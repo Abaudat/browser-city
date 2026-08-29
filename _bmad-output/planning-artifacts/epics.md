@@ -413,6 +413,10 @@ The UX-shaped requirements that do exist are captured above as functional requir
 
 All 172 functional requirements map to exactly one epic. Verified programmatically: no requirement is unmapped and none is claimed by two epics.
 
+**Testing policy, decided 2026-08-29.** Development is TDD throughout. **Every FR is covered by one or more tests**, written before the code that satisfies them. An FR's tests are derived from the acceptance criteria of the stories that deliver it — the Given/When/Then clauses in this document are test specifications, not description. Every one of the 200 stories carries acceptance criteria (897 Given clauses, minimum 3 per story), so the path from requirement to test is complete: FR -> epic -> story -> acceptance criteria -> test.
+
+An FR delivered by several stories accumulates tests across all of them; an FR is not done when its code runs but when every acceptance criterion tracing to it is green. The NFR Test Placement Map below is the counterpart for non-functional requirements, which need it stated separately because most are not delivered by any single story.
+
 ```
 FR1: Epic 4 (The Living Wire) - One in-city day equals 60 real minutes
 FR2: Epic 4 (The Living Wire) - The in-city clock is detached from real-world time

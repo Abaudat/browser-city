@@ -1,5 +1,7 @@
 ---
-stepsCompleted: [1, 2, 3]
+stepsCompleted: [1, 2, 3, 4, 5, 6]
+status: complete
+verdict: READY
 inputDocuments:
   - _bmad-output/planning-artifacts/gdds/gdd-BrowserCity-2026-08-25/gdd.md
   - _bmad-output/planning-artifacts/architecture/architecture-BrowserCity-2026-08-25/architecture.md
@@ -693,3 +695,265 @@ Each entry carries the earliest epic that makes the NFR testable and one of four
 - **NFR21 (consequence needs a physical carrier)** is partly mechanical from Epic 5 — assert no reputation or approval scalar exists on any table — but the full claim stays a review judgement, so it is marked Review at Epic 10 rather than given a test that would only appear to cover it.
 
 **Status: closed.** The Step 3 finding is resolved. Non-functional requirements now have a stronger traceability story than the functional ones: an FR is mapped to an epic, whereas an NFR is mapped to a test that fails a build.
+
+---
+
+## Step 4 — UX Alignment Assessment
+
+### UX Document Status
+
+**Not found.** No `*ux*.md` exists anywhere in the project.
+
+**This was checked rather than assumed.** The step's rule is not to conclude UX is unneeded — so the question asked was whether UX is *implied*, and if so whether the GDD and architecture actually support it. They do, and unusually well.
+
+`epics.md` carries a reasoned *"Not applicable"* rather than an omission, and the reasoning survives scrutiny: the GDD's design law *progression is carried diegetically* plus architecture decision **D17** (*all UI is DOM; nothing persistent, global or abstract is drawn into the canvas*) between them shrink the conventional UX surface almost to nothing.
+
+### The implied UX surface, enumerated
+
+UX is implied — it is simply very small, and every piece of it has an owner:
+
+| Surface | Requirement | Owner | Kind |
+|---|---|---|---|
+| Boot name prompt | FR144 | Epic 4 | DOM, interactive at first paint, zero game assets loaded |
+| Options menu (audio, display, controls) | FR151 | Epic 1 | DOM |
+| Connection-state notices | FR151 | Epic 4 | DOM |
+| Transient object-bound container views | FR150, D17 amendment, D19 | Epic 6 | Canvas, pixel style |
+| Diegetic world information — job boards, council notices, certificate on the wall | FR152 | Epics 10, 13 | Rendered in the world |
+| Click-to-interact | FR148, D16 | Epic 1 | Intent layer |
+| Movement, keybindings | FR149 | Epic 1 | DOM options, `localStorage` |
+| Debug overlays | FR165, FR168 | Epic 1 | Deliberately non-diegetic, dev-only |
+
+### UX ↔ GDD alignment
+
+**PASS — and the architecture is stricter than the GDD asked for.**
+
+The GDD states *no HUD* as a design law and relies on discipline to keep it. D17 converts it into a structural guarantee: **there is no in-canvas UI layer, so there is nowhere to accidentally put a counter.** A HUD is by definition persistent and global, and the amended rule forbids exactly that while still permitting a cupboard to open. This is the rare case of a downstream document strengthening an upstream constraint rather than eroding it.
+
+Every GDD diegetic carrier — the certificate on the wall, the shelf of plushies, the pile of post, a name on a roster — maps to FR152 or FR102 and is rendered in the world rather than in a panel.
+
+### UX ↔ Architecture alignment
+
+**PASS.** No UI element is implied that the architecture does not support:
+
+- **The 1-second boot is UX-designed, not just budgeted.** FR144 makes the name prompt an inline DOM element interactive at first paint with zero game assets loaded, while the payload streams behind it. FR145 spawns first-ever players in their flat interior with the street streaming behind the door. The perceived-performance design is doing real work here — the player is interacting before the world exists.
+- **D16's intent layer is deliberate insulation.** A click resolves to an object instance, checks reachability against `interact_at`, and emits an intent; what the intent *means* is the procedure's business. This exists precisely so the unresolved procedure model can iterate without touching input.
+- **D19 covers the one genuinely new UI surface** — container views — with a rule for when a view appears at all (surfaces: no view; containers: a transient view).
+
+### Warnings
+
+**⚠ 1 — A1, the multi-step procedure interaction model, is still unresolved. This is the project's largest UX risk and it is not closed by anything in Step 4.**
+
+The GDD names it as *the single most important unresolved control question*, because **P4 lives or dies on whether procedure feels like handling or like clicking** — and P4 is the pillar carrying the discretionary middle, which is where the design says the game actually lives. There is no specification to review, by design: it is resolved by prototyping in Epic 8.
+
+**What the architecture mitigates is the cost of being wrong, not the risk of being wrong.** D16's generic intent layer means Epic 8 can iterate on procedure feel without rewriting input — genuinely valuable, and the right structural call. But no amount of insulation makes an unsatisfying interaction model satisfying. The risk remains live until Epic 8 reports, and it sits immediately after the first Burger Test read in Epic 7.
+
+**⚠ 2 — Grid inventory tedium (D19) is a second UX risk, and the documents already note the two will be felt together.**
+
+The epics' open items say: *"Grid inventory tedium — watch alongside the A1 procedure prototyping, since the two will be felt together. Dials are grid sizes and how often a packing decision is forced."* This is correct and worth preserving: a player doing a procedure badly *and* fighting a packing puzzle will not be able to tell the designer which one they disliked. **Recommendation: prototype them separately before combining, or the Epic 8 signal is confounded** — the same reasoning the GDD used to reject a pre-foundation Burger Test spike, applied to a smaller question.
+
+**⚠ 3 — How a first-time player learns a procedure is unspecified. NEW FINDING.**
+
+The design deliberately has no tutorial (systemic content only), no HUD, no objective markers, and no character-creation ceremony — the player boots straight into a flat. The core activity is a multi-step procedure with real failure modes: grind → dose → tamp → pull, or serve → scan → bag → take payment → make change.
+
+**Nothing in any of the three documents states how a new player comes to know those steps.** Searching all three for tutorial, onboarding or teaching language returns essentially nothing.
+
+The vehicle almost certainly exists already: the GDD's ritual open is *"arrive, change in, equip, handover chat with the person you relieve"*, and the epics build handover explicitly, with the acceptance criterion **"handover is where information legitimately passes between people, per the carrier law"** (Epic 8). That is exactly the right diegetic teaching channel — it is already load-bearing for information transfer, it satisfies the physical-carrier law, and it costs no new system.
+
+**But nothing requires it to teach.** As written, handover carries *world* information (what happened on the previous shift), not *procedural* information (how the job is done). A player who has never pulled a shot has no specified route to learning how. Given that the game's central hypothesis is that mundane work is intrinsically satisfying, a player who cannot work out how to do the work fails the Burger Test for reasons that have nothing to do with the hypothesis — **which would corrupt the Epic 7 and Epic 8 signal.**
+
+**Recommendation:** add an acceptance criterion to the ritual-open story making handover the diegetic teaching moment for a procedure the player has not performed before. Small, already-built vehicle, and it protects the falsification points.
+
+**⚠ 4 — Accessibility is entirely absent from all three documents. NEW FINDING.**
+
+Across the GDD, the architecture and the epics there is exactly one incidental mention — D17's remark that DOM is *"accessible by default"* — and no accessibility requirement anywhere. No colour-blind consideration, no text sizing, no input remapping rationale beyond keybindings existing, no contrast guidance.
+
+This matters more here than in most games because of specific design choices: **the game deliberately has no HUD and no text readouts**, so *all* state is communicated through 16×16 pixel art at 3× zoom — prop state, till contents, bin fullness, street degradation. **Legibility of small pixel-art differences is the entire information channel**, and the GDD's most important success metric is *unprompted noticing*. A player who cannot resolve the visual difference cannot play the game at all, not merely play it less comfortably.
+
+**This is not a blocker and it is not a criticism of scope** — a solo passion project is entitled to defer accessibility. But it should be a **recorded decision rather than an omission**, because the no-HUD law makes visual legibility load-bearing in a way that would be expensive to retrofit. The cheapest hedge, if wanted, is a contrast or palette option in the Epic 1 options menu, which already exists and already carries a display section.
+
+### Alignment Issues
+
+**None.** No misalignment was found between the implied UX, the GDD and the architecture. Every implied surface has an owner, and D17 strengthens rather than weakens the GDD's no-HUD law. The four warnings above are open risks and gaps, not contradictions between documents.
+
+---
+
+## Step 5 — Epic Quality Review
+
+Validated against `create-epics-and-stories` standards: player value, epic independence, forward dependencies, story sizing, acceptance-criteria quality, data-creation timing and starter-template handling. Structural checks were run programmatically across all 15 epics and 200 stories.
+
+### Epic independence and dependency direction
+
+**PASS — zero forward dependencies, at either level.**
+
+Every epic declares its dependencies, and every one points strictly backwards:
+
+| Epic | Depends on | | Epic | Depends on |
+|---|---|---|---|---|
+| 0 | nothing — precedes the product work | | 8 | Epic 7 |
+| 1 | nothing — the first epic | | 9 | Epic 8 — handover is mid-procedure, so the procedure state machine must exist first |
+| 2 | Epic 1 | | 10 | Epics 6 and 5 — a chain moves goods |
+| 3 | Epic 2 | | 11 | Epic 10 |
+| 4 | Epics 1 and 3 | | 12 | Epic 11 — the transit pass needs transit |
+| 5 | Epic 4 | | 13 | Epic 12 |
+| 6 | Epic 5 | | 14 | Epics 13 and 3 — generation must exist |
+| 7 | Epics 5 and 6 — the till needs customers | | | |
+
+**Story-level forward references: one candidate, investigated and cleared.** Story 5.3 mentions Story 5.18: *"the resulting rate is fed to the benchmark in Story 5.18."* The direction is forward-**feeding**, not forward-**depending** — 5.3 produces an input that 5.18 later consumes. 5.3 completes without 5.18 existing. Not a violation.
+
+**Twenty forward epic mentions inside story text — all scope boundaries, and they are a strength rather than a defect.** Every one takes the form *"X is built in Epic N"*, *"deferred to Epic N"*, or *"the mechanism arrives in Epic N"*. Examples:
+
+- Epic 7: *"the borrowed night shift is built in Epic 9 rather than here"*
+- Epic 8: *"the litter loop itself is built in Epic 10"*
+- Epic 1: *"the procedure interaction model is deliberately unresolved until Epic 8"*
+- Epic 11: *"the transit pass that changes this arrives in Epic 12"*
+
+These tell an implementing agent what **not** to build, which is exactly the failure mode agentic development is prone to. None creates a dependency on future work; each closes one off.
+
+### Story quality
+
+**PASS across all 200 stories.**
+
+| Check | Result |
+|---|---|
+| Role line (`As a / an / the …`) | **200 / 200** |
+| `I want` / `So that` structure | 200 / 200 |
+| Acceptance criteria present | **200 / 200** |
+| Given/When/Then BDD format | 200 / 200 — 897 `Given` clauses total |
+| Acceptance criteria per story | min 3, max 8, mean 4.5 |
+| Story number matches containing epic | 200 / 200 |
+
+Sizing is consistent — no story is a disguised epic, and none is trivially thin. The largest (Story 5.12, Citizen Memory and Belief, 8 criteria) is a genuinely dense system; the smallest (3 criteria) are spikes and review gates where three assertions are the whole job.
+
+**Acceptance criteria are specific and testable rather than vague.** They name measurable outcomes — *"the street reads as busy, and at three in the morning it reads as quiet"*, *"the transaction aborts cleanly and no partial state is written"*, *"the reducer did not panic"*. The step's canonical bad example ("player can move") does not appear.
+
+**Who the stories are for:**
+
+| Role | Stories | |
+|---|---|---|
+| player / new player / returning player | **128** | 64% |
+| developer / solo developer | 68 | 34% |
+| agent | 4 | 2% |
+
+The developer-facing third is concentrated exactly where it should be — Epics 1–6 (pipeline, generation, wire, stock) run 5–9 developer stories each, while Epics 7–14 run 1–3. Player-facing work rises as foundations complete.
+
+### Starter template and greenfield handling
+
+**PASS.** The architecture specifies an explicit scaffold sequence rather than an off-the-shelf template, and **Story 1.1 is "Project Scaffold and First Round Trip"** — correctly the first story of the first product epic. Greenfield indicators are all present: project setup (1.1), development environment (Epic 0 plus 1.1), and build pipeline early (Story 0.9, Continuous Integration and the Definition of Done).
+
+### Findings
+
+**🟡 1 — Epic 0 is a technical epic with no player value. Declared, justified, accepted.**
+
+By the letter of the standard this is the violation the rule exists to catch: Epic 0 delivers *"a coordinator session, written project context, a review gate, sprint tracking, CI, and a named escalation path"* and states outright **"FRs covered: none, deliberately. Epic 0 builds no game."** It is the only epic without a playable deliverable.
+
+**The justification is strong and I accept it.** The rule exists to stop teams building infrastructure with no user outcome and calling it progress. Epic 0 is not that: it is declared rather than disguised, it is performed by the developer personally rather than dispatched to the agentic team, it depends on nothing and blocks nothing, and on a solo-plus-agents project the development system genuinely is a prerequisite for everything after it. Numbering it 0 rather than 1 is itself a signal that it sits outside the product sequence.
+
+**No action required.** Recorded so that a future reviewer does not "discover" it as a defect.
+
+**🟡 2 — Epic 2's deliverable is labelled "Playable" but nothing about it is playable.**
+
+Epic 2 declares: *"**Playable deliverable:** a scripted block validates against the rules, and a deliberately broken one is correctly rejected with a named violation."*
+
+A player can do nothing new after Epic 2 that they could not do after Epic 1. This is a developer/agent outcome — and consistently so: 9 of Epic 2's 12 stories are developer- or agent-facing. **The epic itself is entirely legitimate** (the epics document argues correctly that the generator's rules *are* the content pipeline, making it load-bearing rather than plumbing). Only the label is wrong.
+
+**Recommendation:** rename the field to **Deliverable**, as Epic 0 already does, or restate it as what a person can do — *"an agent authors a block and has its own work rejected when wrong."* Cosmetic, but the "playable deliverable" convention is what makes the other thirteen epics auditable, and one false positive weakens it.
+
+**🟡 3 — Story 1.2 creates schema structures upfront. This violates the standard and is correct anyway. Document it so nobody "fixes" it.**
+
+The standard says data structures should be created by the story that first needs them, and explicitly names the anti-pattern: *"Epic 1 Story 1 creates all data structures upfront."* Story 1.2, **Permanent Schema Decisions**, does approximately this — fixing every primary key, unique constraint and scheduled-table declaration before the features that use them exist.
+
+**It is forced by the platform, not by habit.** NFR33 and NFR34 record that in SpacetimeDB primary keys and unique constraints are permanent, and a normal table can never become a scheduled one. Deferring these to the story that first needs them would make them unfixable-and-wrong rather than unfixable-and-right. The architecture states it plainly: *"Fix the permanent decisions first."*
+
+**Recommendation:** add one line to Story 1.2 noting that it deliberately departs from just-in-time data creation and why. The risk is a well-intentioned reviewer or agent later "correcting" it toward the standard and producing an irreversible schema error.
+
+### Best-practices compliance summary
+
+| Check | Result |
+|---|---|
+| Epics deliver player/user value | 14 / 15 — Epic 0 a declared, justified exception |
+| Epics function independently | **PASS** — all dependencies point strictly backwards |
+| No forward dependencies | **PASS** — zero at epic level, zero blocking at story level |
+| Stories appropriately sized | **PASS** — 3–8 acceptance criteria, no disguised epics |
+| Data structures created when needed | 1 deliberate exception (Story 1.2), platform-forced |
+| Clear, testable acceptance criteria | **PASS** — 200/200, 897 criteria, specific and measurable |
+| Traceability to FRs maintained | **PASS** — verified in Step 3 |
+| Starter template handled | **PASS** — Story 1.1 |
+
+**No critical or major violations. Three minor findings, two of which are documentation-only.** This is a markedly better result than the epic-quality step usually produces; the dependency discipline in particular — fifteen epics with a clean backward-only chain and twenty explicit scope-boundary statements — is the strongest structural feature of the planning set.
+
+---
+
+## Summary and Recommendations
+
+**Assessor:** Game Producer / Scrum Master review, GDS Implementation Readiness workflow
+**Date:** 2026-08-29
+**Scope:** GDD, Architecture, and the epic/story breakdown — 15 epics, 200 stories, 172 FRs, 47 NFRs
+
+### Overall Readiness Status
+
+# ✅ READY
+
+BrowserCity's planning set is ready for Phase 4 implementation. Nothing found in this assessment blocks starting Epic 0 or Epic 1, and the two items that remain open are open by deliberate decision rather than by omission.
+
+This verdict is not a courtesy. Six issues were found across the six steps; **all six were closed during the assessment**, and the structural checks that usually surface problems — requirement coverage, dependency direction, acceptance-criteria quality — came back clean under independent programmatic verification rather than on the documents' own assurance.
+
+### What was verified, and how
+
+Every structural claim in this report was re-derived rather than accepted from the documents:
+
+| Verification | Result |
+|---|---|
+| FR inventory contiguous, unduplicated, fully mapped, none double-claimed | **PASS** — re-derived, 172/172 |
+| GDD requirements with a traceable implementation path | **102 of 103** (99.0%) |
+| Epic dependency direction | **PASS** — 15 epics, zero forward dependencies |
+| Story-level forward references | **PASS** — one candidate, cleared as forward-feeding |
+| Stories with role line, `I want`/`So that`, and acceptance criteria | **200 / 200** |
+| Acceptance criteria in Given/When/Then, specific and testable | **897 criteria**, min 3 per story, mean 4.5 |
+| Story numbering matches containing epic | **200 / 200** |
+| NFRs placed against an earliest-testable epic | **47 / 47** |
+| Starter-template requirement in Epic 1 Story 1 | **PASS** |
+
+### Issues found — all six closed
+
+| # | Step | Issue | Resolution |
+|---|---|---|---|
+| 1 | 1 | Duplicate epics documents — a superseded design-level charter coexisted with the implementation breakdown | **Closed.** Charter deleted; three inbound references repointed |
+| 2 | 2 | GDD epic references systematically stale — 16 cross-references pointed at old E-numbers, several at the *wrong* epic (A8 → "E5" when the Burger Test is Epic 7; A9 → "E8" when Citizens is Epic 5) | **Closed.** Table replaced with the 15-epic structure plus a `Was` column; 15 inline references repointed |
+| 3 | 2 | Design numbers drifted between documents — the profession target read ~100 in the GDD against ~69 settled by the Scale Baseline; A2 and A4 still read as deferred after the architecture had answered them | **Closed.** Corrected in two places; A2 marked answered, A4 honestly marked still-open pending the B3 spike |
+| 4 | 2 | Architecture escalated **social continuity across long absence** to the GDD and it was never folded in — a fortnight offline is roughly an in-city year, exposing recognisability and the geographic social graph | **Closed.** Recorded as open item **A11** with the accepted position (established citizens are sticky) |
+| 5 | 2 | Stock, goods and money was absent from the GDD despite being load-bearing and becoming Epic 6 | **Closed.** Added as mechanic **M8**; mechanics count corrected seven → eight |
+| 6 | 3 | **No NFR traceability.** No coverage map existed; 39 of 46 NFRs were never referenced outside their own declaration | **Closed.** NFR Test Placement Map added — all 47 placed against the earliest epic that makes them testable, with Gate/Test/Invariant/Review kinds |
+
+### Open items — deliberate, not defects
+
+Three items remain genuinely open and are correctly marked as such in the GDD. None blocks implementation; each is scheduled against the epic that resolves it.
+
+| Item | Impact | Resolves at |
+|---|---|---|
+| **A1** — the multi-step procedure interaction model | **High.** P4 lives or dies on whether procedure feels like handling or clicking. Not resolvable on paper | Prototyping in **Epic 8**, insulated by D16's generic intent layer |
+| **A4** — the 1-second boot against asset streaming | **High.** The hardest constraint in the project. The architecture's boot design is arithmetic, not evidence | Benchmark **B3**, gated in **Epic 1** |
+| **A10** — the borrowing licence as anti-griefing | Medium | Observable only with real players; post-launch |
+
+**The Burger Test's position was decided during this assessment.** It moves from epic 5 of 13 to epic 7 of 15, behind Citizens and Stock/Goods/Money, placing the project's most critical unfalsified assumption behind roughly two additional epics. **Accepted** — the shop till requires customers, so the first job epic always depended on NPC capability, and an answer obtained against a stubbed customer might not transfer. A later test whose result is trustworthy beats an earlier one that is not.
+
+### Recommended next steps
+
+Four items, none blocking. The first two protect the project's own falsification signal and are worth doing before Epic 7.
+
+1. **Make handover the diegetic teaching moment for an unfamiliar procedure.** *(Step 4, warning 3 — the only substantive gap this assessment leaves open.)* The design has no tutorial, no HUD and no objective markers, and nothing in any document states how a first-time player learns to grind → dose → tamp → pull. The vehicle already exists and is already built: ritual open is *"arrive, change in, equip, handover chat with the person you relieve"*, and Epic 8's acceptance criteria already make handover the place information legitimately passes between people. It simply carries *world* information today, not *procedural* information. **Add one acceptance criterion to the ritual-open story.** Without it, a player who cannot work out how to do the job fails the Burger Test for reasons unrelated to the hypothesis — corrupting the Epic 7 and Epic 8 signal, which is the most expensive way this project can be wrong.
+
+2. **Prototype the procedure model (A1) and grid inventory (D19) separately before combining them.** The epics already note the two *"will be felt together"*. A player fighting a packing puzzle while performing a procedure badly cannot tell you which one they disliked. This is the same reasoning the GDD used to reject a pre-foundation Burger Test spike, applied to a smaller question.
+
+3. **Decide accessibility explicitly rather than by omission.** *(Step 4, warning 4.)* All three documents together contain one incidental mention. This matters more here than in most games: with no HUD and no text readouts, **all** state travels through 16×16 pixel art at 3× zoom, so visual legibility is the entire information channel and the headline success metric is *unprompted noticing*. Deferring it is a legitimate call for a solo passion project — but record it as a decision. The cheap hedge, if wanted, is a contrast or palette option in the Epic 1 options menu, which already exists and already has a display section.
+
+4. **Three small documentation fixes.** Adjudicate the GDD's *"municipal memory"* phrase — the one assertion in the entire GDD with no counterpart anywhere (Step 3); it is either a restatement of complaints, matters and citizen memory, in which case say so, or a system nobody has scoped. Relabel Epic 2's "Playable deliverable" as "Deliverable", since a player gains nothing there and the convention is what makes the other fourteen auditable. Add one line to Story 1.2 noting that its upfront schema creation deliberately departs from just-in-time data creation because SpacetimeDB primary keys and scheduled tables are permanent — otherwise a well-meaning reviewer may later "correct" it into an irreversible error.
+
+### Final Note
+
+This assessment identified **six issues across four categories** — document duplication, cross-reference staleness, design-number drift, and requirement traceability. **All six were closed during the assessment.** Four further recommendations remain, none blocking, of which one (the handover teaching moment) is worth doing before the Burger Test to protect its signal.
+
+**The planning set is unusually strong, and the verdict rests on evidence rather than tone.** The FR coverage map is complete and machine-verifiable; the epic dependency chain is clean across fifteen epics with twenty explicit scope-boundary statements telling agents what *not* to build; all 200 stories carry testable Given/When/Then criteria; and the documents consistently record their own weaknesses — accepted trades, unfalsified assumptions and known gaps are named rather than buried. Where the architecture disagreed with the design it said so and handed the finding back, and where this assessment disagreed with the epics the epics were usually right.
+
+Two things now make the requirement set stronger than it was at the start of this review: **every FR is covered by one or more tests** derived from its stories' acceptance criteria, and **every NFR is placed against the earliest epic that makes it testable** with a build-failing enforcement kind. Under TDD that means a requirement is not complete when its code runs but when its tests are green — which is a stronger guarantee than the coverage map this assessment originally recommended.
+
+**Proceed to implementation.** Start with Epic 0 to stand up the development system, then Epic 1, where seventeen NFR tests and three gating spikes land before anything can depend on decisions that cannot be reversed.
