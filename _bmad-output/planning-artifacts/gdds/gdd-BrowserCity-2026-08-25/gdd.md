@@ -734,7 +734,7 @@ GDD-level targets only. Engine selection, system architecture, netcode model and
 
 ## Development Epics
 
-Thirteen epics. Full breakdown — goal, scope, exclusions, dependencies, playable deliverable — in `epics.md`.
+Thirteen epics. Full breakdown — goal, scope, exclusions, dependencies, playable deliverable — in `../../epics.md`.
 
 | # | Epic | Playable deliverable |
 |---|---|---|

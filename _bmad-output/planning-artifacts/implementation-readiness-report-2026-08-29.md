@@ -7,7 +7,6 @@ inputDocuments:
 supportingDocuments:
   - _bmad-output/planning-artifacts/briefs/brief-BrowserCity-2026-08-24/brief.md
   - _bmad-output/planning-artifacts/briefs/brief-BrowserCity-2026-08-24/addendum.md
-  - _bmad-output/planning-artifacts/gdds/gdd-BrowserCity-2026-08-25/epics.md
 ---
 
 # Implementation Readiness Assessment Report
@@ -26,7 +25,6 @@ supportingDocuments:
 
 Companion files in the same folder:
 - `gdds/gdd-BrowserCity-2026-08-25/decision-log.md`
-- `gdds/gdd-BrowserCity-2026-08-25/epics.md` — 15 KB, 323 lines (design-level epic charter, see conflict note)
 
 ### Architecture Documents
 
@@ -41,8 +39,7 @@ Companion files in the same folder:
 - `planning-artifacts/epics.md` — 312 KB, 6442 lines, modified 2026-08-29 16:03
   - 15 epics (Epic 0 through Epic 14), 200 stories
   - Frontmatter declares `stepsCompleted: [1,2,3,4]` with GDD + Architecture as input documents
-- `gdds/gdd-BrowserCity-2026-08-25/epics.md` — 15 KB, 323 lines, modified 2026-08-25 19:35
-  - Design-level epic charter (E1–E14): goal, scope, exclusions, dependencies, playable deliverable
+  - **Sole authoritative epic breakdown.** The superseded design-level charter that previously sat at `gdds/gdd-BrowserCity-2026-08-25/epics.md` has been deleted.
 
 **Sharded documents:** none
 
@@ -61,13 +58,18 @@ Companion files in the same folder:
 
 ### Issues Found
 
-**⚠️ Potential duplicate — two epics files (resolved in-document, needs user confirmation)**
+**✅ RESOLVED — duplicate epics files**
 
-Both `planning-artifacts/epics.md` and `gdds/gdd-BrowserCity-2026-08-25/epics.md` exist. These are *not* two formats of the same document:
-- The GDD-folder file is the **design-level charter** written with the GDD (2026-08-25), before the architecture was complete.
-- The root file is the **implementation-level breakdown** (2026-08-29), and it explicitly states the GDD-folder file "is *not* an input document; where the architecture's findings supersede it, this document folds those findings in rather than inheriting the earlier structure."
+Two epics files previously coexisted:
+- `gdds/gdd-BrowserCity-2026-08-25/epics.md` — the **design-level charter** written alongside the GDD (2026-08-25), before the architecture was complete.
+- `planning-artifacts/epics.md` — the **implementation-level breakdown** (2026-08-29), which explicitly folded in the architecture's findings where they superseded the charter.
 
-The root file is authoritative for this assessment. The GDD-folder file is retained as historical design context. **Confirm this is your intent** — if the older charter is dead, consider renaming it (e.g. `epics-charter-superseded.md`) so no downstream agent mistakes it for current scope.
+The charter has been **deleted**. `planning-artifacts/epics.md` is now the single authoritative epic breakdown, and the three inbound references were repointed to it:
+- `architecture.md` frontmatter `epics:` → `_bmad-output/planning-artifacts/epics.md`
+- `gdd.md` "Development Epics" pointer → `../../epics.md`
+- the source note in `epics.md` itself, rewritten to record the supersession
+
+The GDD retains its own E1–E14 summary table, which stands as the design-level view.
 
 **⚠️ WARNING — no UX Design Specification**
 

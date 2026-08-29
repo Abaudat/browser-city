@@ -11,7 +11,7 @@ inputDocuments:
 
 This document provides the complete epic and story breakdown for BrowserCity, decomposing the requirements from the GDD, UX Design if it exists, and Architecture requirements into implementable stories.
 
-**Source note.** Two input documents only: the GDD (2026-08-25) and the Architecture (2026-08-25, complete, 21 decisions). No UX Design Specification exists for this project. The design-level epic charter at `gdds/gdd-BrowserCity-2026-08-25/epics.md` is *not* an input document; where the architecture's findings supersede it, this document folds those findings in rather than inheriting the earlier structure.
+**Source note.** Two input documents only: the GDD (2026-08-25) and the Architecture (2026-08-25, complete, 21 decisions). No UX Design Specification exists for this project. An earlier design-level epic charter lived at `gdds/gdd-BrowserCity-2026-08-25/epics.md`; it was superseded by this document and has since been removed. Where the architecture's findings superseded it, this document folded those findings in rather than inheriting the earlier structure. This file is the sole authoritative epic breakdown.
 
 ## Requirements Inventory
 
