@@ -59,8 +59,8 @@ The maths is real. Minutes are genuinely scarce; rent is 45% of gross; the bike 
 
 ### Project Goals
 
-1. **Prove that mundane, unsupervised work is intrinsically satisfying** without SS13's round timer and antagonists to give it stakes. This is the hypothesis the whole design rests on, and the first one tested (E5).
-2. **Prove that AI citizens can carry aliveness at low concurrency.** At one connected player, AI must carry the entire density burden. This is the project's real engineering risk — harder than multiplayer (E8).
+1. **Prove that mundane, unsupervised work is intrinsically satisfying** without SS13's round timer and antagonists to give it stakes. This is the hypothesis the whole design rests on, and the first one tested (Epic 7).
+2. **Prove that AI citizens can carry aliveness at low concurrency.** At one connected player, AI must carry the entire density burden. This is the project's real engineering risk — harder than multiplayer (Epic 5).
 3. **Ship a small multiplayer district** with five playable jobs, real transit, 100+ interiors, reciprocal occupancy live, and at least one institutional chain running end to end.
 4. **Build it in a way one person can sustain** — uniform, data-driven, heavily testable systems that agents can extend and validate.
 
@@ -213,6 +213,8 @@ Emergence reaches the player on the way to and from work. The bin that is full, 
 | Edge flat + bike | 30 min | 7h (17.5 real min) | **+17%** |
 | Transit pass / closer flat | 20 min | 7h 20m (18.3 real min) | +22% from start |
 
+**These figures are load-bearing on map scale.** The commute arithmetic above is true only at the settled scale: walking speed is **2.2 cells/sec**, which is what makes a ~333-cell starting commute take exactly 60 in-city minutes on a 512-cell map. The ladder then lands precisely on the design's stated floor — bike at 2x gives 30 in-city minutes, transit pass at 3x gives 20. Because `commute_in_city_minutes = 0.26 x map_width / walk_speed`, **any change to map size or walking speed must be made together, or the ladder and its floor stop being true.**
+
 **Stated tension:** P1 pushes the player to buy the commute down, but the commute is the loop's variance source. Optimise perfectly and you see less of the city. This is a deliberate trade, not a leak, and it is resolved three ways:
 
 1. **There is a floor.** The commute never reaches zero — roughly 20 in-city minutes at best, still real time in the street each leg.
@@ -253,7 +255,7 @@ BrowserCity is open-ended by design: the city ran before the player and continue
 
 ### Primary Mechanics
 
-Seven mechanics. Each names the pillar it serves and the numbers it runs on. A mechanic that serves no pillar is scope creep — none here are unattached.
+Eight mechanics. Each names the pillar it serves and the numbers it runs on. A mechanic that serves no pillar is scope creep — none here are unattached. *(M8 was added 2026-08-29: the architecture found stock and logistics absent from this document and load-bearing.)*
 
 ---
 
@@ -395,7 +397,24 @@ M1 establishes that the discretionary middle is where the game lives. M7 is what
 
 **Design rule:** gamey affordances exist only where the experience genuinely breaks without them. Abstraction is a cost paid reluctantly, never a default vocabulary.
 
-**Two pairs of hands — the principle ships, the content does not.** Some procedures may physically require two people (the sofa, the fry station, the beam), so co-op emerges from simulation fidelity rather than from designed multiplayer content — the only kind of multiplayer content the design laws permit. E6 builds procedures so this is possible; specific two-handed tasks beyond a token case are out of scope for v1.
+**Two pairs of hands — the principle ships, the content does not.** Some procedures may physically require two people (the sofa, the fry station, the beam), so co-op emerges from simulation fidelity rather than from designed multiplayer content — the only kind of multiplayer content the design laws permit. Epic 8 builds procedures so this is possible; specific two-handed tasks beyond a token case are out of scope for v1.
+
+---
+
+#### M8 — Stock, goods and physical money
+
+**Serves:** P4 (props carry state, and the machine is readable), P1 (money is stored time, and here it is also an object)
+
+*Added 2026-08-29. The architecture found this absent from the original seven and load-bearing — it is the substrate the institutional layer consumes, so it precedes it.*
+
+**Things exist in quantities, and move only when somebody moves them.** Goods are not spawned into a shop by a restock timer; they arrive because an order chain ran and somebody carried them. This is Design Law *consequence needs a physical carrier* applied to the economy itself, and it is what turns logistics from a background system into a job somebody holds.
+
+**Physical cash is ordinary stock.** Denominations are items. A till holds a specific set of coins and notes, and a customer paying with a large note when the till holds three coins is an inventory failure the procedure branches on. **This is why "the till runs short of change" is not special-cased** — it falls out of stock being real. Card settles against the account with no cash movement; cash moves stock in both directions and can fail. The payment method acquires real texture for free.
+
+**Why it earns its place against "systemic content only".** It removes special cases rather than adding systems: the café's beans depleting as citizens buy coffee, the supplier ordering across the city boundary, and the till running short are one mechanic seen three times, not three features.
+
+**Cut test:** remove it and restocking becomes a timer, change-making becomes a scripted failure, and the sanitation and supply chains lose the physical carrier that makes them legible.
+
 
 ### Controls and Input
 
@@ -421,13 +440,15 @@ M1 establishes that the discretionary middle is where the game lives. M7 is what
 
 **Resolution scales; causality does not.** Distant simulation is cheaper, never falser. Cheap is not fake.
 
-**Population target — deferred to architecture.** The citizen count for district one is a cost question as much as a design one and is deferred to `gds-game-architecture`, which will hold the per-agent budget. The GDD instead fixes the **design constraints that number must satisfy**:
+**Population target — settled 2026-08-29.** The citizen count was deferred to `gds-game-architecture` as a cost question as much as a design one. It has since been settled by the Scale Baseline, measured against the tileset: **a 512x512 map (~435 m square) carrying ~5,000 citizens** at a density of one per 52.4 cells — roughly Paris-to-Manhattan — across ~894 buildings and ~344 workplaces, costing ~$25/mo at ~42 L2 transactions per second with no overage. The 100+ enterable-interiors target is ~11% of building stock and is therefore never the binding constraint. Full derivation lives in `../../epics.md`.
+
+The design constraints below are what that number had to satisfy. They remain the standing test for any future change to scale:
 
 | Constraint | Requirement |
 |---|---|
 | Local density | A busy street at rush hour must read as busy; a residential street at 3am must read as quiet. Aliveness is measured per screen, not per database. |
 | Sparse periphery | District edges read as character, not as budget. Emptiness must look intentional. |
-| Labour-market depth | Enough distinct professions (target ~100, most AI-held) that wage self-balancing has something to balance. |
+| Labour-market depth | Enough distinct professions (most AI-held) that wage self-balancing has something to balance. *Target was ~100; the Scale Baseline settles v1 at ~69 professions at 5+ employers each, growing toward ~100 as the city extends (see A2).* |
 | Recognisability | Individual agents must be encounterable often enough to become familiar — the barista who greets you requires that you keep meeting the same barista. |
 | AI carries density | At low concurrency, AI citizens carry the entire feeling of aliveness. Player count must never be the source of the city feeling populated. |
 
@@ -444,6 +465,8 @@ investigation → approval → budget → procurement → logistics → labour
 **Response time is a budget line.** How fast the ambulance arrives depends on a decision made in a building the player has never entered.
 
 **Municipal memory.** The city observes and alters itself, readable like weather.
+
+> *Adjudicated 2026-08-29.* The readiness assessment found this to be the only assertion in this GDD with no counterpart in the epics — no requirement, story or acceptance criterion mentions it. **It is a summary of mechanisms that already exist, not a distinct system, and it needs no epic of its own.** The city observes itself through complaint filing with a probability floor so habituation cannot starve the signal (FR80), through workers escalating an out-of-range condition they notice (FR71), and through matters arriving by four fluxes each with a person and a physical carrier (FR70). It alters itself through the chains those matters open (FR81). It is readable because consequence has a physical carrier and is met on the commute rather than in a feed. "Like weather" is the register, not a mechanism: no city-wide mood, index or memory object exists or should be built.
 
 **The reference chain — the plastic-bottle loop.** The vertical slice that exercises institutions, emergence, jobs and physical consequence on a single street:
 
@@ -636,7 +659,7 @@ See § Game Mechanics M2 and M3 for the full rate table. Summary:
 
 **Everything is procedurally generated from a city seed** — street layout, plot subdivision, building exteriors, and interiors. Nothing is hand-placed. This follows directly from the design law *systemic content only*: a solo developer cannot author a city, but can grow one.
 
-**Consequence, stated plainly: the generator's rules are the entire content pipeline.** There is no fallback of hand-authoring a good street if the rules produce a bad one. This makes the tile-semantics and authoring-rules work (E2) load-bearing rather than plumbing, and it is the project's single largest content risk.
+**Consequence, stated plainly: the generator's rules are the entire content pipeline.** There is no fallback of hand-authoring a good street if the rules produce a bad one. This makes the tile-semantics and authoring-rules work (Epic 2) load-bearing rather than plumbing, and it is the project's single largest content risk.
 
 **Determinism:** the same seed produces the same city. The city is not re-rolled; it is generated once and then lived in.
 
@@ -665,7 +688,7 @@ These parameters are also what makes the gentrification loop legible: physical s
 
 ### Level progression
 
-There is none. The player does not advance through spaces; they inhabit one and it grows around them. **The city extends** (E13) as the active player population rises: new neighbourhoods are generated adjacent to district one, built visibly by the development chain, so that there is always somewhere affordable to begin.
+There is none. The player does not advance through spaces; they inhabit one and it grows around them. **The city extends** (Epic 14) as the active player population rises: new neighbourhoods are generated adjacent to district one, built visibly by the development chain, so that there is always somewhere affordable to begin.
 
 ### Density is local
 
@@ -723,8 +746,8 @@ GDD-level targets only. Engine selection, system architecture, netcode model and
 |---|---|---|
 | Exterior tiles | **In hand** — LimeZu Modern Exteriors, pre-split | |
 | Interior tiles and props | **In hand** — LimeZu Modern Interiors, pre-split | Large prop library; the basis for local density |
-| Character spritesheets | **In hand, unsplit** | Splitting is known work, scheduled in E1 |
-| Tile semantic metadata | **To be authored** | E2. The rules that let agents place tiles correctly — the project's real content pipeline |
+| Character spritesheets | **In hand, unsplit** | Splitting is known work, scheduled in Epic 1 |
+| Tile semantic metadata | **To be authored** | Epic 2. The rules that let agents place tiles correctly — the project's real content pipeline |
 | Ambient audio | **To be sourced** | Traffic, rain, tram, room tone, interior/exterior transitions |
 | Music | **Minimal** | Rare and diegetic only; no composed score |
 
@@ -734,34 +757,44 @@ GDD-level targets only. Engine selection, system architecture, netcode model and
 
 ## Development Epics
 
-Thirteen epics. Full breakdown — goal, scope, exclusions, dependencies, playable deliverable — in `../../epics.md`.
+**Fifteen epics — Epic 0 plus fourteen.** The full breakdown (goal, scope, exclusions, dependencies, playable deliverable, stories and acceptance criteria) lives in `../../epics.md`, which is **authoritative for epic structure, numbering and sequence**. That document also carries the numbered requirements inventory (FR1–FR172, NFR1–NFR46) derived from this GDD and from the architecture; this GDD deliberately does not duplicate it.
 
-| # | Epic | Playable deliverable |
-|---|---|---|
-| E1 | Client and Render Foundation | Walk an avatar down a hand-laid test street in a browser |
-| E2 | Tile Semantics and Authoring Rules | A block validates against the rules; a broken one is rejected |
-| E3 | City Generation | Walk a generated district with neighbourhoods that read as different |
-| E4 | Authoritative Server and Netcode | Two browsers standing in the same city, in under a second |
-| E5 | **The Day Loop** | Wake, commute, work a shop-till shift, get paid, have rent taken — **first read on the Burger Test** |
-| E6 | **Procedure and Props** | Two jobs performable well or badly, nothing scoring you — **and the hard Burger Test: the empty post** |
-| E7 | Reciprocal Occupancy | Log off for a day, return, read your post, find your life intact and richer |
-| E8 | **Citizens** | A city that feels populated with one player connected — **and the AI-density answer** |
-| E9 | The Reference Slice | The plastic-bottle loop end to end, read on your commute |
-| E10 | The District | The MVP: five playable jobs, real transit, 100+ interiors, institutions running |
-| E11 | A Life | Three genuinely different things to spend spare minutes on, and a shelf that shows it |
-| E12 | Careers | Qualify in the evenings, wait for a post, take it, make decisions that outlast you |
-| E13 | Growth | Watch a new neighbourhood get built, caused by population pressure you are part of |
+**This table was restructured on 2026-08-29** after the architecture document completed. The design intent of every epic below is unchanged from this GDD's original E1–E13; what changed is grouping, ordering and numbering. The three reasons, recorded by the epics document:
+
+1. **Citizens move before the day loop.** The architecture found that the shop till requires customers, so the first job epic already depended on NPC capability. Building a stubbed customer to preserve the old order would repeat the mistake this GDD itself declined when it rejected a pre-foundation Burger Test spike — a spike's answer might not transfer.
+2. **Stock, Goods and Money is a new epic.** The architecture found it absent from this GDD's breakdown and load-bearing. It is L1's substrate, it makes "the till runs short of change" fall out rather than be special-cased, and it turns logistics into a job.
+3. **Foundation epics are consolidated.** The original E1–E4 all churn the same files, so they are now organised by the boundary they own rather than the layer they sit in, with the three gating spikes pulled into Epic 1.
+
+| # | Epic | Was | Playable deliverable |
+|---|---|---|---|
+| 0 | The Development Team | *new* | Dispatch work to agents with tracking, a review gate and CI. Builds no game |
+| 1 | Foundations and Gating Spikes | E1 | Walk an avatar down a hand-laid test street in a browser, with the three overturning measurements already taken |
+| 2 | The Content Pipeline | E2 | A block validates against the rules; a broken one is rejected with a named violation |
+| 3 | The Generated City | E3 | Walk a generated 512×512 district with neighbourhoods that read as different |
+| 4 | The Living Wire | E4 | Two browsers standing in the same city, in under a second |
+| 5 | **Citizens** | E8 | A city that feels populated with one player connected — **the AI-density answer** |
+| 6 | Stock, Goods and Money | *new* | Beans deplete, an order chain refills them, a till runs short of change |
+| 7 | **The Day Loop** | E5 | Wake, commute, work a shop-till shift, get paid, have rent taken — **first read on the Burger Test** |
+| 8 | **Procedure and Props** | E6 | Two jobs performable well or badly, nothing scoring you — **the hard Burger Test: the empty post** |
+| 9 | Reciprocal Occupancy | E7 | Log off for a day, return, read your post, find your life intact and richer |
+| 10 | Institutions and the Reference Slice | E9 | The plastic-bottle loop end to end, read on your commute |
+| 11 | Transit and the Full Roster | E10 | The MVP: five playable jobs, real transit, 100+ interiors, institutions running |
+| 12 | A Life | E11 | Three genuinely different things to spend spare minutes on, and a shelf that shows it |
+| 13 | Careers | E12 | Qualify in the evenings, wait for a post, take it, make decisions that outlast you |
+| 14 | Growth | E13 | Watch a new neighbourhood get built, caused by population pressure you are part of |
 
 **Sequence:**
 
 ```
-E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E10 → E11 → E12 → E13
-└──── foundation ────┘   └ Burger Test ┘   └ density ┘  └─── content & depth ───┘
+0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14
+    └─── foundation ───┘  └density┘   └ Burger Test ┘  └── content & depth ──┘
 ```
 
-**Two falsification points.** E5 and E6 together answer whether mundane work is intrinsically satisfying without SS13's round timer and antagonists — E5 with a customer-facing job, E6 with the unsupervised empty post, which is the hard case. Everything after E6 assumes yes. E8 answers whether AI citizens can carry the feeling of aliveness at low concurrency, which the addendum names as the real engineering risk.
+**Two falsification points.** Epics 7 and 8 together answer whether mundane work is intrinsically satisfying without SS13's round timer and antagonists — Epic 7 with a customer-facing job, Epic 8 with the unsupervised empty post, which is the hard case. Everything after Epic 8 assumes yes. Epic 5 answers whether AI citizens can carry the feeling of aliveness at low concurrency, which the addendum names as the real engineering risk.
 
-**Multiplayer is not an epic.** Authoritative simulation means the server runs the city with zero clients; a second connected player is close to incrementally free. Netcode is E4's architecture. Building single-player first would mean retrofitting it — the more expensive path.
+> **Recorded decision — the Burger Test runs later, and that is accepted.** In this GDD's original sequence the first falsification point was epic 5 of 13. Under the restructure it is epic 7 of 15, behind Citizens and Stock/Goods/Money, so the design's most critical unfalsified assumption (A8) sits behind roughly two additional epics of work. The epics document raised this as the single largest cost of the restructure. **Decided 2026-08-29: accepted — the epic breakdown stands as written.** The reasoning that carries it is the same one this GDD used to reject a pre-foundation Burger Test spike: the shop till requires customers, so the first job epic always depended on NPC capability, and an answer obtained against a stubbed customer might not transfer. A later test whose result is trustworthy beats an earlier one that is not.
+
+**Multiplayer is not an epic.** Authoritative simulation means the server runs the city with zero clients; a second connected player is close to incrementally free. Netcode is Epic 4's architecture. Building single-player first would mean retrofitting it — the more expensive path.
 
 ---
 
@@ -806,7 +839,7 @@ Each connects to a pillar. Adjectives are not metrics.
 | **Player-owned businesses and infrastructure** | Public office and private ownership are one mechanic under two labels, and belong to a later job tier |
 | **Player-holdable institutional chain links** | Accepted gap. Chains run AI-staffed end to end in v1; players observe rather than staff them. See § Assumptions and Dependencies |
 | **Places as a lateral pursuit** | Deliberately dropped — the only pursuit with no physical carrier. Dropping it retires the stated exception to the physical-carrier law |
-| **Two-handed co-op tasks** | The *principle* ships — procedures may require two people, and E6 builds for it — but specific two-handed tasks beyond a token case are deferred |
+| **Two-handed co-op tasks** | The *principle* ships — procedures may require two people, and Epic 8 builds for it — but specific two-handed tasks beyond a token case are deferred |
 | **Controller and touch support** | Mouse and keyboard only |
 | **Composed musical score** | Music is rare and diegetic; the city is the soundtrack |
 | **Character creation ceremony** | Boot straight into the city. The one-second target forbids it |
@@ -829,20 +862,21 @@ Each connects to a pillar. Adjectives are not metrics.
 
 | # | Item | Impact | Disposition |
 |---|---|---|---|
-| **A1** | **[NOTE FOR DESIGNER]** The multi-step procedure interaction model — how grind → dose → tamp → pull is actually performed | **High.** P4 lives or dies on whether procedure feels like *handling* or like *clicking*. Not resolvable on paper | Resolved by prototyping in **E6** |
-| **A2** | **[ASSUMPTION]** District one's citizen count, and its monthly server cost | **High.** The brief calls this "the number that constrains everything else". Requires engine choice and per-agent budget | Deferred to `gds-game-architecture`. The five design constraints the figure must satisfy are captured in § Core Simulation Systems |
-| **A3** | **Known gap (accepted):** no v1 job is a decision link in an institutional chain | **Medium.** P2 says the machine is staffed and the endgame is occupying links others route through — at launch, players can observe chains but not staff one, so the pillar's most distinctive half ships unplayable | Accepted for v1. Mitigated by job access tiers being a tuning dial: a chain role is an addition, not a rebuild. First candidate is the council permits clerk or a development-chain role, in **E12** |
-| **A4** | **[ASSUMPTION]** The one-second boot is achievable against MMO asset streaming | **High.** The hardest technical constraint in the project, and the brief records that it has not been designed against | `gds-game-architecture` |
-| **A5** | **Known risk:** the generator's rules are the entire content pipeline | **High.** Nothing is hand-authored, so there is no fallback if the rules produce a bad street. Single largest content risk | Mitigated by making tile semantics a first-class epic (**E2**) with a validation harness |
+| **A1** | **[NOTE FOR DESIGNER]** The multi-step procedure interaction model — how grind → dose → tamp → pull is actually performed | **High.** P4 lives or dies on whether procedure feels like *handling* or like *clicking*. Not resolvable on paper | Resolved by prototyping in **Epic 8** |
+| **A2** | **[ASSUMPTION]** District one's citizen count, and its monthly server cost | **High.** The brief calls this "the number that constrains everything else". Requires engine choice and per-agent budget | **Answered 2026-08-29.** The Scale Baseline settles it: a 512x512 map (~435 m square) carries **~5,000 citizens**, ~894 buildings, ~344 workplaces and **~69 professions** at 5+ employers each, for ~42 L2 transactions/sec and **~$25/mo** with no overage. Note the profession target is therefore **~65-70 for v1, not the ~100 stated above**, growing toward it as the city extends |
+| **A3** | **Known gap (accepted):** no v1 job is a decision link in an institutional chain | **Medium.** P2 says the machine is staffed and the endgame is occupying links others route through — at launch, players can observe chains but not staff one, so the pillar's most distinctive half ships unplayable | Accepted for v1. Mitigated by job access tiers being a tuning dial: a chain role is an addition, not a rebuild. First candidate is the council permits clerk or a development-chain role, in **Epic 13**. **Update 2026-08-29:** the architecture found this gap far cheaper to close than assumed — a decider is a citizen whose work-time option set is matters rather than procedure steps, so a player-holdable decision link is an addition, not a rebuild. Epic 13 now closes A3 rather than merely being its first candidate |
+| **A4** | **[ASSUMPTION]** The one-second boot is achievable against MMO asset streaming | **High.** The hardest technical constraint in the project, and the brief records that it has not been designed against | Architecture supplies a boot design, but it is **arithmetic rather than evidence**. Benchmark **B3 (boot budget, measured)** is scheduled as a gating spike in Epic 1, before anything depends on it. Still open until B3 reports |
+| **A5** | **Known risk:** the generator's rules are the entire content pipeline | **High.** Nothing is hand-authored, so there is no fallback if the rules produce a bad street. Single largest content risk | Mitigated by making tile semantics a first-class epic (**Epic 2**) with a validation harness |
 | **A6** | **Recorded tension:** because the understudy banks surplus while a present player spends, absence is technically the money-optimal play | **Low.** Money is explicitly the least-valued axis and has no display, so a player optimising it is optimising something the design neither rewards nor shows | Accepted. Re-examine if players report feeling punished for playing |
 | **A7** | **Accepted trade:** dependency is carried by decisions, not presence — so nobody is literally waiting on *you* | **Medium.** Weakens the felt "being needed" fantasy | Accepted deliberately. The alternative (a degraded AI backfill) would make players and AI mechanically distinguishable and break P2 |
-| **A8** | **[ASSUMPTION]** The Burger Test holds without SS13's round timer and antagonists | **Critical.** Everything after E5 assumes yes | Answered by **E5**. A pre-foundation throwaway spike was considered and declined — the foundation is needed regardless and a spike's answer might not transfer |
-| **A9** | **[ASSUMPTION]** AI citizens can carry the entire feeling of aliveness at low concurrency | **Critical.** The addendum names this as harder than multiplayer | Answered by **E8** |
+| **A8** | **[ASSUMPTION]** The Burger Test holds without SS13's round timer and antagonists | **Critical.** Everything after Epic 7 assumes yes | Answered by **Epic 7**. A pre-foundation throwaway spike was considered and declined — the foundation is needed regardless and a spike's answer might not transfer |
+| **A9** | **[ASSUMPTION]** AI citizens can carry the entire feeling of aliveness at low concurrency | **Critical.** The addendum names this as harder than multiplayer | Answered by **Epic 5** |
 | **A10** | **Untested:** the borrowing licence as an anti-griefing measure | **Medium.** Consequence for a borrowed body lands on the NPC, not the player | Observable only with real players. Revisit post-launch |
+| **A11** | **[ESCALATED TO DESIGN 2026-08-28]** Social continuity across long absence. At 24 in-city days per real day, a fortnight offline is roughly an **in-city year** | **Medium-High.** Money and rent scale fine and the understudy holds the role, but **recognisability and the geographic social graph are the exposed surface** — both assume the player keeps meeting the same people. An in-city year of uniform churn would empty the player's social world while they were away, which is a P3 failure (absence must be safe) reached by a route P3 did not anticipate | Architecture escalated this to the GDD and it is accepted as a design position: **established citizens are sticky rather than churning uniformly**, which is also more accurate than uniform churn rather than a concession to the player. Built in the Citizens epic |
 
 ### Dependencies
 
-- **Art assets are in hand** (LimeZu Modern Exteriors and Modern Interiors, pre-split). Character spritesheets are unsplit; splitting is known work scheduled in E1.
+- **Art assets are in hand** (LimeZu Modern Exteriors and Modern Interiors, pre-split). Character spritesheets are unsplit; splitting is known work scheduled in Epic 1.
 - **Always-on server budget** — self-funded, bounded, expected to run for years before anyone plays. This is a standing commitment, not a launch cost.
 - **Agentic development capacity** — the scope assumes systems uniform, data-driven and heavily testable enough that agents can extend and validate them. This is not an optimisation; it is what makes the scope possible for one person.
 - **`gds-game-architecture`** is the next workflow. It owns engine selection, the simulation architecture, the netcode model, and the two deferred numbers (A2, A4).
@@ -851,4 +885,4 @@ Each connects to a pillar. Adjectives are not metrics.
 
 The brief's headline risk stands and is repeated here so it is not lost: a persistent multiplayer district of 100+ interiors with five procedurally simulated jobs, built by one person on evenings and weekends, is a multi-year commitment with a monthly bill running throughout. This was raised twice during briefing and affirmed deliberately.
 
-Two mitigations exist and should be used. **The reference slice (E9) is a genuine vertical slice** that exercises institutions, emergence, jobs and physical consequence on a single street. And **job access tiers make the job count a dial rather than a commitment** — this is the project's primary scope valve and should be used deliberately.
+Two mitigations exist and should be used. **The reference slice (Epic 10) is a genuine vertical slice** that exercises institutions, emergence, jobs and physical consequence on a single street. And **job access tiers make the job count a dial rather than a commitment** — this is the project's primary scope valve and should be used deliberately.
