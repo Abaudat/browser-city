@@ -11,7 +11,7 @@ platform: 'Browser, exclusive'
 
 # Source Documents
 gdd: '_bmad-output/planning-artifacts/gdds/gdd-BrowserCity-2026-08-25/gdd.md'
-epics: '_bmad-output/planning-artifacts/gdds/gdd-BrowserCity-2026-08-25/epics.md'
+epics: '_bmad-output/planning-artifacts/epics.md'
 brief: '_bmad-output/planning-artifacts/briefs/brief-BrowserCity-2026-08-24/brief.md'
 ---
 
