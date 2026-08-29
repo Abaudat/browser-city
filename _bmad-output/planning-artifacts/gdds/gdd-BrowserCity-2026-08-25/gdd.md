@@ -466,6 +466,8 @@ investigation → approval → budget → procurement → logistics → labour
 
 **Municipal memory.** The city observes and alters itself, readable like weather.
 
+> *Adjudicated 2026-08-29.* The readiness assessment found this to be the only assertion in this GDD with no counterpart in the epics — no requirement, story or acceptance criterion mentions it. **It is a summary of mechanisms that already exist, not a distinct system, and it needs no epic of its own.** The city observes itself through complaint filing with a probability floor so habituation cannot starve the signal (FR80), through workers escalating an out-of-range condition they notice (FR71), and through matters arriving by four fluxes each with a person and a physical carrier (FR70). It alters itself through the chains those matters open (FR81). It is readable because consequence has a physical carrier and is met on the commute rather than in a feed. "Like weather" is the register, not a mechanism: no city-wide mood, index or memory object exists or should be built.
+
 **The reference chain — the plastic-bottle loop.** The vertical slice that exercises institutions, emergence, jobs and physical consequence on a single street:
 
 ```

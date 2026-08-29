@@ -754,7 +754,9 @@ An agent can author world content and have its own work validated, without a hum
 
 This epic is load-bearing rather than plumbing: the design ships no hand-authored content, so the generator's rules **are** the content pipeline (A5). Everything downstream inherits their quality, and there is no fallback of hand-laying a good street.
 
-**Playable deliverable:** a scripted block validates against the rules, and a deliberately broken one is correctly rejected with a named violation.
+**Deliverable:** a scripted block validates against the rules, and a deliberately broken one is correctly rejected with a named violation.
+
+*(Labelled `Deliverable` rather than `Playable deliverable`, as Epic 0 is. A player can do nothing after this epic that they could not do after Epic 1 — the outcome is an agent's, and 9 of this epic's 12 stories are developer- or agent-facing. The epic is load-bearing rather than plumbing, since the generator's rules **are** the content pipeline; only the label would have been wrong. The `Playable deliverable` convention is what makes the other thirteen epics auditable, so it is kept honest here.)*
 **Depends on:** Epic 1.
 **Carries the risk of:** A5, R9 — wrong footprints fail silently, so invariants rather than review are the detector.
 
@@ -1253,6 +1255,9 @@ So that every later story has a place to put code and a way to know it ran.
 As a developer,
 I want every primary key, unique constraint and scheduled table the design will ever need declared in the first commit,
 So that a world which can never be reset is never blocked by a migration the platform forbids.
+
+> **This story deliberately departs from just-in-time data creation. Do not "correct" it.**
+> The normal rule is that each story creates the data structures it needs, and creating them all upfront is an anti-pattern. That rule is suspended here because the platform makes these particular declarations irreversible: in SpacetimeDB a primary key and a unique constraint are permanent (NFR33), and **a normal table can never become a scheduled one** (NFR34). Deferring them to the story that first needs them would not make them flexible — it would make them unfixable *and wrong*. The architecture states it directly: *"Fix the permanent decisions first."* Everything else in the schema remains additive and just-in-time; only these three categories are settled here.
 
 **Acceptance Criteria:**
 

@@ -1088,3 +1088,23 @@ The Step 4 revision's six unowned surfaces are now specified and scheduled. This
 **One defect was introduced and caught during this work.** Story 7.14 originally carried the criterion *"handover teaches it, per Story 8.16"* — a genuine Epic 7 → Epic 8 forward dependency, exactly what Step 5 audited against. It was reworded as a scope boundary (*"the four-beat procedure machine arrives in Epic 8; the opening sequence is complete without it"*), matching the document's existing convention, and the check now passes.
 
 **Verdict: READY, gating condition closed.** The affordance decision that was required before Story 1.9 now exists as Story 1.15 in the same epic, and the carry model required before Epic 6 exists as Stories 6.15 and 6.16.
+
+---
+
+## Outstanding Documentation Fixes — Closed 2026-08-29
+
+The three minor findings carried out of Steps 3 and 5 are now applied. No recommendations from this assessment remain open.
+
+**1 — "Municipal memory" adjudicated (Step 3 finding).** This was the only assertion in the GDD with no counterpart anywhere in the epics. **Adjudication: it is a summary of mechanisms that already exist, not a distinct system, and needs no epic.** The city observes itself through complaint filing with a probability floor so habituation cannot starve the signal (FR80), through workers escalating conditions they notice (FR71), and through matters arriving by four fluxes each with a person and a physical carrier (FR70); it alters itself through the chains those matters open (FR81); and it is readable because consequence has a physical carrier met on the commute. *"Like weather"* is the register, not a mechanism — **no city-wide mood, index or memory object exists or should be built.** Recorded as a note in the GDD at the phrase itself.
+
+*This is a design call made during assessment rather than a mechanical fix. It is reversible: if municipal memory was meant to name something distinct from the matter/chain system, the note is wrong and the capability is unscoped.*
+
+**2 — Epic 2's deliverable relabelled (Step 5 finding).** `Playable deliverable` → `Deliverable`, as Epic 0 already does, with a note explaining why. A player can do nothing after Epic 2 that they could not do after Epic 1; the outcome belongs to an agent, and 9 of the epic's 12 stories are developer- or agent-facing. The epic is load-bearing rather than plumbing — the generator's rules *are* the content pipeline — so only the label was ever wrong. The count is now 13 `Playable deliverable` and 2 `Deliverable`, and the convention that makes the other thirteen epics auditable stays honest.
+
+**3 — Story 1.2 annotated (Step 5 finding).** A blockquote now states that the story deliberately departs from just-in-time data creation and must not be "corrected". The rule is suspended because the platform makes these declarations irreversible: primary keys and unique constraints are permanent (NFR33) and **a normal table can never become a scheduled one** (NFR34). Deferring them would make them unfixable *and wrong* rather than flexible. Everything else in the schema stays additive and just-in-time; only those three categories are settled upfront.
+
+**Integrity re-verified after the fixes:** per-epic FR lists still agree with the coverage map, story-level forward dependencies remain at the single pre-existing forward-*feeding* reference, and all NFRs remain referenced.
+
+### Assessment closed
+
+Every finding raised by this assessment is now either closed or recorded as a deliberate open item with a named epic that resolves it. **Verdict stands: READY.** The remaining open items are A1 (procedure interaction model, prototyped in Epic 8 with FR173's affordance as a precondition), A4 (the one-second boot, pending the B3 measurement gated in Epic 1), and A10 (the borrowing licence, observable only with real players).
