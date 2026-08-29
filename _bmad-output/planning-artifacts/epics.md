@@ -588,6 +588,87 @@ FR171: Epic 4 (The Living Wire) - The same observability pipeline serves table g
 FR172: Epic 4 (The Living Wire) - The five gameplay metrics are instrumented
 ```
 
+### NFR Test Placement Map
+
+**Policy, decided 2026-08-29:** NFRs are covered by tests. Development is TDD throughout, and **each NFR gets its test in the earliest epic that makes it testable** — not in the epic that happens to introduce the feature it constrains. An NFR whose test would be vacuous at that point (nothing to measure yet) waits only as long as it must.
+
+This map is the NFR counterpart to the FR Coverage Map above. Unlike that map it is deliberately **not one-to-one**: several NFRs are standing constraints that every subsequent epic must keep satisfying, so they carry an enforcement mechanism rather than a single test.
+
+**Test kinds:**
+
+- **Gate** — a spike or benchmark that must pass before dependent work proceeds. Failing it overturns a decision rather than producing a bug.
+- **Test** — an ordinary automated test, written first, added in the named epic.
+- **Invariant** — an architectural, lint or property test that runs in CI from the named epic onward and fails the build for every later epic too.
+- **Review** — not mechanically testable. Enforced by Epic 0's review gate and named in the project context.
+
+| NFR | Constraint | Earliest testable | Kind | How |
+|---|---|---|---|---|
+| NFR1 | Cold boot to player-controllable < 1s | **Epic 1** | Gate | Story 1.14 already measures the boot budget. Assertion becomes end-to-end in Epic 4 once the real boot sequence (FR144–FR146) exists; the Epic 1 gate is what stops the budget being spent before then |
+| NFR2 | Sustained 60 FPS at 1080p | **Epic 1** | Gate | Baseline on the hand-laid test street (Story 1.13). Full assertion — busy street at rush hour, interior transition — lands in Epic 5 once there are ~22 agents to render. Closes open item G3 (no frame budget allocated) |
+| NFR3 | Server tick continuous, never spins down | **Epic 4** | Test | Story 4.1 — advance the clock with zero clients connected and assert progress |
+| NFR4 | Zero reconnection seam | **Epic 4** | Test | Disconnect, advance time, reconnect; assert position and state consistent with elapsed time |
+| NFR5 | Browser exclusive, no install or plugin | **Epic 1** | Invariant | CI builds and boots the client headless in a browser context; no native or plugin dependency may enter the bundle |
+| NFR6 | Mouse and keyboard only, no controller or touch | **Epic 1** | Invariant | Story 1.9 owns intents and keybindings; assert no gamepad or touch handler is registered |
+| NFR7 | Busy street reads busy, 3am reads quiet | **Epic 5** | Test | Sample visible-agent counts per scene against the aliveness table (~2 quiet residential, ~22 arterial rush hour) |
+| NFR8 | District edges read as character, not budget | **Epic 3** | Test | Density falloff assertion over generated output; emptiness must be a generator parameter, not an absence |
+| NFR9 | Agents encounterable often enough to be familiar | **Epic 5** | Test | FR61's stable appearance tuple plus route overlap — assert the same citizen recurs on a repeated commute |
+| NFR10 | AI carries aliveness at one connected player | **Epic 5** | Gate | The A9 falsification point. Density measured with exactly one client connected |
+| NFR11 | Client-side L3 ~200 agents within ~2 ms/frame | **Epic 5** | Gate | Story 5.4 is already written as an explicit falsification gate. Exceeding it overturns D-L3 |
+| NFR12 | Bound atlas textures under the GPU limit (~8) | **Epic 2** | Test | Story 2.7 — count simultaneously bound textures across prop and character atlases. Benchmark B8 |
+| NFR13 | Monthly spend bounded and self-funded | **Epic 4** | Invariant | TeV instrumentation (NFR17) reports projected monthly cost in CI; assertion becomes meaningful at population in Epic 5 |
+| NFR14 | Launch scale 512×512, ~5,000 citizens, ~42 tx/sec | **Epic 5** | Test | Generation supplies the map in Epic 3; the transaction rate is only measurable once citizens run |
+| NFR15a | Local density constant at 1 per 52.4 cells | **Epic 5** | Test | Assert density is invariant to map size — shrinking the map must reduce the number of busy streets, never the busy-ness of one |
+| NFR15 | Storage hard wall ~40 GB, review trigger 10 GB | **Epic 4** | Invariant | Story 4.12 registers per-table bounds with the metrics sampler; the watcher alerts on threshold breach |
+| NFR16 | Egress within budget via client-simulated L3 | **Epic 5** | Test | Measure bytes/client/hour against the ~2.4 GB/month projection |
+| NFR17 | TeV per reducer class instrumented from day one | **Epic 1** | Invariant | "From day one" is literal — the instrumentation ships with the first reducer, not with the first performance problem |
+| NFR18 | Every state change has an author | **Epic 4** | Invariant | No reducer may both detect a condition and change the world without a citizen in between. Architectural test over `reducers/` |
+| NFR19 | The Truth Test | **Epic 5** | Test | Run the simulation with zero players and with one, from the same seed; assert the non-player trajectory is identical |
+| NFR20 | Every bounded quantity seeks an equilibrium | **Epic 5** | Property | Property test over `sim/`: for each bounded quantity, assert something actively pursues its equilibrium. A quantity with no pursuer fails the build |
+| NFR21 | Consequence needs a physical carrier | **Epic 10** | Review | Partly mechanical (assert no reputation or approval scalar exists on any table) from Epic 5; the full claim is a review-gate judgement |
+| NFR22 | Progression carried diegetically, no HUD | **Epic 1** | Invariant | Story 1.11's DOM shell fixes the surface at FR151's three items; assert nothing persistent, global or abstract is drawn to canvas (FR150) |
+| NFR23 | L3 never writes to the ledger | **Epic 5** | Invariant | Architectural test — no write path from `client/src/l3/` to any reducer that mutates authoritative state |
+| NFR24 | No mechanical seam between player-held and AI-held roles | **Epic 9** | Test | Earliest point both drivers exist. Swap driver mid-procedure in both directions and assert identical world effect |
+| NFR25 | Generation determinism | **Epic 3** | Gate | Stories 3.13–3.14 — the determinism harness regenerates from seed and diffs. Must survive an arbitrary patch history (R8) |
+| NFR26 | Client-derived values seeded from stable ids | **Epic 5** | Test | Two clients observing the same citizen show the same animation frame at the same time |
+| NFR27 | Systems uniform, data-driven, heavily testable | **Epic 0** | Review | The premise of the whole approach. Enforced by the review gate and stated in project context |
+| NFR28 | `sim/` pure; `reducers/` read tables | **Epic 1** | Invariant | Named in the document as the only boundary that can be violated silently — therefore the highest-value architectural test in the project |
+| NFR29 | Property tests over `sim/` run thousands of citizen-weeks in CI | **Epic 1** | Invariant | Harness exists from Epic 1 (Story 0.9 CI); becomes meaningful at Epic 5 when there are citizen-weeks to simulate |
+| NFR30 | No code shared between `server/` and `client/` | **Epic 1** | Invariant | Dependency test. The two footprint parsers are deliberate and must stay separate |
+| NFR31 | `defs/` the only source of truth, one `defs_version` | **Epic 2** | Invariant | Story 2.8's handshake; assert neither target imports the other |
+| NFR32 | Client writes only position and intents | **Epic 4** | Invariant | Enumerate client-callable reducers and assert the whitelist |
+| NFR33 | Schema additive only; keys permanent and correct in the first commit | **Epic 1** | Invariant | Story 1.2. Migration test asserts no primary key or unique constraint ever changes |
+| NFR34 | Anything that might need scheduling is a scheduled table | **Epic 1** | Invariant | Story 1.2. A normal table can never become one, so this is checked at schema-definition time |
+| NFR35 | Tables stay narrow | **Epic 1** | Invariant | Column-count and write-frequency lint |
+| NFR36 | Extensible sets use `u32` codes plus a companion table, never enums | **Epic 1** | Invariant | Schema lint — a new variant must be a row insert, not a migration |
+| NFR37 | Every table declares a bound; an unbounded table is a bug | **Epic 4** | Invariant | Story 4.12 — machine-readable bound registered with the metrics sampler. Build fails on an undeclared table |
+| NFR38 | Incremental lazy migration is the standard workflow | **Epic 4** | Test | R1. Exercise a read-through backfill against a populated world |
+| NFR39 | Backup before every migration; restore tested | **Epic 1** | Gate | Story 1.4 — B6. Explicitly scheduled before the world contains anything worth losing |
+| NFR40 | No server-side event bus; read a table | **Epic 1** | Invariant | Architectural test over `server/src/` |
+| NFR41 | Reducers return `Result`, never panic in normal flow | **Epic 1** | Invariant | Lint from the first reducer. Aborting always beats writing inconsistent state |
+| NFR42 | Client degrades to not-drawing, never to crashing | **Epic 2** | Test | Earliest point an unknown `def_id` is possible. Feed a bad row, an unknown def and a failed asset load; assert the frame survives |
+| NFR43 | The shrug test — a person could observe it and shrug | **Epic 6** | Test | Earliest concrete instances: empty till, no beans. Assert these produce content, not error paths |
+| NFR44 | Logging by exception, structured; logs separate from observability | **Epic 1** | Invariant | Assert the two pipelines have no shared sink |
+| NFR45 | Balance parameters live in tables and are runtime-tunable | **Epic 5** | Invariant | Earliest balance parameters are the labour market's. Assert no economic constant is compiled |
+| NFR46 | Live parameters and seed values visibly marked | **Epic 6** | Invariant | Story 6.14 already records that this epic's economic figures are seed values. Assert every such table column carries the marking |
+
+**Distribution of first tests:**
+
+| Epic | NFRs first tested | Notes |
+|---|---|---|
+| Epic 0 | 1 | NFR27 — review gate only |
+| **Epic 1** | **17** | The architectural invariants cluster here, correctly: most are properties of the module and schema, and several (NFR33, NFR34) are unfixable after the first commit |
+| Epic 2 | 3 | Asset pipeline and `defs_version` |
+| Epic 3 | 2 | Generation determinism and edge character |
+| Epic 4 | 8 | The wire, metrics, table bounds, migration |
+| Epic 5 | 12 | Everything that needs a population to be measurable |
+| Epic 6 | 2 | Stock-dependent |
+| Epic 9 | 1 | Needs both drivers to exist |
+| Epic 10 | 1 | NFR21 — partly mechanical earlier, fully a review judgement here |
+
+**The load is front-weighted, which is the right shape.** 31 of the 47 NFRs are first tested by the end of Epic 4, before the project's expensive falsification points. The seventeen landing in Epic 1 are not a burden to defer: NFR33 and NFR34 in particular describe decisions that **cannot be corrected after the first commit**, so their tests must exist before there is a schema to get wrong.
+
+---
+
 ## Epic List
 
 **Epic 0 plus fourteen.** Epic 0 builds the development team itself and is the developer's own work; epics 1-14 build the game and are dispatched to it. Each ends in something a person can do, and each stands alone — later epics build on earlier ones, never the reverse.

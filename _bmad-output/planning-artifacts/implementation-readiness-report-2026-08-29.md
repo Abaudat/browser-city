@@ -658,3 +658,38 @@ The epics document builds a complete, machine-verified coverage map for its 172 
 **Functional coverage is excellent and independently verified.** 99% of GDD requirements have a traceable implementation path; the single absence is a one-line GDD phrase of uncertain intent, not a missing system. The epics' internal integrity claims are true — I re-derived all of them rather than taking the document's word, and every one held. The document is also more careful than a naive audit would credit: FR14's split delivery across Epics 8 and 11 is correctly marked rather than fudged.
 
 **Non-functional traceability is absent and should be built before implementation starts.** The work appears to be scheduled; nobody can currently prove it, and the constraints in question are the ones that are expensive to discover late.
+
+---
+
+## NFR Traceability — Resolved 2026-08-29
+
+**Decision:** NFRs are covered by tests. Development is TDD throughout, and **each NFR gets its test in the earliest epic that makes it testable.**
+
+This is a better answer than the coverage map recommended in Step 3. A coverage map records an intention; a test placement records an obligation that fails a build. It also removes the awkwardness the recommendation had to concede — that several NFRs are standing constraints no single epic "covers" — because a standing constraint is naturally expressed as a CI invariant that runs from its first epic onward rather than as an assignment to one owner.
+
+**Built:** an **NFR Test Placement Map** in `planning-artifacts/epics.md`, immediately after the FR Coverage Map. All **47 NFRs** (NFR1–NFR46 plus NFR15a) are placed exactly once — verified programmatically: none missing, none duplicated, none placed that was not declared.
+
+Each entry carries the earliest epic that makes the NFR testable and one of four test kinds:
+
+- **Gate** — a spike or benchmark that must pass before dependent work proceeds; failing it overturns a decision rather than producing a bug (NFR1, NFR2, NFR10, NFR11, NFR25, NFR39)
+- **Test** — an ordinary automated test, written first, in the named epic
+- **Invariant** — an architectural, lint or property test running in CI from that epic onward, failing the build for every later epic too
+- **Review** — not mechanically testable; enforced by Epic 0's review gate (NFR21, NFR27 only)
+
+**Distribution of first tests:**
+
+| Epic | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|
+| NFRs first tested | 1 | **17** | 3 | 2 | 8 | 12 | 2 | 1 | 1 |
+
+**The shape is right, and it is front-weighted.** 31 of 47 are first tested by the end of Epic 4 — before the project's expensive falsification points, so a constraint that is going to overturn a decision does so while the decision is still cheap to revisit.
+
+**The seventeen in Epic 1 are the point, not a burden.** Most are properties of the module and schema rather than of any feature, and two of them — NFR33 (schema additive only; primary keys and unique constraints permanent and correct in the first commit) and NFR34 (anything that might ever need scheduling must be created as a scheduled table) — describe decisions that **cannot be corrected afterwards at all**. Their tests have to exist before there is a schema to get wrong. Under TDD that is the natural order rather than an imposition.
+
+**Three placements are judgement calls worth a glance:**
+
+- **NFR1 (1-second boot)** is gated in Epic 1 by the existing boot-budget spike, but only becomes an end-to-end assertion in Epic 4 when the real boot sequence exists. The Epic 1 gate is what stops the budget being spent before anyone is measuring it.
+- **NFR2 (60 FPS)** is baselined in Epic 1 on the hand-laid test street and only fully assertable in Epic 5 with a rush-hour crowd to render. Placing it in Epic 1 also closes open item **G3** (no frame budget allocated across renderer, L3 and UI).
+- **NFR21 (consequence needs a physical carrier)** is partly mechanical from Epic 5 — assert no reputation or approval scalar exists on any table — but the full claim stays a review judgement, so it is marked Review at Epic 10 rather than given a test that would only appear to cover it.
+
+**Status: closed.** The Step 3 finding is resolved. Non-functional requirements now have a stronger traceability story than the functional ones: an FR is mapped to an epic, whereas an NFR is mapped to a test that fails a build.
