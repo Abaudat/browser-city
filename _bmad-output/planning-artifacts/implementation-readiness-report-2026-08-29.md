@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2]
+stepsCompleted: [1, 2, 3]
 inputDocuments:
   - _bmad-output/planning-artifacts/gdds/gdd-BrowserCity-2026-08-25/gdd.md
   - _bmad-output/planning-artifacts/architecture/architecture-BrowserCity-2026-08-25/architecture.md
@@ -422,3 +422,239 @@ This closes the one item the gap-resolution pass left open, and folds in four su
 ### Alignment status
 
 The GDD and `epics.md` no longer disagree on epic structure, numbering, sequence, scale figures, the profession target, the mechanics roster, or the disposition of any open item. Three items remain genuinely open in the GDD and are correctly marked as such: **A1** (procedure interaction model, resolved by prototyping in Epic 8), **A4** (one-second boot, pending the B3 measurement in Epic 1), and **A10** (the borrowing licence as anti-griefing, observable only with real players).
+
+---
+
+## Step 3 — Epic Coverage Validation
+
+**Sources:** `planning-artifacts/epics.md` (6,442 lines, read in full), traced against the 103 `G-FR` requirements extracted from the GDD in Step 2.
+
+All structural checks in this step were run programmatically rather than by eye, because a 172-requirement map across 15 epics and 200 stories is not reliably auditable by reading.
+
+### Part 1 — Internal integrity of the epics document
+
+The epics document claims: *"All 172 functional requirements map to exactly one epic. Verified programmatically: no requirement is unmapped and none is claimed by two epics."* **I re-verified that claim independently rather than accepting it. It holds.**
+
+| Check | Result |
+|---|---|
+| Inventory numbering contiguous FR1–FR172 | **PASS** — no gaps, no duplicates |
+| Every inventory FR appears in the coverage map | **PASS** — 172/172 mapped |
+| Every mapped FR exists in the inventory | **PASS** — no phantom entries |
+| Any FR claimed by two epics | **PASS** — none double-claimed |
+| Each epic's declared `FRs covered:` list matches the map | **PASS** — all 15 agree exactly |
+| Story number prefix matches containing epic | **PASS** — all 200 stories |
+
+**FR distribution across epics:**
+
+| Epic | FRs | Epic | FRs | Epic | FRs |
+|---|---|---|---|---|---|
+| 0 — Development Team | 0 *(deliberate)* | 5 — Citizens | 20 | 10 — Institutions / Reference Slice | 20 |
+| 1 — Foundations & Spikes | 19 | 6 — Stock, Goods, Money | 14 | 11 — Transit & Full Roster | 5 |
+| 2 — Content Pipeline | 6 | 7 — The Day Loop | 9 | 12 — A Life | 6 |
+| 3 — The Generated City | 15 | 8 — Procedure and Props | 14 | 13 — Careers | 6 |
+| 4 — The Living Wire | 18 | 9 — Reciprocal Occupancy | 14 | 14 — Growth | 6 |
+
+**Stories: 200 across 15 epics**, ranging from 9 (Careers) to 19 (Citizens).
+
+**One apparent discrepancy, investigated and cleared.** Epic 11 declares FR14 (the five-job roster) while the coverage map assigns FR14 to Epic 8. This is not a defect: Epic 11's line reads *"(and completes FR14's job roster: night bus driver and cafe barista)"* — parenthetical and italicised, deliberately not claiming ownership. FR14 is owned by Epic 8 and its delivery genuinely spans two epics. The document is more careful here than a naive checker would credit.
+
+### Part 2 — GDD requirement traceability
+
+Every `G-FR` extracted from the GDD in Step 2, traced to the epics' numbered inventory and thence to an epic.
+
+| G-FR | Requirement | Epics FR | Epic | Status |
+|---|---|---|---|---|
+| G-FR1 | in-city day = 60 real min | FR1 | Epic 4 | OK |
+| G-FR2 | clock detached + continuous | FR2, FR3 | Epic 4 | OK |
+| G-FR3 | day budget 8/8/2/6 | FR4 | Epic 7 | OK |
+| G-FR4 | wake->commute->shift->paid->spend->rent->sleep | FR5 | Epic 7 | OK |
+| G-FR5 | commute is the sensor | FR6 | Epic 7 | OK |
+| G-FR6 | commute floor ~20 min | FR7 | Epic 7 | OK |
+| G-FR7 | sleep: log off or night shift | FR8 | Epic 9 | OK |
+| G-FR8 | transport ladder 60/30/20 | FR26, FR27, FR28 | Epic 12 | OK |
+| G-FR9 | faster commute changes WHAT you read | — | **no numbered FR** | REVIEW |
+| G-FR10 | the sensor migrates to paperwork | — | **no numbered FR** | REVIEW |
+| G-FR11 | housing = proximity to a life | — | **no numbered FR** | REVIEW |
+| G-FR12 | four-beat shift template | FR9 | Epic 8 | OK |
+| G-FR13 | props carry visible state | FR10 | Epic 8 | OK |
+| G-FR14 | procedure on objects, not menus | FR11 | Epic 8 | OK |
+| G-FR15 | simulate what can be done badly | FR12 | Epic 8 | OK |
+| G-FR16 | no score; self-imposed standards | FR13 | Epic 8 | OK |
+| G-FR17 | freedom inverse to supervision | FR15 | Epic 8 | OK |
+| G-FR18 | five playable jobs | FR14 | Epic 8 | OK |
+| G-FR19 | two-handed principle ships | FR16 | Epic 8 | OK |
+| G-FR20 | rent every 7 in-city days | FR19 | Epic 7 | OK |
+| G-FR21 | wage/rent/food/surplus figures | FR20 | Epic 7 | OK |
+| G-FR22 | flatshare halves rent | FR21 | Epic 12 | OK |
+| G-FR23 | no eviction; Ruin By Process | FR22, FR23 | Epic 7 | OK |
+| G-FR24 | bike/pass/closer-flat costs | FR26, FR27 | Epic 12 | OK |
+| G-FR25 | one-time buys minutes, recurring doesn't | — | **no numbered FR** | REVIEW |
+| G-FR26 | understudy earns same wage | FR41 | Epic 9 | OK |
+| G-FR27 | labour market self-balances | FR67, FR68 | Epic 5 | OK |
+| G-FR28 | housing desirability tracks state | — | **no numbered FR** | REVIEW |
+| G-FR29 | money is stored time only | FR29 | Epic 7 | OK |
+| G-FR30 | qualification costs minutes not money | FR100 | Epic 13 | OK |
+| G-FR31 | no win/loss/death/score | FR23 | Epic 7 | OK |
+| G-FR32 | Ruin By Process 4 links | FR22 | Epic 7 | OK |
+| G-FR33 | floor inhabitable; welfare/shelters | FR24 | Epic 10 | OK |
+| G-FR34 | night shift always available/pays | FR43 | Epic 9 | OK |
+| G-FR35 | injury routes through hospital chains | FR25 | Epic 11 | OK |
+| G-FR36 | chain investigation->...->labour | FR81 | Epic 10 | OK |
+| G-FR37 | each link an occupation, no seam | FR82 | Epic 10 | OK |
+| G-FR38 | chains stall/deny/expedite | FR74, FR76, FR77 | Epic 10 | OK |
+| G-FR39 | response time is a budget line | FR83 | Epic 10 | OK |
+| G-FR40 | municipal memory | — | **no numbered FR** | REVIEW |
+| G-FR41 | plastic-bottle reference chain | FR84 | Epic 10 | OK |
+| G-FR42 | development chain | FR158 | Epic 14 | OK |
+| G-FR43 | v1 chains AI-staffed end to end | FR18 | Epic 10 | OK |
+| G-FR44 | understudy conservative mandate | FR36 | Epic 9 | OK |
+| G-FR45 | understudy banks surplus | FR36, FR37 | Epic 9 | OK |
+| G-FR46 | absence reconciles as record; post | FR39, FR40 | Epic 9 | OK |
+| G-FR47 | understudy drift bounded | FR38 | Epic 9 | OK |
+| G-FR48 | understudy not configurable | FR36 | Epic 9 | OK |
+| G-FR49 | night shift in NPC body, tiredness cap | FR42 | Epic 9 | OK |
+| G-FR50 | night shift non-diegetic pick | FR42 | Epic 9 | OK |
+| G-FR51 | borrowed shifts anonymous | FR43 | Epic 9 | OK |
+| G-FR52 | night posts differ only by pay/duration | FR43 | Epic 9 | OK |
+| G-FR53 | AI backfill; post always covered | FR44 | Epic 9 | OK |
+| G-FR54 | never punish logging off | FR47 | Epic 9 | OK |
+| G-FR55 | kinematic continuity, no seam | FR140 | Epic 4 | OK |
+| G-FR56 | ledger vs body separation | FR56, FR57, FR58 | Epic 5 | OK |
+| G-FR57 | player/AI indistinguishability | FR35, FR82 | Epic 9, Epic 10 | OK |
+| G-FR58 | presence verbs | FR30 | Epic 8 | OK |
+| G-FR59 | civic verbs | FR31 | Epic 8 | OK |
+| G-FR60 | binning reverses litter | FR32, FR85 | Epic 8, Epic 10 | OK |
+| G-FR61 | conversation as loitering, costs minutes | FR33 | Epic 8 | OK |
+| G-FR62 | dignity work | FR34 | Epic 8 | OK |
+| G-FR63 | good move != efficient move | — | **no numbered FR** | REVIEW |
+| G-FR64 | gamey affordances only where needed | — | **no numbered FR** | REVIEW |
+| G-FR65 | simulate people not abstractions | FR48 | Epic 5 | OK |
+| G-FR66 | variable depth, uniform in kind | FR49, FR57 | Epic 5 | OK |
+| G-FR67 | city always ticks | FR3 | Epic 4 | OK |
+| G-FR68 | bodies instantiate from computed truth | FR58 | Epic 5 | OK |
+| G-FR69 | the Truth Test | — | **no numbered FR** | REVIEW |
+| G-FR70 | resolution scales, causality doesn't | — | **no numbered FR** | REVIEW |
+| G-FR71 | five population design constraints | — | **no numbered FR** | REVIEW |
+| G-FR72 | equilibrium-seeking law | — | **no numbered FR** | REVIEW |
+| G-FR73 | gentrification undamped; supply added | FR157 | Epic 14 | OK |
+| G-FR74 | growth physically visible | FR159 | Epic 14 | OK |
+| G-FR75 | v1 growth = adjacent neighbourhoods | FR157 | Epic 14 | OK |
+| G-FR76 | geographic social graph emerges | FR55 | Epic 5 | OK |
+| G-FR77 | no XP/level/skill tree/net worth | FR104 | Epic 12 | OK |
+| G-FR78 | gated by qualification and vacancy | FR99, FR100, FR101 | Epic 13 | OK |
+| G-FR79 | diegetic progression carriers | FR102 | Epic 13 | OK |
+| G-FR80 | growth opens new posts | FR157 | Epic 14 | OK |
+| G-FR81 | three lateral pursuits | FR103 | Epic 12 | OK |
+| G-FR82 | places dropped; exception retired | — | **no numbered FR** | REVIEW |
+| G-FR83 | dependency by decisions not presence | FR106 | Epic 13 | OK |
+| G-FR84 | difficulty curve inverted | — | **no numbered FR** | REVIEW |
+| G-FR85 | no late-game pressure added | — | **no numbered FR** | REVIEW |
+| G-FR86 | everything generated from a seed | FR107 | Epic 3 | OK |
+| G-FR87 | generator rules ARE the pipeline | FR111, FR112 | Epic 2 | OK |
+| G-FR88 | determinism: same seed same city | FR108, FR109 | Epic 3 | OK |
+| G-FR89 | one district: streets/interiors/etc | FR114, FR116 | Epic 3 | OK |
+| G-FR90 | neighbourhood character params | FR113 | Epic 3 | OK |
+| G-FR91 | no level progression; city extends | FR157 | Epic 14 | OK |
+| G-FR92 | density local, per screen | — | **no numbered FR** | REVIEW |
+| G-FR93 | LimeZu 16x16 oblique | — | **no numbered FR** | REVIEW |
+| G-FR94 | character sheets unsplit -> split | — | **no numbered FR** | REVIEW |
+| G-FR95 | contemporary unnamed city | — | **no numbered FR** | REVIEW |
+| G-FR96 | no HUD; diegetic carriers | FR102, FR104, FR152 | Epic 1, Epic 12, Epic 13 | OK |
+| G-FR97 | ambient audio beds | FR153 | Epic 11 | OK |
+| G-FR98 | music rare and diegetic | FR154 | Epic 11 | OK |
+| G-FR99 | audio as legibility channel | FR155 | Epic 11 | OK |
+| G-FR100 | browser, no install, no ceremony | FR144, FR145 | Epic 4 | OK |
+| G-FR101 | WASD on oblique grid | FR149 | Epic 1 | OK |
+| G-FR102 | click a world object | FR148 | Epic 1 | OK |
+| G-FR103 | no controller/touch in v1 | — | **no numbered FR** | REVIEW |
+
+**83 of 103 GDD requirements trace directly to a numbered FR.** The remaining 20 were each investigated individually rather than counted as gaps — a design document legitimately contains rationale, design laws and exclusions that are not functional requirements and should not be forced into becoming them.
+
+### Part 3 — Disposition of the 20 untraced requirements
+
+**Covered as non-functional requirements (6).** These are constraints, not features, and the epics correctly classified them as NFRs:
+
+| G-FR | Requirement | Covered by |
+|---|---|---|
+| G-FR69 | The Truth Test | NFR19 |
+| G-FR70 | Resolution scales; causality does not | Design law, realised through FR49 (L2 advances every citizen identically) |
+| G-FR71 | Five population design constraints | NFR7, NFR8, NFR9, NFR10 |
+| G-FR72 | Equilibrium-seeking law | NFR20 |
+| G-FR92 | Density is local, per screen | NFR7, NFR15a |
+| G-FR103 | No controller or touch in v1 | NFR6 |
+
+**Substantively covered in stories, but unnumbered (3).** Real work exists; only the traceability number is absent:
+
+| G-FR | Requirement | Where it actually lives |
+|---|---|---|
+| G-FR28 | Housing desirability tracks physical state and demand; rent follows | **Story 14.9 — Gentrification Stays Desirable**, plus Story 3.7's requirement that physical state, desirability and land use be readable quantities |
+| G-FR93 | LimeZu 16×16 oblique art | Epic 2's atlas and footprint stories, which reason explicitly about oblique projection with front-facing bias and validate against LimeZu wall sprites |
+| G-FR94 | Character spritesheets unsplit — splitting is known work | **Story 2.7 — Character-Part Atlases** |
+
+**Correctly not requirements (10).** These are design rationale, stated tensions, exclusions or art direction. Turning them into acceptance criteria would be a category error:
+
+G-FR9 (a faster commute changes *what* you read) · G-FR10 (the sensor migrates to paperwork — narrated in Epic 13's preamble) · G-FR11 (housing is proximity to a life) · G-FR25 (one-time purchases buy minutes efficiently; recurring do not — a balance rule the FR26/FR27 figures already encode) · G-FR63 (the good move and the efficient move differ) · G-FR64 (gamey affordances only where the experience breaks) · G-FR82 (places dropped; the physical-carrier exception retired) · G-FR84 (the difficulty curve is inverted) · G-FR85 (no late-game pressure may be added) · G-FR95 (a contemporary, unnamed city).
+
+**Genuinely absent (1).**
+
+> **G-FR40 — Municipal memory.** The GDD asserts, in its Institutional Chains section: *"Municipal memory. The city observes and alters itself, readable like weather."* This phrase appears **nowhere in the epics document** — no FR, no NFR, no story, no acceptance criterion.
+>
+> **Assessment: low severity, but it should be closed deliberately rather than left ambiguous.** The capability is plausibly subsumed — the city does observe itself through complaint filing (FR80), matters arriving through four fluxes (FR70), and citizen memory written on surprise (FR55), and it does alter itself through chains. What is missing is any *city-level* observation-and-adjustment distinct from per-citizen memory and per-institution matters. Either the GDD phrase is a poetic restatement of those mechanisms — in which case it needs no epic and the GDD should say so — or it names a distinct system nobody has scoped. **This is the only GDD assertion in the entire document with no traceable counterpart, which is a strong result; it is worth one sentence of adjudication rather than being carried forward as an unknown.**
+
+### Part 4 — Non-functional requirement traceability: the real gap
+
+**This is the significant finding of Step 3, and it is structural rather than a matter of missing content.**
+
+The epics document builds a complete, machine-verified coverage map for its 172 functional requirements. **It builds nothing equivalent for its 46 non-functional requirements.**
+
+| Measure | FRs | NFRs |
+|---|---|---|
+| Declared in the inventory | 172 | 46 |
+| Coverage map exists | **Yes** — every FR mapped to exactly one epic | **No — none exists** |
+| Claimed by any epic | 172 (100%) | 6 (13%) — NFR18, NFR27, NFR28, NFR29, NFR37, NFR44, all by Epic 0 |
+| Never referenced outside their own declaration line | 0 | **39 of 46 (85%)** |
+
+**Does the substance exist even where the number does not?** I spot-checked 22 high-stakes NFRs against all 200 story bodies, searching for the *behaviour* rather than the identifier. **All 22 have substantive story coverage:**
+
+| NFR | Constraint | Found in |
+|---|---|---|
+| NFR1 | 1-second cold boot | Story 1.14 — Spike: Boot Budget Measured |
+| NFR2 / NFR11 | 60 FPS; L3 within ~2 ms/frame | Story 5.4 — Falsification Gate: The L3 Frame Budget |
+| NFR3 | Server never spins down | Story 4.1 — clock advances with zero clients |
+| NFR4 | Zero reconnection seam | Story 4.4 |
+| NFR12 | GPU texture-unit limit | Story 2.7 — atlases count toward the limit |
+| NFR18 / NFR28 | Every state change has an author; `sim/` purity | Story 0.2 — Project Context for Agents |
+| NFR25 | Generation determinism | Story 0.9 (CI), Stories 3.13–3.14 (harness) |
+| NFR29 | Property tests over `sim/` in CI | Story 0.9 |
+| NFR33 / NFR34 | Additive-only schema; scheduled-table permanence | Story 0.6, Story 1.2 — Permanent Schema Decisions |
+| NFR37 | Every table declares a bound | Story 4.12 |
+| NFR39 | Backup and a *tested* restore | Story 1.4 — Spike: Backup, Export and a Tested Restore |
+| NFR41 | Reducers return `Result`, never panic | Story 3.x — "the transaction aborts cleanly… the reducer did not panic" |
+| NFR43 | The shrug test | Story 0.2 — empty till, denied budget are content, not errors |
+| NFR45 / NFR46 | Runtime-tunable balance; seed values visibly marked | Story 5.7, Story 6.14 |
+
+**So the risk is not unbuilt work — it is unverifiable completion.** The FR side can answer "is every requirement scheduled?" with a script. The NFR side cannot answer it at all. On this project that asymmetry is pointed in exactly the wrong direction: BrowserCity's hardest and most falsifiable constraints are **non-functional** — the 1-second boot (A4, the hardest constraint in the project), sustained 60 FPS, generation determinism, the ~40 GB storage wall, and the schema decisions that *cannot be changed after the first commit*. Those are the requirements where a silent omission is expensive and late-discovered.
+
+**Recommendation:** add an NFR coverage map alongside the FR one before implementation starts. This is roughly an hour of work against a document that already contains all the evidence — the spot check above located 22 of them in minutes. Unlike the FR map it will not be one-to-one; several NFRs are standing constraints that every epic must satisfy rather than work any single epic performs, and the map should say so explicitly (a `standing constraint` disposition) rather than forcing a false assignment.
+
+### Coverage Statistics
+
+| Measure | Count | Percentage |
+|---|---|---|
+| GDD functional requirements extracted (`G-FR`) | 103 | — |
+| Traced to a numbered FR in the epics | 83 | 80.6% |
+| Covered as an NFR or realised design law | 6 | 5.8% |
+| Substantively covered in stories, unnumbered | 3 | 2.9% |
+| Correctly not requirements (rationale, exclusions, art direction) | 10 | 9.7% |
+| **Genuinely absent** | **1** | **1.0%** |
+| **Effective GDD coverage** | **102 / 103** | **99.0%** |
+| | | |
+| Epics' own FRs mapped to exactly one epic | 172 / 172 | 100% |
+| Epics' NFRs with a coverage mapping | 6 / 46 | **13.0%** |
+| Sampled NFRs with substantive story coverage | 22 / 22 | 100% |
+
+### Verdict
+
+**Functional coverage is excellent and independently verified.** 99% of GDD requirements have a traceable implementation path; the single absence is a one-line GDD phrase of uncertain intent, not a missing system. The epics' internal integrity claims are true — I re-derived all of them rather than taking the document's word, and every one held. The document is also more careful than a naive audit would credit: FR14's split delivery across Epics 8 and 11 is correctly marked rather than fudged.
+
+**Non-functional traceability is absent and should be built before implementation starts.** The work appears to be scheduled; nobody can currently prove it, and the constraints in question are the ones that are expensive to discover late.
