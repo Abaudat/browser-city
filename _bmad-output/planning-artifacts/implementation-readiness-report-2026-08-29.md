@@ -1,7 +1,7 @@
 ---
 stepsCompleted: [1, 2, 3, 4, 5, 6]
 status: complete
-verdict: READY
+verdict: READY (one gating condition — UX affordance decision before Story 1.9)
 inputDocuments:
   - _bmad-output/planning-artifacts/gdds/gdd-BrowserCity-2026-08-25/gdd.md
   - _bmad-output/planning-artifacts/architecture/architecture-BrowserCity-2026-08-25/architecture.md
@@ -773,6 +773,8 @@ This matters more here than in most games because of specific design choices: **
 
 ### Alignment Issues
 
+> **⚠ SUPERSEDED — see "Step 4 — REVISED" below.** This conclusion was reached on a UI-shaped definition of UX and missed three unowned surfaces: the player carry model (which contradicts D17), interactable affordance, and page/session behaviour.
+
 **None.** No misalignment was found between the implied UX, the GDD and the architecture. Every implied surface has an owner, and D17 strengthens rather than weakens the GDD's no-HUD law. The four warnings above are open risks and gaps, not contradictions between documents.
 
 ---
@@ -957,3 +959,91 @@ This assessment identified **six issues across four categories** — document du
 Two things now make the requirement set stronger than it was at the start of this review: **every FR is covered by one or more tests** derived from its stories' acceptance criteria, and **every NFR is placed against the earliest epic that makes it testable** with a build-failing enforcement kind. Under TDD that means a requirement is not complete when its code runs but when its tests are green — which is a stronger guarantee than the coverage map this assessment originally recommended.
 
 **Proceed to implementation.** Start with Epic 0 to stand up the development system, then Epic 1, where seventeen NFR tests and three gating spikes land before anything can depend on decisions that cannot be reversed.
+
+---
+
+## Step 4 — REVISED 2026-08-29
+
+**This revision supersedes the "Alignment Issues: None" verdict above.** That conclusion was reached on too narrow a definition of UX and is withdrawn.
+
+**The scope error.** The epics document's *"UX Not applicable"* argument is an argument about **UI chrome** — that the DOM surface is small and there is no HUD. I accepted it as covering **all of UX**. It does not. UX also covers the interaction design (how a player knows what is actionable), the page-level experience (what the browser tab actually does), and the flow (what the first session is like). None of those are addressed by "there is no HUD", and on inspection **three of them have no owner in any document.**
+
+### 1 — The grid inventory contradicts the no-canvas-UI rule, and nobody has resolved it
+
+**The contradiction is real.** D19 specifies **Tetris-style grid inventories with rotation**, and D17's amended rule permits the canvas to draw *"transient, object-bound views"* but **"never anything persistent, global, or abstract."**
+
+D19 enumerates its containers: cupboard, drawer, fridge, bag, crate, vehicle. Every one is a world object, so a view opened on it is object-bound and legal. **But D19 never says what the *player* carries, or how they look at it** — and D14's holder model permits a citizen to hold stock directly. If the player-as-citizen holds items directly, then "the player's inventory" is by definition **persistent and global**, which is precisely what D17 forbids. The project would be violating its own structural guarantee at the first inventory screen.
+
+Searching all three documents for player inventory, pockets, or what the player carries returns **nothing**. This is undecided, not decided-and-unwritten.
+
+**Recommended resolution — and it makes the design better rather than merely legal:**
+
+| What the player is carrying | Presentation | Why it is legal and right |
+|---|---|---|
+| **An item in hand** — a bottle on the way to the bin, a coffee, a bin bag | **No view at all.** The character sprite visibly holds it | Mirrors D19's existing "on a surface → no view" rule. The physical carrier *is* the character. Nothing is drawn but the world |
+| **Items in a bag** the player carries | **A transient view opened on the bag**, exactly as for a cupboard | The bag is a world object with a grid from its `object_def`. Object-bound and transient, so D17 is satisfied without amendment |
+
+**This is not a workaround; it is the design law paying out.** A bag as a real object means carrying capacity is a physical thing that can be bought, upgraded, forgotten at home, left on a bus or stolen. It gives money a use that is not minutes — the same role the GDD assigns to collecting. It is a **diegetic progression carrier** in the same family as the certificate on the wall and the shelf of plushies. And because NPCs already pack the same grids by first-fit, there is no player/AI seam, so P2 holds.
+
+It also answers the question the design has to answer anyway: *a player with no bag can still carry one thing in their hands*, which is all the civic-verb loop (pick up bottle → walk → bin it) actually needs.
+
+**Action:** record this as a decision in D19 and in the Epic 6 container-view story. It is small, but it is the difference between the no-HUD guarantee being structural and being aspirational.
+
+### 2 — Nothing specifies how a player knows an object is interactable
+
+**This is the more serious of the two, and it is upstream of A1.**
+
+Every "reachability" reference in the architecture and epics is **server-side**: FR148 says a click resolves to an object instance and checks reachability against the definition's `interact_at`. That is resolution logic. **Nothing anywhere describes what the player sees *before* they click.**
+
+The gap is visible in the epics' own text. Story 8.11 (Civic Verbs) carries the acceptance criterion:
+
+> **Given** civic verbs operate on single world objects
+> **When the player encounters the affordance**
+> **Then** bin the bottle, hold the door and give up the seat are available
+
+**The affordance is assumed to exist and is never defined.** No document says whether it is a cursor change, an outline, a brightening, an animation, or nothing at all.
+
+**Why this genuinely breaks without a decision.** The city is 16×16 pixel art at 3× zoom, procedurally generated, and deliberately dense with props — that density is the whole point of the LimeZu library. On any given screen a player faces dozens of drawn objects of which a handful are interactable. With **no HUD, no objective markers and no tutorial**, a player has no way to distinguish the till from the poster behind it. The GDD's own rule settles whether an affordance is permitted: *"gamey affordances exist only where the experience genuinely breaks without them."* This is that case.
+
+**There is a D17-legal answer available, which is why this is cheap to fix:**
+
+- **An outline or brightening drawn on the object itself is explicitly permitted** — it is transient, object-bound, and neither persistent nor global nor abstract. It needs no amendment to any decision.
+- **A cursor change is browser-level**, which is where D17 already puts things outside the fiction, alongside the DOM prompt and connection notices.
+- Either can be made almost invisible in strength and still work, which suits a design that wants abstraction *"paid reluctantly."*
+
+**Why it must be decided before Epic 8, not during it.** A1 asks whether procedure feels like *handling* or like *clicking*. **A player who cannot tell what is clickable cannot answer that question** — they will report friction that belongs to discovery rather than to the procedure model, and the prototype's signal is confounded exactly as the grid-inventory risk would confound it. The affordance decision is a **precondition of the A1 prototype**, and its first implementation lands in Epic 1 with click-to-interact (Story 1.9).
+
+### 3 — Page-level and session experience is unowned
+
+The browser page is a UX surface in its own right and, beyond FR144's name prompt, no document addresses it. Confirmed absent from all three:
+
+| Surface | Status |
+|---|---|
+| What is visible while the payload streams behind the name prompt | **Unspecified.** FR144 fixes the prompt; nothing says what the rest of the page looks like |
+| Page title and favicon | **Absent.** No mention in any document |
+| Two tabs open on one character | **Absent.** FR142 establishes one character with N identities, but nothing says what happens when the same character is driven from two tabs at once — and the driver model (FR35: exactly one driver per body) implies this needs an answer |
+| Browser refresh, back button, restored session | **Absent.** Only Story 4.9's stale-tab detection touches nearby |
+| Connection loss mid-procedure | Partly covered by connection-state notices (FR151); the *procedure* consequence is unstated |
+
+Most of these are small. **The two-tab case is not** — it touches the one-driver-per-body invariant that reciprocal occupancy rests on, and it is the kind of thing discovered by a player rather than by a test.
+
+### 4 — First-session flow (restated from warning 3, now in context)
+
+The onboarding gap identified above is part of this same family. A player lands, types a name, and spawns in a flat with no HUD, no markers, no tutorial and no stated first beat. **What the opening minutes are is unspecified** — not the mechanics of them, which exist, but the experience.
+
+### Revised verdict for Step 4
+
+**A bounded UX specification is warranted before Epic 8, and one decision within it is needed before Story 1.9.** This is a change from the original Step 4 conclusion.
+
+It is not a full UX document and should not become one — the epics are right that the UI chrome is genuinely small. The surfaces that need owning are:
+
+1. **Interactable affordance** — what the player sees before clicking *(needed for Story 1.9; precondition of the A1 prototype)*
+2. **Player carry model** — hands versus bag, and the container view that follows *(needed for Epic 6)*
+3. **Procedure interaction model** — A1, already scheduled for prototyping in Epic 8
+4. **Container view visual grammar** — already named by the epics as something a later UX spec would own
+5. **Page and session behaviour** — streaming appearance, title, multi-tab, refresh, connection loss mid-procedure
+6. **First-session flow** — the opening minutes, and handover as the teaching moment
+
+Items 3 and 4 the epics already anticipated. **Items 1, 2, 5 and 6 were missed by every document, and by my original Step 4 assessment.**
+
+**Effect on the overall verdict: still READY, now with one gating condition.** Epic 0 and the majority of Epic 1 — scaffold, permanent schema, the three spikes, world model, depth sorting, movement — are unaffected and can start immediately. The affordance decision must land before Story 1.9 implements click-to-interact, and the carry model before Epic 6. Neither is large; both were simply invisible under a UI-shaped definition of UX.
