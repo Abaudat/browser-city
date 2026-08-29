@@ -1,7 +1,7 @@
 ---
 stepsCompleted: [1, 2, 3, 4, 5, 6]
 status: complete
-verdict: READY (one gating condition — UX affordance decision before Story 1.9)
+verdict: READY
 inputDocuments:
   - _bmad-output/planning-artifacts/gdds/gdd-BrowserCity-2026-08-25/gdd.md
   - _bmad-output/planning-artifacts/architecture/architecture-BrowserCity-2026-08-25/architecture.md
@@ -1047,3 +1047,44 @@ It is not a full UX document and should not become one — the epics are right t
 Items 3 and 4 the epics already anticipated. **Items 1, 2, 5 and 6 were missed by every document, and by my original Step 4 assessment.**
 
 **Effect on the overall verdict: still READY, now with one gating condition.** Epic 0 and the majority of Epic 1 — scaffold, permanent schema, the three spikes, world model, depth sorting, movement — are unaffected and can start immediately. The affordance decision must land before Story 1.9 implements click-to-interact, and the carry model before Epic 6. Neither is large; both were simply invisible under a UI-shaped definition of UX.
+
+---
+
+## UX Specification and Stories — Added 2026-08-29
+
+The Step 4 revision's six unowned surfaces are now specified and scheduled. This closes the gating condition on the READY verdict.
+
+**Specification:** `_bmad-output/planning-artifacts/ux/ux-BrowserCity-2026-08-29/ux.md` — deliberately bounded. No colour palette, typography scale or component library, because the art direction is fixed by the LimeZu tilesets and the DOM surface is three elements. It owns six surfaces and nothing else, and carries a recorded accessibility floor rather than leaving accessibility absent.
+
+**Nine new requirements, FR173–FR181**, added to the inventory, the coverage map and the owning epics' FR lists:
+
+| FR | Surface | Epic |
+|---|---|---|
+| FR173 | Interactable affordance — hover highlight on the object, cursor change; unreachable gets cursor only | Epic 1 |
+| FR174, FR175 | Hands hold one visible item with no view; everything else lives in a bag, an ordinary world object | Epic 6 |
+| FR176 | Container view grammar — canvas, object-anchored, one at a time, no capacity readout | Epic 6 |
+| FR177, FR178, FR179 | Page and session — streaming appearance, title, one-tab-per-character, refresh as reconnection | Epic 4 |
+| FR180 | Handover teaches an unfamiliar procedure | Epic 8 |
+| FR181 | The opening minutes as ordered system beats | Epic 7 |
+
+**Six new stories**, written in the document's existing format with full Given/When/Then criteria: **1.15** Interactable Affordance · **4.16** The Page and the Session · **6.15** What the Player Carries · **6.16** The Container View Grammar · **7.14** The Opening Minutes · **8.16** Handover Teaches the Procedure.
+
+**Two decisions worth recording as decisions rather than specifications:**
+
+- **FR175 resolves a live contradiction.** D19 specifies Tetris grid inventories; D17 forbids drawing anything persistent, global or abstract into the canvas; and D19 never said what the *player* carries. A player-as-citizen holding items directly would have made the inventory persistent and global — violating the project's own structural guarantee at the first inventory screen. The resolution makes the design better rather than merely legal: carrying capacity becomes a **physical object that can be bought, forgotten, left on a bus or stolen**, which is a diegetic progression carrier in the same family as the certificate on the wall, and NPCs pack the same grids so P2 holds with no seam.
+- **FR173 is a precondition of A1, not part of it.** A player who cannot tell what is clickable cannot report whether procedure feels like handling or clicking. The affordance ships in Epic 1 so the Epic 8 prototype cannot mistake discovery friction for procedure friction — the same confound the epics already anticipate between A1 and grid-inventory tedium.
+
+**Verification after the additions** — every structural check re-run:
+
+| Check | Result |
+|---|---|
+| FR inventory contiguous FR1–FR181, no duplicates | **PASS** |
+| All 181 mapped, none double-claimed, no phantom entries | **PASS** |
+| Per-epic FR lists match the coverage map | **PASS** |
+| Stories: 206, all with role line and acceptance criteria | **PASS** — 936 Given clauses |
+| Story-level forward dependencies | **PASS** — back to the one pre-existing forward-*feeding* reference |
+| NFRs never referenced outside their declaration | **0** (was 39 before the test placement map) |
+
+**One defect was introduced and caught during this work.** Story 7.14 originally carried the criterion *"handover teaches it, per Story 8.16"* — a genuine Epic 7 → Epic 8 forward dependency, exactly what Step 5 audited against. It was reworded as a scope boundary (*"the four-beat procedure machine arrives in Epic 8; the opening sequence is complete without it"*), matching the document's existing convention, and the check now passes.
+
+**Verdict: READY, gating condition closed.** The affordance decision that was required before Story 1.9 now exists as Story 1.15 in the same epic, and the carry model required before Epic 6 exists as Stories 6.15 and 6.16.

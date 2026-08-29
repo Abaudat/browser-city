@@ -215,6 +215,20 @@ FR160: New neighbourhoods run under the current rule-set version, so a district 
 FR161: New businesses arise from an L2 own-time decision by a citizen with savings weighing unmet local demand, vacant premises rent, capital and qualifications.
 FR162: New citizens arrive through in-migration, exogenous and modulated by the city's attractiveness to people outside it.
 
+**UX surfaces**
+
+*(Added 2026-08-29 from the UX Specification. These surfaces had no owner in any document; FR175 additionally resolves a contradiction between D19's grid inventories and D17's canvas rule.)*
+
+FR173: An object the pointer is over is affordance-marked when it declares an interaction and the player is within its `interact_at` - a transient highlight drawn on that object's own drawables, plus a browser cursor change. Reachable-but-unhovered objects get no treatment; hovered-but-unreachable objects get the cursor only, never the highlight.
+FR174: The player carries an item in hand, visible on the character sprite, with no view of any kind. Hands hold one item.
+FR175: The player has no inventory. Carried items live in a bag, which is a world object with its own grid from `object_def`, viewed exactly as any other container - so nothing persistent, global or abstract is ever drawn.
+FR176: A container view is drawn in canvas in the game's own pixel style, anchored to the container it belongs to, one at a time, with no capacity readout; an item that does not fit is shown by not fitting.
+FR177: While the payload streams, the name prompt is the page - no loading screen, spinner or progress bar. The page title and favicon name the city.
+FR178: A character is driven by exactly one tab. The most recent tab holds the character; an earlier tab is told plainly that the character is being driven elsewhere and is not controllable.
+FR179: A browser refresh behaves as a reconnection rather than a restart. Connection loss mid-procedure snaps the procedure state machine to its current step boundary and resumes there.
+FR180: Handover teaches a procedure the player has not performed before: the outgoing worker walks the steps in the world on the actual props. Repetition is available by talking to a colleague and costs minutes like any conversation.
+FR181: The opening minutes run flat, door, commute, shift-with-handover, payment, rent - ordered system beats rather than scripted content.
+
 **Tooling and observability**
 
 FR163: Time control - a clock multiplier and the ability to jump the clock - is available in development builds.
@@ -401,17 +415,33 @@ A2 (citizen count and cost, reframed as density) · A4 (1-second boot) · A5 (th
 
 ### UX Design Requirements
 
-**Not applicable — no UX Design Specification exists for this project.**
+**Source:** `_bmad-output/planning-artifacts/ux/ux-BrowserCity-2026-08-29/ux.md` *(added 2026-08-29)*.
 
-This is a deliberate condition of the design rather than a missing document. The GDD's Design Law *"progression is carried diegetically"* and D17's *"all UI is DOM; nothing persistent, global or abstract is drawn into the canvas"* together mean the conventional UX surface is close to empty: the boot name prompt, an options menu, connection-state notices, and transient object-bound container views. Everything else that would normally be UX work is world-building — job boards, council notices, a certificate on the wall, a shelf of plushies.
+**The earlier position — that no UX specification was needed — is withdrawn.** That reasoning was sound about UI chrome and wrong about UX. The GDD's design law *"progression is carried diegetically"* and D17's *"all UI is DOM; nothing persistent, global or abstract is drawn into the canvas"* really do make the conventional UI surface almost empty: a boot name prompt, an options menu, connection-state notices, and transient object-bound container views. But UX also covers **how a player knows what is actionable, what the browser page does, and what the opening minutes are** — and the implementation readiness assessment found three such surfaces with no owner in any document, one of which contradicted D17 as written.
 
-The UX-shaped requirements that do exist are captured above as functional requirements (FR144-FR152 for the client surface, FR102 and FR104 for diegetic carriers, FR30-FR34 for the interaction vocabulary) and as NFR22.
+The specification is deliberately bounded. It carries no colour palette, typography scale or component library, because the art direction is fixed by the LimeZu tilesets and the DOM surface is three elements. It owns six surfaces:
 
-**Should a UX specification be authored later**, the areas it would own are: the multi-step procedure interaction model (A1, currently resolved by prototyping), the container view's visual grammar, and the debug tooling's deliberately non-diegetic presentation.
+| # | Surface | Requirements | Epic |
+|---|---|---|---|
+| 1 | Interactable affordance | FR173 | Epic 1 |
+| 2 | What the player carries | FR174, FR175 | Epic 6 |
+| 3 | Container view grammar | FR176 | Epic 6 |
+| 4 | Page and session behaviour | FR177, FR178, FR179 | Epic 4 |
+| 5 | First-session flow and teaching | FR180, FR181 | Epics 7, 8 |
+| 6 | Procedure interaction model | A1 — unchanged, prototyped in Epic 8 | Epic 8 |
+
+**Two findings the specification resolves rather than records:**
+
+- **FR175 closes a contradiction.** D19 specifies Tetris-style grid inventories; D17 forbids drawing anything persistent, global or abstract into the canvas. D19 never said what the *player* carries, and a player-as-citizen holding items directly would make their inventory persistent and global — a violation of the project's own structural guarantee at the first inventory screen. The resolution: hands hold one visible item with no view, and everything else lives in a bag, which is an ordinary world object with an ordinary container view.
+- **FR173 is a precondition of A1, not part of it.** A player who cannot tell what is clickable cannot report whether procedure feels like handling or clicking; the prototype would measure discovery friction and call it procedure friction. The affordance ships in Epic 1, before the Epic 8 prototype runs.
+
+**Accessibility** has a recorded floor in the specification rather than being left absent. It matters here more than in most games because with no HUD and no text readouts, all state travels through 16×16 pixel art at 3× zoom, so visual legibility is the whole information channel. v1 position: affordance strength tunable in the options menu, colour avoided as the sole carrier of state where cheap, screen-reader support explicitly out of scope as a decision rather than an omission.
+
+The remaining UX-shaped requirements stay where they are: FR144–FR152 for the client surface, FR102 and FR104 for diegetic carriers, FR30–FR34 for the interaction vocabulary, and NFR22.
 
 ### FR Coverage Map
 
-All 172 functional requirements map to exactly one epic. Verified programmatically: no requirement is unmapped and none is claimed by two epics.
+All 181 functional requirements map to exactly one epic. Verified programmatically: no requirement is unmapped and none is claimed by two epics.
 
 **Testing policy, decided 2026-08-29.** Development is TDD throughout. **Every FR is covered by one or more tests**, written before the code that satisfies them. An FR's tests are derived from the acceptance criteria of the stories that deliver it — the Given/When/Then clauses in this document are test specifications, not description. Every one of the 200 stories carries acceptance criteria (897 Given clauses, minimum 3 per story), so the path from requirement to test is complete: FR -> epic -> story -> acceptance criteria -> test.
 
@@ -590,6 +620,15 @@ FR169: Epic 4 (The Living Wire) - A scheduled reducer samples per-table row coun
 FR170: Epic 4 (The Living Wire) - An external watcher subscribes to that metrics table and alerts when...
 FR171: Epic 4 (The Living Wire) - The same observability pipeline serves table growth, TeV per reducer class,...
 FR172: Epic 4 (The Living Wire) - The five gameplay metrics are instrumented
+FR173: Epic 1 (Foundations and Gating Spikes) - An object the pointer is over is affordance-marked
+FR174: Epic 6 (Stock, Goods and Money) - The player carries an item in hand, visible, with no view
+FR175: Epic 6 (Stock, Goods and Money) - The player has no inventory; carried items live in a bag
+FR176: Epic 6 (Stock, Goods and Money) - Container view grammar: canvas, object-anchored, one at a time
+FR177: Epic 4 (The Living Wire) - While the payload streams, the name prompt is the page
+FR178: Epic 4 (The Living Wire) - A character is driven by exactly one tab
+FR179: Epic 4 (The Living Wire) - Refresh behaves as reconnection; loss mid-procedure resumes at the step boundary
+FR180: Epic 8 (Procedure and Props) - Handover teaches a procedure the player has not performed before
+FR181: Epic 7 (The Day Loop) - The opening minutes run flat, door, commute, shift, payment, rent
 ```
 
 ### NFR Test Placement Map
@@ -705,7 +744,7 @@ A player can walk an avatar down a hand-laid test street in a browser tab, and t
 **Depends on:** nothing. This is the first epic.
 **Carries the risk of:** R5, R10, A4 — and the permanent schema decisions (D12) that cannot be changed later.
 
-**FRs covered:** FR61, FR62, FR117, FR118, FR119, FR120, FR121, FR122, FR123, FR124, FR125, FR137, FR148, FR149, FR150, FR151, FR152, FR165, FR168
+**FRs covered:** FR61, FR62, FR117, FR118, FR119, FR120, FR121, FR122, FR123, FR124, FR125, FR137, FR148, FR149, FR150, FR151, FR152, FR165, FR168, FR173
 
 ---
 
@@ -744,7 +783,7 @@ Two people stand in the same city in under a second, and the city keeps its own 
 **Carries the risk of:** A4 (the hardest constraint in the project), R1, R2, R4, R5.
 **Closes:** open gap G4 (in-city clock authority).
 
-**FRs covered:** FR1, FR2, FR3, FR136, FR138, FR139, FR140, FR141, FR142, FR143, FR144, FR145, FR146, FR163, FR169, FR170, FR171, FR172
+**FRs covered:** FR1, FR2, FR3, FR136, FR138, FR139, FR140, FR141, FR142, FR143, FR144, FR145, FR146, FR163, FR169, FR170, FR171, FR172, FR177, FR178, FR179
 
 ---
 
@@ -772,7 +811,7 @@ Things exist in quantities, move only when somebody moves them, and money is a p
 **Depends on:** Epic 5.
 **Carries the risk of:** the grid-inventory tedium recorded in D19 — watch it alongside Epic 8's procedure prototyping, since the two are felt together.
 
-**FRs covered:** FR66, FR86, FR87, FR88, FR89, FR90, FR91, FR92, FR93, FR94, FR95, FR96, FR97, FR98
+**FRs covered:** FR66, FR86, FR87, FR88, FR89, FR90, FR91, FR92, FR93, FR94, FR95, FR96, FR97, FR98, FR174, FR175, FR176
 
 ---
 
@@ -788,7 +827,7 @@ A player can live one day: wake in a flat they can barely afford, walk to work, 
 **Depends on:** Epics 5 and 6 — the till needs customers and it needs stock and cash.
 **Carries the risk of:** A8, the critical assumption.
 
-**FRs covered:** FR4, FR5, FR6, FR7, FR19, FR20, FR22, FR23, FR29
+**FRs covered:** FR4, FR5, FR6, FR7, FR19, FR20, FR22, FR23, FR29, FR181
 
 ---
 
@@ -803,7 +842,7 @@ Work that can be performed well or badly, with nothing scoring you — and an em
 **Playable deliverable:** two jobs with real procedure, each performable well or badly, nothing scoring you — plus solitaire on the guard's computer, and a lobby you can clean that nobody asked you to clean.
 **Depends on:** Epic 7.
 
-**FRs covered:** FR9, FR10, FR11, FR12, FR13, FR14, FR15, FR16, FR17, FR30, FR31, FR32, FR33, FR34
+**FRs covered:** FR9, FR10, FR11, FR12, FR13, FR14, FR15, FR16, FR17, FR30, FR31, FR32, FR33, FR34, FR180
 
 ---
 
@@ -1563,6 +1602,48 @@ So that the hardest constraint in the project stops being arithmetic.
 **When** it does
 **Then** the finding is recorded against A4 and R5 and the affected decisions are reopened
 **And** the story is complete regardless, because the deliverable is the measurement
+
+---
+
+### Story 1.15: Interactable Affordance
+
+As a player,
+I want to be able to tell what I can act on,
+So that a dense street is a place I can use rather than a picture I have to guess at.
+
+**Acceptance Criteria:**
+
+**Given** the city is 16x16 pixel art at 3x zoom, deliberately dense with props
+**When** dozens of drawn objects share a screen and a handful are interactable
+**Then** an affordance exists, justified by that specific breakage rather than adopted as a default
+
+**Given** the pointer is over an object that declares an interaction
+**And** the player is within that definition's `interact_at`
+**When** the object is hovered
+**Then** a transient highlight is drawn on that object's own drawables
+**And** the browser cursor changes
+
+**Given** an object is reachable but not hovered
+**When** the player looks at the street
+**Then** it carries no treatment at all, because the world is not pre-lit
+
+**Given** an object is hovered but out of reach
+**When** the pointer rests on it
+**Then** the cursor changes but the in-world highlight is withheld
+**And** this is how reachability is learned rather than told
+
+**Given** D17 permits transient object-bound canvas drawing and forbids the persistent, global or abstract
+**When** the highlight is implemented
+**Then** it exists only while hovered, is never state the world holds, and adds no floating icon, label, tooltip or prompt
+
+**Given** the treatment must survive a busy street at rush hour without becoming noise
+**When** strength is chosen
+**Then** it is a dial rather than a fixed value, exposed in the options menu's display section
+**And** the value is settled by playing rather than by specification
+
+**Given** A1 asks whether procedure feels like handling or like clicking
+**When** the Epic 8 prototype runs
+**Then** this affordance is already in the build, so the prototype cannot mistake discovery friction for procedure friction
 
 ---
 
@@ -2730,6 +2811,45 @@ So that the term which scales with concurrency is set by measurement.
 
 ---
 
+### Story 4.16: The Page and the Session
+
+As a player,
+I want the browser to behave the way a browser should,
+So that the city is a page I can leave and come back to rather than an application I have to manage.
+
+**Acceptance Criteria:**
+
+**Given** the name prompt is interactive at first paint while the payload streams behind it
+**When** the page is loading
+**Then** the prompt is the page
+**And** there is no loading screen, no spinner and no progress bar, because the boot design removed the thing they would report on
+
+**Given** the city is a place rather than an app
+**When** the tab is rendered
+**Then** the page title and favicon name the city, so a player finds it among their other tabs
+
+**Given** a character body has exactly one driver
+**When** the same character is opened in a second tab
+**Then** the most recent tab holds the character
+**And** the earlier tab is told in plain language that the character is being driven elsewhere and is not controllable
+**And** it does not close itself, error, or fight for control
+
+**Given** nothing is ever suspended
+**When** the player refreshes the browser
+**Then** it behaves as a reconnection rather than a restart, with no re-prompt and no lost state
+
+**Given** the player leaves using the back button
+**When** they go
+**Then** the city keeps running and no warning dialog is shown, because that is the design's central promise rather than an accident
+
+**Given** the procedure state machine is server-authoritative
+**When** the connection drops mid-procedure
+**Then** a connection-state notice appears
+**And** the machine snaps to its current step boundary, so the shift is not lost
+**And** the player resumes at that step on reconnection
+
+---
+
 ## Epic 5: Citizens
 
 The city feels populated with one player connected. This epic answers the AI-density hypothesis, which the brief names as the project's real engineering risk - harder than multiplayer.
@@ -3640,6 +3760,89 @@ So that an unsupervised task has a real consequence nobody is scoring.
 
 ---
 
+### Story 6.15: What the Player Carries
+
+As a player,
+I want what I am carrying to be a thing in the world rather than a screen,
+So that the city keeps its promise that nothing persistent is ever drawn over it.
+
+**Acceptance Criteria:**
+
+**Given** D19 specifies grid inventories and D17 forbids drawing anything persistent, global or abstract
+**When** the player carries something
+**Then** there is no player inventory of any kind, because such a view would be persistent and global by definition
+
+**Given** the player is carrying a single item - a bottle for the bin, a coffee, a bin bag
+**When** they walk through the city
+**Then** it is visible on the character sprite
+**And** no view of any kind is opened, mirroring D19's rule that an item on a surface gets no view
+
+**Given** hands hold one item
+**When** the player tries to pick up a second
+**Then** they cannot, and this is the reason a bag is worth owning
+
+**Given** carried items beyond the hands live in a bag
+**When** the player opens it
+**Then** the bag is a world object with its own grid from `object_def`
+**And** the view is object-bound and transient, identical in every respect to opening a cupboard
+
+**Given** a bag is an ordinary object rather than a player attribute
+**When** it exists in the world
+**Then** it can be bought, upgraded, forgotten at home, left on a bus or stolen
+**And** carrying capacity is therefore a physical carrier rather than a stat
+
+**Given** NPCs pack the same grids by first-fit
+**When** a citizen and a player each carry things
+**Then** they do so by the same mechanism, with no mechanical seam, per P2
+
+**Given** a player who did not bring the bag
+**When** they shop
+**Then** what fits is what fits and they make two trips, the same arithmetic that makes a badly packed van fit less
+
+---
+
+### Story 6.16: The Container View Grammar
+
+As a player,
+I want opening a cupboard to feel like opening a cupboard,
+So that handling things reads as part of the world rather than as inventory management.
+
+**Acceptance Criteria:**
+
+**Given** a container view belongs to the fiction
+**When** it is drawn
+**Then** it is canvas in the game's own pixel style, never a DOM panel, which would read as an application
+
+**Given** the view is object-bound
+**When** it opens
+**Then** it is anchored to the container it belongs to
+**And** it is dismissed by walking away, by pressing escape, or by opening another
+
+**Given** two open grids would invite dragging between panels
+**When** the player opens a second container
+**Then** only one container view is open at a time, so the interaction stays handling rather than inventory management
+
+**Given** item footprints are reused unchanged from world footprints
+**When** an item is placed in a container
+**Then** it occupies the same cells it occupies in the world, with rotation supported
+**And** a thing that does not fit genuinely does not fit
+
+**Given** the grid is its own explanation
+**When** an item will not fit
+**Then** it is shown by not fitting, with no error text and no message
+
+**Given** spatial capacity is already a readout
+**When** the view is drawn
+**Then** there is no slot counter, no capacity bar and no tally, because that would be exactly the abstract persistent overlay D17 forbids
+
+**Given** grid inventories are a known source of tedium paid in the only currency the game has
+**When** the packing load is tuned
+**Then** grid sizes and how often a packing decision is forced are the dials
+**And** storing shopping is a moment while running a warehouse shift is the job
+**And** it is prototyped separately from A1 first, so that neither result is confounded by the other
+
+---
+
 ## Epic 7: The Day Loop - the Burger Test, first read
 
 A player can live one day: wake in a flat they can barely afford, walk to work, hold down a shift, get paid, and have rent take its bite.
@@ -3986,6 +4189,42 @@ So that six epics of assumption are tested rather than extended.
 **Given** honest judgement is the deliverable
 **When** the epic closes
 **Then** a written read exists, not a passing test
+
+---
+
+### Story 7.14: The Opening Minutes
+
+As a new player,
+I want my first session to make sense without being explained,
+So that I learn the city by living in it rather than by being taught about it.
+
+**Acceptance Criteria:**
+
+**Given** first-ever spawn is the player's own flat interior
+**When** the session begins
+**Then** it is the loop's opening beat, and it is also the cheapest screen to boot at roughly 420 rows against a street's 28,000
+
+**Given** the street streams behind the door
+**When** the player looks for something to do
+**Then** going outside is the first available thing and needs no prompting
+
+**Given** the commute is 60 in-city minutes on foot
+**When** the player walks it
+**Then** the game has taught its central arithmetic by charging it, before anything explains it
+
+**Given** the till shift at this epic is worked without the four-beat procedure machine, which arrives in Epic 8
+**When** the player takes their first shift
+**Then** the opening sequence is complete without it
+**And** handover as the teaching moment arrives with that machine rather than being owed by this story
+
+**Given** rent takes its bite whether or not the player understood any of this
+**When** the first week closes
+**Then** the metronome has started, which is the design's honest opening statement
+
+**Given** the design ships no authored content
+**When** these beats are implemented
+**Then** each is a system already scheduled elsewhere, ordered for a new player
+**And** nothing here is a script, a cutscene, a quest or a tutorial mode
 
 ---
 
@@ -4422,6 +4661,43 @@ So that the design's foundation is tested rather than assumed for another six ep
 **Given** honest judgement is the deliverable
 **When** the epic closes
 **Then** a written read exists that states plainly whether this is worth doing when nobody is watching
+
+---
+
+### Story 8.16: Handover Teaches the Procedure
+
+As a new player,
+I want the person I am relieving to show me the job,
+So that I can be bad at the work for real reasons rather than because nobody told me what it was.
+
+**Acceptance Criteria:**
+
+**Given** the design has no tutorial, no HUD, no objective markers and no quest log
+**And** the core activity is a multi-step procedure with real failure modes
+**When** a player performs a procedure they have not performed before
+**Then** handover teaches it
+
+**Given** ritual open is arrive, change in, equip and take handover
+**When** the teaching happens
+**Then** it is the outgoing worker walking the steps in the world on the actual props
+**And** it is not a text panel, a tooltip sequence, a step list or a pinned checklist
+
+**Given** knowledge travels through physical carriers
+**When** the procedure is learned
+**Then** it came from a person at handover, satisfying the carrier law rather than bending it
+
+**Given** conversation costs minutes
+**When** the player asks a colleague to go through it again
+**Then** repetition is available and is priced like any other conversation
+
+**Given** props carry their own state
+**When** the player returns for a later shift
+**Then** there is no reminder, no checklist and no re-teaching, because the props are the standing reminder
+
+**Given** the Burger Test asks whether mundane work is intrinsically satisfying
+**When** a player cannot work out how to do the work
+**Then** that would fail the test for reasons unrelated to the hypothesis
+**And** this story exists so Epic 7 and Epic 8 do not return a false negative on the assumption the whole design rests on
 
 ---
 
