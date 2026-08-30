@@ -42,8 +42,11 @@ IDLE='{"busy":false,"terminal":"bc-crew","idle_ms":33585}'
 
 check() { # name, want_branch, want_exit, prs, pr_comments, issues, issue_comments, crew
   local out code got
+  # BC_WAKE_REASON keeps the suite out of the real reason file, which the
+  # watchdog reads and must not find test runs in.
   out="$(BC_PRS_FIXTURE="$4" BC_COMMENTS_FIXTURE="$5" BC_ISSUES_FIXTURE="$6" \
-         BC_ISSUE_COMMENTS_FIXTURE="$7" BC_CREW_OVERRIDE="$8" bash "$WAKE" 2>&1)"
+         BC_ISSUE_COMMENTS_FIXTURE="$7" BC_CREW_OVERRIDE="$8" \
+         BC_WAKE_REASON="$D/reason" bash "$WAKE" 2>&1)"
   code=$?
   got="$(printf '%s' "$out" | jq -r '.branch' 2>/dev/null)"
   if [ "$got" = "$2" ] && [ "$code" = "$3" ]; then
@@ -81,6 +84,47 @@ check "issue lead comment missing"     broken 2 "$D/no-pr.json"   "$D/fresh.json
 check "issue unreadable direction"     broken 2 "$D/no-pr.json"   "$D/fresh.json"         "$D/one-issue.json" "$D/dirs-badstate.json" "$IDLE"
 check "task label but no bc:task"      broken 2 "$D/no-pr.json"   "$D/fresh.json"         "$D/one-issue.json" "$D/no-task-comment.json" "$IDLE"
 check "crew state unknown"             broken 2 "$D/no-pr.json"   "$D/fresh.json"         "$D/no-issue.json"  "$D/dirs-ready.json"    '{"busy":null}'
+
+echo "the Crew probe, against the shapes orca actually returns:"
+# Captured from `orca terminal list --worktree path:<windows-form> --json`.
+# Both failures below answer with exit 0, which is why the probe must read the
+# body rather than the exit code.
+cat > "$D/term-busy.json" <<'JSON'
+{"ok":true,"result":{"terminals":[{"title":"bc-crew","lastOutputAt":99999999999999,"worktreePath":"C:/x"}]}}
+JSON
+cat > "$D/term-none.json" <<'JSON'
+{"ok":true,"result":{"terminals":[{"title":"some other tab","lastOutputAt":99999999999999}]}}
+JSON
+cat > "$D/term-stale.json" <<'JSON'
+{"ok":true,"result":{"terminals":[{"title":"bc-crew","lastOutputAt":1,"worktreePath":"C:/x"}]}}
+JSON
+cat > "$D/term-badselector.json" <<'JSON'
+{"ok":false,"error":{"code":"selector_not_found","message":"selector_not_found"}}
+JSON
+cat > "$D/term-garbage.json" <<'JSON'
+not json
+JSON
+
+probe() { # name, want_branch, want_exit, terminals fixture
+  local out code got
+  out="$(BC_PRS_FIXTURE="$D/no-pr.json" BC_COMMENTS_FIXTURE="$D/fresh.json"          BC_ISSUES_FIXTURE="$D/no-issue.json" BC_ISSUE_COMMENTS_FIXTURE="$D/dirs-ready.json"          BC_TERMINALS_FIXTURE="$4" BC_WAKE_REASON="$D/reason" bash "$WAKE" 2>&1)"
+  code=$?
+  got="$(printf '%s' "$out" | jq -r '.branch' 2>/dev/null)"
+  if [ "$got" = "$2" ] && [ "$code" = "$3" ]; then
+    printf '  ok   %-34s -> %-6s exit %s
+' "$1" "$got" "$code"; pass=$((pass+1))
+  else
+    printf '  FAIL %-34s -> got %s exit %s (want %s exit %s)
+       %s
+' "$1" "$got" "$code" "$2" "$3" "$out"; fail=$((fail+1))
+  fi
+}
+
+probe "fresh output means crew is busy"  c.3    1 "$D/term-busy.json"
+probe "no bc-crew terminal means idle"   t.1    0 "$D/term-none.json"
+probe "stale output means idle"          t.1    0 "$D/term-stale.json"
+probe "a rejected selector is not idle"  broken 2 "$D/term-badselector.json"
+probe "unparseable output is not idle"   broken 2 "$D/term-garbage.json"
 
 rm -rf "$D"
 echo; echo "passed $pass, failed $fail"; [ "$fail" -eq 0 ]

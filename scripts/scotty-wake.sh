@@ -18,16 +18,29 @@ set -o pipefail
 # --- paths, derived rather than hardcoded -----------------------------------
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WORKTREE="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-REASON="$(cd -- "$WORKTREE/.." && pwd)/.scotty-wake-reason"
+REASON="${BC_WAKE_REASON:-$(cd -- "$WORKTREE/.." && pwd)/.scotty-wake-reason}"
 
-GH="$(command -v gh || true)"
-JQ="$(command -v jq || true)"
-ORCA="$(command -v orca || true)"
+# A missing library must exit 2, not die mid-script: bash's own failure exit
+# would be 1, and 1 is "nothing to do" -- the confusion this file exists to
+# prevent, in a script that runs in the precheck where PATH holds nothing.
+if [ ! -r "$SCRIPT_DIR/lib/paths.sh" ]; then
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') WAKE-BROKEN lib/paths.sh missing beside $SCRIPT_DIR" > "$REASON"
+  printf '{"branch":"broken","reason":"lib/paths.sh missing"}\n'
+  exit 2
+fi
+# shellcheck source=lib/paths.sh
+. "$SCRIPT_DIR/lib/paths.sh"
+
+# Derived absolute paths, PATH last. The classifier runs in the same precheck
+# as the budget gate, under a cmd.exe environment that predates every one of
+# these installs, so resolving them off PATH would break the classifier exactly
+# where it is least visible.
+GH="${BC_GH:-$(resolve_gh || true)}"
+JQ="${BC_JQ:-$(resolve_jq || true)}"
+ORCA="${BC_ORCA:-$(resolve_orca || true)}"
 
 CREW_IDLE_MS="${CREW_IDLE_MS:-300000}"
 CYCLE_LIMIT="${CYCLE_LIMIT:-8}"
-
-stamp() { date -u "+%Y-%m-%dT%H:%M:%SZ"; }
 
 fail_broken() {
   echo "$(stamp) WAKE-BROKEN $1" > "$REASON"
@@ -41,9 +54,11 @@ nothing_to_do() {
   exit 1
 }
 
-[ -n "$GH" ]   || fail_broken "gh not found on PATH"
-[ -n "$JQ" ]   || fail_broken "jq not found on PATH"
-[ -n "$ORCA" ] || fail_broken "orca not found on PATH"
+# -x rather than -n: a resolver that returned a path to something unrunnable
+# has found nothing, and saying so here is cheaper than a mystery failure later.
+[ -x "$GH" ]   || fail_broken "gh not found (looked under Program Files, %LOCALAPPDATA%, PATH)"
+[ -x "$JQ" ]   || fail_broken "jq not found (looked under %LOCALAPPDATA%/Microsoft/WinGet, chocolatey, /usr/bin, PATH)"
+[ -x "$ORCA" ] || fail_broken "orca not found (looked under %LOCALAPPDATA%/Programs/orca, PATH)"
 
 # jq helper: machine fields are HTML comments, so nothing parses prose.
 FIELD_DEF='def field($body; $name):
@@ -52,23 +67,42 @@ FIELD_DEF='def field($body; $name):
 # --- is Crew working? -------------------------------------------------------
 # The signal is the age of lastOutputAt. terminal wait --for tui-idle is not
 # used: it returns timeout for an idle shell and a busy Claude TUI alike.
+#
+# Two shapes of silent failure are guarded here, both measured against the real
+# CLI. The selector must carry a Windows-form path, or Orca answers
+# selector_not_found -- ok:false, exit 0 -- which reads as "no terminals" and
+# so as "Crew is idle", which would dispatch a second Crew on top of a working
+# one. And the payload is .result.terminals, not a bare array, so a filter
+# written against the wrong shape matches nothing and reports the same lie.
+ORCA_WORKTREE="$(posix2win "$WORKTREE")"
+
 crew_state() {
   local json
-  json="$("$ORCA" terminal list --worktree "path:$WORKTREE" --json 2>&1)" || {
-    printf '{"busy":null,"error":"orca terminal list failed"}'
-    return
-  }
+  if [ -n "${BC_TERMINALS_FIXTURE:-}" ]; then
+    json="$(cat "$BC_TERMINALS_FIXTURE" 2>/dev/null)" || {
+      printf '{"busy":null,"error":"terminal fixture unreadable"}'; return; }
+  else
+    json="$("$ORCA" terminal list --worktree "path:$ORCA_WORKTREE" --json 2>&1)" || {
+      printf '{"busy":null,"error":"orca terminal list failed"}'; return; }
+  fi
   printf '%s' "$json" | "$JQ" -c --argjson limit "$CREW_IDLE_MS" '
-    ([.[]? | select(.title == "bc-crew")] | first) as $t
-    | if $t == null then {busy:false, terminal:null, idle_ms:null}
-      else (((now * 1000) - ($t.lastOutputAt // 0)) | floor) as $age
-        | {busy: ($age < $limit), terminal: $t.title, idle_ms: $age}
-      end' 2>/dev/null || printf '{"busy":null,"error":"unparseable terminal list"}'
+    if (.ok != true) then
+      {busy: null, error: ("orca rejected the terminal query: " + ((.error.code // "unknown") | tostring))}
+    else
+      ([.result.terminals[]? | select(.title == "bc-crew")] | first) as $t
+      | if $t == null then {busy: false, terminal: null, idle_ms: null}
+        else (((now * 1000) - ($t.lastOutputAt // 0)) | floor) as $age
+          | {busy: ($age < $limit), terminal: $t.title, idle_ms: $age}
+        end
+    end' 2>/dev/null || printf '{"busy":null,"error":"unparseable terminal list"}'
 }
 
 CREW="${BC_CREW_OVERRIDE:-$(crew_state)}"
+# The error the probe recorded, not merely that it failed: "Crew is working"
+# versus "Crew has died" is the distinction that silently stalls the team, so
+# the reason it could not be answered has to survive into the log.
 printf '%s' "$CREW" | "$JQ" -e '.busy != null' >/dev/null 2>&1 \
-  || fail_broken "could not determine Crew state"
+  || fail_broken "could not determine Crew state: $(printf '%s' "$CREW" | "$JQ" -r '.error // "no reason given"' 2>/dev/null)"
 CREW_BUSY="$(printf '%s' "$CREW" | "$JQ" -r '.busy')"
 
 comments_for() { # $1 issue-or-pr number, $2 fixture env value
