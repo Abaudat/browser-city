@@ -144,20 +144,21 @@ The absence of a status comment *is* the signal that a PR is new. There is no ot
 
 _Not yet reviewed._
 
-<!-- bc:verdict PENDING -->
 <!-- bc:reviewed - -->
 <!-- bc:session - -->
 ```
 
 The machine fields live in HTML comments so the classifier never parses prose. The table above them is for Adrian. **Both must agree** — the markers are not a summary, they are the state.
 
-A stub must exist for **every** lead in scope. The classifier treats a missing one as broken rather than as `PENDING`, because guessing there is how a lead silently stops being consulted.
+A stub must exist for **every** lead in scope. The classifier treats a missing one as broken rather than as unreviewed, because guessing there is how a lead silently stops being consulted.
+
+**A stub carries no verdict line.** There are two verdicts, `APPROVED` and `CHANGES`, and a lead writes one only when it has actually reviewed something. "Has not reviewed" is already `reviewed -`; a second marker saying the same thing would be a second truth to drift.
 
 ### Whose turn it is, and why you never reset a verdict
 
 Each lead's comment carries `<!-- bc:reviewed <sha> -->` — the commit it last looked at. A lead owes a review when it has never reviewed, **or when the PR head has moved since it last looked.**
 
-That is the whole mechanism, and it is why there is no `CHANGES` → `PENDING` transition for you to perform. Nobody resets a verdict; Crew pushing a commit is what returns the PR to the leads. It also means an `APPROVED` left at an older commit does not cover code nobody has read — **you cannot merge at c.1 unless every lead approved the current head.**
+That is the whole mechanism, and it is why there is no verdict for you to reset — there is no state to reset it to. Crew pushing a commit is what returns the PR to the leads. It also means an `APPROVED` left at an older commit does not cover code nobody has read — **you cannot merge at c.1 unless every lead approved the current head.**
 
 ### Updating the status comment
 

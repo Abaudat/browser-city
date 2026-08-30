@@ -72,7 +72,7 @@ gh api "repos/{owner}/{repo}/issues/<pr>/comments" \
 
 Your comment carries `<!-- bc:reviewed <sha> -->`: **the commit you last looked at.** Compare it to the PR's current head.
 
-**Case A — `<!-- bc:verdict PENDING -->`, reviewed `-`, no cycle sections.** You have never reviewed this PR. Read your own direction on the issue, then judge the tests against that direction rather than against themselves. Check that tests were written before the implementation, that each test cites the acceptance criterion it satisfies, and that the trace matrix is updated. A story with silently unmet criteria is `CHANGES`, every time.
+**Case A — the comment carries `<!-- bc:reviewed - -->` and no verdict at all.** You have never reviewed this PR. Read your own direction on the issue, then judge the tests against that direction rather than against themselves. Check that tests were written before the implementation, that each test cites the acceptance criterion it satisfies, and that the trace matrix is updated. A story with silently unmet criteria is `CHANGES`, every time.
 
 **Case B — the comment has cycle sections and a reviewed sha that is not the current head.** You reviewed an earlier commit; Crew has pushed since. That comment is your only memory of what you said, because you start a fresh session each time. Read your last cycle section first. Your job now is narrower: **did Crew address those findings?** Review the new commits too, but **do not raise a point at cycle 5 that you could have raised at cycle 1.** Aesthetic and stylistic reopening is not the risk in your mandate; **scope creep in the test direction is.** Judge against what you pre-registered.
 
@@ -98,6 +98,8 @@ Both addressed. Trace matrix updated.
 gh api "repos/{owner}/{repo}/issues/comments/<id>" -X PATCH -F body=@body.md
 ```
 
-The verdict is exactly one of `PENDING`, `APPROVED`, `CHANGES`. **There is no transition back to `PENDING`** — nobody resets a verdict. Whose turn it is comes from `bc:reviewed` against the head commit, so a push by Crew is what returns the PR to you, and an `APPROVED` you left at an older commit does not cover code you have not read.
+**A verdict is `APPROVED` or `CHANGES`. There is no third value and none is ever reset.** Whose turn it is comes from `bc:reviewed` against the head commit — a stub records `-`, so "never reviewed" needs no verdict of its own. A push by Crew is what returns the PR to you, and an `APPROVED` you left at an older commit does not cover code you have not read.
+
+Write both markers together. A verdict without the commit it was reached on, or a commit with no verdict, is incoherent and the classifier stops on it.
 
 Set `bc:reviewed` to the commit you genuinely reviewed. Setting it to head without reading head is how unreviewed code merges.

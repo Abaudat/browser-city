@@ -1121,7 +1121,7 @@ So that nothing about a task lives somewhere a reboot can erase.
 
 **Given** every agent acts as Adrian's GitHub identity, so native review states cannot tell Quentin from Derek
 **When** a lead reports
-**Then** it writes its verdict into its own marked comment, as `<!-- bc:verdict APPROVED -->` or `<!-- bc:verdict CHANGES -->`
+**Then** it writes its verdict into its own marked comment, as `<!-- bc:verdict APPROVED -->` or `<!-- bc:verdict CHANGES -->`, those being the only two verdicts a lead can record
 **And** the findings stay readable above that marker for Crew, and the human-readable text and the marker must agree
 
 **Given** a parser that reads prose breaks on the first well-meant rewording
@@ -1152,6 +1152,7 @@ So that nothing about a task lives somewhere a reboot can erase.
 **Given** a verdict that had to be reset would need a writer, and the only candidates are forbidden from writing that comment
 **When** turn-taking is decided
 **Then** it is decided by the commit each lead recorded reviewing against the PR's current head, and no verdict is ever reset
+**And** "has not reviewed yet" is the absence of a recorded commit rather than a third verdict, so no state exists for anyone to reset
 **And** an `APPROVED` left at an earlier commit does not permit a merge, so a push after approval re-opens review rather than sliding through
 
 **Given** a role's session may be gone after a reboot

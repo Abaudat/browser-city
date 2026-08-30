@@ -58,7 +58,7 @@ Writing the implementation first and backfilling tests is the failure this order
 
 ## 4. When Scotty asks you to address review comments
 
-Each lead in scope owns one comment on the PR, marked `<!-- bc:lead:<role> -->`, ending in a `<!-- bc:verdict -->` line. Read them:
+Each lead in scope owns one comment on the PR, marked `<!-- bc:lead:<role> -->`, carrying a `<!-- bc:verdict -->` of `APPROVED` or `CHANGES` and the commit it was reached on. Read them:
 
 ```bash
 gh api "repos/{owner}/{repo}/issues/<pr>/comments" \

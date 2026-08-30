@@ -207,7 +207,7 @@ Addressed. Trace matrix updated.
 <!-- bc:session 019t73dBSXoTkhtHKX3hFYNP -->
 ```
 
-Verdicts are exactly `PENDING`, `APPROVED` or `CHANGES`; direction states on the task issue are `PENDING` or `READY`. A stub carries `PENDING`, `reviewed -` and no cycle sections, which is also how a lead knows, on waking cold, that it has not seen this PR before.
+**A verdict is `APPROVED` or `CHANGES`. There is no third value.** A stub carries `reviewed -`, no verdict line and no cycle sections, which is how a lead knows on waking cold that it has not seen this PR before — "not yet reviewed" is the absence of a review, not a kind of verdict. Direction states on the task issue are `PENDING` or `READY`, which is a genuine binary with no redundant twin.
 
 **A lead appends a cycle section rather than replacing what it wrote.** That comment is the lead's only memory of its own earlier review — it starts a fresh session each time and has nowhere else to look.
 
@@ -217,7 +217,7 @@ Verdicts are exactly `PENDING`, `APPROVED` or `CHANGES`; direction states on the
 
 A lead's comment carries `<!-- bc:reviewed <sha> -->`, the commit it last read. **A lead owes a review when it has never reviewed, or when the head has moved since it last looked.**
 
-There is therefore no `CHANGES` → `PENDING` transition, and nobody resets a verdict: `PENDING` means never reviewed, and Crew pushing a commit is what returns the PR to the leads. Without this the cycle has no way back from c.5 and would sit there forever. It also closes a hole — an `APPROVED` recorded at an older commit does not cover code nobody has read, so a merge at c.1 requires every lead to have approved *the current head*, and a push after approval re-opens review rather than sliding through.
+Nobody resets a verdict, and there is no state to reset one to: Crew pushing a commit is what returns the PR to the leads. A verdict and the commit it was reached on are written together, and either without the other is incoherent rather than partial. Without this the cycle has no way back from c.5 and would sit there forever. It also closes a hole — an `APPROVED` recorded at an older commit does not cover code nobody has read, so a merge at c.1 requires every lead to have approved *the current head*, and a push after approval re-opens review rather than sliding through.
 
 One consequence for Crew: push once per cycle, when everything is addressed. A mid-cycle push costs every lead in scope a re-review.
 

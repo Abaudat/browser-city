@@ -17,16 +17,19 @@ echo '[{"number":3},{"number":4}]' > "$D/two-issue.json"
 
 status() { printf '{"id":1,"body":"<!-- bc:status -->\\n<!-- bc:story 1.4 -->\\n<!-- bc:scope %s -->\\n<!-- bc:cycle %s -->"}' "$1" "$2"; }
 lead()   { printf '{"id":%s,"body":"<!-- bc:lead:%s -->\\nfindings\\n<!-- bc:verdict %s -->\\n<!-- bc:reviewed %s -->\\n<!-- bc:session s1 -->"}' "$RANDOM" "$1" "$2" "$3"; }
+stub()   { printf '{"id":%s,"body":"<!-- bc:lead:%s -->\\n_Not yet reviewed._\\n<!-- bc:reviewed - -->\\n<!-- bc:session - -->"}' "$RANDOM" "$1"; }
 task()   { printf '{"id":2,"body":"<!-- bc:task -->\\n<!-- bc:story 1.4 -->\\n<!-- bc:scope %s -->"}' "$1"; }
 dir()    { printf '{"id":%s,"body":"<!-- bc:lead:%s -->\\ndirection\\n<!-- bc:direction %s -->\\n<!-- bc:session s1 -->"}' "$RANDOM" "$1" "$2"; }
 
 echo '[{"id":9,"body":"Opened by Crew. Consistency gate: pass."}]' > "$D/c0.json"
 echo "[$(status 'quentin,tim' 2),$(lead quentin APPROVED $SHA1),$(lead tim APPROVED $SHA1)]" > "$D/approved-sha1.json"
 echo "[$(status 'quentin,tim' 2),$(lead quentin CHANGES $SHA1),$(lead tim APPROVED $SHA1)]" > "$D/changes-sha1.json"
-echo "[$(status 'quentin,tim' 2),$(lead quentin PENDING -),$(lead tim PENDING -)]"           > "$D/fresh.json"
+echo "[$(status 'quentin,tim' 2),$(stub quentin),$(stub tim)]"                               > "$D/fresh.json"
 echo "[$(status 'quentin,tim' 8),$(lead quentin CHANGES $SHA1),$(lead tim APPROVED $SHA1)]" > "$D/cycle8.json"
 echo "[$(status 'quentin,tim' 2),$(lead quentin APPROVED $SHA1)]"                            > "$D/pr-missing.json"
 echo "[$(status 'quentin,tim' 2),$(lead quentin WAT $SHA1),$(lead tim APPROVED $SHA1)]"      > "$D/pr-badverdict.json"
+echo "[$(status 'quentin,tim' 2),$(lead quentin APPROVED -),$(lead tim APPROVED $SHA1)]"     > "$D/pr-orphan.json"
+echo "[$(status 'quentin,tim' 2),$(stub quentin),$(lead tim APPROVED $SHA1)]"                > "$D/pr-halfway.json"
 
 echo "[$(task 'quentin,tim'),$(dir quentin READY),$(dir tim READY)]"     > "$D/dirs-ready.json"
 echo "[$(task 'quentin,tim'),$(dir quentin PENDING),$(dir tim READY)]"   > "$D/dirs-partial.json"
@@ -61,6 +64,7 @@ check "c.3 directions ready, crew busy" c.3 1 "$D/no-pr.json" "$D/fresh.json" "$
 echo "review phase - the head commit decides whose turn it is:"
 check "c.0 new PR, no status"          c.0 0 "$D/pr-sha1.json" "$D/c0.json"           "$D/no-issue.json" "$D/dirs-ready.json" "$IDLE"
 check "c.4 never reviewed"             c.4 0 "$D/pr-sha1.json" "$D/fresh.json"        "$D/no-issue.json" "$D/dirs-ready.json" "$IDLE"
+check "c.4 one reviewed, one stub"     c.4 0 "$D/pr-sha1.json" "$D/pr-halfway.json"   "$D/no-issue.json" "$D/dirs-ready.json" "$IDLE"
 check "c.5 changes, nothing new pushed" c.5 0 "$D/pr-sha1.json" "$D/changes-sha1.json" "$D/no-issue.json" "$D/dirs-ready.json" "$IDLE"
 check "c.4 crew pushed since CHANGES"  c.4 0 "$D/pr-sha2.json" "$D/changes-sha1.json" "$D/no-issue.json" "$D/dirs-ready.json" "$IDLE"
 check "c.1 approved at head"           c.1 0 "$D/pr-sha1.json" "$D/approved-sha1.json" "$D/no-issue.json" "$D/dirs-ready.json" "$IDLE"
@@ -72,6 +76,7 @@ check "two story PRs"                  broken 2 "$D/two-pr.json"  "$D/approved-s
 check "two task issues"                broken 2 "$D/no-pr.json"   "$D/fresh.json"         "$D/two-issue.json" "$D/dirs-ready.json"    "$IDLE"
 check "PR lead comment missing"        broken 2 "$D/pr-sha1.json" "$D/pr-missing.json"    "$D/no-issue.json"  "$D/dirs-ready.json"    "$IDLE"
 check "PR unreadable verdict"          broken 2 "$D/pr-sha1.json" "$D/pr-badverdict.json" "$D/no-issue.json"  "$D/dirs-ready.json"    "$IDLE"
+check "verdict with no reviewed sha"   broken 2 "$D/pr-sha1.json" "$D/pr-orphan.json"     "$D/no-issue.json"  "$D/dirs-ready.json"    "$IDLE"
 check "issue lead comment missing"     broken 2 "$D/no-pr.json"   "$D/fresh.json"         "$D/one-issue.json" "$D/dirs-missing.json"  "$IDLE"
 check "issue unreadable direction"     broken 2 "$D/no-pr.json"   "$D/fresh.json"         "$D/one-issue.json" "$D/dirs-badstate.json" "$IDLE"
 check "task label but no bc:task"      broken 2 "$D/no-pr.json"   "$D/fresh.json"         "$D/one-issue.json" "$D/no-task-comment.json" "$IDLE"

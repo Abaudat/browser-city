@@ -120,7 +120,7 @@ if [ "$PR_COUNT" -eq 1 ]; then
         leads: (\$leads | map({
           role:     (.body | capture(\"<!-- bc:lead:(?<r>[a-z]+) -->\") | .r),
           id:       .id,
-          verdict:  (field(.body; \"verdict\")  // \"PENDING\"),
+          verdict:  (field(.body; \"verdict\")  // \"-\"),
           reviewed: (field(.body; \"reviewed\") // \"-\"),
           session:  (field(.body; \"session\")  // \"-\")
         }))
@@ -146,17 +146,23 @@ if [ "$PR_COUNT" -eq 1 ]; then
     '[.scope[] as $s | select([.leads[].role] | index($s) | not) | $s] | join(",")')"
   [ -z "$MISSING" ] || fail_broken "PR $PR has no comment for leads in scope: $MISSING"
 
+  # There are exactly two verdicts. A verdict means nothing without the commit
+  # it was reached on, and a reviewed commit means nothing without a verdict;
+  # either alone is incoherent, so it breaks rather than being assumed.
   BAD="$(printf '%s' "$STATE" | "$JQ" -r \
-    '[.leads[] | select(.verdict | test("^(PENDING|APPROVED|CHANGES)$") | not) | .role] | join(",")')"
-  [ -z "$BAD" ] || fail_broken "PR $PR has unreadable verdicts for: $BAD"
+    '[.leads[] | select(.reviewed != "-")
+      | select(.verdict | test("^(APPROVED|CHANGES)$") | not) | .role] | join(",")')"
+  [ -z "$BAD" ] || fail_broken "PR $PR has a reviewed commit with no readable verdict for: $BAD"
 
-  # A lead owes a review when it has never reviewed, or when Crew has pushed
-  # since it last looked. This is why there is no CHANGES -> PENDING
-  # transition: nobody resets a verdict, the head commit moves instead. It is
-  # also what stops an APPROVED verdict covering commits nobody reviewed.
+  ORPHAN="$(printf '%s' "$STATE" | "$JQ" -r \
+    '[.leads[] | select(.reviewed == "-" and .verdict != "-") | .role] | join(",")')"
+  [ -z "$ORPHAN" ] || fail_broken "PR $PR has a verdict with no reviewed commit for: $ORPHAN"
+
+  # A lead owes a review when the commit it recorded is not the current head.
+  # A stub records "-", so "has never reviewed" needs no state of its own -
+  # which is why there are only two verdicts and neither is ever reset.
   STALE="$(printf '%s' "$STATE" | "$JQ" -r \
-    '[.scope[] as $s | .leads[] | select(.role==$s)
-      | select(.verdict=="PENDING" or .reviewed != $head) | .role] | join(",")' \
+    '[.scope[] as $s | .leads[] | select(.role==$s and .reviewed != $head) | .role] | join(",")' \
     --arg head "$HEAD")"
   CHANGES="$(printf '%s' "$STATE" | "$JQ" -r \
     '[.scope[] as $s | .leads[] | select(.role==$s and .verdict=="CHANGES") | .role] | join(",")')"
