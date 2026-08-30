@@ -714,7 +714,7 @@ This map is the NFR counterpart to the FR Coverage Map above. Unlike that map it
 
 ## Epic List
 
-**Epic 0 plus fourteen.** Epic 0 builds the development team itself and is the developer's own work; epics 1-14 build the game and are dispatched to it. Each ends in something a person can do, and each stands alone — later epics build on earlier ones, never the reverse.
+**Epic 0 plus fourteen.** Epic 0 builds the development team itself and is co-implemented by Adrian and the team; epics 1-14 build the game and are dispatched to it, with Adrian as stakeholder rather than developer. Each ends in something a person can do, and each stands alone — later epics build on earlier ones, never the reverse.
 
 **How this differs from the GDD's E1-E13**, and why:
 
@@ -726,11 +726,12 @@ This map is the NFR counterpart to the FR Coverage Map above. Unlike that map it
 
 ### Epic 0: The Development Team
 
-The solo developer can dispatch work to agents, know what state every story is in, and trust that what comes back respects the architecture's non-negotiable rules.
+The six-role agentic team defined by the team charter exists, dispatches itself, gates itself on budget, reviews its own work against the architecture and the vision, and shows Adrian something playable or visible every Friday - without him in the loop.
 
-**Deliverable:** a coordinator session, written project context, a review gate, sprint tracking derived from this document, CI, and a named escalation path.
+**Deliverable:** the six roles as durable configurations, Scotty's scheduled session, a budget gate with a broken-gate alarm and a watchdog outside the loop, the dispatch cycle and PR protocol, session lifecycle and cleanup, project context, the consistency review gate, sharded epics with sprint tracking, lead-scope tagging, TDD with a trace matrix, the escalation path, agent tooling, a local dev environment, CI and a definition of done, deploy and the Friday demo, the decision log, and a measured cost per story.
 **Depends on:** nothing. This precedes the product work.
-**Performed by:** the developer, not the agentic team - the only epic in this document for which that is true.
+**Specified by:** `team-charter.md`. Where a story here is thin, the charter section it names is the detail; where the two disagree, the charter wins.
+**Performed by:** Adrian and the team together - the only epic in this document for which that is true. From Epic 1 the team is sole developer.
 
 **FRs covered:** none, deliberately. Epic 0 builds no game. It serves NFR18, NFR27, NFR28, NFR29, NFR37 and NFR44, and the GDD's stated dependency on agentic development capacity.
 
@@ -945,44 +946,214 @@ The city grows because the player population grew, so there is always somewhere 
 
 ## Epic 0: The Development Team
 
-The solo developer can dispatch work to agents, know what state every story is in, and trust that what comes back respects the architecture's non-negotiable rules.
+The agentic team defined by the team charter exists, dispatches itself, gates itself on budget, reviews its own work against the architecture and the vision, and shows Adrian something every Friday — without him in the loop.
 
-**This epic is the developer's own work, not the agentic team's.** It is the only epic in this document whose stories are performed by a person rather than dispatched. It exists because the GDD names agentic development capacity as a hard dependency - *"this is not an optimisation; it is what makes the scope possible for one person"* - and nothing else in the epic list builds it.
+**This epic is co-implemented by Adrian and the team.** It is the only epic in this document for which that is true. From Epic 1 onward the team is the sole developer, and Adrian is the stakeholder, product owner and player. Epic 0 exists because the team cannot build the machinery that dispatches the team, and because the GDD names agentic development capacity as a hard dependency — *"this is not an optimisation; it is what makes the scope possible for one person"* — and nothing else in the epic list builds it.
 
-**FRs covered: none, deliberately.** Epic 0 builds no game. It serves NFR27 (uniform, data-driven, agent-extensible by construction), NFR28 and NFR29 (the `sim/` purity boundary and the property tests that depend on it), NFR37 (every table declares a bound, checkable in review), NFR44 (logging discipline), and above all NFR18 - *every state change has an author* - which the architecture names as **the rule most likely to be broken and the most damaging**, enforceable only by review.
+**The team charter (`team-charter.md`) is the specification for this epic.** Where a story here is thin, the charter section it names is the detail. Where the two disagree, the charter wins and the story is wrong.
 
-**Sizing.** These stories are small. The risk is not that they are hard; it is that skipping them is invisible until Epic 5, by which point a hundred stories have been written under conventions nobody wrote down.
+**FRs covered: none, deliberately.** Epic 0 builds no game. It serves NFR27 (uniform, data-driven, agent-extensible by construction), NFR28 and NFR29 (the `sim/` purity boundary and the property tests that depend on it), NFR37 (every table declares a bound, checkable in review), NFR44 (logging discipline), and above all NFR18 — *every state change has an author* — which the architecture names as **the rule most likely to be broken and the most damaging**, enforceable only by review.
 
-### Story 0.1: The Coordinator Session
+**Sizing.** Most of these stories are small. The risk is not that they are hard; it is that skipping them is invisible until Epic 5, by which point a hundred stories have been written under conventions nobody wrote down — and that the failures are silent. Four mechanisms tested during charter authoring failed in ways that produced no error at all: a gate that could not find `jq`, an idle probe that could not tell idle from busy, a manual run that ignored the budget entirely, and a run record that could not say why it skipped. Every story below that ends in a gate or a check must state how its own breakage becomes visible.
 
-As the solo developer,
-I want one long-lived session that owns the backlog and dispatches work into worktrees,
-So that I am directing a team rather than remembering where I left off.
+### Story 0.1: The Six Roles
+
+As Adrian,
+I want the six roles of the charter to exist as durable, addressable agent configurations,
+So that "wake Derek" means something specific and repeatable rather than a prompt someone improvises.
 
 **Acceptance Criteria:**
 
-**Given** work happens across multiple isolated worktrees
-**When** the coordinator session is established
-**Then** it owns the backlog, knows which story each worktree is working, and can address each by name
+**Given** `claude --agent <name>` starts a full top-level session as a named agent
+**When** the roles are built
+**Then** there is one definition file per role — `scotty`, `quentin`, `derek`, `tim`, `artie`, `crew` — and Scotty starts any of them by name
 
-**Given** a story is ready to start
-**When** the coordinator dispatches it
-**Then** an agent begins in its own worktree with the story file, the architecture and the project context already in scope
-**And** the coordinator records which worktree holds which story
+**Given** these roles belong to this project and to no other
+**When** the definitions are placed
+**Then** they live in the repository at `.claude/agents/`, **never** in the user-level `~/.claude/agents/`
+**And** they are version-controlled, so a charter change and a role change land in the same commit, and a fresh clone has the whole team
+**And** nothing about the team depends on state that exists only on one machine
 
-**Given** an agent finishes, stalls or escalates
-**When** the coordinator next wakes
-**Then** it can distinguish the three cases without reading the whole transcript
+**Given** each definition carries its own mandate, reading list and authority
+**When** a role file is written
+**Then** it states the mandate, the declared reading list, and the veto authority if the role has one
+**And** Derek's power to reject a PR and Tim's hard stop on the irreversibles are stated in the role itself, not only in the charter
 
-**Given** the developer closes the laptop mid-sprint
-**When** they return
-**Then** the coordinator can restate current state from durable files rather than from conversation history
+**Given** an agent definition declares its tool access, which makes the reading list *enforceable* rather than merely instructed
+**When** tools are assigned
+**Then** roles that never write code cannot write code — Derek, Quentin, Artie and Scotty have no edit tools
+**And** a role reaching outside its boundary fails rather than drifting
 
-### Story 0.2: Project Context for Agents
+**Given** the model is declared per role and is the largest single lever on cost
+**When** models are assigned
+**Then** each role's choice is deliberate and recorded with its reasoning — Scotty is Opus
+**And** the assignment is revisited once cost per story has been measured
 
-As the solo developer,
+**Given** the charter is the specification and it will move
+**When** it changes materially
+**Then** updating the affected role definitions is part of that change, not a later cleanup
+
+### Story 0.2: The Budget Gate
+
+As Adrian,
+I want the team to stop at 85% of the 5-hour window and 80% of the weekly window,
+So that there is always enough left for me to use Claude myself.
+
+**Acceptance Criteria:**
+
+**Given** `claude-rate-monitor --json` surfaces Anthropic's `anthropic-ratelimit-unified-*` headers
+**When** the gate runs as the automation's precheck
+**Then** it dispatches only when `overallStatus` is `allowed`, session utilisation is below 0.85, and weekly utilisation is below 0.80
+
+**Given** the precheck runs under `cmd.exe` with an environment predating the tool installs
+**When** the gate is written
+**Then** it uses absolute paths to every binary and never relies on PATH
+**And** the precheck value is a single path with no shell in it, because nested quoting through cmd mangles a pipeline
+
+**Given** the scripts currently hardcode one worktree and one machine
+**When** this story is done
+**Then** both paths are derived rather than hardcoded, and the gate works from any worktree
+
+**Given** the gate counts Adrian's own sessions as well as the team's
+**When** he has been working
+**Then** the team's available budget shrinks automatically, with nobody coordinating
+
+**Given** exhaustion is a hard stop rather than an overage charge
+**When** the window is spent
+**Then** the gate skips quietly and the team resumes at the reset time the response reports
+
+### Story 0.3: Scotty's Scheduled Session
+
+As Adrian,
+I want one scheduled automation that owns dispatch and runs without me,
+So that the project moves when the machine is on and I have not typed anything.
+
+**Acceptance Criteria:**
+
+**Given** Orca automations fire on a cron and survive the session that created them
+**When** Scotty is scheduled
+**Then** he runs every 10–15 minutes, gated by the budget gate of Story 0.2
+**And** the schedule survives a reboot, picking up on the machine's next waking hours
+
+**Given** Scotty is stateless by construction
+**When** he wakes
+**Then** he reconstructs everything from the PR, the sprint file and the epics, holding nothing between wakes
+**And** a wake that depends on remembered context is a defect, because the next reboot will break it silently
+
+**Given** the Orca runtime knows worktrees unrelated to this project
+**When** Scotty queries state
+**Then** every query is scoped — `orca worktree list --repo name:BrowserCity`, `orca terminal list --worktree path:<path>` — and an unscoped query is a defect
+**And** all Orca JSON is parsed with `jq`, never with `grep`, which matches nothing against pretty-printed output and yields an empty handle that fails as a plausible-looking timeout
+
+**Given** a manual `orca automations run` bypasses the precheck entirely and dispatches ungated
+**When** the team is operated
+**Then** manual runs are never used to test a gate and never used to start real work
+
+### Story 0.4: Making the Gate's Own Failure Visible
+
+As Adrian,
+I want a broken gate to look different from a spent budget,
+So that the team stopping for a week does not look identical to the team behaving correctly.
+
+**Acceptance Criteria:**
+
+**Given** a non-zero precheck exit means *skip*, and a missing tool exits non-zero exactly as an exhausted budget does
+**When** the gate runs
+**Then** it distinguishes three outcomes: dispatch, budget-skip, and **gate-broken**
+**And** each writes a timestamped reason to a durable absolute path
+
+**Given** the run record's `skipReason` is null even on a precheck skip, so `status` alone can never say *why*
+**When** a watchdog is built
+**Then** it reads the gate's own reason file rather than inferring from the run record
+
+**Given** Scotty only wakes when the gate passes, so he can never notice that the gate is broken
+**When** the watchdog is built
+**Then** it runs outside Scotty's loop
+**And** a prolonged absence of successful dispatch reaches Adrian rather than waiting to be discovered on Friday
+
+**Given** silence is the failure mode being defended against
+**When** the watchdog itself stops
+**Then** that is visible too
+
+### Story 0.5: The Dispatch Cycle
+
+As Scotty,
+I want the c.1–c.6 cycle expressed so a shell script can classify it,
+So that an idle tick costs nothing and I wake already knowing what to do.
+
+**Acceptance Criteria:**
+
+**Given** the charter defines six branches — merge, start, wait, lead's turn, Crew's turn, circuit breaker
+**When** the cycle is built
+**Then** the branch is determined by `gh` and `orca` queries plus `jq`, with no agent reasoning required
+**And** the classification runs in the precheck, so a do-nothing tick never starts an agent
+
+**Given** the distinction between "Crew is working" and "Crew has died" is the one that silently stalls the team
+**When** Crew's state is checked
+**Then** it is the age of `lastOutputAt` from `orca terminal list --json` that decides it
+**And** `orca terminal wait --for tui-idle` is not used, having returned `timeout` for both an idle shell and a busy Claude TUI
+
+**Given** the sprint review PR stays open across a weekend by design
+**When** the cycle asks whether a PR is open
+**Then** it filters on the `story` label, so the review PR never reads as "the story cycle is busy"
+
+**Given** a story PR is approved by every lead in scope
+**When** Scotty merges it
+**Then** he cleans up the task's terminals and sessions in the same step
+
+### Story 0.6: The PR Protocol
+
+As Adrian,
+I want the PR to be the state machine, the memory and the work surface at once,
+So that nothing about a task lives somewhere a reboot can erase.
+
+**Acceptance Criteria:**
+
+**Given** every agent acts as Adrian's GitHub identity, so native review states cannot tell Quentin from Derek
+**When** a lead reports
+**Then** it posts its own comment ending in a machine-readable verdict line — `QUENTIN: APPROVED` or `QUENTIN: CHANGES`
+**And** the findings stay readable above that line for Crew
+
+**Given** several roles may act in one tick
+**When** the status comment is maintained
+**Then** Scotty is its sole writer, so there is no write race
+**And** it carries the leads in scope, each role's session ID, and the cycle count
+
+**Given** a role's session may be gone after a reboot
+**When** a role first wakes for a task
+**Then** it writes its own session ID into the status comment, correcting the row if it was recreated
+
+**Given** PRs are labelled `story` or `sprint-review`
+**When** the label is missing
+**Then** the cycle treats it as a defect rather than guessing
+
+### Story 0.7: Session Lifecycle and Cleanup
+
+As Adrian,
+I want a task's agents to keep their context for that task and lose it afterwards,
+So that Derek remembers the direction he gave without carrying 206 stories of history.
+
+**Acceptance Criteria:**
+
+**Given** Claude sessions persist to disk and `claude --resume <id>` is scriptable
+**When** Scotty finds a role that should be live but is not
+**Then** he creates the terminal and resumes that role by session ID
+**And** whether Orca restored anything on boot is irrelevant, because reconciliation does not assume
+
+**Given** resuming replays the whole transcript, so cost climbs with each review cycle
+**When** the cycle count is tracked
+**Then** the 8-cycle circuit breaker is understood as bounding context growth as well as deadlock
+
+**Given** a task ends at merge
+**When** Scotty merges
+**Then** the task's terminals are stopped and its sessions dropped
+**And** the team does not accumulate live PTYs and multi-megabyte transcripts across 206 stories
+
+### Story 0.8: Project Context for Agents
+
+As Adrian,
 I want the unobvious rules written where every agent will read them,
-So that I am not re-explaining the same five constraints in every story.
+So that nobody is re-explaining the same five constraints in every story.
 
 **Acceptance Criteria:**
 
@@ -1001,23 +1172,24 @@ So that I am not re-explaining the same five constraints in every story.
 
 **Given** agents read a repository-level instruction file by convention
 **When** the context is generated
-**Then** it is reachable from that file rather than only from `_bmad-output/`
+**Then** both it and the team charter are reachable from that file rather than only from `_bmad-output/`
 
 **Given** the design and architecture will move
 **When** either changes materially
 **Then** regenerating the context is part of that change, not a later cleanup
 
-### Story 0.3: The Consistency Rules as a Review Gate
+### Story 0.9: The Consistency Rules as a Review Gate
 
-As the solo developer,
-I want the architecture's own consistency rules turned into a checklist an agent runs against its own diff,
+As Tim,
+I want the architecture's consistency rules turned into a checklist run against a diff,
 So that the rules enforced only by review are actually reviewed.
 
 **Acceptance Criteria:**
 
 **Given** the architecture lists seven consistency rules and names their enforcement
 **When** the review gate is built
-**Then** each rule appears as a check, and each check states whether it is machine-verifiable or requires judgement
+**Then** each rule appears as a check, and each states whether it is machine-verifiable or requires judgement
+**And** the machine-verifiable ones run in CI rather than costing a review
 
 **Given** "no detection-without-an-author" is named as the most likely and most damaging violation
 **When** a diff adds a reducer
@@ -1032,119 +1204,109 @@ So that the rules enforced only by review are actually reviewed.
 **When** a diff adds a table
 **Then** the gate requires a declared bound of a stated kind, and rejects the diff without one
 
-**Given** the gate is run by agents on their own work before the developer sees it
-**When** an agent completes a story
-**Then** it reports the gate's result as part of handing back
+**Given** Crew runs the gate on its own work before any lead sees it
+**When** Crew opens a PR
+**Then** the gate's result is part of the opening comment
 
-### Story 0.4: Sprint Tracking from the Epics File
+### Story 0.10: Sprint Tracking and Epic Sharding
 
-As the solo developer,
-I want story status derived from this document rather than maintained beside it,
-So that the plan and the tracker cannot drift apart.
+As Scotty,
+I want story status derived from this document rather than maintained beside it, and the document small enough to read,
+So that the plan and the tracker cannot drift apart and no role burns its window loading the backlog.
 
 **Acceptance Criteria:**
 
-**Given** `gds-sprint-planning` parses `epic*.md` files, which this document's filename matches
-**When** it is run
-**Then** `sprint-status.yaml` contains every epic and every story in this document, including Epic 0's
+**Given** this document is 334 KB and roughly 85k tokens, and epics are independent by construction
+**When** it is sharded
+**Then** each epic becomes its own `epic*.md`, which is the plural form `gds-sprint-planning` already expects
+**And** the global sections — requirements inventory, coverage map, NFR placement map, sequence — remain together as an index
+
+**Given** `architecture.md` is *not* sharded, deliberately
+**When** anyone proposes sharding it
+**Then** the charter's reasoning applies: its own validation caught it accumulating contradictions, and sharding removes the reader who sees both halves
 
 **Given** the checklist requires no items in the tracker that do not exist in the epic files, and none missing
 **When** the tracker is generated
-**Then** both directions round-trip cleanly
-**And** the story numbering used here, including the `0.N` series, is parsed correctly rather than skipped
+**Then** both directions round-trip cleanly, including the `0.N` series
 
 **Given** stories are added or renumbered as later epics are written
 **When** the tracker is regenerated
 **Then** existing statuses survive and only the structure updates
 
-**Given** the developer wants to know where things stand
-**When** they ask for sprint status
-**Then** the answer comes from the tracker, and names what is in progress, what is blocked and what is next
+### Story 0.11: Lead Scope as Data
 
-### Story 0.5: The Story Lifecycle
-
-As the solo developer,
-I want one named path from a story in this document to merged code,
-So that every story is worked the same way and I can tell where any of them is.
+As Scotty,
+I want each story tagged with the leads it needs,
+So that deciding who to wake is a lookup rather than a judgement, and stays inside the free precheck.
 
 **Acceptance Criteria:**
 
-**Given** the installed skills provide create-story, dev-story, code-review and retrospective
-**When** the lifecycle is defined
-**Then** each stage names its entry condition, its artifact and its exit condition
+**Given** Quentin is in scope on every task and Derek, Tim and Artie conditionally
+**When** the stories are tagged
+**Then** every story in this document carries its lead scope explicitly
 
-**Given** a story is picked up
-**When** its story file is created
-**Then** it carries the acceptance criteria from this document verbatim, plus the architectural decisions and patterns it must respect
-**And** an agent implementing it needs no further context from the developer
+**Given** there are 206 existing stories written before this convention
+**When** the tagging is done
+**Then** it is a deliberate pass over all of them, not a convention applied only to new ones
 
-**Given** acceptance criteria in this document are written as Given/When/Then
-**When** a story is implemented
-**Then** each criterion is demonstrably satisfied or explicitly waived with a recorded reason
-**And** a story with silently unmet criteria does not pass review
+**Given** waking a lead costs a context load
+**When** scope is assigned
+**Then** a lead is in scope because the story touches its domain, not to be safe
 
-**Given** an epic completes
-**When** the retrospective runs
-**Then** it records what the epic actually produced against what it promised, and any finding that should change later epics
+### Story 0.12: TDD and the Trace Matrix
 
-### Story 0.6: The Escalation Path
-
-As the solo developer,
-I want agents to stop and ask on the small set of questions that are genuinely mine,
-So that autonomy does not quietly become drift.
+As Quentin,
+I want tests written before implementation and traceable to the criteria they satisfy,
+So that "tested" is a fact about coverage rather than a claim about effort.
 
 **Acceptance Criteria:**
 
-**Given** most decisions are the agent's to make
-**When** the escalation path is defined
-**Then** it lists the specific conditions that force a stop, and they are few
+**Given** an approver who wrote the artifact cannot judge it
+**When** a task starts
+**Then** Quentin writes his test direction onto the task first — what must be covered at unit, integration and e2e level, and what a weak test would look like here
+**And** Crew writes the tests before the implementation
+**And** Quentin reviews the tests against that pre-registration rather than against what Crew produced
 
-**Given** some decisions are permanent and unforgiving
-**When** an agent would add a primary key, add a unique constraint, or change a table's scheduling status
-**Then** it stops and escalates, because the platform will not let the choice be revised
+**Given** the acceptance criteria in this document are Given/When/Then
+**When** the trace matrix is built
+**Then** each test cites the specific criterion it satisfies, so weak coverage is visible rather than merely counted
+**And** the matrix runs FR → acceptance criterion → test → build
 
-**Given** the design laws are not the agent's to trade against
-**When** an agent finds an acceptance criterion that appears to require breaking one - a HUD element, a state change with no author, a system that punishes logging off, a mechanical seam between player-held and AI-held roles
-**Then** it stops and reports the conflict rather than resolving it
+**Given** a criterion may be genuinely untestable
+**When** that happens
+**Then** it is explicitly waived with a recorded reason, and a story with silently unmet criteria does not pass review
 
-**Given** a spike may return a number that overturns a decision
-**When** it does
-**Then** the agent reports the finding and stops, rather than working around it
+### Story 0.13: The Escalation Path
 
-**Given** an escalation costs the developer attention
-**When** an agent escalates
-**Then** it states the question, the options it sees, and its own recommendation
-### Story 0.7: Scheduled Wake-Ups and Unattended Iteration
-
-As the solo developer,
-I want work to continue while I am not at the keyboard,
-So that evenings and weekends are not the only hours the project moves.
+As Adrian,
+I want exactly one thing to interrupt me,
+So that autonomy is real and my attention is spent on the one question that is actually mine.
 
 **Acceptance Criteria:**
 
-**Given** the developer works evenings and weekends with no deadline
-**When** a wake-up schedule is configured
-**Then** it picks up the next ready story, or reports that nothing is ready and why
+**Given** the charter routes everything except the circuit breaker to the team
+**When** the escalation path is built
+**Then** the only mid-sprint interruption is 8 review cycles without approval
+**And** Tim decides the irreversibles, Derek rules on the design laws, and a spike that overturns a decision is handled by the lead who owns that domain
 
-**Given** unattended work can go wrong quietly
-**When** an unattended run completes
-**Then** it leaves a durable record of what it did, what it decided, and what it could not resolve
-**And** the developer can read that record without reconstructing a session
+**Given** a role wants to ask Adrian something that is not the circuit breaker
+**When** it would otherwise escalate
+**Then** it writes the question into the sprint review instead, and it is answered on Friday
 
-**Given** some work must not proceed without a person
-**When** an unattended run reaches such a point
-**Then** it stops and escalates rather than choosing
-**And** the conditions that force a stop are the ones defined in Story 0.6
+**Given** the circuit breaker halts all work rather than parking the PR and moving on
+**When** it trips
+**Then** Scotty comments on the PR with an @-mention stating the deadlock, what was tried across the eight cycles, the options he sees, and his own recommendation
+**And** the @-mention reaches Adrian with no session attached
 
-**Given** an unattended run could otherwise churn
-**When** it cannot make progress
-**Then** it stops rather than retrying, and says what it is blocked on
+**Given** decisions Adrian never sees are permanent under NFR33 and NFR34
+**When** one is taken
+**Then** it lands in the decision log where the Friday review can reach it
 
-### Story 0.8: Agent Tooling
+### Story 0.14: Agent Tooling
 
-As the solo developer,
-I want agents to have first-party access to the platform they are building on,
-So that they are not guessing at a stack that releases weekly.
+As the team,
+I want first-party access to the platforms we build on,
+So that nobody is guessing at a stack that releases weekly.
 
 **Acceptance Criteria:**
 
@@ -1165,9 +1327,33 @@ So that they are not guessing at a stack that releases weekly.
 **When** a version changes materially
 **Then** the recorded tooling setup is updated as part of that change
 
-### Story 0.9: Continuous Integration and the Definition of Done
+### Story 0.15: The Local Development Environment
 
-As the solo developer,
+As the team,
+I want to develop and test against a local database,
+So that the world Adrian plays is never our scratch space and dev costs nothing.
+
+**Acceptance Criteria:**
+
+**Given** `spacetime start` runs a local instance with its own data directory and `spacetime dev` hot-reloads
+**When** the environment is set up
+**Then** all development and testing runs locally, and resetting is deleting a directory
+
+**Given** `sim/` is pure by design
+**When** its property tests run
+**Then** they need no database at all
+
+**Given** the played build is a single Maincloud database
+**When** anything is deployed there
+**Then** it is only on merge to master, and never as part of development
+
+**Given** the schema churns hard through the early epics and NFR33/NFR34 decisions are permanent
+**When** the demo database is managed
+**Then** it is disposable until the game is live for someone other than Adrian, and the never-reset world begins only at that point
+
+### Story 0.16: Continuous Integration and the Definition of Done
+
+As the team,
 I want a single command that says whether the project is still sound,
 So that "done" is a fact rather than an opinion.
 
@@ -1185,17 +1371,48 @@ So that "done" is a fact rather than an opinion.
 **When** a dependency changes
 **Then** the determinism harness runs and fails loudly if generation output moved
 
-**Given** content correctness is enforced by invariants rather than review
-**When** definitions change
-**Then** the Epic 2 footprint invariants and validation harness run in CI
+**Given** GitHub Actions minutes cost money and Tim owns keeping that minimal
+**When** CI is configured
+**Then** it runs what is needed to protect the invariants and no more
 
 **Given** a story claims to be done
 **When** the definition of done is applied
-**Then** it requires: acceptance criteria demonstrated, CI green, the consistency gate passed, and any new table's bound declared
+**Then** it requires: acceptance criteria demonstrated, tests written before implementation, trace matrix updated, CI green, the consistency gate passed, and any new table's bound declared
 
-### Story 0.10: The Running Decision Log
+### Story 0.17: Deploy, the Demo, and the Weekend
 
-As the solo developer,
+As Adrian,
+I want a playable or visible build every Friday at 17:00 that holds still until I have seen it,
+So that I can review real progress as a player rather than reading a status report.
+
+**Acceptance Criteria:**
+
+**Given** the client is static and the backend is Maincloud
+**When** master is merged
+**Then** GitHub Pages publishes the client to `/`, and that is the live game Adrian plays
+**And** there is no separate demo path, staging copy, or versioned snapshot
+
+**Given** Scotty knows the window reset times from the budget gate
+**When** Friday approaches
+**Then** he enters demo mode a few hours before 17:00, stops taking stories, and puts Crew on preparing the demo
+
+**Given** the early epics produce nothing playable
+**When** there is no playable increment
+**Then** the demo is visual — a rendered city plan, a generated-block contact sheet, a determinism diff as two images — and never a wall of text
+**And** this is Artie's from week one
+
+**Given** Adrian reviews on the sprint review PR and closes it when done
+**When** the PR is open
+**Then** Crew idles until it closes, so nothing merges over the build he is playing
+**And** the weekend idle is the freeze, so no deploy gate is built
+
+**Given** Adrian's comments are the team's input for the next sprint
+**When** he closes the review PR
+**Then** Scotty converts them into new tasks or modifications to existing ones and prioritises them
+
+### Story 0.18: The Running Decision Log
+
+As the team,
 I want implementation-time decisions recorded where the next agent will find them,
 So that a choice made once is not silently remade differently.
 
@@ -1205,6 +1422,11 @@ So that a choice made once is not silently remade differently.
 **When** one of them fires during implementation
 **Then** the decision taken is recorded with its date, its trigger and its reasoning
 
+**Given** four leads now decide asynchronously, which makes drift worse rather than better
+**When** the log is built
+**Then** each lead records decisions in its own domain
+**And** Scotty audits weekly for contradiction, being the only role that reads across all four
+
 **Given** several architectural decisions are explicitly provisional pending measurement
 **When** a spike returns a number
 **Then** the affected decision is updated in place or superseded, and the supersession is visible
@@ -1213,6 +1435,26 @@ So that a choice made once is not silently remade differently.
 **Given** the architecture's own validation found it had accumulated stale text as later decisions overturned earlier ones, such that an agent reading one section would have implemented a system that no longer existed
 **When** a decision changes
 **Then** every place stating the old position is updated in the same change
+
+### Story 0.19: Cost Per Story
+
+As Adrian,
+I want to know what one story actually costs,
+So that every cadence number in the charter stops being a guess.
+
+**Acceptance Criteria:**
+
+**Given** the charter's tick interval, single-threaded Crew and sprint scope are all provisional
+**When** the first stories complete
+**Then** token and dollar cost is recorded per role per story
+
+**Given** `claude_code.cost.usage` and `claude_code.token.usage` are available via OpenTelemetry
+**When** instrumentation is set up
+**Then** it is used rather than reimplementing pricing, and raw token sums are not treated as cost — cache reads dominate the count while costing far less
+
+**Given** the number decides the schedule
+**When** it is known
+**Then** the achievable stories-per-week is stated plainly, and if 206 stories implies a timeline far from expectation, the epic sequence is revisited before the team spends a year enforcing it
 
 
 ---
