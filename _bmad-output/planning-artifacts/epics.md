@@ -1088,7 +1088,7 @@ So that an idle tick costs nothing and I wake already knowing what to do.
 
 **Acceptance Criteria:**
 
-**Given** the charter defines seven branches — set up a new PR, merge, start, wait, lead's turn, Crew's turn, circuit breaker
+**Given** the cycle has two phases — a direction phase on a task issue and a review phase on the PR — and nine branches across them
 **When** the cycle is built
 **Then** the branch is determined by `gh` and `orca` queries plus `jq`, with no agent reasoning required, and printed as JSON for Scotty to read rather than re-derive
 **And** the classification runs in the precheck, so a do-nothing tick never starts an agent
@@ -1143,6 +1143,16 @@ So that nothing about a task lives somewhere a reboot can erase.
 **When** it reviews again
 **Then** it appends a new cycle section rather than replacing what it wrote
 **And** it can tell first review from re-review by whether its comment carries cycle sections at all
+
+**Given** several leads write their directions at the same time, before any PR exists
+**When** the direction phase is built
+**Then** it runs on a task issue with one comment per lead, never on a shared document such as the story file
+**And** Crew is dispatched only when every lead in scope has marked its direction `READY`
+
+**Given** a verdict that had to be reset would need a writer, and the only candidates are forbidden from writing that comment
+**When** turn-taking is decided
+**Then** it is decided by the commit each lead recorded reviewing against the PR's current head, and no verdict is ever reset
+**And** an `APPROVED` left at an earlier commit does not permit a merge, so a push after approval re-opens review rather than sliding through
 
 **Given** a role's session may be gone after a reboot
 **When** a role first wakes for a task

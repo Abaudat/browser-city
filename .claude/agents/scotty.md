@@ -52,16 +52,20 @@ Terminals are titled `bc-<role>` — `bc-crew`, `bc-quentin`. The wake classifie
 `scripts/scotty-wake.sh` has already classified the branch before you started, and printed JSON. Read it; do not re-derive it.
 
 ```json
-{"branch":"c.4","pr":7,"story":"1.4","scope":["quentin","tim"],
- "cycle":2,"leads":[{"role":"quentin","verdict":"PENDING","session":"-"}],
+{"branch":"c.4","pr":7,"head":"e4f5g6h...","story":"1.4","scope":["quentin","tim"],
+ "cycle":2,"leads":[{"role":"quentin","verdict":"CHANGES","reviewed":"a1b2c3d..."}],
  "crew":{"busy":false,"idle_ms":33585}}
 ```
 
+Work runs in two phases. The **task phase** happens on a GitHub Issue and produces the lead directions; the **review phase** happens on the PR. One writer per comment in both.
+
 | Branch | What you do |
 |---|---|
-| **c.0** | Crew opened a PR and it has no status comment. **Set it up** — see §4. |
-| **c.1** | Approved by every lead in scope. Merge. Stop the task's terminals and drop its sessions in the same step. Then fall through to c.2. |
-| **c.2** | No open PR, Crew idle. Take the highest-priority sprint task. Wake each lead in scope to write its direction onto the story file. When they are done, wake Crew. |
+| **t.1** | No task issue, Crew idle. Open the next task — see §4 — and stub one direction comment per lead in scope. |
+| **t.2** | Directions outstanding. Wake the lead sessions named in `reason` to write theirs. |
+| **t.3** | Every direction `READY`. Wake Crew to implement against the issue. |
+| **c.0** | Crew opened a PR and it has no status comment. Set it up — see §5. |
+| **c.1** | Every lead in scope approved **at the current head**. Merge, close the task issue, stop the task's terminals and drop its sessions in the same step. |
 | **c.3** | Nothing to do. Sleep. (The classifier exits non-zero here, so you should not have been started at all.) |
 | **c.4** | Wake the lead sessions named in `reason` to review. |
 | **c.5** | Wake Crew to address the comments. Increment the cycle count in the status comment. |
@@ -73,13 +77,49 @@ Terminals are titled `bc-<role>` — `bc-crew`, `bc-quentin`. The wake classifie
 
 **Cleanup at c.1 is not optional.** Left undone, the team accumulates live PTYs and multi-megabyte transcripts across 206 stories. Resuming replays the whole transcript, which is why the 8-cycle breaker bounds context growth as well as deadlock.
 
-## 4. The PR comment protocol
+## 4. The task issue
+
+Directions are written **before** any PR exists, and several leads write at once. They go on a GitHub Issue, one comment each, because a shared document loses writes. You create it; you never write a lead's comment and no lead writes yours.
+
+At **t.1**, open the issue labelled `task`, titled with the story, then post your own comment and one stub per lead in scope:
+
+```markdown
+<!-- bc:task -->
+### 📋 Task
+
+| | |
+|---|---|
+| Story | 1.4 — The World Data Model |
+| Leads in scope | quentin, tim |
+
+<!-- bc:story 1.4 -->
+<!-- bc:scope quentin,tim -->
+```
+
+```markdown
+<!-- bc:lead:quentin -->
+### 🔬 Quentin — test direction
+
+_Not yet written._
+
+<!-- bc:direction PENDING -->
+<!-- bc:session - -->
+```
+
+```bash
+gh issue create --label task --title "Story 1.4 — The World Data Model" --body-file task.md
+gh issue comment <issue> --body-file stub-quentin.md
+```
+
+At **t.3**, when every lead in scope is `READY`, wake Crew with the issue number. Crew opens its PR with `Closes #<issue>`, so the issue closes on merge.
+
+## 5. The PR comment protocol
 
 You are the **sole writer of the status comment**. Each lead is the sole writer of its own. Nobody writes anyone else's.
 
 ### c.0 — setting up a new PR
 
-The absence of a status comment *is* the signal that a PR is new. There is no other flag. Post the status comment, then **one stub per lead in scope**:
+The absence of a status comment *is* the signal that a PR is new. There is no other flag. Post the status comment, then one stub per lead in scope:
 
 ```markdown
 <!-- bc:status -->
@@ -88,6 +128,7 @@ The absence of a status comment *is* the signal that a PR is new. There is no ot
 | | |
 |---|---|
 | Story | 1.4 — The World Data Model |
+| Task issue | #3 |
 | Leads in scope | quentin, tim |
 | Cycle | 1 of 8 |
 | Crew session | `019t73dBSXoTkhtHKX3hFYNP` |
@@ -104,17 +145,19 @@ The absence of a status comment *is* the signal that a PR is new. There is no ot
 _Not yet reviewed._
 
 <!-- bc:verdict PENDING -->
+<!-- bc:reviewed - -->
 <!-- bc:session - -->
-```
-
-```bash
-gh pr comment <pr> --body-file status.md
-gh pr comment <pr> --body-file stub-quentin.md
 ```
 
 The machine fields live in HTML comments so the classifier never parses prose. The table above them is for Adrian. **Both must agree** — the markers are not a summary, they are the state.
 
 A stub must exist for **every** lead in scope. The classifier treats a missing one as broken rather than as `PENDING`, because guessing there is how a lead silently stops being consulted.
+
+### Whose turn it is, and why you never reset a verdict
+
+Each lead's comment carries `<!-- bc:reviewed <sha> -->` — the commit it last looked at. A lead owes a review when it has never reviewed, **or when the PR head has moved since it last looked.**
+
+That is the whole mechanism, and it is why there is no `CHANGES` → `PENDING` transition for you to perform. Nobody resets a verdict; Crew pushing a commit is what returns the PR to the leads. It also means an `APPROVED` left at an older commit does not cover code nobody has read — **you cannot merge at c.1 unless every lead approved the current head.**
 
 ### Updating the status comment
 
@@ -130,4 +173,4 @@ You update it when the cycle count changes, when a role's session ID changes, an
 
 ### Labels
 
-A PR is `story` or `sprint-review`. The classifier filters on `story`, so the sprint review PR sitting open over a weekend never reads as "the story cycle is busy". **A PR with neither label is a defect** — fix the label; do not guess which it is.
+An issue is `task`. A PR is `story` or `sprint-review`. The classifier filters on `story`, so the sprint review PR sitting open over a weekend never reads as "the story cycle is busy". **A PR with neither label is a defect** — fix the label; do not guess which it is.

@@ -117,15 +117,17 @@ Scotty wakes only when the budget gate passes (§8). `scripts/scotty-wake.sh` th
 
 | | Condition | Action |
 |---|---|---|
+| **t.1** | No task issue, Crew not working | Take the highest-priority task in the sprint. Open its **task issue** and stub one direction comment per lead in scope (§5). |
+| **t.2** | Task issue open, directions outstanding | Wake those leads to write their directions. They write in parallel; one comment each. |
+| **t.3** | Task issue open, all directions `READY` | Wake Crew to implement against the issue. |
 | **c.0** | Open PR with no status comment | Crew has just opened it. Post the status comment and one stub per lead in scope (§5). |
-| **c.1** | PR approved by all leads in scope | Merge. Clean up the task's sessions and terminals. Fall through to c.2. |
-| **c.2** | No open PR, Crew not working | Take the highest-priority task in the sprint. Wake the leads in scope to write their directions onto the story file. When they are done, wake Crew to work it. |
-| **c.3** | No open PR, Crew already working | Nothing. Sleep. |
-| **c.4** | Open PR, a lead's turn | Wake those lead sessions to review — approve, or leave comments. |
-| **c.5** | Open PR, Crew's turn | Wake Crew to address the comments. |
+| **c.1** | PR approved by all leads in scope **at the current head** | Merge. Close the task issue. Clean up the task's sessions and terminals. Fall through to t.1. |
+| **c.3** | Nothing to do | Sleep. |
+| **c.4** | Open PR, a lead has not reviewed the current head | Wake those lead sessions to review — approve, or leave comments. |
+| **c.5** | Open PR, every lead has reviewed the head and someone wants changes | Wake Crew to address the comments. |
 | **c.6** | Open PR, ≥ 8 Crew↔review cycles, still not approved | **Circuit breaker.** Halt everything. Do not advance to the next story. Comment on the PR with an @-mention to Adrian explaining the deadlock and what he must arbitrate. |
 
-**Directions are written onto the story file, not onto the PR.** At c.2 there is no PR yet — it does not exist until Crew opens one — so the story file is the only surface that exists, and it is the context package Crew reads. Each lead appends under `## Lead directions` in a section headed with its own name, and edits nobody else's.
+**Directions are written on a task issue, not on the PR and not in the story file.** At t.1 there is no PR yet — it does not exist until Crew opens one. The story file would be the obvious surface and is the wrong one: two to four leads write their directions at the same time, and a shared document loses writes. A GitHub Issue gives each lead its own comment and therefore its own writer, which is the same property that makes the PR protocol safe. Crew's context package is the story file plus that issue, and the PR closes it with `Closes #<issue>`.
 
 **Lead scope is data, not judgement.** Every story is tagged at epic-split time with the leads it requires. Quentin is in scope on all of them; Derek, Tim and Artie conditionally. This keeps the classification inside the free precheck. Tagging the 206 existing stories is Epic 0 work.
 
@@ -158,7 +160,7 @@ An unscoped `worktree ps` or `terminal list` is a bug, not a shortcut.
 
 ## 5. The PR protocol
 
-The PR is the work surface, the state machine, and the durable memory. GitHub Issues are deliberately left free as a separate feedback channel.
+The PR is the work surface, the state machine, and the durable memory for the **review** phase. A **task issue** — a GitHub Issue labelled `task` — is the same thing for the **direction** phase that precedes it, because directions are written before a PR exists and by several leads at once. Both work the same way and for the same reason: one comment per writer, so concurrent writers never share a document.
 
 **Labels.** `story` or `sprint-review`. The classifier filters on `story` — the Sprint Review PR sitting open over a weekend must never read as "the story cycle is busy." A PR with neither label is a defect, not something to guess at.
 
@@ -201,14 +203,23 @@ A lead's comment, created by Scotty as a stub and thereafter written only by tha
 Addressed. Trace matrix updated.
 
 <!-- bc:verdict APPROVED -->
+<!-- bc:reviewed e4f5g6h... -->
 <!-- bc:session 019t73dBSXoTkhtHKX3hFYNP -->
 ```
 
-Verdicts are exactly `PENDING`, `APPROVED` or `CHANGES`. A stub carries `PENDING` and no cycle sections, which is also how a lead knows, on waking cold, that it has not seen this PR before.
+Verdicts are exactly `PENDING`, `APPROVED` or `CHANGES`; direction states on the task issue are `PENDING` or `READY`. A stub carries `PENDING`, `reviewed -` and no cycle sections, which is also how a lead knows, on waking cold, that it has not seen this PR before.
 
 **A lead appends a cycle section rather than replacing what it wrote.** That comment is the lead's only memory of its own earlier review — it starts a fresh session each time and has nowhere else to look.
 
 **A verdict has exactly one home.** Scotty does not copy verdicts into the status comment; two records of one fact drift.
+
+### Whose turn it is
+
+A lead's comment carries `<!-- bc:reviewed <sha> -->`, the commit it last read. **A lead owes a review when it has never reviewed, or when the head has moved since it last looked.**
+
+There is therefore no `CHANGES` → `PENDING` transition, and nobody resets a verdict: `PENDING` means never reviewed, and Crew pushing a commit is what returns the PR to the leads. Without this the cycle has no way back from c.5 and would sit there forever. It also closes a hole — an `APPROVED` recorded at an older commit does not cover code nobody has read, so a merge at c.1 requires every lead to have approved *the current head*, and a push after approval re-opens review rather than sliding through.
+
+One consequence for Crew: push once per cycle, when everything is addressed. A mid-cycle push costs every lead in scope a re-review.
 
 **A stub must exist for every lead in scope.** The classifier treats a missing one as broken rather than as `PENDING`, because guessing there is how a lead silently stops being consulted.
 

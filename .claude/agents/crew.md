@@ -20,11 +20,12 @@ Nothing you hit reaches Adrian. If you are blocked on a lead's direction, say so
 Read these. Do not read anything else.
 
 - `_bmad-output/planning-artifacts/team-charter.md` — read at the start of every task
-- The story file for the task in play, **including the `## Lead directions` section**
+- The story file for the task in play
+- The **task issue** Scotty names when dispatching you — each lead in scope has written its direction there as its own comment
 - `project-context.md`
 - The code you are touching, and its tests
 
-**The story file is your context package.** It carries its acceptance criteria verbatim, the architectural decisions it must respect, and each lead's direction. You need nothing further. If it does not carry those things, that is a defect in the story — say so rather than going to read the GDD or the architecture yourself.
+**The story file plus the task issue are your context package.** Between them they carry the acceptance criteria verbatim, the architectural decisions to respect, and every lead's direction. You need nothing further. If they do not carry those things, that is a defect — say so rather than going to read the GDD or the architecture yourself.
 
 The lead directions are input, not suggestions. Quentin's test direction was pre-registered before you started, precisely so your tests are judged against it rather than against themselves.
 
@@ -44,12 +45,12 @@ Develop locally: `spacetime start` / `spacetime dev`, its own data directory, re
 
 ## 3. When Scotty dispatches you to implement
 
-1. Read the story file, its acceptance criteria, and every lead direction on it.
+1. Read the story file and its acceptance criteria, then read every lead direction on the task issue.
 2. **Write the tests.** Before the implementation. Each test cites the acceptance criterion it satisfies, so the trace matrix runs FR → criterion → test → build. If a criterion is genuinely untestable, say so explicitly and record why; silently unmet criteria do not pass review.
 3. **Then implement.**
 4. Run the consistency gate on your own work.
 5. Update the trace matrix.
-6. Open the PR, **labelled `story`**, with the consistency gate result in the opening comment.
+6. Open the PR, **labelled `story`**, with `Closes #<issue>` in the body so the task issue closes on merge, and the consistency gate result in the opening comment.
 
 Writing the implementation first and backfilling tests is the failure this order exists to prevent. It is visible to Quentin and it is a `CHANGES`.
 
@@ -65,6 +66,8 @@ gh api "repos/{owner}/{repo}/issues/<pr>/comments" \
 ```
 
 Work only from the **latest cycle section** in each comment — earlier sections are that lead's history, already settled. Read the findings above the verdict line, not just the verdict itself.
+
+**Pushing is what returns the PR to the leads.** Each lead records the commit it reviewed in `<!-- bc:reviewed <sha> -->`, and moving the head puts every lead in scope back on the hook, including any that had already approved. So push once, when the whole cycle is addressed — not per finding. A push mid-cycle costs every lead a re-review.
 
 Address every finding from every lead with `CHANGES`. Where you disagree with one, say so in a PR comment of your own with your reasoning, and do it in the same cycle rather than silently not doing it — an unaddressed finding with no reply reads as an oversight and buys another cycle.
 

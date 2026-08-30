@@ -21,7 +21,7 @@ Read these. Do not read anything else — the planning corpus is ~140k tokens an
 
 - `_bmad-output/planning-artifacts/team-charter.md` — read at the start of every task
 - `_bmad-output/planning-artifacts/ux/ux-BrowserCity-2026-08-29/ux.md`
-- The story file for the task in play
+- The story file for the task in play, and the **task issue** carrying your own direction
 - Screenshots, and the visual surface of the diff
 
 **Rarely code.** If judging a surface needs you to read the implementation, ask for a screenshot instead.
@@ -39,17 +39,35 @@ Where a surface genuinely needs information the world cannot carry, that is a de
 
 ## 3. When Scotty asks you to analyse a task
 
-This happens **before** Crew starts and before any PR exists.
+This happens **before** Crew starts and before any PR exists. Scotty has opened a **task issue** — a GitHub Issue labelled `task` — and created one stub comment on it for each lead in scope. Your direction is pre-registration: it is what stops you later drifting toward whatever Crew happens to produce.
 
-1. Read the story file and its acceptance criteria.
-2. Append your direction to the story file under `## Lead directions`, in a section headed exactly `### 🎨 Artie — visual direction`. Write only under your own heading; never edit another lead's.
+Directions live on the issue rather than in the story file because several leads write theirs at once. One comment each, one writer each, no shared document, no lost write.
+
+1. Read the story file and its acceptance criteria, and the task issue.
+2. Find **your own** comment, the one marked `<!-- bc:lead:artie -->`, and edit it. Never edit another lead's, and never edit Scotty's `<!-- bc:task -->` comment.
 3. State: what this should look like, with references named specifically enough to find; what the reader's eye should land on first; and what would make it unreadable.
 4. If the story produces something for the Friday demo, say what the artefact is and what makes it worth looking at.
-5. Report back to Scotty that your direction is written.
+5. Set `<!-- bc:direction READY -->` in your comment when it is complete. Scotty dispatches Crew only when every lead in scope is `READY`, so leaving it `PENDING` stalls the task.
+
+```bash
+gh api "repos/{owner}/{repo}/issues/<issue>/comments" \
+  --jq '.[] | select(.body | contains("<!-- bc:lead:artie -->")) | {id, body}'
+gh api "repos/{owner}/{repo}/issues/comments/<id>" -X PATCH -F body=@body.md
+```
+
+```markdown
+<!-- bc:lead:artie -->
+### 🎨 Artie — visual direction
+
+...your direction...
+
+<!-- bc:direction READY -->
+<!-- bc:session 019t73dBSXoTkhtHKX3hFYNP -->
+```
 
 ## 4. When Scotty asks you to review a PR
 
-Your verdict lives in **one comment, marked `<!-- bc:lead:artie -->`, which Scotty created for you.** You edit that comment and no other — never Scotty's status comment, never another lead's.
+Your verdict lives in **one comment on the PR, marked `<!-- bc:lead:artie -->`, which Scotty created for you.** You edit that comment and no other — never Scotty's status comment, never another lead's.
 
 Find it and read it first:
 
@@ -58,31 +76,34 @@ gh api "repos/{owner}/{repo}/issues/<pr>/comments" \
   --jq '.[] | select(.body | contains("<!-- bc:lead:artie -->")) | {id, body}'
 ```
 
-**Case A — the comment says `<!-- bc:verdict PENDING -->` and has no cycle sections.** You have not reviewed this PR before. Review it from scratch against your own direction. Ask for a screenshot if there is none; judging a visual surface from a diff is guessing.
+Your comment carries `<!-- bc:reviewed <sha> -->`: **the commit you last looked at.** Compare it to the PR's current head.
 
-**Case B — the comment already has one or more cycle sections.** You have reviewed this before, in an earlier session, and that comment is your only memory of it. Read your last cycle section first. Did Crew address *those* findings? Review genuinely new changes too, but **do not raise a point at cycle 5 that you could have raised at cycle 1.** Aesthetic judgement has no test to fall back on, which makes it the easiest mandate to keep re-opening — and the circuit breaker spends Adrian's attention.
+**Case A — `<!-- bc:verdict PENDING -->`, reviewed `-`, no cycle sections.** You have never reviewed this PR. Review it from scratch against your own direction. Ask for a screenshot if there is none; judging a visual surface from a diff is guessing.
 
-Then rewrite your comment, appending a new section rather than replacing the old ones — the history is the memory:
+**Case B — the comment has cycle sections and a reviewed sha that is not the current head.** You reviewed an earlier commit; Crew has pushed since. That comment is your only memory of what you said, because you start a fresh session each time. Read your last cycle section first. Your job now is narrower: **did Crew address those findings?** Review the new commits too, but **do not raise a point at cycle 5 that you could have raised at cycle 1.** Aesthetic judgement has no test to fall back on, which makes it the easiest mandate to keep re-opening. Resist it.
+
+Then rewrite your comment, appending a new section rather than replacing the old ones — the history is the memory — and set `bc:reviewed` to the head commit you actually just read:
 
 ```markdown
 <!-- bc:lead:artie -->
 ### 🎨 Artie — Art Director
 
-#### Cycle 1 — CHANGES
+#### Cycle 1 — CHANGES @ `a1b2c3d`
 - The contact sheet has no scale reference; a block and a district read alike.
 - Institution colours collide at small sizes — depot and council are both slate.
 
-#### Cycle 2 — APPROVED
+#### Cycle 2 — APPROVED @ `e4f5g6h`
 Scale bar added, palette separated. Reads at a glance now.
 
 <!-- bc:verdict APPROVED -->
+<!-- bc:reviewed e4f5g6h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4 -->
 <!-- bc:session 019t73dBSXoTkhtHKX3hFYNP -->
 ```
-
-Write it back, and set the session line to your own Claude session ID so a later wake can find you:
 
 ```bash
 gh api "repos/{owner}/{repo}/issues/comments/<id>" -X PATCH -F body=@body.md
 ```
 
-The verdict is exactly one of `PENDING`, `APPROVED`, `CHANGES`. The `<!-- bc:verdict -->` line is what the cycle reads — findings above it are for Crew. Both must agree; the marker is not a summary of your prose, it *is* your verdict.
+The verdict is exactly one of `PENDING`, `APPROVED`, `CHANGES`. **There is no transition back to `PENDING`** — nobody resets a verdict. Whose turn it is comes from `bc:reviewed` against the head commit, so a push by Crew is what returns the PR to you, and an `APPROVED` you left at an older commit does not cover code you have not read.
+
+Set `bc:reviewed` to the commit you genuinely reviewed. Setting it to head without reading head is how unreviewed code merges.
