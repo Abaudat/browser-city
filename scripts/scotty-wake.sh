@@ -18,18 +18,23 @@ set -o pipefail
 # --- paths, derived rather than hardcoded -----------------------------------
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WORKTREE="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-REASON="${BC_WAKE_REASON:-$(cd -- "$WORKTREE/.." && pwd)/.scotty-wake-reason}"
 
 # A missing library must exit 2, not die mid-script: bash's own failure exit
 # would be 1, and 1 is "nothing to do" -- the confusion this file exists to
 # prevent, in a script that runs in the precheck where PATH holds nothing.
+# The reason path is recomputed inline because bc_state_dir lives in the
+# library that is missing.
 if [ ! -r "$SCRIPT_DIR/lib/paths.sh" ]; then
-  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') WAKE-BROKEN lib/paths.sh missing beside $SCRIPT_DIR" > "$REASON"
+  FALLBACK="${BC_WAKE_REASON:-$HOME/.browsercity/scotty-wake-reason}"
+  mkdir -p "$(dirname "$FALLBACK")" 2>/dev/null
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') WAKE-BROKEN lib/paths.sh missing beside $SCRIPT_DIR" > "$FALLBACK"
   printf '{"branch":"broken","reason":"lib/paths.sh missing"}\n'
   exit 2
 fi
 # shellcheck source=lib/paths.sh
 . "$SCRIPT_DIR/lib/paths.sh"
+
+REASON="${BC_WAKE_REASON:-$(bc_state_dir)/scotty-wake-reason}"
 
 # Derived absolute paths, PATH last. The classifier runs in the same precheck
 # as the budget gate, under a cmd.exe environment that predates every one of

@@ -54,6 +54,20 @@ resolve() { # $1 command name, $2.. candidate absolute paths (globs allowed)
   return 1
 }
 
+# --- where durable state lives ----------------------------------------------
+# One directory, derived from the user rather than from whichever worktree
+# happened to run. The obvious rule -- "beside the worktree" -- gives a
+# different path per worktree: an Orca workspace lands it under
+# .../BrowserCity/, while the main checkout at D:/Projects/BrowserCity lands it
+# in D:/Projects/, next to unrelated repositories. A watchdog that must find
+# the reason files cannot chase a moving target, and Scotty's automation runs
+# in a different worktree from the one these scripts were authored in.
+bc_state_dir() {
+  local dir="${BC_STATE_DIR:-${WIN_PROFILE:-$HOME}/.browsercity}"
+  mkdir -p "$dir" 2>/dev/null
+  printf '%s' "$dir"
+}
+
 WIN_ROAMING="$(winpath "${APPDATA:-}")"
 WIN_LOCAL="$(winpath "${LOCALAPPDATA:-}")"
 WIN_PROFILE="${HOME:-$(winpath "${USERPROFILE:-}")}"

@@ -74,14 +74,35 @@ echo "the gate is not tied to one worktree:"
 FAKE="$D/elsewhere/some-other-worktree"
 mkdir -p "$FAKE"
 cp -r "$(dirname -- "$GATE")" "$FAKE/scripts"
-( cd / && env -u BC_QUOTA_REASON BC_RATE_JSON_FIXTURE="$D/plenty.json" \
+( cd / && env -u BC_QUOTA_REASON BC_STATE_DIR="$D/state" BC_RATE_JSON_FIXTURE="$D/plenty.json" \
     bash "$FAKE/scripts/quota-gate.sh" >/dev/null 2>&1 )
 code=$?
-if [ "$code" = 0 ] && [ -f "$D/elsewhere/.quota-gate-reason" ]; then
-  printf '  ok   %-32s -> exit %s  reason at %s\n' "runs from a copied worktree" "$code" "\$WORKTREE/../.quota-gate-reason"
+# Nothing beside the worktree: that rule is what scattered the file across
+# D:/Projects once the automation ran outside the authoring worktree.
+if [ "$code" = 0 ] && [ ! -f "$D/elsewhere/.quota-gate-reason" ]; then
+  printf '  ok   %-32s -> exit %s, and wrote nothing beside itself\n' "runs from a copied worktree" "$code"
   pass=$((pass+1))
 else
-  printf '  FAIL %-32s -> exit %s, no reason at %s\n' "runs from a copied worktree" "$code" "$D/elsewhere/.quota-gate-reason"
+  printf '  FAIL %-32s -> exit %s, stray file beside the worktree\n' "runs from a copied worktree" "$code"
+  fail=$((fail+1))
+fi
+
+echo "the reason file has one home, whatever worktree ran:"
+# The obvious rule -- beside the worktree -- puts it under .../BrowserCity/ for
+# an Orca workspace and in D:/Projects/ for the main checkout, so a watchdog
+# has no fixed path to watch. It derives from the user instead.
+STATE="$D/state"
+( env -u BC_QUOTA_REASON BC_STATE_DIR="$STATE" BC_RATE_JSON_FIXTURE="$D/plenty.json"     bash "$FAKE/scripts/quota-gate.sh" >/dev/null 2>&1 )
+codeA=$?
+( cd / && env -u BC_QUOTA_REASON BC_STATE_DIR="$STATE" BC_RATE_JSON_FIXTURE="$D/plenty.json"     bash "$GATE" >/dev/null 2>&1 )
+codeB=$?
+if [ "$codeA" = 0 ] && [ "$codeB" = 0 ] && [ -f "$STATE/quota-gate-reason" ]; then
+  printf '  ok   %-32s -> both worktrees wrote %s
+' "two worktrees, one reason file" "\$BC_STATE_DIR/quota-gate-reason"
+  pass=$((pass+1))
+else
+  printf '  FAIL %-32s -> exits %s/%s, no file at %s
+' "two worktrees, one reason file" "$codeA" "$codeB" "$STATE/quota-gate-reason"
   fail=$((fail+1))
 fi
 

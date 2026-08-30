@@ -49,7 +49,15 @@ Terminals are titled `bc-<role>` — `bc-crew`, `bc-quentin`. The wake classifie
 
 ## 3. When you wake
 
-`scripts/scotty-wake.sh` has already classified the branch before you started, and printed JSON. Read it; do not re-derive it.
+Run the classifier yourself, first thing:
+
+```bash
+bash scripts/scotty-wake.sh
+```
+
+It costs no tokens, and its answer is fresher than the precheck's. The precheck ran it too — that is how it decided to start you at all — but a precheck's stdout does not reach the session it starts, so there is nothing waiting for you to read. It cannot return `c.3` here: the precheck exits non-zero on that branch and you would not exist. If it does, or if it exits 2, stop and report — either the world moved under you or the classifier is broken.
+
+It prints JSON. Act on it; do not re-derive it by hand.
 
 ```json
 {"branch":"c.4","pr":7,"head":"e4f5g6h...","story":"1.4","scope":["quentin","tim"],

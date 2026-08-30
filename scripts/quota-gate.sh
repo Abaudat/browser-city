@@ -18,21 +18,24 @@ set -o pipefail
 # --- paths, derived rather than hardcoded ------------------------------------
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WORKTREE="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-REASON="${BC_QUOTA_REASON:-$(cd -- "$WORKTREE/.." && pwd)/.quota-gate-reason}"
-
 SESSION_CAP="${BC_SESSION_CAP:-0.85}"
 WEEKLY_CAP="${BC_WEEKLY_CAP:-0.80}"
 
 # A missing library must exit 2, not die mid-script: bash's own failure exit
 # would be 1, and 1 is "budget spent, all is well" -- the exact confusion this
-# gate exists to prevent.
+# gate exists to prevent. The reason path is recomputed inline here because
+# bc_state_dir lives in the library that is missing.
 if [ ! -r "$SCRIPT_DIR/lib/paths.sh" ]; then
-  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') GATE-BROKEN lib/paths.sh missing beside $SCRIPT_DIR" > "$REASON"
+  FALLBACK="${BC_QUOTA_REASON:-$HOME/.browsercity/quota-gate-reason}"
+  mkdir -p "$(dirname "$FALLBACK")" 2>/dev/null
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') GATE-BROKEN lib/paths.sh missing beside $SCRIPT_DIR" > "$FALLBACK"
   echo "GATE-BROKEN lib/paths.sh missing beside $SCRIPT_DIR" >&2
   exit 2
 fi
 # shellcheck source=lib/paths.sh
 . "$SCRIPT_DIR/lib/paths.sh"
+
+REASON="${BC_QUOTA_REASON:-$(bc_state_dir)/quota-gate-reason}"
 
 # The reason file is the only durable record; the run record's skipReason is
 # null even on a precheck skip, so nothing else can say why a tick did nothing.
