@@ -991,7 +991,8 @@ So that "wake Derek" means something specific and repeatable rather than a promp
 
 **Given** the model is declared per role and is the largest single lever on cost
 **When** models are assigned
-**Then** each role's choice is deliberate and recorded with its reasoning in the role file — Opus for the four reviewing leads (Quentin, Derek, Tim, Artie), Sonnet for Scotty and Crew
+**Then** each role's choice is deliberate — Opus for the four reviewing leads (Quentin, Derek, Tim, Artie), Sonnet for Scotty and Crew
+**And** the reasoning is recorded in the charter rather than in the role file, a role definition carrying only what the agent needs in order to act
 **And** the assignment is revisited once cost per story has been measured, Crew's first
 
 **Given** the charter is the specification and it will move
@@ -1268,6 +1269,12 @@ So that the plan and the tracker cannot drift apart and no role burns its window
 **Given** stories are added or renumbered as later epics are written
 **When** the tracker is regenerated
 **Then** existing statuses survive and only the structure updates
+**And** no status is ever downgraded, `done` being terminal
+
+**Given** a status nobody writes is a status that drifts
+**When** a story PR merges at c.1
+**Then** Scotty marks that story `done` in the same step, and marks its epic `done` if it was the epic's last story
+**And** he is the only role that writes the tracker, having merged the thing it records
 
 ### Story 0.11: Lead Scope as Data
 

@@ -65,7 +65,7 @@ Work runs in two phases. The **task phase** happens on a GitHub Issue and produc
 | **t.2** | Directions outstanding. Wake the lead sessions named in `reason` to write theirs. |
 | **t.3** | Every direction `READY`. Wake Crew to implement against the issue. |
 | **c.0** | Crew opened a PR and it has no status comment. Set it up — see §5. |
-| **c.1** | Every lead in scope approved **at the current head**. Merge, close the task issue, stop the task's terminals and drop its sessions in the same step. |
+| **c.1** | Every lead in scope approved **at the current head**. Merge, close the task issue, **mark the story done** — see below — then stop the task's terminals and drop its sessions. |
 | **c.3** | Nothing to do. Sleep. (The classifier exits non-zero here, so you should not have been started at all.) |
 | **c.4** | Wake the lead sessions named in `reason` to review. |
 | **c.5** | Wake Crew to address the comments. Increment the cycle count in the status comment. |
@@ -74,6 +74,18 @@ Work runs in two phases. The **task phase** happens on a GitHub Issue and produc
 **Lead scope is data, not judgement.** Every story is tagged with the leads it requires. Quentin is on all of them; Derek, Tim and Artie conditionally. Read the tag; never decide it, and never add a lead "to be safe" — waking one costs a context load.
 
 **On c.6**, comment on the PR with an `@`-mention of Adrian stating the deadlock, what was tried across the eight cycles, the options you see, and your own recommendation. The mention reaches him by email and phone with no session attached. Nothing else interrupts him: a role that wants to ask him something writes it into the sprint review, answered Friday.
+
+### Marking work done
+
+Status lives in the sprint status file, `_bmad-output/implementation-artifacts/sprint-status.yaml`. The epic files supply the structure; the tracker holds the state. **At c.1, in the same step as the merge:**
+
+1. Set the story's key to `done` — `0-1-the-six-roles: done`. The key is the story number with a dash for the period, plus the title in kebab-case.
+2. If that was the **last story in its epic**, set the epic to `done` too — `epic-0: done`. Check every story key for that epic; do not assume, and do not mark an epic done because it looks finished.
+3. Set the epic to `in-progress` when you take its first story, if it is still `backlog`.
+
+**Never downgrade a status.** `done` is terminal; a regenerated tracker preserves it, and so do you. If a merged story turns out to be wrong, that is a new story, not a status reversal.
+
+A story is done when its PR merged with every lead in scope approving the current head. That is the whole test — you do not form your own view of whether the work was good, because judging it is the leads' job and you are not one of them.
 
 **Cleanup at c.1 is not optional.** Left undone, the team accumulates live PTYs and multi-megabyte transcripts across 206 stories. Resuming replays the whole transcript, which is why the 8-cycle breaker bounds context growth as well as deadlock.
 

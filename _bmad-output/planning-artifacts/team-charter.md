@@ -121,13 +121,15 @@ Scotty wakes only when the budget gate passes (§8). `scripts/scotty-wake.sh` th
 | **t.2** | Task issue open, directions outstanding | Wake those leads to write their directions. They write in parallel; one comment each. |
 | **t.3** | Task issue open, all directions `READY` | Wake Crew to implement against the issue. |
 | **c.0** | Open PR with no status comment | Crew has just opened it. Post the status comment and one stub per lead in scope (§5). |
-| **c.1** | PR approved by all leads in scope **at the current head** | Merge. Close the task issue. Clean up the task's sessions and terminals. Fall through to t.1. |
+| **c.1** | PR approved by all leads in scope **at the current head** | Merge. Close the task issue. Mark the story `done` in the tracker, and the epic `done` if it was the last one. Clean up the task's sessions and terminals. Fall through to t.1. |
 | **c.3** | Nothing to do | Sleep. |
 | **c.4** | Open PR, a lead has not reviewed the current head | Wake those lead sessions to review — approve, or leave comments. |
 | **c.5** | Open PR, every lead has reviewed the head and someone wants changes | Wake Crew to address the comments. |
 | **c.6** | Open PR, ≥ 8 Crew↔review cycles, still not approved | **Circuit breaker.** Halt everything. Do not advance to the next story. Comment on the PR with an @-mention to Adrian explaining the deadlock and what he must arbitrate. |
 
 **Directions are written on a task issue, not on the PR and not in the story file.** At t.1 there is no PR yet — it does not exist until Crew opens one. The story file would be the obvious surface and is the wrong one: two to four leads write their directions at the same time, and a shared document loses writes. A GitHub Issue gives each lead its own comment and therefore its own writer, which is the same property that makes the PR protocol safe. Crew's context package is the story file plus that issue, and the PR closes it with `Closes #<issue>`.
+
+**Done is recorded by Scotty at merge, and nowhere else.** The tracker is `sprint-status.yaml`; the epic files supply structure, the tracker holds state. A story is `done` when its PR merged with every lead in scope approving the current head — there is no separate judgement of whether the work was good, because that is what the review was. An epic is `done` when all of its stories are. Status is never downgraded: a merged story that turns out wrong becomes a new story, not a reversal.
 
 **Lead scope is data, not judgement.** Every story is tagged at epic-split time with the leads it requires. Quentin is in scope on all of them; Derek, Tim and Artie conditionally. This keeps the classification inside the free precheck. Tagging the 206 existing stories is Epic 0 work.
 
