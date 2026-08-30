@@ -59,4 +59,38 @@ echo "safe by default:"
 want "disabled unless --enable is given" "--disabled"
 reject "not enabled by default"          "--enabled"
 
+echo "the prompt launches the agent rather than impersonating it:"
+PROMPT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/automation/scotty-prompt.md"
+pwant() { # description, extended regex
+  if grep -qE -- "$2" "$PROMPT"; then
+    printf '  ok   %s
+' "$1"; pass=$((pass+1))
+  else
+    printf '  FAIL %s
+       no match for: %s
+' "$1" "$2"; fail=$((fail+1))
+  fi
+}
+preject() { # description, extended regex that must NOT appear
+  if grep -qE -- "$2" "$PROMPT"; then
+    printf '  FAIL %s
+       matched: %s
+' "$1" "$2"; fail=$((fail+1))
+  else
+    printf '  ok   %s
+' "$1"; pass=$((pass+1))
+  fi
+}
+
+# Starting Scotty by name is what applies his model and tool classes -- the only
+# two boundaries the runtime enforces. A prompt that acts as Scotty instead gets
+# neither, however faithfully it describes him.
+pwant   "starts the agent by name"        "claude --agent scotty"
+preject "never resumes a previous wake"   "claude .*--resume"
+
+# The prompt must stay a launcher. Any role content here is a second copy of
+# scotty.md to drift from, which is the failure the PR protocol is built around.
+preject "does not restate the cycle"      "c\.[0-6]|t\.[1-3]"
+preject "does not restate the protocol"   "bc:(status|verdict|lead|scope)"
+
 echo; echo "passed $pass, failed $fail"; [ "$fail" -eq 0 ]
