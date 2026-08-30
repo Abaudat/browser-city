@@ -111,7 +111,7 @@ The design laws are in the GDD and are not Derek's to trade against either: pres
 
 ## 3. The cycle
 
-Scotty wakes only when the budget gate passes (§8). `scripts/scotty-wake.sh` then classifies the branch before he wakes and prints it as JSON, so he arrives knowing what to do rather than rediscovering it. Classification uses `gh`, `orca` and `jq` only — no agent reasoning — and a do-nothing tick exits non-zero, so it never starts an agent. Like the budget gate it has three exits: work to do, nothing to do, and **broken**, the last written to `.scotty-wake-reason` and alarmed on rather than skipped quietly.
+Scotty wakes only when the budget gate passes (§8). `scripts/scotty-wake.sh` then classifies the branch before he wakes and prints it as JSON, so he arrives knowing what to do rather than rediscovering it. The two run in series as `scripts/precheck.sh`, behind the single `scripts/precheck.cmd` the automation names — budget first, because classification spends `gh` and `orca` calls and there is no point learning what to do when nothing may be done. Classification uses `gh`, `orca` and `jq` only — no agent reasoning — and a do-nothing tick exits non-zero, so it never starts an agent. Like the budget gate it has three exits: work to do, nothing to do, and **broken**, the last written to `.scotty-wake-reason` and alarmed on rather than skipped quietly.
 
 **On wake, Scotty establishes:** is Crew idle? Is there an open story PR? Whose turn is it? Is the PR approved by every lead in scope?
 
@@ -151,6 +151,10 @@ orca terminal list --worktree path:<worktree-path> --json
 ```
 
 An unscoped `worktree ps` or `terminal list` is a bug, not a shortcut.
+
+**The selector takes a Windows-form path, and the wrong form fails silently.** Orca knows this worktree as `C:/Users/.../Create-game-brief`; handed bash's own `/c/Users/...` it answers `selector_not_found` — with **exit 0** and an `ok:false` body. A caller that checks the exit code sees success and an empty terminal list, concludes Crew is idle, and dispatches a second Crew on top of a working one. Convert the path before it goes into a selector, and read `.ok` before reading the result.
+
+**The payload is `.result.terminals`, not a bare array.** A filter written against the top level matches nothing and tells the same lie as the wrong path did. Both shapes are pinned by fixtures in `scripts/tests/test-scotty-wake.sh`, captured from the real CLI.
 
 **Idle vs working is `lastOutputAt`, not `tui-idle`.** `orca terminal wait --for tui-idle` was tested against both an idle shell and a busy Claude TUI and returned `timeout` for both — it cannot distinguish them and is not used. The working signal is the age of `lastOutputAt` from `terminal list --json`, which separates them cleanly (measured: −34 ms for a busy terminal against 33,585 ms for an idle one). Parse it with `jq`; a `grep` for `"handle":"` silently matches nothing against Orca's pretty-printed JSON and yields an empty handle that fails as a plausible-looking timeout.
 
@@ -266,14 +270,18 @@ The team uses at most **85% of the 5-hour window** and **80% of the weekly windo
 The gate runs as the automation's `--precheck`, costs no tokens, and is authoritative. The precheck is a **single path with no shell in it**:
 
 ```
---precheck "C:\...\Create-game-brief\scripts\quota-gate.cmd"
+--precheck "C:\...\Create-game-brief\scripts\precheck.cmd"
 ```
 
-`quota-gate.cmd` hands off to `scripts/quota-gate.sh`. This shape is not stylistic — it is forced by three tested facts:
+`precheck.cmd` hands off to `scripts/precheck.sh`, which runs `quota-gate.sh` and then `scotty-wake.sh` (§3). This shape is not stylistic — it is forced by three tested facts:
 
 1. **The precheck runs under `cmd.exe`, not bash.** A failing precheck reported `'jq' is not recognized as an internal or external command` — a cmd error string. POSIX idioms and single-quoted `jq` filters do not survive there.
 2. **`jq` and `claude-rate-monitor` are not on the precheck's PATH.** The Orca runtime inherits an environment predating their installation. The gate uses **absolute paths** to both binaries.
 3. **Nested quoting through cmd is a trap.** Putting the pipeline inline mangles it. One `.cmd` path as the entire precheck value removes the problem.
+
+Each stage keeps its own reason file and `precheck.sh` does not merge them: two files with one writer each is the same discipline the PR protocol uses, and for the same reason.
+
+**Those absolute paths are derived, not written down.** The automation names `precheck.cmd` by absolute path — that is unavoidable, and it is the only such path. Everything after it comes from `%~dp0` and `${BASH_SOURCE[0]}` for the worktree, and from `%APPDATA%` and `%LOCALAPPDATA%` for the binaries, PATH being consulted last and never depended on. A gate that names one user's home and one worktree stops working the first time either moves, and it stops by exiting non-zero — which is indistinguishable from an ordinary budget skip. The gate is the thing that must not fail silently, so it must not itself be a machine-specific hardcode.
 
 The numbers are first-party: `claude-rate-monitor` surfaces Anthropic's own `anthropic-ratelimit-unified-*` response headers.
 
@@ -285,7 +293,7 @@ The numbers are first-party: `claude-rate-monitor` surfaces Anthropic's own `ant
 | `1` | Budget exhausted | Skip. Normal, expected, quiet. |
 | `2` | **The gate itself is broken** | Skip *and alarm.* Never quiet. |
 
-Every run writes its reason to `BrowserCity/.quota-gate-reason` at an absolute path — `RUN`, `SKIP-BUDGET`, or `GATE-BROKEN <what>` with a UTC timestamp. All three paths verified 2026-08-30.
+Every run writes its reason to `BrowserCity/.quota-gate-reason` at an absolute path — `RUN`, `SKIP-BUDGET`, or `GATE-BROKEN <what>` with a UTC timestamp. A `SKIP-BUDGET` line carries the reset the response itself reported, so the file says when the team comes back rather than only that it stopped. All three exits are covered by `scripts/tests/test-quota-gate.sh`, which asserts the reason line and not just the code, because the code alone cannot tell exit 1 from exit 2's cause. Verified 2026-08-30.
 
 **It counts Adrian's own sessions too.** When he has spent an afternoon working, the team's budget shrinks automatically and it backs off with nobody coordinating. The 15% reserve enforces itself.
 
@@ -341,14 +349,16 @@ All confirmed by test on 2026-08-30 unless noted.
 - **`.claude/agents/*.md` works as specified, and its two declared fields behave differently from each other.** The frontmatter `tools` allowlist is applied at the level of tool *classes*: `claude --agent derek --model haiku -p` returned exactly the six tools declared, and a tool left out of the list is genuinely absent. The per-role `model` field is honoured: with no override, `--agent derek` ran on `claude-opus-5` and `--agent crew` on `claude-sonnet-5`. All six roles exist at `.claude/agents/`.
 - **Per-role *path* scoping does not exist, and two plausible-looking mechanisms silently do nothing.** An entry of the form `Edit(<glob>)` in an agent's `tools:` list parses without error and the agent reports holding `Edit`, but with `--permission-mode acceptEdits` it edited a file well outside the glob. A `permissions: {deny: [...]}` block in agent frontmatter is ignored outright — same result. Both failures are silent, which is why this is recorded here: a role fenced this way would look fenced and not be. Any claim that a role *cannot* touch something must therefore name a tool class it does not hold, never a path.
 - **A print-mode probe cannot test a permission boundary.** `claude -p` auto-denies every edit for want of an approver, so an out-of-scope edit and an in-scope one both fail and the run reads as proof of enforcement. Probes of this kind require `--permission-mode acceptEdits` to isolate the rule under test. This produced one wrong conclusion before it was caught.
-- `orca terminal list --json` exposes `handle`, `connected`, `orphaned`, `lastOutputAt`, `title`. Scoping works via `--worktree <selector>` and `orca worktree list --repo name:BrowserCity`.
+- `orca terminal list --json` exposes `handle`, `connected`, `orphaned`, `lastOutputAt`, `title`. Scoping works via `--worktree <selector>` and `orca worktree list --repo name:BrowserCity`. **The payload sits under `.result.terminals` and the selector wants a Windows-form path**: `--worktree path:C:/Users/.../Create-game-brief` returns the terminals, while the same path as `/c/Users/...` returns `selector_not_found` with `ok:false` and **exit 0**. Both wrong readings produce an empty list rather than an error, so both look like "Crew is idle."
+- **`${p//\\//}` substitutes nothing in this bash**, so a Windows-to-POSIX conversion written that way silently returns the path unchanged and every derived candidate is skipped — the resolver then falls through to PATH, which is the one thing the precheck environment does not have. `${p//'\'//}`, with the backslash quoted, works. Found by a resolver that reported success while finding nothing it had been pointed at.
+- **Unquoted candidate expansion splits `C:/Program Files/...` into three words.** A resolver that globs must set `IFS=` to keep pathname expansion without field splitting, or it silently fails to find tools that are sitting where it looked.
 - **`lastOutputAt` separates busy from idle; `tui-idle` does not.** Measured −34 ms against 33,585 ms. `terminal wait --for tui-idle` returned `timeout` for *both* an idle shell and a busy Claude TUI, so it is not used.
 - `orca automations` supports `--precheck`, `--workspace-mode`, `--base-branch`, `--missed-run-grace-minutes`, `--timezone`, `--reuse-session`, and cron/RRULE triggers.
 - **Scheduled fires do run the precheck, and a non-zero exit blocks dispatch.** Confirmed: a scheduled run with a failing precheck recorded `status: "skipped_precheck"` and spawned no agent.
 - **`orca automations run <id>` bypasses the precheck.** A manual run is ungated and dispatches the agent immediately — confirmed by it spawning a Claude session with `skipReason: null` and no precheck side effects. Only *scheduled* fires are gated. Never use a manual run to test a gate, and never assume a manual run respects the budget.
 - **`skipReason` is `null` even on a precheck skip.** The run record's `status` is the only field that distinguishes `dispatched` from `skipped_precheck`. Any watchdog keys on `status`, never on `skipReason`.
 - A precheck's relative-path side effects did not land in the workspace directory. **Prechecks must use absolute paths** for anything they write.
-- **The budget gate is proven end to end through a real scheduled precheck.** `PRECHECK-PROBE-4` recorded `status: "dispatched"` and the precheck itself wrote `RUN session=0.39 weekly=0.3` to the reason file — so `quota-gate.cmd` resolved both absolute-path binaries, reached the API, and returned 0 from inside Orca's own precheck shell. The failing and broken paths were verified separately (exit 1, and exit 2 with `GATE-BROKEN`).
+- **The budget gate is proven end to end through a real scheduled precheck.** `PRECHECK-PROBE-4` recorded `status: "dispatched"` and the precheck itself wrote `RUN session=0.39 weekly=0.3` to the reason file — so the gate resolved both absolute-path binaries, reached the API, and returned 0 from inside Orca's own precheck shell. The failing and broken paths were verified separately (exit 1, and exit 2 with `GATE-BROKEN`). The entry point has since moved to `precheck.cmd`, which chains the classifier behind the gate, and both binaries are now found by derivation rather than by hardcoded path; that combination is re-proven when the automation of Story 0.3 is scheduled.
 - `jq` 1.8.2 and `claude-rate-monitor` are installed globally and resolve on PATH **in a normal shell**, but **not** in the Orca precheck shell, whose environment predates their installation. This is why §8 uses absolute paths and does not rely on PATH.
 - SpacetimeDB: local instance via `spacetime start` / `spacetime dev`; Maincloud is multi-database.
 
