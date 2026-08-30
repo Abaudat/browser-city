@@ -37,7 +37,7 @@ Every agent reads this at the start of every task.
 
 Six roles. A role exists because it holds durable state no one else holds, because it must be structurally independent of something, or because it runs on a different clock — never because a human studio would have the job title.
 
-**Each role is an agent definition in `.claude/agents/*.md`, started as a full session with `claude --agent <name>`.** The definitions are version-controlled beside the code, so a change to this charter and a change to the roles it describes land in the same commit. Two things follow that make the reading lists below stronger than advice:
+**Each role is an agent definition in the repository at `.claude/agents/*.md`, started as a full session with `claude --agent <name>`.** Project-scoped, never in the user-level `~/.claude/agents/`: the team belongs to BrowserCity, a fresh clone has all six, and nothing about the team depends on state that exists on only one machine. The definitions are version-controlled beside the code, so a change to this charter and a change to the roles it describes land in the same commit. Two things follow that make the reading lists below stronger than advice:
 
 - **Tool access is declared per role, so the boundary is enforced rather than instructed.** Derek, Quentin, Artie and Scotty have no edit tools. A role that reaches outside its remit fails instead of drifting.
 - **The model is declared per role**, which is the largest single lever on cost. Scotty is Opus. Every assignment is recorded with its reasoning and revisited once cost per story is measured (§11).

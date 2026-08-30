@@ -964,10 +964,15 @@ So that "wake Derek" means something specific and repeatable rather than a promp
 
 **Acceptance Criteria:**
 
-**Given** `claude --agent <name>` starts a full top-level session as a named agent, and definitions live in `.claude/agents/*.md`
+**Given** `claude --agent <name>` starts a full top-level session as a named agent
 **When** the roles are built
 **Then** there is one definition file per role — `scotty`, `quentin`, `derek`, `tim`, `artie`, `crew` — and Scotty starts any of them by name
-**And** they are version-controlled in the repository, so a charter change and a role change land in the same commit
+
+**Given** these roles belong to this project and to no other
+**When** the definitions are placed
+**Then** they live in the repository at `.claude/agents/`, **never** in the user-level `~/.claude/agents/`
+**And** they are version-controlled, so a charter change and a role change land in the same commit, and a fresh clone has the whole team
+**And** nothing about the team depends on state that exists only on one machine
 
 **Given** each definition carries its own mandate, reading list and authority
 **When** a role file is written
