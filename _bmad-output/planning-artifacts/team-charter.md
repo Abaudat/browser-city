@@ -39,8 +39,9 @@ Six roles. A role exists because it holds durable state no one else holds, becau
 
 **Each role is an agent definition in the repository at `.claude/agents/*.md`, started as a full session with `claude --agent <name>`.** Project-scoped, never in the user-level `~/.claude/agents/`: the team belongs to BrowserCity, a fresh clone has all six, and nothing about the team depends on state that exists on only one machine. The definitions are version-controlled beside the code, so a change to this charter and a change to the roles it describes land in the same commit. Two things follow that make the reading lists below stronger than advice:
 
-- **Tool access is declared per role, so the boundary is enforced rather than instructed.** Derek, Quentin, Artie and Scotty have no edit tools. A role that reaches outside its remit fails instead of drifting.
-- **The model is declared per role**, which is the largest single lever on cost. Scotty is Opus. Every assignment is recorded with its reasoning and revisited once cost per story is measured (§11).
+- **Every role has edit tools, and each role file states its write remit.** Scotty grooms the backlog, so he writes the sprint file and the story files. The four leads write their directions onto the task *before* Crew is dispatched — at c.2 there is no PR yet, so the story file is the only surface that exists. Crew alone writes feature code and tests; Quentin in particular must never write a test, which is now a rule rather than a tooling limit.
+- **That remit is instructed, not enforced, and the charter should not pretend otherwise.** Tested 2026-08-30: a path-scoped entry in an agent's `tools:` list parses but restricts nothing, and a `permissions:` block in agent frontmatter is ignored entirely. The harness enforces only which tool *classes* a role holds and which model it runs on. Fencing a role to a directory would need project-wide `permissions.deny`, which cannot tell one role from another and so cannot express this.
+- **The model is declared per role**, which is now the only per-role constraint the harness actually enforces, and the largest single lever on cost. **Opus for the four reviewing leads — Quentin, Derek, Tim and Artie; Sonnet for Scotty and Crew.** Depth is bought on the review surface rather than in the implementer, and Scotty's branch classification is done by the precheck before he wakes (§3). Every assignment is recorded with its reasoning in the role file, and Crew's is the first to revisit once cost per story is measured (§11) — if rework shows up as review cycles, the saving was not real.
 
 ### 📋 Scotty — Scrum Master
 
@@ -110,18 +111,23 @@ The design laws are in the GDD and are not Derek's to trade against either: pres
 
 ## 3. The cycle
 
-Scotty wakes only when the budget gate passes (§8). The gate script classifies the branch before he wakes, so he arrives knowing it rather than rediscovering it.
+Scotty wakes only when the budget gate passes (§8). `scripts/scotty-wake.sh` then classifies the branch before he wakes and prints it as JSON, so he arrives knowing what to do rather than rediscovering it. Classification uses `gh`, `orca` and `jq` only — no agent reasoning — and a do-nothing tick exits non-zero, so it never starts an agent. Like the budget gate it has three exits: work to do, nothing to do, and **broken**, the last written to `.scotty-wake-reason` and alarmed on rather than skipped quietly.
 
 **On wake, Scotty establishes:** is Crew idle? Is there an open story PR? Whose turn is it? Is the PR approved by every lead in scope?
 
 | | Condition | Action |
 |---|---|---|
-| **c.1** | PR approved by all leads in scope | Merge. Clean up the task's sessions and terminals. Fall through to c.2. |
-| **c.2** | No open PR, Crew not working | Take the highest-priority task in the sprint. Wake the leads in scope to annotate it with their directions. When they are done, wake Crew to work it. |
-| **c.3** | No open PR, Crew already working | Nothing. Sleep. |
-| **c.4** | Open PR, a lead's turn | Wake those lead sessions to review — approve, or leave comments. |
-| **c.5** | Open PR, Crew's turn | Wake Crew to address the comments. |
+| **t.1** | No task issue, Crew not working | Take the highest-priority task in the sprint. Open its **task issue** and stub one direction comment per lead in scope (§5). |
+| **t.2** | Task issue open, directions outstanding | Wake those leads to write their directions. They write in parallel; one comment each. |
+| **t.3** | Task issue open, all directions `READY` | Wake Crew to implement against the issue. |
+| **c.0** | Open PR with no status comment | Crew has just opened it. Post the status comment and one stub per lead in scope (§5). |
+| **c.1** | PR approved by all leads in scope **at the current head** | Merge. Close the task issue. Clean up the task's sessions and terminals. Fall through to t.1. |
+| **c.3** | Nothing to do | Sleep. |
+| **c.4** | Open PR, a lead has not reviewed the current head | Wake those lead sessions to review — approve, or leave comments. |
+| **c.5** | Open PR, every lead has reviewed the head and someone wants changes | Wake Crew to address the comments. |
 | **c.6** | Open PR, ≥ 8 Crew↔review cycles, still not approved | **Circuit breaker.** Halt everything. Do not advance to the next story. Comment on the PR with an @-mention to Adrian explaining the deadlock and what he must arbitrate. |
+
+**Directions are written on a task issue, not on the PR and not in the story file.** At t.1 there is no PR yet — it does not exist until Crew opens one. The story file would be the obvious surface and is the wrong one: two to four leads write their directions at the same time, and a shared document loses writes. A GitHub Issue gives each lead its own comment and therefore its own writer, which is the same property that makes the PR protocol safe. Crew's context package is the story file plus that issue, and the PR closes it with `Closes #<issue>`.
 
 **Lead scope is data, not judgement.** Every story is tagged at epic-split time with the leads it requires. Quentin is in scope on all of them; Derek, Tim and Artie conditionally. This keeps the classification inside the free precheck. Tagging the 206 existing stories is Epic 0 work.
 
@@ -154,22 +160,72 @@ An unscoped `worktree ps` or `terminal list` is a bug, not a shortcut.
 
 ## 5. The PR protocol
 
-The PR is the work surface, the state machine, and the durable memory. GitHub Issues are deliberately left free as a separate feedback channel.
+The PR is the work surface, the state machine, and the durable memory for the **review** phase. A **task issue** — a GitHub Issue labelled `task` — is the same thing for the **direction** phase that precedes it, because directions are written before a PR exists and by several leads at once. Both work the same way and for the same reason: one comment per writer, so concurrent writers never share a document.
 
-**Labels.** `story` or `sprint-review`. The precheck filters on this — the Sprint Review PR sitting open over a weekend must never read as "the story cycle is busy."
+**Labels.** `story` or `sprint-review`. The classifier filters on `story` — the Sprint Review PR sitting open over a weekend must never read as "the story cycle is busy." A PR with neither label is a defect, not something to guess at.
 
-**One structured comment, written only by Scotty:** the leads in scope, each one's session ID, and the cycle count.
+**One comment per writer, and nobody writes anyone else's.** Scotty owns the status comment. Each lead in scope owns exactly one comment of its own. There is no shared comment and therefore no write race.
 
-**One comment per lead, written by that lead**, ending in a machine-readable verdict:
+**Scotty creates all of them**, at c.0. The *absence* of a status comment is how he knows a PR is new — there is no other flag, and Crew must not create one.
 
+### The format, which is fixed
+
+Machine fields live in HTML comments, so nothing ever parses prose. The human-readable table sits above them and must agree with them; the markers are not a summary of the state, they **are** the state.
+
+Scotty's status comment:
+
+```markdown
+<!-- bc:status -->
+### 📋 Task status
+
+| | |
+|---|---|
+| Story | 1.4 — The World Data Model |
+| Leads in scope | quentin, tim |
+| Cycle | 2 of 8 |
+| Crew session | `019t73dBSXoTkhtHKX3hFYNP` |
+
+<!-- bc:story 1.4 -->
+<!-- bc:scope quentin,tim -->
+<!-- bc:cycle 2 -->
 ```
-QUENTIN: APPROVED
-QUENTIN: CHANGES
+
+A lead's comment, created by Scotty as a stub and thereafter written only by that lead:
+
+```markdown
+<!-- bc:lead:quentin -->
+### 🔬 Quentin — QA
+
+#### Cycle 1 — CHANGES
+- `sim/clock.rs` has no test for the 2.5-minute boundary (AC 3).
+
+#### Cycle 2 — APPROVED
+Addressed. Trace matrix updated.
+
+<!-- bc:verdict APPROVED -->
+<!-- bc:reviewed e4f5g6h... -->
+<!-- bc:session 019t73dBSXoTkhtHKX3hFYNP -->
 ```
 
-The precheck greps the latest verdict per lead. Single writer per comment, so no write race; the lead's actual findings stay readable above the line for Crew.
+**A verdict is `APPROVED` or `CHANGES`. There is no third value.** A stub carries `reviewed -`, no verdict line and no cycle sections, which is how a lead knows on waking cold that it has not seen this PR before — "not yet reviewed" is the absence of a review, not a kind of verdict. Direction states on the task issue are `PENDING` or `READY`, which is a genuine binary with no redundant twin.
 
-GitHub's native approve/request-changes states are *not* used: every agent acts as Adrian's GitHub identity, so `gh pr view --json reviews` cannot tell Quentin from Derek. Separate machine accounts would fix it and cost money. The verdict line is the cheap correct answer.
+**A lead appends a cycle section rather than replacing what it wrote.** That comment is the lead's only memory of its own earlier review — it starts a fresh session each time and has nowhere else to look.
+
+**A verdict has exactly one home.** Scotty does not copy verdicts into the status comment; two records of one fact drift.
+
+### Whose turn it is
+
+A lead's comment carries `<!-- bc:reviewed <sha> -->`, the commit it last read. **A lead owes a review when it has never reviewed, or when the head has moved since it last looked.**
+
+Nobody resets a verdict, and there is no state to reset one to: Crew pushing a commit is what returns the PR to the leads. A verdict and the commit it was reached on are written together, and either without the other is incoherent rather than partial. Without this the cycle has no way back from c.5 and would sit there forever. It also closes a hole — an `APPROVED` recorded at an older commit does not cover code nobody has read, so a merge at c.1 requires every lead to have approved *the current head*, and a push after approval re-opens review rather than sliding through.
+
+One consequence for Crew: push once per cycle, when everything is addressed. A mid-cycle push costs every lead in scope a re-review.
+
+**A stub must exist for every lead in scope.** The classifier treats a missing one as broken rather than as `PENDING`, because guessing there is how a lead silently stops being consulted.
+
+### Why not GitHub's own review states
+
+Every agent acts as Adrian's GitHub identity, so `gh pr view --json reviews` cannot tell Quentin from Derek. Separate machine accounts would fix it and cost money. Marked comments are the cheap correct answer.
 
 ---
 
@@ -280,6 +336,9 @@ Two requirements follow, and both are Epic 0 work:
 All confirmed by test on 2026-08-30 unless noted.
 
 - Claude sessions persist under `~/.claude/projects/`; `claude --resume <id>` is scriptable and survives reboot.
+- **`.claude/agents/*.md` works as specified, and its two declared fields behave differently from each other.** The frontmatter `tools` allowlist is applied at the level of tool *classes*: `claude --agent derek --model haiku -p` returned exactly the six tools declared, and a tool left out of the list is genuinely absent. The per-role `model` field is honoured: with no override, `--agent derek` ran on `claude-opus-5` and `--agent crew` on `claude-sonnet-5`. All six roles exist at `.claude/agents/`.
+- **Per-role *path* scoping does not exist, and two plausible-looking mechanisms silently do nothing.** An entry of the form `Edit(<glob>)` in an agent's `tools:` list parses without error and the agent reports holding `Edit`, but with `--permission-mode acceptEdits` it edited a file well outside the glob. A `permissions: {deny: [...]}` block in agent frontmatter is ignored outright — same result. Both failures are silent, which is why this is recorded here: a role fenced this way would look fenced and not be. Any claim that a role *cannot* touch something must therefore name a tool class it does not hold, never a path.
+- **A print-mode probe cannot test a permission boundary.** `claude -p` auto-denies every edit for want of an approver, so an out-of-scope edit and an in-scope one both fail and the run reads as proof of enforcement. Probes of this kind require `--permission-mode acceptEdits` to isolate the rule under test. This produced one wrong conclusion before it was caught.
 - `orca terminal list --json` exposes `handle`, `connected`, `orphaned`, `lastOutputAt`, `title`. Scoping works via `--worktree <selector>` and `orca worktree list --repo name:BrowserCity`.
 - **`lastOutputAt` separates busy from idle; `tui-idle` does not.** Measured −34 ms against 33,585 ms. `terminal wait --for tui-idle` returned `timeout` for *both* an idle shell and a busy Claude TUI, so it is not used.
 - `orca automations` supports `--precheck`, `--workspace-mode`, `--base-branch`, `--missed-run-grace-minutes`, `--timezone`, `--reuse-session`, and cron/RRULE triggers.

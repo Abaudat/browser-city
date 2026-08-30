@@ -979,15 +979,20 @@ So that "wake Derek" means something specific and repeatable rather than a promp
 **Then** it states the mandate, the declared reading list, and the veto authority if the role has one
 **And** Derek's power to reject a PR and Tim's hard stop on the irreversibles are stated in the role itself, not only in the charter
 
-**Given** an agent definition declares its tool access, which makes the reading list *enforceable* rather than merely instructed
+**Given** every role writes something — Scotty grooms the backlog, and the four leads write their directions onto the task at c.2, when no PR yet exists to comment on
 **When** tools are assigned
-**Then** roles that never write code cannot write code — Derek, Quentin, Artie and Scotty have no edit tools
-**And** a role reaching outside its boundary fails rather than drifting
+**Then** all six roles hold edit tools, and each role file states its own write remit and what it must never touch
+**And** Crew alone writes feature code and tests, with Quentin's prohibition on writing tests stated as the rule the approver role rests on rather than as a tooling limit
+
+**Given** a boundary that looks enforced but is not is worse than one that is plainly advisory
+**When** the tool declaration is relied upon
+**Then** only tool *classes* and the per-role model are treated as enforced, both verified against a resolved session
+**And** path scoping is not claimed anywhere, a path-scoped `tools:` entry and a frontmatter `permissions:` block having both been tested and found to restrict nothing silently
 
 **Given** the model is declared per role and is the largest single lever on cost
 **When** models are assigned
-**Then** each role's choice is deliberate and recorded with its reasoning — Scotty is Opus
-**And** the assignment is revisited once cost per story has been measured
+**Then** each role's choice is deliberate and recorded with its reasoning in the role file — Opus for the four reviewing leads (Quentin, Derek, Tim, Artie), Sonnet for Scotty and Crew
+**And** the assignment is revisited once cost per story has been measured, Crew's first
 
 **Given** the charter is the specification and it will move
 **When** it changes materially
@@ -1083,10 +1088,15 @@ So that an idle tick costs nothing and I wake already knowing what to do.
 
 **Acceptance Criteria:**
 
-**Given** the charter defines six branches — merge, start, wait, lead's turn, Crew's turn, circuit breaker
+**Given** the cycle has two phases — a direction phase on a task issue and a review phase on the PR — and nine branches across them
 **When** the cycle is built
-**Then** the branch is determined by `gh` and `orca` queries plus `jq`, with no agent reasoning required
+**Then** the branch is determined by `gh` and `orca` queries plus `jq`, with no agent reasoning required, and printed as JSON for Scotty to read rather than re-derive
 **And** the classification runs in the precheck, so a do-nothing tick never starts an agent
+
+**Given** a classifier that guesses is worse than one that stops
+**When** the state is ambiguous — two open story PRs, a lead in scope with no comment, an unreadable verdict, Crew's state unknown
+**Then** it exits broken and says which, rather than picking a plausible branch
+**And** that exit is distinguishable from "nothing to do", as the budget gate's is
 
 **Given** the distinction between "Crew is working" and "Crew has died" is the one that silently stalls the team
 **When** Crew's state is checked
@@ -1111,17 +1121,43 @@ So that nothing about a task lives somewhere a reboot can erase.
 
 **Given** every agent acts as Adrian's GitHub identity, so native review states cannot tell Quentin from Derek
 **When** a lead reports
-**Then** it posts its own comment ending in a machine-readable verdict line — `QUENTIN: APPROVED` or `QUENTIN: CHANGES`
-**And** the findings stay readable above that line for Crew
+**Then** it writes its verdict into its own marked comment, as `<!-- bc:verdict APPROVED -->` or `<!-- bc:verdict CHANGES -->`, those being the only two verdicts a lead can record
+**And** the findings stay readable above that marker for Crew, and the human-readable text and the marker must agree
+
+**Given** a parser that reads prose breaks on the first well-meant rewording
+**When** the format is fixed
+**Then** every machine-read field is an HTML comment — `bc:status`, `bc:story`, `bc:scope`, `bc:cycle`, `bc:lead:<role>`, `bc:verdict`, `bc:session`
+**And** the format is set in stone in the charter and reproduced verbatim in each agent definition, so no role improvises it
 
 **Given** several roles may act in one tick
-**When** the status comment is maintained
-**Then** Scotty is its sole writer, so there is no write race
-**And** it carries the leads in scope, each role's session ID, and the cycle count
+**When** comments are written
+**Then** there is exactly one writer per comment — Scotty owns the status comment, each lead owns its own — so there is no write race
+**And** no role ever edits another's, and a verdict has exactly one home rather than being copied into the status comment
+
+**Given** a PR is new precisely when Scotty has not set it up
+**When** Crew opens one
+**Then** the absence of the status comment is the signal, there is no other flag, and Crew does not create one
+**And** Scotty creates the status comment plus one stub per lead in scope, a missing stub being a defect rather than a `PENDING`
+
+**Given** a lead wakes cold and its comment is its only memory of its own earlier review
+**When** it reviews again
+**Then** it appends a new cycle section rather than replacing what it wrote
+**And** it can tell first review from re-review by whether its comment carries cycle sections at all
+
+**Given** several leads write their directions at the same time, before any PR exists
+**When** the direction phase is built
+**Then** it runs on a task issue with one comment per lead, never on a shared document such as the story file
+**And** Crew is dispatched only when every lead in scope has marked its direction `READY`
+
+**Given** a verdict that had to be reset would need a writer, and the only candidates are forbidden from writing that comment
+**When** turn-taking is decided
+**Then** it is decided by the commit each lead recorded reviewing against the PR's current head, and no verdict is ever reset
+**And** "has not reviewed yet" is the absence of a recorded commit rather than a third verdict, so no state exists for anyone to reset
+**And** an `APPROVED` left at an earlier commit does not permit a merge, so a push after approval re-opens review rather than sliding through
 
 **Given** a role's session may be gone after a reboot
 **When** a role first wakes for a task
-**Then** it writes its own session ID into the status comment, correcting the row if it was recreated
+**Then** it writes its own session ID into its own comment, correcting the row if it was recreated
 
 **Given** PRs are labelled `story` or `sprint-review`
 **When** the label is missing
