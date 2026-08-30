@@ -964,23 +964,29 @@ So that "wake Derek" means something specific and repeatable rather than a promp
 
 **Acceptance Criteria:**
 
-**Given** the charter defines Scotty, Quentin, Derek, Tim, Artie and Crew with mandates, reading lists and authority
+**Given** `claude --agent <name>` starts a full top-level session as a named agent, and definitions live in `.claude/agents/*.md`
 **When** the roles are built
-**Then** each exists as a named configuration an automation or script can start by name
-**And** each carries its own mandate, its declared reading list, and its veto authority if it has one
+**Then** there is one definition file per role — `scotty`, `quentin`, `derek`, `tim`, `artie`, `crew` — and Scotty starts any of them by name
+**And** they are version-controlled in the repository, so a charter change and a role change land in the same commit
 
-**Given** context discipline is what keeps the team affordable
-**When** a role is started
-**Then** it loads only its declared reading list — Scotty never the architecture, Quentin never the GDD, Derek never code, Tim never the GDD
-**And** a role that needs something outside its list asks for it rather than widening the list silently
+**Given** each definition carries its own mandate, reading list and authority
+**When** a role file is written
+**Then** it states the mandate, the declared reading list, and the veto authority if the role has one
+**And** Derek's power to reject a PR and Tim's hard stop on the irreversibles are stated in the role itself, not only in the charter
 
-**Given** Derek may reject a PR on his own authority and Tim may stop on an irreversible
-**When** those roles are configured
-**Then** the authority is stated in the role itself, not only in the charter
+**Given** an agent definition declares its tool access, which makes the reading list *enforceable* rather than merely instructed
+**When** tools are assigned
+**Then** roles that never write code cannot write code — Derek, Quentin, Artie and Scotty have no edit tools
+**And** a role reaching outside its boundary fails rather than drifting
 
-**Given** the charter will move
+**Given** the model is declared per role and is the largest single lever on cost
+**When** models are assigned
+**Then** each role's choice is deliberate and recorded with its reasoning — Scotty is Opus
+**And** the assignment is revisited once cost per story has been measured
+
+**Given** the charter is the specification and it will move
 **When** it changes materially
-**Then** updating the affected role configurations is part of that change, not a later cleanup
+**Then** updating the affected role definitions is part of that change, not a later cleanup
 
 ### Story 0.2: The Budget Gate
 
