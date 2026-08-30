@@ -979,11 +979,15 @@ So that "wake Derek" means something specific and repeatable rather than a promp
 **Then** it states the mandate, the declared reading list, and the veto authority if the role has one
 **And** Derek's power to reject a PR and Tim's hard stop on the irreversibles are stated in the role itself, not only in the charter
 
-**Given** an agent definition declares its tool access, which makes the reading list *enforceable* rather than merely instructed
+**Given** every role writes something — Scotty grooms the backlog, and the four leads write their directions onto the task at c.2, when no PR yet exists to comment on
 **When** tools are assigned
-**Then** roles that never write code cannot write code — Derek, Quentin, Artie and Scotty have no edit tools
-**And** a role reaching outside its boundary fails rather than drifting
-**And** the enforcement is verified rather than assumed — the resolved tool list of a no-edit role is checked to contain no edit tool, and the resolved model of a role is checked against its declaration
+**Then** all six roles hold edit tools, and each role file states its own write remit and what it must never touch
+**And** Crew alone writes feature code and tests, with Quentin's prohibition on writing tests stated as the rule the approver role rests on rather than as a tooling limit
+
+**Given** a boundary that looks enforced but is not is worse than one that is plainly advisory
+**When** the tool declaration is relied upon
+**Then** only tool *classes* and the per-role model are treated as enforced, both verified against a resolved session
+**And** path scoping is not claimed anywhere, a path-scoped `tools:` entry and a frontmatter `permissions:` block having both been tested and found to restrict nothing silently
 
 **Given** the model is declared per role and is the largest single lever on cost
 **When** models are assigned
