@@ -983,11 +983,12 @@ So that "wake Derek" means something specific and repeatable rather than a promp
 **When** tools are assigned
 **Then** roles that never write code cannot write code — Derek, Quentin, Artie and Scotty have no edit tools
 **And** a role reaching outside its boundary fails rather than drifting
+**And** the enforcement is verified rather than assumed — the resolved tool list of a no-edit role is checked to contain no edit tool, and the resolved model of a role is checked against its declaration
 
 **Given** the model is declared per role and is the largest single lever on cost
 **When** models are assigned
-**Then** each role's choice is deliberate and recorded with its reasoning — Scotty is Opus
-**And** the assignment is revisited once cost per story has been measured
+**Then** each role's choice is deliberate and recorded with its reasoning in the role file — Opus for the four reviewing leads (Quentin, Derek, Tim, Artie), Sonnet for Scotty and Crew
+**And** the assignment is revisited once cost per story has been measured, Crew's first
 
 **Given** the charter is the specification and it will move
 **When** it changes materially

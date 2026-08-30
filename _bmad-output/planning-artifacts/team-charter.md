@@ -39,8 +39,8 @@ Six roles. A role exists because it holds durable state no one else holds, becau
 
 **Each role is an agent definition in the repository at `.claude/agents/*.md`, started as a full session with `claude --agent <name>`.** Project-scoped, never in the user-level `~/.claude/agents/`: the team belongs to BrowserCity, a fresh clone has all six, and nothing about the team depends on state that exists on only one machine. The definitions are version-controlled beside the code, so a change to this charter and a change to the roles it describes land in the same commit. Two things follow that make the reading lists below stronger than advice:
 
-- **Tool access is declared per role, so the boundary is enforced rather than instructed.** Derek, Quentin, Artie and Scotty have no edit tools. A role that reaches outside its remit fails instead of drifting.
-- **The model is declared per role**, which is the largest single lever on cost. Scotty is Opus. Every assignment is recorded with its reasoning and revisited once cost per story is measured (§11).
+- **Tool access is declared per role, so the boundary is enforced rather than instructed.** Derek, Quentin, Artie and Scotty have no edit tools. A role that reaches outside its remit fails instead of drifting. Bash stays, because the leads report through `gh` — so the boundary catches drift, not a determined agent, and each role file says so.
+- **The model is declared per role**, which is the largest single lever on cost. **Opus for the four reviewing leads — Quentin, Derek, Tim and Artie; Sonnet for Scotty and Crew.** Depth is bought on the review surface rather than in the implementer, and Scotty's branch classification is done by the precheck before he wakes (§3). Every assignment is recorded with its reasoning in the role file, and Crew's is the first to revisit once cost per story is measured (§11) — if rework shows up as review cycles, the saving was not real.
 
 ### 📋 Scotty — Scrum Master
 
@@ -280,6 +280,7 @@ Two requirements follow, and both are Epic 0 work:
 All confirmed by test on 2026-08-30 unless noted.
 
 - Claude sessions persist under `~/.claude/projects/`; `claude --resume <id>` is scriptable and survives reboot.
+- **`.claude/agents/*.md` works as specified, and both declared fields are enforced rather than merely stated.** `claude --agent derek --model haiku -p` returned exactly `Bash, Read, Grep, Glob, WebFetch, WebSearch` — the frontmatter `tools` allowlist is applied, so a no-edit role genuinely has no edit tool. With no override, `--agent derek` ran on `claude-opus-5` and `--agent crew` on `claude-sonnet-5`, so the per-role `model` field is honoured. All six roles exist at `.claude/agents/`.
 - `orca terminal list --json` exposes `handle`, `connected`, `orphaned`, `lastOutputAt`, `title`. Scoping works via `--worktree <selector>` and `orca worktree list --repo name:BrowserCity`.
 - **`lastOutputAt` separates busy from idle; `tui-idle` does not.** Measured −34 ms against 33,585 ms. `terminal wait --for tui-idle` returned `timeout` for *both* an idle shell and a busy Claude TUI, so it is not used.
 - `orca automations` supports `--precheck`, `--workspace-mode`, `--base-branch`, `--missed-run-grace-minutes`, `--timezone`, `--reuse-session`, and cron/RRULE triggers.
