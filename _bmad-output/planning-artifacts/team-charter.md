@@ -111,18 +111,21 @@ The design laws are in the GDD and are not Derek's to trade against either: pres
 
 ## 3. The cycle
 
-Scotty wakes only when the budget gate passes (§8). The gate script classifies the branch before he wakes, so he arrives knowing it rather than rediscovering it.
+Scotty wakes only when the budget gate passes (§8). `scripts/scotty-wake.sh` then classifies the branch before he wakes and prints it as JSON, so he arrives knowing what to do rather than rediscovering it. Classification uses `gh`, `orca` and `jq` only — no agent reasoning — and a do-nothing tick exits non-zero, so it never starts an agent. Like the budget gate it has three exits: work to do, nothing to do, and **broken**, the last written to `.scotty-wake-reason` and alarmed on rather than skipped quietly.
 
 **On wake, Scotty establishes:** is Crew idle? Is there an open story PR? Whose turn is it? Is the PR approved by every lead in scope?
 
 | | Condition | Action |
 |---|---|---|
+| **c.0** | Open PR with no status comment | Crew has just opened it. Post the status comment and one stub per lead in scope (§5). |
 | **c.1** | PR approved by all leads in scope | Merge. Clean up the task's sessions and terminals. Fall through to c.2. |
-| **c.2** | No open PR, Crew not working | Take the highest-priority task in the sprint. Wake the leads in scope to annotate it with their directions. When they are done, wake Crew to work it. |
+| **c.2** | No open PR, Crew not working | Take the highest-priority task in the sprint. Wake the leads in scope to write their directions onto the story file. When they are done, wake Crew to work it. |
 | **c.3** | No open PR, Crew already working | Nothing. Sleep. |
 | **c.4** | Open PR, a lead's turn | Wake those lead sessions to review — approve, or leave comments. |
 | **c.5** | Open PR, Crew's turn | Wake Crew to address the comments. |
 | **c.6** | Open PR, ≥ 8 Crew↔review cycles, still not approved | **Circuit breaker.** Halt everything. Do not advance to the next story. Comment on the PR with an @-mention to Adrian explaining the deadlock and what he must arbitrate. |
+
+**Directions are written onto the story file, not onto the PR.** At c.2 there is no PR yet — it does not exist until Crew opens one — so the story file is the only surface that exists, and it is the context package Crew reads. Each lead appends under `## Lead directions` in a section headed with its own name, and edits nobody else's.
 
 **Lead scope is data, not judgement.** Every story is tagged at epic-split time with the leads it requires. Quentin is in scope on all of them; Derek, Tim and Artie conditionally. This keeps the classification inside the free precheck. Tagging the 206 existing stories is Epic 0 work.
 
@@ -157,20 +160,61 @@ An unscoped `worktree ps` or `terminal list` is a bug, not a shortcut.
 
 The PR is the work surface, the state machine, and the durable memory. GitHub Issues are deliberately left free as a separate feedback channel.
 
-**Labels.** `story` or `sprint-review`. The precheck filters on this — the Sprint Review PR sitting open over a weekend must never read as "the story cycle is busy."
+**Labels.** `story` or `sprint-review`. The classifier filters on `story` — the Sprint Review PR sitting open over a weekend must never read as "the story cycle is busy." A PR with neither label is a defect, not something to guess at.
 
-**One structured comment, written only by Scotty:** the leads in scope, each one's session ID, and the cycle count.
+**One comment per writer, and nobody writes anyone else's.** Scotty owns the status comment. Each lead in scope owns exactly one comment of its own. There is no shared comment and therefore no write race.
 
-**One comment per lead, written by that lead**, ending in a machine-readable verdict:
+**Scotty creates all of them**, at c.0. The *absence* of a status comment is how he knows a PR is new — there is no other flag, and Crew must not create one.
 
+### The format, which is fixed
+
+Machine fields live in HTML comments, so nothing ever parses prose. The human-readable table sits above them and must agree with them; the markers are not a summary of the state, they **are** the state.
+
+Scotty's status comment:
+
+```markdown
+<!-- bc:status -->
+### 📋 Task status
+
+| | |
+|---|---|
+| Story | 1.4 — The World Data Model |
+| Leads in scope | quentin, tim |
+| Cycle | 2 of 8 |
+| Crew session | `019t73dBSXoTkhtHKX3hFYNP` |
+
+<!-- bc:story 1.4 -->
+<!-- bc:scope quentin,tim -->
+<!-- bc:cycle 2 -->
 ```
-QUENTIN: APPROVED
-QUENTIN: CHANGES
+
+A lead's comment, created by Scotty as a stub and thereafter written only by that lead:
+
+```markdown
+<!-- bc:lead:quentin -->
+### 🔬 Quentin — QA
+
+#### Cycle 1 — CHANGES
+- `sim/clock.rs` has no test for the 2.5-minute boundary (AC 3).
+
+#### Cycle 2 — APPROVED
+Addressed. Trace matrix updated.
+
+<!-- bc:verdict APPROVED -->
+<!-- bc:session 019t73dBSXoTkhtHKX3hFYNP -->
 ```
 
-The precheck greps the latest verdict per lead. Single writer per comment, so no write race; the lead's actual findings stay readable above the line for Crew.
+Verdicts are exactly `PENDING`, `APPROVED` or `CHANGES`. A stub carries `PENDING` and no cycle sections, which is also how a lead knows, on waking cold, that it has not seen this PR before.
 
-GitHub's native approve/request-changes states are *not* used: every agent acts as Adrian's GitHub identity, so `gh pr view --json reviews` cannot tell Quentin from Derek. Separate machine accounts would fix it and cost money. The verdict line is the cheap correct answer.
+**A lead appends a cycle section rather than replacing what it wrote.** That comment is the lead's only memory of its own earlier review — it starts a fresh session each time and has nowhere else to look.
+
+**A verdict has exactly one home.** Scotty does not copy verdicts into the status comment; two records of one fact drift.
+
+**A stub must exist for every lead in scope.** The classifier treats a missing one as broken rather than as `PENDING`, because guessing there is how a lead silently stops being consulted.
+
+### Why not GitHub's own review states
+
+Every agent acts as Adrian's GitHub identity, so `gh pr view --json reviews` cannot tell Quentin from Derek. Separate machine accounts would fix it and cost money. Marked comments are the cheap correct answer.
 
 ---
 

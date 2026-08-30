@@ -1088,10 +1088,15 @@ So that an idle tick costs nothing and I wake already knowing what to do.
 
 **Acceptance Criteria:**
 
-**Given** the charter defines six branches — merge, start, wait, lead's turn, Crew's turn, circuit breaker
+**Given** the charter defines seven branches — set up a new PR, merge, start, wait, lead's turn, Crew's turn, circuit breaker
 **When** the cycle is built
-**Then** the branch is determined by `gh` and `orca` queries plus `jq`, with no agent reasoning required
+**Then** the branch is determined by `gh` and `orca` queries plus `jq`, with no agent reasoning required, and printed as JSON for Scotty to read rather than re-derive
 **And** the classification runs in the precheck, so a do-nothing tick never starts an agent
+
+**Given** a classifier that guesses is worse than one that stops
+**When** the state is ambiguous — two open story PRs, a lead in scope with no comment, an unreadable verdict, Crew's state unknown
+**Then** it exits broken and says which, rather than picking a plausible branch
+**And** that exit is distinguishable from "nothing to do", as the budget gate's is
 
 **Given** the distinction between "Crew is working" and "Crew has died" is the one that silently stalls the team
 **When** Crew's state is checked
@@ -1116,17 +1121,32 @@ So that nothing about a task lives somewhere a reboot can erase.
 
 **Given** every agent acts as Adrian's GitHub identity, so native review states cannot tell Quentin from Derek
 **When** a lead reports
-**Then** it posts its own comment ending in a machine-readable verdict line — `QUENTIN: APPROVED` or `QUENTIN: CHANGES`
-**And** the findings stay readable above that line for Crew
+**Then** it writes its verdict into its own marked comment, as `<!-- bc:verdict APPROVED -->` or `<!-- bc:verdict CHANGES -->`
+**And** the findings stay readable above that marker for Crew, and the human-readable text and the marker must agree
+
+**Given** a parser that reads prose breaks on the first well-meant rewording
+**When** the format is fixed
+**Then** every machine-read field is an HTML comment — `bc:status`, `bc:story`, `bc:scope`, `bc:cycle`, `bc:lead:<role>`, `bc:verdict`, `bc:session`
+**And** the format is set in stone in the charter and reproduced verbatim in each agent definition, so no role improvises it
 
 **Given** several roles may act in one tick
-**When** the status comment is maintained
-**Then** Scotty is its sole writer, so there is no write race
-**And** it carries the leads in scope, each role's session ID, and the cycle count
+**When** comments are written
+**Then** there is exactly one writer per comment — Scotty owns the status comment, each lead owns its own — so there is no write race
+**And** no role ever edits another's, and a verdict has exactly one home rather than being copied into the status comment
+
+**Given** a PR is new precisely when Scotty has not set it up
+**When** Crew opens one
+**Then** the absence of the status comment is the signal, there is no other flag, and Crew does not create one
+**And** Scotty creates the status comment plus one stub per lead in scope, a missing stub being a defect rather than a `PENDING`
+
+**Given** a lead wakes cold and its comment is its only memory of its own earlier review
+**When** it reviews again
+**Then** it appends a new cycle section rather than replacing what it wrote
+**And** it can tell first review from re-review by whether its comment carries cycle sections at all
 
 **Given** a role's session may be gone after a reboot
 **When** a role first wakes for a task
-**Then** it writes its own session ID into the status comment, correcting the row if it was recreated
+**Then** it writes its own session ID into its own comment, correcting the row if it was recreated
 
 **Given** PRs are labelled `story` or `sprint-review`
 **When** the label is missing
