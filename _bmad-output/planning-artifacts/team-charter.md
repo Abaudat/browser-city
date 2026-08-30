@@ -236,7 +236,7 @@ Every agent acts as Adrian's GitHub identity, so `gh pr view --json reviews` can
 The planning corpus is ~140k tokens. A role that loads "the plan" has spent its window before doing any work.
 
 - **Each role reads only its declared list** (§2). The lists are narrow on purpose.
-- **`epics.md` is sharded per epic.** At 334 KB / 6,808 lines nobody can load it, epics are independent by construction, and `gds-sprint-planning` parses `epic*.md` — plural. The sharded form is what the tooling expects.
+- **The epic breakdown is sharded per epic**, at `planning-artifacts/epics/`: `index.md` for the global sections, `epic-0.md` … `epic-14.md` for the rest. Nobody could load the 366 KB whole, epics are independent by construction, and `gds-sprint-planning` expects the plural form. **The whole document was removed rather than kept alongside**, because the tooling prefers a whole document wherever it finds one and would have ignored the shards.
 - **`architecture.md` stays whole.** Its own validation caught it accumulating stale text where later decisions overturned earlier ones. Sharding multiplies the places a superseded decision can hide and removes the reader who sees both halves. At ~33k tokens it fits for Tim, its main reader.
 - **Nothing lives in conversation.** Every role reads state from disk at wake and writes it back before sleeping. Cold start is the feature.
 - **Handoffs are fixed-shape summaries, never transcripts.** Nobody does transcript archaeology.

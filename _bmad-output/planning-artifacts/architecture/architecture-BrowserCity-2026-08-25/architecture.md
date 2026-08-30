@@ -11,7 +11,7 @@ platform: 'Browser, exclusive'
 
 # Source Documents
 gdd: '_bmad-output/planning-artifacts/gdds/gdd-BrowserCity-2026-08-25/gdd.md'
-epics: '_bmad-output/planning-artifacts/epics.md'
+epics: '_bmad-output/planning-artifacts/epics/index.md'
 brief: '_bmad-output/planning-artifacts/briefs/brief-BrowserCity-2026-08-24/brief.md'
 ---
 
@@ -284,7 +284,7 @@ L3 is capped by concurrency and L1 is near-constant, so **A2 reduces almost enti
 
 ### Architectural Dependency Order
 
-The order in which systems can be built, derived from dependency rather than from design priority. Where it disagrees with `epics.md`, that disagreement is a signal to return there.
+The order in which systems can be built, derived from dependency rather than from design priority. Where it disagrees with the epic breakdown in `epics/`, that disagreement is a signal to return there.
 
 | Phase | Contents |
 |---|---|
@@ -300,7 +300,7 @@ The order in which systems can be built, derived from dependency rather than fro
 
 **Runtime dependency runs L1 → L2 → L3; build order runs L3 → L2 → L1.** One NPC walks convincingly, then it gets a day, then a city of them gets coordinated.
 
-**Recorded tension.** This spine places NPC work before the day loop, whereas the GDD front-loads E5/E6 as falsification points. Architecture dependency and design risk pull opposite ways. Note also that **E5's first job (convenience shop till: serve, scan, bag, take payment) requires customers** — so E5 already implicitly depends on Phase 3 NPC capability, independently of this ordering. Worth resolving in `epics.md` before it surfaces as a surprise.
+**Recorded tension.** This spine places NPC work before the day loop, whereas the GDD front-loads E5/E6 as falsification points. Architecture dependency and design risk pull opposite ways. Note also that **E5's first job (convenience shop till: serve, scan, bag, take payment) requires customers** — so E5 already implicitly depends on Phase 3 NPC capability, independently of this ordering. Worth resolving in `epics/` before it surfaces as a surprise.
 
 ---
 

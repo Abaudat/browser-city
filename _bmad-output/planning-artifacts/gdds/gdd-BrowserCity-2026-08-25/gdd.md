@@ -440,7 +440,7 @@ M1 establishes that the discretionary middle is where the game lives. M7 is what
 
 **Resolution scales; causality does not.** Distant simulation is cheaper, never falser. Cheap is not fake.
 
-**Population target — settled 2026-08-29.** The citizen count was deferred to `gds-game-architecture` as a cost question as much as a design one. It has since been settled by the Scale Baseline, measured against the tileset: **a 512x512 map (~435 m square) carrying ~5,000 citizens** at a density of one per 52.4 cells — roughly Paris-to-Manhattan — across ~894 buildings and ~344 workplaces, costing ~$25/mo at ~42 L2 transactions per second with no overage. The 100+ enterable-interiors target is ~11% of building stock and is therefore never the binding constraint. Full derivation lives in `../../epics.md`.
+**Population target — settled 2026-08-29.** The citizen count was deferred to `gds-game-architecture` as a cost question as much as a design one. It has since been settled by the Scale Baseline, measured against the tileset: **a 512x512 map (~435 m square) carrying ~5,000 citizens** at a density of one per 52.4 cells — roughly Paris-to-Manhattan — across ~894 buildings and ~344 workplaces, costing ~$25/mo at ~42 L2 transactions per second with no overage. The 100+ enterable-interiors target is ~11% of building stock and is therefore never the binding constraint. Full derivation lives in `../../epics/index.md`.
 
 The design constraints below are what that number had to satisfy. They remain the standing test for any future change to scale:
 
@@ -757,7 +757,7 @@ GDD-level targets only. Engine selection, system architecture, netcode model and
 
 ## Development Epics
 
-**Fifteen epics — Epic 0 plus fourteen.** The full breakdown (goal, scope, exclusions, dependencies, playable deliverable, stories and acceptance criteria) lives in `../../epics.md`, which is **authoritative for epic structure, numbering and sequence**. That document also carries the numbered requirements inventory (FR1–FR172, NFR1–NFR46) derived from this GDD and from the architecture; this GDD deliberately does not duplicate it.
+**Fifteen epics — Epic 0 plus fourteen.** The full breakdown (goal, scope, exclusions, dependencies, playable deliverable, stories and acceptance criteria) lives in `../../epics/`, one file per epic, which is **authoritative for epic structure, numbering and sequence**. Its `index.md` also carries the numbered requirements inventory (FR1–FR172, NFR1–NFR46) derived from this GDD and from the architecture; this GDD deliberately does not duplicate it.
 
 **This table was restructured on 2026-08-29** after the architecture document completed. The design intent of every epic below is unchanged from this GDD's original E1–E13; what changed is grouping, ordering and numbering. The three reasons, recorded by the epics document:
 
