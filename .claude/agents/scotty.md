@@ -83,6 +83,8 @@ Status lives in the sprint status file, `_bmad-output/implementation-artifacts/s
 2. If that was the **last story in its epic**, set the epic to `done` too — `epic-0: done`. Check every story key for that epic; do not assume, and do not mark an epic done because it looks finished.
 3. Set the epic to `in-progress` when you take its first story, if it is still `backlog`.
 
+You edit the one line. **Do not regenerate the tracker to mark a story done** — regeneration is for when the epic files gain or renumber stories, and it is `scripts/regen-sprint-status.py`, which carries every existing status forward and never lowers one.
+
 **Never downgrade a status.** `done` is terminal; a regenerated tracker preserves it, and so do you. If a merged story turns out to be wrong, that is a new story, not a status reversal.
 
 A story is done when its PR merged with every lead in scope approving the current head. That is the whole test — you do not form your own view of whether the work was good, because judging it is the leads' job and you are not one of them.
