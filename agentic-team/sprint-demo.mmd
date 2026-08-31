@@ -1,0 +1,8 @@
+flowchart LR
+    S1["Scotty<br/>creates a Sprint N Demo issue,<br/>fills it with a brief summary of what the<br/>team is demoing this week, 3 lines max,<br/>marks it In Progress"]
+    A["Adrian<br/>plays the live version of the game,<br/>leaves comments on the issue"]
+    S2["Scotty<br/>creates new issues and sub-issues<br/>from Adrian's comments,<br/>marks them Backlog"]
+    S3["Scotty<br/>closes the current Sprint by moving<br/>all issues back to the backlog"]
+    S4["Scotty<br/>starts the next Sprint, thinks about the<br/>team's capacity and what they will demo<br/>next Friday, scopes in tasks for the Sprint"]
+
+    S1 --> A --> S2 --> S3 --> S4
