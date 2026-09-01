@@ -1,0 +1,48 @@
+flowchart TD
+    W(["Scotty wakes"])
+    STOP(["Do nothing — sleep"])
+
+    W --> QD{"Sprint Demo issue<br/>in an active status?"}
+
+    %% ---------- Sprint Demo ----------
+    QD -->|"yes — In Progress"| DA{"Adrian has<br/>commented on it?"}
+    DA -->|no| STOP
+    DA -->|yes| FB[/"Integrate Adrian's feedback:<br/>new issues and sub-issues, Backlog<br/>— NOT SCRIPTED —"/]
+    FB --> DC["Close the Sprint:<br/>move remaining issues back to the backlog,<br/>close the Demo issue"]
+    DC --> DN["Start the next Sprint:<br/>scope in tasks for the week's demo"]
+    DN --> STOP
+
+    %% ---------- Demo due ----------
+    QD -->|no| QF{"Sprint over?"}
+    QF -->|yes| DM["Create the Sprint N Demo issue,<br/>summarise what the team is demoing,<br/>mark it In Progress"]
+    DM --> STOP
+
+    %% ---------- Sub-issue ----------
+    QF -->|no| QS{"Sub-issue in<br/>an active status?"}
+    QS -->|yes| SS{"Its status"}
+
+    SS -->|"To Analyze"| A1{"Every lead in scope<br/>commented?"}
+    A1 -->|no| STOP
+    A1 -->|yes| A2["Mark In Progress,<br/>dispatch to Crew"] --> STOP
+
+    SS -->|"In Progress"| B1{"Crew opened a PR?"}
+    B1 -->|no| STOP
+    B1 -->|yes| B2["Add one stub comment per lead in scope + crew,<br/>mark Leads review"] --> STOP
+
+    SS -->|"Leads review"| C0{"Circuit breaker comment<br/>on the PR?"}
+    C0 -->|yes| STOP
+    C0 -->|no| C1{"Every lead in scope<br/>reviewed the current head?"}
+    C1 -->|no| STOP
+    C1 -->|yes| C2{"All approved?"}
+    C2 -->|yes| C3["Merge the PR,<br/>mark Done"] --> STOP
+    C2 -->|no| C5{"Cycle count<br/>more than 8?"}
+    C5 -->|no| C4["Mark Reviewed,<br/>dispatch to Crew"] --> STOP
+    C5 -->|yes| C6["Circuit breaker:<br/>comment on the PR @-mentioning Adrian<br/>with the deadlock, what was tried,<br/>the options and a recommendation"] --> STOP
+
+    SS -->|"Reviewed"| E1{"Crew pushed and<br/>updated its comment?"}
+    E1 -->|no| STOP
+    E1 -->|yes| E2["Mark Leads review"] --> STOP
+
+    %% ---------- New dev cycle ----------
+    QS -->|no| N1["Start a new dev cycle:<br/>pick the highest-priority sub-issue of the<br/>highest-priority issue in the Sprint backlog,<br/>mark it To Analyze, dispatch the leads in scope"]
+    N1 --> STOP
