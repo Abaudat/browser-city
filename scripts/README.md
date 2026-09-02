@@ -100,6 +100,7 @@ stderr; stdout carries only that one reason line.
 | `BC_WAKE_REASON=<file>` | Where the one-line reason gets written. | `$(bc_state_dir)/wake-reason.txt` — see `lib/paths.sh`; falls back to `${TMPDIR:-$TEMP}/bc-wake-reason.txt` if that can't be resolved. |
 | `BC_ENV_FILE=<file>` | A file of `BC_*=value` lines sourced by every bc-* process — including the ones the role sessions run in their own Orca terminals, which inherit nothing from the orchestrator's environment. The e2e run uses it to point `BC_BASE_BRANCH` at a throwaway base. | `~/.browsercity/env.sh` (absent = defaults) |
 | `BC_READY_TIMEOUT_S=<s>` | How long `bc-session spawn`/`start` wait for the new terminal to show Claude's idle prompt (✳ title + `agentIdentity: claude`) before giving up with a warning. | 90 |
+| `BC_CLOSE_RETRIES=<n>` | How many times `orca terminal close` is retried, two seconds apart, when Orca answers with an error such as `terminal_handle_stale` (which it does transiently for a pane it listed a moment earlier). `bc-session stop-all` then lists the worktree again and reports anything still open as exit 2. | 5 |
 | `BC_SESSION_MODE=main` | `bc-session.sh worktree` returns `$BC_MAIN_CHECKOUT` instead of creating/looking up an Orca worktree-per-issue — the spike's documented fallback if Orca worktrees are ever unavailable. | unset (worktree-per-issue) |
 
 (`lib/config.sh` also exposes plain constant overrides — `BC_REPO`,

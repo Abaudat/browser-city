@@ -68,7 +68,19 @@ orca_terminal_wait_idle() { # <handle> <timeout-ms> -> exit 0 satisfied, 1 timed
   printf '%s' "$out" | "$JQ" -e '.result.wait.satisfied == true' >/dev/null 2>&1
 }
 
-orca_terminal_close() { # <handle>
+# Orca sometimes answers a close with `terminal_handle_stale` even for a handle
+# it listed a second ago (seen when two busy Claude panes share a worktree);
+# the same call succeeds a few seconds later. So read `.ok` and retry.
+: "${BC_CLOSE_RETRIES:=5}"
+orca_terminal_close() { # <handle> -> 0 closed, 1 orca kept refusing
   [ -n "${BC_FAKE:-}" ] && { bc_fake_write orca_terminal_close "$@"; return; }
-  "$ORCA" terminal close --terminal "$1" --json >/dev/null 2>&1
+  local try=0 out
+  while [ "$try" -lt "$BC_CLOSE_RETRIES" ]; do
+    out="$("$ORCA" terminal close --terminal "$1" --json 2>/dev/null)"
+    printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1 && return 0
+    try=$((try + 1))
+    sleep 2
+  done
+  echo "orca: close $1 failed after $BC_CLOSE_RETRIES tries: $(printf '%s' "$out" | "$JQ" -r '.error.message // "no answer"' 2>/dev/null)" >&2
+  return 1
 }

@@ -229,30 +229,58 @@ _bc_send() { # <uuid> <worktree> <text> -> 0 sent, 2 absent
   return 0
 }
 
-_bc_stop() { # <uuid> <worktree> -> 0 closed, 1 already absent
+_bc_stop() { # <uuid> <worktree> -> 0 closed, 1 already absent, 2 orca refused
   local uuid="$1" worktree="$2"
   local uuid8 t handle
   uuid8="$(_bc_uuid8 "$uuid")"
   t="$(_bc_session_find "$worktree" "$uuid8")"
   [ -n "$t" ] || return 1
   handle="$(printf '%s' "$t" | "$JQ" -r '.handle')"
-  orca_terminal_close "$handle"
+  orca_terminal_close "$handle" || return 2
   return 0
 }
 
+# The handles of this issue's Claude panes in a worktree, one per line.
+_bc_issue_handles() { # <issue> <worktree>
+  local terms
+  terms="$(orca_terminals "$2")" || return 2
+  printf '%s' "$terms" | "$JQ" -r --arg pat "#${1} (" \
+    '.[] | select(.agentIdentity=="claude" and ((.title // "") | contains($pat))) | .handle'
+}
+
+# Close every pane, then list again: a close Orca acknowledged can still leave
+# the pane standing, and a pane left standing is a session the reboot drill
+# would count as never restarted. So the count printed is what is actually
+# gone, and anything still there after a second round is reported as broken.
 _bc_stop_all() { # <issue> <worktree> -> count ; 0 closed >=1, 1 none found, 2 broken
   local issue="$1" worktree="$2"
-  local terms handles h count=0
-  terms="$(orca_terminals "$worktree")" || { printf '0'; return 2; }
-  handles="$(printf '%s' "$terms" | "$JQ" -r --arg pat "#${issue} (" \
-    '.[] | select(.agentIdentity=="claude" and ((.title // "") | contains($pat))) | .handle')"
-  while IFS= read -r h; do
-    [ -n "$h" ] || continue
-    orca_terminal_close "$h"
-    count=$((count + 1))
-  done <<< "$handles"
-  printf '%s' "$count"
-  [ "$count" -gt 0 ] && return 0 || return 1
+  local handles h count left round=0
+  handles="$(_bc_issue_handles "$issue" "$worktree")" || { printf '0'; return 2; }
+  [ -n "$handles" ] || { printf '0'; return 1; }
+  count="$(printf '%s\n' "$handles" | grep -c .)"
+  while :; do
+    # One attempt per pane in the first round: Orca answers `terminal_handle_stale`
+    # for a pane that is already going away, and the listing below is the truth.
+    while IFS= read -r h; do
+      [ -n "$h" ] || continue
+      if [ "$round" -eq 0 ]; then
+        BC_CLOSE_RETRIES=1 orca_terminal_close "$h" 2>/dev/null || true
+      else
+        orca_terminal_close "$h" || true
+      fi
+    done <<< "$handles"
+    [ -n "${BC_FAKE:-}" ] && { printf '%s' "$count"; return 0; }
+    sleep 2
+    left="$(_bc_issue_handles "$issue" "$worktree")" || left=""
+    [ -n "$left" ] || { printf '%s' "$count"; return 0; }
+    round=$((round + 1))
+    [ "$round" -lt 2 ] || break
+    handles="$left"
+  done
+  left="$(printf '%s\n' "$left" | grep -c .)"
+  echo "bc-session: stop-all: $left of $count pane(s) for #$issue still open" >&2
+  printf '%s' $((count - left))
+  return 2
 }
 
 _bc_rm_worktree() { # <issue>
