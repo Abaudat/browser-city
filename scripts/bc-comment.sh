@@ -29,12 +29,12 @@ _BC_PR_SH="$_BC_COMMENT_DIR/bc-pr.sh"
 usage() {
   cat >&2 <<'EOF'
 usage: bc-comment.sh <command> [args]
-  create-analysis-stubs <issue> <role=uuid>...  -- N1
+  create-analysis-stubs <issue> <role>...       -- N1 / A1 (idempotent; crew gets none)
   create-review-stubs <pr> <issue>              -- B2
   create-breaker <pr>                           -- C6
   bump-cycle <pr>                                -- E2
   breaker-exists <pr>                            -- C0
-  sessions <issue>
+  sessions <issue>                               -- {role: uuid}, derived from role + issue
   scope <pr>
   pending-leads <issue>                          -- A1
   all-leads-commented --issue <n> | --pr <n>     -- A1, C1
@@ -73,6 +73,24 @@ _bc_find_by_marker() {
     i=$((i + 1))
   done
   return 1
+}
+
+# _bc_review_history <body> <cycle> -> the earlier cycle sections of a
+# lead's review comment: everything between the "### Review" heading and the
+# markers, minus the "_Not yet reviewed._" placeholder and minus a section
+# already written for this same cycle (stamping a cycle twice replaces it).
+# Each `approve`/`reject` appends its own "#### Cycle N" section after this,
+# so the comment keeps the lead's history -- the agents read their last
+# section to know what they already said.
+_bc_review_history() {
+  local body="$1" cycle="$2"
+  printf '%s\n' "$body" | awk -v cyc="$cycle" '
+    /^<!-- bc:/ { exit }
+    /^### Review — / { next }
+    /^_Not yet reviewed\._$/ { next }
+    $0 ~ ("^#### Cycle " cyc " — ") { exit }
+    { print }
+  ' | sed -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba' -e '}'
 }
 
 _bc_marker_present() { # <comments-json> <marker-name> -> exit 0/1
@@ -114,16 +132,20 @@ _bc_scope_of_pr() {
   marker_get "$body" scope
 }
 
-# _bc_pending_leads <issue> <comments-json> -> csv on stdout ; 0 has pending,
-# 1 none pending. Roles walked in BC_LEADS order, restricted to those whose
-# analysis stub actually exists (a role out of scope never got a stub).
+# _bc_pending_leads <scope-csv> <comments-json> -> csv on stdout ; 0 has
+# pending, 1 none. A scoped lead with no analysis stub at all counts as
+# pending (a crashed N1 left it missing; the orchestrator re-creates stubs
+# before asking), so a missing comment can never read as "done".
 _bc_pending_leads() {
-  local comments="$1" role stub body direction out=()
+  local scope="$1" comments="$2" role stub body direction out=()
   for role in $BC_LEADS; do
-    stub="$(_bc_find_by_marker "$comments" "lead:${role}")" || continue
-    body="$(printf '%s' "$stub" | "$JQ" -r '.body')"
-    direction="$(marker_get "$body" direction 2>/dev/null || true)"
-    [ "$direction" = "READY" ] || out+=("$role")
+    case ",$scope," in *",$role,"*) ;; *) continue ;; esac
+    if stub="$(_bc_find_by_marker "$comments" "lead:${role}")"; then
+      body="$(printf '%s' "$stub" | "$JQ" -r '.body')"
+      direction="$(marker_get "$body" direction 2>/dev/null || true)"
+      [ "$direction" = "READY" ] && continue
+    fi
+    out+=("$role")
   done
   [ "${#out[@]}" -gt 0 ] || return 1
   local IFS=','
@@ -187,14 +209,11 @@ create-analysis-stubs)
   comments="$(_bc_comments "$issue")"
   created=0
   for pair in "$@"; do
-    role="${pair%%=*}" uuid="${pair#*=}"
-    if [ "$role" = "crew" ]; then marker="crew"; else marker="lead:${role}"; fi
-    _bc_marker_present "$comments" "$marker" && continue
-    if [ "$role" = "crew" ]; then
-      render_crew_stub "$uuid" | _bc_write_comment "$issue"
-    else
-      render_analysis_stub "$role" "$uuid" | _bc_write_comment "$issue"
-    fi
+    role="${pair%%=*}"   # "role=uuid" is still accepted; the uuid is ignored
+    # Crew never writes on the issue: no stub for it.
+    [ "$role" = "crew" ] && continue
+    _bc_marker_present "$comments" "lead:${role}" && continue
+    render_analysis_stub "$role" | _bc_write_comment "$issue"
     created=$((created + 1))
   done
   printf '%s\n' "$created"
@@ -311,27 +330,11 @@ breaker-exists)
 sessions)
   issue="${1:-}"
   [ -n "$issue" ] || { usage; exit 2; }
-  comments="$(_bc_comments "$issue")"
+  # Nothing is read: every role's uuid is a function of role + issue.
   result="{}"
-  count="$(printf '%s' "$comments" | "$JQ" 'length')"
-  i=0
-  while [ "$i" -lt "$count" ]; do
-    body="$(printf '%s' "$comments" | "$JQ" -r --argjson i "$i" '.[$i].body' | tr -d '\r')"
-    if has_marker "$body" "crew"; then
-      uuid="$(marker_get "$body" session 2>/dev/null || true)"
-      [ -n "$uuid" ] && result="$(printf '%s' "$result" | "$JQ" -c --arg u "$uuid" '. + {crew: $u}')"
-    else
-      for role in $BC_LEADS; do
-        if has_marker "$body" "lead:${role}"; then
-          uuid="$(marker_get "$body" session 2>/dev/null || true)"
-          [ -n "$uuid" ] && result="$(printf '%s' "$result" | "$JQ" -c --arg r "$role" --arg u "$uuid" '. + {($r): $u}')"
-        fi
-      done
-    fi
-    i=$((i + 1))
+  for role in $BC_ROLES; do
+    result="$(printf '%s' "$result" | "$JQ" -c --arg r "$role" --arg u "$(bc_role_uuid "$role" "$issue")" '. + {($r): $u}')"
   done
-  cnt="$(printf '%s' "$result" | "$JQ" 'length')"
-  [ "$cnt" -gt 0 ] || exit 1
   printf '%s\n' "$result"
   exit 0
   ;;
@@ -351,8 +354,10 @@ scope)
 pending-leads)
   issue="${1:-}"
   [ -n "$issue" ] || { usage; exit 2; }
+  scope="$(_bc_issue_scope "$issue")"
+  [ -n "$scope" ] || { echo "bc-comment pending-leads: could not read scope for issue #$issue" >&2; exit 2; }
   comments="$(_bc_comments "$issue")"
-  out="$(_bc_pending_leads "$comments")"; rc=$?
+  out="$(_bc_pending_leads "$scope" "$comments")"; rc=$?
   [ "$rc" -eq 0 ] && printf '%s\n' "$out"
   exit "$rc"
   ;;
@@ -362,8 +367,10 @@ all-leads-commented)
   [ -n "$flag" ] && [ -n "$n" ] || { usage; exit 2; }
   case "$flag" in
     --issue)
+      scope="$(_bc_issue_scope "$n")"
+      [ -n "$scope" ] || { echo "bc-comment all-leads-commented: could not read scope for issue #$n" >&2; exit 2; }
       comments="$(_bc_comments "$n")"
-      if _bc_pending_leads "$comments" >/dev/null; then echo no; exit 1; else echo yes; exit 0; fi
+      if _bc_pending_leads "$scope" "$comments" >/dev/null; then echo no; exit 1; else echo yes; exit 0; fi
       ;;
     --pr)
       comments="$(_bc_comments "$n")"
@@ -437,15 +444,12 @@ update-analysis)
     exit 2
   }
   id="$(printf '%s' "$stub" | "$JQ" -r '.id')"
-  body="$(printf '%s' "$stub" | "$JQ" -r '.body')"
-  uuid="$(marker_get "$body" session 2>/dev/null || true)"
   content="$(cat "$bodyfile")"
   {
     printf '### Analysis — %s\n\n' "$role"
     printf '%s\n\n' "$content"
     printf '<!-- bc:lead:%s -->\n' "$role"
     printf '<!-- bc:direction READY -->\n'
-    printf '<!-- bc:session %s -->\n' "$uuid"
   } | _bc_edit_comment "$id"
   exit 0
   ;;
@@ -464,10 +468,21 @@ approve|reject)
     exit 2
   }
   id="$(printf '%s' "$stub" | "$JQ" -r '.id')"
+  body="$(printf '%s' "$stub" | "$JQ" -r '.body')"
   content="$default"
   [ -n "$bodyfile" ] && [ -f "$bodyfile" ] && content="$(cat "$bodyfile")"
+  # The review cycle comes from the orchestrator's status comment (bump-cycle
+  # moves it at E2); a PR with no status comment yet is on its first.
+  cycle=1
+  status="$(_bc_find_by_marker "$comments" "status" || true)"
+  if [ -n "$status" ]; then
+    cycle="$(marker_get "$(printf '%s' "$status" | "$JQ" -r '.body')" cycle 2>/dev/null || printf 1)"
+  fi
+  history="$(_bc_review_history "$body" "$cycle")"
   {
     printf '### Review — %s\n\n' "$role"
+    [ -n "$history" ] && printf '%s\n\n' "$history"
+    printf '#### Cycle %s — %s @ `%s`\n' "$cycle" "$verdict" "${head:0:7}"
     printf '%s\n\n' "$content"
     printf '<!-- bc:lead:%s -->\n' "$role"
     printf '<!-- bc:reviewed %s -->\n' "$head"

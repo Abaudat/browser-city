@@ -17,8 +17,11 @@ or request changes:
 
     bash {{scripts}}/bc-comment.sh reject {{pr}} {{role}} [bodyfile]
 
-`[bodyfile]` is optional and holds your findings prose; omit it for a plain
+`[bodyfile]` is optional and holds this cycle's findings; omit it for a plain
 approval, but always include one with `reject` explaining what must change.
+The script writes the `#### Cycle N — VERDICT @ <sha>` heading above your
+findings and keeps your earlier cycles' sections, so do not write a heading
+yourself.
 
 If you already reviewed this exact head commit, only make sure your comment
 is stamped, then stop.

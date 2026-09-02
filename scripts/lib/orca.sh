@@ -22,12 +22,22 @@ orca_worktree_create() { # <name> [issue-number] -> worktree path
   printf '%s' "$out" | "$JQ" -r '.result.worktree.path'
 }
 
+# A lookup that fails is retried a couple of times: the Orca CLI answers with
+# an error while another Orca command (a worktree rm, say) is in flight, and
+# one such answer ended an e2e run as "broken" at C0.
 orca_worktree_path() { # <selector, e.g. issue:3 or name:issue-3> -> path
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read orca_worktree_path "$1"; return; }
-  local out
-  out="$("$ORCA" worktree show --worktree "$1" --json 2>/dev/null)"
-  printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1 || return 1
-  printf '%s' "$out" | "$JQ" -r '.result.worktree.path'
+  local out try=0
+  while :; do
+    out="$("$ORCA" worktree show --worktree "$1" --json 2>/dev/null)"
+    if printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1; then
+      printf '%s' "$out" | "$JQ" -r '.result.worktree.path'
+      return 0
+    fi
+    try=$((try + 1))
+    [ "$try" -lt 3 ] || return 1
+    sleep 2
+  done
 }
 
 orca_worktree_rm() { # <selector>

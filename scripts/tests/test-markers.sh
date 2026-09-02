@@ -58,14 +58,10 @@ echo "renderers produce bodies that parse back with the expected markers:"
 
 UUID="cb5993d0-0000-0000-0000-000000000000"
 
-S="$(render_analysis_stub tim "$UUID")"
+S="$(render_analysis_stub tim)"
 check     "analysis stub: lead role present"  0 has_marker "$S" "lead:tim"
 check_out "analysis stub: direction PENDING"  0 PENDING marker_get "$S" "direction"
-check_out "analysis stub: session uuid"       0 "$UUID" marker_get "$S" "session"
-
-S="$(render_crew_stub "$UUID")"
-check     "crew stub: bc:crew present"        0 has_marker "$S" "crew"
-check_out "crew stub: session uuid"           0 "$UUID" marker_get "$S" "session"
+check     "analysis stub: carries no session marker (ids are derived)" 1 has_marker "$S" "session"
 
 S="$(render_status 42 "quentin,tim" 1)"
 check     "status: bc:status present"         0 has_marker "$S" "status"

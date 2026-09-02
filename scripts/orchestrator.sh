@@ -7,8 +7,9 @@
 # gh/orca/claude directly -- picks the single branch of the flowchart the
 # facts select, does the one thing at the end of it, and exits. It reads
 # state; it never remembers it, so a crash mid-tick just means the next tick
-# re-derives where things stand and finishes the job (see the two crash-
-# idempotency repairs below, at "To analyze" and "Leads review").
+# re-derives where things stand and finishes the job (stubs are re-created
+# idempotently at "To analyze" and "Leads review" before anything is judged,
+# and session ids are derived from role + issue, so nothing is ever lost).
 #
 # Node names in comments and in the one-line wake reason are
 # agentic-team/high-level-agentic-flow.mmd's: QD/DA (Sprint Demo gates,
@@ -103,28 +104,18 @@ _nudge_send() {
 }
 
 # _nudge <role> <issue> <worktree> <promptfile> [pr] -- the whole restart/
-# rejoin story: looks the role's session uuid up via `bc-comment sessions`;
-# if it is missing (the stub was never created for this one role -- a role
-# added to scope after N1 ran, or a partial-create crash this role's own
-# repair didn't cover), spawns a fresh session and creates just that one
-# stub -- the N1 repair path, scoped to a single role -- then nudges via
-# _nudge_send.
+# rejoin story. Session ids are derived from role + issue (`bc-comment
+# sessions` hands them out; nothing is recorded anywhere), so this is just:
+# make sure the role's session is up, then send it the prompt unless busy.
 _nudge() {
   local role="$1" issue="$2" worktree="$3" promptfile="$4" pr="${5:-}"
   local sessions uuid
-
   sessions="$(bc_comment sessions "$issue" 2>/dev/null)"
   uuid="$(printf '%s' "$sessions" | "$JQ" -r --arg r "$role" '.[$r] // empty' 2>/dev/null)"
-
   if [ -z "$uuid" ] || [ "$uuid" = "null" ]; then
-    uuid="$(bc_session spawn "$role" "$issue" "$worktree")"
-    if [ -z "$uuid" ]; then
-      echo "orchestrator: nudge: spawn failed for $role on #$issue" >&2
-      return 2
-    fi
-    bc_comment create-analysis-stubs "$issue" "${role}=${uuid}" >/dev/null 2>&1
+    echo "orchestrator: nudge: no session id for $role on #$issue" >&2
+    return 2
   fi
-
   _nudge_send "$role" "$issue" "$worktree" "$uuid" "$promptfile" "$pr"
 }
 
@@ -151,31 +142,6 @@ _nudge_all() {
   for role in "${roles[@]}"; do
     [ -n "$role" ] || continue
     _nudge "$role" "$issue" "$worktree" "$promptfile" "$pr"; rc=$?
-    if [ "$rc" -eq 2 ]; then
-      printf '%s' "$role"
-      return 2
-    fi
-    [ "$rc" -eq 0 ] && sent+=("$role")
-  done
-  _join ',' "${sent[@]}"
-}
-
-# _nudge_pairs <node> <issue> <worktree> <promptfile> <pr> <role=uuid>... --
-# like _nudge_all, but for roles whose uuid is already known (just spawned,
-# or just stubbed) -- uses _nudge_send directly, no `bc-comment sessions`
-# read-after-write needed. The "crew" pair, if present, is skipped -- crew
-# is always nudged separately with its own prompt. Prints the comma-joined
-# roles actually sent to on stdout. Used by N1 and the "To analyze"
-# crash-repair, which both already hold the pairs they just created.
-#
-# Same subshell caveat as _nudge_all above -- see its comment.
-_nudge_pairs() {
-  local node="$1" issue="$2" worktree="$3" promptfile="$4" pr="$5"; shift 5
-  local pair role uuid rc sent=()
-  for pair in "$@"; do
-    role="${pair%%=*}" uuid="${pair#*=}"
-    [ "$role" = "crew" ] && continue
-    _nudge_send "$role" "$issue" "$worktree" "$uuid" "$promptfile" "$pr"; rc=$?
     if [ "$rc" -eq 2 ]; then
       printf '%s' "$role"
       return 2
@@ -254,8 +220,8 @@ if [ "$cur_rc" -eq 1 ]; then
   # =========================================================================
   # N1 -- no sub-issue active: start a new dev cycle. Status is transitioned
   # BEFORE any side effect it announces (a crash after this claims #n but
-  # before the stubs land is exactly the "To analyze, no stubs" repair
-  # below, not a duplicate pick next tick).
+  # before the stubs land is healed at "To analyze", which re-creates the
+  # missing stubs before judging anything -- not a duplicate pick next tick).
   # =========================================================================
   pick="$(bc_issue next)"; rc=$?
   [ "$rc" -eq 0 ] || finish 1 "N1" "sleep" "backlog empty"
@@ -266,19 +232,14 @@ if [ "$cur_rc" -eq 1 ]; then
   bc_issue transition "$n" "To analyze" || finish 2 "N1" "broken" "transition to To analyze failed for #$n"
   wt="$(bc_session worktree "$n")" || finish 2 "N1" "broken" "worktree failed for #$n"
 
-  pairs=()
+  # One analysis stub per scoped lead (Crew writes nothing on the issue and
+  # is only started at A2); then start each lead's session and send the
+  # analysis prompt. Session ids are derived from role + issue, so there is
+  # nothing to record between the two steps.
   IFS=',' read -ra roles <<< "$scope"
-  for role in "${roles[@]}"; do
-    [ -n "$role" ] || continue
-    uuid="$(bc_session spawn "$role" "$n" "$wt")" || finish 2 "N1" "broken" "spawn failed for $role on #$n"
-    pairs+=("${role}=${uuid}")
-  done
-  crew_uuid="$(bc_session spawn crew "$n" "$wt")" || finish 2 "N1" "broken" "spawn failed for crew on #$n"
-  pairs+=("crew=${crew_uuid}")
+  bc_comment create-analysis-stubs "$n" "${roles[@]}" >/dev/null
 
-  bc_comment create-analysis-stubs "$n" "${pairs[@]}" >/dev/null
-
-  sent="$(_nudge_pairs "N1" "$n" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "${pairs[@]}")"; nrc=$?
+  sent="$(_nudge_all "N1" "$n" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "$scope")"; nrc=$?
   if [ "$nrc" -eq 2 ]; then
     finish 2 "N1" "broken" "nudge failed for $sent on #$n"
   fi
@@ -296,39 +257,16 @@ case "$status" in
 
 "To analyze")
   # ===========================================================================
-  # A1 / A2, plus the crash-idempotency repair: if `bc-comment sessions`
-  # finds nothing, N1's transition landed but its spawn+stub loop never
-  # finished -- rebuild every stub via the same path N1 uses, then continue.
+  # A1 / A2. The scoped leads' analysis stubs are (re)created first, every
+  # tick: create-analysis-stubs only adds what is missing, so on a healthy
+  # issue this is a no-op, and on one an N1 crash left half-done it is the
+  # repair. A scoped lead with no stub reads as pending, so nothing is
+  # judged early even if this tick's own creates are not yet readable.
   # ===========================================================================
-  if ! bc_comment sessions "$num" >/dev/null 2>&1; then
-    # Crashed N1: the transition landed but the spawn+stub loop never
-    # finished. Rebuild every stub via the same path N1 uses -- and since
-    # every one of them is a fresh PENDING stub, every scoped lead is
-    # obviously pending; dispatch them directly (via the pairs just built)
-    # rather than re-querying pending-leads, which would need this tick's
-    # own comment-creates read back from GitHub to answer correctly.
-    scope="$(bc_issue scope "$num" 2>/dev/null)"
-    wt="$(bc_session worktree "$num")" || finish 2 "N1" "broken" "worktree failed for #$num (repair)"
-    pairs=()
-    IFS=',' read -ra roles <<< "$scope"
-    for role in "${roles[@]}"; do
-      [ -n "$role" ] || continue
-      uuid="$(bc_session spawn "$role" "$num" "$wt")" || finish 2 "N1" "broken" "spawn failed for $role on #$num (repair)"
-      pairs+=("${role}=${uuid}")
-    done
-    crew_uuid="$(bc_session spawn crew "$num" "$wt")" || finish 2 "N1" "broken" "spawn failed for crew on #$num (repair)"
-    pairs+=("crew=${crew_uuid}")
-    bc_comment create-analysis-stubs "$num" "${pairs[@]}" >/dev/null
-
-    sent="$(_nudge_pairs "A1" "$num" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "${pairs[@]}")"; nrc=$?
-    if [ "$nrc" -eq 2 ]; then
-      finish 2 "A1" "broken" "nudge failed for $sent on #$num"
-    fi
-    if [ -n "$sent" ]; then
-      finish 0 "A1" "nudged" "$sent on #$num"
-    fi
-    finish 1 "A1" "sleep" "repaired stubs for #$num, all leads already busy"
-  fi
+  scope="$(bc_issue scope "$num" 2>/dev/null)"
+  IFS=',' read -ra roles <<< "$scope"
+  bc_comment create-analysis-stubs "$num" "${roles[@]}" >/dev/null 2>&1 \
+    || finish 2 "A1" "broken" "could not create analysis stubs for #$num"
 
   pending="$(bc_comment pending-leads "$num")"; rc=$?
   wt="$(bc_session worktree "$num")" || finish 2 "A1" "broken" "worktree lookup failed for #$num"

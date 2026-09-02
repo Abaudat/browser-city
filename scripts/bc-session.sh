@@ -22,6 +22,10 @@
 #     can return while PowerShell is still launching claude). Later `send`
 #     calls need no wait -- the orchestrator's `ensure` reconciles state
 #     before every send anyway.
+#   - Session ids: derived, never recorded -- bc_role_uuid <role> <issue>
+#     (lib/claude.sh) gives every tick the same uuid, so `spawn`, `start`,
+#     `ensure` and the orchestrator all agree on it without a lookup, and a
+#     restart resumes the transcript that id names if one exists.
 set -u
 _BC_SESSION_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/config.sh
@@ -36,7 +40,8 @@ usage() {
   cat >&2 <<'EOF'
 usage: bc-session.sh <command> [args]
   worktree <issue>
-  spawn <role> <issue> <worktree>
+  uuid <role> <issue>                       -- the role's derived session id
+  spawn <role> <issue> <worktree>           -- start it (resume if it has a transcript), print the uuid
   state <uuid> <worktree>
   start <role> <issue> <uuid> <worktree>
   ensure <role> <issue> <uuid> <worktree>
@@ -51,15 +56,6 @@ EOF
 
 _bc_uuid8() { printf '%s' "${1:0:8}"; } # <uuid> -> first 8 chars
 
-_bc_new_uuid() { # -> a fresh uuid, lowercase
-  if command -v uuidgen >/dev/null 2>&1; then
-    uuidgen | tr '[:upper:]' '[:lower:]'
-  elif command -v python >/dev/null 2>&1; then
-    python -c "import uuid; print(uuid.uuid4())"
-  else
-    return 1
-  fi
-}
 
 # _bc_glyph_word <title> -> idle|working|none (no glyph yet, still the bare
 # name -- caller falls back to lastOutputAt).
@@ -144,20 +140,10 @@ _bc_wait_ready() {
   return 1
 }
 
-_bc_spawn() { # <role> <issue> <worktree> -> new uuid ; 0 spawned, 2 failed
-  local role="$1" issue="$2" worktree="$3"
-  local uuid uuid8 name handle
-  uuid="$(_bc_new_uuid)" || {
-    echo "bc-session: could not generate a uuid (no uuidgen or python on PATH)" >&2
-    return 2
-  }
-  uuid8="$(_bc_uuid8 "$uuid")"
-  name="bc-${role} #${issue} (${uuid8})"
-  handle="$(orca_terminal_create "$worktree" "$name" "$(claude_session_argv "$role" "$uuid" new "$name")")" || {
-    echo "bc-session: failed to create terminal for $name" >&2
-    return 2
-  }
-  _bc_wait_ready "$handle" "$worktree" "$uuid8" "$name"
+_bc_spawn() { # <role> <issue> <worktree> -> the role's uuid ; 0 started, 2 failed
+  local role="$1" issue="$2" worktree="$3" uuid
+  uuid="$(bc_role_uuid "$role" "$issue")"
+  _bc_start "$role" "$issue" "$uuid" "$worktree" >/dev/null || return 2
   printf '%s' "$uuid"
   return 0
 }
@@ -294,6 +280,11 @@ case "$cmd" in
     out="$(_bc_worktree "$@")"; rc=$?
     [ -n "$out" ] && printf '%s\n' "$out"
     exit "$rc"
+    ;;
+  uuid)
+    [ $# -eq 2 ] || { usage; exit 2; }
+    printf '%s\n' "$(bc_role_uuid "$1" "$2")"
+    exit 0
     ;;
   spawn)
     out="$(_bc_spawn "$@")"; rc=$?

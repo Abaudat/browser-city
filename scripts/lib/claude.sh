@@ -29,6 +29,17 @@ claude_session_argv() { # <role> <uuid> <new|resume> <name> -> command string
     "$claude_win" "$role" "$idflag" "$name"
 }
 
+# Session ids are derived, never recorded: md5 of "browser-city <role> #<issue>"
+# shaped like a v4 uuid so `claude --session-id` accepts it. Every tick can
+# recompute who to talk to from role + issue alone -- no stub has to carry a
+# uuid, a half-finished N1 has nothing to repair -- and after a restart
+# `bc-session start` resumes the transcript that id names, if one exists.
+bc_role_uuid() { # <role> <issue> -> uuid
+  local h
+  h="$(printf 'browser-city %s #%s' "$1" "$2" | md5sum | cut -c1-32)"
+  printf '%s-%s-4%s-8%s-%s' "${h:0:8}" "${h:8:4}" "${h:13:3}" "${h:17:3}" "${h:20:12}"
+}
+
 claude_oneshot() { # <promptfile> <inputfile> -> claude's stdout (the input is piped to stdin)
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read claude_oneshot "$(basename "$1")"; return; }
   "$CLAUDE" -p --model sonnet --tools "" --no-session-persistence \

@@ -71,7 +71,7 @@ cleanup() {
   echo
   echo "=== e2e: cleanup starting $(ts) ==="
 
-  local pr_json pr_num pr_state pr_merged="no"
+  local pr_json pr_num pr_state pr_base="" pr_head="" pr_merged="no"
 
   if [ -n "$SUB_NUM" ]; then
     local wt
@@ -87,11 +87,12 @@ cleanup() {
     # PR: search across all states so we can report merged? even if it's
     # already merged (bc-pr for-issue only ever finds OPEN PRs).
     pr_json="$("$GH" pr list --repo "$BC_REPO" --state all \
-      --search "\"Closes #$SUB_NUM\" in:body" --json number,state,baseRefName 2>/dev/null || true)"
+      --search "\"Closes #$SUB_NUM\" in:body" --json number,state,baseRefName,headRefName 2>/dev/null || true)"
     if [ -n "$pr_json" ] && [ "$(printf '%s' "$pr_json" | "$JQ" 'length' 2>/dev/null || echo 0)" -gt 0 ]; then
       pr_num="$(printf '%s' "$pr_json" | "$JQ" -r '.[0].number')"
       pr_state="$(printf '%s' "$pr_json" | "$JQ" -r '.[0].state')"
       pr_base="$(printf '%s' "$pr_json" | "$JQ" -r '.[0].baseRefName')"
+      pr_head="$(printf '%s' "$pr_json" | "$JQ" -r '.[0].headRefName')"
       [ "$pr_state" = "MERGED" ] && pr_merged=yes
       if [ "$pr_base" != "e2e-base" ]; then
         CLEANUP_NOTES="${CLEANUP_NOTES}WARNING: PR #$pr_num was retargeted at $pr_base; if it merged, that branch now carries the e2e's commit
@@ -145,6 +146,15 @@ cleanup() {
     git -C D:/Projects/BrowserCity branch -D "Abaudat/issue-$SUB_NUM" >/dev/null 2>&1 \
       && CLEANUP_NOTES="${CLEANUP_NOTES}deleted local branch Abaudat/issue-$SUB_NUM in D:/Projects/BrowserCity
 " || true
+    # Crew may have pushed the PR from a branch of its own naming; a closed
+    # (unmerged) PR leaves that branch behind.
+    if [ -n "${pr_head:-}" ] && [ "$pr_head" != "Abaudat/issue-$SUB_NUM" ] && [ "$pr_head" != "e2e-base" ]; then
+      git push origin --delete "$pr_head" >/dev/null 2>&1 \
+        && CLEANUP_NOTES="${CLEANUP_NOTES}deleted remote PR head branch $pr_head
+" \
+        || CLEANUP_NOTES="${CLEANUP_NOTES}remote PR head branch $pr_head already gone
+"
+    fi
   fi
   git push origin --delete "e2e-base" >/dev/null 2>&1 \
     && CLEANUP_NOTES="${CLEANUP_NOTES}deleted remote branch e2e-base
@@ -333,6 +343,12 @@ while :; do
       drill_uuids=()
       while IFS='=' read -r role uuid; do
         [ -n "$uuid" ] || continue
+        # Crew's id is derived and always listed, but Crew is only started at
+        # A2 -- a role with no terminal now has nothing to come back from.
+        if [ "$(bcs state "$uuid" "$drill_wt" 2>/dev/null || true)" = "absent" ]; then
+          echo "=== e2e: reboot drill: $role (${uuid:0:8}) has no terminal yet; not part of the drill ==="
+          continue
+        fi
         drill_uuids+=("$uuid")
         drill_role_of["$uuid"]="$role"
         if claude_transcript_exists "$drill_wt" "$uuid"; then

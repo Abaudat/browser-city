@@ -53,8 +53,8 @@ is_human_comment() {
 
 # --- renderers: full comment bodies, heading + short prose + markers -------
 
-render_analysis_stub() { # <role> <uuid>
-  local role="$1" uuid="$2"
+render_analysis_stub() { # <role>
+  local role="$1"
   cat <<EOF
 ### Analysis — ${role}
 
@@ -62,19 +62,6 @@ _pending_
 
 <!-- bc:lead:${role} -->
 <!-- bc:direction PENDING -->
-<!-- bc:session ${uuid} -->
-EOF
-}
-
-render_crew_stub() { # <uuid>
-  local uuid="$1"
-  cat <<EOF
-### Crew
-
-_pending_
-
-<!-- bc:crew -->
-<!-- bc:session ${uuid} -->
 EOF
 }
 

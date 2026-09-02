@@ -15,6 +15,8 @@ ORCH="$SCRIPTS_DIR/orchestrator.sh"
 . "$SCRIPTS_DIR/lib/config.sh"
 bc_init
 . "$SCRIPTS_DIR/lib/markers.sh"
+. "$SCRIPTS_DIR/lib/claude.sh"
+role8() { bc_role_uuid "$1" "$2" | cut -c1-8; }   # <role> <issue> -> first 8 chars of its derived uuid
 
 # run <fakedir> <now> -- one tick; BC_WAKE_REASON is written beside the
 # fixture dir so a test can inspect it directly (checked to equal stdout
@@ -61,31 +63,6 @@ one_active() {
 }
 
 NOW_MIDSPRINT="2026-09-02T08:00:00Z"   # Sprint 1, well before the demo hour.
-
-# --- deterministic uuids for spawn-heavy scenarios (N1, crash repair) ------
-# bc-session.sh's spawn uses `uuidgen` (falling back to python) for a fresh
-# id every call -- a fake uuidgen earlier on PATH, counting up from a reset
-# counter file, makes that sequence predictable so the fixtures below can
-# describe the exact terminals spawn will create.
-UUID_BIN="$(fake_dir)"
-cat > "$UUID_BIN/uuidgen" <<'EOF'
-#!/usr/bin/env bash
-n=$(cat "$UUID_COUNTER" 2>/dev/null || echo 0)
-n=$((n + 1))
-printf '%s' "$n" > "$UUID_COUNTER"
-printf '%08x-0000-0000-0000-%012x\n' "$n" "$n"
-EOF
-chmod +x "$UUID_BIN/uuidgen"
-
-uuid_for() { printf '%08x-0000-0000-0000-%012x\n' "$1" "$1"; }   # <n> -> the uuid uuidgen #n produces
-uuid8_for() { printf '%08x' "$1"; }                               # <n> -> its first 8 chars
-
-run_seq() { # <fakedir> <now> <counterfile> -- like run(), with the fake uuidgen on PATH
-  local fake="$1" now="$2" counter="$3"
-  echo 0 > "$counter"
-  PATH="$UUID_BIN:$PATH" UUID_COUNTER="$counter" \
-    BC_FAKE="$fake" BC_NOW="$now" BC_WAKE_REASON="$fake/reason.txt" bash "$ORCH"
-}
 
 # =============================================================================
 echo "sanity: the reason file carries exactly what stdout printed"
@@ -180,25 +157,28 @@ write_iterations "$F_N1"
 echo '["lead:tim"]' > "$F_N1/gh_issue_labels.901.json"
 printf 'WT901' > "$F_N1/orca_worktree_path.issue:901.json"
 echo '{"result":{"wait":{"satisfied":true}}}' > "$F_N1/orca_terminal_wait_idle.json"
-# scope is "quentin,tim" (BC_LEADS order) -> spawn order is quentin(#1), tim(#2), crew(#3)
-"$JQ" -n -c --arg u1 "$(uuid8_for 1)" --arg u2 "$(uuid8_for 2)" '
+# scope is "quentin,tim"; both panes are listed but disconnected, so `state`
+# reads them as absent, `ensure` starts them (create logged, --session-id
+# since there is no transcript) and `send` still resolves their handles.
+"$JQ" -n -c --arg u1 "$(role8 quentin 901)" --arg u2 "$(role8 tim 901)" '
   [
-    {handle:"hq",title:("✳ bc-quentin #901 (" + $u1 + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0},
-    {handle:"ht",title:("✳ bc-tim #901 (" + $u2 + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}
+    {handle:"hq",title:("✳ bc-quentin #901 (" + $u1 + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0},
+    {handle:"ht",title:("✳ bc-tim #901 (" + $u2 + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0}
   ]' > "$F_N1/orca_terminals.WT901.json"
-CNT_N1="$F_N1/uuid-counter.txt"
-OUT_N1="$(run_seq "$F_N1" "$NOW_MIDSPRINT" "$CNT_N1")"; RC_N1=$?
+OUT_N1="$(run "$F_N1" "$NOW_MIDSPRINT")"; RC_N1=$?
 check_out "N1: exit 0, dispatched both leads" 0 "N1 started dev cycle, dispatched quentin,tim on #901" \
   bash -c 'printf %s "$1"' _ "$OUT_N1"
 check "N1: transition to To analyze logged before any terminal create" 0 \
   line_before "$F_N1/calls.log" '^project_set_single 901 Status To analyze$' '^orca_terminal_create'
-check "N1: spawned quentin, tim and crew" 0 \
+check "N1: spawned quentin" 0 \
   log_has "$F_N1/calls.log" 'orca_terminal_create WT901 bc-quentin #901'
 check "N1: spawned tim"  0 log_has "$F_N1/calls.log" 'orca_terminal_create WT901 bc-tim #901'
-check "N1: spawned crew" 0 log_has "$F_N1/calls.log" 'orca_terminal_create WT901 bc-crew #901'
-check "N1: exactly 3 terminals created (no repeats)" 0 \
+check "N1: did not spawn crew (crew starts at A2, with a derived uuid)" 1 \
+  log_has "$F_N1/calls.log" 'orca_terminal_create WT901 bc-crew #901'
+check_out "N1: exactly 2 terminals created (no repeats)" 0 2 \
   log_count "$F_N1/calls.log" '^orca_terminal_create'
-check "N1: created 3 stub comments" 0 log_count "$F_N1/calls.log" '^gh_comment_create 901 '
+check_out "N1: created 2 stub comments (one per lead, none for crew)" 0 2 \
+  log_count "$F_N1/calls.log" '^gh_comment_create 901 '
 check "N1: sent to quentin's terminal" 0 log_has "$F_N1/calls.log" '^orca_terminal_send hq '
 check "N1: sent to tim's terminal"     0 log_has "$F_N1/calls.log" '^orca_terminal_send ht '
 check "N1: never sent to crew (crew is not nudged at To analyze)" 1 \
@@ -211,9 +191,13 @@ echo "A1: To analyze, one pending lead -- idle session -> nudged"
 F_A1I="$(fake_dir)"
 write_iterations "$F_A1I"
 one_active "$F_A1I" 201 "To analyze"
-{ render_analysis_stub tim "$(uuid_for 99)" | _comment 1; } | "$JQ" -sc '.' > "$F_A1I/gh_issue_comments.201.json"
+echo '["lead:tim"]' > "$F_A1I/gh_issue_labels.201.json"
+{
+  render_analysis_stub quentin | sed 's/direction PENDING/direction READY/' | _comment 1
+  render_analysis_stub tim | _comment 2
+} | "$JQ" -sc '.' > "$F_A1I/gh_issue_comments.201.json"
 printf 'WT201' > "$F_A1I/orca_worktree_path.issue:201.json"
-"$JQ" -n -c --arg u "$(uuid8_for 99)" '[{handle:"h1",title:("✳ bc-tim #201 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
+"$JQ" -n -c --arg u "$(role8 tim 201)" '[{handle:"h1",title:("✳ bc-tim #201 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
   > "$F_A1I/orca_terminals.WT201.json"
 check_out "A1: idle lead gets nudged, exit 0" 0 "A1 nudged tim on #201" run "$F_A1I" "$NOW_MIDSPRINT"
 check "A1: sent to tim's terminal" 0 log_has "$F_A1I/calls.log" '^orca_terminal_send h1 '
@@ -224,9 +208,13 @@ echo "A1: To analyze, one pending lead -- working session -> nothing sent, sleep
 F_A1W="$(fake_dir)"
 write_iterations "$F_A1W"
 one_active "$F_A1W" 202 "To analyze"
-{ render_analysis_stub tim "$(uuid_for 99)" | _comment 1; } | "$JQ" -sc '.' > "$F_A1W/gh_issue_comments.202.json"
+echo '["lead:tim"]' > "$F_A1W/gh_issue_labels.202.json"
+{
+  render_analysis_stub quentin | sed 's/direction PENDING/direction READY/' | _comment 1
+  render_analysis_stub tim | _comment 2
+} | "$JQ" -sc '.' > "$F_A1W/gh_issue_comments.202.json"
 printf 'WT202' > "$F_A1W/orca_worktree_path.issue:202.json"
-"$JQ" -n -c --arg u "$(uuid8_for 99)" '[{handle:"h1",title:("◑ bc-tim #202 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
+"$JQ" -n -c --arg u "$(role8 tim 202)" '[{handle:"h1",title:("◑ bc-tim #202 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
   > "$F_A1W/orca_terminals.WT202.json"
 check_out "A1: working lead -> sleep, exit 1" 1 "A1 sleep waiting on tim (working) on #202" run "$F_A1W" "$NOW_MIDSPRINT"
 check "A1: nothing was sent, nothing written at all" 1 test -f "$F_A1W/calls.log"
@@ -236,13 +224,17 @@ echo "A1: To analyze, one pending lead -- absent session -> restarted then sent"
 F_A1A="$(fake_dir)"
 write_iterations "$F_A1A"
 one_active "$F_A1A" 203 "To analyze"
-{ render_analysis_stub tim "$(uuid_for 99)" | _comment 1; } | "$JQ" -sc '.' > "$F_A1A/gh_issue_comments.203.json"
+echo '["lead:tim"]' > "$F_A1A/gh_issue_labels.203.json"
+{
+  render_analysis_stub quentin | sed 's/direction PENDING/direction READY/' | _comment 1
+  render_analysis_stub tim | _comment 2
+} | "$JQ" -sc '.' > "$F_A1A/gh_issue_comments.203.json"
 printf 'WT203' > "$F_A1A/orca_worktree_path.issue:203.json"
 echo '{"result":{"wait":{"satisfied":true}}}' > "$F_A1A/orca_terminal_wait_idle.json"
 # present in the terminal list but disconnected -> `state` reads it as
 # absent, so `ensure` recreates it -- and since _bc_session_find ignores
 # connected/orphaned, the later `send` still resolves to this same handle.
-"$JQ" -n -c --arg u "$(uuid8_for 99)" '[{handle:"h1",title:("✳ bc-tim #203 (" + $u + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0}]' \
+"$JQ" -n -c --arg u "$(role8 tim 203)" '[{handle:"h1",title:("✳ bc-tim #203 (" + $u + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0}]' \
   > "$F_A1A/orca_terminals.WT203.json"
 check_out "A1: absent lead -> restarted and nudged, exit 0" 0 "A1 nudged tim on #203" run "$F_A1A" "$NOW_MIDSPRINT"
 check "A1: recreated tim's terminal with --session-id (no transcript)" 0 \
@@ -256,12 +248,12 @@ echo "A2: To analyze, every lead READY -> mark In progress, dispatch to Crew"
 F_A2="$(fake_dir)"
 write_iterations "$F_A2"
 one_active "$F_A2" 210 "To analyze"
+echo '[]' > "$F_A2/gh_issue_labels.210.json"
 {
-  render_analysis_stub quentin "$(uuid_for 99)" | sed 's/direction PENDING/direction READY/' | _comment 1
-  render_crew_stub "$(uuid_for 50)" | _comment 2
+  render_analysis_stub quentin | sed 's/direction PENDING/direction READY/' | _comment 1
 } | "$JQ" -sc '.' > "$F_A2/gh_issue_comments.210.json"
 printf 'WT210' > "$F_A2/orca_worktree_path.issue:210.json"
-"$JQ" -n -c --arg u "$(uuid8_for 50)" '[{handle:"h1",title:("✳ bc-crew #210 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
+"$JQ" -n -c --arg u "$(role8 crew 210)" '[{handle:"h1",title:("✳ bc-crew #210 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
   > "$F_A2/orca_terminals.WT210.json"
 check_out "A2: marked In progress, dispatched crew, exit 0" 0 \
   "A2 marked In progress, dispatched crew on #210" run "$F_A2" "$NOW_MIDSPRINT"
@@ -275,9 +267,9 @@ echo "B1: In progress, no PR yet -> nudge Crew"
 F_B1="$(fake_dir)"
 write_iterations "$F_B1"
 one_active "$F_B1" 220 "In progress"
-{ render_crew_stub "$(uuid_for 99)" | _comment 1; } | "$JQ" -sc '.' > "$F_B1/gh_issue_comments.220.json"
+{ render_analysis_stub quentin | _comment 1; } | "$JQ" -sc '.' > "$F_B1/gh_issue_comments.220.json"
 printf 'WT220' > "$F_B1/orca_worktree_path.issue:220.json"
-"$JQ" -n -c --arg u "$(uuid8_for 99)" '[{handle:"h1",title:("✳ bc-crew #220 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
+"$JQ" -n -c --arg u "$(role8 crew 220)" '[{handle:"h1",title:("✳ bc-crew #220 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
   > "$F_B1/orca_terminals.WT220.json"
 check_out "B1: no PR -> nudged crew, exit 0" 0 "B1 nudged crew on #220" run "$F_B1" "$NOW_MIDSPRINT"
 check "B1: sent to crew's terminal" 0 log_has "$F_B1/calls.log" '^orca_terminal_send h1 '
@@ -330,13 +322,13 @@ echo "shaNEW" > "$F_C1/gh_pr_head.61.json"
   printf '### Review — quentin\n\n_Not yet reviewed._\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed shaOLD -->\n' | _comment 2
   printf '### Review — tim\n\n_Not yet reviewed._\n\n<!-- bc:lead:tim -->\n<!-- bc:reviewed shaNEW -->\n' | _comment 3
 } | "$JQ" -sc '.' > "$F_C1/gh_issue_comments.61.json"
-# the session record lives on the ISSUE (analysis stubs), not the PR.
+# the analysis stubs live on the ISSUE; session ids are derived, not read.
 {
-  render_analysis_stub quentin "$(uuid_for 99)" | _comment 1
-  render_analysis_stub tim "$(uuid_for 98)" | _comment 2
+  render_analysis_stub quentin | _comment 1
+  render_analysis_stub tim | _comment 2
 } | "$JQ" -sc '.' > "$F_C1/gh_issue_comments.250.json"
 printf 'WT250' > "$F_C1/orca_worktree_path.issue:250.json"
-"$JQ" -n -c --arg u "$(uuid8_for 99)" '[{handle:"h1",title:("✳ bc-quentin #250 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
+"$JQ" -n -c --arg u "$(role8 quentin 250)" '[{handle:"h1",title:("✳ bc-quentin #250 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
   > "$F_C1/orca_terminals.WT250.json"
 check_out "C1: nudged only the stale lead (quentin), exit 0" 0 "C1 nudged quentin on PR #61" run "$F_C1" "$NOW_MIDSPRINT"
 check "C1: sent to quentin's terminal" 0 log_has "$F_C1/calls.log" '^orca_terminal_send h1 '
@@ -402,9 +394,9 @@ echo "shaC4" > "$F_C4/gh_pr_head.64.json"
   render_status 280 "quentin" 2 | _comment 1
   printf '### Review — quentin\n\nno\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed shaC4 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 2
 } | "$JQ" -sc '.' > "$F_C4/gh_issue_comments.64.json"
-{ render_crew_stub "$(uuid_for 99)" | _comment 1; } | "$JQ" -sc '.' > "$F_C4/gh_issue_comments.280.json"
+{ render_analysis_stub quentin | _comment 1; } | "$JQ" -sc '.' > "$F_C4/gh_issue_comments.280.json"
 printf 'WT280' > "$F_C4/orca_worktree_path.issue:280.json"
-"$JQ" -n -c --arg u "$(uuid8_for 99)" '[{handle:"h1",title:("✳ bc-crew #280 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
+"$JQ" -n -c --arg u "$(role8 crew 280)" '[{handle:"h1",title:("✳ bc-crew #280 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
   > "$F_C4/orca_terminals.WT280.json"
 check_out "C4: marked Reviewed, dispatched crew, exit 0" 0 \
   "C4 marked Reviewed, dispatched crew to address PR #64" run "$F_C4" "$NOW_MIDSPRINT"
@@ -424,9 +416,9 @@ echo '{"number":65,"headRefOid":"shaE1"}' > "$F_E1/gh_pr_for_issue.290.json"
 echo "shaE1" > "$F_E1/gh_pr_head.65.json"
 { printf '### Crew\n\n_Not yet addressed._\n\n<!-- bc:crew -->\n<!-- bc:addressed shaOLD -->\n' | _comment 1; } \
   | "$JQ" -sc '.' > "$F_E1/gh_issue_comments.65.json"
-{ render_crew_stub "$(uuid_for 99)" | _comment 1; } | "$JQ" -sc '.' > "$F_E1/gh_issue_comments.290.json"
+{ render_analysis_stub quentin | _comment 1; } | "$JQ" -sc '.' > "$F_E1/gh_issue_comments.290.json"
 printf 'WT290' > "$F_E1/orca_worktree_path.issue:290.json"
-"$JQ" -n -c --arg u "$(uuid8_for 99)" '[{handle:"h1",title:("✳ bc-crew #290 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
+"$JQ" -n -c --arg u "$(role8 crew 290)" '[{handle:"h1",title:("✳ bc-crew #290 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
   > "$F_E1/orca_terminals.WT290.json"
 check_out "E1: nudged crew, exit 0" 0 "E1 nudged crew on PR #65" run "$F_E1" "$NOW_MIDSPRINT"
 check "E1: sent to crew's terminal" 0 log_has "$F_E1/calls.log" '^orca_terminal_send h1 '
@@ -463,17 +455,16 @@ echo '[]' > "$F_CR/gh_issue_comments.310.json"     # crashed after the transitio
 echo '["lead:tim"]' > "$F_CR/gh_issue_labels.310.json"
 printf 'WT310' > "$F_CR/orca_worktree_path.issue:310.json"
 echo '{"result":{"wait":{"satisfied":true}}}' > "$F_CR/orca_terminal_wait_idle.json"
-"$JQ" -n -c --arg u1 "$(uuid8_for 1)" --arg u2 "$(uuid8_for 2)" '
+"$JQ" -n -c --arg u1 "$(role8 quentin 310)" --arg u2 "$(role8 tim 310)" '
   [
     {handle:"hq",title:("✳ bc-quentin #310 (" + $u1 + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0},
     {handle:"ht",title:("✳ bc-tim #310 (" + $u2 + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}
   ]' > "$F_CR/orca_terminals.WT310.json"
-CNT_CR="$F_CR/uuid-counter.txt"
-OUT_CR="$(run_seq "$F_CR" "$NOW_MIDSPRINT" "$CNT_CR")"
+OUT_CR="$(run "$F_CR" "$NOW_MIDSPRINT")"
 check_out "repair: exit 0, both leads dispatched" 0 "A1 nudged quentin,tim on #310" \
   bash -c 'printf %s "$1"' _ "$OUT_CR"
-check "repair: spawned quentin, tim and crew" 0 log_count "$F_CR/calls.log" '^orca_terminal_create'
-check "repair: created 3 stub comments" 0 log_count "$F_CR/calls.log" '^gh_comment_create 310 '
+check "repair: no terminal created (both sessions were already up)" 1 log_has "$F_CR/calls.log" '^orca_terminal_create'
+check_out "repair: created 2 stub comments" 0 2 log_count "$F_CR/calls.log" '^gh_comment_create 310 '
 check "repair: sent to quentin" 0 log_has "$F_CR/calls.log" '^orca_terminal_send hq '
 check "repair: sent to tim"     0 log_has "$F_CR/calls.log" '^orca_terminal_send ht '
 check "repair: never re-transitioned Status (already To analyze)" 1 \

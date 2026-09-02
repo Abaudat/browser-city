@@ -70,10 +70,14 @@ A crash mid-tick is safe to retick: state is transitioned *before* the side
 effects it announces (N1 claims a sub-issue before spawning anything), and
 every "the gate says no" branch re-derives what's missing rather than
 trusting what a previous tick claimed to have done. Two spots repair a
-half-finished previous tick explicitly: at "To analyze", a sub-issue with no
-session stubs at all gets them rebuilt via the same spawn+stub path N1 uses;
-at "Leads review", a PR with no status comment gets its review stubs
-created before anything else is checked.
+half-finished previous tick explicitly: at "To analyze", the scoped leads'
+analysis stubs are re-created (only the missing ones) before the pending
+check, and a scoped lead with no stub counts as pending; at "Leads review",
+a PR with no status comment gets its review stubs created before anything
+else is checked. Session ids need no repair at all: every role's uuid is
+derived from role + issue number (`bc-session uuid <role> <issue>`, an md5
+shaped as a uuid), so any tick can recompute whom to resume, no comment has
+to carry a uuid, and Crew — which never writes on the issue — gets no stub.
 
 ## The exit contract
 

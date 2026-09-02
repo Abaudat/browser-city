@@ -12,6 +12,7 @@ BC_COMMENT="$SCRIPTS_DIR/bc-comment.sh"
 . "$SCRIPTS_DIR/lib/config.sh"
 bc_init
 . "$SCRIPTS_DIR/lib/markers.sh"
+. "$SCRIPTS_DIR/lib/claude.sh"
 
 run() { local fake="$1"; shift; BC_FAKE="$fake" bash "$BC_COMMENT" "$@"; }
 
@@ -49,22 +50,21 @@ echo "create-analysis-stubs: creates only the missing ones, idempotent on a seco
 
 FAKE_CAS="$(fake_dir)"
 echo '[]' > "$FAKE_CAS/gh_issue_comments.5.json"
-check_out "first run creates all three stubs" 0 3 \
-  run "$FAKE_CAS" create-analysis-stubs 5 "quentin=$U1" "tim=$U2" "crew=$U3"
-check_out "3 gh_comment_create calls logged" 0 3 \
+check_out "first run creates the two lead stubs (crew gets none)" 0 2 \
+  run "$FAKE_CAS" create-analysis-stubs 5 quentin tim crew
+check_out "2 gh_comment_create calls logged" 0 2 \
   _log_count "$FAKE_CAS/calls.log" '^gh_comment_create 5 '
 
 # Second run: the issue now carries the three real stubs -- rebuild the
 # fixture from what create-analysis-stubs actually wrote (marker-complete,
 # so the idempotency check must skip every one of them).
 {
-  render_analysis_stub quentin "$U1" | _comment 1
-  render_analysis_stub tim "$U2" | _comment 2
-  render_crew_stub "$U3" | _comment 3
+  render_analysis_stub quentin | _comment 1
+  render_analysis_stub tim | _comment 2
 } | "$JQ" -sc '.' > "$FAKE_CAS/gh_issue_comments.5.json"
 rm -f "$FAKE_CAS/calls.log"
 check_out "second run (stubs already present) creates 0" 0 0 \
-  run "$FAKE_CAS" create-analysis-stubs 5 "quentin=$U1" "tim=$U2" "crew=$U3"
+  run "$FAKE_CAS" create-analysis-stubs 5 quentin tim crew
 check "second run wrote nothing to calls.log" 1 test -f "$FAKE_CAS/calls.log"
 
 echo
@@ -141,20 +141,17 @@ echo '[]' > "$FAKE_BE_N/gh_issue_comments.5.json"
 check_out "no breaker -> no" 1 no run "$FAKE_BE_N" breaker-exists 5
 
 echo
-echo "sessions: reads {role: uuid} off the issue's stubs, exit 1 when there are none:"
+echo "sessions: every role's uuid is derived from role + issue, nothing is read:"
 
 FAKE_SESS="$(fake_dir)"
-{
-  render_analysis_stub quentin "$U1" | _comment 1
-  render_analysis_stub tim "$U2" | _comment 2
-  render_crew_stub "$U3" | _comment 3
-} | "$JQ" -sc '.' > "$FAKE_SESS/gh_issue_comments.5.json"
-check_out "sessions returns the three uuids" 0 \
-  "{\"quentin\":\"$U1\",\"tim\":\"$U2\",\"crew\":\"$U3\"}" run "$FAKE_SESS" sessions 5
-
-FAKE_SESS0="$(fake_dir)"
-echo '[]' > "$FAKE_SESS0/gh_issue_comments.5.json"
-check "no stubs at all -> exit 1" 1 run "$FAKE_SESS0" sessions 5
+check_out "sessions returns a derived uuid per lead plus crew, in BC_ROLES order" 0 \
+  "$("$JQ" -n -c --arg q "$(bc_role_uuid quentin 5)" --arg d "$(bc_role_uuid derek 5)" --arg t "$(bc_role_uuid tim 5)" --arg a "$(bc_role_uuid artie 5)" --arg c "$(bc_role_uuid crew 5)" '{quentin:$q,derek:$d,tim:$t,artie:$a,crew:$c}')" \
+  run "$FAKE_SESS" sessions 5
+check_out "a role's derived uuid is stable" 0 "$(bc_role_uuid tim 5)" bc_role_uuid tim 5
+check "derived uuids differ per issue" 1 test "$(bc_role_uuid tim 5)" = "$(bc_role_uuid tim 6)"
+check "derived uuids differ per role" 1 test "$(bc_role_uuid tim 5)" = "$(bc_role_uuid crew 5)"
+check "a derived uuid has the 8-4-4-4-12 shape" 0 \
+  bash -c 'printf %s "$1" | grep -Eq "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$"' _ "$(bc_role_uuid tim 5)"
 
 echo
 echo "scope: reads bc:scope off the PR's status comment, exit 2 when missing:"
@@ -171,10 +168,11 @@ echo
 echo "pending-leads: mixed READY/PENDING stubs, and the all-READY empty case:"
 
 FAKE_PEND="$(fake_dir)"
+echo '["lead:derek","lead:tim"]' > "$FAKE_PEND/gh_issue_labels.5.json"
 {
-  render_analysis_stub quentin "$U1" | _comment 1
-  render_analysis_stub tim "$U2" | _comment 2
-  render_analysis_stub derek "$U3" | _comment 3
+  render_analysis_stub quentin | _comment 1
+  render_analysis_stub tim | _comment 2
+  render_analysis_stub derek | _comment 3
 } | "$JQ" -sc '.' > "$FAKE_PEND/gh_issue_comments.5.json"
 # mark quentin READY, leave tim/derek PENDING
 sed -i 's/quentin -->\\n<!-- bc:direction PENDING/quentin -->\\n<!-- bc:direction READY/' "$FAKE_PEND/gh_issue_comments.5.json"
@@ -183,11 +181,17 @@ sed -i 's/quentin -->\\n<!-- bc:direction PENDING/quentin -->\\n<!-- bc:directio
 check_out "quentin ready, derek+tim pending (BC_LEADS order)" 0 "derek,tim" run "$FAKE_PEND" pending-leads 5
 
 FAKE_PEND_ALL="$(fake_dir)"
+echo '[]' > "$FAKE_PEND_ALL/gh_issue_labels.5.json"
 {
-  render_analysis_stub quentin "$U1" | _comment 1
+  render_analysis_stub quentin | _comment 1
 } | "$JQ" -sc '.' | sed 's/direction PENDING/direction READY/' > "$FAKE_PEND_ALL/gh_issue_comments.5.json"
 check "everyone ready -> exit 1, empty" 1 run "$FAKE_PEND_ALL" pending-leads 5
 check_out "everyone ready -> stdout empty" 1 "" run "$FAKE_PEND_ALL" pending-leads 5
+
+FAKE_PEND_MISSING="$(fake_dir)"
+echo '["lead:tim"]' > "$FAKE_PEND_MISSING/gh_issue_labels.5.json"
+{ render_analysis_stub quentin | _comment 1; } | "$JQ" -sc '.' | sed 's/direction PENDING/direction READY/' > "$FAKE_PEND_MISSING/gh_issue_comments.5.json"
+check_out "a scoped lead with no stub at all is pending" 0 "tim" run "$FAKE_PEND_MISSING" pending-leads 5
 
 echo
 echo "all-leads-commented: --issue and --pr phases:"
@@ -278,16 +282,16 @@ FAKE_STB_NO="$(fake_dir)"
 check_out "cycle 8, at the limit -> no" 1 no run "$FAKE_STB_NO" should-trigger-breaker 101
 
 echo
-echo "update-analysis: rebuilds the stub with the new prose, READY, and the preserved session uuid; exit 2 without a stub:"
+echo "update-analysis: rebuilds the stub with the new prose and READY; exit 2 without a stub:"
 
 FAKE_UA="$(fake_dir)"
-{ render_analysis_stub quentin "$U1" | _comment 7; } | "$JQ" -sc '.' > "$FAKE_UA/gh_issue_comments.5.json"
+{ render_analysis_stub quentin | _comment 7; } | "$JQ" -sc '.' > "$FAKE_UA/gh_issue_comments.5.json"
 BODYFILE="$FAKE_UA/direction.txt"
 printf 'Go with the tile-based approach.\n' > "$BODYFILE"
 check "update-analysis exits 0" 0 run "$FAKE_UA" update-analysis 5 quentin "$BODYFILE"
 check "edited comment 7" 0 log_has "$FAKE_UA/calls.log" '^gh_comment_edit 7 '
-check_out "rebuilt body: heading, prose, READY, preserved session" 0 \
-  "$(printf '### Analysis — quentin\n\nGo with the tile-based approach.\n\n<!-- bc:lead:quentin -->\n<!-- bc:direction READY -->\n<!-- bc:session %s -->' "$U1")" \
+check_out "rebuilt body: heading, prose, READY" 0 \
+  "$(printf '### Analysis — quentin\n\nGo with the tile-based approach.\n\n<!-- bc:lead:quentin -->\n<!-- bc:direction READY -->')" \
   _written_body "$FAKE_UA/calls.log" 1
 
 FAKE_UA_NONE="$(fake_dir)"
@@ -306,8 +310,8 @@ echo "cafebabe" > "$FAKE_AR/gh_pr_head.99.json"
 check "approve exits 0" 0 run "$FAKE_AR" approve 99 quentin
 check "approve edited quentin's stub (11), not tim's (12)" 0 log_has "$FAKE_AR/calls.log" '^gh_comment_edit 11 '
 check "approve never touched comment 12" 1 log_has "$FAKE_AR/calls.log" '^gh_comment_edit 12 '
-check_out "approve stamped the head and APPROVED" 0 \
-  "$(printf '### Review — quentin\n\nApproved.\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed cafebabe -->\n<!-- bc:verdict APPROVED -->')" \
+check_out "approve wrote a Cycle 1 section (no status comment -> cycle 1), the head and APPROVED" 0 \
+  "$(printf '### Review — quentin\n\n#### Cycle 1 — APPROVED @ `cafebab`\nApproved.\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed cafebabe -->\n<!-- bc:verdict APPROVED -->')" \
   _written_body "$FAKE_AR/calls.log" 1
 
 FAKE_RJ="$(fake_dir)"
@@ -316,9 +320,34 @@ echo "deadbeef" > "$FAKE_RJ/gh_pr_head.99.json"
 REASON="$FAKE_RJ/reason.txt"
 printf 'This breaks the save format.\n' > "$REASON"
 check "reject with a bodyfile exits 0" 0 run "$FAKE_RJ" reject 99 tim "$REASON"
-check_out "reject stamped the head and CHANGES with the given prose" 0 \
-  "$(printf '### Review — tim\n\nThis breaks the save format.\n\n<!-- bc:lead:tim -->\n<!-- bc:reviewed deadbeef -->\n<!-- bc:verdict CHANGES -->')" \
+check_out "reject wrote a Cycle 1 section, the head and CHANGES with the given prose" 0 \
+  "$(printf '### Review — tim\n\n#### Cycle 1 — CHANGES @ `deadbee`\nThis breaks the save format.\n\n<!-- bc:lead:tim -->\n<!-- bc:reviewed deadbeef -->\n<!-- bc:verdict CHANGES -->')" \
   _written_body "$FAKE_RJ/calls.log" 1
+
+echo
+echo "approve on a later cycle keeps the earlier sections; the same cycle twice replaces its section:"
+
+FAKE_HIST="$(fake_dir)"
+{
+  render_status 5 "tim" 2 | _comment 30
+  printf '### Review — tim\n\n#### Cycle 1 — CHANGES @ `abc1234`\n- the save format breaks\n\n<!-- bc:lead:tim -->\n<!-- bc:reviewed abc1234abc1234 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 31
+} | "$JQ" -sc '.' > "$FAKE_HIST/gh_issue_comments.99.json"
+echo "feedface" > "$FAKE_HIST/gh_pr_head.99.json"
+check "approve on cycle 2 exits 0" 0 run "$FAKE_HIST" approve 99 tim
+check_out "cycle 1 section kept above the new cycle 2 section" 0 \
+  "$(printf '### Review — tim\n\n#### Cycle 1 — CHANGES @ `abc1234`\n- the save format breaks\n\n#### Cycle 2 — APPROVED @ `feedfac`\nApproved.\n\n<!-- bc:lead:tim -->\n<!-- bc:reviewed feedface -->\n<!-- bc:verdict APPROVED -->')" \
+  _written_body "$FAKE_HIST/calls.log" 1
+
+FAKE_SAME="$(fake_dir)"
+{
+  render_status 5 "tim" 1 | _comment 30
+  printf '### Review — tim\n\n#### Cycle 1 — CHANGES @ `abc1234`\n- the save format breaks\n\n<!-- bc:lead:tim -->\n<!-- bc:reviewed abc1234abc1234 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 31
+} | "$JQ" -sc '.' > "$FAKE_SAME/gh_issue_comments.99.json"
+echo "abc1234abc1234" > "$FAKE_SAME/gh_pr_head.99.json"
+check "re-stamping the same cycle exits 0" 0 run "$FAKE_SAME" approve 99 tim
+check_out "the cycle 1 section was replaced, not duplicated" 0 \
+  "$(printf '### Review — tim\n\n#### Cycle 1 — APPROVED @ `abc1234`\nApproved.\n\n<!-- bc:lead:tim -->\n<!-- bc:reviewed abc1234abc1234 -->\n<!-- bc:verdict APPROVED -->')" \
+  _written_body "$FAKE_SAME/calls.log" 1
 
 FAKE_AR_NONE="$(fake_dir)"
 echo '[]' > "$FAKE_AR_NONE/gh_issue_comments.99.json"
