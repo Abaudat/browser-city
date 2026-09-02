@@ -98,6 +98,8 @@ stderr; stdout carries only that one reason line.
 | `BC_FAKE=<dir>` | Every level-1 primitive read/write is replayed from/logged to `<dir>` instead of touching `gh`/`orca`/`claude`. Propagates to every subprocess the orchestrator spawns. This is what the whole test suite runs under. | unset (real calls) |
 | `BC_NOW=<epoch or ISO timestamp>` | Pins "now" for every sprint/demo-hour/clock decision (`bc-sprint over`, `demo-current`, etc). | unset (real clock) |
 | `BC_WAKE_REASON=<file>` | Where the one-line reason gets written. | `$(bc_state_dir)/wake-reason.txt` — see `lib/paths.sh`; falls back to `${TMPDIR:-$TEMP}/bc-wake-reason.txt` if that can't be resolved. |
+| `BC_ENV_FILE=<file>` | A file of `BC_*=value` lines sourced by every bc-* process — including the ones the role sessions run in their own Orca terminals, which inherit nothing from the orchestrator's environment. The e2e run uses it to point `BC_BASE_BRANCH` at a throwaway base. | `~/.browsercity/env.sh` (absent = defaults) |
+| `BC_READY_TIMEOUT_S=<s>` | How long `bc-session spawn`/`start` wait for the new terminal to show Claude's idle prompt (✳ title + `agentIdentity: claude`) before giving up with a warning. | 90 |
 | `BC_SESSION_MODE=main` | `bc-session.sh worktree` returns `$BC_MAIN_CHECKOUT` instead of creating/looking up an Orca worktree-per-issue — the spike's documented fallback if Orca worktrees are ever unavailable. | unset (worktree-per-issue) |
 
 (`lib/config.sh` also exposes plain constant overrides — `BC_REPO`,
@@ -124,3 +126,22 @@ pass/fail summary and exits accordingly).
 Note: `test-orchestrator.sh` alone takes a couple of minutes — each of its
 ~35 scenarios shells out through the real level-2 scripts and their `gh`
 path resolution — so give it a generous timeout if scripting around it.
+
+### The live end-to-end run
+
+```
+bash scripts/tests/e2e.sh
+```
+
+Not part of `run-all.sh`: it drives the real board, repo and Orca. It pushes
+a throwaway `e2e-base` branch and points `BC_BASE_BRANCH` at it through
+`BC_ENV_FILE`, creates a throwaway parent + sub-issue (`lead:tim`, Sprint =
+current, Backlog, Standard), ticks `orchestrator.sh` every 60 s until the
+sub-issue is Done (or 60 min), once closes every role terminal at
+`To analyze` to check the next tick resumes each session without
+duplicating it, and then — from an EXIT trap, so Ctrl-C or a timeout also
+gets there — stops the sessions, removes the worktree, closes any open PR,
+**deletes** both issues (which drops them from the board), deletes the
+branches and restores the env file. Three real Claude sessions do real work,
+so budget 15–45 minutes and some quota. The one thing it cannot remove is
+the merged PR record itself.

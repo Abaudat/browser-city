@@ -16,10 +16,12 @@
 #     glyph (◐◑◒◓ spinner, ...) = working. A title with NO glyph yet (Claude
 #     still booting, so the title is still the bare name we requested) falls
 #     back to `lastOutputAt`: recent (< BC_IDLE_MS) = working, else idle.
-#   - Send: `terminal wait --for tui-idle` is only needed once, right after
-#     `spawn`/`start` create the terminal (a fresh or resuming Claude takes
-#     ~10s to paint its first prompt); later `send` calls need no wait -- the
-#     orchestrator's `ensure` reconciles state before every send anyway.
+#   - Send: readiness is checked once, right after `spawn`/`start` create
+#     the terminal -- `terminal wait --for tui-idle` PLUS polling for the ✳
+#     title with agentIdentity "claude" (see _bc_wait_ready: tui-idle alone
+#     can return while PowerShell is still launching claude). Later `send`
+#     calls need no wait -- the orchestrator's `ensure` reconciles state
+#     before every send anyway.
 set -u
 _BC_SESSION_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/config.sh
@@ -111,6 +113,37 @@ _bc_worktree() { # <issue> -> path ; 0 found/created, 2 create failed
   return 0
 }
 
+# _bc_wait_ready <handle> <worktree> <uuid8> <name> -- block until the new
+# terminal is a Claude session showing its idle prompt. `terminal wait --for
+# tui-idle` is NOT enough on its own: the e2e run (2026-09-02) saw it return
+# satisfied ~3s after create, while the terminal was still PowerShell
+# booting claude -- agentIdentity was still null, so `send`'s title+identity
+# match found nothing ("no session found"), and anything sent then was lost
+# before Claude read its stdin. Claude announces itself by rewriting the
+# title with the ✳ glyph and Orca flips agentIdentity to "claude" at the
+# same time, so that is what this polls for, after the cheap wait. Never
+# fatal: a session that is slow past the timeout is still found by the next
+# tick's `ensure`.
+: "${BC_READY_TIMEOUT_S:=90}"
+_bc_wait_ready() {
+  local handle="$1" worktree="$2" uuid8="$3" name="$4" t waited=0
+  orca_terminal_wait_idle "$handle" 60000 \
+    || echo "bc-session: warning: $name did not reach tui-idle within 60s" >&2
+  # The fake has no boot sequence to wait out (fixtures are static, so the
+  # poll could only spin to the timeout); the tui-idle fixture above is the
+  # test contract.
+  [ -n "${BC_FAKE:-}" ] && return 0
+  while [ "$waited" -lt "$BC_READY_TIMEOUT_S" ]; do
+    t="$(_bc_session_find "$worktree" "$uuid8")"
+    if [ -n "$t" ] && [ "$(_bc_glyph_word "$(printf '%s' "$t" | "$JQ" -r '.title // ""')")" = "idle" ]; then
+      return 0
+    fi
+    sleep 2; waited=$((waited + 2))
+  done
+  echo "bc-session: warning: $name did not show its idle prompt within ${BC_READY_TIMEOUT_S}s" >&2
+  return 1
+}
+
 _bc_spawn() { # <role> <issue> <worktree> -> new uuid ; 0 spawned, 2 failed
   local role="$1" issue="$2" worktree="$3"
   local uuid uuid8 name handle
@@ -124,8 +157,7 @@ _bc_spawn() { # <role> <issue> <worktree> -> new uuid ; 0 spawned, 2 failed
     echo "bc-session: failed to create terminal for $name" >&2
     return 2
   }
-  orca_terminal_wait_idle "$handle" 60000 \
-    || echo "bc-session: warning: $name did not reach tui-idle within 60s" >&2
+  _bc_wait_ready "$handle" "$worktree" "$uuid8" "$name"
   printf '%s' "$uuid"
   return 0
 }
@@ -165,8 +197,7 @@ _bc_start() { # <role> <issue> <uuid> <worktree> -> resume|new ; 0 started, 2 fa
     echo "bc-session: failed to create terminal for $name" >&2
     return 2
   }
-  orca_terminal_wait_idle "$handle" 60000 \
-    || echo "bc-session: warning: $name did not reach tui-idle within 60s" >&2
+  _bc_wait_ready "$handle" "$worktree" "$uuid8" "$name"
   printf '%s' "$mode"
   return 0
 }

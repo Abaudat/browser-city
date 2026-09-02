@@ -10,6 +10,14 @@ _BC_CONFIG_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=paths.sh
 . "$_BC_CONFIG_LIB_DIR/paths.sh"
 
+# Role sessions run in their own Orca terminals and inherit nothing from the
+# orchestrator's environment, so an override that has to reach them too (the
+# e2e run points BC_BASE_BRANCH at a throwaway base, for instance) is written
+# to this file once and sourced by every process. Absent file = defaults.
+: "${BC_ENV_FILE:=$(bc_state_dir)/env.sh}"
+# shellcheck disable=SC1090
+[ -f "$BC_ENV_FILE" ] && . "$BC_ENV_FILE"
+
 : "${BC_REPO:=Abaudat/browser-city}"
 : "${BC_PROJECT_OWNER:=Abaudat}"
 : "${BC_PROJECT_NUMBER:=1}"
@@ -46,10 +54,14 @@ bc_init() {
   JQ="${JQ:-$(resolve_jq || true)}"
   ORCA="${ORCA:-$(resolve_orca || true)}"
   CLAUDE="${CLAUDE:-$(resolve_claude || true)}"
-  [ -n "$GH" ] && [ -x "$GH" ]         || { echo "bc_init: gh not found" >&2; exit 2; }
-  [ -n "$JQ" ] && [ -x "$JQ" ]         || { echo "bc_init: jq not found" >&2; exit 2; }
-  [ -n "$ORCA" ] && [ -x "$ORCA" ]     || { echo "bc_init: orca not found" >&2; exit 2; }
-  [ -n "$CLAUDE" ] && [ -x "$CLAUDE" ] || { echo "bc_init: claude not found" >&2; exit 2; }
+  # _bc_is_executable (paths.sh): a POSIX x bit, or a Windows launcher
+  # (.cmd/.bat/.exe) that merely needs to exist -- git-bash on this machine
+  # does not set the x bit on plain-text .cmd/.bat files, so a bare `-x`
+  # check here would reject the exact claude.cmd resolve_claude picked.
+  [ -n "$GH" ] && _bc_is_executable "$GH"         || { echo "bc_init: gh not found" >&2; exit 2; }
+  [ -n "$JQ" ] && _bc_is_executable "$JQ"         || { echo "bc_init: jq not found" >&2; exit 2; }
+  [ -n "$ORCA" ] && _bc_is_executable "$ORCA"     || { echo "bc_init: orca not found" >&2; exit 2; }
+  [ -n "$CLAUDE" ] && _bc_is_executable "$CLAUDE" || { echo "bc_init: claude not found" >&2; exit 2; }
   export GH JQ ORCA CLAUDE
 }
 

@@ -32,6 +32,21 @@ posix2win() {
   esac
 }
 
+# Windows decides "executable" by extension (PATHEXT), not a POSIX x bit --
+# and on this machine git-bash does not set the x bit on plain-text .cmd/
+# .bat launchers (ls -la shows them -rw-r--r--), so `[ -x ]` alone silently
+# skips them. resolve_claude's candidate order relies on that .cmd landing
+# first (it is the launcher a non-bash terminal -- PowerShell, cmd -- can
+# actually run); skipping it falls through to a POSIX-only fallback that
+# such a terminal cannot execute at all.
+_bc_is_executable() { # <path> -> exit 0 if usable as a command
+  [ -x "$1" ] && return 0
+  case "$1" in
+    *.cmd|*.bat|*.exe) [ -f "$1" ] ;;
+    *) return 1 ;;
+  esac
+}
+
 # Candidates first, PATH only as a last resort: PATH is the thing the precheck
 # environment is known to be missing, so it may confirm a tool but is never
 # relied on to supply one.
@@ -45,12 +60,12 @@ resolve() { # $1 command name, $2.. candidate absolute paths (globs allowed)
   local oldifs="$IFS"; IFS=
   for candidate in "$@"; do
     for match in $candidate; do
-      [ -x "$match" ] && { found="$match"; break 2; }
+      _bc_is_executable "$match" && { found="$match"; break 2; }
     done
   done
   IFS="$oldifs"
   [ -n "$found" ] || found="$(command -v "$name" 2>/dev/null)"
-  [ -n "$found" ] && [ -x "$found" ] && { printf '%s' "$found"; return 0; }
+  [ -n "$found" ] && _bc_is_executable "$found" && { printf '%s' "$found"; return 0; }
   return 1
 }
 

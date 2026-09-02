@@ -13,14 +13,20 @@ _BC_CLAUDE_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 . "$_BC_CLAUDE_LIB_DIR/fake.sh"
 
 claude_session_argv() { # <role> <uuid> <new|resume> <name> -> command string
-  local role="$1" uuid="$2" mode="$3" name="$4" idflag
+  local role="$1" uuid="$2" mode="$3" name="$4" idflag claude_win
   case "$mode" in
     new)    idflag="--session-id $uuid" ;;
     resume) idflag="--resume $uuid" ;;
     *) return 2 ;;
   esac
+  # This command string is typed into the Orca terminal's own shell
+  # (PowerShell on Windows), not bash -- $CLAUDE is resolved in POSIX form
+  # ("/c/Users/...") for every other caller in these scripts, all of which
+  # run under bash, but PowerShell has no such path syntax and reports
+  # CommandNotFoundException on it. Convert to Windows form here only.
+  claude_win="$(posix2win "$CLAUDE")"
   printf "%s --agent %s %s -n '%s' --permission-mode bypassPermissions" \
-    "$CLAUDE" "$role" "$idflag" "$name"
+    "$claude_win" "$role" "$idflag" "$name"
 }
 
 claude_oneshot() { # <promptfile> <inputfile> -> claude's stdout (the input is piped to stdin)

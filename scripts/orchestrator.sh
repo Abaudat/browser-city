@@ -133,6 +133,16 @@ _nudge() {
 # whole tick as broken on a hard failure. Prints the comma-joined roles
 # actually sent to on stdout. For A1 and C1, whose roles come from a
 # pending/stale-leads query rather than a just-built pairs list.
+#
+# NB: every caller invokes this via a `sent="$(_nudge_all ...)"` command
+# substitution, which runs in its own subshell -- so `finish`'s bare `exit`
+# here would only kill that subshell, not the tick. The reason text would
+# leak onto stdout, get captured into $sent, and the caller would go on to
+# treat a real "broken" failure as a successful dispatch (this happened live
+# during the e2e run: "N1 started dev cycle, dispatched N1 broken nudge
+# failed for quentin on #12 on #12", exit 0). So on a hard failure this
+# prints only the failed role name and returns 2; the caller, which is NOT
+# itself in a subshell, checks $? and calls finish.
 _nudge_all() {
   local node="$1" issue="$2" worktree="$3" promptfile="$4" pr="$5" roles_csv="$6"
   local roles role rc sent=()
@@ -142,7 +152,8 @@ _nudge_all() {
     [ -n "$role" ] || continue
     _nudge "$role" "$issue" "$worktree" "$promptfile" "$pr"; rc=$?
     if [ "$rc" -eq 2 ]; then
-      finish 2 "$node" "broken" "nudge failed for $role on #$issue"
+      printf '%s' "$role"
+      return 2
     fi
     [ "$rc" -eq 0 ] && sent+=("$role")
   done
@@ -156,6 +167,8 @@ _nudge_all() {
 # is always nudged separately with its own prompt. Prints the comma-joined
 # roles actually sent to on stdout. Used by N1 and the "To analyze"
 # crash-repair, which both already hold the pairs they just created.
+#
+# Same subshell caveat as _nudge_all above -- see its comment.
 _nudge_pairs() {
   local node="$1" issue="$2" worktree="$3" promptfile="$4" pr="$5"; shift 5
   local pair role uuid rc sent=()
@@ -164,7 +177,8 @@ _nudge_pairs() {
     [ "$role" = "crew" ] && continue
     _nudge_send "$role" "$issue" "$worktree" "$uuid" "$promptfile" "$pr"; rc=$?
     if [ "$rc" -eq 2 ]; then
-      finish 2 "$node" "broken" "nudge failed for $role on #$issue"
+      printf '%s' "$role"
+      return 2
     fi
     [ "$rc" -eq 0 ] && sent+=("$role")
   done
@@ -264,7 +278,10 @@ if [ "$cur_rc" -eq 1 ]; then
 
   bc_comment create-analysis-stubs "$n" "${pairs[@]}" >/dev/null
 
-  sent="$(_nudge_pairs "N1" "$n" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "${pairs[@]}")"
+  sent="$(_nudge_pairs "N1" "$n" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "${pairs[@]}")"; nrc=$?
+  if [ "$nrc" -eq 2 ]; then
+    finish 2 "N1" "broken" "nudge failed for $sent on #$n"
+  fi
   if [ -n "$sent" ]; then
     finish 0 "N1" "started dev cycle, dispatched" "$sent on #$n"
   fi
@@ -303,7 +320,10 @@ case "$status" in
     pairs+=("crew=${crew_uuid}")
     bc_comment create-analysis-stubs "$num" "${pairs[@]}" >/dev/null
 
-    sent="$(_nudge_pairs "A1" "$num" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "${pairs[@]}")"
+    sent="$(_nudge_pairs "A1" "$num" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "${pairs[@]}")"; nrc=$?
+    if [ "$nrc" -eq 2 ]; then
+      finish 2 "A1" "broken" "nudge failed for $sent on #$num"
+    fi
     if [ -n "$sent" ]; then
       finish 0 "A1" "nudged" "$sent on #$num"
     fi
@@ -323,7 +343,10 @@ case "$status" in
     finish 0 "A2" "marked In progress" "#$num"
   elif [ "$rc" -eq 0 ]; then
     # A1 no: nudge exactly the pending leads.
-    sent="$(_nudge_all "A1" "$num" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "$pending")"
+    sent="$(_nudge_all "A1" "$num" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "$pending")"; nrc=$?
+    if [ "$nrc" -eq 2 ]; then
+      finish 2 "A1" "broken" "nudge failed for $sent on #$num"
+    fi
     if [ -n "$sent" ]; then
       finish 0 "A1" "nudged" "$sent on #$num"
     fi
@@ -378,7 +401,10 @@ case "$status" in
     finish 2 "C1" "broken" "stale-leads failed for PR #$pr"
   fi
   if [ "$stale_rc" -eq 0 ]; then
-    sent="$(_nudge_all "C1" "$num" "$wt" "$_BC_PROMPTS/dispatch-review.md" "$pr" "$stale")"
+    sent="$(_nudge_all "C1" "$num" "$wt" "$_BC_PROMPTS/dispatch-review.md" "$pr" "$stale")"; nrc=$?
+    if [ "$nrc" -eq 2 ]; then
+      finish 2 "C1" "broken" "nudge failed for $sent on PR #$pr"
+    fi
     if [ -n "$sent" ]; then
       finish 0 "C1" "nudged" "$sent on PR #$pr"
     fi
