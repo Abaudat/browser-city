@@ -15,7 +15,9 @@ When the work is done and your tests pass, open the PR:
     bash {{scripts}}/bc-pr.sh open {{issue}} "<title>" <bodyfile>
 
 where `<bodyfile>` holds your PR description prose (the script appends
-"Closes #{{issue}}" for you).
+"Closes #{{issue}}" for you). The script chooses the PR's base branch; never
+retarget the PR or open one another way, even if a direction says the base
+looks wrong — note the concern in the PR description instead.
 
 If you already opened a PR for this issue, only make sure it reflects your
 latest committed work (push anything pending), then stop.

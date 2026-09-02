@@ -6,8 +6,9 @@
 #
 #   bash scripts/tests/e2e.sh
 #
-# What it does: pushes a throwaway base branch (e2e-base) and points
-# BC_BASE_BRANCH at it via the env file every bc-* process sources, creates
+# What it does: pushes a throwaway base branch (e2e-base, from this
+# checkout's HEAD) and points BC_BASE_BRANCH at it via the env file every
+# bc-* process sources, creates
 # a throwaway parent+sub issue on the board, ticks `orchestrator.sh` in a
 # loop (printing exit/reason/current every tick, recording every Status
 # transition with a timestamp) until the sub-issue reaches Done or 60
@@ -86,11 +87,16 @@ cleanup() {
     # PR: search across all states so we can report merged? even if it's
     # already merged (bc-pr for-issue only ever finds OPEN PRs).
     pr_json="$("$GH" pr list --repo "$BC_REPO" --state all \
-      --search "\"Closes #$SUB_NUM\" in:body" --json number,state 2>/dev/null || true)"
+      --search "\"Closes #$SUB_NUM\" in:body" --json number,state,baseRefName 2>/dev/null || true)"
     if [ -n "$pr_json" ] && [ "$(printf '%s' "$pr_json" | "$JQ" 'length' 2>/dev/null || echo 0)" -gt 0 ]; then
       pr_num="$(printf '%s' "$pr_json" | "$JQ" -r '.[0].number')"
       pr_state="$(printf '%s' "$pr_json" | "$JQ" -r '.[0].state')"
+      pr_base="$(printf '%s' "$pr_json" | "$JQ" -r '.[0].baseRefName')"
       [ "$pr_state" = "MERGED" ] && pr_merged=yes
+      if [ "$pr_base" != "e2e-base" ]; then
+        CLEANUP_NOTES="${CLEANUP_NOTES}WARNING: PR #$pr_num was retargeted at $pr_base; if it merged, that branch now carries the e2e's commit
+"
+      fi
       if [ "$pr_state" = "OPEN" ]; then
         "$GH" pr close "$pr_num" --repo "$BC_REPO" >/dev/null 2>&1 || true
         pr_state="CLOSED"
@@ -195,17 +201,13 @@ trap cleanup EXIT INT TERM
 # =============================================================================
 # 1. Setup
 # =============================================================================
-echo "=== e2e: setup: pushing throwaway base branch e2e-base from origin/master ==="
-git fetch origin master
-# The destination must be a fully qualified ref (refs/heads/e2e-base) --
-# with a remote-tracking ref as the source ("origin/master"), git cannot
-# guess an unqualified "e2e-base" destination and errors out with "not a
-# full refname" instead of creating/updating the branch.
-if ! git push origin origin/master:refs/heads/e2e-base 2>"$TMP/e2e-push.err"; then
-  echo "=== e2e: setup: e2e-base likely already exists, force-pushing ==="
-  git push -f origin origin/master:refs/heads/e2e-base
-fi
-rm -f "$TMP/e2e-push.err"
+# The base is this checkout's HEAD, not origin/master: the task worktree
+# branches from HEAD, so a base anywhere else makes the PR diff carry every
+# commit between the two, and a lead will (rightly) direct Crew to retarget
+# the PR at the branch the work actually builds on -- which is how run 2
+# merged its canary into scotty-skill instead of e2e-base.
+echo "=== e2e: setup: pushing throwaway base branch e2e-base from HEAD ($(git rev-parse --short HEAD)) ==="
+git push -f origin HEAD:refs/heads/e2e-base
 
 echo "=== e2e: setup: writing $ENV_FILE (BC_BASE_BRANCH=e2e-base) ==="
 if [ -f "$ENV_FILE" ]; then

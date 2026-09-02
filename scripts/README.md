@@ -135,7 +135,9 @@ bash scripts/tests/e2e.sh
 ```
 
 Not part of `run-all.sh`: it drives the real board, repo and Orca. It pushes
-a throwaway `e2e-base` branch and points `BC_BASE_BRANCH` at it through
+a throwaway `e2e-base` branch from the current HEAD (the task worktree
+branches from HEAD too, so the PR diff is only Crew's work) and points
+`BC_BASE_BRANCH` at it through
 `BC_ENV_FILE`, creates a throwaway parent + sub-issue (`lead:tim`, Sprint =
 current, Backlog, Standard), ticks `orchestrator.sh` every 60 s until the
 sub-issue is Done (or 60 min), once closes every role terminal at
