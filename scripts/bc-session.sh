@@ -248,37 +248,34 @@ _bc_issue_handles() { # <issue> <worktree>
     '.[] | select(.agentIdentity=="claude" and ((.title // "") | contains($pat))) | .handle'
 }
 
-# Close every pane, then list again: a close Orca acknowledged can still leave
-# the pane standing, and a pane left standing is a session the reboot drill
-# would count as never restarted. So the count printed is what is actually
-# gone, and anything still there after a second round is reported as broken.
+# Close every pane, then list again, and keep going until the list is empty
+# or BC_STOP_TIMEOUT_S is spent. Orca refuses to close some busy panes with
+# `terminal_handle_stale` (reliably the oldest Claude pane in a worktree) for
+# anything from a few seconds to a minute, then accepts the very same call, so
+# a single pass counts a pane as closed that is still working -- which is how
+# the reboot drill found a "closed" lead still at it. The count printed is what
+# is actually gone; anything still there at the end is reported as broken.
+: "${BC_STOP_TIMEOUT_S:=120}"
 _bc_stop_all() { # <issue> <worktree> -> count ; 0 closed >=1, 1 none found, 2 broken
   local issue="$1" worktree="$2"
-  local handles h count left round=0
+  local handles h count left waited=0
   handles="$(_bc_issue_handles "$issue" "$worktree")" || { printf '0'; return 2; }
   [ -n "$handles" ] || { printf '0'; return 1; }
   count="$(printf '%s\n' "$handles" | grep -c .)"
   while :; do
-    # One attempt per pane in the first round: Orca answers `terminal_handle_stale`
-    # for a pane that is already going away, and the listing below is the truth.
     while IFS= read -r h; do
       [ -n "$h" ] || continue
-      if [ "$round" -eq 0 ]; then
-        BC_CLOSE_RETRIES=1 orca_terminal_close "$h" 2>/dev/null || true
-      else
-        orca_terminal_close "$h" || true
-      fi
+      BC_CLOSE_RETRIES=1 orca_terminal_close "$h" 2>/dev/null || true
     done <<< "$handles"
     [ -n "${BC_FAKE:-}" ] && { printf '%s' "$count"; return 0; }
-    sleep 2
+    sleep 3; waited=$((waited + 3))
     left="$(_bc_issue_handles "$issue" "$worktree")" || left=""
     [ -n "$left" ] || { printf '%s' "$count"; return 0; }
-    round=$((round + 1))
-    [ "$round" -lt 2 ] || break
+    [ "$waited" -lt "$BC_STOP_TIMEOUT_S" ] || break
     handles="$left"
   done
   left="$(printf '%s\n' "$left" | grep -c .)"
-  echo "bc-session: stop-all: $left of $count pane(s) for #$issue still open" >&2
+  echo "bc-session: stop-all: $left of $count pane(s) for #$issue still open after ${BC_STOP_TIMEOUT_S}s" >&2
   printf '%s' $((count - left))
   return 2
 }

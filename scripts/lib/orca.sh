@@ -68,16 +68,22 @@ orca_terminal_wait_idle() { # <handle> <timeout-ms> -> exit 0 satisfied, 1 timed
   printf '%s' "$out" | "$JQ" -e '.result.wait.satisfied == true' >/dev/null 2>&1
 }
 
-# Orca sometimes answers a close with `terminal_handle_stale` even for a handle
-# it listed a second ago (seen when two busy Claude panes share a worktree);
-# the same call succeeds a few seconds later. So read `.ok` and retry.
-: "${BC_CLOSE_RETRIES:=5}"
+# Orca answers a plain `terminal close` with `terminal_handle_stale` for some
+# panes it listed a second ago -- reliably for the first Claude pane created in
+# a worktree while it is busy -- and keeps doing so on retry. Closing the whole
+# tab (`--tab`) is accepted for the same handle and kills the process, so a
+# refused plain close falls back to that; the list is what settles it either way.
+: "${BC_CLOSE_RETRIES:=3}"
 orca_terminal_close() { # <handle> -> 0 closed, 1 orca kept refusing
   [ -n "${BC_FAKE:-}" ] && { bc_fake_write orca_terminal_close "$@"; return; }
-  local try=0 out
+  local try=0 out mode
   while [ "$try" -lt "$BC_CLOSE_RETRIES" ]; do
-    out="$("$ORCA" terminal close --terminal "$1" --json 2>/dev/null)"
-    printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1 && return 0
+    for mode in "" "--tab"; do
+      # shellcheck disable=SC2086
+      out="$("$ORCA" terminal close --terminal "$1" $mode --json 2>/dev/null)"
+      printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1 && return 0
+      printf '%s' "$out" | "$JQ" -e '.error.message == "tab_not_found"' >/dev/null 2>&1 && return 0
+    done
     try=$((try + 1))
     sleep 2
   done
