@@ -28,6 +28,24 @@ scripts/
   prompts/        dispatch-*.md (sent into a running role session) and
                   judge-*.md (system prompts for the one-shot judgement calls)
 
+  Three actions in the flow need judgement rather than derivation, and each
+  is a `judge-*.md` one-shot as Scotty — the agent reduced to those three
+  calls in `.claude/agents/scotty.md`. `judge-sprint-scope.md` answers a
+  question — which candidate stories fit the next sprint — and returns a JSON
+  array `bc-sprint start` acts on; it needs no tools and no identity beyond
+  its own first line, so it runs through `claude_oneshot` with
+  `--system-prompt` and no `--agent`. The other two produce an artefact, so
+  they run through `claude_oneshot_acting`, which loads `--agent scotty`,
+  gives him Bash and Write, and appends the judge prompt as that call's job
+  (`--system-prompt` would replace the agent's prompt rather than add to it).
+  Each then calls a level-2 `write-*` command itself:
+  `judge-demo-summary.md` writes the Sprint Demo body and opens the issue via
+  `bc-issue.sh write-demo`, and `judge-breaker.md` writes the breaker note and
+  posts it via `bc-comment.sh write-breaker`. Prose and the thing carrying it
+  are created in one call, so neither can exist without the other; the caller
+  learns what was created through `BC_WRITE_RESULT`, since Scotty's stdout is
+  not the product.
+
   orchestrator.sh LEVEL 3 — the wake: one entry point, one decision, one action
 
   setup-github.sh  idempotent one-time GitHub setup (labels, scope check)
@@ -40,10 +58,12 @@ level 3) and never calls another script — every function is exactly one
 `gh`/`orca`/`claude` call, or pure text/JSON logic.
 
 Level 2 scripts source level 1 directly. Each is `bc-x.sh <command> [args]`:
-prints JSON or a bare value on stdout, follows the exit contract below. Two
-of the five — `bc-comment.sh` and `bc-pr.sh` — are also invoked by the role
-sessions themselves (leads writing their analysis/review, Crew opening a PR
-and marking it addressed), which is what keeps one writer per comment.
+prints JSON or a bare value on stdout, follows the exit contract below. Three
+of the five — `bc-comment.sh`, `bc-pr.sh` and `bc-issue.sh` — are also invoked
+by the agents themselves (leads writing their analysis/review, Crew opening a
+PR and marking it addressed, Scotty opening the Sprint Demo issue and posting
+the breaker note), which is what keeps one writer per comment. That agent-
+facing subset — and only it — is documented in `.claude/skills/bc-sdlc`.
 
 Level 3 is `orchestrator.sh` alone. It **never sources** `gh-cli.sh`,
 `project.sh`, `orca.sh`, or `claude.sh`, and never calls `gh`/`orca`/`claude`
@@ -105,6 +125,7 @@ stderr; stdout carries only that one reason line.
 | `BC_READY_TIMEOUT_S=<s>` | How long `bc-session spawn`/`start` wait for the new terminal to show Claude's idle prompt (✳ title + `agentIdentity: claude`) before giving up with a warning. | 90 |
 | `BC_CLOSE_RETRIES=<n>` | How many rounds `orca terminal close` gets per pane, two seconds apart, each round trying a plain close and then `--tab`. | 3 |
 | `BC_STOP_TIMEOUT_S=<s>` | How long `bc-session stop-all` keeps closing and re-listing before it reports panes still open as exit 2. Orca refuses to close some busy panes with `terminal_handle_stale` (reliably the oldest Claude pane in a worktree) for up to a minute, then accepts the same call, so stop-all trusts the listing, not the close's answer. | 120 |
+| `BC_WRITE_RESULT=<file>` | Where a `write-*` command records the number/id it just created, as well as printing it. Set by `create-demo`/`create-breaker` around their Scotty call and exported, so the `write-*` call Scotty makes inside `claude` can report back — its stdout belongs to a Bash tool call no caller can read. Unset (a role or a human calling `write-*` by hand) is not an error. | unset |
 | `BC_SESSION_MODE=main` | `bc-session.sh worktree` returns `$BC_MAIN_CHECKOUT` instead of creating/looking up an Orca worktree-per-issue — the spike's documented fallback if Orca worktrees are ever unavailable. | unset (worktree-per-issue) |
 
 (`lib/config.sh` also exposes plain constant overrides — `BC_REPO`,

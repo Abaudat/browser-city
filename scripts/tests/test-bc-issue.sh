@@ -150,19 +150,15 @@ cat > "$FAKE_DM/project_items.json" <<'JSON'
 JSON
 printf 'Fixed the crash on load.\nMore details follow.\n' > "$FAKE_DM/gh_issue_body.501.json"
 printf '\n\nAdded the forest level.\n' > "$FAKE_DM/gh_issue_body.502.json"
-printf 'The team shipped a crash fix and a new level.\n\n- [ ] Show the crash fix\n- [ ] Show the forest level\n' \
-  > "$FAKE_DM/claude_oneshot.judge-demo-summary.md.json"
+# The fixture stands in for Scotty: present means his own `write-demo` call
+# ran and recorded #900 through BC_WRITE_RESULT.
+printf '900\n' > "$FAKE_DM/claude_oneshot_acting.judge-demo-summary.md.json"
 
-check "create-demo exits 0" 0 run "$FAKE_DM" "" create-demo 3
-check "create-demo created the issue with the demo label" 0 \
-  log_has "$FAKE_DM/calls.log" '^gh_issue_create Sprint 3 Demo .* demo$'
-# project_item is a fake_read (it "returns" an id even though it's a
-# side-effecting add-if-missing in real life), so it never appears in
-# calls.log -- only the two project_set_* writes below are observable here.
-check "create-demo scoped it into Sprint 3"             0 \
-  log_has "$FAKE_DM/calls.log" '^project_set_iteration.*sp3id$'
-check "create-demo marked it In progress"               0 \
-  log_has "$FAKE_DM/calls.log" '^project_set_single.*Status In progress$'
+check_out "create-demo prints the number Scotty opened" 0 900 run "$FAKE_DM" "" create-demo 3
+check "create-demo handed the thread to Scotty" 0 \
+  log_has "$FAKE_DM/calls.log" '^claude_oneshot_acting judge-demo-summary\.md$'
+check "create-demo opened nothing itself" 1 \
+  log_has "$FAKE_DM/calls.log" '^gh_issue_create'
 check "create-demo never touched the still-in-progress story" 1 \
   log_has "$FAKE_DM/calls.log" '(^| )503( |$)'
 
@@ -173,9 +169,54 @@ cat > "$FAKE_DM_EMPTY/project_iterations.json" <<'JSON'
 ]
 JSON
 echo '[]' > "$FAKE_DM_EMPTY/project_items.json"
-printf '   \n' > "$FAKE_DM_EMPTY/claude_oneshot.judge-demo-summary.md.json"
-check "create-demo with an empty Scotty reply exits 2"          2 run "$FAKE_DM_EMPTY" "" create-demo 3
-check "create-demo with an empty Scotty reply created nothing" 1 test -f "$FAKE_DM_EMPTY/calls.log"
+# No claude_oneshot_acting fixture: Scotty wrote nothing.
+check "create-demo exits 2 when Scotty opened nothing" 2 run "$FAKE_DM_EMPTY" "" create-demo 3
+check "and the only call logged is the handoff" 0 \
+  log_has "$FAKE_DM_EMPTY/calls.log" '^claude_oneshot_acting judge-demo-summary\.md$'
+check "and no issue was created" 1 log_has "$FAKE_DM_EMPTY/calls.log" '^gh_issue_create'
+
+FAKE_DM_NOSPRINT="$(fake_dir)"
+echo '[]' > "$FAKE_DM_NOSPRINT/project_iterations.json"
+check "create-demo with no such iteration exits 2 before spending a Scotty call" 2 \
+  run "$FAKE_DM_NOSPRINT" "" create-demo 3
+check "and wrote nothing" 1 test -f "$FAKE_DM_NOSPRINT/calls.log"
+
+echo
+echo "write-demo: Scotty's own call -- opens the issue, labels it, scopes it into the sprint:"
+
+FAKE_WD="$(fake_dir)"
+cat > "$FAKE_WD/project_iterations.json" <<'JSON'
+[
+  {"id":"sp3id","title":"Sprint 3","startDate":"2026-09-12","duration":7}
+]
+JSON
+WD_BODY="$FAKE_WD/scotty-body.md"
+printf 'The team shipped a crash fix and a new level.\n\n- [ ] Show the crash fix\n- [ ] Show the forest level\n' \
+  > "$WD_BODY"
+
+check "write-demo exits 0" 0 run "$FAKE_WD" "" write-demo 3 "$WD_BODY"
+check "write-demo created the issue with the demo label" 0 \
+  log_has "$FAKE_WD/calls.log" '^gh_issue_create Sprint 3 Demo .* demo$'
+# project_item is a fake_read (it "returns" an id even though it's a
+# side-effecting add-if-missing in real life), so it never appears in
+# calls.log -- only the two project_set_* writes below are observable here.
+check "write-demo scoped it into Sprint 3"  0 \
+  log_has "$FAKE_WD/calls.log" '^project_set_iteration.*sp3id$'
+check "write-demo marked it In progress"    0 \
+  log_has "$FAKE_WD/calls.log" '^project_set_single.*Status In progress$'
+
+FAKE_WD_EMPTY="$(fake_dir)"
+cat > "$FAKE_WD_EMPTY/project_iterations.json" <<'JSON'
+[
+  {"id":"sp3id","title":"Sprint 3","startDate":"2026-09-12","duration":7}
+]
+JSON
+printf '   \n' > "$FAKE_WD_EMPTY/scotty-body.md"
+check "write-demo with an empty body exits 2" 2 \
+  run "$FAKE_WD_EMPTY" "" write-demo 3 "$FAKE_WD_EMPTY/scotty-body.md"
+check "and wrote nothing" 1 test -f "$FAKE_WD_EMPTY/calls.log"
+check "write-demo with a missing body file exits 2" 2 \
+  run "$FAKE_WD_EMPTY" "" write-demo 3 "$FAKE_WD_EMPTY/nope.md"
 
 echo
 echo "demo-current: marker in the body wins over sprintTitle, and the 'none open' case:"
