@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Worktree and terminal primitives via the `orca` CLI. Wraps `orca worktree
+# *` and `orca terminal *`. The one rule: every function is exactly one orca
+# call, checks `.ok` before trusting `.result` (a rejected selector answers
+# ok:false with exit 0, which reads as "nothing" rather than as an error if
+# unchecked), and is fake-aware via fake.sh. Handles are never stored by
+# these functions or their callers -- always re-listed.
+
+_BC_ORCA_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=config.sh
+. "$_BC_ORCA_LIB_DIR/config.sh"
+# shellcheck source=fake.sh
+. "$_BC_ORCA_LIB_DIR/fake.sh"
+
+orca_worktree_create() { # <name> [issue-number] -> worktree path
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write orca_worktree_create "$@"; return; }
+  local name="$1" issue="${2:-}" out
+  local args=(--repo "id:$BC_ORCA_REPO_ID" --name "$name" --no-parent --json)
+  [ -n "$issue" ] && args+=(--issue "$issue")
+  out="$("$ORCA" worktree create "${args[@]}" 2>/dev/null)"
+  printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1 || return 1
+  printf '%s' "$out" | "$JQ" -r '.result.worktree.path'
+}
+
+# A lookup that fails is retried a couple of times: the Orca CLI answers with
+# an error while another Orca command (a worktree rm, say) is in flight, and
+# one such answer ended an e2e run as "broken" at breaker-tripped.
+orca_worktree_path() { # <selector, e.g. issue:3 or name:issue-3> -> path
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read orca_worktree_path "$1"; return; }
+  local out try=0
+  while :; do
+    out="$("$ORCA" worktree show --worktree "$1" --json 2>/dev/null)"
+    if printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1; then
+      printf '%s' "$out" | "$JQ" -r '.result.worktree.path'
+      return 0
+    fi
+    try=$((try + 1))
+    [ "$try" -lt 3 ] || return 1
+    sleep 2
+  done
+}
+
+orca_worktree_rm() { # <selector>
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write orca_worktree_rm "$@"; return; }
+  "$ORCA" worktree rm --worktree "$1" --force --json >/dev/null 2>&1
+}
+
+orca_terminals() { # <worktree-path, posix or windows form> -> JSON array of terminals
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read orca_terminals "$1"; return; }
+  local winp out
+  winp="$(posix2win "$1")"
+  out="$("$ORCA" terminal list --worktree "path:$winp" --json 2>/dev/null)"
+  printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1 || return 1
+  printf '%s' "$out" | "$JQ" -c '.result.terminals'
+}
+
+orca_terminal_create() { # <worktree-path> <title> <command> -> terminal handle
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write orca_terminal_create "$@"; return; }
+  local path="$1" title="$2" command="$3" winp out
+  winp="$(posix2win "$path")"
+  out="$("$ORCA" terminal create --worktree "path:$winp" --title "$title" --command "$command" --json 2>/dev/null)"
+  printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1 || return 1
+  printf '%s' "$out" | "$JQ" -r '.result.terminal.handle'
+}
+
+orca_terminal_send() { # <handle> <text>
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write orca_terminal_send "$@"; return; }
+  "$ORCA" terminal send --terminal "$1" --text "$2" --enter --json >/dev/null 2>&1
+}
+
+orca_terminal_wait_idle() { # <handle> <timeout-ms> -> exit 0 satisfied, 1 timed out/unreadable
+  local out
+  if [ -n "${BC_FAKE:-}" ]; then
+    out="$(bc_fake_read orca_terminal_wait_idle "$1")" || return 1
+  else
+    out="$("$ORCA" terminal wait --terminal "$1" --for tui-idle --timeout-ms "$2" --json 2>/dev/null)"
+  fi
+  printf '%s' "$out" | "$JQ" -e '.result.wait.satisfied == true' >/dev/null 2>&1
+}
+
+# Orca answers a plain `terminal close` with `terminal_handle_stale` for some
+# panes it listed a second ago -- reliably for the first Claude pane created in
+# a worktree while it is busy -- and keeps doing so on retry. Closing the whole
+# tab (`--tab`) is accepted for the same handle and kills the process, so a
+# refused plain close falls back to that; the list is what settles it either way.
+: "${BC_CLOSE_RETRIES:=3}"
+orca_terminal_close() { # <handle> -> 0 closed, 1 orca kept refusing
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write orca_terminal_close "$@"; return; }
+  local try=0 out mode
+  while [ "$try" -lt "$BC_CLOSE_RETRIES" ]; do
+    for mode in "" "--tab"; do
+      # shellcheck disable=SC2086
+      out="$("$ORCA" terminal close --terminal "$1" $mode --json 2>/dev/null)"
+      printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1 && return 0
+      printf '%s' "$out" | "$JQ" -e '.error.message == "tab_not_found"' >/dev/null 2>&1 && return 0
+    done
+    try=$((try + 1))
+    sleep 2
+  done
+  echo "orca: close $1 failed after $BC_CLOSE_RETRIES tries: $(printf '%s' "$out" | "$JQ" -r '.error.message // "no answer"' 2>/dev/null)" >&2
+  return 1
+}

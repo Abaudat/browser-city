@@ -1,0 +1,48 @@
+flowchart TD
+    wake(["Scotty wakes"])
+    sleep(["Do nothing — sleep"])
+
+    wake --> demo-active{"Sprint Demo issue<br/>in an active status?"}
+
+    %% ---------- Sprint Demo ----------
+    demo-active -->|"yes — In Progress"| demo-has-feedback{"Adrian has<br/>commented on it?"}
+    demo-has-feedback -->|no| sleep
+    demo-has-feedback -->|yes| integrating-feedback[/"Integrate Adrian's feedback:<br/>new issues and sub-issues, Backlog<br/>— NOT SCRIPTED —"/]
+    integrating-feedback --> closing-sprint["Close the Sprint:<br/>move remaining issues back to the backlog,<br/>close the Demo issue"]
+    closing-sprint --> starting-next-sprint["Start the next Sprint:<br/>scope in tasks for the week's demo"]
+    starting-next-sprint --> sleep
+
+    %% ---------- Demo due ----------
+    demo-active -->|no| sprint-over{"Sprint over?"}
+    sprint-over -->|yes| creating-demo-issue["Create the Sprint N Demo issue,<br/>summarise what the team is demoing,<br/>mark it In Progress"]
+    creating-demo-issue --> sleep
+
+    %% ---------- Sub-issue ----------
+    sprint-over -->|no| subissue-active{"Sub-issue in<br/>an active status?"}
+    subissue-active -->|yes| subissue-status{"Its status"}
+
+    subissue-status -->|"To Analyze"| leads-analysed{"Every lead in scope<br/>commented?"}
+    leads-analysed -->|no| sleep
+    leads-analysed -->|yes| dispatching-implementation["Mark In Progress,<br/>dispatch to Crew"] --> sleep
+
+    subissue-status -->|"In Progress"| pr-opened{"Crew opened a PR?"}
+    pr-opened -->|no| sleep
+    pr-opened -->|yes| opening-leads-review["Add one stub comment per lead in scope + crew,<br/>mark Leads review"] --> sleep
+
+    subissue-status -->|"Leads review"| breaker-tripped{"Circuit breaker comment<br/>on the PR?"}
+    breaker-tripped -->|yes| sleep
+    breaker-tripped -->|no| leads-reviewed-head{"Every lead in scope<br/>reviewed the current head?"}
+    leads-reviewed-head -->|no| sleep
+    leads-reviewed-head -->|yes| leads-all-approved{"All approved?"}
+    leads-all-approved -->|yes| merging-pr["Merge the PR,<br/>mark Done"] --> sleep
+    leads-all-approved -->|no| cycles-exhausted{"Cycle count<br/>more than 8?"}
+    cycles-exhausted -->|no| dispatching-rework["Mark Reviewed,<br/>dispatch to Crew"] --> sleep
+    cycles-exhausted -->|yes| tripping-breaker["Circuit breaker:<br/>comment on the PR @-mentioning Adrian<br/>with the deadlock, what was tried,<br/>the options and a recommendation"] --> sleep
+
+    subissue-status -->|"Reviewed"| crew-addressed{"Crew pushed and<br/>updated its comment?"}
+    crew-addressed -->|no| sleep
+    crew-addressed -->|yes| reopening-leads-review["Mark Leads review"] --> sleep
+
+    %% ---------- New dev cycle ----------
+    subissue-active -->|no| starting-dev-cycle["Start a new dev cycle:<br/>pick the highest-priority sub-issue of the<br/>highest-priority issue in the Sprint backlog,<br/>mark it To Analyze, dispatch the leads in scope"]
+    starting-dev-cycle --> sleep
