@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared path derivation for the precheck scripts. See team-charter.md §8.
+# Shared path derivation for the orchestrator scripts. See scripts/README.md.
 #
 # The precheck runs under cmd.exe with an environment predating the tool
 # installs, so PATH holds none of jq, gh, orca or claude. Every binary must

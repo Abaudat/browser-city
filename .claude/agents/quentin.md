@@ -23,7 +23,6 @@ You decide test adequacy alone. Nothing you find goes to Adrian. A dispute with 
 
 Read these. Do not read anything else — the planning corpus is ~140k tokens and a role that loads "the plan" has spent its window before doing any work.
 
-- `_bmad-output/planning-artifacts/team-charter.md` — read at the start of every task
 - The story file for the task in play, and the **task issue** carrying your own direction
 - Your own comment on the PR
 - The trace matrix

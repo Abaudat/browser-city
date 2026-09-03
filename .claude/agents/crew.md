@@ -21,7 +21,6 @@ Nothing you hit reaches Adrian. If you are blocked on a lead's direction, say so
 
 Read these. Do not read anything else.
 
-- `_bmad-output/planning-artifacts/team-charter.md` — read at the start of every task
 - The story file for the task in play
 - The **task issue** you are dispatched against — each lead in scope has written its direction there as its own comment
 - `project-context.md`

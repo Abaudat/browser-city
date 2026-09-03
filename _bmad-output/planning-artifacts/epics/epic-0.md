@@ -1,6 +1,6 @@
 [← Epics index](index.md)
 
-Story status is **not** recorded here. It lives in `_bmad-output/implementation-artifacts/sprint-status.yaml`, which is generated from these files.
+Story status is **not** recorded here. It lives on the GitHub Project board, which `scripts/orchestrator.sh` reads and writes; these files are the plan, not the tracker.
 
 ---
 
@@ -10,7 +10,7 @@ The agentic team defined by the team charter exists, dispatches itself, gates it
 
 **This epic is co-implemented by Adrian and the team.** It is the only epic in this document for which that is true. From Epic 1 onward the team is the sole developer, and Adrian is the stakeholder, product owner and player. Epic 0 exists because the team cannot build the machinery that dispatches the team, and because the GDD names agentic development capacity as a hard dependency — *"this is not an optimisation; it is what makes the scope possible for one person"* — and nothing else in the epic list builds it.
 
-**The team charter (`team-charter.md`) is the specification for this epic.** Where a story here is thin, the charter section it names is the detail. Where the two disagree, the charter wins and the story is wrong.
+**The team charter that specified this epic no longer exists.** It was deleted along with the first shell automation, and the machinery was rebuilt around a GitHub Project board and `scripts/orchestrator.sh`. The specification is now `agentic-team/high-level-agentic-flow.mmd` (the flow), `agentic-team/pr-scope.md` (what each script owns) and `scripts/README.md` (how it runs). Where a story below names the charter, or describes the precheck, the c.1-c.6 cycle or a file-based tracker, it is describing an architecture the project has left behind and the story is the thing that is wrong.
 
 **FRs covered: none, deliberately.** Epic 0 builds no game. It serves NFR27 (uniform, data-driven, agent-extensible by construction), NFR28 and NFR29 (the `sim/` purity boundary and the property tests that depend on it), NFR37 (every table declares a bound, checkable in review), NFR44 (logging discipline), and above all NFR18 — *every state change has an author* — which the architecture names as **the rule most likely to be broken and the most damaging**, enforceable only by review.
 

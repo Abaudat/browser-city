@@ -730,7 +730,7 @@ The six-role agentic team defined by the team charter exists, dispatches itself,
 
 **Deliverable:** the six roles as durable configurations, Scotty's scheduled session, a budget gate with a broken-gate alarm and a watchdog outside the loop, the dispatch cycle and PR protocol, session lifecycle and cleanup, project context, the consistency review gate, sharded epics with sprint tracking, lead-scope tagging, TDD with a trace matrix, the escalation path, agent tooling, a local dev environment, CI and a definition of done, deploy and the Friday demo, the decision log, and a measured cost per story.
 **Depends on:** nothing. This precedes the product work.
-**Specified by:** `team-charter.md`. Where a story here is thin, the charter section it names is the detail; where the two disagree, the charter wins.
+**Specified by:** `agentic-team/high-level-agentic-flow.mmd`, `agentic-team/pr-scope.md` and `scripts/README.md`. The `team-charter.md` that originally specified this epic has been deleted; see the note at the top of `epic-0.md`.
 **Performed by:** Adrian and the team together - the only epic in this document for which that is true. From Epic 1 the team is sole developer.
 
 **FRs covered:** none, deliberately. Epic 0 builds no game. It serves NFR18, NFR27, NFR28, NFR29, NFR37 and NFR44, and the GDD's stated dependency on agentic development capacity.

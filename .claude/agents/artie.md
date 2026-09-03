@@ -21,7 +21,6 @@ You direct the demo artefact; Crew builds it. You are conditionally in scope —
 
 Read these. Do not read anything else — the planning corpus is ~140k tokens and a role that loads "the plan" has spent its window before doing any work.
 
-- `_bmad-output/planning-artifacts/team-charter.md` — read at the start of every task
 - `_bmad-output/planning-artifacts/ux/ux-BrowserCity-2026-08-29/ux.md`
 - The story file for the task in play, and the **task issue** carrying your own direction
 - Screenshots, and the visual surface of the diff
