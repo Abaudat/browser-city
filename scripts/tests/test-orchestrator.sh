@@ -121,16 +121,17 @@ echo "sprint-over/creating-demo-issue: sprint over, no demo yet -> create one"
 F_CREATING_DEMO="$(fake_dir)"
 write_iterations "$F_CREATING_DEMO"
 echo '[]' > "$F_CREATING_DEMO/project_items.json"
-printf 'Shipped nothing notable this week.\n' > "$F_CREATING_DEMO/claude_oneshot.judge-demo-summary.md.json"
-OUT_CREATING_DEMO="$(run "$F_CREATING_DEMO" "2026-09-04T10:01:00Z")"; RC_CREATING_DEMO=$?
-check "sprint-over/creating-demo-issue: exit 0" 0 bash -c "exit $RC_CREATING_DEMO"
-# gh_issue_create has no return-value fixture under BC_FAKE (see bc-issue.sh's
-# own note on create-demo) -- the new issue number is legitimately blank here
-# even on the success path, so this only pins the shape around it.
-check "sprint-over/creating-demo-issue: reason line names creating-demo-issue and sprint 1" 0 \
-  bash -c "printf '%s' \"\$1\" | grep -Eq '^creating-demo-issue created demo #.* for sprint 1\$'" _ "$OUT_CREATING_DEMO"
-check "sprint-over/creating-demo-issue: created the demo issue with the demo label" 0 \
-  log_has "$F_CREATING_DEMO/calls.log" '^gh_issue_create Sprint 1 Demo .* demo$'
+# create-demo hands the work to Scotty, who opens the issue himself with his
+# own `write-demo` call; this fixture stands in for that call having run and
+# recorded #43 (see claude_oneshot_acting in lib/claude.sh).
+printf '43\n' > "$F_CREATING_DEMO/claude_oneshot_acting.judge-demo-summary.md.json"
+check_out "sprint-over/creating-demo-issue: created, exit 0" 0 \
+  "creating-demo-issue created demo #43 for sprint 1" \
+  run "$F_CREATING_DEMO" "2026-09-04T10:01:00Z"
+check "sprint-over/creating-demo-issue: handed the sprint's stories to Scotty" 0 \
+  log_has "$F_CREATING_DEMO/calls.log" '^claude_oneshot_acting judge-demo-summary\.md$'
+check "sprint-over/creating-demo-issue: the orchestrator opened no issue itself" 1 \
+  log_has "$F_CREATING_DEMO/calls.log" '^gh_issue_create'
 
 # =============================================================================
 echo
@@ -373,11 +374,15 @@ echo "shaC6" > "$F_TRIPPING_BREAKER/gh_pr_head.63.json"
   printf '### Review — quentin\n\nno\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed shaC6 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 2
   printf '### Review — tim\n\nfine\n\n<!-- bc:lead:tim -->\n<!-- bc:reviewed shaC6 -->\n<!-- bc:verdict APPROVED -->\n' | _comment 3
 } | "$JQ" -sc '.' > "$F_TRIPPING_BREAKER/gh_issue_comments.63.json"
-printf 'Quentin and Tim disagree. Adrian, which way?\n' > "$F_TRIPPING_BREAKER/claude_oneshot.judge-breaker.md.json"
+# As with the demo, create-breaker only hands the thread over: Scotty posts
+# the note himself with `write-breaker`, which is what this fixture stands in
+# for -- so gh_comment_create and the breaker label are asserted in
+# test-bc-comment.sh, not here.
+printf '88\n' > "$F_TRIPPING_BREAKER/claude_oneshot_acting.judge-breaker.md.json"
 printf 'WT270' > "$F_TRIPPING_BREAKER/orca_worktree_path.issue:270.json"
 check_out "tripping-breaker: circuit breaker triggered, exit 0" 0 "tripping-breaker triggered breaker on PR #63 for #270" run "$F_TRIPPING_BREAKER" "$NOW_MIDSPRINT"
-check "tripping-breaker: posted the breaker comment" 0 log_has "$F_TRIPPING_BREAKER/calls.log" '^gh_comment_create 63 '
-check "tripping-breaker: labelled the PR breaker" 0 log_has "$F_TRIPPING_BREAKER/calls.log" '^gh_pr_add_labels 63 breaker$'
+check "tripping-breaker: handed the thread to Scotty" 0 log_has "$F_TRIPPING_BREAKER/calls.log" '^claude_oneshot_acting judge-breaker\.md$'
+check "tripping-breaker: the orchestrator posted no comment itself" 1 log_has "$F_TRIPPING_BREAKER/calls.log" '^gh_comment_create 63 '
 check "tripping-breaker: never merged" 1 log_has "$F_TRIPPING_BREAKER/calls.log" '^gh_pr_merge'
 check "tripping-breaker: never transitioned the issue" 1 log_has "$F_TRIPPING_BREAKER/calls.log" '^project_set_single 270 '
 

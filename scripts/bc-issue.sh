@@ -4,8 +4,15 @@
 # (high-level-agentic-flow.mmd's subissue-active/subissue-status,
 # demo-active/demo-has-feedback and creating-demo-issue, plus every node that
 # moves a Status). Composes project.sh/gh-cli.sh primitives; the one piece of
-# judgement it delegates is the Sprint Demo body, via Scotty (claude_oneshot +
-# judge-demo-summary.md).
+# judgement it delegates is the Sprint Demo body, via Scotty
+# (claude_oneshot_acting + judge-demo-summary.md).
+#
+# `create-demo` and `write-demo` are the two halves of creating-demo-issue:
+# create-demo gathers what shipped and hands it to Scotty, and Scotty calls
+# write-demo back to open the issue with his body, label it and scope it into
+# the sprint in one step. That is what makes the summary and the issue
+# carrying it atomic -- no Sprint Demo issue ever exists without its body --
+# and it is why write-demo is in the bc-sdlc skill.
 set -u
 _BC_ISSUE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/config.sh
@@ -27,7 +34,8 @@ usage: bc-issue.sh <command> [args]
   current                     -- the single sub-issue in an active status
   transition <issue> <status> -- set Status (and close on Done)
   scope <issue>                -- comma-joined leads in scope, quentin always
-  create-demo <n>              -- create the Sprint n Demo issue
+  create-demo <n>              -- open the Sprint n Demo issue (hands it to Scotty)
+  write-demo <n> <bodyfile>     -- Scotty, creating-demo-issue: open it + scope it
   demo-current                 -- the open Sprint Demo issue, if any
   demo-commented <issue>        -- has a human commented on it
   demo-for <n>                  -- does a Sprint n Demo issue exist
@@ -154,26 +162,63 @@ create-demo)
     i=$((i + 1))
   done
 
-  summary="$(claude_oneshot "$_BC_ISSUE_DIR/prompts/judge-demo-summary.md" "$input")"
-  rm -f "$input"
-  summary="$(printf '%s' "$summary" | sed -e 's/[[:space:]]*$//')"
-  if [ -z "$summary" ]; then
-    echo "bc-issue create-demo: judge-demo-summary.md returned nothing" >&2
+  # Scotty writes the body AND opens the issue, in one `write-demo` call of
+  # his own -- this command never sees his prose. His stdout is not the
+  # product, so the new issue number comes back through BC_WRITE_RESULT.
+  bodyfile="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-demo-body.XXXXXX")"
+  result="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-demo-result.XXXXXX")"
+  # The rendered prompt keeps its original basename -- claude_oneshot_acting
+  # logs and looks up fixtures by it -- so it goes in a temp dir of its own
+  # rather than under a mktemp'd name.
+  promptdir="$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-demo-prompt.XXXXXX")"
+  prompt="$promptdir/judge-demo-summary.md"
+  claude_render_prompt "$_BC_ISSUE_DIR/prompts/judge-demo-summary.md" \
+    scripts="$_BC_ISSUE_DIR" sprint="$n" bodyfile="$bodyfile" > "$prompt"
+
+  export BC_WRITE_RESULT="$result"
+  claude_oneshot_acting "$prompt" "$input"
+  unset BC_WRITE_RESULT
+  rm -rf "$promptdir"
+  rm -f "$input" "$bodyfile"
+
+  new="$(tr -d '\r\n' < "$result" 2>/dev/null || true)"
+  rm -f "$result"
+  if [ -z "$new" ]; then
+    echo "bc-issue create-demo: judge-demo-summary.md did not open the Sprint $n Demo issue" >&2
     exit 2
   fi
+  printf '%s\n' "$new"
+  exit 0
+  ;;
 
-  bodyfile="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-demo-body.XXXXXX")"
-  render_demo_body "$n" "$summary" > "$bodyfile"
-  new="$(gh_issue_create "Sprint $n Demo" "$bodyfile" "$BC_LABEL_DEMO")"
+write-demo)
+  n="${1:-}" bodyfile="${2:-}"
+  [ -n "$n" ] && [ -n "$bodyfile" ] || { usage; exit 2; }
+  [ -f "$bodyfile" ] || { echo "bc-issue write-demo: no such body file: $bodyfile" >&2; exit 2; }
+  summary="$(sed -e 's/[[:space:]]*$//' "$bodyfile")"
+  if [ -z "$(printf '%s' "$summary" | tr -d '[:space:]')" ]; then
+    echo "bc-issue write-demo: the body file is empty" >&2
+    exit 2
+  fi
+  sprint="$(project_iterations | "$JQ" -c --arg t "Sprint $n" 'map(select(.title==$t)) | .[0] // empty')"
+  if [ -z "$sprint" ]; then
+    echo "bc-issue write-demo: no iteration titled 'Sprint $n'" >&2
+    exit 2
+  fi
+  sprintid="$(printf '%s' "$sprint" | "$JQ" -r '.id')"
+
+  out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-demo-out.XXXXXX")"
+  render_demo_body "$n" "$summary" > "$out"
+  new="$(gh_issue_create "Sprint $n Demo" "$out" "$BC_LABEL_DEMO")"
   rc=$?
-  rm -f "$bodyfile"
+  rm -f "$out"
   # Check the function's exit code, not whether stdout was empty: under
   # BC_FAKE, gh_issue_create's write-fixture has no return-value support (it
   # only logs and returns 0), so $new is legitimately empty in every fake
   # test even on the success path -- only a nonzero exit means gh actually
   # failed to create the issue.
   if [ "$rc" -ne 0 ]; then
-    echo "bc-issue create-demo: gh_issue_create failed" >&2
+    echo "bc-issue write-demo: gh_issue_create failed" >&2
     exit 2
   fi
 
@@ -181,6 +226,7 @@ create-demo)
   project_set_iteration "$new" "$sprintid"
   project_set_single "$new" Status "In progress"
 
+  bc_record_result "$new"
   printf '%s\n' "$new"
   exit 0
   ;;

@@ -5,13 +5,21 @@
 # review and Reviewed phases of high-level-agentic-flow.mmd. Composes
 # gh-cli.sh + markers.sh; delegates to bc-issue.sh (for `scope`) and bc-pr.sh
 # (for `head`) as subprocesses rather than re-deriving their facts, and to
-# Scotty (claude_oneshot + judge-breaker.md) for the one piece of judgement,
-# the breaker note.
+# Scotty (claude_oneshot_acting + judge-breaker.md) for the one piece of
+# judgement, the breaker note.
+#
+# `create-breaker` and `write-breaker` are the two halves of that one node:
+# create-breaker gathers the thread and hands it to Scotty, and Scotty calls
+# write-breaker back to post the note, label the PR and assign the human in
+# one step. Splitting it that way is what makes the note and the comment
+# carrying it atomic -- there is no state in which the breaker comment exists
+# without Scotty's prose in it -- and it is why write-breaker is in the
+# bc-sdlc skill: Scotty is a caller of this script, not just its subject.
 #
 # One writer per comment, always found by marker: every write command below
 # locates its comment via `_bc_find_by_marker` and `gh_comment_edit`s it --
 # none of them ever calls gh_comment_create a second time for the same
-# marker (create-analysis-stubs/create-review-stubs/create-breaker are the
+# marker (create-analysis-stubs/create-review-stubs/write-breaker are the
 # only creators, and each is itself marker-gated for idempotency).
 set -u
 _BC_COMMENT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,7 +41,8 @@ usage() {
 usage: bc-comment.sh <command> [args]
   create-analysis-stubs <issue> <role>...       -- starting-dev-cycle / leads-analysed (idempotent; crew gets none)
   create-review-stubs <pr> <issue>              -- opening-leads-review
-  create-breaker <pr>                           -- tripping-breaker
+  create-breaker <pr>                           -- tripping-breaker (hands it to Scotty)
+  write-breaker <pr> <bodyfile>                 -- Scotty, tripping-breaker: post + label + assign
   bump-cycle <pr>                                -- reopening-leads-review
   breaker-exists <pr>                            -- breaker-tripped
   sessions <issue>                               -- {role: uuid}, derived from role + issue
@@ -278,26 +287,61 @@ create-breaker)
     i=$((i + 1))
   done
 
-  reply="$(claude_oneshot "$_BC_COMMENT_DIR/prompts/judge-breaker.md" "$input")"
-  rm -f "$input"
-  reply="$(printf '%s' "$reply" | sed -e 's/[[:space:]]*$//')"
-  if [ -z "$reply" ]; then
-    echo "bc-comment create-breaker: judge-breaker.md returned nothing" >&2
+  # Scotty writes the note AND posts it, in one `write-breaker` call of his
+  # own -- this command never sees his prose. His stdout is not the product,
+  # so the comment id comes back through BC_WRITE_RESULT instead.
+  bodyfile="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-comment-breaker-body.XXXXXX")"
+  result="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-comment-breaker-result.XXXXXX")"
+  # The rendered prompt keeps its original basename -- claude_oneshot_acting
+  # logs and looks up fixtures by it -- so it goes in a temp dir of its own
+  # rather than under a mktemp'd name.
+  promptdir="$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/bc-comment-breaker-prompt.XXXXXX")"
+  prompt="$promptdir/judge-breaker.md"
+  claude_render_prompt "$_BC_COMMENT_DIR/prompts/judge-breaker.md" \
+    scripts="$_BC_COMMENT_DIR" pr="$pr" bodyfile="$bodyfile" > "$prompt"
+
+  export BC_WRITE_RESULT="$result"
+  claude_oneshot_acting "$prompt" "$input"
+  unset BC_WRITE_RESULT
+  rm -rf "$promptdir"
+  rm -f "$input" "$bodyfile"
+
+  newid="$(tr -d '\r\n' < "$result" 2>/dev/null || true)"
+  rm -f "$result"
+  if [ -z "$newid" ]; then
+    echo "bc-comment create-breaker: judge-breaker.md did not write the breaker comment on PR #$pr" >&2
     exit 2
   fi
+  printf '%s\n' "$newid"
+  exit 0
+  ;;
 
-  bodyfile="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-comment-breaker-body.XXXXXX")"
-  render_breaker "$reply" > "$bodyfile"
-  newid="$(gh_comment_create "$pr" "$bodyfile")"
+write-breaker)
+  pr="${1:-}" bodyfile="${2:-}"
+  [ -n "$pr" ] && [ -n "$bodyfile" ] || { usage; exit 2; }
+  [ -f "$bodyfile" ] || { echo "bc-comment write-breaker: no such body file: $bodyfile" >&2; exit 2; }
+  note="$(sed -e 's/[[:space:]]*$//' "$bodyfile")"
+  if [ -z "$(printf '%s' "$note" | tr -d '[:space:]')" ]; then
+    echo "bc-comment write-breaker: the body file is empty" >&2
+    exit 2
+  fi
+  comments="$(_bc_comments "$pr")"
+  _bc_marker_present "$comments" "breaker" && exit 1
+
+  out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-comment-breaker-out.XXXXXX")"
+  render_breaker "$note" > "$out"
+  newid="$(gh_comment_create "$pr" "$out")"
   rc=$?
   if [ "$rc" -ne 0 ]; then
-    echo "bc-comment create-breaker: gh_comment_create failed" >&2
+    echo "bc-comment write-breaker: gh_comment_create failed" >&2
     exit 2
   fi
   gh_pr_add_labels "$pr" "$BC_LABEL_BREAKER"
   gh_pr_assign "$pr" "$BC_HUMAN"
 
-  if [ -n "$newid" ]; then printf '%s\n' "$newid"; else echo ok; fi
+  [ -n "$newid" ] || newid=ok
+  bc_record_result "$newid"
+  printf '%s\n' "$newid"
   exit 0
   ;;
 

@@ -97,13 +97,13 @@ FAKE_CB="$(fake_dir)"
   printf '### Review — quentin\n\nI want approach A.\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed sha1 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 2
   printf '### Review — tim\n\nI want approach B.\n\n<!-- bc:lead:tim -->\n<!-- bc:reviewed sha1 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 3
 } | "$JQ" -sc '.' > "$FAKE_CB/gh_issue_comments.100.json"
-printf 'Quentin wants A, Tim wants B. Adrian, which one?\n' > "$FAKE_CB/claude_oneshot.judge-breaker.md.json"
-check "create-breaker exits 0" 0 run "$FAKE_CB" create-breaker 100
-check "posted the breaker comment"  0 log_has "$FAKE_CB/calls.log" '^gh_comment_create 100 '
-check "added the breaker label"     0 log_has "$FAKE_CB/calls.log" '^gh_pr_add_labels 100 breaker$'
-check "assigned the human"          0 log_has "$FAKE_CB/calls.log" '^gh_pr_assign 100 Abaudat$'
-check "the posted body carries the @mention" 0 _body_has "$FAKE_CB/calls.log" 1 "@Abaudat"
-check "the posted body carries bc:breaker"   0 _body_has "$FAKE_CB/calls.log" 1 "<!-- bc:breaker -->"
+# The fixture stands in for Scotty: present means his own `write-breaker`
+# call ran and recorded comment id 77 through BC_WRITE_RESULT.
+printf '77\n' > "$FAKE_CB/claude_oneshot_acting.judge-breaker.md.json"
+check_out "create-breaker prints the id Scotty posted" 0 77 run "$FAKE_CB" create-breaker 100
+check "create-breaker handed the thread to Scotty" 0 \
+  log_has "$FAKE_CB/calls.log" '^claude_oneshot_acting judge-breaker\.md$'
+check "create-breaker posted nothing itself" 1 log_has "$FAKE_CB/calls.log" '^gh_comment_create'
 
 FAKE_CB_EXISTS="$(fake_dir)"
 { render_breaker "already escalated" | _comment 1; } | "$JQ" -sc '.' > "$FAKE_CB_EXISTS/gh_issue_comments.100.json"
@@ -112,9 +112,41 @@ check "and writes nothing" 1 test -f "$FAKE_CB_EXISTS/calls.log"
 
 FAKE_CB_EMPTY="$(fake_dir)"
 echo '[]' > "$FAKE_CB_EMPTY/gh_issue_comments.100.json"
-printf '   \n' > "$FAKE_CB_EMPTY/claude_oneshot.judge-breaker.md.json"
-check "create-breaker with an empty Scotty reply exits 2" 2 run "$FAKE_CB_EMPTY" create-breaker 100
-check "and writes nothing" 1 test -f "$FAKE_CB_EMPTY/calls.log"
+# No claude_oneshot_acting fixture: Scotty posted nothing.
+check "create-breaker exits 2 when Scotty posted nothing" 2 run "$FAKE_CB_EMPTY" create-breaker 100
+check "and the only call logged is the handoff" 0 \
+  log_has "$FAKE_CB_EMPTY/calls.log" '^claude_oneshot_acting judge-breaker\.md$'
+check "and no comment was posted" 1 log_has "$FAKE_CB_EMPTY/calls.log" '^gh_comment_create'
+
+echo
+echo "write-breaker: Scotty's own call -- posts the note, labels the PR, assigns the human:"
+
+FAKE_WB="$(fake_dir)"
+echo '[]' > "$FAKE_WB/gh_issue_comments.100.json"
+printf 'Quentin wants A, Tim wants B. Which one?\n' > "$FAKE_WB/scotty-note.md"
+check "write-breaker exits 0" 0 run "$FAKE_WB" write-breaker 100 "$FAKE_WB/scotty-note.md"
+check "posted the breaker comment"  0 log_has "$FAKE_WB/calls.log" '^gh_comment_create 100 '
+check "added the breaker label"     0 log_has "$FAKE_WB/calls.log" '^gh_pr_add_labels 100 breaker$'
+check "assigned the human"          0 log_has "$FAKE_WB/calls.log" '^gh_pr_assign 100 Abaudat$'
+check "the posted body carries the @mention" 0 _body_has "$FAKE_WB/calls.log" 1 "@Abaudat"
+check "the posted body carries bc:breaker"   0 _body_has "$FAKE_WB/calls.log" 1 "<!-- bc:breaker -->"
+check "the posted body carries Scotty's note" 0 _body_has "$FAKE_WB/calls.log" 1 "Quentin wants A"
+
+FAKE_WB_EXISTS="$(fake_dir)"
+{ render_breaker "already escalated" | _comment 1; } | "$JQ" -sc '.' > "$FAKE_WB_EXISTS/gh_issue_comments.100.json"
+printf 'A second note.\n' > "$FAKE_WB_EXISTS/scotty-note.md"
+check "write-breaker when bc:breaker already exists exits 1" 1 \
+  run "$FAKE_WB_EXISTS" write-breaker 100 "$FAKE_WB_EXISTS/scotty-note.md"
+check "and writes nothing" 1 test -f "$FAKE_WB_EXISTS/calls.log"
+
+FAKE_WB_EMPTY="$(fake_dir)"
+echo '[]' > "$FAKE_WB_EMPTY/gh_issue_comments.100.json"
+printf '   \n' > "$FAKE_WB_EMPTY/scotty-note.md"
+check "write-breaker with an empty note exits 2" 2 \
+  run "$FAKE_WB_EMPTY" write-breaker 100 "$FAKE_WB_EMPTY/scotty-note.md"
+check "and writes nothing" 1 test -f "$FAKE_WB_EMPTY/calls.log"
+check "write-breaker with a missing body file exits 2" 2 \
+  run "$FAKE_WB_EMPTY" write-breaker 100 "$FAKE_WB_EMPTY/nope.md"
 
 echo
 echo "bump-cycle: increments bc:cycle on the status comment, exit 2 without one:"
