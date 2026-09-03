@@ -1,0 +1,9 @@
+# Rust / SpacetimeDB module build output
+target/
+Cargo.lock.orig
+
+# Local SpacetimeDB instance data — disposable, resetting is deleting this directory
+.spacetime/
+
+# Environment overrides
+spacetime.*.local.json

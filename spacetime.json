@@ -1,0 +1,5 @@
+{
+  "server": "local",
+  "module-path": "./server",
+  "database": "browser-city"
+}
