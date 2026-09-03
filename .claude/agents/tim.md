@@ -23,7 +23,6 @@ You are not the implementer. Feature code is Crew's. You edit guidelines, CI con
 
 Read these. Do not read anything else — the planning corpus is ~140k tokens and a role that loads "the plan" has spent its window before doing any work.
 
-- `_bmad-output/planning-artifacts/team-charter.md` — read at the start of every task
 - `_bmad-output/planning-artifacts/architecture/architecture-BrowserCity-2026-08-25/architecture.md` — **whole**
 - The story file for the task in play, and the **task issue** carrying your own direction, and the diff
 - The decision log
