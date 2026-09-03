@@ -140,7 +140,7 @@ gh_label_create() { # <name> <color-hex-no-hash> <description>
 
 # Appended by the bc-issue.sh work: create-demo needs each Done story's body
 # (first non-empty line) and demo-current needs to read the `bc:demo` marker
-# out of the demo issue's own body -- gh.sh had no body getter yet.
+# out of the demo issue's own body -- gh-cli.sh had no body getter yet.
 gh_issue_body() { # <n> -> issue body text
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_issue_body "$1"; return; }
   "$GH" api "repos/$BC_REPO/issues/$1" --jq '.body // ""' 2>/dev/null

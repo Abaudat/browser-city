@@ -27,41 +27,41 @@ per comment and one opener per PR.
 ## `bc-issue.sh` — issues
 
 
-| Command                       | Node               | Returns                                                                        |
-| ----------------------------- | ------------------ | ------------------------------------------------------------------------------ |
-| `next`                        | N1                 | highest-priority sub-issue of the highest-priority issue in the Sprint backlog |
-| `current`                     | QS / SS            | the active sub-issue and its status, or nothing                                |
-| `transition <issue> <status>` | A2, B2, C3, C4, E2 | —                                                                              |
-| `create-demo <n>`             | DM                 | the new Sprint N Demo issue number                                             |
-| `demo-current`                | QD                 | the active Sprint Demo issue and its status, or nothing                        |
-| `demo-commented <issue>`      | DA                 | whether Adrian has commented                                                   |
+| Command                       | Node                                                                                                     | Returns                                                                        |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `next`                        | starting-dev-cycle                                                                                       | highest-priority sub-issue of the highest-priority issue in the Sprint backlog |
+| `current`                     | subissue-active / subissue-status                                                                        | the active sub-issue and its status, or nothing                                |
+| `transition <issue> <status>` | dispatching-implementation, opening-leads-review, merging-pr, dispatching-rework, reopening-leads-review | —                                                                              |
+| `create-demo <n>`             | creating-demo-issue                                                                                      | the new Sprint N Demo issue number                                             |
+| `demo-current`                | demo-active                                                                                              | the active Sprint Demo issue and its status, or nothing                        |
+| `demo-commented <issue>`      | demo-has-feedback                                                                                        | whether Adrian has commented                                                   |
 
 
-`demo-current` and `demo-commented` are additions — QD and DA are gates with no
-command otherwise.
+`demo-current` and `demo-commented` are additions — demo-active and
+demo-has-feedback are gates with no command otherwise.
 
 ## `bc-comment.sh` — comments
 
 **Scotty writes:**
 
 
-| Command                         | Node                                  |
-| ------------------------------- | ------------------------------------- |
-| `create-analysis-stubs <issue>` | N1                                    |
-| `create-review-stubs <pr>`      | B2 — one per lead in scope **+ crew** |
-| `create-breaker <pr>`           | C6                                    |
+| Command                         | Node                                                    |
+| ------------------------------- | ------------------------------------------------------- |
+| `create-analysis-stubs <issue>` | starting-dev-cycle                                      |
+| `create-review-stubs <pr>`      | opening-leads-review — one per lead in scope **+ crew** |
+| `create-breaker <pr>`           | tripping-breaker                                        |
 
 
 **Scotty reads:**
 
 
-| Command                        | Node    | Returns                            |
-| ------------------------------ | ------- | ---------------------------------- |
-| `breaker-exists <pr>`          | C0      | yes/no                             |
-| `all-leads-commented &lt;issue | pr&gt;` | A1, C1                             |
-| `unapproved-leads <pr>`        | C2      | the list; empty means all approved |
-| `crew-addressed <pr>`          | E1      | yes/no                             |
-| `should-trigger-breaker <pr>`  | C5      | yes/no — cycle count past 8        |
+| Command                                      | Node                                | Returns                            |
+| -------------------------------------------- | ----------------------------------- | ---------------------------------- |
+| `breaker-exists <pr>`                        | breaker-tripped                     | yes/no                             |
+| `all-leads-commented --issue <n> / --pr <n>` | leads-analysed, leads-reviewed-head | yes/no                             |
+| `unapproved-leads <pr>`                      | leads-all-approved                  | the list; empty means all approved |
+| `crew-addressed <pr>`                        | crew-addressed                      | yes/no                             |
+| `should-trigger-breaker <pr>`                | cycles-exhausted                    | yes/no — cycle count past 8        |
 
 
 **Leads and Crew write:**
@@ -78,11 +78,12 @@ command otherwise.
 `approve` and `reject` both stamp the head SHA they reviewed. That stamp is the
 whole turn mechanism: a lead owes a review when it has never reviewed or when
 the head has moved since. There is no verdict to reset, and an old `APPROVED`
-never covers code nobody read — which is why C3 can only merge when every lead
-approved *the current head*.
+never covers code nobody read — which is why merging-pr can only merge when
+every lead approved *the current head*.
 
-`all-leads-commented` covering both A1 and C1 is deliberate: same question,
-different phase. If the two need different arguments, they are two commands.
+`all-leads-commented` covering both leads-analysed and leads-reviewed-head is
+deliberate: same question, different phase. If the two need different
+arguments, they are two commands.
 
 ## `bc-pr.sh` — pull requests
 
@@ -90,23 +91,24 @@ different phase. If the two need different arguments, they are two commands.
 | Command             | Who    | Node                                                                            |
 | ------------------- | ------ | ------------------------------------------------------------------------------- |
 | `open <issue>`      | Crew   | after implementing; body carries `Closes #<issue>` so the issue closes on merge |
-| `merge <pr>`        | Scotty | C3                                                                              |
-| `for-issue <issue>` | Scotty | B1 — the PR number and head SHA, or nothing                                     |
+| `merge <pr>`        | Scotty | merging-pr                                                                      |
+| `for-issue <issue>` | Scotty | pr-opened — the PR number and head SHA, or nothing                              |
 | `head <pr>`         | Scotty | the current head SHA, for the reviewed-SHA comparison                           |
 
 
-`for-issue` and `head` are additions. B1 has no command without the first, and
-C1's "reviewed the current head" cannot be evaluated without the second.
+`for-issue` and `head` are additions. pr-opened has no command without the
+first, and leads-reviewed-head's "reviewed the current head" cannot be
+evaluated without the second.
 
 ## `bc-sprint.sh` — sprints
 
 
-| Command   | Node                                                                                |
-| --------- | ----------------------------------------------------------------------------------- |
-| `start`   | DN — open the next sprint and scope tasks into it                                   |
-| `close`   | DC — move every remaining issue back to the backlog, close the Demo issue           |
-| `over`    | QF — It is past 12:00 in Zurich time on the last day of the Sprint                  |
-| `current` | the sprint number and its last day, both of which `over` and `create-demo <n>` need |
+| Command   | Node                                                                                  |
+| --------- | ------------------------------------------------------------------------------------- |
+| `start`   | starting-next-sprint — open the next sprint and scope tasks into it                   |
+| `close`   | closing-sprint — move every remaining issue back to the backlog, close the Demo issue |
+| `over`    | sprint-over — It is past 12:00 in Zurich time on the last day of the Sprint           |
+| `current` | the sprint number and its last day, both of which `over` and `create-demo <n>` need   |
 
 
 ## `bc-session.sh` — sessions and agents

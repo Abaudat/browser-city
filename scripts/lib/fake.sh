@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The test double for gh.sh/project.sh/orca.sh/claude.sh. When BC_FAKE=<dir>
+# The test double for gh-cli.sh/project.sh/orca.sh/claude.sh. When BC_FAKE=<dir>
 # is set, every read primitive in those libs calls bc_fake_read at its top
 # and returns whatever that finds instead of touching gh/orca/claude; every
 # write primitive calls bc_fake_write and logs instead of acting. The one

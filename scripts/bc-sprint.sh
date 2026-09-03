@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# LEVEL 2 -- sprint-level facts and the two sprint-boundary actions (DC/DN in
-# high-level-agentic-flow.mmd). Composes project.sh's iteration primitives
-# and gh.sh's sub-issue primitive; the one piece of judgement it delegates is
+# LEVEL 2 -- sprint-level facts and the two sprint-boundary actions
+# (closing-sprint/starting-next-sprint in high-level-agentic-flow.mmd).
+# Composes project.sh's iteration primitives and gh-cli.sh's sub-issue
+# primitive; the one piece of judgement it delegates is
 # "what fits next sprint", via Scotty (claude_oneshot + judge-sprint-scope.md).
 set -u
 _BC_SPRINT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,8 +11,8 @@ _BC_SPRINT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 bc_init
 # shellcheck source=lib/project.sh
 . "$_BC_SPRINT_DIR/lib/project.sh"
-# shellcheck source=lib/gh.sh
-. "$_BC_SPRINT_DIR/lib/gh.sh"
+# shellcheck source=lib/gh-cli.sh
+. "$_BC_SPRINT_DIR/lib/gh-cli.sh"
 # shellcheck source=lib/claude.sh
 . "$_BC_SPRINT_DIR/lib/claude.sh"
 

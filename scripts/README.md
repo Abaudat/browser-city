@@ -12,7 +12,7 @@ scripts/
   lib/            LEVEL 1 — primitives, no intelligence, sourced
     paths.sh        tool resolution, path form conversion, bc_state_dir
     config.sh        constants (repo, project, roles, thresholds) + bc_init + the clock
-    gh.sh             issues, PRs, comments, labels, sub-issues (one `gh` call each)
+    gh-cli.sh         issues, PRs, comments, labels, sub-issues (one `gh` call each)
     project.sh        GitHub Project v2: items, Status/Priority/Sprint fields
     orca.sh            worktrees, terminals (one `orca` call each)
     claude.sh           session argv builders + the judgement one-shot
@@ -45,7 +45,7 @@ of the five — `bc-comment.sh` and `bc-pr.sh` — are also invoked by the role
 sessions themselves (leads writing their analysis/review, Crew opening a PR
 and marking it addressed), which is what keeps one writer per comment.
 
-Level 3 is `orchestrator.sh` alone. It **never sources** `gh.sh`,
+Level 3 is `orchestrator.sh` alone. It **never sources** `gh-cli.sh`,
 `project.sh`, `orca.sh`, or `claude.sh`, and never calls `gh`/`orca`/`claude`
 directly — it only sources `lib/config.sh` (for constants, `bc_init`, and
 `bc_state_dir`/`posix2win`) and invokes the five `bc-*.sh` scripts as
@@ -67,11 +67,11 @@ loop and does not remember anything between runs — run it again to advance
 further, e.g. from cron, a scheduled task, or a human.
 
 A crash mid-tick is safe to retick: state is transitioned *before* the side
-effects it announces (N1 claims a sub-issue before spawning anything), and
-every "the gate says no" branch re-derives what's missing rather than
-trusting what a previous tick claimed to have done. Two spots repair a
-half-finished previous tick explicitly: at "To analyze", the scoped leads'
-analysis stubs are re-created (only the missing ones) before the pending
+effects it announces (starting-dev-cycle claims a sub-issue before spawning
+anything), and every "the gate says no" branch re-derives what's missing
+rather than trusting what a previous tick claimed to have done. Two spots
+repair a half-finished previous tick explicitly: at "To analyze", the scoped
+leads' analysis stubs are re-created (only the missing ones) before the pending
 check, and a scoped lead with no stub counts as pending; at "Leads review",
 a PR with no status comment gets its review stubs created before anything
 else is checked. Session ids need no repair at all: every role's uuid is
@@ -82,14 +82,13 @@ to carry a uuid, and Crew — which never writes on the issue — gets no stub.
 ## The exit contract
 
 Every tick ends by writing **one line** — `<node> <verb> <details>`, using
-the node names from `agentic-team/high-level-agentic-flow.mmd` (QD, DA, DC,
-DN, QF, DM, QS, SS, N1, A1, A2, B1, B2, C0–C6, E1, E2) — to both stdout and
-`$BC_WAKE_REASON`, then exits with:
+the node names from `agentic-team/high-level-agentic-flow.mmd` verbatim — to
+both stdout and `$BC_WAKE_REASON`, then exits with:
 
 | Code | Meaning | Examples |
 |---|---|---|
-| `0` | acted | `A1 nudged tim,derek on #12`, `C3 merged PR #15 for #12` |
-| `1` | slept — nothing to do | `QD sleep demo #40 awaiting feedback`, `N1 sleep backlog empty` |
+| `0` | acted | `leads-analysed nudged tim,derek on #12`, `merging-pr merged PR #15 for #12` |
+| `1` | slept — nothing to do | `demo-active sleep demo #40 awaiting feedback`, `starting-dev-cycle sleep backlog empty` |
 | `2` | broken | a level-2 script failed somewhere it shouldn't have |
 
 Everything else — diagnostics, warnings, subprocess stderr — goes to

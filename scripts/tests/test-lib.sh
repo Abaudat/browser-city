@@ -8,7 +8,7 @@ LIB="$TEST_DIR/../lib"
 . "$TEST_DIR/harness.sh"
 . "$LIB/config.sh"
 bc_init
-. "$LIB/gh.sh"
+. "$LIB/gh-cli.sh"
 . "$LIB/project.sh"
 . "$LIB/orca.sh"
 . "$LIB/claude.sh"

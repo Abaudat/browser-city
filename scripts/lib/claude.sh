@@ -32,7 +32,7 @@ claude_session_argv() { # <role> <uuid> <new|resume> <name> -> command string
 # Session ids are derived, never recorded: md5 of "browser-city <role> #<issue>"
 # shaped like a v4 uuid so `claude --session-id` accepts it. Every tick can
 # recompute who to talk to from role + issue alone -- no stub has to carry a
-# uuid, a half-finished N1 has nothing to repair -- and after a restart
+# uuid, a half-finished starting-dev-cycle has nothing to repair -- and after a restart
 # `bc-session start` resumes the transcript that id names, if one exists.
 bc_role_uuid() { # <role> <issue> -> uuid
   local h

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # LEVEL 2 -- the structured-comment reads/writes every other role in the
-# flow depends on (N1, A1/A2, B2, C0/C1/C2/C6, E1/E2 in
-# high-level-agentic-flow.mmd). Composes gh.sh + markers.sh; delegates to
-# bc-issue.sh (for `scope`) and bc-pr.sh (for `head`) as subprocesses rather
-# than re-deriving their facts, and to Scotty (claude_oneshot +
-# judge-breaker.md) for the one piece of judgement, the breaker note.
+# flow depends on -- the analysis stubs, the review stubs and their verdicts,
+# the cycle counter and the circuit breaker. Covers the To analyze, Leads
+# review and Reviewed phases of high-level-agentic-flow.mmd. Composes
+# gh-cli.sh + markers.sh; delegates to bc-issue.sh (for `scope`) and bc-pr.sh
+# (for `head`) as subprocesses rather than re-deriving their facts, and to
+# Scotty (claude_oneshot + judge-breaker.md) for the one piece of judgement,
+# the breaker note.
 #
 # One writer per comment, always found by marker: every write command below
 # locates its comment via `_bc_find_by_marker` and `gh_comment_edit`s it --
@@ -16,8 +18,8 @@ _BC_COMMENT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/config.sh
 . "$_BC_COMMENT_DIR/lib/config.sh"
 bc_init
-# shellcheck source=lib/gh.sh
-. "$_BC_COMMENT_DIR/lib/gh.sh"
+# shellcheck source=lib/gh-cli.sh
+. "$_BC_COMMENT_DIR/lib/gh-cli.sh"
 # shellcheck source=lib/claude.sh
 . "$_BC_COMMENT_DIR/lib/claude.sh"
 # shellcheck source=lib/markers.sh
@@ -29,19 +31,19 @@ _BC_PR_SH="$_BC_COMMENT_DIR/bc-pr.sh"
 usage() {
   cat >&2 <<'EOF'
 usage: bc-comment.sh <command> [args]
-  create-analysis-stubs <issue> <role>...       -- N1 / A1 (idempotent; crew gets none)
-  create-review-stubs <pr> <issue>              -- B2
-  create-breaker <pr>                           -- C6
-  bump-cycle <pr>                                -- E2
-  breaker-exists <pr>                            -- C0
+  create-analysis-stubs <issue> <role>...       -- starting-dev-cycle / leads-analysed (idempotent; crew gets none)
+  create-review-stubs <pr> <issue>              -- opening-leads-review
+  create-breaker <pr>                           -- tripping-breaker
+  bump-cycle <pr>                                -- reopening-leads-review
+  breaker-exists <pr>                            -- breaker-tripped
   sessions <issue>                               -- {role: uuid}, derived from role + issue
   scope <pr>
-  pending-leads <issue>                          -- A1
-  all-leads-commented --issue <n> | --pr <n>     -- A1, C1
-  stale-leads <pr>                               -- C1
-  unapproved-leads <pr>                          -- C2
-  crew-addressed <pr>                            -- E1
-  should-trigger-breaker <pr>                    -- C5
+  pending-leads <issue>                          -- leads-analysed
+  all-leads-commented --issue <n> | --pr <n>     -- leads-analysed, leads-reviewed-head
+  stale-leads <pr>                               -- leads-reviewed-head
+  unapproved-leads <pr>                          -- leads-all-approved
+  crew-addressed <pr>                            -- crew-addressed
+  should-trigger-breaker <pr>                    -- cycles-exhausted
   update-analysis <issue> <role> <bodyfile>      -- a lead, To analyze
   approve <pr> <role> [bodyfile]                 -- a lead, Leads review
   reject <pr> <role> [bodyfile]                  -- a lead, Leads review
@@ -134,8 +136,9 @@ _bc_scope_of_pr() {
 
 # _bc_pending_leads <scope-csv> <comments-json> -> csv on stdout ; 0 has
 # pending, 1 none. A scoped lead with no analysis stub at all counts as
-# pending (a crashed N1 left it missing; the orchestrator re-creates stubs
-# before asking), so a missing comment can never read as "done".
+# pending (a crashed starting-dev-cycle left it missing; the orchestrator
+# re-creates stubs before asking), so a missing comment can never read as
+# "done".
 _bc_pending_leads() {
   local scope="$1" comments="$2" role stub body direction out=()
   for role in $BC_LEADS; do
@@ -155,7 +158,7 @@ _bc_pending_leads() {
 
 # _bc_stale_leads <scope-csv> <comments-json> <head> -> csv on stdout ; 0 has
 # stale, 1 none stale. A scoped role with no review stub at all counts as
-# stale too (a crashed B2 tick left it missing).
+# stale too (a crashed opening-leads-review tick left it missing).
 _bc_stale_leads() {
   local scope="$1" comments="$2" head="$3" role stub body reviewed out=()
   local IFS=',' roles
@@ -472,7 +475,8 @@ approve|reject)
   content="$default"
   [ -n "$bodyfile" ] && [ -f "$bodyfile" ] && content="$(cat "$bodyfile")"
   # The review cycle comes from the orchestrator's status comment (bump-cycle
-  # moves it at E2); a PR with no status comment yet is on its first.
+  # moves it at reopening-leads-review); a PR with no status comment yet is on
+  # its first.
   cycle=1
   status="$(_bc_find_by_marker "$comments" "status" || true)"
   if [ -n "$status" ]; then

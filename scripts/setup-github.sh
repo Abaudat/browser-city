@@ -9,8 +9,8 @@ _BC_SETUP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/config.sh
 . "$_BC_SETUP_DIR/lib/config.sh"
 bc_init
-# shellcheck source=lib/gh.sh
-. "$_BC_SETUP_DIR/lib/gh.sh"
+# shellcheck source=lib/gh-cli.sh
+. "$_BC_SETUP_DIR/lib/gh-cli.sh"
 
 echo "setup-github: checking auth scopes..." >&2
 SCOPES=" $(gh_auth_scopes) "

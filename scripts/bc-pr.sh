@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# LEVEL 2 -- pull-request facts and actions (B1, C3 in
+# LEVEL 2 -- pull-request facts and actions (pr-opened, merging-pr in
 # high-level-agentic-flow.mmd; `open` is called by Crew, not Scotty).
-# Composes gh.sh only. The one primitive this file uses that is NOT in
+# Composes gh-cli.sh only. The one primitive this file uses that is NOT in
 # lib/ -- `git` itself, for the current branch and the push -- is the one
 # tool the plan explicitly leaves unwrapped (see plan-the-implementation-of-
 # snoopy-magpie.md, bc-pr.sh section): "git is not wrapped -- call `git`
@@ -12,8 +12,8 @@ _BC_PR_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/config.sh
 . "$_BC_PR_DIR/lib/config.sh"
 bc_init
-# shellcheck source=lib/gh.sh
-. "$_BC_PR_DIR/lib/gh.sh"
+# shellcheck source=lib/gh-cli.sh
+. "$_BC_PR_DIR/lib/gh-cli.sh"
 
 usage() {
   cat >&2 <<'EOF'

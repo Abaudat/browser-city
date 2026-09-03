@@ -3,7 +3,7 @@
 # exit. Walks agentic-team/high-level-agentic-flow.mmd top to bottom every
 # time it runs: it reads state through the level-2 scripts (bc-issue.sh,
 # bc-comment.sh, bc-pr.sh, bc-sprint.sh, bc-session.sh) as subprocesses --
-# never sources gh.sh/project.sh/orca.sh/claude.sh and never calls
+# never sources gh-cli.sh/project.sh/orca.sh/claude.sh and never calls
 # gh/orca/claude directly -- picks the single branch of the flowchart the
 # facts select, does the one thing at the end of it, and exits. It reads
 # state; it never remembers it, so a crash mid-tick just means the next tick
@@ -12,11 +12,9 @@
 # and session ids are derived from role + issue, so nothing is ever lost).
 #
 # Node names in comments and in the one-line wake reason are
-# agentic-team/high-level-agentic-flow.mmd's: QD/DA (Sprint Demo gates,
-# FB is the one node left unscripted) DC/DN (close+start the Sprint) QF/DM
-# (demo due) QS/SS (which sub-issue, which status) N1 (start a dev cycle)
-# A1/A2 (To analyze) B1/B2 (In progress) C0-C6 (Leads review) E1/E2
-# (Reviewed).
+# agentic-team/high-level-agentic-flow.mmd's, verbatim -- the flowchart is
+# the index. This file covers every node in it except integrating-feedback,
+# which stays manual.
 #
 # Exit contract: 0 acted, 1 slept (nothing to do), 2 broken. Every exit
 # writes exactly one line "<node> <verb> <details>" to $BC_WAKE_REASON
@@ -122,18 +120,19 @@ _nudge() {
 # _nudge_all <node> <issue> <worktree> <promptfile> <pr> <role-csv> -- runs
 # _nudge (uuid looked up per role) for every role in the csv, aborting the
 # whole tick as broken on a hard failure. Prints the comma-joined roles
-# actually sent to on stdout. For A1 and C1, whose roles come from a
-# pending/stale-leads query rather than a just-built pairs list.
+# actually sent to on stdout. For leads-analysed and leads-reviewed-head,
+# whose roles come from a pending/stale-leads query rather than a just-built
+# pairs list.
 #
 # NB: every caller invokes this via a `sent="$(_nudge_all ...)"` command
 # substitution, which runs in its own subshell -- so `finish`'s bare `exit`
 # here would only kill that subshell, not the tick. The reason text would
 # leak onto stdout, get captured into $sent, and the caller would go on to
 # treat a real "broken" failure as a successful dispatch (this happened live
-# during the e2e run: "N1 started dev cycle, dispatched N1 broken nudge
-# failed for quentin on #12 on #12", exit 0). So on a hard failure this
-# prints only the failed role name and returns 2; the caller, which is NOT
-# itself in a subshell, checks $? and calls finish.
+# during the e2e run: "starting-dev-cycle started dev cycle, dispatched
+# starting-dev-cycle broken nudge failed for quentin on #12 on #12", exit 0).
+# So on a hard failure this prints only the failed role name and returns 2;
+# the caller, which is NOT itself in a subshell, checks $? and calls finish.
 _nudge_all() {
   local node="$1" issue="$2" worktree="$3" promptfile="$4" pr="$5" roles_csv="$6"
   local roles role rc sent=()
@@ -152,13 +151,14 @@ _nudge_all() {
 }
 
 # =============================================================================
-# QD / DA / DC / DN -- the Sprint Demo. FB (integrating Adrian's feedback) is
-# the one node left unscripted -- Adrian does it by hand and moves the Demo
-# issue to Reviewed himself, which is what DC/DN below react to.
+# demo-active / demo-has-feedback / closing-sprint / starting-next-sprint --
+# the Sprint Demo. integrating-feedback is the one node left unscripted:
+# Adrian does it by hand and moves the Demo issue to Reviewed himself, which
+# is what closing-sprint/starting-next-sprint below react to.
 # =============================================================================
 demo_json="$(bc_issue demo-current)"; demo_rc=$?
 if [ "$demo_rc" -eq 2 ]; then
-  finish 2 "QD" "broken" "demo-current failed"
+  finish 2 "demo-active" "broken" "demo-current failed"
 fi
 if [ "$demo_rc" -eq 0 ]; then
   dnum="$(printf '%s' "$demo_json" | "$JQ" -r '.number')"
@@ -166,33 +166,34 @@ if [ "$demo_rc" -eq 0 ]; then
   case "$dstatus" in
     "In progress")
       if bc_issue demo-commented "$dnum" >/dev/null 2>&1; then
-        finish 1 "DA" "sleep" "demo #$dnum awaiting feedback integration; set the Demo issue to Reviewed"
+        finish 1 "demo-has-feedback" "sleep" "demo #$dnum awaiting feedback integration; set the Demo issue to Reviewed"
       else
-        finish 1 "QD" "sleep" "demo #$dnum awaiting feedback"
+        finish 1 "demo-active" "sleep" "demo #$dnum awaiting feedback"
       fi
       ;;
     "Reviewed")
       bc_sprint close >/dev/null 2>&1; close_rc=$?
       if [ "$close_rc" -ne 0 ]; then
-        finish 2 "DC" "broken" "sprint close failed for demo #$dnum"
+        finish 2 "closing-sprint" "broken" "sprint close failed for demo #$dnum"
       fi
       bc_sprint start >/dev/null 2>&1; start_rc=$?
       if [ "$start_rc" -eq 2 ]; then
-        finish 2 "DN" "broken" "sprint start failed after closing for demo #$dnum"
+        finish 2 "starting-next-sprint" "broken" "sprint start failed after closing for demo #$dnum"
       fi
-      finish 0 "DN" "closed the sprint and started the next" "after demo #$dnum"
+      finish 0 "starting-next-sprint" "closed the sprint and started the next" "after demo #$dnum"
       ;;
     *)
-      finish 1 "QD" "sleep" "demo #$dnum in unexpected status $dstatus"
+      finish 1 "demo-active" "sleep" "demo #$dnum in unexpected status $dstatus"
       ;;
   esac
 fi
-# demo_rc == 1: no active Sprint Demo issue -- fall through to QF/DM.
+# demo_rc == 1: no active Sprint Demo issue -- fall through to
+# sprint-over/creating-demo-issue.
 
 # =============================================================================
-# QF / DM -- is the sprint over, and if so has today's demo already been
-# created (demo-for guards against creating a second one on the same
-# Friday afternoon tick after tick)?
+# sprint-over / creating-demo-issue -- is the sprint over, and if so has
+# today's demo already been created (demo-for guards against creating a
+# second one on the same Friday afternoon tick after tick)?
 # =============================================================================
 if bc_sprint over >/dev/null 2>&1; then
   cur_json="$(bc_sprint current 2>/dev/null)"
@@ -200,53 +201,55 @@ if bc_sprint over >/dev/null 2>&1; then
   if [ -n "$curnum" ] && ! bc_issue demo-for "$curnum" >/dev/null 2>&1; then
     newnum="$(bc_issue create-demo "$curnum")"; rc=$?
     if [ "$rc" -ne 0 ]; then
-      finish 2 "DM" "broken" "create-demo failed for sprint $curnum"
+      finish 2 "creating-demo-issue" "broken" "create-demo failed for sprint $curnum"
     fi
-    finish 0 "DM" "created" "demo #$newnum for sprint $curnum"
+    finish 0 "creating-demo-issue" "created" "demo #$newnum for sprint $curnum"
   fi
   # else: no current sprint to summarise, or a demo already exists for it
-  # (QF guarded) -- fall through to QS/SS.
+  # (sprint-over guarded) -- fall through to subissue-active/subissue-status.
 fi
 
 # =============================================================================
-# QS / SS -- is a sub-issue in an active status, and which one.
+# subissue-active / subissue-status -- is a sub-issue in an active status,
+# and which one.
 # =============================================================================
 cur="$(bc_issue current)"; cur_rc=$?
 if [ "$cur_rc" -eq 2 ]; then
-  finish 2 "QS" "broken" "more than one active sub-issue"
+  finish 2 "subissue-active" "broken" "more than one active sub-issue"
 fi
 
 if [ "$cur_rc" -eq 1 ]; then
   # =========================================================================
-  # N1 -- no sub-issue active: start a new dev cycle. Status is transitioned
-  # BEFORE any side effect it announces (a crash after this claims #n but
-  # before the stubs land is healed at "To analyze", which re-creates the
-  # missing stubs before judging anything -- not a duplicate pick next tick).
+  # starting-dev-cycle -- no sub-issue active: start a new dev cycle. Status
+  # is transitioned BEFORE any side effect it announces (a crash after this
+  # claims #n but before the stubs land is healed at "To analyze", which
+  # re-creates the missing stubs before judging anything -- not a duplicate
+  # pick next tick).
   # =========================================================================
   pick="$(bc_issue next)"; rc=$?
-  [ "$rc" -eq 0 ] || finish 1 "N1" "sleep" "backlog empty"
+  [ "$rc" -eq 0 ] || finish 1 "starting-dev-cycle" "sleep" "backlog empty"
 
   n="$(printf '%s' "$pick" | "$JQ" -r '.number')"
   scope="$(printf '%s' "$pick" | "$JQ" -r '.scope')"
 
-  bc_issue transition "$n" "To analyze" || finish 2 "N1" "broken" "transition to To analyze failed for #$n"
-  wt="$(bc_session worktree "$n")" || finish 2 "N1" "broken" "worktree failed for #$n"
+  bc_issue transition "$n" "To analyze" || finish 2 "starting-dev-cycle" "broken" "transition to To analyze failed for #$n"
+  wt="$(bc_session worktree "$n")" || finish 2 "starting-dev-cycle" "broken" "worktree failed for #$n"
 
-  # One analysis stub per scoped lead (Crew writes nothing on the issue and
-  # is only started at A2); then start each lead's session and send the
-  # analysis prompt. Session ids are derived from role + issue, so there is
-  # nothing to record between the two steps.
+  # One analysis stub per scoped lead (Crew writes nothing on the issue and is
+  # only started at dispatching-implementation); then start each lead's session
+  # and send the analysis prompt. Session ids are derived from role + issue, so
+  # there is nothing to record between the two steps.
   IFS=',' read -ra roles <<< "$scope"
   bc_comment create-analysis-stubs "$n" "${roles[@]}" >/dev/null
 
-  sent="$(_nudge_all "N1" "$n" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "$scope")"; nrc=$?
+  sent="$(_nudge_all "starting-dev-cycle" "$n" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "$scope")"; nrc=$?
   if [ "$nrc" -eq 2 ]; then
-    finish 2 "N1" "broken" "nudge failed for $sent on #$n"
+    finish 2 "starting-dev-cycle" "broken" "nudge failed for $sent on #$n"
   fi
   if [ -n "$sent" ]; then
-    finish 0 "N1" "started dev cycle, dispatched" "$sent on #$n"
+    finish 0 "starting-dev-cycle" "started dev cycle, dispatched" "$sent on #$n"
   fi
-  finish 0 "N1" "started dev cycle" "#$n"
+  finish 0 "starting-dev-cycle" "started dev cycle" "#$n"
 fi
 
 # cur_rc == 0: a sub-issue is active.
@@ -257,149 +260,152 @@ case "$status" in
 
 "To analyze")
   # ===========================================================================
-  # A1 / A2. The scoped leads' analysis stubs are (re)created first, every
-  # tick: create-analysis-stubs only adds what is missing, so on a healthy
-  # issue this is a no-op, and on one an N1 crash left half-done it is the
-  # repair. A scoped lead with no stub reads as pending, so nothing is
-  # judged early even if this tick's own creates are not yet readable.
+  # leads-analysed / dispatching-implementation. The scoped leads' analysis
+  # stubs are (re)created first, every tick: create-analysis-stubs only adds
+  # what is missing, so on a healthy issue this is a no-op, and on one a
+  # crashed starting-dev-cycle left half-done it is the repair. A scoped lead
+  # with no stub reads as pending, so nothing is judged early even if this
+  # tick's own creates are not yet readable.
   # ===========================================================================
   scope="$(bc_issue scope "$num" 2>/dev/null)"
   IFS=',' read -ra roles <<< "$scope"
   bc_comment create-analysis-stubs "$num" "${roles[@]}" >/dev/null 2>&1 \
-    || finish 2 "A1" "broken" "could not create analysis stubs for #$num"
+    || finish 2 "leads-analysed" "broken" "could not create analysis stubs for #$num"
 
   pending="$(bc_comment pending-leads "$num")"; rc=$?
-  wt="$(bc_session worktree "$num")" || finish 2 "A1" "broken" "worktree lookup failed for #$num"
+  wt="$(bc_session worktree "$num")" || finish 2 "leads-analysed" "broken" "worktree lookup failed for #$num"
   if [ "$rc" -eq 1 ]; then
-    # A2: every lead in scope is READY.
-    bc_issue transition "$num" "In progress" || finish 2 "A2" "broken" "transition to In progress failed for #$num"
+    # dispatching-implementation: every lead in scope is READY.
+    bc_issue transition "$num" "In progress" || finish 2 "dispatching-implementation" "broken" "transition to In progress failed for #$num"
     _nudge crew "$num" "$wt" "$_BC_PROMPTS/dispatch-crew.md"; nrc=$?
-    [ "$nrc" -eq 2 ] && finish 2 "A2" "broken" "nudge failed for crew on #$num"
+    [ "$nrc" -eq 2 ] && finish 2 "dispatching-implementation" "broken" "nudge failed for crew on #$num"
     if [ "$nrc" -eq 0 ]; then
-      finish 0 "A2" "marked In progress, dispatched" "crew on #$num"
+      finish 0 "dispatching-implementation" "marked In progress, dispatched" "crew on #$num"
     fi
-    finish 0 "A2" "marked In progress" "#$num"
+    finish 0 "dispatching-implementation" "marked In progress" "#$num"
   elif [ "$rc" -eq 0 ]; then
-    # A1 no: nudge exactly the pending leads.
-    sent="$(_nudge_all "A1" "$num" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "$pending")"; nrc=$?
+    # leads-analysed no: nudge exactly the pending leads.
+    sent="$(_nudge_all "leads-analysed" "$num" "$wt" "$_BC_PROMPTS/dispatch-analysis.md" "" "$pending")"; nrc=$?
     if [ "$nrc" -eq 2 ]; then
-      finish 2 "A1" "broken" "nudge failed for $sent on #$num"
+      finish 2 "leads-analysed" "broken" "nudge failed for $sent on #$num"
     fi
     if [ -n "$sent" ]; then
-      finish 0 "A1" "nudged" "$sent on #$num"
+      finish 0 "leads-analysed" "nudged" "$sent on #$num"
     fi
-    finish 1 "A1" "sleep" "waiting on $pending (working) on #$num"
+    finish 1 "leads-analysed" "sleep" "waiting on $pending (working) on #$num"
   else
-    finish 2 "A1" "broken" "pending-leads failed for #$num"
+    finish 2 "leads-analysed" "broken" "pending-leads failed for #$num"
   fi
   ;;
 
 "In progress")
   # ===========================================================================
-  # B1 / B2 -- has Crew opened a PR yet.
+  # pr-opened / opening-leads-review -- has Crew opened a PR yet.
   # ===========================================================================
-  wt="$(bc_session worktree "$num")" || finish 2 "B1" "broken" "worktree lookup failed for #$num"
+  wt="$(bc_session worktree "$num")" || finish 2 "pr-opened" "broken" "worktree lookup failed for #$num"
   pr_json="$(bc_pr for-issue "$num")"; rc=$?
   if [ "$rc" -eq 0 ]; then
     pr="$(printf '%s' "$pr_json" | "$JQ" -r '.number')"
     bc_comment create-review-stubs "$pr" "$num" >/dev/null
-    bc_issue transition "$num" "Leads review" || finish 2 "B2" "broken" "transition to Leads review failed for #$num"
-    finish 0 "B2" "review stubs created, marked Leads review" "PR #$pr for #$num"
+    bc_issue transition "$num" "Leads review" || finish 2 "opening-leads-review" "broken" "transition to Leads review failed for #$num"
+    finish 0 "opening-leads-review" "review stubs created, marked Leads review" "PR #$pr for #$num"
   else
     _nudge crew "$num" "$wt" "$_BC_PROMPTS/dispatch-crew.md"; nrc=$?
-    [ "$nrc" -eq 2 ] && finish 2 "B1" "broken" "nudge failed for crew on #$num"
+    [ "$nrc" -eq 2 ] && finish 2 "pr-opened" "broken" "nudge failed for crew on #$num"
     if [ "$nrc" -eq 0 ]; then
-      finish 0 "B1" "nudged" "crew on #$num"
+      finish 0 "pr-opened" "nudged" "crew on #$num"
     fi
-    finish 1 "B1" "sleep" "crew already busy on #$num"
+    finish 1 "pr-opened" "sleep" "crew already busy on #$num"
   fi
   ;;
 
 "Leads review")
   # ===========================================================================
-  # C0..C6, in the plan's order: C0 breaker-exists, C1 stale leads, C2/C3 all
-  # approved, C5/C6 cycle limit, C4 else. Plus the crash-idempotency repair:
-  # a PR exists but carries no status comment yet (a crashed B2).
+  # In the flowchart's order: breaker-tripped (breaker-exists), then
+  # leads-reviewed-head (stale leads), then leads-all-approved -> merging-pr,
+  # then cycles-exhausted -> tripping-breaker, else dispatching-rework. Plus
+  # the crash-idempotency repair: a PR exists but carries no status comment
+  # yet (a crashed opening-leads-review).
   # ===========================================================================
   pr_json="$(bc_pr for-issue "$num")"; rc=$?
-  [ "$rc" -eq 0 ] || finish 2 "C0" "broken" "no PR found for #$num at Leads review"
+  [ "$rc" -eq 0 ] || finish 2 "breaker-tripped" "broken" "no PR found for #$num at Leads review"
   pr="$(printf '%s' "$pr_json" | "$JQ" -r '.number')"
-  wt="$(bc_session worktree "$num")" || finish 2 "C0" "broken" "worktree lookup failed for #$num"
+  wt="$(bc_session worktree "$num")" || finish 2 "breaker-tripped" "broken" "worktree lookup failed for #$num"
 
   if ! bc_comment scope "$pr" >/dev/null 2>&1; then
     bc_comment create-review-stubs "$pr" "$num" >/dev/null
   fi
 
   if bc_comment breaker-exists "$pr" >/dev/null 2>&1; then
-    finish 1 "C0" "sleep" "breaker pending on PR #$pr"
+    finish 1 "breaker-tripped" "sleep" "breaker pending on PR #$pr"
   fi
 
   stale="$(bc_comment stale-leads "$pr")"; stale_rc=$?
   if [ "$stale_rc" -eq 2 ]; then
-    finish 2 "C1" "broken" "stale-leads failed for PR #$pr"
+    finish 2 "leads-reviewed-head" "broken" "stale-leads failed for PR #$pr"
   fi
   if [ "$stale_rc" -eq 0 ]; then
-    sent="$(_nudge_all "C1" "$num" "$wt" "$_BC_PROMPTS/dispatch-review.md" "$pr" "$stale")"; nrc=$?
+    sent="$(_nudge_all "leads-reviewed-head" "$num" "$wt" "$_BC_PROMPTS/dispatch-review.md" "$pr" "$stale")"; nrc=$?
     if [ "$nrc" -eq 2 ]; then
-      finish 2 "C1" "broken" "nudge failed for $sent on PR #$pr"
+      finish 2 "leads-reviewed-head" "broken" "nudge failed for $sent on PR #$pr"
     fi
     if [ -n "$sent" ]; then
-      finish 0 "C1" "nudged" "$sent on PR #$pr"
+      finish 0 "leads-reviewed-head" "nudged" "$sent on PR #$pr"
     fi
-    finish 1 "C1" "sleep" "waiting on $stale (working) on PR #$pr"
+    finish 1 "leads-reviewed-head" "sleep" "waiting on $stale (working) on PR #$pr"
   fi
 
   # stale_rc == 1: every lead in scope reviewed the current head.
   unapproved="$(bc_comment unapproved-leads "$pr")"; un_rc=$?
   if [ "$un_rc" -eq 1 ]; then
-    # C2 yes -> C3: merge, mark Done, tear the sessions down.
-    bc_pr merge "$pr" || finish 2 "C3" "broken" "merge failed for PR #$pr"
-    bc_issue transition "$num" "Done" || finish 2 "C3" "broken" "transition to Done failed for #$num"
+    # leads-all-approved yes -> merging-pr: merge, mark Done, tear the sessions down.
+    bc_pr merge "$pr" || finish 2 "merging-pr" "broken" "merge failed for PR #$pr"
+    bc_issue transition "$num" "Done" || finish 2 "merging-pr" "broken" "transition to Done failed for #$num"
     bc_session stop-all "$num" "$wt" >/dev/null 2>&1
     bc_session rm-worktree "$num" >/dev/null 2>&1
-    finish 0 "C3" "merged" "PR #$pr for #$num"
+    finish 0 "merging-pr" "merged" "PR #$pr for #$num"
   elif [ "$un_rc" -eq 0 ]; then
     if bc_comment should-trigger-breaker "$pr" >/dev/null 2>&1; then
       bc_comment create-breaker "$pr" >/dev/null 2>&1
-      finish 0 "C6" "triggered breaker" "on PR #$pr for #$num"
+      finish 0 "tripping-breaker" "triggered breaker" "on PR #$pr for #$num"
     fi
-    bc_issue transition "$num" "Reviewed" || finish 2 "C4" "broken" "transition to Reviewed failed for #$num"
+    bc_issue transition "$num" "Reviewed" || finish 2 "dispatching-rework" "broken" "transition to Reviewed failed for #$num"
     _nudge crew "$num" "$wt" "$_BC_PROMPTS/dispatch-address.md" "$pr"; nrc=$?
-    [ "$nrc" -eq 2 ] && finish 2 "C4" "broken" "nudge failed for crew on PR #$pr"
+    [ "$nrc" -eq 2 ] && finish 2 "dispatching-rework" "broken" "nudge failed for crew on PR #$pr"
     if [ "$nrc" -eq 0 ]; then
-      finish 0 "C4" "marked Reviewed, dispatched" "crew to address PR #$pr"
+      finish 0 "dispatching-rework" "marked Reviewed, dispatched" "crew to address PR #$pr"
     fi
-    finish 0 "C4" "marked Reviewed" "PR #$pr for #$num"
+    finish 0 "dispatching-rework" "marked Reviewed" "PR #$pr for #$num"
   else
-    finish 2 "C2" "broken" "unapproved-leads failed for PR #$pr"
+    finish 2 "leads-all-approved" "broken" "unapproved-leads failed for PR #$pr"
   fi
   ;;
 
 "Reviewed")
   # ===========================================================================
-  # E1 / E2 -- has Crew pushed and updated its comment.
+  # crew-addressed / reopening-leads-review -- has Crew pushed and updated its comment.
   # ===========================================================================
   pr_json="$(bc_pr for-issue "$num")"; rc=$?
-  [ "$rc" -eq 0 ] || finish 2 "E1" "broken" "no PR found for #$num at Reviewed"
+  [ "$rc" -eq 0 ] || finish 2 "crew-addressed" "broken" "no PR found for #$num at Reviewed"
   pr="$(printf '%s' "$pr_json" | "$JQ" -r '.number')"
-  wt="$(bc_session worktree "$num")" || finish 2 "E1" "broken" "worktree lookup failed for #$num"
+  wt="$(bc_session worktree "$num")" || finish 2 "crew-addressed" "broken" "worktree lookup failed for #$num"
 
   if bc_comment crew-addressed "$pr" >/dev/null 2>&1; then
     bc_comment bump-cycle "$pr" >/dev/null 2>&1
-    bc_issue transition "$num" "Leads review" || finish 2 "E2" "broken" "transition to Leads review failed for #$num"
-    finish 0 "E2" "bumped cycle, marked Leads review" "PR #$pr for #$num"
+    bc_issue transition "$num" "Leads review" || finish 2 "reopening-leads-review" "broken" "transition to Leads review failed for #$num"
+    finish 0 "reopening-leads-review" "bumped cycle, marked Leads review" "PR #$pr for #$num"
   else
     _nudge crew "$num" "$wt" "$_BC_PROMPTS/dispatch-address.md" "$pr"; nrc=$?
-    [ "$nrc" -eq 2 ] && finish 2 "E1" "broken" "nudge failed for crew on PR #$pr"
+    [ "$nrc" -eq 2 ] && finish 2 "crew-addressed" "broken" "nudge failed for crew on PR #$pr"
     if [ "$nrc" -eq 0 ]; then
-      finish 0 "E1" "nudged" "crew on PR #$pr"
+      finish 0 "crew-addressed" "nudged" "crew on PR #$pr"
     fi
-    finish 1 "E1" "sleep" "crew already busy on PR #$pr"
+    finish 1 "crew-addressed" "sleep" "crew already busy on PR #$pr"
   fi
   ;;
 
 *)
-  finish 2 "SS" "broken" "sub-issue #$num in unrecognised status '$status'"
+  finish 2 "subissue-status" "broken" "sub-issue #$num in unrecognised status '$status'"
   ;;
 
 esac

@@ -25,8 +25,8 @@ _BC_SCRIPTS_DIR="$(cd -- "$_BC_E2E_DIR/.." && pwd)"
 # shellcheck source=../lib/config.sh
 . "$_BC_SCRIPTS_DIR/lib/config.sh"
 bc_init
-# shellcheck source=../lib/gh.sh
-. "$_BC_SCRIPTS_DIR/lib/gh.sh"
+# shellcheck source=../lib/gh-cli.sh
+. "$_BC_SCRIPTS_DIR/lib/gh-cli.sh"
 # shellcheck source=../lib/project.sh
 . "$_BC_SCRIPTS_DIR/lib/project.sh"
 # shellcheck source=../lib/orca.sh
@@ -344,7 +344,8 @@ while :; do
       while IFS='=' read -r role uuid; do
         [ -n "$uuid" ] || continue
         # Crew's id is derived and always listed, but Crew is only started at
-        # A2 -- a role with no terminal now has nothing to come back from.
+        # dispatching-implementation -- a role with no terminal now has
+        # nothing to come back from.
         if [ "$(bcs state "$uuid" "$drill_wt" 2>/dev/null || true)" = "absent" ]; then
           echo "=== e2e: reboot drill: $role (${uuid:0:8}) has no terminal yet; not part of the drill ==="
           continue

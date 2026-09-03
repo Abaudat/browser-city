@@ -24,7 +24,7 @@ orca_worktree_create() { # <name> [issue-number] -> worktree path
 
 # A lookup that fails is retried a couple of times: the Orca CLI answers with
 # an error while another Orca command (a worktree rm, say) is in flight, and
-# one such answer ended an e2e run as "broken" at C0.
+# one such answer ended an e2e run as "broken" at breaker-tripped.
 orca_worktree_path() { # <selector, e.g. issue:3 or name:issue-3> -> path
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read orca_worktree_path "$1"; return; }
   local out try=0

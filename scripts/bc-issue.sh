@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# LEVEL 2 -- issue-level facts and actions (N1, QS/SS, A2/B2/C3/C4/E2, QD/DA,
-# DM in high-level-agentic-flow.mmd). Composes project.sh/gh.sh primitives;
-# the one piece of judgement it delegates is the Sprint Demo body, via Scotty
-# (claude_oneshot + judge-demo-summary.md).
+# LEVEL 2 -- issue-level facts and actions: which sub-issue is active and in
+# what status, every Status transition, and the Sprint Demo issue
+# (high-level-agentic-flow.mmd's subissue-active/subissue-status,
+# demo-active/demo-has-feedback and creating-demo-issue, plus every node that
+# moves a Status). Composes project.sh/gh-cli.sh primitives; the one piece of
+# judgement it delegates is the Sprint Demo body, via Scotty (claude_oneshot +
+# judge-demo-summary.md).
 set -u
 _BC_ISSUE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/config.sh
@@ -10,8 +13,8 @@ _BC_ISSUE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 bc_init
 # shellcheck source=lib/project.sh
 . "$_BC_ISSUE_DIR/lib/project.sh"
-# shellcheck source=lib/gh.sh
-. "$_BC_ISSUE_DIR/lib/gh.sh"
+# shellcheck source=lib/gh-cli.sh
+. "$_BC_ISSUE_DIR/lib/gh-cli.sh"
 # shellcheck source=lib/claude.sh
 . "$_BC_ISSUE_DIR/lib/claude.sh"
 # shellcheck source=lib/markers.sh
