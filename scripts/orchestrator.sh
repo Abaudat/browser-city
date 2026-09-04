@@ -28,6 +28,7 @@ _BC_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 bc_init
 
 # --- the level-2 scripts, invoked as subprocesses only ----------------------
+bc_budget()  { bash "$_BC_DIR/bc-budget.sh" "$@"; }
 bc_issue()   { bash "$_BC_DIR/bc-issue.sh" "$@"; }
 bc_comment() { bash "$_BC_DIR/bc-comment.sh" "$@"; }
 bc_pr()      { bash "$_BC_DIR/bc-pr.sh" "$@"; }
@@ -149,6 +150,32 @@ _nudge_all() {
   done
   _join ',' "${sent[@]}"
 }
+
+# =============================================================================
+# budget-available -- the first branch of the flow, and the cheapest. Nothing
+# below this line runs without budget for it: not a dispatch, not a merge,
+# not the `gh` calls that read the board. The caps are 85% of the 5-hour
+# window and 80% of the week, so there is always a margin left for Adrian to
+# use Claude himself -- and since the rate-limit headers are account-wide,
+# his own sessions spend the same budget and the team's share shrinks on its
+# own, with nobody coordinating.
+#
+# The gate fails closed and loudly. A spent budget is exit 1, quiet and
+# expected, naming the reset the response itself reported; a gate that
+# cannot answer -- no monitor, no parse -- is exit 2, because a broken gate
+# that skipped like a spent one would make a team stopped for a week look
+# exactly like a team behaving correctly.
+# =============================================================================
+budget_line="$(bc_budget check)"; budget_rc=$?
+case "$budget_rc" in
+  0) : ;;   # "available session=... weekly=... caps=..." -- carry on.
+  1) finish 1 "budget-available" "sleep" "${budget_line#spent }" ;;
+  # An empty line here means bc-budget.sh died before it could say anything
+  # -- bc_init's own exit 2, most likely. Still broken, and the reason must
+  # still read as a sentence rather than as a bare node name.
+  *) budget_why="${budget_line#broken }"
+     finish 2 "budget-available" "broken" "${budget_why:-bc-budget check failed with no output}" ;;
+esac
 
 # =============================================================================
 # demo-active / demo-has-feedback / closing-sprint / starting-next-sprint --

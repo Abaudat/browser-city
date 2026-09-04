@@ -23,6 +23,15 @@ role8() { bc_role_uuid "$1" "$2" | cut -c1-8; }   # <role> <issue> -> first 8 ch
 # once, below, then trusted for the rest of the file).
 run() {
   local fake="$1" now="$2"
+  # budget-available is the first branch of every wake now, and lib/budget.sh
+  # treats a fake dir with no rate_monitor.json as "the monitor could not
+  # answer" -- deliberately, so the gate is never silently open. Every
+  # scenario below is about some branch further down, so unless it wrote its
+  # own budget fixture it gets one saying there is plenty. The gate's own
+  # scenarios, at the top of this file, write theirs first.
+  [ -f "$fake/rate_monitor.json" ] || printf '%s' \
+    '{"overallStatus":"allowed","session":{"utilization":0.10,"reset":"1788123600"},"weekly":{"utilization":0.20,"reset":"1788512400"}}' \
+    > "$fake/rate_monitor.json"
   BC_FAKE="$fake" BC_NOW="$now" BC_WAKE_REASON="$fake/reason.txt" bash "$ORCH"
 }
 
@@ -65,6 +74,48 @@ one_active() {
 NOW_MIDSPRINT="2026-09-02T08:00:00Z"   # Sprint 1, well before the demo hour.
 
 # =============================================================================
+echo "budget-available: the gate is the first branch, and nothing runs behind it"
+# =============================================================================
+# A spent budget and a broken gate both stop the tick, and the pair of them
+# is the reason this node exists: they must not read the same. Both
+# scenarios below hand the orchestrator a board with real work waiting
+# (a Sprint Demo needing an issue), so a tick that got past the gate would
+# have written to calls.log -- the absence of that file is the assertion
+# that the gate stopped the wake rather than merely commenting on it.
+budget_board() { # <dir> -- a board with work the tick would otherwise do
+  write_iterations "$1"
+  echo '[]' > "$1/project_items.json"
+}
+
+F_BUDGET_SPENT="$(fake_dir)"
+budget_board "$F_BUDGET_SPENT"
+printf '%s' '{"overallStatus":"allowed","session":{"utilization":0.91,"reset":"1788123600"},"weekly":{"utilization":0.20,"reset":"1788512400"}}' \
+  > "$F_BUDGET_SPENT/rate_monitor.json"
+check_out "budget-available: over the session cap -> sleep, exit 1" 1 \
+  "budget-available sleep session=0.91 cap=0.85 resumes=2026-08-30T21:00:00Z" \
+  run "$F_BUDGET_SPENT" "$NOW_MIDSPRINT"
+check "budget-available: a spent tick touched nothing" 1 test -f "$F_BUDGET_SPENT/calls.log"
+
+F_BUDGET_BROKEN="$(fake_dir)"
+budget_board "$F_BUDGET_BROKEN"
+printf '%s' 'not json at all' > "$F_BUDGET_BROKEN/rate_monitor.json"
+BROKEN_OUT="$(run "$F_BUDGET_BROKEN" "$NOW_MIDSPRINT")"; BROKEN_RC=$?
+check "budget-available: a gate that cannot answer exits 2, not 1" 0 \
+  test "$BROKEN_RC" = 2
+check "budget-available: and the reason says broken, not sleep" 0 \
+  grep -q "^budget-available broken " "$F_BUDGET_BROKEN/reason.txt"
+check "budget-available: a broken tick touched nothing either" 1 test -f "$F_BUDGET_BROKEN/calls.log"
+
+F_BUDGET_OK="$(fake_dir)"
+budget_board "$F_BUDGET_OK"
+printf '%s' '{"overallStatus":"allowed","session":{"utilization":0.84,"reset":"1788123600"},"weekly":{"utilization":0.79,"reset":"1788512400"}}' \
+  > "$F_BUDGET_OK/rate_monitor.json"
+check_out "budget-available: just under both caps falls through to the flow" 1 \
+  "starting-dev-cycle sleep backlog empty" \
+  run "$F_BUDGET_OK" "$NOW_MIDSPRINT"
+
+# =============================================================================
+echo
 echo "sanity: the reason file carries exactly what stdout printed"
 # =============================================================================
 F0="$(fake_dir)"

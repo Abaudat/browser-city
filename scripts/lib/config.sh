@@ -26,6 +26,13 @@ _BC_CONFIG_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 : "${BC_ROLES:=$BC_LEADS crew}"
 : "${BC_IDLE_MS:=300000}"
 : "${BC_CYCLE_LIMIT:=8}"
+# The budget gate's two caps, as fractions of Anthropic's own unified rate
+# limit windows. 85% of the 5-hour window and 80% of the week leave Adrian a
+# margin he never has to ask the team for -- and because the headers are
+# account-wide, his own sessions spend the same budget, so the team's share
+# shrinks on its own when he has been working. At or above a cap is a skip.
+: "${BC_SESSION_CAP:=0.85}"
+: "${BC_WEEKLY_CAP:=0.80}"
 # Git Bash on this machine ships no IANA zoneinfo database (no
 # /usr/share/zoneinfo), so TZ=Europe/Zurich is silently taken as UTC by GNU
 # date -- wrong every day of the year, and wrong by two hours half of it. A
