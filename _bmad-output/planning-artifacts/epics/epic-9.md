@@ -160,7 +160,7 @@ So that returning is arriving somewhere rather than reading a report.
 
 **Given** the GDD specifies the pile of post and the architecture overrode it
 **When** this story is implemented
-**Then** the override is recorded in the decision log from Story 0.10, so the contradiction is visible rather than silently resolved
+**Then** the override is recorded in `architecture.md`, so the contradiction is visible rather than silently resolved
 
 ### Story 9.6: Payslips and Receipts
 
@@ -384,7 +384,7 @@ So that recognisability survives the thing that most threatens it.
 
 **Given** this was escalated from the architecture to design and left open
 **When** this story is implemented
-**Then** the decision taken is recorded in the decision log
+**Then** the decision taken is recorded in `architecture.md`
 **And** if stickiness proves insufficient, the finding returns to design rather than being patched here
 
 ### Story 9.14: Come Back After a Week
