@@ -597,5 +597,74 @@ So that every cadence number in the charter stops being a guess.
 **When** it is known
 **Then** the achievable stories-per-week is stated plainly, and if 206 stories implies a timeline far from expectation, the epic sequence is revisited before the team spends a year enforcing it
 
+### Story 0.20: The Epics on GitHub
+
+**Leads:** quentin, tim
+
+As Scotty,
+I want the epic breakdown to live as issues on the board rather than as fifteen markdown files beside it,
+So that the plan and the tracker are the same object, and no role burns its window reading a document to find work the board already knows about.
+
+**Acceptance Criteria:**
+
+**Given** the epic files hold 206 stories the board has never seen, and Story 0.10 already established that status lives only on the board
+**When** the epics are moved
+**Then** each epic becomes one GitHub issue and each of its stories a sub-issue of it, carrying that story's role sentence, its acceptance criteria and its lead scope unchanged
+
+**Given** an agent that has to parse prose to learn where a story sits will eventually parse it wrong
+**When** the issues are created
+**Then** epic membership is the sub-issue link, lead scope is a label, and status is the board's Status field — none of the three restated in the body
+
+**Given** this is a one-time bulk write of several hundred issues against a rate-limited API, and a run that dies halfway leaves the backlog in an unknown state
+**When** the migration runs
+**Then** it is a script that is idempotent and resumable — a second run creates nothing twice and finishes what the first started
+**And** it reports what it created, what it skipped, and what it could not place
+
+**Given** a story present on one side and absent on the other is exactly the drift Story 0.10 was written to prevent
+**When** the move completes
+**Then** a check round-trips both directions and names every story that appears on only one side
+
+**Given** two copies of the plan is the failure the charter's deletion was meant to end
+**When** the move is verified
+**Then** the per-epic files are removed rather than left to rot, and `index.md` stays as the reference the issues point at — the requirements inventory, the coverage map, the NFR placement map and the epic sequence being read whole and belonging to no single story
+**And** anything reworded or dropped in the move is a listed, deliberate change, the migration commit being the only record of it that will survive
+
+### Story 0.21: The Feedback Loop
+
+**Leads:** quentin, derek, tim, artie
+
+As Adrian,
+I want the comments I leave on the Sprint Demo to come back as sized, prioritised stories the team has actually thought about,
+So that playing the game on Friday is how I steer the project, and the only thing I have to do to steer it.
+
+**Acceptance Criteria:**
+
+**Given** Story 0.17 ends at Adrian closing the review and `sprint-demo.mmd` says Scotty turns his comments into issues, but nothing between those two states says how a comment becomes a requirement
+**When** the loop is built
+**Then** it runs `agentic-team/story-creation-flow.mmd` end to end — comments read from the Sprint Demo issue, one requirement issue opened per thing Adrian asked for, each lead in scope analysing it, and only then the sub-issues and their estimates
+
+**Given** a comment is a reaction to a build and not a specification
+**When** Scotty writes the requirement issue
+**Then** it quotes the comment it came from and states the requirement in the project's own vocabulary
+**And** it is a requirement rather than a solution, the how being the leads' to answer and not his
+
+**Given** four leads decide asynchronously, which Story 0.18 records as making drift worse rather than better
+**When** the leads analyse a new requirement
+**Then** each writes into its own domain on that issue — Derek whether it serves the vision, Tim what it costs and what it makes permanent, Artie what it must look and feel like, Quentin how it will be tested
+**And** where two analyses conflict, the conflict is stated on the issue rather than settled silently by whoever wrote last
+
+**Given** the board carries Status, Priority and Sprint but nothing that says how big a story is, and a sprint cannot be scoped against stories of unknown size
+**When** the sub-issues are created
+**Then** each carries a size and a priority as board fields, set at creation
+**And** a sprint is never scoped from unsized stories
+
+**Given** a request Adrian raised and never heard about again is indistinguishable from one that was ignored
+**When** the loop completes for a comment
+**Then** Scotty replies on that comment with what it became — the issues it produced, or the reason it produced none
+
+**Given** every mechanism in this epic that failed silently failed by producing no error at all
+**When** this loop breaks — comments unread, a lead never analysing, sizes never set
+**Then** the break is visible at the next sprint start, which says plainly that it scoped a backlog nothing new had entered
+
 
 ---
