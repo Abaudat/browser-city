@@ -403,34 +403,6 @@ So that "tested" is a fact about coverage rather than a claim about effort.
 **When** that happens
 **Then** it is explicitly waived with a recorded reason, and a story with silently unmet criteria does not pass review
 
-### Story 0.13: The Escalation Path
-
-**Leads:** quentin
-
-As Adrian,
-I want exactly one thing to interrupt me,
-So that autonomy is real and my attention is spent on the one question that is actually mine.
-
-**Acceptance Criteria:**
-
-**Given** the charter routes everything except the circuit breaker to the team
-**When** the escalation path is built
-**Then** the only mid-sprint interruption is 8 review cycles without approval
-**And** Tim decides the irreversibles, Derek rules on the design laws, and a spike that overturns a decision is handled by the lead who owns that domain
-
-**Given** a role wants to ask Adrian something that is not the circuit breaker
-**When** it would otherwise escalate
-**Then** it writes the question into the sprint review instead, and it is answered on Friday
-
-**Given** the circuit breaker halts all work rather than parking the PR and moving on
-**When** it trips
-**Then** Scotty comments on the PR with an @-mention stating the deadlock, what was tried across the eight cycles, the options he sees, and his own recommendation
-**And** the @-mention reaches Adrian with no session attached
-
-**Given** decisions Adrian never sees are permanent under NFR33 and NFR34
-**When** one is taken
-**Then** it lands in the decision log where the Friday review can reach it
-
 ### Story 0.14: Agent Tooling
 
 **Leads:** quentin, tim
@@ -547,34 +519,6 @@ So that I can review real progress as a player rather than reading a status repo
 **When** he closes the review PR
 **Then** Scotty converts them into new tasks or modifications to existing ones and prioritises them
 
-### Story 0.18: The Running Decision Log
-
-**Leads:** quentin, derek, tim
-
-As the team,
-I want implementation-time decisions recorded where the next agent will find them,
-So that a choice made once is not silently remade differently.
-
-**Acceptance Criteria:**
-
-**Given** the architecture carries revisit triggers, escape-hatch conditions and deferred decisions
-**When** one of them fires during implementation
-**Then** the decision taken is recorded with its date, its trigger and its reasoning
-
-**Given** four leads now decide asynchronously, which makes drift worse rather than better
-**When** the log is built
-**Then** each lead records decisions in its own domain
-**And** Scotty audits weekly for contradiction, being the only role that reads across all four
-
-**Given** several architectural decisions are explicitly provisional pending measurement
-**When** a spike returns a number
-**Then** the affected decision is updated in place or superseded, and the supersession is visible
-**And** an agent reading the architecture cannot act on a position that measurement has overturned
-
-**Given** the architecture's own validation found it had accumulated stale text as later decisions overturned earlier ones, such that an agent reading one section would have implemented a system that no longer existed
-**When** a decision changes
-**Then** every place stating the old position is updated in the same change
-
 ### Story 0.19: Cost Per Story
 
 **Leads:** quentin, tim
@@ -648,7 +592,7 @@ So that playing the game on Friday is how I steer the project, and the only thin
 **Then** it quotes the comment it came from and states the requirement in the project's own vocabulary
 **And** it is a requirement rather than a solution, the how being the leads' to answer and not his
 
-**Given** four leads decide asynchronously, which Story 0.18 records as making drift worse rather than better
+**Given** four leads decide asynchronously, which makes drift worse rather than better
 **When** the leads analyse a new requirement
 **Then** each writes into its own domain on that issue — Derek whether it serves the vision, Tim what it costs and what it makes permanent, Artie what it must look and feel like, Quentin how it will be tested
 **And** where two analyses conflict, the conflict is stated on the issue rather than settled silently by whoever wrote last
