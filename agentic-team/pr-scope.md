@@ -10,7 +10,7 @@ ecision, one action, exit. It reads state, it does not remember it. It is fully 
 2. **Orca integration** so every role's session is visible from the skill.
 3. **Session reconciliation** so a role whose session stopped is restarted
 ather than silently skipped.
-4. **Five bash scripts** underneath, holding every deterministic read and write.
+4. **Six bash scripts** underneath, holding every deterministic read and write.
 
 The split is the point. The scripts decide *facts* — what is active, who has
 commented, whether the head moved. The skill decides *nothing* except which
@@ -18,11 +18,25 @@ branch of the flowchart those facts select, and then does the one thing at the
 end of it. Anything the skill has to reason about is a fact a script should have
 returned.
 
-Two of the five are not Scotty's alone. `bc-comment.sh` and `bc-pr.sh` are
+Two of the six are not Scotty's alone. `bc-comment.sh` and `bc-pr.sh` are
 written through by the leads and Crew as well, which is what keeps one writer
 per comment and one opener per PR.
 
 ---
+
+## `bc-budget.sh` — the budget gate
+
+| Command | Node | Returns |
+| ------- | ---- | ------- |
+| `check` | budget-available | exit 0 available, 1 spent, 2 broken — plus one line saying which and why |
+
+The first node of the wake and the only one that can stop it before the board
+is read. Three outcomes, not two: a spent budget (`1`) and a gate that cannot
+answer (`2`) both stop the team, and if they exited the same way a team
+stopped for a week would look exactly like a team behaving correctly. The
+caps — 85% of the 5-hour window, 80% of the week — are read from
+Anthropic's account-wide rate-limit headers, so Adrian's own sessions spend
+the same budget and the team's share shrinks without anyone coordinating.
 
 ## `bc-issue.sh` — issues
 

@@ -113,3 +113,12 @@ resolve_claude() {
     "${WIN_ROAMING:+$WIN_ROAMING/npm/claude.cmd}" \
     "${WIN_PROFILE:+$WIN_PROFILE/.local/bin/claude}"
 }
+
+# The budget gate's one external tool. Resolved lazily by lib/budget.sh
+# rather than in bc_init: a rate monitor that is missing must break the gate
+# alone -- loudly, as exit 2 -- and not every script that sources config.sh.
+resolve_rate_monitor() {
+  resolve claude-rate-monitor \
+    "${WIN_ROAMING:+$WIN_ROAMING/npm/claude-rate-monitor}" \
+    "${WIN_PROFILE:+$WIN_PROFILE/AppData/Roaming/npm/claude-rate-monitor}"
+}

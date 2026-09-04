@@ -11,7 +11,8 @@ state store.
 scripts/
   lib/            LEVEL 1 — primitives, no intelligence, sourced
     paths.sh        tool resolution, path form conversion, bc_state_dir
-    config.sh        constants (repo, project, roles, thresholds) + bc_init + the clock
+    config.sh        constants (repo, project, roles, thresholds, budget caps) + bc_init + the clock
+    budget.sh        the one claude-rate-monitor call + parsing of what it answers
     gh-cli.sh         issues, PRs, comments, labels, sub-issues (one `gh` call each)
     project.sh        GitHub Project v2: items, Status/Priority/Sprint fields
     orca.sh            worktrees, terminals (one `orca` call each)
@@ -19,6 +20,7 @@ scripts/
     markers.sh           the `<!-- bc:name value -->` comment vocabulary
     fake.sh               BC_FAKE test double: replays JSON, logs writes
 
+  bc-budget.sh    LEVEL 2 — the budget gate: available / spent / broken
   bc-issue.sh     LEVEL 2 — issues: next/current/transition/scope/demo-*
   bc-comment.sh    LEVEL 2 — the structured-comment reads and writes
   bc-pr.sh          LEVEL 2 — PRs: open/merge/for-issue/head
@@ -66,9 +68,9 @@ the breaker note), which is what keeps one writer per comment. That agent-
 facing subset — and only it — is documented in `.claude/skills/bc-sdlc`.
 
 Level 3 is `orchestrator.sh` alone. It **never sources** `gh-cli.sh`,
-`project.sh`, `orca.sh`, or `claude.sh`, and never calls `gh`/`orca`/`claude`
+`project.sh`, `orca.sh`, `budget.sh`, or `claude.sh`, and never calls `gh`/`orca`/`claude`
 directly — it only sources `lib/config.sh` (for constants, `bc_init`, and
-`bc_state_dir`/`posix2win`) and invokes the five `bc-*.sh` scripts as
+`bc_state_dir`/`posix2win`) and invokes the six `bc-*.sh` scripts as
 subprocesses. This is the whole point of the split: the level-2 scripts
 decide *facts* (what's active, who has commented, whether the head moved),
 and the orchestrator decides nothing except which branch of the flowchart
@@ -85,6 +87,18 @@ of `agentic-team/high-level-agentic-flow.mmd`, takes the one action that
 branch calls for (or nothing, if the gate says no), and exits. It does not
 loop and does not remember anything between runs — run it again to advance
 further, e.g. from cron, a scheduled task, or a human.
+
+**The budget gate runs first.** Before the board is read at all, the tick
+asks `bc-budget.sh check` whether there is budget: it dispatches only while
+Anthropic's `overallStatus` is `allowed`, the 5-hour window is below 85% and
+the week is below 80%. Those headers are account-wide, so Adrian's own
+sessions spend the same budget and the team's share shrinks on its own when
+he has been working, with nobody coordinating. A spent budget is exit 1 —
+quiet, expected, and the reason line names the reset the response itself
+reported, so "back at 21:00" never reads as "stuck since Tuesday". A gate
+that cannot answer is exit **2**, not 1, because a broken gate that skipped
+like a spent one would make a team stopped for a week look exactly like a
+team behaving correctly.
 
 A crash mid-tick is safe to retick: state is transitioned *before* the side
 effects it announces (starting-dev-cycle claims a sub-issue before spawning
@@ -108,8 +122,8 @@ both stdout and `$BC_WAKE_REASON`, then exits with:
 | Code | Meaning | Examples |
 |---|---|---|
 | `0` | acted | `leads-analysed nudged tim,derek on #12`, `merging-pr merged PR #15 for #12` |
-| `1` | slept — nothing to do | `demo-active sleep demo #40 awaiting feedback`, `starting-dev-cycle sleep backlog empty` |
-| `2` | broken | a level-2 script failed somewhere it shouldn't have |
+| `1` | slept — nothing to do | `budget-available sleep session=0.91 cap=0.85 resumes=2026-08-30T21:00:00Z`, `demo-active sleep demo #40 awaiting feedback`, `starting-dev-cycle sleep backlog empty` |
+| `2` | broken | a level-2 script failed somewhere it shouldn't have — `budget-available broken unparseable rate monitor response: ...` |
 
 Everything else — diagnostics, warnings, subprocess stderr — goes to
 stderr; stdout carries only that one reason line.
@@ -126,6 +140,8 @@ stderr; stdout carries only that one reason line.
 | `BC_CLOSE_RETRIES=<n>` | How many rounds `orca terminal close` gets per pane, two seconds apart, each round trying a plain close and then `--tab`. | 3 |
 | `BC_STOP_TIMEOUT_S=<s>` | How long `bc-session stop-all` keeps closing and re-listing before it reports panes still open as exit 2. Orca refuses to close some busy panes with `terminal_handle_stale` (reliably the oldest Claude pane in a worktree) for up to a minute, then accepts the same call, so stop-all trusts the listing, not the close's answer. | 120 |
 | `BC_WRITE_RESULT=<file>` | Where a `write-*` command records the number/id it just created, as well as printing it. Set by `create-demo`/`create-breaker` around their Scotty call and exported, so the `write-*` call Scotty makes inside `claude` can report back — its stdout belongs to a Bash tool call no caller can read. Unset (a role or a human calling `write-*` by hand) is not an error. | unset |
+| `BC_SESSION_CAP=<0..1>` / `BC_WEEKLY_CAP=<0..1>` | The budget gate's two caps. At or above one is a skip. | `0.85` / `0.80` |
+| `BC_RATE_MONITOR=<path>` | The `claude-rate-monitor` binary, when it is somewhere `resolve_rate_monitor` does not look. | derived (`%APPDATA%/npm`, then PATH) |
 | `BC_SESSION_MODE=main` | `bc-session.sh worktree` returns `$BC_MAIN_CHECKOUT` instead of creating/looking up an Orca worktree-per-issue — the spike's documented fallback if Orca worktrees are ever unavailable. | unset (worktree-per-issue) |
 
 (`lib/config.sh` also exposes plain constant overrides — `BC_REPO`,
@@ -141,6 +157,12 @@ bash scripts/tests/run-all.sh
 Runs every `scripts/tests/test-*.sh` and aggregates pass/fail (exit 0 only
 if every file passed). Each file is fixture-driven through `BC_FAKE`:
 `test-markers.sh` and `test-lib.sh` cover level 1 in isolation;
+`test-bc-budget.sh` covers the gate's three exits against canned
+`rate_monitor.json` responses (a fake dir with no such fixture is treated as
+"the monitor could not answer", so the gate is never silently open in a test
+that forgot to say what the budget was — `test-orchestrator.sh`'s `run`
+helper writes a plenty fixture for the scenarios that are about some other
+branch);
 `test-bc-*.sh` cover each level-2 script's commands against canned
 `project_items.json` / `gh_issue_comments.*.json` / etc fixtures;
 `test-orchestrator.sh` runs `orchestrator.sh` itself as a subprocess, one

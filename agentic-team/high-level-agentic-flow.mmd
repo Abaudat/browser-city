@@ -2,7 +2,9 @@ flowchart TD
     wake(["Scotty wakes"])
     sleep(["Do nothing — sleep"])
 
-    wake --> demo-active{"Sprint Demo issue<br/>in an active status?"}
+    wake --> budget-available{"Budget under both caps?<br/>85% of the 5h window,<br/>80% of the week"}
+    budget-available -->|no| sleep
+    budget-available -->|yes| demo-active{"Sprint Demo issue<br/>in an active status?"}
 
     %% ---------- Sprint Demo ----------
     demo-active -->|"yes — In Progress"| demo-has-feedback{"Adrian has<br/>commented on it?"}
