@@ -667,4 +667,42 @@ So that playing the game on Friday is how I steer the project, and the only thin
 **Then** the break is visible at the next sprint start, which says plainly that it scoped a backlog nothing new had entered
 
 
+### Story 0.22: Rewrite the Leads' Prompts
+
+**Leads:** quentin, tim
+
+As Adrian,
+I want each lead's definition to carry its own judgement and nothing else, in the vocabulary the machinery actually uses,
+So that a lead spends its window on the diff rather than on a protocol four other files already state.
+
+**Acceptance Criteria:**
+
+**Given** the six definitions run to 640 lines and the larger part of each is the comment protocol restated — the stamping commands, the cycle sections, the marker vocabulary, the prohibition on touching another lead's comment
+**When** the prompts are rewritten
+**Then** that protocol is stated in exactly one place, `bc-sdlc`, and each role file says only what its role must judge and what it must never let through
+**And** no instruction survives in two files, the second copy being the one that will be wrong after the next change
+
+**Given** the role definitions are where the comment format is specified and the scripts are what must render it
+**When** the mechanics move out of the role files
+**Then** whatever now holds the format is the thing the scripts are held to, so the move does not quietly turn a contract into documentation
+
+**Given** the definitions still name the team charter, the `c.1`–`c.6` cycle and a precheck that decides scope, all of which this epic's own preamble records as an architecture the project has left behind
+**When** each file is read against `agentic-team/high-level-agentic-flow.mmd`, `agentic-team/pr-scope.md` and `scripts/README.md`
+**Then** every reference to the old flow is replaced by what the orchestrator does, or removed
+**And** a definition describing a step no script performs is treated as the defect, the same way a story describing that flow is
+
+**Given** the definition is loaded before the lead has read the story, its own direction, the diff or the architecture
+**When** length is judged
+**Then** the declared reading list, the veto authority and the named failure modes stay, and the compression comes out of what was duplicated
+**And** the result is measured by what the lead still catches, never by line count alone
+
+**Given** the same protocol text sits in `crew.md` and `scotty.md`
+**When** the pass is made
+**Then** those two go with the four, because a protocol stated once in four files and twice more elsewhere has not moved
+
+**Given** a drifted prompt produces a confident verdict against a rule that no longer holds, which is the silent failure this epic keeps naming
+**When** a rewritten lead is put back to work
+**Then** each is rehearsed once against a PR whose outcome is already known, and a lead that no longer reaches its own earlier finding is not shipped
+
+
 ---
