@@ -18,11 +18,12 @@
 # `integrate-feedback`, `write-epic` and `write-story` are the same split for
 # integrating-feedback, with one difference that shapes the whole node:
 # Scotty opens an unknown NUMBER of issues there, so BC_WRITE_RESULT -- which
-# holds one value -- cannot be the success test. integrate-feedback counts the
-# open, unscoped items on the board before and after instead, and only moves
-# the Demo issue to Reviewed once that count has actually grown. A tick that
-# dies mid-integration therefore leaves the demo In progress and simply runs
-# again, and a Scotty who wrote nothing cannot close a sprint on his word.
+# holds one value -- cannot report what was created. integrate-feedback counts
+# the open, unscoped items on the board before and after instead, and reports
+# the difference; the count is a report, not a gate. Feedback that asks for
+# nothing new -- praise, a question, a note about work already on the backlog
+# -- is a legitimate outcome, so the Demo issue moves to Reviewed either way
+# and the sprint rolls on the next tick rather than the node retrying forever.
 set -u
 _BC_ISSUE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/config.sh
@@ -354,9 +355,9 @@ integrate-feedback)
 
   items="$(project_items)" || { echo "bc-issue integrate-feedback: could not read project items" >&2; exit 2; }
   # The count of open, unscoped work BEFORE the call. Scotty may open any
-  # number of epics and stories, and bc_record_result holds one value, so the
-  # success test is not what he claims -- it is whether the backlog actually
-  # grew. Same principle as every other gate here: re-derive, never trust.
+  # number of epics and stories, and bc_record_result holds one value, so what
+  # landed is re-derived from the board rather than taken from his word --
+  # same principle as every other read here, just reported instead of gated.
   before="$(printf '%s' "$items" | "$JQ" \
     '[.[] | select(.state=="OPEN" and .sprintId==null)] | length')"
 
@@ -392,14 +393,11 @@ integrate-feedback)
   after_items="$(project_items)" || { echo "bc-issue integrate-feedback: could not re-read project items" >&2; exit 2; }
   after="$(printf '%s' "$after_items" | "$JQ" \
     '[.[] | select(.state=="OPEN" and .sprintId==null)] | length')"
-  if [ "$after" -le "$before" ]; then
-    echo "bc-issue integrate-feedback: judge-feedback.md created no backlog work for demo #$issue" >&2
-    exit 2
-  fi
-
-  # The demo issue moves to Reviewed only once the feedback is on the board.
-  # That is what closing-sprint/starting-next-sprint react to, so a tick that
-  # died mid-integration leaves the demo In progress and simply runs again.
+  # Reviewed regardless of what the count says: feedback the backlog already
+  # covers, or that asked for nothing, leaves it unchanged, and holding the
+  # demo In progress for that would stall every sprint behind it. A tick that
+  # dies BEFORE this line still leaves the demo In progress and simply runs
+  # again -- that is what makes the node safe to retry, not the count.
   project_set_single "$issue" Status Reviewed || {
     echo "bc-issue integrate-feedback: failed to mark demo #$issue Reviewed" >&2; exit 2; }
 

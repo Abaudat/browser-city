@@ -375,7 +375,7 @@ check "write-story with a missing argument exits 2" 2 \
 check "and none of those created anything" 1 test -f "$FAKE_WT2/calls.log"
 
 echo
-echo "integrate-feedback: hands the thread to Scotty, then checks the board grew:"
+echo "integrate-feedback: hands the thread to Scotty, then reports what the board gained:"
 
 FAKE_FB="$(fake_dir)"
 printf 'The team shipped a crash fix.\n' > "$FAKE_FB/gh_issue_body.900.json"
@@ -386,7 +386,7 @@ cat > "$FAKE_FB/gh_issue_comments.900.json" <<'JSON'
 ]
 JSON
 # A .seq fixture is the board before and after Scotty's call: two unscoped
-# open items become three, which is what integrate-feedback tests for.
+# open items become three, which is the difference integrate-feedback reports.
 cat > "$FAKE_FB/project_items.seq" <<'JSON'
 [{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},{"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120}]
 [{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},{"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120},{"number":122,"title":"Tighten the parry window","state":"OPEN","status":"Backlog","priority":"Standard","size":"S","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120}]
@@ -404,14 +404,14 @@ check "integrate-feedback marked the demo Reviewed" 0 \
 FAKE_FB0="$(fake_dir)"
 printf 'Demo body.\n' > "$FAKE_FB0/gh_issue_body.900.json"
 echo '[{"id":1,"body":"Looks good."}]' > "$FAKE_FB0/gh_issue_comments.900.json"
-# One fixture, so the count before equals the count after: Scotty wrote
-# nothing, and the demo must NOT advance on his word.
+# One fixture, so the count before equals the count after: feedback that asked
+# for nothing new still advances the demo, reporting a gain of zero.
 echo '[{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null}]' \
   > "$FAKE_FB0/project_items.json"
 
-check "integrate-feedback exits 2 when the backlog did not grow" 2 \
-  run "$FAKE_FB0" "" integrate-feedback 900
-check "and the demo was left In progress for the next tick" 1 \
+check_out "integrate-feedback reports a gain of zero when the backlog did not grow" 0 \
+  '{"demo":900,"created":0}' run "$FAKE_FB0" "" integrate-feedback 900
+check "and the demo still moved to Reviewed" 0 \
   log_has "$FAKE_FB0/calls.log" '^project_set_single 900 Status Reviewed$'
 
 check "integrate-feedback with no issue argument exits 2" 2 run "$FAKE_FB0" "" integrate-feedback

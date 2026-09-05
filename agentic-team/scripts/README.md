@@ -51,9 +51,10 @@ agentic-team/scripts/
   `judge-feedback.md` is the one exception to that last clause, because it
   opens an unknown number of issues and `BC_WRITE_RESULT` holds one value.
   `integrate-feedback` counts the open, unscoped items on the board before and
-  after the call instead, and only marks the Demo issue `Reviewed` once that
-  count has grown — so a Scotty who wrote nothing cannot advance the sprint on
-  his word alone.
+  after the call instead, and reports the difference — a report, not a gate.
+  It marks the Demo issue `Reviewed` either way: feedback that asks for
+  nothing new, or that the backlog already covers, is a legitimate outcome,
+  and stalling the sprint on it would only make the node retry forever.
 
   orchestrator.sh LEVEL 3 — the wake: one entry point, one decision, one action
 
@@ -205,7 +206,7 @@ stderr; stdout carries only that one reason line.
 | `BC_READY_TIMEOUT_S=<s>` | How long `bc-session spawn`/`start` wait for the new terminal to show Claude's idle prompt (✳ title + `agentIdentity: claude`) before giving up with a warning. | 90 |
 | `BC_CLOSE_RETRIES=<n>` | How many rounds `orca terminal close` gets per pane, two seconds apart, each round trying a plain close and then `--tab`. | 3 |
 | `BC_STOP_TIMEOUT_S=<s>` | How long `bc-session stop-all` keeps closing and re-listing before it reports panes still open as exit 2. Orca refuses to close some busy panes with `terminal_handle_stale` (reliably the oldest Claude pane in a worktree) for up to a minute, then accepts the same call, so stop-all trusts the listing, not the close's answer. | 120 |
-| `BC_WRITE_RESULT=<file>` | Where a `write-*` command records the number/id/summary it just created, as well as printing it. Set by `create-demo`/`create-breaker`/`bc-sprint start` around their Scotty call and exported, so the `write-*` call Scotty makes inside `claude` can report back — its stdout belongs to a Bash tool call no caller can read. `integrate-feedback` sets it for none of its writes: Scotty opens an unknown number of issues there, and one file cannot hold them, so that node counts the board instead. Unset (a role or a human calling `write-*` by hand) is not an error. | unset |
+| `BC_WRITE_RESULT=<file>` | Where a `write-*` command records the number/id/summary it just created, as well as printing it. Set by `create-demo`/`create-breaker`/`bc-sprint start` around their Scotty call and exported, so the `write-*` call Scotty makes inside `claude` can report back — its stdout belongs to a Bash tool call no caller can read. `integrate-feedback` sets it for none of its writes: Scotty opens an unknown number of issues there, and one file cannot hold them, so that node counts the board instead (to report what landed, not to gate on it). Unset (a role or a human calling `write-*` by hand) is not an error. | unset |
 | `BC_SESSION_CAP=<0..1>` / `BC_WEEKLY_CAP=<0..1>` | The budget gate's two caps. At or above one is a skip. | `0.85` / `0.80` |
 | `BC_RATE_MONITOR=<path>` | The `claude-rate-monitor` binary, when it is somewhere `resolve_rate_monitor` does not look. | derived (`%APPDATA%/npm`, then PATH) |
 | `BC_SESSION_MODE=main` | `bc-session.sh worktree` returns `$BC_MAIN_CHECKOUT` instead of creating/looking up an Orca worktree-per-issue — the spike's documented fallback if Orca worktrees are ever unavailable. | unset (worktree-per-issue) |

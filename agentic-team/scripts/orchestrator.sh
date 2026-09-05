@@ -180,10 +180,11 @@ esac
 # demo-active / demo-has-feedback / integrating-feedback / closing-sprint /
 # starting-next-sprint -- the Sprint Demo. A demo In progress with a human
 # comment on it is Scotty's to integrate: integrate-feedback turns the
-# feedback into backlog work and, only once that work is actually on the
-# board, moves the Demo issue to Reviewed. That transition is what
-# closing-sprint/starting-next-sprint react to on a later tick, so the two
-# nodes stay one wake apart and a failed integration simply retries.
+# feedback into backlog work -- however much of it the feedback actually
+# calls for, which may be none -- and then moves the Demo issue to Reviewed.
+# That transition is what closing-sprint/starting-next-sprint react to on a
+# later tick, so the two nodes stay one wake apart; an integration that died
+# before the transition left the demo In progress and simply retries.
 # =============================================================================
 demo_json="$(bc_issue demo-current)"; demo_rc=$?
 if [ "$demo_rc" -eq 2 ]; then
