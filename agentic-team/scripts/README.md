@@ -18,7 +18,8 @@ agentic-team/scripts/
     orca.sh            worktrees, terminals (one `orca` call each)
     claude.sh           session argv builders + the judgement one-shot
     markers.sh           the `<!-- bc:name value -->` comment vocabulary
-    fake.sh               BC_FAKE test double: replays JSON, logs writes
+    proc.sh               the one Windows process-table query (is the loop alive?)
+    fake.sh                BC_FAKE test double: replays JSON, logs writes
 
   bc-budget.sh    LEVEL 2 — the budget gate: available / spent / broken
   bc-issue.sh     LEVEL 2 — issues: next/current/transition/scope/demo-*
@@ -50,14 +51,22 @@ agentic-team/scripts/
 
   orchestrator.sh LEVEL 3 — the wake: one entry point, one decision, one action
 
-  setup-github.sh OFF THE WAKE — idempotent one-time GitHub setup (labels, scope check)
-  spike/            the Phase-0 Orca/Claude session spike, kept as documentation
-  tests/             fixture-driven tests, run with bash
+  run-orchestrator.sh OFF THE WAKE — the loop: orchestrator.sh, forever, ten minutes apart
+  keepalive.sh    OFF THE WAKE — the scheduled supervisor: Orca up, terminal up, loop up
+  keepalive.cmd    OFF THE WAKE — the Windows Task Scheduler entry point for it
+  setup-github.sh   OFF THE WAKE — idempotent one-time GitHub setup (labels, scope check)
+  spike/             the Phase-0 Orca/Claude session spike, kept as documentation
+  tests/              fixture-driven tests, run with bash
 ```
 
 Level 1 is sourced by level 2 (and, for `config.sh`/`paths.sh` only, by
 level 3) and never calls another script — every function is exactly one
-`gh`/`orca`/`claude` call, or pure text/JSON logic.
+`gh`/`orca`/`claude` call, one PowerShell call in `proc.sh`'s case, or pure
+text/JSON logic.
+
+The three off-the-wake scripts source level 1 directly, as `setup-github.sh`
+always has: they are not part of the flowchart, so the level-3 rule that
+keeps the orchestrator's decisions honest does not apply to them.
 
 Level 2 scripts source level 1 directly. Each is `bc-x.sh <command> [args]`:
 prints JSON or a bare value on stdout, follows the exit contract below. Three
@@ -113,6 +122,55 @@ derived from role + issue number (`bc-session uuid <role> <issue>`, an md5
 shaped as a uuid), so any tick can recompute whom to resume, no comment has
 to carry a uuid, and Crew — which never writes on the issue — gets no stub.
 
+## Running unattended — the scheduled supervisor
+
+`orchestrator.sh` is one tick. Two files turn it into a team that moves
+without anybody typing:
+
+```
+run-orchestrator.sh   the loop: orchestrator.sh, sleep BC_LOOP_INTERVAL_S (600), forever
+keepalive.sh          the supervisor: is Orca up, is that loop up? make it so
+keepalive.cmd         the Task Scheduler's entry point into keepalive.sh
+```
+
+The loop is where the cadence lives; the supervisor is what the Windows Task
+Scheduler runs every dozen minutes. It owns exactly one fact — that the loop
+is alive — and it re-derives that fact from scratch every run:
+
+1. **Orca is up and reachable.** `orca status`, else `orca open`, then polled
+   until the runtime answers — one `BC_ORCA_READY_TIMEOUT_S` budget covering
+   the launch and the wait together, since `orca open` blocks. An
+   unreachable runtime answers every selector with `ok:false`, which reads as
+   "no terminals" rather than as an error — so this check comes first or
+   every later one is a lie.
+2. **The loop is running.** A live `bash.exe` whose command line *ends in*
+   `run-orchestrator.sh` (`lib/proc.sh`). If there is one, the run is over
+   and nothing is touched — including a loop somebody started by hand, which
+   is the point: two loops ticking the same board would dispatch everything
+   twice.
+3. **Otherwise, a fresh Git Bash terminal.** Any stale tab wearing the
+   supervisor's title is closed, then `orca terminal create` makes a new one
+   in `BC_KEEPALIVE_WORKTREE` running `bash.exe -l <run-orchestrator.sh>;
+   exit`, and the loop is confirmed to have *actually appeared* in the
+   process table before the run claims to have started anything.
+
+Three deliberate choices are worth knowing before changing any of it:
+
+- **It recreates the terminal; it never types into one it finds.** Orca
+  terminals are PowerShell (`spike/FINDINGS.md` #2), so the Git Bash tab is
+  PowerShell running `bash.exe` — and the moment that bash ends, Orca
+  retitles the tab to its own executable path. A tab whose loop has died is
+  therefore neither ours by title nor a bash to type into; a bash command
+  line sent to it produces a PowerShell parse error nobody reads, and the
+  supervisor would report "started" every twelve minutes forever while the
+  team never moved.
+- **The launch line ends in `; exit`.** That is what closes the tab when the
+  loop ends, instead of leaving one renamed leftover per killed loop that
+  nothing can recognise again.
+- **A process query that cannot answer is `broken`, never "not running"** —
+  the same rule as the budget gate. A query that failed open would restart a
+  loop that is already up, on every wake, forever.
+
 ## The exit contract
 
 Every tick ends by writing **one line** — `<node> <verb> <details>`, using
@@ -143,6 +201,13 @@ stderr; stdout carries only that one reason line.
 | `BC_SESSION_CAP=<0..1>` / `BC_WEEKLY_CAP=<0..1>` | The budget gate's two caps. At or above one is a skip. | `0.85` / `0.80` |
 | `BC_RATE_MONITOR=<path>` | The `claude-rate-monitor` binary, when it is somewhere `resolve_rate_monitor` does not look. | derived (`%APPDATA%/npm`, then PATH) |
 | `BC_SESSION_MODE=main` | `bc-session.sh worktree` returns `$BC_MAIN_CHECKOUT` instead of creating/looking up an Orca worktree-per-issue — the spike's documented fallback if Orca worktrees are ever unavailable. | unset (worktree-per-issue) |
+| `BC_LOOP_INTERVAL_S=<s>` | How long `run-orchestrator.sh` sleeps between ticks. Reachable through `$BC_ENV_FILE`, which is the only channel that reaches the loop — Orca creates its terminal, so it inherits Orca's environment, not the supervisor's. | 600 |
+| `BC_KEEPALIVE_WORKTREE=<path>` | The worktree `keepalive.sh` creates the loop's terminal in, Windows-form. | `$BC_MAIN_CHECKOUT` |
+| `BC_KEEPALIVE_TITLE=<text>` | The title that tab wears, and the only tab `keepalive.sh` will ever close. | `bc-orchestrator` |
+| `BC_LOOP_SCRIPT=<path>` | The loop `keepalive.sh` starts and hunts for in the process table. | `run-orchestrator.sh` beside `keepalive.sh` |
+| `BC_ORCA_READY_TIMEOUT_S=<s>` / `BC_LOOP_START_TIMEOUT_S=<s>` / `BC_POLL_INTERVAL_S=<s>` | How long `keepalive.sh` waits for the Orca runtime, and for the loop to appear in the process table after it creates the terminal; and how long it sleeps between polls of either. | 180 / 60 / 5 |
+| `BC_KEEPALIVE_REASON=<file>` / `BC_KEEPALIVE_LOG=<file>` / `BC_KEEPALIVE_LOG_LINES=<n>` | Where `keepalive.sh` writes its one reason line, the log it appends every run to (the Task Scheduler keeps no output of its own), and how many lines that log is trimmed back to. | `$(bc_state_dir)/keepalive-reason.txt` / `$(bc_state_dir)/keepalive.log` / 1000 |
+| `BC_GIT_BASH=<path>` | The `bash.exe` PowerShell launches for the loop's terminal, when git is somewhere `resolve_git_bash` does not look. | derived (`%ProgramFiles%/Git/bin`, …) |
 
 (`lib/config.sh` also exposes plain constant overrides — `BC_REPO`,
 `BC_PROJECT_NUMBER`, `BC_LEADS`, `BC_CYCLE_LIMIT`, `BC_IDLE_MS`, `BC_TZ`,
@@ -167,7 +232,13 @@ branch);
 `project_items.json` / `gh_issue_comments.*.json` / etc fixtures;
 `test-orchestrator.sh` runs `orchestrator.sh` itself as a subprocess, one
 scenario per flowchart edge, asserting the exit code, the exact reason
-line, and the decisive `calls.log` lines (or their absence). To run one
+line, and the decisive `calls.log` lines (or their absence);
+`test-keepalive.sh` does the same for the scheduled supervisor, using
+fake.sh's read-side `.seq` fixtures to make one run see "not yet" and then
+"there it is" — the shape a single static fixture cannot express, and the
+only way to test a poll for anything but its timeout. A sequence's last line
+is never consumed, so an extra poll on a slow machine reads as the state the
+poll settled in rather than as a missing fixture. To run one
 file directly: `bash agentic-team/scripts/tests/test-orchestrator.sh` (it prints its own
 pass/fail summary and exits accordingly).
 
