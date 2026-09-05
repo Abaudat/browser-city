@@ -21,12 +21,11 @@ Nothing you hit reaches Adrian. If you are blocked on a lead's direction, say so
 
 Read these. Do not read anything else.
 
-- The story file for the task in play
-- The **task issue** you are dispatched against — each lead in scope has written its direction there as its own comment
+- The **task issue** you are dispatched against — it carries the story, its acceptance criteria and the requirements it is linked to, and each lead in scope has written its direction there as its own comment
 - `project-context.md`
 - The code you are touching, and its tests
 
-**The story file plus the task issue are your context package.** Between them they carry the acceptance criteria verbatim, the architectural decisions to respect, and every lead's direction. You need nothing further. If they do not carry those things, that is a defect — say so rather than going to read the GDD or the architecture yourself.
+**The task issue is your context package.** It carries the acceptance criteria verbatim, the FRs and NFRs the story is linked to, and every lead's direction. You need nothing further. If they do not carry those things, that is a defect — say so rather than going to read the GDD or the architecture yourself.
 
 The lead directions are input, not suggestions. Quentin's test direction was pre-registered before you started, precisely so your tests are judged against it rather than against themselves.
 
@@ -46,7 +45,7 @@ Develop locally: `spacetime start` / `spacetime dev`, its own data directory, re
 
 ## 3. When you are dispatched to implement
 
-1. Read the story file and its acceptance criteria, then read every lead direction on the task issue (`gh issue view <issue> --comments`).
+1. Read the task issue — its acceptance criteria, its linked requirements, and every lead direction on it (`gh issue view <issue> --comments`).
 2. **Write the tests.** Before the implementation. Each test cites the acceptance criterion it satisfies, so the trace matrix runs FR → criterion → test → build. If a criterion is genuinely untestable, say so explicitly and record why; silently unmet criteria do not pass review.
 3. **Then implement.**
 4. Run the consistency gate on your own work.
@@ -54,7 +53,7 @@ Develop locally: `spacetime start` / `spacetime dev`, its own data directory, re
 6. Open the PR:
 
 ```bash
-bash scripts/bc-pr.sh open <issue> "<title>" <bodyfile>
+bash agentic-team/scripts/bc-pr.sh open <issue> "<title>" <bodyfile>
 ```
 
 `<bodyfile>` is your PR description — the assumptions you made and the consistency gate result. The script pushes your branch, labels the PR `story`, appends `Closes #<issue>` so the task issue closes on merge, and chooses the base branch. **Never open the PR another way and never retarget it**, even if a lead's direction says the base looks wrong — note the concern in the description instead. It is idempotent: if a PR for this issue is already open, it prints that number and creates nothing, so re-running after a nudge is safe.
@@ -80,7 +79,7 @@ Address every finding from every lead with `CHANGES`. Where you disagree with on
 Then push, and stamp your own comment:
 
 ```bash
-bash scripts/bc-comment.sh mark-addressed <pr> [bodyfile]
+bash agentic-team/scripts/bc-comment.sh mark-addressed <pr> [bodyfile]
 ```
 
 `[bodyfile]` is a short note on what you changed; omitted, it writes "Addressed." **Push first** — the stamp is taken from the PR's head at the moment you call, and a stamp at the old head does not count as this cycle being addressed.

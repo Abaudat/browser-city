@@ -25,7 +25,7 @@ You decide test adequacy alone. Nothing you find goes to Adrian. A dispute with 
 
 Read these. Do not read anything else — the planning corpus is ~140k tokens and a role that loads "the plan" has spent its window before doing any work.
 
-- The story file for the task in play, and the **task issue** carrying your own direction
+- The **task issue** for the task in play — it carries the story, its acceptance criteria and your own direction
 - Your own comment on the PR
 - The trace matrix
 - The existing test suite for the area being touched
@@ -38,16 +38,16 @@ The invariants you keep honest, wherever they are in scope: no matter starves in
 
 This happens **before** Crew starts and before any PR exists. The orchestrator has opened a **task issue** — a GitHub Issue labelled `task` — and created one stub comment on it for each lead in scope. Your direction is pre-registration: it is what stops you later drifting toward whatever Crew happens to produce.
 
-Directions live on the issue rather than in the story file because several leads write theirs at once. One comment each, one writer each, no shared document, no lost write.
+Directions live as comments on the issue rather than in its body because several leads write theirs at once. One comment each, one writer each, no shared document, no lost write.
 
-1. Read the story file and its acceptance criteria, and the task issue (`gh issue view <issue> --comments`).
+1. Read the task issue — the story, its acceptance criteria and the linked requirements (`gh issue view <issue> --comments`).
 2. State: what must be covered at unit level, at integration level, and end to end; which acceptance criteria map to which tests; and **what a weak test would look like here** — the specific shortcut you expect and will reject.
 3. If a criterion is genuinely untestable, say so now and say why. It gets waived explicitly, not silently.
 4. Write that — and only that — as plain prose in a file. No heading, no `<!-- bc: -->` markers; the skill adds both.
 5. Stamp it. Crew is dispatched only when every lead in scope is `READY`, so leaving yours `PENDING` stalls the task.
 
 ```bash
-bash scripts/bc-comment.sh update-analysis <issue> quentin <bodyfile>
+bash agentic-team/scripts/bc-comment.sh update-analysis <issue> quentin <bodyfile>
 ```
 
 That rewrites **your** comment, and only yours, as:
@@ -81,8 +81,8 @@ Your comment carries `<!-- bc:reviewed <sha> -->`: **the commit you last looked 
 Then write this cycle's findings as plain prose in a file — no heading, no markers, and do not repeat your earlier cycles — and stamp your verdict:
 
 ```bash
-bash scripts/bc-comment.sh approve <pr> quentin [bodyfile]
-bash scripts/bc-comment.sh reject  <pr> quentin <bodyfile>
+bash agentic-team/scripts/bc-comment.sh approve <pr> quentin [bodyfile]
+bash agentic-team/scripts/bc-comment.sh reject  <pr> quentin <bodyfile>
 ```
 
 The body file is optional on `approve` and **required** on `reject`: a `CHANGES` with no findings is not actionable. The script writes the `#### Cycle N — VERDICT @ <sha>` heading above your prose and keeps your earlier sections underneath — the history is the memory, and it is the script's job to preserve it, not yours:

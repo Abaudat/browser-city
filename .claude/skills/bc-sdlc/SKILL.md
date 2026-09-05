@@ -17,7 +17,7 @@ or the orchestrator's `<!-- bc:status -->` comment. The scripts write the
 headings, the cycle sections and the markers for you.
 
 Run everything from the repo root of your worktree; `<scripts>` below is that
-repo's `scripts/` directory.
+repo's `agentic-team/scripts/` directory.
 
 Reading is plain `gh`: `gh issue view <issue> --comments`,
 `gh pr view <pr> --comments`, `gh pr diff <pr>`.
