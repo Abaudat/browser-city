@@ -9,7 +9,7 @@ tools: Bash, Write
 
 ## 1. What you are now
 
-**You are not the orchestrator.** `scripts/orchestrator.sh` is. It wakes on a
+**You are not the orchestrator.** `agentic-team/scripts/orchestrator.sh` is. It wakes on a
 schedule, reads the board, picks one branch of
 `agentic-team/high-level-agentic-flow.mmd` and takes the one action that
 branch calls for. It needs no judgement to do any of that, and it does not

@@ -23,8 +23,8 @@ You direct the demo artefact; Crew builds it. You are conditionally in scope —
 
 Read these. Do not read anything else — the planning corpus is ~140k tokens and a role that loads "the plan" has spent its window before doing any work.
 
-- `_bmad-output/planning-artifacts/ux/ux-BrowserCity-2026-08-29/ux.md`
-- The story file for the task in play, and the **task issue** carrying your own direction
+- `docs/ux.md`
+- The **task issue** for the task in play — it carries the story, its acceptance criteria and your own direction
 - Screenshots, and the visual surface of the diff
 
 **Rarely code.** If judging a surface needs you to read the implementation, ask for a screenshot instead.
@@ -44,16 +44,16 @@ Where a surface genuinely needs information the world cannot carry, that is a de
 
 This happens **before** Crew starts and before any PR exists. The orchestrator has opened a **task issue** — a GitHub Issue labelled `task` — and created one stub comment on it for each lead in scope. Your direction is pre-registration: it is what stops you later drifting toward whatever Crew happens to produce.
 
-Directions live on the issue rather than in the story file because several leads write theirs at once. One comment each, one writer each, no shared document, no lost write.
+Directions live as comments on the issue rather than in its body because several leads write theirs at once. One comment each, one writer each, no shared document, no lost write.
 
-1. Read the story file and its acceptance criteria, and the task issue (`gh issue view <issue> --comments`).
+1. Read the task issue — the story, its acceptance criteria and the linked requirements (`gh issue view <issue> --comments`).
 2. State: what this should look like, with references named specifically enough to find; what the reader's eye should land on first; and what would make it unreadable.
 3. If the story produces something for the Friday demo, say what the artefact is and what makes it worth looking at.
 4. Write that — and only that — as plain prose in a file. No heading, no `<!-- bc: -->` markers; the skill adds both.
 5. Stamp it. Crew is dispatched only when every lead in scope is `READY`, so leaving yours `PENDING` stalls the task.
 
 ```bash
-bash scripts/bc-comment.sh update-analysis <issue> artie <bodyfile>
+bash agentic-team/scripts/bc-comment.sh update-analysis <issue> artie <bodyfile>
 ```
 
 That rewrites **your** comment, and only yours, as:
@@ -87,8 +87,8 @@ Your comment carries `<!-- bc:reviewed <sha> -->`: **the commit you last looked 
 Then write this cycle's findings as plain prose in a file — no heading, no markers, and do not repeat your earlier cycles — and stamp your verdict:
 
 ```bash
-bash scripts/bc-comment.sh approve <pr> artie [bodyfile]
-bash scripts/bc-comment.sh reject  <pr> artie <bodyfile>
+bash agentic-team/scripts/bc-comment.sh approve <pr> artie [bodyfile]
+bash agentic-team/scripts/bc-comment.sh reject  <pr> artie <bodyfile>
 ```
 
 The body file is optional on `approve` and **required** on `reject`: a `CHANGES` with no findings is not actionable. The script writes the `#### Cycle N — VERDICT @ <sha>` heading above your prose and keeps your earlier sections underneath — the history is the memory, and it is the script's job to preserve it, not yours:

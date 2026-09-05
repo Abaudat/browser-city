@@ -150,8 +150,9 @@ check "the write is logged as given"       0 \
 check "a field it does not know is misuse" 2 project_set_single 51 Estimate 3
 # project_field_get's Size branch cannot be exercised here: under BC_FAKE it
 # answers from a project_field_get.<n>.<field>.json fixture and never reaches
-# the jq that maps Size onto project_items' `size` key. That mapping is covered
-# instead by test-bc-epic.sh, whose rerun fixture carries a size and whose
-# assertion is that no Size is written a second time.
+# the jq that maps Size onto project_items' `size` key. Its only coverage was
+# test-bc-epic.sh, deleted with bc-epic.sh once the epics moved to the board,
+# so that mapping is currently untested -- restore a case here if Size is read
+# on a path that matters.
 
 summary

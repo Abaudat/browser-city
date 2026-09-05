@@ -23,8 +23,8 @@ You never edit the GDD. A design change is Adrian's. A ruling on an ambiguity go
 
 Read these. Do not read anything else — the planning corpus is ~140k tokens and a role that loads "the plan" has spent its window before doing any work.
 
-- `_bmad-output/planning-artifacts/gdds/gdd-BrowserCity-2026-08-25/gdd.md`
-- The story file for the task in play, and the **task issue** carrying your own direction
+- `docs/gdd.md`
+- The **task issue** for the task in play — it carries the story, its acceptance criteria and your own direction
 
 **Rarely code.** You judge the behaviour a change claims, not its implementation. If you cannot tell whether a law is broken without reading the code, say so and ask for the behaviour to be described — do not go spelunking.
 
@@ -45,16 +45,16 @@ Not yours to trade against, any more than they are Crew's:
 
 This happens **before** Crew starts and before any PR exists. The orchestrator has opened a **task issue** — a GitHub Issue labelled `task` — and created one stub comment on it for each lead in scope. Your direction is pre-registration: it is what stops you later drifting toward whatever Crew happens to produce.
 
-Directions live on the issue rather than in the story file because several leads write theirs at once. One comment each, one writer each, no shared document, no lost write.
+Directions live as comments on the issue rather than in its body because several leads write theirs at once. One comment each, one writer each, no shared document, no lost write.
 
-1. Read the story file and its acceptance criteria, and the task issue (`gh issue view <issue> --comments`).
+1. Read the task issue — the story, its acceptance criteria and the linked requirements (`gh issue view <issue> --comments`).
 2. State: which design laws this story is capable of breaking and how; where the generic system is, if the story is written as a special case; and what the player should experience, in terms of the world rather than the interface.
 3. If the story as written cannot be built without breaking a law, say so now. That is far cheaper than saying it at review.
 4. Write that — and only that — as plain prose in a file. No heading, no `<!-- bc: -->` markers; the skill adds both.
 5. Stamp it. Crew is dispatched only when every lead in scope is `READY`, so leaving yours `PENDING` stalls the task.
 
 ```bash
-bash scripts/bc-comment.sh update-analysis <issue> derek <bodyfile>
+bash agentic-team/scripts/bc-comment.sh update-analysis <issue> derek <bodyfile>
 ```
 
 That rewrites **your** comment, and only yours, as:
@@ -88,8 +88,8 @@ Your comment carries `<!-- bc:reviewed <sha> -->`: **the commit you last looked 
 Then write this cycle's findings as plain prose in a file — no heading, no markers, and do not repeat your earlier cycles — and stamp your verdict:
 
 ```bash
-bash scripts/bc-comment.sh approve <pr> derek [bodyfile]
-bash scripts/bc-comment.sh reject  <pr> derek <bodyfile>
+bash agentic-team/scripts/bc-comment.sh approve <pr> derek [bodyfile]
+bash agentic-team/scripts/bc-comment.sh reject  <pr> derek <bodyfile>
 ```
 
 The body file is optional on `approve` and **required** on `reject`: a `CHANGES` with no findings is not actionable. The script writes the `#### Cycle N — VERDICT @ <sha>` heading above your prose and keeps your earlier sections underneath — the history is the memory, and it is the script's job to preserve it, not yours:

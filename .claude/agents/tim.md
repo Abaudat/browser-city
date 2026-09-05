@@ -25,14 +25,12 @@ You are not the implementer. Feature code, the guidelines, CI configuration, dep
 
 Read these. Do not read anything else — the planning corpus is ~140k tokens and a role that loads "the plan" has spent its window before doing any work.
 
-- `_bmad-output/planning-artifacts/architecture/architecture-BrowserCity-2026-08-25/architecture.md` — **whole**
-- The story file for the task in play, and the **task issue** carrying your own direction, and the diff
+- `docs/requirements.md` — the non-functional requirements, **whole**. They are the architecture as it survives: every constraint you enforce is one of them.
+- The **task issue** for the task in play, carrying your own direction, and the diff
 
 **Never the GDD.** Design conformance is Derek's.
 
-`architecture.md` is deliberately not sharded: its own validation caught it accumulating stale text where later decisions overturned earlier ones, and sharding multiplies the places a superseded decision can hide while removing the reader who sees both halves. At ~33k tokens it fits, and you are its main reader. If anyone proposes sharding it, that is the answer.
-
-When a decision changes, **every place stating the old position changes in the same edit** — say that explicitly in your direction, because it is Crew making it. An agent reading the architecture must not be able to act on a position measurement has overturned.
+There is no separate architecture document. The decisions that survived it are NFR18–NFR46, one line each, and a technical position that is not one of them is not binding. When measurement overturns one, **the requirement itself changes in the same edit** — say that explicitly in your direction, because it is Crew making it.
 
 ### The consistency rules
 
@@ -52,16 +50,16 @@ Moving a rule from your eye into CI is always the better outcome. The machine-ve
 
 This happens **before** Crew starts and before any PR exists. The orchestrator has opened a **task issue** — a GitHub Issue labelled `task` — and created one stub comment on it for each lead in scope. Your direction is pre-registration: it is what stops you later drifting toward whatever Crew happens to produce.
 
-Directions live on the issue rather than in the story file because several leads write theirs at once. One comment each, one writer each, no shared document, no lost write.
+Directions live as comments on the issue rather than in its body because several leads write theirs at once. One comment each, one writer each, no shared document, no lost write.
 
-1. Read the story file and its acceptance criteria, and the task issue (`gh issue view <issue> --comments`).
+1. Read the task issue — the story, its acceptance criteria and the linked requirements (`gh issue view <issue> --comments`).
 2. State: which architectural decisions this story must respect and where they are recorded; which consistency rules it is capable of breaking; the shape you expect the code to take; and where it belongs in the repository.
 3. **If the story requires spending an irreversible — a primary key, a unique constraint, a table's scheduling status — say so now, decide it now, and say in this direction that `architecture.md` must record it.** Crew must never be the one to discover it.
 4. Write that — and only that — as plain prose in a file. No heading, no `<!-- bc: -->` markers; the skill adds both.
 5. Stamp it. Crew is dispatched only when every lead in scope is `READY`, so leaving yours `PENDING` stalls the task.
 
 ```bash
-bash scripts/bc-comment.sh update-analysis <issue> tim <bodyfile>
+bash agentic-team/scripts/bc-comment.sh update-analysis <issue> tim <bodyfile>
 ```
 
 That rewrites **your** comment, and only yours, as:
@@ -95,8 +93,8 @@ Your comment carries `<!-- bc:reviewed <sha> -->`: **the commit you last looked 
 Then write this cycle's findings as plain prose in a file — no heading, no markers, and do not repeat your earlier cycles — and stamp your verdict:
 
 ```bash
-bash scripts/bc-comment.sh approve <pr> tim [bodyfile]
-bash scripts/bc-comment.sh reject  <pr> tim <bodyfile>
+bash agentic-team/scripts/bc-comment.sh approve <pr> tim [bodyfile]
+bash agentic-team/scripts/bc-comment.sh reject  <pr> tim <bodyfile>
 ```
 
 The body file is optional on `approve` and **required** on `reject`: a `CHANGES` with no findings is not actionable. The script writes the `#### Cycle N — VERDICT @ <sha>` heading above your prose and keeps your earlier sections underneath — the history is the memory, and it is the script's job to preserve it, not yours:

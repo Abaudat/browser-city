@@ -440,7 +440,7 @@ M1 establishes that the discretionary middle is where the game lives. M7 is what
 
 **Resolution scales; causality does not.** Distant simulation is cheaper, never falser. Cheap is not fake.
 
-**Population target — settled 2026-08-29.** The citizen count was deferred to `gds-game-architecture` as a cost question as much as a design one. It has since been settled by the Scale Baseline, measured against the tileset: **a 512x512 map (~435 m square) carrying ~5,000 citizens** at a density of one per 52.4 cells — roughly Paris-to-Manhattan — across ~894 buildings and ~344 workplaces, costing ~$25/mo at ~42 L2 transactions per second with no overage. The 100+ enterable-interiors target is ~11% of building stock and is therefore never the binding constraint. Full derivation lives in `../../epics/index.md`.
+**Population target — settled 2026-08-29.** The citizen count was deferred to `gds-game-architecture` as a cost question as much as a design one. It has since been settled by the Scale Baseline, measured against the tileset: **a 512x512 map (~435 m square) carrying ~5,000 citizens** at a density of one per 52.4 cells — roughly Paris-to-Manhattan — across ~894 buildings and ~344 workplaces, costing ~$25/mo at ~42 L2 transactions per second with no overage. The 100+ enterable-interiors target is ~11% of building stock and is therefore never the binding constraint. The figure is recorded as NFR14 and NFR15a in `requirements.md`.
 
 The design constraints below are what that number had to satisfy. They remain the standing test for any future change to scale:
 
@@ -757,42 +757,13 @@ GDD-level targets only. Engine selection, system architecture, netcode model and
 
 ## Development Epics
 
-**Fifteen epics — Epic 0 plus fourteen.** The full breakdown (goal, scope, exclusions, dependencies, playable deliverable, stories and acceptance criteria) lives in `../../epics/`, one file per epic, which is **authoritative for epic structure, numbering and sequence**. Its `index.md` also carries the numbered requirements inventory (FR1–FR172, NFR1–NFR46) derived from this GDD and from the architecture; this GDD deliberately does not duplicate it.
+**Fifteen epics — Epic 0 plus fourteen.** The breakdown lives on the GitHub board, one issue per epic and one sub-issue per story, which is authoritative for epic structure, numbering, sequence and status. Each story issue names the FRs and NFRs it delivers; `requirements.md` is where those are defined. This document does not restate any of it.
 
-**This table was restructured on 2026-08-29** after the architecture document completed. The design intent of every epic below is unchanged from this GDD's original E1–E13; what changed is grouping, ordering and numbering. The three reasons, recorded by the epics document:
+**Epic 0 builds the development team** and no game. Epics 1–14 build the game and run in order: foundations, the content pipeline and the generated city; the wire; citizens; stock and money; then the day loop.
 
-1. **Citizens move before the day loop.** The architecture found that the shop till requires customers, so the first job epic already depended on NPC capability. Building a stubbed customer to preserve the old order would repeat the mistake this GDD itself declined when it rejected a pre-foundation Burger Test spike — a spike's answer might not transfer.
-2. **Stock, Goods and Money is a new epic.** The architecture found it absent from this GDD's breakdown and load-bearing. It is L1's substrate, it makes "the till runs short of change" fall out rather than be special-cased, and it turns logistics into a job.
-3. **Foundation epics are consolidated.** The original E1–E4 all churn the same files, so they are now organised by the boundary they own rather than the layer they sit in, with the three gating spikes pulled into Epic 1.
+**Two falsification points.** Epics 7 and 8 together answer whether mundane work is intrinsically satisfying without SS13's round timer and antagonists — Epic 7 with a customer-facing job, Epic 8 with the unsupervised empty post, which is the hard case. Everything after Epic 8 assumes yes. Epic 5 answers whether AI citizens can carry the feeling of aliveness at low concurrency, which is the real engineering risk.
 
-| # | Epic | Was | Playable deliverable |
-|---|---|---|---|
-| 0 | The Development Team | *new* | Dispatch work to agents with tracking, a review gate and CI. Builds no game |
-| 1 | Foundations and Gating Spikes | E1 | Walk an avatar down a hand-laid test street in a browser, with the three overturning measurements already taken |
-| 2 | The Content Pipeline | E2 | A block validates against the rules; a broken one is rejected with a named violation |
-| 3 | The Generated City | E3 | Walk a generated 512×512 district with neighbourhoods that read as different |
-| 4 | The Living Wire | E4 | Two browsers standing in the same city, in under a second |
-| 5 | **Citizens** | E8 | A city that feels populated with one player connected — **the AI-density answer** |
-| 6 | Stock, Goods and Money | *new* | Beans deplete, an order chain refills them, a till runs short of change |
-| 7 | **The Day Loop** | E5 | Wake, commute, work a shop-till shift, get paid, have rent taken — **first read on the Burger Test** |
-| 8 | **Procedure and Props** | E6 | Two jobs performable well or badly, nothing scoring you — **the hard Burger Test: the empty post** |
-| 9 | Reciprocal Occupancy | E7 | Log off for a day, return, read your post, find your life intact and richer |
-| 10 | Institutions and the Reference Slice | E9 | The plastic-bottle loop end to end, read on your commute |
-| 11 | Transit and the Full Roster | E10 | The MVP: five playable jobs, real transit, 100+ interiors, institutions running |
-| 12 | A Life | E11 | Three genuinely different things to spend spare minutes on, and a shelf that shows it |
-| 13 | Careers | E12 | Qualify in the evenings, wait for a post, take it, make decisions that outlast you |
-| 14 | Growth | E13 | Watch a new neighbourhood get built, caused by population pressure you are part of |
-
-**Sequence:**
-
-```
-0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14
-    └─── foundation ───┘  └density┘   └ Burger Test ┘  └── content & depth ──┘
-```
-
-**Two falsification points.** Epics 7 and 8 together answer whether mundane work is intrinsically satisfying without SS13's round timer and antagonists — Epic 7 with a customer-facing job, Epic 8 with the unsupervised empty post, which is the hard case. Everything after Epic 8 assumes yes. Epic 5 answers whether AI citizens can carry the feeling of aliveness at low concurrency, which the addendum names as the real engineering risk.
-
-> **Recorded decision — the Burger Test runs later, and that is accepted.** In this GDD's original sequence the first falsification point was epic 5 of 13. Under the restructure it is epic 7 of 15, behind Citizens and Stock/Goods/Money, so the design's most critical unfalsified assumption (A8) sits behind roughly two additional epics of work. The epics document raised this as the single largest cost of the restructure. **Decided 2026-08-29: accepted — the epic breakdown stands as written.** The reasoning that carries it is the same one this GDD used to reject a pre-foundation Burger Test spike: the shop till requires customers, so the first job epic always depended on NPC capability, and an answer obtained against a stubbed customer might not transfer. A later test whose result is trustworthy beats an earlier one that is not.
+**The Burger Test runs later than this document originally sequenced it, and that is accepted.** The shop till requires customers, so the first job epic always depended on NPC capability, and an answer obtained against a stubbed customer might not transfer. A later test whose result is trustworthy beats an earlier one that is not.
 
 **Multiplayer is not an epic.** Authoritative simulation means the server runs the city with zero clients; a second connected player is close to incrementally free. Netcode is Epic 4's architecture. Building single-player first would mean retrofitting it — the more expensive path.
 

@@ -1,4 +1,4 @@
-# scripts/ — the scripted orchestrator
+# agentic-team/scripts/ — the scripted orchestrator
 
 This is `agentic-team/high-level-agentic-flow.mmd` made executable. State
 lives entirely in GitHub (a Project v2 board, issues, PRs, comments) — these
@@ -8,7 +8,7 @@ state store.
 ## Architecture — three levels
 
 ```
-scripts/
+agentic-team/scripts/
   lib/            LEVEL 1 — primitives, no intelligence, sourced
     paths.sh        tool resolution, path form conversion, bc_state_dir
     config.sh        constants (repo, project, roles, thresholds, budget caps) + bc_init + the clock
@@ -18,8 +18,7 @@ scripts/
     orca.sh            worktrees, terminals (one `orca` call each)
     claude.sh           session argv builders + the judgement one-shot
     markers.sh           the `<!-- bc:name value -->` comment vocabulary
-    epics.sh              the epic-markdown grammar: epic-N.md -> JSON
-    fake.sh                BC_FAKE test double: replays JSON, logs writes
+    fake.sh               BC_FAKE test double: replays JSON, logs writes
 
   bc-budget.sh    LEVEL 2 — the budget gate: available / spent / broken
   bc-issue.sh     LEVEL 2 — issues: next/current/transition/scope/demo-*
@@ -51,8 +50,7 @@ scripts/
 
   orchestrator.sh LEVEL 3 — the wake: one entry point, one decision, one action
 
-  bc-epic.sh      OFF THE WAKE — the epic breakdown onto the board, once
-  setup-github.sh  idempotent one-time GitHub setup (labels, scope check)
+  setup-github.sh OFF THE WAKE — idempotent one-time GitHub setup (labels, scope check)
   spike/            the Phase-0 Orca/Claude session spike, kept as documentation
   tests/             fixture-driven tests, run with bash
 ```
@@ -81,7 +79,7 @@ those facts select, then does the one thing at the end of it.
 ## Running a tick
 
 ```
-bash scripts/orchestrator.sh
+bash agentic-team/scripts/orchestrator.sh
 ```
 
 No arguments. Each run is one wake: it reads state, picks exactly one branch
@@ -153,10 +151,10 @@ stderr; stdout carries only that one reason line.
 ## Running the tests
 
 ```
-bash scripts/tests/run-all.sh
+bash agentic-team/scripts/tests/run-all.sh
 ```
 
-Runs every `scripts/tests/test-*.sh` and aggregates pass/fail (exit 0 only
+Runs every `agentic-team/scripts/tests/test-*.sh` and aggregates pass/fail (exit 0 only
 if every file passed). Each file is fixture-driven through `BC_FAKE`:
 `test-markers.sh` and `test-lib.sh` cover level 1 in isolation;
 `test-bc-budget.sh` covers the gate's three exits against canned
@@ -170,7 +168,7 @@ branch);
 `test-orchestrator.sh` runs `orchestrator.sh` itself as a subprocess, one
 scenario per flowchart edge, asserting the exit code, the exact reason
 line, and the decisive `calls.log` lines (or their absence). To run one
-file directly: `bash scripts/tests/test-orchestrator.sh` (it prints its own
+file directly: `bash agentic-team/scripts/tests/test-orchestrator.sh` (it prints its own
 pass/fail summary and exits accordingly).
 
 Note: `test-orchestrator.sh` alone takes a couple of minutes — each of its
@@ -180,7 +178,7 @@ path resolution — so give it a generous timeout if scripting around it.
 ### The live end-to-end run
 
 ```
-bash scripts/tests/e2e.sh
+bash agentic-team/scripts/tests/e2e.sh
 ```
 
 Not part of `run-all.sh`: it drives the real board, repo and Orca. It pushes

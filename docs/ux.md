@@ -7,10 +7,8 @@ version: "1.0"
 status: "draft"
 scope: "bounded — six surfaces identified by the implementation readiness assessment"
 sources:
-  gdd: "_bmad-output/planning-artifacts/gdds/gdd-BrowserCity-2026-08-25/gdd.md"
-  architecture: "_bmad-output/planning-artifacts/architecture/architecture-BrowserCity-2026-08-25/architecture.md"
-  epics: "_bmad-output/planning-artifacts/epics.md"
-  readiness: "_bmad-output/planning-artifacts/implementation-readiness-report-2026-08-29.md"
+  gdd: "docs/gdd.md"
+  requirements: "docs/requirements.md"
 ---
 
 # BrowserCity — UX Specification
