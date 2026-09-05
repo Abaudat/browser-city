@@ -122,3 +122,44 @@ resolve_rate_monitor() {
     "${WIN_ROAMING:+$WIN_ROAMING/npm/claude-rate-monitor}" \
     "${WIN_PROFILE:+$WIN_PROFILE/AppData/Roaming/npm/claude-rate-monitor}"
 }
+
+# --- the two Windows binaries the scheduled supervisor needs ----------------
+# Both are resolved here rather than at their call sites for the same reason
+# as everything else in this file: keepalive.sh runs from the Windows Task
+# Scheduler, whose environment predates every tool install, so nothing may be
+# assumed to be on PATH.
+WIN_SYSROOT="$(winpath "${SystemRoot:-${SYSTEMROOT:-}}")"
+
+resolve_powershell() {
+  resolve powershell \
+    "${WIN_SYSROOT:+$WIN_SYSROOT/System32/WindowsPowerShell/v1.0/powershell.exe}" \
+    "/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+}
+
+# Git bash, named by a path PowerShell can execute -- Orca terminals are
+# PowerShell (spike/FINDINGS.md #2), so the Git Bash terminal keepalive.sh
+# creates is PowerShell launching this binary. There is deliberately NO PATH
+# fallback: `command -v bash` inside git bash answers /usr/bin/bash, which
+# PowerShell cannot run at all, and a resolver that returned it would produce
+# a terminal that dies on its first line rather than a clean "not found".
+# Override with BC_GIT_BASH when git lives somewhere unusual.
+resolve_git_bash() {
+  local candidate
+  for candidate in \
+    "${BC_GIT_BASH:-}" \
+    "/c/Program Files/Git/bin/bash.exe" \
+    "/c/Program Files (x86)/Git/bin/bash.exe" \
+    "${WIN_LOCAL:+$WIN_LOCAL/Programs/Git/bin/bash.exe}"
+  do
+    [ -n "$candidate" ] || continue
+    _bc_is_executable "$candidate" && { printf '%s' "$candidate"; return 0; }
+  done
+  return 1
+}
+
+# `timeout`, so a hung `orca open` cannot hold a scheduled run open forever.
+# Absent is not fatal -- the caller runs unbounded and the Task Scheduler's
+# own "stop the task if it runs longer than" is the outer guard.
+resolve_timeout() {
+  resolve timeout "/c/Program Files/Git/usr/bin/timeout.exe" "/usr/bin/timeout"
+}

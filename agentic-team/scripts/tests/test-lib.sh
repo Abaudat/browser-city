@@ -33,6 +33,25 @@ FAKE1B="$(fake_dir)"
 check "no fixture anywhere exits 1" 1 with_fake "$FAKE1B" gh_issue_labels 999
 
 echo
+echo "fake reads: a .seq answers one line per call and then holds its last:"
+FAKE1C="$(fake_dir)"
+printf 'one\ntwo\n' > "$FAKE1C/gh_issue_labels.seq"
+check_out "first call takes the first line"        0 one with_fake "$FAKE1C" gh_issue_labels 7
+check_out "second call takes the second"           0 two with_fake "$FAKE1C" gh_issue_labels 7
+check_out "a third call still gets the last line"  0 two with_fake "$FAKE1C" gh_issue_labels 7
+check_out "and so does a fourth -- an exhausted sequence is a settled state, not a missing fixture" \
+  0 two with_fake "$FAKE1C" gh_issue_labels 7
+
+echo
+echo "fake reads: a .seq at one level does not eat another level's fixture:"
+FAKE1D="$(fake_dir)"
+printf 'seq-for-7\n' > "$FAKE1D/gh_issue_labels.7.seq"
+echo '["from-generic"]' > "$FAKE1D/gh_issue_labels.json"
+check_out "the arg's sequence answers that arg"    0 seq-for-7        with_fake "$FAKE1D" gh_issue_labels 7
+check_out "another arg still falls through to the generic fixture" \
+  0 '["from-generic"]' with_fake "$FAKE1D" gh_issue_labels 3
+
+echo
 echo "fake writes: logged to calls.log, one line per call:"
 FAKE2="$(fake_dir)"
 with_fake "$FAKE2" gh_issue_close 42 >/dev/null

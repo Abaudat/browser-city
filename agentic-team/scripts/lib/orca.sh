@@ -51,7 +51,11 @@ orca_terminals() { # <worktree-path, posix or windows form> -> JSON array of ter
   winp="$(posix2win "$1")"
   out="$("$ORCA" terminal list --worktree "path:$winp" --json 2>/dev/null)"
   printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1 || return 1
-  printf '%s' "$out" | "$JQ" -c '.result.terminals'
+  # // [] for the same reason as the handle above: `jq -c` prints "null" for
+  # an absent key, and "null" piped into the caller's `.[]` is an iteration
+  # error on stderr and an empty result -- a listing that looks like "no
+  # terminals" while never having looked.
+  printf '%s' "$out" | "$JQ" -c '.result.terminals // []'
 }
 
 orca_terminal_create() { # <worktree-path> <title> <command> -> terminal handle
@@ -60,7 +64,14 @@ orca_terminal_create() { # <worktree-path> <title> <command> -> terminal handle
   winp="$(posix2win "$path")"
   out="$("$ORCA" terminal create --worktree "path:$winp" --title "$title" --command "$command" --json 2>/dev/null)"
   printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1 || return 1
-  printf '%s' "$out" | "$JQ" -r '.result.terminal.handle'
+  # `jq -r` prints the four-character string "null" for an absent path, so an
+  # ok:true answer carrying no handle would otherwise be handed back as a
+  # handle named "null" -- something no later call can address, reported by
+  # the caller as a terminal it just created. // empty makes it an error.
+  local handle
+  handle="$(printf '%s' "$out" | "$JQ" -r '.result.terminal.handle // empty')"
+  [ -n "$handle" ] || return 1
+  printf '%s' "$handle"
 }
 
 orca_terminal_send() { # <handle> <text>
@@ -99,4 +110,40 @@ orca_terminal_close() { # <handle> -> 0 closed, 1 orca kept refusing
   done
   echo "orca: close $1 failed after $BC_CLOSE_RETRIES tries: $(printf '%s' "$out" | "$JQ" -r '.error.message // "no answer"' 2>/dev/null)" >&2
   return 1
+}
+
+# --- the app itself, for the scheduled supervisor ---------------------------
+# Everything above addresses a running Orca. These two answer whether there
+# is one and start it if there is not, which is the first thing keepalive.sh
+# has to know: an unreachable runtime answers every selector with ok:false,
+# so a supervisor that skipped this check would read "no terminals" and
+# cheerfully create one into nothing.
+
+orca_status() { # -> JSON .result of `orca status`, or exit 1
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read orca_status; return; }
+  local out
+  out="$("$ORCA" status --json 2>/dev/null)"
+  printf '%s' "$out" | "$JQ" -e '.ok == true' >/dev/null 2>&1 || return 1
+  printf '%s' "$out" | "$JQ" -c '.result'
+}
+
+orca_ready() { # -> exit 0 when the app is up AND the runtime is reachable
+  local st
+  st="$(orca_status)" || return 1
+  printf '%s' "$st" | "$JQ" -e '.app.running == true and .runtime.reachable == true' >/dev/null 2>&1
+}
+
+# `orca open` blocks until the runtime is reachable, so the timeout is the
+# only thing standing between a wedged launch and a scheduled run that never
+# ends. No `timeout` binary = unbounded, which the Task Scheduler's own run
+# limit still catches.
+orca_open() { # <timeout-seconds>
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write orca_open "$@"; return; }
+  local secs="$1" to
+  to="$(resolve_timeout || true)"
+  if [ -n "$to" ]; then
+    "$to" "$secs" "$ORCA" open --json >/dev/null 2>&1
+  else
+    "$ORCA" open --json >/dev/null 2>&1
+  fi
 }
