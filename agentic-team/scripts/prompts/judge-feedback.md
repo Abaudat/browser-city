@@ -55,7 +55,10 @@ Rules:
   Priority, Size or a sprint yourself, and never create an issue any other
   way.
 - Base everything on the feedback and the backlog you were given. Do not
-  invent work Adrian did not ask for.
+  invent work Adrian did not ask for. If the backlog already covers everything
+  he raised, or he raised nothing to build, open nothing and say so — an empty
+  answer is a real one here, and padding it with work he did not ask for is
+  worse than no work at all.
 - Do not comment on the demo issue and do not move it — the script does that
   once your work is on the board.
 

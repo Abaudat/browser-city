@@ -147,7 +147,7 @@ write_iterations "$F_INTEGRATING"
 # Three reads of the board, one per line, in the order the tick makes them:
 # demo-current, then integrate-feedback's before and after. Only the third
 # carries the new story (#43) Scotty opened, so the unscoped-open count goes
-# 0 -> 1 across his call, which is exactly what advances the demo.
+# 0 -> 1 across his call -- the number the wake reason reports.
 DEMO_ONLY='[{number:41,title:"Sprint 1 Demo",state:"OPEN",status:"In progress",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null}]'
 {
   "$JQ" -n -c "$DEMO_ONLY"
@@ -166,17 +166,18 @@ check "integrating-feedback: marked the demo Reviewed for the next tick" 0 \
 check "integrating-feedback: did NOT close the sprint in the same tick" 1 \
   log_has "$F_INTEGRATING/calls.log" '^gh_issue_close'
 
-# A Scotty who wrote nothing must not advance the sprint on his word: the
-# board is re-read and, unchanged, the tick is broken rather than done.
+# Feedback that asks for nothing new -- praise, a question, a note about work
+# already on the backlog -- leaves the count unchanged and still advances the
+# demo: the sprint must not stall on a comment there was nothing to open for.
 F_INTEGRATE_NOOP="$(fake_dir)"
 write_iterations "$F_INTEGRATE_NOOP"
 "$JQ" -n -c '[{number:44,title:"Sprint 1 Demo",state:"OPEN",status:"In progress",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null}]' \
   > "$F_INTEGRATE_NOOP/project_items.json"
 echo '[{"id":1,"body":"Looks great, ship it!"}]' > "$F_INTEGRATE_NOOP/gh_issue_comments.44.json"
-check_out "integrating-feedback: a Scotty who wrote nothing is broken, exit 2" 2 \
-  "integrating-feedback broken feedback integration failed for demo #44" \
+check_out "integrating-feedback: feedback that opened nothing still integrates, exit 0" 0 \
+  "integrating-feedback integrated 0 new backlog items from demo #44" \
   run "$F_INTEGRATE_NOOP" "$NOW_MIDSPRINT"
-check "integrating-feedback: and the demo stayed In progress" 1 \
+check "integrating-feedback: and the demo moved to Reviewed" 0 \
   log_has "$F_INTEGRATE_NOOP/calls.log" '^project_set_single 44 Status Reviewed$'
 
 # =============================================================================
