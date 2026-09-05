@@ -121,3 +121,29 @@ ${summary}
 <!-- bc:demo ${n} -->
 EOF
 }
+
+# --- appended by the bc-epic.sh work: the migration's provenance markers ----
+# `bc:epic <n>` and `bc:story <id>` are what make the epic import idempotent
+# and what the round-trip check reads. They are provenance ONLY -- Story 0.20
+# requires that epic membership stay the sub-issue link, lead scope stay a
+# label and status stay the board's field, none of the three restated in a
+# body, so neither renderer writes any of them. The bodies themselves are the
+# epic's preamble and the story's own prose, carried through unchanged.
+
+render_epic_body() { # <epic-number> <preamble>
+  local n="$1" preamble="$2"
+  cat <<EOF
+${preamble}
+
+<!-- bc:epic ${n} -->
+EOF
+}
+
+render_story_body() { # <story-id> <story-body>
+  local id="$1" body="$2"
+  cat <<EOF
+${body}
+
+<!-- bc:story ${id} -->
+EOF
+}

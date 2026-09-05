@@ -32,16 +32,32 @@ bc_fake_read() {
 # separated, args NOT expanded when one of them is a file path -- the path
 # itself is logged, not its contents) to $BC_FAKE/calls.log, then returns 0,
 # unless $BC_FAKE/<fn>.exit exists, in which case it exits with that code
-# instead of logging anything. After logging, a write that has a return value
-# (gh_issue_create, gh_pr_create, orca_terminal_create...) prints
-# $BC_FAKE/<fn>[.<arg1>].json when present, so callers see a canned result.
+# instead of logging anything.
+#
+# After logging, a write that HAS a return value (gh_issue_create,
+# gh_pr_create, orca_terminal_create...) answers with a canned result, so a
+# caller that creates something and then acts on what it got back can be
+# tested at all. Two fixtures, in order:
+#   $BC_FAKE/<fn>.seq   one answer per line, the first consumed and removed
+#                       per call -- what a bulk create needs, since every new
+#                       issue has to come back as a different number
+#   $BC_FAKE/<fn>.json  the same answer for every call
+# Neither present = the write happened and said nothing, which is what every
+# caller written before this saw and still sees.
 bc_fake_write() {
   local fn="$1"; shift
-  local exitfile="$BC_FAKE/${fn}.exit"
+  local exitfile="$BC_FAKE/${fn}.exit" seqfile="$BC_FAKE/${fn}.seq" answer
   if [ -f "$exitfile" ]; then
     exit "$(cat "$exitfile")"
   fi
   { printf '%s' "$fn"; for a in "$@"; do printf ' %s' "$a"; done; printf '\n'; } >> "$BC_FAKE/calls.log"
+  if [ -s "$seqfile" ]; then
+    answer="$(head -1 "$seqfile")"
+    tail -n +2 "$seqfile" > "$seqfile.rest" && mv "$seqfile.rest" "$seqfile"
+    printf '%s' "$answer"
+    return 0
+  fi
+  [ -f "$BC_FAKE/${fn}.json" ] && cat "$BC_FAKE/${fn}.json"
   return 0
 }
 

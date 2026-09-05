@@ -5,6 +5,17 @@
 # flags are spelled out ONCE, here; nothing above this file builds a `claude`
 # command line itself. claude_oneshot answers a question and returns the
 # answer; claude_oneshot_acting answers it by writing the artefact itself.
+#
+# Both pass their prompt as a FILE, never as an argv string. `--system-prompt
+# "$(cat prompt.md)"` was measured on this machine to arrive truncated at the
+# first non-ASCII byte -- every judge-*.md prompt is prose with em dashes in
+# it, so each was silently losing everything after its first one, and the
+# model answered from whatever survived plus its own priors. It read as a
+# prompt the model ignored rather than one it never received, which is exactly
+# the silent failure Epic 0 keeps warning about. The -file forms take a
+# path (in Windows form, `claude` being a Windows process) and the whole
+# prompt arrives.
+#
 # Both are fake-aware via fake.sh; the rest is pure string/filesystem logic
 # and needs no external tool to test.
 
@@ -45,7 +56,7 @@ bc_role_uuid() { # <role> <issue> -> uuid
 claude_oneshot() { # <promptfile> <inputfile> -> claude's stdout (the input is piped to stdin)
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read claude_oneshot "$(basename "$1")"; return; }
   "$CLAUDE" -p --model sonnet --tools "" --no-session-persistence \
-    --system-prompt "$(cat "$1")" < "$2" 2>/dev/null
+    --system-prompt-file "$(posix2win "$1")" < "$2" 2>/dev/null
 }
 
 # claude_oneshot_acting <promptfile> <inputfile> -> exit 0/1, stdout discarded
@@ -86,7 +97,7 @@ claude_oneshot_acting() {
   ( cd "$_BC_CLAUDE_LIB_DIR/../.." || return 2
     "$CLAUDE" -p --model sonnet --agent scotty --tools "Bash,Write" \
       --permission-mode bypassPermissions --no-session-persistence \
-      --append-system-prompt "$(cat "$1")" < "$2" >/dev/null 2>&1 )
+      --append-system-prompt-file "$(posix2win "$1")" < "$2" >/dev/null 2>&1 )
 }
 
 # claude_render_prompt <file> key=value... -> the prompt with every {{key}}

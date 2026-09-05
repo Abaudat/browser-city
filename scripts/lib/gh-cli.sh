@@ -175,3 +175,23 @@ gh_pr_assign() { # <pr> <login>
   [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_pr_assign "$@"; return; }
   "$GH" api "repos/$BC_REPO/issues/$1/assignees" -f "assignees[]=$2" >/dev/null 2>&1
 }
+
+# --- appended by the bc-epic.sh work ---------------------------------------
+# The epic import has to find, in a repo of several hundred issues, the one
+# carrying `<!-- bc:epic <n> -->` -- and it has to do so immediately after a
+# bulk write, when GitHub's search index has not caught up. `gh issue list`
+# with --json body answers from the API rather than the index, so one call
+# gives the importer every body it needs to match against.
+gh_issue_list_bodies() { # -> JSON array of {number, title, body, labels}
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_issue_list_bodies; return; }
+  "$GH" issue list --repo "$BC_REPO" --state all --limit 1000 \
+    --json number,title,body,labels 2>/dev/null
+}
+
+# gh_issue_add_subissue takes the child's DATABASE id, not its number, and
+# nothing else in these scripts exposes it -- gh_issue_create answers with the
+# number the URL ends in. This is the one call that converts one to the other.
+gh_issue_id() { # <n> -> the issue's database id
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_issue_id "$1"; return; }
+  "$GH" api "repos/$BC_REPO/issues/$1" --jq '.id' 2>/dev/null
+}

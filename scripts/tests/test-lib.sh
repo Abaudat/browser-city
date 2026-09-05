@@ -118,4 +118,40 @@ bash /s/scripts/bc-comment.sh write-breaker 100 /tmp/note.md" \
 check_out "no keys given: the prompt comes back untouched" 0 "PR #{{pr}}" \
   claude_render_prompt <(printf 'PR #{{pr}}\n')
 
+echo
+echo "fake writes that have a return value: the .seq and .json answers:"
+FAKE_W="$(fake_dir)"
+check_out "no fixture: the write happens and says nothing" 0 '' \
+  with_fake "$FAKE_W" gh_issue_create "A title" /tmp/body "story"
+check "no fixture: it is still logged" 0 \
+  bash -c "grep -q '^gh_issue_create A title ' '$FAKE_W/calls.log'"
+
+printf '50\n51\n' > "$FAKE_W/gh_issue_create.seq"
+check_out ".seq: the first call gets the first line"  0 50 \
+  with_fake "$FAKE_W" gh_issue_create "First" /tmp/body ""
+check_out ".seq: the second call gets the second"     0 51 \
+  with_fake "$FAKE_W" gh_issue_create "Second" /tmp/body ""
+check_out ".seq: an exhausted sequence answers nothing again" 0 '' \
+  with_fake "$FAKE_W" gh_issue_create "Third" /tmp/body ""
+
+FAKE_W2="$(fake_dir)"
+printf '9001' > "$FAKE_W2/gh_issue_add_subissue.json"
+check_out ".json: the same answer for every call" 0 9001 \
+  with_fake "$FAKE_W2" gh_issue_add_subissue 50 9001
+check_out ".json: and again"                      0 9001 \
+  with_fake "$FAKE_W2" gh_issue_add_subissue 50 9002
+
+echo
+echo "project_set_single knows the board's Size field:"
+FAKE_SZ="$(fake_dir)"
+check "Size is a field it will set"        0 with_fake "$FAKE_SZ" project_set_single 51 Size M
+check "the write is logged as given"       0 \
+  bash -c "grep -qx 'project_set_single 51 Size M' '$FAKE_SZ/calls.log'"
+check "a field it does not know is misuse" 2 project_set_single 51 Estimate 3
+# project_field_get's Size branch cannot be exercised here: under BC_FAKE it
+# answers from a project_field_get.<n>.<field>.json fixture and never reaches
+# the jq that maps Size onto project_items' `size` key. That mapping is covered
+# instead by test-bc-epic.sh, whose rerun fixture carries a size and whose
+# assertion is that no Size is written a second time.
+
 summary

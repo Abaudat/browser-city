@@ -86,4 +86,23 @@ S="$(render_demo_body 3 "Shipped the inventory screen.")"
 check_out "demo body: sprint number"      0 3 marker_get "$S" "demo"
 check     "demo body: is not a human comment" 1 is_human_comment "$S"
 
+echo
+echo "the epic import's provenance markers:"
+
+S="$(render_epic_body 0 "The epic outcome, in one paragraph.")"
+check_out "epic body: the epic number is the marker's value" 0 0 marker_get "$S" "epic"
+check     "epic body: the preamble is carried through" 0   bash -c "printf '%s' \"\$1\" | grep -q 'The epic outcome, in one paragraph.'" _ "$S"
+check     "epic body: is not a human comment" 1 is_human_comment "$S"
+
+S="$(render_story_body 0.20 "As Scotty,
+I want the plan on the board,
+So that the plan and the tracker are one thing.")"
+check_out "story body: the story id is the marker's value" 0 0.20 marker_get "$S" "story"
+check     "story body: the role sentence is carried through" 0   bash -c "printf '%s' \"\$1\" | grep -q 'I want the plan on the board,'" _ "$S"
+# Story 0.20: epic membership is the sub-issue link, lead scope is a label and
+# status is the board's field -- none of the three restated in the body.
+check "story body: says nothing about its epic"   1 bash -c "printf '%s' \"\$1\" | grep -qi 'epic'"   _ "$S"
+check "story body: says nothing about its leads"  1 bash -c "printf '%s' \"\$1\" | grep -qi 'lead'"   _ "$S"
+check "story body: says nothing about its status" 1 bash -c "printf '%s' \"\$1\" | grep -qi 'backlog'" _ "$S"
+
 summary

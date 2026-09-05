@@ -730,7 +730,7 @@ The six-role agentic team defined by the team charter exists, dispatches itself,
 
 **Deliverable:** the six roles as durable configurations, Scotty's scheduled session, a budget gate with a broken-gate alarm and a watchdog outside the loop, the dispatch cycle and PR protocol, session lifecycle and cleanup, project context, the consistency review gate, sharded epics with sprint tracking, lead-scope tagging, TDD with a trace matrix, agent tooling, a local dev environment, CI and a definition of done, deploy and the Friday demo, a measured cost per story, the epic breakdown moved onto the board as issues, the feedback loop that turns Adrian's demo comments into sized, prioritised stories, and the leads' prompts rewritten to carry judgement rather than a restated protocol.
 **Depends on:** nothing. This precedes the product work.
-**Specified by:** `agentic-team/high-level-agentic-flow.mmd`, `agentic-team/pr-scope.md` and `scripts/README.md`. The `team-charter.md` that originally specified this epic has been deleted; see the note at the top of `epic-0.md`.
+**Specified by:** `agentic-team/high-level-agentic-flow.mmd`, `agentic-team/pr-scope.md` and `scripts/README.md`. The `team-charter.md` that originally specified this epic has been deleted, and `epic-0.md` with it - this epic now lives as [issue #34](https://github.com/Abaudat/browser-city/issues/34) and its sub-issues.
 **Performed by:** Adrian and the team together - the only epic in this document for which that is true. From Epic 1 the team is sole developer.
 
 **FRs covered:** none, deliberately. Epic 0 builds no game. It serves NFR18, NFR27, NFR28, NFR29, NFR37 and NFR44, and the GDD's stated dependency on agentic development capacity.
@@ -950,9 +950,11 @@ The city grows because the player population grew, so there is always somewhere 
 
 This document holds the global sections. Each epic is its own file, and no role loads more than the one it needs.
 
+**Epic 0 no longer has a file.** Story 0.20 moved it onto the board: one issue per epic, one sub-issue per story, with lead scope as a label and Status, Size and Priority as board fields. `scripts/bc-epic.sh` did the move and is what will move epics 1-14 when their turn comes; until then their files are still the plan. Only the 12 stories of Epic 0 that had not already been delivered were imported - the other 8 (0.1, 0.2, 0.5, 0.6, 0.7, 0.10, 0.11, 0.15) were built during Epic 0 itself and are recorded in git history rather than on the board.
+
 | Epic | | Stories |
 |---|---|---|
-| 0 | [The Development Team](epic-0.md) | 19 |
+| 0 | [The Development Team](https://github.com/Abaudat/browser-city/issues/34) | 12 of 20, on the board |
 | 1 | [Foundations and Gating Spikes](epic-1.md) | 15 |
 | 2 | [The Content Pipeline](epic-2.md) | 12 |
 | 3 | [The Generated City](epic-3.md) | 16 |

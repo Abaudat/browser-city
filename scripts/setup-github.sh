@@ -28,6 +28,7 @@ LABEL_DEFS=(
   "${BC_LEAD_LABEL_PREFIX}derek|5319e7|In scope for Derek (Game Designer) review"
   "${BC_LEAD_LABEL_PREFIX}tim|5319e7|In scope for Tim (Tech Lead) review"
   "${BC_LEAD_LABEL_PREFIX}artie|5319e7|In scope for Artie (Art Director) review"
+  "$BC_LABEL_EPIC|1d76db|An epic. Its stories are its sub-issues."
   "$BC_LABEL_DEMO|0e8a16|Marks the weekly Friday demo issue"
   "$BC_LABEL_BREAKER|b60205|Circuit breaker: cycle limit reached, escalated to a human"
 )

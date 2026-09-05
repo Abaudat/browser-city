@@ -15,8 +15,8 @@ _BC_PROJECT_CACHE_FILE="${TMPDIR:-$(winpath "${TEMP:-/tmp}")}/bc-project-fields.
 trap 'rm -f "$_BC_PROJECT_CACHE_FILE"' EXIT
 
 # Resolves (and caches for the life of this process) the project's node id
-# plus the Status/Priority option ids and the Sprint field id, all by name.
-# {id, statusF:{id,options:[{id,name}]}, priorityF:{id,options:[...]}, sprintF:{id}}
+# plus the Status/Priority/Size option ids and the Sprint field id, all by name.
+# {id, statusF:{id,options:[{id,name}]}, priorityF:{...}, sizeF:{...}, sprintF:{id}}
 _project_fields() {
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read project_fields; return; }
   if [ ! -s "$_BC_PROJECT_CACHE_FILE" ]; then
@@ -27,6 +27,7 @@ _project_fields() {
             id
             statusF: field(name:"Status")     { ... on ProjectV2SingleSelectField { id options { id name } } }
             priorityF: field(name:"Priority") { ... on ProjectV2SingleSelectField { id options { id name } } }
+            sizeF: field(name:"Size")         { ... on ProjectV2SingleSelectField { id options { id name } } }
             sprintF: field(name:"Sprint")     { ... on ProjectV2IterationField { id } }
           }
         }
@@ -43,12 +44,13 @@ project_item() { # <issue-number> -> project item id (adds the issue if missing)
     --url "https://github.com/$BC_REPO/issues/$1" --format json --jq '.id' 2>/dev/null
 }
 
-project_field_get() { # <issue-number> <Status|Priority|Sprint> -> value name
+project_field_get() { # <issue-number> <Status|Priority|Size|Sprint> -> value name
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read project_field_get "$1" "$2"; return; }
   local key val
   case "$2" in
     Status)   key=status ;;
     Priority) key=priority ;;
+    Size)     key=size ;;
     Sprint)   key=sprintTitle ;;
     *) return 2 ;;
   esac
@@ -58,7 +60,7 @@ project_field_get() { # <issue-number> <Status|Priority|Sprint> -> value name
   printf '%s' "$val"
 }
 
-project_set_single() { # <issue-number> <Status|Priority> <option-name>
+project_set_single() { # <issue-number> <Status|Priority|Size> <option-name>
   [ -n "${BC_FAKE:-}" ] && { bc_fake_write project_set_single "$@"; return; }
   local issue="$1" field="$2" option="$3" cache proj fieldid optid item
   cache="$(_project_fields)" || return 1
@@ -68,6 +70,8 @@ project_set_single() { # <issue-number> <Status|Priority> <option-name>
               optid="$(printf '%s' "$cache" | "$JQ" -r --arg n "$option" '.statusF.options[] | select(.name==$n) | .id')" ;;
     Priority) fieldid="$(printf '%s' "$cache" | "$JQ" -r '.priorityF.id')"
               optid="$(printf '%s' "$cache" | "$JQ" -r --arg n "$option" '.priorityF.options[] | select(.name==$n) | .id')" ;;
+    Size)     fieldid="$(printf '%s' "$cache" | "$JQ" -r '.sizeF.id')"
+              optid="$(printf '%s' "$cache" | "$JQ" -r --arg n "$option" '.sizeF.options[] | select(.name==$n) | .id')" ;;
     *) return 2 ;;
   esac
   [ -n "$fieldid" ] && [ "$fieldid" != "null" ] && [ -n "$optid" ] || return 1
@@ -91,7 +95,7 @@ project_set_iteration() { # <issue-number> <iteration-id|clear>
   fi
 }
 
-project_items() { # -> JSON array of {number,title,state,status,priority,sprintId,sprintTitle,labels,isParent,parent}
+project_items() { # -> JSON array of {number,title,state,status,priority,size,sprintId,sprintTitle,labels,isParent,parent}
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read project_items; return; }
   local raw
   raw="$("$GH" api graphql --paginate --slurp -f query='
@@ -111,6 +115,7 @@ project_items() { # -> JSON array of {number,title,state,status,priority,sprintI
               }
               status: fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
               priority: fieldValueByName(name: "Priority") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
+              size: fieldValueByName(name: "Size") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
               sprint: fieldValueByName(name: "Sprint") { ... on ProjectV2ItemFieldIterationValue { iterationId title } }
             }
           }
@@ -126,6 +131,7 @@ project_items() { # -> JSON array of {number,title,state,status,priority,sprintI
         state: .content.state,
         status: (.status.name // null),
         priority: (.priority.name // null),
+        size: (.size.name // null),
         sprintId: (.sprint.iterationId // null),
         sprintTitle: (.sprint.title // null),
         labels: [.content.labels.nodes[].name],

@@ -14,11 +14,12 @@ scripts/
     config.sh        constants (repo, project, roles, thresholds, budget caps) + bc_init + the clock
     budget.sh        the one claude-rate-monitor call + parsing of what it answers
     gh-cli.sh         issues, PRs, comments, labels, sub-issues (one `gh` call each)
-    project.sh        GitHub Project v2: items, Status/Priority/Sprint fields
+    project.sh        GitHub Project v2: items, Status/Priority/Size/Sprint fields
     orca.sh            worktrees, terminals (one `orca` call each)
     claude.sh           session argv builders + the judgement one-shot
     markers.sh           the `<!-- bc:name value -->` comment vocabulary
-    fake.sh               BC_FAKE test double: replays JSON, logs writes
+    epics.sh              the epic-markdown grammar: epic-N.md -> JSON
+    fake.sh                BC_FAKE test double: replays JSON, logs writes
 
   bc-budget.sh    LEVEL 2 — the budget gate: available / spent / broken
   bc-issue.sh     LEVEL 2 — issues: next/current/transition/scope/demo-*
@@ -50,6 +51,7 @@ scripts/
 
   orchestrator.sh LEVEL 3 — the wake: one entry point, one decision, one action
 
+  bc-epic.sh      OFF THE WAKE — the epic breakdown onto the board, once
   setup-github.sh  idempotent one-time GitHub setup (labels, scope check)
   spike/            the Phase-0 Orca/Claude session spike, kept as documentation
   tests/             fixture-driven tests, run with bash

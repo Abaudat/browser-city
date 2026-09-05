@@ -193,7 +193,7 @@ start)
   input="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-sprint-start.XXXXXX")"
   {
     printf '%s' "$candidates" | "$JQ" -r \
-      '.[] | "- #\(.number) \(.title) — priority: \(.priority // "unset"), size: unset"' | tr -d '\r'
+      '.[] | "- #\(.number) \(.title) — priority: \(.priority // "unset"), size: \(.size // "unset")"' | tr -d '\r'
     printf 'Last sprint delivered: %s\n' "$delivered"
     printf 'Next sprint: %s %s→%s (%s days)\n' "$nxttitle" "$nxtstart" "$nxtend" "$nxtdays"
   } > "$input"

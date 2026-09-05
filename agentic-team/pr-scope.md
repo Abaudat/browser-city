@@ -136,3 +136,30 @@ evaluated without the second.
 | `send <role> <message>` | send a message to an existing, live session                         |
 
 
+
+## `bc-epic.sh` — the epic breakdown as issues
+
+Not part of the wake. `orchestrator.sh` never calls it: it is the one-time
+migration of `_bmad-output/planning-artifacts/epics/epic-N.md` onto the board
+(Story 0.20), run by hand like `setup-github.sh`, and afterwards the repair
+tool for an epic whose import died halfway.
+
+| Command                     | Purpose                                                                       |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| `parse <epic>`              | the epic file as JSON. Reads the file only, never GitHub                      |
+| `plan <epic>`               | what `import` would create, skip and repair. Writes nothing, asks nobody      |
+| `import <epic>`             | create/repair the epic issue, its sub-issues, their labels and board fields   |
+| `check <epic>`              | round-trip the file against the board and name every story on only one side   |
+
+All four take `--only <ids-csv>`; the ids it leaves out come back as
+`excluded` and are never counted as drift.
+
+Everything is keyed on two provenance markers, `<!-- bc:epic <n> -->` and
+`<!-- bc:story <id> -->`, so a second run creates nothing twice and finishes
+what the first started. Nothing is keyed on a title, which a human may
+reword, and nothing on GitHub's search index, which lags a bulk write.
+
+Size and Priority are the one judgement here — the epic files record neither —
+so they go through `prompts/judge-story-size.md`, one `claude_oneshot` per run
+covering every story that still lacks them. A story Scotty does not answer for
+is reported `unplaced` and left for a rerun; it is never guessed.
