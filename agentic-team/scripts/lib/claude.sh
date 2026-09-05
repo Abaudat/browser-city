@@ -6,6 +6,12 @@
 # command line itself. claude_oneshot answers a question and returns the
 # answer; claude_oneshot_acting answers it by writing the artefact itself.
 #
+# Every judgement in the flow is now an acting one -- Scotty's four judge-*.md
+# calls all produce an artefact rather than a reply -- so claude_oneshot has
+# no caller today. It is kept because the distinction is the point: a
+# judgement whose answer is only an answer must not be given tools, and this
+# is the form that gives it none.
+#
 # Both pass their prompt as a FILE, never as an argv string. `--system-prompt
 # "$(cat prompt.md)"` was measured on this machine to arrive truncated at the
 # first non-ASCII byte -- every judge-*.md prompt is prose with em dashes in

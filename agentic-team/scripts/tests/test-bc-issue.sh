@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Fixture-driven coverage for scripts/bc-issue.sh: next's priority ordering
 # and backlog-sub-issue gate, current's 0/1/2-active cases, transition,
-# scope's lead-label handling, create-demo's call sequence, and the
-# demo-current/demo-commented/demo-for gates.
+# scope's lead-label handling, backlog's unscoped read, create-demo's call
+# sequence, the demo-current/demo-commented/demo-for gates, and the
+# integrate-feedback/write-epic/write-story half of integrating-feedback.
 set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$TEST_DIR/.."
@@ -276,5 +277,143 @@ cat > "$FAKE_DF/project_items.json" <<'JSON'
 JSON
 check_out "demo-for: matching sprint number -> its issue number" 0 800 run "$FAKE_DF" "" demo-for 7
 check "demo-for: no demo issue for that sprint -> exit 1" 1 run "$FAKE_DF" "" demo-for 8
+
+
+echo
+echo "backlog: open work on the board, on no sprint:"
+
+FAKE_BL="$(fake_dir)"
+cat > "$FAKE_BL/project_items.json" <<'JSON'
+[
+  {"number":120,"title":"Epic 3 — Combat","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},
+  {"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120},
+  {"number":130,"title":"Already on a sprint","state":"OPEN","status":"In progress","priority":"Blocker","size":"S","sprintId":"sp2","sprintTitle":"Sprint 2","labels":["story"],"isParent":false,"parent":120},
+  {"number":140,"title":"Shipped last sprint","state":"CLOSED","status":"Done","priority":"Low","size":"XS","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120},
+  {"number":150,"title":"Sprint 2 Demo","state":"OPEN","status":"In progress","priority":null,"size":null,"sprintId":null,"sprintTitle":null,"labels":["demo"],"isParent":false,"parent":null}
+]
+JSON
+
+check_out "backlog: the unscoped open work, epic link and all" 0 \
+  '[{"number":120,"title":"Epic 3 — Combat","status":"Backlog","priority":"Critical","size":null,"epic":null,"isEpic":true},{"number":121,"title":"Parry","status":"Backlog","priority":"Standard","size":"M","epic":120,"isEpic":false}]' \
+  run "$FAKE_BL" "" backlog
+check "backlog: reads only -- wrote nothing" 1 test -f "$FAKE_BL/calls.log"
+
+FAKE_BL0="$(fake_dir)"
+echo '[]' > "$FAKE_BL0/project_items.json"
+check_out "backlog: an empty backlog is exit 1, not an error" 1 '[]' run "$FAKE_BL0" "" backlog
+
+echo
+echo "write-epic: Scotty's own call -- opens it, labels it, Backlog on no sprint:"
+
+FAKE_WE="$(fake_dir)"
+WE_BODY="$FAKE_WE/scotty-epic.md"
+printf 'Combat that rewards timing over stat checks.\n' > "$WE_BODY"
+printf '400\n' > "$FAKE_WE/gh_issue_create.json"
+
+check_out "write-epic prints the new issue number" 0 400 \
+  run "$FAKE_WE" "" write-epic 3 "Epic 3 — Combat" "$WE_BODY" Critical
+check "write-epic created the issue with the epic label" 0 \
+  log_has "$FAKE_WE/calls.log" '^gh_issue_create Epic 3 .* epic$'
+# project_item is a fake_read (it "returns" an id even though it's a
+# side-effecting add-if-missing in real life), so it never appears in
+# calls.log -- only the project_set_* writes below are observable here.
+check "write-epic put it in Backlog"     0 log_has "$FAKE_WE/calls.log" '^project_set_single 400 Status Backlog$'
+check "write-epic set its Priority"      0 log_has "$FAKE_WE/calls.log" '^project_set_single 400 Priority Critical$'
+check "write-epic scoped it into NO sprint" 1 log_has "$FAKE_WE/calls.log" '^project_set_iteration'
+
+FAKE_WE2="$(fake_dir)"
+printf 'A preamble.\n' > "$FAKE_WE2/body.md"
+printf '   \n' > "$FAKE_WE2/empty.md"
+check "write-epic with an unknown priority exits 2" 2 \
+  run "$FAKE_WE2" "" write-epic 3 "Epic 3" "$FAKE_WE2/body.md" Urgent
+check "write-epic with an empty body exits 2" 2 \
+  run "$FAKE_WE2" "" write-epic 3 "Epic 3" "$FAKE_WE2/empty.md" Critical
+check "write-epic with a missing body file exits 2" 2 \
+  run "$FAKE_WE2" "" write-epic 3 "Epic 3" "$FAKE_WE2/nope.md" Critical
+check "write-epic with a missing argument exits 2" 2 \
+  run "$FAKE_WE2" "" write-epic 3 "Epic 3" "$FAKE_WE2/body.md"
+check "and none of those created anything" 1 test -f "$FAKE_WE2/calls.log"
+
+echo
+echo "write-story: opens it, labels its leads, links it under its epic:"
+
+FAKE_WT="$(fake_dir)"
+WT_BODY="$FAKE_WT/scotty-story.md"
+printf 'As a player, I can parry.\n\n- Timing window is 200ms\n' > "$WT_BODY"
+printf '401\n' > "$FAKE_WT/gh_issue_create.json"
+printf 'I_kwDO401\n' > "$FAKE_WT/gh_issue_id.401.json"
+
+check_out "write-story prints the new issue number" 0 401 \
+  run "$FAKE_WT" "" write-story 400 3.1 "Parry" "$WT_BODY" M Standard derek,tim
+check "write-story labelled it story + one label per lead" 0 \
+  log_has "$FAKE_WT/calls.log" '^gh_issue_create Parry .* story,lead:derek,lead:tim$'
+check "write-story linked it under its epic by DATABASE id" 0 \
+  log_has "$FAKE_WT/calls.log" '^gh_issue_add_subissue 400 I_kwDO401$'
+check "write-story put it in Backlog"  0 log_has "$FAKE_WT/calls.log" '^project_set_single 401 Status Backlog$'
+check "write-story set its Size"       0 log_has "$FAKE_WT/calls.log" '^project_set_single 401 Size M$'
+check "write-story set its Priority"   0 log_has "$FAKE_WT/calls.log" '^project_set_single 401 Priority Standard$'
+check "write-story scoped it into NO sprint" 1 log_has "$FAKE_WT/calls.log" '^project_set_iteration'
+
+FAKE_WT_NL="$(fake_dir)"
+printf 'A story.\n' > "$FAKE_WT_NL/body.md"
+printf '402\n' > "$FAKE_WT_NL/gh_issue_create.json"
+check_out "write-story with '-' leads takes the story label alone" 0 402 \
+  run "$FAKE_WT_NL" "" write-story 400 3.2 "Riposte" "$FAKE_WT_NL/body.md" S Low -
+check "and quentin was NOT written as a label (scope adds him on read)" 0 \
+  log_has "$FAKE_WT_NL/calls.log" '^gh_issue_create Riposte .* story$'
+
+FAKE_WT2="$(fake_dir)"
+printf 'A story.\n' > "$FAKE_WT2/body.md"
+check "write-story with an unknown size exits 2" 2 \
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" Huge Standard derek
+check "write-story with an unknown priority exits 2" 2 \
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Urgent derek
+check "write-story with an unknown lead exits 2" 2 \
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Standard bob
+check "write-story with a missing argument exits 2" 2 \
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Standard
+check "and none of those created anything" 1 test -f "$FAKE_WT2/calls.log"
+
+echo
+echo "integrate-feedback: hands the thread to Scotty, then checks the board grew:"
+
+FAKE_FB="$(fake_dir)"
+printf 'The team shipped a crash fix.\n' > "$FAKE_FB/gh_issue_body.900.json"
+cat > "$FAKE_FB/gh_issue_comments.900.json" <<'JSON'
+[
+  {"id":1,"body":"Parrying feels floaty — can we tighten it?"},
+  {"id":2,"body":"### Sprint 3 Demo\n\nSummary.\n\n<!-- bc:demo 3 -->"}
+]
+JSON
+# A .seq fixture is the board before and after Scotty's call: two unscoped
+# open items become three, which is what integrate-feedback tests for.
+cat > "$FAKE_FB/project_items.seq" <<'JSON'
+[{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},{"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120}]
+[{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},{"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120},{"number":122,"title":"Tighten the parry window","state":"OPEN","status":"Backlog","priority":"Standard","size":"S","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120}]
+JSON
+
+check_out "integrate-feedback reports the demo and what the board gained" 0 \
+  '{"demo":900,"created":1}' run "$FAKE_FB" "" integrate-feedback 900
+check "integrate-feedback handed the thread to Scotty" 0 \
+  log_has "$FAKE_FB/calls.log" '^claude_oneshot_acting judge-feedback\.md$'
+check "integrate-feedback opened nothing itself" 1 \
+  log_has "$FAKE_FB/calls.log" '^gh_issue_create'
+check "integrate-feedback marked the demo Reviewed" 0 \
+  log_has "$FAKE_FB/calls.log" '^project_set_single 900 Status Reviewed$'
+
+FAKE_FB0="$(fake_dir)"
+printf 'Demo body.\n' > "$FAKE_FB0/gh_issue_body.900.json"
+echo '[{"id":1,"body":"Looks good."}]' > "$FAKE_FB0/gh_issue_comments.900.json"
+# One fixture, so the count before equals the count after: Scotty wrote
+# nothing, and the demo must NOT advance on his word.
+echo '[{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null}]' \
+  > "$FAKE_FB0/project_items.json"
+
+check "integrate-feedback exits 2 when the backlog did not grow" 2 \
+  run "$FAKE_FB0" "" integrate-feedback 900
+check "and the demo was left In progress for the next tick" 1 \
+  log_has "$FAKE_FB0/calls.log" '^project_set_single 900 Status Reviewed$'
+
+check "integrate-feedback with no issue argument exits 2" 2 run "$FAKE_FB0" "" integrate-feedback
 
 summary

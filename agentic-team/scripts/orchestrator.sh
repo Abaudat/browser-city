@@ -13,8 +13,7 @@
 #
 # Node names in comments and in the one-line wake reason are
 # agentic-team/high-level-agentic-flow.mmd's, verbatim -- the flowchart is
-# the index. This file covers every node in it except integrating-feedback,
-# which stays manual.
+# the index. This file covers every node in it.
 #
 # Exit contract: 0 acted, 1 slept (nothing to do), 2 broken. Every exit
 # writes exactly one line "<node> <verb> <details>" to $BC_WAKE_REASON
@@ -178,10 +177,13 @@ case "$budget_rc" in
 esac
 
 # =============================================================================
-# demo-active / demo-has-feedback / closing-sprint / starting-next-sprint --
-# the Sprint Demo. integrating-feedback is the one node left unscripted:
-# Adrian does it by hand and moves the Demo issue to Reviewed himself, which
-# is what closing-sprint/starting-next-sprint below react to.
+# demo-active / demo-has-feedback / integrating-feedback / closing-sprint /
+# starting-next-sprint -- the Sprint Demo. A demo In progress with a human
+# comment on it is Scotty's to integrate: integrate-feedback turns the
+# feedback into backlog work and, only once that work is actually on the
+# board, moves the Demo issue to Reviewed. That transition is what
+# closing-sprint/starting-next-sprint react to on a later tick, so the two
+# nodes stay one wake apart and a failed integration simply retries.
 # =============================================================================
 demo_json="$(bc_issue demo-current)"; demo_rc=$?
 if [ "$demo_rc" -eq 2 ]; then
@@ -193,7 +195,12 @@ if [ "$demo_rc" -eq 0 ]; then
   case "$dstatus" in
     "In progress")
       if bc_issue demo-commented "$dnum" >/dev/null 2>&1; then
-        finish 1 "demo-has-feedback" "sleep" "demo #$dnum awaiting feedback integration; set the Demo issue to Reviewed"
+        integrated="$(bc_issue integrate-feedback "$dnum" 2>/dev/null)"; int_rc=$?
+        if [ "$int_rc" -ne 0 ]; then
+          finish 2 "integrating-feedback" "broken" "feedback integration failed for demo #$dnum"
+        fi
+        created="$(printf '%s' "$integrated" | "$JQ" -r '.created // "some"')"
+        finish 0 "integrating-feedback" "integrated" "$created new backlog items from demo #$dnum"
       else
         finish 1 "demo-active" "sleep" "demo #$dnum awaiting feedback"
       fi

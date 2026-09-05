@@ -1,6 +1,6 @@
 ---
 name: bc-sdlc
-description: 'The Browser City SDLC scripts — how Crew, the leads (tim, derek, quentin, artie) and Scotty write their work onto a task issue or a PR. Use when you are Crew opening a PR or addressing review comments, a lead writing an analysis direction or a review verdict, or Scotty opening the Sprint Demo issue or posting a breaker note.'
+description: 'The Browser City SDLC scripts — how Crew, the leads (tim, derek, quentin, artie) and Scotty write their work onto a task issue, a PR or the board. Use when you are Crew opening a PR or addressing review comments, a lead writing an analysis direction or a review verdict, or Scotty opening the Sprint Demo issue, posting a breaker note, scoping the next sprint, or opening epics and stories from demo feedback.'
 ---
 
 # bc-sdlc — the scripted SDLC surface
@@ -69,16 +69,32 @@ carries it in one call, so the two are never out of step.
 |---|---|
 | `bash <scripts>/bc-issue.sh write-demo <sprint> <bodyfile>` | Opens the `Sprint <n> Demo` issue with `<bodyfile>` as its body, labels it `demo`, adds it to the board and scopes it into Sprint `<n>`. Prints the new issue number. |
 | `bash <scripts>/bc-comment.sh write-breaker <pr> <bodyfile>` | Posts the breaker comment on the PR with `<bodyfile>` as the note, adds the `breaker` label and assigns Adrian. Prints the new comment id. Exits 1 and writes nothing if a breaker comment already exists. |
+| `bash <scripts>/bc-sprint.sh write-scope <sprint> <issue>...` | Moves each issue — and its sub-issues — onto Sprint `<n>`, defaulting to `Backlog` any the board has no Status for. Prints `{"scoped":[...],"sprint":"Sprint n"}`. Make **one** call with every pick in it. |
+| `bash <scripts>/bc-issue.sh write-epic <n> "<title>" <bodyfile> <priority>` | Opens epic `<n>` with `<bodyfile>` as its preamble, labels it `epic`, puts it on the board in `Backlog` on no sprint, and sets Priority. Prints the new issue number. |
+| `bash <scripts>/bc-issue.sh write-story <epic-issue> <id> "<title>" <bodyfile> <size> <priority> <leads-csv>` | Opens a story, labels it `story` plus one `lead:<role>` per lead in `<leads-csv>` (`-` for none — quentin is always in scope), links it as a sub-issue of `<epic-issue>`, puts it on the board in `Backlog` on no sprint, and sets Size and Priority. Prints the new issue number. |
+
+`<epic-issue>` is the epic's **issue** number, not its epic number. `<size>` is
+one of `XS S M L XL`, `<priority>` one of `Blocker Critical Standard Low`; a
+value outside those lists is exit 2, never a silently unset field.
 
 `<bodyfile>` holds your prose only. The scripts write the `### Sprint N Demo`
 / `### Breaker` heading, the `@`-mention of Adrian and the `<!-- bc:demo -->`
-/ `<!-- bc:breaker -->` marker — do not write any of them yourself, and do not
-create the issue or comment any other way. Nothing else on the board is
-yours: never edit a lead's comment, Crew's comment, or the status comment.
+/ `<!-- bc:breaker -->` / `<!-- bc:epic -->` / `<!-- bc:story -->` marker — do
+not write any of them yourself, and do not create the issue or comment any
+other way.
+
+Nothing sets Status, Priority, Size or a sprint but these calls: every one of
+them puts what it creates where it belongs, so never follow one with a board
+edit of your own. `write-epic` and `write-story` deliberately leave their
+issue on **no** sprint — `write-scope` is what scopes work in, later. Nothing
+else on the board is yours either: never edit a lead's comment, Crew's
+comment, or the status comment.
 
 ## Exit codes
 
-`0` did it · `1` nothing to do, someone got there first (`write-breaker` only)
-· `2` bad arguments, an empty body file, or the comment this command must
-edit does not exist (the orchestrator creates every stub — if yours is
-missing, stop and say so rather than creating one).
+`0` did it · `1` nothing to do — a breaker comment already exists
+(`write-breaker`), or none of the issues you passed was still a candidate
+(`write-scope`) · `2` bad arguments, an unknown size/priority/lead, an empty
+body file, or the comment this command must edit does not exist (the
+orchestrator creates every stub — if yours is missing, stop and say so rather
+than creating one).

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Fixture-driven coverage for scripts/bc-sprint.sh: current/next/over at
-# pinned clock values, close's carry/clear/demo-close bookkeeping, and
-# start's Scotty-scoped candidate selection (including the malformed-reply
-# guard).
+# pinned clock values, close's carry/clear/demo-close bookkeeping, items'
+# sprint read, start's handoff to Scotty, and write-scope's candidate guard
+# (the one thing standing between a picked number and the board).
 set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$TEST_DIR/.."
@@ -125,7 +125,34 @@ check "close with no current sprint exits 2"        2 run "$FAKE_CL2" 2026-12-25
 check "close with no current sprint wrote nothing"  1 test -f "$FAKE_CL2/calls.log"
 
 echo
-echo "start: Scotty scopes candidates into the next sprint:"
+echo "items: the sprint's issues, whole and filtered by Status:"
+
+FAKE_IT="$(fake_dir)"
+write_iterations "$FAKE_IT"
+cat > "$FAKE_IT/project_items.json" <<'JSON'
+[
+  {"number":10,"title":"Parent P1","state":"OPEN","status":"In progress","priority":"Standard","size":"L","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
+  {"number":11,"title":"Sub A","state":"OPEN","status":"In progress","priority":"Standard","size":"M","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":10},
+  {"number":12,"title":"Sub B","state":"CLOSED","status":"Done","priority":"Low","size":"S","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":10},
+  {"number":40,"title":"On the next sprint already","state":"OPEN","status":"Backlog","priority":null,"size":null,"sprintId":"sp2","sprintTitle":"Sprint 2","labels":[],"isParent":false,"parent":null}
+]
+JSON
+
+check_out "items: every issue on Sprint 1, sorted, with epic + size" 0 \
+  '[{"number":10,"title":"Parent P1","status":"In progress","priority":"Standard","size":"L","epic":null,"isEpic":true},{"number":11,"title":"Sub A","status":"In progress","priority":"Standard","size":"M","epic":10,"isEpic":false},{"number":12,"title":"Sub B","status":"Done","priority":"Low","size":"S","epic":10,"isEpic":false}]' \
+  run "$FAKE_IT" "" items 1
+check_out "items 1 Done: only what the team finished" 0 \
+  '[{"number":12,"title":"Sub B","status":"Done","priority":"Low","size":"S","epic":10,"isEpic":false}]' \
+  run "$FAKE_IT" "" items 1 Done
+check_out "items: a Status nothing is in -> exit 1, empty array" 1 '[]' \
+  run "$FAKE_IT" "" items 1 "Leads review"
+check "items: an unknown Status exits 2 rather than answering empty" 2 \
+  run "$FAKE_IT" "" items 1 Shipped
+check "items: no such sprint exits 2" 2 run "$FAKE_IT" "" items 9
+check "items: reads only -- wrote nothing" 1 test -f "$FAKE_IT/calls.log"
+
+echo
+echo "start: hands the candidates to Scotty and reports what he scoped:"
 
 FAKE_ST="$(fake_dir)"
 write_iterations "$FAKE_ST"
@@ -134,36 +161,21 @@ cat > "$FAKE_ST/project_items.json" <<'JSON'
   {"number":15,"title":"Delivered last sprint","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null},
   {"number":50,"title":"Fix inventory bug","state":"OPEN","status":null,"priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null},
   {"number":60,"title":"Nice-to-have polish","state":"OPEN","status":null,"priority":"Low","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null},
-  {"number":70,"title":"Sprint 1 Demo","state":"OPEN","status":"In progress","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null},
-  {"number":80,"title":"A sub-issue, not directly scopable","state":"OPEN","status":null,"priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":50},
-  {"number":90,"title":"Already scoped somewhere","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"sp2","sprintTitle":"Sprint 2","labels":[],"isParent":true,"parent":null},
-  {"number":51,"title":"Sub of 50","state":"OPEN","status":"To analyze","priority":"Standard","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":50}
+  {"number":70,"title":"Sprint 1 Demo","state":"OPEN","status":"In progress","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null}
 ]
 JSON
-echo '[{"number":51}]' > "$FAKE_ST/gh_subissues.50.json"
-printf 'Sure, here is my pick: [50]\n' > "$FAKE_ST/claude_oneshot.judge-sprint-scope.md.json"
-echo 'To analyze' > "$FAKE_ST/project_field_get.51.Status.json"
+# The fixture stands in for Scotty: present means his own `write-scope` call
+# ran and recorded what it moved through BC_WRITE_RESULT.
+printf '{"scoped":[50],"sprint":"Sprint 2"}\n' > "$FAKE_ST/claude_oneshot_acting.judge-sprint-scope.md.json"
 
-check_out "start: scopes the chosen candidate into the next sprint" 0 \
-  '{"scoped":[50],"sprint":"Sprint 2"}' \
+check_out "start prints what Scotty scoped" 0 '{"scoped":[50],"sprint":"Sprint 2"}' \
   run "$FAKE_ST" 2026-09-03T08:00:00Z start
-
-check "start logged carrying the chosen candidate"    0 log_has "$FAKE_ST/calls.log" '^project_set_iteration 50 sp2$'
-check "start defaulted the candidate's Status to Backlog (unset)" 0 log_has "$FAKE_ST/calls.log" '^project_set_single 50 Status Backlog$'
-# gh_subissues is a read, not a write -- reads aren't logged to calls.log,
-# only fixture-served; its effect is that 51 (from gh_subissues.50.json)
-# gets carried below, which IS a write and IS asserted.
-check "start carried the sub-issue too"               0 log_has "$FAKE_ST/calls.log" '^project_set_iteration 51 sp2$'
-check "start did NOT reset the sub-issue's Status (already set)" 1 \
-  log_has "$FAKE_ST/calls.log" '^project_set_single 51 '
-check "start left the non-candidate sub-issue (80) untouched" 1 \
-  log_has "$FAKE_ST/calls.log" '(^| )80( |$)'
-check "start left the already-scoped candidate (90) untouched" 1 \
-  log_has "$FAKE_ST/calls.log" '(^| )90( |$)'
-check "start left the demo issue (70) untouched"      1 log_has "$FAKE_ST/calls.log" '(^| )70( |$)'
+check "start handed the candidates to Scotty" 0 \
+  log_has "$FAKE_ST/calls.log" '^claude_oneshot_acting judge-sprint-scope\.md$'
+check "start scoped nothing itself" 1 log_has "$FAKE_ST/calls.log" '^project_set_iteration'
 
 echo
-echo "start: no eligible candidates -> exit 1, {\"scoped\":[]}, no Scotty call:"
+echo "start: no eligible candidates -> exit 1, nothing scoped, no Scotty call:"
 FAKE_ST0="$(fake_dir)"
 write_iterations "$FAKE_ST0"
 echo '[]' > "$FAKE_ST0/project_items.json"
@@ -171,7 +183,7 @@ check_out "start with no candidates" 1 '{"scoped":[]}' run "$FAKE_ST0" 2026-09-0
 check "start with no candidates wrote nothing" 1 test -f "$FAKE_ST0/calls.log"
 
 echo
-echo "start: a malformed Scotty reply exits 2 and writes nothing:"
+echo "start: Scotty scoping nothing exits 2:"
 FAKE_ST1="$(fake_dir)"
 write_iterations "$FAKE_ST1"
 cat > "$FAKE_ST1/project_items.json" <<'JSON'
@@ -179,9 +191,12 @@ cat > "$FAKE_ST1/project_items.json" <<'JSON'
   {"number":50,"title":"Fix inventory bug","state":"OPEN","status":null,"priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null}
 ]
 JSON
-printf 'Sorry, I cannot decide right now.\n' > "$FAKE_ST1/claude_oneshot.judge-sprint-scope.md.json"
-check "start with a malformed reply exits 2"       2 run "$FAKE_ST1" 2026-09-03T08:00:00Z start
-check "start with a malformed reply wrote nothing" 1 test -f "$FAKE_ST1/calls.log"
+# No claude_oneshot_acting fixture: Scotty scoped nothing.
+check "start exits 2 when Scotty scoped nothing" 2 run "$FAKE_ST1" 2026-09-03T08:00:00Z start
+check "and the only call logged is the handoff" 0 \
+  log_has "$FAKE_ST1/calls.log" '^claude_oneshot_acting judge-sprint-scope\.md$'
+check "and nothing was moved onto a sprint" 1 \
+  log_has "$FAKE_ST1/calls.log" '^project_set_iteration'
 
 echo
 echo "start: no next sprint configured -> exit 2, nothing written:"
@@ -198,5 +213,56 @@ cat > "$FAKE_ST2/project_items.json" <<'JSON'
 JSON
 check "start with no next iteration exits 2"       2 run "$FAKE_ST2" 2026-12-25T08:00:00Z start
 check "start with no next iteration wrote nothing" 1 test -f "$FAKE_ST2/calls.log"
+
+echo
+echo "write-scope: Scotty's own call -- his picks, their sub-issues, and nothing else:"
+
+FAKE_WS="$(fake_dir)"
+write_iterations "$FAKE_WS"
+cat > "$FAKE_WS/project_items.json" <<'JSON'
+[
+  {"number":50,"title":"Fix inventory bug","state":"OPEN","status":null,"priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null},
+  {"number":51,"title":"Sub of 50","state":"OPEN","status":"To analyze","priority":"Standard","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":50},
+  {"number":70,"title":"Sprint 1 Demo","state":"OPEN","status":"In progress","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null},
+  {"number":80,"title":"A sub-issue, not directly scopable","state":"OPEN","status":null,"priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":50},
+  {"number":90,"title":"Already scoped somewhere","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"sp2","sprintTitle":"Sprint 2","labels":[],"isParent":true,"parent":null},
+  {"number":95,"title":"Closed","state":"CLOSED","status":"Done","priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null}
+]
+JSON
+echo '[{"number":51}]' > "$FAKE_WS/gh_subissues.50.json"
+echo 'To analyze' > "$FAKE_WS/project_field_get.51.Status.json"
+
+check_out "write-scope keeps only the real candidates out of what it was asked" 0 \
+  '{"scoped":[50],"sprint":"Sprint 2"}' \
+  run "$FAKE_WS" "" write-scope 2 50 80 90 95 4242
+
+check "write-scope moved the candidate"          0 log_has "$FAKE_WS/calls.log" '^project_set_iteration 50 sp2$'
+check "write-scope defaulted its Status (unset)" 0 log_has "$FAKE_WS/calls.log" '^project_set_single 50 Status Backlog$'
+# gh_subissues is a read, not a write -- reads aren't logged to calls.log,
+# only fixture-served; its effect is that 51 (from gh_subissues.50.json) gets
+# carried below, which IS a write and IS asserted.
+check "write-scope carried the sub-issue too"    0 log_has "$FAKE_WS/calls.log" '^project_set_iteration 51 sp2$'
+check "write-scope did NOT reset the sub-issue's Status (already set)" 1 \
+  log_has "$FAKE_WS/calls.log" '^project_set_single 51 '
+check "write-scope dropped the bare sub-issue (80)"       1 log_has "$FAKE_WS/calls.log" '(^| )80( |$)'
+check "write-scope dropped the already-scoped issue (90)" 1 log_has "$FAKE_WS/calls.log" '(^| )90( |$)'
+check "write-scope dropped the closed issue (95)"         1 log_has "$FAKE_WS/calls.log" '(^| )95( |$)'
+check "write-scope dropped the invented number (4242)"    1 log_has "$FAKE_WS/calls.log" '(^| )4242( |$)'
+check "write-scope left the demo issue (70) alone"        1 log_has "$FAKE_WS/calls.log" '(^| )70( |$)'
+
+FAKE_WS0="$(fake_dir)"
+write_iterations "$FAKE_WS0"
+echo '[]' > "$FAKE_WS0/project_items.json"
+check_out "write-scope: nothing asked for is a candidate -> exit 1" 1 \
+  '{"scoped":[]}' run "$FAKE_WS0" "" write-scope 2 50
+check "write-scope with no candidates wrote nothing" 1 test -f "$FAKE_WS0/calls.log"
+
+FAKE_WS2="$(fake_dir)"
+write_iterations "$FAKE_WS2"
+echo '[]' > "$FAKE_WS2/project_items.json"
+check "write-scope with no issues at all exits 2"   2 run "$FAKE_WS2" "" write-scope 2
+check "write-scope with a non-numeric issue exits 2" 2 run "$FAKE_WS2" "" write-scope 2 50 fifty
+check "write-scope with no such sprint exits 2"      2 run "$FAKE_WS2" "" write-scope 9 50
+check "and none of those wrote anything" 1 test -f "$FAKE_WS2/calls.log"
 
 summary
