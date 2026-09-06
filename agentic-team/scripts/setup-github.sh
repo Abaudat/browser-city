@@ -55,4 +55,18 @@ for def in "${LABEL_DEFS[@]}"; do
 done
 
 echo "setup-github: done ($CREATED created, $SKIPPED already present)" >&2
+
+echo "setup-github: checking branch protection on $BC_BASE_BRANCH..." >&2
+REQUIRED="$(gh_branch_required_checks "$BC_BASE_BRANCH")"
+if printf '%s' "$REQUIRED" | "$JQ" -e --arg c "$BC_REQUIRED_CHECK" 'index($c) != null' >/dev/null 2>&1; then
+  echo "setup-github: '$BC_REQUIRED_CHECK' is already a required status check on $BC_BASE_BRANCH" >&2
+else
+  if gh_branch_require_check "$BC_BASE_BRANCH" "$BC_REQUIRED_CHECK"; then
+    echo "setup-github: '$BC_REQUIRED_CHECK' is now a required status check on $BC_BASE_BRANCH" >&2
+  else
+    echo "setup-github: FAILED to set '$BC_REQUIRED_CHECK' as a required status check on $BC_BASE_BRANCH" >&2
+    exit 2
+  fi
+fi
+
 exit 0

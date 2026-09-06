@@ -10,7 +10,10 @@ cited here by identifier.
 | ----------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Server module                 | Rust, edition 2024, `crate-type = ["cdylib"]`, target `wasm32-unknown-unknown`                           |
 | Server, database, replication | SpacetimeDB 2.9.x — the `spacetimedb` crate                                                              |
+| Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the table-bounds registry), and the `browser_city` module crate, which depends on both |
+| Property testing              | `proptest`, dev-dependency of `sim` only; case count from `PROPTEST_CASES`                              |
 | Hosting                       | SpacetimeDB Maincloud                                                                                    |
+| CI / deploy                   | GitHub Actions is the only path to Maincloud; `ci.yml` verifies every PR and push to master, a separate deploy workflow publishes |
 | Client                        | TypeScript + PixiJS v8, bundled by Vite                                                                  |
 | Client SDK                    | the `spacetimedb` npm package                                                                            |
 | Client bindings               | `spacetime generate --lang typescript --out-dir client/src/net/bindings` — generated, never hand-written |
@@ -30,6 +33,26 @@ Authority follows consequence: what cannot change the ledger runs client-side.
 | L1 boundary, L2 citizen brain, citizen routing | Server                             |
 | Player movement and player collision           | Client, authoritative, unvalidated |
 | L3 micro brain, rendering, animation, audio    | Client                             |
+
+## Purity and determinism
+
+`sim` never depends on `spacetimedb` (or anything that touches a network,
+the filesystem, or the wall clock) and never will (NFR28) — `reducers/`
+reads tables, calls `sim`, writes tables. `sim` is integer/fixed-point only,
+uses ordered collections (`BTreeMap`/`BTreeSet`, never `HashMap`/`HashSet`),
+and seeds its own PRNG (`sim::rng`, xoshiro256++ via splitmix64 — never
+`rand`) from stable ids, never from a local source (NFR25, NFR26). Its
+determinism is pinned by a committed golden vector, keyed by
+`sim::rng::RNG_VERSION`; the golden and the version move together.
+
+`browser_city` (the module crate) cannot be linked natively, because
+SpacetimeDB's reducer/table macros reference host FFI symbols the wasm
+runtime supplies — its only automated check is the `wasm32-unknown-unknown`
+build. This is also why NFR28's boundary matters in practice: anything that
+needs a native test belongs in `sim`, not in a reducer.
+
+Every table declares a bound in the `bounds` crate's `TABLE_BOUNDS`
+registry, mechanical or engineering (NFR37).
 
 ## Naming
 

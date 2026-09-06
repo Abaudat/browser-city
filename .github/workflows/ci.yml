@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: server
+
+env:
+  # Kept low so the property job stays under a couple of minutes on a PR.
+  # There is deliberately no scheduled job that raises this: GitHub Actions
+  # minutes cost money on every run this repo will ever make, and Tim owns
+  # keeping that minimal (Story 0.16) -- a low, fixed case count on every
+  # PR and push is the whole property-testing budget for now.
+  PROPTEST_CASES: 256
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # check-golden-version-bump.sh diffs against the PR's base, so
+          # this job alone needs history; test/build only need HEAD.
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+      - run: rustup toolchain install
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: bash ../scripts/ci/check-sim-purity.sh
+      - run: bash ../scripts/ci/check-golden-version-bump.sh "${{ github.event_name == 'pull_request' && format('origin/{0}', github.event.pull_request.base.ref) || '' }}"
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+      - run: rustup toolchain install
+      - name: native tests, including the property suite, in release
+        run: cargo test --workspace --exclude browser_city --release
+      - run: bash ../scripts/ci/check-trace-matrix.sh
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+      - run: rustup toolchain install
+      - name: the module actually has to compile for the thing it runs on
+        run: cargo build --target wasm32-unknown-unknown --release -p browser_city
+
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    needs: [check, test, build]
+    steps:
+      - run: 'true'

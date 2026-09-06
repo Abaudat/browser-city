@@ -52,6 +52,7 @@ _BC_CONFIG_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 : "${BC_ORCA_REPO_ID:=61a8f373-6a62-4138-a33c-fb4be6d0ddc1}"
 : "${BC_MAIN_CHECKOUT:=D:/Projects/BrowserCity}"
 : "${BC_BASE_BRANCH:=master}"
+: "${BC_REQUIRED_CHECK:=ci}"
 
 # Resolves the four external tools once per process into $GH $JQ $ORCA
 # $CLAUDE. Every lib function calls the tool through these vars, never by

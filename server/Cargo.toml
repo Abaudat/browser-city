@@ -1,3 +1,7 @@
+[workspace]
+members = ["sim", "bounds"]
+resolver = "2"
+
 [package]
 name = "browser_city"
 version = "0.1.0"
@@ -6,8 +10,15 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
+# SpacetimeDB's reducer/table macros reference host FFI symbols the wasm
+# runtime supplies, so this crate cannot be linked natively -- "cdylib" is
+# the one target `spacetime build` actually publishes. Its own tests (there
+# are none by design: NFR28 keeps reducers thin, so everything testable
+# lives in `sim`) would fail to link natively for the same reason.
 crate-type = ["cdylib"]
 
 [dependencies]
 spacetimedb = { version = "2.9.*" }
 log = "0.4"
+sim = { path = "sim" }
+bounds = { path = "bounds" }

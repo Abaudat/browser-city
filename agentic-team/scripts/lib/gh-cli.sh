@@ -195,3 +195,22 @@ gh_issue_id() { # <n> -> the issue's database id
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_issue_id "$1"; return; }
   "$GH" api "repos/$BC_REPO/issues/$1" --jq '.id' 2>/dev/null
 }
+
+# --- appended by the Story 0.16 work (CI as a required status check) -------
+gh_branch_required_checks() { # <branch> -> JSON array of required check contexts, [] if unprotected
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_branch_required_checks "$1"; return; }
+  "$GH" api "repos/$BC_REPO/branches/$1/protection/required_status_checks" \
+    --jq '[.checks[].context]' 2>/dev/null || printf '[]'
+}
+
+gh_branch_require_check() { # <branch> <context> -- makes <context> a required status check, strict, on <branch>
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_branch_require_check "$@"; return; }
+  "$GH" api "repos/$BC_REPO/branches/$1/protection" -X PUT --input - >/dev/null 2>&1 <<EOF
+{
+  "required_status_checks": { "strict": true, "checks": [{"context": "$2"}] },
+  "enforce_admins": null,
+  "required_pull_request_reviews": null,
+  "restrictions": null
+}
+EOF
+}
