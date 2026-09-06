@@ -22,3 +22,12 @@ spacetimedb = { version = "2.9.*" }
 log = "0.4"
 sim = { path = "sim" }
 bounds = { path = "bounds" }
+
+[profile.release]
+# The property suite and the wasm build both use this profile (release, for
+# speed). sim's whole contract is deterministic integer/fixed-point
+# arithmetic -- plain release strips overflow checks, which is exactly
+# where a wrapping bug in a scoring or budget function would go silently
+# wrong instead of panicking in CI.
+overflow-checks = true
+debug-assertions = true

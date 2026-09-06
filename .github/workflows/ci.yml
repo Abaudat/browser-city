@@ -5,31 +5,50 @@ on:
   push:
     branches: [master]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-defaults:
-  run:
-    working-directory: server
-
 env:
-  # Kept low so the property job stays under a couple of minutes on a PR.
-  # There is deliberately no scheduled job that raises this: GitHub Actions
-  # minutes cost money on every run this repo will ever make, and Tim owns
-  # keeping that minimal (Story 0.16) -- a low, fixed case count on every
-  # PR and push is the whole property-testing budget for now.
-  PROPTEST_CASES: 256
+  PROPTEST_CASES: 4096
 
 jobs:
+  scripts-tests:
+    name: scripts-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      # gh and jq are already on ubuntu-latest; orca and claude are not, and
+      # never will be in CI (they are the Windows dev machine's own tools).
+      # bc_init only ever checks that all four *exist* -- the whole suite
+      # below runs under BC_FAKE, which never actually invokes them -- so a
+      # no-op stub of the two missing ones is enough to let it run at all.
+      - name: stub the orca/claude CLIs bc_init requires but never calls under BC_FAKE
+        run: |
+          mkdir -p "$RUNNER_TEMP/stub-bin"
+          printf '#!/bin/sh\nexit 0\n' > "$RUNNER_TEMP/stub-bin/orca"
+          printf '#!/bin/sh\nexit 0\n' > "$RUNNER_TEMP/stub-bin/claude"
+          chmod +x "$RUNNER_TEMP/stub-bin/orca" "$RUNNER_TEMP/stub-bin/claude"
+          echo "$RUNNER_TEMP/stub-bin" >> "$GITHUB_PATH"
+      - run: bash agentic-team/scripts/tests/run-all.sh
+
   check:
     name: check
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: server
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # check-golden-version-bump.sh diffs against the PR's base, so
+          # check-golden-version-bump.sh diffs against a base commit, so
           # this job alone needs history; test/build only need HEAD.
           fetch-depth: 0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -39,12 +58,15 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: bash ../scripts/ci/check-sim-purity.sh
-      - run: bash ../scripts/ci/check-golden-version-bump.sh "${{ github.event_name == 'pull_request' && format('origin/{0}', github.event.pull_request.base.ref) || '' }}"
+      - run: bash ../scripts/ci/check-golden-version-bump.sh
 
   test:
     name: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -61,6 +83,9 @@ jobs:
     name: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: server
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -72,9 +97,40 @@ jobs:
       - name: the module actually has to compile for the thing it runs on
         run: cargo build --target wasm32-unknown-unknown --release -p browser_city
 
+  coverage:
+    name: coverage (sim)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+        with:
+          tool: cargo-llvm-cov
+      # sim is pure, has no dependencies and is where the game logic will
+      # live -- it has no excuse for an uncovered line. Scoped to sim only:
+      # a repo-wide percentage gate only teaches people to write
+      # assertion-free tests to pad it.
+      - run: cargo llvm-cov -p sim --fail-under-lines 90
+
   ci:
     name: ci
     runs-on: ubuntu-latest
-    needs: [check, test, build]
+    timeout-minutes: 2
+    needs: [scripts-tests, check, test, build, coverage]
+    if: ${{ !cancelled() }}
     steps:
-      - run: 'true'
+      - name: require every job above to have actually succeeded
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
+            echo "a required job did not succeed: ${{ toJSON(needs) }}"
+            exit 1
+          fi

@@ -1,7 +1,5 @@
 use spacetimedb::ReducerContext;
 
-pub use bounds::{BoundKind, TABLE_BOUNDS, TableBound};
-
 #[spacetimedb::reducer(init)]
 pub fn init(_ctx: &ReducerContext) {
     // Called when the module is initially published

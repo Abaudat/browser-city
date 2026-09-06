@@ -357,10 +357,11 @@ case "$status" in
 "Leads review")
   # ===========================================================================
   # In the flowchart's order: breaker-tripped (breaker-exists), then
-  # leads-reviewed-head (stale leads), then leads-all-approved -> merging-pr,
-  # then cycles-exhausted -> tripping-breaker, else dispatching-rework. Plus
-  # the crash-idempotency repair: a PR exists but carries no status comment
-  # yet (a crashed opening-leads-review).
+  # ci-status, then leads-reviewed-head (stale leads), then
+  # leads-all-approved -> merging-pr, then cycles-exhausted -> tripping-
+  # breaker, else dispatching-rework. Plus the crash-idempotency repair: a
+  # PR exists but carries no status comment yet (a crashed
+  # opening-leads-review).
   # ===========================================================================
   pr_json="$(bc_pr for-issue "$num")"; rc=$?
   [ "$rc" -eq 0 ] || finish 2 "breaker-tripped" "broken" "no PR found for #$num at Leads review"
@@ -373,6 +374,26 @@ case "$status" in
 
   if bc_comment breaker-exists "$pr" >/dev/null 2>&1; then
     finish 1 "breaker-tripped" "sleep" "breaker pending on PR #$pr"
+  fi
+
+  # A lead can approve faster than CI reports, and branch protection alone
+  # cannot dispatch Crew back onto a red build -- so this reads the
+  # required check itself, before ever asking whether the leads are done,
+  # and neither waits on them nor merges while it is red or still running.
+  ci="$(bc_pr ci-status "$pr")"; ci_rc=$?
+  if [ "$ci_rc" -ne 0 ]; then
+    finish 2 "ci-status" "broken" "ci-status failed for PR #$pr"
+  fi
+  if [ "$ci" = "failure" ]; then
+    _nudge crew "$num" "$wt" "$_BC_PROMPTS/dispatch-address.md" "$pr"; nrc=$?
+    [ "$nrc" -eq 2 ] && finish 2 "dispatching-ci-fix" "broken" "nudge failed for crew on PR #$pr"
+    if [ "$nrc" -eq 0 ]; then
+      finish 0 "dispatching-ci-fix" "dispatched" "crew to fix CI on PR #$pr"
+    fi
+    finish 1 "dispatching-ci-fix" "sleep" "crew already busy on PR #$pr"
+  fi
+  if [ "$ci" = "pending" ]; then
+    finish 1 "ci-status" "sleep" "CI still running on PR #$pr"
   fi
 
   stale="$(bc_comment stale-leads "$pr")"; stale_rc=$?

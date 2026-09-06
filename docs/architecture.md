@@ -13,7 +13,7 @@ cited here by identifier.
 | Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the table-bounds registry), and the `browser_city` module crate, which depends on both |
 | Property testing              | `proptest`, dev-dependency of `sim` only; case count from `PROPTEST_CASES`                              |
 | Hosting                       | SpacetimeDB Maincloud                                                                                    |
-| CI / deploy                   | GitHub Actions is the only path to Maincloud; `ci.yml` verifies every PR and push to master, a separate deploy workflow publishes |
+| CI / deploy                   | GitHub Actions is the only path to Maincloud; never a local `spacetime publish` |
 | Client                        | TypeScript + PixiJS v8, bundled by Vite                                                                  |
 | Client SDK                    | the `spacetimedb` npm package                                                                            |
 | Client bindings               | `spacetime generate --lang typescript --out-dir client/src/net/bindings` — generated, never hand-written |
@@ -45,11 +45,8 @@ and seeds its own PRNG (`sim::rng`, xoshiro256++ via splitmix64 — never
 determinism is pinned by a committed golden vector, keyed by
 `sim::rng::RNG_VERSION`; the golden and the version move together.
 
-`browser_city` (the module crate) cannot be linked natively, because
-SpacetimeDB's reducer/table macros reference host FFI symbols the wasm
-runtime supplies — its only automated check is the `wasm32-unknown-unknown`
-build. This is also why NFR28's boundary matters in practice: anything that
-needs a native test belongs in `sim`, not in a reducer.
+`browser_city` cannot be linked natively, so anything requiring a native
+test lives in `sim` or `bounds`.
 
 Every table declares a bound in the `bounds` crate's `TABLE_BOUNDS`
 registry, mechanical or engineering (NFR37).

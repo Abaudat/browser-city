@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fixture-driven coverage for scripts/orchestrator.sh: one scenario per edge
 # of agentic-team/high-level-agentic-flow.mmd (demo-active/demo-has-feedback/closing-sprint/starting-next-sprint, sprint-over/creating-demo-issue, starting-dev-cycle,
-# leads-analysed/dispatching-implementation, pr-opened/opening-leads-review, breaker-tripped-tripping-breaker, crew-addressed/reopening-leads-review), plus the two crash-idempotency repairs and
+# leads-analysed/dispatching-implementation, pr-opened/opening-leads-review, breaker-tripped-tripping-breaker, ci-status/dispatching-ci-fix, crew-addressed/reopening-leads-review), plus the two crash-idempotency repairs and
 # the two hard-failure propagations (bc-issue current's exit 2, an empty
 # backlog). Runs orchestrator.sh as a real subprocess -- BC_FAKE drives the
 # level-1 primitives, the level-2 scripts run for real underneath it, and
@@ -390,6 +390,40 @@ check "breaker-tripped: wrote nothing" 1 test -f "$F_BREAKER_TRIPPED/calls.log"
 
 # =============================================================================
 echo
+echo "ci-status: Leads review, the required check is failing -> dispatch Crew, never consult the leads"
+# =============================================================================
+F_CI_FAILING="$(fake_dir)"
+write_iterations "$F_CI_FAILING"
+one_active "$F_CI_FAILING" 310 "Leads review"
+echo '{"number":67,"headRefOid":"shaRED"}' > "$F_CI_FAILING/gh_pr_for_issue.310.json"
+echo "shaRED" > "$F_CI_FAILING/gh_pr_head.67.json"
+echo '[{"name":"ci","status":"completed","conclusion":"failure"}]' > "$F_CI_FAILING/gh_pr_check_runs.shaRED.json"
+{ render_status 310 "quentin,tim" 1 | _comment 1; } | "$JQ" -sc '.' > "$F_CI_FAILING/gh_issue_comments.67.json"
+printf 'WT310' > "$F_CI_FAILING/orca_worktree_path.issue:310.json"
+"$JQ" -n -c --arg u "$(role8 crew 310)" '[{handle:"h1",title:("✳ bc-crew #310 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
+  > "$F_CI_FAILING/orca_terminals.WT310.json"
+check_out "ci-status: failing -> dispatched crew, exit 0" 0 "dispatching-ci-fix dispatched crew to fix CI on PR #67" run "$F_CI_FAILING" "$NOW_MIDSPRINT"
+check "ci-status: sent to crew's terminal" 0 log_has "$F_CI_FAILING/calls.log" '^orca_terminal_send h1 '
+check "ci-status: never spawned or nudged a lead" 1 log_has "$F_CI_FAILING/calls.log" 'bc-(quentin|tim) #310'
+check "ci-status: never merged" 1 log_has "$F_CI_FAILING/calls.log" '^gh_pr_merge'
+
+# =============================================================================
+echo
+echo "ci-status: Leads review, the required check is still running -> sleep, never consult the leads"
+# =============================================================================
+F_CI_PENDING="$(fake_dir)"
+write_iterations "$F_CI_PENDING"
+one_active "$F_CI_PENDING" 320 "Leads review"
+echo '{"number":68,"headRefOid":"shaYELLOW"}' > "$F_CI_PENDING/gh_pr_for_issue.320.json"
+echo "shaYELLOW" > "$F_CI_PENDING/gh_pr_head.68.json"
+echo '[{"name":"ci","status":"in_progress","conclusion":null}]' > "$F_CI_PENDING/gh_pr_check_runs.shaYELLOW.json"
+{ render_status 320 "quentin,tim" 1 | _comment 1; } | "$JQ" -sc '.' > "$F_CI_PENDING/gh_issue_comments.68.json"
+printf 'WT320' > "$F_CI_PENDING/orca_worktree_path.issue:320.json"
+check_out "ci-status: pending -> sleep, exit 1" 1 "ci-status sleep CI still running on PR #68" run "$F_CI_PENDING" "$NOW_MIDSPRINT"
+check "ci-status: pending wrote nothing" 1 test -f "$F_CI_PENDING/calls.log"
+
+# =============================================================================
+echo
 echo "leads-reviewed-head: Leads review, one stale lead among two -> nudge exactly that one"
 # =============================================================================
 F_LEADS_REVIEWED_HEAD="$(fake_dir)"
@@ -397,6 +431,7 @@ write_iterations "$F_LEADS_REVIEWED_HEAD"
 one_active "$F_LEADS_REVIEWED_HEAD" 250 "Leads review"
 echo '{"number":61,"headRefOid":"shaNEW"}' > "$F_LEADS_REVIEWED_HEAD/gh_pr_for_issue.250.json"
 echo "shaNEW" > "$F_LEADS_REVIEWED_HEAD/gh_pr_head.61.json"
+echo '[{"name":"ci","status":"completed","conclusion":"success"}]' > "$F_LEADS_REVIEWED_HEAD/gh_pr_check_runs.shaNEW.json"
 {
   render_status 250 "quentin,tim" 1 | _comment 1
   printf '### Review — quentin\n\n_Not yet reviewed._\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed shaOLD -->\n' | _comment 2
@@ -423,6 +458,7 @@ write_iterations "$F_MERGING_PR"
 one_active "$F_MERGING_PR" 260 "Leads review"
 echo '{"number":62,"headRefOid":"shaFINAL"}' > "$F_MERGING_PR/gh_pr_for_issue.260.json"
 echo "shaFINAL" > "$F_MERGING_PR/gh_pr_head.62.json"
+echo '[{"name":"ci","status":"completed","conclusion":"success"}]' > "$F_MERGING_PR/gh_pr_check_runs.shaFINAL.json"
 {
   render_status 260 "quentin" 1 | _comment 1
   printf '### Review — quentin\n\nfine\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed shaFINAL -->\n<!-- bc:verdict APPROVED -->\n' | _comment 2
@@ -448,6 +484,7 @@ write_iterations "$F_TRIPPING_BREAKER"
 one_active "$F_TRIPPING_BREAKER" 270 "Leads review"
 echo '{"number":63,"headRefOid":"shaC6"}' > "$F_TRIPPING_BREAKER/gh_pr_for_issue.270.json"
 echo "shaC6" > "$F_TRIPPING_BREAKER/gh_pr_head.63.json"
+echo '[{"name":"ci","status":"completed","conclusion":"success"}]' > "$F_TRIPPING_BREAKER/gh_pr_check_runs.shaC6.json"
 {
   render_status 270 "quentin,tim" 9 | _comment 1
   printf '### Review — quentin\n\nno\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed shaC6 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 2
@@ -474,6 +511,7 @@ write_iterations "$F_DISPATCH_REWORK"
 one_active "$F_DISPATCH_REWORK" 280 "Leads review"
 echo '{"number":64,"headRefOid":"shaC4"}' > "$F_DISPATCH_REWORK/gh_pr_for_issue.280.json"
 echo "shaC4" > "$F_DISPATCH_REWORK/gh_pr_head.64.json"
+echo '[{"name":"ci","status":"completed","conclusion":"success"}]' > "$F_DISPATCH_REWORK/gh_pr_check_runs.shaC4.json"
 {
   render_status 280 "quentin" 2 | _comment 1
   printf '### Review — quentin\n\nno\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed shaC4 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 2

@@ -67,3 +67,52 @@ impl Rng {
         result
     }
 }
+
+#[cfg(test)]
+mod known_answer_tests {
+    use super::*;
+
+    /// splitmix64 from seed 0, checked against the reference algorithm's
+    /// own published output (Sebastiano Vigna, `splitmix64.c`) rather than
+    /// against this file -- a self-generated golden proves this
+    /// implementation is consistent with itself, never that it implements
+    /// splitmix64 correctly. A future rewrite of `splitmix64` has to match
+    /// these three literals, not just match its own past behaviour.
+    #[test]
+    fn splitmix64_matches_the_reference_implementation() {
+        let mut state: u64 = 0;
+        assert_eq!(splitmix64(&mut state), 0xE220A8397B1DCDAF);
+        assert_eq!(splitmix64(&mut state), 0x6E789E6AA1B965F4);
+        assert_eq!(splitmix64(&mut state), 0x06C45D188009454F);
+    }
+
+    /// xoshiro256++ from raw state `[1, 2, 3, 4]` -- the exact fixture the
+    /// reference C source's own test uses -- checked against the first ten
+    /// outputs published with `rand_xoshiro`'s port of that reference
+    /// (`Xoshiro256PlusPlus`'s `reference` test, itself sourced from
+    /// http://xoshiro.di.unimi.it/xoshiro256plusplus.c). Bypasses
+    /// `seed_from_ids`/`Rng::new` deliberately: this is a check on the
+    /// `next_u64` step function against a known-answer, seeding-independent
+    /// fixture, not on our seed derivation.
+    #[test]
+    fn next_u64_matches_the_reference_implementation() {
+        let mut rng = Rng {
+            state: [1, 2, 3, 4],
+        };
+        let expected = [
+            41943041u64,
+            58720359,
+            3588806011781223,
+            3591011842654386,
+            9228616714210784205,
+            9973669472204895162,
+            14011001112246962877,
+            12406186145184390807,
+            15849039046786891736,
+            10450023813501588000,
+        ];
+        for e in expected {
+            assert_eq!(rng.next_u64(), e);
+        }
+    }
+}

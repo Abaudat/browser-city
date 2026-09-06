@@ -1,27 +1,41 @@
 #!/usr/bin/env bash
-# Guards the determinism golden itself: if tests/goldens/*.golden changed in
-# this PR, sim::rng::RNG_VERSION must have changed too -- a golden that moves
-# without a version bump means "generation output moved" went unnoticed,
-# which is exactly what the determinism harness exists to catch.
+# Guards the determinism golden itself: if tests/goldens/*.golden changed
+# since the base, sim::rng::RNG_VERSION must have changed too -- a golden
+# that moves without a version bump means "generation output moved" went
+# unnoticed, which is exactly what the determinism harness exists to catch.
 #
-# Only meaningful with a base to diff against (a pull request); on push to
-# master there is nothing to compare against a predecessor commit that
-# wasn't already checked as a PR, so this is a no-op there.
+# A guard that cannot resolve a base to diff against must not read as
+# "nothing to guard": outside CI (a bare local run, no base given) that is a
+# legitimate no-op, but inside GitHub Actions it must fail loudly instead of
+# waving the run through. On a pull_request, the base is the PR's target
+# branch; on push (a merge landing on master), it is the previous commit --
+# there is always a real "before" to compare against once a base branch has
+# history, since a push is itself a merged, already-checked PR.
 set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-BASE="${1:-${GITHUB_BASE_REF:+origin/$GITHUB_BASE_REF}}"
-
-if [ -z "$BASE" ]; then
-  echo "check-golden-version-bump: no base ref given (not a PR) -- skipping" >&2
+_fail_or_skip() { # <message> -- hard fail under GITHUB_ACTIONS, soft skip otherwise
+  if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    echo "check-golden-version-bump: FAIL -- $1" >&2
+    exit 1
+  fi
+  echo "check-golden-version-bump: $1 -- skipping" >&2
   exit 0
+}
+
+if [ -n "${1:-}" ]; then
+  BASE="$1"
+elif [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ]; then
+  BASE="${GITHUB_BASE_REF:+origin/$GITHUB_BASE_REF}"
+elif [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  BASE="HEAD^"
+else
+  BASE=""
 fi
 
-if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
-  echo "check-golden-version-bump: base ref '$BASE' not found -- skipping" >&2
-  exit 0
-fi
+[ -n "$BASE" ] || _fail_or_skip "no base ref could be resolved"
+git rev-parse --verify "$BASE" >/dev/null 2>&1 || _fail_or_skip "base ref '$BASE' not found"
 
 MERGE_BASE="$(git merge-base "$BASE" HEAD)"
 

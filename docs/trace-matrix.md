@@ -15,3 +15,15 @@ fails CI if a `covered` row's test does not exist, or if a test named
 | `inv_no_owned_item_degrades_during_absence` | No owned item degrades during absence | deferred | | inventory/decay system |
 | `inv_budget_never_negative` | Budget never goes negative | deferred | | economy system |
 | `inv_collider_within_footprint` | `collider` is contained within `footprint` | deferred | | placement/collision system |
+
+## Coverage scale (NFR29)
+
+Rows above track whether an invariant is exercised at all; this tracks
+whether it is exercised at the scale NFR29 asks for. Not part of the
+id/constant/test symmetry `check-trace-matrix.sh` enforces above (there is
+no `INV_` constant for a case count) -- checked by eye until there is a
+citizen simulation to run it against.
+
+| Requirement | Status | Blocked on |
+| --- | --- | --- |
+| Property suite runs thousands of simulated citizen-weeks (NFR29) | deferred | a citizen simulation to generate them against |
