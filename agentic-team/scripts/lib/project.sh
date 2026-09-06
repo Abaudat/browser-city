@@ -63,6 +63,17 @@ project_field_get() { # <issue-number> <Status|Priority|Size|Sprint> -> value na
 project_set_single() { # <issue-number> <Status|Priority|Size> <option-name>
   [ -n "${BC_FAKE:-}" ] && { bc_fake_write project_set_single "$@"; return; }
   local issue="$1" field="$2" option="$3" cache proj fieldid optid item
+  # Validated before the (real, network) call to _project_fields below: an
+  # unknown field is a caller bug, not something whose answer should depend
+  # on gh succeeding first. It used to be the `*)` arm of the case below,
+  # reached only after _project_fields -- so on a machine where that real
+  # call fails (an unauthenticated CI runner, offline), this answered 1
+  # instead of 2, the exact portability bug that surfaced running the suite
+  # off this repo's own gh auth versus a plain ubuntu-latest runner.
+  case "$field" in
+    Status|Priority|Size) ;;
+    *) return 2 ;;
+  esac
   cache="$(_project_fields)" || return 1
   proj="$(printf '%s' "$cache" | "$JQ" -r '.id')"
   case "$field" in
@@ -72,7 +83,6 @@ project_set_single() { # <issue-number> <Status|Priority|Size> <option-name>
               optid="$(printf '%s' "$cache" | "$JQ" -r --arg n "$option" '.priorityF.options[] | select(.name==$n) | .id')" ;;
     Size)     fieldid="$(printf '%s' "$cache" | "$JQ" -r '.sizeF.id')"
               optid="$(printf '%s' "$cache" | "$JQ" -r --arg n "$option" '.sizeF.options[] | select(.name==$n) | .id')" ;;
-    *) return 2 ;;
   esac
   [ -n "$fieldid" ] && [ "$fieldid" != "null" ] && [ -n "$optid" ] || return 1
   item="$(project_item "$issue")" || return 1

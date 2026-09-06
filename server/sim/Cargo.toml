@@ -1,0 +1,13 @@
+[package]
+name = "sim"
+version = "0.1.0"
+edition = "2024"
+
+# Pure simulation crate: NFR28. Never add spacetimedb, tokio, or any
+# network/filesystem/time/random dependency here -- `check-sim-purity.sh`
+# fails the build if one shows up in this crate's dependency graph.
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "=1.11.0"

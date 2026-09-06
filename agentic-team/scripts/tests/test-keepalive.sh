@@ -9,6 +9,21 @@
 # `orca_status.seq` (fake.sh's read-side sequence) let one run see "not yet"
 # and then "there it is", which a single static fixture cannot express.
 set -u
+
+# keepalive.sh supervises a real Windows Task Scheduler process through Orca
+# and a PowerShell/Git-Bash terminal (resolve_git_bash resolves Windows-only
+# absolute paths, on purpose -- see lib/paths.sh) -- there is no Linux
+# equivalent to fake around, so this whole suite is Windows-only. Declared
+# here, loudly, rather than discovered as seven red "git bash not found"
+# assertions the day it runs on a CI runner.
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*) ;;
+  *)
+    echo "SKIP: test-keepalive.sh requires Windows (keepalive.sh drives a real PowerShell/Git-Bash terminal via Orca)"
+    exit 0
+    ;;
+esac
+
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 KEEPALIVE="$TEST_DIR/../keepalive.sh"
 . "$TEST_DIR/harness.sh"

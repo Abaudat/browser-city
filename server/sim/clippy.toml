@@ -1,0 +1,10 @@
+# NFR25: `sim` is integer/fixed-point, ordered collections, no wall clock.
+# Enforced by `clippy::disallowed_types` (`cargo clippy -D warnings`).
+disallowed-types = [
+    { path = "f32", reason = "sim is integer/fixed-point only (NFR25)" },
+    { path = "f64", reason = "sim is integer/fixed-point only (NFR25)" },
+    { path = "std::collections::HashMap", reason = "ordered collections only -- use BTreeMap (NFR25)" },
+    { path = "std::collections::HashSet", reason = "ordered collections only -- use BTreeSet (NFR25)" },
+    { path = "std::time::SystemTime", reason = "sim never reads the wall clock -- time is an injected parameter" },
+    { path = "std::time::Instant", reason = "sim never reads the wall clock -- time is an injected parameter" },
+]

@@ -195,3 +195,29 @@ gh_issue_id() { # <n> -> the issue's database id
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_issue_id "$1"; return; }
   "$GH" api "repos/$BC_REPO/issues/$1" --jq '.id' 2>/dev/null
 }
+
+gh_branch_required_checks() { # <branch> -> JSON array of required check contexts, [] if unprotected
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_branch_required_checks "$1"; return; }
+  "$GH" api "repos/$BC_REPO/branches/$1/protection/required_status_checks" \
+    --jq '[.checks[].context]' 2>/dev/null || printf '[]'
+}
+
+gh_branch_require_check() { # <branch> <context> -- makes <context> a required status check on <branch>
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_branch_require_check "$@"; return; }
+  # strict:false -- an orchestrator merging PRs one after another has no
+  # branch-update-and-wait step, so requiring every PR to be up to date with
+  # the base would stall the second merge of any run.
+  "$GH" api "repos/$BC_REPO/branches/$1/protection" -X PUT --input - >/dev/null 2>&1 <<EOF
+{
+  "required_status_checks": { "strict": false, "checks": [{"context": "$2"}] },
+  "enforce_admins": null,
+  "required_pull_request_reviews": null,
+  "restrictions": null
+}
+EOF
+}
+
+gh_pr_check_runs() { # <sha> -> JSON array of check runs reported against that commit
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_pr_check_runs "$1"; return; }
+  "$GH" api "repos/$BC_REPO/commits/$1/check-runs" --jq '.check_runs' 2>/dev/null
+}

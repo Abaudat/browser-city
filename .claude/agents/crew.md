@@ -37,6 +37,7 @@ The lead directions are input, not suggestions.
 - **`architecture.md` is law**: You must respect the architecture that was decided, unless the leads in your task specifically say otherwise, in which case you must update the architecture file
 - **Keep documentation to the minimum**: Clear, concise and short documentation is key. Do not add decision logs or other transient information to documentation. Do not add the *why*, only the *what*.
 - **Never deploy to Maincloud**: This is the role of the CI, when testing always use a local SpacetimeDB server
+- **A story is Done per `agentic-team/definition-of-done.md`**: every item there holds before you consider a story finished, machine-checked ones via CI and hand-checked ones at review
 
 ## 3. When you are dispatched to implement
 

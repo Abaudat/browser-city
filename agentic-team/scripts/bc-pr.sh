@@ -22,6 +22,8 @@ usage: bc-pr.sh <command> [args]
   merge <pr>                        -- squash-merge and delete the branch
   for-issue <issue>                 -- {"number":n,"head":"<sha>"} of the open PR closing it
   head <pr>                         -- the PR's current head sha
+  ci-status <pr>                    -- "success" | "failure" | "pending" for $BC_REQUIRED_CHECK on its head
+  ci-run-url <pr>                    -- the $BC_REQUIRED_CHECK run's html_url, empty if none
 EOF
 }
 
@@ -103,6 +105,49 @@ head)
   sha="$(gh_pr_head "$pr")" || exit 1
   [ -n "$sha" ] || exit 1
   printf '%s\n' "$sha"
+  exit 0
+  ;;
+
+ci-status)
+  pr="${1:-}"
+  [ -n "$pr" ] || { usage; exit 2; }
+  sha="$(gh_pr_head "$pr")" || exit 1
+  [ -n "$sha" ] || exit 1
+  runs="$(gh_pr_check_runs "$sha")" || exit 1
+  run="$(printf '%s' "$runs" | "$JQ" -c --arg name "$BC_REQUIRED_CHECK" \
+    '[.[]? | select(.name == $name)][0] // empty' 2>/dev/null)"
+  # not reported yet (workflow hasn't started, or hasn't reached the
+  # aggregate job) reads the same as "still running" -- both are "pending".
+  if [ -z "$run" ] || [ "$run" = "null" ]; then
+    echo "pending"
+    exit 0
+  fi
+  status="$(printf '%s' "$run" | "$JQ" -r '.status')"
+  if [ "$status" != "completed" ]; then
+    echo "pending"
+    exit 0
+  fi
+  conclusion="$(printf '%s' "$run" | "$JQ" -r '.conclusion')"
+  # Only a conclusion that actually says the build is broken counts as
+  # "failure" -- a checks-API conclusion the workflow cannot produce today
+  # (e.g. "neutral", "action_required", "stale") must not dispatch Crew at
+  # a build that is not red; treat it as still-undecided instead.
+  case "$conclusion" in
+    success) echo "success" ;;
+    failure | timed_out | cancelled) echo "failure" ;;
+    *) echo "pending" ;;
+  esac
+  exit 0
+  ;;
+
+ci-run-url)
+  pr="${1:-}"
+  [ -n "$pr" ] || { usage; exit 2; }
+  sha="$(gh_pr_head "$pr")" || exit 1
+  [ -n "$sha" ] || exit 1
+  runs="$(gh_pr_check_runs "$sha")" || exit 1
+  printf '%s' "$runs" | "$JQ" -r --arg name "$BC_REQUIRED_CHECK" \
+    '[.[]? | select(.name == $name)][0].html_url // empty' 2>/dev/null
   exit 0
   ;;
 

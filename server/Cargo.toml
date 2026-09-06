@@ -1,3 +1,7 @@
+[workspace]
+members = ["sim", "bounds"]
+resolver = "2"
+
 [package]
 name = "browser_city"
 version = "0.1.0"
@@ -6,8 +10,26 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
+# SpacetimeDB's reducer/table macros reference host FFI symbols the wasm
+# runtime supplies, so this crate cannot be linked natively -- "cdylib" is
+# the one target `spacetime build` actually publishes. Its own tests (there
+# are none by design: NFR28 keeps reducers thin, so everything testable
+# lives in `sim`) would fail to link natively for the same reason.
 crate-type = ["cdylib"]
 
 [dependencies]
 spacetimedb = { version = "2.9.*" }
 log = "0.4"
+sim = { path = "sim" }
+# bounds is deliberately NOT a dependency here: nothing in this crate uses
+# its registry yet (there are no tables), and an edge that exists only to
+# be unused is worse than adding it back the day the first reducer needs it.
+
+[profile.release]
+# This is not a test-only setting: `build` (the wasm target `spacetime
+# build`/`spacetime publish` actually ships) uses this same profile, so the
+# published module carries both flags too, permanently -- see
+# docs/architecture.md's "Purity and determinism" section for why that is
+# the deliberate choice (NFR41) and not an oversight.
+overflow-checks = true
+debug-assertions = true

@@ -60,6 +60,28 @@ check_out "found -> bare sha" 0 cafebabe run "$FAKE_HD" head 42
 check "not found -> exit 1" 1 run "$FAKE_HD" head 999
 
 echo
+echo "ci-status: success, failure, pending (not completed and not reported at all), head not found:"
+
+FAKE_CI="$(fake_dir)"
+echo "shaGREEN" > "$FAKE_CI/gh_pr_head.50.json"
+echo '[{"name":"ci","status":"completed","conclusion":"success"}]' > "$FAKE_CI/gh_pr_check_runs.shaGREEN.json"
+check_out "completed+success -> success" 0 success run "$FAKE_CI" ci-status 50
+
+echo "shaRED" > "$FAKE_CI/gh_pr_head.51.json"
+echo '[{"name":"ci","status":"completed","conclusion":"failure"}]' > "$FAKE_CI/gh_pr_check_runs.shaRED.json"
+check_out "completed+failure -> failure" 0 failure run "$FAKE_CI" ci-status 51
+
+echo "shaYELLOW" > "$FAKE_CI/gh_pr_head.52.json"
+echo '[{"name":"ci","status":"in_progress","conclusion":null}]' > "$FAKE_CI/gh_pr_check_runs.shaYELLOW.json"
+check_out "in_progress -> pending" 0 pending run "$FAKE_CI" ci-status 52
+
+echo "shaNONE" > "$FAKE_CI/gh_pr_head.53.json"
+echo '[]' > "$FAKE_CI/gh_pr_check_runs.shaNONE.json"
+check_out "not reported at all -> pending" 0 pending run "$FAKE_CI" ci-status 53
+
+check "pr head not found -> exit 1" 1 run "$FAKE_CI" ci-status 999
+
+echo
 echo "merge: passes through gh_pr_merge's exit code:"
 
 FAKE_MG="$(fake_dir)"

@@ -82,11 +82,11 @@ render_prompt() {
 # means a hard failure -- callers treat that as broken and finish
 # immediately.
 _nudge_send() {
-  local role="$1" issue="$2" worktree="$3" uuid="$4" promptfile="$5" pr="${6:-}"
+  local role="$1" issue="$2" worktree="$3" uuid="$4" promptfile="$5" pr="${6:-}" extra_kv="${7:-}"
   local scope rendered out rc
 
   scope="$(bc_issue scope "$issue" 2>/dev/null)"
-  rendered="$(render_prompt "$promptfile" issue="$issue" pr="$pr" role="$role" scope="$scope" worktree="$worktree")"
+  rendered="$(render_prompt "$promptfile" issue="$issue" pr="$pr" role="$role" scope="$scope" worktree="$worktree" ${extra_kv:+"$extra_kv"})"
 
   out="$(bc_session ensure "$role" "$issue" "$uuid" "$worktree")"; rc=$?
   if [ "$rc" -eq 0 ] && [ "$out" = "working" ]; then
@@ -101,12 +101,15 @@ _nudge_send() {
   return 0
 }
 
-# _nudge <role> <issue> <worktree> <promptfile> [pr] -- the whole restart/
-# rejoin story. Session ids are derived from role + issue (`bc-comment
-# sessions` hands them out; nothing is recorded anywhere), so this is just:
-# make sure the role's session is up, then send it the prompt unless busy.
+# _nudge <role> <issue> <worktree> <promptfile> [pr] [extra_kv] -- the whole
+# restart/rejoin story. Session ids are derived from role + issue
+# (`bc-comment sessions` hands them out; nothing is recorded anywhere), so
+# this is just: make sure the role's session is up, then send it the prompt
+# unless busy. `extra_kv`, one "key=value" pair, only exists for
+# dispatch-ci-fix.md's `{{run_url}}` -- every other prompt is covered by
+# render_prompt's fixed set.
 _nudge() {
-  local role="$1" issue="$2" worktree="$3" promptfile="$4" pr="${5:-}"
+  local role="$1" issue="$2" worktree="$3" promptfile="$4" pr="${5:-}" extra_kv="${6:-}"
   local sessions uuid
   sessions="$(bc_comment sessions "$issue" 2>/dev/null)"
   uuid="$(printf '%s' "$sessions" | "$JQ" -r --arg r "$role" '.[$r] // empty' 2>/dev/null)"
@@ -114,7 +117,7 @@ _nudge() {
     echo "orchestrator: nudge: no session id for $role on #$issue" >&2
     return 2
   fi
-  _nudge_send "$role" "$issue" "$worktree" "$uuid" "$promptfile" "$pr"
+  _nudge_send "$role" "$issue" "$worktree" "$uuid" "$promptfile" "$pr" "$extra_kv"
 }
 
 # _nudge_all <node> <issue> <worktree> <promptfile> <pr> <role-csv> -- runs
@@ -357,10 +360,13 @@ case "$status" in
 "Leads review")
   # ===========================================================================
   # In the flowchart's order: breaker-tripped (breaker-exists), then
-  # leads-reviewed-head (stale leads), then leads-all-approved -> merging-pr,
-  # then cycles-exhausted -> tripping-breaker, else dispatching-rework. Plus
-  # the crash-idempotency repair: a PR exists but carries no status comment
-  # yet (a crashed opening-leads-review).
+  # ci-status -- pending bounded by its own tick counter (ci_pending),
+  # failure bounded by its own circuit breaker (ci_fails,
+  # ci-fails-exhausted -> tripping-ci-breaker, else dispatching-ci-fix) --
+  # then leads-reviewed-head (stale leads), then leads-all-approved ->
+  # merging-pr, then cycles-exhausted -> tripping-breaker, else
+  # dispatching-rework. Plus the crash-idempotency repair: a PR exists but
+  # carries no status comment yet (a crashed opening-leads-review).
   # ===========================================================================
   pr_json="$(bc_pr for-issue "$num")"; rc=$?
   [ "$rc" -eq 0 ] || finish 2 "breaker-tripped" "broken" "no PR found for #$num at Leads review"
@@ -374,6 +380,47 @@ case "$status" in
   if bc_comment breaker-exists "$pr" >/dev/null 2>&1; then
     finish 1 "breaker-tripped" "sleep" "breaker pending on PR #$pr"
   fi
+
+  # A lead can approve faster than CI reports, and branch protection alone
+  # cannot dispatch Crew back onto a red build -- so this reads the
+  # required check itself, before ever asking whether the leads are done,
+  # and neither waits on them nor merges while it is red or still running.
+  # Both branches below are bounded, the same way dispatching-rework is:
+  # a build Crew cannot fix, or a check that never reports at all, must not
+  # dispatch or sleep forever on nothing but hope.
+  ci="$(bc_pr ci-status "$pr")"; ci_rc=$?
+  if [ "$ci_rc" -ne 0 ]; then
+    finish 2 "ci-status" "broken" "ci-status failed for PR #$pr"
+  fi
+
+  if [ "$ci" = "pending" ]; then
+    if bc_comment counter-exceeds "$pr" ci_pending "$BC_CYCLE_LIMIT" >/dev/null 2>&1; then
+      finish 2 "ci-status" "broken" "'$BC_REQUIRED_CHECK' never reported on PR #$pr after $BC_CYCLE_LIMIT ticks"
+    fi
+    bc_comment bump-counter "$pr" ci_pending >/dev/null 2>&1
+    finish 1 "ci-status" "sleep" "CI still running on PR #$pr"
+  fi
+  # ci is failure or success from here -- either way the check DID report,
+  # so the pending clock resets.
+  bc_comment clear-counter "$pr" ci_pending >/dev/null 2>&1
+
+  if [ "$ci" = "failure" ]; then
+    if bc_comment counter-exceeds "$pr" ci_fails "$BC_CYCLE_LIMIT" >/dev/null 2>&1; then
+      bc_comment create-breaker "$pr" >/dev/null 2>&1
+      finish 0 "tripping-ci-breaker" "triggered breaker" "on PR #$pr for #$num"
+    fi
+    bc_comment bump-counter "$pr" ci_fails >/dev/null 2>&1
+    run_url="$(bc_pr ci-run-url "$pr" 2>/dev/null)"
+    _nudge crew "$num" "$wt" "$_BC_PROMPTS/dispatch-ci-fix.md" "$pr" "run_url=${run_url:-(no run url reported)}"; nrc=$?
+    [ "$nrc" -eq 2 ] && finish 2 "dispatching-ci-fix" "broken" "nudge failed for crew on PR #$pr"
+    if [ "$nrc" -eq 0 ]; then
+      finish 0 "dispatching-ci-fix" "dispatched" "crew to fix CI on PR #$pr"
+    fi
+    finish 1 "dispatching-ci-fix" "sleep" "crew already busy on PR #$pr"
+  fi
+
+  # ci = success -- clear the red-build breaker's counter too.
+  bc_comment clear-counter "$pr" ci_fails >/dev/null 2>&1
 
   stale="$(bc_comment stale-leads "$pr")"; stale_rc=$?
   if [ "$stale_rc" -eq 2 ]; then
