@@ -41,7 +41,7 @@ bc_init
 usage() {
   cat >&2 <<'EOF'
 usage: bc-issue.sh <command> [args]
-  next                        -- highest-priority Backlog sub-issue to start
+  next                        -- highest-priority Backlog issue on this sprint
   current                     -- the single sub-issue in an active status
   transition <issue> <status> -- set Status (and close on Done)
   scope <issue>                -- comma-joined leads in scope, quentin always
@@ -89,6 +89,27 @@ _bc_issue_body() {
   printf '%s' "$text"
 }
 
+# An epic exists only to group its stories, so it is never transitioned on its
+# own: it finishes exactly when its last story does. `transition <n> Done`
+# calls this after closing <n>, and it closes the parent only if every OTHER
+# sub-issue is already closed -- <n> itself is excluded because the sub-issues
+# read can still show the close we just made as open. No parent, an unreadable
+# parent, or one story still open is the ordinary case and is silent.
+_bc_issue_close_epic_if_last() { # <issue> -> parent number on stdout if closed
+  local child="$1" parent subs open
+  parent="$(gh_issue_parent "$child" 2>/dev/null)" || return 1
+  [ -n "$parent" ] || return 1
+  subs="$(gh_subissues "$parent" 2>/dev/null)" || return 1
+  open="$(printf '%s' "$subs" | "$JQ" --argjson n "$child" \
+    '[.[] | select((.number != $n)
+        and (((.state // "open") | ascii_downcase) != "closed"))] | length' \
+    2>/dev/null)" || return 1
+  [ "$open" = "0" ] || return 1
+  project_set_single "$parent" Status Done || return 1
+  gh_issue_close "$parent" || return 1
+  printf '%s' "$parent"
+}
+
 # scope logic shared by `next` (embeds it) and `scope` (prints it).
 _bc_issue_scope() { # <issue> -> comma-joined roles on stdout
   local issue="$1" labels role present="" out=()
@@ -121,18 +142,22 @@ next)
 
   items="$(project_items)" || { echo "bc-issue next: could not read project items" >&2; exit 2; }
 
+  # An epic is a grouping and nothing more: it is never started, and its own
+  # Sprint field says nothing about whether its stories are in scope -- a
+  # sprint routinely holds stories from several epics. So the sprint is read
+  # off the story itself, and the epic only ever comes back as context.
+  # Backlog is the only startable Status (an issue closed by hand keeps
+  # whatever Status it had, hence the OPEN gate), and the Demo issue is the
+  # sprint's own summary, never work to pick up.
   pick="$(printf '%s' "$items" | "$JQ" -c --arg cur "$curid" '
     def prank: if . == "Blocker" then 0 elif . == "Critical" then 1
                 elif . == "Standard" then 2 elif . == "Low" then 3 else 4 end;
-    . as $all
-    | ($all | map(select(.isParent==true and .sprintId==$cur and .status!="Done"))
-             | sort_by([(.priority|prank), .number])) as $parents
-    | [ $parents[] as $p
-        | ($all | map(select(.parent==$p.number and (.status=="Backlog" or .status==null)))
-                 | sort_by([(.priority|prank), .number])) as $subs
-        | select($subs | length > 0)
-        | {number: $subs[0].number, parent: $p.number}
-      ] | .[0] // empty
+    [ .[] | select(.isParent!=true and .state=="OPEN"
+        and .sprintId==$cur and .status=="Backlog"
+        and ((.labels|index("demo"))|not)) ]
+    | sort_by([(.priority|prank), .number])
+    | .[0] // empty
+    | {number, parent}
   ')"
   [ -n "$pick" ] || exit 1
 
@@ -170,6 +195,7 @@ transition)
   project_set_single "$issue" Status "$status" || { echo "bc-issue transition: failed to set Status" >&2; exit 2; }
   if [ "$status" = "Done" ]; then
     gh_issue_close "$issue" || { echo "bc-issue transition: failed to close issue" >&2; exit 2; }
+    _bc_issue_close_epic_if_last "$issue" >/dev/null || true
   fi
   exit 0
   ;;
