@@ -22,5 +22,10 @@ leads' call at review.
 | The consistency gate passed | Human/Machine — `agentic-team/scripts/` consistency gate, once it exists (Story 0.9) |
 
 A red required check on a PR is never left for a human to notice: the
-orchestrator reads it directly and dispatches the existing Crew session,
-without waiting on the leads and without merging, until it is green.
+orchestrator reads it directly, before ever consulting the leads, and
+dispatches Crew with a prompt naming the failing run — never merging while
+it is red. Both directions this could hang are bounded, the same way
+lead-rework is: a build Crew cannot fix trips a circuit breaker after
+`BC_CYCLE_LIMIT` consecutive dispatches, and a check that never reports at
+all finishes the wake `broken` after `BC_CYCLE_LIMIT` ticks rather than
+sleeping on it forever.

@@ -314,6 +314,41 @@ FAKE_STB_NO="$(fake_dir)"
 check_out "cycle 8, at the limit -> no" 1 no run "$FAKE_STB_NO" should-trigger-breaker 101
 
 echo
+echo "bump-counter/clear-counter/counter-exceeds: ci-status's two named, generic counters:"
+
+FAKE_BCT="$(fake_dir)"
+{ render_status 5 "quentin,tim" 1 | _comment 40; } | "$JQ" -sc '.' > "$FAKE_BCT/gh_issue_comments.103.json"
+check_out "bump-counter starts a fresh name at 1" 0 1 run "$FAKE_BCT" bump-counter 103 ci_fails
+check "bump-counter edited the status comment" 0 log_has "$FAKE_BCT/calls.log" '^gh_comment_edit 40 '
+check "the edited body carries ci_fails 1" 0 _body_has "$FAKE_BCT/calls.log" 1 "<!-- bc:ci_fails 1 -->"
+
+FAKE_BCT_NONE="$(fake_dir)"
+echo '[]' > "$FAKE_BCT_NONE/gh_issue_comments.104.json"
+check "bump-counter without a status comment exits 2" 2 run "$FAKE_BCT_NONE" bump-counter 104 ci_fails
+
+FAKE_CCT="$(fake_dir)"
+{ printf '%s\n<!-- bc:ci_fails 3 -->\n' "$(render_status 5 "quentin" 1)" | _comment 41; } | "$JQ" -sc '.' > "$FAKE_CCT/gh_issue_comments.105.json"
+check "clear-counter resets a nonzero counter" 0 run "$FAKE_CCT" clear-counter 105 ci_fails
+check "the edited body carries ci_fails 0" 0 _body_has "$FAKE_CCT/calls.log" 1 "<!-- bc:ci_fails 0 -->"
+
+FAKE_CCT_ZERO="$(fake_dir)"
+{ render_status 5 "quentin" 1 | _comment 42; } | "$JQ" -sc '.' > "$FAKE_CCT_ZERO/gh_issue_comments.106.json"
+check "clear-counter on an absent (zero) counter writes nothing" 0 run "$FAKE_CCT_ZERO" clear-counter 106 ci_fails
+check "no edit was made" 1 test -f "$FAKE_CCT_ZERO/calls.log"
+
+FAKE_CET_YES="$(fake_dir)"
+{ printf '%s\n<!-- bc:ci_pending 9 -->\n' "$(render_status 5 "quentin" 1)" | _comment 1; } | "$JQ" -sc '.' > "$FAKE_CET_YES/gh_issue_comments.107.json"
+check_out "counter-exceeds: 9 > limit 8 -> yes" 0 yes run "$FAKE_CET_YES" counter-exceeds 107 ci_pending 8
+
+FAKE_CET_NO="$(fake_dir)"
+{ printf '%s\n<!-- bc:ci_pending 8 -->\n' "$(render_status 5 "quentin" 1)" | _comment 1; } | "$JQ" -sc '.' > "$FAKE_CET_NO/gh_issue_comments.108.json"
+check_out "counter-exceeds: 8, at the limit -> no" 1 no run "$FAKE_CET_NO" counter-exceeds 108 ci_pending 8
+
+FAKE_CET_ABSENT="$(fake_dir)"
+{ render_status 5 "quentin" 1 | _comment 1; } | "$JQ" -sc '.' > "$FAKE_CET_ABSENT/gh_issue_comments.109.json"
+check_out "counter-exceeds: never bumped (absent, reads as 0) -> no" 1 no run "$FAKE_CET_ABSENT" counter-exceeds 109 ci_pending 8
+
+echo
 echo "update-analysis: rebuilds the stub with the new prose and READY; exit 2 without a stub:"
 
 FAKE_UA="$(fake_dir)"

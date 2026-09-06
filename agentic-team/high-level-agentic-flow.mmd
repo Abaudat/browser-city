@@ -34,7 +34,9 @@ flowchart TD
     subissue-status -->|"Leads review"| breaker-tripped{"Circuit breaker comment<br/>on the PR?"}
     breaker-tripped -->|yes| sleep
     breaker-tripped -->|no| ci-status{"Required check on<br/>the PR's current head"}
-    ci-status -->|failure| dispatching-ci-fix["Dispatch Crew to fix<br/>the failing build"] --> sleep
+    ci-status -->|failure| ci-fails-exhausted{"Consecutive red-build<br/>dispatches more than 8?"}
+    ci-fails-exhausted -->|no| dispatching-ci-fix["Dispatch Crew to fix<br/>the failing build"] --> sleep
+    ci-fails-exhausted -->|yes| tripping-ci-breaker["Circuit breaker:<br/>comment on the PR @-mentioning Adrian<br/>with the deadlock, what was tried,<br/>the options and a recommendation"] --> sleep
     ci-status -->|pending| sleep
     ci-status -->|success| leads-reviewed-head{"Every lead in scope<br/>reviewed the current head?"}
     leads-reviewed-head -->|no| sleep

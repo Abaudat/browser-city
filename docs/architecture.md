@@ -51,6 +51,12 @@ test lives in `sim` or `bounds`.
 Every table declares a bound in the `bounds` crate's `TABLE_BOUNDS`
 registry, mechanical or engineering (NFR37).
 
+The published module runs with `overflow-checks` and `debug-assertions` on
+(`server/Cargo.toml`'s `[profile.release]`, the profile `spacetime build`
+uses): a `debug_assert!` is a production abort, not a test-only aid, and a
+wrapping-arithmetic bug aborts the reducer rather than writing inconsistent
+state (NFR41).
+
 ## Naming
 
 

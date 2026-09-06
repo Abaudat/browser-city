@@ -26,4 +26,4 @@ citizen simulation to run it against.
 
 | Requirement | Status | Blocked on |
 | --- | --- | --- |
-| Property suite runs thousands of simulated citizen-weeks (NFR29) | deferred | a citizen simulation to generate them against |
+| Property suite runs thousands of simulated citizen-weeks (NFR29) | deferred | citizen simulation |

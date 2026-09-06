@@ -19,7 +19,7 @@ jobs:
   scripts-tests:
     name: scripts-tests
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -114,7 +114,7 @@ jobs:
       - run: rustup toolchain install
       - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
         with:
-          tool: cargo-llvm-cov
+          tool: cargo-llvm-cov@0.9.1
       # sim is pure, has no dependencies and is where the game logic will
       # live -- it has no excuse for an uncovered line. Scoped to sim only:
       # a repo-wide percentage gate only teaches people to write

@@ -397,7 +397,7 @@ write_iterations "$F_CI_FAILING"
 one_active "$F_CI_FAILING" 310 "Leads review"
 echo '{"number":67,"headRefOid":"shaRED"}' > "$F_CI_FAILING/gh_pr_for_issue.310.json"
 echo "shaRED" > "$F_CI_FAILING/gh_pr_head.67.json"
-echo '[{"name":"ci","status":"completed","conclusion":"failure"}]' > "$F_CI_FAILING/gh_pr_check_runs.shaRED.json"
+echo '[{"name":"ci","status":"completed","conclusion":"failure","html_url":"https://example.com/runs/1"}]' > "$F_CI_FAILING/gh_pr_check_runs.shaRED.json"
 { render_status 310 "quentin,tim" 1 | _comment 1; } | "$JQ" -sc '.' > "$F_CI_FAILING/gh_issue_comments.67.json"
 printf 'WT310' > "$F_CI_FAILING/orca_worktree_path.issue:310.json"
 "$JQ" -n -c --arg u "$(role8 crew 310)" '[{handle:"h1",title:("✳ bc-crew #310 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
@@ -406,6 +406,29 @@ check_out "ci-status: failing -> dispatched crew, exit 0" 0 "dispatching-ci-fix 
 check "ci-status: sent to crew's terminal" 0 log_has "$F_CI_FAILING/calls.log" '^orca_terminal_send h1 '
 check "ci-status: never spawned or nudged a lead" 1 log_has "$F_CI_FAILING/calls.log" 'bc-(quentin|tim) #310'
 check "ci-status: never merged" 1 log_has "$F_CI_FAILING/calls.log" '^gh_pr_merge'
+check "ci-status: bumped the ci_fails counter" 0 log_has "$F_CI_FAILING/calls.log" '^gh_comment_edit '
+check "ci-status: the dispatched prompt names the failing run" 0 \
+  log_has "$F_CI_FAILING/calls.log" 'https://example\.com/runs/1'
+
+# =============================================================================
+echo
+echo "ci-status: Leads review, consecutive red-build dispatches exhausted -> circuit breaker, never dispatch again"
+# =============================================================================
+F_CI_BREAKER="$(fake_dir)"
+write_iterations "$F_CI_BREAKER"
+one_active "$F_CI_BREAKER" 311 "Leads review"
+echo '{"number":167,"headRefOid":"shaREDLONG"}' > "$F_CI_BREAKER/gh_pr_for_issue.311.json"
+echo "shaREDLONG" > "$F_CI_BREAKER/gh_pr_head.167.json"
+echo '[{"name":"ci","status":"completed","conclusion":"failure"}]' > "$F_CI_BREAKER/gh_pr_check_runs.shaREDLONG.json"
+{
+  printf '%s\n<!-- bc:ci_fails 9 -->\n' "$(render_status 311 "quentin,tim" 1)" | _comment 1
+} | "$JQ" -sc '.' > "$F_CI_BREAKER/gh_issue_comments.167.json"
+printf '88\n' > "$F_CI_BREAKER/claude_oneshot_acting.judge-breaker.md.json"
+printf 'WT311' > "$F_CI_BREAKER/orca_worktree_path.issue:311.json"
+check_out "ci-status: red-build breaker triggered, exit 0" 0 "tripping-ci-breaker triggered breaker on PR #167 for #311" run "$F_CI_BREAKER" "$NOW_MIDSPRINT"
+check "ci-status: handed the thread to Scotty" 0 log_has "$F_CI_BREAKER/calls.log" '^claude_oneshot_acting judge-breaker\.md$'
+check "ci-status: never dispatched crew again" 1 log_has "$F_CI_BREAKER/calls.log" '^orca_terminal_send'
+check "ci-status: never merged" 1 log_has "$F_CI_BREAKER/calls.log" '^gh_pr_merge'
 
 # =============================================================================
 echo
@@ -420,7 +443,26 @@ echo '[{"name":"ci","status":"in_progress","conclusion":null}]' > "$F_CI_PENDING
 { render_status 320 "quentin,tim" 1 | _comment 1; } | "$JQ" -sc '.' > "$F_CI_PENDING/gh_issue_comments.68.json"
 printf 'WT320' > "$F_CI_PENDING/orca_worktree_path.issue:320.json"
 check_out "ci-status: pending -> sleep, exit 1" 1 "ci-status sleep CI still running on PR #68" run "$F_CI_PENDING" "$NOW_MIDSPRINT"
-check "ci-status: pending wrote nothing" 1 test -f "$F_CI_PENDING/calls.log"
+check "ci-status: pending bumped its own tick counter (not the leads')" 0 \
+  log_has "$F_CI_PENDING/calls.log" '^gh_comment_edit '
+check "ci-status: never spawned or nudged anyone" 1 log_has "$F_CI_PENDING/calls.log" 'orca_terminal'
+
+# =============================================================================
+echo
+echo "ci-status: Leads review, the required check never reported after 8 ticks -> broken, not an eternal sleep"
+# =============================================================================
+F_CI_PENDING_TIMEOUT="$(fake_dir)"
+write_iterations "$F_CI_PENDING_TIMEOUT"
+one_active "$F_CI_PENDING_TIMEOUT" 321 "Leads review"
+echo '{"number":168,"headRefOid":"shaYELLOWLONG"}' > "$F_CI_PENDING_TIMEOUT/gh_pr_for_issue.321.json"
+echo "shaYELLOWLONG" > "$F_CI_PENDING_TIMEOUT/gh_pr_head.168.json"
+echo '[]' > "$F_CI_PENDING_TIMEOUT/gh_pr_check_runs.shaYELLOWLONG.json"
+{
+  printf '%s\n<!-- bc:ci_pending 9 -->\n' "$(render_status 321 "quentin,tim" 1)" | _comment 1
+} | "$JQ" -sc '.' > "$F_CI_PENDING_TIMEOUT/gh_issue_comments.168.json"
+check_out "ci-status: pending timeout -> broken, exit 2" 2 \
+  "ci-status broken '$BC_REQUIRED_CHECK' never reported on PR #168 after $BC_CYCLE_LIMIT ticks" \
+  run "$F_CI_PENDING_TIMEOUT" "$NOW_MIDSPRINT"
 
 # =============================================================================
 echo

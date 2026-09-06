@@ -23,6 +23,7 @@ usage: bc-pr.sh <command> [args]
   for-issue <issue>                 -- {"number":n,"head":"<sha>"} of the open PR closing it
   head <pr>                         -- the PR's current head sha
   ci-status <pr>                    -- "success" | "failure" | "pending" for $BC_REQUIRED_CHECK on its head
+  ci-run-url <pr>                    -- the $BC_REQUIRED_CHECK run's html_url, empty if none
 EOF
 }
 
@@ -127,11 +128,26 @@ ci-status)
     exit 0
   fi
   conclusion="$(printf '%s' "$run" | "$JQ" -r '.conclusion')"
-  if [ "$conclusion" = "success" ]; then
-    echo "success"
-  else
-    echo "failure"
-  fi
+  # Only a conclusion that actually says the build is broken counts as
+  # "failure" -- a checks-API conclusion the workflow cannot produce today
+  # (e.g. "neutral", "action_required", "stale") must not dispatch Crew at
+  # a build that is not red; treat it as still-undecided instead.
+  case "$conclusion" in
+    success) echo "success" ;;
+    failure | timed_out | cancelled) echo "failure" ;;
+    *) echo "pending" ;;
+  esac
+  exit 0
+  ;;
+
+ci-run-url)
+  pr="${1:-}"
+  [ -n "$pr" ] || { usage; exit 2; }
+  sha="$(gh_pr_head "$pr")" || exit 1
+  [ -n "$sha" ] || exit 1
+  runs="$(gh_pr_check_runs "$sha")" || exit 1
+  printf '%s' "$runs" | "$JQ" -r --arg name "$BC_REQUIRED_CHECK" \
+    '[.[]? | select(.name == $name)][0].html_url // empty' 2>/dev/null
   exit 0
   ;;
 

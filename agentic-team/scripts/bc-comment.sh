@@ -45,6 +45,9 @@ usage: bc-comment.sh <command> [args]
   write-breaker <pr> <bodyfile>                 -- Scotty, tripping-breaker: post + label + assign
   bump-cycle <pr>                                -- reopening-leads-review
   breaker-exists <pr>                            -- breaker-tripped
+  bump-counter <pr> <name>                       -- ci-status: a named counter on the status comment, starting at 0
+  clear-counter <pr> <name>                      -- ci-status: resets a named counter to 0 if it is not already
+  counter-exceeds <pr> <name> <limit>            -- ci-status: yes/exit 0 when the named counter is over limit
   sessions <issue>                               -- {role: uuid}, derived from role + issue
   scope <pr>
   pending-leads <issue>                          -- leads-analysed
@@ -274,8 +277,9 @@ create-breaker)
     sissue="$(marker_get "$sbody" issue 2>/dev/null || true)"
     sscope="$(marker_get "$sbody" scope 2>/dev/null || true)"
     scycle="$(marker_get "$sbody" cycle 2>/dev/null || true)"
-    printf 'PR #%s status: issue #%s, scope: %s, review cycle: %s\n\n' \
-      "$pr" "$sissue" "$sscope" "$scycle" >> "$input"
+    sfails="$(marker_get "$sbody" ci_fails 2>/dev/null || true)"
+    printf 'PR #%s status: issue #%s, scope: %s, review cycle: %s, consecutive red-build dispatches: %s\n\n' \
+      "$pr" "$sissue" "$sscope" "$scycle" "${sfails:-0}" >> "$input"
   fi
   count="$(printf '%s' "$comments" | "$JQ" 'length')"
   i=0
@@ -360,6 +364,58 @@ bump-cycle)
   marker_set "$body" cycle "$new" | _bc_edit_comment "$id"
   printf '%s\n' "$new"
   exit 0
+  ;;
+
+# ci-status (orchestrator.sh, Leads review) needs two independent bounded
+# loops that bump-cycle/should-trigger-breaker do not fit: a red build (its
+# own circuit breaker, distinct from the lead-rework cycle) and a check that
+# never reports at all (a timeout, not a breaker). Generic name+limit so
+# both share one mechanism instead of two near-duplicates of bump-cycle.
+bump-counter)
+  pr="${1:-}" name="${2:-}"
+  [ -n "$pr" ] && [ -n "$name" ] || { usage; exit 2; }
+  comments="$(_bc_comments "$pr")"
+  status="$(_bc_find_by_marker "$comments" "status")" || {
+    echo "bc-comment bump-counter: no status comment on PR #$pr" >&2
+    exit 2
+  }
+  id="$(printf '%s' "$status" | "$JQ" -r '.id')"
+  body="$(printf '%s' "$status" | "$JQ" -r '.body')"
+  cur="$(marker_get "$body" "$name" 2>/dev/null || printf 0)"
+  new=$((cur + 1))
+  marker_set "$body" "$name" "$new" | _bc_edit_comment "$id"
+  printf '%s\n' "$new"
+  exit 0
+  ;;
+
+clear-counter)
+  pr="${1:-}" name="${2:-}"
+  [ -n "$pr" ] && [ -n "$name" ] || { usage; exit 2; }
+  comments="$(_bc_comments "$pr")"
+  status="$(_bc_find_by_marker "$comments" "status")" || {
+    echo "bc-comment clear-counter: no status comment on PR #$pr" >&2
+    exit 2
+  }
+  id="$(printf '%s' "$status" | "$JQ" -r '.id')"
+  body="$(printf '%s' "$status" | "$JQ" -r '.body')"
+  cur="$(marker_get "$body" "$name" 2>/dev/null || printf 0)"
+  [ "$cur" = "0" ] || marker_set "$body" "$name" 0 | _bc_edit_comment "$id"
+  exit 0
+  ;;
+
+counter-exceeds)
+  pr="${1:-}" name="${2:-}" limit="${3:-}"
+  [ -n "$pr" ] && [ -n "$name" ] && [ -n "$limit" ] || { usage; exit 2; }
+  comments="$(_bc_comments "$pr")"
+  status="$(_bc_find_by_marker "$comments" "status")" || { echo no; exit 1; }
+  body="$(printf '%s' "$status" | "$JQ" -r '.body')"
+  val="$(marker_get "$body" "$name" 2>/dev/null || printf 0)"
+  if [[ "$val" =~ ^[0-9]+$ ]] && [ "$val" -gt "$limit" ]; then
+    echo yes
+    exit 0
+  fi
+  echo no
+  exit 1
   ;;
 
 breaker-exists)
