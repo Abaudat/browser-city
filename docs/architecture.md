@@ -80,3 +80,12 @@ state (NFR41).
 | Rust via rustup | with `rustup target add wasm32-unknown-unknown`                |
 | SpacetimeDB CLI | `spacetime dev` for hot reload, `spacetime publish` to release |
 | Node.js         | client build                                                   |
+
+Agent tooling — declared in `.mcp.json` and `.claude/settings.json`, first-party only:
+
+| Tool | Provided as | Pinned version | Notes |
+| --- | --- | --- | --- |
+| `spacetimedb` | `spacetime mcp` CLI subcommand, `.mcp.json` | CLI 2.9.0 | `--server local` only, never Maincloud; database name comes from the local spacetime config, never hard-coded |
+| `context7` | hosted HTTP MCP, `.mcp.json` | hosted endpoint, no local version to pin | needs `${CONTEXT7_API_KEY}`; a lookup tool, never a source of truth over this file or `docs/requirements.md` |
+| `spacetimedb@spacetimedb-plugins` | Claude plugin marketplace `clockworklabs/SpacetimeDB`, `.claude/settings.json` | tag `v2.9.0`, commit `9e0d92412ff2248f401a8ad12d535f2b5ac30912` | official skills for CLI/module/client development plus its own bundled MCP entry, superseded by this file's `spacetimedb` entry (project scope beats plugin scope) |
+| `pixijs-skills@pixijs-skills` | Claude plugin marketplace `pixijs/pixijs-skills`, `.claude/settings.json` | commit `6aae70d76cf410432dd144029c07a1ad4bb12793` (no tagged release exists) | official PixiJS v8 rendering skills |

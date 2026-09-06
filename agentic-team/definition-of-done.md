@@ -17,6 +17,7 @@ leads' call at review.
 | The determinism golden matches, and moves only with an `RNG_VERSION` bump | Machine — `determinism_golden.rs`, `check-golden-version-bump.sh` |
 | `docs/trace-matrix.md` and `server/sim/tests/invariants.rs`'s `INV_*` constants name each other 1:1, and every `covered`/`deferred` row matches whether its test actually exists | Machine — `check-trace-matrix.sh` |
 | `agentic-team/scripts/tests/run-all.sh` passes | Machine — `ci` / `scripts-tests` job |
+| Agent tooling (`.mcp.json`, `.claude/settings.json`) and its record in `docs/architecture.md` agree, every version is pinned, and no community SpacetimeDB MCP package appears | Machine — `check-agent-tooling.sh` |
 | Acceptance criteria demonstrated | Human — the leads in scope, at review |
 | Tests were written before the implementation they cover | Human — the leads in scope, at review |
 | The consistency gate passed | Human/Machine — `agentic-team/scripts/` consistency gate, once it exists (Story 0.9) |
