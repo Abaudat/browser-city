@@ -81,7 +81,7 @@ check_out "over: a day past all sprints -> no" 1 no \
   run "$FAKE_C" 2026-12-25T08:00:00Z over
 
 echo
-echo "close: carries active work + its parent, clears backlog, closes the demo:"
+echo "close: carries active work + its epic, unscopes what stayed in Backlog, closes the demo:"
 
 FAKE_CL="$(fake_dir)"
 write_iterations "$FAKE_CL"
@@ -100,21 +100,43 @@ cat > "$FAKE_CL/project_items.json" <<'JSON'
 ]
 JSON
 
-check_out "close: summary carries P1+active sub+backlog sibling, clears the rest, closes the demo" 0 \
-  '{"carried":[10,11,12],"cleared":[20,21,30],"demo":99}' \
-  run "$FAKE_CL" 2026-09-03T08:00:00Z close
+# 12 is the case the sprint boundary turns on: a story scoped into Sprint 1,
+# never reached, still Backlog. It does NOT ride into Sprint 2 on the back of
+# its epic -- it keeps its Status and goes back to the unscoped backlog, for
+# the next sprint's scoping to weigh against everything else.
+check_out "close: summary carries the active sub + its epic, unscopes every Backlog item, closes the demo" 0   '{"carried":[10,11],"cleared":[12,20,21,30],"demo":99}'   run "$FAKE_CL" 2026-09-03T08:00:00Z close
 
-check "close logged carry for the parent"          0 log_has "$FAKE_CL/calls.log" '^project_set_iteration 10 sp2$'
-check "close logged carry for the active sub"      0 log_has "$FAKE_CL/calls.log" '^project_set_iteration 11 sp2$'
-check "close logged carry for the backlog sibling"  0 log_has "$FAKE_CL/calls.log" '^project_set_iteration 12 sp2$'
-check "close logged clear for the idle parent"      0 log_has "$FAKE_CL/calls.log" '^project_set_iteration 20 clear$'
+check "close logged carry for the epic of the active sub" 0 log_has "$FAKE_CL/calls.log" '^project_set_iteration 10 sp2$'
+check "close logged carry for the active sub"       0 log_has "$FAKE_CL/calls.log" '^project_set_iteration 11 sp2$'
+check "close unscoped the untouched backlog sibling" 0 log_has "$FAKE_CL/calls.log" '^project_set_iteration 12 clear$'
+check "close never carried the untouched backlog sibling" 1   log_has "$FAKE_CL/calls.log" '^project_set_iteration 12 sp2$'
+check "close logged clear for the idle epic"        0 log_has "$FAKE_CL/calls.log" '^project_set_iteration 20 clear$'
 check "close logged clear for its backlog sub"      0 log_has "$FAKE_CL/calls.log" '^project_set_iteration 21 clear$'
 check "close logged clear for the standalone issue" 0 log_has "$FAKE_CL/calls.log" '^project_set_iteration 30 clear$'
+check "close wrote no Status but the demo's"        1 log_has "$FAKE_CL/calls.log" '^project_set_single [123][0-9] '
 check "close never touched the done sub-issue"      1 log_has "$FAKE_CL/calls.log" '(^| )13( |$)'
 check "close never touched the done standalone"     1 log_has "$FAKE_CL/calls.log" '(^| )31( |$)'
 check "close never touched next sprint's own item"  1 log_has "$FAKE_CL/calls.log" '(^| )40( |$)'
 check "close marked the demo issue Done"            0 log_has "$FAKE_CL/calls.log" '^project_set_single 99 Status Done$'
 check "close closed the demo issue"                 0 log_has "$FAKE_CL/calls.log" '^gh_issue_close 99$'
+
+echo
+echo "close: two Backlog and one Reviewed, all on the closing sprint:"
+
+FAKE_CL3="$(fake_dir)"
+write_iterations "$FAKE_CL3"
+cat > "$FAKE_CL3/project_items.json" <<'JSON'
+[
+  {"number":80,"title":"Task 0, Backlog","state":"OPEN","status":"Backlog","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null},
+  {"number":81,"title":"Task 1, Backlog","state":"OPEN","status":"Backlog","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null},
+  {"number":82,"title":"Task 2, Reviewed","state":"OPEN","status":"Reviewed","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null}
+]
+JSON
+check_out "close: the Reviewed task moves on, the two Backlog tasks come off the sprint" 0   '{"carried":[82],"cleared":[80,81],"demo":null}'   run "$FAKE_CL3" 2026-09-03T08:00:00Z close
+check "close moved the Reviewed task to the next sprint" 0   log_has "$FAKE_CL3/calls.log" '^project_set_iteration 82 sp2$'
+check "close unscoped the first Backlog task"  0 log_has "$FAKE_CL3/calls.log" '^project_set_iteration 80 clear$'
+check "close unscoped the second Backlog task" 0 log_has "$FAKE_CL3/calls.log" '^project_set_iteration 81 clear$'
+check "close rewrote no Status at all"         1 log_has "$FAKE_CL3/calls.log" '^project_set_single'
 
 echo
 echo "close: no current sprint for today -> exit 2, nothing written:"

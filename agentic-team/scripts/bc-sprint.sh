@@ -198,28 +198,23 @@ close)
   sprint_items="$(printf '%s' "$items" | "$JQ" -c --arg cur "$curid" \
     '[.[] | select(.sprintId==$cur and ((.labels|index("demo"))|not))]')"
 
-  active_carry="$(printf '%s' "$sprint_items" | "$JQ" -c '
+  # What carries: work the team actually started (any status past Backlog and
+  # short of Done) plus the epic grouping it, so the sprint it moves into
+  # still shows what the story belongs to. Nothing else does -- a story left
+  # in Backlog was scoped and not reached, and it goes back to the unscoped
+  # backlog for the next sprint's scoping to consider afresh, keeping the
+  # Status it has. Status is never written here: close moves Sprint fields.
+  carry_final="$(printf '%s' "$sprint_items" | "$JQ" -c '
     def isActive: . == "To analyze" or . == "In progress" or . == "Leads review" or . == "Reviewed";
-    [.[] | select(.status | isActive)] as $active
+    [.[] | select(.state=="OPEN" and (.status | isActive))] as $active
     | ([$active[].number] + [$active[] | select(.parent != null) | .parent]) | unique
-  ')"
-
-  carry_final="$(printf '%s' "$sprint_items" | "$JQ" -c --argjson carry0 "$active_carry" '
-    reduce .[] as $it ($carry0;
-      if ($it.status != "Done")
-         and ($it.parent != null)
-         and (($carry0 | index($it.parent)) != null)
-         and ((. | index($it.number)) == null)
-      then . + [$it.number]
-      else . end)
-    | unique
   ')"
 
   # NB: "$carry | index(.number)" would be wrong here -- piping into $carry
   # rebinds `.` to $carry itself before .number is evaluated, so bind the
   # item's number to a variable first and test membership against that.
   clear_final="$(printf '%s' "$sprint_items" | "$JQ" -c --argjson carry "$carry_final" '
-    [.[] | select(.status != "Done") | .number as $n
+    [.[] | select(.state=="OPEN" and .status != "Done") | .number as $n
      | select($carry | any(. == $n) | not) | $n] | unique
   ')"
 

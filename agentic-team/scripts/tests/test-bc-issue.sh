@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Fixture-driven coverage for scripts/bc-issue.sh: next's priority ordering
-# and backlog-sub-issue gate, current's 0/1/2-active cases, transition,
+# and its sprint/Backlog/open gates, current's 0/1/2-active cases, transition
+# (including the epic that closes with its last story),
 # scope's lead-label handling, backlog's unscoped read, create-demo's call
 # sequence, the demo-current/demo-commented/demo-for gates, and the
 # integrate-feedback/write-epic/write-story half of integrating-feedback.
@@ -26,42 +27,68 @@ write_iterations() { # <dir> -- Sprint 1 active on 2026-09-01..2026-09-04
 JSON
 }
 
-echo "next: priority ordering among parents, and 'no Backlog sub-issue' skip:"
+echo "next: the sprint's own Backlog stories, by priority -- epics never enter into it:"
 
 FAKE_N1="$(fake_dir)"
 write_iterations "$FAKE_N1"
 cat > "$FAKE_N1/project_items.json" <<'JSON'
 [
-  {"number":100,"title":"Parent A (top priority, nothing left to start)","state":"OPEN","status":"In progress","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
-  {"number":101,"title":"Sub of A, already active","state":"OPEN","status":"In progress","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100},
-  {"number":102,"title":"Sub of A, done","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100},
-  {"number":300,"title":"Parent C (next highest priority, has work)","state":"OPEN","status":"Backlog","priority":"Critical","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
-  {"number":301,"title":"Sub of C, backlog","state":"OPEN","status":"Backlog","priority":"Low","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":300},
-  {"number":200,"title":"Parent B (lower priority, never reached)","state":"OPEN","status":"Backlog","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
-  {"number":201,"title":"Sub of B, backlog","state":"OPEN","status":"Backlog","priority":"Low","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":200}
+  {"number":100,"title":"Epic A, itself on no sprint","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null},
+  {"number":101,"title":"Sub of A, already active","state":"OPEN","status":"In progress","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100},
+  {"number":102,"title":"Sub of A, done","state":"CLOSED","status":"Done","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100},
+  {"number":103,"title":"Sub of A, closed by hand but still Backlog","state":"CLOSED","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100},
+  {"number":104,"title":"Sub of A, Backlog but on no sprint","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":100},
+  {"number":300,"title":"Epic C, on the sprint but never startable","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
+  {"number":301,"title":"Sub of C, backlog, on the sprint","state":"OPEN","status":"Backlog","priority":"Low","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":300},
+  {"number":201,"title":"Sub of B, backlog, on the sprint, higher priority","state":"OPEN","status":"Backlog","priority":"Critical","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":200},
+  {"number":999,"title":"Sprint 1 Demo, Backlog on the sprint but not work","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null}
 ]
 JSON
 echo '["lead:tim"]' > "$FAKE_N1/gh_issue_labels.json"
 
-check_out "next: skips the top-priority parent with no Backlog sub-issue, picks the next one down" 0 \
-  '{"number":301,"parent":300,"scope":"quentin,tim"}' \
-  run "$FAKE_N1" 2026-09-02T08:00:00Z next
+# 201 beats 301 on priority even though its epic (200) is not on the board at
+# all, and every higher-priority candidate is excluded for a different reason:
+# 100/300 are epics, 101 is not Backlog, 102/103 are closed, 104 is on no
+# sprint, 999 is the Demo issue.
+check_out "next: picks the sprint's highest-priority Backlog story, whatever epic it hangs off" 0   '{"number":201,"parent":200,"scope":"quentin,tim"}'   run "$FAKE_N1" 2026-09-02T08:00:00Z next
 
 FAKE_N2="$(fake_dir)"
 write_iterations "$FAKE_N2"
 cat > "$FAKE_N2/project_items.json" <<'JSON'
 [
-  {"number":400,"title":"Parent D","state":"OPEN","status":"Backlog","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
+  {"number":400,"title":"Epic D","state":"OPEN","status":"Backlog","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
   {"number":401,"title":"Sub, Standard priority","state":"OPEN","status":"Backlog","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":400},
   {"number":402,"title":"Sub, Blocker priority, lower number","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":400},
-  {"number":403,"title":"Sub, Blocker priority, higher number","state":"OPEN","status":null,"priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":400}
+  {"number":403,"title":"Sub, Blocker priority, higher number","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":400}
 ]
 JSON
 echo '[]' > "$FAKE_N2/gh_issue_labels.json"
 
-check_out "next: among tied top-priority sub-issues, picks the lowest number" 0 \
-  '{"number":402,"parent":400,"scope":"quentin"}' \
-  run "$FAKE_N2" 2026-09-02T08:00:00Z next
+check_out "next: among tied top-priority stories, picks the lowest number" 0   '{"number":402,"parent":400,"scope":"quentin"}'   run "$FAKE_N2" 2026-09-02T08:00:00Z next
+
+# A story that hangs off no epic is ordinary work and starts like any other;
+# its parent comes back as null rather than the pick being skipped.
+FAKE_N3="$(fake_dir)"
+write_iterations "$FAKE_N3"
+cat > "$FAKE_N3/project_items.json" <<'JSON'
+[
+  {"number":500,"title":"Standalone story on the sprint","state":"OPEN","status":"Backlog","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null}
+]
+JSON
+echo '[]' > "$FAKE_N3/gh_issue_labels.json"
+check_out "next: an epic-less story is startable, with a null parent" 0   '{"number":500,"parent":null,"scope":"quentin"}'   run "$FAKE_N3" 2026-09-02T08:00:00Z next
+
+# Statuses past Backlog belong to `current`, not `next` -- a sprint whose
+# every story is under way has nothing left to start.
+FAKE_N4="$(fake_dir)"
+write_iterations "$FAKE_N4"
+cat > "$FAKE_N4/project_items.json" <<'JSON'
+[
+  {"number":600,"title":"Reviewed, not startable","state":"OPEN","status":"Reviewed","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null},
+  {"number":601,"title":"Status unset, not startable either","state":"OPEN","status":null,"priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null}
+]
+JSON
+check "next: nothing in Backlog on the sprint -> exit 1" 1 run "$FAKE_N4" 2026-09-02T08:00:00Z next
 
 FAKE_N0="$(fake_dir)"
 write_iterations "$FAKE_N0"
@@ -104,9 +131,11 @@ echo
 echo "transition: writes Status, Done also closes the issue, invalid status is rejected:"
 
 FAKE_TR="$(fake_dir)"
+# No gh_issue_parent fixture: 55 hangs off nothing, so nothing follows it.
 check "transition to Done exits 0"          0 run "$FAKE_TR" "" transition 55 Done
 check "transition logged the status write"  0 log_has "$FAKE_TR/calls.log" '^project_set_single 55 Status Done$'
 check "transition Done also closed the issue" 0 log_has "$FAKE_TR/calls.log" '^gh_issue_close 55$'
+check "transition of an epic-less story closed nothing else" 1   log_has "$FAKE_TR/calls.log" '^gh_issue_close [^5]'
 
 FAKE_TR2="$(fake_dir)"
 check "transition to a non-Done status exits 0" 0 run "$FAKE_TR2" "" transition 56 "In progress"
@@ -117,6 +146,43 @@ check "transition to non-Done never closed the issue" 1 log_has "$FAKE_TR2/calls
 FAKE_TR3="$(fake_dir)"
 check "transition with an unknown status exits 2"       2 run "$FAKE_TR3" "" transition 57 Bogus
 check "transition with an unknown status wrote nothing" 1 test -f "$FAKE_TR3/calls.log"
+
+echo
+echo "transition Done: the epic follows its last story out, and only its last:"
+
+# 61 is the last open story of epic 60: 62 is already closed, and 61's own
+# close is not yet visible in the sub-issues read, which is exactly the case
+# the helper has to see through.
+FAKE_EP="$(fake_dir)"
+echo '60' > "$FAKE_EP/gh_issue_parent.61.json"
+cat > "$FAKE_EP/gh_subissues.60.json" <<'JSON'
+[{"number":61,"state":"open"},{"number":62,"state":"closed"}]
+JSON
+check "transition of the last story exits 0"        0 run "$FAKE_EP" "" transition 61 Done
+check "the story itself was closed"                 0 log_has "$FAKE_EP/calls.log" '^gh_issue_close 61$'
+check "the epic was marked Done"                    0 log_has "$FAKE_EP/calls.log" '^project_set_single 60 Status Done$'
+check "the epic was closed"                         0 log_has "$FAKE_EP/calls.log" '^gh_issue_close 60$'
+
+# Same epic, but 63 is still open: the epic is not finished and is left alone.
+FAKE_EP2="$(fake_dir)"
+echo '60' > "$FAKE_EP2/gh_issue_parent.61.json"
+cat > "$FAKE_EP2/gh_subissues.60.json" <<'JSON'
+[{"number":61,"state":"open"},{"number":62,"state":"closed"},{"number":63,"state":"open"}]
+JSON
+check "transition with a sibling still open exits 0" 0 run "$FAKE_EP2" "" transition 61 Done
+check "the story itself was still closed"            0 log_has "$FAKE_EP2/calls.log" '^gh_issue_close 61$'
+check "the epic was NOT marked Done"                 1 log_has "$FAKE_EP2/calls.log" '^project_set_single 60 '
+check "the epic was NOT closed"                      1 log_has "$FAKE_EP2/calls.log" '^gh_issue_close 60$'
+
+# A non-Done transition never closes anything, epic or story, even on the
+# last open story of its epic.
+FAKE_EP3="$(fake_dir)"
+echo '60' > "$FAKE_EP3/gh_issue_parent.61.json"
+cat > "$FAKE_EP3/gh_subissues.60.json" <<'JSON'
+[{"number":61,"state":"open"},{"number":62,"state":"closed"}]
+JSON
+check "transition to Leads review exits 0"  0 run "$FAKE_EP3" "" transition 61 "Leads review"
+check "and closed nothing at all"           1 log_has "$FAKE_EP3/calls.log" '^gh_issue_close'
 
 echo
 echo "scope: lead labels restricted to BC_LEADS, quentin always in, unknown leads ignored:"
