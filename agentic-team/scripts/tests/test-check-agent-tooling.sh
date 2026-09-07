@@ -34,6 +34,7 @@ JSON
     "spacetimedb@spacetimedb-plugins": true,
     "pixijs-skills@pixijs-skills": true
   },
+  "enabledMcpjsonServers": ["spacetimedb", "context7"],
   "deniedMcpServers": [
     {"serverCommand": ["spacetime", "mcp"]}
   ]
@@ -257,6 +258,26 @@ OUT="$(run_check "$D15" 2>&1)"; CODE=$?
 check "exits non-zero" 1 bash -c "exit $CODE"
 check "names the exact offending message" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF \"has an unrecognized top-level key 'disabledMcpServers'\"" _ "$OUT"
+
+echo
+echo "red: a .mcp.json server is not approved in enabledMcpjsonServers"
+D16="$(fresh_fixture)"
+TMP12="$(fake_dir)"
+jq '.enabledMcpjsonServers = ["spacetimedb"]' "$D16/.claude/settings.json" > "$TMP12/settings.json" && mv "$TMP12/settings.json" "$D16/.claude/settings.json"
+OUT="$(run_check "$D16" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the exact offending message" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF \"mcpServers.context7 is declared in .mcp.json but not approved in .claude/settings.json's enabledMcpjsonServers\"" _ "$OUT"
+
+echo
+echo "red: enabledMcpjsonServers approves a server .mcp.json does not declare"
+D17="$(fresh_fixture)"
+TMP13="$(fake_dir)"
+jq '.enabledMcpjsonServers = ["spacetimedb", "context7", "ghost"]' "$D17/.claude/settings.json" > "$TMP13/settings.json" && mv "$TMP13/settings.json" "$D17/.claude/settings.json"
+OUT="$(run_check "$D17" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the exact offending message" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF \"enabledMcpjsonServers approves 'ghost', which is not a server .mcp.json declares\"" _ "$OUT"
 
 echo
 echo "red: .mcp.json missing entirely"

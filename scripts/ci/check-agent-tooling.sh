@@ -219,7 +219,7 @@ if [ "$SETTINGS_OK" -eq 1 ] && [ -f "$SETTINGS" ]; then
   # reference -- an invented or misspelled key (like a prior cycle's
   # `disabledMcpServers`, which does not exist) must fail loudly rather than
   # sit there silently doing nothing while the doc claims it works
-  ALLOWED_SETTINGS_KEYS=(extraKnownMarketplaces enabledPlugins deniedMcpServers)
+  ALLOWED_SETTINGS_KEYS=(extraKnownMarketplaces enabledPlugins deniedMcpServers enabledMcpjsonServers)
   while IFS= read -r key; do
     [ -n "$key" ] || continue
     allowed=0
@@ -264,6 +264,27 @@ if [ "$SETTINGS_OK" -eq 1 ] && [ -f "$SETTINGS" ]; then
       fail "'$id' bundles its own '$bundled_cmd' with no --server flag; deniedMcpServers needs an exact serverCommand entry for it, or re-enabling it opens an unscoped SpacetimeDB connection"
     fi
   done <<< "$PLUGIN_IDS"
+
+  # a project .mcp.json server is not loaded until it is approved for that
+  # project, and an unattended agent session cannot answer that prompt --
+  # enabledMcpjsonServers must name exactly the servers .mcp.json declares,
+  # both directions, so a server added there without being approved fails
+  # the build instead of silently never loading
+  if [ "$MCP_OK" -eq 1 ]; then
+    APPROVED_SERVERS="$(jqr '.enabledMcpjsonServers // [] | .[]' "$SETTINGS" | sort -u)"
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      if ! printf '%s\n' "$APPROVED_SERVERS" | grep -qxF "$name"; then
+        fail "mcpServers.$name is declared in .mcp.json but not approved in .claude/settings.json's enabledMcpjsonServers -- an unattended agent session can't click through the approval prompt"
+      fi
+    done <<< "$MCP_SERVER_IDS"
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      if ! printf '%s\n' "$MCP_SERVER_IDS" | grep -qxF "$name"; then
+        fail "enabledMcpjsonServers approves '$name', which is not a server .mcp.json declares"
+      fi
+    done <<< "$APPROVED_SERVERS"
+  fi
 fi
 
 if [ "$FAILED" -ne 0 ]; then
