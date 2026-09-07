@@ -18,8 +18,9 @@ agentic-team/scripts/
     orca.sh            worktrees, terminals (one `orca` call each)
     claude.sh           session argv builders + the judgement one-shot
     markers.sh           the `<!-- bc:name value -->` comment vocabulary
-    proc.sh               the one Windows process-table query (is the loop alive?)
-    fake.sh                BC_FAKE test double: replays JSON, logs writes
+    proc.sh               the Windows process table: is the loop alive, and stop it
+    git.sh                 the supervisor's one git call: pull --ff-only
+    fake.sh                 BC_FAKE test double: replays JSON, logs writes
 
   bc-budget.sh    LEVEL 2 — the budget gate: available / spent / broken
   bc-issue.sh     LEVEL 2 — issues: next/current/transition/scope/backlog/demo-*/epics+stories/amend
@@ -67,7 +68,7 @@ agentic-team/scripts/
   orchestrator.sh LEVEL 3 — the wake: one entry point, one decision, one action
 
   run-orchestrator.sh OFF THE WAKE — the loop: orchestrator.sh, forever, ten minutes apart
-  keepalive.sh    OFF THE WAKE — the scheduled supervisor: Orca up, terminal up, loop up
+  keepalive.sh    OFF THE WAKE — the scheduled supervisor: pull, Orca up, loop restarted
   keepalive.cmd    OFF THE WAKE — the Windows Task Scheduler entry point for it
   setup-github.sh   OFF THE WAKE — idempotent one-time GitHub setup (labels, scope check)
   spike/             the Phase-0 Orca/Claude session spike, kept as documentation
@@ -147,32 +148,52 @@ without anybody typing:
 ```
 run-orchestrator.sh   the loop: orchestrator.sh, sleep BC_LOOP_INTERVAL_S (180), forever
                       tee'd to $BC_ORCHESTRATOR_LOG
-keepalive.sh          the supervisor: is Orca up, is that loop up? make it so
+keepalive.sh          the supervisor: pull, then make a current loop be the one running
 keepalive.cmd         the Task Scheduler's entry point into keepalive.sh
 ```
 
 The loop is where the cadence lives; the supervisor is what the Windows Task
 Scheduler runs every dozen minutes. It owns exactly one fact — that the loop
-is alive — and it re-derives that fact from scratch every run:
+running on this machine is a *current* one — and it re-derives that fact from
+scratch every run:
 
-1. **Orca is up and reachable.** `orca status`, else `orca open`, then polled
+1. **The worktree is up to date.** `git pull --ff-only` in
+   `BC_KEEPALIVE_WORKTREE` (`lib/git.sh`). First, because it needs nothing
+   else to be up and everything after it exists to run the code it just
+   fetched. `--ff-only` because that checkout is also a human's working
+   tree: a supervisor running unattended must never write a merge commit
+   into it or leave it MERGING for the next run to inherit. A pull that
+   cannot fast-forward is `pull=failed` in the reason line and nothing more
+   — a loop on slightly old code still moves the team.
+2. **Orca is up and reachable.** `orca status`, else `orca open`, then polled
    until the runtime answers — one `BC_ORCA_READY_TIMEOUT_S` budget covering
    the launch and the wait together, since `orca open` blocks. An
    unreachable runtime answers every selector with `ok:false`, which reads as
-   "no terminals" rather than as an error — so this check comes first or
-   every later one is a lie.
-2. **The loop is running.** A live `bash.exe` whose command line *ends in*
-   `run-orchestrator.sh` (`lib/proc.sh`). If there is one, the run is over
-   and nothing is touched — including a loop somebody started by hand, which
-   is the point: two loops ticking the same board would dispatch everything
-   twice.
-3. **Otherwise, a fresh Git Bash terminal.** Any stale tab wearing the
-   supervisor's title is closed, then `orca terminal create` makes a new one
-   in `BC_KEEPALIVE_WORKTREE` running `bash.exe -l <run-orchestrator.sh>;
+   "no terminals" rather than as an error — so this check comes before
+   anything that talks to Orca or every answer is a lie.
+3. **Any loop already running is stopped.** A live `bash.exe` whose command
+   line *ends in* `run-orchestrator.sh` is killed and confirmed gone
+   (`lib/proc.sh`) before anything else happens — including a loop somebody
+   started by hand. A loop read its scripts once, when it started, so a
+   pull that fixes the orchestrator changes nothing until something restarts
+   it; restarting costs at most one tick, because the loop holds nothing and
+   every tick re-derives the whole board. A tick in flight is a separate
+   bash that finishes on its own. `BC_KEEPALIVE_RESTART=0` opts out, and is
+   then the only way a healthy run exits 1.
+4. **A fresh Git Bash terminal.** Any stale tab wearing the supervisor's
+   title is closed, then `orca terminal create` makes a new one in
+   `BC_KEEPALIVE_WORKTREE` running `bash.exe -l <run-orchestrator.sh>;
    exit`, and the loop is confirmed to have *actually appeared* in the
    process table before the run claims to have started anything.
 
-Three deliberate choices are worth knowing before changing any of it:
+Four deliberate choices are worth knowing before changing any of it:
+
+- **The whole run lives in a `main()` called on the last line.** Step 1
+  pulls the very checkout `keepalive.sh` was read from, and bash reads a
+  script lazily by byte offset — a top-level body would resume mid-line in
+  a file that changed length underneath it. A function body is parsed in
+  full before it runs, and the libraries are sourced above it, before the
+  pull.
 
 - **It recreates the terminal; it never types into one it finds.** Orca
   terminals are PowerShell (`spike/FINDINGS.md` #2), so the Git Bash tab is
@@ -186,8 +207,12 @@ Three deliberate choices are worth knowing before changing any of it:
   loop ends, instead of leaving one renamed leftover per killed loop that
   nothing can recognise again.
 - **A process query that cannot answer is `broken`, never "not running"** —
-  the same rule as the budget gate. A query that failed open would restart a
-  loop that is already up, on every wake, forever.
+  the same rule as the budget gate, and it now guards both directions: a
+  read that failed open, a kill that could not report, or a loop still in
+  the table when the stop deadline passes all end the run *without*
+  creating a terminal. Two loops ticking the same board would dispatch
+  everything twice, and that is worse than a run that does nothing and
+  says so.
 
 ## The exit contract
 
@@ -224,9 +249,12 @@ stderr; stdout carries only that one reason line.
 | `BC_KEEPALIVE_WORKTREE=<path>` | The worktree `keepalive.sh` creates the loop's terminal in, Windows-form. | `$BC_MAIN_CHECKOUT` |
 | `BC_KEEPALIVE_TITLE=<text>` | The title that tab wears, and the only tab `keepalive.sh` will ever close. | `bc-orchestrator` |
 | `BC_LOOP_SCRIPT=<path>` | The loop `keepalive.sh` starts and hunts for in the process table. | `run-orchestrator.sh` beside `keepalive.sh` |
-| `BC_ORCA_READY_TIMEOUT_S=<s>` / `BC_LOOP_START_TIMEOUT_S=<s>` / `BC_POLL_INTERVAL_S=<s>` | How long `keepalive.sh` waits for the Orca runtime, and for the loop to appear in the process table after it creates the terminal; and how long it sleeps between polls of either. | 180 / 60 / 5 |
+| `BC_ORCA_READY_TIMEOUT_S=<s>` / `BC_LOOP_START_TIMEOUT_S=<s>` / `BC_LOOP_STOP_TIMEOUT_S=<s>` / `BC_POLL_INTERVAL_S=<s>` | How long `keepalive.sh` waits for the Orca runtime; for the loop to appear in the process table after it creates the terminal; for the old loop to leave it after being killed (still there at the deadline is `broken`, never a second loop); and how long it sleeps between polls of any of them. | 180 / 60 / 30 / 5 |
+| `BC_KEEPALIVE_PULL=0` | Skip the `git pull --ff-only` step (`pull=skipped` in the reason line). For a run against a checkout that is deliberately not on its upstream — an e2e on a throwaway base, a bisect. | unset (pull) |
+| `BC_KEEPALIVE_RESTART=0` | Leave a loop that is already running alone instead of stopping and replacing it. The run then exits 1 (`keepalive sleep loop already running …`) — the only resting state a healthy supervisor has. | unset (restart) |
 | `BC_KEEPALIVE_REASON=<file>` / `BC_KEEPALIVE_LOG=<file>` / `BC_KEEPALIVE_LOG_LINES=<n>` | Where `keepalive.sh` writes its one reason line, the log it appends every run to (the Task Scheduler keeps no output of its own), and how many lines that log is trimmed back to. | `$(bc_state_dir)/keepalive-reason.txt` / `$(bc_state_dir)/keepalive.log` / 1000 |
 | `BC_GIT_BASH=<path>` | The `bash.exe` PowerShell launches for the loop's terminal, when git is somewhere `resolve_git_bash` does not look. | derived (`%ProgramFiles%/Git/bin`, …) |
+| `BC_GIT=<path>` | The `git` the supervisor's pull runs, when git is somewhere `resolve_git` does not look. The Task Scheduler's environment predates the Git install, so this is resolved by absolute path like every other tool. | derived (`%ProgramFiles%/Git/cmd`, …) |
 
 (`lib/config.sh` also exposes plain constant overrides — `BC_REPO`,
 `BC_PROJECT_NUMBER`, `BC_LEADS`, `BC_CYCLE_LIMIT`, `BC_IDLE_MS`, `BC_TZ`,
@@ -257,7 +285,9 @@ fake.sh's read-side `.seq` fixtures to make one run see "not yet" and then
 "there it is" — the shape a single static fixture cannot express, and the
 only way to test a poll for anything but its timeout. A sequence's last line
 is never consumed, so an extra poll on a slow machine reads as the state the
-poll settled in rather than as a missing fixture. To run one
+poll settled in rather than as a missing fixture — and a restart needs all
+three answers in order, alive at the gate, gone after the kill, up after the
+create, which is exactly what `proc_running.seq` of `1 0 1` says. To run one
 file directly: `bash agentic-team/scripts/tests/test-orchestrator.sh` (it prints its own
 pass/fail summary and exits accordingly).
 

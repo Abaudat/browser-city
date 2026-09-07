@@ -60,3 +60,46 @@ bc_proc_running() { # <exe> <script>
     *)           return 0 ;;
   esac
 }
+
+# bc_proc_kill <exe> <script> -- kill every live <exe> whose command line
+# ENDS in <script>, matched exactly as bc_proc_running matches. Exit 0 at
+# least one was asked to stop, 1 there was nothing to stop, 2 could not tell.
+#
+# It exists for keepalive.sh's restart: the supervisor now stops the loop it
+# finds and starts a fresh one, so that a pull which brought in new
+# orchestrator code is actually the code that ticks. Killing is safe to do
+# mid-tick because a tick is the unit that re-derives everything (see
+# orchestrator.sh): the running orchestrator.sh child is a separate process
+# and finishes on its own, and whatever it did not reach is re-derived by
+# the first tick of the new loop.
+#
+# The third exit code carries the same weight as bc_proc_running's, from the
+# other side: a kill that cannot say whether it worked must not read as
+# "nothing was there", or the caller would start a second loop beside a
+# first one that never died -- two loops ticking the same board, dispatching
+# everything twice, which is the one outcome this whole supervisor exists to
+# prevent. -Force because the loop is a bash.exe with no window to close
+# politely, and -ErrorAction SilentlyContinue because a process that exited
+# between the query and the kill is a success, not a fault.
+bc_proc_kill() { # <exe> <script>
+  # Defaulted rather than bare, so that a caller who forgot an argument gets
+  # this function's own "could not tell" -- the code that stops the run --
+  # instead of `set -u` killing the shell out from under it mid-supervision.
+  local exe="${1:-}" script="${2:-}" ps count
+  [ -n "$exe" ] && [ -n "$script" ] || { echo "proc: exe and script are both required" >&2; return 2; }
+  if [ -n "${BC_FAKE:-}" ]; then
+    bc_fake_write proc_kill "$exe" "$script" >/dev/null
+    count="$(bc_fake_read proc_killed 2>/dev/null)" || count=1
+  else
+    ps="$(resolve_powershell)" || { echo "proc: powershell not found" >&2; return 2; }
+    count="$(BC_PROC_EXE="$exe" BC_PROC_NEEDLE="$script" "$ps" -NoProfile -NonInteractive -Command \
+      '$x=$env:BC_PROC_EXE.ToLower(); $n=$env:BC_PROC_NEEDLE.ToLower(); $p=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -and $_.Name.ToLower() -eq $x -and $_.CommandLine -and $_.CommandLine.ToLower().TrimEnd([char]32,[char]34,[char]39).EndsWith($n) }); $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; $p.Count' \
+      2>/dev/null)"
+  fi
+  count="$(printf '%s' "$count" | tr -d '[:space:]')"
+  case "$count" in
+    ''|*[!0-9]*) echo "proc: unreadable kill count: '${count}'" >&2; return 2 ;;
+    0)           return 1 ;;
+    *)           return 0 ;;
+  esac
+}

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # OFF THE WAKE -- the loop. orchestrator.sh, forever, BC_LOOP_INTERVAL_S
-# apart. This is what keepalive.sh starts in an Orca Git Bash terminal and
-# what it looks for in the process table to decide whether the team is
-# already running.
+# apart. This is what keepalive.sh starts in an Orca Git Bash terminal, and
+# what it hunts for in the process table so it can stop it before starting
+# a replacement -- a loop reads these scripts once, when it starts, so a
+# loop that outlives a pull is a loop running code that has been fixed
+# somewhere it will never see.
 #
 # It holds nothing and decides nothing: every tick re-derives the whole board
 # (see orchestrator.sh), so killing this loop costs at most one interval and
