@@ -45,7 +45,9 @@ spacetime dev --client-lang typescript \
 `reseed_codes` inserts any `sim::codes` row not already present (NFR36/NFR38) and is idempotent, so
 calling it again is always safe. `init` already calls it on a fresh database's first publish; call
 it by hand (as above) after any later publish that adds a code -- the deploy work is what should
-eventually automate this call.
+eventually automate this call. It is operator-only: `init` records whoever published the module as
+its owner, and the reducer rejects any other caller, so run the `spacetime call` above as the same
+identity that ran `spacetime publish`.
 
 `spacetime dev` rebuilds, automigrates, republishes and regenerates `client/src/net/bindings` on
 every save; existing rows survive the migration. Run `scripts/dev/check-hot-reload.sh` to verify

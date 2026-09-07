@@ -61,6 +61,13 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         max_rows: 500_000,
         kind: BoundKind::Engineering,
     },
+    // A one-row config table (the module owner, recorded from `init`) --
+    // the row count is the game rule.
+    TableBound {
+        accessor: "module_owner",
+        max_rows: 1,
+        kind: BoundKind::Mechanical,
+    },
     // NFR14's growth target: ~20,000 citizens at the 1024-squared district.
     // A real game-mechanical ceiling, not a safety valve.
     TableBound {

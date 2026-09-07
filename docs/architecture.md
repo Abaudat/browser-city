@@ -87,8 +87,13 @@ and just-in-time. So:
   reducer (called from `init`, and re-callable by hand) rather than on a
   hot lifecycle path — publishing a module that adds a code is followed by
   calling `reseed_codes`, which is the deploy work's job to automate.
+- An operator-facing reducer (`reseed_codes` is the first) is never left
+  open to any caller: `init` records the publishing identity in the
+  one-row `module_owner` table, and the reducer rejects any other caller
+  via `tables::ops::require_owner`. The next operator reducer (a balance
+  reload, a world fixup) copies this, not a fresh ad hoc check.
 - One scheduled table per system that owns a cadence (NFR34), declared
-  even before it is used, each with an owner-only reducer stub (rejects
+  even before it is used, each with a scheduler-only reducer stub (rejects
   any `ctx.sender() != ctx.database_identity()`) — never one shared tick
   table.
 - Static description and hot state never share a table (NFR35): what

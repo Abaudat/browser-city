@@ -343,6 +343,33 @@
       ]
     },
     {
+      "accessor": "module_owner",
+      "struct_name": "ModuleOwner",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "id",
+          "ty": "u8",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "owner",
+          "ty": "Identity",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "node_kind",
       "struct_name": "NodeKind",
       "public": false,

@@ -40,6 +40,7 @@ pub fn init(ctx: &ReducerContext) {
     // Called when the module is initially published. Nothing is scheduled
     // from here (story 1.2): an empty scheduled table costs nothing, and
     // the first row is a later story's problem.
+    tables::ops::record_owner_from_init(ctx);
     tables::codes::seed_all_codes(ctx);
 }
 
@@ -51,9 +52,17 @@ pub fn init(ctx: &ReducerContext) {
 /// lean on). Idempotent: safe to call after every publish that adds a
 /// code, and a no-op otherwise. `server/README.md` names the deploy step
 /// that calls it.
+///
+/// Operator-only (this module's first one): any connected client could
+/// otherwise call it, at any rate, forever -- a caller check other
+/// operator reducers this project adds later will copy, so it is built
+/// once, correctly, here rather than left open because today's blast
+/// radius happens to be small.
 #[spacetimedb::reducer]
-pub fn reseed_codes(ctx: &ReducerContext) {
+pub fn reseed_codes(ctx: &ReducerContext) -> Result<(), String> {
+    tables::ops::require_owner(ctx)?;
     tables::codes::seed_all_codes(ctx);
+    Ok(())
 }
 
 #[spacetimedb::reducer(client_connected)]

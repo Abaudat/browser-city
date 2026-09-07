@@ -11,9 +11,10 @@
 #     #[auto_inc]) must fail with the automigration rejection SpacetimeDB
 #     itself emits, and the row inserted under v1 must still be there.
 # Then publishes the real module and proves `reseed_codes` is idempotent
-# (calling it a second time changes no companion table's row count) --
-# `browser_city` has no native tests, so this is the only place that claim
-# is ever exercised against a running module.
+# for its owner (calling it a second time changes no companion table's row
+# count) and rejects a freshly-anonymous, non-owner caller -- `browser_city`
+# has no native tests, so this is the only place either claim is ever
+# exercised against a running module.
 # Every failure path below aborts loudly and immediately rather than
 # folding into a pass/fail count: a missing `spacetime` binary, a port
 # already in use, a fixture that fails to compile, a mistyped database
@@ -175,6 +176,17 @@ for table in $CODE_TABLES; do
   [ "$after" = "${BEFORE_COUNT[$table]}" ] || fail "table '$table' row count changed across a re-seed (${BEFORE_COUNT[$table]} -> $after) -- seed_all_codes is not idempotent" "$DATA_DIR/reseed.log"
 done
 echo "check-live-migration: ok -- reseed_codes changed nothing on a second call, across all four companion tables" >&2
+
+echo "check-live-migration: reseed_codes must reject a caller that is not the module owner" >&2
+OWNER_REJECTION_PATTERN="this reducer may only be invoked by the module owner"
+if spacetime call bc-live-migration-codes --server "$SERVER_URL" --no-config -y --anonymous reseed_codes \
+  >"$DATA_DIR/reseed-non-owner.log" 2>&1; then
+  fail "reseed_codes accepted a call from a freshly-anonymous, non-owner identity; it must be rejected" "$DATA_DIR/reseed-non-owner.log"
+fi
+if ! grep -qF "$OWNER_REJECTION_PATTERN" "$DATA_DIR/reseed-non-owner.log"; then
+  fail "reseed_codes rejected the non-owner call, but not for the reason the owner check names -- expected to find '$OWNER_REJECTION_PATTERN'" "$DATA_DIR/reseed-non-owner.log"
+fi
+echo "check-live-migration: ok -- a non-owner call was rejected with the owner-check message" >&2
 
 echo "check-live-migration: both halves of AC3 hold against a real SpacetimeDB instance" >&2
 exit 0

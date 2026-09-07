@@ -84,6 +84,12 @@ export const MetricsSampleSchedule = __t.object("MetricsSampleSchedule", {
 });
 export type MetricsSampleSchedule = __Infer<typeof MetricsSampleSchedule>;
 
+export const ModuleOwner = __t.object("ModuleOwner", {
+  id: __t.u8(),
+  owner: __t.identity(),
+});
+export type ModuleOwner = __Infer<typeof ModuleOwner>;
+
 export const NodeKind = __t.object("NodeKind", {
   code: __t.u32(),
   name: __t.string(),
