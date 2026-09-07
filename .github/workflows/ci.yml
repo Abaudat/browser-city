@@ -31,11 +31,19 @@ jobs:
           fetch-depth: 1
       # A change under scripts/** or .github/** can affect any job group's
       # own checks, so it is folded into every filter below rather than
-      # kept as a fifth output nothing reads. Each filter also lists every
-      # path its own guard scripts actually read (not just the source tree
-      # the job title suggests) -- a filter that misses one of its guard's
-      # inputs is a guard that silently does not run on the PR that
-      # changes exactly that input.
+      # kept as a fifth output nothing reads.
+      #
+      # The rule for every filter, checked whenever a job gains a step:
+      # list every path that job's checks actually read, not just the
+      # source tree its name suggests. A filter that misses one of its
+      # guard's inputs is a guard that silently does not run on exactly
+      # the PR that changes that input -- e.g. `client-check` runs
+      # check-bindings-current.sh and check-no-shared-code.sh, both of
+      # which read server/ (the bindings check regenerates from
+      # --module-path server; the shared-code check greps server/** for
+      # references into client/), so `client` lists server/** too. That
+      # makes `client` and `e2e` identical today, which is fine and
+      # honest: the client's checks genuinely depend on the module.
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
@@ -59,6 +67,7 @@ jobs:
               - 'docs/trace-matrix.md'
             client:
               - 'client/**'
+              - 'server/**'
               - 'scripts/**'
               - '.github/**'
             e2e:

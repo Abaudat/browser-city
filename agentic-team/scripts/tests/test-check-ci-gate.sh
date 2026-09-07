@@ -188,6 +188,27 @@ check "names the unknown job" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF \"'ghost-job', which is neither 'changes' nor a job\"" _ "$OUT"
 
 echo
+echo "red: a job exists in the workflow but is not in ci.yml's 'ci:' needs: (the reverse hole)"
+D5="$(fake_dir)"; rm -rf "$D5"; mkdir -p "$D5"
+write_good_workflow "$D5/ci.yml"
+cat >> "$D5/ci.yml" <<'YAML'
+
+  orphan-job:
+    name: orphan-job
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo noop
+YAML
+OUT="$(run_check "$ALL_SUCCESS" "$ALL_CHANGED" "$D5/ci.yml" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the orphaned job" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF \"job 'orphan-job' exists\"" _ "$OUT"
+check "explains it is invisible to the gate" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF \"is not in the 'ci:' job's needs:\"" _ "$OUT"
+
+echo
 echo "red: the changes job itself did not succeed"
 WF="$(fresh_workflow)"
 CHANGES_FAILED='{

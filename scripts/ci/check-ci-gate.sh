@@ -15,7 +15,9 @@
 # a YAML parser, which is all `if:` ever needs (even e2e's compound
 # condition contains exactly one such reference). A job in `needs:` with
 # no such reference, or more than one distinct one, fails closed rather
-# than guessing.
+# than guessing. The reverse hole is closed too: a job block that exists
+# in the workflow but was never added to `ci:`'s `needs:` would otherwise
+# stay invisible to the gate forever, not just for one run.
 #
 # Usage: check-ci-gate.sh <needs-json> <changes-json> [workflow-file]
 #   <needs-json>    ${{ toJSON(needs) }} -- {"<job>": {"result": "success"|"skipped"|"failure"|"cancelled"}, ...}
@@ -60,6 +62,34 @@ if [ -z "$NEEDS_LINE" ]; then
   exit 1
 fi
 WORKFLOW_JOBS="$(printf '%s' "$NEEDS_LINE" | sed -E 's/^ *needs: *\[(.*)\] *$/\1/' | tr ',' '\n' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+
+# --- every top-level job in the workflow (other than `changes` and `ci`
+# itself) must appear in the `ci` job's own `needs:` list -- the reverse of
+# the hole above: a job added to the workflow and never wired into `ci:`
+# stays invisible to the gate forever, not just for one run. ---------------
+ALL_JOB_NAMES="$(awk '
+  /^jobs:$/ { injobs = 1; next }
+  injobs && /^[^ ]/ { injobs = 0 }
+  injobs && /^  [A-Za-z0-9_-]+:$/ {
+    line = $0
+    sub(/^  /, "", line)
+    sub(/:$/, "", line)
+    print line
+  }
+' "$WORKFLOW")"
+while IFS= read -r job; do
+  [ -n "$job" ] || continue
+  [ "$job" = "changes" ] && continue
+  [ "$job" = "ci" ] && continue
+  if ! printf '%s\n' "$WORKFLOW_JOBS" | grep -qxF "$job"; then
+    echo "check-ci-gate: FAIL -- job '$job' exists in $WORKFLOW but is not in the 'ci:' job's needs: -- it is invisible to the gate" >&2
+    FAILED=1
+  fi
+done <<< "$ALL_JOB_NAMES"
+
+if [ "$FAILED" -ne 0 ]; then
+  exit 1
+fi
 
 # --- derive JOB_FILTER from each job's own if: -----------------------------
 declare -A JOB_FILTER
