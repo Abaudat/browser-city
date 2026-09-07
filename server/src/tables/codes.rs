@@ -34,11 +34,12 @@ pub struct NodeKind {
 }
 
 /// Inserts every code in `sim::codes` not already present in its companion
-/// table, keyed by `code`. Idempotent, so it is safe to call on every
-/// `init` and every `client_connected` (see `seed_all_codes`) -- `init`
-/// only ever runs on the very first publish, so `client_connected` is the
-/// path that lands a code added in month six (NFR38's read-through
-/// backfill posture) without waiting for a data-wiping republish.
+/// table, keyed by `code`. Idempotent, so it is safe to call from `init`
+/// and again from the `reseed_codes` reducer (`../lib.rs`) any time after
+/// -- `init` only ever runs on the module's first publish, so
+/// `reseed_codes` is the explicit, re-callable path that lands a code
+/// added in month six (NFR38's read-through backfill posture) without
+/// waiting for a data-wiping republish.
 pub fn seed_all_codes(ctx: &ReducerContext) {
     for c in sim::codes::matter_kind::CODES {
         if ctx.db.matter_kind().code().find(c.code).is_none() {

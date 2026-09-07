@@ -6,7 +6,9 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import ReseedCodesReducer from "../reseed_codes_reducer";
 import SendPingReducer from "../send_ping_reducer";
 
+export type ReseedCodesParams = __Infer<typeof ReseedCodesReducer>;
 export type SendPingParams = __Infer<typeof SendPingReducer>;
 

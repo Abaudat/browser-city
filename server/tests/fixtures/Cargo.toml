@@ -1,0 +1,10 @@
+[workspace]
+members = ["migration_v1", "migration_v2_good", "migration_v2_bad"]
+resolver = "2"
+
+# One lockfile for all three fixtures (story 1.2 review): they are only
+# ever meaningful as "v1 plus one column" pairs, and three copied
+# lockfiles guarding one column each invited exactly the silent drift
+# check-live-migration.sh exists to catch. A standalone workspace (not a
+# member of ../../Cargo.toml, which excludes this whole directory) so
+# `cargo test --workspace` at the module root never touches it.

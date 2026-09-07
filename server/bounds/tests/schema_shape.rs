@@ -4,7 +4,6 @@
 //! (`schema_snapshot_current.rs`) pins the whole shape; layer three
 //! (`scripts/ci/check-schema-additive.sh`) diffs it against history.
 
-use bounds::TABLE_BOUNDS;
 use bounds::schema::{module_src_dir, parse_module_schema, read_rust_files, reducer_names_in_dir};
 
 const COLUMN_CEILING: usize = 8;
@@ -113,18 +112,5 @@ fn every_scheduled_table_has_the_required_columns_and_names_a_real_reducer() {
     }
 }
 
-#[test]
-fn every_table_in_source_is_registered_in_table_bounds() {
-    // Belt-and-braces alongside `registry_matches_tables.rs`, which already
-    // proves this via its own independent accessor-only scanner; this one
-    // walks the fuller schema model instead so a future change to either
-    // scanner is caught by the other.
-    let registered: Vec<&str> = TABLE_BOUNDS.iter().map(|b| b.accessor).collect();
-    for table in &schema().tables {
-        assert!(
-            registered.contains(&table.accessor.as_str()),
-            "table `{}` has no bound registered in bounds::TABLE_BOUNDS (NFR37)",
-            table.accessor
-        );
-    }
-}
+// Every table has a `TABLE_BOUNDS` row (NFR37): `registry_matches_tables.rs`
+// owns that assertion; it is not duplicated here.

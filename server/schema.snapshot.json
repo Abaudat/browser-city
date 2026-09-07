@@ -13,7 +13,8 @@
           "primary_key": true,
           "auto_inc": true,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "scheduled_at",
@@ -21,7 +22,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -38,7 +40,8 @@
           "primary_key": true,
           "auto_inc": true,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "created_at",
@@ -46,7 +49,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -63,7 +67,8 @@
           "primary_key": true,
           "auto_inc": true,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "identity",
@@ -71,7 +76,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": true,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "character_id",
@@ -79,7 +85,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": true
         }
       ]
     },
@@ -96,7 +103,8 @@
           "primary_key": true,
           "auto_inc": true,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "created_at",
@@ -104,7 +112,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -121,7 +130,8 @@
           "primary_key": true,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "updated_at",
@@ -129,7 +139,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -146,7 +157,8 @@
           "primary_key": true,
           "auto_inc": true,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "scheduled_at",
@@ -154,7 +166,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -171,7 +184,8 @@
           "primary_key": true,
           "auto_inc": true,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "message",
@@ -179,7 +193,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "written_at",
@@ -187,7 +202,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -204,7 +220,8 @@
           "primary_key": true,
           "auto_inc": true,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "scheduled_at",
@@ -212,7 +229,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -229,7 +247,8 @@
           "primary_key": true,
           "auto_inc": true,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "scheduled_at",
@@ -237,7 +256,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -254,7 +274,8 @@
           "primary_key": true,
           "auto_inc": true,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "scheduled_at",
@@ -262,7 +283,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -279,7 +301,8 @@
           "primary_key": true,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "name",
@@ -287,7 +310,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -304,7 +328,8 @@
           "primary_key": true,
           "auto_inc": true,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "scheduled_at",
@@ -312,7 +337,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -329,7 +355,8 @@
           "primary_key": true,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "name",
@@ -337,7 +364,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -354,7 +382,8 @@
           "primary_key": true,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "name",
@@ -362,7 +391,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -379,7 +409,8 @@
           "primary_key": true,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "name",
@@ -387,7 +418,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -404,7 +436,8 @@
           "primary_key": true,
           "auto_inc": true,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         },
         {
           "name": "scheduled_at",
@@ -412,7 +445,8 @@
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
-          "has_default": false
+          "has_default": false,
+          "indexed": false
         }
       ]
     }

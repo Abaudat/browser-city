@@ -2,12 +2,16 @@
 # NFR33's third acceptance criterion, made mechanical: diffs
 # server/schema.snapshot.json (bounds/tests/schema_snapshot_current.rs
 # keeps it honest against the source it was generated from) against the
-# same file at the PR's merge base, and fails loudly on any of the five
+# same file at the PR's merge base, and fails loudly on any of the six
 # things automigration itself would reject:
 #   - a table's primary key changed or removed
 #   - a table's unique constraints changed or removed
 #   - a table's scheduled status changed (including which reducer it names)
 #   - a table or column removed, or a column retyped
+#   - a column inserted ahead of an existing one, or two columns reordered
+#     (the old column-name sequence must remain an ordered prefix of the
+#     new one -- comparing names as a set, the way the per-column loop
+#     below does for removal/retyping, would pass a reorder silently)
 #   - a column appended with neither #[default(...)] nor #[auto_inc]
 # A brand new table needs none of this -- it has no history to violate.
 #
@@ -90,6 +94,14 @@ while IFS= read -r acc; do
   NEW_SCHED="$(jqr -r '.scheduled_reducer // "null"' <<<"$NEW_TABLE")"
   if [ "$OLD_SCHED" != "$NEW_SCHED" ]; then
     echo "check-schema-additive: FAIL -- table '$acc' scheduled status changed: '$OLD_SCHED' -> '$NEW_SCHED'" >&2
+    FAILED=1
+  fi
+
+  OLD_COL_SEQ="$(jqr -c '[.columns[].name]' <<<"$OLD_TABLE")"
+  NEW_COL_SEQ="$(jqr -c '[.columns[].name]' <<<"$NEW_TABLE")"
+  if ! jqr -e --argjson old "$OLD_COL_SEQ" --argjson new "$NEW_COL_SEQ" \
+       '$new[0:($old | length)] == $old' <<<'null' >/dev/null; then
+    echo "check-schema-additive: FAIL -- table '$acc' columns reordered or removed (an append-only change keeps every existing column, in its original position, as a prefix): old order $OLD_COL_SEQ, new order $NEW_COL_SEQ" >&2
     FAILED=1
   fi
 

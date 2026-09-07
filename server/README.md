@@ -37,9 +37,15 @@ spacetime version use 2.9.0
 ```bash
 spacetime start --data-dir .spacetime/data --listen-addr 127.0.0.1:3000   # the local instance
 spacetime publish --yes                                                   # build + publish to it
+spacetime call browser-city reseed_codes                                  # land sim::codes' rows
 spacetime dev --client-lang typescript \
   --module-bindings-path ../client/src/net/bindings --yes                 # hot-reload on file change
 ```
+
+`reseed_codes` inserts any `sim::codes` row not already present (NFR36/NFR38) and is idempotent, so
+calling it again is always safe. `init` already calls it on a fresh database's first publish; call
+it by hand (as above) after any later publish that adds a code -- the deploy work is what should
+eventually automate this call.
 
 `spacetime dev` rebuilds, automigrates, republishes and regenerates `client/src/net/bindings` on
 every save; existing rows survive the migration. Run `scripts/dev/check-hot-reload.sh` to verify

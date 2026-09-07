@@ -43,12 +43,22 @@ pub fn init(ctx: &ReducerContext) {
     tables::codes::seed_all_codes(ctx);
 }
 
-#[spacetimedb::reducer(client_connected)]
-pub fn identity_connected(ctx: &ReducerContext) {
-    // `init` only ever runs on the module's first publish, so this is the
-    // path that lands a code added after that (NFR38) -- idempotent, so
-    // re-running it on every connection costs one indexed lookup per code.
+/// Re-runs the extensible-set seed (NFR38): `init` only ever runs on the
+/// module's first publish, so a code added in month six needs an explicit,
+/// re-callable path to land, not a write on the hottest lifecycle reducer
+/// we have (`client_connected` fires on the city with zero clients
+/// connected too, per NFR3 -- there is no "someone happens to log in" to
+/// lean on). Idempotent: safe to call after every publish that adds a
+/// code, and a no-op otherwise. `server/README.md` names the deploy step
+/// that calls it.
+#[spacetimedb::reducer]
+pub fn reseed_codes(ctx: &ReducerContext) {
     tables::codes::seed_all_codes(ctx);
+}
+
+#[spacetimedb::reducer(client_connected)]
+pub fn identity_connected(_ctx: &ReducerContext) {
+    // Called everytime a new client connects
 }
 
 #[spacetimedb::reducer(client_disconnected)]

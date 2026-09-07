@@ -26,6 +26,11 @@ pub struct ColumnDef {
     /// `#[default(...)]` is present -- NFR33's escape hatch for appending a
     /// column to a table that already has live rows.
     pub has_default: bool,
+    /// `#[index(btree)]` is present. Not itself a permanence rule (an index
+    /// can be added or dropped without touching data), but it must be
+    /// visible in the snapshot -- a trace-matrix row claiming an index
+    /// exists must be falsifiable, not merely asserted in prose.
+    pub indexed: bool,
 }
 
 /// One `#[spacetimedb::table(...)]` struct.
@@ -191,6 +196,7 @@ fn parse_field(chunk: &str) -> Option<ColumnDef> {
     let mut auto_inc = false;
     let mut unique = false;
     let mut has_default = false;
+    let mut indexed = false;
 
     let mut rest = chunk.trim();
     while let Some(stripped) = rest.trim_start().strip_prefix("#[") {
@@ -202,6 +208,7 @@ fn parse_field(chunk: &str) -> Option<ColumnDef> {
             "auto_inc" => auto_inc = true,
             "unique" => unique = true,
             "default" => has_default = true,
+            "index" => indexed = true,
             _ => {}
         }
         rest = &stripped[close + 1..];
@@ -228,6 +235,7 @@ fn parse_field(chunk: &str) -> Option<ColumnDef> {
         auto_inc,
         unique,
         has_default,
+        indexed,
     })
 }
 
@@ -265,6 +273,20 @@ fn strip_line_comments(text: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Fails closed on a bare `#[table(...)]` (legal only after `use
+/// spacetimedb::table;`): this parser only recognises the qualified
+/// `#[spacetimedb::table(...)]` spelling, so a table declared the other way
+/// would otherwise be invisible to it -- and a scanner that cannot see a
+/// table must not silently pass it.
+fn assert_no_bare_table_attr(text: &str, path: &Path) {
+    assert!(
+        !text.contains("#[table("),
+        "{} has a bare #[table(...)] -- NFR37's bounds scanner only recognises the qualified \
+         #[spacetimedb::table(...)] form; spell it out so the registry can see it",
+        path.display()
+    );
 }
 
 /// Every `#[spacetimedb::table(...)] pub struct Name { ... }` in `text`.
@@ -354,7 +376,8 @@ pub fn reducer_names_in(text: &str) -> Vec<String> {
 /// `src_dir`, sorted by accessor.
 pub fn parse_module_schema(src_dir: &Path) -> ModuleSchema {
     let mut tables = Vec::new();
-    for (_path, text) in read_rust_files(src_dir) {
+    for (path, text) in read_rust_files(src_dir) {
+        assert_no_bare_table_attr(&text, &path);
         tables.extend(tables_in(&text));
     }
     tables.sort_by(|a, b| a.accessor.cmp(&b.accessor));
@@ -415,6 +438,27 @@ mod tests {
     }
 
     #[test]
+    fn parses_an_indexed_column() {
+        let src = "#[spacetimedb::table(accessor = character_identity)]\n\
+                   pub struct CharacterIdentity {\n\
+                   #[primary_key]\n#[auto_inc]\npub mapping_id: u64,\n\
+                   #[unique]\npub identity: Identity,\n\
+                   #[index(btree)]\npub character_id: u64,\n\
+                   }";
+        let tables = tables_in(src);
+        assert!(tables[0].columns[2].indexed);
+        assert!(!tables[0].columns[2].unique);
+        assert!(!tables[0].columns[0].indexed);
+    }
+
+    #[test]
+    #[should_panic(expected = "has a bare #[table(")]
+    fn rejects_the_unqualified_spelling() {
+        let src = "use spacetimedb::table;\n#[table(accessor = person)]\nstruct Person;";
+        assert_no_bare_table_attr(src, Path::new("test.rs"));
+    }
+
+    #[test]
     fn finds_two_tables_in_one_file() {
         let src = "#[spacetimedb::table(accessor = a)]\npub struct A { #[primary_key] pub id: u64 }\n\
                    #[spacetimedb::table(accessor = b, public)]\npub struct B { #[primary_key] pub id: u64 }";
@@ -465,6 +509,7 @@ mod tests {
                     auto_inc: true,
                     unique: false,
                     has_default: false,
+                    indexed: false,
                 }],
             }],
         };
