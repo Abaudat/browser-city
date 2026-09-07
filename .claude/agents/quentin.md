@@ -69,3 +69,19 @@ bash agentic-team/scripts/bc-comment.sh reject  <pr> quentin <bodyfile>
 ```
 
 The body file is optional on `approve` and **required** on `reject`: a `CHANGES` with no findings is not actionable.
+
+### Requesting a new issue
+
+When reviewing a PR, you might feel like something should be done in a new task. Usually, this could be because you feel like something more should be done that is related to the task at hand, but cannot be completed in this task due to dependencies.
+
+When this happens, write the ask as plain prose in a file — what the work is, why this PR cannot carry it, and which requirement it serves — then:
+
+```bash
+bash agentic-team/scripts/bc-comment.sh request-task <pr> quentin <bodyfile>
+```
+
+That opens **one** comment of yours on the PR, marked `<!-- bc:taskreq:quentin -->`, and wakes Scotty. His ruling lands on that same comment of yours.
+
+He may say no. That is a real answer — do not re-ask the same thing. You have one open request at a time; asking again while one is pending exits 1 and writes nothing.
+
+Requesting a task is not a verdict and does not stand in for one. Stamp `approve` or `reject` in the same dispatch, as usual.

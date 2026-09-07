@@ -482,4 +482,105 @@ check "and the demo still moved to Reviewed" 0 \
 
 check "integrate-feedback with no issue argument exits 2" 2 run "$FAKE_FB0" "" integrate-feedback
 
+
+echo
+echo "epic-context: the story's epic, its preamble, and every sibling with its board fields:"
+
+# epic-context answers with JSON, so these assertions need jq -- the rest of
+# this file compares plain strings and never needed it resolved.
+. "$SCRIPTS_DIR/lib/config.sh"
+bc_init
+
+# ec <fakedir> <issue> <jq-filter> -- one field of epic-context's document
+ec() { local fake="$1" n="$2" filter="$3"; run "$fake" "" epic-context "$n" | "$JQ" -r "$filter"; }
+
+FAKE_EC="$(fake_dir)"
+cat > "$FAKE_EC/project_items.json" <<'JSON'
+[
+  {"number":300,"title":"Epic 3 — Combat","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},
+  {"number":301,"title":"Parry","state":"OPEN","status":"Leads review","priority":"Standard","size":"M","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["story"],"isParent":false,"parent":300},
+  {"number":302,"title":"Riposte","state":"OPEN","status":"Backlog","priority":"Low","size":"S","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":300},
+  {"number":400,"title":"Epic 4 — Trade","state":"OPEN","status":"Backlog","priority":"Low","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},
+  {"number":401,"title":"Haggling, another epic's story","state":"OPEN","status":"Backlog","priority":"Low","size":"S","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":400}
+]
+JSON
+printf 'Combat should feel weighty.' > "$FAKE_EC/gh_issue_body.300.json"
+
+check_out "epic-context names the story's epic" 0 300 ec "$FAKE_EC" 301 '.epic'
+check_out "epic-context carries the epic's title" 0 "Epic 3 — Combat" ec "$FAKE_EC" 301 '.epicTitle'
+check_out "epic-context carries the epic's preamble" 0 "Combat should feel weighty." \
+  ec "$FAKE_EC" 301 '.epicBody'
+check_out "epic-context lists every sibling of that epic and no other epic's" 0 "301 302" \
+  ec "$FAKE_EC" 301 '[.stories[].number] | join(" ")'
+check_out "epic-context carries each sibling's status, size and priority" 0 "Leads review M Standard" \
+  ec "$FAKE_EC" 301 '.stories[0] | [.status, .size, .priority] | join(" ")'
+check "epic-context read the board and wrote nothing" 1 test -f "$FAKE_EC/calls.log"
+
+# A story the board knows but that hangs off no epic: exit 1, not a document
+# with a null epic in it -- the caller must be able to tell the two apart
+# without inspecting the payload.
+FAKE_EC_NONE="$(fake_dir)"
+echo '[{"number":301,"title":"Orphan","state":"OPEN","status":"Backlog","priority":"Low","size":"S","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":null}]' \
+  > "$FAKE_EC_NONE/project_items.json"
+check "epic-context on a story in no epic exits 1" 1 run "$FAKE_EC_NONE" "" epic-context 301
+check "epic-context with no issue argument exits 2" 2 run "$FAKE_EC_NONE" "" epic-context
+
+echo
+echo "amend-story: appends above the markers, leaves the original prose, sets only the fields given:"
+
+# last_body <calls.log> -- the file the first logged write named (its path is
+# always the last token), the same trick test-bc-comment.sh uses.
+last_body() { sed -n '1p' "$1" | awk '{print $NF}'; }
+
+FAKE_AM="$(fake_dir)"
+printf 'Parry the incoming blow.\n\n## Acceptance criteria\n\n- Parry window is 200ms\n\n<!-- bc:story 3.1 -->\n' \
+  > "$FAKE_AM/gh_issue_body.301.json"
+printf 'It must also cancel the parry on a dodge input.\n\n- Dodge during parry cancels it\n' \
+  > "$FAKE_AM/amendment.md"
+
+check_out "amend-story prints the issue it amended" 0 301 \
+  run "$FAKE_AM" "" amend-story 301 "$FAKE_AM/amendment.md" L Critical
+check "amend-story rewrote the body" 0 log_has "$FAKE_AM/calls.log" '^gh_issue_edit_body 301 '
+AMENDED="$(last_body "$FAKE_AM/calls.log")"
+check "the original prose survived" 0 grep -Fq 'Parry the incoming blow.' "$AMENDED"
+check "the original acceptance criteria survived" 0 grep -Fq 'Parry window is 200ms' "$AMENDED"
+check "the amendment landed under its own heading" 0 grep -Fq '## Amendment' "$AMENDED"
+check "the amendment prose landed" 0 grep -Fq 'cancel the parry on a dodge input' "$AMENDED"
+check "the bc:story marker survived" 0 grep -Fq '<!-- bc:story 3.1 -->' "$AMENDED"
+# The provenance marker is what the epic round-trip check reads, and it reads
+# it at the bottom -- an amendment appended after it would move it.
+check_out "and the marker is still the last non-empty line" 0 '<!-- bc:story 3.1 -->' \
+  bash -c "grep -v '^[[:space:]]*\$' '$AMENDED' | tail -1"
+check "amend-story set the Size it was given" 0 \
+  log_has "$FAKE_AM/calls.log" '^project_set_single 301 Size L$'
+check "amend-story set the Priority it was given" 0 \
+  log_has "$FAKE_AM/calls.log" '^project_set_single 301 Priority Critical$'
+
+FAKE_AM2="$(fake_dir)"
+printf 'A story.\n\n<!-- bc:story 3.1 -->\n' > "$FAKE_AM2/gh_issue_body.301.json"
+printf 'And also this.\n' > "$FAKE_AM2/amendment.md"
+check "amend-story with neither size nor priority exits 0" 0 \
+  run "$FAKE_AM2" "" amend-story 301 "$FAKE_AM2/amendment.md"
+check "and touched neither field on the board" 1 \
+  log_has "$FAKE_AM2/calls.log" '^project_set_single'
+
+FAKE_AM3="$(fake_dir)"
+printf 'A story.\n\n<!-- bc:story 3.1 -->\n' > "$FAKE_AM3/gh_issue_body.301.json"
+printf 'And also this.\n' > "$FAKE_AM3/amendment.md"
+: > "$FAKE_AM3/empty.md"
+check "amend-story with an unknown size exits 2" 2 \
+  run "$FAKE_AM3" "" amend-story 301 "$FAKE_AM3/amendment.md" Huge
+check "amend-story with an unknown priority exits 2" 2 \
+  run "$FAKE_AM3" "" amend-story 301 "$FAKE_AM3/amendment.md" M Urgent
+check "amend-story with an empty body file exits 2" 2 \
+  run "$FAKE_AM3" "" amend-story 301 "$FAKE_AM3/empty.md"
+check "amend-story with no body file exits 2" 2 run "$FAKE_AM3" "" amend-story 301
+check "and none of those wrote anything" 1 test -f "$FAKE_AM3/calls.log"
+
+FAKE_AM4="$(fake_dir)"
+printf 'And also this.\n' > "$FAKE_AM4/amendment.md"
+check "amend-story on an issue with no body exits 2 rather than inventing one" 2 \
+  run "$FAKE_AM4" "" amend-story 301 "$FAKE_AM4/amendment.md"
+check "and wrote nothing" 1 test -f "$FAKE_AM4/calls.log"
+
 summary

@@ -440,6 +440,180 @@ check "mark-addressed with no crew comment exits 2" 2 run "$FAKE_MA_NONE" mark-a
 
 echo
 echo "unknown command: usage on stderr, exit 2:"
+
+echo
+echo "request-task: a lead asks, one open request at a time, and crew is refused by name:"
+
+FAKE_RT="$(fake_dir)"
+echo '[]' > "$FAKE_RT/gh_issue_comments.100.json"
+printf 'The parry window needs a tuning tool. Out of scope for this PR.\n' > "$FAKE_RT/ask.md"
+check "request-task exits 0" 0 run "$FAKE_RT" request-task 100 tim "$FAKE_RT/ask.md"
+check "it created one comment on the PR" 0 log_has "$FAKE_RT/calls.log" '^gh_comment_create 100 '
+check "the comment carries the heading" 0 _body_has "$FAKE_RT/calls.log" 1 "### Task request — tim"
+check "the comment carries the ask" 0 _body_has "$FAKE_RT/calls.log" 1 "needs a tuning tool"
+check "the comment is PENDING" 0 _body_has "$FAKE_RT/calls.log" 1 "<!-- bc:taskreq:tim PENDING -->"
+
+# Crew is refused before anything is read or written -- a silent no-op would
+# look to Crew exactly like a request that landed.
+FAKE_RT_CREW="$(fake_dir)"
+echo '[]' > "$FAKE_RT_CREW/gh_issue_comments.100.json"
+printf 'I would like a follow-up task.\n' > "$FAKE_RT_CREW/ask.md"
+check "request-task from crew exits 2" 2 run "$FAKE_RT_CREW" request-task 100 crew "$FAKE_RT_CREW/ask.md"
+check "and crew wrote nothing at all" 1 test -f "$FAKE_RT_CREW/calls.log"
+check "request-task from an unknown role exits 2" 2 \
+  run "$FAKE_RT_CREW" request-task 100 bob "$FAKE_RT_CREW/ask.md"
+check "and that wrote nothing either" 1 test -f "$FAKE_RT_CREW/calls.log"
+
+FAKE_RT_ARGS="$(fake_dir)"
+echo '[]' > "$FAKE_RT_ARGS/gh_issue_comments.100.json"
+: > "$FAKE_RT_ARGS/empty.md"
+check "request-task with an empty body file exits 2" 2 \
+  run "$FAKE_RT_ARGS" request-task 100 tim "$FAKE_RT_ARGS/empty.md"
+check "request-task with a missing body file exits 2" 2 \
+  run "$FAKE_RT_ARGS" request-task 100 tim "$FAKE_RT_ARGS/nope.md"
+check "request-task with no role exits 2" 2 run "$FAKE_RT_ARGS" request-task 100
+check "and none of those wrote anything" 1 test -f "$FAKE_RT_ARGS/calls.log"
+
+FAKE_RT_OPEN="$(fake_dir)"
+{ render_task_request tim "An earlier ask." | _comment 5; } \
+  | "$JQ" -sc '.' > "$FAKE_RT_OPEN/gh_issue_comments.100.json"
+printf 'A second ask.\n' > "$FAKE_RT_OPEN/ask.md"
+check "request-task while one is still PENDING exits 1" 1 \
+  run "$FAKE_RT_OPEN" request-task 100 tim "$FAKE_RT_OPEN/ask.md"
+check "and writes nothing" 1 test -f "$FAKE_RT_OPEN/calls.log"
+
+# Re-asking AFTER a ruling is allowed, and keeps the ruling above it: Scotty
+# reads his own last answer as part of his input next time.
+FAKE_RT_AGAIN="$(fake_dir)"
+{ render_task_request_resolved tim "The first ask." DENIED "Out of the epic's scope." | _comment 5; } \
+  | "$JQ" -sc '.' > "$FAKE_RT_AGAIN/gh_issue_comments.100.json"
+printf 'A different ask, with a requirement behind it this time.\n' > "$FAKE_RT_AGAIN/ask.md"
+check "request-task after a ruling exits 0" 0 \
+  run "$FAKE_RT_AGAIN" request-task 100 tim "$FAKE_RT_AGAIN/ask.md"
+check "it edited the same comment rather than opening a second" 0 \
+  log_has "$FAKE_RT_AGAIN/calls.log" '^gh_comment_edit 5 '
+check "and created no new comment" 1 log_has "$FAKE_RT_AGAIN/calls.log" '^gh_comment_create'
+check "the earlier ask is still there" 0 _body_has "$FAKE_RT_AGAIN/calls.log" 1 "The first ask."
+check "so is the earlier ruling" 0 _body_has "$FAKE_RT_AGAIN/calls.log" 1 "Out of the epic's scope."
+check "the new ask is there too" 0 _body_has "$FAKE_RT_AGAIN/calls.log" 1 "with a requirement behind it"
+check "and it is PENDING again" 0 _body_has "$FAKE_RT_AGAIN/calls.log" 1 "<!-- bc:taskreq:tim PENDING -->"
+
+echo
+echo "pending-task-requests: the leads still awaiting a ruling, and nobody else:"
+
+FAKE_PTR="$(fake_dir)"
+{
+  render_status 5 "quentin,tim,derek" 1 | _comment 1
+  render_task_request derek "Derek's open ask." | _comment 2
+  render_task_request_resolved tim "Tim's ask." CREATED "Opened #303." | _comment 3
+  render_task_request quentin "Quentin's open ask." | _comment 4
+} | "$JQ" -sc '.' > "$FAKE_PTR/gh_issue_comments.100.json"
+# BC_LEADS order, not comment order, so the csv is stable.
+check_out "pending-task-requests lists only the PENDING ones, in BC_LEADS order" 0 "quentin,derek" \
+  run "$FAKE_PTR" pending-task-requests 100
+check "and read-only: nothing written" 1 test -f "$FAKE_PTR/calls.log"
+
+FAKE_PTR_NONE="$(fake_dir)"
+{
+  render_status 5 "tim" 1 | _comment 1
+  render_task_request_resolved tim "Tim's ask." DENIED "No." | _comment 2
+} | "$JQ" -sc '.' > "$FAKE_PTR_NONE/gh_issue_comments.100.json"
+check "pending-task-requests with every request ruled on exits 1" 1 \
+  run "$FAKE_PTR_NONE" pending-task-requests 100
+
+FAKE_PTR_EMPTY="$(fake_dir)"
+echo '[]' > "$FAKE_PTR_EMPTY/gh_issue_comments.100.json"
+check "pending-task-requests on a PR with no requests exits 1" 1 \
+  run "$FAKE_PTR_EMPTY" pending-task-requests 100
+
+echo
+echo "judge-task-request: hands the epic, the asks and the thread to Scotty, and gates on the re-read:"
+
+# The .seq fixture is the PR before and after Scotty's call: PENDING on the
+# read that builds his input, ruled on the read that checks his work.
+_taskreq_before() {
+  {
+    render_status 5 "quentin,tim" 1 | _comment 1
+    render_task_request tim "The parry window needs a tuning tool." | _comment 2
+  } | "$JQ" -sc '.'
+}
+_taskreq_after() {
+  {
+    render_status 5 "quentin,tim" 1 | _comment 1
+    render_task_request_resolved tim "The parry window needs a tuning tool." CREATED "Opened #303 under Epic 3." | _comment 2
+  } | "$JQ" -sc '.'
+}
+
+FAKE_JTR="$(fake_dir)"
+{ _taskreq_before; _taskreq_after; } > "$FAKE_JTR/gh_issue_comments.100.seq"
+echo '[{"number":5,"title":"Parry","state":"OPEN","status":"Leads review","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":300},{"number":300,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null}]' \
+  > "$FAKE_JTR/project_items.json"
+printf 'Combat should feel weighty.' > "$FAKE_JTR/gh_issue_body.300.json"
+check_out "judge-task-request prints the roles it ruled on" 0 tim run "$FAKE_JTR" judge-task-request 100
+check "it handed the work to Scotty" 0 \
+  log_has "$FAKE_JTR/calls.log" '^claude_oneshot_acting judge-task-request\.md$'
+check "and wrote no comment itself" 1 log_has "$FAKE_JTR/calls.log" '^gh_comment_(create|edit)'
+
+# Scotty answering nothing must be loud: a request left PENDING is a node
+# that would wake to the same work every tick forever.
+FAKE_JTR_STUCK="$(fake_dir)"
+_taskreq_before > "$FAKE_JTR_STUCK/gh_issue_comments.100.json"
+echo '[{"number":5,"title":"Parry","state":"OPEN","status":"Leads review","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":300}]' \
+  > "$FAKE_JTR_STUCK/project_items.json"
+check "judge-task-request exits 2 when Scotty left the request PENDING" 2 \
+  run "$FAKE_JTR_STUCK" judge-task-request 100
+check "and the only call logged is the handoff" 0 \
+  log_has "$FAKE_JTR_STUCK/calls.log" '^claude_oneshot_acting judge-task-request\.md$'
+
+FAKE_JTR_NONE="$(fake_dir)"
+{ render_status 5 "tim" 1 | _comment 1; } | "$JQ" -sc '.' > "$FAKE_JTR_NONE/gh_issue_comments.100.json"
+check "judge-task-request with nothing pending exits 1" 1 run "$FAKE_JTR_NONE" judge-task-request 100
+check "and does not wake Scotty" 1 test -f "$FAKE_JTR_NONE/calls.log"
+
+FAKE_JTR_NOSTATUS="$(fake_dir)"
+{ render_task_request tim "An ask." | _comment 2; } | "$JQ" -sc '.' > "$FAKE_JTR_NOSTATUS/gh_issue_comments.100.json"
+check "judge-task-request with no status comment exits 2" 2 \
+  run "$FAKE_JTR_NOSTATUS" judge-task-request 100
+check "and does not wake Scotty either" 1 test -f "$FAKE_JTR_NOSTATUS/calls.log"
+
+echo
+echo "resolve-task-request: Scotty's own call -- the ruling and the state it closes, in one write:"
+
+FAKE_RES="$(fake_dir)"
+{ render_task_request tim "The parry window needs a tuning tool." | _comment 5; } \
+  | "$JQ" -sc '.' > "$FAKE_RES/gh_issue_comments.100.json"
+printf 'Opened #303 under Epic 3, sized S.\n' > "$FAKE_RES/ruling.md"
+check "resolve-task-request exits 0" 0 \
+  run "$FAKE_RES" resolve-task-request 100 tim CREATED "$FAKE_RES/ruling.md"
+check "it edited the lead's own comment" 0 log_has "$FAKE_RES/calls.log" '^gh_comment_edit 5 '
+check "the ask survived the ruling" 0 _body_has "$FAKE_RES/calls.log" 1 "needs a tuning tool"
+check "the ruling heading names the outcome" 0 _body_has "$FAKE_RES/calls.log" 1 "#### Scotty — CREATED"
+check "the ruling prose landed" 0 _body_has "$FAKE_RES/calls.log" 1 "Opened #303 under Epic 3"
+check "and the marker carries the outcome" 0 _body_has "$FAKE_RES/calls.log" 1 "<!-- bc:taskreq:tim CREATED -->"
+
+FAKE_RES2="$(fake_dir)"
+{ render_task_request derek "An ask." | _comment 5; } \
+  | "$JQ" -sc '.' > "$FAKE_RES2/gh_issue_comments.100.json"
+printf 'Not this epic.\n' > "$FAKE_RES2/ruling.md"
+: > "$FAKE_RES2/empty.md"
+check "resolve-task-request with an unknown outcome exits 2" 2 \
+  run "$FAKE_RES2" resolve-task-request 100 derek MAYBE "$FAKE_RES2/ruling.md"
+check "resolve-task-request with an empty ruling exits 2" 2 \
+  run "$FAKE_RES2" resolve-task-request 100 derek DENIED "$FAKE_RES2/empty.md"
+check "resolve-task-request with no body file exits 2" 2 \
+  run "$FAKE_RES2" resolve-task-request 100 derek DENIED
+check "resolve-task-request for a role with no request exits 2" 2 \
+  run "$FAKE_RES2" resolve-task-request 100 tim DENIED "$FAKE_RES2/ruling.md"
+check "and none of those wrote anything" 1 test -f "$FAKE_RES2/calls.log"
+
+FAKE_RES3="$(fake_dir)"
+{ render_task_request_resolved tim "An ask." DENIED "Already answered." | _comment 5; } \
+  | "$JQ" -sc '.' > "$FAKE_RES3/gh_issue_comments.100.json"
+printf 'A second, different ruling.\n' > "$FAKE_RES3/ruling.md"
+check "resolve-task-request on an already-ruled request exits 1" 1 \
+  run "$FAKE_RES3" resolve-task-request 100 tim AMENDED "$FAKE_RES3/ruling.md"
+check "and does not overwrite the ruling that stands" 1 test -f "$FAKE_RES3/calls.log"
+
 check "unknown command exits 2" 2 run "$(fake_dir)" bogus-command
 
 summary

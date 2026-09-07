@@ -24,6 +24,14 @@
 # nothing new -- praise, a question, a note about work already on the backlog
 # -- is a legitimate outcome, so the Demo issue moves to Reviewed either way
 # and the sprint rolls on the next tick rather than the node retrying forever.
+#
+# `epic-context` and `amend-story` serve judging-task-request, where a lead
+# has asked mid-review for work its PR cannot carry. epic-context is the read
+# that makes the ruling possible -- the epic and every sibling story, so
+# "fold it into #47 instead" is a move Scotty can actually see rather than
+# one he would have to guess at; amend-story is the write for that ruling,
+# appending to a story rather than rewriting it. The other two rulings need
+# nothing new: denying costs a comment, and creating is `write-story`.
 set -u
 _BC_ISSUE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/config.sh
@@ -56,6 +64,9 @@ usage: bc-issue.sh <command> [args]
                                  -- Scotty, integrating-feedback: open an epic
   write-story <epic> <id> <title> <bodyfile> <size> <priority> <leads-csv>
                                  -- Scotty, integrating-feedback: open a story
+  epic-context <issue>           -- judging-task-request: the story's epic and every sibling
+  amend-story <issue> <bodyfile> [<size>] [<priority>]
+                                 -- Scotty, judging-task-request: fold work into an existing story
 EOF
 }
 
@@ -511,6 +522,91 @@ write-story)
 
   bc_record_result "$new"
   printf '%s\n' "$new"
+  exit 0
+  ;;
+
+epic-context)
+  # judging-task-request: everything Scotty needs to rule on a lead's request
+  # without guessing -- the story in play, the epic it belongs to and that
+  # epic's preamble, and every sibling story with its status, size and
+  # priority. The whole epic is the unit of judgement here: a request only
+  # makes sense against the outcome the epic is chasing, and "modify an
+  # existing issue instead" is only reachable if the existing issues are in
+  # front of him.
+  #
+  # Epic membership is the sub-issue link, which project_items already
+  # carries as `parent`, so this is one read of the board plus one body
+  # fetch -- gh_issue_parent is only the fallback for a story the board has
+  # somehow not got an item for.
+  issue="${1:-}"
+  [ -n "$issue" ] || { usage; exit 2; }
+  items="$(project_items)" || { echo "bc-issue epic-context: could not read project items" >&2; exit 2; }
+  epic="$(printf '%s' "$items" | "$JQ" -r --argjson n "$issue" \
+    'map(select(.number==$n)) | .[0].parent // empty')"
+  [ -n "$epic" ] || epic="$(gh_issue_parent "$issue" 2>/dev/null || true)"
+  if [ -z "$epic" ]; then
+    echo "bc-issue epic-context: issue #$issue is in no epic" >&2
+    exit 1
+  fi
+  epic_body="$(gh_issue_body "$epic" 2>/dev/null || true)"
+  printf '%s' "$items" | "$JQ" -c \
+    --argjson story "$issue" --argjson epic "$epic" --arg body "$epic_body" '
+    {
+      story: $story,
+      epic: $epic,
+      epicTitle: (map(select(.number==$epic)) | .[0].title // null),
+      epicBody: $body,
+      stories: [ .[] | select(.parent==$epic)
+                 | {number, title, state, status, size, priority} ]
+                 | sort_by(.number)
+    }'
+  exit 0
+  ;;
+
+amend-story)
+  # judging-task-request, the "fold it into work that already exists" ruling.
+  # The amendment is APPENDED under its own heading rather than replacing the
+  # body: the story's original prose and acceptance criteria are what the
+  # leads pre-registered against, and rewriting them out from under a task in
+  # flight would silently move the target. Size and Priority are optional --
+  # more work often means a bigger story, but not always, and an omitted one
+  # is left exactly as the board has it rather than reset to a default.
+  issue="${1:-}" bodyfile="${2:-}" size="${3:-}" prio="${4:-}"
+  [ -n "$issue" ] && [ -n "$bodyfile" ] || { usage; exit 2; }
+  [ -z "$size" ] || _bc_issue_check_option "$size" "$_BC_SIZES" size amend-story || exit 2
+  [ -z "$prio" ] || _bc_issue_check_option "$prio" "$_BC_PRIORITIES" priority amend-story || exit 2
+  amendment="$(_bc_issue_body "$bodyfile" amend-story)" || exit 2
+
+  current="$(gh_issue_body "$issue" 2>/dev/null || true)"
+  if [ -z "$(printf '%s' "$current" | tr -d '[:space:]')" ]; then
+    echo "bc-issue amend-story: issue #$issue has no body to amend" >&2
+    exit 2
+  fi
+
+  # The `bc:story` provenance marker stays at the bottom of the body, where
+  # the round-trip check looks for it, so the amendment goes in ahead of the
+  # first marker line rather than after everything.
+  out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-amend-out.XXXXXX")"
+  printf '%s\n' "$current" | awk -v amd="$amendment" '
+    BEGIN { done = 0 }
+    /^<!-- bc:/ && !done { print "## Amendment\n\n" amd "\n"; done = 1 }
+    { print }
+    END { if (!done) print "\n## Amendment\n\n" amd }
+  ' > "$out"
+  # Deliberately NOT rm'd, unlike write-demo/write-epic/write-story's body
+  # files and for the same reason _bc_write_comment in bc-comment.sh keeps
+  # its own: this is the only writer here whose product is a body ASSEMBLED
+  # from something already on GitHub rather than handed in whole, so the
+  # only way to assert it kept the original prose and left the marker at the
+  # bottom is to read back the exact path gh_issue_edit_body logged. Left
+  # for the OS temp directory to reap.
+  gh_issue_edit_body "$issue" "$out" || { echo "bc-issue amend-story: gh_issue_edit_body failed" >&2; exit 2; }
+
+  [ -z "$size" ] || project_set_single "$issue" Size "$size"
+  [ -z "$prio" ] || project_set_single "$issue" Priority "$prio"
+
+  bc_record_result "$issue"
+  printf '%s\n' "$issue"
   exit 0
   ;;
 

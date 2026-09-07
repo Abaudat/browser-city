@@ -221,3 +221,12 @@ gh_pr_check_runs() { # <sha> -> JSON array of check runs reported against that c
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_pr_check_runs "$1"; return; }
   "$GH" api "repos/$BC_REPO/commits/$1/check-runs" --jq '.check_runs' 2>/dev/null
 }
+
+# --- appended by the task-request work --------------------------------------
+# Scotty's `amend-story` rewrites a story's body in place to fold a lead's
+# request into work that already exists. Nothing else here writes a body: an
+# issue's prose was previously only ever set at creation time.
+gh_issue_edit_body() { # <n> <bodyfile>
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_issue_edit_body "$@"; return; }
+  "$GH" api "repos/$BC_REPO/issues/$1" -X PATCH -F body="@$2" >/dev/null 2>&1
+}

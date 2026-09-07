@@ -22,7 +22,7 @@ agentic-team/scripts/
     fake.sh                BC_FAKE test double: replays JSON, logs writes
 
   bc-budget.sh    LEVEL 2 — the budget gate: available / spent / broken
-  bc-issue.sh     LEVEL 2 — issues: next/current/transition/scope/backlog/demo-*/epics+stories
+  bc-issue.sh     LEVEL 2 — issues: next/current/transition/scope/backlog/demo-*/epics+stories/amend
   bc-comment.sh    LEVEL 2 — the structured-comment reads and writes
   bc-pr.sh          LEVEL 2 — PRs: open/merge/for-issue/head
   bc-sprint.sh       LEVEL 2 — sprints: current/next/over/items/close/start/write-scope
@@ -31,30 +31,38 @@ agentic-team/scripts/
   prompts/        dispatch-*.md (sent into a running role session) and
                   judge-*.md (system prompts for the one-shot judgement calls)
 
-  Four actions in the flow need judgement rather than derivation, and each is
-  a `judge-*.md` one-shot as Scotty — the agent reduced to those four calls in
-  `.claude/agents/scotty.md`. All four produce an artefact rather than an
-  answer, so all four run through `claude_oneshot_acting`, which loads
+  Five actions in the flow need judgement rather than derivation, and each is
+  a `judge-*.md` one-shot as Scotty — the agent reduced to those five calls in
+  `.claude/agents/scotty.md`. All five produce an artefact rather than an
+  answer, so all five run through `claude_oneshot_acting`, which loads
   `--agent scotty`, gives him Bash and Write, and appends the judge prompt as
   that call's job (`--system-prompt` would replace the agent's prompt rather
   than add to it). Each then calls a level-2 `write-*` command itself:
   `judge-demo-summary.md` writes the Sprint Demo body and opens the issue via
   `bc-issue.sh write-demo`, `judge-breaker.md` writes the breaker note and
   posts it via `bc-comment.sh write-breaker`, `judge-sprint-scope.md` picks
-  the next sprint's stories and moves them via `bc-sprint.sh write-scope`, and
+  the next sprint's stories and moves them via `bc-sprint.sh write-scope`,
   `judge-feedback.md` turns Adrian's demo feedback into backlog work via
-  `bc-issue.sh write-epic` / `write-story`. The judgement and the thing
-  carrying it are made in one call, so neither can exist without the other;
-  the caller learns what was created through `BC_WRITE_RESULT`, since Scotty's
-  stdout is not the product.
+  `bc-issue.sh write-epic` / `write-story`, and `judge-task-request.md` rules
+  on a lead's mid-review request for work via `bc-issue.sh amend-story` or
+  `write-story` — the new story going under the epic of the PR'd issue — then
+  stamps the ruling via `bc-comment.sh resolve-task-request`. The judgement
+  and the thing carrying it are made in one call, so neither can exist without
+  the other; the caller learns what was created through `BC_WRITE_RESULT`,
+  since Scotty's stdout is not the product.
 
-  `judge-feedback.md` is the one exception to that last clause, because it
-  opens an unknown number of issues and `BC_WRITE_RESULT` holds one value.
+  `judge-feedback.md` and `judge-task-request.md` are the two exceptions to
+  that last clause: each may write an unknown number of things, and
+  `BC_WRITE_RESULT` holds one value. Both re-read the state afterwards
+  instead, and the difference between them is what that re-read is for.
   `integrate-feedback` counts the open, unscoped items on the board before and
-  after the call instead, and reports the difference — a report, not a gate.
-  It marks the Demo issue `Reviewed` either way: feedback that asks for
-  nothing new, or that the backlog already covers, is a legitimate outcome,
-  and stalling the sprint on it would only make the node retry forever.
+  after and reports the difference — a report, not a gate. It marks the Demo
+  issue `Reviewed` either way: feedback that asks for nothing new, or that the
+  backlog already covers, is a legitimate outcome, and stalling the sprint on
+  it would only make the node retry forever. `judge-task-request` re-reads the
+  requests themselves, and there it IS the gate: one left `PENDING` is exit 2,
+  because unlike an empty demo it is a node that would wake to the same work
+  every tick forever.
 
   orchestrator.sh LEVEL 3 — the wake: one entry point, one decision, one action
 

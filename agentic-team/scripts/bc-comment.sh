@@ -16,6 +16,20 @@
 # without Scotty's prose in it -- and it is why write-breaker is in the
 # bc-sdlc skill: Scotty is a caller of this script, not just its subject.
 #
+# `judge-task-request` and `resolve-task-request` are that same split for the
+# other node Scotty owns here, task-requested/judging-task-request: a lead has
+# asked mid-review for work its PR cannot carry, and Scotty rules on it
+# against the whole epic. It differs from the breaker in one way that shapes
+# it: he may rule on several requests in one call, so there is no single
+# BC_WRITE_RESULT to read back and the gate is the re-read instead -- a
+# request still PENDING after the handoff is a hard failure, because leaving
+# one would wake the same node to the same work every tick forever.
+#
+# Only a lead can ask. `request-task` refuses crew by name, markers.sh
+# renders no crew request, and BC_LEADS is what pending-task-requests
+# iterates -- three layers that all agree, so the rule holds even where one
+# of them is read past.
+#
 # One writer per comment, always found by marker: every write command below
 # locates its comment via `_bc_find_by_marker` and `gh_comment_edit`s it --
 # none of them ever calls gh_comment_create a second time for the same
@@ -60,6 +74,11 @@ usage: bc-comment.sh <command> [args]
   approve <pr> <role> [bodyfile]                 -- a lead, Leads review
   reject <pr> <role> [bodyfile]                  -- a lead, Leads review
   mark-addressed <pr> [bodyfile]                 -- Crew, Reviewed
+  request-task <pr> <role> <bodyfile>            -- a lead, Leads review: ask Scotty for work (never crew)
+  pending-task-requests <pr>                     -- task-requested
+  judge-task-request <pr>                        -- judging-task-request (hands it to Scotty)
+  resolve-task-request <pr> <role> <outcome> <bodyfile>
+                                                 -- Scotty, judging-task-request: DENIED|AMENDED|CREATED
 EOF
 }
 
@@ -212,6 +231,64 @@ _bc_unapproved_leads() {
   return 0
 }
 
+
+# --- task requests -----------------------------------------------------------
+# The three outcomes Scotty may reach on a lead's request, and the state
+# machine they close: PENDING -> one of these, once. Spelled out here so an
+# outcome outside the list is exit 2 rather than a marker nobody reads.
+_BC_TASK_OUTCOMES="DENIED|AMENDED|CREATED"
+
+# _bc_comment_body <bodyfile> <command> -> the file's prose, trailing blanks
+# trimmed, or exit 2. Same contract as bc-issue.sh's _bc_issue_body: a body
+# file holds only its author's prose, and an empty one is an error rather
+# than an empty comment.
+_bc_comment_body() {
+  local f="$1" who="$2" text
+  [ -f "$f" ] || { echo "bc-comment $who: no such body file: $f" >&2; return 2; }
+  text="$(sed -e 's/[[:space:]]*$//' "$f")"
+  if [ -z "$(printf '%s' "$text" | tr -d '[:space:]')" ]; then
+    echo "bc-comment $who: the body file is empty" >&2
+    return 2
+  fi
+  printf '%s' "$text"
+}
+
+# _bc_task_state <body> <role> -> PENDING | DENIED | AMENDED | CREATED. A
+# comment carrying the marker with no value at all is read as PENDING: the
+# request is undeniably there, and treating an unreadable state as "already
+# handled" would drop it silently.
+_bc_task_state() {
+  marker_get "$1" "taskreq:$2" 2>/dev/null || printf PENDING
+}
+
+# _bc_task_prose <body> -> the request comment's prose: everything between
+# the "### Task request" heading and the markers, Scotty's earlier ruling
+# sections included. Every write of this comment re-renders it from this, so
+# the history accumulates instead of being overwritten -- the same shape
+# _bc_review_history gives a lead's review comment.
+_bc_task_prose() {
+  printf '%s\n' "$1" | awk '
+    /^<!-- bc:/ { exit }
+    /^### Task request — / { next }
+    { print }
+  ' | sed -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba' -e '}'
+}
+
+# _bc_pending_task_requests <comments-json> -> csv of the leads whose request
+# is still PENDING ; exit 1 if none. BC_LEADS is the iteration order, so the
+# csv is stable rather than in comment order, and crew cannot appear in it at
+# all -- it is not a lead.
+_bc_pending_task_requests() {
+  local comments="$1" role stub body out=()
+  for role in $BC_LEADS; do
+    stub="$(_bc_find_by_marker "$comments" "taskreq:${role}")" || continue
+    body="$(printf '%s' "$stub" | "$JQ" -r '.body')"
+    [ "$(_bc_task_state "$body" "$role")" = "PENDING" ] && out+=("$role")
+  done
+  [ "${#out[@]}" -gt 0 ] || return 1
+  local IFS=','
+  printf '%s' "${out[*]}"
+}
 cmd="${1:-}"
 [ -n "$cmd" ] || { usage; exit 2; }
 shift || true
@@ -613,6 +690,147 @@ mark-addressed)
     printf '<!-- bc:crew -->\n'
     printf '<!-- bc:addressed %s -->\n' "$head"
   } | _bc_edit_comment "$id"
+  exit 0
+  ;;
+
+request-task)
+  # A lead, mid-review, asking for work its PR cannot carry. Crew is refused
+  # by name and loudly: Crew implements what the backlog already says, and a
+  # silent no-op here would look to Crew exactly like a request that landed.
+  pr="${1:-}" role="${2:-}" bodyfile="${3:-}"
+  [ -n "$pr" ] && [ -n "$role" ] && [ -n "$bodyfile" ] || { usage; exit 2; }
+  if [ "$role" = "crew" ]; then
+    echo "bc-comment request-task: crew cannot request task creation -- raise it on the PR and let a lead decide" >&2
+    exit 2
+  fi
+  if [[ " $BC_LEADS " != *" $role "* ]]; then
+    echo "bc-comment request-task: unknown lead '$role' (want one of: $BC_LEADS)" >&2
+    exit 2
+  fi
+  ask="$(_bc_comment_body "$bodyfile" request-task)" || exit 2
+
+  comments="$(_bc_comments "$pr")"
+  if stub="$(_bc_find_by_marker "$comments" "taskreq:${role}")"; then
+    id="$(printf '%s' "$stub" | "$JQ" -r '.id')"
+    body="$(printf '%s' "$stub" | "$JQ" -r '.body')"
+    state="$(_bc_task_state "$body" "$role")"
+    # One open request per lead at a time: Scotty rules on what is in front
+    # of him, and a second ask stacked on an unanswered one would be judged
+    # as though it were the first.
+    if [ "$state" = "PENDING" ]; then
+      echo "bc-comment request-task: $role already has a request awaiting Scotty on PR #$pr" >&2
+      exit 1
+    fi
+    # Re-asking after a ruling keeps the ruling above it -- Scotty reads his
+    # own last answer as part of the input, so "you already said no to this"
+    # is something he can see rather than something only the lead remembers.
+    history="$(_bc_task_prose "$body")"
+    [ -n "$history" ] && ask="$(printf '%s\n\n%s' "$history" "$ask")"
+    render_task_request "$role" "$ask" | _bc_edit_comment "$id"
+    exit 0
+  fi
+  render_task_request "$role" "$ask" | _bc_write_comment "$pr"
+  exit 0
+  ;;
+
+pending-task-requests)
+  pr="${1:-}"
+  [ -n "$pr" ] || { usage; exit 2; }
+  comments="$(_bc_comments "$pr")"
+  out="$(_bc_pending_task_requests "$comments")" || exit 1
+  printf '%s\n' "$out"
+  exit 0
+  ;;
+
+judge-task-request)
+  # judging-task-request, the gathering half. Same shape as create-breaker:
+  # this command assembles what Scotty needs and hands it over, and Scotty
+  # calls `resolve-task-request` back himself, so a request and its ruling
+  # are written in one step and there is no state in which one exists
+  # without the other.
+  #
+  # Unlike create-breaker there is no BC_WRITE_RESULT to read: Scotty may
+  # rule on several requests in one call. What landed is re-derived from the
+  # comments instead -- and here that re-read IS the gate rather than a
+  # report, because a request left PENDING is a node that would wake to the
+  # same work every tick forever.
+  pr="${1:-}"
+  [ -n "$pr" ] || { usage; exit 2; }
+  comments="$(_bc_comments "$pr")"
+  status="$(_bc_find_by_marker "$comments" "status")" || {
+    echo "bc-comment judge-task-request: no status comment on PR #$pr" >&2
+    exit 2
+  }
+  sbody="$(printf '%s' "$status" | "$JQ" -r '.body')"
+  issue="$(marker_get "$sbody" issue 2>/dev/null || true)"
+  [ -n "$issue" ] || { echo "bc-comment judge-task-request: no bc:issue on PR #$pr's status comment" >&2; exit 2; }
+
+  pending="$(_bc_pending_task_requests "$comments")" || exit 1
+
+  input="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-comment-taskreq.XXXXXX")"
+  {
+    printf 'PR #%s, story #%s.\n\n' "$pr" "$issue"
+    printf -- '--- the epic ---\n'
+    bash "$_BC_ISSUE_SH" epic-context "$issue" 2>/dev/null || printf '(the story is in no epic)\n'
+    printf -- '\n--- the requests awaiting a ruling ---\n'
+    IFS=',' read -ra _pending <<< "$pending"
+    for role in "${_pending[@]}"; do
+      stub="$(_bc_find_by_marker "$comments" "taskreq:${role}")" || continue
+      body="$(printf '%s' "$stub" | "$JQ" -r '.body')"
+      printf -- '- %s:\n%s\n\n' "$role" "$(_bc_task_prose "$body")"
+    done
+    printf -- '\n--- the PR thread ---\n'
+    count="$(printf '%s' "$comments" | "$JQ" 'length')"
+    i=0
+    while [ "$i" -lt "$count" ]; do
+      body="$(printf '%s' "$comments" | "$JQ" -r --argjson i "$i" '.[$i].body' | tr -d '\r')"
+      heading="$(printf '%s\n' "$body" | grep -m1 '^###' || true)"
+      stripped="$(printf '%s\n' "$body" | grep -v '<!-- bc:' || true)"
+      printf -- '---\n%s\n\n%s\n\n' "${heading:-(comment)}" "$stripped"
+      i=$((i + 1))
+    done
+  } > "$input"
+
+  promptdir="$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/bc-comment-taskreq-prompt.XXXXXX")"
+  prompt="$promptdir/judge-task-request.md"
+  claude_render_prompt "$_BC_COMMENT_DIR/prompts/judge-task-request.md" \
+    scripts="$_BC_COMMENT_DIR" pr="$pr" issue="$issue" > "$prompt"
+
+  claude_oneshot_acting "$prompt" "$input"
+  rm -rf "$promptdir"
+  rm -f "$input"
+
+  still="$(_bc_pending_task_requests "$(_bc_comments "$pr")" || true)"
+  if [ -n "$still" ]; then
+    echo "bc-comment judge-task-request: judge-task-request.md left $still still PENDING on PR #$pr" >&2
+    exit 2
+  fi
+  printf '%s\n' "$pending"
+  exit 0
+  ;;
+
+resolve-task-request)
+  # Scotty's own call: the ruling and the state it puts the request in, in
+  # one write. DENIED needs no other action; AMENDED and CREATED are stamped
+  # only after the `bc-issue.sh` call that made them true, so a ruling that
+  # says a story exists is a ruling whose story exists.
+  pr="${1:-}" role="${2:-}" outcome="${3:-}" bodyfile="${4:-}"
+  [ -n "$pr" ] && [ -n "$role" ] && [ -n "$outcome" ] && [ -n "$bodyfile" ] || { usage; exit 2; }
+  if [[ "|$_BC_TASK_OUTCOMES|" != *"|$outcome|"* ]]; then
+    echo "bc-comment resolve-task-request: unknown outcome '$outcome' (want one of: ${_BC_TASK_OUTCOMES//|/, })" >&2
+    exit 2
+  fi
+  ruling="$(_bc_comment_body "$bodyfile" resolve-task-request)" || exit 2
+  comments="$(_bc_comments "$pr")"
+  stub="$(_bc_find_by_marker "$comments" "taskreq:${role}")" || {
+    echo "bc-comment resolve-task-request: no task request from $role on PR #$pr" >&2
+    exit 2
+  }
+  id="$(printf '%s' "$stub" | "$JQ" -r '.id')"
+  body="$(printf '%s' "$stub" | "$JQ" -r '.body')"
+  [ "$(_bc_task_state "$body" "$role")" = "PENDING" ] || exit 1
+  render_task_request_resolved "$role" "$(_bc_task_prose "$body")" "$outcome" "$ruling" \
+    | _bc_edit_comment "$id"
   exit 0
   ;;
 
