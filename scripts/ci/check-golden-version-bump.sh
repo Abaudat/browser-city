@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Guards the determinism golden itself: if tests/goldens/*.golden changed
-# since the base, sim::rng::RNG_VERSION must have changed too -- a golden
-# that moves without a version bump means "generation output moved" went
-# unnoticed, which is exactly what the determinism harness exists to catch.
+# Guards the determinism golden itself: if tests/goldens/rng_*.golden
+# changed since the base, sim::rng::RNG_VERSION must have changed too -- a
+# golden that moves without a version bump means "generation output moved"
+# went unnoticed, which is exactly what the determinism harness exists to
+# catch. Scoped to the `rng_*` prefix rather than every `*.golden` in the
+# directory: other goldens (e.g. `codes_v1.golden`, pinning sim::codes'
+# code-to-name mapping) are not keyed by RNG_VERSION and must not trip this
+# check.
 #
 # A guard that cannot resolve a base to diff against must not read as
 # "nothing to guard": outside CI (a bare local run, no base given) that is a
@@ -39,7 +43,7 @@ git rev-parse --verify "$BASE" >/dev/null 2>&1 || _fail_or_skip "base ref '$BASE
 
 MERGE_BASE="$(git merge-base "$BASE" HEAD)"
 
-CHANGED_GOLDENS="$(git diff --name-only "$MERGE_BASE" HEAD -- 'server/sim/tests/goldens/*.golden')"
+CHANGED_GOLDENS="$(git diff --name-only "$MERGE_BASE" HEAD -- 'server/sim/tests/goldens/rng_*.golden')"
 if [ -z "$CHANGED_GOLDENS" ]; then
   echo "check-golden-version-bump: no golden changed -- nothing to guard" >&2
   exit 0

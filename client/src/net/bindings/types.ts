@@ -10,10 +10,101 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const BudgetReviewSchedule = __t.object("BudgetReviewSchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type BudgetReviewSchedule = __Infer<typeof BudgetReviewSchedule>;
+
+export const Character = __t.object("Character", {
+  characterId: __t.u64(),
+  createdAt: __t.timestamp(),
+});
+export type Character = __Infer<typeof Character>;
+
+export const CharacterIdentity = __t.object("CharacterIdentity", {
+  mappingId: __t.u64(),
+  identity: __t.identity(),
+  characterId: __t.u64(),
+});
+export type CharacterIdentity = __Infer<typeof CharacterIdentity>;
+
+export const Citizen = __t.object("Citizen", {
+  citizenId: __t.u64(),
+  createdAt: __t.timestamp(),
+});
+export type Citizen = __Infer<typeof Citizen>;
+
+export const CitizenState = __t.object("CitizenState", {
+  citizenId: __t.u64(),
+  updatedAt: __t.timestamp(),
+});
+export type CitizenState = __Infer<typeof CitizenState>;
+
+export const CitizenTransitionSchedule = __t.object("CitizenTransitionSchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type CitizenTransitionSchedule = __Infer<typeof CitizenTransitionSchedule>;
+
 export const DemoPing = __t.object("DemoPing", {
   id: __t.u64(),
   message: __t.string(),
   writtenAt: __t.timestamp(),
 });
 export type DemoPing = __Infer<typeof DemoPing>;
+
+export const EconomySchedule = __t.object("EconomySchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type EconomySchedule = __Infer<typeof EconomySchedule>;
+
+export const GrowthSchedule = __t.object("GrowthSchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type GrowthSchedule = __Infer<typeof GrowthSchedule>;
+
+export const MaintenanceSchedule = __t.object("MaintenanceSchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type MaintenanceSchedule = __Infer<typeof MaintenanceSchedule>;
+
+export const MatterKind = __t.object("MatterKind", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type MatterKind = __Infer<typeof MatterKind>;
+
+export const MetricsSampleSchedule = __t.object("MetricsSampleSchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type MetricsSampleSchedule = __Infer<typeof MetricsSampleSchedule>;
+
+export const NodeKind = __t.object("NodeKind", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type NodeKind = __Infer<typeof NodeKind>;
+
+export const Provision = __t.object("Provision", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type Provision = __Infer<typeof Provision>;
+
+export const ReasonCode = __t.object("ReasonCode", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type ReasonCode = __Infer<typeof ReasonCode>;
+
+export const WorldClockSchedule = __t.object("WorldClockSchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type WorldClockSchedule = __Infer<typeof WorldClockSchedule>;
 
