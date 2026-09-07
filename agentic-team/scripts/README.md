@@ -137,7 +137,8 @@ to carry a uuid, and Crew — which never writes on the issue — gets no stub.
 without anybody typing:
 
 ```
-run-orchestrator.sh   the loop: orchestrator.sh, sleep BC_LOOP_INTERVAL_S (600), forever
+run-orchestrator.sh   the loop: orchestrator.sh, sleep BC_LOOP_INTERVAL_S (180), forever
+                      tee'd to $BC_ORCHESTRATOR_LOG
 keepalive.sh          the supervisor: is Orca up, is that loop up? make it so
 keepalive.cmd         the Task Scheduler's entry point into keepalive.sh
 ```
@@ -210,7 +211,8 @@ stderr; stdout carries only that one reason line.
 | `BC_SESSION_CAP=<0..1>` / `BC_WEEKLY_CAP=<0..1>` | The budget gate's two caps. At or above one is a skip. | `0.85` / `0.80` |
 | `BC_RATE_MONITOR=<path>` | The `claude-rate-monitor` binary, when it is somewhere `resolve_rate_monitor` does not look. | derived (`%APPDATA%/npm`, then PATH) |
 | `BC_SESSION_MODE=main` | `bc-session.sh worktree` returns `$BC_MAIN_CHECKOUT` instead of creating/looking up an Orca worktree-per-issue — the spike's documented fallback if Orca worktrees are ever unavailable. | unset (worktree-per-issue) |
-| `BC_LOOP_INTERVAL_S=<s>` | How long `run-orchestrator.sh` sleeps between ticks. Reachable through `$BC_ENV_FILE`, which is the only channel that reaches the loop — Orca creates its terminal, so it inherits Orca's environment, not the supervisor's. | 600 |
+| `BC_LOOP_INTERVAL_S=<s>` | How long `run-orchestrator.sh` sleeps between ticks. Reachable through `$BC_ENV_FILE`, which is the only channel that reaches the loop — Orca creates its terminal, so it inherits Orca's environment, not the supervisor's. | 180 |
+| `BC_ORCHESTRATOR_LOG=<file>` | The file `run-orchestrator.sh` tees the loop's whole output to — its own line plus every tick's stdout and stderr. Appended to, never rotated: Orca's scrollback dies with the tab, so this is the only record of what the loop did, including a tick that crashed before writing to the board. | `$(bc_state_dir)/orchestrator.log` |
 | `BC_KEEPALIVE_WORKTREE=<path>` | The worktree `keepalive.sh` creates the loop's terminal in, Windows-form. | `$BC_MAIN_CHECKOUT` |
 | `BC_KEEPALIVE_TITLE=<text>` | The title that tab wears, and the only tab `keepalive.sh` will ever close. | `bc-orchestrator` |
 | `BC_LOOP_SCRIPT=<path>` | The loop `keepalive.sh` starts and hunts for in the process table. | `run-orchestrator.sh` beside `keepalive.sh` |
