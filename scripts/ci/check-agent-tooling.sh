@@ -215,6 +215,22 @@ if [ "$MCP_OK" -eq 1 ]; then
 fi
 
 if [ "$SETTINGS_OK" -eq 1 ] && [ -f "$SETTINGS" ]; then
+  # allowlist of top-level keys, confirmed against Claude Code's settings
+  # reference -- an invented or misspelled key (like a prior cycle's
+  # `disabledMcpServers`, which does not exist) must fail loudly rather than
+  # sit there silently doing nothing while the doc claims it works
+  ALLOWED_SETTINGS_KEYS=(extraKnownMarketplaces enabledPlugins deniedMcpServers)
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    allowed=0
+    for k in "${ALLOWED_SETTINGS_KEYS[@]}"; do
+      if [ "$key" = "$k" ]; then allowed=1; fi
+    done
+    if [ "$allowed" -ne 1 ]; then
+      fail "$SETTINGS has an unrecognized top-level key '$key' -- confirm it against Claude Code's settings reference before adding it"
+    fi
+  done <<< "$(jqr 'keys[]' "$SETTINGS")"
+
   # allowlist of first-party marketplace repos, replacing a community-package
   # denylist that could only ever ban names it already knew about
   FIRST_PARTY_REPOS=(
@@ -226,12 +242,28 @@ if [ "$SETTINGS_OK" -eq 1 ] && [ -f "$SETTINGS" ]; then
     repo="$(jqr --arg m "$mp" '.extraKnownMarketplaces[$m].source.repo // empty' "$SETTINGS")"
     allowed=0
     for fp in "${FIRST_PARTY_REPOS[@]}"; do
-      [ "$repo" = "$fp" ] && allowed=1
+      if [ "$repo" = "$fp" ]; then allowed=1; fi
     done
     if [ "$allowed" -ne 1 ]; then
       fail "marketplace '$mp' sources from '$repo', which is not on the first-party allowlist"
     fi
   done <<< "$(jqr '.enabledPlugins // {} | keys[] | split("@")[1]' "$SETTINGS" | sort -u)"
+
+  # plugins known to bundle their own flagless MCP server must have it
+  # blocked exactly -- a documentation claim about closing a Maincloud path
+  # is worthless without a machine behind it
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    bundled_cmd=""
+    case "$id" in
+      spacetimedb@spacetimedb-plugins) bundled_cmd="spacetime mcp" ;;
+    esac
+    [ -n "$bundled_cmd" ] || continue
+    DENIED_COMMANDS="$(jqr '.deniedMcpServers // [] | .[] | select(.serverCommand) | .serverCommand | join(" ")' "$SETTINGS")"
+    if ! printf '%s\n' "$DENIED_COMMANDS" | grep -qxF "$bundled_cmd"; then
+      fail "'$id' bundles its own '$bundled_cmd' with no --server flag; deniedMcpServers needs an exact serverCommand entry for it, or re-enabling it opens an unscoped SpacetimeDB connection"
+    fi
+  done <<< "$PLUGIN_IDS"
 fi
 
 if [ "$FAILED" -ne 0 ]; then

@@ -19,7 +19,7 @@
     "spacetimedb@spacetimedb-plugins": true,
     "pixijs-skills@pixijs-skills": true
   },
-  "disabledMcpServers": [
-    "mcp__plugin_spacetimedb_spacetimedb"
+  "deniedMcpServers": [
+    { "serverCommand": ["spacetime", "mcp"] }
   ]
 }

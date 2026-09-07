@@ -34,7 +34,9 @@ JSON
     "spacetimedb@spacetimedb-plugins": true,
     "pixijs-skills@pixijs-skills": true
   },
-  "disabledMcpServers": ["mcp__plugin_spacetimedb_spacetimedb"]
+  "deniedMcpServers": [
+    {"serverCommand": ["spacetime", "mcp"]}
+  ]
 }
 JSON
   cat > "$d/docs/architecture.md" <<'MD'
@@ -45,7 +47,7 @@ JSON
 | --- | --- | --- | --- |
 | `spacetimedb` | `spacetime mcp` CLI subcommand, `.mcp.json` | 2.9.* | `--server local` explicit |
 | `context7` | hosted HTTP MCP, `.mcp.json` | hosted, unpinnable | needs `${CONTEXT7_API_KEY}` |
-| `spacetimedb@spacetimedb-plugins` | Claude plugin marketplace, `.claude/settings.json` | v2.9.0 | its bundled MCP server is disabled |
+| `spacetimedb@spacetimedb-plugins` | Claude plugin marketplace, `.claude/settings.json` | v2.9.0 | its bundled `spacetime mcp` is blocked by `deniedMcpServers` |
 | `pixijs-skills@pixijs-skills` | Claude plugin marketplace, `.claude/settings.json` | floating on `main` | PixiJS v8 rendering skills |
 <!-- bc:agent-tooling:end -->
 MD
@@ -225,6 +227,36 @@ OUT="$(run_check "$D11" 2>&1)"; CODE=$?
 check "exits non-zero" 1 bash -c "exit $CODE"
 check "names the exact offending message" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF 'is missing the'" _ "$OUT"
+
+echo
+echo "red: the plugin's bundled MCP server has no deniedMcpServers entry at all"
+D13="$(fresh_fixture)"
+TMP9="$(fake_dir)"
+jq 'del(.deniedMcpServers)' "$D13/.claude/settings.json" > "$TMP9/settings.json" && mv "$TMP9/settings.json" "$D13/.claude/settings.json"
+OUT="$(run_check "$D13" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the exact offending message" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF \"'spacetimedb@spacetimedb-plugins' bundles its own 'spacetime mcp' with no --server flag\"" _ "$OUT"
+
+echo
+echo "red: deniedMcpServers is present but does not list the bundled command"
+D14="$(fresh_fixture)"
+TMP10="$(fake_dir)"
+jq '.deniedMcpServers = [{"serverName": "something-else"}]' "$D14/.claude/settings.json" > "$TMP10/settings.json" && mv "$TMP10/settings.json" "$D14/.claude/settings.json"
+OUT="$(run_check "$D14" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the exact offending message" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF \"'spacetimedb@spacetimedb-plugins' bundles its own 'spacetime mcp' with no --server flag\"" _ "$OUT"
+
+echo
+echo "red: an unrecognized top-level key in .claude/settings.json"
+D15="$(fresh_fixture)"
+TMP11="$(fake_dir)"
+jq '.disabledMcpServers = ["mcp__plugin_spacetimedb_spacetimedb"]' "$D15/.claude/settings.json" > "$TMP11/settings.json" && mv "$TMP11/settings.json" "$D15/.claude/settings.json"
+OUT="$(run_check "$D15" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the exact offending message" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF \"has an unrecognized top-level key 'disabledMcpServers'\"" _ "$OUT"
 
 echo
 echo "red: .mcp.json missing entirely"
