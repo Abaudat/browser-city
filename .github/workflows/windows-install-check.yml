@@ -1,0 +1,72 @@
+name: windows-install-check
+
+# The Windows CLI install method in server/README.md, run verbatim on a
+# clean windows-latest runner, so drift in the upstream installer or in
+# our version pin shows up on its own -- see that README section.
+on:
+  push:
+    branches: [master]
+    paths:
+      - server/README.md
+      - scripts/ci/extract-windows-install.sh
+      - .github/workflows/windows-install-check.yml
+  pull_request:
+    paths:
+      - server/README.md
+      - scripts/ci/extract-windows-install.sh
+      - .github/workflows/windows-install-check.yml
+  schedule:
+    # Its real failure mode is upstream drift, not our own commits.
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  windows-install:
+    name: windows-install
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - name: extract the README's Windows install block
+        shell: bash
+        run: bash scripts/ci/extract-windows-install.sh server/README.md > "$RUNNER_TEMP/install.ps1"
+      - name: run it verbatim
+        shell: pwsh
+        run: |
+          & "$env:RUNNER_TEMP\install.ps1"
+      - name: assert the pinned version is what actually got installed
+        shell: pwsh
+        run: |
+          $out = spacetime --version
+          Write-Host $out
+          if ($out -notmatch "2\.9\.\d+") {
+            Write-Error "expected spacetime --version to report 2.9.x, got: $out"
+            exit 1
+          }
+      # A weekly schedule reports to nobody by default -- the Actions tab
+      # is not something anyone watches. On a scheduled run (never on a
+      # push/PR, where the failing check itself is the signal) open or
+      # update one tracking issue instead, so upstream drift in the
+      # installer or a version pin doesn't sit undetected.
+      - name: file or update a tracking issue on scheduled failure
+        if: failure() && github.event_name == 'schedule'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="windows-install-check: scheduled run failed"
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          EXISTING="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number' || true)"
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body "Failed again: $RUN_URL"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" \
+              --body "The weekly Windows install check failed: $RUN_URL
+
+          Likely upstream drift in the installer at https://windows.spacetimedb.com or in the pinned version in server/README.md's fenced block. Close this once resolved."
+          fi

@@ -17,6 +17,8 @@ cited here by identifier.
 | Client                        | TypeScript + PixiJS v8, bundled by Vite                                                                  |
 | Client SDK                    | the `spacetimedb` npm package                                                                            |
 | Client bindings               | `spacetime generate --lang typescript --out-dir client/src/net/bindings` — generated, never hand-written |
+| Client lint/format            | Biome                                                                                                    |
+| Client hosting                | GitHub Pages, deployed by CI on push to master                                                          |
 | Rendering                     | PixiJS WebGPU with WebGL fallback; `@pixi/tilemap` for tile layers                                       |
 | Audio                         | Web Audio directly, or a thin wrapper                                                                    |
 | Art source                    | `ModernTileset/` — whole-object PNGs, nothing pre-split                                                  |
@@ -80,7 +82,7 @@ state (NFR41).
 | Rust via rustup | with `rustup target add wasm32-unknown-unknown`                |
 | SpacetimeDB CLI | `spacetime dev` for hot reload, `spacetime publish` to release |
 | SpacetimeDB CLI default server | `spacetime server set-default local`, so a flagless `spacetime mcp` also resolves to `local` |
-| Node.js         | client build                                                   |
+| Node.js         | 22.x, pinned in `client/.nvmrc`; client build                  |
 
 Agent tooling — declared in `.mcp.json` and `.claude/settings.json`, first-party only:
 

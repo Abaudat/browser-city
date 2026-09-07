@@ -17,6 +17,7 @@ agentic-team/       who builds it
   scripts/                      that flowchart made executable — see its README
 
 server/             the SpacetimeDB module (Rust) — see its README
+client/             the browser client (TypeScript + PixiJS, Vite) — see its own package.json
 ModernTileset/      the licensed 16x16 art source
 .claude/            agent definitions and skills for the team's roles
 ```
@@ -39,4 +40,5 @@ ModernTileset/      the licensed 16x16 art source
 bash agentic-team/scripts/orchestrator.sh    # one tick of the team's wake
 bash agentic-team/scripts/tests/run-all.sh   # the orchestrator's test suite
 cd server && spacetime publish --yes         # build and publish the module locally
+cd client && npm ci && npm run dev           # the browser client, against the local module
 ```

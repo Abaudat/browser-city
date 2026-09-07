@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "rootDir": "src",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    // No exactOptionalPropertyTypes: the generated spacetimedb bindings'
+    // own type inference (code we cannot hand-edit) fails under it with
+    // TS2344/TS2883 cascades unrelated to anything in src/. Tim, story 1.1.
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"]
+}

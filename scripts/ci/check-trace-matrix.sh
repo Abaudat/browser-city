@@ -112,6 +112,32 @@ while IFS= read -r mid; do
   fi
 done <<< "$MATRIX_IDS"
 
+# --- "Round trip and client/server boundary" section: every `covered`
+# row's Guard column names a real path, checked mechanically rather than
+# by eye -- a guard renamed or deleted without updating the row is a lie
+# the matrix would otherwise keep telling.
+BOUNDARY_SECTION="$(awk '
+  /^## Round trip and client\/server boundary$/ { insection = 1; next }
+  /^## / { insection = 0 }
+  insection { print }
+' "$MATRIX")"
+BOUNDARY_ROWS="$(printf '%s\n' "$BOUNDARY_SECTION" | grep -E '^\| [A-Za-z]' || true)"
+
+while IFS='|' read -r _ requirement status guard _; do
+  requirement="$(printf '%s' "$requirement" | xargs)"
+  status="$(printf '%s' "$status" | xargs)"
+  [ -n "$requirement" ] || continue
+  [ "$status" = "covered" ] || continue
+  path="$(printf '%s' "$guard" | grep -oE '`[^`]+`' | head -n1 | tr -d '`')"
+  if [ -z "$path" ]; then
+    echo "check-trace-matrix: FAIL -- '$requirement' is 'covered' but its Guard column names no backtick-quoted path" >&2
+    FAILED=1
+  elif [ ! -e "$REPO_ROOT/$path" ]; then
+    echo "check-trace-matrix: FAIL -- '$requirement' claims coverage via '$path', but that path does not exist" >&2
+    FAILED=1
+  fi
+done <<< "$BOUNDARY_ROWS"
+
 if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
