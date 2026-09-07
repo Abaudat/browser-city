@@ -1,0 +1,14 @@
+[package]
+name = "migration_fixture_v1"
+version = "0.1.0"
+edition = "2024"
+
+# Fixture for scripts/ci/check-live-migration.sh (story 1.2, AC3) --
+# deliberately outside the `server` workspace (see its Cargo.toml's
+# `exclude`), so it never affects `cargo test --workspace` or clippy.
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb = { version = "2.9.*" }

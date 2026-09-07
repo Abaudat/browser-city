@@ -1,12 +1,16 @@
 use spacetimedb::{ReducerContext, Table, Timestamp};
 
+mod tables;
+
 /// The scaffold's smoke slice (story 1.1): proves a reducer write reaches a
-/// subscribed browser client end to end. Not schema -- delete this table and
-/// `send_ping` in the first story that lands a real one (see
-/// `server/README.md`). `written_at` is `ctx.timestamp`, not the wall clock
-/// of whatever called the reducer: it is what the e2e spec measures the
-/// one-second budget against, so a CLI process's own startup time is never
-/// counted against it.
+/// subscribed browser client end to end. Not schema -- kept deliberately
+/// past story 1.2, which lands the first real tables, because none of them
+/// is yet read by a client reducer the e2e round trip can exercise. Delete
+/// this table and `send_ping` in the first story that lands a reducer the
+/// client reads (see `server/README.md`). `written_at` is `ctx.timestamp`,
+/// not the wall clock of whatever called the reducer: it is what the e2e
+/// spec measures the one-second budget against, so a CLI process's own
+/// startup time is never counted against it.
 #[spacetimedb::table(accessor = demo_ping, public)]
 pub struct DemoPing {
     #[primary_key]
@@ -32,8 +36,33 @@ pub fn send_ping(ctx: &ReducerContext, message: String) -> Result<(), String> {
 }
 
 #[spacetimedb::reducer(init)]
-pub fn init(_ctx: &ReducerContext) {
-    // Called when the module is initially published
+pub fn init(ctx: &ReducerContext) {
+    // Called when the module is initially published. Nothing is scheduled
+    // from here (story 1.2): an empty scheduled table costs nothing, and
+    // the first row is a later story's problem.
+    tables::ops::record_owner_from_init(ctx);
+    tables::codes::seed_all_codes(ctx);
+}
+
+/// Re-runs the extensible-set seed (NFR38): `init` only ever runs on the
+/// module's first publish, so a code added in month six needs an explicit,
+/// re-callable path to land, not a write on the hottest lifecycle reducer
+/// we have (`client_connected` fires on the city with zero clients
+/// connected too, per NFR3 -- there is no "someone happens to log in" to
+/// lean on). Idempotent: safe to call after every publish that adds a
+/// code, and a no-op otherwise. `server/README.md` names the deploy step
+/// that calls it.
+///
+/// Operator-only (this module's first one): any connected client could
+/// otherwise call it, at any rate, forever -- a caller check other
+/// operator reducers this project adds later will copy, so it is built
+/// once, correctly, here rather than left open because today's blast
+/// radius happens to be small.
+#[spacetimedb::reducer]
+pub fn reseed_codes(ctx: &ReducerContext) -> Result<(), String> {
+    tables::ops::require_owner(ctx)?;
+    tables::codes::seed_all_codes(ctx);
+    Ok(())
 }
 
 #[spacetimedb::reducer(client_connected)]

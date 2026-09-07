@@ -1,0 +1,14 @@
+[package]
+name = "migration_fixture_v2_good"
+version = "0.1.0"
+edition = "2024"
+
+# The positive half of story 1.2's AC3: appends a column that carries a
+# default -- publishing this over a live database already running
+# `migration_v1` must succeed.
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb = { version = "2.9.*" }

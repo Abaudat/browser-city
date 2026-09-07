@@ -1,0 +1,14 @@
+[package]
+name = "migration_fixture_v2_bad"
+version = "0.1.0"
+edition = "2024"
+
+# The negative half of story 1.2's AC3: appends a column with neither a
+# default nor #[auto_inc] -- publishing this over a live database already
+# running `migration_v1` must fail loudly.
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb = { version = "2.9.*" }
