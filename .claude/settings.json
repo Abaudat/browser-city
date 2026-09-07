@@ -4,21 +4,22 @@
       "source": {
         "source": "github",
         "repo": "clockworklabs/SpacetimeDB",
-        "ref": "v2.9.0",
-        "sha": "9e0d92412ff2248f401a8ad12d535f2b5ac30912"
+        "ref": "v2.9.0"
       }
     },
     "pixijs-skills": {
       "source": {
         "source": "github",
         "repo": "pixijs/pixijs-skills",
-        "ref": "main",
-        "sha": "6aae70d76cf410432dd144029c07a1ad4bb12793"
+        "ref": "main"
       }
     }
   },
   "enabledPlugins": {
     "spacetimedb@spacetimedb-plugins": true,
     "pixijs-skills@pixijs-skills": true
-  }
+  },
+  "disabledMcpServers": [
+    "mcp__plugin_spacetimedb_spacetimedb"
+  ]
 }

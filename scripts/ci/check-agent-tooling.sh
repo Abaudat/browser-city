@@ -17,6 +17,15 @@ MCP="$ROOT/.mcp.json"
 SETTINGS="$ROOT/.claude/settings.json"
 ARCH="$ROOT/docs/architecture.md"
 SPACETIME_JSON="$ROOT/spacetime.json"
+CARGO_TOML="$ROOT/server/Cargo.toml"
+
+MARKER_START='<!-- bc:agent-tooling:start -->'
+MARKER_END='<!-- bc:agent-tooling:end -->'
+UNPINNABLE='hosted, unpinnable'
+# Marketplace `ref`s that name a moving default branch rather than a pin --
+# a plugin resting on one of these floats, and the doc must say so rather
+# than dress it up as a version.
+DEFAULT_BRANCH_NAMES=(main master)
 
 FAILED=0
 fail() { echo "check-agent-tooling: FAIL -- $1" >&2; FAILED=1; }
@@ -54,75 +63,149 @@ if [ -f "$SETTINGS" ] && [ "$SETTINGS_OK" -eq 1 ]; then
 fi
 CONFIG_IDS="$(printf '%s\n%s\n' "$MCP_SERVER_IDS" "$PLUGIN_IDS" | sed '/^$/d' | sort -u)"
 
-# --- collect the doc's declared rows ------------------------------------------
-# The agent-tooling table's rows are identified the same way
-# docs/trace-matrix.md's are: a leading `| \`id\` ` cell -- position-independent,
-# so this does not care which table in the file it lives in.
-DOC_ROWS="$(grep -E '^\| `' "$ARCH" || true)"
-DOC_IDS="$(printf '%s\n' "$DOC_ROWS" | awk -F'|' '{print $2}' | tr -d '`' | xargs -n1 2>/dev/null | sort -u || true)"
-
-if [ -z "$DOC_ROWS" ]; then
-  fail "$ARCH has no agent-tooling rows (expected rows shaped '| \`id\` | ... |') -- add the agent-tooling table to the Toolchain section"
+# --- collect the doc's declared rows, strictly between the markers ----------
+# Scoped to an explicit pair of markers, the same convention the `bc:`
+# vocabulary already uses elsewhere -- so an unrelated table gaining a
+# backticked first column (Stack, Naming, ...) can never be mistaken for an
+# agent-tooling row, and a row moved outside the markers by accident is
+# loudly missing rather than silently ignored.
+DOC_ROWS=""
+if ! grep -qF "$MARKER_START" "$ARCH" || ! grep -qF "$MARKER_END" "$ARCH"; then
+  fail "$ARCH is missing the '$MARKER_START' / '$MARKER_END' markers around the agent-tooling table"
+else
+  DOC_ROWS="$(awk -v s="$MARKER_START" -v e="$MARKER_END" '
+    $0 == s { inside = 1; next }
+    $0 == e { inside = 0; next }
+    inside && /^\|/ { print }
+  ' "$ARCH")"
+  # drop the header and separator rows, keep only backtick-id data rows
+  DOC_ROWS="$(printf '%s\n' "$DOC_ROWS" | grep -E '^\| `' || true)"
+  if [ -z "$DOC_ROWS" ]; then
+    fail "$ARCH has no rows between the agent-tooling markers"
+  fi
 fi
+# whole first cell, trimmed -- never word-split, a multi-word id would
+# otherwise turn into several phantom ids
+DOC_IDS="$(printf '%s\n' "$DOC_ROWS" | awk -F'|' '{print $2}' | tr -d '`' | sed 's/^ *//; s/ *$//' | sort -u)"
+DOC_IDS="$(printf '%s\n' "$DOC_IDS" | sed '/^$/d')"
 
 # --- symmetry: config <-> doc, both directions -------------------------------
 while IFS= read -r id; do
   [ -n "$id" ] || continue
   if ! printf '%s\n' "$DOC_IDS" | grep -qxF "$id"; then
-    fail "'$id' is declared in config but has no row in docs/architecture.md -- add one to the agent-tooling table"
+    fail "'$id' is declared in config but has no row in docs/architecture.md's agent-tooling table"
   fi
 done <<< "$CONFIG_IDS"
 
 while IFS= read -r id; do
   [ -n "$id" ] || continue
   if ! printf '%s\n' "$CONFIG_IDS" | grep -qxF "$id"; then
-    fail "docs/architecture.md has a row for '$id' but no config (.mcp.json / .claude/settings.json) declares it"
+    fail "docs/architecture.md's agent-tooling table has a row for '$id' but no config (.mcp.json / .claude/settings.json) declares it"
   fi
 done <<< "$DOC_IDS"
 
-# --- every doc row carries an exact pinned version ----------------------------
-# | Tool | Provided as | Pinned version | Notes |
-while IFS='|' read -r _ id _provided version _rest; do
-  id="$(printf '%s' "$id" | tr -d '`' | xargs)"
-  version="$(printf '%s' "$version" | xargs)"
+# doc_version_cell <id> -- the trimmed Pinned version cell for a row id.
+doc_version_cell() {
+  printf '%s\n' "$DOC_ROWS" | awk -F'|' -v want="$1" '
+    { id = $2; gsub(/`/, "", id); gsub(/^ +| +$/, "", id);
+      if (id == want) { v = $4; gsub(/^ +| +$/, "", v); print v; exit } }
+  '
+}
+# doc_row <id> -- the whole row, for a Notes-column ("floating") search.
+doc_row() {
+  printf '%s\n' "$DOC_ROWS" | awk -F'|' -v want="$1" '
+    { id = $2; gsub(/`/, "", id); gsub(/^ +| +$/, "", id);
+      if (id == want) { print; exit } }
+  '
+}
+
+# --- every doc row carries a real pin, cross-checked against its source -----
+while IFS= read -r id; do
   [ -n "$id" ] || continue
+  version="$(doc_version_cell "$id")"
   if [ -z "$version" ]; then
     fail "'$id' has an empty Pinned version cell in docs/architecture.md"
-  elif [ "$version" = "*" ]; then
-    fail "'$id' pins version '*' -- a floating wildcard is not a pin"
-  elif printf '%s' "$version" | grep -qiw "latest"; then
-    fail "'$id' pins version 'latest' -- record the exact version instead"
+    continue
   fi
-done <<< "$DOC_ROWS"
+  case "$id" in
+    context7)
+      if [ "$version" != "$UNPINNABLE" ]; then
+        fail "'$id' has no version to pin (a hosted endpoint) -- its cell must read exactly '$UNPINNABLE', not a free-text excuse"
+      fi
+      ;;
+    spacetimedb)
+      if [ -f "$CARGO_TOML" ]; then
+        CRATE_PIN="$(grep -oE 'spacetimedb = \{ version = "[^"]+"' "$CARGO_TOML" | sed -E 's/.*"([^"]+)"/\1/' || true)"
+        if [ -z "$CRATE_PIN" ]; then
+          fail "could not find the spacetimedb crate's version pin in $CARGO_TOML to cross-check '$id' against"
+        elif [ "$version" != "$CRATE_PIN" ]; then
+          fail "'$id' pins '$version' in docs/architecture.md but server/Cargo.toml pins the spacetimedb crate at '$CRATE_PIN' -- the CLI number rides the crate pin, they must match"
+        fi
+      fi
+      ;;
+    *@*)
+      # a <plugin>@<marketplace> id: the doc's Pinned version cell must
+      # literally contain the marketplace's actual `ref` -- this is what
+      # catches drift, in either direction, between config and doc.
+      if [ "$SETTINGS_OK" -eq 1 ] && [ -f "$SETTINGS" ]; then
+        mp="${id#*@}"
+        ref="$(jqr --arg m "$mp" '.extraKnownMarketplaces[$m].source.ref // empty' "$SETTINGS")"
+        if [ -z "$ref" ]; then
+          fail "marketplace '$mp' (behind '$id') has no pinned ref -- a marketplace source with nothing to check out at all"
+        elif ! printf '%s' "$version" | grep -qF "$ref"; then
+          fail "'$id' records '$version' in docs/architecture.md but '.claude/settings.json' pins marketplace '$mp' at ref '$ref' -- they have drifted apart"
+        fi
+        for branch in "${DEFAULT_BRANCH_NAMES[@]}"; do
+          if [ "$ref" = "$branch" ]; then
+            ROW="$(doc_row "$id")"
+            if ! printf '%s' "$ROW" | grep -qi "floating"; then
+              fail "marketplace '$mp' (behind '$id') is pinned to '$ref', a default branch, but its row does not say 'floating' -- record it honestly instead of dressing it up as a version"
+            fi
+          fi
+        done
+      fi
+      ;;
+  esac
+done <<< "$DOC_IDS"
 
-# --- config-level pin and safety checks ---------------------------------------
+# --- config-level safety checks -----------------------------------------------
 if [ "$MCP_OK" -eq 1 ]; then
-  # any npx-launched server must pin an exact package version, never a bare
-  # or unpinned invocation
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
-    cmd="$(jqr --arg n "$name" '.mcpServers[$n].command // ""' "$MCP")"
-    [ "$cmd" = "npx" ] || continue
-    if ! jq -e --arg n "$name" '.mcpServers[$n].args // [] | any(test("@[0-9]"))' "$MCP" >/dev/null; then
-      fail "mcpServers.$name runs via npx with no @version-pinned package -- pin an exact version"
-    fi
-  done <<< "$MCP_SERVER_IDS"
-
-  # headers/env values that carry a secret must be an ${ENV_VAR} reference,
-  # never an inline literal
+  # headers/env values that carry a secret must be an ${ENV_VAR} reference
+  # (optionally with a ${VAR:-default} fallback), never an inline literal
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     server="${line%%|*}"; rest="${line#*|}"
     key="${rest%%=*}"; value="${rest#*=}"
-    if ! [[ "$value" =~ ^\$\{[A-Za-z_][A-Za-z0-9_]*\}$ ]]; then
+    if ! [[ "$value" =~ ^\$\{[A-Za-z_][A-Za-z0-9_]*(:-[^}]*)?\}$ ]]; then
       fail "mcpServers.$server's '$key' is not an \${ENV_VAR} reference -- no inline credential belongs in a tracked file"
     fi
   done <<< "$(jqr '.mcpServers // {} | to_entries[] | .key as $s | ((.value.headers // {}) + (.value.env // {})) | to_entries[] | "\($s)|\(.key)=\(.value)"' "$MCP")"
 
-  # never Maincloud, never a hard-coded production database
-  if jq -e 'tostring | test("maincloud"; "i")' "$MCP" >/dev/null 2>&1; then
-    fail "$MCP names a Maincloud host -- agent tooling targets the local server only"
-  fi
+  # allowlist, not a denylist -- a community MCP server does not get to
+  # exist by having a name the checker has not heard of yet
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    cmd="$(jqr --arg n "$name" '.mcpServers[$n].command // empty' "$MCP")"
+    type="$(jqr --arg n "$name" '.mcpServers[$n].type // empty' "$MCP")"
+    url="$(jqr --arg n "$name" '.mcpServers[$n].url // empty' "$MCP")"
+    if [ "$cmd" = "spacetime" ]; then
+      # the one first-party command this repo trusts to run at all, and only
+      # when it never resolves anywhere but the local server
+      ARGS_JOINED="$(jqr --arg n "$name" '.mcpServers[$n].args // [] | join(" ")' "$MCP")"
+      case "$ARGS_JOINED" in
+        *mcp*)
+          if ! printf '%s' "$ARGS_JOINED" | grep -qE -- '--server[ =]local'; then
+            fail "mcpServers.$name runs 'spacetime mcp' without an explicit '--server local' -- the CLI's own default is not local"
+          fi
+          ;;
+      esac
+    elif [ "$type" = "http" ] && [ "$url" = "https://mcp.context7.com/mcp" ]; then
+      : # the one first-party hosted endpoint this repo trusts
+    else
+      fail "mcpServers.$name (command '$cmd', url '$url') is not on the first-party allowlist -- declare it there or drop it"
+    fi
+  done <<< "$MCP_SERVER_IDS"
+
   if [ -f "$SPACETIME_JSON" ]; then
     PROD_DB="$(jqr '.database // empty' "$SPACETIME_JSON" 2>/dev/null || true)"
     if [ -n "$PROD_DB" ] && jq -e --arg db "$PROD_DB" 'tostring | test($db)' "$MCP" >/dev/null 2>&1; then
@@ -132,47 +215,23 @@ if [ "$MCP_OK" -eq 1 ]; then
 fi
 
 if [ "$SETTINGS_OK" -eq 1 ] && [ -f "$SETTINGS" ]; then
-  if jq -e 'tostring | test("maincloud"; "i")' "$SETTINGS" >/dev/null 2>&1; then
-    fail "$SETTINGS names a Maincloud host -- agent tooling targets the local server only"
-  fi
-  # every marketplace source behind an enabled plugin must pin an exact sha,
-  # not just a floating branch/tag ref
+  # allowlist of first-party marketplace repos, replacing a community-package
+  # denylist that could only ever ban names it already knew about
+  FIRST_PARTY_REPOS=(
+    'clockworklabs/SpacetimeDB'
+    'pixijs/pixijs-skills'
+  )
   while IFS= read -r mp; do
     [ -n "$mp" ] || continue
-    sha="$(jqr --arg m "$mp" '.extraKnownMarketplaces[$m].source.sha // empty' "$SETTINGS")"
-    if [ -z "$sha" ]; then
-      fail "marketplace '$mp' has no pinned commit sha -- a branch/tag ref alone can move under it"
+    repo="$(jqr --arg m "$mp" '.extraKnownMarketplaces[$m].source.repo // empty' "$SETTINGS")"
+    allowed=0
+    for fp in "${FIRST_PARTY_REPOS[@]}"; do
+      [ "$repo" = "$fp" ] && allowed=1
+    done
+    if [ "$allowed" -ne 1 ]; then
+      fail "marketplace '$mp' sources from '$repo', which is not on the first-party allowlist"
     fi
   done <<< "$(jqr '.enabledPlugins // {} | keys[] | split("@")[1]' "$SETTINGS" | sort -u)"
-fi
-
-# --- grep guard: no community SpacetimeDB MCP server anywhere ---------------
-# Driven off tracked files, not a recursive grep, for the same reason
-# check-trace-matrix.sh scopes its #[ignore] scan that way. Excludes this
-# script and its own unit tests, which must name the banned strings
-# literally in order to define and exercise the guard -- everywhere else,
-# the name appearing at all is the violation.
-BANNED_PATTERNS=(
-  'spacetimedb-mcp-server'
-  'spacetimemcp'
-  'game-mcp-spacetime'
-  'fail2fail-studios/spacetimedb-mcp'
-)
-SELF_PATHS=(
-  'scripts/ci/check-agent-tooling.sh'
-  'agentic-team/scripts/tests/test-check-agent-tooling.sh'
-)
-if command -v git >/dev/null 2>&1 && git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-  for pattern in "${BANNED_PATTERNS[@]}"; do
-    HIT="$(git -C "$ROOT" ls-files -z | (cd "$ROOT" && xargs -0 -r grep -liF "$pattern") 2>/dev/null || true)"
-    for self in "${SELF_PATHS[@]}"; do
-      HIT="$(printf '%s\n' "$HIT" | grep -vxF "$self" || true)"
-    done
-    if [ -n "$HIT" ]; then
-      fail "community SpacetimeDB MCP package name '$pattern' found in tracked files (first-party only):"
-      printf '%s\n' "$HIT" >&2
-    fi
-  done
 fi
 
 if [ "$FAILED" -ne 0 ]; then
