@@ -105,4 +105,32 @@ check "story body: says nothing about its epic"   1 bash -c "printf '%s' \"\$1\"
 check "story body: says nothing about its leads"  1 bash -c "printf '%s' \"\$1\" | grep -qi 'lead'"   _ "$S"
 check "story body: says nothing about its status" 1 bash -c "printf '%s' \"\$1\" | grep -qi 'backlog'" _ "$S"
 
+
+echo
+echo "the task-request markers: one marker carries both the ask's existence and its state:"
+
+S="$(render_task_request tim "The parry window needs a tuning tool.")"
+check_out "task request: the marker's value is the state" 0 PENDING marker_get "$S" "taskreq:tim"
+check     "task request: the ask is carried through" 0 \
+  bash -c "printf '%s' \"\$1\" | grep -q 'needs a tuning tool'" _ "$S"
+check     "task request: is not a human comment" 1 is_human_comment "$S"
+# Per-role marker names, so two leads asking on the same PR are two comments
+# with one writer each -- the same shape as bc:lead:<role>.
+check     "task request: tim's marker is not derek's" 1 has_marker "$S" "taskreq:derek"
+
+R="$(render_task_request_resolved tim "The parry window needs a tuning tool." DENIED "Out of Epic 3's scope.")"
+check_out "resolved request: the marker's value is the outcome" 0 DENIED marker_get "$R" "taskreq:tim"
+check     "resolved request: the ask survives the ruling" 0 \
+  bash -c "printf '%s' \"\$1\" | grep -q 'needs a tuning tool'" _ "$R"
+check     "resolved request: the ruling is carried through" 0 \
+  bash -c "printf '%s' \"\$1\" | grep -q \"Out of Epic 3's scope.\"" _ "$R"
+check     "resolved request: the ruling is attributed to Scotty" 0 \
+  bash -c "printf '%s' \"\$1\" | grep -q '#### Scotty — DENIED'" _ "$R"
+
+# Crew is refused the vocabulary itself, not just the command: there is no
+# renderer that can produce a crew request, so nothing can write one by
+# accident.
+check "there is no crew task-request renderer" 1 \
+  bash -c 'declare -f render_crew_task_request >/dev/null'
+
 summary

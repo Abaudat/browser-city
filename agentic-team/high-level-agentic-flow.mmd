@@ -33,7 +33,9 @@ flowchart TD
 
     subissue-status -->|"Leads review"| breaker-tripped{"Circuit breaker comment<br/>on the PR?"}
     breaker-tripped -->|yes| sleep
-    breaker-tripped -->|no| ci-status{"Required check on<br/>the PR's current head"}
+    breaker-tripped -->|no| task-requested{"A lead has asked for a task<br/>and Scotty has not ruled?"}
+    task-requested -->|yes| judging-task-request["Scotty reads the epic, the PR<br/>and the ask, then rules:<br/>deny it, amend an existing issue,<br/>or open a story in the same epic"] --> sleep
+    task-requested -->|no| ci-status{"Required check on<br/>the PR's current head"}
     ci-status -->|failure| ci-fails-exhausted{"Consecutive red-build<br/>dispatches more than 8?"}
     ci-fails-exhausted -->|no| dispatching-ci-fix["Dispatch Crew to fix<br/>the failing build"] --> sleep
     ci-fails-exhausted -->|yes| tripping-ci-breaker["Circuit breaker:<br/>comment on the PR @-mentioning Adrian<br/>with the deadlock, what was tried,<br/>the options and a recommendation"] --> sleep

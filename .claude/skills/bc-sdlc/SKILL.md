@@ -1,6 +1,6 @@
 ---
 name: bc-sdlc
-description: 'The Browser City SDLC scripts — how Crew, the leads (tim, derek, quentin, artie) and Scotty write their work onto a task issue, a PR or the board. Use when you are Crew opening a PR or addressing review comments, a lead writing an analysis direction or a review verdict, or Scotty opening the Sprint Demo issue, posting a breaker note, scoping the next sprint, or opening epics and stories from demo feedback.'
+description: 'The Browser City SDLC scripts — how Crew, the leads (tim, derek, quentin, artie) and Scotty write their work onto a task issue, a PR or the board. Use when you are Crew opening a PR or addressing review comments, a lead writing an analysis direction or a review verdict or asking for a task to be created, or Scotty opening the Sprint Demo issue, posting a breaker note, ruling on a lead''s task request, scoping the next sprint, or opening epics and stories from demo feedback.'
 ---
 
 # bc-sdlc — the scripted SDLC surface
@@ -42,8 +42,17 @@ cycle is addressed, then `mark-addressed`.
 | `bash <scripts>/bc-comment.sh update-analysis <issue> <role> <bodyfile>` | Rewrites *your* analysis comment on the task issue as `### Analysis — <role>` and marks you `READY`. `<bodyfile>` is **required** and holds only your direction prose. Crew is dispatched only when every lead in scope is READY. |
 | `bash <scripts>/bc-comment.sh approve <pr> <role> [bodyfile]` | Stamps `APPROVED` on your review comment at the PR's current head. |
 | `bash <scripts>/bc-comment.sh reject <pr> <role> [bodyfile]` | Stamps `CHANGES` on your review comment at the PR's current head. |
+| `bash <scripts>/bc-comment.sh request-task <pr> <role> <bodyfile>` | Asks Scotty for work this PR cannot carry. Opens (or re-opens, keeping his earlier rulings above it) your own `### Task request — <role>` comment on the PR and wakes him. `<bodyfile>` is **required**: what the work is, why the PR cannot carry it, which requirement it serves. Exits 1 and writes nothing if your previous request is still awaiting a ruling. |
 
 `<role>` is your own name and nothing else.
+
+`request-task` is for real work that genuinely does not fit the PR in front
+of you — not for a finding Crew could address this cycle, which is a
+`reject`. One open request per lead at a time; Scotty may deny it, and a
+denial is an answer, not an invitation to re-ask. It is not a verdict either:
+stamp `approve` or `reject` in the same dispatch as usual.
+
+**Crew may not call `request-task`** — it refuses `crew` by name.
 
 For `approve`/`reject`, `[bodyfile]` holds this cycle's findings: omit it for
 a plain approval, but **always** include one with `reject` explaining what
@@ -72,29 +81,44 @@ carries it in one call, so the two are never out of step.
 | `bash <scripts>/bc-sprint.sh write-scope <sprint> <issue>...` | Moves each issue — and its sub-issues — onto Sprint `<n>`, defaulting to `Backlog` any the board has no Status for. Prints `{"scoped":[...],"sprint":"Sprint n"}`. Make **one** call with every pick in it. |
 | `bash <scripts>/bc-issue.sh write-epic <n> "<title>" <bodyfile> <priority>` | Opens epic `<n>` with `<bodyfile>` as its preamble, labels it `epic`, puts it on the board in `Backlog` on no sprint, and sets Priority. Prints the new issue number. |
 | `bash <scripts>/bc-issue.sh write-story <epic-issue> <id> "<title>" <bodyfile> <size> <priority> <leads-csv>` | Opens a story, labels it `story` plus one `lead:<role>` per lead in `<leads-csv>` (`-` for none — quentin is always in scope), links it as a sub-issue of `<epic-issue>`, puts it on the board in `Backlog` on no sprint, and sets Size and Priority. Prints the new issue number. |
+| `bash <scripts>/bc-issue.sh epic-context <issue>` | Reads the story's epic and every sibling story with status, size and priority, as JSON. A read, not a write — this is what a task-request ruling is made against. Exits 1 if the story is in no epic. |
+| `bash <scripts>/bc-issue.sh amend-story <issue> <bodyfile> [<size>] [<priority>]` | Appends `<bodyfile>`'s prose to an existing story under an `## Amendment` heading, leaving its original prose and its `<!-- bc:story -->` marker intact, and sets Size / Priority if given. Prints the issue number. |
+| `bash <scripts>/bc-comment.sh resolve-task-request <pr> <role> <outcome> <bodyfile>` | Stamps your ruling on the lead's own task-request comment. `<outcome>` is `DENIED`, `AMENDED` or `CREATED`; `<bodyfile>` is **required** and holds two or three sentences naming what you amended or opened. Exits 1 if that request was already ruled on. |
 
 `<epic-issue>` is the epic's **issue** number, not its epic number. `<size>` is
 one of `XS S M L XL`, `<priority>` one of `Blocker Critical Standard Low`; a
 value outside those lists is exit 2, never a silently unset field.
 
 `<bodyfile>` holds your prose only. The scripts write the `### Sprint N Demo`
-/ `### Breaker` heading, the `@`-mention of Adrian and the `<!-- bc:demo -->`
-/ `<!-- bc:breaker -->` / `<!-- bc:epic -->` / `<!-- bc:story -->` marker — do
-not write any of them yourself, and do not create the issue or comment any
-other way.
+/ `### Breaker` / `### Task request` / `## Amendment` heading, the
+`@`-mention of Adrian and the `<!-- bc:demo -->` / `<!-- bc:breaker -->` /
+`<!-- bc:epic -->` / `<!-- bc:story -->` / `<!-- bc:taskreq:<role> -->`
+marker — do not write any of them yourself, and do not create the issue or
+comment any other way.
+
+Ruling on a task request, `amend-story` or `write-story` comes **first** and
+`resolve-task-request` after, so a ruling that says a story exists is one
+whose story exists. `amend-story` is the only command here that touches an
+issue somebody else's work already rests on: it appends, never rewrites, so
+the prose the leads pre-registered against stays where it was.
 
 Nothing sets Status, Priority, Size or a sprint but these calls: every one of
 them puts what it creates where it belongs, so never follow one with a board
 edit of your own. `write-epic` and `write-story` deliberately leave their
-issue on **no** sprint — `write-scope` is what scopes work in, later. Nothing
-else on the board is yours either: never edit a lead's comment, Crew's
-comment, or the status comment.
+issue on **no** sprint — `write-scope` is what scopes work in, later. That
+holds for a story you open on a task-request ruling too: what ties it to the
+work in play is its epic — `write-story` links it there as a sub-issue — not a
+sprint. Nothing else on the board is yours either: never edit a lead's
+comment, Crew's comment, or the status comment.
 
 ## Exit codes
 
 `0` did it · `1` nothing to do — a breaker comment already exists
-(`write-breaker`), or none of the issues you passed was still a candidate
-(`write-scope`) · `2` bad arguments, an unknown size/priority/lead, an empty
+(`write-breaker`), none of the issues you passed was still a candidate
+(`write-scope`), your previous task request is still awaiting a ruling
+(`request-task`), or that request was already ruled on
+(`resolve-task-request`) · `2` bad arguments, an unknown
+size/priority/lead/outcome, `crew` calling `request-task`, an empty
 body file, or the comment this command must edit does not exist (the
 orchestrator creates every stub — if yours is missing, stop and say so rather
 than creating one).

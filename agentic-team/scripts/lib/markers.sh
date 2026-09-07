@@ -147,3 +147,42 @@ ${body}
 <!-- bc:story ${id} -->
 EOF
 }
+
+# --- appended by the task-request work: a lead asking for a task ------------
+# A lead can ask, during review, for work to be created that its own PR
+# cannot carry. The ask lives in ONE comment per lead on the PR, marked
+# `bc:taskreq:<role>`, whose VALUE is the state: PENDING while Scotty has not
+# ruled, then DENIED / AMENDED / CREATED once he has. One marker carries both
+# facts because a request and its ruling are the same thing seen twice --
+# splitting them would allow a state with a ruling and no request, or a
+# resolved request nobody can find.
+#
+# Crew has no renderer here on purpose: Crew never requests a task, and the
+# absence of any way to render one is the enforcement rather than a rule
+# written down somewhere and hoped for.
+
+render_task_request() { # <role> <text>
+  local role="$1" text="$2"
+  cat <<EOF
+### Task request — ${role}
+
+${text}
+
+<!-- bc:taskreq:${role} PENDING -->
+EOF
+}
+
+render_task_request_resolved() { # <role> <request-text> <outcome> <ruling>
+  local role="$1" text="$2" outcome="$3" ruling="$4"
+  cat <<EOF
+### Task request — ${role}
+
+${text}
+
+#### Scotty — ${outcome}
+
+${ruling}
+
+<!-- bc:taskreq:${role} ${outcome} -->
+EOF
+}

@@ -23,5 +23,17 @@ The script writes the `#### Cycle N — VERDICT @ <sha>` heading above your
 findings and keeps your earlier cycles' sections, so do not write a heading
 yourself.
 
+If, and only if, you found real work that this PR genuinely cannot carry —
+not a finding Crew could address this cycle, which is a `reject`, and not a
+preference — you may ask Scotty to create it:
+
+    bash {{scripts}}/bc-comment.sh request-task {{pr}} {{role}} <bodyfile>
+
+`<bodyfile>` says what the work is, why this PR cannot carry it, and which
+requirement it serves. Use this sparingly: Scotty rules against the whole
+epic and denies more often than not, an epic that grows a story per review
+cycle never finishes, and a request is not a verdict — stamp yours either
+way, in this same dispatch.
+
 If you already reviewed this exact head commit, only make sure your comment
 is stamped, then stop.

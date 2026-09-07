@@ -360,6 +360,7 @@ case "$status" in
 "Leads review")
   # ===========================================================================
   # In the flowchart's order: breaker-tripped (breaker-exists), then
+  # task-requested (a lead asking Scotty for work this PR cannot carry), then
   # ci-status -- pending bounded by its own tick counter (ci_pending),
   # failure bounded by its own circuit breaker (ci_fails,
   # ci-fails-exhausted -> tripping-ci-breaker, else dispatching-ci-fix) --
@@ -379,6 +380,21 @@ case "$status" in
 
   if bc_comment breaker-exists "$pr" >/dev/null 2>&1; then
     finish 1 "breaker-tripped" "sleep" "breaker pending on PR #$pr"
+  fi
+
+  # task-requested / judging-task-request -- a lead has asked, during its
+  # review, for work this PR cannot carry. It sits here, ahead of CI and
+  # ahead of the verdict reads, for one reason: a request answered after the
+  # merge is not an answer. Scotty reads the whole epic, the PR and the ask,
+  # and rules -- deny, fold it into an issue that already exists, or open a
+  # new story in the same epic -- and `judge-task-request` fails loudly
+  # rather than sleeping if he leaves one PENDING, because an unresolved
+  # request is a node that would wake to the same work forever.
+  reqs="$(bc_comment pending-task-requests "$pr" 2>/dev/null)"; req_rc=$?
+  if [ "$req_rc" -eq 0 ] && [ -n "$reqs" ]; then
+    bc_comment judge-task-request "$pr" >/dev/null 2>&1 \
+      || finish 2 "judging-task-request" "broken" "could not rule on the request from $reqs on PR #$pr"
+    finish 0 "judging-task-request" "ruled on the task request from" "$reqs on PR #$pr"
   fi
 
   # A lead can approve faster than CI reports, and branch protection alone

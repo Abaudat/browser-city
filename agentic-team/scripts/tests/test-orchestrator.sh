@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fixture-driven coverage for scripts/orchestrator.sh: one scenario per edge
 # of agentic-team/high-level-agentic-flow.mmd (demo-active/demo-has-feedback/closing-sprint/starting-next-sprint, sprint-over/creating-demo-issue, starting-dev-cycle,
-# leads-analysed/dispatching-implementation, pr-opened/opening-leads-review, breaker-tripped-tripping-breaker, ci-status/dispatching-ci-fix, crew-addressed/reopening-leads-review), plus the two crash-idempotency repairs and
+# leads-analysed/dispatching-implementation, pr-opened/opening-leads-review, breaker-tripped-tripping-breaker, task-requested/judging-task-request, ci-status/dispatching-ci-fix, crew-addressed/reopening-leads-review), plus the two crash-idempotency repairs and
 # the two hard-failure propagations (bc-issue current's exit 2, an empty
 # backlog). Runs orchestrator.sh as a real subprocess -- BC_FAKE drives the
 # level-1 primitives, the level-2 scripts run for real underneath it, and
@@ -387,6 +387,114 @@ echo '{"number":60,"headRefOid":"shaX"}' > "$F_BREAKER_TRIPPED/gh_pr_for_issue.2
 printf 'WT240' > "$F_BREAKER_TRIPPED/orca_worktree_path.issue:240.json"
 check_out "breaker-tripped: breaker exists -> sleep, exit 1" 1 "breaker-tripped sleep breaker pending on PR #60" run "$F_BREAKER_TRIPPED" "$NOW_MIDSPRINT"
 check "breaker-tripped: wrote nothing" 1 test -f "$F_BREAKER_TRIPPED/calls.log"
+
+# =============================================================================
+echo
+echo "task-requested: Leads review, a lead is waiting on a ruling -> Scotty rules, ahead of CI and the verdicts"
+# =============================================================================
+# The node sits between breaker-tripped and ci-status on purpose: a request
+# answered after the merge is not an answer. So this scenario gives the
+# orchestrator a PR that is green AND unanimously approved -- a tick that
+# skipped the request would merge it -- and asserts it ruled instead.
+F_TASKREQ="$(fake_dir)"
+write_iterations "$F_TASKREQ"
+one_active "$F_TASKREQ" 320 "Leads review"
+echo '{"number":70,"headRefOid":"shaOK"}' > "$F_TASKREQ/gh_pr_for_issue.320.json"
+echo "shaOK" > "$F_TASKREQ/gh_pr_head.70.json"
+echo '[{"name":"ci","status":"completed","conclusion":"success"}]' > "$F_TASKREQ/gh_pr_check_runs.shaOK.json"
+printf 'WT320' > "$F_TASKREQ/orca_worktree_path.issue:320.json"
+# Scotty's ruling has to appear between two reads of the same fixture, and
+# under BC_FAKE only a .seq can do that. Four reads happen before he is woken
+# -- `scope`, `breaker-exists`, `pending-task-requests`, and
+# `judge-task-request`'s own gather, each its own subprocess and so its own
+# consumed line -- and the fifth is the re-read that checks his work. The
+# last line of a .seq answers every call from then on, so one "after" line
+# closes it. If the orchestrator ever grows or loses a read of this PR's
+# comments before the handoff, this scenario fails loudly rather than
+# silently testing the wrong branch; that is the point of spelling the count
+# out here.
+_taskreq_pending() {
+  {
+    render_status 320 "quentin" 1 | _comment 1
+    printf '### Review — quentin\n\nGood.\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed shaOK -->\n<!-- bc:verdict APPROVED -->\n' | _comment 2
+    render_task_request quentin "The tuning tool belongs in its own story." | _comment 3
+  } | "$JQ" -sc '.'
+}
+{
+  _taskreq_pending
+  _taskreq_pending
+  _taskreq_pending
+  _taskreq_pending
+  {
+    render_status 320 "quentin" 1 | _comment 1
+    printf '### Review — quentin\n\nGood.\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed shaOK -->\n<!-- bc:verdict APPROVED -->\n' | _comment 2
+    render_task_request_resolved quentin "The tuning tool belongs in its own story." CREATED "Opened #901." | _comment 3
+  } | "$JQ" -sc '.'
+} > "$F_TASKREQ/gh_issue_comments.70.seq"
+printf 'An epic.' > "$F_TASKREQ/gh_issue_body.900.json"
+
+check_out "task-requested: pending -> Scotty rules, exit 0" 0 \
+  "judging-task-request ruled on the task request from quentin on PR #70" \
+  run "$F_TASKREQ" "$NOW_MIDSPRINT"
+check "judging-task-request: handed it to Scotty" 0 \
+  log_has "$F_TASKREQ/calls.log" '^claude_oneshot_acting judge-task-request\.md$'
+check "judging-task-request: did NOT merge the approved, green PR" 1 \
+  log_has "$F_TASKREQ/calls.log" '^gh_pr_merge'
+check "judging-task-request: did not mark the story Done" 1 \
+  log_has "$F_TASKREQ/calls.log" '^project_set_single 320 Status Done$'
+check "judging-task-request: ruled before anything else touched the PR" 0 \
+  log_lacks "$F_TASKREQ/calls.log" '^gh_comment_(create|edit)'
+
+# And with every request already ruled on, the same board merges: the node
+# gates the flow, it does not stop it.
+F_TASKREQ_DONE="$(fake_dir)"
+write_iterations "$F_TASKREQ_DONE"
+one_active "$F_TASKREQ_DONE" 320 "Leads review"
+echo '{"number":70,"headRefOid":"shaOK"}' > "$F_TASKREQ_DONE/gh_pr_for_issue.320.json"
+echo "shaOK" > "$F_TASKREQ_DONE/gh_pr_head.70.json"
+echo '[{"name":"ci","status":"completed","conclusion":"success"}]' > "$F_TASKREQ_DONE/gh_pr_check_runs.shaOK.json"
+printf 'WT320' > "$F_TASKREQ_DONE/orca_worktree_path.issue:320.json"
+{
+  render_status 320 "quentin" 1 | _comment 1
+  printf '### Review — quentin\n\nGood.\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed shaOK -->\n<!-- bc:verdict APPROVED -->\n' | _comment 2
+  render_task_request_resolved quentin "The tuning tool belongs in its own story." CREATED "Opened #901." | _comment 3
+} | "$JQ" -sc '.' > "$F_TASKREQ_DONE/gh_issue_comments.70.json"
+check_out "task-requested: every request ruled on -> the flow carries on and merges" 0 \
+  "merging-pr merged PR #70 for #320" run "$F_TASKREQ_DONE" "$NOW_MIDSPRINT"
+check "and Scotty was not woken a second time" 1 \
+  log_has "$F_TASKREQ_DONE/calls.log" '^claude_oneshot_acting judge-task-request\.md$'
+
+# A breaker outranks a request: the PR is already Adrian's, and waking Scotty
+# to rule on work nobody will do next is spending budget on nothing.
+F_TASKREQ_BREAKER="$(fake_dir)"
+write_iterations "$F_TASKREQ_BREAKER"
+one_active "$F_TASKREQ_BREAKER" 320 "Leads review"
+echo '{"number":70,"headRefOid":"shaOK"}' > "$F_TASKREQ_BREAKER/gh_pr_for_issue.320.json"
+printf 'WT320' > "$F_TASKREQ_BREAKER/orca_worktree_path.issue:320.json"
+{
+  render_status 320 "quentin" 1 | _comment 1
+  render_breaker "already escalated" | _comment 2
+  render_task_request quentin "An ask nobody will get to." | _comment 3
+} | "$JQ" -sc '.' > "$F_TASKREQ_BREAKER/gh_issue_comments.70.json"
+check_out "task-requested: a tripped breaker outranks a pending request" 1 \
+  "breaker-tripped sleep breaker pending on PR #70" run "$F_TASKREQ_BREAKER" "$NOW_MIDSPRINT"
+check "and Scotty was not woken" 1 test -f "$F_TASKREQ_BREAKER/calls.log"
+
+# Scotty leaving a request PENDING is exit 2, not a sleep: the node would
+# otherwise wake to the same work every tick for the rest of the sprint.
+F_TASKREQ_STUCK="$(fake_dir)"
+write_iterations "$F_TASKREQ_STUCK"
+one_active "$F_TASKREQ_STUCK" 320 "Leads review"
+echo '{"number":70,"headRefOid":"shaOK"}' > "$F_TASKREQ_STUCK/gh_pr_for_issue.320.json"
+echo "shaOK" > "$F_TASKREQ_STUCK/gh_pr_head.70.json"
+printf 'WT320' > "$F_TASKREQ_STUCK/orca_worktree_path.issue:320.json"
+{
+  render_status 320 "quentin" 1 | _comment 1
+  render_task_request quentin "An ask Scotty never answered." | _comment 2
+} | "$JQ" -sc '.' > "$F_TASKREQ_STUCK/gh_issue_comments.70.json"
+check_out "task-requested: a request left PENDING is broken, not a sleep" 2 \
+  "judging-task-request broken could not rule on the request from quentin on PR #70" \
+  run "$F_TASKREQ_STUCK" "$NOW_MIDSPRINT"
 
 # =============================================================================
 echo

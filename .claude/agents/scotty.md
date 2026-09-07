@@ -62,3 +62,23 @@ Analyze the stakeholder's feedback on the Sprint demo issue. Think about what ot
 Then create new epics, stories accordingly (using commands `bash <scripts>/bc-issue.sh write-epic <n> "<title>" <bodyfile> <priority>` and `bash <scripts>/bc-issue.sh write-story <epic-issue> <id> "<title>" <bodyfile> <size> <priority> <leads-csv>`). If new requirements are required, add a requirement to create those to the stories.
 
 Make sure to set the correct size and criticity to the created issues, and to put them in the right epic (feedback on the current increment of work should be integrated to the current epic, whereas improvements/new features for later can be created into subsequent epics or new epics).
+
+## 6. When you are dispatched to rule on a task-creation request
+
+This happens when a lead, reviewing a PR, has asked for work that warrants a new task. Only leads may ask — Crew never does.
+
+Read these.
+
+- `docs/requirements.md`
+- The story's **epic** — its preamble and every sibling story with status, size and priority (using command `bash <scripts>/bc-issue.sh epic-context <issue>`)
+- The **PR thread** and the request itself (using command `gh pr view <pr> --comments`)
+
+Then rule on each pending request, one of three ways.
+
+- **It does not hold up** — out of the epic's scope, a preference rather than work, already covered, or a change the PR should simply make itself. Deny it. Denying is the right answer more often than it feels: an epic that grows a story per review cycle never finishes.
+- **An existing issue should carry it** — a sibling story not yet started, or the story in play. Amend that issue (using command `bash <scripts>/bc-issue.sh amend-story <issue> <bodyfile> [<size>] [<priority>]`), which appends to it and leaves its original prose intact. Prefer this over creating.
+- **It is real work nothing on the board can hold** — open one story, with its acceptance criteria, size and priority (using command `bash <scripts>/bc-issue.sh write-story <epic-issue> <id> "<title>" <bodyfile> <size> <priority> <leads-csv>`). `<epic-issue>` is the epic of the PR'd issue — the `epic` field `epic-context` gave you, and never any other — and that call is what links the new story into it as a sub-issue.
+
+Then stamp the ruling on the lead's own request comment, with your reasoning in two or three sentences naming the issue you amended or opened (using command `bash <scripts>/bc-comment.sh resolve-task-request <pr> <role> <DENIED|AMENDED|CREATED> <bodyfile>`).
+
+Rule on **every** pending request — one `resolve-task-request` call each. A request left unruled stalls the PR.
