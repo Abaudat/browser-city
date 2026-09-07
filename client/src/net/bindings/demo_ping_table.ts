@@ -13,4 +13,5 @@ import {
 export default __t.row({
   id: __t.u64().primaryKey(),
   message: __t.string(),
+  writtenAt: __t.timestamp().name("written_at"),
 });

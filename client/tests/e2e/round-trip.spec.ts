@@ -15,7 +15,12 @@ test("a reducer write reaches the subscribed client within one second", async ({
   const handle = readSpacetimeHandle();
   const message = `bc-e2e-${Date.now()}`;
 
-  const writtenAtMs = Date.now();
+  // The write is issued through the CLI, not the observing client -- a
+  // real cold `spacetime call` process spawn, config resolution and
+  // connect, all of which is deliberately *not* part of the measured
+  // interval below. The budget is server-commit-to-observation
+  // (`writtenAtMs`, `ctx.timestamp` in `send_ping`, to `observedAtMs`),
+  // not CLI startup noise.
   callReducer(handle, "send_ping", message);
 
   await page.waitForFunction(
@@ -32,7 +37,7 @@ test("a reducer write reaches the subscribed client within one second", async ({
   expect(observation).toBeDefined();
   expect(observation?.message).toBe(message);
 
-  const deltaMs = (observation?.observedAtMs ?? Number.NaN) - writtenAtMs;
+  const deltaMs = (observation?.observedAtMs ?? Number.NaN) - (observation?.writtenAtMs ?? 0);
   expect(deltaMs).toBeGreaterThanOrEqual(0);
   expect(deltaMs).toBeLessThan(1_000);
 });

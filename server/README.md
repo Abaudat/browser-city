@@ -32,21 +32,6 @@ spacetime version use 2.9.0
 ```
 <!-- bc:windows-install:end -->
 
-## Maincloud provisioning (one-time)
-
-`.github/workflows/deploy.yml` publishes to Maincloud on every push to `master`. Before its first
-run, someone with a SpacetimeDB account does this once, by hand, from a machine with the CLI
-installed (Windows or otherwise):
-
-```bash
-spacetime login                       # opens a browser, authenticates against spacetimedb.com
-spacetime login show --token          # prints the bearer token
-```
-
-Add that token to the repository as the `SPACETIMEDB_TOKEN` GitHub Actions secret
-(Settings -> Secrets and variables -> Actions). The deploy workflow's `spacetime publish --server
-maincloud` reads it from there; nothing about it lives in this repository.
-
 ## Running locally
 
 ```bash

@@ -13,6 +13,7 @@ import {
 export const DemoPing = __t.object("DemoPing", {
   id: __t.u64(),
   message: __t.string(),
+  writtenAt: __t.timestamp(),
 });
 export type DemoPing = __Infer<typeof DemoPing>;
 

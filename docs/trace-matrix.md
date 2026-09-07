@@ -30,9 +30,11 @@ citizen simulation to run it against.
 
 ## Round trip and client/server boundary
 
-Not part of the `inv_*`/`check-trace-matrix.sh` symmetry above (these guard
-requirements that span the client/server boundary or the CI graph itself,
-not a `sim` invariant) -- checked by eye.
+Not part of the `inv_*`/`INV_*` id symmetry above (these guard requirements
+that span the client/server boundary or the CI graph itself, not a `sim`
+invariant), but not just checked by eye either: `check-trace-matrix.sh`
+asserts that the path named in every `covered` row's Guard column exists.
+A guard renamed or deleted without updating this table fails CI.
 
 | Requirement | Status | Guard |
 | --- | --- | --- |

@@ -13,6 +13,9 @@
     "rootDir": "src",
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    // No exactOptionalPropertyTypes: the generated spacetimedb bindings'
+    // own type inference (code we cannot hand-edit) fails under it with
+    // TS2344/TS2883 cascades unrelated to anything in src/. Tim, story 1.1.
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true

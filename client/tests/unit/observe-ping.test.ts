@@ -1,12 +1,17 @@
 // Pure-function coverage for the one seam SDK row shape becomes client
-// state (Quentin, story 1.1). No socket, no SDK import -- a fabricated row
-// only.
+// state (Quentin, story 1.1). No socket -- `Timestamp` is a plain SDK
+// value type, not a connection.
+import { Timestamp } from "spacetimedb";
 import { describe, expect, it } from "vitest";
 import { observePingInsert, type PingRow } from "../../src/net/observe-ping";
 
+function rowAt(message: string, id: bigint, writtenAtMs: number): PingRow {
+  return { id, message, writtenAt: Timestamp.fromDate(new Date(writtenAtMs)) };
+}
+
 describe("observePingInsert", () => {
   it("carries the row's id and message through unchanged", () => {
-    const row: PingRow = { id: 7n, message: "hello" };
+    const row = rowAt("hello", 7n, 1_000);
 
     const observation = observePingInsert(row, () => 1_000);
 
@@ -14,8 +19,16 @@ describe("observePingInsert", () => {
     expect(observation.message).toBe("hello");
   });
 
+  it("converts the server-stamped writtenAt to milliseconds", () => {
+    const row = rowAt("x", 1n, 123_456);
+
+    const observation = observePingInsert(row, () => 0);
+
+    expect(observation.writtenAtMs).toBe(123_456);
+  });
+
   it("stamps the observation with the injected clock, not the wall clock", () => {
-    const row: PingRow = { id: 1n, message: "x" };
+    const row = rowAt("x", 1n, 0);
 
     const observation = observePingInsert(row, () => 42);
 
@@ -24,7 +37,7 @@ describe("observePingInsert", () => {
 
   it("defaults to Date.now when no clock is injected", () => {
     const before = Date.now();
-    const observation = observePingInsert({ id: 2n, message: "y" });
+    const observation = observePingInsert(rowAt("y", 2n, 0));
     const after = Date.now();
 
     expect(observation.observedAtMs).toBeGreaterThanOrEqual(before);
@@ -32,7 +45,7 @@ describe("observePingInsert", () => {
   });
 
   it("does not mutate the input row", () => {
-    const row: PingRow = { id: 3n, message: "z" };
+    const row = rowAt("z", 3n, 0);
     const frozen = Object.freeze({ ...row });
 
     expect(() => observePingInsert(frozen, () => 0)).not.toThrow();

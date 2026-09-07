@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   windows-install:
@@ -47,3 +48,25 @@ jobs:
             Write-Error "expected spacetime --version to report 2.9.x, got: $out"
             exit 1
           }
+      # A weekly schedule reports to nobody by default -- the Actions tab
+      # is not something anyone watches. On a scheduled run (never on a
+      # push/PR, where the failing check itself is the signal) open or
+      # update one tracking issue instead, so upstream drift in the
+      # installer or a version pin doesn't sit undetected.
+      - name: file or update a tracking issue on scheduled failure
+        if: failure() && github.event_name == 'schedule'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="windows-install-check: scheduled run failed"
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          EXISTING="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number' || true)"
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body "Failed again: $RUN_URL"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" \
+              --body "The weekly Windows install check failed: $RUN_URL
+
+          Likely upstream drift in the installer at https://windows.spacetimedb.com or in the pinned version in server/README.md's fenced block. Close this once resolved."
+          fi

@@ -3,7 +3,14 @@
 // onInsert row into a PingObservation -- without ever opening a socket.
 // The generated bindings module is mocked; the real round trip over a real
 // socket is client/tests/e2e/round-trip.spec.ts's job, not this file's.
+import { Timestamp } from "spacetimedb";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+interface FakeRow {
+  id: bigint;
+  message: string;
+  writtenAt: Timestamp;
+}
 
 interface FakeState {
   uri?: string;
@@ -11,7 +18,7 @@ interface FakeState {
   onConnectCb?: (connection: unknown) => void;
   onConnectErrorCb?: (ctx: unknown, error: unknown) => void;
   subscribedSql?: string;
-  onInsertCb?: (ctx: unknown, row: { id: bigint; message: string }) => void;
+  onInsertCb?: (ctx: unknown, row: FakeRow) => void;
 }
 
 const state: FakeState = {};
@@ -25,7 +32,7 @@ const fakeConn = {
   }),
   db: {
     demoPing: {
-      onInsert: (cb: (ctx: unknown, row: { id: bigint; message: string }) => void) => {
+      onInsert: (cb: (ctx: unknown, row: FakeRow) => void) => {
         state.onInsertCb = cb;
       },
     },
@@ -85,14 +92,20 @@ describe("connect", () => {
   });
 
   it("turns an onInsert row into a PingObservation via observePingInsert", () => {
-    const received: Array<{ id: bigint; message: string; observedAtMs: number }> = [];
+    const received: Array<{
+      id: bigint;
+      message: string;
+      writtenAtMs: number;
+      observedAtMs: number;
+    }> = [];
     connect((observation) => received.push(observation));
 
-    state.onInsertCb?.({}, { id: 5n, message: "hi" });
+    state.onInsertCb?.({}, { id: 5n, message: "hi", writtenAt: Timestamp.fromDate(new Date(123)) });
 
     expect(received).toHaveLength(1);
     expect(received[0]?.id).toBe(5n);
     expect(received[0]?.message).toBe("hi");
+    expect(received[0]?.writtenAtMs).toBe(123);
     expect(typeof received[0]?.observedAtMs).toBe("number");
   });
 

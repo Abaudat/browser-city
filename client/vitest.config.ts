@@ -10,6 +10,7 @@ export default defineConfig({
       exclude: ["src/net/bindings/**"],
       thresholds: {
         lines: 90,
+        branches: 90,
       },
     },
   },

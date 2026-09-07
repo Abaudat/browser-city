@@ -31,7 +31,11 @@ jobs:
           fetch-depth: 1
       # A change under scripts/** or .github/** can affect any job group's
       # own checks, so it is folded into every filter below rather than
-      # kept as a fifth output nothing reads.
+      # kept as a fifth output nothing reads. Each filter also lists every
+      # path its own guard scripts actually read (not just the source tree
+      # the job title suggests) -- a filter that misses one of its guard's
+      # inputs is a guard that silently does not run on the PR that
+      # changes exactly that input.
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
@@ -40,10 +44,19 @@ jobs:
               - 'agentic-team/**'
               - 'scripts/**'
               - '.github/**'
+              - '.mcp.json'
+              - '.claude/**'
+              - 'docs/architecture.md'
+              - 'spacetime.json'
+              - 'spacetime.local.json'
+              # check-agent-tooling.sh cross-checks the CLI's version pin
+              # against this file too.
+              - 'server/Cargo.toml'
             server:
               - 'server/**'
               - 'scripts/**'
               - '.github/**'
+              - 'docs/trace-matrix.md'
             client:
               - 'client/**'
               - 'scripts/**'
@@ -192,8 +205,8 @@ jobs:
           cache-dependency-path: client/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run typecheck:tests
       - run: npm run lint
-      - run: npm run format
       - run: npm run test:unit:coverage
       - run: rustup toolchain install
       # $GITHUB_PATH only takes effect from the *next* step onward, never
@@ -224,6 +237,12 @@ jobs:
           cache-dependency-path: client/package-lock.json
       - run: npm ci
       - run: npm run build
+      - name: the e2e test hook must not ship in the production bundle
+        run: |
+          if grep -rq '__bc' dist/assets/*.js; then
+            echo "::error::window.__bc leaked into the production bundle -- import.meta.env.DEV did not strip it" >&2
+            exit 1
+          fi
 
   e2e:
     name: e2e
@@ -275,25 +294,16 @@ jobs:
         if: failure()
         with:
           name: playwright-report
-          path: client/playwright-report/
+          path: |
+            client/playwright-report/
+            client/test-results/spacetime-start.log
           retention-days: 7
 
   ci:
     name: ci
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    needs:
-      [
-        changes,
-        scripts-tests,
-        check,
-        test,
-        build,
-        coverage,
-        client-check,
-        client-build,
-        e2e,
-      ]
+    needs: [changes, scripts-tests, check, test, build, coverage, client-check, client-build, e2e]
     if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

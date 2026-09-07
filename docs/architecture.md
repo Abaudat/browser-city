@@ -17,8 +17,8 @@ cited here by identifier.
 | Client                        | TypeScript + PixiJS v8, bundled by Vite                                                                  |
 | Client SDK                    | the `spacetimedb` npm package                                                                            |
 | Client bindings               | `spacetime generate --lang typescript --out-dir client/src/net/bindings` — generated, never hand-written |
-| Client lint/format             | Biome                                                                                                    |
-| Client hosting                | GitHub Pages, built and deployed by `.github/workflows/deploy.yml`                                       |
+| Client lint/format            | Biome                                                                                                    |
+| Client hosting                | GitHub Pages, deployed by CI on push to master                                                          |
 | Rendering                     | PixiJS WebGPU with WebGL fallback; `@pixi/tilemap` for tile layers                                       |
 | Audio                         | Web Audio directly, or a thin wrapper                                                                    |
 | Art source                    | `ModernTileset/` — whole-object PNGs, nothing pre-split                                                  |

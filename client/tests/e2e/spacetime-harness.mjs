@@ -6,7 +6,16 @@
 // `serve-for-e2e.mjs`, which Playwright's `webServer.command` runs as a
 // bare `node` process outside Playwright's own TS transform.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,7 +23,17 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(__dirname, "../../..");
-const STATE_FILE = path.join(tmpdir(), "bc-e2e-spacetime-state.json");
+// Keyed to REPO_ROOT (not a bare fixed name) so two different worktrees
+// running the e2e suite on one machine at the same time never collide and
+// clobber each other's handle.
+const STATE_FILE = path.join(
+  tmpdir(),
+  `bc-e2e-spacetime-state-${createHash("sha256").update(REPO_ROOT).digest("hex").slice(0, 12)}.json`,
+);
+// Fixed, not inside the disposable mkdtemp data dir, so a failed run's
+// output survives long enough to be read and to ride along with the
+// Playwright report artifact upload.
+const START_LOG_FILE = path.join(REPO_ROOT, "client", "test-results", "spacetime-start.log");
 const HEALTH_DEADLINE_MS = 20_000;
 const HEALTH_POLL_INTERVAL_MS = 200;
 
@@ -58,21 +77,35 @@ function uniqueDbName() {
 }
 
 export async function startSpacetime() {
+  // A prior crashed run's state file must never look valid to this one:
+  // remove it before anything else, so a failure below (which skips the
+  // overwrite at the end) can't leave a stale-but-plausible handle behind.
+  rmSync(STATE_FILE, { force: true });
+
   const port = await findFreePort();
   const serverUrl = `http://127.0.0.1:${port}`;
   const dataDir = mkdtempSync(path.join(tmpdir(), "bc-e2e-spacetime-"));
   const dbName = uniqueDbName();
 
+  mkdirSync(path.dirname(START_LOG_FILE), { recursive: true });
+  const logFd = openSync(START_LOG_FILE, "w");
   const child = spawn(
     "spacetime",
     ["start", "--data-dir", dataDir, "--listen-addr", `127.0.0.1:${port}`],
-    { cwd: REPO_ROOT, stdio: "ignore" },
+    { cwd: REPO_ROOT, stdio: ["ignore", logFd, logFd] },
   );
   if (child.pid === undefined) {
     throw new Error("failed to spawn `spacetime start`");
   }
 
-  await waitForHealthy(serverUrl, HEALTH_DEADLINE_MS);
+  try {
+    await waitForHealthy(serverUrl, HEALTH_DEADLINE_MS);
+  } catch (error) {
+    const log = existsSync(START_LOG_FILE) ? readFileSync(START_LOG_FILE, "utf-8") : "";
+    throw new Error(
+      `${error.message}\n\n--- spacetime start output (${START_LOG_FILE}) ---\n${log}`,
+    );
+  }
 
   const publish = spawnSync(
     "spacetime",
