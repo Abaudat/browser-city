@@ -195,11 +195,13 @@ jobs:
       - run: npm run lint
       - run: npm run format
       - run: npm run test:unit:coverage
+      - run: rustup toolchain install
+      # $GITHUB_PATH only takes effect from the *next* step onward, never
+      # within the step that writes it -- so the CLI install and the check
+      # that calls it cannot share one `run:` block.
+      - run: bash ../scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
       - name: bindings are exactly what the module generates
-        run: |
-          rustup toolchain install
-          bash ../scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
-          bash ../scripts/ci/check-bindings-current.sh
+        run: bash ../scripts/ci/check-bindings-current.sh
       - run: bash ../scripts/ci/check-no-shared-code.sh
 
   client-build:

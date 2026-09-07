@@ -27,11 +27,19 @@ if ! grep -qE '"rootDir"[[:space:]]*:[[:space:]]*"src"' "$TSCONFIG"; then
 fi
 
 # --- no symlink crosses the two trees ---------------------------------------
+# A symlink's own tree (the one it must stay inside) is whichever of
+# client/ or server/ it lives under -- not "either tree", which would wave
+# through exactly a client/ symlink pointing into server/ or vice versa.
 while IFS= read -r -d '' f; do
   [ -L "$REPO_ROOT/$f" ] || continue
   target="$(cd "$REPO_ROOT" && readlink -f -- "$f" 2>/dev/null || true)"
+  case "$f" in
+    client/*) own_tree="$CLIENT_DIR" ;;
+    server/*) own_tree="$SERVER_DIR" ;;
+    *) own_tree="" ;;
+  esac
   case "$target" in
-    "$CLIENT_DIR"/*|"$SERVER_DIR"/*) : ;; # stays within its own tree
+    "$own_tree"/*) : ;; # stays within its own tree
     *)
       echo "check-no-shared-code: FAIL -- symlink $f resolves outside its own tree ($target) (NFR30)" >&2
       FAILED=1
