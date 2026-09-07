@@ -106,7 +106,11 @@ check "exits non-zero" 1 bash -c "exit $CODE"
 echo
 echo "soft skip: unresolvable base outside GITHUB_ACTIONS"
 D="$(fresh_repo "$BASE_CONTENT")"
-OUT="$(cd "$D" && bash scripts/ci/check-codes-append-only.sh no-such-ref 2>&1)"; CODE=$?
+# GITHUB_ACTIONS is explicitly cleared, not just left unset -- this suite
+# itself runs inside GitHub Actions, which sets it to "true" ambiently, and
+# an inherited value here would silently exercise the hard-fail branch
+# instead of the one this case actually tests.
+OUT="$(cd "$D" && GITHUB_ACTIONS= bash scripts/ci/check-codes-append-only.sh no-such-ref 2>&1)"; CODE=$?
 check "exits zero" 0 bash -c "exit $CODE"
 
 summary
