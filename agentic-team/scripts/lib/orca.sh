@@ -114,8 +114,9 @@ orca_terminal_close() { # <handle> -> 0 closed, 1 orca kept refusing
 
 # --- the app itself, for the scheduled supervisor ---------------------------
 # Everything above addresses a running Orca. These two answer whether there
-# is one and start it if there is not, which is the first thing keepalive.sh
-# has to know: an unreachable runtime answers every selector with ok:false,
+# is one and start it if there is not -- the first thing keepalive.sh has to
+# know before it touches Orca at all (its pull comes earlier still, needing
+# nothing to be up): an unreachable runtime answers every selector with ok:false,
 # so a supervisor that skipped this check would read "no terminals" and
 # cheerfully create one into nothing.
 

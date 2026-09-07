@@ -157,6 +157,21 @@ resolve_git_bash() {
   return 1
 }
 
+# Git, for the one thing the supervisor does to the repository itself: the
+# pull it runs before restarting the loop (see keepalive.sh). Resolved here,
+# by absolute path, for the same reason as everything else in this file --
+# the Task Scheduler's environment predates the Git install, so `git` is not
+# on PATH even though keepalive.sh is itself running inside git bash. The
+# cmd/ launcher comes first: it is the one a non-bash parent can also run.
+resolve_git() {
+  resolve git \
+    "${BC_GIT:-}" \
+    "/c/Program Files/Git/cmd/git.exe" \
+    "/c/Program Files/Git/bin/git.exe" \
+    "/c/Program Files (x86)/Git/cmd/git.exe" \
+    "${WIN_LOCAL:+$WIN_LOCAL/Programs/Git/cmd/git.exe}"
+}
+
 # `timeout`, so a hung `orca open` cannot hold a scheduled run open forever.
 # Absent is not fatal -- the caller runs unbounded and the Task Scheduler's
 # own "stop the task if it runs longer than" is the outer guard.

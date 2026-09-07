@@ -12,6 +12,8 @@ bc_init
 . "$LIB/project.sh"
 . "$LIB/orca.sh"
 . "$LIB/claude.sh"
+. "$LIB/proc.sh"
+. "$LIB/git.sh"
 
 # A literal "VAR=val" prefix immediately before a command scopes that
 # assignment to just this one invocation (works for functions too, not only
@@ -173,5 +175,41 @@ check "a field it does not know is misuse" 2 project_set_single 51 Estimate 3
 # test-bc-epic.sh, deleted with bc-epic.sh once the epics moved to the board,
 # so that mapping is currently untested -- restore a case here if Size is read
 # on a path that matters.
+
+echo
+echo "bc_proc_kill: the count decides, and an unreadable one is 'could not tell':"
+# The real query is Windows-only (Get-CimInstance), so what is covered here is
+# the contract every caller reads: three exit codes, never two. keepalive.sh's
+# suite drives the same function through a whole run.
+FAKE_K="$(fake_dir)"
+check "no fixture: the kill happened, nothing said otherwise" 0 \
+  with_fake "$FAKE_K" bc_proc_kill bash.exe run-orchestrator.sh
+check "it is logged with the exe and the needle"              0 \
+  bash -c "grep -qx 'proc_kill bash.exe run-orchestrator.sh' '$FAKE_K/calls.log'"
+FAKE_K0="$(fake_dir)"; printf '0\n' > "$FAKE_K0/proc_killed.json"
+check "a count of zero: there was nothing to stop"            1 \
+  with_fake "$FAKE_K0" bc_proc_kill bash.exe run-orchestrator.sh
+FAKE_KX="$(fake_dir)"; printf 'nope\n' > "$FAKE_KX/proc_killed.json"
+check "an unreadable count is broken, never 'nothing there'"  2 \
+  with_fake "$FAKE_KX" bc_proc_kill bash.exe run-orchestrator.sh
+check "both arguments are required"                           2 \
+  with_fake "$FAKE_K" bc_proc_kill bash.exe
+
+echo
+echo "bc_git_pull: logged, and its failure is a return, never an exit:"
+FAKE_G="$(fake_dir)"
+check "a pull that worked"            0 with_fake "$FAKE_G" bc_git_pull WT
+check "it is logged with the worktree" 0 \
+  bash -c "grep -qx 'git_pull WT' '$FAKE_G/calls.log'"
+FAKE_GF="$(fake_dir)"; printf '1\n' > "$FAKE_GF/git_pull.rc"
+check "a pull that could not fast-forward returns 1"          1 \
+  with_fake "$FAKE_GF" bc_git_pull WT
+# The caller reports a failed pull and carries on, so this must never be the
+# thing that kills the supervisor -- if it exited, the line after it would
+# never run and the team would stay stopped over a rebase somebody forgot.
+check "the caller is still alive after one"                   0 \
+  bash -c "BC_FAKE='$FAKE_GF' bash -c '. \"$LIB/git.sh\"; bc_git_pull WT; exit 0'"
+check "a missing directory is misuse"                         1 \
+  with_fake "$FAKE_G" bc_git_pull ""
 
 summary
