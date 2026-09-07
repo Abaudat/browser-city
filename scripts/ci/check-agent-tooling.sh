@@ -148,16 +148,26 @@ fi
 
 # --- grep guard: no community SpacetimeDB MCP server anywhere ---------------
 # Driven off tracked files, not a recursive grep, for the same reason
-# check-trace-matrix.sh scopes its #[ignore] scan that way.
+# check-trace-matrix.sh scopes its #[ignore] scan that way. Excludes this
+# script and its own unit tests, which must name the banned strings
+# literally in order to define and exercise the guard -- everywhere else,
+# the name appearing at all is the violation.
 BANNED_PATTERNS=(
   'spacetimedb-mcp-server'
   'spacetimemcp'
   'game-mcp-spacetime'
   'fail2fail-studios/spacetimedb-mcp'
 )
+SELF_PATHS=(
+  'scripts/ci/check-agent-tooling.sh'
+  'agentic-team/scripts/tests/test-check-agent-tooling.sh'
+)
 if command -v git >/dev/null 2>&1 && git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
   for pattern in "${BANNED_PATTERNS[@]}"; do
     HIT="$(git -C "$ROOT" ls-files -z | (cd "$ROOT" && xargs -0 -r grep -liF "$pattern") 2>/dev/null || true)"
+    for self in "${SELF_PATHS[@]}"; do
+      HIT="$(printf '%s\n' "$HIT" | grep -vxF "$self" || true)"
+    done
     if [ -n "$HIT" ]; then
       fail "community SpacetimeDB MCP package name '$pattern' found in tracked files (first-party only):"
       printf '%s\n' "$HIT" >&2
