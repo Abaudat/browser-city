@@ -45,6 +45,11 @@ spacetime dev --client-lang typescript \
 every save; existing rows survive the migration. Run `scripts/dev/check-hot-reload.sh` to verify
 the hot-reload loop mechanically rather than by eye.
 
+After adding, removing or changing a `#[spacetimedb::table]` field, run
+`scripts/dev/regen-schema-snapshot.sh` and commit the resulting `schema.snapshot.json` --
+`bounds/tests/schema_snapshot_current.rs` fails CI otherwise, and
+`scripts/ci/check-schema-additive.sh` is what actually enforces NFR33 against it on every PR.
+
 Inspecting:
 
 ```bash
@@ -82,5 +87,7 @@ That command belongs to the deploy on merge to master, not to development.
 ## The demo table
 
 `demo_ping` and `send_ping` are the scaffold's smoke test (story 1.1), kept because they prove the
-round trip -- reducer write to subscribed browser client -- end to end. They are not schema. Delete
-them, and `client/tests/e2e/round-trip.spec.ts`, when the first real table lands.
+round trip -- reducer write to subscribed browser client -- end to end. They are not schema, and
+story 1.2's real tables landing does not retire them: they stay until a story lands a reducer the
+client actually reads, since removing them before that would leave the round trip with no subject.
+Delete them, and `client/tests/e2e/round-trip.spec.ts`, in that story.

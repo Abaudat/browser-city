@@ -42,3 +42,18 @@ A guard renamed or deleted without updating this table fails CI.
 | No code shared between `server/` and `client/` (NFR30) | covered | `scripts/ci/check-no-shared-code.sh` |
 | Sim purity, reducers as the only table-touching layer (NFR28) | covered | `scripts/ci/check-sim-purity.sh` (unchanged by this story) |
 | TeV per reducer class instrumented from day one (NFR17) | deferred | first real reducer class -- nothing to measure yet (story 1.1) |
+
+## Schema permanence
+
+Story 1.2: the permanent decisions NFR33-NFR37 forbid ever getting wrong
+in a second commit. Same Guard-path discipline as the section above --
+`check-trace-matrix.sh` asserts every `covered` row's path exists.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| Every table has exactly one primary key; no Rust enum in module source; tables stay under the column ceiling or carry a waiver (NFR33, NFR35, NFR36) | covered | `server/bounds/tests/schema_shape.rs` |
+| Every scheduled table carries `scheduled_id`/`scheduled_at` and names a real, owner-only reducer (NFR34) | covered | `server/bounds/tests/schema_shape.rs` -- `every_scheduled_table_has_the_required_columns_and_names_a_real_reducer` |
+| The schema snapshot is never stale against source | covered | `server/bounds/tests/schema_snapshot_current.rs` |
+| A moved primary key, a moved unique constraint, a changed scheduled status, or a removed/retyped table or column fails the build (NFR33) | covered | `scripts/ci/check-schema-additive.sh` |
+| Appending a column with a default publishes against a live world; appending one without a default is rejected, not silently accepted (NFR33) | covered | `scripts/ci/check-live-migration.sh` |
+| The character&lt;-&gt;identity mapping is one-character-to-N-identities, `identity` unique and `character_id` a plain index (FR142, D5) | covered | `server/schema.snapshot.json` (`character_identity`'s row, pinned and diffed by the two guards above) |

@@ -126,6 +126,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: bash ../scripts/ci/check-sim-purity.sh
       - run: bash ../scripts/ci/check-golden-version-bump.sh
+      - run: bash ../scripts/ci/check-schema-additive.sh
 
   test:
     name: test
@@ -167,6 +168,31 @@ jobs:
       - run: rustup toolchain install
       - name: the module actually has to compile for the thing it runs on
         run: cargo build --target wasm32-unknown-unknown --release -p browser_city
+
+  migrate:
+    name: migrate
+    needs: [changes, build]
+    # `needs: build` too, so a module that does not compile never spins up
+    # an instance -- but this job's own gate is the `server` filter alone
+    # (check-ci-gate.sh requires exactly one `needs.changes.outputs.*`
+    # reference per job).
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            server/tests/fixtures/migration_v1
+            server/tests/fixtures/migration_v2_good
+            server/tests/fixtures/migration_v2_bad
+      - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
+      - name: story 1.2 AC3, proven against a real SpacetimeDB instance
+        run: bash scripts/ci/check-live-migration.sh
 
   coverage:
     name: coverage (sim)
@@ -312,7 +338,7 @@ jobs:
     name: ci
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    needs: [changes, scripts-tests, check, test, build, coverage, client-check, client-build, e2e]
+    needs: [changes, scripts-tests, check, test, build, migrate, coverage, client-check, client-build, e2e]
     if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

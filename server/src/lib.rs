@@ -1,12 +1,16 @@
 use spacetimedb::{ReducerContext, Table, Timestamp};
 
+mod tables;
+
 /// The scaffold's smoke slice (story 1.1): proves a reducer write reaches a
-/// subscribed browser client end to end. Not schema -- delete this table and
-/// `send_ping` in the first story that lands a real one (see
-/// `server/README.md`). `written_at` is `ctx.timestamp`, not the wall clock
-/// of whatever called the reducer: it is what the e2e spec measures the
-/// one-second budget against, so a CLI process's own startup time is never
-/// counted against it.
+/// subscribed browser client end to end. Not schema -- kept deliberately
+/// past story 1.2, which lands the first real tables, because none of them
+/// is yet read by a client reducer the e2e round trip can exercise. Delete
+/// this table and `send_ping` in the first story that lands a reducer the
+/// client reads (see `server/README.md`). `written_at` is `ctx.timestamp`,
+/// not the wall clock of whatever called the reducer: it is what the e2e
+/// spec measures the one-second budget against, so a CLI process's own
+/// startup time is never counted against it.
 #[spacetimedb::table(accessor = demo_ping, public)]
 pub struct DemoPing {
     #[primary_key]
@@ -32,13 +36,19 @@ pub fn send_ping(ctx: &ReducerContext, message: String) -> Result<(), String> {
 }
 
 #[spacetimedb::reducer(init)]
-pub fn init(_ctx: &ReducerContext) {
-    // Called when the module is initially published
+pub fn init(ctx: &ReducerContext) {
+    // Called when the module is initially published. Nothing is scheduled
+    // from here (story 1.2): an empty scheduled table costs nothing, and
+    // the first row is a later story's problem.
+    tables::codes::seed_all_codes(ctx);
 }
 
 #[spacetimedb::reducer(client_connected)]
-pub fn identity_connected(_ctx: &ReducerContext) {
-    // Called everytime a new client connects
+pub fn identity_connected(ctx: &ReducerContext) {
+    // `init` only ever runs on the module's first publish, so this is the
+    // path that lands a code added after that (NFR38) -- idempotent, so
+    // re-running it on every connection costs one indexed lookup per code.
+    tables::codes::seed_all_codes(ctx);
 }
 
 #[spacetimedb::reducer(client_disconnected)]

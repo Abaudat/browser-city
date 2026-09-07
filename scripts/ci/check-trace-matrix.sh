@@ -112,31 +112,48 @@ while IFS= read -r mid; do
   fi
 done <<< "$MATRIX_IDS"
 
-# --- "Round trip and client/server boundary" section: every `covered`
-# row's Guard column names a real path, checked mechanically rather than
-# by eye -- a guard renamed or deleted without updating the row is a lie
-# the matrix would otherwise keep telling.
-BOUNDARY_SECTION="$(awk '
-  /^## Round trip and client\/server boundary$/ { insection = 1; next }
-  /^## / { insection = 0 }
-  insection { print }
-' "$MATRIX")"
-BOUNDARY_ROWS="$(printf '%s\n' "$BOUNDARY_SECTION" | grep -E '^\| [A-Za-z]' || true)"
+# --- Guard-column sections: every `covered` row's Guard column names a
+# real path, checked mechanically rather than by eye -- a guard renamed or
+# deleted without updating the row is a lie the matrix would otherwise
+# keep telling. Not part of the `inv_*`/`INV_*` id symmetry above (these
+# guard requirements that span the client/server boundary, the CI graph
+# itself, or a permanent schema decision, not a `sim` invariant). Add a
+# section title here whenever a new "Requirement | Status | Guard" table
+# is added to the matrix -- this loop is the only thing that makes that
+# table's claims checked rather than decorative.
+GUARD_SECTIONS=(
+  "Round trip and client/server boundary"
+  "Schema permanence"
+)
 
-while IFS='|' read -r _ requirement status guard _; do
-  requirement="$(printf '%s' "$requirement" | xargs)"
-  status="$(printf '%s' "$status" | xargs)"
-  [ -n "$requirement" ] || continue
-  [ "$status" = "covered" ] || continue
-  path="$(printf '%s' "$guard" | grep -oE '`[^`]+`' | head -n1 | tr -d '`')"
-  if [ -z "$path" ]; then
-    echo "check-trace-matrix: FAIL -- '$requirement' is 'covered' but its Guard column names no backtick-quoted path" >&2
+for section in "${GUARD_SECTIONS[@]}"; do
+  SECTION_TEXT="$(awk -v title="## $section" '
+    $0 == title { insection = 1; next }
+    /^## / { insection = 0 }
+    insection { print }
+  ' "$MATRIX")"
+  if [ -z "$SECTION_TEXT" ]; then
+    echo "check-trace-matrix: FAIL -- no '## $section' section found in $MATRIX" >&2
     FAILED=1
-  elif [ ! -e "$REPO_ROOT/$path" ]; then
-    echo "check-trace-matrix: FAIL -- '$requirement' claims coverage via '$path', but that path does not exist" >&2
-    FAILED=1
+    continue
   fi
-done <<< "$BOUNDARY_ROWS"
+  SECTION_ROWS="$(printf '%s\n' "$SECTION_TEXT" | grep -E '^\| [A-Za-z]' || true)"
+
+  while IFS='|' read -r _ requirement status guard _; do
+    requirement="$(printf '%s' "$requirement" | xargs)"
+    status="$(printf '%s' "$status" | xargs)"
+    [ -n "$requirement" ] || continue
+    [ "$status" = "covered" ] || continue
+    path="$(printf '%s' "$guard" | grep -oE '`[^`]+`' | head -n1 | tr -d '`')"
+    if [ -z "$path" ]; then
+      echo "check-trace-matrix: FAIL -- '$requirement' is 'covered' but its Guard column names no backtick-quoted path" >&2
+      FAILED=1
+    elif [ ! -e "$REPO_ROOT/$path" ]; then
+      echo "check-trace-matrix: FAIL -- '$requirement' claims coverage via '$path', but that path does not exist" >&2
+      FAILED=1
+    fi
+  done <<< "$SECTION_ROWS"
+done
 
 if [ "$FAILED" -ne 0 ]; then
   exit 1

@@ -1,0 +1,16 @@
+matter_kind 0 sanitation
+matter_kind 1 budget
+matter_kind 2 housing
+matter_kind 3 labour
+provision 0 retail
+provision 1 employment
+provision 2 transit
+provision 3 housing
+reason_code 0 insufficient_budget
+reason_code 1 low_severity
+reason_code 2 duplicate_complaint
+reason_code 3 out_of_jurisdiction
+node_kind 0 entrance
+node_kind 1 internal
+node_kind 2 street
+node_kind 3 transit_stop
