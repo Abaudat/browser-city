@@ -79,4 +79,16 @@ state (NFR41).
 | --------------- | -------------------------------------------------------------- |
 | Rust via rustup | with `rustup target add wasm32-unknown-unknown`                |
 | SpacetimeDB CLI | `spacetime dev` for hot reload, `spacetime publish` to release |
+| SpacetimeDB CLI default server | `spacetime server set-default local`, so a flagless `spacetime mcp` also resolves to `local` |
 | Node.js         | client build                                                   |
+
+Agent tooling — declared in `.mcp.json` and `.claude/settings.json`, first-party only:
+
+<!-- bc:agent-tooling:start -->
+| Tool | Provided as | Pinned version | Notes |
+| --- | --- | --- | --- |
+| `spacetimedb` | `spacetime mcp` CLI subcommand, `.mcp.json` | 2.9.* | `--server local` explicit; database name from the local spacetime config, never hard-coded; approved via `enabledMcpjsonServers`, not an interactive prompt |
+| `context7` | hosted HTTP MCP, `.mcp.json` | hosted, unpinnable | needs `${CONTEXT7_API_KEY}`, degrades to unauthenticated if unset; a lookup tool, never a source of truth over this file or `docs/requirements.md`; approved via `enabledMcpjsonServers` |
+| `spacetimedb@spacetimedb-plugins` | Claude plugin marketplace `clockworklabs/SpacetimeDB`, `.claude/settings.json` | v2.9.0 | its bundled `spacetime mcp` (no `--server` flag) is blocked by `deniedMcpServers`' `serverCommand: ["spacetime", "mcp"]`, an exact match read from that tag's `.claude-plugin/marketplace.json` on 2026-09-07; only its skills load; re-read that file and update this row and the deny entry together whenever `ref` bumps |
+| `pixijs-skills@pixijs-skills` | Claude plugin marketplace `pixijs/pixijs-skills`, `.claude/settings.json` | floating on `main` | official PixiJS v8 rendering skills |
+<!-- bc:agent-tooling:end -->

@@ -1,0 +1,26 @@
+{
+  "extraKnownMarketplaces": {
+    "spacetimedb-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "clockworklabs/SpacetimeDB",
+        "ref": "v2.9.0"
+      }
+    },
+    "pixijs-skills": {
+      "source": {
+        "source": "github",
+        "repo": "pixijs/pixijs-skills",
+        "ref": "main"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "spacetimedb@spacetimedb-plugins": true,
+    "pixijs-skills@pixijs-skills": true
+  },
+  "enabledMcpjsonServers": ["spacetimedb", "context7"],
+  "deniedMcpServers": [
+    { "serverCommand": ["spacetime", "mcp"] }
+  ]
+}

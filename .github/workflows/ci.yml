@@ -36,6 +36,9 @@ jobs:
           printf '#!/bin/sh\nexit 0\n' > "$RUNNER_TEMP/stub-bin/claude"
           chmod +x "$RUNNER_TEMP/stub-bin/orca" "$RUNNER_TEMP/stub-bin/claude"
           echo "$RUNNER_TEMP/stub-bin" >> "$GITHUB_PATH"
+      # No toolchain needed and sub-second to run -- fails before run-all.sh's
+      # much larger suite gets a chance to.
+      - run: bash scripts/ci/check-agent-tooling.sh
       - run: bash agentic-team/scripts/tests/run-all.sh
 
   check:
