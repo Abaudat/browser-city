@@ -16,24 +16,56 @@ played world by accident.
 parse (`invalid leading byte (0x7e) for external kind`), so the CLI's "could not find wasm-opt"
 warning on every build is expected and correct.
 
+### Installing the CLI on Windows
+
+The documented installer (`curl ... | sh`) is a Unix shell script and does not run in PowerShell.
+The block below is the working Windows method, extracted verbatim and run on a clean
+`windows-latest` runner by `.github/workflows/windows-install-check.yml`
+(`scripts/ci/extract-windows-install.sh`) on every change to this file and weekly, so drift in the
+upstream installer or in our version pin shows up on its own rather than at the next new machine.
+
+<!-- bc:windows-install:start -->
+```powershell
+iwr https://windows.spacetimedb.com -useb | iex
+spacetime version install 2.9.0
+spacetime version use 2.9.0
+```
+<!-- bc:windows-install:end -->
+
+## Maincloud provisioning (one-time)
+
+`.github/workflows/deploy.yml` publishes to Maincloud on every push to `master`. Before its first
+run, someone with a SpacetimeDB account does this once, by hand, from a machine with the CLI
+installed (Windows or otherwise):
+
+```bash
+spacetime login                       # opens a browser, authenticates against spacetimedb.com
+spacetime login show --token          # prints the bearer token
+```
+
+Add that token to the repository as the `SPACETIMEDB_TOKEN` GitHub Actions secret
+(Settings -> Secrets and variables -> Actions). The deploy workflow's `spacetime publish --server
+maincloud` reads it from there; nothing about it lives in this repository.
+
 ## Running locally
 
 ```bash
 spacetime start --data-dir .spacetime/data --listen-addr 127.0.0.1:3000   # the local instance
 spacetime publish --yes                                                   # build + publish to it
-spacetime dev --server-only --yes                                         # hot-reload on file change
+spacetime dev --client-lang typescript \
+  --module-bindings-path ../client/src/net/bindings --yes                 # hot-reload on file change
 ```
 
-`spacetime dev` rebuilds, automigrates and republishes on every save; existing rows survive the
-migration. Add `--client-lang typescript --module-bindings-path client/src/module_bindings` once the
-client exists.
+`spacetime dev` rebuilds, automigrates, republishes and regenerates `client/src/net/bindings` on
+every save; existing rows survive the migration. Run `scripts/dev/check-hot-reload.sh` to verify
+the hot-reload loop mechanically rather than by eye.
 
 Inspecting:
 
 ```bash
 spacetime logs browser-city
-spacetime sql browser-city "SELECT * FROM person"
-spacetime call browser-city say_hello
+spacetime sql browser-city "SELECT * FROM demo_ping"
+spacetime call browser-city send_ping hello
 ```
 
 ## Resetting
@@ -64,5 +96,6 @@ That command belongs to the deploy on merge to master, not to development.
 
 ## The demo table
 
-`Person`, `add` and `say_hello` are the template's smoke test, kept because they prove the local loop
-end to end. They are not schema. Delete them when the first real tables land.
+`demo_ping` and `send_ping` are the scaffold's smoke test (story 1.1), kept because they prove the
+round trip -- reducer write to subscribed browser client -- end to end. They are not schema. Delete
+them, and `client/tests/e2e/round-trip.spec.ts`, when the first real table lands.

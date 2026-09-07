@@ -33,4 +33,13 @@ pub struct TableBound {
 /// The bound for every table in the module. Add a row here in the same PR
 /// that adds a `#[spacetimedb::table]` -- `tests/registry_matches_tables.rs`
 /// fails otherwise.
-pub const TABLE_BOUNDS: &[TableBound] = &[];
+pub const TABLE_BOUNDS: &[TableBound] = &[
+    // The scaffold's smoke slice (story 1.1) -- an engineering ceiling, not
+    // a game rule, since the table itself is deleted with the first real
+    // schema. See `server/README.md`.
+    TableBound {
+        accessor: "demo_ping",
+        max_rows: 1_000,
+        kind: BoundKind::Engineering,
+    },
+];

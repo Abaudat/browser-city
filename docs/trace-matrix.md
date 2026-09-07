@@ -27,3 +27,16 @@ citizen simulation to run it against.
 | Requirement | Status | Blocked on |
 | --- | --- | --- |
 | Property suite runs thousands of simulated citizen-weeks (NFR29) | deferred | citizen simulation |
+
+## Round trip and client/server boundary
+
+Not part of the `inv_*`/`check-trace-matrix.sh` symmetry above (these guard
+requirements that span the client/server boundary or the CI graph itself,
+not a `sim` invariant) -- checked by eye.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| Browser-exclusive, no install/plugin/download gate (NFR5) | covered | `client/tests/e2e/round-trip.spec.ts` -- runs the client in stock headless Chromium with no flag, plugin or install step |
+| No code shared between `server/` and `client/` (NFR30) | covered | `scripts/ci/check-no-shared-code.sh` |
+| Sim purity, reducers as the only table-touching layer (NFR28) | covered | `scripts/ci/check-sim-purity.sh` (unchanged by this story) |
+| TeV per reducer class instrumented from day one (NFR17) | deferred | first real reducer class -- nothing to measure yet (story 1.1) |

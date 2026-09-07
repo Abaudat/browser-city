@@ -7,3 +7,11 @@ Cargo.lock.orig
 
 # Environment overrides
 spacetime.*.local.json
+
+# Client (Vite) build output and tooling caches
+client/node_modules/
+client/dist/
+client/.vite/
+client/playwright-report/
+client/test-results/
+client/coverage/
