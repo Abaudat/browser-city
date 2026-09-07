@@ -94,6 +94,28 @@ pub mod reason_code {
     ];
 }
 
+/// A cell's rendering-order dimension within its floor (FR117, FR123):
+/// never a second collision dimension -- a collision test always consults
+/// a whole floor's merged blocking set, regardless of layer. `rank` (read
+/// by story 1.6's depth sort) lives on this code's companion data row
+/// (`../../src/tables/world.rs`'s `LayerCode`), not here and not on any
+/// per-cell column -- a minimal, honest set for what this story's fixture
+/// needs (a road and the deck above it), not a speculative full set.
+pub mod layer {
+    use super::Code;
+
+    pub const CODES: &[Code] = &[
+        Code {
+            code: 0,
+            name: "ground",
+        },
+        Code {
+            code: 1,
+            name: "overhead",
+        },
+    ];
+}
+
 /// A macro-graph node's kind (FR134): interiors collapse to an entrance
 /// node, plus an internal node for large buildings.
 pub mod node_kind {

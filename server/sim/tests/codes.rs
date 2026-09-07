@@ -6,7 +6,7 @@
 //! something else. `tests/goldens/codes_v1.golden` pins the whole mapping;
 //! a diff there is exactly the moment a human must look.
 
-use sim::codes::{Code, matter_kind, node_kind, provision, reason_code};
+use sim::codes::{Code, layer, matter_kind, node_kind, provision, reason_code};
 
 const GOLDEN: &str = include_str!("goldens/codes_v1.golden");
 
@@ -103,4 +103,11 @@ fn node_kind_matches_golden_and_is_unique() {
     let golden = parse_golden(GOLDEN);
     assert_matches_golden("node_kind", node_kind::CODES, &golden);
     assert_unique("node_kind", node_kind::CODES);
+}
+
+#[test]
+fn layer_matches_golden_and_is_unique() {
+    let golden = parse_golden(GOLDEN);
+    assert_matches_golden("layer", layer::CODES, &golden);
+    assert_unique("layer", layer::CODES);
 }

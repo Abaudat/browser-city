@@ -112,6 +112,61 @@ and just-in-time. So:
   `scripts/ci/check-codes-append-only.sh` diffs
   `sim/tests/goldens/codes_*.golden` the same way.
 
+## World addressing
+
+A cell address is `(x: i32, y: i32, floor: i8, layer: u32)` (FR117). `x`/`y`
+are absolute world tile coordinates, always signed, never chunk-relative in
+a stored column. `floor` is signed (the subway is floor -1, FR122) and is
+`i8` -- a wider column later would be a retype, which
+`check-schema-additive.sh` forbids, so it is decided once, here. `layer` is
+a `u32` code plus its companion `layer_code` data table (NFR36, never a
+Rust enum, minted in `sim::codes::layer`) and is purely a rendering-order
+dimension (FR123's depth-sort rank, read by story 1.6) -- it is never a
+second collision dimension; a collision test always consults one floor's
+whole merged blocking set.
+
+There is no dense per-cell table, and there never will be: cell facts are
+always derived from placed content, never stored per cell.
+
+- Walkability is the absence of a collider (FR128): computed by
+  rasterising the colliders the placed objects on an entity's floor
+  contribute, never a stored walkable/collision column.
+- Building and room ownership (FR119) is areas, not per-cell: `building`
+  and `room` rows carry a surrogate id; `building_area`/`room_area` rows
+  hold the axis-aligned rectangles that belong to one such id. A
+  non-rectangular footprint is several rects.
+- Floor transitions (FR117) are rows in `floor_transition`, anchor cell to
+  target cell, never a boolean on an object and never a special layer. A
+  door is never one of these rows (FR118): it is an ordinary walkable
+  cell.
+
+Chunking is the unit of subscription and of cost (FR145). `CHUNK_SIZE`
+(32 tiles, one floor) is declared once, in `sim::world`; a literal 32
+anywhere else is a defect. `sim::world::chunk_key(x, y, floor)` packs a
+chunk's key as `[63:56] reserved=0 | [55:32] chunk_x (24-bit two's
+complement) | [31:8] chunk_y (24-bit two's complement) | [7:0] floor
+(8-bit two's complement)`; every spatially addressed table carries the
+result as a plain indexed `chunk_key` column. Two containment rules: an
+ownership rect is clipped so it lies entirely inside the chunk its key
+names, so a per-chunk subscription of it is never partial; an object
+instance is addressed by its anchor chunk and may overhang it, which the
+client absorbs with a one-chunk subscription halo.
+
+The collision grid's per-cell budget is 1 bit: a floor's collision set is
+dense storage sized to its extent, indexed by arithmetic (never a map
+lookup per cell, never a scan), so a query costs one bounded access
+regardless of world size.
+
+The client's mirror of these addressing, collision, transition and
+ownership rules is a separate TypeScript implementation (NFR30 forbids
+sharing the code), pinned against the same oracle: the committed
+`fixtures/world-conformance.v1.json`, a hand-authored world plus its
+hand-typed query answers, regenerated from `sim::world::fixture` by
+`bounds`'s `regen-world-fixture` binary. Any story that adds a
+client-side collision or addressing implementation must read this same
+file in its own test suite -- consuming it from only one side is a
+half-finished obligation, not a followed rule.
+
 ## Naming
 
 

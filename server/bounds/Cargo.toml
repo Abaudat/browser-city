@@ -9,6 +9,14 @@ edition = "2024"
 name = "regen-schema-snapshot"
 path = "src/bin/regen_schema_snapshot.rs"
 
+[[bin]]
+name = "regen-world-fixture"
+path = "src/bin/regen_world_fixture.rs"
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Pure logic only (NFR28) -- reused here so the same canonical fixture that
+# `sim`'s own tests check against is what gets serialised to the shared
+# conformance JSON, rather than a second, hand-copied description of it.
+sim = { path = "../sim" }

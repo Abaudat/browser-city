@@ -13,6 +13,7 @@
 //! here needs to change for that.
 
 pub mod schema;
+pub mod world_fixture;
 
 /// Whether a table's bound comes from the game's rules (a real ceiling the
 /// simulation must never exceed) or is an engineering safety valve (a bound
@@ -102,6 +103,66 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         accessor: "node_kind",
         max_rows: 64,
         kind: BoundKind::Mechanical,
+    },
+    TableBound {
+        accessor: "layer_code",
+        max_rows: 64,
+        kind: BoundKind::Mechanical,
+    },
+    // Story 1.5: world addressing (FR117-FR119). Cell facts are always
+    // derived (never a dense per-cell table); these bound the placed
+    // content a generator writes.
+    //
+    // One row per placed object anchor. NFR14's growth target is a
+    // 1024x1024 district; a subway plus street plus up to six above-street
+    // storeys is 8 addressable floors; assuming an average object
+    // footprint of at least 2x2 tiles (FR127 caps it at 8x8, but most
+    // props are far smaller) bounds density at one object per 4 cells:
+    // 1024 * 1024 * 8 / 4 = 2,097,152 -- rounded up for headroom. An
+    // engineering ceiling (the density assumption, not a game rule).
+    TableBound {
+        accessor: "placed_object",
+        max_rows: 3_000_000,
+        kind: BoundKind::Engineering,
+    },
+    // Stairs, ramps, ladders, manholes and station steps are sparse --
+    // roughly one per 16x16 tile block, across the same 8 floors:
+    // 1024 * 1024 / 256 * 8 = 32,768 -- rounded up. An engineering ceiling
+    // (the block-density assumption, not a hard game rule).
+    TableBound {
+        accessor: "floor_transition",
+        max_rows: 50_000,
+        kind: BoundKind::Engineering,
+    },
+    // A real game-mechanical ceiling: a building's minimum plausible
+    // footprint is 5x5 (25 tiles), so the 1024x1024 growth-target district
+    // holds at most 1024 * 1024 / 25 = 41,943 -- rounded up.
+    TableBound {
+        accessor: "building",
+        max_rows: 50_000,
+        kind: BoundKind::Mechanical,
+    },
+    // Up to ~10 rooms per building on average (large buildings carry more,
+    // most carry far fewer): 50,000 buildings * 10 = 500,000.
+    TableBound {
+        accessor: "room",
+        max_rows: 500_000,
+        kind: BoundKind::Mechanical,
+    },
+    // Most footprints are one rect; a non-rectangular one decomposes into
+    // a handful more. 3x `building`'s own ceiling as headroom for that
+    // decomposition and for chunk-boundary clipping (Tech Lead direction:
+    // a rect is clipped to lie entirely inside the chunk its key names).
+    TableBound {
+        accessor: "building_area",
+        max_rows: 150_000,
+        kind: BoundKind::Engineering,
+    },
+    // Same reasoning as `building_area`, over `room`'s ceiling.
+    TableBound {
+        accessor: "room_area",
+        max_rows: 1_500_000,
+        kind: BoundKind::Engineering,
     },
     // Scheduled tables (NFR34): each carries at most a handful of pending
     // rows in practice; the ceiling is a safety net against a runaway

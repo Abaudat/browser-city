@@ -124,6 +124,7 @@ done <<< "$MATRIX_IDS"
 GUARD_SECTIONS=(
   "Round trip and client/server boundary"
   "Schema permanence"
+  "World addressing"
 )
 
 for section in "${GUARD_SECTIONS[@]}"; do
