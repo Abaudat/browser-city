@@ -57,11 +57,27 @@ check)
 
   # overallStatus first: the account can be cut off while both utilisations
   # still read below their caps, and that is a stop, not a rounding question.
-  if [ "$status" != "allowed" ]; then
-    printf 'spent status=%s session=%s weekly=%s resumes=%s\n' \
-      "$status" "$session" "$weekly" "$(rate_reset_at "$session_reset")"
-    exit 1
-  fi
+  #
+  # "allowed_warning" is not one of those cut-offs. Anthropic raises it as
+  # soon as weekly utilisation crosses 7d-surpassed-threshold (0.75), and it
+  # means allowed-and-approaching, not stopped. Reading every status that is
+  # not literally "allowed" as spent parked the team for the rest of the week
+  # at weekly=0.76 against an 0.80 cap -- a stop with no cap reached and no
+  # limit hit. The statuses that are a stop are the rejections; how close to
+  # the limit the team may run is what the caps below are for.
+  case "$status" in
+    allowed|allowed_warning) ;;
+    *)
+      # The weekly reset, not the session one. The account-level status
+      # follows the representative claim, which is the seven-day one, and
+      # the weekly reset is the later of the two regardless: naming the
+      # 5-hour reset here promises the team is back this evening for a stop
+      # that lasts until the week turns over.
+      printf 'spent status=%s session=%s weekly=%s resumes=%s\n' \
+        "$status" "$session" "$weekly" "$(rate_reset_at "$weekly_reset")"
+      exit 1
+      ;;
+  esac
 
   if rate_at_or_over "$session" "$BC_SESSION_CAP"; then
     printf 'spent session=%s cap=%s resumes=%s\n' \
