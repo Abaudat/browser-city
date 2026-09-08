@@ -93,6 +93,6 @@ discipline as the sections above.
 
 | Requirement | Status | Guard |
 | --- | --- | --- |
-| The spike report measured SpacetimeDB version never goes stale against the `server/Cargo.toml` pin, the `docs/architecture.md` stack line, or the pinned CLI installer | covered | `scripts/ci/check-sched-timing-pin.sh` |
-| Scheduler timing (drift budget, non-compounding assumption, post-publish survival) is a load-bearing assumption under any subsystem built on `ScheduleAt` | deferred | the first scheduler-dependent subsystem (L2 citizen ticking / the day-night cycle) -- re-read `docs/spikes/1.3-scheduled-reducer-timing.md` before relying on a repeating schedule phase |
-| A schedule reconciler (or the idempotent, elapsed-time-clamped reducer the republish leg alternative finding would instead demand) | deferred | the story that first needs a repeating schedule to survive a redeploy -- `docs/spikes/1.3-scheduled-reducer-timing.md` republish leg names which of the two rules applies |
+| The spike report measured SpacetimeDB version never goes stale against the `server/Cargo.toml` pin, the `docs/architecture.md` stack line, or the pinned CLI installer exact patch | covered | `scripts/ci/check-sched-timing-pin.sh` |
+| The drift claims in `docs/spikes/1.3-scheduled-reducer-timing.md` are re-runnable with one command | covered | `scripts/dev/run-sched-timing-spike.sh` |
+| Whether a pending scheduled row survives a schema-changing publish, or a publish to Maincloud, is unmeasured (only a same-wasm, same-schema local republish was measured) | deferred | the deploy story |

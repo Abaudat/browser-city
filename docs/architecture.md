@@ -62,28 +62,21 @@ state (NFR41).
 
 ## Scheduled reducers
 
-`docs/spikes/1.3-scheduled-reducer-timing.md` measured SpacetimeDB
-2.9.0's scheduled-reducer timing. A single fire's dispatch drift up to
-2.5 real seconds (one in-city minute at FR1's 24x compression) is within
-what gameplay may already assume; no gameplay system may assume finer
-real-time precision than that from a scheduled reducer.
+A single scheduled-reducer fire's dispatch drift may be assumed within
+2.5 real seconds (one in-city minute at FR1's 24x compression); no
+gameplay system may assume finer real-time precision than that.
 
-A `ScheduleAt::Interval` schedule is not guaranteed to stay anchored to
-its original phase: the measured run showed compounding lateness (tens
-of milliseconds per tick) that grows without bound over a long-running
-cadence, present on an idle instance and unchanged under load. No
-gameplay system may assume a repeating schedule's absolute phase survives
-more than a few ticks; a system whose correctness depends on phase over a
-session-length run (the day-night cycle, a transit timetable, an L2 tick)
-must re-derive its position from a durable, wall-clock-anchored source on
-every fire rather than trusting tick count or the platform's own
-rescheduling.
+A repeating schedule's absolute phase is not guaranteed to survive more
+than a few ticks unless it is explicitly re-anchored to its own original
+target on every reschedule, never to the time it actually fired -- a
+repeat built the second way compounds its own lateness indefinitely
+regardless of which SpacetimeDB API produced it. A system whose
+correctness depends on phase over a session-length run (the day-night
+cycle, a transit timetable, an L2 tick) must be built the first way.
 
-A pending scheduled row (one-shot or repeating) survives a same-module
-republish (`spacetime publish` with no `--delete-data`) and resumes
-firing close to its original schedule; the republish itself costs one
-bounded scheduler pause, not data loss and not a catch-up storm. Nothing
-built on a scheduled table needs its own reconciler for that case.
+Schedules are derived state: rebuilt from durable tables, never trusted
+to outlive a deploy purely by surviving as pending rows. See
+docs/spikes/1.3-scheduled-reducer-timing.md.
 
 ## Schema
 

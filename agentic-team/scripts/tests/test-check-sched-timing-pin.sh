@@ -70,8 +70,15 @@ printf '# Spike report\nno marker here\n' > "$D/docs/spikes/1.3-scheduled-reduce
 check "missing marker -> exit 1" 1 run_check "$D"
 
 echo
-echo "green: a patch-only difference (2.9.0 vs 2.9.1) is not a mismatch"
-D="$(fresh_repo 2.9.1 2.9.x 2.9.* 2.9.0)"
-check "patch bump alone -> exit 0" 0 run_check "$D"
+echo "red: a patch-only difference against the installer is still a mismatch (v2.7.1/v2.8.3 were both patch releases)"
+D="$(fresh_repo 2.9.0 2.9.x 2.9.* 2.9.1)"
+OUT="$(run_check "$D" 2>&1)"; CODE=$?
+check "patch bump alone -> exit 1" 1 bash -c "exit $CODE"
+check_out "message names the exact mismatch" 0 "yes" bash -c "printf '%s' \"\$1\" | grep -qF 'measured on 2.9.0' && echo yes" _ "$OUT"
+
+echo
+echo "green: report matches the installer's exact patch, even though Cargo/architecture only express minor"
+D="$(fresh_repo 2.9.7 2.9.x 2.9.* 2.9.7)"
+check "exact patch match -> exit 0" 0 run_check "$D"
 
 summary
