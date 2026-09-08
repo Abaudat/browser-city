@@ -65,16 +65,22 @@ jobs:
               - 'scripts/**'
               - '.github/**'
               - 'docs/trace-matrix.md'
+              # server/bounds/tests/world_fixture_current.rs regenerates
+              # and diffs this file -- a hand-edit here with no server/
+              # change must still trip the job that catches it.
+              - 'fixtures/**'
             client:
               - 'client/**'
               - 'server/**'
               - 'scripts/**'
               - '.github/**'
+              - 'fixtures/**'
             e2e:
               - 'server/**'
               - 'client/**'
               - 'scripts/**'
               - '.github/**'
+              - 'fixtures/**'
 
   scripts-tests:
     name: scripts-tests

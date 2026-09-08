@@ -94,6 +94,43 @@ pub mod reason_code {
     ];
 }
 
+/// A cell's rendering-order dimension within its floor (FR117, FR123):
+/// never a second collision dimension -- a collision test always consults
+/// a whole floor's merged blocking set, regardless of layer. Unlike the
+/// other extensible sets in this module, a layer carries its FR123
+/// depth-sort `rank` inline on the same entry as `code`/`name` (not a
+/// parallel array, here or anywhere else): a code can never be added
+/// without a rank. `rank` is as permanent as `code` itself and pinned by
+/// the same golden (`tests/codes.rs`, `docs/architecture.md`'s "World
+/// addressing" section) -- get a layer's depth order right the first
+/// time; `../../src/tables/codes.rs`'s `seed_all_codes` only ever inserts
+/// a code once and never updates an existing row, so there is no update
+/// path for a rank once seeded. A minimal, honest set for what this
+/// story's fixture needs (a road and the deck above it), not a
+/// speculative full set.
+pub mod layer {
+    /// One layer code and its FR123 depth-sort rank. `../../src/tables/
+    /// world.rs`'s `LayerCode` is the companion table this seeds.
+    pub struct LayerCode {
+        pub code: u32,
+        pub name: &'static str,
+        pub rank: u32,
+    }
+
+    pub const CODES: &[LayerCode] = &[
+        LayerCode {
+            code: 0,
+            name: "ground",
+            rank: 0,
+        },
+        LayerCode {
+            code: 1,
+            name: "overhead",
+            rank: 1,
+        },
+    ];
+}
+
 /// A macro-graph node's kind (FR134): interiors collapse to an entrance
 /// node, plus an internal node for large buildings.
 pub mod node_kind {

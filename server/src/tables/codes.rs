@@ -1,9 +1,12 @@
 //! Companion tables for the extensible sets defined in `sim::codes`
 //! (NFR36): matter kinds, provisions, reason codes and node kinds are each
-//! a `u32` code plus a name, never a Rust enum, so a new variant is a row
+//! a `u32` code plus a name; layers are a `u32` code plus a name and a
+//! FR123 depth-sort `rank`. Never a Rust enum, so a new variant is a row
 //! insert rather than a migration.
 
 use spacetimedb::{ReducerContext, Table};
+
+use super::world::{LayerCode, layer_code};
 
 #[spacetimedb::table(accessor = matter_kind)]
 pub struct MatterKind {
@@ -70,6 +73,15 @@ pub fn seed_all_codes(ctx: &ReducerContext) {
             ctx.db.node_kind().insert(NodeKind {
                 code: c.code,
                 name: c.name.to_string(),
+            });
+        }
+    }
+    for c in sim::codes::layer::CODES {
+        if ctx.db.layer_code().code().find(c.code).is_none() {
+            ctx.db.layer_code().insert(LayerCode {
+                code: c.code,
+                name: c.name.to_string(),
+                rank: c.rank,
             });
         }
     }

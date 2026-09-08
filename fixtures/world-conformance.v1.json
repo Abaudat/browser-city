@@ -1,0 +1,345 @@
+{
+  "floors": [
+    {
+      "floor": 0,
+      "bounds": {
+        "x0": -5,
+        "y0": -5,
+        "x1": 40,
+        "y1": 10
+      },
+      "colliders": [
+        {
+          "x0": 10,
+          "y0": 1,
+          "x1": 11,
+          "y1": 2
+        },
+        {
+          "x0": 11,
+          "y0": 1,
+          "x1": 12,
+          "y1": 2
+        },
+        {
+          "x0": 13,
+          "y0": 1,
+          "x1": 14,
+          "y1": 2
+        },
+        {
+          "x0": 14,
+          "y0": 1,
+          "x1": 15,
+          "y1": 2
+        },
+        {
+          "x0": 10,
+          "y0": 2,
+          "x1": 11,
+          "y1": 3
+        },
+        {
+          "x0": 14,
+          "y0": 2,
+          "x1": 15,
+          "y1": 3
+        },
+        {
+          "x0": 10,
+          "y0": 3,
+          "x1": 11,
+          "y1": 4
+        },
+        {
+          "x0": 14,
+          "y0": 3,
+          "x1": 15,
+          "y1": 4
+        },
+        {
+          "x0": 10,
+          "y0": 4,
+          "x1": 11,
+          "y1": 5
+        },
+        {
+          "x0": 14,
+          "y0": 4,
+          "x1": 15,
+          "y1": 5
+        },
+        {
+          "x0": 10,
+          "y0": 5,
+          "x1": 11,
+          "y1": 6
+        },
+        {
+          "x0": 11,
+          "y0": 5,
+          "x1": 12,
+          "y1": 6
+        },
+        {
+          "x0": 12,
+          "y0": 5,
+          "x1": 13,
+          "y1": 6
+        },
+        {
+          "x0": 13,
+          "y0": 5,
+          "x1": 14,
+          "y1": 6
+        },
+        {
+          "x0": 14,
+          "y0": 5,
+          "x1": 15,
+          "y1": 6
+        }
+      ]
+    },
+    {
+      "floor": 1,
+      "bounds": {
+        "x0": -5,
+        "y0": -5,
+        "x1": 40,
+        "y1": 10
+      },
+      "colliders": [
+        {
+          "x0": 4,
+          "y0": 0,
+          "x1": 5,
+          "y1": 1
+        },
+        {
+          "x0": 7,
+          "y0": 0,
+          "x1": 8,
+          "y1": 1
+        }
+      ]
+    },
+    {
+      "floor": -1,
+      "bounds": {
+        "x0": -5,
+        "y0": -5,
+        "x1": 40,
+        "y1": 10
+      },
+      "colliders": []
+    }
+  ],
+  "transitions": [
+    {
+      "x": 18,
+      "y": 0,
+      "floor": 0,
+      "target_x": 18,
+      "target_y": 0,
+      "target_floor": -1
+    },
+    {
+      "x": 23,
+      "y": 0,
+      "floor": 0,
+      "target_x": 23,
+      "target_y": 0,
+      "target_floor": 1
+    }
+  ],
+  "building_areas": [
+    {
+      "owner_id": 1,
+      "floor": 0,
+      "rect": {
+        "x0": 10,
+        "y0": 1,
+        "x1": 15,
+        "y1": 6
+      },
+      "chunk_key": 0
+    }
+  ],
+  "room_areas": [
+    {
+      "owner_id": 1,
+      "floor": 0,
+      "rect": {
+        "x0": 11,
+        "y0": 2,
+        "x1": 14,
+        "y1": 5
+      },
+      "chunk_key": 0
+    }
+  ],
+  "cases": [
+    {
+      "x": 2,
+      "y": 0,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 5,
+      "y": 0,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 6,
+      "y": 0,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 5,
+      "y": 0,
+      "floor": 1,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 4,
+      "y": 0,
+      "floor": 1,
+      "expect_blocked": true,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 7,
+      "y": 0,
+      "floor": 1,
+      "expect_blocked": true,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 4,
+      "y": 0,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 10,
+      "y": 1,
+      "floor": 0,
+      "expect_blocked": true,
+      "expect_transition": null,
+      "expect_building_id": 1,
+      "expect_room_id": 0
+    },
+    {
+      "x": 12,
+      "y": 0,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 12,
+      "y": 1,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 1,
+      "expect_room_id": 0
+    },
+    {
+      "x": 12,
+      "y": 2,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 1,
+      "expect_room_id": 1
+    },
+    {
+      "x": 18,
+      "y": 0,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": [
+        18,
+        0,
+        -1
+      ],
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 18,
+      "y": 0,
+      "floor": -1,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 23,
+      "y": 0,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": [
+        23,
+        0,
+        1
+      ],
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 23,
+      "y": 0,
+      "floor": 1,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 10000,
+      "y": 10000,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 0,
+      "y": 0,
+      "floor": 5,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    }
+  ]
+}

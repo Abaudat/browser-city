@@ -16,6 +16,24 @@ export const BudgetReviewSchedule = __t.object("BudgetReviewSchedule", {
 });
 export type BudgetReviewSchedule = __Infer<typeof BudgetReviewSchedule>;
 
+export const Building = __t.object("Building", {
+  buildingId: __t.u64(),
+  createdAt: __t.timestamp(),
+});
+export type Building = __Infer<typeof Building>;
+
+export const BuildingArea = __t.object("BuildingArea", {
+  areaId: __t.u64(),
+  buildingId: __t.u64(),
+  x0: __t.i32(),
+  y0: __t.i32(),
+  x1: __t.i32(),
+  y1: __t.i32(),
+  floor: __t.i8(),
+  chunkKey: __t.u64(),
+});
+export type BuildingArea = __Infer<typeof BuildingArea>;
+
 export const Character = __t.object("Character", {
   characterId: __t.u64(),
   createdAt: __t.timestamp(),
@@ -60,11 +78,30 @@ export const EconomySchedule = __t.object("EconomySchedule", {
 });
 export type EconomySchedule = __Infer<typeof EconomySchedule>;
 
+export const FloorTransition = __t.object("FloorTransition", {
+  transitionId: __t.u64(),
+  x: __t.i32(),
+  y: __t.i32(),
+  floor: __t.i8(),
+  targetX: __t.i32(),
+  targetY: __t.i32(),
+  targetFloor: __t.i8(),
+  chunkKey: __t.u64(),
+});
+export type FloorTransition = __Infer<typeof FloorTransition>;
+
 export const GrowthSchedule = __t.object("GrowthSchedule", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),
 });
 export type GrowthSchedule = __Infer<typeof GrowthSchedule>;
+
+export const LayerCode = __t.object("LayerCode", {
+  code: __t.u32(),
+  name: __t.string(),
+  rank: __t.u32(),
+});
+export type LayerCode = __Infer<typeof LayerCode>;
 
 export const MaintenanceSchedule = __t.object("MaintenanceSchedule", {
   scheduledId: __t.u64(),
@@ -96,6 +133,18 @@ export const NodeKind = __t.object("NodeKind", {
 });
 export type NodeKind = __Infer<typeof NodeKind>;
 
+export const PlacedObject = __t.object("PlacedObject", {
+  objectId: __t.u64(),
+  defId: __t.u32(),
+  x: __t.i32(),
+  y: __t.i32(),
+  floor: __t.i8(),
+  layer: __t.u32(),
+  orientation: __t.u8(),
+  chunkKey: __t.u64(),
+});
+export type PlacedObject = __Infer<typeof PlacedObject>;
+
 export const Provision = __t.object("Provision", {
   code: __t.u32(),
   name: __t.string(),
@@ -107,6 +156,25 @@ export const ReasonCode = __t.object("ReasonCode", {
   name: __t.string(),
 });
 export type ReasonCode = __Infer<typeof ReasonCode>;
+
+export const Room = __t.object("Room", {
+  roomId: __t.u64(),
+  buildingId: __t.u64(),
+  createdAt: __t.timestamp(),
+});
+export type Room = __Infer<typeof Room>;
+
+export const RoomArea = __t.object("RoomArea", {
+  areaId: __t.u64(),
+  roomId: __t.u64(),
+  x0: __t.i32(),
+  y0: __t.i32(),
+  x1: __t.i32(),
+  y1: __t.i32(),
+  floor: __t.i8(),
+  chunkKey: __t.u64(),
+});
+export type RoomArea = __Infer<typeof RoomArea>;
 
 export const WorldClockSchedule = __t.object("WorldClockSchedule", {
   scheduledId: __t.u64(),

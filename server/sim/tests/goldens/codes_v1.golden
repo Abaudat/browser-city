@@ -14,3 +14,5 @@ node_kind 0 entrance
 node_kind 1 internal
 node_kind 2 street
 node_kind 3 transit_stop
+layer 0 ground 0
+layer 1 overhead 1

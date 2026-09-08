@@ -112,6 +112,79 @@ and just-in-time. So:
   `scripts/ci/check-codes-append-only.sh` diffs
   `sim/tests/goldens/codes_*.golden` the same way.
 
+## World addressing
+
+A cell address is `(x: i32, y: i32, floor: i8, layer: u32)` (FR117). `x`/`y`
+are absolute world tile coordinates, always signed, never chunk-relative in
+a stored column. `floor` is signed (the subway is floor -1, FR122) and is
+`i8`. `layer` is a `u32` code plus its companion `layer_code` data table
+(NFR36, never a Rust enum, minted in `sim::codes::layer` with its FR123
+depth-sort `rank` carried inline on the same code entry) and is purely a
+rendering-order dimension (read by story 1.6) -- it is never a second
+collision dimension; a collision test always consults one floor's whole
+merged blocking set. A layer's `rank` is as permanent as its `code`
+number and pinned by the same codes golden -- story 1.6 must get a
+layer's depth order right the first time.
+
+There is no dense per-cell table, and there never will be: cell facts are
+always derived from placed content, never stored per cell.
+
+- Walkability is the absence of a collider (FR128): computed by
+  rasterising the colliders the placed objects on an entity's floor
+  contribute, never a stored walkable/collision column.
+- Building and room ownership (FR119) is areas, not per-cell: `building`
+  and `room` rows carry a surrogate id; `building_area`/`room_area` rows
+  hold the axis-aligned rectangles that belong to one such id. A
+  non-rectangular footprint is several rects. Two same-kind rects on the
+  same floor never overlap; `sim::world::WorldSpec::build` rejects a world
+  that violates this. Areas are bucketed by `chunk_key` (`sim::world::
+  World`'s internal `BTreeMap<u64, Vec<_>>`), so an ownership query costs
+  one map lookup plus a scan of one chunk's rects, never every area in the
+  world.
+- Floor transitions (FR117) are rows in `floor_transition`, anchor cell to
+  target cell, never a boolean on an object and never a special layer. A
+  door is never one of these rows (FR118): it is an ordinary walkable
+  cell. Both the anchor and the target cell must be standable on their own
+  declared floor; `WorldSpec::build` rejects a world with a transition
+  that violates this.
+
+Chunking is the unit of subscription and of cost (FR145). `CHUNK_SIZE`
+(32 tiles, one floor) is declared once, in `sim::world`; a literal 32
+anywhere else is a defect. `sim::world::chunk_key(x, y, floor)` packs a
+chunk's key as `[63:56] reserved=0 | [55:32] chunk_x (24-bit two's
+complement) | [31:8] chunk_y (24-bit two's complement) | [7:0] floor
+(8-bit two's complement)`; every spatially addressed table carries the
+result as a plain indexed `chunk_key` column. Two containment rules: an
+ownership rect is clipped so it lies entirely inside the chunk its key
+names -- `sim::world::clip_rect_to_chunks` is the one function a
+generator uses to produce such rects, and `WorldSpec::build` rejects any
+area whose rect and declared `chunk_key` do not agree with that rule, so
+a per-chunk subscription of the table is never partial; an object
+instance is addressed by its anchor chunk and may overhang it, which the
+client absorbs with a one-chunk subscription halo.
+
+The collision grid's per-cell budget is 1 bit: a floor's collision set is
+dense storage sized to its extent, indexed by arithmetic (never a map
+lookup per cell, never a scan), so a query costs one bounded access
+regardless of world size. `FloorCollision::build` rejects an invalid
+extent or one over `sim::world::MAX_CELLS_PER_FLOOR`, rather than
+allocating unboundedly.
+
+`sim::world::fixture` (the hand-authored conformance world) is compiled
+only behind `sim`'s `fixture` Cargo feature, which `bounds` enables for
+its own dependency and `sim`'s own test builds enable for themselves;
+`browser_city` never enables it, so the published module never contains
+it.
+
+The client's mirror of these addressing, collision, transition and
+ownership rules is a separate TypeScript implementation (NFR30 forbids
+sharing the code). The story that adds it must consume the committed
+`fixtures/world-conformance.v1.json` in its own test suite, the same file
+`sim/tests/world_conformance.rs` reads, regenerated from `sim::world::
+fixture` by `bounds`'s `regen-world-fixture` binary.
+`docs/trace-matrix.md`'s "World addressing" section carries a `deferred`
+row for that obligation until it is met.
+
 ## Naming
 
 
