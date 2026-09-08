@@ -1,0 +1,7 @@
+[package]
+name = "sched_timing_report"
+version = "0.1.0"
+edition = "2024"
+
+# Median/p95/max is a sort and an index (Tim's direction) -- no stats
+# crate, no Python, no notebook. Std only, deliberately.

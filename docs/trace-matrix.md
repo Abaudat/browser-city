@@ -84,3 +84,15 @@ sections above.
 | A collision query costs a bounded, small number of dense-storage accesses regardless of world size, and the collision grid stays within its documented 1-bit-per-cell budget | covered | `server/sim/tests/world_perf.rs` |
 | An ownership query scans only the areas sharing the queried chunk, never every area in the world (FR119, FR120, FR122) | covered | `server/sim/tests/world_perf.rs` -- `ownership_lookup_scans_only_the_queried_chunk_not_every_area_in_the_world` |
 | The client-side TypeScript port of addressing, collision, transition and ownership reads the same fixtures/world-conformance.v1.json its Rust oracle reads (NFR30) | deferred | client-side collision/addressing story |
+
+## Scheduled-reducer timing
+
+Story 1.3: `docs/spikes/1.3-scheduled-reducer-timing.md`'s measured drift
+budget and post-publish schedule rule (R10, D7). Same Guard-path
+discipline as the sections above.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| The spike report measured SpacetimeDB version never goes stale against the `server/Cargo.toml` pin, the `docs/architecture.md` stack line, or the pinned CLI installer | covered | `scripts/ci/check-sched-timing-pin.sh` |
+| Scheduler timing (drift budget, non-compounding assumption, post-publish survival) is a load-bearing assumption under any subsystem built on `ScheduleAt` | deferred | the first scheduler-dependent subsystem (L2 citizen ticking / the day-night cycle) -- re-read `docs/spikes/1.3-scheduled-reducer-timing.md` before relying on a repeating schedule phase |
+| A schedule reconciler (or the idempotent, elapsed-time-clamped reducer the republish leg alternative finding would instead demand) | deferred | the story that first needs a repeating schedule to survive a redeploy -- `docs/spikes/1.3-scheduled-reducer-timing.md` republish leg names which of the two rules applies |

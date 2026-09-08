@@ -60,6 +60,31 @@ uses): a `debug_assert!` is a production abort, not a test-only aid, and a
 wrapping-arithmetic bug aborts the reducer rather than writing inconsistent
 state (NFR41).
 
+## Scheduled reducers
+
+`docs/spikes/1.3-scheduled-reducer-timing.md` measured SpacetimeDB
+2.9.0's scheduled-reducer timing. A single fire's dispatch drift up to
+2.5 real seconds (one in-city minute at FR1's 24x compression) is within
+what gameplay may already assume; no gameplay system may assume finer
+real-time precision than that from a scheduled reducer.
+
+A `ScheduleAt::Interval` schedule is not guaranteed to stay anchored to
+its original phase: the measured run showed compounding lateness (tens
+of milliseconds per tick) that grows without bound over a long-running
+cadence, present on an idle instance and unchanged under load. No
+gameplay system may assume a repeating schedule's absolute phase survives
+more than a few ticks; a system whose correctness depends on phase over a
+session-length run (the day-night cycle, a transit timetable, an L2 tick)
+must re-derive its position from a durable, wall-clock-anchored source on
+every fire rather than trusting tick count or the platform's own
+rescheduling.
+
+A pending scheduled row (one-shot or repeating) survives a same-module
+republish (`spacetime publish` with no `--delete-data`) and resumes
+firing close to its original schedule; the republish itself costs one
+bounded scheduler pause, not data loss and not a catch-up storm. Nothing
+built on a scheduled table needs its own reconciler for that case.
+
 ## Schema
 
 Fix the permanent decisions first. In SpacetimeDB a primary key and a

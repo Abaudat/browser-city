@@ -1,5 +1,5 @@
 [workspace]
-members = ["sim", "bounds"]
+members = ["sim", "bounds", "spikes/sched_timing", "spikes/sched_timing_report"]
 resolver = "2"
 # tests/fixtures/* are standalone modules `scripts/ci/check-live-migration.sh`
 # publishes directly (each its own tiny SpacetimeDB module, deliberately not

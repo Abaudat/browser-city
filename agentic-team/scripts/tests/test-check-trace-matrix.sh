@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fixture-driven coverage for scripts/ci/check-trace-matrix.sh's
-# GUARD_SECTIONS loop (the "Round trip and client/server boundary" /
-# "Schema permanence" sections) -- a scratch two-crate Cargo workspace
+# GUARD_SECTIONS loop (every section named in that array) -- a scratch
+# two-crate Cargo workspace
 # (never the live repo's own) so `cargo test --workspace --exclude
 # browser_city -- --list` has something real to run against. One fixture
 # directory is built once and reused across cases below (only
@@ -78,6 +78,12 @@ write_matrix() { # <second-section-heading>
 | Requirement | Status | Guard |
 | --- | --- | --- |
 | A world-addressing requirement | covered | \`docs/trace-matrix.md\` |
+
+## Scheduled-reducer timing
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| A scheduled-reducer-timing requirement | covered | \`docs/trace-matrix.md\` |
 EOF
 }
 

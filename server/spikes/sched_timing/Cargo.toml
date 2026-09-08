@@ -1,0 +1,14 @@
+[package]
+name = "sched_timing_spike"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# Same reason `browser_city`'s crate-type is cdylib-only (see server/Cargo.toml):
+# SpacetimeDB's reducer/table macros need host FFI symbols the wasm runtime
+# supplies, so this cannot be linked natively either. `cargo test --workspace`
+# excludes this crate for that reason (server's CI `test` job).
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb = { version = "2.9.*" }

@@ -20,12 +20,14 @@ INVARIANTS_FILE="$REPO_ROOT/server/sim/tests/invariants.rs"
 [ -f "$INVARIANTS_FILE" ] || { echo "check-trace-matrix: $INVARIANTS_FILE not found" >&2; exit 1; }
 
 # --- collect every test name the workspace actually runs --------------------
-# browser_city is excluded: it embeds SpacetimeDB's reducer/table macros,
-# which reference host FFI symbols the wasm runtime supplies, so it cannot
-# be linked natively (see server/Cargo.toml). --release reuses the
-# artifacts the CI test job already built in release rather than compiling
-# the workspace a second time in debug just to print test names.
-LIST_OUTPUT="$(cd "$REPO_ROOT/server" && cargo test --workspace --exclude browser_city --release -- --list 2>&1)" || {
+# browser_city and sched_timing_spike are excluded: both embed
+# SpacetimeDB's reducer/table macros, which reference host FFI symbols
+# the wasm runtime supplies, so neither can be linked natively (see
+# server/Cargo.toml and server/spikes/sched_timing/Cargo.toml). --release
+# reuses the artifacts the CI test job already built in release rather
+# than compiling the workspace a second time in debug just to print test
+# names.
+LIST_OUTPUT="$(cd "$REPO_ROOT/server" && cargo test --workspace --exclude browser_city --exclude sched_timing_spike --release -- --list 2>&1)" || {
   echo "check-trace-matrix: 'cargo test -- --list' failed:" >&2
   echo "$LIST_OUTPUT" >&2
   exit 1
@@ -125,6 +127,7 @@ GUARD_SECTIONS=(
   "Round trip and client/server boundary"
   "Schema permanence"
   "World addressing"
+  "Scheduled-reducer timing"
 )
 
 for section in "${GUARD_SECTIONS[@]}"; do
