@@ -97,7 +97,11 @@ pub struct Room {
 /// `building_id` -- cell-to-owner is a pure lookup over the rects covering
 /// an address (`sim::world::World::ownership_at`). Clipped so the rect
 /// lies entirely inside the chunk `chunk_key` names, so a per-chunk
-/// subscription of this table is never partial.
+/// subscription of this table is never partial --
+/// `sim::world::clip_rect_to_chunks` is what a generator uses to produce
+/// that split, and `sim::world::WorldSpec::build` is what rejects a row
+/// that violates it (or overlaps another `building_area` row on the same
+/// floor).
 #[spacetimedb::table(accessor = building_area)]
 pub struct BuildingArea {
     #[primary_key]

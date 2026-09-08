@@ -7,7 +7,19 @@ edition = "2024"
 # network/filesystem/time/random dependency here -- `check-sim-purity.sh`
 # fails the build if one shows up in this crate's dependency graph.
 
+[features]
+# Gates sim::world::fixture (hand-authored test geometry, story 1.5): off
+# by default so `browser_city` (which depends on this crate with default
+# features, never this one) never compiles it into the published wasm
+# module. `bounds` turns it on for its own dependency below; the
+# self-referential dev-dependency turns it on for `cargo test -p sim`
+# without a flag, the same trick that keeps a `#[cfg(test)]`-only item
+# reachable from this crate's own `tests/` (which link the library built
+# for `[dependencies]`, not for `[dev-dependencies]`).
+fixture = []
+
 [dependencies]
 
 [dev-dependencies]
 proptest = "=1.11.0"
+sim = { path = ".", features = ["fixture"] }

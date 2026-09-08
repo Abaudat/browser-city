@@ -96,22 +96,33 @@ pub mod reason_code {
 
 /// A cell's rendering-order dimension within its floor (FR117, FR123):
 /// never a second collision dimension -- a collision test always consults
-/// a whole floor's merged blocking set, regardless of layer. `rank` (read
-/// by story 1.6's depth sort) lives on this code's companion data row
-/// (`../../src/tables/world.rs`'s `LayerCode`), not here and not on any
-/// per-cell column -- a minimal, honest set for what this story's fixture
-/// needs (a road and the deck above it), not a speculative full set.
+/// a whole floor's merged blocking set, regardless of layer. Unlike the
+/// other extensible sets in this module, a layer carries its FR123
+/// depth-sort `rank` inline on the same entry as `code`/`name` (not a
+/// parallel array, here or anywhere else): a code can never be added
+/// without a rank, and the mapping is pinned by the same golden as the
+/// code numbers (`tests/codes.rs`). A minimal, honest set for what this
+/// story's fixture needs (a road and the deck above it), not a
+/// speculative full set.
 pub mod layer {
-    use super::Code;
+    /// One layer code and its FR123 depth-sort rank. `../../src/tables/
+    /// world.rs`'s `LayerCode` is the companion table this seeds.
+    pub struct LayerCode {
+        pub code: u32,
+        pub name: &'static str,
+        pub rank: u32,
+    }
 
-    pub const CODES: &[Code] = &[
-        Code {
+    pub const CODES: &[LayerCode] = &[
+        LayerCode {
             code: 0,
             name: "ground",
+            rank: 0,
         },
-        Code {
+        LayerCode {
             code: 1,
             name: "overhead",
+            rank: 1,
         },
     ];
 }

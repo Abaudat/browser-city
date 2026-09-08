@@ -162,7 +162,8 @@
         "y0": 1,
         "x1": 15,
         "y1": 6
-      }
+      },
+      "chunk_key": 0
     }
   ],
   "room_areas": [
@@ -174,7 +175,8 @@
         "y0": 2,
         "x1": 14,
         "y1": 5
-      }
+      },
+      "chunk_key": 0
     }
   ],
   "cases": [
@@ -316,6 +318,24 @@
       "x": 23,
       "y": 0,
       "floor": 1,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 10000,
+      "y": 10000,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 0,
+      "y": 0,
+      "floor": 5,
       "expect_blocked": false,
       "expect_transition": null,
       "expect_building_id": 0,

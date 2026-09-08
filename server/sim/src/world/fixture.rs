@@ -15,7 +15,19 @@
 //! never the same code, only the same fixture).
 
 use super::collision::{AreaSpec, FloorSpec, TransitionSpec, World, WorldSpec};
-use super::{NO_OWNER, Rect};
+use super::{NO_OWNER, Rect, chunk_key};
+
+/// Builds an [`AreaSpec`], computing its `chunk_key` from `rect`/`floor`
+/// rather than repeating it by hand at every call site -- the one thing
+/// [`WorldSpec::build`] would otherwise reject a typo in.
+fn area(owner_id: u64, floor: i8, rect: Rect) -> AreaSpec {
+    AreaSpec {
+        owner_id,
+        floor,
+        rect,
+        chunk_key: chunk_key(rect.x0, rect.y0, floor),
+    }
+}
 
 /// Every floor the fixture declares.
 pub const STREET: i8 = 0;
@@ -161,18 +173,20 @@ pub fn canonical_world_spec() -> WorldSpec {
                 target_floor: UPPER,
             },
         ],
-        building_areas: vec![AreaSpec {
-            owner_id: FIXTURE_BUILDING_ID,
-            floor: STREET,
-            rect: building_footprint(),
-        }],
-        room_areas: vec![AreaSpec {
-            owner_id: FIXTURE_ROOM_ID,
-            floor: STREET,
-            rect: room_interior(),
-        }],
+        building_areas: vec![area(FIXTURE_BUILDING_ID, STREET, building_footprint())],
+        room_areas: vec![area(FIXTURE_ROOM_ID, STREET, room_interior())],
     }
 }
+
+/// A floor no `FloorSpec` above declares -- used by [`conformance_cases`]
+/// to pin the undeclared-floor behaviour a future client port is most
+/// likely to get wrong.
+pub const UNDECLARED_FLOOR: i8 = 5;
+
+/// A cell outside every declared floor's extent -- see
+/// [`UNDECLARED_FLOOR`]'s doc comment.
+pub const OUT_OF_BOUNDS_X: i32 = 10_000;
+pub const OUT_OF_BOUNDS_Y: i32 = 10_000;
 
 /// Builds the fixture. `WorldSpec::build` only fails if a transition
 /// targets ungrounded geometry, which this hand-checked layout never does.
@@ -351,6 +365,28 @@ pub fn conformance_cases() -> Vec<ConformanceCase> {
             x: STAIR_X,
             y: STAIR_Y,
             floor: UPPER,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: NO_OWNER,
+            expect_room_id: NO_OWNER,
+        },
+        // Outside every declared floor's extent: unblocked, unowned, no
+        // transition -- the single behaviour a future client port is most
+        // likely to get wrong (returning blocked, or throwing, instead).
+        ConformanceCase {
+            x: OUT_OF_BOUNDS_X,
+            y: OUT_OF_BOUNDS_Y,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: NO_OWNER,
+            expect_room_id: NO_OWNER,
+        },
+        // A floor this fixture never declares at all: same answer.
+        ConformanceCase {
+            x: 0,
+            y: 0,
+            floor: UNDECLARED_FLOOR,
             expect_blocked: false,
             expect_transition: None,
             expect_building_id: NO_OWNER,

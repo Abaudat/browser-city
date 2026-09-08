@@ -1,16 +1,12 @@
 //! Companion tables for the extensible sets defined in `sim::codes`
-//! (NFR36): matter kinds, provisions, reason codes, node kinds and layers
-//! are each a `u32` code plus a name, never a Rust enum, so a new variant
-//! is a row insert rather than a migration.
+//! (NFR36): matter kinds, provisions, reason codes and node kinds are each
+//! a `u32` code plus a name; layers are a `u32` code plus a name and a
+//! FR123 depth-sort `rank`. Never a Rust enum, so a new variant is a row
+//! insert rather than a migration.
 
 use spacetimedb::{ReducerContext, Table};
 
 use super::world::{LayerCode, layer_code};
-
-/// `layer`'s rank (FR123's depth-sort key), keyed by `sim::codes::layer`'s
-/// code number -- not itself part of `sim::codes::Code` (no other code set
-/// needs a rank), so it is seeded here rather than carried generically.
-const LAYER_RANKS: &[(u32, u32)] = &[(0, 0), (1, 1)];
 
 #[spacetimedb::table(accessor = matter_kind)]
 pub struct MatterKind {
@@ -82,15 +78,10 @@ pub fn seed_all_codes(ctx: &ReducerContext) {
     }
     for c in sim::codes::layer::CODES {
         if ctx.db.layer_code().code().find(c.code).is_none() {
-            let rank = LAYER_RANKS
-                .iter()
-                .find(|(code, _)| *code == c.code)
-                .map(|(_, rank)| *rank)
-                .unwrap_or_else(|| panic!("layer code {} has no entry in LAYER_RANKS", c.code));
             ctx.db.layer_code().insert(LayerCode {
                 code: c.code,
                 name: c.name.to_string(),
-                rank,
+                rank: c.rank,
             });
         }
     }

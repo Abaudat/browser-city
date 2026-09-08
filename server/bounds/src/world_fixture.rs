@@ -79,6 +79,7 @@ pub struct AreaDoc {
     pub owner_id: u64,
     pub floor: i8,
     pub rect: RectDoc,
+    pub chunk_key: u64,
 }
 
 impl From<&AreaSpec> for AreaDoc {
@@ -87,6 +88,7 @@ impl From<&AreaSpec> for AreaDoc {
             owner_id: a.owner_id,
             floor: a.floor,
             rect: a.rect.into(),
+            chunk_key: a.chunk_key,
         }
     }
 }
