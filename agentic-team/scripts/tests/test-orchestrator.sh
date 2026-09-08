@@ -114,6 +114,18 @@ check_out "budget-available: just under both caps falls through to the flow" 1 \
   "starting-dev-cycle sleep backlog empty" \
   run "$F_BUDGET_OK" "$NOW_MIDSPRINT"
 
+# allowed_warning is the account's normal reading for most of a working
+# week -- Anthropic raises it as soon as the week passes 0.75 -- and it
+# means approaching, not stopped. A tick that reads it as a stop parks the
+# whole team until the week turns over with neither cap ever reached.
+F_BUDGET_WARN="$(fake_dir)"
+budget_board "$F_BUDGET_WARN"
+printf '%s' '{"overallStatus":"allowed_warning","session":{"utilization":0.00,"reset":"1788123600"},"weekly":{"utilization":0.76,"reset":"1788512400"}}' \
+  > "$F_BUDGET_WARN/rate_monitor.json"
+check_out "budget-available: allowed_warning under the caps still works" 1 \
+  "starting-dev-cycle sleep backlog empty" \
+  run "$F_BUDGET_WARN" "$NOW_MIDSPRINT"
+
 # =============================================================================
 echo
 echo "sanity: the reason file carries exactly what stdout printed"

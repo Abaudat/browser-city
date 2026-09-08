@@ -117,15 +117,21 @@ further, e.g. from cron, a scheduled task, or a human.
 
 **The budget gate runs first.** Before the board is read at all, the tick
 asks `bc-budget.sh check` whether there is budget: it dispatches only while
-Anthropic's `overallStatus` is `allowed`, the 5-hour window is below 85% and
-the week is below 80%. Those headers are account-wide, so Adrian's own
-sessions spend the same budget and the team's share shrinks on its own when
-he has been working, with nobody coordinating. A spent budget is exit 1 —
-quiet, expected, and the reason line names the reset the response itself
-reported, so "back at 21:00" never reads as "stuck since Tuesday". A gate
-that cannot answer is exit **2**, not 1, because a broken gate that skipped
-like a spent one would make a team stopped for a week look exactly like a
-team behaving correctly.
+Anthropic's `overallStatus` is not a rejection, the 5-hour window is below
+85% and the week is below 80%. `allowed_warning` is not a rejection: the
+account reads that from the moment the week crosses Anthropic's own 75%
+threshold, which is most of a working week, and it means approaching, not
+stopped. How close to the limit the team runs is the caps' job. Those
+headers are account-wide, so Adrian's own sessions spend the same budget
+and the team's share shrinks on its own when he has been working, with
+nobody coordinating. A spent budget is exit 1 — quiet, expected, and the
+reason line names the reset the response itself reported, so "back at
+21:00" never reads as "stuck since Tuesday". Which reset it names follows
+what stopped the tick: the 5-hour one for the session cap, the weekly one
+for the weekly cap and for a rejected account, whose status follows the
+seven-day claim. A gate that cannot answer is exit **2**, not 1, because a
+broken gate that skipped like a spent one would make a team stopped for a
+week look exactly like a team behaving correctly.
 
 A crash mid-tick is safe to retick: state is transitioned *before* the side
 effects it announces (starting-dev-cycle claims a sub-issue before spawning

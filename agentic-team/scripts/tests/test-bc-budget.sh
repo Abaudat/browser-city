@@ -50,6 +50,18 @@ check_out "a genuine zero is not a missing field" 0 \
 check_out "just under both caps" 0 \
   "available session=0.84 weekly=0.79 caps=0.85/0.80" \
   gate "$(rate allowed 0.84 0.79)"
+# allowed_warning is what the account reads from the moment weekly crosses
+# 7d-surpassed-threshold (0.75) -- most of a normal week, once the team is
+# working. It means approaching, not stopped, and reading it as a stop parked
+# the team until the week turned over with neither cap ever reached.
+check_out "allowed_warning is still budget" 0 \
+  "available session=0.01 weekly=0.76 caps=0.85/0.80" \
+  gate "$(rate allowed_warning 0.01 0.76)"
+# ...and the caps still apply above it. The warning does not open the gate,
+# it just stops it closing early.
+check_out "allowed_warning over the weekly cap is spent on the cap" 1 \
+  "spent weekly=0.81 cap=0.80 resumes=2026-09-04T09:00:00Z" \
+  gate "$(rate allowed_warning 0.10 0.81)"
 
 echo
 echo "exit 1 -- the budget is spent: quiet, and it says when the team is back"
@@ -64,9 +76,16 @@ check_out "session over the cap" 1 \
 check_out "weekly at the cap names the weekly reset" 1 \
   "spent weekly=0.80 cap=0.80 resumes=2026-09-04T09:00:00Z" \
   gate "$(rate allowed 0.10 0.80)"
-check_out "overallStatus not allowed beats both utilisations" 1 \
-  "spent status=rejected session=0.10 weekly=0.10 resumes=2026-08-30T21:00:00Z" \
+# The account can be cut off while both utilisations still read below their
+# caps. The reset named is the weekly one: the account-level status follows
+# the seven-day claim, and the 5-hour reset would promise the team back this
+# evening for a stop that lasts until the week turns over.
+check_out "overallStatus rejected beats both utilisations" 1 \
+  "spent status=rejected session=0.10 weekly=0.10 resumes=2026-09-04T09:00:00Z" \
   gate "$(rate rejected 0.10 0.10)"
+check_out "a blocked account is a stop too" 1 \
+  "spent status=blocked session=0.10 weekly=0.10 resumes=2026-09-04T09:00:00Z" \
+  gate "$(rate blocked 0.10 0.10)"
 # Adrian's own sessions spend the same account-wide budget. Nothing here
 # distinguishes his usage from the team's, and that is the mechanism: high
 # utilisation the team did not cause still stops the team.
