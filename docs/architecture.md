@@ -122,7 +122,9 @@ a stored column. `floor` is signed (the subway is floor -1, FR122) and is
 depth-sort `rank` carried inline on the same code entry) and is purely a
 rendering-order dimension (read by story 1.6) -- it is never a second
 collision dimension; a collision test always consults one floor's whole
-merged blocking set.
+merged blocking set. A layer's `rank` is as permanent as its `code`
+number and pinned by the same codes golden -- story 1.6 must get a
+layer's depth order right the first time.
 
 There is no dense per-cell table, and there never will be: cell facts are
 always derived from placed content, never stored per cell.
@@ -176,10 +178,12 @@ it.
 
 The client's mirror of these addressing, collision, transition and
 ownership rules is a separate TypeScript implementation (NFR30 forbids
-sharing the code); it reads the committed
+sharing the code). The story that adds it must consume the committed
 `fixtures/world-conformance.v1.json` in its own test suite, the same file
 `sim/tests/world_conformance.rs` reads, regenerated from `sim::world::
 fixture` by `bounds`'s `regen-world-fixture` binary.
+`docs/trace-matrix.md`'s "World addressing" section carries a `deferred`
+row for that obligation until it is met.
 
 ## Naming
 

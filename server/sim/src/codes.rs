@@ -100,8 +100,12 @@ pub mod reason_code {
 /// other extensible sets in this module, a layer carries its FR123
 /// depth-sort `rank` inline on the same entry as `code`/`name` (not a
 /// parallel array, here or anywhere else): a code can never be added
-/// without a rank, and the mapping is pinned by the same golden as the
-/// code numbers (`tests/codes.rs`). A minimal, honest set for what this
+/// without a rank. `rank` is as permanent as `code` itself and pinned by
+/// the same golden (`tests/codes.rs`, `docs/architecture.md`'s "World
+/// addressing" section) -- get a layer's depth order right the first
+/// time; `../../src/tables/codes.rs`'s `seed_all_codes` only ever inserts
+/// a code once and never updates an existing row, so there is no update
+/// path for a rank once seeded. A minimal, honest set for what this
 /// story's fixture needs (a road and the deck above it), not a
 /// speculative full set.
 pub mod layer {
