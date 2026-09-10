@@ -2,7 +2,7 @@ flowchart TD
     wake(["Scotty wakes"])
     sleep(["Do nothing — sleep"])
 
-    wake --> budget-available{"Budget under both caps?<br/>85% of the 5h window,<br/>80% of the week"}
+    wake --> budget-available{"Budget under both caps?<br/>85% of the 5h window,<br/>80% of the week<br/>(100% in its last 12h)"}
     budget-available -->|no| sleep
     budget-available -->|yes| demo-active{"Sprint Demo issue<br/>in an active status?"}
 

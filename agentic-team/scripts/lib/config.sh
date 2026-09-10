@@ -33,6 +33,16 @@ _BC_CONFIG_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shrinks on its own when he has been working. At or above a cap is a skip.
 : "${BC_SESSION_CAP:=0.85}"
 : "${BC_WEEKLY_CAP:=0.80}"
+# ...except at the end of the week. The weekly margin exists so Adrian is
+# never left asking the team for quota he needs today -- but quota unspent
+# when the window rolls over is quota nobody ever gets, and the last hours of
+# a window are the ones he is least likely to need it back in. Inside this
+# many hours of the weekly reset the weekly cap is lifted to 1.00: the team
+# may spend the rest of the week's budget, and the only thing that stops it
+# is the real limit. The 5-hour cap is untouched -- that window resets
+# several times a day and has nothing to leave behind. 0 disables the lift.
+: "${BC_WEEKLY_ENDGAME_HOURS:=12}"
+: "${BC_WEEKLY_ENDGAME_CAP:=1.00}"
 # Git Bash on this machine ships no IANA zoneinfo database (no
 # /usr/share/zoneinfo), so TZ=Europe/Zurich is silently taken as UTC by GNU
 # date -- wrong every day of the year, and wrong by two hours half of it. A
