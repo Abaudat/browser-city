@@ -16,6 +16,14 @@ F="$(fake_dir)"
 # Reset epochs: session 2026-08-30T21:00:00Z, weekly 2026-09-04T09:00:00Z.
 SESSION_RESET=1788123600
 WEEKLY_RESET=1788512400
+# Pinned "now", 48h before the weekly reset: far outside the endgame window,
+# so every case that is not about the endgame reads the plain 0.80 cap. It is
+# pinned rather than left to the wall clock because the lift is a question
+# about the distance to the reset, and an unpinned clock makes half this file
+# answer differently depending on the day it runs.
+NOW_MIDWEEK=1788339600
+# ...and 6h before it, inside the default 12h window.
+NOW_ENDGAME=1788490800
 
 rate() { # <overallStatus> <session util> <weekly util> -- the monitor's real shape
   printf '{"overallStatus":"%s","session":{"utilization":%s,"reset":"%s","status":"%s"},"weekly":{"utilization":%s,"reset":"%s","status":"%s"},"overageStatus":"rejected"}\n' \
@@ -28,7 +36,7 @@ gate() {
   local json="$1"; shift
   local d; d="$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/bc-budget.XXXXXX")"
   printf '%s' "$json" > "$d/rate_monitor.json"
-  env BC_FAKE="$d" "$@" bash "$BUDGET" check
+  env BC_FAKE="$d" BC_NOW="$NOW_MIDWEEK" "$@" bash "$BUDGET" check
 }
 
 # gate_nofixture -- a fake dir with no rate_monitor.json at all: the monitor
@@ -98,6 +106,50 @@ check_out "the caps are overridable" 1 \
 check_out "a missing reset says unknown rather than lying" 1 \
   "spent session=0.90 cap=0.85 resumes=unknown" \
   gate '{"overallStatus":"allowed","session":{"utilization":0.90},"weekly":{"utilization":0.1}}'
+
+echo
+echo "the endgame -- the last hours of the week, where the weekly cap lifts"
+# Budget still unspent when the seven-day window rolls over is budget nobody
+# ever gets. Inside 12h of the weekly reset the team may run to the real
+# limit instead of stopping at 0.80.
+check_out "inside the window the weekly cap is lifted" 0 \
+  "available session=0.10 weekly=0.92 caps=0.85/1.00 endgame=2026-09-04T09:00:00Z" \
+  gate "$(rate allowed_warning 0.10 0.92)" BC_NOW="$NOW_ENDGAME"
+# 12h01m out is still the middle of the week: the same utilisation is a skip.
+check_out "just outside the window it is the ordinary cap" 1 \
+  "spent weekly=0.92 cap=0.80 resumes=2026-09-04T09:00:00Z" \
+  gate "$(rate allowed_warning 0.10 0.92)" BC_NOW="$((WEEKLY_RESET - 43260))"
+check_out "one second inside the window lifts it" 0 \
+  "available session=0.10 weekly=0.92 caps=0.85/1.00 endgame=2026-09-04T09:00:00Z" \
+  gate "$(rate allowed_warning 0.10 0.92)" BC_NOW="$((WEEKLY_RESET - 43199))"
+# The lift is not a licence to overspend: 1.00 is the real limit, and the
+# team stops there like it stops anywhere else.
+check_out "a genuinely exhausted week still stops inside the window" 1 \
+  "spent weekly=1 cap=1.00 resumes=2026-09-04T09:00:00Z endgame=2026-09-04T09:00:00Z" \
+  gate "$(rate allowed_warning 0.10 1)" BC_NOW="$NOW_ENDGAME"
+# ...and neither does it touch the 5-hour window, which resets several times
+# a day and has nothing to leave behind.
+check_out "the session cap is untouched by the endgame" 1 \
+  "spent session=0.90 cap=0.85 resumes=2026-08-30T21:00:00Z" \
+  gate "$(rate allowed 0.90 0.92)" BC_NOW="$NOW_ENDGAME"
+# A rejection is still a rejection. The lift moves a cap Adrian set; it
+# cannot spend quota Anthropic has already refused.
+check_out "a rejected account is not rescued by the endgame" 1 \
+  "spent status=rejected session=0.10 weekly=0.92 resumes=2026-09-04T09:00:00Z" \
+  gate "$(rate rejected 0.10 0.92)" BC_NOW="$NOW_ENDGAME"
+check_out "the window is overridable" 0 \
+  "available session=0.10 weekly=0.92 caps=0.85/1.00 endgame=2026-09-04T09:00:00Z" \
+  gate "$(rate allowed_warning 0.10 0.92)" BC_NOW="$NOW_MIDWEEK" BC_WEEKLY_ENDGAME_HOURS=72
+check_out "zero hours turns the lift off entirely" 1 \
+  "spent weekly=0.92 cap=0.80 resumes=2026-09-04T09:00:00Z" \
+  gate "$(rate allowed_warning 0.10 0.92)" BC_NOW="$NOW_ENDGAME" BC_WEEKLY_ENDGAME_HOURS=0
+# A reset the monitor did not give us must not read as "the week is nearly
+# over, spend it all" -- an absent field is the one case where guessing wrong
+# empties the account.
+check_out "a missing weekly reset never opens the lift" 1 \
+  "spent weekly=0.92 cap=0.80 resumes=unknown" \
+  gate '{"overallStatus":"allowed","session":{"utilization":0.1},"weekly":{"utilization":0.92}}' \
+    BC_NOW="$NOW_ENDGAME"
 
 echo
 echo "exit 2 -- the gate is broken, which is NOT a spent budget"

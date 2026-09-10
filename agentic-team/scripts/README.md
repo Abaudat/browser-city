@@ -133,6 +133,19 @@ seven-day claim. A gate that cannot answer is exit **2**, not 1, because a
 broken gate that skipped like a spent one would make a team stopped for a
 week look exactly like a team behaving correctly.
 
+**The weekly cap lifts at the end of the week.** The 80% margin exists so
+Adrian never has to ask the team for quota he needs today — but quota still
+unspent when the seven-day window rolls over is quota nobody ever gets.
+Inside `BC_WEEKLY_ENDGAME_HOURS` (12) of the weekly reset the weekly cap
+becomes `BC_WEEKLY_ENDGAME_CAP` (1.00) and the team runs to the real limit.
+Both the `available` and the weekly `spent` line carry `endgame=<reset>`
+when the lift is on, because a cap reading 1.00 with nothing explaining it
+looks like a misconfiguration. Nothing else changes: the 5-hour cap is
+untouched (that window resets several times a day and has nothing to leave
+behind), a rejected `overallStatus` is still a stop, and a response with no
+weekly reset never opens the lift — an absent field must not read as "the
+week is nearly over, spend it all".
+
 A crash mid-tick is safe to retick: state is transitioned *before* the side
 effects it announces (starting-dev-cycle claims a sub-issue before spawning
 anything), and every "the gate says no" branch re-derives what's missing
@@ -248,6 +261,7 @@ stderr; stdout carries only that one reason line.
 | `BC_STOP_TIMEOUT_S=<s>` | How long `bc-session stop-all` keeps closing and re-listing before it reports panes still open as exit 2. Orca refuses to close some busy panes with `terminal_handle_stale` (reliably the oldest Claude pane in a worktree) for up to a minute, then accepts the same call, so stop-all trusts the listing, not the close's answer. | 120 |
 | `BC_WRITE_RESULT=<file>` | Where a `write-*` command records the number/id/summary it just created, as well as printing it. Set by `create-demo`/`create-breaker`/`bc-sprint start` around their Scotty call and exported, so the `write-*` call Scotty makes inside `claude` can report back — its stdout belongs to a Bash tool call no caller can read. `integrate-feedback` sets it for none of its writes: Scotty opens an unknown number of issues there, and one file cannot hold them, so that node counts the board instead (to report what landed, not to gate on it). Unset (a role or a human calling `write-*` by hand) is not an error. | unset |
 | `BC_SESSION_CAP=<0..1>` / `BC_WEEKLY_CAP=<0..1>` | The budget gate's two caps. At or above one is a skip. | `0.85` / `0.80` |
+| `BC_WEEKLY_ENDGAME_HOURS=<h>` / `BC_WEEKLY_ENDGAME_CAP=<0..1>` | How close to the weekly reset the weekly cap lifts, and what it lifts to. Inside the window the team may spend the rest of the week rather than leave it to expire; the reason line says `endgame=<reset>`. `0` hours turns the lift off. | `12` / `1.00` |
 | `BC_RATE_MONITOR=<path>` | The `claude-rate-monitor` binary, when it is somewhere `resolve_rate_monitor` does not look. | derived (`%APPDATA%/npm`, then PATH) |
 | `BC_SESSION_MODE=main` | `bc-session.sh worktree` returns `$BC_MAIN_CHECKOUT` instead of creating/looking up an Orca worktree-per-issue — the spike's documented fallback if Orca worktrees are ever unavailable. | unset (worktree-per-issue) |
 | `BC_LOOP_INTERVAL_S=<s>` | How long `run-orchestrator.sh` sleeps between ticks. Reachable through `$BC_ENV_FILE`, which is the only channel that reaches the loop — Orca creates its terminal, so it inherits Orca's environment, not the supervisor's. | 180 |

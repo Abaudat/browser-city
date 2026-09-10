@@ -68,6 +68,18 @@ rate_at_or_over() {
   "$JQ" -n --argjson u "$1" --argjson c "$2" -e '$u >= $c' >/dev/null 2>&1
 }
 
+# rate_within <epoch> <hours> -- exit 0 when that reset is less than <hours>
+# away (and still ahead of us). A non-numeric reset -- the monitor answered
+# without one -- is never within: an absent reset must not read as "the week
+# is nearly over, spend it all". Hours of 0 is never within either, which is
+# how BC_WEEKLY_ENDGAME_HOURS=0 turns the lift off.
+rate_within() {
+  case "${1:-}" in ''|*[!0-9]*) return 1 ;; esac
+  "$JQ" -n --argjson r "$1" --argjson n "$(bc_now_epoch)" --arg h "$2" -e '
+    ($h | tonumber) as $hours
+    | $hours > 0 and $r > $n and ($r - $n) < ($hours * 3600)' >/dev/null 2>&1
+}
+
 # rate_reset_at <epoch> -- the reset as a readable UTC stamp, or "unknown".
 # Exhaustion is a hard stop rather than an overage charge, so the reason line
 # has to say when the team comes back: "resumes=19:00" reads as healthy,

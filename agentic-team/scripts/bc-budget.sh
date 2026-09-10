@@ -85,14 +85,27 @@ check)
     exit 1
   fi
 
-  if rate_at_or_over "$weekly" "$BC_WEEKLY_CAP"; then
-    printf 'spent weekly=%s cap=%s resumes=%s\n' \
-      "$weekly" "$BC_WEEKLY_CAP" "$(rate_reset_at "$weekly_reset")"
+  # The weekly cap, unless the week is nearly over. Budget still unspent when
+  # the seven-day window rolls over is budget nobody ever gets, so inside
+  # BC_WEEKLY_ENDGAME_HOURS of the weekly reset the cap is lifted and the team
+  # may run to the real limit. The endgame= field is on both lines: a cap that
+  # reads 1.00 with nothing explaining it looks like a misconfiguration, and
+  # the stamp says which window is being emptied.
+  weekly_cap="$BC_WEEKLY_CAP"
+  endgame=""
+  if rate_within "$weekly_reset" "$BC_WEEKLY_ENDGAME_HOURS"; then
+    weekly_cap="$BC_WEEKLY_ENDGAME_CAP"
+    endgame=" endgame=$(rate_reset_at "$weekly_reset")"
+  fi
+
+  if rate_at_or_over "$weekly" "$weekly_cap"; then
+    printf 'spent weekly=%s cap=%s resumes=%s%s\n' \
+      "$weekly" "$weekly_cap" "$(rate_reset_at "$weekly_reset")" "$endgame"
     exit 1
   fi
 
-  printf 'available session=%s weekly=%s caps=%s/%s\n' \
-    "$session" "$weekly" "$BC_SESSION_CAP" "$BC_WEEKLY_CAP"
+  printf 'available session=%s weekly=%s caps=%s/%s%s\n' \
+    "$session" "$weekly" "$BC_SESSION_CAP" "$weekly_cap" "$endgame"
   exit 0
   ;;
 
