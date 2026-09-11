@@ -1,0 +1,23 @@
+[package]
+name = "world_backup"
+version = "0.1.0"
+edition = "2024"
+
+# Native-only tooling (never reaches the published wasm module, never a
+# dependency of `browser_city` -- docs/architecture.md's Stack table),
+# modelled on `spikes/sched_timing_report`. Replaces story 1.4's earlier
+# `scripts/ops/python/canon.py`: parsing/canonicalising `spacetime sql
+# --format json` output and rendering `spacetime call` arguments is real
+# logic, not orchestration, and belongs in the stack this repo already
+# owns (Tim's direction) -- `serde_json`'s `arbitrary_precision` feature
+# is what makes a `u64`/`chunk_key` above 2^53 round-trip exactly, the
+# same reason `jq` was rejected: `jq` re-serialises every number through
+# an IEEE double.
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+bounds = { path = "../../bounds" }
+
+[dev-dependencies]
+proptest = "1"

@@ -757,6 +757,33 @@
       ]
     },
     {
+      "accessor": "restore_state",
+      "struct_name": "RestoreState",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "id",
+          "ty": "u8",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "open",
+          "ty": "bool",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "room",
       "struct_name": "Room",
       "public": false,

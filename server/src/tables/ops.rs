@@ -10,11 +10,14 @@ use spacetimedb::{Identity, ReducerContext, Table};
 /// primary key can never move, and a singleton row needs one all the
 /// same). `owner` is the identity that ran `init`, i.e. whoever published
 /// the module -- SpacetimeDB has no other notion of "the operator".
+#[derive(Clone)]
 #[spacetimedb::table(accessor = module_owner)]
 pub struct ModuleOwner {
     #[primary_key]
-    id: u8,
-    owner: Identity,
+    // `pub`, not private: `tables::restore::restore_module_owner`
+    // constructs this row from a different module (story 1.4).
+    pub id: u8,
+    pub owner: Identity,
 }
 
 /// Records `ctx.sender()` as the module owner. Called once, from `init`

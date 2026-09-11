@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
-# Schema-driven adversarial seed data (Quentin's direction): for every
-# non-scheduled table SpacetimeDB SQL can actually write to, inserts a few
-# rows cycling through each column's type extremes (integer MIN/MAX, a
-# quoted/tabbed/newlined/emoji string, a synthetic Identity) -- generated
-# from server/schema.snapshot.json's own column list and types, never a
-# hand-written per-table row, so a new table or column type this generator
-# cannot fill fails loudly (see python/canon.py's EDGE_VALUES).
+# Schema-driven adversarial seed data (Quentin's direction): every
+# non-scheduled table, Timestamp-bearing ones included, cycling each
+# column through its type's extremes (integer MIN/MAX, a quoted/tabbed/
+# newlined/CR'd/backslashed/emoji string, a synthetic Identity, an
+# adversarial Timestamp) -- generated from server/schema.snapshot.json's
+# own column list and types (server/tools/world_backup), never a
+# hand-written per-table row, so a new table or column type this
+# generator cannot fill fails loudly.
 #
-# Never seeds `module_owner` (already holds `init`'s one row) or a table
-# with a Timestamp/ScheduleAt column (SpacetimeDB 2.9's SQL INSERT cannot
-# construct either -- docs/spikes/1.4-backup-restore.md); both are logged
-# by name, not silently skipped.
+# Goes through the module's own `begin_restore`/`restore_<table>`/
+# `finish_restore` reducers (`server/src/tables/restore.rs`) on a
+# freshly published database -- the same mechanism restore-world.sh
+# uses, and the only mechanism that can write a Timestamp at all
+# (SpacetimeDB 2.9's SQL cannot). This is why seeding requires the target
+# to be freshly published: `begin_restore`'s own precondition.
 #
 # Usage: seed-edge-rows.sh <db> [--server <url-or-nickname>] [--rows <n>] [--offset <base>]
 set -uo pipefail
 SCRIPT="seed-edge-rows"
 . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-[ "$#" -ge 1 ] || bc_ops_die "$SCRIPT" "usage: seed-edge-rows.sh <db> [--server <url-or-nickname>] [--rows <n>] [--offset <base>]"
+USAGE="usage: seed-edge-rows.sh <db> [--server <url-or-nickname>] [--rows <n>] [--offset <base>]"
+[ "$#" -ge 1 ] || bc_ops_die "$SCRIPT" "$USAGE"
 DB="$1"; shift
 SERVER_ARGS=()
 ROWS=3
@@ -27,42 +31,30 @@ while [ "$#" -gt 0 ]; do
     --server) SERVER_ARGS=(--server "$2"); shift 2 ;;
     --rows) ROWS="$2"; shift 2 ;;
     --offset) OFFSET="$2"; shift 2 ;;
-    *) bc_ops_die "$SCRIPT" "unknown argument: $1" ;;
+    *) bc_ops_die "$SCRIPT" "unrecognized argument: $1 -- $USAGE" ;;
   esac
 done
 
-SEEDED=()
-SKIPPED_OWNER=()
-SKIPPED_TIMESTAMP=()
+bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" begin_restore '[]'
 
+SEEDED=()
 while IFS= read -r table; do
   [ -n "$table" ] || continue
   if [ "$table" = "module_owner" ]; then
-    SKIPPED_OWNER+=("$table")
+    # Never seeded with a synthetic Identity: it would overwrite the real
+    # owner `require_owner` checks every other call in this same restore
+    # against, locking out every subsequent `restore_*` call in this run.
+    # Its own Identity round trip is exercised for real by every restore
+    # this story runs -- init's own owner is a genuine Identity already.
     continue
   fi
-  PROBE="$(mktemp)"
-  bc_sql_json "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "SELECT * FROM $table" >"$PROBE"
-  coltypes="$(bc_canon coltypes "$PROBE")"
-  if printf '%s\n' "$coltypes" | grep -qE '^(TIMESTAMP|SCHEDULE|OTHER)$'; then
-    SKIPPED_TIMESTAMP+=("$table")
-    rm -f "$PROBE"
-    continue
-  fi
-  col_list="$(bc_canon columns "$PROBE" | paste -sd, -)"
-  rm -f "$PROBE"
-
-  # seed-tuples already returns one comma-joined VALUES blob (never
-  # newline-per-tuple piped through `paste`): an adversarial seed string
-  # can contain a real newline byte, which `paste -sd,` would misread as
-  # a tuple separator.
-  values="$(bc_canon seed-tuples "$BC_SNAPSHOT" "$table" "$ROWS" "$OFFSET")"
-  bc_sql_exec "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "INSERT INTO $table ($col_list) VALUES $values"
+  args_json="$(bc_wb seed-rows "$BC_SNAPSHOT" "$table" "$ROWS" "$OFFSET")"
+  bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "restore_$table" "$args_json"
   SEEDED+=("$table")
   OFFSET=$((OFFSET + ROWS + 1))
 done <<< "$(bc_table_names non-scheduled)"
 
+bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" finish_restore '[]'
+
 echo "seed-edge-rows: ok -- seeded ${#SEEDED[@]} table(s): ${SEEDED[*]:-}" >&2
-echo "seed-edge-rows: not seeded (already init-seeded): ${SKIPPED_OWNER[*]:-none}" >&2
-echo "seed-edge-rows: not seeded (Timestamp/ScheduleAt column, no reducer can write one via SQL): ${SKIPPED_TIMESTAMP[*]:-none}" >&2
 exit 0

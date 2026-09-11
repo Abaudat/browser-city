@@ -23,8 +23,8 @@ A="$1"; B="$2"
 [ -f "$A/manifest.json" ] || bc_ops_die "$SCRIPT" "$A/manifest.json not found -- is '$A' an export-world.sh export?"
 [ -f "$B/manifest.json" ] || bc_ops_die "$SCRIPT" "$B/manifest.json not found -- is '$B' an export-world.sh export?"
 
-SHA_A="$("$BC_PYTHON" -c "import json,sys; print(json.load(open(sys.argv[1]))['schema_sha256'])" "$A/manifest.json")"
-SHA_B="$("$BC_PYTHON" -c "import json,sys; print(json.load(open(sys.argv[1]))['schema_sha256'])" "$B/manifest.json")"
+SHA_A="$(grep -oE '"schema_sha256": *"[0-9a-f]+"' "$A/manifest.json" | grep -oE '[0-9a-f]{16,}')"
+SHA_B="$(grep -oE '"schema_sha256": *"[0-9a-f]+"' "$B/manifest.json" | grep -oE '[0-9a-f]{16,}')"
 [ "$SHA_A" = "$SHA_B" ] || bc_ops_die "$SCRIPT" "the two exports were taken against different schemas ($SHA_A vs $SHA_B) -- not comparable"
 
 MISMATCHES=0

@@ -7,6 +7,7 @@ use spacetimedb::{Identity, Timestamp};
 /// A player's persistent entity. Deliberately thin: name, appearance and
 /// everything else arrive additively as later stories need them (NFR33) --
 /// the only permanent decision settled here is the surrogate key.
+#[derive(Clone)]
 #[spacetimedb::table(accessor = character)]
 pub struct Character {
     #[primary_key]
@@ -21,6 +22,7 @@ pub struct Character {
 /// identities -- an anonymous identity that later links an OIDC one, for
 /// instance). Putting `Identity` on `Character` as its own key, or making
 /// `character_id` unique here, would forbid that permanently.
+#[derive(Clone)]
 #[spacetimedb::table(accessor = character_identity)]
 pub struct CharacterIdentity {
     #[primary_key]

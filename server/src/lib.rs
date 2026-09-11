@@ -11,13 +11,16 @@ mod tables;
 /// not the wall clock of whatever called the reducer: it is what the e2e
 /// spec measures the one-second budget against, so a CLI process's own
 /// startup time is never counted against it.
+#[derive(Clone)]
 #[spacetimedb::table(accessor = demo_ping, public)]
 pub struct DemoPing {
     #[primary_key]
     #[auto_inc]
-    id: u64,
-    message: String,
-    written_at: Timestamp,
+    // `pub`, not private: `tables::restore::restore_demo_ping` constructs
+    // this row from a different module (story 1.4).
+    pub id: u64,
+    pub message: String,
+    pub written_at: Timestamp,
 }
 
 /// Inserts one `demo_ping` row. Never panics (NFR41): the only failure mode

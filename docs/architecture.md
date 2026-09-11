@@ -23,8 +23,8 @@ cited here by identifier.
 | Rendering                     | PixiJS WebGPU with WebGL fallback; `@pixi/tilemap` for tile layers                                       |
 | Audio                         | Web Audio directly, or a thin wrapper                                                                    |
 | Art source                    | `ModernTileset/` — whole-object PNGs, nothing pre-split                                                  |
-| Backup encryption             | `gpg --symmetric` — the repo is public; a plaintext export must never touch an Actions artifact          |
-| Backup tooling                | `scripts/ops/*.sh` shell out to `spacetime sql --format json`/`describe --json` and `python3` (already on `ubuntu-latest`) — never `jq` for a row value: `jq` re-serialises every number through an IEEE double, which silently corrupts a `u64`/`chunk_key` above 2^53; Python's `json` module decodes an integer literal to an arbitrary-precision `int`, confirmed exact by `scripts/ops/python/canon.py`'s own round trip |
+| Backup encryption             | `gpg --symmetric`                                                                                        |
+| Backup tooling                | `scripts/ops/*.sh` shell `spacetime sql`/`spacetime call`/`describe --json`; `server/tools/world_backup` (native, `serde_json` `arbitrary_precision`) parses and canonicalises, never `jq` |
 
 
 ## Authority
@@ -91,29 +91,19 @@ docs/spikes/1.3-scheduled-reducer-timing.md.
 See docs/spikes/1.4-backup-restore.md for the platform investigation and
 the measured limitations behind these rules.
 
-- A backup is a logical export via `scripts/ops/export-world.sh`, never a
-  platform-level snapshot (no such CLI command exists in SpacetimeDB
-  2.9). It runs daily and before every migration; the export never
-  touches an Actions artifact, a log, or git unencrypted — `gpg
-  --symmetric`, retained 90 days.
-- A restore (`scripts/ops/restore-world.sh`) only ever targets a freshly
-  published database, at the exact schema the export names, restored by
-  the identity the export was taken from — never a live world.
-- A scheduled table is exported but never restored: schedules are derived
-  state (see "Scheduled reducers" above).
-- A table with a `Timestamp` or `ScheduleAt` column is exported (`SELECT`
-  reads either fine) but cannot be restored via SQL: SpacetimeDB 2.9's
-  `spacetime sql INSERT`/`UPDATE` cannot construct a literal for either
-  type. A populated such table makes `restore-world.sh` refuse outright,
-  never silently drop it.
-- An export is consistent per table, not across tables — one `spacetime
-  sql` call per table, each its own transaction.
-- `spacetime sql --format json` numbers pass through `python3`'s `json`
-  module and nothing else: never `jq`, never a step that could coerce a
-  `u64`/`chunk_key` above 2^53 through an IEEE double.
-- The round trip is proven, not assumed: `scripts/ci/check-backup-restore.sh`
-  runs export → restore → verify against a real local instance on every
-  server-affecting change.
+- Export via `scripts/ops/export-world.sh`, before every migration and
+  daily once the deploy story wires it in; gpg-encrypted before it ever
+  reaches an Actions artifact, retained 90 days.
+- Restore only through the `restore_*` reducers
+  (`server/src/tables/restore.rs`), into a fresh database, by the owner
+  identity, at the exported schema.
+- auto_inc tables are restored through their own sequence (id `0`),
+  never with an explicit id.
+- Scheduled tables are never restored.
+- Consistency is per table, not across tables.
+- Every non-scheduled table has a `restore_<table>` reducer, checked
+  mechanically (`bounds/tests/restore_coverage.rs`); the round trip is
+  proven by `scripts/ci/check-backup-restore.sh`.
 
 ## Schema
 

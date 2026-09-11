@@ -7,27 +7,31 @@
 # Usage: export-world.sh <db> <out-dir> [--server <url-or-nickname>]
 #
 # Writes <out-dir>/<table>.jsonl (one canonical JSON row per line, sorted
-# by primary key -- see python/canon.py) for every table, plus
-# manifest.json (CLI version, the schema snapshot's own sha256, the
-# database identity, the exporting identity, per-table row counts and
-# per-file sha256). Every value passes through python/canon.py, never
-# `jq` -- see that file's module doc for why (u64/chunk_key precision).
+# by the table's real primary key -- server/tools/world_backup) for every
+# table, plus manifest.json (CLI version, the schema snapshot's own
+# sha256, the database identity, the exporting identity, per-table row
+# counts and per-file sha256). Every value passes through world_backup,
+# never `jq` -- see that crate's module doc for why (u64/chunk_key
+# precision).
 #
-# Atomic: builds in <out-dir>.partial, then renames -- a failed or
-# half-written export never looks like one at the final path (Quentin's
-# direction). Any non-zero exit, stderr error, table/column drift against
-# the snapshot, or an empty *table list* (the snapshot must not be empty)
-# aborts loudly before the rename.
+# Atomic: builds in <out-dir>.partial, then rename-swaps into place. A
+# failed or half-written export never looks like one at the final path
+# (Quentin's direction), and a failed *rename* never destroys a previous
+# good export either: the old export is moved aside first and only
+# deleted after the new one is fully in place.
 set -uo pipefail
 SCRIPT="export-world"
 . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-[ "$#" -ge 2 ] || bc_ops_die "$SCRIPT" "usage: export-world.sh <db> <out-dir> [--server <url-or-nickname>]"
+USAGE="usage: export-world.sh <db> <out-dir> [--server <url-or-nickname>]"
+[ "$#" -ge 2 ] || bc_ops_die "$SCRIPT" "$USAGE"
 DB="$1"; OUT_DIR="$2"; shift 2
 SERVER_ARGS=()
 if [ "$#" -ge 2 ] && [ "$1" = "--server" ]; then
   SERVER_ARGS=(--server "$2")
+  shift 2
 fi
+bc_reject_unknown_args "$SCRIPT" "$USAGE" "$@"
 
 [ -f "$BC_SNAPSHOT" ] || bc_ops_die "$SCRIPT" "$BC_SNAPSHOT not found"
 command -v spacetime >/dev/null 2>&1 || bc_ops_die "$SCRIPT" "'spacetime' is not on PATH"
@@ -45,7 +49,7 @@ if ! spacetime describe "$DB" "${SERVER_ARGS[@]}" --no-config -y --json >"$DESCR
   bc_ops_die "$SCRIPT" "'spacetime describe $DB --json' failed:
 $(cat "$TMP_DIR/.describe.err")"
 fi
-LIVE_TABLES="$(bc_canon describe-tables "$DESCRIBE_JSON" | sort)"
+LIVE_TABLES="$(bc_wb describe-tables "$DESCRIBE_JSON" | grep -v '^restore_state$' | sort)"
 SNAPSHOT_TABLES="$(bc_table_names all | sort)"
 [ -n "$SNAPSHOT_TABLES" ] || bc_ops_die "$SCRIPT" "$BC_SNAPSHOT names no tables"
 MISSING="$(comm -23 <(printf '%s\n' "$SNAPSHOT_TABLES") <(printf '%s\n' "$LIVE_TABLES"))"
@@ -65,14 +69,14 @@ TABLES_JSON="$TMP_DIR/.tables.json"
     bc_sql_json "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "SELECT * FROM $table" >"$RESPONSE"
 
     # column drift, name-normalised (SpacetimeDB echoes e.g. `x0` back as
-    # `x_0` -- see python/canon.py's normalize_name)
-    LIVE_COLS="$(bc_canon columns-normalized "$RESPONSE")"
-    SNAP_COLS="$(bc_canon snapshot-columns "$BC_SNAPSHOT" "$table")"
+    # `x_0` -- see world_backup::normalize_name)
+    LIVE_COLS="$(bc_wb columns-normalized "$RESPONSE")"
+    SNAP_COLS="$(bc_wb snapshot-columns "$BC_SNAPSHOT" "$table")"
     if [ "$LIVE_COLS" != "$SNAP_COLS" ]; then
       bc_ops_die "$SCRIPT" "'$table' columns differ from $BC_SNAPSHOT (live: [$(printf '%s' "$LIVE_COLS" | tr '\n' ',')] snapshot: [$(printf '%s' "$SNAP_COLS" | tr '\n' ',')])"
     fi
 
-    bc_canon rows-canonical "$RESPONSE" >"$TMP_DIR/$table.jsonl"
+    bc_wb rows-canonical "$BC_SNAPSHOT" "$table" "$RESPONSE" >"$TMP_DIR/$table.jsonl"
     rm -f "$RESPONSE"
     count="$(wc -l < "$TMP_DIR/$table.jsonl" | tr -d ' ')"
     ROW_COUNTS["$table"]="$count"
@@ -97,7 +101,7 @@ DATABASE_IDENTITY="$(printf '%s' "$LIST_OUT" | awk -v db="$DB" '$1 == db {print 
 [ -n "$EXPORTING_IDENTITY" ] || EXPORTING_IDENTITY="unknown"
 [ -n "$DATABASE_IDENTITY" ] || DATABASE_IDENTITY="unknown"
 
-bc_canon write-manifest "$TMP_DIR/manifest.json" \
+bc_wb write-manifest "$TMP_DIR/manifest.json" \
   "cli_version=$CLI_VERSION" \
   "schema_sha256=$SNAPSHOT_SHA" \
   "database_identity=$DATABASE_IDENTITY" \
@@ -110,8 +114,19 @@ bc_canon write-manifest "$TMP_DIR/manifest.json" \
 rm -f "$DESCRIBE_JSON" "$TMP_DIR/.describe.err" "$TABLES_JSON"
 
 trap - EXIT
-rm -rf "$OUT_DIR"
-mv "$TMP_DIR" "$OUT_DIR"
+# Move the previous good export aside first, and delete it only once the
+# new one is fully in place -- a failed rename must never destroy a
+# working export (Quentin's direction).
+ASIDE=""
+if [ -e "$OUT_DIR" ]; then
+  ASIDE="${OUT_DIR%/}.previous.$$"
+  mv "$OUT_DIR" "$ASIDE"
+fi
+if ! mv "$TMP_DIR" "$OUT_DIR"; then
+  [ -n "$ASIDE" ] && mv "$ASIDE" "$OUT_DIR"
+  bc_ops_die "$SCRIPT" "could not move $TMP_DIR into place at $OUT_DIR -- the previous export, if any, was restored"
+fi
+[ -n "$ASIDE" ] && rm -rf "$ASIDE"
 
 TOTAL=0
 for table in "${!ROW_COUNTS[@]}"; do TOTAL=$((TOTAL + ROW_COUNTS["$table"])); done

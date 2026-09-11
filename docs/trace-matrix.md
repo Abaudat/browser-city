@@ -107,6 +107,10 @@ migration, because no Maincloud deploy workflow exists yet to wire it into
 
 | Requirement | Status | Guard |
 | --- | --- | --- |
-| The restore has been tested: export -> restore -> verify against a real SpacetimeDB instance, including adversarial values, the auto_inc gap, and the refusal paths (NFR39) | covered | `scripts/ci/check-backup-restore.sh` |
+| The restore has been tested: export -> restore -> verify against a real SpacetimeDB instance, including adversarial values (every non-scheduled table, Timestamp-bearing ones included), the auto_inc sequence ending exactly where the export left off, byte-budgeted multi-batch restore, and the refusal paths (NFR39) | covered | `scripts/ci/check-backup-restore.sh` |
+| Every non-scheduled table has a `restore_<table>` reducer -- a table nobody adds one for can never actually be restored | covered | `server/bounds/tests/restore_coverage.rs` |
 | The world is backed up before every migration (NFR39) | deferred | the deploy story -- no Maincloud deploy workflow exists yet to run `scripts/ops/export-world.sh` before a publish |
+| An unattended scheduled export runs daily and alerts on its own failure, including a schedule GitHub silently disabled | deferred | the deploy story -- `backup.yml` is `workflow_dispatch`-only until `SPACETIME_MAINCLOUD_TOKEN` exists; a daily schedule that fails on every run until then trains people to ignore the alarm |
+| A full restore has been performed and verified against Maincloud (AC4) | deferred | no Maincloud credential (`SPACETIME_MAINCLOUD_TOKEN`/`BACKUP_PASSPHRASE`/`vars.BACKUP_DATABASE`) exists in this repo yet -- `.github/workflows/backup.yml`'s `rehearsal` job is correct by inspection and unexercised |
+| Cross-table consistency during export (each table is its own transaction) | deferred | the first reducer that writes two tables in one transaction (e.g. `citizen` + `citizen_state`) -- nothing reminds anyone today because none does yet |
 | The spike report's measured SpacetimeDB version never goes stale against the same three pins story 1.3's does | covered | `scripts/ci/check-spike-pin.sh` |

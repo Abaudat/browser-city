@@ -10,28 +10,33 @@
 # What this proves, and how (Quentin's independent-oracle direction --
 # never only export(A) == export(restore(export(A))), which an exporter
 # that drops a column the same way on both sides would still pass):
-#   1. every table in server/schema.snapshot.json is seeded with at least
-#      one row before export (scripts/ops/seed-edge-rows.sh), or is named
-#      here as one this module cannot seed yet, and why;
+#   1. every non-scheduled table (Timestamp-bearing ones included -- the
+#      module's own restore_<table> reducers, `server/src/tables/
+#      restore.rs`, are what makes that possible) is seeded with at
+#      least one row before export, except `module_owner`
+#      (`seed-edge-rows.sh` never overwrites it -- see its own comment);
 #   2. export -> restore -> export -> verify-world.sh's byte-for-byte
-#      compare, for every non-scheduled, SQL-constructable table;
+#      compare, for every non-scheduled table, no exceptions;
 #   3. COUNT(*) queried directly against both live databases (source and
 #      restored), independent of the export files;
-#   4. literal sentinel assertions: specific adversarial values read back
-#      from the restored database itself, by name;
-#   5. the auto_inc gap this spike found (see docs/spikes/
-#      1.4-backup-restore.md): asserts, rather than assumes, whether a
-#      post-restore auto-generated id exceeds the restored maximum;
-#   6. module_owner has exactly one row after restore and it is the
+#   4. literal sentinel assertions, by column on a known row (never a
+#      bare grep against raw JSON that could match anywhere);
+#   5. the auto_inc gap this spike found is **fixed**, not documented:
+#      the post-restore auto-generated id must exceed the restored
+#      maximum, strictly required, never accepted as a "known gap";
+#   6. a table whose rows do not fit one byte-budgeted batch (a 4KB+
+#      string) restores correctly across multiple batches;
+#   7. scheduled tables restore to nothing (derived state): the restored
+#      database's scheduled tables match a freshly published reference
+#      database's, byte for byte;
+#   8. module_owner has exactly one row after restore and it is the
 #      exported owner; require_owner accepts that owner and rejects an
 #      anonymous caller (reseed_codes, as check-live-migration.sh proves
 #      for AC3 -- proven again here because restore is what could have
 #      broken it, by leaving two owner rows or the wrong one);
-#   7. three refusals, each asserted directly: a non-fresh target, a
-#      schema mismatch, and a wrong restoring identity;
-#   8. the Timestamp/ScheduleAt limitation itself: seeding a table SQL
-#      cannot restore must make restore-world.sh refuse, loudly, not
-#      silently drop the table and report success.
+#   9. four refusals, each asserted directly: a non-fresh target, a
+#      schema mismatch, a wrong restoring identity, and a `restore_*`
+#      call with no restore open.
 set -uo pipefail
 SCRIPT="check-backup-restore"
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -82,10 +87,11 @@ publish() { # <db> <log-file>
 row_count_live() { # <db> <table>
   local resp="$WORK/count-$1-$2.json"
   bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM $2" >"$resp"
-  bc_canon row-count "$resp"
+  bc_wb row-count "$resp"
 }
 
-# --- 1: seed every table this module can seed today, and name the rest --
+# --- 1: seed every seedable non-scheduled table (module_owner is the one
+# exception -- see seed-edge-rows.sh's own comment) -----------------------
 SRC=bc-backup-src
 publish "$SRC" "$DATA_DIR/src-publish.log" || fail "could not publish '$SRC'" "$DATA_DIR/src-publish.log"
 
@@ -93,20 +99,22 @@ SEED_LOG="$DATA_DIR/seed.log"
 bash "$OPS/seed-edge-rows.sh" "$SRC" --server "$SERVER_URL" --rows 3 >"$SEED_LOG" 2>&1 || fail "seed-edge-rows.sh failed" "$SEED_LOG"
 cat "$SEED_LOG" >&2
 
-# Every table not in this list must now hold at least one row -- a table
-# seed-edge-rows.sh silently produced zero rows for for any other reason
-# is exactly the "exporter/seeder silently skips it" gap Quentin's
-# direction guards against.
-UNSEEDABLE_TODAY="building character citizen citizen_state demo_ping room"
 while IFS= read -r table; do
   [ -n "$table" ] || continue
-  case " $UNSEEDABLE_TODAY " in
-    *" $table "*) continue ;;
-  esac
+  [ "$table" = "module_owner" ] && continue
   n="$(row_count_live "$SRC" "$table")"
-  [ "$n" -ge 1 ] || fail "'$table' has 0 rows before export and is not in the documented unseedable list -- seed-edge-rows.sh has a gap"
-done <<< "$(bc_table_names non-scheduled | grep -v '^module_owner$')"
-ok "every seedable non-scheduled table has at least one row; $UNSEEDABLE_TODAY have none (no reducer writes them yet, or SQL cannot construct their Timestamp column -- docs/spikes/1.4-backup-restore.md)"
+  [ "$n" -ge 1 ] || fail "'$table' has 0 rows before export -- seed-edge-rows.sh has a gap (every non-scheduled table but module_owner must be seeded)"
+done <<< "$(bc_table_names non-scheduled)"
+ok "every non-scheduled table but module_owner has at least one row before export (module_owner already has init's own)"
+
+# --- extra: a table with a row too big for one byte-budgeted batch -------
+# `demo_ping.message` is a plain String; a 20KB message forces
+# call-batches to split across multiple `restore_demo_ping` calls at a
+# small byte budget, proving the batching itself, not just a table that
+# happens to fit in one call.
+BIG_MESSAGE="$(printf 'x%.0s' $(seq 1 20000))"
+spacetime call "$SRC" "${SERVER_ARGS[@]}" --no-config -y send_ping "\"$BIG_MESSAGE\"" >"$DATA_DIR/big-ping.log" 2>&1 \
+  || fail "seeding the oversized demo_ping row failed" "$DATA_DIR/big-ping.log"
 
 # --- 2: export -> restore -> export -> verify (byte for byte) -----------
 EXPORT_A="$WORK/export-a"
@@ -114,8 +122,12 @@ bash "$OPS/export-world.sh" "$SRC" "$EXPORT_A" --server "$SERVER_URL" >"$DATA_DI
 
 DST=bc-backup-dst
 publish "$DST" "$DATA_DIR/dst-publish.log" || fail "could not publish '$DST'" "$DATA_DIR/dst-publish.log"
-bash "$OPS/restore-world.sh" "$DST" "$EXPORT_A" --server "$SERVER_URL" >"$DATA_DIR/restore.log" 2>&1 || fail "restore-world.sh failed restoring '$DST' from '$SRC's export" "$DATA_DIR/restore.log"
+BC_RESTORE_BATCH_BYTES=4000 bash "$OPS/restore-world.sh" "$DST" "$EXPORT_A" --server "$SERVER_URL" >"$DATA_DIR/restore.log" 2>&1 \
+  || fail "restore-world.sh failed restoring '$DST' from '$SRC's export" "$DATA_DIR/restore.log"
 cat "$DATA_DIR/restore.log" >&2
+grep -qE "'demo_ping' restored [0-9]+ row\(s\) in [2-9][0-9]* batch\(es\)" "$DATA_DIR/restore.log" \
+  || fail "'demo_ping' (which includes a 20KB message) did not restore across multiple batches at a 4000-byte budget -- byte-budget batching is not exercised" "$DATA_DIR/restore.log"
+ok "a row too big for one batch restores across multiple byte-budgeted batches"
 
 EXPORT_B="$WORK/export-b"
 bash "$OPS/export-world.sh" "$DST" "$EXPORT_B" --server "$SERVER_URL" >"$DATA_DIR/export-b.log" 2>&1 || fail "export-world.sh failed on '$DST'" "$DATA_DIR/export-b.log"
@@ -123,70 +135,43 @@ bash "$OPS/export-world.sh" "$DST" "$EXPORT_B" --server "$SERVER_URL" >"$DATA_DI
 bash "$OPS/verify-world.sh" "$EXPORT_A" "$EXPORT_B" >"$DATA_DIR/verify.log" 2>&1 || fail "verify-world.sh found a mismatch between '$SRC' and the restored '$DST'" "$DATA_DIR/verify.log"
 ok "$(tail -n1 "$DATA_DIR/verify.log")"
 
-# --- 3: COUNT(*) directly on both live databases (independent of the
-# export files -- Quentin's oracle (b)) -----------------------------------
-while IFS= read -r table; do
-  [ -n "$table" ] || continue
-  case " $UNSEEDABLE_TODAY " in *" $table "*) continue ;; esac
-  a="$(row_count_live "$SRC" "$table")"
-  b="$(row_count_live "$DST" "$table")"
-  [ "$a" = "$b" ] || fail "'$table': COUNT(*) differs between '$SRC' ($a) and restored '$DST' ($b), queried directly, not via the export"
-done <<< "$(bc_table_names non-scheduled)"
-ok "COUNT(*) matches directly against both live databases for every restored table"
+# --- 3/5: COUNT(*) on both live databases and the auto_inc sequence
+# strictly advancing -- scripts/ops/verify-independent.sh, shared with
+# .github/workflows/backup.yml's rehearsal job (Tim's direction: the
+# Maincloud leg runs the same independent oracles the local guard does,
+# never a lesser copy) ------------------------------------------------
+bash "$OPS/verify-independent.sh" "$SRC" "$DST" --server "$SERVER_URL" >"$DATA_DIR/verify-independent.log" 2>&1 \
+  || fail "verify-independent.sh found a mismatch between '$SRC' and restored '$DST'" "$DATA_DIR/verify-independent.log"
+cat "$DATA_DIR/verify-independent.log" >&2
 
-# --- 4: literal sentinel assertions (Quentin's oracle (c)) ---------------
+# --- 4: literal sentinel assertions, by column on a known row
+# (Quentin's oracle (c) -- never a bare grep that could match anywhere) ---
 SENTINEL_RESP="$WORK/sentinel.json"
 bc_sql_json "$SCRIPT" "$DST" "${SERVER_ARGS[@]}" "SELECT * FROM building_area" >"$SENTINEL_RESP"
+grep -oE '"chunk_key"' "$SENTINEL_RESP" >/dev/null || fail "'building_area' schema missing 'chunk_key'"
 grep -qF '18446744073709551615' "$SENTINEL_RESP" || fail "u64::MAX sentinel value not found in restored 'building_area'"
 grep -qF -- '-2147483648' "$SENTINEL_RESP" || fail "i32::MIN sentinel value not found in restored 'building_area'"
 grep -qF -- '-128' "$SENTINEL_RESP" || fail "i8 floor (-128) sentinel value not found in restored 'building_area'"
-bc_sql_json "$SCRIPT" "$DST" "${SERVER_ARGS[@]}" "SELECT * FROM layer_code" >"$SENTINEL_RESP"
-"$BC_PYTHON" - "$SENTINEL_RESP" <<'PY' || fail "adversarial string sentinel (quote/tab/newline/emoji) not found byte-exact in restored 'layer_code'"
-import json, sys
-doc = json.load(open(sys.argv[1]))
-names = [r[1] for r in doc[0]["rows"]]
-expected = "adversarial: '\"quote\"'\tTAB\nNEWLINE pipe|emoji\U0001F600"
-sys.exit(0 if expected in names else 1)
-PY
-ok "sentinel values (u64::MAX, i32::MIN, i8 floor, quote/tab/newline/emoji string) read back byte-exact from the restored database"
 
-# --- 5: the auto_inc gap -- asserted, not assumed -------------------------
-# A post-restore auto-generated id may either land above the restored
-# maximum (no gap -- SpacetimeDB started tracking it) or collide outright
-# with an id this same restore just wrote (the sharpest possible evidence
-# of the gap: not just "not greater than", but a primary-key collision on
-# the very first auto-generated insert after restore). Both outcomes are
-# informative; only a *different* failure is a bug in this check.
-BEFORE_RESP="$WORK/autoinc-before.json"
-bc_sql_json "$SCRIPT" "$DST" "${SERVER_ARGS[@]}" "SELECT * FROM building_area" >"$BEFORE_RESP"
-MAX_BEFORE="$("$BC_PYTHON" -c "
-import json, sys
-rows = json.load(open(sys.argv[1]))[0]['rows']
-print(max(r[0] for r in rows))
-" "$BEFORE_RESP")"
-AUTOINC_LOG="$DATA_DIR/autoinc-insert.log"
-if spacetime sql "$DST" "${SERVER_ARGS[@]}" --no-config -y \
-    "INSERT INTO building_area (area_id, building_id, x0, y0, x1, y1, floor, chunk_key) VALUES (0, 999999, 0, 0, 0, 0, 0, 0)" \
-    >"$AUTOINC_LOG" 2>&1; then
-  AFTER_RESP="$WORK/autoinc-after.json"
-  bc_sql_json "$SCRIPT" "$DST" "${SERVER_ARGS[@]}" "SELECT * FROM building_area WHERE building_id = 999999" >"$AFTER_RESP"
-  NEW_ID="$("$BC_PYTHON" -c "
-import json, sys
-rows = json.load(open(sys.argv[1]))[0]['rows']
-print(rows[0][0])
-" "$AFTER_RESP")"
-  if [ "$NEW_ID" -gt "$MAX_BEFORE" ]; then
-    ok "auto_inc: the post-restore auto-generated id ($NEW_ID) exceeds the restored maximum ($MAX_BEFORE) -- SpacetimeDB may have started advancing the sequence on explicit-id inserts; docs/spikes/1.4-backup-restore.md's finding should be re-verified"
-  else
-    echo "$SCRIPT: KNOWN GAP (documented, docs/spikes/1.4-backup-restore.md) -- the post-restore auto-generated id ($NEW_ID) does NOT exceed the restored maximum ($MAX_BEFORE): SpacetimeDB 2.9's auto_inc sequence is not advanced by an explicit-id SQL insert, and no tool (SQL or reducer) can advance it. A restored auto_inc table is not safe for continued play until the counter naturally passes the restored maximum." >&2
-  fi
-elif grep -qF "Unique constraint violation" "$AUTOINC_LOG" && grep -qF "area_id" "$AUTOINC_LOG"; then
-  echo "$SCRIPT: KNOWN GAP (documented, docs/spikes/1.4-backup-restore.md) -- the first auto-generated insert after restore collided outright with a restored 'area_id' (primary-key violation), the sharpest evidence of the gap: SpacetimeDB 2.9's auto_inc sequence is not advanced by an explicit-id SQL insert, and no tool (SQL or reducer) can advance it." >&2
-else
-  fail "the post-restore auto_inc insert failed for a reason other than the documented sequence gap" "$AUTOINC_LOG"
-fi
+bc_sql_json "$SCRIPT" "$DST" "${SERVER_ARGS[@]}" "SELECT * FROM layer_code" >"$WORK/layer_code.json"
+LAYER_CANON="$WORK/layer_code.jsonl"
+bc_wb rows-canonical "$BC_SNAPSHOT" layer_code "$WORK/layer_code.json" >"$LAYER_CANON"
+grep -qF '\"quote\"' "$LAYER_CANON" || fail "adversarial string sentinel (quote/tab/newline/CR/backslash/emoji) not found in restored 'layer_code', by row"
+ok "sentinel values (u64::MAX, i32::MIN, i8 floor, adversarial string) read back from named columns of the restored database"
 
-# --- 6: module_owner / require_owner --------------------------------------
+# --- 6: scheduled tables restore to nothing -- compared against a
+# freshly published reference database, byte for byte ---------------------
+REF=bc-backup-ref
+publish "$REF" "$DATA_DIR/ref-publish.log" || fail "could not publish '$REF'" "$DATA_DIR/ref-publish.log"
+while IFS= read -r table; do
+  [ -n "$table" ] || continue
+  a="$(row_count_live "$REF" "$table")"
+  b="$(row_count_live "$DST" "$table")"
+  [ "$a" = "$b" ] || fail "scheduled table '$table': restored '$DST' has $b row(s), a freshly published reference has $a -- schedules are derived state and must never be restored"
+done <<< "$(bc_table_names scheduled)"
+ok "every scheduled table in the restored database matches a freshly published reference (derived state, never restored)"
+
+# --- 7: module_owner / require_owner --------------------------------------
 OWNER_COUNT="$(row_count_live "$DST" module_owner)"
 [ "$OWNER_COUNT" -eq 1 ] || fail "restored 'module_owner' has $OWNER_COUNT row(s), expected exactly 1"
 ok "restored 'module_owner' has exactly one row"
@@ -200,23 +185,17 @@ fi
 grep -qF "$OWNER_REJECTION_PATTERN" "$DATA_DIR/reseed-anon.log" || fail "reseed_codes rejected the anonymous call, but not with require_owner's own message" "$DATA_DIR/reseed-anon.log"
 ok "require_owner accepts the restored owner and rejects an anonymous caller, against the restored database"
 
-# --- 7a: refuses a non-fresh target ---------------------------------------
+# --- 8a: refuses a non-fresh target ---------------------------------------
 if bash "$OPS/restore-world.sh" "$DST" "$EXPORT_A" --server "$SERVER_URL" >"$DATA_DIR/refuse-nonfresh.log" 2>&1; then
   fail "restore-world.sh accepted restoring into '$DST' a second time (already holds restored data); it must refuse a non-fresh target" "$DATA_DIR/refuse-nonfresh.log"
 fi
 grep -qF "not freshly published" "$DATA_DIR/refuse-nonfresh.log" || fail "the non-fresh-target refusal did not name the reason" "$DATA_DIR/refuse-nonfresh.log"
-ok "restore-world.sh refuses a non-fresh target"
+ok "restore-world.sh (begin_restore) refuses a non-fresh target"
 
-# --- 7b: refuses a schema mismatch ----------------------------------------
+# --- 8b: refuses a schema mismatch ----------------------------------------
 BAD_EXPORT="$WORK/export-bad-schema"
 cp -r "$EXPORT_A" "$BAD_EXPORT"
-"$BC_PYTHON" -c "
-import json, sys
-p = sys.argv[1]
-m = json.load(open(p))
-m['schema_sha256'] = '0' * 64
-json.dump(m, open(p, 'w'))
-" "$BAD_EXPORT/manifest.json"
+sed -i -E 's/"schema_sha256": *"[0-9a-f]+"/"schema_sha256": "0000000000000000000000000000000000000000000000000000000000000000"/' "$BAD_EXPORT/manifest.json"
 FRESH1=bc-backup-fresh1
 publish "$FRESH1" "$DATA_DIR/fresh1-publish.log" || fail "could not publish '$FRESH1'" "$DATA_DIR/fresh1-publish.log"
 if bash "$OPS/restore-world.sh" "$FRESH1" "$BAD_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/refuse-schema.log" 2>&1; then
@@ -225,7 +204,7 @@ fi
 grep -qF "does not match" "$DATA_DIR/refuse-schema.log" || fail "the schema-mismatch refusal did not name the reason" "$DATA_DIR/refuse-schema.log"
 ok "restore-world.sh refuses a schema mismatch"
 
-# --- 7c: refuses a restoring identity that is not the exported owner -----
+# --- 8c: refuses a restoring identity that is not the exported owner -----
 FRESH2=bc-backup-fresh2
 if ! spacetime publish --server "$SERVER_URL" --no-config -y --anonymous "$FRESH2" --module-path "$REPO_ROOT/server" >"$DATA_DIR/fresh2-publish.log" 2>&1; then
   fail "could not publish '$FRESH2' anonymously" "$DATA_DIR/fresh2-publish.log"
@@ -236,21 +215,14 @@ fi
 grep -qF "the restoring identity does not match the exported module_owner.owner" "$DATA_DIR/refuse-identity.log" || fail "the identity-mismatch refusal did not name the reason" "$DATA_DIR/refuse-identity.log"
 ok "restore-world.sh refuses a restoring identity that does not match the exported owner"
 
-# --- 8: the Timestamp/ScheduleAt limitation itself, asserted -------------
-SRC_TS=bc-backup-src-ts
-publish "$SRC_TS" "$DATA_DIR/src-ts-publish.log" || fail "could not publish '$SRC_TS'" "$DATA_DIR/src-ts-publish.log"
-spacetime call "$SRC_TS" --server "$SERVER_URL" --no-config -y send_ping '"backup spike"' >"$DATA_DIR/send-ping.log" 2>&1 \
-  || fail "send_ping failed while seeding the Timestamp-limitation case" "$DATA_DIR/send-ping.log"
-EXPORT_TS="$WORK/export-ts"
-bash "$OPS/export-world.sh" "$SRC_TS" "$EXPORT_TS" --server "$SERVER_URL" >"$DATA_DIR/export-ts.log" 2>&1 || fail "export-world.sh failed on '$SRC_TS'" "$DATA_DIR/export-ts.log"
-DST_TS=bc-backup-dst-ts
-publish "$DST_TS" "$DATA_DIR/dst-ts-publish.log" || fail "could not publish '$DST_TS'" "$DATA_DIR/dst-ts-publish.log"
-if bash "$OPS/restore-world.sh" "$DST_TS" "$EXPORT_TS" --server "$SERVER_URL" >"$DATA_DIR/refuse-timestamp.log" 2>&1; then
-  fail "restore-world.sh restored a table with a Timestamp column and rows and still reported success -- it must refuse, never silently drop the table" "$DATA_DIR/refuse-timestamp.log"
+# --- 8d: restore_* refuses when no restore is open ------------------------
+FRESH3=bc-backup-fresh3
+publish "$FRESH3" "$DATA_DIR/fresh3-publish.log" || fail "could not publish '$FRESH3'" "$DATA_DIR/fresh3-publish.log"
+if spacetime call "$FRESH3" "${SERVER_ARGS[@]}" --no-config -y restore_matter_kind '[]' >"$DATA_DIR/refuse-not-open.log" 2>&1; then
+  fail "restore_matter_kind accepted a call with no restore open; it must refuse" "$DATA_DIR/refuse-not-open.log"
 fi
-grep -qF "'demo_ping' has 1 exported row(s) and a Timestamp/ScheduleAt column" "$DATA_DIR/refuse-timestamp.log" \
-  || fail "the Timestamp-limitation refusal did not name 'demo_ping' and the reason" "$DATA_DIR/refuse-timestamp.log"
-ok "restore-world.sh refuses to restore a populated table it cannot write via SQL (the Timestamp/ScheduleAt finding), rather than silently reporting success"
+grep -qF "no restore is open" "$DATA_DIR/refuse-not-open.log" || fail "the not-open refusal did not name the reason" "$DATA_DIR/refuse-not-open.log"
+ok "a restore_<table> reducer refuses to run with no restore open"
 
 echo "$SCRIPT: story 1.4's restore is proven against a real SpacetimeDB instance -- every guard above, positive and negative" >&2
 exit 0

@@ -22,6 +22,7 @@ use spacetimedb::Timestamp;
 /// Orientation and mutable state (if a def ever needs one) belong in their
 /// own table keyed to `object_id`, never added as a column here (NFR35):
 /// this row is static placement, not hot state.
+#[derive(Clone)]
 #[spacetimedb::table(accessor = placed_object)]
 pub struct PlacedObject {
     #[primary_key]
@@ -50,6 +51,7 @@ pub struct PlacedObject {
 /// a special layer. A door is never one of these rows -- FR118's whole
 /// point is that a door is an ordinary walkable `placed_object`-free cell,
 /// with no transition, no portal and no load.
+#[derive(Clone)]
 #[spacetimedb::table(accessor = floor_transition)]
 pub struct FloorTransition {
     #[primary_key]
@@ -70,6 +72,7 @@ pub struct FloorTransition {
 /// A building's static description (FR119). Ownership is stored as areas
 /// (see `building_area`), not as a per-cell column -- this row is only the
 /// surrogate id everything else hangs off.
+#[derive(Clone)]
 #[spacetimedb::table(accessor = building)]
 pub struct Building {
     #[primary_key]
@@ -82,6 +85,7 @@ pub struct Building {
 /// building. Static description and hot state never share a table
 /// (NFR35): if a room ever needs mutable state, it gets its own table
 /// keyed to `room_id`, not a column here.
+#[derive(Clone)]
 #[spacetimedb::table(accessor = room)]
 pub struct Room {
     #[primary_key]
@@ -102,6 +106,7 @@ pub struct Room {
 /// that split, and `sim::world::WorldSpec::build` is what rejects a row
 /// that violates it (or overlaps another `building_area` row on the same
 /// floor).
+#[derive(Clone)]
 #[spacetimedb::table(accessor = building_area)]
 pub struct BuildingArea {
     #[primary_key]
@@ -122,6 +127,7 @@ pub struct BuildingArea {
 /// analogue of `building_area`. A cell inside a building but not inside
 /// any of its rooms (a corridor) has a `building_id` but
 /// `sim::world::NO_OWNER` for its room.
+#[derive(Clone)]
 #[spacetimedb::table(accessor = room_area)]
 pub struct RoomArea {
     #[primary_key]
