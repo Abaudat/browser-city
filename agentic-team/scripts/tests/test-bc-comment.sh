@@ -288,19 +288,43 @@ echo "shaNEW" > "$FAKE_UNAPP_ALL/gh_pr_head.99.json"
 check "everyone approved current head -> exit 1, empty" 1 run "$FAKE_UNAPP_ALL" unapproved-leads 99
 
 echo
-echo "crew-addressed: yes at the addressed sha, no once the head moves on:"
+echo "crew-addressed: yes at the addressed sha, no once the head moves on or the leads already reviewed it:"
 
 FAKE_CA="$(fake_dir)"
-{ printf '### Crew\n\n_Not yet addressed._\n\n<!-- bc:crew -->\n<!-- bc:addressed sha1 -->\n' | _comment 1; } \
-  | "$JQ" -sc '.' > "$FAKE_CA/gh_issue_comments.101.json"
+{
+  render_status 5 "quentin,tim" 3 | _comment 1
+  printf '### Review — quentin\n\nno\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed sha0 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 2
+  printf '### Review — tim\n\nno\n\n<!-- bc:lead:tim -->\n<!-- bc:reviewed sha0 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 3
+  printf '### Crew\n\n_Not yet addressed._\n\n<!-- bc:crew -->\n<!-- bc:addressed sha1 -->\n' | _comment 4
+} | "$JQ" -sc '.' > "$FAKE_CA/gh_issue_comments.101.json"
 echo "sha1" > "$FAKE_CA/gh_pr_head.101.json"
-check_out "addressed matches current head -> yes" 0 yes run "$FAKE_CA" crew-addressed 101
+check_out "addressed matches a head the leads have not reviewed -> yes" 0 yes run "$FAKE_CA" crew-addressed 101
 echo "sha2" > "$FAKE_CA/gh_pr_head.101.json"
 check_out "head moved on -> no" 1 no run "$FAKE_CA" crew-addressed 101
+
+# Last round's stamp: Crew addressed sha1, both leads then reviewed sha1 and
+# asked for changes, and Crew has not pushed yet. The stamp still equals the
+# head, but it answers the previous round, not this one.
+FAKE_CA_OLD="$(fake_dir)"
+sed 's/bc:reviewed sha0/bc:reviewed sha1/g' "$FAKE_CA/gh_issue_comments.101.json" > "$FAKE_CA_OLD/gh_issue_comments.101.json"
+echo "sha1" > "$FAKE_CA_OLD/gh_pr_head.101.json"
+check_out "every lead already reviewed the addressed head -> no" 1 no run "$FAKE_CA_OLD" crew-addressed 101
+
+# One lead reviewed sha1, the other has not yet: still a fresh answer.
+FAKE_CA_MIXED="$(fake_dir)"
+sed '0,/bc:reviewed sha0/s//bc:reviewed sha1/' "$FAKE_CA/gh_issue_comments.101.json" > "$FAKE_CA_MIXED/gh_issue_comments.101.json"
+echo "sha1" > "$FAKE_CA_MIXED/gh_pr_head.101.json"
+check_out "only some leads reviewed the addressed head -> yes" 0 yes run "$FAKE_CA_MIXED" crew-addressed 101
 
 FAKE_CA_NONE="$(fake_dir)"
 echo '[]' > "$FAKE_CA_NONE/gh_issue_comments.101.json"
 check_out "no crew comment at all -> no" 1 no run "$FAKE_CA_NONE" crew-addressed 101
+
+FAKE_CA_NOSTATUS="$(fake_dir)"
+{ printf '### Crew\n\n_Not yet addressed._\n\n<!-- bc:crew -->\n<!-- bc:addressed sha1 -->\n' | _comment 1; } \
+  | "$JQ" -sc '.' > "$FAKE_CA_NOSTATUS/gh_issue_comments.101.json"
+echo "sha1" > "$FAKE_CA_NOSTATUS/gh_pr_head.101.json"
+check_out "no status comment (no scope to judge against) -> no" 1 no run "$FAKE_CA_NOSTATUS" crew-addressed 101
 
 echo
 echo "should-trigger-breaker: past BC_CYCLE_LIMIT (8) vs. at or under it:"

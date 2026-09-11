@@ -592,7 +592,14 @@ crew-addressed)
   stub="$(_bc_find_by_marker "$comments" "crew")" || { echo no; exit 1; }
   body="$(printf '%s' "$stub" | "$JQ" -r '.body')"
   addressed="$(marker_get "$body" addressed 2>/dev/null || printf -- -)"
-  if [ -n "$head" ] && [ "$addressed" = "$head" ]; then
+  # A stamp at the current head is only this round's answer if no lead in
+  # scope has already reviewed that head. Otherwise it is last round's stamp,
+  # still matching because Crew has not pushed yet, and reading it as "yes"
+  # bounces Reviewed <-> Leads review every tick, bumping the cycle each time
+  # until the breaker trips on a PR nobody touched.
+  scope="$(_bc_scope_of_pr "$comments")" || { echo no; exit 1; }
+  if [ -n "$head" ] && [ "$addressed" = "$head" ] \
+    && _bc_stale_leads "$scope" "$comments" "$head" >/dev/null; then
     echo yes
     exit 0
   fi

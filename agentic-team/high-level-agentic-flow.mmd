@@ -48,7 +48,7 @@ flowchart TD
     cycles-exhausted -->|no| dispatching-rework["Mark Reviewed,<br/>dispatch to Crew"] --> sleep
     cycles-exhausted -->|yes| tripping-breaker["Circuit breaker:<br/>comment on the PR @-mentioning Adrian<br/>with the deadlock, what was tried,<br/>the options and a recommendation"] --> sleep
 
-    subissue-status -->|"Reviewed"| crew-addressed{"Crew pushed and<br/>updated its comment?"}
+    subissue-status -->|"Reviewed"| crew-addressed{"Crew pushed a head the leads<br/>have not reviewed and stamped it?"}
     crew-addressed -->|no| sleep
     crew-addressed -->|yes| reopening-leads-review["Mark Leads review"] --> sleep
 

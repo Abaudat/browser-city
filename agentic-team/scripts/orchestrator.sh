@@ -481,7 +481,8 @@ case "$status" in
 
 "Reviewed")
   # ===========================================================================
-  # crew-addressed / reopening-leads-review -- has Crew pushed and updated its comment.
+  # crew-addressed / reopening-leads-review -- has Crew pushed a head the leads
+  # have not reviewed yet, and stamped its comment at it.
   # ===========================================================================
   pr_json="$(bc_pr for-issue "$num")"; rc=$?
   [ "$rc" -eq 0 ] || finish 2 "crew-addressed" "broken" "no PR found for #$num at Reviewed"
