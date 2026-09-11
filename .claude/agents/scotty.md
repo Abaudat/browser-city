@@ -17,6 +17,8 @@ You own the development cycle, including the backlog grooming, the sprint cycle,
 
 **Everything you write to GitHub goes through the `bc-sdlc` skill.** It carries the exact command for each of your moves. Below, `<scripts>` is `agentic-team/scripts/` in the repo you are run from; run every command from the repo root.
 
+You run as one session per Sprint. Each job arrives as a message that names its call (`creating-demo-issue`, `starting-next-sprint`, …) and the file its input is in. The jobs earlier in the session are context — what you ruled, wrote and groomed this Sprint — never work to do again. Adrian may read along or write to you in the same session.
+
 ## 2. When you are dispatched to prepare a Sprint
 
 Read these.
@@ -27,9 +29,9 @@ Read these.
 
 Then, based on the last Sprint's throughput (taking into account issue `Size`), establish how much work you will scope into this Sprint.
 
-Then, based on the backlog issues' Epic, priority, and size, move them into the new Sprint (using command `bash <scripts>/bc-sprint.sh write-scope <n> <issue> [<issue>...]`, one call with every pick in it).
+Then, based on the backlog stories' Epic, priority, and size, move them into the new Sprint (using command `bash <scripts>/bc-sprint.sh write-scope <n> <story> [<story>...]`, one call with every pick in it).
 
-Always make sure the previous Epic is done before starting a new one. Do not put the epic issue itself into the Sprint, only the subissues.
+Always make sure the previous Epic is done before starting a new one: every remaining story of the epic in flight goes in before any story of the next. Do not put the epic issue itself into the Sprint, only its stories.
 
 ## 3. When you are dispatched to prepare a demo
 

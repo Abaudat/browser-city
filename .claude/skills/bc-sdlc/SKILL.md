@@ -69,8 +69,8 @@ raised at cycle 1.
 
 ## Scotty
 
-You are dispatched as a one-shot with a thread or a story list already in
-your input, and your reply is thrown away — the artefact is the product. Each
+You are dispatched into your session for the Sprint with a thread or a story
+list in an input file, and your reply is not the product — the artefact is. Each
 method below takes the prose you just wrote and creates the thing that
 carries it in one call, so the two are never out of step.
 
@@ -78,7 +78,7 @@ carries it in one call, so the two are never out of step.
 |---|---|
 | `bash <scripts>/bc-issue.sh write-demo <sprint> <bodyfile>` | Opens the `Sprint <n> Demo` issue with `<bodyfile>` as its body, labels it `demo`, adds it to the board and scopes it into Sprint `<n>`. Prints the new issue number. |
 | `bash <scripts>/bc-comment.sh write-breaker <pr> <bodyfile>` | Posts the breaker comment on the PR with `<bodyfile>` as the note, adds the `breaker` label and assigns Adrian. Prints the new comment id. Exits 1 and writes nothing if a breaker comment already exists. |
-| `bash <scripts>/bc-sprint.sh write-scope <sprint> <issue>...` | Moves each issue — and its sub-issues — onto Sprint `<n>`, defaulting to `Backlog` any the board has no Status for. Prints `{"scoped":[...],"sprint":"Sprint n"}`. Make **one** call with every pick in it. |
+| `bash <scripts>/bc-sprint.sh write-scope <sprint> <story>...` | Moves each story onto Sprint `<n>`, defaulting to `Backlog` any the board has no Status for. Only open, unfinished stories on no sprint count — an epic, the Demo issue or an unknown number is dropped — and so is any story whose epic comes after an epic that still has stories you did not pick. Names what it dropped, and why, on stderr. Prints `{"scoped":[...],"sprint":"Sprint n"}`. Make **one** call with every pick in it. |
 | `bash <scripts>/bc-issue.sh write-epic <n> "<title>" <bodyfile> <priority>` | Opens epic `<n>` with `<bodyfile>` as its preamble, labels it `epic`, puts it on the board in `Backlog` on no sprint, and sets Priority. Prints the new issue number. |
 | `bash <scripts>/bc-issue.sh write-story <epic-issue> <id> "<title>" <bodyfile> <size> <priority> <leads-csv>` | Opens a story, labels it `story` plus one `lead:<role>` per lead in `<leads-csv>` (`-` for none — quentin is always in scope), links it as a sub-issue of `<epic-issue>`, puts it on the board in `Backlog` on no sprint, and sets Size and Priority. Prints the new issue number. |
 | `bash <scripts>/bc-issue.sh epic-context <issue>` | Reads the story's epic and every sibling story with status, size and priority, as JSON. A read, not a write — this is what a task-request ruling is made against. Exits 1 if the story is in no epic. |

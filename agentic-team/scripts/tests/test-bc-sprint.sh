@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Fixture-driven coverage for scripts/bc-sprint.sh: current/next/over at
 # pinned clock values, close's carry/clear/demo-close bookkeeping, items'
-# sprint read, start's handoff to Scotty, and write-scope's candidate guard
-# (the one thing standing between a picked number and the board).
+# sprint read, start's handoff to Scotty, and write-scope's two guards --
+# candidates only, and the epic order -- which are what stands between a
+# picked number and the board.
 set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$TEST_DIR/.."
 BC_SPRINT="$SCRIPTS_DIR/bc-sprint.sh"
 . "$TEST_DIR/harness.sh"
+. "$SCRIPTS_DIR/lib/config.sh"
+bc_init
 
 run() { # <fakedir> <now-or-empty> <args...>
   local fake="$1" now="$2"; shift 2
@@ -174,33 +177,63 @@ check "items: no such sprint exits 2" 2 run "$FAKE_IT" "" items 9
 check "items: reads only -- wrote nothing" 1 test -f "$FAKE_IT/calls.log"
 
 echo
-echo "start: hands the candidates to Scotty and reports what he scoped:"
+echo "start: hands Scotty the stories by epic, reads back what he scoped:"
+
+# Sprint 1 is closing (now is inside it), Sprint 2 (sp2) is next. Epic 40 is
+# in flight: 41 finished, 44 carried onto Sprint 2, 42 and 43 back on no
+# sprint. Epic 60 has not started. 50 is a story in no epic. Neither epic, the
+# demo, nor anything already on a sprint may be offered.
+_scope_board() {
+  cat <<'JSON'
+[
+  {"number":15,"title":"Delivered last sprint","state":"CLOSED","status":"Done","priority":"Standard","size":"M","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null},
+  {"number":40,"title":"Epic 1: Foundations","state":"OPEN","status":"Backlog","priority":null,"size":null,"sprintId":"sp2","sprintTitle":"Sprint 2","labels":["epic"],"isParent":true,"parent":null},
+  {"number":41,"title":"Story 1.1","state":"CLOSED","status":"Done","priority":"Standard","size":"S","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["story"],"isParent":false,"parent":40},
+  {"number":42,"title":"Story 1.2","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":40},
+  {"number":43,"title":"Story 1.3","state":"OPEN","status":"Backlog","priority":"Critical","size":"L","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":40},
+  {"number":44,"title":"Story 1.4","state":"OPEN","status":"Leads review","priority":"Standard","size":"M","sprintId":"sp2","sprintTitle":"Sprint 2","labels":["story"],"isParent":false,"parent":40},
+  {"number":50,"title":"Fix inventory bug","state":"OPEN","status":"Backlog","priority":"Blocker","size":"XS","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":null},
+  {"number":60,"title":"Epic 2: Content","state":"OPEN","status":"Backlog","priority":null,"size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},
+  {"number":61,"title":"Story 2.1","state":"OPEN","status":"Backlog","priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":60},
+  {"number":62,"title":"Story 2.2","state":"OPEN","status":"Backlog","priority":"Standard","size":"S","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":60},
+  {"number":70,"title":"Sprint 1 Demo","state":"CLOSED","status":"Done","priority":null,"size":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null}
+]
+JSON
+}
 
 FAKE_ST="$(fake_dir)"
 write_iterations "$FAKE_ST"
-cat > "$FAKE_ST/project_items.json" <<'JSON'
-[
-  {"number":15,"title":"Delivered last sprint","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null},
-  {"number":50,"title":"Fix inventory bug","state":"OPEN","status":null,"priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null},
-  {"number":60,"title":"Nice-to-have polish","state":"OPEN","status":null,"priority":"Low","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null},
-  {"number":70,"title":"Sprint 1 Demo","state":"OPEN","status":"In progress","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null}
-]
-JSON
-# The fixture stands in for Scotty: present means his own `write-scope` call
-# ran and recorded what it moved through BC_WRITE_RESULT.
-printf '{"scoped":[50],"sprint":"Sprint 2"}\n' > "$FAKE_ST/claude_oneshot_acting.judge-sprint-scope.md.json"
+_scope_board > "$FAKE_ST/project_items.json"
+# The overlay stands in for Scotty: present means his own `write-scope` call
+# ran, and the board read back afterwards has 42 and 43 on Sprint 2.
+mkdir -p "$FAKE_ST/bc_scotty.judge-sprint-scope.md.d"
+_scope_board | "$JQ" -c 'map(if .number == 42 or .number == 43 then .sprintId = "sp2" | .sprintTitle = "Sprint 2" else . end)' \
+  > "$FAKE_ST/bc_scotty.judge-sprint-scope.md.d/project_items.json"
 
-check_out "start prints what Scotty scoped" 0 '{"scoped":[50],"sprint":"Sprint 2"}' \
+check_out "start prints what the board says Scotty scoped" 0 '{"scoped":[42,43],"sprint":"Sprint 2"}' \
   run "$FAKE_ST" 2026-09-03T08:00:00Z start
 check "start handed the candidates to Scotty" 0 \
-  log_has "$FAKE_ST/calls.log" '^claude_oneshot_acting judge-sprint-scope\.md$'
+  log_has "$FAKE_ST/calls.log" '^bc_scotty judge-sprint-scope\.md$'
 check "start scoped nothing itself" 1 log_has "$FAKE_ST/calls.log" '^project_set_iteration'
+
+IN="$FAKE_ST/bc_scotty.judge-sprint-scope.md.input"
+# The first sprint that closed for real: the unfinished epic's Backlog stories
+# were not offered at all, so Scotty scoped the next epic over them.
+check "the in-flight epic's unscoped stories are offered"  0 grep -q '^- #42 Story 1.2' "$IN"
+check "and so are its other ones"                          0 grep -q '^- #43 Story 1.3' "$IN"
+check "the in-flight epic heads its group with its progress" 0 grep -q '^### #40 Epic 1: Foundations — 1 of 4 stories done, 1 on a sprint$' "$IN"
+check "no epic is ever offered as a candidate"             1 grep -Eq '^- #(40|60) ' "$IN"
+check "nothing finished, carried, or the demo is offered as a candidate" 1 grep -Eq '^- #(15|41|70) ' "$IN"
+check "the carried story is listed as already on the next sprint" 0 grep -q '^- #44 Story 1.4 — status: Leads review, size: M$' "$IN"
+check "last sprint's delivery counts stories only, with sizes" 0 grep -q '^2 stories (sizes: M, S)$' "$IN"
+check_out "epics come in issue order, stories in no epic last" 0 '#40 #60 Stories' \
+  sh -c 'grep "^### " "$1" | cut -d" " -f2 | tr "\n" " " | sed "s/ $//"' _ "$IN"
 
 echo
 echo "start: no eligible candidates -> exit 1, nothing scoped, no Scotty call:"
 FAKE_ST0="$(fake_dir)"
 write_iterations "$FAKE_ST0"
-echo '[]' > "$FAKE_ST0/project_items.json"
+echo '[{"number":60,"title":"An epic is not a candidate","state":"OPEN","status":"Backlog","priority":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null}]' > "$FAKE_ST0/project_items.json"
 check_out "start with no candidates" 1 '{"scoped":[]}' run "$FAKE_ST0" 2026-09-03T08:00:00Z start
 check "start with no candidates wrote nothing" 1 test -f "$FAKE_ST0/calls.log"
 
@@ -208,15 +241,11 @@ echo
 echo "start: Scotty scoping nothing exits 2:"
 FAKE_ST1="$(fake_dir)"
 write_iterations "$FAKE_ST1"
-cat > "$FAKE_ST1/project_items.json" <<'JSON'
-[
-  {"number":50,"title":"Fix inventory bug","state":"OPEN","status":null,"priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null}
-]
-JSON
-# No claude_oneshot_acting fixture: Scotty scoped nothing.
+_scope_board > "$FAKE_ST1/project_items.json"
+# No bc_scotty overlay: the board reads back unchanged.
 check "start exits 2 when Scotty scoped nothing" 2 run "$FAKE_ST1" 2026-09-03T08:00:00Z start
 check "and the only call logged is the handoff" 0 \
-  log_has "$FAKE_ST1/calls.log" '^claude_oneshot_acting judge-sprint-scope\.md$'
+  log_has "$FAKE_ST1/calls.log" '^bc_scotty judge-sprint-scope\.md$'
 check "and nothing was moved onto a sprint" 1 \
   log_has "$FAKE_ST1/calls.log" '^project_set_iteration'
 
@@ -228,49 +257,65 @@ cat > "$FAKE_ST2/project_iterations.json" <<'JSON'
   {"id":"only1","title":"Sprint 1","startDate":"2026-09-01","duration":4}
 ]
 JSON
-cat > "$FAKE_ST2/project_items.json" <<'JSON'
-[
-  {"number":50,"title":"Fix inventory bug","state":"OPEN","status":null,"priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null}
-]
-JSON
+_scope_board > "$FAKE_ST2/project_items.json"
 check "start with no next iteration exits 2"       2 run "$FAKE_ST2" 2026-12-25T08:00:00Z start
 check "start with no next iteration wrote nothing" 1 test -f "$FAKE_ST2/calls.log"
 
 echo
-echo "write-scope: Scotty's own call -- his picks, their sub-issues, and nothing else:"
+echo "write-scope: Scotty's own call -- stories only, never an epic, nothing else:"
 
-FAKE_WS="$(fake_dir)"
-write_iterations "$FAKE_WS"
-cat > "$FAKE_WS/project_items.json" <<'JSON'
-[
-  {"number":50,"title":"Fix inventory bug","state":"OPEN","status":null,"priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null},
-  {"number":51,"title":"Sub of 50","state":"OPEN","status":"To analyze","priority":"Standard","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":50},
-  {"number":70,"title":"Sprint 1 Demo","state":"OPEN","status":"In progress","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null},
-  {"number":80,"title":"A sub-issue, not directly scopable","state":"OPEN","status":null,"priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":50},
-  {"number":90,"title":"Already scoped somewhere","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"sp2","sprintTitle":"Sprint 2","labels":[],"isParent":true,"parent":null},
-  {"number":95,"title":"Closed","state":"CLOSED","status":"Done","priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null}
-]
-JSON
-echo '[{"number":51}]' > "$FAKE_WS/gh_subissues.50.json"
-echo 'To analyze' > "$FAKE_WS/project_field_get.51.Status.json"
+_ws_fake() { # -> a fresh fake dir holding the scoping board
+  local d
+  d="$(fake_dir)"
+  write_iterations "$d"
+  _scope_board > "$d/project_items.json"
+  echo 'Backlog' > "$d/project_field_get.43.Status.json"
+  echo 'Backlog' > "$d/project_field_get.50.Status.json"
+  echo 'Backlog' > "$d/project_field_get.61.Status.json"
+  printf '%s' "$d"
+}
 
+FAKE_WS="$(_ws_fake)"
 check_out "write-scope keeps only the real candidates out of what it was asked" 0 \
-  '{"scoped":[50],"sprint":"Sprint 2"}' \
-  run "$FAKE_WS" "" write-scope 2 50 80 90 95 4242
+  '{"scoped":[42,43,50],"sprint":"Sprint 2"}' \
+  run "$FAKE_WS" "" write-scope 2 43 42 50 40 44 41 70 4242
+check "write-scope moved each story"             0 log_has "$FAKE_WS/calls.log" '^project_set_iteration 42 sp2$'
+check "write-scope defaulted an unset Status"    0 log_has "$FAKE_WS/calls.log" '^project_set_single 42 Status Backlog$'
+check "write-scope left a set Status alone"      1 log_has "$FAKE_WS/calls.log" '^project_set_single 43 '
+check "write-scope dropped the epic (40)"            1 log_has "$FAKE_WS/calls.log" '(^| )40( |$)'
+check "write-scope dropped the carried story (44)"   1 log_has "$FAKE_WS/calls.log" '(^| )44( |$)'
+check "write-scope dropped the finished story (41)"  1 log_has "$FAKE_WS/calls.log" '(^| )41( |$)'
+check "write-scope left the demo issue (70) alone"   1 log_has "$FAKE_WS/calls.log" '(^| )70( |$)'
+check "write-scope dropped the invented number (4242)" 1 log_has "$FAKE_WS/calls.log" '(^| )4242( |$)'
+run "$FAKE_WS" "" write-scope 2 43 42 50 40 44 41 70 4242 >/dev/null 2>"$FAKE_WS/stderr.txt"
+check "and it says on stderr what it dropped" 0 grep -q 'dropped: #40 #41 #44 #70 #4242' "$FAKE_WS/stderr.txt"
 
-check "write-scope moved the candidate"          0 log_has "$FAKE_WS/calls.log" '^project_set_iteration 50 sp2$'
-check "write-scope defaulted its Status (unset)" 0 log_has "$FAKE_WS/calls.log" '^project_set_single 50 Status Backlog$'
-# gh_subissues is a read, not a write -- reads aren't logged to calls.log,
-# only fixture-served; its effect is that 51 (from gh_subissues.50.json) gets
-# carried below, which IS a write and IS asserted.
-check "write-scope carried the sub-issue too"    0 log_has "$FAKE_WS/calls.log" '^project_set_iteration 51 sp2$'
-check "write-scope did NOT reset the sub-issue's Status (already set)" 1 \
-  log_has "$FAKE_WS/calls.log" '^project_set_single 51 '
-check "write-scope dropped the bare sub-issue (80)"       1 log_has "$FAKE_WS/calls.log" '(^| )80( |$)'
-check "write-scope dropped the already-scoped issue (90)" 1 log_has "$FAKE_WS/calls.log" '(^| )90( |$)'
-check "write-scope dropped the closed issue (95)"         1 log_has "$FAKE_WS/calls.log" '(^| )95( |$)'
-check "write-scope dropped the invented number (4242)"    1 log_has "$FAKE_WS/calls.log" '(^| )4242( |$)'
-check "write-scope left the demo issue (70) alone"        1 log_has "$FAKE_WS/calls.log" '(^| )70( |$)'
+echo
+echo "write-scope: the epic order -- nothing from a later epic while an earlier one has stories left:"
+
+FAKE_WO="$(_ws_fake)"
+check_out "a later epic's story is dropped while the in-flight epic has one unpicked" 0 \
+  '{"scoped":[43,50],"sprint":"Sprint 2"}' \
+  run "$FAKE_WO" "" write-scope 2 43 61 50
+check "the later epic's story was not moved" 1 log_has "$FAKE_WO/calls.log" '(^| )61( |$)'
+run "$FAKE_WO" "" write-scope 2 43 61 50 >/dev/null 2>"$FAKE_WO/stderr.txt"
+check "and stderr names the epic still in flight and what was held back" 0 \
+  grep -q 'epic #40 still has stories you did not pick, so these from later epics were dropped: #61' "$FAKE_WO/stderr.txt"
+
+FAKE_WO2="$(_ws_fake)"
+check_out "once the in-flight epic is wholly picked, the next epic may start" 0 \
+  '{"scoped":[42,43,61],"sprint":"Sprint 2"}' \
+  run "$FAKE_WO2" "" write-scope 2 42 43 61
+
+FAKE_WO3="$(_ws_fake)"
+check_out "part of the in-flight epic is fine on its own" 0 \
+  '{"scoped":[43],"sprint":"Sprint 2"}' \
+  run "$FAKE_WO3" "" write-scope 2 43
+
+FAKE_WO4="$(_ws_fake)"
+check_out "only a later epic's stories -> nothing lands, exit 1" 1 \
+  '{"scoped":[]}' run "$FAKE_WO4" "" write-scope 2 61 62
+check "and nothing was written" 1 test -f "$FAKE_WO4/calls.log"
 
 FAKE_WS0="$(fake_dir)"
 write_iterations "$FAKE_WS0"

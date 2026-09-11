@@ -5,7 +5,7 @@
 # review and Reviewed phases of high-level-agentic-flow.mmd. Composes
 # gh-cli.sh + markers.sh; delegates to bc-issue.sh (for `scope`) and bc-pr.sh
 # (for `head`) as subprocesses rather than re-deriving their facts, and to
-# Scotty (claude_oneshot_acting + judge-breaker.md) for the one piece of
+# Scotty (`bc-session.sh scotty` + judge-breaker.md) for the one piece of
 # judgement, the breaker note.
 #
 # `create-breaker` and `write-breaker` are the two halves of that one node:
@@ -21,7 +21,7 @@
 # asked mid-review for work its PR cannot carry, and Scotty rules on it
 # against the whole epic. It differs from the breaker in one way that shapes
 # it: he may rule on several requests in one call, so there is no single
-# BC_WRITE_RESULT to read back and the gate is the re-read instead -- a
+# comment to look for and the gate is the re-read of every request -- a
 # request still PENDING after the handoff is a hard failure, because leaving
 # one would wake the same node to the same work every tick forever.
 #
@@ -369,11 +369,10 @@ create-breaker)
   done
 
   # Scotty writes the note AND posts it, in one `write-breaker` call of his
-  # own -- this command never sees his prose. His stdout is not the product,
-  # so the comment id comes back through BC_WRITE_RESULT instead.
+  # own -- this command never sees his prose. His reply is not the product,
+  # so the comment id is read back off the PR instead.
   bodyfile="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-comment-breaker-body.XXXXXX")"
-  result="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-comment-breaker-result.XXXXXX")"
-  # The rendered prompt keeps its original basename -- claude_oneshot_acting
+  # The rendered prompt keeps its original basename -- `bc-session.sh scotty`
   # logs and looks up fixtures by it -- so it goes in a temp dir of its own
   # rather than under a mktemp'd name.
   promptdir="$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/bc-comment-breaker-prompt.XXXXXX")"
@@ -381,14 +380,11 @@ create-breaker)
   claude_render_prompt "$_BC_COMMENT_DIR/prompts/judge-breaker.md" \
     scripts="$_BC_COMMENT_DIR" pr="$pr" bodyfile="$bodyfile" > "$prompt"
 
-  export BC_WRITE_RESULT="$result"
-  claude_oneshot_acting "$prompt" "$input"
-  unset BC_WRITE_RESULT
+  bash "$_BC_COMMENT_DIR/bc-session.sh" scotty "$prompt" "$input"
   rm -rf "$promptdir"
   rm -f "$input" "$bodyfile"
 
-  newid="$(tr -d '\r\n' < "$result" 2>/dev/null || true)"
-  rm -f "$result"
+  newid="$(_bc_find_by_marker "$(_bc_comments "$pr")" "breaker" | "$JQ" -r '.id // empty' 2>/dev/null | tr -d '\r')"
   if [ -z "$newid" ]; then
     echo "bc-comment create-breaker: judge-breaker.md did not write the breaker comment on PR #$pr" >&2
     exit 2
@@ -421,7 +417,6 @@ write-breaker)
   gh_pr_assign "$pr" "$BC_HUMAN"
 
   [ -n "$newid" ] || newid=ok
-  bc_record_result "$newid"
   printf '%s\n' "$newid"
   exit 0
   ;;
@@ -756,11 +751,11 @@ judge-task-request)
   # are written in one step and there is no state in which one exists
   # without the other.
   #
-  # Unlike create-breaker there is no BC_WRITE_RESULT to read: Scotty may
-  # rule on several requests in one call. What landed is re-derived from the
-  # comments instead -- and here that re-read IS the gate rather than a
-  # report, because a request left PENDING is a node that would wake to the
-  # same work every tick forever.
+  # Unlike create-breaker there is no one comment to look for: Scotty may
+  # rule on several requests in one call. What landed is re-derived from
+  # every request instead -- and that re-read is the gate, because a request
+  # left PENDING is a node that would wake to the same work every tick
+  # forever.
   pr="${1:-}"
   [ -n "$pr" ] || { usage; exit 2; }
   comments="$(_bc_comments "$pr")"
@@ -803,7 +798,7 @@ judge-task-request)
   claude_render_prompt "$_BC_COMMENT_DIR/prompts/judge-task-request.md" \
     scripts="$_BC_COMMENT_DIR" pr="$pr" issue="$issue" > "$prompt"
 
-  claude_oneshot_acting "$prompt" "$input"
+  bash "$_BC_COMMENT_DIR/bc-session.sh" scotty "$prompt" "$input"
   rm -rf "$promptdir"
   rm -f "$input"
 

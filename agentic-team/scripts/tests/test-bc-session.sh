@@ -176,6 +176,105 @@ echo 2 > "$F8B/orca_worktree_rm.exit"
 check "rm-worktree passes a forced non-zero exit through" 2 with_fake "$F8B" bcs rm-worktree 998
 
 echo
+echo "scotty: under plain BC_FAKE, logs the handoff, keeps the input, applies the overlay"
+F9="$(fake_dir)"
+mkdir -p "$F9/p" "$F9/bc_scotty.judge-x.md.d"
+printf 'Do the thing.\n' > "$F9/p/judge-x.md"
+printf 'the input\n' > "$F9/input.txt"
+echo '["after"]' > "$F9/bc_scotty.judge-x.md.d/project_items.json"
+check "scotty exits 0" 0 with_fake "$F9" bcs scotty "$F9/p/judge-x.md" "$F9/input.txt"
+check_out "logged by the prompt's basename" 0 "bc_scotty judge-x.md" sed -n '1p' "$F9/calls.log"
+check_out "kept what he was handed" 0 "the input" cat "$F9/bc_scotty.judge-x.md.input"
+check_out "applied the overlay" 0 '["after"]' cat "$F9/project_items.json"
+check "scotty with a missing argument exits 2" 2 with_fake "$F9" bcs scotty "$F9/p/judge-x.md"
+
+echo
+echo "scotty: the real composition -- one session per Sprint, wait, send, wait"
+# Sprint 1 ended 09-04 and Sprint 2 starts 09-07: on the weekend between them
+# the Sprint in play is still 1, the one being reviewed.
+_scotty_fake() { # -> a fresh fake dir with iterations, a prompt and an input
+  local d
+  d="$(fake_dir)"
+  mkdir -p "$d/p"
+  printf 'This is your `creating-demo-issue` call.\n' > "$d/p/judge-demo-summary.md"
+  printf 'the input\n' > "$d/input.txt"
+  cat > "$d/project_iterations.json" <<'JSON'
+[
+  {"id":"s1","title":"Sprint 1","startDate":"2026-09-01","duration":4},
+  {"id":"s2","title":"Sprint 2","startDate":"2026-09-07","duration":7}
+]
+JSON
+  echo '{"result":{"wait":{"satisfied":true}}}' > "$d/orca_terminal_wait_idle.json"
+  printf '%s' "$d"
+}
+WEEKEND="2026-09-05T10:00:00Z"
+SU="$(bcs uuid scotty sprint-1)"
+S8="${SU:0:8}"
+_t() { # <glyph-or-empty> <uuid8> <sprint> <handle> -> one terminal object
+  printf '{"handle":"%s","title":"%sbc-scotty #sprint-%s (%s)","agentIdentity":"claude","connected":true,"orphaned":false,"lastOutputAt":0}' \
+    "$4" "${1:+$1 }" "$3" "$2"
+}
+IDLE="[$(_t ✳ "$S8" 1 hs)]"
+WORK="[$(_t ◑ "$S8" 1 hs)]"
+scotty_real() { # <fakedir> <home> [env...] -- runs `scotty` against the orca fixtures
+  local d="$1" h="$2"; shift 2
+  env BC_FAKE="$d" BC_FAKE_SCOTTY_SESSION=1 BC_NOW="$WEEKEND" BC_CLAUDE_HOME="$h" \
+    BC_SCOTTY_WORKTREE=WTS BC_SCOTTY_POLL_S=0 "$@" \
+    bash "$SESSION" scotty "$d/p/judge-demo-summary.md" "$d/input.txt"
+}
+EMPTY_HOME="$(fake_dir)"
+
+# Already running and idle: no new terminal, one send, back once he has
+# worked and gone idle again. Reads, in order: ensure, the pre-send wait,
+# send's lookup, then the wait for the job (working, then idle).
+F10="$(_scotty_fake)"
+printf '%s\n' "$IDLE" "$IDLE" "$IDLE" "$WORK" "$IDLE" > "$F10/orca_terminals.WTS.seq"
+check "a live idle session: exits 0 once he has worked and gone idle" 0 scotty_real "$F10" "$EMPTY_HOME"
+check "it created no terminal" 1 grep -q '^orca_terminal_create' "$F10/calls.log"
+check "it sent the prompt to his sprint-1 pane" 0 _calls_has "$F10/calls.log" 'orca_terminal_send hs This is your `creating-demo-issue` call.'
+check "and named the input file in the same message" 0 _calls_has "$F10/calls.log" "$F10/input.txt"
+
+# Not running: start it in the Sprint's name, then close last Sprint's pane --
+# and only that one.
+F11="$(_scotty_fake)"
+STALE="[$(_t ✳ "$S8" 1 hs),$(_t ✳ deadbeef 0 hold),{\"handle\":\"htim\",\"title\":\"✳ bc-tim #3 (aaaa1111)\",\"agentIdentity\":\"claude\"}]"
+printf '%s\n' "[]" "$STALE" "$IDLE" "$IDLE" "$WORK" "$IDLE" > "$F11/orca_terminals.WTS.seq"
+check "no session yet: exits 0" 0 scotty_real "$F11" "$EMPTY_HOME"
+check "it started his session under the Sprint's name" 0 _calls_has "$F11/calls.log" "orca_terminal_create WTS bc-scotty #sprint-1 ($S8)"
+check "with --agent scotty and the sprint's derived id" 0 _calls_has "$F11/calls.log" "--agent scotty --session-id $SU"
+check "it closed last Sprint's pane" 0 grep -q '^orca_terminal_close hold$' "$F11/calls.log"
+check "and nothing else" 0 test "$(grep -c '^orca_terminal_close' "$F11/calls.log")" -eq 1
+check "then sent the job" 0 grep -q '^orca_terminal_send hs ' "$F11/calls.log"
+
+# Busy the whole time (Adrian talking to him, or a job that never ends):
+# nothing is sent over it, and the call fails loudly.
+F12="$(_scotty_fake)"
+printf '%s\n' "$WORK" > "$F12/orca_terminals.WTS.seq"
+: > "$F12/calls.log"
+check "a session busy past the timeout: exits 2" 2 scotty_real "$F12" "$EMPTY_HOME" BC_SCOTTY_TIMEOUT_S=3
+check "and nothing was sent" 1 grep -q '^orca_terminal_send' "$F12/calls.log"
+
+# Idle after the send and never seen working: done once the grace has passed.
+F13="$(_scotty_fake)"
+printf '%s\n' "$IDLE" > "$F13/orca_terminals.WTS.seq"
+check "idle throughout: done after the grace" 0 scotty_real "$F13" "$EMPTY_HOME" BC_SCOTTY_GRACE_S=3
+check "and the job was sent" 0 grep -q '^orca_terminal_send hs ' "$F13/calls.log"
+
+# The pane disappears mid-job.
+F14="$(_scotty_fake)"
+printf '%s\n' "$IDLE" "$IDLE" "$IDLE" "$WORK" "[]" > "$F14/orca_terminals.WTS.seq"
+check "the session going away mid-job: exits 2" 2 scotty_real "$F14" "$EMPTY_HOME"
+
+# A new Sprint is a new session.
+F15="$(_scotty_fake)"
+S2U="$(bcs uuid scotty sprint-2)"
+printf '%s\n' "[]" "[$(_t ✳ "${S2U:0:8}" 2 h2)]" > "$F15/orca_terminals.WTS.seq"
+env BC_FAKE="$F15" BC_FAKE_SCOTTY_SESSION=1 BC_NOW="2026-09-08T10:00:00Z" BC_CLAUDE_HOME="$EMPTY_HOME" \
+  BC_SCOTTY_WORKTREE=WTS BC_SCOTTY_POLL_S=0 BC_SCOTTY_GRACE_S=1 \
+  bash "$SESSION" scotty "$F15/p/judge-demo-summary.md" "$F15/input.txt" >/dev/null 2>&1
+check "once Sprint 2 has started, the session is Sprint 2's" 0 _calls_has "$F15/calls.log" "orca_terminal_create WTS bc-scotty #sprint-2 (${S2U:0:8})"
+
+echo
 echo "unknown command: usage on stderr, exit 2"
 check "unknown command exits 2" 2 bcs bogus-command
 

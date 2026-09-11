@@ -83,6 +83,19 @@ bc_fake_write() {
   return 0
 }
 
+# bc_fake_overlay <key> -- copies every file in $BC_FAKE/<key>.d/ over the
+# fixtures in $BC_FAKE, so the reads after this call see a different world
+# than the reads before it. It exists for the one write whose effects happen
+# somewhere no primitive logs: handing a job to Scotty's session, where the
+# issues and comments he writes are made by his own `write-*` calls. Present
+# directory = "his writes landed, and this is what the board reads back";
+# absent = "he did nothing", which is the failure the callers must catch.
+bc_fake_overlay() {
+  local d="$BC_FAKE/$1.d"
+  [ -d "$d" ] || return 0
+  cp -f "$d"/* "$BC_FAKE"/ 2>/dev/null || true
+}
+
 # bc_faking -- true when BC_FAKE is set and usable. Every primitive that
 # wants fake-awareness starts with:
 #   [ -n "${BC_FAKE:-}" ] && { bc_fake_read fn "$1"; return; }
