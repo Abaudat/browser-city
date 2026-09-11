@@ -172,7 +172,7 @@ check_out "integrating-feedback: integrated, exit 0" 0 \
   "integrating-feedback integrated 1 new backlog items from demo #41" \
   run "$F_INTEGRATING" "$NOW_MIDSPRINT"
 check "integrating-feedback: handed the thread to Scotty" 0 \
-  log_has "$F_INTEGRATING/calls.log" '^claude_oneshot_acting judge-feedback\.md$'
+  log_has "$F_INTEGRATING/calls.log" '^bc_scotty judge-feedback\.md$'
 check "integrating-feedback: marked the demo Reviewed for the next tick" 0 \
   log_has "$F_INTEGRATING/calls.log" '^project_set_single 41 Status Reviewed$'
 check "integrating-feedback: did NOT close the sprint in the same tick" 1 \
@@ -213,14 +213,16 @@ F_CREATING_DEMO="$(fake_dir)"
 write_iterations "$F_CREATING_DEMO"
 echo '[]' > "$F_CREATING_DEMO/project_items.json"
 # create-demo hands the work to Scotty, who opens the issue himself with his
-# own `write-demo` call; this fixture stands in for that call having run and
-# recorded #43 (see claude_oneshot_acting in lib/claude.sh).
-printf '43\n' > "$F_CREATING_DEMO/claude_oneshot_acting.judge-demo-summary.md.json"
+# own `write-demo` call; this overlay stands in for that call having run --
+# the board read back afterwards carries #43 (see `scotty` in bc-session.sh).
+mkdir -p "$F_CREATING_DEMO/bc_scotty.judge-demo-summary.md.d"
+"$JQ" -n -c '[{number:43,title:"Sprint 1 Demo",state:"OPEN",status:"In progress",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null}]' \
+  > "$F_CREATING_DEMO/bc_scotty.judge-demo-summary.md.d/project_items.json"
 check_out "sprint-over/creating-demo-issue: created, exit 0" 0 \
   "creating-demo-issue created demo #43 for sprint 1" \
   run "$F_CREATING_DEMO" "2026-09-04T10:01:00Z"
 check "sprint-over/creating-demo-issue: handed the sprint's stories to Scotty" 0 \
-  log_has "$F_CREATING_DEMO/calls.log" '^claude_oneshot_acting judge-demo-summary\.md$'
+  log_has "$F_CREATING_DEMO/calls.log" '^bc_scotty judge-demo-summary\.md$'
 check "sprint-over/creating-demo-issue: the orchestrator opened no issue itself" 1 \
   log_has "$F_CREATING_DEMO/calls.log" '^gh_issue_create'
 
@@ -449,7 +451,7 @@ check_out "task-requested: pending -> Scotty rules, exit 0" 0 \
   "judging-task-request ruled on the task request from quentin on PR #70" \
   run "$F_TASKREQ" "$NOW_MIDSPRINT"
 check "judging-task-request: handed it to Scotty" 0 \
-  log_has "$F_TASKREQ/calls.log" '^claude_oneshot_acting judge-task-request\.md$'
+  log_has "$F_TASKREQ/calls.log" '^bc_scotty judge-task-request\.md$'
 check "judging-task-request: did NOT merge the approved, green PR" 1 \
   log_has "$F_TASKREQ/calls.log" '^gh_pr_merge'
 check "judging-task-request: did not mark the story Done" 1 \
@@ -474,7 +476,7 @@ printf 'WT320' > "$F_TASKREQ_DONE/orca_worktree_path.issue:320.json"
 check_out "task-requested: every request ruled on -> the flow carries on and merges" 0 \
   "merging-pr merged PR #70 for #320" run "$F_TASKREQ_DONE" "$NOW_MIDSPRINT"
 check "and Scotty was not woken a second time" 1 \
-  log_has "$F_TASKREQ_DONE/calls.log" '^claude_oneshot_acting judge-task-request\.md$'
+  log_has "$F_TASKREQ_DONE/calls.log" '^bc_scotty judge-task-request\.md$'
 
 # A breaker outranks a request: the PR is already Adrian's, and waking Scotty
 # to rule on work nobody will do next is spending budget on nothing.
@@ -543,10 +545,14 @@ echo '[{"name":"ci","status":"completed","conclusion":"failure"}]' > "$F_CI_BREA
 {
   printf '%s\n<!-- bc:ci_fails 9 -->\n' "$(render_status 311 "quentin,tim" 1)" | _comment 1
 } | "$JQ" -sc '.' > "$F_CI_BREAKER/gh_issue_comments.167.json"
-printf '88\n' > "$F_CI_BREAKER/claude_oneshot_acting.judge-breaker.md.json"
+mkdir -p "$F_CI_BREAKER/bc_scotty.judge-breaker.md.d"
+{
+  "$JQ" -c '.[]' "$F_CI_BREAKER/gh_issue_comments.167.json"
+  render_breaker "The build has been red for nine dispatches." | _comment 88
+} | "$JQ" -sc '.' > "$F_CI_BREAKER/bc_scotty.judge-breaker.md.d/gh_issue_comments.167.json"
 printf 'WT311' > "$F_CI_BREAKER/orca_worktree_path.issue:311.json"
 check_out "ci-status: red-build breaker triggered, exit 0" 0 "tripping-ci-breaker triggered breaker on PR #167 for #311" run "$F_CI_BREAKER" "$NOW_MIDSPRINT"
-check "ci-status: handed the thread to Scotty" 0 log_has "$F_CI_BREAKER/calls.log" '^claude_oneshot_acting judge-breaker\.md$'
+check "ci-status: handed the thread to Scotty" 0 log_has "$F_CI_BREAKER/calls.log" '^bc_scotty judge-breaker\.md$'
 check "ci-status: never dispatched crew again" 1 log_has "$F_CI_BREAKER/calls.log" '^orca_terminal_send'
 check "ci-status: never merged" 1 log_has "$F_CI_BREAKER/calls.log" '^gh_pr_merge'
 
@@ -653,13 +659,17 @@ echo '[{"name":"ci","status":"completed","conclusion":"success"}]' > "$F_TRIPPIN
   printf '### Review — tim\n\nfine\n\n<!-- bc:lead:tim -->\n<!-- bc:reviewed shaC6 -->\n<!-- bc:verdict APPROVED -->\n' | _comment 3
 } | "$JQ" -sc '.' > "$F_TRIPPING_BREAKER/gh_issue_comments.63.json"
 # As with the demo, create-breaker only hands the thread over: Scotty posts
-# the note himself with `write-breaker`, which is what this fixture stands in
+# the note himself with `write-breaker`, which is what this overlay stands in
 # for -- so gh_comment_create and the breaker label are asserted in
 # test-bc-comment.sh, not here.
-printf '88\n' > "$F_TRIPPING_BREAKER/claude_oneshot_acting.judge-breaker.md.json"
+mkdir -p "$F_TRIPPING_BREAKER/bc_scotty.judge-breaker.md.d"
+{
+  "$JQ" -c '.[]' "$F_TRIPPING_BREAKER/gh_issue_comments.63.json"
+  render_breaker "Quentin and Tim disagree." | _comment 88
+} | "$JQ" -sc '.' > "$F_TRIPPING_BREAKER/bc_scotty.judge-breaker.md.d/gh_issue_comments.63.json"
 printf 'WT270' > "$F_TRIPPING_BREAKER/orca_worktree_path.issue:270.json"
 check_out "tripping-breaker: circuit breaker triggered, exit 0" 0 "tripping-breaker triggered breaker on PR #63 for #270" run "$F_TRIPPING_BREAKER" "$NOW_MIDSPRINT"
-check "tripping-breaker: handed the thread to Scotty" 0 log_has "$F_TRIPPING_BREAKER/calls.log" '^claude_oneshot_acting judge-breaker\.md$'
+check "tripping-breaker: handed the thread to Scotty" 0 log_has "$F_TRIPPING_BREAKER/calls.log" '^bc_scotty judge-breaker\.md$'
 check "tripping-breaker: the orchestrator posted no comment itself" 1 log_has "$F_TRIPPING_BREAKER/calls.log" '^gh_comment_create 63 '
 check "tripping-breaker: never merged" 1 log_has "$F_TRIPPING_BREAKER/calls.log" '^gh_pr_merge'
 check "tripping-breaker: never transitioned the issue" 1 log_has "$F_TRIPPING_BREAKER/calls.log" '^project_set_single 270 '

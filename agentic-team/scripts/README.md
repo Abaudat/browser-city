@@ -16,7 +16,7 @@ agentic-team/scripts/
     gh-cli.sh         issues, PRs, comments, labels, sub-issues (one `gh` call each)
     project.sh        GitHub Project v2: items, Status/Priority/Size/Sprint fields
     orca.sh            worktrees, terminals (one `orca` call each)
-    claude.sh           session argv builders + the judgement one-shot
+    claude.sh           session argv builders, derived session ids, prompt rendering
     markers.sh           the `<!-- bc:name value -->` comment vocabulary
     proc.sh               the Windows process table: is the loop alive, and stop it
     git.sh                 the supervisor's one git call: pull --ff-only
@@ -27,18 +27,19 @@ agentic-team/scripts/
   bc-comment.sh    LEVEL 2 — the structured-comment reads and writes
   bc-pr.sh          LEVEL 2 — PRs: open/merge/for-issue/head
   bc-sprint.sh       LEVEL 2 — sprints: current/next/over/items/close/start/write-scope
-  bc-session.sh       LEVEL 2 — Orca/Claude session lifecycle
+  bc-session.sh       LEVEL 2 — Orca/Claude session lifecycle, and Scotty's sprint session
 
   prompts/        dispatch-*.md (sent into a running role session) and
-                  judge-*.md (system prompts for the one-shot judgement calls)
+                  judge-*.md (the jobs sent into Scotty's sprint session)
 
   Five actions in the flow need judgement rather than derivation, and each is
-  a `judge-*.md` one-shot as Scotty — the agent reduced to those five calls in
+  a `judge-*.md` job for Scotty — the agent reduced to those five calls in
   `.claude/agents/scotty.md`. All five produce an artefact rather than an
-  answer, so all five run through `claude_oneshot_acting`, which loads
-  `--agent scotty`, gives him Bash and Write, and appends the judge prompt as
-  that call's job (`--system-prompt` would replace the agent's prompt rather
-  than add to it). Each then calls a level-2 `write-*` command itself:
+  answer, and all five run through `bc-session.sh scotty`: the rendered
+  prompt is sent as a message into Scotty's session for the Sprint in play —
+  one Orca terminal per Sprint, in `$BC_SCOTTY_WORKTREE`, that Adrian can
+  watch and answer like any role's — and the call returns once he is back at
+  his idle prompt. Each job then calls a level-2 `write-*` command itself:
   `judge-demo-summary.md` writes the Sprint Demo body and opens the issue via
   `bc-issue.sh write-demo`, `judge-breaker.md` writes the breaker note and
   posts it via `bc-comment.sh write-breaker`, `judge-sprint-scope.md` picks
@@ -49,13 +50,15 @@ agentic-team/scripts/
   `write-story` — the new story going under the epic of the PR'd issue — then
   stamps the ruling via `bc-comment.sh resolve-task-request`. The judgement
   and the thing carrying it are made in one call, so neither can exist without
-  the other; the caller learns what was created through `BC_WRITE_RESULT`,
-  since Scotty's stdout is not the product.
+  the other; the caller learns what was created by reading the board or the
+  PR back once he is done — the Demo issue on that sprint, the breaker
+  comment, the offered stories now on the next sprint — since his reply is
+  not the product.
 
-  `judge-feedback.md` and `judge-task-request.md` are the two exceptions to
-  that last clause: each may write an unknown number of things, and
-  `BC_WRITE_RESULT` holds one value. Both re-read the state afterwards
-  instead, and the difference between them is what that re-read is for.
+  `judge-feedback.md` and `judge-task-request.md` have no one artefact to look
+  for: each may write an unknown number of things. Both re-read the state
+  afterwards all the same, and the difference between them is what that
+  re-read is for.
   `integrate-feedback` counts the open, unscoped items on the board before and
   after and reports the difference — a report, not a gate. It marks the Demo
   issue `Reviewed` either way: feedback that asks for nothing new, or that the
@@ -259,7 +262,8 @@ stderr; stdout carries only that one reason line.
 | `BC_READY_TIMEOUT_S=<s>` | How long `bc-session spawn`/`start` wait for the new terminal to show Claude's idle prompt (✳ title + `agentIdentity: claude`) before giving up with a warning. | 90 |
 | `BC_CLOSE_RETRIES=<n>` | How many rounds `orca terminal close` gets per pane, two seconds apart, each round trying a plain close and then `--tab`. | 3 |
 | `BC_STOP_TIMEOUT_S=<s>` | How long `bc-session stop-all` keeps closing and re-listing before it reports panes still open as exit 2. Orca refuses to close some busy panes with `terminal_handle_stale` (reliably the oldest Claude pane in a worktree) for up to a minute, then accepts the same call, so stop-all trusts the listing, not the close's answer. | 120 |
-| `BC_WRITE_RESULT=<file>` | Where a `write-*` command records the number/id/summary it just created, as well as printing it. Set by `create-demo`/`create-breaker`/`bc-sprint start` around their Scotty call and exported, so the `write-*` call Scotty makes inside `claude` can report back — its stdout belongs to a Bash tool call no caller can read. `integrate-feedback` sets it for none of its writes: Scotty opens an unknown number of issues there, and one file cannot hold them, so that node counts the board instead (to report what landed, not to gate on it). Unset (a role or a human calling `write-*` by hand) is not an error. | unset |
+| `BC_SCOTTY_WORKTREE=<path>` | The checkout Scotty's sprint session runs in. He writes only to GitHub, so it is not a worktree of his own — it only has to hold `.claude/agents/scotty.md` and be one Orca knows. | `$BC_MAIN_CHECKOUT` |
+| `BC_SCOTTY_TIMEOUT_S=<s>` / `BC_SCOTTY_POLL_S=<s>` / `BC_SCOTTY_GRACE_S=<s>` | How long `bc-session scotty` waits for his session to finish a job (and, before sending, to finish whatever it was already doing) before giving up as exit 2; how often it looks; and how long an idle title right after a send may pass for "done" without his having been seen working. | 3600 / 5 / 60 |
 | `BC_SESSION_CAP=<0..1>` / `BC_WEEKLY_CAP=<0..1>` | The budget gate's two caps. At or above one is a skip. | `0.85` / `0.80` |
 | `BC_WEEKLY_ENDGAME_HOURS=<h>` / `BC_WEEKLY_ENDGAME_CAP=<0..1>` | How close to the weekly reset the weekly cap lifts, and what it lifts to. Inside the window the team may spend the rest of the week rather than leave it to expire; the reason line says `endgame=<reset>`. `0` hours turns the lift off. | `12` / `1.00` |
 | `BC_RATE_MONITOR=<path>` | The `claude-rate-monitor` binary, when it is somewhere `resolve_rate_monitor` does not look. | derived (`%APPDATA%/npm`, then PATH) |

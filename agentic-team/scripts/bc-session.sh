@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # LEVEL 2 -- Orca/Claude session lifecycle for one role on one issue: derive
 # its worktree, spawn/resume/message/stop the Orca terminal that runs it, and
-# read back whether it is working, idle, or gone. Composes lib/orca.sh and
-# lib/claude.sh only -- never calls the `orca`/`claude` binaries directly.
+# read back whether it is working, idle, or gone -- and the same for Scotty's
+# one session per Sprint (`scotty`). Composes lib/orca.sh and lib/claude.sh,
+# plus lib/project.sh for which Sprint is in play -- never calls the
+# `orca`/`claude` binaries directly.
 #
 # Spike answers (scripts/spike/FINDINGS.md, verified 2026-09-02):
 #   - Title source: Claude's `-n` name wins the tab title (Orca's --title is
@@ -35,6 +37,8 @@ bc_init
 . "$_BC_SESSION_DIR/lib/orca.sh"
 # shellcheck source=lib/claude.sh
 . "$_BC_SESSION_DIR/lib/claude.sh"
+# shellcheck source=lib/project.sh
+. "$_BC_SESSION_DIR/lib/project.sh"
 
 usage() {
   cat >&2 <<'EOF'
@@ -49,6 +53,7 @@ usage: bc-session.sh <command> [args]
   stop <uuid> <worktree>
   stop-all <issue> <worktree>
   rm-worktree <issue>
+  scotty <promptfile> <inputfile>           -- hand Scotty a job in his sprint session, wait until he is done
 EOF
 }
 
@@ -270,6 +275,106 @@ _bc_rm_worktree() { # <issue>
   orca_worktree_rm "issue:$1"
 }
 
+# --- Scotty's sprint session -------------------------------------------------
+# Scotty's judgements (the demo, feedback, scoping, breakers, task requests)
+# used to be `claude -p` one-shots: the orchestrator waited on a process
+# whose output went nowhere, so what he read and why he chose what he chose
+# could not be seen by anyone. Now each is a message into one Orca terminal
+# per Sprint, like every other role's session -- Adrian can watch it, answer
+# it, and scroll back through it -- and the Sprint is its unit of memory: the
+# rulings he made mid-sprint, the demo he wrote and the feedback he groomed
+# are all still in front of him when he scopes the next one.
+#
+# It stays synchronous for its callers, as the one-shot was: the job is sent,
+# and this returns once the session has gone back to its idle prompt. The
+# caller then re-reads the board or the PR to see what he actually wrote --
+# his reply is not the product, and a session's environment cannot carry a
+# result file back the way a child process's could.
+: "${BC_SCOTTY_TIMEOUT_S:=3600}"
+: "${BC_SCOTTY_POLL_S:=5}"
+: "${BC_SCOTTY_GRACE_S:=60}"
+
+# The sprint in play: the last iteration that has started, so the weekend
+# between a Friday demo and Monday belongs to the sprint being reviewed, not
+# to a gap. Before the first one, the first one; no iterations at all, 0.
+_bc_scotty_sprint() { # -> sprint number
+  local n
+  n="$(project_iterations 2>/dev/null | "$JQ" -r --arg d "$(bc_zurich_date)" '
+    (map(select(.startDate <= $d)) | sort_by(.startDate) | last)
+      // (sort_by(.startDate) | first) // empty
+    | .title | capture("Sprint (?<n>[0-9]+)").n
+  ' 2>/dev/null | tr -d '\r')"
+  printf '%s' "${n:-0}"
+}
+
+# Last sprint's pane is closed only once this sprint's session exists, so the
+# previous one stays readable until there is a new one to read instead. Its
+# transcript is kept either way (`claude --resume` finds it).
+_bc_scotty_close_stale() { # <worktree> <key>
+  local terms h
+  terms="$(orca_terminals "$1")" || return 0
+  printf '%s' "$terms" | "$JQ" -r --arg keep "#$2 (" '
+    .[] | (.title // "") as $t
+    | select(.agentIdentity=="claude" and ($t | contains("bc-scotty #sprint-")) and ($t | contains($keep) | not))
+    | .handle' | tr -d '\r' | while IFS= read -r h; do
+    [ -n "$h" ] && orca_terminal_close "$h" >/dev/null 2>&1
+  done
+  return 0
+}
+
+# _bc_scotty_wait <uuid> <worktree> <grace_s> -> 0 idle, 1 still working at
+# BC_SCOTTY_TIMEOUT_S, 2 the session is gone. Idle only counts as "done" once
+# he has been seen working, or once <grace_s> has passed without that: the
+# title can still show the idle glyph for a moment after a send lands.
+_bc_scotty_wait() {
+  local uuid="$1" wt="$2" grace="$3" waited=0 seen=0 rc step="$BC_SCOTTY_POLL_S"
+  while :; do
+    _bc_state_word "$uuid" "$wt" >/dev/null; rc=$?
+    case "$rc" in
+      0) seen=1 ;;
+      1) if [ "$seen" -eq 1 ] || [ "$waited" -ge "$grace" ]; then return 0; fi ;;
+      *) return 2 ;;
+    esac
+    [ "$waited" -lt "$BC_SCOTTY_TIMEOUT_S" ] || return 1
+    [ "$step" -gt 0 ] && sleep "$step"
+    waited=$((waited + (step > 0 ? step : 1)))
+  done
+}
+
+_bc_scotty() { # <promptfile> <inputfile> -> 0 he took the job and finished, 2 he could not be given it or never finished
+  local prompt="$1" input="$2" key uuid wt word rc msg
+  if [ ! -f "$prompt" ] || [ ! -f "$input" ]; then
+    echo "bc-session scotty: no such prompt or input file" >&2
+    return 2
+  fi
+  key="sprint-$(_bc_scotty_sprint)"
+  uuid="$(bc_role_uuid scotty "$key")"
+  wt="$BC_SCOTTY_WORKTREE"
+
+  word="$(_bc_ensure scotty "$key" "$uuid" "$wt")"
+  [ "$word" = "started" ] && _bc_scotty_close_stale "$wt" "$key"
+
+  # Busy with an earlier job, or with Adrian: never talk over it.
+  _bc_scotty_wait "$uuid" "$wt" 0; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "bc-session scotty: his $key session is $([ "$rc" -eq 1 ] && echo 'still busy' || echo 'not running')" >&2
+    return 2
+  fi
+
+  msg="$(cat "$prompt")
+
+The input for this call is in \`$input\` -- read it with \`cat\` before anything else."
+  _bc_send "$uuid" "$wt" "$msg" || return 2
+
+  _bc_scotty_wait "$uuid" "$wt" "$BC_SCOTTY_GRACE_S"; rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    1) echo "bc-session scotty: still working after ${BC_SCOTTY_TIMEOUT_S}s in his $key session" >&2 ;;
+    *) echo "bc-session scotty: his $key session went away mid-job" >&2 ;;
+  esac
+  return 2
+}
+
 # --- dispatch ----------------------------------------------------------------
 
 cmd="${1:-}"
@@ -321,6 +426,23 @@ case "$cmd" in
     ;;
   rm-worktree)
     _bc_rm_worktree "$@"
+    exit $?
+    ;;
+  scotty)
+    [ $# -eq 2 ] || { usage; exit 2; }
+    # Under BC_FAKE the callers' tests stand in for Scotty with a fixture
+    # overlay (bc_fake_overlay) rather than an Orca terminal fixture per
+    # poll; BC_FAKE_SCOTTY_SESSION=1 runs the real composition against the
+    # orca fixtures instead, which is how test-bc-session.sh covers it.
+    if [ -n "${BC_FAKE:-}" ] && [ -z "${BC_FAKE_SCOTTY_SESSION:-}" ]; then
+      bc_fake_write bc_scotty "$(basename "$1")"
+      # What he was handed, kept where a test can read it after the caller
+      # has deleted its temp file.
+      cp -f "$2" "$BC_FAKE/bc_scotty.$(basename "$1").input" 2>/dev/null || true
+      bc_fake_overlay "bc_scotty.$(basename "$1")"
+      exit 0
+    fi
+    _bc_scotty "$@"
     exit $?
     ;;
   *)

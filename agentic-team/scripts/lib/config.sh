@@ -61,6 +61,10 @@ _BC_CONFIG_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 : "${BC_WORKSPACES:=$HOME/orca/workspaces/BrowserCity}"
 : "${BC_ORCA_REPO_ID:=61a8f373-6a62-4138-a33c-fb4be6d0ddc1}"
 : "${BC_MAIN_CHECKOUT:=D:/Projects/BrowserCity}"
+# Scotty's sprint session runs here. He writes to GitHub and never to the
+# tree, so he needs no worktree of his own -- only a checkout whose
+# .claude/agents holds scotty.md, and one Orca already knows.
+: "${BC_SCOTTY_WORKTREE:=$BC_MAIN_CHECKOUT}"
 : "${BC_BASE_BRANCH:=master}"
 : "${BC_REQUIRED_CHECK:=ci}"
 
@@ -82,20 +86,6 @@ bc_init() {
   [ -n "$ORCA" ] && _bc_is_executable "$ORCA"     || { echo "bc_init: orca not found" >&2; exit 2; }
   [ -n "$CLAUDE" ] && _bc_is_executable "$CLAUDE" || { echo "bc_init: claude not found" >&2; exit 2; }
   export GH JQ ORCA CLAUDE
-}
-
-# --- what a write tells the caller it could not see -------------------------
-# bc_record_result <value> -- when BC_WRITE_RESULT names a file, record there
-# the id/number this command just created. It exists for exactly one caller
-# shape: a command that hands the work to Scotty (claude_oneshot_acting) and
-# so cannot read the stdout of the `write-*` call Scotty makes -- that stdout
-# belongs to a Bash tool call inside the `claude` process. The path is
-# exported, the whole process tree inherits it, and the write leaves its
-# answer in it. No file set (a role or a human calling `write-*` by hand) is
-# not an error: stdout already carries the value.
-bc_record_result() {
-  [ -n "${BC_WRITE_RESULT:-}" ] || return 0
-  printf '%s\n' "$1" > "$BC_WRITE_RESULT" 2>/dev/null || true
 }
 
 # --- clock, overridable so tests can pin it ---------------------------------

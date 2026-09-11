@@ -217,17 +217,25 @@ cat > "$FAKE_DM/project_items.json" <<'JSON'
 JSON
 printf 'Fixed the crash on load.\nMore details follow.\n' > "$FAKE_DM/gh_issue_body.501.json"
 printf '\n\nAdded the forest level.\n' > "$FAKE_DM/gh_issue_body.502.json"
-# The fixture stands in for Scotty: present means his own `write-demo` call
-# ran and recorded #900 through BC_WRITE_RESULT.
-printf '900\n' > "$FAKE_DM/claude_oneshot_acting.judge-demo-summary.md.json"
+# The overlay stands in for Scotty: present means his own `write-demo` call
+# ran, and the board read back afterwards carries the Demo issue it opened.
+mkdir -p "$FAKE_DM/bc_scotty.judge-demo-summary.md.d"
+cat > "$FAKE_DM/bc_scotty.judge-demo-summary.md.d/project_items.json" <<'JSON'
+[
+  {"number":501,"title":"Fix inventory bug","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null},
+  {"number":900,"title":"Sprint 3 Demo","state":"OPEN","status":"In progress","priority":null,"sprintId":"sp3id","sprintTitle":"Sprint 3","labels":["demo"],"isParent":false,"parent":null}
+]
+JSON
 
 check_out "create-demo prints the number Scotty opened" 0 900 run "$FAKE_DM" "" create-demo 3
 check "create-demo handed the thread to Scotty" 0 \
-  log_has "$FAKE_DM/calls.log" '^claude_oneshot_acting judge-demo-summary\.md$'
+  log_has "$FAKE_DM/calls.log" '^bc_scotty judge-demo-summary\.md$'
 check "create-demo opened nothing itself" 1 \
   log_has "$FAKE_DM/calls.log" '^gh_issue_create'
 check "create-demo never touched the still-in-progress story" 1 \
   log_has "$FAKE_DM/calls.log" '(^| )503( |$)'
+check "create-demo handed Scotty only what was finished" 0 \
+  grep -q '#502 Add forest level' "$FAKE_DM/bc_scotty.judge-demo-summary.md.input"
 
 FAKE_DM_EMPTY="$(fake_dir)"
 cat > "$FAKE_DM_EMPTY/project_iterations.json" <<'JSON'
@@ -236,10 +244,10 @@ cat > "$FAKE_DM_EMPTY/project_iterations.json" <<'JSON'
 ]
 JSON
 echo '[]' > "$FAKE_DM_EMPTY/project_items.json"
-# No claude_oneshot_acting fixture: Scotty wrote nothing.
+# No bc_scotty overlay: Scotty wrote nothing.
 check "create-demo exits 2 when Scotty opened nothing" 2 run "$FAKE_DM_EMPTY" "" create-demo 3
 check "and the only call logged is the handoff" 0 \
-  log_has "$FAKE_DM_EMPTY/calls.log" '^claude_oneshot_acting judge-demo-summary\.md$'
+  log_has "$FAKE_DM_EMPTY/calls.log" '^bc_scotty judge-demo-summary\.md$'
 check "and no issue was created" 1 log_has "$FAKE_DM_EMPTY/calls.log" '^gh_issue_create'
 
 FAKE_DM_NOSPRINT="$(fake_dir)"
@@ -461,7 +469,7 @@ JSON
 check_out "integrate-feedback reports the demo and what the board gained" 0 \
   '{"demo":900,"created":1}' run "$FAKE_FB" "" integrate-feedback 900
 check "integrate-feedback handed the thread to Scotty" 0 \
-  log_has "$FAKE_FB/calls.log" '^claude_oneshot_acting judge-feedback\.md$'
+  log_has "$FAKE_FB/calls.log" '^bc_scotty judge-feedback\.md$'
 check "integrate-feedback opened nothing itself" 1 \
   log_has "$FAKE_FB/calls.log" '^gh_issue_create'
 check "integrate-feedback marked the demo Reviewed" 0 \

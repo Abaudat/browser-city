@@ -119,16 +119,6 @@ check_out "posix2win: already windows-form is a no-op"         0 C:/Users/granb 
 check_out "round trip: winpath then posix2win restores drive letter and slashes" 0 'C:/Users/granb' roundtrip_win 'C:\Users\granb'
 
 echo
-echo "bc_record_result: writes to BC_WRITE_RESULT when set, is a no-op when not:"
-RESULT_FILE="$(fake_dir)/result.txt"
-BC_WRITE_RESULT="$RESULT_FILE" bc_record_result 901
-check_out "recorded the value"                0 901 cat "$RESULT_FILE"
-BC_WRITE_RESULT="$RESULT_FILE" bc_record_result 902
-check_out "a second call replaces, never appends" 0 902 cat "$RESULT_FILE"
-unset BC_WRITE_RESULT
-check "no BC_WRITE_RESULT set is a silent no-op, not a failure" 0 bc_record_result 903
-
-echo
 echo "claude_render_prompt: {{key}} substitution, and a prompt with no keys:"
 PROMPT_SRC="$(fake_dir)/p.md"
 printf 'PR #{{pr}}, body at {{bodyfile}}\nbash {{scripts}}/bc-comment.sh write-breaker {{pr}} {{bodyfile}}\n' > "$PROMPT_SRC"

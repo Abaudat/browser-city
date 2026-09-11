@@ -97,12 +97,16 @@ FAKE_CB="$(fake_dir)"
   printf '### Review — quentin\n\nI want approach A.\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed sha1 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 2
   printf '### Review — tim\n\nI want approach B.\n\n<!-- bc:lead:tim -->\n<!-- bc:reviewed sha1 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 3
 } | "$JQ" -sc '.' > "$FAKE_CB/gh_issue_comments.100.json"
-# The fixture stands in for Scotty: present means his own `write-breaker`
-# call ran and recorded comment id 77 through BC_WRITE_RESULT.
-printf '77\n' > "$FAKE_CB/claude_oneshot_acting.judge-breaker.md.json"
+# The overlay stands in for Scotty: present means his own `write-breaker`
+# call ran, and the thread read back afterwards carries it as comment 77.
+mkdir -p "$FAKE_CB/bc_scotty.judge-breaker.md.d"
+{
+  "$JQ" -c '.[]' "$FAKE_CB/gh_issue_comments.100.json"
+  render_breaker "Quentin and Tim disagree on the approach." | _comment 77
+} | "$JQ" -sc '.' > "$FAKE_CB/bc_scotty.judge-breaker.md.d/gh_issue_comments.100.json"
 check_out "create-breaker prints the id Scotty posted" 0 77 run "$FAKE_CB" create-breaker 100
 check "create-breaker handed the thread to Scotty" 0 \
-  log_has "$FAKE_CB/calls.log" '^claude_oneshot_acting judge-breaker\.md$'
+  log_has "$FAKE_CB/calls.log" '^bc_scotty judge-breaker\.md$'
 check "create-breaker posted nothing itself" 1 log_has "$FAKE_CB/calls.log" '^gh_comment_create'
 
 FAKE_CB_EXISTS="$(fake_dir)"
@@ -112,10 +116,10 @@ check "and writes nothing" 1 test -f "$FAKE_CB_EXISTS/calls.log"
 
 FAKE_CB_EMPTY="$(fake_dir)"
 echo '[]' > "$FAKE_CB_EMPTY/gh_issue_comments.100.json"
-# No claude_oneshot_acting fixture: Scotty posted nothing.
+# No bc_scotty overlay: Scotty posted nothing.
 check "create-breaker exits 2 when Scotty posted nothing" 2 run "$FAKE_CB_EMPTY" create-breaker 100
 check "and the only call logged is the handoff" 0 \
-  log_has "$FAKE_CB_EMPTY/calls.log" '^claude_oneshot_acting judge-breaker\.md$'
+  log_has "$FAKE_CB_EMPTY/calls.log" '^bc_scotty judge-breaker\.md$'
 check "and no comment was posted" 1 log_has "$FAKE_CB_EMPTY/calls.log" '^gh_comment_create'
 
 echo
@@ -551,7 +555,7 @@ echo '[{"number":5,"title":"Parry","state":"OPEN","status":"Leads review","prior
 printf 'Combat should feel weighty.' > "$FAKE_JTR/gh_issue_body.300.json"
 check_out "judge-task-request prints the roles it ruled on" 0 tim run "$FAKE_JTR" judge-task-request 100
 check "it handed the work to Scotty" 0 \
-  log_has "$FAKE_JTR/calls.log" '^claude_oneshot_acting judge-task-request\.md$'
+  log_has "$FAKE_JTR/calls.log" '^bc_scotty judge-task-request\.md$'
 check "and wrote no comment itself" 1 log_has "$FAKE_JTR/calls.log" '^gh_comment_(create|edit)'
 
 # Scotty answering nothing must be loud: a request left PENDING is a node
@@ -563,7 +567,7 @@ echo '[{"number":5,"title":"Parry","state":"OPEN","status":"Leads review","prior
 check "judge-task-request exits 2 when Scotty left the request PENDING" 2 \
   run "$FAKE_JTR_STUCK" judge-task-request 100
 check "and the only call logged is the handoff" 0 \
-  log_has "$FAKE_JTR_STUCK/calls.log" '^claude_oneshot_acting judge-task-request\.md$'
+  log_has "$FAKE_JTR_STUCK/calls.log" '^bc_scotty judge-task-request\.md$'
 
 FAKE_JTR_NONE="$(fake_dir)"
 { render_status 5 "tim" 1 | _comment 1; } | "$JQ" -sc '.' > "$FAKE_JTR_NONE/gh_issue_comments.100.json"

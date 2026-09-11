@@ -5,7 +5,7 @@
 # demo-active/demo-has-feedback, creating-demo-issue and integrating-feedback,
 # plus every node that moves a Status). Composes project.sh/gh-cli.sh primitives; the two pieces of
 # judgement it delegates are the Sprint Demo body and what Adrian's feedback
-# means, both via Scotty (claude_oneshot_acting + judge-demo-summary.md /
+# means, both via Scotty (`bc-session.sh scotty` + judge-demo-summary.md /
 # judge-feedback.md).
 #
 # `create-demo` and `write-demo` are the two halves of creating-demo-issue:
@@ -13,12 +13,13 @@
 # write-demo back to open the issue with his body, label it and scope it into
 # the sprint in one step. That is what makes the summary and the issue
 # carrying it atomic -- no Sprint Demo issue ever exists without its body --
-# and it is why write-demo is in the bc-sdlc skill.
+# and it is why write-demo is in the bc-sdlc skill. create-demo learns the new
+# number by reading the board back once he is done, not from his reply.
 #
 # `integrate-feedback`, `write-epic` and `write-story` are the same split for
 # integrating-feedback, with one difference that shapes the whole node:
-# Scotty opens an unknown NUMBER of issues there, so BC_WRITE_RESULT -- which
-# holds one value -- cannot report what was created. integrate-feedback counts
+# Scotty opens an unknown NUMBER of issues there, so there is no one issue
+# to look for. integrate-feedback counts
 # the open, unscoped items on the board before and after instead, and reports
 # the difference; the count is a report, not a gate. Feedback that asks for
 # nothing new -- praise, a question, a note about work already on the backlog
@@ -261,11 +262,10 @@ create-demo)
   done
 
   # Scotty writes the body AND opens the issue, in one `write-demo` call of
-  # his own -- this command never sees his prose. His stdout is not the
-  # product, so the new issue number comes back through BC_WRITE_RESULT.
+  # his own -- this command never sees his prose. His reply is not the
+  # product, so the new issue number is read back off the board.
   bodyfile="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-demo-body.XXXXXX")"
-  result="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-demo-result.XXXXXX")"
-  # The rendered prompt keeps its original basename -- claude_oneshot_acting
+  # The rendered prompt keeps its original basename -- `bc-session.sh scotty`
   # logs and looks up fixtures by it -- so it goes in a temp dir of its own
   # rather than under a mktemp'd name.
   promptdir="$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-demo-prompt.XXXXXX")"
@@ -273,14 +273,12 @@ create-demo)
   claude_render_prompt "$_BC_ISSUE_DIR/prompts/judge-demo-summary.md" \
     scripts="$_BC_ISSUE_DIR" sprint="$n" bodyfile="$bodyfile" > "$prompt"
 
-  export BC_WRITE_RESULT="$result"
-  claude_oneshot_acting "$prompt" "$input"
-  unset BC_WRITE_RESULT
+  bash "$_BC_ISSUE_DIR/bc-session.sh" scotty "$prompt" "$input"
   rm -rf "$promptdir"
   rm -f "$input" "$bodyfile"
 
-  new="$(tr -d '\r\n' < "$result" 2>/dev/null || true)"
-  rm -f "$result"
+  new="$(project_items 2>/dev/null | "$JQ" -r --arg t "Sprint $n" \
+    '[.[] | select((.labels|index("demo")) and .sprintTitle==$t)] | .[0].number // empty' | tr -d '\r')"
   if [ -z "$new" ]; then
     echo "bc-issue create-demo: judge-demo-summary.md did not open the Sprint $n Demo issue" >&2
     exit 2
@@ -324,7 +322,6 @@ write-demo)
   project_set_iteration "$new" "$sprintid"
   project_set_single "$new" Status "In progress"
 
-  bc_record_result "$new"
   printf '%s\n' "$new"
   exit 0
   ;;
@@ -392,9 +389,9 @@ integrate-feedback)
 
   items="$(project_items)" || { echo "bc-issue integrate-feedback: could not read project items" >&2; exit 2; }
   # The count of open, unscoped work BEFORE the call. Scotty may open any
-  # number of epics and stories, and bc_record_result holds one value, so what
-  # landed is re-derived from the board rather than taken from his word --
-  # same principle as every other read here, just reported instead of gated.
+  # number of epics and stories, so what landed is re-derived from the board
+  # rather than taken from his word -- same principle as every other read
+  # here, just reported instead of gated.
   before="$(printf '%s' "$items" | "$JQ" \
     '[.[] | select(.state=="OPEN" and .sprintId==null)] | length')"
 
@@ -423,7 +420,7 @@ integrate-feedback)
   claude_render_prompt "$_BC_ISSUE_DIR/prompts/judge-feedback.md" \
     scripts="$_BC_ISSUE_DIR" demo="$issue" > "$prompt"
 
-  claude_oneshot_acting "$prompt" "$input"
+  bash "$_BC_ISSUE_DIR/bc-session.sh" scotty "$prompt" "$input"
   rm -rf "$promptdir"
   rm -f "$input"
 
@@ -466,7 +463,6 @@ write-epic)
   project_set_single "$new" Status Backlog
   project_set_single "$new" Priority "$prio"
 
-  bc_record_result "$new"
   printf '%s\n' "$new"
   exit 0
   ;;
@@ -520,7 +516,6 @@ write-story)
   project_set_single "$new" Size "$size"
   project_set_single "$new" Priority "$prio"
 
-  bc_record_result "$new"
   printf '%s\n' "$new"
   exit 0
   ;;
@@ -605,7 +600,6 @@ amend-story)
   [ -z "$size" ] || project_set_single "$issue" Size "$size"
   [ -z "$prio" ] || project_set_single "$issue" Priority "$prio"
 
-  bc_record_result "$issue"
   printf '%s\n' "$issue"
   exit 0
   ;;
