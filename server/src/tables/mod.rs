@@ -8,5 +8,6 @@ pub mod citizen;
 pub mod codes;
 pub mod identity;
 pub mod ops;
+pub mod restore;
 pub mod schedules;
 pub mod world;

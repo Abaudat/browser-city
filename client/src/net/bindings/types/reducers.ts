@@ -6,9 +6,47 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import BeginRestoreReducer from "../begin_restore_reducer";
+import FinishRestoreReducer from "../finish_restore_reducer";
 import ReseedCodesReducer from "../reseed_codes_reducer";
+import RestoreBuildingReducer from "../restore_building_reducer";
+import RestoreBuildingAreaReducer from "../restore_building_area_reducer";
+import RestoreCharacterReducer from "../restore_character_reducer";
+import RestoreCharacterIdentityReducer from "../restore_character_identity_reducer";
+import RestoreCitizenReducer from "../restore_citizen_reducer";
+import RestoreCitizenStateReducer from "../restore_citizen_state_reducer";
+import RestoreDemoPingReducer from "../restore_demo_ping_reducer";
+import RestoreFloorTransitionReducer from "../restore_floor_transition_reducer";
+import RestoreLayerCodeReducer from "../restore_layer_code_reducer";
+import RestoreMatterKindReducer from "../restore_matter_kind_reducer";
+import RestoreModuleOwnerReducer from "../restore_module_owner_reducer";
+import RestoreNodeKindReducer from "../restore_node_kind_reducer";
+import RestorePlacedObjectReducer from "../restore_placed_object_reducer";
+import RestoreProvisionReducer from "../restore_provision_reducer";
+import RestoreReasonCodeReducer from "../restore_reason_code_reducer";
+import RestoreRoomReducer from "../restore_room_reducer";
+import RestoreRoomAreaReducer from "../restore_room_area_reducer";
 import SendPingReducer from "../send_ping_reducer";
 
+export type BeginRestoreParams = __Infer<typeof BeginRestoreReducer>;
+export type FinishRestoreParams = __Infer<typeof FinishRestoreReducer>;
 export type ReseedCodesParams = __Infer<typeof ReseedCodesReducer>;
+export type RestoreBuildingParams = __Infer<typeof RestoreBuildingReducer>;
+export type RestoreBuildingAreaParams = __Infer<typeof RestoreBuildingAreaReducer>;
+export type RestoreCharacterParams = __Infer<typeof RestoreCharacterReducer>;
+export type RestoreCharacterIdentityParams = __Infer<typeof RestoreCharacterIdentityReducer>;
+export type RestoreCitizenParams = __Infer<typeof RestoreCitizenReducer>;
+export type RestoreCitizenStateParams = __Infer<typeof RestoreCitizenStateReducer>;
+export type RestoreDemoPingParams = __Infer<typeof RestoreDemoPingReducer>;
+export type RestoreFloorTransitionParams = __Infer<typeof RestoreFloorTransitionReducer>;
+export type RestoreLayerCodeParams = __Infer<typeof RestoreLayerCodeReducer>;
+export type RestoreMatterKindParams = __Infer<typeof RestoreMatterKindReducer>;
+export type RestoreModuleOwnerParams = __Infer<typeof RestoreModuleOwnerReducer>;
+export type RestoreNodeKindParams = __Infer<typeof RestoreNodeKindReducer>;
+export type RestorePlacedObjectParams = __Infer<typeof RestorePlacedObjectReducer>;
+export type RestoreProvisionParams = __Infer<typeof RestoreProvisionReducer>;
+export type RestoreReasonCodeParams = __Infer<typeof RestoreReasonCodeReducer>;
+export type RestoreRoomParams = __Infer<typeof RestoreRoomReducer>;
+export type RestoreRoomAreaParams = __Infer<typeof RestoreRoomAreaReducer>;
 export type SendPingParams = __Infer<typeof SendPingReducer>;
 

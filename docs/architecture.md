@@ -12,7 +12,7 @@ cited here by identifier.
 | Server, database, replication | SpacetimeDB 2.9.x — the `spacetimedb` crate                                                              |
 | Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the table-bounds registry), and the `browser_city` module crate, which depends on both |
 | Property testing              | `proptest`, dev-dependency of `sim` only; case count from `PROPTEST_CASES`                              |
-| `serde`/`serde_json`          | Native-only tooling (`bounds`'s schema-snapshot serialization, the spike-report binaries under `server/spikes/*_report`) — never a dependency of a published module crate |
+| `serde`/`serde_json`          | Native-only tooling (`bounds`'s schema-snapshot serialization, the spike-report binaries under `server/spikes/*_report`, `server/tools/*` e.g. `world_backup`) — never a dependency of a published module crate |
 | Hosting                       | SpacetimeDB Maincloud                                                                                    |
 | CI / deploy                   | GitHub Actions is the only path to Maincloud; never a local `spacetime publish` |
 | Client                        | TypeScript + PixiJS v8, bundled by Vite                                                                  |
@@ -23,6 +23,8 @@ cited here by identifier.
 | Rendering                     | PixiJS WebGPU with WebGL fallback; `@pixi/tilemap` for tile layers                                       |
 | Audio                         | Web Audio directly, or a thin wrapper                                                                    |
 | Art source                    | `ModernTileset/` — whole-object PNGs, nothing pre-split                                                  |
+| Backup encryption             | `gpg --symmetric`                                                                                        |
+| Backup tooling                | `scripts/ops/*.sh` shell `spacetime sql`/`spacetime call`/`describe --json`; `server/tools/world_backup` (native, `serde_json` `arbitrary_precision`) parses and canonicalises, never `jq` |
 
 
 ## Authority
@@ -83,6 +85,27 @@ rather than replaying them all.
 Schedules are derived state: rebuilt from durable tables, never trusted
 to outlive a deploy purely by surviving as pending rows. See
 docs/spikes/1.3-scheduled-reducer-timing.md.
+
+## Backup
+
+See docs/spikes/1.4-backup-restore.md for the platform investigation and
+the measured limitations behind these rules.
+
+- Export via `scripts/ops/export-world.sh`, before every migration and
+  daily once the deploy story wires it in; gpg-encrypted before it ever
+  reaches an Actions artifact, retained 90 days.
+- Restore only through the `restore_*` reducers
+  (`server/src/tables/restore.rs`), into a fresh database, by the owner
+  identity, at the exported schema.
+- auto_inc tables are restored through their own sequence (id `0`),
+  never with an explicit id, and advanced past the exported sequence
+  position (`manifest.json`'s `sequence_floors`); a restore never
+  re-issues an id.
+- Scheduled tables are never restored.
+- Consistency is per table, not across tables.
+- Every non-scheduled table has a `restore_<table>` reducer, checked
+  mechanically (`bounds/tests/restore_coverage.rs`); the round trip is
+  proven by `scripts/ci/check-backup-restore.sh`.
 
 ## Schema
 

@@ -69,6 +69,13 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         max_rows: 1,
         kind: BoundKind::Mechanical,
     },
+    // Story 1.4: whether a restore is currently open -- a one-row gate,
+    // the same rule as `module_owner`'s.
+    TableBound {
+        accessor: "restore_state",
+        max_rows: 1,
+        kind: BoundKind::Mechanical,
+    },
     // NFR14's growth target: ~20,000 citizens at the 1024-squared district.
     // A real game-mechanical ceiling, not a safety valve.
     TableBound {

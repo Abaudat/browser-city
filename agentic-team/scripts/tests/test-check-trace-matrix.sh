@@ -84,6 +84,12 @@ write_matrix() { # <second-section-heading>
 | Requirement | Status | Guard |
 | --- | --- | --- |
 | A scheduled-reducer-timing requirement | covered | \`docs/trace-matrix.md\` |
+
+## Backup and restore
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| A backup/restore requirement | covered | \`docs/trace-matrix.md\` |
 EOF
 }
 

@@ -9,6 +9,7 @@ use spacetimedb::Timestamp;
 /// A citizen's static description (FR48: home, job, appearance seed,
 /// ends). Those fields arrive additively as the stories that need them
 /// land (NFR33) -- only the surrogate key is a permanent decision here.
+#[derive(Clone)]
 #[spacetimedb::table(accessor = citizen)]
 pub struct Citizen {
     #[primary_key]
