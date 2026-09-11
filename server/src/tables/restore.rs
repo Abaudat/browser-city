@@ -48,13 +48,25 @@
 //! reducer therefore also takes `sequence_floor: u64`
 //! (`scripts/ops/export-world.sh` records it per table in
 //! `manifest.json`, read from `st_sequence.allocated` at export time --
-//! a safe upper bound, since nothing above it was ever issued) and, after
-//! placing every exported row, keeps inserting-then-deleting a throwaway
-//! row (never a real one) until the generated id reaches at least that
-//! floor. Multi-batch restores must pass `0` (a permanent no-op) for
-//! every batch but a table's own last one -- advancing early would place
-//! the sequence past a still-to-come batch's own target ids, which the
-//! gap-fill loop above would then read as an overshoot and abort on.
+//! a safe upper bound, since nothing above it was ever issued, and a
+//! hard, immediate error if that record is missing: there is no legacy
+//! export to fall back to `0`, "do not advance", for) and, after placing
+//! every exported row, advances the sequence to at least that floor --
+//! never by inserting a fresh, made-up row and leaving it there.
+//! [`AutoIncRow::placeholder`] (one const literal per table,
+//! `impl_autoinc_row!`'s own third argument, never `Default`: a
+//! `Default` impl on the row type itself would be a public, meaningless
+//! constructor gameplay code could also reach) exists only for a table
+//! with no exported rows at all to reuse instead; the far more common
+//! case reuses the *last exported row placed* -- deleted, then
+//! re-inserted with its own real id once the advance is done -- so a
+//! `#[unique]` column (`character_identity.identity`, today) can never
+//! collide with a made-up throwaway value while a real row's own values
+//! are already sitting in the table. Multi-batch restores must pass `0`
+//! (a permanent no-op) for every batch but a table's own last one --
+//! advancing early would place the sequence past a still-to-come batch's
+//! own target ids, which the gap-fill loop above would then read as an
+//! overshoot and abort on.
 //!
 //! `restore_module_owner` and the five code-table restore reducers
 //! delete their existing (`init`-seeded) rows first, then insert the
@@ -62,7 +74,7 @@
 //! `scripts/ops/restore-world.sh` documented before this story moved the
 //! write path into the module.
 
-use spacetimedb::{ReducerContext, Table};
+use spacetimedb::{Identity, ReducerContext, Table, Timestamp};
 
 use crate::{DemoPing, demo_ping};
 
@@ -219,17 +231,18 @@ pub fn finish_restore(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 /// An auto_inc table's row, reduced to what [`restore_autoinc_rows`]
-/// needs: its own id, and a copy of itself with a different one. One
-/// tiny impl per auto_inc table (below) -- never a derive, since the id
-/// field's name differs per table. `Default` (every auto_inc table
-/// struct derives it, alongside `Clone`) is what lets the sequence-floor
-/// advance below construct a throwaway row with no real export data to
-/// copy from (an empty table can still have a nonzero floor -- rows once
-/// existed and were deleted before export) -- its field values never
-/// matter, since [`restore_autoinc_rows`] deletes it again immediately.
-trait AutoIncRow: Clone + Default {
+/// needs: its own id, a copy of itself with a different one, and (only
+/// for the case a table has no exported rows at all to reuse, below) one
+/// throwaway placeholder value, supplied per table
+/// (`impl_autoinc_row!`'s own third argument), never derived. Never
+/// `Default` on the row type itself (Tim's direction): that would be a
+/// public, meaningless constructor (`Character::default()`, for one)
+/// gameplay code could also reach -- restore concerns must not leak into
+/// domain types.
+trait AutoIncRow: Clone {
     fn id(&self) -> u64;
     fn with_id(&self, id: u64) -> Self;
+    fn placeholder() -> Self;
 }
 
 /// The shared gap-filling loop this file's module doc describes, generic
@@ -249,12 +262,24 @@ trait AutoIncRow: Clone + Default {
 /// fresh id. `sequence_floor` is `st_sequence.allocated` at export time
 /// (`scripts/ops/export-world.sh`, `manifest.json`'s own
 /// `sequence_floors`) -- a safe upper bound, since nothing above it was
-/// ever issued. Every placeholder inserted to reach the floor is deleted
-/// again immediately (it is never a real exported row); only the
-/// sequence's own position, never table content, is affected. **Pass `0`
-/// for every call but a table's own last batch** -- advancing early
-/// would place the sequence past a still-to-come batch's own target ids,
-/// which the loop above would then read as an overshoot and abort on.
+/// ever issued. **Pass `0` for every call but a table's own last batch**
+/// -- advancing early would place the sequence past a still-to-come
+/// batch's own target ids, which the loop above would then read as an
+/// overshoot and abort on.
+///
+/// The throwaway rows this advance inserts-then-deletes to consume ids
+/// must never collide with a real one on a `#[unique]` column
+/// (`character_identity.identity`, today): if at least one row was
+/// placed, the *last* one placed (`R`) is deleted, cloned with id `0`
+/// repeatedly until the generated id reaches the floor, and then
+/// re-inserted with its own real, explicit id -- safe, because the
+/// sequence is already past it, and `R`'s own unique values cannot
+/// collide with the throwaway clones carrying the exact same values,
+/// deleted again before the next one is ever inserted. If no row was
+/// placed at all (a table with a nonzero floor but nothing exported --
+/// rows once existed and were deleted before export), an explicit
+/// per-table `placeholder()` is used instead: an empty table has nothing
+/// to collide with.
 fn restore_autoinc_rows<T: AutoIncRow>(
     rows: Vec<T>,
     mut insert: impl FnMut(T) -> T,
@@ -262,12 +287,14 @@ fn restore_autoinc_rows<T: AutoIncRow>(
     table_name: &str,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    let mut last_placed: Option<T> = None;
     for row in rows {
         let target_id = row.id();
         loop {
             let inserted = insert(row.with_id(0));
             let got = inserted.id();
             if got == target_id {
+                last_placed = Some(inserted);
                 break;
             } else if got < target_id {
                 delete(got);
@@ -280,21 +307,40 @@ fn restore_autoinc_rows<T: AutoIncRow>(
         }
     }
     if sequence_floor > 0 {
-        loop {
-            let dummy = T::default().with_id(0);
-            let inserted = insert(dummy);
-            let got = inserted.id();
-            delete(got);
-            if got >= sequence_floor {
-                break;
+        match last_placed {
+            Some(r) => {
+                delete(r.id());
+                loop {
+                    let inserted = insert(r.with_id(0));
+                    let got = inserted.id();
+                    delete(got);
+                    if got >= sequence_floor {
+                        break;
+                    }
+                }
+                insert(r);
             }
+            None => loop {
+                let inserted = insert(T::placeholder().with_id(0));
+                let got = inserted.id();
+                delete(got);
+                if got >= sequence_floor {
+                    break;
+                }
+            },
         }
     }
     Ok(())
 }
 
+/// `$placeholder` is an explicit literal, never `Default::default()`: a
+/// table's own `placeholder()` is only ever reached when that table has
+/// no exported rows to reuse instead (`restore_autoinc_rows`'s own doc
+/// comment above) -- field values otherwise never matter, since the row
+/// is deleted again immediately and nothing else exists yet to collide
+/// with.
 macro_rules! impl_autoinc_row {
-    ($Row:ty, $id_field:ident) => {
+    ($Row:ty, $id_field:ident, $placeholder:expr) => {
         impl AutoIncRow for $Row {
             fn id(&self) -> u64 {
                 self.$id_field
@@ -304,20 +350,120 @@ macro_rules! impl_autoinc_row {
                 copy.$id_field = id;
                 copy
             }
+            fn placeholder() -> Self {
+                $placeholder
+            }
         }
     };
 }
 
-impl_autoinc_row!(DemoPing, id);
-impl_autoinc_row!(Building, building_id);
-impl_autoinc_row!(BuildingArea, area_id);
-impl_autoinc_row!(Character, character_id);
-impl_autoinc_row!(CharacterIdentity, mapping_id);
-impl_autoinc_row!(Citizen, citizen_id);
-impl_autoinc_row!(FloorTransition, transition_id);
-impl_autoinc_row!(PlacedObject, object_id);
-impl_autoinc_row!(Room, room_id);
-impl_autoinc_row!(RoomArea, area_id);
+impl_autoinc_row!(
+    DemoPing,
+    id,
+    DemoPing {
+        id: 0,
+        message: String::new(),
+        written_at: Timestamp::UNIX_EPOCH,
+    }
+);
+impl_autoinc_row!(
+    Building,
+    building_id,
+    Building {
+        building_id: 0,
+        created_at: Timestamp::UNIX_EPOCH,
+    }
+);
+impl_autoinc_row!(
+    BuildingArea,
+    area_id,
+    BuildingArea {
+        area_id: 0,
+        building_id: 0,
+        x0: 0,
+        y0: 0,
+        x1: 0,
+        y1: 0,
+        floor: 0,
+        chunk_key: 0,
+    }
+);
+impl_autoinc_row!(
+    Character,
+    character_id,
+    Character {
+        character_id: 0,
+        created_at: Timestamp::UNIX_EPOCH,
+    }
+);
+impl_autoinc_row!(
+    CharacterIdentity,
+    mapping_id,
+    CharacterIdentity {
+        mapping_id: 0,
+        identity: Identity::default(),
+        character_id: 0,
+    }
+);
+impl_autoinc_row!(
+    Citizen,
+    citizen_id,
+    Citizen {
+        citizen_id: 0,
+        created_at: Timestamp::UNIX_EPOCH,
+    }
+);
+impl_autoinc_row!(
+    FloorTransition,
+    transition_id,
+    FloorTransition {
+        transition_id: 0,
+        x: 0,
+        y: 0,
+        floor: 0,
+        target_x: 0,
+        target_y: 0,
+        target_floor: 0,
+        chunk_key: 0,
+    }
+);
+impl_autoinc_row!(
+    PlacedObject,
+    object_id,
+    PlacedObject {
+        object_id: 0,
+        def_id: 0,
+        x: 0,
+        y: 0,
+        floor: 0,
+        layer: 0,
+        orientation: 0,
+        chunk_key: 0,
+    }
+);
+impl_autoinc_row!(
+    Room,
+    room_id,
+    Room {
+        room_id: 0,
+        building_id: 0,
+        created_at: Timestamp::UNIX_EPOCH,
+    }
+);
+impl_autoinc_row!(
+    RoomArea,
+    area_id,
+    RoomArea {
+        area_id: 0,
+        room_id: 0,
+        x0: 0,
+        y0: 0,
+        x1: 0,
+        y1: 0,
+        floor: 0,
+        chunk_key: 0,
+    }
+);
 
 #[spacetimedb::reducer]
 pub fn restore_demo_ping(

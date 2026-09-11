@@ -117,6 +117,36 @@ if [ "${TARGET_OWNER,,}" != "${EXPORT_OWNER,,}" ]; then
 fi
 echo "restore-world: ok -- restoring identity matches the exported owner" >&2
 
+AUTOINC_TABLES="$(bc_wb autoinc-tables "$BC_SNAPSHOT")"
+is_autoinc() { # <table>
+  grep -qxF "$1" <<<"$AUTOINC_TABLES"
+}
+# floor_for <table> -- the table's own recorded sequence_floors entry, or
+# a loud, immediate failure naming the table (never a silent "0" fallback
+# -- Tim's direction: export-world.sh always writes one entry per
+# auto_inc table, so a missing one only ever means a truncated,
+# hand-edited or pre-cycle-4 manifest, and reading that as "do not
+# advance" would silently bring back the id re-use cycle 4 removed).
+floor_for() {
+  local table="$1" out errlog
+  errlog="$(mktemp)"
+  if ! out="$(bc_wb manifest-floor "$MANIFEST" "$table" 2>"$errlog")"; then
+    bc_ops_die "$SCRIPT" "could not read '$table's own sequence floor from $MANIFEST:
+$(cat "$errlog")"
+  fi
+  rm -f "$errlog"
+  printf '%s' "$out"
+}
+
+# Checked once, before begin_restore ever runs: a manifest missing an
+# auto_inc table's own floor must fail loudly up front, not partway
+# through a restore already in progress.
+while IFS= read -r table; do
+  [ -n "$table" ] || continue
+  floor_for "$table" >/dev/null
+done <<< "$AUTOINC_TABLES"
+echo "restore-world: ok -- every auto_inc table has a recorded sequence floor in $MANIFEST" >&2
+
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" begin_restore '[]'
 echo "restore-world: ok -- begin_restore opened (target was freshly published)" >&2
 
@@ -128,11 +158,6 @@ while IFS= read -r table; do
   echo "restore-world: skip '$table' -- scheduled table, derived state, never restored" >&2
   SKIPPED_SCHEDULED=$((SKIPPED_SCHEDULED + 1))
 done <<< "$(bc_table_names scheduled)"
-
-AUTOINC_TABLES="$(bc_wb autoinc-tables "$BC_SNAPSHOT")"
-is_autoinc() { # <table>
-  grep -qxF "$1" <<<"$AUTOINC_TABLES"
-}
 
 while IFS= read -r table; do
   [ -n "$table" ] || continue
@@ -169,7 +194,7 @@ while IFS= read -r table; do
   # -- so batches are materialized into an array first, never streamed
   # one at a time, purely so the *last* one is known before any call is
   # made.
-  FLOOR="$(bc_wb manifest-floor "$MANIFEST" "$table")"
+  FLOOR="$(floor_for "$table")"
   if [ "$n" -eq 0 ]; then
     if [ "$FLOOR" = "0" ]; then
       echo "restore-world: ok -- '$table' has 0 exported rows and no sequence floor to advance to" >&2

@@ -16,26 +16,13 @@ pub struct Character {
     pub created_at: Timestamp,
 }
 
-/// Manual, not derived: `Timestamp` has no `Default` impl. Only ever used
-/// as a throwaway row by `tables::restore`'s sequence-floor advance --
-/// field values never matter, since that row is deleted again
-/// immediately.
-impl Default for Character {
-    fn default() -> Self {
-        Character {
-            character_id: 0,
-            created_at: Timestamp::UNIX_EPOCH,
-        }
-    }
-}
-
 /// One-character-to-N-identities (FR142): `identity` is `#[unique]` (an
 /// identity reaches at most one character); `character_id` is a plain
 /// btree index, not unique (a character may be reached by any number of
 /// identities -- an anonymous identity that later links an OIDC one, for
 /// instance). Putting `Identity` on `Character` as its own key, or making
 /// `character_id` unique here, would forbid that permanently.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 #[spacetimedb::table(accessor = character_identity)]
 pub struct CharacterIdentity {
     #[primary_key]

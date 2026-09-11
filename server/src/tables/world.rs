@@ -22,7 +22,7 @@ use spacetimedb::Timestamp;
 /// Orientation and mutable state (if a def ever needs one) belong in their
 /// own table keyed to `object_id`, never added as a column here (NFR35):
 /// this row is static placement, not hot state.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 #[spacetimedb::table(accessor = placed_object)]
 pub struct PlacedObject {
     #[primary_key]
@@ -51,7 +51,7 @@ pub struct PlacedObject {
 /// a special layer. A door is never one of these rows -- FR118's whole
 /// point is that a door is an ordinary walkable `placed_object`-free cell,
 /// with no transition, no portal and no load.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 #[spacetimedb::table(accessor = floor_transition)]
 pub struct FloorTransition {
     #[primary_key]
@@ -81,19 +81,6 @@ pub struct Building {
     pub created_at: Timestamp,
 }
 
-/// Manual, not derived: `Timestamp` has no `Default` impl. Only ever used
-/// as a throwaway row by `tables::restore`'s sequence-floor advance --
-/// field values never matter, since that row is deleted again
-/// immediately.
-impl Default for Building {
-    fn default() -> Self {
-        Building {
-            building_id: 0,
-            created_at: Timestamp::UNIX_EPOCH,
-        }
-    }
-}
-
 /// A room's static description (FR119), always inside exactly one
 /// building. Static description and hot state never share a table
 /// (NFR35): if a room ever needs mutable state, it gets its own table
@@ -109,17 +96,6 @@ pub struct Room {
     pub created_at: Timestamp,
 }
 
-/// Manual, not derived: see `Building`'s own `impl Default` above.
-impl Default for Room {
-    fn default() -> Self {
-        Room {
-            room_id: 0,
-            building_id: 0,
-            created_at: Timestamp::UNIX_EPOCH,
-        }
-    }
-}
-
 /// One axis-aligned rectangle of a building's ownership (FR119). A
 /// non-rectangular building decomposes into several rows sharing one
 /// `building_id` -- cell-to-owner is a pure lookup over the rects covering
@@ -130,7 +106,7 @@ impl Default for Room {
 /// that split, and `sim::world::WorldSpec::build` is what rejects a row
 /// that violates it (or overlaps another `building_area` row on the same
 /// floor).
-#[derive(Clone, Default)]
+#[derive(Clone)]
 #[spacetimedb::table(accessor = building_area)]
 pub struct BuildingArea {
     #[primary_key]
@@ -151,7 +127,7 @@ pub struct BuildingArea {
 /// analogue of `building_area`. A cell inside a building but not inside
 /// any of its rooms (a corridor) has a `building_id` but
 /// `sim::world::NO_OWNER` for its room.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 #[spacetimedb::table(accessor = room_area)]
 pub struct RoomArea {
     #[primary_key]

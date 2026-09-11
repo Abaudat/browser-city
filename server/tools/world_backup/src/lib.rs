@@ -404,20 +404,32 @@ pub const ADVERSARIAL_STRING: &str =
 /// text -- parsed with `serde_json`'s `arbitrary_precision`, never a
 /// hand-rolled regex over the manifest's raw text (the same precision
 /// risk `docs/architecture.md`'s "never `jq`" rule exists to avoid, just
-/// reached a different way). `0` if `table` has no entry (never seeded
-/// with an auto_inc column, e.g. it was empty at export with no sequence
-/// ever created) -- `0` also doubles as `restore_autoinc_rows`'s own
-/// "do not advance" sentinel, so a table genuinely absent from the
-/// manifest and a table explicitly telling a batch not to advance read
-/// the same way to a caller.
+/// reached a different way).
+///
+/// A hard error, never a silent `"0"`, if `table` has no entry or
+/// `sequence_floors` is missing entirely (Tim's direction): `export-
+/// world.sh` always writes one entry per auto_inc table, so a missing
+/// one only ever means a truncated, hand-edited or pre-cycle-4 manifest
+/// -- reading that as `"0"` (`restore_autoinc_rows`'s own "do not
+/// advance" sentinel, used only for a non-final batch, never for this
+/// function's own return value) would silently bring back the very id
+/// re-use this cycle removed. There is no legacy export to stay
+/// compatible with: nothing has ever gone live, and no backup has ever
+/// actually been taken. An empty table whose sequence was never touched
+/// still gets a real, explicit `"0"` from export -- the only legitimate
+/// zero, and it still round-trips through here exactly, since it is a
+/// present entry, not a missing one.
 pub fn manifest_sequence_floor(manifest: &Value, table: &str) -> Result<String> {
-    let floors = manifest.get("sequence_floors");
-    let Some(floors) = floors else {
-        return Ok("0".to_string());
-    };
-    let Some(value) = floors.get(table) else {
-        return Ok("0".to_string());
-    };
+    let floors = manifest.get("sequence_floors").ok_or_else(|| {
+        err(format!(
+            "manifest.json has no sequence_floors at all -- cannot restore auto_inc table '{table}' without its recorded floor (a truncated, hand-edited or pre-cycle-4 export?)"
+        ))
+    })?;
+    let value = floors.get(table).ok_or_else(|| {
+        err(format!(
+            "manifest.json's sequence_floors has no entry for '{table}' -- cannot restore it without its recorded floor (a truncated, hand-edited or pre-cycle-4 export?)"
+        ))
+    })?;
     match value {
         Value::Number(n) => Ok(n.to_string()),
         other => Err(err(format!(
@@ -840,23 +852,27 @@ mod tests {
     #[test]
     fn manifest_sequence_floor_reads_the_named_table_exactly() {
         let manifest: Value = serde_json::from_str(
-            r#"{"sequence_floors":{"widget":18446744073709551615,"empty_table":1}}"#,
+            r#"{"sequence_floors":{"widget":18446744073709551615,"empty_table":0}}"#,
         )
         .unwrap();
         assert_eq!(
             manifest_sequence_floor(&manifest, "widget").unwrap(),
             "18446744073709551615"
         );
+        // An empty table whose sequence was never touched gets a real,
+        // present, explicit "0" from export -- the one legitimate zero,
+        // and it must still round-trip exactly, not be conflated with a
+        // missing entry.
         assert_eq!(
             manifest_sequence_floor(&manifest, "empty_table").unwrap(),
-            "1"
+            "0"
         );
         // Missing from sequence_floors, or no sequence_floors at all:
-        // both read as "0" -- restore_autoinc_rows's own "do not
-        // advance" sentinel, never an error.
-        assert_eq!(manifest_sequence_floor(&manifest, "nope").unwrap(), "0");
+        // both a hard error (Tim's direction) -- never a silent "0" that
+        // would bring back the id re-use this cycle removed.
+        assert!(manifest_sequence_floor(&manifest, "nope").is_err());
         let no_floors: Value = serde_json::from_str(r#"{"cli_version":"2.9.0"}"#).unwrap();
-        assert_eq!(manifest_sequence_floor(&no_floors, "widget").unwrap(), "0");
+        assert!(manifest_sequence_floor(&no_floors, "widget").is_err());
     }
 
     #[test]

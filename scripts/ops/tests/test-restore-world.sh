@@ -22,8 +22,9 @@ REAL_OWNER_HEX="0xc200279199e24f46fe6947912389eb3ef546be8c560f8e6968ebc3a531ec02
 
 # make_export -- a real, valid, all-empty export directory built by
 # world_backup itself (schema-correct manifest, one empty .jsonl per
-# table, a real `module_owner` row) -- the fixture every restore test
-# starts from and edits.
+# table, a real `module_owner` row, a real `sequence_floors` entry -- "0"
+# -- for every auto_inc table, matching what export-world.sh itself
+# always writes) -- the fixture every restore test starts from and edits.
 make_export() {
   local dir
   dir="$(fake_dir)/export"
@@ -35,7 +36,14 @@ make_export() {
   printf '[0,["%s"]]\n' "$REAL_OWNER_HEX" > "$dir/module_owner.jsonl"
   local sha
   sha="$(sha256sum "$SNAPSHOT" | awk '{print $1}' | sed 's/^\\//')"
-  printf '{\n  "schema_sha256": "%s"\n}\n' "$sha" > "$dir/manifest.json"
+  local floors="" first=1
+  while IFS= read -r table; do
+    [ -n "$table" ] || continue
+    [ "$first" -eq 1 ] || floors="$floors,"
+    first=0
+    floors="$floors\"$table\":0"
+  done < <("$WB" autoinc-tables "$SNAPSHOT")
+  printf '{\n  "schema_sha256": "%s",\n  "sequence_floors": {%s}\n}\n' "$sha" "$floors" > "$dir/manifest.json"
   printf '%s' "$dir"
 }
 
@@ -169,12 +177,23 @@ check_contains "names restore_demo_ping" "restore_demo_ping" "$(cat "$LOGDIR/out
 echo
 echo "green: an auto_inc table with 0 exported rows but a nonzero manifest floor still gets a restore_<table> call (to advance the sequence, not skipped as if there were nothing to do)"
 DIR="$(make_export)"
-sed -i 's/"schema_sha256": "\([0-9a-f]*\)"/"schema_sha256": "\1",\n  "sequence_floors": {"demo_ping": 4097}/' "$DIR/manifest.json"
+sed -i 's/"demo_ping":0/"demo_ping":4097/' "$DIR/manifest.json"
 CALLS_LOG="$LOGDIR/calls.log"
 rm -f "$CALLS_LOG"
 run_restore call-log "$DIR" CALL_LOG="$CALLS_LOG" >"$LOGDIR/out7.log" 2>&1; CODE=$?
 check "0-row auto_inc table with a floor -> exit 0" 0 bash -c "exit $CODE"
 check_contains "calls restore_demo_ping with the recorded floor" "restore_demo_ping [] 4097" "$(cat "$CALLS_LOG" 2>/dev/null)"
+
+echo
+echo "red: an auto_inc table missing from the manifest's own sequence_floors fails before begin_restore, never silently as if its floor were 0"
+DIR="$(make_export)"
+sed -i -E 's/"demo_ping":[0-9]+,//; s/,"demo_ping":[0-9]+//; s/"demo_ping":[0-9]+//' "$DIR/manifest.json"
+CALL_LOG_MISSING="$LOGDIR/calls-missing.log"
+rm -f "$CALL_LOG_MISSING"
+run_restore call-log "$DIR" CALL_LOG="$CALL_LOG_MISSING" >"$LOGDIR/out8.log" 2>&1; CODE=$?
+check "missing sequence_floors entry -> exit non-zero" 1 bash -c "exit $CODE"
+check_contains "names the table missing its floor" "demo_ping" "$(cat "$LOGDIR/out8.log")"
+check "never calls begin_restore (stops before it)" 0 test ! -s "$CALL_LOG_MISSING"
 
 echo
 echo "red: an unrecognized flag is rejected, never silently defaulted"
