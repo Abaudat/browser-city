@@ -92,6 +92,14 @@ spacetime publish browser-city --server maincloud --yes
 
 That command belongs to the deploy on merge to master, not to development.
 
+## Spikes
+
+`spikes/` holds throwaway measurement modules, published under their own disposable database names,
+depended on by nothing and never touched by the deploy path -- see each spike's own crate doc
+comment. `scripts/dev/run-sched-timing-spike.sh` re-runs story 1.3's scheduled-reducer timing
+measurement; `docs/spikes/1.3-scheduled-reducer-timing.md` has the pre-registered budget and the
+findings.
+
 ## The demo table
 
 `demo_ping` and `send_ping` are the scaffold's smoke test (story 1.1), kept because they prove the

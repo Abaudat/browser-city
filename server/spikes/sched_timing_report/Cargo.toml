@@ -1,0 +1,15 @@
+[package]
+name = "sched_timing_report"
+version = "0.1.0"
+edition = "2024"
+
+# Median/p95/max is a sort and an index (Tim's direction) -- no stats
+# crate, no Python, no notebook. serde/serde_json is the one dependency
+# (parsing republish-summary.json), the same native-only precedent
+# bounds/Cargo.toml already sets (docs/architecture.md's "Schema-snapshot
+# serialization" row) -- not a stats crate, and this binary never reaches
+# the published wasm either.
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

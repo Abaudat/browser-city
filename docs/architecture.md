@@ -12,7 +12,7 @@ cited here by identifier.
 | Server, database, replication | SpacetimeDB 2.9.x — the `spacetimedb` crate                                                              |
 | Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the table-bounds registry), and the `browser_city` module crate, which depends on both |
 | Property testing              | `proptest`, dev-dependency of `sim` only; case count from `PROPTEST_CASES`                              |
-| Schema-snapshot serialization | `serde`/`serde_json`, dependency of `bounds` only — native-only, never reaches the published wasm         |
+| `serde`/`serde_json`          | Native-only tooling (`bounds`'s schema-snapshot serialization, the spike-report binaries under `server/spikes/*_report`) — never a dependency of a published module crate |
 | Hosting                       | SpacetimeDB Maincloud                                                                                    |
 | CI / deploy                   | GitHub Actions is the only path to Maincloud; never a local `spacetime publish` |
 | Client                        | TypeScript + PixiJS v8, bundled by Vite                                                                  |
@@ -59,6 +59,30 @@ The published module runs with `overflow-checks` and `debug-assertions` on
 uses): a `debug_assert!` is a production abort, not a test-only aid, and a
 wrapping-arithmetic bug aborts the reducer rather than writing inconsistent
 state (NFR41).
+
+## Scheduled reducers
+
+A single scheduled-reducer fire's dispatch drift may be assumed within
+2.5 real seconds (one in-city minute at FR1's 24x compression); no
+gameplay system may assume finer real-time precision than that.
+
+A repeating schedule's absolute phase is not guaranteed to survive more
+than a few ticks unless it is explicitly re-anchored to its own original
+target on every reschedule, never to the time it actually fired -- a
+repeat built the second way compounds its own lateness indefinitely
+regardless of which SpacetimeDB API produced it. A system whose
+correctness depends on phase over a session-length run (the day-night
+cycle, a transit timetable, an L2 tick) must be built the first way, and
+must additionally bound its own catch-up: re-anchoring to the original
+target with no further care dispatches every missed tick back-to-back
+after any pause (a deploy, a host stall) until it is caught up, which is
+its own unbounded-burst hazard. A phase-preserving repeat must skip ticks
+it cannot deliver on time, or clamp the elapsed-time delta it simulates,
+rather than replaying them all.
+
+Schedules are derived state: rebuilt from durable tables, never trusted
+to outlive a deploy purely by surviving as pending rows. See
+docs/spikes/1.3-scheduled-reducer-timing.md.
 
 ## Schema
 

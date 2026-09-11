@@ -84,3 +84,15 @@ sections above.
 | A collision query costs a bounded, small number of dense-storage accesses regardless of world size, and the collision grid stays within its documented 1-bit-per-cell budget | covered | `server/sim/tests/world_perf.rs` |
 | An ownership query scans only the areas sharing the queried chunk, never every area in the world (FR119, FR120, FR122) | covered | `server/sim/tests/world_perf.rs` -- `ownership_lookup_scans_only_the_queried_chunk_not_every_area_in_the_world` |
 | The client-side TypeScript port of addressing, collision, transition and ownership reads the same fixtures/world-conformance.v1.json its Rust oracle reads (NFR30) | deferred | client-side collision/addressing story |
+
+## Scheduled-reducer timing
+
+Story 1.3: `docs/spikes/1.3-scheduled-reducer-timing.md`'s measured drift
+budget and post-publish schedule rule (R10, D7). Same Guard-path
+discipline as the sections above.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| The spike report measured SpacetimeDB version never goes stale against the `server/Cargo.toml` pin, the `docs/architecture.md` stack line, or the pinned CLI installer exact patch | covered | `scripts/ci/check-sched-timing-pin.sh` |
+| The drift claims in `docs/spikes/1.3-scheduled-reducer-timing.md` are re-runnable with one command | covered | `scripts/dev/run-sched-timing-spike.sh` |
+| Whether a pending scheduled row survives a schema-changing publish, or a publish to Maincloud, is unmeasured (only a same-wasm, same-schema local republish was measured) | deferred | the deploy story |
