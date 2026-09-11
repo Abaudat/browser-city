@@ -687,7 +687,7 @@ check_out "dispatching-rework: marked Reviewed, dispatched crew, exit 0" 0 \
 check "dispatching-rework: transitioned to Reviewed" 0 log_has "$F_DISPATCH_REWORK/calls.log" '^project_set_single 280 Status Reviewed$'
 check "dispatching-rework: sent to crew's terminal" 0 log_has "$F_DISPATCH_REWORK/calls.log" '^orca_terminal_send h1 '
 check "dispatching-rework: never merged" 1 log_has "$F_DISPATCH_REWORK/calls.log" '^gh_pr_merge'
-check "dispatching-rework: never triggered a breaker" 1 log_has "$F_DISPATCH_REWORK/calls.log" 'breaker'
+check "dispatching-rework: never triggered a breaker" 1 log_has "$F_DISPATCH_REWORK/calls.log" '^claude_oneshot_acting judge-breaker\.md$'
 
 # =============================================================================
 echo
@@ -727,6 +727,33 @@ check_out "reopening-leads-review: bumped cycle, marked Leads review, exit 0" 0 
 check "reopening-leads-review: bumped the cycle on the status comment" 0 log_has "$F_REOPENING_REVIEW/calls.log" '^gh_comment_edit 1 '
 check "reopening-leads-review: transitioned back to Leads review" 0 \
   log_has "$F_REOPENING_REVIEW/calls.log" '^project_set_single 300 Status Leads review$'
+
+# =============================================================================
+echo
+echo "crew-addressed: Reviewed, Crew's stamp is last round's (leads already reviewed that head) -> no cycle bump"
+# =============================================================================
+# The PR #275 loop: the leads rejected the head Crew had stamped, the rework
+# was dispatched, and Crew has not pushed yet. The old stamp still equals the
+# head; reading it as addressed bounced the PR back to Leads review every tick
+# and bumped the cycle 3 -> 9 until the breaker tripped.
+F_CREW_STALE_STAMP="$(fake_dir)"
+write_iterations "$F_CREW_STALE_STAMP"
+one_active "$F_CREW_STALE_STAMP" 305 "Reviewed"
+echo '{"number":67,"headRefOid":"shaE3"}' > "$F_CREW_STALE_STAMP/gh_pr_for_issue.305.json"
+echo "shaE3" > "$F_CREW_STALE_STAMP/gh_pr_head.67.json"
+{
+  render_status 305 "quentin" 3 | _comment 1
+  printf '### Review — quentin\n\nno\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed shaE3 -->\n<!-- bc:verdict CHANGES -->\n' | _comment 2
+  printf '### Crew\n\nAddressed.\n\n<!-- bc:crew -->\n<!-- bc:addressed shaE3 -->\n' | _comment 3
+} | "$JQ" -sc '.' > "$F_CREW_STALE_STAMP/gh_issue_comments.67.json"
+{ render_analysis_stub quentin | _comment 1; } | "$JQ" -sc '.' > "$F_CREW_STALE_STAMP/gh_issue_comments.305.json"
+printf 'WT305' > "$F_CREW_STALE_STAMP/orca_worktree_path.issue:305.json"
+"$JQ" -n -c --arg u "$(role8 crew 305)" '[{handle:"h1",title:("✳ bc-crew #305 (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
+  > "$F_CREW_STALE_STAMP/orca_terminals.WT305.json"
+check_out "crew-addressed (stale stamp): nudged crew, exit 0" 0 "crew-addressed nudged crew on PR #67" run "$F_CREW_STALE_STAMP" "$NOW_MIDSPRINT"
+check "crew-addressed (stale stamp): never bumped the cycle" 1 log_has "$F_CREW_STALE_STAMP/calls.log" '^gh_comment_edit'
+check "crew-addressed (stale stamp): never went back to Leads review" 1 \
+  log_has "$F_CREW_STALE_STAMP/calls.log" '^project_set_single 305 Status Leads review$'
 
 # =============================================================================
 echo
