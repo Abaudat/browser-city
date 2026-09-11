@@ -48,6 +48,11 @@
 #                                    republishing (must exceed the largest
 #                                    republish offset)
 #   SCHED_TIMING_HOST_LABEL          overrides the report header's host
+#   SCHED_TIMING_CATCHUP_BUCKET_MS   catch-up leg's bucket (default 100)
+#   SCHED_TIMING_CATCHUP_BACKDATE_MS how far in the past the catch-up
+#                                    leg's origin is seeded (default
+#                                    10000 -- ~100 ticks already due)
+#   SCHED_TIMING_CATCHUP_WAIT_S      catch-up leg's observation window
 #
 # AUTHORITATIVE_RUN: Quentin's direction asks for >=200 samples at every
 # bucket <=1s, >=30 at 30s/60s and whatever fits at 600s. Set
@@ -87,6 +92,13 @@ REPUBLISH_WAIT_S="${SCHED_TIMING_REPUBLISH_WAIT_S:-650}"
 # alongside the normal zero-extra-writes ladder entry at the same bucket.
 WORK_BUCKET_MS=1000
 WORK_EXTRA_WRITES=50
+# Leg 4 (catch-up): a phase-preserving repeat seeded already behind, so
+# several targets are already due at seed time -- Tim's cycle-2 direction.
+# Deliberately short: a bounded storm followed by a few real-cadence
+# ticks to confirm convergence, not another multi-minute leg.
+CATCHUP_BUCKET_MS="${SCHED_TIMING_CATCHUP_BUCKET_MS:-100}"
+CATCHUP_BACKDATE_MS="${SCHED_TIMING_CATCHUP_BACKDATE_MS:-10000}"
+CATCHUP_WAIT_S="${SCHED_TIMING_CATCHUP_WAIT_S:-20}"
 
 RUN_ID_SUFFIX="$$"
 START_PID=""
@@ -373,8 +385,29 @@ jq -n \
 echo "run-sched-timing-spike: republish leg -- wrote $REPUBLISH_SUMMARY_JSON (pending before/after; sched_timing_report classifies survival against $REPUBLISH_CSV, never a duplicated copy of it)" >&2
 
 # ---------------------------------------------------------------------------
+# Leg 4: catch-up -- seeds one ONESHOT_ANCHORED probe whose origin is
+# already CATCHUP_BACKDATE_MS in the past, so its first several targets
+# are already due at seed time. No compensation logic added anywhere for
+# this: `seed_oneshot_anchored_backdated` seeds the exact same
+# ONESHOT_ANCHORED chain the idle leg does, just backdated, so whatever
+# happens next is the platform's behaviour, not a shape written to hide
+# it. Answers: does it dispatch a bounded burst and resume real-time
+# cadence, or never converge (Tim's cycle-2 direction)?
+# ---------------------------------------------------------------------------
+CATCHUP_DB="bc-sched-timing-catchup-$RUN_ID_SUFFIX"
+publish "$MODULE_DIR" "$CATCHUP_DB" "$DATA_DIR/publish-catchup.log" || fail "could not publish the catch-up leg" "$DATA_DIR/publish-catchup.log"
+PUBLISHED_DBS+=("$CATCHUP_DB")
+call "$CATCHUP_DB" seed_oneshot_anchored_backdated "\"catchup-leg\"" "$CATCHUP_BUCKET_MS" "$CATCHUP_BACKDATE_MS"
+wait_window "$CATCHUP_DB" "$CATCHUP_WAIT_S" "catch-up"
+CATCHUP_CSV="$OUT_DIR/catchup-leg.csv"
+export_observations_csv "$CATCHUP_DB" "$CATCHUP_CSV"
+CATCHUP_EXPECTED_MIN=$(( (CATCHUP_BACKDATE_MS / CATCHUP_BUCKET_MS) * 50 / 100 ))
+CATCHUP_N="$(require_min_fires "$CATCHUP_CSV" "$CATCHUP_EXPECTED_MIN" "catch-up")"
+echo "run-sched-timing-spike: catch-up -- $CATCHUP_N reducer fires recorded (expected at least $CATCHUP_EXPECTED_MIN from ${CATCHUP_BACKDATE_MS}ms backdated at a ${CATCHUP_BUCKET_MS}ms bucket)" >&2
+
+# ---------------------------------------------------------------------------
 # Reduce every leg through the native binary -- the ladder legs, both
-# observer logs, and the republish classification.
+# observer logs, the republish classification, and the catch-up leg.
 # ---------------------------------------------------------------------------
 REPORT_MD="$OUT_DIR/report.md"
 {
@@ -404,6 +437,10 @@ REPORT_MD="$OUT_DIR/report.md"
   echo "### Republish leg"
   echo
   "$REPORT_BIN" republish "$REPUBLISH_SUMMARY_JSON" "$REPUBLISH_CSV"
+  echo
+  echo "### Catch-up leg (backdated ${CATCHUP_BACKDATE_MS}ms, ${CATCHUP_BUCKET_MS}ms bucket)"
+  echo
+  "$REPORT_BIN" catchup "$CATCHUP_CSV"
 } >"$REPORT_MD"
 
 echo "run-sched-timing-spike: wrote $REPORT_MD" >&2
@@ -411,4 +448,4 @@ cp "$OBSERVER_IDLE_LOG" "$OUT_DIR/observer-lateness-idle.log" 2>/dev/null \
   && cp "$OBSERVER_REPUBLISH_LOG" "$OUT_DIR/observer-lateness-republish.log" 2>/dev/null \
   && echo "run-sched-timing-spike: both observer logs copied into $OUT_DIR" >&2
 
-echo "run-sched-timing-spike: done. Raw CSVs, republish-summary.json, both observer logs and report.md are in $OUT_DIR" >&2
+echo "run-sched-timing-spike: done. Raw CSVs (including catchup-leg.csv), republish-summary.json, both observer logs and report.md are in $OUT_DIR" >&2

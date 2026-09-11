@@ -503,6 +503,112 @@ pub fn render_republish_markdown(report: &RepublishReport) -> String {
     out
 }
 
+// ---------------------------------------------------------------------
+// Catch-up leg: a phase-preserving repeat (ONESHOT_ANCHORED) seeded with
+// an origin already in the past, so several of its targets are already
+// due at seed time -- measures whether it dispatches a bounded storm to
+// catch up and resumes real-time cadence, or never converges (Tim's
+// cycle-2 direction).
+// ---------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CatchupSummary {
+    pub n: usize,
+    pub bucket_ms: u64,
+    /// `true` iff a gap between consecutive fires at least half a bucket
+    /// wide was observed -- the point real-time cadence resumed.
+    pub converged: bool,
+    /// Fires before convergence (all of `n`, if `converged` is `false`).
+    pub burst_fire_count: usize,
+    pub burst_duration_ms: f64,
+    /// `None` when the burst was zero-duration (converged on the very
+    /// first gap -- nothing to rate) or there was nothing to measure.
+    pub dispatch_rate_per_s: Option<f64>,
+    /// The worst (most overdue) single-fire drift observed -- how far
+    /// behind the backdated seed actually was.
+    pub max_drift_ms: f64,
+}
+
+/// A gap at least this fraction of `bucket_ms` between two consecutive
+/// fires is read as "real-time cadence resumed", not "still catching up".
+const CONVERGENCE_GAP_FRACTION: f64 = 0.5;
+
+pub fn summarize_catchup(rows: &[Row]) -> CatchupSummary {
+    let mut sorted: Vec<&Row> = rows.iter().collect();
+    sorted.sort_by_key(|r| r.sequence);
+    let n = sorted.len();
+    let bucket_ms = sorted.first().map(|r| r.bucket_ms).unwrap_or(0);
+    let max_drift_ms = sorted
+        .iter()
+        .map(|r| micros_to_ms(r.drift_micros))
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    if n < 2 {
+        return CatchupSummary {
+            n,
+            bucket_ms,
+            converged: false,
+            burst_fire_count: n,
+            burst_duration_ms: 0.0,
+            dispatch_rate_per_s: None,
+            max_drift_ms,
+        };
+    }
+
+    let converge_threshold_micros = (bucket_ms as f64 * 1000.0 * CONVERGENCE_GAP_FRACTION) as i64;
+    let converge_at = (1..n).find(|&i| {
+        sorted[i].fired_at_micros - sorted[i - 1].fired_at_micros >= converge_threshold_micros
+    });
+
+    match converge_at {
+        Some(idx) => {
+            let burst_fire_count = idx;
+            let burst_duration_ms =
+                micros_to_ms(sorted[idx - 1].fired_at_micros - sorted[0].fired_at_micros);
+            let dispatch_rate_per_s = (burst_duration_ms > 0.0)
+                .then(|| burst_fire_count as f64 / (burst_duration_ms / 1000.0));
+            CatchupSummary {
+                n,
+                bucket_ms,
+                converged: true,
+                burst_fire_count,
+                burst_duration_ms,
+                dispatch_rate_per_s,
+                max_drift_ms,
+            }
+        }
+        None => CatchupSummary {
+            n,
+            bucket_ms,
+            converged: false,
+            burst_fire_count: n,
+            burst_duration_ms: micros_to_ms(
+                sorted[n - 1].fired_at_micros - sorted[0].fired_at_micros,
+            ),
+            dispatch_rate_per_s: None,
+            max_drift_ms,
+        },
+    }
+}
+
+pub fn render_catchup_markdown(s: &CatchupSummary) -> String {
+    let rate = s
+        .dispatch_rate_per_s
+        .map(|r| format!(" ({r:.1} fires/s)"))
+        .unwrap_or_default();
+    if s.converged {
+        format!(
+            "n={}, bucket={}ms: catch-up burst fired {} time(s) in {:.3} ms{rate}, then resumed real-time cadence. Worst overdue fire: {:.3} ms late.\n",
+            s.n, s.bucket_ms, s.burst_fire_count, s.burst_duration_ms, s.max_drift_ms
+        )
+    } else {
+        format!(
+            "n={}, bucket={}ms: did not converge back to real-time cadence within the collected window ({} fire(s) over {:.3} ms). Worst overdue fire: {:.3} ms late.\n",
+            s.n, s.bucket_ms, s.burst_fire_count, s.burst_duration_ms, s.max_drift_ms
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -755,5 +861,72 @@ mod tests {
         assert_eq!(iv.fire_count, 3);
         assert_eq!(iv.first_drift_ms, Some(443.0));
         assert_eq!(iv.last_drift_ms, Some(462.0));
+    }
+
+    // --- catch-up leg ----------------------------------------------------
+
+    // row()'s last arg fills both fired_at_micros and drift_micros; only
+    // fired_at_micros and bucket_ms matter for these tests.
+    fn fired_at(sequence: u32, bucket_ms: u64, fired_at_micros: i64) -> Row {
+        row(
+            "catchup",
+            mode::ONESHOT_ANCHORED,
+            bucket_ms,
+            sequence,
+            fired_at_micros,
+        )
+    }
+
+    #[test]
+    fn catchup_detects_a_bounded_burst_then_convergence() {
+        // bucket=100ms (threshold 50ms): three storm fires 5ms apart, then
+        // a 100ms gap, then two more 100ms-spaced fires (real cadence).
+        let rows = vec![
+            fired_at(0, 100, 0),
+            fired_at(1, 100, 5_000),
+            fired_at(2, 100, 10_000),
+            fired_at(3, 100, 110_000),
+            fired_at(4, 100, 210_000),
+        ];
+        let s = summarize_catchup(&rows);
+        assert!(s.converged);
+        assert_eq!(s.burst_fire_count, 3);
+        assert_eq!(s.burst_duration_ms, 10.0);
+        assert_eq!(s.dispatch_rate_per_s, Some(300.0));
+    }
+
+    #[test]
+    fn catchup_reports_no_convergence_when_no_gap_is_wide_enough() {
+        // bucket=1000ms (threshold 500ms): every gap is 10ms, never close
+        // to real cadence within the collected window.
+        let rows = vec![
+            fired_at(0, 1000, 0),
+            fired_at(1, 1000, 10_000),
+            fired_at(2, 1000, 20_000),
+        ];
+        let s = summarize_catchup(&rows);
+        assert!(!s.converged);
+        assert_eq!(s.burst_fire_count, 3);
+        assert!(s.dispatch_rate_per_s.is_none());
+    }
+
+    #[test]
+    fn catchup_markdown_names_convergence_and_the_rate() {
+        let rows = vec![
+            fired_at(0, 100, 0),
+            fired_at(1, 100, 5_000),
+            fired_at(2, 100, 10_000),
+            fired_at(3, 100, 110_000),
+        ];
+        let md = render_catchup_markdown(&summarize_catchup(&rows));
+        assert!(md.contains("resumed real-time cadence"));
+        assert!(md.contains("fires/s"));
+    }
+
+    #[test]
+    fn catchup_markdown_names_non_convergence_plainly() {
+        let rows = vec![fired_at(0, 1000, 0), fired_at(1, 1000, 10_000)];
+        let md = render_catchup_markdown(&summarize_catchup(&rows));
+        assert!(md.contains("did not converge"));
     }
 }

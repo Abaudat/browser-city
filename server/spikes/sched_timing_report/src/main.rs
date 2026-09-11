@@ -4,6 +4,7 @@
 //!   ladder <csv-file>...            median/p95/max/n + cumulative slip
 //!   observer <observer-log-file>    client-side receipt latency
 //!   republish <summary.json> <republish-leg.csv>   survival classification
+//!   catchup <csv-file>               backdated-seed convergence/burst rate
 //!
 //! Exits non-zero, with a message naming the offending file, on any
 //! unparseable input -- a silently-skipped bad row would corrupt a
@@ -15,8 +16,8 @@ use std::process::ExitCode;
 
 use sched_timing_report::{
     Row, classify_republish, parse_csv, parse_observer_log, parse_republish_summary,
-    render_latency_markdown, render_markdown, render_republish_markdown, summarize,
-    summarize_latencies,
+    render_catchup_markdown, render_latency_markdown, render_markdown, render_republish_markdown,
+    summarize, summarize_catchup, summarize_latencies,
 };
 
 fn read_or_fail(path: &str) -> Result<String, String> {
@@ -121,9 +122,32 @@ fn main() -> ExitCode {
             print!("{}", render_republish_markdown(&report));
             ExitCode::SUCCESS
         }
+        "catchup" => {
+            let [path] = rest else {
+                eprintln!("usage: sched_timing_report catchup <csv-file>");
+                return ExitCode::FAILURE;
+            };
+            let content = match read_or_fail(path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("sched_timing_report: FAIL -- {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            match parse_csv(&content) {
+                Ok(rows) => {
+                    print!("{}", render_catchup_markdown(&summarize_catchup(&rows)));
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("sched_timing_report: FAIL -- {path}: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         other => {
             eprintln!(
-                "sched_timing_report: unknown subcommand {other:?} (want ladder|observer|republish)"
+                "sched_timing_report: unknown subcommand {other:?} (want ladder|observer|republish|catchup)"
             );
             ExitCode::FAILURE
         }

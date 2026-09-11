@@ -152,6 +152,38 @@ pub fn seed_oneshot_anchored_ladder(ctx: &ReducerContext, run_id: String, bucket
     seed_oneshot(ctx, run_id, bucket_ms, mode::ONESHOT_ANCHORED);
 }
 
+/// Seeds one `ONESHOT_ANCHORED` probe whose origin is already
+/// `backdate_ms` in the past, so its first target (and likely several
+/// more) are already due at seed time -- simulating a pause (a deploy, a
+/// host stall) that a phase-preserving repeat resumes from (Tim's cycle-2
+/// direction). No compensation logic here or in `fire_probe`: this seeds
+/// the exact same `ONESHOT_ANCHORED` chain the ladder does, just with a
+/// backdated origin, so whatever catch-up behaviour follows is the
+/// platform's, not a shape written to hide it.
+#[reducer]
+pub fn seed_oneshot_anchored_backdated(
+    ctx: &ReducerContext,
+    run_id: String,
+    bucket_ms: u64,
+    backdate_ms: u64,
+) {
+    let now = ctx.timestamp;
+    let run_start_micros = micros_of(now) - backdate_ms as i64 * 1000;
+    let first_target_micros = run_start_micros + bucket_ms as i64 * 1000;
+    ctx.db.probe().insert(Probe {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Time(Timestamp::from_micros_since_unix_epoch(
+            first_target_micros,
+        )),
+        run_id,
+        mode: mode::ONESHOT_ANCHORED,
+        bucket_ms,
+        sequence: 0,
+        run_start_micros,
+        extra_writes: 0,
+    });
+}
+
 fn seed_oneshot(ctx: &ReducerContext, run_id: String, bucket_ms: u64, probe_mode: u8) {
     let now = ctx.timestamp;
     let at = now + TimeDuration::from_micros(bucket_ms as i64 * 1000);
