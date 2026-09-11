@@ -34,7 +34,26 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import BeginRestoreReducer from "./begin_restore_reducer";
+import FinishRestoreReducer from "./finish_restore_reducer";
 import ReseedCodesReducer from "./reseed_codes_reducer";
+import RestoreBuildingReducer from "./restore_building_reducer";
+import RestoreBuildingAreaReducer from "./restore_building_area_reducer";
+import RestoreCharacterReducer from "./restore_character_reducer";
+import RestoreCharacterIdentityReducer from "./restore_character_identity_reducer";
+import RestoreCitizenReducer from "./restore_citizen_reducer";
+import RestoreCitizenStateReducer from "./restore_citizen_state_reducer";
+import RestoreDemoPingReducer from "./restore_demo_ping_reducer";
+import RestoreFloorTransitionReducer from "./restore_floor_transition_reducer";
+import RestoreLayerCodeReducer from "./restore_layer_code_reducer";
+import RestoreMatterKindReducer from "./restore_matter_kind_reducer";
+import RestoreModuleOwnerReducer from "./restore_module_owner_reducer";
+import RestoreNodeKindReducer from "./restore_node_kind_reducer";
+import RestorePlacedObjectReducer from "./restore_placed_object_reducer";
+import RestoreProvisionReducer from "./restore_provision_reducer";
+import RestoreReasonCodeReducer from "./restore_reason_code_reducer";
+import RestoreRoomReducer from "./restore_room_reducer";
+import RestoreRoomAreaReducer from "./restore_room_area_reducer";
 import SendPingReducer from "./send_ping_reducer";
 
 // Import all procedure arg schemas
@@ -61,7 +80,26 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("begin_restore", BeginRestoreReducer),
+  __reducerSchema("finish_restore", FinishRestoreReducer),
   __reducerSchema("reseed_codes", ReseedCodesReducer),
+  __reducerSchema("restore_building", RestoreBuildingReducer),
+  __reducerSchema("restore_building_area", RestoreBuildingAreaReducer),
+  __reducerSchema("restore_character", RestoreCharacterReducer),
+  __reducerSchema("restore_character_identity", RestoreCharacterIdentityReducer),
+  __reducerSchema("restore_citizen", RestoreCitizenReducer),
+  __reducerSchema("restore_citizen_state", RestoreCitizenStateReducer),
+  __reducerSchema("restore_demo_ping", RestoreDemoPingReducer),
+  __reducerSchema("restore_floor_transition", RestoreFloorTransitionReducer),
+  __reducerSchema("restore_layer_code", RestoreLayerCodeReducer),
+  __reducerSchema("restore_matter_kind", RestoreMatterKindReducer),
+  __reducerSchema("restore_module_owner", RestoreModuleOwnerReducer),
+  __reducerSchema("restore_node_kind", RestoreNodeKindReducer),
+  __reducerSchema("restore_placed_object", RestorePlacedObjectReducer),
+  __reducerSchema("restore_provision", RestoreProvisionReducer),
+  __reducerSchema("restore_reason_code", RestoreReasonCodeReducer),
+  __reducerSchema("restore_room", RestoreRoomReducer),
+  __reducerSchema("restore_room_area", RestoreRoomAreaReducer),
   __reducerSchema("send_ping", SendPingReducer),
 );
 

@@ -157,6 +157,12 @@ export const ReasonCode = __t.object("ReasonCode", {
 });
 export type ReasonCode = __Infer<typeof ReasonCode>;
 
+export const RestoreState = __t.object("RestoreState", {
+  id: __t.u8(),
+  open: __t.bool(),
+});
+export type RestoreState = __Infer<typeof RestoreState>;
+
 export const Room = __t.object("Room", {
   roomId: __t.u64(),
   buildingId: __t.u64(),
