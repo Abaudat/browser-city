@@ -60,7 +60,7 @@ jobs:
               # check-agent-tooling.sh cross-checks the CLI's version pin
               # against this file too.
               - 'server/Cargo.toml'
-              # check-sched-timing-pin.sh (this job) cross-checks the
+              # check-spike-pin.sh (this job) cross-checks the
               # spike report's measured version against docs/architecture.md
               # (already listed above) and the pinned installer script,
               # already under scripts/**.
@@ -110,13 +110,14 @@ jobs:
           chmod +x "$RUNNER_TEMP/stub-bin/orca" "$RUNNER_TEMP/stub-bin/claude"
           echo "$RUNNER_TEMP/stub-bin" >> "$GITHUB_PATH"
       # No toolchain needed and sub-second to run -- fails before run-all.sh's
-      # much larger suite gets a chance to. check-sched-timing-pin.sh is
+      # much larger suite gets a chance to. check-spike-pin.sh is
       # four greps against committed files, not a server-workspace check
       # (it needs no cargo, no spacetime instance) -- it belongs here, not
       # in the `check` job, so a docs/spikes/** edit never spins up
       # `migrate`'s real local SpacetimeDB instance to protect it.
       - run: bash scripts/ci/check-agent-tooling.sh
-      - run: bash scripts/ci/check-sched-timing-pin.sh
+      - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.3-scheduled-reducer-timing.md sched-timing-spacetimedb-version
+      - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.4-backup-restore.md backup-spacetimedb-version
       - run: bash agentic-team/scripts/tests/run-all.sh
 
   check:
@@ -215,6 +216,12 @@ jobs:
       - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
       - name: story 1.2 AC3, proven against a real SpacetimeDB instance
         run: bash scripts/ci/check-live-migration.sh
+      # Story 1.4: the same job already starts a local instance, so the
+      # backup/restore round trip reuses it rather than spinning up a
+      # second one (Tim's direction) -- its own disposable port (3988),
+      # never 3987 (check-live-migration.sh's).
+      - name: story 1.4 AC3/AC4, the restore proven against a real SpacetimeDB instance
+        run: bash scripts/ci/check-backup-restore.sh
 
   coverage:
     name: coverage (sim)

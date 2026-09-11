@@ -128,6 +128,7 @@ GUARD_SECTIONS=(
   "Schema permanence"
   "World addressing"
   "Scheduled-reducer timing"
+  "Backup and restore"
 )
 
 for section in "${GUARD_SECTIONS[@]}"; do

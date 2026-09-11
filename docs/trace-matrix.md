@@ -93,6 +93,20 @@ discipline as the sections above.
 
 | Requirement | Status | Guard |
 | --- | --- | --- |
-| The spike report measured SpacetimeDB version never goes stale against the `server/Cargo.toml` pin, the `docs/architecture.md` stack line, or the pinned CLI installer exact patch | covered | `scripts/ci/check-sched-timing-pin.sh` |
+| The spike report measured SpacetimeDB version never goes stale against the `server/Cargo.toml` pin, the `docs/architecture.md` stack line, or the pinned CLI installer exact patch | covered | `scripts/ci/check-spike-pin.sh` |
 | The drift claims in `docs/spikes/1.3-scheduled-reducer-timing.md` are re-runnable with one command | covered | `scripts/dev/run-sched-timing-spike.sh` |
 | Whether a pending scheduled row survives a schema-changing publish, or a publish to Maincloud, is unmeasured (only a same-wasm, same-schema local republish was measured) | deferred | the deploy story |
+
+## Backup and restore
+
+Story 1.4: `docs/spikes/1.4-backup-restore.md`'s logical export/restore and
+the platform limitations it found. NFR39 splits into two rows: this story
+proves the restore has been tested; it does not wire a backup into a
+migration, because no Maincloud deploy workflow exists yet to wire it into
+(same Guard-path discipline as the sections above).
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| The restore has been tested: export -> restore -> verify against a real SpacetimeDB instance, including adversarial values, the auto_inc gap, and the refusal paths (NFR39) | covered | `scripts/ci/check-backup-restore.sh` |
+| The world is backed up before every migration (NFR39) | deferred | the deploy story -- no Maincloud deploy workflow exists yet to run `scripts/ops/export-world.sh` before a publish |
+| The spike report's measured SpacetimeDB version never goes stale against the same three pins story 1.3's does | covered | `scripts/ci/check-spike-pin.sh` |

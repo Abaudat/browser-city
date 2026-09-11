@@ -8,6 +8,10 @@ Cargo.lock.orig
 # Environment overrides
 spacetime.*.local.json
 
+# Local backup/restore exports (scripts/ops/) -- a plaintext export must
+# never touch git (docs/architecture.md's "Backup" section).
+.backup-export/
+
 # Client (Vite) build output and tooling caches
 client/node_modules/
 client/dist/

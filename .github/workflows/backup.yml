@@ -1,0 +1,174 @@
+name: backup
+
+# Story 1.4 (AC2/AC4): the unattended Maincloud export, and the one real
+# restore rehearsal. GitHub Actions is the only path to Maincloud (never a
+# local `spacetime publish` -- docs/architecture.md), so both legs live
+# here, using the exact same scripts/ops/*.sh CI and a human run locally,
+# never a second copy.
+#
+# Repo is public: anyone logged in can download an Actions artifact, so
+# the export is `gpg --symmetric` encrypted before `upload-artifact` --
+# see the "encrypt" step. A plaintext export never touches an artifact, a
+# log, or git.
+#
+# Until the deploy story creates the live database and its own CI
+# credential, `vars.BACKUP_DATABASE`/`secrets.SPACETIME_MAINCLOUD_TOKEN`/
+# `secrets.BACKUP_PASSPHRASE` do not exist yet -- every scheduled run
+# fails, on purpose (a missing secret is a failure, never a silent skip),
+# and files/updates the same tracking issue windows-install-check.yml
+# does. docs/trace-matrix.md's `deferred` row names this blocker.
+on:
+  schedule:
+    # An off-minute, not top-of-hour, per GitHub's own scheduling advice.
+    - cron: "37 3 * * *"
+  workflow_dispatch:
+    inputs:
+      rehearsal:
+        description: "Also run the restore rehearsal leg (publishes, restores and deletes two scratch Maincloud databases)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: backup-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  export:
+    name: export
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
+
+      - name: check required secrets/variables are present (a missing one is a failure, never a skip)
+        run: |
+          missing=""
+          [ -n "${{ secrets.SPACETIME_MAINCLOUD_TOKEN }}" ] || missing="$missing SPACETIME_MAINCLOUD_TOKEN"
+          [ -n "${{ secrets.BACKUP_PASSPHRASE }}" ] || missing="$missing BACKUP_PASSPHRASE"
+          [ -n "${{ vars.BACKUP_DATABASE }}" ] || missing="$missing vars.BACKUP_DATABASE"
+          if [ -n "$missing" ]; then
+            echo "::error::backup.yml: missing required secret(s)/variable(s):$missing -- see this workflow's own header comment"
+            exit 1
+          fi
+
+      # A schedule that silently stops running (GitHub disables a cron
+      # trigger after 60 days with no commits on a public repo; a secret
+      # can expire) reports nothing on its own -- Quentin's direction:
+      # treat staleness itself as a failure mode with its own check,
+      # never inferred from "no alert arrived".
+      - name: fail if the last successful export is too old
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LAST_SUCCESS="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow backup.yml --status success --json conclusion,createdAt --jq '.[0].createdAt' || true)"
+          if [ -z "$LAST_SUCCESS" ]; then
+            echo "backup: no prior successful 'backup' workflow run found -- fine for the very first run, otherwise investigate" >&2
+          else
+            LAST_EPOCH="$(date -u -d "$LAST_SUCCESS" +%s)"
+            NOW_EPOCH="$(date -u +%s)"
+            AGE_HOURS=$(( (NOW_EPOCH - LAST_EPOCH) / 3600 ))
+            if [ "$AGE_HOURS" -gt 36 ]; then
+              echo "::error::backup: the last successful export was ${AGE_HOURS}h ago ($LAST_SUCCESS) -- past the 36h staleness budget for a daily schedule. The schedule may have been disabled (60 days with no commits, on a public repo) or a secret may have expired."
+              exit 1
+            fi
+            echo "backup: last successful export was ${AGE_HOURS}h ago -- within budget" >&2
+          fi
+
+      - name: log into Maincloud with the backup service identity
+        run: spacetime login --token "${{ secrets.SPACETIME_MAINCLOUD_TOKEN }}" --no-browser
+
+      - name: export the live database
+        run: bash scripts/ops/export-world.sh "${{ vars.BACKUP_DATABASE }}" "$RUNNER_TEMP/export" --server maincloud
+
+      - name: freshness marker (Quentin's direction -- a schedule that silently stops running reports nothing)
+        run: date -u +%Y-%m-%dT%H:%M:%SZ > "$RUNNER_TEMP/export/exported-at-utc.txt"
+
+      - name: encrypt the export before it ever touches an artifact
+        run: |
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/export.tar.gz" export
+          gpg --batch --yes --symmetric --cipher-algo AES256 \
+            --passphrase "${{ secrets.BACKUP_PASSPHRASE }}" \
+            --output "$RUNNER_TEMP/export.tar.gz.gpg" "$RUNNER_TEMP/export.tar.gz"
+          rm -f "$RUNNER_TEMP/export.tar.gz"
+          rm -rf "$RUNNER_TEMP/export"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: world-export-${{ github.run_id }}
+          path: ${{ runner.temp }}/export.tar.gz.gpg
+          retention-days: 90
+
+      # A weekly/daily schedule reports to nobody by default. Never on a
+      # workflow_dispatch (the failing run itself is the signal there) --
+      # scripts/ci/report-scheduled-failure.sh, shared with
+      # windows-install-check.yml, never a second copy of this logic.
+      - name: file or update a tracking issue on scheduled failure
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          bash scripts/ci/report-scheduled-failure.sh \
+            "backup: scheduled export failed" \
+            "The daily backup export failed: $RUN_URL
+
+          A missing/expired secret, an unreachable Maincloud database, or a schema this export could not read are the likely causes -- see the run log. Close this once resolved."
+
+  rehearsal:
+    name: rehearsal
+    needs: export
+    if: github.event_name == 'workflow_dispatch' && inputs.rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
+      - run: spacetime login --token "${{ secrets.SPACETIME_MAINCLOUD_TOKEN }}" --no-browser
+
+      - name: publish the rehearsal source database
+        run: spacetime publish --server maincloud --no-config -y "browser-city-rehearsal-src-${{ github.run_id }}" --module-path server
+
+      - name: seed it with the same edge-case generator the local guard uses
+        run: bash scripts/ops/seed-edge-rows.sh "browser-city-rehearsal-src-${{ github.run_id }}" --server maincloud
+
+      - name: export through the real encrypted-artifact path
+        run: bash scripts/ops/export-world.sh "browser-city-rehearsal-src-${{ github.run_id }}" "$RUNNER_TEMP/rehearsal-export" --server maincloud
+      - run: |
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/rehearsal-export.tar.gz" rehearsal-export
+          gpg --batch --yes --symmetric --cipher-algo AES256 \
+            --passphrase "${{ secrets.BACKUP_PASSPHRASE }}" \
+            --output "$RUNNER_TEMP/rehearsal-export.tar.gz.gpg" "$RUNNER_TEMP/rehearsal-export.tar.gz"
+
+      - name: download and decrypt it, exactly as an operator would
+        run: |
+          gpg --batch --yes --decrypt --passphrase "${{ secrets.BACKUP_PASSPHRASE }}" \
+            --output "$RUNNER_TEMP/rehearsal-export-roundtrip.tar.gz" "$RUNNER_TEMP/rehearsal-export.tar.gz.gpg"
+          mkdir -p "$RUNNER_TEMP/rehearsal-export-decrypted"
+          tar -C "$RUNNER_TEMP/rehearsal-export-decrypted" -xzf "$RUNNER_TEMP/rehearsal-export-roundtrip.tar.gz"
+
+      - name: publish the rehearsal destination database
+        run: spacetime publish --server maincloud --no-config -y "browser-city-rehearsal-dst-${{ github.run_id }}" --module-path server
+
+      - name: restore, verify, and check auto_inc
+        run: |
+          bash scripts/ops/restore-world.sh "browser-city-rehearsal-dst-${{ github.run_id }}" "$RUNNER_TEMP/rehearsal-export-decrypted/rehearsal-export" --server maincloud
+          bash scripts/ops/export-world.sh "browser-city-rehearsal-dst-${{ github.run_id }}" "$RUNNER_TEMP/rehearsal-export-b" --server maincloud
+          bash scripts/ops/verify-world.sh "$RUNNER_TEMP/rehearsal-export" "$RUNNER_TEMP/rehearsal-export-b"
+
+      # `always()`: both scratch databases must never survive this job,
+      # rehearsal succeeded or not.
+      - name: delete both scratch databases
+        if: always()
+        run: |
+          spacetime delete --server maincloud --no-config -y "browser-city-rehearsal-src-${{ github.run_id }}" || true
+          spacetime delete --server maincloud --no-config -y "browser-city-rehearsal-dst-${{ github.run_id }}" || true
