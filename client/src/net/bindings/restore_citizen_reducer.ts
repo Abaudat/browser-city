@@ -18,4 +18,5 @@ export default {
   get rows() {
     return __t.array(Citizen);
   },
+  sequenceFloor: __t.u64(),
 };

@@ -18,4 +18,5 @@ export default {
   get rows() {
     return __t.array(FloorTransition);
   },
+  sequenceFloor: __t.u64(),
 };

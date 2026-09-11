@@ -18,4 +18,5 @@ export default {
   get rows() {
     return __t.array(DemoPing);
   },
+  sequenceFloor: __t.u64(),
 };

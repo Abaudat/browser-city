@@ -18,4 +18,5 @@ export default {
   get rows() {
     return __t.array(BuildingArea);
   },
+  sequenceFloor: __t.u64(),
 };
