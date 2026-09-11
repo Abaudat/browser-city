@@ -216,18 +216,22 @@ jobs:
             server
             server/tests/fixtures
       - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
-      - name: story 1.2 AC3, proven against a real SpacetimeDB instance
-        run: bash scripts/ci/check-live-migration.sh
       # Story 1.4: scripts/ops/'s own fast, stub-`spacetime` tests --
-      # never an instance, but they build server/tools/world_backup
+      # never a real instance, but they build server/tools/world_backup
       # (cargo/rustup already set up in this job), so they run here
-      # rather than in scripts-tests, which has neither.
+      # rather than in scripts-tests, which has neither. Runs before
+      # either real-instance step below (Quentin's fail-fast direction):
+      # a cheap, no-instance suite should fail before this job pays for
+      # starting one, not after.
       - name: story 1.4, scripts/ops/'s own fast failure-path tests
         run: bash scripts/ops/tests/run-all.sh
-      # Story 1.4: the same job already starts a local instance, so the
-      # backup/restore round trip reuses it rather than spinning up a
-      # second one (Tim's direction) -- its own disposable port (3988),
-      # never 3987 (check-live-migration.sh's).
+      - name: story 1.2 AC3, proven against a real SpacetimeDB instance
+        run: bash scripts/ci/check-live-migration.sh
+      # Story 1.4: its own disposable local instance and port (3988),
+      # never 3987 (check-live-migration.sh's) -- run in the same job
+      # rather than a second one only because a module build is already
+      # available here (Tim's direction), not because an instance is
+      # shared between the two steps.
       - name: story 1.4 AC3/AC4, the restore proven against a real SpacetimeDB instance
         run: bash scripts/ci/check-backup-restore.sh
 

@@ -49,10 +49,16 @@ fi
 bc_reject_unknown_args "$SCRIPT" "$USAGE" "$@"
 
 # A byte budget, never a row count: the whole command line, not just this
-# one argument, must fit -- 16,000 bytes is comfortably under Windows'
-# ~32,000-character command-line limit (the dev box) while still well
-# under Linux's 131,072-byte single-argument limit (CI, backup.yml).
-BATCH_BYTES="${BC_RESTORE_BATCH_BYTES:-16000}"
+# one argument, must fit. OS-aware, not one flat default: 100,000 bytes
+# on Linux (CI, backup.yml's rehearsal job) -- comfortably under Linux's
+# real 131,072-byte single-argv-element limit -- and 16,000 bytes
+# everywhere else (this dev box is Windows, whose whole-command-line
+# limit is ~32,000 characters, much tighter relative to a single
+# argument than Linux's own). `uname -s` -- never `$OSTYPE`, which is
+# bash-specific and not always set the same way under Git Bash/MSYS.
+DEFAULT_BATCH_BYTES=16000
+[ "$(uname -s)" = "Linux" ] && DEFAULT_BATCH_BYTES=100000
+BATCH_BYTES="${BC_RESTORE_BATCH_BYTES:-$DEFAULT_BATCH_BYTES}"
 
 MANIFEST="$EXPORT_DIR/manifest.json"
 [ -f "$MANIFEST" ] || bc_ops_die "$SCRIPT" "$MANIFEST not found -- is '$EXPORT_DIR' an export-world.sh export?"

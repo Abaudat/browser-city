@@ -7,32 +7,28 @@
 BC_OPS_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BC_REPO_ROOT="$(cd -- "$BC_OPS_DIR/../.." && pwd)"
 BC_SNAPSHOT="$BC_REPO_ROOT/server/schema.snapshot.json"
-BC_WB_BUILT=""
 
 bc_ops_die() { # <script-name> <message>
   echo "$1: FAIL -- $2" >&2
   exit 1
 }
 
-# bc_wb <args...> -- runs the world_backup binary, building it (release,
-# idempotent -- a no-op rebuild when nothing changed) on first use rather
-# than requiring a separate CI step. Never `jq` for a row value: see
-# server/tools/world_backup/src/lib.rs's module doc for why (u64/
-# chunk_key precision, confirmed empirically).
+# bc_wb <args...> -- runs the world_backup binary. `cargo build` runs on
+# every call, deliberately, not guarded behind "does a binary already
+# exist": a stale binary left from a previous `world_backup` edit would
+# otherwise be used silently (confirmed: a bash-level "built once" guard
+# does not actually run once per process, since most callers invoke
+# `bc_wb` from a `$(...)` subshell, which never shares that guard variable
+# back with the caller -- every subshell saw "not built yet" and skipped
+# straight to using the stale binary any earlier sibling call had left).
+# `cargo build` itself is the idempotent check (a few tens of
+# milliseconds once nothing changed) -- `-q` keeps that quiet, stderr
+# kept for a real build failure.
 bc_wb() {
+  ( cd "$BC_REPO_ROOT/server" && cargo build -q -p world_backup --release ) \
+    || bc_ops_die "bc_wb" "could not build server/tools/world_backup"
   local bin="$BC_REPO_ROOT/server/target/release/world_backup"
   [ -x "$bin" ] || bin="$bin.exe"
-  if [ ! -x "$bin" ]; then
-    # `cargo build` is idempotent (a no-op the moment nothing changed),
-    # but re-invoking it once per call still costs a process spawn and
-    # prints a status line every time -- built once, eagerly, by whichever
-    # caller (a shell function, so this runs at most once per process
-    # regardless of how many subshells later call `bc_wb`) hits a missing
-    # binary first, quietly (stdout discarded, stderr kept for a real
-    # build failure).
-    ( cd "$BC_REPO_ROOT/server" && cargo build -p world_backup --release >/dev/null ) \
-      || bc_ops_die "bc_wb" "could not build server/tools/world_backup"
-  fi
   [ -x "$bin" ] || bc_ops_die "bc_wb" "world_backup binary not found after building it"
   "$bin" "$@"
 }
@@ -62,6 +58,30 @@ $(cat "$errlog")"
   fi
   rm -f "$errlog"
   printf '%s' "$out"
+}
+
+# bc_sql_exec <script> <db> <server-args...> -- <statement> -- runs a
+# non-SELECT statement (INSERT/DELETE), discarding stdout. Same fail-loud
+# contract as bc_sql_json, no `--format json` (nothing to parse).
+bc_sql_exec() {
+  local script="$1" db="$2"; shift 2
+  local -a server_args=()
+  while [ "$#" -gt 1 ]; do
+    server_args+=("$1")
+    shift
+  done
+  local statement="$1"
+  local errlog
+  errlog="$(mktemp)"
+  if ! spacetime sql "$db" "${server_args[@]}" --no-config -y "$statement" >/dev/null 2>"$errlog"; then
+    bc_ops_die "$script" "'spacetime sql' failed for: $statement
+$(cat "$errlog")"
+  fi
+  if grep -qiE '^Error' "$errlog"; then
+    bc_ops_die "$script" "'spacetime sql' reported an error for: $statement
+$(cat "$errlog")"
+  fi
+  rm -f "$errlog"
 }
 
 # bc_call <script> <db> <server-args...> -- <reducer> <args-json> -- calls

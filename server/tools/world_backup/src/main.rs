@@ -58,6 +58,13 @@ fn run(args: &[String]) -> Result<()> {
                 println!("{k:?}");
             }
         }
+        "column-values" => {
+            // column-values <response.json> <column-name>
+            let resp = parse_response(&read_file(&args[2])?)?;
+            for v in column_values(&resp, &args[3])? {
+                println!("{v}");
+            }
+        }
         "row-count" => {
             let resp = parse_response(&read_file(&args[2])?)?;
             println!("{}", resp.rows.len());
@@ -106,6 +113,16 @@ fn run(args: &[String]) -> Result<()> {
             for c in &table.columns {
                 println!("{}", normalize_name(&c.name));
             }
+        }
+        "sql-probeable-autoinc-tables" => {
+            let snapshot = read_snapshot(&args[2])?;
+            for accessor in sql_probeable_autoinc_tables(&snapshot) {
+                println!("{accessor}");
+            }
+        }
+        "auto-inc-column" => {
+            let snapshot = read_snapshot(&args[2])?;
+            println!("{}", auto_inc_column(&snapshot, &args[3])?);
         }
         "snapshot-tables" => {
             let snapshot = read_snapshot(&args[2])?;

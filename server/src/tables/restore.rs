@@ -76,10 +76,50 @@ fn require_restore_open(ctx: &ReducerContext) -> Result<(), String> {
     }
 }
 
-/// Opens a restore. Refuses unless every table that is not `init`-seeded
-/// (`module_owner`, the five code tables) is empty -- the guard against
-/// restoring over a live world. Idempotent-refusing: calling it again
-/// while a restore is already open is an error, not a silent no-op, so a
+/// `init` seeds these (`module_owner`, the five code tables) -- restore
+/// *replaces* their content rather than requiring them empty. The single
+/// source of truth for which tables that is: `bounds/tests/
+/// restore_coverage.rs`'s text scan reads this constant's own source
+/// (never a second, hand-copied list) and fails CI if a non-scheduled
+/// table is in neither this list nor [`NON_INIT_SEEDED_TABLES`].
+#[allow(dead_code)] // read by `restore_coverage.rs` as source text, not Rust code
+const INIT_SEEDED_TABLES: &[&str] = &[
+    "module_owner",
+    "matter_kind",
+    "provision",
+    "reason_code",
+    "node_kind",
+    "layer_code",
+];
+
+/// Every non-scheduled table `init` does *not* seed -- `begin_restore`
+/// refuses unless every one of these is empty. The single source of
+/// truth: `bounds/tests/restore_coverage.rs`'s text scan reads this
+/// constant's own source and fails CI if a table here has no matching
+/// `ctx.db.<accessor>().iter().next().is_some()` check in
+/// `begin_restore`'s body below, or if a non-scheduled table is in
+/// neither this list nor [`INIT_SEEDED_TABLES`] -- so a table added next
+/// month without an entry here is a build failure, not a silent hole in
+/// "never restore over a live world".
+#[allow(dead_code)] // read by `restore_coverage.rs` as source text, not Rust code
+const NON_INIT_SEEDED_TABLES: &[&str] = &[
+    "demo_ping",
+    "building",
+    "building_area",
+    "character",
+    "character_identity",
+    "citizen",
+    "citizen_state",
+    "floor_transition",
+    "placed_object",
+    "room",
+    "room_area",
+];
+
+/// Opens a restore. Refuses unless every table in
+/// [`NON_INIT_SEEDED_TABLES`] is empty -- the guard against restoring
+/// over a live world. Idempotent-refusing: calling it again while a
+/// restore is already open is an error, not a silent no-op, so a
 /// half-finished restore is never quietly resumed with a different
 /// export.
 #[spacetimedb::reducer]
@@ -392,6 +432,26 @@ pub fn restore_citizen_state(ctx: &ReducerContext, rows: Vec<CitizenState>) -> R
 pub fn restore_module_owner(ctx: &ReducerContext, rows: Vec<ModuleOwner>) -> Result<(), String> {
     require_owner(ctx)?;
     require_restore_open(ctx)?;
+    // The module's own guard against locking the operator out, not only
+    // restore-world.sh's early, friendlier message (Tim's direction):
+    // an empty or foreign `module_owner.jsonl` must never be allowed to
+    // delete the only owner this reducer is about to remove.
+    match rows.as_slice() {
+        [row] if row.owner == ctx.sender() => {}
+        [row] => {
+            return Err(format!(
+                "restore_module_owner refuses to restore an owner ({}) that is not the caller ({}) -- require_owner would lock the operator out of the restored world",
+                row.owner,
+                ctx.sender()
+            ));
+        }
+        other => {
+            return Err(format!(
+                "restore_module_owner requires exactly one row, got {}",
+                other.len()
+            ));
+        }
+    }
     let existing: Vec<u8> = ctx.db.module_owner().iter().map(|r| r.id).collect();
     for id in existing {
         ctx.db.module_owner().id().delete(id);

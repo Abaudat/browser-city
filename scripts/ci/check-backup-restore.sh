@@ -17,26 +17,44 @@
 #      (`seed-edge-rows.sh` never overwrites it -- see its own comment);
 #   2. export -> restore -> export -> verify-world.sh's byte-for-byte
 #      compare, for every non-scheduled table, no exceptions;
-#   3. COUNT(*) queried directly against both live databases (source and
+#   3. the auto_inc gap-fill loop is actually exercised, not merely
+#      present: `floor_transition` is seeded with real holes (a single
+#      deleted row, plus ~2,000 bulk-inserted ids deleted down to a
+#      handful) before export, so restoring it *requires* the
+#      delete-and-retry branch of `restore_autoinc_rows`, not just the
+#      "already exact" branch a gap-free seed would only ever exercise.
+#      A real ~100,000-id gap is measured, not skipped -- but in
+#      `scripts/dev/run-backup-perf.sh`'s gappy leg, not here: bulk
+#      seeding one at PR time would blow Tim's <2-minute budget for this
+#      check, so this file proves *correctness* at a real but modest
+#      scale, and the perf harness proves *scale* separately;
+#   4. an overshoot (a restore that skips an id) aborts the reducer and
+#      leaves no partial row -- the whole call rolls back, not just the
+#      offending insert;
+#   5. COUNT(*) queried directly against both live databases (source and
 #      restored), independent of the export files;
-#   4. literal sentinel assertions, by column on a known row (never a
-#      bare grep against raw JSON that could match anywhere);
-#   5. the auto_inc gap this spike found is **fixed**, not documented:
+#   6. literal sentinel assertions, by exact column value on a known row
+#      (never a bare grep against raw JSON that could match a substring
+#      anywhere) -- including a Timestamp and an Identity, the two types
+#      this story's restore mechanism made possible at all;
+#   7. the auto_inc gap this spike found is **fixed**, not documented:
 #      the post-restore auto-generated id must exceed the restored
 #      maximum, strictly required, never accepted as a "known gap";
-#   6. a table whose rows do not fit one byte-budgeted batch (a 4KB+
+#   8. a table whose rows do not fit one byte-budgeted batch (a 4KB+
 #      string) restores correctly across multiple batches;
-#   7. scheduled tables restore to nothing (derived state): the restored
+#   9. scheduled tables restore to nothing (derived state): the restored
 #      database's scheduled tables match a freshly published reference
-#      database's, byte for byte;
-#   8. module_owner has exactly one row after restore and it is the
+#      database's, by row count -- both are always empty today, since
+#      schedules are derived state and this restore never writes one;
+#  10. module_owner has exactly one row after restore and it is the
 #      exported owner; require_owner accepts that owner and rejects an
 #      anonymous caller (reseed_codes, as check-live-migration.sh proves
 #      for AC3 -- proven again here because restore is what could have
 #      broken it, by leaving two owner rows or the wrong one);
-#   9. four refusals, each asserted directly: a non-fresh target, a
-#      schema mismatch, a wrong restoring identity, and a `restore_*`
-#      call with no restore open.
+#  11. five refusals, each asserted directly: a non-fresh target, a
+#      schema mismatch, a wrong restoring identity, a `restore_*` call
+#      with no restore open, and `restore_module_owner` given a row
+#      whose owner is not the caller.
 set -uo pipefail
 SCRIPT="check-backup-restore"
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -84,10 +102,41 @@ done
 publish() { # <db> <log-file>
   spacetime publish --server "$SERVER_URL" --no-config -y "$1" --module-path "$REPO_ROOT/server" >"$2" 2>&1
 }
+sql_exec() { # <db> <statement> <log-file>
+  spacetime sql "$1" "${SERVER_ARGS[@]}" --no-config -y "$2" >"$3" 2>&1
+}
 row_count_live() { # <db> <table>
   local resp="$WORK/count-$1-$2.json"
   bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM $2" >"$resp"
   bc_wb row-count "$resp"
+}
+column_values_live() { # <db> <table> <column>
+  local resp="$WORK/colval-$1-$2-$3.json"
+  bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM $2" >"$resp"
+  bc_wb column-values "$resp" "$3"
+}
+# values_contain <needle> <newline-separated haystack> -- exact,
+# line-for-line equality, never a substring search. Deliberately never
+# `grep -F`/`grep -x`: confirmed empirically that the `grep` on this dev
+# box's PATH reports no match for an exact multi-byte UTF-8 (emoji) line
+# against itself, byte-for-byte identical per `cmp` -- a `grep`-build
+# quirk, not a real mismatch. Plain bash string equality has no such bug.
+values_contain() {
+  local needle="$1" line
+  while IFS= read -r line; do
+    [ "$line" = "$needle" ] && return 0
+  done <<<"$2"
+  return 1
+}
+# max_id_live <db> <table> -- the table's own real primary-key column,
+# max'd as an exact integer (never through a machine float, and never row
+# count, which under-counts the moment a table has any gap): empty if the
+# table has no rows. Mirrors verify-independent.sh's own helper of the
+# same name and contract.
+max_id_live() {
+  local resp="$WORK/maxid-$1-$2.json"
+  bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM $2" >"$resp"
+  bc_wb rows-canonical "$BC_SNAPSHOT" "$2" "$resp" | sed -E 's/^\[([0-9]+),?.*/\1/' | sort -g | tail -n1
 }
 
 # --- 1: seed every seedable non-scheduled table (module_owner is the one
@@ -116,6 +165,43 @@ BIG_MESSAGE="$(printf 'x%.0s' $(seq 1 20000))"
 spacetime call "$SRC" "${SERVER_ARGS[@]}" --no-config -y send_ping "\"$BIG_MESSAGE\"" >"$DATA_DIR/big-ping.log" 2>&1 \
   || fail "seeding the oversized demo_ping row failed" "$DATA_DIR/big-ping.log"
 
+# --- extra: real holes in an auto_inc id space (Quentin's/Tim's
+# direction -- `seed-edge-rows.sh`'s own ids are always contiguous
+# 1..n, so without this the gap-fill loop's delete-and-retry branch
+# would never run at all, in this check or in run-backup-perf.sh's
+# gap-free legs). `floor_transition` already holds 3 seeded rows
+# (ids 1-3, no Timestamp column, SQL-writable) -----------------------
+sql_exec "$SRC" "DELETE FROM floor_transition WHERE transition_id = 2" "$DATA_DIR/gap-delete-1.log" \
+  || fail "deleting floor_transition id 2 (the small gap) failed" "$DATA_DIR/gap-delete-1.log"
+GAP_N=2000
+GAP_BATCH=200
+gap_start=0
+while [ "$gap_start" -lt "$GAP_N" ]; do
+  tuples=""
+  i="$gap_start"
+  gap_end=$((gap_start + GAP_BATCH))
+  [ "$gap_end" -gt "$GAP_N" ] && gap_end="$GAP_N"
+  while [ "$i" -lt "$gap_end" ]; do
+    id=$((i + 10))
+    [ -n "$tuples" ] && tuples="$tuples,"
+    tuples="${tuples}(0,$id,$id,0,$id,$id,0,$id)"
+    i=$((i + 1))
+  done
+  sql_exec "$SRC" "INSERT INTO floor_transition (transition_id, x, y, floor, target_x, target_y, target_floor, chunk_key) VALUES $tuples" "$DATA_DIR/gap-bulk-insert.log" \
+    || fail "bulk-inserting the gap range into floor_transition failed" "$DATA_DIR/gap-bulk-insert.log"
+  gap_start="$gap_end"
+done
+# Keep a handful of low ids and a handful of tail ids, delete everything
+# bulk-inserted between them -- a real, exported gap of roughly
+# ${GAP_N} ids (never merely a deleted-then-nothing-exported range: a
+# tail row must survive at a high id, or restore's gap-fill loop would
+# have nothing past 10 left to reach, and this would test nothing). A
+# smaller, PR-time-budgeted stand-in for the >=100k gap
+# `scripts/dev/run-backup-perf.sh`'s gappy leg measures.
+sql_exec "$SRC" "DELETE FROM floor_transition WHERE transition_id > 10 AND transition_id < $((GAP_N - 1))" "$DATA_DIR/gap-delete-2.log" \
+  || fail "deleting the middle of the bulk-inserted gap range failed" "$DATA_DIR/gap-delete-2.log"
+ok "'floor_transition' seeded with real id gaps (one deleted row, one ~${GAP_N}-id gap) before export"
+
 # --- 2: export -> restore -> export -> verify (byte for byte) -----------
 EXPORT_A="$WORK/export-a"
 bash "$OPS/export-world.sh" "$SRC" "$EXPORT_A" --server "$SERVER_URL" >"$DATA_DIR/export-a.log" 2>&1 || fail "export-world.sh failed on '$SRC'" "$DATA_DIR/export-a.log"
@@ -123,7 +209,7 @@ bash "$OPS/export-world.sh" "$SRC" "$EXPORT_A" --server "$SERVER_URL" >"$DATA_DI
 DST=bc-backup-dst
 publish "$DST" "$DATA_DIR/dst-publish.log" || fail "could not publish '$DST'" "$DATA_DIR/dst-publish.log"
 BC_RESTORE_BATCH_BYTES=4000 bash "$OPS/restore-world.sh" "$DST" "$EXPORT_A" --server "$SERVER_URL" >"$DATA_DIR/restore.log" 2>&1 \
-  || fail "restore-world.sh failed restoring '$DST' from '$SRC's export" "$DATA_DIR/restore.log"
+  || fail "restore-world.sh failed restoring '$DST' from '$SRC's export -- with real id gaps seeded, this exercises the gap-fill loop's delete-and-retry branch, not only the always-exact branch a contiguous seed would" "$DATA_DIR/restore.log"
 cat "$DATA_DIR/restore.log" >&2
 grep -qE "'demo_ping' restored [0-9]+ row\(s\) in [2-9][0-9]* batch\(es\)" "$DATA_DIR/restore.log" \
   || fail "'demo_ping' (which includes a 20KB message) did not restore across multiple batches at a 4000-byte budget -- byte-budget batching is not exercised" "$DATA_DIR/restore.log"
@@ -132,10 +218,56 @@ ok "a row too big for one batch restores across multiple byte-budgeted batches"
 EXPORT_B="$WORK/export-b"
 bash "$OPS/export-world.sh" "$DST" "$EXPORT_B" --server "$SERVER_URL" >"$DATA_DIR/export-b.log" 2>&1 || fail "export-world.sh failed on '$DST'" "$DATA_DIR/export-b.log"
 
-bash "$OPS/verify-world.sh" "$EXPORT_A" "$EXPORT_B" >"$DATA_DIR/verify.log" 2>&1 || fail "verify-world.sh found a mismatch between '$SRC' and the restored '$DST'" "$DATA_DIR/verify.log"
-ok "$(tail -n1 "$DATA_DIR/verify.log")"
+bash "$OPS/verify-world.sh" "$EXPORT_A" "$EXPORT_B" >"$DATA_DIR/verify.log" 2>&1 || fail "verify-world.sh found a mismatch between '$SRC' and the restored '$DST' -- across a table with real id gaps, this is the gap-fill loop's own correctness proof" "$DATA_DIR/verify.log"
+ok "$(tail -n1 "$DATA_DIR/verify.log") (including 'floor_transition', seeded with real id gaps)"
 
-# --- 3/5: COUNT(*) on both live databases and the auto_inc sequence
+# --- 4: an overshoot rolls back the whole call, no partial row left ------
+FRESH_OVERSHOOT=bc-backup-overshoot
+publish "$FRESH_OVERSHOOT" "$DATA_DIR/overshoot-publish.log" || fail "could not publish '$FRESH_OVERSHOOT'" "$DATA_DIR/overshoot-publish.log"
+spacetime call "$FRESH_OVERSHOOT" "${SERVER_ARGS[@]}" --no-config -y begin_restore '[]' >"$DATA_DIR/overshoot-begin.log" 2>&1 \
+  || fail "begin_restore failed against '$FRESH_OVERSHOOT'" "$DATA_DIR/overshoot-begin.log"
+spacetime call "$FRESH_OVERSHOOT" "${SERVER_ARGS[@]}" --no-config -y restore_building_area '[[5,1,0,0,0,0,0,0]]' >"$DATA_DIR/overshoot-first.log" 2>&1 \
+  || fail "restoring building_area id 5 failed" "$DATA_DIR/overshoot-first.log"
+if spacetime call "$FRESH_OVERSHOOT" "${SERVER_ARGS[@]}" --no-config -y restore_building_area '[[3,2,0,0,0,0,0,0]]' >"$DATA_DIR/overshoot-second.log" 2>&1; then
+  fail "restore_building_area accepted an id (3) behind the sequence's current position (past 5); it must overshoot and abort" "$DATA_DIR/overshoot-second.log"
+fi
+grep -qF "overshot the exported id 3" "$DATA_DIR/overshoot-second.log" || fail "the overshoot refusal did not name the reason" "$DATA_DIR/overshoot-second.log"
+AFTER_OVERSHOOT="$(row_count_live "$FRESH_OVERSHOOT" building_area)"
+[ "$AFTER_OVERSHOOT" -eq 1 ] || fail "building_area has $AFTER_OVERSHOOT row(s) after the failed overshoot call, expected exactly 1 (id 5) -- the failed call's own inserts/deletes must roll back entirely" "$DATA_DIR/overshoot-second.log"
+ok "an overshoot aborts the whole reducer call and leaves no partial row (building_area still has exactly its one row)"
+
+# --- tail-deletion: the sequence ends at the restored MAXIMUM id, not at
+# the source's live sequence position, if the source's own tail rows were
+# deleted after being inserted -- docs/spikes/1.4-backup-restore.md
+# records this precisely rather than claiming "ends exactly where the
+# export's sequence was". Pinned here, not merely asserted in prose. -----
+TAIL_SRC=bc-backup-tail
+publish "$TAIL_SRC" "$DATA_DIR/tail-publish.log" || fail "could not publish '$TAIL_SRC'" "$DATA_DIR/tail-publish.log"
+sql_exec "$TAIL_SRC" "INSERT INTO building_area (area_id, building_id, x0, y0, x1, y1, floor, chunk_key) VALUES (0,1,0,0,0,0,0,0),(0,1,0,0,0,0,0,0),(0,1,0,0,0,0,0,0)" "$DATA_DIR/tail-insert.log" \
+  || fail "seeding building_area ids 1-3 in '$TAIL_SRC' failed" "$DATA_DIR/tail-insert.log"
+sql_exec "$TAIL_SRC" "DELETE FROM building_area WHERE area_id = 3" "$DATA_DIR/tail-delete.log" \
+  || fail "deleting building_area id 3 (the tail row) failed" "$DATA_DIR/tail-delete.log"
+TAIL_EXPORT="$WORK/tail-export"
+bash "$OPS/export-world.sh" "$TAIL_SRC" "$TAIL_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/tail-export.log" 2>&1 || fail "export-world.sh failed on '$TAIL_SRC'" "$DATA_DIR/tail-export.log"
+TAIL_DST=bc-backup-tail-dst
+publish "$TAIL_DST" "$DATA_DIR/tail-dst-publish.log" || fail "could not publish '$TAIL_DST'" "$DATA_DIR/tail-dst-publish.log"
+bash "$OPS/restore-world.sh" "$TAIL_DST" "$TAIL_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/tail-restore.log" 2>&1 \
+  || fail "restore-world.sh failed restoring '$TAIL_DST'" "$DATA_DIR/tail-restore.log"
+# The documented (not merely assumed) behaviour: the restored sequence
+# reaches id 2 (the restored maximum), never id 3 (the source's live
+# sequence position before its tail row was deleted) -- so the very next
+# auto-generated insert on the restored database gets id 3, which is
+# fine (it was never present in restored data) but would NOT be fine if
+# the source's own sequence had continued operating in parallel, since
+# it too would eventually hand out id 3 or higher. This is the named,
+# tested residual gap docs/trace-matrix.md records as `deferred`.
+sql_exec "$TAIL_DST" "INSERT INTO building_area (area_id, building_id, x0, y0, x1, y1, floor, chunk_key) VALUES (0,9,0,0,0,0,0,0)" "$DATA_DIR/tail-probe.log" \
+  || fail "the post-restore auto_inc probe on '$TAIL_DST' failed" "$DATA_DIR/tail-probe.log"
+TAIL_NEW_ID="$(max_id_live "$TAIL_DST" building_area)"
+[ "$TAIL_NEW_ID" = "3" ] || fail "expected the post-restore probe on '$TAIL_DST' to land on id 3 (the restored maximum + 1, documented, not the source's pre-deletion sequence position); got $TAIL_NEW_ID" "$DATA_DIR/tail-probe.log"
+ok "tail-deletion: the restored sequence reaches only the restored maximum id (documented in docs/spikes/1.4-backup-restore.md and docs/trace-matrix.md, not silently assumed away)"
+
+# --- 5/7: COUNT(*) on both live databases and the auto_inc sequence
 # strictly advancing -- scripts/ops/verify-independent.sh, shared with
 # .github/workflows/backup.yml's rehearsal job (Tim's direction: the
 # Maincloud leg runs the same independent oracles the local guard does,
@@ -144,22 +276,40 @@ bash "$OPS/verify-independent.sh" "$SRC" "$DST" --server "$SERVER_URL" >"$DATA_D
   || fail "verify-independent.sh found a mismatch between '$SRC' and restored '$DST'" "$DATA_DIR/verify-independent.log"
 cat "$DATA_DIR/verify-independent.log" >&2
 
-# --- 4: literal sentinel assertions, by column on a known row
-# (Quentin's oracle (c) -- never a bare grep that could match anywhere) ---
-SENTINEL_RESP="$WORK/sentinel.json"
-bc_sql_json "$SCRIPT" "$DST" "${SERVER_ARGS[@]}" "SELECT * FROM building_area" >"$SENTINEL_RESP"
-grep -oE '"chunk_key"' "$SENTINEL_RESP" >/dev/null || fail "'building_area' schema missing 'chunk_key'"
-grep -qF '18446744073709551615' "$SENTINEL_RESP" || fail "u64::MAX sentinel value not found in restored 'building_area'"
-grep -qF -- '-2147483648' "$SENTINEL_RESP" || fail "i32::MIN sentinel value not found in restored 'building_area'"
-grep -qF -- '-128' "$SENTINEL_RESP" || fail "i8 floor (-128) sentinel value not found in restored 'building_area'"
+# --- 6: literal sentinel assertions, by exact column value on a known
+# row (Quentin's oracle (c) -- never a bare grep that could match a
+# substring anywhere) -------------------------------------------------
+# The exact raw bytes seed-edge-rows.sh's own generator
+# (server/tools/world_backup's `edge_values(ColKind::String)`) feeds in --
+# duplicated here as raw bytes, not as an already-JSON-escaped literal,
+# with `jq` computing the one true JSON-escaped form to compare against
+# (never hand-escaped: comparing raw control characters against
+# `column-values`'s JSON-escaped output would never match).
+EXPECT_STRING="adversarial: '\"quote\"'"$'\t'"TAB"$'\n'"NEWLINE"$'\r'"CR\\backslash\\'literal-\\n'pipe|emoji"$'\xf0\x9f\x98\x80'
+# `tr -d '\r'`: some `jq` builds emit CRLF on Windows (scripts/ci/
+# check-agent-tooling.sh's own `jqr` helper works around the same thing).
+EXPECT_STRING_JSON="$(jq -Rn --arg s "$EXPECT_STRING" '$s' | tr -d '\r')"
+CHUNK_KEYS="$(column_values_live "$DST" building_area chunk_key)"
+values_contain '18446744073709551615' "$CHUNK_KEYS" || fail "u64::MAX not found exactly in restored 'building_area.chunk_key'"
+X0_VALUES="$(column_values_live "$DST" building_area x0)"
+values_contain '-2147483648' "$X0_VALUES" || fail "i32::MIN not found exactly in restored 'building_area.x0'"
+FLOOR_VALUES="$(column_values_live "$DST" building_area floor)"
+values_contain '-128' "$FLOOR_VALUES" || fail "i8 floor (-128) not found exactly in restored 'building_area.floor'"
+NAME_VALUES="$(column_values_live "$DST" layer_code name)"
+values_contain "$EXPECT_STRING_JSON" "$NAME_VALUES" \
+  || fail "the exact adversarial string (quote/tab/newline/CR/backslash/emoji) was not found byte-exact in restored 'layer_code.name'"
+CREATED_AT_VALUES="$(column_values_live "$DST" building created_at)"
+values_contain '[0]' "$CREATED_AT_VALUES" || fail "Timestamp 0 micros not found exactly in restored 'building.created_at'"
+values_contain '[9223372036854775807]' "$CREATED_AT_VALUES" || fail "Timestamp i64::MAX micros not found exactly in restored 'building.created_at'"
+IDENTITY_VALUES="$(column_values_live "$DST" character_identity identity)"
+# SQL trims an Identity's leading zero nibbles on read (docs/spikes/
+# 1.4-backup-restore.md's own documented quirk) -- never exactly 64 hex
+# digits on the way back out, so this only asserts the shape, not a
+# fixed width.
+grep -qE '^\["0x[0-9a-f]+"\]$' <<<"$IDENTITY_VALUES" || fail "no well-formed synthetic Identity ('0x' + hex digits) found in restored 'character_identity.identity'"
+ok "sentinel values (u64::MAX, i32::MIN, i8 floor, the full adversarial string, a Timestamp at 0 and i64::MAX micros, and an Identity) read back exactly, by column, from the restored database"
 
-bc_sql_json "$SCRIPT" "$DST" "${SERVER_ARGS[@]}" "SELECT * FROM layer_code" >"$WORK/layer_code.json"
-LAYER_CANON="$WORK/layer_code.jsonl"
-bc_wb rows-canonical "$BC_SNAPSHOT" layer_code "$WORK/layer_code.json" >"$LAYER_CANON"
-grep -qF '\"quote\"' "$LAYER_CANON" || fail "adversarial string sentinel (quote/tab/newline/CR/backslash/emoji) not found in restored 'layer_code', by row"
-ok "sentinel values (u64::MAX, i32::MIN, i8 floor, adversarial string) read back from named columns of the restored database"
-
-# --- 6: scheduled tables restore to nothing -- compared against a
+# --- 9: scheduled tables restore to nothing -- compared against a
 # freshly published reference database, byte for byte ---------------------
 REF=bc-backup-ref
 publish "$REF" "$DATA_DIR/ref-publish.log" || fail "could not publish '$REF'" "$DATA_DIR/ref-publish.log"
@@ -169,9 +319,9 @@ while IFS= read -r table; do
   b="$(row_count_live "$DST" "$table")"
   [ "$a" = "$b" ] || fail "scheduled table '$table': restored '$DST' has $b row(s), a freshly published reference has $a -- schedules are derived state and must never be restored"
 done <<< "$(bc_table_names scheduled)"
-ok "every scheduled table in the restored database matches a freshly published reference (derived state, never restored)"
+ok "every scheduled table in the restored database matches a freshly published reference (compared by row count -- schedules are derived state, never restored, so both are always empty today)"
 
-# --- 7: module_owner / require_owner --------------------------------------
+# --- 10: module_owner / require_owner --------------------------------------
 OWNER_COUNT="$(row_count_live "$DST" module_owner)"
 [ "$OWNER_COUNT" -eq 1 ] || fail "restored 'module_owner' has $OWNER_COUNT row(s), expected exactly 1"
 ok "restored 'module_owner' has exactly one row"
@@ -185,14 +335,14 @@ fi
 grep -qF "$OWNER_REJECTION_PATTERN" "$DATA_DIR/reseed-anon.log" || fail "reseed_codes rejected the anonymous call, but not with require_owner's own message" "$DATA_DIR/reseed-anon.log"
 ok "require_owner accepts the restored owner and rejects an anonymous caller, against the restored database"
 
-# --- 8a: refuses a non-fresh target ---------------------------------------
+# --- 11a: refuses a non-fresh target ---------------------------------------
 if bash "$OPS/restore-world.sh" "$DST" "$EXPORT_A" --server "$SERVER_URL" >"$DATA_DIR/refuse-nonfresh.log" 2>&1; then
   fail "restore-world.sh accepted restoring into '$DST' a second time (already holds restored data); it must refuse a non-fresh target" "$DATA_DIR/refuse-nonfresh.log"
 fi
 grep -qF "not freshly published" "$DATA_DIR/refuse-nonfresh.log" || fail "the non-fresh-target refusal did not name the reason" "$DATA_DIR/refuse-nonfresh.log"
 ok "restore-world.sh (begin_restore) refuses a non-fresh target"
 
-# --- 8b: refuses a schema mismatch ----------------------------------------
+# --- 11b: refuses a schema mismatch ----------------------------------------
 BAD_EXPORT="$WORK/export-bad-schema"
 cp -r "$EXPORT_A" "$BAD_EXPORT"
 sed -i -E 's/"schema_sha256": *"[0-9a-f]+"/"schema_sha256": "0000000000000000000000000000000000000000000000000000000000000000"/' "$BAD_EXPORT/manifest.json"
@@ -204,7 +354,7 @@ fi
 grep -qF "does not match" "$DATA_DIR/refuse-schema.log" || fail "the schema-mismatch refusal did not name the reason" "$DATA_DIR/refuse-schema.log"
 ok "restore-world.sh refuses a schema mismatch"
 
-# --- 8c: refuses a restoring identity that is not the exported owner -----
+# --- 11c: refuses a restoring identity that is not the exported owner -----
 FRESH2=bc-backup-fresh2
 if ! spacetime publish --server "$SERVER_URL" --no-config -y --anonymous "$FRESH2" --module-path "$REPO_ROOT/server" >"$DATA_DIR/fresh2-publish.log" 2>&1; then
   fail "could not publish '$FRESH2' anonymously" "$DATA_DIR/fresh2-publish.log"
@@ -215,7 +365,7 @@ fi
 grep -qF "the restoring identity does not match the exported module_owner.owner" "$DATA_DIR/refuse-identity.log" || fail "the identity-mismatch refusal did not name the reason" "$DATA_DIR/refuse-identity.log"
 ok "restore-world.sh refuses a restoring identity that does not match the exported owner"
 
-# --- 8d: restore_* refuses when no restore is open ------------------------
+# --- 11d: restore_* refuses when no restore is open ------------------------
 FRESH3=bc-backup-fresh3
 publish "$FRESH3" "$DATA_DIR/fresh3-publish.log" || fail "could not publish '$FRESH3'" "$DATA_DIR/fresh3-publish.log"
 if spacetime call "$FRESH3" "${SERVER_ARGS[@]}" --no-config -y restore_matter_kind '[]' >"$DATA_DIR/refuse-not-open.log" 2>&1; then
@@ -223,6 +373,16 @@ if spacetime call "$FRESH3" "${SERVER_ARGS[@]}" --no-config -y restore_matter_ki
 fi
 grep -qF "no restore is open" "$DATA_DIR/refuse-not-open.log" || fail "the not-open refusal did not name the reason" "$DATA_DIR/refuse-not-open.log"
 ok "a restore_<table> reducer refuses to run with no restore open"
+
+# --- 11e: restore_module_owner refuses a foreign owner ---------------------
+spacetime call "$FRESH3" "${SERVER_ARGS[@]}" --no-config -y begin_restore '[]' >"$DATA_DIR/foreign-owner-begin.log" 2>&1 \
+  || fail "begin_restore failed against '$FRESH3'" "$DATA_DIR/foreign-owner-begin.log"
+FOREIGN_IDENTITY="0x$(printf '1%.0s' $(seq 1 64) | head -c 64)"
+if spacetime call "$FRESH3" "${SERVER_ARGS[@]}" --no-config -y restore_module_owner "[[0,[\"$FOREIGN_IDENTITY\"]]]" >"$DATA_DIR/foreign-owner.log" 2>&1; then
+  fail "restore_module_owner accepted a row whose owner is not the caller; it must refuse" "$DATA_DIR/foreign-owner.log"
+fi
+grep -qF "not the caller" "$DATA_DIR/foreign-owner.log" || fail "the foreign-owner refusal did not name the reason" "$DATA_DIR/foreign-owner.log"
+ok "restore_module_owner refuses a row whose owner is not the caller"
 
 echo "$SCRIPT: story 1.4's restore is proven against a real SpacetimeDB instance -- every guard above, positive and negative" >&2
 exit 0

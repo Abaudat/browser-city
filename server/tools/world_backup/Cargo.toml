@@ -10,9 +10,11 @@ edition = "2024"
 # --format json` output and rendering `spacetime call` arguments is real
 # logic, not orchestration, and belongs in the stack this repo already
 # owns (Tim's direction) -- `serde_json`'s `arbitrary_precision` feature
-# is what makes a `u64`/`chunk_key` above 2^53 round-trip exactly, the
-# same reason `jq` was rejected: `jq` re-serialises every number through
-# an IEEE double.
+# is what makes a `u64`/`chunk_key` above 2^53 round-trip exactly. Not
+# because `jq` cannot: `jq` 1.7+ handles this correctly (confirmed:
+# `jq 1.8.2` here round-trips `18446744073709551615` exactly) -- owning
+# this logic natively is about keeping it in the tested stack, not a
+# `jq`-version workaround (see `src/lib.rs`'s own module doc).
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

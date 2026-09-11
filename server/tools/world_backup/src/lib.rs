@@ -7,14 +7,22 @@
 //! is `cargo test`-able with no `spacetime` instance.
 //!
 //! Every number passes through `serde_json::Value` with the
-//! `arbitrary_precision` feature enabled, never through an `f64` and
-//! never through `jq`: `jq` re-serialises every JSON number through an
-//! IEEE double, which silently corrupts a `u64` (`chunk_key`, an
-//! auto_inc id) above 2^53 -- confirmed empirically against a real local
-//! SpacetimeDB 2.9.0 instance while building this crate's predecessor.
+//! `arbitrary_precision` feature enabled, never through an `f64`.
 //! `arbitrary_precision` keeps a number's own decimal text as its
 //! internal representation end to end, so it is exact by construction,
 //! not by care at each call site.
+//!
+//! Not `jq`, but not because `jq` cannot do this: cycle 1 of this story
+//! shipped a `jq`-based canonicaliser on the assumption that `jq`
+//! re-serialises every JSON number through an IEEE double, silently
+//! corrupting a `u64` (`chunk_key`, an auto_inc id) above 2^53. Review
+//! found that premise wrong for a current `jq` -- confirmed here:
+//! `jq 1.8.2` passes `18446744073709551615` through `.`/`sort` exactly,
+//! unchanged (`jq` 1.7+ added exact big-integer handling). This crate
+//! exists regardless, because the real reason to own this logic natively
+//! is that parsing/canonicalisation belongs in the stack this repo
+//! already tests (`cargo test`, the `bounds` crate's own `ModuleSchema`/
+//! `TableDef` types), not a `jq`-version compatibility question.
 
 use std::collections::BTreeMap;
 
@@ -219,6 +227,85 @@ pub fn primary_key_column<'a>(snapshot: &'a ModuleSchema, accessor: &str) -> Res
                 "'{accessor}' has no primary_key column in the snapshot"
             ))
         })
+}
+
+/// The index of `column` among `resp`'s own live columns (name-
+/// normalised), or an error naming every live column found -- used by
+/// `column-values` to extract one column's values exactly, by name,
+/// rather than a bare `grep` of the raw response that could match a
+/// substring anywhere in the line (Quentin's direction: sentinel
+/// assertions must be by column on a known row).
+pub fn column_index(resp: &SqlResponse, column: &str) -> Result<usize> {
+    let want = normalize_name(column);
+    let live = column_names(resp);
+    live.iter()
+        .position(|n| normalize_name(n) == want)
+        .ok_or_else(|| {
+            err(format!(
+                "column '{column}' not found among [{}]",
+                live.join(", ")
+            ))
+        })
+}
+
+/// Every row's value at `column`, as one canonical JSON-value line each
+/// (the same exact-precision text `row_to_line` would give that one
+/// field) -- an Identity/Timestamp stays wrapped (`["0x..."]`/`[micros]`),
+/// exactly as `spacetime sql --format json` -- and the reducer-call arg
+/// shape both give it, so a caller compares against the same literal it
+/// would pass to a `restore_<table>` call.
+pub fn column_values(resp: &SqlResponse, column: &str) -> Result<Vec<String>> {
+    let index = column_index(resp, column)?;
+    resp.rows
+        .iter()
+        .map(|row| {
+            let field = row
+                .as_array()
+                .and_then(|a| a.get(index))
+                .ok_or_else(|| err("a row is shorter than its schema's column count"))?;
+            Ok(serde_json::to_string(field).expect("a parsed field always re-serializes"))
+        })
+        .collect()
+}
+
+/// Every non-scheduled table with an auto_inc primary key that SQL can
+/// also write to directly with an all-zero probe row (no `Timestamp`/
+/// `ScheduleAt` column -- SQL cannot construct either literal at all --
+/// and no `Identity`/`ConnectionId` column either -- SQL can write one,
+/// but only as a real hex literal, not the `0` this generator's probe
+/// row always uses for a non-string, non-bool column) -- derived from
+/// the snapshot, never a hand-written list, so `verify-independent.sh`'s
+/// auto_inc probe covers every table it actually can the moment a new
+/// one is added.
+pub fn sql_probeable_autoinc_tables(snapshot: &ModuleSchema) -> Vec<String> {
+    snapshot
+        .tables
+        .iter()
+        .filter(|t| t.scheduled_reducer.is_none())
+        .filter(|t| t.columns.iter().any(|c| c.primary_key && c.auto_inc))
+        .filter(|t| {
+            !t.columns.iter().any(|c| {
+                matches!(
+                    c.ty.as_str(),
+                    "Timestamp" | "ScheduleAt" | "Identity" | "ConnectionId"
+                )
+            })
+        })
+        .map(|t| t.accessor.clone())
+        .collect()
+}
+
+/// `accessor`'s auto_inc primary-key column name, or an error if it has
+/// none -- used to build the probe insert for
+/// [`sql_probeable_autoinc_tables`]' members.
+pub fn auto_inc_column<'a>(snapshot: &'a ModuleSchema, accessor: &str) -> Result<&'a str> {
+    let table = table_def(snapshot, accessor)?;
+    table
+        .columns
+        .iter()
+        .find(|c| c.primary_key && c.auto_inc)
+        .map(|c| c.name.as_str())
+        .ok_or_else(|| err(format!("'{accessor}' has no auto_inc primary_key column")))
 }
 
 pub fn table_def<'a>(snapshot: &'a ModuleSchema, accessor: &str) -> Result<&'a TableDef> {
@@ -519,6 +606,65 @@ mod tests {
     }
 
     #[test]
+    fn column_values_extracts_by_normalized_name_not_position() {
+        let r = resp(
+            r#"{"elements":[{"name":{"some":"x_0"},"algebraic_type":{"I32":[]}},{"name":{"some":"y_0"},"algebraic_type":{"I32":[]}}]}"#,
+            r#"[[-2147483648,1],[2147483647,2]]"#,
+        );
+        assert_eq!(
+            column_values(&r, "x0").unwrap(),
+            vec!["-2147483648", "2147483647"]
+        );
+        assert_eq!(column_values(&r, "y0").unwrap(), vec!["1", "2"]);
+    }
+
+    #[test]
+    fn column_values_keeps_identity_and_timestamp_wrapped() {
+        let r = resp(
+            r#"{"elements":[{"name":{"some":"owner"},"algebraic_type":{"Product":{"elements":[{"name":{"some":"__identity__"},"algebraic_type":{"U256":[]}}]}}}]}"#,
+            r#"[[["0xabc"]]]"#,
+        );
+        assert_eq!(column_values(&r, "owner").unwrap(), vec![r#"["0xabc"]"#]);
+    }
+
+    #[test]
+    fn column_values_fails_on_an_unknown_column() {
+        let r = resp(
+            r#"{"elements":[{"name":{"some":"a"},"algebraic_type":{"I32":[]}}]}"#,
+            "[]",
+        );
+        assert!(column_values(&r, "nope").is_err());
+    }
+
+    #[test]
+    fn sql_probeable_autoinc_tables_excludes_timestamp_identity_and_scheduled_tables() {
+        let snapshot = snap(
+            r#"{"tables":[
+                {"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                    {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}
+                ]},
+                {"accessor":"has_timestamp","struct_name":"HasTimestamp","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                    {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false},
+                    {"name":"t","ty":"Timestamp","primary_key":false,"auto_inc":false,"unique":false,"has_default":false,"indexed":false}
+                ]},
+                {"accessor":"has_identity","struct_name":"HasIdentity","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                    {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false},
+                    {"name":"owner","ty":"Identity","primary_key":false,"auto_inc":false,"unique":true,"has_default":false,"indexed":false}
+                ]},
+                {"accessor":"not_autoinc","struct_name":"NotAutoinc","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                    {"name":"code","ty":"u32","primary_key":true,"auto_inc":false,"unique":false,"has_default":false,"indexed":false}
+                ]},
+                {"accessor":"scheduled_one","struct_name":"ScheduledOne","public":false,"scheduled_reducer":"tick","wide_table_waiver":null,"columns":[
+                    {"name":"scheduled_id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}
+                ]}
+            ]}"#,
+        );
+        assert_eq!(sql_probeable_autoinc_tables(&snapshot), vec!["widget"]);
+        assert_eq!(auto_inc_column(&snapshot, "widget").unwrap(), "id");
+        assert!(auto_inc_column(&snapshot, "not_autoinc").is_err());
+    }
+
+    #[test]
     fn u64_max_and_high_bit_survive_parse_and_reserialize_exactly() {
         let r = resp(
             r#"{"elements":[{"name":{"some":"chunk_key"},"algebraic_type":{"U64":[]}}]}"#,
@@ -699,6 +845,42 @@ mod proptests {
             let row: Value = serde_json::from_str(&format!("[{text}]")).unwrap();
             let line = row_to_line(&row);
             prop_assert_eq!(line, format!("[{text}]"));
+        }
+
+        /// Quentin's direction: `batch_by_bytes` is the function that
+        /// could silently drop or duplicate a row. Random line sets and
+        /// budgets, checked three ways: every input row comes back out,
+        /// in order; every batch parses as valid JSON; and every batch
+        /// stays within budget unless a single oversized row forces it
+        /// over (never split mid-row, never dropped).
+        #[test]
+        fn batch_by_bytes_never_drops_reorders_or_corrupts_rows(
+            values in prop::collection::vec(any::<i64>(), 0..200),
+            budget in 3usize..500,
+        ) {
+            let lines: Vec<String> = values.iter().map(|n| format!("[{n}]")).collect();
+            let batches = batch_by_bytes(lines.iter().map(String::as_str), budget);
+
+            for batch in &batches {
+                let parsed: Value = serde_json::from_str(batch)
+                    .unwrap_or_else(|e| panic!("batch is not valid JSON: {e}: {batch}"));
+                prop_assert!(parsed.is_array());
+                let rows = parsed.as_array().unwrap();
+                if rows.len() > 1 {
+                    prop_assert!(
+                        batch.len() <= budget,
+                        "batch of {} rows is {} bytes, over budget {budget}: {batch}",
+                        rows.len(), batch.len()
+                    );
+                }
+            }
+
+            let recovered: Vec<i64> = batches
+                .iter()
+                .flat_map(|b| serde_json::from_str::<Vec<[i64; 1]>>(b).unwrap())
+                .map(|row| row[0])
+                .collect();
+            prop_assert_eq!(recovered, values);
         }
     }
 }
