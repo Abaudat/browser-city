@@ -229,6 +229,18 @@ sql_exec "$TAIL_SRC" "INSERT INTO building_area (area_id, building_id, x0, y0, x
   || fail "seeding building_area ids 1-3 in '$TAIL_SRC' failed" "$DATA_DIR/tail-insert.log"
 sql_exec "$TAIL_SRC" "DELETE FROM building_area WHERE area_id = 3" "$DATA_DIR/tail-delete.log" \
   || fail "deleting building_area id 3 (the tail row) failed" "$DATA_DIR/tail-delete.log"
+# The `None` branch of `restore_autoinc_rows` (no rows placed at all, a
+# nonzero floor, the per-table `placeholder()` literal) is otherwise
+# never taken by anything in this file: every auto_inc table in the main
+# restore has rows, and `building_area` above still has two. `room_area`
+# here gets seeded then *entirely* deleted before export -- a real
+# disaster-recovery shape (every row of a table gone, but ids it once
+# issued must still never be re-issued) -- so the restore of this table
+# specifically must take the placeholder branch, not the delete-R one.
+sql_exec "$TAIL_SRC" "INSERT INTO room_area (area_id, room_id, x0, y0, x1, y1, floor, chunk_key) VALUES (0,1,0,0,0,0,0,0),(0,1,0,0,0,0,0,0),(0,1,0,0,0,0,0,0)" "$DATA_DIR/tail-room-area-insert.log" \
+  || fail "seeding room_area ids in '$TAIL_SRC' failed" "$DATA_DIR/tail-room-area-insert.log"
+sql_exec "$TAIL_SRC" "DELETE FROM room_area" "$DATA_DIR/tail-room-area-delete.log" \
+  || fail "deleting every room_area row in '$TAIL_SRC' failed" "$DATA_DIR/tail-room-area-delete.log"
 TAIL_EXPORT="$WORK/tail-export"
 bash "$OPS/export-world.sh" "$TAIL_SRC" "$TAIL_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/tail-export.log" 2>&1 || fail "export-world.sh failed on '$TAIL_SRC'" "$DATA_DIR/tail-export.log"
 TAIL_FLOOR="$(bc_wb manifest-floor "$TAIL_EXPORT/manifest.json" building_area)"
@@ -239,6 +251,8 @@ TAIL_FLOOR="$(bc_wb manifest-floor "$TAIL_EXPORT/manifest.json" building_area)"
 # exported rows themselves (those only ever reach id 2, area_id 3 having
 # been deleted before export).
 [ "$TAIL_FLOOR" -gt 2 ] || fail "expected '$TAIL_EXPORT/manifest.json's sequence_floors.building_area to exceed the restored maximum (2); got $TAIL_FLOOR -- st_sequence.allocated was not captured" "$DATA_DIR/tail-export.log"
+ROOM_AREA_FLOOR="$(bc_wb manifest-floor "$TAIL_EXPORT/manifest.json" room_area)"
+[ "$ROOM_AREA_FLOOR" -gt 0 ] || fail "expected '$TAIL_EXPORT/manifest.json's sequence_floors.room_area to be nonzero -- room_area had 3 rows once, all deleted before export, so its sequence was touched and the None (placeholder) branch would never actually be exercised by restoring it" "$DATA_DIR/tail-export.log"
 TAIL_DST=bc-backup-tail-dst
 publish "$TAIL_DST" "$DATA_DIR/tail-dst-publish.log" || fail "could not publish '$TAIL_DST'" "$DATA_DIR/tail-dst-publish.log"
 bash "$OPS/restore-world.sh" "$TAIL_DST" "$TAIL_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/tail-restore.log" 2>&1 \
@@ -255,6 +269,17 @@ sql_exec "$TAIL_DST" "INSERT INTO building_area (area_id, building_id, x0, y0, x
 TAIL_NEW_ID="$(max_id_live "$TAIL_DST" building_area)"
 [ "$TAIL_NEW_ID" -gt "$TAIL_FLOOR" ] || fail "expected the post-restore probe on '$TAIL_DST' to land past the manifest's own sequence floor ($TAIL_FLOOR), never merely at the restored maximum + 1 (3, the id the source once issued and then deleted); got $TAIL_NEW_ID" "$DATA_DIR/tail-probe.log"
 ok "tail-deletion: the restored sequence advances past the manifest's own recorded floor ($TAIL_FLOOR), so it never re-issues an id the source once handed out (probe landed on $TAIL_NEW_ID)"
+
+# room_area itself restores to exactly 0 rows -- the None branch's own
+# per-table placeholder() literal must never be left behind as a real
+# row, only ever used to advance the sequence and then deleted again.
+ROOM_AREA_COUNT="$(row_count_live "$TAIL_DST" room_area)"
+[ "$ROOM_AREA_COUNT" -eq 0 ] || fail "restored '$TAIL_DST.room_area' has $ROOM_AREA_COUNT row(s), expected exactly 0 -- the None branch's placeholder() row must be deleted again, never left behind" "$DATA_DIR/tail-restore.log"
+sql_exec "$TAIL_DST" "INSERT INTO room_area (area_id, room_id, x0, y0, x1, y1, floor, chunk_key) VALUES (0,9,0,0,0,0,0,0)" "$DATA_DIR/tail-room-area-probe.log" \
+  || fail "the post-restore auto_inc probe on '$TAIL_DST.room_area' failed" "$DATA_DIR/tail-room-area-probe.log"
+ROOM_AREA_NEW_ID="$(max_id_live "$TAIL_DST" room_area)"
+[ "$ROOM_AREA_NEW_ID" -gt "$ROOM_AREA_FLOOR" ] || fail "expected the post-restore probe on '$TAIL_DST.room_area' (restored via the None/placeholder branch -- every row was deleted before export) to land past the manifest's own sequence floor ($ROOM_AREA_FLOOR); got $ROOM_AREA_NEW_ID" "$DATA_DIR/tail-room-area-probe.log"
+ok "tail-deletion (all rows gone): 'room_area' restores to exactly 0 rows and its sequence still advances past the manifest's own recorded floor ($ROOM_AREA_FLOOR), via restore_autoinc_rows's None/placeholder() branch (probe landed on $ROOM_AREA_NEW_ID)"
 
 # --- 5/7: COUNT(*) on both live databases and the auto_inc sequence
 # strictly advancing -- scripts/ops/verify-independent.sh, shared with
