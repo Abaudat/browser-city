@@ -129,14 +129,17 @@ values_contain() {
   return 1
 }
 # max_id_live <db> <table> -- the table's own real primary-key column,
-# max'd as an exact integer (never through a machine float, and never row
-# count, which under-counts the moment a table has any gap): empty if the
-# table has no rows. Mirrors verify-independent.sh's own helper of the
-# same name and contract.
+# max'd as an exact integer (`world_backup max-pk`, built on
+# `canonical_rows`' own real-primary-key sort -- never a `sed`/`sort -g`
+# pipeline over raw text, which both reintroduces the "primary key is
+# column 0" assumption `canonical_rows` was built to remove, and compares
+# through a machine float via `sort -g`): empty if the table has no rows.
+# Mirrors verify-independent.sh's own helper of the same name and
+# contract.
 max_id_live() {
   local resp="$WORK/maxid-$1-$2.json"
   bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM $2" >"$resp"
-  bc_wb rows-canonical "$BC_SNAPSHOT" "$2" "$resp" | sed -E 's/^\[([0-9]+),?.*/\1/' | sort -g | tail -n1
+  bc_wb max-pk "$BC_SNAPSHOT" "$2" "$resp"
 }
 
 # --- 1: seed every seedable non-scheduled table (module_owner is the one
@@ -170,36 +173,15 @@ spacetime call "$SRC" "${SERVER_ARGS[@]}" --no-config -y send_ping "\"$BIG_MESSA
 # 1..n, so without this the gap-fill loop's delete-and-retry branch
 # would never run at all, in this check or in run-backup-perf.sh's
 # gap-free legs). `floor_transition` already holds 3 seeded rows
-# (ids 1-3, no Timestamp column, SQL-writable) -----------------------
+# (ids 1-3, no Timestamp column, SQL-writable) -- `seed-id-gaps.sh`,
+# shared with `backup.yml`'s own rehearsal (a real, >=100k-id gap there,
+# never duplicated logic) -----------------------------------------------
 sql_exec "$SRC" "DELETE FROM floor_transition WHERE transition_id = 2" "$DATA_DIR/gap-delete-1.log" \
   || fail "deleting floor_transition id 2 (the small gap) failed" "$DATA_DIR/gap-delete-1.log"
 GAP_N=2000
-GAP_BATCH=200
-gap_start=0
-while [ "$gap_start" -lt "$GAP_N" ]; do
-  tuples=""
-  i="$gap_start"
-  gap_end=$((gap_start + GAP_BATCH))
-  [ "$gap_end" -gt "$GAP_N" ] && gap_end="$GAP_N"
-  while [ "$i" -lt "$gap_end" ]; do
-    id=$((i + 10))
-    [ -n "$tuples" ] && tuples="$tuples,"
-    tuples="${tuples}(0,$id,$id,0,$id,$id,0,$id)"
-    i=$((i + 1))
-  done
-  sql_exec "$SRC" "INSERT INTO floor_transition (transition_id, x, y, floor, target_x, target_y, target_floor, chunk_key) VALUES $tuples" "$DATA_DIR/gap-bulk-insert.log" \
-    || fail "bulk-inserting the gap range into floor_transition failed" "$DATA_DIR/gap-bulk-insert.log"
-  gap_start="$gap_end"
-done
-# Keep a handful of low ids and a handful of tail ids, delete everything
-# bulk-inserted between them -- a real, exported gap of roughly
-# ${GAP_N} ids (never merely a deleted-then-nothing-exported range: a
-# tail row must survive at a high id, or restore's gap-fill loop would
-# have nothing past 10 left to reach, and this would test nothing). A
-# smaller, PR-time-budgeted stand-in for the >=100k gap
-# `scripts/dev/run-backup-perf.sh`'s gappy leg measures.
-sql_exec "$SRC" "DELETE FROM floor_transition WHERE transition_id > 10 AND transition_id < $((GAP_N - 1))" "$DATA_DIR/gap-delete-2.log" \
-  || fail "deleting the middle of the bulk-inserted gap range failed" "$DATA_DIR/gap-delete-2.log"
+bash "$OPS/seed-id-gaps.sh" "$SRC" --table floor_transition --gap "$GAP_N" --server "$SERVER_URL" >"$DATA_DIR/seed-id-gaps.log" 2>&1 \
+  || fail "seed-id-gaps.sh failed to carve a gap into floor_transition" "$DATA_DIR/seed-id-gaps.log"
+cat "$DATA_DIR/seed-id-gaps.log" >&2
 ok "'floor_transition' seeded with real id gaps (one deleted row, one ~${GAP_N}-id gap) before export"
 
 # --- 2: export -> restore -> export -> verify (byte for byte) -----------
@@ -226,9 +208,9 @@ FRESH_OVERSHOOT=bc-backup-overshoot
 publish "$FRESH_OVERSHOOT" "$DATA_DIR/overshoot-publish.log" || fail "could not publish '$FRESH_OVERSHOOT'" "$DATA_DIR/overshoot-publish.log"
 spacetime call "$FRESH_OVERSHOOT" "${SERVER_ARGS[@]}" --no-config -y begin_restore '[]' >"$DATA_DIR/overshoot-begin.log" 2>&1 \
   || fail "begin_restore failed against '$FRESH_OVERSHOOT'" "$DATA_DIR/overshoot-begin.log"
-spacetime call "$FRESH_OVERSHOOT" "${SERVER_ARGS[@]}" --no-config -y restore_building_area '[[5,1,0,0,0,0,0,0]]' >"$DATA_DIR/overshoot-first.log" 2>&1 \
+spacetime call "$FRESH_OVERSHOOT" "${SERVER_ARGS[@]}" --no-config -y restore_building_area '[[5,1,0,0,0,0,0,0]]' 0 >"$DATA_DIR/overshoot-first.log" 2>&1 \
   || fail "restoring building_area id 5 failed" "$DATA_DIR/overshoot-first.log"
-if spacetime call "$FRESH_OVERSHOOT" "${SERVER_ARGS[@]}" --no-config -y restore_building_area '[[3,2,0,0,0,0,0,0]]' >"$DATA_DIR/overshoot-second.log" 2>&1; then
+if spacetime call "$FRESH_OVERSHOOT" "${SERVER_ARGS[@]}" --no-config -y restore_building_area '[[3,2,0,0,0,0,0,0]]' 0 >"$DATA_DIR/overshoot-second.log" 2>&1; then
   fail "restore_building_area accepted an id (3) behind the sequence's current position (past 5); it must overshoot and abort" "$DATA_DIR/overshoot-second.log"
 fi
 grep -qF "overshot the exported id 3" "$DATA_DIR/overshoot-second.log" || fail "the overshoot refusal did not name the reason" "$DATA_DIR/overshoot-second.log"
@@ -236,11 +218,11 @@ AFTER_OVERSHOOT="$(row_count_live "$FRESH_OVERSHOOT" building_area)"
 [ "$AFTER_OVERSHOOT" -eq 1 ] || fail "building_area has $AFTER_OVERSHOOT row(s) after the failed overshoot call, expected exactly 1 (id 5) -- the failed call's own inserts/deletes must roll back entirely" "$DATA_DIR/overshoot-second.log"
 ok "an overshoot aborts the whole reducer call and leaves no partial row (building_area still has exactly its one row)"
 
-# --- tail-deletion: the sequence ends at the restored MAXIMUM id, not at
-# the source's live sequence position, if the source's own tail rows were
-# deleted after being inserted -- docs/spikes/1.4-backup-restore.md
-# records this precisely rather than claiming "ends exactly where the
-# export's sequence was". Pinned here, not merely asserted in prose. -----
+# --- tail-deletion: the restored sequence advances past the manifest's
+# own recorded floor (st_sequence.allocated at export time), never merely
+# to the restored data's own maximum id -- so it never re-issues an id
+# the source ever handed out, even one deleted off the table's tail
+# before export. Pinned here directly, not merely asserted in prose. -----
 TAIL_SRC=bc-backup-tail
 publish "$TAIL_SRC" "$DATA_DIR/tail-publish.log" || fail "could not publish '$TAIL_SRC'" "$DATA_DIR/tail-publish.log"
 sql_exec "$TAIL_SRC" "INSERT INTO building_area (area_id, building_id, x0, y0, x1, y1, floor, chunk_key) VALUES (0,1,0,0,0,0,0,0),(0,1,0,0,0,0,0,0),(0,1,0,0,0,0,0,0)" "$DATA_DIR/tail-insert.log" \
@@ -249,46 +231,50 @@ sql_exec "$TAIL_SRC" "DELETE FROM building_area WHERE area_id = 3" "$DATA_DIR/ta
   || fail "deleting building_area id 3 (the tail row) failed" "$DATA_DIR/tail-delete.log"
 TAIL_EXPORT="$WORK/tail-export"
 bash "$OPS/export-world.sh" "$TAIL_SRC" "$TAIL_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/tail-export.log" 2>&1 || fail "export-world.sh failed on '$TAIL_SRC'" "$DATA_DIR/tail-export.log"
+TAIL_FLOOR="$(bc_wb manifest-floor "$TAIL_EXPORT/manifest.json" building_area)"
+# `st_sequence.allocated` pre-allocates in blocks (docs/spikes/
+# 1.4-backup-restore.md) -- after 3 inserts on a fresh table, the floor
+# is the block ceiling, never merely 3, so this is also, incidentally,
+# proof the floor is really read from `st_sequence`, not derived from the
+# exported rows themselves (those only ever reach id 2, area_id 3 having
+# been deleted before export).
+[ "$TAIL_FLOOR" -gt 2 ] || fail "expected '$TAIL_EXPORT/manifest.json's sequence_floors.building_area to exceed the restored maximum (2); got $TAIL_FLOOR -- st_sequence.allocated was not captured" "$DATA_DIR/tail-export.log"
 TAIL_DST=bc-backup-tail-dst
 publish "$TAIL_DST" "$DATA_DIR/tail-dst-publish.log" || fail "could not publish '$TAIL_DST'" "$DATA_DIR/tail-dst-publish.log"
 bash "$OPS/restore-world.sh" "$TAIL_DST" "$TAIL_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/tail-restore.log" 2>&1 \
   || fail "restore-world.sh failed restoring '$TAIL_DST'" "$DATA_DIR/tail-restore.log"
-# The documented (not merely assumed) behaviour: the restored sequence
-# reaches id 2 (the restored maximum), never id 3 (the source's live
-# sequence position before its tail row was deleted) -- so the very next
-# auto-generated insert on the restored database gets id 3, which is
-# fine (it was never present in restored data) but would NOT be fine if
-# the source's own sequence had continued operating in parallel, since
-# it too would eventually hand out id 3 or higher. This is the named,
-# tested residual gap docs/trace-matrix.md records as `deferred`.
+# The next auto-generated insert on the restored database must land
+# strictly past the manifest's own floor -- never at id 3, the restored
+# maximum (2) plus one, which is what a restore that stopped at the
+# restored data's own maximum id would give (and did, before this
+# cycle): area_id 3 was real, once, on the source, and letting the
+# restored database hand it out again would silently point any dangling
+# reference at the wrong row.
 sql_exec "$TAIL_DST" "INSERT INTO building_area (area_id, building_id, x0, y0, x1, y1, floor, chunk_key) VALUES (0,9,0,0,0,0,0,0)" "$DATA_DIR/tail-probe.log" \
   || fail "the post-restore auto_inc probe on '$TAIL_DST' failed" "$DATA_DIR/tail-probe.log"
 TAIL_NEW_ID="$(max_id_live "$TAIL_DST" building_area)"
-[ "$TAIL_NEW_ID" = "3" ] || fail "expected the post-restore probe on '$TAIL_DST' to land on id 3 (the restored maximum + 1, documented, not the source's pre-deletion sequence position); got $TAIL_NEW_ID" "$DATA_DIR/tail-probe.log"
-ok "tail-deletion: the restored sequence reaches only the restored maximum id (documented in docs/spikes/1.4-backup-restore.md and docs/trace-matrix.md, not silently assumed away)"
+[ "$TAIL_NEW_ID" -gt "$TAIL_FLOOR" ] || fail "expected the post-restore probe on '$TAIL_DST' to land past the manifest's own sequence floor ($TAIL_FLOOR), never merely at the restored maximum + 1 (3, the id the source once issued and then deleted); got $TAIL_NEW_ID" "$DATA_DIR/tail-probe.log"
+ok "tail-deletion: the restored sequence advances past the manifest's own recorded floor ($TAIL_FLOOR), so it never re-issues an id the source once handed out (probe landed on $TAIL_NEW_ID)"
 
 # --- 5/7: COUNT(*) on both live databases and the auto_inc sequence
 # strictly advancing -- scripts/ops/verify-independent.sh, shared with
 # .github/workflows/backup.yml's rehearsal job (Tim's direction: the
 # Maincloud leg runs the same independent oracles the local guard does,
 # never a lesser copy) ------------------------------------------------
-bash "$OPS/verify-independent.sh" "$SRC" "$DST" --server "$SERVER_URL" >"$DATA_DIR/verify-independent.log" 2>&1 \
+bash "$OPS/verify-independent.sh" "$SRC" "$DST" "$EXPORT_A/manifest.json" --server "$SERVER_URL" >"$DATA_DIR/verify-independent.log" 2>&1 \
   || fail "verify-independent.sh found a mismatch between '$SRC' and restored '$DST'" "$DATA_DIR/verify-independent.log"
 cat "$DATA_DIR/verify-independent.log" >&2
 
 # --- 6: literal sentinel assertions, by exact column value on a known
 # row (Quentin's oracle (c) -- never a bare grep that could match a
 # substring anywhere) -------------------------------------------------
-# The exact raw bytes seed-edge-rows.sh's own generator
-# (server/tools/world_backup's `edge_values(ColKind::String)`) feeds in --
-# duplicated here as raw bytes, not as an already-JSON-escaped literal,
-# with `jq` computing the one true JSON-escaped form to compare against
-# (never hand-escaped: comparing raw control characters against
-# `column-values`'s JSON-escaped output would never match).
-EXPECT_STRING="adversarial: '\"quote\"'"$'\t'"TAB"$'\n'"NEWLINE"$'\r'"CR\\backslash\\'literal-\\n'pipe|emoji"$'\xf0\x9f\x98\x80'
-# `tr -d '\r'`: some `jq` builds emit CRLF on Windows (scripts/ci/
-# check-agent-tooling.sh's own `jqr` helper works around the same thing).
-EXPECT_STRING_JSON="$(jq -Rn --arg s "$EXPECT_STRING" '$s' | tr -d '\r')"
+# `world_backup adversarial-string-line`, never `jq`: the exact same
+# constant `server/tools/world_backup`'s own `edge_values` seeds every
+# String column with, run through the very same canonical-line serializer
+# `column-values` itself uses -- the expected and actual values go
+# through the same serializer (Tim's direction), and never retyped by
+# hand here as a second, driftable copy of the literal bytes.
+EXPECT_STRING_JSON="$(bc_wb adversarial-string-line)"
 CHUNK_KEYS="$(column_values_live "$DST" building_area chunk_key)"
 values_contain '18446744073709551615' "$CHUNK_KEYS" || fail "u64::MAX not found exactly in restored 'building_area.chunk_key'"
 X0_VALUES="$(column_values_live "$DST" building_area x0)"
@@ -301,13 +287,22 @@ values_contain "$EXPECT_STRING_JSON" "$NAME_VALUES" \
 CREATED_AT_VALUES="$(column_values_live "$DST" building created_at)"
 values_contain '[0]' "$CREATED_AT_VALUES" || fail "Timestamp 0 micros not found exactly in restored 'building.created_at'"
 values_contain '[9223372036854775807]' "$CREATED_AT_VALUES" || fail "Timestamp i64::MAX micros not found exactly in restored 'building.created_at'"
-IDENTITY_VALUES="$(column_values_live "$DST" character_identity identity)"
-# SQL trims an Identity's leading zero nibbles on read (docs/spikes/
-# 1.4-backup-restore.md's own documented quirk) -- never exactly 64 hex
-# digits on the way back out, so this only asserts the shape, not a
-# fixed width.
-grep -qE '^\["0x[0-9a-f]+"\]$' <<<"$IDENTITY_VALUES" || fail "no well-formed synthetic Identity ('0x' + hex digits) found in restored 'character_identity.identity'"
-ok "sentinel values (u64::MAX, i32::MIN, i8 floor, the full adversarial string, a Timestamp at 0 and i64::MAX micros, and an Identity) read back exactly, by column, from the restored database"
+# Identity: exact, not shape-only (Quentin's direction -- a shape-only
+# check like `^\["0x[0-9a-f]+"\]$` would pass a *corrupted* Identity too,
+# as long as it still looked like one). SQL trims an Identity's leading
+# zero nibbles on read the same way on both the source and the restored
+# database (docs/spikes/1.4-backup-restore.md's own documented quirk), so
+# the source's own live `character_identity.identity` values, sorted, are
+# the exact expected set to compare the restored ones against -- exact
+# and independent of the export files, never merely "looks well-formed".
+SRC_IDENTITY_VALUES="$(column_values_live "$SRC" character_identity identity | sort)"
+DST_IDENTITY_VALUES="$(column_values_live "$DST" character_identity identity | sort)"
+[ -n "$SRC_IDENTITY_VALUES" ] || fail "'$SRC.character_identity' has no rows -- nothing to compare Identity values against"
+[ "$SRC_IDENTITY_VALUES" = "$DST_IDENTITY_VALUES" ] || fail "restored 'character_identity.identity' values do not exactly match '$SRC's own, sorted -- expected:
+$SRC_IDENTITY_VALUES
+got:
+$DST_IDENTITY_VALUES"
+ok "sentinel values (u64::MAX, i32::MIN, i8 floor, the full adversarial string, a Timestamp at 0 and i64::MAX micros, and every Identity, exact and sorted) read back exactly, by column, from the restored database"
 
 # --- 9: scheduled tables restore to nothing -- compared against a
 # freshly published reference database, byte for byte ---------------------

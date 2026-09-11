@@ -73,6 +73,21 @@ if [ "\$1" = "sql" ]; then
   fi
   WB="$REPO_ROOT/server/target/release/world_backup"
   [ -x "\$WB" ] || WB="\$WB.exe"
+  if [ "\$TABLE" = "st_sequence" ]; then
+    # Not one of this module's own tables -- SpacetimeDB's system table,
+    # export-world.sh's own sequence-floor read (story 1.4, cycle 4).
+    # One plausible row per real auto_inc table, never a table this
+    # module does not actually have.
+    ROWS=""
+    while IFS= read -r t; do
+      [ -n "\$t" ] || continue
+      COL="\$("\$WB" auto-inc-column "\$SNAPSHOT" "\$t")"
+      [ -n "\$ROWS" ] && ROWS="\$ROWS,"
+      ROWS="\${ROWS}[1,\"\${t}_\${COL}_seq\",1,0,1,1,1,170141183460469231731687303715884105727,1]"
+    done <<< "\$("\$WB" autoinc-tables "\$SNAPSHOT")"
+    printf '[{"schema":{"elements":[{"name":{"some":"sequence_id"},"algebraic_type":{"U32":[]}},{"name":{"some":"sequence_name"},"algebraic_type":{"String":[]}},{"name":{"some":"table_id"},"algebraic_type":{"U32":[]}},{"name":{"some":"col_pos"},"algebraic_type":{"U16":[]}},{"name":{"some":"increment"},"algebraic_type":{"I64":[]}},{"name":{"some":"start"},"algebraic_type":{"I128":[]}},{"name":{"some":"min_value"},"algebraic_type":{"I128":[]}},{"name":{"some":"max_value"},"algebraic_type":{"I128":[]}},{"name":{"some":"allocated"},"algebraic_type":{"I128":[]}}]},"rows":[%s]}]' "\$ROWS"
+    exit 0
+  fi
   COLS="\$("\$WB" snapshot-columns "\$SNAPSHOT" "\$TABLE")"
   ELEMENTS="\$(printf '%s\n' "\$COLS" | awk '{ if (n++) printf ","; printf "{\"name\":{\"some\":\"%s\"},\"algebraic_type\":{\"String\":[]}}", \$0 }')"
   printf '[{"schema":{"elements":[%s]},"rows":[]}]' "\$ELEMENTS"

@@ -71,7 +71,30 @@ if [ "\$1" = "sql" ]; then
   exit 0
 fi
 if [ "\$1" = "call" ]; then
-  REDUCER="\${@: -2:1}"
+  # The reducer name is never at a fixed offset from the end: it is
+  # followed by zero args (begin_restore/finish_restore), one (most
+  # restore_<table> reducers) or two (an auto_inc table's own rows +
+  # sequence_floor) -- but it is always the argument right after \`-y\`,
+  # regardless of how many follow it. REST captures every argument after
+  # the reducer name, in order, for MODE=call-log to record.
+  REDUCER=""
+  REST=""
+  prev=""
+  after=0
+  for a in "\$@"; do
+    if [ "\$after" = 1 ]; then
+      [ -n "\$REST" ] && REST="\$REST "
+      REST="\$REST\$a"
+    fi
+    if [ "\$prev" = "-y" ]; then
+      REDUCER="\$a"
+      after=1
+    fi
+    prev="\$a"
+  done
+  if [ "\$MODE" = "call-log" ] && [ -n "\${CALL_LOG:-}" ]; then
+    echo "\$REDUCER \$REST" >> "\$CALL_LOG"
+  fi
   if [ "\$REDUCER" = "begin_restore" ] || [ "\$REDUCER" = "finish_restore" ]; then
     exit 0
   fi
@@ -142,6 +165,16 @@ printf '[1,"seeded for this test",[0]]\n' > "$DIR/demo_ping.jsonl"
 run_restore call-fails-on-table "$DIR" STUB_FAIL_TABLE=demo_ping >"$LOGDIR/out5.log" 2>&1; CODE=$?
 check "restore_demo_ping failure -> exit non-zero" 1 bash -c "exit $CODE"
 check_contains "names restore_demo_ping" "restore_demo_ping" "$(cat "$LOGDIR/out5.log")"
+
+echo
+echo "green: an auto_inc table with 0 exported rows but a nonzero manifest floor still gets a restore_<table> call (to advance the sequence, not skipped as if there were nothing to do)"
+DIR="$(make_export)"
+sed -i 's/"schema_sha256": "\([0-9a-f]*\)"/"schema_sha256": "\1",\n  "sequence_floors": {"demo_ping": 4097}/' "$DIR/manifest.json"
+CALLS_LOG="$LOGDIR/calls.log"
+rm -f "$CALLS_LOG"
+run_restore call-log "$DIR" CALL_LOG="$CALLS_LOG" >"$LOGDIR/out7.log" 2>&1; CODE=$?
+check "0-row auto_inc table with a floor -> exit 0" 0 bash -c "exit $CODE"
+check_contains "calls restore_demo_ping with the recorded floor" "restore_demo_ping [] 4097" "$(cat "$CALLS_LOG" 2>/dev/null)"
 
 echo
 echo "red: an unrecognized flag is rejected, never silently defaulted"

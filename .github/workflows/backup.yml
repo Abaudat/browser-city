@@ -137,6 +137,16 @@ jobs:
       - name: seed it with the same edge-case generator the local guard uses
         run: bash scripts/ops/seed-edge-rows.sh "browser-city-rehearsal-src-${{ github.run_id }}" --server maincloud
 
+      # A real, >=100,000-id gap, under Maincloud's own reducer execution
+      # limits -- the local guard's own gap is deliberately smaller
+      # (~2,000 ids, PR-time-budgeted); this dispatch-only job has no such
+      # budget, and this is the one path that ever runs the restore
+      # against Maincloud, so it is also the one place a ceiling-scale
+      # gap-fill's real wall time (logged by restore-world.sh itself,
+      # below) is ever actually measured (Quentin's direction).
+      - name: carve a real, >=100,000-id gap into an auto_inc table
+        run: bash scripts/ops/seed-id-gaps.sh "browser-city-rehearsal-src-${{ github.run_id }}" --table placed_object --gap 100000 --server maincloud
+
       - name: export through the real encrypted-artifact path
         run: bash scripts/ops/export-world.sh "browser-city-rehearsal-src-${{ github.run_id }}" "$RUNNER_TEMP/rehearsal-export" --server maincloud
       - env:
@@ -177,7 +187,7 @@ jobs:
           bash scripts/ops/restore-world.sh "browser-city-rehearsal-dst-${{ github.run_id }}" "$RUNNER_TEMP/rehearsal-export-decrypted/rehearsal-export" --server maincloud
           bash scripts/ops/export-world.sh "browser-city-rehearsal-dst-${{ github.run_id }}" "$RUNNER_TEMP/rehearsal-export-b" --server maincloud
           bash scripts/ops/verify-world.sh "$RUNNER_TEMP/rehearsal-export" "$RUNNER_TEMP/rehearsal-export-b"
-          bash scripts/ops/verify-independent.sh "browser-city-rehearsal-src-${{ github.run_id }}" "browser-city-rehearsal-dst-${{ github.run_id }}" --server maincloud
+          bash scripts/ops/verify-independent.sh "browser-city-rehearsal-src-${{ github.run_id }}" "browser-city-rehearsal-dst-${{ github.run_id }}" "$RUNNER_TEMP/rehearsal-export-decrypted/rehearsal-export/manifest.json" --server maincloud
 
       # `always()`: both scratch databases must never survive this job,
       # rehearsal succeeded or not.

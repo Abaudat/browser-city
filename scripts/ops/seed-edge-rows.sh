@@ -37,6 +37,8 @@ done
 
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" begin_restore '[]'
 
+AUTOINC_TABLES="$(bc_wb autoinc-tables "$BC_SNAPSHOT")"
+
 SEEDED=()
 while IFS= read -r table; do
   [ -n "$table" ] || continue
@@ -49,7 +51,15 @@ while IFS= read -r table; do
     continue
   fi
   args_json="$(bc_wb seed-rows "$BC_SNAPSHOT" "$table" "$ROWS" "$OFFSET")"
-  bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "restore_$table" "$args_json"
+  if grep -qxF "$table" <<<"$AUTOINC_TABLES"; then
+    # `0`: every id `seed-rows` generates is already sequential and
+    # gap-free (its own doc comment), so there is no sequence to advance
+    # further -- `0` is `restore_autoinc_rows`'s own permanent no-op, not
+    # a real floor from a manifest this synthetic seed never had.
+    bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "restore_$table" "$args_json" 0
+  else
+    bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "restore_$table" "$args_json"
+  fi
   SEEDED+=("$table")
   OFFSET=$((OFFSET + ROWS + 1))
 done <<< "$(bc_table_names non-scheduled)"

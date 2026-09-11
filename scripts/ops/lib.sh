@@ -13,23 +13,34 @@ bc_ops_die() { # <script-name> <message>
   exit 1
 }
 
-# bc_wb <args...> -- runs the world_backup binary. `cargo build` runs on
-# every call, deliberately, not guarded behind "does a binary already
-# exist": a stale binary left from a previous `world_backup` edit would
-# otherwise be used silently (confirmed: a bash-level "built once" guard
-# does not actually run once per process, since most callers invoke
-# `bc_wb` from a `$(...)` subshell, which never shares that guard variable
-# back with the caller -- every subshell saw "not built yet" and skipped
-# straight to using the stale binary any earlier sibling call had left).
-# `cargo build` itself is the idempotent check (a few tens of
-# milliseconds once nothing changed) -- `-q` keeps that quiet, stderr
-# kept for a real build failure.
-bc_wb() {
+# Builds world_backup once, right here at source time -- never inside
+# `bc_wb()` itself (Quentin's cycle-3 direction fixed a stale-binary bug
+# by rebuilding on every `bc_wb` call, but `export-world.sh` alone calls
+# `bc_wb` dozens of times per table, and each was a full `cargo build`
+# invocation: the spike's own export numbers measured that tooling
+# overhead, not export cost -- a flat ~6.7s regardless of row count).
+# `BC_WB_READY`, exported, is what makes "once" mean once per *process
+# tree*, not once per script file: a script this one sources into
+# directly sees the variable already set in its own shell; a script
+# invoked as a **child process** (`bash other-script.sh`, never a
+# `$(...)` subshell, whose own `export`s never reach back to the
+# caller) inherits the exported variable too, since an exported
+# environment variable does reach a child process, confirmed. A fresh
+# top-level `bash` process -- a new CI step, a human's own terminal --
+# always starts with `BC_WB_READY` unset, so it always rebuilds once;
+# stale-binary safety is kept, just no longer paid for on every call.
+if [ -z "${BC_WB_READY:-}" ]; then
   ( cd "$BC_REPO_ROOT/server" && cargo build -q -p world_backup --release ) \
-    || bc_ops_die "bc_wb" "could not build server/tools/world_backup"
+    || bc_ops_die "lib.sh" "could not build server/tools/world_backup"
+  export BC_WB_READY=1
+fi
+
+# bc_wb <args...> -- runs the already-built world_backup binary (see the
+# build, above, sourced exactly once per process tree).
+bc_wb() {
   local bin="$BC_REPO_ROOT/server/target/release/world_backup"
   [ -x "$bin" ] || bin="$bin.exe"
-  [ -x "$bin" ] || bc_ops_die "bc_wb" "world_backup binary not found after building it"
+  [ -x "$bin" ] || bc_ops_die "bc_wb" "world_backup binary not found -- lib.sh's own build did not produce it"
   "$bin" "$@"
 }
 
@@ -84,23 +95,32 @@ $(cat "$errlog")"
   rm -f "$errlog"
 }
 
-# bc_call <script> <db> <server-args...> -- <reducer> <args-json> -- calls
-# a reducer with one JSON argument (a `Vec<Row>`, per story 1.4's
-# restore_<table> reducers). Same fail-loud contract as bc_sql_json.
-# `spacetime call` writes its error, if any, to stderr; the message text
-# itself (not just the exit code) is what callers grep for a specific
-# refusal reason.
+# bc_call <script> <db> <server-args...> -- <reducer> <arg...> -- calls a
+# reducer, one CLI positional argument per reducer parameter, in order
+# (confirmed empirically: `spacetime call`'s own `[ARGUMENTS...]` -- a
+# two-parameter reducer like `restore_<table>(rows: Vec<Row>,
+# sequence_floor: u64)` takes two positional args, `rows-json` then
+# `floor-json`, never one combined array). Same fail-loud contract as
+# bc_sql_json. `spacetime call` writes its error, if any, to stderr; the
+# message text itself (not just the exit code) is what callers grep for
+# a specific refusal reason.
 bc_call() {
   local script="$1" db="$2"; shift 2
   local -a server_args=()
-  while [ "$#" -gt 2 ]; do
-    server_args+=("$1")
-    shift
-  done
-  local reducer="$1" args_json="$2"
+  # `--server <url>` or nothing -- detected by name, never by counting
+  # remaining arguments: a fixed "2 non-server args left" cutoff (the
+  # reducer name and its one JSON blob) stopped working once a
+  # `restore_<table>` reducer started taking a second, `sequence_floor`,
+  # argument, so which reducer this call is for no longer determines a
+  # single fixed count of arguments left over.
+  if [ "$#" -ge 2 ] && [ "$1" = "--server" ]; then
+    server_args=("$1" "$2")
+    shift 2
+  fi
+  local reducer="$1"; shift
   local errlog
   errlog="$(mktemp)"
-  if ! spacetime call "$db" "${server_args[@]}" --no-config -y "$reducer" "$args_json" >/dev/null 2>"$errlog"; then
+  if ! spacetime call "$db" "${server_args[@]}" --no-config -y "$reducer" "$@" >/dev/null 2>"$errlog"; then
     bc_ops_die "$script" "'spacetime call $reducer' failed:
 $(cat "$errlog")"
   fi

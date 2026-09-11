@@ -23,6 +23,20 @@ pub struct DemoPing {
     pub written_at: Timestamp,
 }
 
+/// Manual, not derived: `Timestamp` has no `Default` impl. Only ever used
+/// as a throwaway row by `tables::restore`'s sequence-floor advance --
+/// field values never matter, since that row is deleted again
+/// immediately.
+impl Default for DemoPing {
+    fn default() -> Self {
+        DemoPing {
+            id: 0,
+            message: String::new(),
+            written_at: Timestamp::UNIX_EPOCH,
+        }
+    }
+}
+
 /// Inserts one `demo_ping` row. Never panics (NFR41): the only failure mode
 /// today is an empty message, reported as `Err` rather than written. The
 /// validation itself lives in `sim::demo_ping` (NFR28), unit-tested there --

@@ -308,6 +308,124 @@ pub fn auto_inc_column<'a>(snapshot: &'a ModuleSchema, accessor: &str) -> Result
         .ok_or_else(|| err(format!("'{accessor}' has no auto_inc primary_key column")))
 }
 
+/// Every non-scheduled table with an auto_inc primary key, regardless of
+/// its other columns' types -- unlike [`sql_probeable_autoinc_tables`],
+/// which excludes anything SQL cannot also write a *probe row* to.
+/// `st_sequence` (a system table, distinct from the target table's own
+/// row data) is readable via SQL for every auto_inc table without
+/// exception, so `export-world.sh`'s own sequence-floor reads use this
+/// list, never the narrower SQL-probeable one.
+pub fn autoinc_tables(snapshot: &ModuleSchema) -> Vec<String> {
+    snapshot
+        .tables
+        .iter()
+        .filter(|t| t.scheduled_reducer.is_none())
+        .filter(|t| t.columns.iter().any(|c| c.primary_key && c.auto_inc))
+        .map(|t| t.accessor.clone())
+        .collect()
+}
+
+/// `table`'s auto_inc `column`'s own `st_sequence.allocated` value, read
+/// from a `SELECT * FROM st_sequence` response -- a safe upper bound on
+/// every id that table's sequence has ever issued (SpacetimeDB
+/// pre-allocates `auto_inc` ids in blocks; `allocated` is the current
+/// block's own ceiling, confirmed empirically, never smaller than the
+/// highest id actually used). `sequence_name`'s own naming convention,
+/// confirmed empirically against a real local instance: `<table>_
+/// <column>_seq`.
+pub fn sequence_floor(resp: &SqlResponse, table: &str, column: &str) -> Result<String> {
+    let name_index = column_index(resp, "sequence_name")?;
+    let allocated_index = column_index(resp, "allocated")?;
+    let want = format!("{table}_{column}_seq");
+    for row in &resp.rows {
+        let arr = row
+            .as_array()
+            .ok_or_else(|| err("st_sequence row is not an array"))?;
+        let name = arr
+            .get(name_index)
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| err("st_sequence row's sequence_name is not a string"))?;
+        if name == want {
+            let allocated = arr
+                .get(allocated_index)
+                .ok_or_else(|| err("st_sequence row is shorter than its schema's column count"))?;
+            return match allocated {
+                Value::Number(n) => Ok(n.to_string()),
+                other => Err(err(format!(
+                    "st_sequence.allocated for '{want}' is not a plain integer: {other}"
+                ))),
+            };
+        }
+    }
+    Err(err(format!(
+        "no st_sequence row named '{want}' -- sequence_name's naming convention may have changed"
+    )))
+}
+
+/// The primary-key value of `accessor`'s own highest exported row (by
+/// [`canonical_rows`]' real-primary-key sort, never column 0 or a
+/// `sed`/`sort -g` pipeline over raw text, which both re-introduces the
+/// "primary key is column 0" assumption `canonical_rows` itself was built
+/// to remove, and compares through a machine float via `sort -g`) --
+/// `None` if the table has no rows.
+pub fn max_pk(
+    snapshot: &ModuleSchema,
+    accessor: &str,
+    resp: &SqlResponse,
+) -> Result<Option<String>> {
+    let rows = canonical_rows(snapshot, accessor, resp)?;
+    let Some(last) = rows.last() else {
+        return Ok(None);
+    };
+    let pk_index = primary_key_index(snapshot, accessor, resp)?;
+    let field = last
+        .as_array()
+        .and_then(|a| a.get(pk_index))
+        .ok_or_else(|| err("a row is shorter than its schema's column count"))?;
+    match field {
+        Value::Number(n) => Ok(Some(n.to_string())),
+        other => Err(err(format!(
+            "primary key value is not a plain integer: {other}"
+        ))),
+    }
+}
+
+/// The exact adversarial string [`edge_values`] seeds every `String`
+/// column with -- exposed here so a caller building the *expected* value
+/// for a sentinel check (`scripts/ci/check-backup-restore.sh`) reuses the
+/// literal bytes [`edge_values`] itself seeds with, rather than
+/// retyping them (a latent drift risk) or reaching for `jq` to
+/// JSON-escape a hand-typed copy (`docs/architecture.md`'s "never `jq`"
+/// rule, Tim's direction).
+pub const ADVERSARIAL_STRING: &str =
+    "adversarial: '\"quote\"'\tTAB\nNEWLINE\rCR\\backslash\\'literal-\\n'pipe|emoji\u{1F600}";
+
+/// `manifest`'s own `sequence_floors.<table>` value, as exact decimal
+/// text -- parsed with `serde_json`'s `arbitrary_precision`, never a
+/// hand-rolled regex over the manifest's raw text (the same precision
+/// risk `docs/architecture.md`'s "never `jq`" rule exists to avoid, just
+/// reached a different way). `0` if `table` has no entry (never seeded
+/// with an auto_inc column, e.g. it was empty at export with no sequence
+/// ever created) -- `0` also doubles as `restore_autoinc_rows`'s own
+/// "do not advance" sentinel, so a table genuinely absent from the
+/// manifest and a table explicitly telling a batch not to advance read
+/// the same way to a caller.
+pub fn manifest_sequence_floor(manifest: &Value, table: &str) -> Result<String> {
+    let floors = manifest.get("sequence_floors");
+    let Some(floors) = floors else {
+        return Ok("0".to_string());
+    };
+    let Some(value) = floors.get(table) else {
+        return Ok("0".to_string());
+    };
+    match value {
+        Value::Number(n) => Ok(n.to_string()),
+        other => Err(err(format!(
+            "manifest.json's sequence_floors.{table} is not a plain integer: {other}"
+        ))),
+    }
+}
+
 pub fn table_def<'a>(snapshot: &'a ModuleSchema, accessor: &str) -> Result<&'a TableDef> {
     snapshot
         .tables
@@ -468,9 +586,10 @@ fn edge_values(kind: ColKind) -> Vec<Value> {
             json!(""),
             // quote, double-quote, tab, real newline, CR, backslash, a
             // literal two-char `\n`, emoji, pipe -- Quentin's direction.
-            json!(
-                "adversarial: '\"quote\"'\tTAB\nNEWLINE\rCR\\backslash\\'literal-\\n'pipe|emoji\u{1F600}"
-            ),
+            // `ADVERSARIAL_STRING`, not a second copy of the same
+            // literal: a caller building the *expected* value for a
+            // sentinel check reuses this exact constant instead.
+            Value::String(ADVERSARIAL_STRING.to_string()),
             json!("plain seed value"),
         ],
         ColKind::Timestamp => vec![
@@ -662,6 +781,82 @@ mod tests {
         assert_eq!(sql_probeable_autoinc_tables(&snapshot), vec!["widget"]);
         assert_eq!(auto_inc_column(&snapshot, "widget").unwrap(), "id");
         assert!(auto_inc_column(&snapshot, "not_autoinc").is_err());
+        // autoinc_tables: unlike sql_probeable_autoinc_tables, includes
+        // every auto_inc table regardless of its other columns' types --
+        // has_timestamp and has_identity both count, scheduled_one and
+        // not_autoinc still do not.
+        let mut all_autoinc = autoinc_tables(&snapshot);
+        all_autoinc.sort();
+        assert_eq!(all_autoinc, vec!["has_identity", "has_timestamp", "widget"]);
+    }
+
+    #[test]
+    fn sequence_floor_finds_the_named_row_and_reads_its_allocated_value() {
+        let r = resp(
+            r#"{"elements":[
+                {"name":{"some":"sequence_id"},"algebraic_type":{"U32":[]}},
+                {"name":{"some":"sequence_name"},"algebraic_type":{"String":[]}},
+                {"name":{"some":"allocated"},"algebraic_type":{"U64":[]}}
+            ]}"#,
+            r#"[[1,"other_id_seq",99],[2,"widget_id_seq",18446744073709551615]]"#,
+        );
+        assert_eq!(
+            sequence_floor(&r, "widget", "id").unwrap(),
+            "18446744073709551615"
+        );
+        assert!(sequence_floor(&r, "nope", "id").is_err());
+    }
+
+    #[test]
+    fn max_pk_reads_the_highest_canonical_rows_own_primary_key() {
+        let snapshot = snap(
+            r#"{"tables":[{"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}
+            ]}]}"#,
+        );
+        let r = resp(
+            r#"{"elements":[{"name":{"some":"id"},"algebraic_type":{"U64":[]}}]}"#,
+            r#"[[3],[18446744073709551615],[1]]"#,
+        );
+        assert_eq!(
+            max_pk(&snapshot, "widget", &r).unwrap(),
+            Some("18446744073709551615".to_string())
+        );
+        let empty = resp(
+            r#"{"elements":[{"name":{"some":"id"},"algebraic_type":{"U64":[]}}]}"#,
+            "[]",
+        );
+        assert_eq!(max_pk(&snapshot, "widget", &empty).unwrap(), None);
+    }
+
+    #[test]
+    fn adversarial_string_is_seeded_verbatim_by_edge_values() {
+        // The exact same constant `edge_values(ColKind::String)` seeds
+        // with -- never two copies that could drift apart.
+        let values = edge_values(ColKind::String);
+        assert!(values.contains(&Value::String(ADVERSARIAL_STRING.to_string())));
+    }
+
+    #[test]
+    fn manifest_sequence_floor_reads_the_named_table_exactly() {
+        let manifest: Value = serde_json::from_str(
+            r#"{"sequence_floors":{"widget":18446744073709551615,"empty_table":1}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            manifest_sequence_floor(&manifest, "widget").unwrap(),
+            "18446744073709551615"
+        );
+        assert_eq!(
+            manifest_sequence_floor(&manifest, "empty_table").unwrap(),
+            "1"
+        );
+        // Missing from sequence_floors, or no sequence_floors at all:
+        // both read as "0" -- restore_autoinc_rows's own "do not
+        // advance" sentinel, never an error.
+        assert_eq!(manifest_sequence_floor(&manifest, "nope").unwrap(), "0");
+        let no_floors: Value = serde_json::from_str(r#"{"cli_version":"2.9.0"}"#).unwrap();
+        assert_eq!(manifest_sequence_floor(&no_floors, "widget").unwrap(), "0");
     }
 
     #[test]

@@ -172,3 +172,65 @@ fn restore_rs_is_readable_and_nonempty() {
     assert!(Path::new(&path).is_file(), "{} not found", path.display());
     assert!(!restore_rs_text().is_empty());
 }
+
+/// One `restore_<table>` reducer's own signature text, from
+/// `pub fn restore_<table>(` to the matching close-paren -- brace/paren
+/// depth tracked the same way `begin_restore_body` tracks `{}`, so a
+/// `Vec<Row>` or similar nested `(`/`)` inside a type does not end the
+/// scan early.
+fn restore_reducer_signature<'a>(text: &'a str, table: &str) -> &'a str {
+    let marker = format!("pub fn restore_{table}(");
+    let start = text
+        .find(&marker)
+        .unwrap_or_else(|| panic!("restore.rs: no `{marker}` found"));
+    let open = start + marker.len() - 1;
+    let mut depth: i32 = 0;
+    for (i, b) in text.as_bytes()[open..].iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &text[start..open + i + 1];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("restore.rs: restore_{table}'s signature parens are unbalanced");
+}
+
+/// Tim's direction (cycle 4): a restore that stops at the restored data's
+/// own maximum id can re-issue an id the source already handed out and
+/// deleted, corrupting a dangling reference in another table. Every
+/// auto_inc table's own `restore_<table>` reducer must take a
+/// `sequence_floor: u64` parameter and advance the sequence past it
+/// (`restore_autoinc_rows`, `tables::restore`'s own module doc) -- a
+/// table added next month without it is a build failure, not a silent
+/// gap in that guarantee.
+#[test]
+fn every_auto_inc_table_restore_reducer_takes_a_sequence_floor() {
+    let schema = parse_module_schema(&module_src_dir());
+    let text = restore_rs_text();
+    let mut checked = 0;
+    for table in &schema.tables {
+        if table.scheduled_reducer.is_some() || table.accessor == "restore_state" {
+            continue;
+        }
+        let is_auto_inc = table.columns.iter().any(|c| c.primary_key && c.auto_inc);
+        if !is_auto_inc {
+            continue;
+        }
+        let sig = restore_reducer_signature(&text, &table.accessor);
+        assert!(
+            sig.contains("sequence_floor: u64"),
+            "restore_{}'s signature has no `sequence_floor: u64` parameter -- an auto_inc table's restore reducer must be able to advance the sequence past the exported floor, never merely to the restored maximum id",
+            table.accessor
+        );
+        checked += 1;
+    }
+    assert!(
+        checked > 0,
+        "no auto_inc table found in the schema -- this test would otherwise pass vacuously"
+    );
+}

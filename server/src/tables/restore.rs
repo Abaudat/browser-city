@@ -32,12 +32,29 @@
 //! asserted to equal the exported one, via [`restore_autoinc_rows`]. When
 //! it does not yet (the sequence is behind), the generated row is deleted
 //! and another `0`-insert tried -- consuming exactly the ids between the
-//! sequence's current position and the target, so the sequence ends
-//! exactly where the export's did, not merely "not colliding today". If
-//! a generated id ever overshoots the target (the target id was itself
-//! skipped, e.g. exported ids that are not increasing) the reducer
-//! aborts and the whole restore fails loudly rather than silently
-//! reordering data.
+//! sequence's current position and the target. If a generated id ever
+//! overshoots the target (the target id was itself skipped, e.g.
+//! exported ids that are not increasing) the reducer aborts and the whole
+//! restore fails loudly rather than silently reordering data.
+//!
+//! **The sequence never re-issues an id the source ever handed out, not
+//! merely the highest one still present in the export.** Restoring only
+//! up to the restored data's own maximum id would let the *next*
+//! player-created row reuse an id the source deleted off a table's tail
+//! before export -- and since export is consistent per table, not across
+//! tables, a dangling reference in another table (a `character_identity`
+//! row pointing at a `character_id` already gone) could then resolve to
+//! whatever *new* row lands on that reused id. Every `restore_<table>`
+//! reducer therefore also takes `sequence_floor: u64`
+//! (`scripts/ops/export-world.sh` records it per table in
+//! `manifest.json`, read from `st_sequence.allocated` at export time --
+//! a safe upper bound, since nothing above it was ever issued) and, after
+//! placing every exported row, keeps inserting-then-deleting a throwaway
+//! row (never a real one) until the generated id reaches at least that
+//! floor. Multi-batch restores must pass `0` (a permanent no-op) for
+//! every batch but a table's own last one -- advancing early would place
+//! the sequence past a still-to-come batch's own target ids, which the
+//! gap-fill loop above would then read as an overshoot and abort on.
 //!
 //! `restore_module_owner` and the five code-table restore reducers
 //! delete their existing (`init`-seeded) rows first, then insert the
@@ -204,8 +221,13 @@ pub fn finish_restore(ctx: &ReducerContext) -> Result<(), String> {
 /// An auto_inc table's row, reduced to what [`restore_autoinc_rows`]
 /// needs: its own id, and a copy of itself with a different one. One
 /// tiny impl per auto_inc table (below) -- never a derive, since the id
-/// field's name differs per table.
-trait AutoIncRow: Clone {
+/// field's name differs per table. `Default` (every auto_inc table
+/// struct derives it, alongside `Clone`) is what lets the sequence-floor
+/// advance below construct a throwaway row with no real export data to
+/// copy from (an empty table can still have a nonzero floor -- rows once
+/// existed and were deleted before export) -- its field values never
+/// matter, since [`restore_autoinc_rows`] deletes it again immediately.
+trait AutoIncRow: Clone + Default {
     fn id(&self) -> u64;
     fn with_id(&self, id: u64) -> Self;
 }
@@ -216,11 +238,29 @@ trait AutoIncRow: Clone {
 /// than a `ctx`/accessor parameter because there is no shared trait
 /// across SpacetimeDB's per-table generated accessor types to abstract
 /// that part genuinely generically.
+///
+/// `sequence_floor`, after every row is placed, advances the sequence to
+/// at least that position -- never merely to the highest *exported* id.
+/// Restoring only up to the restored data's own maximum id can re-issue
+/// an id the source already handed out and later deleted (a dangling
+/// `character_identity.identity` pointing at a `character_id` no longer
+/// present, for one): the next player-created row on the restored
+/// database would then collide with that stale reference instead of a
+/// fresh id. `sequence_floor` is `st_sequence.allocated` at export time
+/// (`scripts/ops/export-world.sh`, `manifest.json`'s own
+/// `sequence_floors`) -- a safe upper bound, since nothing above it was
+/// ever issued. Every placeholder inserted to reach the floor is deleted
+/// again immediately (it is never a real exported row); only the
+/// sequence's own position, never table content, is affected. **Pass `0`
+/// for every call but a table's own last batch** -- advancing early
+/// would place the sequence past a still-to-come batch's own target ids,
+/// which the loop above would then read as an overshoot and abort on.
 fn restore_autoinc_rows<T: AutoIncRow>(
     rows: Vec<T>,
     mut insert: impl FnMut(T) -> T,
     mut delete: impl FnMut(u64),
     table_name: &str,
+    sequence_floor: u64,
 ) -> Result<(), String> {
     for row in rows {
         let target_id = row.id();
@@ -236,6 +276,17 @@ fn restore_autoinc_rows<T: AutoIncRow>(
                 return Err(format!(
                     "'{table_name}': the generated id {got} overshot the exported id {target_id} -- exported ids must be strictly increasing and gap-free from the sequence's own position; restore aborted"
                 ));
+            }
+        }
+    }
+    if sequence_floor > 0 {
+        loop {
+            let dummy = T::default().with_id(0);
+            let inserted = insert(dummy);
+            let got = inserted.id();
+            delete(got);
+            if got >= sequence_floor {
+                break;
             }
         }
     }
@@ -269,7 +320,11 @@ impl_autoinc_row!(Room, room_id);
 impl_autoinc_row!(RoomArea, area_id);
 
 #[spacetimedb::reducer]
-pub fn restore_demo_ping(ctx: &ReducerContext, rows: Vec<DemoPing>) -> Result<(), String> {
+pub fn restore_demo_ping(
+    ctx: &ReducerContext,
+    rows: Vec<DemoPing>,
+    sequence_floor: u64,
+) -> Result<(), String> {
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -279,11 +334,16 @@ pub fn restore_demo_ping(ctx: &ReducerContext, rows: Vec<DemoPing>) -> Result<()
             ctx.db.demo_ping().id().delete(id);
         },
         "demo_ping",
+        sequence_floor,
     )
 }
 
 #[spacetimedb::reducer]
-pub fn restore_building(ctx: &ReducerContext, rows: Vec<Building>) -> Result<(), String> {
+pub fn restore_building(
+    ctx: &ReducerContext,
+    rows: Vec<Building>,
+    sequence_floor: u64,
+) -> Result<(), String> {
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -293,11 +353,16 @@ pub fn restore_building(ctx: &ReducerContext, rows: Vec<Building>) -> Result<(),
             ctx.db.building().building_id().delete(id);
         },
         "building",
+        sequence_floor,
     )
 }
 
 #[spacetimedb::reducer]
-pub fn restore_building_area(ctx: &ReducerContext, rows: Vec<BuildingArea>) -> Result<(), String> {
+pub fn restore_building_area(
+    ctx: &ReducerContext,
+    rows: Vec<BuildingArea>,
+    sequence_floor: u64,
+) -> Result<(), String> {
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -307,11 +372,16 @@ pub fn restore_building_area(ctx: &ReducerContext, rows: Vec<BuildingArea>) -> R
             ctx.db.building_area().area_id().delete(id);
         },
         "building_area",
+        sequence_floor,
     )
 }
 
 #[spacetimedb::reducer]
-pub fn restore_character(ctx: &ReducerContext, rows: Vec<Character>) -> Result<(), String> {
+pub fn restore_character(
+    ctx: &ReducerContext,
+    rows: Vec<Character>,
+    sequence_floor: u64,
+) -> Result<(), String> {
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -321,6 +391,7 @@ pub fn restore_character(ctx: &ReducerContext, rows: Vec<Character>) -> Result<(
             ctx.db.character().character_id().delete(id);
         },
         "character",
+        sequence_floor,
     )
 }
 
@@ -328,6 +399,7 @@ pub fn restore_character(ctx: &ReducerContext, rows: Vec<Character>) -> Result<(
 pub fn restore_character_identity(
     ctx: &ReducerContext,
     rows: Vec<CharacterIdentity>,
+    sequence_floor: u64,
 ) -> Result<(), String> {
     require_owner(ctx)?;
     require_restore_open(ctx)?;
@@ -338,11 +410,16 @@ pub fn restore_character_identity(
             ctx.db.character_identity().mapping_id().delete(id);
         },
         "character_identity",
+        sequence_floor,
     )
 }
 
 #[spacetimedb::reducer]
-pub fn restore_citizen(ctx: &ReducerContext, rows: Vec<Citizen>) -> Result<(), String> {
+pub fn restore_citizen(
+    ctx: &ReducerContext,
+    rows: Vec<Citizen>,
+    sequence_floor: u64,
+) -> Result<(), String> {
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -352,6 +429,7 @@ pub fn restore_citizen(ctx: &ReducerContext, rows: Vec<Citizen>) -> Result<(), S
             ctx.db.citizen().citizen_id().delete(id);
         },
         "citizen",
+        sequence_floor,
     )
 }
 
@@ -359,6 +437,7 @@ pub fn restore_citizen(ctx: &ReducerContext, rows: Vec<Citizen>) -> Result<(), S
 pub fn restore_floor_transition(
     ctx: &ReducerContext,
     rows: Vec<FloorTransition>,
+    sequence_floor: u64,
 ) -> Result<(), String> {
     require_owner(ctx)?;
     require_restore_open(ctx)?;
@@ -369,11 +448,16 @@ pub fn restore_floor_transition(
             ctx.db.floor_transition().transition_id().delete(id);
         },
         "floor_transition",
+        sequence_floor,
     )
 }
 
 #[spacetimedb::reducer]
-pub fn restore_placed_object(ctx: &ReducerContext, rows: Vec<PlacedObject>) -> Result<(), String> {
+pub fn restore_placed_object(
+    ctx: &ReducerContext,
+    rows: Vec<PlacedObject>,
+    sequence_floor: u64,
+) -> Result<(), String> {
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -383,11 +467,16 @@ pub fn restore_placed_object(ctx: &ReducerContext, rows: Vec<PlacedObject>) -> R
             ctx.db.placed_object().object_id().delete(id);
         },
         "placed_object",
+        sequence_floor,
     )
 }
 
 #[spacetimedb::reducer]
-pub fn restore_room(ctx: &ReducerContext, rows: Vec<Room>) -> Result<(), String> {
+pub fn restore_room(
+    ctx: &ReducerContext,
+    rows: Vec<Room>,
+    sequence_floor: u64,
+) -> Result<(), String> {
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -397,11 +486,16 @@ pub fn restore_room(ctx: &ReducerContext, rows: Vec<Room>) -> Result<(), String>
             ctx.db.room().room_id().delete(id);
         },
         "room",
+        sequence_floor,
     )
 }
 
 #[spacetimedb::reducer]
-pub fn restore_room_area(ctx: &ReducerContext, rows: Vec<RoomArea>) -> Result<(), String> {
+pub fn restore_room_area(
+    ctx: &ReducerContext,
+    rows: Vec<RoomArea>,
+    sequence_floor: u64,
+) -> Result<(), String> {
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -411,6 +505,7 @@ pub fn restore_room_area(ctx: &ReducerContext, rows: Vec<RoomArea>) -> Result<()
             ctx.db.room_area().area_id().delete(id);
         },
         "room_area",
+        sequence_floor,
     )
 }
 

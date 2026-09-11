@@ -124,6 +124,39 @@ fn run(args: &[String]) -> Result<()> {
             let snapshot = read_snapshot(&args[2])?;
             println!("{}", auto_inc_column(&snapshot, &args[3])?);
         }
+        "autoinc-tables" => {
+            let snapshot = read_snapshot(&args[2])?;
+            for accessor in autoinc_tables(&snapshot) {
+                println!("{accessor}");
+            }
+        }
+        "sequence-floor" => {
+            // sequence-floor <st_sequence-response.json> <table> <column>
+            let resp = parse_response(&read_file(&args[2])?)?;
+            println!("{}", sequence_floor(&resp, &args[3], &args[4])?);
+        }
+        "max-pk" => {
+            // max-pk <snapshot.json> <accessor> <response.json>
+            let snapshot = read_snapshot(&args[2])?;
+            let accessor = &args[3];
+            let resp = parse_response(&read_file(&args[4])?)?;
+            if let Some(pk) = max_pk(&snapshot, accessor, &resp)? {
+                println!("{pk}");
+            }
+        }
+        "adversarial-string-line" => {
+            println!(
+                "{}",
+                row_to_line(&Value::String(ADVERSARIAL_STRING.to_string()))
+            );
+        }
+        "manifest-floor" => {
+            // manifest-floor <manifest.json> <table>
+            let text = read_file(&args[2])?;
+            let manifest: Value = serde_json::from_str(&text)
+                .map_err(|e| WorldBackupError(format!("{}: not valid JSON: {e}", args[2])))?;
+            println!("{}", manifest_sequence_floor(&manifest, &args[3])?);
+        }
         "snapshot-tables" => {
             let snapshot = read_snapshot(&args[2])?;
             for t in &snapshot.tables {
@@ -163,24 +196,29 @@ fn run(args: &[String]) -> Result<()> {
             }
         }
         "write-manifest" => {
-            // write-manifest <out.json> <key=value...> tables_file=<path>
+            // write-manifest <out.json> <key=value...> <name>_file=<path>...
+            // -- any key ending `_file` embeds the JSON parsed from that
+            // path under the key with `_file` stripped (e.g.
+            // `tables_file=t.json` embeds t.json's own parsed value under
+            // `"tables"`; `sequence_floors_file=f.json` under
+            // `"sequence_floors"`), never a hardcoded single field name.
             let out = &args[2];
             let mut manifest = serde_json::Map::new();
-            let mut tables_file: Option<String> = None;
+            let mut file_fields: Vec<(String, String)> = Vec::new();
             for pair in &args[3..] {
                 let (k, v) = pair
                     .split_once('=')
                     .ok_or_else(|| WorldBackupError(format!("not key=value: {pair}")))?;
-                if k == "tables_file" {
-                    tables_file = Some(v.to_string());
+                if let Some(field) = k.strip_suffix("_file") {
+                    file_fields.push((field.to_string(), v.to_string()));
                 } else {
                     manifest.insert(k.to_string(), Value::String(v.to_string()));
                 }
             }
-            if let Some(tf) = tables_file {
-                let tables: Value = serde_json::from_str(&read_file(&tf)?)
-                    .map_err(|e| WorldBackupError(format!("{tf}: not valid JSON: {e}")))?;
-                manifest.insert("tables".to_string(), tables);
+            for (field, path) in file_fields {
+                let value: Value = serde_json::from_str(&read_file(&path)?)
+                    .map_err(|e| WorldBackupError(format!("{path}: not valid JSON: {e}")))?;
+                manifest.insert(field, value);
             }
             let text = serde_json::to_string_pretty(&Value::Object(manifest))
                 .expect("a manifest built from strings always serializes");

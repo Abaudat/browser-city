@@ -10,9 +10,13 @@
 # by the table's real primary key -- server/tools/world_backup) for every
 # table, plus manifest.json (CLI version, the schema snapshot's own
 # sha256, the database identity, the exporting identity, per-table row
-# counts and per-file sha256). Every value passes through world_backup,
-# never `jq` -- see that crate's module doc for why (u64/chunk_key
-# precision).
+# counts and per-file sha256, and every auto_inc table's own
+# `sequence_floors` -- `st_sequence.allocated` at export time, a safe
+# upper bound restore-world.sh advances each sequence past, so a restore
+# never re-issues an id the source ever handed out, not merely the
+# highest one still present in the export). Every value passes through
+# world_backup, never `jq` -- see that crate's module doc for why
+# (u64/chunk_key precision).
 #
 # Atomic: builds in <out-dir>.partial, then rename-swaps into place. A
 # failed or half-written export never looks like one at the final path
@@ -88,6 +92,30 @@ TABLES_JSON="$TMP_DIR/.tables.json"
   printf '\n}\n'
 } > "$TABLES_JSON"
 
+# --- every auto_inc table's own sequence floor (Tim's direction, cycle
+# 4): the restore must never re-issue an id the source ever handed out,
+# not merely the highest one still present among the exported rows --
+# `st_sequence.allocated` (a system table, readable regardless of the
+# target table's own column types) is a safe upper bound, since nothing
+# above it was ever issued. One query for every table's sequence at once,
+# never one per table. ---------------------------------------------------
+ST_SEQUENCE_RESPONSE="$TMP_DIR/.st_sequence.json"
+bc_sql_json "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "SELECT * FROM st_sequence" >"$ST_SEQUENCE_RESPONSE"
+FLOORS_JSON="$TMP_DIR/.sequence-floors.json"
+{
+  printf '{\n'
+  first=1
+  while IFS= read -r table; do
+    [ -n "$table" ] || continue
+    col="$(bc_wb auto-inc-column "$BC_SNAPSHOT" "$table")"
+    floor="$(bc_wb sequence-floor "$ST_SEQUENCE_RESPONSE" "$table" "$col")"
+    [ "$first" -eq 1 ] || printf ',\n'
+    first=0
+    printf '  "%s": %s' "$table" "$floor"
+  done <<< "$(bc_wb autoinc-tables "$BC_SNAPSHOT")"
+  printf '\n}\n'
+} > "$FLOORS_JSON"
+
 CLI_VERSION="$(spacetime --version 2>/dev/null | grep -oE 'spacetimedb tool version [0-9]+\.[0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo unknown)"
 SNAPSHOT_SHA="$(bc_sha256 "$BC_SNAPSHOT")"
 EXPORTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -109,9 +137,10 @@ bc_wb write-manifest "$TMP_DIR/manifest.json" \
   "exported_at=$EXPORTED_AT" \
   "database=$DB" \
   "tables_file=$TABLES_JSON" \
+  "sequence_floors_file=$FLOORS_JSON" \
   || bc_ops_die "$SCRIPT" "could not write manifest.json"
 
-rm -f "$DESCRIBE_JSON" "$TMP_DIR/.describe.err" "$TABLES_JSON"
+rm -f "$DESCRIBE_JSON" "$TMP_DIR/.describe.err" "$TABLES_JSON" "$ST_SEQUENCE_RESPONSE" "$FLOORS_JSON"
 
 trap - EXIT
 # Move the previous good export aside first, and delete it only once the

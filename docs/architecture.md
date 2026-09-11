@@ -98,7 +98,9 @@ the measured limitations behind these rules.
   (`server/src/tables/restore.rs`), into a fresh database, by the owner
   identity, at the exported schema.
 - auto_inc tables are restored through their own sequence (id `0`),
-  never with an explicit id.
+  never with an explicit id, and advanced past the exported sequence
+  position (`manifest.json`'s `sequence_floors`); a restore never
+  re-issues an id.
 - Scheduled tables are never restored.
 - Consistency is per table, not across tables.
 - Every non-scheduled table has a `restore_<table>` reducer, checked

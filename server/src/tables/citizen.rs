@@ -18,6 +18,19 @@ pub struct Citizen {
     pub created_at: Timestamp,
 }
 
+/// Manual, not derived: `Timestamp` has no `Default` impl. Only ever used
+/// as a throwaway row by `tables::restore`'s sequence-floor advance --
+/// field values never matter, since that row is deleted again
+/// immediately.
+impl Default for Citizen {
+    fn default() -> Self {
+        Citizen {
+            citizen_id: 0,
+            created_at: Timestamp::UNIX_EPOCH,
+        }
+    }
+}
+
 /// A citizen's hot state, rewritten at every L2 transition (FR49). Shares
 /// `citizen`'s own id rather than minting its own -- the two rows are
 /// always created and destroyed together, never independently.

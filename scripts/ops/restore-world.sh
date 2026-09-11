@@ -18,12 +18,17 @@
 # match the exported owner (checked here, before any reducer call,
 # because a real one gets an unhelpful bare read failure instead of this
 # script's own clear message -- SpacetimeDB refuses a private-table SQL
-# read to any identity but the owner, confirmed empirically), and batch
-# each table's rows into `spacetime call` arguments sized by a **byte**
+# read to any identity but the owner, confirmed empirically), batch each
+# table's rows into `spacetime call` arguments sized by a **byte**
 # budget, never a fixed row count (Quentin's direction: a fixed row count
 # breaks the moment a table's average row size crosses the command-line
 # length limit -- 131,072 bytes for one argv element on Linux, roughly
-# 32,000 characters for the *whole* command line on Windows).
+# 32,000 characters for the *whole* command line on Windows), and, for
+# every auto_inc table, pass its own recorded `sequence_floor` (manifest.
+# json's `sequence_floors`) on the last batch only -- so the restored
+# sequence advances past every id the source ever issued, not merely the
+# highest one still present among the exported rows (docs/spikes/
+# 1.4-backup-restore.md).
 #
 # Usage: restore-world.sh <db> <export-dir> [--server <url-or-nickname>]
 #
@@ -124,23 +129,78 @@ while IFS= read -r table; do
   SKIPPED_SCHEDULED=$((SKIPPED_SCHEDULED + 1))
 done <<< "$(bc_table_names scheduled)"
 
+AUTOINC_TABLES="$(bc_wb autoinc-tables "$BC_SNAPSHOT")"
+is_autoinc() { # <table>
+  grep -qxF "$1" <<<"$AUTOINC_TABLES"
+}
+
 while IFS= read -r table; do
   [ -n "$table" ] || continue
   file="$EXPORT_DIR/$table.jsonl"
   [ -f "$file" ] || bc_ops_die "$SCRIPT" "$file not found in the export"
   n="$(wc -l < "$file" | tr -d ' ')"
-  if [ "$n" -eq 0 ]; then
-    echo "restore-world: ok -- '$table' has 0 exported rows" >&2
+
+  if ! is_autoinc "$table"; then
+    if [ "$n" -eq 0 ]; then
+      echo "restore-world: ok -- '$table' has 0 exported rows" >&2
+      RESTORED=$((RESTORED + 1))
+      continue
+    fi
+    total=0
+    while IFS= read -r batch; do
+      [ -n "$batch" ] || continue
+      bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "restore_$table" "$batch"
+      total=$((total + 1))
+    done <<< "$(bc_wb call-batches "$file" "$BATCH_BYTES")"
+    echo "restore-world: ok -- '$table' restored $n row(s) in $total batch(es), byte budget $BATCH_BYTES" >&2
     RESTORED=$((RESTORED + 1))
     continue
   fi
-  total=0
-  while IFS= read -r batch; do
+
+  # auto_inc table: every `restore_<table>` call also takes
+  # `sequence_floor: u64` -- `0` (a permanent no-op) for every batch but
+  # this table's own *last* one, which gets the real floor from
+  # manifest.json's `sequence_floors` (docs/spikes/
+  # 1.4-backup-restore.md's own rule: the restored sequence must never
+  # re-issue an id the source ever handed out, not merely the highest one
+  # still present among the exported rows). Advancing early would place
+  # the sequence past a still-to-come batch's own target ids, which
+  # `restore_autoinc_rows` would then read as an overshoot and abort on
+  # -- so batches are materialized into an array first, never streamed
+  # one at a time, purely so the *last* one is known before any call is
+  # made.
+  FLOOR="$(bc_wb manifest-floor "$MANIFEST" "$table")"
+  if [ "$n" -eq 0 ]; then
+    if [ "$FLOOR" = "0" ]; then
+      echo "restore-world: ok -- '$table' has 0 exported rows and no sequence floor to advance to" >&2
+      RESTORED=$((RESTORED + 1))
+      continue
+    fi
+    t0=$(date +%s.%N)
+    bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "restore_$table" '[]' "$FLOOR"
+    t1=$(date +%s.%N)
+    echo "restore-world: ok -- '$table' has 0 exported rows, advanced its sequence to floor $FLOOR in $(awk -v a="$t0" -v b="$t1" 'BEGIN{printf "%.3f", b-a}')s" >&2
+    RESTORED=$((RESTORED + 1))
+    continue
+  fi
+
+  mapfile -t BATCHES < <(bc_wb call-batches "$file" "$BATCH_BYTES")
+  total=${#BATCHES[@]}
+  last=$((total - 1))
+  gap_fill_s="0.000"
+  for i in "${!BATCHES[@]}"; do
+    batch="${BATCHES[$i]}"
     [ -n "$batch" ] || continue
-    bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "restore_$table" "$batch"
-    total=$((total + 1))
-  done <<< "$(bc_wb call-batches "$file" "$BATCH_BYTES")"
-  echo "restore-world: ok -- '$table' restored $n row(s) in $total batch(es), byte budget $BATCH_BYTES" >&2
+    if [ "$i" -eq "$last" ]; then
+      t0=$(date +%s.%N)
+      bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "restore_$table" "$batch" "$FLOOR"
+      t1=$(date +%s.%N)
+      gap_fill_s="$(awk -v a="$t0" -v b="$t1" 'BEGIN{printf "%.3f", b-a}')"
+    else
+      bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" "restore_$table" "$batch" 0
+    fi
+  done
+  echo "restore-world: ok -- '$table' restored $n row(s) in $total batch(es), byte budget $BATCH_BYTES, sequence advanced to floor $FLOOR -- last batch (rows + floor-advance) took ${gap_fill_s}s" >&2
   RESTORED=$((RESTORED + 1))
 done <<< "$(bc_table_names non-scheduled)"
 
