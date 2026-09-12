@@ -116,6 +116,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         key: located(text, &o.key),
                         width: o.width,
                         height: o.height,
+                        collider: o.collider.as_ref().map(|c| located(text, c)),
                     });
                 }
             }

@@ -4,7 +4,7 @@ import {
   buildPropDrawables,
   updatePlayerDrawable,
 } from "../../../src/demo/drawables";
-import { PLAYER_BOUNDS, PLAYER_START, SIDEWALK_TILES } from "../../../src/demo/fixture";
+import { PLAYER_START, PLAYER_WALK_SOUTH_REST_Y, SIDEWALK_TILES } from "../../../src/demo/fixture";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { LAYER_TABLE } from "../../../src/render/layer-table";
 import { screenPositionPx } from "../../../src/render/screen-position";
@@ -45,7 +45,7 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     expect(pool.map((d) => d.stableId.toString())).toEqual(DEMO_SCENE_GOLDEN_ORDER);
   });
 
-  it("sorts the fixture with the player walked south to the clamped bound to the second committed id sequence", () => {
+  it("sorts the fixture with the player walked south to rest against the story 1.8 obstacle to the second committed id sequence", () => {
     // Quentin's direction: the unit test owns this ordering fact too --
     // `render-order.spec.ts` only has to prove the real adapter reaches
     // it after a real move, never derive or own it by itself. Built
@@ -53,7 +53,11 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // above is, so a wrong golden here fails with a diff in the fastest
     // job instead of a ten-second timeout in the slowest one.
     const props = buildPropDrawables((layer) => rankOf(layer));
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_BOUNDS.y1);
+    const player = buildPlayerDrawable(
+      rankOf("characters"),
+      PLAYER_START.x,
+      PLAYER_WALK_SOUTH_REST_Y,
+    );
     const pool = [...props, player];
     sortDrawablesInPlace(pool);
 
@@ -116,38 +120,30 @@ describe("the story 1.6 demo scene's committed ordering", () => {
   });
 });
 
-describe("PLAYER_BOUNDS stays within the world the scene actually draws (Quentin's cycle-4 direction)", () => {
+describe("PLAYER_WALK_SOUTH_REST_Y stays within the world the scene actually draws (Quentin's cycle-4 direction, carried forward to story 1.8)", () => {
   // The scene's mount-time canvas-bounds guard (`assertSpritesWithinCanvas`)
   // only ever runs once, against the player's *starting* position -- it
-  // can never catch a clamp that only overruns the drawn world once the
-  // player has actually walked there. This pins the relation directly
+  // can never catch a rest point that only overruns the drawn world once
+  // the player has actually walked there. This pins the relation directly
   // against the pure `screenPositionPx` the scene itself uses, so a
-  // future edit to either the bounds or the fixture's ground extent fails
-  // here, cheaply, instead of drawing the player off the pavement.
-  it("keeps every corner of PLAYER_BOUNDS drawn no lower than the pavement's own last row", () => {
+  // future edit to either the obstacle's position or the fixture's ground
+  // extent fails here, cheaply, instead of drawing the player off the
+  // pavement.
+  it("keeps the walked-south rest position drawn no lower than the pavement's own last row", () => {
     // `SIDEWALK_TILES.y1` is exclusive -- the last drawn pavement row's
     // own bottom edge, in world pixels, is exactly `y1 * tileSizePx`.
     const groundBottomPx = SIDEWALK_TILES.y1 * TILE_SIZE_PX;
-    const corners = [
-      { x: PLAYER_BOUNDS.x0, y: PLAYER_BOUNDS.y0 },
-      { x: PLAYER_BOUNDS.x0, y: PLAYER_BOUNDS.y1 },
-      { x: PLAYER_BOUNDS.x1, y: PLAYER_BOUNDS.y0 },
-      { x: PLAYER_BOUNDS.x1, y: PLAYER_BOUNDS.y1 },
-    ] as const;
-
-    for (const corner of corners) {
-      const pos = screenPositionPx(
-        corner.x,
-        corner.y,
-        PLAYER_START.floor,
-        TILE_SIZE_PX,
-        STOREY_HEIGHT_PX,
-      );
-      expect(pos.y).toBeGreaterThanOrEqual(0);
-      expect(pos.y).toBeLessThanOrEqual(groundBottomPx);
-      expect(pos.x).toBeGreaterThanOrEqual(SIDEWALK_TILES.x0 * TILE_SIZE_PX);
-      expect(pos.x).toBeLessThanOrEqual(SIDEWALK_TILES.x1 * TILE_SIZE_PX);
-    }
+    const pos = screenPositionPx(
+      PLAYER_START.x,
+      PLAYER_WALK_SOUTH_REST_Y,
+      PLAYER_START.floor,
+      TILE_SIZE_PX,
+      STOREY_HEIGHT_PX,
+    );
+    expect(pos.y).toBeGreaterThanOrEqual(0);
+    expect(pos.y).toBeLessThanOrEqual(groundBottomPx);
+    expect(pos.x).toBeGreaterThanOrEqual(SIDEWALK_TILES.x0 * TILE_SIZE_PX);
+    expect(pos.x).toBeLessThanOrEqual(SIDEWALK_TILES.x1 * TILE_SIZE_PX);
   });
 });
 

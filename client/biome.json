@@ -28,5 +28,26 @@
       "quoteStyle": "double",
       "semicolons": "always"
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["src/world/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["pixi.js", "../net/*", "!../net/bindings/types", "../demo/*"]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

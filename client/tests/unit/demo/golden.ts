@@ -49,22 +49,21 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
   "3", // south wall, east segment, x=7
   "3", // south wall, east segment, x=8
   "11", // awning -- anchored on the pavement (y=7), still in front of the player at the start position
+  "14", // the story 1.8 solid obstacle, further south still (y=8) -- always the last static prop
 ];
 
 /**
- * The order after the player has walked south to the edge of
- * `PLAYER_BOUNDS` (y = 8, clamped -- a deterministic endpoint regardless
- * of exact key-hold timing, one full row past the awning's own anchor at
- * y=7 and no further, since that is the last row `SIDEWALK_TILES` itself
- * draws -- Quentin's cycle-4 direction): they now sort in front of the
- * table, the glass, the whole near row of the west/east walls, the south
- * wall and the awning itself -- Artie's cycle-3 direction: a player
- * walking all the way out of the shop must end up in front of the awning
- * on the street, not hidden behind it forever. `drawables.test.ts`
- * asserts this same list directly against the comparator
- * (`sortDrawablesInPlace`) -- `render-order.spec.ts` only proves the real
- * adapter reaches the identical order after a real keyboard move, it
- * never owns the ordering fact by itself.
+ * The order after the player has walked south out the door and rested
+ * against the story 1.8 solid obstacle (id 14, `PLAYER_WALK_SOUTH_REST_Y`
+ * -- a real collider, not an invented bounds rectangle): they now sort in
+ * front of the table, the glass, the whole near row of the west/east
+ * walls, the south wall, the awning and the obstacle itself -- Artie's
+ * cycle-3 direction carried forward: a player walking all the way out of
+ * the shop must end up in front of everything on the street, not hidden
+ * behind it forever. `drawables.test.ts` asserts this same list directly
+ * against the comparator (`sortDrawablesInPlace`) -- `render-order.spec.ts`
+ * only proves the real adapter reaches the identical order after a real
+ * keyboard move, it never owns the ordering fact by itself.
  */
 export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "1",
@@ -101,5 +100,6 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "3",
   "3",
   "11", // awning -- now behind the player too: they have walked all the way past it
+  "14", // the obstacle the player is now resting against -- also behind them
   "1000", // the player, out on the pavement, in front of everything
 ];

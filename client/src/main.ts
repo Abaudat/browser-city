@@ -3,11 +3,16 @@ import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
 import { mountDemoScene } from "./demo/scene";
 import { connect } from "./net/connection";
-import { recordPingForE2e, recordRenderOrderForE2e } from "./net/e2e-hooks";
+import {
+  recordPingForE2e,
+  recordPlayerPositionForE2e,
+  recordRenderOrderForE2e,
+} from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
 import { bootstrapRenderer } from "./render/bootstrap";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
+import { loadMovementConfig } from "./world/movement-config";
 
 async function main(): Promise<void> {
   const mount = document.getElementById("app");
@@ -57,6 +62,7 @@ async function startDemoScene(): Promise<void> {
   const defs = await fetchDefs("/defs/defs.json");
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");
+  const movementConfig = loadMovementConfig(defs);
 
   const rankTable = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
 
@@ -71,7 +77,9 @@ async function startDemoScene(): Promise<void> {
     tileSizePx,
     storeyHeightPx,
     rankOf: (code) => resolveRank(rankTable, code),
+    movementConfig,
     onOrderChange: recordRenderOrderForE2e,
+    onPlayerMove: recordPlayerPositionForE2e,
   });
 }
 

@@ -1,11 +1,17 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { canonicalDump, DefsParseError, parseDefs } from "../../../src/defs/parse";
 import type { Defs } from "../../../src/defs/types";
+
+const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
 function validPayload(): Record<string, unknown> {
   return {
     generated_by: "tools/defs-build -- do not edit by hand",
     defs_version: "abc123",
+    collider_subcells_per_cell: 16,
     objects: [{ id: 1, key: "trash_bin", width: 1, height: 1 }],
     items: [
       { id: 1, key: "bottle" },
@@ -126,6 +132,137 @@ describe("parseDefs", () => {
     payload.balance = [{ key: "a", value: 10, min: 0, max: 10 }];
     expect(() => parseDefs(payload)).not.toThrow();
   });
+
+  it("parses a present collider and leaves an absent one undefined", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+      collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
+    };
+    const defs = parseDefs(payload);
+    expect(defs.objects[0]?.collider).toEqual({ x0: 4, y0: 4, x1: 12, y1: 12 });
+
+    payload.objects = [{ id: 1, key: "trash_bin", width: 1, height: 1 }];
+    expect(parseDefs(payload).objects[0]?.collider).toBeUndefined();
+  });
+
+  it("rejects a non-integer collider bound", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+      collider: { x0: 4.5, y0: 4, x1: 12, y1: 12 },
+    };
+    expect(() => parseDefs(payload)).toThrow(/expected an integer in \[-2\^31, 2\^31\)/);
+  });
+
+  it("treats an explicit null collider the same as an absent one", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+      collider: null,
+    };
+    expect(parseDefs(payload).objects[0]?.collider).toBeUndefined();
+  });
+
+  it("rejects a zero-area collider (FR128)", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+      collider: { x0: 5, y0: 5, x1: 5, y1: 9 },
+    };
+    expect(() => parseDefs(payload)).toThrow(/zero or negative area/);
+  });
+
+  it("rejects a collider outside its own footprint (FR128)", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+      collider: { x0: 0, y0: 0, x1: 20, y1: 8 },
+    };
+    expect(() => parseDefs(payload)).toThrow(/does not fit inside its footprint/);
+  });
+
+  it("accepts a collider flush with the footprint edge (FR128)", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+      collider: { x0: 0, y0: 0, x1: 16, y1: 16 },
+    };
+    expect(() => parseDefs(payload)).not.toThrow();
+  });
+
+  it("inv_collider_within_footprint", () => {
+    // Real, committed data: every object's own collider (if any) is
+    // contained in its own footprint -- checked independently of
+    // `parseDefs`'s own enforcement of the same rule, against real
+    // `defs/objects` content (Quentin's direction).
+    const defsJson = JSON.parse(
+      readFileSync(`${REPO_ROOT}client/public/defs/defs.json`, "utf-8"),
+    ) as {
+      collider_subcells_per_cell: number;
+      objects: readonly {
+        width: number;
+        height: number;
+        collider: { x0: number; y0: number; x1: number; y1: number } | null;
+      }[];
+    };
+    const perCell = defsJson.collider_subcells_per_cell;
+    const withColliders = defsJson.objects.filter((o) => o.collider !== null);
+    expect(withColliders.length).toBeGreaterThan(0);
+    for (const o of withColliders) {
+      const c = o.collider as { x0: number; y0: number; x1: number; y1: number };
+      expect(c.x1).toBeGreaterThan(c.x0);
+      expect(c.y1).toBeGreaterThan(c.y0);
+      expect(c.x0).toBeGreaterThanOrEqual(0);
+      expect(c.y0).toBeGreaterThanOrEqual(0);
+      expect(c.x1).toBeLessThanOrEqual(o.width * perCell);
+      expect(c.y1).toBeLessThanOrEqual(o.height * perCell);
+    }
+
+    // Property: for any footprint and any collider rect, `parseDefs`
+    // accepts it exactly when it is contained (positive area, inside
+    // `width*16 x height*16`) and rejects it otherwise.
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 8 }),
+        fc.integer({ min: 1, max: 8 }),
+        fc.integer({ min: -20, max: 140 }),
+        fc.integer({ min: -20, max: 140 }),
+        fc.integer({ min: -20, max: 140 }),
+        fc.integer({ min: -20, max: 140 }),
+        (width, height, x0, y0, x1, y1) => {
+          const payload = validPayload();
+          payload.objects = [{ id: 1, key: "x", width, height, collider: { x0, y0, x1, y1 } }];
+          const maxX = width * 16;
+          const maxY = height * 16;
+          const contained = x1 > x0 && y1 > y0 && x0 >= 0 && y0 >= 0 && x1 <= maxX && y1 <= maxY;
+          if (contained) {
+            expect(() => parseDefs(payload)).not.toThrow();
+          } else {
+            expect(() => parseDefs(payload)).toThrow();
+          }
+        },
+      ),
+    );
+  });
 });
 
 describe("canonicalDump", () => {
@@ -138,7 +275,7 @@ describe("canonicalDump", () => {
         "chain plastic_bottle id=1 links=[sanitation_worker]",
         "item bottle id=1",
         "item recycled_glass id=2",
-        "object trash_bin id=1 height=1 width=1",
+        "object trash_bin id=1 height=1 width=1 collider=none",
         "profession sanitation_worker id=1",
         "recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]",
         "",

@@ -15,15 +15,19 @@ import { type Application, Assets, Container, Rectangle, Sprite, Texture } from 
 import { layerCodeByName } from "../render/layer-table";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { screenPositionPx } from "../render/screen-position";
-import { fromSortUnits } from "../render/sort-units";
+import { fromSortUnits, toSortUnits } from "../render/sort-units";
+import type { ColliderSource } from "../world/collision-grid";
+import { CollisionGrid } from "../world/collision-grid";
+import { attachKeyboard, KeyboardState } from "../world/keyboard";
+import type { MovementConfig } from "../world/movement";
+import { step } from "../world/movement";
 import {
   buildPlayerDrawable,
   buildPropDrawables,
   type PropDrawable,
   updatePlayerDrawable,
 } from "./drawables";
-import { INTERIOR_FLOOR_TILES, PLAYER_BOUNDS, PLAYER_START, SIDEWALK_TILES } from "./fixture";
-import { type PlayerBounds, stepPlayer } from "./player-step";
+import { DEMO_PROPS, INTERIOR_FLOOR_TILES, PLAYER_START, SIDEWALK_TILES } from "./fixture";
 
 // Each `new URL(<literal>, import.meta.url)` call below must stay a
 // literal string argument, not a variable or template interpolation --
@@ -126,29 +130,27 @@ const SCREEN_Y_NUDGE_PX: Readonly<Partial<Record<string, number>>> = {
   glass: -18,
 };
 
-const WALK_TILES_PER_SECOND = 3;
 const ZOOM = 3;
 const CANVAS_MARGIN_PX = 8;
-
-const KEY_TO_DELTA: Record<string, readonly [number, number]> = {
-  ArrowUp: [0, -1],
-  ArrowDown: [0, 1],
-  ArrowLeft: [-1, 0],
-  ArrowRight: [1, 0],
-  w: [0, -1],
-  s: [0, 1],
-  a: [-1, 0],
-  d: [1, 0],
-};
 
 export interface MountDemoSceneOptions {
   readonly tileSizePx: number;
   readonly storeyHeightPx: number;
   readonly rankOf: (layerCode: number) => number;
+  /** Read once from `defs/`'s `movement.*` balance keys (`main.ts`) --
+   * never a literal in this file (Tim's direction, story 1.8). */
+  readonly movementConfig: MovementConfig;
   /** Called once after every real re-sort (including the first one) with
    * the resulting `stableId` order -- the render path's own event, never
    * polled every frame (Quentin's direction). */
   readonly onOrderChange?: (order: readonly bigint[]) => void;
+  /** Called once at mount and then every ticker frame with the player's
+   * current continuous position (story 1.8's e2e proof that movement is
+   * client-side and immediate, FR137) -- unlike `onOrderChange`, this is
+   * polled every frame on purpose: `movement.spec.ts` needs to observe
+   * the position changing within a few frames, not only when it crosses
+   * a sort-unit boundary. */
+  readonly onPlayerMove?: (x: number, y: number) => void;
 }
 
 export interface DemoSceneHandle {
@@ -317,7 +319,8 @@ export async function mountDemoScene(
   app: Application,
   options: MountDemoSceneOptions,
 ): Promise<DemoSceneHandle> {
-  const { tileSizePx, storeyHeightPx, rankOf, onOrderChange } = options;
+  const { tileSizePx, storeyHeightPx, rankOf, movementConfig, onOrderChange, onPlayerMove } =
+    options;
 
   const rawTextures = new Map<string, Texture>();
   await Promise.all(
@@ -469,40 +472,57 @@ export async function mountDemoScene(
     canvasHeight,
   );
 
-  const pressed = new Set<string>();
-  const onKeyDown = (event: KeyboardEvent): void => {
-    if (event.key in KEY_TO_DELTA) pressed.add(event.key);
-  };
-  const onKeyUp = (event: KeyboardEvent): void => {
-    pressed.delete(event.key);
-  };
-  window.addEventListener("keydown", onKeyDown);
-  window.addEventListener("keyup", onKeyUp);
+  // The demo's own collision grid (story 1.8): one synthetic
+  // `PlacedObject`-shaped row per fixture prop, fed straight from
+  // `fixture.ts`'s own hand-declared colliders -- exactly the shape a
+  // later chunk-streaming story's `onInsert` will feed the same grid,
+  // just called directly here instead of from a subscription (Tim's
+  // direction: `placed_object` stays private in this story).
+  const objectDefs = new Map<number, ColliderSource>(
+    DEMO_PROPS.map((prop) => [
+      Number(prop.id),
+      {
+        width: prop.footprint?.width ?? 1,
+        height: prop.footprint?.height ?? 1,
+        ...(prop.collider ? { collider: prop.collider } : {}),
+      },
+    ]),
+  );
+  const collisionGrid = new CollisionGrid(movementConfig.subcellsPerCell, objectDefs);
+  for (const prop of DEMO_PROPS) {
+    collisionGrid.insert({
+      objectId: prop.id,
+      defId: Number(prop.id),
+      x: prop.x,
+      y: prop.y,
+      floor: prop.floor,
+      layer: 0,
+      orientation: 0,
+      chunkKey: 0n,
+    });
+  }
 
-  const bounds: PlayerBounds = PLAYER_BOUNDS;
+  onPlayerMove?.(playerX, playerY);
+
+  const keyboard = new KeyboardState();
+  attachKeyboard(keyboard);
 
   app.ticker.add((ticker) => {
-    let dx = 0;
-    let dy = 0;
-    for (const key of pressed) {
-      const delta = KEY_TO_DELTA[key];
-      if (!delta) continue;
-      dx += delta[0];
-      dy += delta[1];
-    }
-    if (dx === 0 && dy === 0) return;
+    const direction = keyboard.direction();
+    if (direction.x === 0 && direction.y === 0) return;
 
-    const step = stepPlayer(
-      playerX,
-      playerY,
-      dx,
-      dy,
-      WALK_TILES_PER_SECOND,
+    const before = { x: toSortUnits(playerX), y: toSortUnits(playerY) };
+    const next = step(
+      { x: playerX, y: playerY },
+      direction,
       ticker.deltaMS,
-      bounds,
+      collisionGrid,
+      PLAYER_START.floor,
+      movementConfig,
     );
-    playerX = step.x;
-    playerY = step.y;
+    playerX = next.x;
+    playerY = next.y;
+    onPlayerMove?.(playerX, playerY);
 
     updatePlayerDrawable(playerDrawable, playerX, playerY);
     positionSprite(
@@ -518,7 +538,8 @@ export async function mountDemoScene(
     // Only re-sort when the player's own sort key actually moved to a
     // new sub-tile unit (Tim's direction): a street of static props
     // costs nothing per frame.
-    if (step.sortKeyChanged) {
+    const after = { x: toSortUnits(playerX), y: toSortUnits(playerY) };
+    if (after.x !== before.x || after.y !== before.y) {
       applyDepthOrder(poolContainer, members, renderOrder);
       onOrderChange?.(renderOrder);
     }

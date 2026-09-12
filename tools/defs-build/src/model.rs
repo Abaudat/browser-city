@@ -34,6 +34,22 @@ impl<T> Located<T> {
 
 // --- one-file-per-kind raw shapes, each an array of tables ------------------
 
+/// Sub-cells per cell, the fixed unit a `collider` rect is declared in
+/// (Tim's direction, story 1.8): never tied to `render.tile_size_px`,
+/// because collision cannot change when art scale changes. Declared once,
+/// here, and emitted into both generated artefacts by `emit.rs` -- a
+/// literal 16 anywhere else in this crate or a caller is a defect.
+pub const COLLIDER_SUBCELLS_PER_CELL: i64 = 16;
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RawColliderRect {
+    pub x0: i32,
+    pub y0: i32,
+    pub x1: i32,
+    pub y1: i32,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawObject {
@@ -41,6 +57,10 @@ pub struct RawObject {
     pub key: Spanned<String>,
     pub width: u32,
     pub height: u32,
+    /// A half-open integer rect in sub-cells relative to the footprint's
+    /// top-left anchor cell (FR128). Absent means walkable -- there is no
+    /// separate `walkable` flag anywhere.
+    pub collider: Option<Spanned<RawColliderRect>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,6 +148,7 @@ pub struct ObjectEntry {
     pub key: Located<String>,
     pub width: u32,
     pub height: u32,
+    pub collider: Option<Located<RawColliderRect>>,
 }
 
 #[derive(Debug)]
@@ -213,12 +234,21 @@ pub struct RawDefs {
 
 // --- the plain, validated shapes emit.rs reads ------------------------------
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ColliderRect {
+    pub x0: i32,
+    pub y0: i32,
+    pub x1: i32,
+    pub y1: i32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectDef {
     pub id: u32,
     pub key: String,
     pub width: u32,
     pub height: u32,
+    pub collider: Option<ColliderRect>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

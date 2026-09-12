@@ -8,5 +8,7 @@
   "dangling-profession-reference",
   "out-of-range-balance",
   "non-integer-id",
-  "negative-id"
+  "negative-id",
+  "zero-area-collider",
+  "collider-outside-footprint"
 ]

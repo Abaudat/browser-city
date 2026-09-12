@@ -37,6 +37,18 @@ export interface DemoFootprint {
   readonly height: number;
 }
 
+/** A half-open collider rect in sub-cells, relative to the prop's own
+ * anchor cell -- `defs/`'s own unit (16 sub-cells per cell, story 1.8).
+ * Absent means walkable (FR128): there is no separate `walkable` flag. A
+ * multi-cell prop's collider spans its whole footprint in one rect;
+ * `world/collision-grid.ts` rasterises it into every cell it overlaps. */
+export interface DemoCollider {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
 /** One placed prop in the demo scene. `x`/`y` are the anchor cell (world
  * tile coordinates); `assetKey` names an entry in `scene.ts`'s asset
  * table -- this module knows nothing about textures or PixiJS. */
@@ -48,6 +60,18 @@ export interface DemoProp {
   readonly floor: number;
   readonly layer: DemoLayer;
   readonly footprint?: DemoFootprint;
+  readonly collider?: DemoCollider;
+}
+
+const SUBCELLS_PER_CELL = 16;
+
+/** A collider spanning a prop's whole footprint -- the common case for a
+ * solid wall or piece of furniture (story 1.8: colliders live in `defs/`
+ * for real content; this demo fixture is throwaway harness code that
+ * states its own instead, the same way it states its own footprints). */
+function fullFootprintCollider(footprint?: DemoFootprint): DemoCollider {
+  const { width, height } = footprint ?? { width: 1, height: 1 };
+  return { x0: 0, y0: 0, x1: width * SUBCELLS_PER_CELL, y1: height * SUBCELLS_PER_CELL };
 }
 
 /** The player's starting position -- continuous world coordinates
@@ -55,21 +79,26 @@ export interface DemoProp {
  * position, never a snapped cell), moved by keyboard input in
  * `scene.ts`. Inside the room, one tile off the west wall so walking
  * north/south naturally crosses several of that wall's decomposed
- * cells -- the near/far occlusion worked example. */
-export const PLAYER_START = { x: 5, y: 4, floor: 0 } as const;
+ * cells -- the near/far occlusion worked example. `x` is `DOOR_X + 0.5`
+ * (the door column's own centre, not its left edge): story 1.8's player
+ * has a real body width, so it must be centred in the one-cell-wide door
+ * gap, not flush with its edge, or it would clip the south wall standing
+ * still. */
+export const PLAYER_START = { x: 5.5, y: 4, floor: 0 } as const;
 export const PLAYER_STABLE_ID = 1000n;
-// y1 reaches one full row past the awning's own anchor (SOUTH_WALL_Y + 1)
-// and onto the open pavement -- Artie's cycle-3 direction: the player must
-// be able to walk all the way out from behind the awning to in front of
-// it, not stop at the doorway. Held to 8, not further: `SIDEWALK_TILES`
-// draws its last pavement row at world y = 8, so a bottom-anchored
-// player's feet at (y1 + 1) * tileSizePx must not pass its bottom edge at
-// y1 = 8 -- Quentin's cycle-4 direction, since the scene's mount-time
-// canvas-bounds guard only ever runs against the player's *starting*
-// position, never the clamped one the player actually walks to; see
-// `drawables.test.ts`'s corner check, which pins this relation directly
-// against `screenPositionPx` so it cannot drift again unnoticed.
-export const PLAYER_BOUNDS = { x0: 4.2, x1: 6.8, y0: 2.2, y1: 8 } as const;
+/** The world y the player rests at after walking straight south out the
+ * door and onto the pavement (story 1.8: no artificial bounds clamp any
+ * more -- `PLANTER` below, id 14, is a real, walkable-around collider
+ * placed directly in the player's path, so this is a physical rest point,
+ * not an invented rectangle). `render-order.spec.ts` holds "south" for
+ * long enough to reach it -- deterministic regardless of exact key-hold
+ * timing, the same property the old `PLAYER_BOUNDS` clamp gave. Held to
+ * 8, not further: `SIDEWALK_TILES` draws its last pavement row at world y
+ * = 8, so a bottom-anchored player's feet must not pass its bottom edge
+ * (`drawables.test.ts`'s corner check pins this against
+ * `screenPositionPx`).
+ */
+export const PLAYER_WALK_SOUTH_REST_Y = 8;
 
 // The building footprint: x = 3..8 (west wall, 4 interior columns, east
 // wall), y = 1..6 (north wall, 4 interior rows, south/door wall).
@@ -95,6 +124,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "walls",
     footprint: { width: EAST_WALL_X - WEST_WALL_X + 1, height: 1 },
+    collider: fullFootprintCollider({ width: EAST_WALL_X - WEST_WALL_X + 1, height: 1 }),
   },
   // South (front) wall, split around the door gap at DOOR_X. A short,
   // one-tile-tall module (`wallTileShort`, unlike the north wall's
@@ -109,6 +139,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "walls",
     footprint: { width: DOOR_X - WEST_WALL_X, height: 1 },
+    collider: fullFootprintCollider({ width: DOOR_X - WEST_WALL_X, height: 1 }),
   },
   {
     id: 3n,
@@ -118,6 +149,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "walls",
     footprint: { width: EAST_WALL_X - DOOR_X, height: 1 },
+    collider: fullFootprintCollider({ width: EAST_WALL_X - DOOR_X, height: 1 }),
   },
   // West wall: the near/far occlusion worked example -- decomposed
   // toward the camera (width 1, height 4), so walking past it shows the
@@ -131,6 +163,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "walls",
     footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
+    collider: fullFootprintCollider({ width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 }),
   },
   // East wall, same shape, mirrored.
   {
@@ -141,6 +174,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "walls",
     footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
+    collider: fullFootprintCollider({ width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 }),
   },
 
   // A window and a poster mounted flat on the north wall face
@@ -161,6 +195,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "furniture",
     footprint: { width: 3, height: 1 },
+    collider: fullFootprintCollider({ width: 3, height: 1 }),
   },
 
   // A table with a glass on it: same anchor cell, `furniture` under
@@ -172,7 +207,10 @@ export const DEMO_PROPS: readonly DemoProp[] = [
   { id: 9n, assetKey: "table", x: INTERIOR_X0, y: INTERIOR_Y1, floor: 0, layer: "furniture" },
   { id: 10n, assetKey: "glass", x: INTERIOR_X0, y: INTERIOR_Y1, floor: 0, layer: "objects" },
 
-  // The awning: anchored one cell south of the door, on the pavement --
+  // The awning: no collider (FR128's worked example -- absence of a
+  // collider is walkability, `render-order.spec.ts`'s "does not stop at a
+  // known collider-less prop" check). Anchored one cell south of the
+  // door, on the pavement --
   // never at the wall/lintel row itself (Artie's cycle-3 direction: a
   // bottom-anchored sprite only ever overhangs *upward*, so anchoring it
   // at the door would hang the canopy back into the shop instead of out
@@ -210,6 +248,23 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     y: INTERIOR_Y0 + 2,
     floor: 1,
     layer: "furniture",
+  },
+
+  // A solid obstacle straight south of the door, on the pavement (story
+  // 1.8): the known-solid rest point `render-order.spec.ts` and
+  // `drawables.test.ts` walk the player into -- a real physical collider,
+  // replacing the old artificial `PLAYER_BOUNDS` clamp. `PLAYER_START.x`
+  // is the same column as `DOOR_X`, so walking straight south passes
+  // through the open doorway and stops here deterministically, regardless
+  // of exact key-hold timing.
+  {
+    id: 14n,
+    assetKey: "table",
+    x: DOOR_X,
+    y: PLAYER_WALK_SOUTH_REST_Y,
+    floor: 0,
+    layer: "objects",
+    collider: fullFootprintCollider(),
   },
 ] as const;
 

@@ -3,6 +3,10 @@ id = 1
 key = "trash_bin"
 width = 1
 height = 1
+# A sub-tile collider (FR128): the bin's own body, not its whole cell --
+# half a cell wide and tall, centred in the cell. Sub-cells relative to
+# the anchor cell's top-left, COLLIDER_SUBCELLS_PER_CELL (16) per cell.
+collider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }
 
 [[object]]
 id = 2
@@ -15,3 +19,12 @@ id = 3
 key = "shop_counter"
 width = 3
 height = 1
+
+[[object]]
+id = 4
+key = "lamppost"
+width = 1
+height = 1
+# The story 1.8 worked example: a small base collider near the bottom of
+# the cell, so a player passes through the rest of the cell freely.
+collider = { x0 = 6, y0 = 10, x1 = 10, y1 = 14 }

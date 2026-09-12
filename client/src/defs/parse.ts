@@ -10,6 +10,7 @@
 import type {
   BalanceDef,
   ChainDef,
+  ColliderRect,
   Defs,
   ItemDef,
   ObjectDef,
@@ -83,6 +84,34 @@ function expectI64(value: unknown, path: string): number {
   return n;
 }
 
+/** A collider bound is a Rust `i32` -- signed, unlike a `u32` id/width. */
+const I32_MIN = -(2 ** 31);
+const I32_MAX_EXCLUSIVE = 2 ** 31;
+
+function expectI32(value: unknown, path: string): number {
+  const n = expectNumber(value, path);
+  if (!Number.isInteger(n) || n < I32_MIN || n >= I32_MAX_EXCLUSIVE) {
+    fail(`${path}: expected an integer in [-2^31, 2^31)`);
+  }
+  return n;
+}
+
+function parseColliderRect(value: unknown, path: string): ColliderRect {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["x0", "y0", "x1", "y1"], path);
+  return {
+    x0: expectI32(obj.x0, `${path}.x0`),
+    y0: expectI32(obj.y0, `${path}.y0`),
+    x1: expectI32(obj.x1, `${path}.x1`),
+    y1: expectI32(obj.y1, `${path}.y1`),
+  };
+}
+
+function parseNullableCollider(value: unknown, path: string): ColliderRect | undefined {
+  if (value === undefined || value === null) return undefined;
+  return parseColliderRect(value, path);
+}
+
 function expectStringArray(value: unknown, path: string): string[] {
   return expectArray(value, path).map((item, i) => expectString(item, `${path}[${i}]`));
 }
@@ -101,12 +130,14 @@ function checkKnownKeys(
 
 function parseObject(value: unknown, path: string): ObjectDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "width", "height"], path);
+  checkKnownKeys(obj, ["id", "key", "width", "height", "collider"], path);
+  const collider = parseNullableCollider(obj.collider, `${path}.collider`);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     width: expectU32(obj.width, `${path}.width`),
     height: expectU32(obj.height, `${path}.height`),
+    ...(collider ? { collider } : {}),
   };
 }
 
@@ -189,6 +220,7 @@ export function parseDefs(data: unknown): Defs {
     [
       "generated_by",
       "defs_version",
+      "collider_subcells_per_cell",
       "objects",
       "items",
       "recipes",
@@ -200,6 +232,10 @@ export function parseDefs(data: unknown): Defs {
   );
 
   const defsVersion = expectString(root.defs_version, "$.defs_version");
+  const colliderSubcellsPerCell = expectU32(
+    root.collider_subcells_per_cell,
+    "$.collider_subcells_per_cell",
+  );
   const objects = expectArray(root.objects, "$.objects").map((v, i) =>
     parseObject(v, `$.objects[${i}]`),
   );
@@ -257,7 +293,33 @@ export function parseDefs(data: unknown): Defs {
     }
   }
 
-  return { defsVersion, objects, items, recipes, professions, chains, balance };
+  for (const object of objects) {
+    checkColliderWithinFootprint(object, colliderSubcellsPerCell);
+  }
+
+  return { defsVersion, colliderSubcellsPerCell, objects, items, recipes, professions, chains, balance };
+}
+
+/** FR128's containment rule (`inv_collider_within_footprint`): a declared
+ * `collider` must have positive area and fit entirely inside its own
+ * object's footprint, sized `width*colliderSubcellsPerCell x
+ * height*colliderSubcellsPerCell` sub-cells -- the exact rule `tools/
+ * defs-build`'s own `validate.rs` enforces at build time, checked again
+ * here so the client is never quietly lenient about data it did not
+ * build itself. */
+function checkColliderWithinFootprint(object: ObjectDef, colliderSubcellsPerCell: number): void {
+  const c = object.collider;
+  if (!c) return;
+  if (c.x1 <= c.x0 || c.y1 <= c.y0) {
+    fail(`object '${object.key}' collider (${c.x0}, ${c.y0})-(${c.x1}, ${c.y1}) has zero or negative area`);
+  }
+  const maxX = object.width * colliderSubcellsPerCell;
+  const maxY = object.height * colliderSubcellsPerCell;
+  if (c.x0 < 0 || c.y0 < 0 || c.x1 > maxX || c.y1 > maxY) {
+    fail(
+      `object '${object.key}' collider (${c.x0}, ${c.y0})-(${c.x1}, ${c.y1}) does not fit inside its footprint ${object.width}x${object.height} cells (${maxX}x${maxY} sub-cells)`,
+    );
+  }
 }
 
 /**
@@ -270,7 +332,12 @@ export function parseDefs(data: unknown): Defs {
 export function canonicalDump(defs: Defs): string {
   const lines: string[] = [];
   for (const o of defs.objects) {
-    lines.push(`object ${o.key} id=${o.id} height=${o.height} width=${o.width}`);
+    const collider = o.collider
+      ? `${o.collider.x0},${o.collider.y0},${o.collider.x1},${o.collider.y1}`
+      : "none";
+    lines.push(
+      `object ${o.key} id=${o.id} height=${o.height} width=${o.width} collider=${collider}`,
+    );
   }
   for (const i of defs.items) {
     lines.push(`item ${i.key} id=${i.id}`);

@@ -170,6 +170,49 @@ fn check_chain_profession_refs(
     Ok(())
 }
 
+/// FR128's containment rule: a declared `collider` must have positive
+/// area and must fit entirely inside the object's own footprint, sized
+/// `width*COLLIDER_SUBCELLS_PER_CELL x height*COLLIDER_SUBCELLS_PER_CELL`
+/// sub-cells (Tim's direction, story 1.8). Widened to `i64` throughout so
+/// no combination of `i32` collider bounds can overflow the comparison.
+fn check_object_colliders(entries: &[ObjectEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        let Some(collider) = &e.collider else {
+            continue;
+        };
+        let c = collider.value;
+        if (c.x1 as i64) <= (c.x0 as i64) || (c.y1 as i64) <= (c.y0 as i64) {
+            return Err(DefsError::new(
+                &e.path,
+                collider.line,
+                collider.col,
+                format!(
+                    "object '{}' collider ({}, {})-({}, {}) has zero or negative area",
+                    e.key.value, c.x0, c.y0, c.x1, c.y1
+                ),
+            ));
+        }
+        let max_x = e.width as i64 * COLLIDER_SUBCELLS_PER_CELL;
+        let max_y = e.height as i64 * COLLIDER_SUBCELLS_PER_CELL;
+        if (c.x0 as i64) < 0
+            || (c.y0 as i64) < 0
+            || (c.x1 as i64) > max_x
+            || (c.y1 as i64) > max_y
+        {
+            return Err(DefsError::new(
+                &e.path,
+                collider.line,
+                collider.col,
+                format!(
+                    "object '{}' collider ({}, {})-({}, {}) does not fit inside its footprint {}x{} cells ({max_x}x{max_y} sub-cells)",
+                    e.key.value, c.x0, c.y0, c.x1, c.y1, e.width, e.height
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn check_balance_range(entries: &[BalanceEntry]) -> Result<(), DefsError> {
     for e in entries {
         if e.value.value < e.min || e.value.value > e.max {
@@ -207,6 +250,8 @@ pub fn validate(raw: &RawDefs) -> Result<Defs, DefsError> {
     check_id_key_dupes(&raw.chains, "chain")?;
     check_balance_key_dupes(&raw.balance)?;
 
+    check_object_colliders(&raw.objects)?;
+
     let item_keys: BTreeSet<&str> = raw.items.iter().map(|i| i.key.value.as_str()).collect();
     check_recipe_item_refs(&raw.recipes, &item_keys)?;
 
@@ -227,6 +272,12 @@ pub fn validate(raw: &RawDefs) -> Result<Defs, DefsError> {
             key: o.key.value.clone(),
             width: o.width,
             height: o.height,
+            collider: o.collider.as_ref().map(|c| ColliderRect {
+                x0: c.value.x0,
+                y0: c.value.y0,
+                x1: c.value.x1,
+                y1: c.value.y1,
+            }),
         })
         .collect();
     objects.sort_by(|a, b| a.key.cmp(&b.key));
@@ -463,6 +514,58 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let err = validate(&raw).unwrap_err();
         assert!(err.message.contains("out of its own declared range"));
+    }
+
+    #[test]
+    fn a_zero_area_collider_is_rejected() {
+        let f = files(&[(
+            "defs/objects/x.toml",
+            "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ncollider = { x0 = 5, y0 = 5, x1 = 5, y1 = 9 }\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw).unwrap_err();
+        assert!(err.message.contains("zero or negative area"));
+    }
+
+    #[test]
+    fn a_collider_outside_the_footprint_is_rejected() {
+        let f = files(&[(
+            "defs/objects/x.toml",
+            "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ncollider = { x0 = 0, y0 = 0, x1 = 20, y1 = 8 }\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw).unwrap_err();
+        assert!(err.message.contains("does not fit inside its footprint"));
+    }
+
+    #[test]
+    fn a_collider_flush_with_the_footprint_edge_is_accepted() {
+        let f = files(&[(
+            "defs/objects/x.toml",
+            "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ncollider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let defs = validate(&raw).unwrap();
+        assert_eq!(
+            defs.objects[0].collider,
+            Some(ColliderRect {
+                x0: 0,
+                y0: 0,
+                x1: 16,
+                y1: 16
+            })
+        );
+    }
+
+    #[test]
+    fn an_absent_collider_stays_none() {
+        let f = files(&[(
+            "defs/objects/x.toml",
+            "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let defs = validate(&raw).unwrap();
+        assert_eq!(defs.objects[0].collider, None);
     }
 
     #[test]

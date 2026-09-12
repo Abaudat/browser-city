@@ -5,6 +5,7 @@ function validPayload(version: string): Record<string, unknown> {
   return {
     generated_by: "tools/defs-build -- do not edit by hand",
     defs_version: version,
+    collider_subcells_per_cell: 16,
     objects: [],
     items: [],
     recipes: [],

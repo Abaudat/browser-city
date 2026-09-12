@@ -136,6 +136,18 @@ fn a_balance_key_with_a_non_snake_case_segment_is_rejected() {
     );
 }
 
+#[test]
+fn a_zero_area_collider_is_named() {
+    let err = build_err("zero-area-collider");
+    assert!(err.message.contains("zero or negative area"));
+}
+
+#[test]
+fn a_collider_outside_its_footprint_is_named() {
+    let err = build_err("collider-outside-footprint");
+    assert!(err.message.contains("does not fit inside its footprint"));
+}
+
 /// Every category this module lists above has its own fixture directory
 /// under `tests/fixtures/invalid/` -- so a category added to one and not
 /// the other is a hard failure here, not a silent gap. `non-integer-id`
@@ -161,6 +173,8 @@ fn every_known_category_has_a_fixture_directory() {
         "invalid-balance-key-format",
         "non-integer-id",
         "negative-id",
+        "zero-area-collider",
+        "collider-outside-footprint",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

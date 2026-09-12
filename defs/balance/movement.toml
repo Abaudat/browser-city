@@ -1,0 +1,32 @@
+# FR137 movement constants (story 1.8). The GDD ties walking speed to map
+# size and the commute ladder, and server citizens will need the same
+# number later -- so this lives here, not as a TypeScript literal, and
+# folds into `defs_version` like every other balance key.
+
+[[balance]]
+# Canonical speed, in millicells per real second (balance values are
+# integers): 2.2 cells/s. 35 world px/second (the AC's other figure) is
+# derived from this at `render.tile_size_px`, not the other way round --
+# 35 / 16 = 2.1875, not exactly 2.2, and this key is the one the movement
+# code actually reads (Crew's assumption, story 1.8: cells/s is
+# canonical, px/s is the approximate, derived figure).
+key = "movement.walk_speed_millicells_per_s"
+value = 2200
+min = 100
+max = 20000
+
+[[balance]]
+# The player's collision body (never the sprite rect): a small rect at
+# the feet, horizontally centred on the player's position, bottom edge at
+# that position. Half a cell wide, in COLLIDER_SUBCELLS_PER_CELL (16)
+# sub-cells per cell.
+key = "movement.player_body_width_subcells"
+value = 8
+min = 1
+max = 16
+
+[[balance]]
+key = "movement.player_body_height_subcells"
+value = 4
+min = 1
+max = 16
