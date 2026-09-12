@@ -108,8 +108,8 @@ pub mod reason_code {
 /// path for a rank once seeded.
 ///
 /// `ground` (rank 0) is the flat-pass floor/road surface: never a pool
-/// member (see `client/src/render/sort-key.ts`), so its rank is never
-/// compared against a pool rank. The five pool layers -- `furniture`,
+/// member (see the client's own render-order comparator), so its rank is
+/// never compared against a pool rank. The five pool layers -- `furniture`,
 /// `objects`, `walls`, `wall_decals`, `characters` -- are minted a decade
 /// apart (story 1.6), leaving every in-between number free for a future
 /// layer to slot into without renumbering anything. Every live rank is
@@ -188,8 +188,9 @@ pub mod layer {
 
     /// The FR123 depth-sort rank for a *live* (non-deprecated, known)
     /// layer code -- `Err` for a deprecated or unknown code, never a
-    /// silent fallback rank. The client's own rank lookup
-    /// (`client/src/render/layer-ranks.ts`) mirrors this refusal.
+    /// silent fallback rank. The client's own rank lookup mirrors this
+    /// refusal (NFR30: a separate TypeScript implementation, not shared
+    /// code).
     pub fn live_rank(code: u32) -> Result<u32, String> {
         if is_deprecated(code) {
             return Err(format!("layer code {code} is deprecated"));
