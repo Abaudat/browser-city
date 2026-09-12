@@ -48,10 +48,10 @@ TEST_NAMES="$(printf '%s\n' "$LIST_OUTPUT" | grep -E ': (test|benchmark)$' | sed
 # what the constant-symmetry check below exempts from needing an `INV_`
 # Rust constant.
 CLIENT_INV_NAMES="$(
-  find "$CLIENT_UNIT_DIR" -name '*.test.ts' -print0 |
+  { find "$CLIENT_UNIT_DIR" -name '*.test.ts' -print0 |
     xargs -0 -r grep -ohE '(it|test)\(\s*["'"'"'](inv_[A-Za-z0-9_]+)["'"'"']' |
     grep -oE 'inv_[A-Za-z0-9_]+' |
-    sort -u
+    sort -u; } || true
 )"
 
 # --- ban #[ignore] -----------------------------------------------------------

@@ -16,7 +16,7 @@ command -v cargo >/dev/null 2>&1 || { echo "SKIP: no cargo on PATH"; exit 0; }
 
 D="$(fake_dir)"
 rm -rf "$D"
-mkdir -p "$D/docs" "$D/server/sim/src" "$D/server/sim/tests" "$D/server/browser_city/src" "$D/scripts/ci"
+mkdir -p "$D/docs" "$D/server/sim/src" "$D/server/sim/tests" "$D/server/browser_city/src" "$D/scripts/ci" "$D/client/tests/unit"
 cp "$CHECK" "$D/scripts/ci/check-trace-matrix.sh"
 
 cat > "$D/server/Cargo.toml" <<'TOML'
@@ -84,6 +84,12 @@ write_matrix() { # <second-section-heading>
 | Requirement | Status | Guard |
 | --- | --- | --- |
 | A world-addressing requirement | covered | \`docs/trace-matrix.md\` |
+
+## Rendering
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| A rendering requirement | covered | \`docs/trace-matrix.md\` |
 
 ## Scheduled-reducer timing
 
