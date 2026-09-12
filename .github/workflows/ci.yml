@@ -79,6 +79,10 @@ jobs:
               # direction: a defs change re-runs the build that consumes
               # its own generated half.
               - 'server/sim/src/generated/defs.rs'
+              # check-trace-matrix.sh (this job) scans client/tests/unit/**
+              # for inv_* names too (story 1.6 on) -- a client-only PR that
+              # adds one with no matrix row must still trip this job.
+              - 'client/tests/unit/**'
             client:
               - 'client/**'
               - 'server/**'
