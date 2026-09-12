@@ -362,6 +362,15 @@ jobs:
       - name: bindings are exactly what the module generates
         run: bash ../scripts/ci/check-bindings-current.sh
       - run: bash ../scripts/ci/check-no-shared-code.sh
+      - name: the one client-side layer-rank mirror never drifts from the server golden
+        run: bash ../scripts/ci/check-layer-table-current.sh
+      # The cargo-free half of check-trace-matrix.sh: the client inv_*
+      # symmetry and the Guard-section path checks, at effectively zero
+      # cost -- Tim's direction, so a client-only PR is never gated on
+      # the full run's release cargo test/clippy/wasm build (that stays
+      # in the server-gated `test` job).
+      - name: client-side trace-matrix symmetry (no cargo)
+        run: bash ../scripts/ci/check-trace-matrix.sh --client-only
 
   client-build:
     name: client-build

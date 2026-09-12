@@ -13,6 +13,12 @@ export default defineConfig({
     host: "127.0.0.1",
     fs: {
       strict: true,
+      // The story 1.6 demo scene reads real LimeZu sprites straight out of
+      // the repo-root `ModernTileset/` (Artie's direction: no new PNGs, no
+      // copy into `public/`) via `new URL(..., import.meta.url)` asset
+      // imports -- Vite still needs the dev server's own fs guard widened
+      // to let those responses through.
+      allow: [".", "../ModernTileset"],
     },
   },
   preview: {

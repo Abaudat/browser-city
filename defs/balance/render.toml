@@ -1,0 +1,24 @@
+# FR123/FR124 rendering constants (story 1.6). Both are content data, not
+# TypeScript literals, so they fold into `defs_version` and stay reviewable
+# alongside the art -- see docs/architecture.md's "Rendering" section.
+
+[[balance]]
+# The LimeZu sheets this project draws from are native 16x16 pixel art
+# (docs/gdd.md); every world-space-to-screen-space conversion multiplies
+# by this before the 3x zoom scale.
+key = "render.tile_size_px"
+value = 16
+min = 1
+max = 64
+
+[[balance]]
+# One storey's vertical screen offset (FR124): stacking a LimeZu interior
+# wall module (ModernTileset/moderninteriors-win/1_Interiors/16x16/
+# Room_Builder_subfiles/Room_Builder_Walls_16x16.png) three tiles tall
+# lands the upper storey's floor line exactly on the lower storey's wall
+# top, with no seam and no double baseboard -- verified visually in the
+# story 1.6 demo scene screenshots. 3 tiles * 16px.
+key = "render.storey_height_px"
+value = 48
+min = 1
+max = 256

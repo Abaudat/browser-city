@@ -9,3 +9,9 @@ id = 2
 key = "park_bench"
 width = 2
 height = 1
+
+[[object]]
+id = 3
+key = "shop_counter"
+width = 3
+height = 1

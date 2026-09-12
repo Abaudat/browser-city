@@ -2,10 +2,12 @@
 
 The invariants named across `requirements.md` and the architecture, and
 whether an automated test protects each one today. `covered` rows name the
-`#[test]` function that protects them; `deferred` rows name the story that
-will add the subsystem they protect. `scripts/ci/check-trace-matrix.sh`
-fails CI if a `covered` row's test does not exist, or if a test named
-`inv_*` exists with no row here.
+test function that protects them -- a Rust `#[test]` function, or (story
+1.6 on) an `it`/`test` name in `client/tests/unit/**` prefixed `inv_`;
+`deferred` rows name the story that will add the subsystem they protect.
+`scripts/ci/check-trace-matrix.sh` fails CI if a `covered` row's test does
+not exist in either suite, or if an `inv_*` test exists in either suite
+with no row here.
 
 | Invariant id | Description | Status | Test | Story |
 | --- | --- | --- | --- | --- |
@@ -19,6 +21,10 @@ fails CI if a `covered` row's test does not exist, or if a test named
 | `inv_floor_transition_lands_standable` | No transition cell ever targets a floor or cell where the entity would be inside geometry or out of bounds (FR117) | covered | `inv_floor_transition_lands_standable` | — |
 | `inv_world_query_total` | A world query never panics and never wraps, for any i32 coordinate and any floor or layer (FR117) | covered | `inv_world_query_total` | — |
 | `inv_cell_ownership_defined` | Every in-bounds cell answers the ownership query, and ids are stable across queries (FR119) | covered | `inv_cell_ownership_defined` | — |
+| `inv_depth_order_total_and_stable` | The FR123 sort key is a strict total order (antisymmetric, strict for distinct keys, transitive), so no canopy footprint can ever fail to resolve an order | covered | `inv_depth_order_total_and_stable` | — |
+| `inv_drawable_pool_is_a_permutation` | Sorting a drawable pool drops or duplicates nothing -- the output is exactly the input multiset (FR123) | covered | `inv_drawable_pool_is_a_permutation` | — |
+| `inv_floor_never_affects_depth_order` | For any two drawables differing only in floor, the comparator's result against a third drawable is identical either way (FR124) | covered | `inv_floor_never_affects_depth_order` | — |
+| `inv_multicell_prop_covers_footprint_once` | A multi-cell prop's decomposition yields exactly width*height drawables, anchors covering the footprint exactly once (FR125) | covered | `inv_multicell_prop_covers_footprint_once` | — |
 
 ## Coverage scale (NFR29)
 
@@ -100,6 +106,28 @@ sections above.
 | A collision query costs a bounded, small number of dense-storage accesses regardless of world size, and the collision grid stays within its documented 1-bit-per-cell budget | covered | `server/sim/tests/world_perf.rs` |
 | An ownership query scans only the areas sharing the queried chunk, never every area in the world (FR119, FR120, FR122) | covered | `server/sim/tests/world_perf.rs` -- `ownership_lookup_scans_only_the_queried_chunk_not_every_area_in_the_world` |
 | The client-side TypeScript port of addressing, collision, transition and ownership reads the same fixtures/world-conformance.v1.json its Rust oracle reads (NFR30) | deferred | client-side collision/addressing story |
+
+## Rendering
+
+Story 1.6: FR123-FR127's depth sort, rank ladder and decomposition. Same
+Guard-path discipline as the sections above.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| The rank ladder tens are unique among live codes, and every pool rank is a multiple of ten (FR123) | covered | `server/sim/tests/codes.rs` -- `layer_ranks_are_unique_and_pool_ranks_are_multiples_of_ten` |
+| A deprecated layer code (`overhead`) stays seeded but refuses a live rank lookup, on both sides (Tim direction) | covered | `server/sim/tests/codes.rs` -- `deprecated_layer_codes_stay_seeded_but_refuse_live_rank`, `client/tests/unit/render/layer-ranks.test.ts` |
+| A committed `sim::codes` layer line never changes or disappears once merged; only new lines may be appended (NFR36) | covered | `scripts/ci/check-codes-append-only.sh` |
+| The one client-side rank-ladder mirror (`layer-table.ts`) never drifts from the golden-pinned server mapping on any code, name, rank or deprecated flag (Quentin/Tim direction, cycle 2) | covered | `scripts/ci/check-layer-table-current.sh` |
+| The comparator is the sole ordering authority: a pool container keeps `sortableChildren` at `false`, and the children of a real Pixi `Container` end up in the comparator order regardless of the order they were attached in, including across repeated re-sorts with no duplication | covered | `client/tests/unit/render/pixi-order.test.ts` |
+| The FR123 sort-key unit (tile * `SORT_SUBDIVISIONS`) is declared exactly once, round-trips exactly, is strictly monotonic, and resolves sub-tile movement to a different unit before a whole tile is crossed (Tim direction, cycle 2) | covered | `client/tests/unit/render/sort-units.test.ts` |
+| The FR124 floor offset is zero at floor 0, proportional and strictly monotonic in floor (higher floor draws further up the screen), and sourced from the `render.storey_height_px` balance key rather than a literal (Quentin direction, cycle 2) | covered | `client/tests/unit/render/screen-position.test.ts` |
+| The tile size and storey height are `defs/balance/render.toml` keys, not TypeScript literals, and fold into `defs_version` | covered | `scripts/ci/check-defs-current.sh`, `scripts/ci/check-defs-version-bump.sh` |
+| A real, mounted Pixi display list produces the same order the comparator produces over the identical, committed fixture scene, both at rest and after a real keyboard-driven move (Quentin direction) | covered | `client/tests/e2e/render-order.spec.ts` against `client/tests/unit/demo/drawables.test.ts` and its shared goldens (`golden.ts`) |
+| The demo player movement never leaves its bounds, is a true no-op with no input, and reports a sort-key change exactly when the quantised position changes (Quentin direction, cycle 2) | covered | `client/tests/unit/demo/player-step.test.ts` |
+| A per-cell sub-rect is only legal on whole-tile boundaries; a prop whose declared footprint does not match the real pixel dimensions of its art throws at mount rather than drawing a stretched or fractional slice (Artie/Tim direction, cycle 2) | covered | `client/src/demo/scene.ts` -- `sliceTexture`/`sliceAlongAxis` |
+| Every sprite the demo scene mounts is drawn within the canvas -- an off-canvas scene fails loudly instead of passing every id-based check silently (Artie direction, cycle 2) | covered | `client/src/demo/scene.ts` -- `assertSpritesWithinCanvas`, called at mount |
+| The client-only trace-matrix check (no cargo) and the full run agree, and `client-check` runs the former so a client-only PR is never gated on the slowest half of the graph (Tim direction, cycle 2) | covered | `.github/workflows/ci.yml` -- the `client-check` job's own step, `scripts/ci/check-trace-matrix.sh --client-only` |
+| The render-order e2e hook never ships in the production bundle, same as every other `window.__bc` use | covered | `.github/workflows/ci.yml` -- the `client-build` job's own bundle grep |
 
 ## Scheduled-reducer timing
 

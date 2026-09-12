@@ -1,5 +1,6 @@
 object 1 trash_bin
 object 2 park_bench
+object 3 shop_counter
 item 1 bottle
 item 2 recycled_glass
 recipe 1 bottle_recycling
