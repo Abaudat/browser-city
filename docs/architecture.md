@@ -168,11 +168,10 @@ a stored column. `floor` is signed (the subway is floor -1, FR122) and is
 `i8`. `layer` is a `u32` code plus its companion `layer_code` data table
 (NFR36, never a Rust enum, minted in `sim::codes::layer` with its FR123
 depth-sort `rank` carried inline on the same code entry) and is purely a
-rendering-order dimension (read by story 1.6) -- it is never a second
-collision dimension; a collision test always consults one floor's whole
-merged blocking set. A layer's `rank` is as permanent as its `code`
-number and pinned by the same codes golden -- story 1.6 must get a
-layer's depth order right the first time.
+rendering-order dimension -- it is never a second collision dimension; a
+collision test always consults one floor's whole merged blocking set. A
+layer's `rank` is as permanent as its `code` number and pinned by the same
+codes golden. See "Rendering" below for the ladder itself.
 
 There is no dense per-cell table, and there never will be: cell facts are
 always derived from placed content, never stored per cell.
@@ -232,6 +231,53 @@ sharing the code). The story that adds it must consume the committed
 fixture` by `bounds`'s `regen-world-fixture` binary.
 `docs/trace-matrix.md`'s "World addressing" section carries a `deferred`
 row for that obligation until it is met.
+
+## Rendering
+
+A frame draws four passes, in this fixed order, declared even when a pass
+is empty: three flat passes -- ground, ground decals, ground objects --
+followed by one y-sorted pool. A flat pass is never depth-sorted and
+never occludes anything; anything with visible vertical extent, however
+small, belongs in the pool instead (FR123).
+
+The pool's sort key is `(y, rank, x, stableId)`, most significant first,
+implemented once in `client/src/render/sort-key.ts` and nowhere else --
+that comparator is the sole ordering authority, and a pool container's
+`sortableChildren` is `false` everywhere one exists. Every component is a
+world-space integer: `y`/`x` are exactly the world coordinates a drawable
+is anchored at, never a screen-space or floor-adjusted value; `rank` comes
+from `sim::codes::layer` (below), never a literal; `stableId` is a
+`bigint` end to end (`object_id` for a placed drawable, a character's id
+for a character) and is never narrowed through `Number`. Floor is never a
+term in the key (FR124): it is applied only once, as a vertical screen
+offset, when a drawable is positioned on screen.
+
+`sim::codes::layer`'s rank ladder (FR123) is minted in tens, leaving every
+in-between number free for a future layer to slot into without
+renumbering anything: `furniture` 10, `objects` 20, `walls` 30,
+`wall_decals` 40, `characters` 50. `ground` keeps rank 0 and is the flat
+ground pass's layer -- never a pool member, so its rank is never compared
+against a pool rank. `overhead` (code 1, rank 1) is deprecated: its row
+stays seeded forever (deprecation is a usage ban, not a deletion), but
+nothing may place new content on it, and a rank lookup that resolves an
+unknown or deprecated code throws rather than sorting it silently. A
+rank's number is as permanent as its code and pinned by the same codes
+golden.
+
+A multi-cell prop (FR125/FR126) decomposes into one per-cell drawable per
+cell of its footprint, each with its own anchor and its own source
+sub-rect -- a placeholder sub-rect until an atlas exists, but the field is
+never optional. Extent comes from the placed object's `object_def`
+(`defs/`), never a hardcoded number, and is capped at approximately 8x8
+(FR127).
+
+`render.tile_size_px` and `render.storey_height_px` are balance keys
+(`defs/balance/render.toml`), not TypeScript literals, so they fold into
+`defs_version` and stay reviewable alongside the art. `storey_height_px`
+is the floor screen offset FR124 describes: a drawable's screen position
+subtracts `floor * storey_height_px`, and a drawable on a storey above the
+viewer's own must never sort as though it were on that floor because of
+it.
 
 ## Definitions (`defs/`)
 

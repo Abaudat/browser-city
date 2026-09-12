@@ -9,15 +9,20 @@
 #   - an INV_* constant with no matrix row, or a matrix row with no INV_*
 #     constant, means the registry and the matrix have drifted apart
 #   - an inv_* test with no row at all is coverage the matrix does not know
-#     about
+#     about, in *either* suite: `server/sim/tests/invariants.rs`'s `#[test]`
+#     functions, or an `it`/`test` name in `client/tests/unit/**` prefixed
+#     `inv_` (story 1.6 on) -- a client-side invariant has no `INV_` Rust
+#     constant counterpart, so it is exempt from that symmetry check alone.
 # Also bans `#[ignore]` outright -- a skipped test is an unautomated test.
 set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 MATRIX="$REPO_ROOT/docs/trace-matrix.md"
 INVARIANTS_FILE="$REPO_ROOT/server/sim/tests/invariants.rs"
+CLIENT_UNIT_DIR="$REPO_ROOT/client/tests/unit"
 
 [ -f "$MATRIX" ] || { echo "check-trace-matrix: $MATRIX not found" >&2; exit 1; }
 [ -f "$INVARIANTS_FILE" ] || { echo "check-trace-matrix: $INVARIANTS_FILE not found" >&2; exit 1; }
+[ -d "$CLIENT_UNIT_DIR" ] || { echo "check-trace-matrix: $CLIENT_UNIT_DIR not found" >&2; exit 1; }
 
 # --- collect every test name the workspace actually runs --------------------
 # browser_city and sched_timing_spike are excluded: both embed
@@ -34,6 +39,20 @@ LIST_OUTPUT="$(cd "$REPO_ROOT/server" && cargo test --workspace --exclude browse
 }
 
 TEST_NAMES="$(printf '%s\n' "$LIST_OUTPUT" | grep -E ': (test|benchmark)$' | sed -E 's/: (test|benchmark)$//')"
+
+# --- collect every inv_* test name declared in client/tests/unit/** ---------
+# Matches `it("inv_foo", ...)` / `test("inv_foo", ...)`, single or double
+# quoted -- the exact idiom `client/tests/unit/render/*.test.ts` uses.
+# `TEST_NAMES` (above) is Rust-only, kept separate rather than merged: a
+# client name has no module-path prefix to strip, and this list alone is
+# what the constant-symmetry check below exempts from needing an `INV_`
+# Rust constant.
+CLIENT_INV_NAMES="$(
+  find "$CLIENT_UNIT_DIR" -name '*.test.ts' -print0 |
+    xargs -0 -r grep -ohE '(it|test)\(\s*["'"'"'](inv_[A-Za-z0-9_]+)["'"'"']' |
+    grep -oE 'inv_[A-Za-z0-9_]+' |
+    sort -u
+)"
 
 # --- ban #[ignore] -----------------------------------------------------------
 # Driven off tracked files, not a recursive grep from server/ -- that would
@@ -69,13 +88,13 @@ while IFS='|' read -r _ id _ status test _; do
       if [ -z "$test" ]; then
         echo "check-trace-matrix: FAIL -- '$id' is 'covered' but names no test" >&2
         FAILED=1
-      elif ! printf '%s\n' "$TEST_NAMES" | grep -qxF "$test"; then
+      elif ! printf '%s\n' "$TEST_NAMES" | grep -qxF "$test" && ! printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$test"; then
         echo "check-trace-matrix: FAIL -- '$id' claims coverage via '$test', but no such test exists" >&2
         FAILED=1
       fi
       ;;
     deferred)
-      if printf '%s\n' "$TEST_NAMES" | grep -qxF "$id"; then
+      if printf '%s\n' "$TEST_NAMES" | grep -qxF "$id" || printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$id"; then
         echo "check-trace-matrix: FAIL -- '$id' is 'deferred' but a test named '$id' now exists -- flip its row to 'covered'" >&2
         FAILED=1
       fi
@@ -83,7 +102,7 @@ while IFS='|' read -r _ id _ status test _; do
   esac
 done <<< "$MATRIX_ROWS"
 
-# every inv_* test must have a matrix row
+# every inv_* test must have a matrix row (Rust side)
 while IFS= read -r name; do
   [ -n "$name" ] || continue
   case "$name" in
@@ -96,8 +115,21 @@ while IFS= read -r name; do
   fi
 done <<< "$TEST_NAMES"
 
+# every inv_* test must have a matrix row (client side) -- same direction,
+# same message, so a client-only invariant can never silently stop being
+# tracked either.
+while IFS= read -r name; do
+  [ -n "$name" ] || continue
+  if ! printf '%s\n' "$MATRIX_IDS" | grep -qxF "$name"; then
+    echo "check-trace-matrix: FAIL -- client test '$name' has no row in docs/trace-matrix.md" >&2
+    FAILED=1
+  fi
+done <<< "$CLIENT_INV_NAMES"
+
 # every INV_* constant must have a matrix row, and every matrix row an INV_*
 # constant -- the registry and the matrix are two hands on the same list.
+# A matrix row covered by a client inv_* test is exempt from needing a
+# Rust INV_ constant: it is a client-only invariant, not a sim one.
 while IFS= read -r cid; do
   [ -n "$cid" ] || continue
   if ! printf '%s\n' "$MATRIX_IDS" | grep -qxF "$cid"; then
@@ -108,6 +140,9 @@ done <<< "$CONSTANT_IDS"
 
 while IFS= read -r mid; do
   [ -n "$mid" ] || continue
+  if printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$mid"; then
+    continue
+  fi
   if ! printf '%s\n' "$CONSTANT_IDS" | grep -qxF "$mid"; then
     echo "check-trace-matrix: FAIL -- docs/trace-matrix.md has a row for '$mid' but invariants.rs declares no such INV_ constant" >&2
     FAILED=1
@@ -128,6 +163,7 @@ GUARD_SECTIONS=(
   "Schema permanence"
   "Definitions"
   "World addressing"
+  "Rendering"
   "Scheduled-reducer timing"
   "Backup and restore"
 )
