@@ -54,7 +54,15 @@ export const DEMO_PROPS: readonly DemoProp[] = [
   // decomposition showcased a second way (the counter below is the
   // primary worked example), each cell reading its own vertical slice of
   // the wall texture.
-  { id: 1n, assetKey: "wall", x: 2, y: 1, floor: 0, layer: "walls", footprint: { width: 8, height: 1 } },
+  {
+    id: 1n,
+    assetKey: "wall",
+    x: 2,
+    y: 1,
+    floor: 0,
+    layer: "walls",
+    footprint: { width: 8, height: 1 },
+  },
 
   // A window and a poster mounted flat on that same wall face
   // (wall_decals, FR123's tens rank above `walls`) -- same anchor row,
@@ -92,7 +100,15 @@ export const DEMO_PROPS: readonly DemoProp[] = [
   // of furniture, on `floor: 1`. FR124's floor offset places these above
   // the ground floor on screen; nothing about their sort position may
   // depend on that (`inv_floor_never_affects_depth_order`).
-  { id: 8n, assetKey: "wall", x: 2, y: 1, floor: 1, layer: "walls", footprint: { width: 8, height: 1 } },
+  {
+    id: 8n,
+    assetKey: "wall",
+    x: 2,
+    y: 1,
+    floor: 1,
+    layer: "walls",
+    footprint: { width: 8, height: 1 },
+  },
   { id: 9n, assetKey: "table", x: 6, y: 3, floor: 1, layer: "furniture" },
 ] as const;
 

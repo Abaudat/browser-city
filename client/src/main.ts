@@ -4,9 +4,9 @@ import type { Defs } from "./defs/types";
 import { connect } from "./net/connection";
 import { recordPingForE2e, recordRenderOrderForE2e } from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
+import { bootstrapRenderer } from "./render/bootstrap";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { mountDemoScene } from "./render/pixi-scene";
-import { bootstrapRenderer } from "./render/bootstrap";
 
 async function main(): Promise<void> {
   const mount = document.getElementById("app");

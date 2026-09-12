@@ -7,8 +7,8 @@
 // so this stays exactly as fast as every other unit test here.
 import { Container, Sprite, Texture } from "pixi.js";
 import { describe, expect, it } from "vitest";
-import { applyDepthOrder, type PoolMember } from "../../../src/render/pixi-scene";
 import type { PropDrawable } from "../../../src/render/demo-scene-drawables";
+import { applyDepthOrder, type PoolMember } from "../../../src/render/pixi-scene";
 
 function member(stableId: bigint, y: number, rank: number, x = 0): PoolMember {
   const drawable: PropDrawable = {

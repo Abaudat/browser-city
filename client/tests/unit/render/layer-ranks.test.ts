@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildLayerRankTable, resolveRank, UnknownLayerCodeError } from "../../../src/render/layer-ranks";
+import {
+  buildLayerRankTable,
+  resolveRank,
+  UnknownLayerCodeError,
+} from "../../../src/render/layer-ranks";
 
 // Mirrors `server/sim/tests/goldens/codes_v1.golden`'s `layer` rows --
 // fixture data for this test file only, never a second production source

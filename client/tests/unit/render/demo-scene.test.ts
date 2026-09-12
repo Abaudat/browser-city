@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
-import { buildPlayerDrawable, buildPropDrawables } from "../../../src/render/demo-scene-drawables";
 import { PLAYER_START } from "../../../src/render/demo-fixture";
+import { buildPlayerDrawable, buildPropDrawables } from "../../../src/render/demo-scene-drawables";
+import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { compareDrawables, sortDrawablesInPlace } from "../../../src/render/sort-key";
 import { DEMO_SCENE_GOLDEN_ORDER } from "./demo-scene-golden";
 
@@ -95,6 +95,8 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // applied to this scene's own data.
     const swapped = { ...groundWallCell, floor: upperWallCell.floor };
     const swappedOther = { ...upperWallCell, floor: groundWallCell.floor };
-    expect(compareDrawables(groundWallCell, upperWallCell)).toBe(compareDrawables(swapped, swappedOther));
+    expect(compareDrawables(groundWallCell, upperWallCell)).toBe(
+      compareDrawables(swapped, swappedOther),
+    );
   });
 });

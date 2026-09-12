@@ -99,12 +99,16 @@ describe("compareDrawables", () => {
 
   it("precedence: y differs, everything else equal", () => {
     fc.assert(
-      fc.property(fc.integer({ min: -100, max: -1 }), fc.integer({ min: 1, max: 100 }), (lo, hi) => {
-        const a: Drawable = { ...base, y: lo };
-        const b: Drawable = { ...base, y: hi };
-        expect(compareDrawables(a, b)).toBeLessThan(0);
-        expect(compareDrawables(b, a)).toBeGreaterThan(0);
-      }),
+      fc.property(
+        fc.integer({ min: -100, max: -1 }),
+        fc.integer({ min: 1, max: 100 }),
+        (lo, hi) => {
+          const a: Drawable = { ...base, y: lo };
+          const b: Drawable = { ...base, y: hi };
+          expect(compareDrawables(a, b)).toBeLessThan(0);
+          expect(compareDrawables(b, a)).toBeGreaterThan(0);
+        },
+      ),
     );
   });
 
@@ -121,23 +125,31 @@ describe("compareDrawables", () => {
 
   it("precedence: x differs, everything else equal", () => {
     fc.assert(
-      fc.property(fc.integer({ min: -100, max: -1 }), fc.integer({ min: 1, max: 100 }), (lo, hi) => {
-        const a: Drawable = { ...base, x: lo };
-        const b: Drawable = { ...base, x: hi };
-        expect(compareDrawables(a, b)).toBeLessThan(0);
-        expect(compareDrawables(b, a)).toBeGreaterThan(0);
-      }),
+      fc.property(
+        fc.integer({ min: -100, max: -1 }),
+        fc.integer({ min: 1, max: 100 }),
+        (lo, hi) => {
+          const a: Drawable = { ...base, x: lo };
+          const b: Drawable = { ...base, x: hi };
+          expect(compareDrawables(a, b)).toBeLessThan(0);
+          expect(compareDrawables(b, a)).toBeGreaterThan(0);
+        },
+      ),
     );
   });
 
   it("precedence: stableId differs, everything else equal", () => {
     fc.assert(
-      fc.property(fc.bigInt({ min: 0n, max: 1000n }), fc.bigInt({ min: 1001n, max: 2000n }), (lo, hi) => {
-        const a: Drawable = { ...base, stableId: lo };
-        const b: Drawable = { ...base, stableId: hi };
-        expect(compareDrawables(a, b)).toBeLessThan(0);
-        expect(compareDrawables(b, a)).toBeGreaterThan(0);
-      }),
+      fc.property(
+        fc.bigInt({ min: 0n, max: 1000n }),
+        fc.bigInt({ min: 1001n, max: 2000n }),
+        (lo, hi) => {
+          const a: Drawable = { ...base, stableId: lo };
+          const b: Drawable = { ...base, stableId: hi };
+          expect(compareDrawables(a, b)).toBeLessThan(0);
+          expect(compareDrawables(b, a)).toBeGreaterThan(0);
+        },
+      ),
     );
   });
 
@@ -195,7 +207,10 @@ describe("compareDrawables", () => {
     const expectedIds = first.map((d) => d.stableId);
 
     for (let shuffle = 0; shuffle < 20; shuffle++) {
-      const shuffled = fc.sample(fc.shuffledSubarray(pool, { minLength: pool.length, maxLength: pool.length }), 1)[0];
+      const shuffled = fc.sample(
+        fc.shuffledSubarray(pool, { minLength: pool.length, maxLength: pool.length }),
+        1,
+      )[0];
       if (!shuffled) throw new Error("unreachable");
       sortDrawablesInPlace(shuffled);
       expect(shuffled.map((d) => d.stableId)).toEqual(expectedIds);

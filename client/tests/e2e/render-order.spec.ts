@@ -10,10 +10,14 @@ import { expect, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { DEMO_SCENE_GOLDEN_ORDER } from "../unit/render/demo-scene-golden";
 
-test("the demo scene's real, mounted display list produces the committed depth order", async ({ page }) => {
+test("the demo scene's real, mounted display list produces the committed depth order", async ({
+  page,
+}) => {
   await page.goto("/");
 
-  await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, { timeout: 10_000 });
+  await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
+    timeout: 10_000,
+  });
 
   const order = await page.evaluate(() => window.__bc?.renderOrder ?? []);
   expect(order).toEqual(DEMO_SCENE_GOLDEN_ORDER);

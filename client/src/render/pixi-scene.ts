@@ -11,9 +11,9 @@
 // D17: no debug text, no rank numbers, no sort-key readouts on the
 // canvas. This module draws the scene and nothing else.
 
-import { Assets, Container, Rectangle, Sprite, Texture } from "pixi.js";
 import type { Application } from "pixi.js";
-import { GROUND_TILES, PLAYER_START, type DemoLayer } from "./demo-fixture";
+import { Assets, Container, Rectangle, Sprite, Texture } from "pixi.js";
+import { type DemoLayer, GROUND_TILES, PLAYER_START } from "./demo-fixture";
 import {
   buildPlayerDrawable,
   buildPropDrawables,
@@ -123,11 +123,17 @@ export interface DemoSceneHandle {
 function sliceTexture(base: Texture, drawable: PropDrawable): Texture {
   if (drawable.footprintWidth > 1 && drawable.footprintHeight === 1) {
     const sliceWidth = base.width / drawable.footprintWidth;
-    return cropped(base, new Rectangle(drawable.sourceCol * sliceWidth, 0, sliceWidth, base.height));
+    return cropped(
+      base,
+      new Rectangle(drawable.sourceCol * sliceWidth, 0, sliceWidth, base.height),
+    );
   }
   if (drawable.footprintHeight > 1 && drawable.footprintWidth === 1) {
     const sliceHeight = base.height / drawable.footprintHeight;
-    return cropped(base, new Rectangle(0, drawable.sourceRow * sliceHeight, base.width, sliceHeight));
+    return cropped(
+      base,
+      new Rectangle(0, drawable.sourceRow * sliceHeight, base.width, sliceHeight),
+    );
   }
   return base;
 }
@@ -135,7 +141,8 @@ function sliceTexture(base: Texture, drawable: PropDrawable): Texture {
 function createSprite(drawable: PropDrawable, textures: ReadonlyMap<string, Texture>): Sprite {
   const base = textures.get(drawable.assetKey);
   if (!base) throw new Error(`pixi-scene: no texture loaded for asset '${drawable.assetKey}'`);
-  const texture = drawable.assetKey === "player" ? cropped(base, PLAYER_FRAME) : sliceTexture(base, drawable);
+  const texture =
+    drawable.assetKey === "player" ? cropped(base, PLAYER_FRAME) : sliceTexture(base, drawable);
   const sprite = new Sprite(texture);
   // Bottom-centre origin pinned to the cell's bottom edge (Artie's
   // direction): a tall sprite overhangs upward out of its footprint,
@@ -184,7 +191,10 @@ export function applyDepthOrder(poolContainer: Container, members: PoolMember[])
  * only when the player's own sort key actually changes -- a street of
  * static props costs nothing per frame.
  */
-export async function mountDemoScene(app: Application, options: MountDemoSceneOptions): Promise<DemoSceneHandle> {
+export async function mountDemoScene(
+  app: Application,
+  options: MountDemoSceneOptions,
+): Promise<DemoSceneHandle> {
   const { tileSizePx, storeyHeightPx, rankOf } = options;
 
   const textures = new Map<string, Texture>();
@@ -237,7 +247,11 @@ export async function mountDemoScene(app: Application, options: MountDemoSceneOp
 
   let playerX: number = PLAYER_START.x;
   let playerY: number = PLAYER_START.y;
-  const playerDrawable = buildPlayerDrawable(rankOf(RANK_CODE_BY_LAYER.characters), playerX, playerY);
+  const playerDrawable = buildPlayerDrawable(
+    rankOf(RANK_CODE_BY_LAYER.characters),
+    playerX,
+    playerY,
+  );
   const playerSprite = createSprite(playerDrawable, textures);
   positionSprite(playerSprite, playerX, playerY, PLAYER_START.floor, tileSizePx, storeyHeightPx);
   poolContainer.addChild(playerSprite);
@@ -269,8 +283,16 @@ export async function mountDemoScene(app: Application, options: MountDemoSceneOp
 
     const distancePerFrame = (WALK_TILES_PER_SECOND * ticker.deltaMS) / 1000;
     const length = Math.hypot(dx, dy) || 1;
-    const nextX = clamp(playerX + (dx / length) * distancePerFrame, PLAYER_BOUNDS.x0, PLAYER_BOUNDS.x1);
-    const nextY = clamp(playerY + (dy / length) * distancePerFrame, PLAYER_BOUNDS.y0, PLAYER_BOUNDS.y1);
+    const nextX = clamp(
+      playerX + (dx / length) * distancePerFrame,
+      PLAYER_BOUNDS.x0,
+      PLAYER_BOUNDS.x1,
+    );
+    const nextY = clamp(
+      playerY + (dy / length) * distancePerFrame,
+      PLAYER_BOUNDS.y0,
+      PLAYER_BOUNDS.y1,
+    );
 
     const previousSortY = toSortUnits(playerY);
     const previousSortX = toSortUnits(playerX);
@@ -278,7 +300,14 @@ export async function mountDemoScene(app: Application, options: MountDemoSceneOp
     playerY = nextY;
 
     playerMember.drawable = buildPlayerDrawable(playerMember.drawable.rank, playerX, playerY);
-    positionSprite(playerMember.sprite, playerX, playerY, PLAYER_START.floor, tileSizePx, storeyHeightPx);
+    positionSprite(
+      playerMember.sprite,
+      playerX,
+      playerY,
+      PLAYER_START.floor,
+      tileSizePx,
+      storeyHeightPx,
+    );
 
     // Only re-sort when the player's own sort key actually moved to a
     // new sub-tile unit (Tim's direction): a street of static props

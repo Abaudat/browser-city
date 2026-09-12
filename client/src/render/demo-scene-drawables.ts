@@ -4,7 +4,7 @@
 // output into sprites.
 
 import { decomposeFootprint } from "./decompose";
-import { DEMO_PROPS, type DemoLayer, PLAYER_START, PLAYER_STABLE_ID } from "./demo-fixture";
+import { DEMO_PROPS, type DemoLayer, PLAYER_STABLE_ID, PLAYER_START } from "./demo-fixture";
 import type { Drawable } from "./sort-key";
 
 /** The demo quantises continuous world positions to this many sort units
@@ -37,7 +37,12 @@ export function buildPropDrawables(rankOf: (layer: DemoLayer) => number): PropDr
   for (const prop of DEMO_PROPS) {
     const rank = rankOf(prop.layer);
     const footprint = prop.footprint ?? { width: 1, height: 1 };
-    const cells = decomposeFootprint({ x: prop.x, y: prop.y, width: footprint.width, height: footprint.height });
+    const cells = decomposeFootprint({
+      x: prop.x,
+      y: prop.y,
+      width: footprint.width,
+      height: footprint.height,
+    });
     for (const cell of cells) {
       drawables.push({
         x: toSortUnits(cell.x),
