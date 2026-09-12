@@ -207,9 +207,14 @@ fn layer_ranks_are_unique_and_pool_ranks_are_multiples_of_ten() {
 /// fallback rank for new content.
 #[test]
 fn deprecated_layer_codes_stay_seeded_but_refuse_live_rank() {
-    assert!(layer::is_deprecated(1), "overhead (code 1) must stay deprecated");
     assert!(
-        layer::CODES.iter().any(|c| c.code == 1 && c.name == "overhead"),
+        layer::is_deprecated(1),
+        "overhead (code 1) must stay deprecated"
+    );
+    assert!(
+        layer::CODES
+            .iter()
+            .any(|c| c.code == 1 && c.name == "overhead"),
         "a deprecated code's row must stay seeded in CODES"
     );
     assert!(
