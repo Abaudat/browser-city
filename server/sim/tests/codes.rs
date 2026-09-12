@@ -7,6 +7,7 @@
 //! a diff there is exactly the moment a human must look.
 
 use sim::codes::{Code, layer, matter_kind, node_kind, provision, reason_code};
+use std::collections::BTreeSet;
 
 const GOLDEN: &str = include_str!("goldens/codes_v1.golden");
 
@@ -165,4 +166,70 @@ fn layer_matches_golden_and_is_unique() {
             entry.name
         );
     }
+}
+
+/// FR123's tens ladder: every live rank is unique (a collision would make
+/// depth order between two layers coin-flip on row order), and every rank
+/// minted for a pool layer (i.e. every rank but `ground`'s 0) is a
+/// multiple of ten, leaving every in-between number free for a future
+/// layer to slot into without renumbering anything already seeded.
+#[test]
+fn layer_ranks_are_unique_and_pool_ranks_are_multiples_of_ten() {
+    let mut seen_ranks = BTreeSet::new();
+    for entry in layer::CODES {
+        assert!(
+            seen_ranks.insert(entry.rank),
+            "layer {} ({}): rank {} collides with another live layer's rank",
+            entry.code,
+            entry.name,
+            entry.rank
+        );
+        // `ground` is the flat-pass rank (never a pool member) and
+        // `overhead` is deprecated legacy (its rank is frozen, never
+        // moved into the tens ladder) -- neither is a pool layer.
+        if layer::is_deprecated(entry.code) || entry.name == "ground" {
+            continue;
+        }
+        assert_eq!(
+            entry.rank % 10,
+            0,
+            "layer {} ({}): pool rank {} is not a multiple of ten",
+            entry.code,
+            entry.name,
+            entry.rank
+        );
+    }
+}
+
+/// [`layer::DEPRECATED_CODES`] is a usage ban, not a deletion: `overhead`
+/// stays a known, seeded code (so anything already stored under it keeps
+/// resolving), but [`layer::live_rank`] refuses it -- never a silent
+/// fallback rank for new content.
+#[test]
+fn deprecated_layer_codes_stay_seeded_but_refuse_live_rank() {
+    assert!(
+        layer::is_deprecated(1),
+        "overhead (code 1) must stay deprecated"
+    );
+    assert!(
+        layer::CODES
+            .iter()
+            .any(|c| c.code == 1 && c.name == "overhead"),
+        "a deprecated code's row must stay seeded in CODES"
+    );
+    assert_eq!(
+        layer::live_rank(1),
+        Err(layer::RankLookupError::Deprecated(1)),
+        "live_rank must name the code as deprecated, not just refuse it"
+    );
+    assert_eq!(
+        layer::live_rank(9_999),
+        Err(layer::RankLookupError::Unknown(9_999)),
+        "live_rank must name the code as unknown, not just refuse it"
+    );
+    assert_eq!(
+        layer::live_rank(2),
+        Ok(10),
+        "live_rank must return the real rank for a live, known code"
+    );
 }
