@@ -1,0 +1,4 @@
+[[chain]]
+id = 1
+key = "plastic_bottle"
+links = ["sanitation_worker"]

@@ -25,6 +25,7 @@ jobs:
       server: ${{ steps.filter.outputs.server }}
       client: ${{ steps.filter.outputs.client }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      defs: ${{ steps.filter.outputs.defs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -74,17 +75,35 @@ jobs:
               # and diffs this file -- a hand-edit here with no server/
               # change must still trip the job that catches it.
               - 'fixtures/**'
+              # Explicit, though already implied by server/** -- Tim's
+              # direction: a defs change re-runs the build that consumes
+              # its own generated half.
+              - 'server/sim/src/generated/defs.rs'
             client:
               - 'client/**'
               - 'server/**'
               - 'scripts/**'
               - '.github/**'
               - 'fixtures/**'
+              - 'client/public/defs/defs.json'
             e2e:
               - 'server/**'
               - 'client/**'
               - 'scripts/**'
               - '.github/**'
+              - 'fixtures/**'
+            defs:
+              - 'defs/**'
+              - 'tools/defs-build/**'
+              - 'server/sim/src/generated/defs.rs'
+              - 'client/public/defs/defs.json'
+              - 'scripts/**'
+              - '.github/**'
+              # tools/defs-build/tests/shared_malformed_cases.rs does
+              # include_str!(this file) -- a PR that only edits the shared
+              # case list must still run the Rust half of the drift guard,
+              # not just the client's own test (already covered by
+              # fixtures/** below via its own filter membership elsewhere).
               - 'fixtures/**'
 
   scripts-tests:
@@ -119,6 +138,57 @@ jobs:
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.3-scheduled-reducer-timing.md sched-timing-spacetimedb-version
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.4-backup-restore.md backup-spacetimedb-version
       - run: bash agentic-team/scripts/tests/run-all.sh
+
+  defs:
+    name: defs
+    needs: changes
+    if: needs.changes.outputs.defs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tools/defs-build
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # check-defs-version-bump.sh diffs against a base commit, so
+          # this job alone needs history; the generator's own tests and
+          # check-defs-current.sh only need HEAD.
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: tools/defs-build
+      - run: rustup toolchain install
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - name: the generator's own unit and fixture tests
+        run: cargo test
+      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+        with:
+          tool: cargo-llvm-cov@0.9.1
+      # Scope the *report*, not the *run* (Quentin's direction): `--lib`
+      # would scope the run itself and silently skip `tests/
+      # failure_fixtures.rs`/`tests/shared_malformed_cases.rs` -- the
+      # fourteen-plus fixture tests that exercise the error branches this
+      # gate exists to hold accountable. Running the whole test binary set
+      # and excluding only `src/bin/` from the *report* is what actually
+      # measures what the comment above always claimed: the `defs-build`
+      # binary's own thin CLI wiring is exercised for real by check-defs-
+      # current.sh below, the same reasoning NFR28 applies to a reducer's
+      # own thin wrapper, so it is excluded from the number, not from the
+      # run that produces it.
+      - run: cargo llvm-cov --fail-under-lines 90 --ignore-filename-regex 'src/bin/'
+      # Not gated behind build/migrate/e2e (Quentin's direction): needs
+      # only this crate's own Rust toolchain, so a bad defs edit is red in
+      # a couple of minutes, not after the slowest job in the graph.
+      - name: story 2.1 AC1/AC4, both generated artefacts match defs/
+        run: bash ../../scripts/ci/check-defs-current.sh
+      - name: story 2.1, an id or key is never renumbered, reused or retired
+        run: bash ../../scripts/ci/check-defs-ids-append-only.sh
+      - name: story 2.1 AC3, any defs/ change bumps defs_version
+        run: bash ../../scripts/ci/check-defs-version-bump.sh
+      - name: story 2.1 AC3, nothing versions independently -- a direct pin
+        run: bash ../../scripts/ci/check-defs-version-agrees.sh
 
   check:
     name: check
@@ -319,6 +389,20 @@ jobs:
             echo "::error::window.__bc leaked into the production bundle -- import.meta.env.DEV did not strip it" >&2
             exit 1
           fi
+      # Quentin's direction: the asset is fetched at runtime, never
+      # imported, so no other check in this PR would notice a Vite
+      # publicDir/base-path change silently dropping it -- and it must
+      # carry the exact version actually committed, not a stale one Vite
+      # picked up from a cache.
+      - name: story 2.1, the built defs asset exists and carries the committed defs_version
+        run: |
+          test -f dist/defs/defs.json || { echo "::error::dist/defs/defs.json is missing after npm run build" >&2; exit 1; }
+          built=$(grep -oE '"defs_version": *"[^"]*"' dist/defs/defs.json | head -n1 | sed -E 's/.*"([^"]*)"$/\1/')
+          committed=$(grep -oE '"defs_version": *"[^"]*"' public/defs/defs.json | head -n1 | sed -E 's/.*"([^"]*)"$/\1/')
+          if [ "$built" != "$committed" ]; then
+            echo "::error::dist/defs/defs.json's defs_version ($built) does not match the committed public/defs/defs.json ($committed)" >&2
+            exit 1
+          fi
 
   e2e:
     name: e2e
@@ -379,7 +463,7 @@ jobs:
     name: ci
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    needs: [changes, scripts-tests, check, test, build, migrate, coverage, client-check, client-build, e2e]
+    needs: [changes, scripts-tests, defs, check, test, build, migrate, coverage, client-check, client-build, e2e]
     if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -73,6 +73,12 @@ write_matrix() { # <second-section-heading>
 | --- | --- | --- |
 | A schema-permanence requirement | covered | \`docs/trace-matrix.md\` |
 
+## Definitions
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| A definitions requirement | covered | \`docs/trace-matrix.md\` |
+
 ## World addressing
 
 | Requirement | Status | Guard |

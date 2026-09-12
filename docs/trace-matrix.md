@@ -65,6 +65,22 @@ in a second commit. Same Guard-path discipline as the section above --
 | Re-seeding the extensible-set companion tables is idempotent (`reseed_codes`) (NFR36, NFR38) | covered | `scripts/ci/check-live-migration.sh` |
 | An operator-only reducer rejects any caller that is not the module owner (`reseed_codes`, `tables::ops::require_owner`) | covered | `scripts/ci/check-live-migration.sh` |
 
+## Definitions
+
+Story 2.1: `defs/` is the only source of truth; both targets consume
+generated output, never each other, under one `defs_version` (NFR31).
+Same Guard-path discipline as the sections above.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| The generator emits a Rust include and a client JSON asset from `defs/`, and neither is ever hand-edited | covered | `scripts/ci/check-defs-current.sh` |
+| A malformed definition fails the build naming the offending file and line, and no partial output is emitted | covered | `tools/defs-build/tests/failure_fixtures.rs` |
+| An id or a key, once merged, is never renumbered, reused or retired | covered | `scripts/ci/check-defs-ids-append-only.sh` |
+| The single `defs_version` changes whenever anything under `defs/` changes, and never independently | covered | `scripts/ci/check-defs-version-bump.sh` |
+| Both generated artefacts carry the exact same `defs_version`, asserted directly rather than inferred, and the built client asset ships it too | covered | `scripts/ci/check-defs-version-agrees.sh`, the `client-build` job's own build-asset assertion |
+| The server's and the client's independent parsers agree on every field, and on a shared table of malformed input both must reject (NFR30) | covered | `server/sim/tests/defs_dump.rs`, `client/tests/unit/defs/dump-golden.test.ts`, `tools/defs-build/tests/shared_malformed_cases.rs`, `client/tests/unit/defs/malformed.test.ts` |
+| The prop atlases, character-part atlases and audio manifest fold into `defs_version` | deferred | the story that adds each pipeline -- none of the three inputs exist yet |
+
 ## World addressing
 
 Story 1.5: `(x, y, floor, layer)` addressing, collision, floor transitions

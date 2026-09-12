@@ -1,0 +1,12 @@
+[
+  "unknown-field",
+  "missing-field",
+  "wrong-type",
+  "duplicate-id",
+  "duplicate-key",
+  "dangling-item-reference",
+  "dangling-profession-reference",
+  "out-of-range-balance",
+  "non-integer-id",
+  "negative-id"
+]

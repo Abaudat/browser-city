@@ -84,6 +84,24 @@ check "names the offending reference" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF 'references a server/ build artefact'" _ "$OUT"
 
 echo
+echo "red: server/ references the client's generated defs asset"
+D6="$(fresh_fixture)"
+echo '// see client/public/defs/defs.json' >> "$D6/server/src/lib.rs"
+OUT="$(run_check "$D6" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the offending reference" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF 'the client'\"'\"'s generated defs asset'" _ "$OUT"
+
+echo
+echo "red: client/src references the module's generated defs include"
+D7="$(fresh_fixture)"
+echo '// import "../../../server/sim/src/generated/defs.rs"' >> "$D7/client/src/net/config.ts"
+OUT="$(run_check "$D7" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the offending reference" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF 'the module'\"'\"'s generated defs include'" _ "$OUT"
+
+echo
 echo "red: a symlink crosses from client/ into server/"
 D5="$(fresh_fixture)"
 ln -s "$D5/server/src/lib.rs" "$D5/client/src/net/leak.rs" 2>/dev/null

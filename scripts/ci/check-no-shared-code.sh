@@ -66,6 +66,20 @@ if [ -d "$CLIENT_DIR/src" ] && grep -rlE 'server/target' "$CLIENT_DIR/src" 2>/de
   FAILED=1
 fi
 
+# --- story 2.1: defs/'s two generated artefacts are explicitly in scope,
+# not just caught incidentally by the broader greps above -- the client's
+# generated asset (server/ reading it) and the module's generated include
+# (client/src reading it) would each be exactly the "one side reads the
+# other's generated output" NFR31 forbids alongside NFR30. ------------------
+if [ -d "$SERVER_DIR" ] && grep -rlF 'client/public/defs' "$SERVER_DIR" --include='*.rs' --include='*.toml' 2>/dev/null; then
+  echo "check-no-shared-code: FAIL -- server/ references client/public/defs, the client's generated defs asset (NFR30, NFR31)" >&2
+  FAILED=1
+fi
+if [ -d "$CLIENT_DIR/src" ] && grep -rlE 'server/sim/src/generated|sim::generated' "$CLIENT_DIR/src" 2>/dev/null; then
+  echo "check-no-shared-code: FAIL -- client/src references the module's generated defs include (NFR30, NFR31)" >&2
+  FAILED=1
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi

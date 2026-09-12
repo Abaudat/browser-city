@@ -1,0 +1,19 @@
+[workspace]
+# Detaches this crate from server/'s Cargo workspace (and from any future
+# client-side Rust tooling): it belongs to neither build target, so it
+# keeps its own Cargo.lock and rust-toolchain.toml rather than inheriting
+# either's (Tim's direction, story 2.1).
+
+[package]
+name = "defs-build"
+version = "0.1.0"
+edition = "2024"
+
+# Native-only tooling: never a dependency of `browser_city` or the client
+# bundle (docs/architecture.md's Stack table). `toml`, because `defs/` is
+# TOML (the naming table's own `city-props.toml` example); `serde`
+# (derive) is already-sanctioned native-only tooling. No other dependency
+# is approved for this crate.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

@@ -1,0 +1,5 @@
+[[balance]]
+key = "citizen.bar_decay.rest"
+value = 999
+min = 0
+max = 100

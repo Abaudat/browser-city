@@ -1,0 +1,7 @@
+object 1 trash_bin
+object 2 park_bench
+item 1 bottle
+item 2 recycled_glass
+recipe 1 bottle_recycling
+profession 1 sanitation_worker
+chain 1 plastic_bottle
