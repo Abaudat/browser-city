@@ -43,24 +43,27 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
   "10", // glass, y=5 -- rank 20, after the rank-10 table it shares an anchor with
   "4", // west wall, y=5 -- the near end, in front of the player
   "5", // east wall, y=5
-  "11", // awning (door lintel)
   "2", // south wall, west segment, x=3
   "2", // south wall, west segment, x=4
   "3", // south wall, east segment, x=6
   "3", // south wall, east segment, x=7
   "3", // south wall, east segment, x=8
+  "11", // awning -- anchored on the pavement (y=7), still in front of the player at the start position
 ];
 
 /**
  * The order after the player has walked south to the edge of
- * `PLAYER_BOUNDS` (y = 5.8, clamped -- a deterministic endpoint
- * regardless of exact key-hold timing): they now sort in front of the
- * table, the glass and the whole near row of the west/east walls, which
- * all sorted behind them at the start position. `drawables.test.ts`
- * asserts this same list directly against the comparator
- * (`sortDrawablesInPlace`) -- `render-order.spec.ts` only proves the real
- * adapter reaches the identical order after a real keyboard move, it
- * never owns the ordering fact by itself.
+ * `PLAYER_BOUNDS` (y = 8.5, clamped -- a deterministic endpoint
+ * regardless of exact key-hold timing, and well past the awning's own
+ * anchor at y=7): they now sort in front of the table, the glass, the
+ * whole near row of the west/east walls, the south wall and the awning
+ * itself -- Artie's cycle-3 direction: a player walking all the way out
+ * of the shop must end up in front of the awning on the street, not
+ * hidden behind it forever. `drawables.test.ts` asserts this same list
+ * directly against the comparator (`sortDrawablesInPlace`) --
+ * `render-order.spec.ts` only proves the real adapter reaches the
+ * identical order after a real keyboard move, it never owns the ordering
+ * fact by itself.
  */
 export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "1",
@@ -91,11 +94,11 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "10", // glass -- now behind the player
   "4", // west wall, y=5 -- now behind the player too
   "5", // east wall, y=5
-  "1000", // the player, now past the near row
-  "11", // awning -- still in front of the player
+  "2", // south wall, west segment -- now behind the player
   "2",
-  "2",
+  "3", // south wall, east segment -- now behind the player
   "3",
   "3",
-  "3",
+  "11", // awning -- now behind the player too: they have walked all the way past it
+  "1000", // the player, out on the pavement, in front of everything
 ];

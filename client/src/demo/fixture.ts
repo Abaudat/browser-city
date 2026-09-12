@@ -58,7 +58,11 @@ export interface DemoProp {
  * cells -- the near/far occlusion worked example. */
 export const PLAYER_START = { x: 5, y: 4, floor: 0 } as const;
 export const PLAYER_STABLE_ID = 1000n;
-export const PLAYER_BOUNDS = { x0: 4.2, x1: 6.8, y0: 2.2, y1: 5.8 } as const;
+// y1 reaches well past the awning's own anchor (SOUTH_WALL_Y + 1) and
+// onto the open pavement -- Artie's cycle-3 direction: the player must be
+// able to walk all the way out from behind the awning to in front of it,
+// not stop at the doorway.
+export const PLAYER_BOUNDS = { x0: 4.2, x1: 6.8, y0: 2.2, y1: 8.5 } as const;
 
 // The building footprint: x = 3..8 (west wall, 4 interior columns, east
 // wall), y = 1..6 (north wall, 4 interior rows, south/door wall).
@@ -161,10 +165,15 @@ export const DEMO_PROPS: readonly DemoProp[] = [
   { id: 9n, assetKey: "table", x: INTERIOR_X0, y: INTERIOR_Y1, floor: 0, layer: "furniture" },
   { id: 10n, assetKey: "glass", x: INTERIOR_X0, y: INTERIOR_Y1, floor: 0, layer: "objects" },
 
-  // The awning: anchored at the door lintel it hangs off (Artie's
-  // direction), overhanging the sidewalk cells south of the door that it
-  // does not itself stand on.
-  { id: 11n, assetKey: "awning", x: DOOR_X, y: SOUTH_WALL_Y, floor: 0, layer: "objects" },
+  // The awning: anchored one cell south of the door, on the pavement --
+  // never at the wall/lintel row itself (Artie's cycle-3 direction: a
+  // bottom-anchored sprite only ever overhangs *upward*, so anchoring it
+  // at the door would hang the canopy back into the shop instead of out
+  // over the street). From here its 2-tile overhang reaches only as far
+  // north as the door threshold, never into the room, so a player walks
+  // behind it while inside, is never fully hidden passing through the
+  // door, and ends up in front of it once they are out on the pavement.
+  { id: 11n, assetKey: "awning", x: DOOR_X, y: SOUTH_WALL_Y + 1, floor: 0, layer: "objects" },
 
   // The second storey, directly above the shop: its own north wall and a
   // piece of furniture, on `floor: 1`. A visually distinct wall variant
