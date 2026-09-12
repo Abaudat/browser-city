@@ -8,6 +8,8 @@
 // question for the modules next to it) -- never a rank typed in here by
 // hand. Pure, zero PixiJS.
 
+import { DEPRECATED_LAYER_CODES } from "./layer-table";
+
 /** The `layer_code` row shape this module needs -- a structural subset of
  * `net/bindings`'s generated `LayerCode`, so a caller can pass the real
  * subscribed rows directly without an adapter. */
@@ -15,15 +17,6 @@ export interface LayerCodeRow {
   readonly code: number;
   readonly rank: number;
 }
-
-/** Codes `sim::codes::layer::DEPRECATED_CODES` bans from new placement.
- * Mirrored by hand because there are, and are expected to remain, very
- * few of these -- a code is deprecated once, deliberately, in the same PR
- * that reads this file's own doc comment, never silently. `overhead`
- * (code 1) was minted for a bridge deck FR124's floor offset already
- * expresses; it stays seeded server-side (a usage ban, not a deletion)
- * but must never be resolved to a rank here either. */
-const DEPRECATED_LAYER_CODES: ReadonlySet<number> = new Set([1]);
 
 /** Builds the live code-to-rank lookup from subscribed `layer_code` rows.
  * A deprecated code's row is dropped rather than included -- it must

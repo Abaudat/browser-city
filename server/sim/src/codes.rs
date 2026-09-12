@@ -186,20 +186,30 @@ pub mod layer {
         DEPRECATED_CODES.contains(&code)
     }
 
+    /// Why [`live_rank`] refused a code -- a plain enum, not a formatted
+    /// `String`: `sim` is a pure crate (NFR28) and this refusal sits on
+    /// what could become a hot path once a placement reducer calls it, so
+    /// it must not allocate to report it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum RankLookupError {
+        Deprecated(u32),
+        Unknown(u32),
+    }
+
     /// The FR123 depth-sort rank for a *live* (non-deprecated, known)
     /// layer code -- `Err` for a deprecated or unknown code, never a
     /// silent fallback rank. The client's own rank lookup mirrors this
     /// refusal (NFR30: a separate TypeScript implementation, not shared
     /// code).
-    pub fn live_rank(code: u32) -> Result<u32, String> {
+    pub fn live_rank(code: u32) -> Result<u32, RankLookupError> {
         if is_deprecated(code) {
-            return Err(format!("layer code {code} is deprecated"));
+            return Err(RankLookupError::Deprecated(code));
         }
         CODES
             .iter()
             .find(|c| c.code == code)
             .map(|c| c.rank)
-            .ok_or_else(|| format!("layer code {code} is unknown"))
+            .ok_or(RankLookupError::Unknown(code))
     }
 }
 

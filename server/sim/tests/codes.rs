@@ -217,13 +217,15 @@ fn deprecated_layer_codes_stay_seeded_but_refuse_live_rank() {
             .any(|c| c.code == 1 && c.name == "overhead"),
         "a deprecated code's row must stay seeded in CODES"
     );
-    assert!(
-        layer::live_rank(1).is_err(),
-        "live_rank must refuse a deprecated code rather than return a rank silently"
+    assert_eq!(
+        layer::live_rank(1),
+        Err(layer::RankLookupError::Deprecated(1)),
+        "live_rank must name the code as deprecated, not just refuse it"
     );
-    assert!(
-        layer::live_rank(9_999).is_err(),
-        "live_rank must refuse an unknown code rather than return a rank silently"
+    assert_eq!(
+        layer::live_rank(9_999),
+        Err(layer::RankLookupError::Unknown(9_999)),
+        "live_rank must name the code as unknown, not just refuse it"
     );
     assert_eq!(
         layer::live_rank(2),

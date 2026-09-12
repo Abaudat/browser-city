@@ -1,31 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { PLAYER_START } from "../../../src/render/demo-fixture";
-import { buildPlayerDrawable, buildPropDrawables } from "../../../src/render/demo-scene-drawables";
+import {
+  buildPlayerDrawable,
+  buildPropDrawables,
+  updatePlayerDrawable,
+} from "../../../src/demo/drawables";
+import { PLAYER_START } from "../../../src/demo/fixture";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
+import { LAYER_TABLE } from "../../../src/render/layer-table";
 import { compareDrawables, sortDrawablesInPlace } from "../../../src/render/sort-key";
-import { DEMO_SCENE_GOLDEN_ORDER } from "./demo-scene-golden";
+import { toSortUnits } from "../../../src/render/sort-units";
+import { DEMO_SCENE_GOLDEN_ORDER } from "./golden";
 
-// Mirrors `server/sim/tests/goldens/codes_v1.golden`'s `layer` rows --
-// fixture data for this test only (`layer-ranks.test.ts` pins the lookup
-// logic itself; this file is about the demo scene's own ordering).
-const LAYER_ROWS = [
-  { code: 2, rank: 10 }, // furniture
-  { code: 3, rank: 20 }, // objects
-  { code: 4, rank: 30 }, // walls
-  { code: 5, rank: 40 }, // wall_decals
-  { code: 6, rank: 50 }, // characters
-];
-const LAYER_CODE_BY_NAME: Record<string, number> = {
-  furniture: 2,
-  objects: 3,
-  walls: 4,
-  wall_decals: 5,
-  characters: 6,
-};
+const CODE_BY_NAME: Record<string, number> = Object.fromEntries(
+  LAYER_TABLE.map((row) => [row.name, row.code]),
+);
 
-function rankOf(layer: keyof typeof LAYER_CODE_BY_NAME): number {
-  const table = buildLayerRankTable(LAYER_ROWS);
-  const code = LAYER_CODE_BY_NAME[layer];
+function rankOf(layer: string): number {
+  const table = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
+  const code = CODE_BY_NAME[layer];
   if (code === undefined) throw new Error(`unknown demo layer ${layer}`);
   return resolveRank(table, code);
 }
@@ -44,35 +36,32 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     expect(pool.map((d) => d.stableId.toString())).toEqual(DEMO_SCENE_GOLDEN_ORDER);
   });
 
-  it("worked example: the player stands between the counter's near and far ends", () => {
+  it("worked example: the player stands between the west wall's near and far cells", () => {
     // FR125's AC, made explicit rather than left to the snapshot above:
-    // the counter runs toward the camera (width=1, height=3) beside the
-    // player's start position. The far cell (smaller y) sorts behind the
-    // player; the near cell (larger y) sorts in front -- the one thing a
-    // footprint running parallel to the camera could never demonstrate.
+    // the west wall runs toward the camera (width 1, height 4) beside
+    // the player's start position. Cells nearer the north wall (smaller
+    // y) sort behind the player; cells nearer the door (larger y) sort
+    // in front -- the one thing a footprint running parallel to the
+    // camera could never demonstrate.
     const props = buildPropDrawables((layer) => rankOf(layer));
     const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y);
 
-    const counterCells = props.filter((p) => p.stableId === 4n);
-    expect(counterCells).toHaveLength(3);
-    const farCell = counterCells.find((c) => c.sourceRow === 0);
-    const middleCell = counterCells.find((c) => c.sourceRow === 1);
-    const nearCell = counterCells.find((c) => c.sourceRow === 2);
-    if (!farCell || !middleCell || !nearCell) throw new Error("unreachable");
+    const westWallCells = props
+      .filter((p) => p.stableId === 4n)
+      .sort((a, b) => a.sourceRow - b.sourceRow);
+    expect(westWallCells).toHaveLength(4);
+    const farCell = westWallCells[0];
+    const nearCell = westWallCells[westWallCells.length - 1];
+    if (!farCell || !nearCell) throw new Error("unreachable");
 
-    // far end: behind the player (drawn first)
-    expect(compareDrawables(farCell, player)).toBeLessThan(0);
-    // same row as the player: furniture's rank is below characters', so
-    // it draws behind regardless of x
-    expect(compareDrawables(middleCell, player)).toBeLessThan(0);
-    // near end: in front of the player (drawn after)
-    expect(compareDrawables(nearCell, player)).toBeGreaterThan(0);
+    expect(compareDrawables(farCell, player)).toBeLessThan(0); // far end: behind the player
+    expect(compareDrawables(nearCell, player)).toBeGreaterThan(0); // near end: in front of the player
   });
 
   it("a table and the glass on it share an anchor; the rank tiebreak keeps the glass on top", () => {
     const props = buildPropDrawables((layer) => rankOf(layer));
-    const table = props.find((p) => p.stableId === 5n);
-    const glass = props.find((p) => p.stableId === 6n);
+    const table = props.find((p) => p.stableId === 9n);
+    const glass = props.find((p) => p.stableId === 10n);
     if (!table || !glass) throw new Error("unreachable");
     expect(table.x).toBe(glass.x);
     expect(table.y).toBe(glass.y);
@@ -82,14 +71,14 @@ describe("the story 1.6 demo scene's committed ordering", () => {
   it("FR124: the upper-storey wall shares (x, y, rank) with the ground-floor wall, and only the stableId tiebreak (never floor) orders them", () => {
     const props = buildPropDrawables((layer) => rankOf(layer));
     const groundWallCell = props.find((p) => p.stableId === 1n && p.sourceCol === 0);
-    const upperWallCell = props.find((p) => p.stableId === 8n && p.sourceCol === 0);
+    const upperWallCell = props.find((p) => p.stableId === 12n && p.sourceCol === 0);
     if (!groundWallCell || !upperWallCell) throw new Error("unreachable");
     expect(groundWallCell.x).toBe(upperWallCell.x);
     expect(groundWallCell.y).toBe(upperWallCell.y);
     expect(groundWallCell.rank).toBe(upperWallCell.rank);
     expect(groundWallCell.floor).not.toBe(upperWallCell.floor);
 
-    // The comparison result is driven entirely by stableId (1n < 8n) --
+    // The comparison result is driven entirely by stableId (1n < 12n) --
     // swapping which one carries which floor changes nothing about the
     // result, which is exactly `inv_floor_never_affects_depth_order`
     // applied to this scene's own data.
@@ -98,5 +87,22 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     expect(compareDrawables(groundWallCell, upperWallCell)).toBe(
       compareDrawables(swapped, swappedOther),
     );
+  });
+});
+
+describe("updatePlayerDrawable", () => {
+  it("mutates the same object in place rather than allocating a new one", () => {
+    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y);
+    const sameObject = player;
+
+    updatePlayerDrawable(player, PLAYER_START.x + 1, PLAYER_START.y + 1);
+
+    expect(player).toBe(sameObject);
+    expect(player.x).toBe(toSortUnits(PLAYER_START.x + 1));
+    expect(player.y).toBe(toSortUnits(PLAYER_START.y + 1));
+    // Everything else about the player stays fixed.
+    expect(player.rank).toBe(rankOf("characters"));
+    expect(player.stableId).toBe(1000n);
+    expect(player.floor).toBe(PLAYER_START.floor);
   });
 });

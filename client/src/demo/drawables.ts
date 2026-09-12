@@ -1,26 +1,15 @@
-// Turns the committed demo fixture (`demo-fixture.ts`) into the plain
+// Turns the committed demo fixture (`fixture.ts`) into the plain
 // `Drawable`s `sort-key.ts`'s comparator orders (FR123). Pure, zero
-// PixiJS -- `pixi-scene.ts` is the only thing that turns this module's
-// output into sprites.
+// PixiJS -- `scene.ts` is the only thing that turns this module's output
+// into sprites.
 
-import { decomposeFootprint } from "./decompose";
-import { DEMO_PROPS, type DemoLayer, PLAYER_STABLE_ID, PLAYER_START } from "./demo-fixture";
-import type { Drawable } from "./sort-key";
+import { decomposeFootprint } from "../render/decompose";
+import type { Drawable } from "../render/sort-key";
+import { toSortUnits } from "../render/sort-units";
+import { DEMO_PROPS, type DemoLayer, PLAYER_STABLE_ID, PLAYER_START } from "./fixture";
 
-/** The demo quantises continuous world positions to this many sort units
- * per tile before handing them to the integer-only comparator (Tim's "no
- * floats anywhere in the key") -- fine enough that a walking character's
- * sort position updates far more often than once per whole tile crossed,
- * which is what makes its anchor effectively continuous (Artie's
- * direction) rather than snapped to a cell. */
-export const SORT_SUBDIVISIONS = 4;
-
-export function toSortUnits(worldCoord: number): number {
-  return Math.round(worldCoord * SORT_SUBDIVISIONS);
-}
-
-/** A `Drawable` plus what `pixi-scene.ts` needs to pick and slice a
- * texture for it -- never consulted by the comparator itself. */
+/** A `Drawable` plus what `scene.ts` needs to pick and slice a texture
+ * for it -- never consulted by the comparator itself. */
 export interface PropDrawable extends Drawable {
   readonly assetKey: string;
   readonly sourceCol: number;
@@ -31,7 +20,7 @@ export interface PropDrawable extends Drawable {
 
 /** Every non-player prop in the fixture, decomposed (FR125) where it
  * carries a footprint. `rankOf` is the only way this function learns a
- * layer's rank -- never a literal here (see `layer-ranks.ts`). */
+ * layer's rank -- never a literal here (see `render/layer-ranks.ts`). */
 export function buildPropDrawables(rankOf: (layer: DemoLayer) => number): PropDrawable[] {
   const drawables: PropDrawable[] = [];
   for (const prop of DEMO_PROPS) {
@@ -76,4 +65,14 @@ export function buildPlayerDrawable(rank: number, feetX: number, feetY: number):
     footprintWidth: 1,
     footprintHeight: 1,
   };
+}
+
+/** Mutates `player`'s position in place from a new continuous feet
+ * position -- Quentin's direction: the render path must not allocate a
+ * whole new `Drawable` object every frame the player moves, before the
+ * re-sort gate is even consulted. Only `x`/`y` change; `rank`,
+ * `stableId`, `floor` and the asset fields never do for the player. */
+export function updatePlayerDrawable(player: PropDrawable, feetX: number, feetY: number): void {
+  (player as { x: number }).x = toSortUnits(feetX);
+  (player as { y: number }).y = toSortUnits(feetY);
 }

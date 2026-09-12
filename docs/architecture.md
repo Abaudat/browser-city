@@ -11,7 +11,8 @@ cited here by identifier.
 | Server module                 | Rust, edition 2024, `crate-type = ["cdylib"]`, target `wasm32-unknown-unknown`                           |
 | Server, database, replication | SpacetimeDB 2.9.x — the `spacetimedb` crate                                                              |
 | Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the table-bounds registry), and the `browser_city` module crate, which depends on both |
-| Property testing              | `proptest`, dev-dependency of `sim` only; case count from `PROPTEST_CASES`                              |
+| Property testing (server)     | `proptest`, dev-dependency of `sim` only; case count from `PROPTEST_CASES`                              |
+| Property testing (client)     | `fast-check` 4.10.0, pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
 | `serde`/`serde_json`          | Native-only tooling (`bounds`'s schema-snapshot serialization, the spike-report binaries under `server/spikes/*_report`, `server/tools/*` e.g. `world_backup`) — never a dependency of a published module crate |
 | Hosting                       | SpacetimeDB Maincloud                                                                                    |
 | CI / deploy                   | GitHub Actions is the only path to Maincloud; never a local `spacetime publish` |
@@ -234,6 +235,18 @@ row for that obligation until it is met.
 
 ## Rendering
 
+`client/src/render/` holds the permanent rendering modules -- the ones
+the next story that builds a real, subscribed drawable pool reaches for.
+`client/src/demo/` holds story 1.6's own demo scene: a committed,
+deterministic fixture, throwaway harness code by design. Imports flow
+demo -> render, never the reverse, so deleting the demo is one directory
+and one import. `sort-key.ts`, `decompose.ts`, `layer-ranks.ts`,
+`layer-table.ts`, `sort-units.ts`, `screen-position.ts` and
+`pixi-order.ts` all live under `render/`; nothing under `demo/` is held
+to the coverage bar the permanent modules are, though it is still
+exercised by real tests (`client/vitest.config.ts`'s coverage
+`include`/`exclude`).
+
 A frame draws four passes, in this fixed order, declared even when a pass
 is empty: three flat passes -- ground, ground decals, ground objects --
 followed by one y-sorted pool. A flat pass is never depth-sorted and
@@ -241,16 +254,28 @@ never occludes anything; anything with visible vertical extent, however
 small, belongs in the pool instead (FR123).
 
 The pool's sort key is `(y, rank, x, stableId)`, most significant first,
-implemented once in `client/src/render/sort-key.ts` and nowhere else --
-that comparator is the sole ordering authority, and a pool container's
-`sortableChildren` is `false` everywhere one exists. Every component is a
-world-space integer: `y`/`x` are exactly the world coordinates a drawable
-is anchored at, never a screen-space or floor-adjusted value; `rank` comes
-from `sim::codes::layer` (below), never a literal; `stableId` is a
+implemented once in `render/sort-key.ts` and nowhere else -- that
+comparator is the sole ordering authority, reached through
+`render/pixi-order.ts`'s `applyDepthOrder` (the one Pixi-touching
+adapter for it), and a pool container's `sortableChildren` is `false`
+everywhere one exists. Every component is an integer: `y`/`x` are world
+*position*, in FR123 sort units (`render/sort-units.ts`'s
+`SORT_SUBDIVISIONS` per tile), never a raw tile index and never a
+screen-space or floor-adjusted value -- a continuous, moving character
+needs sub-tile resolution to sort correctly against a static prop it is
+passing, and every caller that builds a drawable must convert a tile
+coordinate through `toSortUnits` or it silently mixes units. `rank`
+comes from `sim::codes::layer` (below), never a literal; `stableId` is a
 `bigint` end to end (`object_id` for a placed drawable, a character's id
 for a character) and is never narrowed through `Number`. Floor is never a
 term in the key (FR124): it is applied only once, as a vertical screen
-offset, when a drawable is positioned on screen.
+offset (`render/screen-position.ts`'s `floorOffsetPx`), when a drawable
+is positioned on screen. Two floors whose screen rects overlap (a
+storey visible through or above another) have no defined occlusion
+relationship today -- wall retraction and floor culling (deferred) are
+what keep two storeys from being co-visible in normal play, and that
+remains a real design gap until one of those lands, not something to
+lean on.
 
 `sim::codes::layer`'s rank ladder (FR123) is minted in tens, leaving every
 in-between number free for a future layer to slot into without
@@ -262,14 +287,23 @@ stays seeded forever (deprecation is a usage ban, not a deletion), but
 nothing may place new content on it, and a rank lookup that resolves an
 unknown or deprecated code throws rather than sorting it silently. A
 rank's number is as permanent as its code and pinned by the same codes
-golden.
+golden. `client/src/render/layer-table.ts` is the client's one mirror of
+that ladder -- every other client module that needs a code, a name, a
+rank or the deprecated set reads it from there, never a second
+hand-typed copy, and `scripts/ci/check-layer-table-current.sh` fails the
+build the moment it disagrees with the golden.
 
 A multi-cell prop (FR125/FR126) decomposes into one per-cell drawable per
 cell of its footprint, each with its own anchor and its own source
 sub-rect -- a placeholder sub-rect until an atlas exists, but the field is
 never optional. Extent comes from the placed object's `object_def`
 (`defs/`), never a hardcoded number, and is capped at approximately 8x8
-(FR127).
+(FR127). A per-cell sub-rect is only ever legal on whole-tile boundaries:
+either the source art is already exactly one tile long on the decomposed
+axis (every cell repeats it whole) or exactly `cells * tile_size_px` long
+(sliced into equal whole-pixel cells) -- anything else, including any
+horizontal overhang, is refused at mount rather than drawn stretched or
+fractional.
 
 `render.tile_size_px` and `render.storey_height_px` are balance keys
 (`defs/balance/render.toml`), not TypeScript literals, so they fold into
@@ -278,6 +312,13 @@ is the floor screen offset FR124 describes: a drawable's screen position
 subtracts `floor * storey_height_px`, and a drawable on a storey above the
 viewer's own must never sort as though it were on that floor because of
 it.
+
+Story 1.6's demo scene reads its sprites straight out of the repo-root
+`ModernTileset/` at runtime (`new URL(..., import.meta.url)` asset
+imports), not out of `client/public/`. Any future Pages deploy workflow
+must therefore check out the whole repository for the client build job --
+never a sparse or `client/`-only checkout -- for as long as any client
+code reads assets from outside `client/`.
 
 ## Definitions (`defs/`)
 

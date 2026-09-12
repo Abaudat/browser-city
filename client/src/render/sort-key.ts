@@ -2,14 +2,18 @@
 // PixiJS and zero `net/bindings` imports: this module is pure arithmetic
 // over plain records, provable in vitest's node environment without a
 // canvas, a GPU or a live connection ever existing. `client/src/render/
-// pixi-scene.ts` is the only file allowed to hand this comparator's
+// pixi-order.ts` is the only file allowed to hand this comparator's
 // output to a real display list.
 //
-// `x`/`y` are world-space integers exactly as stored -- never a
-// screen-space or floor-adjusted value, never a pixel (FR124: floor is a
-// vertical screen offset applied only when a drawable is positioned on
-// screen, and is carried on `Drawable.floor` for that purpose only -- the
-// comparator below never reads it). `rank` is the FR123 tens rank the
+// `x`/`y` are world *position*, in FR123 sort units (`sort-units.ts`:
+// `tile * SORT_SUBDIVISIONS`), never raw tile indices and never a
+// screen-space or floor-adjusted value (FR124: floor is a vertical
+// screen offset applied only when a drawable is positioned on screen --
+// `screen-position.ts` -- and is carried on `Drawable.floor` for that
+// purpose only; the comparator below never reads it). Every caller that
+// builds a `Drawable` must convert through `toSortUnits` -- passing a raw
+// tile coordinate mixes units with a continuous, moving character and
+// silently produces the wrong order. `rank` is the FR123 tens rank the
 // drawable's `layer` resolves to (`layer-ranks.ts`), read from
 // `sim::codes::layer`'s data, never a literal here. `stableId` is a
 // `bigint` and stays one end to end: narrowing it through `Number` would
@@ -29,7 +33,10 @@
  * screen-offset calculation only (FR124) -- [`compareDrawables`] never
  * reads it. */
 export interface Drawable {
+  /** World position in FR123 sort units (`sort-units.ts`'s
+   * `SORT_SUBDIVISIONS` per tile) -- never a raw tile index. */
   readonly x: number;
+  /** World position in FR123 sort units -- never a raw tile index. */
   readonly y: number;
   readonly rank: number;
   readonly stableId: bigint;
@@ -59,4 +66,17 @@ export function compareDrawables(a: Drawable, b: Drawable): number {
  * costs nothing beyond the (already-sorted) comparator calls. */
 export function sortDrawablesInPlace(pool: Drawable[]): void {
   pool.sort(compareDrawables);
+}
+
+/** [`sortDrawablesInPlace`] generalised to any item that carries a
+ * `Drawable` rather than being one -- the one sort authority every real
+ * caller goes through too, not a second, inline `items.sort((a, b) =>
+ * compareDrawables(...))` next to it (Tim's direction: `pixi-order.ts`'s
+ * `applyDepthOrder` calls this, it does not re-implement it). `toDrawable`
+ * should be a stable, module-level function reference (never an inline
+ * arrow at the call site) so calling this allocates nothing beyond the
+ * one short-lived comparator closure `Array.prototype.sort` needs for
+ * this call. */
+export function sortByDrawable<T>(items: T[], toDrawable: (item: T) => Drawable): void {
+  items.sort((a, b) => compareDrawables(toDrawable(a), toDrawable(b)));
 }

@@ -14,7 +14,24 @@
 #     `inv_` (story 1.6 on) -- a client-side invariant has no `INV_` Rust
 #     constant counterpart, so it is exempt from that symmetry check alone.
 # Also bans `#[ignore]` outright -- a skipped test is an unautomated test.
+#
+# `--client-only` (Tim's direction, story 1.6 cycle 2): runs only the
+# directions that need no cargo invocation at all -- the client inv_*
+# symmetry and the Guard-section path checks -- so `client-check` can run
+# this at effectively zero cost instead of the full run paying for a
+# release `cargo test --workspace` (clippy, wasm build, `cargo llvm-cov`,
+# two local SpacetimeDB instances) just to protect two greps over
+# committed text. It skips: listing the Rust test suite, verifying a
+# `covered` row's test when that test is not a client `inv_*` name (it
+# may be a Rust test this mode cannot see), and the `INV_`
+# constant<->matrix symmetry (a Rust-only concern). `test` (server-gated)
+# still runs the unflagged, full check.
 set -euo pipefail
+CLIENT_ONLY=0
+if [ "${1:-}" = "--client-only" ]; then
+  CLIENT_ONLY=1
+fi
+
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 MATRIX="$REPO_ROOT/docs/trace-matrix.md"
 INVARIANTS_FILE="$REPO_ROOT/server/sim/tests/invariants.rs"
@@ -31,14 +48,17 @@ CLIENT_UNIT_DIR="$REPO_ROOT/client/tests/unit"
 # server/Cargo.toml and server/spikes/sched_timing/Cargo.toml). --release
 # reuses the artifacts the CI test job already built in release rather
 # than compiling the workspace a second time in debug just to print test
-# names.
-LIST_OUTPUT="$(cd "$REPO_ROOT/server" && cargo test --workspace --exclude browser_city --exclude sched_timing_spike --release -- --list 2>&1)" || {
-  echo "check-trace-matrix: 'cargo test -- --list' failed:" >&2
-  echo "$LIST_OUTPUT" >&2
-  exit 1
-}
-
-TEST_NAMES="$(printf '%s\n' "$LIST_OUTPUT" | grep -E ': (test|benchmark)$' | sed -E 's/: (test|benchmark)$//')"
+# names. Skipped entirely under --client-only.
+if [ "$CLIENT_ONLY" -eq 1 ]; then
+  TEST_NAMES=""
+else
+  LIST_OUTPUT="$(cd "$REPO_ROOT/server" && cargo test --workspace --exclude browser_city --exclude sched_timing_spike --release -- --list 2>&1)" || {
+    echo "check-trace-matrix: 'cargo test -- --list' failed:" >&2
+    echo "$LIST_OUTPUT" >&2
+    exit 1
+  }
+  TEST_NAMES="$(printf '%s\n' "$LIST_OUTPUT" | grep -E ': (test|benchmark)$' | sed -E 's/: (test|benchmark)$//')"
+fi
 
 # --- collect every inv_* test name declared in client/tests/unit/** ---------
 # Matches `it("inv_foo", ...)` / `test("inv_foo", ...)`, single or double
@@ -88,13 +108,25 @@ while IFS='|' read -r _ id _ status test _; do
       if [ -z "$test" ]; then
         echo "check-trace-matrix: FAIL -- '$id' is 'covered' but names no test" >&2
         FAILED=1
+      elif [ "$CLIENT_ONLY" -eq 1 ]; then
+        # Cannot see the Rust suite in this mode, and a Rust invariant
+        # test name looks exactly like a client one (both are `inv_*`) --
+        # so this mode only ever confirms a client test exists, never
+        # that a row wrongly claims one that does not. The full run
+        # (`test` job) is what catches that.
+        :
       elif ! printf '%s\n' "$TEST_NAMES" | grep -qxF "$test" && ! printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$test"; then
         echo "check-trace-matrix: FAIL -- '$id' claims coverage via '$test', but no such test exists" >&2
         FAILED=1
       fi
       ;;
     deferred)
-      if printf '%s\n' "$TEST_NAMES" | grep -qxF "$id" || printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$id"; then
+      if [ "$CLIENT_ONLY" -eq 1 ]; then
+        if printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$id"; then
+          echo "check-trace-matrix: FAIL -- '$id' is 'deferred' but a client test named '$id' now exists -- flip its row to 'covered'" >&2
+          FAILED=1
+        fi
+      elif printf '%s\n' "$TEST_NAMES" | grep -qxF "$id" || printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$id"; then
         echo "check-trace-matrix: FAIL -- '$id' is 'deferred' but a test named '$id' now exists -- flip its row to 'covered'" >&2
         FAILED=1
       fi
@@ -102,18 +134,21 @@ while IFS='|' read -r _ id _ status test _; do
   esac
 done <<< "$MATRIX_ROWS"
 
-# every inv_* test must have a matrix row (Rust side)
-while IFS= read -r name; do
-  [ -n "$name" ] || continue
-  case "$name" in
-    *inv_*) short="${name##*::}" ;;
-    *) continue ;;
-  esac
-  if ! printf '%s\n' "$MATRIX_IDS" | grep -qxF "$short"; then
-    echo "check-trace-matrix: FAIL -- test '$name' has no row in docs/trace-matrix.md" >&2
-    FAILED=1
-  fi
-done <<< "$TEST_NAMES"
+# every inv_* test must have a matrix row (Rust side) -- skipped under
+# --client-only, which never lists the Rust suite.
+if [ "$CLIENT_ONLY" -eq 0 ]; then
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    case "$name" in
+      *inv_*) short="${name##*::}" ;;
+      *) continue ;;
+    esac
+    if ! printf '%s\n' "$MATRIX_IDS" | grep -qxF "$short"; then
+      echo "check-trace-matrix: FAIL -- test '$name' has no row in docs/trace-matrix.md" >&2
+      FAILED=1
+    fi
+  done <<< "$TEST_NAMES"
+fi
 
 # every inv_* test must have a matrix row (client side) -- same direction,
 # same message, so a client-only invariant can never silently stop being
@@ -129,25 +164,28 @@ done <<< "$CLIENT_INV_NAMES"
 # every INV_* constant must have a matrix row, and every matrix row an INV_*
 # constant -- the registry and the matrix are two hands on the same list.
 # A matrix row covered by a client inv_* test is exempt from needing a
-# Rust INV_ constant: it is a client-only invariant, not a sim one.
-while IFS= read -r cid; do
-  [ -n "$cid" ] || continue
-  if ! printf '%s\n' "$MATRIX_IDS" | grep -qxF "$cid"; then
-    echo "check-trace-matrix: FAIL -- invariants.rs declares '$cid' but docs/trace-matrix.md has no row for it" >&2
-    FAILED=1
-  fi
-done <<< "$CONSTANT_IDS"
+# Rust INV_ constant: it is a client-only invariant, not a sim one. A
+# Rust-only concern, so skipped under --client-only.
+if [ "$CLIENT_ONLY" -eq 0 ]; then
+  while IFS= read -r cid; do
+    [ -n "$cid" ] || continue
+    if ! printf '%s\n' "$MATRIX_IDS" | grep -qxF "$cid"; then
+      echo "check-trace-matrix: FAIL -- invariants.rs declares '$cid' but docs/trace-matrix.md has no row for it" >&2
+      FAILED=1
+    fi
+  done <<< "$CONSTANT_IDS"
 
-while IFS= read -r mid; do
-  [ -n "$mid" ] || continue
-  if printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$mid"; then
-    continue
-  fi
-  if ! printf '%s\n' "$CONSTANT_IDS" | grep -qxF "$mid"; then
-    echo "check-trace-matrix: FAIL -- docs/trace-matrix.md has a row for '$mid' but invariants.rs declares no such INV_ constant" >&2
-    FAILED=1
-  fi
-done <<< "$MATRIX_IDS"
+  while IFS= read -r mid; do
+    [ -n "$mid" ] || continue
+    if printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$mid"; then
+      continue
+    fi
+    if ! printf '%s\n' "$CONSTANT_IDS" | grep -qxF "$mid"; then
+      echo "check-trace-matrix: FAIL -- docs/trace-matrix.md has a row for '$mid' but invariants.rs declares no such INV_ constant" >&2
+      FAILED=1
+    fi
+  done <<< "$MATRIX_IDS"
+fi
 
 # --- Guard-column sections: every `covered` row's Guard column names a
 # real path, checked mechanically rather than by eye -- a guard renamed or
@@ -201,5 +239,9 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-trace-matrix: matrix, registry and test suite all agree" >&2
+if [ "$CLIENT_ONLY" -eq 1 ]; then
+  echo "check-trace-matrix: --client-only -- client inv_* symmetry and Guard-section paths agree" >&2
+else
+  echo "check-trace-matrix: matrix, registry and test suite all agree" >&2
+fi
 exit 0

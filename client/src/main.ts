@@ -1,12 +1,13 @@
 import { Application } from "pixi.js";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
+import { mountDemoScene } from "./demo/scene";
 import { connect } from "./net/connection";
 import { recordPingForE2e, recordRenderOrderForE2e } from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
 import { bootstrapRenderer } from "./render/bootstrap";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
-import { mountDemoScene } from "./render/pixi-scene";
+import { LAYER_TABLE } from "./render/layer-table";
 
 async function main(): Promise<void> {
   const mount = document.getElementById("app");
@@ -39,13 +40,12 @@ async function main(): Promise<void> {
  * ping demo above. Never blocks `main()` on failure (NFR42) -- a broken
  * demo mount must never take the ping round trip down with it.
  *
- * The layer ranks below mirror `server/sim/tests/goldens/codes_v1.golden`
- * exactly (never a second hand-maintained *value*, only a second
- * hand-maintained transport: this story defines no `layer_code`
- * subscription wiring, so the demo's own rank source is this fixed table,
- * the same one `client/tests/unit/render/demo-scene.test.ts` uses --
- * still resolved through `layer-ranks.ts`, never inlined into the sort
- * key). Wiring this scene to a live subscription is later work.
+ * The rank table comes from `render/layer-table.ts` -- the one
+ * client-side mirror of `sim::codes::layer`, guarded against drift by
+ * `scripts/ci/check-layer-table-current.sh` -- never a second
+ * hand-maintained copy here. There is still no live `layer_code`
+ * subscription in this story (Tim's scope call); wiring one is later
+ * work.
  */
 async function startDemoScene(): Promise<void> {
   const mount = document.getElementById("demo-scene");
@@ -58,34 +58,20 @@ async function startDemoScene(): Promise<void> {
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");
 
-  const rankTable = buildLayerRankTable([
-    { code: 0, rank: 0 },
-    { code: 1, rank: 1 },
-    { code: 2, rank: 10 },
-    { code: 3, rank: 20 },
-    { code: 4, rank: 30 },
-    { code: 5, rank: 40 },
-    { code: 6, rank: 50 },
-  ]);
+  const rankTable = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
 
   const app = new Application();
-  await app.init({ preference: "webgpu", background: "#284028", width: 480, height: 360 });
+  await app.init({ preference: "webgpu", background: "#284028" });
   mount.appendChild(app.canvas);
 
-  const scene = await mountDemoScene(app, {
+  // The render path's own resort event drives this hook directly
+  // (Quentin's direction) -- never a ticker polling `getRenderOrder()`
+  // every frame to see whether it changed.
+  await mountDemoScene(app, {
     tileSizePx,
     storeyHeightPx,
     rankOf: (code) => resolveRank(rankTable, code),
-  });
-
-  recordRenderOrderForE2e(scene.getRenderOrder());
-  let lastRecorded = scene.getRenderOrder();
-  app.ticker.add(() => {
-    const order = scene.getRenderOrder();
-    if (order.length !== lastRecorded.length || order.some((id, i) => id !== lastRecorded[i])) {
-      lastRecorded = order;
-      recordRenderOrderForE2e(order);
-    }
+    onOrderChange: recordRenderOrderForE2e,
   });
 }
 
