@@ -3,7 +3,7 @@
   "defs_version": "test",
   "objects": [],
   "items": [{ "id": 1, "key": "bottle" }],
-  "recipes": [{ "id": 1, "key": "bottle-recycling", "inputs": ["nonexistent-item"], "outputs": ["bottle"] }],
+  "recipes": [{ "id": 1, "key": "bottle_recycling", "inputs": ["nonexistent-item"], "outputs": ["bottle"] }],
   "professions": [],
   "chains": [],
   "balance": []

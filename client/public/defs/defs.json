@@ -1,22 +1,22 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "83b2ce4a5696c42e",
+  "defs_version": "eadbca91bcbdec9b",
   "objects": [
-    { "height": 1, "id": 2, "key": "park-bench", "width": 2 },
-    { "height": 1, "id": 1, "key": "trash-bin", "width": 1 }
+    { "height": 1, "id": 2, "key": "park_bench", "width": 2 },
+    { "height": 1, "id": 1, "key": "trash_bin", "width": 1 }
   ],
   "items": [
     { "id": 1, "key": "bottle" },
-    { "id": 2, "key": "recycled-glass" }
+    { "id": 2, "key": "recycled_glass" }
   ],
   "recipes": [
-    { "id": 1, "inputs": ["bottle"], "key": "bottle-recycling", "outputs": ["recycled-glass"] }
+    { "id": 1, "inputs": ["bottle"], "key": "bottle_recycling", "outputs": ["recycled_glass"] }
   ],
   "professions": [
-    { "id": 1, "key": "sanitation-worker" }
+    { "id": 1, "key": "sanitation_worker" }
   ],
   "chains": [
-    { "id": 1, "key": "plastic-bottle", "links": ["sanitation-worker"] }
+    { "id": 1, "key": "plastic_bottle", "links": ["sanitation_worker"] }
   ],
   "balance": [
     { "key": "citizen.bar_decay.rest", "max": 100, "min": 0, "value": 10 }

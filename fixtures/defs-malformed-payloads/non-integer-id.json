@@ -2,10 +2,7 @@
   "generated_by": "tools/defs-build -- do not edit by hand",
   "defs_version": "test",
   "objects": [],
-  "items": [
-    { "id": 1, "key": "bottle" },
-    { "id": 1, "key": "recycled_glass" }
-  ],
+  "items": [{ "id": 1.5, "key": "bottle" }],
   "recipes": [],
   "professions": [],
   "chains": [],

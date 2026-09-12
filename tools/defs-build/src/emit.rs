@@ -270,7 +270,7 @@ mod tests {
         Defs {
             objects: vec![ObjectDef {
                 id: 1,
-                key: "trash-bin".into(),
+                key: "trash_bin".into(),
                 width: 1,
                 height: 1,
             }],
@@ -280,18 +280,18 @@ mod tests {
             }],
             recipes: vec![RecipeDef {
                 id: 1,
-                key: "bottle-recycling".into(),
+                key: "bottle_recycling".into(),
                 inputs: vec!["bottle".into()],
                 outputs: vec![],
             }],
             professions: vec![ProfessionDef {
                 id: 1,
-                key: "sanitation-worker".into(),
+                key: "sanitation_worker".into(),
             }],
             chains: vec![ChainDef {
                 id: 1,
-                key: "plastic-bottle".into(),
-                links: vec!["sanitation-worker".into()],
+                key: "plastic_bottle".into(),
+                links: vec!["sanitation_worker".into()],
             }],
             balance: vec![BalanceDef {
                 key: "citizen.bar_decay.rest".into(),
@@ -307,7 +307,7 @@ mod tests {
         let out = emit_rust(&sample(), "abc123");
         assert!(out.starts_with(GENERATED_HEADER_RUST));
         assert!(out.contains("pub const DEFS_VERSION: &str = \"abc123\";"));
-        assert!(out.contains("ObjectDef { id: 1, key: \"trash-bin\", width: 1, height: 1 }"));
+        assert!(out.contains("ObjectDef { id: 1, key: \"trash_bin\", width: 1, height: 1 }"));
         assert!(!out.contains('\r'));
     }
 
@@ -347,7 +347,7 @@ mod tests {
         let manifest = emit_id_manifest(&defs);
         let lines: Vec<&str> = manifest.lines().collect();
         assert_eq!(lines[0], "object 0 aardvark");
-        assert_eq!(lines[1], "object 1 trash-bin");
+        assert_eq!(lines[1], "object 1 trash_bin");
         assert!(!manifest.contains("balance"));
     }
 }

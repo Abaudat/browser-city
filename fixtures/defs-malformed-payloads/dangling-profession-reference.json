@@ -4,7 +4,7 @@
   "objects": [],
   "items": [],
   "recipes": [],
-  "professions": [{ "id": 1, "key": "sanitation-worker" }],
-  "chains": [{ "id": 1, "key": "plastic-bottle", "links": ["nonexistent-profession"] }],
+  "professions": [{ "id": 1, "key": "sanitation_worker" }],
+  "chains": [{ "id": 1, "key": "plastic_bottle", "links": ["nonexistent-profession"] }],
   "balance": []
 }

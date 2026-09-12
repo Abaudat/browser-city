@@ -1,7 +1,7 @@
 [[item]]
 id = 1
-key = "bottle"
+key = "trash-bin"
 
 [[item]]
-id = 1
+id = 2
 key = "recycled_glass"

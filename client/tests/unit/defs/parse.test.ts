@@ -6,14 +6,14 @@ function validPayload(): Record<string, unknown> {
   return {
     generated_by: "tools/defs-build -- do not edit by hand",
     defs_version: "abc123",
-    objects: [{ id: 1, key: "trash-bin", width: 1, height: 1 }],
+    objects: [{ id: 1, key: "trash_bin", width: 1, height: 1 }],
     items: [
       { id: 1, key: "bottle" },
-      { id: 2, key: "recycled-glass" },
+      { id: 2, key: "recycled_glass" },
     ],
-    recipes: [{ id: 1, key: "bottle-recycling", inputs: ["bottle"], outputs: ["recycled-glass"] }],
-    professions: [{ id: 1, key: "sanitation-worker" }],
-    chains: [{ id: 1, key: "plastic-bottle", links: ["sanitation-worker"] }],
+    recipes: [{ id: 1, key: "bottle_recycling", inputs: ["bottle"], outputs: ["recycled_glass"] }],
+    professions: [{ id: 1, key: "sanitation_worker" }],
+    chains: [{ id: 1, key: "plastic_bottle", links: ["sanitation_worker"] }],
     balance: [{ key: "citizen.bar_decay.rest", value: 10, min: 0, max: 100 }],
   };
 }
@@ -22,7 +22,7 @@ describe("parseDefs", () => {
   it("parses a well-formed document into the plain Defs shape", () => {
     const defs = parseDefs(validPayload());
     expect(defs.defsVersion).toBe("abc123");
-    expect(defs.objects).toEqual([{ id: 1, key: "trash-bin", width: 1, height: 1 }]);
+    expect(defs.objects).toEqual([{ id: 1, key: "trash_bin", width: 1, height: 1 }]);
     expect(defs.recipes[0]?.inputs).toEqual(["bottle"]);
   });
 
@@ -55,11 +55,35 @@ describe("parseDefs", () => {
     expect(() => parseDefs(payload)).toThrow(/expected a number/);
   });
 
+  it("rejects a non-integer id, never accepting what the module could not have produced", () => {
+    const payload = validPayload();
+    (payload.items as Record<string, unknown>[])[0] = { id: 1.5, key: "bottle" };
+    expect(() => parseDefs(payload)).toThrow(/expected an integer in \[0, 2\^32\)/);
+  });
+
+  it("rejects a negative id", () => {
+    const payload = validPayload();
+    (payload.items as Record<string, unknown>[])[0] = { id: -1, key: "bottle" };
+    expect(() => parseDefs(payload)).toThrow(/expected an integer in \[0, 2\^32\)/);
+  });
+
+  it("rejects an id at or above 2^32", () => {
+    const payload = validPayload();
+    (payload.items as Record<string, unknown>[])[0] = { id: 2 ** 32, key: "bottle" };
+    expect(() => parseDefs(payload)).toThrow(/expected an integer in \[0, 2\^32\)/);
+  });
+
+  it("rejects a non-integer balance value", () => {
+    const payload = validPayload();
+    payload.balance = [{ key: "a", value: 1.5, min: 0, max: 10 }];
+    expect(() => parseDefs(payload)).toThrow(/expected an integer/);
+  });
+
   it("rejects a duplicate id within one kind", () => {
     const payload = validPayload();
     payload.items = [
       { id: 1, key: "bottle" },
-      { id: 1, key: "recycled-glass" },
+      { id: 1, key: "recycled_glass" },
     ];
     expect(() => parseDefs(payload)).toThrow(/duplicate item id 1/);
   });
@@ -111,12 +135,12 @@ describe("canonicalDump", () => {
     expect(dump).toBe(
       [
         "balance citizen.bar_decay.rest value=10 min=0 max=100",
-        "chain plastic-bottle id=1 links=[sanitation-worker]",
+        "chain plastic_bottle id=1 links=[sanitation_worker]",
         "item bottle id=1",
-        "item recycled-glass id=2",
-        "object trash-bin id=1 height=1 width=1",
-        "profession sanitation-worker id=1",
-        "recipe bottle-recycling id=1 inputs=[bottle] outputs=[recycled-glass]",
+        "item recycled_glass id=2",
+        "object trash_bin id=1 height=1 width=1",
+        "profession sanitation_worker id=1",
+        "recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]",
         "",
       ].join("\n"),
     );

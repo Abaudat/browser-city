@@ -1,4 +1,4 @@
 [[chain]]
 id = 1
-key = "plastic-bottle"
+key = "plastic_bottle"
 links = ["nonexistent-profession"]

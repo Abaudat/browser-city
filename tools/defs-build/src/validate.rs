@@ -9,6 +9,48 @@ use std::collections::{BTreeSet, HashMap};
 
 use crate::error::DefsError;
 use crate::model::*;
+use crate::naming::{is_dotted_snake_case, is_snake_case};
+
+/// A def key's own value must be snake_case (`docs/architecture.md`'s
+/// naming table: "Data keys -- snake_case, matches Rust") -- distinct
+/// from a file name's stem, which is kebab-case and checked in
+/// `parse.rs`. Tim's direction: this is the check that keeps a key
+/// permanently wrong the moment `check-defs-ids-append-only.sh` pins it.
+fn check_key_format<T: IdKeyEntry>(entries: &[T], kind: &str) -> Result<(), DefsError> {
+    for e in entries {
+        if !is_snake_case(&e.key().value) {
+            return Err(DefsError::new(
+                e.path(),
+                e.key().line,
+                e.key().col,
+                format!(
+                    "invalid {kind} key '{}' -- keys must be snake_case (lowercase letters, digits, single underscores)",
+                    e.key().value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A balance key is dotted snake_case, every segment held to the same
+/// rule as any other kind's key.
+fn check_balance_key_format(entries: &[BalanceEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        if !is_dotted_snake_case(&e.key.value) {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "invalid balance key '{}' -- keys must be dotted snake_case, each segment lowercase letters, digits and single underscores",
+                    e.key.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
 
 fn check_id_key_dupes<T: IdKeyEntry>(entries: &[T], kind: &str) -> Result<(), DefsError> {
     let mut seen_ids: HashMap<u32, &T> = HashMap::new();
@@ -151,6 +193,13 @@ fn check_balance_range(entries: &[BalanceEntry]) -> Result<(), DefsError> {
 /// "no partial output" is a property of when `emit` is called (only after
 /// this returns `Ok`), not of collecting every error at once.
 pub fn validate(raw: &RawDefs) -> Result<Defs, DefsError> {
+    check_key_format(&raw.objects, "object")?;
+    check_key_format(&raw.items, "item")?;
+    check_key_format(&raw.recipes, "recipe")?;
+    check_key_format(&raw.professions, "profession")?;
+    check_key_format(&raw.chains, "chain")?;
+    check_balance_key_format(&raw.balance)?;
+
     check_id_key_dupes(&raw.objects, "object")?;
     check_id_key_dupes(&raw.items, "item")?;
     check_id_key_dupes(&raw.recipes, "recipe")?;
@@ -276,23 +325,23 @@ mod tests {
         files(&[
             (
                 "defs/objects/city-props.toml",
-                "[[object]]\nid = 1\nkey = \"trash-bin\"\nwidth = 1\nheight = 1\n",
+                "[[object]]\nid = 1\nkey = \"trash_bin\"\nwidth = 1\nheight = 1\n",
             ),
             (
                 "defs/items/sanitation.toml",
-                "[[item]]\nid = 1\nkey = \"bottle\"\n\n[[item]]\nid = 2\nkey = \"recycled-glass\"\n",
+                "[[item]]\nid = 1\nkey = \"bottle\"\n\n[[item]]\nid = 2\nkey = \"recycled_glass\"\n",
             ),
             (
                 "defs/recipes/sanitation.toml",
-                "[[recipe]]\nid = 1\nkey = \"bottle-recycling\"\ninputs = [\"bottle\"]\noutputs = [\"recycled-glass\"]\n",
+                "[[recipe]]\nid = 1\nkey = \"bottle_recycling\"\ninputs = [\"bottle\"]\noutputs = [\"recycled_glass\"]\n",
             ),
             (
                 "defs/professions/sanitation.toml",
-                "[[profession]]\nid = 1\nkey = \"sanitation-worker\"\n",
+                "[[profession]]\nid = 1\nkey = \"sanitation_worker\"\n",
             ),
             (
                 "defs/chains/sanitation.toml",
-                "[[chain]]\nid = 1\nkey = \"plastic-bottle\"\nlinks = [\"sanitation-worker\"]\n",
+                "[[chain]]\nid = 1\nkey = \"plastic_bottle\"\nlinks = [\"sanitation_worker\"]\n",
             ),
             (
                 "defs/balance/citizen.toml",
@@ -305,11 +354,36 @@ mod tests {
     fn a_consistent_tree_validates_and_sorts_by_key() {
         let raw = parse_all(&valid_tree()).unwrap();
         let defs = validate(&raw).unwrap();
-        assert_eq!(defs.objects[0].key, "trash-bin");
+        assert_eq!(defs.objects[0].key, "trash_bin");
         assert_eq!(defs.items[0].key, "bottle");
         assert_eq!(defs.recipes[0].inputs, vec!["bottle"]);
-        assert_eq!(defs.chains[0].links, vec!["sanitation-worker"]);
+        assert_eq!(defs.chains[0].links, vec!["sanitation_worker"]);
         assert_eq!(defs.balance[0].value, 10);
+    }
+
+    #[test]
+    fn a_kebab_case_key_is_rejected_as_invalid_snake_case() {
+        let f = files(&[(
+            "defs/items/x.toml",
+            "[[item]]\nid = 1\nkey = \"trash-bin\"\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw).unwrap_err();
+        assert!(err.message.contains("invalid item key 'trash-bin'"));
+    }
+
+    #[test]
+    fn a_balance_key_with_a_kebab_case_segment_is_rejected() {
+        let f = files(&[(
+            "defs/balance/x.toml",
+            "[[balance]]\nkey = \"citizen.bar-decay.rest\"\nvalue = 1\nmin = 0\nmax = 10\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw).unwrap_err();
+        assert!(
+            err.message
+                .contains("invalid balance key 'citizen.bar-decay.rest'")
+        );
     }
 
     #[test]

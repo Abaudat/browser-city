@@ -11,6 +11,7 @@ pub mod emit;
 pub mod error;
 pub mod fsio;
 pub mod model;
+pub mod naming;
 pub mod parse;
 pub mod sha256;
 pub mod spans;

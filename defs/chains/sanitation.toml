@@ -1,4 +1,4 @@
 [[chain]]
 id = 1
-key = "plastic-bottle"
-links = ["sanitation-worker"]
+key = "plastic_bottle"
+links = ["sanitation_worker"]

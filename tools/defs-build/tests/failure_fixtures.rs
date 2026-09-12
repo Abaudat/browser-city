@@ -82,7 +82,7 @@ fn a_recipe_naming_an_unknown_item_is_named() {
     let err = build_err("dangling-recipe-item");
     assert_eq!(
         err.to_string(),
-        "defs/recipes/sanitation.toml:3:7: recipe 'bottle-recycling' names unknown item 'nonexistent-item' in inputs"
+        "defs/recipes/sanitation.toml:3:7: recipe 'bottle_recycling' names unknown item 'nonexistent-item' in inputs"
     );
 }
 
@@ -91,7 +91,7 @@ fn a_chain_naming_an_unknown_profession_is_named() {
     let err = build_err("dangling-chain-profession");
     assert_eq!(
         err.to_string(),
-        "defs/chains/sanitation.toml:3:7: chain 'plastic-bottle' names unknown profession 'nonexistent-profession' in links"
+        "defs/chains/sanitation.toml:3:7: chain 'plastic_bottle' names unknown profession 'nonexistent-profession' in links"
     );
 }
 
@@ -111,9 +111,37 @@ fn a_non_kebab_case_filename_is_rejected() {
     assert!(err.message.contains("not kebab-case"));
 }
 
+/// Quentin/Tim's direction: a git-tracked file under `defs/` that is not
+/// `.toml` must be a hard, named build error -- the binary must not
+/// pre-filter by extension before `parse_all` ever sees it.
+#[test]
+fn a_non_toml_file_is_rejected() {
+    let err = build_err("non-toml-file");
+    assert_eq!(err.path, PathBuf::from("defs/items/notes.md"));
+    assert!(err.message.contains(".toml extension"));
+}
+
+#[test]
+fn a_kebab_case_key_value_is_rejected_as_invalid_snake_case() {
+    let err = build_err("invalid-key-format");
+    assert!(err.message.contains("invalid item key 'trash-bin'"));
+}
+
+#[test]
+fn a_balance_key_with_a_non_snake_case_segment_is_rejected() {
+    let err = build_err("invalid-balance-key-format");
+    assert!(
+        err.message
+            .contains("invalid balance key 'citizen.bar-decay.rest'")
+    );
+}
+
 /// Every category this module lists above has its own fixture directory
 /// under `tests/fixtures/invalid/` -- so a category added to one and not
-/// the other is a hard failure here, not a silent gap.
+/// the other is a hard failure here, not a silent gap. `non-integer-id`
+/// and `negative-id` are asserted to fail by `shared_malformed_cases.rs`
+/// (they pin the client/server equivalence Quentin's direction asks for),
+/// not by their own named test here.
 #[test]
 fn every_known_category_has_a_fixture_directory() {
     let known = [
@@ -128,6 +156,11 @@ fn every_known_category_has_a_fixture_directory() {
         "dangling-chain-profession",
         "out-of-range-balance-value",
         "bad-filename",
+        "non-toml-file",
+        "invalid-key-format",
+        "invalid-balance-key-format",
+        "non-integer-id",
+        "negative-id",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)
@@ -146,22 +179,25 @@ fn every_known_category_has_a_fixture_directory() {
 /// Simulates the binary's own edge (`build` then, only on success,
 /// `fsio::atomic_write`) against a scratch "output directory" pre-seeded
 /// with sentinel content, for every invalid fixture category.
+///
+/// Tim's direction: the category list is read from `tests/fixtures/
+/// invalid/` itself, never hard-coded next to it -- a category added
+/// later is covered by this assertion automatically, not only by its own
+/// message test above.
 #[test]
 fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
-    let categories = [
-        "toml-syntax-error",
-        "unknown-key",
-        "missing-required-key",
-        "wrong-value-type",
-        "duplicate-id-in-file",
-        "duplicate-id-across-files",
-        "duplicate-key-in-file",
-        "dangling-recipe-item",
-        "dangling-chain-profession",
-        "out-of-range-balance-value",
-        "bad-filename",
-    ];
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
+    let mut categories: Vec<String> = std::fs::read_dir(&base)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .collect();
+    categories.sort();
+    assert!(
+        !categories.is_empty(),
+        "tests/fixtures/invalid/ has no categories -- this assertion would otherwise pass vacuously"
+    );
     for category in categories {
+        let category = category.as_str();
         let scratch = defs_build::fsio::make_scratch_dir("defs-build-notouch").unwrap();
         let rust_out = scratch.join("defs.rs");
         let json_out = scratch.join("defs.json");

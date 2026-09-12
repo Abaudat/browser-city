@@ -1,5 +1,5 @@
 [[recipe]]
 id = 1
-key = "bottle-recycling"
+key = "bottle_recycling"
 inputs = ["nonexistent-item"]
-outputs = ["recycled-glass"]
+outputs = ["recycled_glass"]

@@ -54,6 +54,35 @@ function expectNumber(value: unknown, path: string): number {
   return value;
 }
 
+/** Rust ids/widths/heights are `u32` -- the module hard-rejects a
+ * non-integer, a negative value or one at or above 2^32 at build time,
+ * and this client must reject the exact same input, never accept it just
+ * because it arrived as JSON over `fetch` instead of TOML at build time
+ * (Quentin's direction). */
+const U32_EXCLUSIVE_MAX = 2 ** 32;
+
+function expectU32(value: unknown, path: string): number {
+  const n = expectNumber(value, path);
+  if (!Number.isInteger(n) || n < 0 || n >= U32_EXCLUSIVE_MAX) {
+    fail(`${path}: expected an integer in [0, 2^32)`);
+  }
+  return n;
+}
+
+/** Balance `value`/`min`/`max` are Rust `i64` -- not a non-integer. Full
+ * `i64` range is not representable exactly as a JS `number` (limited to
+ * `Number.isSafeInteger`'s +-2^53), which is an inherent JS boundary this
+ * client accepts rather than works around; every balance value this
+ * project defines is a small, human-authored constant, nowhere near that
+ * edge. */
+function expectI64(value: unknown, path: string): number {
+  const n = expectNumber(value, path);
+  if (!Number.isInteger(n)) {
+    fail(`${path}: expected an integer`);
+  }
+  return n;
+}
+
 function expectStringArray(value: unknown, path: string): string[] {
   return expectArray(value, path).map((item, i) => expectString(item, `${path}[${i}]`));
 }
@@ -74,10 +103,10 @@ function parseObject(value: unknown, path: string): ObjectDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(obj, ["id", "key", "width", "height"], path);
   return {
-    id: expectNumber(obj.id, `${path}.id`),
+    id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
-    width: expectNumber(obj.width, `${path}.width`),
-    height: expectNumber(obj.height, `${path}.height`),
+    width: expectU32(obj.width, `${path}.width`),
+    height: expectU32(obj.height, `${path}.height`),
   };
 }
 
@@ -85,7 +114,7 @@ function parseItem(value: unknown, path: string): ItemDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(obj, ["id", "key"], path);
   return {
-    id: expectNumber(obj.id, `${path}.id`),
+    id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
   };
 }
@@ -94,7 +123,7 @@ function parseRecipe(value: unknown, path: string): RecipeDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(obj, ["id", "key", "inputs", "outputs"], path);
   return {
-    id: expectNumber(obj.id, `${path}.id`),
+    id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     inputs: expectStringArray(obj.inputs, `${path}.inputs`),
     outputs: expectStringArray(obj.outputs, `${path}.outputs`),
@@ -105,7 +134,7 @@ function parseProfession(value: unknown, path: string): ProfessionDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(obj, ["id", "key"], path);
   return {
-    id: expectNumber(obj.id, `${path}.id`),
+    id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
   };
 }
@@ -114,7 +143,7 @@ function parseChain(value: unknown, path: string): ChainDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(obj, ["id", "key", "links"], path);
   return {
-    id: expectNumber(obj.id, `${path}.id`),
+    id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     links: expectStringArray(obj.links, `${path}.links`),
   };
@@ -125,9 +154,9 @@ function parseBalance(value: unknown, path: string): BalanceDef {
   checkKnownKeys(obj, ["key", "value", "min", "max"], path);
   return {
     key: expectString(obj.key, `${path}.key`),
-    value: expectNumber(obj.value, `${path}.value`),
-    min: expectNumber(obj.min, `${path}.min`),
-    max: expectNumber(obj.max, `${path}.max`),
+    value: expectI64(obj.value, `${path}.value`),
+    min: expectI64(obj.min, `${path}.min`),
+    max: expectI64(obj.max, `${path}.max`),
   };
 }
 

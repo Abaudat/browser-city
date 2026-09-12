@@ -15,8 +15,12 @@ pub const DEFS_VERSION_LEN: usize = 16;
 
 /// Strips every `\r` byte -- not just `\r\n` -- so a Windows checkout
 /// (CRLF) and a Linux checkout (LF) of the exact same content hash
-/// identically (Tim's direction; `defs/` holds only text TOML, so this is
-/// never applied to binary content).
+/// identically (Tim's direction). `defs/` holds only text TOML content --
+/// enforced, not merely assumed, since every git-tracked file under
+/// `defs/` is now required to parse as one (the `defs-build` binary no
+/// longer pre-filters by extension; an unknown extension is a build
+/// error from `parse::check_filename` before this function ever sees its
+/// bytes).
 fn normalize_lf(content: &[u8]) -> Vec<u8> {
     content.iter().copied().filter(|&b| b != b'\r').collect()
 }

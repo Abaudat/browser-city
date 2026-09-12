@@ -99,6 +99,12 @@ jobs:
               - 'client/public/defs/defs.json'
               - 'scripts/**'
               - '.github/**'
+              # tools/defs-build/tests/shared_malformed_cases.rs does
+              # include_str!(this file) -- a PR that only edits the shared
+              # case list must still run the Rust half of the drift guard,
+              # not just the client's own test (already covered by
+              # fixtures/** below via its own filter membership elsewhere).
+              - 'fixtures/**'
 
   scripts-tests:
     name: scripts-tests
@@ -160,13 +166,18 @@ jobs:
       - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
         with:
           tool: cargo-llvm-cov@0.9.1
-      # `--lib` only (Quentin's direction: the error branches are what
-      # must be covered, and the extensive failure-fixture suite is what
-      # exercises them) -- the `defs-build` binary's own `main`/`run` are
-      # thin CLI wiring already exercised for real by check-defs-
-      # current.sh above, the same reasoning NFR28 already applies to a
-      # reducer's own thin wrapper.
-      - run: cargo llvm-cov --lib --fail-under-lines 90
+      # Scope the *report*, not the *run* (Quentin's direction): `--lib`
+      # would scope the run itself and silently skip `tests/
+      # failure_fixtures.rs`/`tests/shared_malformed_cases.rs` -- the
+      # fourteen-plus fixture tests that exercise the error branches this
+      # gate exists to hold accountable. Running the whole test binary set
+      # and excluding only `src/bin/` from the *report* is what actually
+      # measures what the comment above always claimed: the `defs-build`
+      # binary's own thin CLI wiring is exercised for real by check-defs-
+      # current.sh below, the same reasoning NFR28 applies to a reducer's
+      # own thin wrapper, so it is excluded from the number, not from the
+      # run that produces it.
+      - run: cargo llvm-cov --fail-under-lines 90 --ignore-filename-regex 'src/bin/'
       # Not gated behind build/migrate/e2e (Quentin's direction): needs
       # only this crate's own Rust toolchain, so a bad defs edit is red in
       # a couple of minutes, not after the slowest job in the graph.
@@ -176,6 +187,8 @@ jobs:
         run: bash ../../scripts/ci/check-defs-ids-append-only.sh
       - name: story 2.1 AC3, any defs/ change bumps defs_version
         run: bash ../../scripts/ci/check-defs-version-bump.sh
+      - name: story 2.1 AC3, nothing versions independently -- a direct pin
+        run: bash ../../scripts/ci/check-defs-version-agrees.sh
 
   check:
     name: check
@@ -374,6 +387,20 @@ jobs:
         run: |
           if grep -rq '__bc' dist/assets/*.js; then
             echo "::error::window.__bc leaked into the production bundle -- import.meta.env.DEV did not strip it" >&2
+            exit 1
+          fi
+      # Quentin's direction: the asset is fetched at runtime, never
+      # imported, so no other check in this PR would notice a Vite
+      # publicDir/base-path change silently dropping it -- and it must
+      # carry the exact version actually committed, not a stale one Vite
+      # picked up from a cache.
+      - name: story 2.1, the built defs asset exists and carries the committed defs_version
+        run: |
+          test -f dist/defs/defs.json || { echo "::error::dist/defs/defs.json is missing after npm run build" >&2; exit 1; }
+          built=$(grep -oE '"defs_version": *"[^"]*"' dist/defs/defs.json | head -n1 | sed -E 's/.*"([^"]*)"$/\1/')
+          committed=$(grep -oE '"defs_version": *"[^"]*"' public/defs/defs.json | head -n1 | sed -E 's/.*"([^"]*)"$/\1/')
+          if [ "$built" != "$committed" ]; then
+            echo "::error::dist/defs/defs.json's defs_version ($built) does not match the committed public/defs/defs.json ($committed)" >&2
             exit 1
           fi
 

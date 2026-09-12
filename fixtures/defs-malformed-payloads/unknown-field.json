@@ -1,7 +1,7 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
   "defs_version": "test",
-  "objects": [{ "id": 1, "key": "trash-bin", "width": 1, "height": 1, "bogus": 2 }],
+  "objects": [{ "id": 1, "key": "trash_bin", "width": 1, "height": 1, "bogus": 2 }],
   "items": [],
   "recipes": [],
   "professions": [],

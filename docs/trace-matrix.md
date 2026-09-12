@@ -77,6 +77,7 @@ Same Guard-path discipline as the sections above.
 | A malformed definition fails the build naming the offending file and line, and no partial output is emitted | covered | `tools/defs-build/tests/failure_fixtures.rs` |
 | An id or a key, once merged, is never renumbered, reused or retired | covered | `scripts/ci/check-defs-ids-append-only.sh` |
 | The single `defs_version` changes whenever anything under `defs/` changes, and never independently | covered | `scripts/ci/check-defs-version-bump.sh` |
+| Both generated artefacts carry the exact same `defs_version`, asserted directly rather than inferred, and the built client asset ships it too | covered | `scripts/ci/check-defs-version-agrees.sh`, the `client-build` job's own build-asset assertion |
 | The server's and the client's independent parsers agree on every field, and on a shared table of malformed input both must reject (NFR30) | covered | `server/sim/tests/defs_dump.rs`, `client/tests/unit/defs/dump-golden.test.ts`, `tools/defs-build/tests/shared_malformed_cases.rs`, `client/tests/unit/defs/malformed.test.ts` |
 | The prop atlases, character-part atlases and audio manifest fold into `defs_version` | deferred | the story that adds each pipeline -- none of the three inputs exist yet |
 

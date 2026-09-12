@@ -10,19 +10,15 @@ use toml::Spanned;
 
 use crate::error::DefsError;
 use crate::model::*;
+use crate::naming::is_kebab_case;
 use crate::spans::line_col;
 
-/// A file name's stem must be kebab-case (`docs/architecture.md`'s naming
-/// table): lowercase ASCII letters and digits, single hyphens, no leading,
-/// trailing or doubled hyphen.
-pub fn is_kebab_case(stem: &str) -> bool {
-    if stem.is_empty() || stem.starts_with('-') || stem.ends_with('-') || stem.contains("--") {
-        return false;
-    }
-    stem.bytes()
-        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-}
-
+/// Every git-tracked file under `defs/` must reach this branch or the
+/// `.toml`-extension one below it -- there is no third, silent path
+/// (Quentin/Tim's direction: a `defs/items/notes.md` or a stray `.json`
+/// must be a hard, named build error, not quietly excluded before
+/// parsing ever sees it). Callers must never pre-filter the file list by
+/// extension.
 fn check_filename(path: &Path) -> Result<(), DefsError> {
     if path.extension().and_then(|e| e.to_str()) != Some("toml") {
         return Err(DefsError::new(
@@ -195,32 +191,15 @@ mod tests {
     }
 
     #[test]
-    fn is_kebab_case_accepts_lowercase_digits_and_single_hyphens() {
-        assert!(is_kebab_case("city-props"));
-        assert!(is_kebab_case("a1-b2"));
-        assert!(is_kebab_case("a"));
-    }
-
-    #[test]
-    fn is_kebab_case_rejects_uppercase_underscore_leading_trailing_and_double_hyphen() {
-        assert!(!is_kebab_case("CityProps"));
-        assert!(!is_kebab_case("city_props"));
-        assert!(!is_kebab_case("-city"));
-        assert!(!is_kebab_case("city-"));
-        assert!(!is_kebab_case("city--props"));
-        assert!(!is_kebab_case(""));
-    }
-
-    #[test]
     fn parses_one_object_file_with_two_entries() {
         let f = files(&[(
             "defs/objects/city-props.toml",
-            "[[object]]\nid = 1\nkey = \"trash-bin\"\nwidth = 1\nheight = 1\n\n[[object]]\nid = 2\nkey = \"bench\"\nwidth = 2\nheight = 1\n",
+            "[[object]]\nid = 1\nkey = \"trash_bin\"\nwidth = 1\nheight = 1\n\n[[object]]\nid = 2\nkey = \"bench\"\nwidth = 2\nheight = 1\n",
         )]);
         let raw = parse_all(&f).unwrap();
         assert_eq!(raw.objects.len(), 2);
         assert_eq!(raw.objects[0].id.value, 1);
-        assert_eq!(raw.objects[0].key.value, "trash-bin");
+        assert_eq!(raw.objects[0].key.value, "trash_bin");
         assert_eq!(raw.objects[1].width, 2);
     }
 

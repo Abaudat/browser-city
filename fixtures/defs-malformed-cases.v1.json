@@ -6,5 +6,7 @@
   "duplicate-key",
   "dangling-item-reference",
   "dangling-profession-reference",
-  "out-of-range-balance"
+  "out-of-range-balance",
+  "non-integer-id",
+  "negative-id"
 ]

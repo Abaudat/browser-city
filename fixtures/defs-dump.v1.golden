@@ -1,8 +1,8 @@
 balance citizen.bar_decay.rest value=10 min=0 max=100
-chain plastic-bottle id=1 links=[sanitation-worker]
+chain plastic_bottle id=1 links=[sanitation_worker]
 item bottle id=1
-item recycled-glass id=2
-object park-bench id=2 height=1 width=2
-object trash-bin id=1 height=1 width=1
-profession sanitation-worker id=1
-recipe bottle-recycling id=1 inputs=[bottle] outputs=[recycled-glass]
+item recycled_glass id=2
+object park_bench id=2 height=1 width=2
+object trash_bin id=1 height=1 width=1
+profession sanitation_worker id=1
+recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]

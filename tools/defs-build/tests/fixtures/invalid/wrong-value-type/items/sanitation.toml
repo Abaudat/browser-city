@@ -4,4 +4,4 @@ key = "bottle"
 
 [[item]]
 id = 2
-key = "recycled-glass"
+key = "recycled_glass"

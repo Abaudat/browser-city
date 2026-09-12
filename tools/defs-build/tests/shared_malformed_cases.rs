@@ -27,6 +27,8 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "dangling-item-reference" => "dangling-recipe-item",
         "dangling-profession-reference" => "dangling-chain-profession",
         "out-of-range-balance" => "out-of-range-balance-value",
+        "non-integer-id" => "non-integer-id",
+        "negative-id" => "negative-id",
         other => panic!(
             "shared case '{other}' has no mapped tests/fixtures/invalid/ directory -- add one to fixture_for()"
         ),

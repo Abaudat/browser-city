@@ -1,11 +1,11 @@
 [[object]]
 id = 1
-key = "trash-bin"
+key = "trash_bin"
 width = 1
 height = 1
 
 [[object]]
 id = 2
-key = "park-bench"
+key = "park_bench"
 width = 2
 height = 1
