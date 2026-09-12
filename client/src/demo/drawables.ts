@@ -4,7 +4,7 @@
 // into sprites.
 
 import { decomposeFootprint } from "../render/decompose";
-import type { Drawable } from "../render/sort-key";
+import { type Drawable, setDrawablePosition } from "../render/sort-key";
 import { toSortUnits } from "../render/sort-units";
 import { DEMO_PROPS, type DemoLayer, PLAYER_STABLE_ID, PLAYER_START } from "./fixture";
 
@@ -73,6 +73,5 @@ export function buildPlayerDrawable(rank: number, feetX: number, feetY: number):
  * re-sort gate is even consulted. Only `x`/`y` change; `rank`,
  * `stableId`, `floor` and the asset fields never do for the player. */
 export function updatePlayerDrawable(player: PropDrawable, feetX: number, feetY: number): void {
-  (player as { x: number }).x = toSortUnits(feetX);
-  (player as { y: number }).y = toSortUnits(feetY);
+  setDrawablePosition(player, toSortUnits(feetX), toSortUnits(feetY));
 }

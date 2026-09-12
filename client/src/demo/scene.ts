@@ -80,8 +80,22 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
 /** The player sprite is one frame cropped out of a much larger animation
  * sheet -- a fixed source-rect, the same idiom the per-cell decomposition
  * sub-rects use, just applied to a hand-picked frame instead of a
- * generated grid. */
-const PLAYER_FRAME = new Rectangle(0, 0, 16, 32);
+ * generated grid.
+ *
+ * `Premade_Character_01.png` is 896x656px, which is not a uniform grid
+ * top to bottom -- 656 does not divide evenly by any single frame
+ * height, because the sheet's last 16px strip is a row of small colour
+ * swatches, not a character frame (confirmed by measuring the sheet's
+ * own opaque-pixel row bands: a `(0, 0, 16, 32)` guess crops across two
+ * unrelated frames and reads as a totem pole, not a person -- Artie's
+ * finding). The character frames themselves sit on a real 16px-wide,
+ * 32px-tall grid starting at `y = 0`, each character bottom-anchored
+ * within its own cell (empty headroom above, feet on the cell's bottom
+ * edge) -- verified by measuring the sheet's opaque columns (16px period)
+ * and row bands (32px period from row 4 on) and by rendering this exact
+ * crop in isolation. Row 4, column 0 is a single idle, front-facing
+ * frame. */
+const PLAYER_FRAME = new Rectangle(0, 128, 16, 32);
 
 /** `wallTileH`/`wallTileV` are two real, whole-tile sub-rects of the same
  * `wallSheet` source file (never a new PNG): a 1x3-tile swatch for the
@@ -267,6 +281,27 @@ export function assertSpritesWithinCanvas(
   }
 }
 
+/** Mount-time geometry guard, in the same family as
+ * [`assertSpritesWithinCanvas`] (Artie's direction): a drawable's art may
+ * overhang above its own anchor row (bottom-centre anchoring makes that
+ * the normal case), but never by more than one storey. The off-canvas
+ * wall this pair replaced overhung by a factor of thirteen; this is the
+ * rule that would have caught it directly, by name, instead of only via
+ * where the sprite happened to land on screen. */
+export function assertNoOverhangBeyondStorey(
+  sprites: Iterable<{ readonly label: string; readonly overhangPx: number }>,
+  storeyHeightPx: number,
+): void {
+  for (const { label, overhangPx } of sprites) {
+    if (overhangPx > storeyHeightPx + 0.5) {
+      throw new Error(
+        `assertNoOverhangBeyondStorey: '${label}' overhangs its own anchor row by ${overhangPx}px, ` +
+          `more than one storey (${storeyHeightPx}px)`,
+      );
+    }
+  }
+}
+
 interface PoolEntry extends OrderedMember<PropDrawable> {
   readonly assetKey: string;
 }
@@ -336,6 +371,7 @@ export async function mountDemoScene(
   ): string => {
     if (assetKey === "wallTile")
       return footprintWidth > footprintHeight ? "wallTileH" : "wallTileV";
+    if (assetKey === "wallTileShort") return "wallTileV"; // the same short, flush swatch, reused for a low front wall
     if (assetKey === "wallTileUpper") return "wallTileUpperH";
     return assetKey;
   };
@@ -387,6 +423,20 @@ export async function mountDemoScene(
   const renderOrder: bigint[] = [];
   applyDepthOrder(poolContainer, members, renderOrder);
   onOrderChange?.(renderOrder);
+
+  // `member.view.height` is the sprite's own local (unscaled) pixel
+  // height -- independent of the world container's zoom, set below.
+  // Subtracting one tile is what turns "total sprite height" into
+  // "overhang above the anchor row itself": a sprite exactly as tall as
+  // its own row has zero overhang, and Artie's "factor of thirteen" wall
+  // was measured the same way (624px of overhang against a 48px storey).
+  assertNoOverhangBeyondStorey(
+    members.map((m) => ({
+      label: `${m.assetKey}#${m.drawable.stableId}`,
+      overhangPx: m.view.height - tileSizePx,
+    })),
+    storeyHeightPx,
+  );
 
   // Camera: translate the world container so its whole content (both
   // storeys, every overhang) sits inside the canvas with a small margin,

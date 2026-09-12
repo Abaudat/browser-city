@@ -4,12 +4,12 @@ import {
   buildPropDrawables,
   updatePlayerDrawable,
 } from "../../../src/demo/drawables";
-import { PLAYER_START } from "../../../src/demo/fixture";
+import { PLAYER_BOUNDS, PLAYER_START } from "../../../src/demo/fixture";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { LAYER_TABLE } from "../../../src/render/layer-table";
 import { compareDrawables, sortDrawablesInPlace } from "../../../src/render/sort-key";
 import { toSortUnits } from "../../../src/render/sort-units";
-import { DEMO_SCENE_GOLDEN_ORDER } from "./golden";
+import { DEMO_SCENE_GOLDEN_ORDER, DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH } from "./golden";
 
 const CODE_BY_NAME: Record<string, number> = Object.fromEntries(
   LAYER_TABLE.map((row) => [row.name, row.code]),
@@ -34,6 +34,23 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // through a mounted display list) can never silently disagree about
     // what this scene renders.
     expect(pool.map((d) => d.stableId.toString())).toEqual(DEMO_SCENE_GOLDEN_ORDER);
+  });
+
+  it("sorts the fixture with the player walked south to the clamped bound to the second committed id sequence", () => {
+    // Quentin's direction: the unit test owns this ordering fact too --
+    // `render-order.spec.ts` only has to prove the real adapter reaches
+    // it after a real move, never derive or own it by itself. Built
+    // straight from the comparator, the same way the at-rest golden
+    // above is, so a wrong golden here fails with a diff in the fastest
+    // job instead of a ten-second timeout in the slowest one.
+    const props = buildPropDrawables((layer) => rankOf(layer));
+    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_BOUNDS.y1);
+    const pool = [...props, player];
+    sortDrawablesInPlace(pool);
+
+    expect(pool.map((d) => d.stableId.toString())).toEqual(
+      DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
+    );
   });
 
   it("worked example: the player stands between the west wall's near and far cells", () => {

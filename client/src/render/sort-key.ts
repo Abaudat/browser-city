@@ -68,6 +68,25 @@ export function sortDrawablesInPlace(pool: Drawable[]): void {
   pool.sort(compareDrawables);
 }
 
+/**
+ * Overwrites `target`'s `x`/`y` in place -- both already in FR123 sort
+ * units, the caller's job to produce (`sort-units.ts`'s `toSortUnits`),
+ * never this function's. This is the one, documented place `Drawable`'s
+ * own `readonly` is deliberately defeated, so that a render path
+ * updating a moving character's position every frame it changes does not
+ * allocate a whole new `Drawable` to do it (Quentin's direction) via an
+ * ad-hoc cast at the call site (Tim's direction: the module that owns
+ * `Drawable`'s shape is what should own this capability, not a cast
+ * sneaking past it in demo code). Every other field is immutable by
+ * construction -- there is no `setRank`/`setStableId`/`setFloor`,
+ * because none of those should ever change after a `Drawable` is built.
+ */
+export function setDrawablePosition(target: Drawable, x: number, y: number): void {
+  const mutable = target as { x: number; y: number };
+  mutable.x = x;
+  mutable.y = y;
+}
+
 /** [`sortDrawablesInPlace`] generalised to any item that carries a
  * `Drawable` rather than being one -- the one sort authority every real
  * caller goes through too, not a second, inline `items.sort((a, b) =>

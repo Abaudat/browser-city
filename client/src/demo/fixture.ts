@@ -85,10 +85,14 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     layer: "walls",
     footprint: { width: EAST_WALL_X - WEST_WALL_X + 1, height: 1 },
   },
-  // South (front) wall, split around the door gap at DOOR_X.
+  // South (front) wall, split around the door gap at DOOR_X. A short,
+  // one-tile-tall module (`wallTileShort`, unlike the north wall's
+  // three-tile `wallTile`) -- Artie's direction: a full-height front
+  // wall covers the room's own contents from the camera, and near-side
+  // wall retraction (FR120) is a later story's job, not this one's.
   {
     id: 2n,
-    assetKey: "wallTile",
+    assetKey: "wallTileShort",
     x: WEST_WALL_X,
     y: SOUTH_WALL_Y,
     floor: 0,
@@ -97,7 +101,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
   },
   {
     id: 3n,
-    assetKey: "wallTile",
+    assetKey: "wallTileShort",
     x: DOOR_X + 1,
     y: SOUTH_WALL_Y,
     floor: 0,
@@ -180,11 +184,14 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     layer: "walls",
     footprint: { width: EAST_WALL_X - WEST_WALL_X + 1, height: 1 },
   },
+  // Positioned away from the ground-floor counter's (x=4..6, y=2) own
+  // screen footprint -- Artie's direction: two storeys stacked onto the
+  // same screen space read as one pile, not as two legible floors.
   {
     id: 13n,
     assetKey: "table",
-    x: INTERIOR_X0 + 2,
-    y: INTERIOR_Y0 + 1,
+    x: INTERIOR_X0 + 3,
+    y: INTERIOR_Y0 + 2,
     floor: 1,
     layer: "furniture",
   },

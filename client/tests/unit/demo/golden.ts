@@ -33,9 +33,9 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
   "8", // counter, x=6
   "4", // west wall, y=2 -- the far end of the near/far worked example
   "5", // east wall, y=2
-  "13", // upper-storey table, same y as the row below, lower rank (furniture < walls)
   "4", // west wall, y=3
   "5", // east wall, y=3
+  "13", // upper-storey table (world y=4, same tier as the row below, lower rank)
   "4", // west wall, y=4 -- ties the player's own row; rank breaks it (wall behind)
   "5", // east wall, y=4
   "1000", // the player itself
@@ -56,10 +56,11 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
  * `PLAYER_BOUNDS` (y = 5.8, clamped -- a deterministic endpoint
  * regardless of exact key-hold timing): they now sort in front of the
  * table, the glass and the whole near row of the west/east walls, which
- * all sorted behind them at the start position. `render-order.spec.ts`
- * presses a key, waits for this exact order, and asserts it -- the FR125
- * near/far occlusion AC observed end to end through a real move, not
- * just inferred from the static initial snapshot.
+ * all sorted behind them at the start position. `drawables.test.ts`
+ * asserts this same list directly against the comparator
+ * (`sortDrawablesInPlace`) -- `render-order.spec.ts` only proves the real
+ * adapter reaches the identical order after a real keyboard move, it
+ * never owns the ordering fact by itself.
  */
 export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "1",
@@ -81,9 +82,9 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "8",
   "4",
   "5",
-  "13",
   "4",
   "5",
+  "13",
   "4",
   "5",
   "9", // table -- now behind the player
