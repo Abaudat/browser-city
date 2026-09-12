@@ -1,0 +1,7 @@
+object 1 trash-bin
+object 2 park-bench
+item 1 bottle
+item 2 recycled-glass
+recipe 1 bottle-recycling
+profession 1 sanitation-worker
+chain 1 plastic-bottle

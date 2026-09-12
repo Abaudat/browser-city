@@ -6,7 +6,7 @@ export default defineConfig({
     environment: "node",
     coverage: {
       provider: "v8",
-      include: ["src/net/**"],
+      include: ["src/net/**", "src/defs/**"],
       exclude: ["src/net/bindings/**"],
       thresholds: {
         lines: 90,

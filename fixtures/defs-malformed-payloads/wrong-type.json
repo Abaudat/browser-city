@@ -1,0 +1,10 @@
+{
+  "generated_by": "tools/defs-build -- do not edit by hand",
+  "defs_version": "test",
+  "objects": [{ "id": "nope", "key": "trash-bin", "width": 1, "height": 1 }],
+  "items": [],
+  "recipes": [],
+  "professions": [],
+  "chains": [],
+  "balance": []
+}

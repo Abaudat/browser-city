@@ -1,0 +1,8 @@
+[[item]]
+id = 1
+key = "bottle"
+bogus = 2
+
+[[item]]
+id = 2
+key = "recycled-glass"

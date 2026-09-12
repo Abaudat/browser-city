@@ -25,6 +25,7 @@ jobs:
       server: ${{ steps.filter.outputs.server }}
       client: ${{ steps.filter.outputs.client }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      defs: ${{ steps.filter.outputs.defs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -74,18 +75,30 @@ jobs:
               # and diffs this file -- a hand-edit here with no server/
               # change must still trip the job that catches it.
               - 'fixtures/**'
+              # Explicit, though already implied by server/** -- Tim's
+              # direction: a defs change re-runs the build that consumes
+              # its own generated half.
+              - 'server/sim/src/generated/defs.rs'
             client:
               - 'client/**'
               - 'server/**'
               - 'scripts/**'
               - '.github/**'
               - 'fixtures/**'
+              - 'client/public/defs/defs.json'
             e2e:
               - 'server/**'
               - 'client/**'
               - 'scripts/**'
               - '.github/**'
               - 'fixtures/**'
+            defs:
+              - 'defs/**'
+              - 'tools/defs-build/**'
+              - 'server/sim/src/generated/defs.rs'
+              - 'client/public/defs/defs.json'
+              - 'scripts/**'
+              - '.github/**'
 
   scripts-tests:
     name: scripts-tests
@@ -119,6 +132,50 @@ jobs:
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.3-scheduled-reducer-timing.md sched-timing-spacetimedb-version
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.4-backup-restore.md backup-spacetimedb-version
       - run: bash agentic-team/scripts/tests/run-all.sh
+
+  defs:
+    name: defs
+    needs: changes
+    if: needs.changes.outputs.defs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tools/defs-build
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # check-defs-version-bump.sh diffs against a base commit, so
+          # this job alone needs history; the generator's own tests and
+          # check-defs-current.sh only need HEAD.
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: tools/defs-build
+      - run: rustup toolchain install
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - name: the generator's own unit and fixture tests
+        run: cargo test
+      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+        with:
+          tool: cargo-llvm-cov@0.9.1
+      # `--lib` only (Quentin's direction: the error branches are what
+      # must be covered, and the extensive failure-fixture suite is what
+      # exercises them) -- the `defs-build` binary's own `main`/`run` are
+      # thin CLI wiring already exercised for real by check-defs-
+      # current.sh above, the same reasoning NFR28 already applies to a
+      # reducer's own thin wrapper.
+      - run: cargo llvm-cov --lib --fail-under-lines 90
+      # Not gated behind build/migrate/e2e (Quentin's direction): needs
+      # only this crate's own Rust toolchain, so a bad defs edit is red in
+      # a couple of minutes, not after the slowest job in the graph.
+      - name: story 2.1 AC1/AC4, both generated artefacts match defs/
+        run: bash ../../scripts/ci/check-defs-current.sh
+      - name: story 2.1, an id or key is never renumbered, reused or retired
+        run: bash ../../scripts/ci/check-defs-ids-append-only.sh
+      - name: story 2.1 AC3, any defs/ change bumps defs_version
+        run: bash ../../scripts/ci/check-defs-version-bump.sh
 
   check:
     name: check
@@ -379,7 +436,7 @@ jobs:
     name: ci
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    needs: [changes, scripts-tests, check, test, build, migrate, coverage, client-check, client-build, e2e]
+    needs: [changes, scripts-tests, defs, check, test, build, migrate, coverage, client-check, client-build, e2e]
     if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

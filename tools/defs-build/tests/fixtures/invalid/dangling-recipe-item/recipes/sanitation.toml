@@ -1,0 +1,5 @@
+[[recipe]]
+id = 1
+key = "bottle-recycling"
+inputs = ["nonexistent-item"]
+outputs = ["recycled-glass"]

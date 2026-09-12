@@ -25,6 +25,7 @@ cited here by identifier.
 | Art source                    | `ModernTileset/` — whole-object PNGs, nothing pre-split                                                  |
 | Backup encryption             | `gpg --symmetric`                                                                                        |
 | Backup tooling                | `scripts/ops/*.sh` shell `spacetime sql`/`spacetime call`/`describe --json`; `server/tools/world_backup` (native, `serde_json` `arbitrary_precision`) parses and canonicalises, never `jq` |
+| Defs tooling                  | `tools/defs-build` — standalone native Rust binary crate (own `Cargo.toml`/`Cargo.lock`/`rust-toolchain.toml`, outside both `server/`'s workspace and the client), depends only on `toml` and `serde`; never a dependency of `browser_city` or the client bundle |
 
 
 ## Authority
@@ -231,6 +232,47 @@ sharing the code). The story that adds it must consume the committed
 fixture` by `bounds`'s `regen-world-fixture` binary.
 `docs/trace-matrix.md`'s "World addressing" section carries a `deferred`
 row for that obligation until it is met.
+
+## Definitions (`defs/`)
+
+`defs/` is the single source of truth for game content data (NFR31),
+subdivided into `objects/`, `items/`, `recipes/`, `professions/`,
+`chains/` and `balance/`, each a directory of TOML files (the naming
+table's `city-props.toml`). Neither build target writes here and neither
+runs the generator: `tools/defs-build/` is a standalone Rust binary crate
+outside both the server and client dependency graphs (its own
+`Cargo.toml` with an empty `[workspace]` table, its own committed
+`Cargo.lock` and `rust-toolchain.toml`), and its two outputs are committed
+and kept current by `scripts/ci/check-defs-current.sh` -- the same idiom
+as `client/src/net/bindings`. `server/sim/src/generated/defs.rs` is a
+plain Rust module of `static`/`const` tables over `&'static str` and
+integers, no deserialisation or allocation at runtime; `client/public/
+defs/defs.json` is a canonical, static JSON asset fetched at runtime,
+cache-busted and compared against the FR147 handshake's own
+`defs_version`. Both begin with a generated-file marker and are never
+hand-edited.
+
+An object, item, recipe, profession or chain declares an explicit,
+permanent integer id in its own file -- never one derived from file
+order, position or a hash. An id or a key, once merged, is never
+renumbered, reused or retired: `tools/defs-build/goldens/defs-manifest.
+golden` pins the append-only `kind id key` list, guarded by
+`scripts/ci/check-defs-ids-append-only.sh`. `defs/balance/` entries seed
+data (NFR45), keyed by a dotted `snake_case` balance key, not an id.
+
+A single `defs_version` -- a SHA-256 over every git-tracked file under
+`defs/`, sorted by path, LF-normalised -- covers every input, including
+the prop atlases, character-part atlases and the audio manifest once
+those land; their own manifests belong under `defs/`, not beside their
+producing pipeline, so that they fold into this one version rather than
+versioning independently. `defs_version` is computed, never hand-bumped,
+identical in both generated artefacts, and guarded by
+`scripts/ci/check-defs-version-bump.sh`.
+
+The server and client each parse the generated source with their own
+independent implementation (NFR30) -- deliberate duplication, not an
+oversight, pinned against drift by a shared canonical dump golden and a
+shared table of malformed-input cases both sides must reject.
 
 ## Naming
 
