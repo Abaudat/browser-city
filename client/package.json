@@ -27,6 +27,7 @@
     "@playwright/test": "1.63.0",
     "@types/node": "22.20.1",
     "@vitest/coverage-v8": "5.0.0",
+    "fast-check": "4.10.0",
     "jsdom": "30.0.1",
     "typescript": "7.0.2",
     "vite": "8.2.2",

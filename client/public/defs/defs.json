@@ -1,8 +1,9 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "eadbca91bcbdec9b",
+  "defs_version": "90af8036e7221832",
   "objects": [
     { "height": 1, "id": 2, "key": "park_bench", "width": 2 },
+    { "height": 1, "id": 3, "key": "shop_counter", "width": 3 },
     { "height": 1, "id": 1, "key": "trash_bin", "width": 1 }
   ],
   "items": [
@@ -19,6 +20,8 @@
     { "id": 1, "key": "plastic_bottle", "links": ["sanitation_worker"] }
   ],
   "balance": [
-    { "key": "citizen.bar_decay.rest", "max": 100, "min": 0, "value": 10 }
+    { "key": "citizen.bar_decay.rest", "max": 100, "min": 0, "value": 10 },
+    { "key": "render.storey_height_px", "max": 256, "min": 1, "value": 48 },
+    { "key": "render.tile_size_px", "max": 64, "min": 1, "value": 16 }
   ]
 }

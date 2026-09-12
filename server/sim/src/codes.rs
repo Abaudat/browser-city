@@ -105,9 +105,23 @@ pub mod reason_code {
 /// addressing" section) -- get a layer's depth order right the first
 /// time; `../../src/tables/codes.rs`'s `seed_all_codes` only ever inserts
 /// a code once and never updates an existing row, so there is no update
-/// path for a rank once seeded. A minimal, honest set for what this
-/// story's fixture needs (a road and the deck above it), not a
-/// speculative full set.
+/// path for a rank once seeded.
+///
+/// `ground` (rank 0) is the flat-pass floor/road surface: never a pool
+/// member (see `client/src/render/sort-key.ts`), so its rank is never
+/// compared against a pool rank. The five pool layers -- `furniture`,
+/// `objects`, `walls`, `wall_decals`, `characters` -- are minted a decade
+/// apart (story 1.6), leaving every in-between number free for a future
+/// layer to slot into without renumbering anything. Every live rank is
+/// unique and every pool rank is a multiple of ten
+/// (`layer_ranks_are_unique_and_pool_ranks_are_multiples_of_ten`,
+/// `tests/codes.rs`).
+///
+/// `overhead` (code 1, rank 1) is deprecated (see [`DEPRECATED_CODES`]):
+/// it was minted for a bridge deck FR124's floor offset already expresses,
+/// its rank cannot be moved, and it cannot sit anywhere sane in the tens
+/// ladder. The row stays seeded forever -- deprecation is a usage ban, not
+/// a deletion -- but nothing may place new content on it.
 pub mod layer {
     /// One layer code and its FR123 depth-sort rank. `../../src/tables/
     /// world.rs`'s `LayerCode` is the companion table this seeds.
@@ -128,7 +142,64 @@ pub mod layer {
             name: "overhead",
             rank: 1,
         },
+        LayerCode {
+            code: 2,
+            name: "furniture",
+            rank: 10,
+        },
+        LayerCode {
+            code: 3,
+            name: "objects",
+            rank: 20,
+        },
+        LayerCode {
+            code: 4,
+            name: "walls",
+            rank: 30,
+        },
+        LayerCode {
+            code: 5,
+            name: "wall_decals",
+            rank: 40,
+        },
+        LayerCode {
+            code: 6,
+            name: "characters",
+            rank: 50,
+        },
     ];
+
+    /// Codes no `PlacedObject` (or `WorldSpec` fixture) may ever be placed
+    /// on again -- a usage ban, not a deletion: the row stays in
+    /// [`CODES`]/seeded forever, since anything already stored under it
+    /// must keep resolving. Checked by [`is_deprecated`]; there is no
+    /// live call site yet that constructs a `PlacedObject` at all (that
+    /// lands with the world-generation story), so this is the guard that
+    /// story must call before accepting a layer value, not a check wired
+    /// into `WorldSpec::build` today.
+    pub const DEPRECATED_CODES: &[u32] = &[1];
+
+    /// Whether `code` is banned from new placement (see
+    /// [`DEPRECATED_CODES`]'s doc comment). Total over every `u32`,
+    /// including a code [`CODES`] has never heard of.
+    pub fn is_deprecated(code: u32) -> bool {
+        DEPRECATED_CODES.contains(&code)
+    }
+
+    /// The FR123 depth-sort rank for a *live* (non-deprecated, known)
+    /// layer code -- `Err` for a deprecated or unknown code, never a
+    /// silent fallback rank. The client's own rank lookup
+    /// (`client/src/render/layer-ranks.ts`) mirrors this refusal.
+    pub fn live_rank(code: u32) -> Result<u32, String> {
+        if is_deprecated(code) {
+            return Err(format!("layer code {code} is deprecated"));
+        }
+        CODES
+            .iter()
+            .find(|c| c.code == code)
+            .map(|c| c.rank)
+            .ok_or_else(|| format!("layer code {code} is unknown"))
+    }
 }
 
 /// A macro-graph node's kind (FR134): interiors collapse to an entrance
