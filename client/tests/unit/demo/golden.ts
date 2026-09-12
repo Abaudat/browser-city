@@ -53,17 +53,18 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
 
 /**
  * The order after the player has walked south to the edge of
- * `PLAYER_BOUNDS` (y = 8.5, clamped -- a deterministic endpoint
- * regardless of exact key-hold timing, and well past the awning's own
- * anchor at y=7): they now sort in front of the table, the glass, the
- * whole near row of the west/east walls, the south wall and the awning
- * itself -- Artie's cycle-3 direction: a player walking all the way out
- * of the shop must end up in front of the awning on the street, not
- * hidden behind it forever. `drawables.test.ts` asserts this same list
- * directly against the comparator (`sortDrawablesInPlace`) --
- * `render-order.spec.ts` only proves the real adapter reaches the
- * identical order after a real keyboard move, it never owns the ordering
- * fact by itself.
+ * `PLAYER_BOUNDS` (y = 8, clamped -- a deterministic endpoint regardless
+ * of exact key-hold timing, one full row past the awning's own anchor at
+ * y=7 and no further, since that is the last row `SIDEWALK_TILES` itself
+ * draws -- Quentin's cycle-4 direction): they now sort in front of the
+ * table, the glass, the whole near row of the west/east walls, the south
+ * wall and the awning itself -- Artie's cycle-3 direction: a player
+ * walking all the way out of the shop must end up in front of the awning
+ * on the street, not hidden behind it forever. `drawables.test.ts`
+ * asserts this same list directly against the comparator
+ * (`sortDrawablesInPlace`) -- `render-order.spec.ts` only proves the real
+ * adapter reaches the identical order after a real keyboard move, it
+ * never owns the ordering fact by itself.
  */
 export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "1",

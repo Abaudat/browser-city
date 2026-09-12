@@ -4,12 +4,21 @@ import {
   buildPropDrawables,
   updatePlayerDrawable,
 } from "../../../src/demo/drawables";
-import { PLAYER_BOUNDS, PLAYER_START } from "../../../src/demo/fixture";
+import { PLAYER_BOUNDS, PLAYER_START, SIDEWALK_TILES } from "../../../src/demo/fixture";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { LAYER_TABLE } from "../../../src/render/layer-table";
+import { screenPositionPx } from "../../../src/render/screen-position";
 import { compareDrawables, sortDrawablesInPlace } from "../../../src/render/sort-key";
 import { toSortUnits } from "../../../src/render/sort-units";
 import { DEMO_SCENE_GOLDEN_ORDER, DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH } from "./golden";
+
+// Mirrors `render.tile_size_px` / `render.storey_height_px`
+// (`defs/defs.json`) -- the scene itself always reads these from the
+// balance keys (`main.ts`), never a literal; this test pins the same
+// values so the relation below stays a pure arithmetic fact, with no
+// need to mount Pixi to check it.
+const TILE_SIZE_PX = 16;
+const STOREY_HEIGHT_PX = 48;
 
 const CODE_BY_NAME: Record<string, number> = Object.fromEntries(
   LAYER_TABLE.map((row) => [row.name, row.code]),
@@ -104,6 +113,41 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     expect(compareDrawables(groundWallCell, upperWallCell)).toBe(
       compareDrawables(swapped, swappedOther),
     );
+  });
+});
+
+describe("PLAYER_BOUNDS stays within the world the scene actually draws (Quentin's cycle-4 direction)", () => {
+  // The scene's mount-time canvas-bounds guard (`assertSpritesWithinCanvas`)
+  // only ever runs once, against the player's *starting* position -- it
+  // can never catch a clamp that only overruns the drawn world once the
+  // player has actually walked there. This pins the relation directly
+  // against the pure `screenPositionPx` the scene itself uses, so a
+  // future edit to either the bounds or the fixture's ground extent fails
+  // here, cheaply, instead of drawing the player off the pavement.
+  it("keeps every corner of PLAYER_BOUNDS drawn no lower than the pavement's own last row", () => {
+    // `SIDEWALK_TILES.y1` is exclusive -- the last drawn pavement row's
+    // own bottom edge, in world pixels, is exactly `y1 * tileSizePx`.
+    const groundBottomPx = SIDEWALK_TILES.y1 * TILE_SIZE_PX;
+    const corners = [
+      { x: PLAYER_BOUNDS.x0, y: PLAYER_BOUNDS.y0 },
+      { x: PLAYER_BOUNDS.x0, y: PLAYER_BOUNDS.y1 },
+      { x: PLAYER_BOUNDS.x1, y: PLAYER_BOUNDS.y0 },
+      { x: PLAYER_BOUNDS.x1, y: PLAYER_BOUNDS.y1 },
+    ] as const;
+
+    for (const corner of corners) {
+      const pos = screenPositionPx(
+        corner.x,
+        corner.y,
+        PLAYER_START.floor,
+        TILE_SIZE_PX,
+        STOREY_HEIGHT_PX,
+      );
+      expect(pos.y).toBeGreaterThanOrEqual(0);
+      expect(pos.y).toBeLessThanOrEqual(groundBottomPx);
+      expect(pos.x).toBeGreaterThanOrEqual(SIDEWALK_TILES.x0 * TILE_SIZE_PX);
+      expect(pos.x).toBeLessThanOrEqual(SIDEWALK_TILES.x1 * TILE_SIZE_PX);
+    }
   });
 });
 

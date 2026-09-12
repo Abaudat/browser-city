@@ -58,11 +58,18 @@ export interface DemoProp {
  * cells -- the near/far occlusion worked example. */
 export const PLAYER_START = { x: 5, y: 4, floor: 0 } as const;
 export const PLAYER_STABLE_ID = 1000n;
-// y1 reaches well past the awning's own anchor (SOUTH_WALL_Y + 1) and
-// onto the open pavement -- Artie's cycle-3 direction: the player must be
-// able to walk all the way out from behind the awning to in front of it,
-// not stop at the doorway.
-export const PLAYER_BOUNDS = { x0: 4.2, x1: 6.8, y0: 2.2, y1: 8.5 } as const;
+// y1 reaches one full row past the awning's own anchor (SOUTH_WALL_Y + 1)
+// and onto the open pavement -- Artie's cycle-3 direction: the player must
+// be able to walk all the way out from behind the awning to in front of
+// it, not stop at the doorway. Held to 8, not further: `SIDEWALK_TILES`
+// draws its last pavement row at world y = 8, so a bottom-anchored
+// player's feet at (y1 + 1) * tileSizePx must not pass its bottom edge at
+// y1 = 8 -- Quentin's cycle-4 direction, since the scene's mount-time
+// canvas-bounds guard only ever runs against the player's *starting*
+// position, never the clamped one the player actually walks to; see
+// `drawables.test.ts`'s corner check, which pins this relation directly
+// against `screenPositionPx` so it cannot drift again unnoticed.
+export const PLAYER_BOUNDS = { x0: 4.2, x1: 6.8, y0: 2.2, y1: 8 } as const;
 
 // The building footprint: x = 3..8 (west wall, 4 interior columns, east
 // wall), y = 1..6 (north wall, 4 interior rows, south/door wall).
