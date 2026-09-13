@@ -16,26 +16,24 @@
 // `inv_floor_never_affects_depth_order`), so this file only has to state
 // its real output as a committed fact, the same way it always has.
 //
-// Ids: 1/12 are shop A's ground/upper north wall; 30/60 are shop B's
-// north wall and the platform's own north wall -- FR124 means floor never
-// breaks a tie, so at x=13 (where shop B's own east end and the
-// platform's own north-west corner share the same screen column) the two
-// interleave, ordered only by stableId (30 before 60). 500000+ ids are
-// the FR120 wall-stub companions (`demo/drawables.ts`'s `STUB_ID_OFFSET`)
-// -- always present, drawn behind their own wall at the same cell.
+// Ids: 1 is shop A's own north wall; 30/60 are shop B's north wall and
+// the platform's own north wall -- FR124 means floor never breaks a tie,
+// so at x=13 (where shop B's own east end and the platform's own
+// north-west corner share the same screen column) the two interleave,
+// ordered only by stableId (30 before 60). 500000+ ids are the FR120
+// wall-stub companions (`demo/drawables.ts`'s `STUB_ID_OFFSET`) -- always
+// present, drawn behind their own wall at the same cell, including the
+// platform's own front wall (61 -> 500061), which retracts the same
+// ownership-keyed way a shop's front wall does. There is no upper storey
+// in this fixture (removed, story 1.7 cycle 2): `isStoreyAboveCulled` is
+// proven directly against synthetic drawables in `visibility.test.ts`.
 export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
   "1",
-  "12",
   "1",
-  "12",
   "1",
-  "12",
   "1",
-  "12",
   "1",
-  "12",
   "1",
-  "12",
   "30",
   "30",
   "30",
@@ -52,10 +50,8 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
   "7", // poster, north wall face
   "8",
   "8",
-  "8", // shop A's counter
-  "35",
-  "35",
-  "35", // shop B's counter
+  "8", // shop A's counter (3 cells wide)
+  "35", // shop B's shelf
   "64",
   "64", // the platform bench
   "51", // the platform's own up-stairs decoration
@@ -69,7 +65,6 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
   "34",
   "62",
   "63", // same wall set, y=3
-  "13", // shop A's upper-storey table
   "4",
   "5",
   "34",
@@ -77,7 +72,7 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
   "63", // same wall set, y=4 -- the player's own row
   "1000", // the player, at rest in shop A
   "9", // shop A's table, right behind its window
-  "36", // shop B's chair, right behind its window
+  "36", // shop B's basket, right behind its window
   "10", // the glass on shop A's table
   "4",
   "5",
@@ -86,22 +81,30 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
   "63", // same wall set, y=5 -- the near end, in front of the player
   "500002", // shop A front wall (west segment) stub, x=3
   "500002", // shop A front wall (west segment) stub, x=4
-  "500006", // shop A's window stub
-  "500003", // shop A front wall (east segment) stub, x=7
-  "500003", // shop A front wall (east segment) stub, x=8
+  "500006", // shop A's window stub, x=6,7,8 (WINDOW_WIDTH = 3)
+  "500006",
+  "500006",
   "500031", // shop B front wall (west segment) stub
-  "500032", // shop B's window stub
-  "500033", // shop B front wall (east segment) stub, x=12
-  "500033", // shop B front wall (east segment) stub, x=13
+  "500032", // shop B's window stub, x=11,12,13
+  "500032",
+  "500032",
+  "500061", // the platform's own front wall stub, x=13..20 (near-side, ownership-keyed)
+  "500061",
+  "500061",
+  "500061",
+  "500061",
+  "500061",
+  "500061",
+  "500061",
   "2",
   "2", // shop A front wall, west segment
   "6", // shop A's window
-  "3",
-  "3", // shop A front wall, east segment
+  "6",
+  "6",
   "31", // shop B front wall, west segment
   "32", // shop B's window
-  "33",
-  "33", // shop B front wall, east segment
+  "32",
+  "32",
   "61",
   "61",
   "61",
@@ -128,17 +131,11 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
  */
 export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "1",
-  "12",
   "1",
-  "12",
   "1",
-  "12",
   "1",
-  "12",
   "1",
-  "12",
   "1",
-  "12",
   "30",
   "30",
   "30",
@@ -157,8 +154,6 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "8",
   "8",
   "35",
-  "35",
-  "35",
   "64",
   "64",
   "51",
@@ -172,7 +167,6 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "34",
   "62",
   "63",
-  "13",
   "4",
   "5",
   "34",
@@ -189,21 +183,29 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "500002",
   "500002",
   "500006",
-  "500003",
-  "500003",
+  "500006",
+  "500006",
   "500031",
   "500032",
-  "500033",
-  "500033",
+  "500032",
+  "500032",
+  "500061",
+  "500061",
+  "500061",
+  "500061",
+  "500061",
+  "500061",
+  "500061",
+  "500061",
   "2",
   "2", // south wall, west segment -- now behind the player
   "6",
-  "3",
-  "3",
+  "6",
+  "6",
   "31",
   "32",
-  "33",
-  "33",
+  "32",
+  "32",
   "61",
   "61",
   "61",
@@ -217,3 +219,130 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "50",
   "1000", // the player, out on the pavement, in front of everything
 ];
+
+// --- FR120/FR121/FR122 visibility goldens (Quentin's direction, story
+// 1.7 cycle 2): a decimal `stableId` -> state map for three fixed viewer
+// positions, computed straight from `buildPropDrawables` +
+// `computeVisibility` over the real demo `OwnershipIndex`, exactly the
+// way `scene.ts` resolves the viewer at runtime (`ownershipAt` on the
+// player's own cell). `drawables.test.ts` asserts these directly against
+// the pure functions; `../e2e/enclosure.spec.ts` imports the same maps
+// and asserts them against `window.__bc.visibility`, which is built from
+// each pool member's own real, just-written `sprite.visible`/
+// `sprite.alpha` -- so the pure prediction and the real, mounted adapter
+// can never silently disagree about what any of these three scenes show. ---
+
+/** The player at `PLAYER_START`, at rest inside shop A: shop A's own
+ * near-side wall/window (2, 6) are retracted (hidden); every subway
+ * drawable (floor -1: 51, 60-64, 500061) is floor-culled; shop B's window
+ * (32) is translucent, not retracted, since the viewer is not inside shop
+ * B. */
+export const DEMO_VISIBILITY_AT_REST_IN_SHOP_A: Readonly<Record<string, string>> = {
+  "1": "normal",
+  "2": "hidden", // shop A's own near-side wall -- retracted
+  "4": "normal",
+  "5": "normal",
+  "6": "hidden", // shop A's own window -- retracted, not translucent (retraction wins)
+  "7": "normal",
+  "8": "normal",
+  "9": "normal",
+  "10": "normal",
+  "11": "normal",
+  "14": "normal",
+  "30": "normal",
+  "31": "normal",
+  "32": "translucent", // shop B's window -- the viewer is not inside shop B
+  "34": "normal",
+  "35": "normal",
+  "36": "normal",
+  "50": "normal",
+  "51": "hidden", // floor -1 -- culled
+  "60": "hidden",
+  "61": "hidden",
+  "62": "hidden",
+  "63": "hidden",
+  "64": "hidden",
+  "1000": "normal", // the player itself
+  "500002": "normal", // the FR120 stub, left on screen while its own wall is retracted
+  "500006": "normal",
+  "500031": "normal",
+  "500032": "normal",
+  "500061": "hidden", // floor -1 -- culled, same as its own wall
+};
+
+/** The player at the lamppost rest point outside (`lamppostRestY()`), on
+ * the pavement, `NO_OWNER`: nothing retracts (both shopfronts show a full
+ * wall/translucent window); the subway stays floor-culled. */
+export const DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE: Readonly<Record<string, string>> = {
+  "1": "normal",
+  "2": "normal",
+  "4": "normal",
+  "5": "normal",
+  "6": "translucent",
+  "7": "normal",
+  "8": "normal",
+  "9": "normal",
+  "10": "normal",
+  "11": "normal",
+  "14": "normal",
+  "30": "normal",
+  "31": "normal",
+  "32": "translucent",
+  "34": "normal",
+  "35": "normal",
+  "36": "normal",
+  "50": "normal",
+  "51": "hidden",
+  "60": "hidden",
+  "61": "hidden",
+  "62": "hidden",
+  "63": "hidden",
+  "64": "hidden",
+  "1000": "normal",
+  "500002": "normal",
+  "500006": "normal",
+  "500031": "normal",
+  "500032": "normal",
+  "500061": "hidden",
+};
+
+/** The player just landed on the subway platform (`PLATFORM_LANDING_X +
+ * 0.5, PLATFORM_LANDING_Y + 0.5`, floor -1): every street-side drawable
+ * (floor 0) is floor-culled, and the platform's own near-side (front)
+ * wall (61) retracts around the player the same ownership-keyed way a
+ * shop's front wall does -- Artie's finding that the player was
+ * invisible on the platform is exactly this state's own regression
+ * guard: the player itself (1000) and the platform's own stub (500061)
+ * must both stay `normal`. */
+export const DEMO_VISIBILITY_ON_SUBWAY_LANDING: Readonly<Record<string, string>> = {
+  "1": "hidden",
+  "2": "hidden",
+  "4": "hidden",
+  "5": "hidden",
+  "6": "hidden",
+  "7": "hidden",
+  "8": "hidden",
+  "9": "hidden",
+  "10": "hidden",
+  "11": "hidden",
+  "14": "hidden",
+  "30": "hidden",
+  "31": "hidden",
+  "32": "hidden",
+  "34": "hidden",
+  "35": "hidden",
+  "36": "hidden",
+  "50": "hidden",
+  "51": "normal", // the platform's own up-stairs decoration
+  "60": "normal", // the platform's own back wall
+  "61": "hidden", // the platform's own near-side (front) wall -- retracted
+  "62": "normal", // the platform's own west wall
+  "63": "normal", // the platform's own east wall
+  "64": "normal", // the platform bench
+  "1000": "normal", // the player itself -- never hidden by its own enclosure's front wall
+  "500002": "hidden",
+  "500006": "hidden",
+  "500031": "hidden",
+  "500032": "hidden",
+  "500061": "normal", // the platform's own front-wall stub, left on screen while 61 is retracted
+};

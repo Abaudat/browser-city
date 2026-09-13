@@ -7,10 +7,13 @@
 // `CollisionGrid` already indexes every floor's colliders together, keyed
 // by `floor` on every query (`entriesInCell(floor, x, y)`) rather than one
 // grid swapped out per floor -- so "the collision set changes in the same
-// step" is a property of [`TransitionIndex.enter`] returning the new
-// `floor` and position together, from one call, for the caller to apply
-// as a single assignment, never a `floor` update followed by a separate
-// position update a caller could observe half-done.
+// step" is a property of a caller reading `transitionAt`'s target position
+// and floor from one call and applying both fields as a single assignment,
+// never a `floor` update followed by a separate position update a caller
+// could observe half-done. `world/floor-walk.ts`'s `stepAndTransition` is
+// that caller -- gating the lookup on a real cell change is what actually
+// makes a transition edge-triggered (entered by walking), never level-
+// triggered on every tick a key is held; this module only holds the data.
 
 /** One floor transition's anchor and target (FR117) -- mirrors
  * `sim::world::TransitionSpec`'s columns. A door is never one of these
@@ -42,25 +45,31 @@ function key(x: number, y: number, floor: number): string {
 export class TransitionIndex {
   private readonly byAnchor: ReadonlyMap<string, TransitionTarget>;
 
+  /** Throws if two specs share the same anchor cell -- `sim::world::
+   * WorldSpec::build` itself does not check this today (a plain
+   * `BTreeMap::insert` silently keeps only the last one), but silently
+   * dropping one of two transitions a generator declared at the same
+   * anchor is exactly the class of bug this story found the hard way
+   * (two transitions landing on each other's own anchor, discovered only
+   * by a real keyboard walk bouncing between floors); the client refuses
+   * it outright rather than picking a winner nobody chose. */
   constructor(transitions: readonly TransitionSpec[]) {
     const map = new Map<string, TransitionTarget>();
     for (const t of transitions) {
-      map.set(key(t.x, t.y, t.floor), { x: t.targetX, y: t.targetY, floor: t.targetFloor });
+      const k = key(t.x, t.y, t.floor);
+      if (map.has(k)) {
+        throw new Error(
+          `TransitionIndex: duplicate transition anchor (${t.x}, ${t.y}, floor ${t.floor})`,
+        );
+      }
+      map.set(k, { x: t.targetX, y: t.targetY, floor: t.targetFloor });
     }
     this.byAnchor = map;
   }
 
-  /** The floor transition anchored at this cell, if any (FR117). */
+  /** The floor transition anchored at this cell, if any (FR117).
+   * `undefined` if `(x, y, floor)` is not a transition's anchor. */
   transitionAt(x: number, y: number, floor: number): TransitionTarget | undefined {
     return this.byAnchor.get(key(x, y, floor));
-  }
-
-  /** Entering a transition cell (FR117): the target position and floor
-   * from one call -- a caller applies both fields in a single assignment,
-   * so there is no intermediate render or collision query that could ever
-   * see the new floor with the old position, or vice versa. `undefined`
-   * if `(x, y, floor)` is not a transition's anchor. */
-  enter(x: number, y: number, floor: number): TransitionTarget | undefined {
-    return this.transitionAt(x, y, floor);
   }
 }

@@ -16,13 +16,20 @@
 // add, not this file.
 //
 // Story 1.7 (FR120/FR121/FR122) pays off the shortcut story 1.6 took: the
-// old `wallTileShort` front-wall stub is gone (Artie's direction -- near-
-// side retraction now exists, so the demo shows it, not a permanently
-// short wall). The terrace is two shops, A and B, sharing one party wall
-// at `PARTY_WALL_X`, each with its own door, its own front window (a real
-// `defs/objects` `window = true` tile, never a `wall_decals` overlay) and
-// its own furniture. A subway stairwell on the pavement leads down to a
-// small platform on floor -1.
+// old `wallTileShort` front-wall stub is gone -- near-side retraction now
+// exists, so the demo shows it, not a permanently short wall. The terrace
+// is two shops, A and B, sharing one party wall at `PARTY_WALL_X`, each
+// with its own door, its own front window (a real `defs/objects` `window
+// = true` tile, never a `wall_decals` overlay) and its own furniture. A
+// subway stairwell on the pavement leads down to a small platform on
+// floor -1, whose own front wall retracts the same ownership-keyed way a
+// shop's does while the player stands on it.
+//
+// Near-side-ness (FR120) is never hand-authored here: `demo/drawables.ts`
+// resolves it per cell from `render/visibility.ts`'s `isNearSideWall`, a
+// pure predicate over ownership and cell coordinates. This fixture only
+// states geometry and ownership areas; which walls end up near-side falls
+// out of that shape.
 
 import type { PlacedObject } from "../net/bindings/types";
 import type { ColliderSource } from "../world/collision-grid";
@@ -61,13 +68,6 @@ export interface DemoProp {
   readonly footprint?: DemoFootprint;
   readonly defId?: number;
   readonly solid?: true;
-  /** FR120 (Artie's direction): only a south-facing (front) wall run
-   * occludes the room from the camera in this 3/4 view -- side walls,
-   * party walls and the back wall are never near-side and never retract.
-   * This is cell-coordinate-derived fixture data (which wall run this is),
-   * never a runtime geometric computation over sprite bounds --
-   * `render/visibility.ts`'s `isRetracted` just reads it. */
-  readonly nearSide?: true;
 }
 
 /** `defs/objects/city-props.toml`'s own `lamppost` id -- the demo places
@@ -75,7 +75,7 @@ export interface DemoProp {
 export const LAMPPOST_DEF_ID = 4;
 /** `defs/objects/city-props.toml`'s own `shop_window` id (FR121, story
  * 1.7): a real `[[object]] window = true` entry, never a demo-only flag --
- * both shops' front windows place it by id, the same way the lamppost
+ * every shopfront window places it by id, the same way the lamppost
  * does. */
 export const WINDOW_DEF_ID = 5;
 
@@ -114,19 +114,23 @@ const INTERIOR_Y1 = 5;
 // Shop A: west wall, four interior columns, then the party wall it shares
 // with shop B (Artie's direction: the shared wall line has no gap and no
 // doubled wall -- shop B declares no west wall of its own; this column is
-// it).
+// it). The door sits at a fixed column (`DOOR_X_A`); the window fills the
+// rest of the front row east of it, all the way to the party wall, so its
+// own art is never asked to overhang across the door (Artie's direction:
+// the window must never overlap a door cell).
 const WEST_WALL_X = 3;
 const PARTY_WALL_X = 8;
 const INTERIOR_X0_A = 4;
 const DOOR_X_A = 5;
-const WINDOW_X_A = 6;
+const WINDOW_X_A = DOOR_X_A + 1;
+const WINDOW_WIDTH = 3;
 
 // Shop B: starts immediately east of the party wall, its own four
 // interior columns, its own east wall.
 const INTERIOR_X0_B = 9;
 const EAST_WALL_X_B = 13;
 const DOOR_X_B = 10;
-const WINDOW_X_B = 11;
+const WINDOW_X_B = DOOR_X_B + 1;
 
 /** Story 1.7 ownership ids (Tim's direction): the enclosure key is
  * `buildingId`, resolved from the ownership index -- never hand-typed on
@@ -134,34 +138,14 @@ const WINDOW_X_B = 11;
  * sentinel; these start at 1 like a real `#[auto_inc]` id would. */
 export const SHOP_A_BUILDING_ID = 1n;
 export const SHOP_B_BUILDING_ID = 2n;
+/** The subway platform's own ownership id (Artie's direction): its front
+ * wall retracts the same ownership-keyed way a shop's does, while the
+ * player stands on it -- otherwise the platform's own front wall would
+ * permanently hide whoever just walked onto it. */
+export const PLATFORM_BUILDING_ID = 3n;
 
-/** The ownership areas the demo's own `OwnershipIndex` is built from
- * (mirrors `building_area` rows): each shop's whole footprint, walls
- * included, on the floor(s) it actually occupies -- shop A also owns its
- * own upper storey's footprint, which is what lets Artie's "storeys above
- * are culled too" rule find it. Room ownership is not used this story
- * (Tim's direction). */
-export const DEMO_BUILDING_AREAS: readonly OwnershipArea[] = [
-  {
-    ownerId: SHOP_A_BUILDING_ID,
-    floor: 0,
-    rect: { x0: WEST_WALL_X, y0: NORTH_WALL_Y, x1: PARTY_WALL_X + 1, y1: SOUTH_WALL_Y + 1 },
-  },
-  {
-    ownerId: SHOP_A_BUILDING_ID,
-    floor: 1,
-    rect: { x0: WEST_WALL_X, y0: NORTH_WALL_Y, x1: PARTY_WALL_X + 1, y1: SOUTH_WALL_Y + 1 },
-  },
-  {
-    ownerId: SHOP_B_BUILDING_ID,
-    floor: 0,
-    rect: { x0: PARTY_WALL_X + 1, y0: NORTH_WALL_Y, x1: EAST_WALL_X_B + 1, y1: SOUTH_WALL_Y + 1 },
-  },
-];
-
-export const DEMO_ROOM_AREAS: readonly OwnershipArea[] = [];
-
-// --- the subway -------------------------------------------------------------
+// --- the subway (declared before DEMO_BUILDING_AREAS, which references
+// the platform's own footprint) -----------------------------------------
 
 export const STREET_FLOOR = 0;
 export const SUBWAY_FLOOR = -1;
@@ -196,21 +180,19 @@ export const PLATFORM_LANDING_Y = PLATFORM_INTERIOR_Y0 + 1;
  * between the two transitions on consecutive frames just because holding
  * the same direction key kept the player inside the landing cell for a
  * second frame -- one cell of separation is what a caller's continued
- * momentum naturally clears. */
+ * momentum naturally clears (`world/floor-walk.ts` now also gates every
+ * transition lookup on the cell actually changing by walking, so this is
+ * belt and braces, not the only thing preventing a bounce). */
 export const PLATFORM_UP_ANCHOR_X = PLATFORM_LANDING_X;
 export const PLATFORM_UP_ANCHOR_Y = PLATFORM_LANDING_Y - 1;
 
 /** Where climbing back up lands on the street: one cell east of the
  * stairwell's own anchor (`STAIRS_X`/`STAIRS_Y`), never that identical
  * cell -- the same "never the anchor cell" rule `PLATFORM_UP_ANCHOR_X/Y`
- * applies below ground applies here too. Landing exactly on the down
- * anchor would re-trigger it the instant a caller's own continued
- * momentum (or an unreleased key) is still checked against that cell on
- * the very next tick, bouncing the player straight back underground --
- * a real bug this fixture found the hard way, not a hypothetical one.
- * Still immediately beside the stairwell prop (Artie's "where you come
- * out must physically match where you went in"), just not the single
- * tile that triggers the descent. */
+ * applies below ground applies here too. Still immediately beside the
+ * stairwell prop (Artie's "where you come out must physically match
+ * where you went in"), just not the single tile that triggers the
+ * descent. */
 export const STREET_EXIT_X = STAIRS_X + 1;
 export const STREET_EXIT_Y = STAIRS_Y;
 
@@ -239,10 +221,38 @@ export const DEMO_TRANSITIONS: readonly TransitionSpec[] = [
   },
 ];
 
+/** The ownership areas the demo's own `OwnershipIndex` is built from
+ * (mirrors `building_area` rows): each shop's whole footprint, walls
+ * included, on the floor(s) it actually occupies, and the platform's own
+ * footprint on floor -1, which is what lets its own front wall retract
+ * the same way a shop's does. Room ownership is not used this story
+ * (Tim's direction). No shop owns an upper storey here: `isStoreyAboveCulled`
+ * is proven directly, against synthetic drawables, in
+ * `visibility.test.ts` -- it does not need this fixture to carry one. */
+export const DEMO_BUILDING_AREAS: readonly OwnershipArea[] = [
+  {
+    ownerId: SHOP_A_BUILDING_ID,
+    floor: 0,
+    rect: { x0: WEST_WALL_X, y0: NORTH_WALL_Y, x1: PARTY_WALL_X + 1, y1: SOUTH_WALL_Y + 1 },
+  },
+  {
+    ownerId: SHOP_B_BUILDING_ID,
+    floor: 0,
+    rect: { x0: PARTY_WALL_X + 1, y0: NORTH_WALL_Y, x1: EAST_WALL_X_B + 1, y1: SOUTH_WALL_Y + 1 },
+  },
+  {
+    ownerId: PLATFORM_BUILDING_ID,
+    floor: SUBWAY_FLOOR,
+    rect: { x0: PLATFORM_X0, y0: PLATFORM_Y0, x1: PLATFORM_X1 + 1, y1: PLATFORM_Y1 + 1 },
+  },
+];
+
+export const DEMO_ROOM_AREAS: readonly OwnershipArea[] = [];
+
 /** The platform's own boundary wall ring -- a real, solid, drawn wall
- * (Artie's "tiled wall"), never near-side (underground has no per-
- * enclosure retraction; FR122's floor culling already keeps it from ever
- * being co-visible with the street). */
+ * built from the subway pack's own tiled wall art (Artie's direction),
+ * near-side exactly where `render/visibility.ts`'s `isNearSideWall`
+ * predicate says it is (the front/south run) -- no special-casing here. */
 function platformWalls(): readonly DemoProp[] {
   const walls: DemoProp[] = [
     {
@@ -294,7 +304,8 @@ function platformWalls(): readonly DemoProp[] {
  * sequence. */
 export const DEMO_PROPS: readonly DemoProp[] = [
   // --- Shop A ----------------------------------------------------------
-  // North (back) wall: full width, never near-side.
+  // North (back) wall: full width, never near-side (nothing owned by
+  // shop A sits south of it -- it is the interior itself).
   {
     id: 1n,
     assetKey: "wallTile",
@@ -317,11 +328,14 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     layer: "walls",
     footprint: { width: DOOR_X_A - WEST_WALL_X, height: 1 },
     solid: true,
-    nearSide: true,
   },
   // The shop window (FR121): a real `defs/objects` wall tile, `window =
-  // true`, next to the door -- like a shop window (Artie's direction).
-  // Its collider comes from `defs/`, so it is placed by `defId` like the
+  // true`, filling the whole front row east of the door up to the party
+  // wall -- its own art (`ME_Singles_Office_16x16_Window_1_Middle_
+  // Modular.png`, 48x32px) is exactly `WINDOW_WIDTH` tiles wide, so the
+  // footprint matches the art exactly and `sliceTexture` slices it
+  // cleanly, never overhanging over the door (Artie's direction). Its
+  // collider comes from `defs/`, so it is placed by `defId` like the
   // lamppost, never `solid: true`.
   {
     id: 6n,
@@ -330,20 +344,8 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     y: SOUTH_WALL_Y,
     floor: 0,
     layer: "walls",
+    footprint: { width: WINDOW_WIDTH, height: 1 },
     defId: WINDOW_DEF_ID,
-    nearSide: true,
-  },
-  // South (front) wall, east of the window, up to the party wall.
-  {
-    id: 3n,
-    assetKey: "wallTile",
-    x: WINDOW_X_A + 1,
-    y: SOUTH_WALL_Y,
-    floor: 0,
-    layer: "walls",
-    footprint: { width: PARTY_WALL_X - WINDOW_X_A, height: 1 },
-    solid: true,
-    nearSide: true,
   },
   // West wall: the near/far occlusion worked example -- decomposed
   // toward the camera (width 1, height 4).
@@ -395,37 +397,14 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     solid: true,
   },
 
-  // A table with a glass on it, moved right behind the window
-  // (Artie's direction: visible from the pavement through the glass).
+  // A table with a glass on it, right behind the window (Artie's
+  // direction: visible from the pavement through the glass).
   { id: 9n, assetKey: "table", x: WINDOW_X_A, y: INTERIOR_Y1, floor: 0, layer: "furniture" },
   { id: 10n, assetKey: "glass", x: WINDOW_X_A, y: INTERIOR_Y1, floor: 0, layer: "objects" },
 
   // The awning: no collider (FR128's worked example), on the pavement
   // south of the door.
   { id: 11n, assetKey: "awning", x: DOOR_X_A, y: SOUTH_WALL_Y + 1, floor: 0, layer: "objects" },
-
-  // Shop A's second storey, directly above it: its own north wall and a
-  // piece of furniture, on `floor: 1`. Its `ownerBuildingId` resolves to
-  // `SHOP_A_BUILDING_ID` from `DEMO_BUILDING_AREAS`'s own floor-1 entry --
-  // Artie's "storeys above are culled too" rule (`isStoreyAboveCulled`)
-  // hides both the moment the player is inside shop A on floor 0.
-  {
-    id: 12n,
-    assetKey: "wallTileUpper",
-    x: WEST_WALL_X,
-    y: NORTH_WALL_Y,
-    floor: 1,
-    layer: "walls",
-    footprint: { width: PARTY_WALL_X - WEST_WALL_X + 1, height: 1 },
-  },
-  {
-    id: 13n,
-    assetKey: "table",
-    x: INTERIOR_X0_A + 3,
-    y: INTERIOR_Y0 + 2,
-    floor: 1,
-    layer: "furniture",
-  },
 
   // A solid obstacle straight south of shop A's door, on the pavement
   // (story 1.8): the known-solid rest point `render-order.spec.ts` and
@@ -441,8 +420,9 @@ export const DEMO_PROPS: readonly DemoProp[] = [
   },
 
   // --- Shop B: a different business, different furniture (Artie's
-  // "grounded city" direction -- two copies of the same shop breaks it).
-  // No west wall prop of its own: the party wall (id 5, above) is it. ---
+  // "grounded city" direction -- two copies of the same shop breaks it):
+  // a grocer, not a second tiki bar. No west wall prop of its own: the
+  // party wall (id 5, above) is it. ---
   {
     id: 30n,
     assetKey: "wallTile",
@@ -462,7 +442,6 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     layer: "walls",
     footprint: { width: DOOR_X_B - INTERIOR_X0_B, height: 1 },
     solid: true,
-    nearSide: true,
   },
   {
     id: 32n,
@@ -471,19 +450,8 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     y: SOUTH_WALL_Y,
     floor: 0,
     layer: "walls",
+    footprint: { width: WINDOW_WIDTH, height: 1 },
     defId: WINDOW_DEF_ID,
-    nearSide: true,
-  },
-  {
-    id: 33n,
-    assetKey: "wallTile",
-    x: WINDOW_X_B + 1,
-    y: SOUTH_WALL_Y,
-    floor: 0,
-    layer: "walls",
-    footprint: { width: EAST_WALL_X_B - WINDOW_X_B, height: 1 },
-    solid: true,
-    nearSide: true,
   },
   {
     id: 34n,
@@ -495,37 +463,32 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
     solid: true,
   },
-  // Shop B's own counter (a visually distinct variant, `counterB`) and a
-  // chair -- different interior furniture from shop A's, right behind
-  // its own window.
-  {
-    id: 35n,
-    assetKey: "counterB",
-    x: INTERIOR_X0_B,
-    y: INTERIOR_Y0,
-    floor: 0,
-    layer: "furniture",
-    footprint: { width: 3, height: 1 },
-    solid: true,
-  },
-  { id: 36n, assetKey: "chair", x: WINDOW_X_B, y: INTERIOR_Y1, floor: 0, layer: "furniture" },
+  // Shop B's own shelving (a grocery-store display, not a bar counter)
+  // and a produce basket -- different interior furniture from shop A's,
+  // right behind its own window.
+  { id: 35n, assetKey: "shelf", x: INTERIOR_X0_B, y: INTERIOR_Y0, floor: 0, layer: "furniture" },
+  { id: 36n, assetKey: "basket", x: WINDOW_X_B, y: INTERIOR_Y1, floor: 0, layer: "furniture" },
 
   // --- The subway ---------------------------------------------------------
   // The stairwell entrance: a physical prop, walkable (no collider) --
-  // never a teleport tile.
+  // never a teleport tile. A real descending stairwell with railings
+  // (Artie's direction), never the flat tread strip a footprint-1 prop
+  // reused for both directions would read as.
   {
     id: 50n,
-    assetKey: "subwayStairs",
+    assetKey: "subwayStairsDown",
     x: STAIRS_X,
     y: STAIRS_Y,
     floor: STREET_FLOOR,
     layer: "objects",
   },
   // The matching up-stairs on the platform, one cell north of the
-  // landing (`PLATFORM_UP_ANCHOR_X/Y`'s own doc comment).
+  // landing (`PLATFORM_UP_ANCHOR_X/Y`'s own doc comment) -- a distinct
+  // sprite from the street's own down stairwell (Artie's direction: one
+  // sprite never plays both roles).
   {
     id: 51n,
-    assetKey: "subwayStairs",
+    assetKey: "subwayStairsUp",
     x: PLATFORM_UP_ANCHOR_X,
     y: PLATFORM_UP_ANCHOR_Y,
     floor: SUBWAY_FLOOR,
@@ -580,49 +543,91 @@ export const DEMO_BOUNDARY: readonly DemoBoundaryRect[] = [
   },
 ] as const;
 
-/** Flat-pass ground tiles (FR123: three flat passes before the sorted
- * pool) -- never depth-sorted, painted once in fixed grids. Interior
- * floor and exterior pavement are two distinct textures (Artie's
- * direction: there must be an inside). */
-export const INTERIOR_FLOOR_TILES = {
+/** One flat-pass ground tile group (FR123: three flat passes before the
+ * sorted pool) -- never depth-sorted, painted once in a fixed grid. Story
+ * 1.7: carries its own `floor` so `scene.ts` can cull it the same way
+ * every other drawable is culled (FR122), through `render/pixi-
+ * visibility.ts`'s `VisibilityApplier`, never a second, ad hoc rule. */
+export interface DemoGroundTiles {
+  readonly assetKey: string;
+  readonly floor: number;
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
+/** Interior floor and exterior pavement are two distinct textures
+ * (Artie's direction: there must be an inside); the platform's own floor
+ * and edge strip are two more, from the subway pack, never the shops'
+ * `floor` crop (Artie's direction: it must read as somewhere new). */
+export const INTERIOR_FLOOR_TILES: DemoGroundTiles = {
   assetKey: "floor",
+  floor: STREET_FLOOR,
   x0: WEST_WALL_X,
   y0: NORTH_WALL_Y,
   x1: PARTY_WALL_X + 1,
   y1: SOUTH_WALL_Y,
-} as const;
+};
 
-export const INTERIOR_FLOOR_TILES_B = {
+export const INTERIOR_FLOOR_TILES_B: DemoGroundTiles = {
   assetKey: "floor",
+  floor: STREET_FLOOR,
   x0: PARTY_WALL_X + 1,
   y0: NORTH_WALL_Y,
   x1: EAST_WALL_X_B + 1,
   y1: SOUTH_WALL_Y,
-} as const;
-
-/** The platform's own floor pass, floor -1 -- Artie's direction: what
- * surrounds it is plain black (nothing drawn), never a texture, so this
- * pass paints only the interior the walls enclose. */
-export const PLATFORM_FLOOR_TILES = {
-  assetKey: "floor",
-  x0: PLATFORM_INTERIOR_X0,
-  y0: PLATFORM_INTERIOR_Y0,
-  x1: PLATFORM_INTERIOR_X1 + 1,
-  y1: PLATFORM_INTERIOR_Y1 + 1,
-} as const;
+};
 
 // One row deeper than the terrace needs, because a bottom-anchored sprite
 // paints a row lower than the cell its body occupies: the player resting
 // against the lamppost must still be drawn over pavement, not past its
 // last painted row. Widened east to cover both shops and the subway
 // stairwell.
-export const SIDEWALK_TILES = {
+export const SIDEWALK_TILES: DemoGroundTiles = {
   assetKey: "sidewalk",
+  floor: STREET_FLOOR,
   x0: 1,
   y0: SOUTH_WALL_Y,
   x1: 21,
   y1: 10,
-} as const;
+};
+
+/** The platform's own floor pass, floor -1 -- Artie's direction: what
+ * surrounds it is plain black (nothing drawn), never a texture, so this
+ * pass paints only the interior the walls enclose, one row short of the
+ * front wall to leave room for the edge strip below. */
+export const PLATFORM_FLOOR_TILES: DemoGroundTiles = {
+  assetKey: "subwayFloor",
+  floor: SUBWAY_FLOOR,
+  x0: PLATFORM_INTERIOR_X0,
+  y0: PLATFORM_INTERIOR_Y0,
+  x1: PLATFORM_INTERIOR_X1 + 1,
+  y1: PLATFORM_INTERIOR_Y1,
+};
+
+/** The platform's own hazard-striped edge, one row along its front wall
+ * (Artie's "a platform edge strip") -- from the subway pack, distinct
+ * from the plain floor tile either side of it. */
+export const PLATFORM_EDGE_TILES: DemoGroundTiles = {
+  assetKey: "subwayEdge",
+  floor: SUBWAY_FLOOR,
+  x0: PLATFORM_INTERIOR_X0,
+  y0: PLATFORM_INTERIOR_Y1,
+  x1: PLATFORM_INTERIOR_X1 + 1,
+  y1: PLATFORM_INTERIOR_Y1 + 1,
+};
+
+/** Every ground tile group `scene.ts` paints, in pass order -- the one
+ * list both the mount code and any future ground-visibility test walk,
+ * so a new group is never forgotten in one place. */
+export const DEMO_GROUND_TILES: readonly DemoGroundTiles[] = [
+  INTERIOR_FLOOR_TILES,
+  INTERIOR_FLOOR_TILES_B,
+  SIDEWALK_TILES,
+  PLATFORM_FLOOR_TILES,
+  PLATFORM_EDGE_TILES,
+];
 
 /** The demo's own collider sources, keyed by the synthetic def id
  * `demoDefId` mints: the shops' plain walls (solid across their whole

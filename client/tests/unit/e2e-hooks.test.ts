@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerPositionForE2e,
   recordRenderOrderForE2e,
@@ -87,29 +88,55 @@ describe("recordPlayerPositionForE2e", () => {
 });
 
 describe("recordVisibilityForE2e", () => {
-  it("stores a copy of the state map under window.__bc.visibility", () => {
+  it("stores a copy of the state and alpha maps under window.__bc.visibility/visibilityAlpha", () => {
     const state = { "1": "hidden", "2": "translucent" };
-    recordVisibilityForE2e(state);
+    const alpha = { "1": 1, "2": 0.42 };
+    recordVisibilityForE2e(state, alpha);
     expect(window.__bc?.visibility).toEqual(state);
     expect(window.__bc?.visibility).not.toBe(state); // a copy, never the same reference
+    expect(window.__bc?.visibilityAlpha).toEqual(alpha);
+    expect(window.__bc?.visibilityAlpha).not.toBe(alpha);
   });
 
   it("creates the buffer lazily rather than requiring pre-existing state", () => {
     expect(window.__bc).toBeUndefined();
-    recordVisibilityForE2e({ "1": "normal" });
+    recordVisibilityForE2e({ "1": "normal" }, { "1": 1 });
     expect(window.__bc?.visibility).toEqual({ "1": "normal" });
+    expect(window.__bc?.visibilityAlpha).toEqual({ "1": 1 });
   });
 
-  it("overwrites the previous map rather than accumulating a history", () => {
-    recordVisibilityForE2e({ "1": "hidden" });
-    recordVisibilityForE2e({ "2": "normal" });
+  it("overwrites the previous maps rather than accumulating a history", () => {
+    recordVisibilityForE2e({ "1": "hidden" }, { "1": 1 });
+    recordVisibilityForE2e({ "2": "normal" }, { "2": 1 });
     expect(window.__bc?.visibility).toEqual({ "2": "normal" });
+    expect(window.__bc?.visibilityAlpha).toEqual({ "2": 1 });
   });
 
   it("does nothing when DEV is false", () => {
     vi.stubEnv("DEV", false);
 
-    recordVisibilityForE2e({ "1": "hidden" });
+    recordVisibilityForE2e({ "1": "hidden" }, { "1": 1 });
+
+    expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("recordMasksCheckedForE2e", () => {
+  it("stores the result under window.__bc.masksAllNull", () => {
+    recordMasksCheckedForE2e(true);
+    expect(window.__bc?.masksAllNull).toBe(true);
+  });
+
+  it("creates the buffer lazily rather than requiring pre-existing state", () => {
+    expect(window.__bc).toBeUndefined();
+    recordMasksCheckedForE2e(false);
+    expect(window.__bc?.masksAllNull).toBe(false);
+  });
+
+  it("does nothing when DEV is false", () => {
+    vi.stubEnv("DEV", false);
+
+    recordMasksCheckedForE2e(true);
 
     expect(window.__bc).toBeUndefined();
   });

@@ -10,6 +10,12 @@
 // changed since the last call, so a street of static props costs nothing
 // per frame the player has not crossed into a new enclosure or floor
 // (Tim's direction).
+//
+// A caller that needs to observe what this actually wrote (`demo/scene.ts`'s
+// e2e hook) reads it straight back off each member's own `view.visible`/
+// `view.alpha` after `apply`/`applyForce` returns -- never a second,
+// recomputed `VisibilityState` this module could get out of sync with what
+// it really wrote (Quentin/Tim's direction).
 
 import type { Sprite } from "pixi.js";
 import { computeVisibility, type VisibilityDrawable, type VisibilityViewer } from "./visibility";
@@ -17,7 +23,9 @@ import { computeVisibility, type VisibilityDrawable, type VisibilityViewer } fro
 /** One visibility-managed pool member: a [`VisibilityDrawable`] (what
  * `computeVisibility` reads) plus the sprite it owns. Structural over
  * `visible`/`alpha` only, so a fake sprite-like object can stand in for
- * unit tests with no real Pixi `Sprite`. */
+ * unit tests with no real Pixi `Sprite` -- and a real Pixi `Container`
+ * (a whole ground-tile pass) qualifies exactly as well as a `Sprite`
+ * does, both being toggled the identical way. */
 export interface VisibilityMember<D extends VisibilityDrawable = VisibilityDrawable> {
   readonly drawable: D;
   readonly view: Pick<Sprite, "visible" | "alpha">;

@@ -4,6 +4,7 @@ import type { Defs } from "./defs/types";
 import { mountDemoScene } from "./demo/scene";
 import { connect } from "./net/connection";
 import {
+  recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerPositionForE2e,
   recordRenderOrderForE2e,
@@ -92,6 +93,7 @@ async function startDemoScene(): Promise<void> {
     onOrderChange: recordRenderOrderForE2e,
     onPlayerMove: recordPlayerPositionForE2e,
     onVisibilityChange: recordVisibilityForE2e,
+    onMasksChecked: recordMasksCheckedForE2e,
   });
 }
 

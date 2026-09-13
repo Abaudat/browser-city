@@ -9,12 +9,13 @@ import { layerCodeByName } from "../../../src/render/layer-table";
 import {
   computeVisibility,
   isFloorCulled,
+  isNearSideWall,
   isRetracted,
   isStoreyAboveCulled,
-  NO_OWNER,
   type VisibilityDrawable,
   type VisibilityViewer,
 } from "../../../src/render/visibility";
+import { NO_OWNER, type OwnershipArea, OwnershipIndex } from "../../../src/world/ownership";
 
 const WALLS = layerCodeByName("walls");
 const FURNITURE = layerCodeByName("furniture");
@@ -195,65 +196,182 @@ describe("windows (FR121)", () => {
   });
 });
 
+// --- A generated terrace, for tests that must prove position enters only
+// through ownership rather than restating `computeVisibility`'s own
+// argument-equality (Quentin's direction) --------------------------------
+
+const TERRACE_FLOOR = 0;
+const TERRACE_Y0 = 0;
+const TERRACE_HEIGHT = 4; // exclusive: rows TERRACE_Y0 .. TERRACE_Y0 + HEIGHT - 1
+const TERRACE_WIDTH = 3; // each building is this many columns wide
+
+/** `shopCount` adjacent building rects, each `TERRACE_WIDTH` columns wide,
+ * sharing a party wall column with its neighbour -- the same shape
+ * `fixture.ts`'s terrace declares, built from a parameter instead of
+ * hand-typed, so the property below holds for any terrace size, not one
+ * hand-walked example. Building ids start at 1 (`NO_OWNER` is 0). */
+function terraceAreas(shopCount: number): readonly OwnershipArea[] {
+  const areas: OwnershipArea[] = [];
+  for (let i = 0; i < shopCount; i++) {
+    areas.push({
+      ownerId: BigInt(i + 1),
+      floor: TERRACE_FLOOR,
+      rect: {
+        x0: i * TERRACE_WIDTH,
+        y0: TERRACE_Y0,
+        x1: (i + 1) * TERRACE_WIDTH,
+        y1: TERRACE_Y0 + TERRACE_HEIGHT,
+      },
+    });
+  }
+  return areas;
+}
+
+describe("isNearSideWall (FR120)", () => {
+  it("the terrace's own front (south) row is near-side for every building, including its corners", () => {
+    const shopCount = 4;
+    const ownership = new OwnershipIndex(terraceAreas(shopCount), []);
+    const frontY = TERRACE_Y0 + TERRACE_HEIGHT - 1;
+    for (let shop = 0; shop < shopCount; shop++) {
+      const buildingId = BigInt(shop + 1);
+      for (let dx = 0; dx < TERRACE_WIDTH; dx++) {
+        const x = shop * TERRACE_WIDTH + dx; // dx=0 and dx=WIDTH-1 are the two corners
+        expect(isNearSideWall(ownership, x, frontY, TERRACE_FLOOR, buildingId)).toBe(true);
+      }
+    }
+  });
+
+  it("a building's own side-wall column (its west or east edge, shared with the next building's rect) is never near-side", () => {
+    // Mirrors `fixture.ts`'s party wall: the terrace's rects are
+    // non-overlapping and contiguous, so the column at a middle
+    // building's own east edge belongs only to that building, not to its
+    // neighbour -- and every interior row of it has the same building
+    // immediately south, so it is a side wall, never near-side.
+    const shopCount = 3;
+    const middle = 1; // owner id 2, with a neighbour on both sides
+    const ownership = new OwnershipIndex(terraceAreas(shopCount), []);
+    const owner = BigInt(middle + 1);
+    const westEdgeX = middle * TERRACE_WIDTH;
+    const eastEdgeX = (middle + 1) * TERRACE_WIDTH - 1;
+    for (let y = TERRACE_Y0; y < TERRACE_Y0 + TERRACE_HEIGHT - 1; y++) {
+      expect(isNearSideWall(ownership, westEdgeX, y, TERRACE_FLOOR, owner)).toBe(false);
+      expect(isNearSideWall(ownership, eastEdgeX, y, TERRACE_FLOOR, owner)).toBe(false);
+    }
+  });
+
+  it("a cell outside every building is never near-side for NO_OWNER -- isRetracted's own NO_OWNER guard is what actually keeps it from retracting", () => {
+    const ownership = new OwnershipIndex(terraceAreas(2), []);
+    expect(isNearSideWall(ownership, -1, -1, TERRACE_FLOOR, NO_OWNER)).toBe(false);
+  });
+});
+
 // --- Property invariants (docs/trace-matrix.md) -----------------------------
 
 const buildingIdArb = fc.oneof(fc.constant(NO_OWNER), fc.integer({ min: 1, max: 5 }).map(BigInt));
-const floorArb = fc.integer({ min: -2, max: 2 });
 
 describe("property invariants (docs/trace-matrix.md)", () => {
   it("inv_retraction_keyed_on_ownership", () => {
-    // Two viewer positions with the same (floor, buildingId) give
-    // identical visibility for every drawable -- and a wall with a
-    // different owner is never retracted, however close the viewer's own
-    // building id is to it.
+    // Built against a real `OwnershipIndex` over a generated terrace
+    // (never a hand-typed pair of viewer objects): any two cells inside
+    // the same building's own area, on the same floor, resolve to the
+    // same `buildingId` and so give identical `computeVisibility` for
+    // every drawable -- position only ever enters through ownership.
     fc.assert(
       fc.property(
-        floorArb,
-        buildingIdArb,
+        fc.integer({ min: 1, max: 6 }),
+        fc.integer({ min: 0, max: 5 }),
         fc.record({
-          floor: floorArb,
+          x: fc.integer({ min: -2, max: 20 }),
+          y: fc.integer({ min: -2, max: 6 }),
+        }),
+        fc.record({
+          x: fc.integer({ min: -2, max: 20 }),
+          y: fc.integer({ min: -2, max: 6 }),
+        }),
+        fc.record({
           layerCode: fc.constantFrom(WALLS, FURNITURE, OBJECTS),
-          ownerBuildingId: buildingIdArb,
           isWindow: fc.boolean(),
           isNearSide: fc.boolean(),
         }),
-        (viewerFloor, viewerBuilding, d) => {
-          const v1 = { floor: viewerFloor, buildingId: viewerBuilding };
-          const v2 = { floor: viewerFloor, buildingId: viewerBuilding };
-          expect(computeVisibility(v1, d)).toBe(computeVisibility(v2, d));
+        (shopCount, drawableFloor, posA, posB, dShape) => {
+          const ownership = new OwnershipIndex(terraceAreas(shopCount), []);
+          const ownerA = ownership.ownershipAt(posA.x, posA.y, TERRACE_FLOOR).buildingId;
+          const ownerB = ownership.ownershipAt(posB.x, posB.y, TERRACE_FLOOR).buildingId;
+          fc.pre(ownerA !== NO_OWNER && ownerA === ownerB);
+
+          const vA: VisibilityViewer = { floor: TERRACE_FLOOR, buildingId: ownerA };
+          const vB: VisibilityViewer = { floor: TERRACE_FLOOR, buildingId: ownerB };
+          const d = drawable({ floor: drawableFloor, ...dShape, ownerBuildingId: ownerA });
+          expect(computeVisibility(vA, d)).toBe(computeVisibility(vB, d));
         },
       ),
     );
+
+    // A cell one step across a shared terrace wall changes retraction for
+    // exactly those two buildings' own near-side walls: standing just
+    // inside building `i` retracts only building `i`'s front wall, never
+    // building `i + 1`'s, and crossing the party wall flips which one.
     fc.assert(
       fc.property(
-        fc.integer({ min: 1, max: 5 }).map(BigInt),
-        fc.integer({ min: 1, max: 5 }).map(BigInt),
-        floorArb,
-        (viewerBuilding, wallOwner, floor) => {
-          fc.pre(viewerBuilding !== wallOwner);
-          const v = { floor, buildingId: viewerBuilding };
-          const d = drawable({
-            floor,
+        fc.integer({ min: 2, max: 6 }),
+        fc.integer({ min: 0, max: 4 }),
+        (shopCount, i) => {
+          fc.pre(i < shopCount - 1);
+          const ownership = new OwnershipIndex(terraceAreas(shopCount), []);
+          const frontY = TERRACE_Y0 + TERRACE_HEIGHT - 1;
+          const leftOwner = BigInt(i + 1);
+          const rightOwner = BigInt(i + 2);
+          const leftWall = drawable({
+            floor: TERRACE_FLOOR,
             layerCode: WALLS,
             isNearSide: true,
-            ownerBuildingId: wallOwner,
+            ownerBuildingId: leftOwner,
           });
-          expect(isRetracted(v, d)).toBe(false);
+          const rightWall = drawable({
+            floor: TERRACE_FLOOR,
+            layerCode: WALLS,
+            isNearSide: true,
+            ownerBuildingId: rightOwner,
+          });
+
+          const viewerInLeft: VisibilityViewer = {
+            floor: TERRACE_FLOOR,
+            buildingId: ownership.ownershipAt(i * TERRACE_WIDTH, frontY, TERRACE_FLOOR).buildingId,
+          };
+          const viewerInRight: VisibilityViewer = {
+            floor: TERRACE_FLOOR,
+            buildingId: ownership.ownershipAt((i + 1) * TERRACE_WIDTH, frontY, TERRACE_FLOOR)
+              .buildingId,
+          };
+
+          expect(isRetracted(viewerInLeft, leftWall)).toBe(true);
+          expect(isRetracted(viewerInLeft, rightWall)).toBe(false);
+          expect(isRetracted(viewerInRight, leftWall)).toBe(false);
+          expect(isRetracted(viewerInRight, rightWall)).toBe(true);
         },
       ),
     );
   });
 
   it("inv_floor_culling_exclusive", () => {
-    // Player floor >= 0 means no floor -1-or-below drawable is ever
-    // visible; player floor < 0 means no floor >= 0 drawable is ever
-    // visible.
+    // Asserted on `computeVisibility` itself, with an arbitrary drawable,
+    // not only on `isFloorCulled` -- so a future rule inserted ahead of
+    // floor culling in the precedence chain can't quietly un-hide a
+    // subway drawable from a street-or-above viewer, or vice versa.
     fc.assert(
       fc.property(
         fc.integer({ min: 0, max: 3 }),
         fc.integer({ min: -3, max: -1 }),
-        (viewerFloor, drawableFloor) => {
-          expect(isFloorCulled(viewerFloor, drawableFloor)).toBe(true);
+        fc.record({
+          layerCode: fc.constantFrom(WALLS, FURNITURE, OBJECTS),
+          ownerBuildingId: buildingIdArb,
+          isWindow: fc.boolean(),
+          isNearSide: fc.boolean(),
+        }),
+        (viewerFloor, drawableFloor, dShape) => {
+          const v: VisibilityViewer = { floor: viewerFloor, buildingId: dShape.ownerBuildingId };
+          const d = drawable({ floor: drawableFloor, ...dShape });
+          expect(computeVisibility(v, d)).toBe("hidden");
         },
       ),
     );
@@ -261,8 +379,16 @@ describe("property invariants (docs/trace-matrix.md)", () => {
       fc.property(
         fc.integer({ min: -3, max: -1 }),
         fc.integer({ min: 0, max: 3 }),
-        (viewerFloor, drawableFloor) => {
-          expect(isFloorCulled(viewerFloor, drawableFloor)).toBe(true);
+        fc.record({
+          layerCode: fc.constantFrom(WALLS, FURNITURE, OBJECTS),
+          ownerBuildingId: buildingIdArb,
+          isWindow: fc.boolean(),
+          isNearSide: fc.boolean(),
+        }),
+        (viewerFloor, drawableFloor, dShape) => {
+          const v: VisibilityViewer = { floor: viewerFloor, buildingId: dShape.ownerBuildingId };
+          const d = drawable({ floor: drawableFloor, ...dShape });
+          expect(computeVisibility(v, d)).toBe("hidden");
         },
       ),
     );

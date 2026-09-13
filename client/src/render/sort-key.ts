@@ -71,20 +71,36 @@ export function sortDrawablesInPlace(pool: Drawable[]): void {
 /**
  * Overwrites `target`'s `x`/`y` in place -- both already in FR123 sort
  * units, the caller's job to produce (`sort-units.ts`'s `toSortUnits`),
- * never this function's. This is the one, documented place `Drawable`'s
- * own `readonly` is deliberately defeated, so that a render path
- * updating a moving character's position every frame it changes does not
- * allocate a whole new `Drawable` to do it (Quentin's direction) via an
- * ad-hoc cast at the call site (Tim's direction: the module that owns
+ * never this function's. This is one of two documented places
+ * `Drawable`'s own `readonly` is deliberately defeated, so that a render
+ * path updating a moving character's position every frame it changes does
+ * not allocate a whole new `Drawable` to do it (Quentin's direction) via
+ * an ad-hoc cast at the call site (Tim's direction: the module that owns
  * `Drawable`'s shape is what should own this capability, not a cast
- * sneaking past it in demo code). Every other field is immutable by
- * construction -- there is no `setRank`/`setStableId`/`setFloor`,
- * because none of those should ever change after a `Drawable` is built.
+ * sneaking past it in demo code). `rank`/`stableId` are still immutable
+ * by construction -- there is no `setRank`/`setStableId`, because neither
+ * should ever change after a `Drawable` is built.
  */
 export function setDrawablePosition(target: Drawable, x: number, y: number): void {
   const mutable = target as { x: number; y: number };
   mutable.x = x;
   mutable.y = y;
+}
+
+/**
+ * Overwrites `target`'s `floor` in place -- the other documented place
+ * `Drawable`'s own `readonly` is deliberately defeated (story 1.7): a
+ * floor transition changes a character's own floor exactly the way
+ * walking changes its `x`/`y`, and `render/visibility.ts`'s
+ * `computeVisibility` reads a drawable's `floor` on every call, so a
+ * player drawable left on its stale, pre-transition floor would read as
+ * floor-culled from its own new position the instant it landed. A floor
+ * transition is a rare event (never every frame, unlike
+ * [`setDrawablePosition`]), so this never runs on the hot per-frame path.
+ */
+export function setDrawableFloor(target: Drawable, floor: number): void {
+  const mutable = target as { floor: number };
+  mutable.floor = floor;
 }
 
 /** [`sortDrawablesInPlace`] generalised to any item that carries a

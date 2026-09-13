@@ -3,10 +3,14 @@
 // `(floor, buildingId)` actually changed -- proven with fake sprite-like
 // objects whose setters are counted, never a real Pixi `Sprite`.
 import fc from "fast-check";
+import { Container, Sprite, Texture } from "pixi.js";
 import { describe, expect, it } from "vitest";
 import { layerCodeByName } from "../../../src/render/layer-table";
+import { applyDepthOrder, type OrderedMember } from "../../../src/render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../../../src/render/pixi-visibility";
-import { NO_OWNER } from "../../../src/render/visibility";
+import type { Drawable } from "../../../src/render/sort-key";
+import type { VisibilityDrawable } from "../../../src/render/visibility";
+import { NO_OWNER } from "../../../src/world/ownership";
 
 const FURNITURE = layerCodeByName("furniture");
 
@@ -112,16 +116,19 @@ describe("VisibilityApplier", () => {
   });
 
   it("inv_visibility_never_reorders_pool", () => {
-    // Visibility is applied after the sort and never adds or removes pool
-    // members: hidden sprites get `visible = false`, but the ordered
-    // `stableId` list is exactly the same whether or not visibility has
-    // been applied -- this is what keeps story 1.6's goldens and the
-    // permutation invariant valid once retraction/culling exist.
+    // The real sequence `scene.ts` runs every frame: order, apply
+    // visibility, order again -- against a real `Container` and the real
+    // `applyDepthOrder` (not a bare array `VisibilityApplier` never
+    // touches, which cannot fail this invariant by construction). Hidden
+    // members get `visible = false` but stay in the container, at their
+    // sorted position, exactly like every other member.
     fc.assert(
       fc.property(
+        fc.uniqueArray(fc.integer({ min: 1, max: 50 }), { minLength: 1, maxLength: 20 }),
         fc.array(
           fc.record({
-            stableId: fc.integer({ min: 1, max: 50 }).map(BigInt),
+            y: fc.integer({ min: -20, max: 20 }),
+            rank: fc.integer({ min: 0, max: 5 }),
             floor: fc.integer({ min: -2, max: 2 }),
             layerCode: fc.constantFrom(WALLS, FURNITURE),
             ownerBuildingId: fc.oneof(
@@ -137,19 +144,42 @@ describe("VisibilityApplier", () => {
           floor: fc.integer({ min: -2, max: 2 }),
           buildingId: fc.oneof(fc.constant(NO_OWNER), fc.integer({ min: 1, max: 3 }).map(BigInt)),
         }),
-        (drawables, viewer) => {
-          const members = drawables.map((drawable) => ({
-            drawable,
-            view: { visible: true, alpha: 1 },
-          }));
-          const idsBefore = members.map((m) => m.drawable.stableId);
+        (ids, specs, viewer) => {
+          const n = Math.min(ids.length, specs.length);
+          const members: (OrderedMember & VisibilityMember<Drawable & VisibilityDrawable>)[] = [];
+          for (let i = 0; i < n; i++) {
+            const id = ids[i];
+            const spec = specs[i];
+            if (id === undefined || spec === undefined) throw new Error("unreachable");
+            const drawable: Drawable & VisibilityDrawable = {
+              x: 0,
+              y: spec.y,
+              rank: spec.rank,
+              stableId: BigInt(id),
+              floor: spec.floor,
+              layerCode: spec.layerCode,
+              ownerBuildingId: spec.ownerBuildingId,
+              isWindow: spec.isWindow,
+              isNearSide: spec.isNearSide,
+            };
+            members.push({ drawable, view: new Sprite(Texture.EMPTY) });
+          }
+
+          const container = new Container();
+          for (const m of members) container.addChild(m.view);
+          const order: bigint[] = [];
+          applyDepthOrder(container, members, order);
+          const childrenBefore = [...container.children];
+          const idsBefore = [...order];
 
           const applier = new VisibilityApplier();
           applier.applyForce(members, viewer, 0.5);
 
-          const idsAfter = members.map((m) => m.drawable.stableId);
-          expect(idsAfter).toEqual(idsBefore); // same order, same membership
-          expect(members).toHaveLength(drawables.length); // never added to or removed from
+          applyDepthOrder(container, members, order);
+
+          expect(order).toEqual(idsBefore); // same order
+          expect(container.children).toEqual(childrenBefore); // same membership, same sequence
+          expect(container.children).toHaveLength(members.length); // never added to or removed from
         },
       ),
     );

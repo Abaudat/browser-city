@@ -11,22 +11,20 @@
 // `-1` (FR122's "the subway is floor -1" is a fact about this world's
 // content, not a magic number this module hard-codes).
 
+import { NO_OWNER, type OwnershipIndex } from "../world/ownership";
 import { layerCodeByName } from "./layer-table";
 
 export type VisibilityState = "hidden" | "translucent" | "normal";
 
 /** The viewer's own enclosure identity: which building it is inside (or
- * [`NO_OWNER`] if none) and which floor it stands on -- resolved once, on
- * an enclosure or floor change, never every frame (Tim's direction). */
+ * `NO_OWNER` if none, imported from `world/ownership.ts` -- the one
+ * sentinel, never restated) and which floor it stands on -- resolved
+ * once, on an enclosure or floor change, never every frame (Tim's
+ * direction). */
 export interface VisibilityViewer {
   readonly floor: number;
   readonly buildingId: bigint;
 }
-
-/** The sentinel "no owner" id (mirrors `world/ownership.ts`'s `NO_OWNER`,
- * restated here rather than imported so this module stays free of any
- * dependency beyond `layer-table.ts`). */
-export const NO_OWNER = 0n;
 
 /** The minimal shape [`computeVisibility`] needs from a drawable --
  * structural, so a caller's own richer drawable type (`demo/drawables.ts`'s
@@ -57,6 +55,30 @@ const WALLS_LAYER_CODE = layerCodeByName("walls");
  * added later culls the same way with no change here. */
 export function isFloorCulled(viewerFloor: number, drawableFloor: number): boolean {
   return viewerFloor >= 0 ? drawableFloor < 0 : drawableFloor >= 0;
+}
+
+/** FR120 (Tim's direction): whether the wall cell at `(x, y, floor)`,
+ * owned by `buildingId`, is a near-side (front-facing) wall -- a pure
+ * predicate over ownership and cell coordinates alone, never sprite
+ * bounds or screen space, and never hand-authored per prop (a generated
+ * building can never carry a fixture-only flag). A wall cell is near-side
+ * exactly when the cell directly south of it, `(x, y + 1, floor)`, is
+ * *not* owned by the same building: a south-facing front run always has
+ * open street (or a different building) on its far side, while a side
+ * wall, a party wall shared with a neighbour, and a back wall all have
+ * the same building's own interior (or another wall cell of the same
+ * building) immediately south of them. This is what makes "only the
+ * front facade retracts" a fact about the building's own shape, not a
+ * rule someone has to remember to restate for every new one. */
+export function isNearSideWall(
+  ownership: OwnershipIndex,
+  x: number,
+  y: number,
+  floor: number,
+  buildingId: bigint,
+): boolean {
+  const south = ownership.ownershipAt(x, y + 1, floor).buildingId;
+  return south !== buildingId;
 }
 
 /** FR120: a near-side wall of the building the viewer occupies is

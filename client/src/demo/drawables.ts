@@ -6,11 +6,10 @@
 
 import { decomposeFootprint } from "../render/decompose";
 import { layerCodeByName } from "../render/layer-table";
-import { type Drawable, setDrawablePosition } from "../render/sort-key";
+import { type Drawable, setDrawableFloor, setDrawablePosition } from "../render/sort-key";
 import { toSortUnits } from "../render/sort-units";
-import type { VisibilityDrawable } from "../render/visibility";
-import { NO_OWNER } from "../render/visibility";
-import type { OwnershipIndex } from "../world/ownership";
+import { isNearSideWall, type VisibilityDrawable } from "../render/visibility";
+import { NO_OWNER, type OwnershipIndex } from "../world/ownership";
 import { DEMO_PROPS, type DemoLayer, PLAYER_STABLE_ID } from "./fixture";
 
 /** A `Drawable` plus what `scene.ts` needs to pick and slice a texture
@@ -55,7 +54,11 @@ const STUB_LAYER_CODE = layerCodeByName("furniture");
  * layer's rank -- never a literal here (see `render/layer-ranks.ts`).
  * `ownership` resolves each drawable's `ownerBuildingId` once, from the
  * ownership index, at build time -- never looked up while drawing
- * (Tim's direction). */
+ * (Tim's direction). Near-side-ness (FR120) is computed the same way, per
+ * cell, from `render/visibility.ts`'s `isNearSideWall` -- a pure function
+ * of ownership and cell coordinates, never a hand-authored fixture flag
+ * (Tim's direction: a generated building must retract correctly with no
+ * fixture-only tag to remember). */
 export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDrawable[] {
   const { rankOf, ownership, windowDefIds } = options;
   const drawables: PropDrawable[] = [];
@@ -72,6 +75,9 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
     });
     for (const cell of cells) {
       const ownerBuildingId = ownership.ownershipAt(cell.x, cell.y, prop.floor).buildingId;
+      const isNearSide =
+        layerCode === WALLS_LAYER_CODE &&
+        isNearSideWall(ownership, cell.x, cell.y, prop.floor, ownerBuildingId);
       drawables.push({
         x: toSortUnits(cell.x),
         y: toSortUnits(cell.y),
@@ -86,7 +92,7 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
         layerCode,
         ownerBuildingId,
         isWindow,
-        isNearSide: prop.nearSide === true,
+        isNearSide,
       });
 
       // The FR120 wall-stub companion (Artie's direction): only for a
@@ -95,7 +101,7 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
       // turn, subject to retraction) and drawn at a lower rank than
       // `walls` so the tall wall sprite fully covers it when the wall is
       // not retracted.
-      if (layerCode === WALLS_LAYER_CODE && prop.nearSide === true) {
+      if (isNearSide) {
         drawables.push({
           x: toSortUnits(cell.x),
           y: toSortUnits(cell.y),
@@ -151,15 +157,21 @@ export function buildPlayerDrawable(
   };
 }
 
-/** Mutates `player`'s position in place from a new continuous feet
- * position -- Quentin's direction: the render path must not allocate a
- * whole new `Drawable` object every frame the player moves, before the
- * re-sort gate is even consulted. Only `x`/`y` change here; `rank`,
- * `stableId` and the asset fields never do for the player. */
-export function updatePlayerDrawable(player: PropDrawable, feetX: number, feetY: number): void {
+/** Mutates `player`'s position (and, on a floor transition, its own
+ * `floor`) in place from a new continuous feet position -- Quentin's
+ * direction: the render path must not allocate a whole new `Drawable`
+ * object every frame the player moves, before the re-sort gate is even
+ * consulted. `floor` must be kept current too (story 1.7): a player
+ * drawable left on its pre-transition floor reads as floor-culled
+ * (FR122) from its own new position the instant it lands -- the player
+ * itself would be invisible in its own new enclosure. `rank`, `stableId`
+ * and the asset fields never change for the player. */
+export function updatePlayerDrawable(
+  player: PropDrawable,
+  feetX: number,
+  feetY: number,
+  floor: number,
+): void {
   setDrawablePosition(player, toSortUnits(feetX), toSortUnits(feetY));
+  setDrawableFloor(player, floor);
 }
-
-/** Sentinel re-exported for callers that need to compare against "no
- * building" without importing `render/visibility.ts` directly. */
-export { NO_OWNER };

@@ -26,13 +26,19 @@ describe("TransitionIndex", () => {
     expect(index.transitionAt(18, 0, -1)).toBeUndefined();
   });
 
-  it("enter() returns floor and position together, from one call, so a caller can apply both in a single assignment", () => {
-    const index = new TransitionIndex(specs);
-    const target = index.enter(18, 0, 0);
-    expect(target).toEqual({ x: 18, y: 0, floor: -1 });
-    // The same object identity work either way; the point is there is no
-    // intermediate state a caller could observe between reading the new
-    // floor and reading the new position -- both come from this one call.
-    expect(index.enter(0, 0, 0)).toBeUndefined();
+  it("throws on two specs sharing the same anchor cell, rather than silently keeping only the last", () => {
+    const duplicated: TransitionSpec[] = [
+      { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
+      { x: 5, y: 0, floor: 0, targetX: 9, targetY: 9, targetFloor: 1 },
+    ];
+    expect(() => new TransitionIndex(duplicated)).toThrow(/duplicate transition anchor/);
+  });
+
+  it("the same anchor cell on two different floors is not a duplicate", () => {
+    const specs2: TransitionSpec[] = [
+      { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
+      { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
+    ];
+    expect(() => new TransitionIndex(specs2)).not.toThrow();
   });
 });

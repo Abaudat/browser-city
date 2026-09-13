@@ -7,16 +7,27 @@
 # `client-check` alongside the rest of the client-only guards.
 set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-SRC_DIR="$REPO_ROOT/client/src"
+# An optional first argument overrides the scanned directory --
+# `scripts/ci/tests/test-check-no-masks.sh`'s own use, so it can plant
+# each banned construct in a throwaway temp file rather than the real
+# `client/src/`. `client-check` itself always calls this with no argument.
+SRC_DIR="${1:-"$REPO_ROOT/client/src"}"
 
 [ -d "$SRC_DIR" ] || { echo "check-no-masks: $SRC_DIR not found" >&2; exit 1; }
 
-# Word-boundary patterns: `.mask` (property access/assignment), `setMask(`,
-# `new Graphics` used as a mask, `filters` (the Pixi filter list) and
-# `RenderTexture`. `src/net/bindings` is generated and never touches
-# rendering, but is excluded anyway for the same reason other checks
-# exclude it.
-PATTERN='\.mask\b|\bsetMask\(|\bfilters\b|\bRenderTexture\b'
+# Word-boundary, case-sensitive patterns on identifiers only (Tim's
+# direction, story 1.7 cycle 2 -- the original pattern missed a `{ mask: g
+# }` constructor option, any `*Filter` class, `filterArea` and `stencil`):
+# `mask =`/`mask:` and `filters =`/`filters:` (an assignment or
+# object-literal option -- deliberately not `mask\b`/`filters?\b` alone,
+# which would also flag this script's own legitimate `view.mask === null`
+# read proving the opposite (that nothing sets one) and every ordinary
+# `Array.prototype.filter(...)` call in the codebase), `setMask(`, any
+# Pixi filter class (`AlphaFilter`, `BlurFilter`, ...), `filterArea`,
+# `RenderTexture` and `stencil`. `src/net/bindings` is generated and never
+# touches rendering, but is excluded anyway for the same reason other
+# checks exclude it.
+PATTERN='\bmask\s*=[^=]|\bmask\s*:|\bfilters\s*=[^=]|\bfilters\s*:|\bsetMask\(|\w*Filter\b|\bfilterArea\b|\bRenderTexture\b|\bstencil\b'
 
 MATCHES="$(grep -rnE "$PATTERN" "$SRC_DIR" --include='*.ts' --exclude-dir=bindings 2>/dev/null || true)"
 
