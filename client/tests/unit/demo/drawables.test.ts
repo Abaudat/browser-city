@@ -15,14 +15,14 @@ import {
   SUBWAY_FLOOR,
 } from "../../../src/demo/fixture";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
-import { LAYER_TABLE } from "../../../src/render/layer-table";
+import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
 import { screenPositionPx } from "../../../src/render/screen-position";
 import { compareDrawables, sortDrawablesInPlace } from "../../../src/render/sort-key";
 import { toSortUnits } from "../../../src/render/sort-units";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import type { Vec2 } from "../../../src/world/movement";
 import { step } from "../../../src/world/movement";
-import { cellOf } from "../../../src/world/ownership";
+import { cellOf, NO_OWNER } from "../../../src/world/ownership";
 import {
   demoCollisionGrid,
   demoMovementConfig,
@@ -182,6 +182,13 @@ describe("the demo scene's committed visibility (story 1.7 cycle 2, Quentin's di
   // `(floor, buildingId)` from a cell exactly the way `scene.ts` does
   // (`ownershipAt` on `cellOf(x)`/`cellOf(y)`) -- never a slow e2e round
   // trip as the only thing proving what a given position should show.
+  // The two floors this demo's ground-tile passes ever occupy (`fixture.ts`'s
+  // `STREET_FLOOR`/`SUBWAY_FLOOR`) -- a ground group is never a window,
+  // never near-side and never owned by a building (`NO_OWNER`), so floor
+  // culling is the only rule that can ever apply to it, exactly mirroring
+  // `scene.ts`'s own synthetic ground drawable.
+  const GROUND_FLOORS = [0, -1] as const;
+
   function visibilityAt(x: number, y: number, floor: number): Record<string, string> {
     const ownership = demoOwnershipIndex();
     const props = buildDemoProps();
@@ -193,6 +200,16 @@ describe("the demo scene's committed visibility (story 1.7 cycle 2, Quentin's di
     const result: Record<string, string> = {};
     for (const drawable of [...props, player]) {
       result[drawable.stableId.toString()] = computeVisibility(viewer, drawable);
+    }
+    for (const groundFloor of GROUND_FLOORS) {
+      result[`ground:${groundFloor}`] = computeVisibility(viewer, {
+        floor: groundFloor,
+        layerCode: layerCodeByName("objects"),
+        ownerBuildingId: NO_OWNER,
+        isWindow: false,
+        isNearSide: false,
+        isStub: false,
+      });
     }
     return result;
   }

@@ -20,13 +20,17 @@
 // the platform's own north wall -- FR124 means floor never breaks a tie,
 // so at x=13 (where shop B's own east end and the platform's own
 // north-west corner share the same screen column) the two interleave,
-// ordered only by stableId (30 before 60). 500000+ ids are the FR120
-// wall-stub companions (`demo/drawables.ts`'s `STUB_ID_OFFSET`) -- always
-// present, drawn behind their own wall at the same cell, including the
-// platform's own front wall (61 -> 500061), which retracts the same
-// ownership-keyed way a shop's front wall does. There is no upper storey
-// in this fixture (removed, story 1.7 cycle 2): `isStoreyAboveCulled` is
-// proven directly against synthetic drawables in `visibility.test.ts`.
+// ordered only by stableId (30 before 60). 40/41 are the two front-wall
+// corner piers (story 1.7 cycle 2, Artie's direction): shop A's own,
+// beside the party wall, and shop B's own, at its east wall -- each
+// separates its shopfront's window from the corner, so the two never run
+// straight into each other's glass. 500000+ ids are the FR120 wall-stub
+// companions (`demo/drawables.ts`'s `STUB_ID_OFFSET`) -- always present,
+// drawn behind their own wall at the same cell, including the platform's
+// own front wall (61 -> 500061), which retracts the same ownership-keyed
+// way a shop's front wall does. There is no upper storey in this fixture
+// (removed, story 1.7 cycle 2): `isStoreyAboveCulled` is proven directly
+// against synthetic drawables in `visibility.test.ts`.
 export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
   "1",
   "1",
@@ -80,14 +84,14 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
   "62",
   "63", // same wall set, y=5 -- the near end, in front of the player
   "500002", // shop A front wall (west segment) stub, x=3
-  "500002", // shop A front wall (west segment) stub, x=4
-  "500006", // shop A's window stub, x=6,7,8 (WINDOW_WIDTH = 3)
+  "500006", // shop A's window stub, x=5,6,7 (WINDOW_WIDTH = 3)
   "500006",
   "500006",
-  "500031", // shop B front wall (west segment) stub
-  "500032", // shop B's window stub, x=11,12,13
+  "500040", // shop A's party-wall pier stub
+  "500032", // shop B's window stub, x=10,11,12
   "500032",
   "500032",
+  "500041", // shop B's east-wall pier stub
   "500061", // the platform's own front wall stub, x=13..20 (near-side, ownership-keyed)
   "500061",
   "500061",
@@ -96,15 +100,15 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
   "500061",
   "500061",
   "500061",
-  "2",
-  "2", // shop A front wall, west segment
+  "2", // shop A front wall, west segment (the SW corner)
   "6", // shop A's window
   "6",
   "6",
-  "31", // shop B front wall, west segment
+  "40", // shop A's party-wall pier
   "32", // shop B's window
   "32",
   "32",
+  "41", // shop B's east-wall pier
   "61",
   "61",
   "61",
@@ -181,14 +185,14 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "62",
   "63", // west/party/shop-B-east/platform walls, y=5 -- now behind the player too
   "500002",
-  "500002",
   "500006",
   "500006",
   "500006",
-  "500031",
+  "500040",
   "500032",
   "500032",
   "500032",
+  "500041",
   "500061",
   "500061",
   "500061",
@@ -197,15 +201,15 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "500061",
   "500061",
   "500061",
-  "2",
   "2", // south wall, west segment -- now behind the player
   "6",
   "6",
   "6",
-  "31",
+  "40",
   "32",
   "32",
   "32",
+  "41",
   "61",
   "61",
   "61",
@@ -230,13 +234,20 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
 // and asserts them against `window.__bc.visibility`, which is built from
 // each pool member's own real, just-written `sprite.visible`/
 // `sprite.alpha` -- so the pure prediction and the real, mounted adapter
-// can never silently disagree about what any of these three scenes show. ---
+// can never silently disagree about what any of these three scenes show.
+//
+// The two front-wall corner-pier stubs (500040, 500041) are the cycle-2
+// regression guard for the stub-shows-through-the-glass bug (Artie's
+// finding): a stub is `normal` exactly when its own parent pier is
+// retracted, `hidden` otherwise -- the inverse of every other drawable's
+// own rule, never the same one. ---
 
 /** The player at `PLAYER_START`, at rest inside shop A: shop A's own
- * near-side wall/window (2, 6) are retracted (hidden); every subway
- * drawable (floor -1: 51, 60-64, 500061) is floor-culled; shop B's window
- * (32) is translucent, not retracted, since the viewer is not inside shop
- * B. */
+ * near-side wall/window/pier (2, 6, 40) are retracted (hidden), so their
+ * own stubs (500002, 500006, 500040) show; every subway drawable (floor
+ * -1: 51, 60-64, 500061) is floor-culled; shop B's window (32) and pier
+ * (41) are translucent/normal, not retracted, since the viewer is not
+ * inside shop B -- so shop B's own stubs (500032, 500041) stay hidden. */
 export const DEMO_VISIBILITY_AT_REST_IN_SHOP_A: Readonly<Record<string, string>> = {
   "1": "normal",
   "2": "hidden", // shop A's own near-side wall -- retracted
@@ -250,11 +261,12 @@ export const DEMO_VISIBILITY_AT_REST_IN_SHOP_A: Readonly<Record<string, string>>
   "11": "normal",
   "14": "normal",
   "30": "normal",
-  "31": "normal",
   "32": "translucent", // shop B's window -- the viewer is not inside shop B
   "34": "normal",
   "35": "normal",
   "36": "normal",
+  "40": "hidden", // shop A's own party-wall pier -- retracted
+  "41": "normal", // shop B's own east-wall pier -- not retracted
   "50": "normal",
   "51": "hidden", // floor -1 -- culled
   "60": "hidden",
@@ -263,16 +275,20 @@ export const DEMO_VISIBILITY_AT_REST_IN_SHOP_A: Readonly<Record<string, string>>
   "63": "hidden",
   "64": "hidden",
   "1000": "normal", // the player itself
-  "500002": "normal", // the FR120 stub, left on screen while its own wall is retracted
-  "500006": "normal",
-  "500031": "normal",
-  "500032": "normal",
+  "500002": "normal", // parent (2) retracted -- the stub shows
+  "500006": "normal", // parent (6) retracted -- the stub shows
+  "500032": "hidden", // parent (32) not retracted -- the stub stays hidden
+  "500040": "normal", // parent (40) retracted -- the stub shows
+  "500041": "hidden", // parent (41) not retracted -- the stub stays hidden
   "500061": "hidden", // floor -1 -- culled, same as its own wall
+  "ground:0": "normal", // the street's own ground pass
+  "ground:-1": "hidden", // the subway's own ground pass -- floor-culled
 };
 
 /** The player at the lamppost rest point outside (`lamppostRestY()`), on
  * the pavement, `NO_OWNER`: nothing retracts (both shopfronts show a full
- * wall/translucent window); the subway stays floor-culled. */
+ * wall/translucent window/pier), so every stub stays hidden behind its
+ * own parent; the subway stays floor-culled. */
 export const DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE: Readonly<Record<string, string>> = {
   "1": "normal",
   "2": "normal",
@@ -286,11 +302,12 @@ export const DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE: Readonly<Record<string, string
   "11": "normal",
   "14": "normal",
   "30": "normal",
-  "31": "normal",
   "32": "translucent",
   "34": "normal",
   "35": "normal",
   "36": "normal",
+  "40": "normal",
+  "41": "normal",
   "50": "normal",
   "51": "hidden",
   "60": "hidden",
@@ -299,11 +316,14 @@ export const DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE: Readonly<Record<string, string
   "63": "hidden",
   "64": "hidden",
   "1000": "normal",
-  "500002": "normal",
-  "500006": "normal",
-  "500031": "normal",
-  "500032": "normal",
+  "500002": "hidden",
+  "500006": "hidden",
+  "500032": "hidden",
+  "500040": "hidden",
+  "500041": "hidden",
   "500061": "hidden",
+  "ground:0": "normal",
+  "ground:-1": "hidden",
 };
 
 /** The player just landed on the subway platform (`PLATFORM_LANDING_X +
@@ -327,11 +347,12 @@ export const DEMO_VISIBILITY_ON_SUBWAY_LANDING: Readonly<Record<string, string>>
   "11": "hidden",
   "14": "hidden",
   "30": "hidden",
-  "31": "hidden",
   "32": "hidden",
   "34": "hidden",
   "35": "hidden",
   "36": "hidden",
+  "40": "hidden",
+  "41": "hidden",
   "50": "hidden",
   "51": "normal", // the platform's own up-stairs decoration
   "60": "normal", // the platform's own back wall
@@ -342,7 +363,10 @@ export const DEMO_VISIBILITY_ON_SUBWAY_LANDING: Readonly<Record<string, string>>
   "1000": "normal", // the player itself -- never hidden by its own enclosure's front wall
   "500002": "hidden",
   "500006": "hidden",
-  "500031": "hidden",
   "500032": "hidden",
+  "500040": "hidden",
+  "500041": "hidden",
   "500061": "normal", // the platform's own front-wall stub, left on screen while 61 is retracted
+  "ground:0": "hidden", // the street's own ground pass -- floor-culled
+  "ground:-1": "normal", // the subway's own ground pass
 };

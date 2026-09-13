@@ -22,18 +22,29 @@ export interface PropDrawable extends Drawable, VisibilityDrawable {
   readonly sourceRow: number;
   readonly footprintWidth: number;
   readonly footprintHeight: number;
+  /** Which run a `wallTile`/`wallStub` drawable belongs to (Artie's
+   * cycle-2 direction) -- `scene.ts`'s own swatch picker reads this, never
+   * a decomposed cell's own footprint aspect ratio (which cannot tell a
+   * one-cell-wide front wall pier from a one-cell side wall). Copied
+   * straight from `DemoProp.wallOrientation`, defaulting to `"horizontal"`
+   * for every prop that does not declare one -- meaningless for anything
+   * that is not a wall, but always present so no caller needs an
+   * `undefined` branch. */
+  readonly wallOrientation: "horizontal" | "vertical";
 }
 
 /** The FR120 wall-stub companion's own stable-id offset: large enough that
  * it can never collide with a real prop id, small enough to read easily
  * in a debugger. Never destroys/rebuilds a sprite (Tim's direction) --
  * this is a second, permanent pool member for every near-side wall
- * segment, always present, whose own visibility never depends on
- * retraction (see its `isNearSide: false` below): when the wall itself is
- * not retracted, it draws behind the (higher-rank) wall and is invisible
- * in practice; the moment the wall's rank-30 sprite goes `hidden`, the
- * stub is what is left on screen (Artie's "shrinks to a baseboard-height
- * stub, does not vanish"). */
+ * segment, always present, drawn at a lower rank than `walls` so the tall
+ * wall sprite fully covers it when the wall is not retracted. Its own
+ * visibility is `computeVisibility`'s `isStub` rule (story 1.7 cycle 2):
+ * the *inverse* of its parent's own retraction, driven from the same
+ * `isNearSide`/`ownerBuildingId` the parent carries -- never `isNearSide:
+ * false` (that would make it permanently visible, showing through a
+ * translucent window as a grey block over the furniture even while the
+ * real wall is drawn -- Artie's cycle-2 finding). */
 const STUB_ID_OFFSET = 500_000n;
 
 /** The def ids `defs/` marks as windows (FR121) -- resolved once by the
@@ -93,14 +104,17 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
         ownerBuildingId,
         isWindow,
         isNearSide,
+        isStub: false,
+        wallOrientation: prop.wallOrientation ?? "horizontal",
       });
 
       // The FR120 wall-stub companion (Artie's direction): only for a
       // near-side wall cell, always a separate, permanent pool member at
-      // the identical cell, never near-side itself (so it is never, in
-      // turn, subject to retraction) and drawn at a lower rank than
-      // `walls` so the tall wall sprite fully covers it when the wall is
-      // not retracted.
+      // the identical cell. Carries the same `isNearSide`/`ownerBuildingId`
+      // as its parent -- `isStub: true` is what tells `computeVisibility`
+      // to invert that into "hidden while the parent shows, normal while
+      // it's retracted" rather than applying the ordinary retraction rule
+      // a real wall follows.
       if (isNearSide) {
         drawables.push({
           x: toSortUnits(cell.x),
@@ -116,7 +130,9 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
           layerCode: STUB_LAYER_CODE,
           ownerBuildingId,
           isWindow: false,
-          isNearSide: false,
+          isNearSide: true,
+          isStub: true,
+          wallOrientation: prop.wallOrientation ?? "horizontal",
         });
       }
     }
@@ -154,6 +170,8 @@ export function buildPlayerDrawable(
     ownerBuildingId: NO_OWNER,
     isWindow: false,
     isNearSide: false,
+    isStub: false,
+    wallOrientation: "horizontal",
   };
 }
 

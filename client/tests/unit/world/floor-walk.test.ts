@@ -130,4 +130,55 @@ describe("stepAndTransition", () => {
       ),
     );
   });
+
+  it("the mutually-targeting pair never fires on two consecutive steps, for any sequence of direction changes (Quentin's cycle-2 direction: a stronger property than holding one direction the whole way)", () => {
+    // A player is free to walk back and forth across the anchor -- each
+    // genuine crossing legitimately fires a transition, so "at most one
+    // transition ever" does not hold here the way it does for a single
+    // held direction. What must never happen, whatever the direction
+    // sequence, is the exact bug shape this module exists to make
+    // impossible: landing on one transition's anchor and having the very
+    // next step immediately fire the other (a still-held or newly-issued
+    // key re-checked against a cell that is itself an anchor).
+    const mutual = new TransitionIndex([
+      { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
+      { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
+    ]);
+    const directions = [
+      { x: 1, y: 0 },
+      { x: -1, y: 0 },
+      { x: 0, y: 0 },
+    ] as const;
+
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            direction: fc.constantFrom(...directions),
+            deltaMs: fc.integer({ min: 1, max: BIG_DELTA_MS }),
+          }),
+          { minLength: 1, maxLength: 40 },
+        ),
+        (steps) => {
+          let state: FloorWalkState = { x: 4.5, y: 0.5, floor: 0, cellX: 4, cellY: 0 };
+          let previousTransitioned = false;
+          for (const { direction, deltaMs } of steps) {
+            const next = stepAndTransition(
+              state,
+              direction,
+              deltaMs,
+              OPEN_GRID,
+              FAST_CONFIG,
+              mutual,
+            );
+            if (next.transitioned) {
+              expect(previousTransitioned).toBe(false);
+            }
+            previousTransitioned = next.transitioned;
+            state = next;
+          }
+        },
+      ),
+    );
+  });
 });

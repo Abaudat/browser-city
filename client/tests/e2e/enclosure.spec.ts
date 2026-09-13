@@ -25,6 +25,7 @@ import { expect, type Page, test } from "@playwright/test";
 import {
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
+  PLAYER_START,
   STREET_EXIT_X,
   STREET_EXIT_Y,
 } from "../../src/demo/fixture";
@@ -106,6 +107,25 @@ test.describe("story 1.7: enclosure visibility", () => {
     const windowAlpha = await windowAlphaFraction(page);
     const alpha = await page.evaluate(() => window.__bc?.visibilityAlpha?.["32"]);
     expect(alpha).toBeCloseTo(windowAlpha, 5);
+
+    // FR122's flat-pass culling (Tim's cycle-2 direction): the street's
+    // own ground pass must be visible from the street, and the subway's
+    // own ground pass must not -- proven against the real, mounted
+    // ground-tile containers, not only the sorted pool.
+    const groundVisibility = await currentVisibility(page);
+    expect(groundVisibility["ground:0"]).toBe("normal");
+    expect(groundVisibility["ground:-1"]).toBe("hidden");
+
+    // The FR120 wall-stub companion's own inverse rule (Artie's cycle-2
+    // finding): while shop A's own near-side wall/window/pier (2, 6, 40)
+    // are retracted (drawn `hidden`), their stub companions must be the
+    // ones left on screen -- and shop B's own front, still fully drawn,
+    // must keep its stubs hidden behind it.
+    expect(groundVisibility["500002"]).toBe("normal"); // parent 2 retracted
+    expect(groundVisibility["500006"]).toBe("normal"); // parent 6 retracted
+    expect(groundVisibility["500040"]).toBe("normal"); // parent 40 retracted
+    expect(groundVisibility["500032"]).toBe("hidden"); // parent 32 (shop B) not retracted
+    expect(groundVisibility["500041"]).toBe("hidden"); // parent 41 (shop B) not retracted
   });
 
   test("walking out of shop A onto the pavement matches the committed outside golden", async ({
@@ -114,7 +134,7 @@ test.describe("story 1.7: enclosure visibility", () => {
     await page.goto("/");
     await waitForSceneReady(page);
 
-    await walkTo(page, "ArrowDown", { x: 5.5, y: lamppostRestY() });
+    await walkTo(page, "ArrowDown", { x: PLAYER_START.x, y: lamppostRestY() });
     // The visibility hook only fires when the player's own cell changes
     // (Tim's direction) -- wait for the real, event-driven update rather
     // than a fixed delay.
@@ -131,7 +151,7 @@ test.describe("story 1.7: enclosure visibility", () => {
     await page.goto("/");
     await waitForSceneReady(page);
 
-    await walkTo(page, "ArrowDown", { x: 5.5, y: lamppostRestY() });
+    await walkTo(page, "ArrowDown", { x: PLAYER_START.x, y: lamppostRestY() });
 
     // The stairwell shares the lamppost's own row (`STAIRS_Y`, `fixture.ts`'s
     // own doc comment) -- a pure east walk reaches its anchor cell with no
@@ -146,7 +166,12 @@ test.describe("story 1.7: enclosure visibility", () => {
       timeout: 15_000,
     });
 
-    expect(await currentVisibility(page)).toEqual(DEMO_VISIBILITY_ON_SUBWAY_LANDING);
+    const platformVisibility = await currentVisibility(page);
+    expect(platformVisibility).toEqual(DEMO_VISIBILITY_ON_SUBWAY_LANDING);
+    // FR122's flat-pass culling, the reverse of the street shot above:
+    // the subway's own ground pass is now visible, the street's is not.
+    expect(platformVisibility["ground:-1"]).toBe("normal");
+    expect(platformVisibility["ground:0"]).toBe("hidden");
 
     // Walking north from the landing reaches the up-stairs' own anchor,
     // one cell further in (`fixture.ts`'s `PLATFORM_UP_ANCHOR_X/Y`), and

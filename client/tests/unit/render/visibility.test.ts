@@ -28,6 +28,7 @@ function drawable(overrides: Partial<VisibilityDrawable> = {}): VisibilityDrawab
     ownerBuildingId: NO_OWNER,
     isWindow: false,
     isNearSide: false,
+    isStub: false,
     ...overrides,
   };
 }
@@ -168,6 +169,86 @@ describe("computeVisibility: the full matrix", () => {
       }
     }
   }
+});
+
+describe("a wall-stub companion's own visibility (isStub, story 1.7 cycle 2)", () => {
+  // Artie's cycle-2 finding: a stub given `isNearSide: false` (or any
+  // rule shared with an ordinary drawable) is permanently visible, and
+  // shows through a translucent window as a grey block over the
+  // furniture even while the real wall is drawn. A stub's own rule is the
+  // *inverse* of retraction: `normal` exactly when its parent wall would
+  // retract, `hidden` otherwise -- never `translucent`, whatever its own
+  // `isWindow` says (a stub is never itself a window).
+  it("normal when near-side and owned by the viewer's own building -- the parent would be retracted", () => {
+    const v = viewer({ buildingId: 1n });
+    const stub = drawable({ isStub: true, isNearSide: true, ownerBuildingId: 1n });
+    expect(computeVisibility(v, stub)).toBe("normal");
+  });
+
+  it("hidden when not near-side -- the parent would never retract", () => {
+    const v = viewer({ buildingId: 1n });
+    const stub = drawable({ isStub: true, isNearSide: false, ownerBuildingId: 1n });
+    expect(computeVisibility(v, stub)).toBe("hidden");
+  });
+
+  it("hidden when owned by a different building -- the parent shows, from this viewer", () => {
+    const v = viewer({ buildingId: 1n });
+    const stub = drawable({ isStub: true, isNearSide: true, ownerBuildingId: 2n });
+    expect(computeVisibility(v, stub)).toBe("hidden");
+  });
+
+  it("hidden when unowned (NO_OWNER) -- the parent never retracts for anyone", () => {
+    const v = viewer({ buildingId: NO_OWNER });
+    const stub = drawable({ isStub: true, isNearSide: true, ownerBuildingId: NO_OWNER });
+    expect(computeVisibility(v, stub)).toBe("hidden");
+  });
+
+  it("never translucent, even when isWindow is true and the parent is retracted", () => {
+    const v = viewer({ buildingId: 1n });
+    const stub = drawable({
+      isStub: true,
+      isNearSide: true,
+      ownerBuildingId: 1n,
+      isWindow: true,
+    });
+    expect(computeVisibility(v, stub)).toBe("normal");
+  });
+
+  it("floor culling still wins over a stub's own inverse rule", () => {
+    const v = viewer({ floor: 0, buildingId: 1n });
+    const stub = drawable({ floor: -1, isStub: true, isNearSide: true, ownerBuildingId: 1n });
+    expect(computeVisibility(v, stub)).toBe("hidden");
+  });
+
+  it("storey-above culling still wins over a stub's own inverse rule", () => {
+    const v = viewer({ floor: 0, buildingId: 1n });
+    const stub = drawable({ floor: 1, isStub: true, isNearSide: true, ownerBuildingId: 1n });
+    expect(computeVisibility(v, stub)).toBe("hidden");
+  });
+
+  it("property: a stub is normal iff near-side and owned by the viewer's own building, for any viewer/ownership combination on the same floor", () => {
+    fc.assert(
+      fc.property(
+        buildingIdArb,
+        buildingIdArb,
+        fc.boolean(),
+        (viewerBuilding, stubOwner, isNearSide) => {
+          const v = viewer({ floor: 0, buildingId: viewerBuilding });
+          const stub = drawable({
+            floor: 0,
+            isStub: true,
+            isNearSide,
+            ownerBuildingId: stubOwner,
+          });
+          const expected =
+            isNearSide && stubOwner !== NO_OWNER && stubOwner === viewerBuilding
+              ? "normal"
+              : "hidden";
+          expect(computeVisibility(v, stub)).toBe(expected);
+        },
+      ),
+    );
+  });
 });
 
 describe("windows (FR121)", () => {

@@ -242,7 +242,10 @@ export interface MountDemoSceneOptions {
    * wrote the right thing, never recompute the pure function a second
    * time). Covers every real pool member, including the FR120 wall-stub
    * companions -- their own ids (`STUB_ID_OFFSET` and above) are exactly
-   * as real a fact about what the adapter wrote as any other member's. */
+   * as real a fact about what the adapter wrote as any other member's --
+   * plus every ground-tile-pass group, keyed `ground:<floor>` (Tim's
+   * direction, cycle 2: FR122's flat-pass culling needs a guard that can
+   * see it too, not only the sorted pool). */
   readonly onVisibilityChange?: (
     state: Readonly<Record<string, string>>,
     alpha: Readonly<Record<string, number>>,
@@ -411,12 +414,25 @@ interface PoolEntry extends OrderedMember<PropDrawable>, VisibilityMember<PropDr
   readonly view: Sprite;
 }
 
-const wallAssetOf = (assetKey: string, footprintWidth: number, footprintHeight: number): string => {
+/** Picks a wall drawable's real texture from its own declared
+ * `wallOrientation` (`demo/fixture.ts`'s `DemoProp.wallOrientation`,
+ * carried onto `PropDrawable`) -- never from a decomposed cell's own
+ * footprint aspect ratio (Artie's cycle-2 finding: a one-cell-wide
+ * *front* wall pier and a one-cell side wall are both `1x1` after
+ * decomposition, so the aspect ratio alone cannot tell them apart; a
+ * front wall must always be the tall swatch, whatever width it happens to
+ * be cut into). Exported for its own unit test. */
+export const wallAssetOf = (
+  assetKey: string,
+  wallOrientation: "horizontal" | "vertical",
+): string => {
   if (assetKey === "wallTile") {
-    return footprintWidth > footprintHeight ? "wallTileH" : "wallTileV";
+    return wallOrientation === "vertical" ? "wallTileV" : "wallTileH";
   }
   // The FR120 stub (Artie's direction): the same flush, short swatch a
-  // side wall already uses -- no new art.
+  // side wall already uses -- no new art, and deliberately the same
+  // swatch regardless of its own parent's orientation (a stub is meant to
+  // read as a short baseboard remnant, never a second tall wall).
   if (assetKey === "wallStub") return "wallTileV";
   // The platform's own tiled wall is already a flush single-tile subway
   // swatch (never a 3-tall interior module), so every orientation just
@@ -542,7 +558,7 @@ export async function mountDemoScene(
     windowDefIds,
   }).map((d) => ({
     ...d,
-    assetKey: wallAssetOf(d.assetKey, d.footprintWidth, d.footprintHeight),
+    assetKey: wallAssetOf(d.assetKey, d.wallOrientation),
   }));
 
   const entries: PoolEntry[] = propDrawables.map((drawable) => {
@@ -671,6 +687,7 @@ export async function mountDemoScene(
         ownerBuildingId: NO_OWNER,
         isWindow: false,
         isNearSide: false,
+        isStub: false,
       },
       view: container,
     }),
@@ -701,8 +718,9 @@ export async function mountDemoScene(
     // `view.visible`/`view.alpha` (Quentin/Tim's direction) -- never a
     // second, recomputed `VisibilityState` this could silently disagree
     // with what `VisibilityApplier` actually wrote. Ground-tile-pass
-    // groups carry no `stableId` and are out of scope for this map (the
-    // same scope `onVisibilityChange`'s own doc comment promises).
+    // groups carry no `stableId` (Tim's direction, cycle 2: FR122's
+    // flat-pass culling fix needs a guard that can see them too), so each
+    // one is reported under its own `ground:<floor>` key instead.
     if (applied && onVisibilityChange) {
       const reportedState: Record<string, string> = {};
       const reportedAlpha: Record<string, number> = {};
@@ -713,6 +731,14 @@ export async function mountDemoScene(
           alpha: entry.view.alpha,
         });
         reportedAlpha[id] = entry.view.alpha;
+      }
+      for (const [floor, container] of groundContainersByFloor) {
+        const id = `ground:${floor}`;
+        reportedState[id] = stateFromWrite({
+          visible: container.visible,
+          alpha: container.alpha,
+        });
+        reportedAlpha[id] = container.alpha;
       }
       onVisibilityChange(reportedState, reportedAlpha);
     }

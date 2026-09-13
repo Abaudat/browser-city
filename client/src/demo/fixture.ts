@@ -68,6 +68,17 @@ export interface DemoProp {
   readonly footprint?: DemoFootprint;
   readonly defId?: number;
   readonly solid?: true;
+  /** For a `wallTile`/`wallStub` prop only: which run this wall segment
+   * belongs to -- a north/south (front/back) run is `"horizontal"`, an
+   * east/west (side/party) run is `"vertical"`. A real generator always
+   * knows this when it places a wall segment (the same fact
+   * `PlacedObject.orientation` would carry); it is never re-derived from
+   * a decomposed cell's own footprint aspect ratio, which cannot tell a
+   * one-cell-wide *front* wall pier from a one-cell side wall (Artie's
+   * cycle-2 finding: that is exactly the bug that dropped shop B's front
+   * wall to a flush side-wall tile). Unused, and meaningless, for every
+   * other layer. */
+  readonly wallOrientation?: "horizontal" | "vertical";
 }
 
 /** `defs/objects/city-props.toml`'s own `lamppost` id -- the demo places
@@ -88,22 +99,6 @@ export function demoDefId(id: bigint): number {
   return DEMO_DEF_ID_BASE + Number(id);
 }
 
-/** The player's starting position -- continuous world coordinates
- * (Artie's direction: a character's sort anchor is its continuous feet
- * position, never a snapped cell), moved by keyboard input in
- * `scene.ts`. Inside shop A, one tile off the west wall so walking
- * north/south naturally crosses several of that wall's decomposed
- * cells -- the near/far occlusion worked example. `x` is `DOOR_X_A + 0.5`
- * (the door column's own centre): the player has a real body width, so it
- * must be centred in the one-cell-wide door gap. */
-export const PLAYER_START = { x: 5.5, y: 4, floor: 0 } as const;
-export const PLAYER_STABLE_ID = 1000n;
-
-/** The anchor cell of the lamppost the player walks into when leaving
- * shop A by its door: the same column as `DOOR_X_A`, out on the pavement.
- * A real collider read from `defs/objects/city-props.toml`. */
-export const LAMPPOST_CELL = { x: 5, y: 8 } as const;
-
 // Shared storey shape for both ground-floor shops: north (back) wall,
 // four interior rows, south (front) wall.
 const NORTH_WALL_Y = 1;
@@ -114,14 +109,18 @@ const INTERIOR_Y1 = 5;
 // Shop A: west wall, four interior columns, then the party wall it shares
 // with shop B (Artie's direction: the shared wall line has no gap and no
 // doubled wall -- shop B declares no west wall of its own; this column is
-// it). The door sits at a fixed column (`DOOR_X_A`); the window fills the
-// rest of the front row east of it, all the way to the party wall, so its
-// own art is never asked to overhang across the door (Artie's direction:
-// the window must never overlap a door cell).
+// it). Every front run is door, then a `WINDOW_WIDTH`-wide window, then a
+// full-height wall pier at the far corner (Artie's cycle-2 direction: a
+// window must never run straight into the corner with no wall pier
+// between it and the next building, or the two shopfronts blur into one
+// continuous glazed strip) -- `DOOR_X_A`/`DOOR_X_B` are the only two
+// numbers hand-picked below; everything else (window position, pier
+// position, `PLAYER_START`, `LAMPPOST_CELL`) is derived from them, never
+// a second hand-patched literal.
 const WEST_WALL_X = 3;
 const PARTY_WALL_X = 8;
 const INTERIOR_X0_A = 4;
-const DOOR_X_A = 5;
+const DOOR_X_A = WEST_WALL_X + 1;
 const WINDOW_X_A = DOOR_X_A + 1;
 const WINDOW_WIDTH = 3;
 
@@ -129,8 +128,24 @@ const WINDOW_WIDTH = 3;
 // interior columns, its own east wall.
 const INTERIOR_X0_B = 9;
 const EAST_WALL_X_B = 13;
-const DOOR_X_B = 10;
+const DOOR_X_B = PARTY_WALL_X + 1;
 const WINDOW_X_B = DOOR_X_B + 1;
+
+/** The player's starting position -- continuous world coordinates
+ * (Artie's direction: a character's sort anchor is its continuous feet
+ * position, never a snapped cell), moved by keyboard input in
+ * `scene.ts`. Inside shop A, one tile off the west wall so walking
+ * north/south naturally crosses several of that wall's decomposed
+ * cells -- the near/far occlusion worked example. `x` is `DOOR_X_A + 0.5`
+ * (the door column's own centre): the player has a real body width, so it
+ * must be centred in the one-cell-wide door gap. */
+export const PLAYER_START = { x: DOOR_X_A + 0.5, y: 4, floor: 0 } as const;
+export const PLAYER_STABLE_ID = 1000n;
+
+/** The anchor cell of the lamppost the player walks into when leaving
+ * shop A by its door: the same column as `DOOR_X_A`, out on the pavement.
+ * A real collider read from `defs/objects/city-props.toml`. */
+export const LAMPPOST_CELL = { x: DOOR_X_A, y: 8 } as const;
 
 /** Story 1.7 ownership ids (Tim's direction): the enclosure key is
  * `buildingId`, resolved from the ownership index -- never hand-typed on
@@ -264,6 +279,7 @@ function platformWalls(): readonly DemoProp[] {
       layer: "walls",
       footprint: { width: PLATFORM_X1 - PLATFORM_X0 + 1, height: 1 },
       solid: true,
+      wallOrientation: "horizontal",
     },
     {
       id: 61n,
@@ -274,6 +290,7 @@ function platformWalls(): readonly DemoProp[] {
       layer: "walls",
       footprint: { width: PLATFORM_X1 - PLATFORM_X0 + 1, height: 1 },
       solid: true,
+      wallOrientation: "horizontal",
     },
     {
       id: 62n,
@@ -284,6 +301,7 @@ function platformWalls(): readonly DemoProp[] {
       layer: "walls",
       footprint: { width: 1, height: PLATFORM_INTERIOR_Y1 - PLATFORM_INTERIOR_Y0 + 1 },
       solid: true,
+      wallOrientation: "vertical",
     },
     {
       id: 63n,
@@ -294,6 +312,7 @@ function platformWalls(): readonly DemoProp[] {
       layer: "walls",
       footprint: { width: 1, height: PLATFORM_INTERIOR_Y1 - PLATFORM_INTERIOR_Y0 + 1 },
       solid: true,
+      wallOrientation: "vertical",
     },
   ];
   return walls;
@@ -315,10 +334,12 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     layer: "walls",
     footprint: { width: PARTY_WALL_X - WEST_WALL_X + 1, height: 1 },
     solid: true,
+    wallOrientation: "horizontal",
   },
-  // South (front) wall, west of the door: full-height wall now (Artie's
-  // direction -- retraction exists, so the front facade is a full wall
-  // from outside, not a permanently short stub).
+  // South (front) wall, west of the door -- also the SW corner pier where
+  // the west wall (id 4) meets the front run: full-height wall now
+  // (Artie's direction -- retraction exists, so the front facade is a
+  // full wall from outside, not a permanently short stub).
   {
     id: 2n,
     assetKey: "wallTile",
@@ -328,15 +349,18 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     layer: "walls",
     footprint: { width: DOOR_X_A - WEST_WALL_X, height: 1 },
     solid: true,
+    wallOrientation: "horizontal",
   },
   // The shop window (FR121): a real `defs/objects` wall tile, `window =
-  // true`, filling the whole front row east of the door up to the party
-  // wall -- its own art (`ME_Singles_Office_16x16_Window_1_Middle_
-  // Modular.png`, 48x32px) is exactly `WINDOW_WIDTH` tiles wide, so the
-  // footprint matches the art exactly and `sliceTexture` slices it
-  // cleanly, never overhanging over the door (Artie's direction). Its
-  // collider comes from `defs/`, so it is placed by `defId` like the
-  // lamppost, never `solid: true`.
+  // true`, `WINDOW_WIDTH` cells wide starting right after the door --
+  // its own art (`ME_Singles_Office_16x16_Window_1_Middle_Modular.png`,
+  // 48x32px) is exactly that many tiles wide, so the footprint matches
+  // the art exactly and `sliceTexture` slices it cleanly, never
+  // overhanging over the door (Artie's direction). It stops one cell
+  // short of the party wall -- id 40 below is that last cell, a full
+  // wall pier, so the window never runs straight into the corner (Artie's
+  // cycle-2 direction). Its collider comes from `defs/`, so it is placed
+  // by `defId` like the lamppost, never `solid: true`.
   {
     id: 6n,
     assetKey: "window",
@@ -358,6 +382,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     layer: "walls",
     footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
     solid: true,
+    wallOrientation: "vertical",
   },
   // The party wall shop A and shop B share, one cell thick (Artie's
   // direction: no gap, no doubled wall) -- a side wall, so it is never
@@ -371,6 +396,25 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     layer: "walls",
     footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
     solid: true,
+    wallOrientation: "vertical",
+  },
+  // Shop A's own front-wall pier at the party-wall corner: the window
+  // (id 6) stops one cell short of it, so a full-height wall pier always
+  // separates the two shopfronts' glass, never a continuous glazed strip
+  // (Artie's cycle-2 direction). Owned by shop A (`DEMO_BUILDING_AREAS`'s
+  // rect includes this column), so it retracts with the rest of shop A's
+  // front while the player is inside -- the same corner id 4/id 2 already
+  // form on the west side, just party-wall side.
+  {
+    id: 40n,
+    assetKey: "wallTile",
+    x: PARTY_WALL_X,
+    y: SOUTH_WALL_Y,
+    floor: 0,
+    layer: "walls",
+    footprint: { width: 1, height: 1 },
+    solid: true,
+    wallOrientation: "horizontal",
   },
 
   // A poster mounted flat on the north wall face (wall_decals, FR123's
@@ -421,8 +465,12 @@ export const DEMO_PROPS: readonly DemoProp[] = [
 
   // --- Shop B: a different business, different furniture (Artie's
   // "grounded city" direction -- two copies of the same shop breaks it):
-  // a grocer, not a second tiki bar. No west wall prop of its own: the
-  // party wall (id 5, above) is it. ---
+  // a grocer, not a second tiki bar. No west wall prop of its own on
+  // either row: the party wall (id 5) closes its interior rows, id 40
+  // (above) closes its front row -- shop B's own door sits immediately
+  // east of that pier, so there is nothing left for a separate "west
+  // segment" prop to cover (cycle-2: `DOOR_X_B` moved from one cell east
+  // of `INTERIOR_X0_B` to the party-wall pier's own neighbour). ---
   {
     id: 30n,
     assetKey: "wallTile",
@@ -432,17 +480,11 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     layer: "walls",
     footprint: { width: EAST_WALL_X_B - INTERIOR_X0_B + 1, height: 1 },
     solid: true,
+    wallOrientation: "horizontal",
   },
-  {
-    id: 31n,
-    assetKey: "wallTile",
-    x: INTERIOR_X0_B,
-    y: SOUTH_WALL_Y,
-    floor: 0,
-    layer: "walls",
-    footprint: { width: DOOR_X_B - INTERIOR_X0_B, height: 1 },
-    solid: true,
-  },
+  // The window stops one cell short of the east wall -- id 41 below is
+  // that last cell, the same full-height corner pier shop A's own party
+  // wall side gets (id 40).
   {
     id: 32n,
     assetKey: "window",
@@ -462,6 +504,20 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     layer: "walls",
     footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
     solid: true,
+    wallOrientation: "vertical",
+  },
+  // Shop B's own front-wall pier at its east corner, the mirror of shop
+  // A's own id 40 (Artie's cycle-2 direction).
+  {
+    id: 41n,
+    assetKey: "wallTile",
+    x: EAST_WALL_X_B,
+    y: SOUTH_WALL_Y,
+    floor: 0,
+    layer: "walls",
+    footprint: { width: 1, height: 1 },
+    solid: true,
+    wallOrientation: "horizontal",
   },
   // Shop B's own shelving (a grocery-store display, not a bar counter)
   // and a produce basket -- different interior furniture from shop A's,
@@ -495,10 +551,14 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     layer: "objects",
   },
   ...platformWalls(),
+  // At the platform's own west end, clear of the up-stairs sprite's own
+  // overhang (Artie's cycle-2 direction: the stairs, anchored at
+  // `PLATFORM_UP_ANCHOR_X`, were covering the bench almost completely
+  // when the two sat one cell apart).
   {
     id: 64n,
     assetKey: "subwayBench",
-    x: PLATFORM_INTERIOR_X0 + 3,
+    x: PLATFORM_INTERIOR_X0,
     y: PLATFORM_INTERIOR_Y0,
     floor: SUBWAY_FLOOR,
     layer: "furniture",

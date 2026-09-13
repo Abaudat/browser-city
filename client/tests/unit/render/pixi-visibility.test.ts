@@ -53,6 +53,7 @@ function member(overrides: Partial<VisibilityMember["drawable"]> = {}): Visibili
       ownerBuildingId: NO_OWNER,
       isWindow: false,
       isNearSide: false,
+      isStub: false,
       ...overrides,
     },
     view: fakeSprite(),
@@ -161,6 +162,7 @@ describe("VisibilityApplier", () => {
               ownerBuildingId: spec.ownerBuildingId,
               isWindow: spec.isWindow,
               isNearSide: spec.isNearSide,
+              isStub: false,
             };
             members.push({ drawable, view: new Sprite(Texture.EMPTY) });
           }

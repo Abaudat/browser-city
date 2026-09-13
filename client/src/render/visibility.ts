@@ -44,6 +44,28 @@ export interface VisibilityDrawable {
    * camera in this 3/4 view (Artie's direction) -- side walls, party
    * walls and the back wall are never near-side and never retract. */
   readonly isNearSide: boolean;
+  /** The FR120 wall-stub companion (`demo/drawables.ts`'s `STUB_ID_OFFSET`
+   * pool member): the *inverse* of its own parent wall's retraction,
+   * never the same rule a normal drawable follows. A stub sits behind its
+   * parent wall at a lower rank -- while the wall is drawn (not
+   * retracted), the stub must stay hidden, or it shows through a
+   * translucent window as a grey block over the furniture (Artie's cycle-2
+   * finding); the moment the parent retracts, the stub is what is left
+   * on screen. Never itself a window, and never floor/storey culling's
+   * concern to special-case -- those still apply first, the same as any
+   * other drawable. */
+  readonly isStub: boolean;
+}
+
+/** The near-side-and-owned-by-the-viewer condition [`isRetracted`] and a
+ * stub's own inverse both read -- factored out so a stub can share the
+ * identical ownership test without also picking up [`isRetracted`]'s
+ * `layerCode === "walls"` gate (a stub is deliberately never on the walls
+ * layer, so it draws behind its taller parent wall sprite). */
+function isNearSideOwnedByViewer(viewer: VisibilityViewer, drawable: VisibilityDrawable): boolean {
+  if (!drawable.isNearSide) return false;
+  if (drawable.ownerBuildingId === NO_OWNER) return false;
+  return drawable.ownerBuildingId === viewer.buildingId;
 }
 
 const WALLS_LAYER_CODE = layerCodeByName("walls");
@@ -90,9 +112,7 @@ export function isNearSideWall(
  * that share an ownership id, not just one hand-walked example). */
 export function isRetracted(viewer: VisibilityViewer, drawable: VisibilityDrawable): boolean {
   if (drawable.layerCode !== WALLS_LAYER_CODE) return false;
-  if (!drawable.isNearSide) return false;
-  if (drawable.ownerBuildingId === NO_OWNER) return false;
-  return drawable.ownerBuildingId === viewer.buildingId;
+  return isNearSideOwnedByViewer(viewer, drawable);
 }
 
 /** Artie's direction, story 1.7: while the viewer is inside an enclosure,
@@ -115,9 +135,13 @@ export function isStoreyAboveCulled(
  * The one function every one of FR120/FR121/FR122's rules is decided by,
  * in a fixed order: floor culling first (a drawable on a co-invisible
  * floor is simply `hidden`, regardless of anything else about it), then
- * storey-above culling, then retraction (a retracted near-side wall is
- * `hidden`), then the window rule (a non-hidden window drawable is
- * `translucent`) -- anything else is `normal`.
+ * storey-above culling, then a stub's own inverse-of-retraction rule (a
+ * stub is `normal` exactly when its parent wall would retract, `hidden`
+ * otherwise -- never `translucent`, and never subject to the ordinary
+ * retraction/window rules below, which are a real wall's own), then
+ * retraction (a retracted near-side wall is `hidden`), then the window
+ * rule (a non-hidden window drawable is `translucent`) -- anything else
+ * is `normal`.
  */
 export function computeVisibility(
   viewer: VisibilityViewer,
@@ -125,6 +149,7 @@ export function computeVisibility(
 ): VisibilityState {
   if (isFloorCulled(viewer.floor, drawable.floor)) return "hidden";
   if (isStoreyAboveCulled(viewer, drawable)) return "hidden";
+  if (drawable.isStub) return isNearSideOwnedByViewer(viewer, drawable) ? "normal" : "hidden";
   if (isRetracted(viewer, drawable)) return "hidden";
   if (drawable.isWindow) return "translucent";
   return "normal";
