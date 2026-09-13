@@ -59,7 +59,12 @@ function buildDemoProps() {
 describe("the story 1.6 demo scene's committed ordering", () => {
   it("sorts the whole fixture (props + player) to a fixed, committed id sequence", () => {
     const props = buildDemoProps();
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor);
+    const player = buildPlayerDrawable(
+      rankOf("characters"),
+      PLAYER_START.x,
+      PLAYER_START.y,
+      PLAYER_START.floor,
+    );
     const pool = [...props, player];
     sortDrawablesInPlace(pool);
 
@@ -78,7 +83,12 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // above is, so a wrong golden here fails with a diff in the fastest
     // job instead of a ten-second timeout in the slowest one.
     const props = buildDemoProps();
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, lamppostRestY(), PLAYER_START.floor);
+    const player = buildPlayerDrawable(
+      rankOf("characters"),
+      PLAYER_START.x,
+      lamppostRestY(),
+      PLAYER_START.floor,
+    );
     const pool = [...props, player];
     sortDrawablesInPlace(pool);
 
@@ -95,7 +105,12 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // in front -- the one thing a footprint running parallel to the
     // camera could never demonstrate.
     const props = buildDemoProps();
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor);
+    const player = buildPlayerDrawable(
+      rankOf("characters"),
+      PLAYER_START.x,
+      PLAYER_START.y,
+      PLAYER_START.floor,
+    );
 
     const westWallCells = props
       .filter((p) => p.stableId === 4n)
@@ -156,12 +171,14 @@ describe("the player can never walk off the drawn world", () => {
   /** The drawn ground: interior floor and pavement, in screen pixels.
    * `x1`/`y1` are exclusive tile indices, so the drawn extent's own far
    * edge is at `x1 * tileSizePx`. */
-  const groundScreenRects = [INTERIOR_FLOOR_TILES, INTERIOR_FLOOR_TILES_B, SIDEWALK_TILES].map((tiles) => ({
-    left: tiles.x0 * TILE_SIZE_PX,
-    right: tiles.x1 * TILE_SIZE_PX,
-    top: tiles.y0 * TILE_SIZE_PX,
-    bottom: tiles.y1 * TILE_SIZE_PX,
-  }));
+  const groundScreenRects = [INTERIOR_FLOOR_TILES, INTERIOR_FLOOR_TILES_B, SIDEWALK_TILES].map(
+    (tiles) => ({
+      left: tiles.x0 * TILE_SIZE_PX,
+      right: tiles.x1 * TILE_SIZE_PX,
+      top: tiles.y0 * TILE_SIZE_PX,
+      bottom: tiles.y1 * TILE_SIZE_PX,
+    }),
+  );
 
   /** The four corners of the player's collision body, in world cells. */
   function bodyCorners(pos: Vec2): readonly Vec2[] {
@@ -234,7 +251,12 @@ describe("the player can never walk off the drawn world", () => {
 
 describe("updatePlayerDrawable", () => {
   it("mutates the same object in place rather than allocating a new one", () => {
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor);
+    const player = buildPlayerDrawable(
+      rankOf("characters"),
+      PLAYER_START.x,
+      PLAYER_START.y,
+      PLAYER_START.floor,
+    );
     const sameObject = player;
 
     updatePlayerDrawable(player, PLAYER_START.x + 1, PLAYER_START.y + 1);

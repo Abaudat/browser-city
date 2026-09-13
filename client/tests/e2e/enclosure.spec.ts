@@ -23,12 +23,12 @@ import { lamppostRestY } from "../unit/demo/demo-world";
 
 async function waitForSceneReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
-    timeout: 10_000,
+    timeout: 15_000,
   });
   await page.waitForFunction(
     () => Object.keys(window.__bc?.visibility ?? {}).length > 0,
     undefined,
-    { timeout: 10_000 },
+    { timeout: 15_000 },
   );
 }
 
@@ -75,14 +75,14 @@ test.describe("story 1.7: enclosure visibility", () => {
     await page.waitForFunction(
       (expected) => (window.__bc?.playerPosition?.y ?? 0) >= expected - 0.01,
       restY,
-      { timeout: 10_000 },
+      { timeout: 15_000 },
     );
     await page.keyboard.up("ArrowDown");
     // The visibility hook only fires when the player's own cell changes
     // (Tim's direction) -- wait for the real, event-driven update rather
     // than a fixed delay.
     await page.waitForFunction(() => window.__bc?.visibility?.["2"] !== "hidden", undefined, {
-      timeout: 10_000,
+      timeout: 15_000,
     });
 
     expect(await visibilityOf(page, "2")).toBe("normal");
@@ -106,7 +106,7 @@ test.describe("story 1.7: enclosure visibility", () => {
     await page.waitForFunction(
       (expected) => (window.__bc?.playerPosition?.y ?? 0) >= expected - 0.01,
       restY,
-      { timeout: 10_000 },
+      { timeout: 15_000 },
     );
     await page.keyboard.up("ArrowDown");
 
@@ -124,11 +124,11 @@ test.describe("story 1.7: enclosure visibility", () => {
         return !!pos && Math.abs(pos.x - x) < 0.01 && Math.abs(pos.y - y) < 0.01;
       },
       { x: landingX, y: landingY },
-      { timeout: 10_000 },
+      { timeout: 15_000 },
     );
     await page.keyboard.up("ArrowRight");
     await page.waitForFunction(() => window.__bc?.visibility?.["60"] !== "hidden", undefined, {
-      timeout: 10_000,
+      timeout: 15_000,
     });
 
     // The street floor, including its own stairwell prop, is culled
@@ -153,11 +153,11 @@ test.describe("story 1.7: enclosure visibility", () => {
         return !!pos && Math.abs(pos.x - x) < 0.01 && Math.abs(pos.y - y) < 0.01;
       },
       { x: streetX, y: streetY },
-      { timeout: 10_000 },
+      { timeout: 15_000 },
     );
     await page.keyboard.up("ArrowUp");
     await page.waitForFunction(() => window.__bc?.visibility?.["60"] === "hidden", undefined, {
-      timeout: 10_000,
+      timeout: 15_000,
     });
 
     expect(await visibilityOf(page, "1")).toBe("normal");

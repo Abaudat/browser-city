@@ -5,8 +5,8 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { layerCodeByName } from "../../../src/render/layer-table";
-import { NO_OWNER } from "../../../src/render/visibility";
 import { VisibilityApplier, type VisibilityMember } from "../../../src/render/pixi-visibility";
+import { NO_OWNER } from "../../../src/render/visibility";
 
 const FURNITURE = layerCodeByName("furniture");
 
@@ -124,7 +124,10 @@ describe("VisibilityApplier", () => {
             stableId: fc.integer({ min: 1, max: 50 }).map(BigInt),
             floor: fc.integer({ min: -2, max: 2 }),
             layerCode: fc.constantFrom(WALLS, FURNITURE),
-            ownerBuildingId: fc.oneof(fc.constant(NO_OWNER), fc.integer({ min: 1, max: 3 }).map(BigInt)),
+            ownerBuildingId: fc.oneof(
+              fc.constant(NO_OWNER),
+              fc.integer({ min: 1, max: 3 }).map(BigInt),
+            ),
             isWindow: fc.boolean(),
             isNearSide: fc.boolean(),
           }),

@@ -28,9 +28,7 @@ describe("parseDefs", () => {
   it("parses a well-formed document into the plain Defs shape", () => {
     const defs = parseDefs(validPayload());
     expect(defs.defsVersion).toBe("abc123");
-    expect(defs.objects).toEqual([
-      { id: 1, key: "trash_bin", width: 1, height: 1, window: false },
-    ]);
+    expect(defs.objects).toEqual([{ id: 1, key: "trash_bin", width: 1, height: 1, window: false }]);
     expect(defs.recipes[0]?.inputs).toEqual(["bottle"]);
   });
 
@@ -219,7 +217,12 @@ describe("parseDefs", () => {
 
   it("rejects a missing window field", () => {
     const payload = validPayload();
-    (payload.objects as Record<string, unknown>[])[0] = { id: 1, key: "trash_bin", width: 1, height: 1 };
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+    };
     expect(() => parseDefs(payload)).toThrow(/expected a boolean/);
   });
 

@@ -54,9 +54,9 @@ describe("isFloorCulled (FR122)", () => {
 describe("isRetracted (FR120)", () => {
   it("retracts only a near-side wall owned by the viewer's own building", () => {
     const v = viewer({ buildingId: 1n });
-    expect(isRetracted(v, drawable({ layerCode: WALLS, isNearSide: true, ownerBuildingId: 1n }))).toBe(
-      true,
-    );
+    expect(
+      isRetracted(v, drawable({ layerCode: WALLS, isNearSide: true, ownerBuildingId: 1n })),
+    ).toBe(true);
   });
 
   it("never retracts a non-wall layer", () => {
@@ -197,10 +197,7 @@ describe("windows (FR121)", () => {
 
 // --- Property invariants (docs/trace-matrix.md) -----------------------------
 
-const buildingIdArb = fc.oneof(
-  fc.constant(NO_OWNER),
-  fc.integer({ min: 1, max: 5 }).map(BigInt),
-);
+const buildingIdArb = fc.oneof(fc.constant(NO_OWNER), fc.integer({ min: 1, max: 5 }).map(BigInt));
 const floorArb = fc.integer({ min: -2, max: 2 });
 
 describe("property invariants (docs/trace-matrix.md)", () => {
