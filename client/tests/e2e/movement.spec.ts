@@ -42,16 +42,23 @@ test("holding a direction key moves the avatar within a few frames, client-side,
   // "Immediately, with no round trip" measured in animation frames, not
   // wall-clock: a server echo would take far more than three frames even
   // on localhost, so a time-based wait could never tell the two apart.
-  // The counter starts on the same tick the key goes down and stops the
-  // frame the position first changes.
+  //
+  // The count is anchored inside the page, on its own `keydown` event --
+  // never on the `page.evaluate` that installs the probe. Those are two
+  // separate CDP round trips, and every frame that renders between them
+  // would otherwise be charged to the movement.
   await page.evaluate((startY) => {
-    const w = window as unknown as { __bcFrames?: { count: number; movedAt: number | null } };
-    const probe = { count: 0, movedAt: null as number | null };
-    w.__bcFrames = probe;
+    const probe = { framesSinceKeydown: null as number | null, movedAt: null as number | null };
+    (window as unknown as { __bcFrames: typeof probe }).__bcFrames = probe;
+    window.addEventListener("keydown", () => {
+      probe.framesSinceKeydown ??= 0;
+    });
     const tick = (): void => {
-      probe.count++;
-      if (probe.movedAt === null && (window.__bc?.playerPosition?.y ?? startY) > startY) {
-        probe.movedAt = probe.count;
+      if (probe.framesSinceKeydown !== null && probe.movedAt === null) {
+        probe.framesSinceKeydown++;
+        if ((window.__bc?.playerPosition?.y ?? startY) > startY) {
+          probe.movedAt = probe.framesSinceKeydown;
+        }
       }
       requestAnimationFrame(tick);
     };
@@ -72,7 +79,10 @@ test("holding a direction key moves the avatar within a few frames, client-side,
       (window as unknown as { __bcFrames?: { movedAt: number | null } }).__bcFrames?.movedAt ??
       Number.NaN,
   );
-  expect(movedAtFrame).toBeLessThanOrEqual(3);
+  // One frame for the scene's own ticker to run after the keydown, plus
+  // one for the probe's callback possibly running ahead of it on that
+  // same frame. Anything beyond that is a round trip, not a frame.
+  expect(movedAtFrame).toBeLessThanOrEqual(2);
 
   // Passes straight through the awning (id 11, y=7, collider-less) --
   // never pauses there -- on the way to resting against the lamppost's
