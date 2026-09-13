@@ -13,6 +13,7 @@ import { bootstrapRenderer } from "./render/bootstrap";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
 import { loadMovementConfig } from "./world/movement-config";
+import { objectDefsById } from "./world/object-defs";
 
 async function main(): Promise<void> {
   const mount = document.getElementById("app");
@@ -78,6 +79,7 @@ async function startDemoScene(): Promise<void> {
     storeyHeightPx,
     rankOf: (code) => resolveRank(rankTable, code),
     movementConfig,
+    objectDefs: objectDefsById(defs),
     onOrderChange: recordRenderOrderForE2e,
     onPlayerMove: recordPlayerPositionForE2e,
   });

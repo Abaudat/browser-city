@@ -144,27 +144,61 @@ describe("CollisionGrid", () => {
 });
 
 describe("inv_collision_grid_matches_rebuild", () => {
-  const defId = 1;
-  const objectDefs = new Map([[defId, DEF_WITH_COLLIDER]]);
+  // Three kinds of def, because a `delete` that used the wrong def could
+  // not be caught by one: no collider at all, a collider inside one cell,
+  // and one wide enough to overhang a chunk edge.
+  const NO_COLLIDER_DEF = 1;
+  const SUB_CELL_DEF = 2;
+  const MULTI_CELL_DEF = 3;
+  const objectDefs = new Map<number, ColliderSource>([
+    [NO_COLLIDER_DEF, DEF_WITHOUT_COLLIDER],
+    [SUB_CELL_DEF, DEF_WITH_COLLIDER],
+    [
+      MULTI_CELL_DEF,
+      { width: 3, height: 2, collider: { x0: 4, y0: 0, x1: 3 * 16, y1: 2 * 16 - 3 } },
+    ],
+  ]);
+  const defIdArb = fc.constantFrom(NO_COLLIDER_DEF, SUB_CELL_DEF, MULTI_CELL_DEF);
+  const floorArb = fc.constantFrom(-1, 0, 1);
+  // Straddling a chunk boundary (CHUNK_SIZE is 32) on both signs, so an
+  // insert or delete that got the chunk key wrong shows up.
+  const coordArb = fc.integer({ min: -33, max: 33 });
 
   const rowArb = fc.record({
     objectId: fc.integer({ min: 1, max: 6 }).map(BigInt),
-    x: fc.integer({ min: -3, max: 3 }),
-    y: fc.integer({ min: -3, max: 3 }),
+    x: coordArb,
+    y: coordArb,
+    floor: floorArb,
+    defId: defIdArb,
   });
 
-  function buildFromScratch(rows: ReadonlyMap<bigint, Row>): CollisionGrid {
+  function gridOf(rows: Iterable<Row>): CollisionGrid {
     const grid = gridWith(objectDefs);
-    for (const r of rows.values()) grid.insert(r);
+    for (const r of rows) grid.insert(r);
     return grid;
   }
 
-  function snapshot(grid: CollisionGrid, cells: readonly [number, number][]): unknown {
-    return cells.map(([x, y]) => [...grid.entriesInCell(0, x, y)].map((e) => e.objectId).sort());
+  /** Full entries -- object id *and* rect -- across every floor in play,
+   * plus the grid's own allocated-chunk count, so "identical to a fresh
+   * build" covers storage shape and not only query answers. */
+  function snapshot(grid: CollisionGrid): unknown {
+    const cells: unknown[] = [];
+    for (const floor of [-1, 0, 1]) {
+      for (let x = -35; x <= 36; x++) {
+        for (let y = -35; y <= 36; y++) {
+          const entries = [...grid.entriesInCell(floor, x, y)]
+            .map((e) => `${e.objectId}@${e.rect.x0},${e.rect.y0},${e.rect.x1},${e.rect.y1}`)
+            .sort();
+          if (entries.length > 0) cells.push([floor, x, y, entries]);
+        }
+      }
+    }
+    return { cells, allocatedChunks: grid.allocatedChunkCount() };
   }
 
   // A sequence of random insert/delete/update calls always equals a
-  // fresh build of the survivors.
+  // fresh build of the survivors -- including which chunks are allocated,
+  // so a grid that never frees an emptied chunk fails here.
   it("inv_collision_grid_matches_rebuild", () => {
     fc.assert(
       fc.property(
@@ -177,7 +211,7 @@ describe("inv_collision_grid_matches_rebuild", () => {
             }),
             fc.record({ kind: fc.constant("update" as const), row: rowArb }),
           ),
-          { maxLength: 30 },
+          { maxLength: 40 },
         ),
         (ops) => {
           const grid = gridWith(objectDefs);
@@ -189,7 +223,7 @@ describe("inv_collision_grid_matches_rebuild", () => {
               // insert rather than modelling a scenario the real table
               // can never produce.
               if (survivors.has(op.row.objectId)) continue;
-              const r = row({ objectId: op.row.objectId, x: op.row.x, y: op.row.y, defId });
+              const r = row(op.row);
               grid.insert(r);
               survivors.set(r.objectId, r);
             } else if (op.kind === "delete") {
@@ -199,7 +233,8 @@ describe("inv_collision_grid_matches_rebuild", () => {
                 survivors.delete(op.objectId);
               }
             } else {
-              const newRow = row({ objectId: op.row.objectId, x: op.row.x, y: op.row.y, defId });
+              // An update may change def and floor, not only position.
+              const newRow = row(op.row);
               const existing = survivors.get(op.row.objectId);
               if (existing) {
                 grid.update(existing, newRow);
@@ -210,14 +245,40 @@ describe("inv_collision_grid_matches_rebuild", () => {
             }
           }
 
-          const rebuilt = buildFromScratch(survivors);
-          const cells: [number, number][] = [];
-          for (let x = -4; x <= 4; x++) {
-            for (let y = -4; y <= 4; y++) cells.push([x, y]);
-          }
-          expect(snapshot(grid, cells)).toEqual(snapshot(rebuilt, cells));
+          expect(snapshot(grid)).toEqual(snapshot(gridOf(survivors.values())));
         },
       ),
+      { numRuns: 60 },
     );
+  });
+
+  it("frees a chunk as soon as its last entry goes, and the floor with its last chunk", () => {
+    const grid = gridWith(objectDefs);
+    const a = row({ objectId: 1n, defId: SUB_CELL_DEF, x: 0, y: 0, floor: 0 });
+    const b = row({ objectId: 2n, defId: SUB_CELL_DEF, x: 40, y: 40, floor: 1 });
+    expect(grid.allocatedChunkCount()).toBe(0);
+    grid.insert(a);
+    grid.insert(b);
+    expect(grid.allocatedChunkCount()).toBe(2);
+    grid.delete(a);
+    expect(grid.allocatedChunkCount()).toBe(1);
+    grid.delete(b);
+    expect(grid.allocatedChunkCount()).toBe(0);
+    // The emptied floor answers queries exactly as it did before anything
+    // was ever inserted.
+    expect(grid.entriesInCell(0, 0, 0)).toEqual([]);
+    expect(grid.entriesInCell(1, 40, 40)).toEqual([]);
+  });
+
+  it("keeps a chunk while any other entry in it survives", () => {
+    const grid = gridWith(objectDefs);
+    const a = row({ objectId: 1n, defId: SUB_CELL_DEF, x: 0, y: 0, floor: 0 });
+    const b = row({ objectId: 2n, defId: SUB_CELL_DEF, x: 1, y: 1, floor: 0 });
+    grid.insert(a);
+    grid.insert(b);
+    expect(grid.allocatedChunkCount()).toBe(1);
+    grid.delete(a);
+    expect(grid.allocatedChunkCount()).toBe(1);
+    expect(grid.entriesInCell(0, 1, 1)).toHaveLength(1);
   });
 });

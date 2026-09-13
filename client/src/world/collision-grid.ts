@@ -1,9 +1,9 @@
-// The derived collision grid (story 1.8): sparse by chunk, dense inside a
-// chunk, expanded from `placed_object`-shaped rows on `insert`, `delete`
-// and `update` -- never queried by scanning rows. `world/**` may only
-// import `PlacedObject` as a type from `net/bindings` (Tim's direction,
-// enforced by `client/biome.json`'s `noRestrictedImports` override); this
-// module knows nothing else about `net/`.
+// The derived collision grid: sparse by chunk, dense inside a chunk,
+// expanded from `placed_object`-shaped rows on `insert`, `delete` and
+// `update` -- never queried by scanning rows. `world/**` may only import
+// `PlacedObject` as a type from `net/bindings` (enforced by
+// `client/biome.json`'s `noRestrictedImports` override); this module knows
+// nothing else about `net/`.
 
 import type { PlacedObject } from "../net/bindings/types";
 import { CHUNK_SIZE, chunkKey } from "./chunk";
@@ -38,13 +38,19 @@ export interface GridEntry {
  * a single dense-storage-shaped cell lookup, never a row scan. A counting
  * wrapper implementing this same interface is how the O(1) property test
  * proves the resolver's own cost is bounded by the cells a swept body
- * spans, never by how many objects the grid holds (Quentin's direction).
- */
+ * spans, never by how many objects the grid holds. */
 export interface CollisionGridQuery {
   entriesInCell(floor: number, cellX: number, cellY: number): readonly GridEntry[];
 }
 
-type ChunkCells = (GridEntry[] | undefined)[];
+/** One chunk's dense per-cell storage, plus the count of its own occupied
+ * cells -- the count is what lets `delete` free the whole
+ * `CHUNK_SIZE*CHUNK_SIZE` array the moment its last entry goes, instead of
+ * keeping every chunk a session ever streamed through. */
+interface Chunk {
+  readonly cells: (GridEntry[] | undefined)[];
+  occupiedCells: number;
+}
 
 function localIndex(cellX: number, cellY: number): number {
   const localX = ((cellX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
@@ -52,21 +58,24 @@ function localIndex(cellX: number, cellY: number): number {
   return localY * CHUNK_SIZE + localX;
 }
 
+const NO_ENTRIES: readonly GridEntry[] = [];
+
 /**
- * `Map<floor, Map<chunk key, ChunkCells>>`: sparse by chunk (a chunk with
- * no collider anywhere never allocates its dense array), dense inside a
- * chunk (`CHUNK_SIZE*CHUNK_SIZE`, indexed arithmetically, matching the
- * server's own dense-per-floor collision grid's cost shape). Mutated only
- * through `insert`/`delete`/`update` -- there is no other way to change
- * what this grid reports.
+ * `Map<floor, Map<chunk key, Chunk>>`: sparse by chunk (a chunk with no
+ * collider anywhere never allocates its dense array, and one whose last
+ * collider is deleted frees it again), dense inside a chunk
+ * (`CHUNK_SIZE*CHUNK_SIZE`, indexed arithmetically, matching the server's
+ * own dense-per-floor collision grid's cost shape). Mutated only through
+ * `insert`/`delete`/`update` -- there is no other way to change what this
+ * grid reports.
  */
 export class CollisionGrid implements CollisionGridQuery {
-  private readonly floors = new Map<number, Map<bigint, ChunkCells>>();
+  private readonly floors = new Map<number, Map<bigint, Chunk>>();
 
   /** `subcellsPerCell` is `defs/`'s own generated
-   * `COLLIDER_SUBCELLS_PER_CELL`, never a literal here (Tim's direction).
-   * `objectDefs` is resolved once, at construction -- `insert` does one
-   * map lookup per row, never per frame. */
+   * `COLLIDER_SUBCELLS_PER_CELL`, never a literal here. `objectDefs` is
+   * resolved once, at construction -- `insert` does one map lookup per
+   * row, never per frame. */
   constructor(
     private readonly subcellsPerCell: number,
     private readonly objectDefs: ReadonlyMap<number, ColliderSource>,
@@ -74,7 +83,18 @@ export class CollisionGrid implements CollisionGridQuery {
 
   entriesInCell(floor: number, cellX: number, cellY: number): readonly GridEntry[] {
     const chunk = this.floors.get(floor)?.get(chunkKey(cellX, cellY, floor));
-    return chunk?.[localIndex(cellX, cellY)] ?? [];
+    return chunk?.cells[localIndex(cellX, cellY)] ?? NO_ENTRIES;
+  }
+
+  /** How many dense chunk arrays are allocated right now, across every
+   * floor. Storage shape, not a query result: an `insert`/`delete` pair
+   * must leave this exactly where it started, and a grid must never
+   * accumulate chunks it no longer has an entry in
+   * (`inv_collision_grid_matches_rebuild`). */
+  allocatedChunkCount(): number {
+    let total = 0;
+    for (const byChunk of this.floors.values()) total += byChunk.size;
+    return total;
   }
 
   /** Absent from `objectDefs`, or with no `collider` declared, contributes
@@ -82,47 +102,59 @@ export class CollisionGrid implements CollisionGridQuery {
    * and `delete`'s own no-op in that case is `inv_absent_collider_is_walkable`. */
   insert(row: PlacedObject): void {
     this.forEachCoveredCell(row, (cellX, cellY, entry) => {
-      let byFloor = this.floors.get(row.floor);
-      if (!byFloor) {
-        byFloor = new Map();
-        this.floors.set(row.floor, byFloor);
+      let byChunk = this.floors.get(row.floor);
+      if (!byChunk) {
+        byChunk = new Map();
+        this.floors.set(row.floor, byChunk);
       }
       const key = chunkKey(cellX, cellY, row.floor);
-      let chunk = byFloor.get(key);
+      let chunk = byChunk.get(key);
       if (!chunk) {
-        chunk = new Array(CHUNK_SIZE * CHUNK_SIZE).fill(undefined);
-        byFloor.set(key, chunk);
+        chunk = { cells: new Array(CHUNK_SIZE * CHUNK_SIZE).fill(undefined), occupiedCells: 0 };
+        byChunk.set(key, chunk);
       }
       const idx = localIndex(cellX, cellY);
-      const list = chunk[idx] ?? [];
-      list.push(entry);
-      chunk[idx] = list;
+      const list = chunk.cells[idx];
+      if (list) {
+        list.push(entry);
+      } else {
+        chunk.cells[idx] = [entry];
+        chunk.occupiedCells++;
+      }
     });
   }
 
   /** Removes every trace of `row.objectId` from the cells it was inserted
    * into -- recomputed from `row` the same way `insert` did, so an
-   * `insert`/`delete` pair always leaves the grid exactly as it was
-   * (`inv_collision_grid_matches_rebuild`). Deleting one of two
-   * overlapping colliders never unblocks the space the other one still
-   * covers: only entries matching this exact `objectId` are removed. */
+   * `insert`/`delete` pair always leaves the grid exactly as it was, down
+   * to which chunks are allocated. Deleting one of two overlapping
+   * colliders never unblocks the space the other one still covers: only
+   * entries matching this exact `objectId` are removed. */
   delete(row: PlacedObject): void {
     this.forEachCoveredCell(row, (cellX, cellY) => {
-      const byFloor = this.floors.get(row.floor);
+      const byChunk = this.floors.get(row.floor);
       const key = chunkKey(cellX, cellY, row.floor);
-      const chunk = byFloor?.get(key);
-      if (!chunk) return;
+      const chunk = byChunk?.get(key);
+      if (!byChunk || !chunk) return;
       const idx = localIndex(cellX, cellY);
-      const list = chunk[idx];
+      const list = chunk.cells[idx];
       if (!list) return;
       const next = list.filter((e) => e.objectId !== row.objectId);
-      chunk[idx] = next.length > 0 ? next : undefined;
+      if (next.length > 0) {
+        chunk.cells[idx] = next;
+        return;
+      }
+      chunk.cells[idx] = undefined;
+      chunk.occupiedCells--;
+      if (chunk.occupiedCells > 0) return;
+      byChunk.delete(key);
+      if (byChunk.size === 0) this.floors.delete(row.floor);
     });
   }
 
-  /** Delete then insert (Tim's direction) -- never an in-place mutation,
-   * so a changed `defId`/position/floor is handled uniformly with no
-   * separate "what actually changed" logic. */
+  /** Delete then insert -- never an in-place mutation, so a changed
+   * `defId`/position/floor is handled uniformly with no separate "what
+   * actually changed" logic. */
   update(oldRow: PlacedObject, newRow: PlacedObject): void {
     this.delete(oldRow);
     this.insert(newRow);

@@ -1,9 +1,8 @@
-// Keyboard state as its own small pure module (Quentin's direction):
-// tracks which movement keys are currently held and reduces them to one
-// input direction, decoupled from `window`'s own event plumbing so it is
-// unit-testable in jsdom without mounting a scene. `attachKeyboard` is the
-// only function that touches `window` -- everything else here is a plain
-// data structure.
+// Keyboard state as its own small module: `world/**` is the pure
+// movement/collision layer and may not touch the DOM, so the one place
+// that binds `window` events lives here instead. `KeyboardState` tracks
+// which movement keys are held and reduces them to one input direction;
+// `attachKeyboard` is the only function here that touches `window`.
 
 export type DirectionKey =
   | "ArrowUp"

@@ -1,9 +1,10 @@
 // The client-authoritative movement step (FR137): input direction, speed
 // and body size in, a new position out, resolved against the derived
 // `CollisionGrid` by per-axis swept AABB. No network, no PixiJS, no DOM --
-// `world/**`'s import ban (`client/biome.json`) makes that structural.
+// `client/biome.json`'s `src/world/**` override bans those imports and
+// the `window`/`document` globals outright, so it stays that way.
 
-import type { CollisionGridQuery, GridEntry } from "./collision-grid";
+import type { CollisionGridQuery } from "./collision-grid";
 import { cellsForRange } from "./subcells";
 
 export interface Vec2 {
@@ -11,8 +12,9 @@ export interface Vec2 {
   readonly y: number;
 }
 
-/** The three balance-key-derived constants this module reads exactly once
- * (Tim's direction) -- never a literal scattered through movement code. */
+/** The balance-key-derived constants this module is handed, read exactly
+ * once by `world/movement-config.ts` -- never a literal scattered through
+ * movement code. */
 export interface MovementConfig {
   /** Derived from `movement.walk_speed_millicells_per_s`: cells travelled
    * per millisecond in open space. */
@@ -31,41 +33,24 @@ export interface MovementConfig {
  * teleport through a wall. */
 const MAX_DELTA_MS = 100;
 
-function candidatesInRange(
-  grid: CollisionGridQuery,
-  floor: number,
-  xMin: number,
-  yMin: number,
-  xMax: number,
-  yMax: number,
-  subcellsPerCell: number,
-): readonly GridEntry[] {
-  const [cellX0, cellX1] = cellsForRange(xMin, xMax, subcellsPerCell);
-  const [cellY0, cellY1] = cellsForRange(yMin, yMax, subcellsPerCell);
-  const seen = new Map<bigint, GridEntry>();
-  for (let cy = cellY0; cy <= cellY1; cy++) {
-    for (let cx = cellX0; cx <= cellX1; cx++) {
-      for (const entry of grid.entriesInCell(floor, cx, cy)) {
-        seen.set(entry.objectId, entry);
-      }
-    }
-  }
-  return [...seen.values()];
-}
-
 /**
  * Resolves movement along one axis, holding the perpendicular axis fixed
  * at the body's current `[otherMin, otherMax)` range -- per-axis swept
- * AABB (Tim's direction): moving X then Y this way is what gives sliding
- * along a surface instead of catching on it, and querying the union of
- * the start and end boxes (never just the end box) is what makes it a
- * sweep, so no delta -- however large -- can tunnel through a collider
- * thinner than one step.
+ * AABB: moving X then Y this way is what gives sliding along a surface
+ * instead of catching on it, and querying the union of the start and end
+ * boxes (never just the end box) is what makes it a sweep, so no delta --
+ * however large -- can tunnel through a collider thinner than one step.
  *
  * `extentBefore`/`extentAfter` place the body relative to the moving
  * coordinate: X is centred (`extentBefore === extentAfter`, half the
  * body's width each way); Y is not (the body's bottom edge *is* the
  * position, so `extentAfter` is 0 and the whole height is `extentBefore`).
+ *
+ * Entries are read straight out of the grid's own cells with no
+ * intermediate collection: an entry spanning several of the swept cells
+ * is simply clamped against more than once, and clamping against the same
+ * face twice is idempotent (`Math.min`/`Math.max`), so deduplicating it
+ * would only cost an allocation per axis per frame.
  */
 function resolveAxis(
   startPos: number,
@@ -88,37 +73,46 @@ function resolveAxis(
   const unionMin = Math.min(startMin, desiredMin);
   const unionMax = Math.max(startMax, desiredMax);
 
-  const candidates =
-    axis === "x"
-      ? candidatesInRange(grid, floor, unionMin, otherMin, unionMax, otherMax, subcellsPerCell)
-      : candidatesInRange(grid, floor, otherMin, unionMin, otherMax, unionMax, subcellsPerCell);
+  const swept = axis === "x";
+  const [cellX0, cellX1] = swept
+    ? cellsForRange(unionMin, unionMax, subcellsPerCell)
+    : cellsForRange(otherMin, otherMax, subcellsPerCell);
+  const [cellY0, cellY1] = swept
+    ? cellsForRange(otherMin, otherMax, subcellsPerCell)
+    : cellsForRange(unionMin, unionMax, subcellsPerCell);
 
   const movingPositive = desiredPos > startPos;
   let result = desiredPos;
 
-  for (const candidate of candidates) {
-    const rect = candidate.rect;
-    const [perpMin, perpMax, faceMin, faceMax] =
-      axis === "x" ? [rect.y0, rect.y1, rect.x0, rect.x1] : [rect.x0, rect.x1, rect.y0, rect.y1];
+  for (let cy = cellY0; cy <= cellY1; cy++) {
+    for (let cx = cellX0; cx <= cellX1; cx++) {
+      for (const candidate of grid.entriesInCell(floor, cx, cy)) {
+        const rect = candidate.rect;
+        const perpMin = swept ? rect.y0 : rect.x0;
+        const perpMax = swept ? rect.y1 : rect.x1;
+        const faceMin = swept ? rect.x0 : rect.y0;
+        const faceMax = swept ? rect.x1 : rect.y1;
 
-    // Half-open overlap test (touching is not blocked): the perpendicular
-    // ranges must actually overlap, not merely touch at a shared edge --
-    // this is what keeps two cell-adjacent colliders forming a flush wall
-    // from catching the player on their internal seam.
-    if (!(otherMin < perpMax && perpMin < otherMax)) continue;
+        // Half-open overlap test (touching is not blocked): the
+        // perpendicular ranges must actually overlap, not merely touch at
+        // a shared edge -- this is what keeps two cell-adjacent colliders
+        // forming a flush wall from catching the player on their seam.
+        if (!(otherMin < perpMax && perpMin < otherMax)) continue;
 
-    if (movingPositive) {
-      // The leading edge is `pos + extentAfter` (the body's own max
-      // bound) -- clamping must hold *that* edge at the collider's near
-      // face, not the opposite one.
-      if (faceMin >= startMax && faceMin < desiredMax) {
-        result = Math.min(result, faceMin - extentAfter);
-      }
-    } else {
-      // The leading edge is `pos - extentBefore` (the body's own min
-      // bound) moving in the negative direction.
-      if (faceMax <= startMin && faceMax > desiredMin) {
-        result = Math.max(result, faceMax + extentBefore);
+        if (movingPositive) {
+          // The leading edge is `pos + extentAfter` (the body's own max
+          // bound) -- clamping must hold *that* edge at the collider's
+          // near face, not the opposite one.
+          if (faceMin >= startMax && faceMin < desiredMax) {
+            result = Math.min(result, faceMin - extentAfter);
+          }
+        } else {
+          // The leading edge is `pos - extentBefore` (the body's own min
+          // bound) moving in the negative direction.
+          if (faceMax <= startMin && faceMax > desiredMin) {
+            result = Math.max(result, faceMax + extentBefore);
+          }
+        }
       }
     }
   }

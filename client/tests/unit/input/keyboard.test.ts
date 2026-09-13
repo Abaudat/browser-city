@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { attachKeyboard, KeyboardState } from "../../../src/world/keyboard";
+import { attachKeyboard, KeyboardState } from "../../../src/input/keyboard";
 
 describe("KeyboardState", () => {
   it("no keys held is a zero direction", () => {

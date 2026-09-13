@@ -12,7 +12,15 @@ import type { ColliderSource } from "../../../src/world/collision-grid";
 import { CollisionGrid } from "../../../src/world/collision-grid";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
-const SUBCELLS_PER_CELL = 16;
+
+/** `defs/`'s own generated `COLLIDER_SUBCELLS_PER_CELL`, read from the
+ * committed document rather than restated -- the drift that constant was
+ * generated to prevent. */
+const SUBCELLS_PER_CELL: number = (
+  JSON.parse(readFileSync(`${REPO_ROOT}client/public/defs/defs.json`, "utf-8")) as {
+    collider_subcells_per_cell: number;
+  }
+).collider_subcells_per_cell;
 
 interface Rect {
   readonly x0: number;
@@ -55,31 +63,44 @@ const fixture: Fixture = JSON.parse(
   readFileSync(`${REPO_ROOT}fixtures/world-conformance.v1.json`, "utf-8"),
 );
 
-/** Every collider in the fixture is a whole cell (`x1 === x0 + 1`, `y1 ===
- * y0 + 1`) -- this builds one synthetic `PlacedObject`-shaped row per
- * collider cell, anchored at the cell itself, with a def whose own
- * collider fills the entire cell. */
+/** One synthetic `PlacedObject`-shaped row per fixture collider, each
+ * with a def built from that collider's own real width and height -- a
+ * multi-cell collider appearing in the fixture later must widen the def,
+ * not be silently truncated to one cell. */
 function buildGridFromFixture(): CollisionGrid {
-  const wholeCell: ColliderSource = {
-    width: 1,
-    height: 1,
-    collider: { x0: 0, y0: 0, x1: SUBCELLS_PER_CELL, y1: SUBCELLS_PER_CELL },
-  };
-  const grid = new CollisionGrid(SUBCELLS_PER_CELL, new Map([[1, wholeCell]]));
-  let objectId = 1n;
+  const defs = new Map<number, ColliderSource>();
+  const rows: { defId: number; collider: Rect; floor: number }[] = [];
   for (const floorSpec of fixture.floors) {
     for (const collider of floorSpec.colliders) {
-      grid.insert({
-        objectId: objectId++,
-        defId: 1,
-        x: collider.x0,
-        y: collider.y0,
-        floor: floorSpec.floor,
-        layer: 0,
-        orientation: 0,
-        chunkKey: 0n,
+      const width = collider.x1 - collider.x0;
+      const height = collider.y1 - collider.y0;
+      const defId = defs.size + 1;
+      defs.set(defId, {
+        width,
+        height,
+        collider: {
+          x0: 0,
+          y0: 0,
+          x1: width * SUBCELLS_PER_CELL,
+          y1: height * SUBCELLS_PER_CELL,
+        },
       });
+      rows.push({ defId, collider, floor: floorSpec.floor });
     }
+  }
+  const grid = new CollisionGrid(SUBCELLS_PER_CELL, defs);
+  let objectId = 1n;
+  for (const { defId, collider, floor } of rows) {
+    grid.insert({
+      objectId: objectId++,
+      defId,
+      x: collider.x0,
+      y: collider.y0,
+      floor,
+      layer: 0,
+      orientation: 0,
+      chunkKey: 0n,
+    });
   }
   return grid;
 }
@@ -104,11 +125,29 @@ describe("world conformance fixture", () => {
     }
   });
 
-  it("inv_collision_only_within_floor: a cell blocked on one floor is never blocked on another", () => {
+  it("a cell blocked on one floor is blocked on another only if that floor declares its own collider there", () => {
     const grid = buildGridFromFixture();
-    // (4, 0, floor 1) is blocked in the fixture; floor 0 at the same (x,
-    // y) is not.
-    expect(grid.entriesInCell(1, 4, 0).length).toBeGreaterThan(0);
-    expect(grid.entriesInCell(0, 4, 0)).toEqual([]);
+    const declaredFloors = fixture.floors.map((f) => f.floor);
+    expect(declaredFloors.length).toBeGreaterThan(1);
+
+    const blockedCases = fixture.cases.filter((c) => c.expect_blocked);
+    expect(blockedCases.length).toBeGreaterThan(0);
+
+    for (const blocked of blockedCases) {
+      for (const floor of declaredFloors) {
+        // What the fixture itself says about that cell on that floor --
+        // the Rust oracle's own answer, re-derived from the collider list
+        // rather than assumed.
+        const declaredHere = fixture.floors
+          .filter((f) => f.floor === floor)
+          .some((f) =>
+            f.colliders.some(
+              (r) => blocked.x >= r.x0 && blocked.x < r.x1 && blocked.y >= r.y0 && blocked.y < r.y1,
+            ),
+          );
+        const isBlocked = grid.entriesInCell(floor, blocked.x, blocked.y).length > 0;
+        expect(isBlocked, `(${blocked.x}, ${blocked.y}) on floor ${floor}`).toBe(declaredHere);
+      }
+    }
   });
 });

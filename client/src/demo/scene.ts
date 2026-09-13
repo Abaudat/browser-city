@@ -12,13 +12,13 @@
 // canvas. This module draws the scene and nothing else.
 
 import { type Application, Assets, Container, Rectangle, Sprite, Texture } from "pixi.js";
+import { attachKeyboard, KeyboardState } from "../input/keyboard";
 import { layerCodeByName } from "../render/layer-table";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { screenPositionPx } from "../render/screen-position";
 import { fromSortUnits, toSortUnits } from "../render/sort-units";
 import type { ColliderSource } from "../world/collision-grid";
 import { CollisionGrid } from "../world/collision-grid";
-import { attachKeyboard, KeyboardState } from "../world/keyboard";
 import type { MovementConfig } from "../world/movement";
 import { step } from "../world/movement";
 import {
@@ -27,7 +27,13 @@ import {
   type PropDrawable,
   updatePlayerDrawable,
 } from "./drawables";
-import { DEMO_PROPS, INTERIOR_FLOOR_TILES, PLAYER_START, SIDEWALK_TILES } from "./fixture";
+import {
+  demoColliderSources,
+  demoPlacedRows,
+  INTERIOR_FLOOR_TILES,
+  PLAYER_START,
+  SIDEWALK_TILES,
+} from "./fixture";
 
 // Each `new URL(<literal>, import.meta.url)` call below must stay a
 // literal string argument, not a variable or template interpolation --
@@ -138,8 +144,12 @@ export interface MountDemoSceneOptions {
   readonly storeyHeightPx: number;
   readonly rankOf: (layerCode: number) => number;
   /** Read once from `defs/`'s `movement.*` balance keys (`main.ts`) --
-   * never a literal in this file (Tim's direction, story 1.8). */
+   * never a literal in this file. */
   readonly movementConfig: MovementConfig;
+  /** Real `defs/objects` colliders, keyed by def id
+   * (`world/object-defs.ts`), so a prop the demo places by `defId` uses
+   * the collider `defs/` declares for it rather than a restated rect. */
+  readonly objectDefs: ReadonlyMap<number, ColliderSource>;
   /** Called once after every real re-sort (including the first one) with
    * the resulting `stableId` order -- the render path's own event, never
    * polled every frame (Quentin's direction). */
@@ -319,8 +329,15 @@ export async function mountDemoScene(
   app: Application,
   options: MountDemoSceneOptions,
 ): Promise<DemoSceneHandle> {
-  const { tileSizePx, storeyHeightPx, rankOf, movementConfig, onOrderChange, onPlayerMove } =
-    options;
+  const {
+    tileSizePx,
+    storeyHeightPx,
+    rankOf,
+    movementConfig,
+    objectDefs,
+    onOrderChange,
+    onPlayerMove,
+  } = options;
 
   const rawTextures = new Map<string, Texture>();
   await Promise.all(
@@ -472,34 +489,19 @@ export async function mountDemoScene(
     canvasHeight,
   );
 
-  // The demo's own collision grid (story 1.8): one synthetic
-  // `PlacedObject`-shaped row per fixture prop, fed straight from
-  // `fixture.ts`'s own hand-declared colliders -- exactly the shape a
-  // later chunk-streaming story's `onInsert` will feed the same grid,
-  // just called directly here instead of from a subscription (Tim's
-  // direction: `placed_object` stays private in this story).
-  const objectDefs = new Map<number, ColliderSource>(
-    DEMO_PROPS.map((prop) => [
-      Number(prop.id),
-      {
-        width: prop.footprint?.width ?? 1,
-        height: prop.footprint?.height ?? 1,
-        ...(prop.collider ? { collider: prop.collider } : {}),
-      },
-    ]),
-  );
-  const collisionGrid = new CollisionGrid(movementConfig.subcellsPerCell, objectDefs);
-  for (const prop of DEMO_PROPS) {
-    collisionGrid.insert({
-      objectId: prop.id,
-      defId: Number(prop.id),
-      x: prop.x,
-      y: prop.y,
-      floor: prop.floor,
-      layer: 0,
-      orientation: 0,
-      chunkKey: 0n,
-    });
+  // The collision grid: real `defs/objects` colliders (`objectDefs`,
+  // resolved from the fetched document in `main.ts`) plus the demo's own
+  // walls and world boundary, fed in as `PlacedObject`-shaped rows --
+  // exactly the shape a later chunk-streaming story's `onInsert` will
+  // feed the same grid, just called directly here instead of from a
+  // subscription (`placed_object` stays private in this story).
+  const colliderSources = new Map<number, ColliderSource>([
+    ...objectDefs,
+    ...demoColliderSources(movementConfig.subcellsPerCell),
+  ]);
+  const collisionGrid = new CollisionGrid(movementConfig.subcellsPerCell, colliderSources);
+  for (const placed of demoPlacedRows()) {
+    collisionGrid.insert(placed);
   }
 
   onPlayerMove?.(playerX, playerY);

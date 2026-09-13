@@ -23,6 +23,9 @@
 // size) -- there is no stretched or fractional slice anywhere in this
 // fixture.
 
+import type { PlacedObject } from "../net/bindings/types";
+import type { ColliderSource } from "../world/collision-grid";
+
 /** The five pool layers (FR123), in ascending rank order -- the ladder
  * itself lives in `sim::codes::layer`/`render/layer-table.ts`; this is
  * just which one each demo prop is on. */
@@ -37,21 +40,14 @@ export interface DemoFootprint {
   readonly height: number;
 }
 
-/** A half-open collider rect in sub-cells, relative to the prop's own
- * anchor cell -- `defs/`'s own unit (16 sub-cells per cell, story 1.8).
- * Absent means walkable (FR128): there is no separate `walkable` flag. A
- * multi-cell prop's collider spans its whole footprint in one rect;
- * `world/collision-grid.ts` rasterises it into every cell it overlaps. */
-export interface DemoCollider {
-  readonly x0: number;
-  readonly y0: number;
-  readonly x1: number;
-  readonly y1: number;
-}
-
 /** One placed prop in the demo scene. `x`/`y` are the anchor cell (world
  * tile coordinates); `assetKey` names an entry in `scene.ts`'s asset
- * table -- this module knows nothing about textures or PixiJS. */
+ * table -- this module knows nothing about textures or PixiJS.
+ *
+ * Collision comes from one of two places, never a hand-typed sub-cell
+ * rect: `defId` names a real `defs/objects` entry and uses that entry's
+ * own `collider`; `solid` is demo-only geometry (the shop's walls, which
+ * are not `defs/` objects yet) blocking the prop's whole footprint. */
 export interface DemoProp {
   readonly id: bigint;
   readonly assetKey: string;
@@ -60,18 +56,21 @@ export interface DemoProp {
   readonly floor: number;
   readonly layer: DemoLayer;
   readonly footprint?: DemoFootprint;
-  readonly collider?: DemoCollider;
+  readonly defId?: number;
+  readonly solid?: true;
 }
 
-const SUBCELLS_PER_CELL = 16;
+/** `defs/objects/city-props.toml`'s own `lamppost` id -- the demo places
+ * it by id so its collider is read from `defs/`, never restated here. */
+export const LAMPPOST_DEF_ID = 4;
 
-/** A collider spanning a prop's whole footprint -- the common case for a
- * solid wall or piece of furniture (story 1.8: colliders live in `defs/`
- * for real content; this demo fixture is throwaway harness code that
- * states its own instead, the same way it states its own footprints). */
-function fullFootprintCollider(footprint?: DemoFootprint): DemoCollider {
-  const { width, height } = footprint ?? { width: 1, height: 1 };
-  return { x0: 0, y0: 0, x1: width * SUBCELLS_PER_CELL, y1: height * SUBCELLS_PER_CELL };
+/** Synthetic def ids for demo-only geometry (walls, world boundary),
+ * offset far past any real `defs/objects` id so the two never collide in
+ * the one `defId -> collider` map the grid is built from. */
+const DEMO_DEF_ID_BASE = 10_000;
+
+export function demoDefId(id: bigint): number {
+  return DEMO_DEF_ID_BASE + Number(id);
 }
 
 /** The player's starting position -- continuous world coordinates
@@ -86,19 +85,15 @@ function fullFootprintCollider(footprint?: DemoFootprint): DemoCollider {
  * still. */
 export const PLAYER_START = { x: 5.5, y: 4, floor: 0 } as const;
 export const PLAYER_STABLE_ID = 1000n;
-/** The world y the player rests at after walking straight south out the
- * door and onto the pavement (story 1.8: no artificial bounds clamp any
- * more -- `PLANTER` below, id 14, is a real, walkable-around collider
- * placed directly in the player's path, so this is a physical rest point,
- * not an invented rectangle). `render-order.spec.ts` holds "south" for
- * long enough to reach it -- deterministic regardless of exact key-hold
- * timing, the same property the old `PLAYER_BOUNDS` clamp gave. Held to
- * 8, not further: `SIDEWALK_TILES` draws its last pavement row at world y
- * = 8, so a bottom-anchored player's feet must not pass its bottom edge
- * (`drawables.test.ts`'s corner check pins this against
- * `screenPositionPx`).
- */
-export const PLAYER_WALK_SOUTH_REST_Y = 8;
+
+/** The anchor cell of the lamppost the player walks into when leaving by
+ * the door: the same column as `DOOR_X`, out on the pavement. Walking
+ * straight south from `PLAYER_START` rests against its base collider --
+ * a real collider read from `defs/objects/city-props.toml`, so the rest
+ * point is deterministic regardless of key-hold timing (the one property
+ * the old `PLAYER_BOUNDS` clamp existed for), and derived from `defs/`
+ * by every consumer rather than restated as a number here. */
+export const LAMPPOST_CELL = { x: 5, y: 8 } as const;
 
 // The building footprint: x = 3..8 (west wall, 4 interior columns, east
 // wall), y = 1..6 (north wall, 4 interior rows, south/door wall).
@@ -124,7 +119,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "walls",
     footprint: { width: EAST_WALL_X - WEST_WALL_X + 1, height: 1 },
-    collider: fullFootprintCollider({ width: EAST_WALL_X - WEST_WALL_X + 1, height: 1 }),
+    solid: true,
   },
   // South (front) wall, split around the door gap at DOOR_X. A short,
   // one-tile-tall module (`wallTileShort`, unlike the north wall's
@@ -139,7 +134,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "walls",
     footprint: { width: DOOR_X - WEST_WALL_X, height: 1 },
-    collider: fullFootprintCollider({ width: DOOR_X - WEST_WALL_X, height: 1 }),
+    solid: true,
   },
   {
     id: 3n,
@@ -149,7 +144,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "walls",
     footprint: { width: EAST_WALL_X - DOOR_X, height: 1 },
-    collider: fullFootprintCollider({ width: EAST_WALL_X - DOOR_X, height: 1 }),
+    solid: true,
   },
   // West wall: the near/far occlusion worked example -- decomposed
   // toward the camera (width 1, height 4), so walking past it shows the
@@ -163,7 +158,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "walls",
     footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
-    collider: fullFootprintCollider({ width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 }),
+    solid: true,
   },
   // East wall, same shape, mirrored.
   {
@@ -174,7 +169,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "walls",
     footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
-    collider: fullFootprintCollider({ width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 }),
+    solid: true,
   },
 
   // A window and a poster mounted flat on the north wall face
@@ -195,7 +190,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "furniture",
     footprint: { width: 3, height: 1 },
-    collider: fullFootprintCollider({ width: 3, height: 1 }),
+    solid: true,
   },
 
   // A table with a glass on it: same anchor cell, `furniture` under
@@ -260,12 +255,47 @@ export const DEMO_PROPS: readonly DemoProp[] = [
   {
     id: 14n,
     assetKey: "table",
-    x: DOOR_X,
-    y: PLAYER_WALK_SOUTH_REST_Y,
+    x: LAMPPOST_CELL.x,
+    y: LAMPPOST_CELL.y,
     floor: 0,
     layer: "objects",
-    collider: fullFootprintCollider(),
+    defId: LAMPPOST_DEF_ID,
   },
+] as const;
+
+/** A collider-only rect, in whole cells, with no sprite and no place in
+ * the depth-sorted pool. */
+export interface DemoBoundaryRect {
+  readonly id: bigint;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** The edge of the drawn world (FR137 has no world-boundary concept yet,
+ * and the pavement simply stops): a closed ring of solid, undrawn cells
+ * around everything `INTERIOR_FLOOR_TILES` and `SIDEWALK_TILES` paint, so
+ * the avatar can never walk off the ground into the void. The shop's own
+ * walls close the rest of the ring. `drawables.test.ts` proves the ring
+ * is closed by walking the real resolver against it, rather than trusting
+ * this list by eye. */
+// A sprite is drawn bottom-centre-anchored (`render/screen-position.ts`),
+// so a body at world `(x, y)` paints at `((x + 0.5) * tile, (y + 1) *
+// tile)`. The ring below is placed for that convention, one half-cell in
+// from the painted edge where the offset needs it, so a body pinned
+// against it is still drawn over ground -- `drawables.test.ts` checks
+// exactly that, through `screenPositionPx`, rather than by eye.
+export const DEMO_BOUNDARY: readonly DemoBoundaryRect[] = [
+  // West and east of the pavement.
+  { id: 101n, x: 0, y: SOUTH_WALL_Y, width: 1, height: 4 },
+  { id: 102n, x: 9, y: SOUTH_WALL_Y, width: 1, height: 4 },
+  // South of the pavement.
+  { id: 103n, x: 0, y: 9, width: 10, height: 1 },
+  // North of the pavement, either side of the shop's own footprint --
+  // the two stretches of pavement edge no wall already closes.
+  { id: 104n, x: 1, y: SOUTH_WALL_Y - 1, width: WEST_WALL_X - 1, height: 1 },
+  { id: 105n, x: EAST_WALL_X + 1, y: SOUTH_WALL_Y - 1, width: 1, height: 1 },
 ] as const;
 
 /** Flat-pass ground tiles (FR123: three flat passes before the sorted
@@ -280,10 +310,82 @@ export const INTERIOR_FLOOR_TILES = {
   y1: SOUTH_WALL_Y,
 } as const;
 
+// One row deeper than the shop needs, because a bottom-anchored sprite
+// paints a row lower than the cell its body occupies: the player resting
+// against the lamppost must still be drawn over pavement, not past its
+// last painted row.
 export const SIDEWALK_TILES = {
   assetKey: "sidewalk",
   x0: 1,
   y0: SOUTH_WALL_Y,
   x1: 10,
-  y1: 9,
+  y1: 10,
 } as const;
+
+/** The demo's own collider sources, keyed by the synthetic def id
+ * `demoDefId` mints: the shop's walls (solid across their whole
+ * footprint) and the world boundary. Anything that exists in `defs/` is
+ * absent here and read from `defs/` instead. `subcellsPerCell` comes from
+ * the scene, which reads it from `defs/`'s generated
+ * `COLLIDER_SUBCELLS_PER_CELL` -- this module never states it. */
+export function demoColliderSources(subcellsPerCell: number): ReadonlyMap<number, ColliderSource> {
+  const sources = new Map<number, ColliderSource>();
+  for (const prop of DEMO_PROPS) {
+    if (!prop.solid) continue;
+    const { width, height } = prop.footprint ?? { width: 1, height: 1 };
+    sources.set(demoDefId(prop.id), {
+      width,
+      height,
+      collider: { x0: 0, y0: 0, x1: width * subcellsPerCell, y1: height * subcellsPerCell },
+    });
+  }
+  for (const rect of DEMO_BOUNDARY) {
+    sources.set(demoDefId(rect.id), {
+      width: rect.width,
+      height: rect.height,
+      collider: {
+        x0: 0,
+        y0: 0,
+        x1: rect.width * subcellsPerCell,
+        y1: rect.height * subcellsPerCell,
+      },
+    });
+  }
+  return sources;
+}
+
+/** Every collider-bearing placement the demo feeds the grid, shaped like
+ * the generated `PlacedObject` binding: the props that declare `defId` or
+ * `solid`, plus the undrawn boundary ring. A later chunk-streaming story
+ * replaces this with a real subscription; the grid's own API does not
+ * change. */
+export function demoPlacedRows(): readonly PlacedObject[] {
+  const rows: PlacedObject[] = [];
+  for (const prop of DEMO_PROPS) {
+    const defId = prop.defId ?? (prop.solid ? demoDefId(prop.id) : undefined);
+    if (defId === undefined) continue;
+    rows.push({
+      objectId: prop.id,
+      defId,
+      x: prop.x,
+      y: prop.y,
+      floor: prop.floor,
+      layer: 0,
+      orientation: 0,
+      chunkKey: 0n,
+    });
+  }
+  for (const rect of DEMO_BOUNDARY) {
+    rows.push({
+      objectId: rect.id,
+      defId: demoDefId(rect.id),
+      x: rect.x,
+      y: rect.y,
+      floor: PLAYER_START.floor,
+      layer: 0,
+      orientation: 0,
+      chunkKey: 0n,
+    });
+  }
+  return rows;
+}

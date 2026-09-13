@@ -180,13 +180,9 @@ always derived from placed content, never stored per cell.
 - Walkability is the absence of a collider (FR128): computed by
   rasterising the colliders the placed objects on an entity's floor
   contribute, never a stored walkable/collision column. The server's
-  `FloorCollision` (below) is tile-granular, for L2 citizen routing only.
-  Player movement's sub-tile precision (a `collider` rect declared in
-  sub-cells, `defs/`'s own unit) is client-only in v1 (FR137): nothing on
-  the server rasterises it into `FloorCollision`, by design, not
-  oversight -- see "Movement and collision (client)" below. The two never
-  need to agree cell-for-cell, and nothing should later "fix" one to
-  match the other.
+  `FloorCollision` (below) is tile-granular, for citizen routing; sub-tile
+  collider precision is client-only (FR137), and the server never
+  consumes a `collider`. The two are not required to agree cell for cell.
 - Building and room ownership (FR119) is areas, not per-cell: `building`
   and `room` rows carry a surrogate id; `building_area`/`room_area` rows
   hold the axis-aligned rectangles that belong to one such id. A
@@ -236,74 +232,45 @@ ownership rules is a separate TypeScript implementation (NFR30 forbids
 sharing the code). Its own test suite consumes the committed
 `fixtures/world-conformance.v1.json`, the same file
 `sim/tests/world_conformance.rs` reads, regenerated from `sim::world::
-fixture` by `bounds`'s `regen-world-fixture` binary. Story 1.8's
-`client/src/world/chunk.ts` and `client/tests/unit/world/conformance.test.ts`
-cover chunk addressing and whole-cell collision this way; floor
-transitions and building/room ownership have no client port yet, and
-`docs/trace-matrix.md`'s "World addressing" section carries a `deferred`
-row naming the story that will add them.
+fixture` by `bounds`'s `regen-world-fixture` binary. Chunk addressing and
+collision are covered; transitions and ownership are not yet ported, and
+`docs/trace-matrix.md` carries a `deferred` row naming the story that
+will add them.
 
 ## Movement and collision (client)
 
-Story 1.8: FR137's fully client-authoritative player movement, permanent
+Player movement and collision are client-authoritative (FR137), permanent
 code under `client/src/world/`, driven by collider data in `defs/`.
 
-- **Collider units.** `defs/objects/*.toml`'s optional `collider = { x0,
-  y0, x1, y1 }` is a half-open integer rect in sub-cells relative to the
-  footprint's top-left anchor cell -- `COLLIDER_SUBCELLS_PER_CELL` (16),
-  generated once by `tools/defs-build` into both artefacts, never tied to
-  `render.tile_size_px` (collision cannot change when art scale changes).
-  No `collider` key means walkable (FR128); there is no `walkable` flag
-  anywhere. `tools/defs-build` rejects a zero-area collider or one that
-  does not fit inside `width*height*COLLIDER_SUBCELLS_PER_CELL`
-  (`inv_collider_within_footprint`, checked again client-side in
-  `defs/parse.ts` since the client never trusts a runtime-fetched
-  document just because a build step already validated one).
-- **Speed and body are balance keys.** `defs/balance/movement.toml`
-  holds `movement.walk_speed_millicells_per_s` (2200 -- 2.2 cells/s is
-  canonical, the AC's 35px/s figure is derived and approximate) and
-  `movement.player_body_width_subcells`/`player_body_height_subcells`.
-  The body is a small rect at the feet, horizontally centred on the
-  player's position, bottom edge at that position -- never the sprite
-  rect. `client/src/world/movement-config.ts` reads each value exactly
-  once into a `MovementConfig`; no other module reads the balance keys
-  directly or repeats the speed literal
-  (`client/tests/unit/world/no-speed-literal.test.ts`).
-- **The derived grid** (`client/src/world/collision-grid.ts`) is sparse
-  by chunk, dense inside a chunk: `Map<floor, Map<chunk key, ChunkCells>>`,
-  `ChunkCells` a fixed `CHUNK_SIZE*CHUNK_SIZE` array indexed
-  arithmetically, mirroring `sim::world::chunk_key`'s bit layout in
-  `bigint` (`client/src/world/chunk.ts`, its own `CHUNK_SIZE` constant --
-  NFR30 duplication, deliberate). Mutated only through `insert`, `delete`
-  (delete then insert for `update`) against rows shaped like the
-  generated `PlacedObject` binding type; a collider is rasterised into
-  every cell it overlaps, across chunk edges, so overhang works (FR126).
-  `orientation != 0` throws until a rotation story defines it. `placed_object`
-  stays private in this story (Schema rule: public only once read) -- the
-  demo feeds the grid rows shaped like the binding type directly; a later
-  chunk-streaming story wires real `onInsert`/`onDelete`/`onUpdate`
-  subscriptions to the same grid.
-- **Movement** (`client/src/world/movement.ts`) is a pure `step(position,
-  inputDir, deltaMs, grid, floor, config) -> position`, resolved per-axis
-  (move X against the grid, then Y) -- what gives sliding into corners
-  without catching on seams between neighbouring colliders. Each axis
-  sweeps the union of the body's start and end boxes, so no delta
-  (including a 100ms-clamped frame spike after a backgrounded tab) can
-  tunnel through a collider. Positions stay floats; every collider face
-  is a multiple of 1/16 and exactly representable, so resolution snaps to
-  the face exactly with strict half-open comparisons and no epsilon.
-  Candidates come only from the cells the swept body spans
-  (`CollisionGridQuery.entriesInCell`), never a row scan -- the lookup
-  count is identical whether the grid holds 10 or 100k objects elsewhere.
-- **Import boundaries are mechanical.** `client/biome.json`'s
-  `noRestrictedImports` override bans `pixi.js`, `../net/*` (except
-  `net/bindings` types, type-only) and `../demo/*` under
-  `client/src/world/**`, backed by a structural test
-  (`client/tests/unit/world/import-boundaries.test.ts`) that does not
-  depend on Biome configuration staying correct. Input stays in the
-  scene: keydown/keyup (`client/src/world/keyboard.ts`) set a direction,
-  released entirely on window `blur`/`visibilitychange`, and every frame
-  calls `step` directly -- no network involved (FR137).
+- A `collider` on an `[[object]]` is a half-open integer rect in
+  sub-cells relative to the footprint's anchor cell;
+  `COLLIDER_SUBCELLS_PER_CELL` is generated into both artefacts and is
+  never derived from `render.tile_size_px`. No `collider` means walkable
+  (FR128); there is no `walkable` flag. Containment inside
+  `width*height` sub-cells is enforced by `tools/defs-build` and again by
+  `client/src/defs/parse.ts`.
+- Walking speed and the player body are balance keys
+  (`defs/balance/movement.toml`), read once into a `MovementConfig` by
+  `client/src/world/movement-config.ts`. The body is a small rect at the
+  feet, centred on the player's position with its bottom edge there --
+  never the sprite rect.
+- The collision grid is derived, sparse by chunk and dense within one
+  (`CHUNK_SIZE*CHUNK_SIZE`, indexed arithmetically), keyed by the
+  client's own mirror of `chunk_key`. It is mutated only by
+  `insert`/`delete`/`update` over `PlacedObject`-shaped rows, rasterises
+  a collider into every cell it overlaps including across chunk edges,
+  frees a chunk when its last entry goes, and throws on a non-zero
+  `orientation`.
+- A step resolves per axis by swept AABB, sweeping the union of the
+  body's start and end boxes. `deltaMs` is clamped to 100 ms. Collider
+  faces are exactly representable, so resolution snaps to a face with
+  strict half-open comparisons and no epsilon. Candidates come only from
+  the cells the swept body spans, never a row query.
+- `world/**` may not import `pixi.js`, values from `net/` (only
+  `net/bindings` types, type-only) or `demo/`, and may not touch `window`
+  or `document`; DOM input lives in `client/src/input/`.
+- The server's `FloorCollision` stays tile-granular and never consumes a
+  `collider`.
 
 ## Rendering
 
