@@ -28,5 +28,35 @@
       "quoteStyle": "double",
       "semicolons": "always"
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["src/world/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "window": "world/** is the pure movement/collision layer -- DOM access belongs in src/input/ or src/demo/",
+                  "document": "world/** is the pure movement/collision layer -- DOM access belongs in src/input/ or src/demo/"
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["pixi.js", "../net/*", "!../net/bindings/types", "../demo/*"]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

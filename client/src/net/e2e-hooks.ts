@@ -8,7 +8,11 @@ import type { PingObservation } from "./observe-ping";
 
 declare global {
   interface Window {
-    __bc?: { pings: PingObservation[]; renderOrder?: string[] };
+    __bc?: {
+      pings: PingObservation[];
+      renderOrder?: string[];
+      playerPosition?: { x: number; y: number };
+    };
   }
 }
 
@@ -28,5 +32,16 @@ export function recordRenderOrderForE2e(order: readonly bigint[]): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.renderOrder = order.map((id) => id.toString());
+  window.__bc = bucket;
+}
+
+/** Story 1.8's proof that a held direction key moves the avatar
+ * client-side, with no round trip (FR137): the demo scene's current
+ * continuous player position, read every frame -- `movement.spec.ts` is
+ * the only reader. */
+export function recordPlayerPositionForE2e(x: number, y: number): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.playerPosition = { x, y };
   window.__bc = bucket;
 }

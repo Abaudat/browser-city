@@ -1,10 +1,12 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "90af8036e7221832",
+  "defs_version": "ffa70266e12d5d29",
+  "collider_subcells_per_cell": 16,
   "objects": [
-    { "height": 1, "id": 2, "key": "park_bench", "width": 2 },
-    { "height": 1, "id": 3, "key": "shop_counter", "width": 3 },
-    { "height": 1, "id": 1, "key": "trash_bin", "width": 1 }
+    { "collider": { "x0": 6, "y0": 10, "x1": 10, "y1": 14 }, "height": 1, "id": 4, "key": "lamppost", "width": 1 },
+    { "collider": null, "height": 1, "id": 2, "key": "park_bench", "width": 2 },
+    { "collider": null, "height": 1, "id": 3, "key": "shop_counter", "width": 3 },
+    { "collider": { "x0": 4, "y0": 4, "x1": 12, "y1": 12 }, "height": 1, "id": 1, "key": "trash_bin", "width": 1 }
   ],
   "items": [
     { "id": 1, "key": "bottle" },
@@ -21,6 +23,9 @@
   ],
   "balance": [
     { "key": "citizen.bar_decay.rest", "max": 100, "min": 0, "value": 10 },
+    { "key": "movement.player_body_height_subcells", "max": 16, "min": 1, "value": 4 },
+    { "key": "movement.player_body_width_subcells", "max": 16, "min": 1, "value": 8 },
+    { "key": "movement.walk_speed_millicells_per_s", "max": 20000, "min": 100, "value": 2200 },
     { "key": "render.storey_height_px", "max": 256, "min": 1, "value": 48 },
     { "key": "render.tile_size_px", "max": 64, "min": 1, "value": 16 }
   ]

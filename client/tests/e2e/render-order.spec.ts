@@ -26,9 +26,10 @@ test("the demo scene's real, mounted display list produces the committed depth o
   const initialOrder = await page.evaluate(() => window.__bc?.renderOrder ?? []);
   expect(initialOrder).toEqual(DEMO_SCENE_GOLDEN_ORDER);
 
-  // Walk south for long enough to reach PLAYER_BOUNDS's clamp -- a
-  // deterministic endpoint regardless of exact key-hold timing, so this
-  // assertion is never a race against the ticker's frame rate.
+  // Walk south for long enough to rest against the story 1.8 solid
+  // obstacle (`fixture.ts`'s id 14, a real collider) -- a deterministic
+  // endpoint regardless of exact key-hold timing, so this assertion is
+  // never a race against the ticker's frame rate.
   await page.keyboard.down("ArrowDown");
   await page.waitForFunction(
     (expected) => JSON.stringify(window.__bc?.renderOrder) === JSON.stringify(expected),

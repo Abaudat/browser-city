@@ -16,7 +16,7 @@ with no row here.
 | `inv_inventory_superset_after_absence` | Inventory is a superset after any absence | deferred | | inventory system |
 | `inv_no_owned_item_degrades_during_absence` | No owned item degrades during absence | deferred | | inventory/decay system |
 | `inv_budget_never_negative` | Budget never goes negative | deferred | | economy system |
-| `inv_collider_within_footprint` | `collider` is contained within `footprint` | deferred | | placement/collision system |
+| `inv_collider_within_footprint` | `collider` is contained within `footprint` (FR128) | covered | `inv_collider_within_footprint` | — |
 | `inv_collision_only_within_floor` | No cell on any other floor ever contributes to an entity's collision result (FR117) | covered | `inv_collision_only_within_floor` | — |
 | `inv_floor_transition_lands_standable` | No transition cell ever targets a floor or cell where the entity would be inside geometry or out of bounds (FR117) | covered | `inv_floor_transition_lands_standable` | — |
 | `inv_world_query_total` | A world query never panics and never wraps, for any i32 coordinate and any floor or layer (FR117) | covered | `inv_world_query_total` | — |
@@ -25,6 +25,12 @@ with no row here.
 | `inv_drawable_pool_is_a_permutation` | Sorting a drawable pool drops or duplicates nothing -- the output is exactly the input multiset (FR123) | covered | `inv_drawable_pool_is_a_permutation` | — |
 | `inv_floor_never_affects_depth_order` | For any two drawables differing only in floor, the comparator's result against a third drawable is identical either way (FR124) | covered | `inv_floor_never_affects_depth_order` | — |
 | `inv_multicell_prop_covers_footprint_once` | A multi-cell prop's decomposition yields exactly width*height drawables, anchors covering the footprint exactly once (FR125) | covered | `inv_multicell_prop_covers_footprint_once` | — |
+| `inv_move_never_ends_inside_collider` | Starting from any non-penetrating position, any input sequence and any deltaMs (including huge frame spikes) never ends with the player box overlapping a collider (FR137) | covered | `inv_move_never_ends_inside_collider` | — |
+| `inv_move_never_tunnels` | A single step with a delta much longer than a thin collider's width never ends on the far side of it | covered | `inv_move_never_tunnels` | — |
+| `inv_slide_keeps_tangential_motion` | Moving diagonally into a flat, axis-aligned surface keeps the full tangential component of the motion and zeroes only the normal component; a flush two-cell corner never stops the player on its internal seam | covered | `inv_slide_keeps_tangential_motion` | — |
+| `inv_collision_grid_matches_rebuild` | A model-based sequence of random insert/delete/update calls always leaves the grid identical to a from-scratch build of the surviving rows | covered | `inv_collision_grid_matches_rebuild` | — |
+| `inv_absent_collider_is_walkable` | An object with no collider contributes nothing: the grid is unchanged by its insert and its delete, and a step in open space is never clamped (FR128) | covered | `inv_absent_collider_is_walkable` | — |
+| `inv_step_is_frame_rate_independent` | In open space, one step of N ms equals k steps summing to N ms (within epsilon), and diagonal speed never exceeds axis speed | covered | `inv_step_is_frame_rate_independent` | — |
 
 ## Coverage scale (NFR29)
 
@@ -86,6 +92,7 @@ Same Guard-path discipline as the sections above.
 | Both generated artefacts carry the exact same `defs_version`, asserted directly rather than inferred, and the built client asset ships it too | covered | `scripts/ci/check-defs-version-agrees.sh`, the `client-build` job's own build-asset assertion |
 | The server's and the client's independent parsers agree on every field, and on a shared table of malformed input both must reject (NFR30) | covered | `server/sim/tests/defs_dump.rs`, `client/tests/unit/defs/dump-golden.test.ts`, `tools/defs-build/tests/shared_malformed_cases.rs`, `client/tests/unit/defs/malformed.test.ts` |
 | The prop atlases, character-part atlases and audio manifest fold into `defs_version` | deferred | the story that adds each pipeline -- none of the three inputs exist yet |
+| An object `collider` (sub-cells, FR128) rejects zero/negative area and a rect that does not fit inside `width*height*COLLIDER_SUBCELLS_PER_CELL`; `COLLIDER_SUBCELLS_PER_CELL` is generated once into both artefacts (story 1.8) | covered | `tools/defs-build/tests/failure_fixtures.rs` -- `a_zero_area_collider_is_named`, `a_collider_outside_its_footprint_is_named`; `tools/defs-build/tests/shared_malformed_cases.rs` |
 
 ## World addressing
 
@@ -105,7 +112,8 @@ sections above.
 | The `chunk_key` packing round-trips and never panics, including at the extremes (FR145) | covered | `server/sim/tests/world_chunk.rs` |
 | A collision query costs a bounded, small number of dense-storage accesses regardless of world size, and the collision grid stays within its documented 1-bit-per-cell budget | covered | `server/sim/tests/world_perf.rs` |
 | An ownership query scans only the areas sharing the queried chunk, never every area in the world (FR119, FR120, FR122) | covered | `server/sim/tests/world_perf.rs` -- `ownership_lookup_scans_only_the_queried_chunk_not_every_area_in_the_world` |
-| The client-side TypeScript port of addressing, collision, transition and ownership reads the same fixtures/world-conformance.v1.json its Rust oracle reads (NFR30) | deferred | client-side collision/addressing story |
+| The client-side TypeScript port of chunk addressing and whole-cell collision reads the same fixtures/world-conformance.v1.json its Rust oracle reads, and agrees on every case (NFR30, story 1.8) | covered | `client/tests/unit/world/conformance.test.ts` |
+| The client-side TypeScript port of floor transitions and building/room ownership reads the same fixtures/world-conformance.v1.json its Rust oracle reads (NFR30) | deferred | chunk-streaming / floor-transition client story |
 
 ## Rendering
 
@@ -123,11 +131,18 @@ Guard-path discipline as the sections above.
 | The FR124 floor offset is zero at floor 0, proportional and strictly monotonic in floor (higher floor draws further up the screen), and sourced from the `render.storey_height_px` balance key rather than a literal (Quentin direction, cycle 2) | covered | `client/tests/unit/render/screen-position.test.ts` |
 | The tile size and storey height are `defs/balance/render.toml` keys, not TypeScript literals, and fold into `defs_version` | covered | `scripts/ci/check-defs-current.sh`, `scripts/ci/check-defs-version-bump.sh` |
 | A real, mounted Pixi display list produces the same order the comparator produces over the identical, committed fixture scene, both at rest and after a real keyboard-driven move (Quentin direction) | covered | `client/tests/e2e/render-order.spec.ts` against `client/tests/unit/demo/drawables.test.ts` and its shared goldens (`golden.ts`) |
-| The demo player movement never leaves its bounds, is a true no-op with no input, and reports a sort-key change exactly when the quantised position changes (Quentin direction, cycle 2) | covered | `client/tests/unit/demo/player-step.test.ts` |
+| The demo player movement is resolved by `world/movement.ts` swept-AABB `step` against real fixture colliders, and the scene only re-sorts when the player own quantised sort-key position actually changes (replacing the old bounds-clamped `player-step.ts`) | covered | `client/tests/unit/world/movement.test.ts`, `client/tests/unit/demo/drawables.test.ts` |
 | A per-cell sub-rect is only legal on whole-tile boundaries; a prop whose declared footprint does not match the real pixel dimensions of its art throws at mount rather than drawing a stretched or fractional slice (Artie/Tim direction, cycle 2) | covered | `client/src/demo/scene.ts` -- `sliceTexture`/`sliceAlongAxis` |
 | Every sprite the demo scene mounts is drawn within the canvas -- an off-canvas scene fails loudly instead of passing every id-based check silently (Artie direction, cycle 2) | covered | `client/src/demo/scene.ts` -- `assertSpritesWithinCanvas`, called at mount |
 | The client-only trace-matrix check (no cargo) and the full run agree, and `client-check` runs the former so a client-only PR is never gated on the slowest half of the graph (Tim direction, cycle 2) | covered | `.github/workflows/ci.yml` -- the `client-check` job's own step, `scripts/ci/check-trace-matrix.sh --client-only` |
 | The render-order e2e hook never ships in the production bundle, same as every other `window.__bc` use | covered | `.github/workflows/ci.yml` -- the `client-build` job's own bundle grep |
+| Walking speed is a named constant derived from `movement.walk_speed_millicells_per_s`, never a literal scattered through movement code; crossing a 40-cell viewport at the committed speed takes 18s within tolerance across jittered frame deltas (FR137) | covered | `client/tests/unit/world/no-speed-literal.test.ts`, `client/tests/unit/world/defs-movement.test.ts` |
+| Client movement code under `world/**` never imports `pixi.js`, values from `net/` (only `net/bindings` types, type-only) or `demo/`, and never touches `window`/`document` | covered | `client/biome.json` -- the `src/world/**` override's `noRestrictedImports` and `noRestrictedGlobals`, run by the `client-check` job |
+| A collision query is `O(1)`: the number of cells examined for the same move is identical whether the grid holds 10 or 100k objects placed elsewhere, and no row query happens in the movement path | covered | `client/tests/unit/world/movement.test.ts` -- the counting-wrapper test |
+| Colliders declared in `defs/objects` reach the running client: the grid def map is built from the fetched document, and a def sub-tile collider both blocks and lets the player past the free part of its cell (FR128) | covered | `client/src/world/object-defs.ts`, `client/tests/unit/world/defs-movement.test.ts` |
+| The grid frees a chunk when its last entry is deleted, and a floor when its last chunk goes, so a streaming session never accumulates chunks it no longer has an entry in | covered | `client/tests/unit/world/collision-grid.test.ts` -- `inv_collision_grid_matches_rebuild` compares `allocatedChunkCount` too |
+| The player can never walk off the drawn world: for any input sequence, every step keeps the drawn body over the interior floor or the pavement | covered | `client/tests/unit/demo/drawables.test.ts` -- the boundary-ring property |
+| Holding a direction key moves the avatar within three animation frames with no round trip (FR137); it comes to rest against a real collider and never pauses at a collider-less prop | covered | `client/tests/e2e/movement.spec.ts` |
 
 ## Scheduled-reducer timing
 

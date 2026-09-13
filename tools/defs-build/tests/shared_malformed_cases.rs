@@ -29,6 +29,8 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "out-of-range-balance" => "out-of-range-balance-value",
         "non-integer-id" => "non-integer-id",
         "negative-id" => "negative-id",
+        "zero-area-collider" => "zero-area-collider",
+        "collider-outside-footprint" => "collider-outside-footprint",
         other => panic!(
             "shared case '{other}' has no mapped tests/fixtures/invalid/ directory -- add one to fixture_for()"
         ),

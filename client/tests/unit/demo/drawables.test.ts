@@ -1,15 +1,19 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   buildPlayerDrawable,
   buildPropDrawables,
   updatePlayerDrawable,
 } from "../../../src/demo/drawables";
-import { PLAYER_BOUNDS, PLAYER_START, SIDEWALK_TILES } from "../../../src/demo/fixture";
+import { INTERIOR_FLOOR_TILES, PLAYER_START, SIDEWALK_TILES } from "../../../src/demo/fixture";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { LAYER_TABLE } from "../../../src/render/layer-table";
 import { screenPositionPx } from "../../../src/render/screen-position";
 import { compareDrawables, sortDrawablesInPlace } from "../../../src/render/sort-key";
 import { toSortUnits } from "../../../src/render/sort-units";
+import type { Vec2 } from "../../../src/world/movement";
+import { step } from "../../../src/world/movement";
+import { demoCollisionGrid, demoMovementConfig, lamppostRestY } from "./demo-world";
 import { DEMO_SCENE_GOLDEN_ORDER, DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH } from "./golden";
 
 // Mirrors `render.tile_size_px` / `render.storey_height_px`
@@ -45,7 +49,7 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     expect(pool.map((d) => d.stableId.toString())).toEqual(DEMO_SCENE_GOLDEN_ORDER);
   });
 
-  it("sorts the fixture with the player walked south to the clamped bound to the second committed id sequence", () => {
+  it("sorts the fixture with the player walked south to rest against the story 1.8 obstacle to the second committed id sequence", () => {
     // Quentin's direction: the unit test owns this ordering fact too --
     // `render-order.spec.ts` only has to prove the real adapter reaches
     // it after a real move, never derive or own it by itself. Built
@@ -53,7 +57,7 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // above is, so a wrong golden here fails with a diff in the fastest
     // job instead of a ten-second timeout in the slowest one.
     const props = buildPropDrawables((layer) => rankOf(layer));
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_BOUNDS.y1);
+    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, lamppostRestY());
     const pool = [...props, player];
     sortDrawablesInPlace(pool);
 
@@ -116,38 +120,94 @@ describe("the story 1.6 demo scene's committed ordering", () => {
   });
 });
 
-describe("PLAYER_BOUNDS stays within the world the scene actually draws (Quentin's cycle-4 direction)", () => {
+describe("the player can never walk off the drawn world", () => {
   // The scene's mount-time canvas-bounds guard (`assertSpritesWithinCanvas`)
   // only ever runs once, against the player's *starting* position -- it
-  // can never catch a clamp that only overruns the drawn world once the
-  // player has actually walked there. This pins the relation directly
-  // against the pure `screenPositionPx` the scene itself uses, so a
-  // future edit to either the bounds or the fixture's ground extent fails
-  // here, cheaply, instead of drawing the player off the pavement.
-  it("keeps every corner of PLAYER_BOUNDS drawn no lower than the pavement's own last row", () => {
-    // `SIDEWALK_TILES.y1` is exclusive -- the last drawn pavement row's
-    // own bottom edge, in world pixels, is exactly `y1 * tileSizePx`.
-    const groundBottomPx = SIDEWALK_TILES.y1 * TILE_SIZE_PX;
-    const corners = [
-      { x: PLAYER_BOUNDS.x0, y: PLAYER_BOUNDS.y0 },
-      { x: PLAYER_BOUNDS.x0, y: PLAYER_BOUNDS.y1 },
-      { x: PLAYER_BOUNDS.x1, y: PLAYER_BOUNDS.y0 },
-      { x: PLAYER_BOUNDS.x1, y: PLAYER_BOUNDS.y1 },
-    ] as const;
+  // can never catch a walk that leaves the drawn ground later. Nothing
+  // clamps the player any more (story 1.8 deleted `PLAYER_BOUNDS`), so
+  // the only thing keeping the avatar on the pavement is the fixture's
+  // own boundary colliders; this walks the real resolver against the real
+  // grid to prove that ring is actually closed, rather than trusting the
+  // rect list by eye.
+  const grid = demoCollisionGrid();
+  const config = demoMovementConfig();
 
-    for (const corner of corners) {
-      const pos = screenPositionPx(
+  /** The drawn ground: interior floor and pavement, in screen pixels.
+   * `x1`/`y1` are exclusive tile indices, so the drawn extent's own far
+   * edge is at `x1 * tileSizePx`. */
+  const groundScreenRects = [INTERIOR_FLOOR_TILES, SIDEWALK_TILES].map((tiles) => ({
+    left: tiles.x0 * TILE_SIZE_PX,
+    right: tiles.x1 * TILE_SIZE_PX,
+    top: tiles.y0 * TILE_SIZE_PX,
+    bottom: tiles.y1 * TILE_SIZE_PX,
+  }));
+
+  /** The four corners of the player's collision body, in world cells. */
+  function bodyCorners(pos: Vec2): readonly Vec2[] {
+    const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+    const height = config.bodyHeightSubcells / config.subcellsPerCell;
+    return [
+      { x: pos.x - halfWidth, y: pos.y - height },
+      { x: pos.x + halfWidth, y: pos.y - height },
+      { x: pos.x - halfWidth, y: pos.y },
+      { x: pos.x + halfWidth, y: pos.y },
+    ];
+  }
+
+  function isOnDrawnGround(pos: Vec2): boolean {
+    // The union of the two ground rects has no hole, so a body entirely
+    // inside it is exactly a body whose every corner is inside one of
+    // them -- corner checking cannot pass a body that has left the
+    // ground.
+    return bodyCorners(pos).every((corner) => {
+      const screen = screenPositionPx(
         corner.x,
         corner.y,
         PLAYER_START.floor,
         TILE_SIZE_PX,
         STOREY_HEIGHT_PX,
       );
-      expect(pos.y).toBeGreaterThanOrEqual(0);
-      expect(pos.y).toBeLessThanOrEqual(groundBottomPx);
-      expect(pos.x).toBeGreaterThanOrEqual(SIDEWALK_TILES.x0 * TILE_SIZE_PX);
-      expect(pos.x).toBeLessThanOrEqual(SIDEWALK_TILES.x1 * TILE_SIZE_PX);
+      return groundScreenRects.some(
+        (rect) =>
+          screen.x >= rect.left &&
+          screen.x <= rect.right &&
+          screen.y >= rect.top &&
+          screen.y <= rect.bottom,
+      );
+    });
+  }
+
+  it("stays on the interior floor or the pavement for any input sequence, every step", () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            dx: fc.integer({ min: -1, max: 1 }),
+            dy: fc.integer({ min: -1, max: 1 }),
+            deltaMs: fc.integer({ min: 1, max: 5_000 }),
+          }),
+          { minLength: 1, maxLength: 400 },
+        ),
+        (inputs) => {
+          let pos: Vec2 = { x: PLAYER_START.x, y: PLAYER_START.y };
+          expect(isOnDrawnGround(pos)).toBe(true);
+          for (const { dx, dy, deltaMs } of inputs) {
+            pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config);
+            expect(isOnDrawnGround(pos), `left the drawn world at (${pos.x}, ${pos.y})`).toBe(true);
+          }
+        },
+      ),
+      { numRuns: 60 },
+    );
+  });
+
+  it("walking straight south rests against the lamppost, still on the last pavement row", () => {
+    let pos: Vec2 = { x: PLAYER_START.x, y: PLAYER_START.y };
+    for (let i = 0; i < 400; i++) {
+      pos = step(pos, { x: 0, y: 1 }, 16, grid, PLAYER_START.floor, config);
     }
+    expect(pos.y).toBeCloseTo(lamppostRestY(), 9);
+    expect(isOnDrawnGround(pos)).toBe(true);
   });
 });
 
