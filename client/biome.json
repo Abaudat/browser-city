@@ -31,6 +31,26 @@
   },
   "overrides": [
     {
+      "includes": [
+        "src/render/**",
+        "!src/render/bootstrap.ts",
+        "!src/render/pixi-order.ts",
+        "!src/render/pixi-visibility.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [{ "group": ["pixi.js"] }]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/world/**"],
       "linter": {
         "rules": {

@@ -21,8 +21,8 @@ fn canonical_dump() -> String {
             Some(c) => format!("{},{},{},{}", c.x0, c.y0, c.x1, c.y1),
         };
         lines.push(format!(
-            "object {} id={} height={} width={} collider={collider}",
-            o.key, o.id, o.height, o.width
+            "object {} id={} height={} width={} collider={collider} window={}",
+            o.key, o.id, o.height, o.width, o.window
         ));
     }
     for i in defs::ITEMS {

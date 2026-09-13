@@ -1,12 +1,14 @@
-// The story 1.6 demo scene's Pixi mount -- the only file besides
-// `bootstrap.ts` and `render/pixi-order.ts` allowed to import `pixi.js`.
-// Ordering itself is `render/pixi-order.ts`'s job; this file's whole job
-// is texture loading, sprite construction, container wiring, keyboard
-// input and the mount-time geometry guard. Real LimeZu sprites only,
-// loaded straight out of the repo-root `ModernTileset/` (Artie's
-// direction: no coloured rectangles, no new PNGs) -- nearest-neighbour
-// filtering, integer world-pixel positions rounded before the zoom scale,
-// bottom-centre sprite anchors pinned to each drawable's own cell.
+// The demo scene's Pixi mount -- the only file besides `bootstrap.ts` and
+// `render/pixi-order.ts`/`render/pixi-visibility.ts` allowed to import
+// `pixi.js`. Ordering itself is `render/pixi-order.ts`'s job, visibility
+// is `render/pixi-visibility.ts`'s (story 1.7); this file's whole job is
+// texture loading, sprite construction, container wiring, keyboard input
+// and the mount-time geometry guard. Real LimeZu sprites only, loaded
+// straight out of the repo-root `ModernTileset/` (Artie's direction: no
+// coloured rectangles, no new PNGs beyond what a new prop genuinely
+// needs) -- nearest-neighbour filtering, integer world-pixel positions
+// rounded before the zoom scale, bottom-centre sprite anchors pinned to
+// each drawable's own cell.
 //
 // D17: no debug text, no rank numbers, no sort-key readouts on the
 // canvas. This module draws the scene and nothing else.
@@ -15,12 +17,16 @@ import { type Application, Assets, Container, Rectangle, Sprite, Texture } from 
 import { attachKeyboard, KeyboardState } from "../input/keyboard";
 import { layerCodeByName } from "../render/layer-table";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
-import { screenPositionPx } from "../render/screen-position";
+import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
+import { floorOffsetPx, screenPositionPx } from "../render/screen-position";
 import { fromSortUnits, toSortUnits } from "../render/sort-units";
+import { computeVisibility, type VisibilityViewer } from "../render/visibility";
 import type { ColliderSource } from "../world/collision-grid";
 import { CollisionGrid } from "../world/collision-grid";
 import type { MovementConfig } from "../world/movement";
 import { step } from "../world/movement";
+import { cellOf, OwnershipIndex } from "../world/ownership";
+import { TransitionIndex } from "../world/transitions";
 import {
   buildPlayerDrawable,
   buildPropDrawables,
@@ -28,9 +34,14 @@ import {
   updatePlayerDrawable,
 } from "./drawables";
 import {
+  DEMO_BUILDING_AREAS,
+  DEMO_ROOM_AREAS,
+  DEMO_TRANSITIONS,
   demoColliderSources,
   demoPlacedRows,
   INTERIOR_FLOOR_TILES,
+  INTERIOR_FLOOR_TILES_B,
+  PLATFORM_FLOOR_TILES,
   PLAYER_START,
   SIDEWALK_TILES,
 } from "./fixture";
@@ -69,6 +80,14 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png",
     import.meta.url,
   ).href,
+  counterB: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_2.png",
+    import.meta.url,
+  ).href,
+  chair: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Chiar_1.png",
+    import.meta.url,
+  ).href,
   table: new URL(
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16/ME_Singles_Camping_16x16_Benched_Table_1.png",
     import.meta.url,
@@ -79,6 +98,14 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
   ).href,
   awning: new URL(
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Building_Singles_16x16/ME_Singles_Generic_Building_16x16_Shop_Tent_1.png",
+    import.meta.url,
+  ).href,
+  subwayStairs: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Small.png",
+    import.meta.url,
+  ).href,
+  subwayBench: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Two_Seats_Grey_Bench_Frontal_1.png",
     import.meta.url,
   ).href,
   player: new URL(
@@ -115,8 +142,9 @@ const PLAYER_FRAME = new Rectangle(0, 128, 16, 32);
  * horizontally (Artie's rule). Both are reused whole, per cell -- see
  * `sliceTexture`'s "repeat" case. `wallTileUpperH` is a visually distinct
  * variant of the same swatch shape, used only for the second storey's
- * wall, so the storey seam reads clearly in a screenshot instead of two
- * identical textures fusing into what looks like one tall wall. */
+ * wall. `wallTileV`'s own flush swatch doubles as the FR120 retraction
+ * stub (Artie's direction: "the short wall caps already in
+ * Room_Builder_Walls_16x16.png", no new art) -- see `wallStub` below. */
 const WALL_TILE_H_FRAME = new Rectangle(0, 528, 16, 48);
 const WALL_TILE_V_FRAME = new Rectangle(0, 528, 16, 16);
 const WALL_TILE_UPPER_H_FRAME = new Rectangle(0, 0, 16, 48);
@@ -124,7 +152,8 @@ const WALL_TILE_UPPER_H_FRAME = new Rectangle(0, 0, 16, 48);
 /** A plain, single-tile interior floor swatch cropped from the same
  * Room Builder sheet family as the walls -- real art, never a new PNG,
  * and visually distinct from the exterior `sidewalk` tile (Artie's
- * direction: there must be an inside). */
+ * direction: there must be an inside). Reused for the subway platform's
+ * own floor pass too. */
 const FLOOR_TILE_FRAME = new Rectangle(208, 560, 16, 16);
 
 /** A small, purely cosmetic screen-space nudge applied after normal
@@ -139,10 +168,20 @@ const SCREEN_Y_NUDGE_PX: Readonly<Partial<Record<string, number>>> = {
 const ZOOM = 3;
 const CANVAS_MARGIN_PX = 8;
 
+/** Colour the app background switches to while the player is on any
+ * below-ground floor (Artie's direction: what surrounds the subway
+ * platform is plain black, never a texture, never the street's own
+ * background bleeding through). */
+const SUBWAY_BACKGROUND = 0x000000;
+
 export interface MountDemoSceneOptions {
   readonly tileSizePx: number;
   readonly storeyHeightPx: number;
   readonly rankOf: (layerCode: number) => number;
+  /** `render.window_alpha`'s resolved balance value (FR121), already
+   * divided down to a plain `(0, 1)` fraction -- never a literal in this
+   * file or in `render/visibility.ts`/`pixi-visibility.ts`. */
+  readonly windowAlpha: number;
   /** Read once from `defs/`'s `movement.*` balance keys (`main.ts`) --
    * never a literal in this file. */
   readonly movementConfig: MovementConfig;
@@ -150,6 +189,9 @@ export interface MountDemoSceneOptions {
    * (`world/object-defs.ts`), so a prop the demo places by `defId` uses
    * the collider `defs/` declares for it rather than a restated rect. */
   readonly objectDefs: ReadonlyMap<number, ColliderSource>;
+  /** The def ids `defs/` marks `window = true` (story 1.7, FR121) --
+   * resolved once by the caller from the fetched document. */
+  readonly windowDefIds: ReadonlySet<number>;
   /** Called once after every real re-sort (including the first one) with
    * the resulting `stableId` order -- the render path's own event, never
    * polled every frame (Quentin's direction). */
@@ -157,10 +199,15 @@ export interface MountDemoSceneOptions {
   /** Called once at mount and then every ticker frame with the player's
    * current continuous position (story 1.8's e2e proof that movement is
    * client-side and immediate, FR137) -- unlike `onOrderChange`, this is
-   * polled every frame on purpose: `movement.spec.ts` needs to observe
-   * the position changing within a few frames, not only when it crosses
-   * a sort-unit boundary. */
+   * polled every frame on purpose. */
   readonly onPlayerMove?: (x: number, y: number) => void;
+  /** Called once at mount and then every time visibility is actually
+   * re-applied (story 1.7's e2e proof, `enclosure.spec.ts`) -- a map from
+   * decimal `stableId` string to its current FR120/FR121/FR122 state,
+   * covering every real pool member (never the wall-stub companions,
+   * which are an implementation detail of how retraction looks, not a
+   * fact worth asserting on directly). */
+  readonly onVisibilityChange?: (state: Readonly<Record<string, string>>) => void;
 }
 
 export interface DemoSceneHandle {
@@ -314,16 +361,35 @@ export function assertNoOverhangBeyondStorey(
   }
 }
 
-interface PoolEntry extends OrderedMember<PropDrawable> {
+interface PoolEntry extends OrderedMember<PropDrawable>, VisibilityMember<PropDrawable> {
   readonly assetKey: string;
+  readonly view: Sprite;
 }
 
+const wallAssetOf = (assetKey: string, footprintWidth: number, footprintHeight: number): string => {
+  // Orientation-aware for every real wall run, `subwayWall` included: a
+  // horizontal run (a north/south wall, width > height) gets the tall
+  // swatch; a vertical run (an east/west wall) gets the flush one -- the
+  // platform's own walls are wall runs like any other, not a special case.
+  if (assetKey === "wallTile" || assetKey === "subwayWall") {
+    return footprintWidth > footprintHeight ? "wallTileH" : "wallTileV";
+  }
+  if (assetKey === "wallTileUpper") return "wallTileUpperH";
+  // The FR120 stub (Artie's direction): the same flush, short swatch a
+  // side wall already uses -- no new art.
+  if (assetKey === "wallStub") return "wallTileV";
+  return assetKey;
+};
+
 /**
- * Mounts the committed story 1.6 demo scene (`fixture.ts`) into `app`,
- * wires keyboard movement for the player, and keeps the pool container's
- * children ordered by `render/pixi-order.ts`'s `applyDepthOrder`.
- * Re-sorts only when the player's own sort key actually changes -- a
- * street of static props costs nothing per frame.
+ * Mounts the committed demo scene (`fixture.ts`) into `app`, wires
+ * keyboard movement and floor transitions for the player, keeps the pool
+ * container's children ordered by `render/pixi-order.ts`'s
+ * `applyDepthOrder`, and keeps every member's FR120/FR121/FR122 state
+ * current through `render/pixi-visibility.ts`'s `VisibilityApplier`.
+ * Re-sorts only when the player's own sort key actually changes, and
+ * re-applies visibility only when the player's own enclosure/floor
+ * changes -- a street of static props costs nothing per frame either way.
  */
 export async function mountDemoScene(
   app: Application,
@@ -333,10 +399,13 @@ export async function mountDemoScene(
     tileSizePx,
     storeyHeightPx,
     rankOf,
+    windowAlpha,
     movementConfig,
     objectDefs,
+    windowDefIds,
     onOrderChange,
     onPlayerMove,
+    onVisibilityChange,
   } = options;
 
   const rawTextures = new Map<string, Texture>();
@@ -370,33 +439,37 @@ export async function mountDemoScene(
   const groundSprites: Sprite[] = [];
   for (const [tiles, assetKey] of [
     [INTERIOR_FLOOR_TILES, INTERIOR_FLOOR_TILES.assetKey] as const,
+    [INTERIOR_FLOOR_TILES_B, INTERIOR_FLOOR_TILES_B.assetKey] as const,
     [SIDEWALK_TILES, SIDEWALK_TILES.assetKey] as const,
+    [PLATFORM_FLOOR_TILES, PLATFORM_FLOOR_TILES.assetKey] as const,
   ]) {
     const groundTexture = textureFor(assetKey, textures);
+    // Every ground pass tile is top-left anchored (default Sprite
+    // anchor), unlike the bottom-centre pool sprites -- FR124's floor
+    // offset still applies, so the platform's own floor pass (floor -1)
+    // paints `storeyHeightPx` further down the screen, exactly where
+    // FR124 already places anything else on that floor.
+    const floor = tiles === PLATFORM_FLOOR_TILES ? -1 : 0;
+    const offset = floorOffsetPx(floor, storeyHeightPx);
     for (let y = tiles.y0; y < tiles.y1; y++) {
       for (let x = tiles.x0; x < tiles.x1; x++) {
         const tile = new Sprite(groundTexture);
         tile.x = Math.round(x * tileSizePx);
-        tile.y = Math.round(y * tileSizePx);
+        tile.y = Math.round(y * tileSizePx + offset);
         groundPass.addChild(tile);
         groundSprites.push(tile);
       }
     }
   }
 
-  const wallAssetOf = (
-    assetKey: string,
-    footprintWidth: number,
-    footprintHeight: number,
-  ): string => {
-    if (assetKey === "wallTile")
-      return footprintWidth > footprintHeight ? "wallTileH" : "wallTileV";
-    if (assetKey === "wallTileShort") return "wallTileV"; // the same short, flush swatch, reused for a low front wall
-    if (assetKey === "wallTileUpper") return "wallTileUpperH";
-    return assetKey;
-  };
+  const ownership = new OwnershipIndex(DEMO_BUILDING_AREAS, DEMO_ROOM_AREAS);
+  const transitions = new TransitionIndex(DEMO_TRANSITIONS);
 
-  const propDrawables = buildPropDrawables((layer) => rankOf(layerCodeByName(layer))).map((d) => ({
+  const propDrawables = buildPropDrawables({
+    rankOf: (layer) => rankOf(layerCodeByName(layer)),
+    ownership,
+    windowDefIds,
+  }).map((d) => ({
     ...d,
     assetKey: wallAssetOf(d.assetKey, d.footprintWidth, d.footprintHeight),
   }));
@@ -417,21 +490,15 @@ export async function mountDemoScene(
 
   let playerX: number = PLAYER_START.x;
   let playerY: number = PLAYER_START.y;
+  let playerFloor: number = PLAYER_START.floor;
   const playerDrawable = buildPlayerDrawable(
     rankOf(layerCodeByName("characters")),
     playerX,
     playerY,
+    playerFloor,
   );
   const playerSprite = createSprite(playerDrawable, textures, tileSizePx);
-  positionSprite(
-    playerSprite,
-    playerX,
-    playerY,
-    PLAYER_START.floor,
-    tileSizePx,
-    storeyHeightPx,
-    "player",
-  );
+  positionSprite(playerSprite, playerX, playerY, playerFloor, tileSizePx, storeyHeightPx, "player");
   const playerEntry: PoolEntry = {
     drawable: playerDrawable,
     view: playerSprite,
@@ -458,10 +525,13 @@ export async function mountDemoScene(
     storeyHeightPx,
   );
 
-  // Camera: translate the world container so its whole content (both
-  // storeys, every overhang) sits inside the canvas with a small margin,
-  // then size the canvas to fit exactly -- Artie's direction: nothing
-  // this scene contains may be drawn off-canvas.
+  // Camera: translate the world container so its whole content (every
+  // floor, both storeys, every overhang) sits inside the canvas with a
+  // small margin, then size the canvas to fit exactly -- Artie's
+  // direction: nothing this scene contains may be drawn off-canvas.
+  // Computed once, over every sprite regardless of its later visibility
+  // state, so the canvas never needs to resize again once the player
+  // starts walking between floors and enclosures.
   const worldBounds = world.getLocalBounds();
   const canvasWidth = Math.ceil(worldBounds.width * ZOOM) + CANVAS_MARGIN_PX * 2;
   const canvasHeight = Math.ceil(worldBounds.height * ZOOM) + CANVAS_MARGIN_PX * 2;
@@ -504,6 +574,45 @@ export async function mountDemoScene(
     collisionGrid.insert(placed);
   }
 
+  // Story 1.7: the visibility adapter, gated on the viewer's own
+  // (floor, buildingId) tuple actually changing (Tim's direction) --
+  // computed from the player's own *cell* (`cellOf`, `Math.floor`), never
+  // every frame.
+  const visibilityApplier = new VisibilityApplier();
+  const originalBackground = app.renderer.background.color;
+
+  function reportVisibility(): void {
+    if (!onVisibilityChange) return;
+    const viewer: VisibilityViewer = {
+      floor: playerFloor,
+      buildingId: ownership.ownershipAt(cellOf(playerX), cellOf(playerY), playerFloor).buildingId,
+    };
+    const map: Record<string, string> = {};
+    for (const m of entries) {
+      map[m.drawable.stableId.toString()] = computeVisibility(viewer, m.drawable);
+    }
+    onVisibilityChange(map);
+  }
+
+  function applyVisibilityFor(cellX: number, cellY: number, floor: number, force: boolean): void {
+    const viewer: VisibilityViewer = {
+      floor,
+      buildingId: ownership.ownershipAt(cellX, cellY, floor).buildingId,
+    };
+    let applied = true;
+    if (force) {
+      visibilityApplier.applyForce(members, viewer, windowAlpha);
+    } else {
+      applied = visibilityApplier.apply(members, viewer, windowAlpha);
+    }
+    app.renderer.background.color = floor < 0 ? SUBWAY_BACKGROUND : originalBackground;
+    if (applied) reportVisibility();
+  }
+
+  let lastCellX = cellOf(playerX);
+  let lastCellY = cellOf(playerY);
+  applyVisibilityFor(lastCellX, lastCellY, playerFloor, true);
+
   onPlayerMove?.(playerX, playerY);
 
   const keyboard = new KeyboardState();
@@ -519,11 +628,26 @@ export async function mountDemoScene(
       direction,
       ticker.deltaMS,
       collisionGrid,
-      PLAYER_START.floor,
+      playerFloor,
       movementConfig,
     );
     playerX = next.x;
     playerY = next.y;
+
+    // A floor transition (FR117-style, never a boolean on the player):
+    // entering the anchor cell changes floor and position together, from
+    // one call -- there is never a frame where one changed but not the
+    // other (Tim's direction). Checked on the player's own quantised
+    // cell, the same gate the ownership/visibility lookups below use.
+    const cellX = cellOf(playerX);
+    const cellY = cellOf(playerY);
+    const landing = transitions.enter(cellX, cellY, playerFloor);
+    if (landing) {
+      playerX = landing.x + 0.5;
+      playerY = landing.y + 0.5;
+      playerFloor = landing.floor;
+    }
+
     onPlayerMove?.(playerX, playerY);
 
     updatePlayerDrawable(playerDrawable, playerX, playerY);
@@ -531,7 +655,7 @@ export async function mountDemoScene(
       playerSprite,
       playerX,
       playerY,
-      PLAYER_START.floor,
+      playerFloor,
       tileSizePx,
       storeyHeightPx,
       "player",
@@ -544,6 +668,18 @@ export async function mountDemoScene(
     if (after.x !== before.x || after.y !== before.y) {
       applyDepthOrder(poolContainer, members, renderOrder);
       onOrderChange?.(renderOrder);
+    }
+
+    // Ownership is looked up only when the player's own cell actually
+    // changed (Tim's direction) -- never every frame -- and visibility is
+    // re-applied only when that lookup (or the floor) actually differs
+    // from last time (`VisibilityApplier`'s own gate).
+    const nowCellX = cellOf(playerX);
+    const nowCellY = cellOf(playerY);
+    if (nowCellX !== lastCellX || nowCellY !== lastCellY || landing) {
+      lastCellX = nowCellX;
+      lastCellY = nowCellY;
+      applyVisibilityFor(nowCellX, nowCellY, playerFloor, false);
     }
   });
 

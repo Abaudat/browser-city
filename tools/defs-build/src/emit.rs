@@ -58,16 +58,17 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("pub struct ColliderRect {\n    pub x0: i32,\n    pub y0: i32,\n    pub x1: i32,\n    pub y1: i32,\n}\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct ObjectDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub width: u32,\n    pub height: u32,\n    pub collider: Option<ColliderRect>,\n}\n\n");
+    out.push_str("pub struct ObjectDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub width: u32,\n    pub height: u32,\n    pub collider: Option<ColliderRect>,\n    pub window: bool,\n}\n\n");
     out.push_str("pub const OBJECTS: &[ObjectDef] = &[\n");
     for o in &defs.objects {
         out.push_str(&format!(
-            "    ObjectDef {{ id: {}, key: {:?}, width: {}, height: {}, collider: {} }},\n",
+            "    ObjectDef {{ id: {}, key: {:?}, width: {}, height: {}, collider: {}, window: {} }},\n",
             o.id,
             o.key,
             o.width,
             o.height,
-            fmt_collider_rust(o.collider)
+            fmt_collider_rust(o.collider),
+            o.window
         ));
     }
     out.push_str("];\n\n");
@@ -181,12 +182,13 @@ pub fn emit_json(defs: &Defs, defs_version: &str) -> String {
     for (i, o) in defs.objects.iter().enumerate() {
         let comma = if i + 1 < defs.objects.len() { "," } else { "" };
         out.push_str(&format!(
-            "    {{ \"collider\": {}, \"height\": {}, \"id\": {}, \"key\": {}, \"width\": {} }}{comma}\n",
+            "    {{ \"collider\": {}, \"height\": {}, \"id\": {}, \"key\": {}, \"width\": {}, \"window\": {} }}{comma}\n",
             fmt_collider_json(o.collider),
             o.height,
             o.id,
             json_escape(&o.key),
-            o.width
+            o.width,
+            o.window
         ));
     }
     out.push_str("  ],\n");
@@ -314,6 +316,7 @@ mod tests {
                     x1: 12,
                     y1: 12,
                 }),
+                window: false,
             }],
             items: vec![ItemDef {
                 id: 1,
@@ -349,7 +352,7 @@ mod tests {
         assert!(out.starts_with(GENERATED_HEADER_RUST));
         assert!(out.contains("pub const DEFS_VERSION: &str = \"abc123\";"));
         assert!(out.contains(
-            "ObjectDef { id: 1, key: \"trash_bin\", width: 1, height: 1, collider: Some(ColliderRect { x0: 4, y0: 4, x1: 12, y1: 12 }) }"
+            "ObjectDef { id: 1, key: \"trash_bin\", width: 1, height: 1, collider: Some(ColliderRect { x0: 4, y0: 4, x1: 12, y1: 12 }), window: false }"
         ));
         assert!(out.contains("pub const COLLIDER_SUBCELLS_PER_CELL: i32 = 16;"));
         assert!(!out.contains('\r'));
@@ -384,6 +387,16 @@ mod tests {
     }
 
     #[test]
+    fn emit_json_renders_the_window_flag() {
+        let mut defs = sample();
+        let out = emit_json(&defs, "v1");
+        assert!(out.contains("\"window\": false"));
+        defs.objects[0].window = true;
+        let out = emit_json(&defs, "v1");
+        assert!(out.contains("\"window\": true"));
+    }
+
+    #[test]
     fn emit_json_is_valid_enough_to_round_trip_by_eye_every_kind_present() {
         let out = emit_json(&sample(), "v1");
         for key in [
@@ -407,6 +420,7 @@ mod tests {
             width: 1,
             height: 1,
             collider: None,
+            window: false,
         });
         let manifest = emit_id_manifest(&defs);
         let lines: Vec<&str> = manifest.lines().collect();

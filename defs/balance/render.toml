@@ -22,3 +22,15 @@ key = "render.storey_height_px"
 value = 48
 min = 1
 max = 256
+
+[[balance]]
+# FR121: a window wall tile's alpha, drawn from outside -- strictly
+# between 0 and 1 (never a literal in `render/visibility.ts` or
+# `pixi-visibility.ts`) so the furniture behind the glass is visible but
+# the wall still reads as glazed, not as a hole. Artie's starting value,
+# tuned by eye against the story 1.7 demo terrace screenshots.
+key = "render.window_alpha"
+value = 50
+min = 1
+max = 99
+

@@ -12,6 +12,7 @@ declare global {
       pings: PingObservation[];
       renderOrder?: string[];
       playerPosition?: { x: number; y: number };
+      visibility?: Record<string, string>;
     };
   }
 }
@@ -43,5 +44,19 @@ export function recordPlayerPositionForE2e(x: number, y: number): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.playerPosition = { x, y };
+  window.__bc = bucket;
+}
+
+/** Story 1.7's proof that the real, mounted adapter reaches the same
+ * FR120/FR121/FR122 states the pure `computeVisibility` function
+ * predicts (Quentin's direction): a map from decimal `stableId` string to
+ * its current visibility state ("hidden"/"translucent"/"normal"), updated
+ * every time `render/pixi-visibility.ts`'s `VisibilityApplier` actually
+ * re-applies (never polled every frame). `client/tests/e2e/
+ * enclosure.spec.ts` is the only reader. */
+export function recordVisibilityForE2e(state: Readonly<Record<string, string>>): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.visibility = { ...state };
   window.__bc = bucket;
 }

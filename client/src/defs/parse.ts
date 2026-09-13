@@ -128,15 +128,21 @@ function checkKnownKeys(
   }
 }
 
+function expectBoolean(value: unknown, path: string): boolean {
+  if (typeof value !== "boolean") fail(`${path}: expected a boolean`);
+  return value;
+}
+
 function parseObject(value: unknown, path: string): ObjectDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "width", "height", "collider"], path);
+  checkKnownKeys(obj, ["id", "key", "width", "height", "collider", "window"], path);
   const collider = parseNullableCollider(obj.collider, `${path}.collider`);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     width: expectU32(obj.width, `${path}.width`),
     height: expectU32(obj.height, `${path}.height`),
+    window: expectBoolean(obj.window, `${path}.window`),
     ...(collider ? { collider } : {}),
   };
 }
@@ -347,7 +353,7 @@ export function canonicalDump(defs: Defs): string {
       ? `${o.collider.x0},${o.collider.y0},${o.collider.x1},${o.collider.y1}`
       : "none";
     lines.push(
-      `object ${o.key} id=${o.id} height=${o.height} width=${o.width} collider=${collider}`,
+      `object ${o.key} id=${o.id} height=${o.height} width=${o.width} collider=${collider} window=${o.window}`,
     );
   }
   for (const i of defs.items) {

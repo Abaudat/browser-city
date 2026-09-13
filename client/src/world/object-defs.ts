@@ -23,3 +23,11 @@ export function objectDefsById(defs: Defs): ReadonlyMap<number, ColliderSource> 
     ]),
   );
 }
+
+/** Story 1.7 (FR121): the def ids `defs/` marks `window = true` -- the
+ * single source of truth [`render/visibility.ts`]'s translucency rule
+ * reads from, resolved once here rather than restated as a demo-only
+ * literal. */
+export function windowDefIds(defs: Defs): ReadonlySet<number> {
+  return new Set(defs.objects.filter((o) => o.window).map((o) => o.id));
+}

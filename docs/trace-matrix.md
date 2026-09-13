@@ -31,6 +31,10 @@ with no row here.
 | `inv_collision_grid_matches_rebuild` | A model-based sequence of random insert/delete/update calls always leaves the grid identical to a from-scratch build of the surviving rows | covered | `inv_collision_grid_matches_rebuild` | — |
 | `inv_absent_collider_is_walkable` | An object with no collider contributes nothing: the grid is unchanged by its insert and its delete, and a step in open space is never clamped (FR128) | covered | `inv_absent_collider_is_walkable` | — |
 | `inv_step_is_frame_rate_independent` | In open space, one step of N ms equals k steps summing to N ms (within epsilon), and diagonal speed never exceeds axis speed | covered | `inv_step_is_frame_rate_independent` | — |
+| `inv_retraction_keyed_on_ownership` | Two viewer positions sharing (floor, buildingId) give identical visibility for every drawable, and a wall with a different owner is never retracted, however close the viewer's own building id is (FR120) | covered | `inv_retraction_keyed_on_ownership` | — |
+| `inv_only_occupied_enclosure_opens` | In a generated terrace of N shops, standing in shop k retracts walls owned by k only (FR120) | covered | `inv_only_occupied_enclosure_opens` | — |
+| `inv_floor_culling_exclusive` | Player floor >= 0 means no floor -1-or-below drawable is ever visible, and player floor < 0 means no floor >= 0 drawable is ever visible (FR122) | covered | `inv_floor_culling_exclusive` | — |
+| `inv_visibility_never_reorders_pool` | Applying FR120/FR121/FR122 visibility never adds, removes or reorders pool members -- only `sprite.visible`/`sprite.alpha` change | covered | `inv_visibility_never_reorders_pool` | — |
 
 ## Coverage scale (NFR29)
 
@@ -113,12 +117,14 @@ sections above.
 | A collision query costs a bounded, small number of dense-storage accesses regardless of world size, and the collision grid stays within its documented 1-bit-per-cell budget | covered | `server/sim/tests/world_perf.rs` |
 | An ownership query scans only the areas sharing the queried chunk, never every area in the world (FR119, FR120, FR122) | covered | `server/sim/tests/world_perf.rs` -- `ownership_lookup_scans_only_the_queried_chunk_not_every_area_in_the_world` |
 | The client-side TypeScript port of chunk addressing and whole-cell collision reads the same fixtures/world-conformance.v1.json its Rust oracle reads, and agrees on every case (NFR30, story 1.8) | covered | `client/tests/unit/world/conformance.test.ts` |
-| The client-side TypeScript port of floor transitions and building/room ownership reads the same fixtures/world-conformance.v1.json its Rust oracle reads (NFR30) | deferred | chunk-streaming / floor-transition client story |
+| The client-side TypeScript port of floor transitions and building/room ownership reads the same fixtures/world-conformance.v1.json its Rust oracle reads, and agrees on every case (NFR30, story 1.7) | covered | `client/tests/unit/world/conformance.test.ts`, `client/tests/unit/world/ownership.test.ts`, `client/tests/unit/world/transitions.test.ts` |
 
 ## Rendering
 
-Story 1.6: FR123-FR127's depth sort, rank ladder and decomposition. Same
-Guard-path discipline as the sections above.
+Story 1.6: FR123-FR127's depth sort, rank ladder and decomposition. Story
+1.7: FR120-FR122's enclosure visibility (near-side retraction, window
+translucency, subway/street floor culling). Same Guard-path discipline as
+the sections above.
 
 | Requirement | Status | Guard |
 | --- | --- | --- |
@@ -143,6 +149,13 @@ Guard-path discipline as the sections above.
 | The grid frees a chunk when its last entry is deleted, and a floor when its last chunk goes, so a streaming session never accumulates chunks it no longer has an entry in | covered | `client/tests/unit/world/collision-grid.test.ts` -- `inv_collision_grid_matches_rebuild` compares `allocatedChunkCount` too |
 | The player can never walk off the drawn world: for any input sequence, every step keeps the drawn body over the interior floor or the pavement | covered | `client/tests/unit/demo/drawables.test.ts` -- the boundary-ring property |
 | Holding a direction key moves the avatar within three animation frames with no round trip (FR137); it comes to rest against a real collider and never pauses at a collider-less prop | covered | `client/tests/e2e/movement.spec.ts` |
+| FR120: a near-side wall of the building the viewer occupies is retracted, keyed on the ownership id alone (never proximity); a viewer outside any building or a wall it does not own is never retracted | covered | `client/src/render/visibility.ts` -- `isRetracted`, `client/tests/unit/render/visibility.test.ts` |
+| FR121: a window drawable that is not hidden is translucent, at `render.window_alpha` (a balance key, never a literal); retraction wins over the window rule for a retracted near-side window | covered | `client/src/render/visibility.ts` -- `computeVisibility`, `client/tests/unit/render/visibility.test.ts` |
+| FR122: two floors of opposite sign are never co-visible, compared by sign alone (never against the literal -1); a floor transition changes floor and position together, from one call, never one without the other | covered | `client/src/render/visibility.ts` -- `isFloorCulled`, `client/src/world/transitions.ts`, `client/tests/unit/world/transitions.test.ts` |
+| While the viewer is inside an enclosure, that same building floors above the viewer own floor are culled too (Artie direction, the same ownership-keyed rule as retraction) | covered | `client/src/render/visibility.ts` -- `isStoreyAboveCulled`, `client/tests/unit/render/visibility.test.ts` |
+| No masking, filter or render-texture construct exists anywhere under `client/src/` (FR121) | covered | `scripts/ci/check-no-masks.sh`, run by the `client-check` job |
+| The permanent `render/**` modules (`visibility.ts` included) cannot import `pixi.js`, same discipline as the `world/**` import ban | covered | `client/biome.json` -- the `src/render/**` override's `noRestrictedImports` |
+| The real, mounted `VisibilityApplier` reaches the same FR120/FR121/FR122 states the pure `computeVisibility` function predicts, after a real keyboard-driven walk into and out of an enclosure and into and out of the subway | covered | `client/tests/e2e/enclosure.spec.ts` |
 
 ## Scheduled-reducer timing
 

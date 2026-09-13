@@ -15,7 +15,7 @@
 //! never the same code, only the same fixture).
 
 use super::collision::{AreaSpec, FloorSpec, TransitionSpec, World, WorldSpec};
-use super::{NO_OWNER, Rect, chunk_key};
+use super::{NO_OWNER, Rect, chunk_key, clip_rect_to_chunks};
 
 /// Builds an [`AreaSpec`], computing its `chunk_key` from `rect`/`floor`
 /// rather than repeating it by hand at every call site -- the one thing
@@ -29,6 +29,21 @@ fn area(owner_id: u64, floor: i8, rect: Rect) -> AreaSpec {
     }
 }
 
+/// Splits `rect` into one [`AreaSpec`] per chunk it spans, all sharing
+/// `owner_id` -- the real generator idiom [`clip_rect_to_chunks`]'s own doc
+/// comment describes, exercised here by [`chunk_boundary_building_rect`].
+fn clipped_area(owner_id: u64, floor: i8, rect: Rect) -> Vec<AreaSpec> {
+    clip_rect_to_chunks(rect, floor)
+        .into_iter()
+        .map(|(piece, key)| AreaSpec {
+            owner_id,
+            floor,
+            rect: piece,
+            chunk_key: key,
+        })
+        .collect()
+}
+
 /// Every floor the fixture declares.
 pub const STREET: i8 = 0;
 pub const SUBWAY: i8 = -1;
@@ -38,6 +53,96 @@ pub const UPPER: i8 = 1;
 pub const FIXTURE_BUILDING_ID: u64 = 1;
 /// The single room's id, inside `FIXTURE_BUILDING_ID`.
 pub const FIXTURE_ROOM_ID: u64 = 1;
+
+/// Story 1.7 (Quentin's direction): a terrace of two adjacent shops
+/// sharing one wall line, each with its own building id and its own room
+/// nested inside it -- the ownership shapes a future client-side
+/// retraction/enclosure port must agree with the Rust oracle on.
+pub const TERRACE_SHOP_A_ID: u64 = 2;
+pub const TERRACE_ROOM_A_ID: u64 = 2;
+pub const TERRACE_SHOP_B_ID: u64 = 3;
+pub const TERRACE_ROOM_B_ID: u64 = 3;
+
+/// Shop A's whole footprint: touches Shop B's along `x = 25`, the shared
+/// wall line -- `x1` here equals Shop B's `x0` below, so the two rects are
+/// adjacent, never overlapping (the same no-overlap rule `WorldSpec::build`
+/// already enforces for same-kind areas).
+fn terrace_shop_a() -> Rect {
+    Rect {
+        x0: 20,
+        y0: 1,
+        x1: 25,
+        y1: 6,
+    }
+}
+
+/// Shop A's room, nested entirely inside its own building footprint, one
+/// ring in from every wall -- "a room nested in a building".
+fn terrace_room_a() -> Rect {
+    Rect {
+        x0: 21,
+        y0: 2,
+        x1: 24,
+        y1: 5,
+    }
+}
+
+/// Shop B's whole footprint, immediately east of Shop A's -- `x0` here is
+/// Shop A's own `x1`.
+fn terrace_shop_b() -> Rect {
+    Rect {
+        x0: 25,
+        y0: 1,
+        x1: 30,
+        y1: 6,
+    }
+}
+
+fn terrace_room_b() -> Rect {
+    Rect {
+        x0: 26,
+        y0: 2,
+        x1: 29,
+        y1: 5,
+    }
+}
+
+/// Story 1.7: a building whose declared footprint would span two chunks
+/// along `x` (`CHUNK_SIZE` is 32; this rect covers `30..35`, crossing
+/// `x = 32`) -- clipped into per-chunk pieces by
+/// [`super::clip_rect_to_chunks`], the one function a real generator uses
+/// for exactly this shape, each piece sharing the same owner id. Proves an
+/// ownership query on either side of the boundary agrees, even though the
+/// two pieces live in different `AreaIndex` buckets.
+pub const CHUNK_BOUNDARY_BUILDING_ID: u64 = 4;
+
+fn chunk_boundary_building_rect() -> Rect {
+    Rect {
+        x0: 30,
+        y0: 2,
+        x1: 35,
+        y1: 4,
+    }
+}
+
+/// Story 1.7: a subway platform, floor -1, directly under Shop A's own
+/// footprint -- proves the same `(x, y)` on two different floors never
+/// shares an owner, and that ownership is queried per floor like collision
+/// is.
+pub const SUBWAY_PLATFORM_BUILDING_ID: u64 = 5;
+
+/// Story 1.7: a building at negative world coordinates -- ownership is
+/// never assumed non-negative.
+pub const NEGATIVE_COORDS_BUILDING_ID: u64 = 6;
+
+fn negative_coords_building_rect() -> Rect {
+    Rect {
+        x0: -5,
+        y0: -4,
+        x1: -1,
+        y1: -1,
+    }
+}
 
 /// Shared extent for every floor -- generous enough to hold the whole
 /// layout below with room either side.
@@ -173,8 +278,30 @@ pub fn canonical_world_spec() -> WorldSpec {
                 target_floor: UPPER,
             },
         ],
-        building_areas: vec![area(FIXTURE_BUILDING_ID, STREET, building_footprint())],
-        room_areas: vec![area(FIXTURE_ROOM_ID, STREET, room_interior())],
+        building_areas: {
+            let mut areas = vec![
+                area(FIXTURE_BUILDING_ID, STREET, building_footprint()),
+                area(TERRACE_SHOP_A_ID, STREET, terrace_shop_a()),
+                area(TERRACE_SHOP_B_ID, STREET, terrace_shop_b()),
+                area(SUBWAY_PLATFORM_BUILDING_ID, SUBWAY, terrace_shop_a()),
+                area(
+                    NEGATIVE_COORDS_BUILDING_ID,
+                    STREET,
+                    negative_coords_building_rect(),
+                ),
+            ];
+            areas.extend(clipped_area(
+                CHUNK_BOUNDARY_BUILDING_ID,
+                STREET,
+                chunk_boundary_building_rect(),
+            ));
+            areas
+        },
+        room_areas: vec![
+            area(FIXTURE_ROOM_ID, STREET, room_interior()),
+            area(TERRACE_ROOM_A_ID, STREET, terrace_room_a()),
+            area(TERRACE_ROOM_B_ID, STREET, terrace_room_b()),
+        ],
     }
 }
 
@@ -387,6 +514,102 @@ pub fn conformance_cases() -> Vec<ConformanceCase> {
             x: 0,
             y: 0,
             floor: UNDECLARED_FLOOR,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: NO_OWNER,
+            expect_room_id: NO_OWNER,
+        },
+        // Story 1.7: the terrace's shared wall line -- Shop A's own wall
+        // column (x=24, its footprint's east edge, one short of the room
+        // interior) and Shop B's own wall column (x=25, its footprint's
+        // west edge) are adjacent but never the same cell, and never the
+        // same owner.
+        ConformanceCase {
+            x: 24,
+            y: 3,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: TERRACE_SHOP_A_ID,
+            expect_room_id: NO_OWNER,
+        },
+        ConformanceCase {
+            x: 25,
+            y: 3,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: TERRACE_SHOP_B_ID,
+            expect_room_id: NO_OWNER,
+        },
+        // Inside each shop's own room -- "a room nested in a building",
+        // and proof that standing in one shop never touches the other's
+        // ownership.
+        ConformanceCase {
+            x: 22,
+            y: 3,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: TERRACE_SHOP_A_ID,
+            expect_room_id: TERRACE_ROOM_A_ID,
+        },
+        ConformanceCase {
+            x: 27,
+            y: 3,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: TERRACE_SHOP_B_ID,
+            expect_room_id: TERRACE_ROOM_B_ID,
+        },
+        // Story 1.7: an area clipped across a chunk boundary
+        // (`chunk_boundary_building_rect` spans x=32, `CHUNK_SIZE`) --
+        // both pieces share the same owner id, on either side of the
+        // boundary.
+        ConformanceCase {
+            x: 31,
+            y: 3,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: CHUNK_BOUNDARY_BUILDING_ID,
+            expect_room_id: NO_OWNER,
+        },
+        ConformanceCase {
+            x: 32,
+            y: 3,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: CHUNK_BOUNDARY_BUILDING_ID,
+            expect_room_id: NO_OWNER,
+        },
+        // Story 1.7: a floor -1 area directly under a floor 0 building --
+        // the same (x, y) on two different floors never shares an owner.
+        ConformanceCase {
+            x: 22,
+            y: 3,
+            floor: SUBWAY,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: SUBWAY_PLATFORM_BUILDING_ID,
+            expect_room_id: NO_OWNER,
+        },
+        // Story 1.7: negative world coordinates.
+        ConformanceCase {
+            x: -3,
+            y: -2,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: NEGATIVE_COORDS_BUILDING_ID,
+            expect_room_id: NO_OWNER,
+        },
+        ConformanceCase {
+            x: -10,
+            y: -2,
+            floor: STREET,
             expect_blocked: false,
             expect_transition: None,
             expect_building_id: NO_OWNER,

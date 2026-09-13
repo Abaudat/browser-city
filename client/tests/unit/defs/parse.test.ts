@@ -12,7 +12,7 @@ function validPayload(): Record<string, unknown> {
     generated_by: "tools/defs-build -- do not edit by hand",
     defs_version: "abc123",
     collider_subcells_per_cell: 16,
-    objects: [{ id: 1, key: "trash_bin", width: 1, height: 1 }],
+    objects: [{ id: 1, key: "trash_bin", width: 1, height: 1, window: false }],
     items: [
       { id: 1, key: "bottle" },
       { id: 2, key: "recycled_glass" },
@@ -28,7 +28,9 @@ describe("parseDefs", () => {
   it("parses a well-formed document into the plain Defs shape", () => {
     const defs = parseDefs(validPayload());
     expect(defs.defsVersion).toBe("abc123");
-    expect(defs.objects).toEqual([{ id: 1, key: "trash_bin", width: 1, height: 1 }]);
+    expect(defs.objects).toEqual([
+      { id: 1, key: "trash_bin", width: 1, height: 1, window: false },
+    ]);
     expect(defs.recipes[0]?.inputs).toEqual(["bottle"]);
   });
 
@@ -140,12 +142,13 @@ describe("parseDefs", () => {
       key: "trash_bin",
       width: 1,
       height: 1,
+      window: false,
       collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
     };
     const defs = parseDefs(payload);
     expect(defs.objects[0]?.collider).toEqual({ x0: 4, y0: 4, x1: 12, y1: 12 });
 
-    payload.objects = [{ id: 1, key: "trash_bin", width: 1, height: 1 }];
+    payload.objects = [{ id: 1, key: "trash_bin", width: 1, height: 1, window: false }];
     expect(parseDefs(payload).objects[0]?.collider).toBeUndefined();
   });
 
@@ -156,6 +159,7 @@ describe("parseDefs", () => {
       key: "trash_bin",
       width: 1,
       height: 1,
+      window: false,
       collider: { x0: 4.5, y0: 4, x1: 12, y1: 12 },
     };
     expect(() => parseDefs(payload)).toThrow(/expected an integer in \[-2\^31, 2\^31\)/);
@@ -168,6 +172,7 @@ describe("parseDefs", () => {
       key: "trash_bin",
       width: 1,
       height: 1,
+      window: false,
       collider: null,
     };
     expect(parseDefs(payload).objects[0]?.collider).toBeUndefined();
@@ -180,6 +185,7 @@ describe("parseDefs", () => {
       key: "trash_bin",
       width: 1,
       height: 1,
+      window: false,
       collider: { x0: 5, y0: 5, x1: 5, y1: 9 },
     };
     expect(() => parseDefs(payload)).toThrow(/zero or negative area/);
@@ -192,6 +198,7 @@ describe("parseDefs", () => {
       key: "trash_bin",
       width: 1,
       height: 1,
+      window: false,
       collider: { x0: 0, y0: 0, x1: 20, y1: 8 },
     };
     expect(() => parseDefs(payload)).toThrow(/does not fit inside its footprint/);
@@ -204,9 +211,41 @@ describe("parseDefs", () => {
       key: "trash_bin",
       width: 1,
       height: 1,
+      window: false,
       collider: { x0: 0, y0: 0, x1: 16, y1: 16 },
     };
     expect(() => parseDefs(payload)).not.toThrow();
+  });
+
+  it("rejects a missing window field", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = { id: 1, key: "trash_bin", width: 1, height: 1 };
+    expect(() => parseDefs(payload)).toThrow(/expected a boolean/);
+  });
+
+  it("rejects a non-boolean window field", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+      window: "nope",
+    };
+    expect(() => parseDefs(payload)).toThrow(/expected a boolean/);
+  });
+
+  it("accepts window: true", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "shop_window",
+      width: 1,
+      height: 1,
+      window: true,
+    };
+    const defs = parseDefs(payload);
+    expect(defs.objects[0]?.window).toBe(true);
   });
 
   it("inv_collider_within_footprint", () => {
@@ -250,7 +289,9 @@ describe("parseDefs", () => {
         fc.integer({ min: -20, max: 140 }),
         (width, height, x0, y0, x1, y1) => {
           const payload = validPayload();
-          payload.objects = [{ id: 1, key: "x", width, height, collider: { x0, y0, x1, y1 } }];
+          payload.objects = [
+            { id: 1, key: "x", width, height, window: false, collider: { x0, y0, x1, y1 } },
+          ];
           const maxX = width * 16;
           const maxY = height * 16;
           const contained = x1 > x0 && y1 > y0 && x0 >= 0 && y0 >= 0 && x1 <= maxX && y1 <= maxY;
@@ -275,7 +316,7 @@ describe("canonicalDump", () => {
         "chain plastic_bottle id=1 links=[sanitation_worker]",
         "item bottle id=1",
         "item recycled_glass id=2",
-        "object trash_bin id=1 height=1 width=1 collider=none",
+        "object trash_bin id=1 height=1 width=1 collider=none window=false",
         "profession sanitation_worker id=1",
         "recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]",
         "",

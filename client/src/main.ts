@@ -7,13 +7,14 @@ import {
   recordPingForE2e,
   recordPlayerPositionForE2e,
   recordRenderOrderForE2e,
+  recordVisibilityForE2e,
 } from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
 import { bootstrapRenderer } from "./render/bootstrap";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
 import { loadMovementConfig } from "./world/movement-config";
-import { objectDefsById } from "./world/object-defs";
+import { objectDefsById, windowDefIds } from "./world/object-defs";
 
 async function main(): Promise<void> {
   const mount = document.getElementById("app");
@@ -63,6 +64,12 @@ async function startDemoScene(): Promise<void> {
   const defs = await fetchDefs("/defs/defs.json");
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");
+  // Story 1.7 (FR121): `render.window_alpha` is a percent integer (1-99,
+  // an `i64` balance key cannot carry a fraction), divided down to the
+  // plain `(0, 1)` fraction `render/pixi-visibility.ts` applies as
+  // `sprite.alpha` -- never a literal window alpha anywhere in this
+  // client.
+  const windowAlpha = getBalance(defs, "render.window_alpha") / 100;
   const movementConfig = loadMovementConfig(defs);
 
   const rankTable = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
@@ -78,10 +85,13 @@ async function startDemoScene(): Promise<void> {
     tileSizePx,
     storeyHeightPx,
     rankOf: (code) => resolveRank(rankTable, code),
+    windowAlpha,
     movementConfig,
     objectDefs: objectDefsById(defs),
+    windowDefIds: windowDefIds(defs),
     onOrderChange: recordRenderOrderForE2e,
     onPlayerMove: recordPlayerPositionForE2e,
+    onVisibilityChange: recordVisibilityForE2e,
   });
 }
 

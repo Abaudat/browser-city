@@ -364,6 +364,8 @@ jobs:
       - run: bash ../scripts/ci/check-no-shared-code.sh
       - name: the one client-side layer-rank mirror never drifts from the server golden
         run: bash ../scripts/ci/check-layer-table-current.sh
+      - name: story 1.7 FR121, no masking/filter/render-texture construct under client/src/
+        run: bash ../scripts/ci/check-no-masks.sh
       # The cargo-free half of check-trace-matrix.sh: the client inv_*
       # symmetry and the Guard-section path checks, at effectively zero
       # cost -- Tim's direction, so a client-only PR is never gated on

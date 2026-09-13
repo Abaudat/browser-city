@@ -4,6 +4,7 @@ import {
   recordPingForE2e,
   recordPlayerPositionForE2e,
   recordRenderOrderForE2e,
+  recordVisibilityForE2e,
 } from "../../src/net/e2e-hooks";
 
 afterEach(() => {
@@ -80,6 +81,35 @@ describe("recordPlayerPositionForE2e", () => {
     vi.stubEnv("DEV", false);
 
     recordPlayerPositionForE2e(1, 1);
+
+    expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("recordVisibilityForE2e", () => {
+  it("stores a copy of the state map under window.__bc.visibility", () => {
+    const state = { "1": "hidden", "2": "translucent" };
+    recordVisibilityForE2e(state);
+    expect(window.__bc?.visibility).toEqual(state);
+    expect(window.__bc?.visibility).not.toBe(state); // a copy, never the same reference
+  });
+
+  it("creates the buffer lazily rather than requiring pre-existing state", () => {
+    expect(window.__bc).toBeUndefined();
+    recordVisibilityForE2e({ "1": "normal" });
+    expect(window.__bc?.visibility).toEqual({ "1": "normal" });
+  });
+
+  it("overwrites the previous map rather than accumulating a history", () => {
+    recordVisibilityForE2e({ "1": "hidden" });
+    recordVisibilityForE2e({ "2": "normal" });
+    expect(window.__bc?.visibility).toEqual({ "2": "normal" });
+  });
+
+  it("does nothing when DEV is false", () => {
+    vi.stubEnv("DEV", false);
+
+    recordVisibilityForE2e({ "1": "hidden" });
 
     expect(window.__bc).toBeUndefined();
   });

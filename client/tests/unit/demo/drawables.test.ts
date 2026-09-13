@@ -5,7 +5,12 @@ import {
   buildPropDrawables,
   updatePlayerDrawable,
 } from "../../../src/demo/drawables";
-import { INTERIOR_FLOOR_TILES, PLAYER_START, SIDEWALK_TILES } from "../../../src/demo/fixture";
+import {
+  INTERIOR_FLOOR_TILES,
+  INTERIOR_FLOOR_TILES_B,
+  PLAYER_START,
+  SIDEWALK_TILES,
+} from "../../../src/demo/fixture";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { LAYER_TABLE } from "../../../src/render/layer-table";
 import { screenPositionPx } from "../../../src/render/screen-position";
@@ -13,7 +18,13 @@ import { compareDrawables, sortDrawablesInPlace } from "../../../src/render/sort
 import { toSortUnits } from "../../../src/render/sort-units";
 import type { Vec2 } from "../../../src/world/movement";
 import { step } from "../../../src/world/movement";
-import { demoCollisionGrid, demoMovementConfig, lamppostRestY } from "./demo-world";
+import {
+  demoCollisionGrid,
+  demoMovementConfig,
+  demoOwnershipIndex,
+  demoWindowDefIds,
+  lamppostRestY,
+} from "./demo-world";
 import { DEMO_SCENE_GOLDEN_ORDER, DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH } from "./golden";
 
 // Mirrors `render.tile_size_px` / `render.storey_height_px`
@@ -35,10 +46,20 @@ function rankOf(layer: string): number {
   return resolveRank(table, code);
 }
 
+/** Every test below builds the same real props -- the demo's own
+ * ownership index and window def ids, exactly the way `scene.ts` does. */
+function buildDemoProps() {
+  return buildPropDrawables({
+    rankOf,
+    ownership: demoOwnershipIndex(),
+    windowDefIds: demoWindowDefIds(),
+  });
+}
+
 describe("the story 1.6 demo scene's committed ordering", () => {
   it("sorts the whole fixture (props + player) to a fixed, committed id sequence", () => {
-    const props = buildPropDrawables((layer) => rankOf(layer));
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y);
+    const props = buildDemoProps();
+    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor);
     const pool = [...props, player];
     sortDrawablesInPlace(pool);
 
@@ -56,8 +77,8 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // straight from the comparator, the same way the at-rest golden
     // above is, so a wrong golden here fails with a diff in the fastest
     // job instead of a ten-second timeout in the slowest one.
-    const props = buildPropDrawables((layer) => rankOf(layer));
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, lamppostRestY());
+    const props = buildDemoProps();
+    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, lamppostRestY(), PLAYER_START.floor);
     const pool = [...props, player];
     sortDrawablesInPlace(pool);
 
@@ -73,8 +94,8 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // y) sort behind the player; cells nearer the door (larger y) sort
     // in front -- the one thing a footprint running parallel to the
     // camera could never demonstrate.
-    const props = buildPropDrawables((layer) => rankOf(layer));
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y);
+    const props = buildDemoProps();
+    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor);
 
     const westWallCells = props
       .filter((p) => p.stableId === 4n)
@@ -89,7 +110,7 @@ describe("the story 1.6 demo scene's committed ordering", () => {
   });
 
   it("a table and the glass on it share an anchor; the rank tiebreak keeps the glass on top", () => {
-    const props = buildPropDrawables((layer) => rankOf(layer));
+    const props = buildDemoProps();
     const table = props.find((p) => p.stableId === 9n);
     const glass = props.find((p) => p.stableId === 10n);
     if (!table || !glass) throw new Error("unreachable");
@@ -99,7 +120,7 @@ describe("the story 1.6 demo scene's committed ordering", () => {
   });
 
   it("FR124: the upper-storey wall shares (x, y, rank) with the ground-floor wall, and only the stableId tiebreak (never floor) orders them", () => {
-    const props = buildPropDrawables((layer) => rankOf(layer));
+    const props = buildDemoProps();
     const groundWallCell = props.find((p) => p.stableId === 1n && p.sourceCol === 0);
     const upperWallCell = props.find((p) => p.stableId === 12n && p.sourceCol === 0);
     if (!groundWallCell || !upperWallCell) throw new Error("unreachable");
@@ -135,7 +156,7 @@ describe("the player can never walk off the drawn world", () => {
   /** The drawn ground: interior floor and pavement, in screen pixels.
    * `x1`/`y1` are exclusive tile indices, so the drawn extent's own far
    * edge is at `x1 * tileSizePx`. */
-  const groundScreenRects = [INTERIOR_FLOOR_TILES, SIDEWALK_TILES].map((tiles) => ({
+  const groundScreenRects = [INTERIOR_FLOOR_TILES, INTERIOR_FLOOR_TILES_B, SIDEWALK_TILES].map((tiles) => ({
     left: tiles.x0 * TILE_SIZE_PX,
     right: tiles.x1 * TILE_SIZE_PX,
     top: tiles.y0 * TILE_SIZE_PX,
@@ -213,7 +234,7 @@ describe("the player can never walk off the drawn world", () => {
 
 describe("updatePlayerDrawable", () => {
   it("mutates the same object in place rather than allocating a new one", () => {
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y);
+    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor);
     const sameObject = player;
 
     updatePlayerDrawable(player, PLAYER_START.x + 1, PLAYER_START.y + 1);
