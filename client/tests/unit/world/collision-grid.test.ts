@@ -58,7 +58,11 @@ describe("CollisionGrid", () => {
   });
 
   it("inserts a whole-cell collider into exactly the one cell it occupies", () => {
-    const wholeCell: ColliderSource = { width: 1, height: 1, collider: { x0: 0, y0: 0, x1: 16, y1: 16 } };
+    const wholeCell: ColliderSource = {
+      width: 1,
+      height: 1,
+      collider: { x0: 0, y0: 0, x1: 16, y1: 16 },
+    };
     const grid = gridWith(new Map([[1, wholeCell]]));
     grid.insert(row({ objectId: 5n, x: 3, y: 2 }));
     expect(grid.entriesInCell(0, 3, 2)).toHaveLength(1);
@@ -78,7 +82,11 @@ describe("CollisionGrid", () => {
   it("a collider overhanging a chunk edge is rasterised into every cell it overlaps, across chunks", () => {
     // CHUNK_SIZE is 32; a 2-wide collider anchored at cell (31, 0) covers
     // cells (31, 0) in chunk (0,0) and (32, 0) in chunk (1, 0).
-    const twoWide: ColliderSource = { width: 2, height: 1, collider: { x0: 0, y0: 0, x1: 32, y1: 16 } };
+    const twoWide: ColliderSource = {
+      width: 2,
+      height: 1,
+      collider: { x0: 0, y0: 0, x1: 32, y1: 16 },
+    };
     const grid = gridWith(new Map([[1, twoWide]]));
     grid.insert(row({ objectId: 9n, x: 31, y: 0 }));
     expect(grid.entriesInCell(0, 31, 0)).toHaveLength(1);
@@ -152,9 +160,7 @@ describe("inv_collision_grid_matches_rebuild", () => {
   }
 
   function snapshot(grid: CollisionGrid, cells: readonly [number, number][]): unknown {
-    return cells.map(([x, y]) =>
-      [...grid.entriesInCell(0, x, y)].map((e) => e.objectId).sort(),
-    );
+    return cells.map(([x, y]) => [...grid.entriesInCell(0, x, y)].map((e) => e.objectId).sort());
   }
 
   // A sequence of random insert/delete/update calls always equals a
@@ -165,7 +171,10 @@ describe("inv_collision_grid_matches_rebuild", () => {
         fc.array(
           fc.oneof(
             fc.record({ kind: fc.constant("insert" as const), row: rowArb }),
-            fc.record({ kind: fc.constant("delete" as const), objectId: fc.integer({ min: 1, max: 6 }).map(BigInt) }),
+            fc.record({
+              kind: fc.constant("delete" as const),
+              objectId: fc.integer({ min: 1, max: 6 }).map(BigInt),
+            }),
             fc.record({ kind: fc.constant("update" as const), row: rowArb }),
           ),
           { maxLength: 30 },

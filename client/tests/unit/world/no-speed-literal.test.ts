@@ -3,8 +3,7 @@
 // `defs/balance/movement.toml`'s own `value = 2200` -- everything under
 // `client/src/world/**` must read it through `loadMovementConfig`,
 // never repeat the number itself.
-import { readFileSync } from "node:fs";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 

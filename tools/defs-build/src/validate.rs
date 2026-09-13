@@ -194,10 +194,7 @@ fn check_object_colliders(entries: &[ObjectEntry]) -> Result<(), DefsError> {
         }
         let max_x = e.width as i64 * COLLIDER_SUBCELLS_PER_CELL;
         let max_y = e.height as i64 * COLLIDER_SUBCELLS_PER_CELL;
-        if (c.x0 as i64) < 0
-            || (c.y0 as i64) < 0
-            || (c.x1 as i64) > max_x
-            || (c.y1 as i64) > max_y
+        if (c.x0 as i64) < 0 || (c.y0 as i64) < 0 || (c.x1 as i64) > max_x || (c.y1 as i64) > max_y
         {
             return Err(DefsError::new(
                 &e.path,

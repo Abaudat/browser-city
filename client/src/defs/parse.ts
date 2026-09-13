@@ -297,7 +297,16 @@ export function parseDefs(data: unknown): Defs {
     checkColliderWithinFootprint(object, colliderSubcellsPerCell);
   }
 
-  return { defsVersion, colliderSubcellsPerCell, objects, items, recipes, professions, chains, balance };
+  return {
+    defsVersion,
+    colliderSubcellsPerCell,
+    objects,
+    items,
+    recipes,
+    professions,
+    chains,
+    balance,
+  };
 }
 
 /** FR128's containment rule (`inv_collider_within_footprint`): a declared
@@ -311,7 +320,9 @@ function checkColliderWithinFootprint(object: ObjectDef, colliderSubcellsPerCell
   const c = object.collider;
   if (!c) return;
   if (c.x1 <= c.x0 || c.y1 <= c.y0) {
-    fail(`object '${object.key}' collider (${c.x0}, ${c.y0})-(${c.x1}, ${c.y1}) has zero or negative area`);
+    fail(
+      `object '${object.key}' collider (${c.x0}, ${c.y0})-(${c.x1}, ${c.y1}) has zero or negative area`,
+    );
   }
   const maxX = object.width * colliderSubcellsPerCell;
   const maxY = object.height * colliderSubcellsPerCell;

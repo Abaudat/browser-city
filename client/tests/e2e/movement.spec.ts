@@ -7,11 +7,11 @@
 // `client/tests/unit/world/*.test.ts`'s property tests; this spec only
 // proves the real adapter is wired to the real movement code.
 import { expect, test } from "@playwright/test";
-import type {} from "../../src/net/e2e-hooks";
 // `PLAYER_WALK_SOUTH_REST_Y` (id 14, a real physical collider) and the
 // awning (id 11, deliberately collider-less) are `fixture.ts`'s own
 // story 1.8 worked examples -- see that file's comments.
 import { PLAYER_START, PLAYER_WALK_SOUTH_REST_Y } from "../../src/demo/fixture";
+import type {} from "../../src/net/e2e-hooks";
 
 function playerPosition(page: import("@playwright/test").Page) {
   return page.evaluate(() => window.__bc?.playerPosition);
