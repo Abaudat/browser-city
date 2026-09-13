@@ -200,11 +200,26 @@ export const PLATFORM_LANDING_Y = PLATFORM_INTERIOR_Y0 + 1;
 export const PLATFORM_UP_ANCHOR_X = PLATFORM_LANDING_X;
 export const PLATFORM_UP_ANCHOR_Y = PLATFORM_LANDING_Y - 1;
 
+/** Where climbing back up lands on the street: one cell east of the
+ * stairwell's own anchor (`STAIRS_X`/`STAIRS_Y`), never that identical
+ * cell -- the same "never the anchor cell" rule `PLATFORM_UP_ANCHOR_X/Y`
+ * applies below ground applies here too. Landing exactly on the down
+ * anchor would re-trigger it the instant a caller's own continued
+ * momentum (or an unreleased key) is still checked against that cell on
+ * the very next tick, bouncing the player straight back underground --
+ * a real bug this fixture found the hard way, not a hypothetical one.
+ * Still immediately beside the stairwell prop (Artie's "where you come
+ * out must physically match where you went in"), just not the single
+ * tile that triggers the descent. */
+export const STREET_EXIT_X = STAIRS_X + 1;
+export const STREET_EXIT_Y = STAIRS_Y;
+
 /** The floor transition data (Tim's `world/transitions.ts` port): entering
  * the stairwell cell on the street lands on the platform; entering the
- * up-stairs' own anchor cell returns to the street, at the same physical
- * spot. Never a boolean on the stairs prop -- a `floor_transition`-shaped
- * row, anchor cell to target cell, exactly like the server's own model. */
+ * up-stairs' own anchor cell returns to the street, one cell beside the
+ * stairwell. Never a boolean on the stairs prop -- a `floor_transition`-
+ * shaped row, anchor cell to target cell, exactly like the server's own
+ * model. */
 export const DEMO_TRANSITIONS: readonly TransitionSpec[] = [
   {
     x: STAIRS_X,
@@ -218,8 +233,8 @@ export const DEMO_TRANSITIONS: readonly TransitionSpec[] = [
     x: PLATFORM_UP_ANCHOR_X,
     y: PLATFORM_UP_ANCHOR_Y,
     floor: SUBWAY_FLOOR,
-    targetX: STAIRS_X,
-    targetY: STAIRS_Y,
+    targetX: STREET_EXIT_X,
+    targetY: STREET_EXIT_Y,
     targetFloor: STREET_FLOOR,
   },
 ];

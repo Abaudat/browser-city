@@ -17,7 +17,12 @@
 // direction) -- the walk always goes through the real keyboard and the
 // real `world/transitions.ts` port.
 import { expect, type Page, test } from "@playwright/test";
-import { PLATFORM_LANDING_X, PLATFORM_LANDING_Y, STAIRS_X, STAIRS_Y } from "../../src/demo/fixture";
+import {
+  PLATFORM_LANDING_X,
+  PLATFORM_LANDING_Y,
+  STREET_EXIT_X,
+  STREET_EXIT_Y,
+} from "../../src/demo/fixture";
 import type {} from "../../src/net/e2e-hooks";
 import { lamppostRestY } from "../unit/demo/demo-world";
 
@@ -142,10 +147,12 @@ test.describe("story 1.7: enclosure visibility", () => {
     expect(await visibilityOf(page, "64")).toBe("normal"); // the bench
 
     // Walking north from the landing reaches the up-stairs' own anchor,
-    // one cell further in (`fixture.ts`'s `PLATFORM_UP_ANCHOR_X/Y`) --
-    // landing back exactly where the player went down.
-    const streetX = STAIRS_X + 0.5;
-    const streetY = STAIRS_Y + 0.5;
+    // one cell further in (`fixture.ts`'s `PLATFORM_UP_ANCHOR_X/Y`), and
+    // lands one cell beside the stairwell (`STREET_EXIT_X/Y`) -- never
+    // the down anchor's own cell, which would re-trigger the descent the
+    // instant a still-held key is checked against it again.
+    const streetX = STREET_EXIT_X + 0.5;
+    const streetY = STREET_EXIT_Y + 0.5;
     await page.keyboard.down("ArrowUp");
     await page.waitForFunction(
       ({ x, y }) => {

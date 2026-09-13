@@ -156,6 +156,7 @@ the sections above.
 | No masking, filter or render-texture construct exists anywhere under `client/src/` (FR121) | covered | `scripts/ci/check-no-masks.sh`, run by the `client-check` job |
 | The permanent `render/**` modules (`visibility.ts` included) cannot import `pixi.js`, same discipline as the `world/**` import ban | covered | `client/biome.json` -- the `src/render/**` override's `noRestrictedImports` |
 | The real, mounted `VisibilityApplier` reaches the same FR120/FR121/FR122 states the pure `computeVisibility` function predicts, after a real keyboard-driven walk into and out of an enclosure and into and out of the subway | covered | `client/tests/e2e/enclosure.spec.ts` |
+| No demo floor transition lands on a cell that is itself a transition anchor -- a still-held direction key checked again on the very next tick must never immediately retrigger the transition a player just arrived from | covered | `client/tests/unit/demo/fixture.test.ts` |
 
 ## Scheduled-reducer timing
 
