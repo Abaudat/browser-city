@@ -137,6 +137,11 @@ jobs:
       - run: bash scripts/ci/check-agent-tooling.sh
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.3-scheduled-reducer-timing.md sched-timing-spacetimedb-version
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.4-backup-restore.md backup-spacetimedb-version
+      # scripts/ci/'s own fast, no-toolchain-needed tests for its
+      # mechanical guards (e.g. check-no-masks.sh's own pattern, story 1.7
+      # cycle 2) -- runs here, not in `client-check`, since it needs
+      # nothing client-check's own toolchain provides.
+      - run: bash scripts/ci/tests/run-all.sh
       - run: bash agentic-team/scripts/tests/run-all.sh
 
   defs:
@@ -364,6 +369,8 @@ jobs:
       - run: bash ../scripts/ci/check-no-shared-code.sh
       - name: the one client-side layer-rank mirror never drifts from the server golden
         run: bash ../scripts/ci/check-layer-table-current.sh
+      - name: story 1.7 FR121, no masking/filter/render-texture construct under client/src/
+        run: bash ../scripts/ci/check-no-masks.sh
       # The cargo-free half of check-trace-matrix.sh: the client inv_*
       # symmetry and the Guard-section path checks, at effectively zero
       # cost -- Tim's direction, so a client-only PR is never gated on

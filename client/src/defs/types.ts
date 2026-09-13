@@ -23,6 +23,9 @@ export interface ObjectDef {
   /** Absent means walkable (FR128) -- there is no separate `walkable`
    * flag anywhere. */
   readonly collider?: ColliderRect;
+  /** Story 1.7 (FR121): a window wall tile draws semi-transparently
+   * (`render.window_alpha`) and retracts like any other front wall. */
+  readonly window: boolean;
 }
 
 export interface ItemDef {

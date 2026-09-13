@@ -31,6 +31,7 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "negative-id" => "negative-id",
         "zero-area-collider" => "zero-area-collider",
         "collider-outside-footprint" => "collider-outside-footprint",
+        "non-boolean-window" => "non-boolean-window",
         other => panic!(
             "shared case '{other}' has no mapped tests/fixtures/invalid/ directory -- add one to fixture_for()"
         ),

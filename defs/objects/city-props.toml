@@ -28,3 +28,14 @@ height = 1
 # The story 1.8 worked example: a small base collider near the bottom of
 # the cell, so a player passes through the rest of the cell freely.
 collider = { x0 = 6, y0 = 10, x1 = 10, y1 = 14 }
+
+[[object]]
+id = 5
+key = "shop_window"
+width = 1
+height = 1
+# Story 1.7 (FR121): a window wall tile -- solid like any other wall cell
+# (the whole cell), but drawn semi-transparently (`render.window_alpha`)
+# and retracted like any other front wall.
+window = true
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }

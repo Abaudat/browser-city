@@ -12,6 +12,9 @@ declare global {
       pings: PingObservation[];
       renderOrder?: string[];
       playerPosition?: { x: number; y: number };
+      visibility?: Record<string, string>;
+      visibilityAlpha?: Record<string, number>;
+      masksAllNull?: boolean;
     };
   }
 }
@@ -43,5 +46,38 @@ export function recordPlayerPositionForE2e(x: number, y: number): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.playerPosition = { x, y };
+  window.__bc = bucket;
+}
+
+/** Story 1.7's proof that the real, mounted adapter reaches the same
+ * FR120/FR121/FR122 states the pure `computeVisibility` function
+ * predicts (Quentin's direction): a map from decimal `stableId` string to
+ * its current visibility state ("hidden"/"translucent"/"normal"), plus
+ * the exact `alpha` each member's own sprite carries right now -- both
+ * read straight off `sprite.visible`/`sprite.alpha` after `VisibilityApplier`
+ * writes them (never recomputed), updated every time it actually
+ * re-applies (never polled every frame). `client/tests/e2e/
+ * enclosure.spec.ts` is the only reader; the alpha map is what lets it
+ * assert a translucent sprite's alpha equals `render.window_alpha / 100`
+ * directly, not merely that its state is "translucent". */
+export function recordVisibilityForE2e(
+  state: Readonly<Record<string, string>>,
+  alpha: Readonly<Record<string, number>>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.visibility = { ...state };
+  bucket.visibilityAlpha = { ...alpha };
+  window.__bc = bucket;
+}
+
+/** FR121's "no masking or aperture system" acceptance criterion (Tim's
+ * direction), proven against the real, mounted display list rather than
+ * only by `scripts/ci/check-no-masks.sh` never finding the word `mask` in
+ * the source -- recorded once, after mount. */
+export function recordMasksCheckedForE2e(allNull: boolean): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.masksAllNull = allNull;
   window.__bc = bucket;
 }

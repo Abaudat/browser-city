@@ -61,6 +61,12 @@ pub struct RawObject {
     /// top-left anchor cell (FR128). Absent means walkable -- there is no
     /// separate `walkable` flag anywhere.
     pub collider: Option<Spanned<RawColliderRect>>,
+    /// Story 1.7 (FR121): a window wall tile draws semi-transparently
+    /// (`render.window_alpha`, a balance key -- never a literal) and lets
+    /// near-side retraction hide it exactly like any other front wall.
+    /// Optional, defaults to `false` -- most objects are not windows.
+    #[serde(default)]
+    pub window: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -149,6 +155,7 @@ pub struct ObjectEntry {
     pub width: u32,
     pub height: u32,
     pub collider: Option<Located<RawColliderRect>>,
+    pub window: bool,
 }
 
 #[derive(Debug)]
@@ -249,6 +256,7 @@ pub struct ObjectDef {
     pub width: u32,
     pub height: u32,
     pub collider: Option<ColliderRect>,
+    pub window: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

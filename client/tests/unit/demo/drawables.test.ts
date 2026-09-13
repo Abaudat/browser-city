@@ -5,16 +5,38 @@ import {
   buildPropDrawables,
   updatePlayerDrawable,
 } from "../../../src/demo/drawables";
-import { INTERIOR_FLOOR_TILES, PLAYER_START, SIDEWALK_TILES } from "../../../src/demo/fixture";
+import {
+  INTERIOR_FLOOR_TILES,
+  INTERIOR_FLOOR_TILES_B,
+  PLATFORM_LANDING_X,
+  PLATFORM_LANDING_Y,
+  PLAYER_START,
+  SIDEWALK_TILES,
+  SUBWAY_FLOOR,
+} from "../../../src/demo/fixture";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
-import { LAYER_TABLE } from "../../../src/render/layer-table";
+import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
 import { screenPositionPx } from "../../../src/render/screen-position";
 import { compareDrawables, sortDrawablesInPlace } from "../../../src/render/sort-key";
 import { toSortUnits } from "../../../src/render/sort-units";
+import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import type { Vec2 } from "../../../src/world/movement";
 import { step } from "../../../src/world/movement";
-import { demoCollisionGrid, demoMovementConfig, lamppostRestY } from "./demo-world";
-import { DEMO_SCENE_GOLDEN_ORDER, DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH } from "./golden";
+import { cellOf, NO_OWNER } from "../../../src/world/ownership";
+import {
+  demoCollisionGrid,
+  demoMovementConfig,
+  demoOwnershipIndex,
+  demoWindowDefIds,
+  lamppostRestY,
+} from "./demo-world";
+import {
+  DEMO_SCENE_GOLDEN_ORDER,
+  DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
+  DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE,
+  DEMO_VISIBILITY_AT_REST_IN_SHOP_A,
+  DEMO_VISIBILITY_ON_SUBWAY_LANDING,
+} from "./golden";
 
 // Mirrors `render.tile_size_px` / `render.storey_height_px`
 // (`defs/defs.json`) -- the scene itself always reads these from the
@@ -35,10 +57,25 @@ function rankOf(layer: string): number {
   return resolveRank(table, code);
 }
 
+/** Every test below builds the same real props -- the demo's own
+ * ownership index and window def ids, exactly the way `scene.ts` does. */
+function buildDemoProps() {
+  return buildPropDrawables({
+    rankOf,
+    ownership: demoOwnershipIndex(),
+    windowDefIds: demoWindowDefIds(),
+  });
+}
+
 describe("the story 1.6 demo scene's committed ordering", () => {
   it("sorts the whole fixture (props + player) to a fixed, committed id sequence", () => {
-    const props = buildPropDrawables((layer) => rankOf(layer));
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y);
+    const props = buildDemoProps();
+    const player = buildPlayerDrawable(
+      rankOf("characters"),
+      PLAYER_START.x,
+      PLAYER_START.y,
+      PLAYER_START.floor,
+    );
     const pool = [...props, player];
     sortDrawablesInPlace(pool);
 
@@ -56,8 +93,13 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // straight from the comparator, the same way the at-rest golden
     // above is, so a wrong golden here fails with a diff in the fastest
     // job instead of a ten-second timeout in the slowest one.
-    const props = buildPropDrawables((layer) => rankOf(layer));
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, lamppostRestY());
+    const props = buildDemoProps();
+    const player = buildPlayerDrawable(
+      rankOf("characters"),
+      PLAYER_START.x,
+      lamppostRestY(),
+      PLAYER_START.floor,
+    );
     const pool = [...props, player];
     sortDrawablesInPlace(pool);
 
@@ -73,8 +115,13 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // y) sort behind the player; cells nearer the door (larger y) sort
     // in front -- the one thing a footprint running parallel to the
     // camera could never demonstrate.
-    const props = buildPropDrawables((layer) => rankOf(layer));
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y);
+    const props = buildDemoProps();
+    const player = buildPlayerDrawable(
+      rankOf("characters"),
+      PLAYER_START.x,
+      PLAYER_START.y,
+      PLAYER_START.floor,
+    );
 
     const westWallCells = props
       .filter((p) => p.stableId === 4n)
@@ -89,7 +136,7 @@ describe("the story 1.6 demo scene's committed ordering", () => {
   });
 
   it("a table and the glass on it share an anchor; the rank tiebreak keeps the glass on top", () => {
-    const props = buildPropDrawables((layer) => rankOf(layer));
+    const props = buildDemoProps();
     const table = props.find((p) => p.stableId === 9n);
     const glass = props.find((p) => p.stableId === 10n);
     if (!table || !glass) throw new Error("unreachable");
@@ -98,24 +145,90 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     expect(compareDrawables(table, glass)).toBeLessThan(0);
   });
 
-  it("FR124: the upper-storey wall shares (x, y, rank) with the ground-floor wall, and only the stableId tiebreak (never floor) orders them", () => {
-    const props = buildPropDrawables((layer) => rankOf(layer));
+  it("FR124: two drawables sharing (x, y, rank) but not floor are still ordered, by stableId alone, never floor", () => {
+    // This fixture carries no real upper storey (removed, story 1.7 cycle
+    // 2 -- `isStoreyAboveCulled` is proven directly, against synthetic
+    // drawables, in `visibility.test.ts`), so this worked example builds
+    // its own second drawable rather than reaching for one: a real ground
+    // wall cell, and a copy of it on a different floor with a different
+    // stableId -- the exact shape a real upper storey's own wall would
+    // have shared with the one below it.
+    const props = buildDemoProps();
     const groundWallCell = props.find((p) => p.stableId === 1n && p.sourceCol === 0);
-    const upperWallCell = props.find((p) => p.stableId === 12n && p.sourceCol === 0);
-    if (!groundWallCell || !upperWallCell) throw new Error("unreachable");
+    if (!groundWallCell) throw new Error("unreachable");
+    const upperWallCell = { ...groundWallCell, stableId: 99_999n, floor: 1 };
+
     expect(groundWallCell.x).toBe(upperWallCell.x);
     expect(groundWallCell.y).toBe(upperWallCell.y);
     expect(groundWallCell.rank).toBe(upperWallCell.rank);
     expect(groundWallCell.floor).not.toBe(upperWallCell.floor);
 
-    // The comparison result is driven entirely by stableId (1n < 12n) --
-    // swapping which one carries which floor changes nothing about the
-    // result, which is exactly `inv_floor_never_affects_depth_order`
-    // applied to this scene's own data.
+    // The comparison result is driven entirely by stableId -- swapping
+    // which one carries which floor changes nothing about the result,
+    // which is exactly `inv_floor_never_affects_depth_order` applied to
+    // this scene's own data.
     const swapped = { ...groundWallCell, floor: upperWallCell.floor };
     const swappedOther = { ...upperWallCell, floor: groundWallCell.floor };
     expect(compareDrawables(groundWallCell, upperWallCell)).toBe(
       compareDrawables(swapped, swappedOther),
+    );
+  });
+});
+
+describe("the demo scene's committed visibility (story 1.7 cycle 2, Quentin's direction)", () => {
+  // The unit counterpart to `../e2e/enclosure.spec.ts`: derives the same
+  // three goldens straight from `buildPropDrawables` + `computeVisibility`
+  // over the real demo ownership index, resolving the viewer's own
+  // `(floor, buildingId)` from a cell exactly the way `scene.ts` does
+  // (`ownershipAt` on `cellOf(x)`/`cellOf(y)`) -- never a slow e2e round
+  // trip as the only thing proving what a given position should show.
+  // The two floors this demo's ground-tile passes ever occupy (`fixture.ts`'s
+  // `STREET_FLOOR`/`SUBWAY_FLOOR`) -- a ground group is never a window,
+  // never near-side and never owned by a building (`NO_OWNER`), so floor
+  // culling is the only rule that can ever apply to it, exactly mirroring
+  // `scene.ts`'s own synthetic ground drawable.
+  const GROUND_FLOORS = [0, -1] as const;
+
+  function visibilityAt(x: number, y: number, floor: number): Record<string, string> {
+    const ownership = demoOwnershipIndex();
+    const props = buildDemoProps();
+    const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
+    const viewer: VisibilityViewer = {
+      floor,
+      buildingId: ownership.ownershipAt(cellOf(x), cellOf(y), floor).buildingId,
+    };
+    const result: Record<string, string> = {};
+    for (const drawable of [...props, player]) {
+      result[drawable.stableId.toString()] = computeVisibility(viewer, drawable);
+    }
+    for (const groundFloor of GROUND_FLOORS) {
+      result[`ground:${groundFloor}`] = computeVisibility(viewer, {
+        floor: groundFloor,
+        layerCode: layerCodeByName("objects"),
+        ownerBuildingId: NO_OWNER,
+        isWindow: false,
+        isNearSide: false,
+        isStub: false,
+      });
+    }
+    return result;
+  }
+
+  it("at rest in shop A", () => {
+    expect(visibilityAt(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor)).toEqual(
+      DEMO_VISIBILITY_AT_REST_IN_SHOP_A,
+    );
+  });
+
+  it("at the lamppost rest point outside", () => {
+    expect(visibilityAt(PLAYER_START.x, lamppostRestY(), PLAYER_START.floor)).toEqual(
+      DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE,
+    );
+  });
+
+  it("on the subway landing", () => {
+    expect(visibilityAt(PLATFORM_LANDING_X + 0.5, PLATFORM_LANDING_Y + 0.5, SUBWAY_FLOOR)).toEqual(
+      DEMO_VISIBILITY_ON_SUBWAY_LANDING,
     );
   });
 });
@@ -135,12 +248,14 @@ describe("the player can never walk off the drawn world", () => {
   /** The drawn ground: interior floor and pavement, in screen pixels.
    * `x1`/`y1` are exclusive tile indices, so the drawn extent's own far
    * edge is at `x1 * tileSizePx`. */
-  const groundScreenRects = [INTERIOR_FLOOR_TILES, SIDEWALK_TILES].map((tiles) => ({
-    left: tiles.x0 * TILE_SIZE_PX,
-    right: tiles.x1 * TILE_SIZE_PX,
-    top: tiles.y0 * TILE_SIZE_PX,
-    bottom: tiles.y1 * TILE_SIZE_PX,
-  }));
+  const groundScreenRects = [INTERIOR_FLOOR_TILES, INTERIOR_FLOOR_TILES_B, SIDEWALK_TILES].map(
+    (tiles) => ({
+      left: tiles.x0 * TILE_SIZE_PX,
+      right: tiles.x1 * TILE_SIZE_PX,
+      top: tiles.y0 * TILE_SIZE_PX,
+      bottom: tiles.y1 * TILE_SIZE_PX,
+    }),
+  );
 
   /** The four corners of the player's collision body, in world cells. */
   function bodyCorners(pos: Vec2): readonly Vec2[] {
@@ -213,10 +328,15 @@ describe("the player can never walk off the drawn world", () => {
 
 describe("updatePlayerDrawable", () => {
   it("mutates the same object in place rather than allocating a new one", () => {
-    const player = buildPlayerDrawable(rankOf("characters"), PLAYER_START.x, PLAYER_START.y);
+    const player = buildPlayerDrawable(
+      rankOf("characters"),
+      PLAYER_START.x,
+      PLAYER_START.y,
+      PLAYER_START.floor,
+    );
     const sameObject = player;
 
-    updatePlayerDrawable(player, PLAYER_START.x + 1, PLAYER_START.y + 1);
+    updatePlayerDrawable(player, PLAYER_START.x + 1, PLAYER_START.y + 1, PLAYER_START.floor);
 
     expect(player).toBe(sameObject);
     expect(player.x).toBe(toSortUnits(PLAYER_START.x + 1));
@@ -225,5 +345,18 @@ describe("updatePlayerDrawable", () => {
     expect(player.rank).toBe(rankOf("characters"));
     expect(player.stableId).toBe(1000n);
     expect(player.floor).toBe(PLAYER_START.floor);
+  });
+
+  it("also updates the player's own floor on a floor transition -- FR122: a stale floor would read the player itself as floor-culled the instant it lands", () => {
+    const player = buildPlayerDrawable(
+      rankOf("characters"),
+      PLAYER_START.x,
+      PLAYER_START.y,
+      PLAYER_START.floor,
+    );
+
+    updatePlayerDrawable(player, PLAYER_START.x, PLAYER_START.y, -1);
+
+    expect(player.floor).toBe(-1);
   });
 });

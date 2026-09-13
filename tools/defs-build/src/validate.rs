@@ -275,6 +275,7 @@ pub fn validate(raw: &RawDefs) -> Result<Defs, DefsError> {
                 x1: c.value.x1,
                 y1: c.value.y1,
             }),
+            window: o.window,
         })
         .collect();
     objects.sort_by(|a, b| a.key.cmp(&b.key));

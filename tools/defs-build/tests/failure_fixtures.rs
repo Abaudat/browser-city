@@ -148,6 +148,12 @@ fn a_collider_outside_its_footprint_is_named() {
     assert!(err.message.contains("does not fit inside its footprint"));
 }
 
+#[test]
+fn a_non_boolean_window_is_named() {
+    let err = build_err("non-boolean-window");
+    assert!(err.message.contains("expected") || err.message.contains("boolean"));
+}
+
 /// Every category this module lists above has its own fixture directory
 /// under `tests/fixtures/invalid/` -- so a category added to one and not
 /// the other is a hard failure here, not a silent gap. `non-integer-id`
@@ -175,6 +181,7 @@ fn every_known_category_has_a_fixture_directory() {
         "negative-id",
         "zero-area-collider",
         "collider-outside-footprint",
+        "non-boolean-window",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

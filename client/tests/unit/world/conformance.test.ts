@@ -1,15 +1,17 @@
 // The client-side half of the shared conformance fixture (Tim's
-// direction, story 1.8): `fixtures/world-conformance.v1.json` is the same
-// file `server/sim/tests/world_conformance.rs` reads. Chunk addressing and
-// whole-cell collision are checked here; floor transitions and ownership
-// stay `deferred` in `docs/trace-matrix.md` until their own story wires
-// them into the client.
+// direction, story 1.8 and story 1.7): `fixtures/world-conformance.v1.json`
+// is the same file `server/sim/tests/world_conformance.rs` reads. Chunk
+// addressing, whole-cell collision, floor transitions and building/room
+// ownership are all checked here now (story 1.7 ports the last two,
+// closing trace-matrix row 116).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { chunkKey } from "../../../src/world/chunk";
 import type { ColliderSource } from "../../../src/world/collision-grid";
 import { CollisionGrid } from "../../../src/world/collision-grid";
+import { NO_OWNER, type OwnershipArea, OwnershipIndex } from "../../../src/world/ownership";
+import { TransitionIndex, type TransitionSpec } from "../../../src/world/transitions";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -42,6 +44,15 @@ interface AreaSpec {
   readonly chunk_key: number;
 }
 
+interface TransitionDoc {
+  readonly x: number;
+  readonly y: number;
+  readonly floor: number;
+  readonly target_x: number;
+  readonly target_y: number;
+  readonly target_floor: number;
+}
+
 interface Case {
   readonly x: number;
   readonly y: number;
@@ -54,6 +65,7 @@ interface Case {
 
 interface Fixture {
   readonly floors: readonly FloorSpec[];
+  readonly transitions: readonly TransitionDoc[];
   readonly building_areas: readonly AreaSpec[];
   readonly room_areas: readonly AreaSpec[];
   readonly cases: readonly Case[];
@@ -147,6 +159,70 @@ describe("world conformance fixture", () => {
           );
         const isBlocked = grid.entriesInCell(floor, blocked.x, blocked.y).length > 0;
         expect(isBlocked, `(${blocked.x}, ${blocked.y}) on floor ${floor}`).toBe(declaredHere);
+      }
+    }
+  });
+
+  function buildOwnershipIndex(): OwnershipIndex {
+    const buildingAreas: OwnershipArea[] = fixture.building_areas.map((a) => ({
+      ownerId: BigInt(a.owner_id),
+      floor: a.floor,
+      rect: a.rect,
+    }));
+    const roomAreas: OwnershipArea[] = fixture.room_areas.map((a) => ({
+      ownerId: BigInt(a.owner_id),
+      floor: a.floor,
+      rect: a.rect,
+    }));
+    return new OwnershipIndex(buildingAreas, roomAreas);
+  }
+
+  it("story 1.7: the TS ownership port agrees with the Rust oracle on every conformance case", () => {
+    const index = buildOwnershipIndex();
+    const ownershipCases = fixture.cases.filter(
+      (c) => c.expect_building_id !== 0 || c.expect_room_id !== 0,
+    );
+    expect(ownershipCases.length).toBeGreaterThan(0);
+    for (const c of fixture.cases) {
+      const ownership = index.ownershipAt(c.x, c.y, c.floor);
+      expect(ownership.buildingId, `(${c.x}, ${c.y}, floor ${c.floor}).buildingId`).toBe(
+        BigInt(c.expect_building_id),
+      );
+      expect(ownership.roomId, `(${c.x}, ${c.y}, floor ${c.floor}).roomId`).toBe(
+        BigInt(c.expect_room_id),
+      );
+    }
+    // NO_OWNER is 0n -- an unowned cell in the fixture must resolve to it.
+    const unowned = fixture.cases.find((c) => c.expect_building_id === 0);
+    expect(unowned).toBeDefined();
+    if (unowned) {
+      expect(index.ownershipAt(unowned.x, unowned.y, unowned.floor).buildingId).toBe(NO_OWNER);
+    }
+  });
+
+  it("story 1.7: the TS transition port agrees with the Rust oracle on every conformance case", () => {
+    const specs: TransitionSpec[] = fixture.transitions.map((t) => ({
+      x: t.x,
+      y: t.y,
+      floor: t.floor,
+      targetX: t.target_x,
+      targetY: t.target_y,
+      targetFloor: t.target_floor,
+    }));
+    const index = new TransitionIndex(specs);
+    const transitionCases = fixture.cases.filter((c) => c.expect_transition !== null);
+    expect(transitionCases.length).toBeGreaterThan(0);
+    for (const c of fixture.cases) {
+      const transition = index.transitionAt(c.x, c.y, c.floor);
+      if (c.expect_transition === null) {
+        expect(transition, `(${c.x}, ${c.y}, floor ${c.floor})`).toBeUndefined();
+      } else {
+        const [tx, ty, tf] = c.expect_transition;
+        expect(transition, `(${c.x}, ${c.y}, floor ${c.floor})`).toEqual({
+          x: tx,
+          y: ty,
+          floor: tf,
+        });
       }
     }
   });

@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 import { parseDefs } from "../../../src/defs/parse";
 import type { Defs } from "../../../src/defs/types";
 import {
+  DEMO_BUILDING_AREAS,
+  DEMO_ROOM_AREAS,
   demoColliderSources,
   demoPlacedRows,
   LAMPPOST_CELL,
@@ -20,7 +22,8 @@ import type { ColliderSource } from "../../../src/world/collision-grid";
 import { CollisionGrid } from "../../../src/world/collision-grid";
 import type { MovementConfig } from "../../../src/world/movement";
 import { loadMovementConfig } from "../../../src/world/movement-config";
-import { objectDefsById } from "../../../src/world/object-defs";
+import { objectDefsById, windowDefIds } from "../../../src/world/object-defs";
+import { OwnershipIndex } from "../../../src/world/ownership";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -32,6 +35,20 @@ export function committedDefs(): Defs {
 
 export function demoMovementConfig(): MovementConfig {
   return loadMovementConfig(committedDefs());
+}
+
+/** The demo's own ownership index (story 1.7), built from `fixture.ts`'s
+ * committed `DEMO_BUILDING_AREAS`/`DEMO_ROOM_AREAS` -- shared by every
+ * test that needs to resolve a drawable's `ownerBuildingId` the same way
+ * `scene.ts` does. */
+export function demoOwnershipIndex(): OwnershipIndex {
+  return new OwnershipIndex(DEMO_BUILDING_AREAS, DEMO_ROOM_AREAS);
+}
+
+/** The demo's own window def ids (FR121), read from the committed
+ * `defs.json` -- never a literal restated in a test. */
+export function demoWindowDefIds(): ReadonlySet<number> {
+  return windowDefIds(committedDefs());
 }
 
 /** The grid the demo scene runs against, built from the same two sources

@@ -1,7 +1,12 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { Drawable } from "../../../src/render/sort-key";
-import { compareDrawables, sortDrawablesInPlace } from "../../../src/render/sort-key";
+import {
+  compareDrawables,
+  setDrawableFloor,
+  setDrawablePosition,
+  sortDrawablesInPlace,
+} from "../../../src/render/sort-key";
 
 const drawableArb: fc.Arbitrary<Drawable> = fc.record({
   x: fc.integer({ min: -500, max: 500 }),
@@ -247,5 +252,23 @@ describe("compareDrawables", () => {
     sortDrawablesInPlace(pool);
     const elapsedMs = performance.now() - start;
     expect(elapsedMs).toBeLessThan(200);
+  });
+});
+
+describe("setDrawablePosition / setDrawableFloor", () => {
+  it("setDrawablePosition mutates x/y in place, leaving every other field untouched", () => {
+    const d: Drawable = { x: 1, y: 2, rank: 3, stableId: 9n, floor: 0 };
+    setDrawablePosition(d, 10, 20);
+    expect(d).toEqual({ x: 10, y: 20, rank: 3, stableId: 9n, floor: 0 });
+  });
+
+  it("setDrawableFloor mutates floor in place, leaving x/y/rank/stableId untouched", () => {
+    // The story 1.7 case this exists for: a floor transition changes a
+    // character's own floor exactly the way walking changes its x/y, and
+    // `computeVisibility` reads `floor` on every call -- a drawable left
+    // on its stale floor would floor-cull itself the instant it lands.
+    const d: Drawable = { x: 1, y: 2, rank: 3, stableId: 9n, floor: 0 };
+    setDrawableFloor(d, -1);
+    expect(d).toEqual({ x: 1, y: 2, rank: 3, stableId: 9n, floor: -1 });
   });
 });

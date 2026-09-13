@@ -1,12 +1,13 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "ffa70266e12d5d29",
+  "defs_version": "f5533384f8b9be84",
   "collider_subcells_per_cell": 16,
   "objects": [
-    { "collider": { "x0": 6, "y0": 10, "x1": 10, "y1": 14 }, "height": 1, "id": 4, "key": "lamppost", "width": 1 },
-    { "collider": null, "height": 1, "id": 2, "key": "park_bench", "width": 2 },
-    { "collider": null, "height": 1, "id": 3, "key": "shop_counter", "width": 3 },
-    { "collider": { "x0": 4, "y0": 4, "x1": 12, "y1": 12 }, "height": 1, "id": 1, "key": "trash_bin", "width": 1 }
+    { "collider": { "x0": 6, "y0": 10, "x1": 10, "y1": 14 }, "height": 1, "id": 4, "key": "lamppost", "width": 1, "window": false },
+    { "collider": null, "height": 1, "id": 2, "key": "park_bench", "width": 2, "window": false },
+    { "collider": null, "height": 1, "id": 3, "key": "shop_counter", "width": 3, "window": false },
+    { "collider": { "x0": 0, "y0": 0, "x1": 16, "y1": 16 }, "height": 1, "id": 5, "key": "shop_window", "width": 1, "window": true },
+    { "collider": { "x0": 4, "y0": 4, "x1": 12, "y1": 12 }, "height": 1, "id": 1, "key": "trash_bin", "width": 1, "window": false }
   ],
   "items": [
     { "id": 1, "key": "bottle" },
@@ -27,6 +28,7 @@
     { "key": "movement.player_body_width_subcells", "max": 16, "min": 1, "value": 8 },
     { "key": "movement.walk_speed_millicells_per_s", "max": 20000, "min": 100, "value": 2200 },
     { "key": "render.storey_height_px", "max": 256, "min": 1, "value": 48 },
-    { "key": "render.tile_size_px", "max": 64, "min": 1, "value": 16 }
+    { "key": "render.tile_size_px", "max": 64, "min": 1, "value": 16 },
+    { "key": "render.window_alpha", "max": 99, "min": 1, "value": 50 }
   ]
 }

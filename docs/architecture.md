@@ -229,13 +229,15 @@ it.
 
 The client's mirror of these addressing, collision, transition and
 ownership rules is a separate TypeScript implementation (NFR30 forbids
-sharing the code). Its own test suite consumes the committed
+sharing the code): `client/src/world/chunk.ts` (addressing),
+`client/src/world/collision-grid.ts` (collision), `client/src/world/
+transitions.ts` (floor transitions) and `client/src/world/ownership.ts`
+(building/room ownership). Its own test suite consumes the committed
 `fixtures/world-conformance.v1.json`, the same file
 `sim/tests/world_conformance.rs` reads, regenerated from `sim::world::
-fixture` by `bounds`'s `regen-world-fixture` binary. Chunk addressing and
-collision are covered; transitions and ownership are not yet ported, and
-`docs/trace-matrix.md` carries a `deferred` row naming the story that
-will add them.
+fixture` by `bounds`'s `regen-world-fixture` binary; every case in that
+fixture is checked from the client side too
+(`client/tests/unit/world/conformance.test.ts`).
 
 ## Movement and collision (client)
 
@@ -309,12 +311,8 @@ comes from `sim::codes::layer` (below), never a literal; `stableId` is a
 for a character) and is never narrowed through `Number`. Floor is never a
 term in the key (FR124): it is applied only once, as a vertical screen
 offset (`render/screen-position.ts`'s `floorOffsetPx`), when a drawable
-is positioned on screen. Two floors whose screen rects overlap (a
-storey visible through or above another) have no defined occlusion
-relationship today -- wall retraction and floor culling (deferred) are
-what keep two storeys from being co-visible in normal play, and that
-remains a real design gap until one of those lands, not something to
-lean on.
+is positioned on screen. Occlusion between floors is entirely
+"Visibility" below's job, not the sort key's.
 
 `sim::codes::layer`'s rank ladder (FR123) is minted in tens, leaving every
 in-between number free for a future layer to slot into without
@@ -358,6 +356,36 @@ imports), not out of `client/public/`. Any future Pages deploy workflow
 must therefore check out the whole repository for the client build job --
 never a sparse or `client/`-only checkout -- for as long as any client
 code reads assets from outside `client/`.
+
+### Visibility
+
+FR120-FR122's enclosure visibility is decided by one pure function,
+applied strictly after the FR123 sort, and never itself adds, removes or
+reorders a pool member.
+
+- `client/src/render/visibility.ts`'s `computeVisibility` is the only
+  visibility rule and imports no `pixi.js` (Biome enforces this);
+  `client/src/render/pixi-visibility.ts`'s `VisibilityApplier` is the only
+  code that writes `sprite.visible`/`sprite.alpha`, and never adds,
+  removes or reorders pool members.
+- Visibility is recomputed only on a change of the viewer's own cell
+  ownership or floor, and applies to every pass -- the flat ground passes
+  as well as the sorted pool.
+- Retraction: a `walls` drawable that is near-side (the cell directly
+  south of it, on the same floor, is not owned by the same building) and
+  owned by the viewer's own building is hidden; a building's floors above
+  the viewer's own current floor are hidden the same way while the viewer
+  is inside it.
+- Windows: an `[[object]]` with `window = true` in `defs/` draws at
+  `render.window_alpha` percent (`defs/balance/render.toml`, never a
+  TypeScript literal) once it is not hidden; masks, filters, render
+  textures and stencils are banned anywhere under `client/src/`
+  (`scripts/ci/check-no-masks.sh`).
+- Floors of opposite sign are never co-visible, compared by sign alone
+  against the viewer's own floor, never against the literal `-1`.
+
+Retraction is keyed on `buildingId` alone, never `roomId`: a terrace shop
+is its own building, not a room of a shared one.
 
 ## Definitions (`defs/`)
 

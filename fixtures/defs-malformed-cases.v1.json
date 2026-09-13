@@ -10,5 +10,6 @@
   "non-integer-id",
   "negative-id",
   "zero-area-collider",
-  "collider-outside-footprint"
+  "collider-outside-footprint",
+  "non-boolean-window"
 ]
