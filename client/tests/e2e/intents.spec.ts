@@ -18,7 +18,6 @@ import {
   TRASH_BIN_DEF_ID,
 } from "../../src/demo/fixture";
 import { KEYBINDINGS_STORAGE_KEY } from "../../src/input/keybindings-storage";
-import { IGNORED_CURSOR_MS } from "../../src/input/pointer";
 import type {} from "../../src/net/e2e-hooks";
 import { screenPositionPx } from "../../src/render/screen-position";
 import { committedDefs } from "../unit/demo/demo-world";
@@ -113,6 +112,35 @@ function playerY(page: Page) {
   return page.evaluate(() => window.__bc?.playerPosition?.y ?? Number.NaN);
 }
 
+/**
+ * Records every value the canvas's own `cursor` ever takes, from inside
+ * the page.
+ *
+ * The refused-click cursor is a ~250 ms transient (`IGNORED_CURSOR_MS`),
+ * and sampling for it with `toHaveCSS` is a race that this spec loses the
+ * moment the runner is loaded: the first poll crosses a CDP round trip,
+ * and if it lands after the blip expired, every later poll sees only the
+ * settled value. A `MutationObserver` inside the page cannot miss it --
+ * it observes the real element's real style writes, in order, however
+ * slow the harness is.
+ */
+async function recordCursorChanges(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const canvas = document.querySelector("#demo-scene canvas");
+    if (!(canvas instanceof HTMLElement)) throw new Error("no demo canvas to observe");
+    const seen: string[] = [canvas.style.cursor];
+    (window as unknown as { __bcCursors: string[] }).__bcCursors = seen;
+    new MutationObserver(() => {
+      const current = canvas.style.cursor;
+      if (seen[seen.length - 1] !== current) seen.push(current);
+    }).observe(canvas, { attributes: true, attributeFilter: ["style"] });
+  });
+}
+
+function cursorChanges(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as unknown as { __bcCursors?: string[] }).__bcCursors ?? []);
+}
+
 /** Walks the player north until their feet are inside `defId`'s own reach
  * row, read from `defs/` -- never a fixed "settle" sleep, which is what
  * flakes on a loaded runner. */
@@ -142,6 +170,8 @@ test("a click resolves to an object instance, checks reach, and emits an intent 
   await page.goto("/");
   await ready(page);
 
+  await recordCursorChanges(page);
+
   const counter = propById(COUNTER_ID, SHOP_COUNTER_DEF_ID);
   // The counter's reach rect is the customer side of it -- the row south
   // of its own footprint. The player starts one row further south than
@@ -161,15 +191,28 @@ test("a click resolves to an object instance, checks reach, and emits an intent 
 
   // AC2: out of reach -- no intent, the click is recorded as ignored, and
   // it is *visibly* ignored: the real canvas element's cursor blips to
-  // `not-allowed` and then returns on its own.
+  // `not-allowed` and then returns to the hover cursor on its own.
   await clickCell(page, counter.x, counter.y, counter.floor);
-  await expect(canvasOf(page)).toHaveCSS("cursor", "not-allowed");
   await canvasOf(page).screenshot({ path: `${SHOT_DIR}/refused-click.png` });
   await expect.poll(() => ignoredIntents(page)).toEqual([COUNTER_ID.toString()]);
   expect(await intents(page)).toEqual([]);
-  await expect(canvasOf(page)).toHaveCSS("cursor", "pointer", {
-    timeout: IGNORED_CURSOR_MS * 8,
-  });
+
+  // The blip happened at all...
+  await expect.poll(() => cursorChanges(page)).toContain("not-allowed");
+  // ...and it ended by itself, without a second click or a mouse move.
+  // The *settled* value is not a transient, so waiting for it is not a
+  // race.
+  await expect
+    .poll(() => cursorChanges(page).then((seen) => seen[seen.length - 1]), {
+      // A fixed, generous wait rather than a multiple of the dial: how
+      // long this spec is willing to wait for a settled value is about
+      // the harness, and tuning `IGNORED_CURSOR_MS` down must never
+      // shorten it into a race.
+      timeout: 5_000,
+    })
+    .toBe("pointer");
+  // It never pulses: the refusal is shown exactly once per refused click.
+  expect((await cursorChanges(page)).filter((c) => c === "not-allowed")).toHaveLength(1);
 
   // Walk into reach *without moving the mouse*: the affordance has to
   // follow the player, since movement is keyboard-only.
