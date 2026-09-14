@@ -60,7 +60,13 @@ describe("FootprintIndex", () => {
   it("carries the def id and the layer code each pick needs", () => {
     const index = indexWith(new Map([[3, ONE_CELL]]));
     index.insert(row({ objectId: 9n, defId: 3, layer: 42, x: 1, y: 1 }));
-    expect(index.objectsAt(0, 1, 1)[0]).toEqual({ objectId: 9n, defId: 3, layer: 42 });
+    expect(index.objectsAt(0, 1, 1)[0]).toEqual({
+      objectId: 9n,
+      defId: 3,
+      layer: 42,
+      anchorX: 1,
+      anchorY: 1,
+    });
   });
 
   it("keeps floors independent (FR117)", () => {
@@ -164,7 +170,7 @@ describe("FootprintIndex", () => {
         for (let x = -35; x <= 37; x++) {
           for (let y = -35; y <= 37; y++) {
             const entries = [...index.objectsAt(floor, x, y)]
-              .map((e) => `${e.objectId}/${e.defId}/${e.layer}`)
+              .map((e) => `${e.objectId}/${e.defId}/${e.layer}@${e.anchorX},${e.anchorY}`)
               .sort();
             if (entries.length > 0) cells.push([floor, x, y, entries]);
           }

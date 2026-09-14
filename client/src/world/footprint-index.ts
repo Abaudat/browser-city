@@ -32,6 +32,11 @@ export interface FootprintEntry {
   readonly objectId: bigint;
   readonly defId: number;
   readonly layer: number;
+  /** The placed row's own anchor cell -- carried because an `interact_at`
+   * rect is declared relative to it, so a reach check translates the rect
+   * into world sub-cells without going back to the row. */
+  readonly anchorX: number;
+  readonly anchorY: number;
 }
 
 /** The narrow read interface a pick depends on: one dense-storage-shaped
@@ -88,6 +93,8 @@ export class FootprintIndex implements FootprintQuery {
       objectId: row.objectId,
       defId: row.defId,
       layer: row.layer,
+      anchorX: row.x,
+      anchorY: row.y,
     };
     this.forEachFootprintCell(row, (cellX, cellY) => {
       let byChunk = this.floors.get(row.floor);
