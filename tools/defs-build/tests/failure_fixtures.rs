@@ -173,25 +173,32 @@ fn a_non_boolean_window_is_named() {
     assert!(err.message.contains("expected") || err.message.contains("boolean"));
 }
 
-/// Story 1.10 (Tim's direction): id 0 is never a valid declared appearance
-/// part id -- it is the runtime "no layer" sentinel.
+/// Id 0 is never a valid declared appearance part id -- it is the
+/// runtime "no layer" sentinel.
 #[test]
 fn an_appearance_part_declaring_id_zero_is_named() {
     let err = build_err("appearance-id-zero");
     assert!(err.message.contains("declares id 0"));
 }
 
-/// Story 1.10: a part declaring a family with no matching
-/// `[[appearance_layout]]` is named, not silently matched to the wrong
-/// family's grid.
+/// An appearance part id above 65535 does not fit the `u16` storage
+/// column and is named, not silently truncated.
+#[test]
+fn an_appearance_part_declaring_an_id_above_u16_max_is_named() {
+    let err = build_err("appearance-id-too-large");
+    assert!(err.message.contains("does not fit in a u16"));
+}
+
+/// A part declaring a family with no matching `[[appearance_layout]]` is
+/// named, not silently matched to the wrong family's grid.
 #[test]
 fn an_appearance_part_naming_a_family_with_no_layout_is_named() {
     let err = build_err("appearance-family-mismatch");
     assert!(err.message.contains("no [[appearance_layout]] entry"));
 }
 
-/// Story 1.10 (Artie's direction): a `[[uniform]]` naming an unknown
-/// profession is named, exactly like a chain naming an unknown profession.
+/// A `[[uniform]]` naming an unknown profession is named, exactly like a
+/// chain naming an unknown profession.
 #[test]
 fn a_uniform_naming_an_unknown_profession_is_named() {
     let err = build_err("appearance-dangling-uniform-profession");
@@ -230,6 +237,7 @@ fn every_known_category_has_a_fixture_directory() {
         "interact-at-outside-bound",
         "interact-at-inside-collider",
         "appearance-id-zero",
+        "appearance-id-too-large",
         "appearance-family-mismatch",
         "appearance-dangling-uniform-profession",
     ];

@@ -277,10 +277,10 @@ fn check_object_interact_at(entries: &[ObjectEntry]) -> Result<(), DefsError> {
     Ok(())
 }
 
-/// Story 1.10 (Tim's direction): id `0` is never issued for any appearance
-/// part kind -- it is the runtime sentinel for "no layer" (legal only for a
-/// generated hairstyle/accessory *value*, never for a declared def), so a
-/// declared id of `0` here is always a mistake, not a valid entry.
+/// Id `0` is never issued for any appearance part kind -- it is the
+/// runtime sentinel for "no layer" (legal only for a generated
+/// hairstyle/accessory *value*, never for a declared def), so a declared
+/// id of `0` here is always a mistake, not a valid entry.
 fn check_appearance_id_not_zero<T: IdKeyEntry>(entries: &[T], kind: &str) -> Result<(), DefsError> {
     for e in entries {
         if e.id().value == 0 {
@@ -298,11 +298,35 @@ fn check_appearance_id_not_zero<T: IdKeyEntry>(entries: &[T], kind: &str) -> Res
     Ok(())
 }
 
-/// Story 1.10 (Tim/Artie's direction): a layout is only ever shared within
-/// one family, so every part sheet's `(animation, direction, frame)` cells
-/// must fit inside its own family's declared grid -- checked against the
-/// sheet's own `IHDR` dimensions (`sheet_dims`, read by `fsio` from the
-/// real file), never assumed from a byte count or a vendor's own claim.
+/// A body/eyes/hairstyle/outfit/accessory id is stored as `u16`
+/// (`sim::appearance::Appearance` and the `citizen` schema columns): an
+/// id above 65535 would silently truncate into a different part, so it
+/// is rejected here rather than at the cast.
+const APPEARANCE_ID_MAX: u32 = u16::MAX as u32;
+
+fn check_appearance_id_u16<T: IdKeyEntry>(entries: &[T], kind: &str) -> Result<(), DefsError> {
+    for e in entries {
+        if e.id().value > APPEARANCE_ID_MAX {
+            return Err(DefsError::new(
+                e.path(),
+                e.id().line,
+                e.id().col,
+                format!(
+                    "{kind} '{}' declares id {} which does not fit in a u16 (max {APPEARANCE_ID_MAX})",
+                    e.key().value,
+                    e.id().value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A layout is only ever shared within one family, so every part sheet's
+/// `(animation, direction, frame)` cells must fit inside its own family's
+/// declared grid -- checked against the sheet's own `IHDR` dimensions
+/// (`sheet_dims`, read by `fsio` from the real file), never assumed from
+/// a byte count or a vendor's own claim.
 fn layout_for_family(
     layouts: &[AppearanceLayoutEntry],
     family: Family,
@@ -356,36 +380,34 @@ fn check_sheet_fits_layout(
             format!("{kind} '{key}' names sheet '{sheet}' but its dimensions were never read"),
         ));
     };
-    let num_directions = layout.directions.len() as u32;
-    let needed_width = layout
-        .rows
-        .iter()
-        .map(|r| r.frames_per_direction * num_directions * layout.cell_width)
-        .max()
-        .unwrap_or(0);
-    let needed_height = layout
-        .rows
-        .iter()
-        .map(|r| (r.row + 1) * layout.cell_height)
-        .max()
-        .unwrap_or(0);
-    if width < needed_width || height < needed_height {
+    if !layout.accepted_sizes.value.contains(&(width, height)) {
+        let accepted: Vec<String> = layout
+            .accepted_sizes
+            .value
+            .iter()
+            .map(|(w, h)| format!("{w}x{h}"))
+            .collect();
         return Err(DefsError::new(
             path,
             line,
             col,
             format!(
-                "{kind} '{key}' sheet '{sheet}' is {width}x{height}px but family '{}' needs at least {needed_width}x{needed_height}px to hold every declared (animation, direction, frame) cell",
-                family.as_str()
+                "{kind} '{key}' sheet '{sheet}' is {width}x{height}px but family '{}' only accepts [{}]",
+                family.as_str(),
+                accepted.join(", ")
             ),
         ));
     }
     Ok(())
 }
 
-/// Exactly one `[[appearance_layout]]` per family (Tim's direction: a
-/// layout is shared *within* a family, so two competing layouts for the
-/// same family would make "the" family layout ambiguous).
+/// Exactly one `[[appearance_layout]]` per family (a layout is shared
+/// *within* a family, so two competing layouts for the same family would
+/// make "the" family layout ambiguous), a non-empty `directions` and
+/// `accepted_sizes` list, and every declared row fits inside every
+/// declared accepted size -- a layout that names a size too small for its
+/// own grid is a defs-authoring mistake, not something to catch only once
+/// a sheet happens to use that size.
 fn check_one_layout_per_family(layouts: &[AppearanceLayoutEntry]) -> Result<(), DefsError> {
     let mut seen: HashMap<Family, &AppearanceLayoutEntry> = HashMap::new();
     for l in layouts {
@@ -411,6 +433,17 @@ fn check_one_layout_per_family(layouts: &[AppearanceLayoutEntry]) -> Result<(), 
                 format!("appearance_layout '{}' declares no directions", l.key.value),
             ));
         }
+        if l.accepted_sizes.value.is_empty() {
+            return Err(DefsError::new(
+                &l.path,
+                l.accepted_sizes.line,
+                l.accepted_sizes.col,
+                format!(
+                    "appearance_layout '{}' declares no accepted_sizes",
+                    l.key.value
+                ),
+            ));
+        }
         for r in &l.rows {
             if r.frames_per_direction == 0 {
                 return Err(DefsError::new(
@@ -424,17 +457,43 @@ fn check_one_layout_per_family(layouts: &[AppearanceLayoutEntry]) -> Result<(), 
                 ));
             }
         }
+        let num_directions = l.directions.len() as u32;
+        let needed_width = l
+            .rows
+            .iter()
+            .map(|r| r.frames_per_direction * num_directions * l.cell_width)
+            .max()
+            .unwrap_or(0);
+        let needed_height = l
+            .rows
+            .iter()
+            .map(|r| (r.row + 1) * l.cell_height)
+            .max()
+            .unwrap_or(0);
+        for &(width, height) in &l.accepted_sizes.value {
+            if width < needed_width || height < needed_height {
+                return Err(DefsError::new(
+                    &l.path,
+                    l.accepted_sizes.line,
+                    l.accepted_sizes.col,
+                    format!(
+                        "appearance_layout '{}' declares accepted size {width}x{height}px but its own grid needs at least {needed_width}x{needed_height}px",
+                        l.key.value
+                    ),
+                ));
+            }
+        }
     }
     Ok(())
 }
 
-/// Story 1.10 (Artie's direction): a `[[uniform]]` is a fixed, permanent
-/// override for one profession's outfit and/or accessory layer -- never a
-/// pool, never re-derived. Every reference is validated exactly like a
-/// `chain`'s profession links: the profession must exist, the override
-/// must name something real, and whatever it names must actually be
-/// reserved for role use (`pool = "role_only"`) on the adult family --
-/// never a civilian part (which would make it indistinguishable from a
+/// A `[[uniform]]` is a fixed, permanent override for one profession's
+/// outfit and/or accessory layer -- never a pool, never re-derived.
+/// Every reference is validated exactly like a `chain`'s profession
+/// links: the profession must exist, the override must name something
+/// real, and whatever it names must actually be reserved for role use
+/// (`pool = "role_only"`) on the adult family -- never a civilian part
+/// (which would make it indistinguishable from a
 /// random roll) and never a costume (dead content with no role to wear
 /// it).
 fn check_uniforms(
@@ -609,6 +668,12 @@ pub fn validate(
     check_appearance_id_not_zero(&raw.accessories, "accessory")?;
     check_appearance_id_not_zero(&raw.appearance_layouts, "appearance_layout")?;
     check_appearance_id_not_zero(&raw.uniforms, "uniform")?;
+
+    check_appearance_id_u16(&raw.bodies, "body")?;
+    check_appearance_id_u16(&raw.eyes, "eyes")?;
+    check_appearance_id_u16(&raw.hairstyles, "hairstyle")?;
+    check_appearance_id_u16(&raw.outfits, "outfit")?;
+    check_appearance_id_u16(&raw.accessories, "accessory")?;
 
     check_object_colliders(&raw.objects)?;
     check_object_interact_at(&raw.objects)?;
@@ -804,7 +869,7 @@ pub fn validate(
         .bodies
         .iter()
         .map(|b| BodyDef {
-            id: b.id.value,
+            id: b.id.value as u16,
             key: b.key.value.clone(),
             family: b.family.value,
             sheet: b.sheet.value.clone(),
@@ -816,7 +881,7 @@ pub fn validate(
         .eyes
         .iter()
         .map(|e| EyesDef {
-            id: e.id.value,
+            id: e.id.value as u16,
             key: e.key.value.clone(),
             family: e.family.value,
             sheet: e.sheet.value.clone(),
@@ -828,7 +893,7 @@ pub fn validate(
         .hairstyles
         .iter()
         .map(|h| HairstyleDef {
-            id: h.id.value,
+            id: h.id.value as u16,
             key: h.key.value.clone(),
             family: h.family.value,
             sheet: h.sheet.value.clone(),
@@ -843,7 +908,7 @@ pub fn validate(
         .outfits
         .iter()
         .map(|o| OutfitDef {
-            id: o.id.value,
+            id: o.id.value as u16,
             key: o.key.value.clone(),
             family: o.family.value,
             sheet: o.sheet.value.clone(),
@@ -857,11 +922,12 @@ pub fn validate(
         .accessories
         .iter()
         .map(|a| AccessoryDef {
-            id: a.id.value,
+            id: a.id.value as u16,
             key: a.key.value.clone(),
             family: a.family.value,
             sheet: a.sheet.value.clone(),
             pool: a.pool.value,
+            slot: a.slot.value,
         })
         .collect();
     accessories.sort_by(|a, b| a.key.cmp(&b.key));
@@ -885,6 +951,7 @@ pub fn validate(
                     frames_per_direction: r.frames_per_direction,
                 })
                 .collect(),
+            accepted_sizes: l.accepted_sizes.value.clone(),
         })
         .collect();
     appearance_layouts.sort_by(|a, b| a.key.cmp(&b.key));
@@ -1214,7 +1281,7 @@ mod tests {
 
     // --- Story 1.10: appearance --------------------------------------------
 
-    const LAYOUT_TOML: &str = "[[appearance_layout]]\nid = 1\nkey = \"adult\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"right\", \"up\", \"left\", \"down\"]\nrows = [\n  { animation = \"idle\", row = 1, frames_per_direction = 6 },\n  { animation = \"walk\", row = 2, frames_per_direction = 6 },\n]\n";
+    const LAYOUT_TOML: &str = "[[appearance_layout]]\nid = 1\nkey = \"adult\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"right\", \"up\", \"left\", \"down\"]\nrows = [\n  { animation = \"idle\", row = 1, frames_per_direction = 6 },\n  { animation = \"walk\", row = 2, frames_per_direction = 6 },\n]\naccepted_sizes = [{ width = 896, height = 656 }]\n";
 
     fn appearance_sheet_dims() -> BTreeMap<String, (u32, u32)> {
         [("sheets/body.png".to_string(), (896, 656))]
@@ -1249,7 +1316,27 @@ mod tests {
         let mut small_dims = BTreeMap::new();
         small_dims.insert("sheets/body.png".to_string(), (32, 32));
         let err = validate(&raw, &small_dims).unwrap_err();
-        assert!(err.message.contains("needs at least"));
+        assert!(err.message.contains("only accepts"));
+    }
+
+    #[test]
+    fn a_sheet_bigger_than_the_grid_but_not_a_declared_size_is_rejected() {
+        let f = files(&[
+            ("defs/appearance/layouts.toml", LAYOUT_TOML),
+            (
+                "defs/appearance/bodies.toml",
+                "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\n",
+            ),
+        ]);
+        let raw = parse_all(&f).unwrap();
+        let mut bigger_dims = BTreeMap::new();
+        // Bigger than the grid on every axis, but not one of LAYOUT_TOML's
+        // declared accepted_sizes -- must still be rejected by name, not
+        // waved through for being "big enough".
+        bigger_dims.insert("sheets/body.png".to_string(), (960, 700));
+        let err = validate(&raw, &bigger_dims).unwrap_err();
+        assert!(err.message.contains("only accepts"));
+        assert!(err.message.contains("960x700"));
     }
 
     #[test]
@@ -1261,6 +1348,31 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
         assert!(err.message.contains("no [[appearance_layout]] entry"));
+    }
+
+    #[test]
+    fn a_declared_id_above_u16_max_is_rejected() {
+        let f = files(&[(
+            "defs/appearance/bodies.toml",
+            "[[body]]\nid = 65536\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
+        assert!(err.message.contains("does not fit in a u16"));
+    }
+
+    #[test]
+    fn a_declared_id_at_exactly_u16_max_is_accepted() {
+        let f = files(&[
+            ("defs/appearance/layouts.toml", LAYOUT_TOML),
+            (
+                "defs/appearance/bodies.toml",
+                "[[body]]\nid = 65535\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\n",
+            ),
+        ]);
+        let raw = parse_all(&f).unwrap();
+        let defs = validate(&raw, &appearance_sheet_dims()).unwrap();
+        assert_eq!(defs.bodies[0].id, 65535);
     }
 
     #[test]
@@ -1278,7 +1390,7 @@ mod tests {
     fn two_layouts_for_the_same_family_are_rejected() {
         let f = files(&[(
             "defs/appearance/layouts.toml",
-            "[[appearance_layout]]\nid = 1\nkey = \"a\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\n\n[[appearance_layout]]\nid = 2\nkey = \"b\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\n",
+            "[[appearance_layout]]\nid = 1\nkey = \"a\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 16, height = 32 }]\n\n[[appearance_layout]]\nid = 2\nkey = \"b\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 16, height = 32 }]\n",
         )]);
         let raw = parse_all(&f).unwrap();
         let err = validate(&raw, &BTreeMap::new()).unwrap_err();
@@ -1294,7 +1406,7 @@ mod tests {
             ),
             (
                 "defs/appearance/accessories.toml",
-                "[[accessory]]\nid = 1\nkey = \"jacket\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"role_only\"\n",
+                "[[accessory]]\nid = 1\nkey = \"jacket\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"role_only\"\nslot = \"torso\"\n",
             ),
             ("defs/appearance/uniforms.toml", uniform_toml),
         ])
@@ -1339,7 +1451,7 @@ mod tests {
             ),
             (
                 "defs/appearance/accessories.toml",
-                "[[accessory]]\nid = 1\nkey = \"backpack\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
+                "[[accessory]]\nid = 1\nkey = \"backpack\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\nslot = \"back\"\n",
             ),
             (
                 "defs/appearance/uniforms.toml",
@@ -1371,7 +1483,7 @@ mod tests {
             ),
             (
                 "defs/appearance/accessories.toml",
-                "[[accessory]]\nid = 1\nkey = \"jacket\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"role_only\"\n\n[[accessory]]\nid = 2\nkey = \"helmet\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"role_only\"\n",
+                "[[accessory]]\nid = 1\nkey = \"jacket\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"role_only\"\nslot = \"torso\"\n\n[[accessory]]\nid = 2\nkey = \"helmet\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"role_only\"\nslot = \"head\"\n",
             ),
             (
                 "defs/appearance/uniforms.toml",
@@ -1387,10 +1499,20 @@ mod tests {
     fn an_invalid_pool_value_is_rejected_at_parse_time() {
         let f = files(&[(
             "defs/appearance/accessories.toml",
-            "[[accessory]]\nid = 1\nkey = \"a\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"bogus\"\n",
+            "[[accessory]]\nid = 1\nkey = \"a\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"bogus\"\nslot = \"head\"\n",
         )]);
         let err = parse_all(&f).unwrap_err();
         assert!(err.message.contains("bogus"));
+    }
+
+    #[test]
+    fn an_invalid_slot_value_is_rejected_at_parse_time() {
+        let f = files(&[(
+            "defs/appearance/accessories.toml",
+            "[[accessory]]\nid = 1\nkey = \"a\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\nslot = \"waist\"\n",
+        )]);
+        let err = parse_all(&f).unwrap_err();
+        assert!(err.message.contains("waist"));
     }
 
     #[test]

@@ -148,10 +148,9 @@ pub struct ChainFile {
     pub chain: Vec<RawChain>,
 }
 
-/// Story 1.10 (FR61/FR62): one part sheet's family. A layout is only ever
-/// shared *within* a family (Tim/Artie's direction) -- adults and kids
-/// never mix parts, so the generator and the layout invariant both branch
-/// on this before anything else.
+/// One part sheet's family (FR61/FR62). A layout is only ever shared
+/// *within* a family -- adults and kids never mix parts, so the generator
+/// and the layout invariant both branch on this before anything else.
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum Family {
@@ -168,11 +167,10 @@ impl Family {
     }
 }
 
-/// Story 1.10 (Artie's direction): which pool a part is drawn from.
-/// `Civilian` is eligible for random generation; `RoleOnly` is reserved for
-/// a `[[uniform]]` override and never rolled at random; `Costume` is dead
-/// content until a future system (a holiday, a party) gives it a reason to
-/// exist.
+/// Which pool a part is drawn from. `Civilian` is eligible for random
+/// generation; `RoleOnly` is reserved for a `[[uniform]]` override and
+/// never rolled at random; `Costume` is dead content until a future
+/// system (a holiday, a party) gives it a reason to exist.
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Pool {
@@ -233,6 +231,32 @@ pub struct RawOutfit {
     pub hides_hairstyle: bool,
 }
 
+/// Where on the body an accessory sits. A uniform accessory override
+/// removes the citizen's own civilian accessory only when both share a
+/// slot (a helmet removes a beanie; a hi-vis jacket over a beard keeps
+/// the beard) -- otherwise it draws as an additional layer on top.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Slot {
+    Face,
+    Head,
+    Back,
+    Torso,
+    Hands,
+}
+
+impl Slot {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Slot::Face => "face",
+            Slot::Head => "head",
+            Slot::Back => "back",
+            Slot::Torso => "torso",
+            Slot::Hands => "hands",
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawAccessory {
@@ -241,6 +265,7 @@ pub struct RawAccessory {
     pub family: Spanned<Family>,
     pub sheet: Spanned<String>,
     pub pool: Spanned<Pool>,
+    pub slot: Spanned<Slot>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -249,6 +274,19 @@ pub struct RawAppearanceLayoutRow {
     pub animation: String,
     pub row: u32,
     pub frames_per_direction: u32,
+}
+
+/// One exact sheet size a family accepts. A layout matches sheets by
+/// exact size, never "big enough": the vendor sheets are not uniform (an
+/// adult body sheet is wider than an adult eyes sheet, an addon sheet is
+/// shorter than either), so the declared set is every size the family's
+/// own real sheets actually use, and nothing else. A new sheet size is
+/// always a defs change here, never something the checker infers.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSheetSize {
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -261,6 +299,7 @@ pub struct RawAppearanceLayout {
     pub cell_height: u32,
     pub directions: Vec<String>,
     pub rows: Vec<RawAppearanceLayoutRow>,
+    pub accepted_sizes: Spanned<Vec<RawSheetSize>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -275,13 +314,13 @@ pub struct RawUniform {
     pub accessory: Option<String>,
 }
 
-/// Story 1.10: `defs/appearance/*.toml` may declare any mix of the seven
-/// array kinds below in one file -- unlike every other `defs/` directory,
-/// this one holds several distinct kinds side by side (Tim's direction:
-/// `[[body]]`, `[[eyes]]`, `[[outfit]]`, `[[hairstyle]]`, `[[accessory]]`,
-/// plus `[[appearance_layout]]` and `[[uniform]]`), so a single raw file
-/// shape with every array defaulted to empty is simpler than inventing a
-/// second `kind_of` dispatch.
+/// `defs/appearance/*.toml` may declare any mix of the seven array kinds
+/// below in one file -- unlike every other `defs/` directory, this one
+/// holds several distinct kinds side by side (`[[body]]`, `[[eyes]]`,
+/// `[[outfit]]`, `[[hairstyle]]`, `[[accessory]]`, plus
+/// `[[appearance_layout]]` and `[[uniform]]`), so a single raw file shape
+/// with every array defaulted to empty is simpler than inventing a second
+/// `kind_of` dispatch.
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct AppearanceFile {
@@ -419,6 +458,7 @@ pub struct AccessoryEntry {
     pub family: Located<Family>,
     pub sheet: Located<String>,
     pub pool: Located<Pool>,
+    pub slot: Located<Slot>,
 }
 
 #[derive(Debug, Clone)]
@@ -438,6 +478,7 @@ pub struct AppearanceLayoutEntry {
     pub cell_height: u32,
     pub directions: Vec<String>,
     pub rows: Vec<AppearanceLayoutRowEntry>,
+    pub accepted_sizes: Located<Vec<(u32, u32)>>,
 }
 
 #[derive(Debug)]
@@ -562,9 +603,13 @@ pub struct BalanceDef {
     pub max: i64,
 }
 
+/// Story 1.10's five appearance part kinds store their id as `u16` (the
+/// `citizen` schema columns and the generator's tuple are `u16`): a
+/// declared id above 65535 would silently truncate, so `validate.rs`
+/// rejects it before it ever reaches this struct.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BodyDef {
-    pub id: u32,
+    pub id: u16,
     pub key: String,
     pub family: Family,
     pub sheet: String,
@@ -572,7 +617,7 @@ pub struct BodyDef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EyesDef {
-    pub id: u32,
+    pub id: u16,
     pub key: String,
     pub family: Family,
     pub sheet: String,
@@ -580,7 +625,7 @@ pub struct EyesDef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HairstyleDef {
-    pub id: u32,
+    pub id: u16,
     pub key: String,
     pub family: Family,
     pub sheet: String,
@@ -591,7 +636,7 @@ pub struct HairstyleDef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutfitDef {
-    pub id: u32,
+    pub id: u16,
     pub key: String,
     pub family: Family,
     pub sheet: String,
@@ -601,11 +646,12 @@ pub struct OutfitDef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccessoryDef {
-    pub id: u32,
+    pub id: u16,
     pub key: String,
     pub family: Family,
     pub sheet: String,
     pub pool: Pool,
+    pub slot: Slot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -624,6 +670,7 @@ pub struct AppearanceLayoutDef {
     pub cell_height: u32,
     pub directions: Vec<String>,
     pub rows: Vec<AppearanceLayoutRowDef>,
+    pub accepted_sizes: Vec<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

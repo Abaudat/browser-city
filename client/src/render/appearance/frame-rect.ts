@@ -3,9 +3,9 @@
 // `sourceFrameRect` addresses a cell in a part's own full sheet (the
 // layout's declared grid); `compositeCellRect`/`compositeSheetSize`
 // address the *compact* strip `composite.ts` repacks the layers into
-// (only the rows/directions/frames this game actually uses, Tim's
-// direction -- an adult idle+walk composite is 2 rows x 24 columns of
-// 16x32, never a copy of the much larger vendor sheet).
+// (only the rows/directions/frames this game actually uses -- an adult
+// idle+walk composite is 2 rows x 24 columns of 16x32, never a copy of
+// the much larger vendor sheet).
 
 import type { AppearanceLayoutDef } from "../../defs/types";
 

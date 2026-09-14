@@ -1,6 +1,6 @@
-//! Story 1.10 (FR61/FR62): a citizen's appearance is a stable, five-integer
-//! tuple -- `body`, `eyes`, `outfit`, `hairstyle`, `accessory` -- generated
-//! once, server-side, from the citizen id, and stored (never re-derived).
+//! A citizen's appearance is a stable, five-integer tuple -- `body`,
+//! `eyes`, `outfit`, `hairstyle`, `accessory` (FR61) -- generated once,
+//! server-side, from the citizen id, and stored (never re-derived).
 //! Determinism uses `sim::rng`, seeded from the citizen id and this
 //! module's own stream salt, exactly like every other seeded system.
 //!
@@ -8,23 +8,29 @@
 //! never a declared id in `defs/appearance/` (`tools/defs-build` rejects
 //! that), only a value this generator can produce.
 //!
-//! FR62 (Artie's direction, cycle 1): the stored tuple is a citizen's own
-//! civilian look, drawn only from the civilian pool. Occupation drives a
-//! separate, fixed *uniform override* for the outfit and/or accessory
-//! layer ([`resolve_uniform`]) -- looked up by profession key, applied only
-//! at render time while on shift, and never written back into the stored
-//! tuple. That is a deliberate departure from an earlier draft of this
-//! story's direction (Tim's, which had `generate` re-roll the outfit
-//! column from a profession's own outfit pool): a uniform must be the same
-//! one fixed look for every worker of a role for FR62's "readable from
-//! across a street" to hold, and a render-time override needs no write
-//! when a shift starts or ends. See the story 1.10 PR description for the
-//! full reasoning.
+//! FR62: the stored tuple is a citizen's own civilian look, drawn only
+//! from the civilian pool. Occupation drives a separate, fixed uniform
+//! override for the outfit and/or accessory layer, looked up by
+//! profession key from `defs/appearance/`'s own `[[uniform]]` table and
+//! applied only at render time while on shift -- never written back into
+//! the stored tuple. The server never resolves a uniform: nothing on the
+//! server side needs the citizen's rendered, on-shift look, only its
+//! stored civilian one, so that resolution lives entirely on the client
+//! (`client/src/render/appearance/composite.ts`'s `resolveUniform`).
 //!
-//! Bumped whenever this generator's algorithm, its seeding, or its table
-//! order changes in a way that could move its output for an id already in
-//! play -- `tests/goldens/appearance_v1.golden` is keyed to this, exactly
-//! like `sim::rng::RNG_VERSION`.
+//! Bumped whenever this generator's algorithm or its seeding changes in a
+//! way that could move its output for an id already in play --
+//! `tests/goldens/appearance_v1.golden` is keyed to this, exactly like
+//! `sim::rng::RNG_VERSION`. The golden is pinned against a small, fixed,
+//! test-local catalogue, not the live `defs/`: [`generate`] is not stable
+//! across catalogue changes either (appending a part to a family shifts
+//! every later pick's `% len`), so pinning against the live catalogue
+//! would force a version bump on every routine art addition. That
+//! catalogue instability is harmless in production only because
+//! `generate` is called once, at citizen creation, and its result is
+//! stored -- appending a part afterwards never touches an
+//! already-generated row, because nothing ever calls `generate` again
+//! for that citizen id.
 
 use crate::generated::defs::{self, Family, Pool};
 use crate::rng::{Rng, seed_from_ids};
@@ -48,12 +54,23 @@ pub struct Appearance {
     pub accessory: u16,
 }
 
-/// FR62: a profession's fixed uniform. `None` on either field means that
-/// layer is left at the citizen's own civilian look while on shift.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct UniformOverride {
-    pub outfit: Option<u16>,
-    pub accessory: Option<u16>,
+/// Every input [`generate`] draws from, passed in rather than read from
+/// `generated::defs` directly: pinning `tests/goldens/appearance_v1.
+/// golden` against a small fixed `Catalogue` (built in the test itself)
+/// keeps the golden -- and the `APPEARANCE_VERSION` bump it forces --
+/// tied to the algorithm, not to the live catalogue's own size. Property
+/// tests over [`live_catalogue`] still cover the family/pool/range
+/// invariants against the real `defs/`.
+pub struct Catalogue<'a> {
+    pub bodies: &'a [defs::BodyDef],
+    pub eyes: &'a [defs::EyesDef],
+    pub hairstyles: &'a [defs::HairstyleDef],
+    pub outfits: &'a [defs::OutfitDef],
+    pub accessories: &'a [defs::AccessoryDef],
+    /// `citizen.appearance.hair_rare_chance`'s value, out of 100.
+    pub hair_rare_chance: i64,
+    /// `citizen.appearance.accessory_none_chance`'s value, out of 100.
+    pub accessory_none_chance: i64,
 }
 
 fn balance_value(key: &str) -> i64 {
@@ -62,6 +79,20 @@ fn balance_value(key: &str) -> i64 {
         .find(|b| b.key == key)
         .map(|b| b.value)
         .unwrap_or_else(|| panic!("sim::appearance: missing balance key '{key}'"))
+}
+
+/// The real, live `defs/appearance/` catalogue -- what a caller outside
+/// this module's own tests always wants.
+pub fn live_catalogue() -> Catalogue<'static> {
+    Catalogue {
+        bodies: defs::BODIES,
+        eyes: defs::EYES,
+        hairstyles: defs::HAIRSTYLES,
+        outfits: defs::OUTFITS,
+        accessories: defs::ACCESSORIES,
+        hair_rare_chance: balance_value("citizen.appearance.hair_rare_chance"),
+        accessory_none_chance: balance_value("citizen.appearance.accessory_none_chance"),
+    }
 }
 
 /// Uniformly picks one of `items` using `rng`, or `None` for an empty
@@ -76,7 +107,7 @@ fn pick_uniform(rng: &mut Rng, items: &[u16]) -> Option<u16> {
 }
 
 fn family_ids<T>(
-    items: &'static [T],
+    items: &[T],
     family: Family,
     get: impl Fn(&T) -> (Family, u16),
 ) -> Vec<u16> {
@@ -89,29 +120,31 @@ fn family_ids<T>(
         .collect()
 }
 
-/// Generates one citizen's appearance tuple, deterministic from `citizen_id`
-/// alone (FR61: "the same barista looks the same forever"). Called once, at
-/// citizen creation, by the caller (a later story); this module never
-/// re-derives an existing citizen's tuple, and never will -- appending a
-/// part to a manifest must never change an existing face.
-pub fn generate(citizen_id: u64, family: Family) -> Appearance {
+/// Generates one citizen's appearance tuple, deterministic from
+/// `citizen_id`, `family` and `catalogue` together (FR61). Called once,
+/// at citizen creation, by the caller (a later story); the result is
+/// stored and never re-derived -- see the module doc for why this
+/// function's own output is *not* stable across catalogue changes, only
+/// storage keeps an already-generated citizen's face fixed.
+pub fn generate(citizen_id: u64, family: Family, catalogue: &Catalogue) -> Appearance {
     let mut rng = Rng::new(seed_from_ids(citizen_id, APPEARANCE_STREAM));
 
-    let bodies = family_ids(defs::BODIES, family, |b| (b.family, b.id as u16));
+    let bodies = family_ids(catalogue.bodies, family, |b| (b.family, b.id));
     let body = pick_uniform(&mut rng, &bodies).unwrap_or(0);
 
-    let eyes_ids = family_ids(defs::EYES, family, |e| (e.family, e.id as u16));
+    let eyes_ids = family_ids(catalogue.eyes, family, |e| (e.family, e.id));
     let eyes = pick_uniform(&mut rng, &eyes_ids).unwrap_or(0);
 
-    let civilian_outfits: Vec<u16> = defs::OUTFITS
+    let civilian_outfits: Vec<u16> = catalogue
+        .outfits
         .iter()
         .filter(|o| o.family == family && o.pool == Pool::Civilian)
-        .map(|o| o.id as u16)
+        .map(|o| o.id)
         .collect();
     let outfit = pick_uniform(&mut rng, &civilian_outfits).unwrap_or(0);
 
-    let hairstyle = pick_hairstyle(&mut rng, family);
-    let accessory = pick_accessory(&mut rng, family);
+    let hairstyle = pick_hairstyle(&mut rng, family, catalogue);
+    let accessory = pick_accessory(&mut rng, family, catalogue);
 
     Appearance {
         body,
@@ -122,27 +155,31 @@ pub fn generate(citizen_id: u64, family: Family) -> Appearance {
     }
 }
 
-/// Artie's direction: hair colour is weighted towards natural colours, with
-/// bright/rare colours drawn only `citizen.appearance.hair_rare_chance`
-/// percent of the time (a balance key, never a literal). Falls back to
-/// whichever pool is non-empty if the family has none of the wanted kind
-/// (a kid family's own hairstyles, declared with `rare = false` throughout
-/// today, have no rare entries).
-fn pick_hairstyle(rng: &mut Rng, family: Family) -> u16 {
-    let rare_ids: Vec<u16> = defs::HAIRSTYLES
+/// Hair colour is weighted towards natural colours, with rare/dye
+/// colours (`HairstyleDef::rare`) drawn only `hair_rare_chance` percent
+/// of the time. Falls back to whichever pool is non-empty if the family
+/// has none of the wanted kind -- every hairstyle in the committed
+/// catalogue is `rare = false` today, adult and kid alike (the vendor
+/// pack's own dye options top out at a muted grey-blue, never an
+/// actually unnatural colour like pink or bright green), so this always
+/// falls back to the common pool in practice; the rare pool stays wired
+/// for whenever `defs/appearance/` gains one that qualifies.
+fn pick_hairstyle(rng: &mut Rng, family: Family, catalogue: &Catalogue) -> u16 {
+    let rare_ids: Vec<u16> = catalogue
+        .hairstyles
         .iter()
         .filter(|h| h.family == family && h.rare)
-        .map(|h| h.id as u16)
+        .map(|h| h.id)
         .collect();
-    let common_ids: Vec<u16> = defs::HAIRSTYLES
+    let common_ids: Vec<u16> = catalogue
+        .hairstyles
         .iter()
         .filter(|h| h.family == family && !h.rare)
-        .map(|h| h.id as u16)
+        .map(|h| h.id)
         .collect();
 
-    let rare_chance = balance_value("citizen.appearance.hair_rare_chance") as u64;
     let roll = rng.next_u64() % 100;
-    let want_rare = roll < rare_chance;
+    let want_rare = roll < catalogue.hair_rare_chance as u64;
 
     let pool = if want_rare && !rare_ids.is_empty() {
         &rare_ids
@@ -154,53 +191,26 @@ fn pick_hairstyle(rng: &mut Rng, family: Family) -> u16 {
     pick_uniform(rng, pool).unwrap_or(0)
 }
 
-/// Artie's direction: about 70% of adult civilians wear no accessory
-/// (`citizen.appearance.accessory_none_chance`, a balance key). Kids have
-/// no accessory tables at all, so a kid's accessory is always `0` -- forced
-/// here, not merely the accidental result of an empty candidate list, so
-/// the rule reads as a decision rather than a side effect.
-fn pick_accessory(rng: &mut Rng, family: Family) -> u16 {
+/// A civilian has `accessory_none_chance` percent chance of wearing no
+/// accessory at all. Kids have no accessory tables at all, so a kid's
+/// accessory is always `0` -- forced here, not merely the accidental
+/// result of an empty candidate list, so the rule reads as a decision
+/// rather than a side effect.
+fn pick_accessory(rng: &mut Rng, family: Family, catalogue: &Catalogue) -> u16 {
     if family == Family::Kid {
         return 0;
     }
-    let none_chance = balance_value("citizen.appearance.accessory_none_chance") as u64;
     let roll = rng.next_u64() % 100;
-    if roll < none_chance {
+    if roll < catalogue.accessory_none_chance as u64 {
         return 0;
     }
-    let candidates: Vec<u16> = defs::ACCESSORIES
+    let candidates: Vec<u16> = catalogue
+        .accessories
         .iter()
         .filter(|a| a.family == family && a.pool == Pool::Civilian)
-        .map(|a| a.id as u16)
+        .map(|a| a.id)
         .collect();
     pick_uniform(rng, &candidates).unwrap_or(0)
-}
-
-/// FR62: the fixed uniform override for `profession_key`, or `None` when
-/// that profession declares no `[[uniform]]` (most professions today).
-/// `tools/defs-build` already proved every `[[uniform]]`'s `outfit`/
-/// `accessory` names a real, adult, `role_only` part, so this never
-/// silently drops a reference -- an `.expect` names the defect loudly
-/// rather than returning a wrong id.
-pub fn resolve_uniform(profession_key: &str) -> Option<UniformOverride> {
-    let uniform = defs::UNIFORMS
-        .iter()
-        .find(|u| u.profession == profession_key)?;
-    let outfit = uniform.outfit.map(|key| {
-        defs::OUTFITS
-            .iter()
-            .find(|o| o.key == key)
-            .unwrap_or_else(|| panic!("sim::appearance: uniform outfit '{key}' not found"))
-            .id as u16
-    });
-    let accessory = uniform.accessory.map(|key| {
-        defs::ACCESSORIES
-            .iter()
-            .find(|a| a.key == key)
-            .unwrap_or_else(|| panic!("sim::appearance: uniform accessory '{key}' not found"))
-            .id as u16
-    });
-    Some(UniformOverride { outfit, accessory })
 }
 
 #[cfg(test)]
@@ -209,15 +219,17 @@ mod tests {
 
     #[test]
     fn generate_is_deterministic_for_the_same_id() {
-        let a = generate(42, Family::Adult);
-        let b = generate(42, Family::Adult);
+        let catalogue = live_catalogue();
+        let a = generate(42, Family::Adult, &catalogue);
+        let b = generate(42, Family::Adult, &catalogue);
         assert_eq!(a, b);
     }
 
     #[test]
     fn generate_never_returns_a_zero_body_eyes_or_outfit() {
+        let catalogue = live_catalogue();
         for id in [0u64, 1, 42, u64::MAX] {
-            let a = generate(id, Family::Adult);
+            let a = generate(id, Family::Adult, &catalogue);
             assert_ne!(a.body, 0);
             assert_ne!(a.eyes, 0);
             assert_ne!(a.outfit, 0);
@@ -226,46 +238,30 @@ mod tests {
 
     #[test]
     fn generate_never_gives_a_kid_an_accessory() {
+        let catalogue = live_catalogue();
         for id in [0u64, 1, 42, 1234, u64::MAX] {
-            let a = generate(id, Family::Kid);
+            let a = generate(id, Family::Kid, &catalogue);
             assert_eq!(a.accessory, 0);
         }
     }
 
     #[test]
     fn generate_only_uses_the_requested_familys_parts() {
+        let catalogue = live_catalogue();
         for id in 0u64..200 {
-            let adult = generate(id, Family::Adult);
-            let body = defs::BODIES
-                .iter()
-                .find(|b| b.id as u16 == adult.body)
-                .unwrap();
+            let adult = generate(id, Family::Adult, &catalogue);
+            let body = defs::BODIES.iter().find(|b| b.id == adult.body).unwrap();
             assert_eq!(body.family, Family::Adult);
             let outfit = defs::OUTFITS
                 .iter()
-                .find(|o| o.id as u16 == adult.outfit)
+                .find(|o| o.id == adult.outfit)
                 .unwrap();
             assert_eq!(outfit.family, Family::Adult);
             assert_eq!(outfit.pool, Pool::Civilian);
 
-            let kid = generate(id, Family::Kid);
-            let kid_body = defs::BODIES
-                .iter()
-                .find(|b| b.id as u16 == kid.body)
-                .unwrap();
+            let kid = generate(id, Family::Kid, &catalogue);
+            let kid_body = defs::BODIES.iter().find(|b| b.id == kid.body).unwrap();
             assert_eq!(kid_body.family, Family::Kid);
         }
-    }
-
-    #[test]
-    fn resolve_uniform_finds_the_sanitation_worker_mapping() {
-        let uniform =
-            resolve_uniform("sanitation_worker").expect("sanitation_worker must have a uniform");
-        assert!(uniform.accessory.is_some());
-    }
-
-    #[test]
-    fn resolve_uniform_is_none_for_a_profession_with_no_uniform_entry() {
-        assert_eq!(resolve_uniform("no_such_profession_at_all"), None);
     }
 }

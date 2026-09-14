@@ -8,3 +8,4 @@ directions = ["down"]
 rows = [
   { animation = "idle", row = 0, frames_per_direction = 1 },
 ]
+accepted_sizes = [{ width = 16, height = 32 }]

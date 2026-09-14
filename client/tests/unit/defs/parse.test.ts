@@ -398,6 +398,7 @@ describe("parseDefs appearance (story 1.10)", () => {
     cell_height: 32,
     directions: ["down"],
     rows: [{ animation: "idle", row: 0, frames_per_direction: 1 }],
+    accepted_sizes: [{ width: 16, height: 32 }],
   };
   const BODY = { id: 1, key: "body_01", family: "adult", sheet: "x/body.png" };
   const EYES = { id: 1, key: "eyes_01", family: "adult", sheet: "x/eyes.png" };
@@ -424,6 +425,7 @@ describe("parseDefs appearance (story 1.10)", () => {
     family: "adult",
     sheet: "x/jacket.png",
     pool: "role_only",
+    slot: "torso",
   };
   const CIVILIAN_ACCESSORY = {
     id: 2,
@@ -431,6 +433,7 @@ describe("parseDefs appearance (story 1.10)", () => {
     family: "adult",
     sheet: "x/backpack.png",
     pool: "civilian",
+    slot: "back",
   };
 
   function appearancePayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {

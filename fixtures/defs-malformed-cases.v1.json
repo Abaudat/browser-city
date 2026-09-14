@@ -16,6 +16,7 @@
   "interact-at-outside-bound",
   "interact-at-inside-collider",
   "appearance-id-zero",
+  "appearance-id-too-large",
   "appearance-family-mismatch",
   "appearance-dangling-uniform-profession"
 ]

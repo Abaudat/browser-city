@@ -5,8 +5,8 @@
 // unboundedly. Pure over an injected `factory`/`dispose` pair -- no
 // `pixi.js`, no canvas -- so this is testable with a fake texture type.
 //
-// Eviction policy (Tim's direction, this story): least-recently-used
-// among entries with *no* outstanding reference. A key with a reference
+// Eviction policy: least-recently-used among entries with *no* outstanding
+// reference. A key with a reference
 // still held is never evicted, however far past capacity the cache
 // temporarily sits (a live character never has its own texture pulled
 // out from under it); a fully-released entry stays cached for reuse

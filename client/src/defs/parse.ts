@@ -25,6 +25,8 @@ import type {
   Pool,
   ProfessionDef,
   RecipeDef,
+  SheetSize,
+  Slot,
   UniformDef,
 } from "./types";
 
@@ -212,14 +214,36 @@ function expectPool(value: unknown, path: string): Pool {
   return s;
 }
 
+function expectSlot(value: unknown, path: string): Slot {
+  const s = expectString(value, path);
+  if (s !== "face" && s !== "head" && s !== "back" && s !== "torso" && s !== "hands") {
+    fail(`${path}: expected 'face', 'head', 'back', 'torso' or 'hands', got '${s}'`);
+  }
+  return s;
+}
+
 function expectNullableString(value: unknown, path: string): string | undefined {
   if (value === undefined || value === null) return undefined;
   return expectString(value, path);
 }
 
-/** Story 1.10 (Tim's direction): id 0 is never a valid declared appearance
- * part id -- it is the runtime "no layer" sentinel, legal only as a
- * generated hairstyle/accessory *value*, never as a declared id. */
+/** Every appearance part id is stored as a `u16` (`sim::appearance::
+ * Appearance` and the `citizen` schema columns): an id above 65535 would
+ * silently truncate into a different part at runtime, so the client
+ * rejects it at parse time exactly like `tools/defs-build` does. */
+const U16_EXCLUSIVE_MAX = 2 ** 16;
+
+function expectAppearanceId(value: unknown, path: string): number {
+  const n = expectU32(value, path);
+  if (n >= U16_EXCLUSIVE_MAX) {
+    fail(`${path}: expected an integer in [0, 2^16) (does not fit in a u16)`);
+  }
+  return n;
+}
+
+/** Id 0 is never a valid declared appearance part id -- it is the
+ * runtime "no layer" sentinel, legal only as a generated hairstyle/
+ * accessory *value*, never as a declared id. */
 function checkAppearanceIdNotZero(id: number, key: string, kind: string): void {
   if (id === 0) {
     fail(`${kind} '${key}' declares id 0 -- 0 is reserved as the runtime "no layer" sentinel`);
@@ -230,7 +254,7 @@ function parseBody(value: unknown, path: string): BodyDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(obj, ["id", "key", "family", "sheet"], path);
   return {
-    id: expectU32(obj.id, `${path}.id`),
+    id: expectAppearanceId(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     family: expectFamily(obj.family, `${path}.family`),
     sheet: expectString(obj.sheet, `${path}.sheet`),
@@ -241,7 +265,7 @@ function parseEyes(value: unknown, path: string): EyesDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(obj, ["id", "key", "family", "sheet"], path);
   return {
-    id: expectU32(obj.id, `${path}.id`),
+    id: expectAppearanceId(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     family: expectFamily(obj.family, `${path}.family`),
     sheet: expectString(obj.sheet, `${path}.sheet`),
@@ -252,7 +276,7 @@ function parseHairstyle(value: unknown, path: string): HairstyleDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(obj, ["id", "key", "family", "sheet", "style", "color", "rare"], path);
   return {
-    id: expectU32(obj.id, `${path}.id`),
+    id: expectAppearanceId(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     family: expectFamily(obj.family, `${path}.family`),
     sheet: expectString(obj.sheet, `${path}.sheet`),
@@ -266,7 +290,7 @@ function parseOutfit(value: unknown, path: string): OutfitDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool", "hides_hairstyle"], path);
   return {
-    id: expectU32(obj.id, `${path}.id`),
+    id: expectAppearanceId(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     family: expectFamily(obj.family, `${path}.family`),
     sheet: expectString(obj.sheet, `${path}.sheet`),
@@ -277,13 +301,14 @@ function parseOutfit(value: unknown, path: string): OutfitDef {
 
 function parseAccessory(value: unknown, path: string): AccessoryDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool"], path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool", "slot"], path);
   return {
-    id: expectU32(obj.id, `${path}.id`),
+    id: expectAppearanceId(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     family: expectFamily(obj.family, `${path}.family`),
     sheet: expectString(obj.sheet, `${path}.sheet`),
     pool: expectPool(obj.pool, `${path}.pool`),
+    slot: expectSlot(obj.slot, `${path}.slot`),
   };
 }
 
@@ -297,15 +322,27 @@ function parseAppearanceLayoutRow(value: unknown, path: string): AppearanceLayou
   };
 }
 
+function parseSheetSize(value: unknown, path: string): SheetSize {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["width", "height"], path);
+  return {
+    width: expectU32(obj.width, `${path}.width`),
+    height: expectU32(obj.height, `${path}.height`),
+  };
+}
+
 function parseAppearanceLayout(value: unknown, path: string): AppearanceLayoutDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(
     obj,
-    ["id", "key", "family", "cell_width", "cell_height", "directions", "rows"],
+    ["id", "key", "family", "cell_width", "cell_height", "directions", "rows", "accepted_sizes"],
     path,
   );
   const rows = expectArray(obj.rows, `${path}.rows`).map((v, i) =>
     parseAppearanceLayoutRow(v, `${path}.rows[${i}]`),
+  );
+  const acceptedSizes = expectArray(obj.accepted_sizes, `${path}.accepted_sizes`).map((v, i) =>
+    parseSheetSize(v, `${path}.accepted_sizes[${i}]`),
   );
   return {
     id: expectU32(obj.id, `${path}.id`),
@@ -315,6 +352,7 @@ function parseAppearanceLayout(value: unknown, path: string): AppearanceLayoutDe
     cellHeight: expectU32(obj.cell_height, `${path}.cell_height`),
     directions: expectStringArray(obj.directions, `${path}.directions`),
     rows,
+    acceptedSizes,
   };
 }
 
@@ -679,13 +717,16 @@ export function canonicalDump(defs: Defs): string {
     );
   }
   for (const a of defs.accessories) {
-    lines.push(`accessory ${a.key} id=${a.id} family=${a.family} sheet=${a.sheet} pool=${a.pool}`);
+    lines.push(
+      `accessory ${a.key} id=${a.id} family=${a.family} sheet=${a.sheet} pool=${a.pool} slot=${a.slot}`,
+    );
   }
   for (const l of defs.appearanceLayouts) {
     const directions = l.directions.join(",");
     const rows = l.rows.map((r) => `${r.animation}:${r.row}:${r.framesPerDirection}`).join(",");
+    const acceptedSizes = l.acceptedSizes.map((s) => `${s.width}x${s.height}`).join(",");
     lines.push(
-      `appearance_layout ${l.key} id=${l.id} family=${l.family} cell_width=${l.cellWidth} cell_height=${l.cellHeight} directions=[${directions}] rows=[${rows}]`,
+      `appearance_layout ${l.key} id=${l.id} family=${l.family} cell_width=${l.cellWidth} cell_height=${l.cellHeight} directions=[${directions}] rows=[${rows}] accepted_sizes=[${acceptedSizes}]`,
     );
   }
   for (const u of defs.uniforms) {

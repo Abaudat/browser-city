@@ -20,6 +20,7 @@ const LAYOUT: AppearanceLayoutDef = {
     { animation: "idle", row: 1, framesPerDirection: 6 },
     { animation: "walk", row: 2, framesPerDirection: 6 },
   ],
+  acceptedSizes: [{ width: 896, height: 656 }],
 };
 
 describe("sourceFrameRect", () => {

@@ -65,15 +65,20 @@ export interface BalanceDef {
   readonly max: number;
 }
 
-/** Story 1.10 (FR61): which family of parts an appearance part belongs to
- * -- a layout is only ever shared *within* one family. */
+/** Which family of parts an appearance part belongs to (FR61) -- a layout
+ * is only ever shared *within* one family. */
 export type Family = "adult" | "kid";
 
-/** Story 1.10 (Artie's direction): which pool a part is drawn from.
- * `civilian` is eligible for random generation; `role_only` is reserved
- * for a `UniformDef` override; `costume` is dead content until a future
- * system gives it a reason to exist. */
+/** Which pool a part is drawn from. `civilian` is eligible for random
+ * generation; `role_only` is reserved for a `UniformDef` override;
+ * `costume` is dead content until a future system gives it a reason to
+ * exist. */
 export type Pool = "civilian" | "role_only" | "costume";
+
+/** Where on the body an accessory sits. A uniform accessory override
+ * removes the citizen's own civilian accessory only when both share a
+ * slot; otherwise it draws as an additional layer. */
+export type Slot = "face" | "head" | "back" | "torso" | "hands";
 
 export interface BodyDef {
   readonly id: number;
@@ -105,8 +110,7 @@ export interface OutfitDef {
   readonly family: Family;
   readonly sheet: string;
   readonly pool: Pool;
-  /** Story 1.10 (Tim's direction): the frog/tiger kid pyjamas hide the
-   * hairstyle layer while worn. */
+  /** The frog/tiger kid pyjamas hide the hairstyle layer while worn. */
   readonly hidesHairstyle: boolean;
 }
 
@@ -116,12 +120,18 @@ export interface AccessoryDef {
   readonly family: Family;
   readonly sheet: string;
   readonly pool: Pool;
+  readonly slot: Slot;
 }
 
 export interface AppearanceLayoutRow {
   readonly animation: string;
   readonly row: number;
   readonly framesPerDirection: number;
+}
+
+export interface SheetSize {
+  readonly width: number;
+  readonly height: number;
 }
 
 export interface AppearanceLayoutDef {
@@ -132,11 +142,12 @@ export interface AppearanceLayoutDef {
   readonly cellHeight: number;
   readonly directions: readonly string[];
   readonly rows: readonly AppearanceLayoutRow[];
+  readonly acceptedSizes: readonly SheetSize[];
 }
 
-/** Story 1.10 (FR62, Artie's direction): a profession's fixed uniform
- * override for the outfit and/or accessory layer -- never a stored part of
- * a citizen's own appearance tuple, applied only at render time. */
+/** A profession's fixed uniform override for the outfit and/or accessory
+ * layer (FR62) -- never a stored part of a citizen's own appearance
+ * tuple, applied only at render time. */
 export interface UniformDef {
   readonly id: number;
   readonly key: string;

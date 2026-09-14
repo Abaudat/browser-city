@@ -83,6 +83,24 @@ check "names the unclassified path" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF 'has no version rule, add one'" _ "$OUT"
 
 echo
+echo "green: defs.rs changes by a large diff alongside a DEFS_VERSION bump"
+# Regression coverage for the SIGPIPE fix (commit fa95912b): the old
+# `git diff ... | grep -q ...` piped form let `grep -q` close its input
+# early on a match while `git diff` was still writing a large diff,
+# killing it with SIGPIPE -- a non-zero exit `pipefail` then treated as
+# "no match" even though the version line was really there. Several
+# thousand generated lines reliably reproduce a diff `grep -q` matches
+# well before `git diff` finishes writing.
+D="$(fresh_repo)"
+printf '[[object]]\nid = 1\nkey = "b"\n' > "$D/defs/objects/a.toml"
+{
+  printf 'pub const DEFS_VERSION: &str = "v2";\n'
+  for i in $(seq 1 5000); do printf 'pub const GENERATED_FILLER_%d: u32 = %d;\n' "$i" "$i"; done
+} > "$D/$DEFS_RS"
+commit_changes "$D"
+check "large diff with the bump still detected -> exit 0" 0 run_check "$D"
+
+echo
 echo "hard fail: unresolvable base under GITHUB_ACTIONS"
 D="$(fresh_repo)"
 OUT="$(cd "$D" && GITHUB_ACTIONS=true bash scripts/ci/check-defs-version-bump.sh no-such-ref 2>&1)"; CODE=$?

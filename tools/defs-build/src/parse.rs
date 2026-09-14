@@ -230,6 +230,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         family: located(text, &a.family),
                         sheet: located(text, &a.sheet),
                         pool: located(text, &a.pool),
+                        slot: located(text, &a.slot),
                     });
                 }
                 for l in file.appearance_layout {
@@ -250,6 +251,18 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                                 frames_per_direction: r.frames_per_direction,
                             })
                             .collect(),
+                        accepted_sizes: {
+                            let located_sizes = located(text, &l.accepted_sizes);
+                            Located::at(
+                                located_sizes
+                                    .value
+                                    .into_iter()
+                                    .map(|s| (s.width, s.height))
+                                    .collect(),
+                                located_sizes.line,
+                                located_sizes.col,
+                            )
+                        },
                     });
                 }
                 for u in file.uniform {

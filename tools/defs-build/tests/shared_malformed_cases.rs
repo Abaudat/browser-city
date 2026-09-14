@@ -36,6 +36,7 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "interact-at-outside-bound" => "interact-at-outside-bound",
         "interact-at-inside-collider" => "interact-at-inside-collider",
         "appearance-id-zero" => "appearance-id-zero",
+        "appearance-id-too-large" => "appearance-id-too-large",
         "appearance-family-mismatch" => "appearance-family-mismatch",
         "appearance-dangling-uniform-profession" => "appearance-dangling-uniform-profession",
         other => panic!(

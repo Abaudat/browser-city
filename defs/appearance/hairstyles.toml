@@ -59,7 +59,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_07.png"
 style = 1
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 8
@@ -122,7 +122,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_07.png"
 style = 2
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 15
@@ -185,7 +185,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_07.png"
 style = 3
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 22
@@ -248,7 +248,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_07.png"
 style = 4
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 29
@@ -311,7 +311,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_07.png"
 style = 5
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 36
@@ -374,7 +374,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_07.png"
 style = 6
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 43
@@ -437,7 +437,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_07.png"
 style = 7
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 50
@@ -500,7 +500,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_07.png"
 style = 8
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 57
@@ -563,7 +563,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_07.png"
 style = 9
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 64
@@ -626,7 +626,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_07.png"
 style = 10
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 71
@@ -689,7 +689,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_07.png"
 style = 11
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 78
@@ -752,7 +752,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_07.png"
 style = 12
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 85
@@ -815,7 +815,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_07.png"
 style = 13
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 92
@@ -878,7 +878,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_07.png"
 style = 14
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 99
@@ -941,7 +941,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_07.png"
 style = 15
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 106
@@ -1004,7 +1004,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_07.png"
 style = 16
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 113
@@ -1067,7 +1067,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_07.png"
 style = 17
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 120
@@ -1130,7 +1130,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_07.png"
 style = 18
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 127
@@ -1193,7 +1193,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_07.png"
 style = 19
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 134
@@ -1256,7 +1256,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_07.png"
 style = 20
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 141
@@ -1319,7 +1319,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_07.png"
 style = 21
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 148
@@ -1382,7 +1382,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_07.png"
 style = 22
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 155
@@ -1445,7 +1445,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_07.png"
 style = 23
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 162
@@ -1508,7 +1508,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_07.png"
 style = 24
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 169
@@ -1571,7 +1571,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_07.png"
 style = 25
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 176
@@ -1634,7 +1634,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_07.png"
 style = 26
 color = 7
-rare = true
+rare = false
 
 [[hairstyle]]
 id = 183

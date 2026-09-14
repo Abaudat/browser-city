@@ -90,6 +90,7 @@ jobs:
               # out of this subtree at runtime (the same idiom story 1.6's
               # demo scene already uses for other art).
               - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
+              - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
             e2e:
               - 'server/**'
               - 'client/**'
@@ -97,6 +98,7 @@ jobs:
               - '.github/**'
               - 'fixtures/**'
               - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
+              - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
             defs:
               - 'defs/**'
               - 'tools/defs-build/**'
@@ -108,6 +110,7 @@ jobs:
               # verify the appearance layout invariant -- a PR that only
               # swaps a part sheet must still run that check.
               - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
+              - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
               # tools/defs-build/tests/shared_malformed_cases.rs does
               # include_str!(this file) -- a PR that only edits the shared
               # case list must still run the Rust half of the drift guard,
@@ -489,6 +492,17 @@ jobs:
           if-no-files-found: warn
           # Review evidence, not a record: a week is long enough to look
           # at and short enough not to accumulate.
+          retention-days: 7
+      # Story 1.10: the street crowd, the twin kids beside an adult, the
+      # walk-loop's four directions and the post-reload crowd -- the same
+      # "leave the real thing behind for review" idiom as story-1.9-shots
+      # above.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: story-1.10-shots
+          path: client/test-results/story-1.10-shots
+          if-no-files-found: warn
           retention-days: 7
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()

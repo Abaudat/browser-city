@@ -143,7 +143,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("pub enum Pool {\n    Civilian,\n    RoleOnly,\n    Costume,\n}\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct BodyDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n}\n\n");
+    out.push_str("pub struct BodyDef {\n    pub id: u16,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n}\n\n");
     out.push_str("pub const BODIES: &[BodyDef] = &[\n");
     for b in &defs.bodies {
         out.push_str(&format!(
@@ -157,7 +157,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("];\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct EyesDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n}\n\n");
+    out.push_str("pub struct EyesDef {\n    pub id: u16,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n}\n\n");
     out.push_str("pub const EYES: &[EyesDef] = &[\n");
     for e in &defs.eyes {
         out.push_str(&format!(
@@ -171,7 +171,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("];\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct HairstyleDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n    pub style: u32,\n    pub color: u32,\n    pub rare: bool,\n}\n\n");
+    out.push_str("pub struct HairstyleDef {\n    pub id: u16,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n    pub style: u32,\n    pub color: u32,\n    pub rare: bool,\n}\n\n");
     out.push_str("pub const HAIRSTYLES: &[HairstyleDef] = &[\n");
     for h in &defs.hairstyles {
         out.push_str(&format!(
@@ -188,7 +188,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("];\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct OutfitDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n    pub pool: Pool,\n    pub hides_hairstyle: bool,\n}\n\n");
+    out.push_str("pub struct OutfitDef {\n    pub id: u16,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n    pub pool: Pool,\n    pub hides_hairstyle: bool,\n}\n\n");
     out.push_str("pub const OUTFITS: &[OutfitDef] = &[\n");
     for o in &defs.outfits {
         out.push_str(&format!(
@@ -204,16 +204,19 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("];\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct AccessoryDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n    pub pool: Pool,\n}\n\n");
+    out.push_str("pub enum Slot {\n    Face,\n    Head,\n    Back,\n    Torso,\n    Hands,\n}\n\n");
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str("pub struct AccessoryDef {\n    pub id: u16,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n    pub pool: Pool,\n    pub slot: Slot,\n}\n\n");
     out.push_str("pub const ACCESSORIES: &[AccessoryDef] = &[\n");
     for a in &defs.accessories {
         out.push_str(&format!(
-            "    AccessoryDef {{ id: {}, key: {:?}, family: {}, sheet: {:?}, pool: {} }},\n",
+            "    AccessoryDef {{ id: {}, key: {:?}, family: {}, sheet: {:?}, pool: {}, slot: {} }},\n",
             a.id,
             a.key,
             fmt_family_rust(a.family),
             a.sheet,
-            fmt_pool_rust(a.pool)
+            fmt_pool_rust(a.pool),
+            fmt_slot_rust(a.slot)
         ));
     }
     out.push_str("];\n\n");
@@ -221,7 +224,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str("pub struct AppearanceLayoutRowDef {\n    pub animation: &'static str,\n    pub row: u32,\n    pub frames_per_direction: u32,\n}\n\n");
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct AppearanceLayoutDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub cell_width: u32,\n    pub cell_height: u32,\n    pub directions: &'static [&'static str],\n    pub rows: &'static [AppearanceLayoutRowDef],\n}\n\n");
+    out.push_str("pub struct AppearanceLayoutDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub cell_width: u32,\n    pub cell_height: u32,\n    pub directions: &'static [&'static str],\n    pub rows: &'static [AppearanceLayoutRowDef],\n    pub accepted_sizes: &'static [(u32, u32)],\n}\n\n");
     out.push_str("pub const APPEARANCE_LAYOUTS: &[AppearanceLayoutDef] = &[\n");
     for l in &defs.appearance_layouts {
         let directions = fmt_str_slice(&l.directions);
@@ -235,15 +238,21 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
                 )
             })
             .collect();
+        let accepted_sizes: Vec<String> = l
+            .accepted_sizes
+            .iter()
+            .map(|(w, h)| format!("({w}, {h})"))
+            .collect();
         out.push_str(&format!(
-            "    AppearanceLayoutDef {{ id: {}, key: {:?}, family: {}, cell_width: {}, cell_height: {}, directions: &{}, rows: &[{}] }},\n",
+            "    AppearanceLayoutDef {{ id: {}, key: {:?}, family: {}, cell_width: {}, cell_height: {}, directions: &{}, rows: &[{}], accepted_sizes: &[{}] }},\n",
             l.id,
             l.key,
             fmt_family_rust(l.family),
             l.cell_width,
             l.cell_height,
             directions,
-            rows.join(", ")
+            rows.join(", "),
+            accepted_sizes.join(", ")
         ));
     }
     out.push_str("];\n\n");
@@ -278,6 +287,16 @@ fn fmt_pool_rust(pool: crate::model::Pool) -> &'static str {
         crate::model::Pool::Civilian => "Pool::Civilian",
         crate::model::Pool::RoleOnly => "Pool::RoleOnly",
         crate::model::Pool::Costume => "Pool::Costume",
+    }
+}
+
+fn fmt_slot_rust(slot: crate::model::Slot) -> &'static str {
+    match slot {
+        crate::model::Slot::Face => "Slot::Face",
+        crate::model::Slot::Head => "Slot::Head",
+        crate::model::Slot::Back => "Slot::Back",
+        crate::model::Slot::Torso => "Slot::Torso",
+        crate::model::Slot::Hands => "Slot::Hands",
     }
 }
 
@@ -491,12 +510,13 @@ pub fn emit_json(defs: &Defs, defs_version: &str) -> String {
             ""
         };
         out.push_str(&format!(
-            "    {{ \"family\": {}, \"id\": {}, \"key\": {}, \"pool\": {}, \"sheet\": {} }}{comma}\n",
+            "    {{ \"family\": {}, \"id\": {}, \"key\": {}, \"pool\": {}, \"sheet\": {}, \"slot\": {} }}{comma}\n",
             json_escape(a.family.as_str()),
             a.id,
             json_escape(&a.key),
             json_escape(a.pool.as_str()),
-            json_escape(&a.sheet)
+            json_escape(&a.sheet),
+            json_escape(a.slot.as_str())
         ));
     }
     out.push_str("  ],\n");
@@ -520,8 +540,14 @@ pub fn emit_json(defs: &Defs, defs_version: &str) -> String {
                 )
             })
             .collect();
+        let accepted_sizes: Vec<String> = l
+            .accepted_sizes
+            .iter()
+            .map(|(w, h)| format!("{{ \"height\": {h}, \"width\": {w} }}"))
+            .collect();
         out.push_str(&format!(
-            "    {{ \"cell_height\": {}, \"cell_width\": {}, \"directions\": {}, \"family\": {}, \"id\": {}, \"key\": {}, \"rows\": [{}] }}{comma}\n",
+            "    {{ \"accepted_sizes\": [{}], \"cell_height\": {}, \"cell_width\": {}, \"directions\": {}, \"family\": {}, \"id\": {}, \"key\": {}, \"rows\": [{}] }}{comma}\n",
+            accepted_sizes.join(", "),
             l.cell_height,
             l.cell_width,
             json_str_array(&l.directions),
@@ -709,6 +735,7 @@ mod tests {
                 family: Family::Adult,
                 sheet: "ModernTileset/Accessories/Accessory_06_Policeman_Hat_01.png".into(),
                 pool: Pool::RoleOnly,
+                slot: Slot::Head,
             }],
             appearance_layouts: vec![AppearanceLayoutDef {
                 id: 1,
@@ -722,6 +749,7 @@ mod tests {
                     row: 1,
                     frames_per_direction: 6,
                 }],
+                accepted_sizes: vec![(896, 656), (927, 656)],
             }],
             uniforms: vec![UniformDef {
                 id: 1,
@@ -840,10 +868,13 @@ mod tests {
         assert!(out.contains("pool: Pool::Civilian"));
         assert!(out.contains("AccessoryDef { id: 1"));
         assert!(out.contains("pool: Pool::RoleOnly"));
+        assert!(out.contains("slot: Slot::Head"));
         assert!(out.contains("AppearanceLayoutDef { id: 1, key: \"adult\""));
         assert!(out.contains(
             "AppearanceLayoutRowDef { animation: \"idle\", row: 1, frames_per_direction: 6 }"
         ));
+        assert!(out.contains("accepted_sizes: &[(896, 656), (927, 656)]"));
+        assert!(out.contains("pub struct BodyDef {\n    pub id: u16,"));
         assert!(out.contains(
             "UniformDef { id: 1, key: \"sanitation_worker_uniform\", profession: \"sanitation_worker\", outfit: None, accessory: Some(\"accessory_06_policeman_hat_01\") }"
         ));

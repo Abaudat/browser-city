@@ -34,7 +34,6 @@ pub const INV_APPEARANCE_DETERMINISTIC_FROM_ID: &str =
 pub const INV_APPEARANCE_INDICES_IN_RANGE: &str = "sim::appearance::generate never panics and every non-zero index it returns names a real manifest entry of the matching family";
 pub const INV_KIDS_PARTS_ONLY_ON_KIDS_BODIES: &str =
     "a kid family tuple only ever contains kid-family parts, and its accessory is always 0";
-pub const INV_OUTFIT_FOLLOWS_OCCUPATION: &str = "the generated civilian outfit is always drawn from the civilian pool, and every declared uniform override names a real, adult, role_only part";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -59,8 +58,9 @@ proptest! {
     #[test]
     fn inv_appearance_deterministic_from_id(id in any::<u64>(), kid in any::<bool>()) {
         let family = if kid { Family::Kid } else { Family::Adult };
-        let a = appearance::generate(id, family);
-        let b = appearance::generate(id, family);
+        let catalogue = appearance::live_catalogue();
+        let a = appearance::generate(id, family, &catalogue);
+        let b = appearance::generate(id, family, &catalogue);
         prop_assert_eq!(a, b);
     }
 
@@ -72,103 +72,55 @@ proptest! {
     #[test]
     fn inv_appearance_indices_in_range(id in any::<u64>(), kid in any::<bool>()) {
         let family = if kid { Family::Kid } else { Family::Adult };
-        let a = appearance::generate(id, family);
+        let catalogue = appearance::live_catalogue();
+        let a = appearance::generate(id, family, &catalogue);
 
         prop_assert_ne!(a.body, 0);
-        prop_assert!(defs::BODIES.iter().any(|b| b.id as u16 == a.body && b.family == family));
+        prop_assert!(defs::BODIES.iter().any(|b| b.id == a.body && b.family == family));
 
         prop_assert_ne!(a.eyes, 0);
-        prop_assert!(defs::EYES.iter().any(|e| e.id as u16 == a.eyes && e.family == family));
+        prop_assert!(defs::EYES.iter().any(|e| e.id == a.eyes && e.family == family));
 
         prop_assert_ne!(a.outfit, 0);
         let outfit_ok = defs::OUTFITS
             .iter()
-            .any(|o| o.id as u16 == a.outfit && o.family == family && o.pool == Pool::Civilian);
+            .any(|o| o.id == a.outfit && o.family == family && o.pool == Pool::Civilian);
         prop_assert!(outfit_ok);
 
         if a.hairstyle != 0 {
             let hairstyle_ok = defs::HAIRSTYLES
                 .iter()
-                .any(|h| h.id as u16 == a.hairstyle && h.family == family);
+                .any(|h| h.id == a.hairstyle && h.family == family);
             prop_assert!(hairstyle_ok);
         }
         if a.accessory != 0 {
             let accessory_ok = defs::ACCESSORIES
                 .iter()
-                .any(|ac| ac.id as u16 == a.accessory && ac.family == family && ac.pool == Pool::Civilian);
+                .any(|ac| ac.id == a.accessory && ac.family == family && ac.pool == Pool::Civilian);
             prop_assert!(accessory_ok);
         }
     }
 
-    /// `inv_kids_parts_only_on_kids_bodies` (FR61, Artie's direction): a
-    /// kid tuple never contains an adult part, and its accessory is always
-    /// 0 (no kid accessory tables exist).
+    /// `inv_kids_parts_only_on_kids_bodies` (FR61): a kid tuple never
+    /// contains an adult part, and its accessory is always 0 (no kid
+    /// accessory tables exist).
     #[test]
     fn inv_kids_parts_only_on_kids_bodies(id in any::<u64>()) {
-        let kid = appearance::generate(id, Family::Kid);
+        let catalogue = appearance::live_catalogue();
+        let kid = appearance::generate(id, Family::Kid, &catalogue);
         prop_assert_eq!(kid.accessory, 0);
-        prop_assert_eq!(defs::BODIES.iter().find(|b| b.id as u16 == kid.body).unwrap().family, Family::Kid);
-        prop_assert_eq!(defs::EYES.iter().find(|e| e.id as u16 == kid.eyes).unwrap().family, Family::Kid);
-        prop_assert_eq!(defs::OUTFITS.iter().find(|o| o.id as u16 == kid.outfit).unwrap().family, Family::Kid);
+        prop_assert_eq!(defs::BODIES.iter().find(|b| b.id == kid.body).unwrap().family, Family::Kid);
+        prop_assert_eq!(defs::EYES.iter().find(|e| e.id == kid.eyes).unwrap().family, Family::Kid);
+        prop_assert_eq!(defs::OUTFITS.iter().find(|o| o.id == kid.outfit).unwrap().family, Family::Kid);
         if kid.hairstyle != 0 {
             prop_assert_eq!(
-                defs::HAIRSTYLES.iter().find(|h| h.id as u16 == kid.hairstyle).unwrap().family,
+                defs::HAIRSTYLES.iter().find(|h| h.id == kid.hairstyle).unwrap().family,
                 Family::Kid
             );
         }
 
-        let adult = appearance::generate(id, Family::Adult);
-        prop_assert_eq!(defs::BODIES.iter().find(|b| b.id as u16 == adult.body).unwrap().family, Family::Adult);
-    }
-}
-
-/// `inv_outfit_follows_occupation` (FR62): the generated civilian outfit is
-/// always drawn from the civilian pool (never a role_only or costume
-/// part), and resolving any profession's uniform override always yields a
-/// real, adult, role_only outfit/accessory -- `tools/defs-build` proves
-/// this once at build time; this proves the runtime read agrees, for any
-/// citizen id and every profession `defs/professions` declares today. A
-/// plain (non-property) test: the profession/uniform half needs no random
-/// input, and mixing it into the proptest block above would only run the
-/// same static check hundreds of times for no added coverage.
-#[test]
-fn inv_outfit_follows_occupation() {
-    for id in [0u64, 1, 42, 1_000_000, u64::MAX] {
-        for family in [Family::Adult, Family::Kid] {
-            let a = appearance::generate(id, family);
-            let outfit = defs::OUTFITS
-                .iter()
-                .find(|o| o.id as u16 == a.outfit)
-                .unwrap();
-            assert_eq!(outfit.pool, Pool::Civilian);
-        }
-    }
-
-    for profession in defs::PROFESSIONS {
-        let Some(uniform) = appearance::resolve_uniform(profession.key) else {
-            continue;
-        };
-        if let Some(outfit_id) = uniform.outfit {
-            let def = defs::OUTFITS
-                .iter()
-                .find(|o| o.id as u16 == outfit_id)
-                .unwrap();
-            assert_eq!(def.pool, Pool::RoleOnly);
-            assert_eq!(def.family, Family::Adult);
-        }
-        if let Some(accessory_id) = uniform.accessory {
-            let def = defs::ACCESSORIES
-                .iter()
-                .find(|a| a.id as u16 == accessory_id)
-                .unwrap();
-            assert_eq!(def.pool, Pool::RoleOnly);
-            assert_eq!(def.family, Family::Adult);
-        }
-        assert!(
-            uniform.outfit.is_some() || uniform.accessory.is_some(),
-            "profession '{}' has a uniform overriding nothing",
-            profession.key
-        );
+        let adult = appearance::generate(id, Family::Adult, &catalogue);
+        prop_assert_eq!(defs::BODIES.iter().find(|b| b.id == adult.body).unwrap().family, Family::Adult);
     }
 }
 

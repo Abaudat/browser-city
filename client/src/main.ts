@@ -6,6 +6,8 @@ import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-
 import { KeyboardState } from "./input/keyboard";
 import { connect } from "./net/connection";
 import {
+  exposeAppearanceCompareForE2e,
+  recordAppearanceTextureIdsForE2e,
   recordHighlightForE2e,
   recordIgnoredIntentForE2e,
   recordIntentForE2e,
@@ -113,7 +115,8 @@ async function startDemoScene(): Promise<void> {
   // The render path's own resort event drives this hook directly
   // (Quentin's direction) -- never a ticker polling `getRenderOrder()`
   // every frame to see whether it changed.
-  await mountDemoScene(app, {
+  const handle = await mountDemoScene(app, {
+    defs,
     tileSizePx,
     storeyHeightPx,
     rankOf: (code) => resolveRank(rankTable, code),
@@ -135,6 +138,16 @@ async function startDemoScene(): Promise<void> {
     onViewTransform: recordViewTransformForE2e,
     onHighlightChange: recordHighlightForE2e,
   });
+
+  // Story 1.10: the street crowd's own e2e observation surface, wired
+  // here rather than threaded through `MountDemoSceneOptions` as another
+  // callback -- both values are already sitting on the real, mounted
+  // handle `mountDemoScene` just returned, with nothing left to compute.
+  recordAppearanceTextureIdsForE2e(
+    handle.citizensLayer.textureIdsById,
+    handle.citizensLayer.distinctTextureCount,
+  );
+  exposeAppearanceCompareForE2e(handle.citizensLayer.compareForE2e);
 }
 
 function getBalance(defs: Defs, key: string): number {

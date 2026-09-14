@@ -27,6 +27,16 @@ fn pool_str(pool: defs::Pool) -> &'static str {
     }
 }
 
+fn slot_str(slot: defs::Slot) -> &'static str {
+    match slot {
+        defs::Slot::Face => "face",
+        defs::Slot::Head => "head",
+        defs::Slot::Back => "back",
+        defs::Slot::Torso => "torso",
+        defs::Slot::Hands => "hands",
+    }
+}
+
 fn canonical_dump() -> String {
     let mut lines: Vec<String> = Vec::new();
 
@@ -120,12 +130,13 @@ fn canonical_dump() -> String {
     }
     for a in defs::ACCESSORIES {
         lines.push(format!(
-            "accessory {} id={} family={} sheet={} pool={}",
+            "accessory {} id={} family={} sheet={} pool={} slot={}",
             a.key,
             a.id,
             family_str(a.family),
             a.sheet,
-            pool_str(a.pool)
+            pool_str(a.pool),
+            slot_str(a.slot)
         ));
     }
     for l in defs::APPEARANCE_LAYOUTS {
@@ -135,15 +146,21 @@ fn canonical_dump() -> String {
             .iter()
             .map(|r| format!("{}:{}:{}", r.animation, r.row, r.frames_per_direction))
             .collect();
+        let accepted_sizes: Vec<String> = l
+            .accepted_sizes
+            .iter()
+            .map(|(w, h)| format!("{w}x{h}"))
+            .collect();
         lines.push(format!(
-            "appearance_layout {} id={} family={} cell_width={} cell_height={} directions=[{}] rows=[{}]",
+            "appearance_layout {} id={} family={} cell_width={} cell_height={} directions=[{}] rows=[{}] accepted_sizes=[{}]",
             l.key,
             l.id,
             family_str(l.family),
             l.cell_width,
             l.cell_height,
             directions,
-            rows.join(",")
+            rows.join(","),
+            accepted_sizes.join(",")
         ));
     }
     for u in defs::UNIFORMS {

@@ -7,9 +7,10 @@ TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 . "$TEST_DIR/harness.sh"
 CHECK="$TEST_DIR/../../../scripts/ci/check-golden-version-bump.sh"
 
-# fresh_repo -- a scratch git repo with rng.rs at RNG_VERSION 1 and a
-# committed rng_v1.golden, tagged "base". The real script is copied in at
-# scripts/ci/ so REPO_ROOT resolves inside the fixture.
+# fresh_repo -- a scratch git repo with rng.rs at RNG_VERSION 1, a
+# committed rng_v1.golden, appearance.rs at APPEARANCE_VERSION 1, and a
+# committed appearance_v1.golden, tagged "base". The real script is
+# copied in at scripts/ci/ so REPO_ROOT resolves inside the fixture.
 fresh_repo() {
   local d
   d="$(fake_dir)"
@@ -18,6 +19,8 @@ fresh_repo() {
   cp "$CHECK" "$d/scripts/ci/check-golden-version-bump.sh"
   printf 'pub const RNG_VERSION: u32 = 1;\n' > "$d/server/sim/src/rng.rs"
   echo 'version=1' > "$d/server/sim/tests/goldens/rng_v1.golden"
+  printf 'pub const APPEARANCE_VERSION: u32 = 1;\n' > "$d/server/sim/src/appearance.rs"
+  echo 'version=1' > "$d/server/sim/tests/goldens/appearance_v1.golden"
   git -C "$d" init -q
   git -C "$d" config user.email t@t.com
   git -C "$d" config user.name t
@@ -73,6 +76,35 @@ check "names the unmoved RNG_VERSION" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF 'RNG_VERSION did not'" _ "$OUT"
 
 echo
+echo "green: appearance golden moves alongside an APPEARANCE_VERSION bump"
+D="$(fresh_repo)"
+sed -i 's/APPEARANCE_VERSION: u32 = 1/APPEARANCE_VERSION: u32 = 2/' "$D/server/sim/src/appearance.rs"
+echo 'version=2' > "$D/server/sim/tests/goldens/appearance_v1.golden"
+commit_changes "$D"
+check "bumped together -> exit 0" 0 run_check "$D"
+
+echo
+echo "red: appearance golden moves with no APPEARANCE_VERSION bump"
+D="$(fresh_repo)"
+echo 'version=2' > "$D/server/sim/tests/goldens/appearance_v1.golden"
+commit_changes "$D"
+OUT="$(run_check "$D" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the missing bump" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF 'no APPEARANCE_VERSION bump'" _ "$OUT"
+
+echo
+echo "red: appearance.rs changes but not the APPEARANCE_VERSION line itself"
+D="$(fresh_repo)"
+echo '// a comment, not a version bump' >> "$D/server/sim/src/appearance.rs"
+echo 'version=2' > "$D/server/sim/tests/goldens/appearance_v1.golden"
+commit_changes "$D"
+OUT="$(run_check "$D" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the unmoved APPEARANCE_VERSION" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF 'APPEARANCE_VERSION did not'" _ "$OUT"
+
+echo
 echo "green: a codes_*.golden change is governed elsewhere, not by this script"
 D="$(fresh_repo)"
 mkdir -p "$D/server/sim/tests/goldens"
@@ -96,6 +128,21 @@ OUT="$(run_check "$D" 2>&1)"; CODE=$?
 check "exits non-zero" 1 bash -c "exit $CODE"
 check "names the unclassified golden" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF 'has no permanence rule, add one'" _ "$OUT"
+
+echo
+echo "green: rng.rs changes by a large diff alongside an RNG_VERSION bump"
+# Regression coverage for the SIGPIPE fix (see
+# check-defs-version-bump.sh's own large-diff case): a diff several
+# thousand lines long, with the version bump early in the file, used to
+# risk `grep -q` closing the pipe before `git diff` finished writing.
+D="$(fresh_repo)"
+{
+  printf 'pub const RNG_VERSION: u32 = 2;\n'
+  for i in $(seq 1 5000); do printf '// filler line %d\n' "$i"; done
+} > "$D/server/sim/src/rng.rs"
+echo 'version=2' > "$D/server/sim/tests/goldens/rng_v1.golden"
+commit_changes "$D"
+check "large diff with the bump still detected -> exit 0" 0 run_check "$D"
 
 echo
 echo "hard fail: unresolvable base under GITHUB_ACTIONS"
