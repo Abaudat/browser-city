@@ -57,6 +57,19 @@ bash agentic-team/scripts/bc-pr.sh open <issue> "<title>" <bodyfile>
 
 `<bodyfile>` is your PR description — the assumptions you made and the consistency gate result.
 
+### Screenshots
+
+When your task has anything on screen, or a lead's direction asks for screenshots, attach them. The leads review from what's on screen.
+
+1. Capture from the running demo with Playwright, e.g. `page.locator("canvas").nth(1).screenshot({ path })`. Look at each one with Read before attaching it.
+2. **Prefer still images.** Use a GIF only when motion is the thing under review, like movement or an animation, and a sequence of stills can't show it. Keep a GIF short and small: record a Playwright video, then `ffmpeg -i in.webm -vf "fps=10,scale=640:-1" out.gif`.
+3. Commit first. Images are filed under your branch and HEAD commit.
+4. Upload them, then paste the printed markdown into your body file:
+
+```bash
+bash agentic-team/scripts/bc-pr.sh attach <image>...
+```
+
 ## 4. When you are dispatched to address review comments
 
 Each lead in scope owns one comment on the PR, marked `<!-- bc:lead:<role> -->`, carrying a `<!-- bc:verdict -->` of `APPROVED` or `CHANGES` and the commit it was reached on. Read them:
@@ -77,4 +90,4 @@ Then push, and stamp your own comment:
 bash agentic-team/scripts/bc-comment.sh mark-addressed <pr> [bodyfile]
 ```
 
-`[bodyfile]` is a short note on what you changed; omitted, it writes "Addressed." **Push first** — the stamp is taken from the PR's head at the moment you call, and a stamp at the old head does not count as this cycle being addressed.
+`[bodyfile]` is a short note on what you changed; omitted, it writes "Addressed." When a finding was about something on screen, attach fresh screenshots of it at the pushed head (see Screenshots above). **Push first** — the stamp is taken from the PR's head at the moment you call, and a stamp at the old head does not count as this cycle being addressed.

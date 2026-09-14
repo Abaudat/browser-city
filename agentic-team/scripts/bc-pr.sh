@@ -19,6 +19,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: bc-pr.sh <command> [args]
   open <issue> <title> <bodyfile>  -- open a PR from the cwd's current branch (Crew)
+  attach <image>...                 -- upload images for the cwd's branch and HEAD, print markdown (Crew)
   merge <pr>                        -- squash-merge and delete the branch
   for-issue <issue>                 -- {"number":n,"head":"<sha>"} of the open PR closing it
   head <pr>                         -- the PR's current head sha
@@ -80,6 +81,54 @@ open)
     exit 2
   fi
   printf '%s\n' "$new"
+  exit 0
+  ;;
+
+attach)
+  [ "$#" -gt 0 ] || { usage; exit 2; }
+  # Every file is checked before anything is uploaded, so a bad argument
+  # never leaves half a set of screenshots behind.
+  for f in "$@"; do
+    [ -f "$f" ] || { echo "bc-pr attach: no such file: $f" >&2; exit 2; }
+    name="$(basename -- "$f")"
+    case "$name" in
+      *[!A-Za-z0-9._-]*)
+        echo "bc-pr attach: '$name' must be letters, digits, '.', '_' or '-' only" >&2
+        exit 2 ;;
+    esac
+    case "$(printf '%s' "$name" | tr 'A-Z' 'a-z')" in
+      *.png | *.jpg | *.jpeg | *.gif | *.webp) ;;
+      *) echo "bc-pr attach: '$name' is not a png, jpg, gif or webp image" >&2; exit 2 ;;
+    esac
+  done
+
+  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || {
+    echo "bc-pr attach: could not determine the current git branch" >&2
+    exit 2
+  }
+  if [ "$branch" = "$BC_BASE_BRANCH" ]; then
+    echo "bc-pr attach: refusing to attach from $BC_BASE_BRANCH" >&2
+    exit 2
+  fi
+  sha="$(git rev-parse --short=7 HEAD)"
+
+  gh_branch_exists "$BC_ASSETS_BRANCH" >/dev/null || {
+    echo "bc-pr attach: $BC_REPO has no $BC_ASSETS_BRANCH branch; run setup-github.sh" >&2
+    exit 2
+  }
+
+  for f in "$@"; do
+    name="$(basename -- "$f")"
+    path="$branch/$sha/$name"
+    # Re-attaching the same name at the same commit replaces the file.
+    existing="$(gh_content_sha "$BC_ASSETS_BRANCH" "$path" 2>/dev/null)"
+    gh_content_put "$BC_ASSETS_BRANCH" "$path" "$f" "$existing" || {
+      echo "bc-pr attach: failed to upload $f" >&2
+      exit 2
+    }
+    printf '![%s](https://raw.githubusercontent.com/%s/%s/%s)\n' \
+      "${name%.*}" "$BC_REPO" "$BC_ASSETS_BRANCH" "$path"
+  done
   exit 0
   ;;
 

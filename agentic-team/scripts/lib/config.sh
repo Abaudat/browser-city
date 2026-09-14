@@ -58,6 +58,9 @@ _BC_CONFIG_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 : "${BC_LABEL_EPIC:=epic}"
 : "${BC_LEAD_LABEL_PREFIX:=lead:}"
 : "${BC_MERGE_METHOD:=squash}"
+# GitHub has no API for PR image attachments, so Crew's screenshots live on
+# this orphan branch and PRs link to them by raw URL.
+: "${BC_ASSETS_BRANCH:=pr-assets}"
 : "${BC_WORKSPACES:=$HOME/orca/workspaces/BrowserCity}"
 : "${BC_ORCA_REPO_ID:=61a8f373-6a62-4138-a33c-fb4be6d0ddc1}"
 : "${BC_MAIN_CHECKOUT:=D:/Projects/BrowserCity}"

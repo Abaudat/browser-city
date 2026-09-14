@@ -25,7 +25,7 @@ agentic-team/scripts/
   bc-budget.sh    LEVEL 2 — the budget gate: available / spent / broken
   bc-issue.sh     LEVEL 2 — issues: next/current/transition/scope/backlog/demo-*/epics+stories/amend
   bc-comment.sh    LEVEL 2 — the structured-comment reads and writes
-  bc-pr.sh          LEVEL 2 — PRs: open/merge/for-issue/head
+  bc-pr.sh          LEVEL 2 — PRs: open/attach/merge/for-issue/head
   bc-sprint.sh       LEVEL 2 — sprints: current/next/over/items/close/start/write-scope
   bc-session.sh       LEVEL 2 — Orca/Claude session lifecycle, and Scotty's sprint session
 
