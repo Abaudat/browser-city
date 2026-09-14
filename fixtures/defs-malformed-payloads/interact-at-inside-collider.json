@@ -1,0 +1,22 @@
+{
+  "generated_by": "tools/defs-build -- do not edit by hand",
+  "defs_version": "test",
+  "collider_subcells_per_cell": 16,
+  "interact_at_max_reach_cells": 2,
+  "objects": [
+    {
+      "id": 1,
+      "key": "trash_bin",
+      "width": 1,
+      "height": 1,
+      "collider": { "x0": 0, "y0": 0, "x1": 16, "y1": 16 },
+      "interact_at": { "x0": 4, "y0": 4, "x1": 12, "y1": 12 },
+      "window": false
+    }
+  ],
+  "items": [],
+  "recipes": [],
+  "professions": [],
+  "chains": [],
+  "balance": []
+}

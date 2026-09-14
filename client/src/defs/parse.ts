@@ -135,8 +135,9 @@ function expectBoolean(value: unknown, path: string): boolean {
 
 function parseObject(value: unknown, path: string): ObjectDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "width", "height", "collider", "window"], path);
+  checkKnownKeys(obj, ["id", "key", "width", "height", "collider", "interact_at", "window"], path);
   const collider = parseNullableCollider(obj.collider, `${path}.collider`);
+  const interactAt = parseNullableCollider(obj.interact_at, `${path}.interact_at`);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
@@ -144,6 +145,7 @@ function parseObject(value: unknown, path: string): ObjectDef {
     height: expectU32(obj.height, `${path}.height`),
     window: expectBoolean(obj.window, `${path}.window`),
     ...(collider ? { collider } : {}),
+    ...(interactAt ? { interactAt } : {}),
   };
 }
 
@@ -227,6 +229,7 @@ export function parseDefs(data: unknown): Defs {
       "generated_by",
       "defs_version",
       "collider_subcells_per_cell",
+      "interact_at_max_reach_cells",
       "objects",
       "items",
       "recipes",
@@ -241,6 +244,10 @@ export function parseDefs(data: unknown): Defs {
   const colliderSubcellsPerCell = expectU32(
     root.collider_subcells_per_cell,
     "$.collider_subcells_per_cell",
+  );
+  const interactAtMaxReachCells = expectU32(
+    root.interact_at_max_reach_cells,
+    "$.interact_at_max_reach_cells",
   );
   const objects = expectArray(root.objects, "$.objects").map((v, i) =>
     parseObject(v, `$.objects[${i}]`),
@@ -301,11 +308,13 @@ export function parseDefs(data: unknown): Defs {
 
   for (const object of objects) {
     checkColliderWithinFootprint(object, colliderSubcellsPerCell);
+    checkInteractAtReach(object, colliderSubcellsPerCell, interactAtMaxReachCells);
   }
 
   return {
     defsVersion,
     colliderSubcellsPerCell,
+    interactAtMaxReachCells,
     objects,
     items,
     recipes,
@@ -339,6 +348,42 @@ function checkColliderWithinFootprint(object: ObjectDef, colliderSubcellsPerCell
   }
 }
 
+/** FR148's reach rules (story 1.9), the exact three `tools/defs-build`'s
+ * own `validate.rs` enforces at build time, checked again here so the
+ * client is never quietly lenient about data it did not build itself: a
+ * declared `interactAt` has positive area, reaches no further than
+ * `interactAtMaxReachCells` beyond its own footprint on any side, and --
+ * when the object also declares a `collider` -- never lies entirely
+ * inside it (a player can never stand inside a collider, so such a rect
+ * could never be reached). */
+function checkInteractAtReach(
+  object: ObjectDef,
+  colliderSubcellsPerCell: number,
+  interactAtMaxReachCells: number,
+): void {
+  const r = object.interactAt;
+  if (!r) return;
+  if (r.x1 <= r.x0 || r.y1 <= r.y0) {
+    fail(
+      `object '${object.key}' interact_at (${r.x0}, ${r.y0})-(${r.x1}, ${r.y1}) has zero or negative area`,
+    );
+  }
+  const reach = interactAtMaxReachCells * colliderSubcellsPerCell;
+  const maxX = object.width * colliderSubcellsPerCell;
+  const maxY = object.height * colliderSubcellsPerCell;
+  if (r.x0 < -reach || r.y0 < -reach || r.x1 > maxX + reach || r.y1 > maxY + reach) {
+    fail(
+      `object '${object.key}' interact_at (${r.x0}, ${r.y0})-(${r.x1}, ${r.y1}) reaches further than ${interactAtMaxReachCells} cell(s) beyond its own ${object.width}x${object.height} footprint`,
+    );
+  }
+  const c = object.collider;
+  if (c && r.x0 >= c.x0 && r.y0 >= c.y0 && r.x1 <= c.x1 && r.y1 <= c.y1) {
+    fail(
+      `object '${object.key}' interact_at (${r.x0}, ${r.y0})-(${r.x1}, ${r.y1}) lies entirely inside its own collider (${c.x0}, ${c.y0})-(${c.x1}, ${c.y1}) -- it could never be reached`,
+    );
+  }
+}
+
 /**
  * A canonical, sorted, field-fixed text dump of `defs` -- the exact
  * format `server/sim/tests/defs_dump.rs` independently produces from the
@@ -348,12 +393,11 @@ function checkColliderWithinFootprint(object: ObjectDef, colliderSubcellsPerCell
  */
 export function canonicalDump(defs: Defs): string {
   const lines: string[] = [];
+  const rect = (r: ColliderRect | undefined): string =>
+    r ? `${r.x0},${r.y0},${r.x1},${r.y1}` : "none";
   for (const o of defs.objects) {
-    const collider = o.collider
-      ? `${o.collider.x0},${o.collider.y0},${o.collider.x1},${o.collider.y1}`
-      : "none";
     lines.push(
-      `object ${o.key} id=${o.id} height=${o.height} width=${o.width} collider=${collider} window=${o.window}`,
+      `object ${o.key} id=${o.id} height=${o.height} width=${o.width} collider=${rect(o.collider)} interact_at=${rect(o.interactAt)} window=${o.window}`,
     );
   }
   for (const i of defs.items) {

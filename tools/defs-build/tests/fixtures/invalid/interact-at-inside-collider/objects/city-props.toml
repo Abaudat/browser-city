@@ -1,0 +1,9 @@
+[[object]]
+id = 1
+key = "trash_bin"
+width = 1
+height = 1
+# The reach rect sits entirely inside the object's own collider, so no
+# player body could ever stand in it.
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
+interact_at = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }

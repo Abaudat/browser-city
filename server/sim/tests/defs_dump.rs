@@ -16,12 +16,14 @@ fn canonical_dump() -> String {
     let mut lines: Vec<String> = Vec::new();
 
     for o in defs::OBJECTS {
-        let collider = match o.collider {
+        let rect = |r: Option<defs::ColliderRect>| match r {
             None => "none".to_string(),
             Some(c) => format!("{},{},{},{}", c.x0, c.y0, c.x1, c.y1),
         };
+        let collider = rect(o.collider);
+        let interact_at = rect(o.interact_at);
         lines.push(format!(
-            "object {} id={} height={} width={} collider={collider} window={}",
+            "object {} id={} height={} width={} collider={collider} interact_at={interact_at} window={}",
             o.key, o.id, o.height, o.width, o.window
         ));
     }

@@ -1,0 +1,8 @@
+[[object]]
+id = 1
+key = "trash_bin"
+width = 1
+height = 1
+# INTERACT_AT_MAX_REACH_CELLS is 2 cells (32 sub-cells) beyond the
+# footprint on every side; this reaches one sub-cell further west.
+interact_at = { x0 = -33, y0 = 0, x1 = 16, y1 = 16 }

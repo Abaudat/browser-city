@@ -12,6 +12,7 @@ function validPayload(): Record<string, unknown> {
     generated_by: "tools/defs-build -- do not edit by hand",
     defs_version: "abc123",
     collider_subcells_per_cell: 16,
+    interact_at_max_reach_cells: 2,
     objects: [{ id: 1, key: "trash_bin", width: 1, height: 1, window: false }],
     items: [
       { id: 1, key: "bottle" },
@@ -148,6 +149,78 @@ describe("parseDefs", () => {
 
     payload.objects = [{ id: 1, key: "trash_bin", width: 1, height: 1, window: false }];
     expect(parseDefs(payload).objects[0]?.collider).toBeUndefined();
+  });
+
+  it("parses a present interact_at and leaves an absent one undefined (FR148)", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+      window: false,
+      interact_at: { x0: 0, y0: 16, x1: 16, y1: 32 },
+    };
+    const defs = parseDefs(payload);
+    expect(defs.objects[0]?.interactAt).toEqual({ x0: 0, y0: 16, x1: 16, y1: 32 });
+    expect(defs.interactAtMaxReachCells).toBe(2);
+
+    payload.objects = [{ id: 1, key: "trash_bin", width: 1, height: 1, window: false }];
+    expect(parseDefs(payload).objects[0]?.interactAt).toBeUndefined();
+  });
+
+  it("rejects a zero-area interact_at (FR148)", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+      window: false,
+      interact_at: { x0: 0, y0: 16, x1: 0, y1: 32 },
+    };
+    expect(() => parseDefs(payload)).toThrow(/zero or negative area/);
+  });
+
+  it("rejects an interact_at reaching further than the declared bound (FR148)", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+      window: false,
+      // The bound is 2 cells * 16 sub-cells = 32 beyond the footprint.
+      interact_at: { x0: -33, y0: 0, x1: 16, y1: 16 },
+    };
+    expect(() => parseDefs(payload)).toThrow(/reaches further than/);
+  });
+
+  it("accepts an interact_at exactly at the declared reach bound (FR148)", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+      window: false,
+      interact_at: { x0: -32, y0: 0, x1: 16, y1: 16 },
+    };
+    expect(() => parseDefs(payload)).not.toThrow();
+  });
+
+  it("rejects an interact_at lying entirely inside its own collider (FR148)", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      width: 1,
+      height: 1,
+      window: false,
+      collider: { x0: 0, y0: 0, x1: 16, y1: 16 },
+      interact_at: { x0: 4, y0: 4, x1: 12, y1: 12 },
+    };
+    expect(() => parseDefs(payload)).toThrow(/could never be reached/);
   });
 
   it("rejects a non-integer collider bound", () => {
@@ -319,7 +392,7 @@ describe("canonicalDump", () => {
         "chain plastic_bottle id=1 links=[sanitation_worker]",
         "item bottle id=1",
         "item recycled_glass id=2",
-        "object trash_bin id=1 height=1 width=1 collider=none window=false",
+        "object trash_bin id=1 height=1 width=1 collider=none interact_at=none window=false",
         "profession sanitation_worker id=1",
         "recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]",
         "",
