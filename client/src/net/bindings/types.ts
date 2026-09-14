@@ -50,6 +50,11 @@ export type CharacterIdentity = __Infer<typeof CharacterIdentity>;
 export const Citizen = __t.object("Citizen", {
   citizenId: __t.u64(),
   createdAt: __t.timestamp(),
+  appearanceBody: __t.u16(),
+  appearanceEyes: __t.u16(),
+  appearanceOutfit: __t.u16(),
+  appearanceHairstyle: __t.u16(),
+  appearanceAccessory: __t.u16(),
 });
 export type Citizen = __Infer<typeof Citizen>;
 
