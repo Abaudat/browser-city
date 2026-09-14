@@ -31,6 +31,18 @@ function expectValid(bindings: Bindings): void {
   expect(new Set(codes).size).toBe(codes.length);
 }
 
+/** Valid, and additionally playable: every direction still has a key.
+ * `rebind` guarantees this outright -- it refuses a rebind that would
+ * take another action's last key. `normaliseBindings` guarantees it for
+ * everything short of storage hand-edited to give one action every one of
+ * another's keys, which no path in the game produces. */
+function expectNoStrandedAction(bindings: Bindings): void {
+  expectValid(bindings);
+  for (const action of BINDABLE_ACTIONS) {
+    expect(bindings[action].length, `${action} has no key bound`).toBeGreaterThan(0);
+  }
+}
+
 describe("DEFAULT_BINDINGS", () => {
   it("binds WASD and the arrow keys, by KeyboardEvent.code (FR149)", () => {
     expect(DEFAULT_BINDINGS.move_up).toEqual(["KeyW", "ArrowUp"]);
@@ -104,7 +116,7 @@ describe("rebind", () => {
   it("replaces the chosen slot, leaving the action's other key alone", () => {
     const next = rebind(DEFAULT_BINDINGS, "move_up", 0, "KeyI");
     expect(next.move_up).toEqual(["KeyI", "ArrowUp"]);
-    expectValid(next);
+    expectNoStrandedAction(next);
   });
 
   it("never mutates the map it was given", () => {
@@ -120,7 +132,7 @@ describe("rebind", () => {
     const next = rebind(DEFAULT_BINDINGS, "move_up", 0, "KeyS");
     expect(next.move_up).toEqual(["KeyS", "ArrowUp"]);
     expect(next.move_down).toEqual(["KeyW", "ArrowDown"]);
-    expectValid(next);
+    expectNoStrandedAction(next);
   });
 
   it("refuses a reserved code, leaving the map exactly as it was", () => {
@@ -133,6 +145,44 @@ describe("rebind", () => {
     for (const code of ["", "Unidentified"]) {
       expect(rebind(DEFAULT_BINDINGS, "move_up", 0, code)).toEqual(DEFAULT_BINDINGS);
     }
+  });
+
+  it("binding into a slot past the end appends, without duplicating a key the action already has", () => {
+    // Found by `inv_rebind_survives_reload`: a slot index past the end
+    // appends, so the appended code lands at the end rather than at that
+    // index. Treating the two as the same position made the "move it
+    // within this action" branch match nothing, drop every copy, and
+    // leave the action with no keys at all.
+    const oneKey = { ...DEFAULT_BINDINGS, move_up: ["ArrowUp"] };
+    const next = rebind(oneKey, "move_up", 2, "ArrowUp");
+    expect(next.move_up).toEqual(["ArrowUp"]);
+    expectNoStrandedAction(next);
+  });
+
+  it("never leaves an action with no keys, whatever slot is targeted", () => {
+    // Walking up with nothing bound to it is unplayable, and the menu
+    // offers no way back: it shows one keycap per bound key.
+    let bindings: Bindings = DEFAULT_BINDINGS;
+    bindings = rebind(bindings, "move_right", 2, "KeyW");
+    bindings = rebind(bindings, "move_right", 3, "ArrowUp");
+    expectNoStrandedAction(bindings);
+  });
+
+  it("refuses to take the last key of another action, rather than disabling it", () => {
+    const oneKey: Bindings = { ...DEFAULT_BINDINGS, move_up: ["KeyW"] };
+    // move_right has two keys and a free slot to append into, so there is
+    // nothing to give back in a swap -- taking KeyW would strand move_up.
+    const next = rebind(oneKey, "move_right", 5, "KeyW");
+    expect(next).toEqual(oneKey);
+  });
+
+  it("still swaps when the other action keeps a key, which is the normal case", () => {
+    // The menu only ever targets an occupied slot, so a real rebind
+    // always has something to give back.
+    const next = rebind(DEFAULT_BINDINGS, "move_right", 0, "KeyW");
+    expect(next.move_right).toEqual(["KeyW", "ArrowRight"]);
+    expect(next.move_up).toEqual(["KeyD", "ArrowUp"]);
+    expectNoStrandedAction(next);
   });
 
   it("inv_rebind_survives_reload", () => {
@@ -182,7 +232,7 @@ describe("rebind", () => {
   it("moving a code within one action never duplicates it", () => {
     const next = rebind(DEFAULT_BINDINGS, "move_up", 1, "KeyW");
     expect(next.move_up).toEqual(["ArrowUp", "KeyW"]);
-    expectValid(next);
+    expectNoStrandedAction(next);
   });
 
   it("inv_keybindings_injective", () => {
@@ -216,7 +266,7 @@ describe("rebind", () => {
           let bindings = DEFAULT_BINDINGS;
           for (const step of steps) {
             bindings = rebind(bindings, step.action, step.slot, step.code);
-            expectValid(bindings);
+            expectNoStrandedAction(bindings);
           }
         },
       ),
@@ -261,6 +311,15 @@ describe("normaliseBindings", () => {
     const next = normaliseBindings({ move_up: ["KeyZ"], move_down: ["KeyZ"] });
     expectValid(next);
     expect(actionForCode(next, "KeyZ")).toBe("move_up");
+  });
+
+  it("keeps a direction playable when stored data gave its key to another action", () => {
+    // Both actions stored the same code: the first in canonical order
+    // keeps it, and the second falls back to whichever of its own
+    // defaults are still free rather than being left unplayable.
+    const next = normaliseBindings({ move_up: ["KeyZ"], move_down: ["KeyZ"] });
+    expect(next.move_up).toEqual(["KeyZ"]);
+    expectNoStrandedAction(next);
   });
 
   it("de-duplicates a code repeated within one action", () => {

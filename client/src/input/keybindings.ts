@@ -101,8 +101,12 @@ function withAction(
  * dialog, and never an action silently left with one key fewer). Either
  * way the result is injective: a code drives exactly one action.
  *
- * A code no loader would keep ([`isBindableCode`]) is refused outright
- * and the map comes back untouched.
+ * Two rebinds are refused outright, with the map coming back untouched:
+ * a code no loader would keep ([`isBindableCode`]), and one that would
+ * leave *another* action with no key at all. The second can only arise
+ * when this slot is empty, so there is nothing to hand back in the swap;
+ * the menu never targets an empty slot, and a direction with no key is
+ * unplayable with no way to bind one back.
  */
 export function rebind(
   bindings: Bindings,
@@ -113,12 +117,17 @@ export function rebind(
   if (!isBindableCode(code)) return bindings;
 
   const current = [...bindings[action]];
-  const displaced = current[slotIndex];
+  // Where the code will actually sit: a slot past the end appends, so it
+  // lands at the end, not at `slotIndex`. Conflating the two is what let
+  // a rebind drop every copy of a code and strand its action with none
+  // (`inv_rebind_survives_reload`).
+  const targetIndex = Math.min(Math.max(slotIndex, 0), current.length);
+  const displaced = current[targetIndex];
   if (displaced === code) return bindings;
 
   const previousOwner = actionForCode(bindings, code);
 
-  if (slotIndex < current.length) current[slotIndex] = code;
+  if (targetIndex < current.length) current[targetIndex] = code;
   else current.push(code);
 
   if (previousOwner === action) {
@@ -126,7 +135,7 @@ export function rebind(
     // never duplicate it. The slot it came from takes what was displaced
     // (or simply loses it, if this slot was empty).
     const moved = current.map((c, i) => {
-      if (i === slotIndex) return c;
+      if (i === targetIndex) return c;
       return c === code ? displaced : c;
     });
     return withAction(
@@ -136,16 +145,16 @@ export function rebind(
     );
   }
 
-  let next = withAction(bindings, action, current);
   if (previousOwner) {
-    const theirs = next[previousOwner].map((c) => (c === code ? displaced : c));
-    next = withAction(
-      next,
-      previousOwner,
-      theirs.filter((c): c is string => c !== undefined),
-    );
+    const theirs = bindings[previousOwner]
+      .map((c) => (c === code ? displaced : c))
+      .filter((c): c is string => c !== undefined);
+    // Taking their last key would disable that direction entirely.
+    if (theirs.length === 0) return bindings;
+    return withAction(withAction(bindings, action, current), previousOwner, theirs);
   }
-  return next;
+
+  return withAction(bindings, action, current);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -188,9 +197,17 @@ export function normaliseBindings(value: unknown): Bindings {
 
   for (const action of BINDABLE_ACTIONS) {
     const codes = cleaned.get(action) ?? [...DEFAULT_BINDINGS[action]];
-    const kept = (codes.length > 0 ? codes : [...DEFAULT_BINDINGS[action]]).filter(
-      (code) => !claimed.has(code),
-    );
+    const preferred = codes.length > 0 ? codes : [...DEFAULT_BINDINGS[action]];
+    let kept = preferred.filter((code) => !claimed.has(code));
+    if (kept.length === 0) {
+      // Stored data that gave every one of this action's keys to an
+      // earlier one would otherwise leave this direction unplayable.
+      // Fall back to whichever of its own defaults are still free. Only
+      // hand-edited storage can reach this, and if even the defaults are
+      // taken there is nothing left to offer but an empty list -- never
+      // an invented key, and never a second action bound to the same one.
+      kept = DEFAULT_BINDINGS[action].filter((code) => !claimed.has(code));
+    }
     for (const code of kept) claimed.add(code);
     result[action] = kept;
   }
