@@ -18,12 +18,12 @@ import {
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
 } from "../../../src/demo/fixture";
-import type { ColliderSource } from "../../../src/world/collision-grid";
-import { CollisionGrid } from "../../../src/world/collision-grid";
 import type { MovementConfig } from "../../../src/world/movement";
 import { loadMovementConfig } from "../../../src/world/movement-config";
+import type { ObjectSource } from "../../../src/world/object-defs";
 import { objectDefsById, windowDefIds } from "../../../src/world/object-defs";
 import { OwnershipIndex } from "../../../src/world/ownership";
+import { WorldIndex } from "../../../src/world/world-index";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -51,17 +51,25 @@ export function demoWindowDefIds(): ReadonlySet<number> {
   return windowDefIds(committedDefs());
 }
 
-/** The grid the demo scene runs against, built from the same two sources
- * `scene.ts` uses. */
-export function demoCollisionGrid(): CollisionGrid {
+/** Every def source the demo scene indexes: `defs/objects` (footprints,
+ * colliders and FR148 reach rects) plus the fixture's own walls and
+ * boundary, exactly as `scene.ts` composes them. */
+export function demoObjectSources(): ReadonlyMap<number, ObjectSource> {
   const config = demoMovementConfig();
-  const sources = new Map<number, ColliderSource>([
+  return new Map<number, ObjectSource>([
     ...objectDefsById(committedDefs()),
     ...demoColliderSources(config.subcellsPerCell),
   ]);
-  const grid = new CollisionGrid(config.subcellsPerCell, sources);
-  for (const row of demoPlacedRows()) grid.insert(row);
-  return grid;
+}
+
+/** The derived world the demo scene runs against -- collision grid and
+ * footprint index together, fed through the one `insert` the scene uses,
+ * so a test can never exercise a combination the game cannot reach. */
+export function demoWorldIndex(): WorldIndex {
+  const config = demoMovementConfig();
+  const world = new WorldIndex(config.subcellsPerCell, demoObjectSources());
+  for (const row of demoPlacedRows()) world.insert(row);
+  return world;
 }
 
 /** Where the player comes to rest walking straight south out of the door:

@@ -14,7 +14,10 @@
 // canvas. This module draws the scene and nothing else.
 
 import { type Application, Assets, Container, Rectangle, Sprite, Texture } from "pixi.js";
-import { attachKeyboard, KeyboardState } from "../input/keyboard";
+import type { IgnoredSink, IntentSink } from "../input/intent";
+import { attachKeyboard, type KeyboardState } from "../input/keyboard";
+import type { PickContext, PickRect } from "../input/pick";
+import { attachPointer } from "../input/pointer";
 import { layerCodeByName } from "../render/layer-table";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
@@ -22,16 +25,16 @@ import { floorOffsetPx, screenPositionPx } from "../render/screen-position";
 import { fromSortUnits, toSortUnits } from "../render/sort-units";
 import type { VisibilityState, VisibilityViewer } from "../render/visibility";
 import { isFloorCulled } from "../render/visibility";
-import type { ColliderSource } from "../world/collision-grid";
-import { CollisionGrid } from "../world/collision-grid";
 import {
   type FloorWalkResult,
   initialFloorWalkState,
   stepAndTransition,
 } from "../world/floor-walk";
 import type { MovementConfig } from "../world/movement";
+import type { ObjectSource } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { TransitionIndex } from "../world/transitions";
+import { WorldIndex } from "../world/world-index";
 import {
   buildPlayerDrawable,
   buildPropDrawables,
@@ -99,6 +102,13 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
   ).href,
   glass: new URL(
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16/ME_Singles_Camping_16x16_Bottle_1.png",
+    import.meta.url,
+  ).href,
+  // Story 1.9's interaction target on the pavement: a real single street
+  // bin from the city-props pack, 16x32px -- one cell wide, bottom
+  // anchored, overhanging one tile upward like every other tall prop.
+  trashBin: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Small_Closed_Trash_Can.png",
     import.meta.url,
   ).href,
   awning: new URL(
@@ -199,6 +209,17 @@ const CANVAS_MARGIN_PX = 8;
  * never a second, separately-typed `floor < 0` check. */
 const SUBWAY_BACKGROUND = 0x000000;
 
+/** FR173's affordance mark, as one dial (Artie's direction, cycle 2):
+ * how strongly the additive overlay copy of a hovered object's own
+ * sprites is drawn. Additive blending brightens that object's own opaque
+ * pixels neutrally; a tint can only multiply, which reads as stained
+ * rather than lit and carries the state change in hue alone. A blend mode
+ * is not a filter, so FR121's ban is untouched. */
+const HIGHLIGHT_ALPHA = 0.18;
+/** The overlay's blend mode -- one of Pixi's basic modes, which needs no
+ * filter path in the renderer. */
+const HIGHLIGHT_BLEND_MODE = "add" as const;
+
 /** The layer code every ground-tile-pass group's own synthetic
  * `VisibilityDrawable` carries -- never read by `computeVisibility`'s
  * wall-layer check (a ground pass is never `isNearSide`), so any live
@@ -217,10 +238,11 @@ export interface MountDemoSceneOptions {
   /** Read once from `defs/`'s `movement.*` balance keys (`main.ts`) --
    * never a literal in this file. */
   readonly movementConfig: MovementConfig;
-  /** Real `defs/objects` colliders, keyed by def id
-   * (`world/object-defs.ts`), so a prop the demo places by `defId` uses
-   * the collider `defs/` declares for it rather than a restated rect. */
-  readonly objectDefs: ReadonlyMap<number, ColliderSource>;
+  /** Real `defs/objects` footprints, colliders and FR148 reach rects,
+   * keyed by def id (`world/object-defs.ts`), so a prop the demo places
+   * by `defId` uses what `defs/` declares for it rather than a restated
+   * rect. */
+  readonly objectDefs: ReadonlyMap<number, ObjectSource>;
   /** The def ids `defs/` marks `window = true` (story 1.7, FR121) --
    * resolved once by the caller from the fetched document. */
   readonly windowDefIds: ReadonlySet<number>;
@@ -256,11 +278,39 @@ export interface MountDemoSceneOptions {
    * real display list rather than only by `scripts/ci/check-no-masks.sh`
    * never finding the word `mask` in the source. */
   readonly onMasksChecked?: (allNull: boolean) => void;
+  /** Called once, after the camera is set, with the zoom and the world
+   * container's own offset -- what a caller needs to turn a world pixel
+   * into a canvas one (story 1.9's e2e spec computes its click points
+   * that way rather than hard-coding a pixel). */
+  readonly onViewTransform?: (zoom: number, offsetX: number, offsetY: number) => void;
+  /** Story 1.9 (FR148): where a click's intent goes. One injected sink,
+   * and the only thing Epic 8 has to replace -- this scene neither knows
+   * nor decides what an intent means. Absent means intents are simply
+   * dropped, which is exactly what "unresolved until Epic 8" looks like. */
+  readonly onIntent?: IntentSink;
+  /** Called instead of `onIntent` when the player clicks an interactable
+   * object that is out of reach (AC2) -- the render side's own cue that
+   * the click was refused. */
+  readonly onIgnored?: IgnoredSink;
+  /** Called whenever the affordance-marked object changes (FR173), with
+   * `undefined` when nothing is marked -- the render path's own event,
+   * never polled. */
+  readonly onHighlightChange?: (objectId: bigint | undefined) => void;
+  /** The keyboard state to drive movement with -- required, and built by
+   * the caller from the player's own stored bindings. No default here on
+   * purpose: one falling back to `DEFAULT_BINDINGS` would silently ignore
+   * what the player had set. */
+  readonly keyboard: KeyboardState;
 }
 
 export interface DemoSceneHandle {
   readonly app: Application;
   getRenderOrder(): readonly bigint[];
+  /** The keyboard this scene is actually driven by -- the caller's own
+   * instance when it supplied one. */
+  readonly keyboard: KeyboardState;
+  /** Removes every listener this scene attached (keyboard and pointer). */
+  destroy(): void;
 }
 
 function cropped(base: Texture, frame: Rectangle): Texture {
@@ -485,6 +535,10 @@ export async function mountDemoScene(
     onPlayerMove,
     onVisibilityChange,
     onMasksChecked,
+    onIntent,
+    onIgnored,
+    onViewTransform,
+    onHighlightChange,
   } = options;
 
   const rawTextures = new Map<string, Texture>();
@@ -657,19 +711,54 @@ export async function mountDemoScene(
   const everyMaskableView = [...members.map((m) => m.view), ...groundContainersByFloor.values()];
   onMasksChecked?.(everyMaskableView.every((view) => view.mask == null));
 
-  // The collision grid: real `defs/objects` colliders (`objectDefs`,
-  // resolved from the fetched document in `main.ts`) plus the demo's own
-  // walls and world boundary, fed in as `PlacedObject`-shaped rows --
-  // exactly the shape a later chunk-streaming story's `onInsert` will
-  // feed the same grid, just called directly here instead of from a
-  // subscription (`placed_object` stays private in this story).
-  const colliderSources = new Map<number, ColliderSource>([
-    ...objectDefs,
-    ...demoColliderSources(movementConfig.subcellsPerCell),
-  ]);
-  const collisionGrid = new CollisionGrid(movementConfig.subcellsPerCell, colliderSources);
-  for (const placed of demoPlacedRows()) {
-    collisionGrid.insert(placed);
+  onViewTransform?.(ZOOM, world.position.x, world.position.y);
+
+  // The derived indexes: real `defs/objects` footprints, colliders and
+  // FR148 reach rects (`objectDefs`, resolved from the fetched document
+  // in `main.ts`) plus the demo's own walls and world boundary, fed in as
+  // `PlacedObject`-shaped rows through the one `WorldIndex.insert` that
+  // feeds both the collision grid and the footprint index -- exactly the
+  // shape a later chunk-streaming story's `onInsert` will feed, just
+  // called directly here instead of from a subscription (`placed_object`
+  // stays private in this story).
+  // How far each definition's *art* is drawn outside its own footprint,
+  // measured from the real sprites this scene just built (never a second,
+  // hand-typed height). The footprint index needs it so that a click on
+  // the part of a tall prop drawn over the cells above it still finds
+  // that prop: our sprites are bottom-centre anchored, so a 16x32 bin on
+  // a 1x1 footprint draws a whole cell up into the row behind it.
+  const placedRows = demoPlacedRows();
+  const defIdByObjectId = new Map(placedRows.map((row) => [row.objectId, row.defId]));
+  const overhangByDefId = new Map<number, { up: number; side: number }>();
+  for (const entry of entries) {
+    const defId = defIdByObjectId.get(entry.drawable.stableId);
+    if (defId === undefined) continue;
+    const footprintWidthPx = entry.drawable.footprintWidth * tileSizePx;
+    const up = Math.max(0, Math.ceil((entry.view.height - tileSizePx) / tileSizePx));
+    const side = Math.max(0, Math.ceil((entry.view.width - footprintWidthPx) / 2 / tileSizePx));
+    const current = overhangByDefId.get(defId);
+    overhangByDefId.set(defId, {
+      up: Math.max(current?.up ?? 0, up),
+      side: Math.max(current?.side ?? 0, side),
+    });
+  }
+
+  const objectSources = new Map<number, ObjectSource>(
+    [...objectDefs, ...demoColliderSources(movementConfig.subcellsPerCell)].map(
+      ([defId, source]) => {
+        const overhang = overhangByDefId.get(defId);
+        return [
+          defId,
+          overhang
+            ? { ...source, drawOverhangCellsUp: overhang.up, drawOverhangCellsX: overhang.side }
+            : source,
+        ];
+      },
+    ),
+  );
+  const worldIndex = new WorldIndex(movementConfig.subcellsPerCell, objectSources);
+  for (const placed of placedRows) {
+    worldIndex.insert(placed);
   }
 
   // Story 1.7: the visibility adapter, gated on the viewer's own
@@ -744,14 +833,155 @@ export async function mountDemoScene(
     }
   }
 
+  // Story 1.9: which objects are currently visible, rebuilt from each
+  // pool member's own just-written `sprite.visible` whenever visibility
+  // is re-applied (a rare event, never per frame). A click resolves
+  // through this: if it cannot be seen it cannot be clicked, so a
+  // retracted front wall is neither clickable itself nor in the way of
+  // what is now visible behind it.
+  const hiddenObjectIds = new Set<bigint>();
+  function refreshHiddenObjects(): void {
+    const anyVisible = new Map<bigint, boolean>();
+    for (const entry of entries) {
+      const id = entry.drawable.stableId;
+      anyVisible.set(id, (anyVisible.get(id) ?? false) || entry.view.visible);
+    }
+    hiddenObjectIds.clear();
+    for (const [id, visible] of anyVisible) {
+      if (!visible) hiddenObjectIds.add(id);
+    }
+  }
+
   let lastCellX = walk.cellX;
   let lastCellY = walk.cellY;
   applyVisibilityFor(lastCellX, lastCellY, walk.floor, true);
+  refreshHiddenObjects();
 
   onPlayerMove?.(walk.x, walk.y);
 
-  const keyboard = new KeyboardState();
-  attachKeyboard(keyboard);
+  const { keyboard } = options;
+  const detachKeyboard = attachKeyboard(keyboard);
+
+  // FR173's affordance mark (Artie's direction, cycle 2): while an object
+  // is hovered and in reach, one extra sprite per drawable of that object
+  // -- same texture, same transform, drawn in the slot directly above its
+  // own source sprite -- composited additively. That brightens the
+  // object's own opaque pixels and nothing else: not its tile, not a box
+  // around it, and nothing left in the world once the pointer moves on.
+  // Built lazily on hover and destroyed on un-hover, so a scene at rest
+  // carries none of them.
+  const spritesByObjectId = new Map<bigint, Sprite[]>();
+  for (const entry of entries) {
+    const id = entry.drawable.stableId;
+    const list = spritesByObjectId.get(id);
+    if (list) list.push(entry.view);
+    else spritesByObjectId.set(id, [entry.view]);
+  }
+
+  let highlightedObjectId: bigint | undefined;
+  let highlightOverlays: Sprite[] = [];
+
+  function clearHighlightOverlays(): void {
+    for (const overlay of highlightOverlays) {
+      overlay.parent?.removeChild(overlay);
+      overlay.destroy();
+    }
+    highlightOverlays = [];
+  }
+
+  function buildHighlightOverlays(objectId: bigint): void {
+    for (const source of spritesByObjectId.get(objectId) ?? []) {
+      const parent = source.parent;
+      if (!parent || !source.visible) continue;
+      const overlay = new Sprite(source.texture);
+      overlay.anchor.set(source.anchor.x, source.anchor.y);
+      overlay.x = source.x;
+      overlay.y = source.y;
+      overlay.scale.set(source.scale.x, source.scale.y);
+      overlay.alpha = HIGHLIGHT_ALPHA * source.alpha;
+      overlay.blendMode = HIGHLIGHT_BLEND_MODE;
+      parent.addChildAt(overlay, parent.getChildIndex(source) + 1);
+      highlightOverlays.push(overlay);
+    }
+  }
+
+  function setHighlight(objectId: bigint | undefined): void {
+    if (highlightedObjectId === objectId) return;
+    clearHighlightOverlays();
+    highlightedObjectId = objectId;
+    if (objectId !== undefined) buildHighlightOverlays(objectId);
+    onHighlightChange?.(objectId);
+  }
+
+  /** Re-attaches the overlays after something rebuilt the pool
+   * container's children: `applyDepthOrder` drops every child it does not
+   * own, and an overlay is deliberately not a pool member. */
+  function reapplyHighlight(): void {
+    if (highlightedObjectId === undefined) return;
+    clearHighlightOverlays();
+    buildHighlightOverlays(highlightedObjectId);
+  }
+
+  // FR148's one pointer listener, on the canvas element itself -- no Pixi
+  // `eventMode`, no `interactive`, no per-sprite `on("pointer…")`
+  // anywhere in this client.
+  // The rect each object's sprites actually cover, in the world
+  // container's own pixel space -- measured once from the real sprites
+  // this scene built, never a second hand-typed height. This is what lets
+  // a click on any drawn part of a prop resolve to it, including the part
+  // that overhangs the cells above its own footprint.
+  const drawnRects = new Map<bigint, PickRect>();
+  for (const [objectId, sprites] of spritesByObjectId) {
+    let x0 = Number.POSITIVE_INFINITY;
+    let y0 = Number.POSITIVE_INFINITY;
+    let x1 = Number.NEGATIVE_INFINITY;
+    let y1 = Number.NEGATIVE_INFINITY;
+    for (const sprite of sprites) {
+      const left = sprite.x - sprite.width * sprite.anchor.x;
+      const top = sprite.y - sprite.height * sprite.anchor.y;
+      x0 = Math.min(x0, left);
+      y0 = Math.min(y0, top);
+      x1 = Math.max(x1, left + sprite.width);
+      y1 = Math.max(y1, top + sprite.height);
+    }
+    if (Number.isFinite(x0)) drawnRects.set(objectId, { x0, y0, x1, y1 });
+  }
+
+  const pickContext = (): PickContext => ({
+    index: worldIndex,
+    objectDefs: objectSources,
+    rankOf,
+    subcellsPerCell: movementConfig.subcellsPerCell,
+    isVisible: (objectId) => !hiddenObjectIds.has(objectId),
+    drawnRectOf: (objectId) => drawnRects.get(objectId),
+  });
+  const pointer = attachPointer({
+    element: app.canvas,
+    // Client pixels to the world-pixel space `screenPositionPx` produces:
+    // undo the canvas's own CSS scaling, then the camera offset and zoom
+    // this scene applied to the world container.
+    toWorldPx: (clientX, clientY) => {
+      const rect = app.canvas.getBoundingClientRect();
+      // `app.screen` is in the renderer's *logical* units -- the same
+      // space `world.position`/`world.scale` live in. `canvas.width` is in
+      // device pixels and matches only while `resolution` is 1, so the day
+      // someone turns on `autoDensity` for HiDPI it would put every click
+      // on the wrong cell with nothing to catch it.
+      const scaleX = rect.width > 0 ? app.screen.width / rect.width : 1;
+      const scaleY = rect.height > 0 ? app.screen.height / rect.height : 1;
+      return {
+        x: ((clientX - rect.left) * scaleX - world.position.x) / world.scale.x,
+        y: ((clientY - rect.top) * scaleY - world.position.y) / world.scale.y,
+      };
+    },
+    context: pickContext,
+    player: () => ({ x: walk.x, y: walk.y, floor: walk.floor }),
+    tileSizePx,
+    storeyHeightPx,
+    onIntent: (intent) => onIntent?.(intent),
+    onIgnored: (objectId) => onIgnored?.(objectId),
+    onHighlightChange: setHighlight,
+  });
 
   app.ticker.add((ticker) => {
     const direction = keyboard.direction();
@@ -762,7 +992,7 @@ export async function mountDemoScene(
       walk,
       direction,
       ticker.deltaMS,
-      collisionGrid,
+      worldIndex,
       movementConfig,
       transitions,
     );
@@ -778,6 +1008,7 @@ export async function mountDemoScene(
     const after = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
     if (after.x !== before.x || after.y !== before.y) {
       applyDepthOrder(poolContainer, members, renderOrder);
+      reapplyHighlight();
       onOrderChange?.(renderOrder);
     }
 
@@ -789,12 +1020,27 @@ export async function mountDemoScene(
       lastCellX = walk.cellX;
       lastCellY = walk.cellY;
       applyVisibilityFor(walk.cellX, walk.cellY, walk.floor, false);
+      refreshHiddenObjects();
     }
+
+    // The hover has to follow the world, not only the mouse: movement is
+    // keyboard-only, so walking into or out of an object's reach with the
+    // mouse held still is the normal way a player meets the affordance.
+    // Reach is sub-cell, so this runs on every step that actually moved,
+    // not only when the player enters a new cell. It is still an event --
+    // a frame where nothing moved returns above and never reaches here.
+    pointer.refresh();
   });
 
   return {
     app,
     getRenderOrder: () => renderOrder,
+    keyboard,
+    destroy: () => {
+      detachKeyboard();
+      pointer.detach();
+      setHighlight(undefined);
+    },
   };
 }
 

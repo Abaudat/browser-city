@@ -11,5 +11,8 @@
   "negative-id",
   "zero-area-collider",
   "collider-outside-footprint",
-  "non-boolean-window"
+  "non-boolean-window",
+  "zero-area-interact-at",
+  "interact-at-outside-bound",
+  "interact-at-inside-collider"
 ]

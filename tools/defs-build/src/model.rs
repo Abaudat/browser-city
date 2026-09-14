@@ -41,6 +41,16 @@ impl<T> Located<T> {
 /// literal 16 anywhere else in this crate or a caller is a defect.
 pub const COLLIDER_SUBCELLS_PER_CELL: i64 = 16;
 
+/// How far beyond its own footprint an `interact_at` rect may reach, on
+/// every side, in whole cells (Tim's direction, story 1.9): unlike a
+/// `collider`, a reach rect is meant to extend outside the footprint (you
+/// stand *in front of* a counter), but never arbitrarily far -- an
+/// interaction you can start from across the street is not an
+/// interaction with an object. Declared once, here, and emitted into both
+/// generated artefacts by `emit.rs` -- a literal 2 anywhere else in this
+/// crate or a caller is a defect.
+pub const INTERACT_AT_MAX_REACH_CELLS: i64 = 2;
+
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RawColliderRect {
@@ -61,6 +71,14 @@ pub struct RawObject {
     /// top-left anchor cell (FR128). Absent means walkable -- there is no
     /// separate `walkable` flag anywhere.
     pub collider: Option<Spanned<RawColliderRect>>,
+    /// Story 1.9 (FR148): where a player must stand to interact with this
+    /// object -- a half-open integer rect in sub-cells relative to the
+    /// footprint's own anchor cell, the same unit a `collider` uses.
+    /// Unlike a `collider` it may reach outside the footprint (up to
+    /// [`INTERACT_AT_MAX_REACH_CELLS`] on every side). Its presence *is*
+    /// the declaration that this object has an interaction; there is no
+    /// separate `interactable` flag anywhere.
+    pub interact_at: Option<Spanned<RawColliderRect>>,
     /// Story 1.7 (FR121): a window wall tile draws semi-transparently
     /// (`render.window_alpha`, a balance key -- never a literal) and lets
     /// near-side retraction hide it exactly like any other front wall.
@@ -155,6 +173,7 @@ pub struct ObjectEntry {
     pub width: u32,
     pub height: u32,
     pub collider: Option<Located<RawColliderRect>>,
+    pub interact_at: Option<Located<RawColliderRect>>,
     pub window: bool,
 }
 
@@ -256,6 +275,8 @@ pub struct ObjectDef {
     pub width: u32,
     pub height: u32,
     pub collider: Option<ColliderRect>,
+    /// Present exactly when this object declares an interaction (FR148).
+    pub interact_at: Option<ColliderRect>,
     pub window: bool,
 }
 

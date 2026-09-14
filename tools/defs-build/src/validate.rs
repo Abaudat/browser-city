@@ -210,6 +210,73 @@ fn check_object_colliders(entries: &[ObjectEntry]) -> Result<(), DefsError> {
     Ok(())
 }
 
+/// FR148's reach rules (Tim's direction, story 1.9). A declared
+/// `interact_at` must have positive area, must not reach further than
+/// [`INTERACT_AT_MAX_REACH_CELLS`] beyond its own footprint on any side,
+/// and -- when the object also declares a `collider` -- must not lie
+/// entirely inside it, because a player can never stand inside a
+/// collider, so such a rect could never be reached. Widened to `i64`
+/// throughout, exactly like the collider check, so no combination of
+/// `i32` bounds can overflow a comparison.
+fn check_object_interact_at(entries: &[ObjectEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        let Some(interact_at) = &e.interact_at else {
+            continue;
+        };
+        let r = interact_at.value;
+        if (r.x1 as i64) <= (r.x0 as i64) || (r.y1 as i64) <= (r.y0 as i64) {
+            return Err(DefsError::new(
+                &e.path,
+                interact_at.line,
+                interact_at.col,
+                format!(
+                    "object '{}' interact_at ({}, {})-({}, {}) has zero or negative area",
+                    e.key.value, r.x0, r.y0, r.x1, r.y1
+                ),
+            ));
+        }
+
+        let reach = INTERACT_AT_MAX_REACH_CELLS * COLLIDER_SUBCELLS_PER_CELL;
+        let max_x = e.width as i64 * COLLIDER_SUBCELLS_PER_CELL;
+        let max_y = e.height as i64 * COLLIDER_SUBCELLS_PER_CELL;
+        if (r.x0 as i64) < -reach
+            || (r.y0 as i64) < -reach
+            || (r.x1 as i64) > max_x + reach
+            || (r.y1 as i64) > max_y + reach
+        {
+            return Err(DefsError::new(
+                &e.path,
+                interact_at.line,
+                interact_at.col,
+                format!(
+                    "object '{}' interact_at ({}, {})-({}, {}) reaches further than {INTERACT_AT_MAX_REACH_CELLS} cell(s) beyond its own {}x{} footprint",
+                    e.key.value, r.x0, r.y0, r.x1, r.y1, e.width, e.height
+                ),
+            ));
+        }
+
+        if let Some(collider) = &e.collider {
+            let c = collider.value;
+            let inside = (r.x0 as i64) >= (c.x0 as i64)
+                && (r.y0 as i64) >= (c.y0 as i64)
+                && (r.x1 as i64) <= (c.x1 as i64)
+                && (r.y1 as i64) <= (c.y1 as i64);
+            if inside {
+                return Err(DefsError::new(
+                    &e.path,
+                    interact_at.line,
+                    interact_at.col,
+                    format!(
+                        "object '{}' interact_at ({}, {})-({}, {}) lies entirely inside its own collider ({}, {})-({}, {}) -- it could never be reached",
+                        e.key.value, r.x0, r.y0, r.x1, r.y1, c.x0, c.y0, c.x1, c.y1
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn check_balance_range(entries: &[BalanceEntry]) -> Result<(), DefsError> {
     for e in entries {
         if e.value.value < e.min || e.value.value > e.max {
@@ -248,6 +315,7 @@ pub fn validate(raw: &RawDefs) -> Result<Defs, DefsError> {
     check_balance_key_dupes(&raw.balance)?;
 
     check_object_colliders(&raw.objects)?;
+    check_object_interact_at(&raw.objects)?;
 
     let item_keys: BTreeSet<&str> = raw.items.iter().map(|i| i.key.value.as_str()).collect();
     check_recipe_item_refs(&raw.recipes, &item_keys)?;
@@ -270,6 +338,12 @@ pub fn validate(raw: &RawDefs) -> Result<Defs, DefsError> {
             width: o.width,
             height: o.height,
             collider: o.collider.as_ref().map(|c| ColliderRect {
+                x0: c.value.x0,
+                y0: c.value.y0,
+                x1: c.value.x1,
+                y1: c.value.y1,
+            }),
+            interact_at: o.interact_at.as_ref().map(|c| ColliderRect {
                 x0: c.value.x0,
                 y0: c.value.y0,
                 x1: c.value.x1,
@@ -564,6 +638,80 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let defs = validate(&raw).unwrap();
         assert_eq!(defs.objects[0].collider, None);
+    }
+
+    #[test]
+    fn a_zero_area_interact_at_is_rejected() {
+        let f = files(&[(
+            "defs/objects/x.toml",
+            "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ninteract_at = { x0 = 0, y0 = 16, x1 = 0, y1 = 32 }\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw).unwrap_err();
+        assert!(err.message.contains("zero or negative area"));
+        assert!(err.message.contains("interact_at"));
+    }
+
+    #[test]
+    fn an_interact_at_beyond_the_reach_bound_is_rejected() {
+        // The bound is INTERACT_AT_MAX_REACH_CELLS cells beyond the
+        // footprint on every side; one sub-cell further out is refused.
+        let beyond = -(INTERACT_AT_MAX_REACH_CELLS * COLLIDER_SUBCELLS_PER_CELL) - 1;
+        let f = files(&[(
+            "defs/objects/x.toml",
+            &format!(
+                "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ninteract_at = {{ x0 = {beyond}, y0 = 0, x1 = 16, y1 = 16 }}\n"
+            ),
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw).unwrap_err();
+        assert!(err.message.contains("reaches further than"));
+    }
+
+    #[test]
+    fn an_interact_at_exactly_at_the_reach_bound_is_accepted() {
+        let at = -(INTERACT_AT_MAX_REACH_CELLS * COLLIDER_SUBCELLS_PER_CELL);
+        let f = files(&[(
+            "defs/objects/x.toml",
+            &format!(
+                "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ninteract_at = {{ x0 = {at}, y0 = 0, x1 = 16, y1 = 16 }}\n"
+            ),
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let defs = validate(&raw).unwrap();
+        assert_eq!(defs.objects[0].interact_at.unwrap().x0, at as i32);
+    }
+
+    #[test]
+    fn an_interact_at_entirely_inside_the_objects_own_collider_is_rejected() {
+        let f = files(&[(
+            "defs/objects/x.toml",
+            "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ncollider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }\ninteract_at = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw).unwrap_err();
+        assert!(err.message.contains("could never be reached"));
+    }
+
+    #[test]
+    fn an_interact_at_reaching_outside_its_own_collider_is_accepted() {
+        let f = files(&[(
+            "defs/objects/x.toml",
+            "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ncollider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }\ninteract_at = { x0 = 0, y0 = 16, x1 = 16, y1 = 32 }\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        assert!(validate(&raw).is_ok());
+    }
+
+    #[test]
+    fn an_absent_interact_at_stays_none() {
+        let f = files(&[(
+            "defs/objects/x.toml",
+            "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let defs = validate(&raw).unwrap();
+        assert_eq!(defs.objects[0].interact_at, None);
     }
 
     #[test]

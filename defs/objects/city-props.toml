@@ -7,6 +7,10 @@ height = 1
 # half a cell wide and tall, centred in the cell. Sub-cells relative to
 # the anchor cell's top-left, COLLIDER_SUBCELLS_PER_CELL (16) per cell.
 collider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }
+# FR148: where a player must stand to interact with the bin -- the whole
+# cell plus a quarter-cell skirt on every side, so you can use it from any
+# direction without standing exactly on its own collider.
+interact_at = { x0 = -4, y0 = -4, x1 = 20, y1 = 20 }
 
 [[object]]
 id = 2
@@ -19,6 +23,11 @@ id = 3
 key = "shop_counter"
 width = 3
 height = 1
+# The whole cell of the counter's own footprint blocks (you cannot walk
+# through a counter), and FR148's reach is the customer side of it: the
+# full-width row immediately south, outside the footprint entirely.
+collider = { x0 = 0, y0 = 0, x1 = 48, y1 = 16 }
+interact_at = { x0 = 0, y0 = 16, x1 = 48, y1 = 32 }
 
 [[object]]
 id = 4

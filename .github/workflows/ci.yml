@@ -371,6 +371,8 @@ jobs:
         run: bash ../scripts/ci/check-layer-table-current.sh
       - name: story 1.7 FR121, no masking/filter/render-texture construct under client/src/
         run: bash ../scripts/ci/check-no-masks.sh
+      - name: story 1.9 FR148, the input layer cannot reach a procedure or an interaction module
+        run: bash ../scripts/ci/check-input-boundary.sh
       # The cargo-free half of check-trace-matrix.sh: the client inv_*
       # symmetry and the Guard-section path checks, at effectively zero
       # cost -- Tim's direction, so a client-only PR is never gated on
@@ -466,6 +468,19 @@ jobs:
         run: npx playwright install-deps chromium
       - working-directory: client
         run: npm run test:e2e
+      # The affordance grammar is a judgement call about what the player
+      # sees, and a pixel count is no substitute for looking at it -- the
+      # intents spec leaves these behind on every run, pass or fail, so
+      # art direction can review the real thing from the run page.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: story-1.9-shots
+          path: client/test-results/story-1.9-shots
+          if-no-files-found: warn
+          # Review evidence, not a record: a week is long enough to look
+          # at and short enough not to accumulate.
+          retention-days: 7
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:

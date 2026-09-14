@@ -5,13 +5,26 @@
 // that `defs/objects` already declares.
 
 import type { Defs } from "../defs/types";
-import type { ColliderSource } from "./collision-grid";
+import type { ColliderRectSubcells, ColliderSource } from "./collision-grid";
+
+/** Everything the derived indexes and a pick need from one `defs/`
+ * object, in one record: the footprint every object has, the collider
+ * only some do (FR128), and the reach rect only interactable ones do
+ * (FR148). Structurally satisfies `ColliderSource` (the collision grid),
+ * `FootprintSource` (the footprint index) and `input/pick.ts`'s own
+ * `PickObjectDef`, so one map feeds all three and they can never be built
+ * from different data. */
+export interface ObjectSource extends ColliderSource {
+  readonly interactAt?: ColliderRectSubcells;
+}
 
 /** Keyed by `ObjectDef.id`, which is what a `placed_object` row's `defId`
  * column carries. An object with no `collider` is still present in the
  * map (its footprint is real); it simply contributes nothing to the grid,
- * which is FR128's rule, not a special case. */
-export function objectDefsById(defs: Defs): ReadonlyMap<number, ColliderSource> {
+ * which is FR128's rule, not a special case. An object with no
+ * `interactAt` declares no interaction, which is FR148's rule in exactly
+ * the same way. */
+export function objectDefsById(defs: Defs): ReadonlyMap<number, ObjectSource> {
   return new Map(
     defs.objects.map((object) => [
       object.id,
@@ -19,6 +32,7 @@ export function objectDefsById(defs: Defs): ReadonlyMap<number, ColliderSource> 
         width: object.width,
         height: object.height,
         ...(object.collider ? { collider: object.collider } : {}),
+        ...(object.interactAt ? { interactAt: object.interactAt } : {}),
       },
     ]),
   );

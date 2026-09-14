@@ -2,18 +2,25 @@ import { Application } from "pixi.js";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
 import { mountDemoScene } from "./demo/scene";
+import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
+import { KeyboardState } from "./input/keyboard";
 import { connect } from "./net/connection";
 import {
+  recordHighlightForE2e,
+  recordIgnoredIntentForE2e,
+  recordIntentForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerPositionForE2e,
   recordRenderOrderForE2e,
+  recordViewTransformForE2e,
   recordVisibilityForE2e,
 } from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
 import { bootstrapRenderer } from "./render/bootstrap";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
+import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, windowDefIds } from "./world/object-defs";
 
@@ -79,6 +86,30 @@ async function startDemoScene(): Promise<void> {
   await app.init({ preference: "webgpu", background: "#284028" });
   mount.appendChild(app.canvas);
 
+  // FR149: the player's own bindings, or the defaults if storage is
+  // empty, blocked or unreadable -- never an error the player has to see
+  // or a game that will not start. Read exactly once, so the keyboard and
+  // the menu can never start out disagreeing about what is bound.
+  const storage = resolveStorage(() => window.localStorage);
+  const bindings = loadBindings(storage);
+  const keyboard = new KeyboardState(bindings);
+
+  // FR151's options menu. It takes the keyboard while it is open, so a
+  // key pressed to rebind never also walks the avatar; the world behind
+  // it keeps running, because the city never pauses.
+  mountOptionsMenu({
+    container: document.body,
+    initialBindings: bindings,
+    onBindingsChange: (bindings) => {
+      keyboard.setBindings(bindings);
+      saveBindings(storage, bindings);
+    },
+    onOpenChange: (open) => {
+      if (open) keyboard.suspend();
+      else keyboard.resume();
+    },
+  });
+
   // The render path's own resort event drives this hook directly
   // (Quentin's direction) -- never a ticker polling `getRenderOrder()`
   // every frame to see whether it changed.
@@ -94,6 +125,15 @@ async function startDemoScene(): Promise<void> {
     onPlayerMove: recordPlayerPositionForE2e,
     onVisibilityChange: recordVisibilityForE2e,
     onMasksChecked: recordMasksCheckedForE2e,
+    keyboard,
+    // FR148: the intent sink. Nothing consumes an intent yet -- the
+    // procedure interaction model is Epic 8's, deliberately unresolved --
+    // so the only consumer today is the e2e observation hook. Swapping
+    // this function is the whole of what Epic 8 has to do here.
+    onIntent: recordIntentForE2e,
+    onIgnored: recordIgnoredIntentForE2e,
+    onViewTransform: recordViewTransformForE2e,
+    onHighlightChange: recordHighlightForE2e,
   });
 }
 

@@ -149,6 +149,25 @@ fn a_collider_outside_its_footprint_is_named() {
 }
 
 #[test]
+fn a_zero_area_interact_at_is_named() {
+    let err = build_err("zero-area-interact-at");
+    assert!(err.message.contains("interact_at"));
+    assert!(err.message.contains("zero or negative area"));
+}
+
+#[test]
+fn an_interact_at_beyond_the_reach_bound_is_named() {
+    let err = build_err("interact-at-outside-bound");
+    assert!(err.message.contains("reaches further than"));
+}
+
+#[test]
+fn an_interact_at_inside_its_own_collider_is_named() {
+    let err = build_err("interact-at-inside-collider");
+    assert!(err.message.contains("could never be reached"));
+}
+
+#[test]
 fn a_non_boolean_window_is_named() {
     let err = build_err("non-boolean-window");
     assert!(err.message.contains("expected") || err.message.contains("boolean"));
@@ -182,6 +201,9 @@ fn every_known_category_has_a_fixture_directory() {
         "zero-area-collider",
         "collider-outside-footprint",
         "non-boolean-window",
+        "zero-area-interact-at",
+        "interact-at-outside-bound",
+        "interact-at-inside-collider",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

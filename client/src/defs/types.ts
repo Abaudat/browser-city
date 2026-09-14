@@ -23,6 +23,13 @@ export interface ObjectDef {
   /** Absent means walkable (FR128) -- there is no separate `walkable`
    * flag anywhere. */
   readonly collider?: ColliderRect;
+  /** Story 1.9 (FR148): where a player must stand for this object to be
+   * interactable -- the same half-open sub-cell rect a `collider` uses,
+   * relative to the same anchor cell, but allowed to reach outside the
+   * footprint (up to `Defs.interactAtMaxReachCells` on every side).
+   * Absent means this object declares no interaction at all -- there is
+   * no separate `interactable` flag anywhere. */
+  readonly interactAt?: ColliderRect;
   /** Story 1.7 (FR121): a window wall tile draws semi-transparently
    * (`render.window_alpha`) and retracts like any other front wall. */
   readonly window: boolean;
@@ -64,6 +71,10 @@ export interface Defs {
    * declared in (story 1.8) -- generated once by `tools/defs-build` into
    * both artefacts, never a client-side literal. */
   readonly colliderSubcellsPerCell: number;
+  /** How far beyond its own footprint an `interactAt` rect may reach, in
+   * whole cells (story 1.9) -- generated once by `tools/defs-build` into
+   * both artefacts, never a client-side literal. */
+  readonly interactAtMaxReachCells: number;
   readonly objects: readonly ObjectDef[];
   readonly items: readonly ItemDef[];
   readonly recipes: readonly RecipeDef[];

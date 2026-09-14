@@ -24,10 +24,10 @@ import type { Vec2 } from "../../../src/world/movement";
 import { step } from "../../../src/world/movement";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
 import {
-  demoCollisionGrid,
   demoMovementConfig,
   demoOwnershipIndex,
   demoWindowDefIds,
+  demoWorldIndex,
   lamppostRestY,
 } from "./demo-world";
 import {
@@ -242,7 +242,7 @@ describe("the player can never walk off the drawn world", () => {
   // own boundary colliders; this walks the real resolver against the real
   // grid to prove that ring is actually closed, rather than trusting the
   // rect list by eye.
-  const grid = demoCollisionGrid();
+  const grid = demoWorldIndex();
   const config = demoMovementConfig();
 
   /** The drawn ground: interior floor and pavement, in screen pixels.
