@@ -411,6 +411,11 @@ impl_autoinc_row!(
     Citizen {
         citizen_id: 0,
         created_at: Timestamp::UNIX_EPOCH,
+        appearance_body: 0,
+        appearance_eyes: 0,
+        appearance_outfit: 0,
+        appearance_hairstyle: 0,
+        appearance_accessory: 0,
     }
 );
 impl_autoinc_row!(

@@ -1,0 +1,23 @@
+{
+  "generated_by": "tools/defs-build -- do not edit by hand",
+  "defs_version": "test",
+  "collider_subcells_per_cell": 16,
+  "interact_at_max_reach_cells": 2,
+  "objects": [],
+  "items": [],
+  "recipes": [],
+  "professions": [],
+  "chains": [],
+  "balance": [],
+  "bodies": [],
+  "eyes": [],
+  "hairstyles": [],
+  "outfits": [],
+  "accessories": [
+    { "id": 1, "key": "jacket", "family": "adult", "sheet": "x/jacket.png", "pool": "role_only" }
+  ],
+  "appearance_layouts": [],
+  "uniforms": [
+    { "id": 1, "key": "ghost", "profession": "nonexistent-profession", "accessory": "jacket" }
+  ]
+}

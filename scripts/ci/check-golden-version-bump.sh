@@ -56,12 +56,17 @@ fi
 
 FAILED=0
 CHANGED_RNG=""
+CHANGED_APPEARANCE=""
 while IFS= read -r path; do
   [ -n "$path" ] || continue
   base_name="$(basename "$path")"
   case "$base_name" in
     rng_*.golden)
       CHANGED_RNG="$CHANGED_RNG
+$path"
+      ;;
+    appearance_*.golden)
+      CHANGED_APPEARANCE="$CHANGED_APPEARANCE
 $path"
       ;;
     codes_*.golden)
@@ -92,6 +97,22 @@ if [ -n "$CHANGED_RNG" ]; then
     FAILED=1
   else
     echo "check-golden-version-bump: golden changed alongside an RNG_VERSION bump -- ok" >&2
+  fi
+fi
+
+if [ -n "$CHANGED_APPEARANCE" ]; then
+  CHANGED_APPEARANCE="$(printf '%s\n' "$CHANGED_APPEARANCE" | sed '/^$/d')"
+  CHANGED_APPEARANCE_VERSION="$(git diff --name-only "$MERGE_BASE" HEAD -- 'server/sim/src/appearance.rs')"
+  if [ -z "$CHANGED_APPEARANCE_VERSION" ]; then
+    echo "check-golden-version-bump: FAIL -- golden(s) changed with no APPEARANCE_VERSION bump:" >&2
+    printf '%s\n' "$CHANGED_APPEARANCE" >&2
+    FAILED=1
+  elif ! git diff "$MERGE_BASE" HEAD -- 'server/sim/src/appearance.rs' | grep -qE '^[+-]pub const APPEARANCE_VERSION'; then
+    echo "check-golden-version-bump: FAIL -- golden(s) changed but APPEARANCE_VERSION did not:" >&2
+    printf '%s\n' "$CHANGED_APPEARANCE" >&2
+    FAILED=1
+  else
+    echo "check-golden-version-bump: golden changed alongside an APPEARANCE_VERSION bump -- ok" >&2
   fi
 fi
 

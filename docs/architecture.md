@@ -442,12 +442,53 @@ reorders a pool member.
 Retraction is keyed on `buildingId` alone, never `roomId`: a terrace shop
 is its own building, not a room of a shared one.
 
+### Appearance
+
+A citizen's appearance is five stored `u16` part ids -- `body`, `eyes`,
+`outfit`, `hairstyle`, `accessory` (FR61) -- `0` meaning "no layer" on
+`hairstyle`/`accessory` only (`body`/`eyes`/`outfit` are never absent).
+Generated exactly once, server-side, by `sim::appearance::generate` at
+citizen creation from the citizen id alone (`sim::rng`, seeded by that id
+plus the module's own stream salt) and stored; nothing ever re-derives an
+existing citizen's tuple, so appending a part to the manifest can never
+change an existing face. `defs/appearance/` declares five part kinds
+(`body`, `eyes`, `outfit`, `hairstyle`, `accessory`), a `[[uniform]]`
+table (FR62: a profession's fixed outfit/accessory override, resolved at
+render time only and never written back into the stored tuple -- a
+citizen's own civilian look never changes when a shift starts or ends),
+and one `[[appearance_layout]]` per family (`adult`/`kid`): cell size,
+direction order, and one row per animation this game uses today (`idle`,
+`walk`). A layout is only ever shared *within* one family. `tools/
+defs-build` enforces the layout invariant by reading each part's own PNG
+`IHDR` (width/height only, no `png` crate) and rejecting a sheet too
+small to hold every declared `(animation, direction, frame)` cell for its
+family -- verified once by that check, never assumed.
+
+Rendering composites the five layers (body -> eyes -> outfit ->
+hairstyle -> accessory, skipping `0`) into one compact strip -- only the
+rows/directions/frames this game actually uses, repacked, never a copy of
+the vendor sheet's own much larger canvas -- via `OffscreenCanvas`
+`drawImage` calls, nearest-neighbour sampled, wrapped in one Pixi
+`Texture.from` (never a `RenderTexture`, still banned anywhere under
+`client/src/`, "Visibility" above). `client/src/render/appearance/`
+holds this: `frame-rect.ts` (pure pixel math), `composite.ts` (pure
+layer-order/cache-key logic), `composite-canvas.ts` and `part-sheets.ts`
+(the two real-canvas/Pixi/Vite-`import.meta.glob` adapters, excluded
+from `client/vitest.config.ts`'s coverage gate for exactly that reason)
+and `appearance-cache.ts` (a reference-counted, bounded LRU cache keyed
+by the tuple plus any uniform override -- one composite texture per
+unique key, evicting least-recently-used entries with no outstanding
+reference past an engineering cap, so a busy street's distinct tuples
+can never leak GPU memory unboundedly). A character on screen is one
+`Sprite` in the `characters`-rank pool.
+
 ## Definitions (`defs/`)
 
 `defs/` is the single source of truth for game content data (NFR31),
 subdivided into `objects/`, `items/`, `recipes/`, `professions/`,
-`chains/` and `balance/`, each a directory of TOML files (the naming
-table's `city-props.toml`). Neither build target writes here and neither
+`chains/`, `appearance/` and `balance/`, each a directory of TOML files
+(the naming table's `city-props.toml`). Neither build target writes here
+and neither
 runs the generator: `tools/defs-build/` is a standalone Rust binary crate
 outside both the server and client dependency graphs (its own
 `Cargo.toml` with an empty `[workspace]` table, its own committed
@@ -461,9 +502,10 @@ cache-busted and compared against the FR147 handshake's own
 `defs_version`. Both begin with a generated-file marker and are never
 hand-edited.
 
-An object, item, recipe, profession or chain declares an explicit,
-permanent integer id in its own file -- never one derived from file
-order, position or a hash. An id or a key, once merged, is never
+An object, item, recipe, profession, chain, or appearance part/layout/
+uniform declares an explicit, permanent integer id in its own file --
+never one derived from file order, position or a hash. An id or a key,
+once merged, is never
 renumbered, reused or retired: `tools/defs-build/goldens/defs-manifest.
 golden` pins the append-only `kind id key` list, guarded by
 `scripts/ci/check-defs-ids-append-only.sh`. `defs/balance/` entries seed
@@ -476,7 +518,10 @@ those land; their own manifests belong under `defs/`, not beside their
 producing pipeline, so that they fold into this one version rather than
 versioning independently. `defs_version` is computed, never hand-bumped,
 identical in both generated artefacts, and guarded by
-`scripts/ci/check-defs-version-bump.sh`.
+`scripts/ci/check-defs-version-bump.sh`. It does not hash the
+`ModernTileset/` PNGs themselves: vendor art is treated as immutable, and
+replacing a sheet in place (rather than adding a new one under a new
+part id) is not a change `defs_version` detects.
 
 The server and client each parse the generated source with their own
 independent implementation (NFR30) -- deliberate duplication, not an

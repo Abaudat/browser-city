@@ -22,6 +22,13 @@ function validPayload(): Record<string, unknown> {
     professions: [{ id: 1, key: "sanitation_worker" }],
     chains: [{ id: 1, key: "plastic_bottle", links: ["sanitation_worker"] }],
     balance: [{ key: "citizen.bar_decay.rest", value: 10, min: 0, max: 100 }],
+    bodies: [],
+    eyes: [],
+    hairstyles: [],
+    outfits: [],
+    accessories: [],
+    appearance_layouts: [],
+    uniforms: [],
   };
 }
 
@@ -379,6 +386,193 @@ describe("parseDefs", () => {
         },
       ),
     );
+  });
+});
+
+describe("parseDefs appearance (story 1.10)", () => {
+  const LAYOUT = {
+    id: 1,
+    key: "adult",
+    family: "adult",
+    cell_width: 16,
+    cell_height: 32,
+    directions: ["down"],
+    rows: [{ animation: "idle", row: 0, frames_per_direction: 1 }],
+  };
+  const BODY = { id: 1, key: "body_01", family: "adult", sheet: "x/body.png" };
+  const EYES = { id: 1, key: "eyes_01", family: "adult", sheet: "x/eyes.png" };
+  const OUTFIT = {
+    id: 1,
+    key: "outfit_01",
+    family: "adult",
+    sheet: "x/outfit.png",
+    pool: "civilian",
+    hides_hairstyle: false,
+  };
+  const HAIRSTYLE = {
+    id: 1,
+    key: "hair_01",
+    family: "adult",
+    sheet: "x/hair.png",
+    style: 1,
+    color: 1,
+    rare: false,
+  };
+  const ROLE_ACCESSORY = {
+    id: 1,
+    key: "jacket",
+    family: "adult",
+    sheet: "x/jacket.png",
+    pool: "role_only",
+  };
+  const CIVILIAN_ACCESSORY = {
+    id: 2,
+    key: "backpack",
+    family: "adult",
+    sheet: "x/backpack.png",
+    pool: "civilian",
+  };
+
+  function appearancePayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      ...validPayload(),
+      appearance_layouts: [LAYOUT],
+      bodies: [BODY],
+      eyes: [EYES],
+      outfits: [OUTFIT],
+      hairstyles: [HAIRSTYLE],
+      accessories: [ROLE_ACCESSORY, CIVILIAN_ACCESSORY],
+      uniforms: [],
+      ...overrides,
+    };
+  }
+
+  it("parses a full, self-consistent appearance tree", () => {
+    const defs = parseDefs(appearancePayload());
+    expect(defs.bodies).toEqual([BODY]);
+    expect(defs.appearanceLayouts[0]?.family).toBe("adult");
+  });
+
+  it("rejects an unknown family value", () => {
+    const payload = appearancePayload({ bodies: [{ ...BODY, family: "teen" }] });
+    expect(() => parseDefs(payload)).toThrow(/expected 'adult' or 'kid'/);
+  });
+
+  it("rejects an unknown pool value", () => {
+    const payload = appearancePayload({ outfits: [{ ...OUTFIT, pool: "bogus" }] });
+    expect(() => parseDefs(payload)).toThrow(/expected 'civilian', 'role_only' or 'costume'/);
+  });
+
+  for (const kind of ["bodies", "eyes", "hairstyles", "outfits", "accessories", "appearance_layouts"] as const) {
+    it(`rejects id 0 for '${kind}'`, () => {
+      const template: Record<string, Record<string, unknown>> = {
+        bodies: BODY,
+        eyes: EYES,
+        hairstyles: HAIRSTYLE,
+        outfits: OUTFIT,
+        accessories: ROLE_ACCESSORY,
+        appearance_layouts: LAYOUT,
+      };
+      const payload = appearancePayload({ [kind]: [{ ...template[kind], id: 0 }] });
+      expect(() => parseDefs(payload)).toThrow(/declares id 0/);
+    });
+  }
+
+  it("rejects duplicate ids within one appearance kind", () => {
+    const payload = appearancePayload({ bodies: [BODY, { ...BODY, key: "body_02" }] });
+    expect(() => parseDefs(payload)).toThrow(/duplicate body id/);
+  });
+
+  it("rejects duplicate keys within one appearance kind even with distinct ids", () => {
+    const payload = appearancePayload({ bodies: [BODY, { ...BODY, id: 2 }] });
+    expect(() => parseDefs(payload)).toThrow(/duplicate body key/);
+  });
+
+  it("rejects a part naming a family with no matching appearance_layout", () => {
+    const payload = appearancePayload({ bodies: [{ ...BODY, family: "kid" }] });
+    expect(() => parseDefs(payload)).toThrow(/no appearance_layout entry declares that family/);
+  });
+
+  it("rejects two appearance_layout entries for the same family", () => {
+    const payload = appearancePayload({
+      appearance_layouts: [LAYOUT, { ...LAYOUT, id: 2, key: "adult2" }],
+    });
+    expect(() => parseDefs(payload)).toThrow(/already covered/);
+  });
+
+  it("uniform: accepts a real profession and a role_only adult accessory", () => {
+    const payload = appearancePayload({
+      uniforms: [{ id: 1, key: "u1", profession: "sanitation_worker", accessory: "jacket" }],
+    });
+    expect(() => parseDefs(payload)).not.toThrow();
+  });
+
+  it("uniform: rejects an unknown profession", () => {
+    const payload = appearancePayload({
+      uniforms: [{ id: 1, key: "u1", profession: "ghost", accessory: "jacket" }],
+    });
+    expect(() => parseDefs(payload)).toThrow(/names unknown profession/);
+  });
+
+  it("uniform: rejects a duplicate profession", () => {
+    const payload = appearancePayload({
+      uniforms: [
+        { id: 1, key: "u1", profession: "sanitation_worker", accessory: "jacket" },
+        { id: 2, key: "u2", profession: "sanitation_worker", accessory: "jacket" },
+      ],
+    });
+    expect(() => parseDefs(payload)).toThrow(/exactly one uniform per profession/);
+  });
+
+  it("uniform: rejects overriding neither outfit nor accessory", () => {
+    const payload = appearancePayload({
+      uniforms: [{ id: 1, key: "u1", profession: "sanitation_worker" }],
+    });
+    expect(() => parseDefs(payload)).toThrow(/overrides neither/);
+  });
+
+  it("uniform: rejects an unknown outfit reference", () => {
+    const payload = appearancePayload({
+      uniforms: [{ id: 1, key: "u1", profession: "sanitation_worker", outfit: "ghost" }],
+    });
+    expect(() => parseDefs(payload)).toThrow(/names unknown outfit/);
+  });
+
+  it("uniform: rejects an unknown accessory reference", () => {
+    const payload = appearancePayload({
+      uniforms: [{ id: 1, key: "u1", profession: "sanitation_worker", accessory: "ghost" }],
+    });
+    expect(() => parseDefs(payload)).toThrow(/names unknown accessory/);
+  });
+
+  it("uniform: rejects a civilian-pool accessory", () => {
+    const payload = appearancePayload({
+      uniforms: [
+        { id: 1, key: "u1", profession: "sanitation_worker", accessory: "backpack" },
+      ],
+    });
+    expect(() => parseDefs(payload)).toThrow(/not an adult role_only accessory/);
+  });
+
+  it("uniform: rejects a civilian-pool outfit", () => {
+    const payload = appearancePayload({
+      uniforms: [{ id: 1, key: "u1", profession: "sanitation_worker", outfit: "outfit_01" }],
+    });
+    expect(() => parseDefs(payload)).toThrow(/not an adult role_only outfit/);
+  });
+
+  it("uniform: accepts a role_only outfit override", () => {
+    const roleOutfit = { ...OUTFIT, id: 2, key: "role_outfit", pool: "role_only" };
+    const payload = appearancePayload({
+      outfits: [OUTFIT, roleOutfit],
+      uniforms: [{ id: 1, key: "u1", profession: "sanitation_worker", outfit: "role_outfit" }],
+    });
+    expect(() => parseDefs(payload)).not.toThrow();
+  });
+
+  it("rejects an unknown field on an appearance part", () => {
+    const payload = appearancePayload({ bodies: [{ ...BODY, bogus: 1 }] });
+    expect(() => parseDefs(payload)).toThrow(/unknown field/);
   });
 });
 

@@ -33,19 +33,46 @@ pub struct BuildOutput {
     pub id_manifest: String,
 }
 
-/// Runs every stage over an already-collected `(path, text)` file list and
-/// an already-computed `defs_version` -- the one function a caller needs
-/// once the filesystem edge has done its own job. Returns every rendered
-/// artefact, or the first [`DefsError`] found; writes nothing.
+/// Runs every stage over an already-collected `(path, text)` file list, the
+/// `(width, height)` already read from every appearance part's own `sheet`
+/// file (story 1.10; empty for a tree with no `defs/appearance/` entries),
+/// and an already-computed `defs_version` -- the one function a caller
+/// needs once the filesystem edge has done its own job. Returns every
+/// rendered artefact, or the first [`DefsError`] found; writes nothing.
 pub fn build(
     files: &[(std::path::PathBuf, String)],
+    sheet_dims: &std::collections::BTreeMap<String, (u32, u32)>,
     defs_version: &str,
 ) -> Result<BuildOutput, DefsError> {
     let raw = parse::parse_all(files)?;
-    let defs = validate::validate(&raw)?;
+    let defs = validate::validate(&raw, sheet_dims)?;
     Ok(BuildOutput {
         rust: emit::emit_rust(&defs, defs_version),
         json: emit::emit_json(&defs, defs_version),
         id_manifest: emit::emit_id_manifest(&defs),
     })
+}
+
+/// Every `sheet` path an already-parsed [`model::RawDefs`] tree references
+/// (story 1.10) -- the list a caller (the `defs-build` binary) reads real
+/// `IHDR` dimensions for via `fsio::read_png_dims` before calling
+/// [`build`]. Pure: just walks the tree `parse_all` already built.
+pub fn appearance_sheet_paths(raw: &model::RawDefs) -> Vec<String> {
+    let mut paths: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for b in &raw.bodies {
+        paths.insert(b.sheet.value.clone());
+    }
+    for e in &raw.eyes {
+        paths.insert(e.sheet.value.clone());
+    }
+    for h in &raw.hairstyles {
+        paths.insert(h.sheet.value.clone());
+    }
+    for o in &raw.outfits {
+        paths.insert(o.sheet.value.clone());
+    }
+    for a in &raw.accessories {
+        paths.insert(a.sheet.value.clone());
+    }
+    paths.into_iter().collect()
 }

@@ -51,6 +51,7 @@ enum Kind {
     Professions,
     Chains,
     Balance,
+    Appearance,
 }
 
 /// `path` must read `defs/<kind>/<name>.toml` -- the kind is the second
@@ -73,12 +74,13 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
         "professions" => Ok(Kind::Professions),
         "chains" => Ok(Kind::Chains),
         "balance" => Ok(Kind::Balance),
+        "appearance" => Ok(Kind::Appearance),
         other => Err(DefsError::new(
             path,
             1,
             1,
             format!(
-                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/recipes/professions/chains/balance"
+                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/recipes/professions/chains/balance/appearance"
             ),
         )),
     }
@@ -174,6 +176,90 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         value: located(text, &b.value),
                         min: b.min,
                         max: b.max,
+                    });
+                }
+            }
+            Kind::Appearance => {
+                let file: AppearanceFile = parse_toml(path, text)?;
+                for b in file.body {
+                    raw.bodies.push(BodyEntry {
+                        path: path.clone(),
+                        id: located(text, &b.id),
+                        key: located(text, &b.key),
+                        family: located(text, &b.family),
+                        sheet: located(text, &b.sheet),
+                    });
+                }
+                for e in file.eyes {
+                    raw.eyes.push(EyesEntry {
+                        path: path.clone(),
+                        id: located(text, &e.id),
+                        key: located(text, &e.key),
+                        family: located(text, &e.family),
+                        sheet: located(text, &e.sheet),
+                    });
+                }
+                for h in file.hairstyle {
+                    raw.hairstyles.push(HairstyleEntry {
+                        path: path.clone(),
+                        id: located(text, &h.id),
+                        key: located(text, &h.key),
+                        family: located(text, &h.family),
+                        sheet: located(text, &h.sheet),
+                        style: h.style,
+                        color: h.color,
+                        rare: h.rare,
+                    });
+                }
+                for o in file.outfit {
+                    raw.outfits.push(OutfitEntry {
+                        path: path.clone(),
+                        id: located(text, &o.id),
+                        key: located(text, &o.key),
+                        family: located(text, &o.family),
+                        sheet: located(text, &o.sheet),
+                        pool: located(text, &o.pool),
+                        hides_hairstyle: o.hides_hairstyle,
+                    });
+                }
+                for a in file.accessory {
+                    raw.accessories.push(AccessoryEntry {
+                        path: path.clone(),
+                        id: located(text, &a.id),
+                        key: located(text, &a.key),
+                        family: located(text, &a.family),
+                        sheet: located(text, &a.sheet),
+                        pool: located(text, &a.pool),
+                    });
+                }
+                for l in file.appearance_layout {
+                    raw.appearance_layouts.push(AppearanceLayoutEntry {
+                        path: path.clone(),
+                        id: located(text, &l.id),
+                        key: located(text, &l.key),
+                        family: located(text, &l.family),
+                        cell_width: l.cell_width,
+                        cell_height: l.cell_height,
+                        directions: l.directions,
+                        rows: l
+                            .rows
+                            .into_iter()
+                            .map(|r| AppearanceLayoutRowEntry {
+                                animation: r.animation,
+                                row: r.row,
+                                frames_per_direction: r.frames_per_direction,
+                            })
+                            .collect(),
+                    });
+                }
+                for u in file.uniform {
+                    raw.uniforms.push(UniformEntry {
+                        path: path.clone(),
+                        id: located(text, &u.id),
+                        key: located(text, &u.key),
+                        profession: located(text, &u.profession),
+                        outfit: u.outfit,
+                        accessory: u.accessory,
                     });
                 }
             }

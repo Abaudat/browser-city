@@ -1,0 +1,34 @@
+[[body]]
+id = 1
+key = "body_test"
+family = "adult"
+sheet = "fixtures/appearance/body-test.png"
+
+[[eyes]]
+id = 1
+key = "eyes_test"
+family = "adult"
+sheet = "fixtures/appearance/eyes-test.png"
+
+[[outfit]]
+id = 1
+key = "outfit_test"
+family = "adult"
+sheet = "fixtures/appearance/outfit-test.png"
+pool = "civilian"
+
+[[hairstyle]]
+id = 1
+key = "hair_test"
+family = "adult"
+sheet = "fixtures/appearance/hair-test.png"
+style = 1
+color = 1
+rare = false
+
+[[accessory]]
+id = 1
+key = "accessory_test"
+family = "adult"
+sheet = "fixtures/appearance/accessory-test.png"
+pool = "role_only"

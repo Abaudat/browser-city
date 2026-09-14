@@ -14,7 +14,7 @@ mod support;
 
 use std::path::{Path, PathBuf};
 
-use support::{build_err, merged_tree, read_tree, valid_dir};
+use support::{appearance_sheet_dims, build_err, merged_tree, read_tree, valid_dir};
 
 #[test]
 fn toml_syntax_error_names_the_offending_file_and_line() {
@@ -173,6 +173,31 @@ fn a_non_boolean_window_is_named() {
     assert!(err.message.contains("expected") || err.message.contains("boolean"));
 }
 
+/// Story 1.10 (Tim's direction): id 0 is never a valid declared appearance
+/// part id -- it is the runtime "no layer" sentinel.
+#[test]
+fn an_appearance_part_declaring_id_zero_is_named() {
+    let err = build_err("appearance-id-zero");
+    assert!(err.message.contains("declares id 0"));
+}
+
+/// Story 1.10: a part declaring a family with no matching
+/// `[[appearance_layout]]` is named, not silently matched to the wrong
+/// family's grid.
+#[test]
+fn an_appearance_part_naming_a_family_with_no_layout_is_named() {
+    let err = build_err("appearance-family-mismatch");
+    assert!(err.message.contains("no [[appearance_layout]] entry"));
+}
+
+/// Story 1.10 (Artie's direction): a `[[uniform]]` naming an unknown
+/// profession is named, exactly like a chain naming an unknown profession.
+#[test]
+fn a_uniform_naming_an_unknown_profession_is_named() {
+    let err = build_err("appearance-dangling-uniform-profession");
+    assert!(err.message.contains("names unknown profession"));
+}
+
 /// Every category this module lists above has its own fixture directory
 /// under `tests/fixtures/invalid/` -- so a category added to one and not
 /// the other is a hard failure here, not a silent gap. `non-integer-id`
@@ -204,6 +229,9 @@ fn every_known_category_has_a_fixture_directory() {
         "zero-area-interact-at",
         "interact-at-outside-bound",
         "interact-at-inside-collider",
+        "appearance-id-zero",
+        "appearance-family-mismatch",
+        "appearance-dangling-uniform-profession",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)
@@ -250,7 +278,7 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
         std::fs::write(&manifest_out, "sentinel manifest\n").unwrap();
 
         let files = merged_tree(category);
-        let result = defs_build::build(&files, "test-version");
+        let result = defs_build::build(&files, &appearance_sheet_dims(), "test-version");
         assert!(result.is_err(), "'{category}' was expected to fail");
         if let Ok(output) = result {
             defs_build::fsio::atomic_write(&rust_out, &output.rust).unwrap();
@@ -282,6 +310,6 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
 #[test]
 fn the_valid_base_tree_builds_cleanly() {
     let files = read_tree(&valid_dir());
-    let result = defs_build::build(&files, "test-version");
+    let result = defs_build::build(&files, &appearance_sheet_dims(), "test-version");
     assert!(result.is_ok(), "valid fixture failed: {:?}", result.err());
 }

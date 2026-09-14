@@ -1,0 +1,2070 @@
+[[hairstyle]]
+id = 1
+key = "hairstyle_01_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_01.png"
+style = 1
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 2
+key = "hairstyle_01_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_02.png"
+style = 1
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 3
+key = "hairstyle_01_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_03.png"
+style = 1
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 4
+key = "hairstyle_01_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_04.png"
+style = 1
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 5
+key = "hairstyle_01_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_05.png"
+style = 1
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 6
+key = "hairstyle_01_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_06.png"
+style = 1
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 7
+key = "hairstyle_01_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_07.png"
+style = 1
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 8
+key = "hairstyle_02_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_01.png"
+style = 2
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 9
+key = "hairstyle_02_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_02.png"
+style = 2
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 10
+key = "hairstyle_02_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_03.png"
+style = 2
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 11
+key = "hairstyle_02_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_04.png"
+style = 2
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 12
+key = "hairstyle_02_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_05.png"
+style = 2
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 13
+key = "hairstyle_02_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_06.png"
+style = 2
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 14
+key = "hairstyle_02_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_07.png"
+style = 2
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 15
+key = "hairstyle_03_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_01.png"
+style = 3
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 16
+key = "hairstyle_03_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_02.png"
+style = 3
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 17
+key = "hairstyle_03_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_03.png"
+style = 3
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 18
+key = "hairstyle_03_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_04.png"
+style = 3
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 19
+key = "hairstyle_03_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_05.png"
+style = 3
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 20
+key = "hairstyle_03_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_06.png"
+style = 3
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 21
+key = "hairstyle_03_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_07.png"
+style = 3
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 22
+key = "hairstyle_04_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_01.png"
+style = 4
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 23
+key = "hairstyle_04_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_02.png"
+style = 4
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 24
+key = "hairstyle_04_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_03.png"
+style = 4
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 25
+key = "hairstyle_04_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_04.png"
+style = 4
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 26
+key = "hairstyle_04_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_05.png"
+style = 4
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 27
+key = "hairstyle_04_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_06.png"
+style = 4
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 28
+key = "hairstyle_04_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_07.png"
+style = 4
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 29
+key = "hairstyle_05_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_01.png"
+style = 5
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 30
+key = "hairstyle_05_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_02.png"
+style = 5
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 31
+key = "hairstyle_05_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_03.png"
+style = 5
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 32
+key = "hairstyle_05_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_04.png"
+style = 5
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 33
+key = "hairstyle_05_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_05.png"
+style = 5
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 34
+key = "hairstyle_05_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_06.png"
+style = 5
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 35
+key = "hairstyle_05_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_07.png"
+style = 5
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 36
+key = "hairstyle_06_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_01.png"
+style = 6
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 37
+key = "hairstyle_06_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_02.png"
+style = 6
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 38
+key = "hairstyle_06_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_03.png"
+style = 6
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 39
+key = "hairstyle_06_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_04.png"
+style = 6
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 40
+key = "hairstyle_06_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_05.png"
+style = 6
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 41
+key = "hairstyle_06_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_06.png"
+style = 6
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 42
+key = "hairstyle_06_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_07.png"
+style = 6
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 43
+key = "hairstyle_07_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_01.png"
+style = 7
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 44
+key = "hairstyle_07_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_02.png"
+style = 7
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 45
+key = "hairstyle_07_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_03.png"
+style = 7
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 46
+key = "hairstyle_07_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_04.png"
+style = 7
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 47
+key = "hairstyle_07_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_05.png"
+style = 7
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 48
+key = "hairstyle_07_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_06.png"
+style = 7
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 49
+key = "hairstyle_07_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_07.png"
+style = 7
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 50
+key = "hairstyle_08_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_01.png"
+style = 8
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 51
+key = "hairstyle_08_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_02.png"
+style = 8
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 52
+key = "hairstyle_08_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_03.png"
+style = 8
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 53
+key = "hairstyle_08_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_04.png"
+style = 8
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 54
+key = "hairstyle_08_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_05.png"
+style = 8
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 55
+key = "hairstyle_08_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_06.png"
+style = 8
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 56
+key = "hairstyle_08_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_07.png"
+style = 8
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 57
+key = "hairstyle_09_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_01.png"
+style = 9
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 58
+key = "hairstyle_09_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_02.png"
+style = 9
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 59
+key = "hairstyle_09_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_03.png"
+style = 9
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 60
+key = "hairstyle_09_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_04.png"
+style = 9
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 61
+key = "hairstyle_09_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_05.png"
+style = 9
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 62
+key = "hairstyle_09_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_06.png"
+style = 9
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 63
+key = "hairstyle_09_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_07.png"
+style = 9
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 64
+key = "hairstyle_10_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_01.png"
+style = 10
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 65
+key = "hairstyle_10_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_02.png"
+style = 10
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 66
+key = "hairstyle_10_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_03.png"
+style = 10
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 67
+key = "hairstyle_10_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_04.png"
+style = 10
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 68
+key = "hairstyle_10_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_05.png"
+style = 10
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 69
+key = "hairstyle_10_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_06.png"
+style = 10
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 70
+key = "hairstyle_10_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_07.png"
+style = 10
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 71
+key = "hairstyle_11_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_01.png"
+style = 11
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 72
+key = "hairstyle_11_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_02.png"
+style = 11
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 73
+key = "hairstyle_11_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_03.png"
+style = 11
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 74
+key = "hairstyle_11_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_04.png"
+style = 11
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 75
+key = "hairstyle_11_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_05.png"
+style = 11
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 76
+key = "hairstyle_11_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_06.png"
+style = 11
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 77
+key = "hairstyle_11_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_07.png"
+style = 11
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 78
+key = "hairstyle_12_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_01.png"
+style = 12
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 79
+key = "hairstyle_12_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_02.png"
+style = 12
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 80
+key = "hairstyle_12_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_03.png"
+style = 12
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 81
+key = "hairstyle_12_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_04.png"
+style = 12
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 82
+key = "hairstyle_12_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_05.png"
+style = 12
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 83
+key = "hairstyle_12_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_06.png"
+style = 12
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 84
+key = "hairstyle_12_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_07.png"
+style = 12
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 85
+key = "hairstyle_13_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_01.png"
+style = 13
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 86
+key = "hairstyle_13_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_02.png"
+style = 13
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 87
+key = "hairstyle_13_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_03.png"
+style = 13
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 88
+key = "hairstyle_13_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_04.png"
+style = 13
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 89
+key = "hairstyle_13_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_05.png"
+style = 13
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 90
+key = "hairstyle_13_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_06.png"
+style = 13
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 91
+key = "hairstyle_13_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_07.png"
+style = 13
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 92
+key = "hairstyle_14_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_01.png"
+style = 14
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 93
+key = "hairstyle_14_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_02.png"
+style = 14
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 94
+key = "hairstyle_14_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_03.png"
+style = 14
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 95
+key = "hairstyle_14_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_04.png"
+style = 14
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 96
+key = "hairstyle_14_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_05.png"
+style = 14
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 97
+key = "hairstyle_14_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_06.png"
+style = 14
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 98
+key = "hairstyle_14_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_07.png"
+style = 14
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 99
+key = "hairstyle_15_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_01.png"
+style = 15
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 100
+key = "hairstyle_15_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_02.png"
+style = 15
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 101
+key = "hairstyle_15_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_03.png"
+style = 15
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 102
+key = "hairstyle_15_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_04.png"
+style = 15
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 103
+key = "hairstyle_15_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_05.png"
+style = 15
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 104
+key = "hairstyle_15_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_06.png"
+style = 15
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 105
+key = "hairstyle_15_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_07.png"
+style = 15
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 106
+key = "hairstyle_16_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_01.png"
+style = 16
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 107
+key = "hairstyle_16_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_02.png"
+style = 16
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 108
+key = "hairstyle_16_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_03.png"
+style = 16
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 109
+key = "hairstyle_16_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_04.png"
+style = 16
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 110
+key = "hairstyle_16_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_05.png"
+style = 16
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 111
+key = "hairstyle_16_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_06.png"
+style = 16
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 112
+key = "hairstyle_16_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_07.png"
+style = 16
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 113
+key = "hairstyle_17_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_01.png"
+style = 17
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 114
+key = "hairstyle_17_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_02.png"
+style = 17
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 115
+key = "hairstyle_17_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_03.png"
+style = 17
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 116
+key = "hairstyle_17_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_04.png"
+style = 17
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 117
+key = "hairstyle_17_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_05.png"
+style = 17
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 118
+key = "hairstyle_17_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_06.png"
+style = 17
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 119
+key = "hairstyle_17_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_07.png"
+style = 17
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 120
+key = "hairstyle_18_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_01.png"
+style = 18
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 121
+key = "hairstyle_18_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_02.png"
+style = 18
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 122
+key = "hairstyle_18_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_03.png"
+style = 18
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 123
+key = "hairstyle_18_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_04.png"
+style = 18
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 124
+key = "hairstyle_18_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_05.png"
+style = 18
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 125
+key = "hairstyle_18_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_06.png"
+style = 18
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 126
+key = "hairstyle_18_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_07.png"
+style = 18
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 127
+key = "hairstyle_19_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_01.png"
+style = 19
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 128
+key = "hairstyle_19_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_02.png"
+style = 19
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 129
+key = "hairstyle_19_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_03.png"
+style = 19
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 130
+key = "hairstyle_19_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_04.png"
+style = 19
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 131
+key = "hairstyle_19_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_05.png"
+style = 19
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 132
+key = "hairstyle_19_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_06.png"
+style = 19
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 133
+key = "hairstyle_19_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_07.png"
+style = 19
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 134
+key = "hairstyle_20_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_01.png"
+style = 20
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 135
+key = "hairstyle_20_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_02.png"
+style = 20
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 136
+key = "hairstyle_20_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_03.png"
+style = 20
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 137
+key = "hairstyle_20_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_04.png"
+style = 20
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 138
+key = "hairstyle_20_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_05.png"
+style = 20
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 139
+key = "hairstyle_20_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_06.png"
+style = 20
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 140
+key = "hairstyle_20_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_07.png"
+style = 20
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 141
+key = "hairstyle_21_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_01.png"
+style = 21
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 142
+key = "hairstyle_21_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_02.png"
+style = 21
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 143
+key = "hairstyle_21_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_03.png"
+style = 21
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 144
+key = "hairstyle_21_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_04.png"
+style = 21
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 145
+key = "hairstyle_21_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_05.png"
+style = 21
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 146
+key = "hairstyle_21_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_06.png"
+style = 21
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 147
+key = "hairstyle_21_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_07.png"
+style = 21
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 148
+key = "hairstyle_22_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_01.png"
+style = 22
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 149
+key = "hairstyle_22_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_02.png"
+style = 22
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 150
+key = "hairstyle_22_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_03.png"
+style = 22
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 151
+key = "hairstyle_22_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_04.png"
+style = 22
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 152
+key = "hairstyle_22_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_05.png"
+style = 22
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 153
+key = "hairstyle_22_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_06.png"
+style = 22
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 154
+key = "hairstyle_22_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_07.png"
+style = 22
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 155
+key = "hairstyle_23_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_01.png"
+style = 23
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 156
+key = "hairstyle_23_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_02.png"
+style = 23
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 157
+key = "hairstyle_23_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_03.png"
+style = 23
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 158
+key = "hairstyle_23_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_04.png"
+style = 23
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 159
+key = "hairstyle_23_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_05.png"
+style = 23
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 160
+key = "hairstyle_23_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_06.png"
+style = 23
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 161
+key = "hairstyle_23_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_07.png"
+style = 23
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 162
+key = "hairstyle_24_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_01.png"
+style = 24
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 163
+key = "hairstyle_24_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_02.png"
+style = 24
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 164
+key = "hairstyle_24_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_03.png"
+style = 24
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 165
+key = "hairstyle_24_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_04.png"
+style = 24
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 166
+key = "hairstyle_24_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_05.png"
+style = 24
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 167
+key = "hairstyle_24_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_06.png"
+style = 24
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 168
+key = "hairstyle_24_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_07.png"
+style = 24
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 169
+key = "hairstyle_25_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_01.png"
+style = 25
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 170
+key = "hairstyle_25_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_02.png"
+style = 25
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 171
+key = "hairstyle_25_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_03.png"
+style = 25
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 172
+key = "hairstyle_25_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_04.png"
+style = 25
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 173
+key = "hairstyle_25_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_05.png"
+style = 25
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 174
+key = "hairstyle_25_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_06.png"
+style = 25
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 175
+key = "hairstyle_25_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_07.png"
+style = 25
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 176
+key = "hairstyle_26_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_01.png"
+style = 26
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 177
+key = "hairstyle_26_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_02.png"
+style = 26
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 178
+key = "hairstyle_26_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_03.png"
+style = 26
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 179
+key = "hairstyle_26_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_04.png"
+style = 26
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 180
+key = "hairstyle_26_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_05.png"
+style = 26
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 181
+key = "hairstyle_26_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_06.png"
+style = 26
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 182
+key = "hairstyle_26_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_07.png"
+style = 26
+color = 7
+rare = true
+
+[[hairstyle]]
+id = 183
+key = "hairstyle_27_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_01.png"
+style = 27
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 184
+key = "hairstyle_27_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_02.png"
+style = 27
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 185
+key = "hairstyle_27_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_03.png"
+style = 27
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 186
+key = "hairstyle_27_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_04.png"
+style = 27
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 187
+key = "hairstyle_27_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_05.png"
+style = 27
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 188
+key = "hairstyle_27_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_06.png"
+style = 27
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 189
+key = "hairstyle_28_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_28_01.png"
+style = 28
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 190
+key = "hairstyle_28_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_28_02.png"
+style = 28
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 191
+key = "hairstyle_28_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_28_03.png"
+style = 28
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 192
+key = "hairstyle_28_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_28_04.png"
+style = 28
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 193
+key = "hairstyle_28_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_28_05.png"
+style = 28
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 194
+key = "hairstyle_28_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_28_06.png"
+style = 28
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 195
+key = "hairstyle_29_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_29_01.png"
+style = 29
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 196
+key = "hairstyle_29_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_29_02.png"
+style = 29
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 197
+key = "hairstyle_29_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_29_03.png"
+style = 29
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 198
+key = "hairstyle_29_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_29_04.png"
+style = 29
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 199
+key = "hairstyle_29_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_29_05.png"
+style = 29
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 200
+key = "hairstyle_29_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_29_06.png"
+style = 29
+color = 6
+rare = false
+
+[[hairstyle]]
+id = 201
+key = "kid_hairstyle_kid_1_1"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_1_1.png"
+style = 1
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 202
+key = "kid_hairstyle_kid_1_2"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_1_2.png"
+style = 1
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 203
+key = "kid_hairstyle_kid_1_3"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_1_3.png"
+style = 1
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 204
+key = "kid_hairstyle_kid_1_4"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_1_4.png"
+style = 1
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 205
+key = "kid_hairstyle_kid_1_5"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_1_5.png"
+style = 1
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 206
+key = "kid_hairstyle_kid_2_1"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_2_1.png"
+style = 2
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 207
+key = "kid_hairstyle_kid_2_2"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_2_2.png"
+style = 2
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 208
+key = "kid_hairstyle_kid_2_3"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_2_3.png"
+style = 2
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 209
+key = "kid_hairstyle_kid_2_4"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_2_4.png"
+style = 2
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 210
+key = "kid_hairstyle_kid_2_5"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_2_5.png"
+style = 2
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 211
+key = "kid_hairstyle_kid_3_1"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_3_1.png"
+style = 3
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 212
+key = "kid_hairstyle_kid_3_2"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_3_2.png"
+style = 3
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 213
+key = "kid_hairstyle_kid_3_3"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_3_3.png"
+style = 3
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 214
+key = "kid_hairstyle_kid_3_4"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_3_4.png"
+style = 3
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 215
+key = "kid_hairstyle_kid_3_5"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_3_5.png"
+style = 3
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 216
+key = "kid_hairstyle_kid_4_1"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_4_1.png"
+style = 4
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 217
+key = "kid_hairstyle_kid_4_2"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_4_2.png"
+style = 4
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 218
+key = "kid_hairstyle_kid_4_3"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_4_3.png"
+style = 4
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 219
+key = "kid_hairstyle_kid_4_4"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_4_4.png"
+style = 4
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 220
+key = "kid_hairstyle_kid_4_5"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_4_5.png"
+style = 4
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 221
+key = "kid_hairstyle_kid_5_1"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_5_1.png"
+style = 5
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 222
+key = "kid_hairstyle_kid_5_2"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_5_2.png"
+style = 5
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 223
+key = "kid_hairstyle_kid_5_3"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_5_3.png"
+style = 5
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 224
+key = "kid_hairstyle_kid_5_4"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_5_4.png"
+style = 5
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 225
+key = "kid_hairstyle_kid_5_5"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_5_5.png"
+style = 5
+color = 5
+rare = false
+
+[[hairstyle]]
+id = 226
+key = "kid_hairstyle_kid_6_1"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_1.png"
+style = 6
+color = 1
+rare = false
+
+[[hairstyle]]
+id = 227
+key = "kid_hairstyle_kid_6_2"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_2.png"
+style = 6
+color = 2
+rare = false
+
+[[hairstyle]]
+id = 228
+key = "kid_hairstyle_kid_6_3"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_3.png"
+style = 6
+color = 3
+rare = false
+
+[[hairstyle]]
+id = 229
+key = "kid_hairstyle_kid_6_4"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_4.png"
+style = 6
+color = 4
+rare = false
+
+[[hairstyle]]
+id = 230
+key = "kid_hairstyle_kid_6_5"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_5.png"
+style = 6
+color = 5
+rare = false
+

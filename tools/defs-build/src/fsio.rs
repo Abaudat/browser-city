@@ -76,6 +76,34 @@ pub fn read_text(repo_root: &Path, paths: &[PathBuf]) -> io::Result<Vec<(PathBuf
         .collect()
 }
 
+/// Reads the `(width, height)` a PNG's own `IHDR` chunk declares, for every
+/// one of `paths` (relative to `repo_root`) -- std only, no `png` crate
+/// (Tim's direction keeps this crate toml+serde-only): a PNG's signature is
+/// 8 bytes, its first chunk's length+type is 8 more, and `IHDR`'s own body
+/// starts with two big-endian `u32`s, so 24 bytes is always enough. Story
+/// 1.10's layout invariant reads these to check a declared `[[appearance_
+/// layout]]` cell against the sheet's real dimensions rather than assuming
+/// them. A missing file or a file too short to be a PNG is a hard error
+/// naming the path, exactly like [`read_bytes`]/[`read_text`].
+pub fn read_png_dims(repo_root: &Path, paths: &[String]) -> io::Result<Vec<(String, (u32, u32))>> {
+    paths
+        .iter()
+        .map(|p| {
+            let bytes = std::fs::read(repo_root.join(p))
+                .map_err(|e| io::Error::other(format!("{p}: {e}")))?;
+            const PNG_SIGNATURE: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+            if bytes.len() < 24 || bytes[0..8] != PNG_SIGNATURE || &bytes[12..16] != b"IHDR" {
+                return Err(io::Error::other(format!(
+                    "{p}: not a valid PNG (too short or missing signature/IHDR)"
+                )));
+            }
+            let width = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
+            let height = u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
+            Ok((p.clone(), (width, height)))
+        })
+        .collect()
+}
+
 /// Writes `contents` to `path` atomically: the full text lands in a
 /// sibling temp file first, and only a rename -- never a stream into
 /// `path` itself -- makes it visible at `path`. An interrupted write (a
@@ -240,6 +268,42 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains(".tmp-"))
             .collect();
         assert!(leftover.is_empty(), "a .tmp- file was left behind");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn write_minimal_png(path: &Path, width: u32, height: u32) {
+        let mut bytes = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        bytes.extend_from_slice(&[0, 0, 0, 13]); // IHDR length
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&width.to_be_bytes());
+        bytes.extend_from_slice(&height.to_be_bytes());
+        bytes.extend_from_slice(&[8, 6, 0, 0, 0]); // bit depth, color type, etc. (unused)
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn read_png_dims_reads_width_and_height_from_the_ihdr_chunk() {
+        let dir = make_scratch_dir("defs-build-test-png").unwrap();
+        write_minimal_png(&dir.join("a.png"), 896, 656);
+        let result = read_png_dims(&dir, &["a.png".to_string()]).unwrap();
+        assert_eq!(result, vec![("a.png".to_string(), (896, 656))]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_png_dims_fails_naming_a_missing_file() {
+        let dir = make_scratch_dir("defs-build-test-png-missing").unwrap();
+        let err = read_png_dims(&dir, &["nope.png".to_string()]).unwrap_err();
+        assert!(err.to_string().contains("nope.png"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_png_dims_fails_on_a_file_too_short_to_be_a_png() {
+        let dir = make_scratch_dir("defs-build-test-png-short").unwrap();
+        std::fs::write(dir.join("bad.png"), b"not a png").unwrap();
+        let err = read_png_dims(&dir, &["bad.png".to_string()]).unwrap_err();
+        assert!(err.to_string().contains("bad.png"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

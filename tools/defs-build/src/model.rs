@@ -148,6 +148,159 @@ pub struct ChainFile {
     pub chain: Vec<RawChain>,
 }
 
+/// Story 1.10 (FR61/FR62): one part sheet's family. A layout is only ever
+/// shared *within* a family (Tim/Artie's direction) -- adults and kids
+/// never mix parts, so the generator and the layout invariant both branch
+/// on this before anything else.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum Family {
+    Adult,
+    Kid,
+}
+
+impl Family {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Family::Adult => "adult",
+            Family::Kid => "kid",
+        }
+    }
+}
+
+/// Story 1.10 (Artie's direction): which pool a part is drawn from.
+/// `Civilian` is eligible for random generation; `RoleOnly` is reserved for
+/// a `[[uniform]]` override and never rolled at random; `Costume` is dead
+/// content until a future system (a holiday, a party) gives it a reason to
+/// exist.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Pool {
+    Civilian,
+    RoleOnly,
+    Costume,
+}
+
+impl Pool {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Pool::Civilian => "civilian",
+            Pool::RoleOnly => "role_only",
+            Pool::Costume => "costume",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawBody {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    pub family: Spanned<Family>,
+    pub sheet: Spanned<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawEyes {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    pub family: Spanned<Family>,
+    pub sheet: Spanned<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawHairstyle {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    pub family: Spanned<Family>,
+    pub sheet: Spanned<String>,
+    pub style: u32,
+    pub color: u32,
+    pub rare: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawOutfit {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    pub family: Spanned<Family>,
+    pub sheet: Spanned<String>,
+    pub pool: Spanned<Pool>,
+    #[serde(default)]
+    pub hides_hairstyle: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawAccessory {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    pub family: Spanned<Family>,
+    pub sheet: Spanned<String>,
+    pub pool: Spanned<Pool>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct RawAppearanceLayoutRow {
+    pub animation: String,
+    pub row: u32,
+    pub frames_per_direction: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawAppearanceLayout {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    pub family: Spanned<Family>,
+    pub cell_width: u32,
+    pub cell_height: u32,
+    pub directions: Vec<String>,
+    pub rows: Vec<RawAppearanceLayoutRow>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawUniform {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    pub profession: Spanned<String>,
+    #[serde(default)]
+    pub outfit: Option<String>,
+    #[serde(default)]
+    pub accessory: Option<String>,
+}
+
+/// Story 1.10: `defs/appearance/*.toml` may declare any mix of the seven
+/// array kinds below in one file -- unlike every other `defs/` directory,
+/// this one holds several distinct kinds side by side (Tim's direction:
+/// `[[body]]`, `[[eyes]]`, `[[outfit]]`, `[[hairstyle]]`, `[[accessory]]`,
+/// plus `[[appearance_layout]]` and `[[uniform]]`), so a single raw file
+/// shape with every array defaulted to empty is simpler than inventing a
+/// second `kind_of` dispatch.
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct AppearanceFile {
+    #[serde(default)]
+    pub body: Vec<RawBody>,
+    #[serde(default)]
+    pub eyes: Vec<RawEyes>,
+    #[serde(default)]
+    pub hairstyle: Vec<RawHairstyle>,
+    #[serde(default)]
+    pub outfit: Vec<RawOutfit>,
+    #[serde(default)]
+    pub accessory: Vec<RawAccessory>,
+    #[serde(default)]
+    pub appearance_layout: Vec<RawAppearanceLayout>,
+    #[serde(default)]
+    pub uniform: Vec<RawUniform>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawBalance {
@@ -217,6 +370,86 @@ pub struct BalanceEntry {
     pub max: i64,
 }
 
+#[derive(Debug)]
+pub struct BodyEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub family: Located<Family>,
+    pub sheet: Located<String>,
+}
+
+#[derive(Debug)]
+pub struct EyesEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub family: Located<Family>,
+    pub sheet: Located<String>,
+}
+
+#[derive(Debug)]
+pub struct HairstyleEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub family: Located<Family>,
+    pub sheet: Located<String>,
+    pub style: u32,
+    pub color: u32,
+    pub rare: bool,
+}
+
+#[derive(Debug)]
+pub struct OutfitEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub family: Located<Family>,
+    pub sheet: Located<String>,
+    pub pool: Located<Pool>,
+    pub hides_hairstyle: bool,
+}
+
+#[derive(Debug)]
+pub struct AccessoryEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub family: Located<Family>,
+    pub sheet: Located<String>,
+    pub pool: Located<Pool>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppearanceLayoutRowEntry {
+    pub animation: String,
+    pub row: u32,
+    pub frames_per_direction: u32,
+}
+
+#[derive(Debug)]
+pub struct AppearanceLayoutEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub family: Located<Family>,
+    pub cell_width: u32,
+    pub cell_height: u32,
+    pub directions: Vec<String>,
+    pub rows: Vec<AppearanceLayoutRowEntry>,
+}
+
+#[derive(Debug)]
+pub struct UniformEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub profession: Located<String>,
+    pub outfit: Option<String>,
+    pub accessory: Option<String>,
+}
+
 /// An entry that carries a permanent, explicit numeric id and a key --
 /// every kind except `balance` (Tim's direction: balance seeds a future
 /// table by dotted key, never an id, in this story).
@@ -247,6 +480,13 @@ impl_id_key_entry!(ItemEntry);
 impl_id_key_entry!(RecipeEntry);
 impl_id_key_entry!(ProfessionEntry);
 impl_id_key_entry!(ChainEntry);
+impl_id_key_entry!(BodyEntry);
+impl_id_key_entry!(EyesEntry);
+impl_id_key_entry!(HairstyleEntry);
+impl_id_key_entry!(OutfitEntry);
+impl_id_key_entry!(AccessoryEntry);
+impl_id_key_entry!(AppearanceLayoutEntry);
+impl_id_key_entry!(UniformEntry);
 
 #[derive(Debug, Default)]
 pub struct RawDefs {
@@ -256,6 +496,13 @@ pub struct RawDefs {
     pub professions: Vec<ProfessionEntry>,
     pub chains: Vec<ChainEntry>,
     pub balance: Vec<BalanceEntry>,
+    pub bodies: Vec<BodyEntry>,
+    pub eyes: Vec<EyesEntry>,
+    pub hairstyles: Vec<HairstyleEntry>,
+    pub outfits: Vec<OutfitEntry>,
+    pub accessories: Vec<AccessoryEntry>,
+    pub appearance_layouts: Vec<AppearanceLayoutEntry>,
+    pub uniforms: Vec<UniformEntry>,
 }
 
 // --- the plain, validated shapes emit.rs reads ------------------------------
@@ -315,6 +562,79 @@ pub struct BalanceDef {
     pub max: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyDef {
+    pub id: u32,
+    pub key: String,
+    pub family: Family,
+    pub sheet: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EyesDef {
+    pub id: u32,
+    pub key: String,
+    pub family: Family,
+    pub sheet: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HairstyleDef {
+    pub id: u32,
+    pub key: String,
+    pub family: Family,
+    pub sheet: String,
+    pub style: u32,
+    pub color: u32,
+    pub rare: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutfitDef {
+    pub id: u32,
+    pub key: String,
+    pub family: Family,
+    pub sheet: String,
+    pub pool: Pool,
+    pub hides_hairstyle: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccessoryDef {
+    pub id: u32,
+    pub key: String,
+    pub family: Family,
+    pub sheet: String,
+    pub pool: Pool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppearanceLayoutRowDef {
+    pub animation: String,
+    pub row: u32,
+    pub frames_per_direction: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppearanceLayoutDef {
+    pub id: u32,
+    pub key: String,
+    pub family: Family,
+    pub cell_width: u32,
+    pub cell_height: u32,
+    pub directions: Vec<String>,
+    pub rows: Vec<AppearanceLayoutRowDef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UniformDef {
+    pub id: u32,
+    pub key: String,
+    pub profession: String,
+    pub outfit: Option<String>,
+    pub accessory: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Defs {
     pub objects: Vec<ObjectDef>,
@@ -323,4 +643,11 @@ pub struct Defs {
     pub professions: Vec<ProfessionDef>,
     pub chains: Vec<ChainDef>,
     pub balance: Vec<BalanceDef>,
+    pub bodies: Vec<BodyDef>,
+    pub eyes: Vec<EyesDef>,
+    pub hairstyles: Vec<HairstyleDef>,
+    pub outfits: Vec<OutfitDef>,
+    pub accessories: Vec<AccessoryDef>,
+    pub appearance_layouts: Vec<AppearanceLayoutDef>,
+    pub uniforms: Vec<UniformDef>,
 }

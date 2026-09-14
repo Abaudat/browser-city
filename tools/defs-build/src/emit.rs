@@ -134,9 +134,165 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
             b.key, b.value, b.min, b.max
         ));
     }
+    out.push_str("];\n\n");
+
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str("pub enum Family {\n    Adult,\n    Kid,\n}\n\n");
+
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str("pub enum Pool {\n    Civilian,\n    RoleOnly,\n    Costume,\n}\n\n");
+
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str("pub struct BodyDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n}\n\n");
+    out.push_str("pub const BODIES: &[BodyDef] = &[\n");
+    for b in &defs.bodies {
+        out.push_str(&format!(
+            "    BodyDef {{ id: {}, key: {:?}, family: {}, sheet: {:?} }},\n",
+            b.id,
+            b.key,
+            fmt_family_rust(b.family),
+            b.sheet
+        ));
+    }
+    out.push_str("];\n\n");
+
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str("pub struct EyesDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n}\n\n");
+    out.push_str("pub const EYES: &[EyesDef] = &[\n");
+    for e in &defs.eyes {
+        out.push_str(&format!(
+            "    EyesDef {{ id: {}, key: {:?}, family: {}, sheet: {:?} }},\n",
+            e.id,
+            e.key,
+            fmt_family_rust(e.family),
+            e.sheet
+        ));
+    }
+    out.push_str("];\n\n");
+
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str("pub struct HairstyleDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n    pub style: u32,\n    pub color: u32,\n    pub rare: bool,\n}\n\n");
+    out.push_str("pub const HAIRSTYLES: &[HairstyleDef] = &[\n");
+    for h in &defs.hairstyles {
+        out.push_str(&format!(
+            "    HairstyleDef {{ id: {}, key: {:?}, family: {}, sheet: {:?}, style: {}, color: {}, rare: {} }},\n",
+            h.id,
+            h.key,
+            fmt_family_rust(h.family),
+            h.sheet,
+            h.style,
+            h.color,
+            h.rare
+        ));
+    }
+    out.push_str("];\n\n");
+
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str("pub struct OutfitDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n    pub pool: Pool,\n    pub hides_hairstyle: bool,\n}\n\n");
+    out.push_str("pub const OUTFITS: &[OutfitDef] = &[\n");
+    for o in &defs.outfits {
+        out.push_str(&format!(
+            "    OutfitDef {{ id: {}, key: {:?}, family: {}, sheet: {:?}, pool: {}, hides_hairstyle: {} }},\n",
+            o.id,
+            o.key,
+            fmt_family_rust(o.family),
+            o.sheet,
+            fmt_pool_rust(o.pool),
+            o.hides_hairstyle
+        ));
+    }
+    out.push_str("];\n\n");
+
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str("pub struct AccessoryDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n    pub pool: Pool,\n}\n\n");
+    out.push_str("pub const ACCESSORIES: &[AccessoryDef] = &[\n");
+    for a in &defs.accessories {
+        out.push_str(&format!(
+            "    AccessoryDef {{ id: {}, key: {:?}, family: {}, sheet: {:?}, pool: {} }},\n",
+            a.id,
+            a.key,
+            fmt_family_rust(a.family),
+            a.sheet,
+            fmt_pool_rust(a.pool)
+        ));
+    }
+    out.push_str("];\n\n");
+
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str("pub struct AppearanceLayoutRowDef {\n    pub animation: &'static str,\n    pub row: u32,\n    pub frames_per_direction: u32,\n}\n\n");
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str("pub struct AppearanceLayoutDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub family: Family,\n    pub cell_width: u32,\n    pub cell_height: u32,\n    pub directions: &'static [&'static str],\n    pub rows: &'static [AppearanceLayoutRowDef],\n}\n\n");
+    out.push_str("pub const APPEARANCE_LAYOUTS: &[AppearanceLayoutDef] = &[\n");
+    for l in &defs.appearance_layouts {
+        let directions = fmt_str_slice(&l.directions);
+        let rows: Vec<String> = l
+            .rows
+            .iter()
+            .map(|r| {
+                format!(
+                    "AppearanceLayoutRowDef {{ animation: {:?}, row: {}, frames_per_direction: {} }}",
+                    r.animation, r.row, r.frames_per_direction
+                )
+            })
+            .collect();
+        out.push_str(&format!(
+            "    AppearanceLayoutDef {{ id: {}, key: {:?}, family: {}, cell_width: {}, cell_height: {}, directions: &{}, rows: &[{}] }},\n",
+            l.id,
+            l.key,
+            fmt_family_rust(l.family),
+            l.cell_width,
+            l.cell_height,
+            directions,
+            rows.join(", ")
+        ));
+    }
+    out.push_str("];\n\n");
+
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str("pub struct UniformDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub profession: &'static str,\n    pub outfit: Option<&'static str>,\n    pub accessory: Option<&'static str>,\n}\n\n");
+    out.push_str("pub const UNIFORMS: &[UniformDef] = &[\n");
+    for u in &defs.uniforms {
+        out.push_str(&format!(
+            "    UniformDef {{ id: {}, key: {:?}, profession: {:?}, outfit: {}, accessory: {} }},\n",
+            u.id,
+            u.key,
+            u.profession,
+            fmt_opt_str_rust(&u.outfit),
+            fmt_opt_str_rust(&u.accessory)
+        ));
+    }
     out.push_str("];\n");
 
     out
+}
+
+fn fmt_family_rust(family: crate::model::Family) -> &'static str {
+    match family {
+        crate::model::Family::Adult => "Family::Adult",
+        crate::model::Family::Kid => "Family::Kid",
+    }
+}
+
+fn fmt_pool_rust(pool: crate::model::Pool) -> &'static str {
+    match pool {
+        crate::model::Pool::Civilian => "Pool::Civilian",
+        crate::model::Pool::RoleOnly => "Pool::RoleOnly",
+        crate::model::Pool::Costume => "Pool::Costume",
+    }
+}
+
+fn fmt_opt_str_rust(s: &Option<String>) -> String {
+    match s {
+        None => "None".to_string(),
+        Some(v) => format!("Some({v:?})"),
+    }
+}
+
+fn fmt_opt_str_json(s: &Option<String>) -> String {
+    match s {
+        None => "null".to_string(),
+        Some(v) => json_escape(v),
+    }
 }
 
 fn fmt_collider_rust(collider: Option<ColliderRect>) -> String {
@@ -264,6 +420,131 @@ pub fn emit_json(defs: &Defs, defs_version: &str) -> String {
             b.value
         ));
     }
+    out.push_str("  ],\n");
+
+    out.push_str("  \"bodies\": [\n");
+    for (i, b) in defs.bodies.iter().enumerate() {
+        let comma = if i + 1 < defs.bodies.len() { "," } else { "" };
+        out.push_str(&format!(
+            "    {{ \"family\": {}, \"id\": {}, \"key\": {}, \"sheet\": {} }}{comma}\n",
+            json_escape(b.family.as_str()),
+            b.id,
+            json_escape(&b.key),
+            json_escape(&b.sheet)
+        ));
+    }
+    out.push_str("  ],\n");
+
+    out.push_str("  \"eyes\": [\n");
+    for (i, e) in defs.eyes.iter().enumerate() {
+        let comma = if i + 1 < defs.eyes.len() { "," } else { "" };
+        out.push_str(&format!(
+            "    {{ \"family\": {}, \"id\": {}, \"key\": {}, \"sheet\": {} }}{comma}\n",
+            json_escape(e.family.as_str()),
+            e.id,
+            json_escape(&e.key),
+            json_escape(&e.sheet)
+        ));
+    }
+    out.push_str("  ],\n");
+
+    out.push_str("  \"hairstyles\": [\n");
+    for (i, h) in defs.hairstyles.iter().enumerate() {
+        let comma = if i + 1 < defs.hairstyles.len() {
+            ","
+        } else {
+            ""
+        };
+        out.push_str(&format!(
+            "    {{ \"color\": {}, \"family\": {}, \"id\": {}, \"key\": {}, \"rare\": {}, \"sheet\": {}, \"style\": {} }}{comma}\n",
+            h.color,
+            json_escape(h.family.as_str()),
+            h.id,
+            json_escape(&h.key),
+            h.rare,
+            json_escape(&h.sheet),
+            h.style
+        ));
+    }
+    out.push_str("  ],\n");
+
+    out.push_str("  \"outfits\": [\n");
+    for (i, o) in defs.outfits.iter().enumerate() {
+        let comma = if i + 1 < defs.outfits.len() { "," } else { "" };
+        out.push_str(&format!(
+            "    {{ \"family\": {}, \"hides_hairstyle\": {}, \"id\": {}, \"key\": {}, \"pool\": {}, \"sheet\": {} }}{comma}\n",
+            json_escape(o.family.as_str()),
+            o.hides_hairstyle,
+            o.id,
+            json_escape(&o.key),
+            json_escape(o.pool.as_str()),
+            json_escape(&o.sheet)
+        ));
+    }
+    out.push_str("  ],\n");
+
+    out.push_str("  \"accessories\": [\n");
+    for (i, a) in defs.accessories.iter().enumerate() {
+        let comma = if i + 1 < defs.accessories.len() {
+            ","
+        } else {
+            ""
+        };
+        out.push_str(&format!(
+            "    {{ \"family\": {}, \"id\": {}, \"key\": {}, \"pool\": {}, \"sheet\": {} }}{comma}\n",
+            json_escape(a.family.as_str()),
+            a.id,
+            json_escape(&a.key),
+            json_escape(a.pool.as_str()),
+            json_escape(&a.sheet)
+        ));
+    }
+    out.push_str("  ],\n");
+
+    out.push_str("  \"appearance_layouts\": [\n");
+    for (i, l) in defs.appearance_layouts.iter().enumerate() {
+        let comma = if i + 1 < defs.appearance_layouts.len() {
+            ","
+        } else {
+            ""
+        };
+        let rows: Vec<String> = l
+            .rows
+            .iter()
+            .map(|r| {
+                format!(
+                    "{{ \"animation\": {}, \"frames_per_direction\": {}, \"row\": {} }}",
+                    json_escape(&r.animation),
+                    r.frames_per_direction,
+                    r.row
+                )
+            })
+            .collect();
+        out.push_str(&format!(
+            "    {{ \"cell_height\": {}, \"cell_width\": {}, \"directions\": {}, \"family\": {}, \"id\": {}, \"key\": {}, \"rows\": [{}] }}{comma}\n",
+            l.cell_height,
+            l.cell_width,
+            json_str_array(&l.directions),
+            json_escape(l.family.as_str()),
+            l.id,
+            json_escape(&l.key),
+            rows.join(", ")
+        ));
+    }
+    out.push_str("  ],\n");
+
+    out.push_str("  \"uniforms\": [\n");
+    for (i, u) in defs.uniforms.iter().enumerate() {
+        let comma = if i + 1 < defs.uniforms.len() { "," } else { "" };
+        out.push_str(&format!(
+            "    {{ \"accessory\": {}, \"id\": {}, \"key\": {}, \"outfit\": {}, \"profession\": {} }}{comma}\n",
+            fmt_opt_str_json(&u.accessory),
+            u.id,
+            json_escape(&u.key),
+            fmt_opt_str_json(&u.outfit),
+            json_escape(&u.profession)
+        ));
+    }
     out.push_str("  ]\n");
 
     out.push_str("}\n");
@@ -301,6 +582,41 @@ pub fn emit_id_manifest(defs: &Defs) -> String {
     chains.sort_by_key(|c| c.id);
     for c in &chains {
         lines.push(format!("chain {} {}", c.id, c.key));
+    }
+    let mut bodies = defs.bodies.clone();
+    bodies.sort_by_key(|b| b.id);
+    for b in &bodies {
+        lines.push(format!("body {} {}", b.id, b.key));
+    }
+    let mut eyes = defs.eyes.clone();
+    eyes.sort_by_key(|e| e.id);
+    for e in &eyes {
+        lines.push(format!("eyes {} {}", e.id, e.key));
+    }
+    let mut hairstyles = defs.hairstyles.clone();
+    hairstyles.sort_by_key(|h| h.id);
+    for h in &hairstyles {
+        lines.push(format!("hairstyle {} {}", h.id, h.key));
+    }
+    let mut outfits = defs.outfits.clone();
+    outfits.sort_by_key(|o| o.id);
+    for o in &outfits {
+        lines.push(format!("outfit {} {}", o.id, o.key));
+    }
+    let mut accessories = defs.accessories.clone();
+    accessories.sort_by_key(|a| a.id);
+    for a in &accessories {
+        lines.push(format!("accessory {} {}", a.id, a.key));
+    }
+    let mut appearance_layouts = defs.appearance_layouts.clone();
+    appearance_layouts.sort_by_key(|l| l.id);
+    for l in &appearance_layouts {
+        lines.push(format!("appearance_layout {} {}", l.id, l.key));
+    }
+    let mut uniforms = defs.uniforms.clone();
+    uniforms.sort_by_key(|u| u.id);
+    for u in &uniforms {
+        lines.push(format!("uniform {} {}", u.id, u.key));
     }
     let mut text = lines.join("\n");
     text.push('\n');
@@ -357,6 +673,62 @@ mod tests {
                 value: 10,
                 min: 0,
                 max: 100,
+            }],
+            bodies: vec![BodyDef {
+                id: 1,
+                key: "body_01".into(),
+                family: Family::Adult,
+                sheet: "ModernTileset/Bodies/Body_01.png".into(),
+            }],
+            eyes: vec![EyesDef {
+                id: 1,
+                key: "eyes_01".into(),
+                family: Family::Adult,
+                sheet: "ModernTileset/Eyes/Eyes_01.png".into(),
+            }],
+            hairstyles: vec![HairstyleDef {
+                id: 1,
+                key: "hairstyle_01_01".into(),
+                family: Family::Adult,
+                sheet: "ModernTileset/Hairstyles/Hairstyle_01_01.png".into(),
+                style: 1,
+                color: 1,
+                rare: false,
+            }],
+            outfits: vec![OutfitDef {
+                id: 1,
+                key: "outfit_01_01".into(),
+                family: Family::Adult,
+                sheet: "ModernTileset/Outfits/Outfit_01_01.png".into(),
+                pool: Pool::Civilian,
+                hides_hairstyle: false,
+            }],
+            accessories: vec![AccessoryDef {
+                id: 1,
+                key: "accessory_06_policeman_hat_01".into(),
+                family: Family::Adult,
+                sheet: "ModernTileset/Accessories/Accessory_06_Policeman_Hat_01.png".into(),
+                pool: Pool::RoleOnly,
+            }],
+            appearance_layouts: vec![AppearanceLayoutDef {
+                id: 1,
+                key: "adult".into(),
+                family: Family::Adult,
+                cell_width: 16,
+                cell_height: 32,
+                directions: vec!["right".into(), "up".into(), "left".into(), "down".into()],
+                rows: vec![AppearanceLayoutRowDef {
+                    animation: "idle".into(),
+                    row: 1,
+                    frames_per_direction: 6,
+                }],
+            }],
+            uniforms: vec![UniformDef {
+                id: 1,
+                key: "sanitation_worker_uniform".into(),
+                profession: "sanitation_worker".into(),
+                outfit: None,
+                accessory: Some("accessory_06_policeman_hat_01".into()),
             }],
         }
     }
@@ -442,9 +814,51 @@ mod tests {
             "\"professions\"",
             "\"chains\"",
             "\"balance\"",
+            "\"bodies\"",
+            "\"eyes\"",
+            "\"hairstyles\"",
+            "\"outfits\"",
+            "\"accessories\"",
+            "\"appearance_layouts\"",
+            "\"uniforms\"",
         ] {
             assert!(out.contains(key), "missing {key} in {out}");
         }
+    }
+
+    #[test]
+    fn emit_rust_renders_every_appearance_kind() {
+        let out = emit_rust(&sample(), "abc123");
+        assert!(out.contains("pub enum Family"));
+        assert!(out.contains("pub enum Pool"));
+        assert!(out.contains(
+            "BodyDef { id: 1, key: \"body_01\", family: Family::Adult, sheet: \"ModernTileset/Bodies/Body_01.png\" }"
+        ));
+        assert!(out.contains("EyesDef { id: 1, key: \"eyes_01\""));
+        assert!(out.contains("HairstyleDef { id: 1, key: \"hairstyle_01_01\""));
+        assert!(out.contains("OutfitDef { id: 1, key: \"outfit_01_01\""));
+        assert!(out.contains("pool: Pool::Civilian"));
+        assert!(out.contains("AccessoryDef { id: 1"));
+        assert!(out.contains("pool: Pool::RoleOnly"));
+        assert!(out.contains("AppearanceLayoutDef { id: 1, key: \"adult\""));
+        assert!(out.contains(
+            "AppearanceLayoutRowDef { animation: \"idle\", row: 1, frames_per_direction: 6 }"
+        ));
+        assert!(out.contains(
+            "UniformDef { id: 1, key: \"sanitation_worker_uniform\", profession: \"sanitation_worker\", outfit: None, accessory: Some(\"accessory_06_policeman_hat_01\") }"
+        ));
+    }
+
+    #[test]
+    fn emit_id_manifest_includes_every_appearance_kind() {
+        let manifest = emit_id_manifest(&sample());
+        assert!(manifest.contains("body 1 body_01"));
+        assert!(manifest.contains("eyes 1 eyes_01"));
+        assert!(manifest.contains("hairstyle 1 hairstyle_01_01"));
+        assert!(manifest.contains("outfit 1 outfit_01_01"));
+        assert!(manifest.contains("accessory 1 accessory_06_policeman_hat_01"));
+        assert!(manifest.contains("appearance_layout 1 adult"));
+        assert!(manifest.contains("uniform 1 sanitation_worker_uniform"));
     }
 
     #[test]

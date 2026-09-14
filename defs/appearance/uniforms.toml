@@ -1,0 +1,6 @@
+[[uniform]]
+id = 1
+key = "sanitation_worker_uniform"
+profession = "sanitation_worker"
+accessory = "addon_accessory_21_worker_jacket"
+

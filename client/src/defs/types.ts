@@ -65,6 +65,86 @@ export interface BalanceDef {
   readonly max: number;
 }
 
+/** Story 1.10 (FR61): which family of parts an appearance part belongs to
+ * -- a layout is only ever shared *within* one family. */
+export type Family = "adult" | "kid";
+
+/** Story 1.10 (Artie's direction): which pool a part is drawn from.
+ * `civilian` is eligible for random generation; `role_only` is reserved
+ * for a `UniformDef` override; `costume` is dead content until a future
+ * system gives it a reason to exist. */
+export type Pool = "civilian" | "role_only" | "costume";
+
+export interface BodyDef {
+  readonly id: number;
+  readonly key: string;
+  readonly family: Family;
+  readonly sheet: string;
+}
+
+export interface EyesDef {
+  readonly id: number;
+  readonly key: string;
+  readonly family: Family;
+  readonly sheet: string;
+}
+
+export interface HairstyleDef {
+  readonly id: number;
+  readonly key: string;
+  readonly family: Family;
+  readonly sheet: string;
+  readonly style: number;
+  readonly color: number;
+  readonly rare: boolean;
+}
+
+export interface OutfitDef {
+  readonly id: number;
+  readonly key: string;
+  readonly family: Family;
+  readonly sheet: string;
+  readonly pool: Pool;
+  /** Story 1.10 (Tim's direction): the frog/tiger kid pyjamas hide the
+   * hairstyle layer while worn. */
+  readonly hidesHairstyle: boolean;
+}
+
+export interface AccessoryDef {
+  readonly id: number;
+  readonly key: string;
+  readonly family: Family;
+  readonly sheet: string;
+  readonly pool: Pool;
+}
+
+export interface AppearanceLayoutRow {
+  readonly animation: string;
+  readonly row: number;
+  readonly framesPerDirection: number;
+}
+
+export interface AppearanceLayoutDef {
+  readonly id: number;
+  readonly key: string;
+  readonly family: Family;
+  readonly cellWidth: number;
+  readonly cellHeight: number;
+  readonly directions: readonly string[];
+  readonly rows: readonly AppearanceLayoutRow[];
+}
+
+/** Story 1.10 (FR62, Artie's direction): a profession's fixed uniform
+ * override for the outfit and/or accessory layer -- never a stored part of
+ * a citizen's own appearance tuple, applied only at render time. */
+export interface UniformDef {
+  readonly id: number;
+  readonly key: string;
+  readonly profession: string;
+  readonly outfit?: string;
+  readonly accessory?: string;
+}
+
 export interface Defs {
   readonly defsVersion: string;
   /** Sub-cells per cell, the fixed unit every `ObjectDef.collider` is
@@ -81,4 +161,11 @@ export interface Defs {
   readonly professions: readonly ProfessionDef[];
   readonly chains: readonly ChainDef[];
   readonly balance: readonly BalanceDef[];
+  readonly bodies: readonly BodyDef[];
+  readonly eyes: readonly EyesDef[];
+  readonly hairstyles: readonly HairstyleDef[];
+  readonly outfits: readonly OutfitDef[];
+  readonly accessories: readonly AccessoryDef[];
+  readonly appearanceLayouts: readonly AppearanceLayoutDef[];
+  readonly uniforms: readonly UniformDef[];
 }

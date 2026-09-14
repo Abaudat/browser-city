@@ -1,0 +1,11 @@
+version=1
+id=0 family=adult tuple=2,1,34,189,0
+id=0 family=kid tuple=13,9,141,225,0
+id=1 family=adult tuple=1,2,71,111,0
+id=1 family=kid tuple=11,13,143,230,0
+id=42 family=adult tuple=1,7,53,124,53
+id=42 family=kid tuple=12,12,145,217,0
+id=1000000 family=adult tuple=6,5,62,13,63
+id=1000000 family=kid tuple=10,11,145,212,0
+id=18446744073709551615 family=adult tuple=7,1,66,148,0
+id=18446744073709551615 family=kid tuple=12,9,141,207,0
