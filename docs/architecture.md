@@ -263,6 +263,12 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   a collider into every cell it overlaps including across chunk edges,
   frees a chunk when its last entry goes, and throws on a non-zero
   `orientation`.
+- The footprint index (`world/footprint-index.ts`) is a second derived
+  index in the same storage shape, keyed by every cell an object's
+  `width x height` covers rather than by its collider -- an object with
+  no collider must still be clickable. `world/world-index.ts` is the one
+  `insert`/`delete`/`update` that feeds both, so the two can never drift
+  apart; nothing holds either index directly.
 - A step resolves per axis by swept AABB, sweeping the union of the
   body's start and end boxes. `deltaMs` is clamped to 100 ms. Collider
   faces are exactly representable, so resolution snaps to a face with
@@ -273,6 +279,55 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   or `document`; DOM input lives in `client/src/input/`.
 - The server's `FloorCollision` stays tile-granular and never consumes a
   `collider`.
+
+## Input (client)
+
+`client/src/input/` is the only place DOM input is read, and it produces
+*intents*, never actions (FR148).
+
+- An `Intent` is `{ objectId, defId }` and nothing else: no verb, no
+  action, no kind. The input layer never encodes what a click means --
+  that is the procedure's business, unresolved until Epic 8. Emission is
+  one injected sink plus one `onIgnored` callback; there is no event bus.
+- `src/input/**` may not import `pixi.js`, `net/` (bindings included),
+  `demo/`, or any procedure or interaction module. Enforced by
+  `client/biome.json`'s own override and again by
+  `scripts/ci/check-input-boundary.sh`, so a deleted override still
+  fails.
+- Picking goes through the footprint index, never PixiJS hit-testing: one
+  `pointerdown`/`pointermove` listener on the canvas *element*, and no
+  `eventMode`, `interactive` or per-sprite pointer handler anywhere under
+  `client/src/`. A click resolves by the footprint cell under the pointer
+  on the viewer's own floor -- `render/screen-position.ts`'s
+  `worldCellFromScreenPx`, which reuses that module's own projection
+  constants. Where objects share a cell, `render/sort-key.ts`'s
+  comparator decides which is in front; an object story 1.7 has hidden is
+  never picked and never blocks a click on what is visible behind it.
+  A click on the overhanging upper part of a tall sprite resolves to the
+  cell it is drawn over, not to that sprite -- sprite-bounds picking is a
+  later story if playtesting asks for it.
+- `interact_at` on an `[[object]]` is a half-open integer rect in
+  sub-cells relative to the anchor cell, in the same unit as `collider`,
+  but allowed to reach outside the footprint by at most
+  `INTERACT_AT_MAX_REACH_CELLS` (generated into both artefacts). Its
+  presence *is* the declaration that an object is interactable; there is
+  no `interactable` flag. Reach is exact: the player's feet position in
+  sub-cell integers, half-open comparisons, same floor -- no distance, no
+  radius, no epsilon.
+- Movement keys resolve `KeyboardEvent.code`, never `.key`, so Shift,
+  CapsLock and non-QWERTY layouts cannot stop a walk. Bindings are data
+  (`input/keybindings.ts`): one code drives at most one action, `Escape`
+  is reserved for the options menu and cannot be bound.
+- Keybindings persist in exactly one versioned `localStorage` key,
+  `bc.keybindings.v1`, touched only by `input/keybindings-storage.ts`
+  through an injected `Storage`. Reading never throws (missing, corrupt,
+  wrong version, blocked storage all fall back to defaults in memory),
+  reading never writes, and stored actions merge per action over the
+  defaults. `clear()` is never called: other client state shares the
+  origin.
+- `client/src/ui/options-menu.ts` is the FR151 options menu, the only
+  settings surface: plain DOM, `Escape` to open and close, keyboard taken
+  off movement while it is open, the world never paused behind it.
 
 ## Rendering
 
@@ -427,6 +482,13 @@ The server and client each parse the generated source with their own
 independent implementation (NFR30) -- deliberate duplication, not an
 oversight, pinned against drift by a shared canonical dump golden and a
 shared table of malformed-input cases both sides must reject.
+
+Two optional sub-cell rects on an `[[object]]` carry its physical facts,
+both validated identically on both sides: `collider` (FR128, must fit
+inside the footprint) and `interact_at` (FR148, may reach up to
+`INTERACT_AT_MAX_REACH_CELLS` beyond it, must have positive area, and
+must never lie entirely inside the object's own collider -- a rect no
+player body could stand in could never be reached).
 
 ## Naming
 

@@ -202,6 +202,7 @@ GUARD_SECTIONS=(
   "Definitions"
   "World addressing"
   "Rendering"
+  "Input and intents"
   "Scheduled-reducer timing"
   "Backup and restore"
 )

@@ -35,6 +35,13 @@ with no row here.
 | `inv_only_occupied_enclosure_opens` | In a generated terrace of N shops, standing in shop k retracts walls owned by k only (FR120) | covered | `inv_only_occupied_enclosure_opens` | — |
 | `inv_floor_culling_exclusive` | Player floor >= 0 means no floor -1-or-below drawable is ever visible, and player floor < 0 means no floor >= 0 drawable is ever visible (FR122) | covered | `inv_floor_culling_exclusive` | — |
 | `inv_visibility_never_reorders_pool` | Applying FR120/FR121/FR122 visibility never adds, removes or reorders pool members -- only `sprite.visible`/`sprite.alpha` change | covered | `inv_visibility_never_reorders_pool` | — |
+| `inv_footprint_index_matches_rebuild` | A model-based sequence of random insert/delete/update calls always leaves the footprint index identical to a from-scratch build of the surviving rows, allocated chunks included (FR148) | covered | `inv_footprint_index_matches_rebuild` | — |
+| `inv_pick_inverts_screen_position` | For any cell, any floor and any pixel of the screen rect that cell is actually drawn over, picking resolves back to that same cell, through `screen-position.ts`'s own projection constants (FR148) | covered | `inv_pick_inverts_screen_position` | — |
+| `inv_pick_resolves_topmost_drawn` | Where several objects cover the clicked cell, the pick returns the one the FR123 comparator draws last -- never the first inserted, and never an object the enclosure rules have hidden (FR148) | covered | `inv_pick_resolves_topmost_drawn` | — |
+| `inv_unreachable_never_emits` | For any player position, a click on an interactable object emits exactly one intent when the player's feet are inside its `interact_at`, and exactly one ignore when they are not -- never both and never neither (FR148) | covered | `inv_unreachable_never_emits` | — |
+| `inv_keybindings_injective` | After any sequence of rebinds, no key code is ever bound to two actions, no action is missing, and no reserved code is ever bound (FR149) | covered | `inv_keybindings_injective` | — |
+| `inv_keybindings_parse_is_total` | Parsing any value at all as stored bindings never throws and always yields a complete, valid, injective map (FR149) | covered | `inv_keybindings_parse_is_total` | — |
+| `inv_keybindings_read_is_total` | Reading any string at all out of the bindings storage key never throws, always yields a complete map, and never writes -- so a parse bug can never destroy saved bindings (FR149) | covered | `inv_keybindings_read_is_total` | — |
 
 ## Coverage scale (NFR29)
 
@@ -160,6 +167,23 @@ the sections above.
 | The permanent `render/**` modules (`visibility.ts` included) cannot import `pixi.js`, same discipline as the `world/**` import ban | covered | `client/biome.json` -- the `src/render/**` override's `noRestrictedImports` |
 | The real, mounted `VisibilityApplier` reaches the same FR120/FR121/FR122 states the pure `computeVisibility` function predicts, after a real keyboard-driven walk into and out of an enclosure and into and out of the subway | covered | `client/tests/e2e/enclosure.spec.ts` |
 | The demo own committed transitions never target another transition own anchor cell -- a fixture-data sanity check, not the guard against the underlying bounce bug (see the edge-triggered `floor-walk.ts` row above) | covered | `client/tests/unit/demo/fixture.test.ts` |
+
+## Input and intents
+
+Story 1.9: FR148's intents and FR149's keybindings. Same Guard-path
+discipline as the sections above.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| Nothing in the input layer encodes what an intent means (AC3): an `Intent` is an object instance and its definition, with no verb, action or kind field, and `src/input/**` cannot import a procedure, an interaction module, `net/` (bindings included), `demo/` or `pixi.js` | covered | `client/src/input/intent.ts`; `client/biome.json` -- the `src/input/**` override; `scripts/ci/check-input-boundary.sh`, run by `client-check`; `scripts/ci/tests/test-check-input-boundary.sh`, run by `scripts-tests`; `client/tests/unit/input/pick.test.ts` -- the exact-shape and two-consumers tests |
+| An object declares an interaction by carrying an `interact_at` rect and no other way; the rect has positive area, reaches no further than `INTERACT_AT_MAX_REACH_CELLS` beyond its own footprint, and never lies entirely inside the object's own collider -- rejected identically by the build tool and by the client's own parser (FR148) | covered | `tools/defs-build/src/validate.rs` -- `check_object_interact_at`, `client/src/defs/parse.ts` -- `checkInteractAtReach`, `tools/defs-build/tests/shared_malformed_cases.rs`, `client/tests/unit/defs/malformed.test.ts` |
+| Picking never uses PixiJS hit-testing: exactly one `pointerdown`/`pointermove` listener on the canvas element, and no `eventMode`, `interactive` or per-sprite pointer handler anywhere under `client/src/` | covered | `client/src/input/pointer.ts`, `client/tests/unit/demo/no-federated-events.test.ts` |
+| A click is visibly ignored without anything being drawn for it: the highlight stays withheld and the cursor blips to `not-allowed` once, never pulsing, and an in-reach click adds no confirmation effect of its own (AC2, D17) | covered | `client/src/input/pointer.ts` -- `IGNORED_CURSOR_MS`, `client/tests/unit/input/pointer.test.ts` |
+| A real click on the real canvas records exactly one intent for the object clicked, records an ignore and no intent once out of range, and a rebind survives a reload while cleared storage boots on defaults with no console error (AC1/AC2/AC4) | covered | `client/tests/e2e/intents.spec.ts` |
+| Movement keys resolve `KeyboardEvent.code`, never `.key`, so Shift, CapsLock and a non-QWERTY layout never stop a walk; the old key stops working the moment it is rebound | covered | `client/src/input/keyboard.ts`, `client/tests/unit/input/keyboard.test.ts` |
+| Keybindings live in exactly one versioned `localStorage` key, written only on a real rebind; reading never throws and never writes, and never touches another key in the same origin (FR149) | covered | `client/src/input/keybindings-storage.ts`, `client/tests/unit/input/keybindings-storage.test.ts` |
+| The DOM UI surface gains exactly one thing: the FR151 options menu, opened with `Escape`, which takes the keyboard while open, never pauses the world, and never blocks with `alert()`/`confirm()` | covered | `client/src/ui/options-menu.ts`, `client/tests/unit/ui/options-menu.test.ts` |
+| NFR6: mouse and keyboard only -- no touch, pointer-gesture or controller handling is written anywhere in the input layer | covered | `client/src/input/pointer.ts` -- `pointerdown`/`pointermove` only, no touch or gesture listener; `client/src/input/keyboard.ts` |
 
 ## Scheduled-reducer timing
 

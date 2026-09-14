@@ -105,6 +105,13 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16/ME_Singles_Camping_16x16_Bottle_1.png",
     import.meta.url,
   ).href,
+  // Story 1.9's interaction target on the pavement: a real single street
+  // bin from the city-props pack, 16x32px -- one cell wide, bottom
+  // anchored, overhanging one tile upward like every other tall prop.
+  trashBin: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Small_Closed_Trash_Can.png",
+    import.meta.url,
+  ).href,
   awning: new URL(
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Building_Singles_16x16/ME_Singles_Generic_Building_16x16_Shop_Tent_1.png",
     import.meta.url,
@@ -270,6 +277,11 @@ export interface MountDemoSceneOptions {
    * real display list rather than only by `scripts/ci/check-no-masks.sh`
    * never finding the word `mask` in the source. */
   readonly onMasksChecked?: (allNull: boolean) => void;
+  /** Called once, after the camera is set, with the zoom and the world
+   * container's own offset -- what a caller needs to turn a world pixel
+   * into a canvas one (story 1.9's e2e spec computes its click points
+   * that way rather than hard-coding a pixel). */
+  readonly onViewTransform?: (zoom: number, offsetX: number, offsetY: number) => void;
   /** Story 1.9 (FR148): where a click's intent goes. One injected sink,
    * and the only thing Epic 8 has to replace -- this scene neither knows
    * nor decides what an intent means. Absent means intents are simply
@@ -519,6 +531,7 @@ export async function mountDemoScene(
     onMasksChecked,
     onIntent,
     onIgnored,
+    onViewTransform,
   } = options;
 
   const rawTextures = new Map<string, Texture>();
@@ -690,6 +703,8 @@ export async function mountDemoScene(
   // would fail every unmasked sprite in this scene.
   const everyMaskableView = [...members.map((m) => m.view), ...groundContainersByFloor.values()];
   onMasksChecked?.(everyMaskableView.every((view) => view.mask == null));
+
+  onViewTransform?.(ZOOM, world.position.x, world.position.y);
 
   // The derived indexes: real `defs/objects` footprints, colliders and
   // FR148 reach rects (`objectDefs`, resolved from the fetched document

@@ -12,6 +12,7 @@ import {
   recordPingForE2e,
   recordPlayerPositionForE2e,
   recordRenderOrderForE2e,
+  recordViewTransformForE2e,
   recordVisibilityForE2e,
 } from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
@@ -128,6 +129,7 @@ async function startDemoScene(): Promise<void> {
     // this function is the whole of what Epic 8 has to do here.
     onIntent: recordIntentForE2e,
     onIgnored: recordIgnoredIntentForE2e,
+    onViewTransform: recordViewTransformForE2e,
   });
 }
 

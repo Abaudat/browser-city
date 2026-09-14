@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bindings } from "../../../src/input/keybindings";
-import { DEFAULT_BINDINGS } from "../../../src/input/keybindings";
+import { DEFAULT_BINDINGS, rebind } from "../../../src/input/keybindings";
 import type { OptionsMenuHandle } from "../../../src/ui/options-menu";
 import { keycapLabel, mountOptionsMenu, SWAP_FLASH_MS } from "../../../src/ui/options-menu";
 
@@ -58,6 +58,20 @@ describe("mountOptionsMenu", () => {
     h.menu.destroy();
   });
 
+  it("a closed menu is display:none, so it never swallows a click meant for the world", () => {
+    // The panel is a full-screen flex backdrop, and `display: flex` beats
+    // the `hidden` attribute's own UA rule -- without an explicit
+    // `[hidden] { display: none }` a closed menu stays an invisible sheet
+    // over the whole city that intercepts every click.
+    const h = mount();
+    const backdrop = document.querySelector<HTMLElement>("[data-bc-backdrop]");
+    if (!backdrop) throw new Error("no backdrop");
+    expect(window.getComputedStyle(backdrop).display).toBe("none");
+    h.menu.open();
+    expect(window.getComputedStyle(backdrop).display).not.toBe("none");
+    h.menu.destroy();
+  });
+
   it("Escape opens it and Escape closes it again (FR151)", () => {
     const h = mount();
     pressKey("Escape");
@@ -82,6 +96,25 @@ describe("mountOptionsMenu", () => {
     expect(h.openStates).toEqual([true]);
     h.menu.close();
     expect(h.openStates).toEqual([true, false]);
+    h.menu.destroy();
+  });
+
+  it("toggle opens then closes, the same as pressing Escape twice", () => {
+    const h = mount();
+    h.menu.toggle();
+    expect(h.menu.isOpen()).toBe(true);
+    h.menu.toggle();
+    expect(h.menu.isOpen()).toBe(false);
+    h.menu.destroy();
+  });
+
+  it("setBindings redraws what it shows without reporting a change back", () => {
+    const h = mount();
+    h.menu.open();
+    h.menu.setBindings(rebind(DEFAULT_BINDINGS, "move_up", 0, "KeyI"));
+    expect(keycapsOf("move_up").map((b) => b.textContent)).toEqual(["I", "↑"]);
+    // The caller already knows -- it is the one that changed them.
+    expect(h.changes).toEqual([]);
     h.menu.destroy();
   });
 

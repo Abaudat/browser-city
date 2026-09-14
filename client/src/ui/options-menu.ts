@@ -94,6 +94,12 @@ const STYLE_TEXT = `
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: #ececec;
 }
+/* display:flex above would otherwise beat the hidden attribute's own UA
+   rule, leaving a closed menu as an invisible full-screen sheet over the
+   city that swallows every click meant for the world. */
+[data-bc-backdrop][hidden] {
+  display: none;
+}
 [data-bc-panel] {
   background: #14161a;
   border: 1px solid #2b2f36;

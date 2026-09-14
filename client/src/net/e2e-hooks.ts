@@ -17,6 +17,7 @@ declare global {
       masksAllNull?: boolean;
       intents?: { objectId: string; defId: number }[];
       ignoredIntents?: string[];
+      viewTransform?: { zoom: number; offsetX: number; offsetY: number };
     };
   }
 }
@@ -106,5 +107,17 @@ export function recordIgnoredIntentForE2e(objectId: bigint): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.ignoredIntents = [...(bucket.ignoredIntents ?? []), objectId.toString()];
+  window.__bc = bucket;
+}
+
+/** Story 1.9: the demo scene's own camera transform, recorded once at
+ * mount. `intents.spec.ts` needs it to turn a world pixel -- computed
+ * from the real `screenPositionPx` and the real fixture cell -- into the
+ * canvas offset to click at, rather than hard-coding a pixel that would
+ * silently stop meaning anything the moment the camera moves. */
+export function recordViewTransformForE2e(zoom: number, offsetX: number, offsetY: number): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.viewTransform = { zoom, offsetX, offsetY };
   window.__bc = bucket;
 }
