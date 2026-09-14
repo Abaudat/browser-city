@@ -45,8 +45,6 @@ fi
 git rev-parse --verify "$BASE" >/dev/null 2>&1 || _fail_or_skip "base ref '$BASE' not found"
 
 MERGE_BASE="$(git merge-base "$BASE" HEAD)"
-echo "check-defs-version-bump: DEBUG BASE=$BASE resolved=$(git rev-parse "$BASE") HEAD=$(git rev-parse HEAD) MERGE_BASE=$MERGE_BASE" >&2
-git diff --stat "$MERGE_BASE" HEAD -- "$DEFS_RS" >&2 || true
 
 CHANGED_DEFS="$(git diff --name-only "$MERGE_BASE" HEAD -- 'defs/**')"
 if [ -z "$CHANGED_DEFS" ]; then
@@ -78,7 +76,21 @@ if [ -z "$CHANGED_DEFS_RS" ]; then
   echo "check-defs-version-bump: FAIL -- defs/ changed with no defs_version bump:" >&2
   printf '%s\n' "$CHANGED_DEFS" >&2
   exit 1
-elif ! git diff "$MERGE_BASE" HEAD -- "$DEFS_RS" | grep -qE '^[+-]pub const DEFS_VERSION'; then
+fi
+
+# Captured to a variable rather than piped straight into `grep -q`: `grep
+# -q` exits the instant it finds a match, which for a match near the top
+# of a long diff (this file's `DEFS_VERSION` line is line 4, and a
+# `defs/` change routinely adds hundreds of lines below it) closes the
+# pipe while `git diff` is still writing -- `git diff` then dies of
+# SIGPIPE, and under `pipefail` that non-zero exit status wins the
+# pipeline's result even though grep already found its match. Observed
+# for real: this exact `git diff | grep -q` reliably reported "not
+# found" on a real match in CI (Linux, strict SIGPIPE delivery) while
+# never reproducing locally (Windows git, different pipe/signal
+# semantics) across several attempts on the identical commit.
+DEFS_RS_DIFF="$(git diff "$MERGE_BASE" HEAD -- "$DEFS_RS")"
+if ! grep -qE '^[+-]pub const DEFS_VERSION' <<<"$DEFS_RS_DIFF"; then
   echo "check-defs-version-bump: FAIL -- defs/ changed but DEFS_VERSION did not:" >&2
   printf '%s\n' "$CHANGED_DEFS" >&2
   exit 1
