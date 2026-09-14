@@ -209,6 +209,42 @@ check "explains it is invisible to the gate" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF \"is not in the 'ci:' job's needs:\"" _ "$OUT"
 
 echo
+echo "green: a '# bc:non-gating' job outside ci.yml's 'ci:' needs: is exempt from the reverse-hole check"
+D6="$(fake_dir)"; rm -rf "$D6"; mkdir -p "$D6"
+write_good_workflow "$D6/ci.yml"
+cat >> "$D6/ci.yml" <<'YAML'
+
+  e2e-review-shots:
+    name: e2e-review-shots
+    # bc:non-gating -- screenshots only, never fails the merge gate
+    needs: [changes, client-build]
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo noop
+YAML
+# GitHub Actions never populates `needs.<job>` for a job that is not
+# actually in the calling job's own `needs:` list -- `e2e-review-shots`
+# is absent from needs-json here for exactly that reason, the same as it
+# would be for real.
+check "the non-gating job's own absence from needs-json is not an error" 0 \
+  run_check "$ALL_SUCCESS" "$ALL_CHANGED" "$D6/ci.yml"
+
+echo
+echo "red: even with a non-gating job present, a real gating job's own failure still fails ci"
+NON_GATING_PRESENT_E2E_FAILED='{
+  "changes": {"result": "success"},
+  "check": {"result": "success"},
+  "client-check": {"result": "success"},
+  "client-build": {"result": "success"},
+  "e2e": {"result": "failure"}
+}'
+OUT="$(run_check "$NON_GATING_PRESENT_E2E_FAILED" "$ALL_CHANGED" "$D6/ci.yml" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the failed gating job" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF \"'e2e' did not succeed (result: 'failure')\"" _ "$OUT"
+
+echo
 echo "red: the changes job itself did not succeed"
 WF="$(fresh_workflow)"
 CHANGES_FAILED='{

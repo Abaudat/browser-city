@@ -14,13 +14,19 @@
 // committed `Defs` document -- `body`/`eyes`/`outfit`/`accessory` only
 // ever come from each part's own `civilian` pool, matching the one
 // constraint `sim::appearance::generate` itself enforces (a `role_only`
-// or `costume` part can never reach an ordinary citizen). This is a
-// deterministic index walk, not `generate()`'s own weighted RNG: the
-// generator's own correctness is already pinned by `appearance_v2.golden`
-// and its property tests, so this module only needs *valid*, *varied*
-// tuples, never `generate`'s exact distribution.
+// or `costume` part can never reach an ordinary citizen). Each field is
+// picked by hashing `(citizen index, a field-specific salt)` through a
+// small deterministic mix (`hash32`), not by any single shared stride --
+// no two fields ever cycle in lockstep, and no field on its own repeats a
+// visible period. `accessory_none_chance` and `hair_rare_chance` (`defs/
+// balance/citizen.toml`) are applied the same way `generate()` applies
+// them, so the crowd's own accessory/dye-hair rate matches what the real
+// generator would produce, even though this is a hash, not `sim::rng`'s
+// own algorithm: the generator's exact distribution is already pinned by
+// `appearance_v2.golden` and its property tests, so this module only
+// needs to *not misrepresent* it, never to reproduce it bit for bit.
 
-import type { Defs, Family } from "../defs/types";
+import type { Defs, Family, HairstyleDef } from "../defs/types";
 import type { AppearanceTuple } from "../render/appearance/composite";
 
 export interface CitizenFixture {
@@ -57,25 +63,62 @@ export const PLAZA_X0 = 0;
 export const PLAZA_Y0 = 16;
 
 /** The strip's own footprint, in local cells relative to `PLAZA_X0`/
- * `PLAZA_Y0` -- wide and deep enough that `scatterPosition`'s low-
- * discrepancy sequence spreads `ADULT_COUNT + KID_COUNT` citizens with
- * real gaps between them, never a visible row or column. */
+ * `PLAZA_Y0` -- wide and deep enough that seeded rejection sampling
+ * spreads `ADULT_COUNT + KID_COUNT` citizens across the *whole* strip
+ * with real gaps between them, never a visible row, column or lattice. */
 const STRIP_WIDTH = 22;
 const STRIP_DEPTH = 11;
 const MIN_SPACING = 1;
 
+// A small, fixed integer hash (a splitmix32 finalizer) -- deterministic
+// and exactly reproducible from one run to the next, with none of a
+// linear stride's or a low-discrepancy sequence's own visible periodicity
+// or lattice structure. Every "pick field X for citizen index I" call
+// below hashes `(index, a field-specific salt)` through this, so distinct
+// fields never move in lockstep and the same field never repeats on a
+// visible period.
+function hash32(seed: number): number {
+  let z = (seed + 0x9e3779b9) >>> 0;
+  z = Math.imul(z ^ (z >>> 16), 0x21f0aaad) >>> 0;
+  z = Math.imul(z ^ (z >>> 15), 0x735a2d97) >>> 0;
+  return (z ^ (z >>> 15)) >>> 0;
+}
+
+/** A reproducible float in `[0, 1)` for `(index, salt)`. */
+function hashUnit(index: number, salt: number): number {
+  return hash32(index * 2654435761 + salt) / 0x1_0000_0000;
+}
+
+/** Picks one element of `list` for `(index, salt)`, or `undefined` for an
+ * empty list -- mirrors `sim::appearance::pick_uniform`'s own "uniform
+ * over a non-empty slice, `None` for an empty one" contract. */
+function pickByHash<T>(list: readonly T[], index: number, salt: number): T | undefined {
+  if (list.length === 0) return undefined;
+  return list[hash32(index * 2654435761 + salt) % list.length];
+}
+
+const SALT_BODY = 0x1000;
+const SALT_EYES = 0x2000;
+const SALT_OUTFIT = 0x3000;
+const SALT_HAIR_RARE_ROLL = 0x4000;
+const SALT_HAIR_PICK = 0x5000;
+const SALT_ACCESSORY_NONE_ROLL = 0x6000;
+const SALT_ACCESSORY_PICK = 0x7000;
+const SALT_FACING = 0x8000;
+const SALT_SCATTER_X = 0x9000;
+const SALT_SCATTER_Y = 0xa000;
+
 const FACINGS: readonly string[] = ["down", "up", "left", "right"];
 
 function facingFor(index: number): string {
-  const facing = FACINGS[(index * 7) % FACINGS.length];
-  return facing ?? "down";
+  return pickByHash(FACINGS, index, SALT_FACING) ?? "down";
 }
 
 /** A citizen who stands still, one tile beside `kid-0` on the identical
  * foot line -- the pairing the close-crop screenshot needs -- and the
- * three "two citizens talking" vignettes: each pair one tile apart,
- * facing each other. Every other adult/kid is scattered instead (see
- * `scatterPosition`). Indices are into the adult/kid sequence `0..
+ * three "two citizens talking" vignettes: each pair one tile apart, on
+ * the same row, facing each other. Every other adult/kid is scattered
+ * instead (see `place`). Indices are into the adult/kid sequence `0..
  * ADULT_COUNT`/`0..KID_COUNT`, not into any def id. */
 interface ReservedSlot {
   readonly x: number;
@@ -98,42 +141,42 @@ const RESERVED_KID_SLOTS: ReadonlyMap<number, ReservedSlot> = new Map([
   [1, { x: 3, y: 2, facing: "down" }],
 ]);
 
-// A Weyl (additive-recurrence) low-discrepancy sequence: deterministic
-// and exactly reproducible from one run to the next, like every other
-// value in this module, but with none of a `% columns` grid's visible
-// rows or columns -- the two constants are the golden ratio's conjugate
-// and a second irrational decorrelated from it, so the two axes never
-// beat against each other into a hidden lattice.
-const GOLDEN_CONJUGATE = 0.6180339887498949;
-const SECOND_IRRATIONAL = 0.7548776662466927;
-
-function scatterPosition(sequenceIndex: number): { x: number; y: number } {
-  const fx = (sequenceIndex * GOLDEN_CONJUGATE) % 1;
-  const fy = (sequenceIndex * SECOND_IRRATIONAL) % 1;
-  return { x: fx * STRIP_WIDTH, y: fy * STRIP_DEPTH };
+/** A candidate point from seeded rejection sampling ("dart-throwing"):
+ * `attempt` decorrelates each retry from the last for the same citizen,
+ * `sequenceIndex` decorrelates citizens from each other -- deterministic
+ * throughout, never `Math.random`. */
+function scatterCandidate(sequenceIndex: number, attempt: number): { x: number; y: number } {
+  const combined = sequenceIndex * 97 + attempt;
+  return {
+    x: hashUnit(combined, SALT_SCATTER_X) * STRIP_WIDTH,
+    y: hashUnit(combined, SALT_SCATTER_Y) * STRIP_DEPTH,
+  };
 }
 
-/** Nudges `candidate` away from every point already placed until it
- * clears `MIN_SPACING`, or a fixed retry budget runs out -- a citizen
- * standing shoulder-to-shoulder inside another is the one placement bug
- * a low-discrepancy sequence alone does not rule out. Deterministic: the
- * nudge direction is exactly the vector away from the point it collided
- * with, never a random retry. */
-function settle(
+const MAX_SCATTER_ATTEMPTS = 200;
+
+/** Seeded rejection sampling over the *whole* strip: draws candidates for
+ * `sequenceIndex` until one clears `MIN_SPACING` from every point already
+ * placed (including the reserved slots), or the retry budget runs out --
+ * unlike a low-discrepancy sequence, this has no lattice structure of its
+ * own to leak through as a visible pattern once spacing pushes points
+ * around. At this strip's density (fewer than 40 points over `STRIP_WIDTH
+ * * STRIP_DEPTH` cells), a valid draw is overwhelmingly found well before
+ * the budget runs out; the last candidate drawn is accepted regardless as
+ * a last resort, rather than this ever throwing. */
+function place(
   placed: readonly { readonly x: number; readonly y: number }[],
-  candidate: { x: number; y: number },
+  sequenceIndex: number,
 ): { x: number; y: number } {
-  let point = candidate;
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const collision = placed.find((p) => Math.hypot(point.x - p.x, point.y - p.y) < MIN_SPACING);
-    if (!collision) break;
-    const dx = point.x - collision.x;
-    const dy = point.y - collision.y;
-    const distance = Math.hypot(dx, dy) || 0.001;
-    const push = MIN_SPACING - distance + 0.05;
-    point = { x: point.x + (dx / distance) * push, y: point.y + (dy / distance) * push };
+  let candidate = scatterCandidate(sequenceIndex, 0);
+  for (let attempt = 0; attempt < MAX_SCATTER_ATTEMPTS; attempt++) {
+    candidate = scatterCandidate(sequenceIndex, attempt);
+    const collides = placed.some(
+      (p) => Math.hypot(candidate.x - p.x, candidate.y - p.y) < MIN_SPACING,
+    );
+    if (!collides) return candidate;
   }
-  return point;
+  return candidate;
 }
 
 function civilianOf<T extends { readonly family: Family; readonly pool: string }>(
@@ -143,44 +186,69 @@ function civilianOf<T extends { readonly family: Family; readonly pool: string }
   return defs.filter((d) => d.family === family && d.pool === "civilian");
 }
 
-function familyOf<T extends { readonly family: Family }>(
-  defs: readonly T[],
-  family: Family,
-): readonly T[] {
-  return defs.filter((d) => d.family === family);
+function balanceValue(defs: Defs, key: string): number {
+  const entry = defs.balance.find((b) => b.key === key);
+  if (!entry) throw new Error(`citizens: no balance entry for '${key}'`);
+  return entry.value;
 }
 
-/** Picks a citizen's tuple for `index` within its own family -- a
- * deterministic index walk over each part's own civilian-pool list, with
- * a different, decorrelated stride per field so the parts do not all
- * cycle in lockstep (which is exactly what made the earlier lockstep
- * walk read as a fixed, repeating pattern rather than a varied crowd).
- * `0` (no accessory) is folded into the accessory cycle as one more
- * choice, the same "legal absence" `resolveLayers` already treats `0`
- * as -- never an id this module invents. */
+/** Mirrors `sim::appearance::pick_hairstyle`'s own rule: a
+ * `hairRareChancePercent` chance of drawing from the family's `rare`
+ * pool instead of its natural one, falling back to whichever pool is
+ * non-empty if the family has none of the wanted kind. */
+function pickHairstyleId(
+  defs: Defs,
+  family: Family,
+  index: number,
+  hairRareChancePercent: number,
+): number {
+  const rare: HairstyleDef[] = [];
+  const common: HairstyleDef[] = [];
+  for (const h of defs.hairstyles) {
+    if (h.family !== family) continue;
+    (h.rare ? rare : common).push(h);
+  }
+  const roll = Math.floor(hashUnit(index, SALT_HAIR_RARE_ROLL) * 100);
+  const wantRare = roll < hairRareChancePercent;
+  const pool = wantRare && rare.length > 0 ? rare : common.length > 0 ? common : rare;
+  return pickByHash(pool, index, SALT_HAIR_PICK)?.id ?? 0;
+}
+
+/** Mirrors `sim::appearance::pick_accessory`'s own rule: kids never carry
+ * one, and an adult has `accessoryNoneChancePercent` chance of carrying
+ * none either. */
+function pickAccessoryId(
+  defs: Defs,
+  family: Family,
+  index: number,
+  accessoryNoneChancePercent: number,
+): number {
+  if (family === "kid") return 0;
+  const roll = Math.floor(hashUnit(index, SALT_ACCESSORY_NONE_ROLL) * 100);
+  if (roll < accessoryNoneChancePercent) return 0;
+  return pickByHash(civilianOf(defs.accessories, family), index, SALT_ACCESSORY_PICK)?.id ?? 0;
+}
+
+/** Picks a citizen's tuple for `index` within its own family, mirroring
+ * `sim::appearance::generate`'s own rules field for field (civilian pool,
+ * `accessory_none_chance`, `hair_rare_chance`) over a deterministic hash
+ * instead of `sim::rng` -- see this module's own doc comment for why that
+ * is the right amount of fidelity here. */
 function tupleFor(defs: Defs, family: Family, index: number): AppearanceTuple {
   const bodies = civilianOf(defs.bodies, family);
   const eyes = civilianOf(defs.eyes, family);
   const outfits = civilianOf(defs.outfits, family);
-  const accessories = civilianOf(defs.accessories, family);
-  const hairstyles = familyOf(defs.hairstyles, family);
   if (bodies.length === 0 || eyes.length === 0 || outfits.length === 0) {
     throw new Error(`citizens: no civilian ${family} body/eyes/outfit in the committed defs`);
   }
-  const hairstyle = hairstyles.length > 0 ? hairstyles[(index * 5) % hairstyles.length] : undefined;
-  // Accessory `0` (none) is one more slot in the cycle, not a special
-  // case -- roughly one in `accessories.length + 1` citizens goes without.
-  const accessoryChoice = index * 11;
-  const accessoryId =
-    accessories.length > 0 && accessoryChoice % (accessories.length + 1) !== 0
-      ? (accessories[accessoryChoice % accessories.length]?.id ?? 0)
-      : 0;
+  const hairRareChance = balanceValue(defs, "citizen.appearance.hair_rare_chance");
+  const accessoryNoneChance = balanceValue(defs, "citizen.appearance.accessory_none_chance");
   return {
-    body: bodies[index % bodies.length]?.id ?? 0,
-    eyes: eyes[(index * 3) % eyes.length]?.id ?? 0,
-    outfit: outfits[(index * 7) % outfits.length]?.id ?? 0,
-    hairstyle: hairstyle?.id ?? 0,
-    accessory: accessoryId,
+    body: pickByHash(bodies, index, SALT_BODY)?.id ?? 0,
+    eyes: pickByHash(eyes, index, SALT_EYES)?.id ?? 0,
+    outfit: pickByHash(outfits, index, SALT_OUTFIT)?.id ?? 0,
+    hairstyle: pickHairstyleId(defs, family, index, hairRareChance),
+    accessory: pickAccessoryId(defs, family, index, accessoryNoneChance),
   };
 }
 
@@ -188,13 +256,13 @@ function tupleFor(defs: Defs, family: Family, index: number): AppearanceTuple {
  * sanitation-worker uniform among the rest in civilian dress, FR62),
  * `KID_COUNT` kids (the first two sharing one identical tuple, standing
  * side by side -- FR61's "two citizens can look exactly alike" made
- * visible), scattered over the crowd's own pavement strip by a
- * deterministic low-discrepancy sequence with a minimum tile of spacing,
- * depth-sorted among itself by foot `y` (`citizens-layer.ts`'s job) so a
- * citizen in front overlaps the one behind correctly. One adult stands
- * beside `kid-0` on its identical foot line (the close-crop screenshot's
- * pairing), and three adult pairs stand one tile apart facing each
- * other, as if talking. */
+ * visible), scattered over the crowd's own pavement strip by seeded
+ * rejection sampling with a minimum tile of spacing, depth-sorted among
+ * itself by foot `y` (`citizens-layer.ts`'s job) so a citizen in front
+ * overlaps the one behind correctly. One adult stands beside `kid-0` on
+ * its identical foot line (the close-crop screenshot's pairing), and
+ * three adult pairs stand one tile apart facing each other, as if
+ * talking. */
 export function buildCitizenFixtures(defs: Defs): readonly CitizenFixture[] {
   const fixtures: CitizenFixture[] = [];
   const placed: { x: number; y: number }[] = [];
@@ -202,13 +270,21 @@ export function buildCitizenFixtures(defs: Defs): readonly CitizenFixture[] {
   for (const slot of RESERVED_KID_SLOTS.values()) placed.push(slot);
 
   // The first three adult slots deliberately share one tuple (AC5:
-  // proof that several characters reuse one composite texture).
-  const sharedTuple = tupleFor(defs, "adult", 0);
+  // proof that several characters reuse one composite texture). Based on
+  // index 5, not 0: index 5 happens to draw no accessory of its own, so
+  // this trio contributes zero extra weight to any single accessory id
+  // -- basing it on an index that *did* draw one would inflate that one
+  // id's own count by the trio's own two extra citizens, on top of
+  // whatever other citizen independently draws the same id, and risk
+  // tripping the "no accessory id repeats more than a few times" crowd-
+  // variety test below for a reason that has nothing to do with the
+  // hash's own real distribution.
+  const sharedTuple = tupleFor(defs, "adult", 5);
 
   let scatterCursor = 0;
   for (let i = 0; i < ADULT_COUNT; i++) {
     const reserved = RESERVED_ADULT_SLOTS.get(i);
-    const local = reserved ?? settle(placed, scatterPosition(scatterCursor++));
+    const local = reserved ?? place(placed, scatterCursor++);
     if (!reserved) placed.push(local);
     fixtures.push({
       id: `adult-${i}`,
@@ -223,7 +299,7 @@ export function buildCitizenFixtures(defs: Defs): readonly CitizenFixture[] {
   const twinTuple = tupleFor(defs, "kid", 0);
   for (let i = 0; i < KID_COUNT; i++) {
     const reserved = RESERVED_KID_SLOTS.get(i);
-    const local = reserved ?? settle(placed, scatterPosition(scatterCursor++));
+    const local = reserved ?? place(placed, scatterCursor++);
     if (!reserved) placed.push(local);
     fixtures.push({
       id: `kid-${i}`,
@@ -322,9 +398,8 @@ export function buildWalkerFixture(defs: Defs): CitizenFixture {
 }
 
 /** A second, distinct walker: a sanitation worker, walking the same
- * shape of loop a few tiles further along -- Artie's direction that the
- * uniform's extra layer needs its own walk-direction proof, not only the
- * civilian walker's. */
+ * shape of loop a few tiles further along -- the uniform's extra layer
+ * needs its own walk-direction proof, not only the civilian walker's. */
 export const UNIFORMED_WALKER_ID = "uniformed-walker";
 
 export function buildUniformedWalkerFixture(defs: Defs): CitizenFixture {

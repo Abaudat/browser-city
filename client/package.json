@@ -16,7 +16,8 @@
     "format": "biome format .",
     "test:unit": "vitest run",
     "test:unit:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:review-shots": "playwright test --project=chromium-review-shots"
   },
   "dependencies": {
     "pixi.js": "8.20.1",

@@ -119,11 +119,10 @@ test.describe("the real, mounted appearance pipeline", () => {
     // `releasePartImage`) -- without that, every one of the 48 stack
     // rebuilds below re-fetches and re-decodes the same PNGs from
     // scratch, which is what previously made this test take 26s+ locally
-    // and time out on CI at 90s. Runtime is now a consistent ~6-9s, on CI
-    // included now that `playwright.config.ts` runs CI serially (its own
-    // comment explains why) rather than sharing a CPU-bound runner across
-    // workers -- this budget is a margin over that real time, not a cover
-    // for redundant work.
+    // and time out on CI at 90s. Runtime is now a consistent ~25s on CI
+    // (serial, a shared CPU-bound runner across workers costs real wall
+    // time even without redundant decode work) -- this budget is a
+    // margin over that real time, not a cover for redundant work.
     test.setTimeout(45_000);
     const defs: Defs = committedDefs();
     const adultBody = defs.bodies.find((b) => b.family === "adult");
@@ -137,8 +136,8 @@ test.describe("the real, mounted appearance pipeline", () => {
       throw new Error("appearance.spec: committed defs.json is missing an expected adult part");
     }
     // Every adult body sheet is 927px wide in the real committed catalogue
-    // -- this tuple already exercises Quentin's "a 927px body sheet" case,
-    // with no separate one needed.
+    // -- this tuple already exercises the wide-body-sheet case, with no
+    // separate one needed.
     const adultTuple = {
       body: adultBody.id,
       eyes: adultEyes.id,

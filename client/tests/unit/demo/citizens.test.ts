@@ -132,6 +132,35 @@ describe("buildCitizenFixtures", () => {
     const ids = fixtures.map((f) => f.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it("accessories are hashed per citizen, not a repeating pattern (Artie's crowd-variety direction)", () => {
+    // `accessory_none_chance` (`defs/balance/citizen.toml`) is 70: about
+    // 70% of adults should carry no accessory at all, and no single
+    // accessory id should stand out as a uniform (everyone wearing the
+    // same cap reads as a lookup table, not a population). Bounds below
+    // are deliberately loose around that ~30%-with-an-accessory
+    // expectation -- this is a hash over 40 draws, not a fair-coin
+    // guarantee -- but tight enough to catch a stride or a low-variety
+    // pool leaking through as visible repetition.
+    const accessoryCounts = new Map<number, number>();
+    let adultsWithAccessory = 0;
+    for (const adult of adults) {
+      if (adult.tuple.accessory === 0) continue;
+      adultsWithAccessory++;
+      accessoryCounts.set(
+        adult.tuple.accessory,
+        (accessoryCounts.get(adult.tuple.accessory) ?? 0) + 1,
+      );
+    }
+    // adults.length is 40 (asserted above): 30% expected-with-accessory
+    // + 30 points of tolerance (a hash over 40 draws, not a fair coin) =
+    // at most 60% (24 of 40) -- still well short of "almost everyone",
+    // which is the pattern this test exists to catch.
+    expect(adultsWithAccessory).toBeLessThanOrEqual(Math.ceil(adults.length * 0.6));
+    for (const count of accessoryCounts.values()) {
+      expect(count).toBeLessThanOrEqual(3);
+    }
+  });
 });
 
 describe("buildWalkerFixture / buildUniformedWalkerFixture", () => {

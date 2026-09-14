@@ -37,6 +37,18 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      // `appearance-screenshots.spec.ts` asserts nothing -- it only
+      // leaves review images behind, so a slow runner or a dropped frame
+      // in one of its real-time walker waits must never turn the merge
+      // gate red. The `e2e-review-shots` project below runs it instead,
+      // in a separate, non-gating CI job (`ci.yml`'s own `# bc:non-gating`
+      // marker, `check-ci-gate.sh`).
+      testIgnore: "**/appearance-screenshots.spec.ts",
+    },
+    {
+      name: "chromium-review-shots",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: "**/appearance-screenshots.spec.ts",
     },
   ],
 });
