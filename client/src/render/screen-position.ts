@@ -35,3 +35,51 @@ export function screenPositionPx(
     y: Math.round((worldY + 1) * tileSizePx + floorOffsetPx(floor, storeyHeightPx)),
   };
 }
+
+/**
+ * [`screenPositionPx`]'s inverse for picking (story 1.9, FR148): the
+ * continuous world point a screen pixel falls on, for a viewer on
+ * `floor`. The same two projection constants, read the same way -- the
+ * floor offset goes through [`floorOffsetPx`] itself, never a second copy
+ * of that rule.
+ *
+ * Deliberately *not* the algebraic inverse of [`screenPositionPx`]'s
+ * `+0.5`/`+1` terms: those place a *bottom-centre-anchored sprite* within
+ * the cell it sits on, they are not part of the world-to-screen
+ * projection itself. A cell `(cx, cy)` whose anchor
+ * [`screenPositionPx`] puts at `(ax, ay)` is drawn over
+ * `[ax - tile/2, ax + tile/2) x [ay - tile, ay)` -- so the pixel-to-cell
+ * map that agrees with what the renderer actually drew is this plain
+ * scale-and-offset one (`inv_pick_inverts_screen_position`). Inverting
+ * the anchor terms instead would pick a cell half a tile west and one
+ * row north of the one under the cursor.
+ */
+export function worldPointFromScreenPx(
+  screenX: number,
+  screenY: number,
+  floor: number,
+  tileSizePx: number,
+  storeyHeightPx: number,
+): { readonly x: number; readonly y: number } {
+  return {
+    x: screenX / tileSizePx,
+    y: (screenY - floorOffsetPx(floor, storeyHeightPx)) / tileSizePx,
+  };
+}
+
+/** The whole world cell a screen pixel falls in, for a viewer on `floor`
+ * -- [`worldPointFromScreenPx`] floored toward negative infinity (never
+ * truncated, so a negative coordinate lands in the cell west/north of the
+ * origin rather than on it). This is the only place a pick turns a
+ * continuous point into the integer cell coordinates a `placed_object`
+ * row is indexed by. */
+export function worldCellFromScreenPx(
+  screenX: number,
+  screenY: number,
+  floor: number,
+  tileSizePx: number,
+  storeyHeightPx: number,
+): { readonly cellX: number; readonly cellY: number } {
+  const point = worldPointFromScreenPx(screenX, screenY, floor, tileSizePx, storeyHeightPx);
+  return { cellX: Math.floor(point.x), cellY: Math.floor(point.y) };
+}
