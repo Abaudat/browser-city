@@ -463,7 +463,14 @@ describe("parseDefs appearance (story 1.10)", () => {
     expect(() => parseDefs(payload)).toThrow(/expected 'civilian', 'role_only' or 'costume'/);
   });
 
-  for (const kind of ["bodies", "eyes", "hairstyles", "outfits", "accessories", "appearance_layouts"] as const) {
+  for (const kind of [
+    "bodies",
+    "eyes",
+    "hairstyles",
+    "outfits",
+    "accessories",
+    "appearance_layouts",
+  ] as const) {
     it(`rejects id 0 for '${kind}'`, () => {
       const template: Record<string, Record<string, unknown>> = {
         bodies: BODY,
@@ -547,9 +554,7 @@ describe("parseDefs appearance (story 1.10)", () => {
 
   it("uniform: rejects a civilian-pool accessory", () => {
     const payload = appearancePayload({
-      uniforms: [
-        { id: 1, key: "u1", profession: "sanitation_worker", accessory: "backpack" },
-      ],
+      uniforms: [{ id: 1, key: "u1", profession: "sanitation_worker", accessory: "backpack" }],
     });
     expect(() => parseDefs(payload)).toThrow(/not an adult role_only accessory/);
   });

@@ -264,11 +264,7 @@ function parseHairstyle(value: unknown, path: string): HairstyleDef {
 
 function parseOutfit(value: unknown, path: string): OutfitDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(
-    obj,
-    ["id", "key", "family", "sheet", "pool", "hides_hairstyle"],
-    path,
-  );
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool", "hides_hairstyle"], path);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
@@ -420,9 +416,7 @@ export function parseDefs(data: unknown): Defs {
   const balance = expectArray(root.balance, "$.balance").map((v, i) =>
     parseBalance(v, `$.balance[${i}]`),
   );
-  const bodies = expectArray(root.bodies, "$.bodies").map((v, i) =>
-    parseBody(v, `$.bodies[${i}]`),
-  );
+  const bodies = expectArray(root.bodies, "$.bodies").map((v, i) => parseBody(v, `$.bodies[${i}]`));
   const eyes = expectArray(root.eyes, "$.eyes").map((v, i) => parseEyes(v, `$.eyes[${i}]`));
   const hairstyles = expectArray(root.hairstyles, "$.hairstyles").map((v, i) =>
     parseHairstyle(v, `$.hairstyles[${i}]`),
@@ -685,9 +679,7 @@ export function canonicalDump(defs: Defs): string {
     );
   }
   for (const a of defs.accessories) {
-    lines.push(
-      `accessory ${a.key} id=${a.id} family=${a.family} sheet=${a.sheet} pool=${a.pool}`,
-    );
+    lines.push(`accessory ${a.key} id=${a.id} family=${a.family} sheet=${a.sheet} pool=${a.pool}`);
   }
   for (const l of defs.appearanceLayouts) {
     const directions = l.directions.join(",");

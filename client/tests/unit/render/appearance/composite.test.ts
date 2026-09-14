@@ -141,7 +141,12 @@ describe("drawComposite", () => {
       },
       drawImage: () => {},
     };
-    drawComposite(spyCtx, LAYOUT, { body: null, eyes: null, outfit: null, hairstyle: null, accessory: null }, outfitDef());
+    drawComposite(
+      spyCtx,
+      LAYOUT,
+      { body: null, eyes: null, outfit: null, hairstyle: null, accessory: null },
+      outfitDef(),
+    );
     expect(calls).toContain(false);
   });
 });
