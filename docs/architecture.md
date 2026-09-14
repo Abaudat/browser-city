@@ -27,6 +27,7 @@ cited here by identifier.
 | Backup encryption             | `gpg --symmetric`                                                                                        |
 | Backup tooling                | `scripts/ops/*.sh` shell `spacetime sql`/`spacetime call`/`describe --json`; `server/tools/world_backup` (native, `serde_json` `arbitrary_precision`) parses and canonicalises, never `jq` |
 | Defs tooling                  | `tools/defs-build` — standalone native Rust binary crate (own `Cargo.toml`/`Cargo.lock`/`rust-toolchain.toml`, outside both `server/`'s workspace and the client), depends only on `toml` and `serde`; never a dependency of `browser_city` or the client bundle |
+| Demo citizens tooling         | `tools/demo-citizens-build` — standalone crate (own `Cargo.toml`/`Cargo.lock`/`rust-toolchain.toml`, outside both `server/` and the client), depends only on `sim`; generates the committed `client/public/demo-citizens.json` fixture from `sim::appearance::generate` and lives outside `server/` so that path dependency never trips NFR30's "`server/` never references `client/`" check |
 
 
 ## Authority

@@ -79,6 +79,13 @@ jobs:
               # direction: a defs change re-runs the build that consumes
               # its own generated half.
               - 'server/sim/src/generated/defs.rs'
+              # Story 1.10: this standalone crate depends on `sim` (path
+              # dependency, outside server/ so it can write into
+              # client/public/ without tripping check-no-shared-code.sh)
+              # and regenerates/diffs the committed fixture below -- a
+              # hand-edit to either must still trip the job that catches it.
+              - 'tools/demo-citizens-build/**'
+              - 'client/public/demo-citizens.json'
             client:
               - 'client/**'
               - 'server/**'
@@ -206,6 +213,28 @@ jobs:
         run: bash ../../scripts/ci/check-defs-version-bump.sh
       - name: story 2.1 AC3, nothing versions independently -- a direct pin
         run: bash ../../scripts/ci/check-defs-version-agrees.sh
+
+  demo-citizens:
+    name: demo-citizens
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tools/demo-citizens-build
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: tools/demo-citizens-build
+      - run: rustup toolchain install
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - name: story 1.10, the committed demo crowd fixture matches sim::appearance::generate's own live output
+        run: cargo test
 
   check:
     name: check
@@ -517,7 +546,7 @@ jobs:
     name: ci
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    needs: [changes, scripts-tests, defs, check, test, build, migrate, coverage, client-check, client-build, e2e]
+    needs: [changes, scripts-tests, defs, demo-citizens, check, test, build, migrate, coverage, client-check, client-build, e2e]
     if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

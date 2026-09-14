@@ -1,5 +1,5 @@
 {
-  "generated_by": "server/sim/tests/demo_citizens_fixture.rs",
+  "generated_by": "tools/demo-citizens-build/tests/demo_citizens_fixture.rs",
   "rows": [
     { "id": 1, "family": "adult", "body": 7, "eyes": 6, "outfit": 71, "hairstyle": 111, "accessory": 0 },
     { "id": 1, "family": "kid", "body": 11, "eyes": 13, "outfit": 143, "hairstyle": 214, "accessory": 0 },

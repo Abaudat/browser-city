@@ -152,10 +152,15 @@ test.describe("the real, mounted appearance pipeline", () => {
   }) => {
     // The full `(animation, direction, frame)` grid below is 48 real
     // comparisons, each its own pipeline build and independent Canvas2D
-    // stack draw -- a real CI run took 26.2s of the suite's default 30s
-    // budget, comfortable locally but thin on a slower runner. Budgeted
-    // for the real work this test does, not loosened.
-    test.setTimeout(90_000);
+    // stack draw. `compare-pipeline-vs-stack.ts` decodes each of the
+    // handful of sheets this fixed tuple references exactly once and
+    // holds it for its own module lifetime (never paired with a
+    // `releasePartImage`) -- without that, every one of the 48 stack
+    // rebuilds below re-fetches and re-decodes the same PNGs from
+    // scratch, which is what previously made this test take 26s+ locally
+    // and time out on CI under worker contention. A generous margin over
+    // the real ~6-8s local runtime, not a budget for redundant work.
+    test.setTimeout(45_000);
     const defs: Defs = committedDefs();
     const adultBody = defs.bodies.find((b) => b.family === "adult");
     const adultEyes = defs.eyes.find((e) => e.family === "adult");

@@ -1,7 +1,7 @@
 // `demo/citizens.ts`'s own pure fixture builder, tested against the real
-// committed `client/public/demo-citizens.json` -- `server/sim/tests/
-// demo_citizens_fixture.rs`'s own generated output, the same "no
-// hand-typed id" property the module doc comment claims. Body/eyes ids
+// committed `client/public/demo-citizens.json` -- `tools/demo-citizens-
+// build/tests/demo_citizens_fixture.rs`'s own generated output, the same
+// "no hand-typed id" property the module doc comment claims. Body/eyes ids
 // are cross-checked against the committed `defs/defs.json` so a stale
 // fixture (regenerated defs, un-regenerated demo-citizens.json) fails
 // here rather than silently.

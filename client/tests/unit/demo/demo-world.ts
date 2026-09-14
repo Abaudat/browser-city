@@ -34,10 +34,10 @@ export function committedDefs(): Defs {
   );
 }
 
-/** The demo's own committed street-crowd fixture -- `server/sim/tests/
- * demo_citizens_fixture.rs`'s generated output, read the same way the
- * browser fetches it. Shared by `tests/unit/demo/citizens.test.ts` and
- * `tests/e2e/appearance.spec.ts`. */
+/** The demo's own committed street-crowd fixture -- `tools/demo-citizens-
+ * build/tests/demo_citizens_fixture.rs`'s generated output, read the same
+ * way the browser fetches it. Shared by `tests/unit/demo/citizens.test.ts`
+ * and `tests/e2e/appearance.spec.ts`. */
 export function committedDemoCitizens(): DemoCitizensFixture {
   return parseDemoCitizens(
     JSON.parse(readFileSync(`${REPO_ROOT}client/public/demo-citizens.json`, "utf-8")) as unknown,

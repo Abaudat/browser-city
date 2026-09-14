@@ -216,8 +216,9 @@ export interface MountDemoSceneOptions {
    * street crowd's real appearance textures (`citizens-layer.ts`). */
   readonly defs: Defs;
   /** Story 1.10: the committed, sim-generated demo citizen tuples
-   * (`server/sim/tests/demo_citizens_fixture.rs`'s own output) --
-   * `citizens.ts` places these, it never invents a tuple of its own. */
+   * (`tools/demo-citizens-build/tests/demo_citizens_fixture.rs`'s own
+   * output) -- `citizens.ts` places these, it never invents a tuple of
+   * its own. */
   readonly demoCitizens: DemoCitizensFixture;
   readonly tileSizePx: number;
   readonly storeyHeightPx: number;

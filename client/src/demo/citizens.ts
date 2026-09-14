@@ -10,11 +10,11 @@
 // against). Pure data plus one pure builder, zero PixiJS: `citizens-layer.
 // ts` is the only adapter that turns this into sprites.
 //
-// Every tuple comes from `demo-citizens.json` -- `server/sim/tests/
-// demo_citizens_fixture.rs`'s own committed output of the real
-// `sim::appearance::generate`, never a hand-rolled index walk over each
-// part list. This module only decides *where* each row stands and *which*
-// profession override it wears; it never invents an id.
+// Every tuple comes from `demo-citizens.json` -- `tools/demo-citizens-
+// build/tests/demo_citizens_fixture.rs`'s own committed output of the
+// real `sim::appearance::generate`, never a hand-rolled index walk over
+// each part list. This module only decides *where* each row stands and
+// *which* profession override it wears; it never invents an id.
 
 import type { AppearanceTuple } from "../render/appearance/composite";
 

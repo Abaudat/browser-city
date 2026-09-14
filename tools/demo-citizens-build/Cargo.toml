@@ -1,0 +1,27 @@
+[workspace]
+# Detaches this crate from server/'s Cargo workspace (and from client/'s
+# tooling): it belongs to neither build target, so it keeps its own
+# Cargo.lock and rust-toolchain.toml rather than inheriting either's --
+# the same reasoning as tools/defs-build's own Cargo.toml.
+#
+# This crate exists specifically so the story 1.10 demo-citizens generator
+# can depend on `sim` (a `server/` crate) while writing into
+# `client/public/` without either path living inside `server/` itself:
+# `scripts/ci/check-no-shared-code.sh` greps every file under `server/`
+# for the literal `client/` (NFR30), so a generator doing exactly that
+# from inside `server/sim/tests/` trips it -- the same reason
+# tools/defs-build itself lives outside both trees rather than inside
+# either one.
+
+[package]
+name = "demo-citizens-build"
+version = "0.1.0"
+edition = "2024"
+
+# Native-only tooling: never a dependency of `browser_city` or the client
+# bundle. `sim` is the one approved dependency -- the whole point of this
+# crate is reading its public, pure `appearance::generate` (NFR28: `sim`
+# itself stays dependency-free; nothing stops something else depending on
+# it).
+[dependencies]
+sim = { path = "../../server/sim" }

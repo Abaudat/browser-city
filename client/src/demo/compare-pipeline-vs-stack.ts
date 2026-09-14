@@ -23,7 +23,7 @@ import type { Texture } from "pixi.js";
 import type { Defs } from "../defs/types";
 import type { AppearanceTuple, UniformOverride } from "../render/appearance/composite";
 import { compositeCellRect, sourceFrameRect } from "../render/appearance/frame-rect";
-import { loadPartImage, releasePartImage } from "../render/appearance/part-sheets";
+import { loadPartImage } from "../render/appearance/part-sheets";
 import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
 import { resolveLayers } from "../render/appearance/resolve-layers";
 
@@ -35,6 +35,30 @@ const STACK_LAYER_ORDER = [
   "accessory",
   "uniformAccessory",
 ] as const;
+
+// This module's own wrapper around `loadPartImage`, deliberately never
+// paired with a `releasePartImage`: `appearance.spec.ts` calls
+// `comparePipelineVsStack` dozens of times over for one fixed tuple (the
+// full `(animation, direction, frame)` grid), and matching every load
+// with an immediate release (`appearance-texture.ts`'s own contract)
+// would let `part-sheets.ts`'s ref-counted cache evict and re-decode the
+// same handful of sheets on every one of those calls. Holding one
+// permanent reference per sheet here instead keeps each sheet decoded
+// exactly once for this module's own lifetime -- a Playwright test page's
+// sheet set is small and fixed, and the page (and this cache with it) is
+// torn down between tests, so there is no long-session leak to guard
+// against the way there is in `part-sheets.ts`'s own production contract.
+const stackImageCache = new Map<string, Promise<ImageBitmap>>();
+
+function loadStackImage(sheet: string): Promise<ImageBitmap> {
+  let cached = stackImageCache.get(sheet);
+  if (!cached) {
+    cached = loadPartImage(sheet);
+    cached.catch(() => stackImageCache.delete(sheet));
+    stackImageCache.set(sheet, cached);
+  }
+  return cached;
+}
 
 function readImageData(
   width: number,
@@ -94,23 +118,18 @@ export async function comparePipelineVsStack(
     uniformAccessory: resolved.sheets.uniformAccessory,
   };
   const src = sourceFrameRect(resolved.layout, animation, direction, frame);
-  const layerImages: { sheet: string; image: ImageBitmap }[] = [];
+  const images: ImageBitmap[] = [];
   for (const layer of STACK_LAYER_ORDER) {
     if (layer === "hairstyle" && resolved.effectiveOutfit.hidesHairstyle) continue;
     const sheet = sheetByLayer[layer];
     if (!sheet) continue;
-    layerImages.push({ sheet, image: await loadPartImage(sheet) });
+    images.push(await loadStackImage(sheet));
   }
   const stack = readImageData(cell.width, cell.height, (ctx) => {
-    for (const { image } of layerImages) {
+    for (const image of images) {
       ctx.drawImage(image, src.x, src.y, src.width, src.height, 0, 0, src.width, src.height);
     }
   });
-  // `loadPartImage`'s cache is ref-counted, not permanent -- every load
-  // here is matched with a release once this function is done drawing
-  // from the bitmap, the same contract `appearance-texture.ts` itself
-  // follows.
-  for (const { sheet, image } of layerImages) releasePartImage(sheet, image);
 
   return { pipeline, stack };
 }
