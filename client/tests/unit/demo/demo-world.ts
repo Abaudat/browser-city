@@ -10,7 +10,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseDefs } from "../../../src/defs/parse";
 import type { Defs } from "../../../src/defs/types";
-import { type DemoCitizensFixture, parseDemoCitizens } from "../../../src/demo/citizens";
 import {
   DEMO_BUILDING_AREAS,
   DEMO_ROOM_AREAS,
@@ -31,16 +30,6 @@ const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 export function committedDefs(): Defs {
   return parseDefs(
     JSON.parse(readFileSync(`${REPO_ROOT}client/public/defs/defs.json`, "utf-8")) as unknown,
-  );
-}
-
-/** The demo's own committed street-crowd fixture -- `tools/demo-citizens-
- * build/tests/demo_citizens_fixture.rs`'s generated output, read the same
- * way the browser fetches it. Shared by `tests/unit/demo/citizens.test.ts`
- * and `tests/e2e/appearance.spec.ts`. */
-export function committedDemoCitizens(): DemoCitizensFixture {
-  return parseDemoCitizens(
-    JSON.parse(readFileSync(`${REPO_ROOT}client/public/demo-citizens.json`, "utf-8")) as unknown,
   );
 }
 

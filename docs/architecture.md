@@ -27,7 +27,6 @@ cited here by identifier.
 | Backup encryption             | `gpg --symmetric`                                                                                        |
 | Backup tooling                | `scripts/ops/*.sh` shell `spacetime sql`/`spacetime call`/`describe --json`; `server/tools/world_backup` (native, `serde_json` `arbitrary_precision`) parses and canonicalises, never `jq` |
 | Defs tooling                  | `tools/defs-build` — standalone native Rust binary crate (own `Cargo.toml`/`Cargo.lock`/`rust-toolchain.toml`, outside both `server/`'s workspace and the client), depends only on `toml` and `serde`; never a dependency of `browser_city` or the client bundle |
-| Demo citizens tooling         | `tools/demo-citizens-build` — standalone crate (own `Cargo.toml`/`Cargo.lock`/`rust-toolchain.toml`, outside both `server/` and the client), depends only on `sim`; generates the committed `client/public/demo-citizens.json` fixture from `sim::appearance::generate` and lives outside `server/` so that path dependency never trips NFR30's "`server/` never references `client/`" check |
 
 
 ## Authority
@@ -461,10 +460,7 @@ is its own building, not a room of a shared one.
   the beard).
 - `body` and `eyes` each carry a `pool` (`civilian`/`role_only`/
   `costume`), the same enum `outfit`/`accessory` already declare:
-  `sim::appearance::generate` only ever draws from the `civilian` pool
-  for either, so a `costume`-pool body or eye tone (declared, never
-  generated, for uniform/event art) can never land on an ordinary
-  citizen.
+  `generate` draws `body` and `eyes` from the `civilian` pool only.
 - Layout (cell size, direction order, one row per animation) is declared
   once per family (`adult`/`kid`) in `[[appearance_layout]]`, and
   enforced against every part sheet's real dimensions: `tools/defs-build`
@@ -475,8 +471,7 @@ is its own building, not a room of a shared one.
   `ImageBitmap`s (`fetch` + `createImageBitmap`) -- never through Pixi's
   `Assets`/`Texture`. A bitmap is only needed while a composite is being
   built: `part-sheets.ts` ref-counts each in-flight load and closes the
-  bitmap once every caller drawing from it has finished, never held past
-  that.
+  bitmap once every caller drawing from it has finished.
 - Exactly one composite `Texture` exists per unique tuple+override: the
   five (or six, with a uniform accessory) layers are drawn in order via
   `OffscreenCanvas.drawImage` onto one compact strip, nearest-neighbour

@@ -77,9 +77,18 @@ export class AppearanceCache<T> {
    * value was never really cached (there is nothing to dispose), and it
    * must not sit in the map as a dead entry a later `acquire` would just
    * hand back again. Never the normal path out of the cache; `release`
-   * plus eviction is. */
-  forget(key: string): void {
-    this.entries.delete(key);
+   * plus eviction is.
+   *
+   * Identity-guarded on `value`: a no-op unless `key` still maps to
+   * exactly this `value`. Without that guard, a stale rejection racing a
+   * fresh rebuild would delete whatever now sits under `key` -- built,
+   * released, evicted while its own fetch was still in flight, re-
+   * acquired (a fresh entry now under the same key), and only then does
+   * the first build's rejection arrive. `forget`ing unconditionally would
+   * delete the fresh entry, leaking its value and leaving a third
+   * `acquire` to build yet another one for the same tuple. */
+  forget(key: string, value: T): void {
+    if (this.entries.get(key)?.value === value) this.entries.delete(key);
   }
 
   private evictOverCapacity(): void {

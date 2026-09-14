@@ -1,7 +1,0 @@
-[toolchain]
-# Pinned to the same channel as server/rust-toolchain.toml -- this crate
-# depends on `sim`, built with that channel, and targets neither wasm32
-# nor the server workspace, so it needs none of that file's other
-# components or targets.
-channel = "1.98.1"
-components = ["rustfmt", "clippy"]

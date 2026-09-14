@@ -1643,7 +1643,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_01.png"
 style = 27
 color = 1
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 184
@@ -1652,7 +1652,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_02.png"
 style = 27
 color = 2
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 185
@@ -1661,7 +1661,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_03.png"
 style = 27
 color = 3
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 186
@@ -1670,7 +1670,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_04.png"
 style = 27
 color = 4
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 187
@@ -1679,7 +1679,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_05.png"
 style = 27
 color = 5
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 188
@@ -1688,7 +1688,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_06.png"
 style = 27
 color = 6
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 189
@@ -1697,7 +1697,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_28_01.png"
 style = 28
 color = 1
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 190
@@ -1706,7 +1706,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_28_02.png"
 style = 28
 color = 2
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 191
@@ -1715,7 +1715,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_28_03.png"
 style = 28
 color = 3
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 192
@@ -1724,7 +1724,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_28_04.png"
 style = 28
 color = 4
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 193
@@ -1733,7 +1733,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_28_05.png"
 style = 28
 color = 5
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 194
@@ -1742,7 +1742,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_28_06.png"
 style = 28
 color = 6
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 195
@@ -1751,7 +1751,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_29_01.png"
 style = 29
 color = 1
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 196
@@ -1760,7 +1760,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_29_02.png"
 style = 29
 color = 2
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 197
@@ -1769,7 +1769,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_29_03.png"
 style = 29
 color = 3
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 198
@@ -1778,7 +1778,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_29_04.png"
 style = 29
 color = 4
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 199
@@ -1787,7 +1787,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_29_05.png"
 style = 29
 color = 5
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 200
@@ -1796,7 +1796,7 @@ family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_29_06.png"
 style = 29
 color = 6
-rare = false
+rare = true
 
 [[hairstyle]]
 id = 201

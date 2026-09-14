@@ -1,13 +1,13 @@
 import { Application } from "pixi.js";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
-import { parseDemoCitizens } from "./demo/citizens";
 import { mountDemoScene } from "./demo/scene";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
 import { connect } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
+  exposeWalkerPositionsForE2e,
   recordAppearanceTextureIdsForE2e,
   recordHighlightForE2e,
   recordIgnoredIntentForE2e,
@@ -73,11 +73,6 @@ async function startDemoScene(): Promise<void> {
   }
 
   const defs = await fetchDefs("/defs/defs.json");
-  const demoCitizensResponse = await fetch("/demo-citizens.json");
-  if (!demoCitizensResponse.ok) {
-    throw new Error(`main: /demo-citizens.json responded ${demoCitizensResponse.status}`);
-  }
-  const demoCitizens = parseDemoCitizens(await demoCitizensResponse.json());
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");
   // Story 1.7 (FR121): `render.window_alpha` is a percent integer (1-99,
@@ -123,7 +118,6 @@ async function startDemoScene(): Promise<void> {
   // every frame to see whether it changed.
   const handle = await mountDemoScene(app, {
     defs,
-    demoCitizens,
     tileSizePx,
     storeyHeightPx,
     rankOf: (code) => resolveRank(rankTable, code),
@@ -155,6 +149,7 @@ async function startDemoScene(): Promise<void> {
     handle.citizensLayer.distinctTextureCount,
   );
   exposeAppearanceCompareForE2e(handle.citizensLayer.compareForE2e);
+  exposeWalkerPositionsForE2e(handle.citizensLayer.walkerPositions);
 }
 
 function getBalance(defs: Defs, key: string): number {

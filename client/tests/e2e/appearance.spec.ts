@@ -1,8 +1,8 @@
-// Story 1.10's one e2e spec (AC5, FR61/FR62, Quentin/Tim's direction):
-// the runtime half of the appearance pipeline unit tests cannot reach --
-// a real browser, a real `fetch` against the real `ModernTileset/` part
-// sheets, a real `OffscreenCanvas`, a real Pixi `Texture` -- proving
-// three things the pure unit tests only assume:
+// Story 1.10's appearance-pipeline e2e spec: the runtime half of the
+// appearance pipeline unit tests cannot reach -- a real browser, a real
+// `fetch` against the real `ModernTileset/` part sheets, a real
+// `OffscreenCanvas`, a real Pixi `Texture` -- proving three things the
+// pure unit tests only assume:
 //   1. the real, mounted composite reads back byte-for-byte identical to
 //      an independent five/six-sprite stack drawn straight from the same
 //      vendor sheets (`window.__bc.appearanceCompare`, wired to
@@ -11,64 +11,22 @@
 //      instance, never one each (`window.__bc.appearanceTextureIds`);
 //   3. the real page fetches only the part sheets the crowd actually
 //      references, never the wider catalogue eagerly.
-// Screenshots are left behind as a CI artifact (Artie's direction, the
-// same idiom as `story-1.9-shots`) for visual review -- crowd, a kid
-// beside an adult, one frame per walk direction, and the crowd again
-// after a full reload (the reload is the caching story's whole point:
-// nothing about the crowd should look different, or take visibly longer
-// to settle, the second time).
-import { expect, type Page, test } from "@playwright/test";
+// `appearance-screenshots.spec.ts` is the sibling spec that leaves review
+// screenshots behind as a CI artifact instead of asserting anything --
+// kept in its own file so this one stays fast.
+import { expect, test } from "@playwright/test";
 import type { Defs } from "../../src/defs/types";
 import {
   buildCitizenFixtures,
   buildPlayerAppearanceTuple,
+  buildUniformedWalkerFixture,
   buildWalkerFixture,
 } from "../../src/demo/citizens";
 import type {} from "../../src/net/e2e-hooks";
 import { resolveUniform } from "../../src/render/appearance/composite";
 import { resolveLayers } from "../../src/render/appearance/resolve-layers";
-import { screenPositionPx } from "../../src/render/screen-position";
-import { committedDefs, committedDemoCitizens } from "../unit/demo/demo-world";
-
-const SHOT_DIR = "test-results/story-1.10-shots";
-
-function balance(key: string): number {
-  const entry = committedDefs().balance.find((b) => b.key === key);
-  if (!entry) throw new Error(`no balance key '${key}'`);
-  return entry.value;
-}
-
-const TILE_SIZE_PX = balance("render.tile_size_px");
-const STOREY_HEIGHT_PX = balance("render.storey_height_px");
-const GROUND_FLOOR = 0;
-
-async function ready(page: Page): Promise<void> {
-  await page.waitForFunction(
-    () => Object.keys(window.__bc?.appearanceTextureIds ?? {}).length > 0,
-    undefined,
-    { timeout: 20_000 },
-  );
-  await page.waitForFunction(() => window.__bc?.appearanceCompare !== undefined, undefined, {
-    timeout: 20_000,
-  });
-  await page.waitForFunction(() => window.__bc?.viewTransform !== undefined, undefined, {
-    timeout: 20_000,
-  });
-}
-
-function canvasOf(page: Page) {
-  return page.locator("#demo-scene canvas");
-}
-
-/** Converts a world pixel (`screenPositionPx`'s own output) to the canvas
- * offset to screenshot at, through the scene's own recorded camera
- * transform -- the same conversion `intents.spec.ts` uses for clicks, so
- * a crop never drifts out of step with a moved camera. */
-async function canvasOffset(page: Page, worldPx: { x: number; y: number }) {
-  const view = await page.evaluate(() => window.__bc?.viewTransform);
-  if (!view) throw new Error("the demo scene never recorded its view transform");
-  return { x: worldPx.x * view.zoom + view.offsetX, y: worldPx.y * view.zoom + view.offsetY };
-}
+import { committedDefs } from "../unit/demo/demo-world";
+import { ready } from "./appearance-test-support";
 
 test.describe("the real, mounted appearance pipeline", () => {
   test("citizens sharing a tuple+override share one texture instance (AC5)", async ({ page }) => {
@@ -103,8 +61,11 @@ test.describe("the real, mounted appearance pipeline", () => {
     page,
   }) => {
     const defs: Defs = committedDefs();
-    const demoCitizens = committedDemoCitizens();
-    const fixtures = [...buildCitizenFixtures(demoCitizens), buildWalkerFixture(demoCitizens)];
+    const fixtures = [
+      ...buildCitizenFixtures(defs),
+      buildWalkerFixture(defs),
+      buildUniformedWalkerFixture(defs),
+    ];
     const tuplesAndOverrides: {
       tuple: (typeof fixtures)[number]["tuple"];
       override: ReturnType<typeof resolveUniform>;
@@ -115,7 +76,7 @@ test.describe("the real, mounted appearance pipeline", () => {
     // The player itself (`scene.ts`) is a generated tuple through the
     // same pipeline, never part of `citizens.ts`'s own fixture list.
     tuplesAndOverrides.push({
-      tuple: buildPlayerAppearanceTuple(demoCitizens),
+      tuple: buildPlayerAppearanceTuple(defs),
       override: null,
     });
 
@@ -259,82 +220,5 @@ test.describe("the real, mounted appearance pipeline", () => {
       expect(result).toBeDefined();
       expect(result?.pipeline.data).toEqual(result?.stack.data);
     }
-  });
-});
-
-test.describe("story 1.10 review screenshots", () => {
-  test("crowd, twin kids, walk directions, and after a full reload", async ({ page }) => {
-    // This is the one spec in the suite that pays for the full street
-    // crowd's own network-bound texture build *twice* (once at mount,
-    // once after `page.reload()`) plus four real-time waits for the
-    // walker to cross its own loop -- comfortably under the suite's
-    // default 30s budget locally, but tight enough on a slower CI runner
-    // to time out on real, necessary work rather than a stuck test (a
-    // real run there took 31.3s). Budgeted for the work, not loosened
-    // because a run happened to miss the default by a second.
-    test.setTimeout(90_000);
-    await page.goto("/");
-    await ready(page);
-
-    await canvasOf(page).screenshot({ path: `${SHOT_DIR}/crowd.png` });
-
-    // `kid-0` and the adult standing right beside it, on the identical
-    // `gridY` (`citizens.ts` extends the last adult row rightward for the
-    // kid row rather than starting a new one below it) -- the crop is
-    // centred on the real fixture positions, computed the same way
-    // `intents.spec.ts` turns a world cell into a canvas offset, so it
-    // never drifts out of step with a camera move or a fixture reshuffle.
-    const demoCitizens = committedDemoCitizens();
-    const fixtures = buildCitizenFixtures(demoCitizens);
-    const kid0 = fixtures.find((f) => f.id === "kid-0");
-    if (!kid0) throw new Error("appearance.spec: no kid-0 fixture");
-    const neighbourAdult = fixtures
-      .filter((f) => f.id.startsWith("adult-") && f.gridY === kid0.gridY)
-      .sort((a, b) => b.gridX - a.gridX)[0];
-    if (!neighbourAdult) {
-      throw new Error("appearance.spec: no adult shares kid-0's own gridY");
-    }
-    const midCellX = (kid0.gridX + neighbourAdult.gridX) / 2;
-    const midWorldPx = screenPositionPx(
-      midCellX,
-      kid0.gridY,
-      GROUND_FLOOR,
-      TILE_SIZE_PX,
-      STOREY_HEIGHT_PX,
-    );
-    const view = await page.evaluate(() => window.__bc?.viewTransform);
-    if (!view) throw new Error("the demo scene never recorded its view transform");
-    const centre = await canvasOffset(page, midWorldPx);
-    // `fullPage` screenshots and `boundingBox()` must agree on the same
-    // (unscrolled) coordinate origin -- pinned to the top so a prior
-    // scroll position can never shift the two out of step.
-    await page.evaluate(() => window.scrollTo(0, 0));
-    const canvasBox = await canvasOf(page).boundingBox();
-    if (!canvasBox) throw new Error("appearance.spec: the demo canvas has no bounding box");
-    const cropWidth = TILE_SIZE_PX * 8 * view.zoom;
-    const cropHeight = TILE_SIZE_PX * 6 * view.zoom;
-    await page.screenshot({
-      path: `${SHOT_DIR}/kid-beside-adult.png`,
-      fullPage: true,
-      clip: {
-        x: canvasBox.x + centre.x - cropWidth / 2,
-        y: canvasBox.y + centre.y - cropHeight * 0.75,
-        width: cropWidth,
-        height: cropHeight,
-      },
-    });
-
-    // The walker loops through right -> up -> left -> down forever
-    // (`citizens.ts`'s own `WALKER_LOOP`) at `WALK_CELLS_PER_SECOND` --
-    // four waits spaced comfortably past one full leg each are enough to
-    // have crossed every direction at least once.
-    for (let i = 0; i < 4; i++) {
-      await page.waitForTimeout(1200);
-      await canvasOf(page).screenshot({ path: `${SHOT_DIR}/walk-direction-${i}.png` });
-    }
-
-    await page.reload();
-    await ready(page);
-    await canvasOf(page).screenshot({ path: `${SHOT_DIR}/crowd-after-reload.png` });
   });
 });

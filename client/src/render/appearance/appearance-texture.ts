@@ -20,6 +20,7 @@ import {
 } from "./composite";
 import { buildCompositeCanvas, compositeCanvasToTexture } from "./composite-canvas";
 import { compositeCellRect } from "./frame-rect";
+import { loadLayerImages } from "./layer-images";
 import { loadPartImage, releasePartImage } from "./part-sheets";
 import { type ResolvedLayerSheets, resolveLayers } from "./resolve-layers";
 
@@ -29,38 +30,22 @@ import { type ResolvedLayerSheets, resolveLayers } from "./resolve-layers";
  * distinct tuples grow the GPU texture set forever. */
 export const APPEARANCE_TEXTURE_CACHE_CAPACITY = 256;
 
-async function loadLayerImages(sheets: ResolvedLayerSheets): Promise<LayerImages> {
-  const [body, eyes, outfit, hairstyle, accessory, uniformAccessory] = await Promise.all([
-    loadPartImage(sheets.body),
-    sheets.eyes ? loadPartImage(sheets.eyes) : null,
-    loadPartImage(sheets.outfit),
-    sheets.hairstyle ? loadPartImage(sheets.hairstyle) : null,
-    sheets.accessory ? loadPartImage(sheets.accessory) : null,
-    sheets.uniformAccessory ? loadPartImage(sheets.uniformAccessory) : null,
-  ]);
-  return { body, eyes, outfit, hairstyle, accessory, uniformAccessory };
-}
-
-/** Releases every bitmap `loadLayerImages` acquired -- called right after
- * `buildCompositeCanvas` has drawn from them, since a bitmap is never
- * needed again once its pixels are already in the composite canvas. */
-function releaseLayerImages(sheets: ResolvedLayerSheets, images: LayerImages): void {
-  releasePartImage(sheets.body, images.body as ImageBitmap);
-  if (sheets.eyes && images.eyes) releasePartImage(sheets.eyes, images.eyes as ImageBitmap);
-  releasePartImage(sheets.outfit, images.outfit as ImageBitmap);
-  if (sheets.hairstyle && images.hairstyle) {
-    releasePartImage(sheets.hairstyle, images.hairstyle as ImageBitmap);
-  }
-  if (sheets.accessory && images.accessory) {
-    releasePartImage(sheets.accessory, images.accessory as ImageBitmap);
-  }
-  if (sheets.uniformAccessory && images.uniformAccessory) {
-    releasePartImage(sheets.uniformAccessory, images.uniformAccessory as ImageBitmap);
-  }
-}
-
 function frameKey(animation: string, direction: string, frameIndex: number): string {
   return `${animation}|${direction}|${frameIndex}`;
+}
+
+/** Releases every bitmap `loadLayerImages` returned -- called right after
+ * `buildCompositeCanvas` has drawn from them, since a bitmap is never
+ * needed again once its pixels are already in the composite canvas. A
+ * partial-failure release (some layers loaded, one did not) is
+ * `loadLayerImages`'s own job, not this one's -- this only ever runs
+ * after a full success. */
+function releaseLoadedImages(sheets: ResolvedLayerSheets, images: LayerImages): void {
+  for (const key of Object.keys(sheets) as (keyof ResolvedLayerSheets)[]) {
+    const sheet = sheets[key];
+    const value = images[key];
+    if (sheet && value) releasePartImage(sheet, value as ImageBitmap);
+  }
 }
 
 /** One composited tuple+override's own texture set: the full compact
@@ -104,9 +89,13 @@ async function buildCompositeFrames(
   override: UniformOverride | null,
 ): Promise<CompositeFrames> {
   const resolved = resolveLayers(defs, tuple, override);
-  const images = await loadLayerImages(resolved.sheets);
+  const images = (await loadLayerImages(
+    resolved.sheets,
+    loadPartImage,
+    releasePartImage,
+  )) as LayerImages;
   const canvas = buildCompositeCanvas(resolved.layout, images, resolved.effectiveOutfit);
-  releaseLayerImages(resolved.sheets, images);
+  releaseLoadedImages(resolved.sheets, images);
 
   const texture = compositeCanvasToTexture(canvas);
   texture.source.scaleMode = "nearest";
@@ -164,7 +153,7 @@ export class AppearanceTextureCache {
     return this.cache.acquire(key, () => {
       const pending = buildCompositeFrames(this.defs, tuple, override);
       pending.catch(() => {
-        this.cache.forget(key);
+        this.cache.forget(key, pending);
       });
       return pending;
     });

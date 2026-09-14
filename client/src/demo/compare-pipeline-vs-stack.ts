@@ -23,8 +23,9 @@ import type { Texture } from "pixi.js";
 import type { Defs } from "../defs/types";
 import type { AppearanceTuple, UniformOverride } from "../render/appearance/composite";
 import { compositeCellRect, sourceFrameRect } from "../render/appearance/frame-rect";
-import { loadPartImage } from "../render/appearance/part-sheets";
+import { fetchPartBitmap } from "../render/appearance/part-sheets";
 import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
+import { createRefCountedCache } from "../render/appearance/ref-counted-cache";
 import { resolveLayers } from "../render/appearance/resolve-layers";
 
 const STACK_LAYER_ORDER = [
@@ -36,29 +37,20 @@ const STACK_LAYER_ORDER = [
   "uniformAccessory",
 ] as const;
 
-// This module's own wrapper around `loadPartImage`, deliberately never
-// paired with a `releasePartImage`: `appearance.spec.ts` calls
-// `comparePipelineVsStack` dozens of times over for one fixed tuple (the
-// full `(animation, direction, frame)` grid), and matching every load
-// with an immediate release (`appearance-texture.ts`'s own contract)
-// would let `part-sheets.ts`'s ref-counted cache evict and re-decode the
-// same handful of sheets on every one of those calls. Holding one
-// permanent reference per sheet here instead keeps each sheet decoded
-// exactly once for this module's own lifetime -- a Playwright test page's
-// sheet set is small and fixed, and the page (and this cache with it) is
-// torn down between tests, so there is no long-session leak to guard
-// against the way there is in `part-sheets.ts`'s own production contract.
-const stackImageCache = new Map<string, Promise<ImageBitmap>>();
-
-function loadStackImage(sheet: string): Promise<ImageBitmap> {
-  let cached = stackImageCache.get(sheet);
-  if (!cached) {
-    cached = loadPartImage(sheet);
-    cached.catch(() => stackImageCache.delete(sheet));
-    stackImageCache.set(sheet, cached);
-  }
-  return cached;
-}
+// This module's own cache, entirely separate from `part-sheets.ts`'s
+// production one -- same `fetchPartBitmap` loader (the URL resolution is
+// shared; the state is not), so this e2e harness never perturbs the
+// production cache it is checking: the crowd's own real mount (through
+// `citizens-layer.ts`) still exercises production's close-at-zero-
+// references path for real, unaffected by whatever this module does with
+// its own state. `appearance.spec.ts` calls `comparePipelineVsStack`
+// dozens of times over for one fixed tuple (the full `(animation,
+// direction, frame)` grid); this cache's own references are held for
+// this module's whole lifetime, never released, so each of that fixed
+// tuple's handful of sheets is decoded exactly once rather than on every
+// call -- a Playwright test page's own sheet set is small and fixed, and
+// the page (and this cache with it) is torn down between tests.
+const stackImages = createRefCountedCache(fetchPartBitmap, (bitmap) => bitmap.close());
 
 function readImageData(
   width: number,
@@ -123,7 +115,7 @@ export async function comparePipelineVsStack(
     if (layer === "hairstyle" && resolved.effectiveOutfit.hidesHairstyle) continue;
     const sheet = sheetByLayer[layer];
     if (!sheet) continue;
-    images.push(await loadStackImage(sheet));
+    images.push(await stackImages.acquire(sheet));
   }
   const stack = readImageData(cell.width, cell.height, (ctx) => {
     for (const image of images) {

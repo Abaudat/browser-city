@@ -84,9 +84,9 @@ describe("inv_composite_cache_one_texture_per_tuple", () => {
     const { build, dispose } = makeBuilder();
     const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 10 });
 
-    cache.acquire("a", build);
+    const a = cache.acquire("a", build);
     cache.acquire("a", build); // a second outstanding reference
-    cache.forget("a");
+    cache.forget("a", a);
 
     expect(cache.size).toBe(0);
     expect(dispose).not.toHaveBeenCalled();
@@ -99,8 +99,36 @@ describe("inv_composite_cache_one_texture_per_tuple", () => {
   it("forgetting a key that was never acquired is a no-op", () => {
     const { dispose } = makeBuilder();
     const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 10 });
-    expect(() => cache.forget("never-acquired")).not.toThrow();
+    const phantom: FakeTexture = { id: -1, destroyed: false };
+    expect(() => cache.forget("never-acquired", phantom)).not.toThrow();
     expect(dispose).not.toHaveBeenCalled();
+  });
+
+  it("a stale forget never evicts a fresher entry built after the one it names (Quentin's cycle-3 regression)", () => {
+    const { build, dispose } = makeBuilder();
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 1 });
+
+    // Build P1 for "x", release it, then evict it via capacity pressure
+    // (a second key at capacity 1 pushes it out) -- exactly the sequence
+    // a build whose own fetch is still stalled while its last reference
+    // already left would produce.
+    const p1 = cache.acquire("x", build);
+    cache.release("x");
+    cache.acquire("y", build);
+    cache.release("y");
+    expect(dispose).toHaveBeenCalledExactlyOnceWith(p1);
+
+    // "x" walks back into view: a fresh P2 is built under the same key.
+    const p2 = cache.acquire("x", build);
+
+    // P1's own (late) rejection/cleanup arrives now and tries to forget
+    // "x" -- but the value it names (p1) is no longer what "x" maps to.
+    cache.forget("x", p1);
+
+    // P2 must survive untouched, and no third build for "x" must happen.
+    const p3 = cache.acquire("x", build);
+    expect(p3).toBe(p2);
+    expect(build).toHaveBeenCalledTimes(3); // x(P1), y, x(P2) -- never a P3
   });
 
   // The trace-matrix-registered name (docs/trace-matrix.md,

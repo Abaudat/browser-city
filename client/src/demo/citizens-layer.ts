@@ -24,27 +24,16 @@ import {
 import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
 import {
   buildCitizenFixtures,
+  buildUniformedWalkerFixture,
   buildWalkerFixture,
-  type DemoCitizensFixture,
   plazaBounds,
+  UNIFORMED_WALKER_ID,
   WALKER_ID,
-  WALKER_LOOP,
+  walkerPoseAt,
 } from "./citizens";
 import { comparePipelineVsStack } from "./compare-pipeline-vs-stack";
 
-/** Cells per second the one animated citizen walks its loop at -- a
- * plain, fixed demo constant, not a `defs/` balance key (this citizen
- * is decorative, not simulated). */
-const WALK_CELLS_PER_SECOND = 1.5;
-const WALK_FRAMES_PER_DIRECTION = 6;
-const WALK_FRAMES_PER_SECOND = 8;
-
-function directionOf(dx: number, dy: number): string {
-  if (dx > 0) return "right";
-  if (dx < 0) return "left";
-  if (dy < 0) return "up";
-  return "down";
-}
+const WALKER_IDS: readonly string[] = [WALKER_ID, UNIFORMED_WALKER_ID];
 
 export interface CitizensLayerHandle {
   /** One opaque id per distinct `CompositeFrames` instance actually
@@ -60,16 +49,40 @@ export interface CitizensLayerHandle {
     direction: string,
     frame: number,
   ): Promise<{ pipeline: PixelSnapshot; stack: PixelSnapshot }>;
-  /** Advances the walking citizen -- called from `scene.ts`'s own ticker,
-   * never a second ticker registered here (one driver of frame-by-frame
-   * state). */
+  /** Advances every walking citizen -- called from `scene.ts`'s own
+   * ticker, never a second ticker registered here (one driver of
+   * frame-by-frame state). */
   update(deltaMS: number): void;
+  /** Every walker's current world position and facing direction, keyed by
+   * citizen id -- `appearance-screenshots.spec.ts`'s only reader, so a
+   * close-crop screenshot can wait for and centre on a specific walker in
+   * a specific direction instead of guessing at timing. */
+  walkerPositions(): Readonly<Record<string, { x: number; y: number; direction: string }>>;
+}
+
+interface WalkerState {
+  readonly sprite: Sprite;
+  readonly frames: CompositeFrames;
+  readonly family: Family;
+  readonly startX: number;
+  readonly startY: number;
+  elapsedMS: number;
+  direction: string;
+}
+
+function advanceWalker(walker: WalkerState, deltaMS: number, tileSizePx: number): void {
+  walker.elapsedMS += deltaMS;
+  const pose = walkerPoseAt(walker.startX, walker.startY, walker.elapsedMS);
+  walker.sprite.x = Math.round(pose.x * tileSizePx);
+  walker.sprite.y = Math.round(pose.y * tileSizePx);
+  walker.sprite.zIndex = pose.y;
+  walker.sprite.texture = walker.frames.frame("walk", pose.direction, pose.frameIndex);
+  walker.direction = pose.direction;
 }
 
 export async function mountCitizensLayer(
   world: Container,
   defs: Defs,
-  demoCitizens: DemoCitizensFixture,
   tileSizePx: number,
   cache: AppearanceTextureCache,
   sidewalkTexture: Texture,
@@ -94,7 +107,11 @@ export async function mountCitizensLayer(
   layer.sortableChildren = true;
   world.addChild(layer);
 
-  const fixtures = [...buildCitizenFixtures(demoCitizens), buildWalkerFixture(demoCitizens)];
+  const fixtures = [
+    ...buildCitizenFixtures(defs),
+    buildWalkerFixture(defs),
+    buildUniformedWalkerFixture(defs),
+  ];
   const layoutByFamily = new Map(defs.appearanceLayouts.map((l) => [l.family, l]));
 
   const textureIds = new Map<CompositeFrames, number>();
@@ -109,9 +126,7 @@ export async function mountCitizensLayer(
   }
 
   const textureIdsById: Record<string, number> = {};
-  let walkerSprite: Sprite | undefined;
-  let walkerFrames: CompositeFrames | undefined;
-  let walkerFamily: Family | undefined;
+  const walkers = new Map<string, WalkerState>();
 
   await Promise.all(
     fixtures.map(async (fixture) => {
@@ -126,70 +141,39 @@ export async function mountCitizensLayer(
       const frames = await cache.acquire(fixture.tuple, override);
       textureIdsById[fixture.id] = idFor(frames);
 
-      const sprite = new Sprite(frames.frame("idle", "down", 0));
+      const sprite = new Sprite(frames.frame("idle", fixture.facing, 0));
       sprite.anchor.set(0.5, 1);
       sprite.x = Math.round(fixture.gridX * tileSizePx);
       sprite.y = Math.round(fixture.gridY * tileSizePx);
       sprite.zIndex = fixture.gridY;
       layer.addChild(sprite);
 
-      if (fixture.id === WALKER_ID) {
-        walkerSprite = sprite;
-        walkerFrames = frames;
-        walkerFamily = body.family;
+      if (WALKER_IDS.includes(fixture.id)) {
+        walkers.set(fixture.id, {
+          sprite,
+          frames,
+          family: body.family,
+          startX: fixture.gridX,
+          startY: fixture.gridY,
+          elapsedMS: 0,
+          direction: fixture.facing,
+        });
       }
     }),
   );
 
-  let legIndex = 0;
-  let legProgress = 0; // 0..1 across the current leg
-  let elapsedMS = 0;
-  const walkerFixture = fixtures.find((f) => f.id === WALKER_ID);
-  const startX = walkerFixture?.gridX ?? 0;
-  const startY = walkerFixture?.gridY ?? 0;
-
-  function legOrigin(index: number): { x: number; y: number } {
-    let x = startX;
-    let y = startY;
-    for (let i = 0; i < index % WALKER_LOOP.length; i++) {
-      const leg = WALKER_LOOP[i];
-      if (leg) {
-        x += leg.dx;
-        y += leg.dy;
-      }
-    }
-    return { x, y };
+  function update(deltaMS: number): void {
+    for (const walker of walkers.values()) advanceWalker(walker, deltaMS, tileSizePx);
   }
 
-  function update(deltaMS: number): void {
-    if (!walkerSprite || !walkerFrames || !walkerFamily) return;
-    const layout = layoutByFamily.get(walkerFamily);
-    if (!layout) return;
-
-    elapsedMS += deltaMS;
-    const currentLeg = WALKER_LOOP[legIndex % WALKER_LOOP.length];
-    if (!currentLeg) return;
-    const legLengthCells = Math.hypot(currentLeg.dx, currentLeg.dy);
-    const legDurationMS = (legLengthCells / WALK_CELLS_PER_SECOND) * 1000;
-    legProgress += deltaMS / legDurationMS;
-    while (legProgress >= 1) {
-      legProgress -= 1;
-      legIndex += 1;
+  function walkerPositions(): Readonly<
+    Record<string, { x: number; y: number; direction: string }>
+  > {
+    const positions: Record<string, { x: number; y: number; direction: string }> = {};
+    for (const [id, walker] of walkers) {
+      positions[id] = { x: walker.sprite.x, y: walker.sprite.y, direction: walker.direction };
     }
-
-    const origin = legOrigin(legIndex);
-    const leg = WALKER_LOOP[legIndex % WALKER_LOOP.length];
-    if (!leg) return;
-    const x = origin.x + leg.dx * legProgress;
-    const y = origin.y + leg.dy * legProgress;
-    walkerSprite.x = Math.round(x * tileSizePx);
-    walkerSprite.y = Math.round(y * tileSizePx);
-    walkerSprite.zIndex = y;
-
-    const direction = directionOf(leg.dx, leg.dy);
-    const frameIndex =
-      Math.floor((elapsedMS / 1000) * WALK_FRAMES_PER_SECOND) % WALK_FRAMES_PER_DIRECTION;
-    walkerSprite.texture = walkerFrames.frame("walk", direction, frameIndex);
+    return positions;
   }
 
   function compareForE2e(
@@ -211,5 +195,6 @@ export async function mountCitizensLayer(
     distinctTextureCount: nextTextureId,
     compareForE2e,
     update,
+    walkerPositions,
   };
 }

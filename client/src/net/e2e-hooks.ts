@@ -35,6 +35,11 @@ declare global {
         direction: string,
         frame: number,
       ) => Promise<{ pipeline: PixelSnapshot; stack: PixelSnapshot }>;
+      /** Story 1.10: every walker's current world pixel position and
+       * facing direction, keyed by citizen id -- a callable, never a value
+       * recorded once, since it must reflect whichever frame it is called
+       * on. `appearance-screenshots.spec.ts`'s only reader. */
+      walkerPositions?: () => Record<string, { x: number; y: number; direction: string }>;
     };
   }
 }
@@ -175,5 +180,17 @@ export function exposeAppearanceCompareForE2e(
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.appearanceCompare = compare;
+  window.__bc = bucket;
+}
+
+/** Story 1.10: exposes the real, mounted crowd's own walker positions as
+ * a callable, the same "callable, not a recorded value" reasoning as
+ * `exposeAppearanceCompareForE2e` above. */
+export function exposeWalkerPositionsForE2e(
+  walkerPositions: NonNullable<NonNullable<Window["__bc"]>["walkerPositions"]>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.walkerPositions = walkerPositions;
   window.__bc = bucket;
 }

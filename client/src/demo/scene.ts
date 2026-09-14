@@ -41,7 +41,7 @@ import type { ObjectSource } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { TransitionIndex } from "../world/transitions";
 import { WorldIndex } from "../world/world-index";
-import { buildPlayerAppearanceTuple, type DemoCitizensFixture } from "./citizens";
+import { buildPlayerAppearanceTuple } from "./citizens";
 import { type CitizensLayerHandle, mountCitizensLayer } from "./citizens-layer";
 import {
   buildPlayerDrawable,
@@ -213,13 +213,9 @@ const GROUND_LAYER_CODE = layerCodeByName("objects");
 
 export interface MountDemoSceneOptions {
   /** Story 1.10: the fetched, parsed defs document -- needed to build the
-   * street crowd's real appearance textures (`citizens-layer.ts`). */
+   * street crowd's real appearance textures (`citizens-layer.ts`) and, via
+   * `citizens.ts`, the tuples themselves. */
   readonly defs: Defs;
-  /** Story 1.10: the committed, sim-generated demo citizen tuples
-   * (`tools/demo-citizens-build/tests/demo_citizens_fixture.rs`'s own
-   * output) -- `citizens.ts` places these, it never invents a tuple of
-   * its own. */
-  readonly demoCitizens: DemoCitizensFixture;
   readonly tileSizePx: number;
   readonly storeyHeightPx: number;
   readonly rankOf: (layerCode: number) => number;
@@ -517,7 +513,6 @@ export async function mountDemoScene(
 ): Promise<DemoSceneHandle> {
   const {
     defs,
-    demoCitizens,
     tileSizePx,
     storeyHeightPx,
     rankOf,
@@ -640,7 +635,7 @@ export async function mountDemoScene(
   // street crowd (`citizensLayer` below), so a player who happens to
   // match a crowd member's tuple reuses that texture too (AC5).
   const appearanceCache = new AppearanceTextureCache(defs);
-  const playerTuple = buildPlayerAppearanceTuple(demoCitizens);
+  const playerTuple = buildPlayerAppearanceTuple(defs);
   const playerFrames = await appearanceCache.acquire(playerTuple);
   const playerSprite = new Sprite(playerFrames.frame("idle", "down", 0));
   playerSprite.anchor.set(0.5, 1);
@@ -1059,7 +1054,6 @@ export async function mountDemoScene(
   const citizensLayer = await mountCitizensLayer(
     world,
     defs,
-    demoCitizens,
     tileSizePx,
     appearanceCache,
     textureFor("sidewalk", textures),
