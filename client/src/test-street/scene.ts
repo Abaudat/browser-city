@@ -25,6 +25,7 @@ import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
 import { layerCodeByName } from "../render/layer-table";
+import { FloorStacks } from "../render/floor-stacks";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
 import { floorOffsetPx, screenPositionPx } from "../render/screen-position";
@@ -138,6 +139,21 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
   ).href,
   subwayBench: new URL(
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Two_Seats_Grey_Bench_Frontal_1.png",
+    import.meta.url,
+  ).href,
+  // Story 1.13's footbridge: a concrete deck (the same city pavement
+  // tile the street below it is paved with, repeated per deck cell) and
+  // a flight of steps at each end. Real LimeZu art, no new PNGs.
+  bridgeDeck: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png",
+    import.meta.url,
+  ).href,
+  bridgeStairsUp: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_4.png",
+    import.meta.url,
+  ).href,
+  bridgeStairsDown: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png",
     import.meta.url,
   ).href,
   subwayWall: new URL(
@@ -548,27 +564,23 @@ export async function mountStreetScene(
   const world = new Container();
   app.stage.addChild(world);
 
-  // Four passes, declared in order even while empty (Tim's direction):
-  // three flat, then the y-sorted pool.
-  const groundPass = new Container();
-  const groundDecalPass = new Container();
-  const groundObjectPass = new Container();
-  const poolContainer = new Container();
-  poolContainer.sortableChildren = false; // the comparator is the only ordering authority
-  world.addChild(groundPass, groundDecalPass, groundObjectPass, poolContainer);
+  // Story 1.13 (Tim's direction): one four-pass stack per floor -- three
+  // flat passes then the y-sorted pool, declared in order even while
+  // empty -- with the stacks themselves drawn in ascending floor order.
+  // That is what lets a bridge deck on floor 1 sit over the street it
+  // spans without floor ever entering the FR123 sort key.
+  const stacks = new FloorStacks(world);
 
-  // Story 1.7: one container per distinct floor among the ground-tile
-  // groups (Tim's direction) -- toggled as a unit through the same
-  // `VisibilityApplier` the pool goes through, so a culled floor's flat
-  // passes are culled exactly as completely as its pool sprites are,
-  // never a second rule.
+  // Story 1.7: the flat ground pass of each floor's own stack is toggled
+  // as a unit through the same `VisibilityApplier` the pool goes through,
+  // so a culled floor's flat passes are culled exactly as completely as
+  // its pool sprites are, never a second rule.
   const groundContainersByFloor = new Map<number, Container>();
   function groundContainerFor(floor: number): Container {
     let container = groundContainersByFloor.get(floor);
     if (!container) {
-      container = new Container();
+      container = stacks.stackFor(floor).ground;
       groundContainersByFloor.set(floor, container);
-      groundPass.addChild(container);
     }
     return container;
   }
@@ -646,10 +658,52 @@ export async function mountStreetScene(
     assetKey: "player",
   };
   const members: PoolEntry[] = [...entries, playerEntry];
-  for (const m of members) poolContainer.addChild(m.view);
 
+  // One pool per floor (`FloorStacks`), so the comparator only ever
+  // orders drawables that share a floor and the stacks themselves settle
+  // what covers what between floors.
+  const membersByFloor = new Map<number, PoolEntry[]>();
+  function poolMembersOf(floor: number): PoolEntry[] {
+    let list = membersByFloor.get(floor);
+    if (!list) {
+      list = [];
+      membersByFloor.set(floor, list);
+      stacks.stackFor(floor);
+    }
+    return list;
+  }
+  for (const m of members) poolMembersOf(m.drawable.floor).push(m);
+
+  /** The order every floor's pool is in, concatenated ascending -- what
+   * `window.__bc.renderOrder` reports and what the golden pins. Rebuilt
+   * in place, never reallocated. */
   const renderOrder: bigint[] = [];
-  applyDepthOrder(poolContainer, members, renderOrder);
+  const orderByFloor = new Map<number, bigint[]>();
+
+  function reorderFloor(floor: number): void {
+    const list = membersByFloor.get(floor);
+    if (!list) return;
+    let order = orderByFloor.get(floor);
+    if (!order) {
+      order = [];
+      orderByFloor.set(floor, order);
+    }
+    applyDepthOrder(stacks.stackFor(floor).pool, list, order);
+  }
+
+  function rebuildRenderOrder(): void {
+    renderOrder.length = 0;
+    for (const floor of stacks.floors()) {
+      for (const id of orderByFloor.get(floor) ?? []) renderOrder.push(id);
+    }
+  }
+
+  function reorderAll(): void {
+    for (const floor of stacks.floors()) reorderFloor(floor);
+    rebuildRenderOrder();
+  }
+
+  reorderAll();
   onOrderChange?.(renderOrder);
 
   // `member.view.height` is the sprite's own local (unscaled) pixel
@@ -993,6 +1047,7 @@ export async function mountStreetScene(
     if (direction.x === 0 && direction.y === 0) return;
 
     const before = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
+    const floorBefore = walk.floor;
     walk = stepAndTransition(
       walk,
       direction,
@@ -1010,11 +1065,32 @@ export async function mountStreetScene(
     // Only re-sort when the player's own sort key actually moved to a
     // new sub-tile unit (Tim's direction): a street of static props
     // costs nothing per frame.
-    const after = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
-    if (after.x !== before.x || after.y !== before.y) {
-      applyDepthOrder(poolContainer, members, renderOrder);
+    // A floor transition moves the player between two pools -- a rare
+    // event, never the per-frame path -- so its own floor's pool and the
+    // one it left are both re-sorted, which is also what re-parents the
+    // player's sprite into the stack it now belongs to.
+    if (walk.floor !== floorBefore) {
+      const leaving = membersByFloor.get(floorBefore);
+      if (leaving) {
+        const index = leaving.indexOf(playerEntry);
+        if (index >= 0) leaving.splice(index, 1);
+      }
+      poolMembersOf(walk.floor).push(playerEntry);
+      reorderFloor(floorBefore);
+      reorderFloor(walk.floor);
+      rebuildRenderOrder();
       reapplyHighlight();
       onOrderChange?.(renderOrder);
+    } else {
+      const after = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
+      if (after.x !== before.x || after.y !== before.y) {
+        // Only the player's own floor can have changed order: every
+        // other member of every other pool is static.
+        reorderFloor(walk.floor);
+        rebuildRenderOrder();
+        reapplyHighlight();
+        onOrderChange?.(renderOrder);
+      }
     }
 
     // Ownership is looked up only when the player's own cell actually

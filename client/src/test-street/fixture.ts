@@ -98,6 +98,18 @@ export const SHOP_COUNTER_DEF_ID = 3;
  * every shopfront window places it by id, the same way the lamppost
  * does. */
 export const WINDOW_DEF_ID = 5;
+/** `defs/objects/city-props.toml`'s own `wall_segment` id (story 1.13):
+ * one plain solid wall cell -- the bridge's own parapet is laid from
+ * these, one cell at a time. */
+export const WALL_SEGMENT_DEF_ID = 6;
+/** `defs/objects/city-props.toml`'s own `bridge_deck` id (story 1.13): a
+ * four-cell walkable span with no collider at all, so the street below
+ * it is unobstructed (FR117/FR128). */
+export const BRIDGE_DECK_DEF_ID = 7;
+/** `defs/objects/city-props.toml`'s own `foot_stairs` id (story 1.13): a
+ * walkable flight of steps. Which floors it joins is a `floor_transition`
+ * row anchored on its cell, never a field on the prop. */
+export const FOOT_STAIRS_DEF_ID = 8;
 
 /** Synthetic def ids for street-only geometry (walls, world boundary),
  * offset far past any real `defs/objects` id so the two never collide in
@@ -220,11 +232,43 @@ export const PLATFORM_UP_ANCHOR_Y = PLATFORM_LANDING_Y - 1;
 export const STREET_EXIT_X = STAIRS_X + 1;
 export const STREET_EXIT_Y = STAIRS_Y;
 
+// --- the footbridge (story 1.13) ---------------------------------------
+//
+// The AC2 case no other part of this street carries: two floors at one
+// `(x, y)`. The deck spans the pavement one storey up, so the cells
+// `(BRIDGE_X0..BRIDGE_X1, BRIDGE_DECK_Y)` exist twice over -- open
+// pavement on floor 0, walkable deck on floor 1 -- and neither floor's
+// collision ever reaches the other (FR117). Walking east along the
+// pavement passes *under* it; the stairs at its east end lead up onto it.
+
+export const BRIDGE_FLOOR = STREET_FLOOR + 1;
+/** The deck's own row: the first pavement row south of the terrace, so
+ * the underpass is the same row the walk east already uses. */
+export const BRIDGE_DECK_Y = SOUTH_WALL_Y + 1;
+export const BRIDGE_X0 = 17;
+/** Four cells of `bridge_deck`, the def's own declared width. */
+export const BRIDGE_DECK_WIDTH = 4;
+export const BRIDGE_X1 = BRIDGE_X0 + BRIDGE_DECK_WIDTH - 1;
+
+/** Where the street-level stairs stand: the pavement row south of the
+ * deck's own east end. Entering this cell climbs onto the deck. */
+export const BRIDGE_UP_ANCHOR_X = BRIDGE_X1;
+export const BRIDGE_UP_ANCHOR_Y = BRIDGE_DECK_Y + 1;
+
+/** Where the deck's own down-stairs stand: two cells west of the
+ * up-stairs' own landing, and never the deck's own west end, so a walk
+ * that keeps holding one direction key after landing has cells to spare
+ * before it meets any other transition anchor (the subway's own is
+ * further west still). */
+export const BRIDGE_DOWN_ANCHOR_X = BRIDGE_X0 + 1;
+export const BRIDGE_DOWN_ANCHOR_Y = BRIDGE_DECK_Y;
+
 /** The floor transition data (Tim's `world/transitions.ts` port): entering
  * the stairwell cell on the street lands on the platform; entering the
  * up-stairs' own anchor cell returns to the street, one cell beside the
- * stairwell. Never a boolean on the stairs prop -- a `floor_transition`-
- * shaped row, anchor cell to target cell, exactly like the server's own
+ * stairwell. The footbridge's own two rows are the same shape, one storey
+ * up. Never a boolean on the stairs prop -- a `floor_transition`-shaped
+ * row, anchor cell to target cell, exactly like the server's own
  * model. */
 export const STREET_TRANSITIONS: readonly TransitionSpec[] = [
   {
@@ -241,6 +285,22 @@ export const STREET_TRANSITIONS: readonly TransitionSpec[] = [
     floor: SUBWAY_FLOOR,
     targetX: STREET_EXIT_X,
     targetY: STREET_EXIT_Y,
+    targetFloor: STREET_FLOOR,
+  },
+  {
+    x: BRIDGE_UP_ANCHOR_X,
+    y: BRIDGE_UP_ANCHOR_Y,
+    floor: STREET_FLOOR,
+    targetX: BRIDGE_X1,
+    targetY: BRIDGE_DECK_Y,
+    targetFloor: BRIDGE_FLOOR,
+  },
+  {
+    x: BRIDGE_DOWN_ANCHOR_X,
+    y: BRIDGE_DOWN_ANCHOR_Y,
+    floor: BRIDGE_FLOOR,
+    targetX: BRIDGE_DOWN_ANCHOR_X,
+    targetY: BRIDGE_DECK_Y + 1,
     targetFloor: STREET_FLOOR,
   },
 ];
@@ -580,6 +640,55 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // overhang (Artie's cycle-2 direction: the stairs, anchored at
   // `PLATFORM_UP_ANCHOR_X`, were covering the bench almost completely
   // when the two sat one cell apart).
+  // --- The footbridge (story 1.13) -------------------------------------
+  // The deck itself: one multi-cell prop, placed by its real `defs/`
+  // id, so its "no collider at all" comes from `defs/objects` rather
+  // than from this fixture choosing not to give it one.
+  {
+    id: 70n,
+    assetKey: "bridgeDeck",
+    x: BRIDGE_X0,
+    y: BRIDGE_DECK_Y,
+    floor: BRIDGE_FLOOR,
+    layer: "objects",
+    footprint: { width: BRIDGE_DECK_WIDTH, height: 1 },
+    defId: BRIDGE_DECK_DEF_ID,
+  },
+  // The parapet along the deck's own north edge: real `wall_segment`
+  // cells, one per deck column. Owned by no building, so they are never
+  // retracted however close the player stands (FR120 is keyed on
+  // ownership, never proximity).
+  ...Array.from({ length: BRIDGE_DECK_WIDTH }, (_, index) => ({
+    id: BigInt(71 + index),
+    assetKey: "wallTile",
+    x: BRIDGE_X0 + index,
+    y: BRIDGE_DECK_Y - 1,
+    floor: BRIDGE_FLOOR,
+    layer: "walls" as const,
+    defId: WALL_SEGMENT_DEF_ID,
+    wallOrientation: "vertical" as const,
+  })),
+  // The stairs at each end: walkable props (no collider in `defs/`),
+  // each the physical thing a `floor_transition` row is anchored on.
+  {
+    id: 80n,
+    assetKey: "bridgeStairsUp",
+    x: BRIDGE_UP_ANCHOR_X,
+    y: BRIDGE_UP_ANCHOR_Y,
+    floor: STREET_FLOOR,
+    layer: "objects",
+    defId: FOOT_STAIRS_DEF_ID,
+  },
+  {
+    id: 81n,
+    assetKey: "bridgeStairsDown",
+    x: BRIDGE_DOWN_ANCHOR_X,
+    y: BRIDGE_DOWN_ANCHOR_Y,
+    floor: BRIDGE_FLOOR,
+    layer: "objects",
+    defId: FOOT_STAIRS_DEF_ID,
+  },
+
   {
     id: 64n,
     assetKey: "subwayBench",
@@ -600,6 +709,10 @@ export interface StreetBoundaryRect {
   readonly y: number;
   readonly width: number;
   readonly height: number;
+  /** Which floor this stretch of edge closes. Defaults to the street
+   * (`STREET_FLOOR`); the footbridge's own deck needs its own ring one
+   * storey up, since a floor's collision never reaches another (FR117). */
+  readonly floor?: number;
 }
 
 /** The edge of the drawn world (FR137 has no world-boundary concept yet,
@@ -626,6 +739,15 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
     width: 21 - (EAST_WALL_X_B + 1),
     height: 1,
   },
+  // The footbridge's own ring, one storey up: the deck is the only
+  // standable thing on `BRIDGE_FLOOR`, so everything around it is closed
+  // off. Its north side needs no entry -- the parapet (real
+  // `wall_segment` cells) already closes it.
+  { id: 110n, x: BRIDGE_X0 - 1, y: BRIDGE_DECK_Y + 1, width: BRIDGE_DECK_WIDTH + 2, height: 1, floor: BRIDGE_FLOOR },
+  { id: 111n, x: BRIDGE_X0 - 1, y: BRIDGE_DECK_Y, width: 1, height: 1, floor: BRIDGE_FLOOR },
+  { id: 112n, x: BRIDGE_X1 + 1, y: BRIDGE_DECK_Y, width: 1, height: 1, floor: BRIDGE_FLOOR },
+  { id: 113n, x: BRIDGE_X0 - 1, y: BRIDGE_DECK_Y - 1, width: 1, height: 1, floor: BRIDGE_FLOOR },
+  { id: 114n, x: BRIDGE_X1 + 1, y: BRIDGE_DECK_Y - 1, width: 1, height: 1, floor: BRIDGE_FLOOR },
 ] as const;
 
 /** One flat-pass ground tile group (FR123: three flat passes before the
@@ -777,11 +899,125 @@ export function streetPlacedRows(): readonly PlacedObject[] {
       defId: streetDefId(rect.id),
       x: rect.x,
       y: rect.y,
-      floor: PLAYER_START.floor,
+      floor: rect.floor ?? STREET_FLOOR,
       layer: 0,
       orientation: 0,
       chunkKey: 0n,
     });
   }
   return rows;
+}
+
+// --- the scripted walk (story 1.13) -------------------------------------
+//
+// One route, declared once, here with the geometry it walks (Quentin's
+// direction): `tests/unit/test-street/street-conformance.test.ts` walks it
+// against the real `world/floor-walk.ts` resolver to prove it is
+// collision-feasible at all, and `tests/e2e/test-street.spec.ts` walks the
+// identical list through real `page.keyboard` input. Neither restates a
+// coordinate, so Epic 3 swapping this street's data keeps both.
+
+/** One held movement key, in the same `KeyboardEvent.code`-shaped names
+ * the default bindings use -- never a raw direction vector, because the
+ * e2e walk must go through the real keybindings, not around them. */
+export type StreetWalkKey = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight";
+
+/** When to let a held key go. Declarative on purpose: the same value is
+ * evaluated in node (against a simulated step) and inside the page
+ * (against `window.__bc.playerPosition`/`playerFloor`), so neither side
+ * needs a fixed wait. */
+export type StreetWalkUntil =
+  | { readonly kind: "x-at-least"; readonly value: number }
+  | { readonly kind: "x-at-most"; readonly value: number }
+  | { readonly kind: "y-at-least"; readonly value: number }
+  | { readonly kind: "y-at-most"; readonly value: number }
+  | { readonly kind: "floor"; readonly value: number };
+
+export interface StreetWalkSegment {
+  /** The checkpoint this segment ends at -- what the e2e spec asserts
+   * against by name, so a reordered route can never silently assert the
+   * wrong thing at the wrong place. */
+  readonly label: string;
+  readonly key: StreetWalkKey;
+  readonly until: StreetWalkUntil;
+}
+
+/** Whether a held key's own release condition is met, for a walker at
+ * `(x, y)` on `floor`. The one rule both the simulated and the real walk
+ * use. */
+export function streetWalkUntilMet(
+  until: StreetWalkUntil,
+  x: number,
+  y: number,
+  floor: number,
+): boolean {
+  switch (until.kind) {
+    case "x-at-least":
+      return x >= until.value;
+    case "x-at-most":
+      return x <= until.value;
+    case "y-at-least":
+      return y >= until.value;
+    case "y-at-most":
+      return y <= until.value;
+    case "floor":
+      return floor === until.value;
+  }
+}
+
+/** The direction a held key walks in -- the same mapping the default
+ * keybindings produce, restated here only so the *simulated* walk can run
+ * without a DOM (`input/keyboard.ts` needs real key events). */
+export const STREET_WALK_DIRECTIONS: Readonly<Record<StreetWalkKey, { x: number; y: number }>> = {
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+};
+
+/** What the route needs from `defs/` -- the one rest position that is a
+ * real collider face rather than a cell coordinate, supplied by the
+ * caller so this module stays free of `defs/` (and of any filesystem or
+ * fetch). */
+export interface StreetWalkInputs {
+  /** Where a walk straight south out of shop A's door comes to rest: the
+   * top face of the lamppost's own base collider. */
+  readonly lamppostRestY: number;
+}
+
+/**
+ * The scripted walk, in order. It leaves shop A by its door (the
+ * enclosure case), rests part-way through the lamppost (the
+ * pass-partly-through case: inside the footprint, outside the collider),
+ * walks east along the pavement, turns up onto the underpass row and
+ * crosses *under* the bridge deck (the two-floors-at-one-`(x, y)` case),
+ * climbs onto the deck by its stairs (the transition case), walks the
+ * deck's own multi-cell span, and comes back down to the street.
+ */
+export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
+  return [
+    // Out of the door, onto the pavement: the building's own near-side
+    // walls come back the moment the player is no longer inside it.
+    { label: "outside-the-shopfront", key: "ArrowDown", until: { kind: "y-at-least", value: SOUTH_WALL_Y + 1 } },
+    // Into the lamppost, coming to rest against its own small base
+    // collider part-way into its cell.
+    {
+      label: "part-way-through-the-lamppost",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.lamppostRestY - 0.01 },
+    },
+    // East along the pavement, stopping short of the subway stairwell's
+    // own anchor cell.
+    { label: "east-along-the-pavement", key: "ArrowRight", until: { kind: "x-at-least", value: STAIRS_X - 0.5 } },
+    // North onto the row the bridge deck spans.
+    { label: "on-the-underpass-row", key: "ArrowUp", until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 } },
+    // Under the deck, the whole span: from here east, every cell walked
+    // has a drawable one floor above it at the same `(x, y)`.
+    { label: "under-the-bridge", key: "ArrowRight", until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 } },
+    // South onto the stairs at the deck's east end -- the transition
+    // cell, which lands the player on the deck one storey up.
+    { label: "on-the-bridge-deck", key: "ArrowDown", until: { kind: "floor", value: BRIDGE_FLOOR } },
+    // West along the deck, over the street, down the far stairs.
+    { label: "back-on-the-street", key: "ArrowLeft", until: { kind: "floor", value: STREET_FLOOR } },
+  ];
 }

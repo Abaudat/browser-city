@@ -14,10 +14,11 @@ import {
   SIDEWALK_TILES,
   SUBWAY_FLOOR,
 } from "../../../src/test-street/fixture";
+import { sortAcrossFloors } from "../../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
 import { screenPositionPx } from "../../../src/render/screen-position";
-import { compareDrawables, sortDrawablesInPlace } from "../../../src/render/sort-key";
+import { compareDrawables } from "../../../src/render/sort-key";
 import { toSortUnits } from "../../../src/render/sort-units";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import type { Vec2 } from "../../../src/world/movement";
@@ -76,8 +77,7 @@ describe("the story 1.6 street scene's committed ordering", () => {
       PLAYER_START.y,
       PLAYER_START.floor,
     );
-    const pool = [...props, player];
-    sortDrawablesInPlace(pool);
+    const pool = sortAcrossFloors([...props, player], (d) => d);
 
     // Shared verbatim with `render-order.spec.ts` -- the comparator (run
     // here, directly, in node) and the real Pixi adapter (run there,
@@ -100,8 +100,7 @@ describe("the story 1.6 street scene's committed ordering", () => {
       lamppostRestY(),
       PLAYER_START.floor,
     );
-    const pool = [...props, player];
-    sortDrawablesInPlace(pool);
+    const pool = sortAcrossFloors([...props, player], (d) => d);
 
     expect(pool.map((d) => d.stableId.toString())).toEqual(
       STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
