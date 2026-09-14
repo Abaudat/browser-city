@@ -48,3 +48,34 @@ height = 1
 # and retracted like any other front wall.
 window = true
 collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
+
+[[object]]
+id = 6
+key = "wall_segment"
+width = 1
+height = 1
+# One plain, solid wall cell -- the generic segment a wall run (a
+# building facade, a bridge railing) is laid from, one cell at a time.
+# The whole cell blocks. A doorway is the absence of a segment, never an
+# object of its own (FR118: a door is an ordinary walkable cell).
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
+
+[[object]]
+id = 7
+key = "bridge_deck"
+width = 4
+height = 1
+# The walkable span of a footbridge: four cells of deck, no collider at
+# all (FR128), so an entity on the deck's own floor walks the whole span
+# and an entity on the floor below passes under it unobstructed -- the
+# deck occupies the same (x, y) as the street beneath it and never
+# contributes collision to it (FR117).
+
+[[object]]
+id = 8
+key = "foot_stairs"
+width = 1
+height = 1
+# A flight of steps between two floors: a physical, walkable prop, never
+# a teleport tile. Which floors it joins is a `floor_transition` row
+# anchored on its cell (FR117), never a field here.
