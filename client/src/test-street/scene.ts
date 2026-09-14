@@ -24,6 +24,7 @@ import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
+import type { AppearanceTuple } from "../render/appearance/composite";
 import { layerCodeByName } from "../render/layer-table";
 import { FloorStacks } from "../render/floor-stacks";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
@@ -258,7 +259,12 @@ export interface MountStreetSceneOptions {
    * current continuous position (story 1.8's e2e proof that movement is
    * client-side and immediate, FR137) -- unlike `onOrderChange`, this is
    * polled every frame on purpose. */
-  readonly onPlayerMove?: (x: number, y: number) => void;
+  readonly onPlayerMove?: (x: number, y: number, floor: number) => void;
+  /** Story 1.13 (NFR2): how long this scene's own ticker callback took,
+   * in ms, every frame it runs -- the frame *work* the perf harness
+   * gates on, never a rAF interval. One call per frame into a sink that
+   * does nothing unless a perf run has asked for samples. */
+  readonly onFrameWork?: (ms: number) => void;
   /** Called once at mount and then every time visibility is actually
    * re-applied (story 1.7's e2e proof, `enclosure.spec.ts`) -- a map from
    * decimal `stableId` string to its current FR120/FR121/FR122 state,
@@ -309,6 +315,10 @@ export interface MountStreetSceneOptions {
 
 export interface StreetSceneHandle {
   readonly app: Application;
+  /** The player's own appearance tuple, as composited at mount (FR61) --
+   * `main.ts` wires its DEV-only `window.__bc` hook against this, the
+   * same way it does for the crowd's own texture identities. */
+  readonly playerAppearance: AppearanceTuple;
   getRenderOrder(): readonly bigint[];
   /** The keyboard this scene is actually driven by -- the caller's own
    * instance when it supplied one. */
@@ -538,6 +548,7 @@ export async function mountStreetScene(
     windowDefIds,
     onOrderChange,
     onPlayerMove,
+    onFrameWork,
     onVisibilityChange,
     onMasksChecked,
     onIntent,
@@ -916,7 +927,7 @@ export async function mountStreetScene(
   applyVisibilityFor(lastCellX, lastCellY, walk.floor, true);
   refreshHiddenObjects();
 
-  onPlayerMove?.(walk.x, walk.y);
+  onPlayerMove?.(walk.x, walk.y, walk.floor);
 
   const { keyboard } = options;
   const detachKeyboard = attachKeyboard(keyboard);
@@ -1043,6 +1054,16 @@ export async function mountStreetScene(
   });
 
   app.ticker.add((ticker) => {
+    // NFR2's measurement point: the scene's own work for this frame,
+    // start to finish. `performance.now()` twice per frame allocates
+    // nothing and costs nothing measurable; the sink itself keeps no
+    // samples unless a perf run has asked for them.
+    const frameStart = performance.now();
+    tick(ticker.deltaMS);
+    onFrameWork?.(performance.now() - frameStart);
+  });
+
+  function tick(deltaMS: number): void {
     const direction = keyboard.direction();
     if (direction.x === 0 && direction.y === 0) return;
 
@@ -1051,13 +1072,13 @@ export async function mountStreetScene(
     walk = stepAndTransition(
       walk,
       direction,
-      ticker.deltaMS,
+      deltaMS,
       worldIndex,
       movementConfig,
       transitions,
     );
 
-    onPlayerMove?.(walk.x, walk.y);
+    onPlayerMove?.(walk.x, walk.y, walk.floor);
 
     updatePlayerDrawable(playerDrawable, walk.x, walk.y, walk.floor);
     positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, "player");
@@ -1111,7 +1132,7 @@ export async function mountStreetScene(
     // not only when the player enters a new cell. It is still an event --
     // a frame where nothing moved returns above and never reaches here.
     pointer.refresh();
-  });
+  }
 
   // Story 1.10: the street crowd, a second, additive layer under `world`
   // -- never part of `members`/`poolContainer` (see `citizens.ts`'s own
@@ -1155,6 +1176,7 @@ export async function mountStreetScene(
 
   return {
     app,
+    playerAppearance: playerTuple,
     getRenderOrder: () => renderOrder,
     keyboard,
     citizensLayer,

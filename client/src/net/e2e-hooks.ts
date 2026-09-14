@@ -14,6 +14,18 @@ declare global {
       pings: PingObservation[];
       renderOrder?: string[];
       playerPosition?: { x: number; y: number };
+      /** Story 1.13: the floor the player is standing on right now --
+       * recorded with the position, from the same `FloorWalkResult`, so a
+       * reader can never see one without the other. */
+      playerFloor?: number;
+      /** Story 1.13 (NFR2): per-frame *work* time in ms -- how long the
+       * scene's own ticker callback took, never a rAF interval (headless
+       * CI has no vsync or GPU, so wall-clock FPS there is noise).
+       * Recording is off until `__bcStartFrameTimings` turns it on, so a
+       * functional spec never pays for it. */
+      frameTimings?: number[];
+      startFrameTimings?: () => void;
+      stopFrameTimings?: () => number[];
       visibility?: Record<string, string>;
       visibilityAlpha?: Record<string, number>;
       masksAllNull?: boolean;
@@ -25,6 +37,19 @@ declare global {
        * id -- citizens sharing a tuple+override share an id (AC5). */
       appearanceTextureIds?: Record<string, number>;
       appearanceDistinctTextureCount?: number;
+      /** Story 1.13: the player's own five stored part indices (FR61),
+       * recorded once at mount. Unlike `appearanceTextureIds` -- opaque
+       * per-session identity counters, assigned in texture-load order and
+       * meaningless across a reload -- this is the tuple itself, so "the
+       * same five parts after a walk and after a reload" is a thing a
+       * spec can actually assert. */
+      playerAppearance?: {
+        body: number;
+        eyes: number;
+        outfit: number;
+        hairstyle: number;
+        accessory: number;
+      };
       /** Story 1.10: the real, mounted pipeline's own pixel output vs.
        * an independent five/six-sprite stack, for one `(tuple, override,
        * animation, direction, frame)`. */
@@ -62,10 +87,33 @@ export function recordRenderOrderForE2e(order: readonly bigint[]): void {
  * client-side, with no round trip (FR137): the street scene's current
  * continuous player position, read every frame -- `movement.spec.ts` is
  * the only reader. */
-export function recordPlayerPositionForE2e(x: number, y: number): void {
+export function recordPlayerPositionForE2e(x: number, y: number, floor: number): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.playerPosition = { x, y };
+  bucket.playerFloor = floor;
+  window.__bc = bucket;
+}
+
+/** Story 1.13 (NFR2): the frame-work recorder the perf spec drives. The
+ * scene reports how long its own ticker callback took, every frame, and
+ * this keeps the samples only while a caller has asked for them -- a
+ * functional run records nothing and allocates nothing. */
+export function recordFrameWorkForE2e(ms: number): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  if (bucket.frameTimings) bucket.frameTimings.push(ms);
+  if (bucket.startFrameTimings) return;
+  bucket.startFrameTimings = () => {
+    const current = window.__bc;
+    if (current) current.frameTimings = [];
+  };
+  bucket.stopFrameTimings = () => {
+    const current = window.__bc;
+    const samples = current?.frameTimings ?? [];
+    if (current) current.frameTimings = undefined;
+    return samples;
+  };
   window.__bc = bucket;
 }
 
@@ -162,6 +210,21 @@ export function recordAppearanceTextureIdsForE2e(
   const bucket = window.__bc ?? { pings: [] };
   bucket.appearanceTextureIds = { ...idsById };
   bucket.appearanceDistinctTextureCount = distinctCount;
+  window.__bc = bucket;
+}
+
+/** Story 1.13: the player's own appearance tuple, as the real, mounted
+ * scene composited it -- read once at mount and never again. */
+export function recordPlayerAppearanceForE2e(tuple: {
+  readonly body: number;
+  readonly eyes: number;
+  readonly outfit: number;
+  readonly hairstyle: number;
+  readonly accessory: number;
+}): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.playerAppearance = { ...tuple };
   window.__bc = bucket;
 }
 

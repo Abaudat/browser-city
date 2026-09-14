@@ -12,7 +12,9 @@ import {
   recordIgnoredIntentForE2e,
   recordIntentForE2e,
   recordMasksCheckedForE2e,
+  recordFrameWorkForE2e,
   recordPingForE2e,
+  recordPlayerAppearanceForE2e,
   recordPlayerPositionForE2e,
   recordRenderOrderForE2e,
   recordViewTransformForE2e,
@@ -126,6 +128,7 @@ async function startStreetScene(): Promise<void> {
     windowDefIds: windowDefIds(defs),
     onOrderChange: recordRenderOrderForE2e,
     onPlayerMove: recordPlayerPositionForE2e,
+    onFrameWork: recordFrameWorkForE2e,
     onVisibilityChange: recordVisibilityForE2e,
     onMasksChecked: recordMasksCheckedForE2e,
     keyboard,
@@ -148,6 +151,7 @@ async function startStreetScene(): Promise<void> {
     handle.citizensLayer.distinctTextureCount,
   );
   exposeAppearanceCompareForE2e(handle.citizensLayer.compareForE2e);
+  recordPlayerAppearanceForE2e(handle.playerAppearance);
 }
 
 function getBalance(defs: Defs, key: string): number {
