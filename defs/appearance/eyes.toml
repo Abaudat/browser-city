@@ -3,76 +3,89 @@ id = 1
 key = "eyes_01"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_01.png"
+pool = "civilian"
 
 [[eyes]]
 id = 2
 key = "eyes_02"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_02.png"
+pool = "civilian"
 
 [[eyes]]
 id = 3
 key = "eyes_03"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_03.png"
+pool = "civilian"
 
 [[eyes]]
 id = 4
 key = "eyes_04"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_04.png"
+pool = "civilian"
 
 [[eyes]]
 id = 5
 key = "eyes_05"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_05.png"
+pool = "civilian"
 
 [[eyes]]
 id = 6
 key = "eyes_06"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_06.png"
+pool = "civilian"
 
 [[eyes]]
 id = 7
 key = "eyes_07"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_07.png"
+pool = "costume"
 
 [[eyes]]
 id = 8
 key = "kid_eyes_kids_1"
 family = "kid"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_1.png"
+pool = "civilian"
 
 [[eyes]]
 id = 9
 key = "kid_eyes_kids_2"
 family = "kid"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_2.png"
+pool = "civilian"
 
 [[eyes]]
 id = 10
 key = "kid_eyes_kids_3"
 family = "kid"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_3.png"
+pool = "civilian"
 
 [[eyes]]
 id = 11
 key = "kid_eyes_kids_4"
 family = "kid"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_4.png"
+pool = "civilian"
 
 [[eyes]]
 id = 12
 key = "kid_eyes_kids_5"
 family = "kid"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_5.png"
+pool = "civilian"
 
 [[eyes]]
 id = 13
 key = "kid_eyes_kids_6"
 family = "kid"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_6.png"
+pool = "civilian"
 

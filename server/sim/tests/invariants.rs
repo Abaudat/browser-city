@@ -67,7 +67,9 @@ proptest! {
     /// `inv_appearance_indices_in_range` (FR61): for any u64 citizen id and
     /// family, `generate` never panics, `body`/`eyes`/`outfit` are always
     /// non-zero and name a real manifest entry of the matching family
-    /// (`outfit` additionally from the civilian pool), and a non-zero
+    /// (`body`/`eyes`/`outfit` additionally from the civilian pool, never
+    /// a costume-pool sheet like the unnaturally coloured bodies/eyes a
+    /// generated citizen must never wear), and a non-zero
     /// `hairstyle`/`accessory` also names a real entry of that family.
     #[test]
     fn inv_appearance_indices_in_range(id in any::<u64>(), kid in any::<bool>()) {
@@ -76,10 +78,16 @@ proptest! {
         let a = appearance::generate(id, family, &catalogue);
 
         prop_assert_ne!(a.body, 0);
-        prop_assert!(defs::BODIES.iter().any(|b| b.id == a.body && b.family == family));
+        let body_ok = defs::BODIES
+            .iter()
+            .any(|b| b.id == a.body && b.family == family && b.pool == Pool::Civilian);
+        prop_assert!(body_ok);
 
         prop_assert_ne!(a.eyes, 0);
-        prop_assert!(defs::EYES.iter().any(|e| e.id == a.eyes && e.family == family));
+        let eyes_ok = defs::EYES
+            .iter()
+            .any(|e| e.id == a.eyes && e.family == family && e.pool == Pool::Civilian);
+        prop_assert!(eyes_ok);
 
         prop_assert_ne!(a.outfit, 0);
         let outfit_ok = defs::OUTFITS

@@ -85,6 +85,7 @@ export interface BodyDef {
   readonly key: string;
   readonly family: Family;
   readonly sheet: string;
+  readonly pool: Pool;
 }
 
 export interface EyesDef {
@@ -92,6 +93,7 @@ export interface EyesDef {
   readonly key: string;
   readonly family: Family;
   readonly sheet: string;
+  readonly pool: Pool;
 }
 
 export interface HairstyleDef {

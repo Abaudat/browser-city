@@ -1,7 +1,7 @@
 // Story 1.10 (AC5, FR61): the composite cache keys by the packed tuple
 // (plus uniform override), counts references, and evicts least-recently
-// used entries past an engineering cap. Pure: the factory/dispose
-// functions are injected, so this needs no Pixi and no canvas.
+// used entries past an engineering cap. Pure: the build/dispose functions
+// are injected, so this needs no Pixi and no canvas.
 import { describe, expect, it, vi } from "vitest";
 import { AppearanceCache } from "../../../../src/render/appearance/appearance-cache";
 
@@ -10,10 +10,10 @@ interface FakeTexture {
   destroyed: boolean;
 }
 
-function makeFactory() {
+function makeBuilder() {
   let nextId = 0;
   const created: FakeTexture[] = [];
-  const factory = vi.fn((_key: string): FakeTexture => {
+  const build = vi.fn((): FakeTexture => {
     const texture = { id: nextId++, destroyed: false };
     created.push(texture);
     return texture;
@@ -21,38 +21,38 @@ function makeFactory() {
   const dispose = vi.fn((texture: FakeTexture) => {
     texture.destroyed = true;
   });
-  return { factory, dispose, created };
+  return { build, dispose, created };
 }
 
 describe("inv_composite_cache_one_texture_per_tuple", () => {
-  it("returns the same texture instance for the same key and calls the factory once", () => {
-    const { factory, dispose } = makeFactory();
-    const cache = new AppearanceCache<FakeTexture>({ factory, dispose, capacity: 10 });
+  it("returns the same texture instance for the same key and calls build once", () => {
+    const { build, dispose } = makeBuilder();
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 10 });
 
-    const a = cache.acquire("tuple-1");
-    const b = cache.acquire("tuple-1");
+    const a = cache.acquire("tuple-1", build);
+    const b = cache.acquire("tuple-1", build);
 
     expect(a).toBe(b);
-    expect(factory).toHaveBeenCalledTimes(1);
+    expect(build).toHaveBeenCalledTimes(1);
   });
 
   it("gives different tuples different entries", () => {
-    const { factory, dispose } = makeFactory();
-    const cache = new AppearanceCache<FakeTexture>({ factory, dispose, capacity: 10 });
+    const { build, dispose } = makeBuilder();
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 10 });
 
-    const a = cache.acquire("tuple-1");
-    const b = cache.acquire("tuple-2");
+    const a = cache.acquire("tuple-1", build);
+    const b = cache.acquire("tuple-2", build);
 
     expect(a).not.toBe(b);
-    expect(factory).toHaveBeenCalledTimes(2);
+    expect(build).toHaveBeenCalledTimes(2);
   });
 
   it("releases a texture's reference when a character leaves the view, without disposing it while capacity allows it to stay cached", () => {
-    const { factory, dispose } = makeFactory();
-    const cache = new AppearanceCache<FakeTexture>({ factory, dispose, capacity: 10 });
+    const { build, dispose } = makeBuilder();
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 10 });
 
-    const a = cache.acquire("tuple-1");
-    cache.acquire("tuple-1"); // a second character sharing the same look
+    const a = cache.acquire("tuple-1", build);
+    cache.acquire("tuple-1", build); // a second character sharing the same look
     cache.release("tuple-1");
     expect(dispose).not.toHaveBeenCalled();
 
@@ -62,22 +62,44 @@ describe("inv_composite_cache_one_texture_per_tuple", () => {
   });
 
   it("reuses a fully-released entry on a later acquire, rather than rebuilding it, as long as it was never evicted", () => {
-    const { factory, dispose } = makeFactory();
-    const cache = new AppearanceCache<FakeTexture>({ factory, dispose, capacity: 10 });
+    const { build, dispose } = makeBuilder();
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 10 });
 
-    const a = cache.acquire("tuple-1");
+    const a = cache.acquire("tuple-1", build);
     cache.release("tuple-1");
-    const b = cache.acquire("tuple-1");
+    const b = cache.acquire("tuple-1", build);
 
     expect(b).toBe(a);
-    expect(factory).toHaveBeenCalledTimes(1);
+    expect(build).toHaveBeenCalledTimes(1);
   });
 
   it("releasing a key with no outstanding reference is a no-op, never an underflow", () => {
-    const { dispose } = makeFactory();
-    const { factory } = makeFactory();
-    const cache = new AppearanceCache<FakeTexture>({ factory, dispose, capacity: 10 });
+    const { dispose } = makeBuilder();
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 10 });
     expect(() => cache.release("never-acquired")).not.toThrow();
+    expect(dispose).not.toHaveBeenCalled();
+  });
+
+  it("forget removes an entry outright, without calling dispose, regardless of its reference count", () => {
+    const { build, dispose } = makeBuilder();
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 10 });
+
+    cache.acquire("a", build);
+    cache.acquire("a", build); // a second outstanding reference
+    cache.forget("a");
+
+    expect(cache.size).toBe(0);
+    expect(dispose).not.toHaveBeenCalled();
+
+    // A later acquire of the same key builds fresh -- forget left nothing behind.
+    cache.acquire("a", build);
+    expect(build).toHaveBeenCalledTimes(2);
+  });
+
+  it("forgetting a key that was never acquired is a no-op", () => {
+    const { dispose } = makeBuilder();
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 10 });
+    expect(() => cache.forget("never-acquired")).not.toThrow();
     expect(dispose).not.toHaveBeenCalled();
   });
 
@@ -85,27 +107,29 @@ describe("inv_composite_cache_one_texture_per_tuple", () => {
   // scripts/ci/check-trace-matrix.sh): the property in one assertion,
   // the cases above are what pin its behaviour precisely.
   it("inv_composite_cache_one_texture_per_tuple", () => {
-    const { factory, dispose } = makeFactory();
-    const cache = new AppearanceCache<FakeTexture>({ factory, dispose, capacity: 10 });
+    const { build, dispose } = makeBuilder();
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 10 });
 
     const keys = ["a", "b", "c"];
-    const acquiredTwice = keys.map((k) => [cache.acquire(k), cache.acquire(k)] as const);
+    const acquiredTwice = keys.map(
+      (k) => [cache.acquire(k, build), cache.acquire(k, build)] as const,
+    );
     for (const [first, second] of acquiredTwice) {
       expect(first).toBe(second);
     }
     const distinct = new Set(acquiredTwice.map(([t]) => t));
     expect(distinct.size).toBe(keys.length);
-    expect(factory).toHaveBeenCalledTimes(keys.length);
+    expect(build).toHaveBeenCalledTimes(keys.length);
   });
 });
 
 describe("inv_composite_cache_bounded", () => {
   it("never holds more than its declared capacity of entries with no outstanding reference", () => {
-    const { factory, dispose } = makeFactory();
-    const cache = new AppearanceCache<FakeTexture>({ factory, dispose, capacity: 3 });
+    const { build, dispose } = makeBuilder();
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 3 });
 
     for (let i = 0; i < 5; i++) {
-      cache.acquire(`tuple-${i}`);
+      cache.acquire(`tuple-${i}`, build);
       cache.release(`tuple-${i}`);
     }
 
@@ -113,18 +137,18 @@ describe("inv_composite_cache_bounded", () => {
   });
 
   it("evicts the least-recently-used entry first, disposing it", () => {
-    const { factory, dispose } = makeFactory();
-    const cache = new AppearanceCache<FakeTexture>({ factory, dispose, capacity: 2 });
+    const { build, dispose } = makeBuilder();
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 2 });
 
-    const a = cache.acquire("a");
+    const a = cache.acquire("a", build);
     cache.release("a");
-    const b = cache.acquire("b");
+    const b = cache.acquire("b", build);
     cache.release("b");
     // touch "a" again so "b" becomes the least-recently-used one
-    cache.acquire("a");
+    cache.acquire("a", build);
     cache.release("a");
 
-    cache.acquire("c"); // pushes the cache over capacity
+    cache.acquire("c", build); // pushes the cache over capacity
     cache.release("c");
 
     expect(dispose).toHaveBeenCalledExactlyOnceWith(b);
@@ -132,11 +156,11 @@ describe("inv_composite_cache_bounded", () => {
   });
 
   it("never evicts an entry that still has an outstanding reference", () => {
-    const { factory, dispose } = makeFactory();
-    const cache = new AppearanceCache<FakeTexture>({ factory, dispose, capacity: 1 });
+    const { build, dispose } = makeBuilder();
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity: 1 });
 
-    const a = cache.acquire("a"); // still held (no release)
-    cache.acquire("b");
+    const a = cache.acquire("a", build); // still held (no release)
+    cache.acquire("b", build);
     cache.release("b");
 
     expect(dispose).not.toHaveBeenCalledWith(a);
@@ -146,12 +170,12 @@ describe("inv_composite_cache_bounded", () => {
   // The trace-matrix-registered name -- see the comment on
   // `inv_composite_cache_one_texture_per_tuple` above.
   it("inv_composite_cache_bounded", () => {
-    const { factory, dispose } = makeFactory();
+    const { build, dispose } = makeBuilder();
     const capacity = 4;
-    const cache = new AppearanceCache<FakeTexture>({ factory, dispose, capacity });
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity });
 
     for (let i = 0; i < 50; i++) {
-      cache.acquire(`tuple-${i}`);
+      cache.acquire(`tuple-${i}`, build);
       cache.release(`tuple-${i}`);
       expect(cache.size).toBeLessThanOrEqual(capacity);
     }

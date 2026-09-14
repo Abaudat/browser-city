@@ -35,7 +35,7 @@
 use crate::generated::defs::{self, Family, Pool};
 use crate::rng::{Rng, seed_from_ids};
 
-pub const APPEARANCE_VERSION: u32 = 1;
+pub const APPEARANCE_VERSION: u32 = 2;
 
 /// This module's own salt for [`seed_from_ids`], distinct from any other
 /// system that also seeds off a citizen id -- so two systems drawing from
@@ -106,12 +106,21 @@ fn pick_uniform(rng: &mut Rng, items: &[u16]) -> Option<u16> {
     Some(items[idx])
 }
 
-fn family_ids<T>(items: &[T], family: Family, get: impl Fn(&T) -> (Family, u16)) -> Vec<u16> {
+/// Every civilian-pool id of `family` (bodies and eyes both use this: a
+/// generated citizen's body and eyes are drawn from the same civilian
+/// pool an outfit already was, never the costume pool a handful of
+/// vendor sheets landed in -- an unnaturally coloured skin tone or iris
+/// is a costume choice, not a citizen anyone would generate).
+fn civilian_family_ids<T>(
+    items: &[T],
+    family: Family,
+    get: impl Fn(&T) -> (Family, Pool, u16),
+) -> Vec<u16> {
     items
         .iter()
         .filter_map(|item| {
-            let (f, id) = get(item);
-            (f == family).then_some(id)
+            let (f, pool, id) = get(item);
+            (f == family && pool == Pool::Civilian).then_some(id)
         })
         .collect()
 }
@@ -125,10 +134,10 @@ fn family_ids<T>(items: &[T], family: Family, get: impl Fn(&T) -> (Family, u16))
 pub fn generate(citizen_id: u64, family: Family, catalogue: &Catalogue) -> Appearance {
     let mut rng = Rng::new(seed_from_ids(citizen_id, APPEARANCE_STREAM));
 
-    let bodies = family_ids(catalogue.bodies, family, |b| (b.family, b.id));
+    let bodies = civilian_family_ids(catalogue.bodies, family, |b| (b.family, b.pool, b.id));
     let body = pick_uniform(&mut rng, &bodies).unwrap_or(0);
 
-    let eyes_ids = family_ids(catalogue.eyes, family, |e| (e.family, e.id));
+    let eyes_ids = civilian_family_ids(catalogue.eyes, family, |e| (e.family, e.pool, e.id));
     let eyes = pick_uniform(&mut rng, &eyes_ids).unwrap_or(0);
 
     let civilian_outfits: Vec<u16> = catalogue
@@ -154,12 +163,10 @@ pub fn generate(citizen_id: u64, family: Family, catalogue: &Catalogue) -> Appea
 /// Hair colour is weighted towards natural colours, with rare/dye
 /// colours (`HairstyleDef::rare`) drawn only `hair_rare_chance` percent
 /// of the time. Falls back to whichever pool is non-empty if the family
-/// has none of the wanted kind -- every hairstyle in the committed
-/// catalogue is `rare = false` today, adult and kid alike (the vendor
-/// pack's own dye options top out at a muted grey-blue, never an
-/// actually unnatural colour like pink or bright green), so this always
-/// falls back to the common pool in practice; the rare pool stays wired
-/// for whenever `defs/appearance/` gains one that qualifies.
+/// has none of the wanted kind. In the committed catalogue this is
+/// exactly one dye colour per family (a saturated blue, distinctly
+/// different from every natural blonde/brown/auburn/grey shade around
+/// it) -- every other colour, adult and kid alike, is natural.
 fn pick_hairstyle(rng: &mut Rng, family: Family, catalogue: &Catalogue) -> u16 {
     let rare_ids: Vec<u16> = catalogue
         .hairstyles

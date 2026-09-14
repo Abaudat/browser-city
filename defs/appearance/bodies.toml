@@ -3,76 +3,89 @@ id = 1
 key = "body_01"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_01.png"
+pool = "civilian"
 
 [[body]]
 id = 2
 key = "body_02"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_02.png"
+pool = "civilian"
 
 [[body]]
 id = 3
 key = "body_03"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_03.png"
+pool = "civilian"
 
 [[body]]
 id = 4
 key = "body_04"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_04.png"
+pool = "civilian"
 
 [[body]]
 id = 5
 key = "body_05"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_05.png"
+pool = "civilian"
 
 [[body]]
 id = 6
 key = "body_06"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_06.png"
+pool = "civilian"
 
 [[body]]
 id = 7
 key = "body_07"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_07.png"
+pool = "civilian"
 
 [[body]]
 id = 8
 key = "body_08"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_08.png"
+pool = "costume"
 
 [[body]]
 id = 9
 key = "body_09"
 family = "adult"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_09.png"
+pool = "costume"
 
 [[body]]
 id = 10
 key = "kid_body_1_kid"
 family = "kid"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_1_kid.png"
+pool = "civilian"
 
 [[body]]
 id = 11
 key = "kid_body_2_kid"
 family = "kid"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_2_kid.png"
+pool = "civilian"
 
 [[body]]
 id = 12
 key = "kid_body_3_kid"
 family = "kid"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_3_kid.png"
+pool = "civilian"
 
 [[body]]
 id = 13
 key = "kid_body_4_kid"
 family = "kid"
 sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_4_kid.png"
+pool = "civilian"
 

@@ -3,12 +3,14 @@ id = 1
 key = "body_test"
 family = "adult"
 sheet = "fixtures/appearance/body-test.png"
+pool = "civilian"
 
 [[eyes]]
 id = 1
 key = "eyes_test"
 family = "adult"
 sheet = "fixtures/appearance/eyes-test.png"
+pool = "civilian"
 
 [[outfit]]
 id = 1

@@ -27,9 +27,20 @@ import {
 import type {} from "../../src/net/e2e-hooks";
 import { resolveUniform } from "../../src/render/appearance/composite";
 import { resolveLayers } from "../../src/render/appearance/resolve-layers";
-import { committedDefs } from "../unit/demo/demo-world";
+import { screenPositionPx } from "../../src/render/screen-position";
+import { committedDefs, committedDemoCitizens } from "../unit/demo/demo-world";
 
 const SHOT_DIR = "test-results/story-1.10-shots";
+
+function balance(key: string): number {
+  const entry = committedDefs().balance.find((b) => b.key === key);
+  if (!entry) throw new Error(`no balance key '${key}'`);
+  return entry.value;
+}
+
+const TILE_SIZE_PX = balance("render.tile_size_px");
+const STOREY_HEIGHT_PX = balance("render.storey_height_px");
+const GROUND_FLOOR = 0;
 
 async function ready(page: Page): Promise<void> {
   await page.waitForFunction(
@@ -40,10 +51,23 @@ async function ready(page: Page): Promise<void> {
   await page.waitForFunction(() => window.__bc?.appearanceCompare !== undefined, undefined, {
     timeout: 20_000,
   });
+  await page.waitForFunction(() => window.__bc?.viewTransform !== undefined, undefined, {
+    timeout: 20_000,
+  });
 }
 
 function canvasOf(page: Page) {
   return page.locator("#demo-scene canvas");
+}
+
+/** Converts a world pixel (`screenPositionPx`'s own output) to the canvas
+ * offset to screenshot at, through the scene's own recorded camera
+ * transform -- the same conversion `intents.spec.ts` uses for clicks, so
+ * a crop never drifts out of step with a moved camera. */
+async function canvasOffset(page: Page, worldPx: { x: number; y: number }) {
+  const view = await page.evaluate(() => window.__bc?.viewTransform);
+  if (!view) throw new Error("the demo scene never recorded its view transform");
+  return { x: worldPx.x * view.zoom + view.offsetX, y: worldPx.y * view.zoom + view.offsetY };
 }
 
 test.describe("the real, mounted appearance pipeline", () => {
@@ -79,7 +103,8 @@ test.describe("the real, mounted appearance pipeline", () => {
     page,
   }) => {
     const defs: Defs = committedDefs();
-    const fixtures = [...buildCitizenFixtures(defs), buildWalkerFixture(defs)];
+    const demoCitizens = committedDemoCitizens();
+    const fixtures = [...buildCitizenFixtures(demoCitizens), buildWalkerFixture(demoCitizens)];
     const tuplesAndOverrides: {
       tuple: (typeof fixtures)[number]["tuple"];
       override: ReturnType<typeof resolveUniform>;
@@ -89,7 +114,10 @@ test.describe("the real, mounted appearance pipeline", () => {
     }));
     // The player itself (`scene.ts`) is a generated tuple through the
     // same pipeline, never part of `citizens.ts`'s own fixture list.
-    tuplesAndOverrides.push({ tuple: buildPlayerAppearanceTuple(defs), override: null });
+    tuplesAndOverrides.push({
+      tuple: buildPlayerAppearanceTuple(demoCitizens),
+      override: null,
+    });
 
     const expectedBasenames = new Set<string>();
     for (const { tuple, override } of tuplesAndOverrides) {
@@ -242,27 +270,49 @@ test.describe("story 1.10 review screenshots", () => {
 
     await canvasOf(page).screenshot({ path: `${SHOT_DIR}/crowd.png` });
 
-    // The twin kids (`citizens.ts`'s `kid-0`/`kid-1`) and the adult row
-    // directly above them -- `citizens.ts` always places the kid rows
-    // last (after every adult row) and left-aligned (`gridX` starting at
-    // 0), so the crowd's own bottom-left corner always has this pairing,
-    // regardless of the real committed defs' exact part counts (which
-    // only change *how many* rows of adults there are, never where the
-    // kid rows sit relative to them).
+    // `kid-0` and the adult standing right beside it, on the identical
+    // `gridY` (`citizens.ts` extends the last adult row rightward for the
+    // kid row rather than starting a new one below it) -- the crop is
+    // centred on the real fixture positions, computed the same way
+    // `intents.spec.ts` turns a world cell into a canvas offset, so it
+    // never drifts out of step with a camera move or a fixture reshuffle.
+    const demoCitizens = committedDemoCitizens();
+    const fixtures = buildCitizenFixtures(demoCitizens);
+    const kid0 = fixtures.find((f) => f.id === "kid-0");
+    if (!kid0) throw new Error("appearance.spec: no kid-0 fixture");
+    const neighbourAdult = fixtures
+      .filter((f) => f.id.startsWith("adult-") && f.gridY === kid0.gridY)
+      .sort((a, b) => b.gridX - a.gridX)[0];
+    if (!neighbourAdult) {
+      throw new Error("appearance.spec: no adult shares kid-0's own gridY");
+    }
+    const midCellX = (kid0.gridX + neighbourAdult.gridX) / 2;
+    const midWorldPx = screenPositionPx(
+      midCellX,
+      kid0.gridY,
+      GROUND_FLOOR,
+      TILE_SIZE_PX,
+      STOREY_HEIGHT_PX,
+    );
+    const view = await page.evaluate(() => window.__bc?.viewTransform);
+    if (!view) throw new Error("the demo scene never recorded its view transform");
+    const centre = await canvasOffset(page, midWorldPx);
     // `fullPage` screenshots and `boundingBox()` must agree on the same
     // (unscrolled) coordinate origin -- pinned to the top so a prior
     // scroll position can never shift the two out of step.
     await page.evaluate(() => window.scrollTo(0, 0));
     const canvasBox = await canvasOf(page).boundingBox();
     if (!canvasBox) throw new Error("appearance.spec: the demo canvas has no bounding box");
+    const cropWidth = TILE_SIZE_PX * 8 * view.zoom;
+    const cropHeight = TILE_SIZE_PX * 6 * view.zoom;
     await page.screenshot({
       path: `${SHOT_DIR}/kid-beside-adult.png`,
       fullPage: true,
       clip: {
-        x: canvasBox.x,
-        y: canvasBox.y + canvasBox.height * 0.75,
-        width: canvasBox.width * 0.35,
-        height: canvasBox.height * 0.25,
+        x: canvasBox.x + centre.x - cropWidth / 2,
+        y: canvasBox.y + centre.y - cropHeight * 0.75,
+        width: cropWidth,
+        height: cropHeight,
       },
     });
 

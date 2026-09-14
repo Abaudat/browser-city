@@ -400,8 +400,8 @@ describe("parseDefs appearance (story 1.10)", () => {
     rows: [{ animation: "idle", row: 0, frames_per_direction: 1 }],
     accepted_sizes: [{ width: 16, height: 32 }],
   };
-  const BODY = { id: 1, key: "body_01", family: "adult", sheet: "x/body.png" };
-  const EYES = { id: 1, key: "eyes_01", family: "adult", sheet: "x/eyes.png" };
+  const BODY = { id: 1, key: "body_01", family: "adult", sheet: "x/body.png", pool: "civilian" };
+  const EYES = { id: 1, key: "eyes_01", family: "adult", sheet: "x/eyes.png", pool: "civilian" };
   const OUTFIT = {
     id: 1,
     key: "outfit_01",

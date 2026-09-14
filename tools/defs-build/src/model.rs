@@ -196,6 +196,7 @@ pub struct RawBody {
     pub key: Spanned<String>,
     pub family: Spanned<Family>,
     pub sheet: Spanned<String>,
+    pub pool: Spanned<Pool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -205,6 +206,7 @@ pub struct RawEyes {
     pub key: Spanned<String>,
     pub family: Spanned<Family>,
     pub sheet: Spanned<String>,
+    pub pool: Spanned<Pool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -416,6 +418,7 @@ pub struct BodyEntry {
     pub key: Located<String>,
     pub family: Located<Family>,
     pub sheet: Located<String>,
+    pub pool: Located<Pool>,
 }
 
 #[derive(Debug)]
@@ -425,6 +428,7 @@ pub struct EyesEntry {
     pub key: Located<String>,
     pub family: Located<Family>,
     pub sheet: Located<String>,
+    pub pool: Located<Pool>,
 }
 
 #[derive(Debug)]
@@ -613,6 +617,7 @@ pub struct BodyDef {
     pub key: String,
     pub family: Family,
     pub sheet: String,
+    pub pool: Pool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -621,6 +626,7 @@ pub struct EyesDef {
     pub key: String,
     pub family: Family,
     pub sheet: String,
+    pub pool: Pool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

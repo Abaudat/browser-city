@@ -89,19 +89,21 @@ fn canonical_dump() -> String {
     }
     for b in defs::BODIES {
         lines.push(format!(
-            "body {} id={} family={} sheet={}",
+            "body {} id={} family={} pool={} sheet={}",
             b.key,
             b.id,
             family_str(b.family),
+            pool_str(b.pool),
             b.sheet
         ));
     }
     for e in defs::EYES {
         lines.push(format!(
-            "eyes {} id={} family={} sheet={}",
+            "eyes {} id={} family={} pool={} sheet={}",
             e.key,
             e.id,
             family_str(e.family),
+            pool_str(e.pool),
             e.sheet
         ));
     }

@@ -450,9 +450,7 @@ is its own building, not a room of a shared one.
   never absent.
 - Generated exactly once, server-side, by `sim::appearance::generate` at
   citizen creation, seeded from the citizen id alone (`sim::rng`), and
-  stored. Nothing ever re-derives an existing citizen's tuple -- storage,
-  not append-stability, is what keeps a face fixed as `defs/appearance/`
-  grows.
+  stored. Nothing ever re-derives an existing citizen's tuple.
 - A profession's uniform (FR62: `[[uniform]]` in `defs/appearance/`) is a
   render-time override of the outfit and/or accessory layer, resolved by
   the client from `defs.json`, and never written back into the stored
@@ -460,6 +458,12 @@ is its own building, not a room of a shared one.
   it removes the citizen's own civilian accessory only when both declare
   the same `slot` (a helmet removes a beanie; a jacket over a beard keeps
   the beard).
+- `body` and `eyes` each carry a `pool` (`civilian`/`role_only`/
+  `costume`), the same enum `outfit`/`accessory` already declare:
+  `sim::appearance::generate` only ever draws from the `civilian` pool
+  for either, so a `costume`-pool body or eye tone (declared, never
+  generated, for uniform/event art) can never land on an ordinary
+  citizen.
 - Layout (cell size, direction order, one row per animation) is declared
   once per family (`adult`/`kid`) in `[[appearance_layout]]`, and
   enforced against every part sheet's real dimensions: `tools/defs-build`
@@ -468,27 +472,24 @@ is its own building, not a room of a shared one.
   `accepted_sizes`.
 - Part sheets are fetched lazily, once per sheet, as CPU-side
   `ImageBitmap`s (`fetch` + `createImageBitmap`) -- never through Pixi's
-  `Assets`/`Texture`, which would upload every sheet to the GPU, the
-  exact cost compositing exists to avoid.
+  `Assets`/`Texture`. A bitmap is only needed while a composite is being
+  built: `part-sheets.ts` ref-counts each in-flight load and closes the
+  bitmap once every caller drawing from it has finished, never held past
+  that.
 - Exactly one composite `Texture` exists per unique tuple+override: the
   five (or six, with a uniform accessory) layers are drawn in order via
-  `OffscreenCanvas.drawImage` onto one compact strip (only the
-  rows/directions/frames this game uses, never a copy of the vendor
-  sheet), nearest-neighbour sampled, then wrapped in one Pixi
-  `Texture.from` -- `RenderTexture` stays banned anywhere under
-  `client/src/` ("Visibility" above). This texture is shared,
-  reference-counted, and held in a bounded LRU
+  `OffscreenCanvas.drawImage` onto one compact strip, nearest-neighbour
+  sampled, then wrapped in one Pixi `Texture.from` -- `RenderTexture`
+  stays banned anywhere under `client/src/` ("Visibility" above). This
+  texture is shared, reference-counted, and held in a bounded LRU
   (`render/appearance/appearance-cache.ts`) that evicts only entries with
   no outstanding reference. A character on screen is one `Sprite` in the
   `characters`-rank pool.
-- `client/src/render/appearance/` layout: `frame-rect.ts` (pure pixel
-  math), `composite.ts` (pure layer-order/cache-key/uniform-override
-  logic), `resolve-layers.ts` (pure tuple -> defs rows/sheet paths),
-  `appearance-cache.ts` (the generic ref-counted LRU), and
-  `composite-canvas.ts`/`part-sheets.ts`/`appearance-texture.ts` (the
-  real-canvas/Vite-`import.meta.glob`/`fetch` adapters wiring the above
-  together, excluded from `client/vitest.config.ts`'s coverage gate for
-  exactly that reason).
+- Every `(animation, direction, frame)` cell of that compact strip is
+  cropped once into its own frame `Texture` when the composite is built,
+  never on a per-tick basis: callers look a frame up by index, they never
+  construct one. Disposing a composite destroys every frame texture
+  together with the base strip texture.
 
 ## Definitions (`defs/`)
 

@@ -1,4 +1,4 @@
-version=1
+version=2
 id=0 family=adult tuple=2,2,2,1,0
 id=0 family=kid tuple=11,11,11,10,0
 id=1 family=adult tuple=1,2,1,3,0

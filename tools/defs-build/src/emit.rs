@@ -143,29 +143,31 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("pub enum Pool {\n    Civilian,\n    RoleOnly,\n    Costume,\n}\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct BodyDef {\n    pub id: u16,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n}\n\n");
+    out.push_str("pub struct BodyDef {\n    pub id: u16,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n    pub pool: Pool,\n}\n\n");
     out.push_str("pub const BODIES: &[BodyDef] = &[\n");
     for b in &defs.bodies {
         out.push_str(&format!(
-            "    BodyDef {{ id: {}, key: {:?}, family: {}, sheet: {:?} }},\n",
+            "    BodyDef {{ id: {}, key: {:?}, family: {}, sheet: {:?}, pool: {} }},\n",
             b.id,
             b.key,
             fmt_family_rust(b.family),
-            b.sheet
+            b.sheet,
+            fmt_pool_rust(b.pool)
         ));
     }
     out.push_str("];\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct EyesDef {\n    pub id: u16,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n}\n\n");
+    out.push_str("pub struct EyesDef {\n    pub id: u16,\n    pub key: &'static str,\n    pub family: Family,\n    pub sheet: &'static str,\n    pub pool: Pool,\n}\n\n");
     out.push_str("pub const EYES: &[EyesDef] = &[\n");
     for e in &defs.eyes {
         out.push_str(&format!(
-            "    EyesDef {{ id: {}, key: {:?}, family: {}, sheet: {:?} }},\n",
+            "    EyesDef {{ id: {}, key: {:?}, family: {}, sheet: {:?}, pool: {} }},\n",
             e.id,
             e.key,
             fmt_family_rust(e.family),
-            e.sheet
+            e.sheet,
+            fmt_pool_rust(e.pool)
         ));
     }
     out.push_str("];\n\n");
@@ -445,10 +447,11 @@ pub fn emit_json(defs: &Defs, defs_version: &str) -> String {
     for (i, b) in defs.bodies.iter().enumerate() {
         let comma = if i + 1 < defs.bodies.len() { "," } else { "" };
         out.push_str(&format!(
-            "    {{ \"family\": {}, \"id\": {}, \"key\": {}, \"sheet\": {} }}{comma}\n",
+            "    {{ \"family\": {}, \"id\": {}, \"key\": {}, \"pool\": {}, \"sheet\": {} }}{comma}\n",
             json_escape(b.family.as_str()),
             b.id,
             json_escape(&b.key),
+            json_escape(b.pool.as_str()),
             json_escape(&b.sheet)
         ));
     }
@@ -458,10 +461,11 @@ pub fn emit_json(defs: &Defs, defs_version: &str) -> String {
     for (i, e) in defs.eyes.iter().enumerate() {
         let comma = if i + 1 < defs.eyes.len() { "," } else { "" };
         out.push_str(&format!(
-            "    {{ \"family\": {}, \"id\": {}, \"key\": {}, \"sheet\": {} }}{comma}\n",
+            "    {{ \"family\": {}, \"id\": {}, \"key\": {}, \"pool\": {}, \"sheet\": {} }}{comma}\n",
             json_escape(e.family.as_str()),
             e.id,
             json_escape(&e.key),
+            json_escape(e.pool.as_str()),
             json_escape(&e.sheet)
         ));
     }
@@ -705,12 +709,14 @@ mod tests {
                 key: "body_01".into(),
                 family: Family::Adult,
                 sheet: "ModernTileset/Bodies/Body_01.png".into(),
+                pool: Pool::Civilian,
             }],
             eyes: vec![EyesDef {
                 id: 1,
                 key: "eyes_01".into(),
                 family: Family::Adult,
                 sheet: "ModernTileset/Eyes/Eyes_01.png".into(),
+                pool: Pool::Civilian,
             }],
             hairstyles: vec![HairstyleDef {
                 id: 1,
@@ -860,7 +866,7 @@ mod tests {
         assert!(out.contains("pub enum Family"));
         assert!(out.contains("pub enum Pool"));
         assert!(out.contains(
-            "BodyDef { id: 1, key: \"body_01\", family: Family::Adult, sheet: \"ModernTileset/Bodies/Body_01.png\" }"
+            "BodyDef { id: 1, key: \"body_01\", family: Family::Adult, sheet: \"ModernTileset/Bodies/Body_01.png\", pool: Pool::Civilian }"
         ));
         assert!(out.contains("EyesDef { id: 1, key: \"eyes_01\""));
         assert!(out.contains("HairstyleDef { id: 1, key: \"hairstyle_01_01\""));

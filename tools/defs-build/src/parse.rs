@@ -188,6 +188,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         key: located(text, &b.key),
                         family: located(text, &b.family),
                         sheet: located(text, &b.sheet),
+                        pool: located(text, &b.pool),
                     });
                 }
                 for e in file.eyes {
@@ -197,6 +198,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         key: located(text, &e.key),
                         family: located(text, &e.family),
                         sheet: located(text, &e.sheet),
+                        pool: located(text, &e.pool),
                     });
                 }
                 for h in file.hairstyle {

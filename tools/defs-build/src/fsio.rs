@@ -1,6 +1,6 @@
 //! The filesystem/process edge: everything in this crate that actually
 //! reads a directory, shells out to `git`, or writes a file lives here --
-//! `parse`, `validate` and `emit` never do (Quentin's direction).
+//! `parse`, `validate` and `emit` never do.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -39,8 +39,8 @@ pub fn list_git_tracked_files(repo_root: &Path, dir: &str) -> io::Result<Vec<Pat
 }
 
 /// Every path under `dir` that exists on disk but is not `git add`ed and
-/// is not gitignored (relative to `repo_root`). Quentin's direction:
-/// `defs_version` is computed from `git ls-files`, so a def that exists
+/// is not gitignored (relative to `repo_root`). `defs_version` is
+/// computed from `git ls-files`, so a def that exists
 /// on disk but is not yet tracked is invisible to a local build and
 /// present in CI's (CI always checks out a fully-committed tree) --
 /// the caller must fail loudly on a non-empty result rather than quietly
@@ -78,7 +78,7 @@ pub fn read_text(repo_root: &Path, paths: &[PathBuf]) -> io::Result<Vec<(PathBuf
 
 /// Reads the `(width, height)` a PNG's own `IHDR` chunk declares, for every
 /// one of `paths` (relative to `repo_root`) -- std only, no `png` crate
-/// (Tim's direction keeps this crate toml+serde-only): a PNG's signature is
+/// (this crate stays toml+serde-only): a PNG's signature is
 /// 8 bytes, its first chunk's length+type is 8 more, and `IHDR`'s own body
 /// starts with two big-endian `u32`s, so 24 bytes is always enough. Story
 /// 1.10's layout invariant reads these to check a declared `[[appearance_
@@ -108,8 +108,8 @@ pub fn read_png_dims(repo_root: &Path, paths: &[String]) -> io::Result<Vec<(Stri
 /// sibling temp file first, and only a rename -- never a stream into
 /// `path` itself -- makes it visible at `path`. An interrupted write (a
 /// killed process, a full disk) leaves the temp file orphaned and `path`
-/// exactly as it was (Tim/Quentin's direction: "no partial output" is a
-/// design property, not a matter of ordering).
+/// exactly as it was: "no partial output" is a design property, not a
+/// matter of ordering.
 pub fn atomic_write(path: &Path, contents: &str) -> io::Result<()> {
     let dir = path
         .parent()
@@ -142,9 +142,9 @@ fn unique_suffix() -> u128 {
 
 /// A fresh, empty directory under the OS temp dir, unique per call -- this
 /// crate's own stand-in for a `tempfile::TempDir`, since `toml` and
-/// `serde` are the only dependencies approved for it (Tim's direction).
-/// Never auto-deleted: every caller (tests, the `defs-build` binary's own
-/// scratch work) removes it explicitly when done.
+/// `serde` are the only dependencies approved for it. Never auto-deleted:
+/// every caller (tests, the `defs-build` binary's own scratch work)
+/// removes it explicitly when done.
 pub fn make_scratch_dir(prefix: &str) -> io::Result<PathBuf> {
     let dir = std::env::temp_dir().join(format!(
         "{prefix}-{}-{}",

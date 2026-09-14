@@ -16,7 +16,6 @@
 // view) should not pay to rebuild.
 
 export interface AppearanceCacheOptions<T> {
-  readonly factory: (key: string) => T;
   readonly dispose: (value: T) => void;
   readonly capacity: number;
 }
@@ -39,10 +38,13 @@ export class AppearanceCache<T> {
     return this.entries.size;
   }
 
-  /** Returns `key`'s cached texture, building it via the factory on a
-   * miss, and increments its reference count. Touching an entry (hit or
-   * miss) marks it most-recently-used. */
-  acquire(key: string): T {
+  /** Returns `key`'s cached value, calling `build` on a miss, and
+   * increments its reference count. Touching an entry (hit or miss) marks
+   * it most-recently-used. `build` is the caller's own, taking `key` as a
+   * closure rather than this cache decoding it back into whatever the
+   * caller built it from -- there is only ever one encoding of a key to
+   * keep in sync this way, the caller's own. */
+  acquire(key: string, build: () => T): T {
     const existing = this.entries.get(key);
     if (existing) {
       // Re-insert to move this key to the end of the Map's iteration
@@ -54,7 +56,7 @@ export class AppearanceCache<T> {
       return existing.value;
     }
 
-    const value = this.options.factory(key);
+    const value = build();
     this.entries.set(key, { value, refCount: 1 });
     this.evictOverCapacity();
     return value;
@@ -68,6 +70,16 @@ export class AppearanceCache<T> {
     const entry = this.entries.get(key);
     if (!entry) return;
     entry.refCount = Math.max(0, entry.refCount - 1);
+  }
+
+  /** Unconditionally removes `key`, regardless of its reference count,
+   * without calling `dispose` -- for a `build` that itself failed: the
+   * value was never really cached (there is nothing to dispose), and it
+   * must not sit in the map as a dead entry a later `acquire` would just
+   * hand back again. Never the normal path out of the cache; `release`
+   * plus eviction is. */
+  forget(key: string): void {
+    this.entries.delete(key);
   }
 
   private evictOverCapacity(): void {

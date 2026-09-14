@@ -4,8 +4,8 @@
 // `window.__bc` never ships. Exists so the e2e spec reads page state
 // instead of scraping console output.
 
-import type { PixelSnapshot } from "../render/appearance/compare-pipeline-vs-stack";
 import type { AppearanceTuple, UniformOverride } from "../render/appearance/composite";
+import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
 import type { PingObservation } from "./observe-ping";
 
 declare global {
@@ -25,9 +25,9 @@ declare global {
        * id -- citizens sharing a tuple+override share an id (AC5). */
       appearanceTextureIds?: Record<string, number>;
       appearanceDistinctTextureCount?: number;
-      /** Story 1.10 (Quentin's direction): the real, mounted pipeline's
-       * own pixel output vs. an independent five/six-sprite stack, for
-       * one `(tuple, override, animation, direction, frame)`. */
+      /** Story 1.10: the real, mounted pipeline's own pixel output vs.
+       * an independent five/six-sprite stack, for one `(tuple, override,
+       * animation, direction, frame)`. */
       appearanceCompare?: (
         tuple: AppearanceTuple,
         override: UniformOverride | null,
@@ -165,10 +165,10 @@ export function recordAppearanceTextureIdsForE2e(
   window.__bc = bucket;
 }
 
-/** Story 1.10 (Quentin's direction): exposes the real, mounted crowd's
- * own pixel-diff proof as a callable -- `appearance.spec.ts` invokes it
- * with fixed tuples through `page.evaluate`, never a value recorded once
- * at mount (each call needs its own tuple/cell arguments). */
+/** Story 1.10: exposes the real, mounted crowd's own pixel-diff proof as
+ * a callable -- `appearance.spec.ts` invokes it with fixed tuples through
+ * `page.evaluate`, never a value recorded once at mount (each call needs
+ * its own tuple/cell arguments). */
 export function exposeAppearanceCompareForE2e(
   compare: NonNullable<NonNullable<Window["__bc"]>["appearanceCompare"]>,
 ): void {

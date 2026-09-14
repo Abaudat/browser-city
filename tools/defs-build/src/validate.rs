@@ -873,6 +873,7 @@ pub fn validate(
             key: b.key.value.clone(),
             family: b.family.value,
             sheet: b.sheet.value.clone(),
+            pool: b.pool.value,
         })
         .collect();
     bodies.sort_by(|a, b| a.key.cmp(&b.key));
@@ -885,6 +886,7 @@ pub fn validate(
             key: e.key.value.clone(),
             family: e.family.value,
             sheet: e.sheet.value.clone(),
+            pool: e.pool.value,
         })
         .collect();
     eyes.sort_by(|a, b| a.key.cmp(&b.key));
@@ -1295,7 +1297,7 @@ mod tests {
             ("defs/appearance/layouts.toml", LAYOUT_TOML),
             (
                 "defs/appearance/bodies.toml",
-                "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\n",
+                "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
             ),
         ]);
         let raw = parse_all(&f).unwrap();
@@ -1309,7 +1311,7 @@ mod tests {
             ("defs/appearance/layouts.toml", LAYOUT_TOML),
             (
                 "defs/appearance/bodies.toml",
-                "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\n",
+                "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
             ),
         ]);
         let raw = parse_all(&f).unwrap();
@@ -1325,7 +1327,7 @@ mod tests {
             ("defs/appearance/layouts.toml", LAYOUT_TOML),
             (
                 "defs/appearance/bodies.toml",
-                "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\n",
+                "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
             ),
         ]);
         let raw = parse_all(&f).unwrap();
@@ -1343,7 +1345,7 @@ mod tests {
     fn a_part_naming_a_family_with_no_layout_is_rejected() {
         let f = files(&[(
             "defs/appearance/bodies.toml",
-            "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\n",
+            "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
         let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
@@ -1354,7 +1356,7 @@ mod tests {
     fn a_declared_id_above_u16_max_is_rejected() {
         let f = files(&[(
             "defs/appearance/bodies.toml",
-            "[[body]]\nid = 65536\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\n",
+            "[[body]]\nid = 65536\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
         let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
@@ -1367,7 +1369,7 @@ mod tests {
             ("defs/appearance/layouts.toml", LAYOUT_TOML),
             (
                 "defs/appearance/bodies.toml",
-                "[[body]]\nid = 65535\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\n",
+                "[[body]]\nid = 65535\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
             ),
         ]);
         let raw = parse_all(&f).unwrap();
@@ -1379,7 +1381,7 @@ mod tests {
     fn a_declared_id_of_zero_is_rejected_for_every_appearance_kind() {
         let f = files(&[(
             "defs/appearance/bodies.toml",
-            "[[body]]\nid = 0\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\n",
+            "[[body]]\nid = 0\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
         let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
@@ -1519,7 +1521,7 @@ mod tests {
     fn an_invalid_family_value_is_rejected_at_parse_time() {
         let f = files(&[(
             "defs/appearance/bodies.toml",
-            "[[body]]\nid = 1\nkey = \"a\"\nfamily = \"teen\"\nsheet = \"sheets/body.png\"\n",
+            "[[body]]\nid = 1\nkey = \"a\"\nfamily = \"teen\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
         )]);
         let err = parse_all(&f).unwrap_err();
         assert!(err.message.contains("teen"));

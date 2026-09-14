@@ -41,7 +41,6 @@ export default defineConfig({
         "src/render/appearance/composite-canvas.ts",
         "src/render/appearance/part-sheets.ts",
         "src/render/appearance/appearance-texture.ts",
-        "src/render/appearance/compare-pipeline-vs-stack.ts",
       ],
       thresholds: {
         lines: 90,

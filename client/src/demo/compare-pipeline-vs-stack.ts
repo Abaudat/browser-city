@@ -1,37 +1,31 @@
-// Story 1.10 (AC5, Quentin's direction): the runtime half of the
-// composite pipeline proof `client/tests/e2e/appearance.spec.ts` needs --
-// that the real, mounted composite (`part-sheets.ts`'s real `fetch`,
-// `composite-canvas.ts`'s real `OffscreenCanvas`) reads back
-// byte-for-byte identical to an independent five/six-layer stack, drawn
-// straight from the same vendor sheets via `sourceFrameRect`, never
-// `composite.ts`'s own cell-packing math a second time. Plain `Canvas2D`
-// throughout, deliberately not Pixi's own `renderer.extract`: a `Texture`
-// frame-cropped from either an `ImageBitmap`-backed or a canvas-backed
-// source read back wrong (fully transparent, or fully opaque garbage)
-// through a real WebGPU renderer's extract path when tried here --
-// `Canvas2D.getImageData` over the exact same underlying canvas/bitmap
-// resources is what the real composite (`composite-canvas.ts`) already
-// trusts for identical work, and is what this file trusts too. A DEV-only
-// browser adapter (`pixi.js`'s `Texture` type only, `fetch`) -- excluded
-// from `client/vitest.config.ts`'s coverage gate alongside
-// `composite-canvas.ts`/`part-sheets.ts`/`appearance-texture.ts`, the
-// other real-canvas/Pixi adapters it composes.
+// Story 1.10 (AC5): the runtime half of the composite pipeline proof
+// `client/tests/e2e/appearance.spec.ts` needs -- that the real, mounted
+// composite (`part-sheets.ts`'s real `fetch`, `composite-canvas.ts`'s
+// real `OffscreenCanvas`) reads back byte-for-byte identical to an
+// independent five/six-layer stack, drawn straight from the same vendor
+// sheets via `sourceFrameRect`, never `composite.ts`'s own cell-packing
+// math a second time. Plain `Canvas2D` throughout, deliberately not
+// Pixi's own `renderer.extract`: a `Texture` frame-cropped from either an
+// `ImageBitmap`-backed or a canvas-backed source read back wrong (fully
+// transparent, or fully opaque garbage) through a real WebGPU renderer's
+// extract path when tried here -- `Canvas2D.getImageData` over the exact
+// same underlying canvas/bitmap resources is what the real composite
+// (`composite-canvas.ts`) already trusts for identical work, and is what
+// this file trusts too.
+//
+// Lives under `demo/`, not `render/appearance/`: this is e2e test harness
+// wired through the demo scene, never part of the production render
+// pipeline, so it belongs where the rest of the demo-only code does
+// (`client/vitest.config.ts`'s coverage gate already excludes `demo/**`
+// wholesale).
 
 import type { Texture } from "pixi.js";
-import type { Defs } from "../../defs/types";
-import type { AppearanceTuple, UniformOverride } from "./composite";
-import { compositeCellRect, sourceFrameRect } from "./frame-rect";
-import { loadPartImage } from "./part-sheets";
-import { resolveLayers } from "./resolve-layers";
-
-export interface PixelSnapshot {
-  readonly width: number;
-  readonly height: number;
-  /** Plain, not typed-array, so this crosses a `page.evaluate` boundary
-   * (Playwright's own serialisation, like every other `window.__bc`
-   * value) with no special handling. */
-  readonly data: readonly number[];
-}
+import type { Defs } from "../defs/types";
+import type { AppearanceTuple, UniformOverride } from "../render/appearance/composite";
+import { compositeCellRect, sourceFrameRect } from "../render/appearance/frame-rect";
+import { loadPartImage, releasePartImage } from "../render/appearance/part-sheets";
+import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
+import { resolveLayers } from "../render/appearance/resolve-layers";
 
 const STACK_LAYER_ORDER = [
   "body",
@@ -112,6 +106,11 @@ export async function comparePipelineVsStack(
       ctx.drawImage(image, src.x, src.y, src.width, src.height, 0, 0, src.width, src.height);
     }
   });
+  // `loadPartImage`'s cache is ref-counted, not permanent -- every load
+  // here is matched with a release once this function is done drawing
+  // from the bitmap, the same contract `appearance-texture.ts` itself
+  // follows.
+  for (const { sheet, image } of layerImages) releasePartImage(sheet, image);
 
   return { pipeline, stack };
 }

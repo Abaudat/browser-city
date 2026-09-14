@@ -38,8 +38,7 @@
         "!src/render/pixi-visibility.ts",
         "!src/render/appearance/composite-canvas.ts",
         "!src/render/appearance/part-sheets.ts",
-        "!src/render/appearance/appearance-texture.ts",
-        "!src/render/appearance/compare-pipeline-vs-stack.ts"
+        "!src/render/appearance/appearance-texture.ts"
       ],
       "linter": {
         "rules": {

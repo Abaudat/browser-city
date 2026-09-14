@@ -40,11 +40,19 @@ function moduleKeyFor(sheet: string): string {
   return `../${sheet}`;
 }
 
-// Keyed by `sheet`, not by URL: two parts naming the same sheet share one
-// in-flight (or already-resolved) fetch+decode, never fetching or
-// decoding it twice. Holds the promise, not just the result, so
-// concurrent callers before the first decode finishes still share it.
-const imageCache = new Map<string, Promise<ImageBitmap>>();
+interface ImageCacheEntry {
+  readonly promise: Promise<ImageBitmap>;
+  refCount: number;
+}
+
+// Keyed by `sheet`, ref-counted -- a decoded bitmap is only ever held
+// while at least one composite build is actively using it, never cached
+// beyond that (a decoded 896x656 sheet is ~2.3MB of RGBA, and a long
+// session can reference hundreds of distinct sheets; the browser's own
+// HTTP cache already makes a later refetch cheap). Two callers asking for
+// the same sheet while it is still in flight share one fetch+decode;
+// `releasePartImage` is the other half of this contract.
+const imageCache = new Map<string, ImageCacheEntry>();
 
 /** Loads `sheet` as a CPU-side `ImageBitmap` -- never through Pixi's
  * `Assets`/`Texture`: a vendor sheet is only ever a `drawImage` source
@@ -52,22 +60,53 @@ const imageCache = new Map<string, Promise<ImageBitmap>>();
  * textures (the one cost this whole module exists to avoid) would defeat
  * the point of compositing at all. Throws, naming the path, when `sheet`
  * matches none of the glob patterns above -- a defs-authoring mistake,
- * not a silent blank layer. */
+ * not a silent blank layer. Every call must be paired with exactly one
+ * `releasePartImage` once the caller is done drawing from the bitmap --
+ * `appearance-texture.ts` is the one caller, right after
+ * `buildCompositeCanvas` returns. */
 export function loadPartImage(sheet: string): Promise<ImageBitmap> {
-  const cached = imageCache.get(sheet);
-  if (cached) return cached;
-
-  const loader = SHEET_MODULES[moduleKeyFor(sheet)];
-  if (!loader) {
-    throw new Error(`part-sheets: '${sheet}' is not under a known character-part folder`);
+  let entry = imageCache.get(sheet);
+  if (!entry) {
+    const loader = SHEET_MODULES[moduleKeyFor(sheet)];
+    if (!loader) {
+      throw new Error(`part-sheets: '${sheet}' is not under a known character-part folder`);
+    }
+    const promise = (async () => {
+      const url = await loader();
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(
+          `part-sheets: '${sheet}' fetch failed with ${response.status} ${response.statusText}`,
+        );
+      }
+      const blob = await response.blob();
+      return createImageBitmap(blob);
+    })();
+    entry = { promise, refCount: 0 };
+    imageCache.set(sheet, entry);
+    // A rejected fetch/decode must never poison this sheet for the rest
+    // of the session -- a later caller gets a fresh attempt, not the same
+    // dead promise. Every already-registered caller still observes the
+    // rejection through their own reference to this same promise.
+    promise.catch(() => {
+      if (imageCache.get(sheet) === entry) imageCache.delete(sheet);
+    });
   }
+  entry.refCount += 1;
+  return entry.promise;
+}
 
-  const promise = (async () => {
-    const url = await loader();
-    const response = await fetch(url);
-    const blob = await response.blob();
-    return createImageBitmap(blob);
-  })();
-  imageCache.set(sheet, promise);
-  return promise;
+/** Releases one reference on `sheet`, taken by the matching
+ * `loadPartImage` call. Once every caller that shared the in-flight
+ * bitmap has released it, the bitmap is `close()`d and its cache entry
+ * dropped. A release for a sheet whose load already failed (and was
+ * therefore already evicted above) is a no-op. */
+export function releasePartImage(sheet: string, bitmap: ImageBitmap): void {
+  const entry = imageCache.get(sheet);
+  if (!entry) return;
+  entry.refCount -= 1;
+  if (entry.refCount <= 0) {
+    imageCache.delete(sheet);
+    bitmap.close();
+  }
 }

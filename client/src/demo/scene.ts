@@ -1,8 +1,8 @@
 // The demo scene's Pixi mount -- one of a small, named set of files
 // allowed to import `pixi.js` (`bootstrap.ts`,
 // `render/pixi-order.ts`/`render/pixi-visibility.ts`, and story 1.10's
-// `render/appearance/composite-canvas.ts`/`appearance-texture.ts`/
-// `compare-pipeline-vs-stack.ts` and `demo/citizens-layer.ts`, each its
+// `render/appearance/composite-canvas.ts`/`appearance-texture.ts` and
+// `demo/citizens-layer.ts`/`demo/compare-pipeline-vs-stack.ts`, each its
 // own real-canvas/Pixi adapter). Ordering itself is
 // `render/pixi-order.ts`'s job, visibility is `render/pixi-visibility.
 // ts`'s (story 1.7); this file's whole job is texture loading, sprite
@@ -24,7 +24,6 @@ import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
-import { compositeCellRect } from "../render/appearance/frame-rect";
 import { layerCodeByName } from "../render/layer-table";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
@@ -42,7 +41,7 @@ import type { ObjectSource } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { TransitionIndex } from "../world/transitions";
 import { WorldIndex } from "../world/world-index";
-import { buildPlayerAppearanceTuple } from "./citizens";
+import { buildPlayerAppearanceTuple, type DemoCitizensFixture } from "./citizens";
 import { type CitizensLayerHandle, mountCitizensLayer } from "./citizens-layer";
 import {
   buildPlayerDrawable,
@@ -216,6 +215,10 @@ export interface MountDemoSceneOptions {
   /** Story 1.10: the fetched, parsed defs document -- needed to build the
    * street crowd's real appearance textures (`citizens-layer.ts`). */
   readonly defs: Defs;
+  /** Story 1.10: the committed, sim-generated demo citizen tuples
+   * (`server/sim/tests/demo_citizens_fixture.rs`'s own output) --
+   * `citizens.ts` places these, it never invents a tuple of its own. */
+  readonly demoCitizens: DemoCitizensFixture;
   readonly tileSizePx: number;
   readonly storeyHeightPx: number;
   readonly rankOf: (layerCode: number) => number;
@@ -513,6 +516,7 @@ export async function mountDemoScene(
 ): Promise<DemoSceneHandle> {
   const {
     defs,
+    demoCitizens,
     tileSizePx,
     storeyHeightPx,
     rankOf,
@@ -635,17 +639,9 @@ export async function mountDemoScene(
   // street crowd (`citizensLayer` below), so a player who happens to
   // match a crowd member's tuple reuses that texture too (AC5).
   const appearanceCache = new AppearanceTextureCache(defs);
-  const playerLayout = defs.appearanceLayouts.find((l) => l.family === "adult");
-  if (!playerLayout) throw new Error("scene: no adult appearance layout declared");
-  const playerTuple = buildPlayerAppearanceTuple(defs);
-  const playerTexture = await appearanceCache.acquire(playerTuple);
-  const playerCell = compositeCellRect(playerLayout, "idle", "down", 0);
-  const playerSprite = new Sprite(
-    cropped(
-      playerTexture,
-      new Rectangle(playerCell.x, playerCell.y, playerCell.width, playerCell.height),
-    ),
-  );
+  const playerTuple = buildPlayerAppearanceTuple(demoCitizens);
+  const playerFrames = await appearanceCache.acquire(playerTuple);
+  const playerSprite = new Sprite(playerFrames.frame("idle", "down", 0));
   playerSprite.anchor.set(0.5, 1);
   positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, "player");
   const playerEntry: PoolEntry = {
@@ -1059,7 +1055,14 @@ export async function mountDemoScene(
   // the canvas to the pre-crowd content; the crowd needs its own second,
   // one-time re-fit once it exists, since Artie's "nothing this scene
   // contains may be drawn off-canvas" applies to it too.
-  const citizensLayer = await mountCitizensLayer(world, defs, tileSizePx, appearanceCache);
+  const citizensLayer = await mountCitizensLayer(
+    world,
+    defs,
+    demoCitizens,
+    tileSizePx,
+    appearanceCache,
+    textureFor("sidewalk", textures),
+  );
   const worldBoundsWithCrowd = world.getLocalBounds();
   const canvasWidthWithCrowd = Math.ceil(worldBoundsWithCrowd.width * ZOOM) + CANVAS_MARGIN_PX * 2;
   const canvasHeightWithCrowd =

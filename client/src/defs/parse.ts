@@ -252,23 +252,25 @@ function checkAppearanceIdNotZero(id: number, key: string, kind: string): void {
 
 function parseBody(value: unknown, path: string): BodyDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "family", "sheet"], path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool"], path);
   return {
     id: expectAppearanceId(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     family: expectFamily(obj.family, `${path}.family`),
     sheet: expectString(obj.sheet, `${path}.sheet`),
+    pool: expectPool(obj.pool, `${path}.pool`),
   };
 }
 
 function parseEyes(value: unknown, path: string): EyesDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "family", "sheet"], path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool"], path);
   return {
     id: expectAppearanceId(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     family: expectFamily(obj.family, `${path}.family`),
     sheet: expectString(obj.sheet, `${path}.sheet`),
+    pool: expectPool(obj.pool, `${path}.pool`),
   };
 }
 
@@ -701,10 +703,10 @@ export function canonicalDump(defs: Defs): string {
     lines.push(`balance ${b.key} value=${b.value} min=${b.min} max=${b.max}`);
   }
   for (const b of defs.bodies) {
-    lines.push(`body ${b.key} id=${b.id} family=${b.family} sheet=${b.sheet}`);
+    lines.push(`body ${b.key} id=${b.id} family=${b.family} pool=${b.pool} sheet=${b.sheet}`);
   }
   for (const e of defs.eyes) {
-    lines.push(`eyes ${e.key} id=${e.id} family=${e.family} sheet=${e.sheet}`);
+    lines.push(`eyes ${e.key} id=${e.id} family=${e.family} pool=${e.pool} sheet=${e.sheet}`);
   }
   for (const h of defs.hairstyles) {
     lines.push(

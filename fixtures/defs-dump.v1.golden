@@ -102,215 +102,215 @@ balance movement.walk_speed_millicells_per_s value=2200 min=100 max=20000
 balance render.storey_height_px value=48 min=1 max=256
 balance render.tile_size_px value=16 min=1 max=64
 balance render.window_alpha value=50 min=1 max=99
-body body_01 id=1 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_01.png
-body body_02 id=2 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_02.png
-body body_03 id=3 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_03.png
-body body_04 id=4 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_04.png
-body body_05 id=5 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_05.png
-body body_06 id=6 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_06.png
-body body_07 id=7 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_07.png
-body body_08 id=8 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_08.png
-body body_09 id=9 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_09.png
-body kid_body_1_kid id=10 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_1_kid.png
-body kid_body_2_kid id=11 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_2_kid.png
-body kid_body_3_kid id=12 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_3_kid.png
-body kid_body_4_kid id=13 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_4_kid.png
+body body_01 id=1 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_01.png
+body body_02 id=2 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_02.png
+body body_03 id=3 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_03.png
+body body_04 id=4 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_04.png
+body body_05 id=5 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_05.png
+body body_06 id=6 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_06.png
+body body_07 id=7 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_07.png
+body body_08 id=8 family=adult pool=costume sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_08.png
+body body_09 id=9 family=adult pool=costume sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_09.png
+body kid_body_1_kid id=10 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_1_kid.png
+body kid_body_2_kid id=11 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_2_kid.png
+body kid_body_3_kid id=12 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_3_kid.png
+body kid_body_4_kid id=13 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_4_kid.png
 chain plastic_bottle id=1 links=[sanitation_worker]
-eyes eyes_01 id=1 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_01.png
-eyes eyes_02 id=2 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_02.png
-eyes eyes_03 id=3 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_03.png
-eyes eyes_04 id=4 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_04.png
-eyes eyes_05 id=5 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_05.png
-eyes eyes_06 id=6 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_06.png
-eyes eyes_07 id=7 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_07.png
-eyes kid_eyes_kids_1 id=8 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_1.png
-eyes kid_eyes_kids_2 id=9 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_2.png
-eyes kid_eyes_kids_3 id=10 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_3.png
-eyes kid_eyes_kids_4 id=11 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_4.png
-eyes kid_eyes_kids_5 id=12 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_5.png
-eyes kid_eyes_kids_6 id=13 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_6.png
+eyes eyes_01 id=1 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_01.png
+eyes eyes_02 id=2 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_02.png
+eyes eyes_03 id=3 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_03.png
+eyes eyes_04 id=4 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_04.png
+eyes eyes_05 id=5 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_05.png
+eyes eyes_06 id=6 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_06.png
+eyes eyes_07 id=7 family=adult pool=costume sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_07.png
+eyes kid_eyes_kids_1 id=8 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_1.png
+eyes kid_eyes_kids_2 id=9 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_2.png
+eyes kid_eyes_kids_3 id=10 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_3.png
+eyes kid_eyes_kids_4 id=11 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_4.png
+eyes kid_eyes_kids_5 id=12 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_5.png
+eyes kid_eyes_kids_6 id=13 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes_kids/16x16/Eyes_kids_6.png
 hairstyle hairstyle_01_01 id=1 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_01.png style=1 color=1 rare=false
 hairstyle hairstyle_01_02 id=2 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_02.png style=1 color=2 rare=false
 hairstyle hairstyle_01_03 id=3 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_03.png style=1 color=3 rare=false
 hairstyle hairstyle_01_04 id=4 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_04.png style=1 color=4 rare=false
 hairstyle hairstyle_01_05 id=5 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_05.png style=1 color=5 rare=false
 hairstyle hairstyle_01_06 id=6 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_06.png style=1 color=6 rare=false
-hairstyle hairstyle_01_07 id=7 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_07.png style=1 color=7 rare=false
+hairstyle hairstyle_01_07 id=7 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_01_07.png style=1 color=7 rare=true
 hairstyle hairstyle_02_01 id=8 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_01.png style=2 color=1 rare=false
 hairstyle hairstyle_02_02 id=9 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_02.png style=2 color=2 rare=false
 hairstyle hairstyle_02_03 id=10 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_03.png style=2 color=3 rare=false
 hairstyle hairstyle_02_04 id=11 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_04.png style=2 color=4 rare=false
 hairstyle hairstyle_02_05 id=12 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_05.png style=2 color=5 rare=false
 hairstyle hairstyle_02_06 id=13 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_06.png style=2 color=6 rare=false
-hairstyle hairstyle_02_07 id=14 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_07.png style=2 color=7 rare=false
+hairstyle hairstyle_02_07 id=14 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_02_07.png style=2 color=7 rare=true
 hairstyle hairstyle_03_01 id=15 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_01.png style=3 color=1 rare=false
 hairstyle hairstyle_03_02 id=16 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_02.png style=3 color=2 rare=false
 hairstyle hairstyle_03_03 id=17 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_03.png style=3 color=3 rare=false
 hairstyle hairstyle_03_04 id=18 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_04.png style=3 color=4 rare=false
 hairstyle hairstyle_03_05 id=19 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_05.png style=3 color=5 rare=false
 hairstyle hairstyle_03_06 id=20 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_06.png style=3 color=6 rare=false
-hairstyle hairstyle_03_07 id=21 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_07.png style=3 color=7 rare=false
+hairstyle hairstyle_03_07 id=21 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_03_07.png style=3 color=7 rare=true
 hairstyle hairstyle_04_01 id=22 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_01.png style=4 color=1 rare=false
 hairstyle hairstyle_04_02 id=23 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_02.png style=4 color=2 rare=false
 hairstyle hairstyle_04_03 id=24 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_03.png style=4 color=3 rare=false
 hairstyle hairstyle_04_04 id=25 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_04.png style=4 color=4 rare=false
 hairstyle hairstyle_04_05 id=26 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_05.png style=4 color=5 rare=false
 hairstyle hairstyle_04_06 id=27 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_06.png style=4 color=6 rare=false
-hairstyle hairstyle_04_07 id=28 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_07.png style=4 color=7 rare=false
+hairstyle hairstyle_04_07 id=28 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_04_07.png style=4 color=7 rare=true
 hairstyle hairstyle_05_01 id=29 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_01.png style=5 color=1 rare=false
 hairstyle hairstyle_05_02 id=30 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_02.png style=5 color=2 rare=false
 hairstyle hairstyle_05_03 id=31 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_03.png style=5 color=3 rare=false
 hairstyle hairstyle_05_04 id=32 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_04.png style=5 color=4 rare=false
 hairstyle hairstyle_05_05 id=33 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_05.png style=5 color=5 rare=false
 hairstyle hairstyle_05_06 id=34 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_06.png style=5 color=6 rare=false
-hairstyle hairstyle_05_07 id=35 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_07.png style=5 color=7 rare=false
+hairstyle hairstyle_05_07 id=35 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_05_07.png style=5 color=7 rare=true
 hairstyle hairstyle_06_01 id=36 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_01.png style=6 color=1 rare=false
 hairstyle hairstyle_06_02 id=37 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_02.png style=6 color=2 rare=false
 hairstyle hairstyle_06_03 id=38 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_03.png style=6 color=3 rare=false
 hairstyle hairstyle_06_04 id=39 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_04.png style=6 color=4 rare=false
 hairstyle hairstyle_06_05 id=40 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_05.png style=6 color=5 rare=false
 hairstyle hairstyle_06_06 id=41 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_06.png style=6 color=6 rare=false
-hairstyle hairstyle_06_07 id=42 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_07.png style=6 color=7 rare=false
+hairstyle hairstyle_06_07 id=42 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_06_07.png style=6 color=7 rare=true
 hairstyle hairstyle_07_01 id=43 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_01.png style=7 color=1 rare=false
 hairstyle hairstyle_07_02 id=44 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_02.png style=7 color=2 rare=false
 hairstyle hairstyle_07_03 id=45 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_03.png style=7 color=3 rare=false
 hairstyle hairstyle_07_04 id=46 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_04.png style=7 color=4 rare=false
 hairstyle hairstyle_07_05 id=47 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_05.png style=7 color=5 rare=false
 hairstyle hairstyle_07_06 id=48 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_06.png style=7 color=6 rare=false
-hairstyle hairstyle_07_07 id=49 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_07.png style=7 color=7 rare=false
+hairstyle hairstyle_07_07 id=49 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_07_07.png style=7 color=7 rare=true
 hairstyle hairstyle_08_01 id=50 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_01.png style=8 color=1 rare=false
 hairstyle hairstyle_08_02 id=51 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_02.png style=8 color=2 rare=false
 hairstyle hairstyle_08_03 id=52 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_03.png style=8 color=3 rare=false
 hairstyle hairstyle_08_04 id=53 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_04.png style=8 color=4 rare=false
 hairstyle hairstyle_08_05 id=54 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_05.png style=8 color=5 rare=false
 hairstyle hairstyle_08_06 id=55 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_06.png style=8 color=6 rare=false
-hairstyle hairstyle_08_07 id=56 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_07.png style=8 color=7 rare=false
+hairstyle hairstyle_08_07 id=56 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_08_07.png style=8 color=7 rare=true
 hairstyle hairstyle_09_01 id=57 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_01.png style=9 color=1 rare=false
 hairstyle hairstyle_09_02 id=58 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_02.png style=9 color=2 rare=false
 hairstyle hairstyle_09_03 id=59 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_03.png style=9 color=3 rare=false
 hairstyle hairstyle_09_04 id=60 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_04.png style=9 color=4 rare=false
 hairstyle hairstyle_09_05 id=61 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_05.png style=9 color=5 rare=false
 hairstyle hairstyle_09_06 id=62 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_06.png style=9 color=6 rare=false
-hairstyle hairstyle_09_07 id=63 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_07.png style=9 color=7 rare=false
+hairstyle hairstyle_09_07 id=63 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_09_07.png style=9 color=7 rare=true
 hairstyle hairstyle_10_01 id=64 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_01.png style=10 color=1 rare=false
 hairstyle hairstyle_10_02 id=65 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_02.png style=10 color=2 rare=false
 hairstyle hairstyle_10_03 id=66 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_03.png style=10 color=3 rare=false
 hairstyle hairstyle_10_04 id=67 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_04.png style=10 color=4 rare=false
 hairstyle hairstyle_10_05 id=68 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_05.png style=10 color=5 rare=false
 hairstyle hairstyle_10_06 id=69 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_06.png style=10 color=6 rare=false
-hairstyle hairstyle_10_07 id=70 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_07.png style=10 color=7 rare=false
+hairstyle hairstyle_10_07 id=70 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_10_07.png style=10 color=7 rare=true
 hairstyle hairstyle_11_01 id=71 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_01.png style=11 color=1 rare=false
 hairstyle hairstyle_11_02 id=72 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_02.png style=11 color=2 rare=false
 hairstyle hairstyle_11_03 id=73 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_03.png style=11 color=3 rare=false
 hairstyle hairstyle_11_04 id=74 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_04.png style=11 color=4 rare=false
 hairstyle hairstyle_11_05 id=75 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_05.png style=11 color=5 rare=false
 hairstyle hairstyle_11_06 id=76 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_06.png style=11 color=6 rare=false
-hairstyle hairstyle_11_07 id=77 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_07.png style=11 color=7 rare=false
+hairstyle hairstyle_11_07 id=77 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_11_07.png style=11 color=7 rare=true
 hairstyle hairstyle_12_01 id=78 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_01.png style=12 color=1 rare=false
 hairstyle hairstyle_12_02 id=79 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_02.png style=12 color=2 rare=false
 hairstyle hairstyle_12_03 id=80 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_03.png style=12 color=3 rare=false
 hairstyle hairstyle_12_04 id=81 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_04.png style=12 color=4 rare=false
 hairstyle hairstyle_12_05 id=82 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_05.png style=12 color=5 rare=false
 hairstyle hairstyle_12_06 id=83 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_06.png style=12 color=6 rare=false
-hairstyle hairstyle_12_07 id=84 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_07.png style=12 color=7 rare=false
+hairstyle hairstyle_12_07 id=84 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_12_07.png style=12 color=7 rare=true
 hairstyle hairstyle_13_01 id=85 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_01.png style=13 color=1 rare=false
 hairstyle hairstyle_13_02 id=86 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_02.png style=13 color=2 rare=false
 hairstyle hairstyle_13_03 id=87 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_03.png style=13 color=3 rare=false
 hairstyle hairstyle_13_04 id=88 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_04.png style=13 color=4 rare=false
 hairstyle hairstyle_13_05 id=89 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_05.png style=13 color=5 rare=false
 hairstyle hairstyle_13_06 id=90 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_06.png style=13 color=6 rare=false
-hairstyle hairstyle_13_07 id=91 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_07.png style=13 color=7 rare=false
+hairstyle hairstyle_13_07 id=91 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_13_07.png style=13 color=7 rare=true
 hairstyle hairstyle_14_01 id=92 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_01.png style=14 color=1 rare=false
 hairstyle hairstyle_14_02 id=93 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_02.png style=14 color=2 rare=false
 hairstyle hairstyle_14_03 id=94 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_03.png style=14 color=3 rare=false
 hairstyle hairstyle_14_04 id=95 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_04.png style=14 color=4 rare=false
 hairstyle hairstyle_14_05 id=96 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_05.png style=14 color=5 rare=false
 hairstyle hairstyle_14_06 id=97 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_06.png style=14 color=6 rare=false
-hairstyle hairstyle_14_07 id=98 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_07.png style=14 color=7 rare=false
+hairstyle hairstyle_14_07 id=98 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_14_07.png style=14 color=7 rare=true
 hairstyle hairstyle_15_01 id=99 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_01.png style=15 color=1 rare=false
 hairstyle hairstyle_15_02 id=100 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_02.png style=15 color=2 rare=false
 hairstyle hairstyle_15_03 id=101 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_03.png style=15 color=3 rare=false
 hairstyle hairstyle_15_04 id=102 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_04.png style=15 color=4 rare=false
 hairstyle hairstyle_15_05 id=103 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_05.png style=15 color=5 rare=false
 hairstyle hairstyle_15_06 id=104 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_06.png style=15 color=6 rare=false
-hairstyle hairstyle_15_07 id=105 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_07.png style=15 color=7 rare=false
+hairstyle hairstyle_15_07 id=105 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_15_07.png style=15 color=7 rare=true
 hairstyle hairstyle_16_01 id=106 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_01.png style=16 color=1 rare=false
 hairstyle hairstyle_16_02 id=107 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_02.png style=16 color=2 rare=false
 hairstyle hairstyle_16_03 id=108 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_03.png style=16 color=3 rare=false
 hairstyle hairstyle_16_04 id=109 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_04.png style=16 color=4 rare=false
 hairstyle hairstyle_16_05 id=110 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_05.png style=16 color=5 rare=false
 hairstyle hairstyle_16_06 id=111 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_06.png style=16 color=6 rare=false
-hairstyle hairstyle_16_07 id=112 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_07.png style=16 color=7 rare=false
+hairstyle hairstyle_16_07 id=112 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_16_07.png style=16 color=7 rare=true
 hairstyle hairstyle_17_01 id=113 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_01.png style=17 color=1 rare=false
 hairstyle hairstyle_17_02 id=114 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_02.png style=17 color=2 rare=false
 hairstyle hairstyle_17_03 id=115 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_03.png style=17 color=3 rare=false
 hairstyle hairstyle_17_04 id=116 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_04.png style=17 color=4 rare=false
 hairstyle hairstyle_17_05 id=117 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_05.png style=17 color=5 rare=false
 hairstyle hairstyle_17_06 id=118 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_06.png style=17 color=6 rare=false
-hairstyle hairstyle_17_07 id=119 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_07.png style=17 color=7 rare=false
+hairstyle hairstyle_17_07 id=119 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_17_07.png style=17 color=7 rare=true
 hairstyle hairstyle_18_01 id=120 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_01.png style=18 color=1 rare=false
 hairstyle hairstyle_18_02 id=121 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_02.png style=18 color=2 rare=false
 hairstyle hairstyle_18_03 id=122 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_03.png style=18 color=3 rare=false
 hairstyle hairstyle_18_04 id=123 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_04.png style=18 color=4 rare=false
 hairstyle hairstyle_18_05 id=124 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_05.png style=18 color=5 rare=false
 hairstyle hairstyle_18_06 id=125 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_06.png style=18 color=6 rare=false
-hairstyle hairstyle_18_07 id=126 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_07.png style=18 color=7 rare=false
+hairstyle hairstyle_18_07 id=126 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_18_07.png style=18 color=7 rare=true
 hairstyle hairstyle_19_01 id=127 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_01.png style=19 color=1 rare=false
 hairstyle hairstyle_19_02 id=128 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_02.png style=19 color=2 rare=false
 hairstyle hairstyle_19_03 id=129 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_03.png style=19 color=3 rare=false
 hairstyle hairstyle_19_04 id=130 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_04.png style=19 color=4 rare=false
 hairstyle hairstyle_19_05 id=131 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_05.png style=19 color=5 rare=false
 hairstyle hairstyle_19_06 id=132 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_06.png style=19 color=6 rare=false
-hairstyle hairstyle_19_07 id=133 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_07.png style=19 color=7 rare=false
+hairstyle hairstyle_19_07 id=133 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_19_07.png style=19 color=7 rare=true
 hairstyle hairstyle_20_01 id=134 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_01.png style=20 color=1 rare=false
 hairstyle hairstyle_20_02 id=135 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_02.png style=20 color=2 rare=false
 hairstyle hairstyle_20_03 id=136 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_03.png style=20 color=3 rare=false
 hairstyle hairstyle_20_04 id=137 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_04.png style=20 color=4 rare=false
 hairstyle hairstyle_20_05 id=138 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_05.png style=20 color=5 rare=false
 hairstyle hairstyle_20_06 id=139 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_06.png style=20 color=6 rare=false
-hairstyle hairstyle_20_07 id=140 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_07.png style=20 color=7 rare=false
+hairstyle hairstyle_20_07 id=140 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_20_07.png style=20 color=7 rare=true
 hairstyle hairstyle_21_01 id=141 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_01.png style=21 color=1 rare=false
 hairstyle hairstyle_21_02 id=142 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_02.png style=21 color=2 rare=false
 hairstyle hairstyle_21_03 id=143 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_03.png style=21 color=3 rare=false
 hairstyle hairstyle_21_04 id=144 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_04.png style=21 color=4 rare=false
 hairstyle hairstyle_21_05 id=145 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_05.png style=21 color=5 rare=false
 hairstyle hairstyle_21_06 id=146 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_06.png style=21 color=6 rare=false
-hairstyle hairstyle_21_07 id=147 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_07.png style=21 color=7 rare=false
+hairstyle hairstyle_21_07 id=147 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_21_07.png style=21 color=7 rare=true
 hairstyle hairstyle_22_01 id=148 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_01.png style=22 color=1 rare=false
 hairstyle hairstyle_22_02 id=149 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_02.png style=22 color=2 rare=false
 hairstyle hairstyle_22_03 id=150 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_03.png style=22 color=3 rare=false
 hairstyle hairstyle_22_04 id=151 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_04.png style=22 color=4 rare=false
 hairstyle hairstyle_22_05 id=152 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_05.png style=22 color=5 rare=false
 hairstyle hairstyle_22_06 id=153 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_06.png style=22 color=6 rare=false
-hairstyle hairstyle_22_07 id=154 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_07.png style=22 color=7 rare=false
+hairstyle hairstyle_22_07 id=154 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_22_07.png style=22 color=7 rare=true
 hairstyle hairstyle_23_01 id=155 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_01.png style=23 color=1 rare=false
 hairstyle hairstyle_23_02 id=156 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_02.png style=23 color=2 rare=false
 hairstyle hairstyle_23_03 id=157 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_03.png style=23 color=3 rare=false
 hairstyle hairstyle_23_04 id=158 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_04.png style=23 color=4 rare=false
 hairstyle hairstyle_23_05 id=159 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_05.png style=23 color=5 rare=false
 hairstyle hairstyle_23_06 id=160 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_06.png style=23 color=6 rare=false
-hairstyle hairstyle_23_07 id=161 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_07.png style=23 color=7 rare=false
+hairstyle hairstyle_23_07 id=161 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_23_07.png style=23 color=7 rare=true
 hairstyle hairstyle_24_01 id=162 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_01.png style=24 color=1 rare=false
 hairstyle hairstyle_24_02 id=163 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_02.png style=24 color=2 rare=false
 hairstyle hairstyle_24_03 id=164 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_03.png style=24 color=3 rare=false
 hairstyle hairstyle_24_04 id=165 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_04.png style=24 color=4 rare=false
 hairstyle hairstyle_24_05 id=166 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_05.png style=24 color=5 rare=false
 hairstyle hairstyle_24_06 id=167 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_06.png style=24 color=6 rare=false
-hairstyle hairstyle_24_07 id=168 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_07.png style=24 color=7 rare=false
+hairstyle hairstyle_24_07 id=168 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_24_07.png style=24 color=7 rare=true
 hairstyle hairstyle_25_01 id=169 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_01.png style=25 color=1 rare=false
 hairstyle hairstyle_25_02 id=170 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_02.png style=25 color=2 rare=false
 hairstyle hairstyle_25_03 id=171 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_03.png style=25 color=3 rare=false
 hairstyle hairstyle_25_04 id=172 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_04.png style=25 color=4 rare=false
 hairstyle hairstyle_25_05 id=173 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_05.png style=25 color=5 rare=false
 hairstyle hairstyle_25_06 id=174 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_06.png style=25 color=6 rare=false
-hairstyle hairstyle_25_07 id=175 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_07.png style=25 color=7 rare=false
+hairstyle hairstyle_25_07 id=175 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_25_07.png style=25 color=7 rare=true
 hairstyle hairstyle_26_01 id=176 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_01.png style=26 color=1 rare=false
 hairstyle hairstyle_26_02 id=177 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_02.png style=26 color=2 rare=false
 hairstyle hairstyle_26_03 id=178 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_03.png style=26 color=3 rare=false
 hairstyle hairstyle_26_04 id=179 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_04.png style=26 color=4 rare=false
 hairstyle hairstyle_26_05 id=180 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_05.png style=26 color=5 rare=false
 hairstyle hairstyle_26_06 id=181 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_06.png style=26 color=6 rare=false
-hairstyle hairstyle_26_07 id=182 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_07.png style=26 color=7 rare=false
+hairstyle hairstyle_26_07 id=182 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_26_07.png style=26 color=7 rare=true
 hairstyle hairstyle_27_01 id=183 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_01.png style=27 color=1 rare=false
 hairstyle hairstyle_27_02 id=184 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_02.png style=27 color=2 rare=false
 hairstyle hairstyle_27_03 id=185 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles/16x16/Hairstyle_27_03.png style=27 color=3 rare=false
@@ -333,32 +333,32 @@ hairstyle kid_hairstyle_kid_1_1 id=201 family=kid sheet=ModernTileset/moderninte
 hairstyle kid_hairstyle_kid_1_2 id=202 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_1_2.png style=1 color=2 rare=false
 hairstyle kid_hairstyle_kid_1_3 id=203 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_1_3.png style=1 color=3 rare=false
 hairstyle kid_hairstyle_kid_1_4 id=204 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_1_4.png style=1 color=4 rare=false
-hairstyle kid_hairstyle_kid_1_5 id=205 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_1_5.png style=1 color=5 rare=false
+hairstyle kid_hairstyle_kid_1_5 id=205 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_1_5.png style=1 color=5 rare=true
 hairstyle kid_hairstyle_kid_2_1 id=206 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_2_1.png style=2 color=1 rare=false
 hairstyle kid_hairstyle_kid_2_2 id=207 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_2_2.png style=2 color=2 rare=false
 hairstyle kid_hairstyle_kid_2_3 id=208 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_2_3.png style=2 color=3 rare=false
 hairstyle kid_hairstyle_kid_2_4 id=209 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_2_4.png style=2 color=4 rare=false
-hairstyle kid_hairstyle_kid_2_5 id=210 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_2_5.png style=2 color=5 rare=false
+hairstyle kid_hairstyle_kid_2_5 id=210 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_2_5.png style=2 color=5 rare=true
 hairstyle kid_hairstyle_kid_3_1 id=211 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_3_1.png style=3 color=1 rare=false
 hairstyle kid_hairstyle_kid_3_2 id=212 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_3_2.png style=3 color=2 rare=false
 hairstyle kid_hairstyle_kid_3_3 id=213 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_3_3.png style=3 color=3 rare=false
 hairstyle kid_hairstyle_kid_3_4 id=214 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_3_4.png style=3 color=4 rare=false
-hairstyle kid_hairstyle_kid_3_5 id=215 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_3_5.png style=3 color=5 rare=false
+hairstyle kid_hairstyle_kid_3_5 id=215 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_3_5.png style=3 color=5 rare=true
 hairstyle kid_hairstyle_kid_4_1 id=216 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_4_1.png style=4 color=1 rare=false
 hairstyle kid_hairstyle_kid_4_2 id=217 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_4_2.png style=4 color=2 rare=false
 hairstyle kid_hairstyle_kid_4_3 id=218 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_4_3.png style=4 color=3 rare=false
 hairstyle kid_hairstyle_kid_4_4 id=219 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_4_4.png style=4 color=4 rare=false
-hairstyle kid_hairstyle_kid_4_5 id=220 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_4_5.png style=4 color=5 rare=false
+hairstyle kid_hairstyle_kid_4_5 id=220 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_4_5.png style=4 color=5 rare=true
 hairstyle kid_hairstyle_kid_5_1 id=221 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_5_1.png style=5 color=1 rare=false
 hairstyle kid_hairstyle_kid_5_2 id=222 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_5_2.png style=5 color=2 rare=false
 hairstyle kid_hairstyle_kid_5_3 id=223 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_5_3.png style=5 color=3 rare=false
 hairstyle kid_hairstyle_kid_5_4 id=224 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_5_4.png style=5 color=4 rare=false
-hairstyle kid_hairstyle_kid_5_5 id=225 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_5_5.png style=5 color=5 rare=false
+hairstyle kid_hairstyle_kid_5_5 id=225 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_5_5.png style=5 color=5 rare=true
 hairstyle kid_hairstyle_kid_6_1 id=226 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_1.png style=6 color=1 rare=false
 hairstyle kid_hairstyle_kid_6_2 id=227 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_2.png style=6 color=2 rare=false
 hairstyle kid_hairstyle_kid_6_3 id=228 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_3.png style=6 color=3 rare=false
 hairstyle kid_hairstyle_kid_6_4 id=229 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_4.png style=6 color=4 rare=false
-hairstyle kid_hairstyle_kid_6_5 id=230 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_5.png style=6 color=5 rare=false
+hairstyle kid_hairstyle_kid_6_5 id=230 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_5.png style=6 color=5 rare=true
 item bottle id=1
 item recycled_glass id=2
 object lamppost id=4 height=1 width=1 collider=6,10,10,14 interact_at=none window=false

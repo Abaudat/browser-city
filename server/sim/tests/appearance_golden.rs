@@ -18,36 +18,53 @@
 use sim::appearance::{APPEARANCE_VERSION, Appearance, Catalogue, generate};
 use sim::generated::defs::{AccessoryDef, BodyDef, EyesDef, Family, HairstyleDef, OutfitDef, Pool};
 
+// A costume-pool body/eyes (ids 4 and 3) sit right in the middle of each
+// family's id range -- if `generate`'s own civilian-only filter for
+// bodies/eyes ever regressed to picking from every pool again, these
+// would start appearing in the golden immediately, not only in the
+// live-catalogue property test.
 const BODIES: &[BodyDef] = &[
     BodyDef {
         id: 1,
         key: "adult_body_1",
         family: Family::Adult,
         sheet: "x",
+        pool: Pool::Civilian,
     },
     BodyDef {
         id: 2,
         key: "adult_body_2",
         family: Family::Adult,
         sheet: "x",
+        pool: Pool::Civilian,
     },
     BodyDef {
         id: 3,
         key: "adult_body_3",
         family: Family::Adult,
         sheet: "x",
+        pool: Pool::Civilian,
+    },
+    BodyDef {
+        id: 4,
+        key: "adult_body_costume",
+        family: Family::Adult,
+        sheet: "x",
+        pool: Pool::Costume,
     },
     BodyDef {
         id: 10,
         key: "kid_body_1",
         family: Family::Kid,
         sheet: "x",
+        pool: Pool::Civilian,
     },
     BodyDef {
         id: 11,
         key: "kid_body_2",
         family: Family::Kid,
         sheet: "x",
+        pool: Pool::Civilian,
     },
 ];
 
@@ -57,24 +74,35 @@ const EYES: &[EyesDef] = &[
         key: "adult_eyes_1",
         family: Family::Adult,
         sheet: "x",
+        pool: Pool::Civilian,
     },
     EyesDef {
         id: 2,
         key: "adult_eyes_2",
         family: Family::Adult,
         sheet: "x",
+        pool: Pool::Civilian,
+    },
+    EyesDef {
+        id: 3,
+        key: "adult_eyes_costume",
+        family: Family::Adult,
+        sheet: "x",
+        pool: Pool::Costume,
     },
     EyesDef {
         id: 10,
         key: "kid_eyes_1",
         family: Family::Kid,
         sheet: "x",
+        pool: Pool::Civilian,
     },
     EyesDef {
         id: 11,
         key: "kid_eyes_2",
         family: Family::Kid,
         sheet: "x",
+        pool: Pool::Civilian,
     },
 ];
 
@@ -256,7 +284,7 @@ const IDS: [u64; 32] = [
     u64::MAX,
 ];
 
-const GOLDEN: &str = include_str!("goldens/appearance_v1.golden");
+const GOLDEN: &str = include_str!("goldens/appearance_v2.golden");
 
 struct GoldenRow {
     id: u64,
@@ -330,7 +358,7 @@ fn appearance_output_matches_committed_golden() {
 
     assert_eq!(
         golden_version, APPEARANCE_VERSION,
-        "tests/goldens/appearance_v1.golden is keyed to version {golden_version} but \
+        "tests/goldens/appearance_v2.golden is keyed to version {golden_version} but \
          sim::appearance::APPEARANCE_VERSION is {APPEARANCE_VERSION} -- regenerate the golden \
          (and rename it) whenever APPEARANCE_VERSION changes"
     );

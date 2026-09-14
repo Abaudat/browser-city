@@ -27,9 +27,27 @@ const ADULT_LAYOUT: AppearanceLayoutDef = {
 
 const KID_LAYOUT: AppearanceLayoutDef = { ...ADULT_LAYOUT, id: 2, key: "kid", family: "kid" };
 
-const BODY: BodyDef = { id: 1, key: "body_01", family: "adult", sheet: "bodies/body_01.png" };
-const KID_BODY: BodyDef = { id: 11, key: "kid_body_01", family: "kid", sheet: "bodies/kid_01.png" };
-const EYES: EyesDef = { id: 1, key: "eyes_01", family: "adult", sheet: "eyes/eyes_01.png" };
+const BODY: BodyDef = {
+  id: 1,
+  key: "body_01",
+  family: "adult",
+  sheet: "bodies/body_01.png",
+  pool: "civilian",
+};
+const KID_BODY: BodyDef = {
+  id: 11,
+  key: "kid_body_01",
+  family: "kid",
+  sheet: "bodies/kid_01.png",
+  pool: "civilian",
+};
+const EYES: EyesDef = {
+  id: 1,
+  key: "eyes_01",
+  family: "adult",
+  sheet: "eyes/eyes_01.png",
+  pool: "civilian",
+};
 const OUTFIT: OutfitDef = {
   id: 5,
   key: "outfit_01",

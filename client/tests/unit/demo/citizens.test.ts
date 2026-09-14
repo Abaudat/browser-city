@@ -1,11 +1,11 @@
 // `demo/citizens.ts`'s own pure fixture builder, tested against the real
-// committed `client/public/defs/defs.json` -- the same "no hand-typed
-// id" property the module doc comment claims.
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+// committed `client/public/demo-citizens.json` -- `server/sim/tests/
+// demo_citizens_fixture.rs`'s own generated output, the same "no
+// hand-typed id" property the module doc comment claims. Body/eyes ids
+// are cross-checked against the committed `defs/defs.json` so a stale
+// fixture (regenerated defs, un-regenerated demo-citizens.json) fails
+// here rather than silently.
 import { describe, expect, it } from "vitest";
-import { parseDefs } from "../../../src/defs/parse";
-import type { Defs } from "../../../src/defs/types";
 import {
   buildCitizenFixtures,
   buildPlayerAppearanceTuple,
@@ -13,18 +13,12 @@ import {
   WALKER_ID,
   WALKER_LOOP,
 } from "../../../src/demo/citizens";
-
-const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
-
-function committedDefs(): Defs {
-  return parseDefs(
-    JSON.parse(readFileSync(`${REPO_ROOT}client/public/defs/defs.json`, "utf-8")) as unknown,
-  );
-}
+import { committedDefs, committedDemoCitizens } from "./demo-world";
 
 describe("buildCitizenFixtures", () => {
   const defs = committedDefs();
-  const fixtures = buildCitizenFixtures(defs);
+  const demoCitizens = committedDemoCitizens();
+  const fixtures = buildCitizenFixtures(demoCitizens);
   const adults = fixtures.filter((f) => f.id.startsWith("adult-"));
   const kids = fixtures.filter((f) => f.id.startsWith("kid-"));
 
@@ -80,9 +74,10 @@ describe("buildCitizenFixtures", () => {
 
 describe("buildWalkerFixture", () => {
   const defs = committedDefs();
+  const demoCitizens = committedDemoCitizens();
 
   it("has the reserved walker id and an adult tuple naming real ids", () => {
-    const walker = buildWalkerFixture(defs);
+    const walker = buildWalkerFixture(demoCitizens);
     expect(walker.id).toBe(WALKER_ID);
     const adultBodyIds = new Set(defs.bodies.filter((b) => b.family === "adult").map((b) => b.id));
     expect(adultBodyIds.has(walker.tuple.body)).toBe(true);
@@ -111,8 +106,9 @@ describe("WALKER_LOOP", () => {
 describe("buildPlayerAppearanceTuple", () => {
   it("names a real adult body id, distinct from the walker's own tuple", () => {
     const defs = committedDefs();
-    const playerTuple = buildPlayerAppearanceTuple(defs);
-    const walkerTuple = buildWalkerFixture(defs).tuple;
+    const demoCitizens = committedDemoCitizens();
+    const playerTuple = buildPlayerAppearanceTuple(demoCitizens);
+    const walkerTuple = buildWalkerFixture(demoCitizens).tuple;
     const adultBodyIds = new Set(defs.bodies.filter((b) => b.family === "adult").map((b) => b.id));
     expect(adultBodyIds.has(playerTuple.body)).toBe(true);
     expect(playerTuple).not.toEqual(walkerTuple);
