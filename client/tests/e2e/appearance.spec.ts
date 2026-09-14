@@ -158,12 +158,12 @@ test.describe("the real, mounted appearance pipeline", () => {
     // `releasePartImage`) -- without that, every one of the 48 stack
     // rebuilds below re-fetches and re-decodes the same PNGs from
     // scratch, which is what previously made this test take 26s+ locally
-    // and time out on CI at 90s. Local runtime after that fix is a
-    // consistent ~6-9s; the budget below is wider than that specifically
-    // for CI's own runner variance (a real CI run took 46.3s under
-    // contention heavy enough that an unrelated spec in the same run blew
-    // its own default 30s budget too), not a cover for redundant work.
-    test.setTimeout(60_000);
+    // and time out on CI at 90s. Runtime is now a consistent ~6-9s, on CI
+    // included now that `playwright.config.ts` runs CI serially (its own
+    // comment explains why) rather than sharing a CPU-bound runner across
+    // workers -- this budget is a margin over that real time, not a cover
+    // for redundant work.
+    test.setTimeout(45_000);
     const defs: Defs = committedDefs();
     const adultBody = defs.bodies.find((b) => b.family === "adult");
     const adultEyes = defs.eyes.find((e) => e.family === "adult");
