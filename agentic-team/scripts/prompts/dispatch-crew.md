@@ -19,5 +19,12 @@ where `<bodyfile>` holds your PR description prose (the script appends
 retarget the PR or open one another way, even if a direction says the base
 looks wrong — note the concern in the PR description instead.
 
+If the work shows anything on screen, capture screenshots, prefer stills to
+GIFs, and put them in the description:
+
+    bash {{scripts}}/bc-pr.sh attach <image>...
+
+It prints one markdown image line per file.
+
 If you already opened a PR for this issue, only make sure it reflects your
 latest committed work (push anything pending), then stop.

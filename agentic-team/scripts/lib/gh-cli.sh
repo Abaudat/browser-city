@@ -230,3 +230,43 @@ gh_issue_edit_body() { # <n> <bodyfile>
   [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_issue_edit_body "$@"; return; }
   "$GH" api "repos/$BC_REPO/issues/$1" -X PATCH -F body="@$2" >/dev/null 2>&1
 }
+
+# --- appended by the PR-screenshot work -------------------------------------
+# Crew's `attach` writes images onto $BC_ASSETS_BRANCH through the contents
+# API, and setup-github.sh creates that branch as an orphan with no files.
+gh_branch_exists() { # <branch> -> branch name (exit 1 if absent)
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_branch_exists "$1"; return; }
+  "$GH" api "repos/$BC_REPO/branches/$1" --jq '.name' 2>/dev/null
+}
+
+gh_orphan_commit_create() { # <message> -> sha of a parentless commit with an empty tree
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_orphan_commit_create "$@"; return; }
+  "$GH" api "repos/$BC_REPO/git/commits" -f message="$1" \
+    -f tree=4b825dc642cb6eb9a060e54bf8d69288fbee4904 --jq '.sha' 2>/dev/null
+}
+
+gh_ref_create() { # <branch> <sha>
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_ref_create "$@"; return; }
+  "$GH" api "repos/$BC_REPO/git/refs" -f ref="refs/heads/$1" -f sha="$2" >/dev/null 2>&1
+}
+
+gh_content_sha() { # <branch> <path> -> blob sha of that file (exit 1 if absent)
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_content_sha "$1"; return; }
+  "$GH" api "repos/$BC_REPO/contents/$2?ref=$1" --jq '.sha' 2>/dev/null
+}
+
+gh_content_put() { # <branch> <path> <file> [blob-sha] -- blob-sha replaces an existing file
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_content_put "$@"; return; }
+  local b64 payload rc
+  b64="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-content.XXXXXX")"
+  payload="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-content.XXXXXX")"
+  # base64 into a file and --input the payload: an image on the command line
+  # would blow Windows' 32K argument limit.
+  base64 -w0 "$3" > "$b64"
+  "$JQ" -n --rawfile c "$b64" --arg m "Add $2" --arg b "$1" --arg s "${4:-}" \
+    '{message: $m, content: $c, branch: $b} + (if $s == "" then {} else {sha: $s} end)' > "$payload"
+  "$GH" api "repos/$BC_REPO/contents/$2" -X PUT --input "$payload" >/dev/null 2>&1
+  rc=$?
+  rm -f "$b64" "$payload"
+  return "$rc"
+}

@@ -27,6 +27,7 @@ Reading is plain `gh`: `gh issue view <issue> --comments`,
 | Command | What it does |
 |---|---|
 | `bash <scripts>/bc-pr.sh open <issue> "<title>" <bodyfile>` | Pushes the current branch and opens the PR, labelled `story`, with `Closes #<issue>` appended to `<bodyfile>`'s prose. Prints the PR number. Idempotent — if a PR already closes that issue it prints its number and creates nothing. The script picks the base branch; never retarget the PR or open one another way. |
+| `bash <scripts>/bc-pr.sh attach <image>...` | Uploads each png/jpg/gif/webp to the `pr-assets` branch under `<branch>/<HEAD sha7>/<name>` and prints one `![name](url)` line per image, for you to paste into a `<bodyfile>`. File names are letters, digits, `.`, `_` and `-` only. Re-attaching the same name at the same commit replaces it. Prefer still images; use a GIF only when motion is what is under review. |
 | `bash <scripts>/bc-comment.sh mark-addressed <pr> [bodyfile]` | Rewrites your `### Crew` comment on the PR and stamps it at the PR's **current head**. `[bodyfile]` is optional prose on what you changed; omitted, it writes "Addressed." Push your fixes *first* — the stamp is taken from the head at the moment you run it. |
 
 `<bodyfile>` is a plain text file holding only your prose — no markers, no

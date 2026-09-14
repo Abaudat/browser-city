@@ -21,6 +21,7 @@ _seed_common() {
   local d="$1"
   printf 'repo project\n' > "$d/gh_auth_scopes.seq"
   echo '["lead:derek","lead:tim","lead:artie","epic","demo","breaker"]' > "$d/gh_label_list.json"
+  echo 'pr-assets' > "$d/gh_branch_exists.pr-assets.json"
 }
 
 echo "branch protection: already required -- no mutation, exit 0:"
@@ -55,5 +56,26 @@ _seed_common "$FAKE_FAIL"
 echo '[]' > "$FAKE_FAIL/gh_branch_required_checks.json"
 echo 1 > "$FAKE_FAIL/gh_branch_require_check.exit"
 check "a forced gh_branch_require_check failure never reads as exit 0" 1 run "$FAKE_FAIL"
+
+echo
+echo "assets branch: absent -- creates an orphan commit and points the branch at it:"
+
+FAKE_ASSETS="$(fake_dir)"
+_seed_common "$FAKE_ASSETS"
+rm "$FAKE_ASSETS/gh_branch_exists.pr-assets.json"
+echo '["ci"]' > "$FAKE_ASSETS/gh_branch_required_checks.json"
+printf 'c0ffee' > "$FAKE_ASSETS/gh_orphan_commit_create.json"
+check "absent -> exit 0" 0 run "$FAKE_ASSETS"
+check "pr-assets points at the new commit" 0 log_has "$FAKE_ASSETS/calls.log" '^gh_ref_create pr-assets c0ffee$'
+
+echo
+echo "assets branch: the commit comes back empty -- no ref, exit 2:"
+
+FAKE_ASSETS_FAIL="$(fake_dir)"
+_seed_common "$FAKE_ASSETS_FAIL"
+rm "$FAKE_ASSETS_FAIL/gh_branch_exists.pr-assets.json"
+echo '["ci"]' > "$FAKE_ASSETS_FAIL/gh_branch_required_checks.json"
+check "empty commit sha -> exit 2" 2 run "$FAKE_ASSETS_FAIL"
+check "no ref created" 1 log_has "$FAKE_ASSETS_FAIL/calls.log" '^gh_ref_create'
 
 summary

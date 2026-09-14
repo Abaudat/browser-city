@@ -69,4 +69,17 @@ else
   fi
 fi
 
+echo "setup-github: checking the $BC_ASSETS_BRANCH branch..." >&2
+if gh_branch_exists "$BC_ASSETS_BRANCH" >/dev/null; then
+  echo "setup-github: $BC_ASSETS_BRANCH already exists" >&2
+else
+  COMMIT="$(gh_orphan_commit_create "Screenshots attached to PRs")"
+  if [ -n "$COMMIT" ] && gh_ref_create "$BC_ASSETS_BRANCH" "$COMMIT"; then
+    echo "setup-github: created $BC_ASSETS_BRANCH" >&2
+  else
+    echo "setup-github: FAILED to create $BC_ASSETS_BRANCH" >&2
+    exit 2
+  fi
+fi
+
 exit 0

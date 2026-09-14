@@ -149,6 +149,50 @@ check_out "prints the existing PR's number" 0 55 \
 check "creates nothing (no calls.log at all)" 1 test -f "$FAKE_IDEM/calls.log"
 
 echo
+echo "attach: refuses bad arguments before uploading anything:"
+
+FAKE_AT_BAD="$(fake_dir)"
+echo 'pr-assets' > "$FAKE_AT_BAD/gh_branch_exists.pr-assets.json"
+printf 'png' > "$FAKE_AT_BAD/street.png"
+printf 'webm' > "$FAKE_AT_BAD/walk.webm"
+printf 'png' > "$FAKE_AT_BAD/two words.png"
+check "no files -> exit 2" 2 in_repo env BC_FAKE="$FAKE_AT_BAD" bash "$BC_PR" attach
+check "a missing file -> exit 2" 2 in_repo env BC_FAKE="$FAKE_AT_BAD" bash "$BC_PR" attach "$FAKE_AT_BAD/street.png" "$FAKE_AT_BAD/nope.png"
+check "a non-image -> exit 2" 2 in_repo env BC_FAKE="$FAKE_AT_BAD" bash "$BC_PR" attach "$FAKE_AT_BAD/walk.webm"
+check "a name needing url-encoding -> exit 2" 2 in_repo env BC_FAKE="$FAKE_AT_BAD" bash "$BC_PR" attach "$FAKE_AT_BAD/two words.png"
+check "nothing was uploaded" 1 test -f "$FAKE_AT_BAD/calls.log"
+
+( cd "$REPO" && git checkout -q master )
+check "from master -> exit 2" 2 in_repo env BC_FAKE="$FAKE_AT_BAD" bash "$BC_PR" attach "$FAKE_AT_BAD/street.png"
+( cd "$REPO" && git checkout -q issue-8 )
+
+FAKE_AT_NOBRANCH="$(fake_dir)"
+printf 'png' > "$FAKE_AT_NOBRANCH/street.png"
+check "no assets branch -> exit 2" 2 in_repo env BC_FAKE="$FAKE_AT_NOBRANCH" bash "$BC_PR" attach "$FAKE_AT_NOBRANCH/street.png"
+check "nothing was uploaded" 1 test -f "$FAKE_AT_NOBRANCH/calls.log"
+
+echo
+echo "attach: uploads under <branch>/<sha7>/ and prints one markdown image per file:"
+
+SHA7="$(cd "$REPO" && git rev-parse --short=7 HEAD)"
+RAW="https://raw.githubusercontent.com/Abaudat/browser-city/pr-assets/issue-8/$SHA7"
+FAKE_AT="$(fake_dir)"
+echo 'pr-assets' > "$FAKE_AT/gh_branch_exists.pr-assets.json"
+printf 'png' > "$FAKE_AT/street.png"
+printf 'gif' > "$FAKE_AT/walk.GIF"
+check_out "prints both images" 0 "$(printf '![street](%s/street.png)\n![walk](%s/walk.GIF)' "$RAW" "$RAW")" \
+  in_repo env BC_FAKE="$FAKE_AT" bash "$BC_PR" attach "$FAKE_AT/street.png" "$FAKE_AT/walk.GIF"
+check "street.png uploaded as a new file" 0 log_has "$FAKE_AT/calls.log" "^gh_content_put pr-assets issue-8/$SHA7/street.png [^ ]+/street.png $"
+
+FAKE_AT_RE="$(fake_dir)"
+echo 'pr-assets' > "$FAKE_AT_RE/gh_branch_exists.pr-assets.json"
+echo 'b10b5ha' > "$FAKE_AT_RE/gh_content_sha.pr-assets.json"
+printf 'png' > "$FAKE_AT_RE/street.png"
+check "re-attaching replaces the existing file" 0 \
+  in_repo env BC_FAKE="$FAKE_AT_RE" bash "$BC_PR" attach "$FAKE_AT_RE/street.png"
+check "the replace passes the existing blob sha" 0 log_has "$FAKE_AT_RE/calls.log" "^gh_content_put pr-assets issue-8/$SHA7/street.png [^ ]+ b10b5ha$"
+
+echo
 echo "unknown command: usage on stderr, exit 2:"
 check "unknown command exits 2" 2 run "$(fake_dir)" bogus-command
 
