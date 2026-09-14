@@ -313,6 +313,26 @@ describe("keyboard navigation", () => {
     h.menu.destroy();
   });
 
+  it("keeps focus on the keycap it just rebound, so a keyboard player does not lose their place", () => {
+    // `render()` rebuilds the keycaps, destroying the focused button --
+    // without restoring focus it drops to the body and Tab starts over.
+    const h = mount();
+    h.menu.open();
+    (keycapsOf("move_up")[0] as HTMLButtonElement).click();
+    pressKey("KeyI");
+    expect(document.activeElement).toBe(keycapsOf("move_up")[0]);
+    h.menu.destroy();
+  });
+
+  it("keeps focus on the cancelled keycap when a capture is abandoned", () => {
+    const h = mount();
+    h.menu.open();
+    (keycapsOf("move_up")[1] as HTMLButtonElement).click();
+    pressKey("Escape");
+    expect(document.activeElement).toBe(keycapsOf("move_up")[1]);
+    h.menu.destroy();
+  });
+
   it("Tab cancels a capture instead of binding itself as a movement key", () => {
     const h = mount();
     h.menu.open();

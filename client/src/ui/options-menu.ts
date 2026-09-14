@@ -283,8 +283,9 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
   container.appendChild(backdrop);
 
   function stopCapture(): void {
+    const cancelled = capturing;
     capturing = undefined;
-    render();
+    render(cancelled);
   }
 
   function flash(action: BindableAction): void {
@@ -302,19 +303,27 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
     );
   }
 
-  function applyBindings(next: Bindings, flashed: readonly BindableAction[] = []): void {
+  function applyBindings(
+    next: Bindings,
+    flashed: readonly BindableAction[] = [],
+    focusOn?: { action: BindableAction; slot: number },
+  ): void {
     bindings = next;
     for (const action of flashed) flash(action);
-    render();
+    render(focusOn);
     onBindingsChange(next);
   }
 
   function captureInto(action: BindableAction, slot: number): void {
     capturing = { action, slot };
-    render();
+    render(capturing);
   }
 
-  function render(): void {
+  /** Which keycap to leave focused after a rebuild. `render` replaces
+   * every keycap, so the button the player was on is destroyed -- without
+   * this, focus drops to the body after each rebind and a keyboard player
+   * loses their place mid-menu (Artie's cycle-2 note). */
+  function render(focusOn?: { action: BindableAction; slot: number }): void {
     for (const action of BINDABLE_ACTIONS) {
       const keys = keyLists.get(action);
       if (!keys) continue;
@@ -335,6 +344,7 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
         );
         cap.addEventListener("click", () => captureInto(action, slot));
         keys.appendChild(cap);
+        if (focusOn && focusOn.action === action && focusOn.slot === slot) cap.focus();
       }
     }
   }
@@ -404,7 +414,7 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
       );
       const next = rebind(bindings, action, slot, event.code);
       capturing = undefined;
-      applyBindings(next, previousOwner ? [action, previousOwner] : []);
+      applyBindings(next, previousOwner ? [action, previousOwner] : [], { action, slot });
       return;
     }
     if (event.code === "Escape") {

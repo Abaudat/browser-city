@@ -290,18 +290,33 @@ describe("picking by what is drawn, not by the footprint cell", () => {
     expect(topmostAt(lid, 0, ctx())?.objectId).toBe(100n);
   });
 
-  it("a click on the same cell but outside the prop's drawn sprite hits the wall", () => {
-    // One cell east: the bin's art does not reach here at all.
+  it("a click in a cell the prop is registered in, but outside its drawn sprite, hits the wall", () => {
+    // The broad phase deliberately over-registers: a sideways overhang
+    // puts the bin in its neighbour's cells too, and its own row is later
+    // than the wall's, so it would win the sort in every one of them.
+    // Only the narrow phase stops it -- this is the case that catches a
+    // missing rect test.
+    const eastWall = entry({ objectId: 300n, defId: PLAIN_PROP_DEF, anchorX: 6, anchorY: 6 });
+    const overhangCells = {
+      // Both the bin (through its overhang) and the wall really are here.
+      "0:6:6": [eastWall, bin],
+    };
+    const withOverhang = contextOf(queryOf(overhangCells), {
+      drawnRectOf: (objectId) =>
+        objectId === 300n ? spriteRect(6, 6, 1, TILE) : drawnRects.get(objectId),
+    });
+    // The centre of cell (6, 6): inside the wall's own sprite, and one
+    // whole cell east of anything the bin draws.
     const besideTheBin: PickPoint = {
-      cellX: 5,
+      cellX: 6,
       cellY: 6,
-      worldXPx: 5 * TILE + TILE / 2,
+      worldXPx: 6 * TILE + TILE / 2,
       worldYPx: 6 * TILE + TILE / 2,
     };
-    const onlyWall = contextOf(queryOf({ "0:5:6": [wall] }), {
-      drawnRectOf: (objectId) => drawnRects.get(objectId),
-    });
-    expect(topmostAt(besideTheBin, 0, onlyWall)?.objectId).toBe(200n);
+    // Guard the guard: the bin must really be a candidate here, or this
+    // test would pass for the same reason the old one did.
+    expect(overhangCells["0:6:6"].map((e) => e.objectId)).toContain(100n);
+    expect(topmostAt(besideTheBin, 0, withOverhang)?.objectId).toBe(300n);
   });
 
   it("a click below a prop's own drawn sprite never hits it", () => {
@@ -329,6 +344,87 @@ describe("picking by what is drawn, not by the footprint cell", () => {
       worldYPx: -1 * TILE + TILE / 2,
     };
     expect(topmostAt(topOfCounter, 0, counterCtx)?.objectId).toBe(300n);
+  });
+
+  it("inv_pick_hits_only_what_is_drawn_at_the_point", () => {
+    // The broad phase over-registers on purpose, so the narrow phase is
+    // what makes a pick correct. For any set of candidates on one cell --
+    // some drawn over the point, some drawn elsewhere, some drawing
+    // nothing at all, each independently visible -- the pick is whatever
+    // the renderer's own sort draws last among the ones actually there.
+    const POINT: PickPoint = { cellX: 3, cellY: 3, worldXPx: 56, worldYPx: 56 };
+    const rectArb = fc.oneof(
+      // Contains the point.
+      fc.constant<PickRect | undefined>({ x0: 48, y0: 48, x1: 64, y1: 64 }),
+      // Misses it: east of it, and north of it.
+      fc.constant<PickRect | undefined>({ x0: 64, y0: 48, x1: 80, y1: 64 }),
+      fc.constant<PickRect | undefined>({ x0: 48, y0: 0, x1: 64, y1: 16 }),
+      // Draws nothing, so it keeps the cell it was found under.
+      fc.constant<PickRect | undefined>(undefined),
+    );
+
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(fc.integer({ min: 1, max: 400 }).map(BigInt), {
+          minLength: 1,
+          maxLength: 8,
+        }),
+        fc.array(fc.constantFrom(...LAYER_CODES), { minLength: 8, maxLength: 8 }),
+        fc.array(fc.boolean(), { minLength: 8, maxLength: 8 }),
+        fc.array(rectArb, { minLength: 8, maxLength: 8 }),
+        fc.array(fc.integer({ min: -2, max: 2 }), { minLength: 8, maxLength: 8 }),
+        (ids, layers, visibility, rects, rowOffsets) => {
+          const candidates = ids.map((objectId, i) =>
+            entry({
+              objectId,
+              layer: layers[i] as number,
+              anchorX: 3,
+              anchorY: 3 + (rowOffsets[i] as number),
+            }),
+          );
+          const rectById = new Map<bigint, PickRect | undefined>(
+            candidates.map((c, i) => [c.objectId, rects[i]]),
+          );
+          const visible = new Set(
+            candidates.filter((_, i) => visibility[i]).map((c) => c.objectId),
+          );
+          const ctx = contextOf(queryOf({ "0:3:3": candidates }), {
+            isVisible: (objectId) => visible.has(objectId),
+            drawnRectOf: (objectId) => rectById.get(objectId),
+          });
+
+          const picked = topmostAt(POINT, 0, ctx);
+
+          // Oracle: everything visible that is actually drawn over the
+          // point (or draws nothing at all), ordered by the renderer's
+          // own sort, last one wins.
+          const eligible = candidates.filter((c) => {
+            if (!visible.has(c.objectId)) return false;
+            const rect = rectById.get(c.objectId);
+            if (!rect) return true;
+            return (
+              POINT.worldXPx >= rect.x0 &&
+              POINT.worldXPx < rect.x1 &&
+              POINT.worldYPx >= rect.y0 &&
+              POINT.worldYPx < rect.y1
+            );
+          });
+          if (eligible.length === 0) {
+            expect(picked).toBeUndefined();
+            return;
+          }
+          const keyed = eligible.map((c) => ({
+            candidate: c,
+            key: pickSortKey(c, ctx.objectDefs.get(c.defId), 0, ctx),
+          }));
+          const keys = keyed.map((k) => k.key);
+          sortDrawablesInPlace(keys);
+          const front = keys[keys.length - 1];
+          expect(picked?.objectId).toBe(keyed.find((k) => k.key === front)?.candidate.objectId);
+        },
+      ),
+      { numRuns: 400 },
+    );
   });
 
   it("an object with no drawn rect at all still resolves by its own footprint cell", () => {
