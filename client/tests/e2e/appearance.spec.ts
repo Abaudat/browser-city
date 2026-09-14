@@ -122,6 +122,12 @@ test.describe("the real, mounted appearance pipeline", () => {
   test("the composite reads back byte-for-byte identical to an independent sprite stack, for fixed tuples", async ({
     page,
   }) => {
+    // The full `(animation, direction, frame)` grid below is 48 real
+    // comparisons, each its own pipeline build and independent Canvas2D
+    // stack draw -- a real CI run took 26.2s of the suite's default 30s
+    // budget, comfortable locally but thin on a slower runner. Budgeted
+    // for the real work this test does, not loosened.
+    test.setTimeout(90_000);
     const defs: Defs = committedDefs();
     const adultBody = defs.bodies.find((b) => b.family === "adult");
     const adultEyes = defs.eyes.find((e) => e.family === "adult");
@@ -222,6 +228,15 @@ test.describe("the real, mounted appearance pipeline", () => {
 
 test.describe("story 1.10 review screenshots", () => {
   test("crowd, twin kids, walk directions, and after a full reload", async ({ page }) => {
+    // This is the one spec in the suite that pays for the full street
+    // crowd's own network-bound texture build *twice* (once at mount,
+    // once after `page.reload()`) plus four real-time waits for the
+    // walker to cross its own loop -- comfortably under the suite's
+    // default 30s budget locally, but tight enough on a slower CI runner
+    // to time out on real, necessary work rather than a stuck test (a
+    // real run there took 31.3s). Budgeted for the work, not loosened
+    // because a run happened to miss the default by a second.
+    test.setTimeout(90_000);
     await page.goto("/");
     await ready(page);
 

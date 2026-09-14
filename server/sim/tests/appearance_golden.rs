@@ -19,41 +19,190 @@ use sim::appearance::{APPEARANCE_VERSION, Appearance, Catalogue, generate};
 use sim::generated::defs::{AccessoryDef, BodyDef, EyesDef, Family, HairstyleDef, OutfitDef, Pool};
 
 const BODIES: &[BodyDef] = &[
-    BodyDef { id: 1, key: "adult_body_1", family: Family::Adult, sheet: "x" },
-    BodyDef { id: 2, key: "adult_body_2", family: Family::Adult, sheet: "x" },
-    BodyDef { id: 3, key: "adult_body_3", family: Family::Adult, sheet: "x" },
-    BodyDef { id: 10, key: "kid_body_1", family: Family::Kid, sheet: "x" },
-    BodyDef { id: 11, key: "kid_body_2", family: Family::Kid, sheet: "x" },
+    BodyDef {
+        id: 1,
+        key: "adult_body_1",
+        family: Family::Adult,
+        sheet: "x",
+    },
+    BodyDef {
+        id: 2,
+        key: "adult_body_2",
+        family: Family::Adult,
+        sheet: "x",
+    },
+    BodyDef {
+        id: 3,
+        key: "adult_body_3",
+        family: Family::Adult,
+        sheet: "x",
+    },
+    BodyDef {
+        id: 10,
+        key: "kid_body_1",
+        family: Family::Kid,
+        sheet: "x",
+    },
+    BodyDef {
+        id: 11,
+        key: "kid_body_2",
+        family: Family::Kid,
+        sheet: "x",
+    },
 ];
 
 const EYES: &[EyesDef] = &[
-    EyesDef { id: 1, key: "adult_eyes_1", family: Family::Adult, sheet: "x" },
-    EyesDef { id: 2, key: "adult_eyes_2", family: Family::Adult, sheet: "x" },
-    EyesDef { id: 10, key: "kid_eyes_1", family: Family::Kid, sheet: "x" },
-    EyesDef { id: 11, key: "kid_eyes_2", family: Family::Kid, sheet: "x" },
+    EyesDef {
+        id: 1,
+        key: "adult_eyes_1",
+        family: Family::Adult,
+        sheet: "x",
+    },
+    EyesDef {
+        id: 2,
+        key: "adult_eyes_2",
+        family: Family::Adult,
+        sheet: "x",
+    },
+    EyesDef {
+        id: 10,
+        key: "kid_eyes_1",
+        family: Family::Kid,
+        sheet: "x",
+    },
+    EyesDef {
+        id: 11,
+        key: "kid_eyes_2",
+        family: Family::Kid,
+        sheet: "x",
+    },
 ];
 
 const HAIRSTYLES: &[HairstyleDef] = &[
-    HairstyleDef { id: 1, key: "adult_hair_1", family: Family::Adult, sheet: "x", style: 1, color: 1, rare: false },
-    HairstyleDef { id: 2, key: "adult_hair_2", family: Family::Adult, sheet: "x", style: 1, color: 2, rare: false },
-    HairstyleDef { id: 3, key: "adult_hair_3", family: Family::Adult, sheet: "x", style: 2, color: 1, rare: false },
-    HairstyleDef { id: 4, key: "adult_hair_rare", family: Family::Adult, sheet: "x", style: 2, color: 7, rare: true },
-    HairstyleDef { id: 10, key: "kid_hair_1", family: Family::Kid, sheet: "x", style: 1, color: 1, rare: false },
-    HairstyleDef { id: 11, key: "kid_hair_2", family: Family::Kid, sheet: "x", style: 1, color: 2, rare: false },
+    HairstyleDef {
+        id: 1,
+        key: "adult_hair_1",
+        family: Family::Adult,
+        sheet: "x",
+        style: 1,
+        color: 1,
+        rare: false,
+    },
+    HairstyleDef {
+        id: 2,
+        key: "adult_hair_2",
+        family: Family::Adult,
+        sheet: "x",
+        style: 1,
+        color: 2,
+        rare: false,
+    },
+    HairstyleDef {
+        id: 3,
+        key: "adult_hair_3",
+        family: Family::Adult,
+        sheet: "x",
+        style: 2,
+        color: 1,
+        rare: false,
+    },
+    HairstyleDef {
+        id: 4,
+        key: "adult_hair_rare",
+        family: Family::Adult,
+        sheet: "x",
+        style: 2,
+        color: 7,
+        rare: true,
+    },
+    HairstyleDef {
+        id: 10,
+        key: "kid_hair_1",
+        family: Family::Kid,
+        sheet: "x",
+        style: 1,
+        color: 1,
+        rare: false,
+    },
+    HairstyleDef {
+        id: 11,
+        key: "kid_hair_2",
+        family: Family::Kid,
+        sheet: "x",
+        style: 1,
+        color: 2,
+        rare: false,
+    },
 ];
 
 const OUTFITS: &[OutfitDef] = &[
-    OutfitDef { id: 1, key: "adult_outfit_1", family: Family::Adult, sheet: "x", pool: Pool::Civilian, hides_hairstyle: false },
-    OutfitDef { id: 2, key: "adult_outfit_2", family: Family::Adult, sheet: "x", pool: Pool::Civilian, hides_hairstyle: false },
-    OutfitDef { id: 3, key: "adult_outfit_role", family: Family::Adult, sheet: "x", pool: Pool::RoleOnly, hides_hairstyle: false },
-    OutfitDef { id: 10, key: "kid_outfit_1", family: Family::Kid, sheet: "x", pool: Pool::Civilian, hides_hairstyle: false },
-    OutfitDef { id: 11, key: "kid_outfit_2", family: Family::Kid, sheet: "x", pool: Pool::Civilian, hides_hairstyle: false },
+    OutfitDef {
+        id: 1,
+        key: "adult_outfit_1",
+        family: Family::Adult,
+        sheet: "x",
+        pool: Pool::Civilian,
+        hides_hairstyle: false,
+    },
+    OutfitDef {
+        id: 2,
+        key: "adult_outfit_2",
+        family: Family::Adult,
+        sheet: "x",
+        pool: Pool::Civilian,
+        hides_hairstyle: false,
+    },
+    OutfitDef {
+        id: 3,
+        key: "adult_outfit_role",
+        family: Family::Adult,
+        sheet: "x",
+        pool: Pool::RoleOnly,
+        hides_hairstyle: false,
+    },
+    OutfitDef {
+        id: 10,
+        key: "kid_outfit_1",
+        family: Family::Kid,
+        sheet: "x",
+        pool: Pool::Civilian,
+        hides_hairstyle: false,
+    },
+    OutfitDef {
+        id: 11,
+        key: "kid_outfit_2",
+        family: Family::Kid,
+        sheet: "x",
+        pool: Pool::Civilian,
+        hides_hairstyle: false,
+    },
 ];
 
 const ACCESSORIES: &[AccessoryDef] = &[
-    AccessoryDef { id: 1, key: "adult_accessory_1", family: Family::Adult, sheet: "x", pool: Pool::Civilian, slot: sim::generated::defs::Slot::Head },
-    AccessoryDef { id: 2, key: "adult_accessory_2", family: Family::Adult, sheet: "x", pool: Pool::Civilian, slot: sim::generated::defs::Slot::Face },
-    AccessoryDef { id: 3, key: "adult_accessory_role", family: Family::Adult, sheet: "x", pool: Pool::RoleOnly, slot: sim::generated::defs::Slot::Torso },
+    AccessoryDef {
+        id: 1,
+        key: "adult_accessory_1",
+        family: Family::Adult,
+        sheet: "x",
+        pool: Pool::Civilian,
+        slot: sim::generated::defs::Slot::Head,
+    },
+    AccessoryDef {
+        id: 2,
+        key: "adult_accessory_2",
+        family: Family::Adult,
+        sheet: "x",
+        pool: Pool::Civilian,
+        slot: sim::generated::defs::Slot::Face,
+    },
+    AccessoryDef {
+        id: 3,
+        key: "adult_accessory_role",
+        family: Family::Adult,
+        sheet: "x",
+        pool: Pool::RoleOnly,
+        slot: sim::generated::defs::Slot::Torso,
+    },
 ];
 
 fn test_catalogue() -> Catalogue<'static> {
@@ -129,7 +278,9 @@ fn parse_golden(text: &str) -> (u32, Vec<GoldenRow>) {
     let version: u32 = version_line
         .strip_prefix("version=")
         .and_then(|v| v.parse().ok())
-        .unwrap_or_else(|| panic!("golden's first line must be 'version=<n>', got {version_line:?}"));
+        .unwrap_or_else(|| {
+            panic!("golden's first line must be 'version=<n>', got {version_line:?}")
+        });
 
     let rows = lines
         .map(|line| {
@@ -150,7 +301,10 @@ fn parse_golden(text: &str) -> (u32, Vec<GoldenRow>) {
                 .unwrap_or_else(|| panic!("malformed golden row: {line:?}"));
             let nums: Vec<u16> = tuple_str
                 .split(',')
-                .map(|v| v.parse().unwrap_or_else(|_| panic!("bad tuple value in: {line:?}")))
+                .map(|v| {
+                    v.parse()
+                        .unwrap_or_else(|_| panic!("bad tuple value in: {line:?}"))
+                })
                 .collect();
             assert_eq!(nums.len(), 5, "malformed golden row: {line:?}");
             GoldenRow {
@@ -193,9 +347,14 @@ fn appearance_output_matches_committed_golden() {
     let mut row_iter = golden_rows.iter();
     for id in IDS {
         for family in [Family::Adult, Family::Kid] {
-            let row = row_iter.next().expect("golden has fewer rows than expected");
+            let row = row_iter
+                .next()
+                .expect("golden has fewer rows than expected");
             assert_eq!(row.id, id, "golden row order does not match IDS x families");
-            assert_eq!(row.family, family, "golden row order does not match IDS x families");
+            assert_eq!(
+                row.family, family,
+                "golden row order does not match IDS x families"
+            );
 
             let actual = generate(id, family, &catalogue);
             assert_eq!(

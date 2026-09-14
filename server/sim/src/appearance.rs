@@ -15,8 +15,8 @@
 //! applied only at render time while on shift -- never written back into
 //! the stored tuple. The server never resolves a uniform: nothing on the
 //! server side needs the citizen's rendered, on-shift look, only its
-//! stored civilian one, so that resolution lives entirely on the client
-//! (`client/src/render/appearance/composite.ts`'s `resolveUniform`).
+//! stored civilian one, so that resolution lives entirely on the render
+//! side (`resolveUniform`, outside this crate).
 //!
 //! Bumped whenever this generator's algorithm or its seeding changes in a
 //! way that could move its output for an id already in play --
@@ -106,11 +106,7 @@ fn pick_uniform(rng: &mut Rng, items: &[u16]) -> Option<u16> {
     Some(items[idx])
 }
 
-fn family_ids<T>(
-    items: &[T],
-    family: Family,
-    get: impl Fn(&T) -> (Family, u16),
-) -> Vec<u16> {
+fn family_ids<T>(items: &[T], family: Family, get: impl Fn(&T) -> (Family, u16)) -> Vec<u16> {
     items
         .iter()
         .filter_map(|item| {
@@ -252,10 +248,7 @@ mod tests {
             let adult = generate(id, Family::Adult, &catalogue);
             let body = defs::BODIES.iter().find(|b| b.id == adult.body).unwrap();
             assert_eq!(body.family, Family::Adult);
-            let outfit = defs::OUTFITS
-                .iter()
-                .find(|o| o.id == adult.outfit)
-                .unwrap();
+            let outfit = defs::OUTFITS.iter().find(|o| o.id == adult.outfit).unwrap();
             assert_eq!(outfit.family, Family::Adult);
             assert_eq!(outfit.pool, Pool::Civilian);
 
