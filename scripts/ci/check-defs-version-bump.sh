@@ -45,6 +45,8 @@ fi
 git rev-parse --verify "$BASE" >/dev/null 2>&1 || _fail_or_skip "base ref '$BASE' not found"
 
 MERGE_BASE="$(git merge-base "$BASE" HEAD)"
+echo "check-defs-version-bump: DEBUG BASE=$BASE resolved=$(git rev-parse "$BASE") HEAD=$(git rev-parse HEAD) MERGE_BASE=$MERGE_BASE" >&2
+git diff --stat "$MERGE_BASE" HEAD -- "$DEFS_RS" >&2 || true
 
 CHANGED_DEFS="$(git diff --name-only "$MERGE_BASE" HEAD -- 'defs/**')"
 if [ -z "$CHANGED_DEFS" ]; then
