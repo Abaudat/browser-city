@@ -53,57 +53,43 @@ git -C "$D" config user.name t
 git -C "$D" add -A
 git -C "$D" commit -q -m base
 
-write_matrix() { # <second-section-heading> [extra-id-table-row]
-  cat > "$D/docs/trace-matrix.md" <<EOF
+# Every section name check-trace-matrix.sh's own GUARD_SECTIONS array
+# lists, read from the script itself rather than restated here -- a
+# section added to that array must never be able to break this test's own
+# green fixture (it did once: story 1.9's "Input and intents").
+guard_sections() {
+  # Only the leading indent and the surrounding quotes come off: a
+  # section name's own internal spaces are part of the heading.
+  sed -n '/^GUARD_SECTIONS=(/,/^)/p' "$CHECK" | sed -nE 's/^[[:space:]]+"(.+)"$/\1/p'
+}
+
+write_matrix() { # <heading to use in place of "Schema permanence"> [extra-id-table-row]
+  {
+    cat <<EOF
 # Trace matrix
 
 | Invariant id | Description | Status | Test | Story |
 | --- | --- | --- | --- | --- |
 | \`inv_something_never_starves\` | something never starves | deferred | | someday |
 ${2:-}
-
-## Round trip and client/server boundary
-
-| Requirement | Status | Guard |
-| --- | --- | --- |
-| A round-trip requirement | covered | \`docs/trace-matrix.md\` |
-
-## $1
-
-| Requirement | Status | Guard |
-| --- | --- | --- |
-| A schema-permanence requirement | covered | \`docs/trace-matrix.md\` |
-
-## Definitions
-
-| Requirement | Status | Guard |
-| --- | --- | --- |
-| A definitions requirement | covered | \`docs/trace-matrix.md\` |
-
-## World addressing
-
-| Requirement | Status | Guard |
-| --- | --- | --- |
-| A world-addressing requirement | covered | \`docs/trace-matrix.md\` |
-
-## Rendering
-
-| Requirement | Status | Guard |
-| --- | --- | --- |
-| A rendering requirement | covered | \`docs/trace-matrix.md\` |
-
-## Scheduled-reducer timing
-
-| Requirement | Status | Guard |
-| --- | --- | --- |
-| A scheduled-reducer-timing requirement | covered | \`docs/trace-matrix.md\` |
-
-## Backup and restore
-
-| Requirement | Status | Guard |
-| --- | --- | --- |
-| A backup/restore requirement | covered | \`docs/trace-matrix.md\` |
 EOF
+    # One Guard table per section the checker requires, in its own order.
+    # "Schema permanence" is the one case names, so it is the one \$1
+    # renames -- that is how the "a renamed section must fail" case is
+    # built.
+    while IFS= read -r section; do
+      [ -n "$section" ] || continue
+      [ "$section" = "Schema permanence" ] && section="$1"
+      cat <<EOF
+
+## $section
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| A $section requirement | covered | \`docs/trace-matrix.md\` |
+EOF
+    done < <(guard_sections)
+  } > "$D/docs/trace-matrix.md"
 }
 
 run_check() { # [extra-arg...]
