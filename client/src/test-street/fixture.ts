@@ -729,7 +729,12 @@ export interface StreetBoundaryRect {
    * stairs down are not, and could never take them. A rail whose solid
    * part reaches a little way back into the deck's own row stops the
    * walker strictly inside that row instead. */
-  readonly collider?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+  readonly collider?: {
+    readonly x0: number;
+    readonly y0: number;
+    readonly x1: number;
+    readonly y1: number;
+  };
 }
 
 /** The edge of the drawn world (FR137 has no world-boundary concept yet,
