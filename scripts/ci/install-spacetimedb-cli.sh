@@ -19,7 +19,14 @@ mkdir -p "$INSTALL_DIR"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-curl -sSL -o "$WORK/$ASSET" "$URL"
+# `-f`: a non-2xx response (GitHub's release CDN has been seen to answer
+# a plain "download" URL with a transient 504 Gateway Time-out HTML body)
+# must fail curl itself, never get written to disk and silently reach the
+# checksum check below as a "mismatch" -- that reads as a bad pin when the
+# real cause is a blip in a server this repo does not control. `--retry`
+# gives exactly that kind of transient failure a few automatic chances
+# before this script gives up for real.
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o "$WORK/$ASSET" "$URL"
 
 ACTUAL_SHA256="$(sha256sum "$WORK/$ASSET" | awk '{print $1}')"
 if [ "$ACTUAL_SHA256" != "$SHA256" ]; then
