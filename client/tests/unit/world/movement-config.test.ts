@@ -6,6 +6,7 @@ function defsWith(balance: readonly { key: string; value: number }[]): Defs {
   return {
     defsVersion: "test",
     colliderSubcellsPerCell: 16,
+    interactAtMaxReachCells: 2,
     objects: [],
     items: [],
     recipes: [],

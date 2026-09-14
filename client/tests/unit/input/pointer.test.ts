@@ -58,7 +58,7 @@ function harness(
   const intents: Intent[] = [];
   const ignored: bigint[] = [];
   const highlights: (bigint | undefined)[] = [];
-  let player = playerAt;
+  const player = playerAt;
 
   const detach = attachPointer({
     element,
@@ -202,9 +202,7 @@ describe("click feedback", () => {
 
   it("ignores a non-primary button, so a right-click never acts", () => {
     const h = harness();
-    h.element.dispatchEvent(
-      new MouseEvent("pointerdown", { ...pixelInCell(5, 5), button: 2 }),
-    );
+    h.element.dispatchEvent(new MouseEvent("pointerdown", { ...pixelInCell(5, 5), button: 2 }));
     expect(h.intents).toEqual([]);
     h.detach();
   });

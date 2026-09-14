@@ -2,8 +2,12 @@ import { Application } from "pixi.js";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
 import { mountDemoScene } from "./demo/scene";
+import { loadBindings, saveBindings } from "./input/keybindings-storage";
+import { KeyboardState } from "./input/keyboard";
 import { connect } from "./net/connection";
 import {
+  recordIgnoredIntentForE2e,
+  recordIntentForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerPositionForE2e,
@@ -14,6 +18,7 @@ import type { PingObservation } from "./net/observe-ping";
 import { bootstrapRenderer } from "./render/bootstrap";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
+import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, windowDefIds } from "./world/object-defs";
 
@@ -79,6 +84,28 @@ async function startDemoScene(): Promise<void> {
   await app.init({ preference: "webgpu", background: "#284028" });
   mount.appendChild(app.canvas);
 
+  // FR149: the player's own bindings, or the defaults if storage is
+  // empty, blocked or unreadable -- never an error the player has to see
+  // or a game that will not start.
+  const storage = safeLocalStorage();
+  const keyboard = new KeyboardState(loadBindings(storage));
+
+  // FR151's options menu. It takes the keyboard while it is open, so a
+  // key pressed to rebind never also walks the avatar; the world behind
+  // it keeps running, because the city never pauses.
+  mountOptionsMenu({
+    container: document.body,
+    initialBindings: loadBindings(storage),
+    onBindingsChange: (bindings) => {
+      keyboard.setBindings(bindings);
+      saveBindings(storage, bindings);
+    },
+    onOpenChange: (open) => {
+      if (open) keyboard.suspend();
+      else keyboard.resume();
+    },
+  });
+
   // The render path's own resort event drives this hook directly
   // (Quentin's direction) -- never a ticker polling `getRenderOrder()`
   // every frame to see whether it changed.
@@ -94,7 +121,25 @@ async function startDemoScene(): Promise<void> {
     onPlayerMove: recordPlayerPositionForE2e,
     onVisibilityChange: recordVisibilityForE2e,
     onMasksChecked: recordMasksCheckedForE2e,
+    keyboard,
+    // FR148: the intent sink. Nothing consumes an intent yet -- the
+    // procedure interaction model is Epic 8's, deliberately unresolved --
+    // so the only consumer today is the e2e observation hook. Swapping
+    // this function is the whole of what Epic 8 has to do here.
+    onIntent: recordIntentForE2e,
+    onIgnored: recordIgnoredIntentForE2e,
   });
+}
+
+/** `localStorage` can throw on mere *access* in an embedded or
+ * storage-blocked context, not only on read -- so even reaching for it is
+ * guarded, and the game plays on defaults when it is not there. */
+function safeLocalStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
 }
 
 function getBalance(defs: Defs, key: string): number {

@@ -15,6 +15,8 @@ declare global {
       visibility?: Record<string, string>;
       visibilityAlpha?: Record<string, number>;
       masksAllNull?: boolean;
+      intents?: { objectId: string; defId: number }[];
+      ignoredIntents?: string[];
     };
   }
 }
@@ -79,5 +81,30 @@ export function recordMasksCheckedForE2e(allNull: boolean): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.masksAllNull = allNull;
+  window.__bc = bucket;
+}
+
+/** Story 1.9's proof that a real click on a real canvas becomes exactly
+ * one intent, carrying the instance the player actually clicked (FR148):
+ * every intent the demo scene emitted, in order, with `bigint` ids as
+ * decimal strings since `window.__bc` crosses into Playwright's own
+ * serialisation. `client/tests/e2e/intents.spec.ts` is the only reader. */
+export function recordIntentForE2e(intent: { objectId: bigint; defId: number }): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.intents = [
+    ...(bucket.intents ?? []),
+    { objectId: intent.objectId.toString(), defId: intent.defId },
+  ];
+  window.__bc = bucket;
+}
+
+/** The other half of the same proof (AC2): the objects whose clicks were
+ * refused for being out of reach. A click that emits an intent must never
+ * also appear here, and vice versa. */
+export function recordIgnoredIntentForE2e(objectId: bigint): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.ignoredIntents = [...(bucket.ignoredIntents ?? []), objectId.toString()];
   window.__bc = bucket;
 }

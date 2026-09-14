@@ -141,9 +141,7 @@ describe("attachKeyboard", () => {
     // dead mid-walk. `.code` is "KeyW" either way.
     const state = new KeyboardState(DEFAULT_BINDINGS);
     const detach = attachKeyboard(state, window);
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", { code: "KeyW", key: "W", shiftKey: true }),
-    );
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: "W", shiftKey: true }));
     expect(state.direction()).toEqual({ x: 0, y: -1 });
     detach();
   });

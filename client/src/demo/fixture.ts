@@ -32,6 +32,7 @@
 // out of that shape.
 
 import type { PlacedObject } from "../net/bindings/types";
+import { layerCodeByName } from "../render/layer-table";
 import type { ColliderSource } from "../world/collision-grid";
 import type { OwnershipArea } from "../world/ownership";
 import type { TransitionSpec } from "../world/transitions";
@@ -84,6 +85,14 @@ export interface DemoProp {
 /** `defs/objects/city-props.toml`'s own `lamppost` id -- the demo places
  * it by id so its collider is read from `defs/`, never restated here. */
 export const LAMPPOST_DEF_ID = 4;
+/** `defs/objects/city-props.toml`'s own `trash_bin` id (story 1.9,
+ * FR148): the small interaction target, out on the pavement. Its
+ * `interact_at` reach comes from `defs/` like everything else. */
+export const TRASH_BIN_DEF_ID = 1;
+/** `defs/objects/city-props.toml`'s own `shop_counter` id (story 1.9,
+ * FR148): the wide interaction target -- three cells of counter, reachable
+ * only from the customer side. */
+export const SHOP_COUNTER_DEF_ID = 3;
 /** `defs/objects/city-props.toml`'s own `shop_window` id (FR121, story
  * 1.7): a real `[[object]] window = true` entry, never a demo-only flag --
  * every shopfront window places it by id, the same way the lamppost
@@ -429,7 +438,9 @@ export const DEMO_PROPS: readonly DemoProp[] = [
   },
 
   // The counter (FR125's worked example): real art is 48x64px, exactly
-  // 3 tiles wide.
+  // 3 tiles wide. Story 1.9: placed by `defId` rather than `solid`, so
+  // both its collider and its FR148 reach rect come from `defs/` -- the
+  // wide interaction target, reachable only from the customer side.
   {
     id: 8n,
     assetKey: "counter",
@@ -438,7 +449,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
     floor: 0,
     layer: "furniture",
     footprint: { width: 3, height: 1 },
-    solid: true,
+    defId: SHOP_COUNTER_DEF_ID,
   },
 
   // A table with a glass on it, right behind the window (Artie's
@@ -449,6 +460,20 @@ export const DEMO_PROPS: readonly DemoProp[] = [
   // The awning: no collider (FR128's worked example), on the pavement
   // south of the door.
   { id: 11n, assetKey: "awning", x: DOOR_X_A, y: SOUTH_WALL_Y + 1, floor: 0, layer: "objects" },
+
+  // Story 1.9's small interaction target (FR148): a real bin on the
+  // pavement, two cells east of shop A's door, so walking out of the door
+  // and along the pavement crosses its reach boundary. Its collider and
+  // its `interact_at` both come from `defs/objects`'s own `trash_bin`.
+  {
+    id: 15n,
+    assetKey: "trashBin",
+    x: DOOR_X_A + 2,
+    y: SOUTH_WALL_Y + 1,
+    floor: 0,
+    layer: "objects",
+    defId: TRASH_BIN_DEF_ID,
+  },
 
   // A solid obstacle straight south of shop A's door, on the pavement
   // (story 1.8): the known-solid rest point `render-order.spec.ts` and
@@ -738,7 +763,10 @@ export function demoPlacedRows(): readonly PlacedObject[] {
       x: prop.x,
       y: prop.y,
       floor: prop.floor,
-      layer: 0,
+      // The real layer code, not a placeholder: story 1.9's footprint
+      // index resolves an FR123 rank from it, which is what decides
+      // which of two objects sharing a cell a click lands on.
+      layer: layerCodeByName(prop.layer),
       orientation: 0,
       chunkKey: 0n,
     });

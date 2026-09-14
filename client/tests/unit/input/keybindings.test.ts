@@ -7,8 +7,8 @@ import {
   DEFAULT_BINDINGS,
   isReservedCode,
   normaliseBindings,
-  rebind,
   RESERVED_CODES,
+  rebind,
 } from "../../../src/input/keybindings";
 
 function codesOf(bindings: Bindings): string[] {

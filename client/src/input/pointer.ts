@@ -46,7 +46,10 @@ export interface PointerOptions {
    * produces, undoing whatever camera offset and zoom the scene applied.
    * Injected because the camera belongs to the scene, and this module
    * must not import PixiJS to ask it. */
-  readonly toWorldPx: (clientX: number, clientY: number) => { readonly x: number; readonly y: number };
+  readonly toWorldPx: (
+    clientX: number,
+    clientY: number,
+  ) => { readonly x: number; readonly y: number };
   /** Read per event, never captured once: the index, the defs and the
    * visibility predicate all change as the world streams and the player
    * walks between enclosures. */

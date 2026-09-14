@@ -14,7 +14,11 @@
 // canvas. This module draws the scene and nothing else.
 
 import { type Application, Assets, Container, Rectangle, Sprite, Texture } from "pixi.js";
+import type { IgnoredSink, IntentSink } from "../input/intent";
+import { DEFAULT_BINDINGS } from "../input/keybindings";
 import { attachKeyboard, KeyboardState } from "../input/keyboard";
+import type { PickContext } from "../input/pick";
+import { attachPointer } from "../input/pointer";
 import { layerCodeByName } from "../render/layer-table";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
@@ -22,16 +26,16 @@ import { floorOffsetPx, screenPositionPx } from "../render/screen-position";
 import { fromSortUnits, toSortUnits } from "../render/sort-units";
 import type { VisibilityState, VisibilityViewer } from "../render/visibility";
 import { isFloorCulled } from "../render/visibility";
-import type { ColliderSource } from "../world/collision-grid";
-import { CollisionGrid } from "../world/collision-grid";
 import {
   type FloorWalkResult,
   initialFloorWalkState,
   stepAndTransition,
 } from "../world/floor-walk";
 import type { MovementConfig } from "../world/movement";
+import type { ObjectSource } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { TransitionIndex } from "../world/transitions";
+import { WorldIndex } from "../world/world-index";
 import {
   buildPlayerDrawable,
   buildPropDrawables,
@@ -199,6 +203,15 @@ const CANVAS_MARGIN_PX = 8;
  * never a second, separately-typed `floor < 0` check. */
 const SUBWAY_BACKGROUND = 0x000000;
 
+/** FR173's affordance mark, as one dial (Artie's direction): a warm tint
+ * on a hovered, in-reach object's own sprites. A tint multiplies, and
+ * FR121 bans the filters that could brighten instead, so this shifts the
+ * object warm rather than lifting its brightness -- the same "this one,
+ * here" read, within the rules this client already holds. */
+const HIGHLIGHT_TINT = 0xfff0c0;
+/** Pixi's own "no tint" value -- restoring this is what clears the mark. */
+const NO_HIGHLIGHT_TINT = 0xffffff;
+
 /** The layer code every ground-tile-pass group's own synthetic
  * `VisibilityDrawable` carries -- never read by `computeVisibility`'s
  * wall-layer check (a ground pass is never `isNearSide`), so any live
@@ -217,10 +230,11 @@ export interface MountDemoSceneOptions {
   /** Read once from `defs/`'s `movement.*` balance keys (`main.ts`) --
    * never a literal in this file. */
   readonly movementConfig: MovementConfig;
-  /** Real `defs/objects` colliders, keyed by def id
-   * (`world/object-defs.ts`), so a prop the demo places by `defId` uses
-   * the collider `defs/` declares for it rather than a restated rect. */
-  readonly objectDefs: ReadonlyMap<number, ColliderSource>;
+  /** Real `defs/objects` footprints, colliders and FR148 reach rects,
+   * keyed by def id (`world/object-defs.ts`), so a prop the demo places
+   * by `defId` uses what `defs/` declares for it rather than a restated
+   * rect. */
+  readonly objectDefs: ReadonlyMap<number, ObjectSource>;
   /** The def ids `defs/` marks `window = true` (story 1.7, FR121) --
    * resolved once by the caller from the fetched document. */
   readonly windowDefIds: ReadonlySet<number>;
@@ -256,11 +270,29 @@ export interface MountDemoSceneOptions {
    * real display list rather than only by `scripts/ci/check-no-masks.sh`
    * never finding the word `mask` in the source. */
   readonly onMasksChecked?: (allNull: boolean) => void;
+  /** Story 1.9 (FR148): where a click's intent goes. One injected sink,
+   * and the only thing Epic 8 has to replace -- this scene neither knows
+   * nor decides what an intent means. Absent means intents are simply
+   * dropped, which is exactly what "unresolved until Epic 8" looks like. */
+  readonly onIntent?: IntentSink;
+  /** Called instead of `onIntent` when the player clicks an interactable
+   * object that is out of reach (AC2) -- the render side's own cue that
+   * the click was refused. */
+  readonly onIgnored?: IgnoredSink;
+  /** The keyboard state to drive movement with. Injected so the caller
+   * can hand the same instance to the options menu (which takes the
+   * keyboard while it is open) and re-bind it live. */
+  readonly keyboard?: KeyboardState;
 }
 
 export interface DemoSceneHandle {
   readonly app: Application;
   getRenderOrder(): readonly bigint[];
+  /** The keyboard this scene is actually driven by -- the caller's own
+   * instance when it supplied one. */
+  readonly keyboard: KeyboardState;
+  /** Removes every listener this scene attached (keyboard and pointer). */
+  destroy(): void;
 }
 
 function cropped(base: Texture, frame: Rectangle): Texture {
@@ -485,6 +517,8 @@ export async function mountDemoScene(
     onPlayerMove,
     onVisibilityChange,
     onMasksChecked,
+    onIntent,
+    onIgnored,
   } = options;
 
   const rawTextures = new Map<string, Texture>();
@@ -657,19 +691,21 @@ export async function mountDemoScene(
   const everyMaskableView = [...members.map((m) => m.view), ...groundContainersByFloor.values()];
   onMasksChecked?.(everyMaskableView.every((view) => view.mask == null));
 
-  // The collision grid: real `defs/objects` colliders (`objectDefs`,
-  // resolved from the fetched document in `main.ts`) plus the demo's own
-  // walls and world boundary, fed in as `PlacedObject`-shaped rows --
-  // exactly the shape a later chunk-streaming story's `onInsert` will
-  // feed the same grid, just called directly here instead of from a
-  // subscription (`placed_object` stays private in this story).
-  const colliderSources = new Map<number, ColliderSource>([
+  // The derived indexes: real `defs/objects` footprints, colliders and
+  // FR148 reach rects (`objectDefs`, resolved from the fetched document
+  // in `main.ts`) plus the demo's own walls and world boundary, fed in as
+  // `PlacedObject`-shaped rows through the one `WorldIndex.insert` that
+  // feeds both the collision grid and the footprint index -- exactly the
+  // shape a later chunk-streaming story's `onInsert` will feed, just
+  // called directly here instead of from a subscription (`placed_object`
+  // stays private in this story).
+  const objectSources = new Map<number, ObjectSource>([
     ...objectDefs,
     ...demoColliderSources(movementConfig.subcellsPerCell),
   ]);
-  const collisionGrid = new CollisionGrid(movementConfig.subcellsPerCell, colliderSources);
+  const worldIndex = new WorldIndex(movementConfig.subcellsPerCell, objectSources);
   for (const placed of demoPlacedRows()) {
-    collisionGrid.insert(placed);
+    worldIndex.insert(placed);
   }
 
   // Story 1.7: the visibility adapter, gated on the viewer's own
@@ -744,14 +780,97 @@ export async function mountDemoScene(
     }
   }
 
+  // Story 1.9: which objects are currently visible, rebuilt from each
+  // pool member's own just-written `sprite.visible` whenever visibility
+  // is re-applied (a rare event, never per frame). A click resolves
+  // through this: if it cannot be seen it cannot be clicked, so a
+  // retracted front wall is neither clickable itself nor in the way of
+  // what is now visible behind it.
+  const hiddenObjectIds = new Set<bigint>();
+  function refreshHiddenObjects(): void {
+    const anyVisible = new Map<bigint, boolean>();
+    for (const entry of entries) {
+      const id = entry.drawable.stableId;
+      anyVisible.set(id, (anyVisible.get(id) ?? false) || entry.view.visible);
+    }
+    hiddenObjectIds.clear();
+    for (const [id, visible] of anyVisible) {
+      if (!visible) hiddenObjectIds.add(id);
+    }
+  }
+
   let lastCellX = walk.cellX;
   let lastCellY = walk.cellY;
   applyVisibilityFor(lastCellX, lastCellY, walk.floor, true);
+  refreshHiddenObjects();
 
   onPlayerMove?.(walk.x, walk.y);
 
-  const keyboard = new KeyboardState();
-  attachKeyboard(keyboard);
+  const keyboard = options.keyboard ?? new KeyboardState(DEFAULT_BINDINGS);
+  const detachKeyboard = attachKeyboard(keyboard);
+
+  // FR173's affordance mark: a subtle tint on the hovered object's *own*
+  // drawables -- never its tile, never a box drawn around it, and never
+  // anything added to the scene. FR121 bans every filter and mask in this
+  // client, so this is a plain sprite tint rather than a ColorMatrix
+  // brighten: a warm shift that reads as "lit" without a coloured
+  // outline, held steady while hovered (it never pulses, so it can never
+  // flash). One named constant, so the strength is a dial.
+  const spritesByObjectId = new Map<bigint, Sprite[]>();
+  for (const entry of entries) {
+    const id = entry.drawable.stableId;
+    const list = spritesByObjectId.get(id);
+    if (list) list.push(entry.view);
+    else spritesByObjectId.set(id, [entry.view]);
+  }
+  let highlightedObjectId: bigint | undefined;
+  function setHighlight(objectId: bigint | undefined): void {
+    if (highlightedObjectId === objectId) return;
+    if (highlightedObjectId !== undefined) {
+      for (const sprite of spritesByObjectId.get(highlightedObjectId) ?? []) {
+        sprite.tint = NO_HIGHLIGHT_TINT;
+      }
+    }
+    highlightedObjectId = objectId;
+    if (objectId !== undefined) {
+      for (const sprite of spritesByObjectId.get(objectId) ?? []) {
+        sprite.tint = HIGHLIGHT_TINT;
+      }
+    }
+  }
+
+  // FR148's one pointer listener, on the canvas element itself -- no Pixi
+  // `eventMode`, no `interactive`, no per-sprite `on("pointer…")`
+  // anywhere in this client.
+  const pickContext = (): PickContext => ({
+    index: worldIndex,
+    objectDefs: objectSources,
+    rankOf,
+    subcellsPerCell: movementConfig.subcellsPerCell,
+    isVisible: (objectId) => !hiddenObjectIds.has(objectId),
+  });
+  const detachPointer = attachPointer({
+    element: app.canvas,
+    // Client pixels to the world-pixel space `screenPositionPx` produces:
+    // undo the canvas's own CSS scaling, then the camera offset and zoom
+    // this scene applied to the world container.
+    toWorldPx: (clientX, clientY) => {
+      const rect = app.canvas.getBoundingClientRect();
+      const scaleX = rect.width > 0 ? app.canvas.width / rect.width : 1;
+      const scaleY = rect.height > 0 ? app.canvas.height / rect.height : 1;
+      return {
+        x: ((clientX - rect.left) * scaleX - world.position.x) / world.scale.x,
+        y: ((clientY - rect.top) * scaleY - world.position.y) / world.scale.y,
+      };
+    },
+    context: pickContext,
+    player: () => ({ x: walk.x, y: walk.y, floor: walk.floor }),
+    tileSizePx,
+    storeyHeightPx,
+    onIntent: (intent) => onIntent?.(intent),
+    onIgnored: (objectId) => onIgnored?.(objectId),
+    onHighlightChange: setHighlight,
+  });
 
   app.ticker.add((ticker) => {
     const direction = keyboard.direction();
@@ -762,7 +881,7 @@ export async function mountDemoScene(
       walk,
       direction,
       ticker.deltaMS,
-      collisionGrid,
+      worldIndex,
       movementConfig,
       transitions,
     );
@@ -789,12 +908,19 @@ export async function mountDemoScene(
       lastCellX = walk.cellX;
       lastCellY = walk.cellY;
       applyVisibilityFor(walk.cellX, walk.cellY, walk.floor, false);
+      refreshHiddenObjects();
     }
   });
 
   return {
     app,
     getRenderOrder: () => renderOrder,
+    keyboard,
+    destroy: () => {
+      detachKeyboard();
+      detachPointer();
+      setHighlight(undefined);
+    },
   };
 }
 

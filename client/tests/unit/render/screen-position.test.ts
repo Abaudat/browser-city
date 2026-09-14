@@ -134,9 +134,10 @@ describe("worldCellFromScreenPx", () => {
     const tileSizePx = 16;
     const storeyHeightPx = 48;
     const anchor = screenPositionPx(3, 2, -1, tileSizePx, storeyHeightPx);
-    expect(
-      worldCellFromScreenPx(anchor.x, anchor.y - 1, -1, tileSizePx, storeyHeightPx),
-    ).toEqual({ cellX: 3, cellY: 2 });
+    expect(worldCellFromScreenPx(anchor.x, anchor.y - 1, -1, tileSizePx, storeyHeightPx)).toEqual({
+      cellX: 3,
+      cellY: 2,
+    });
     // The same pixel on floor 0 is a different cell entirely.
     expect(
       worldCellFromScreenPx(anchor.x, anchor.y - 1, 0, tileSizePx, storeyHeightPx).cellY,

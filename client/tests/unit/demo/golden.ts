@@ -118,6 +118,7 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
   "61",
   "61", // the platform's own south wall
   "11", // the awning
+  "15", // story 1.9's trash bin, on the pavement east of the door
   "14", // the lamppost obstacle
   "50", // the street-level subway stairwell prop, same row, further east
 ];
@@ -219,6 +220,7 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "61",
   "61",
   "11", // awning -- now behind the player too: they have walked all the way past it
+  "15", // story 1.9's trash bin, on the pavement east of the door
   "14", // the lamppost the player is now resting against -- also behind them
   "50",
   "1000", // the player, out on the pavement, in front of everything
@@ -283,6 +285,7 @@ export const DEMO_VISIBILITY_AT_REST_IN_SHOP_A: Readonly<Record<string, string>>
   "500061": "hidden", // floor -1 -- culled, same as its own wall
   "ground:0": "normal", // the street's own ground pass
   "ground:-1": "hidden", // the subway's own ground pass -- floor-culled
+  "15": "normal",
 };
 
 /** The player at the lamppost rest point outside (`lamppostRestY()`), on
@@ -324,6 +327,7 @@ export const DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE: Readonly<Record<string, string
   "500061": "hidden",
   "ground:0": "normal",
   "ground:-1": "hidden",
+  "15": "normal",
 };
 
 /** The player just landed on the subway platform (`PLATFORM_LANDING_X +
@@ -369,4 +373,5 @@ export const DEMO_VISIBILITY_ON_SUBWAY_LANDING: Readonly<Record<string, string>>
   "500061": "normal", // the platform's own front-wall stub, left on screen while 61 is retracted
   "ground:0": "hidden", // the street's own ground pass -- floor-culled
   "ground:-1": "normal", // the subway's own ground pass
+  "15": "hidden",
 };

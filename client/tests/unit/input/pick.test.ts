@@ -37,10 +37,7 @@ const TRASH_BIN_DEF = 1;
 const PLAIN_PROP_DEF = 2;
 const COUNTER_DEF = 3;
 
-function contextOf(
-  query: FootprintQuery,
-  overrides: Partial<PickContext> = {},
-): PickContext {
+function contextOf(query: FootprintQuery, overrides: Partial<PickContext> = {}): PickContext {
   return {
     index: query,
     objectDefs: new Map([
@@ -123,8 +120,7 @@ describe("topmostAt", () => {
           // the stable id.
           const rankA = RANKS[layerA] ?? 0;
           const rankB = RANKS[layerB] ?? 0;
-          const expected =
-            rankA !== rankB ? (rankA > rankB ? idA : idB) : idA > idB ? idA : idB;
+          const expected = rankA !== rankB ? (rankA > rankB ? idA : idB) : idA > idB ? idA : idB;
           expect(picked?.objectId).toBe(expected);
         },
       ),
@@ -164,7 +160,9 @@ describe("topmostAt", () => {
 describe("resolveClick", () => {
   // The bin is anchored at (5, 5); its reach rect covers a quarter-cell
   // skirt around its own cell.
-  const binCell = { "0:5:5": [entry({ objectId: 100n, defId: TRASH_BIN_DEF, anchorX: 5, anchorY: 5 })] };
+  const binCell = {
+    "0:5:5": [entry({ objectId: 100n, defId: TRASH_BIN_DEF, anchorX: 5, anchorY: 5 })],
+  };
 
   it("emits exactly one intent for a reachable object (AC1)", () => {
     const ctx = contextOf(queryOf(binCell));
@@ -211,9 +209,7 @@ describe("resolveClick", () => {
     // three of its cells resolve to the same instance, and the reach row
     // is y = 3 across its whole width.
     const counter = entry({ objectId: 400n, defId: COUNTER_DEF, anchorX: 4, anchorY: 2 });
-    const ctx = contextOf(
-      queryOf({ "0:4:2": [counter], "0:5:2": [counter], "0:6:2": [counter] }),
-    );
+    const ctx = contextOf(queryOf({ "0:4:2": [counter], "0:5:2": [counter], "0:6:2": [counter] }));
     for (const cellX of [4, 5, 6]) {
       expect(resolveClick(cellX + 0.5, 2.5, 0, player(6.9, 3.5), ctx)).toEqual({
         intent: { objectId: 400n, defId: COUNTER_DEF },

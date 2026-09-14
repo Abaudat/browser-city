@@ -51,6 +51,25 @@
       }
     },
     {
+      "includes": ["src/input/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["pixi.js", "../net/*", "../net/**", "../demo/*", "../demo/**"]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/world/**"],
       "linter": {
         "rules": {
