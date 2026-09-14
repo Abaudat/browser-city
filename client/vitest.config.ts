@@ -13,6 +13,7 @@ export default defineConfig({
         "src/demo/**",
         "src/world/**",
         "src/input/**",
+        "src/ui/**",
       ],
       // `src/net/bindings/**` is generated (never hand-tested). `src/
       // demo/**` is throwaway harness code (Tim's direction: fenced off

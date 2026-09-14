@@ -1,0 +1,255 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Bindings } from "../../../src/input/keybindings";
+import { DEFAULT_BINDINGS } from "../../../src/input/keybindings";
+import type { OptionsMenuHandle } from "../../../src/ui/options-menu";
+import { keycapLabel, mountOptionsMenu, SWAP_FLASH_MS } from "../../../src/ui/options-menu";
+
+interface Harness {
+  readonly menu: OptionsMenuHandle;
+  readonly changes: Bindings[];
+  readonly openStates: boolean[];
+  bindings(): Bindings;
+}
+
+function mount(initial: Bindings = DEFAULT_BINDINGS): Harness {
+  const changes: Bindings[] = [];
+  const openStates: boolean[] = [];
+  let current = initial;
+  const menu = mountOptionsMenu({
+    container: document.body,
+    initialBindings: initial,
+    onBindingsChange: (next) => {
+      current = next;
+      changes.push(next);
+    },
+    onOpenChange: (open) => openStates.push(open),
+  });
+  return { menu, changes, openStates, bindings: () => current };
+}
+
+function pressKey(code: string): void {
+  window.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true }));
+}
+
+function rowFor(action: string): HTMLElement {
+  const row = document.querySelector<HTMLElement>(`[data-bc-action="${action}"]`);
+  if (!row) throw new Error(`no row for ${action}`);
+  return row;
+}
+
+function keycapsOf(action: string): HTMLButtonElement[] {
+  return [...rowFor(action).querySelectorAll<HTMLButtonElement>("[data-bc-keycap]")];
+}
+
+beforeEach(() => {
+  document.body.innerHTML = "";
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("mountOptionsMenu", () => {
+  it("mounts closed, so the menu never covers the city uninvited", () => {
+    const h = mount();
+    expect(h.menu.isOpen()).toBe(false);
+    expect(document.querySelector("[data-bc-options]")?.getAttribute("hidden")).not.toBeNull();
+    h.menu.destroy();
+  });
+
+  it("Escape opens it and Escape closes it again (FR151)", () => {
+    const h = mount();
+    pressKey("Escape");
+    expect(h.menu.isOpen()).toBe(true);
+    pressKey("Escape");
+    expect(h.menu.isOpen()).toBe(false);
+    expect(h.openStates).toEqual([true, false]);
+    h.menu.destroy();
+  });
+
+  it("the close button closes it too", () => {
+    const h = mount();
+    h.menu.open();
+    document.querySelector<HTMLButtonElement>("[data-bc-close]")?.click();
+    expect(h.menu.isOpen()).toBe(false);
+    h.menu.destroy();
+  });
+
+  it("reports open state so the caller can take the keyboard off movement", () => {
+    const h = mount();
+    h.menu.open();
+    expect(h.openStates).toEqual([true]);
+    h.menu.close();
+    expect(h.openStates).toEqual([true, false]);
+    h.menu.destroy();
+  });
+
+  it("is one panel over a backdrop, with the world left running behind it", () => {
+    const h = mount();
+    h.menu.open();
+    expect(document.querySelectorAll("[data-bc-options]")).toHaveLength(1);
+    expect(document.querySelector("[data-bc-backdrop]")).not.toBeNull();
+    h.menu.destroy();
+  });
+
+  it("shows the Controls section and invents no placeholder settings", () => {
+    const h = mount();
+    h.menu.open();
+    const text = document.querySelector("[data-bc-options]")?.textContent ?? "";
+    expect(text).toContain("Controls");
+    expect(text).toContain("Options");
+    // Audio and Display are later stories: no empty rows, no disabled
+    // sliders, nothing invented.
+    expect(text).not.toContain("Volume");
+    expect(text).not.toContain("Fullscreen");
+    h.menu.destroy();
+  });
+
+  it("says that Escape is fixed, rather than offering it as a binding", () => {
+    const h = mount();
+    h.menu.open();
+    const text = document.querySelector("[data-bc-options]")?.textContent ?? "";
+    expect(text).toContain("Escape");
+    h.menu.destroy();
+  });
+
+  it("names each action in plain words, never by its own code", () => {
+    const h = mount();
+    h.menu.open();
+    expect(rowFor("move_up").textContent).toContain("Walk up");
+    expect(rowFor("move_left").textContent).toContain("Walk left");
+    const text = document.querySelector("[data-bc-options]")?.textContent ?? "";
+    expect(text).not.toContain("move_up");
+    h.menu.destroy();
+  });
+
+  it("shows both of an action's keys, arrows as glyphs", () => {
+    const h = mount();
+    h.menu.open();
+    expect(keycapsOf("move_up").map((b) => b.textContent)).toEqual(["W", "↑"]);
+    expect(keycapsOf("move_right").map((b) => b.textContent)).toEqual(["D", "→"]);
+    h.menu.destroy();
+  });
+
+  it("every control is a focusable button, so the menu about keys is usable by keyboard", () => {
+    const h = mount();
+    h.menu.open();
+    for (const cap of keycapsOf("move_up")) expect(cap.tagName).toBe("BUTTON");
+    expect(document.querySelector("[data-bc-reset]")?.tagName).toBe("BUTTON");
+    expect(document.querySelector("[data-bc-close]")?.tagName).toBe("BUTTON");
+    h.menu.destroy();
+  });
+});
+
+describe("rebinding through the menu", () => {
+  it("a keycap asks for a key, and the next key press binds it", () => {
+    const h = mount();
+    h.menu.open();
+    (keycapsOf("move_up")[0] as HTMLButtonElement).click();
+    expect(keycapsOf("move_up")[0]?.textContent).toBe("Press a key…");
+
+    pressKey("KeyI");
+    expect(h.bindings().move_up).toEqual(["KeyI", "ArrowUp"]);
+    expect(keycapsOf("move_up").map((b) => b.textContent)).toEqual(["I", "↑"]);
+    expect(h.changes).toHaveLength(1);
+    h.menu.destroy();
+  });
+
+  it("Escape cancels the capture without closing the menu or binding anything", () => {
+    const h = mount();
+    h.menu.open();
+    const cap = keycapsOf("move_up")[0] as HTMLButtonElement;
+    cap.click();
+    pressKey("Escape");
+    expect(h.menu.isOpen()).toBe(true);
+    expect(h.changes).toEqual([]);
+    expect(keycapsOf("move_up")[0]?.textContent).toBe("W");
+    h.menu.destroy();
+  });
+
+  it("swaps with the action that already had the key, and flashes both rows", () => {
+    vi.useFakeTimers();
+    const h = mount();
+    h.menu.open();
+    (keycapsOf("move_up")[0] as HTMLButtonElement).click();
+    pressKey("KeyS");
+
+    expect(h.bindings().move_up).toEqual(["KeyS", "ArrowUp"]);
+    expect(h.bindings().move_down).toEqual(["KeyW", "ArrowDown"]);
+    expect(rowFor("move_up").dataset.bcFlash).toBe("true");
+    expect(rowFor("move_down").dataset.bcFlash).toBe("true");
+
+    vi.advanceTimersByTime(SWAP_FLASH_MS);
+    expect(rowFor("move_up").dataset.bcFlash).toBeUndefined();
+    expect(rowFor("move_down").dataset.bcFlash).toBeUndefined();
+    h.menu.destroy();
+  });
+
+  it("never blocks with a dialog: no alert, no confirm", () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const confirmSpy = vi.spyOn(window, "confirm").mockImplementation(() => true);
+    const h = mount();
+    h.menu.open();
+    (keycapsOf("move_up")[0] as HTMLButtonElement).click();
+    pressKey("KeyS");
+    document.querySelector<HTMLButtonElement>("[data-bc-reset]")?.click();
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(confirmSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+    confirmSpy.mockRestore();
+    h.menu.destroy();
+  });
+
+  it("resets to defaults with no confirmation step", () => {
+    const h = mount();
+    h.menu.open();
+    (keycapsOf("move_up")[0] as HTMLButtonElement).click();
+    pressKey("KeyI");
+    document.querySelector<HTMLButtonElement>("[data-bc-reset]")?.click();
+    expect(h.bindings()).toEqual(DEFAULT_BINDINGS);
+    expect(keycapsOf("move_up").map((b) => b.textContent)).toEqual(["W", "↑"]);
+    h.menu.destroy();
+  });
+
+  it("a key press with no capture pending never rebinds anything", () => {
+    const h = mount();
+    h.menu.open();
+    pressKey("KeyI");
+    expect(h.changes).toEqual([]);
+    h.menu.destroy();
+  });
+
+  it("shows whatever bindings it was given, including the defaults after cleared storage", () => {
+    const h = mount(DEFAULT_BINDINGS);
+    h.menu.open();
+    expect(keycapsOf("move_up").map((b) => b.textContent)).toEqual(["W", "↑"]);
+    // No "your settings were reset" notice anywhere.
+    expect(document.querySelector("[data-bc-options]")?.textContent).not.toContain("reset to");
+    h.menu.destroy();
+  });
+
+  it("destroy removes the menu and stops listening for Escape", () => {
+    const h = mount();
+    h.menu.destroy();
+    expect(document.querySelector("[data-bc-options]")).toBeNull();
+    pressKey("Escape");
+    expect(h.openStates).toEqual([]);
+  });
+});
+
+describe("keycapLabel", () => {
+  it("prints a letter key as its letter and an arrow as its glyph", () => {
+    expect(keycapLabel("KeyW")).toBe("W");
+    expect(keycapLabel("ArrowUp")).toBe("↑");
+    expect(keycapLabel("ArrowDown")).toBe("↓");
+    expect(keycapLabel("ArrowLeft")).toBe("←");
+    expect(keycapLabel("ArrowRight")).toBe("→");
+  });
+
+  it("prints a digit key as its digit, and anything else as its own code", () => {
+    expect(keycapLabel("Digit1")).toBe("1");
+    expect(keycapLabel("Space")).toBe("Space");
+    expect(keycapLabel("F5")).toBe("F5");
+  });
+});
