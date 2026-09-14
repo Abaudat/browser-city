@@ -1,4 +1,4 @@
-// `demo/citizens.ts`'s own pure fixture builder, tested against the real
+// `test-street/citizens.ts`'s own pure fixture builder, tested against the real
 // committed `client/public/defs/defs.json` -- the same "no hand-typed
 // id" property the module doc comment claims.
 import { describe, expect, it } from "vitest";
@@ -14,8 +14,8 @@ import {
   WALKER_ID,
   WALKER_LOOP,
   walkerPoseAt,
-} from "../../../src/demo/citizens";
-import { committedDefs } from "./demo-world";
+} from "../../../src/test-street/citizens";
+import { committedDefs } from "./street-world";
 
 describe("buildCitizenFixtures", () => {
   const defs = committedDefs();

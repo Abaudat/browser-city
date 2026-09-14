@@ -1,20 +1,20 @@
 // Quentin's direction: one e2e is acceptable and enough for story 1.6 --
-// mounting the committed demo fixture through the real adapter
-// (`src/demo/scene.ts`) and reading the resulting ordered id list back
+// mounting the committed street fixture through the real adapter
+// (`src/test-street/scene.ts`) and reading the resulting ordered id list back
 // through the existing DEV-only `window.__bc` hook proves the adapter is
 // actually wired to the real display list, both at rest and after a real
 // keyboard-driven move. The comparator itself is proven by
-// `client/tests/unit/demo/drawables.test.ts` against the identical,
+// `client/tests/unit/test-street/drawables.test.ts` against the identical,
 // shared goldens -- this spec never re-derives an order, it only checks
 // the real page produced it.
 import { expect, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import {
-  DEMO_SCENE_GOLDEN_ORDER,
-  DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
-} from "../unit/demo/golden";
+  STREET_GOLDEN_ORDER,
+  STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
+} from "../unit/test-street/golden";
 
-test("the demo scene's real, mounted display list produces the committed depth order, at rest and after moving", async ({
+test("the street scene's real, mounted display list produces the committed depth order, at rest and after moving", async ({
   page,
 }) => {
   await page.goto("/");
@@ -24,7 +24,7 @@ test("the demo scene's real, mounted display list produces the committed depth o
   });
 
   const initialOrder = await page.evaluate(() => window.__bc?.renderOrder ?? []);
-  expect(initialOrder).toEqual(DEMO_SCENE_GOLDEN_ORDER);
+  expect(initialOrder).toEqual(STREET_GOLDEN_ORDER);
 
   // Walk south for long enough to rest against the story 1.8 solid
   // obstacle (`fixture.ts`'s id 14, a real collider) -- a deterministic
@@ -33,11 +33,11 @@ test("the demo scene's real, mounted display list produces the committed depth o
   await page.keyboard.down("ArrowDown");
   await page.waitForFunction(
     (expected) => JSON.stringify(window.__bc?.renderOrder) === JSON.stringify(expected),
-    DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
+    STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
     { timeout: 10_000 },
   );
   await page.keyboard.up("ArrowDown");
 
   const movedOrder = await page.evaluate(() => window.__bc?.renderOrder ?? []);
-  expect(movedOrder).toEqual(DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH);
+  expect(movedOrder).toEqual(STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH);
 });

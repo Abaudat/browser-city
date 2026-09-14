@@ -4,7 +4,7 @@ import {
   buildPlayerDrawable,
   buildPropDrawables,
   updatePlayerDrawable,
-} from "../../../src/demo/drawables";
+} from "../../../src/test-street/drawables";
 import {
   INTERIOR_FLOOR_TILES,
   INTERIOR_FLOOR_TILES_B,
@@ -13,7 +13,7 @@ import {
   PLAYER_START,
   SIDEWALK_TILES,
   SUBWAY_FLOOR,
-} from "../../../src/demo/fixture";
+} from "../../../src/test-street/fixture";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
 import { screenPositionPx } from "../../../src/render/screen-position";
@@ -24,18 +24,18 @@ import type { Vec2 } from "../../../src/world/movement";
 import { step } from "../../../src/world/movement";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
 import {
-  demoMovementConfig,
-  demoOwnershipIndex,
-  demoWindowDefIds,
-  demoWorldIndex,
+  streetMovementConfig,
+  streetOwnershipIndex,
+  streetWindowDefIds,
+  streetWorldIndex,
   lamppostRestY,
-} from "./demo-world";
+} from "./street-world";
 import {
-  DEMO_SCENE_GOLDEN_ORDER,
-  DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
-  DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE,
-  DEMO_VISIBILITY_AT_REST_IN_SHOP_A,
-  DEMO_VISIBILITY_ON_SUBWAY_LANDING,
+  STREET_GOLDEN_ORDER,
+  STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
+  STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE,
+  STREET_VISIBILITY_AT_REST_IN_SHOP_A,
+  STREET_VISIBILITY_ON_SUBWAY_LANDING,
 } from "./golden";
 
 // Mirrors `render.tile_size_px` / `render.storey_height_px`
@@ -53,23 +53,23 @@ const CODE_BY_NAME: Record<string, number> = Object.fromEntries(
 function rankOf(layer: string): number {
   const table = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
   const code = CODE_BY_NAME[layer];
-  if (code === undefined) throw new Error(`unknown demo layer ${layer}`);
+  if (code === undefined) throw new Error(`unknown street layer ${layer}`);
   return resolveRank(table, code);
 }
 
-/** Every test below builds the same real props -- the demo's own
+/** Every test below builds the same real props -- the street's own
  * ownership index and window def ids, exactly the way `scene.ts` does. */
-function buildDemoProps() {
+function buildStreetProps() {
   return buildPropDrawables({
     rankOf,
-    ownership: demoOwnershipIndex(),
-    windowDefIds: demoWindowDefIds(),
+    ownership: streetOwnershipIndex(),
+    windowDefIds: streetWindowDefIds(),
   });
 }
 
-describe("the story 1.6 demo scene's committed ordering", () => {
+describe("the story 1.6 street scene's committed ordering", () => {
   it("sorts the whole fixture (props + player) to a fixed, committed id sequence", () => {
-    const props = buildDemoProps();
+    const props = buildStreetProps();
     const player = buildPlayerDrawable(
       rankOf("characters"),
       PLAYER_START.x,
@@ -83,7 +83,7 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // here, directly, in node) and the real Pixi adapter (run there,
     // through a mounted display list) can never silently disagree about
     // what this scene renders.
-    expect(pool.map((d) => d.stableId.toString())).toEqual(DEMO_SCENE_GOLDEN_ORDER);
+    expect(pool.map((d) => d.stableId.toString())).toEqual(STREET_GOLDEN_ORDER);
   });
 
   it("sorts the fixture with the player walked south to rest against the story 1.8 obstacle to the second committed id sequence", () => {
@@ -93,7 +93,7 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // straight from the comparator, the same way the at-rest golden
     // above is, so a wrong golden here fails with a diff in the fastest
     // job instead of a ten-second timeout in the slowest one.
-    const props = buildDemoProps();
+    const props = buildStreetProps();
     const player = buildPlayerDrawable(
       rankOf("characters"),
       PLAYER_START.x,
@@ -104,7 +104,7 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     sortDrawablesInPlace(pool);
 
     expect(pool.map((d) => d.stableId.toString())).toEqual(
-      DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
+      STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
     );
   });
 
@@ -115,7 +115,7 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // y) sort behind the player; cells nearer the door (larger y) sort
     // in front -- the one thing a footprint running parallel to the
     // camera could never demonstrate.
-    const props = buildDemoProps();
+    const props = buildStreetProps();
     const player = buildPlayerDrawable(
       rankOf("characters"),
       PLAYER_START.x,
@@ -136,7 +136,7 @@ describe("the story 1.6 demo scene's committed ordering", () => {
   });
 
   it("a table and the glass on it share an anchor; the rank tiebreak keeps the glass on top", () => {
-    const props = buildDemoProps();
+    const props = buildStreetProps();
     const table = props.find((p) => p.stableId === 9n);
     const glass = props.find((p) => p.stableId === 10n);
     if (!table || !glass) throw new Error("unreachable");
@@ -153,7 +153,7 @@ describe("the story 1.6 demo scene's committed ordering", () => {
     // wall cell, and a copy of it on a different floor with a different
     // stableId -- the exact shape a real upper storey's own wall would
     // have shared with the one below it.
-    const props = buildDemoProps();
+    const props = buildStreetProps();
     const groundWallCell = props.find((p) => p.stableId === 1n && p.sourceCol === 0);
     if (!groundWallCell) throw new Error("unreachable");
     const upperWallCell = { ...groundWallCell, stableId: 99_999n, floor: 1 };
@@ -175,14 +175,14 @@ describe("the story 1.6 demo scene's committed ordering", () => {
   });
 });
 
-describe("the demo scene's committed visibility (story 1.7 cycle 2, Quentin's direction)", () => {
+describe("the street scene's committed visibility (story 1.7 cycle 2, Quentin's direction)", () => {
   // The unit counterpart to `../e2e/enclosure.spec.ts`: derives the same
   // three goldens straight from `buildPropDrawables` + `computeVisibility`
-  // over the real demo ownership index, resolving the viewer's own
+  // over the real street ownership index, resolving the viewer's own
   // `(floor, buildingId)` from a cell exactly the way `scene.ts` does
   // (`ownershipAt` on `cellOf(x)`/`cellOf(y)`) -- never a slow e2e round
   // trip as the only thing proving what a given position should show.
-  // The two floors this demo's ground-tile passes ever occupy (`fixture.ts`'s
+  // The two floors this street's ground-tile passes ever occupy (`fixture.ts`'s
   // `STREET_FLOOR`/`SUBWAY_FLOOR`) -- a ground group is never a window,
   // never near-side and never owned by a building (`NO_OWNER`), so floor
   // culling is the only rule that can ever apply to it, exactly mirroring
@@ -190,8 +190,8 @@ describe("the demo scene's committed visibility (story 1.7 cycle 2, Quentin's di
   const GROUND_FLOORS = [0, -1] as const;
 
   function visibilityAt(x: number, y: number, floor: number): Record<string, string> {
-    const ownership = demoOwnershipIndex();
-    const props = buildDemoProps();
+    const ownership = streetOwnershipIndex();
+    const props = buildStreetProps();
     const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
     const viewer: VisibilityViewer = {
       floor,
@@ -216,19 +216,19 @@ describe("the demo scene's committed visibility (story 1.7 cycle 2, Quentin's di
 
   it("at rest in shop A", () => {
     expect(visibilityAt(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor)).toEqual(
-      DEMO_VISIBILITY_AT_REST_IN_SHOP_A,
+      STREET_VISIBILITY_AT_REST_IN_SHOP_A,
     );
   });
 
   it("at the lamppost rest point outside", () => {
     expect(visibilityAt(PLAYER_START.x, lamppostRestY(), PLAYER_START.floor)).toEqual(
-      DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE,
+      STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE,
     );
   });
 
   it("on the subway landing", () => {
     expect(visibilityAt(PLATFORM_LANDING_X + 0.5, PLATFORM_LANDING_Y + 0.5, SUBWAY_FLOOR)).toEqual(
-      DEMO_VISIBILITY_ON_SUBWAY_LANDING,
+      STREET_VISIBILITY_ON_SUBWAY_LANDING,
     );
   });
 });
@@ -242,8 +242,8 @@ describe("the player can never walk off the drawn world", () => {
   // own boundary colliders; this walks the real resolver against the real
   // grid to prove that ring is actually closed, rather than trusting the
   // rect list by eye.
-  const grid = demoWorldIndex();
-  const config = demoMovementConfig();
+  const grid = streetWorldIndex();
+  const config = streetMovementConfig();
 
   /** The drawn ground: interior floor and pavement, in screen pixels.
    * `x1`/`y1` are exclusive tile indices, so the drawn extent's own far

@@ -1,8 +1,8 @@
-// The demo scene's Pixi mount -- one of a small, named set of files
+// The street scene's Pixi mount -- one of a small, named set of files
 // allowed to import `pixi.js` (`bootstrap.ts`,
 // `render/pixi-order.ts`/`render/pixi-visibility.ts`, and story 1.10's
 // `render/appearance/composite-canvas.ts`/`appearance-texture.ts` and
-// `demo/citizens-layer.ts`/`demo/compare-pipeline-vs-stack.ts`, each its
+// `test-street/citizens-layer.ts`/`test-street/compare-pipeline-vs-stack.ts`, each its
 // own real-canvas/Pixi adapter). Ordering itself is
 // `render/pixi-order.ts`'s job, visibility is `render/pixi-visibility.
 // ts`'s (story 1.7); this file's whole job is texture loading, sprite
@@ -50,13 +50,13 @@ import {
   updatePlayerDrawable,
 } from "./drawables";
 import {
-  DEMO_BUILDING_AREAS,
-  DEMO_GROUND_TILES,
-  DEMO_ROOM_AREAS,
-  DEMO_TRANSITIONS,
-  type DemoGroundTiles,
-  demoColliderSources,
-  demoPlacedRows,
+  STREET_BUILDING_AREAS,
+  STREET_GROUND_TILES,
+  STREET_ROOM_AREAS,
+  STREET_TRANSITIONS,
+  type StreetGroundTiles,
+  streetColliderSources,
+  streetPlacedRows,
   PLAYER_START,
 } from "./fixture";
 
@@ -211,7 +211,7 @@ const HIGHLIGHT_BLEND_MODE = "add" as const;
  * literal number. */
 const GROUND_LAYER_CODE = layerCodeByName("objects");
 
-export interface MountDemoSceneOptions {
+export interface MountStreetSceneOptions {
   /** Story 1.10: the fetched, parsed defs document -- needed to build the
    * street crowd's real appearance textures (`citizens-layer.ts`) and, via
    * `citizens.ts`, the tuples themselves. */
@@ -227,7 +227,7 @@ export interface MountDemoSceneOptions {
    * never a literal in this file. */
   readonly movementConfig: MovementConfig;
   /** Real `defs/objects` footprints, colliders and FR148 reach rects,
-   * keyed by def id (`world/object-defs.ts`), so a prop the demo places
+   * keyed by def id (`world/object-defs.ts`), so a prop the street places
    * by `defId` uses what `defs/` declares for it rather than a restated
    * rect. */
   readonly objectDefs: ReadonlyMap<number, ObjectSource>;
@@ -291,7 +291,7 @@ export interface MountDemoSceneOptions {
   readonly keyboard: KeyboardState;
 }
 
-export interface DemoSceneHandle {
+export interface StreetSceneHandle {
   readonly app: Application;
   getRenderOrder(): readonly bigint[];
   /** The keyboard this scene is actually driven by -- the caller's own
@@ -453,7 +453,7 @@ interface PoolEntry extends OrderedMember<PropDrawable>, VisibilityMember<PropDr
 }
 
 /** Picks a wall drawable's real texture from its own declared
- * `wallOrientation` (`demo/fixture.ts`'s `DemoProp.wallOrientation`,
+ * `wallOrientation` (`test-street/fixture.ts`'s `StreetProp.wallOrientation`,
  * carried onto `PropDrawable`) -- never from a decomposed cell's own
  * footprint aspect ratio (Artie's cycle-2 finding: a one-cell-wide
  * *front* wall pier and a one-cell side wall are both `1x1` after
@@ -496,7 +496,7 @@ function stateFromWrite(write: SpriteVisibilityWrite): VisibilityState {
 }
 
 /**
- * Mounts the committed demo scene (`fixture.ts`) into `app`, wires
+ * Mounts the committed street scene (`fixture.ts`) into `app`, wires
  * keyboard movement and floor transitions for the player, keeps the pool
  * container's children ordered by `render/pixi-order.ts`'s
  * `applyDepthOrder`, and keeps every member's FR120/FR121/FR122 state
@@ -507,10 +507,10 @@ function stateFromWrite(write: SpriteVisibilityWrite): VisibilityState {
  * re-applies visibility only when the player's own enclosure/floor
  * changes -- a street of static props costs nothing per frame either way.
  */
-export async function mountDemoScene(
+export async function mountStreetScene(
   app: Application,
-  options: MountDemoSceneOptions,
-): Promise<DemoSceneHandle> {
+  options: MountStreetSceneOptions,
+): Promise<StreetSceneHandle> {
   const {
     defs,
     tileSizePx,
@@ -574,7 +574,7 @@ export async function mountDemoScene(
   }
 
   const groundSprites: Sprite[] = [];
-  for (const tiles of DEMO_GROUND_TILES) {
+  for (const tiles of STREET_GROUND_TILES) {
     const groundTexture = textureFor(tiles.assetKey, textures);
     const container = groundContainerFor(tiles.floor);
     const offset = floorOffsetPx(tiles.floor, storeyHeightPx);
@@ -592,8 +592,8 @@ export async function mountDemoScene(
     }
   }
 
-  const ownership = new OwnershipIndex(DEMO_BUILDING_AREAS, DEMO_ROOM_AREAS);
-  const transitions = new TransitionIndex(DEMO_TRANSITIONS);
+  const ownership = new OwnershipIndex(STREET_BUILDING_AREAS, STREET_ROOM_AREAS);
+  const transitions = new TransitionIndex(STREET_TRANSITIONS);
 
   const propDrawables = buildPropDrawables({
     rankOf: (layer) => rankOf(layerCodeByName(layer)),
@@ -720,7 +720,7 @@ export async function mountDemoScene(
 
   // The derived indexes: real `defs/objects` footprints, colliders and
   // FR148 reach rects (`objectDefs`, resolved from the fetched document
-  // in `main.ts`) plus the demo's own walls and world boundary, fed in as
+  // in `main.ts`) plus the street's own walls and world boundary, fed in as
   // `PlacedObject`-shaped rows through the one `WorldIndex.insert` that
   // feeds both the collision grid and the footprint index -- exactly the
   // shape a later chunk-streaming story's `onInsert` will feed, just
@@ -732,7 +732,7 @@ export async function mountDemoScene(
   // the part of a tall prop drawn over the cells above it still finds
   // that prop: our sprites are bottom-centre anchored, so a 16x32 bin on
   // a 1x1 footprint draws a whole cell up into the row behind it.
-  const placedRows = demoPlacedRows();
+  const placedRows = streetPlacedRows();
   const defIdByObjectId = new Map(placedRows.map((row) => [row.objectId, row.defId]));
   const overhangByDefId = new Map<number, { up: number; side: number }>();
   for (const entry of entries) {
@@ -749,7 +749,7 @@ export async function mountDemoScene(
   }
 
   const objectSources = new Map<number, ObjectSource>(
-    [...objectDefs, ...demoColliderSources(movementConfig.subcellsPerCell)].map(
+    [...objectDefs, ...streetColliderSources(movementConfig.subcellsPerCell)].map(
       ([defId, source]) => {
         const overhang = overhangByDefId.get(defId);
         return [
@@ -1045,7 +1045,7 @@ export async function mountDemoScene(
   // (`onOrderChange`/`onPlayerMove`/`onVisibilityChange`/
   // `onMasksChecked`, and the keyboard itself) has already fired -- those
   // all run synchronously, in this same function body, before this
-  // `await`; only `mountDemoScene`'s own promise (`onViewTransform`
+  // `await`; only `mountStreetScene`'s own promise (`onViewTransform`
   // included, deliberately fired only once, below) waits on the crowd's
   // own network-bound texture loads. The camera fit above already sized
   // the canvas to the pre-crowd content; the crowd needs its own second,
@@ -1090,6 +1090,6 @@ export async function mountDemoScene(
   };
 }
 
-// `DemoGroundTiles` is re-exported for callers (tests) that iterate
-// `DEMO_GROUND_TILES` without importing `fixture.ts` a second time.
-export type { DemoGroundTiles };
+// `StreetGroundTiles` is re-exported for callers (tests) that iterate
+// `STREET_GROUND_TILES` without importing `fixture.ts` a second time.
+export type { StreetGroundTiles };

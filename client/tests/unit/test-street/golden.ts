@@ -1,4 +1,4 @@
-// The demo scene's committed depth order (Quentin's direction): shared
+// The street scene's committed depth order (Quentin's direction): shared
 // verbatim by `drawables.test.ts` (which sorts the fixture through the
 // comparator directly, in vitest's node environment) and
 // `../e2e/render-order.spec.ts` (which reads the same order back out of a
@@ -25,13 +25,13 @@
 // beside the party wall, and shop B's own, at its east wall -- each
 // separates its shopfront's window from the corner, so the two never run
 // straight into each other's glass. 500000+ ids are the FR120 wall-stub
-// companions (`demo/drawables.ts`'s `STUB_ID_OFFSET`) -- always present,
+// companions (`test-street/drawables.ts`'s `STUB_ID_OFFSET`) -- always present,
 // drawn behind their own wall at the same cell, including the platform's
 // own front wall (61 -> 500061), which retracts the same ownership-keyed
 // way a shop's front wall does. There is no upper storey in this fixture
 // (removed, story 1.7 cycle 2): `isStoreyAboveCulled` is proven directly
 // against synthetic drawables in `visibility.test.ts`.
-export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
+export const STREET_GOLDEN_ORDER: readonly string[] = [
   "1",
   "1",
   "1",
@@ -134,7 +134,7 @@ export const DEMO_SCENE_GOLDEN_ORDER: readonly string[] = [
  * comparator -- `render-order.spec.ts` only proves the real adapter
  * reaches the identical order after a real keyboard move.
  */
-export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
+export const STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "1",
   "1",
   "1",
@@ -229,7 +229,7 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
 // --- FR120/FR121/FR122 visibility goldens (Quentin's direction, story
 // 1.7 cycle 2): a decimal `stableId` -> state map for three fixed viewer
 // positions, computed straight from `buildPropDrawables` +
-// `computeVisibility` over the real demo `OwnershipIndex`, exactly the
+// `computeVisibility` over the real street `OwnershipIndex`, exactly the
 // way `scene.ts` resolves the viewer at runtime (`ownershipAt` on the
 // player's own cell). `drawables.test.ts` asserts these directly against
 // the pure functions; `../e2e/enclosure.spec.ts` imports the same maps
@@ -250,7 +250,7 @@ export const DEMO_SCENE_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
  * -1: 51, 60-64, 500061) is floor-culled; shop B's window (32) and pier
  * (41) are translucent/normal, not retracted, since the viewer is not
  * inside shop B -- so shop B's own stubs (500032, 500041) stay hidden. */
-export const DEMO_VISIBILITY_AT_REST_IN_SHOP_A: Readonly<Record<string, string>> = {
+export const STREET_VISIBILITY_AT_REST_IN_SHOP_A: Readonly<Record<string, string>> = {
   "1": "normal",
   "2": "hidden", // shop A's own near-side wall -- retracted
   "4": "normal",
@@ -292,7 +292,7 @@ export const DEMO_VISIBILITY_AT_REST_IN_SHOP_A: Readonly<Record<string, string>>
  * the pavement, `NO_OWNER`: nothing retracts (both shopfronts show a full
  * wall/translucent window/pier), so every stub stays hidden behind its
  * own parent; the subway stays floor-culled. */
-export const DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE: Readonly<Record<string, string>> = {
+export const STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE: Readonly<Record<string, string>> = {
   "1": "normal",
   "2": "normal",
   "4": "normal",
@@ -338,7 +338,7 @@ export const DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE: Readonly<Record<string, string
  * invisible on the platform is exactly this state's own regression
  * guard: the player itself (1000) and the platform's own stub (500061)
  * must both stay `normal`. */
-export const DEMO_VISIBILITY_ON_SUBWAY_LANDING: Readonly<Record<string, string>> = {
+export const STREET_VISIBILITY_ON_SUBWAY_LANDING: Readonly<Record<string, string>> = {
   "1": "hidden",
   "2": "hidden",
   "4": "hidden",

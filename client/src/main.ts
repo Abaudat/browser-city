@@ -1,7 +1,7 @@
 import { Application } from "pixi.js";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
-import { mountDemoScene } from "./demo/scene";
+import { mountStreetScene } from "./test-street/scene";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
 import { connect } from "./net/connection";
@@ -44,18 +44,18 @@ async function main(): Promise<void> {
   connect(onPing);
 
   try {
-    await startDemoScene();
+    await startStreetScene();
   } catch (error: unknown) {
-    // NFR42: the demo scene degrades to not-drawing, never takes the ping
+    // NFR42: the street scene degrades to not-drawing, never takes the ping
     // round trip down with it.
-    console.error("[main] demo scene failed to start", error);
+    console.error("[main] street scene failed to start", error);
   }
 }
 
 /**
- * Story 1.6's demo scene: a second, independent Pixi application from the
+ * Story 1.6's street scene: a second, independent Pixi application from the
  * ping demo above. Never blocks `main()` on failure (NFR42) -- a broken
- * demo mount must never take the ping round trip down with it.
+ * street mount must never take the ping round trip down with it.
  *
  * The rank table comes from `render/layer-table.ts` -- the one
  * client-side mirror of `sim::codes::layer`, guarded against drift by
@@ -64,10 +64,10 @@ async function main(): Promise<void> {
  * subscription in this story (Tim's scope call); wiring one is later
  * work.
  */
-async function startDemoScene(): Promise<void> {
-  const mount = document.getElementById("demo-scene");
+async function startStreetScene(): Promise<void> {
+  const mount = document.getElementById("test-street");
   if (!mount) {
-    console.error("[main] #demo-scene is missing from index.html");
+    console.error("[main] #test-street is missing from index.html");
     return;
   }
 
@@ -115,7 +115,7 @@ async function startDemoScene(): Promise<void> {
   // The render path's own resort event drives this hook directly
   // (Quentin's direction) -- never a ticker polling `getRenderOrder()`
   // every frame to see whether it changed.
-  const handle = await mountDemoScene(app, {
+  const handle = await mountStreetScene(app, {
     defs,
     tileSizePx,
     storeyHeightPx,
@@ -140,9 +140,9 @@ async function startDemoScene(): Promise<void> {
   });
 
   // Story 1.10: the street crowd's own e2e observation surface, wired
-  // here rather than threaded through `MountDemoSceneOptions` as another
+  // here rather than threaded through `MountStreetSceneOptions` as another
   // callback -- both values are already sitting on the real, mounted
-  // handle `mountDemoScene` just returned, with nothing left to compute.
+  // handle `mountStreetScene` just returned, with nothing left to compute.
   recordAppearanceTextureIdsForE2e(
     handle.citizensLayer.textureIdsById,
     handle.citizensLayer.distinctTextureCount,

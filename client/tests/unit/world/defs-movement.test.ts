@@ -4,12 +4,12 @@
 // is the same file the browser fetches at runtime.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { LAMPPOST_CELL, LAMPPOST_DEF_ID } from "../../../src/demo/fixture";
+import { LAMPPOST_CELL, LAMPPOST_DEF_ID } from "../../../src/test-street/fixture";
 import { CollisionGrid } from "../../../src/world/collision-grid";
 import type { Vec2 } from "../../../src/world/movement";
 import { step } from "../../../src/world/movement";
 import { objectDefsById } from "../../../src/world/object-defs";
-import { committedDefs, demoMovementConfig } from "../demo/demo-world";
+import { committedDefs, streetMovementConfig } from "../test-street/street-world";
 
 /** FR137/the GDD's own pace: one viewport width is 40 cells, and crossing
  * it takes 18 real seconds. The numbers are the requirement, so they are
@@ -22,7 +22,7 @@ const CROSSING_TOLERANCE_MS = 500;
 
 describe("the committed walking speed", () => {
   it("crosses a 40-cell viewport in 18 real seconds, within tolerance, across jittered frame deltas", () => {
-    const config = demoMovementConfig();
+    const config = streetMovementConfig();
     const emptyGrid = new CollisionGrid(config.subcellsPerCell, new Map());
 
     fc.assert(
@@ -48,7 +48,7 @@ describe("the committed walking speed", () => {
 });
 
 describe("the committed lamppost def", () => {
-  const config = demoMovementConfig();
+  const config = streetMovementConfig();
   const defs = committedDefs();
   const sources = objectDefsById(defs);
 

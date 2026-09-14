@@ -54,7 +54,7 @@ describe("applyDepthOrder", () => {
 
     // Move the player-equivalent (id 3) past the others and re-sort again
     // -- the exact "member changes position, container re-attaches"
-    // sequence the demo's per-frame path exercises.
+    // sequence the street's per-frame path exercises.
     const moved = members.find((m) => m.drawable.stableId === 3n);
     if (!moved) throw new Error("unreachable");
     (moved as { drawable: Drawable }).drawable = { ...moved.drawable, y: 40 };

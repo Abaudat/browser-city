@@ -1,5 +1,5 @@
 // Exactly one e2e spec for player movement. Holding a direction key
-// against the real, mounted demo fixture must move the avatar within a
+// against the real, mounted street fixture must move the avatar within a
 // few animation frames, client-side, with no network round trip -- and
 // stop at a real collider without ever pausing at a collider-less prop it
 // passes on the way. The geometry itself (per-axis swept AABB, sliding,
@@ -7,13 +7,13 @@
 // `client/tests/unit/world/*.test.ts`'s property tests; this spec only
 // proves the real adapter is wired to the real movement code.
 import { expect, test } from "@playwright/test";
-import { PLAYER_START } from "../../src/demo/fixture";
+import { PLAYER_START } from "../../src/test-street/fixture";
 import type {} from "../../src/net/e2e-hooks";
 // The rest point is the lamppost's own base collider (fixture id 14,
 // placed by its real `defs/objects` id); the awning (id 11) is
 // deliberately collider-less. Both come from `defs/`, never a number
 // restated here.
-import { lamppostRestY } from "../unit/demo/demo-world";
+import { lamppostRestY } from "../unit/test-street/street-world";
 
 function playerPosition(page: import("@playwright/test").Page) {
   return page.evaluate(() => window.__bc?.playerPosition);

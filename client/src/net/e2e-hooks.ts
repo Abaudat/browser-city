@@ -47,7 +47,7 @@ export function recordPingForE2e(observation: PingObservation): void {
 }
 
 /** Story 1.6's proof that the real adapter is wired to the real display
- * list (Quentin's direction): the demo scene's current depth order,
+ * list (Quentin's direction): the street scene's current depth order,
  * `bigint`s as decimal strings since `window.__bc` crosses into
  * Playwright's own serialisation. `client/tests/e2e/render-order.spec.ts`
  * is the only reader. */
@@ -59,7 +59,7 @@ export function recordRenderOrderForE2e(order: readonly bigint[]): void {
 }
 
 /** Story 1.8's proof that a held direction key moves the avatar
- * client-side, with no round trip (FR137): the demo scene's current
+ * client-side, with no round trip (FR137): the street scene's current
  * continuous player position, read every frame -- `movement.spec.ts` is
  * the only reader. */
 export function recordPlayerPositionForE2e(x: number, y: number): void {
@@ -104,7 +104,7 @@ export function recordMasksCheckedForE2e(allNull: boolean): void {
 
 /** Story 1.9's proof that a real click on a real canvas becomes exactly
  * one intent, carrying the instance the player actually clicked (FR148):
- * every intent the demo scene emitted, in order, with `bigint` ids as
+ * every intent the street scene emitted, in order, with `bigint` ids as
  * decimal strings since `window.__bc` crosses into Playwright's own
  * serialisation. `client/tests/e2e/intents.spec.ts` is the only reader. */
 export function recordIntentForE2e(intent: { objectId: bigint; defId: number }): void {
@@ -127,7 +127,7 @@ export function recordIgnoredIntentForE2e(objectId: bigint): void {
   window.__bc = bucket;
 }
 
-/** Story 1.9: the demo scene's own camera transform, recorded once at
+/** Story 1.9: the street scene's own camera transform, recorded once at
  * mount. `intents.spec.ts` needs it to turn a world pixel -- computed
  * from the real `screenPositionPx` and the real fixture cell -- into the
  * canvas offset to click at, rather than hard-coding a pixel that would

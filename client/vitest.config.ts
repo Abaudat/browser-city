@@ -10,7 +10,7 @@ export default defineConfig({
         "src/net/**",
         "src/defs/**",
         "src/render/**",
-        "src/demo/**",
+        "src/test-street/**",
         "src/world/**",
         "src/input/**",
         "src/ui/**",
@@ -20,7 +20,7 @@ export default defineConfig({
       // from the permanent render modules precisely so the whole
       // directory can be excluded here, by path, rather than by naming
       // individual files as they're added) -- it is still exercised by
-      // real tests (`tests/unit/demo/**`), just not held to this bar.
+      // real tests (`tests/unit/test-street/**`), just not held to this bar.
       // `bootstrap.ts` is the pre-existing ping-demo shell. Every
       // permanent `src/render/**` module -- including the Pixi-touching
       // `pixi-order.ts`, which is sprite/container wiring and nothing
@@ -37,7 +37,7 @@ export default defineConfig({
       exclude: [
         "src/net/bindings/**",
         "src/render/bootstrap.ts",
-        "src/demo/**",
+        "src/test-street/**",
         "src/render/appearance/composite-canvas.ts",
         "src/render/appearance/part-sheets.ts",
         "src/render/appearance/appearance-texture.ts",

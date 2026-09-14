@@ -1,5 +1,5 @@
 // The generic ref-counted in-flight cache `part-sheets.ts` and
-// `demo/compare-pipeline-vs-stack.ts` each build their own instance of.
+// `test-street/compare-pipeline-vs-stack.ts` each build their own instance of.
 // Pure: `load`/`close` are injected fakes, so this needs no `fetch` and
 // no `ImageBitmap`.
 import { describe, expect, it, vi } from "vitest";

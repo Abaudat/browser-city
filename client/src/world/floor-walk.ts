@@ -2,7 +2,7 @@
 // (Quentin/Tim's direction, story 1.7): the one pure function that decides
 // whether a step also crosses a floor transition, so the rule lives in
 // `world/` (held to the coverage bar, unit-tested directly) rather than in
-// `demo/scene.ts` (throwaway harness code, only reachable through a real
+// `test-street/scene.ts` (throwaway harness code, only reachable through a real
 // keyboard-driven e2e walk).
 //
 // A transition is edge-triggered, entered by walking, never level-

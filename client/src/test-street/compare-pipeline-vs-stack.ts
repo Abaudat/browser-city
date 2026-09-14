@@ -13,10 +13,10 @@
 // (`composite-canvas.ts`) already trusts for identical work, and is what
 // this file trusts too.
 //
-// Lives under `demo/`, not `render/appearance/`: this is e2e test harness
-// wired through the demo scene, never part of the production render
-// pipeline, so it belongs where the rest of the demo-only code does
-// (`client/vitest.config.ts`'s coverage gate already excludes `demo/**`
+// Lives under `test-street/`, not `render/appearance/`: this is e2e test harness
+// wired through the street scene, never part of the production render
+// pipeline, so it belongs where the rest of the street-only code does
+// (`client/vitest.config.ts`'s coverage gate already excludes `test-street/**`
 // wholesale).
 
 import type { Texture } from "pixi.js";

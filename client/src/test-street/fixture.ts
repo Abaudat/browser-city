@@ -1,8 +1,8 @@
-// The committed, deterministic story 1.6/1.7 demo scene (Artie's
+// The committed, deterministic story 1.6/1.7 street scene (Artie's
 // direction): fixed layout, fixed seed, no randomisation, real LimeZu
 // sprites only -- no coloured rectangles. Pure data, zero PixiJS: shared
 // by the real adapter (`scene.ts`, mounted from `main.ts`) and
-// `client/tests/unit/demo/drawables.test.ts`'s ordering check, so the
+// `client/tests/unit/test-street/drawables.test.ts`'s ordering check, so the
 // comparator and the adapter can never silently disagree about what this
 // scene should look like (Quentin's direction), and by
 // `client/tests/e2e/render-order.spec.ts`/`enclosure.spec.ts`, which read
@@ -10,14 +10,14 @@
 // list through `window.__bc`.
 //
 // This scene and its asset choices are throwaway harness code (Artie's
-// own framing, and why it lives under `src/demo/` rather than
+// own framing, and why it lives under `src/test-street/` rather than
 // `src/render/`) -- the sort key, the rank ladder, the storey constant and
 // (story 1.7) the visibility rules are the permanent things these stories
 // add, not this file.
 //
 // Story 1.7 (FR120/FR121/FR122) pays off the shortcut story 1.6 took: the
 // old `wallTileShort` front-wall stub is gone -- near-side retraction now
-// exists, so the demo shows it, not a permanently short wall. The terrace
+// exists, so the street shows it, not a permanently short wall. The terrace
 // is two shops, A and B, sharing one party wall at `PARTY_WALL_X`, each
 // with its own door, its own front window (a real `defs/objects` `window
 // = true` tile, never a `wall_decals` overlay) and its own furniture. A
@@ -25,7 +25,7 @@
 // floor -1, whose own front wall retracts the same ownership-keyed way a
 // shop's does while the player stands on it.
 //
-// Near-side-ness (FR120) is never hand-authored here: `demo/drawables.ts`
+// Near-side-ness (FR120) is never hand-authored here: `test-street/drawables.ts`
 // resolves it per cell from `render/visibility.ts`'s `isNearSideWall`, a
 // pure predicate over ownership and cell coordinates. This fixture only
 // states geometry and ownership areas; which walls end up near-side falls
@@ -39,34 +39,34 @@ import type { TransitionSpec } from "../world/transitions";
 
 /** The five pool layers (FR123), in ascending rank order -- the ladder
  * itself lives in `sim::codes::layer`/`render/layer-table.ts`; this is
- * just which one each demo prop is on. */
-export type DemoLayer = "furniture" | "objects" | "walls" | "wall_decals" | "characters";
+ * just which one each street prop is on. */
+export type StreetLayer = "furniture" | "objects" | "walls" | "wall_decals" | "characters";
 
 /** A prop wide/tall enough to need FR125 decomposition. Orientation
  * (`PlacedObject.orientation`) is a later story's concern; this fixture
  * simply states the already-oriented extent a real world generator would
  * have resolved before calling `decomposeFootprint`. */
-export interface DemoFootprint {
+export interface StreetFootprint {
   readonly width: number;
   readonly height: number;
 }
 
-/** One placed prop in the demo scene. `x`/`y` are the anchor cell (world
+/** One placed prop in the street scene. `x`/`y` are the anchor cell (world
  * tile coordinates); `assetKey` names an entry in `scene.ts`'s asset
  * table -- this module knows nothing about textures or PixiJS.
  *
  * Collision comes from one of two places, never a hand-typed sub-cell
  * rect: `defId` names a real `defs/objects` entry and uses that entry's
- * own `collider`; `solid` is demo-only geometry (the shops' plain walls,
+ * own `collider`; `solid` is street-only geometry (the shops' plain walls,
  * which are not `defs/` objects) blocking the prop's whole footprint. */
-export interface DemoProp {
+export interface StreetProp {
   readonly id: bigint;
   readonly assetKey: string;
   readonly x: number;
   readonly y: number;
   readonly floor: number;
-  readonly layer: DemoLayer;
-  readonly footprint?: DemoFootprint;
+  readonly layer: StreetLayer;
+  readonly footprint?: StreetFootprint;
   readonly defId?: number;
   readonly solid?: true;
   /** For a `wallTile`/`wallStub` prop only: which run this wall segment
@@ -82,7 +82,7 @@ export interface DemoProp {
   readonly wallOrientation?: "horizontal" | "vertical";
 }
 
-/** `defs/objects/city-props.toml`'s own `lamppost` id -- the demo places
+/** `defs/objects/city-props.toml`'s own `lamppost` id -- the street places
  * it by id so its collider is read from `defs/`, never restated here. */
 export const LAMPPOST_DEF_ID = 4;
 /** `defs/objects/city-props.toml`'s own `trash_bin` id (story 1.9,
@@ -94,18 +94,18 @@ export const TRASH_BIN_DEF_ID = 1;
  * only from the customer side. */
 export const SHOP_COUNTER_DEF_ID = 3;
 /** `defs/objects/city-props.toml`'s own `shop_window` id (FR121, story
- * 1.7): a real `[[object]] window = true` entry, never a demo-only flag --
+ * 1.7): a real `[[object]] window = true` entry, never a street-only flag --
  * every shopfront window places it by id, the same way the lamppost
  * does. */
 export const WINDOW_DEF_ID = 5;
 
-/** Synthetic def ids for demo-only geometry (walls, world boundary),
+/** Synthetic def ids for street-only geometry (walls, world boundary),
  * offset far past any real `defs/objects` id so the two never collide in
  * the one `defId -> collider` map the grid is built from. */
-const DEMO_DEF_ID_BASE = 10_000;
+const STREET_DEF_ID_BASE = 10_000;
 
-export function demoDefId(id: bigint): number {
-  return DEMO_DEF_ID_BASE + Number(id);
+export function streetDefId(id: bigint): number {
+  return STREET_DEF_ID_BASE + Number(id);
 }
 
 // Shared storey shape for both ground-floor shops: north (back) wall,
@@ -168,7 +168,7 @@ export const SHOP_B_BUILDING_ID = 2n;
  * permanently hide whoever just walked onto it. */
 export const PLATFORM_BUILDING_ID = 3n;
 
-// --- the subway (declared before DEMO_BUILDING_AREAS, which references
+// --- the subway (declared before STREET_BUILDING_AREAS, which references
 // the platform's own footprint) -----------------------------------------
 
 export const STREET_FLOOR = 0;
@@ -226,7 +226,7 @@ export const STREET_EXIT_Y = STAIRS_Y;
  * stairwell. Never a boolean on the stairs prop -- a `floor_transition`-
  * shaped row, anchor cell to target cell, exactly like the server's own
  * model. */
-export const DEMO_TRANSITIONS: readonly TransitionSpec[] = [
+export const STREET_TRANSITIONS: readonly TransitionSpec[] = [
   {
     x: STAIRS_X,
     y: STAIRS_Y,
@@ -245,7 +245,7 @@ export const DEMO_TRANSITIONS: readonly TransitionSpec[] = [
   },
 ];
 
-/** The ownership areas the demo's own `OwnershipIndex` is built from
+/** The ownership areas the street's own `OwnershipIndex` is built from
  * (mirrors `building_area` rows): each shop's whole footprint, walls
  * included, on the floor(s) it actually occupies, and the platform's own
  * footprint on floor -1, which is what lets its own front wall retract
@@ -253,7 +253,7 @@ export const DEMO_TRANSITIONS: readonly TransitionSpec[] = [
  * (Tim's direction). No shop owns an upper storey here: `isStoreyAboveCulled`
  * is proven directly, against synthetic drawables, in
  * `visibility.test.ts` -- it does not need this fixture to carry one. */
-export const DEMO_BUILDING_AREAS: readonly OwnershipArea[] = [
+export const STREET_BUILDING_AREAS: readonly OwnershipArea[] = [
   {
     ownerId: SHOP_A_BUILDING_ID,
     floor: 0,
@@ -271,14 +271,14 @@ export const DEMO_BUILDING_AREAS: readonly OwnershipArea[] = [
   },
 ];
 
-export const DEMO_ROOM_AREAS: readonly OwnershipArea[] = [];
+export const STREET_ROOM_AREAS: readonly OwnershipArea[] = [];
 
 /** The platform's own boundary wall ring -- a real, solid, drawn wall
  * built from the subway pack's own tiled wall art (Artie's direction),
  * near-side exactly where `render/visibility.ts`'s `isNearSideWall`
  * predicate says it is (the front/south run) -- no special-casing here. */
-function platformWalls(): readonly DemoProp[] {
-  const walls: DemoProp[] = [
+function platformWalls(): readonly StreetProp[] {
+  const walls: StreetProp[] = [
     {
       id: 60n,
       assetKey: "subwayWall",
@@ -330,7 +330,7 @@ function platformWalls(): readonly DemoProp[] {
 /** Every non-player prop in the fixture, fixed and hand-placed. Ids are
  * small and sequential -- this is fixture data, not a live `object_id`
  * sequence. */
-export const DEMO_PROPS: readonly DemoProp[] = [
+export const STREET_PROPS: readonly StreetProp[] = [
   // --- Shop A ----------------------------------------------------------
   // North (back) wall: full width, never near-side (nothing owned by
   // shop A sits south of it -- it is the interior itself).
@@ -410,7 +410,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
   // Shop A's own front-wall pier at the party-wall corner: the window
   // (id 6) stops one cell short of it, so a full-height wall pier always
   // separates the two shopfronts' glass, never a continuous glazed strip
-  // (Artie's cycle-2 direction). Owned by shop A (`DEMO_BUILDING_AREAS`'s
+  // (Artie's cycle-2 direction). Owned by shop A (`STREET_BUILDING_AREAS`'s
   // rect includes this column), so it retracts with the rest of shop A's
   // front while the player is inside -- the same corner id 4/id 2 already
   // form on the west side, just party-wall side.
@@ -594,7 +594,7 @@ export const DEMO_PROPS: readonly DemoProp[] = [
 
 /** A collider-only rect, in whole cells, with no sprite and no place in
  * the depth-sorted pool. */
-export interface DemoBoundaryRect {
+export interface StreetBoundaryRect {
   readonly id: bigint;
   readonly x: number;
   readonly y: number;
@@ -610,7 +610,7 @@ export interface DemoBoundaryRect {
  * `drawables.test.ts` proves the ring is closed by walking the real
  * resolver against it. The platform (floor -1) needs no separate entry
  * here: its own four walls (`platformWalls`) already close it. */
-export const DEMO_BOUNDARY: readonly DemoBoundaryRect[] = [
+export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
   // West and east of the pavement.
   { id: 101n, x: 0, y: SOUTH_WALL_Y, width: 1, height: 4 },
   { id: 102n, x: 21, y: SOUTH_WALL_Y, width: 1, height: 4 },
@@ -633,7 +633,7 @@ export const DEMO_BOUNDARY: readonly DemoBoundaryRect[] = [
  * 1.7: carries its own `floor` so `scene.ts` can cull it the same way
  * every other drawable is culled (FR122), through `render/pixi-
  * visibility.ts`'s `VisibilityApplier`, never a second, ad hoc rule. */
-export interface DemoGroundTiles {
+export interface StreetGroundTiles {
   readonly assetKey: string;
   readonly floor: number;
   readonly x0: number;
@@ -646,7 +646,7 @@ export interface DemoGroundTiles {
  * (Artie's direction: there must be an inside); the platform's own floor
  * and edge strip are two more, from the subway pack, never the shops'
  * `floor` crop (Artie's direction: it must read as somewhere new). */
-export const INTERIOR_FLOOR_TILES: DemoGroundTiles = {
+export const INTERIOR_FLOOR_TILES: StreetGroundTiles = {
   assetKey: "floor",
   floor: STREET_FLOOR,
   x0: WEST_WALL_X,
@@ -655,7 +655,7 @@ export const INTERIOR_FLOOR_TILES: DemoGroundTiles = {
   y1: SOUTH_WALL_Y,
 };
 
-export const INTERIOR_FLOOR_TILES_B: DemoGroundTiles = {
+export const INTERIOR_FLOOR_TILES_B: StreetGroundTiles = {
   assetKey: "floor",
   floor: STREET_FLOOR,
   x0: PARTY_WALL_X + 1,
@@ -669,7 +669,7 @@ export const INTERIOR_FLOOR_TILES_B: DemoGroundTiles = {
 // against the lamppost must still be drawn over pavement, not past its
 // last painted row. Widened east to cover both shops and the subway
 // stairwell.
-export const SIDEWALK_TILES: DemoGroundTiles = {
+export const SIDEWALK_TILES: StreetGroundTiles = {
   assetKey: "sidewalk",
   floor: STREET_FLOOR,
   x0: 1,
@@ -682,7 +682,7 @@ export const SIDEWALK_TILES: DemoGroundTiles = {
  * surrounds it is plain black (nothing drawn), never a texture, so this
  * pass paints only the interior the walls enclose, one row short of the
  * front wall to leave room for the edge strip below. */
-export const PLATFORM_FLOOR_TILES: DemoGroundTiles = {
+export const PLATFORM_FLOOR_TILES: StreetGroundTiles = {
   assetKey: "subwayFloor",
   floor: SUBWAY_FLOOR,
   x0: PLATFORM_INTERIOR_X0,
@@ -694,7 +694,7 @@ export const PLATFORM_FLOOR_TILES: DemoGroundTiles = {
 /** The platform's own hazard-striped edge, one row along its front wall
  * (Artie's "a platform edge strip") -- from the subway pack, distinct
  * from the plain floor tile either side of it. */
-export const PLATFORM_EDGE_TILES: DemoGroundTiles = {
+export const PLATFORM_EDGE_TILES: StreetGroundTiles = {
   assetKey: "subwayEdge",
   floor: SUBWAY_FLOOR,
   x0: PLATFORM_INTERIOR_X0,
@@ -706,7 +706,7 @@ export const PLATFORM_EDGE_TILES: DemoGroundTiles = {
 /** Every ground tile group `scene.ts` paints, in pass order -- the one
  * list both the mount code and any future ground-visibility test walk,
  * so a new group is never forgotten in one place. */
-export const DEMO_GROUND_TILES: readonly DemoGroundTiles[] = [
+export const STREET_GROUND_TILES: readonly StreetGroundTiles[] = [
   INTERIOR_FLOOR_TILES,
   INTERIOR_FLOOR_TILES_B,
   SIDEWALK_TILES,
@@ -714,26 +714,26 @@ export const DEMO_GROUND_TILES: readonly DemoGroundTiles[] = [
   PLATFORM_EDGE_TILES,
 ];
 
-/** The demo's own collider sources, keyed by the synthetic def id
- * `demoDefId` mints: the shops' plain walls (solid across their whole
+/** The street's own collider sources, keyed by the synthetic def id
+ * `streetDefId` mints: the shops' plain walls (solid across their whole
  * footprint) and the world boundary. Anything that exists in `defs/`
  * (the window, the lamppost) is absent here and read from `defs/`
  * instead. `subcellsPerCell` comes from the scene, which reads it from
  * `defs/`'s generated `COLLIDER_SUBCELLS_PER_CELL` -- this module never
  * states it. */
-export function demoColliderSources(subcellsPerCell: number): ReadonlyMap<number, ColliderSource> {
+export function streetColliderSources(subcellsPerCell: number): ReadonlyMap<number, ColliderSource> {
   const sources = new Map<number, ColliderSource>();
-  for (const prop of DEMO_PROPS) {
+  for (const prop of STREET_PROPS) {
     if (!prop.solid) continue;
     const { width, height } = prop.footprint ?? { width: 1, height: 1 };
-    sources.set(demoDefId(prop.id), {
+    sources.set(streetDefId(prop.id), {
       width,
       height,
       collider: { x0: 0, y0: 0, x1: width * subcellsPerCell, y1: height * subcellsPerCell },
     });
   }
-  for (const rect of DEMO_BOUNDARY) {
-    sources.set(demoDefId(rect.id), {
+  for (const rect of STREET_BOUNDARY) {
+    sources.set(streetDefId(rect.id), {
       width: rect.width,
       height: rect.height,
       collider: {
@@ -747,15 +747,15 @@ export function demoColliderSources(subcellsPerCell: number): ReadonlyMap<number
   return sources;
 }
 
-/** Every collider-bearing placement the demo feeds the grid, shaped like
+/** Every collider-bearing placement the street feeds the grid, shaped like
  * the generated `PlacedObject` binding: the props that declare `defId` or
  * `solid`, plus the undrawn boundary ring. A later chunk-streaming story
  * replaces this with a real subscription; the grid's own API does not
  * change. */
-export function demoPlacedRows(): readonly PlacedObject[] {
+export function streetPlacedRows(): readonly PlacedObject[] {
   const rows: PlacedObject[] = [];
-  for (const prop of DEMO_PROPS) {
-    const defId = prop.defId ?? (prop.solid ? demoDefId(prop.id) : undefined);
+  for (const prop of STREET_PROPS) {
+    const defId = prop.defId ?? (prop.solid ? streetDefId(prop.id) : undefined);
     if (defId === undefined) continue;
     rows.push({
       objectId: prop.id,
@@ -771,10 +771,10 @@ export function demoPlacedRows(): readonly PlacedObject[] {
       chunkKey: 0n,
     });
   }
-  for (const rect of DEMO_BOUNDARY) {
+  for (const rect of STREET_BOUNDARY) {
     rows.push({
       objectId: rect.id,
-      defId: demoDefId(rect.id),
+      defId: streetDefId(rect.id),
       x: rect.x,
       y: rect.y,
       floor: PLAYER_START.floor,

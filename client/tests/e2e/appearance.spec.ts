@@ -18,11 +18,11 @@ import {
   buildPlayerAppearanceTuple,
   buildUniformedWalkerFixture,
   buildWalkerFixture,
-} from "../../src/demo/citizens";
+} from "../../src/test-street/citizens";
 import type {} from "../../src/net/e2e-hooks";
 import { resolveUniform } from "../../src/render/appearance/composite";
 import { resolveLayers } from "../../src/render/appearance/resolve-layers";
-import { committedDefs } from "../unit/demo/demo-world";
+import { committedDefs } from "../unit/test-street/street-world";
 import { ready } from "./appearance-test-support";
 
 test.describe("the real, mounted appearance pipeline", () => {

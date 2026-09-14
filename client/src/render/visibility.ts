@@ -27,7 +27,7 @@ export interface VisibilityViewer {
 }
 
 /** The minimal shape [`computeVisibility`] needs from a drawable --
- * structural, so a caller's own richer drawable type (`demo/drawables.ts`'s
+ * structural, so a caller's own richer drawable type (`test-street/drawables.ts`'s
  * `PropDrawable`) can be passed directly with no adapter object. */
 export interface VisibilityDrawable {
   readonly floor: number;
@@ -44,7 +44,7 @@ export interface VisibilityDrawable {
    * camera in this 3/4 view (Artie's direction) -- side walls, party
    * walls and the back wall are never near-side and never retract. */
   readonly isNearSide: boolean;
-  /** The FR120 wall-stub companion (`demo/drawables.ts`'s `STUB_ID_OFFSET`
+  /** The FR120 wall-stub companion (`test-street/drawables.ts`'s `STUB_ID_OFFSET`
    * pool member): the *inverse* of its own parent wall's retraction,
    * never the same rule a normal drawable follows. A stub sits behind its
    * parent wall at a lower rank -- while the wall is drawn (not

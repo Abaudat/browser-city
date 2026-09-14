@@ -1,4 +1,4 @@
-// Turns the committed demo fixture (`fixture.ts`) into the plain
+// Turns the committed street fixture (`fixture.ts`) into the plain
 // `Drawable`s `sort-key.ts`'s comparator orders (FR123), each also
 // carrying the fields `render/visibility.ts`'s `computeVisibility` needs
 // (FR120/FR121/FR122, story 1.7). Pure, zero PixiJS -- `scene.ts` is the
@@ -10,7 +10,7 @@ import { type Drawable, setDrawableFloor, setDrawablePosition } from "../render/
 import { toSortUnits } from "../render/sort-units";
 import { isNearSideWall, type VisibilityDrawable } from "../render/visibility";
 import { NO_OWNER, type OwnershipIndex } from "../world/ownership";
-import { DEMO_PROPS, type DemoLayer, PLAYER_STABLE_ID } from "./fixture";
+import { STREET_PROPS, type StreetLayer, PLAYER_STABLE_ID } from "./fixture";
 
 /** A `Drawable` plus what `scene.ts` needs to pick and slice a texture
  * for it, plus what `render/visibility.ts` needs to decide its
@@ -26,7 +26,7 @@ export interface PropDrawable extends Drawable, VisibilityDrawable {
    * cycle-2 direction) -- `scene.ts`'s own swatch picker reads this, never
    * a decomposed cell's own footprint aspect ratio (which cannot tell a
    * one-cell-wide front wall pier from a one-cell side wall). Copied
-   * straight from `DemoProp.wallOrientation`, defaulting to `"horizontal"`
+   * straight from `StreetProp.wallOrientation`, defaulting to `"horizontal"`
    * for every prop that does not declare one -- meaningless for anything
    * that is not a wall, but always present so no caller needs an
    * `undefined` branch. */
@@ -51,7 +51,7 @@ const STUB_ID_OFFSET = 500_000n;
  * caller (`world/object-defs.ts`'s `windowDefIds`), never looked up while
  * drawing. */
 export interface BuildPropDrawablesOptions {
-  readonly rankOf: (layer: DemoLayer) => number;
+  readonly rankOf: (layer: StreetLayer) => number;
   readonly ownership: OwnershipIndex;
   readonly windowDefIds: ReadonlySet<number>;
 }
@@ -73,7 +73,7 @@ const STUB_LAYER_CODE = layerCodeByName("furniture");
 export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDrawable[] {
   const { rankOf, ownership, windowDefIds } = options;
   const drawables: PropDrawable[] = [];
-  for (const prop of DEMO_PROPS) {
+  for (const prop of STREET_PROPS) {
     const rank = rankOf(prop.layer);
     const layerCode = layerCodeByName(prop.layer);
     const footprint = prop.footprint ?? { width: 1, height: 1 };
