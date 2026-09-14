@@ -1,0 +1,1176 @@
+[[outfit]]
+id = 1
+key = "outfit_01_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_01_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 2
+key = "outfit_01_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_01_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 3
+key = "outfit_01_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_01_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 4
+key = "outfit_01_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_01_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 5
+key = "outfit_01_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_01_05.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 6
+key = "outfit_01_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_01_06.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 7
+key = "outfit_01_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_01_07.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 8
+key = "outfit_01_08"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_01_08.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 9
+key = "outfit_01_09"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_01_09.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 10
+key = "outfit_01_10"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_01_10.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 11
+key = "outfit_02_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_02_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 12
+key = "outfit_02_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_02_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 13
+key = "outfit_02_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_02_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 14
+key = "outfit_02_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_02_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 15
+key = "outfit_03_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_03_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 16
+key = "outfit_03_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_03_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 17
+key = "outfit_03_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_03_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 18
+key = "outfit_03_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_03_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 19
+key = "outfit_04_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_04_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 20
+key = "outfit_04_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_04_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 21
+key = "outfit_04_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_04_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 22
+key = "outfit_05_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_05_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 23
+key = "outfit_05_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_05_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 24
+key = "outfit_05_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_05_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 25
+key = "outfit_05_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_05_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 26
+key = "outfit_05_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_05_05.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 27
+key = "outfit_06_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_06_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 28
+key = "outfit_06_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_06_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 29
+key = "outfit_06_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_06_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 30
+key = "outfit_06_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_06_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 31
+key = "outfit_07_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_07_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 32
+key = "outfit_07_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_07_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 33
+key = "outfit_07_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_07_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 34
+key = "outfit_07_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_07_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 35
+key = "outfit_08_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_08_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 36
+key = "outfit_08_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_08_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 37
+key = "outfit_08_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_08_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 38
+key = "outfit_09_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_09_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 39
+key = "outfit_09_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_09_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 40
+key = "outfit_09_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_09_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 41
+key = "outfit_10_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_10_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 42
+key = "outfit_10_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_10_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 43
+key = "outfit_10_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_10_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 44
+key = "outfit_10_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_10_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 45
+key = "outfit_10_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_10_05.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 46
+key = "outfit_11_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_11_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 47
+key = "outfit_11_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_11_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 48
+key = "outfit_11_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_11_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 49
+key = "outfit_11_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_11_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 50
+key = "outfit_12_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_12_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 51
+key = "outfit_12_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_12_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 52
+key = "outfit_12_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_12_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 53
+key = "outfit_13_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_13_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 54
+key = "outfit_13_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_13_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 55
+key = "outfit_13_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_13_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 56
+key = "outfit_13_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_13_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 57
+key = "outfit_14_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_14_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 58
+key = "outfit_14_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_14_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 59
+key = "outfit_14_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_14_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 60
+key = "outfit_14_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_14_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 61
+key = "outfit_14_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_14_05.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 62
+key = "outfit_15_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_15_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 63
+key = "outfit_15_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_15_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 64
+key = "outfit_15_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_15_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 65
+key = "outfit_16_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_16_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 66
+key = "outfit_16_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_16_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 67
+key = "outfit_16_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_16_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 68
+key = "outfit_17_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_17_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 69
+key = "outfit_17_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_17_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 70
+key = "outfit_17_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_17_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 71
+key = "outfit_18_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_18_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 72
+key = "outfit_18_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_18_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 73
+key = "outfit_18_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_18_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 74
+key = "outfit_18_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_18_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 75
+key = "outfit_19_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_19_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 76
+key = "outfit_19_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_19_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 77
+key = "outfit_19_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_19_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 78
+key = "outfit_19_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_19_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 79
+key = "outfit_20_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_20_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 80
+key = "outfit_20_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_20_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 81
+key = "outfit_20_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_20_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 82
+key = "outfit_21_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_21_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 83
+key = "outfit_21_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_21_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 84
+key = "outfit_21_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_21_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 85
+key = "outfit_21_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_21_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 86
+key = "outfit_22_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_22_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 87
+key = "outfit_22_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_22_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 88
+key = "outfit_22_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_22_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 89
+key = "outfit_22_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_22_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 90
+key = "outfit_23_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_23_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 91
+key = "outfit_23_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_23_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 92
+key = "outfit_23_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_23_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 93
+key = "outfit_23_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_23_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 94
+key = "outfit_24_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_24_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 95
+key = "outfit_24_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_24_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 96
+key = "outfit_24_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_24_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 97
+key = "outfit_24_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_24_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 98
+key = "outfit_25_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_25_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 99
+key = "outfit_25_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_25_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 100
+key = "outfit_25_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_25_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 101
+key = "outfit_25_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_25_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 102
+key = "outfit_25_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_25_05.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 103
+key = "outfit_26_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_26_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 104
+key = "outfit_26_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_26_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 105
+key = "outfit_26_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_26_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 106
+key = "outfit_27_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_27_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 107
+key = "outfit_27_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_27_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 108
+key = "outfit_27_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_27_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 109
+key = "outfit_28_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_28_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 110
+key = "outfit_28_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_28_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 111
+key = "outfit_28_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_28_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 112
+key = "outfit_28_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_28_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 113
+key = "outfit_29_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_29_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 114
+key = "outfit_29_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_29_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 115
+key = "outfit_29_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_29_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 116
+key = "outfit_29_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_29_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 117
+key = "outfit_30_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_30_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 118
+key = "outfit_30_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_30_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 119
+key = "outfit_30_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_30_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 120
+key = "outfit_31_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_31_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 121
+key = "outfit_31_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_31_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 122
+key = "outfit_31_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_31_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 123
+key = "outfit_31_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_31_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 124
+key = "outfit_31_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_31_05.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 125
+key = "outfit_32_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_32_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 126
+key = "outfit_32_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_32_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 127
+key = "outfit_32_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_32_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 128
+key = "outfit_32_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_32_04.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 129
+key = "outfit_32_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_32_05.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 130
+key = "outfit_33_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_33_01.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 131
+key = "outfit_33_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_33_02.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 132
+key = "outfit_33_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_33_03.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 133
+key = "addon_outfit_firefighter"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Firefighter_16x16.png"
+pool = "role_only"
+hides_hairstyle = false
+
+[[outfit]]
+id = 134
+key = "addon_outfit_military_general"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Military_General_16x16.png"
+pool = "costume"
+hides_hairstyle = false
+
+[[outfit]]
+id = 135
+key = "addon_outfit_postman"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Postman_16x16.png"
+pool = "role_only"
+hides_hairstyle = false
+
+[[outfit]]
+id = 136
+key = "addon_outfit_postman_with_hat"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Postman_With_Hat_16x16.png"
+pool = "role_only"
+hides_hairstyle = false
+
+[[outfit]]
+id = 137
+key = "addon_outfit_scout_1"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Scout_16x16_1.png"
+pool = "costume"
+hides_hairstyle = false
+
+[[outfit]]
+id = 138
+key = "addon_outfit_scout_2"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Scout_16x16_2.png"
+pool = "costume"
+hides_hairstyle = false
+
+[[outfit]]
+id = 139
+key = "addon_outfit_scout_3"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Scout_16x16_3.png"
+pool = "costume"
+hides_hairstyle = false
+
+[[outfit]]
+id = 140
+key = "addon_outfit_soldier"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Soldier_16x16.png"
+pool = "costume"
+hides_hairstyle = false
+
+[[outfit]]
+id = 141
+key = "kid_outfit_kid_1"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits_kids/16x16/Outfit_kid_1.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 142
+key = "kid_outfit_kid_2"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits_kids/16x16/Outfit_kid_2.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 143
+key = "kid_outfit_kid_3"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits_kids/16x16/Outfit_kid_3.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 144
+key = "kid_outfit_kid_4"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits_kids/16x16/Outfit_kid_4.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 145
+key = "kid_outfit_kid_5"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits_kids/16x16/Outfit_kid_5.png"
+pool = "civilian"
+hides_hairstyle = false
+
+[[outfit]]
+id = 146
+key = "kid_outfit_kid_6_pajama_frog"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits_kids/16x16/Outfit_kid_6_pajama_frog.png"
+pool = "costume"
+hides_hairstyle = true
+
+[[outfit]]
+id = 147
+key = "kid_outfit_kid_7_pajama_tiger"
+family = "kid"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits_kids/16x16/Outfit_kid_7_pajama_tiger.png"
+pool = "costume"
+hides_hairstyle = true
+

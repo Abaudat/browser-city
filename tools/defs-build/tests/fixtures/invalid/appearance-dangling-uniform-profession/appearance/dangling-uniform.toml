@@ -1,0 +1,5 @@
+[[uniform]]
+id = 2
+key = "ghost_profession_uniform"
+profession = "nonexistent-profession"
+accessory = "accessory_test"

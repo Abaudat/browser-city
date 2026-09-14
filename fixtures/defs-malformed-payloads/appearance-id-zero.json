@@ -1,0 +1,19 @@
+{
+  "generated_by": "tools/defs-build -- do not edit by hand",
+  "defs_version": "test",
+  "collider_subcells_per_cell": 16,
+  "interact_at_max_reach_cells": 2,
+  "objects": [],
+  "items": [],
+  "recipes": [],
+  "professions": [],
+  "chains": [],
+  "balance": [],
+  "bodies": [{ "id": 0, "key": "body_zero", "family": "adult", "sheet": "x/body.png" }],
+  "eyes": [],
+  "hairstyles": [],
+  "outfits": [],
+  "accessories": [],
+  "appearance_layouts": [],
+  "uniforms": []
+}

@@ -3,6 +3,7 @@
 //! table and touches no clock, filesystem, or network; every input it needs
 //! is passed in by its caller in `../src` (the reducer crate).
 
+pub mod appearance;
 pub mod codes;
 pub mod demo_ping;
 // `tools/defs-build` emits already-formatted text (docs/architecture.md's

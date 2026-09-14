@@ -442,13 +442,58 @@ reorders a pool member.
 Retraction is keyed on `buildingId` alone, never `roomId`: a terrace shop
 is its own building, not a room of a shared one.
 
+### Appearance
+
+- A citizen's appearance is five stored `u16` part ids (FR61): `body`,
+  `eyes`, `outfit`, `hairstyle`, `accessory`. `0` means "no layer",
+  legal only on `hairstyle`/`accessory`; `body`/`eyes`/`outfit` are
+  never absent.
+- Generated exactly once, server-side, by `sim::appearance::generate` at
+  citizen creation, seeded from the citizen id alone (`sim::rng`), and
+  stored. Nothing ever re-derives an existing citizen's tuple.
+- A profession's uniform (FR62: `[[uniform]]` in `defs/appearance/`) is a
+  render-time override of the outfit and/or accessory layer, resolved by
+  the client from `defs.json`, and never written back into the stored
+  tuple. A uniform accessory is an additional layer, not a replacement:
+  it removes the citizen's own civilian accessory only when both declare
+  the same `slot` (a helmet removes a beanie; a jacket over a beard keeps
+  the beard).
+- `body` and `eyes` each carry a `pool` (`civilian`/`role_only`/
+  `costume`), the same enum `outfit`/`accessory` already declare:
+  `generate` draws `body` and `eyes` from the `civilian` pool only.
+- Layout (cell size, direction order, one row per animation) is declared
+  once per family (`adult`/`kid`) in `[[appearance_layout]]`, and
+  enforced against every part sheet's real dimensions: `tools/defs-build`
+  reads each PNG's `IHDR` (width/height only, no `png` crate) and rejects
+  a sheet whose size is not one of the layout's own declared
+  `accepted_sizes`.
+- Part sheets are fetched lazily, once per sheet, as CPU-side
+  `ImageBitmap`s (`fetch` + `createImageBitmap`) -- never through Pixi's
+  `Assets`/`Texture`. A bitmap is only needed while a composite is being
+  built: `part-sheets.ts` ref-counts each in-flight load and closes the
+  bitmap once every caller drawing from it has finished.
+- Exactly one composite `Texture` exists per unique tuple+override: the
+  five (or six, with a uniform accessory) layers are drawn in order via
+  `OffscreenCanvas.drawImage` onto one compact strip, nearest-neighbour
+  sampled, then wrapped in one Pixi `Texture.from` -- `RenderTexture`
+  stays banned anywhere under `client/src/` ("Visibility" above). This
+  texture is shared, reference-counted, and held in a bounded LRU
+  (`render/appearance/appearance-cache.ts`) that evicts only entries with
+  no outstanding reference. A character on screen is one `Sprite` in the
+  `characters`-rank pool.
+- Every `(animation, direction, frame)` cell of that compact strip is
+  cropped once into its own frame `Texture` when the composite is built,
+  never on a per-tick basis: callers look a frame up by index, they never
+  construct one. Disposing a composite destroys every frame texture
+  together with the base strip texture.
+
 ## Definitions (`defs/`)
 
 `defs/` is the single source of truth for game content data (NFR31),
 subdivided into `objects/`, `items/`, `recipes/`, `professions/`,
-`chains/` and `balance/`, each a directory of TOML files (the naming
-table's `city-props.toml`). Neither build target writes here and neither
-runs the generator: `tools/defs-build/` is a standalone Rust binary crate
+`chains/`, `appearance/` and `balance/`, each a directory of TOML files
+(the naming table's `city-props.toml`). Neither build target writes here
+and neither runs the generator: `tools/defs-build/` is a standalone Rust binary crate
 outside both the server and client dependency graphs (its own
 `Cargo.toml` with an empty `[workspace]` table, its own committed
 `Cargo.lock` and `rust-toolchain.toml`), and its two outputs are committed
@@ -461,9 +506,10 @@ cache-busted and compared against the FR147 handshake's own
 `defs_version`. Both begin with a generated-file marker and are never
 hand-edited.
 
-An object, item, recipe, profession or chain declares an explicit,
-permanent integer id in its own file -- never one derived from file
-order, position or a hash. An id or a key, once merged, is never
+An object, item, recipe, profession, chain, or appearance part/layout/
+uniform declares an explicit, permanent integer id in its own file --
+never one derived from file order, position or a hash. An id or a key,
+once merged, is never
 renumbered, reused or retired: `tools/defs-build/goldens/defs-manifest.
 golden` pins the append-only `kind id key` list, guarded by
 `scripts/ci/check-defs-ids-append-only.sh`. `defs/balance/` entries seed
@@ -476,7 +522,10 @@ those land; their own manifests belong under `defs/`, not beside their
 producing pipeline, so that they fold into this one version rather than
 versioning independently. `defs_version` is computed, never hand-bumped,
 identical in both generated artefacts, and guarded by
-`scripts/ci/check-defs-version-bump.sh`.
+`scripts/ci/check-defs-version-bump.sh`. It does not hash the
+`ModernTileset/` PNGs themselves: vendor art is treated as immutable, and
+replacing a sheet in place (rather than adding a new one under a new
+part id) is not a change `defs_version` detects.
 
 The server and client each parse the generated source with their own
 independent implementation (NFR30) -- deliberate duplication, not an

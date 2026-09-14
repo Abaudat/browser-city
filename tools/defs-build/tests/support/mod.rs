@@ -54,9 +54,27 @@ pub fn merged_tree(category: &str) -> Vec<(PathBuf, String)> {
     files.into_iter().collect()
 }
 
+/// The `(width, height)` every `tests/fixtures/valid/appearance/*.toml`
+/// sheet path needs to satisfy the valid tree's own `[[appearance_layout]]`
+/// (16x32 cells, one direction, one frame) -- fixed here rather than read
+/// from a real file, since these tests exercise `validate`'s own logic,
+/// never `fsio`'s.
+pub fn appearance_sheet_dims() -> BTreeMap<String, (u32, u32)> {
+    [
+        ("fixtures/appearance/body-test.png", (16, 32)),
+        ("fixtures/appearance/eyes-test.png", (16, 32)),
+        ("fixtures/appearance/outfit-test.png", (16, 32)),
+        ("fixtures/appearance/hair-test.png", (16, 32)),
+        ("fixtures/appearance/accessory-test.png", (16, 32)),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v))
+    .collect()
+}
+
 pub fn build_err(category: &str) -> defs_build::DefsError {
     let files = merged_tree(category);
-    defs_build::build(&files, "test-version").expect_err(&format!(
+    defs_build::build(&files, &appearance_sheet_dims(), "test-version").expect_err(&format!(
         "fixture category '{category}' was expected to fail the build"
     ))
 }

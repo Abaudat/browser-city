@@ -1,23 +1,29 @@
-// The demo scene's Pixi mount -- the only file besides `bootstrap.ts` and
-// `render/pixi-order.ts`/`render/pixi-visibility.ts` allowed to import
-// `pixi.js`. Ordering itself is `render/pixi-order.ts`'s job, visibility
-// is `render/pixi-visibility.ts`'s (story 1.7); this file's whole job is
-// texture loading, sprite construction, container wiring, keyboard input
-// and the mount-time geometry guard. Real LimeZu sprites only, loaded
-// straight out of the repo-root `ModernTileset/` (Artie's direction: no
-// coloured rectangles, no new PNGs beyond what a new prop genuinely
-// needs) -- nearest-neighbour filtering, integer world-pixel positions
-// rounded before the zoom scale, bottom-centre sprite anchors pinned to
-// each drawable's own cell.
+// The demo scene's Pixi mount -- one of a small, named set of files
+// allowed to import `pixi.js` (`bootstrap.ts`,
+// `render/pixi-order.ts`/`render/pixi-visibility.ts`, and story 1.10's
+// `render/appearance/composite-canvas.ts`/`appearance-texture.ts` and
+// `demo/citizens-layer.ts`/`demo/compare-pipeline-vs-stack.ts`, each its
+// own real-canvas/Pixi adapter). Ordering itself is
+// `render/pixi-order.ts`'s job, visibility is `render/pixi-visibility.
+// ts`'s (story 1.7); this file's whole job is texture loading, sprite
+// construction, container wiring, keyboard input and the mount-time
+// geometry guard. Real LimeZu sprites only, loaded straight out of the
+// repo-root `ModernTileset/` (Artie's direction: no coloured rectangles,
+// no new PNGs beyond what a new prop genuinely needs) -- nearest-
+// neighbour filtering, integer world-pixel positions rounded before the
+// zoom scale, bottom-centre sprite anchors pinned to each drawable's own
+// cell.
 //
 // D17: no debug text, no rank numbers, no sort-key readouts on the
 // canvas. This module draws the scene and nothing else.
 
 import { type Application, Assets, Container, Rectangle, Sprite, Texture } from "pixi.js";
+import type { Defs } from "../defs/types";
 import type { IgnoredSink, IntentSink } from "../input/intent";
 import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
+import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
 import { layerCodeByName } from "../render/layer-table";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
@@ -35,6 +41,8 @@ import type { ObjectSource } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { TransitionIndex } from "../world/transitions";
 import { WorldIndex } from "../world/world-index";
+import { buildPlayerAppearanceTuple } from "./citizens";
+import { type CitizensLayerHandle, mountCitizensLayer } from "./citizens-layer";
 import {
   buildPlayerDrawable,
   buildPropDrawables,
@@ -144,31 +152,7 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Binary_Edge_Left_Down_1.png",
     import.meta.url,
   ).href,
-  player: new URL(
-    "../../../ModernTileset/moderninteriors-win/2_Characters/Character_Generator/0_Premade_Characters/16x16/Premade_Character_01.png",
-    import.meta.url,
-  ).href,
 };
-
-/** The player sprite is one frame cropped out of a much larger animation
- * sheet -- a fixed source-rect, the same idiom the per-cell decomposition
- * sub-rects use, just applied to a hand-picked frame instead of a
- * generated grid.
- *
- * `Premade_Character_01.png` is 896x656px, which is not a uniform grid
- * top to bottom -- 656 does not divide evenly by any single frame
- * height, because the sheet's last 16px strip is a row of small colour
- * swatches, not a character frame (confirmed by measuring the sheet's
- * own opaque-pixel row bands: a `(0, 0, 16, 32)` guess crops across two
- * unrelated frames and reads as a totem pole, not a person -- Artie's
- * finding). The character frames themselves sit on a real 16px-wide,
- * 32px-tall grid starting at `y = 0`, each character bottom-anchored
- * within its own cell (empty headroom above, feet on the cell's bottom
- * edge) -- verified by measuring the sheet's opaque columns (16px period)
- * and row bands (32px period from row 4 on) and by rendering this exact
- * crop in isolation. Row 4, column 0 is a single idle, front-facing
- * frame. */
-const PLAYER_FRAME = new Rectangle(0, 128, 16, 32);
 
 /** `wallTileH`/`wallTileV` are two real, whole-tile sub-rects of the same
  * `wallSheet` source file (never a new PNG): a 1x3-tile swatch for the
@@ -228,6 +212,10 @@ const HIGHLIGHT_BLEND_MODE = "add" as const;
 const GROUND_LAYER_CODE = layerCodeByName("objects");
 
 export interface MountDemoSceneOptions {
+  /** Story 1.10: the fetched, parsed defs document -- needed to build the
+   * street crowd's real appearance textures (`citizens-layer.ts`) and, via
+   * `citizens.ts`, the tuples themselves. */
+  readonly defs: Defs;
   readonly tileSizePx: number;
   readonly storeyHeightPx: number;
   readonly rankOf: (layerCode: number) => number;
@@ -309,6 +297,9 @@ export interface DemoSceneHandle {
   /** The keyboard this scene is actually driven by -- the caller's own
    * instance when it supplied one. */
   readonly keyboard: KeyboardState;
+  /** Story 1.10: the mounted street crowd, for `main.ts` to wire its own
+   * DEV-only `window.__bc` hooks against -- never read by this file. */
+  readonly citizensLayer: CitizensLayerHandle;
   /** Removes every listener this scene attached (keyboard and pointer). */
   destroy(): void;
 }
@@ -388,10 +379,7 @@ function createSprite(
   tileSizePx: number,
 ): Sprite {
   const base = textureFor(drawable.assetKey, textures);
-  const texture =
-    drawable.assetKey === "player"
-      ? cropped(base, PLAYER_FRAME)
-      : sliceTexture(base, drawable, tileSizePx);
+  const texture = sliceTexture(base, drawable, tileSizePx);
   const sprite = new Sprite(texture);
   // Bottom-centre origin pinned to the cell's bottom edge (Artie's
   // direction): a tall sprite overhangs upward out of its footprint,
@@ -524,6 +512,7 @@ export async function mountDemoScene(
   options: MountDemoSceneOptions,
 ): Promise<DemoSceneHandle> {
   const {
+    defs,
     tileSizePx,
     storeyHeightPx,
     rankOf,
@@ -639,7 +628,17 @@ export async function mountDemoScene(
     walk.y,
     walk.floor,
   );
-  const playerSprite = createSprite(playerDrawable, textures, tileSizePx);
+
+  // Story 1.10 (Artie's direction): the player itself is one generated
+  // tuple through the real pipeline, never the placeholder
+  // `Premade_Character_01.png` crop -- shares `appearanceCache` with the
+  // street crowd (`citizensLayer` below), so a player who happens to
+  // match a crowd member's tuple reuses that texture too (AC5).
+  const appearanceCache = new AppearanceTextureCache(defs);
+  const playerTuple = buildPlayerAppearanceTuple(defs);
+  const playerFrames = await appearanceCache.acquire(playerTuple);
+  const playerSprite = new Sprite(playerFrames.frame("idle", "down", 0));
+  playerSprite.anchor.set(0.5, 1);
   positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, "player");
   const playerEntry: PoolEntry = {
     drawable: playerDrawable,
@@ -711,7 +710,13 @@ export async function mountDemoScene(
   const everyMaskableView = [...members.map((m) => m.view), ...groundContainersByFloor.values()];
   onMasksChecked?.(everyMaskableView.every((view) => view.mask == null));
 
-  onViewTransform?.(ZOOM, world.position.x, world.position.y);
+  // `onViewTransform` fires once, later, after the street crowd's own
+  // camera re-fit below -- never here, while the camera is still only
+  // fitted to the pre-crowd content and about to move again. A caller
+  // reading `window.__bc.viewTransform` the moment it first appears must
+  // see the one, final transform every click/hover computation the rest
+  // of this scene's own lifetime will actually use, never a value that
+  // is about to go stale.
 
   // The derived indexes: real `defs/objects` footprints, colliders and
   // FR148 reach rects (`objectDefs`, resolved from the fetched document
@@ -1032,10 +1037,51 @@ export async function mountDemoScene(
     pointer.refresh();
   });
 
+  // Story 1.10: the street crowd, a second, additive layer under `world`
+  // -- never part of `members`/`poolContainer` (see `citizens.ts`'s own
+  // module doc for why: it must never move this scene's own committed
+  // depth-order goldens). Mounted last, after every signal an existing
+  // e2e spec's own `ready()` gate depends on
+  // (`onOrderChange`/`onPlayerMove`/`onVisibilityChange`/
+  // `onMasksChecked`, and the keyboard itself) has already fired -- those
+  // all run synchronously, in this same function body, before this
+  // `await`; only `mountDemoScene`'s own promise (`onViewTransform`
+  // included, deliberately fired only once, below) waits on the crowd's
+  // own network-bound texture loads. The camera fit above already sized
+  // the canvas to the pre-crowd content; the crowd needs its own second,
+  // one-time re-fit once it exists, since Artie's "nothing this scene
+  // contains may be drawn off-canvas" applies to it too.
+  const citizensLayer = await mountCitizensLayer(
+    world,
+    defs,
+    tileSizePx,
+    appearanceCache,
+    textureFor("sidewalk", textures),
+  );
+  const worldBoundsWithCrowd = world.getLocalBounds();
+  const canvasWidthWithCrowd = Math.ceil(worldBoundsWithCrowd.width * ZOOM) + CANVAS_MARGIN_PX * 2;
+  const canvasHeightWithCrowd =
+    Math.ceil(worldBoundsWithCrowd.height * ZOOM) + CANVAS_MARGIN_PX * 2;
+  app.renderer.resize(canvasWidthWithCrowd, canvasHeightWithCrowd);
+  world.scale.set(ZOOM);
+  world.position.set(
+    CANVAS_MARGIN_PX - worldBoundsWithCrowd.x * ZOOM,
+    CANVAS_MARGIN_PX - worldBoundsWithCrowd.y * ZOOM,
+  );
+  onViewTransform?.(ZOOM, world.position.x, world.position.y);
+
+  // Story 1.10: the one walking citizen's own animation, always
+  // ticking -- unlike the player's own ticker above, this must never
+  // early-return while the player stands still, so it is a second,
+  // independent `app.ticker.add` registration rather than folded into
+  // the one above.
+  app.ticker.add((ticker) => citizensLayer.update(ticker.deltaMS));
+
   return {
     app,
     getRenderOrder: () => renderOrder,
     keyboard,
+    citizensLayer,
     destroy: () => {
       detachKeyboard();
       pointer.detach();

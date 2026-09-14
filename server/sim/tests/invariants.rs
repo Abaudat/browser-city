@@ -7,6 +7,8 @@
 //! disagree, so this file and the matrix cannot drift silently.
 
 use proptest::prelude::*;
+use sim::appearance;
+use sim::generated::defs::{self, Family, Pool};
 use sim::rng::{Rng, seed_from_ids};
 use sim::world::{
     AreaSpec, FloorCollision, FloorSpec, NO_OWNER, Rect, TransitionSpec, WorldSpec, chunk_key,
@@ -27,6 +29,11 @@ pub const INV_WORLD_QUERY_TOTAL: &str =
     "a world query never panics and never wraps, for any i32 coordinate and any floor or layer";
 pub const INV_CELL_OWNERSHIP_DEFINED: &str =
     "every in-bounds cell answers the ownership query, and ids are stable across queries";
+pub const INV_APPEARANCE_DETERMINISTIC_FROM_ID: &str =
+    "the same citizen id always derives the same five-integer appearance tuple";
+pub const INV_APPEARANCE_INDICES_IN_RANGE: &str = "sim::appearance::generate never panics and every non-zero index it returns names a real manifest entry of the matching family";
+pub const INV_KIDS_PARTS_ONLY_ON_KIDS_BODIES: &str =
+    "a kid family tuple only ever contains kid-family parts, and its accessory is always 0";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -44,6 +51,84 @@ proptest! {
         let out_1: Vec<u64> = (0..n).map(|_| rng_1.next_u64()).collect();
         let out_2: Vec<u64> = (0..n).map(|_| rng_2.next_u64()).collect();
         prop_assert_eq!(out_1, out_2);
+    }
+
+    /// `inv_appearance_deterministic_from_id` (FR61): the same citizen id
+    /// and family always derive the same tuple, on any run.
+    #[test]
+    fn inv_appearance_deterministic_from_id(id in any::<u64>(), kid in any::<bool>()) {
+        let family = if kid { Family::Kid } else { Family::Adult };
+        let catalogue = appearance::live_catalogue();
+        let a = appearance::generate(id, family, &catalogue);
+        let b = appearance::generate(id, family, &catalogue);
+        prop_assert_eq!(a, b);
+    }
+
+    /// `inv_appearance_indices_in_range` (FR61): for any u64 citizen id and
+    /// family, `generate` never panics, `body`/`eyes`/`outfit` are always
+    /// non-zero and name a real manifest entry of the matching family
+    /// (`body`/`eyes`/`outfit` additionally from the civilian pool, never
+    /// a costume-pool sheet like the unnaturally coloured bodies/eyes a
+    /// generated citizen must never wear), and a non-zero
+    /// `hairstyle`/`accessory` also names a real entry of that family.
+    #[test]
+    fn inv_appearance_indices_in_range(id in any::<u64>(), kid in any::<bool>()) {
+        let family = if kid { Family::Kid } else { Family::Adult };
+        let catalogue = appearance::live_catalogue();
+        let a = appearance::generate(id, family, &catalogue);
+
+        prop_assert_ne!(a.body, 0);
+        let body_ok = defs::BODIES
+            .iter()
+            .any(|b| b.id == a.body && b.family == family && b.pool == Pool::Civilian);
+        prop_assert!(body_ok);
+
+        prop_assert_ne!(a.eyes, 0);
+        let eyes_ok = defs::EYES
+            .iter()
+            .any(|e| e.id == a.eyes && e.family == family && e.pool == Pool::Civilian);
+        prop_assert!(eyes_ok);
+
+        prop_assert_ne!(a.outfit, 0);
+        let outfit_ok = defs::OUTFITS
+            .iter()
+            .any(|o| o.id == a.outfit && o.family == family && o.pool == Pool::Civilian);
+        prop_assert!(outfit_ok);
+
+        if a.hairstyle != 0 {
+            let hairstyle_ok = defs::HAIRSTYLES
+                .iter()
+                .any(|h| h.id == a.hairstyle && h.family == family);
+            prop_assert!(hairstyle_ok);
+        }
+        if a.accessory != 0 {
+            let accessory_ok = defs::ACCESSORIES
+                .iter()
+                .any(|ac| ac.id == a.accessory && ac.family == family && ac.pool == Pool::Civilian);
+            prop_assert!(accessory_ok);
+        }
+    }
+
+    /// `inv_kids_parts_only_on_kids_bodies` (FR61): a kid tuple never
+    /// contains an adult part, and its accessory is always 0 (no kid
+    /// accessory tables exist).
+    #[test]
+    fn inv_kids_parts_only_on_kids_bodies(id in any::<u64>()) {
+        let catalogue = appearance::live_catalogue();
+        let kid = appearance::generate(id, Family::Kid, &catalogue);
+        prop_assert_eq!(kid.accessory, 0);
+        prop_assert_eq!(defs::BODIES.iter().find(|b| b.id == kid.body).unwrap().family, Family::Kid);
+        prop_assert_eq!(defs::EYES.iter().find(|e| e.id == kid.eyes).unwrap().family, Family::Kid);
+        prop_assert_eq!(defs::OUTFITS.iter().find(|o| o.id == kid.outfit).unwrap().family, Family::Kid);
+        if kid.hairstyle != 0 {
+            prop_assert_eq!(
+                defs::HAIRSTYLES.iter().find(|h| h.id == kid.hairstyle).unwrap().family,
+                Family::Kid
+            );
+        }
+
+        let adult = appearance::generate(id, Family::Adult, &catalogue);
+        prop_assert_eq!(defs::BODIES.iter().find(|b| b.id == adult.body).unwrap().family, Family::Adult);
     }
 }
 

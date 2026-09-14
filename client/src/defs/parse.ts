@@ -8,14 +8,26 @@
 // rejects at build time.
 
 import type {
+  AccessoryDef,
+  AppearanceLayoutDef,
+  AppearanceLayoutRow,
   BalanceDef,
+  BodyDef,
   ChainDef,
   ColliderRect,
   Defs,
+  EyesDef,
+  Family,
+  HairstyleDef,
   ItemDef,
   ObjectDef,
+  OutfitDef,
+  Pool,
   ProfessionDef,
   RecipeDef,
+  SheetSize,
+  Slot,
+  UniformDef,
 } from "./types";
 
 export class DefsParseError extends Error {
@@ -188,6 +200,178 @@ function parseChain(value: unknown, path: string): ChainDef {
   };
 }
 
+function expectFamily(value: unknown, path: string): Family {
+  const s = expectString(value, path);
+  if (s !== "adult" && s !== "kid") fail(`${path}: expected 'adult' or 'kid', got '${s}'`);
+  return s;
+}
+
+function expectPool(value: unknown, path: string): Pool {
+  const s = expectString(value, path);
+  if (s !== "civilian" && s !== "role_only" && s !== "costume") {
+    fail(`${path}: expected 'civilian', 'role_only' or 'costume', got '${s}'`);
+  }
+  return s;
+}
+
+function expectSlot(value: unknown, path: string): Slot {
+  const s = expectString(value, path);
+  if (s !== "face" && s !== "head" && s !== "back" && s !== "torso" && s !== "hands") {
+    fail(`${path}: expected 'face', 'head', 'back', 'torso' or 'hands', got '${s}'`);
+  }
+  return s;
+}
+
+function expectNullableString(value: unknown, path: string): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  return expectString(value, path);
+}
+
+/** Every appearance part id is stored as a `u16` (`sim::appearance::
+ * Appearance` and the `citizen` schema columns): an id above 65535 would
+ * silently truncate into a different part at runtime, so the client
+ * rejects it at parse time exactly like `tools/defs-build` does. */
+const U16_EXCLUSIVE_MAX = 2 ** 16;
+
+function expectAppearanceId(value: unknown, path: string): number {
+  const n = expectU32(value, path);
+  if (n >= U16_EXCLUSIVE_MAX) {
+    fail(`${path}: expected an integer in [0, 2^16) (does not fit in a u16)`);
+  }
+  return n;
+}
+
+/** Id 0 is never a valid declared appearance part id -- it is the
+ * runtime "no layer" sentinel, legal only as a generated hairstyle/
+ * accessory *value*, never as a declared id. */
+function checkAppearanceIdNotZero(id: number, key: string, kind: string): void {
+  if (id === 0) {
+    fail(`${kind} '${key}' declares id 0 -- 0 is reserved as the runtime "no layer" sentinel`);
+  }
+}
+
+function parseBody(value: unknown, path: string): BodyDef {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool"], path);
+  return {
+    id: expectAppearanceId(obj.id, `${path}.id`),
+    key: expectString(obj.key, `${path}.key`),
+    family: expectFamily(obj.family, `${path}.family`),
+    sheet: expectString(obj.sheet, `${path}.sheet`),
+    pool: expectPool(obj.pool, `${path}.pool`),
+  };
+}
+
+function parseEyes(value: unknown, path: string): EyesDef {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool"], path);
+  return {
+    id: expectAppearanceId(obj.id, `${path}.id`),
+    key: expectString(obj.key, `${path}.key`),
+    family: expectFamily(obj.family, `${path}.family`),
+    sheet: expectString(obj.sheet, `${path}.sheet`),
+    pool: expectPool(obj.pool, `${path}.pool`),
+  };
+}
+
+function parseHairstyle(value: unknown, path: string): HairstyleDef {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "style", "color", "rare"], path);
+  return {
+    id: expectAppearanceId(obj.id, `${path}.id`),
+    key: expectString(obj.key, `${path}.key`),
+    family: expectFamily(obj.family, `${path}.family`),
+    sheet: expectString(obj.sheet, `${path}.sheet`),
+    style: expectU32(obj.style, `${path}.style`),
+    color: expectU32(obj.color, `${path}.color`),
+    rare: expectBoolean(obj.rare, `${path}.rare`),
+  };
+}
+
+function parseOutfit(value: unknown, path: string): OutfitDef {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool", "hides_hairstyle"], path);
+  return {
+    id: expectAppearanceId(obj.id, `${path}.id`),
+    key: expectString(obj.key, `${path}.key`),
+    family: expectFamily(obj.family, `${path}.family`),
+    sheet: expectString(obj.sheet, `${path}.sheet`),
+    pool: expectPool(obj.pool, `${path}.pool`),
+    hidesHairstyle: expectBoolean(obj.hides_hairstyle, `${path}.hides_hairstyle`),
+  };
+}
+
+function parseAccessory(value: unknown, path: string): AccessoryDef {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool", "slot"], path);
+  return {
+    id: expectAppearanceId(obj.id, `${path}.id`),
+    key: expectString(obj.key, `${path}.key`),
+    family: expectFamily(obj.family, `${path}.family`),
+    sheet: expectString(obj.sheet, `${path}.sheet`),
+    pool: expectPool(obj.pool, `${path}.pool`),
+    slot: expectSlot(obj.slot, `${path}.slot`),
+  };
+}
+
+function parseAppearanceLayoutRow(value: unknown, path: string): AppearanceLayoutRow {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["animation", "row", "frames_per_direction"], path);
+  return {
+    animation: expectString(obj.animation, `${path}.animation`),
+    row: expectU32(obj.row, `${path}.row`),
+    framesPerDirection: expectU32(obj.frames_per_direction, `${path}.frames_per_direction`),
+  };
+}
+
+function parseSheetSize(value: unknown, path: string): SheetSize {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["width", "height"], path);
+  return {
+    width: expectU32(obj.width, `${path}.width`),
+    height: expectU32(obj.height, `${path}.height`),
+  };
+}
+
+function parseAppearanceLayout(value: unknown, path: string): AppearanceLayoutDef {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(
+    obj,
+    ["id", "key", "family", "cell_width", "cell_height", "directions", "rows", "accepted_sizes"],
+    path,
+  );
+  const rows = expectArray(obj.rows, `${path}.rows`).map((v, i) =>
+    parseAppearanceLayoutRow(v, `${path}.rows[${i}]`),
+  );
+  const acceptedSizes = expectArray(obj.accepted_sizes, `${path}.accepted_sizes`).map((v, i) =>
+    parseSheetSize(v, `${path}.accepted_sizes[${i}]`),
+  );
+  return {
+    id: expectU32(obj.id, `${path}.id`),
+    key: expectString(obj.key, `${path}.key`),
+    family: expectFamily(obj.family, `${path}.family`),
+    cellWidth: expectU32(obj.cell_width, `${path}.cell_width`),
+    cellHeight: expectU32(obj.cell_height, `${path}.cell_height`),
+    directions: expectStringArray(obj.directions, `${path}.directions`),
+    rows,
+    acceptedSizes,
+  };
+}
+
+function parseUniform(value: unknown, path: string): UniformDef {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["id", "key", "profession", "outfit", "accessory"], path);
+  const outfit = expectNullableString(obj.outfit, `${path}.outfit`);
+  const accessory = expectNullableString(obj.accessory, `${path}.accessory`);
+  return {
+    id: expectU32(obj.id, `${path}.id`),
+    key: expectString(obj.key, `${path}.key`),
+    profession: expectString(obj.profession, `${path}.profession`),
+    ...(outfit !== undefined ? { outfit } : {}),
+    ...(accessory !== undefined ? { accessory } : {}),
+  };
+}
+
 function parseBalance(value: unknown, path: string): BalanceDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(obj, ["key", "value", "min", "max"], path);
@@ -236,6 +420,13 @@ export function parseDefs(data: unknown): Defs {
       "professions",
       "chains",
       "balance",
+      "bodies",
+      "eyes",
+      "hairstyles",
+      "outfits",
+      "accessories",
+      "appearance_layouts",
+      "uniforms",
     ],
     "$",
   );
@@ -265,16 +456,102 @@ export function parseDefs(data: unknown): Defs {
   const balance = expectArray(root.balance, "$.balance").map((v, i) =>
     parseBalance(v, `$.balance[${i}]`),
   );
+  const bodies = expectArray(root.bodies, "$.bodies").map((v, i) => parseBody(v, `$.bodies[${i}]`));
+  const eyes = expectArray(root.eyes, "$.eyes").map((v, i) => parseEyes(v, `$.eyes[${i}]`));
+  const hairstyles = expectArray(root.hairstyles, "$.hairstyles").map((v, i) =>
+    parseHairstyle(v, `$.hairstyles[${i}]`),
+  );
+  const outfits = expectArray(root.outfits, "$.outfits").map((v, i) =>
+    parseOutfit(v, `$.outfits[${i}]`),
+  );
+  const accessories = expectArray(root.accessories, "$.accessories").map((v, i) =>
+    parseAccessory(v, `$.accessories[${i}]`),
+  );
+  const appearanceLayouts = expectArray(root.appearance_layouts, "$.appearance_layouts").map(
+    (v, i) => parseAppearanceLayout(v, `$.appearance_layouts[${i}]`),
+  );
+  const uniforms = expectArray(root.uniforms, "$.uniforms").map((v, i) =>
+    parseUniform(v, `$.uniforms[${i}]`),
+  );
 
   checkNoDuplicateIdsOrKeys(objects, "object");
   checkNoDuplicateIdsOrKeys(items, "item");
   checkNoDuplicateIdsOrKeys(recipes, "recipe");
   checkNoDuplicateIdsOrKeys(professions, "profession");
   checkNoDuplicateIdsOrKeys(chains, "chain");
+  checkNoDuplicateIdsOrKeys(bodies, "body");
+  checkNoDuplicateIdsOrKeys(eyes, "eyes");
+  checkNoDuplicateIdsOrKeys(hairstyles, "hairstyle");
+  checkNoDuplicateIdsOrKeys(outfits, "outfit");
+  checkNoDuplicateIdsOrKeys(accessories, "accessory");
+  checkNoDuplicateIdsOrKeys(appearanceLayouts, "appearance_layout");
+  checkNoDuplicateIdsOrKeys(uniforms, "uniform");
   const seenBalanceKeys = new Set<string>();
   for (const entry of balance) {
     if (seenBalanceKeys.has(entry.key)) fail(`duplicate balance key '${entry.key}'`);
     seenBalanceKeys.add(entry.key);
+  }
+
+  for (const b of bodies) checkAppearanceIdNotZero(b.id, b.key, "body");
+  for (const e of eyes) checkAppearanceIdNotZero(e.id, e.key, "eyes");
+  for (const h of hairstyles) checkAppearanceIdNotZero(h.id, h.key, "hairstyle");
+  for (const o of outfits) checkAppearanceIdNotZero(o.id, o.key, "outfit");
+  for (const a of accessories) checkAppearanceIdNotZero(a.id, a.key, "accessory");
+  for (const l of appearanceLayouts) checkAppearanceIdNotZero(l.id, l.key, "appearance_layout");
+  for (const u of uniforms) checkAppearanceIdNotZero(u.id, u.key, "uniform");
+
+  const layoutFamilies = new Set<string>();
+  for (const layout of appearanceLayouts) {
+    if (layoutFamilies.has(layout.family)) {
+      fail(
+        `appearance_layout '${layout.key}' declares family '${layout.family}' but it is already covered -- exactly one layout per family`,
+      );
+    }
+    layoutFamilies.add(layout.family);
+  }
+  for (const part of [...bodies, ...eyes, ...hairstyles, ...outfits, ...accessories]) {
+    if (!layoutFamilies.has(part.family)) {
+      fail(
+        `'${part.key}' declares family '${part.family}' but no appearance_layout entry declares that family`,
+      );
+    }
+  }
+
+  const professionKeysForUniforms = new Set(professions.map((p) => p.key));
+  const outfitByKey = new Map(outfits.map((o) => [o.key, o]));
+  const accessoryByKey = new Map(accessories.map((a) => [a.key, a]));
+  const seenUniformProfessions = new Set<string>();
+  for (const uniform of uniforms) {
+    if (!professionKeysForUniforms.has(uniform.profession)) {
+      fail(`uniform '${uniform.key}' names unknown profession '${uniform.profession}'`);
+    }
+    if (seenUniformProfessions.has(uniform.profession)) {
+      fail(
+        `uniform '${uniform.key}' duplicates profession '${uniform.profession}' -- exactly one uniform per profession`,
+      );
+    }
+    seenUniformProfessions.add(uniform.profession);
+    if (uniform.outfit === undefined && uniform.accessory === undefined) {
+      fail(`uniform '${uniform.key}' overrides neither outfit nor accessory`);
+    }
+    if (uniform.outfit !== undefined) {
+      const def = outfitByKey.get(uniform.outfit);
+      if (!def) fail(`uniform '${uniform.key}' names unknown outfit '${uniform.outfit}'`);
+      else if (def.family !== "adult" || def.pool !== "role_only") {
+        fail(
+          `uniform '${uniform.key}' names outfit '${uniform.outfit}' which is not an adult role_only outfit`,
+        );
+      }
+    }
+    if (uniform.accessory !== undefined) {
+      const def = accessoryByKey.get(uniform.accessory);
+      if (!def) fail(`uniform '${uniform.key}' names unknown accessory '${uniform.accessory}'`);
+      else if (def.family !== "adult" || def.pool !== "role_only") {
+        fail(
+          `uniform '${uniform.key}' names accessory '${uniform.accessory}' which is not an adult role_only accessory`,
+        );
+      }
+    }
   }
 
   const itemKeys = new Set(items.map((i) => i.key));
@@ -321,6 +598,13 @@ export function parseDefs(data: unknown): Defs {
     professions,
     chains,
     balance,
+    bodies,
+    eyes,
+    hairstyles,
+    outfits,
+    accessories,
+    appearanceLayouts,
+    uniforms,
   };
 }
 
@@ -417,6 +701,40 @@ export function canonicalDump(defs: Defs): string {
   }
   for (const b of defs.balance) {
     lines.push(`balance ${b.key} value=${b.value} min=${b.min} max=${b.max}`);
+  }
+  for (const b of defs.bodies) {
+    lines.push(`body ${b.key} id=${b.id} family=${b.family} pool=${b.pool} sheet=${b.sheet}`);
+  }
+  for (const e of defs.eyes) {
+    lines.push(`eyes ${e.key} id=${e.id} family=${e.family} pool=${e.pool} sheet=${e.sheet}`);
+  }
+  for (const h of defs.hairstyles) {
+    lines.push(
+      `hairstyle ${h.key} id=${h.id} family=${h.family} sheet=${h.sheet} style=${h.style} color=${h.color} rare=${h.rare}`,
+    );
+  }
+  for (const o of defs.outfits) {
+    lines.push(
+      `outfit ${o.key} id=${o.id} family=${o.family} sheet=${o.sheet} pool=${o.pool} hides_hairstyle=${o.hidesHairstyle}`,
+    );
+  }
+  for (const a of defs.accessories) {
+    lines.push(
+      `accessory ${a.key} id=${a.id} family=${a.family} sheet=${a.sheet} pool=${a.pool} slot=${a.slot}`,
+    );
+  }
+  for (const l of defs.appearanceLayouts) {
+    const directions = l.directions.join(",");
+    const rows = l.rows.map((r) => `${r.animation}:${r.row}:${r.framesPerDirection}`).join(",");
+    const acceptedSizes = l.acceptedSizes.map((s) => `${s.width}x${s.height}`).join(",");
+    lines.push(
+      `appearance_layout ${l.key} id=${l.id} family=${l.family} cell_width=${l.cellWidth} cell_height=${l.cellHeight} directions=[${directions}] rows=[${rows}] accepted_sizes=[${acceptedSizes}]`,
+    );
+  }
+  for (const u of defs.uniforms) {
+    lines.push(
+      `uniform ${u.key} id=${u.id} profession=${u.profession} outfit=${u.outfit ?? "none"} accessory=${u.accessory ?? "none"}`,
+    );
   }
   lines.sort();
   return `${lines.join("\n")}\n`;

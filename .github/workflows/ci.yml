@@ -86,12 +86,19 @@ jobs:
               - '.github/**'
               - 'fixtures/**'
               - 'client/public/defs/defs.json'
+              # Story 1.10: the client loads character-part sheets straight
+              # out of this subtree at runtime (the same idiom story 1.6's
+              # demo scene already uses for other art).
+              - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
+              - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
             e2e:
               - 'server/**'
               - 'client/**'
               - 'scripts/**'
               - '.github/**'
               - 'fixtures/**'
+              - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
+              - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
             defs:
               - 'defs/**'
               - 'tools/defs-build/**'
@@ -99,6 +106,11 @@ jobs:
               - 'client/public/defs/defs.json'
               - 'scripts/**'
               - '.github/**'
+              # Story 1.10: tools/defs-build reads these PNGs' own IHDR to
+              # verify the appearance layout invariant -- a PR that only
+              # swaps a part sheet must still run that check.
+              - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
+              - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
               # tools/defs-build/tests/shared_malformed_cases.rs does
               # include_str!(this file) -- a PR that only edits the shared
               # case list must still run the Rust half of the drift guard,

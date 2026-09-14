@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  exposeAppearanceCompareForE2e,
+  recordAppearanceTextureIdsForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerPositionForE2e,
@@ -137,6 +139,53 @@ describe("recordMasksCheckedForE2e", () => {
     vi.stubEnv("DEV", false);
 
     recordMasksCheckedForE2e(true);
+
+    expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("recordAppearanceTextureIdsForE2e", () => {
+  it("stores a copy of the ids map and the distinct count", () => {
+    const ids = { "adult-0": 0, "adult-1": 0, "adult-2": 1 };
+    recordAppearanceTextureIdsForE2e(ids, 2);
+    expect(window.__bc?.appearanceTextureIds).toEqual(ids);
+    expect(window.__bc?.appearanceTextureIds).not.toBe(ids);
+    expect(window.__bc?.appearanceDistinctTextureCount).toBe(2);
+  });
+
+  it("creates the buffer lazily rather than requiring pre-existing state", () => {
+    expect(window.__bc).toBeUndefined();
+    recordAppearanceTextureIdsForE2e({ a: 0 }, 1);
+    expect(window.__bc?.appearanceTextureIds).toEqual({ a: 0 });
+  });
+
+  it("does nothing when DEV is false", () => {
+    vi.stubEnv("DEV", false);
+
+    recordAppearanceTextureIdsForE2e({ a: 0 }, 1);
+
+    expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("exposeAppearanceCompareForE2e", () => {
+  it("stores the callable under window.__bc.appearanceCompare", () => {
+    const compare = vi.fn();
+    exposeAppearanceCompareForE2e(compare);
+    expect(window.__bc?.appearanceCompare).toBe(compare);
+  });
+
+  it("creates the buffer lazily rather than requiring pre-existing state", () => {
+    expect(window.__bc).toBeUndefined();
+    const compare = vi.fn();
+    exposeAppearanceCompareForE2e(compare);
+    expect(window.__bc?.appearanceCompare).toBe(compare);
+  });
+
+  it("does nothing when DEV is false", () => {
+    vi.stubEnv("DEV", false);
+
+    exposeAppearanceCompareForE2e(vi.fn());
 
     expect(window.__bc).toBeUndefined();
   });

@@ -26,7 +26,22 @@ export default defineConfig({
       // `pixi-order.ts`, which is sprite/container wiring and nothing
       // that decides an order or a position -- stays in scope; never
       // lower the bar or exclude a pure module.
-      exclude: ["src/net/bindings/**", "src/render/bootstrap.ts", "src/demo/**"],
+      // Story 1.10: `composite-canvas.ts` needs a real `OffscreenCanvas`
+      // (an `OffscreenCanvas`-less node test cannot exercise it
+      // meaningfully) and `part-sheets.ts` needs a real Vite
+      // `import.meta.glob`/`fetch` runtime -- both thin adapters over the
+      // pure logic in `composite.ts`/`frame-rect.ts`/`resolve-layers.ts`/
+      // `appearance-cache.ts`, which stay in scope. `appearance-texture.ts`
+      // is the adapter composing those two together plus the cache; no
+      // logic of its own remains once its inputs are each covered.
+      exclude: [
+        "src/net/bindings/**",
+        "src/render/bootstrap.ts",
+        "src/demo/**",
+        "src/render/appearance/composite-canvas.ts",
+        "src/render/appearance/part-sheets.ts",
+        "src/render/appearance/appearance-texture.ts",
+      ],
       thresholds: {
         lines: 90,
         branches: 90,

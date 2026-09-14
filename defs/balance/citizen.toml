@@ -3,3 +3,15 @@ key = "citizen.bar_decay.rest"
 value = 10
 min = 0
 max = 100
+
+[[balance]]
+key = "citizen.appearance.accessory_none_chance"
+value = 70
+min = 0
+max = 100
+
+[[balance]]
+key = "citizen.appearance.hair_rare_chance"
+value = 15
+min = 0
+max = 100

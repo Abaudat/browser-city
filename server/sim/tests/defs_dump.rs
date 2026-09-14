@@ -12,6 +12,31 @@ use sim::generated::defs;
 
 const GOLDEN: &str = include_str!("../../../fixtures/defs-dump.v1.golden");
 
+fn family_str(family: defs::Family) -> &'static str {
+    match family {
+        defs::Family::Adult => "adult",
+        defs::Family::Kid => "kid",
+    }
+}
+
+fn pool_str(pool: defs::Pool) -> &'static str {
+    match pool {
+        defs::Pool::Civilian => "civilian",
+        defs::Pool::RoleOnly => "role_only",
+        defs::Pool::Costume => "costume",
+    }
+}
+
+fn slot_str(slot: defs::Slot) -> &'static str {
+    match slot {
+        defs::Slot::Face => "face",
+        defs::Slot::Head => "head",
+        defs::Slot::Back => "back",
+        defs::Slot::Torso => "torso",
+        defs::Slot::Hands => "hands",
+    }
+}
+
 fn canonical_dump() -> String {
     let mut lines: Vec<String> = Vec::new();
 
@@ -60,6 +85,94 @@ fn canonical_dump() -> String {
         lines.push(format!(
             "balance {} value={} min={} max={}",
             b.key, b.value, b.min, b.max
+        ));
+    }
+    for b in defs::BODIES {
+        lines.push(format!(
+            "body {} id={} family={} pool={} sheet={}",
+            b.key,
+            b.id,
+            family_str(b.family),
+            pool_str(b.pool),
+            b.sheet
+        ));
+    }
+    for e in defs::EYES {
+        lines.push(format!(
+            "eyes {} id={} family={} pool={} sheet={}",
+            e.key,
+            e.id,
+            family_str(e.family),
+            pool_str(e.pool),
+            e.sheet
+        ));
+    }
+    for h in defs::HAIRSTYLES {
+        lines.push(format!(
+            "hairstyle {} id={} family={} sheet={} style={} color={} rare={}",
+            h.key,
+            h.id,
+            family_str(h.family),
+            h.sheet,
+            h.style,
+            h.color,
+            h.rare
+        ));
+    }
+    for o in defs::OUTFITS {
+        lines.push(format!(
+            "outfit {} id={} family={} sheet={} pool={} hides_hairstyle={}",
+            o.key,
+            o.id,
+            family_str(o.family),
+            o.sheet,
+            pool_str(o.pool),
+            o.hides_hairstyle
+        ));
+    }
+    for a in defs::ACCESSORIES {
+        lines.push(format!(
+            "accessory {} id={} family={} sheet={} pool={} slot={}",
+            a.key,
+            a.id,
+            family_str(a.family),
+            a.sheet,
+            pool_str(a.pool),
+            slot_str(a.slot)
+        ));
+    }
+    for l in defs::APPEARANCE_LAYOUTS {
+        let directions = l.directions.join(",");
+        let rows: Vec<String> = l
+            .rows
+            .iter()
+            .map(|r| format!("{}:{}:{}", r.animation, r.row, r.frames_per_direction))
+            .collect();
+        let accepted_sizes: Vec<String> = l
+            .accepted_sizes
+            .iter()
+            .map(|(w, h)| format!("{w}x{h}"))
+            .collect();
+        lines.push(format!(
+            "appearance_layout {} id={} family={} cell_width={} cell_height={} directions=[{}] rows=[{}] accepted_sizes=[{}]",
+            l.key,
+            l.id,
+            family_str(l.family),
+            l.cell_width,
+            l.cell_height,
+            directions,
+            rows.join(","),
+            accepted_sizes.join(",")
+        ));
+    }
+    for u in defs::UNIFORMS {
+        lines.push(format!(
+            "uniform {} id={} profession={} outfit={} accessory={}",
+            u.key,
+            u.id,
+            u.profession,
+            u.outfit.unwrap_or("none"),
+            u.accessory.unwrap_or("none")
         ));
     }
 

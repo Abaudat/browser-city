@@ -5,7 +5,7 @@
 //! [`crate::emit`] reads. Pure over an already-parsed tree; no filesystem
 //! access.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::error::DefsError;
 use crate::model::*;
@@ -277,6 +277,330 @@ fn check_object_interact_at(entries: &[ObjectEntry]) -> Result<(), DefsError> {
     Ok(())
 }
 
+/// Id `0` is never issued for any appearance part kind -- it is the
+/// runtime sentinel for "no layer" (legal only for a generated
+/// hairstyle/accessory *value*, never for a declared def), so a declared
+/// id of `0` here is always a mistake, not a valid entry.
+fn check_appearance_id_not_zero<T: IdKeyEntry>(entries: &[T], kind: &str) -> Result<(), DefsError> {
+    for e in entries {
+        if e.id().value == 0 {
+            return Err(DefsError::new(
+                e.path(),
+                e.id().line,
+                e.id().col,
+                format!(
+                    "{kind} '{}' declares id 0 -- 0 is reserved as the runtime \"no layer\" sentinel and is never a declared id",
+                    e.key().value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A body/eyes/hairstyle/outfit/accessory id is stored as `u16`
+/// (`sim::appearance::Appearance` and the `citizen` schema columns): an
+/// id above 65535 would silently truncate into a different part, so it
+/// is rejected here rather than at the cast.
+const APPEARANCE_ID_MAX: u32 = u16::MAX as u32;
+
+fn check_appearance_id_u16<T: IdKeyEntry>(entries: &[T], kind: &str) -> Result<(), DefsError> {
+    for e in entries {
+        if e.id().value > APPEARANCE_ID_MAX {
+            return Err(DefsError::new(
+                e.path(),
+                e.id().line,
+                e.id().col,
+                format!(
+                    "{kind} '{}' declares id {} which does not fit in a u16 (max {APPEARANCE_ID_MAX})",
+                    e.key().value,
+                    e.id().value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A layout is only ever shared within one family, so every part sheet's
+/// `(animation, direction, frame)` cells must fit inside its own family's
+/// declared grid -- checked against the sheet's own `IHDR` dimensions
+/// (`sheet_dims`, read by `fsio` from the real file), never assumed from
+/// a byte count or a vendor's own claim.
+fn layout_for_family(
+    layouts: &[AppearanceLayoutEntry],
+    family: Family,
+) -> Option<&AppearanceLayoutEntry> {
+    layouts.iter().find(|l| l.family.value == family)
+}
+
+/// The part-agnostic fields [`check_sheet_fits_layout`] needs -- bundled so
+/// that function stays under clippy's argument-count lint despite naming a
+/// path, a span, a kind, a key, a family and a sheet all independently.
+struct SheetCheck<'a> {
+    path: &'a std::path::Path,
+    line: usize,
+    col: usize,
+    kind: &'a str,
+    key: &'a str,
+    family: Family,
+    sheet: &'a str,
+}
+
+fn check_sheet_fits_layout(
+    part: SheetCheck<'_>,
+    layouts: &[AppearanceLayoutEntry],
+    sheet_dims: &BTreeMap<String, (u32, u32)>,
+) -> Result<(), DefsError> {
+    let SheetCheck {
+        path,
+        line,
+        col,
+        kind,
+        key,
+        family,
+        sheet,
+    } = part;
+    let Some(layout) = layout_for_family(layouts, family) else {
+        return Err(DefsError::new(
+            path,
+            line,
+            col,
+            format!(
+                "{kind} '{key}' declares family '{}' but no [[appearance_layout]] entry declares that family",
+                family.as_str()
+            ),
+        ));
+    };
+    let Some(&(width, height)) = sheet_dims.get(sheet) else {
+        return Err(DefsError::new(
+            path,
+            line,
+            col,
+            format!("{kind} '{key}' names sheet '{sheet}' but its dimensions were never read"),
+        ));
+    };
+    if !layout.accepted_sizes.value.contains(&(width, height)) {
+        let accepted: Vec<String> = layout
+            .accepted_sizes
+            .value
+            .iter()
+            .map(|(w, h)| format!("{w}x{h}"))
+            .collect();
+        return Err(DefsError::new(
+            path,
+            line,
+            col,
+            format!(
+                "{kind} '{key}' sheet '{sheet}' is {width}x{height}px but family '{}' only accepts [{}]",
+                family.as_str(),
+                accepted.join(", ")
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Exactly one `[[appearance_layout]]` per family (a layout is shared
+/// *within* a family, so two competing layouts for the same family would
+/// make "the" family layout ambiguous), a non-empty `directions` and
+/// `accepted_sizes` list, and every declared row fits inside every
+/// declared accepted size -- a layout that names a size too small for its
+/// own grid is a defs-authoring mistake, not something to catch only once
+/// a sheet happens to use that size.
+fn check_one_layout_per_family(layouts: &[AppearanceLayoutEntry]) -> Result<(), DefsError> {
+    let mut seen: HashMap<Family, &AppearanceLayoutEntry> = HashMap::new();
+    for l in layouts {
+        if let Some(prev) = seen.get(&l.family.value) {
+            return Err(DefsError::new(
+                &l.path,
+                l.family.line,
+                l.family.col,
+                format!(
+                    "appearance_layout '{}' declares family '{}' but '{}' already declared it -- exactly one layout per family",
+                    l.key.value,
+                    l.family.value.as_str(),
+                    prev.key.value
+                ),
+            ));
+        }
+        seen.insert(l.family.value, l);
+        if l.directions.is_empty() {
+            return Err(DefsError::new(
+                &l.path,
+                l.key.line,
+                l.key.col,
+                format!("appearance_layout '{}' declares no directions", l.key.value),
+            ));
+        }
+        if l.accepted_sizes.value.is_empty() {
+            return Err(DefsError::new(
+                &l.path,
+                l.accepted_sizes.line,
+                l.accepted_sizes.col,
+                format!(
+                    "appearance_layout '{}' declares no accepted_sizes",
+                    l.key.value
+                ),
+            ));
+        }
+        for r in &l.rows {
+            if r.frames_per_direction == 0 {
+                return Err(DefsError::new(
+                    &l.path,
+                    l.key.line,
+                    l.key.col,
+                    format!(
+                        "appearance_layout '{}' row '{}' declares 0 frames_per_direction",
+                        l.key.value, r.animation
+                    ),
+                ));
+            }
+        }
+        let num_directions = l.directions.len() as u32;
+        let needed_width = l
+            .rows
+            .iter()
+            .map(|r| r.frames_per_direction * num_directions * l.cell_width)
+            .max()
+            .unwrap_or(0);
+        let needed_height = l
+            .rows
+            .iter()
+            .map(|r| (r.row + 1) * l.cell_height)
+            .max()
+            .unwrap_or(0);
+        for &(width, height) in &l.accepted_sizes.value {
+            if width < needed_width || height < needed_height {
+                return Err(DefsError::new(
+                    &l.path,
+                    l.accepted_sizes.line,
+                    l.accepted_sizes.col,
+                    format!(
+                        "appearance_layout '{}' declares accepted size {width}x{height}px but its own grid needs at least {needed_width}x{needed_height}px",
+                        l.key.value
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A `[[uniform]]` is a fixed, permanent override for one profession's
+/// outfit and/or accessory layer -- never a pool, never re-derived.
+/// Every reference is validated exactly like a `chain`'s profession
+/// links: the profession must exist, the override must name something
+/// real, and whatever it names must actually be reserved for role use
+/// (`pool = "role_only"`) on the adult family -- never a civilian part
+/// (which would make it indistinguishable from a
+/// random roll) and never a costume (dead content with no role to wear
+/// it).
+fn check_uniforms(
+    uniforms: &[UniformEntry],
+    profession_keys: &BTreeSet<&str>,
+    outfits: &[OutfitEntry],
+    accessories: &[AccessoryEntry],
+) -> Result<(), DefsError> {
+    let mut seen_profession: HashMap<&str, &UniformEntry> = HashMap::new();
+    for u in uniforms {
+        if !profession_keys.contains(u.profession.value.as_str()) {
+            return Err(DefsError::new(
+                &u.path,
+                u.profession.line,
+                u.profession.col,
+                format!(
+                    "uniform '{}' names unknown profession '{}'",
+                    u.key.value, u.profession.value
+                ),
+            ));
+        }
+        if let Some(prev) = seen_profession.get(u.profession.value.as_str()) {
+            return Err(DefsError::new(
+                &u.path,
+                u.profession.line,
+                u.profession.col,
+                format!(
+                    "uniform '{}' duplicates profession '{}' already covered by uniform '{}' -- exactly one uniform per profession",
+                    u.key.value, u.profession.value, prev.key.value
+                ),
+            ));
+        }
+        seen_profession.insert(u.profession.value.as_str(), u);
+
+        if u.outfit.is_none() && u.accessory.is_none() {
+            return Err(DefsError::new(
+                &u.path,
+                u.key.line,
+                u.key.col,
+                format!(
+                    "uniform '{}' overrides neither outfit nor accessory -- a uniform overriding nothing is meaningless",
+                    u.key.value
+                ),
+            ));
+        }
+
+        if let Some(outfit_key) = &u.outfit {
+            let found = outfits.iter().find(|o| &o.key.value == outfit_key);
+            match found {
+                None => {
+                    return Err(DefsError::new(
+                        &u.path,
+                        u.key.line,
+                        u.key.col,
+                        format!(
+                            "uniform '{}' names unknown outfit '{outfit_key}'",
+                            u.key.value
+                        ),
+                    ));
+                }
+                Some(o) if o.family.value != Family::Adult || o.pool.value != Pool::RoleOnly => {
+                    return Err(DefsError::new(
+                        &u.path,
+                        u.key.line,
+                        u.key.col,
+                        format!(
+                            "uniform '{}' names outfit '{outfit_key}' which is not an adult role_only outfit",
+                            u.key.value
+                        ),
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
+
+        if let Some(accessory_key) = &u.accessory {
+            let found = accessories.iter().find(|a| &a.key.value == accessory_key);
+            match found {
+                None => {
+                    return Err(DefsError::new(
+                        &u.path,
+                        u.key.line,
+                        u.key.col,
+                        format!(
+                            "uniform '{}' names unknown accessory '{accessory_key}'",
+                            u.key.value
+                        ),
+                    ));
+                }
+                Some(a) if a.family.value != Family::Adult || a.pool.value != Pool::RoleOnly => {
+                    return Err(DefsError::new(
+                        &u.path,
+                        u.key.line,
+                        u.key.col,
+                        format!(
+                            "uniform '{}' names accessory '{accessory_key}' which is not an adult role_only accessory",
+                            u.key.value
+                        ),
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
+    }
+    Ok(())
+}
+
 fn check_balance_range(entries: &[BalanceEntry]) -> Result<(), DefsError> {
     for e in entries {
         if e.value.value < e.min || e.value.value > e.max {
@@ -299,13 +623,29 @@ fn check_balance_range(entries: &[BalanceEntry]) -> Result<(), DefsError> {
 /// output regardless of file-read order). Stops at the first violation --
 /// "no partial output" is a property of when `emit` is called (only after
 /// this returns `Ok`), not of collecting every error at once.
-pub fn validate(raw: &RawDefs) -> Result<Defs, DefsError> {
+///
+/// `sheet_dims` carries the `(width, height)` `fsio::read_png_dims` read
+/// from every appearance part's own `sheet` file -- validation never
+/// touches the filesystem itself (Quentin's direction), so a caller with
+/// no appearance parts in its tree (every test fixture but story 1.10's
+/// own) passes an empty map.
+pub fn validate(
+    raw: &RawDefs,
+    sheet_dims: &BTreeMap<String, (u32, u32)>,
+) -> Result<Defs, DefsError> {
     check_key_format(&raw.objects, "object")?;
     check_key_format(&raw.items, "item")?;
     check_key_format(&raw.recipes, "recipe")?;
     check_key_format(&raw.professions, "profession")?;
     check_key_format(&raw.chains, "chain")?;
     check_balance_key_format(&raw.balance)?;
+    check_key_format(&raw.bodies, "body")?;
+    check_key_format(&raw.eyes, "eyes")?;
+    check_key_format(&raw.hairstyles, "hairstyle")?;
+    check_key_format(&raw.outfits, "outfit")?;
+    check_key_format(&raw.accessories, "accessory")?;
+    check_key_format(&raw.appearance_layouts, "appearance_layout")?;
+    check_key_format(&raw.uniforms, "uniform")?;
 
     check_id_key_dupes(&raw.objects, "object")?;
     check_id_key_dupes(&raw.items, "item")?;
@@ -313,6 +653,27 @@ pub fn validate(raw: &RawDefs) -> Result<Defs, DefsError> {
     check_id_key_dupes(&raw.professions, "profession")?;
     check_id_key_dupes(&raw.chains, "chain")?;
     check_balance_key_dupes(&raw.balance)?;
+    check_id_key_dupes(&raw.bodies, "body")?;
+    check_id_key_dupes(&raw.eyes, "eyes")?;
+    check_id_key_dupes(&raw.hairstyles, "hairstyle")?;
+    check_id_key_dupes(&raw.outfits, "outfit")?;
+    check_id_key_dupes(&raw.accessories, "accessory")?;
+    check_id_key_dupes(&raw.appearance_layouts, "appearance_layout")?;
+    check_id_key_dupes(&raw.uniforms, "uniform")?;
+
+    check_appearance_id_not_zero(&raw.bodies, "body")?;
+    check_appearance_id_not_zero(&raw.eyes, "eyes")?;
+    check_appearance_id_not_zero(&raw.hairstyles, "hairstyle")?;
+    check_appearance_id_not_zero(&raw.outfits, "outfit")?;
+    check_appearance_id_not_zero(&raw.accessories, "accessory")?;
+    check_appearance_id_not_zero(&raw.appearance_layouts, "appearance_layout")?;
+    check_appearance_id_not_zero(&raw.uniforms, "uniform")?;
+
+    check_appearance_id_u16(&raw.bodies, "body")?;
+    check_appearance_id_u16(&raw.eyes, "eyes")?;
+    check_appearance_id_u16(&raw.hairstyles, "hairstyle")?;
+    check_appearance_id_u16(&raw.outfits, "outfit")?;
+    check_appearance_id_u16(&raw.accessories, "accessory")?;
 
     check_object_colliders(&raw.objects)?;
     check_object_interact_at(&raw.objects)?;
@@ -328,6 +689,89 @@ pub fn validate(raw: &RawDefs) -> Result<Defs, DefsError> {
     check_chain_profession_refs(&raw.chains, &profession_keys)?;
 
     check_balance_range(&raw.balance)?;
+
+    check_one_layout_per_family(&raw.appearance_layouts)?;
+    for b in &raw.bodies {
+        check_sheet_fits_layout(
+            SheetCheck {
+                path: &b.path,
+                line: b.sheet.line,
+                col: b.sheet.col,
+                kind: "body",
+                key: &b.key.value,
+                family: b.family.value,
+                sheet: &b.sheet.value,
+            },
+            &raw.appearance_layouts,
+            sheet_dims,
+        )?;
+    }
+    for e in &raw.eyes {
+        check_sheet_fits_layout(
+            SheetCheck {
+                path: &e.path,
+                line: e.sheet.line,
+                col: e.sheet.col,
+                kind: "eyes",
+                key: &e.key.value,
+                family: e.family.value,
+                sheet: &e.sheet.value,
+            },
+            &raw.appearance_layouts,
+            sheet_dims,
+        )?;
+    }
+    for h in &raw.hairstyles {
+        check_sheet_fits_layout(
+            SheetCheck {
+                path: &h.path,
+                line: h.sheet.line,
+                col: h.sheet.col,
+                kind: "hairstyle",
+                key: &h.key.value,
+                family: h.family.value,
+                sheet: &h.sheet.value,
+            },
+            &raw.appearance_layouts,
+            sheet_dims,
+        )?;
+    }
+    for o in &raw.outfits {
+        check_sheet_fits_layout(
+            SheetCheck {
+                path: &o.path,
+                line: o.sheet.line,
+                col: o.sheet.col,
+                kind: "outfit",
+                key: &o.key.value,
+                family: o.family.value,
+                sheet: &o.sheet.value,
+            },
+            &raw.appearance_layouts,
+            sheet_dims,
+        )?;
+    }
+    for a in &raw.accessories {
+        check_sheet_fits_layout(
+            SheetCheck {
+                path: &a.path,
+                line: a.sheet.line,
+                col: a.sheet.col,
+                kind: "accessory",
+                key: &a.key.value,
+                family: a.family.value,
+                sheet: &a.sheet.value,
+            },
+            &raw.appearance_layouts,
+            sheet_dims,
+        )?;
+    }
+    check_uniforms(
+        &raw.uniforms,
+        &profession_keys,
+        &raw.outfits,
+        &raw.accessories,
+    )?;
 
     let mut objects: Vec<ObjectDef> = raw
         .objects
@@ -421,6 +865,112 @@ pub fn validate(raw: &RawDefs) -> Result<Defs, DefsError> {
         .collect();
     balance.sort_by(|a, b| a.key.cmp(&b.key));
 
+    let mut bodies: Vec<BodyDef> = raw
+        .bodies
+        .iter()
+        .map(|b| BodyDef {
+            id: b.id.value as u16,
+            key: b.key.value.clone(),
+            family: b.family.value,
+            sheet: b.sheet.value.clone(),
+            pool: b.pool.value,
+        })
+        .collect();
+    bodies.sort_by(|a, b| a.key.cmp(&b.key));
+
+    let mut eyes: Vec<EyesDef> = raw
+        .eyes
+        .iter()
+        .map(|e| EyesDef {
+            id: e.id.value as u16,
+            key: e.key.value.clone(),
+            family: e.family.value,
+            sheet: e.sheet.value.clone(),
+            pool: e.pool.value,
+        })
+        .collect();
+    eyes.sort_by(|a, b| a.key.cmp(&b.key));
+
+    let mut hairstyles: Vec<HairstyleDef> = raw
+        .hairstyles
+        .iter()
+        .map(|h| HairstyleDef {
+            id: h.id.value as u16,
+            key: h.key.value.clone(),
+            family: h.family.value,
+            sheet: h.sheet.value.clone(),
+            style: h.style,
+            color: h.color,
+            rare: h.rare,
+        })
+        .collect();
+    hairstyles.sort_by(|a, b| a.key.cmp(&b.key));
+
+    let mut outfits: Vec<OutfitDef> = raw
+        .outfits
+        .iter()
+        .map(|o| OutfitDef {
+            id: o.id.value as u16,
+            key: o.key.value.clone(),
+            family: o.family.value,
+            sheet: o.sheet.value.clone(),
+            pool: o.pool.value,
+            hides_hairstyle: o.hides_hairstyle,
+        })
+        .collect();
+    outfits.sort_by(|a, b| a.key.cmp(&b.key));
+
+    let mut accessories: Vec<AccessoryDef> = raw
+        .accessories
+        .iter()
+        .map(|a| AccessoryDef {
+            id: a.id.value as u16,
+            key: a.key.value.clone(),
+            family: a.family.value,
+            sheet: a.sheet.value.clone(),
+            pool: a.pool.value,
+            slot: a.slot.value,
+        })
+        .collect();
+    accessories.sort_by(|a, b| a.key.cmp(&b.key));
+
+    let mut appearance_layouts: Vec<AppearanceLayoutDef> = raw
+        .appearance_layouts
+        .iter()
+        .map(|l| AppearanceLayoutDef {
+            id: l.id.value,
+            key: l.key.value.clone(),
+            family: l.family.value,
+            cell_width: l.cell_width,
+            cell_height: l.cell_height,
+            directions: l.directions.clone(),
+            rows: l
+                .rows
+                .iter()
+                .map(|r| AppearanceLayoutRowDef {
+                    animation: r.animation.clone(),
+                    row: r.row,
+                    frames_per_direction: r.frames_per_direction,
+                })
+                .collect(),
+            accepted_sizes: l.accepted_sizes.value.clone(),
+        })
+        .collect();
+    appearance_layouts.sort_by(|a, b| a.key.cmp(&b.key));
+
+    let mut uniforms: Vec<UniformDef> = raw
+        .uniforms
+        .iter()
+        .map(|u| UniformDef {
+            id: u.id.value,
+            key: u.key.value.clone(),
+            profession: u.profession.value.clone(),
+            outfit: u.outfit.clone(),
+            accessory: u.accessory.clone(),
+        })
+        .collect();
+    uniforms.sort_by(|a, b| a.key.cmp(&b.key));
+
     Ok(Defs {
         objects,
         items,
@@ -428,6 +978,13 @@ pub fn validate(raw: &RawDefs) -> Result<Defs, DefsError> {
         professions,
         chains,
         balance,
+        bodies,
+        eyes,
+        hairstyles,
+        outfits,
+        accessories,
+        appearance_layouts,
+        uniforms,
     })
 }
 
@@ -476,7 +1033,7 @@ mod tests {
     #[test]
     fn a_consistent_tree_validates_and_sorts_by_key() {
         let raw = parse_all(&valid_tree()).unwrap();
-        let defs = validate(&raw).unwrap();
+        let defs = validate(&raw, &BTreeMap::new()).unwrap();
         assert_eq!(defs.objects[0].key, "trash_bin");
         assert_eq!(defs.items[0].key, "bottle");
         assert_eq!(defs.recipes[0].inputs, vec!["bottle"]);
@@ -491,7 +1048,7 @@ mod tests {
             "[[item]]\nid = 1\nkey = \"trash-bin\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.message.contains("invalid item key 'trash-bin'"));
     }
 
@@ -502,7 +1059,7 @@ mod tests {
             "[[balance]]\nkey = \"citizen.bar-decay.rest\"\nvalue = 1\nmin = 0\nmax = 10\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(
             err.message
                 .contains("invalid balance key 'citizen.bar-decay.rest'")
@@ -516,7 +1073,7 @@ mod tests {
             "[[item]]\nid = 1\nkey = \"a\"\n\n[[item]]\nid = 1\nkey = \"b\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.message.contains("duplicate item id 1"));
     }
 
@@ -527,7 +1084,7 @@ mod tests {
             ("defs/items/b.toml", "[[item]]\nid = 1\nkey = \"b\"\n"),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.path.ends_with("b.toml"));
         assert!(err.message.contains("duplicate item id 1"));
         assert!(err.message.contains("a.toml"));
@@ -540,7 +1097,7 @@ mod tests {
             "[[item]]\nid = 1\nkey = \"a\"\n\n[[item]]\nid = 2\nkey = \"a\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.message.contains("duplicate item key 'a'"));
     }
 
@@ -551,7 +1108,7 @@ mod tests {
             "[[balance]]\nkey = \"a\"\nvalue = 1\nmin = 0\nmax = 10\n\n[[balance]]\nkey = \"a\"\nvalue = 2\nmin = 0\nmax = 10\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.message.contains("duplicate balance key 'a'"));
     }
 
@@ -562,7 +1119,7 @@ mod tests {
             "[[recipe]]\nid = 1\nkey = \"r\"\ninputs = [\"nope\"]\noutputs = []\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.message.contains("unknown item 'nope'"));
     }
 
@@ -573,7 +1130,7 @@ mod tests {
             "[[chain]]\nid = 1\nkey = \"c\"\nlinks = [\"nope\"]\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.message.contains("unknown profession 'nope'"));
     }
 
@@ -584,7 +1141,7 @@ mod tests {
             "[[balance]]\nkey = \"a\"\nvalue = 999\nmin = 0\nmax = 10\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.message.contains("out of its own declared range"));
     }
 
@@ -595,7 +1152,7 @@ mod tests {
             "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ncollider = { x0 = 5, y0 = 5, x1 = 5, y1 = 9 }\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.message.contains("zero or negative area"));
     }
 
@@ -606,7 +1163,7 @@ mod tests {
             "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ncollider = { x0 = 0, y0 = 0, x1 = 20, y1 = 8 }\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.message.contains("does not fit inside its footprint"));
     }
 
@@ -617,7 +1174,7 @@ mod tests {
             "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ncollider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let defs = validate(&raw).unwrap();
+        let defs = validate(&raw, &BTreeMap::new()).unwrap();
         assert_eq!(
             defs.objects[0].collider,
             Some(ColliderRect {
@@ -636,7 +1193,7 @@ mod tests {
             "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let defs = validate(&raw).unwrap();
+        let defs = validate(&raw, &BTreeMap::new()).unwrap();
         assert_eq!(defs.objects[0].collider, None);
     }
 
@@ -647,7 +1204,7 @@ mod tests {
             "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ninteract_at = { x0 = 0, y0 = 16, x1 = 0, y1 = 32 }\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.message.contains("zero or negative area"));
         assert!(err.message.contains("interact_at"));
     }
@@ -664,7 +1221,7 @@ mod tests {
             ),
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.message.contains("reaches further than"));
     }
 
@@ -678,7 +1235,7 @@ mod tests {
             ),
         )]);
         let raw = parse_all(&f).unwrap();
-        let defs = validate(&raw).unwrap();
+        let defs = validate(&raw, &BTreeMap::new()).unwrap();
         assert_eq!(defs.objects[0].interact_at.unwrap().x0, at as i32);
     }
 
@@ -689,7 +1246,7 @@ mod tests {
             "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ncollider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }\ninteract_at = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw).unwrap_err();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
         assert!(err.message.contains("could never be reached"));
     }
 
@@ -700,7 +1257,7 @@ mod tests {
             "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\ncollider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }\ninteract_at = { x0 = 0, y0 = 16, x1 = 16, y1 = 32 }\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        assert!(validate(&raw).is_ok());
+        assert!(validate(&raw, &BTreeMap::new()).is_ok());
     }
 
     #[test]
@@ -710,7 +1267,7 @@ mod tests {
             "[[object]]\nid = 1\nkey = \"a\"\nwidth = 1\nheight = 1\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let defs = validate(&raw).unwrap();
+        let defs = validate(&raw, &BTreeMap::new()).unwrap();
         assert_eq!(defs.objects[0].interact_at, None);
     }
 
@@ -721,6 +1278,252 @@ mod tests {
             "[[balance]]\nkey = \"a\"\nvalue = 10\nmin = 0\nmax = 10\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        assert!(validate(&raw).is_ok());
+        assert!(validate(&raw, &BTreeMap::new()).is_ok());
+    }
+
+    // --- Story 1.10: appearance --------------------------------------------
+
+    const LAYOUT_TOML: &str = "[[appearance_layout]]\nid = 1\nkey = \"adult\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"right\", \"up\", \"left\", \"down\"]\nrows = [\n  { animation = \"idle\", row = 1, frames_per_direction = 6 },\n  { animation = \"walk\", row = 2, frames_per_direction = 6 },\n]\naccepted_sizes = [{ width = 896, height = 656 }]\n";
+
+    fn appearance_sheet_dims() -> BTreeMap<String, (u32, u32)> {
+        [("sheets/body.png".to_string(), (896, 656))]
+            .into_iter()
+            .collect()
+    }
+
+    #[test]
+    fn a_body_fitting_its_familys_layout_is_accepted() {
+        let f = files(&[
+            ("defs/appearance/layouts.toml", LAYOUT_TOML),
+            (
+                "defs/appearance/bodies.toml",
+                "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
+            ),
+        ]);
+        let raw = parse_all(&f).unwrap();
+        let defs = validate(&raw, &appearance_sheet_dims()).unwrap();
+        assert_eq!(defs.bodies[0].key, "body_01");
+    }
+
+    #[test]
+    fn a_sheet_too_small_for_its_familys_layout_is_rejected() {
+        let f = files(&[
+            ("defs/appearance/layouts.toml", LAYOUT_TOML),
+            (
+                "defs/appearance/bodies.toml",
+                "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
+            ),
+        ]);
+        let raw = parse_all(&f).unwrap();
+        let mut small_dims = BTreeMap::new();
+        small_dims.insert("sheets/body.png".to_string(), (32, 32));
+        let err = validate(&raw, &small_dims).unwrap_err();
+        assert!(err.message.contains("only accepts"));
+    }
+
+    #[test]
+    fn a_sheet_bigger_than_the_grid_but_not_a_declared_size_is_rejected() {
+        let f = files(&[
+            ("defs/appearance/layouts.toml", LAYOUT_TOML),
+            (
+                "defs/appearance/bodies.toml",
+                "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
+            ),
+        ]);
+        let raw = parse_all(&f).unwrap();
+        let mut bigger_dims = BTreeMap::new();
+        // Bigger than the grid on every axis, but not one of LAYOUT_TOML's
+        // declared accepted_sizes -- must still be rejected by name, not
+        // waved through for being "big enough".
+        bigger_dims.insert("sheets/body.png".to_string(), (960, 700));
+        let err = validate(&raw, &bigger_dims).unwrap_err();
+        assert!(err.message.contains("only accepts"));
+        assert!(err.message.contains("960x700"));
+    }
+
+    #[test]
+    fn a_part_naming_a_family_with_no_layout_is_rejected() {
+        let f = files(&[(
+            "defs/appearance/bodies.toml",
+            "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
+        assert!(err.message.contains("no [[appearance_layout]] entry"));
+    }
+
+    #[test]
+    fn a_declared_id_above_u16_max_is_rejected() {
+        let f = files(&[(
+            "defs/appearance/bodies.toml",
+            "[[body]]\nid = 65536\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
+        assert!(err.message.contains("does not fit in a u16"));
+    }
+
+    #[test]
+    fn a_declared_id_at_exactly_u16_max_is_accepted() {
+        let f = files(&[
+            ("defs/appearance/layouts.toml", LAYOUT_TOML),
+            (
+                "defs/appearance/bodies.toml",
+                "[[body]]\nid = 65535\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
+            ),
+        ]);
+        let raw = parse_all(&f).unwrap();
+        let defs = validate(&raw, &appearance_sheet_dims()).unwrap();
+        assert_eq!(defs.bodies[0].id, 65535);
+    }
+
+    #[test]
+    fn a_declared_id_of_zero_is_rejected_for_every_appearance_kind() {
+        let f = files(&[(
+            "defs/appearance/bodies.toml",
+            "[[body]]\nid = 0\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
+        assert!(err.message.contains("declares id 0"));
+    }
+
+    #[test]
+    fn two_layouts_for_the_same_family_are_rejected() {
+        let f = files(&[(
+            "defs/appearance/layouts.toml",
+            "[[appearance_layout]]\nid = 1\nkey = \"a\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 16, height = 32 }]\n\n[[appearance_layout]]\nid = 2\nkey = \"b\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 16, height = 32 }]\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &BTreeMap::new()).unwrap_err();
+        assert!(err.message.contains("exactly one layout per family"));
+    }
+
+    fn appearance_and_profession_tree(uniform_toml: &str) -> Vec<(PathBuf, String)> {
+        files(&[
+            ("defs/appearance/layouts.toml", LAYOUT_TOML),
+            (
+                "defs/professions/sanitation.toml",
+                "[[profession]]\nid = 1\nkey = \"sanitation_worker\"\n",
+            ),
+            (
+                "defs/appearance/accessories.toml",
+                "[[accessory]]\nid = 1\nkey = \"jacket\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"role_only\"\nslot = \"torso\"\n",
+            ),
+            ("defs/appearance/uniforms.toml", uniform_toml),
+        ])
+    }
+
+    #[test]
+    fn a_uniform_naming_a_real_profession_and_role_only_accessory_is_accepted() {
+        let f = appearance_and_profession_tree(
+            "[[uniform]]\nid = 1\nkey = \"sanitation_worker_uniform\"\nprofession = \"sanitation_worker\"\naccessory = \"jacket\"\n",
+        );
+        let raw = parse_all(&f).unwrap();
+        assert!(validate(&raw, &appearance_sheet_dims()).is_ok());
+    }
+
+    #[test]
+    fn a_uniform_naming_an_unknown_profession_is_rejected() {
+        let f = appearance_and_profession_tree(
+            "[[uniform]]\nid = 1\nkey = \"ghost\"\nprofession = \"no_such_profession\"\naccessory = \"jacket\"\n",
+        );
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
+        assert!(err.message.contains("names unknown profession"));
+    }
+
+    #[test]
+    fn a_uniform_naming_an_unknown_accessory_is_rejected() {
+        let f = appearance_and_profession_tree(
+            "[[uniform]]\nid = 1\nkey = \"ghost\"\nprofession = \"sanitation_worker\"\naccessory = \"no_such_accessory\"\n",
+        );
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
+        assert!(err.message.contains("names unknown accessory"));
+    }
+
+    #[test]
+    fn a_uniform_naming_a_civilian_pool_accessory_is_rejected() {
+        let f = files(&[
+            ("defs/appearance/layouts.toml", LAYOUT_TOML),
+            (
+                "defs/professions/sanitation.toml",
+                "[[profession]]\nid = 1\nkey = \"sanitation_worker\"\n",
+            ),
+            (
+                "defs/appearance/accessories.toml",
+                "[[accessory]]\nid = 1\nkey = \"backpack\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\nslot = \"back\"\n",
+            ),
+            (
+                "defs/appearance/uniforms.toml",
+                "[[uniform]]\nid = 1\nkey = \"ghost\"\nprofession = \"sanitation_worker\"\naccessory = \"backpack\"\n",
+            ),
+        ]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
+        assert!(err.message.contains("not an adult role_only accessory"));
+    }
+
+    #[test]
+    fn a_uniform_overriding_neither_outfit_nor_accessory_is_rejected() {
+        let f = appearance_and_profession_tree(
+            "[[uniform]]\nid = 1\nkey = \"ghost\"\nprofession = \"sanitation_worker\"\n",
+        );
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
+        assert!(err.message.contains("overrides neither"));
+    }
+
+    #[test]
+    fn two_uniforms_for_the_same_profession_are_rejected() {
+        let f = files(&[
+            ("defs/appearance/layouts.toml", LAYOUT_TOML),
+            (
+                "defs/professions/sanitation.toml",
+                "[[profession]]\nid = 1\nkey = \"sanitation_worker\"\n",
+            ),
+            (
+                "defs/appearance/accessories.toml",
+                "[[accessory]]\nid = 1\nkey = \"jacket\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"role_only\"\nslot = \"torso\"\n\n[[accessory]]\nid = 2\nkey = \"helmet\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"role_only\"\nslot = \"head\"\n",
+            ),
+            (
+                "defs/appearance/uniforms.toml",
+                "[[uniform]]\nid = 1\nkey = \"a\"\nprofession = \"sanitation_worker\"\naccessory = \"jacket\"\n\n[[uniform]]\nid = 2\nkey = \"b\"\nprofession = \"sanitation_worker\"\naccessory = \"helmet\"\n",
+            ),
+        ]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &appearance_sheet_dims()).unwrap_err();
+        assert!(err.message.contains("exactly one uniform per profession"));
+    }
+
+    #[test]
+    fn an_invalid_pool_value_is_rejected_at_parse_time() {
+        let f = files(&[(
+            "defs/appearance/accessories.toml",
+            "[[accessory]]\nid = 1\nkey = \"a\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"bogus\"\nslot = \"head\"\n",
+        )]);
+        let err = parse_all(&f).unwrap_err();
+        assert!(err.message.contains("bogus"));
+    }
+
+    #[test]
+    fn an_invalid_slot_value_is_rejected_at_parse_time() {
+        let f = files(&[(
+            "defs/appearance/accessories.toml",
+            "[[accessory]]\nid = 1\nkey = \"a\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\nslot = \"waist\"\n",
+        )]);
+        let err = parse_all(&f).unwrap_err();
+        assert!(err.message.contains("waist"));
+    }
+
+    #[test]
+    fn an_invalid_family_value_is_rejected_at_parse_time() {
+        let f = files(&[(
+            "defs/appearance/bodies.toml",
+            "[[body]]\nid = 1\nkey = \"a\"\nfamily = \"teen\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
+        )]);
+        let err = parse_all(&f).unwrap_err();
+        assert!(err.message.contains("teen"));
     }
 }

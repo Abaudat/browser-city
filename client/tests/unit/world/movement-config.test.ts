@@ -13,6 +13,13 @@ function defsWith(balance: readonly { key: string; value: number }[]): Defs {
     professions: [],
     chains: [],
     balance: balance.map((b) => ({ ...b, min: 0, max: 1_000_000 })),
+    bodies: [],
+    eyes: [],
+    hairstyles: [],
+    outfits: [],
+    accessories: [],
+    appearanceLayouts: [],
+    uniforms: [],
   };
 }
 

@@ -1,0 +1,743 @@
+[[accessory]]
+id = 1
+key = "accessory_01_ladybug_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_01_Ladybug_01.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 2
+key = "accessory_01_ladybug_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_01_Ladybug_02.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 3
+key = "accessory_01_ladybug_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_01_Ladybug_03.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 4
+key = "accessory_01_ladybug_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_01_Ladybug_04.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 5
+key = "accessory_02_bee_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_02_Bee_01.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 6
+key = "accessory_02_bee_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_02_Bee_02.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 7
+key = "accessory_02_bee_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_02_Bee_03.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 8
+key = "accessory_03_backpack_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_03_Backpack_01.png"
+pool = "civilian"
+slot = "back"
+
+[[accessory]]
+id = 9
+key = "accessory_03_backpack_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_03_Backpack_02.png"
+pool = "civilian"
+slot = "back"
+
+[[accessory]]
+id = 10
+key = "accessory_03_backpack_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_03_Backpack_03.png"
+pool = "civilian"
+slot = "back"
+
+[[accessory]]
+id = 11
+key = "accessory_03_backpack_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_03_Backpack_04.png"
+pool = "civilian"
+slot = "back"
+
+[[accessory]]
+id = 12
+key = "accessory_03_backpack_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_03_Backpack_05.png"
+pool = "civilian"
+slot = "back"
+
+[[accessory]]
+id = 13
+key = "accessory_03_backpack_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_03_Backpack_06.png"
+pool = "civilian"
+slot = "back"
+
+[[accessory]]
+id = 14
+key = "accessory_03_backpack_07"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_03_Backpack_07.png"
+pool = "civilian"
+slot = "back"
+
+[[accessory]]
+id = 15
+key = "accessory_03_backpack_08"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_03_Backpack_08.png"
+pool = "civilian"
+slot = "back"
+
+[[accessory]]
+id = 16
+key = "accessory_03_backpack_09"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_03_Backpack_09.png"
+pool = "civilian"
+slot = "back"
+
+[[accessory]]
+id = 17
+key = "accessory_03_backpack_10"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_03_Backpack_10.png"
+pool = "civilian"
+slot = "back"
+
+[[accessory]]
+id = 18
+key = "accessory_04_snapback_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_04_Snapback_01.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 19
+key = "accessory_04_snapback_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_04_Snapback_02.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 20
+key = "accessory_04_snapback_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_04_Snapback_03.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 21
+key = "accessory_04_snapback_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_04_Snapback_04.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 22
+key = "accessory_04_snapback_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_04_Snapback_05.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 23
+key = "accessory_04_snapback_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_04_Snapback_06.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 24
+key = "accessory_05_dino_snapback_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_05_Dino_Snapback_01.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 25
+key = "accessory_05_dino_snapback_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_05_Dino_Snapback_02.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 26
+key = "accessory_05_dino_snapback_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_05_Dino_Snapback_03.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 27
+key = "accessory_06_policeman_hat_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_06_Policeman_Hat_01.png"
+pool = "role_only"
+slot = "head"
+
+[[accessory]]
+id = 28
+key = "accessory_06_policeman_hat_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_06_Policeman_Hat_02.png"
+pool = "role_only"
+slot = "head"
+
+[[accessory]]
+id = 29
+key = "accessory_06_policeman_hat_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_06_Policeman_Hat_03.png"
+pool = "role_only"
+slot = "head"
+
+[[accessory]]
+id = 30
+key = "accessory_06_policeman_hat_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_06_Policeman_Hat_04.png"
+pool = "role_only"
+slot = "head"
+
+[[accessory]]
+id = 31
+key = "accessory_06_policeman_hat_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_06_Policeman_Hat_05.png"
+pool = "role_only"
+slot = "head"
+
+[[accessory]]
+id = 32
+key = "accessory_06_policeman_hat_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_06_Policeman_Hat_06.png"
+pool = "role_only"
+slot = "head"
+
+[[accessory]]
+id = 33
+key = "accessory_07_bataclava_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_07_Bataclava_01.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 34
+key = "accessory_07_bataclava_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_07_Bataclava_02.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 35
+key = "accessory_07_bataclava_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_07_Bataclava_03.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 36
+key = "accessory_08_detective_hat_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_08_Detective_Hat_01.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 37
+key = "accessory_08_detective_hat_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_08_Detective_Hat_02.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 38
+key = "accessory_08_detective_hat_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_08_Detective_Hat_03.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 39
+key = "accessory_09_zombie_brain_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_09_Zombie_Brain_01.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 40
+key = "accessory_09_zombie_brain_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_09_Zombie_Brain_02.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 41
+key = "accessory_09_zombie_brain_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_09_Zombie_Brain_03.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 42
+key = "accessory_10_bolt_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_10_Bolt_01.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 43
+key = "accessory_10_bolt_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_10_Bolt_02.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 44
+key = "accessory_10_bolt_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_10_Bolt_03.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 45
+key = "accessory_11_beanie_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_11_Beanie_01.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 46
+key = "accessory_11_beanie_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_11_Beanie_02.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 47
+key = "accessory_11_beanie_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_11_Beanie_03.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 48
+key = "accessory_11_beanie_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_11_Beanie_04.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 49
+key = "accessory_11_beanie_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_11_Beanie_05.png"
+pool = "civilian"
+slot = "head"
+
+[[accessory]]
+id = 50
+key = "accessory_12_mustache_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_12_Mustache_01.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 51
+key = "accessory_12_mustache_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_12_Mustache_02.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 52
+key = "accessory_12_mustache_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_12_Mustache_03.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 53
+key = "accessory_12_mustache_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_12_Mustache_04.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 54
+key = "accessory_12_mustache_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_12_Mustache_05.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 55
+key = "accessory_13_beard_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_13_Beard_01.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 56
+key = "accessory_13_beard_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_13_Beard_02.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 57
+key = "accessory_13_beard_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_13_Beard_03.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 58
+key = "accessory_13_beard_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_13_Beard_04.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 59
+key = "accessory_13_beard_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_13_Beard_05.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 60
+key = "accessory_14_gloves_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_14_Gloves_01.png"
+pool = "civilian"
+slot = "hands"
+
+[[accessory]]
+id = 61
+key = "accessory_14_gloves_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_14_Gloves_02.png"
+pool = "civilian"
+slot = "hands"
+
+[[accessory]]
+id = 62
+key = "accessory_14_gloves_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_14_Gloves_03.png"
+pool = "civilian"
+slot = "hands"
+
+[[accessory]]
+id = 63
+key = "accessory_14_gloves_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_14_Gloves_04.png"
+pool = "civilian"
+slot = "hands"
+
+[[accessory]]
+id = 64
+key = "accessory_15_glasses_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_15_Glasses_01.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 65
+key = "accessory_15_glasses_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_15_Glasses_02.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 66
+key = "accessory_15_glasses_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_15_Glasses_03.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 67
+key = "accessory_15_glasses_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_15_Glasses_04.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 68
+key = "accessory_15_glasses_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_15_Glasses_05.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 69
+key = "accessory_15_glasses_06"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_15_Glasses_06.png"
+pool = "civilian"
+slot = "face"
+
+[[accessory]]
+id = 70
+key = "accessory_16_monocle_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_16_Monocle_01.png"
+pool = "costume"
+slot = "face"
+
+[[accessory]]
+id = 71
+key = "accessory_16_monocle_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_16_Monocle_02.png"
+pool = "costume"
+slot = "face"
+
+[[accessory]]
+id = 72
+key = "accessory_16_monocle_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_16_Monocle_03.png"
+pool = "costume"
+slot = "face"
+
+[[accessory]]
+id = 73
+key = "accessory_17_medical_mask_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_17_Medical_Mask_01.png"
+pool = "role_only"
+slot = "face"
+
+[[accessory]]
+id = 74
+key = "accessory_17_medical_mask_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_17_Medical_Mask_02.png"
+pool = "role_only"
+slot = "face"
+
+[[accessory]]
+id = 75
+key = "accessory_17_medical_mask_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_17_Medical_Mask_03.png"
+pool = "role_only"
+slot = "face"
+
+[[accessory]]
+id = 76
+key = "accessory_17_medical_mask_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_17_Medical_Mask_04.png"
+pool = "role_only"
+slot = "face"
+
+[[accessory]]
+id = 77
+key = "accessory_17_medical_mask_05"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_17_Medical_Mask_05.png"
+pool = "role_only"
+slot = "face"
+
+[[accessory]]
+id = 78
+key = "accessory_18_chef_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_18_Chef_01.png"
+pool = "role_only"
+slot = "head"
+
+[[accessory]]
+id = 79
+key = "accessory_18_chef_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_18_Chef_02.png"
+pool = "role_only"
+slot = "head"
+
+[[accessory]]
+id = 80
+key = "accessory_18_chef_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_18_Chef_03.png"
+pool = "role_only"
+slot = "head"
+
+[[accessory]]
+id = 81
+key = "accessory_19_party_cone_01"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_19_Party_Cone_01.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 82
+key = "accessory_19_party_cone_02"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_19_Party_Cone_02.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 83
+key = "accessory_19_party_cone_03"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_19_Party_Cone_03.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 84
+key = "accessory_19_party_cone_04"
+family = "adult"
+sheet = "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Accessories/16x16/Accessory_19_Party_Cone_04.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 85
+key = "addon_accessory_20_worker_helmet"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Accessory_20_Worker_Helmet_16x16.png"
+pool = "role_only"
+slot = "head"
+
+[[accessory]]
+id = 86
+key = "addon_accessory_21_worker_jacket"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Accessory_21_Worker_Jacket_16x16.png"
+pool = "role_only"
+slot = "torso"
+
+[[accessory]]
+id = 87
+key = "addon_accessory_22_scout_snapback"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Accessory_22_Scout_Snapback_16x16.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 88
+key = "addon_accessory_24_pumpkin_head"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Accessory_24_Pumpkin_Head_16x16.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 89
+key = "addon_accessory_24_pumpkin_head_2"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Accessory_24_Pumpkin_Head_16x16_2.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 90
+key = "addon_accessory_25_black_cylinder"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Accessory_25_Black_Cylinder_16x16.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 91
+key = "addon_accessory_26_postman_hat_and_bag"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Accessory_26_Postman_Hat_and_Bag_16x16.png"
+pool = "role_only"
+slot = "head"
+
+[[accessory]]
+id = 92
+key = "addon_accessory_27_soldier_helmet"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Accessory_27_Soldier_Helmet_16x16.png"
+pool = "costume"
+slot = "head"
+
+[[accessory]]
+id = 93
+key = "addon_accessory_28_military_general_hat"
+family = "adult"
+sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Accessory_28_Military_General_Hat_16x16.png"
+pool = "costume"
+slot = "head"

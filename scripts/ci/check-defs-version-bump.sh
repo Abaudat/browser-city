@@ -20,7 +20,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 DEFS_RS="server/sim/src/generated/defs.rs"
-KNOWN_KINDS="objects items recipes professions chains balance"
+KNOWN_KINDS="objects items recipes professions chains balance appearance"
 
 _fail_or_skip() { # <message> -- hard fail under GITHUB_ACTIONS, soft skip otherwise
   if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
@@ -76,7 +76,21 @@ if [ -z "$CHANGED_DEFS_RS" ]; then
   echo "check-defs-version-bump: FAIL -- defs/ changed with no defs_version bump:" >&2
   printf '%s\n' "$CHANGED_DEFS" >&2
   exit 1
-elif ! git diff "$MERGE_BASE" HEAD -- "$DEFS_RS" | grep -qE '^[+-]pub const DEFS_VERSION'; then
+fi
+
+# Captured to a variable rather than piped straight into `grep -q`: `grep
+# -q` exits the instant it finds a match, which for a match near the top
+# of a long diff (this file's `DEFS_VERSION` line is line 4, and a
+# `defs/` change routinely adds hundreds of lines below it) closes the
+# pipe while `git diff` is still writing -- `git diff` then dies of
+# SIGPIPE, and under `pipefail` that non-zero exit status wins the
+# pipeline's result even though grep already found its match. Observed
+# for real: this exact `git diff | grep -q` reliably reported "not
+# found" on a real match in CI (Linux, strict SIGPIPE delivery) while
+# never reproducing locally (Windows git, different pipe/signal
+# semantics) across several attempts on the identical commit.
+DEFS_RS_DIFF="$(git diff "$MERGE_BASE" HEAD -- "$DEFS_RS")"
+if ! grep -qE '^[+-]pub const DEFS_VERSION' <<<"$DEFS_RS_DIFF"; then
   echo "check-defs-version-bump: FAIL -- defs/ changed but DEFS_VERSION did not:" >&2
   printf '%s\n' "$CHANGED_DEFS" >&2
   exit 1

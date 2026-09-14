@@ -1,0 +1,6 @@
+[[body]]
+id = 65536
+key = "body_too_large"
+family = "adult"
+sheet = "fixtures/appearance/body-test.png"
+pool = "civilian"

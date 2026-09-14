@@ -7,7 +7,9 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use defs_build::{build, fsio, version};
+use std::collections::BTreeMap;
+
+use defs_build::{appearance_sheet_paths, build, fsio, parse, version};
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -53,7 +55,17 @@ fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut text_files = fsio::read_text(root, &tracked)?;
     text_files.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let output = build(&text_files, &defs_version)?;
+    // Story 1.10: which sheets does the tree reference, so their real
+    // `IHDR` dimensions can be read before `validate` checks the layout
+    // invariant against them -- the one impure step `build` itself never
+    // performs (Quentin's direction: parse/validate/emit stay pure).
+    let raw = parse::parse_all(&text_files)?;
+    let sheet_paths = appearance_sheet_paths(&raw);
+    let sheet_dims: BTreeMap<String, (u32, u32)> = fsio::read_png_dims(root, &sheet_paths)?
+        .into_iter()
+        .collect();
+
+    let output = build(&text_files, &sheet_dims, &defs_version)?;
 
     let rust_path = root.join("server/sim/src/generated/defs.rs");
     let json_path = root.join("client/public/defs/defs.json");

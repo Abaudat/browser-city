@@ -1,0 +1,32 @@
+[[appearance_layout]]
+id = 1
+key = "adult"
+family = "adult"
+cell_width = 16
+cell_height = 32
+directions = ["right", "up", "left", "down"]
+rows = [
+  { animation = "idle", row = 1, frames_per_direction = 6 },
+  { animation = "walk", row = 2, frames_per_direction = 6 },
+]
+accepted_sizes = [
+  { width = 896, height = 656 },
+  { width = 927, height = 656 },
+  { width = 896, height = 640 },
+]
+
+[[appearance_layout]]
+id = 2
+key = "kid"
+family = "kid"
+cell_width = 16
+cell_height = 32
+directions = ["right", "up", "left", "down"]
+rows = [
+  { animation = "idle", row = 1, frames_per_direction = 6 },
+  { animation = "walk", row = 2, frames_per_direction = 6 },
+]
+accepted_sizes = [
+  { width = 384, height = 128 },
+  { width = 384, height = 96 },
+]

@@ -4,6 +4,8 @@
 // `window.__bc` never ships. Exists so the e2e spec reads page state
 // instead of scraping console output.
 
+import type { AppearanceTuple, UniformOverride } from "../render/appearance/composite";
+import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
 import type { PingObservation } from "./observe-ping";
 
 declare global {
@@ -19,6 +21,20 @@ declare global {
       ignoredIntents?: string[];
       viewTransform?: { zoom: number; offsetX: number; offsetY: number };
       highlightedObjectId?: string | null;
+      /** Story 1.10: one opaque texture-identity id per mounted citizen
+       * id -- citizens sharing a tuple+override share an id (AC5). */
+      appearanceTextureIds?: Record<string, number>;
+      appearanceDistinctTextureCount?: number;
+      /** Story 1.10: the real, mounted pipeline's own pixel output vs.
+       * an independent five/six-sprite stack, for one `(tuple, override,
+       * animation, direction, frame)`. */
+      appearanceCompare?: (
+        tuple: AppearanceTuple,
+        override: UniformOverride | null,
+        animation: string,
+        direction: string,
+        frame: number,
+      ) => Promise<{ pipeline: PixelSnapshot; stack: PixelSnapshot }>;
     };
   }
 }
@@ -132,5 +148,32 @@ export function recordHighlightForE2e(objectId: bigint | undefined): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.highlightedObjectId = objectId === undefined ? null : objectId.toString();
+  window.__bc = bucket;
+}
+
+/** Story 1.10 (AC5): the mounted street crowd's own texture identities,
+ * once, right after mount -- `appearance.spec.ts`'s only reader for the
+ * "one composite per unique key" proof. */
+export function recordAppearanceTextureIdsForE2e(
+  idsById: Readonly<Record<string, number>>,
+  distinctCount: number,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.appearanceTextureIds = { ...idsById };
+  bucket.appearanceDistinctTextureCount = distinctCount;
+  window.__bc = bucket;
+}
+
+/** Story 1.10: exposes the real, mounted crowd's own pixel-diff proof as
+ * a callable -- `appearance.spec.ts` invokes it with fixed tuples through
+ * `page.evaluate`, never a value recorded once at mount (each call needs
+ * its own tuple/cell arguments). */
+export function exposeAppearanceCompareForE2e(
+  compare: NonNullable<NonNullable<Window["__bc"]>["appearanceCompare"]>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.appearanceCompare = compare;
   window.__bc = bucket;
 }

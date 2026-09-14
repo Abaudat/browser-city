@@ -1,0 +1,6 @@
+[[body]]
+id = 0
+key = "body_zero"
+family = "adult"
+sheet = "fixtures/appearance/body-test.png"
+pool = "civilian"

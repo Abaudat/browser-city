@@ -13,6 +13,13 @@ function validPayload(version: string): Record<string, unknown> {
     professions: [],
     chains: [],
     balance: [],
+    bodies: [],
+    eyes: [],
+    hairstyles: [],
+    outfits: [],
+    accessories: [],
+    appearance_layouts: [],
+    uniforms: [],
   };
 }
 

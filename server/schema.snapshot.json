@@ -222,6 +222,51 @@
           "unique": false,
           "has_default": false,
           "indexed": false
+        },
+        {
+          "name": "appearance_body",
+          "ty": "u16",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "appearance_eyes",
+          "ty": "u16",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "appearance_outfit",
+          "ty": "u16",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "appearance_hairstyle",
+          "ty": "u16",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "appearance_accessory",
+          "ty": "u16",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
         }
       ]
     },

@@ -45,6 +45,12 @@ with no row here.
 | `inv_keybindings_parse_is_total` | Parsing any value at all as stored bindings never throws and always yields a complete, valid, injective map (FR149) | covered | `inv_keybindings_parse_is_total` | — |
 | `inv_keybindings_read_is_total` | Reading any string at all out of the bindings storage key never throws, always yields a complete map, and never writes -- so a parse bug can never destroy saved bindings (FR149) | covered | `inv_keybindings_read_is_total` | — |
 | `inv_rebind_survives_reload` | Whatever any sequence of rebinds produces, loading it back yields exactly that map -- `rebind` and `normaliseBindings` cannot disagree about what is bindable, so no binding the player sets can vanish on the next boot (FR149) | covered | `inv_rebind_survives_reload` | — |
+| `inv_appearance_deterministic_from_id` | The same citizen id always derives the same five-integer appearance tuple (FR61) | covered | `inv_appearance_deterministic_from_id` | 1.10 |
+| `inv_appearance_indices_in_range` | For any u64 citizen id and family, `sim::appearance::generate` never panics and every non-zero index it returns names a real manifest entry of the matching family (FR61) | covered | `inv_appearance_indices_in_range` | 1.10 |
+| `inv_kids_parts_only_on_kids_bodies` | A kid family tuple only ever contains kid-family body/eyes/hairstyle/outfit parts, and its accessory is always 0 -- never an adult part (FR61) | covered | `inv_kids_parts_only_on_kids_bodies` | 1.10 |
+| `inv_outfit_follows_occupation` | Resolving a profession's uniform override (`resolveUniform`) always yields that profession's declared role_only, adult outfit/accessory by id, for any profession in `defs/professions` that has one (FR62) | covered | `inv_outfit_follows_occupation` | 1.10 |
+| `inv_composite_cache_one_texture_per_tuple` | The appearance composite cache returns the same texture instance for the same tuple+override, calls the factory exactly once per unique key, and releases a texture once every reference is gone (FR61) | covered | `inv_composite_cache_one_texture_per_tuple` | 1.10 |
+| `inv_composite_cache_bounded` | The appearance composite cache never holds more than its declared engineering cap of entries, evicting least-recently-used ones first | covered | `inv_composite_cache_bounded` | 1.10 |
 
 ## Coverage scale (NFR29)
 
