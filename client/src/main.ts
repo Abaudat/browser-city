@@ -7,7 +7,6 @@ import { KeyboardState } from "./input/keyboard";
 import { connect } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
-  exposeWalkerPositionsForE2e,
   recordAppearanceTextureIdsForE2e,
   recordHighlightForE2e,
   recordIgnoredIntentForE2e,
@@ -149,7 +148,6 @@ async function startDemoScene(): Promise<void> {
     handle.citizensLayer.distinctTextureCount,
   );
   exposeAppearanceCompareForE2e(handle.citizensLayer.compareForE2e);
-  exposeWalkerPositionsForE2e(handle.citizensLayer.walkerPositions);
 }
 
 function getBalance(defs: Defs, key: string): number {

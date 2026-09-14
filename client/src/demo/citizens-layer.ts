@@ -53,11 +53,6 @@ export interface CitizensLayerHandle {
    * ticker, never a second ticker registered here (one driver of
    * frame-by-frame state). */
   update(deltaMS: number): void;
-  /** Every walker's current world position and facing direction, keyed by
-   * citizen id -- `appearance-screenshots.spec.ts`'s only reader, so a
-   * close-crop screenshot can wait for and centre on a specific walker in
-   * a specific direction instead of guessing at timing. */
-  walkerPositions(): Readonly<Record<string, { x: number; y: number; direction: string }>>;
 }
 
 interface WalkerState {
@@ -67,7 +62,6 @@ interface WalkerState {
   readonly startX: number;
   readonly startY: number;
   elapsedMS: number;
-  direction: string;
 }
 
 function advanceWalker(walker: WalkerState, deltaMS: number, tileSizePx: number): void {
@@ -77,7 +71,6 @@ function advanceWalker(walker: WalkerState, deltaMS: number, tileSizePx: number)
   walker.sprite.y = Math.round(pose.y * tileSizePx);
   walker.sprite.zIndex = pose.y;
   walker.sprite.texture = walker.frames.frame("walk", pose.direction, pose.frameIndex);
-  walker.direction = pose.direction;
 }
 
 export async function mountCitizensLayer(
@@ -156,7 +149,6 @@ export async function mountCitizensLayer(
           startX: fixture.gridX,
           startY: fixture.gridY,
           elapsedMS: 0,
-          direction: fixture.facing,
         });
       }
     }),
@@ -164,16 +156,6 @@ export async function mountCitizensLayer(
 
   function update(deltaMS: number): void {
     for (const walker of walkers.values()) advanceWalker(walker, deltaMS, tileSizePx);
-  }
-
-  function walkerPositions(): Readonly<
-    Record<string, { x: number; y: number; direction: string }>
-  > {
-    const positions: Record<string, { x: number; y: number; direction: string }> = {};
-    for (const [id, walker] of walkers) {
-      positions[id] = { x: walker.sprite.x, y: walker.sprite.y, direction: walker.direction };
-    }
-    return positions;
   }
 
   function compareForE2e(
@@ -195,6 +177,5 @@ export async function mountCitizensLayer(
     distinctTextureCount: nextTextureId,
     compareForE2e,
     update,
-    walkerPositions,
   };
 }

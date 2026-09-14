@@ -17,13 +17,7 @@
 # no such reference, or more than one distinct one, fails closed rather
 # than guessing. The reverse hole is closed too: a job block that exists
 # in the workflow but was never added to `ci:`'s `needs:` would otherwise
-# stay invisible to the gate forever, not just for one run -- unless that
-# job's own block contains a `# bc:non-gating` comment, an explicit,
-# co-located opt-out for a job that must never gate the merge (e.g. a
-# screenshot-only job whose real-time waits are not assertions). That
-# marker lives in ci.yml itself, next to the job it exempts, for the same
-# reason the filter mapping above does: nothing about what gates the
-# merge should live only in this script.
+# stay invisible to the gate forever, not just for one run.
 #
 # Usage: check-ci-gate.sh <needs-json> <changes-json> [workflow-file]
 #   <needs-json>    ${{ toJSON(needs) }} -- {"<job>": {"result": "success"|"skipped"|"failure"|"cancelled"}, ...}
@@ -87,24 +81,10 @@ while IFS= read -r job; do
   [ -n "$job" ] || continue
   [ "$job" = "changes" ] && continue
   [ "$job" = "ci" ] && continue
-  if printf '%s\n' "$WORKFLOW_JOBS" | grep -qxF "$job"; then
-    continue
+  if ! printf '%s\n' "$WORKFLOW_JOBS" | grep -qxF "$job"; then
+    echo "check-ci-gate: FAIL -- job '$job' exists in $WORKFLOW but is not in the 'ci:' job's needs: -- it is invisible to the gate" >&2
+    FAILED=1
   fi
-  # A plain bash pattern match, not `| grep -q`: the same SIGPIPE-under-
-  # pipefail race the SpacetimeDB CLI install script hit -- `grep -q`
-  # exits (and closes its read end) the moment it finds the marker, a few
-  # lines into this ~60-line block, before `printf` finishes writing the
-  # rest; under `pipefail` that makes the pipeline's own exit status
-  # `printf`'s SIGPIPE (141), not `grep`'s successful match. A bare string
-  # test has no pipe to race.
-  BLOCK="$(job_block "$job")"
-  case "$BLOCK" in
-    *'# bc:non-gating'*)
-      continue # explicitly opted out -- see this script's own header comment
-      ;;
-  esac
-  echo "check-ci-gate: FAIL -- job '$job' exists in $WORKFLOW but is not in the 'ci:' job's needs: -- it is invisible to the gate" >&2
-  FAILED=1
 done <<< "$ALL_JOB_NAMES"
 
 if [ "$FAILED" -ne 0 ]; then

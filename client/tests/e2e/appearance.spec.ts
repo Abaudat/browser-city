@@ -11,9 +11,6 @@
 //      instance, never one each (`window.__bc.appearanceTextureIds`);
 //   3. the real page fetches only the part sheets the crowd actually
 //      references, never the wider catalogue eagerly.
-// `appearance-screenshots.spec.ts` is the sibling spec that leaves review
-// screenshots behind as a CI artifact instead of asserting anything --
-// kept in its own file so this one stays fast.
 import { expect, test } from "@playwright/test";
 import type { Defs } from "../../src/defs/types";
 import {
