@@ -24,9 +24,10 @@ function queryOf(cells: Record<string, FootprintEntry[]>): FootprintQuery {
   };
 }
 
-function contextOf(query: FootprintQuery): PickContext {
+function contextOf(query: FootprintQuery, isVisible?: (id: bigint) => boolean): PickContext {
   return {
     index: query,
+    ...(isVisible ? { isVisible } : {}),
     objectDefs: new Map([
       [BIN_DEF, { width: 1, height: 1, interactAt: { x0: -4, y0: -4, x1: 20, y1: 20 } }],
       [PLAIN_DEF, { width: 1, height: 1 }],
@@ -44,6 +45,8 @@ interface Harness {
   readonly ignored: bigint[];
   readonly highlights: (bigint | undefined)[];
   cursor(): string;
+  setPlayer(next: PickPlayer): void;
+  refresh(): void;
   detach(): void;
 }
 
@@ -52,18 +55,19 @@ interface Harness {
 function harness(
   cells: Record<string, FootprintEntry[]> = BIN_CELL,
   playerAt: PickPlayer = { x: 5.5, y: 5.5, floor: 0 },
+  isVisible?: (id: bigint) => boolean,
 ): Harness {
   const element = document.createElement("div");
   document.body.appendChild(element);
   const intents: Intent[] = [];
   const ignored: bigint[] = [];
   const highlights: (bigint | undefined)[] = [];
-  const player = playerAt;
+  let player = playerAt;
 
-  const detach = attachPointer({
+  const pointer = attachPointer({
     element,
     toWorldPx: (clientX, clientY) => ({ x: clientX, y: clientY }),
-    context: () => contextOf(queryOf(cells)),
+    context: () => contextOf(queryOf(cells), isVisible),
     player: () => player,
     tileSizePx: TILE,
     storeyHeightPx: STOREY,
@@ -78,7 +82,11 @@ function harness(
     ignored,
     highlights,
     cursor: () => element.style.cursor,
-    detach,
+    setPlayer: (next) => {
+      player = next;
+    },
+    refresh: pointer.refresh,
+    detach: pointer.detach,
   };
 }
 
@@ -149,6 +157,82 @@ describe("hover feedback (FR173's grammar)", () => {
     expect(h.highlights.at(-1)).toBeUndefined();
     expect(h.cursor()).toBe("default");
     h.detach();
+  });
+});
+
+describe("the hover follows the world, not only the mouse", () => {
+  // Movement is keyboard-only (FR149), so the normal case is a mouse
+  // resting on an object while the player walks. Without a refresh the
+  // affordance lies: it stays lit after walking out of reach, and never
+  // lights up on walking in.
+  it("walking into reach lights the object up with the pointer still", () => {
+    const h = harness(BIN_CELL, { x: 20, y: 20, floor: 0 });
+    move(h, 5, 5);
+    expect(h.highlights.at(-1)).toBeUndefined();
+    expect(h.cursor()).toBe("pointer");
+
+    h.setPlayer({ x: 5.5, y: 5.5, floor: 0 });
+    h.refresh();
+    expect(h.highlights.at(-1)).toBe(100n);
+    h.detach();
+  });
+
+  it("walking out of reach clears the highlight with the pointer still", () => {
+    const h = harness();
+    move(h, 5, 5);
+    expect(h.highlights.at(-1)).toBe(100n);
+
+    h.setPlayer({ x: 20, y: 20, floor: 0 });
+    h.refresh();
+    expect(h.highlights.at(-1)).toBeUndefined();
+    // Still an interactable object under the cursor, just not from here.
+    expect(h.cursor()).toBe("pointer");
+    h.detach();
+  });
+
+  it("a refresh with the pointer outside the canvas changes nothing", () => {
+    const h = harness(BIN_CELL, { x: 20, y: 20, floor: 0 });
+    move(h, 5, 5);
+    h.element.dispatchEvent(new MouseEvent("pointerleave"));
+    const before = h.highlights.length;
+
+    h.setPlayer({ x: 5.5, y: 5.5, floor: 0 });
+    h.refresh();
+    expect(h.highlights.length).toBe(before);
+    expect(h.highlights.at(-1)).toBeUndefined();
+    expect(h.cursor()).toBe("default");
+    h.detach();
+  });
+
+  it("a refresh before the pointer has ever entered the canvas changes nothing", () => {
+    const h = harness();
+    h.refresh();
+    expect(h.highlights).toEqual([]);
+    expect(h.cursor()).toBe("");
+    h.detach();
+  });
+
+  it("an object hidden under a still cursor loses its highlight on refresh", () => {
+    const hidden = new Set<bigint>();
+    const h = harness(BIN_CELL, { x: 5.5, y: 5.5, floor: 0 }, (id) => !hidden.has(id));
+    move(h, 5, 5);
+    expect(h.highlights.at(-1)).toBe(100n);
+
+    hidden.add(100n);
+    h.refresh();
+    expect(h.highlights.at(-1)).toBeUndefined();
+    expect(h.cursor()).toBe("default");
+    h.detach();
+  });
+
+  it("a refresh after detach never writes to the element again", () => {
+    const h = harness(BIN_CELL, { x: 20, y: 20, floor: 0 });
+    move(h, 5, 5);
+    h.detach();
+    const cursorAtDetach = h.cursor();
+    h.setPlayer({ x: 5.5, y: 5.5, floor: 0 });
+    h.refresh();
+    expect(h.cursor()).toBe(cursorAtDetach);
   });
 });
 

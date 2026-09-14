@@ -8,9 +8,10 @@
 // colliders, and FR128 makes an absent collider mean "walkable", so a
 // bench or a poster with no collider is invisible to it. A click must
 // still resolve to those (Tim's direction), so this index keys on the
-// object's own *footprint* -- every cell `width x height` covers -- and
-// carries nothing about whether it blocks movement. `world/world-index.ts`
-// is what guarantees the two are always fed by the same call.
+// object's own *drawn* extent -- every cell `width x height` covers, plus
+// the cells its art overhangs into -- and carries nothing about whether it
+// blocks movement. `world/world-index.ts` is what guarantees the two are
+// always fed by the same call.
 
 import type { PlacedObject } from "../net/bindings/types";
 import { CHUNK_SIZE, chunkKey } from "./chunk";
@@ -22,6 +23,15 @@ import { CHUNK_SIZE, chunkKey } from "./chunk";
 export interface FootprintSource {
   readonly width: number;
   readonly height: number;
+  /** How many whole cells this object's *art* is drawn above its own
+   * anchor row, and beyond its own columns on each side. Our props are
+   * bottom-centre anchored and routinely draw past their footprint (a
+   * 16x32 bin on a 1x1 footprint), and a click on the drawn part has to
+   * find the object -- so those cells are indexed too. Derived from the
+   * same texture the renderer places, never hand-typed; absent means the
+   * art fits inside the footprint. */
+  readonly drawOverhangCellsUp?: number;
+  readonly drawOverhangCellsX?: number;
 }
 
 /** One object occupying one cell. `defId` is what a pick resolves the
@@ -163,8 +173,13 @@ export class FootprintIndex implements FootprintQuery {
         `FootprintIndex: object ${row.objectId} has orientation ${row.orientation} -- rotated footprints are not supported until a story defines them`,
       );
     }
-    for (let dy = 0; dy < def.height; dy++) {
-      for (let dx = 0; dx < def.width; dx++) {
+    // The footprint, plus whatever the art draws outside it: upward from
+    // the anchor row (bottom-anchored sprites never overhang downward)
+    // and symmetrically sideways (they are centre-anchored).
+    const up = def.drawOverhangCellsUp ?? 0;
+    const side = def.drawOverhangCellsX ?? 0;
+    for (let dy = -up; dy < def.height; dy++) {
+      for (let dx = -side; dx < def.width + side; dx++) {
         fn(row.x + dx, row.y + dy);
       }
     }

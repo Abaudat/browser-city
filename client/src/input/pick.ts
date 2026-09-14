@@ -1,16 +1,30 @@
-// FR148's click resolution: world point in, an [`Intent`] or an ignore
-// out. Pure -- no DOM, no PixiJS, no network -- so every rule below is
-// provable in vitest without a canvas. `input/pointer.ts` is the only
-// thing that turns a real `pointerdown` into a call here.
+// FR148's click resolution: a point in, an [`Intent`] or an ignore out.
+// Pure -- no DOM, no PixiJS, no network -- so every rule below is provable
+// in vitest without a canvas. `input/pointer.ts` is the only thing that
+// turns a real `pointerdown` into a call here.
 //
-// Two rules this module borrows rather than restates:
-//   - which of several objects sharing a cell is in front is
-//     `render/sort-key.ts`'s FR123 comparator, the renderer's own
-//     ordering authority. There is no second ordering rule here.
-//   - whether an object is visible at all is the caller's
-//     `isVisible` predicate, fed from story 1.7's own visibility state.
-//     If it cannot be seen it cannot be clicked (Artie's direction), and
-//     a retracted wall does not block a click on what is now behind it.
+// A pick is two phases, because what a player sees and what the derived
+// grid holds are not the same shape:
+//
+//   Broad phase, by cell. The footprint index answers one cell in one
+//   chunk lookup, whatever else the world holds. Objects are registered
+//   in every cell their *drawn sprite* covers, not only their footprint
+//   (`world/footprint-index.ts`), because our props are bottom-anchored
+//   and draw upward past their own row.
+//
+//   Narrow phase, by drawn rect. A candidate only counts if the point is
+//   inside the rect its sprite actually occupies (Artie's direction: a
+//   click on any part of what you can see hits that object -- clicking
+//   the lid of a tall bin must not hit the wall it is drawn over). An
+//   object with no sprite has no rect and stays resolvable through its
+//   own cells alone.
+//
+// Two rules this module borrows rather than restates: which of several
+// overlapping objects is in front is `render/sort-key.ts`'s FR123
+// comparator, and whether an object is visible at all is the caller's
+// `isVisible` predicate, fed from story 1.7's own visibility state. If it
+// cannot be seen it cannot be clicked, and a retracted wall does not
+// block a click on what is now behind it.
 
 import { compareDrawables, type Drawable } from "../render/sort-key";
 import { toSortUnits } from "../render/sort-units";
@@ -20,6 +34,15 @@ import type { Intent } from "./intent";
 /** A half-open integer rect in sub-cells, relative to an object's own
  * anchor cell -- `defs/`'s `interact_at`, unchanged. */
 export interface ReachRect {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
+/** A half-open rect in world pixels -- the space `screenPositionPx`
+ * produces, before the camera's own offset and zoom. */
+export interface PickRect {
   readonly x0: number;
   readonly y0: number;
   readonly x1: number;
@@ -44,6 +67,18 @@ export interface PickPlayer {
   readonly floor: number;
 }
 
+/** Where the pointer is, in both units a pick needs: the whole cell for
+ * the broad phase (`render/screen-position.ts`'s `worldCellFromScreenPx`
+ * is the one thing that produces it) and the world pixel for the narrow
+ * phase. Nothing here is derived from the other -- the caller converts
+ * once and passes both, so this module never floors a coordinate itself. */
+export interface PickPoint {
+  readonly cellX: number;
+  readonly cellY: number;
+  readonly worldXPx: number;
+  readonly worldYPx: number;
+}
+
 export interface PickContext {
   readonly index: FootprintQuery;
   readonly objectDefs: ReadonlyMap<number, PickObjectDef>;
@@ -55,12 +90,16 @@ export interface PickContext {
   /** Story 1.7's visibility, per object instance. Absent means
    * everything is visible (the pure-unit-test case). */
   readonly isVisible?: (objectId: bigint) => boolean;
+  /** The rect an object's sprites actually cover, in world pixels --
+   * supplied by whoever built them, never measured a second time here.
+   * `undefined` for an object that draws nothing, which then resolves
+   * through its own footprint cells alone. */
+  readonly drawnRectOf?: (objectId: bigint) => PickRect | undefined;
 }
 
 /** What a click resolved to. Empty ground and a prop that declares no
  * interaction both resolve to `undefined`: no intent *and* no ignore,
- * because nothing was refused -- there was nothing there to refuse
- * (Artie's direction: the cursor stays `default` and nothing happens). */
+ * because nothing was refused -- there was nothing there to refuse. */
 export type ClickResolution = { readonly intent: Intent } | { readonly ignored: bigint };
 
 /** Just enough of a placed object to place its own reach rect in the
@@ -104,35 +143,55 @@ export function isWithinReach(
 }
 
 /**
- * The visible object drawn last -- i.e. in front -- in the cell, or
- * `undefined` if the cell is empty or everything in it is hidden. Costs
- * exactly one cell lookup: the footprint index answers from that cell's
- * own chunk, whatever else the world holds.
- *
- * Every candidate in one cell shares that cell's own `x`/`y`, so the
- * FR123 key reduces to rank then stable id here -- but it is still the
- * real comparator that decides, not a hand-rolled "higher rank wins"
- * restatement that could drift from it.
+ * The FR123 key a candidate is ordered by -- its own drawn row, which is
+ * the row its sprite is anchored on, never the cell the pointer happens
+ * to be in (a tall prop is picked from cells above its own). Exported so
+ * a test can use the renderer's own sort as its oracle instead of
+ * restating this rule.
+ */
+export function pickSortKey(
+  entry: FootprintEntry,
+  def: PickObjectDef | undefined,
+  floor: number,
+  context: Pick<PickContext, "rankOf">,
+): Drawable {
+  const bottomRow = entry.anchorY + Math.max(1, def?.height ?? 1) - 1;
+  return {
+    x: toSortUnits(entry.anchorX),
+    y: toSortUnits(bottomRow),
+    rank: context.rankOf(entry.layer),
+    stableId: entry.objectId,
+    floor,
+  };
+}
+
+function containsPoint(rect: PickRect, x: number, y: number): boolean {
+  return x >= rect.x0 && x < rect.x1 && y >= rect.y0 && y < rect.y1;
+}
+
+/**
+ * The visible object drawn in front at `point`, or `undefined` if nothing
+ * drawn covers it. Costs exactly one cell lookup: the footprint index
+ * answers from that cell's own chunk, whatever else the world holds.
  */
 export function topmostAt(
-  cellX: number,
-  cellY: number,
+  point: PickPoint,
   floor: number,
   context: PickContext,
 ): FootprintEntry | undefined {
-  const { index, rankOf, isVisible } = context;
+  const { index, isVisible, drawnRectOf, objectDefs } = context;
   let best: FootprintEntry | undefined;
   let bestKey: Drawable | undefined;
 
-  for (const candidate of index.objectsAt(floor, cellX, cellY)) {
+  for (const candidate of index.objectsAt(floor, point.cellX, point.cellY)) {
     if (isVisible && !isVisible(candidate.objectId)) continue;
-    const key: Drawable = {
-      x: toSortUnits(cellX),
-      y: toSortUnits(cellY),
-      rank: rankOf(candidate.layer),
-      stableId: candidate.objectId,
-      floor,
-    };
+
+    // An object that draws something is picked by what it draws; one
+    // that draws nothing keeps the cell it was found under.
+    const rect = drawnRectOf?.(candidate.objectId);
+    if (rect && !containsPoint(rect, point.worldXPx, point.worldYPx)) continue;
+
+    const key = pickSortKey(candidate, objectDefs.get(candidate.defId), floor, context);
     if (!bestKey || compareDrawables(key, bestKey) > 0) {
       best = candidate;
       bestKey = key;
@@ -142,23 +201,22 @@ export function topmostAt(
 }
 
 /**
- * FR148, whole: resolve the world point `(worldX, worldY)` on `floor` to
- * the object under it, and decide -- from that object's own `interact_at`
- * and the player's feet -- whether this click is an intent or an ignore.
+ * FR148, whole: resolve `point` on `floor` to the object drawn under it,
+ * and decide -- from that object's own `interact_at` and the player's
+ * feet -- whether this click is an intent or an ignore.
  *
- * Exactly one of three things happens, and the caller cannot get a fourth:
- * an intent (reachable, interactable), an ignore (interactable, out of
- * reach), or nothing at all (empty ground, a prop that declares no
+ * Exactly one of three things happens, and the caller cannot get a
+ * fourth: an intent (reachable, interactable), an ignore (interactable,
+ * out of reach), or nothing at all (empty ground, a prop that declares no
  * interaction, or an object whose definition this client has not got).
  */
 export function resolveClick(
-  worldX: number,
-  worldY: number,
+  point: PickPoint,
   floor: number,
   player: PickPlayer,
   context: PickContext,
 ): ClickResolution | undefined {
-  const entry = topmostAt(Math.floor(worldX), Math.floor(worldY), floor, context);
+  const entry = topmostAt(point, floor, context);
   if (!entry) return undefined;
 
   const def = context.objectDefs.get(entry.defId);

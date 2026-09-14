@@ -15,9 +15,8 @@
 
 import { type Application, Assets, Container, Rectangle, Sprite, Texture } from "pixi.js";
 import type { IgnoredSink, IntentSink } from "../input/intent";
-import { DEFAULT_BINDINGS } from "../input/keybindings";
-import { attachKeyboard, KeyboardState } from "../input/keyboard";
-import type { PickContext } from "../input/pick";
+import { attachKeyboard, type KeyboardState } from "../input/keyboard";
+import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
 import { layerCodeByName } from "../render/layer-table";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
@@ -210,14 +209,16 @@ const CANVAS_MARGIN_PX = 8;
  * never a second, separately-typed `floor < 0` check. */
 const SUBWAY_BACKGROUND = 0x000000;
 
-/** FR173's affordance mark, as one dial (Artie's direction): a warm tint
- * on a hovered, in-reach object's own sprites. A tint multiplies, and
- * FR121 bans the filters that could brighten instead, so this shifts the
- * object warm rather than lifting its brightness -- the same "this one,
- * here" read, within the rules this client already holds. */
-const HIGHLIGHT_TINT = 0xfff0c0;
-/** Pixi's own "no tint" value -- restoring this is what clears the mark. */
-const NO_HIGHLIGHT_TINT = 0xffffff;
+/** FR173's affordance mark, as one dial (Artie's direction, cycle 2):
+ * how strongly the additive overlay copy of a hovered object's own
+ * sprites is drawn. Additive blending brightens that object's own opaque
+ * pixels neutrally; a tint can only multiply, which reads as stained
+ * rather than lit and carries the state change in hue alone. A blend mode
+ * is not a filter, so FR121's ban is untouched. */
+const HIGHLIGHT_ALPHA = 0.18;
+/** The overlay's blend mode -- one of Pixi's basic modes, which needs no
+ * filter path in the renderer. */
+const HIGHLIGHT_BLEND_MODE = "add" as const;
 
 /** The layer code every ground-tile-pass group's own synthetic
  * `VisibilityDrawable` carries -- never read by `computeVisibility`'s
@@ -291,10 +292,15 @@ export interface MountDemoSceneOptions {
    * object that is out of reach (AC2) -- the render side's own cue that
    * the click was refused. */
   readonly onIgnored?: IgnoredSink;
-  /** The keyboard state to drive movement with. Injected so the caller
-   * can hand the same instance to the options menu (which takes the
-   * keyboard while it is open) and re-bind it live. */
-  readonly keyboard?: KeyboardState;
+  /** Called whenever the affordance-marked object changes (FR173), with
+   * `undefined` when nothing is marked -- the render path's own event,
+   * never polled. */
+  readonly onHighlightChange?: (objectId: bigint | undefined) => void;
+  /** The keyboard state to drive movement with -- required, and built by
+   * the caller from the player's own stored bindings. No default here on
+   * purpose: one falling back to `DEFAULT_BINDINGS` would silently ignore
+   * what the player had set. */
+  readonly keyboard: KeyboardState;
 }
 
 export interface DemoSceneHandle {
@@ -532,6 +538,7 @@ export async function mountDemoScene(
     onIntent,
     onIgnored,
     onViewTransform,
+    onHighlightChange,
   } = options;
 
   const rawTextures = new Map<string, Texture>();
@@ -714,12 +721,43 @@ export async function mountDemoScene(
   // shape a later chunk-streaming story's `onInsert` will feed, just
   // called directly here instead of from a subscription (`placed_object`
   // stays private in this story).
-  const objectSources = new Map<number, ObjectSource>([
-    ...objectDefs,
-    ...demoColliderSources(movementConfig.subcellsPerCell),
-  ]);
+  // How far each definition's *art* is drawn outside its own footprint,
+  // measured from the real sprites this scene just built (never a second,
+  // hand-typed height). The footprint index needs it so that a click on
+  // the part of a tall prop drawn over the cells above it still finds
+  // that prop: our sprites are bottom-centre anchored, so a 16x32 bin on
+  // a 1x1 footprint draws a whole cell up into the row behind it.
+  const placedRows = demoPlacedRows();
+  const defIdByObjectId = new Map(placedRows.map((row) => [row.objectId, row.defId]));
+  const overhangByDefId = new Map<number, { up: number; side: number }>();
+  for (const entry of entries) {
+    const defId = defIdByObjectId.get(entry.drawable.stableId);
+    if (defId === undefined) continue;
+    const footprintWidthPx = entry.drawable.footprintWidth * tileSizePx;
+    const up = Math.max(0, Math.ceil((entry.view.height - tileSizePx) / tileSizePx));
+    const side = Math.max(0, Math.ceil((entry.view.width - footprintWidthPx) / 2 / tileSizePx));
+    const current = overhangByDefId.get(defId);
+    overhangByDefId.set(defId, {
+      up: Math.max(current?.up ?? 0, up),
+      side: Math.max(current?.side ?? 0, side),
+    });
+  }
+
+  const objectSources = new Map<number, ObjectSource>(
+    [...objectDefs, ...demoColliderSources(movementConfig.subcellsPerCell)].map(
+      ([defId, source]) => {
+        const overhang = overhangByDefId.get(defId);
+        return [
+          defId,
+          overhang
+            ? { ...source, drawOverhangCellsUp: overhang.up, drawOverhangCellsX: overhang.side }
+            : source,
+        ];
+      },
+    ),
+  );
   const worldIndex = new WorldIndex(movementConfig.subcellsPerCell, objectSources);
-  for (const placed of demoPlacedRows()) {
+  for (const placed of placedRows) {
     worldIndex.insert(placed);
   }
 
@@ -821,16 +859,17 @@ export async function mountDemoScene(
 
   onPlayerMove?.(walk.x, walk.y);
 
-  const keyboard = options.keyboard ?? new KeyboardState(DEFAULT_BINDINGS);
+  const { keyboard } = options;
   const detachKeyboard = attachKeyboard(keyboard);
 
-  // FR173's affordance mark: a subtle tint on the hovered object's *own*
-  // drawables -- never its tile, never a box drawn around it, and never
-  // anything added to the scene. FR121 bans every filter and mask in this
-  // client, so this is a plain sprite tint rather than a ColorMatrix
-  // brighten: a warm shift that reads as "lit" without a coloured
-  // outline, held steady while hovered (it never pulses, so it can never
-  // flash). One named constant, so the strength is a dial.
+  // FR173's affordance mark (Artie's direction, cycle 2): while an object
+  // is hovered and in reach, one extra sprite per drawable of that object
+  // -- same texture, same transform, drawn in the slot directly above its
+  // own source sprite -- composited additively. That brightens the
+  // object's own opaque pixels and nothing else: not its tile, not a box
+  // around it, and nothing left in the world once the pointer moves on.
+  // Built lazily on hover and destroyed on un-hover, so a scene at rest
+  // carries none of them.
   const spritesByObjectId = new Map<bigint, Sprite[]>();
   for (const entry of entries) {
     const id = entry.drawable.stableId;
@@ -838,41 +877,98 @@ export async function mountDemoScene(
     if (list) list.push(entry.view);
     else spritesByObjectId.set(id, [entry.view]);
   }
+
   let highlightedObjectId: bigint | undefined;
+  let highlightOverlays: Sprite[] = [];
+
+  function clearHighlightOverlays(): void {
+    for (const overlay of highlightOverlays) {
+      overlay.parent?.removeChild(overlay);
+      overlay.destroy();
+    }
+    highlightOverlays = [];
+  }
+
+  function buildHighlightOverlays(objectId: bigint): void {
+    for (const source of spritesByObjectId.get(objectId) ?? []) {
+      const parent = source.parent;
+      if (!parent || !source.visible) continue;
+      const overlay = new Sprite(source.texture);
+      overlay.anchor.set(source.anchor.x, source.anchor.y);
+      overlay.x = source.x;
+      overlay.y = source.y;
+      overlay.scale.set(source.scale.x, source.scale.y);
+      overlay.alpha = HIGHLIGHT_ALPHA * source.alpha;
+      overlay.blendMode = HIGHLIGHT_BLEND_MODE;
+      parent.addChildAt(overlay, parent.getChildIndex(source) + 1);
+      highlightOverlays.push(overlay);
+    }
+  }
+
   function setHighlight(objectId: bigint | undefined): void {
     if (highlightedObjectId === objectId) return;
-    if (highlightedObjectId !== undefined) {
-      for (const sprite of spritesByObjectId.get(highlightedObjectId) ?? []) {
-        sprite.tint = NO_HIGHLIGHT_TINT;
-      }
-    }
+    clearHighlightOverlays();
     highlightedObjectId = objectId;
-    if (objectId !== undefined) {
-      for (const sprite of spritesByObjectId.get(objectId) ?? []) {
-        sprite.tint = HIGHLIGHT_TINT;
-      }
-    }
+    if (objectId !== undefined) buildHighlightOverlays(objectId);
+    onHighlightChange?.(objectId);
+  }
+
+  /** Re-attaches the overlays after something rebuilt the pool
+   * container's children: `applyDepthOrder` drops every child it does not
+   * own, and an overlay is deliberately not a pool member. */
+  function reapplyHighlight(): void {
+    if (highlightedObjectId === undefined) return;
+    clearHighlightOverlays();
+    buildHighlightOverlays(highlightedObjectId);
   }
 
   // FR148's one pointer listener, on the canvas element itself -- no Pixi
   // `eventMode`, no `interactive`, no per-sprite `on("pointer…")`
   // anywhere in this client.
+  // The rect each object's sprites actually cover, in the world
+  // container's own pixel space -- measured once from the real sprites
+  // this scene built, never a second hand-typed height. This is what lets
+  // a click on any drawn part of a prop resolve to it, including the part
+  // that overhangs the cells above its own footprint.
+  const drawnRects = new Map<bigint, PickRect>();
+  for (const [objectId, sprites] of spritesByObjectId) {
+    let x0 = Number.POSITIVE_INFINITY;
+    let y0 = Number.POSITIVE_INFINITY;
+    let x1 = Number.NEGATIVE_INFINITY;
+    let y1 = Number.NEGATIVE_INFINITY;
+    for (const sprite of sprites) {
+      const left = sprite.x - sprite.width * sprite.anchor.x;
+      const top = sprite.y - sprite.height * sprite.anchor.y;
+      x0 = Math.min(x0, left);
+      y0 = Math.min(y0, top);
+      x1 = Math.max(x1, left + sprite.width);
+      y1 = Math.max(y1, top + sprite.height);
+    }
+    if (Number.isFinite(x0)) drawnRects.set(objectId, { x0, y0, x1, y1 });
+  }
+
   const pickContext = (): PickContext => ({
     index: worldIndex,
     objectDefs: objectSources,
     rankOf,
     subcellsPerCell: movementConfig.subcellsPerCell,
     isVisible: (objectId) => !hiddenObjectIds.has(objectId),
+    drawnRectOf: (objectId) => drawnRects.get(objectId),
   });
-  const detachPointer = attachPointer({
+  const pointer = attachPointer({
     element: app.canvas,
     // Client pixels to the world-pixel space `screenPositionPx` produces:
     // undo the canvas's own CSS scaling, then the camera offset and zoom
     // this scene applied to the world container.
     toWorldPx: (clientX, clientY) => {
       const rect = app.canvas.getBoundingClientRect();
-      const scaleX = rect.width > 0 ? app.canvas.width / rect.width : 1;
-      const scaleY = rect.height > 0 ? app.canvas.height / rect.height : 1;
+      // `app.screen` is in the renderer's *logical* units -- the same
+      // space `world.position`/`world.scale` live in. `canvas.width` is in
+      // device pixels and matches only while `resolution` is 1, so the day
+      // someone turns on `autoDensity` for HiDPI it would put every click
+      // on the wrong cell with nothing to catch it.
+      const scaleX = rect.width > 0 ? app.screen.width / rect.width : 1;
+      const scaleY = rect.height > 0 ? app.screen.height / rect.height : 1;
       return {
         x: ((clientX - rect.left) * scaleX - world.position.x) / world.scale.x,
         y: ((clientY - rect.top) * scaleY - world.position.y) / world.scale.y,
@@ -912,6 +1008,7 @@ export async function mountDemoScene(
     const after = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
     if (after.x !== before.x || after.y !== before.y) {
       applyDepthOrder(poolContainer, members, renderOrder);
+      reapplyHighlight();
       onOrderChange?.(renderOrder);
     }
 
@@ -925,6 +1022,14 @@ export async function mountDemoScene(
       applyVisibilityFor(walk.cellX, walk.cellY, walk.floor, false);
       refreshHiddenObjects();
     }
+
+    // The hover has to follow the world, not only the mouse: movement is
+    // keyboard-only, so walking into or out of an object's reach with the
+    // mouse held still is the normal way a player meets the affordance.
+    // Reach is sub-cell, so this runs on every step that actually moved,
+    // not only when the player enters a new cell. It is still an event --
+    // a frame where nothing moved returns above and never reaches here.
+    pointer.refresh();
   });
 
   return {
@@ -933,7 +1038,7 @@ export async function mountDemoScene(
     keyboard,
     destroy: () => {
       detachKeyboard();
-      detachPointer();
+      pointer.detach();
       setHighlight(undefined);
     },
   };

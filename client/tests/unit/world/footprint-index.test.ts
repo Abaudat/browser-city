@@ -69,6 +69,41 @@ describe("FootprintIndex", () => {
     });
   });
 
+  it("covers the cells a prop's art overhangs into, not only its footprint", () => {
+    // Our props are bottom-anchored and draw upward past their own row
+    // (a 16x32 bin on a 1x1 footprint). A click on the drawn part must
+    // find the object, so the broad phase has to reach those cells too.
+    const tall: FootprintSource = { width: 1, height: 1, drawOverhangCellsUp: 1 };
+    const index = indexWith(new Map([[1, tall]]));
+    index.insert(row({ objectId: 7n, x: 4, y: 5 }));
+    expect(index.objectsAt(0, 4, 5).map((e) => e.objectId)).toEqual([7n]);
+    expect(index.objectsAt(0, 4, 4).map((e) => e.objectId)).toEqual([7n]);
+    // Never below its own row, and never further up than it draws.
+    expect(index.objectsAt(0, 4, 6)).toEqual([]);
+    expect(index.objectsAt(0, 4, 3)).toEqual([]);
+  });
+
+  it("covers sideways overhang too, on both sides", () => {
+    const wide: FootprintSource = { width: 1, height: 1, drawOverhangCellsX: 1 };
+    const index = indexWith(new Map([[1, wide]]));
+    index.insert(row({ objectId: 8n, x: 4, y: 5 }));
+    for (const cellX of [3, 4, 5]) {
+      expect(index.objectsAt(0, cellX, 5).map((e) => e.objectId)).toEqual([8n]);
+    }
+    expect(index.objectsAt(0, 2, 5)).toEqual([]);
+    expect(index.objectsAt(0, 6, 5)).toEqual([]);
+  });
+
+  it("an overhanging object is removed from its overhang cells too", () => {
+    const tall: FootprintSource = { width: 1, height: 1, drawOverhangCellsUp: 2 };
+    const index = indexWith(new Map([[1, tall]]));
+    const r = row({ objectId: 9n, x: 4, y: 5 });
+    index.insert(r);
+    index.delete(r);
+    for (const cellY of [3, 4, 5]) expect(index.objectsAt(0, 4, cellY)).toEqual([]);
+    expect(index.allocatedChunkCount()).toBe(0);
+  });
+
   it("keeps floors independent (FR117)", () => {
     const index = indexWith(new Map([[1, ONE_CELL]]));
     index.insert(row({ objectId: 1n, x: 2, y: 2, floor: 0 }));

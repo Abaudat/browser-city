@@ -21,7 +21,7 @@
 //     including on "Reset to defaults".
 
 import type { BindableAction, Bindings } from "../input/keybindings";
-import { BINDABLE_ACTIONS, DEFAULT_BINDINGS, rebind } from "../input/keybindings";
+import { BINDABLE_ACTIONS, DEFAULT_BINDINGS, isBindableCode, rebind } from "../input/keybindings";
 
 /** How long both rows of a swap stay marked, so the player sees what
  * moved. A steady mark that ends, never a pulse -- nothing in this menu
@@ -35,11 +35,36 @@ const ACTION_LABELS: Readonly<Record<BindableAction, string>> = {
   move_right: "Walk right",
 };
 
-const ARROW_GLYPHS: Readonly<Record<string, string>> = {
+/** What the common non-letter keys are called on a keyboard, rather than
+ * in the `KeyboardEvent.code` vocabulary: a player who binds Shift should
+ * not be shown "ShiftLeft". */
+const CODE_LABELS: Readonly<Record<string, string>> = {
   ArrowUp: "↑",
   ArrowDown: "↓",
   ArrowLeft: "←",
   ArrowRight: "→",
+  Space: "Space",
+  Enter: "Enter",
+  Tab: "Tab",
+  Backspace: "Backspace",
+  CapsLock: "Caps Lock",
+  ShiftLeft: "Left Shift",
+  ShiftRight: "Right Shift",
+  ControlLeft: "Left Ctrl",
+  ControlRight: "Right Ctrl",
+  AltLeft: "Left Alt",
+  AltRight: "Right Alt",
+  Semicolon: ";",
+  Quote: "'",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+  Backslash: "\\",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Minus: "-",
+  Equal: "=",
+  Backquote: "`",
 };
 
 const CAPTURE_PROMPT = "Press a key…";
@@ -49,10 +74,11 @@ const CAPTURE_PROMPT = "Press a key…";
  * otherwise the code itself, which is at least something a player can
  * recognise. */
 export function keycapLabel(code: string): string {
-  const arrow = ARROW_GLYPHS[code];
-  if (arrow) return arrow;
+  const named = CODE_LABELS[code];
+  if (named) return named;
   if (code.startsWith("Key") && code.length === 4) return code.slice(3);
   if (code.startsWith("Digit") && code.length === 6) return code.slice(5);
+  if (code.startsWith("Numpad") && code.length === 7) return `Num ${code.slice(6)}`;
   return code;
 }
 
@@ -313,24 +339,65 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
     }
   }
 
+  /** Every control inside the panel, in DOM order -- what Tab cycles
+   * through, and what the trap below wraps around. */
+  function focusables(): HTMLElement[] {
+    return [...panel.querySelectorAll<HTMLElement>("button")];
+  }
+
   function setOpen(next: boolean): void {
     if (open === next) return;
     open = next;
     backdrop.hidden = !next;
     if (!next) capturing = undefined;
     render();
+    if (next) {
+      // A menu about keys must be reachable by keyboard: start focus on
+      // the first keycap so Tab continues from inside the panel rather
+      // than from wherever the page happened to be.
+      focusables()[0]?.focus();
+    } else {
+      // Hand focus back to the page, or a movement key would be typed
+      // into whichever button was still focused.
+      (doc.activeElement as HTMLElement | null)?.blur();
+      doc.body.focus?.();
+    }
     onOpenChange?.(next);
+  }
+
+  /** Keeps Tab inside the panel while it is open -- without this it walks
+   * straight out to the page behind the backdrop, where nothing is
+   * visible to a sighted player. */
+  function trapTab(event: KeyboardEvent): void {
+    const controls = focusables();
+    if (controls.length === 0) return;
+    const first = controls[0] as HTMLElement;
+    const last = controls[controls.length - 1] as HTMLElement;
+    const active = doc.activeElement;
+    if (event.shiftKey && (active === first || !panel.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !panel.contains(active))) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (capturing) {
-      // Escape cancels the capture; it never binds, and never closes the
-      // menu out from under a player who was mid-rebind.
+      // Escape cancels the capture, and so does Tab: binding Tab would
+      // take away the only way to move around this menu without a mouse.
+      // Neither ever binds, and neither closes the menu out from under a
+      // player who was mid-rebind.
       event.preventDefault();
-      if (event.code === "Escape") {
+      if (event.code === "Escape" || event.code === "Tab") {
         stopCapture();
         return;
       }
+      // A key no loader would keep is simply not a binding: stay in
+      // capture and wait for a real one, rather than saving something
+      // that disappears on the next reload.
+      if (!isBindableCode(event.code)) return;
       const { action, slot } = capturing;
       const previousOwner = BINDABLE_ACTIONS.find(
         (other) => other !== action && bindings[other].includes(event.code),
@@ -343,7 +410,9 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
     if (event.code === "Escape") {
       event.preventDefault();
       setOpen(!open);
+      return;
     }
+    if (open && event.code === "Tab") trapTab(event);
   };
 
   const onResetClick = (): void => {

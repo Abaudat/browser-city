@@ -5,6 +5,7 @@ import {
   actionForCode,
   BINDABLE_ACTIONS,
   DEFAULT_BINDINGS,
+  isBindableCode,
   isReservedCode,
   normaliseBindings,
   RESERVED_CODES,
@@ -46,6 +47,35 @@ describe("DEFAULT_BINDINGS", () => {
     expect(RESERVED_CODES).toContain("Escape");
     expect(isReservedCode("Escape")).toBe(true);
     expect(isReservedCode("KeyW")).toBe(false);
+  });
+});
+
+describe("isBindableCode", () => {
+  // One definition of "a code a player can actually bind", shared by
+  // `rebind` and `normaliseBindings` -- otherwise the menu can save a
+  // binding that silently vanishes on the next load.
+  it("accepts a real physical key code", () => {
+    for (const code of ["KeyW", "ArrowUp", "Space", "Numpad8", "F5", "Semicolon"]) {
+      expect(isBindableCode(code)).toBe(true);
+    }
+  });
+
+  it("rejects the empty string", () => {
+    expect(isBindableCode("")).toBe(false);
+  });
+
+  it("rejects 'Unidentified', which an IME or a virtual keyboard can send", () => {
+    expect(isBindableCode("Unidentified")).toBe(false);
+  });
+
+  it("rejects a reserved code", () => {
+    expect(isBindableCode("Escape")).toBe(false);
+  });
+
+  it("rejects anything that is not a string at all", () => {
+    for (const value of [undefined, null, 42, {}, []]) {
+      expect(isBindableCode(value as unknown as string)).toBe(false);
+    }
   });
 });
 
@@ -95,6 +125,54 @@ describe("rebind", () => {
 
   it("refuses a reserved code, leaving the map exactly as it was", () => {
     expect(rebind(DEFAULT_BINDINGS, "move_up", 0, "Escape")).toEqual(DEFAULT_BINDINGS);
+  });
+
+  it("refuses a code no loader would keep, rather than saving one that vanishes", () => {
+    // `rebind` and `normaliseBindings` must agree on what is bindable:
+    // anything the menu can write must survive the next load.
+    for (const code of ["", "Unidentified"]) {
+      expect(rebind(DEFAULT_BINDINGS, "move_up", 0, code)).toEqual(DEFAULT_BINDINGS);
+    }
+  });
+
+  it("inv_rebind_survives_reload", () => {
+    // Whatever any sequence of rebinds produces, loading it back yields
+    // exactly the same map -- no binding the player set can disappear on
+    // the next boot.
+    const codeArb = fc.oneof(
+      fc.constantFrom(
+        "KeyW",
+        "KeyA",
+        "KeyS",
+        "KeyD",
+        "ArrowUp",
+        "ArrowLeft",
+        "KeyI",
+        "Space",
+        "Numpad8",
+        "Escape",
+        "Unidentified",
+        "",
+      ),
+      fc.string(),
+    );
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            action: fc.constantFrom(...BINDABLE_ACTIONS),
+            slot: fc.integer({ min: 0, max: 2 }),
+            code: codeArb,
+          }),
+          { maxLength: 20 },
+        ),
+        (steps) => {
+          let bindings = DEFAULT_BINDINGS;
+          for (const step of steps) bindings = rebind(bindings, step.action, step.slot, step.code);
+          expect(normaliseBindings(bindings)).toEqual(bindings);
+        },
+      ),
+    );
   });
 
   it("rebinding a slot to the code it already holds changes nothing", () => {

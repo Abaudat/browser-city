@@ -271,6 +271,76 @@ describe("rebinding through the menu", () => {
   });
 });
 
+describe("keyboard navigation", () => {
+  // A menu about keys has to be usable without a mouse.
+  it("focuses the first keycap on open, so Tab starts inside the panel", () => {
+    const h = mount();
+    h.menu.open();
+    expect(document.activeElement).toBe(keycapsOf("move_up")[0]);
+    h.menu.destroy();
+  });
+
+  it("returns focus to the page on close, so movement keys are not typed into a button", () => {
+    const h = mount();
+    h.menu.open();
+    h.menu.close();
+    expect(document.activeElement).not.toBe(keycapsOf("move_up")[0]);
+    expect(["BODY", undefined]).toContain(document.activeElement?.tagName);
+    h.menu.destroy();
+  });
+
+  it("keeps Tab inside the panel rather than leaking to the page behind it", () => {
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    const h = mount();
+    h.menu.open();
+
+    const focusables = [...document.querySelectorAll<HTMLElement>("[data-bc-panel] button")];
+    const last = focusables[focusables.length - 1] as HTMLElement;
+    const first = focusables[0] as HTMLElement;
+
+    // Tab off the last control wraps to the first, never to `outside`.
+    last.focus();
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "Tab", bubbles: true }));
+    expect(document.activeElement).toBe(first);
+
+    // Shift+Tab off the first wraps to the last.
+    first.focus();
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { code: "Tab", shiftKey: true, bubbles: true }),
+    );
+    expect(document.activeElement).toBe(last);
+    h.menu.destroy();
+  });
+
+  it("Tab cancels a capture instead of binding itself as a movement key", () => {
+    const h = mount();
+    h.menu.open();
+    (keycapsOf("move_up")[0] as HTMLButtonElement).click();
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "Tab", bubbles: true }));
+
+    expect(h.changes).toEqual([]);
+    expect(h.bindings().move_up).toEqual(DEFAULT_BINDINGS.move_up);
+    expect(keycapsOf("move_up")[0]?.textContent).toBe("W");
+    expect(h.menu.isOpen()).toBe(true);
+    h.menu.destroy();
+  });
+
+  it("a key that cannot be bound is ignored, never saved to vanish on reload", () => {
+    const h = mount();
+    h.menu.open();
+    (keycapsOf("move_up")[0] as HTMLButtonElement).click();
+    // Some IMEs and virtual keyboards report this for every key.
+    pressKey("Unidentified");
+    expect(h.changes).toEqual([]);
+    // Still capturing: the player's next real key press is what binds.
+    expect(keycapsOf("move_up")[0]?.textContent).toBe("Press a key…");
+    pressKey("KeyI");
+    expect(h.bindings().move_up).toEqual(["KeyI", "ArrowUp"]);
+    h.menu.destroy();
+  });
+});
+
 describe("keycapLabel", () => {
   it("prints a letter key as its letter and an arrow as its glyph", () => {
     expect(keycapLabel("KeyW")).toBe("W");
@@ -280,9 +350,31 @@ describe("keycapLabel", () => {
     expect(keycapLabel("ArrowRight")).toBe("→");
   });
 
-  it("prints a digit key as its digit, and anything else as its own code", () => {
+  it("prints a digit key as its digit", () => {
     expect(keycapLabel("Digit1")).toBe("1");
+    expect(keycapLabel("Numpad8")).toBe("Num 8");
+  });
+
+  it("gives the common non-letter keys readable names, never a code identifier", () => {
     expect(keycapLabel("Space")).toBe("Space");
+    expect(keycapLabel("ShiftLeft")).toBe("Left Shift");
+    expect(keycapLabel("ShiftRight")).toBe("Right Shift");
+    expect(keycapLabel("ControlLeft")).toBe("Left Ctrl");
+    expect(keycapLabel("AltLeft")).toBe("Left Alt");
+    expect(keycapLabel("Enter")).toBe("Enter");
+    expect(keycapLabel("Tab")).toBe("Tab");
+  });
+
+  it("prints punctuation as the character it is, not as its code name", () => {
+    expect(keycapLabel("Semicolon")).toBe(";");
+    expect(keycapLabel("Comma")).toBe(",");
+    expect(keycapLabel("Period")).toBe(".");
+    expect(keycapLabel("Slash")).toBe("/");
+    expect(keycapLabel("BracketLeft")).toBe("[");
+    expect(keycapLabel("BracketRight")).toBe("]");
+  });
+
+  it("falls back to the code itself for anything it has no name for", () => {
     expect(keycapLabel("F5")).toBe("F5");
   });
 });

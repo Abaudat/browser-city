@@ -36,6 +36,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * The storage to use, or `null` -- given a getter rather than a value
+ * because reaching for `window.localStorage` can itself throw in an
+ * embedded or storage-blocked context, not only reading from it. This is
+ * the whole of AC4's "a browser with cleared storage falls back to
+ * defaults without error" entry point, and it lives here so it is
+ * testable: `main.ts` is not covered, and no browser test can make
+ * property access on `localStorage` throw on demand.
+ */
+export function resolveStorage(
+  get: () => BindingsStorage | null | undefined,
+): BindingsStorage | null {
+  try {
+    return get() ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** The player's bindings, or the defaults -- for every possible reason
  * the stored value might not be usable. Never throws, never writes. */
 export function loadBindings(storage: BindingsStorage | null | undefined): Bindings {

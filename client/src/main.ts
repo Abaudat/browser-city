@@ -2,10 +2,11 @@ import { Application } from "pixi.js";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
 import { mountDemoScene } from "./demo/scene";
-import { loadBindings, saveBindings } from "./input/keybindings-storage";
+import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
 import { connect } from "./net/connection";
 import {
+  recordHighlightForE2e,
   recordIgnoredIntentForE2e,
   recordIntentForE2e,
   recordMasksCheckedForE2e,
@@ -87,16 +88,18 @@ async function startDemoScene(): Promise<void> {
 
   // FR149: the player's own bindings, or the defaults if storage is
   // empty, blocked or unreadable -- never an error the player has to see
-  // or a game that will not start.
-  const storage = safeLocalStorage();
-  const keyboard = new KeyboardState(loadBindings(storage));
+  // or a game that will not start. Read exactly once, so the keyboard and
+  // the menu can never start out disagreeing about what is bound.
+  const storage = resolveStorage(() => window.localStorage);
+  const bindings = loadBindings(storage);
+  const keyboard = new KeyboardState(bindings);
 
   // FR151's options menu. It takes the keyboard while it is open, so a
   // key pressed to rebind never also walks the avatar; the world behind
   // it keeps running, because the city never pauses.
   mountOptionsMenu({
     container: document.body,
-    initialBindings: loadBindings(storage),
+    initialBindings: bindings,
     onBindingsChange: (bindings) => {
       keyboard.setBindings(bindings);
       saveBindings(storage, bindings);
@@ -130,18 +133,8 @@ async function startDemoScene(): Promise<void> {
     onIntent: recordIntentForE2e,
     onIgnored: recordIgnoredIntentForE2e,
     onViewTransform: recordViewTransformForE2e,
+    onHighlightChange: recordHighlightForE2e,
   });
-}
-
-/** `localStorage` can throw on mere *access* in an embedded or
- * storage-blocked context, not only on read -- so even reaching for it is
- * guarded, and the game plays on defaults when it is not there. */
-function safeLocalStorage(): Storage | null {
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
 }
 
 function getBalance(defs: Defs, key: string): number {

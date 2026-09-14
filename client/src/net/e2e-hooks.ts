@@ -18,6 +18,7 @@ declare global {
       intents?: { objectId: string; defId: number }[];
       ignoredIntents?: string[];
       viewTransform?: { zoom: number; offsetX: number; offsetY: number };
+      highlightedObjectId?: string | null;
     };
   }
 }
@@ -119,5 +120,17 @@ export function recordViewTransformForE2e(zoom: number, offsetX: number, offsetY
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.viewTransform = { zoom, offsetX, offsetY };
+  window.__bc = bucket;
+}
+
+/** FR173's affordance mark, as the real scene applied it: which object is
+ * marked right now, or `null` when none is. `intents.spec.ts` reads this
+ * to prove the mark follows the *player* -- walking into reach with the
+ * mouse held still must light the object up, which no pointer event
+ * would ever report. */
+export function recordHighlightForE2e(objectId: bigint | undefined): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.highlightedObjectId = objectId === undefined ? null : objectId.toString();
   window.__bc = bucket;
 }

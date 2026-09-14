@@ -38,6 +38,23 @@ export function isReservedCode(code: string): boolean {
   return RESERVED_CODES.includes(code);
 }
 
+/** The code a keyboard reports when it cannot name the physical key --
+ * an IME, and some virtual keyboards, send this for every key. Binding it
+ * would bind *everything*. */
+const UNIDENTIFIED_CODE = "Unidentified";
+
+/**
+ * Whether `code` is a key a player can actually bind. The single
+ * definition [`rebind`] and [`normaliseBindings`] both use: without it
+ * the two can disagree, and the menu can show and save a binding that
+ * silently vanishes on the next load (`inv_rebind_survives_reload`).
+ */
+export function isBindableCode(code: string): boolean {
+  if (typeof code !== "string" || code.length === 0) return false;
+  if (code === UNIDENTIFIED_CODE) return false;
+  return !isReservedCode(code);
+}
+
 /** WASD plus the arrow keys (FR149), each action carrying both. */
 export const DEFAULT_BINDINGS: Bindings = Object.freeze({
   move_up: Object.freeze(["KeyW", "ArrowUp"]),
@@ -84,7 +101,8 @@ function withAction(
  * dialog, and never an action silently left with one key fewer). Either
  * way the result is injective: a code drives exactly one action.
  *
- * A reserved code is refused outright and the map comes back untouched.
+ * A code no loader would keep ([`isBindableCode`]) is refused outright
+ * and the map comes back untouched.
  */
 export function rebind(
   bindings: Bindings,
@@ -92,7 +110,7 @@ export function rebind(
   slotIndex: number,
   code: string,
 ): Bindings {
-  if (isReservedCode(code)) return bindings;
+  if (!isBindableCode(code)) return bindings;
 
   const current = [...bindings[action]];
   const displaced = current[slotIndex];
@@ -162,8 +180,7 @@ export function normaliseBindings(value: unknown): Bindings {
     if (!Array.isArray(stored)) continue;
     const codes: string[] = [];
     for (const code of stored) {
-      if (typeof code !== "string" || code.length === 0) continue;
-      if (isReservedCode(code)) continue;
+      if (!isBindableCode(code)) continue;
       if (!codes.includes(code)) codes.push(code);
     }
     cleaned.set(action, codes);

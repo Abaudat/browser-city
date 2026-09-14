@@ -6,6 +6,7 @@ import {
   KEYBINDINGS_STORAGE_KEY,
   KEYBINDINGS_VERSION,
   loadBindings,
+  resolveStorage,
   saveBindings,
 } from "../../../src/input/keybindings-storage";
 
@@ -144,6 +145,36 @@ describe("loadBindings", () => {
         expect(fake.writes).toEqual([]);
       }),
     );
+  });
+});
+
+describe("resolveStorage", () => {
+  // Reaching for `window.localStorage` can throw on *access* alone, not
+  // only on read -- an embedded or storage-blocked context does exactly
+  // that. This is AC4's "without error" path, and it lives here rather
+  // than in `main.ts` so it can be tested at all.
+  it("returns the storage when it is there", () => {
+    const storage = fakeStorage().storage;
+    expect(resolveStorage(() => storage)).toBe(storage);
+  });
+
+  it("returns null when merely reaching for it throws", () => {
+    expect(
+      resolveStorage(() => {
+        throw new DOMException("denied", "SecurityError");
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null when there is no storage object at all", () => {
+    expect(resolveStorage(() => undefined as unknown as BindingsStorage)).toBeNull();
+  });
+
+  it("feeds loadBindings, which then plays on defaults", () => {
+    const storage = resolveStorage((): BindingsStorage => {
+      throw new DOMException("denied", "SecurityError");
+    });
+    expect(loadBindings(storage)).toEqual(DEFAULT_BINDINGS);
   });
 });
 

@@ -25,7 +25,7 @@
 //   - empty ground or a non-interactable prop: `default`, and nothing at
 //     all happens. There is no click-to-move and no ground marker.
 
-import { worldPointFromScreenPx } from "../render/screen-position";
+import { worldCellFromScreenPx } from "../render/screen-position";
 import type { IgnoredSink, IntentSink } from "./intent";
 import type { PickContext, PickPlayer } from "./pick";
 import { resolveClick } from "./pick";
@@ -66,13 +66,27 @@ export interface PointerOptions {
   readonly onHighlightChange?: (objectId: bigint | undefined) => void;
 }
 
+export interface PointerHandle {
+  /** Re-resolves the hover at the last known pointer position, for when
+   * the *world* moved rather than the mouse. Movement is keyboard-only
+   * (FR149), so a player walking into or out of an object's reach with
+   * the mouse held still is the normal case, not an edge one -- without
+   * this the affordance keeps showing the reach the player used to have.
+   * A no-op while the pointer is outside the canvas, or before it has
+   * ever been over it. Driven by the scene's own events (a movement step,
+   * a visibility change), never polled per frame. */
+  refresh(): void;
+  /** Removes every listener and cancels a pending cursor blip. */
+  detach(): void;
+}
+
 /**
  * Wires one element's pointer events to [`resolveClick`]. Returns a
  * cleanup function that removes every listener it added and cancels a
  * pending cursor blip, so a detached scene can never write to an element
  * it no longer owns.
  */
-export function attachPointer(options: PointerOptions): () => void {
+export function attachPointer(options: PointerOptions): PointerHandle {
   const {
     element,
     toWorldPx,
@@ -89,6 +103,11 @@ export function attachPointer(options: PointerOptions): () => void {
   let hoverCursor: string = CURSOR_DEFAULT;
   let blipTimer: ReturnType<typeof setTimeout> | undefined;
   let detached = false;
+  /** Where the pointer last was, in client coordinates -- cleared when it
+   * leaves, so a world change never revives a hover for a pointer that is
+   * somewhere else entirely. */
+  let lastClientX: number | undefined;
+  let lastClientY: number | undefined;
 
   function setHighlight(objectId: bigint | undefined): void {
     if (highlighted === objectId) return;
@@ -100,21 +119,40 @@ export function attachPointer(options: PointerOptions): () => void {
     element.style.cursor = cursor;
   }
 
-  function resolveAt(event: MouseEvent) {
-    const worldPx = toWorldPx(event.clientX, event.clientY);
+  function resolveAt(clientX: number, clientY: number) {
+    const worldPx = toWorldPx(clientX, clientY);
     const viewer = player();
-    const point = worldPointFromScreenPx(
+    // The cell for the index lookup, and the world pixel for the
+    // drawn-sprite test -- converted once, here, so `pick.ts` never
+    // floors a coordinate itself.
+    const cell = worldCellFromScreenPx(
       worldPx.x,
       worldPx.y,
       viewer.floor,
       tileSizePx,
       storeyHeightPx,
     );
-    return resolveClick(point.x, point.y, viewer.floor, viewer, context());
+    // The world pixel goes through untouched: a drawn rect comes from the
+    // sprite that produced it, which already carries FR124's floor
+    // offset, so undoing that offset here would compare two different
+    // spaces.
+    return resolveClick(
+      {
+        cellX: cell.cellX,
+        cellY: cell.cellY,
+        worldXPx: worldPx.x,
+        worldYPx: worldPx.y,
+      },
+      viewer.floor,
+      viewer,
+      context(),
+    );
   }
 
-  function applyHover(event: MouseEvent): void {
-    const resolution = resolveAt(event);
+  function applyHover(clientX: number, clientY: number): void {
+    lastClientX = clientX;
+    lastClientY = clientY;
+    const resolution = resolveAt(clientX, clientY);
     if (resolution && "intent" in resolution) {
       hoverCursor = CURSOR_INTERACTABLE;
       setHighlight(resolution.intent.objectId);
@@ -132,9 +170,11 @@ export function attachPointer(options: PointerOptions): () => void {
     if (blipTimer === undefined) setCursor(hoverCursor);
   }
 
-  const onPointerMove = (event: MouseEvent): void => applyHover(event);
+  const onPointerMove = (event: MouseEvent): void => applyHover(event.clientX, event.clientY);
 
   const onPointerLeave = (): void => {
+    lastClientX = undefined;
+    lastClientY = undefined;
     hoverCursor = CURSOR_DEFAULT;
     setHighlight(undefined);
     if (blipTimer === undefined) setCursor(hoverCursor);
@@ -145,17 +185,17 @@ export function attachPointer(options: PointerOptions): () => void {
     // must never also act on the world.
     if (event.button !== 0) return;
 
-    const resolution = resolveAt(event);
+    const resolution = resolveAt(event.clientX, event.clientY);
     if (!resolution) return;
 
     if ("intent" in resolution) {
       onIntent(resolution.intent);
-      applyHover(event);
+      applyHover(event.clientX, event.clientY);
       return;
     }
 
     onIgnored?.(resolution.ignored);
-    applyHover(event);
+    applyHover(event.clientX, event.clientY);
     if (blipTimer !== undefined) clearTimeout(blipTimer);
     setCursor(CURSOR_REFUSED);
     blipTimer = setTimeout(() => {
@@ -169,14 +209,21 @@ export function attachPointer(options: PointerOptions): () => void {
   element.addEventListener("pointerleave", onPointerLeave);
   element.addEventListener("pointerdown", onPointerDown);
 
-  return () => {
-    detached = true;
-    if (blipTimer !== undefined) {
-      clearTimeout(blipTimer);
-      blipTimer = undefined;
-    }
-    element.removeEventListener("pointermove", onPointerMove);
-    element.removeEventListener("pointerleave", onPointerLeave);
-    element.removeEventListener("pointerdown", onPointerDown);
+  return {
+    refresh: () => {
+      if (detached) return;
+      if (lastClientX === undefined || lastClientY === undefined) return;
+      applyHover(lastClientX, lastClientY);
+    },
+    detach: () => {
+      detached = true;
+      if (blipTimer !== undefined) {
+        clearTimeout(blipTimer);
+        blipTimer = undefined;
+      }
+      element.removeEventListener("pointermove", onPointerMove);
+      element.removeEventListener("pointerleave", onPointerLeave);
+      element.removeEventListener("pointerdown", onPointerDown);
+    },
   };
 }
