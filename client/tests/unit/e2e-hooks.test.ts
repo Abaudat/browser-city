@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   exposeAppearanceCompareForE2e,
   recordAppearanceTextureIdsForE2e,
+  recordFrameWorkForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
-  recordFrameWorkForE2e,
   recordPlayerPositionForE2e,
   recordRenderOrderForE2e,
   recordVisibilityForE2e,

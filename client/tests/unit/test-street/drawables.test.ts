@@ -1,5 +1,12 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { sortAcrossFloors } from "../../../src/render/floor-stacks";
+import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
+import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
+import { screenPositionPx } from "../../../src/render/screen-position";
+import { compareDrawables } from "../../../src/render/sort-key";
+import { toSortUnits } from "../../../src/render/sort-units";
+import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import {
   buildPlayerDrawable,
   buildPropDrawables,
@@ -14,23 +21,9 @@ import {
   SIDEWALK_TILES,
   SUBWAY_FLOOR,
 } from "../../../src/test-street/fixture";
-import { sortAcrossFloors } from "../../../src/render/floor-stacks";
-import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
-import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
-import { screenPositionPx } from "../../../src/render/screen-position";
-import { compareDrawables } from "../../../src/render/sort-key";
-import { toSortUnits } from "../../../src/render/sort-units";
-import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import type { Vec2 } from "../../../src/world/movement";
 import { step } from "../../../src/world/movement";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
-import {
-  streetMovementConfig,
-  streetOwnershipIndex,
-  streetWindowDefIds,
-  streetWorldIndex,
-  lamppostRestY,
-} from "./street-world";
 import {
   STREET_GOLDEN_ORDER,
   STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
@@ -38,6 +31,13 @@ import {
   STREET_VISIBILITY_AT_REST_IN_SHOP_A,
   STREET_VISIBILITY_ON_SUBWAY_LANDING,
 } from "./golden";
+import {
+  lamppostRestY,
+  streetMovementConfig,
+  streetOwnershipIndex,
+  streetWindowDefIds,
+  streetWorldIndex,
+} from "./street-world";
 
 // Mirrors `render.tile_size_px` / `render.storey_height_px`
 // (`defs/defs.json`) -- the scene itself always reads these from the
@@ -102,9 +102,7 @@ describe("the story 1.6 street scene's committed ordering", () => {
     );
     const pool = sortAcrossFloors([...props, player], (d) => d);
 
-    expect(pool.map((d) => d.stableId.toString())).toEqual(
-      STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
-    );
+    expect(pool.map((d) => d.stableId.toString())).toEqual(STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH);
   });
 
   it("worked example: the player stands between the west wall's near and far cells", () => {

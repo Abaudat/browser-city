@@ -32,8 +32,8 @@ check "a reducer binding import" 1 bash "$CHECK" "$d"
 d="$(plant 'import { connect } from "../net/connection";')"
 check "a net/ import" 1 bash "$CHECK" "$d"
 
-d="$(plant 'import { DEMO_PROPS } from "../demo/fixture";')"
-check "a demo/ import" 1 bash "$CHECK" "$d"
+d="$(plant 'import { STREET_PROPS } from "../test-street/fixture";')"
+check "a test-street/ import" 1 bash "$CHECK" "$d"
 
 d="$(plant 'import { runProcedure } from "../procedures/vend";')"
 check "a procedure module import" 1 bash "$CHECK" "$d"

@@ -16,7 +16,7 @@ export default defineConfig({
         "src/ui/**",
       ],
       // `src/net/bindings/**` is generated (never hand-tested). `src/
-      // demo/**` is throwaway harness code (Tim's direction: fenced off
+      // test-street/**` is throwaway harness code (Tim's direction: fenced off
       // from the permanent render modules precisely so the whole
       // directory can be excluded here, by path, rather than by naming
       // individual files as they're added) -- it is still exercised by

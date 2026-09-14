@@ -11,6 +11,10 @@
 // same file.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { sortAcrossFloors } from "../../../src/render/floor-stacks";
+import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
+import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
+import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import { buildPlayerDrawable, buildPropDrawables } from "../../../src/test-street/drawables";
 import {
   PLATFORM_LANDING_X,
@@ -19,16 +23,8 @@ import {
   STREET_GROUND_TILES,
   SUBWAY_FLOOR,
 } from "../../../src/test-street/fixture";
-import { sortAcrossFloors } from "../../../src/render/floor-stacks";
-import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
-import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
-import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
-import {
-  lamppostRestY,
-  streetOwnershipIndex,
-  streetWindowDefIds,
-} from "./street-world";
+import { lamppostRestY, streetOwnershipIndex, streetWindowDefIds } from "./street-world";
 
 const CODE_BY_NAME: Record<string, number> = Object.fromEntries(
   LAYER_TABLE.map((row) => [row.name, row.code]),

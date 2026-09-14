@@ -23,9 +23,11 @@
 // third boot of the same scene costs the slowest job in the repo real
 // wall time.
 import { expect, type Page, test } from "@playwright/test";
+import type {} from "../../src/net/e2e-hooks";
 import { sortAcrossFloors } from "../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../src/render/layer-ranks";
 import { LAYER_TABLE } from "../../src/render/layer-table";
+import { buildPlayerDrawable, buildPropDrawables } from "../../src/test-street/drawables";
 import {
   BRIDGE_DECK_Y,
   BRIDGE_FLOOR,
@@ -40,11 +42,9 @@ import {
   STREET_PROPS,
   type StreetWalkSegment,
   type StreetWalkUntil,
-  WINDOW_DEF_ID,
   streetWalkRoute,
+  WINDOW_DEF_ID,
 } from "../../src/test-street/fixture";
-import { buildPlayerDrawable, buildPropDrawables } from "../../src/test-street/drawables";
-import type {} from "../../src/net/e2e-hooks";
 import {
   committedDefs,
   lamppostRestY,
@@ -109,11 +109,9 @@ async function waitForSceneReady(page: Page): Promise<void> {
   // The street crowd's own composites finish loading after the first
   // visibility pass (`scene.ts` mounts it last, deliberately), and this
   // spec asserts on them -- so "ready" includes them.
-  await page.waitForFunction(
-    () => window.__bc?.playerAppearance !== undefined,
-    undefined,
-    { timeout: 30_000 },
-  );
+  await page.waitForFunction(() => window.__bc?.playerAppearance !== undefined, undefined, {
+    timeout: 30_000,
+  });
 }
 
 /** Holds one key until the page itself reports the segment's own release
@@ -227,9 +225,7 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // The mounted display list is in the order the comparator demands for
   // the player's real position -- not a literal, and not a rule this spec
   // re-derives.
-  expect(await currentOrder(page)).toEqual(
-    expectedOrderFor(start.x, start.y, start.floor),
-  );
+  expect(await currentOrder(page)).toEqual(expectedOrderFor(start.x, start.y, start.floor));
 
   const route = streetWalkRoute({ lamppostRestY: lamppostRestY() });
   const segment = (label: string): StreetWalkSegment => {
@@ -279,9 +275,7 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // own, which puts the avatar behind the prop while it is north of the
   // prop's own sort line.
   const orderAtLamppost = await currentOrder(page);
-  expect(orderAtLamppost).toEqual(
-    expectedOrderFor(atLamppost.x, atLamppost.y, atLamppost.floor),
-  );
+  expect(orderAtLamppost).toEqual(expectedOrderFor(atLamppost.x, atLamppost.y, atLamppost.floor));
   // The avatar's feet are south of the prop's own sort line here (it came
   // to rest part-way into the prop's cell), so the comparator draws it in
   // *front* of the prop, and the mounted list agrees -- it is the

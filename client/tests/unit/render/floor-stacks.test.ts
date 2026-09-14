@@ -6,11 +6,51 @@
 // between whole stacks, never between two pool members.
 import { Container, Sprite, Texture } from "pixi.js";
 import { describe, expect, it } from "vitest";
-import { FloorStacks } from "../../../src/render/floor-stacks";
+import { FloorStacks, sortAcrossFloors } from "../../../src/render/floor-stacks";
 
 function childIndexOf(parent: Container, child: Container): number {
   return parent.children.indexOf(child);
 }
+
+describe("sortAcrossFloors", () => {
+  const drawable = (stableId: bigint, y: number, floor: number, rank = 20) => ({
+    x: 0,
+    y,
+    rank,
+    stableId,
+    floor,
+  });
+
+  it("puts every drawable on a higher floor after every drawable on a lower one", () => {
+    // The deck sorts *earlier* than the street by the FR123 key (smaller
+    // y), and still draws after it, because it is on a higher floor.
+    const deck = drawable(2n, 10, 1);
+    const street = drawable(1n, 90, 0);
+    const basement = drawable(3n, 50, -1);
+    expect(sortAcrossFloors([street, deck, basement], (d) => d)).toEqual([basement, street, deck]);
+  });
+
+  it("orders drawables on one floor by the comparator alone", () => {
+    const near = drawable(1n, 90, 0);
+    const far = drawable(2n, 10, 0);
+    expect(sortAcrossFloors([near, far], (d) => d)).toEqual([far, near]);
+  });
+
+  it("drops and duplicates nothing, and leaves its input alone", () => {
+    const input = [drawable(1n, 5, 1), drawable(2n, 5, 0), drawable(3n, 1, 1)];
+    const snapshot = [...input];
+    const ordered = sortAcrossFloors(input, (d) => d);
+    expect(ordered).toHaveLength(input.length);
+    expect(new Set(ordered)).toEqual(new Set(input));
+    expect(input).toEqual(snapshot);
+  });
+
+  it("orders nothing at all without complaint", () => {
+    expect(
+      sortAcrossFloors([], (d: { floor: number }) => ({ ...d, x: 0, y: 0, rank: 0, stableId: 0n })),
+    ).toEqual([]);
+  });
+});
 
 describe("FloorStacks", () => {
   it("gives each floor its own four passes, in the fixed FR123 order", () => {
@@ -42,6 +82,7 @@ describe("FloorStacks", () => {
     expect(childIndexOf(world, below.root)).toBeLessThan(childIndexOf(world, street.root));
     expect(childIndexOf(world, street.root)).toBeLessThan(childIndexOf(world, above.root));
     expect(stacks.floors()).toEqual([-1, 0, 1]);
+    expect(stacks.stacks()).toEqual([below, street, above]);
   });
 
   it("draws everything on a higher floor after everything on a lower one, whatever their sort keys", () => {

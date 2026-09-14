@@ -25,8 +25,8 @@ import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
 import type { AppearanceTuple } from "../render/appearance/composite";
-import { layerCodeByName } from "../render/layer-table";
 import { FloorStacks } from "../render/floor-stacks";
+import { layerCodeByName } from "../render/layer-table";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
 import { floorOffsetPx, screenPositionPx } from "../render/screen-position";
@@ -52,6 +52,7 @@ import {
   updatePlayerDrawable,
 } from "./drawables";
 import {
+  PLAYER_START,
   STREET_BUILDING_AREAS,
   STREET_GROUND_TILES,
   STREET_ROOM_AREAS,
@@ -59,7 +60,6 @@ import {
   type StreetGroundTiles,
   streetColliderSources,
   streetPlacedRows,
-  PLAYER_START,
 } from "./fixture";
 
 // Each `new URL(<literal>, import.meta.url)` call below must stay a
@@ -149,12 +149,11 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png",
     import.meta.url,
   ).href,
-  bridgeStairsUp: new URL(
-    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_4.png",
-    import.meta.url,
-  ).href,
-  bridgeStairsDown: new URL(
-    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png",
+  // One cell wide (16x48), so a flight of steps on a one-cell footprint
+  // overhangs upward like every other tall prop and never sideways over
+  // the deck it lands on.
+  bridgeStairs: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Small_2.png",
     import.meta.url,
   ).href,
   subwayWall: new URL(
@@ -1069,14 +1068,7 @@ export async function mountStreetScene(
 
     const before = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
     const floorBefore = walk.floor;
-    walk = stepAndTransition(
-      walk,
-      direction,
-      deltaMS,
-      worldIndex,
-      movementConfig,
-      transitions,
-    );
+    walk = stepAndTransition(walk, direction, deltaMS, worldIndex, movementConfig, transitions);
 
     onPlayerMove?.(walk.x, walk.y, walk.floor);
 

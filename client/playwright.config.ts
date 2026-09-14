@@ -37,6 +37,18 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      // Story 1.13: the perf harness is its own project below, and the
+      // functional run never pays for its minutes of walking.
+      testIgnore: /street-perf\.spec\.ts/,
+    },
+    {
+      // NFR2's measurement harness and regression gate. Never part of
+      // `npm run test:e2e`: `npm run test:e2e:perf` is the only thing
+      // that selects it, and `BC_SOAK_MS` turns the short run into the
+      // 10-minute soak.
+      name: "perf",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /street-perf\.spec\.ts/,
     },
   ],
 });

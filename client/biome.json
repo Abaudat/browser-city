@@ -34,6 +34,7 @@
       "includes": [
         "src/render/**",
         "!src/render/bootstrap.ts",
+        "!src/render/floor-stacks.ts",
         "!src/render/pixi-order.ts",
         "!src/render/pixi-visibility.ts",
         "!src/render/appearance/composite-canvas.ts",
@@ -46,7 +47,7 @@
             "noRestrictedImports": {
               "level": "error",
               "options": {
-                "patterns": [{ "group": ["pixi.js"] }]
+                "patterns": [{ "group": ["pixi.js", "../test-street/*", "../test-street/**"] }]
               }
             }
           }
@@ -63,7 +64,13 @@
               "options": {
                 "patterns": [
                   {
-                    "group": ["pixi.js", "../net/*", "../net/**", "../test-street/*", "../test-street/**"]
+                    "group": [
+                      "pixi.js",
+                      "../net/*",
+                      "../net/**",
+                      "../test-street/*",
+                      "../test-street/**"
+                    ]
                   }
                 ]
               }
@@ -91,7 +98,13 @@
               "options": {
                 "patterns": [
                   {
-                    "group": ["pixi.js", "../net/*", "!../net/bindings/types", "../test-street/*"]
+                    "group": [
+                      "pixi.js",
+                      "../net/*",
+                      "!../net/bindings/types",
+                      "../test-street/*",
+                      "../test-street/**"
+                    ]
                   }
                 ]
               }

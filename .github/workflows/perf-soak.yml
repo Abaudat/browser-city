@@ -1,0 +1,71 @@
+name: perf-soak
+
+# NFR2's ten-minute session, measured (story 1.13). Deliberately *not*
+# part of the `ci` gate: it takes ten minutes of walking per run, and a
+# PR must never wait on it. `scripts/ci/check-ci-gate.sh` only inspects
+# `ci.yml`, so this workflow is invisible to that gate by construction --
+# which is the intent, recorded here rather than left to be rediscovered.
+#
+# What it adds over the short run in `ci.yml`'s `e2e` job is duration: a
+# leak only shows over a long session, so this one samples
+# `performance.memory.usedJSHeapSize` per lap and fails if the last
+# minute's median has grown more than 20% over the second minute's.
+#
+# NFR2 is only partly served either way: "a busy street at rush hour"
+# needs NPC crowds (Epic 5). `docs/trace-matrix.md` marks NFR2 `partial`
+# and names story 5.4 for the rest.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "client/**"
+      - "defs/**"
+      - ".github/workflows/perf-soak.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-soak-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  soak:
+    name: soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # The client reads its sprites straight out of the repo-root
+      # `ModernTileset/`, so this needs the whole repository, never a
+      # sparse or `client/`-only checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+      - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: client/.nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - working-directory: client
+        run: npm ci
+      - working-directory: client
+        run: npx playwright install --with-deps chromium
+      - name: ten minutes of walking, at 1080p, with the heap sampled
+        working-directory: client
+        env:
+          BC_SOAK_MS: "600000"
+        run: npm run test:e2e:perf
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: story-1.13-soak
+          path: client/test-results/story-1.13-perf
+          if-no-files-found: warn
+          retention-days: 14

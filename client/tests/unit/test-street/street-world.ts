@@ -11,16 +11,16 @@ import { fileURLToPath } from "node:url";
 import { parseDefs } from "../../../src/defs/parse";
 import type { Defs } from "../../../src/defs/types";
 import {
+  LAMPPOST_CELL,
+  LAMPPOST_DEF_ID,
   PLAYER_START,
   STREET_BUILDING_AREAS,
   STREET_ROOM_AREAS,
-  streetColliderSources,
-  streetPlacedRows,
-  LAMPPOST_CELL,
-  LAMPPOST_DEF_ID,
   STREET_TRANSITIONS,
   STREET_WALK_DIRECTIONS,
   type StreetWalkSegment,
+  streetColliderSources,
+  streetPlacedRows,
   streetWalkUntilMet,
 } from "../../../src/test-street/fixture";
 import {
@@ -28,13 +28,13 @@ import {
   initialFloorWalkState,
   stepAndTransition,
 } from "../../../src/world/floor-walk";
-import { step } from "../../../src/world/movement";
-import { TransitionIndex } from "../../../src/world/transitions";
 import type { MovementConfig } from "../../../src/world/movement";
+import { step } from "../../../src/world/movement";
 import { loadMovementConfig } from "../../../src/world/movement-config";
 import type { ObjectSource } from "../../../src/world/object-defs";
 import { objectDefsById, windowDefIds } from "../../../src/world/object-defs";
 import { OwnershipIndex } from "../../../src/world/ownership";
+import { TransitionIndex } from "../../../src/world/transitions";
 import { WorldIndex } from "../../../src/world/world-index";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));

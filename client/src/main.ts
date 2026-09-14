@@ -1,18 +1,17 @@
 import { Application } from "pixi.js";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
-import { mountStreetScene } from "./test-street/scene";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
 import { connect } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
   recordAppearanceTextureIdsForE2e,
+  recordFrameWorkForE2e,
   recordHighlightForE2e,
   recordIgnoredIntentForE2e,
   recordIntentForE2e,
   recordMasksCheckedForE2e,
-  recordFrameWorkForE2e,
   recordPingForE2e,
   recordPlayerAppearanceForE2e,
   recordPlayerPositionForE2e,
@@ -24,6 +23,7 @@ import type { PingObservation } from "./net/observe-ping";
 import { bootstrapRenderer } from "./render/bootstrap";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
+import { mountStreetScene } from "./test-street/scene";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, windowDefIds } from "./world/object-defs";

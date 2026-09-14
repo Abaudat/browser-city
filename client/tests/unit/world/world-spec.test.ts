@@ -113,6 +113,17 @@ describe("checkWorldSpec", () => {
     expect(problems).toEqual([]);
   });
 
+  it("refuses an invalid (empty or inverted) area rect", () => {
+    const problems = checkWorldSpec({
+      buildingAreas: [area(1n, 0, 4, 1, 4, 4)],
+      roomAreas: [],
+      transitions: [],
+      isStandable: everywhereStandable,
+    });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("invalid");
+  });
+
   it("refuses a transition whose anchor cell is not standable", () => {
     const problems = checkWorldSpec({
       buildingAreas: [],

@@ -103,7 +103,8 @@ function checkAreas(
  */
 export function checkWorldSpec(check: WorldSpecCheck): string[] {
   const { buildingAreas, roomAreas, transitions, isStandable } = check;
-  const chunkKeyOf = check.chunkKeyOf ?? ((area) => chunkKey(area.rect.x0, area.rect.y0, area.floor));
+  const chunkKeyOf =
+    check.chunkKeyOf ?? ((area) => chunkKey(area.rect.x0, area.rect.y0, area.floor));
   const problems: string[] = [];
 
   checkAreas(buildingAreas, "building_area", chunkKeyOf, problems);

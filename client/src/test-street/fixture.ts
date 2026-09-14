@@ -672,7 +672,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // each the physical thing a `floor_transition` row is anchored on.
   {
     id: 80n,
-    assetKey: "bridgeStairsUp",
+    assetKey: "bridgeStairs",
     x: BRIDGE_UP_ANCHOR_X,
     y: BRIDGE_UP_ANCHOR_Y,
     floor: STREET_FLOOR,
@@ -681,7 +681,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
   },
   {
     id: 81n,
-    assetKey: "bridgeStairsDown",
+    assetKey: "bridgeStairs",
     x: BRIDGE_DOWN_ANCHOR_X,
     y: BRIDGE_DOWN_ANCHOR_Y,
     floor: BRIDGE_FLOOR,
@@ -743,7 +743,14 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
   // standable thing on `BRIDGE_FLOOR`, so everything around it is closed
   // off. Its north side needs no entry -- the parapet (real
   // `wall_segment` cells) already closes it.
-  { id: 110n, x: BRIDGE_X0 - 1, y: BRIDGE_DECK_Y + 1, width: BRIDGE_DECK_WIDTH + 2, height: 1, floor: BRIDGE_FLOOR },
+  {
+    id: 110n,
+    x: BRIDGE_X0 - 1,
+    y: BRIDGE_DECK_Y + 1,
+    width: BRIDGE_DECK_WIDTH + 2,
+    height: 1,
+    floor: BRIDGE_FLOOR,
+  },
   { id: 111n, x: BRIDGE_X0 - 1, y: BRIDGE_DECK_Y, width: 1, height: 1, floor: BRIDGE_FLOOR },
   { id: 112n, x: BRIDGE_X1 + 1, y: BRIDGE_DECK_Y, width: 1, height: 1, floor: BRIDGE_FLOOR },
   { id: 113n, x: BRIDGE_X0 - 1, y: BRIDGE_DECK_Y - 1, width: 1, height: 1, floor: BRIDGE_FLOOR },
@@ -843,7 +850,9 @@ export const STREET_GROUND_TILES: readonly StreetGroundTiles[] = [
  * instead. `subcellsPerCell` comes from the scene, which reads it from
  * `defs/`'s generated `COLLIDER_SUBCELLS_PER_CELL` -- this module never
  * states it. */
-export function streetColliderSources(subcellsPerCell: number): ReadonlyMap<number, ColliderSource> {
+export function streetColliderSources(
+  subcellsPerCell: number,
+): ReadonlyMap<number, ColliderSource> {
   const sources = new Map<number, ColliderSource>();
   for (const prop of STREET_PROPS) {
     if (!prop.solid) continue;
@@ -998,7 +1007,11 @@ export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSe
   return [
     // Out of the door, onto the pavement: the building's own near-side
     // walls come back the moment the player is no longer inside it.
-    { label: "outside-the-shopfront", key: "ArrowDown", until: { kind: "y-at-least", value: SOUTH_WALL_Y + 1 } },
+    {
+      label: "outside-the-shopfront",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: SOUTH_WALL_Y + 1 },
+    },
     // Into the lamppost, coming to rest against its own small base
     // collider part-way into its cell.
     {
@@ -1008,16 +1021,87 @@ export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSe
     },
     // East along the pavement, stopping short of the subway stairwell's
     // own anchor cell.
-    { label: "east-along-the-pavement", key: "ArrowRight", until: { kind: "x-at-least", value: STAIRS_X - 0.5 } },
+    {
+      label: "east-along-the-pavement",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: STAIRS_X - 0.5 },
+    },
     // North onto the row the bridge deck spans.
-    { label: "on-the-underpass-row", key: "ArrowUp", until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 } },
+    {
+      label: "on-the-underpass-row",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 },
+    },
     // Under the deck, the whole span: from here east, every cell walked
     // has a drawable one floor above it at the same `(x, y)`.
-    { label: "under-the-bridge", key: "ArrowRight", until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 } },
+    {
+      label: "under-the-bridge",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
+    },
     // South onto the stairs at the deck's east end -- the transition
     // cell, which lands the player on the deck one storey up.
-    { label: "on-the-bridge-deck", key: "ArrowDown", until: { kind: "floor", value: BRIDGE_FLOOR } },
+    {
+      label: "on-the-bridge-deck",
+      key: "ArrowDown",
+      until: { kind: "floor", value: BRIDGE_FLOOR },
+    },
     // West along the deck, over the street, down the far stairs.
-    { label: "back-on-the-street", key: "ArrowLeft", until: { kind: "floor", value: STREET_FLOOR } },
+    {
+      label: "back-on-the-street",
+      key: "ArrowLeft",
+      until: { kind: "floor", value: STREET_FLOOR },
+    },
+  ];
+}
+
+/**
+ * The way back: from where [`streetWalkRoute`] ends, on the pavement
+ * under the west end of the bridge, home to the player's own start
+ * position inside shop A. Deliberately not the forward route reversed --
+ * a route is a list of held keys, and holding the opposite key for the
+ * same distance is not the same journey: the way back must still avoid
+ * walking into the subway stairwell's own anchor cell, and it re-enters
+ * the shop through the same door it left by.
+ *
+ * `streetWalkRoute` then `streetReturnRoute` is one lap, and every lap
+ * crosses both floor transitions, both enclosure boundaries and the
+ * underpass -- which is what makes it the right thing for the NFR2 perf
+ * harness to loop.
+ */
+export function streetReturnRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
+  return [
+    {
+      label: "back-on-the-underpass-row",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 },
+    },
+    // West along the underpass row, stopping short of the subway
+    // stairwell's own column -- that cell is a transition anchor, and
+    // walking into it would take the lap underground.
+    {
+      label: "west-of-the-stairwell",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: STAIRS_X - 0.5 },
+    },
+    // Down onto the pavement, but only as far as the row *above* the
+    // lamppost's own base collider: the way west passes straight through
+    // the lamppost's cell, and a walker whose feet were level with that
+    // collider would stop dead against it.
+    {
+      label: "back-down-to-the-pavement",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.lamppostRestY - 0.4 },
+    },
+    {
+      label: "west-along-the-pavement",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: DOOR_X_A + 0.5 },
+    },
+    {
+      label: "back-inside-shop-a",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: PLAYER_START.y },
+    },
   ];
 }

@@ -9,6 +9,7 @@
 // property tests in `tests/unit/render/**` and `tests/unit/world/**`.
 // This file only asserts what is true of *this* street's data.
 import { describe, expect, it } from "vitest";
+import { isNearSideWall } from "../../../src/render/visibility";
 import {
   BRIDGE_DECK_DEF_ID,
   BRIDGE_DECK_WIDTH,
@@ -24,11 +25,11 @@ import {
   STREET_PROPS,
   STREET_ROOM_AREAS,
   STREET_TRANSITIONS,
-  WINDOW_DEF_ID,
   streetPlacedRows,
+  streetReturnRoute,
   streetWalkRoute,
+  WINDOW_DEF_ID,
 } from "../../../src/test-street/fixture";
-import { isNearSideWall } from "../../../src/render/visibility";
 import { NO_OWNER } from "../../../src/world/ownership";
 import { checkWorldSpec } from "../../../src/world/world-spec";
 import {
@@ -109,8 +110,7 @@ describe("the hand-laid test street (AC1, AC2)", () => {
     const window = STREET_PROPS.find((prop) => prop.defId === WINDOW_DEF_ID);
     if (!window) throw new Error("no window in the street");
     const behind = STREET_PROPS.filter(
-      (prop) =>
-        prop.layer === "furniture" && prop.floor === window.floor && prop.y < window.y,
+      (prop) => prop.layer === "furniture" && prop.floor === window.floor && prop.y < window.y,
     );
     expect(behind.length).toBeGreaterThan(0);
   });
@@ -179,8 +179,9 @@ describe("the scripted walk (AC3)", () => {
     expect(ownership.ownershipAt(outside.cellX, outside.cellY, outside.floor).buildingId).toBe(
       NO_OWNER,
     );
-    expect(ownership.ownershipAt(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor).buildingId)
-      .not.toBe(NO_OWNER);
+    expect(
+      ownership.ownershipAt(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor).buildingId,
+    ).not.toBe(NO_OWNER);
   });
 
   it("comes to rest inside the lamppost's own footprint cell but outside its collider", () => {
@@ -202,5 +203,17 @@ describe("the scripted walk (AC3)", () => {
   it("climbs onto the deck by a transition and comes back down to the street", () => {
     expect(at("on-the-bridge-deck").floor).toBe(BRIDGE_FLOOR);
     expect(at("back-on-the-street").floor).toBe(PLAYER_START.floor);
+  });
+
+  it("walks a whole lap: out to the bridge, back into the shop, without falling down the subway stairs", () => {
+    // The lap the NFR2 perf harness loops. It must end back inside the
+    // shop, on the street's own floor -- a lap that ended underground
+    // would be measuring a different journey every time round.
+    const inputs = { lamppostRestY: lamppostRestY() };
+    const lap = simulateStreetWalk([...streetWalkRoute(inputs), ...streetReturnRoute(inputs)]);
+    const home = lap[lap.length - 1]?.state;
+    if (!home) throw new Error("the lap produced no checkpoints");
+    expect(home.floor).toBe(PLAYER_START.floor);
+    expect(ownership.ownershipAt(home.cellX, home.cellY, home.floor).buildingId).not.toBe(NO_OWNER);
   });
 });
