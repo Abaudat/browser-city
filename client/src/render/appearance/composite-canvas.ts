@@ -26,10 +26,10 @@ export function buildCompositeCanvas(
   return canvas;
 }
 
-/** Wraps an already-drawn composite canvas in one Pixi `Texture` -- never
- * a `RenderTexture` (banned under `client/src/`, FR121): a plain
- * `Texture.from` over a canvas source needs no render pass, so the ban
- * is never in tension with this story. */
+/** Wraps an already-drawn composite canvas in one Pixi `Texture` --
+ * `Texture.from` over a canvas source, never a GPU render-to-texture
+ * pass (still banned under `client/src/`, FR121, and never needed here:
+ * a plain `Texture.from` is not that construct). */
 export function compositeCanvasToTexture(canvas: OffscreenCanvas): Texture {
   return Texture.from(canvas as unknown as HTMLCanvasElement);
 }
