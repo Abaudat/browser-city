@@ -25,8 +25,9 @@ import {
   STREET_PROPS,
   STREET_ROOM_AREAS,
   STREET_TRANSITIONS,
+  SUBWAY_FLOOR,
+  streetBridgeLapRoute,
   streetPlacedRows,
-  streetReturnRoute,
   streetWalkRoute,
   WINDOW_DEF_ID,
 } from "../../../src/test-street/fixture";
@@ -205,15 +206,64 @@ describe("the scripted walk (AC3)", () => {
     expect(at("back-on-the-street").floor).toBe(PLAYER_START.floor);
   });
 
-  it("walks a whole lap: out to the bridge, back into the shop, without falling down the subway stairs", () => {
-    // The lap the NFR2 perf harness loops. It must end back inside the
-    // shop, on the street's own floor -- a lap that ended underground
-    // would be measuring a different journey every time round.
-    const inputs = { lamppostRestY: lamppostRestY() };
-    const lap = simulateStreetWalk([...streetWalkRoute(inputs), ...streetReturnRoute(inputs)]);
-    const home = lap[lap.length - 1]?.state;
+  it("walks a whole lap, and lands back where the lap started, so laps chain", () => {
+    // The lap the NFR2 perf harness loops. It must end where it began --
+    // a lap that drifted would be measuring a different journey every
+    // time round -- and must never wander onto a floor it did not mean
+    // to visit.
+    const lap = streetBridgeLapRoute();
+    const first = simulateStreetWalk(lap, { start: at("back-on-the-street") });
+    const home = first[first.length - 1]?.state;
     if (!home) throw new Error("the lap produced no checkpoints");
     expect(home.floor).toBe(PLAYER_START.floor);
-    expect(ownership.ownershipAt(home.cellX, home.cellY, home.floor).buildingId).not.toBe(NO_OWNER);
+    expect(home.cellX).toBe(at("back-on-the-street").cellX);
+    expect(home.cellY).toBe(at("back-on-the-street").cellY);
+
+    const second = simulateStreetWalk(lap, { start: home });
+    const secondHome = second[second.length - 1]?.state;
+    expect(secondHome?.cellX).toBe(home.cellX);
+    expect(secondHome?.cellY).toBe(home.cellY);
+    expect(secondHome?.floor).toBe(home.floor);
+  });
+
+  it("survives a slow machine: every segment still completes with the key released late", () => {
+    // The failure this pins: a held key is released over a round trip to
+    // the page, so a walker always travels some way past its own release
+    // condition, and how far is a property of the machine. A route whose
+    // next segment depends on stopping *near* a threshold works on a fast
+    // laptop and hangs on a slow CI runner -- which is exactly what
+    // happened, on the perf job, with the route's own return leg.
+    //
+    // 8 steps of 100 ms (the resolver's own delta clamp, so the largest
+    // step it will ever take) is ~1.8 cells of overshoot per segment --
+    // roughly 800 ms of release latency at the committed walking speed,
+    // which is far beyond anything a loaded CI runner has shown. Every
+    // margin the route leaves is wider than that: the closest call is the
+    // bridge's own landing cell, `STAIRS_X - BRIDGE_DOWN_ANCHOR_X` cells
+    // from the subway stairwell's anchor.
+    const lag = { stepMs: 100, releaseLagSteps: 8 };
+    const inputs = { lamppostRestY: lamppostRestY() };
+
+    const out = simulateStreetWalk(streetWalkRoute(inputs), lag);
+    const arrived = out[out.length - 1]?.state;
+    if (!arrived) throw new Error("the walk produced no checkpoints");
+    expect(arrived.floor).toBe(PLAYER_START.floor);
+    // Never fell down the subway stairwell on the way.
+    for (const checkpoint of out) expect(checkpoint.state.floor).not.toBe(SUBWAY_FLOOR);
+
+    let state = arrived;
+    for (let lapIndex = 0; lapIndex < 3; lapIndex++) {
+      const lap = simulateStreetWalk(streetBridgeLapRoute(), { ...lag, start: state });
+      for (const checkpoint of lap) expect(checkpoint.state.floor).not.toBe(SUBWAY_FLOOR);
+      const end = lap[lap.length - 1]?.state;
+      if (!end) throw new Error("the lap produced no checkpoints");
+      state = end;
+    }
+    // Three laps later it is still on the street, still where a lap
+    // starts: the loop is stable, not slowly drifting somewhere it will
+    // eventually hang.
+    expect(state.floor).toBe(PLAYER_START.floor);
+    expect(state.cellX).toBe(arrived.cellX);
+    expect(state.cellY).toBe(arrived.cellY);
   });
 });

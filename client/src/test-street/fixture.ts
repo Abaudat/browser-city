@@ -255,12 +255,16 @@ export const BRIDGE_X1 = BRIDGE_X0 + BRIDGE_DECK_WIDTH - 1;
 export const BRIDGE_UP_ANCHOR_X = BRIDGE_X1;
 export const BRIDGE_UP_ANCHOR_Y = BRIDGE_DECK_Y + 1;
 
-/** Where the deck's own down-stairs stand: two cells west of the
- * up-stairs' own landing, and never the deck's own west end, so a walk
- * that keeps holding one direction key after landing has cells to spare
- * before it meets any other transition anchor (the subway's own is
- * further west still). */
-export const BRIDGE_DOWN_ANCHOR_X = BRIDGE_X0 + 1;
+/** Where the deck's own down-stairs stand: one cell west of the
+ * up-stairs' own landing. A walker still holding its direction key when
+ * it lands keeps moving, and how far it travels before the key is
+ * released is not something the walker controls -- so where it lands has
+ * to be far enough from every *other* transition anchor that an
+ * overshoot can never fall into one. From here that is the subway
+ * stairwell, `STAIRS_X - BRIDGE_DOWN_ANCHOR_X` cells west, which
+ * `street-conformance.test.ts` walks with a deliberately exaggerated
+ * release lag to prove. */
+export const BRIDGE_DOWN_ANCHOR_X = BRIDGE_X1 - 1;
 export const BRIDGE_DOWN_ANCHOR_Y = BRIDGE_DECK_Y;
 
 /** The floor transition data (Tim's `world/transitions.ts` port): entering
@@ -713,6 +717,19 @@ export interface StreetBoundaryRect {
    * (`STREET_FLOOR`); the footbridge's own deck needs its own ring one
    * storey up, since a floor's collision never reaches another (FR117). */
   readonly floor?: number;
+  /** An optional sub-cell collider (`COLLIDER_SUBCELLS_PER_CELL` per
+   * cell, relative to the anchor cell's top-left), for an edge that is
+   * not a whole cell of solid. Defaults to the whole rect.
+   *
+   * The bridge's own south rail needs one. A walker holding a direction
+   * key into a whole-cell edge comes to rest exactly on the cell
+   * boundary, and a position exactly on a boundary belongs to the cell
+   * *past* it -- so a walker pressed against a whole-cell rail south of
+   * the deck would report standing one row south of the deck, where the
+   * stairs down are not, and could never take them. A rail whose solid
+   * part reaches a little way back into the deck's own row stops the
+   * walker strictly inside that row instead. */
+  readonly collider?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
 }
 
 /** The edge of the drawn world (FR137 has no world-boundary concept yet,
@@ -743,13 +760,19 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
   // standable thing on `BRIDGE_FLOOR`, so everything around it is closed
   // off. Its north side needs no entry -- the parapet (real
   // `wall_segment` cells) already closes it.
+  //
+  // The south side is the rail along the deck's own edge: anchored on the
+  // deck row itself, solid only across its last two sub-cells, so a
+  // walker leaning on it stops strictly inside the deck's row rather
+  // than exactly on its southern boundary (see `collider` above).
   {
     id: 110n,
     x: BRIDGE_X0 - 1,
-    y: BRIDGE_DECK_Y + 1,
+    y: BRIDGE_DECK_Y,
     width: BRIDGE_DECK_WIDTH + 2,
     height: 1,
     floor: BRIDGE_FLOOR,
+    collider: { x0: 0, y0: 14, x1: (BRIDGE_DECK_WIDTH + 2) * 16, y1: 16 },
   },
   { id: 111n, x: BRIDGE_X0 - 1, y: BRIDGE_DECK_Y, width: 1, height: 1, floor: BRIDGE_FLOOR },
   { id: 112n, x: BRIDGE_X1 + 1, y: BRIDGE_DECK_Y, width: 1, height: 1, floor: BRIDGE_FLOOR },
@@ -867,7 +890,7 @@ export function streetColliderSources(
     sources.set(streetDefId(rect.id), {
       width: rect.width,
       height: rect.height,
-      collider: {
+      collider: rect.collider ?? {
         x0: 0,
         y0: 0,
         x1: rect.width * subcellsPerCell,
@@ -1019,12 +1042,15 @@ export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSe
       key: "ArrowDown",
       until: { kind: "y-at-least", value: inputs.lamppostRestY - 0.01 },
     },
-    // East along the pavement, stopping short of the subway stairwell's
-    // own anchor cell.
+    // East along the pavement, turning north at the terrace's own east
+    // end -- several cells short of the subway stairwell's anchor cell,
+    // because a held key is released over a round trip and the walker
+    // keeps moving meanwhile. A threshold half a cell from that anchor
+    // would send a slow enough machine underground instead.
     {
       label: "east-along-the-pavement",
       key: "ArrowRight",
-      until: { kind: "x-at-least", value: STAIRS_X - 0.5 },
+      until: { kind: "x-at-least", value: EAST_WALL_X_B - 0.5 },
     },
     // North onto the row the bridge deck spans.
     {
@@ -1056,52 +1082,52 @@ export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSe
 }
 
 /**
- * The way back: from where [`streetWalkRoute`] ends, on the pavement
- * under the west end of the bridge, home to the player's own start
- * position inside shop A. Deliberately not the forward route reversed --
- * a route is a list of held keys, and holding the opposite key for the
- * same distance is not the same journey: the way back must still avoid
- * walking into the subway stairwell's own anchor cell, and it re-enters
- * the shop through the same door it left by.
+ * The lap the NFR2 perf harness walks, over and over: north of the
+ * bridge, west along the terrace, back east, up onto the deck and down
+ * again. It starts and ends at exactly the position
+ * [`streetWalkRoute`]'s own last segment leaves the walker in, so laps
+ * chain with nothing to reset between them.
  *
- * `streetWalkRoute` then `streetReturnRoute` is one lap, and every lap
- * crosses both floor transitions, both enclosure boundaries and the
- * underpass -- which is what makes it the right thing for the NFR2 perf
- * harness to loop.
+ * Every segment ends either against a real collider or on a floor
+ * transition, and never on a bare coordinate threshold. That is
+ * deliberate: a held key is released over a round trip to the page, so
+ * how far past its own threshold a walker travels is a property of the
+ * machine, not of the route. A collider rest and a transition are both
+ * immune to that -- walking further into a wall changes nothing, and a
+ * transition fires on entering a whole cell -- so a lap that only uses
+ * those is the same lap on a fast machine and a slow one.
  */
-export function streetReturnRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
+export function streetBridgeLapRoute(): readonly StreetWalkSegment[] {
   return [
+    // North until the pavement's own northern edge stops the walker.
     {
-      label: "back-on-the-underpass-row",
+      label: "lap-north-of-the-bridge",
       key: "ArrowUp",
-      until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 },
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y - 0.4 },
     },
-    // West along the underpass row, stopping short of the subway
-    // stairwell's own column -- that cell is a transition anchor, and
-    // walking into it would take the lap underground.
+    // West until the terrace's own east wall stops it.
     {
-      label: "west-of-the-stairwell",
+      label: "lap-west-along-the-terrace",
       key: "ArrowLeft",
-      until: { kind: "x-at-most", value: STAIRS_X - 0.5 },
+      until: { kind: "x-at-most", value: EAST_WALL_X_B + 1.5 },
     },
-    // Down onto the pavement, but only as far as the row *above* the
-    // lamppost's own base collider: the way west passes straight through
-    // the lamppost's cell, and a walker whose feet were level with that
-    // collider would stop dead against it.
+    // East until the world's own eastern edge stops it.
     {
-      label: "back-down-to-the-pavement",
+      label: "lap-east-to-the-bridge",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
+    },
+    // Down onto the stairs, which are the transition itself.
+    {
+      label: "lap-up-onto-the-deck",
       key: "ArrowDown",
-      until: { kind: "y-at-least", value: inputs.lamppostRestY - 0.4 },
+      until: { kind: "floor", value: BRIDGE_FLOOR },
     },
+    // West along the deck, down the far stairs, back where the lap began.
     {
-      label: "west-along-the-pavement",
+      label: "lap-down-to-the-street",
       key: "ArrowLeft",
-      until: { kind: "x-at-most", value: DOOR_X_A + 0.5 },
-    },
-    {
-      label: "back-inside-shop-a",
-      key: "ArrowUp",
-      until: { kind: "y-at-most", value: PLAYER_START.y },
+      until: { kind: "floor", value: STREET_FLOOR },
     },
   ];
 }

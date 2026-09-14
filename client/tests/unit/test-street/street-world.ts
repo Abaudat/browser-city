@@ -135,15 +135,28 @@ export function isCellStandable(
  * throws naming the segment that never completed. */
 export function simulateStreetWalk(
   route: readonly StreetWalkSegment[],
-  options: { readonly stepMs?: number; readonly maxStepsPerSegment?: number } = {},
+  options: {
+    readonly stepMs?: number;
+    readonly maxStepsPerSegment?: number;
+    /** How many extra steps the walker keeps taking *after* its release
+     * condition is already met -- the release lag a real walk always has,
+     * because the condition is observed outside the page and the key is
+     * released over a round trip while the scene keeps ticking. Zero is
+     * the unreachable ideal; a real machine is somewhere above it, and a
+     * slow CI runner is further above it than a developer's laptop. A
+     * route that only survives zero is a route that fails on CI. */
+    readonly releaseLagSteps?: number;
+    readonly start?: FloorWalkResult;
+  } = {},
 ): { readonly label: string; readonly state: FloorWalkResult }[] {
   const stepMs = options.stepMs ?? 16;
   const maxSteps = options.maxStepsPerSegment ?? 4000;
+  const releaseLagSteps = options.releaseLagSteps ?? 0;
   const config = streetMovementConfig();
   const world = streetWorldIndex();
   const transitions = new TransitionIndex(STREET_TRANSITIONS);
 
-  let state: FloorWalkResult = {
+  let state: FloorWalkResult = options.start ?? {
     ...initialFloorWalkState(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor),
     transitioned: false,
   };
@@ -159,6 +172,11 @@ export function simulateStreetWalk(
             `(${JSON.stringify(segment.until)}); stuck at (${state.x}, ${state.y}) on floor ${state.floor}`,
         );
       }
+      state = stepAndTransition(state, direction, stepMs, world, config, transitions);
+    }
+    // The key is still down while the release travels; the scene keeps
+    // ticking. Everything the next segment relies on has to survive this.
+    for (let lag = 0; lag < releaseLagSteps; lag++) {
       state = stepAndTransition(state, direction, stepMs, world, config, transitions);
     }
     checkpoints.push({ label: segment.label, state });

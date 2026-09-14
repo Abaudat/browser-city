@@ -116,8 +116,8 @@ export const STREET_GOLDEN_ORDER: readonly string[] = [
   "74",
   "70",
   "70",
-  "81",
   "70",
+  "81",
   "70",
 ];
 
@@ -218,8 +218,8 @@ export const STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "74",
   "70",
   "70",
-  "81",
   "70",
+  "81",
   "70",
 ];
 

@@ -10,7 +10,7 @@ import { type Drawable, setDrawableFloor, setDrawablePosition } from "../render/
 import { toSortUnits } from "../render/sort-units";
 import { isNearSideWall, type VisibilityDrawable } from "../render/visibility";
 import { NO_OWNER, type OwnershipIndex } from "../world/ownership";
-import { STREET_PROPS, type StreetLayer, PLAYER_STABLE_ID } from "./fixture";
+import { PLAYER_STABLE_ID, STREET_PROPS, type StreetLayer } from "./fixture";
 
 /** A `Drawable` plus what `scene.ts` needs to pick and slice a texture
  * for it, plus what `render/visibility.ts` needs to decide its

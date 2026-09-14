@@ -22,6 +22,7 @@
 // direction) -- the walk always goes through the real keyboard and the
 // real `world/transitions.ts` port.
 import { expect, type Page, test } from "@playwright/test";
+import type {} from "../../src/net/e2e-hooks";
 import {
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
@@ -29,13 +30,12 @@ import {
   STREET_EXIT_X,
   STREET_EXIT_Y,
 } from "../../src/test-street/fixture";
-import type {} from "../../src/net/e2e-hooks";
-import { lamppostRestY } from "../unit/test-street/street-world";
 import {
   STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE,
   STREET_VISIBILITY_AT_REST_IN_SHOP_A,
   STREET_VISIBILITY_ON_SUBWAY_LANDING,
 } from "../unit/test-street/golden";
+import { lamppostRestY } from "../unit/test-street/street-world";
 
 async function waitForSceneReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {

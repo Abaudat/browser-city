@@ -25,7 +25,7 @@ import type {} from "../../src/net/e2e-hooks";
 import {
   type StreetWalkSegment,
   type StreetWalkUntil,
-  streetReturnRoute,
+  streetBridgeLapRoute,
   streetWalkRoute,
 } from "../../src/test-street/fixture";
 import { lamppostRestY } from "../unit/test-street/street-world";
@@ -93,6 +93,10 @@ async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void
   }
 }
 
+async function walkRoute(page: Page, route: readonly StreetWalkSegment[]): Promise<void> {
+  for (const segment of route) await walkSegment(page, segment);
+}
+
 test("the frame path stays inside its work budget for a whole walked session (NFR2, partial)", async ({
   page,
 }) => {
@@ -107,15 +111,26 @@ test("the frame path stays inside its work budget for a whole walked session (NF
     timeout: 60_000,
   });
 
-  const inputs = { lamppostRestY: lamppostRestY() };
-  // One lap: out to the bridge and back to the shop. Every lap crosses
-  // both floor transitions, both enclosures and the underpass.
-  const lap = [...streetWalkRoute(inputs), ...streetReturnRoute(inputs)];
+  // The journey out is walked once: it leaves the shop (an enclosure
+  // boundary), rests part-way through the lamppost, crosses under the
+  // bridge and climbs onto the deck. It is not looped, because its own
+  // way home would have to thread a one-cell doorway, and how far a
+  // walker travels past its release condition is a property of the
+  // machine, not of the route -- a loop that needs sub-cell precision is
+  // a loop that hangs on a slow enough runner.
+  await walkRoute(page, streetWalkRoute({ lamppostRestY: lamppostRestY() }));
 
-  // Warm-up: one full lap, with nothing recorded.
+  // What *is* looped is the bridge lap, whose every segment ends on a
+  // collider or a floor transition -- both immune to overshoot -- and
+  // which starts and ends exactly where the journey out left off. Two
+  // floor transitions per lap: NFR2's "including an interior
+  // transition", repeatedly rather than once.
+  const lap = streetBridgeLapRoute();
+
+  // Warm-up: laps with nothing recorded.
   const warmUpUntil = Date.now() + WARM_UP_MS;
   while (Date.now() < warmUpUntil) {
-    for (const segment of lap) await walkSegment(page, segment);
+    await walkRoute(page, lap);
   }
 
   await page.evaluate(() => window.__bc?.startFrameTimings?.());
@@ -123,9 +138,7 @@ test("the frame path stays inside its work budget for a whole walked session (NF
   const heapSamples: { atMs: number; usedJsHeapSize: number }[] = [];
   const startedAt = Date.now();
   while (Date.now() - startedAt < RUN_MS) {
-    // NFR2's "including an interior transition", repeatedly rather than
-    // once: every lap crosses both of them.
-    for (const segment of lap) await walkSegment(page, segment);
+    await walkRoute(page, lap);
     const usedJsHeapSize = await page.evaluate(() => {
       const memory = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
       return memory?.usedJSHeapSize ?? 0;

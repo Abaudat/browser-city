@@ -11,15 +11,15 @@
 // still passing.
 import { mkdirSync } from "node:fs";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import {
-  STREET_PROPS,
-  PLAYER_START,
-  SHOP_COUNTER_DEF_ID,
-  TRASH_BIN_DEF_ID,
-} from "../../src/test-street/fixture";
 import { KEYBINDINGS_STORAGE_KEY } from "../../src/input/keybindings-storage";
 import type {} from "../../src/net/e2e-hooks";
 import { screenPositionPx } from "../../src/render/screen-position";
+import {
+  PLAYER_START,
+  SHOP_COUNTER_DEF_ID,
+  STREET_PROPS,
+  TRASH_BIN_DEF_ID,
+} from "../../src/test-street/fixture";
 import { committedDefs } from "../unit/test-street/street-world";
 
 const COUNTER_ID = 8n;
