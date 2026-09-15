@@ -1,0 +1,113 @@
+{
+  "rowCount": 56000,
+  "network": {
+    "name": "pessimistic",
+    "label": "pessimistic (10 Mbps down / 10 Mbps up / 60 ms RTT)"
+  },
+  "cpu": {
+    "name": "reference",
+    "label": "reference machine, no CPU throttle"
+  },
+  "samples": [
+    {
+      "decodeMs": 12294.600000023842,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12247.799999952316,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12208.600000023842,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12193.600000023842,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12216.200000047684,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12291.699999928474,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12506.299999952316,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12179.5,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12103.5,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12265.100000023842,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12209.100000023842,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12147.700000047684,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12507.300000071526,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12516.399999976158,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12149.200000047684,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12204.600000023842,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12323.900000095367,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12381.899999976158,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12293.200000047684,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    },
+    {
+      "decodeMs": 12018.300000071526,
+      "rowCount": 56000,
+      "bytesOnWire": 835930
+    }
+  ]
+}

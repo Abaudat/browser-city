@@ -7,6 +7,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: [
+        "src/boot/**",
         "src/net/**",
         "src/defs/**",
         "src/render/**",

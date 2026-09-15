@@ -26,6 +26,7 @@ import {
   Texture,
   UPDATE_PRIORITY,
 } from "pixi.js";
+import { BOOT_MARK, markBoot } from "../boot/boot-marks";
 import type { Defs } from "../defs/types";
 import type { IgnoredSink, IntentSink } from "../input/intent";
 import { attachKeyboard, type KeyboardState } from "../input/keyboard";
@@ -1180,6 +1181,13 @@ export async function mountStreetScene(
     appearanceCache,
     textureFor("sidewalk", textures),
   );
+  // Story 1.14 (NFR1): the atlas term's own end -- every texture this
+  // scene loads before its first frame (the static tiles above, the
+  // player's own composite and the street crowd's own part sheets just
+  // above) has resolved by this line, not only the small static set. There
+  // is no real atlas yet, so this pairs with Resource Timing's own
+  // per-image request count and byte total for everything awaited above.
+  markBoot(BOOT_MARK.ATLAS_READY);
   const worldBoundsWithCrowd = world.getLocalBounds();
   const canvasWidthWithCrowd = Math.ceil(worldBoundsWithCrowd.width * ZOOM) + CANVAS_MARGIN_PX * 2;
   const canvasHeightWithCrowd =
@@ -1212,6 +1220,25 @@ export async function mountStreetScene(
   app.ticker.add(
     () => {
       onFrameWork?.(performance.now() - frameWorkStartMs);
+    },
+    undefined,
+    UPDATE_PRIORITY.UTILITY,
+  );
+
+  // Story 1.14 (NFR1): fires once, after the first frame has actually
+  // rendered (`UPDATE_PRIORITY.UTILITY` runs after Pixi's own render --
+  // see the frame-work window comment above). FR144's name prompt does
+  // not exist yet, so `INTERACTIVE_PROMPT` and `PLAYER_CONTROLLABLE` are
+  // both stand-ins fired at this same instant (Tim's direction): the
+  // keyboard was already attached before the ticker started, so input is
+  // genuinely accepted from here on -- `docs/spikes/1.14-boot-budget.md`'s
+  // harness proves it by pressing a key right after this mark and
+  // asserting the player's position actually changes.
+  app.ticker.addOnce(
+    () => {
+      markBoot(BOOT_MARK.FIRST_FRAME_RENDERED);
+      markBoot(BOOT_MARK.INTERACTIVE_PROMPT);
+      markBoot(BOOT_MARK.PLAYER_CONTROLLABLE);
     },
     undefined,
     UPDATE_PRIORITY.UTILITY,

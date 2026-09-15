@@ -18,18 +18,25 @@ interface FakeState {
   onConnectCb?: (connection: unknown) => void;
   onConnectErrorCb?: (ctx: unknown, error: unknown) => void;
   subscribedSql?: string;
+  onAppliedCb?: () => void;
   onInsertCb?: (ctx: unknown, row: FakeRow) => void;
 }
 
 const state: FakeState = {};
 
+const fakeSubscriptionBuilder = {
+  onApplied: (cb: () => void) => {
+    state.onAppliedCb = cb;
+    return fakeSubscriptionBuilder;
+  },
+  subscribe: (sql: string) => {
+    state.subscribedSql = sql;
+    return { unsubscribe: () => {} };
+  },
+};
+
 const fakeConn = {
-  subscriptionBuilder: () => ({
-    subscribe: (sql: string) => {
-      state.subscribedSql = sql;
-      return { unsubscribe: () => {} };
-    },
-  }),
+  subscriptionBuilder: () => fakeSubscriptionBuilder,
   db: {
     demoPing: {
       onInsert: (cb: (ctx: unknown, row: FakeRow) => void) => {
@@ -71,6 +78,7 @@ beforeEach(() => {
   state.onConnectCb = undefined;
   state.onConnectErrorCb = undefined;
   state.subscribedSql = undefined;
+  state.onAppliedCb = undefined;
   state.onInsertCb = undefined;
 });
 
@@ -107,6 +115,21 @@ describe("connect", () => {
     expect(received[0]?.message).toBe("hi");
     expect(received[0]?.writtenAtMs).toBe(123);
     expect(typeof received[0]?.observedAtMs).toBe("number");
+  });
+
+  it("marks the handshake open and the subscription applied (NFR1) at their own distinct moments", () => {
+    const markSpy = vi.spyOn(performance, "mark");
+    connect(() => {});
+
+    expect(markSpy).not.toHaveBeenCalledWith("bc-boot:handshake-open");
+    state.onConnectCb?.(fakeConn);
+    expect(markSpy).toHaveBeenCalledWith("bc-boot:handshake-open");
+    expect(markSpy).not.toHaveBeenCalledWith("bc-boot:subscription-applied");
+
+    state.onAppliedCb?.();
+    expect(markSpy).toHaveBeenCalledWith("bc-boot:subscription-applied");
+
+    markSpy.mockRestore();
   });
 
   it("logs rather than throws on a connection error (NFR42)", () => {

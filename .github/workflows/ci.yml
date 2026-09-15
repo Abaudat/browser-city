@@ -149,6 +149,7 @@ jobs:
       - run: bash scripts/ci/check-agent-tooling.sh
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.3-scheduled-reducer-timing.md sched-timing-spacetimedb-version
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.4-backup-restore.md backup-spacetimedb-version
+      - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.14-boot-budget.md boot-budget-spacetimedb-version
       # scripts/ci/'s own fast, no-toolchain-needed tests for its
       # mechanical guards (e.g. check-no-masks.sh's own pattern, story 1.7
       # cycle 2) -- runs here, not in `client-check`, since it needs
@@ -251,7 +252,7 @@ jobs:
           workspaces: server
       - run: rustup toolchain install
       - name: native tests, including the property suite, in release
-        run: cargo test --workspace --exclude browser_city --exclude sched_timing_spike --release
+        run: cargo test --workspace --exclude browser_city --exclude sched_timing_spike --exclude boot_budget_spike --release
       - run: bash ../scripts/ci/check-trace-matrix.sh
 
   build:
@@ -281,6 +282,8 @@ jobs:
       # compile check anywhere is here.
       - name: the timing spike's own module must still compile too
         run: cargo build --target wasm32-unknown-unknown --release -p sched_timing_spike
+      - name: story 1.14's boot-budget spike module must still compile too
+        run: cargo build --target wasm32-unknown-unknown --release -p boot_budget_spike
 
   migrate:
     name: migrate
@@ -419,6 +422,59 @@ jobs:
             echo "::error::window.__bc leaked into the production bundle -- import.meta.env.DEV did not strip it" >&2
             exit 1
           fi
+      # Story 1.14 (Tim's direction): the decode-only harness and its
+      # generated bindings live under tests/e2e/boot-budget/ precisely so
+      # they are structurally unreachable from index.html's own module
+      # graph; this is the regression guard for that staying true.
+      - name: story 1.14, no boot-budget spike code reaches the production bundle
+        run: |
+          if grep -rlq 'boot-budget/bindings\|decode-harness\|boot_budget_spike' dist/assets/*.js dist/index.html 2>/dev/null; then
+            echo "::error::boot-budget spike code (client/tests/e2e/boot-budget/**) leaked into the production bundle" >&2
+            exit 1
+          fi
+      # Story 1.14 (NFR1, Quentin's direction): a fail-fast, browser-less
+      # regression gate for the two dominant terms docs/spikes/1.14-boot-
+      # budget.md measured (bundle and atlas), set from that spike's own
+      # numbers plus margin -- never a timing gate (that needs a browser
+      # and stays out of the PR-blocking `ci` gate; see the trace matrix's
+      # NFR1 row). The atlas figure is the *whole* public PNG catalogue
+      # `dist/assets/` ships (every character-generator sheet and city
+      # prop, ~481 files today), not only the ~105 files one boot actually
+      # fetches (docs/spikes/1.14-boot-budget.md's own, tighter, per-boot
+      # figure) -- a looser upper bound, but one that still catches "more
+      # art landed" the moment it happens, with no browser required.
+      - name: story 1.14 (NFR1), gzipped bundle and atlas size budgets
+        run: |
+          BUNDLE_BUDGET_BYTES=180000
+          ATLAS_BUDGET_BYTES=13000000
+
+          bundle_bytes=0
+          for f in dist/assets/index-*.js; do
+            [ -f "$f" ] || continue
+            sz=$(gzip -c "$f" | wc -c)
+            bundle_bytes=$((bundle_bytes + sz))
+          done
+          if [ "$bundle_bytes" -eq 0 ]; then
+            echo "::error::no dist/assets/index-*.js entry chunk found to measure" >&2
+            exit 1
+          fi
+          if [ "$bundle_bytes" -gt "$BUNDLE_BUDGET_BYTES" ]; then
+            echo "::error::production bundle grew to ${bundle_bytes} gzip bytes, over the ${BUNDLE_BUDGET_BYTES}-byte budget (docs/spikes/1.14-boot-budget.md) -- re-measure the spike if this is deliberate" >&2
+            exit 1
+          fi
+          echo "bundle: ${bundle_bytes} gzip bytes (budget ${BUNDLE_BUDGET_BYTES})"
+
+          atlas_bytes=0
+          for f in dist/assets/*.png; do
+            [ -f "$f" ] || continue
+            sz=$(gzip -c "$f" | wc -c)
+            atlas_bytes=$((atlas_bytes + sz))
+          done
+          if [ "$atlas_bytes" -gt "$ATLAS_BUDGET_BYTES" ]; then
+            echo "::error::the public PNG catalogue grew to ${atlas_bytes} gzip bytes, over the ${ATLAS_BUDGET_BYTES}-byte budget (docs/spikes/1.14-boot-budget.md) -- re-measure the spike if this is deliberate" >&2
+            exit 1
+          fi
+          echo "atlas (whole PNG catalogue): ${atlas_bytes} gzip bytes (budget ${ATLAS_BUDGET_BYTES})"
       # Quentin's direction: the asset is fetched at runtime, never
       # imported, so no other check in this PR would notice a Vite
       # publicDir/base-path change silently dropping it -- and it must

@@ -1,0 +1,72 @@
+name: boot-budget
+
+# Story 1.14 (NFR1): the full boot-budget measurement -- 20 cold, throttled
+# samples per network/CPU profile, plus D4's row-count decode sweep -- is
+# too slow and too noisy for every PR (Quentin/Tim's direction), so it is
+# never part of `ci.yml`'s gate. `scripts/ci/check-ci-gate.sh` only
+# inspects `ci.yml`, so this workflow is invisible to that gate by
+# construction, the same pattern `perf-soak.yml` sets for NFR2's own
+# long-running measurement.
+#
+# This workflow measures and uploads the raw samples; it does not commit
+# docs/spikes/1.14-boot-budget.md itself -- a human reviews the artifact
+# and runs scripts/dev/run-boot-budget-spike.sh locally (or downloads this
+# run's raw JSON) to regenerate and commit the report, the same
+# discipline story 1.3's re-run entry point sets.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "client/**"
+      - "server/**"
+      - "defs/**"
+      - "ModernTileset/**"
+      - ".github/workflows/boot-budget.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: boot-budget-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    name: measure
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # The client reads its sprites straight out of the repo-root
+      # ModernTileset/, and the harness publishes server/ and
+      # server/spikes/boot_budget, so this needs the whole repository.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+      - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: client/.nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - working-directory: client
+        run: npm ci
+      - working-directory: client
+        run: npx playwright install --with-deps chromium
+      - name: 20 cold samples per profile, milestones and D4's decode sweep
+        env:
+          BC_BOOT_OUT_DIR: ${{ github.workspace }}/boot-budget-out
+          BC_BOOT_HOST_LABEL: github-actions-runner
+        run: bash scripts/dev/run-boot-budget-spike.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: story-1.14-boot-budget
+          path: boot-budget-out
+          if-no-files-found: warn
+          retention-days: 14

@@ -73,6 +73,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "boot_budget_spike"
+version = "0.1.0"
+dependencies = [
+ "sim",
+ "spacetimedb",
+]
+
+[[package]]
 name = "bounds"
 version = "0.1.0"
 dependencies = [

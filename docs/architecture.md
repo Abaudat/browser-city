@@ -556,6 +556,41 @@ the footprint) and `interact_at` (FR148, reaches at most
 `INTERACT_AT_MAX_REACH_CELLS` beyond it, has positive area, and never
 lies entirely inside the object's own collider).
 
+## Boot budget
+
+Boot milestones are marked only through `client/src/boot/boot-marks.ts`; NFR1
+is measured by `scripts/dev/run-boot-budget-spike.sh` against a production
+build.
+
+Three decisions/risks this measures, recorded here because none of them was
+written down anywhere before story 1.14 (only A4, the GDD-level version of
+R5, existed in `docs/gdd.md`):
+
+- **D6 (boot design).** NFR1's 1000 ms budget is split into per-term targets
+  -- bundle, defs, atlas, handshake, subscription decode, remaining time to
+  controllable -- stated in `docs/spikes/1.14-boot-budget.md`'s "Pre-
+  registered budget". Until story 1.14, this split was arithmetic, never
+  measured against a real payload.
+- **D4 (chunking is the unit of subscription, FR145; see "World addressing"
+  above).** The known risk this carries: a street-sized subscription is
+  `CHUNK_SIZE`-many chunks' worth of `placed_object` rows -- ux.md's own
+  figure is ~28k rows for one street, against ~420 for the cheapest
+  first-spawn screen (the flat). Whether decoding that many rows on
+  subscribe fits inside the boot budget, or whether the client must
+  subscribe to a narrower halo of chunks than "the whole street" at first
+  paint, is the chunking migration this risk names.
+- **R5 (risk register: NFR1 is unproven against a real payload).** The same
+  risk A4 names in `docs/gdd.md`'s assumptions table, stated here as a
+  standing architectural risk rather than a GDD-level open item.
+
+**Status: both reopened.** `docs/spikes/1.14-boot-budget.md` measured every
+profile missing the budget by 2.6x-5.6x, atlas (no batching, no atlas
+artifact) the dominant term throughout, and D4's own pre-registered revisit
+trigger blown by ~30x at the 28k-row scale ux.md names. This section states
+what D4/D6/R5 are, not a duplicate of the spike's own numbers -- see that
+file for the measurement, and `docs/gdd.md`'s A4 row for the GDD-level
+summary.
+
 ## Naming
 
 

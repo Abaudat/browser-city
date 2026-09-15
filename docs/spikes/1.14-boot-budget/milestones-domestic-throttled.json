@@ -1,0 +1,312 @@
+{
+  "network": {
+    "name": "domestic",
+    "label": "typical domestic (50 Mbps down / 10 Mbps up / 30 ms RTT)"
+  },
+  "cpu": {
+    "name": "throttled",
+    "label": "CDP 4x CPU throttle (reproducible anywhere, CI included)"
+  },
+  "samples": [
+    {
+      "totalMs": 2795.5,
+      "firstPaintMs": 820,
+      "interactivePromptMs": 2795.5,
+      "terms": {
+        "bundle": 242.10000002384186,
+        "defs": 39.10000002384186,
+        "atlas": 2134.7999999523163,
+        "handshake": 84.39999997615814,
+        "subscriptionDecode": 26.199999928474426,
+        "toControllable": 14
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2908,
+      "firstPaintMs": 808,
+      "interactivePromptMs": 2908,
+      "terms": {
+        "bundle": 236.30000007152557,
+        "defs": 42.60000002384186,
+        "atlas": 2238.899999976158,
+        "handshake": 90,
+        "subscriptionDecode": 40.299999952316284,
+        "toControllable": 14.699999928474426
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2760.5,
+      "firstPaintMs": 824,
+      "interactivePromptMs": 2760.5,
+      "terms": {
+        "bundle": 228,
+        "defs": 40.5,
+        "atlas": 2078.5,
+        "handshake": 100.20000004768372,
+        "subscriptionDecode": 12,
+        "toControllable": 15
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2869.8000000715256,
+      "firstPaintMs": 812,
+      "interactivePromptMs": 2869.8000000715256,
+      "terms": {
+        "bundle": 227.40000009536743,
+        "defs": 39.89999997615814,
+        "atlas": 2209.3000000715256,
+        "handshake": 84.69999992847443,
+        "subscriptionDecode": 25.600000023841858,
+        "toControllable": 13.899999976158142
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2826.2000000476837,
+      "firstPaintMs": 880,
+      "interactivePromptMs": 2826.2000000476837,
+      "terms": {
+        "bundle": 250.29999995231628,
+        "defs": 42.89999997615814,
+        "atlas": 2082.7000000476837,
+        "handshake": 112,
+        "subscriptionDecode": 41.800000071525574,
+        "toControllable": 13.800000071525574
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2799,
+      "firstPaintMs": 808,
+      "interactivePromptMs": 2799,
+      "terms": {
+        "bundle": 229.90000009536743,
+        "defs": 45.89999997615814,
+        "atlas": 2137,
+        "handshake": 96.09999990463257,
+        "subscriptionDecode": 21.5,
+        "toControllable": 14.099999904632568
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2659.399999976158,
+      "firstPaintMs": 836,
+      "interactivePromptMs": 2659.399999976158,
+      "terms": {
+        "bundle": 224.89999997615814,
+        "defs": 40.200000047683716,
+        "atlas": 1974.8999999761581,
+        "handshake": 99.39999997615814,
+        "subscriptionDecode": 39,
+        "toControllable": 11.699999928474426
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2803,
+      "firstPaintMs": 836,
+      "interactivePromptMs": 2803,
+      "terms": {
+        "bundle": 239.30000007152557,
+        "defs": 40.39999997615814,
+        "atlas": 2116.899999976158,
+        "handshake": 112.29999995231628,
+        "subscriptionDecode": 35.60000002384186,
+        "toControllable": 12.5
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2763.7000000476837,
+      "firstPaintMs": 816,
+      "interactivePromptMs": 2763.7000000476837,
+      "terms": {
+        "bundle": 242.5,
+        "defs": 41.200000047683716,
+        "atlas": 2080.7000000476837,
+        "handshake": 89.60000002384186,
+        "subscriptionDecode": 39.699999928474426,
+        "toControllable": 13.900000095367432
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2842.600000023842,
+      "firstPaintMs": 892,
+      "interactivePromptMs": 2842.600000023842,
+      "terms": {
+        "bundle": 245.70000004768372,
+        "defs": 43.60000002384186,
+        "atlas": 2107.7000000476837,
+        "handshake": 97.89999997615814,
+        "subscriptionDecode": 28.100000023841858,
+        "toControllable": 9.300000071525574
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2917.600000023842,
+      "firstPaintMs": 876,
+      "interactivePromptMs": 2917.600000023842,
+      "terms": {
+        "bundle": 240.39999997615814,
+        "defs": 44.5,
+        "atlas": 2184.899999976158,
+        "handshake": 102.10000002384186,
+        "subscriptionDecode": 27.700000047683716,
+        "toControllable": 14.899999976158142
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2779,
+      "firstPaintMs": 868,
+      "interactivePromptMs": 2779,
+      "terms": {
+        "bundle": 245.80000007152557,
+        "defs": 44.299999952316284,
+        "atlas": 2066,
+        "handshake": 102.39999997615814,
+        "subscriptionDecode": 32,
+        "toControllable": 12
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2771.399999976158,
+      "firstPaintMs": 888,
+      "interactivePromptMs": 2771.399999976158,
+      "terms": {
+        "bundle": 244,
+        "defs": 40.699999928474426,
+        "atlas": 2033.6000000238419,
+        "handshake": 105.29999995231628,
+        "subscriptionDecode": 42.200000047683716,
+        "toControllable": 15.5
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2734.7000000476837,
+      "firstPaintMs": 844,
+      "interactivePromptMs": 2734.7000000476837,
+      "terms": {
+        "bundle": 236.89999997615814,
+        "defs": 42.40000009536743,
+        "atlas": 2047.4000000953674,
+        "handshake": 108.10000002384186,
+        "subscriptionDecode": 14.300000071525574,
+        "toControllable": 14.800000071525574
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2850.600000023842,
+      "firstPaintMs": 852,
+      "interactivePromptMs": 2850.600000023842,
+      "terms": {
+        "bundle": 237.39999997615814,
+        "defs": 47.59999990463257,
+        "atlas": 2148,
+        "handshake": 123.89999997615814,
+        "subscriptionDecode": 50.60000002384186,
+        "toControllable": 16.5
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2917.0999999046326,
+      "firstPaintMs": 856,
+      "interactivePromptMs": 2917.0999999046326,
+      "terms": {
+        "bundle": 244.89999997615814,
+        "defs": 41.199999928474426,
+        "atlas": 2217.100000023842,
+        "handshake": 95.19999992847443,
+        "subscriptionDecode": 51.40000009536743,
+        "toControllable": 13.599999904632568
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2812,
+      "firstPaintMs": 860,
+      "interactivePromptMs": 2812,
+      "terms": {
+        "bundle": 234.40000009536743,
+        "defs": 47.89999997615814,
+        "atlas": 2100,
+        "handshake": 104.19999992847443,
+        "subscriptionDecode": 25.899999976158142,
+        "toControllable": 16.5
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2710.2000000476837,
+      "firstPaintMs": 872,
+      "interactivePromptMs": 2710.2000000476837,
+      "terms": {
+        "bundle": 244.5,
+        "defs": 52.200000047683716,
+        "atlas": 2002.2000000476837,
+        "handshake": 98.10000002384186,
+        "subscriptionDecode": 26.699999928474426,
+        "toControllable": 12.900000095367432
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2706.7999999523163,
+      "firstPaintMs": 836,
+      "interactivePromptMs": 2706.7999999523163,
+      "terms": {
+        "bundle": 240.29999995231628,
+        "defs": 46.89999997615814,
+        "atlas": 2019.8000000715256,
+        "handshake": 115.90000009536743,
+        "subscriptionDecode": 36.59999990463257,
+        "toControllable": 12.5
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    },
+    {
+      "totalMs": 2763,
+      "firstPaintMs": 820,
+      "interactivePromptMs": 2763,
+      "terms": {
+        "bundle": 244.39999997615814,
+        "defs": 38.60000002384186,
+        "atlas": 2085.600000023842,
+        "handshake": 108.5,
+        "subscriptionDecode": 36.10000002384186,
+        "toControllable": 12.100000023841858
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709
+    }
+  ]
+}

@@ -42,17 +42,18 @@ CLIENT_UNIT_DIR="$REPO_ROOT/client/tests/unit"
 [ -d "$CLIENT_UNIT_DIR" ] || { echo "check-trace-matrix: $CLIENT_UNIT_DIR not found" >&2; exit 1; }
 
 # --- collect every test name the workspace actually runs --------------------
-# browser_city and sched_timing_spike are excluded: both embed
-# SpacetimeDB's reducer/table macros, which reference host FFI symbols
-# the wasm runtime supplies, so neither can be linked natively (see
-# server/Cargo.toml and server/spikes/sched_timing/Cargo.toml). --release
-# reuses the artifacts the CI test job already built in release rather
-# than compiling the workspace a second time in debug just to print test
-# names. Skipped entirely under --client-only.
+# browser_city, sched_timing_spike and boot_budget_spike are excluded: all
+# three embed SpacetimeDB's reducer/table macros, which reference host FFI
+# symbols the wasm runtime supplies, so none can be linked natively (see
+# server/Cargo.toml, server/spikes/sched_timing/Cargo.toml and
+# server/spikes/boot_budget/Cargo.toml). --release reuses the artifacts
+# the CI test job already built in release rather than compiling the
+# workspace a second time in debug just to print test names. Skipped
+# entirely under --client-only.
 if [ "$CLIENT_ONLY" -eq 1 ]; then
   TEST_NAMES=""
 else
-  LIST_OUTPUT="$(cd "$REPO_ROOT/server" && cargo test --workspace --exclude browser_city --exclude sched_timing_spike --release -- --list 2>&1)" || {
+  LIST_OUTPUT="$(cd "$REPO_ROOT/server" && cargo test --workspace --exclude browser_city --exclude sched_timing_spike --exclude boot_budget_spike --release -- --list 2>&1)" || {
     echo "check-trace-matrix: 'cargo test -- --list' failed:" >&2
     echo "$LIST_OUTPUT" >&2
     exit 1
@@ -205,6 +206,7 @@ GUARD_SECTIONS=(
   "Input and intents"
   "Scheduled-reducer timing"
   "Backup and restore"
+  "Boot budget"
 )
 
 for section in "${GUARD_SECTIONS[@]}"; do
