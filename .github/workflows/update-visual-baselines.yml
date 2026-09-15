@@ -29,11 +29,6 @@ name: update-visual-baselines
 
 on:
   workflow_dispatch:
-  # TEMPORARY, this PR only: see the note in the Crew comment on PR #286 --
-  # workflow_dispatch cannot run until this file is on the default branch.
-  # Removed once this cycle's regenerated baselines are committed.
-  push:
-    branches: [Abaudat/issue-61]
 
 permissions:
   contents: write
