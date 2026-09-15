@@ -302,10 +302,32 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Network.enable");
   let framesSentWhileWalking = 0;
-  const onWsFrameSent = (event: { response: { opcode: number } }): void => {
-    if (event.response.opcode === 1 || event.response.opcode === 2) framesSentWhileWalking++;
+  const onWsFrameSent = (event: { response: { opcode: number; payloadData: string } }): void => {
+    if (event.response.opcode === 1 || event.response.opcode === 2) {
+      framesSentWhileWalking++;
+      // Diagnostic only, never asserted on: if this ever counts again,
+      // the payload says what it actually was.
+      console.log(
+        `[test-street] unexpected websocket data frame (opcode ${event.response.opcode}): ${event.response.payloadData.slice(0, 200)}`,
+      );
+    }
   };
-  cdp.on("Network.webSocketFrameSent", onWsFrameSent);
+
+  /** A `toHaveScreenshot` check holds the player still for as long as its
+   * own stability wait takes (minutes on a cold CI run, the first time it
+   * has to write a new baseline) -- long enough, in practice, to cross
+   * whatever produced the one stray data frame a screenshot-lengthened
+   * run saw here before. The player is provably not moving while a
+   * screenshot is taken, so nothing sent during that specific window can
+   * be a result of movement, whatever caused it; the counter is detached
+   * for its duration rather than guessed at case by case. */
+  function trackFrames(): void {
+    cdp.on("Network.webSocketFrameSent", onWsFrameSent);
+  }
+  function untrackFrames(): void {
+    cdp.off("Network.webSocketFrameSent", onWsFrameSent);
+  }
+  trackFrames();
 
   // The ping indicator (`bootstrap.ts`) is fixed-position and can overlap
   // the canvas's own bounding box; it also recolours on a ping this scene
@@ -314,7 +336,12 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   const pingIndicator = page.locator("#bc-ping-indicator");
 
   async function screenshot(name: string): Promise<void> {
-    await expect(canvas).toHaveScreenshot(name, { ...SCREENSHOT_OPTIONS, mask: [pingIndicator] });
+    untrackFrames();
+    try {
+      await expect(canvas).toHaveScreenshot(name, { ...SCREENSHOT_OPTIONS, mask: [pingIndicator] });
+    } finally {
+      trackFrames();
+    }
   }
 
   // --- inside shop A -----------------------------------------------------
@@ -489,7 +516,7 @@ test("one walk down the test street: collision, depth order, retraction, floors 
     expectedOrderFor(backOnTheStreet.x, backOnTheStreet.y, backOnTheStreet.floor),
   );
 
-  cdp.off("Network.webSocketFrameSent", onWsFrameSent);
+  untrackFrames();
   // FR137: the whole walk was client-authoritative -- not one WebSocket
   // data frame, and therefore not one reducer call, while moving.
   expect(framesSentWhileWalking).toBe(0);
