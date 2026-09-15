@@ -72,6 +72,17 @@ d="$(plant 'import {
 } from "pixi.js";')"
 check "a multi-line import with BitmapText on its own line, alongside others" 1 bash "$CHECK" "$d"
 
+# Tim's direction, cycle 2: the multi-line report used to name no
+# identifier at all -- `s/\s+/ /g` on the flattened clause reset `$1`
+# before it was interpolated into the message, so "(bans )" printed
+# regardless of which name actually tripped it.
+d="$(plant 'import {
+  Container,
+  Text,
+} from "pixi.js";')"
+check_contains "the multi-line report names the actual banned identifier, not a blank" \
+  "(bans Text)" "$(bash "$CHECK" "$d" 2>&1)"
+
 d="$(plant 'import {
   Container,
   Sprite,

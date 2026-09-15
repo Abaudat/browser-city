@@ -322,10 +322,12 @@ export interface MountStreetSceneOptions {
    * never polled. */
   readonly onHighlightChange?: (objectId: bigint | undefined) => void;
   /** FR173's affordance dial (story 1.11, the U1 dial from `docs/ux.md`):
-   * 0-100, scaling `HIGHLIGHT_ALPHA` linearly. Defaults to 100 (the
-   * constant's own value, unscaled) so a caller that never wires the
-   * options-menu setting still gets the pre-dial behaviour. */
-  readonly highlightStrength?: number;
+   * 0-100, scaling `HIGHLIGHT_ALPHA` linearly. Required, not defaulted
+   * here (Tim's direction, cycle 2): `settings/display-settings.ts`'s
+   * `DEFAULT_DISPLAY_SETTINGS` is the one place a default for this value
+   * exists -- a second opinion on it here is exactly what let the range
+   * `[20, 100]` and this file's own fallback of 100 disagree. */
+  readonly highlightStrength: number;
   /** The keyboard state to drive movement with -- required, and built by
    * the caller from the player's own stored bindings. No default here on
    * purpose: one falling back to `DEFAULT_BINDINGS` would silently ignore
@@ -988,7 +990,7 @@ export async function mountStreetScene(
   let highlightOverlays: Sprite[] = [];
   // 0-100 (story 1.11's U1 dial); live-settable through the handle's own
   // setHighlightStrength.
-  let currentHighlightStrength = highlightStrength ?? 100;
+  let currentHighlightStrength = highlightStrength;
 
   function clearHighlightOverlays(): void {
     for (const overlay of highlightOverlays) {

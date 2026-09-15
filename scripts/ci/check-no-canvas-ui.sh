@@ -59,8 +59,9 @@ IMPORT_MATCHES="$(
       while (/import\b(.*?)from\s*[\x27"]pixi\.js[\x27"]/gs) {
         my $clause = $1;
         if ($clause =~ /\b(Text|BitmapText|HTMLText|SplitText|TextStyle|TextStyleOptions)\b/) {
+          my $banned = $1;
           (my $flat = $clause) =~ s/\s+/ /g;
-          print "$ARGV: import ...$flat... from \"pixi.js\" (bans $1)\n";
+          print "$ARGV: import ...$flat... from \"pixi.js\" (bans $banned)\n";
         }
       }
     ' 2>/dev/null || true

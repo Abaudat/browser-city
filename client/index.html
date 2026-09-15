@@ -31,6 +31,15 @@
          may clip real content either. -->
     <style>
       :root {
+        /* Tells every browser to paint its own built-in controls dark
+           (Artie's direction, cycle 2): an unchecked checkbox and an
+           unfilled range track are UA-drawn, and `accent-color` alone
+           only tints the *checked*/filled state -- without this, the
+           panel's own near-black is undercut by a stock light-mode
+           checkbox, and the story 4.6 name-prompt text input would
+           render as a white field for the one frame before its own CSS
+           applies. */
+        color-scheme: dark;
         --bc-font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         --bc-panel-bg: #14161a;
         --bc-text: #ececec;
