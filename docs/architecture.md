@@ -406,13 +406,63 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   `isBindableCode` is the single rule for what may be bound, and `Escape`
   is reserved for the options menu.
 - Keybindings persist in exactly one versioned `localStorage` key,
-  `bc.keybindings.v1`, touched only by `input/keybindings-storage.ts`
-  through an injected `Storage`. Reading never throws and never writes;
-  stored actions merge per action over the defaults. `clear()` is never
-  called.
-- `client/src/ui/options-menu.ts` is the FR151 options menu, the only
-  settings surface: plain DOM, `Escape` to open and close, keyboard taken
-  off movement while it is open.
+  `bc.keybindings.v1`, through `input/keybindings-storage.ts`, itself a
+  thin shape-and-defaults layer over `settings/settings-storage.ts`'s
+  shared read-safely/write-safely idiom (below). Reading never throws and
+  never writes; stored actions merge per action over the defaults.
+  `clear()` is never called.
+
+## DOM UI
+
+The whole game has exactly three DOM UI surfaces (FR151): the boot name
+prompt (story 4.6), the options menu and the connection notice. `client/
+src/ui/` is their only home -- `mountOptionsMenu`/`mountConnectionNotice`
+each take plain data and callbacks through a `mountX(options)` function
+and return a handle with `destroy()`, no framework, no dependency. Every
+top-level element a surface mounts carries `data-bc-surface` with one of
+`options-menu`, `connection-notice` or `name-prompt`, checked exhaustively
+against `document.body`'s own children by
+`client/tests/e2e/connection-notice.spec.ts`. `ui/style.ts`'s
+`ensureStyle(doc, id, css)` and `ui/theme.ts`'s `ensureUiTheme(doc)`
+(shared font/colour/accent custom properties) are the one styling
+mechanism both surfaces use, so a third surface never invents its own.
+
+- `client/src/net/connection.ts`'s `ConnectionStatus` (`"connecting" |
+  "connected" | "disconnected"`) is `net/`'s only connection-state export
+  -- a plain string union, never an SDK type. `ui/connection-notice.ts`
+  duplicates the same three-member union locally rather than importing
+  it: `src/ui/**` may not import `net/**` (or `pixi.js`, `render/**`,
+  `world/**`, `test-street/**`) -- a DOM surface receives plain data
+  through its mount options, never reaches into the game. The union is
+  built so a later story can add a `"reconnecting"` member (reconnection
+  itself is out of scope here) without reshaping either side.
+- The connection notice shows, after a debounce, while the status is not
+  `"connected"`, and on recovery shows "Reconnected" briefly before a
+  fade -- the only animation in this layer. Nothing in the disconnect
+  path touches the Pixi `Application`, the scene, its ticker or any pool:
+  the notice is the disconnect's only consumer, which is what makes "the
+  world keeps rendering its last known state" hold by construction.
+- The options menu is one panel, three sections in this fixed order --
+  Audio, Display, Controls -- as stacked headings, never tabs. Every
+  control has a real consumer today or a persisted value a named later
+  story reads.
+- `client/src/settings/settings-storage.ts` is the one settings-storage
+  idiom every group (`input/keybindings-storage.ts`, `settings/
+  audio-settings.ts`, `settings/display-settings.ts`) shares: one
+  versioned `localStorage` key per group, read once through an injected
+  `Storage`. Reading never throws and never writes; a version or shape it
+  does not recognise falls back to defaults in memory.
+- Three mechanical guards keep this section true, all run by
+  `client-check`: `scripts/ci/check-no-canvas-ui.sh` (no Pixi `Text`/
+  `BitmapText`/`HTMLText`/`SplitText` construction or import, no native
+  `alert`/`confirm`/`prompt`, anywhere under `client/src/`);
+  `client/biome.json`'s `src/ui/**` override (nothing below `ui/` can be
+  imported by `render/**`, `world/**` or `input/**`, and `ui/**` itself
+  cannot reach `net/**`, `render/**`, `world/**`, `test-street/**` or
+  `pixi.js`); and `noRestrictedGlobals` banning `document` in
+  `render/**`, `net/**`, `defs/**` and `boot/**` (`window` stays allowed)
+  -- DOM creation is only possible in `ui/`, `input/`, `test-street/` and
+  `main.ts`.
 
 ## Rendering
 

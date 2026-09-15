@@ -414,6 +414,8 @@ jobs:
         run: bash ../scripts/ci/check-layer-table-current.sh
       - name: story 1.7 FR121, no masking/filter/render-texture construct under client/src/
         run: bash ../scripts/ci/check-no-masks.sh
+      - name: story 1.11 FR150/FR152/FR151, no canvas-text construct or native dialog under client/src/
+        run: bash ../scripts/ci/check-no-canvas-ui.sh
       - name: story 1.9 FR148, the input layer cannot reach a procedure or an interaction module
         run: bash ../scripts/ci/check-input-boundary.sh
       # The cargo-free half of check-trace-matrix.sh: the client inv_*

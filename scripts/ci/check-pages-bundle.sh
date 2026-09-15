@@ -92,6 +92,18 @@ if [ -n "$LOCALHOST_MATCHES" ]; then
   FAILED=1
 fi
 
+# --- story 1.11: the story 1.1 ping indicator never ships (negative) -------
+# `render/bootstrap.ts` (deleted this story) mounted a fixed-position
+# `#bc-ping-indicator` div -- a fourth persistent DOM surface with no
+# requirement behind it, exactly the abstract counter NFR22/FR151 ban. It
+# must never reach a production bundle, whatever a later branch does.
+PING_INDICATOR_MATCHES="$(grep -rlF 'bc-ping-indicator' "$DIST_DIR" --include='*.js' --include='*.html' 2>/dev/null || true)"
+if [ -n "$PING_INDICATOR_MATCHES" ]; then
+  echo "check-pages-bundle: FAIL -- the story 1.1 ping indicator (#bc-ping-indicator, NFR22/FR151 forbid it) shipped in the production bundle:" >&2
+  echo "$PING_INDICATOR_MATCHES" >&2
+  FAILED=1
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi

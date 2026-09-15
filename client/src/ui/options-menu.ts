@@ -1,27 +1,38 @@
-// FR151's options menu -- the only settings surface this client has, and
-// one of exactly three DOM surfaces the whole game is allowed (the boot
-// name prompt and connection-state notices are the other two). Plain DOM,
-// no framework, no dependency.
+// FR151's options menu -- one of exactly three DOM surfaces the whole
+// game is allowed (the boot name prompt and the connection notice,
+// `ui/connection-notice.ts`, are the other two). Plain DOM, no framework,
+// no dependency.
 //
-// It is structured as *the* options menu from the start, with Audio and
-// Display as later sections of this same panel rather than a separate
-// "keybindings" dialog somebody has to merge in later. Only Controls
-// exists today, and nothing is invented to fill the others.
+// One panel, three sections in this fixed order -- Audio, Display,
+// Controls -- as stacked headings, never tabs (Artie's direction: too few
+// settings to justify an application-style tab strip). Every control has
+// a real consumer today or a persisted value a named later story reads
+// (Tim's wiring rule): Audio's volume/mute are FR153's audio story's
+// input; Display's highlight strength is the U1 dial
+// (`docs/ux.md`) the affordance story reads; Controls is FR149's
+// rebinding, unchanged. Nothing decorative is ever added here.
 //
 // Artie's rules, which are what the styling below is:
 //   - one small centred panel over a semi-transparent backdrop. The city
 //     stays visible behind it and keeps running: the world never pauses.
-//   - system font stack, near-black panel, off-white text, one accent.
-//     No pixel-font imitation, no wood or leather frame, no UI sprite
-//     sheet. The menu sits outside the fiction and should look like it.
+//   - system font stack, near-black panel, off-white text, one accent
+//     (`ui/theme.ts`'s shared custom properties). No pixel-font
+//     imitation, no wood or leather frame, no UI sprite sheet. The menu
+//     sits outside the fiction and should look like it.
 //   - `Escape` opens and closes it, and is listed as fixed because it is
 //     reserved (`input/keybindings.ts`) -- a player cannot bind it away.
 //   - a key already bound elsewhere swaps, and both rows flash. Never an
-//     error dialog: there is no `confirm()` or `alert()` in this file,
-//     including on "Reset to defaults".
+//     error dialog: this file never calls the browser's native blocking
+//     dialogs, including on "Reset to defaults" (which resets Controls
+//     only -- Audio and Display are separate persisted groups, untouched
+//     by it). `scripts/ci/check-no-canvas-ui.sh` bans them repo-wide.
 
 import type { BindableAction, Bindings } from "../input/keybindings";
 import { BINDABLE_ACTIONS, DEFAULT_BINDINGS, isBindableCode, rebind } from "../input/keybindings";
+import type { AudioSettings } from "../settings/audio-settings";
+import type { DisplaySettings } from "../settings/display-settings";
+import { ensureStyle } from "./style";
+import { ensureUiTheme } from "./theme";
 
 /** How long both rows of a swap stay marked, so the player sees what
  * moved. A steady mark that ends, never a pulse -- nothing in this menu
@@ -92,6 +103,12 @@ export interface OptionsMenuOptions {
   /** Called when the menu opens or closes, so the caller can take the
    * keyboard off movement while it is open (Artie's direction). */
   readonly onOpenChange?: (open: boolean) => void;
+  readonly initialAudio: AudioSettings;
+  /** Called with the new value on every committed slider/toggle change.
+   * Persisting it is the caller's job, same as `onBindingsChange`. */
+  readonly onAudioChange: (audio: AudioSettings) => void;
+  readonly initialDisplay: DisplaySettings;
+  readonly onDisplayChange: (display: DisplaySettings) => void;
 }
 
 export interface OptionsMenuHandle {
@@ -117,8 +134,8 @@ const STYLE_TEXT = `
   align-items: center;
   justify-content: center;
   z-index: 100;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color: #ececec;
+  font-family: var(--bc-font);
+  color: var(--bc-text);
 }
 /* display:flex above would otherwise beat the hidden attribute's own UA
    rule, leaving a closed menu as an invisible full-screen sheet over the
@@ -127,12 +144,14 @@ const STYLE_TEXT = `
   display: none;
 }
 [data-bc-panel] {
-  background: #14161a;
-  border: 1px solid #2b2f36;
+  background: var(--bc-panel-bg);
+  border: 1px solid var(--bc-border);
   border-radius: 6px;
   padding: 20px 24px;
   min-width: 320px;
   max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
 [data-bc-panel] h2 {
@@ -145,8 +164,11 @@ const STYLE_TEXT = `
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #8b93a1;
-  margin: 0 0 8px;
+  color: var(--bc-muted);
+  margin: 20px 0 8px;
+}
+[data-bc-panel] h3:first-of-type {
+  margin-top: 0;
 }
 [data-bc-row] {
   display: flex;
@@ -159,34 +181,41 @@ const STYLE_TEXT = `
 [data-bc-row][data-bc-flash="true"] {
   background: rgba(94, 158, 214, 0.22);
 }
+[data-bc-row] label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 [data-bc-keys] {
   display: flex;
   gap: 6px;
 }
-[data-bc-keycap], [data-bc-reset], [data-bc-close] {
+[data-bc-keycap], [data-bc-reset], [data-bc-close], [data-bc-fullscreen-toggle] {
   font: inherit;
   font-size: 12px;
-  color: #ececec;
-  background: #20242b;
+  color: var(--bc-text);
+  background: var(--bc-control-bg);
   border: 1px solid #363b44;
   border-radius: 4px;
   padding: 3px 9px;
   cursor: pointer;
 }
-[data-bc-keycap]:hover, [data-bc-reset]:hover, [data-bc-close]:hover {
-  background: #272c34;
+[data-bc-keycap]:hover, [data-bc-reset]:hover, [data-bc-close]:hover, [data-bc-fullscreen-toggle]:hover {
+  background: var(--bc-control-bg-hover);
 }
-[data-bc-keycap]:focus-visible, [data-bc-reset]:focus-visible, [data-bc-close]:focus-visible {
-  outline: 2px solid #5e9ed6;
+[data-bc-keycap]:focus-visible, [data-bc-reset]:focus-visible, [data-bc-close]:focus-visible,
+[data-bc-fullscreen-toggle]:focus-visible, [data-bc-volume-slider]:focus-visible,
+[data-bc-highlight-slider]:focus-visible, [data-bc-mute-toggle]:focus-visible {
+  outline: 2px solid var(--bc-accent);
   outline-offset: 2px;
 }
 [data-bc-keycap][data-bc-capturing="true"] {
-  border-color: #5e9ed6;
-  color: #5e9ed6;
+  border-color: var(--bc-accent);
+  color: var(--bc-accent);
 }
 [data-bc-note] {
   font-size: 11px;
-  color: #8b93a1;
+  color: var(--bc-muted);
   margin: 14px 0 0;
 }
 [data-bc-actions] {
@@ -195,15 +224,13 @@ const STYLE_TEXT = `
   gap: 8px;
   margin-top: 16px;
 }
-`;
-
-function ensureStyle(doc: Document): void {
-  if (doc.getElementById(STYLE_ID)) return;
-  const style = doc.createElement("style");
-  style.id = STYLE_ID;
-  style.textContent = STYLE_TEXT;
-  doc.head.appendChild(style);
+[data-bc-value] {
+  font-size: 12px;
+  color: var(--bc-muted);
+  min-width: 2.5em;
+  text-align: right;
 }
+`;
 
 /**
  * Mounts the options menu into `container`, closed. Returns a handle the
@@ -212,11 +239,23 @@ function ensureStyle(doc: Document): void {
  * the panel has focus.
  */
 export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle {
-  const { container, initialBindings, onBindingsChange, onOpenChange } = options;
+  const {
+    container,
+    initialBindings,
+    onBindingsChange,
+    onOpenChange,
+    initialAudio,
+    onAudioChange,
+    initialDisplay,
+    onDisplayChange,
+  } = options;
   const doc = container.ownerDocument;
-  ensureStyle(doc);
+  ensureUiTheme(doc);
+  ensureStyle(doc, STYLE_ID, STYLE_TEXT);
 
   let bindings = initialBindings;
+  let audio = initialAudio;
+  let display = initialDisplay;
   let open = false;
   let capturing: { action: BindableAction; slot: number } | undefined;
   const flashTimers = new Map<BindableAction, ReturnType<typeof setTimeout>>();
@@ -224,6 +263,7 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
   const backdrop = doc.createElement("div");
   backdrop.setAttribute("data-bc-backdrop", "");
   backdrop.setAttribute("data-bc-options", "");
+  backdrop.setAttribute("data-bc-surface", "options-menu");
   backdrop.setAttribute("role", "dialog");
   backdrop.setAttribute("aria-modal", "false");
   backdrop.setAttribute("aria-label", "Options");
@@ -237,6 +277,68 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
   title.textContent = "Options";
   panel.appendChild(title);
 
+  // --- Audio ---------------------------------------------------------
+  const audioHeading = doc.createElement("h3");
+  audioHeading.textContent = "Audio";
+  panel.appendChild(audioHeading);
+
+  const volumeRow = doc.createElement("div");
+  volumeRow.setAttribute("data-bc-row", "");
+  const volumeLabel = doc.createElement("label");
+  volumeLabel.textContent = "Master volume";
+  const volumeSlider = doc.createElement("input");
+  volumeSlider.type = "range";
+  volumeSlider.min = "0";
+  volumeSlider.max = "100";
+  volumeSlider.setAttribute("data-bc-volume-slider", "");
+  const volumeValue = doc.createElement("span");
+  volumeValue.setAttribute("data-bc-value", "");
+  volumeLabel.append(volumeSlider, volumeValue);
+  volumeRow.appendChild(volumeLabel);
+  panel.appendChild(volumeRow);
+
+  const muteRow = doc.createElement("div");
+  muteRow.setAttribute("data-bc-row", "");
+  const muteLabel = doc.createElement("label");
+  const muteToggle = doc.createElement("input");
+  muteToggle.type = "checkbox";
+  muteToggle.setAttribute("data-bc-mute-toggle", "");
+  muteLabel.append(muteToggle, doc.createTextNode("Mute"));
+  muteRow.appendChild(muteLabel);
+  panel.appendChild(muteRow);
+
+  // --- Display ---------------------------------------------------------
+  const displayHeading = doc.createElement("h3");
+  displayHeading.textContent = "Display";
+  panel.appendChild(displayHeading);
+
+  const highlightRow = doc.createElement("div");
+  highlightRow.setAttribute("data-bc-row", "");
+  const highlightLabel = doc.createElement("label");
+  highlightLabel.textContent = "Highlight strength";
+  const highlightSlider = doc.createElement("input");
+  highlightSlider.type = "range";
+  highlightSlider.min = "0";
+  highlightSlider.max = "100";
+  highlightSlider.setAttribute("data-bc-highlight-slider", "");
+  const highlightValue = doc.createElement("span");
+  highlightValue.setAttribute("data-bc-value", "");
+  highlightLabel.append(highlightSlider, highlightValue);
+  highlightRow.appendChild(highlightLabel);
+  panel.appendChild(highlightRow);
+
+  const fullscreenRow = doc.createElement("div");
+  fullscreenRow.setAttribute("data-bc-row", "");
+  const fullscreenLabel = doc.createElement("span");
+  fullscreenLabel.textContent = "Fullscreen";
+  const fullscreenToggle = doc.createElement("button");
+  fullscreenToggle.type = "button";
+  fullscreenToggle.setAttribute("data-bc-fullscreen-toggle", "");
+  fullscreenToggle.textContent = "Toggle";
+  fullscreenRow.append(fullscreenLabel, fullscreenToggle);
+  panel.appendChild(fullscreenRow);
+
+  // --- Controls ---------------------------------------------------------
   const controlsHeading = doc.createElement("h3");
   controlsHeading.textContent = "Controls";
   panel.appendChild(controlsHeading);
@@ -352,7 +454,18 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
   /** Every control inside the panel, in DOM order -- what Tab cycles
    * through, and what the trap below wraps around. */
   function focusables(): HTMLElement[] {
-    return [...panel.querySelectorAll<HTMLElement>("button")];
+    return [...panel.querySelectorAll<HTMLElement>("button, input")];
+  }
+
+  function renderAudio(): void {
+    volumeSlider.value = String(audio.masterVolume);
+    volumeValue.textContent = `${audio.masterVolume}%`;
+    muteToggle.checked = audio.muted;
+  }
+
+  function renderDisplay(): void {
+    highlightSlider.value = String(display.highlightStrength);
+    highlightValue.textContent = `${display.highlightStrength}%`;
   }
 
   function setOpen(next: boolean): void {
@@ -431,12 +544,54 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
   };
   const onCloseClick = (): void => setOpen(false);
 
+  // Live readout on every drag tick ('input'), but only committed (and
+  // persisted, through the caller's onAudioChange/onDisplayChange) on
+  // 'change' -- the same idiom a native OS volume slider uses, so a drag
+  // never writes to storage on every intermediate tick.
+  const onVolumeInput = (): void => {
+    volumeValue.textContent = `${volumeSlider.value}%`;
+  };
+  const onVolumeChange = (): void => {
+    audio = { ...audio, masterVolume: Number(volumeSlider.value) };
+    onAudioChange(audio);
+  };
+  const onMuteChange = (): void => {
+    audio = { ...audio, muted: muteToggle.checked };
+    onAudioChange(audio);
+  };
+  const onHighlightInput = (): void => {
+    highlightValue.textContent = `${highlightSlider.value}%`;
+  };
+  const onHighlightChange = (): void => {
+    display = { ...display, highlightStrength: Number(highlightSlider.value) };
+    onDisplayChange(display);
+  };
+  // The browser owns fullscreen state (Artie's direction) -- nothing here
+  // persists it. `requestFullscreen`/`exitFullscreen` are absent in
+  // environments with no Fullscreen API (jsdom included); the optional
+  // call is the whole of that guard.
+  const onFullscreenClick = (): void => {
+    if (doc.fullscreenElement) {
+      void doc.exitFullscreen?.();
+    } else {
+      void doc.documentElement.requestFullscreen?.();
+    }
+  };
+
   reset.addEventListener("click", onResetClick);
   close.addEventListener("click", onCloseClick);
+  volumeSlider.addEventListener("input", onVolumeInput);
+  volumeSlider.addEventListener("change", onVolumeChange);
+  muteToggle.addEventListener("change", onMuteChange);
+  highlightSlider.addEventListener("input", onHighlightInput);
+  highlightSlider.addEventListener("change", onHighlightChange);
+  fullscreenToggle.addEventListener("click", onFullscreenClick);
   const view = doc.defaultView;
   view?.addEventListener("keydown", onKeyDown);
 
   render();
+  renderAudio();
+  renderDisplay();
 
   return {
     element: backdrop,
@@ -454,6 +609,12 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
       view?.removeEventListener("keydown", onKeyDown);
       reset.removeEventListener("click", onResetClick);
       close.removeEventListener("click", onCloseClick);
+      volumeSlider.removeEventListener("input", onVolumeInput);
+      volumeSlider.removeEventListener("change", onVolumeChange);
+      muteToggle.removeEventListener("change", onMuteChange);
+      highlightSlider.removeEventListener("input", onHighlightInput);
+      highlightSlider.removeEventListener("change", onHighlightChange);
+      fullscreenToggle.removeEventListener("click", onFullscreenClick);
       backdrop.remove();
     },
   };

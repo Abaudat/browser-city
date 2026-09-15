@@ -21,10 +21,12 @@ import {
   recordVisibilityForE2e,
 } from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
-import { bootstrapRenderer } from "./render/bootstrap";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
+import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
+import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { mountStreetScene } from "./test-street/scene";
+import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, windowDefIds } from "./world/object-defs";
@@ -35,21 +37,20 @@ async function main(): Promise<void> {
   // before it is fetch/parse/eval (Resource Timing owns that half) and
   // everything after is the app's own boot work.
   markBoot(BOOT_MARK.MAIN_START);
-  const mount = document.getElementById("app");
-  if (!mount) {
-    // NFR42: degrade to not-drawing, never crash.
-    console.error("[main] #app is missing from index.html");
-    return;
-  }
 
-  const renderer = bootstrapRenderer(mount);
+  // FR151's connection notice -- mounted before `connect()` so `onStatus`'s
+  // very first, synchronous "connecting" call always has somewhere to go.
+  // Nothing here ever touches the Pixi Application, the scene, its ticker
+  // or any pool (story 1.11, Tim's direction): the notice is the
+  // disconnect's only consumer, which is what makes "the world keeps
+  // rendering its last known state" hold by construction.
+  const notice = mountConnectionNotice({ container: document.body });
 
   function onPing(observation: PingObservation): void {
-    renderer.showPing(observation);
     recordPingForE2e(observation);
   }
 
-  connect(onPing);
+  connect(onPing, (status) => notice.setStatus(status));
 
   try {
     await startStreetScene();
@@ -62,10 +63,8 @@ async function main(): Promise<void> {
 
 /**
  * The street scene: the page's one and only Pixi `Application` (Tim's
- * direction, story 1.13) -- the ping indicator above is plain DOM and
- * shares no GPU context or ticker with this. Never blocks `main()` on
- * failure (NFR42) -- a broken street mount must never take the ping round
- * trip down with it.
+ * direction, story 1.13). Never blocks `main()` on failure (NFR42) -- a
+ * broken street mount must never take the ping round trip down with it.
  *
  * The rank table comes from `render/layer-table.ts` -- the one
  * client-side mirror of `sim::codes::layer`, guarded against drift by
@@ -107,9 +106,13 @@ async function startStreetScene(): Promise<void> {
   // FR149: the player's own bindings, or the defaults if storage is
   // empty, blocked or unreadable -- never an error the player has to see
   // or a game that will not start. Read exactly once, so the keyboard and
-  // the menu can never start out disagreeing about what is bound.
+  // the menu can never start out disagreeing about what is bound. Audio
+  // and Display settings are read the same way, once, through the same
+  // injected `Storage` (`settings/settings-storage.ts`'s shared idiom).
   const storage = resolveStorage(() => window.localStorage);
   const bindings = loadBindings(storage);
+  const audio = loadAudioSettings(storage);
+  const display = loadDisplaySettings(storage);
   const keyboard = new KeyboardState(bindings);
 
   // FR151's options menu. It takes the keyboard while it is open, so a
@@ -126,6 +129,10 @@ async function startStreetScene(): Promise<void> {
       if (open) keyboard.suspend();
       else keyboard.resume();
     },
+    initialAudio: audio,
+    onAudioChange: (next) => saveAudioSettings(storage, next),
+    initialDisplay: display,
+    onDisplayChange: (next) => saveDisplaySettings(storage, next),
   });
 
   // DEV-only, like every other `window.__bc`-adjacent test aid: a

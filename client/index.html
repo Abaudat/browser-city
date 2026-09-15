@@ -4,15 +4,41 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BrowserCity</title>
+    <!-- Artie's direction, story 1.11: full-bleed, no scrollbars, no page
+         chrome, and the same near-black the DOM UI panels use, so a
+         resize or a slow first frame never flashes white. This is page
+         shell styling, not a UI surface's own stylesheet (`ui/theme.ts`'s
+         injected custom properties, which this also seeds so a UI
+         surface never has to duplicate the panel colour). -->
+    <style>
+      :root {
+        --bc-panel-bg: #14161a;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bc-panel-bg);
+      }
+      #test-street {
+        width: 100%;
+        height: 100%;
+      }
+      #test-street canvas {
+        display: block;
+      }
+    </style>
   </head>
   <body>
-    <!-- The story 1.1 ping indicator's own DOM mount -- plain DOM, not a
-         second Pixi canvas (story 1.13, Tim's direction: the page has one
-         Pixi Application, the street scene's below). -->
-    <div id="app"></div>
-    <!-- The street scene's one Pixi canvas mount. D17 keeps every
-         affordance for it (were one ever needed) in the DOM, never drawn
-         on the canvas. -->
+    <!-- The street scene's one Pixi canvas mount -- the whole DOM has
+         exactly this, plus whatever DOM UI surfaces `main.ts` mounts
+         (FR151: the options menu, the connection notice, and the boot
+         name prompt story 4.6 adds), each carrying its own
+         `data-bc-surface`. D17 keeps every affordance for the world (were
+         one ever needed) in the DOM, never drawn on the canvas. -->
     <div id="test-street"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

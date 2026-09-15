@@ -17,6 +17,7 @@ interface FakeState {
   databaseName?: string;
   onConnectCb?: (connection: unknown) => void;
   onConnectErrorCb?: (ctx: unknown, error: unknown) => void;
+  onDisconnectCb?: (ctx: unknown, error?: unknown) => void;
   subscribedSql?: string;
   onAppliedCb?: () => void;
   onInsertCb?: (ctx: unknown, row: FakeRow) => void;
@@ -63,6 +64,10 @@ const builder = {
     state.onConnectErrorCb = cb;
     return builder;
   },
+  onDisconnect: (cb: (ctx: unknown, error?: unknown) => void) => {
+    state.onDisconnectCb = cb;
+    return builder;
+  },
   build: () => fakeConn,
 };
 
@@ -77,6 +82,7 @@ beforeEach(() => {
   state.databaseName = undefined;
   state.onConnectCb = undefined;
   state.onConnectErrorCb = undefined;
+  state.onDisconnectCb = undefined;
   state.subscribedSql = undefined;
   state.onAppliedCb = undefined;
   state.onInsertCb = undefined;
@@ -140,5 +146,65 @@ describe("connect", () => {
     expect(errorSpy).toHaveBeenCalled();
 
     errorSpy.mockRestore();
+  });
+
+  describe("onStatus (story 1.11)", () => {
+    it("is called synchronously with 'connecting' before anything else happens", () => {
+      const statuses: string[] = [];
+      connect(
+        () => {},
+        (status) => statuses.push(status),
+      );
+      expect(statuses).toEqual(["connecting"]);
+    });
+
+    it("moves to 'connected' once the handshake completes", () => {
+      const statuses: string[] = [];
+      connect(
+        () => {},
+        (status) => statuses.push(status),
+      );
+      state.onConnectCb?.(fakeConn);
+      expect(statuses).toEqual(["connecting", "connected"]);
+    });
+
+    it("moves to 'disconnected' on a connect error at boot -- never having connected", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const statuses: string[] = [];
+      connect(
+        () => {},
+        (status) => statuses.push(status),
+      );
+      state.onConnectErrorCb?.({}, new Error("boom"));
+      expect(statuses).toEqual(["connecting", "disconnected"]);
+    });
+
+    it("moves to 'disconnected' on a drop after a successful connect", () => {
+      const statuses: string[] = [];
+      connect(
+        () => {},
+        (status) => statuses.push(status),
+      );
+      state.onConnectCb?.(fakeConn);
+      state.onDisconnectCb?.({}, undefined);
+      expect(statuses).toEqual(["connecting", "connected", "disconnected"]);
+    });
+
+    it("a drop's error, when there is one, is logged rather than thrown (NFR42)", () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      connect(() => {});
+      state.onConnectCb?.(fakeConn);
+      expect(() => state.onDisconnectCb?.({}, new Error("closed"))).not.toThrow();
+      expect(errorSpy).toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+
+    it("connect() never throws when no onStatus listener is given at all", () => {
+      expect(() => {
+        connect(() => {});
+        state.onConnectCb?.(fakeConn);
+        state.onDisconnectCb?.({}, undefined);
+      }).not.toThrow();
+    });
   });
 });
