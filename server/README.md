@@ -34,9 +34,18 @@ spacetime version use 2.9.0
 
 ## Maincloud and GitHub Pages provisioning (one-time)
 
-`.github/workflows/deploy.yml` publishes to Maincloud and deploys the client to GitHub Pages on
+`.github/workflows/deploy.yml` publishes to Maincloud and deploys the client to GitHub Pages, on
 every push to `master` that passed CI. None of this can be automated; someone with the right
-access does it once, by hand, before the workflow's first real run.
+access does it once, by hand, before `vars.DEPLOY_ENABLED` is set to `true` (until then, the
+workflow's `resolve` job does nothing on a push -- see that file's own header comment).
+
+**The `maincloud` environment.** Settings -> Environments -> New environment, named `maincloud`.
+Restrict its deployment branches to `master` (so nothing dispatched from any other branch can ever
+read what it holds) before adding the two secrets below to it -- an environment secret is only
+readable by a job that declares `environment: maincloud`, unlike a repository secret, which any
+workflow anyone with push access can dispatch from their own branch could read. `deploy.yml`'s
+`backup`/`publish-module` jobs and `backup.yml`'s `export`/`rehearsal` jobs all declare it; nothing
+else needs to.
 
 **The Maincloud deploy identity.** From a machine with the CLI installed (Windows or otherwise):
 
@@ -46,36 +55,29 @@ spacetime login show --token          # prints the bearer token
 spacetime login show                  # prints "You are logged in as <identity>"
 ```
 
-Add the token to the repository as the `SPACETIME_MAINCLOUD_TOKEN` secret, and the identity as the
-`MAINCLOUD_OWNER_IDENTITY` repository variable (Settings -> Secrets and variables -> Actions).
-This is the *same* identity `.github/workflows/backup.yml` already logs in as: a backup restorable
-only by an identity nobody holds is not a backup, so the identity that ever publishes the live
-database must be the one that owns it. Every job in `deploy.yml` that logs in re-checks this itself
-(compares `spacetime login show` against `vars.MAINCLOUD_OWNER_IDENTITY`) rather than trusting
-`--token`/`--no-config` silently did the right thing.
+Add the token to the `maincloud` environment as the `SPACETIME_MAINCLOUD_TOKEN` secret, and the
+identity as the `MAINCLOUD_OWNER_IDENTITY` *repository* variable (a variable is not a secret, and
+every job that logs in needs to read it to verify itself, including ones that do not otherwise
+need the `maincloud` environment). This is the *same* identity `.github/workflows/backup.yml`
+already logs in as: a backup restorable only by an identity nobody holds is not a backup, so the
+identity that ever publishes the live database must be the one that owns it. Every job that logs
+in re-checks this itself (compares `spacetime login show` against `vars.MAINCLOUD_OWNER_IDENTITY`)
+rather than trusting `--token`/`--no-config` silently did the right thing.
 
 Also add the live database's name as the `BACKUP_DATABASE` repository variable -- the single name
-both `deploy.yml` and `backup.yml` publish to, back up and restore, never two copies of it.
-`BACKUP_PASSPHRASE` (the export encryption passphrase) is `backup.yml`'s own secret; see that
-workflow's header comment.
-
-**The deploy smoke check's fixed identity.** `client/tests/e2e/deploy-smoke.spec.ts` reconnects as
-the same identity on every run rather than minting a fresh one on every deploy, which would slowly
-pollute the production world. Mint one once, from a *separate* login than the deploy identity above
-(a throwaway browser profile, or `spacetime login --port` against a different config directory
-avoids clobbering the deploy identity's own login state):
-
-```bash
-spacetime login show --token          # prints this second identity's own bearer token
-```
-
-Add it as the `DEPLOY_SMOKE_TOKEN` secret. `net/connection.ts` only ever reads it from a
-`?bc-token=` query parameter on the page URL `deploy.yml`'s `smoke` job builds -- no real player's
-URL ever carries one, so this identity is never handed to anyone but the smoke check itself.
+`deploy.yml` and `backup.yml` both publish to, back up and restore, never two copies of it.
+`BACKUP_PASSPHRASE` (the export encryption passphrase) goes into the `maincloud` environment
+alongside `SPACETIME_MAINCLOUD_TOKEN`; see `backup.yml`'s own header comment.
 
 **GitHub Pages.** Settings -> Pages -> Source: "GitHub Actions" (not a branch). This provisions the
 `github-pages` deployment environment `deploy-client` targets; restrict it to `master` (Settings ->
 Environments -> github-pages -> Deployment branches) so nothing but that job can ever publish to it.
+
+**Turning it on.** Only once every secret and variable above exists and both environments are
+branch-restricted: set the `DEPLOY_ENABLED` repository variable to `true`. Before that, `push`es to
+master still trigger `deploy.yml`, but its `resolve` job only emits a `::notice::` and does nothing
+else (no failed presence check, no tracking issue) -- so this workflow can be merged and live on
+master well before provisioning is finished, with zero effect until it is.
 
 ## Running locally
 
@@ -136,6 +138,25 @@ spacetime publish browser-city --server maincloud --yes
 ```
 
 That command belongs to the deploy on merge to master, not to development.
+
+### Recovery -- there is no automatic rollback
+
+A published schema cannot be rolled back; NFR33 (enforced at PR time by
+`scripts/ci/check-schema-additive.sh`) only ever lets an *additive* schema reach `deploy.yml`, so
+the module half of a bad deploy is a forward-only problem: fix the bug, merge the fix, and let
+`deploy.yml` publish that. `workflow_dispatch` (with an explicit `sha` input) retries a deploy or
+re-runs it against an older commit, but redeploying an older SHA only ever re-ships the *client*
+half safely -- publishing an older module is itself a schema change (removing whatever the bad
+commit added), which is exactly what `check-deploy-workflow.sh` and NFR33 exist to refuse, so it
+is never a way to undo a published migration.
+
+A world restore is a separate, deliberate operation, never part of a deploy: `scripts/ops/
+restore-world.sh`, into a *fresh* database, from an export `backup.yml` produced -- see
+`docs/architecture.md`'s own Backup section.
+
+A `deploy.yml` failure on `master` opens or updates a tracking issue (`scripts/ci/
+report-scheduled-failure.sh`) rather than sitting unnoticed in the Actions tab; that issue links
+back to this section.
 
 ## Spikes
 

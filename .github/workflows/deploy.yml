@@ -3,30 +3,49 @@ name: deploy
 # Publishes the module to Maincloud and deploys the client to GitHub
 # Pages -- the one path from a merge on master to a running game. Split
 # out of #49/#266 (never provisioned there, would have been red on every
-# push, no post-deploy verification); this workflow only lands once the
-# `SPACETIME_MAINCLOUD_TOKEN` secret, the `vars.BACKUP_DATABASE`/
-# `vars.MAINCLOUD_OWNER_IDENTITY` variables and the `github-pages`
-# environment are already provisioned -- see server/README.md.
+# push, no post-deploy verification); PR #288 landed this file itself
+# before the `SPACETIME_MAINCLOUD_TOKEN`/`BACKUP_PASSPHRASE`
+# (`maincloud` environment secrets, shared with backup.yml),
+# `vars.BACKUP_DATABASE`/`vars.MAINCLOUD_OWNER_IDENTITY`/
+# `vars.DEPLOY_ENABLED` variables, and the `github-pages` environment
+# were provisioned -- see server/README.md.
+#
+# `vars.DEPLOY_ENABLED` (Quentin's direction, PR #288 cycle 1) is the
+# gate for that ordering problem: until it is `true`, the `resolve` job
+# below does nothing but emit a `::notice::` on a `workflow_run` trigger
+# (every job downstream of it is skipped, cleanly -- `report-failure`
+# never fires), so this workflow can land, merge and run on every push to
+# master with zero effect and zero false alarms, before anything is
+# provisioned. A `workflow_dispatch` while disabled is a loud failure
+# instead, never a silent no-op -- a human asking this workflow to run
+# needs to know why it did nothing.
 #
 # Trigger: `workflow_run` of `ci` on `master`, only when it actually
 # succeeded -- this workflow deploys `ci`'s own head commit, never
 # whatever master happens to be at by the time this runs. `workflow_dispatch`
 # exists to retry a deploy or to smoke-test it after provisioning, without
-# an empty commit to master; a dispatch still refuses to run against a
-# commit whose own `ci` check run did not succeed (the `resolve` job,
-# below) -- it retries a deploy that already passed CI, it does not skip
-# CI.
+# an empty commit to master; the `resolve` job refuses a dispatch unless
+# its resolved commit is on `refs/heads/master` (github.ref itself, and
+# an ancestor-of-master compare check -- `workflow_dispatch`'s own
+# `github.sha` is the tip of whichever branch/ref it was run from, not
+# necessarily master) whose own `ci` check run succeeded -- it retries a
+# deploy that already passed CI on master, it does not skip CI or deploy
+# an arbitrary branch.
 #
 # One credential, one owner identity (Quentin's direction): this reuses
-# `backup.yml`'s own `SPACETIME_MAINCLOUD_TOKEN` secret and
-# `vars.BACKUP_DATABASE` variable rather than adding a second copy of
-# either -- a backup restorable only by an identity nobody holds is not a
-# backup, so the identity that publishes here must be the same one that
-# owns the live database backup.yml exports. `vars.MAINCLOUD_OWNER_IDENTITY`
-# is the mechanical proof of that: every job that logs in compares the
-# identity `spacetime login show` actually reports against it and refuses
-# to continue if they differ, rather than trusting `--token`/`--no-config`
-# silently did the right thing.
+# `backup.yml`'s own `SPACETIME_MAINCLOUD_TOKEN`/`BACKUP_PASSPHRASE`
+# secrets and `vars.BACKUP_DATABASE` variable rather than adding a second
+# copy of any -- a backup restorable only by an identity nobody holds is
+# not a backup, so the identity that publishes here must be the same one
+# that owns the live database backup.yml exports. `vars.
+# MAINCLOUD_OWNER_IDENTITY` is the mechanical proof of that: every job
+# that logs in compares the identity `spacetime login show` actually
+# reports against it and refuses to continue if they differ, rather than
+# trusting `--token`/`--no-config` silently did the right thing. Both
+# secrets live in the `maincloud` environment (shared with backup.yml,
+# restricted to master), not at repo scope: a repo-level secret is
+# readable by any workflow anyone with push access can dispatch from
+# their own branch; an environment restricted to master is not.
 #
 # Two publishes must never overlap, and a publish must never be killed
 # halfway (a partial module publish or a partial Pages deploy is worse
@@ -35,8 +54,11 @@ name: deploy
 #
 # scripts/ci/check-deploy-workflow.sh is this file's own structural guard
 # (run in `ci.yml`'s `scripts-tests` job on every change under
-# `.github/workflows/**`): no destructive publish flag anywhere below, and
-# `publish-module` always `needs:` the `backup` job.
+# `.github/workflows/**`): no destructive command or flag anywhere below,
+# every job that publishes needs: (and can only run after) the `backup`
+# job, and `backup`'s own first-deploy exception goes through
+# `scripts/ops/check-database-exists.sh`, never an inline `spacetime
+# describe`.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -45,7 +67,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: "Commit SHA to deploy (defaults to the tip of master) -- must carry a green 'ci' check run"
+        description: "Commit SHA to deploy (defaults to the tip of master) -- must be on master with a green 'ci' check run"
         type: string
         default: ""
 
@@ -69,9 +91,10 @@ env:
   MAINCLOUD_WS_URI: wss://maincloud.spacetimedb.com
 
 jobs:
-  # Resolves the exact commit to deploy, and is the one place a dispatch
-  # is refused for not having passed CI -- every other job trusts this
-  # job's output rather than re-deriving it.
+  # Resolves the exact commit to deploy, refuses a dispatch that is not
+  # on master or has not passed CI, and is the one place `vars.
+  # DEPLOY_ENABLED` is read -- every other job trusts this job's `sha`/
+  # `enabled` outputs rather than re-deriving either.
   resolve:
     name: resolve
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
@@ -79,73 +102,147 @@ jobs:
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
+      enabled: ${{ steps.resolve.outputs.enabled }}
     permissions:
       contents: read
       checks: read
     steps:
-      - name: resolve the commit to deploy
+      - name: resolve the commit to deploy, and refuse anything unsafe to deploy
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
           DISPATCH_SHA: ${{ inputs.sha }}
           WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
           DEFAULT_SHA: ${{ github.sha }}
         run: |
+          if [ "$GITHUB_REF" != "refs/heads/master" ]; then
+            echo "::error::deploy.yml only ever runs from refs/heads/master (got '$GITHUB_REF')" >&2
+            exit 1
+          fi
+
+          if [ "$DEPLOY_ENABLED" != "true" ]; then
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "::error::vars.DEPLOY_ENABLED is not 'true' -- provisioning (server/README.md) is not complete yet; a dispatch must not silently no-op" >&2
+              exit 1
+            fi
+            echo "::notice::vars.DEPLOY_ENABLED is not 'true' yet -- nothing is provisioned, so this run does nothing (not a failure)" >&2
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           if [ "$EVENT_NAME" = "workflow_run" ]; then
             SHA="$WORKFLOW_RUN_SHA"
           else
             SHA="${DISPATCH_SHA:-$DEFAULT_SHA}"
+
+            # workflow_dispatch's own github.sha is the tip of whichever
+            # ref it was run from -- refuse anything not actually on
+            # master's own history.
+            COMPARE_STATUS="$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...master" --jq '.status')"
+            case "$COMPARE_STATUS" in
+              identical|ahead) ;;
+              *)
+                echo "::error::refusing to deploy $SHA -- it is not an ancestor of master (compare status: '$COMPARE_STATUS')" >&2
+                exit 1
+                ;;
+            esac
+
             # A dispatch retries a deploy that already passed CI; it does
             # not skip CI. Refuse outright rather than publish an
-            # unvetted commit.
-            CONCLUSION="$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/check-runs" --jq '[.check_runs[] | select(.name == "ci")] | sort_by(.started_at) | last | .conclusion // "missing"')"
+            # unvetted commit. per_page=100: ci.yml already runs more
+            # than the default page size's worth of jobs, and a lost 'ci'
+            # check run must read as "refuse", not "missing == also refuse
+            # but for the wrong reason forever as the workflow grows".
+            CONCLUSION="$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/check-runs?per_page=100" --jq '[.check_runs[] | select(.name == "ci")] | sort_by(.started_at) | last | .conclusion // "missing"')"
             if [ "$CONCLUSION" != "success" ]; then
               echo "::error::refusing to deploy $SHA -- its 'ci' check run did not succeed (conclusion: '$CONCLUSION')" >&2
               exit 1
             fi
           fi
+
           echo "resolve: deploying $SHA" >&2
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
 
-  # Whether client-affecting paths changed in this deploy's own commit --
-  # `deploy-client` skips on a module-only change (`smoke` still runs
-  # against the already-deployed client, below: a module can break a
-  # client that is already live).
+  # Whether the client actually needs to be redeployed -- compared
+  # against what is actually live (Quentin's direction, PR #288 cycle 1),
+  # never against the previous commit. A commit whose own deploy never
+  # ran (CI cancelled by a fast-following push, or a prior deploy
+  # failure) must not let a later, module-only commit read as "nothing
+  # client-side changed" when the client that is actually live is still
+  # the one before it. If the live page is unreachable or carries no
+  # stamp, or the diff itself cannot be resolved, deploy -- the safe
+  # default is always "ship the client", never "assume it's fine".
   changes:
     name: changes
     needs: resolve
+    if: needs.resolve.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      client: ${{ steps.filter.outputs.client }}
+      client: ${{ steps.decide.outputs.client }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.sha }}
-          fetch-depth: 2
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: filter
-        with:
-          base: HEAD^
-          filters: |
-            client:
-              - 'client/**'
-              - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
-              - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
+          fetch-depth: 0
+
+      - name: does the deployed client need to change?
+        id: decide
+        env:
+          SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          LIVE_SHA="$(curl -sf "$PAGES_URL" 2>/dev/null | grep -oE 'name="bc-build" content="[0-9a-f]+"' | sed -E 's/.*content="([0-9a-f]+)"/\1/' | head -n1 || true)"
+          if [ -z "$LIVE_SHA" ]; then
+            echo "changes: no live bc-build stamp found (unreachable, or the very first deploy) -- deploying the client" >&2
+            echo "client=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # scripts/ci/lib/deploy-client-paths.txt is the one list this
+          # and ci.yml's own client: filter both read -- scripts/ci/
+          # check-deploy-client-paths-current.sh keeps the latter a
+          # superset of it. The `/**` suffix (dorny/paths-filter's own
+          # glob syntax) is stripped: a plain directory pathspec already
+          # means "everything under it" to `git diff`.
+          PATHSPEC=()
+          while IFS= read -r line; do
+            line="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+            [ -n "$line" ] || continue
+            case "$line" in '#'*) continue ;; esac
+            PATHSPEC+=("${line%/**}")
+          done < scripts/ci/lib/deploy-client-paths.txt
+
+          # git diff --quiet exits 0 (no difference -> skip), 1 (a
+          # difference -> deploy) or a git error, e.g. 128 on an unknown
+          # revision if the live SHA fell out of history -- any non-zero
+          # exit takes the same "deploy" branch below, the safe default.
+          if git diff --quiet "$LIVE_SHA" "$SHA" -- "${PATHSPEC[@]}" 2>/dev/null; then
+            echo "changes: no client-affecting path changed since the live deploy ($LIVE_SHA) -- skipping deploy-client" >&2
+            echo "client=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changes: client-affecting paths changed since the live deploy ($LIVE_SHA), or the diff could not be resolved -- deploying the client" >&2
+            echo "client=true" >> "$GITHUB_OUTPUT"
+          fi
 
   # NFR39: the world is backed up before every publish. The one exception
   # is the very first deploy, when the database does not exist yet --
-  # detected with an explicit `spacetime describe` probe, never `|| true`
-  # on the export itself. Also where the deploy identity is verified
+  # scripts/ops/check-database-exists.sh's own positive not-found check,
+  # never `|| true` on the export itself: any other failure (a network
+  # blip, a Maincloud 5xx, an auth problem) is a hard failure of this
+  # job, not a silent skip. Also where the deploy identity is verified
   # (Quentin's direction): every later job that logs in repeats this
   # check rather than trusting an earlier job's login carried over --
   # each job is a fresh runner.
   backup:
     name: backup
     needs: resolve
+    if: needs.resolve.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: maincloud
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -197,13 +294,9 @@ jobs:
         env:
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
         run: |
-          if spacetime describe "$BACKUP_DATABASE" --server maincloud --no-config -y --json >/dev/null 2>"$RUNNER_TEMP/describe.err"; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::'$BACKUP_DATABASE' does not exist on Maincloud yet -- this is the first deploy, so there is nothing to back up" >&2
-            cat "$RUNNER_TEMP/describe.err" >&2
-          fi
+          EXISTS="$(bash scripts/ops/check-database-exists.sh "$BACKUP_DATABASE" --server maincloud)"
+          echo "exists=$EXISTS" >> "$GITHUB_OUTPUT"
+          [ "$EXISTS" = "true" ] || echo "::notice::'$BACKUP_DATABASE' does not exist on Maincloud yet -- this is the first deploy, so there is nothing to back up" >&2
 
       - name: export the live database before publishing (NFR39)
         if: steps.exists.outputs.exists == 'true'
@@ -232,12 +325,17 @@ jobs:
 
   # Publishes the module to Maincloud and lands any newly-added
   # sim::codes rows -- server/README.md names this job as `reseed_codes`'s
-  # automated caller.
+  # automated caller. NFR33 (an additive-only schema, enforced at PR time
+  # by check-schema-additive.sh) is what makes forward-only the only
+  # publish this job ever has to make -- see server/README.md's Maincloud
+  # recovery section.
   publish-module:
     name: publish-module
     needs: [resolve, backup]
+    if: needs.resolve.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: maincloud
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -338,7 +436,7 @@ jobs:
         run: sed -i "s#</head>#  <meta name=\"bc-build\" content=\"$SHA\" />\n  </head>#" dist/index.html
 
       - name: base path and production URI both check out -- fails before Pages ever serves it
-        run: bash scripts/ci/check-pages-bundle.sh client/dist "$BASE_PATH"
+        run: bash scripts/ci/check-pages-bundle.sh client/dist "$BASE_PATH" "$MAINCLOUD_WS_URI"
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
@@ -377,11 +475,9 @@ jobs:
 
       - name: check required secrets/variables are present (a missing one is a failure, never a skip)
         env:
-          DEPLOY_SMOKE_TOKEN: ${{ secrets.DEPLOY_SMOKE_TOKEN }}
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
         run: |
           missing=""
-          [ -n "$DEPLOY_SMOKE_TOKEN" ] || missing="$missing DEPLOY_SMOKE_TOKEN"
           [ -n "$BACKUP_DATABASE" ] || missing="$missing vars.BACKUP_DATABASE"
           if [ -n "$missing" ]; then
             echo "::error::deploy.yml (smoke): missing required secret(s)/variable(s):$missing -- see server/README.md's Maincloud provisioning section" >&2
@@ -416,14 +512,14 @@ jobs:
       # fires. `ci.yml`'s `e2e` job runs the identical spec against a
       # production-base build under /browser-city/, backed by a
       # disposable local SpacetimeDB, so a broken spec is caught before
-      # merge. One fixed identity token (DEPLOY_SMOKE_TOKEN), reused every
-      # run via the ?bc-token= override `net/connection.ts` reads --
-      # never a fresh identity, which would slowly pollute the production
-      # world (NFR39 live-database hygiene).
+      # merge. Every run connects as a fresh, anonymous identity, exactly
+      # like every real player -- `identity_connected` (server/src/lib.rs)
+      # writes nothing today, so nothing is polluted; deferred trace-
+      # matrix row for when the first story gives that reducer a body.
       - name: post-deploy smoke check against the live URL
         working-directory: client
         env:
-          BC_DEPLOY_URL: ${{ env.PAGES_URL }}?bc-token=${{ secrets.DEPLOY_SMOKE_TOKEN }}
+          BC_DEPLOY_URL: ${{ env.PAGES_URL }}
           BC_DEPLOY_EXPECT_WS_ORIGIN: ${{ env.MAINCLOUD_WS_URI }}
           BC_DEPLOY_EXPECT_DB: ${{ vars.BACKUP_DATABASE }}
         run: npm run test:e2e:deploy-smoke
@@ -435,8 +531,8 @@ jobs:
           retention-days: 7
 
   # No automatic rollback exists (server/README.md): a published schema
-  # cannot be rolled back. A red deploy on master must not sit unnoticed
-  # in the Actions tab.
+  # cannot be rolled back, only rolled forward. A red deploy on master
+  # must not sit unnoticed in the Actions tab.
   report-failure:
     name: report-failure
     needs: [resolve, changes, backup, publish-module, deploy-client, smoke]
@@ -458,4 +554,4 @@ jobs:
             "deploy failed" \
             "deploy.yml failed: $RUN_URL
 
-          No automatic rollback exists (server/README.md's own manual recovery path): a published schema cannot be rolled back. Redeploy the last good SHA with workflow_dispatch once the cause is fixed; restore only through scripts/ops/restore-world.sh, into a fresh database. Close this once resolved."
+          No automatic rollback exists (server/README.md's own manual recovery path): a published schema cannot be rolled back, only rolled forward -- fix and merge, then redeploy (workflow_dispatch) once the cause is fixed. Redeploying an older SHA re-ships the client only, and only while its schema is still compatible with the live one; it never un-publishes a module. Restore only through scripts/ops/restore-world.sh, into a fresh database. Close this once resolved."

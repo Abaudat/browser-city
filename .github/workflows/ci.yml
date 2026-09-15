@@ -168,11 +168,16 @@ jobs:
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.3-scheduled-reducer-timing.md sched-timing-spacetimedb-version
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.4-backup-restore.md backup-spacetimedb-version
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.14-boot-budget.md boot-budget-spacetimedb-version
-      # The deploy story: no destructive publish flag anywhere in
-      # deploy.yml, and its publish job needs: its backup job (NFR39).
-      # Same reasoning as the checks above -- a workflow-structure guard,
-      # not a server-workspace one.
+      # The deploy story: no destructive command or flag anywhere in
+      # deploy.yml, and every job that publishes needs: (and can only run
+      # after) its backup job (NFR39). Same reasoning as the checks above
+      # -- a workflow-structure guard, not a server-workspace one.
       - run: bash scripts/ci/check-deploy-workflow.sh
+      # The deploy story: deploy.yml's own client-changed decision reads
+      # scripts/ci/lib/deploy-client-paths.txt -- this job's own `client:`
+      # filter (below) must stay a superset of it, or the two silently
+      # drift apart.
+      - run: bash scripts/ci/check-deploy-client-paths-current.sh
       # scripts/ci/'s own fast, no-toolchain-needed tests for its
       # mechanical guards (e.g. check-no-masks.sh's own pattern, story 1.7
       # cycle 2) -- runs here, not in `client-check`, since it needs
@@ -514,7 +519,7 @@ jobs:
           VITE_SPACETIME_DB=dummy \
             npx vite build --base=/browser-city/ --outDir dist-pages
       - name: base path and production URI both check out
-        run: bash ../scripts/ci/check-pages-bundle.sh dist-pages /browser-city/
+        run: bash ../scripts/ci/check-pages-bundle.sh dist-pages /browser-city/ wss://dummy.invalid
 
   e2e:
     name: e2e

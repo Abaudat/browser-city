@@ -224,8 +224,13 @@ for section in "${GUARD_SECTIONS[@]}"; do
   SECTION_ROWS="$(printf '%s\n' "$SECTION_TEXT" | grep -E '^\| [A-Za-z]' || true)"
 
   while IFS='|' read -r _ requirement status guard _; do
-    requirement="$(printf '%s' "$requirement" | xargs)"
-    status="$(printf '%s' "$status" | xargs)"
+    # sed, never xargs: a Requirement cell is free English prose and
+    # routinely contains an apostrophe ("Quentin's direction"), which
+    # xargs treats as a quote character and aborts on when unmatched --
+    # this crashed the whole check the first time a monitored section
+    # actually had one (PR #288 cycle 1).
+    requirement="$(printf '%s' "$requirement" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+    status="$(printf '%s' "$status" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
     [ -n "$requirement" ] || continue
     [ "$status" = "covered" ] || continue
     path="$(printf '%s' "$guard" | grep -oE '`[^`]+`' | head -n1 | tr -d '`')"

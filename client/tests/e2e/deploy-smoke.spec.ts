@@ -54,10 +54,9 @@ test("the deployed client boots for real: connects, subscribes and reaches playe
     wsUrl ??= ws.url();
   });
 
-  // Never a relative goto()/baseURL join: this project's baseURL already
-  // carries a query string (?bc-token=...) when the caller sets one, and
-  // URL-resolving a relative path against it would silently drop that
-  // query string. The full target always comes straight from the env var.
+  // The full target always comes straight from the env var, never a
+  // relative goto()/baseURL join -- one fewer thing to get subtly wrong
+  // between the live URL and the local rehearsal's preview URL.
   const deployUrl = process.env.BC_DEPLOY_URL;
   if (!deployUrl) {
     throw new Error("deploy-smoke.spec.ts: BC_DEPLOY_URL must be set");
@@ -65,10 +64,12 @@ test("the deployed client boots for real: connects, subscribes and reaches playe
   await page.goto(deployUrl);
 
   // (d) player-controllable, the same 30s liveness bound every other boot
-  // spec in this repo uses.
+  // spec in this repo uses. BOOT_MARK.PLAYER_CONTROLLABLE passed in as an
+  // argument, never hardcoded here too -- a renamed mark must fail loudly
+  // in one place, not pass here while failing everywhere else.
   await page.waitForFunction(
-    () => performance.getEntriesByName("bc-boot:player-controllable").length > 0,
-    undefined,
+    (markName) => performance.getEntriesByName(markName).length > 0,
+    BOOT_MARK.PLAYER_CONTROLLABLE,
     { timeout: 30_000 },
   );
 
