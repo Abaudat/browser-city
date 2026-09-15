@@ -122,8 +122,10 @@ const SCREENSHOT_OPTIONS = {
 
 // The interior checkpoint is the walk's own fixed starting position --
 // no movement at all before this shot, so nothing but rendering noise
-// should ever differ. Measured on CI (two consecutive runs of the same
-// commit, `update-visual-baselines.yml`'s own workflow run TODO): TODO px.
+// should ever differ. Measured on CI (`ci.yml`'s own `e2e` job, two
+// consecutive runs of commit 61a77b86: 34958235275, re-run to
+// 104347576797): 0px differed on both -- `toHaveScreenshot` reports a
+// diff count only when the comparison actually fails, and neither did.
 const INTERIOR_MAX_DIFF_PIXELS = 150;
 
 // The underpass checkpoint is reached after several segments of real,
@@ -131,8 +133,7 @@ const INTERIOR_MAX_DIFF_PIXELS = 150;
 // 1.13, cycle 3), so the position itself carries no jitter -- this
 // budget is rendering noise only, the same as the interior shot's, with
 // a little more headroom because the walk that reaches it is longer.
-// Measured on CI (two consecutive runs of the same commit,
-// `update-visual-baselines.yml`'s own workflow run TODO): TODO px.
+// Measured on CI, the same two runs: 0px differed on both.
 const UNDERPASS_MAX_DIFF_PIXELS = 200;
 
 const RANK_TABLE = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
