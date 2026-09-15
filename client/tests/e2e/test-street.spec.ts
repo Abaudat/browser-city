@@ -87,6 +87,12 @@ test.use({ viewport: { width: 1920, height: 1080 } });
 const SCREENSHOT_OPTIONS = {
   animations: "disabled",
   maxDiffPixelRatio: 0.01,
+  // Playwright's own "wait for a stable screenshot" pre-check needs more
+  // than its 5s default the first time it runs on a CI image: nothing
+  // here is still animating (the crowd is frozen), but a cold headless
+  // Chromium settling its own compositor/font state on an unfamiliar
+  // runner has taken longer than that in practice.
+  timeout: 30_000,
 } as const;
 
 const RANK_TABLE = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
