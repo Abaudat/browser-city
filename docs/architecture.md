@@ -94,8 +94,10 @@ docs/spikes/1.3-scheduled-reducer-timing.md.
 See docs/spikes/1.4-backup-restore.md for the platform investigation and
 the measured limitations behind these rules.
 
-- Export via `scripts/ops/export-world.sh`, before every migration and
-  daily once the deploy story wires it in; gpg-encrypted before it ever
+- Export via `scripts/ops/export-world.sh`, before every migration
+  (`.github/workflows/deploy.yml`'s `backup` job, always run ahead of
+  `publish-module`) and daily once a `backup.yml` schedule and dead-man's-
+  switch exist (`docs/trace-matrix.md`); gpg-encrypted before it ever
   reaches an Actions artifact, retained 90 days.
 - Restore only through the `restore_*` reducers
   (`server/src/tables/restore.rs`), into a fresh database, by the owner
@@ -109,6 +111,57 @@ the measured limitations behind these rules.
 - Every non-scheduled table has a `restore_<table>` reducer, checked
   mechanically (`bounds/tests/restore_coverage.rs`); the round trip is
   proven by `scripts/ci/check-backup-restore.sh`.
+
+## Deploy
+
+`.github/workflows/deploy.yml` is the one path from a merge on master to a
+running game (`CI / deploy`, above) -- triggered by `workflow_run` of `ci`
+on `master`, only on success, deploying that run's own `head_sha`, never
+whatever master happens to be at; `workflow_dispatch` retries a deploy or
+smoke-tests it, and refuses a commit whose own `ci` check run did not
+succeed.
+
+- One credential, one owner identity: the same `SPACETIME_MAINCLOUD_TOKEN`
+  secret and `BACKUP_DATABASE` variable `backup.yml` uses, never a second
+  copy of either. Every job that logs in compares `spacetime login show`
+  against the `MAINCLOUD_OWNER_IDENTITY` variable and refuses to continue
+  if they differ.
+- `backup` (NFR39) always runs before `publish-module` (`needs:`), the one
+  exception being the very first deploy, detected with an explicit
+  `spacetime describe` probe rather than `|| true` on the export.
+  `scripts/ci/check-deploy-workflow.sh` asserts both mechanically: no
+  destructive publish flag anywhere in the workflow, and `publish-module`
+  always `needs:` `backup`.
+- `publish-module` calls `reseed_codes` after publishing (NFR36/NFR38,
+  above).
+- `deploy-client` builds the client with `vite build --base=/browser-city/`
+  (this repo is `Abaudat/browser-city`, no custom domain) and the real
+  `VITE_SPACETIME_URI`/`VITE_SPACETIME_DB`, then deploys to GitHub Pages.
+  `scripts/ci/check-pages-bundle.sh` asserts the built output never
+  references an absolute `/assets/...` path and never carries
+  `client/src/net/config.ts`'s local-dev fallback -- run against a real
+  build here, and against a second, production-style build `ci.yml`'s
+  `client-build` job makes with dummy `VITE_` values, so a misconfigured
+  base or a missing production URI is a red PR, not a broken deploy.
+  Skips when a commit's own changes do not touch the client -- `smoke`
+  still runs, since a module can break a client that is already deployed.
+- `smoke` is a real Playwright spec (`client/tests/e2e/deploy-smoke.spec.ts`,
+  the `deploy-smoke` project), not an HTTP 200 check: it asserts no failed
+  request or console/page error, that the WebSocket dials the configured
+  Maincloud URI and database, that the initial subscription applies, and
+  that the player-controllable mark fires. It polls the live URL for a
+  `<meta name="bc-build">` tag stamped with the deployed commit before
+  running, so Pages propagation lag can never pass it against a stale
+  deploy. It reconnects as one fixed identity (the `DEPLOY_SMOKE_TOKEN`
+  secret, read from a `?bc-token=` query parameter `net/connection.ts`
+  checks) rather than minting a fresh one every run. `ci.yml`'s `e2e` job
+  runs the identical spec against a production-base build under
+  `/browser-city/`, backed by a disposable local SpacetimeDB, so a broken
+  spec is caught before merge.
+- No automatic rollback: a published schema cannot be rolled back. A
+  failure on master runs `scripts/ci/report-scheduled-failure.sh`, so it
+  becomes a tracking issue rather than sitting unnoticed in the Actions
+  tab; `server/README.md` names the manual recovery path.
 
 ## Schema
 
@@ -136,7 +189,7 @@ and just-in-time. So:
   migration. Seeding is idempotent and lives in an explicit `reseed_codes`
   reducer (called from `init`, and re-callable by hand) rather than on a
   hot lifecycle path — publishing a module that adds a code is followed by
-  calling `reseed_codes`, which is the deploy work's job to automate.
+  calling `reseed_codes`, automated by `deploy.yml`'s `publish-module` job.
 - An operator-facing reducer (`reseed_codes` is the first) is never left
   open to any caller: `init` records the publishing identity in the
   one-row `module_owner` table, and the reducer rejects any other caller
@@ -426,10 +479,10 @@ it.
 
 The test street reads its sprites straight out of the repo-root
 `ModernTileset/` at runtime (`new URL(..., import.meta.url)` asset
-imports), not out of `client/public/`. Any future Pages deploy workflow
-must therefore check out the whole repository for the client build job --
-never a sparse or `client/`-only checkout -- for as long as any client
-code reads assets from outside `client/`.
+imports), not out of `client/public/`. `deploy.yml`'s `deploy-client` job
+therefore checks out the whole repository -- never a sparse or
+`client/`-only checkout -- for as long as any client code reads assets
+from outside `client/`.
 
 ### Visibility
 

@@ -8,6 +8,14 @@ import { defineConfig, devices } from "@playwright/test";
 // against unbundled dev-server modules.
 const BOOT_PREVIEW_URL = process.env.BC_BOOT_PREVIEW_URL;
 
+// The deploy story: `deploy-smoke` never shares this config's own
+// webServer/dev-server baseURL either -- its target is either the real
+// deployed Pages URL (`deploy.yml`'s `smoke` job) or a production-base
+// preview `client/tests/e2e/serve-for-deploy-smoke.mjs` stands up itself
+// (`ci.yml`'s `e2e` job), never the unbundled dev server this config
+// starts by default.
+const DEPLOY_URL = process.env.BC_DEPLOY_URL;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
@@ -37,21 +45,23 @@ export default defineConfig({
   // see that file for why this replaces a separate globalSetup step. Never
   // started for a `boot` run: `run-boot-budget-spike.sh` manages its own
   // server (a production preview, not the dev server this starts).
-  webServer: BOOT_PREVIEW_URL
-    ? undefined
-    : {
-        command: "node tests/e2e/serve-for-e2e.mjs",
-        url: "http://127.0.0.1:5173",
-        reuseExistingServer: false,
-        timeout: 30_000,
-      },
+  webServer:
+    BOOT_PREVIEW_URL || DEPLOY_URL
+      ? undefined
+      : {
+          command: "node tests/e2e/serve-for-e2e.mjs",
+          url: "http://127.0.0.1:5173",
+          reuseExistingServer: false,
+          timeout: 30_000,
+        },
   projects: [
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      // Story 1.13/1.14: the perf and boot-budget harnesses are their own
-      // projects below, and the functional run never pays for either.
-      testIgnore: [/street-perf\.spec\.ts/, /boot-budget\.spec\.ts/],
+      // Story 1.13/1.14/deploy: the perf, boot-budget and deploy-smoke
+      // harnesses are their own projects below, and the functional run
+      // never pays for (or accidentally runs) any of them.
+      testIgnore: [/street-perf\.spec\.ts/, /boot-budget\.spec\.ts/, /deploy-smoke\.spec\.ts/],
     },
     {
       // NFR2's measurement harness and regression gate. Never part of
@@ -72,6 +82,16 @@ export default defineConfig({
       name: "boot",
       use: { ...devices["Desktop Chrome"] },
       testMatch: /boot-budget\.spec\.ts/,
+    },
+    {
+      // The deploy story's post-deploy smoke check. Never part of `npm
+      // run test:e2e`: `npm run test:e2e:deploy-smoke` is the only thing
+      // that selects it, and it only ever runs against a real, already-
+      // built target named by BC_DEPLOY_URL above -- this project starts
+      // no webServer of its own, unlike every other project here.
+      name: "deploy-smoke",
+      use: { ...devices["Desktop Chrome"], baseURL: DEPLOY_URL },
+      testMatch: /deploy-smoke\.spec\.ts/,
     },
   ],
 });

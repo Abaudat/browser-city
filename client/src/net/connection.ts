@@ -18,9 +18,20 @@ export type PingListener = (observation: PingObservation) => void;
  * connects after the write still observes it.
  */
 export function connect(onPing: PingListener): DbConnection {
+  // A real player never carries this: no code anywhere links to a page
+  // with `?bc-token=` on it. `client/tests/e2e/deploy-smoke.spec.ts`
+  // (both against a live Maincloud database and against the disposable
+  // local one `ci.yml`'s `e2e` job rehearses it with) is the one caller
+  // that ever sets it, so the post-deploy smoke check reconnects as the
+  // same fixed identity every run instead of minting a fresh one that
+  // would otherwise slowly pollute the production world (NFR39). Absent,
+  // `withToken(undefined)` is exactly today's behaviour: a fresh
+  // server-issued identity, every load.
+  const token = new URLSearchParams(window.location.search).get("bc-token") ?? undefined;
   const conn = DbConnection.builder()
     .withUri(NET_CONFIG.uri)
     .withDatabaseName(NET_CONFIG.databaseName)
+    .withToken(token)
     .onConnect((connection) => {
       // Story 1.14 (NFR1): the handshake term ends here, and the
       // subscription-decode term ends at this subscription's own

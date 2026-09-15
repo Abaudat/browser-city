@@ -32,6 +32,51 @@ spacetime version use 2.9.0
 ```
 <!-- bc:windows-install:end -->
 
+## Maincloud and GitHub Pages provisioning (one-time)
+
+`.github/workflows/deploy.yml` publishes to Maincloud and deploys the client to GitHub Pages on
+every push to `master` that passed CI. None of this can be automated; someone with the right
+access does it once, by hand, before the workflow's first real run.
+
+**The Maincloud deploy identity.** From a machine with the CLI installed (Windows or otherwise):
+
+```bash
+spacetime login                       # opens a browser, authenticates against spacetimedb.com
+spacetime login show --token          # prints the bearer token
+spacetime login show                  # prints "You are logged in as <identity>"
+```
+
+Add the token to the repository as the `SPACETIME_MAINCLOUD_TOKEN` secret, and the identity as the
+`MAINCLOUD_OWNER_IDENTITY` repository variable (Settings -> Secrets and variables -> Actions).
+This is the *same* identity `.github/workflows/backup.yml` already logs in as: a backup restorable
+only by an identity nobody holds is not a backup, so the identity that ever publishes the live
+database must be the one that owns it. Every job in `deploy.yml` that logs in re-checks this itself
+(compares `spacetime login show` against `vars.MAINCLOUD_OWNER_IDENTITY`) rather than trusting
+`--token`/`--no-config` silently did the right thing.
+
+Also add the live database's name as the `BACKUP_DATABASE` repository variable -- the single name
+both `deploy.yml` and `backup.yml` publish to, back up and restore, never two copies of it.
+`BACKUP_PASSPHRASE` (the export encryption passphrase) is `backup.yml`'s own secret; see that
+workflow's header comment.
+
+**The deploy smoke check's fixed identity.** `client/tests/e2e/deploy-smoke.spec.ts` reconnects as
+the same identity on every run rather than minting a fresh one on every deploy, which would slowly
+pollute the production world. Mint one once, from a *separate* login than the deploy identity above
+(a throwaway browser profile, or `spacetime login --port` against a different config directory
+avoids clobbering the deploy identity's own login state):
+
+```bash
+spacetime login show --token          # prints this second identity's own bearer token
+```
+
+Add it as the `DEPLOY_SMOKE_TOKEN` secret. `net/connection.ts` only ever reads it from a
+`?bc-token=` query parameter on the page URL `deploy.yml`'s `smoke` job builds -- no real player's
+URL ever carries one, so this identity is never handed to anyone but the smoke check itself.
+
+**GitHub Pages.** Settings -> Pages -> Source: "GitHub Actions" (not a branch). This provisions the
+`github-pages` deployment environment `deploy-client` targets; restrict it to `master` (Settings ->
+Environments -> github-pages -> Deployment branches) so nothing but that job can ever publish to it.
+
 ## Running locally
 
 ```bash

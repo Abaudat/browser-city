@@ -207,6 +207,7 @@ GUARD_SECTIONS=(
   "Scheduled-reducer timing"
   "Backup and restore"
   "Boot budget"
+  "Deploy"
 )
 
 for section in "${GUARD_SECTIONS[@]}"; do

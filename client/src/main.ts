@@ -81,7 +81,13 @@ async function startStreetScene(): Promise<void> {
     return;
   }
 
-  const defs = await fetchDefs("/defs/defs.json");
+  // Never a hard-coded leading-slash literal (client/tests/e2e/
+  // deploy-smoke.spec.ts caught exactly this: it 404s under GitHub
+  // Pages' own /browser-city/ base). `import.meta.env.BASE_URL` is
+  // Vite's own base-aware constant -- always the build's `base` value,
+  // with a trailing slash, so `/` locally and `/browser-city/` in
+  // production resolve to the same relative asset either way.
+  const defs = await fetchDefs(`${import.meta.env.BASE_URL}defs/defs.json`);
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");
   // Story 1.7 (FR121): `render.window_alpha` is a percent integer (1-99,

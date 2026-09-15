@@ -18,7 +18,8 @@
     "test:unit:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --project=chromium",
     "test:e2e:perf": "playwright test --project=perf",
-    "test:e2e:boot": "playwright test --project=boot"
+    "test:e2e:boot": "playwright test --project=boot",
+    "test:e2e:deploy-smoke": "playwright test --project=deploy-smoke"
   },
   "dependencies": {
     "pixi.js": "8.20.1",

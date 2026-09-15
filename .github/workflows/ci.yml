@@ -168,6 +168,11 @@ jobs:
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.3-scheduled-reducer-timing.md sched-timing-spacetimedb-version
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.4-backup-restore.md backup-spacetimedb-version
       - run: bash scripts/ci/check-spike-pin.sh docs/spikes/1.14-boot-budget.md boot-budget-spacetimedb-version
+      # The deploy story: no destructive publish flag anywhere in
+      # deploy.yml, and its publish job needs: its backup job (NFR39).
+      # Same reasoning as the checks above -- a workflow-structure guard,
+      # not a server-workspace one.
+      - run: bash scripts/ci/check-deploy-workflow.sh
       # scripts/ci/'s own fast, no-toolchain-needed tests for its
       # mechanical guards (e.g. check-no-masks.sh's own pattern, story 1.7
       # cycle 2) -- runs here, not in `client-check`, since it needs
@@ -497,6 +502,19 @@ jobs:
             echo "::error::dist/defs/defs.json's defs_version ($built) does not match the committed public/defs/defs.json ($committed)" >&2
             exit 1
           fi
+      # The deploy story: a second, production-style build with the real
+      # Pages base and dummy `wss://` VITE_ values -- catches a
+      # misconfigured base or a client that would quietly dial localhost
+      # (client/src/net/config.ts's dev fallback) on the PR, not on the
+      # next master deploy. A separate --outDir so it never clobbers the
+      # build above.
+      - name: production-style build for GitHub Pages (real base, dummy production VITE_ values)
+        run: |
+          VITE_SPACETIME_URI=wss://dummy.invalid \
+          VITE_SPACETIME_DB=dummy \
+            npx vite build --base=/browser-city/ --outDir dist-pages
+      - name: base path and production URI both check out
+        run: bash ../scripts/ci/check-pages-bundle.sh dist-pages /browser-city/
 
   e2e:
     name: e2e
@@ -544,6 +562,15 @@ jobs:
         run: npx playwright install-deps chromium
       - working-directory: client
         run: npm run test:e2e
+      # The deploy story: the same client/tests/e2e/deploy-smoke.spec.ts
+      # deploy.yml runs against the live URL, rehearsed here against a
+      # production-base build (/browser-city/) served by `vite preview`,
+      # backed by its own disposable local SpacetimeDB -- so a broken
+      # smoke spec, or a base that only works at `/`, is caught before
+      # merge rather than only after a real deploy.
+      - name: post-deploy smoke spec, rehearsed against a production-base build
+        working-directory: client
+        run: node tests/e2e/serve-for-deploy-smoke.mjs
       # NFR2's regression gate (story 1.13): the same scripted walk on a
       # loop, gating p95/max frame *work* -- the whole per-frame CPU cost
       # (movement, re-sorting, visibility, the crowd's own update and

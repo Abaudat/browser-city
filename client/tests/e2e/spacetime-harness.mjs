@@ -37,7 +37,9 @@ const START_LOG_FILE = path.join(REPO_ROOT, "client", "test-results", "spacetime
 const HEALTH_DEADLINE_MS = 20_000;
 const HEALTH_POLL_INTERVAL_MS = 200;
 
-function findFreePort() {
+// Exported for serve-for-deploy-smoke.mjs's own preview server port (the
+// deploy story) -- never a second copy of this logic.
+export function findFreePort() {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
     srv.on("error", reject);
