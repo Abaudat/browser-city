@@ -113,7 +113,13 @@ async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void
         }
       },
       segment.until,
-      { timeout: 60_000 },
+      // A cold, busy CI runner (this spec's own crowd keeps animating,
+      // unlike `test-street.spec.ts`'s frozen one) has occasionally taken
+      // markedly longer than a single segment's own real walking time to
+      // render enough frames to cover it -- widened from 60s after an
+      // observed CI flake, the same reason the screenshot spec's own
+      // stability wait was widened.
+      { timeout: 120_000 },
     );
   } finally {
     await page.keyboard.up(segment.key);
@@ -127,7 +133,12 @@ async function walkRoute(page: Page, route: readonly StreetWalkSegment[]): Promi
 test("the frame path stays inside its work budget for a whole walked session (NFR2, partial)", async ({
   page,
 }) => {
-  test.setTimeout(RUN_MS + 120_000);
+  // 180s of headroom, not 120s: the initial walk's own segments (the
+  // journey out, `walkRoute` below) each now individually allow up to
+  // 120s on a cold, busy runner (`walkSegment`'s own doc comment says
+  // why), so the fixed overhead this test's own timeout budgets for has
+  // to allow for more than one of them landing badly.
+  test.setTimeout(RUN_MS + 180_000);
 
   // NFR2's own resolution. `page.setViewportSize` rather than a project
   // `viewport`, so this stays true even run from a config someone else
