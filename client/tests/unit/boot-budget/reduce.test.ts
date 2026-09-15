@@ -13,11 +13,20 @@ import {
 } from "../../e2e/boot-budget/reduce.mjs";
 
 describe("percentileOfSorted / percentile", () => {
-  it("is nearest-rank, matching street-perf.spec.ts's own convention", () => {
+  // True nearest-rank: rank = ceil(p/100 * n), 1-based. Cycle 1's formula
+  // (floor(p/100 * n)) read one rank too high throughout -- p50 of 1..10
+  // was 6, not the correct 5 (Quentin's cycle-1 finding).
+  it("is true nearest-rank: rank = ceil(p/100 * n), 1-based", () => {
     const sorted = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    expect(percentileOfSorted(sorted, 50)).toBe(6);
-    expect(percentileOfSorted(sorted, 90)).toBe(10);
-    expect(percentileOfSorted(sorted, 0)).toBe(1);
+    expect(percentileOfSorted(sorted, 50)).toBe(5); // ceil(5)=5 -> index 4
+    expect(percentileOfSorted(sorted, 90)).toBe(9); // ceil(9)=9 -> index 8
+    expect(percentileOfSorted(sorted, 0)).toBe(1); // ceil(0)=0 -> clamped to index 0
+  });
+
+  it("at n=20, p95 is the 19th-smallest value, never the max (cycle 1's bug)", () => {
+    const sorted = Array.from({ length: 20 }, (_, i) => i + 1); // 1..20
+    expect(percentileOfSorted(sorted, 95)).toBe(19); // ceil(19)=19 -> index 18
+    expect(percentileOfSorted(sorted, 95)).not.toBe(20);
   });
 
   it("sorts unsorted input rather than assuming it", () => {

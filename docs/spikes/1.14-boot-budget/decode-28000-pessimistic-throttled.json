@@ -10,104 +10,184 @@
   },
   "samples": [
     {
-      "decodeMs": 6116.700000047684,
+      "decodeMs": 5839.699999928474,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5788.196999928914,
+      "transferMs": 0,
+      "clientMs": 51.502999999560416,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5939.800000071526,
+      "decodeMs": 5902.799999952316,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5854.395000031218,
+      "transferMs": 0,
+      "clientMs": 48.40499992109835,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5879.5,
+      "decodeMs": 6041.799999952316,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5983.3830000134185,
+      "transferMs": 0,
+      "clientMs": 58.41699993889779,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5944.600000023842,
+      "decodeMs": 5983,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5926.44199996721,
+      "transferMs": 0,
+      "clientMs": 56.558000032790005,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5854.600000023842,
+      "decodeMs": 5842.899999976158,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5785.431999946013,
+      "transferMs": 0,
+      "clientMs": 57.46800003014505,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5688.900000095367,
+      "decodeMs": 6068.199999928474,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 6010.848000063561,
+      "transferMs": 0,
+      "clientMs": 57.35199986491352,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5917.199999928474,
+      "decodeMs": 6164.699999928474,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 6108.969999942929,
+      "transferMs": 0,
+      "clientMs": 55.729999985545874,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 6021.899999976158,
+      "decodeMs": 5962.400000095367,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5910.298999981023,
+      "transferMs": 0,
+      "clientMs": 52.10100011434406,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 6046.600000023842,
+      "decodeMs": 6041.399999976158,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5988.623000099324,
+      "transferMs": 0,
+      "clientMs": 52.77699987683445,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5987.199999928474,
+      "decodeMs": 6068.299999952316,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 6014.588000020012,
+      "transferMs": 0,
+      "clientMs": 53.711999932304025,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5979.800000071526,
+      "decodeMs": 5937.100000023842,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5884.9309999495745,
+      "transferMs": 0,
+      "clientMs": 52.16900007426739,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5896.600000023842,
+      "decodeMs": 6063.800000071526,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 6010.93500002753,
+      "transferMs": 0,
+      "clientMs": 52.86500004399568,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5908.300000071526,
+      "decodeMs": 5902.399999976158,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5848.129000049084,
+      "transferMs": 0,
+      "clientMs": 54.27099992707372,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 6062.5,
+      "decodeMs": 5876.700000047684,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5826.056000078097,
+      "transferMs": 0,
+      "clientMs": 50.64399996958673,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 6043.299999952316,
+      "decodeMs": 5969.300000071526,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5917.660999926738,
+      "transferMs": 0,
+      "clientMs": 51.63900014478713,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5794.299999952316,
+      "decodeMs": 5978.100000023842,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5921.828999998979,
+      "transferMs": 0,
+      "clientMs": 56.27100002486259,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5951.399999976158,
+      "decodeMs": 5883.299999952316,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5832.243000040762,
+      "transferMs": 0,
+      "clientMs": 51.05699991155416,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5807.100000023842,
+      "decodeMs": 5902.299999952316,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5847.765999962576,
+      "transferMs": 0,
+      "clientMs": 54.53399998974055,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 5694.700000047684,
+      "decodeMs": 5828.699999928474,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5777.061000000685,
+      "transferMs": 0,
+      "clientMs": 51.63899992778897,
+      "responseFrameCount": 1
     },
     {
-      "decodeMs": 6097.200000047684,
+      "decodeMs": 6050.599999904633,
       "rowCount": 28000,
-      "bytesOnWire": 419723
+      "bytesOnWire": 419723,
+      "serverMs": 5999.9200000893325,
+      "transferMs": 0,
+      "clientMs": 50.67999981530011,
+      "responseFrameCount": 1
     }
   ]
 }

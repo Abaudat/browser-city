@@ -7,15 +7,17 @@
 // thing that turns this module's output into docs/spikes/1.14-boot-
 // budget.md's tables -- by calling these functions, never by hand.
 
-/** The value at percentile `p` (0-100) of an ascending-sorted array,
- * nearest-rank (never interpolated) -- the same convention
- * street-perf.spec.ts's own `percentile` uses. */
+/** The value at percentile `p` (0-100) of an ascending-sorted array, true
+ * nearest-rank (never interpolated): `rank = ceil(p/100 * n)`, 1-based, so
+ * the 0-based index is `rank - 1`, clamped into range. Cycle 1's formula
+ * (`floor(p/100 * n)`) was not nearest-rank -- it read one rank too high
+ * throughout (Quentin's cycle-1 finding: it silently turned p95 at n=20
+ * into the max, which is exactly the sample the D4 trigger was
+ * mis-evaluated against). */
 export function percentileOfSorted(sortedAscending, p) {
   if (sortedAscending.length === 0) return Number.NaN;
-  const index = Math.min(
-    sortedAscending.length - 1,
-    Math.floor((p / 100) * sortedAscending.length),
-  );
+  const rank = Math.ceil((p / 100) * sortedAscending.length);
+  const index = Math.min(sortedAscending.length - 1, Math.max(0, rank - 1));
   return sortedAscending[index];
 }
 

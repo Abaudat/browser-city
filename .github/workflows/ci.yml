@@ -26,6 +26,7 @@ jobs:
       client: ${{ steps.filter.outputs.client }}
       e2e: ${{ steps.filter.outputs.e2e }}
       defs: ${{ steps.filter.outputs.defs }}
+      bootbudget: ${{ steps.filter.outputs.bootbudget }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -91,6 +92,11 @@ jobs:
               # demo scene already uses for other art).
               - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
               - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
+              # Story 1.14, cycle 2 (Tim's direction): check-boot-budget-
+              # report-current.sh regenerates docs/spikes/1.14-boot-
+              # budget.md from exactly these paths.
+              - 'docs/spikes/1.14-boot-budget/**'
+              - 'docs/spikes/1.14-boot-budget.md'
             e2e:
               - 'server/**'
               - 'client/**'
@@ -117,6 +123,17 @@ jobs:
               # not just the client's own test (already covered by
               # fixtures/** below via its own filter membership elsewhere).
               - 'fixtures/**'
+            # Story 1.14, cycle 2 (Quentin's direction): the boot-budget
+            # harness has never run on Linux (`boot-budget.yml` is
+            # workflow_dispatch-only), and the script has Windows-specific
+            # process handling -- this is deliberately narrow, only the
+            # paths the harness itself needs to keep working, not every
+            # client/server change.
+            bootbudget:
+              - 'scripts/dev/run-boot-budget-spike.sh'
+              - 'client/tests/e2e/boot-budget/**'
+              - 'server/spikes/boot_budget/**'
+              - 'client/playwright.config.ts'
 
   scripts-tests:
     name: scripts-tests
@@ -395,6 +412,8 @@ jobs:
       # in the server-gated `test` job).
       - name: client-side trace-matrix symmetry (no cargo)
         run: bash ../scripts/ci/check-trace-matrix.sh --client-only
+      - name: story 1.14, docs/spikes/1.14-boot-budget.md is exactly the generator's own output
+        run: bash ../scripts/ci/check-boot-budget-report-current.sh
 
   client-build:
     name: client-build
@@ -432,21 +451,21 @@ jobs:
             echo "::error::boot-budget spike code (client/tests/e2e/boot-budget/**) leaked into the production bundle" >&2
             exit 1
           fi
-      # Story 1.14 (NFR1, Quentin's direction): a fail-fast, browser-less
-      # regression gate for the two dominant terms docs/spikes/1.14-boot-
-      # budget.md measured (bundle and atlas), set from that spike's own
-      # numbers plus margin -- never a timing gate (that needs a browser
-      # and stays out of the PR-blocking `ci` gate; see the trace matrix's
-      # NFR1 row). The atlas figure is the *whole* public PNG catalogue
-      # `dist/assets/` ships (every character-generator sheet and city
-      # prop, ~481 files today), not only the ~105 files one boot actually
-      # fetches (docs/spikes/1.14-boot-budget.md's own, tighter, per-boot
-      # figure) -- a looser upper bound, but one that still catches "more
-      # art landed" the moment it happens, with no browser required.
-      - name: story 1.14 (NFR1), gzipped bundle and atlas size budgets
+      # Story 1.14 (NFR1): a fail-fast, browser-less regression gate for the
+      # bundle term docs/spikes/1.14-boot-budget.md measured, set from that
+      # spike's own number plus margin -- never a timing gate (that needs a
+      # browser and stays out of the PR-blocking `ci` gate; see the trace
+      # matrix's NFR1 row). Cycle 2 (Tim's direction): there is no matching
+      # gzip gate on `dist/assets/*.png` -- PNG is already compressed, so
+      # gzip-summing it measures nothing; the whole catalogue is not the
+      # boot payload either, and a byte ceiling on all art gets bumped by
+      # every art PR, which teaches everyone to bump budgets rather than
+      # read them. The atlas term's own gate is deterministic and
+      # request-shaped instead: `client/tests/e2e/boot-marks.spec.ts`'s
+      # image-request-count/byte assertion, which runs on every client PR.
+      - name: story 1.14 (NFR1), gzipped bundle size budget
         run: |
           BUNDLE_BUDGET_BYTES=180000
-          ATLAS_BUDGET_BYTES=13000000
 
           bundle_bytes=0
           for f in dist/assets/index-*.js; do
@@ -463,18 +482,6 @@ jobs:
             exit 1
           fi
           echo "bundle: ${bundle_bytes} gzip bytes (budget ${BUNDLE_BUDGET_BYTES})"
-
-          atlas_bytes=0
-          for f in dist/assets/*.png; do
-            [ -f "$f" ] || continue
-            sz=$(gzip -c "$f" | wc -c)
-            atlas_bytes=$((atlas_bytes + sz))
-          done
-          if [ "$atlas_bytes" -gt "$ATLAS_BUDGET_BYTES" ]; then
-            echo "::error::the public PNG catalogue grew to ${atlas_bytes} gzip bytes, over the ${ATLAS_BUDGET_BYTES}-byte budget (docs/spikes/1.14-boot-budget.md) -- re-measure the spike if this is deliberate" >&2
-            exit 1
-          fi
-          echo "atlas (whole PNG catalogue): ${atlas_bytes} gzip bytes (budget ${ATLAS_BUDGET_BYTES})"
       # Quentin's direction: the asset is fetched at runtime, never
       # imported, so no other check in this PR would notice a Vite
       # publicDir/base-path change silently dropping it -- and it must
@@ -577,11 +584,61 @@ jobs:
             client/test-results/spacetime-start.log
           retention-days: 7
 
+  boot-smoke:
+    name: boot-smoke
+    needs: [changes, client-build]
+    # Story 1.14, cycle 2 (Quentin's direction): boot-budget.yml (the full,
+    # 400-page-load measurement) is workflow_dispatch-only and has never
+    # run on Linux; the harness script has Windows-specific process
+    # handling, so its first failure on a Linux runner would otherwise land
+    # on master unnoticed. This proves the harness runs end to end on the
+    # runner in a few minutes -- one cold sample, one row count -- only
+    # when the harness itself changes.
+    if: |
+      always() &&
+      needs.changes.outputs.bootbudget == 'true' &&
+      (needs.client-build.result == 'success' || needs.client-build.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+      - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: client/.nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - working-directory: client
+        run: npm ci
+      - working-directory: client
+        run: npx playwright install --with-deps chromium
+      - name: the harness itself runs end to end (one sample, one row count)
+        env:
+          BC_BOOT_SAMPLES: "1"
+          BC_BOOT_DECODE_SAMPLES: "1"
+          BC_BOOT_DECODE_ROW_COUNT: "7000"
+          BC_BOOT_OUT_DIR: ${{ github.workspace }}/boot-smoke-out
+          BC_BOOT_HOST_LABEL: github-actions-runner
+        run: bash scripts/dev/run-boot-budget-spike.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: boot-smoke
+          path: boot-smoke-out
+          if-no-files-found: warn
+          retention-days: 7
+
   ci:
     name: ci
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    needs: [changes, scripts-tests, defs, check, test, build, migrate, coverage, client-check, client-build, e2e]
+    needs: [changes, scripts-tests, defs, check, test, build, migrate, coverage, client-check, client-build, e2e, boot-smoke]
     if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

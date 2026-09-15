@@ -13,17 +13,17 @@ name: boot-budget
 # and runs scripts/dev/run-boot-budget-spike.sh locally (or downloads this
 # run's raw JSON) to regenerate and commit the report, the same
 # discipline story 1.3's re-run entry point sets.
+#
+# Cycle 2 (Tim's direction): `workflow_dispatch` only, no `push` trigger.
+# 400 page loads on every master push produces an artifact nothing reads
+# and nothing gates, and its throttled numbers on a shared, noisy runner
+# are not comparable to the committed run anyway -- run it by hand when
+# someone is going to regenerate the report. `ci.yml`'s own `boot-smoke`
+# job (BC_BOOT_SAMPLES=1, one row count) is what actually runs on every
+# relevant push, proving the harness itself still works end to end.
 
 on:
   workflow_dispatch:
-  push:
-    branches: [master]
-    paths:
-      - "client/**"
-      - "server/**"
-      - "defs/**"
-      - "ModernTileset/**"
-      - ".github/workflows/boot-budget.yml"
 
 permissions:
   contents: read

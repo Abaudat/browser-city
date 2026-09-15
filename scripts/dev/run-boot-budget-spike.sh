@@ -142,6 +142,23 @@ BROWSER_VERSION="$(cd "$CLIENT_DIR" && node -e "
 
 echo "run-boot-budget-spike: SpacetimeDB $SPACETIME_VERSION on $HOST_LABEL, started $RUN_DATE" >&2
 
+# Quentin's direction: commit the run's own metadata next to the raw JSON
+# so the exact report can be rebuilt from the repo alone -- never
+# re-detected fresh on a later regeneration, which would put a new date
+# into a diff of otherwise-unchanged numbers.
+METADATA_JSON="$OUT_DIR/run-metadata.json"
+node -e "
+  const hostInfo = JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf-8'));
+  console.log(JSON.stringify({
+    spacetimeVersion: process.argv[2],
+    runDate: process.argv[3],
+    pixiVersion: process.argv[4],
+    browserVersion: process.argv[5],
+    playwrightVersion: process.argv[6],
+    hostInfo,
+  }, null, 2));
+" "$HOST_INFO_JSON" "$SPACETIME_VERSION" "$RUN_DATE" "$PIXI_VERSION" "$BROWSER_VERSION" "$PLAYWRIGHT_VERSION" >"$METADATA_JSON"
+
 SPACETIME_PORT="$(free_port)"
 SERVER_URL="http://127.0.0.1:$SPACETIME_PORT"
 spacetime start --data-dir "$DATA_DIR/data" --listen-addr "127.0.0.1:$SPACETIME_PORT" >"$START_LOG" 2>&1 &
@@ -206,12 +223,7 @@ PLAYWRIGHT_STATUS=${PIPESTATUS[0]:-$?}
 node "$REPO_ROOT/scripts/dev/generate-boot-budget-report.mjs" \
   --raw-dir "$OUT_DIR" \
   --out "$OUT_DIR/report.md" \
-  --spacetime-version "$SPACETIME_VERSION" \
-  --host-info "$HOST_INFO_JSON" \
-  --run-date "$RUN_DATE" \
-  --pixi-version "$PIXI_VERSION" \
-  --browser-version "$BROWSER_VERSION" \
-  --playwright-version "$PLAYWRIGHT_VERSION" \
+  --metadata "$METADATA_JSON" \
   || fail "generate-boot-budget-report.mjs failed"
 
 echo "run-boot-budget-spike: wrote $OUT_DIR/report.md" >&2

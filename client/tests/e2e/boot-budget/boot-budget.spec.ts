@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { type CDPSession, expect, test } from "@playwright/test";
-import { BOOT_MARK } from "../../../src/boot/boot-marks";
+import { computeSampleTerms } from "./compute-terms.mjs";
 import type {} from "./decode-harness";
 import { CPU_PROFILES, DECODE_ROW_COUNTS, MIN_SAMPLES, NETWORK_PROFILES } from "./profiles.mjs";
 
@@ -30,19 +30,6 @@ interface CpuProfile {
   readonly name: string;
   readonly label: string;
   readonly rate: number;
-}
-
-interface RawResourceEntry {
-  readonly name: string;
-  readonly initiatorType: string;
-  readonly fetchStart: number;
-  readonly responseEnd: number;
-  readonly transferSize: number;
-}
-interface RawSample {
-  readonly marks: Record<string, number>;
-  readonly firstPaintMs: number | null;
-  readonly resources: readonly RawResourceEntry[];
 }
 
 const SAMPLES = Number(process.env.BC_BOOT_SAMPLES ?? MIN_SAMPLES);
@@ -73,66 +60,6 @@ async function applyThrottling(
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpu.rate });
 }
 
-/** Turns one page's raw marks/paint/resource-timing entries into the
- * named terms the report's attribution table reads -- Resource Timing for
- * fetch/decode, the boot marks for everything the browser cannot see on
- * its own (Tim's direction). Never computed in the page itself: this runs
- * in Node, over data already carried across the `page.evaluate` boundary,
- * so it is exactly as testable as `reduce.mjs` (fixed input, pure output)
- * even though it is not re-exported there -- it depends on `BOOT_MARK`'s
- * names, which belong with the marks, not with the generic reducer. */
-function computeSampleTerms(raw: RawSample) {
-  const marks = raw.marks;
-  const mainStart = marks[BOOT_MARK.MAIN_START] ?? 0;
-  const handshakeOpen = marks[BOOT_MARK.HANDSHAKE_OPEN] ?? mainStart;
-  const subscriptionApplied = marks[BOOT_MARK.SUBSCRIPTION_APPLIED] ?? handshakeOpen;
-  const atlasReady = marks[BOOT_MARK.ATLAS_READY] ?? mainStart;
-  const playerControllable = marks[BOOT_MARK.PLAYER_CONTROLLABLE] ?? atlasReady;
-
-  const defsResources = raw.resources.filter((r) => r.name.endsWith("/defs/defs.json"));
-  const defsMs =
-    defsResources.length > 0
-      ? Math.max(...defsResources.map((r) => r.responseEnd - r.fetchStart))
-      : 0;
-
-  // There is no real atlas yet (Tim's direction): every image fetched
-  // before the player is controllable stands in for it, with its own
-  // request count and byte total recorded alongside the timing.
-  const imageResources = raw.resources.filter(
-    (r) => /\.(png|jpe?g|webp)$/i.test(r.name) && r.responseEnd <= playerControllable,
-  );
-  const atlasMs =
-    imageResources.length > 0
-      ? Math.max(...imageResources.map((r) => r.responseEnd)) -
-        Math.min(...imageResources.map((r) => r.fetchStart))
-      : 0;
-  const atlasBytes = imageResources.reduce((sum, r) => sum + (r.transferSize ?? 0), 0);
-
-  // Terms are each a self-contained wall-clock duration for their own
-  // phase, not disjoint slices of the total: the handshake proceeds
-  // concurrently with the defs/atlas fetch in the real boot sequence
-  // today, so their sum can exceed the end-to-end total. The remainder
-  // (computed by reduce.mjs's summarizeTerms, from this same data) shows
-  // that plainly instead of forcing a false reconciliation.
-  const terms = {
-    bundle: mainStart,
-    defs: defsMs,
-    atlas: atlasMs,
-    handshake: Math.max(0, handshakeOpen - mainStart),
-    subscriptionDecode: Math.max(0, subscriptionApplied - handshakeOpen),
-    toControllable: Math.max(0, playerControllable - Math.max(atlasReady, subscriptionApplied)),
-  };
-
-  return {
-    totalMs: playerControllable,
-    firstPaintMs: raw.firstPaintMs,
-    interactivePromptMs: marks[BOOT_MARK.INTERACTIVE_PROMPT] ?? null,
-    terms,
-    atlasRequestCount: imageResources.length,
-    atlasBytes,
-  };
-}
-
 async function collectOneSample(
   browser: import("@playwright/test").Browser,
   network: NetworkProfile,
@@ -150,7 +77,7 @@ async function collectOneSample(
     { timeout: 30_000 },
   );
 
-  const raw = (await page.evaluate(() => {
+  const raw = await page.evaluate(() => {
     const marks = Object.fromEntries(
       performance.getEntriesByType("mark").map((e) => [e.name, e.startTime]),
     );
@@ -162,12 +89,16 @@ async function collectOneSample(
         name: e.name,
         initiatorType: e.initiatorType,
         fetchStart: e.fetchStart,
+        requestStart: e.requestStart,
         responseEnd: e.responseEnd,
         transferSize: e.transferSize,
+        nextHopProtocol: e.nextHopProtocol,
       }),
     );
-    return { marks, firstPaintMs: fcp ? fcp.startTime : null, resources };
-  })) as RawSample;
+    const entryScriptUrl =
+      document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src ?? "";
+    return { marks, firstPaintMs: fcp ? fcp.startTime : null, resources, entryScriptUrl };
+  });
 
   await context.close();
   return computeSampleTerms(raw);
@@ -221,6 +152,25 @@ const DECODE_SERVER_URL = process.env.BC_BOOT_DECODE_SERVER_URL;
 const DECODE_DB_NAME = process.env.BC_BOOT_DECODE_DB_NAME;
 const DECODE_SAMPLES = Number(process.env.BC_BOOT_DECODE_SAMPLES ?? MIN_SAMPLES);
 
+/** Tim's/Quentin's cycle-1 finding: `subscribe()` -> `onApplied` conflates
+ * server query evaluation, network transfer and client decode/apply into
+ * one number -- and the raw data showed it (throttling the *client* CPU
+ * made the number *faster*, which a client-decode-bound cost cannot do).
+ * This control leg applies neither network emulation nor (for `reference`
+ * CPU) any CDP instrumentation beyond the bare minimum needed to read the
+ * result -- no `webSocketFrameReceived` listener, no `Network.
+ * emulateNetworkConditions` call at all -- so there is at least one
+ * reading with zero CDP overhead of any kind (Tim's direction). Never
+ * used for the milestone sweep -- domestic/pessimistic are the only two
+ * network conditions NFR1 itself cares about. */
+const NO_EMULATION_NETWORK_PROFILE: NetworkProfile = {
+  name: "none",
+  label: "no network emulation at all (control leg)",
+  downloadKbps: 0,
+  uploadKbps: 0,
+  latencyMs: 0,
+};
+
 function reseedDecodeDb(serverUrl: string, dbName: string, rowCount: number): void {
   const clear = spawnSync(
     "spacetime",
@@ -250,10 +200,122 @@ function reseedDecodeDb(serverUrl: string, dbName: string, rowCount: number): vo
   }
 }
 
+interface DecodeSample {
+  decodeMs: number;
+  rowCount: number;
+  bytesOnWire: number;
+  /** Tim's/Quentin's split, via CDP `Network.webSocketFrame{Sent,Received}`
+   * timestamps -- present only on the throttled (`domestic`/`pessimistic`)
+   * legs, which are the only ones instrumented with the frame listener. */
+  serverMs?: number;
+  transferMs?: number;
+  clientMs?: number;
+  /** How many WebSocket frames the subscription's response actually
+   * arrived in. When this is 1, `transferMs` is definitionally 0 and
+   * `serverMs` covers both server-side query time *and* wire transfer of
+   * that one frame -- the report states this plainly rather than let a
+   * reader assume `server` is a pure isolate at every row count. */
+  responseFrameCount?: number;
+}
+
+async function collectOneDecodeSample(
+  browser: import("@playwright/test").Browser,
+  network: NetworkProfile,
+  cpu: CpuProfile,
+  decodeUrl: string,
+  wsUri: string,
+  dbName: string,
+  rowCount: number,
+  captureFrames: boolean,
+): Promise<DecodeSample> {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const cdp = await context.newCDPSession(page);
+
+  const framesSent: number[] = [];
+  const framesReceived: number[] = [];
+  let bytesOnWire = 0;
+
+  if (captureFrames) {
+    await applyThrottling(cdp, network, cpu);
+    cdp.on("Network.webSocketFrameSent", (event) => {
+      framesSent.push(event.timestamp);
+    });
+    cdp.on("Network.webSocketFrameReceived", (event) => {
+      framesReceived.push(event.timestamp);
+      const { payloadData, opcode } = event.response;
+      bytesOnWire += opcode === 2 ? Buffer.byteLength(payloadData, "base64") : payloadData.length;
+    });
+  } else {
+    // The bare control leg (Tim's direction): CPU throttling only, if the
+    // profile calls for it -- no Network.enable, no emulation, no frame
+    // listener at all.
+    if (cpu.rate !== 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpu.rate });
+  }
+
+  await page.goto(`${decodeUrl}?uri=${encodeURIComponent(wsUri)}&db=${encodeURIComponent(dbName)}`);
+  await page.waitForFunction(
+    () =>
+      window.__bootDecode?.appliedAtMs !== undefined || window.__bootDecode?.error !== undefined,
+    undefined,
+    { timeout: 30_000 },
+  );
+  const result = await page.evaluate(() => window.__bootDecode);
+  await context.close();
+
+  if (!result || result.error) {
+    throw new Error(`decode harness error: ${result?.error ?? "no result"}`);
+  }
+  if (result.rowCount !== rowCount) {
+    throw new Error(
+      `decode harness applied ${result.rowCount} rows, expected ${rowCount} -- the seed did not land before subscribe`,
+    );
+  }
+  const decodeMs = (result.appliedAtMs as number) - (result.subscribeStartMs as number);
+
+  const sample: DecodeSample = { decodeMs, rowCount: result.rowCount, bytesOnWire };
+
+  if (captureFrames) {
+    // The last frame this page ever *sends* is the subscribe call itself
+    // (the harness sends nothing else afterwards); every frame it
+    // *receives* after that belongs to this subscription's response, not
+    // to the connection handshake that preceded it. Frame timestamps are
+    // CDP monotonic seconds -- compared only against each other, never
+    // against a page-side performance.now() reading (different clock
+    // epoch); `clientMs` below is a duration-of-durations, not a
+    // cross-clock timestamp subtraction, so the epoch difference is not a
+    // correctness problem (see the report's Method section).
+    const subscribeSentTs = framesSent.at(-1);
+    const responseFrames = framesReceived.filter(
+      (t) => subscribeSentTs !== undefined && t > subscribeSentTs,
+    );
+    if (subscribeSentTs !== undefined && responseFrames.length > 0) {
+      const firstResponseTs = Math.min(...responseFrames);
+      const lastResponseTs = Math.max(...responseFrames);
+      const serverMs = (firstResponseTs - subscribeSentTs) * 1000;
+      const transferMs = (lastResponseTs - firstResponseTs) * 1000;
+      sample.serverMs = serverMs;
+      sample.transferMs = transferMs;
+      sample.clientMs = Math.max(0, decodeMs - serverMs - transferMs);
+      sample.responseFrameCount = responseFrames.length;
+    }
+  }
+
+  return sample;
+}
+
 if (DECODE_URL && DECODE_SERVER_URL && DECODE_DB_NAME) {
   const wsUri = DECODE_SERVER_URL.replace(/^http/, "ws");
 
-  for (const rowCount of DECODE_ROW_COUNTS as readonly number[]) {
+  // `ci.yml`'s `boot-smoke` job proves the harness runs end to end on the
+  // runner in a few minutes, not that it reproduces this story's own
+  // numbers -- one row count is enough for that.
+  const smokeRowCount = process.env.BC_BOOT_DECODE_ROW_COUNT
+    ? Number(process.env.BC_BOOT_DECODE_ROW_COUNT)
+    : undefined;
+  const rowCountsToRun = smokeRowCount ? [smokeRowCount] : (DECODE_ROW_COUNTS as readonly number[]);
+
+  for (const rowCount of rowCountsToRun) {
     test.describe(`decode -- ${rowCount} rows`, () => {
       test.beforeAll(() => {
         reseedDecodeDb(DECODE_SERVER_URL, DECODE_DB_NAME, rowCount);
@@ -266,51 +328,20 @@ if (DECODE_URL && DECODE_SERVER_URL && DECODE_DB_NAME) {
           }) => {
             test.setTimeout(DECODE_SAMPLES * 30_000 + 60_000);
 
-            const samples: { decodeMs: number; rowCount: number; bytesOnWire: number }[] = [];
+            const samples: DecodeSample[] = [];
             for (let i = 0; i < DECODE_SAMPLES; i++) {
-              const context = await browser.newContext();
-              const page = await context.newPage();
-              const cdp = await context.newCDPSession(page);
-              await applyThrottling(cdp, network, cpu);
-
-              // Resource Timing never carries WebSocket payload bytes
-              // (confirmed empirically while building this harness: it
-              // reports 0 every time) -- CDP's own frame events are the
-              // only place the subscription's actual byte count on the
-              // wire is observable.
-              let bytesOnWire = 0;
-              cdp.on("Network.webSocketFrameReceived", (event) => {
-                const { payloadData, opcode } = event.response;
-                bytesOnWire +=
-                  opcode === 2 ? Buffer.byteLength(payloadData, "base64") : payloadData.length;
-              });
-
-              await page.goto(
-                `${DECODE_URL}?uri=${encodeURIComponent(wsUri)}&db=${encodeURIComponent(DECODE_DB_NAME)}`,
+              samples.push(
+                await collectOneDecodeSample(
+                  browser,
+                  network,
+                  cpu,
+                  DECODE_URL,
+                  wsUri,
+                  DECODE_DB_NAME,
+                  rowCount,
+                  true,
+                ),
               );
-              await page.waitForFunction(
-                () =>
-                  window.__bootDecode?.appliedAtMs !== undefined ||
-                  window.__bootDecode?.error !== undefined,
-                undefined,
-                { timeout: 30_000 },
-              );
-              const result = await page.evaluate(() => window.__bootDecode);
-              await context.close();
-
-              if (!result || result.error) {
-                throw new Error(`decode harness error: ${result?.error ?? "no result"}`);
-              }
-              if (result.rowCount !== rowCount) {
-                throw new Error(
-                  `decode harness applied ${result.rowCount} rows, expected ${rowCount} -- the seed did not land before subscribe`,
-                );
-              }
-              samples.push({
-                decodeMs: (result.appliedAtMs as number) - (result.subscribeStartMs as number),
-                rowCount: result.rowCount,
-                bytesOnWire,
-              });
             }
 
             const outFile = path.join(
@@ -335,6 +366,59 @@ if (DECODE_URL && DECODE_SERVER_URL && DECODE_DB_NAME) {
             expect(samples.length).toBe(DECODE_SAMPLES);
           });
         }
+      }
+
+      // The control leg: no network emulation at all, both CPU profiles
+      // (Quentin's direction), and no frame listener on `reference` CPU
+      // specifically (Tim's direction: at least one reading with zero CDP
+      // instrumentation).
+      for (const cpu of CPU_PROFILES as readonly CpuProfile[]) {
+        test(`${NO_EMULATION_NETWORK_PROFILE.name} network, ${cpu.name} CPU (n=${DECODE_SAMPLES}) [control]`, async ({
+          browser,
+        }) => {
+          test.setTimeout(DECODE_SAMPLES * 30_000 + 60_000);
+
+          const captureFrames = cpu.name !== "reference";
+          const samples: DecodeSample[] = [];
+          for (let i = 0; i < DECODE_SAMPLES; i++) {
+            samples.push(
+              await collectOneDecodeSample(
+                browser,
+                NO_EMULATION_NETWORK_PROFILE,
+                cpu,
+                DECODE_URL,
+                wsUri,
+                DECODE_DB_NAME,
+                rowCount,
+                captureFrames,
+              ),
+            );
+          }
+
+          const outFile = path.join(
+            OUT_DIR,
+            `decode-${rowCount}-${NO_EMULATION_NETWORK_PROFILE.name}-${cpu.name}.json`,
+          );
+          writeFileSync(
+            outFile,
+            `${JSON.stringify(
+              {
+                rowCount,
+                network: {
+                  name: NO_EMULATION_NETWORK_PROFILE.name,
+                  label: NO_EMULATION_NETWORK_PROFILE.label,
+                },
+                cpu: { name: cpu.name, label: cpu.label },
+                samples,
+              },
+              null,
+              2,
+            )}\n`,
+            "utf-8",
+          );
+
+          expect(samples.length).toBe(DECODE_SAMPLES);
+        });
       }
     });
   }

@@ -67,7 +67,14 @@ export const DECODE_ROW_COUNTS = Object.freeze([7000, 14000, 28000, 56000]);
 
 /** Tim's pre-registered D4 revisit trigger: "the 28k-row decode passes if
  * its throttled-profile p95 is <=150 ms. Anything above that opens D4's
- * chunking migration." */
+ * chunking migration." The number and the profile are unchanged from
+ * cycle 1 -- only *what quantity it is measured against* was wrong there.
+ * Cycle 1 evaluated it against the whole `subscribe()` -> `onApplied`
+ * window, which both leads found conflates server query time, network
+ * transfer and client decode; cycle 2 evaluates it against the `client`
+ * term the CDP frame-timestamp split isolates (the actual decode/apply
+ * cost), the only one of the three the trigger was ever meant to guard --
+ * a measurement fix, not a budget edit. */
 export const DECODE_REVISIT_ROW_COUNT = 28000;
 export const DECODE_REVISIT_TRIGGER_MS = 150;
 export const DECODE_REVISIT_PROFILE = "throttled";
