@@ -335,6 +335,14 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   const baseURL = test.info().project.use.baseURL;
   if (!baseURL) throw new Error("no baseURL configured for this project");
   const pageOrigin = new URL(baseURL).origin;
+  // Assumes the page opens exactly one cross-origin websocket: the one
+  // to SpacetimeDB. True today (the client's own net/ layer holds a
+  // single connection, and nothing else here opens one), so this is
+  // never asserted on directly -- if that ever changes, whichever
+  // cross-origin socket is created *last* silently wins here, which
+  // would misattribute frames rather than fail loudly. A second
+  // cross-origin socket appearing in `Network.webSocketCreated` is the
+  // signal to revisit this.
   let spacetimeRequestId: string | undefined;
   cdp.on("Network.webSocketCreated", (event: { requestId: string; url: string }) => {
     const socketOrigin = new URL(event.url.replace(/^ws/, "http")).origin;
