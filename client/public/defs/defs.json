@@ -1,14 +1,17 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "f63bda8cbc33c573",
+  "defs_version": "8f5a3c33fdd4b5fc",
   "collider_subcells_per_cell": 16,
   "interact_at_max_reach_cells": 2,
   "objects": [
+    { "collider": null, "height": 1, "id": 7, "interact_at": null, "key": "bridge_deck", "width": 4, "window": false },
+    { "collider": null, "height": 1, "id": 8, "interact_at": null, "key": "foot_stairs", "width": 1, "window": false },
     { "collider": { "x0": 6, "y0": 10, "x1": 10, "y1": 14 }, "height": 1, "id": 4, "interact_at": null, "key": "lamppost", "width": 1, "window": false },
     { "collider": null, "height": 1, "id": 2, "interact_at": null, "key": "park_bench", "width": 2, "window": false },
     { "collider": { "x0": 0, "y0": 0, "x1": 48, "y1": 16 }, "height": 1, "id": 3, "interact_at": { "x0": 0, "y0": 16, "x1": 48, "y1": 32 }, "key": "shop_counter", "width": 3, "window": false },
     { "collider": { "x0": 0, "y0": 0, "x1": 16, "y1": 16 }, "height": 1, "id": 5, "interact_at": null, "key": "shop_window", "width": 1, "window": true },
-    { "collider": { "x0": 4, "y0": 4, "x1": 12, "y1": 12 }, "height": 1, "id": 1, "interact_at": { "x0": -4, "y0": -4, "x1": 20, "y1": 20 }, "key": "trash_bin", "width": 1, "window": false }
+    { "collider": { "x0": 4, "y0": 4, "x1": 12, "y1": 12 }, "height": 1, "id": 1, "interact_at": { "x0": -4, "y0": -4, "x1": 20, "y1": 20 }, "key": "trash_bin", "width": 1, "window": false },
+    { "collider": { "x0": 0, "y0": 0, "x1": 16, "y1": 16 }, "height": 1, "id": 6, "interact_at": null, "key": "wall_segment", "width": 1, "window": false }
   ],
   "items": [
     { "id": 1, "key": "bottle" },

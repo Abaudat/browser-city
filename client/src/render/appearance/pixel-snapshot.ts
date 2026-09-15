@@ -1,4 +1,4 @@
-// A plain, serialisable pixel buffer -- shared between `demo/compare-
+// A plain, serialisable pixel buffer -- shared between `test-street/compare-
 // pipeline-vs-stack.ts` (the one real producer) and `net/e2e-hooks.ts`
 // (the one consumer, over `window.__bc`), so neither has to depend on the
 // other's own directory for a type this small.

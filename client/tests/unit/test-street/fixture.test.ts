@@ -10,11 +10,11 @@
 // data-level fact directly, so a future transition can never reintroduce
 // the same shape of bug without a fast, non-flaky test catching it first.
 import { describe, expect, it } from "vitest";
-import { DEMO_TRANSITIONS } from "../../../src/demo/fixture";
+import { STREET_TRANSITIONS } from "../../../src/test-street/fixture";
 
-describe("DEMO_TRANSITIONS", () => {
+describe("STREET_TRANSITIONS", () => {
   it("is non-empty", () => {
-    expect(DEMO_TRANSITIONS.length).toBeGreaterThan(0);
+    expect(STREET_TRANSITIONS.length).toBeGreaterThan(0);
   });
 
   it("no transition's target cell is itself a transition anchor", () => {
@@ -24,8 +24,8 @@ describe("DEMO_TRANSITIONS", () => {
     // immediately re-trigger a transition from the cell the previous one
     // just landed on -- an infinite bounce for as long as the key stays
     // held, never a stable arrival.
-    const anchors = new Set(DEMO_TRANSITIONS.map((t) => `${t.x}|${t.y}|${t.floor}`));
-    for (const t of DEMO_TRANSITIONS) {
+    const anchors = new Set(STREET_TRANSITIONS.map((t) => `${t.x}|${t.y}|${t.floor}`));
+    for (const t of STREET_TRANSITIONS) {
       const targetKey = `${t.targetX}|${t.targetY}|${t.targetFloor}`;
       expect(
         anchors.has(targetKey),

@@ -77,7 +77,7 @@ export function sortDrawablesInPlace(pool: Drawable[]): void {
  * not allocate a whole new `Drawable` to do it (Quentin's direction) via
  * an ad-hoc cast at the call site (Tim's direction: the module that owns
  * `Drawable`'s shape is what should own this capability, not a cast
- * sneaking past it in demo code). `rank`/`stableId` are still immutable
+ * sneaking past it in street code). `rank`/`stableId` are still immutable
  * by construction -- there is no `setRank`/`setStableId`, because neither
  * should ever change after a `Drawable` is built.
  */

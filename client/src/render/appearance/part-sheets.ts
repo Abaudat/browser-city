@@ -46,7 +46,7 @@ function moduleKeyFor(sheet: string): string {
 }
 
 /** Fetches and decodes `sheet` as a CPU-side `ImageBitmap`, with no
- * caching of its own -- `loadPartImage` below and `demo/compare-pipeline-
+ * caching of its own -- `loadPartImage` below and `test-street/compare-pipeline-
  * vs-stack.ts`'s own, entirely separate cache both call this as their
  * `ref-counted-cache.ts` `load`. Throws, naming the path, when `sheet`
  * matches none of the glob patterns above (a defs-authoring mistake, not

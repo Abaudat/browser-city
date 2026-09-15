@@ -1,5 +1,5 @@
 // Story 1.10 (AC5, FR61/FR62): a fixed, deterministic street crowd for
-// the demo scene, proving the real appearance pipeline end to end --
+// the street scene, proving the real appearance pipeline end to end --
 // separate from `fixture.ts`'s own collision-tested world (a crowd this
 // size needs more pavement than the existing, heavily-tested story
 // 1.6-1.9 fixture has room for, and reshaping that shared fixture risks
@@ -252,7 +252,7 @@ function tupleFor(defs: Defs, family: Family, index: number): AppearanceTuple {
   };
 }
 
-/** The demo's fixed street crowd: `ADULT_COUNT` adults (four in a
+/** The street's fixed street crowd: `ADULT_COUNT` adults (four in a
  * sanitation-worker uniform among the rest in civilian dress, FR62),
  * `KID_COUNT` kids (the first two sharing one identical tuple, standing
  * side by side -- FR61's "two citizens can look exactly alike" made

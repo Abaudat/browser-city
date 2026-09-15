@@ -2,7 +2,7 @@
 // 2): the sole place `sort-key.ts`'s comparator output reaches a real
 // display list. Everything here is sprite construction and container
 // wiring, nothing that decides an order or a position -- it stays in
-// `src/render/` (unlike `src/demo/`) because it outlives the demo scene:
+// `src/render/` (unlike `src/test-street/`) because it outlives the street scene:
 // the next story that builds a real, subscribed drawable pool calls this
 // same function.
 

@@ -480,6 +480,25 @@ jobs:
         run: npx playwright install-deps chromium
       - working-directory: client
         run: npm run test:e2e
+      # NFR2's regression gate (story 1.13): the same scripted walk on a
+      # loop, gating p95/max frame *work* -- the whole per-frame CPU cost
+      # (movement, re-sorting, visibility, the crowd's own update and
+      # Pixi's own render, bracketed by ticker priority in
+      # `test-street/scene.ts`), never a wall-clock frame rate, which on a
+      # GPU-less headless runner would be noise and therefore flaky. Runs
+      # after the functional specs on purpose: a functional failure must
+      # be what stops this job, not a perf number. The full ten-minute
+      # soak is `perf-soak.yml`, deliberately not part of this gate.
+      - name: the frame path stays inside its work budget (NFR2, partial)
+        working-directory: client
+        run: npm run test:e2e:perf
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: story-1.13-perf
+          path: client/test-results/story-1.13-perf
+          if-no-files-found: warn
+          retention-days: 7
       # The affordance grammar is a judgement call about what the player
       # sees, and a pixel count is no substitute for looking at it -- the
       # intents spec leaves these behind on every run, pass or fail, so

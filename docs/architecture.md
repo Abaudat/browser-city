@@ -231,8 +231,12 @@ The client's mirror of these addressing, collision, transition and
 ownership rules is a separate TypeScript implementation (NFR30 forbids
 sharing the code): `client/src/world/chunk.ts` (addressing),
 `client/src/world/collision-grid.ts` (collision), `client/src/world/
-transitions.ts` (floor transitions) and `client/src/world/ownership.ts`
-(building/room ownership). Its own test suite consumes the committed
+transitions.ts` (floor transitions), `client/src/world/ownership.ts`
+(building/room ownership) and `client/src/world/world-spec.ts`, which
+mirrors `WorldSpec::build`'s own refusals (overlapping same-kind rects, a
+rect that does not fit the chunk its anchor corner names, a transition
+end that is not standable) so world data is refused before anything
+consumes it, hand-laid or streamed. Its own test suite consumes the committed
 `fixtures/world-conformance.v1.json`, the same file
 `sim/tests/world_conformance.rs` reads, regenerated from `sim::world::
 fixture` by `bounds`'s `regen-world-fixture` binary; every case in that
@@ -275,7 +279,7 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   strict half-open comparisons and no epsilon. Candidates come only from
   the cells the swept body spans, never a row query.
 - `world/**` may not import `pixi.js`, values from `net/` (only
-  `net/bindings` types, type-only) or `demo/`, and may not touch `window`
+  `net/bindings` types, type-only) or `test-street/`, and may not touch `window`
   or `document`; DOM input lives in `client/src/input/`.
 - The server's `FloorCollision` stays tile-granular and never consumes a
   `collider`.
@@ -289,7 +293,7 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   action, no kind. Emission is one injected sink plus one `onIgnored`
   callback; there is no event bus.
 - `src/input/**` may not import `pixi.js`, `net/` (bindings included),
-  `demo/`, or any procedure or interaction module -- enforced by
+  `test-street/`, or any procedure or interaction module -- enforced by
   `client/biome.json`'s override and by
   `scripts/ci/check-input-boundary.sh`.
 - Picking never uses PixiJS hit-testing: one `pointerdown`/`pointermove`
@@ -333,21 +337,35 @@ code under `client/src/world/`, driven by collider data in `defs/`.
 
 `client/src/render/` holds the permanent rendering modules -- the ones
 the next story that builds a real, subscribed drawable pool reaches for.
-`client/src/demo/` holds story 1.6's own demo scene: a committed,
-deterministic fixture, throwaway harness code by design. Imports flow
-demo -> render, never the reverse, so deleting the demo is one directory
-and one import. `sort-key.ts`, `decompose.ts`, `layer-ranks.ts`,
-`layer-table.ts`, `sort-units.ts`, `screen-position.ts` and
-`pixi-order.ts` all live under `render/`; nothing under `demo/` is held
-to the coverage bar the permanent modules are, though it is still
-exercised by real tests (`client/vitest.config.ts`'s coverage
-`include`/`exclude`).
+`client/src/test-street/` holds the one hand-laid scene the client is
+proven against: a committed, deterministic fixture, throwaway harness
+code by design, replaced wholesale by Epic 3's generator. There is never
+more than one such directory. Imports flow test-street -> render/world/
+input, never the reverse (`client/biome.json` enforces it on `render/**`,
+`world/**` and `input/**`), so deleting the street is one directory and
+one import in `main.ts`. `sort-key.ts`, `decompose.ts`, `layer-ranks.ts`,
+`layer-table.ts`, `sort-units.ts`, `screen-position.ts`,
+`floor-stacks.ts` and `pixi-order.ts` all live under `render/`; nothing
+under `test-street/` is held to the coverage bar the permanent modules
+are, though it is still exercised by real tests
+(`client/vitest.config.ts`'s coverage `include`/`exclude`).
 
-A frame draws four passes, in this fixed order, declared even when a pass
-is empty: three flat passes -- ground, ground decals, ground objects --
-followed by one y-sorted pool. A flat pass is never depth-sorted and
-never occludes anything; anything with visible vertical extent, however
-small, belongs in the pool instead (FR123).
+A frame draws four passes per floor, in this fixed order, declared even
+when a pass is empty: three flat passes -- ground, ground decals, ground
+objects -- followed by one y-sorted pool. A flat pass is never
+depth-sorted and never occludes anything; anything with visible vertical
+extent, however small, belongs in the pool instead (FR123).
+
+Each floor gets its own such stack (`render/floor-stacks.ts`), and the
+stacks draw in ascending floor order: every drawable on a higher floor is
+drawn after every drawable on a lower one. That, and nothing else, is how
+two storeys whose screen rects overlap -- a bridge deck over the street it
+spans -- are resolved; floor never enters the sort key (FR124), and no
+z-offset or container trick is used in scene code. The comparator orders
+within one floor's pool only. Content above the player's own floor is
+hidden only where the player is covered by it, through the ownership-keyed
+rule under "Visibility" below, never a floor-specific check in scene
+code.
 
 The pool's sort key is `(y, rank, x, stableId)`, most significant first,
 implemented once in `render/sort-key.ts` and nowhere else -- that
@@ -405,7 +423,7 @@ subtracts `floor * storey_height_px`, and a drawable on a storey above the
 viewer's own must never sort as though it were on that floor because of
 it.
 
-Story 1.6's demo scene reads its sprites straight out of the repo-root
+The test street reads its sprites straight out of the repo-root
 `ModernTileset/` at runtime (`new URL(..., import.meta.url)` asset
 imports), not out of `client/public/`. Any future Pages deploy workflow
 must therefore check out the whole repository for the client build job --

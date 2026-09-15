@@ -11,16 +11,16 @@
 // still passing.
 import { mkdirSync } from "node:fs";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import {
-  DEMO_PROPS,
-  PLAYER_START,
-  SHOP_COUNTER_DEF_ID,
-  TRASH_BIN_DEF_ID,
-} from "../../src/demo/fixture";
 import { KEYBINDINGS_STORAGE_KEY } from "../../src/input/keybindings-storage";
 import type {} from "../../src/net/e2e-hooks";
 import { screenPositionPx } from "../../src/render/screen-position";
-import { committedDefs } from "../unit/demo/demo-world";
+import {
+  PLAYER_START,
+  SHOP_COUNTER_DEF_ID,
+  STREET_PROPS,
+  TRASH_BIN_DEF_ID,
+} from "../../src/test-street/fixture";
+import { committedDefs } from "../unit/test-street/street-world";
 
 const COUNTER_ID = 8n;
 const BIN_ID = 15n;
@@ -42,7 +42,7 @@ const SUBCELLS_PER_CELL = committedDefs().colliderSubcellsPerCell;
 /** One of the fixture's own props, found by id, so a moved prop moves
  * this spec's clicks with it. */
 function propById(id: bigint, expectedDefId: number) {
-  const prop = DEMO_PROPS.find((p) => p.id === id);
+  const prop = STREET_PROPS.find((p) => p.id === id);
   if (!prop || prop.defId !== expectedDefId) {
     throw new Error(`fixture prop ${id} is no longer placed by defs id ${expectedDefId}`);
   }
@@ -75,14 +75,14 @@ async function ready(page: Page): Promise<void> {
 }
 
 function canvasOf(page: Page): Locator {
-  return page.locator("#demo-scene canvas");
+  return page.locator("#test-street canvas");
 }
 
 /** Converts a world pixel to the canvas offset to click, through the
  * scene's own recorded zoom and camera offset. */
 async function canvasOffset(page: Page, worldPx: { x: number; y: number }) {
   const view = await page.evaluate(() => window.__bc?.viewTransform);
-  if (!view) throw new Error("the demo scene never recorded its view transform");
+  if (!view) throw new Error("the street scene never recorded its view transform");
   return { x: worldPx.x * view.zoom + view.offsetX, y: worldPx.y * view.zoom + view.offsetY };
 }
 
@@ -126,8 +126,8 @@ function playerY(page: Page) {
  */
 async function recordCursorChanges(page: Page): Promise<void> {
   await page.evaluate(() => {
-    const canvas = document.querySelector("#demo-scene canvas");
-    if (!(canvas instanceof HTMLElement)) throw new Error("no demo canvas to observe");
+    const canvas = document.querySelector("#test-street canvas");
+    if (!(canvas instanceof HTMLElement)) throw new Error("no street canvas to observe");
     const seen: string[] = [canvas.style.cursor];
     (window as unknown as { __bcCursors: string[] }).__bcCursors = seen;
     new MutationObserver(() => {

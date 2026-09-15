@@ -11,7 +11,7 @@
 // per frame the player has not crossed into a new enclosure or floor
 // (Tim's direction).
 //
-// A caller that needs to observe what this actually wrote (`demo/scene.ts`'s
+// A caller that needs to observe what this actually wrote (`test-street/scene.ts`'s
 // e2e hook) reads it straight back off each member's own `view.visible`/
 // `view.alpha` after `apply`/`applyForce` returns -- never a second,
 // recomputed `VisibilityState` this module could get out of sync with what

@@ -1,8 +1,8 @@
-// The demo scene's Pixi mount -- one of a small, named set of files
+// The street scene's Pixi mount -- one of a small, named set of files
 // allowed to import `pixi.js` (`bootstrap.ts`,
 // `render/pixi-order.ts`/`render/pixi-visibility.ts`, and story 1.10's
 // `render/appearance/composite-canvas.ts`/`appearance-texture.ts` and
-// `demo/citizens-layer.ts`/`demo/compare-pipeline-vs-stack.ts`, each its
+// `test-street/citizens-layer.ts`/`test-street/compare-pipeline-vs-stack.ts`, each its
 // own real-canvas/Pixi adapter). Ordering itself is
 // `render/pixi-order.ts`'s job, visibility is `render/pixi-visibility.
 // ts`'s (story 1.7); this file's whole job is texture loading, sprite
@@ -17,13 +17,23 @@
 // D17: no debug text, no rank numbers, no sort-key readouts on the
 // canvas. This module draws the scene and nothing else.
 
-import { type Application, Assets, Container, Rectangle, Sprite, Texture } from "pixi.js";
+import {
+  type Application,
+  Assets,
+  Container,
+  Rectangle,
+  Sprite,
+  Texture,
+  UPDATE_PRIORITY,
+} from "pixi.js";
 import type { Defs } from "../defs/types";
 import type { IgnoredSink, IntentSink } from "../input/intent";
 import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
+import type { AppearanceTuple } from "../render/appearance/composite";
+import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName } from "../render/layer-table";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
@@ -50,14 +60,14 @@ import {
   updatePlayerDrawable,
 } from "./drawables";
 import {
-  DEMO_BUILDING_AREAS,
-  DEMO_GROUND_TILES,
-  DEMO_ROOM_AREAS,
-  DEMO_TRANSITIONS,
-  type DemoGroundTiles,
-  demoColliderSources,
-  demoPlacedRows,
   PLAYER_START,
+  STREET_BUILDING_AREAS,
+  STREET_GROUND_TILES,
+  STREET_ROOM_AREAS,
+  STREET_TRANSITIONS,
+  type StreetGroundTiles,
+  streetColliderSources,
+  streetPlacedRows,
 } from "./fixture";
 
 // Each `new URL(<literal>, import.meta.url)` call below must stay a
@@ -140,6 +150,20 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Two_Seats_Grey_Bench_Frontal_1.png",
     import.meta.url,
   ).href,
+  // Story 1.13's footbridge: a concrete deck (the same city pavement
+  // tile the street below it is paved with, repeated per deck cell) and
+  // a flight of steps at each end. Real LimeZu art, no new PNGs.
+  bridgeDeck: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png",
+    import.meta.url,
+  ).href,
+  // One cell wide (16x48), so a flight of steps on a one-cell footprint
+  // overhangs upward like every other tall prop and never sideways over
+  // the deck it lands on.
+  bridgeStairs: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Small_2.png",
+    import.meta.url,
+  ).href,
   subwayWall: new URL(
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Lilac_Tile_1_Vers_1.png",
     import.meta.url,
@@ -211,7 +235,7 @@ const HIGHLIGHT_BLEND_MODE = "add" as const;
  * literal number. */
 const GROUND_LAYER_CODE = layerCodeByName("objects");
 
-export interface MountDemoSceneOptions {
+export interface MountStreetSceneOptions {
   /** Story 1.10: the fetched, parsed defs document -- needed to build the
    * street crowd's real appearance textures (`citizens-layer.ts`) and, via
    * `citizens.ts`, the tuples themselves. */
@@ -227,7 +251,7 @@ export interface MountDemoSceneOptions {
    * never a literal in this file. */
   readonly movementConfig: MovementConfig;
   /** Real `defs/objects` footprints, colliders and FR148 reach rects,
-   * keyed by def id (`world/object-defs.ts`), so a prop the demo places
+   * keyed by def id (`world/object-defs.ts`), so a prop the street places
    * by `defId` uses what `defs/` declares for it rather than a restated
    * rect. */
   readonly objectDefs: ReadonlyMap<number, ObjectSource>;
@@ -242,7 +266,12 @@ export interface MountDemoSceneOptions {
    * current continuous position (story 1.8's e2e proof that movement is
    * client-side and immediate, FR137) -- unlike `onOrderChange`, this is
    * polled every frame on purpose. */
-  readonly onPlayerMove?: (x: number, y: number) => void;
+  readonly onPlayerMove?: (x: number, y: number, floor: number) => void;
+  /** Story 1.13 (NFR2): how long this scene's own ticker callback took,
+   * in ms, every frame it runs -- the frame *work* the perf harness
+   * gates on, never a rAF interval. One call per frame into a sink that
+   * does nothing unless a perf run has asked for samples. */
+  readonly onFrameWork?: (ms: number) => void;
   /** Called once at mount and then every time visibility is actually
    * re-applied (story 1.7's e2e proof, `enclosure.spec.ts`) -- a map from
    * decimal `stableId` string to its current FR120/FR121/FR122 state,
@@ -289,10 +318,22 @@ export interface MountDemoSceneOptions {
    * purpose: one falling back to `DEFAULT_BINDINGS` would silently ignore
    * what the player had set. */
   readonly keyboard: KeyboardState;
+  /** Story 1.13: starts the street crowd's own walk-cycle ticker paused
+   * -- every citizen stays at its initial, fixed-fixture pose, forever,
+   * rather than animating. Exists solely so `test-street.spec.ts`'s
+   * `toHaveScreenshot` checks have a deterministic frame to compare: the
+   * crowd's own animation state otherwise depends on real wall-clock
+   * timing between mount and screenshot, which no baseline could ever
+   * match twice. Absent (or `false`) means the crowd walks normally. */
+  readonly startWithCrowdFrozen?: boolean;
 }
 
-export interface DemoSceneHandle {
+export interface StreetSceneHandle {
   readonly app: Application;
+  /** The player's own appearance tuple, as composited at mount (FR61) --
+   * `main.ts` wires its DEV-only `window.__bc` hook against this, the
+   * same way it does for the crowd's own texture identities. */
+  readonly playerAppearance: AppearanceTuple;
   getRenderOrder(): readonly bigint[];
   /** The keyboard this scene is actually driven by -- the caller's own
    * instance when it supplied one. */
@@ -453,7 +494,7 @@ interface PoolEntry extends OrderedMember<PropDrawable>, VisibilityMember<PropDr
 }
 
 /** Picks a wall drawable's real texture from its own declared
- * `wallOrientation` (`demo/fixture.ts`'s `DemoProp.wallOrientation`,
+ * `wallOrientation` (`test-street/fixture.ts`'s `StreetProp.wallOrientation`,
  * carried onto `PropDrawable`) -- never from a decomposed cell's own
  * footprint aspect ratio (Artie's cycle-2 finding: a one-cell-wide
  * *front* wall pier and a one-cell side wall are both `1x1` after
@@ -496,7 +537,7 @@ function stateFromWrite(write: SpriteVisibilityWrite): VisibilityState {
 }
 
 /**
- * Mounts the committed demo scene (`fixture.ts`) into `app`, wires
+ * Mounts the committed street scene (`fixture.ts`) into `app`, wires
  * keyboard movement and floor transitions for the player, keeps the pool
  * container's children ordered by `render/pixi-order.ts`'s
  * `applyDepthOrder`, and keeps every member's FR120/FR121/FR122 state
@@ -507,10 +548,10 @@ function stateFromWrite(write: SpriteVisibilityWrite): VisibilityState {
  * re-applies visibility only when the player's own enclosure/floor
  * changes -- a street of static props costs nothing per frame either way.
  */
-export async function mountDemoScene(
+export async function mountStreetScene(
   app: Application,
-  options: MountDemoSceneOptions,
-): Promise<DemoSceneHandle> {
+  options: MountStreetSceneOptions,
+): Promise<StreetSceneHandle> {
   const {
     defs,
     tileSizePx,
@@ -522,13 +563,16 @@ export async function mountDemoScene(
     windowDefIds,
     onOrderChange,
     onPlayerMove,
+    onFrameWork,
     onVisibilityChange,
     onMasksChecked,
     onIntent,
     onIgnored,
     onViewTransform,
     onHighlightChange,
+    startWithCrowdFrozen,
   } = options;
+  const crowdFrozen = startWithCrowdFrozen ?? false;
 
   const rawTextures = new Map<string, Texture>();
   await Promise.all(
@@ -548,33 +592,29 @@ export async function mountDemoScene(
   const world = new Container();
   app.stage.addChild(world);
 
-  // Four passes, declared in order even while empty (Tim's direction):
-  // three flat, then the y-sorted pool.
-  const groundPass = new Container();
-  const groundDecalPass = new Container();
-  const groundObjectPass = new Container();
-  const poolContainer = new Container();
-  poolContainer.sortableChildren = false; // the comparator is the only ordering authority
-  world.addChild(groundPass, groundDecalPass, groundObjectPass, poolContainer);
+  // Story 1.13 (Tim's direction): one four-pass stack per floor -- three
+  // flat passes then the y-sorted pool, declared in order even while
+  // empty -- with the stacks themselves drawn in ascending floor order.
+  // That is what lets a bridge deck on floor 1 sit over the street it
+  // spans without floor ever entering the FR123 sort key.
+  const stacks = new FloorStacks(world);
 
-  // Story 1.7: one container per distinct floor among the ground-tile
-  // groups (Tim's direction) -- toggled as a unit through the same
-  // `VisibilityApplier` the pool goes through, so a culled floor's flat
-  // passes are culled exactly as completely as its pool sprites are,
-  // never a second rule.
+  // Story 1.7: the flat ground pass of each floor's own stack is toggled
+  // as a unit through the same `VisibilityApplier` the pool goes through,
+  // so a culled floor's flat passes are culled exactly as completely as
+  // its pool sprites are, never a second rule.
   const groundContainersByFloor = new Map<number, Container>();
   function groundContainerFor(floor: number): Container {
     let container = groundContainersByFloor.get(floor);
     if (!container) {
-      container = new Container();
+      container = stacks.stackFor(floor).ground;
       groundContainersByFloor.set(floor, container);
-      groundPass.addChild(container);
     }
     return container;
   }
 
   const groundSprites: Sprite[] = [];
-  for (const tiles of DEMO_GROUND_TILES) {
+  for (const tiles of STREET_GROUND_TILES) {
     const groundTexture = textureFor(tiles.assetKey, textures);
     const container = groundContainerFor(tiles.floor);
     const offset = floorOffsetPx(tiles.floor, storeyHeightPx);
@@ -592,8 +632,8 @@ export async function mountDemoScene(
     }
   }
 
-  const ownership = new OwnershipIndex(DEMO_BUILDING_AREAS, DEMO_ROOM_AREAS);
-  const transitions = new TransitionIndex(DEMO_TRANSITIONS);
+  const ownership = new OwnershipIndex(STREET_BUILDING_AREAS, STREET_ROOM_AREAS);
+  const transitions = new TransitionIndex(STREET_TRANSITIONS);
 
   const propDrawables = buildPropDrawables({
     rankOf: (layer) => rankOf(layerCodeByName(layer)),
@@ -646,10 +686,52 @@ export async function mountDemoScene(
     assetKey: "player",
   };
   const members: PoolEntry[] = [...entries, playerEntry];
-  for (const m of members) poolContainer.addChild(m.view);
 
+  // One pool per floor (`FloorStacks`), so the comparator only ever
+  // orders drawables that share a floor and the stacks themselves settle
+  // what covers what between floors.
+  const membersByFloor = new Map<number, PoolEntry[]>();
+  function poolMembersOf(floor: number): PoolEntry[] {
+    let list = membersByFloor.get(floor);
+    if (!list) {
+      list = [];
+      membersByFloor.set(floor, list);
+      stacks.stackFor(floor);
+    }
+    return list;
+  }
+  for (const m of members) poolMembersOf(m.drawable.floor).push(m);
+
+  /** The order every floor's pool is in, concatenated ascending -- what
+   * `window.__bc.renderOrder` reports and what the golden pins. Rebuilt
+   * in place, never reallocated. */
   const renderOrder: bigint[] = [];
-  applyDepthOrder(poolContainer, members, renderOrder);
+  const orderByFloor = new Map<number, bigint[]>();
+
+  function reorderFloor(floor: number): void {
+    const list = membersByFloor.get(floor);
+    if (!list) return;
+    let order = orderByFloor.get(floor);
+    if (!order) {
+      order = [];
+      orderByFloor.set(floor, order);
+    }
+    applyDepthOrder(stacks.stackFor(floor).pool, list, order);
+  }
+
+  function rebuildRenderOrder(): void {
+    renderOrder.length = 0;
+    for (const floor of stacks.floors()) {
+      for (const id of orderByFloor.get(floor) ?? []) renderOrder.push(id);
+    }
+  }
+
+  function reorderAll(): void {
+    for (const floor of stacks.floors()) reorderFloor(floor);
+    rebuildRenderOrder();
+  }
+
+  reorderAll();
   onOrderChange?.(renderOrder);
 
   // `member.view.height` is the sprite's own local (unscaled) pixel
@@ -720,7 +802,7 @@ export async function mountDemoScene(
 
   // The derived indexes: real `defs/objects` footprints, colliders and
   // FR148 reach rects (`objectDefs`, resolved from the fetched document
-  // in `main.ts`) plus the demo's own walls and world boundary, fed in as
+  // in `main.ts`) plus the street's own walls and world boundary, fed in as
   // `PlacedObject`-shaped rows through the one `WorldIndex.insert` that
   // feeds both the collision grid and the footprint index -- exactly the
   // shape a later chunk-streaming story's `onInsert` will feed, just
@@ -732,7 +814,7 @@ export async function mountDemoScene(
   // the part of a tall prop drawn over the cells above it still finds
   // that prop: our sprites are bottom-centre anchored, so a 16x32 bin on
   // a 1x1 footprint draws a whole cell up into the row behind it.
-  const placedRows = demoPlacedRows();
+  const placedRows = streetPlacedRows();
   const defIdByObjectId = new Map(placedRows.map((row) => [row.objectId, row.defId]));
   const overhangByDefId = new Map<number, { up: number; side: number }>();
   for (const entry of entries) {
@@ -749,7 +831,7 @@ export async function mountDemoScene(
   }
 
   const objectSources = new Map<number, ObjectSource>(
-    [...objectDefs, ...demoColliderSources(movementConfig.subcellsPerCell)].map(
+    [...objectDefs, ...streetColliderSources(movementConfig.subcellsPerCell)].map(
       ([defId, source]) => {
         const overhang = overhangByDefId.get(defId);
         return [
@@ -862,7 +944,7 @@ export async function mountDemoScene(
   applyVisibilityFor(lastCellX, lastCellY, walk.floor, true);
   refreshHiddenObjects();
 
-  onPlayerMove?.(walk.x, walk.y);
+  onPlayerMove?.(walk.x, walk.y, walk.floor);
 
   const { keyboard } = options;
   const detachKeyboard = attachKeyboard(keyboard);
@@ -988,21 +1070,40 @@ export async function mountDemoScene(
     onHighlightChange: setHighlight,
   });
 
+  // NFR2's measurement point: the scene's own CPU work for the *whole*
+  // frame, not one system's callback (Quentin/Tim's direction, cycle 1).
+  // Pixi's own `Application` renders through a `TickerPlugin` listener
+  // registered at `UPDATE_PRIORITY.LOW` (confirmed against pixi.js's own
+  // source, `app/TickerPlugin.js`); every other listener this scene adds
+  // below defaults to `NORMAL`, which runs before it. So a listener at
+  // `INTERACTION` (higher than everything) marks the start, and one at
+  // `UTILITY` (lower than `LOW`, so it runs after the render call
+  // returns) marks the end -- between them sits movement, re-sorting,
+  // visibility, the crowd's own update and the render itself: the whole
+  // per-frame cost this app pays, in one pair of `performance.now()`
+  // calls that allocate nothing and cost nothing measurable on their own.
+  let frameWorkStartMs = 0;
+  app.ticker.add(
+    () => {
+      frameWorkStartMs = performance.now();
+    },
+    undefined,
+    UPDATE_PRIORITY.INTERACTION,
+  );
+
   app.ticker.add((ticker) => {
+    tick(ticker.deltaMS);
+  });
+
+  function tick(deltaMS: number): void {
     const direction = keyboard.direction();
     if (direction.x === 0 && direction.y === 0) return;
 
     const before = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
-    walk = stepAndTransition(
-      walk,
-      direction,
-      ticker.deltaMS,
-      worldIndex,
-      movementConfig,
-      transitions,
-    );
+    const floorBefore = walk.floor;
+    walk = stepAndTransition(walk, direction, deltaMS, worldIndex, movementConfig, transitions);
 
-    onPlayerMove?.(walk.x, walk.y);
+    onPlayerMove?.(walk.x, walk.y, walk.floor);
 
     updatePlayerDrawable(playerDrawable, walk.x, walk.y, walk.floor);
     positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, "player");
@@ -1010,11 +1111,32 @@ export async function mountDemoScene(
     // Only re-sort when the player's own sort key actually moved to a
     // new sub-tile unit (Tim's direction): a street of static props
     // costs nothing per frame.
-    const after = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
-    if (after.x !== before.x || after.y !== before.y) {
-      applyDepthOrder(poolContainer, members, renderOrder);
+    // A floor transition moves the player between two pools -- a rare
+    // event, never the per-frame path -- so its own floor's pool and the
+    // one it left are both re-sorted, which is also what re-parents the
+    // player's sprite into the stack it now belongs to.
+    if (walk.floor !== floorBefore) {
+      const leaving = membersByFloor.get(floorBefore);
+      if (leaving) {
+        const index = leaving.indexOf(playerEntry);
+        if (index >= 0) leaving.splice(index, 1);
+      }
+      poolMembersOf(walk.floor).push(playerEntry);
+      reorderFloor(floorBefore);
+      reorderFloor(walk.floor);
+      rebuildRenderOrder();
       reapplyHighlight();
       onOrderChange?.(renderOrder);
+    } else {
+      const after = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
+      if (after.x !== before.x || after.y !== before.y) {
+        // Only the player's own floor can have changed order: every
+        // other member of every other pool is static.
+        reorderFloor(walk.floor);
+        rebuildRenderOrder();
+        reapplyHighlight();
+        onOrderChange?.(renderOrder);
+      }
     }
 
     // Ownership is looked up only when the player's own cell actually
@@ -1035,7 +1157,7 @@ export async function mountDemoScene(
     // not only when the player enters a new cell. It is still an event --
     // a frame where nothing moved returns above and never reaches here.
     pointer.refresh();
-  });
+  }
 
   // Story 1.10: the street crowd, a second, additive layer under `world`
   // -- never part of `members`/`poolContainer` (see `citizens.ts`'s own
@@ -1045,7 +1167,7 @@ export async function mountDemoScene(
   // (`onOrderChange`/`onPlayerMove`/`onVisibilityChange`/
   // `onMasksChecked`, and the keyboard itself) has already fired -- those
   // all run synchronously, in this same function body, before this
-  // `await`; only `mountDemoScene`'s own promise (`onViewTransform`
+  // `await`; only `mountStreetScene`'s own promise (`onViewTransform`
   // included, deliberately fired only once, below) waits on the crowd's
   // own network-bound texture loads. The camera fit above already sized
   // the canvas to the pre-crowd content; the crowd needs its own second,
@@ -1074,11 +1196,30 @@ export async function mountDemoScene(
   // ticking -- unlike the player's own ticker above, this must never
   // early-return while the player stands still, so it is a second,
   // independent `app.ticker.add` registration rather than folded into
-  // the one above.
-  app.ticker.add((ticker) => citizensLayer.update(ticker.deltaMS));
+  // the one above. Still runs before the render (`NORMAL`, the default,
+  // is above the render's own `LOW`), so it stays inside the frame-work
+  // window the two listeners above bound. `crowdFrozen` (story 1.13,
+  // `startWithCrowdFrozen`) is the one exception: a screenshot test needs
+  // every citizen pinned at its initial pose, never this scene's own
+  // concern otherwise.
+  app.ticker.add((ticker) => {
+    if (!crowdFrozen) citizensLayer.update(ticker.deltaMS);
+  });
+
+  // The frame-work window's own closing bracket: below the render's own
+  // `LOW` priority, so this always runs after `app.render()` has
+  // returned for the frame just drawn.
+  app.ticker.add(
+    () => {
+      onFrameWork?.(performance.now() - frameWorkStartMs);
+    },
+    undefined,
+    UPDATE_PRIORITY.UTILITY,
+  );
 
   return {
     app,
+    playerAppearance: playerTuple,
     getRenderOrder: () => renderOrder,
     keyboard,
     citizensLayer,
@@ -1090,6 +1231,6 @@ export async function mountDemoScene(
   };
 }
 
-// `DemoGroundTiles` is re-exported for callers (tests) that iterate
-// `DEMO_GROUND_TILES` without importing `fixture.ts` a second time.
-export type { DemoGroundTiles };
+// `StreetGroundTiles` is re-exported for callers (tests) that iterate
+// `STREET_GROUND_TILES` without importing `fixture.ts` a second time.
+export type { StreetGroundTiles };

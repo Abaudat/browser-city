@@ -1,9 +1,9 @@
-// `demo/scene.ts`'s own pure helpers, tested directly rather than only
+// `test-street/scene.ts`'s own pure helpers, tested directly rather than only
 // through the slower e2e suite (Artie's cycle-2 direction: a unit case
 // for a 1x1 near-side wall is what would have caught shop B's front wall
 // dropping to the flush side-wall tile).
 import { describe, expect, it } from "vitest";
-import { wallAssetOf } from "../../../src/demo/scene";
+import { wallAssetOf } from "../../../src/test-street/scene";
 
 describe("wallAssetOf", () => {
   it("picks the tall swatch for a horizontal (front/back) wall, regardless of how narrow this particular cut is", () => {

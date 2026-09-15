@@ -28,3 +28,14 @@ client/src/net/bindings/** linguist-generated
 # regeneration.
 server/sim/src/generated/defs.rs linguist-generated text eol=lf
 client/public/defs/defs.json linguist-generated text eol=lf
+
+# Client sources: `npm run lint` is `biome check`, which formats to LF
+# (Biome's own default) and is the exact check CI runs. On a CRLF working
+# copy every file reports a format error, the 20-diagnostic cap truncates
+# the real findings away behind them, and the check becomes unusable
+# locally -- which is how a formatting error reaches CI at all. Forcing LF
+# here makes the local run and the CI run the same run.
+client/**/*.ts text eol=lf
+client/**/*.mjs text eol=lf
+client/**/*.json text eol=lf
+client/**/*.html text eol=lf

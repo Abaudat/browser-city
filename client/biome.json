@@ -33,7 +33,7 @@
     {
       "includes": [
         "src/render/**",
-        "!src/render/bootstrap.ts",
+        "!src/render/floor-stacks.ts",
         "!src/render/pixi-order.ts",
         "!src/render/pixi-visibility.ts",
         "!src/render/appearance/composite-canvas.ts",
@@ -46,7 +46,7 @@
             "noRestrictedImports": {
               "level": "error",
               "options": {
-                "patterns": [{ "group": ["pixi.js"] }]
+                "patterns": [{ "group": ["pixi.js", "../test-street/*", "../test-street/**"] }]
               }
             }
           }
@@ -63,7 +63,13 @@
               "options": {
                 "patterns": [
                   {
-                    "group": ["pixi.js", "../net/*", "../net/**", "../demo/*", "../demo/**"]
+                    "group": [
+                      "pixi.js",
+                      "../net/*",
+                      "../net/**",
+                      "../test-street/*",
+                      "../test-street/**"
+                    ]
                   }
                 ]
               }
@@ -81,8 +87,8 @@
               "level": "error",
               "options": {
                 "deniedGlobals": {
-                  "window": "world/** is the pure movement/collision layer -- DOM access belongs in src/input/ or src/demo/",
-                  "document": "world/** is the pure movement/collision layer -- DOM access belongs in src/input/ or src/demo/"
+                  "window": "world/** is the pure movement/collision layer -- DOM access belongs in src/input/ or src/test-street/",
+                  "document": "world/** is the pure movement/collision layer -- DOM access belongs in src/input/ or src/test-street/"
                 }
               }
             },
@@ -91,7 +97,13 @@
               "options": {
                 "patterns": [
                   {
-                    "group": ["pixi.js", "../net/*", "!../net/bindings/types", "../demo/*"]
+                    "group": [
+                      "pixi.js",
+                      "../net/*",
+                      "!../net/bindings/types",
+                      "../test-street/*",
+                      "../test-street/**"
+                    ]
                   }
                 ]
               }

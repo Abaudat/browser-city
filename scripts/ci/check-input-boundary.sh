@@ -25,16 +25,16 @@ SRC_DIR="${1:-"$REPO_ROOT/client/src/input"}"
 # Matches the module specifier of a static `import ... from "…"`, a
 # side-effect `import "…"`, a type-only import, or a dynamic `import("…")`
 # whose path names any of: `net/` (bindings and connection included),
-# `demo/`, a `procedure`/`procedures` module, an `interaction`/
+# `test-street/`, a `procedure`/`procedures` module, an `interaction`/
 # `interactions` module, or `pixi.js`. Deliberately matches the *path*,
 # not an identifier, so a local variable called `interaction` is never a
 # false positive.
-PATTERN='(from|import)[[:space:]]*\(?[[:space:]]*["'"'"'][^"'"'"']*((^|/)(net|demo|procedure|procedures|interaction|interactions)(/|["'"'"'])|pixi\.js)'
+PATTERN='(from|import)[[:space:]]*\(?[[:space:]]*["'"'"'][^"'"'"']*((^|/)(net|test-street|procedure|procedures|interaction|interactions)(/|["'"'"'])|pixi\.js)'
 
 MATCHES="$(grep -rnE "$PATTERN" "$SRC_DIR" --include='*.ts' 2>/dev/null || true)"
 
 if [ -n "$MATCHES" ]; then
-  echo "check-input-boundary: FAIL -- client/src/input/ must not import a procedure, an interaction module, net/ or demo/ (FR148: the input layer never encodes what an intent means):" >&2
+  echo "check-input-boundary: FAIL -- client/src/input/ must not import a procedure, an interaction module, net/ or test-street/ (FR148: the input layer never encodes what an intent means):" >&2
   echo "$MATCHES" >&2
   exit 1
 fi
@@ -47,5 +47,5 @@ if [ -f "$BIOME_CONFIG" ] && ! grep -q '"src/input/\*\*"' "$BIOME_CONFIG"; then
   exit 1
 fi
 
-echo "check-input-boundary: client/src/input/ imports no procedure, interaction, net/ or demo/ module (FR148)" >&2
+echo "check-input-boundary: client/src/input/ imports no procedure, interaction, net/ or test-street/ module (FR148)" >&2
 exit 0

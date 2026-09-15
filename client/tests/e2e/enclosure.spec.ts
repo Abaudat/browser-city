@@ -1,10 +1,10 @@
 // Story 1.7's one e2e spec (Quentin's direction): mounting the committed
-// demo terrace through the real adapter (`src/demo/scene.ts`) and reading
+// street terrace through the real adapter (`src/test-street/scene.ts`) and reading
 // FR120/FR121/FR122's visibility state back out of the existing DEV-only
 // `window.__bc` hook proves the real, mounted `VisibilityApplier` reaches
 // the same states `render/visibility.ts`'s pure `computeVisibility`
 // predicts. It compares against the exact same goldens
-// `tests/unit/demo/drawables.test.ts` asserts from the pure functions
+// `tests/unit/test-street/drawables.test.ts` asserts from the pure functions
 // directly (Quentin's direction, cycle 2) -- this spec never re-derives a
 // state on its own, and `window.__bc.visibility`/`visibilityAlpha` are
 // built in `scene.ts` from each pool member's own real, just-written
@@ -22,20 +22,20 @@
 // direction) -- the walk always goes through the real keyboard and the
 // real `world/transitions.ts` port.
 import { expect, type Page, test } from "@playwright/test";
+import type {} from "../../src/net/e2e-hooks";
 import {
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
   PLAYER_START,
   STREET_EXIT_X,
   STREET_EXIT_Y,
-} from "../../src/demo/fixture";
-import type {} from "../../src/net/e2e-hooks";
-import { lamppostRestY } from "../unit/demo/demo-world";
+} from "../../src/test-street/fixture";
 import {
-  DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE,
-  DEMO_VISIBILITY_AT_REST_IN_SHOP_A,
-  DEMO_VISIBILITY_ON_SUBWAY_LANDING,
-} from "../unit/demo/golden";
+  STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE,
+  STREET_VISIBILITY_AT_REST_IN_SHOP_A,
+  STREET_VISIBILITY_ON_SUBWAY_LANDING,
+} from "../unit/test-street/golden";
+import { lamppostRestY } from "../unit/test-street/street-world";
 
 async function waitForSceneReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
@@ -91,7 +91,7 @@ test.describe("story 1.7: enclosure visibility", () => {
     await page.goto("/");
     await waitForSceneReady(page);
 
-    expect(await currentVisibility(page)).toEqual(DEMO_VISIBILITY_AT_REST_IN_SHOP_A);
+    expect(await currentVisibility(page)).toEqual(STREET_VISIBILITY_AT_REST_IN_SHOP_A);
 
     // FR121's "no masking or aperture system" acceptance criterion,
     // proven against the real, mounted display list (Tim's direction) --
@@ -142,7 +142,7 @@ test.describe("story 1.7: enclosure visibility", () => {
       timeout: 15_000,
     });
 
-    expect(await currentVisibility(page)).toEqual(DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE);
+    expect(await currentVisibility(page)).toEqual(STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE);
   });
 
   test("entering the subway culls the street and reveals the platform; leaving it reverses that", async ({
@@ -167,7 +167,7 @@ test.describe("story 1.7: enclosure visibility", () => {
     });
 
     const platformVisibility = await currentVisibility(page);
-    expect(platformVisibility).toEqual(DEMO_VISIBILITY_ON_SUBWAY_LANDING);
+    expect(platformVisibility).toEqual(STREET_VISIBILITY_ON_SUBWAY_LANDING);
     // FR122's flat-pass culling, the reverse of the street shot above:
     // the subway's own ground pass is now visible, the street's is not.
     expect(platformVisibility["ground:-1"]).toBe("normal");
@@ -187,6 +187,6 @@ test.describe("story 1.7: enclosure visibility", () => {
     // plain pavement) -- `computeVisibility` only ever reads the viewer's
     // own `(floor, buildingId)`, never its exact position, so this is the
     // identical state the "walked out onto the pavement" golden above is.
-    expect(await currentVisibility(page)).toEqual(DEMO_VISIBILITY_AT_LAMPPOST_OUTSIDE);
+    expect(await currentVisibility(page)).toEqual(STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE);
   });
 });

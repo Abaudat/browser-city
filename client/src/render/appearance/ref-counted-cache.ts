@@ -3,7 +3,7 @@
 // browser-specific), so this is testable with fake async functions.
 // `part-sheets.ts` is the one production instance (`load` resolves and
 // fetches a vendor sheet, `close` calls `ImageBitmap.close()`);
-// `demo/compare-pipeline-vs-stack.ts` builds its own, entirely separate
+// `test-street/compare-pipeline-vs-stack.ts` builds its own, entirely separate
 // instance over the same `load` function, so the e2e harness never shares
 // cache state with the production pipeline it is checking.
 

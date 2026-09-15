@@ -13,16 +13,16 @@
 //      references, never the wider catalogue eagerly.
 import { expect, test } from "@playwright/test";
 import type { Defs } from "../../src/defs/types";
+import type {} from "../../src/net/e2e-hooks";
+import { resolveUniform } from "../../src/render/appearance/composite";
+import { resolveLayers } from "../../src/render/appearance/resolve-layers";
 import {
   buildCitizenFixtures,
   buildPlayerAppearanceTuple,
   buildUniformedWalkerFixture,
   buildWalkerFixture,
-} from "../../src/demo/citizens";
-import type {} from "../../src/net/e2e-hooks";
-import { resolveUniform } from "../../src/render/appearance/composite";
-import { resolveLayers } from "../../src/render/appearance/resolve-layers";
-import { committedDefs } from "../unit/demo/demo-world";
+} from "../../src/test-street/citizens";
+import { committedDefs } from "../unit/test-street/street-world";
 import { ready } from "./appearance-test-support";
 
 test.describe("the real, mounted appearance pipeline", () => {

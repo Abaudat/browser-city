@@ -9,7 +9,7 @@
 //
 // There is still no live `layer_code` subscription in this story (Tim's
 // scope call) -- this table is what a caller reaches for until one
-// exists, and it is what the demo scene resolves ranks through
+// exists, and it is what the street scene resolves ranks through
 // (`layer-ranks.ts`'s `buildLayerRankTable`), never a second set of
 // literals next to it.
 
@@ -40,7 +40,7 @@ export const DEPRECATED_LAYER_CODES: ReadonlySet<number> = new Set(
 );
 
 /** Looks up a live (non-deprecated) code by its layer name -- what a
- * caller building drawables from a name-keyed source (the demo fixture)
+ * caller building drawables from a name-keyed source (the street fixture)
  * uses instead of typing a code number by hand. Throws for an unknown or
  * deprecated name, same refusal posture as `layer-ranks.ts`'s
  * `resolveRank`. */

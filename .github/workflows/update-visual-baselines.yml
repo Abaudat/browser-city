@@ -1,0 +1,78 @@
+name: update-visual-baselines
+
+# Regenerates `client/tests/e2e/test-street.spec.ts-snapshots/*.png` on the
+# CI image (story 1.13, Quentin's direction: baselines must be generated
+# on linux chromium, never on a contributor's own machine, whose font
+# hinting and GPU rasteriser render different pixels than CI's).
+#
+# `workflow_dispatch` only: this pushes a commit, so it only ever runs on
+# a human's explicit say-so, against whatever branch they name. Never
+# triggered by a PR event -- a baseline update is a deliberate act, not
+# something that happens as a side effect of pushing code.
+#
+# Usage: `gh workflow run update-visual-baselines.yml --ref <branch>`, or
+# the Actions tab's "Run workflow" button, against the branch whose
+# baselines need updating.
+#
+# Never dispatch this against `master`: it pushes straight to whatever
+# ref it runs on, with no PR, no review and no CI, which would overwrite
+# exactly the pictures that are supposed to block a regression. The
+# first step below refuses that ref outright rather than relying only on
+# branch protection to catch it. Refuses loudly (fails the job), never
+# silently skips, so a mistaken dispatch is visible as a failure.
+#
+# A commit this workflow pushes, using the default `GITHUB_TOKEN`, does
+# not itself trigger `ci` on the branch it lands on (GitHub does not
+# chain workflow runs started by `GITHUB_TOKEN` by default) -- the
+# branch's head is left with no fresh `ci` result until something else
+# pushes to it again.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    name: update
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: refuse to run against master
+        if: github.ref == 'refs/heads/master'
+        run: |
+          echo "::error::update-visual-baselines must never be dispatched against master -- it pushes straight to whatever ref it runs on, with no PR or review. Dispatch it against the feature branch whose baselines need updating instead." >&2
+          exit 1
+      # The street's sprites come from the repo-root `ModernTileset/`, so
+      # this needs the whole repository, never a sparse checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+      - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: client/.nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - working-directory: client
+        run: npm ci
+      - working-directory: client
+        run: npx playwright install --with-deps chromium
+      - working-directory: client
+        run: npx playwright test tests/e2e/test-street.spec.ts --project=chromium --update-snapshots
+      - name: commit any changed or new baselines
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add 'client/tests/e2e/test-street.spec.ts-snapshots/**'
+          if git diff --cached --quiet; then
+            echo "update-visual-baselines: no baseline changed" >&2
+            exit 0
+          fi
+          git commit -m "Update visual baselines (test-street.spec.ts, linux chromium)"
+          git push

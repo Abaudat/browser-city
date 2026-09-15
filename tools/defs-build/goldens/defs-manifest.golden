@@ -3,6 +3,9 @@ object 2 park_bench
 object 3 shop_counter
 object 4 lamppost
 object 5 shop_window
+object 6 wall_segment
+object 7 bridge_deck
+object 8 foot_stairs
 item 1 bottle
 item 2 recycled_glass
 recipe 1 bottle_recycling

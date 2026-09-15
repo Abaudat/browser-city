@@ -1,18 +1,19 @@
 import { Application } from "pixi.js";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
-import { mountDemoScene } from "./demo/scene";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
 import { connect } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
   recordAppearanceTextureIdsForE2e,
+  recordFrameWorkForE2e,
   recordHighlightForE2e,
   recordIgnoredIntentForE2e,
   recordIntentForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
+  recordPlayerAppearanceForE2e,
   recordPlayerPositionForE2e,
   recordRenderOrderForE2e,
   recordViewTransformForE2e,
@@ -22,6 +23,7 @@ import type { PingObservation } from "./net/observe-ping";
 import { bootstrapRenderer } from "./render/bootstrap";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
+import { mountStreetScene } from "./test-street/scene";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, windowDefIds } from "./world/object-defs";
@@ -34,7 +36,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const renderer = await bootstrapRenderer(mount);
+  const renderer = bootstrapRenderer(mount);
 
   function onPing(observation: PingObservation): void {
     renderer.showPing(observation);
@@ -44,18 +46,20 @@ async function main(): Promise<void> {
   connect(onPing);
 
   try {
-    await startDemoScene();
+    await startStreetScene();
   } catch (error: unknown) {
-    // NFR42: the demo scene degrades to not-drawing, never takes the ping
+    // NFR42: the street scene degrades to not-drawing, never takes the ping
     // round trip down with it.
-    console.error("[main] demo scene failed to start", error);
+    console.error("[main] street scene failed to start", error);
   }
 }
 
 /**
- * Story 1.6's demo scene: a second, independent Pixi application from the
- * ping demo above. Never blocks `main()` on failure (NFR42) -- a broken
- * demo mount must never take the ping round trip down with it.
+ * The street scene: the page's one and only Pixi `Application` (Tim's
+ * direction, story 1.13) -- the ping indicator above is plain DOM and
+ * shares no GPU context or ticker with this. Never blocks `main()` on
+ * failure (NFR42) -- a broken street mount must never take the ping round
+ * trip down with it.
  *
  * The rank table comes from `render/layer-table.ts` -- the one
  * client-side mirror of `sim::codes::layer`, guarded against drift by
@@ -64,10 +68,10 @@ async function main(): Promise<void> {
  * subscription in this story (Tim's scope call); wiring one is later
  * work.
  */
-async function startDemoScene(): Promise<void> {
-  const mount = document.getElementById("demo-scene");
+async function startStreetScene(): Promise<void> {
+  const mount = document.getElementById("test-street");
   if (!mount) {
-    console.error("[main] #demo-scene is missing from index.html");
+    console.error("[main] #test-street is missing from index.html");
     return;
   }
 
@@ -112,10 +116,19 @@ async function startDemoScene(): Promise<void> {
     },
   });
 
+  // DEV-only, like every other `window.__bc`-adjacent test aid: a
+  // `toHaveScreenshot` check needs the street crowd's own walk cycle to
+  // never advance, or which frame of which citizen's animation happens to
+  // be on screen would depend on real wall-clock timing and no baseline
+  // could ever be stable (`test-street.spec.ts`'s own header). Absent
+  // means the crowd walks normally, exactly as it always has.
+  const freezeCrowdForE2e =
+    import.meta.env.DEV && new URLSearchParams(window.location.search).has("freezeCrowd");
+
   // The render path's own resort event drives this hook directly
   // (Quentin's direction) -- never a ticker polling `getRenderOrder()`
   // every frame to see whether it changed.
-  const handle = await mountDemoScene(app, {
+  const handle = await mountStreetScene(app, {
     defs,
     tileSizePx,
     storeyHeightPx,
@@ -124,8 +137,10 @@ async function startDemoScene(): Promise<void> {
     movementConfig,
     objectDefs: objectDefsById(defs),
     windowDefIds: windowDefIds(defs),
+    startWithCrowdFrozen: freezeCrowdForE2e,
     onOrderChange: recordRenderOrderForE2e,
     onPlayerMove: recordPlayerPositionForE2e,
+    onFrameWork: recordFrameWorkForE2e,
     onVisibilityChange: recordVisibilityForE2e,
     onMasksChecked: recordMasksCheckedForE2e,
     keyboard,
@@ -140,14 +155,15 @@ async function startDemoScene(): Promise<void> {
   });
 
   // Story 1.10: the street crowd's own e2e observation surface, wired
-  // here rather than threaded through `MountDemoSceneOptions` as another
+  // here rather than threaded through `MountStreetSceneOptions` as another
   // callback -- both values are already sitting on the real, mounted
-  // handle `mountDemoScene` just returned, with nothing left to compute.
+  // handle `mountStreetScene` just returned, with nothing left to compute.
   recordAppearanceTextureIdsForE2e(
     handle.citizensLayer.textureIdsById,
     handle.citizensLayer.distinctTextureCount,
   );
   exposeAppearanceCompareForE2e(handle.citizensLayer.compareForE2e);
+  recordPlayerAppearanceForE2e(handle.playerAppearance);
 }
 
 function getBalance(defs: Defs, key: string): number {

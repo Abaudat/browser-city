@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   exposeAppearanceCompareForE2e,
   recordAppearanceTextureIdsForE2e,
+  recordFrameWorkForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerPositionForE2e,
@@ -64,26 +65,52 @@ describe("recordRenderOrderForE2e", () => {
 
 describe("recordPlayerPositionForE2e", () => {
   it("stores the current position under window.__bc.playerPosition", () => {
-    recordPlayerPositionForE2e(5, 4);
+    recordPlayerPositionForE2e(5, 4, 0);
     expect(window.__bc?.playerPosition).toEqual({ x: 5, y: 4 });
+    expect(window.__bc?.playerFloor).toBe(0);
   });
 
   it("overwrites the previous position rather than accumulating a history", () => {
-    recordPlayerPositionForE2e(5, 4);
-    recordPlayerPositionForE2e(5.1, 4.2);
+    recordPlayerPositionForE2e(5, 4, 0);
+    recordPlayerPositionForE2e(5.1, 4.2, -1);
     expect(window.__bc?.playerPosition).toEqual({ x: 5.1, y: 4.2 });
+    expect(window.__bc?.playerFloor).toBe(-1);
   });
 
   it("creates the buffer lazily rather than requiring pre-existing state", () => {
     expect(window.__bc).toBeUndefined();
-    recordPlayerPositionForE2e(1, 1);
+    recordPlayerPositionForE2e(1, 1, 0);
     expect(window.__bc?.playerPosition).toEqual({ x: 1, y: 1 });
   });
 
   it("does nothing when DEV is false", () => {
     vi.stubEnv("DEV", false);
 
-    recordPlayerPositionForE2e(1, 1);
+    recordPlayerPositionForE2e(1, 1, 0);
+
+    expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("recordFrameWorkForE2e", () => {
+  it("records nothing until a caller starts a perf run, then collects every sample", () => {
+    recordFrameWorkForE2e(1.5);
+    expect(window.__bc?.frameTimings).toBeUndefined();
+
+    window.__bc?.startFrameTimings?.();
+    recordFrameWorkForE2e(2.5);
+    recordFrameWorkForE2e(3.5);
+
+    expect(window.__bc?.stopFrameTimings?.()).toEqual([2.5, 3.5]);
+    // Stopping it puts the hook back to recording nothing.
+    recordFrameWorkForE2e(4.5);
+    expect(window.__bc?.frameTimings).toBeUndefined();
+  });
+
+  it("does nothing when DEV is false", () => {
+    vi.stubEnv("DEV", false);
+
+    recordFrameWorkForE2e(1);
 
     expect(window.__bc).toBeUndefined();
   });
