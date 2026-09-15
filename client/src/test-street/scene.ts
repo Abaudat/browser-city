@@ -229,6 +229,13 @@ const HIGHLIGHT_ALPHA = 0.18;
  * filter path in the renderer. */
 const HIGHLIGHT_BLEND_MODE = "add" as const;
 
+/** `buildHighlightOverlays`'s own alpha computation, pulled out as a pure
+ * function so it is unit-testable without mounting a Pixi `Application`
+ * (Quentin's direction, story 1.11). `strength` is the U1 dial, 0-100. */
+export function highlightOverlayAlpha(strength: number, sourceAlpha: number): number {
+  return HIGHLIGHT_ALPHA * (strength / 100) * sourceAlpha;
+}
+
 /** The layer code every ground-tile-pass group's own synthetic
  * `VisibilityDrawable` carries -- never read by `computeVisibility`'s
  * wall-layer check (a ground pass is never `isNearSide`), so any live
@@ -314,6 +321,11 @@ export interface MountStreetSceneOptions {
    * `undefined` when nothing is marked -- the render path's own event,
    * never polled. */
   readonly onHighlightChange?: (objectId: bigint | undefined) => void;
+  /** FR173's affordance dial (story 1.11, the U1 dial from `docs/ux.md`):
+   * 0-100, scaling `HIGHLIGHT_ALPHA` linearly. Defaults to 100 (the
+   * constant's own value, unscaled) so a caller that never wires the
+   * options-menu setting still gets the pre-dial behaviour. */
+  readonly highlightStrength?: number;
   /** The keyboard state to drive movement with -- required, and built by
    * the caller from the player's own stored bindings. No default here on
    * purpose: one falling back to `DEFAULT_BINDINGS` would silently ignore
@@ -344,6 +356,11 @@ export interface StreetSceneHandle {
   readonly citizensLayer: CitizensLayerHandle;
   /** Removes every listener this scene attached (keyboard and pointer). */
   destroy(): void;
+  /** Live-updates the FR173 highlight dial (0-100) -- re-applies
+   * immediately to whatever is highlighted right now, so dragging the
+   * options-menu slider while an object is marked is visible without a
+   * re-hover. */
+  setHighlightStrength(strength: number): void;
 }
 
 function cropped(base: Texture, frame: Rectangle): Texture {
@@ -572,6 +589,7 @@ export async function mountStreetScene(
     onViewTransform,
     onHighlightChange,
     startWithCrowdFrozen,
+    highlightStrength,
   } = options;
   const crowdFrozen = startWithCrowdFrozen ?? false;
 
@@ -968,6 +986,9 @@ export async function mountStreetScene(
 
   let highlightedObjectId: bigint | undefined;
   let highlightOverlays: Sprite[] = [];
+  // 0-100 (story 1.11's U1 dial); live-settable through the handle's own
+  // setHighlightStrength.
+  let currentHighlightStrength = highlightStrength ?? 100;
 
   function clearHighlightOverlays(): void {
     for (const overlay of highlightOverlays) {
@@ -986,7 +1007,7 @@ export async function mountStreetScene(
       overlay.x = source.x;
       overlay.y = source.y;
       overlay.scale.set(source.scale.x, source.scale.y);
-      overlay.alpha = HIGHLIGHT_ALPHA * source.alpha;
+      overlay.alpha = highlightOverlayAlpha(currentHighlightStrength, source.alpha);
       overlay.blendMode = HIGHLIGHT_BLEND_MODE;
       parent.addChildAt(overlay, parent.getChildIndex(source) + 1);
       highlightOverlays.push(overlay);
@@ -1008,6 +1029,11 @@ export async function mountStreetScene(
     if (highlightedObjectId === undefined) return;
     clearHighlightOverlays();
     buildHighlightOverlays(highlightedObjectId);
+  }
+
+  function setHighlightStrength(strength: number): void {
+    currentHighlightStrength = strength;
+    reapplyHighlight();
   }
 
   // FR148's one pointer listener, on the canvas element itself -- no Pixi
@@ -1250,6 +1276,7 @@ export async function mountStreetScene(
     getRenderOrder: () => renderOrder,
     keyboard,
     citizensLayer,
+    setHighlightStrength,
     destroy: () => {
       detachKeyboard();
       pointer.detach();

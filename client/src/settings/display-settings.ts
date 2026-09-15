@@ -1,39 +1,51 @@
 // The options menu's Display section (Artie's direction, story 1.11):
-// the U1 dial (`docs/ux.md` accessibility floor) -- interactable-highlight
-// strength -- as a persisted 0-100 slider. The affordance overlay itself
-// (`test-street/scene.ts`'s `HIGHLIGHT_ALPHA`) is not wired to this value
-// in this story (no requirement asks for that plumbing yet); the value is
-// saved so the affordance story that scopes doing so can read it.
+// the U1 dial (`docs/ux.md` accessibility floor) -- object-highlight
+// strength -- as a persisted slider, wired live into
+// `test-street/scene.ts`'s affordance overlay (`highlightOverlayAlpha`).
+//
+// The range is [20, 100], not [0, 100], and the default is 60, not 100
+// (Artie's direction, cycle 2): zero would mean no affordance at all,
+// and `docs/ux.md` §1 makes the hover highlight how a player learns an
+// object is out of reach -- letting the dial reach zero reopens the
+// "can't find the game" failure the affordance exists to prevent. The
+// floor and default are load-bearing the moment this ships: the value is
+// saved, and a later change to the default never reaches a player who
+// already saved one.
 
-import { loadVersioned, type SettingsStorage, saveVersioned } from "./settings-storage";
+import {
+  clampPercent,
+  isRecord,
+  loadVersioned,
+  type SettingsStorage,
+  saveVersioned,
+} from "./settings-storage";
 
 export interface DisplaySettings {
-  /** 0-100. */
+  /** 20-100. */
   readonly highlightStrength: number;
 }
 
+export const HIGHLIGHT_STRENGTH_MIN = 20;
+export const HIGHLIGHT_STRENGTH_MAX = 100;
+
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
-  highlightStrength: 100,
+  highlightStrength: 60,
 };
 
 export const DISPLAY_STORAGE_KEY = "bc.display.v1";
 export const DISPLAY_VERSION = 1;
 const PAYLOAD_KEY = "value";
 
-function clampStrength(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_DISPLAY_SETTINGS.highlightStrength;
-  return Math.min(100, Math.max(0, Math.round(value)));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 export function normaliseDisplaySettings(raw: unknown): DisplaySettings {
   if (!isRecord(raw)) return DEFAULT_DISPLAY_SETTINGS;
   const highlightStrength =
     typeof raw.highlightStrength === "number"
-      ? clampStrength(raw.highlightStrength)
+      ? clampPercent(
+          raw.highlightStrength,
+          HIGHLIGHT_STRENGTH_MIN,
+          HIGHLIGHT_STRENGTH_MAX,
+          DEFAULT_DISPLAY_SETTINGS.highlightStrength,
+        )
       : DEFAULT_DISPLAY_SETTINGS.highlightStrength;
   return { highlightStrength };
 }

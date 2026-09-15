@@ -1,6 +1,8 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  clampPercent,
+  isRecord,
   loadVersioned,
   resolveStorage,
   type SettingsStorage,
@@ -179,5 +181,41 @@ describe("resolveStorage", () => {
 
   it("returns null when there is no storage object at all", () => {
     expect(resolveStorage(() => undefined as unknown as SettingsStorage)).toBeNull();
+  });
+});
+
+describe("isRecord", () => {
+  it("is true for plain objects only, never an array, null or a primitive", () => {
+    expect(isRecord({})).toBe(true);
+    expect(isRecord({ a: 1 })).toBe(true);
+    expect(isRecord([])).toBe(false);
+    expect(isRecord(null)).toBe(false);
+    expect(isRecord(42)).toBe(false);
+    expect(isRecord("x")).toBe(false);
+    expect(isRecord(undefined)).toBe(false);
+  });
+});
+
+describe("clampPercent", () => {
+  // The one clamp every percent-shaped setting group shares (Tim's
+  // direction, cycle 2) -- audio's volume and display's highlight
+  // strength both call this rather than each declaring their own.
+  it("passes an in-range integer through unchanged", () => {
+    expect(clampPercent(50, 0, 100, 0)).toBe(50);
+  });
+
+  it("clamps above the maximum and below the minimum", () => {
+    expect(clampPercent(500, 0, 100, 0)).toBe(100);
+    expect(clampPercent(-20, 0, 100, 0)).toBe(0);
+    expect(clampPercent(0, 20, 100, 60)).toBe(20);
+  });
+
+  it("rounds a fractional value", () => {
+    expect(clampPercent(50.6, 0, 100, 0)).toBe(51);
+  });
+
+  it("falls back for non-finite input (NaN, Infinity)", () => {
+    expect(clampPercent(Number.NaN, 0, 100, 42)).toBe(42);
+    expect(clampPercent(Number.POSITIVE_INFINITY, 0, 100, 42)).toBe(42);
   });
 });

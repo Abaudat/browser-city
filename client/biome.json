@@ -142,6 +142,7 @@
                       "pixi.js",
                       "../net/*",
                       "../net/**",
+                      "!../net/connection-status",
                       "../render/**",
                       "../world/**",
                       "../test-street/*",

@@ -415,54 +415,55 @@ code under `client/src/world/`, driven by collider data in `defs/`.
 ## DOM UI
 
 The whole game has exactly three DOM UI surfaces (FR151): the boot name
-prompt (story 4.6), the options menu and the connection notice. `client/
-src/ui/` is their only home -- `mountOptionsMenu`/`mountConnectionNotice`
-each take plain data and callbacks through a `mountX(options)` function
-and return a handle with `destroy()`, no framework, no dependency. Every
-top-level element a surface mounts carries `data-bc-surface` with one of
-`options-menu`, `connection-notice` or `name-prompt`, checked exhaustively
-against `document.body`'s own children by
-`client/tests/e2e/connection-notice.spec.ts`. `ui/style.ts`'s
-`ensureStyle(doc, id, css)` and `ui/theme.ts`'s `ensureUiTheme(doc)`
-(shared font/colour/accent custom properties) are the one styling
-mechanism both surfaces use, so a third surface never invents its own.
+prompt, the options menu, the connection notice. `client/src/ui/` is
+their only home. Each is a `mountX(options)` function taking plain data
+and callbacks, returning a handle with `destroy()` -- no framework, no
+dependency. Every top-level element a surface mounts carries
+`data-bc-surface` with one of `options-menu`, `connection-notice` or
+`name-prompt`, checked against `document.body`'s own children by
+`client/tests/e2e/connection-notice.spec.ts`. `index.html`'s own
+`<style>` block holds the shared font/colour/accent custom properties
+every surface uses; `ui/style.ts`'s `ensureStyle(doc, id, css)` is each
+surface's own per-surface rule injector.
 
-- `client/src/net/connection.ts`'s `ConnectionStatus` (`"connecting" |
-  "connected" | "disconnected"`) is `net/`'s only connection-state export
-  -- a plain string union, never an SDK type. `ui/connection-notice.ts`
-  duplicates the same three-member union locally rather than importing
-  it: `src/ui/**` may not import `net/**` (or `pixi.js`, `render/**`,
-  `world/**`, `test-street/**`) -- a DOM surface receives plain data
-  through its mount options, never reaches into the game. The union is
-  built so a later story can add a `"reconnecting"` member (reconnection
-  itself is out of scope here) without reshaping either side.
-- The connection notice shows, after a debounce, while the status is not
-  `"connected"`, and on recovery shows "Reconnected" briefly before a
-  fade -- the only animation in this layer. Nothing in the disconnect
-  path touches the Pixi `Application`, the scene, its ticker or any pool:
-  the notice is the disconnect's only consumer, which is what makes "the
-  world keeps rendering its last known state" hold by construction.
+- `net/connection-status.ts` exports `ConnectionStatus` (`"connecting" |
+  "connected" | "disconnected"`), a plain string union -- `net/`'s only
+  export `src/ui/**` may import. `ui/connection-notice.ts` shows
+  "Connecting…" while `"connecting"`, "Connection lost" while
+  `"disconnected"`, and "Reconnected" briefly on a later `"connected"`
+  before fading (the fade is the only animation here, its duration set
+  from the `fadeMs` option). Nothing in the disconnect path touches the
+  Pixi `Application`, the scene, its ticker or any pool. The
+  "Reconnected" path is currently unreachable (nothing calls
+  `setStatus("connected")` after a drop); kept in place for the
+  reconnection story to wire.
 - The options menu is one panel, three sections in this fixed order --
   Audio, Display, Controls -- as stacked headings, never tabs. Every
-  control has a real consumer today or a persisted value a named later
-  story reads.
-- `client/src/settings/settings-storage.ts` is the one settings-storage
-  idiom every group (`input/keybindings-storage.ts`, `settings/
-  audio-settings.ts`, `settings/display-settings.ts`) shares: one
-  versioned `localStorage` key per group, read once through an injected
-  `Storage`. Reading never throws and never writes; a version or shape it
-  does not recognise falls back to defaults in memory.
-- Three mechanical guards keep this section true, all run by
-  `client-check`: `scripts/ci/check-no-canvas-ui.sh` (no Pixi `Text`/
-  `BitmapText`/`HTMLText`/`SplitText` construction or import, no native
-  `alert`/`confirm`/`prompt`, anywhere under `client/src/`);
-  `client/biome.json`'s `src/ui/**` override (nothing below `ui/` can be
-  imported by `render/**`, `world/**` or `input/**`, and `ui/**` itself
-  cannot reach `net/**`, `render/**`, `world/**`, `test-street/**` or
-  `pixi.js`); and `noRestrictedGlobals` banning `document` in
-  `render/**`, `net/**`, `defs/**` and `boot/**` (`window` stays allowed)
-  -- DOM creation is only possible in `ui/`, `input/`, `test-street/` and
-  `main.ts`.
+  control has a real consumer or a persisted value a named later story
+  reads. Display's highlight-strength slider is `[20, 100]`, default 60,
+  and drives `test-street/scene.ts`'s `highlightOverlayAlpha` live
+  through `StreetSceneHandle.setHighlightStrength`. The fullscreen row is
+  hidden when `document.documentElement.requestFullscreen` does not
+  exist; its label reflects `document.fullscreenElement`, kept live via
+  `fullscreenchange`.
+- `settings/settings-storage.ts` is the one settings-storage idiom every
+  group (`input/keybindings-storage.ts`, `settings/audio-settings.ts`,
+  `settings/display-settings.ts`) shares, including its `isRecord`/
+  `clampPercent` helpers: one versioned `localStorage` key per group,
+  read once through an injected `Storage`. Reading never throws and
+  never writes; an unrecognised version or shape falls back to defaults
+  in memory.
+- Three mechanical guards, all run by `client-check`:
+  `scripts/ci/check-no-canvas-ui.sh` (no Pixi `Text`/`BitmapText`/
+  `HTMLText`/`SplitText`/`TextStyle`/`TextStyleOptions` construction or
+  import, single- or multi-line, no native `alert`/`confirm`/`prompt`,
+  anywhere under `client/src/`); `client/biome.json`'s `src/ui/**`
+  override (nothing below `ui/` can import it; `ui/**` itself cannot
+  reach `net/**` except `net/connection-status`, nor `render/**`,
+  `world/**`, `test-street/**`, `pixi.js`); `noRestrictedGlobals` banning
+  `document` in `render/**`, `net/**`, `defs/**` and `boot/**` (`window`
+  stays allowed) -- DOM creation is only possible in `ui/`, `input/`,
+  `test-street/` and `main.ts`.
 
 ## Rendering
 

@@ -23,8 +23,22 @@ export interface SettingsStorage {
   removeItem(key: string): void;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** Exported so every settings group's own `normalise*` function shares
+ * one shape check rather than each declaring its own copy (Tim's
+ * direction, cycle 2). */
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Clamps a percent-shaped setting (volume, highlight strength, ...) into
+ * `[min, max]`, rounding to an integer -- the one clamp every such
+ * setting group shares, rather than each declaring `clampVolume`/
+ * `clampStrength` as the same function under a different name (Tim's
+ * direction, cycle 2). Non-finite input (`NaN`, `Infinity`, a value that
+ * was never actually a number) falls back to `fallback`. */
+export function clampPercent(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 /** The storage to use, or `null` -- given a getter rather than a value

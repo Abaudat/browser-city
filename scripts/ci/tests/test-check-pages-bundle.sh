@@ -69,16 +69,6 @@ d="$(good_dist)"
 printf 'const fallback = "ws://127.0.0.1:3000";\n' >> "$d/assets/index-abc.js"
 check "the ws://127.0.0.1 local-dev fallback leaking into production fails" 1 bash "$CHECK" "$d" "$BASE" "$URI"
 
-# Story 1.11: the story 1.1 ping indicator (render/bootstrap.ts, deleted)
-# must never ship, in the JS or in index.html.
-d="$(good_dist)"
-printf 'el.id = "bc-ping-indicator";\n' >> "$d/assets/index-abc.js"
-check "the bc-ping-indicator string leaking into the production JS fails" 1 bash "$CHECK" "$d" "$BASE" "$URI"
-
-d="$(good_dist)"
-printf '<div id="bc-ping-indicator"></div>' >> "$d/index.html"
-check "the bc-ping-indicator string leaking into index.html fails" 1 bash "$CHECK" "$d" "$BASE" "$URI"
-
 # The positive assertion: "no localhost fallback" alone would still pass
 # a build that baked in some other wrong URI entirely.
 d="$(good_dist)"

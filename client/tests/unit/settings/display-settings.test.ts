@@ -3,6 +3,8 @@ import {
   DEFAULT_DISPLAY_SETTINGS,
   DISPLAY_STORAGE_KEY,
   DISPLAY_VERSION,
+  HIGHLIGHT_STRENGTH_MAX,
+  HIGHLIGHT_STRENGTH_MIN,
   loadDisplaySettings,
   normaliseDisplaySettings,
   saveDisplaySettings,
@@ -22,8 +24,10 @@ function fakeStorage(initial: Record<string, string> = {}) {
 }
 
 describe("display settings", () => {
-  it("defaults to full highlight strength", () => {
-    expect(DEFAULT_DISPLAY_SETTINGS).toEqual({ highlightStrength: 100 });
+  it("defaults to 60 -- not the maximum, and never the floor (Artie's direction: U1's weakest treatment that still works)", () => {
+    expect(DEFAULT_DISPLAY_SETTINGS).toEqual({ highlightStrength: 60 });
+    expect(HIGHLIGHT_STRENGTH_MIN).toBe(20);
+    expect(HIGHLIGHT_STRENGTH_MAX).toBe(100);
   });
 
   it("round-trips what saveDisplaySettings wrote", () => {
@@ -39,18 +43,24 @@ describe("display settings", () => {
     const wrongVersion = fakeStorage({
       [DISPLAY_STORAGE_KEY]: JSON.stringify({
         version: DISPLAY_VERSION + 1,
-        value: { highlightStrength: 1 },
+        value: { highlightStrength: 40 },
       }),
     });
     expect(loadDisplaySettings(wrongVersion.storage)).toEqual(DEFAULT_DISPLAY_SETTINGS);
   });
 
-  it("clamps an out-of-range strength rather than propagating it", () => {
+  it("clamps above the maximum rather than propagating it", () => {
     expect(normaliseDisplaySettings({ highlightStrength: 500 })).toEqual({
       highlightStrength: 100,
     });
+  });
+
+  it("clamps below the floor -- zero never reaches the overlay (no affordance at all is the failure this floor prevents)", () => {
+    expect(normaliseDisplaySettings({ highlightStrength: 0 })).toEqual({
+      highlightStrength: 20,
+    });
     expect(normaliseDisplaySettings({ highlightStrength: -20 })).toEqual({
-      highlightStrength: 0,
+      highlightStrength: 20,
     });
   });
 
@@ -63,7 +73,7 @@ describe("display settings", () => {
 
   it("uses exactly one storage key", () => {
     const fake = fakeStorage();
-    saveDisplaySettings(fake.storage, { highlightStrength: 10 });
+    saveDisplaySettings(fake.storage, { highlightStrength: 40 });
     expect([...fake.data.keys()]).toEqual([DISPLAY_STORAGE_KEY]);
   });
 });

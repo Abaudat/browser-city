@@ -25,7 +25,7 @@ import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
-import { mountStreetScene } from "./test-street/scene";
+import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
 import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
@@ -115,6 +115,13 @@ async function startStreetScene(): Promise<void> {
   const display = loadDisplaySettings(storage);
   const keyboard = new KeyboardState(bindings);
 
+  // Set once the street scene below finishes mounting -- `onDisplayChange`
+  // can fire before then (the menu is interactive immediately), so a
+  // change that arrives first is still persisted, just not pushed live
+  // until the scene handle exists (it reads the persisted value as its
+  // own initial `highlightStrength` either way).
+  let sceneHandle: StreetSceneHandle | undefined;
+
   // FR151's options menu. It takes the keyboard while it is open, so a
   // key pressed to rebind never also walks the avatar; the world behind
   // it keeps running, because the city never pauses.
@@ -132,7 +139,10 @@ async function startStreetScene(): Promise<void> {
     initialAudio: audio,
     onAudioChange: (next) => saveAudioSettings(storage, next),
     initialDisplay: display,
-    onDisplayChange: (next) => saveDisplaySettings(storage, next),
+    onDisplayChange: (next) => {
+      saveDisplaySettings(storage, next);
+      sceneHandle?.setHighlightStrength(next.highlightStrength);
+    },
   });
 
   // DEV-only, like every other `window.__bc`-adjacent test aid: a
@@ -157,6 +167,7 @@ async function startStreetScene(): Promise<void> {
     objectDefs: objectDefsById(defs),
     windowDefIds: windowDefIds(defs),
     startWithCrowdFrozen: freezeCrowdForE2e,
+    highlightStrength: display.highlightStrength,
     onOrderChange: recordRenderOrderForE2e,
     onPlayerMove: recordPlayerPositionForE2e,
     onFrameWork: recordFrameWorkForE2e,
@@ -172,6 +183,7 @@ async function startStreetScene(): Promise<void> {
     onViewTransform: recordViewTransformForE2e,
     onHighlightChange: recordHighlightForE2e,
   });
+  sceneHandle = handle;
 
   // Story 1.10: the street crowd's own e2e observation surface, wired
   // here rather than threaded through `MountStreetSceneOptions` as another

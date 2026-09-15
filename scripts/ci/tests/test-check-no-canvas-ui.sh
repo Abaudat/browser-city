@@ -55,5 +55,28 @@ check "importing TextStyle from pixi.js (Tim's addition to the import list)" 1 b
 d="$(plant 'import { TextStyleOptions } from "pixi.js";')"
 check "importing TextStyleOptions from pixi.js" 1 bash "$CHECK" "$d"
 
+# The real hole Tim's direction (cycle 2) found: a formatter-wrapped
+# multi-line import, exactly the shape Biome's own 100-column line width
+# produces for any non-trivial pixi.js import (test-street/scene.ts is
+# one real example).
+d="$(plant 'import {
+  Container,
+  Text,
+} from "pixi.js";')"
+check "a multi-line import with Text on its own line" 1 bash "$CHECK" "$d"
+
+d="$(plant 'import {
+  Container,
+  Sprite,
+  BitmapText,
+} from "pixi.js";')"
+check "a multi-line import with BitmapText on its own line, alongside others" 1 bash "$CHECK" "$d"
+
+d="$(plant 'import {
+  Container,
+  Sprite,
+} from "pixi.js";')"
+check "a multi-line import with none of the banned names passes" 0 bash "$CHECK" "$d"
+
 summary
 exit $?

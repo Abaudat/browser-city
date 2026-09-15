@@ -53,7 +53,7 @@ describe("mountConnectionNotice", () => {
     notice.destroy();
   });
 
-  it("a connect error at boot shows the notice, after the debounce", () => {
+  it("a connect error at boot shows 'Connection lost' -- never 'reconnecting', which this build never does -- after the debounce", () => {
     const notice = mount();
     notice.setStatus("disconnected");
     expect(isVisible()).toBe(false);
@@ -61,11 +61,11 @@ describe("mountConnectionNotice", () => {
     expect(isVisible()).toBe(false);
     vi.advanceTimersByTime(1);
     expect(isVisible()).toBe(true);
-    expect(noticeText()).toBe("Connection lost — reconnecting…");
+    expect(noticeText()).toBe("Connection lost");
     notice.destroy();
   });
 
-  it("a drop after a successful connect also shows the notice", () => {
+  it("a drop after a successful connect also shows 'Connection lost'", () => {
     const notice = mount();
     notice.setStatus("connecting");
     notice.setStatus("connected");
@@ -74,6 +74,41 @@ describe("mountConnectionNotice", () => {
     notice.setStatus("disconnected");
     vi.advanceTimersByTime(1000);
     expect(isVisible()).toBe(true);
+    expect(noticeText()).toBe("Connection lost");
+    notice.destroy();
+  });
+
+  it("a slow first connect shows 'Connecting…' after the debounce -- never 'Connection lost', since nothing was ever lost", () => {
+    const notice = mount();
+    notice.setStatus("connecting");
+    vi.advanceTimersByTime(999);
+    expect(isVisible()).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(isVisible()).toBe(true);
+    expect(noticeText()).toBe("Connecting…");
+    notice.destroy();
+  });
+
+  it("'connecting' held for a long time never shows the lost-connection message (Quentin's direction, cycle 2)", () => {
+    const notice = mount();
+    notice.setStatus("connecting");
+    vi.advanceTimersByTime(60_000);
+    expect(isVisible()).toBe(true);
+    expect(noticeText()).toBe("Connecting…");
+    expect(noticeText()).not.toContain("lost");
+    notice.destroy();
+  });
+
+  it("a real connect error arriving while 'Connecting…' is already shown switches the wording in place, without a fresh debounce", () => {
+    const notice = mount();
+    notice.setStatus("connecting");
+    vi.advanceTimersByTime(1000);
+    expect(noticeText()).toBe("Connecting…");
+
+    notice.setStatus("disconnected");
+    // No new debounce wait -- the switch is immediate.
+    expect(isVisible()).toBe(true);
+    expect(noticeText()).toBe("Connection lost");
     notice.destroy();
   });
 
@@ -140,7 +175,14 @@ describe("mountConnectionNotice", () => {
     // Still in the "Reconnected" hold window.
     notice.setStatus("disconnected");
     expect(isVisible()).toBe(true);
-    expect(noticeText()).toBe("Connection lost — reconnecting…");
+    expect(noticeText()).toBe("Connection lost");
+    notice.destroy();
+  });
+
+  it("drives the fade's transition-duration from the fadeMs option directly, so overriding it can never desync from the CSS (Tim's direction, cycle 2)", () => {
+    const notice = mount({ fadeMs: 750 });
+    const el = document.querySelector<HTMLElement>("[data-bc-notice]");
+    expect(el?.style.transitionDuration).toBe("750ms");
     notice.destroy();
   });
 

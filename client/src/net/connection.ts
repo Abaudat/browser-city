@@ -7,16 +7,12 @@
 import { BOOT_MARK, markBoot } from "../boot/boot-marks";
 import { DbConnection } from "./bindings";
 import { NET_CONFIG } from "./config";
+import type { ConnectionStatus } from "./connection-status";
 import { observePingInsert, type PingObservation } from "./observe-ping";
 
-export type PingListener = (observation: PingObservation) => void;
+export type { ConnectionStatus } from "./connection-status";
 
-/** A plain string union -- never an SDK type, never the SDK's own error
- * object, leaking past this file (story 1.11, Tim's direction).
- * `"reconnecting"` is deliberately not a member yet: this story does not
- * implement reconnection (story 4.16's FR179/FR140/NFR4 work); the union
- * is built so that story adds the member without reshaping this one. */
-export type ConnectionStatus = "connecting" | "connected" | "disconnected";
+export type PingListener = (observation: PingObservation) => void;
 
 export type StatusListener = (status: ConnectionStatus) => void;
 

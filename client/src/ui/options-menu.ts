@@ -8,17 +8,19 @@
 // settings to justify an application-style tab strip). Every control has
 // a real consumer today or a persisted value a named later story reads
 // (Tim's wiring rule): Audio's volume/mute are FR153's audio story's
-// input; Display's highlight strength is the U1 dial
-// (`docs/ux.md`) the affordance story reads; Controls is FR149's
-// rebinding, unchanged. Nothing decorative is ever added here.
+// input; Display's highlight strength (the U1 dial, `docs/ux.md`) drives
+// `test-street/scene.ts`'s affordance overlay live, and its fullscreen
+// toggle drives `document.fullscreenElement` directly; Controls is
+// FR149's rebinding, unchanged. Nothing decorative is ever added here.
 //
 // Artie's rules, which are what the styling below is:
 //   - one small centred panel over a semi-transparent backdrop. The city
 //     stays visible behind it and keeps running: the world never pauses.
 //   - system font stack, near-black panel, off-white text, one accent
-//     (`ui/theme.ts`'s shared custom properties). No pixel-font
-//     imitation, no wood or leather frame, no UI sprite sheet. The menu
-//     sits outside the fiction and should look like it.
+//     (`index.html`'s shared custom properties, the same ones the
+//     connection notice uses). No pixel-font imitation, no wood or
+//     leather frame, no UI sprite sheet. The menu sits outside the
+//     fiction and should look like it.
 //   - `Escape` opens and closes it, and is listed as fixed because it is
 //     reserved (`input/keybindings.ts`) -- a player cannot bind it away.
 //   - a key already bound elsewhere swaps, and both rows flash. Never an
@@ -30,9 +32,18 @@
 import type { BindableAction, Bindings } from "../input/keybindings";
 import { BINDABLE_ACTIONS, DEFAULT_BINDINGS, isBindableCode, rebind } from "../input/keybindings";
 import type { AudioSettings } from "../settings/audio-settings";
-import type { DisplaySettings } from "../settings/display-settings";
+import {
+  type DisplaySettings,
+  HIGHLIGHT_STRENGTH_MAX,
+  HIGHLIGHT_STRENGTH_MIN,
+} from "../settings/display-settings";
 import { ensureStyle } from "./style";
-import { ensureUiTheme } from "./theme";
+
+/** Every `mountOptionsMenu` call gets its own id prefix, so two mounted
+ * instances (never true in `main.ts`, but true across adjacent unit
+ * tests that do not always `destroy()` before the next `mount()`) never
+ * collide on a `<label for>` target. */
+let mountCounter = 0;
 
 /** How long both rows of a swap stay marked, so the player sees what
  * moved. A steady mark that ends, never a pulse -- nothing in this menu
@@ -170,10 +181,15 @@ const STYLE_TEXT = `
 [data-bc-panel] h3:first-of-type {
   margin-top: 0;
 }
+/* One grid for every row -- Audio, Display and Controls alike (Artie's
+   direction, cycle 2): the label in the left column, the row's one
+   control block flush against the right column, so every right edge
+   (a keycap's, a slider's readout, the fullscreen button's) lines up on
+   the same column regardless of section. */
 [data-bc-row] {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   padding: 5px 6px;
   border-radius: 4px;
@@ -181,14 +197,22 @@ const STYLE_TEXT = `
 [data-bc-row][data-bc-flash="true"] {
   background: rgba(94, 158, 214, 0.22);
 }
-[data-bc-row] label {
+[data-bc-control] {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 [data-bc-keys] {
   display: flex;
   gap: 6px;
+}
+/* The panel itself is focused on open (Artie's direction, cycle 2: a
+   ring around the volume slider the instant the menu appears reads as
+   an already-made selection) -- programmatic focus on a non-interactive
+   container draws no ring of its own. */
+[data-bc-panel]:focus {
+  outline: none;
 }
 [data-bc-keycap], [data-bc-reset], [data-bc-close], [data-bc-fullscreen-toggle] {
   font: inherit;
@@ -213,6 +237,27 @@ const STYLE_TEXT = `
   border-color: var(--bc-accent);
   color: var(--bc-accent);
 }
+/* One accent across keycaps, focus rings and form controls (Artie's
+   direction, cycle 2): without this Chrome paints the range thumb/track
+   and the checkbox in its own saturated system blue, a second accent
+   colour next to ours. A thin track in --bc-control-bg is the fallback
+   for a browser that still renders the unfilled range track in a light
+   system colour despite accent-color. */
+[data-bc-volume-slider], [data-bc-highlight-slider] {
+  accent-color: var(--bc-accent);
+  width: 140px;
+}
+[data-bc-volume-slider]::-webkit-slider-runnable-track, [data-bc-highlight-slider]::-webkit-slider-runnable-track {
+  background: var(--bc-control-bg);
+  border-radius: 2px;
+}
+[data-bc-volume-slider]::-moz-range-track, [data-bc-highlight-slider]::-moz-range-track {
+  background: var(--bc-control-bg);
+  border-radius: 2px;
+}
+[data-bc-mute-toggle] {
+  accent-color: var(--bc-accent);
+}
 [data-bc-note] {
   font-size: 11px;
   color: var(--bc-muted);
@@ -225,9 +270,10 @@ const STYLE_TEXT = `
   margin-top: 16px;
 }
 [data-bc-value] {
+  display: inline-block;
   font-size: 12px;
   color: var(--bc-muted);
-  min-width: 2.5em;
+  width: 3em;
   text-align: right;
 }
 `;
@@ -250,8 +296,8 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
     onDisplayChange,
   } = options;
   const doc = container.ownerDocument;
-  ensureUiTheme(doc);
   ensureStyle(doc, STYLE_ID, STYLE_TEXT);
+  const idPrefix = `bc-options-${++mountCounter}`;
 
   let bindings = initialBindings;
   let audio = initialAudio;
@@ -271,6 +317,13 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
 
   const panel = doc.createElement("div");
   panel.setAttribute("data-bc-panel", "");
+  // Focused on open instead of the first real control (Artie's
+  // direction, cycle 2) -- see the `:focus { outline: none }` rule
+  // above. `tabindex="-1"` keeps it out of the normal Tab order, so the
+  // very next Tab after open lands on the first real control (the
+  // browser's own "next tabbable node after the focused one" behaviour),
+  // which is exactly where the ring belongs.
+  panel.tabIndex = -1;
   backdrop.appendChild(panel);
 
   const title = doc.createElement("h2");
@@ -284,27 +337,38 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
 
   const volumeRow = doc.createElement("div");
   volumeRow.setAttribute("data-bc-row", "");
+  const volumeId = `${idPrefix}-volume`;
   const volumeLabel = doc.createElement("label");
   volumeLabel.textContent = "Master volume";
+  volumeLabel.htmlFor = volumeId;
+  const volumeControl = doc.createElement("div");
+  volumeControl.setAttribute("data-bc-control", "");
   const volumeSlider = doc.createElement("input");
   volumeSlider.type = "range";
+  volumeSlider.id = volumeId;
   volumeSlider.min = "0";
   volumeSlider.max = "100";
   volumeSlider.setAttribute("data-bc-volume-slider", "");
   const volumeValue = doc.createElement("span");
   volumeValue.setAttribute("data-bc-value", "");
-  volumeLabel.append(volumeSlider, volumeValue);
-  volumeRow.appendChild(volumeLabel);
+  volumeControl.append(volumeSlider, volumeValue);
+  volumeRow.append(volumeLabel, volumeControl);
   panel.appendChild(volumeRow);
 
   const muteRow = doc.createElement("div");
   muteRow.setAttribute("data-bc-row", "");
+  const muteId = `${idPrefix}-mute`;
   const muteLabel = doc.createElement("label");
+  muteLabel.textContent = "Mute";
+  muteLabel.htmlFor = muteId;
+  const muteControl = doc.createElement("div");
+  muteControl.setAttribute("data-bc-control", "");
   const muteToggle = doc.createElement("input");
   muteToggle.type = "checkbox";
+  muteToggle.id = muteId;
   muteToggle.setAttribute("data-bc-mute-toggle", "");
-  muteLabel.append(muteToggle, doc.createTextNode("Mute"));
-  muteRow.appendChild(muteLabel);
+  muteControl.appendChild(muteToggle);
+  muteRow.append(muteLabel, muteControl);
   panel.appendChild(muteRow);
 
   // --- Display ---------------------------------------------------------
@@ -314,29 +378,45 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
 
   const highlightRow = doc.createElement("div");
   highlightRow.setAttribute("data-bc-row", "");
+  const highlightId = `${idPrefix}-highlight`;
   const highlightLabel = doc.createElement("label");
-  highlightLabel.textContent = "Highlight strength";
+  // "Object highlight", not "Highlight strength" (Artie's direction,
+  // cycle 2): the earlier label named the dial, not what it does.
+  highlightLabel.textContent = "Object highlight";
+  highlightLabel.htmlFor = highlightId;
+  const highlightControl = doc.createElement("div");
+  highlightControl.setAttribute("data-bc-control", "");
   const highlightSlider = doc.createElement("input");
   highlightSlider.type = "range";
-  highlightSlider.min = "0";
-  highlightSlider.max = "100";
+  highlightSlider.id = highlightId;
+  // 20, not 0 (Artie's direction, cycle 2): zero would mean no
+  // affordance at all, which reopens the "can't find the game" failure
+  // the affordance exists to prevent (`docs/ux.md` §1).
+  highlightSlider.min = String(HIGHLIGHT_STRENGTH_MIN);
+  highlightSlider.max = String(HIGHLIGHT_STRENGTH_MAX);
   highlightSlider.setAttribute("data-bc-highlight-slider", "");
   const highlightValue = doc.createElement("span");
   highlightValue.setAttribute("data-bc-value", "");
-  highlightLabel.append(highlightSlider, highlightValue);
-  highlightRow.appendChild(highlightLabel);
+  highlightControl.append(highlightSlider, highlightValue);
+  highlightRow.append(highlightLabel, highlightControl);
   panel.appendChild(highlightRow);
 
   const fullscreenRow = doc.createElement("div");
   fullscreenRow.setAttribute("data-bc-row", "");
   const fullscreenLabel = doc.createElement("span");
   fullscreenLabel.textContent = "Fullscreen";
+  const fullscreenControl = doc.createElement("div");
+  fullscreenControl.setAttribute("data-bc-control", "");
   const fullscreenToggle = doc.createElement("button");
   fullscreenToggle.type = "button";
   fullscreenToggle.setAttribute("data-bc-fullscreen-toggle", "");
-  fullscreenToggle.textContent = "Toggle";
-  fullscreenRow.append(fullscreenLabel, fullscreenToggle);
+  fullscreenControl.appendChild(fullscreenToggle);
+  fullscreenRow.append(fullscreenLabel, fullscreenControl);
   panel.appendChild(fullscreenRow);
+  // No Fullscreen API in this environment (Artie's direction, cycle 2):
+  // hide the row entirely rather than show a button that does nothing.
+  const fullscreenSupported = typeof doc.documentElement.requestFullscreen === "function";
+  fullscreenRow.hidden = !fullscreenSupported;
 
   // --- Controls ---------------------------------------------------------
   const controlsHeading = doc.createElement("h3");
@@ -452,9 +532,14 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
   }
 
   /** Every control inside the panel, in DOM order -- what Tab cycles
-   * through, and what the trap below wraps around. */
+   * through, and what the trap below wraps around. Excludes anything
+   * inside a `[hidden]` row (the fullscreen row, when the Fullscreen API
+   * is absent) -- an unfocusable control must never be picked as the
+   * first/last stop of the trap. */
   function focusables(): HTMLElement[] {
-    return [...panel.querySelectorAll<HTMLElement>("button, input")];
+    return [...panel.querySelectorAll<HTMLElement>("button, input")].filter(
+      (el) => el.closest("[hidden]") === null,
+    );
   }
 
   function renderAudio(): void {
@@ -468,6 +553,16 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
     highlightValue.textContent = `${display.highlightStrength}%`;
   }
 
+  /** Reflects `doc.fullscreenElement` on the button's own label, so it
+   * always says what clicking it will do (Artie's direction, cycle 2),
+   * and stays correct even when fullscreen was entered or left outside
+   * this menu (F11, the browser's own Esc handling) -- wired to
+   * `fullscreenchange`, never assumed from the click alone. */
+  function renderFullscreen(): void {
+    const isFullscreen = doc.fullscreenElement != null;
+    fullscreenToggle.textContent = isFullscreen ? "Exit fullscreen" : "Enter fullscreen";
+  }
+
   function setOpen(next: boolean): void {
     if (open === next) return;
     open = next;
@@ -475,10 +570,11 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
     if (!next) capturing = undefined;
     render();
     if (next) {
-      // A menu about keys must be reachable by keyboard: start focus on
-      // the first keycap so Tab continues from inside the panel rather
-      // than from wherever the page happened to be.
-      focusables()[0]?.focus();
+      // The panel itself, not the first real control (Artie's direction,
+      // cycle 2): a ring around the volume slider the instant the menu
+      // opens reads as an already-made selection. The next real Tab
+      // lands there instead, which is where the ring belongs.
+      panel.focus();
     } else {
       // Hand focus back to the page, or a movement key would be typed
       // into whichever button was still focused.
@@ -569,7 +665,8 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
   // The browser owns fullscreen state (Artie's direction) -- nothing here
   // persists it. `requestFullscreen`/`exitFullscreen` are absent in
   // environments with no Fullscreen API (jsdom included); the optional
-  // call is the whole of that guard.
+  // call is the whole of that guard, and the row is hidden entirely in
+  // that case (above), so this listener is unreachable there anyway.
   const onFullscreenClick = (): void => {
     if (doc.fullscreenElement) {
       void doc.exitFullscreen?.();
@@ -577,6 +674,7 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
       void doc.documentElement.requestFullscreen?.();
     }
   };
+  const onFullscreenChange = (): void => renderFullscreen();
 
   reset.addEventListener("click", onResetClick);
   close.addEventListener("click", onCloseClick);
@@ -586,12 +684,14 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
   highlightSlider.addEventListener("input", onHighlightInput);
   highlightSlider.addEventListener("change", onHighlightChange);
   fullscreenToggle.addEventListener("click", onFullscreenClick);
+  doc.addEventListener("fullscreenchange", onFullscreenChange);
   const view = doc.defaultView;
   view?.addEventListener("keydown", onKeyDown);
 
   render();
   renderAudio();
   renderDisplay();
+  renderFullscreen();
 
   return {
     element: backdrop,
@@ -615,6 +715,7 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
       highlightSlider.removeEventListener("input", onHighlightInput);
       highlightSlider.removeEventListener("change", onHighlightChange);
       fullscreenToggle.removeEventListener("click", onFullscreenClick);
+      doc.removeEventListener("fullscreenchange", onFullscreenChange);
       backdrop.remove();
     },
   };
