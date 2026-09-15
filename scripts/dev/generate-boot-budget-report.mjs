@@ -514,20 +514,30 @@ if (decodeByRowCount.size === 0) {
         ? ` (\`request→receipt\` itself: ${pct1(split.server.median)} ms.)`
         : "";
       p(
-        `Under \`${run.network.name}\`/${run.cpu.name}, \`decodeMs\` reads ${pct1(readingMs)} ms -- ${inflation.toFixed(1)}x its own-CPU-profile control.${serverNote} CDP's \`Network.emulateNetworkConditions\` is holding the single response frame for its emulated transfer time before the page ever sees it -- exactly what network emulation is supposed to do to a real transfer -- so this is **not** a real-network time estimate for this payload.${estimateLine}`,
+        `Under \`${run.network.name}\`/${run.cpu.name}, \`decodeMs\` reads ${pct1(readingMs)} ms -- ${inflation.toFixed(1)}x its own-CPU-profile control.${serverNote} CDP's \`Network.emulateNetworkConditions\` is holding the single response frame for its emulated transfer time before the page ever sees it, so this is **not** a real-network time estimate for this payload.${estimateLine}`,
       );
     }
     p();
 
     // The residual: does throttling the CPU still change the reading
     // *within* the same network profile, after the CDP-artifact inflation
-    // is accounted for? Reported from data, and left honestly
-    // "unexplained" rather than a story invented to fit it (Quentin's
-    // direction).
-    if (typeof controlReferenceMs === "number") {
+    // is accounted for? Cycle 3 (Tim's direction): the throttled leg's own
+    // split already accounts for it -- `client` is the CPU-bound decode/apply
+    // cost the 4x throttle directly acts on, and `request→receipt` on that
+    // same leg is close to the reference leg's entire (unsplit) window, i.e.
+    // the co-located request/response round trip that throttling barely
+    // touches. Reported from data, not a fixed paragraph with numbers
+    // filled in.
+    if (
+      typeof controlReferenceMs === "number" &&
+      controlThrottledSplit?.server &&
+      controlThrottledSplit?.client
+    ) {
       const controlResidual = controlThrottledMs / controlReferenceMs;
+      const requestReceiptMs = controlThrottledSplit.server.median;
+      const clientMs = controlThrottledSplit.client.median;
       p(
-        `**The CPU-throttling residual.** Even with network emulation removed entirely, \`none\`/throttled reads ${pct1(controlThrottledMs)} ms against \`none\`/reference's ${pct1(controlReferenceMs)} ms (${controlResidual < 1 ? "throttled is faster" : "throttled is slower"}, ${controlResidual.toFixed(2)}x). Both point at the same co-located, un-emulated SpacetimeDB process, so this residual is not a network-emulation artifact. Nothing in the data collected by this harness explains it -- it is left **unexplained** rather than attributed to a mechanism this report cannot verify.`,
+        `**The CPU-throttling residual, attributed to client decode/apply.** Even with network emulation removed entirely, \`none\`/throttled reads ${pct1(controlThrottledMs)} ms against \`none\`/reference's ${pct1(controlReferenceMs)} ms (${controlResidual < 1 ? "throttled is faster" : "throttled is slower"}, ${controlResidual.toFixed(2)}x) -- the expected direction once CDP's emulated-transfer inflation (above) is out of the picture. The throttled leg's own split explains it: \`client\` (CPU-bound decode/apply, the term the 4x throttle directly slows) alone reads ${pct1(clientMs)} ms, and \`request→receipt\` reads ${pct1(requestReceiptMs)} ms -- close to \`none\`/reference's entire ${pct1(controlReferenceMs)} ms window, which has no split of its own but is dominated by the same co-located request/response round trip rather than by decode/apply at 1x CPU. ${pct1(requestReceiptMs)} ms + ${pct1(clientMs)} ms ≈ ${pct1(controlThrottledMs)} ms, matching the throttled reading; this residual is throttled client decode/apply time, not a mechanism this report cannot verify.`,
       );
       p();
     }

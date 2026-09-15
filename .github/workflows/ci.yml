@@ -134,6 +134,7 @@ jobs:
               - 'client/tests/e2e/boot-budget/**'
               - 'server/spikes/boot_budget/**'
               - 'client/playwright.config.ts'
+              - 'client/vite.config.ts'
 
   scripts-tests:
     name: scripts-tests
