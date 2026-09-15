@@ -287,22 +287,40 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // The walk crosses the whole street at the committed walking speed.
   test.setTimeout(180_000);
 
-  await page.goto("/?freezeCrowd=1");
-  await waitForSceneReady(page);
-  const canvas = page.locator("#test-street canvas");
-
-  // FR137's own claim is "no reducer call" -- a websocket *data* frame
-  // (text/binary), never a control frame (ping/pong/close) the browser
-  // sends on its own to answer the server's connection keepalive.
-  // Playwright's page-level `framesent` event does not distinguish the
-  // two (a real reproduction: the committed walk below was briefly flaky
-  // for exactly this reason, once its own runtime grew long enough to
-  // cross a keepalive interval), so this counts through CDP instead,
-  // where the opcode is visible.
+  // FR137's own claim is "no reducer call" -- a data frame on *this app's
+  // own* websocket connection to SpacetimeDB, never a control frame the
+  // browser answers a keepalive with, and never a frame on some other
+  // websocket the page happens to have open. Both turned out to matter:
+  // Playwright's page-level `framesent` event does not distinguish a
+  // control frame from a real one (a real reproduction: the committed
+  // walk was briefly flaky for exactly this reason). Once counted through
+  // CDP by opcode instead, a second real reproduction turned up a second
+  // websocket entirely -- Vite's own HMR client, same-origin with the
+  // page, which sends its own periodic `{"type":"ping"}` *text* frame,
+  // indistinguishable from a real reducer call by opcode alone.
+  // SpacetimeDB's own port is chosen fresh per test run
+  // (`spacetime-harness.mjs`'s `findFreePort`), so it is identified the
+  // one way that needs no literal: the websocket whose origin differs
+  // from the page's own (`use.baseURL`), found from
+  // `Network.webSocketCreated`, wired up before `page.goto` or its own
+  // creation event is missed.
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Network.enable");
+  const baseURL = test.info().project.use.baseURL;
+  if (!baseURL) throw new Error("no baseURL configured for this project");
+  const pageOrigin = new URL(baseURL).origin;
+  let spacetimeRequestId: string | undefined;
+  cdp.on("Network.webSocketCreated", (event: { requestId: string; url: string }) => {
+    const socketOrigin = new URL(event.url.replace(/^ws/, "http")).origin;
+    if (socketOrigin !== pageOrigin) spacetimeRequestId = event.requestId;
+  });
+
   let framesSentWhileWalking = 0;
-  const onWsFrameSent = (event: { response: { opcode: number; payloadData: string } }): void => {
+  const onWsFrameSent = (event: {
+    requestId: string;
+    response: { opcode: number; payloadData: string };
+  }): void => {
+    if (event.requestId !== spacetimeRequestId) return;
     if (event.response.opcode === 1 || event.response.opcode === 2) {
       framesSentWhileWalking++;
       // Diagnostic only, never asserted on: if this ever counts again,
@@ -315,12 +333,10 @@ test("one walk down the test street: collision, depth order, retraction, floors 
 
   /** A `toHaveScreenshot` check holds the player still for as long as its
    * own stability wait takes (minutes on a cold CI run, the first time it
-   * has to write a new baseline) -- long enough, in practice, to cross
-   * whatever produced the one stray data frame a screenshot-lengthened
-   * run saw here before. The player is provably not moving while a
-   * screenshot is taken, so nothing sent during that specific window can
-   * be a result of movement, whatever caused it; the counter is detached
-   * for its duration rather than guessed at case by case. */
+   * has to write a new baseline). The player is provably not moving while
+   * a screenshot is taken, so nothing sent during that specific window
+   * can be a result of movement, whatever caused it -- belt and braces
+   * alongside the socket scoping above, not a substitute for it. */
   function trackFrames(): void {
     cdp.on("Network.webSocketFrameSent", onWsFrameSent);
   }
@@ -328,6 +344,10 @@ test("one walk down the test street: collision, depth order, retraction, floors 
     cdp.off("Network.webSocketFrameSent", onWsFrameSent);
   }
   trackFrames();
+
+  await page.goto("/?freezeCrowd=1");
+  await waitForSceneReady(page);
+  const canvas = page.locator("#test-street canvas");
 
   // The ping indicator (`bootstrap.ts`) is fixed-position and can overlap
   // the canvas's own bounding box; it also recolours on a ping this scene
