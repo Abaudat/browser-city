@@ -343,11 +343,16 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   function untrackFrames(): void {
     cdp.off("Network.webSocketFrameSent", onWsFrameSent);
   }
-  trackFrames();
 
   await page.goto("/?freezeCrowd=1");
   await waitForSceneReady(page);
   const canvas = page.locator("#test-street canvas");
+
+  // Counting starts only once the scene (and with it, the one-time
+  // `SELECT * FROM demo_ping` subscription every connection opens with)
+  // is fully up -- FR137's claim is "no frame while walking", not "no
+  // frame for the whole page lifetime including its own bootstrap".
+  trackFrames();
 
   // The ping indicator (`bootstrap.ts`) is fixed-position and can overlap
   // the canvas's own bounding box; it also recolours on a ping this scene
