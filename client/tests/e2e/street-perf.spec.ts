@@ -91,36 +91,70 @@ function median(values: readonly number[]): number {
   return percentile(sorted, 50);
 }
 
+async function waitForUntil(page: Page, until: StreetWalkUntil, timeout: number): Promise<void> {
+  await page.waitForFunction(
+    (u: StreetWalkUntil) => {
+      const position = window.__bc?.playerPosition;
+      const floor = window.__bc?.playerFloor;
+      if (!position || floor === undefined) return false;
+      switch (u.kind) {
+        case "x-at-least":
+          return position.x >= u.value;
+        case "x-at-most":
+          return position.x <= u.value;
+        case "y-at-least":
+          return position.y >= u.value;
+        case "y-at-most":
+          return position.y <= u.value;
+        case "floor":
+          return floor === u.value;
+      }
+    },
+    until,
+    { timeout },
+  );
+}
+
+/** How long a single segment is allowed, and how it reports itself while
+ * waiting: polled in short slices (`SEGMENT_POLL_MS`) rather than one
+ * long `waitForFunction`, logging the walker's own position each time a
+ * slice elapses without meeting the segment's own release condition --
+ * an observed CI flake (this spec's own crowd keeps animating, unlike
+ * `test-street.spec.ts`'s frozen one, so a cold, busy runner has
+ * occasionally taken markedly longer than a single segment's own real
+ * walking time to render enough frames to cover it) had nothing in the
+ * CI log naming which segment stalled or where the walker actually was,
+ * short of a full trace this workflow does not upload. */
+const SEGMENT_TIMEOUT_MS = 120_000;
+const SEGMENT_POLL_MS = 10_000;
+
 async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
   await page.keyboard.down(segment.key);
   try {
-    await page.waitForFunction(
-      (until: StreetWalkUntil) => {
-        const position = window.__bc?.playerPosition;
-        const floor = window.__bc?.playerFloor;
-        if (!position || floor === undefined) return false;
-        switch (until.kind) {
-          case "x-at-least":
-            return position.x >= until.value;
-          case "x-at-most":
-            return position.x <= until.value;
-          case "y-at-least":
-            return position.y >= until.value;
-          case "y-at-most":
-            return position.y <= until.value;
-          case "floor":
-            return floor === until.value;
-        }
-      },
-      segment.until,
-      // A cold, busy CI runner (this spec's own crowd keeps animating,
-      // unlike `test-street.spec.ts`'s frozen one) has occasionally taken
-      // markedly longer than a single segment's own real walking time to
-      // render enough frames to cover it -- widened from 60s after an
-      // observed CI flake, the same reason the screenshot spec's own
-      // stability wait was widened.
-      { timeout: 120_000 },
-    );
+    const deadline = Date.now() + SEGMENT_TIMEOUT_MS;
+    for (;;) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        const position = await page.evaluate(() => window.__bc?.playerPosition);
+        const floor = await page.evaluate(() => window.__bc?.playerFloor);
+        throw new Error(
+          `walkSegment: '${segment.label}' never met its release condition ` +
+            `(${JSON.stringify(segment.until)}) within ${SEGMENT_TIMEOUT_MS}ms; ` +
+            `stuck at ${JSON.stringify(position)}, floor ${floor}`,
+        );
+      }
+      try {
+        await waitForUntil(page, segment.until, Math.min(SEGMENT_POLL_MS, remaining));
+        return;
+      } catch {
+        const position = await page.evaluate(() => window.__bc?.playerPosition);
+        const floor = await page.evaluate(() => window.__bc?.playerFloor);
+        console.log(
+          `[street-perf] still waiting on '${segment.label}' (${JSON.stringify(segment.until)}); ` +
+            `at ${JSON.stringify(position)}, floor ${floor}`,
+        );
+      }
+    }
   } finally {
     await page.keyboard.up(segment.key);
   }
