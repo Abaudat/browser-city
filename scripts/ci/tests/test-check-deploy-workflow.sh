@@ -118,6 +118,53 @@ sed -i "/^  publish-module:\$/a\\    if: needs.changes.outputs.client == 'true'"
 check "an ordinary if: (no always/failure/!cancelled) on the publish job still passes" 0 bash "$CHECK" "$D7/deploy.yml"
 
 echo
+echo "YAML mapping keys have no required order -- a key written after steps: must be read the same as one written before (Quentin's cycle-2 direction, PR #288)"
+D7B="$(fake_dir)"
+cat > "$D7B/deploy.yml" <<'YAML'
+name: deploy
+on:
+  workflow_dispatch:
+jobs:
+  backup:
+    name: backup
+    runs-on: ubuntu-latest
+    steps:
+      - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
+
+  publish-module:
+    name: publish-module
+    needs: [backup]
+    runs-on: ubuntu-latest
+    steps:
+      - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
+    if: always()
+YAML
+OUT="$(bash "$CHECK" "$D7B/deploy.yml" 2>&1)"; CODE=$?
+check "if: always() written *after* steps: still fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'could still run after'" _ "$OUT"
+
+D7C="$(fake_dir)"
+cat > "$D7C/deploy.yml" <<'YAML'
+name: deploy
+on:
+  workflow_dispatch:
+jobs:
+  backup:
+    name: backup
+    runs-on: ubuntu-latest
+    steps:
+      - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
+
+  publish-module:
+    name: publish-module
+    runs-on: ubuntu-latest
+    steps:
+      - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
+    needs: [backup]
+YAML
+check "needs: [backup] written *after* steps: still passes (not a false FAIL)" 0 bash "$CHECK" "$D7C/deploy.yml"
+
+echo
 echo "the backup job's first-deploy exception must be the positive script, never an inline describe"
 D9="$(fake_dir)"; write_good_workflow "$D9/deploy.yml"
 sed -i 's#bash scripts/ops/check-database-exists.sh "\$DB" --server maincloud#spacetime describe "$DB" --server maincloud --no-config -y --json#' "$D9/deploy.yml"

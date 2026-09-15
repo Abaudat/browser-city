@@ -54,5 +54,45 @@ check "names the missing path" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"'Mode
 check "a missing paths-file fails" 1 bash "$CHECK" "$(fake_dir)/nope.txt" "$D1/ci.yml"
 check "a missing ci workflow fails" 1 bash "$CHECK" "$D1/paths.txt" "$(fake_dir)/nope.yml"
 
+echo
+echo "a path present elsewhere in the file, but not under client: specifically, must still fail (Quentin's cycle-2 direction, PR #288: 'client/**' also appears under the unrelated e2e: filter)"
+D3="$(fake_dir)"
+write_paths_file "$D3/paths.txt"
+cat > "$D3/ci.yml" <<'YAML'
+jobs:
+  changes:
+    steps:
+      - uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            client:
+              - 'client/**'
+            e2e:
+              - 'client/**'
+              - 'ModernTileset/thing/**'
+YAML
+OUT="$(bash "$CHECK" "$D3/paths.txt" "$D3/ci.yml" 2>&1)"; CODE=$?
+check "a path only under e2e:, not client:, fails" 1 bash -c "exit $CODE"
+check "names the missing path and the client: filter" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF \"'ModernTileset/thing/**'\" && printf '%s' \"\$1\" | grep -qF \"own 'client:' filter\"" _ "$OUT"
+
+echo
+echo "no client: filter at all"
+D4="$(fake_dir)"
+write_paths_file "$D4/paths.txt"
+cat > "$D4/ci.yml" <<'YAML'
+jobs:
+  changes:
+    steps:
+      - uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            server:
+              - 'server/**'
+YAML
+OUT="$(bash "$CHECK" "$D4/paths.txt" "$D4/ci.yml" 2>&1)"; CODE=$?
+check "no client: filter at all fails" 1 bash -c "exit $CODE"
+check "names the missing filter" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"no 'client:' filter found\"" _ "$OUT"
+
 summary
 exit $?

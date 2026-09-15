@@ -189,43 +189,18 @@ jobs:
           ref: ${{ needs.resolve.outputs.sha }}
           fetch-depth: 0
 
+      # scripts/ci/decide-client-deploy.sh owns the stamp-parsing,
+      # path-stripping and git-diff-exit-code logic, with its own fixture
+      # tests under scripts/ci/tests -- the same move cycle 1 made for
+      # backup's `describe` probe, and for the same reason: this decides
+      # what ships to players, and untested bash inline in YAML is not
+      # good enough for that.
       - name: does the deployed client need to change?
         id: decide
         env:
           SHA: ${{ needs.resolve.outputs.sha }}
         run: |
-          LIVE_SHA="$(curl -sf "$PAGES_URL" 2>/dev/null | grep -oE 'name="bc-build" content="[0-9a-f]+"' | sed -E 's/.*content="([0-9a-f]+)"/\1/' | head -n1 || true)"
-          if [ -z "$LIVE_SHA" ]; then
-            echo "changes: no live bc-build stamp found (unreachable, or the very first deploy) -- deploying the client" >&2
-            echo "client=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # scripts/ci/lib/deploy-client-paths.txt is the one list this
-          # and ci.yml's own client: filter both read -- scripts/ci/
-          # check-deploy-client-paths-current.sh keeps the latter a
-          # superset of it. The `/**` suffix (dorny/paths-filter's own
-          # glob syntax) is stripped: a plain directory pathspec already
-          # means "everything under it" to `git diff`.
-          PATHSPEC=()
-          while IFS= read -r line; do
-            line="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
-            [ -n "$line" ] || continue
-            case "$line" in '#'*) continue ;; esac
-            PATHSPEC+=("${line%/**}")
-          done < scripts/ci/lib/deploy-client-paths.txt
-
-          # git diff --quiet exits 0 (no difference -> skip), 1 (a
-          # difference -> deploy) or a git error, e.g. 128 on an unknown
-          # revision if the live SHA fell out of history -- any non-zero
-          # exit takes the same "deploy" branch below, the safe default.
-          if git diff --quiet "$LIVE_SHA" "$SHA" -- "${PATHSPEC[@]}" 2>/dev/null; then
-            echo "changes: no client-affecting path changed since the live deploy ($LIVE_SHA) -- skipping deploy-client" >&2
-            echo "client=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changes: client-affecting paths changed since the live deploy ($LIVE_SHA), or the diff could not be resolved -- deploying the client" >&2
-            echo "client=true" >> "$GITHUB_OUTPUT"
-          fi
+          echo "client=$(bash scripts/ci/decide-client-deploy.sh "$SHA" "$PAGES_URL")" >> "$GITHUB_OUTPUT"
 
   # NFR39: the world is backed up before every publish. The one exception
   # is the very first deploy, when the database does not exist yet --
@@ -433,7 +408,7 @@ jobs:
         working-directory: client
         env:
           SHA: ${{ needs.resolve.outputs.sha }}
-        run: sed -i "s#</head>#  <meta name=\"bc-build\" content=\"$SHA\" />\n  </head>#" dist/index.html
+        run: bash ../scripts/ci/stamp-build.sh dist/index.html "$SHA"
 
       - name: base path and production URI both check out -- fails before Pages ever serves it
         run: bash scripts/ci/check-pages-bundle.sh client/dist "$BASE_PATH" "$MAINCLOUD_WS_URI"
@@ -493,10 +468,11 @@ jobs:
         env:
           SHA: ${{ needs.resolve.outputs.sha }}
         run: |
+          . scripts/ci/lib/bc-build-stamp.sh
           DEADLINE=$((SECONDS + 300))
           while [ "$SECONDS" -lt "$DEADLINE" ]; do
-            BODY="$(curl -sf "$PAGES_URL" || true)"
-            if printf '%s' "$BODY" | grep -qF "bc-build\" content=\"$SHA\""; then
+            LIVE_SHA="$(curl -sf "$PAGES_URL" 2>/dev/null | bc_build_stamp_extract || true)"
+            if [ "$LIVE_SHA" = "$SHA" ]; then
               echo "deploy: $PAGES_URL now serves $SHA" >&2
               exit 0
             fi

@@ -74,11 +74,28 @@ job_block() { # <name> -- the job's full body, from its "  <name>:" line to
   ' "$WORKFLOW"
 }
 
-job_header() { # <name> -- the job's own keys (needs:/if:/runs-on:/...),
-               # stopping before its `steps:` list -- never a step's own
-               # `run:` body, so a legitimate `always()` inside a bash
-               # script step is never mistaken for the job's condition.
-  job_block "$1" | awk '/^ *steps:$/ { exit } { print }'
+job_header() { # <name> -- the job's own keys (needs:/if:/runs-on:/...) and
+               # their own block-scalar continuations (an `if: |` value's
+               # lines), excluding the `steps:` list itself -- never a
+               # step's own `run:` body, so a legitimate `always()` inside
+               # a bash script step is never mistaken for the job's
+               # condition. YAML mapping keys have no required order, so
+               # this tracks which job-level key (4-space indent) owns
+               # each following deeper-indented line, rather than simply
+               # stopping at the first `steps:` line -- a job whose
+               # `if:`/`needs:` happens to be written *after* its `steps:`
+               # block is checked exactly the same as one written before.
+  job_block "$1" | awk '
+    /^    [A-Za-z0-9_-]+:/ {
+      key = $0
+      sub(/^    /, "", key)
+      sub(/:.*/, "", key)
+      in_steps = (key == "steps")
+      if (!in_steps) print
+      next
+    }
+    !in_steps { print }
+  '
 }
 
 ALL_JOB_NAMES="$(awk '
