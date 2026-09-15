@@ -272,32 +272,28 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // The walk crosses the whole street at the committed walking speed.
   test.setTimeout(180_000);
 
-  const wsPromise = page.waitForEvent("websocket");
   await page.goto("/?freezeCrowd=1");
-  const ws = await wsPromise;
   await waitForSceneReady(page);
   const canvas = page.locator("#test-street canvas");
 
+  // FR137's own claim is "no reducer call" -- a websocket *data* frame
+  // (text/binary), never a control frame (ping/pong/close) the browser
+  // sends on its own to answer the server's connection keepalive.
+  // Playwright's page-level `framesent` event does not distinguish the
+  // two (a real reproduction: the committed walk below was briefly flaky
+  // for exactly this reason, once its own runtime grew long enough to
+  // cross a keepalive interval), so this counts through CDP instead,
+  // where the opcode is visible.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Network.enable");
   let framesSentWhileWalking = 0;
-  const onFrameSent = (): void => {
-    framesSentWhileWalking++;
+  const onWsFrameSent = (event: { response: { opcode: number } }): void => {
+    if (event.response.opcode === 1 || event.response.opcode === 2) framesSentWhileWalking++;
   };
-  ws.on("framesent", onFrameSent);
+  cdp.on("Network.webSocketFrameSent", onWsFrameSent);
 
-  /** A `toHaveScreenshot` check holds the player still for as long as its
-   * own stability wait takes (cold-CI-runner minutes on the first run,
-   * `SCREENSHOT_OPTIONS.timeout` above) -- long enough, in practice, to
-   * cross a websocket keepalive interval that has nothing to do with
-   * movement. The FR137 claim below is specifically about movement, so a
-   * screenshot's own dwell time is excluded from what it measures, the
-   * same way the scene's own player is not moving while one is taken. */
   async function screenshot(name: string): Promise<void> {
-    ws.off("framesent", onFrameSent);
-    try {
-      await expect(canvas).toHaveScreenshot(name, SCREENSHOT_OPTIONS);
-    } finally {
-      ws.on("framesent", onFrameSent);
-    }
+    await expect(canvas).toHaveScreenshot(name, SCREENSHOT_OPTIONS);
   }
 
   // --- inside shop A -----------------------------------------------------
@@ -466,9 +462,9 @@ test("one walk down the test street: collision, depth order, retraction, floors 
     expectedOrderFor(backOnTheStreet.x, backOnTheStreet.y, backOnTheStreet.floor),
   );
 
-  ws.off("framesent", onFrameSent);
+  cdp.off("Network.webSocketFrameSent", onWsFrameSent);
   // FR137: the whole walk was client-authoritative -- not one WebSocket
-  // frame, and therefore not one reducer call, while moving.
+  // data frame, and therefore not one reducer call, while moving.
   expect(framesSentWhileWalking).toBe(0);
 
   // Appearance is the same five parts it was before the walk (FR61): the
