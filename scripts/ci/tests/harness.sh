@@ -25,6 +25,20 @@ check() {
   fi
 }
 
+# check_contains <name> <needle> <haystack> -- substring assertion, used
+# to pin a specific stdout value (e.g. decide-client-deploy.sh's
+# "true"/"false") rather than only a command's exit code.
+check_contains() {
+  local name="$1" needle="$2" haystack="$3"
+  if printf '%s' "$haystack" | grep -qF "$needle"; then
+    printf '  ok   %s\n' "$name"
+    pass=$((pass + 1))
+  else
+    printf '  FAIL %s -- expected to find %q in:\n       %s\n' "$name" "$needle" "$haystack"
+    fail=$((fail + 1))
+  fi
+}
+
 fake_dir() {
   local d
   d="$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/bc-ci-fake.XXXXXX")"

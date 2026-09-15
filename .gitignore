@@ -16,6 +16,8 @@ spacetime.*.local.json
 client/node_modules/
 client/dist/
 client/dist-boot-budget-decode/
+client/dist-pages/
+client/dist-deploy-smoke/
 client/.vite/
 client/playwright-report/
 client/test-results/

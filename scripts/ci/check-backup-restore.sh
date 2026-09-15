@@ -404,5 +404,22 @@ fi
 grep -qF "not the caller" "$DATA_DIR/foreign-owner.log" || fail "the foreign-owner refusal did not name the reason" "$DATA_DIR/foreign-owner.log"
 ok "restore_module_owner refuses a row whose owner is not the caller"
 
+# --- 12: scripts/ops/check-database-exists.sh's not-found contract, against
+# the pinned CLI's real wording (Quentin's cycle-2 direction, PR #288: the
+# deploy story's own stub-fixture suite for this script only proves it
+# agrees with itself; a real instance is already running here, so this is
+# where the CLI's actual not-found wording is exercised for real, not just
+# asserted by a stubbed binary) ---------------------------------------------
+EXISTS_OUT="$(bash "$OPS/check-database-exists.sh" "$SRC" --server "$SERVER_URL")" \
+  || fail "check-database-exists.sh failed against '$SRC', a database that really exists"
+[ "$EXISTS_OUT" = "true" ] || fail "check-database-exists.sh printed '$EXISTS_OUT' for '$SRC', which really exists (expected 'true')"
+ok "check-database-exists.sh recognises a real, published database"
+
+NEVER_PUBLISHED=bc-backup-never-published
+NOT_FOUND_OUT="$(bash "$OPS/check-database-exists.sh" "$NEVER_PUBLISHED" --server "$SERVER_URL")" \
+  || fail "check-database-exists.sh failed against '$NEVER_PUBLISHED', a name that was never published -- the CLI's not-found wording may have drifted from the one the script matches"
+[ "$NOT_FOUND_OUT" = "false" ] || fail "check-database-exists.sh printed '$NOT_FOUND_OUT' for '$NEVER_PUBLISHED', which was never published (expected 'false')"
+ok "check-database-exists.sh's not-found contract holds against the real, pinned CLI"
+
 echo "$SCRIPT: story 1.4's restore is proven against a real SpacetimeDB instance -- every guard above, positive and negative" >&2
 exit 0

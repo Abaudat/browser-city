@@ -54,6 +54,13 @@ jobs:
     name: export
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Story: Deploy (PR #288, Quentin's direction) moved
+    # SPACETIME_MAINCLOUD_TOKEN/BACKUP_PASSPHRASE into this environment,
+    # restricted to master -- the same credential deploy.yml's `backup`/
+    # `publish-module` jobs use, so both workflows declare it rather than
+    # either carrying a repo-level secret anyone who can push a branch
+    # and dispatch a workflow from it could read.
+    environment: maincloud
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -118,6 +125,7 @@ jobs:
     if: inputs.rehearsal
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment: maincloud
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

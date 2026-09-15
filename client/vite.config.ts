@@ -15,6 +15,17 @@ const bootHttps = process.env.BC_BOOT_HTTPS === "1";
 
 export default defineConfig({
   root: ".",
+  // This repo is `Abaudat/browser-city`, so GitHub Pages serves the built
+  // client from `/browser-city/`, not the domain root -- a default build
+  // emits `<script src="/assets/...">`, which resolves to the domain root
+  // and 404s, a blank page that a build step still calls "success" (the
+  // deploy story). No hard-coded base here: the dev server, `npm run
+  // test:e2e`'s disposable preview and the boot-budget harness all serve
+  // from `/`, so the Pages base is only ever `vite build --base=...`'s own
+  // CLI flag -- `.github/workflows/deploy.yml`'s real build, and `ci.yml`'s
+  // production-style rehearsal of it, are the only two callers that ever
+  // pass one. `scripts/ci/check-pages-bundle.sh` is the mechanical
+  // assertion that a build actually carries the base it claims to.
   plugins: bootHttps ? [basicSsl()] : [],
   build: {
     outDir: "dist",

@@ -192,4 +192,10 @@ check "client-only exits non-zero on the same fixture" 1 bash -c \
 check "cargo still was never invoked" 1 bash -c "[ -e '$CARGO_SENTINEL' ]"
 clear_client_tests
 
+echo
+echo "green: a Requirement cell with an apostrophe in a monitored section still passes (PR #288 cycle 2: the trimming step used to be xargs, which aborts on an unmatched quote -- any natural-English apostrophe there crashed the whole check)"
+write_matrix "Schema permanence"
+sed -i "s#A World addressing requirement#A World addressing requirement -- Quentin's direction#" "$D/docs/trace-matrix.md"
+check "an apostrophe in a covered Requirement cell -> exit 0" 0 run_check
+
 summary

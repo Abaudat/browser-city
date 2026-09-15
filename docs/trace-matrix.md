@@ -225,23 +225,24 @@ discipline as the sections above.
 | --- | --- | --- |
 | The spike report measured SpacetimeDB version never goes stale against the `server/Cargo.toml` pin, the `docs/architecture.md` stack line, or the pinned CLI installer exact patch | covered | `scripts/ci/check-spike-pin.sh` |
 | The drift claims in `docs/spikes/1.3-scheduled-reducer-timing.md` are re-runnable with one command | covered | `scripts/dev/run-sched-timing-spike.sh` |
-| Whether a pending scheduled row survives a schema-changing publish, or a publish to Maincloud, is unmeasured (only a same-wasm, same-schema local republish was measured) | deferred | the deploy story |
+| Whether a pending scheduled row survives a schema-changing publish, or a publish to Maincloud, is unmeasured (only a same-wasm, same-schema local republish was measured) | deferred | a schema-changing publish exercised against Maincloud with a pending scheduled row already queued -- the deploy story (this one) only proves an *additive* publish round-trips (NFR33's own guard already forbids a non-additive one from ever reaching `deploy.yml`), so this stays unmeasured until a story adds a real scheduled reducer for it to matter to |
 
 ## Backup and restore
 
 Story 1.4: `docs/spikes/1.4-backup-restore.md`'s logical export/restore and
-the platform limitations it found. NFR39 splits into two rows: this story
-proves the restore has been tested; it does not wire a backup into a
-migration, because no Maincloud deploy workflow exists yet to wire it into
-(same Guard-path discipline as the sections above).
+the platform limitations it found. NFR39 split into two rows while no
+Maincloud deploy workflow existed; the deploy story (this one) wires the
+first into `.github/workflows/deploy.yml` and provisions the Maincloud
+credential the second was blocked on (same Guard-path discipline as the
+sections above).
 
 | Requirement | Status | Guard |
 | --- | --- | --- |
 | The restore has been tested: export -> restore -> verify against a real SpacetimeDB instance, including adversarial values (every non-scheduled table, Timestamp-bearing ones included), a real `auto_inc` id gap (the restored sequence advancing past the recorded floor in the exported manifest, never merely to the maximum id present in the restored data, so no id the source ever issued is re-issued; an overshoot correctly aborting the whole call), byte-budgeted multi-batch restore, and the refusal paths (NFR39) | covered | `scripts/ci/check-backup-restore.sh` |
 | Every non-scheduled table has a `restore_<table>` reducer -- a table nobody adds one for can never actually be restored | covered | `server/bounds/tests/restore_coverage.rs` |
-| The world is backed up before every migration (NFR39) | deferred | the deploy story -- no Maincloud deploy workflow exists yet to run `scripts/ops/export-world.sh` before a publish |
-| An unattended scheduled export runs daily and alerts on its own failure, including a schedule GitHub silently disabled | deferred | the deploy story -- `backup.yml` is `workflow_dispatch`-only until `SPACETIME_MAINCLOUD_TOKEN` exists; a daily schedule that fails on every run until then trains people to ignore the alarm |
-| A full restore has been performed and verified against Maincloud (AC4), including a real, >=100,000-id auto_inc gap-fill under the reducer execution limits Maincloud itself imposes, with its wall time measured, not merely local timings extrapolated | deferred | no Maincloud credential (`SPACETIME_MAINCLOUD_TOKEN`/`BACKUP_PASSPHRASE`/`vars.BACKUP_DATABASE`) exists in this repo yet -- `.github/workflows/backup.yml`'s `rehearsal` job (which already carves that gap with `scripts/ops/seed-id-gaps.sh` and logs the restore's own wall time) is correct by inspection and unexercised |
+| The world is backed up before every migration (NFR39) | covered | `.github/workflows/deploy.yml` -- the `backup` job, always run before `publish-module` (`needs:`); `scripts/ci/check-deploy-workflow.sh` asserts that dependency mechanically |
+| An unattended scheduled export runs daily and alerts on its own failure, including a schedule GitHub silently disabled | deferred | `backup.yml`'s own daily `schedule` trigger and a dead-man's-switch that does not depend on that same schedule to notice it stopped firing -- neither exists yet; this story provisions the credential `backup.yml`'s header names as the blocker but does not itself add the schedule, so `backup.yml` stays `workflow_dispatch`-only |
+| A full restore has been performed and verified against Maincloud (AC4), including a real, >=100,000-id auto_inc gap-fill under the reducer execution limits Maincloud itself imposes, with its wall time measured, not merely local timings extrapolated | deferred | the Maincloud credential this story adds a place for (`maincloud` environment secrets, `vars.MAINCLOUD_OWNER_IDENTITY`/`vars.BACKUP_DATABASE`) has not actually been provisioned yet -- `.github/workflows/backup.yml`'s `rehearsal` job (which already carves that gap with `scripts/ops/seed-id-gaps.sh` and logs the restore's own wall time) is correct by inspection and unexercised; moves to `covered` once a green `rehearsal: true` run is linked |
 | Cross-table consistency during export (each table is its own transaction) | deferred | the first reducer that writes two tables in one transaction (e.g. `citizen` + `citizen_state`) -- nothing reminds anyone today because none does yet |
 | No reducer other than `restore_<table>` writes an auto_inc table while a restore is open -- a client-facing write racing the gap-fill loop could observe or create an id the exported data still needs | deferred | the first story whose reducer accepts a live client connection *and* writes an auto_inc table; today a restore always targets a database name no client connects to, by procedure (`scripts/ops/restore-world.sh`'s own doc comment), not by a lock the module enforces |
 | The spike report measured SpacetimeDB version never goes stale against the same three pins story 1.3 does | covered | `scripts/ci/check-spike-pin.sh` |
@@ -259,3 +260,27 @@ subscription-decode sweep. Same Guard-path discipline as the sections above.
 | The atlas term's regression gate is request-shaped (count and bytes before `player-controllable`), not a byte-sum over the whole public art catalogue -- so it still guards the dominant term docs/spikes/1.14-boot-budget.md measured even when the catalogue's own total size is unrelated to what one boot fetches | covered | `client/tests/e2e/boot-marks.spec.ts` |
 | The boot-budget spike module (`server/spikes/boot_budget`) still compiles, and no spike code (its generated bindings, the decode-only HTML entry) reaches the production bundle | covered | `.github/workflows/ci.yml` -- `build`'s own compile step, `client-build`'s dist-leak check |
 | The boot-budget harness itself (script, Playwright project, spike module) runs end to end on a Linux CI runner, not only the Windows dev box it was built on | covered | `.github/workflows/ci.yml` -- `boot-smoke` |
+
+## Deploy
+
+This story: publishing the module to Maincloud and the client to GitHub
+Pages, with a backup before every publish (NFR39, above), a structural
+guard against a destructive publish, and a real post-deploy smoke check.
+Same Guard-path discipline as the sections above.
+
+Cycle 1 (Quentin's direction): a row is only `covered` once it has actually run for real, not merely
+once its guard exists -- the credential and variables this story adds a place for
+(`vars.DEPLOY_ENABLED` included) are not provisioned yet, so nothing below has ever exercised the
+live Maincloud/Pages path. `deferred`/`partial` rows below say exactly how far each one actually
+got.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| A build under the real Pages base (`/browser-city/`) never references any top-level dist entry root-absolute -- a misconfigured base fails the build, not the deploy | covered | `scripts/ci/check-pages-bundle.sh`, run on every client PR by `ci.yml`'s `client-build` job against a production-style build; the same guard runs again in `deploy-client` against the real build once `deploy.yml` is enabled |
+| The production URI actually reaches the build: the `ws://127.0.0.1` local-dev fallback (`client/src/net/config.ts`) never ships in a Pages build, and the expected URI is actually present | covered | `scripts/ci/check-pages-bundle.sh` (same guard and PR-time caller as the row above) |
+| A publish never carries a destructive command or flag (`--delete-data`/`-c`/`--clear-database`/`--break-clients`/`spacetime delete`), and every job that publishes `needs:` (and can only run after) the job that backs up first (NFR39) | covered | `scripts/ci/check-deploy-workflow.sh`, run directly against `deploy.yml` by `ci.yml`'s `scripts-tests` job, with its own fixture tests under `scripts/ci/tests` |
+| The `backup` job's first-deploy exception positively recognises "database not found" rather than treating any failure as one | covered | `scripts/ops/check-database-exists.sh`, fixture-tested under `scripts/ops/tests` with a stubbed CLI (found/not-found/generic-error) |
+| The deployed bundle serves the exact commit `deploy.yml` published, not a previous one Pages propagation lag would otherwise let a smoke check pass against | deferred | `.github/workflows/deploy.yml` -- the `deploy-client` job's own `<meta name="bc-build">` stamp and the `smoke` job's bounded poll for it exist and are structurally sound, but have never run for real: `vars.DEPLOY_ENABLED` is not set, so `deploy.yml` has never completed a live run |
+| The deployed game actually reaches player-controllable: it loads with no failed request and no console/page error, its WebSocket dials the configured Maincloud URI and database, and its initial subscription applies | partial | `client/tests/e2e/deploy-smoke.spec.ts` (the `deploy-smoke` Playwright project) -- rehearsed for real by `ci.yml`'s `e2e` job against a production-base build under `/browser-city/`, backed by a disposable local SpacetimeDB, on every client PR; `deploy.yml`'s `smoke` job runs the identical spec against the live Maincloud/Pages path, but that path has never actually run (see the row above) |
+| The client, once deployed, is redeployed only when it actually needs to be -- compared against what is live, never the previous commit | deferred | `.github/workflows/deploy.yml` -- the `changes` job's live-vs-resolved-SHA `git diff`; structurally sound, never exercised against a real live deploy |
+| The post-deploy smoke check reuses one fixed identity rather than minting a fresh one every run (NFR39 live-database hygiene) | deferred | the first story whose `client_connected` or `connect` path actually writes a row (`server/src/lib.rs`'s `identity_connected` writes nothing today, so a fresh identity every smoke run pollutes nothing) -- when it lands, the fixed identity goes in through Playwright (`addInitScript`/storage) or a server-side smoke identity, never a URL query parameter (readable by any visitor, and captured verbatim by Playwright's own `trace`/`playwright-report` artifacts on a public repo) |

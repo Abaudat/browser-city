@@ -1,0 +1,21 @@
+# The single list of paths that decide whether the deployed client needs
+# to change (Quentin's direction, PR #288 cycle 1: "keep the client path
+# list in one place. Today it is copied between ci.yml and deploy.yml and
+# will drift"). Two readers, kept in sync mechanically rather than by
+# hand:
+#   - .github/workflows/deploy.yml's `changes` job builds a git pathspec
+#     from these lines (the `/**` suffix stripped -- a plain directory
+#     pathspec already means "everything under it" to `git diff`) to
+#     decide whether `deploy-client` needs to run.
+#   - .github/workflows/ci.yml's own `client:` paths-filter is checked by
+#     scripts/ci/check-deploy-client-paths-current.sh to still contain
+#     every line here verbatim -- it is deliberately a superset (it also
+#     gates client-check/client-build/e2e on server/**, scripts/**, etc.,
+#     which decide whether those *jobs* run, not whether the deployed
+#     asset itself changed), so the direction being checked is one-way:
+#     every line here must appear in ci.yml, not the reverse.
+#
+# Blank lines and #-comments are ignored by both readers.
+client/**
+ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**
+ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**
