@@ -41,7 +41,7 @@ import {
   streetBridgeLapRoute,
   streetWalkRoute,
 } from "../../src/test-street/fixture";
-import { lamppostRestY } from "../unit/test-street/street-world";
+import { streetWalkInputs } from "../unit/test-street/street-world";
 
 /** The frame budget the scene's own work must fit inside. A 60 FPS frame
  * is 16.7 ms end to end; the app's own work getting half of that leaves
@@ -152,7 +152,7 @@ test("the frame path stays inside its work budget for a whole walked session (NF
   // walker travels past its release condition is a property of the
   // machine, not of the route -- a loop that needs sub-cell precision is
   // a loop that hangs on a slow enough runner.
-  await walkRoute(page, streetWalkRoute({ lamppostRestY: lamppostRestY() }));
+  await walkRoute(page, streetWalkRoute(streetWalkInputs()));
 
   // What *is* looped is the bridge lap, whose every segment ends on a
   // collider or a floor transition -- both immune to overshoot -- and

@@ -11,13 +11,22 @@ import { fileURLToPath } from "node:url";
 import { parseDefs } from "../../../src/defs/parse";
 import type { Defs } from "../../../src/defs/types";
 import {
+  BRIDGE_DECK_Y,
+  BRIDGE_UNDER_CURB_COLLIDER,
+  BRIDGE_UNDER_EXIT_COLLIDER,
+  BRIDGE_UNDER_EXIT_Y,
+  BRIDGE_UNDER_PILLAR_COLLIDER,
+  BRIDGE_UNDER_PILLAR_X,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
+  PAVEMENT_CROSSING_REST_COLLIDER,
+  PAVEMENT_CROSSING_REST_X,
   PLAYER_START,
   STREET_BUILDING_AREAS,
   STREET_ROOM_AREAS,
   STREET_TRANSITIONS,
   STREET_WALK_DIRECTIONS,
+  type StreetWalkInputs,
   type StreetWalkSegment,
   streetColliderSources,
   streetPlacedRows,
@@ -94,6 +103,75 @@ export function lamppostRestY(): number {
     throw new Error(`lamppostRestY: def ${LAMPPOST_DEF_ID} has no collider in defs.json`);
   }
   return LAMPPOST_CELL.y + lamppost.collider.y0 / defs.colliderSubcellsPerCell;
+}
+
+/** Where the walk's own crossing leg comes to rest: the west face of
+ * `PAVEMENT_CROSSING_REST_COLLIDER`, the same "feet/body edge touches
+ * the near face" shape every other rest in this file uses, computed from
+ * the real collider and the real movement config, never a hand-typed
+ * number (story 1.13, cycle 3; `PAVEMENT_CROSSING_REST_X`'s own doc
+ * comment says why this leg needs a rest at all). */
+export function pavementCrossingRestX(): number {
+  const config = streetMovementConfig();
+  const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  return (
+    PAVEMENT_CROSSING_REST_X +
+    PAVEMENT_CROSSING_REST_COLLIDER.x0 / config.subcellsPerCell -
+    halfWidth
+  );
+}
+
+/** Where the underpass checkpoint's own row is fixed: approaching the
+ * curb from the south (walking north, up into the underpass row from the
+ * subway stairwell's own row), the body's own top edge -- `bodyHeight`
+ * north of `pos.y`, the value that always names the feet, bottom-
+ * anchored -- stops at the curb's own south face (`collider.y1`). Not a
+ * south approach: the curb's own north face sits exactly on the row's
+ * own entrance (`collider.y0` is `0`), so a walker coming from the north
+ * side never enters the row at all, and could never leave it southward
+ * either, since the same face is in the way both times. Computed from
+ * the real collider shape and the real movement config, never a
+ * hand-typed number (story 1.13, cycle 3). */
+export function bridgeUnderRestY(): number {
+  const config = streetMovementConfig();
+  const bodyHeight = config.bodyHeightSubcells / config.subcellsPerCell;
+  return BRIDGE_DECK_Y + BRIDGE_UNDER_CURB_COLLIDER.y1 / config.subcellsPerCell + bodyHeight;
+}
+
+/** Where the underpass checkpoint's own column is fixed: approaching the
+ * pillar from the west (walking east), the body's own east edge stops at
+ * the pillar's own west face (`collider.x0`), so the body's own centre
+ * (`pos.x`) lands that far short by the body's own half-width. */
+export function bridgeUnderRestX(): number {
+  const config = streetMovementConfig();
+  const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  return (
+    BRIDGE_UNDER_PILLAR_X + BRIDGE_UNDER_PILLAR_COLLIDER.x0 / config.subcellsPerCell - halfWidth
+  );
+}
+
+/** Where leaving the underpass comes to rest: the north face of
+ * `BRIDGE_UNDER_EXIT_COLLIDER`, one row south of the checkpoint -- the
+ * same "feet touch the near face" shape every rest in this file uses,
+ * chosen so the body's own top edge (not only its feet) clears the
+ * pillar's own row (`BRIDGE_UNDER_EXIT_COLLIDER`'s own doc comment says
+ * why leaving needs a rest at all). */
+export function bridgeExitRestY(): number {
+  const config = streetMovementConfig();
+  return BRIDGE_UNDER_EXIT_Y + BRIDGE_UNDER_EXIT_COLLIDER.y0 / config.subcellsPerCell;
+}
+
+/** Every real value [`streetWalkRoute`] needs, assembled once -- the one
+ * call site every unit test and e2e spec goes through, so none of them
+ * can drift from another about what a rest position actually is. */
+export function streetWalkInputs(): StreetWalkInputs {
+  return {
+    lamppostRestY: lamppostRestY(),
+    pavementCrossingRestX: pavementCrossingRestX(),
+    bridgeUnderRestY: bridgeUnderRestY(),
+    bridgeUnderRestX: bridgeUnderRestX(),
+    bridgeExitRestY: bridgeExitRestY(),
+  };
 }
 
 /** Whether a whole cell can be stood on, on its own floor: the real

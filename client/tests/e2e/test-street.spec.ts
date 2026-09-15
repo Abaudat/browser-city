@@ -76,8 +76,8 @@ import {
 } from "../../src/test-street/fixture";
 import {
   committedDefs,
-  lamppostRestY,
   streetOwnershipIndex,
+  streetWalkInputs,
   streetWindowDefIds,
 } from "../unit/test-street/street-world";
 
@@ -99,21 +99,18 @@ test.use({ viewport: { width: 1920, height: 1080 } });
 // own per-pixel colour-difference tolerance, 0-1) absorbs anti-aliasing
 // noise without widening how many pixels may differ.
 //
-// 2,500, not a much smaller number: the underpass checkpoint is reached
-// after several segments of real, timed movement, so its own rest
-// position carries a little run-to-run jitter from ordinary round-trip
-// latency (unlike the interior checkpoint, which is the walk's fixed
-// starting position and needs none of this headroom) -- there is no
-// collider to stop against mid-span, on purpose, since the whole point
-// of an underpass is that it is open. With nearest-neighbour sampling
-// (no antialiasing to soften it), even a sub-pixel position difference
-// can shift the avatar's own drawn pixels by a full device pixel,
-// which a real CI comparison measured at 1,152 differing pixels between
-// two otherwise-identical runs. 2,500 gives that headroom while staying
-// an order of magnitude tighter than the ratio this replaced.
+// Per-shot, not shared (Quentin's direction, cycle 3): a static shot and
+// a moving one do not carry the same risk, and a budget wide enough for
+// one is not a meaningful check on the other. Both checkpoints are now
+// real collider rests, not timed thresholds (`fixture.ts`'s own
+// `streetWalkRoute` doc comments say why) -- the position itself is
+// bit-for-bit identical run to run (`street-conformance.test.ts`'s own
+// "stops at the exact same position..." test pins that at unit level),
+// so what is left for either budget to absorb is rendering noise alone
+// (font hinting, compositor rounding), never position jitter. Below the
+// smallest object under test (the avatar, ~2,000px) on both.
 const SCREENSHOT_OPTIONS = {
   animations: "disabled",
-  maxDiffPixels: 2_500,
   threshold: 0.2,
   // Playwright's own "wait for a stable screenshot" pre-check needs more
   // than its 5s default the first time it runs on a CI image: nothing
@@ -122,6 +119,21 @@ const SCREENSHOT_OPTIONS = {
   // runner has taken longer than that in practice.
   timeout: 30_000,
 } as const;
+
+// The interior checkpoint is the walk's own fixed starting position --
+// no movement at all before this shot, so nothing but rendering noise
+// should ever differ. Measured on CI (two consecutive runs of the same
+// commit, `update-visual-baselines.yml`'s own workflow run TODO): TODO px.
+const INTERIOR_MAX_DIFF_PIXELS = 150;
+
+// The underpass checkpoint is reached after several segments of real,
+// keyboard-driven movement, but both axes are collider rests now (story
+// 1.13, cycle 3), so the position itself carries no jitter -- this
+// budget is rendering noise only, the same as the interior shot's, with
+// a little more headroom because the walk that reaches it is longer.
+// Measured on CI (two consecutive runs of the same commit,
+// `update-visual-baselines.yml`'s own workflow run TODO): TODO px.
+const UNDERPASS_MAX_DIFF_PIXELS = 200;
 
 const RANK_TABLE = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
 const CODE_BY_NAME = Object.fromEntries(LAYER_TABLE.map((row) => [row.name, row.code]));
@@ -373,10 +385,14 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // timing into the baseline (Quentin's direction, cycle 2).
   const pingIndicator = page.locator("#bc-ping-indicator");
 
-  async function screenshot(name: string): Promise<void> {
+  async function screenshot(name: string, maxDiffPixels: number): Promise<void> {
     untrackFrames();
     try {
-      await expect(canvas).toHaveScreenshot(name, { ...SCREENSHOT_OPTIONS, mask: [pingIndicator] });
+      await expect(canvas).toHaveScreenshot(name, {
+        ...SCREENSHOT_OPTIONS,
+        maxDiffPixels,
+        mask: [pingIndicator],
+      });
     } finally {
       trackFrames();
     }
@@ -410,9 +426,9 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // The interior checkpoint (Quentin's direction, cycle 1): every id-based
   // check above passes, and this is what catches it if it still looks
   // wrong.
-  await screenshot("interior.png");
+  await screenshot("interior.png", INTERIOR_MAX_DIFF_PIXELS);
 
-  const route = streetWalkRoute({ lamppostRestY: lamppostRestY() });
+  const route = streetWalkRoute(streetWalkInputs());
   const segment = (label: string): StreetWalkSegment => {
     const found = route.find((s) => s.label === label);
     if (!found) throw new Error(`no route segment '${label}'`);
@@ -491,7 +507,9 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   );
 
   // --- under the bridge --------------------------------------------------
-  await walkSegment(page, segment("east-along-the-pavement"));
+  await walkSegment(page, segment("past-the-lamppost"));
+  await walkSegment(page, segment("off-the-crossing-row"));
+  await walkSegment(page, segment("east-along-the-crossing"));
   await walkSegment(page, segment("on-the-underpass-row"));
   await walkSegment(page, segment("under-the-bridge"));
   const underTheBridge = await playerState(page);
@@ -507,7 +525,7 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // here, and this is the one check that would have caught the avatar
   // reading as clipped at the canvas edge instead of visibly under a
   // deck.
-  await screenshot("underpass.png");
+  await screenshot("underpass.png", UNDERPASS_MAX_DIFF_PIXELS);
 
   // Two floors at one (x, y), both drawn: the deck above is not culled
   // (FR122 culls by sign, and both floors are street-side), and the
@@ -530,6 +548,11 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   expect(firstDeckIndex).toBeGreaterThan(lastStreetIndex);
 
   // --- up onto the deck --------------------------------------------------
+  // Off the underpass row entirely: the support pillar just rested
+  // against spans the row's own full height, so an eastward step stays
+  // swept against it until the walker clears the row (story 1.13, cycle
+  // 3).
+  await walkSegment(page, segment("leaving-the-underpass"));
   // Past the deck's own east end, to the stairs that climb onto it.
   await walkSegment(page, segment("east-of-the-bridge"));
   await walkSegment(page, segment("on-the-bridge-deck"));

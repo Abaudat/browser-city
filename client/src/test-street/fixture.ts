@@ -148,7 +148,7 @@ const WINDOW_WIDTH = 3;
 // Shop B: starts immediately east of the party wall, its own four
 // interior columns, its own east wall.
 const INTERIOR_X0_B = 9;
-const EAST_WALL_X_B = 13;
+export const EAST_WALL_X_B = 13;
 const DOOR_X_B = PARTY_WALL_X + 1;
 const WINDOW_X_B = DOOR_X_B + 1;
 
@@ -194,6 +194,42 @@ export const SUBWAY_FLOOR = -1;
  * it by holding one direction at a time, never two at once. */
 export const STAIRS_X = 16;
 export const STAIRS_Y = LAMPPOST_CELL.y;
+
+/** The pavement's own south edge (`STREET_BOUNDARY`'s id 103, below) --
+ * exported so the scripted walk (story 1.13, cycle 3) can rest against
+ * it by name rather than a second, hand-typed `9`. The stairwell shares
+ * `STAIRS_Y`'s row with the lamppost (this constant's own doc comment
+ * above), which a real e2e spec already walks straight across
+ * (`enclosure.spec.ts`'s own subway-entry test): nothing may ever sit on
+ * that row between the lamppost and `STAIRS_X`, so the walk's own east
+ * leg detours one row further south, onto this real, always-open edge,
+ * before it turns east at all. */
+export const PAVEMENT_SOUTH_EDGE_Y = STAIRS_Y + 1;
+
+/** Where the walk's own east leg on the pavement's south edge comes to
+ * rest (story 1.13, cycle 3): one column east of the corner pier shop
+ * B's own frontage ends on. A rest, not a threshold: `STAIRS_X` is close
+ * enough east of here that release lag alone can carry a threshold-based
+ * walk straight into its own row while still crossing it (found the hard
+ * way, walking north from an overshot landing on this same row briefly
+ * re-enters `STAIRS_X`'s own column at `STAIRS_Y`, round-tripping through
+ * the subway and back before the walk ever reaches the bridge) -- a
+ * rest here removes that risk at its source, the same reason
+ * `BRIDGE_UNDER_CURB_X` shares this column rather than sitting nearer
+ * the bridge itself. */
+export const PAVEMENT_CROSSING_REST_X = EAST_WALL_X_B + 1;
+/** On the stairwell's own row (`STAIRS_Y`, not the pavement's south edge
+ * one row further down), solid only across its own bottom sliver, the
+ * body's own height wide -- so it sits exactly where the body itself
+ * sits once at rest against the real south edge (`off-the-crossing-row`
+ * below), touching that edge without overlapping it (`docs/
+ * architecture.md`'s own "touching is not blocked" rule -- the edge
+ * itself cannot be this rest, for exactly that reason). Never any
+ * further north: the stairwell's own row is a thoroughfare
+ * (`PAVEMENT_CROSSING_REST_X`'s own doc comment says why), and this
+ * sliver sits south of every real y the walk to the stairwell itself
+ * ever reaches. */
+export const PAVEMENT_CROSSING_REST_COLLIDER = { x0: 8, y0: 12, x1: 16, y1: 16 } as const;
 
 /** The platform's own footprint, floor -1, positioned so the stairs land
  * directly below the street entrance (Artie's direction: where you come
@@ -249,10 +285,50 @@ export const BRIDGE_X0 = 17;
 /** Four cells of `bridge_deck`, the def's own declared width. */
 export const BRIDGE_DECK_WIDTH = 4;
 export const BRIDGE_X1 = BRIDGE_X0 + BRIDGE_DECK_WIDTH - 1;
-/** The middle of the deck's own span, strictly inside `[BRIDGE_X0,
- * BRIDGE_X1]` -- where the underpass checkpoint stops (story 1.13,
- * cycle 2): visibly under the drawn deck, never past its east end. */
-export const BRIDGE_MIDPOINT_X = BRIDGE_X0 + BRIDGE_DECK_WIDTH / 2;
+
+/** The underpass checkpoint's own two rest colliders (story 1.13, cycle
+ * 3): a low curb fixes the row, a support pillar fixes the column. The
+ * pillar sits strictly inside `[BRIDGE_X0, BRIDGE_X1]`, west of
+ * `BRIDGE_DOWN_ANCHOR_X`/`BRIDGE_UP_ANCHOR_X` (below) so it never sits on
+ * a transition column. */
+/** Where the curb itself sits (story 1.13, cycle 3): `PAVEMENT_CROSSING_
+ * REST_X`'s own column, not the bridge's own span -- that constant's own
+ * doc comment says why the approach leg needs a rest of its own, and
+ * sharing its column is what lets the checkpoint's own north turn start
+ * from a rest rather than a threshold too: nothing east of this column,
+ * all the way to the pillar, ever risks a transition, so the whole
+ * stretch between the two rests is free to be as wide as it needs to be. */
+export const BRIDGE_UNDER_CURB_X = PAVEMENT_CROSSING_REST_X;
+export const BRIDGE_UNDER_PILLAR_X = BRIDGE_X0 + 1;
+/** Solid only across its own top quarter, so a walker approaching from
+ * the south still lands inside the row, not on its own boundary --
+ * exported so `street-world.ts` can compute the exact rest position from
+ * this same shape, never a hand-typed duplicate of it. */
+export const BRIDGE_UNDER_CURB_COLLIDER = { x0: 0, y0: 0, x1: 16, y1: 4 } as const;
+/** A vertical strip spanning the row's own full height, so an east rest
+ * against it lands at the same column whatever row within
+ * `BRIDGE_DECK_Y` the walker approaches from. */
+export const BRIDGE_UNDER_PILLAR_COLLIDER = { x0: 4, y0: 0, x1: 12, y1: 16 } as const;
+
+/** A third rest, one row south of the checkpoint (story 1.13, cycle 3):
+ * leaving the underpass needs to clear the pillar's own row before an
+ * eastward step stops sweeping against it (`BRIDGE_UNDER_PILLAR_COLLIDER`
+ * spans the row's own full height, but only that one row), and a
+ * threshold south of the checkpoint has nothing to catch it before the
+ * pavement's own south edge -- three rows further than intended, and
+ * still on the subway stairwell's own row rather than clear of it, which
+ * is what actually broke `street-conformance.test.ts`'s own slow-machine
+ * walk (a released-late walker that overshoot carries clean past the
+ * bridge's own up-transition anchor, along a row the anchor is not on).
+ * A low kerb, the same shape and the same idiom as the checkpoint's own
+ * curb, at the pillar's own column one row south. */
+// One cell wide, at the pillar's own column only -- `leaving-the-
+// underpass` never starts anywhere else (`under-the-bridge`'s own rest
+// fixes it), and the subway's own street-side exit lands one column
+// west of it (`STREET_EXIT_X`, `STREET_EXIT_X + 1 === BRIDGE_UNDER_
+// PILLAR_X`), so a wider strip here would wall that landing cell off.
+export const BRIDGE_UNDER_EXIT_Y = BRIDGE_DECK_Y + 1;
+export const BRIDGE_UNDER_EXIT_COLLIDER = { x0: 0, y0: 8, x1: 16, y1: 12 } as const;
 
 /** Where the street-level stairs stand: the pavement row south of the
  * deck's own east end. Entering this cell climbs onto the deck. */
@@ -754,7 +830,7 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
   { id: 101n, x: 0, y: SOUTH_WALL_Y, width: 1, height: 4 },
   { id: 102n, x: 21, y: SOUTH_WALL_Y, width: 1, height: 4 },
   // South of the pavement.
-  { id: 103n, x: 0, y: 9, width: 21, height: 1 },
+  { id: 103n, x: 0, y: PAVEMENT_SOUTH_EDGE_Y, width: 21, height: 1 },
   // North of the pavement, either side of the terrace's own footprint --
   // the two stretches of pavement edge no wall already closes.
   { id: 104n, x: 1, y: SOUTH_WALL_Y - 1, width: WEST_WALL_X - 1, height: 1 },
@@ -787,6 +863,68 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
   { id: 112n, x: BRIDGE_X1 + 1, y: BRIDGE_DECK_Y, width: 1, height: 1, floor: BRIDGE_FLOOR },
   { id: 113n, x: BRIDGE_X0 - 1, y: BRIDGE_DECK_Y - 1, width: 1, height: 1, floor: BRIDGE_FLOOR },
   { id: 114n, x: BRIDGE_X1 + 1, y: BRIDGE_DECK_Y - 1, width: 1, height: 1, floor: BRIDGE_FLOOR },
+  // The scripted walk's own crossing rest (story 1.13, cycle 3;
+  // `PAVEMENT_CROSSING_REST_X`'s own doc comment says why): the same
+  // column the underpass checkpoint's own curb sits on, so the walk's
+  // eastward crossing and its northward turn onto the underpass row are
+  // both rests, back to back, with no threshold-driven guesswork
+  // between them.
+  {
+    id: 116n,
+    x: PAVEMENT_CROSSING_REST_X,
+    y: STAIRS_Y,
+    width: 1,
+    height: 1,
+    collider: PAVEMENT_CROSSING_REST_COLLIDER,
+  },
+  // The underpass checkpoint's own rest colliders (story 1.13, cycle 3 --
+  // Quentin's direction): "the street exists precisely to be shaped for
+  // its own tests". A screenshot needs a *rest*, never a timed threshold
+  // -- a threshold's own stopping point carries real run-to-run jitter
+  // from ordinary round-trip latency, a collider's does not, regardless
+  // of timing, because resolution always snaps to the exact same face.
+  //
+  // Two separate colliders, not one, and on the street's own floor
+  // (`STREET_FLOOR`, the default) -- never the deck's own floor above,
+  // which never contributes to this floor's collision (FR117): a south
+  // rest fixes the row (a low curb, solid only across its own top
+  // quarter so a walker approaching from the south still lands *inside*
+  // the row rather than on its own boundary, the same "solid only across
+  // part of the cell" idiom the deck's south rail above already uses,
+  // sitting well west of the bridge's own span -- `BRIDGE_UNDER_CURB_X`'s
+  // own doc comment says why), and a separate east rest fixes the column
+  // (`BRIDGE_UNDER_PILLAR_X`, a support pillar -- a real bridge's own
+  // understructure, not only a test aid -- solid across a vertical strip
+  // spanning the row's own full height). Neither sits on
+  // `BRIDGE_DOWN_ANCHOR_X`/`BRIDGE_UP_ANCHOR_X` so neither ever
+  // interferes with the transition columns the rest of the walk and the
+  // perf lap both still use.
+  {
+    id: 117n,
+    x: BRIDGE_UNDER_CURB_X,
+    y: BRIDGE_DECK_Y,
+    width: 1,
+    height: 1,
+    collider: BRIDGE_UNDER_CURB_COLLIDER,
+  },
+  {
+    id: 118n,
+    x: BRIDGE_UNDER_PILLAR_X,
+    y: BRIDGE_DECK_Y,
+    width: 1,
+    height: 1,
+    collider: BRIDGE_UNDER_PILLAR_COLLIDER,
+  },
+  // A third rest, one row south, for leaving the underpass again
+  // (`BRIDGE_UNDER_EXIT_COLLIDER`'s own doc comment says why).
+  {
+    id: 119n,
+    x: BRIDGE_UNDER_PILLAR_X,
+    y: BRIDGE_UNDER_EXIT_Y,
+    width: 1,
+    height: 1,
+    collider: BRIDGE_UNDER_EXIT_COLLIDER,
+  },
 ] as const;
 
 /** One flat-pass ground tile group (FR123: three flat passes before the
@@ -1054,16 +1192,36 @@ export interface StreetWalkInputs {
   /** Where a walk straight south out of shop A's door comes to rest: the
    * top face of the lamppost's own base collider. */
   readonly lamppostRestY: number;
+  /** Where the walk's own crossing leg comes to rest: the west face of
+   * `PAVEMENT_CROSSING_REST_COLLIDER`. See `PAVEMENT_CROSSING_REST_X`'s
+   * own doc comment for why this leg needs a rest at all (story 1.13,
+   * cycle 3). */
+  readonly pavementCrossingRestX: number;
+  /** Where the underpass checkpoint comes to rest: a south rest against
+   * `BRIDGE_UNDER_CURB_X`'s own curb, fixing the row. A collider face,
+   * not a coordinate threshold -- see the checkpoint's own comment
+   * below for why that distinction is the whole point (story 1.13,
+   * cycle 3). */
+  readonly bridgeUnderRestY: number;
+  /** Where the underpass checkpoint comes to rest: an east rest against
+   * `BRIDGE_UNDER_PILLAR_X`'s own support pillar, fixing the column. */
+  readonly bridgeUnderRestX: number;
+  /** Where leaving the underpass comes to rest: a north rest against
+   * `BRIDGE_UNDER_EXIT_COLLIDER`, one row south of the checkpoint. See
+   * that constant's own doc comment for why leaving needs a rest too
+   * (story 1.13, cycle 3). */
+  readonly bridgeExitRestY: number;
 }
 
 /**
  * The scripted walk, in order. It leaves shop A by its door (the
  * enclosure case), rests part-way through the lamppost (the
  * pass-partly-through case: inside the footprint, outside the collider),
- * walks east along the pavement, turns up onto the underpass row and
- * crosses *under* the bridge deck (the two-floors-at-one-`(x, y)` case),
- * climbs onto the deck by its stairs (the transition case), walks the
- * deck's own multi-cell span, and comes back down to the street.
+ * detours one row south to cross the subway stairwell's own row clear of
+ * it, turns up onto the underpass row and crosses *under* the bridge
+ * deck (the two-floors-at-one-`(x, y)` case), climbs onto the deck by
+ * its stairs (the transition case), walks the deck's own multi-cell
+ * span, and comes back down to the street.
  */
 export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
   return [
@@ -1081,39 +1239,106 @@ export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSe
       key: "ArrowDown",
       until: { kind: "y-at-least", value: inputs.lamppostRestY - 0.01 },
     },
-    // East along the pavement, turning north at the terrace's own east
-    // end -- several cells short of the subway stairwell's anchor cell,
-    // because a held key is released over a round trip and the walker
-    // keeps moving meanwhile. A threshold half a cell from that anchor
-    // would send a slow enough machine underground instead.
+    // East just far enough to clear the lamppost's own collider: resting
+    // against its north face (the segment above) leaves the walker
+    // directly above the rest of that same collider, which still blocks
+    // a straight step south. A handful of cells short of anything else
+    // on this row, so the exact distance carries no risk either way.
     {
-      label: "east-along-the-pavement",
+      label: "past-the-lamppost",
       key: "ArrowRight",
-      until: { kind: "x-at-least", value: EAST_WALL_X_B - 0.5 },
+      until: { kind: "x-at-least", value: LAMPPOST_CELL.x + 1 },
     },
-    // North onto the row the bridge deck spans.
+    // South off the lamppost's own row, onto the pavement's real south
+    // edge (story 1.13, cycle 3): a *rest*, immune to release lag by
+    // construction (`PAVEMENT_SOUTH_EDGE_Y`'s own doc comment says why
+    // this detour exists at all -- the lamppost's own row is a
+    // thoroughfare `enclosure.spec.ts`'s own subway-entry test already
+    // walks straight across, so nothing may block it here).
+    {
+      label: "off-the-crossing-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: PAVEMENT_SOUTH_EDGE_Y },
+    },
+    // East along the pavement's own south edge, to a rest, not a
+    // threshold (story 1.13, cycle 3; `PAVEMENT_CROSSING_REST_X`'s own
+    // doc comment says why: this row carries no risk on its own, but a
+    // threshold here still hands an uncontrolled x to the *next*
+    // segment's own northward walk, which does cross the subway
+    // stairwell's own row on the way -- found the hard way, when a
+    // threshold's own overshoot here previously placed that walk right
+    // back in the stairwell's own column).
+    {
+      label: "east-along-the-crossing",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: inputs.pavementCrossingRestX },
+    },
+    // North onto the row the bridge deck spans: a *rest*, not a
+    // threshold (story 1.13, cycle 3 -- Quentin's direction). A
+    // threshold's own stopping point carries real run-to-run jitter from
+    // ordinary round-trip latency between the page and whatever is
+    // watching it; a collider's does not, whatever that latency turns
+    // out to be, because resolution always snaps to the exact same face
+    // (`docs/architecture.md`'s "no epsilon"). Approached from the south
+    // (`ArrowUp`, up off the pavement's own south edge), the same side
+    // `leaving-the-underpass` below continues back toward: the curb's
+    // own north face sits right on the row's own entrance (nothing south
+    // of it to rest against), so a south approach is the only one that
+    // both enters the row and still has room to leave it again. The
+    // previous segment's own rest already fixes the column
+    // (`BRIDGE_UNDER_CURB_X` shares it), so this segment only has the
+    // row left to fix. `bridgeUnderRestY` is that face's own world
+    // position, computed by the caller from the real collider
+    // (`street-world.ts`), never a coordinate guessed at here.
     {
       label: "on-the-underpass-row",
       key: "ArrowUp",
-      until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 },
+      until: { kind: "y-at-most", value: inputs.bridgeUnderRestY },
     },
-    // Under the deck: stops strictly inside its own span (story 1.13,
-    // cycle 2 -- Quentin's direction), visibly beneath the drawn deck,
-    // never past its east end. Every cell walked from here has a
-    // drawable one floor above it at the same `(x, y)`.
+    // The column half: the checkpoint itself. Both axes are now collider
+    // rests, so this position is bit-for-bit identical however long the
+    // walk to reach it took. Strictly inside the deck's own span
+    // (`[BRIDGE_X0, BRIDGE_X1]`), visibly beneath the drawn deck, and
+    // every cell here has a drawable one floor above it at the same
+    // `(x, y)` -- the two-floors-at-one-`(x, y)` case.
     {
       label: "under-the-bridge",
       key: "ArrowRight",
-      until: { kind: "x-at-least", value: BRIDGE_MIDPOINT_X },
+      until: { kind: "x-at-least", value: inputs.bridgeUnderRestX },
     },
-    // On, past the deck's own east end, to the stairs that climb onto it.
+    // Off the underpass row entirely before continuing east: a *rest*,
+    // not a threshold (story 1.13, cycle 3). The support pillar just
+    // rested against spans the row's own full height, so the walker's
+    // own body (not only its feet) has to clear that row before an
+    // eastward step stops being swept against it -- a plain threshold
+    // here has nothing to catch it before the pavement's own south edge,
+    // three rows further than intended and still on the subway
+    // stairwell's own row rather than clear of it, which is what broke
+    // `street-conformance.test.ts`'s own slow-machine walk before this
+    // rest existed (`BRIDGE_UNDER_EXIT_COLLIDER`'s own doc comment says
+    // why). `bridgeExitRestY` already leaves the body's own height
+    // (bottom-anchored, extending north from the feet) entirely south of
+    // the pillar's row.
+    {
+      label: "leaving-the-underpass",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.bridgeExitRestY },
+    },
+    // On, past the deck's own east end, to the stairs that climb onto
+    // it -- crossing the up-transition's own anchor column on the way,
+    // which is what actually triggers the climb; holding the key
+    // through that lands on the deck and keeps walking there until its
+    // own east edge stops it, satisfying this segment's own threshold
+    // either way.
     {
       label: "east-of-the-bridge",
       key: "ArrowRight",
       until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
     },
-    // South onto the stairs at the deck's east end -- the transition
-    // cell, which lands the player on the deck one storey up.
+    // Already on the deck by now in the ordinary case (the segment
+    // above's own crossing triggered it); held only so a route that
+    // somehow reached this point still on the street keeps walking
+    // until it does.
     {
       label: "on-the-bridge-deck",
       key: "ArrowDown",

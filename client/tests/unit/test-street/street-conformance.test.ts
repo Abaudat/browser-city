@@ -15,6 +15,7 @@ import {
   BRIDGE_DECK_WIDTH,
   BRIDGE_DECK_Y,
   BRIDGE_FLOOR,
+  BRIDGE_UNDER_PILLAR_X,
   BRIDGE_X0,
   BRIDGE_X1,
   furnitureBehindWindows,
@@ -41,6 +42,7 @@ import {
   simulateStreetWalk,
   streetMovementConfig,
   streetOwnershipIndex,
+  streetWalkInputs,
   streetWorldIndex,
 } from "./street-world";
 
@@ -76,6 +78,14 @@ describe("the hand-laid test street (AC1, AC2)", () => {
     // both over and under.
     for (let x = BRIDGE_X0; x <= BRIDGE_X1; x++) {
       expect(isCellStandable(world, config, x, BRIDGE_DECK_Y, BRIDGE_FLOOR)).toBe(true);
+      // The pillar's own column (`BRIDGE_UNDER_PILLAR_X`) is a deliberate,
+      // real obstruction on the street floor -- the underpass checkpoint's
+      // own rest collider (story 1.13, cycle 3) -- so its dead centre is
+      // not standable, even though the walk still passes beside it. The
+      // checkpoint's other rest, the curb, sits west of the bridge's own
+      // span entirely (`BRIDGE_UNDER_CURB_X`'s own doc comment says why),
+      // so every other column under the span is untouched by either.
+      if (x === BRIDGE_UNDER_PILLAR_X) continue;
       expect(isCellStandable(world, config, x, BRIDGE_DECK_Y, PLAYER_START.floor)).toBe(true);
     }
     const deck = objectDef(BRIDGE_DECK_DEF_ID);
@@ -162,7 +172,7 @@ describe("the street as world data (Tim's WorldSpec::build mirror)", () => {
 });
 
 describe("the scripted walk (AC3)", () => {
-  const checkpoints = simulateStreetWalk(streetWalkRoute({ lamppostRestY: lamppostRestY() }));
+  const checkpoints = simulateStreetWalk(streetWalkRoute(streetWalkInputs()));
   const at = (label: string) => {
     const found = checkpoints.find((checkpoint) => checkpoint.label === label);
     if (!found) throw new Error(`no checkpoint '${label}' in the simulated walk`);
@@ -171,7 +181,7 @@ describe("the scripted walk (AC3)", () => {
 
   it("completes every segment against the real collision grid", () => {
     expect(checkpoints.map((checkpoint) => checkpoint.label)).toEqual(
-      streetWalkRoute({ lamppostRestY: lamppostRestY() }).map((segment) => segment.label),
+      streetWalkRoute(streetWalkInputs()).map((segment) => segment.label),
     );
   });
 
@@ -202,10 +212,36 @@ describe("the scripted walk (AC3)", () => {
     expect(under.x).toBeLessThanOrEqual(BRIDGE_X1);
   });
 
+  it("stops at the exact same position under the bridge whether the key is released on time or held 8 slow steps late", () => {
+    // The whole point of a rest over a threshold (story 1.13, cycle 3,
+    // Quentin's direction): a real collider always snaps to the same
+    // face regardless of how long the walk to reach it took. Pinned at
+    // unit level, to 1e-9, so a future edit that turns this checkpoint
+    // back into a coordinate threshold goes red here -- on the fastest
+    // job there is -- rather than only showing up as e2e baseline flake.
+    const inputs = streetWalkInputs();
+    const onTime = simulateStreetWalk(streetWalkRoute(inputs), { releaseLagSteps: 0 });
+    const late = simulateStreetWalk(streetWalkRoute(inputs), {
+      stepMs: 100,
+      releaseLagSteps: 8,
+    });
+    const onTimeUnder = onTime.find((c) => c.label === "under-the-bridge")?.state;
+    const lateUnder = late.find((c) => c.label === "under-the-bridge")?.state;
+    if (!onTimeUnder || !lateUnder) {
+      throw new Error("both walks must reach the 'under-the-bridge' checkpoint");
+    }
+    expect(lateUnder.x).toBeCloseTo(onTimeUnder.x, 9);
+    expect(lateUnder.y).toBeCloseTo(onTimeUnder.y, 9);
+    expect(lateUnder.floor).toBe(onTimeUnder.floor);
+  });
+
   it("continues past the bridge's own east end to reach the stairs up", () => {
+    // This segment's own threshold sits past the up-transition's own
+    // anchor column, so holding the key through it climbs onto the deck
+    // mid-segment (the ordinary case) -- the next segment ("on-the-bridge-
+    // deck") is what actually asserts the climb happened.
     const east = at("east-of-the-bridge");
-    expect(east.floor).toBe(PLAYER_START.floor);
-    expect(east.cellY).toBe(BRIDGE_DECK_Y);
+    expect(east.floor).toBe(BRIDGE_FLOOR);
     expect(east.x).toBeGreaterThan(BRIDGE_X1);
   });
 
@@ -250,7 +286,7 @@ describe("the scripted walk (AC3)", () => {
     // bridge's own landing cell, `STAIRS_X - BRIDGE_DOWN_ANCHOR_X` cells
     // from the subway stairwell's anchor.
     const lag = { stepMs: 100, releaseLagSteps: 8 };
-    const inputs = { lamppostRestY: lamppostRestY() };
+    const inputs = streetWalkInputs();
 
     const out = simulateStreetWalk(streetWalkRoute(inputs), lag);
     const arrived = out[out.length - 1]?.state;
