@@ -4,6 +4,7 @@
 // data and a plain callback, never the SDK's own types, to the rest of the
 // client.
 
+import { BOOT_MARK, markBoot } from "../boot/boot-marks";
 import { DbConnection } from "./bindings";
 import { NET_CONFIG } from "./config";
 import { observePingInsert, type PingObservation } from "./observe-ping";
@@ -21,7 +22,14 @@ export function connect(onPing: PingListener): DbConnection {
     .withUri(NET_CONFIG.uri)
     .withDatabaseName(NET_CONFIG.databaseName)
     .onConnect((connection) => {
-      connection.subscriptionBuilder().subscribe("SELECT * FROM demo_ping");
+      // Story 1.14 (NFR1): the handshake term ends here, and the
+      // subscription-decode term ends at this subscription's own
+      // `onApplied` -- the two are never conflated under one mark.
+      markBoot(BOOT_MARK.HANDSHAKE_OPEN);
+      connection
+        .subscriptionBuilder()
+        .onApplied(() => markBoot(BOOT_MARK.SUBSCRIPTION_APPLIED))
+        .subscribe("SELECT * FROM demo_ping");
     })
     .onConnectError((_ctx, error) => {
       // NFR42: the client degrades to not-drawing, never to crashing.

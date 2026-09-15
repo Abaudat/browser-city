@@ -17,7 +17,8 @@
     "test:unit": "vitest run",
     "test:unit:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --project=chromium",
-    "test:e2e:perf": "playwright test --project=perf"
+    "test:e2e:perf": "playwright test --project=perf",
+    "test:e2e:boot": "playwright test --project=boot"
   },
   "dependencies": {
     "pixi.js": "8.20.1",
@@ -27,6 +28,7 @@
     "@biomejs/biome": "2.5.12",
     "@playwright/test": "1.63.0",
     "@types/node": "22.20.1",
+    "@vitejs/plugin-basic-ssl": "2.3.0",
     "@vitest/coverage-v8": "5.0.0",
     "fast-check": "4.10.0",
     "jsdom": "30.0.1",

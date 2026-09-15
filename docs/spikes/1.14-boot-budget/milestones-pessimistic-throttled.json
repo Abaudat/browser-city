@@ -1,0 +1,452 @@
+{
+  "network": {
+    "name": "pessimistic",
+    "label": "pessimistic (10 Mbps down / 10 Mbps up / 60 ms RTT)"
+  },
+  "cpu": {
+    "name": "throttled",
+    "label": "CDP 4x CPU throttle (reproducible anywhere, CI included)"
+  },
+  "samples": [
+    {
+      "totalMs": 4158,
+      "firstPaintMs": 1356,
+      "interactivePromptMs": 4158,
+      "playerControllableMs": 4158,
+      "terms": {
+        "bundle": 274.10000002384186,
+        "eval": 63.60000002384186,
+        "defs": 80.29999995231628,
+        "atlasFetch": 2872.3000000715256,
+        "atlasDecoded": 3026.100000023842,
+        "handshake": 128.29999995231628,
+        "subscriptionDecode": 44.300000071525574,
+        "toControllable": 79.89999997615814
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.5,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4136.799999952316,
+      "firstPaintMs": 1344,
+      "interactivePromptMs": 4136.799999952316,
+      "playerControllableMs": 4136.799999952316,
+      "terms": {
+        "bundle": 274.40000009536743,
+        "eval": 59.299999952316284,
+        "defs": 85.70000004768372,
+        "atlasFetch": 2880.6999999284744,
+        "atlasDecoded": 3037.0999999046326,
+        "handshake": 130.20000004768372,
+        "subscriptionDecode": 43.89999997615814,
+        "toControllable": 64.10000002384186
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.5,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4139.800000071526,
+      "firstPaintMs": 1356,
+      "interactivePromptMs": 4139.800000071526,
+      "playerControllableMs": 4139.800000071526,
+      "terms": {
+        "bundle": 273.7000000476837,
+        "eval": 59.09999990463257,
+        "defs": 84.59999990463257,
+        "atlasFetch": 2882.7000000476837,
+        "atlasDecoded": 3012.8000000715256,
+        "handshake": 131.60000002384186,
+        "subscriptionDecode": 43.89999997615814,
+        "toControllable": 82.39999997615814
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.5,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4263.300000071526,
+      "firstPaintMs": 1356,
+      "interactivePromptMs": 4263.300000071526,
+      "playerControllableMs": 4263.300000071526,
+      "terms": {
+        "bundle": 271,
+        "eval": 59.09999990463257,
+        "defs": 85.89999997615814,
+        "atlasFetch": 2904.3000000715256,
+        "atlasDecoded": 3183.7000000476837,
+        "handshake": 133,
+        "subscriptionDecode": 44.5,
+        "toControllable": 27.200000047683716
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.3999999761581421,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4152,
+      "firstPaintMs": 1368,
+      "interactivePromptMs": 4152,
+      "playerControllableMs": 4152,
+      "terms": {
+        "bundle": 274,
+        "eval": 60.199999928474426,
+        "defs": 83.79999995231628,
+        "atlasFetch": 2889.1999999284744,
+        "atlasDecoded": 3005.600000023842,
+        "handshake": 133.5,
+        "subscriptionDecode": 41.89999997615814,
+        "toControllable": 97.59999990463257
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.3999999761581421,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4189.900000095367,
+      "firstPaintMs": 1352,
+      "interactivePromptMs": 4189.900000095367,
+      "playerControllableMs": 4189.900000095367,
+      "terms": {
+        "bundle": 274.89999997615814,
+        "eval": 59.5,
+        "defs": 84.69999992847443,
+        "atlasFetch": 2884.6999999284744,
+        "atlasDecoded": 3094.6999999284744,
+        "handshake": 134.10000002384186,
+        "subscriptionDecode": 27.5,
+        "toControllable": 61.40000009536743
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.40000009536743164,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4225,
+      "firstPaintMs": 1372,
+      "interactivePromptMs": 4225,
+      "playerControllableMs": 4225,
+      "terms": {
+        "bundle": 273.90000009536743,
+        "eval": 57.5,
+        "defs": 89.29999995231628,
+        "atlasFetch": 2881.8000000715256,
+        "atlasDecoded": 3074.2000000476837,
+        "handshake": 134.79999995231628,
+        "subscriptionDecode": 44.60000002384186,
+        "toControllable": 93.89999997615814
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.5,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4230.900000095367,
+      "firstPaintMs": 1360,
+      "interactivePromptMs": 4230.900000095367,
+      "playerControllableMs": 4230.900000095367,
+      "terms": {
+        "bundle": 271.5,
+        "eval": 60.39999997615814,
+        "defs": 84.40000009536743,
+        "atlasFetch": 2877.1999999284744,
+        "atlasDecoded": 3098.399999976158,
+        "handshake": 132.20000004768372,
+        "subscriptionDecode": 42.299999952316284,
+        "toControllable": 79.10000002384186
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.40000009536743164,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4202.299999952316,
+      "firstPaintMs": 1356,
+      "interactivePromptMs": 4202.299999952316,
+      "playerControllableMs": 4202.299999952316,
+      "terms": {
+        "bundle": 259.39999997615814,
+        "eval": 57.700000047683716,
+        "defs": 90.5,
+        "atlasFetch": 2877.399999976158,
+        "atlasDecoded": 3096.3000000715256,
+        "handshake": 135.70000004768372,
+        "subscriptionDecode": 42.699999928474426,
+        "toControllable": 70.69999992847443
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.5,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4191.899999976158,
+      "firstPaintMs": 1360,
+      "interactivePromptMs": 4191.899999976158,
+      "playerControllableMs": 4191.899999976158,
+      "terms": {
+        "bundle": 263.10000002384186,
+        "eval": 56.699999928474426,
+        "defs": 88.69999992847443,
+        "atlasFetch": 2884.5,
+        "atlasDecoded": 3122.899999976158,
+        "handshake": 136,
+        "subscriptionDecode": 43.10000002384186,
+        "toControllable": 24
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.40000009536743164,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4220.299999952316,
+      "firstPaintMs": 1360,
+      "interactivePromptMs": 4220.299999952316,
+      "playerControllableMs": 4220.299999952316,
+      "terms": {
+        "bundle": 274.6999999284744,
+        "eval": 58.39999997615814,
+        "defs": 90.39999997615814,
+        "atlasFetch": 2879.7000000476837,
+        "atlasDecoded": 3109.8000000715256,
+        "handshake": 135.40000009536743,
+        "subscriptionDecode": 42.299999952316284,
+        "toControllable": 57.199999928474426
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.5,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4207.700000047684,
+      "firstPaintMs": 1356,
+      "interactivePromptMs": 4207.700000047684,
+      "playerControllableMs": 4207.700000047684,
+      "terms": {
+        "bundle": 272.5,
+        "eval": 59.800000071525574,
+        "defs": 84.10000002384186,
+        "atlasFetch": 2877.0999999046326,
+        "atlasDecoded": 3117.399999976158,
+        "handshake": 130.69999992847443,
+        "subscriptionDecode": 44.300000071525574,
+        "toControllable": 37
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.3999999761581421,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4217.5,
+      "firstPaintMs": 1328,
+      "interactivePromptMs": 4217.5,
+      "playerControllableMs": 4217.5,
+      "terms": {
+        "bundle": 270.09999990463257,
+        "eval": 57,
+        "defs": 87.80000007152557,
+        "atlasFetch": 2872.1999999284744,
+        "atlasDecoded": 3112.1999999284744,
+        "handshake": 134.70000004768372,
+        "subscriptionDecode": 43.799999952316284,
+        "toControllable": 82.80000007152557
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.5999999046325684,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4213.100000023842,
+      "firstPaintMs": 1360,
+      "interactivePromptMs": 4213.100000023842,
+      "playerControllableMs": 4213.100000023842,
+      "terms": {
+        "bundle": 274.10000002384186,
+        "eval": 61,
+        "defs": 87.60000002384186,
+        "atlasFetch": 2874.7999999523163,
+        "atlasDecoded": 3088.7999999523163,
+        "handshake": 132.5,
+        "subscriptionDecode": 43.299999952316284,
+        "toControllable": 70.80000007152557
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.3999999761581421,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4173.100000023842,
+      "firstPaintMs": 1368,
+      "interactivePromptMs": 4173.100000023842,
+      "playerControllableMs": 4173.100000023842,
+      "terms": {
+        "bundle": 272.39999997615814,
+        "eval": 64.60000002384186,
+        "defs": 78.29999995231628,
+        "atlasFetch": 2878.899999976158,
+        "atlasDecoded": 3080.7999999523163,
+        "handshake": 127.39999997615814,
+        "subscriptionDecode": 43.199999928474426,
+        "toControllable": 45
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.5,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4164.100000023842,
+      "firstPaintMs": 1344,
+      "interactivePromptMs": 4164.100000023842,
+      "playerControllableMs": 4164.100000023842,
+      "terms": {
+        "bundle": 256.89999997615814,
+        "eval": 59.89999997615814,
+        "defs": 86.79999995231628,
+        "atlasFetch": 2892.5,
+        "atlasDecoded": 3049.399999976158,
+        "handshake": 130.90000009536743,
+        "subscriptionDecode": 44.39999997615814,
+        "toControllable": 85.10000002384186
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.5,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4178.399999976158,
+      "firstPaintMs": 1360,
+      "interactivePromptMs": 4178.399999976158,
+      "playerControllableMs": 4178.399999976158,
+      "terms": {
+        "bundle": 260.89999997615814,
+        "eval": 65.69999992847443,
+        "defs": 88.39999997615814,
+        "atlasFetch": 2867.7000000476837,
+        "atlasDecoded": 3064.7000000476837,
+        "handshake": 139.60000002384186,
+        "subscriptionDecode": 44.10000002384186,
+        "toControllable": 59.60000002384186
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.5,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4236.5,
+      "firstPaintMs": 1376,
+      "interactivePromptMs": 4236.5,
+      "playerControllableMs": 4236.5,
+      "terms": {
+        "bundle": 272.7000000476837,
+        "eval": 57.10000002384186,
+        "defs": 89.19999992847443,
+        "atlasFetch": 2885.399999976158,
+        "atlasDecoded": 3111.1999999284744,
+        "handshake": 135,
+        "subscriptionDecode": 41.89999997615814,
+        "toControllable": 58
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.40000009536743164,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4197.399999976158,
+      "firstPaintMs": 1392,
+      "interactivePromptMs": 4197.399999976158,
+      "playerControllableMs": 4197.399999976158,
+      "terms": {
+        "bundle": 272.59999990463257,
+        "eval": 65.5,
+        "defs": 91.89999997615814,
+        "atlasFetch": 2884.100000023842,
+        "atlasDecoded": 3061,
+        "handshake": 145,
+        "subscriptionDecode": 27.700000047683716,
+        "toControllable": 49.89999997615814
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.5,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    },
+    {
+      "totalMs": 4203.200000047684,
+      "firstPaintMs": 1392,
+      "interactivePromptMs": 4203.200000047684,
+      "playerControllableMs": 4203.200000047684,
+      "terms": {
+        "bundle": 271.1999999284744,
+        "eval": 63.89999997615814,
+        "defs": 91.60000002384186,
+        "atlasFetch": 2864.0999999046326,
+        "atlasDecoded": 3077.2999999523163,
+        "handshake": 142.80000007152557,
+        "subscriptionDecode": 27.799999952316284,
+        "toControllable": 37.700000047683716
+      },
+      "atlasRequestCount": 105,
+      "atlasBytes": 3116709,
+      "atlasMedianQueuingMs": 0.5,
+      "atlasProtocolCounts": {
+        "h2": 105
+      }
+    }
+  ]
+}

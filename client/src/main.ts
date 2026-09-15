@@ -1,4 +1,5 @@
 import { Application } from "pixi.js";
+import { BOOT_MARK, markBoot } from "./boot/boot-marks";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
@@ -29,6 +30,11 @@ import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, windowDefIds } from "./world/object-defs";
 
 async function main(): Promise<void> {
+  // Story 1.14 (NFR1): the bundle term's own end -- module top-level
+  // evaluation is already done the moment this line runs, so everything
+  // before it is fetch/parse/eval (Resource Timing owns that half) and
+  // everything after is the app's own boot work.
+  markBoot(BOOT_MARK.MAIN_START);
   const mount = document.getElementById("app");
   if (!mount) {
     // NFR42: degrade to not-drawing, never crash.

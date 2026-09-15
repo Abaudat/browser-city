@@ -245,3 +245,17 @@ migration, because no Maincloud deploy workflow exists yet to wire it into
 | Cross-table consistency during export (each table is its own transaction) | deferred | the first reducer that writes two tables in one transaction (e.g. `citizen` + `citizen_state`) -- nothing reminds anyone today because none does yet |
 | No reducer other than `restore_<table>` writes an auto_inc table while a restore is open -- a client-facing write racing the gap-fill loop could observe or create an id the exported data still needs | deferred | the first story whose reducer accepts a live client connection *and* writes an auto_inc table; today a restore always targets a database name no client connects to, by procedure (`scripts/ops/restore-world.sh`'s own doc comment), not by a lock the module enforces |
 | The spike report measured SpacetimeDB version never goes stale against the same three pins story 1.3 does | covered | `scripts/ci/check-spike-pin.sh` |
+
+## Boot budget
+
+Story 1.14: `docs/spikes/1.14-boot-budget.md`'s measured milestones and D4's
+subscription-decode sweep. Same Guard-path discipline as the sections above.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| NFR1: cold boot to player-controllable in under 1 second, measured on a mid-range laptop over a typical domestic connection. Partial: the harness, the milestones (permanent marks in `client/src/boot/boot-marks.ts`) and the D4 decode sweep ship here, re-runnable with one command; a PR-blocking timing gate does not exist yet -- 20 cold, throttled samples is too slow and too noisy for every PR -- and belongs to the story that builds the real boot path (FR144-146), once real crowd content exists to measure it against | partial | `client/tests/e2e/boot-budget/boot-budget.spec.ts` (the `boot` Playwright project), `scripts/dev/run-boot-budget-spike.sh`, `.github/workflows/ci.yml` -- `client-build`'s gzipped bundle size budget and `boot-smoke`'s end-to-end run, `client/tests/e2e/boot-marks.spec.ts`'s deterministic atlas request-count/byte gate, the cheap standing proxies for the two dominant terms until that story lands the real gate |
+| The `docs/spikes/1.14-boot-budget.md` report measured SpacetimeDB version never goes stale against the server/Cargo.toml pin, the docs/architecture.md stack line and the pinned CLI installer | covered | `scripts/ci/check-spike-pin.sh` |
+| The committed report `docs/spikes/1.14-boot-budget.md` is exactly the output of `scripts/dev/generate-boot-budget-report.mjs` over the committed raw JSON and run metadata -- never hand-transcribed | covered | `scripts/ci/check-boot-budget-report-current.sh` |
+| The atlas term's regression gate is request-shaped (count and bytes before `player-controllable`), not a byte-sum over the whole public art catalogue -- so it still guards the dominant term docs/spikes/1.14-boot-budget.md measured even when the catalogue's own total size is unrelated to what one boot fetches | covered | `client/tests/e2e/boot-marks.spec.ts` |
+| The boot-budget spike module (`server/spikes/boot_budget`) still compiles, and no spike code (its generated bindings, the decode-only HTML entry) reaches the production bundle | covered | `.github/workflows/ci.yml` -- `build`'s own compile step, `client-build`'s dist-leak check |
+| The boot-budget harness itself (script, Playwright project, spike module) runs end to end on a Linux CI runner, not only the Windows dev box it was built on | covered | `.github/workflows/ci.yml` -- `boot-smoke` |

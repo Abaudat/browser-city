@@ -7,7 +7,9 @@
       "*.ts",
       "*.json",
       "!src/net/bindings",
+      "!tests/e2e/boot-budget/bindings",
       "!dist",
+      "!dist-boot-budget-decode",
       "!node_modules"
     ]
   },

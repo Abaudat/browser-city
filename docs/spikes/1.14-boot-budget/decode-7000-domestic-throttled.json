@@ -1,0 +1,193 @@
+{
+  "rowCount": 7000,
+  "network": {
+    "name": "domestic",
+    "label": "typical domestic (50 Mbps down / 10 Mbps up / 30 ms RTT)"
+  },
+  "cpu": {
+    "name": "throttled",
+    "label": "CDP 4x CPU throttle (reproducible anywhere, CI included)"
+  },
+  "samples": [
+    {
+      "decodeMs": 837.5,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 809.8600000375882,
+      "transferMs": 0,
+      "clientMs": 27.63999996241182,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 915.8000000715256,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 891.4489999879152,
+      "transferMs": 0,
+      "clientMs": 24.351000083610415,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 989.7000000476837,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 965.7580000348389,
+      "transferMs": 0,
+      "clientMs": 23.9420000128448,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 1066.3000000715256,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 1039.4860000815243,
+      "transferMs": 0,
+      "clientMs": 26.81399999000132,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 944.3999999761581,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 920.280999969691,
+      "transferMs": 0,
+      "clientMs": 24.119000006467104,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 991.1000000238419,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 966.6260000085458,
+      "transferMs": 0,
+      "clientMs": 24.474000015296042,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 990,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 967.3699999693781,
+      "transferMs": 0,
+      "clientMs": 22.630000030621886,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 1145.8000000715256,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 1121.4519999921322,
+      "transferMs": 0,
+      "clientMs": 24.348000079393387,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 973.3999999761581,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 948.2019999995828,
+      "transferMs": 0,
+      "clientMs": 25.197999976575375,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 846.0999999046326,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 821.3370000012219,
+      "transferMs": 0,
+      "clientMs": 24.762999903410673,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 1024,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 997.7580000413582,
+      "transferMs": 0,
+      "clientMs": 26.241999958641827,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 819,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 794.5899999467656,
+      "transferMs": 0,
+      "clientMs": 24.4100000532344,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 1131.7999999523163,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 1108.9829999255016,
+      "transferMs": 0,
+      "clientMs": 22.81700002681464,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 894.7999999523163,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 870.3110000351444,
+      "transferMs": 0,
+      "clientMs": 24.488999917171896,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 912.6000000238419,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 888.6469999561086,
+      "transferMs": 0,
+      "clientMs": 23.953000067733228,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 1057.4000000953674,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 1031.4210000215098,
+      "transferMs": 0,
+      "clientMs": 25.979000073857605,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 1024.7999999523163,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 1001.2939999578521,
+      "transferMs": 0,
+      "clientMs": 23.50599999446422,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 975,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 947.7740000002086,
+      "transferMs": 0,
+      "clientMs": 27.225999999791384,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 929.6000000238419,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 904.6190000372007,
+      "transferMs": 0,
+      "clientMs": 24.98099998664111,
+      "responseFrameCount": 1
+    },
+    {
+      "decodeMs": 1019.3999999761581,
+      "rowCount": 7000,
+      "bytesOnWire": 107396,
+      "serverMs": 994.5559999905527,
+      "transferMs": 0,
+      "clientMs": 24.84399998560548,
+      "responseFrameCount": 1
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+[package]
+name = "boot_budget_spike"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# Same reason `sched_timing_spike`'s crate-type is cdylib-only (see
+# server/spikes/sched_timing/Cargo.toml): SpacetimeDB's reducer/table
+# macros need host FFI symbols the wasm runtime supplies, so this cannot
+# be linked natively either. `cargo test --workspace` excludes this crate
+# for that reason (server's CI `test` job).
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb = { version = "2.9.*" }
+# Reuses the real `sim::world::chunk_key` packing (Tim's direction: the
+# seeded rows must carry the same column shape, chunk-key scheme included,
+# as a real placed-object row would) rather than a second, spike-local
+# copy of the formula.
+sim = { path = "../../sim" }
