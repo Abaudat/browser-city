@@ -17,6 +17,20 @@
 //     }>,
 //   }
 
+/** Cycle 3 (both leads' direction): the subset of `terms` that are
+ * genuinely sequential, non-overlapping phases in the real boot sequence
+ * -- `reduce.mjs`'s `summarizeTerms` sums exactly this list for the
+ * "unattributed remainder" row, never every term. `atlasFetch` is left
+ * out because it is a sub-interval of `atlasDecoded` (both nested,
+ * same fetches), and `handshake`/`subscriptionDecode` are left out
+ * because `main.ts` never awaits `connect()` before starting the street
+ * scene -- they run concurrently with `defs`/`atlasDecoded`, not after
+ * them. The sequential, awaited chain is: bundle -> eval -> defs (awaited
+ * before the scene mounts) -> atlasDecoded (the scene's own texture
+ * loading, the last awaited phase before the ticker starts) ->
+ * toControllable. */
+export const DISJOINT_TERM_NAMES = ["bundle", "eval", "defs", "atlasDecoded", "toControllable"];
+
 const REQUIRED_MARKS = [
   "bc-boot:main-start",
   "bc-boot:handshake-open",
@@ -96,6 +110,19 @@ export function computeSampleTerms(raw) {
   const imageResources = raw.resources.filter(
     (r) => /\.(png|jpe?g|webp)$/i.test(r.name) && r.responseEnd <= playerControllable,
   );
+  // Quentin's cycle-3 direction: the whole point of measuring over
+  // BC_BOOT_HTTPS is that the atlas term reflects the protocol production
+  // actually serves (GitHub Pages, HTTP/2). A silent fallback to HTTP/1.1
+  // (a misconfigured preview, an ALPN negotiation failure) must never reach
+  // the report as if it were a production reading -- so every image
+  // response's own negotiated protocol is asserted here, not assumed.
+  for (const r of imageResources) {
+    if (r.nextHopProtocol !== "h2") {
+      throw new Error(
+        `computeSampleTerms: image resource '${r.name}' negotiated '${r.nextHopProtocol}', not 'h2' -- the milestone sweep must be served over HTTP/2 (BC_BOOT_HTTPS=1) for the atlas term to mean what the report says it means`,
+      );
+    }
+  }
   const atlasFetchMs =
     imageResources.length > 0
       ? Math.max(...imageResources.map((r) => r.responseEnd)) -

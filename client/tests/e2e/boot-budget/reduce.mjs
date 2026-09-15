@@ -45,13 +45,25 @@ export function summarize(values) {
 
 /** `summarize` over every named term in an array of per-sample term maps
  * (`{bundle, defs, atlas, ...}` -> ms), plus the same over `totalMs` and
- * over the unattributed remainder (`totalMs - sum(terms)`) -- shown
- * explicitly, per sample, rather than hidden (Quentin's direction). A
- * negative remainder is not an error: terms that run concurrently in the
- * real boot sequence (e.g. the handshake alongside the defs/atlas fetch)
- * can sum to more than the end-to-end total. */
-export function summarizeTerms(samples) {
+ * over the unattributed remainder (`totalMs - sum(disjointTermNames)`) --
+ * shown explicitly, per sample, rather than hidden (Quentin's direction).
+ *
+ * `disjointTermNames` (cycle 3, both leads' direction) is the explicit
+ * subset of term names that are genuinely sequential, non-overlapping
+ * phases -- the only ones a remainder can be computed from without lying.
+ * Every term is still summarized and shown in the per-term table
+ * regardless; a term left out of `disjointTermNames` (a sub-figure nested
+ * inside another, like `atlasFetch` inside `atlasDecoded`, or work that
+ * runs concurrently with another term, like `handshake` alongside the
+ * atlas fetch) is never counted in the remainder sum, so it can never be
+ * double-subtracted. Defaults to every term name for callers (and old
+ * fixtures) that have nothing to exclude. A negative remainder is still
+ * not an error even with a curated list: it means the disjoint terms
+ * themselves overran the total, a real finding worth showing, not
+ * clamping away. */
+export function summarizeTerms(samples, disjointTermNames) {
   const termNames = Object.keys(samples[0]?.terms ?? {});
+  const namesForRemainder = disjointTermNames ?? termNames;
   /** @type {Record<string, ReturnType<typeof summarize>>} */
   const perTerm = {};
   for (const name of termNames) {
@@ -59,7 +71,7 @@ export function summarizeTerms(samples) {
   }
   const totals = summarize(samples.map((s) => s.totalMs));
   const remainders = summarize(
-    samples.map((s) => s.totalMs - termNames.reduce((sum, name) => sum + s.terms[name], 0)),
+    samples.map((s) => s.totalMs - namesForRemainder.reduce((sum, name) => sum + s.terms[name], 0)),
   );
   return { n: samples.length, terms: perTerm, total: totals, remainder: remainders };
 }

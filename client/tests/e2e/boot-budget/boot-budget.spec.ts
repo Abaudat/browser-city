@@ -65,7 +65,11 @@ async function collectOneSample(
   network: NetworkProfile,
   cpu: CpuProfile,
 ) {
-  const context = await browser.newContext();
+  // Quentin's cycle-3 direction: the production preview negotiates HTTP/2
+  // over a throwaway self-signed cert (BC_BOOT_HTTPS,
+  // vite.config.ts) so this sweep measures the same protocol GitHub Pages
+  // serves in production, not the preview server's default HTTP/1.1.
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);
   await applyThrottling(cdp, network, cpu);

@@ -58,7 +58,7 @@ function baseRaw(overrides: RawOverrides = {}) {
         requestStart: 132,
         responseEnd: 300,
         transferSize: 20000,
-        nextHopProtocol: "http/1.1",
+        nextHopProtocol: "h2",
       },
       {
         name: "http://127.0.0.1/assets/sheet-b.png",
@@ -67,7 +67,7 @@ function baseRaw(overrides: RawOverrides = {}) {
         requestStart: 260,
         responseEnd: 480,
         transferSize: 15000,
-        nextHopProtocol: "http/1.1",
+        nextHopProtocol: "h2",
       },
       ...(overrides.resources ?? []),
     ],
@@ -95,7 +95,7 @@ describe("computeSampleTerms", () => {
     const result = computeSampleTerms(baseRaw());
     expect(result.atlasRequestCount).toBe(2);
     expect(result.atlasBytes).toBe(35000);
-    expect(result.atlasProtocolCounts).toEqual({ "http/1.1": 2 });
+    expect(result.atlasProtocolCounts).toEqual({ h2: 2 });
     // queuing: sheet-a = 132-130=2, sheet-b = 260-200=60; median of [2,60] = 31
     expect(result.atlasMedianQueuingMs).toBe(31);
   });
@@ -110,13 +110,30 @@ describe("computeSampleTerms", () => {
           requestStart: 511,
           responseEnd: 900, // after player-controllable (520)
           transferSize: 99999,
-          nextHopProtocol: "http/1.1",
+          nextHopProtocol: "h2",
         },
       ],
     });
     const result = computeSampleTerms(raw);
     expect(result.atlasRequestCount).toBe(2); // the late one is excluded
     expect(result.atlasBytes).toBe(35000);
+  });
+
+  it("throws when an in-scope image resource did not negotiate HTTP/2", () => {
+    const raw = baseRaw({
+      resources: [
+        {
+          name: "http://127.0.0.1/assets/sheet-c.png",
+          initiatorType: "img",
+          fetchStart: 130,
+          requestStart: 132,
+          responseEnd: 300,
+          transferSize: 20000,
+          nextHopProtocol: "http/1.1",
+        },
+      ],
+    });
+    expect(() => computeSampleTerms(raw)).toThrow(/did not negotiate|not 'h2'/);
   });
 
   it("computes handshake, subscriptionDecode and toControllable from the marks", () => {

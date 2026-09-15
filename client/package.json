@@ -28,6 +28,7 @@
     "@biomejs/biome": "2.5.12",
     "@playwright/test": "1.63.0",
     "@types/node": "22.20.1",
+    "@vitejs/plugin-basic-ssl": "2.3.0",
     "@vitest/coverage-v8": "5.0.0",
     "fast-check": "4.10.0",
     "jsdom": "30.0.1",

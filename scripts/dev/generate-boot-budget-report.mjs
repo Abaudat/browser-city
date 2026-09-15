@@ -10,6 +10,7 @@
 // `check-defs-current.sh`.
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { DISJOINT_TERM_NAMES } from "../../client/tests/e2e/boot-budget/compute-terms.mjs";
 import {
   decodeRevisitOpened,
   summarize,
@@ -90,10 +91,15 @@ let dominantTermName = null;
 let dominantTermMs = -Infinity;
 
 const milestoneSummaries = milestoneRuns.map((run) => {
-  const summary = summarizeTerms(run.samples);
+  const summary = summarizeTerms(run.samples, DISJOINT_TERM_NAMES);
   const met = verdictMet(summary, PRE_REGISTERED_BUDGET_MS.total);
   if (!met) overallMissed = true;
+  // Only the disjoint terms compete for "dominant" -- a sub-figure like
+  // `atlasFetch` (nested inside `atlasDecoded`) must never be named the
+  // dominant term in its own right, since that would double-report the
+  // same fetch window under two names.
   for (const [term, stat] of Object.entries(summary.terms)) {
+    if (!DISJOINT_TERM_NAMES.includes(term)) continue;
     if (stat.median > dominantTermMs) {
       dominantTermMs = stat.median;
       dominantTermName = term;
@@ -297,11 +303,11 @@ p(
 );
 p();
 p(
-  "**The atlas evidence is a preview-server reading, not a production one.** `vite preview` serves plain HTTP/1.1 (six connections per origin; the emulated RTT is paid per request queued behind those six); GitHub Pages, where this client actually ships, serves HTTP/2 (request multiplexing over one connection, no such queuing). With 105 image requests for the street crowd, that protocol difference is a real share of the atlas term below -- the per-profile tables report the measured protocol mix and the median per-request queuing delay (`requestStart` - `fetchStart`) so this is shown, not asserted. The 105 requests themselves come from `client/src/test-street/`'s crowd -- explicitly throwaway harness code (docs/architecture.md), not a boot path the product ships -- so the atlas figures below describe today's harness, not a claim about the shipped game.",
+  '**The atlas evidence is now measured over the production protocol.** Cycle 2\'s report measured the milestone sweep over `vite preview`\'s default HTTP/1.1 (six connections per origin, RTT paid per request queued behind those six) while GitHub Pages -- where this client actually ships -- serves HTTP/2 (one multiplexed connection, no such queuing); with 105 image requests, that inflated the atlas figures with a preview-server artefact production never pays. `BC_BOOT_HTTPS` now serves the milestone sweep over HTTP/2 with a throwaway self-signed cert (`vite.config.ts`, `@vitejs/plugin-basic-ssl`), and `compute-terms.mjs` asserts every image response actually negotiated `h2`, throwing otherwise -- a silent fallback to HTTP/1.1 can never reach this report unnoticed. The per-profile tables still report the measured protocol mix and median per-request queuing delay (`requestStart` - `fetchStart`) as evidence. The 105 requests themselves come from `client/src/test-street/`\'s crowd -- explicitly throwaway harness code (docs/architecture.md), not a boot path the product ships -- so the atlas figures below describe today\'s harness over production\'s own protocol, not a claim about the shipped game\'s eventual atlas.',
 );
 p();
 p(
-  "**D4's decode split, via CDP frame timestamps.** `subscribe()` -> `onApplied` alone conflates server-side query evaluation, network transfer, CDP's own per-frame emulation and client decode/apply into one number -- and cycle 1's own raw data ruled out client decode as the dominant cost (4x CPU throttling made the number *faster*, which a CPU-bound cost cannot do). The `domestic`/`pessimistic` decode legs now listen to CDP's `Network.webSocketFrameSent`/`webSocketFrameReceived` and split the window into three durations: **server** (subscribe's own outgoing frame -> the first response frame), **transfer** (first response frame -> last response frame) and **client** (last response frame -> `onApplied`, page clock). The CDP-clock durations (`server`, `transfer`) and the page-clock duration (`decodeMs`) are each computed as differences *within* their own clock, never by subtracting an absolute timestamp in one clock from one in the other -- both clocks are steady, equal-rate monotonic seconds, so `client = decodeMs - server - transfer` is a valid duration-of-durations even though the two clocks do not share an epoch.",
+  '**D4\'s decode split, via CDP frame timestamps.** `subscribe()` -> `onApplied` alone conflates server-side query evaluation, network transfer, CDP\'s own per-frame emulation and client decode/apply into one number -- and cycle 1\'s own raw data ruled out client decode as the dominant cost (4x CPU throttling made the number *faster*, which a CPU-bound cost cannot do). The `domestic`/`pessimistic` decode legs now listen to CDP\'s `Network.webSocketFrameSent`/`webSocketFrameReceived` and split the window into three durations: **request→receipt** (subscribe\'s own outgoing frame -> full receipt of the response, renamed from "server" in cycle 2 -- see the D4 sweep section below for why it is not a server-time isolate under emulation), **transfer** (first response frame -> last response frame, 0 whenever the whole response is one frame) and **client** (last response frame -> `onApplied`, page clock). The CDP-clock durations (`request→receipt`, `transfer`) and the page-clock duration (`decodeMs`) are each computed as differences *within* their own clock, never by subtracting an absolute timestamp in one clock from one in the other -- both clocks are steady, equal-rate monotonic seconds, so `client = decodeMs - request→receipt - transfer` is a valid duration-of-durations even though the two clocks do not share an epoch.',
 );
 p();
 p(
@@ -390,15 +396,20 @@ for (const m of milestoneSummaries) {
   p("| Term | median (ms) | p75 (ms) | p95 (ms) | max (ms) |");
   p("| --- | --- | --- | --- | --- |");
   for (const [term, stat] of Object.entries(summary.terms)) {
+    const sub = DISJOINT_TERM_NAMES.includes(term) ? "" : " (sub-figure)";
     p(
-      `| ${term} | ${pct1(stat.median)} | ${pct1(stat.p75)} | ${pct1(stat.p95)} | ${pct1(stat.max)} |`,
+      `| ${term}${sub} | ${pct1(stat.median)} | ${pct1(stat.p75)} | ${pct1(stat.p95)} | ${pct1(stat.max)} |`,
     );
   }
   p(
     `| **total (to player-controllable)** | ${pct1(summary.total.median)} | ${pct1(summary.total.p75)} | ${pct1(summary.total.p95)} | ${pct1(summary.total.max)} |`,
   );
   p(
-    `| unattributed remainder | ${pct1(summary.remainder.median)} | ${pct1(summary.remainder.p75)} | ${pct1(summary.remainder.p95)} | ${pct1(summary.remainder.max)} |`,
+    `| unattributed remainder (\`total - sum(${DISJOINT_TERM_NAMES.join(", ")})\`) | ${pct1(summary.remainder.median)} | ${pct1(summary.remainder.p75)} | ${pct1(summary.remainder.p95)} | ${pct1(summary.remainder.max)} |`,
+  );
+  p();
+  p(
+    `The remainder sums only the disjoint, sequential terms above (marked "(sub-figure)" for the ones it excludes: \`atlasFetch\` nests inside \`atlasDecoded\`; \`handshake\`/\`subscriptionDecode\` run concurrently with \`defs\`/\`atlasDecoded\`, never after them -- see Method).`,
   );
   p();
   p(`Verdict (p75 vs. ${PRE_REGISTERED_BUDGET_MS.total} ms budget): **${met ? "MET" : "MISSED"}**.`);
@@ -428,11 +439,11 @@ if (decodeByRowCount.size === 0) {
   p();
 } else {
   p(
-    "`decodeMs` is the whole `subscribe()`->`onApplied` window (page clock). `server`/`transfer`/`client` are the CDP frame-timestamp split (Method); present only on the `domestic`/`pessimistic` legs and on the `none`/`throttled` control leg -- `none`/`reference` runs with no CDP instrumentation at all, so it reports `decodeMs` only.",
+    '`decodeMs` is the whole `subscribe()`->`onApplied` window (page clock). `request→receipt`/`transfer`/`client` are the CDP frame-timestamp split (Method); present only on the `domestic`/`pessimistic` legs and on the `none`/`throttled` control leg -- `none`/`reference` runs with no CDP instrumentation at all, so it reports `decodeMs` only. Renamed from "server" (cycle 2) because, at a median frame count of 1, it measures the whole window from the outgoing request to full receipt of the one WebSocket frame -- under network emulation, that includes CDP holding the message for the emulated transfer time, not server-side query evaluation alone (see the finding below).',
   );
   p();
   p(
-    "| Row count | Network | CPU | n | median frames | decodeMs median/p75/p95 | server median/p75/p95 | transfer median/p75/p95 | client median/p75/p95 |",
+    "| Row count | Network | CPU | n | median frames | decodeMs median/p75/p95 | request→receipt median/p75/p95 | transfer median/p75/p95 | client median/p75/p95 |",
   );
   p("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
   const rowCounts = [...decodeByRowCount.keys()].sort((a, b) => a - b);
@@ -454,27 +465,82 @@ if (decodeByRowCount.size === 0) {
   p();
   if (anySingleFrame) {
     p(
-      "**On at least one row count, the whole subscription response arrived in a single WebSocket frame** (median frame count 1) -- `transfer` is definitionally 0 there, and `server` covers both server-side query evaluation *and* wire transfer of that one frame, not query evaluation alone. Read `server` at those row counts as \"everything up to full receipt\", not a pure server-side isolate; the split only separates the two once a row count's response is large enough to fragment into multiple frames.",
+      '**The whole subscription response arrives in a single WebSocket frame at every row count measured** (median frame count 1) -- `transfer` is definitionally 0 throughout; the split never gets the chance to separate "server" from "wire transfer" on its own, because there is only ever one frame to time.',
     );
     p();
   }
 
-  // Explain the cycle-1 anomaly with cycle-2's own split, computed, not asserted.
-  const anomalyRun28kThrottled = decodeByRowCount.get(28000)?.find((r) => r.network.name === "domestic" && r.cpu.name === "throttled");
-  const anomalyRun28kReference = decodeByRowCount.get(28000)?.find((r) => r.network.name === "domestic" && r.cpu.name === "reference");
-  if (anomalyRun28kThrottled && anomalyRun28kReference) {
-    const throttledSplit = decodeTermSummaries(anomalyRun28kThrottled);
-    const referenceSplit = decodeTermSummaries(anomalyRun28kReference);
-    if (throttledSplit.server && referenceSplit.server) {
-      const throttledTotal = throttledSplit.decodeMs.median;
-      const referenceTotal = referenceSplit.decodeMs.median;
-      const throttledServerShare = throttledSplit.server.median / throttledTotal;
-      const referenceServerShare = referenceSplit.server.median / referenceTotal;
+  // Cycle 3 (both leads' direction): derive the "server is inflated"
+  // finding from the none-leg control's own numbers, at D4's own trigger
+  // row count -- never a fixed paragraph with numbers filled in.
+  // `decodeMs` is the comparison basis (present on every leg, split or
+  // not); `none`/reference has no CDP frame listener at all (Tim's "bare
+  // control" direction), so it has no `.server` figure to compare, only
+  // `decodeMs` -- which, with `transfer` always 0 and `client` a few tens
+  // of ms, is dominated by the same quantity `.server` isolates elsewhere.
+  const controlThrottled = decodeByRowCount
+    .get(DECODE_REVISIT_ROW_COUNT)
+    ?.find((r) => r.network.name === "none" && r.cpu.name === "throttled");
+  const controlReference = decodeByRowCount
+    .get(DECODE_REVISIT_ROW_COUNT)
+    ?.find((r) => r.network.name === "none" && r.cpu.name === "reference");
+  const emulatedRuns = (decodeByRowCount.get(DECODE_REVISIT_ROW_COUNT) ?? []).filter(
+    (r) => r.network.name !== "none",
+  );
+  const controlThrottledSplit = controlThrottled ? decodeTermSummaries(controlThrottled) : null;
+  const controlReferenceSplit = controlReference ? decodeTermSummaries(controlReference) : null;
+  const controlThrottledMs = controlThrottledSplit?.decodeMs.median;
+  const controlReferenceMs = controlReferenceSplit?.decodeMs.median;
+
+  if (typeof controlThrottledMs === "number" && emulatedRuns.length > 0) {
+    p(
+      `**"request→receipt" (and the whole \`decodeMs\` window) under network emulation is a CDP artifact, not server time.** The \`none\` control leg -- same co-located SpacetimeDB process, same row count, only network emulation removed -- reads ${pct1(controlThrottledMs)} ms (throttled CPU)${typeof controlReferenceMs === "number" ? ` / ${pct1(controlReferenceMs)} ms (reference CPU)` : ""}. That is the real figure for server-side query evaluation plus loopback transfer.`,
+    );
+    for (const run of emulatedRuns) {
+      const split = decodeTermSummaries(run);
+      const controlMs = run.cpu.name === "throttled" ? controlThrottledMs : controlReferenceMs;
+      if (typeof controlMs !== "number") continue;
+      const readingMs = split.decodeMs.median;
+      const inflation = readingMs / Math.max(controlMs, 0.001);
+      const netProfile = NETWORK_PROFILES.find((n) => n.name === run.network.name) ?? null;
+      const bytesOnWire = run.samples[0]?.bytesOnWire;
+      let estimateLine = "";
+      if (netProfile && typeof bytesOnWire === "number") {
+        const transferEstimateMs = (bytesOnWire * 8) / netProfile.downloadKbps;
+        const realisticEstimateMs = transferEstimateMs + netProfile.latencyMs;
+        estimateLine = ` A real ${netProfile.label} link would move ${(bytesOnWire / 1024).toFixed(1)} KiB in about ${transferEstimateMs.toFixed(1)} ms plus one RTT (${netProfile.latencyMs} ms) ≈ ${realisticEstimateMs.toFixed(1)} ms -- not ${pct1(readingMs)} ms.`;
+      }
+      const serverNote = split.server
+        ? ` (\`request→receipt\` itself: ${pct1(split.server.median)} ms.)`
+        : "";
       p(
-        `**The cycle-1 "throttled is faster" reading, explained.** At 28,000 rows on \`domestic\`: the **server** term is ${pct(throttledServerShare)} of the total when the client CPU is throttled, versus ${pct(referenceServerShare)} unthrottled (server ${pct1(throttledSplit.server.median)} ms throttled vs. ${pct1(referenceSplit.server.median)} ms unthrottled; client ${pct1(throttledSplit.client.median)} ms throttled vs. ${pct1(referenceSplit.client.median)} ms unthrottled). Server query evaluation runs in a *separate native process*, unaffected by the browser's own CPU throttle -- so the split shows the effect is not client decode getting faster under throttling, it is the **server** term dominating either way, with the two processes (browser, local SpacetimeDB) competing for the same machine's cores. An unthrottled browser consuming full CPU cycles appears to contend *more* with the co-located server process than a deliberately-throttled one that yields between instruction batches -- a co-location artifact of running both processes on one machine, not a property of decode cost itself. This is exactly why the D4 trigger reads the isolated **client** term, not the conflated whole.`,
+        `Under \`${run.network.name}\`/${run.cpu.name}, \`decodeMs\` reads ${pct1(readingMs)} ms -- ${inflation.toFixed(1)}x its own-CPU-profile control.${serverNote} CDP's \`Network.emulateNetworkConditions\` is holding the single response frame for its emulated transfer time before the page ever sees it -- exactly what network emulation is supposed to do to a real transfer -- so this is **not** a real-network time estimate for this payload.${estimateLine}`,
+      );
+    }
+    p();
+
+    // The residual: does throttling the CPU still change the reading
+    // *within* the same network profile, after the CDP-artifact inflation
+    // is accounted for? Reported from data, and left honestly
+    // "unexplained" rather than a story invented to fit it (Quentin's
+    // direction).
+    if (typeof controlReferenceMs === "number") {
+      const controlResidual = controlThrottledMs / controlReferenceMs;
+      p(
+        `**The CPU-throttling residual.** Even with network emulation removed entirely, \`none\`/throttled reads ${pct1(controlThrottledMs)} ms against \`none\`/reference's ${pct1(controlReferenceMs)} ms (${controlResidual < 1 ? "throttled is faster" : "throttled is slower"}, ${controlResidual.toFixed(2)}x). Both point at the same co-located, un-emulated SpacetimeDB process, so this residual is not a network-emulation artifact. Nothing in the data collected by this harness explains it -- it is left **unexplained** rather than attributed to a mechanism this report cannot verify.`,
       );
       p();
     }
+
+    p(
+      "The pre-registered D4 trigger reads the isolated **client** term precisely because of this: the control leg's own client term is close to what the emulated legs' own client terms report too, so the client decode/apply cost itself is not what network emulation is distorting.",
+    );
+    p();
+  } else {
+    p(
+      `**"request→receipt" under network emulation could not be checked against a control leg** -- no \`decode-${DECODE_REVISIT_ROW_COUNT}-none-throttled.json\` (or no matching emulated leg) was found in the raw directory. Read every \`request→receipt\`/\`decodeMs\` figure under \`domestic\`/\`pessimistic\` as unverified against a control until this is re-run.`,
+    );
+    p();
   }
 
   const bytesFirst = decodeRuns[0]?.samples?.[0]?.bytesOnWire;
@@ -503,7 +569,7 @@ p(
   "- **The reference-machine rows are a real dev box, not a literal mid-range laptop.** Re-running `scripts/dev/run-boot-budget-spike.sh` on one is one command away, not gathered by this PR.",
 );
 p(
-  "- **The atlas figures describe today's harness (`test-street/`'s throwaway crowd against a `vite preview` HTTP/1.1 server), not a production reading** -- see Method for both caveats. There is no atlas artifact to measure yet.",
+  "- **The atlas figures describe today's harness (`test-street/`'s throwaway crowd, now measured over HTTP/2 like production), not a production reading** -- there is no atlas artifact to measure yet, and the crowd itself is throwaway harness code; see Method.",
 );
 p(
   "- **NFR1's own PR-blocking regression gate does not exist yet** -- 20 cold, throttled samples is too slow and too noisy for every PR. `.github/workflows/ci.yml`'s `client-build` job gates the bundle term (a gzipped size budget on the production JS, set from this run's own number plus margin); `client/tests/e2e/boot-marks.spec.ts` gates the atlas term deterministically (image request count and bytes before `player-controllable`, set from this run). The full measurement runs on `workflow_dispatch` only (`.github/workflows/boot-budget.yml`), never gating a PR and never on push (its throttled numbers on a shared runner are not comparable to this committed run). `docs/trace-matrix.md`'s NFR1 row is `partial` and names the story that builds the real boot path (FR144-146) for the rest.",

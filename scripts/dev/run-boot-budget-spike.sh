@@ -99,7 +99,9 @@ free_port() {
 wait_healthy() { # <url> <label>
   local deadline=$((SECONDS + HEALTH_DEADLINE_S))
   while [ "$SECONDS" -lt "$deadline" ]; do
-    curl -sf -o /dev/null "$1" && return 0
+    # -k: the milestone preview serves a throwaway self-signed cert
+    # (BC_BOOT_HTTPS); harmless no-op against a plain http:// URL.
+    curl -sfk -o /dev/null "$1" && return 0
     sleep "$POLL_INTERVAL_S"
   done
   return 1
@@ -174,12 +176,20 @@ spacetime publish --server "$SERVER_URL" --no-config -y "$MAIN_DB" --module-path
 ( cd "$CLIENT_DIR" && VITE_SPACETIME_URI="ws://127.0.0.1:$SPACETIME_PORT" VITE_SPACETIME_DB="$MAIN_DB" npm run build ) >"$DATA_DIR/build-main.log" 2>&1 \
   || fail "'npm run build' (production client) failed" "$DATA_DIR/build-main.log"
 
+# Quentin's cycle-3 direction: `vite preview` serves HTTP/1.1 by default,
+# which queues the milestone sweep's ~105 image requests behind six
+# connections per origin -- an artefact of the preview server, never paid
+# by the real host (GitHub Pages, HTTP/2). BC_BOOT_HTTPS turns on
+# vite.config.ts's throwaway self-signed cert so this leg negotiates HTTP/2
+# like production does; compute-terms.mjs asserts every image response
+# actually got `h2` and throws otherwise, so a silent fallback can never
+# reach the report.
 MAIN_PREVIEW_PORT="$(free_port)"
-( cd "$CLIENT_DIR" && npx vite preview --port "$MAIN_PREVIEW_PORT" ) >"$DATA_DIR/preview-main.log" 2>&1 &
+( cd "$CLIENT_DIR" && BC_BOOT_HTTPS=1 npx vite preview --port "$MAIN_PREVIEW_PORT" ) >"$DATA_DIR/preview-main.log" 2>&1 &
 MAIN_PREVIEW_PID=$!
-MAIN_PREVIEW_URL="http://127.0.0.1:$MAIN_PREVIEW_PORT"
+MAIN_PREVIEW_URL="https://127.0.0.1:$MAIN_PREVIEW_PORT"
 wait_healthy "$MAIN_PREVIEW_URL/" "production preview" || fail "'vite preview' (production client) did not become healthy" "$DATA_DIR/preview-main.log"
-echo "run-boot-budget-spike: production build served at $MAIN_PREVIEW_URL" >&2
+echo "run-boot-budget-spike: production build served (HTTP/2, self-signed) at $MAIN_PREVIEW_URL" >&2
 
 # --- D4's decode-only harness, against server/spikes/boot_budget ---
 DECODE_ENV=()

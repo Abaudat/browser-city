@@ -93,6 +93,36 @@ describe("summarizeTerms", () => {
     const result = summarizeTerms(overlapping);
     expect(result.remainder.median).toBe(-60);
   });
+
+  // Cycle 3 (both leads' direction): atlasFetch nests inside atlasDecoded
+  // (both cover the same image fetches), so summing every term double-
+  // subtracted the atlas window and made the remainder meaningless
+  // (-1.7s to -4.0s in the committed report). An explicit disjoint-term
+  // list fixes this without dropping the nested term from the table.
+  it("never double-subtracts a nested sub-figure when an explicit disjoint list is given", () => {
+    const nested = [
+      {
+        totalMs: 500,
+        terms: { bundle: 100, atlasFetch: 300, atlasDecoded: 320, toControllable: 80 },
+      },
+    ];
+    // Naive (no disjoint list): 500 - (100+300+320+80) = -300, wrong --
+    // atlasFetch is counted a second time inside atlasDecoded.
+    expect(summarizeTerms(nested).remainder.median).toBe(-300);
+    // Disjoint list leaves atlasFetch out: 500 - (100+320+80) = 0, correct.
+    const result = summarizeTerms(nested, ["bundle", "atlasDecoded", "toControllable"]);
+    expect(result.remainder.median).toBe(0);
+    // The excluded term is still summarized and present in the table.
+    expect(result.terms.atlasFetch.median).toBe(300);
+  });
+
+  it("still reports every term's own summary regardless of the disjoint list", () => {
+    const result = summarizeTerms(samples, ["bundle"]);
+    expect(result.terms.defs.median).toBe(50);
+    expect(result.terms.handshake.median).toBe(150);
+    // remainder now only subtracts bundle: 1000 - 250 = 750
+    expect(result.remainder.median).toBe(750);
+  });
 });
 
 describe("verdictMet", () => {
