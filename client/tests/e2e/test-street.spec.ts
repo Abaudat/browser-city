@@ -284,6 +284,22 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   };
   ws.on("framesent", onFrameSent);
 
+  /** A `toHaveScreenshot` check holds the player still for as long as its
+   * own stability wait takes (cold-CI-runner minutes on the first run,
+   * `SCREENSHOT_OPTIONS.timeout` above) -- long enough, in practice, to
+   * cross a websocket keepalive interval that has nothing to do with
+   * movement. The FR137 claim below is specifically about movement, so a
+   * screenshot's own dwell time is excluded from what it measures, the
+   * same way the scene's own player is not moving while one is taken. */
+  async function screenshot(name: string): Promise<void> {
+    ws.off("framesent", onFrameSent);
+    try {
+      await expect(canvas).toHaveScreenshot(name, SCREENSHOT_OPTIONS);
+    } finally {
+      ws.on("framesent", onFrameSent);
+    }
+  }
+
   // --- inside shop A -----------------------------------------------------
   const start = await playerState(page);
   expect(start).toEqual({ x: PLAYER_START.x, y: PLAYER_START.y, floor: PLAYER_START.floor });
@@ -312,7 +328,7 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // The interior checkpoint (Quentin's direction, cycle 1): every id-based
   // check above passes, and this is what catches it if it still looks
   // wrong.
-  await expect(canvas).toHaveScreenshot("interior.png", SCREENSHOT_OPTIONS);
+  await screenshot("interior.png");
 
   const route = streetWalkRoute({ lamppostRestY: lamppostRestY() });
   const segment = (label: string): StreetWalkSegment => {
@@ -405,7 +421,7 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // are drawn here, and this is the one check that would have caught the
   // avatar reading as clipped at the canvas edge instead of visibly under
   // a deck.
-  await expect(canvas).toHaveScreenshot("underpass.png", SCREENSHOT_OPTIONS);
+  await screenshot("underpass.png");
 
   // Two floors at one (x, y), both drawn: the deck above is not culled
   // (FR122 culls by sign, and both floors are street-side), and the
