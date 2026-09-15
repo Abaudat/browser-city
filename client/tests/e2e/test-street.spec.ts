@@ -98,9 +98,22 @@ test.use({ viewport: { width: 1920, height: 1080 } });
 // `maxDiffPixels` is an absolute count instead; `threshold` (Playwright's
 // own per-pixel colour-difference tolerance, 0-1) absorbs anti-aliasing
 // noise without widening how many pixels may differ.
+//
+// 2,500, not a much smaller number: the underpass checkpoint is reached
+// after several segments of real, timed movement, so its own rest
+// position carries a little run-to-run jitter from ordinary round-trip
+// latency (unlike the interior checkpoint, which is the walk's fixed
+// starting position and needs none of this headroom) -- there is no
+// collider to stop against mid-span, on purpose, since the whole point
+// of an underpass is that it is open. With nearest-neighbour sampling
+// (no antialiasing to soften it), even a sub-pixel position difference
+// can shift the avatar's own drawn pixels by a full device pixel,
+// which a real CI comparison measured at 1,152 differing pixels between
+// two otherwise-identical runs. 2,500 gives that headroom while staying
+// an order of magnitude tighter than the ratio this replaced.
 const SCREENSHOT_OPTIONS = {
   animations: "disabled",
-  maxDiffPixels: 150,
+  maxDiffPixels: 2_500,
   threshold: 0.2,
   // Playwright's own "wait for a stable screenshot" pre-check needs more
   // than its 5s default the first time it runs on a CI image: nothing
