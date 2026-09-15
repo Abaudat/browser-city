@@ -47,10 +47,13 @@ import { lamppostRestY } from "../unit/test-street/street-world";
  * is 16.7 ms end to end; the app's own work getting half of that leaves
  * the other half for the renderer, the browser and everything else. This
  * now covers the whole frame (see the module doc above), not a fraction
- * of it -- measured locally against this same spec at p95 0.6 ms / max
- * 1.4 ms (`test-results/story-1.13-perf/frame-work.json`, the run this
- * comment was written from), comfortably inside both numbers with the
- * render included. */
+ * of it -- measured locally (a Windows development machine) at p95
+ * 0.6 ms / max 1.4 ms, and on the CI runner itself (`ubuntu-latest`,
+ * `.github/workflows/ci.yml`'s `e2e` job, run 34937513478) at p95 0.8 ms
+ * / max 3 ms -- comfortably inside both numbers with the render
+ * included, on the machine this budget actually has to hold on. Only an
+ * 8-13x margin today; NFR2's own budget, and story 5.4 tightens it under
+ * real crowd load. */
 const P95_FRAME_WORK_MS = 8;
 const MAX_FRAME_WORK_MS = 16.7;
 

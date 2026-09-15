@@ -13,9 +13,27 @@ name: update-visual-baselines
 # Usage: `gh workflow run update-visual-baselines.yml --ref <branch>`, or
 # the Actions tab's "Run workflow" button, against the branch whose
 # baselines need updating.
+#
+# Never dispatch this against `master`: it pushes straight to whatever
+# ref it runs on, with no PR, no review and no CI, which would overwrite
+# exactly the pictures that are supposed to block a regression. The
+# first step below refuses that ref outright rather than relying only on
+# branch protection to catch it. Refuses loudly (fails the job), never
+# silently skips, so a mistaken dispatch is visible as a failure.
+#
+# A commit this workflow pushes, using the default `GITHUB_TOKEN`, does
+# not itself trigger `ci` on the branch it lands on (GitHub does not
+# chain workflow runs started by `GITHUB_TOKEN` by default) -- the
+# branch's head is left with no fresh `ci` result until something else
+# pushes to it again.
 
 on:
   workflow_dispatch:
+  # TEMPORARY, this PR only: see the note in the Crew comment on PR #286 --
+  # workflow_dispatch cannot run until this file is on the default branch.
+  # Removed once this cycle's regenerated baselines are committed.
+  push:
+    branches: [Abaudat/issue-61]
 
 permissions:
   contents: write
@@ -26,6 +44,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: refuse to run against master
+        if: github.ref == 'refs/heads/master'
+        run: |
+          echo "::error::update-visual-baselines must never be dispatched against master -- it pushes straight to whatever ref it runs on, with no PR or review. Dispatch it against the feature branch whose baselines need updating instead." >&2
+          exit 1
       # The street's sprites come from the repo-root `ModernTileset/`, so
       # this needs the whole repository, never a sparse checkout.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

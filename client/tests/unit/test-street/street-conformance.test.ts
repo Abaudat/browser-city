@@ -194,11 +194,19 @@ describe("the scripted walk (AC3)", () => {
     expect(rest.y).toBeCloseTo(lamppostRestY(), 5);
   });
 
-  it("crosses the whole bridge span underneath it, on the street's own floor", () => {
+  it("stops strictly under the bridge span, on the street's own floor", () => {
     const under = at("under-the-bridge");
     expect(under.floor).toBe(PLAYER_START.floor);
     expect(under.cellY).toBe(BRIDGE_DECK_Y);
-    expect(under.x).toBeGreaterThan(BRIDGE_X1);
+    expect(under.x).toBeGreaterThanOrEqual(BRIDGE_X0);
+    expect(under.x).toBeLessThanOrEqual(BRIDGE_X1);
+  });
+
+  it("continues past the bridge's own east end to reach the stairs up", () => {
+    const east = at("east-of-the-bridge");
+    expect(east.floor).toBe(PLAYER_START.floor);
+    expect(east.cellY).toBe(BRIDGE_DECK_Y);
+    expect(east.x).toBeGreaterThan(BRIDGE_X1);
   });
 
   it("climbs onto the deck by a transition and comes back down to the street", () => {

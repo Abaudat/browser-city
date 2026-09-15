@@ -25,6 +25,11 @@ function toCssColor(color: number): string {
  */
 export function bootstrapRenderer(mountEl: HTMLElement): Renderer {
   const dot = document.createElement("div");
+  // A stable, purpose-specific id: the street's own visual-regression
+  // checks (`test-street.spec.ts`) mask this element by selector, since
+  // it sits at a fixed viewport position that can overlap the street
+  // canvas and recolours on a ping this scene has no other control over.
+  dot.id = "bc-ping-indicator";
   dot.style.cssText =
     "position:fixed;top:12px;left:12px;width:24px;height:24px;border-radius:50%;" +
     "background:#101018;pointer-events:none;z-index:1000;";

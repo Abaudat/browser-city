@@ -23,17 +23,21 @@
 // third boot of the same scene costs the slowest job in the repo real
 // wall time.
 //
-// Two `toHaveScreenshot` checks (Quentin's direction, cycle 1) catch what
-// no id-based assertion can: "every check passes and it looks wrong". A
-// fixed 1920x1080 viewport (`test.use` below), `animations: "disabled"`
-// and a tight `maxDiffPixelRatio` keep them meaningful rather than
-// perpetually flaky. `?freezeCrowd=1` (a DEV-only query flag,
-// `main.ts`) starts the street crowd's own walk-cycle ticker paused, so
-// every citizen stays at its initial, fixed-fixture pose -- otherwise
-// which frame of which citizen's walk cycle happens to be on screen at
-// screenshot time would depend on real wall-clock timing, and no baseline
-// could ever be stable. Nothing else this spec asserts depends on the
-// crowd's own animation being live.
+// Two `toHaveScreenshot` checks (Quentin's direction) catch what no
+// id-based assertion can: "every check passes and it looks wrong". A
+// fixed 1920x1080 viewport (`test.use` below), `animations: "disabled"`,
+// an absolute `maxDiffPixels` sized to the objects under test (never a
+// ratio of the whole canvas -- a ratio loose enough to let the avatar or
+// a window vanish is not a regression check), and a masked ping
+// indicator (fixed-position, recolours on a ping this scene does not
+// control) keep them meaningful rather than perpetually flaky.
+// `?freezeCrowd=1` (a DEV-only query flag, `main.ts`) starts the street
+// crowd's own walk-cycle ticker paused, so every citizen stays at its
+// initial, fixed-fixture pose -- otherwise which frame of which
+// citizen's walk cycle happens to be on screen at screenshot time would
+// depend on real wall-clock timing, and no baseline could ever be
+// stable. Nothing else this spec asserts depends on the crowd's own
+// animation being live.
 //
 // Baselines are committed PNGs, generated on the CI image (linux
 // chromium) -- never on a contributor's own machine, whose font hinting
@@ -43,6 +47,9 @@
 // <branch>`, or the Actions tab's "Run workflow" button) -- it runs this
 // spec with `--update-snapshots` on `ubuntu-latest` and pushes the
 // changed `*-snapshots/*.png` files back to the branch it was run on.
+// Look at what it produced before committing: a baseline is a human
+// claim that the picture is right, not whatever the runner happened to
+// generate.
 import { expect, type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { sortAcrossFloors } from "../../src/render/floor-stacks";
@@ -84,9 +91,17 @@ test.describe.configure({ mode: "serial" });
 // sized to the world's own bounds, never to the viewport).
 test.use({ viewport: { width: 1920, height: 1080 } });
 
+// A pixel budget in proportion to the objects under test, not the whole
+// 1792x1456 canvas (Quentin's direction, cycle 2): `maxDiffPixelRatio:
+// 0.01` on this image is ~26,000 px, wider than the avatar (~2,000px) or
+// a window (~5,000px) -- either could vanish and this would stay green.
+// `maxDiffPixels` is an absolute count instead; `threshold` (Playwright's
+// own per-pixel colour-difference tolerance, 0-1) absorbs anti-aliasing
+// noise without widening how many pixels may differ.
 const SCREENSHOT_OPTIONS = {
   animations: "disabled",
-  maxDiffPixelRatio: 0.01,
+  maxDiffPixels: 150,
+  threshold: 0.2,
   // Playwright's own "wait for a stable screenshot" pre-check needs more
   // than its 5s default the first time it runs on a CI image: nothing
   // here is still animating (the crowd is frozen), but a cold headless
@@ -292,8 +307,14 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   };
   cdp.on("Network.webSocketFrameSent", onWsFrameSent);
 
+  // The ping indicator (`bootstrap.ts`) is fixed-position and can overlap
+  // the canvas's own bounding box; it also recolours on a ping this scene
+  // does not control, which would otherwise bake the connection's own
+  // timing into the baseline (Quentin's direction, cycle 2).
+  const pingIndicator = page.locator("#bc-ping-indicator");
+
   async function screenshot(name: string): Promise<void> {
-    await expect(canvas).toHaveScreenshot(name, SCREENSHOT_OPTIONS);
+    await expect(canvas).toHaveScreenshot(name, { ...SCREENSHOT_OPTIONS, mask: [pingIndicator] });
   }
 
   // --- inside shop A -----------------------------------------------------
@@ -411,12 +432,16 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   const underTheBridge = await playerState(page);
   expect(underTheBridge.floor).toBe(PLAYER_START.floor);
   expect(Math.floor(underTheBridge.y)).toBe(BRIDGE_DECK_Y);
-  expect(underTheBridge.x).toBeGreaterThan(BRIDGE_X1);
+  // Strictly inside the deck's own span (story 1.13, cycle 2: this used
+  // to check `> BRIDGE_X1`, which is *past* the deck, not under it --
+  // exactly the clipped framing the baseline caught).
+  expect(underTheBridge.x).toBeGreaterThanOrEqual(BRIDGE_X0);
+  expect(underTheBridge.x).toBeLessThanOrEqual(BRIDGE_X1);
 
-  // The underpass checkpoint (Quentin's direction, cycle 1): both floors
-  // are drawn here, and this is the one check that would have caught the
-  // avatar reading as clipped at the canvas edge instead of visibly under
-  // a deck.
+  // The underpass checkpoint (Quentin's direction): both floors are drawn
+  // here, and this is the one check that would have caught the avatar
+  // reading as clipped at the canvas edge instead of visibly under a
+  // deck.
   await screenshot("underpass.png");
 
   // Two floors at one (x, y), both drawn: the deck above is not culled
@@ -440,6 +465,8 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   expect(firstDeckIndex).toBeGreaterThan(lastStreetIndex);
 
   // --- up onto the deck --------------------------------------------------
+  // Past the deck's own east end, to the stairs that climb onto it.
+  await walkSegment(page, segment("east-of-the-bridge"));
   await walkSegment(page, segment("on-the-bridge-deck"));
   const onDeck = await playerState(page);
   expect(onDeck.floor).toBe(BRIDGE_FLOOR);

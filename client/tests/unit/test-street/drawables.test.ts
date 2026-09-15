@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { sortAcrossFloors } from "../../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
-import { screenPositionPx } from "../../../src/render/screen-position";
 import { compareDrawables } from "../../../src/render/sort-key";
 import { toSortUnits } from "../../../src/render/sort-units";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
@@ -13,6 +12,8 @@ import {
   updatePlayerDrawable,
 } from "../../../src/test-street/drawables";
 import {
+  BRIDGE_DECK_Y,
+  BRIDGE_X1,
   INTERIOR_FLOOR_TILES,
   INTERIOR_FLOOR_TILES_B,
   PLATFORM_LANDING_X,
@@ -45,7 +46,6 @@ import {
 // values so the relation below stays a pure arithmetic fact, with no
 // need to mount Pixi to check it.
 const TILE_SIZE_PX = 16;
-const STOREY_HEIGHT_PX = 48;
 
 const CODE_BY_NAME: Record<string, number> = Object.fromEntries(
   LAYER_TABLE.map((row) => [row.name, row.code]),
@@ -270,21 +270,26 @@ describe("the player can never walk off the drawn world", () => {
     // The union of the two ground rects has no hole, so a body entirely
     // inside it is exactly a body whose every corner is inside one of
     // them -- corner checking cannot pass a body that has left the
-    // ground.
+    // ground. A raw world-space corner is compared against the ground
+    // rects in the same plain `tile * tileSizePx` pixel space they were
+    // built in above -- never through `screenPositionPx`, which adds a
+    // bottom-centre *sprite anchor* offset (`+0.5` tile in x, `+1` tile
+    // in y) that has nothing to do with where a collision corner actually
+    // sits. That mismatch went unnoticed while every walk this property
+    // covered stayed comfortably inside the ground rects' own interior;
+    // it surfaces the moment a corner is checked within about a tile of
+    // a rect's real edge (found while extending this property to the
+    // bridge's own east end, story 1.13 cycle 2), which is exactly where
+    // a boundary hole would otherwise go undetected.
     return bodyCorners(pos).every((corner) => {
-      const screen = screenPositionPx(
-        corner.x,
-        corner.y,
-        PLAYER_START.floor,
-        TILE_SIZE_PX,
-        STOREY_HEIGHT_PX,
-      );
+      const screenX = corner.x * TILE_SIZE_PX;
+      const screenY = corner.y * TILE_SIZE_PX;
       return groundScreenRects.some(
         (rect) =>
-          screen.x >= rect.left &&
-          screen.x <= rect.right &&
-          screen.y >= rect.top &&
-          screen.y <= rect.bottom,
+          screenX >= rect.left &&
+          screenX <= rect.right &&
+          screenY >= rect.top &&
+          screenY <= rect.bottom,
       );
     });
   }
@@ -320,6 +325,46 @@ describe("the player can never walk off the drawn world", () => {
     }
     expect(pos.y).toBeCloseTo(lamppostRestY(), 9);
     expect(isOnDrawnGround(pos)).toBe(true);
+  });
+
+  // Story 1.13, cycle 2 (Quentin's direction): the bridge's own east end
+  // specifically, not only the general walk from the shop -- a hole in
+  // the boundary ring there must fail here, at unit speed, rather than
+  // only ever showing up as a wrong-looking screenshot.
+  it("stays on the pavement for any input sequence starting under the bridge's own east end", () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            dx: fc.integer({ min: -1, max: 1 }),
+            dy: fc.integer({ min: -1, max: 1 }),
+            deltaMs: fc.integer({ min: 1, max: 5_000 }),
+          }),
+          { minLength: 1, maxLength: 400 },
+        ),
+        (inputs) => {
+          let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_DECK_Y + 0.5 };
+          expect(isOnDrawnGround(pos)).toBe(true);
+          for (const { dx, dy, deltaMs } of inputs) {
+            pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config);
+            expect(isOnDrawnGround(pos), `left the drawn world at (${pos.x}, ${pos.y})`).toBe(true);
+          }
+        },
+      ),
+      { numRuns: 60 },
+    );
+  });
+
+  it("walking straight east from under the bridge stops at the world's own edge, still on the pavement", () => {
+    let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_DECK_Y + 0.5 };
+    for (let i = 0; i < 400; i++) {
+      pos = step(pos, { x: 1, y: 0 }, 16, grid, PLAYER_START.floor, config);
+    }
+    expect(isOnDrawnGround(pos)).toBe(true);
+    // Actually stopped (the boundary collider caught it), not merely
+    // exhausted the loop mid-stride.
+    const further = step(pos, { x: 1, y: 0 }, 16, grid, PLAYER_START.floor, config);
+    expect(further.x).toBeCloseTo(pos.x, 9);
   });
 });
 

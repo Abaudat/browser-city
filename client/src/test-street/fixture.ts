@@ -249,6 +249,10 @@ export const BRIDGE_X0 = 17;
 /** Four cells of `bridge_deck`, the def's own declared width. */
 export const BRIDGE_DECK_WIDTH = 4;
 export const BRIDGE_X1 = BRIDGE_X0 + BRIDGE_DECK_WIDTH - 1;
+/** The middle of the deck's own span, strictly inside `[BRIDGE_X0,
+ * BRIDGE_X1]` -- where the underpass checkpoint stops (story 1.13,
+ * cycle 2): visibly under the drawn deck, never past its east end. */
+export const BRIDGE_MIDPOINT_X = BRIDGE_X0 + BRIDGE_DECK_WIDTH / 2;
 
 /** Where the street-level stairs stand: the pavement row south of the
  * deck's own east end. Entering this cell climbs onto the deck. */
@@ -1093,10 +1097,18 @@ export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSe
       key: "ArrowUp",
       until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 },
     },
-    // Under the deck, the whole span: from here east, every cell walked
-    // has a drawable one floor above it at the same `(x, y)`.
+    // Under the deck: stops strictly inside its own span (story 1.13,
+    // cycle 2 -- Quentin's direction), visibly beneath the drawn deck,
+    // never past its east end. Every cell walked from here has a
+    // drawable one floor above it at the same `(x, y)`.
     {
       label: "under-the-bridge",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_MIDPOINT_X },
+    },
+    // On, past the deck's own east end, to the stairs that climb onto it.
+    {
+      label: "east-of-the-bridge",
       key: "ArrowRight",
       until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
     },
