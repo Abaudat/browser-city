@@ -297,7 +297,10 @@ describe("the scripted walk (AC3)", () => {
 
     let state = arrived;
     for (let lapIndex = 0; lapIndex < 3; lapIndex++) {
-      const lap = simulateStreetWalk(streetBridgeLapRoute(), { ...lag, start: state });
+      const lap = simulateStreetWalk(streetBridgeLapRoute(), {
+        ...lag,
+        start: state,
+      });
       for (const checkpoint of lap) expect(checkpoint.state.floor).not.toBe(SUBWAY_FLOOR);
       const end = lap[lap.length - 1]?.state;
       if (!end) throw new Error("the lap produced no checkpoints");

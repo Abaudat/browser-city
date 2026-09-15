@@ -307,8 +307,18 @@ export const BRIDGE_UNDER_PILLAR_X = BRIDGE_X0 + 1;
 export const BRIDGE_UNDER_CURB_COLLIDER = { x0: 0, y0: 0, x1: 16, y1: 4 } as const;
 /** A vertical strip spanning the row's own full height, so an east rest
  * against it lands at the same column whatever row within
- * `BRIDGE_DECK_Y` the walker approaches from. */
-export const BRIDGE_UNDER_PILLAR_COLLIDER = { x0: 4, y0: 0, x1: 12, y1: 16 } as const;
+ * `BRIDGE_DECK_Y` the walker approaches from. Narrow on purpose (story
+ * 1.13, cycle 3): the strip's own west face (`x0`) is the checkpoint's
+ * own rest and stays fixed, but the strip's own east face is what a
+ * north-south crossing elsewhere on this row has to clear, widened by
+ * the walker's own half-width on both sides -- and `BRIDGE_DOWN_ANCHOR_
+ * X`'s own down-transition, one row south, lands close enough east of
+ * a wide strip for a released-late lap to land inside that widened zone
+ * (observed on CI: a lap landing there, then turning north straight
+ * into the pillar, stuck for good, on a lap this pillar did not exist
+ * to threaten before this cycle). Narrower leaves more real margin
+ * between the two without moving either. */
+export const BRIDGE_UNDER_PILLAR_COLLIDER = { x0: 4, y0: 0, x1: 6, y1: 16 } as const;
 
 /** A third rest, one row south of the checkpoint (story 1.13, cycle 3):
  * leaving the underpass needs to clear the pillar's own row before an
@@ -1360,14 +1370,13 @@ export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSe
  * [`streetWalkRoute`]'s own last segment leaves the walker in, so laps
  * chain with nothing to reset between them.
  *
- * Every segment ends either against a real collider or on a floor
- * transition, and never on a bare coordinate threshold. That is
- * deliberate: a held key is released over a round trip to the page, so
- * how far past its own threshold a walker travels is a property of the
- * machine, not of the route. A collider rest and a transition are both
- * immune to that -- walking further into a wall changes nothing, and a
- * transition fires on entering a whole cell -- so a lap that only uses
- * those is the same lap on a fast machine and a slow one.
+ * A held key is released over a round trip to the page, so how far past
+ * its own threshold a walker travels is a property of the machine, not
+ * of the route -- every segment ends either against a real collider or
+ * a floor transition, immune to that (walking further into a wall
+ * changes nothing, and a transition fires on entering a whole cell), so
+ * a lap that only uses those is the same lap on a fast machine and a
+ * slow one.
  */
 export function streetBridgeLapRoute(): readonly StreetWalkSegment[] {
   return [
