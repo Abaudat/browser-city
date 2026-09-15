@@ -388,19 +388,18 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // frame for the whole page lifetime including its own bootstrap".
   trackFrames();
 
-  // The ping indicator (`bootstrap.ts`) is fixed-position and can overlap
-  // the canvas's own bounding box; it also recolours on a ping this scene
-  // does not control, which would otherwise bake the connection's own
-  // timing into the baseline (Quentin's direction, cycle 2).
-  const pingIndicator = page.locator("#bc-ping-indicator");
-
+  // Story 1.11: the story 1.1 ping indicator (`render/bootstrap.ts`) is
+  // gone -- it was a fixed-position DOM surface with no requirement
+  // behind it, exactly the kind of abstract counter NFR22/FR151 forbid.
+  // Nothing masks the canvas screenshot below any more; the connection
+  // notice (`ui/connection-notice.ts`) stays hidden on a healthy
+  // connection, so it never bleeds into the baseline either.
   async function screenshot(name: string, maxDiffPixels: number): Promise<void> {
     untrackFrames();
     try {
       await expect(canvas).toHaveScreenshot(name, {
         ...SCREENSHOT_OPTIONS,
         maxDiffPixels,
-        mask: [pingIndicator],
       });
     } finally {
       trackFrames();

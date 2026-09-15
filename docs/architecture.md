@@ -13,6 +13,7 @@ cited here by identifier.
 | Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the table-bounds registry), and the `browser_city` module crate, which depends on both |
 | Property testing (server)     | `proptest`, dev-dependency of `sim` only; case count from `PROPTEST_CASES`                              |
 | Property testing (client)     | `fast-check` 4.10.0, pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
+| E2E pixel compare             | `pixelmatch` 7.2.0 + `pngjs` 7.0.0 (`@types/pngjs` 6.0.5), pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
 | Boot-budget HTTPS preview     | `@vitejs/plugin-basic-ssl` 2.3.0, pinned, `devDependency` of `client` only; enabled only when `BC_BOOT_HTTPS=1` (the boot-budget harness), never for `npm run dev`/`preview` defaults, never in the built bundle |
 | `serde`/`serde_json`          | Native-only tooling (`bounds`'s schema-snapshot serialization, the spike-report binaries under `server/spikes/*_report`, `server/tools/*` e.g. `world_backup`) — never a dependency of a published module crate |
 | Hosting                       | SpacetimeDB Maincloud                                                                                    |
@@ -406,13 +407,64 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   `isBindableCode` is the single rule for what may be bound, and `Escape`
   is reserved for the options menu.
 - Keybindings persist in exactly one versioned `localStorage` key,
-  `bc.keybindings.v1`, touched only by `input/keybindings-storage.ts`
-  through an injected `Storage`. Reading never throws and never writes;
-  stored actions merge per action over the defaults. `clear()` is never
-  called.
-- `client/src/ui/options-menu.ts` is the FR151 options menu, the only
-  settings surface: plain DOM, `Escape` to open and close, keyboard taken
-  off movement while it is open.
+  `bc.keybindings.v1`, through `input/keybindings-storage.ts`, itself a
+  thin shape-and-defaults layer over `settings/settings-storage.ts`'s
+  shared read-safely/write-safely idiom (below). Reading never throws and
+  never writes; stored actions merge per action over the defaults.
+  `clear()` is never called.
+
+## DOM UI
+
+The whole game has exactly three DOM UI surfaces (FR151): the boot name
+prompt, the options menu, the connection notice. `client/src/ui/` is
+their only home. Each is a `mountX(options)` function taking plain data
+and callbacks, returning a handle with `destroy()` -- no framework, no
+dependency. Every top-level element a surface mounts carries
+`data-bc-surface` with one of `options-menu`, `connection-notice` or
+`name-prompt`, checked against `document.body`'s own children by
+`client/tests/e2e/connection-notice.spec.ts`. `index.html`'s own
+`<style>` block holds the shared font/colour/accent custom properties
+every surface uses; `ui/style.ts`'s `ensureStyle(doc, id, css)` is each
+surface's own per-surface rule injector.
+
+- `net/connection-status.ts` exports `ConnectionStatus` (`"connecting" |
+  "connected" | "disconnected"`), a plain string union -- `net/`'s only
+  export `src/ui/**` may import. `ui/connection-notice.ts` shows
+  "Connecting…" while `"connecting"`, "Connection lost" while
+  `"disconnected"`, and "Reconnected" briefly on a later `"connected"`
+  before fading (the fade is the only animation here, its duration set
+  from the `fadeMs` option). Nothing in the disconnect path touches the
+  Pixi `Application`, the scene, its ticker or any pool. The
+  "Reconnected" path is currently unreachable (nothing calls
+  `setStatus("connected")` after a drop); kept in place for the
+  reconnection story to wire.
+- The options menu is one panel, three sections in this fixed order --
+  Audio, Display, Controls -- as stacked headings, never tabs. Every
+  control has a real consumer or a persisted value a named later story
+  reads. Display's highlight-strength slider is `[20, 100]`, default 60,
+  and drives `test-street/scene.ts`'s `highlightOverlayAlpha` live
+  through `StreetSceneHandle.setHighlightStrength`. The fullscreen row is
+  hidden when `document.documentElement.requestFullscreen` does not
+  exist; its label reflects `document.fullscreenElement`, kept live via
+  `fullscreenchange`.
+- `settings/settings-storage.ts` is the one settings-storage idiom every
+  group (`input/keybindings-storage.ts`, `settings/audio-settings.ts`,
+  `settings/display-settings.ts`) shares, including its `isRecord`/
+  `clampPercent` helpers: one versioned `localStorage` key per group,
+  read once through an injected `Storage`. Reading never throws and
+  never writes; an unrecognised version or shape falls back to defaults
+  in memory.
+- Three mechanical guards, all run by `client-check`:
+  `scripts/ci/check-no-canvas-ui.sh` (no Pixi `Text`/`BitmapText`/
+  `HTMLText`/`SplitText`/`TextStyle`/`TextStyleOptions` construction or
+  import, single- or multi-line, no native `alert`/`confirm`/`prompt`,
+  anywhere under `client/src/`); `client/biome.json`'s `src/ui/**`
+  override (nothing below `ui/` can import it; `ui/**` itself cannot
+  reach `net/**` except `net/connection-status`, nor `render/**`,
+  `world/**`, `test-street/**`, `pixi.js`); `noRestrictedGlobals` banning
+  `document` in `render/**`, `net/**`, `defs/**` and `boot/**` (`window`
+  stays allowed) -- DOM creation is only possible in `ui/`, `input/`,
+  `test-street/` and `main.ts`.
 
 ## Rendering
 

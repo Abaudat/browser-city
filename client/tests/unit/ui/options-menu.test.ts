@@ -2,6 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bindings } from "../../../src/input/keybindings";
 import { DEFAULT_BINDINGS, rebind } from "../../../src/input/keybindings";
+import { type AudioSettings, DEFAULT_AUDIO_SETTINGS } from "../../../src/settings/audio-settings";
+import {
+  DEFAULT_DISPLAY_SETTINGS,
+  type DisplaySettings,
+} from "../../../src/settings/display-settings";
 import type { OptionsMenuHandle } from "../../../src/ui/options-menu";
 import { keycapLabel, mountOptionsMenu, SWAP_FLASH_MS } from "../../../src/ui/options-menu";
 
@@ -9,12 +14,20 @@ interface Harness {
   readonly menu: OptionsMenuHandle;
   readonly changes: Bindings[];
   readonly openStates: boolean[];
+  readonly audioChanges: AudioSettings[];
+  readonly displayChanges: DisplaySettings[];
   bindings(): Bindings;
 }
 
-function mount(initial: Bindings = DEFAULT_BINDINGS): Harness {
+function mount(
+  initial: Bindings = DEFAULT_BINDINGS,
+  initialAudio: AudioSettings = DEFAULT_AUDIO_SETTINGS,
+  initialDisplay: DisplaySettings = DEFAULT_DISPLAY_SETTINGS,
+): Harness {
   const changes: Bindings[] = [];
   const openStates: boolean[] = [];
+  const audioChanges: AudioSettings[] = [];
+  const displayChanges: DisplaySettings[] = [];
   let current = initial;
   const menu = mountOptionsMenu({
     container: document.body,
@@ -24,8 +37,12 @@ function mount(initial: Bindings = DEFAULT_BINDINGS): Harness {
       changes.push(next);
     },
     onOpenChange: (open) => openStates.push(open),
+    initialAudio,
+    onAudioChange: (next) => audioChanges.push(next),
+    initialDisplay,
+    onDisplayChange: (next) => displayChanges.push(next),
   });
-  return { menu, changes, openStates, bindings: () => current };
+  return { menu, changes, openStates, audioChanges, displayChanges, bindings: () => current };
 }
 
 function pressKey(code: string): void {
@@ -126,16 +143,13 @@ describe("mountOptionsMenu", () => {
     h.menu.destroy();
   });
 
-  it("shows the Controls section and invents no placeholder settings", () => {
+  it("has exactly the sections Audio, Display, Controls, in that order, and nothing else (FR151)", () => {
     const h = mount();
     h.menu.open();
-    const text = document.querySelector("[data-bc-options]")?.textContent ?? "";
-    expect(text).toContain("Controls");
-    expect(text).toContain("Options");
-    // Audio and Display are later stories: no empty rows, no disabled
-    // sliders, nothing invented.
-    expect(text).not.toContain("Volume");
-    expect(text).not.toContain("Fullscreen");
+    const headings = [...document.querySelectorAll<HTMLElement>("[data-bc-panel] h3")].map(
+      (h3) => h3.textContent,
+    );
+    expect(headings).toEqual(["Audio", "Display", "Controls"]);
     h.menu.destroy();
   });
 
@@ -171,6 +185,228 @@ describe("mountOptionsMenu", () => {
     for (const cap of keycapsOf("move_up")) expect(cap.tagName).toBe("BUTTON");
     expect(document.querySelector("[data-bc-reset]")?.tagName).toBe("BUTTON");
     expect(document.querySelector("[data-bc-close]")?.tagName).toBe("BUTTON");
+    h.menu.destroy();
+  });
+});
+
+describe("Audio and Display sections", () => {
+  it("every row is the same label/control grid, with the label wired to its control by for/id (Artie's direction, cycle 2)", () => {
+    const h = mount();
+    h.menu.open();
+    for (const selector of ["[data-bc-volume-slider]", "[data-bc-highlight-slider]"]) {
+      const input = document.querySelector<HTMLInputElement>(selector);
+      const row = input?.closest<HTMLElement>("[data-bc-row]");
+      const label = row?.querySelector("label");
+      expect(input?.id).toBeTruthy();
+      expect(label?.htmlFor).toBe(input?.id);
+      // The label holds only its text -- it does not wrap the control.
+      expect(label?.contains(input ?? null)).toBe(false);
+    }
+    h.menu.destroy();
+  });
+
+  it("the Mute row reads label-then-control, the same order every other row uses -- never the checkbox first", () => {
+    const h = mount();
+    h.menu.open();
+    const mute = document.querySelector<HTMLInputElement>("[data-bc-mute-toggle]");
+    const row = mute?.closest<HTMLElement>("[data-bc-row]");
+    const children = [...(row?.children ?? [])];
+    expect(children[0]?.tagName).toBe("LABEL");
+    expect(children[0]?.textContent).toBe("Mute");
+    expect(children[1]?.querySelector("[data-bc-mute-toggle]")).toBe(mute);
+    h.menu.destroy();
+  });
+
+  it("renames the Display slider to 'Object highlight', not 'Highlight strength'", () => {
+    const h = mount();
+    h.menu.open();
+    const label = document
+      .querySelector<HTMLInputElement>("[data-bc-highlight-slider]")
+      ?.closest("[data-bc-row]")
+      ?.querySelector("label");
+    expect(label?.textContent).toBe("Object highlight");
+    h.menu.destroy();
+  });
+
+  it("the Display slider's own minimum is 20, never 0 (Artie's direction, cycle 2: zero means no affordance at all)", () => {
+    const h = mount();
+    h.menu.open();
+    const highlight = document.querySelector<HTMLInputElement>("[data-bc-highlight-slider]");
+    expect(highlight?.min).toBe("20");
+    expect(highlight?.max).toBe("100");
+    h.menu.destroy();
+  });
+
+  it("shows the given initial audio and display settings", () => {
+    const h = mount(DEFAULT_BINDINGS, { masterVolume: 42, muted: true }, { highlightStrength: 35 });
+    h.menu.open();
+    const volume = document.querySelector<HTMLInputElement>("[data-bc-volume-slider]");
+    const mute = document.querySelector<HTMLInputElement>("[data-bc-mute-toggle]");
+    const highlight = document.querySelector<HTMLInputElement>("[data-bc-highlight-slider]");
+    expect(volume?.value).toBe("42");
+    expect(mute?.checked).toBe(true);
+    expect(highlight?.value).toBe("35");
+    h.menu.destroy();
+  });
+
+  it("commits a volume drag on 'change', calling onAudioChange with the new value", () => {
+    const h = mount();
+    h.menu.open();
+    const volume = document.querySelector<HTMLInputElement>("[data-bc-volume-slider]");
+    if (!volume) throw new Error("no volume slider");
+    volume.value = "30";
+    volume.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(h.audioChanges).toEqual([{ masterVolume: 30, muted: false }]);
+    h.menu.destroy();
+  });
+
+  it("toggling mute calls onAudioChange with the new value, keeping the volume untouched", () => {
+    const h = mount(DEFAULT_BINDINGS, { masterVolume: 55, muted: false });
+    h.menu.open();
+    const mute = document.querySelector<HTMLInputElement>("[data-bc-mute-toggle]");
+    if (!mute) throw new Error("no mute toggle");
+    mute.checked = true;
+    mute.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(h.audioChanges).toEqual([{ masterVolume: 55, muted: true }]);
+    h.menu.destroy();
+  });
+
+  it("commits a highlight-strength drag on 'change', calling onDisplayChange with the new value", () => {
+    const h = mount();
+    h.menu.open();
+    const highlight = document.querySelector<HTMLInputElement>("[data-bc-highlight-slider]");
+    if (!highlight) throw new Error("no highlight slider");
+    highlight.value = "40";
+    highlight.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(h.displayChanges).toEqual([{ highlightStrength: 40 }]);
+    h.menu.destroy();
+  });
+
+  it("live-updates the volume and highlight readouts on every drag tick ('input'), before any commit", () => {
+    const h = mount();
+    h.menu.open();
+    const volume = document.querySelector<HTMLInputElement>("[data-bc-volume-slider]");
+    const highlight = document.querySelector<HTMLInputElement>("[data-bc-highlight-slider]");
+    if (!volume || !highlight) throw new Error("missing slider");
+    volume.value = "77";
+    volume.dispatchEvent(new Event("input", { bubbles: true }));
+    highlight.value = "33";
+    highlight.dispatchEvent(new Event("input", { bubbles: true }));
+    const values = [...document.querySelectorAll("[data-bc-value]")].map((el) => el.textContent);
+    expect(values).toEqual(["77%", "33%"]);
+    // Never committed by 'input' alone -- only 'change' calls the callback.
+    expect(h.audioChanges).toEqual([]);
+    expect(h.displayChanges).toEqual([]);
+    h.menu.destroy();
+  });
+
+  it("hides the fullscreen row entirely when no Fullscreen API exists, rather than showing a button that does nothing (Artie's direction, cycle 2)", () => {
+    const h = mount();
+    h.menu.open();
+    const toggle = document.querySelector<HTMLButtonElement>("[data-bc-fullscreen-toggle]");
+    const row = toggle?.closest<HTMLElement>("[data-bc-row]");
+    expect(row?.hidden).toBe(true);
+    expect(() => toggle?.click()).not.toThrow();
+    h.menu.destroy();
+  });
+
+  describe("with a Fullscreen API present", () => {
+    // jsdom implements none of the Fullscreen API -- these three
+    // properties are defined for every test in this block, and removed
+    // again afterwards.
+    let requestFullscreen: ReturnType<typeof vi.fn>;
+    let exitFullscreen: ReturnType<typeof vi.fn>;
+    let fullscreenElementValue: Element | null;
+
+    beforeEach(() => {
+      requestFullscreen = vi.fn();
+      exitFullscreen = vi.fn();
+      fullscreenElementValue = null;
+      Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+        value: requestFullscreen,
+        configurable: true,
+      });
+      Object.defineProperty(document, "exitFullscreen", {
+        value: exitFullscreen,
+        configurable: true,
+      });
+      Object.defineProperty(document, "fullscreenElement", {
+        get: () => fullscreenElementValue,
+        configurable: true,
+      });
+    });
+
+    afterEach(() => {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).requestFullscreen;
+      delete (document as unknown as Record<string, unknown>).exitFullscreen;
+      delete (document as unknown as Record<string, unknown>).fullscreenElement;
+    });
+
+    it("shows the row, labelled 'Enter fullscreen' while not fullscreen", () => {
+      const h = mount();
+      h.menu.open();
+      const toggle = document.querySelector<HTMLButtonElement>("[data-bc-fullscreen-toggle]");
+      const row = toggle?.closest<HTMLElement>("[data-bc-row]");
+      expect(row?.hidden).toBe(false);
+      expect(toggle?.textContent).toBe("Enter fullscreen");
+      h.menu.destroy();
+    });
+
+    it("requests fullscreen when not already fullscreen, and exits it when already fullscreen", () => {
+      const h = mount();
+      h.menu.open();
+      const toggle = document.querySelector<HTMLButtonElement>("[data-bc-fullscreen-toggle]");
+      toggle?.click();
+      expect(requestFullscreen).toHaveBeenCalledTimes(1);
+      expect(exitFullscreen).not.toHaveBeenCalled();
+
+      fullscreenElementValue = document.documentElement;
+      toggle?.click();
+      expect(exitFullscreen).toHaveBeenCalledTimes(1);
+
+      h.menu.destroy();
+    });
+
+    it("relabels to 'Exit fullscreen' on fullscreenchange, even when fullscreen was entered outside this menu (F11, the browser's own Esc)", () => {
+      const h = mount();
+      h.menu.open();
+      const toggle = document.querySelector<HTMLButtonElement>("[data-bc-fullscreen-toggle]");
+      expect(toggle?.textContent).toBe("Enter fullscreen");
+
+      fullscreenElementValue = document.documentElement;
+      document.dispatchEvent(new Event("fullscreenchange"));
+      expect(toggle?.textContent).toBe("Exit fullscreen");
+
+      fullscreenElementValue = null;
+      document.dispatchEvent(new Event("fullscreenchange"));
+      expect(toggle?.textContent).toBe("Enter fullscreen");
+
+      h.menu.destroy();
+    });
+
+    it("destroy stops listening for fullscreenchange", () => {
+      const h = mount();
+      h.menu.open();
+      const toggle = document.querySelector<HTMLButtonElement>("[data-bc-fullscreen-toggle]");
+      h.menu.destroy();
+      fullscreenElementValue = document.documentElement;
+      expect(() => document.dispatchEvent(new Event("fullscreenchange"))).not.toThrow();
+      // The element was already removed by destroy(); nothing to
+      // re-assert on `toggle` here beyond "this never throws".
+      expect(toggle?.isConnected).toBe(false);
+    });
+  });
+
+  it("never blocks with alert/confirm/prompt from an audio or display control", () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const h = mount();
+    h.menu.open();
+    const volume = document.querySelector<HTMLInputElement>("[data-bc-volume-slider]");
+    if (!volume) throw new Error("no volume slider");
+    volume.value = "1";
+    volume.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
     h.menu.destroy();
   });
 });
@@ -272,11 +508,30 @@ describe("rebinding through the menu", () => {
 });
 
 describe("keyboard navigation", () => {
-  // A menu about keys has to be usable without a mouse.
-  it("focuses the first keycap on open, so Tab starts inside the panel", () => {
+  // A menu about keys has to be usable without a mouse. The panel itself
+  // is focused on open, not its first control (Artie's direction, cycle
+  // 2: a ring around the volume slider the instant the menu appears
+  // reads as an already-made selection) -- the next real Tab is what
+  // lands on the first control.
+  it("focuses the panel itself on open, never a control", () => {
     const h = mount();
     h.menu.open();
-    expect(document.activeElement).toBe(keycapsOf("move_up")[0]);
+    expect(document.activeElement).toBe(document.querySelector("[data-bc-panel]"));
+    h.menu.destroy();
+  });
+
+  it("does not intercept Tab while the panel itself is focused, so the browser's own default action (focus the next tabbable node) is free to run", () => {
+    const h = mount();
+    h.menu.open();
+    const panel = document.querySelector("[data-bc-panel]");
+    expect(document.activeElement).toBe(panel);
+    // `trapTab` only calls `preventDefault()` when the active element is
+    // the trap's own first/last control, or outside the panel entirely.
+    // The panel itself satisfies neither (`panel.contains(panel)` is
+    // true), so this dispatch must be left un-prevented.
+    const event = new KeyboardEvent("keydown", { code: "Tab", bubbles: true, cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
     h.menu.destroy();
   });
 
@@ -295,7 +550,9 @@ describe("keyboard navigation", () => {
     const h = mount();
     h.menu.open();
 
-    const focusables = [...document.querySelectorAll<HTMLElement>("[data-bc-panel] button")];
+    const focusables = [
+      ...document.querySelectorAll<HTMLElement>("[data-bc-panel] button, [data-bc-panel] input"),
+    ];
     const last = focusables[focusables.length - 1] as HTMLElement;
     const first = focusables[0] as HTMLElement;
 

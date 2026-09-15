@@ -4,15 +4,69 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BrowserCity</title>
+    <!-- The one shared visual language every DOM UI surface uses
+         (`ui/options-menu.ts`, `ui/connection-notice.ts`, and the boot
+         name prompt story 4.6 adds): these custom properties, not a
+         second copy in a JS module. They live here, not behind a JS
+         import, because the boot name prompt must be interactive at
+         first paint with zero game assets loaded (FR144) -- a theme that
+         only arrives once a module has executed is the wrong layer for
+         that. `ui/style.ts`'s `ensureStyle` still carries each surface's
+         own per-surface rules.
+
+         Also page-shell styling: no margin, and the same near-black as
+         the panels for `background`, so a resize or a slow first frame
+         never flashes white.
+
+         Deliberately no `height: 100%`/`overflow: hidden` here: the
+         street scene's own canvas is sized to the world's own bounds,
+         never to the viewport (`test-street.spec.ts`'s own comment, story
+         1.13) -- clipping to exactly the viewport height would cut off
+         the part of a taller-than-viewport world a fixed test viewport
+         cannot show, which is exactly what broke `test-street.spec.ts`'s
+         own screenshots the first time this rule was tried (a real
+         Pixi/CDP compositor clip, not a snapshot-noise flake). A resizable
+         canvas that always matches the viewport is a later story's
+         concern; nothing here should force scrollbars, but nothing here
+         may clip real content either. -->
+    <style>
+      :root {
+        /* Tells every browser to paint its own built-in controls dark
+           (Artie's direction, cycle 2): an unchecked checkbox and an
+           unfilled range track are UA-drawn, and `accent-color` alone
+           only tints the *checked*/filled state -- without this, the
+           panel's own near-black is undercut by a stock light-mode
+           checkbox, and the story 4.6 name-prompt text input would
+           render as a white field for the one frame before its own CSS
+           applies. */
+        color-scheme: dark;
+        --bc-font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        --bc-panel-bg: #14161a;
+        --bc-text: #ececec;
+        --bc-muted: #8b93a1;
+        --bc-border: #2b2f36;
+        --bc-accent: #5e9ed6;
+        --bc-control-bg: #20242b;
+        --bc-control-bg-hover: #272c34;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bc-panel-bg);
+      }
+      #test-street canvas {
+        display: block;
+      }
+    </style>
   </head>
   <body>
-    <!-- The story 1.1 ping indicator's own DOM mount -- plain DOM, not a
-         second Pixi canvas (story 1.13, Tim's direction: the page has one
-         Pixi Application, the street scene's below). -->
-    <div id="app"></div>
-    <!-- The street scene's one Pixi canvas mount. D17 keeps every
-         affordance for it (were one ever needed) in the DOM, never drawn
-         on the canvas. -->
+    <!-- The street scene's one Pixi canvas mount -- the whole DOM has
+         exactly this, plus whatever DOM UI surfaces `main.ts` mounts
+         (FR151: the options menu, the connection notice, and the boot
+         name prompt story 4.6 adds), each carrying its own
+         `data-bc-surface`. D17 keeps every affordance for the world (were
+         one ever needed) in the DOM, never drawn on the canvas. -->
     <div id="test-street"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -15,6 +15,7 @@ export default defineConfig({
         "src/world/**",
         "src/input/**",
         "src/ui/**",
+        "src/settings/**",
       ],
       // `src/net/bindings/**` is generated (never hand-tested). `src/
       // test-street/**` is throwaway harness code (Tim's direction: fenced off
@@ -24,10 +25,13 @@ export default defineConfig({
       // real tests (`tests/unit/test-street/**`), just not held to this bar.
       // Every permanent `src/render/**` module -- including the
       // Pixi-touching `pixi-order.ts`, which is sprite/container wiring
-      // and nothing that decides an order or a position, and
-      // `bootstrap.ts`, plain DOM since story 1.13 merged the ping
-      // indicator off its own Pixi `Application` -- stays in scope; never
-      // lower the bar or exclude a pure module.
+      // and nothing that decides an order or a position -- stays in
+      // scope; never lower the bar or exclude a pure module. Story 1.11:
+      // `src/ui/**` (the options menu and the connection notice) and
+      // `src/settings/**` (their persisted-storage idiom) stay in scope
+      // the same way -- these are DOM-adjacent, but every one of their
+      // effects is provable in jsdom, so there is no reason to exempt
+      // them.
       // Story 1.10: `composite-canvas.ts` needs a real `OffscreenCanvas`
       // (an `OffscreenCanvas`-less node test cannot exercise it
       // meaningfully) and `part-sheets.ts` needs a real Vite

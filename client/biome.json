@@ -48,7 +48,17 @@
             "noRestrictedImports": {
               "level": "error",
               "options": {
-                "patterns": [{ "group": ["pixi.js", "../test-street/*", "../test-street/**"] }]
+                "patterns": [
+                  {
+                    "group": [
+                      "pixi.js",
+                      "../test-street/*",
+                      "../test-street/**",
+                      "../ui/*",
+                      "../ui/**"
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -70,7 +80,9 @@
                       "../net/*",
                       "../net/**",
                       "../test-street/*",
-                      "../test-street/**"
+                      "../test-street/**",
+                      "../ui/*",
+                      "../ui/**"
                     ]
                   }
                 ]
@@ -104,10 +116,57 @@
                       "../net/*",
                       "!../net/bindings/types",
                       "../test-street/*",
+                      "../test-street/**",
+                      "../ui/*",
+                      "../ui/**"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/ui/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "pixi.js",
+                      "../net/*",
+                      "../net/**",
+                      "!../net/connection-status",
+                      "../render/**",
+                      "../world/**",
+                      "../test-street/*",
                       "../test-street/**"
                     ]
                   }
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/render/**", "src/net/**", "src/defs/**", "src/boot/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "document": "DOM creation belongs in src/ui/, src/input/, src/test-street/ or main.ts -- window stays allowed (e2e-hooks.ts, pixel-snapshot.ts use it)"
+                }
               }
             }
           }
