@@ -113,6 +113,23 @@ describe("checkWorldSpec", () => {
     expect(problems).toEqual([]);
   });
 
+  it("refuses an area whose declared chunk_key disagrees with its own rect's real key", () => {
+    // The mirror must never accept what the oracle refuses (Tim's
+    // direction, cycle 1): a streamed row's own declared `chunk_key`
+    // column is checked against the real key its rect anchors in, never
+    // trusted on its own -- a wrong declared key would otherwise bucket
+    // the area somewhere a query for its real chunk would never look.
+    const problems = checkWorldSpec({
+      buildingAreas: [area(1n, 0, 1, 1, 4, 4)],
+      roomAreas: [],
+      transitions: [],
+      isStandable: everywhereStandable,
+      chunkKeyOf: () => chunkKey(CHUNK_SIZE, CHUNK_SIZE, 0),
+    });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("declares chunk_key");
+  });
+
   it("refuses an invalid (empty or inverted) area rect", () => {
     const problems = checkWorldSpec({
       buildingAreas: [area(1n, 0, 4, 1, 4, 4)],

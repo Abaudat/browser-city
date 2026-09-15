@@ -22,6 +22,27 @@
 // the same page to prove a subset of what the walk below proves, and a
 // third boot of the same scene costs the slowest job in the repo real
 // wall time.
+//
+// Two `toHaveScreenshot` checks (Quentin's direction, cycle 1) catch what
+// no id-based assertion can: "every check passes and it looks wrong". A
+// fixed 1920x1080 viewport (`test.use` below), `animations: "disabled"`
+// and a tight `maxDiffPixelRatio` keep them meaningful rather than
+// perpetually flaky. `?freezeCrowd=1` (a DEV-only query flag,
+// `main.ts`) starts the street crowd's own walk-cycle ticker paused, so
+// every citizen stays at its initial, fixed-fixture pose -- otherwise
+// which frame of which citizen's walk cycle happens to be on screen at
+// screenshot time would depend on real wall-clock timing, and no baseline
+// could ever be stable. Nothing else this spec asserts depends on the
+// crowd's own animation being live.
+//
+// Baselines are committed PNGs, generated on the CI image (linux
+// chromium) -- never on a contributor's own machine, whose font hinting
+// and GPU rasteriser render different pixels than CI's. Regenerate them
+// by running `.github/workflows/update-visual-baselines.yml` against
+// this branch (`gh workflow run update-visual-baselines.yml --ref
+// <branch>`, or the Actions tab's "Run workflow" button) -- it runs this
+// spec with `--update-snapshots` on `ubuntu-latest` and pushes the
+// changed `*-snapshots/*.png` files back to the branch it was run on.
 import { expect, type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { sortAcrossFloors } from "../../src/render/floor-stacks";
@@ -33,6 +54,7 @@ import {
   BRIDGE_FLOOR,
   BRIDGE_X0,
   BRIDGE_X1,
+  furnitureBehindWindows,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
   PLAYER_STABLE_ID,
@@ -55,6 +77,17 @@ import {
 // The whole walk is one test on purpose: it is one continuous journey,
 // and splitting it would re-boot and re-walk the scene per assertion.
 test.describe.configure({ mode: "serial" });
+
+// The fixed viewport the two `toHaveScreenshot` checks need -- applies to
+// the whole test, not only those two moments, which is fine: nothing else
+// this spec asserts depends on the window size (the canvas itself is
+// sized to the world's own bounds, never to the viewport).
+test.use({ viewport: { width: 1920, height: 1080 } });
+
+const SCREENSHOT_OPTIONS = {
+  animations: "disabled",
+  maxDiffPixelRatio: 0.01,
+} as const;
 
 const RANK_TABLE = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
 const CODE_BY_NAME = Object.fromEntries(LAYER_TABLE.map((row) => [row.name, row.code]));
@@ -147,6 +180,48 @@ async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void
   }
 }
 
+/** FR137's latency guard, ported from the deleted `movement.spec.ts` onto
+ * the walk's own first segment rather than run a second time (Quentin's
+ * direction, cycle 1: it costs nothing extra -- the key is being pressed
+ * either way). Holds `segment.key` exactly like [`walkSegment`], but
+ * first installs an in-page `requestAnimationFrame` probe that counts
+ * real animation frames from the browser's own `keydown` event (anchored
+ * inside the page, on the event itself -- never on the `page.evaluate`
+ * call that installs the probe, which is a separate CDP round trip) to
+ * the first frame `window.__bc.playerPosition.y` reads past `startY`.
+ * Returns that frame count. */
+async function walkSegmentMeasuringLatency(
+  page: Page,
+  segment: StreetWalkSegment,
+  startY: number,
+): Promise<number> {
+  await page.evaluate((y) => {
+    const probe = { framesSinceKeydown: null as number | null, movedAt: null as number | null };
+    (window as unknown as { __bcFrames: typeof probe }).__bcFrames = probe;
+    window.addEventListener("keydown", () => {
+      probe.framesSinceKeydown ??= 0;
+    });
+    const tick = (): void => {
+      if (probe.framesSinceKeydown !== null && probe.movedAt === null) {
+        probe.framesSinceKeydown++;
+        if ((window.__bc?.playerPosition?.y ?? y) > y) {
+          probe.movedAt = probe.framesSinceKeydown;
+        }
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, startY);
+
+  await walkSegment(page, segment);
+
+  return page.evaluate(
+    () =>
+      (window as unknown as { __bcFrames?: { movedAt: number | null } }).__bcFrames?.movedAt ??
+      Number.NaN,
+  );
+}
+
 /** Every visibility state the real, mounted adapter just wrote, read back
  * off each sprite's own `visible`/`alpha` (never recomputed in the page). */
 function currentVisibility(page: Page): Promise<Record<string, string>> {
@@ -192,9 +267,10 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   test.setTimeout(180_000);
 
   const wsPromise = page.waitForEvent("websocket");
-  await page.goto("/");
+  await page.goto("/?freezeCrowd=1");
   const ws = await wsPromise;
   await waitForSceneReady(page);
+  const canvas = page.locator("#test-street canvas");
 
   let framesSentWhileWalking = 0;
   const onFrameSent = (): void => {
@@ -227,6 +303,11 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // re-derives.
   expect(await currentOrder(page)).toEqual(expectedOrderFor(start.x, start.y, start.floor));
 
+  // The interior checkpoint (Quentin's direction, cycle 1): every id-based
+  // check above passes, and this is what catches it if it still looks
+  // wrong.
+  await expect(canvas).toHaveScreenshot("interior.png", SCREENSHOT_OPTIONS);
+
   const route = streetWalkRoute({ lamppostRestY: lamppostRestY() });
   const segment = (label: string): StreetWalkSegment => {
     const found = route.find((s) => s.label === label);
@@ -235,7 +316,19 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   };
 
   // --- out onto the pavement --------------------------------------------
-  await walkSegment(page, segment("outside-the-shopfront"));
+  // FR137: holding the key moves the avatar within a few real animation
+  // frames of the browser's own keydown, with no round trip -- proven on
+  // this segment because it is the walk's own first held key, so nothing
+  // else is added by measuring it here.
+  const movedAtFrame = await walkSegmentMeasuringLatency(
+    page,
+    segment("outside-the-shopfront"),
+    start.y,
+  );
+  // One frame for the scene's own ticker to run after the keydown, plus
+  // one for the probe's callback possibly running ahead of it on that
+  // same frame. Anything beyond that is a round trip, not a frame.
+  expect(movedAtFrame).toBeLessThanOrEqual(2);
   const outside = await playerState(page);
   expect(outside.floor).toBe(PLAYER_START.floor);
 
@@ -251,9 +344,13 @@ test("one walk down the test street: collision, depth order, retraction, floors 
     expect(outsideVisibility[id]).toBe("translucent");
     expect(alphas[id]).toBeCloseTo(windowAlpha.value / 100, 5);
   }
-  const furnitureBehindTheWindow = STREET_PROPS.filter(
-    (prop) => prop.layer === "furniture" && prop.floor === PLAYER_START.floor,
-  ).map((prop) => prop.id.toString());
+  // The real "behind a window" set (Quentin's direction, cycle 1): same
+  // floor, north of the window's own row, x-overlapping its footprint --
+  // never every floor-0 furniture prop regardless of whether a window
+  // actually sits in front of it, which would pass vacuously on a
+  // re-laid street.
+  const furnitureBehindTheWindow = furnitureBehindWindows().map((id) => id.toString());
+  expect(furnitureBehindTheWindow.length).toBeGreaterThan(0);
   for (const id of furnitureBehindTheWindow) {
     expect(outsideVisibility[id]).not.toBe("hidden");
   }
@@ -297,6 +394,12 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   expect(underTheBridge.floor).toBe(PLAYER_START.floor);
   expect(Math.floor(underTheBridge.y)).toBe(BRIDGE_DECK_Y);
   expect(underTheBridge.x).toBeGreaterThan(BRIDGE_X1);
+
+  // The underpass checkpoint (Quentin's direction, cycle 1): both floors
+  // are drawn here, and this is the one check that would have caught the
+  // avatar reading as clipped at the canvas edge instead of visibly under
+  // a deck.
+  await expect(canvas).toHaveScreenshot("underpass.png", SCREENSHOT_OPTIONS);
 
   // Two floors at one (x, y), both drawn: the deck above is not culled
   // (FR122 culls by sign, and both floors are street-side), and the

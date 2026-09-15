@@ -44,11 +44,17 @@ export interface WorldSpecCheck {
    * (`world/collision-grid.ts` plus the player body from
    * `defs/balance/movement.toml`), never this module's own rule. */
   readonly isStandable: (x: number, y: number, floor: number) => boolean;
-  /** Which chunk an area is filed under. Defaults to the same rule the
-   * server enforces on a declared `chunk_key` column -- the key of the
-   * rect's own anchor corner -- and is injectable only so a caller
-   * carrying real `building_area` rows can pass the column those rows
-   * actually declare. */
+  /** Which chunk a caller's own row declares an area filed under.
+   * Defaults to the real key (the rect's own anchor corner), so most
+   * callers never supply this; it exists only so a caller carrying real
+   * `building_area` rows can pass the *declared* `chunk_key` column those
+   * rows actually carry. That declared value is never trusted on its own
+   * (Tim's direction, cycle 1): `checkWorldSpec` always checks it against
+   * the real key too, and reports a problem when they disagree -- the
+   * same refusal `WorldSpec::build` makes for a row whose own
+   * `chunk_key` column lies about which chunk its rect anchors in. A
+   * caller cannot use this to make the mirror accept what the oracle
+   * would refuse. */
   readonly chunkKeyOf?: (area: OwnershipArea) => bigint;
 }
 
@@ -70,7 +76,15 @@ function checkAreas(
       problems.push(`${where} spans more than one chunk`);
       continue;
     }
-    const key = chunkKeyOf(area);
+    const realKey = chunkKey(rect.x0, rect.y0, floor);
+    const declaredKey = chunkKeyOf(area);
+    if (declaredKey !== realKey) {
+      problems.push(
+        `${where} declares chunk_key ${declaredKey}, but its own chunk_key is ${realKey}`,
+      );
+      continue;
+    }
+    const key = declaredKey;
     const bucket = byChunk.get(key);
     if (!bucket) {
       byChunk.set(key, [area]);
@@ -96,6 +110,9 @@ function checkAreas(
  *
  * - an invalid ownership rect, or one that does not fit inside the single
  *   chunk its own anchor corner names;
+ * - an area whose declared `chunk_key` (`chunkKeyOf`, when a caller
+ *   supplies real rows) disagrees with the real key its own rect anchors
+ *   in;
  * - two areas of the same kind, in the same chunk, whose rects overlap --
  *   which one a query answers with would otherwise depend on row order;
  * - a transition whose anchor or target cell is not standable on its own

@@ -1,24 +1,37 @@
-// NFR2's measurement harness and its regression gate (Quentin's
+// NFR2's measurement harness and its regression gate (Quentin/Tim's
 // direction, story 1.13). Its own Playwright project, `perf`, so the
 // functional run (`npm run test:e2e`) never pays for it:
 //
 //     npm run test:e2e:perf                  # the short run, ~60s
 //     BC_SOAK_MS=600000 npm run test:e2e:perf  # the 10-minute soak
 //
-// What it measures is per-frame *work*: the time spent inside the scene's
-// own ticker callback, reported through the DEV-only `window.__bc`
-// frame-timing hook. It is deliberately not a frame rate. Headless CI
-// chromium has no vsync and no GPU, so a wall-clock FPS number measured
-// there is noise, and a gate built on one would be flaky by
-// construction -- which is exactly why the FPS half of NFR2 belongs to
-// spike 1.14 and to a real machine.
+// What it measures is the whole per-frame CPU *work*, not one system's
+// callback (cycle 1 finding, both leads): `test-street/scene.ts` brackets
+// it with two ticker listeners, one at `UPDATE_PRIORITY.INTERACTION`
+// (before everything) and one at `UPDATE_PRIORITY.UTILITY` (after Pixi's
+// own render, which runs at `UPDATE_PRIORITY.LOW`) -- so movement,
+// re-sorting, visibility and the street crowd's own animation update all
+// fall inside the window, and so does the render call itself. It is
+// deliberately not a frame *rate*. Headless CI chromium has no vsync and
+// no GPU, so a wall-clock FPS number measured there is noise, and a gate
+// built on one would be flaky by construction -- which is exactly why the
+// FPS half of NFR2 belongs to spike 1.14 and to a real machine.
 //
 // NFR2 is only partly served by this: "a busy street at rush hour" needs
 // NPC crowds (Epic 5), which do not exist yet. `docs/trace-matrix.md`
 // marks NFR2 `partial` and names story 5.4 for the rest. What this file
 // closes is the regression half -- the frame path that exists today must
 // not get slower, and a session must not leak.
-
+//
+// The heap is sampled through a CDP session (`HeapProfiler.collectGarbage`
+// then `Runtime.getHeapUsage().usedSize`), once per lap, never
+// `performance.memory.usedJSHeapSize`: without
+// `--enable-precise-memory-info` that figure is bucketed and cached, and
+// sampled with no GC beforehand it measures the allocation sawtooth, not
+// retained size -- a threshold on it could neither reliably catch a leak
+// nor reliably stay green without one. The short run also asserts a
+// (wider) growth bound, first lap vs. last lap, so a leak has a chance to
+// be caught on a run every PR waits for, not only on the soak nobody does.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
@@ -32,7 +45,12 @@ import { lamppostRestY } from "../unit/test-street/street-world";
 
 /** The frame budget the scene's own work must fit inside. A 60 FPS frame
  * is 16.7 ms end to end; the app's own work getting half of that leaves
- * the other half for the renderer, the browser and everything else. */
+ * the other half for the renderer, the browser and everything else. This
+ * now covers the whole frame (see the module doc above), not a fraction
+ * of it -- measured locally against this same spec at p95 0.6 ms / max
+ * 1.4 ms (`test-results/story-1.13-perf/frame-work.json`, the run this
+ * comment was written from), comfortably inside both numbers with the
+ * render included. */
 const P95_FRAME_WORK_MS = 8;
 const MAX_FRAME_WORK_MS = 16.7;
 
@@ -49,8 +67,14 @@ const IS_SOAK = RUN_MS >= 300_000;
 /** A leaking session grows its heap monotonically. Comparing the last
  * minute's median against the second minute's (never the first, which is
  * still warming up) is what tells a leak from ordinary allocation
- * sawtooth. */
-const MAX_HEAP_GROWTH_RATIO = 1.2;
+ * sawtooth -- the soak's own window, over many laps. */
+const MAX_HEAP_GROWTH_RATIO_SOAK = 1.2;
+
+/** The short run's own, looser bound: first lap vs. last lap, with far
+ * fewer samples over a far shorter session than the soak gets, so it is
+ * a bound wide enough to survive ordinary noise while still catching a
+ * gross regression on every PR rather than only on the soak. */
+const MAX_HEAP_GROWTH_RATIO_SHORT = 1.5;
 
 function percentile(sorted: readonly number[], p: number): number {
   if (sorted.length === 0) return Number.NaN;
@@ -111,6 +135,13 @@ test("the frame path stays inside its work budget for a whole walked session (NF
     timeout: 60_000,
   });
 
+  const cdp = await page.context().newCDPSession(page);
+  async function sampleHeapBytes(): Promise<number> {
+    await cdp.send("HeapProfiler.collectGarbage");
+    const usage = await cdp.send("Runtime.getHeapUsage");
+    return usage.usedSize;
+  }
+
   // The journey out is walked once: it leaves the shop (an enclosure
   // boundary), rests part-way through the lamppost, crosses under the
   // bridge and climbs onto the deck. It is not looped, because its own
@@ -135,15 +166,11 @@ test("the frame path stays inside its work budget for a whole walked session (NF
 
   await page.evaluate(() => window.__bc?.startFrameTimings?.());
 
-  const heapSamples: { atMs: number; usedJsHeapSize: number }[] = [];
+  const heapSamples: { atMs: number; usedHeapBytes: number }[] = [];
   const startedAt = Date.now();
   while (Date.now() - startedAt < RUN_MS) {
     await walkRoute(page, lap);
-    const usedJsHeapSize = await page.evaluate(() => {
-      const memory = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
-      return memory?.usedJSHeapSize ?? 0;
-    });
-    heapSamples.push({ atMs: Date.now() - startedAt, usedJsHeapSize });
+    heapSamples.push({ atMs: Date.now() - startedAt, usedHeapBytes: await sampleHeapBytes() });
   }
 
   const samples = (await page.evaluate(() => window.__bc?.stopFrameTimings?.() ?? [])) as number[];
@@ -174,22 +201,35 @@ test("the frame path stays inside its work budget for a whole walked session (NF
   expect(report.frameWorkMs.p95).toBeLessThanOrEqual(P95_FRAME_WORK_MS);
   expect(report.frameWorkMs.max).toBeLessThanOrEqual(MAX_FRAME_WORK_MS);
 
+  expect(heapSamples.length).toBeGreaterThanOrEqual(2);
+
   if (IS_SOAK) {
     // A leak over a long session is exactly what NFR2's own duration
-    // exists to catch, so it is only asserted on the run that is long
-    // enough to see one.
+    // exists to catch: the second minute's median against the last
+    // minute's, never the first minute (still warming up).
     const minute = 60_000;
     const secondMinute = heapSamples
       .filter((s) => s.atMs >= minute && s.atMs < 2 * minute)
-      .map((s) => s.usedJsHeapSize);
+      .map((s) => s.usedHeapBytes);
     const lastMinute = heapSamples
       .filter((s) => s.atMs >= RUN_MS - minute)
-      .map((s) => s.usedJsHeapSize);
-    // `performance.memory` is chromium-only and may be absent; a run that
-    // could not measure the heap must say so rather than pass silently.
+      .map((s) => s.usedHeapBytes);
     expect(secondMinute.length).toBeGreaterThan(0);
     expect(lastMinute.length).toBeGreaterThan(0);
     expect(median(secondMinute)).toBeGreaterThan(0);
-    expect(median(lastMinute) / median(secondMinute)).toBeLessThanOrEqual(MAX_HEAP_GROWTH_RATIO);
+    expect(median(lastMinute) / median(secondMinute)).toBeLessThanOrEqual(
+      MAX_HEAP_GROWTH_RATIO_SOAK,
+    );
+  } else {
+    // The short run's own, looser check: first lap vs. last lap, so a
+    // gross leak has a chance of being caught on a run every PR waits
+    // for, not only on the soak workflow nobody blocks on.
+    const first = heapSamples[0]?.usedHeapBytes;
+    const last = heapSamples[heapSamples.length - 1]?.usedHeapBytes;
+    expect(first).toBeGreaterThan(0);
+    expect(last).toBeGreaterThan(0);
+    if (first !== undefined && last !== undefined) {
+      expect(last / first).toBeLessThanOrEqual(MAX_HEAP_GROWTH_RATIO_SHORT);
+    }
   }
 });

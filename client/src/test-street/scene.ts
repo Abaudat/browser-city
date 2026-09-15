@@ -17,7 +17,15 @@
 // D17: no debug text, no rank numbers, no sort-key readouts on the
 // canvas. This module draws the scene and nothing else.
 
-import { type Application, Assets, Container, Rectangle, Sprite, Texture } from "pixi.js";
+import {
+  type Application,
+  Assets,
+  Container,
+  Rectangle,
+  Sprite,
+  Texture,
+  UPDATE_PRIORITY,
+} from "pixi.js";
 import type { Defs } from "../defs/types";
 import type { IgnoredSink, IntentSink } from "../input/intent";
 import { attachKeyboard, type KeyboardState } from "../input/keyboard";
@@ -310,6 +318,14 @@ export interface MountStreetSceneOptions {
    * purpose: one falling back to `DEFAULT_BINDINGS` would silently ignore
    * what the player had set. */
   readonly keyboard: KeyboardState;
+  /** Story 1.13: starts the street crowd's own walk-cycle ticker paused
+   * -- every citizen stays at its initial, fixed-fixture pose, forever,
+   * rather than animating. Exists solely so `test-street.spec.ts`'s
+   * `toHaveScreenshot` checks have a deterministic frame to compare: the
+   * crowd's own animation state otherwise depends on real wall-clock
+   * timing between mount and screenshot, which no baseline could ever
+   * match twice. Absent (or `false`) means the crowd walks normally. */
+  readonly startWithCrowdFrozen?: boolean;
 }
 
 export interface StreetSceneHandle {
@@ -554,7 +570,9 @@ export async function mountStreetScene(
     onIgnored,
     onViewTransform,
     onHighlightChange,
+    startWithCrowdFrozen,
   } = options;
+  const crowdFrozen = startWithCrowdFrozen ?? false;
 
   const rawTextures = new Map<string, Texture>();
   await Promise.all(
@@ -1052,14 +1070,29 @@ export async function mountStreetScene(
     onHighlightChange: setHighlight,
   });
 
+  // NFR2's measurement point: the scene's own CPU work for the *whole*
+  // frame, not one system's callback (Quentin/Tim's direction, cycle 1).
+  // Pixi's own `Application` renders through a `TickerPlugin` listener
+  // registered at `UPDATE_PRIORITY.LOW` (confirmed against pixi.js's own
+  // source, `app/TickerPlugin.js`); every other listener this scene adds
+  // below defaults to `NORMAL`, which runs before it. So a listener at
+  // `INTERACTION` (higher than everything) marks the start, and one at
+  // `UTILITY` (lower than `LOW`, so it runs after the render call
+  // returns) marks the end -- between them sits movement, re-sorting,
+  // visibility, the crowd's own update and the render itself: the whole
+  // per-frame cost this app pays, in one pair of `performance.now()`
+  // calls that allocate nothing and cost nothing measurable on their own.
+  let frameWorkStartMs = 0;
+  app.ticker.add(
+    () => {
+      frameWorkStartMs = performance.now();
+    },
+    undefined,
+    UPDATE_PRIORITY.INTERACTION,
+  );
+
   app.ticker.add((ticker) => {
-    // NFR2's measurement point: the scene's own work for this frame,
-    // start to finish. `performance.now()` twice per frame allocates
-    // nothing and costs nothing measurable; the sink itself keeps no
-    // samples unless a perf run has asked for them.
-    const frameStart = performance.now();
     tick(ticker.deltaMS);
-    onFrameWork?.(performance.now() - frameStart);
   });
 
   function tick(deltaMS: number): void {
@@ -1163,8 +1196,26 @@ export async function mountStreetScene(
   // ticking -- unlike the player's own ticker above, this must never
   // early-return while the player stands still, so it is a second,
   // independent `app.ticker.add` registration rather than folded into
-  // the one above.
-  app.ticker.add((ticker) => citizensLayer.update(ticker.deltaMS));
+  // the one above. Still runs before the render (`NORMAL`, the default,
+  // is above the render's own `LOW`), so it stays inside the frame-work
+  // window the two listeners above bound. `crowdFrozen` (story 1.13,
+  // `startWithCrowdFrozen`) is the one exception: a screenshot test needs
+  // every citizen pinned at its initial pose, never this scene's own
+  // concern otherwise.
+  app.ticker.add((ticker) => {
+    if (!crowdFrozen) citizensLayer.update(ticker.deltaMS);
+  });
+
+  // The frame-work window's own closing bracket: below the render's own
+  // `LOW` priority, so this always runs after `app.render()` has
+  // returned for the frame just drawn.
+  app.ticker.add(
+    () => {
+      onFrameWork?.(performance.now() - frameWorkStartMs);
+    },
+    undefined,
+    UPDATE_PRIORITY.UTILITY,
+  );
 
   return {
     app,

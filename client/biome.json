@@ -33,7 +33,6 @@
     {
       "includes": [
         "src/render/**",
-        "!src/render/bootstrap.ts",
         "!src/render/floor-stacks.ts",
         "!src/render/pixi-order.ts",
         "!src/render/pixi-visibility.ts",

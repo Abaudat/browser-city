@@ -36,7 +36,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const renderer = await bootstrapRenderer(mount);
+  const renderer = bootstrapRenderer(mount);
 
   function onPing(observation: PingObservation): void {
     renderer.showPing(observation);
@@ -55,9 +55,11 @@ async function main(): Promise<void> {
 }
 
 /**
- * Story 1.6's street scene: a second, independent Pixi application from the
- * ping demo above. Never blocks `main()` on failure (NFR42) -- a broken
- * street mount must never take the ping round trip down with it.
+ * The street scene: the page's one and only Pixi `Application` (Tim's
+ * direction, story 1.13) -- the ping indicator above is plain DOM and
+ * shares no GPU context or ticker with this. Never blocks `main()` on
+ * failure (NFR42) -- a broken street mount must never take the ping round
+ * trip down with it.
  *
  * The rank table comes from `render/layer-table.ts` -- the one
  * client-side mirror of `sim::codes::layer`, guarded against drift by
@@ -114,6 +116,15 @@ async function startStreetScene(): Promise<void> {
     },
   });
 
+  // DEV-only, like every other `window.__bc`-adjacent test aid: a
+  // `toHaveScreenshot` check needs the street crowd's own walk cycle to
+  // never advance, or which frame of which citizen's animation happens to
+  // be on screen would depend on real wall-clock timing and no baseline
+  // could ever be stable (`test-street.spec.ts`'s own header). Absent
+  // means the crowd walks normally, exactly as it always has.
+  const freezeCrowdForE2e =
+    import.meta.env.DEV && new URLSearchParams(window.location.search).has("freezeCrowd");
+
   // The render path's own resort event drives this hook directly
   // (Quentin's direction) -- never a ticker polling `getRenderOrder()`
   // every frame to see whether it changed.
@@ -126,6 +137,7 @@ async function startStreetScene(): Promise<void> {
     movementConfig,
     objectDefs: objectDefsById(defs),
     windowDefIds: windowDefIds(defs),
+    startWithCrowdFrozen: freezeCrowdForE2e,
     onOrderChange: recordRenderOrderForE2e,
     onPlayerMove: recordPlayerPositionForE2e,
     onFrameWork: recordFrameWorkForE2e,

@@ -945,6 +945,36 @@ export function streetPlacedRows(): readonly PlacedObject[] {
   return rows;
 }
 
+/** Every `furniture` prop that sits directly behind some window wall tile
+ * (a real `defs/objects` entry with `window = true`, placed by
+ * `WINDOW_DEF_ID`): the same floor, strictly north of that window's own
+ * row, and horizontally overlapping its footprint width. This is the
+ * exact geometric fact FR121's "furniture is visible through a
+ * translucent window" rests on -- computed once from the real prop list,
+ * never a hand-typed id list and never every floor-0 furniture prop
+ * regardless of whether a window is actually in front of it, so this set
+ * can never pass vacuously and a re-laid street that drops the case fails
+ * here rather than only looking wrong on screen. */
+export function furnitureBehindWindows(): readonly bigint[] {
+  const windows = STREET_PROPS.filter((prop) => prop.defId === WINDOW_DEF_ID);
+  const ids = new Set<bigint>();
+  for (const prop of STREET_PROPS) {
+    if (prop.layer !== "furniture") continue;
+    const propWidth = prop.footprint?.width ?? 1;
+    for (const window of windows) {
+      if (prop.floor !== window.floor) continue;
+      if (prop.y >= window.y) continue;
+      const windowWidth = window.footprint?.width ?? 1;
+      const overlaps = prop.x < window.x + windowWidth && window.x < prop.x + propWidth;
+      if (overlaps) {
+        ids.add(prop.id);
+        break;
+      }
+    }
+  }
+  return [...ids];
+}
+
 // --- the scripted walk (story 1.13) -------------------------------------
 //
 // One route, declared once, here with the geometry it walks (Quentin's

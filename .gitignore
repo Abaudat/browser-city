@@ -19,3 +19,15 @@ client/.vite/
 client/playwright-report/
 client/test-results/
 client/coverage/
+
+# Screenshots taken for a PR description (bc-pr.sh attach) -- belong in
+# the PR body, uploaded to the pr-assets branch, never in this history.
+.shots/
+
+# Visual regression baselines (client/tests/e2e/*-snapshots/) are
+# committed only for the platform CI actually runs on (linux); a baseline
+# auto-written by a local, non-CI run on any other platform (Windows'
+# `-win32`, macOS' `-darwin`) must never be committed -- it was never
+# generated on the CI image `update-visual-baselines.yml` requires.
+client/tests/e2e/**/*-snapshots/*-win32.png
+client/tests/e2e/**/*-snapshots/*-darwin.png

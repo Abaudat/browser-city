@@ -21,10 +21,11 @@ export default defineConfig({
       // directory can be excluded here, by path, rather than by naming
       // individual files as they're added) -- it is still exercised by
       // real tests (`tests/unit/test-street/**`), just not held to this bar.
-      // `bootstrap.ts` is the pre-existing ping-demo shell. Every
-      // permanent `src/render/**` module -- including the Pixi-touching
-      // `pixi-order.ts`, which is sprite/container wiring and nothing
-      // that decides an order or a position -- stays in scope; never
+      // Every permanent `src/render/**` module -- including the
+      // Pixi-touching `pixi-order.ts`, which is sprite/container wiring
+      // and nothing that decides an order or a position, and
+      // `bootstrap.ts`, plain DOM since story 1.13 merged the ping
+      // indicator off its own Pixi `Application` -- stays in scope; never
       // lower the bar or exclude a pure module.
       // Story 1.10: `composite-canvas.ts` needs a real `OffscreenCanvas`
       // (an `OffscreenCanvas`-less node test cannot exercise it
@@ -36,7 +37,6 @@ export default defineConfig({
       // logic of its own remains once its inputs are each covered.
       exclude: [
         "src/net/bindings/**",
-        "src/render/bootstrap.ts",
         "src/test-street/**",
         "src/render/appearance/composite-canvas.ts",
         "src/render/appearance/part-sheets.ts",

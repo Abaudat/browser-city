@@ -17,6 +17,7 @@ import {
   BRIDGE_FLOOR,
   BRIDGE_X0,
   BRIDGE_X1,
+  furnitureBehindWindows,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
   PLAYER_START,
@@ -107,13 +108,12 @@ describe("the hand-laid test street (AC1, AC2)", () => {
     expect(objectDef(WINDOW_DEF_ID).window).toBe(true);
   });
 
-  it("has furniture behind a window, so the window has something to be seen through", () => {
-    const window = STREET_PROPS.find((prop) => prop.defId === WINDOW_DEF_ID);
-    if (!window) throw new Error("no window in the street");
-    const behind = STREET_PROPS.filter(
-      (prop) => prop.layer === "furniture" && prop.floor === window.floor && prop.y < window.y,
-    );
-    expect(behind.length).toBeGreaterThan(0);
+  it("has furniture directly behind a window, so the window has something to be seen through", () => {
+    // The real "behind a window" set (same floor, north of the window's
+    // own row, x-overlapping its footprint) -- not merely "any furniture
+    // somewhere on the floor", which would pass even if no window sat in
+    // front of any of it.
+    expect(furnitureBehindWindows().length).toBeGreaterThan(0);
   });
 
   it("has a prop wider than one cell", () => {

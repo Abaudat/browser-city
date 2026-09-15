@@ -6,10 +6,13 @@
     <title>BrowserCity</title>
   </head>
   <body>
+    <!-- The story 1.1 ping indicator's own DOM mount -- plain DOM, not a
+         second Pixi canvas (story 1.13, Tim's direction: the page has one
+         Pixi Application, the street scene's below). -->
     <div id="app"></div>
-    <!-- Story 1.13's hand-laid test street mount -- a second, independent canvas from
-         the story 1.1 ping demo above; D17 keeps every affordance for it
-         (were one ever needed) in the DOM, never drawn on the canvas. -->
+    <!-- The street scene's one Pixi canvas mount. D17 keeps every
+         affordance for it (were one ever needed) in the DOM, never drawn
+         on the canvas. -->
     <div id="test-street"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
