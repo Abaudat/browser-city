@@ -91,72 +91,80 @@ function median(values: readonly number[]): number {
   return percentile(sorted, 50);
 }
 
-async function waitForUntil(page: Page, until: StreetWalkUntil, timeout: number): Promise<void> {
-  await page.waitForFunction(
-    (u: StreetWalkUntil) => {
-      const position = window.__bc?.playerPosition;
-      const floor = window.__bc?.playerFloor;
-      if (!position || floor === undefined) return false;
-      switch (u.kind) {
-        case "x-at-least":
-          return position.x >= u.value;
-        case "x-at-most":
-          return position.x <= u.value;
-        case "y-at-least":
-          return position.y >= u.value;
-        case "y-at-most":
-          return position.y <= u.value;
-        case "floor":
-          return floor === u.value;
-      }
-    },
-    until,
-    { timeout },
-  );
-}
+/** How long a single segment is allowed. */
+const SEGMENT_TIMEOUT_MS = 60_000;
 
-/** How long a single segment is allowed, and how it reports itself while
- * waiting: polled in short slices (`SEGMENT_POLL_MS`) rather than one
- * long `waitForFunction`, logging the walker's own position each time a
- * slice elapses without meeting the segment's own release condition --
- * an observed CI flake (this spec's own crowd keeps animating, unlike
- * `test-street.spec.ts`'s frozen one, so a cold, busy runner has
- * occasionally taken markedly longer than a single segment's own real
- * walking time to render enough frames to cover it) had nothing in the
- * CI log naming which segment stalled or where the walker actually was,
- * short of a full trace this workflow does not upload. */
-const SEGMENT_TIMEOUT_MS = 120_000;
-const SEGMENT_POLL_MS = 10_000;
-
+/** Holds `segment.key` down, waits for its own release condition, and
+ * releases it again -- entirely inside the page, in one `page.evaluate`
+ * call, unlike `test-street.spec.ts`'s own `page.keyboard.down`/
+ * `waitForFunction`/`page.keyboard.up` sequence. That sequence is real,
+ * OS-level input, the more faithful choice for a functional spec, but
+ * each of its three steps is its own Node<->page round trip, and this
+ * spec's own crowd keeps animating (unlike `test-street.spec.ts`'s
+ * frozen one) -- a cold, busy CI runner has shown enough round-trip
+ * latency between "the release condition became true" and "the key
+ * actually lifts" for the walker to keep travelling for several tenths
+ * of a cell past it, occasionally far enough to land somewhere this
+ * route never checked (observed: released from a floor transition,
+ * carried into the underpass checkpoint's own support pillar, stuck for
+ * good on the very next segment). Dispatching a synthetic `KeyboardEvent`
+ * (`input/keyboard.ts` binds `.code`, the same field either kind of event
+ * carries, and does not check `isTrusted`) and polling with the page's
+ * own `requestAnimationFrame` keeps the whole hold-and-release inside a
+ * single frame's own callback, with no round trip in between. */
 async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
-  await page.keyboard.down(segment.key);
-  try {
-    const deadline = Date.now() + SEGMENT_TIMEOUT_MS;
-    for (;;) {
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) {
-        const position = await page.evaluate(() => window.__bc?.playerPosition);
-        const floor = await page.evaluate(() => window.__bc?.playerFloor);
-        throw new Error(
-          `walkSegment: '${segment.label}' never met its release condition ` +
-            `(${JSON.stringify(segment.until)}) within ${SEGMENT_TIMEOUT_MS}ms; ` +
-            `stuck at ${JSON.stringify(position)}, floor ${floor}`,
-        );
-      }
-      try {
-        await waitForUntil(page, segment.until, Math.min(SEGMENT_POLL_MS, remaining));
-        return;
-      } catch {
-        const position = await page.evaluate(() => window.__bc?.playerPosition);
-        const floor = await page.evaluate(() => window.__bc?.playerFloor);
-        console.log(
-          `[street-perf] still waiting on '${segment.label}' (${JSON.stringify(segment.until)}); ` +
-            `at ${JSON.stringify(position)}, floor ${floor}`,
-        );
-      }
-    }
-  } finally {
-    await page.keyboard.up(segment.key);
+  const result = await page.evaluate(
+    ({ code, until, timeoutMs }) => {
+      return new Promise<{ met: boolean; position: unknown; floor: unknown }>((resolve) => {
+        const met = (u: StreetWalkUntil): boolean => {
+          const position = window.__bc?.playerPosition;
+          const floor = window.__bc?.playerFloor;
+          if (!position || floor === undefined) return false;
+          switch (u.kind) {
+            case "x-at-least":
+              return position.x >= u.value;
+            case "x-at-most":
+              return position.x <= u.value;
+            case "y-at-least":
+              return position.y >= u.value;
+            case "y-at-most":
+              return position.y <= u.value;
+            case "floor":
+              return floor === u.value;
+          }
+        };
+        const release = (ok: boolean) => {
+          window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
+          resolve({
+            met: ok,
+            position: window.__bc?.playerPosition,
+            floor: window.__bc?.playerFloor,
+          });
+        };
+        const deadline = performance.now() + timeoutMs;
+        const tick = () => {
+          if (met(until)) {
+            release(true);
+            return;
+          }
+          if (performance.now() >= deadline) {
+            release(false);
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        window.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true }));
+        requestAnimationFrame(tick);
+      });
+    },
+    { code: segment.key, until: segment.until, timeoutMs: SEGMENT_TIMEOUT_MS },
+  );
+  if (!result.met) {
+    throw new Error(
+      `walkSegment: '${segment.label}' never met its release condition ` +
+        `(${JSON.stringify(segment.until)}) within ${SEGMENT_TIMEOUT_MS}ms; ` +
+        `stuck at ${JSON.stringify(result.position)}, floor ${JSON.stringify(result.floor)}`,
+    );
   }
 }
 
@@ -167,12 +175,7 @@ async function walkRoute(page: Page, route: readonly StreetWalkSegment[]): Promi
 test("the frame path stays inside its work budget for a whole walked session (NFR2, partial)", async ({
   page,
 }) => {
-  // 180s of headroom, not 120s: the initial walk's own segments (the
-  // journey out, `walkRoute` below) each now individually allow up to
-  // 120s on a cold, busy runner (`walkSegment`'s own doc comment says
-  // why), so the fixed overhead this test's own timeout budgets for has
-  // to allow for more than one of them landing badly.
-  test.setTimeout(RUN_MS + 180_000);
+  test.setTimeout(RUN_MS + 120_000);
 
   // NFR2's own resolution. `page.setViewportSize` rather than a project
   // `viewport`, so this stays true even run from a config someone else
