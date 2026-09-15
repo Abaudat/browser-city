@@ -16,13 +16,6 @@ name: update-visual-baselines
 
 on:
   workflow_dispatch:
-  # TEMPORARY, this PR only: `workflow_dispatch` only becomes dispatchable
-  # once a workflow file is on the default branch, and this one cannot be
-  # until this PR merges -- which needs the baselines first. `push` is
-  # evaluated against the commit itself, no such restriction, so it
-  # bootstraps the first run. Removed once #286's own baselines exist.
-  push:
-    branches: [Abaudat/issue-61]
 
 permissions:
   contents: write
