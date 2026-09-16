@@ -1,0 +1,10 @@
+[[object]]
+id = 1
+key = "trash_can"
+name = "Trash Can"
+layer = "furniture"
+sprite = { sheet = "fixtures/objects/trash-bin-test.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+# No collider, no `underfoot` tag: nobody said whether this blocks or is
+# walked on -- rejected by name.

@@ -30,6 +30,9 @@ layer = "furniture"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png", x = 0, y = 0, w = 32, h = 16 }
 width = 2
 height = 1
+# Story 2.4 (FR128): a bench blocks -- the whole two-cell seat/back
+# depth, leaving the front lip free to approach from.
+collider = { x0 = 0, y0 = 0, x1 = 32, y1 = 12 }
 tags = ["seating"]
 
 [[object]]
@@ -106,8 +109,9 @@ height = 1
 # all (FR128), so an entity on the deck's own floor walks the whole span
 # and an entity on the floor below passes under it unobstructed -- the
 # deck occupies the same (x, y) as the street beneath it and never
-# contributes collision to it (FR117).
-tags = ["bridge"]
+# contributes collision to it (FR117). Story 2.4 (FR128): explicitly
+# walkable, not merely absent a collider -- `underfoot`.
+tags = ["bridge", "underfoot"]
 
 [[object]]
 id = 8
@@ -119,5 +123,6 @@ width = 1
 height = 1
 # A flight of steps between two floors: a physical, walkable prop, never
 # a teleport tile. Which floors it joins is a `floor_transition` row
-# anchored on its cell (FR117), never a field here.
-tags = ["stairs"]
+# anchored on its cell (FR117), never a field here. Story 2.4 (FR128):
+# explicitly walkable -- `underfoot`.
+tags = ["stairs", "underfoot"]

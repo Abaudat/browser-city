@@ -34,3 +34,13 @@ key = "bridge"
 [[tag]]
 id = 8
 key = "stairs"
+
+# Story 2.4 (FR128): the walkability invariant's own vocabulary -- an
+# object with no `collider` must carry this tag (it is explicitly walked
+# on, like a manhole cover, a rug, a doormat or a floor decal), and an
+# object that carries this tag must never also declare a `collider`. Not
+# an allow-list of object keys: any object may carry it, reviewed the
+# same way as every other content change, in this file's own diff.
+[[tag]]
+id = 9
+key = "underfoot"

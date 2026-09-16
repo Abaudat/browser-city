@@ -25,6 +25,7 @@ function validPayload(): Record<string, unknown> {
         height: 1,
         window: false,
         tags: [],
+        collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
       },
     ],
     items: [
@@ -64,6 +65,7 @@ describe("parseDefs", () => {
         height: 1,
         window: false,
         tags: [],
+        collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
       },
     ]);
     expect(defs.recipes[0]?.inputs).toEqual(["bottle"]);
@@ -238,6 +240,7 @@ describe("parseDefs", () => {
     const defs = parseDefs(payload);
     expect(defs.objects[0]?.collider).toEqual({ x0: 4, y0: 4, x1: 12, y1: 12 });
 
+    payload.tags = [{ id: 1, key: "underfoot" }];
     payload.objects = [
       {
         id: 1,
@@ -248,7 +251,7 @@ describe("parseDefs", () => {
         width: 1,
         height: 1,
         window: false,
-        tags: [],
+        tags: [1],
       },
     ];
     expect(parseDefs(payload).objects[0]?.collider).toBeUndefined();
@@ -266,6 +269,7 @@ describe("parseDefs", () => {
       height: 1,
       window: false,
       tags: [],
+      collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
       interact_at: { x0: 0, y0: 16, x1: 16, y1: 32 },
     };
     const defs = parseDefs(payload);
@@ -283,6 +287,7 @@ describe("parseDefs", () => {
         height: 1,
         window: false,
         tags: [],
+        collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
       },
     ];
     expect(parseDefs(payload).objects[0]?.interactAt).toBeUndefined();
@@ -325,6 +330,7 @@ describe("parseDefs", () => {
 
   it("accepts an interact_at exactly at the declared reach bound (FR148)", () => {
     const payload = validPayload();
+    payload.tags = [{ id: 1, key: "underfoot" }];
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
@@ -334,7 +340,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
-      tags: [],
+      tags: [1],
       interact_at: { x0: -32, y0: 0, x1: 16, y1: 16 },
     };
     expect(() => parseDefs(payload)).not.toThrow();
@@ -377,6 +383,7 @@ describe("parseDefs", () => {
 
   it("treats an explicit null collider the same as an absent one", () => {
     const payload = validPayload();
+    payload.tags = [{ id: 1, key: "underfoot" }];
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
@@ -386,7 +393,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
-      tags: [],
+      tags: [1],
       collider: null,
     };
     expect(parseDefs(payload).objects[0]?.collider).toBeUndefined();
@@ -426,6 +433,30 @@ describe("parseDefs", () => {
     expect(() => parseDefs(payload)).toThrow(/does not fit inside its footprint/);
   });
 
+  it("rejects a collider outside its own sprite bounds as a footprint containment failure (story 2.4 AC3)", () => {
+    // The corollary Tim's direction describes, not a duplicate check:
+    // the sprite always agrees with the footprint exactly
+    // (checkSpriteMatchesFootprint), so a collider outside the sprite is
+    // always outside the footprint too, and is refused by the exact same
+    // containment check and message.
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
+      width: 1,
+      height: 1,
+      window: false,
+      tags: [],
+      collider: { x0: 0, y0: 0, x1: 20, y1: 8 },
+    };
+    expect(() => parseDefs(payload)).toThrow(
+      "object 'trash_bin' collider (0, 0)-(20, 8) does not fit inside its footprint (0, 0)-(16, 16) sub-cells",
+    );
+  });
+
   it("accepts a collider flush with the footprint edge (FR128)", () => {
     const payload = validPayload();
     (payload.objects as Record<string, unknown>[])[0] = {
@@ -442,6 +473,62 @@ describe("parseDefs", () => {
     };
     expect(() => parseDefs(payload)).not.toThrow();
   });
+
+  // --- story 2.4: the walkability invariant (FR128) -------------------------
+
+  it("rejects a colliderless object not tagged 'underfoot'", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_can",
+      name: "Trash Can",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
+      width: 1,
+      height: 1,
+      window: false,
+      tags: [],
+    };
+    expect(() => parseDefs(payload)).toThrow(/trash_can.*underfoot/);
+  });
+
+  it("rejects an object declaring both a collider and the 'underfoot' tag", () => {
+    const payload = validPayload();
+    payload.tags = [{ id: 1, key: "underfoot" }];
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
+      width: 1,
+      height: 1,
+      window: false,
+      tags: [1],
+      collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
+    };
+    expect(() => parseDefs(payload)).toThrow(/declares both a collider/);
+  });
+
+  it.each(["manhole", "rug", "doormat", "floor_decal"])(
+    "accepts a colliderless '%s' tagged 'underfoot'",
+    (key) => {
+      const payload = validPayload();
+      payload.tags = [{ id: 1, key: "underfoot" }];
+      (payload.objects as Record<string, unknown>[])[0] = {
+        id: 1,
+        key,
+        name: key,
+        layer: 2,
+        sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
+        width: 1,
+        height: 1,
+        window: false,
+        tags: [1],
+      };
+      expect(() => parseDefs(payload)).not.toThrow();
+    },
+  );
 
   it("rejects a missing window field", () => {
     const payload = validPayload();
@@ -486,6 +573,7 @@ describe("parseDefs", () => {
       height: 1,
       window: true,
       tags: [],
+      collider: { x0: 0, y0: 0, x1: 16, y1: 16 },
     };
     const defs = parseDefs(payload);
     expect(defs.objects[0]?.window).toBe(true);
@@ -770,7 +858,7 @@ describe("canonicalDump", () => {
         "chain plastic_bottle id=1 links=[sanitation_worker]",
         "item bottle id=1",
         "item recycled_glass id=2",
-        "object trash_bin id=1 name=Trash Bin layer=2 sprite=x.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[]",
+        "object trash_bin id=1 name=Trash Bin layer=2 sprite=x.png:0,0,16,16 height=1 width=1 collider=4,4,12,12 interact_at=none window=false tags=[]",
         "profession sanitation_worker id=1",
         "recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]",
         "",

@@ -510,6 +510,15 @@ fn build_requirement_rules(
 /// `width*COLLIDER_SUBCELLS_PER_CELL x height*COLLIDER_SUBCELLS_PER_CELL`
 /// sub-cells (Tim's direction, story 1.8). Widened to `i64` throughout so
 /// no combination of `i32` collider bounds can overflow the comparison.
+///
+/// Story 2.4 AC3's "collider within sprite bounds" needs no separate
+/// check here: `check_object_sprite_matches_footprint` already fixes the
+/// sprite to exactly the footprint's own extent (`w == width *
+/// tile_size_px`, `h >= height * tile_size_px`, upward overhang only), so
+/// a collider contained in the footprint is always contained in the
+/// sprite -- a collider outside the sprite is therefore always outside
+/// the footprint, and is refused right here, by this same check, never a
+/// duplicate one.
 fn check_object_colliders(entries: &[ObjectEntry]) -> Result<(), DefsError> {
     for e in entries {
         let Some(collider) = &e.collider else {
@@ -531,15 +540,60 @@ fn check_object_colliders(entries: &[ObjectEntry]) -> Result<(), DefsError> {
         let max_y = e.height as i64 * COLLIDER_SUBCELLS_PER_CELL;
         if (c.x0 as i64) < 0 || (c.y0 as i64) < 0 || (c.x1 as i64) > max_x || (c.y1 as i64) > max_y
         {
+            // Quentin's direction: both rectangles, collider and
+            // footprint, in the same unit (sub-cells) and a fixed order,
+            // so the two are comparable by eye rather than one being
+            // `WxH cells`.
             return Err(DefsError::new(
                 &e.path,
                 collider.line,
                 collider.col,
                 format!(
-                    "object '{}' collider ({}, {})-({}, {}) does not fit inside its footprint {}x{} cells ({max_x}x{max_y} sub-cells)",
-                    e.key.value, c.x0, c.y0, c.x1, c.y1, e.width, e.height
+                    "object '{}' collider ({}, {})-({}, {}) does not fit inside its footprint (0, 0)-({max_x}, {max_y}) sub-cells",
+                    e.key.value, c.x0, c.y0, c.x1, c.y1
                 ),
             ));
+        }
+    }
+    Ok(())
+}
+
+/// FR128's other half (story 2.4): absence of a collider is walkability,
+/// but that absence must be *declared* -- every object either blocks (a
+/// `collider`) or is explicitly walkable (the [`UNDERFOOT_TAG_KEY`] tag),
+/// never neither (a colliderless prop nobody thought about) and never
+/// both (contradictory metadata: an object cannot block and be
+/// explicitly walkable at once). Checked last among the object checks,
+/// after every other object-level rejection has already had its own
+/// chance to fire on a malformed row for its own reason -- this is the
+/// generic catch-all, not a specific geometry check.
+fn check_object_walkability_tag(entries: &[ObjectEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        let is_underfoot = e.tags.iter().any(|t| t == UNDERFOOT_TAG_KEY);
+        match (&e.collider, is_underfoot) {
+            (None, false) => {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    e.key.col,
+                    format!(
+                        "object '{}' has no collider and is not tagged '{UNDERFOOT_TAG_KEY}' -- every prop either blocks (a collider) or is explicitly walkable (the '{UNDERFOOT_TAG_KEY}' tag); add one",
+                        e.key.value
+                    ),
+                ));
+            }
+            (Some(_), true) => {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    e.key.col,
+                    format!(
+                        "object '{}' declares both a collider and the '{UNDERFOOT_TAG_KEY}' tag -- an object cannot both block and be explicitly walkable",
+                        e.key.value
+                    ),
+                ));
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -1366,6 +1420,11 @@ pub fn validate(
         })?;
         check_object_sprite_matches_footprint(&raw.objects, tile_size_px)?;
     }
+    // Story 2.4: last among the object checks -- every other object-level
+    // rejection above (name, layer, footprint cap, collider/interact_at
+    // geometry, sprite) gets its own chance to fire on a fixture built to
+    // exercise it before this generic catch-all ever runs.
+    check_object_walkability_tag(&raw.objects)?;
 
     let item_keys: BTreeSet<&str> = raw.items.iter().map(|i| i.key.value.as_str()).collect();
     check_recipe_item_refs(&raw.recipes, &item_keys)?;
@@ -1732,6 +1791,12 @@ mod tests {
     const BALANCE_RENDER_TOML: &str =
         "[[balance]]\nkey = \"render.tile_size_px\"\nvalue = 16\nmin = 1\nmax = 64\n";
 
+    /// Story 2.4: declares the `underfoot` tag -- every fixture below that
+    /// wants a colliderless object to pass the walkability invariant adds
+    /// this file alongside its own `defs/tags/x.toml` and tags the object
+    /// `"underfoot"`.
+    const TAGS_UNDERFOOT_TOML: &str = "[[tag]]\nid = 1\nkey = \"underfoot\"\n";
+
     fn object_sheet_dims() -> BTreeMap<String, (u32, u32)> {
         [("fixtures/objects/test.png".to_string(), (16u32, 16u32))]
             .into_iter()
@@ -1753,7 +1818,7 @@ mod tests {
             (
                 "defs/objects/city-props.toml",
                 &format!(
-                    "[[object]]\nid = 1\nkey = \"trash_bin\"\n{OBJECT_HEADER}width = 1\nheight = 1\n"
+                    "[[object]]\nid = 1\nkey = \"trash_bin\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 4, y0 = 4, x1 = 12, y1 = 12 }}\n"
                 ),
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
@@ -1930,6 +1995,31 @@ mod tests {
         assert!(err.message.contains("does not fit inside its footprint"));
     }
 
+    /// Story 2.4 AC3: a collider outside its own sprite bounds is
+    /// rejected -- proven as the corollary Tim's direction describes,
+    /// never a duplicate check: `check_object_sprite_matches_footprint`
+    /// already fixes the sprite to exactly the footprint's own extent,
+    /// so a collider outside the sprite is always outside the footprint
+    /// too, and is refused by this exact same containment check.
+    #[test]
+    fn a_collider_outside_its_sprite_is_rejected_as_a_footprint_containment_failure() {
+        let f = files(&[
+            (
+                "defs/objects/x.toml",
+                &format!(
+                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 0, y0 = 0, x1 = 20, y1 = 8 }}\n"
+                ),
+            ),
+            ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+        ]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "defs/objects/x.toml:9:12: object 'a' collider (0, 0)-(20, 8) does not fit inside its footprint (0, 0)-(16, 16) sub-cells"
+        );
+    }
+
     #[test]
     fn a_collider_flush_with_the_footprint_edge_is_accepted() {
         let f = files(&[
@@ -1954,14 +2044,85 @@ mod tests {
         );
     }
 
+    // --- story 2.4: the walkability invariant (FR128) ----------------------
+
+    /// Quentin's direction: "one table-driven test, not four" -- every one
+    /// of the AC's own example kinds (manhole, rug, doormat, floor decal)
+    /// is colliderless and carries the `underfoot` tag, and the build
+    /// passes. Without this, a check that rejects every colliderless
+    /// object regardless of the tag would also pass the negative tests
+    /// below -- this is what proves it does not.
+    #[test]
+    fn underfoot_allow_listed_props_with_no_collider_pass() {
+        for key in ["manhole", "rug", "doormat", "floor_decal"] {
+            let f = files(&[
+                (
+                    "defs/objects/x.toml",
+                    &format!(
+                        "[[object]]\nid = 1\nkey = \"{key}\"\n{OBJECT_HEADER}width = 1\nheight = 1\ntags = [\"underfoot\"]\n"
+                    ),
+                ),
+                ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+                ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
+            ]);
+            let raw = parse_all(&f).unwrap();
+            let result = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "");
+            assert!(
+                result.is_ok(),
+                "'{key}' tagged underfoot should pass: {result:?}"
+            );
+        }
+    }
+
+    /// A colliderless prop that never named `underfoot` is rejected by
+    /// name -- the AC's own "trash can with no collision" example.
+    #[test]
+    fn a_colliderless_object_not_tagged_underfoot_is_rejected() {
+        let f = files(&[
+            (
+                "defs/objects/x.toml",
+                &format!(
+                    "[[object]]\nid = 1\nkey = \"trash_can\"\n{OBJECT_HEADER}width = 1\nheight = 1\n"
+                ),
+            ),
+            ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+        ]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        assert!(err.message.contains("trash_can"));
+        assert!(err.message.contains("underfoot"));
+    }
+
+    /// The other direction: a collider (it blocks) and the `underfoot` tag
+    /// (it is explicitly walkable) can never both be declared.
+    #[test]
+    fn an_object_tagged_underfoot_with_a_collider_is_rejected() {
+        let f = files(&[
+            (
+                "defs/objects/x.toml",
+                &format!(
+                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 4, y0 = 4, x1 = 12, y1 = 12 }}\ntags = [\"underfoot\"]\n"
+                ),
+            ),
+            ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+            ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
+        ]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        assert!(err.message.contains("declares both a collider"));
+    }
+
     #[test]
     fn an_absent_collider_stays_none() {
         let f = files(&[
             (
                 "defs/objects/x.toml",
-                &format!("[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\n"),
+                &format!(
+                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ntags = [\"underfoot\"]\n"
+                ),
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+            ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
         let defs = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap();
@@ -2011,10 +2172,11 @@ mod tests {
             (
                 "defs/objects/x.toml",
                 &format!(
-                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ninteract_at = {{ x0 = {at}, y0 = 0, x1 = 16, y1 = 16 }}\n"
+                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ninteract_at = {{ x0 = {at}, y0 = 0, x1 = 16, y1 = 16 }}\ntags = [\"underfoot\"]\n"
                 ),
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+            ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
         let defs = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap();
@@ -2057,9 +2219,12 @@ mod tests {
         let f = files(&[
             (
                 "defs/objects/x.toml",
-                &format!("[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\n"),
+                &format!(
+                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ntags = [\"underfoot\"]\n"
+                ),
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+            ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
         let defs = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap();
@@ -2187,9 +2352,10 @@ mod tests {
         let f = files(&[
             (
                 "defs/objects/x.toml",
-                "[[object]]\nid = 1\nkey = \"a\"\nname = \"A\"\nlayer = \"furniture\"\nsprite = { sheet = \"fixtures/objects/test.png\", x = 0, y = 0, w = 16, h = 32 }\nwidth = 1\nheight = 1\n",
+                "[[object]]\nid = 1\nkey = \"a\"\nname = \"A\"\nlayer = \"furniture\"\nsprite = { sheet = \"fixtures/objects/test.png\", x = 0, y = 0, w = 16, h = 32 }\nwidth = 1\nheight = 1\ntags = [\"underfoot\"]\n",
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+            ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
         let mut dims = object_sheet_dims();
@@ -2216,9 +2382,10 @@ mod tests {
         let f = files(&[
             (
                 "defs/objects/x.toml",
-                "[[object]]\nid = 1\nkey = \"a\"\nname = \"A\"\nlayer = \"furniture\"\nsprite = { sheet = \"fixtures/objects/test.png\", x = 0, y = 0, w = 128, h = 128 }\nwidth = 8\nheight = 8\n",
+                "[[object]]\nid = 1\nkey = \"a\"\nname = \"A\"\nlayer = \"furniture\"\nsprite = { sheet = \"fixtures/objects/test.png\", x = 0, y = 0, w = 128, h = 128 }\nwidth = 8\nheight = 8\ntags = [\"underfoot\"]\n",
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+            ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
         let mut dims = object_sheet_dims();

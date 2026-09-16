@@ -6,7 +6,7 @@ layer = "furniture"
 sprite = { sheet = "fixtures/objects/trash-bin-test.png", x = 0, y = 0, w = 16, h = 16 }
 width = 1
 height = 1
-# Story 2.4: this crate's shared valid base tree must satisfy the
-# walkability invariant on its own -- a collider, exactly like the real
-# trash_bin's own.
 collider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }
+# Contradictory metadata: a collider (it blocks) and the `underfoot` tag
+# (it is explicitly walkable) can never both be true of the same object.
+tags = ["underfoot"]

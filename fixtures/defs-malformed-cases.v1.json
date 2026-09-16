@@ -29,5 +29,7 @@
   "empty-object-name",
   "footprint-cap-exceeded",
   "walkable-flag-rejected",
-  "dangling-tag-reference"
+  "dangling-tag-reference",
+  "no-collider-not-underfoot",
+  "underfoot-with-collider"
 ]

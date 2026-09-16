@@ -362,10 +362,10 @@ hairstyle kid_hairstyle_kid_6_4 id=229 family=kid sheet=ModernTileset/moderninte
 hairstyle kid_hairstyle_kid_6_5 id=230 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_5.png style=6 color=5 rare=true
 item bottle id=1
 item recycled_glass id=2
-object bridge_deck id=7 name=Bridge Deck layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/10_Vehicles_Singles_16x16/ME_Singles_Vehicles_16x16_Car_Left_1.png:0,0,64,48 height=1 width=4 collider=none interact_at=none window=false tags=[7]
-object foot_stairs id=8 name=Foot Stairs layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Small_Stairs.png:0,0,16,32 height=1 width=1 collider=none interact_at=none window=false tags=[8]
+object bridge_deck id=7 name=Bridge Deck layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/10_Vehicles_Singles_16x16/ME_Singles_Vehicles_16x16_Car_Left_1.png:0,0,64,48 height=1 width=4 collider=none interact_at=none window=false tags=[7,9]
+object foot_stairs id=8 name=Foot Stairs layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Small_Stairs.png:0,0,16,32 height=1 width=1 collider=none interact_at=none window=false tags=[8,9]
 object lamppost id=4 name=Street Lamp layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Street_Lamp_5.png:0,0,16,64 height=1 width=1 collider=6,10,10,14 interact_at=none window=false tags=[4]
-object park_bench id=2 name=Park Bench layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png:0,0,32,16 height=1 width=2 collider=none interact_at=none window=false tags=[2]
+object park_bench id=2 name=Park Bench layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png:0,0,32,16 height=1 width=2 collider=0,0,32,12 interact_at=none window=false tags=[2]
 object shop_counter id=3 name=Shop Counter layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png:0,0,48,64 height=1 width=3 collider=0,0,48,16 interact_at=0,16,48,32 window=false tags=[3]
 object shop_window id=5 name=Shop Window layer=4 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Balcony_Window_Left_1.png:0,0,16,16 height=1 width=1 collider=0,0,16,16 interact_at=none window=true tags=[5]
 object trash_bin id=1 name=Trash Bin layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16/ME_Singles_Camping_16x16_Pier_Bin_1.png:0,0,16,16 height=1 width=1 collider=4,4,12,12 interact_at=-4,-4,20,20 window=false tags=[1]
@@ -525,6 +525,7 @@ tag lighting id=4
 tag seating id=2
 tag shopfront id=5
 tag stairs id=8
+tag underfoot id=9
 tag wall id=6
 tag waste id=1
 uniform sanitation_worker_uniform id=1 profession=sanitation_worker outfit=none accessory=addon_accessory_21_worker_jacket

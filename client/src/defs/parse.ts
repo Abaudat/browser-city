@@ -70,6 +70,14 @@ function expectNumber(value: unknown, path: string): number {
   return value;
 }
 
+/** Story 2.4 (FR128): the walkability invariant's own vocabulary, not a
+ * hard-coded allow-list of object keys -- an object with no `collider`
+ * must carry this tag, and an object that carries this tag must not
+ * declare a `collider`. A single named constant here and in `tools/
+ * defs-build/src/model.rs`'s own copy, never a repeated string literal
+ * past either. */
+const UNDERFOOT_TAG_KEY = "underfoot";
+
 /** Rust ids/widths/heights are `u32` -- the module hard-rejects a
  * non-integer, a negative value or one at or above 2^32 at build time,
  * and this client must reject the exact same input, never accept it just
@@ -649,6 +657,7 @@ export function parseDefs(data: unknown): Defs {
     );
   }
   const tagIds = new Set(tags.map((t) => t.id));
+  const underfootTagId = tags.find((t) => t.key === UNDERFOOT_TAG_KEY)?.id;
   for (const object of objects) {
     checkObjectName(object);
     checkObjectLayer(object);
@@ -660,6 +669,10 @@ export function parseDefs(data: unknown): Defs {
     checkColliderWithinFootprint(object, colliderSubcellsPerCell);
     checkInteractAtReach(object, colliderSubcellsPerCell, interactAtMaxReachCells);
     checkObjectTags(object, tagIds);
+    // Story 2.4: the generic catch-all, checked last -- every other
+    // object-level rejection above gets its own chance to fire on a
+    // payload built to exercise it before this one does.
+    checkObjectWalkabilityTag(object, underfootTagId);
   }
 
   return {
@@ -724,6 +737,26 @@ function checkObjectTags(object: ObjectDef, tagIds: ReadonlySet<number>): void {
     if (!tagIds.has(tag)) {
       fail(`object '${object.key}' names unknown tag id ${tag}`);
     }
+  }
+}
+
+/** FR128's other half (story 2.4): absence of a collider is walkability,
+ * but that absence must be *declared* -- every object either blocks (a
+ * `collider`) or is explicitly walkable (the `underfoot` tag), never
+ * neither and never both. `underfootTagId` is `undefined` when this
+ * defs tree declares no `underfoot` tag at all, in which case no object
+ * could ever legitimately carry it. */
+function checkObjectWalkabilityTag(object: ObjectDef, underfootTagId: number | undefined): void {
+  const isUnderfoot = underfootTagId !== undefined && object.tags.includes(underfootTagId);
+  if (!object.collider && !isUnderfoot) {
+    fail(
+      `object '${object.key}' has no collider and is not tagged '${UNDERFOOT_TAG_KEY}' -- every prop either blocks (a collider) or is explicitly walkable (the '${UNDERFOOT_TAG_KEY}' tag); add one`,
+    );
+  }
+  if (object.collider && isUnderfoot) {
+    fail(
+      `object '${object.key}' declares both a collider and the '${UNDERFOOT_TAG_KEY}' tag -- an object cannot both block and be explicitly walkable`,
+    );
   }
 }
 
@@ -793,7 +826,14 @@ function checkSpriteMatchesFootprint(object: ObjectDef, tileSizePx: number): voi
  * height*colliderSubcellsPerCell` sub-cells -- the exact rule `tools/
  * defs-build`'s own `validate.rs` enforces at build time, checked again
  * here so the client is never quietly lenient about data it did not
- * build itself. */
+ * build itself.
+ *
+ * Story 2.4 AC3's "collider within sprite bounds" needs no separate
+ * check: `checkSpriteMatchesFootprint` already fixes the sprite to
+ * exactly the footprint's own extent, so a collider contained in the
+ * footprint is always contained in the sprite -- a collider outside the
+ * sprite is therefore always outside the footprint, and is refused right
+ * here, never a duplicate check. */
 function checkColliderWithinFootprint(object: ObjectDef, colliderSubcellsPerCell: number): void {
   const c = object.collider;
   if (!c) return;
@@ -805,8 +845,10 @@ function checkColliderWithinFootprint(object: ObjectDef, colliderSubcellsPerCell
   const maxX = object.width * colliderSubcellsPerCell;
   const maxY = object.height * colliderSubcellsPerCell;
   if (c.x0 < 0 || c.y0 < 0 || c.x1 > maxX || c.y1 > maxY) {
+    // Tim's direction: both rectangles, collider and footprint, in the
+    // same unit (sub-cells), in a fixed order -- comparable by eye.
     fail(
-      `object '${object.key}' collider (${c.x0}, ${c.y0})-(${c.x1}, ${c.y1}) does not fit inside its footprint ${object.width}x${object.height} cells (${maxX}x${maxY} sub-cells)`,
+      `object '${object.key}' collider (${c.x0}, ${c.y0})-(${c.x1}, ${c.y1}) does not fit inside its footprint (0, 0)-(${maxX}, ${maxY}) sub-cells`,
     );
   }
 }
