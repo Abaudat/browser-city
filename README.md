@@ -4,6 +4,15 @@ A persistent, browser-based life simulation set in a city that runs whether or n
 watching. The server is a SpacetimeDB module; the client is a thin PixiJS renderer. The game is
 built by an agentic team that takes its work from GitHub.
 
+**Play the live build:** <https://abaudat.github.io/browser-city/>
+
+## Milestones
+
+Where each live-build milestone lands in the epics, pinned to the story that first delivers it.
+Three of them have no story yet. Source: the [epics and stories on GitHub](https://github.com/Abaudat/browser-city/issues?q=label%3Aepic).
+
+![Milestone timeline across the epics](docs/milestones.png)
+
 ## Layout
 
 ```
