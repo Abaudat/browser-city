@@ -39,14 +39,16 @@ max = 99
 # by the U1 display-strength dial (`settings/display-settings.ts`,
 # `[20, 100]`, default 60) -- a percent integer (never a TypeScript
 # literal), divided down to a plain `(0, 1)` fraction in `main.ts` the same
-# way `render.window_alpha` is. Settled by playing (Artie/Derek's
-# direction): hovered on the densest street the test scene produces, at
-# 3x zoom, against both a dark prop (the trash bin) and a pale one (the
-# shop window's furniture) -- 18% is the weakest additive brighten that
-# still reads on both without the object's own colour needing to carry the
-# state change.
+# way `render.window_alpha` is. Settled by playing (Artie's direction,
+# cycle 2): judged on full-viewport screenshots of the densest street the
+# test scene produces, unmarked against marked, at the default dial and at
+# the floor, against both a dark prop (the trash bin) and a pale one (the
+# shop counter) -- 18% (the first value tried) measured as a mean ~5%
+# brighten at the default dial and did not read reliably even zoomed in
+# with the object already known; 50% puts the default dial's own effective
+# alpha at 30%, which does.
 key = "render.highlight_alpha"
-value = 18
+value = 50
 min = 1
 max = 100
 

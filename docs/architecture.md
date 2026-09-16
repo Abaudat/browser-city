@@ -599,12 +599,11 @@ is its own building, not a room of a shared one.
 FR173's affordance mark: one additive overlay copy of each visible
 drawable of the hovered, in-reach object, inserted as a sibling directly
 above its own source sprite in the pool container -- never a pool member,
-never a separate top layer -- so it inherits the object's own FR123 sort
-for free. Re-attached by the one wrapper that calls `applyDepthOrder`
-(`test-street/scene.ts`'s `reorderFloor`); no other call site touches it
-after a re-sort. Its overlay tracks its source every frame it is alive --
-position, scale, anchor, texture, visibility and alpha all mirrored --
-never a snapshot taken at hover start.
+never a separate top layer. Re-attached by the one wrapper that calls
+`applyDepthOrder` (`test-street/scene.ts`'s `reorderFloor`); no other call
+site touches it after a re-sort. Its overlay tracks its source every frame
+it is alive -- position, scale, anchor, texture, visibility and alpha all
+mirrored -- never a snapshot taken at hover start.
 
 - `client/src/render/highlight.ts` is the pure half: `highlightOverlayAlpha`
   and `highlightOverlaySpec`, zero PixiJS. Alpha is `render.highlight_alpha`
@@ -612,20 +611,19 @@ never a snapshot taken at hover start.
   TypeScript literal) times the U1 display-strength dial (`[20, 100]`,
   default 60) times the source sprite's own alpha.
 - `client/src/render/pixi-highlight.ts`'s `HighlightApplier` is the only
-  code that constructs, inserts or destroys an overlay sprite. Built once
-  and destroyed on every hover transition, every strength change and
-  every re-sort; a scene at rest carries none (D17 -- the hovered id lives
-  in `input/pointer.ts`'s closure and in the applier alone, never on a
-  drawable, in settings, or in any per-object cache).
+  code that constructs, inserts or destroys an overlay sprite, and owns
+  its own per-frame `refresh` ticker subscription, live only while
+  something is marked. Built on the first hover transition, torn down on
+  the transition back to `undefined`; a scene at rest carries none (D17
+  -- the hovered id lives in `input/pointer.ts`'s closure and in the
+  applier alone, never on a drawable, in settings, or in any per-object
+  cache).
 - Only the four Pixi v8 basic blend modes (`normal`/`add`/`multiply`/
   `screen`) are ever assigned anywhere under `client/src/`, and no import
-  from `pixi.js/advanced-blend-modes` exists -- every other blend mode is
-  an advanced one implemented as a filter under the hood, which FR121
-  bans; `scripts/ci/check-no-masks.sh` checks both mechanically.
-- The client's reachability predicate (`input/pick.ts`'s `isWithinReach`)
-  is the one the mark is permitted to promise, over the same `interact_at`
-  data the server will resolve a reducer click against -- never a second,
-  more generous copy.
+  from `pixi.js/advanced-blend-modes` exists; `scripts/ci/check-no-masks.sh`
+  checks both mechanically.
+- `input/pick.ts`'s `isWithinReach` is the same predicate the server will
+  resolve a reducer click against -- never a second, more generous copy.
 
 ### Appearance
 

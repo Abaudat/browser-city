@@ -40,13 +40,14 @@ function contextOf(query: FootprintQuery, isVisible?: (id: bigint) => boolean): 
 const BIN_CELL = { "0:5:5": [entry({ objectId: 100n })] };
 
 /** A bare, isolated `Window`-shaped fake -- never the real global `window`,
- * so a test's own `blur()`/`hide()`/`show()` can never leak into (or be
- * masked by) another test's listeners on the one real jsdom window every
- * test file shares. Mirrors `input/keyboard.ts`'s own `attachKeyboard`
- * test idiom (a second, injected target). */
+ * so a test's own `blur()`/`focus()`/`hide()`/`show()` can never leak into
+ * (or be masked by) another test's listeners on the one real jsdom window
+ * every test file shares. Mirrors `input/keyboard.ts`'s own
+ * `attachKeyboard` test idiom (a second, injected target). */
 function fakeWindowTarget(): {
   readonly target: Window;
   blur(): void;
+  focus(): void;
   hide(): void;
   show(): void;
 } {
@@ -85,6 +86,9 @@ function fakeWindowTarget(): {
     blur: () => {
       for (const cb of listeners.get("blur") ?? []) cb();
     },
+    focus: () => {
+      for (const cb of listeners.get("focus") ?? []) cb();
+    },
     hide: () => {
       visibilityState = "hidden";
       for (const cb of docListeners.get("visibilitychange") ?? []) cb();
@@ -108,6 +112,7 @@ interface Harness {
   resume(): void;
   detach(): void;
   blurWindow(): void;
+  focusWindow(): void;
   hideTab(): void;
   showTab(): void;
 }
@@ -154,6 +159,7 @@ function harness(
     resume: pointer.resume,
     detach: pointer.detach,
     blurWindow: fakeWindow.blur,
+    focusWindow: fakeWindow.focus,
     hideTab: fakeWindow.hide,
     showTab: fakeWindow.show,
   };
@@ -383,20 +389,36 @@ describe("click feedback", () => {
   });
 });
 
-describe("the mark must never survive its context (Artie's direction)", () => {
-  it("suspend() clears the mark and the cursor, and resume() re-lights the same still-hovered object with the mouse untouched", () => {
+describe("suspend/resume: the options menu does not change what is true (Derek's direction)", () => {
+  it("suspend() leaves an already-true mark exactly as it is -- the menu opening does not make the pointer position or the player's reach any less true", () => {
     const h = harness();
     move(h, 5, 5);
     expect(h.highlights.at(-1)).toBe(100n);
     expect(h.cursor()).toBe("pointer");
 
+    const before = h.highlights.length;
     h.suspend();
-    expect(h.highlights.at(-1)).toBeUndefined();
-    expect(h.cursor()).toBe("default");
+    // No teardown call at all -- not even a redundant one that happens to
+    // report the same id.
+    expect(h.highlights.length).toBe(before);
+    expect(h.highlights.at(-1)).toBe(100n);
+    expect(h.cursor()).toBe("pointer");
 
     h.resume();
     expect(h.highlights.at(-1)).toBe(100n);
     expect(h.cursor()).toBe("pointer");
+    h.detach();
+  });
+
+  it("suspend() while nothing is marked stays unmarked, and resume() does not invent a hover", () => {
+    const h = harness();
+    h.suspend();
+    expect(h.highlights).toEqual([]);
+    expect(h.cursor()).toBe("");
+
+    h.resume();
+    expect(h.highlights).toEqual([]);
+    expect(h.cursor()).toBe("");
     h.detach();
   });
 
@@ -425,15 +447,34 @@ describe("the mark must never survive its context (Artie's direction)", () => {
     h.detach();
   });
 
-  it("resume() with the pointer never having moved never invents a hover", () => {
+  it("resume() picks up a hover that started only after the menu opened, once the mouse actually moves again", () => {
     const h = harness();
     h.suspend();
-    h.resume();
+    move(h, 5, 5); // ignored while suspended
     expect(h.highlights).toEqual([]);
-    expect(h.cursor()).toBe("default");
+
+    h.resume();
+    // resume() alone does not invent a position the pointer never
+    // reported while suspended (the ignored move above never set
+    // lastClientX/Y); a real move after resume does.
+    expect(h.highlights).toEqual([]);
+    move(h, 5, 5);
+    expect(h.highlights.at(-1)).toBe(100n);
     h.detach();
   });
 
+  it("suspend()/resume() after detach are no-ops, never writing to the element again", () => {
+    const h = harness();
+    move(h, 5, 5);
+    h.detach();
+    const cursorAtDetach = h.cursor();
+    h.suspend();
+    h.resume();
+    expect(h.cursor()).toBe(cursorAtDetach);
+  });
+});
+
+describe("blur/tab-hide: the pointer's whereabouts genuinely stop being knowable (Artie's direction)", () => {
   it("a window blur clears the mark and the cursor, without discarding the last pointer position", () => {
     const h = harness();
     move(h, 5, 5);
@@ -442,12 +483,61 @@ describe("the mark must never survive its context (Artie's direction)", () => {
     h.blurWindow();
     expect(h.highlights.at(-1)).toBeUndefined();
     expect(h.cursor()).toBe("default");
+    h.detach();
+  });
 
-    // The pointer never left the canvas, only the window lost focus -- a
-    // world change (never only the mouse) can still re-resolve the same
-    // position through `refresh()`.
+  it("latches: a scene-driven refresh() while unfocused never relights the mark", () => {
+    const h = harness();
+    move(h, 5, 5);
+    h.blurWindow();
+    const before = h.highlights.length;
+
     h.refresh();
+    expect(h.highlights.length).toBe(before);
+    expect(h.highlights.at(-1)).toBeUndefined();
+    expect(h.cursor()).toBe("default");
+    h.detach();
+  });
+
+  it("focus returning re-resolves at the last known pointer position -- the symmetric restore (Derek's direction): a click is fully live again the instant focus returns, so the mark must be too", () => {
+    const h = harness();
+    move(h, 5, 5);
+    h.blurWindow();
+    expect(h.highlights.at(-1)).toBeUndefined();
+
+    h.focusWindow();
     expect(h.highlights.at(-1)).toBe(100n);
+    expect(h.cursor()).toBe("pointer");
+    h.detach();
+  });
+
+  it("the tab hiding (visibilitychange -> hidden) clears the mark and latches refresh(); becoming visible again relights it, the symmetric restore", () => {
+    const h = harness();
+    move(h, 5, 5);
+    expect(h.highlights.at(-1)).toBe(100n);
+
+    h.hideTab();
+    expect(h.highlights.at(-1)).toBeUndefined();
+    expect(h.cursor()).toBe("default");
+
+    h.refresh();
+    expect(h.highlights.at(-1)).toBeUndefined(); // still latched
+
+    h.showTab();
+    expect(h.highlights.at(-1)).toBe(100n);
+    expect(h.cursor()).toBe("pointer");
+    h.detach();
+  });
+
+  it("focus/visibility-restore with the pointer having left the canvas in the meantime is a no-op, never inventing a hover", () => {
+    const h = harness();
+    move(h, 5, 5);
+    h.blurWindow();
+    h.element.dispatchEvent(new MouseEvent("pointerleave"));
+
+    h.focusWindow();
+    expect(h.highlights.at(-1)).toBeUndefined();
+    expect(h.cursor()).toBe("default");
     h.detach();
   });
 
@@ -467,37 +557,15 @@ describe("the mark must never survive its context (Artie's direction)", () => {
     vi.useRealTimers();
   });
 
-  it("the tab hiding (visibilitychange -> hidden) clears the mark; becoming visible again does not by itself relight it", () => {
-    const h = harness();
-    move(h, 5, 5);
-    expect(h.highlights.at(-1)).toBe(100n);
-
-    h.hideTab();
-    expect(h.highlights.at(-1)).toBeUndefined();
-    expect(h.cursor()).toBe("default");
-
-    h.showTab();
-    expect(h.highlights.at(-1)).toBeUndefined();
-    h.detach();
-  });
-
-  it("a blur/visibilitychange after detach never writes to the element again", () => {
+  it("blur/focus/visibilitychange after detach never write to the element again", () => {
     const h = harness();
     move(h, 5, 5);
     h.detach();
     const cursorAtDetach = h.cursor();
     h.blurWindow();
+    h.focusWindow();
     h.hideTab();
-    expect(h.cursor()).toBe(cursorAtDetach);
-  });
-
-  it("suspend()/resume() after detach are no-ops, never writing to the element again", () => {
-    const h = harness();
-    move(h, 5, 5);
-    h.detach();
-    const cursorAtDetach = h.cursor();
-    h.suspend();
-    h.resume();
+    h.showTab();
     expect(h.cursor()).toBe(cursorAtDetach);
   });
 });

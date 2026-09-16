@@ -70,10 +70,14 @@ export function highlightOverlayAlpha(
 /** The minimal shape [`highlightOverlaySpec`] needs from a source sprite
  * -- structural over a texture handle of the caller's own choosing
  * (`render/pixi-highlight.ts`'s real `Texture`, or a plain string in a
- * unit test), so this module never imports `pixi.js` to describe it. */
+ * unit test), so this module never imports `pixi.js` to describe it.
+ * Deliberately no `visible` field: whether a source's own overlay exists
+ * at all is `render/pixi-highlight.ts`'s own decision (built while the
+ * source is visible, torn down the instant it is not), made before this
+ * function is ever called -- a spec is only ever asked for once that
+ * decision is already "yes". */
 export interface HighlightSourceView<TTexture = unknown> {
   readonly texture: TTexture;
-  readonly visible: boolean;
   readonly alpha: number;
   readonly anchorX: number;
   readonly anchorY: number;
@@ -95,7 +99,6 @@ export interface HighlightSourceView<TTexture = unknown> {
  * list. */
 export interface HighlightOverlaySpec<TTexture = unknown> {
   readonly texture: TTexture;
-  readonly visible: boolean;
   readonly alpha: number;
   readonly anchorX: number;
   readonly anchorY: number;
@@ -109,13 +112,7 @@ export interface HighlightOverlaySpec<TTexture = unknown> {
 /**
  * Builds the overlay spec for one source sprite of the hovered, in-reach
  * object -- everything [`highlightOverlayAlpha`] needs plus the rest of
- * the transform, mirrored straight from `source`. `visible` is carried
- * through unchanged (never computed here): a source that is currently
- * hidden (a floor-culled sprite, mid-hover) still gets a spec, so its own
- * overlay can mirror `visible = false` right along with it rather than
- * being skipped and left stale (Artie's direction) -- `render/
- * pixi-highlight.ts` is the one place that turns `visible: false` into
- * the overlay sprite actually disappearing.
+ * the transform, mirrored straight from `source`.
  */
 export function highlightOverlaySpec<TTexture>(
   source: HighlightSourceView<TTexture>,
@@ -124,7 +121,6 @@ export function highlightOverlaySpec<TTexture>(
 ): HighlightOverlaySpec<TTexture> {
   return {
     texture: source.texture,
-    visible: source.visible,
     alpha: highlightOverlayAlpha(ceilingAlpha, strength, source.alpha),
     anchorX: source.anchorX,
     anchorY: source.anchorY,

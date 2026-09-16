@@ -74,7 +74,6 @@ function sourceView(
 ): HighlightSourceView<string> {
   return {
     texture: "bin",
-    visible: true,
     alpha: 1,
     anchorX: 0.5,
     anchorY: 1,
@@ -114,10 +113,5 @@ describe("highlightOverlaySpec", () => {
   it("computes alpha through highlightOverlayAlpha, never a second formula", () => {
     const spec = highlightOverlaySpec(sourceView({ alpha: 0.5 }), CEILING, 60);
     expect(spec.alpha).toBeCloseTo(highlightOverlayAlpha(CEILING, 60, 0.5), 10);
-  });
-
-  it("carries the source's own visibility through unchanged, never recomputing it -- a hidden source still gets a spec, so its overlay can track it rather than being skipped and left stale", () => {
-    const spec = highlightOverlaySpec(sourceView({ visible: false }), CEILING, 100);
-    expect(spec.visible).toBe(false);
   });
 });

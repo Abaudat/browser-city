@@ -97,19 +97,25 @@ function median(values: readonly number[]): number {
 /** How long a single segment is allowed. */
 const SEGMENT_TIMEOUT_MS = 60_000;
 
-/** Parks the mouse over a real interactable prop's own drawn rect, once,
- * for the whole measured window (Tim's direction): before this, the
- * measured walk left the pointer wherever Playwright's own default put
- * it, so FR173's per-step hover resolution (`pointer.ts`'s `refresh`,
- * called every step `tick()` actually moves) and its highlight-applier
- * refresh (every frame, unconditionally) both ran *outside* the p95
- * frame-work gate. The bin stays out of reach for the whole bridge lap
- * (it never leaves the shopfront's own block), so this exercises the
- * pick-resolution cost every real session pays on every step, not the
- * additional per-overlay cost of a live mark -- that path's own cost is
- * covered by the lifecycle-hammering unit test
- * (`tests/unit/render/pixi-highlight.test.ts`) and the FR173 pixel e2e
- * spec (`test-street.spec.ts`), neither of which is a frame-budget gate. */
+/** How long the marked phase records for (Quentin's direction): a real,
+ * non-trivial share of frames must be measured with an object actually
+ * marked, or the gate proves nothing about the one genuinely new
+ * per-frame cost this story added. Independent of `RUN_MS`/`IS_SOAK` --
+ * this phase is a work-budget check, not a leak check, so it does not
+ * need to scale with the soak's own duration. */
+const MARKED_PHASE_MS = 5_000;
+
+/** Parks the mouse over a real interactable prop's own drawn rect, once
+ * (Tim's direction): before this, the measured walk left the pointer
+ * wherever Playwright's own default put it, so FR173's per-step hover
+ * resolution (`pointer.ts`'s `refresh`, called every step `tick()`
+ * actually moves) ran *outside* the p95 frame-work gate. Used for the
+ * main lap phase below (where the bin stays out of reach the whole time,
+ * exercising pick-resolution cost alone) and, separately, for the marked
+ * phase (where the player has walked into the bin's own `interact_at`
+ * first, so this also exercises `HighlightApplier`'s own per-frame
+ * `refresh` -- see that phase's own comment for why it is measured on its
+ * own window rather than folded into the lap). */
 async function hoverAnInteractableProp(page: Page): Promise<void> {
   const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
   if (!bin) throw new Error("the fixture no longer places a trash bin");
@@ -262,13 +268,28 @@ test("the frame path stays inside its work budget for a whole walked session (NF
   await page.evaluate(() => window.__bc?.startFrameTimings?.());
 
   const heapSamples: { atMs: number; usedHeapBytes: number }[] = [];
+  const frameSamples: number[] = [];
   const startedAt = Date.now();
   while (Date.now() - startedAt < RUN_MS) {
     await walkRoute(page, lap);
+    // Stop recording *before* `sampleHeapBytes()`'s own forced full GC
+    // (Quentin's direction): `HeapProfiler.collectGarbage` is a real
+    // main-thread stall, and with recording left running across it, that
+    // stall could land inside whichever ticker frame happened to be
+    // in-flight and get attributed to the app's own frame-work `max` --
+    // measuring the harness, not the game. Restarting immediately after
+    // means no frame is ever dropped for longer than one heap sample.
+    const batch = (await page.evaluate(() => window.__bc?.stopFrameTimings?.() ?? [])) as number[];
+    frameSamples.push(...batch);
     heapSamples.push({ atMs: Date.now() - startedAt, usedHeapBytes: await sampleHeapBytes() });
+    await page.evaluate(() => window.__bc?.startFrameTimings?.());
   }
+  const finalBatch = (await page.evaluate(
+    () => window.__bc?.stopFrameTimings?.() ?? [],
+  )) as number[];
+  frameSamples.push(...finalBatch);
 
-  const samples = (await page.evaluate(() => window.__bc?.stopFrameTimings?.() ?? [])) as number[];
+  const samples = frameSamples;
   expect(samples.length).toBeGreaterThan(100);
 
   const sorted = [...samples].sort((a, b) => a - b);
@@ -327,4 +348,76 @@ test("the frame path stays inside its work budget for a whole walked session (NF
       expect(last / first).toBeLessThanOrEqual(MAX_HEAP_GROWTH_RATIO_SHORT);
     }
   }
+
+  // --- the marked phase (Quentin's direction) -------------------------
+  // The lap above deliberately never marks anything -- the bin stays out
+  // of reach for the whole bridge lap -- so the one genuinely new
+  // per-frame cost this story added, `HighlightApplier`'s own `refresh`
+  // (mirroring every overlay sprite from its own source, live only while
+  // something is marked), was measured nowhere. A fresh reload back to
+  // `PLAYER_START` is the cheapest way to reach the bin's own
+  // `interact_at` with this file's own proven route segments, without
+  // threading a second route through wherever the lap above happened to
+  // leave the player.
+  await page.reload();
+  await page.waitForFunction(() => window.__bc?.playerAppearance !== undefined, undefined, {
+    timeout: 60_000,
+  });
+
+  const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
+  if (!bin) throw new Error("the fixture no longer places a trash bin");
+  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 4)) {
+    await walkSegment(page, segment);
+  }
+  await walkSegment(page, {
+    label: "under-the-bin",
+    key: "ArrowRight",
+    until: { kind: "x-at-least", value: bin.x },
+  });
+  await walkSegment(page, {
+    label: "up-into-the-bins-reach",
+    key: "ArrowUp",
+    until: { kind: "y-at-most", value: bin.y + 1 },
+  });
+
+  await hoverAnInteractableProp(page);
+  await expect
+    .poll(() => page.evaluate(() => window.__bc?.highlightedObjectId ?? null))
+    .toBe(bin.id.toString());
+
+  // A short, unrecorded settle: the hover transition itself builds the
+  // overlay once (`HighlightApplier.set`), which this phase is not
+  // measuring -- only the steady per-frame `refresh` cost while it stays
+  // marked, sitting completely still, is.
+  await page.waitForTimeout(300);
+
+  await page.evaluate(() => window.__bc?.startFrameTimings?.());
+  await page.waitForTimeout(MARKED_PHASE_MS);
+  const markedSamples = (await page.evaluate(
+    () => window.__bc?.stopFrameTimings?.() ?? [],
+  )) as number[];
+
+  expect(markedSamples.length).toBeGreaterThan(20);
+  const markedSorted = [...markedSamples].sort((a, b) => a - b);
+  const markedReport = {
+    markedPhaseMs: MARKED_PHASE_MS,
+    frames: markedSamples.length,
+    frameWorkMs: {
+      p50: percentile(markedSorted, 50),
+      p90: percentile(markedSorted, 90),
+      p95: percentile(markedSorted, 95),
+      p99: percentile(markedSorted, 99),
+      max: markedSorted[markedSorted.length - 1],
+    },
+  };
+  writeFileSync(
+    "test-results/story-1.13-perf/frame-work-marked.json",
+    `${JSON.stringify(markedReport, null, 2)}\n`,
+    "utf-8",
+  );
+
+  // The same budget the unmarked lap is held to -- a gate that only ever
+  // measures the feature switched off is not a gate.
+  expect(markedReport.frameWorkMs.p95).toBeLessThanOrEqual(P95_FRAME_WORK_MS);
+  expect(markedReport.frameWorkMs.max).toBeLessThanOrEqual(MAX_FRAME_WORK_MS);
 });

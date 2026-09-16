@@ -357,12 +357,14 @@ export interface StreetSceneHandle {
    * options-menu slider while an object is marked is visible without a
    * re-hover. */
   setHighlightStrength(strength: number): void;
-  /** Clears the mark and ignores pointer input until [`resumePointer`]
-   * (Artie's direction: the mark must never survive its context) --
-   * `main.ts` calls this from the options menu's own `onOpenChange(true)`. */
+  /** Ignores new pointer input (no new hovers, no clicks) until
+   * [`resumePointer`], without touching an already-true mark (Derek's
+   * direction) -- `main.ts` calls this from the options menu's own
+   * `onOpenChange(true)`. */
   suspendPointer(): void;
-  /** Re-resolves the hover at the last known pointer position, if any --
-   * `main.ts` calls this from `onOpenChange(false)`. */
+  /** Stops ignoring pointer input, and re-resolves the hover at the last
+   * known pointer position, if any -- `main.ts` calls this from
+   * `onOpenChange(false)`. */
   resumePointer(): void;
 
   // Story 1.12 (FR165): the reads `main.ts` assembles a `DebugWorldView`
@@ -707,10 +709,13 @@ export async function mountStreetScene(
 
   // FR173's affordance mark (`render/highlight.ts`/`render/pixi-highlight.ts`):
   // one `HighlightApplier` per scene, built once from the same
-  // `entries` this scene already has, and threaded through picking's own
-  // drawn-rect index below with no second lookup. `reorderFloor` (the one
-  // wrapper that calls `applyDepthOrder`) is the only place `reapply()`
-  // is ever called (Tim's direction) -- see that function, just below.
+  // `entries` this scene already has, threaded through picking's own
+  // drawn-rect index below with no second lookup, and given `app.ticker`
+  // itself so it can own its own per-frame `refresh` subscription
+  // (Quentin's direction: that guarantee belongs in the permanent module,
+  // not in this file). `reorderFloor` (the one wrapper that calls
+  // `applyDepthOrder`) is the only place this file calls `refresh()`
+  // directly -- see that function, just below.
   const spritesByObjectId = new Map<bigint, Sprite[]>();
   for (const entry of entries) {
     const id = entry.drawable.stableId;
@@ -722,6 +727,7 @@ export async function mountStreetScene(
     spritesByObjectId,
     highlightAlpha,
     highlightStrength,
+    app.ticker,
   );
 
   let walk: FloorWalkResult = {
@@ -784,10 +790,11 @@ export async function mountStreetScene(
     }
     applyDepthOrder(stacks.stackFor(floor).pool, list, order);
     // The one call site (Tim's direction): `applyDepthOrder`'s own
-    // `removeChildren()` drops every overlay along with anything else it
+    // `removeChildren()` orphans every overlay along with anything else it
     // does not own, so every re-sort re-attaches whatever is currently
-    // marked. A no-op while nothing is marked.
-    highlightApplier.reapply();
+    // marked (`refresh()` reuses the same overlay instances rather than
+    // rebuilding them). A no-op while nothing is marked.
+    highlightApplier.refresh();
   }
 
   function rebuildRenderOrder(): void {
@@ -1022,35 +1029,12 @@ export async function mountStreetScene(
 
   // FR173's affordance mark: `highlightApplier` (built above, straight
   // after `entries`) owns every overlay sprite this scene ever draws for
-  // it. `setHighlight` below is the whole of this file's own opinion on
-  // the mark -- gating `onHighlightChange` on the applier's own report of
-  // real change, never a second, separately-tracked id (Tim's direction).
-  //
-  // `highlightApplier.refresh()` (Artie's direction: the overlay tracks
-  // its source every frame it is alive, never a snapshot) only needs to
-  // run while something actually is alive -- so its own ticker callback
-  // is added and removed with the mark itself, never left registered for
-  // the scene's whole lifetime. A street of static props with nothing
-  // hovered -- the overwhelming majority of every session, including the
-  // whole of NFR2's own perf walk -- pays literally nothing for it,
-  // rather than one extra callback dispatch on every rendered frame
-  // forever for a feature idle 99% of the time.
-  let highlightTicking = false;
-  function refreshHighlightTick(): void {
-    highlightApplier.refresh();
-  }
-  function setHighlightTicking(active: boolean): void {
-    if (active === highlightTicking) return;
-    highlightTicking = active;
-    if (active) app.ticker.add(refreshHighlightTick);
-    else app.ticker.remove(refreshHighlightTick);
-  }
-
+  // it, and its own per-frame `refresh` subscription. `setHighlight` below
+  // is the whole of this file's own opinion on the mark -- gating
+  // `onHighlightChange` on the applier's own report of real change, never
+  // a second, separately-tracked id (Tim's direction).
   function setHighlight(objectId: bigint | undefined): void {
-    if (highlightApplier.set(objectId)) {
-      setHighlightTicking(objectId !== undefined);
-      onHighlightChange?.(objectId);
-    }
+    if (highlightApplier.set(objectId)) onHighlightChange?.(objectId);
   }
 
   function setHighlightStrength(strength: number): void {

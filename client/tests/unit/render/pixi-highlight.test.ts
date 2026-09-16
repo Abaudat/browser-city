@@ -1,10 +1,14 @@
 // `render/pixi-highlight.ts`'s own unit tests (Tim's direction, story
 // 1.15), against a real Pixi `Container`/`Sprite` -- the same idiom
-// `pixi-visibility.test.ts` and `pixi-order.test.ts` use.
+// `pixi-visibility.test.ts` and `pixi-order.test.ts` use. The ticker
+// itself is a plain fake (Quentin's direction): the permanent
+// subscribe/unsubscribe guarantee lives in this class now, so it is
+// proven here against a fake ticker rather than through a real Pixi
+// `Application`.
 
 import { Container, Sprite, Texture } from "pixi.js";
 import { describe, expect, it } from "vitest";
-import { HighlightApplier } from "../../../src/render/pixi-highlight";
+import { HighlightApplier, type HighlightTicker } from "../../../src/render/pixi-highlight";
 import { applyDepthOrder, type OrderedMember } from "../../../src/render/pixi-order";
 import type { Drawable } from "../../../src/render/sort-key";
 
@@ -16,13 +20,35 @@ function textureNamed(name: string): Texture {
   return texture;
 }
 
+/** A minimal, plain fake for `HighlightTicker` -- records every
+ * subscribed callback in a `Set` (so a double-`add` of the same function
+ * is never counted twice, matching what a real Pixi `Ticker` does), and
+ * exposes `tick()` to invoke everything currently subscribed, plus
+ * `listenerCount()` so a test can assert on the subscription itself, not
+ * only on its effect. */
+function fakeTicker(): HighlightTicker & { tick(): void; listenerCount(): number } {
+  const listeners = new Set<() => void>();
+  return {
+    add: (fn) => {
+      listeners.add(fn);
+    },
+    remove: (fn) => {
+      listeners.delete(fn);
+    },
+    tick: () => {
+      for (const fn of [...listeners]) fn();
+    },
+    listenerCount: () => listeners.size,
+  };
+}
+
 describe("HighlightApplier", () => {
   it("marking an object builds one overlay per source sprite, inserted directly above its own source", () => {
     const parent = new Container();
     const a = new Sprite(Texture.EMPTY);
     const b = new Sprite(Texture.EMPTY);
     parent.addChild(a, b);
-    const applier = new HighlightApplier(new Map([[1n, [a, b]]]), CEILING, 100);
+    const applier = new HighlightApplier(new Map([[1n, [a, b]]]), CEILING, 100, fakeTicker());
 
     expect(applier.set(1n)).toBe(true);
 
@@ -41,7 +67,7 @@ describe("HighlightApplier", () => {
     const parent = new Container();
     const a = new Sprite(Texture.EMPTY);
     parent.addChild(a);
-    const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100);
+    const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100, fakeTicker());
 
     applier.set(undefined);
     expect(parent.children).toHaveLength(1);
@@ -52,7 +78,7 @@ describe("HighlightApplier", () => {
     const parent = new Container();
     const a = new Sprite(Texture.EMPTY);
     parent.addChild(a);
-    const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100);
+    const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100, fakeTicker());
 
     applier.set(1n);
     expect(parent.children).toHaveLength(2);
@@ -63,7 +89,7 @@ describe("HighlightApplier", () => {
 
   it("a source sprite with no parent is skipped, never throwing and never leaving an orphan overlay", () => {
     const orphan = new Sprite(Texture.EMPTY);
-    const applier = new HighlightApplier(new Map([[1n, [orphan]]]), CEILING, 100);
+    const applier = new HighlightApplier(new Map([[1n, [orphan]]]), CEILING, 100, fakeTicker());
     expect(() => applier.set(1n)).not.toThrow();
     expect(applier.current()).toBe(1n);
   });
@@ -80,6 +106,7 @@ describe("HighlightApplier", () => {
       ]),
       CEILING,
       100,
+      fakeTicker(),
     );
 
     applier.set(1n);
@@ -95,7 +122,7 @@ describe("HighlightApplier", () => {
       const parent = new Container();
       const a = new Sprite(Texture.EMPTY);
       parent.addChild(a);
-      const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100);
+      const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100, fakeTicker());
 
       expect(applier.set(1n)).toBe(true);
       const overlayFirst = parent.children[parent.getChildIndex(a) + 1];
@@ -107,7 +134,7 @@ describe("HighlightApplier", () => {
     });
 
     it("set(undefined) repeatedly while nothing is marked is also a no-op", () => {
-      const applier = new HighlightApplier(new Map(), CEILING, 100);
+      const applier = new HighlightApplier(new Map(), CEILING, 100, fakeTicker());
       expect(applier.set(undefined)).toBe(false);
       expect(applier.set(undefined)).toBe(false);
     });
@@ -118,7 +145,7 @@ describe("HighlightApplier", () => {
     const a = new Sprite(Texture.EMPTY);
     a.alpha = 1;
     parent.addChild(a);
-    const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 60);
+    const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 60, fakeTicker());
 
     applier.set(1n);
     const overlay = parent.children[parent.getChildIndex(a) + 1] as Sprite;
@@ -131,6 +158,77 @@ describe("HighlightApplier", () => {
     expect(overlay.alpha).toBeCloseTo(CEILING, 10);
   });
 
+  describe("the refresh ticker subscription (Quentin's direction)", () => {
+    it("subscribes on the first real mark, unsubscribes on the transition back to undefined", () => {
+      const parent = new Container();
+      const a = new Sprite(Texture.EMPTY);
+      parent.addChild(a);
+      const ticker = fakeTicker();
+      const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100, ticker);
+
+      expect(ticker.listenerCount()).toBe(0);
+      applier.set(1n);
+      expect(ticker.listenerCount()).toBe(1);
+      applier.set(undefined);
+      expect(ticker.listenerCount()).toBe(0);
+    });
+
+    it("never double-subscribes across a hammered hover sequence", () => {
+      const parent = new Container();
+      const a = new Sprite(Texture.EMPTY);
+      const b = new Sprite(Texture.EMPTY);
+      parent.addChild(a, b);
+      const ticker = fakeTicker();
+      const applier = new HighlightApplier(
+        new Map([
+          [1n, [a]],
+          [2n, [b]],
+        ]),
+        CEILING,
+        100,
+        ticker,
+      );
+
+      for (let i = 0; i < 50; i++) {
+        applier.set(BigInt((i % 2) + 1)); // 1n, 2n, 1n, 2n, ... always a real transition
+        expect(ticker.listenerCount()).toBe(1);
+      }
+      applier.set(undefined);
+      expect(ticker.listenerCount()).toBe(0);
+    });
+
+    it("set(undefined) is the one teardown path, and it unsubscribes even mid-hammering (no separate destroy())", () => {
+      const parent = new Container();
+      const a = new Sprite(Texture.EMPTY);
+      parent.addChild(a);
+      const ticker = fakeTicker();
+      const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100, ticker);
+
+      applier.set(1n);
+      expect(ticker.listenerCount()).toBe(1);
+      applier.set(undefined);
+      expect(ticker.listenerCount()).toBe(0);
+      // Idempotent: tearing down twice never double-unsubscribes or throws.
+      expect(() => applier.set(undefined)).not.toThrow();
+      expect(ticker.listenerCount()).toBe(0);
+    });
+
+    it("ticking the subscribed callback runs a real refresh -- moving the source moves the overlay with no caller-driven refresh() call", () => {
+      const parent = new Container();
+      const a = new Sprite(Texture.EMPTY);
+      a.x = 1;
+      parent.addChild(a);
+      const ticker = fakeTicker();
+      const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100, ticker);
+      applier.set(1n);
+      const overlay = parent.children[parent.getChildIndex(a) + 1] as Sprite;
+
+      a.x = 77;
+      ticker.tick();
+      expect(overlay.x).toBe(77);
+    });
+  });
+
   describe("refresh() tracks a live source, never a snapshot (Artie's direction)", () => {
     it("mirrors a moved/rescaled/retextured source onto the same overlay instance", () => {
       const parent = new Container();
@@ -138,7 +236,7 @@ describe("HighlightApplier", () => {
       a.x = 10;
       a.y = 20;
       parent.addChild(a);
-      const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100);
+      const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100, fakeTicker());
       applier.set(1n);
       const overlay = parent.children[parent.getChildIndex(a) + 1] as Sprite;
 
@@ -162,7 +260,7 @@ describe("HighlightApplier", () => {
       const parent = new Container();
       const a = new Sprite(Texture.EMPTY);
       parent.addChild(a);
-      const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100);
+      const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100, fakeTicker());
       applier.set(1n);
       expect(parent.children).toHaveLength(2);
 
@@ -179,28 +277,30 @@ describe("HighlightApplier", () => {
       const parent = new Container();
       const a = new Sprite(Texture.EMPTY);
       parent.addChild(a);
-      const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100);
+      const applier = new HighlightApplier(new Map([[1n, [a]]]), CEILING, 100, fakeTicker());
       applier.refresh();
       expect(parent.children).toHaveLength(1);
     });
   });
 
-  describe("reapply() after a real removeChildren-and-refill", () => {
-    it("restores exactly one overlay per visible source sprite, and zero for an invisible one", () => {
+  describe("refresh() after a real removeChildren-and-refill (a re-sort)", () => {
+    it("re-attaches the same overlay instances -- one per visible source sprite, zero for an invisible one -- allocating no new Sprite", () => {
       const container = new Container();
       const a = new Sprite(Texture.EMPTY);
       const b = new Sprite(Texture.EMPTY);
       b.visible = false;
       container.addChild(a, b);
 
-      const applier = new HighlightApplier(new Map([[1n, [a, b]]]), CEILING, 100);
+      const applier = new HighlightApplier(new Map([[1n, [a, b]]]), CEILING, 100, fakeTicker());
       applier.set(1n);
       expect(container.children).toHaveLength(3); // a, a's overlay, b (no overlay: hidden)
+      const overlayOfA = container.children.find((c) => c !== a && c !== b) as Sprite;
 
       // The real sequence `test-street/scene.ts`'s `reorderFloor` runs:
       // `applyDepthOrder` calls `removeChildren()` then re-adds only the
-      // members it owns -- dropping every overlay along with anything
-      // else it does not itself own.
+      // members it owns -- orphaning every overlay along with anything
+      // else it does not itself own (their own `.parent` becomes `null`;
+      // `overlayOfA` itself is untouched otherwise, still the same object).
       const members: OrderedMember[] = [
         { drawable: drawableOf(1n, 0), view: a },
         { drawable: drawableOf(2n, 1), view: b },
@@ -208,23 +308,27 @@ describe("HighlightApplier", () => {
       const order: bigint[] = [];
       applyDepthOrder(container, members, order);
       expect(container.children).toHaveLength(2); // overlay dropped by removeChildren
+      expect(overlayOfA.parent).toBeNull();
 
-      applier.reapply();
+      applier.refresh();
       expect(container.children).toHaveLength(3); // exactly one overlay restored, for a only
       expect(container.children.includes(a)).toBe(true);
       expect(container.children.includes(b)).toBe(true);
+      // The re-attached overlay is the very same instance, not a rebuild.
+      expect(container.children.includes(overlayOfA)).toBe(true);
+      expect(container.children[container.getChildIndex(a) + 1]).toBe(overlayOfA);
     });
 
     it("is a no-op while nothing is marked", () => {
       const container = new Container();
-      const applier = new HighlightApplier(new Map(), CEILING, 100);
-      applier.reapply();
+      const applier = new HighlightApplier(new Map(), CEILING, 100, fakeTicker());
+      applier.refresh();
       expect(container.children).toHaveLength(0);
     });
   });
 
   describe("lifecycle hammering: hover/un-hover cycles, strength changes and a visibility change interleaved", () => {
-    it("ends with the same container child count and the same number of live sprites, before and after destroy()", () => {
+    it("ends with the same container child count and the same number of live sprites, before and after the final set(undefined)", () => {
       const parent = new Container();
       const sprites = Array.from({ length: 5 }, () => {
         const s = new Sprite(Texture.EMPTY);
@@ -234,7 +338,8 @@ describe("HighlightApplier", () => {
       const spritesByObjectId = new Map<bigint, Sprite[]>(
         sprites.map((s, i) => [BigInt(i + 1), [s]]),
       );
-      const applier = new HighlightApplier(spritesByObjectId, CEILING, 60);
+      const ticker = fakeTicker();
+      const applier = new HighlightApplier(spritesByObjectId, CEILING, 60, ticker);
       const baselineCount = parent.children.length;
 
       for (let i = 0; i < 200; i++) {
@@ -246,15 +351,14 @@ describe("HighlightApplier", () => {
           if (target) target.visible = i % 14 !== 0;
         }
         applier.refresh();
+        ticker.tick(); // the same subscribed path a real per-frame session drives
         if (i % 11 === 0) applier.set(undefined);
       }
       applier.set(undefined);
 
       expect(parent.children.length).toBe(baselineCount);
       expect(parent.children.every((c) => c instanceof Sprite)).toBe(true);
-
-      applier.destroy();
-      expect(parent.children.length).toBe(baselineCount);
+      expect(ticker.listenerCount()).toBe(0);
     });
   });
 });

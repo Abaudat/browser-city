@@ -178,6 +178,20 @@ async function hoverCell(page: Page, cellX: number, cellY: number, floor: number
   await canvasOf(page).hover({ position });
 }
 
+/** Drives the real U1 dial through the real options menu -- `Escape` opens
+ * it, the highlight slider's own committed ('change') value is what
+ * `main.ts` forwards into `StreetSceneHandle.setHighlightStrength`,
+ * `Escape` closes it again. Used by the FR173 pixel spec to derive a
+ * diff-coverage floor from the object's own dial-100 behaviour, never a
+ * hardcoded pixel count. */
+async function setHighlightStrengthViaMenu(page: Page, value: number): Promise<void> {
+  await page.keyboard.press("Escape");
+  const slider = page.locator("[data-bc-highlight-slider]");
+  await slider.fill(String(value));
+  await slider.dispatchEvent("change");
+  await page.keyboard.press("Escape");
+}
+
 /** The bin's own drawn rect, in canvas pixels, padded by a couple of
  * pixels of rounding slack -- the region every FR173 overlay pixel for it
  * must fall inside. The art is a real, known 16x32 LimeZu asset on a 1x1
@@ -849,7 +863,6 @@ test("FR173's affordance mark is a real pixel change, confined to the hovered ob
     .toBe(bin.id.toString());
   const hoveredInReach = await canvasOf(page).screenshot({ animations: "disabled" });
   const diffFromBaseline = pixelDiffCoords(baselineInReach, hoveredInReach);
-  expect(diffFromBaseline.length).toBeGreaterThan(0);
   // Nothing bleeds onto the bin's own tile, its neighbours or the ground
   // pass: every differing pixel lies inside the bin's own drawn rect.
   for (const { x, y } of diffFromBaseline) {
@@ -858,6 +871,28 @@ test("FR173's affordance mark is a real pixel change, confined to the hovered ob
     expect(y).toBeGreaterThanOrEqual(binRect.y0);
     expect(y).toBeLessThanOrEqual(binRect.y1);
   }
+
+  // A floor derived from the object's own behaviour, not a magic number
+  // (Quentin's direction): `expect(...).toBeGreaterThan(0)` alone passes
+  // on one accidentally-lit pixel, which an overlay built at near-zero
+  // alpha, or built for only one of several source drawables, would still
+  // satisfy while the affordance itself was broken. The dial at 100 is
+  // the strongest this object can ever be marked, so its own diff-pixel
+  // coverage is the natural ceiling to hold the default dial's own
+  // coverage to a meaningful share of -- self-calibrating against the
+  // real art, never re-tuned by hand when the art changes.
+  await hoverCell(page, away.x, away.y, away.floor);
+  await setHighlightStrengthViaMenu(page, 100);
+  await hoverCell(page, bin.x, bin.y, bin.floor);
+  await expect
+    .poll(() => page.evaluate(() => window.__bc?.highlightedObjectId ?? null))
+    .toBe(bin.id.toString());
+  const hoveredAt100 = await canvasOf(page).screenshot({ animations: "disabled" });
+  const diffAt100 = pixelDiffCoords(baselineInReach, hoveredAt100);
+
+  const MIN_COVERAGE_RATIO = 0.5;
+  expect(diffAt100.length).toBeGreaterThan(0);
+  expect(diffFromBaseline.length).toBeGreaterThanOrEqual(diffAt100.length * MIN_COVERAGE_RATIO);
 
   // The pointer moving on leaves nothing behind -- back to the baseline
   // within zero tolerance, so "leaves nothing behind" is measured, not

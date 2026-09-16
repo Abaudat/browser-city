@@ -149,10 +149,13 @@ async function startStreetScene(): Promise<void> {
     onOpenChange: (open) => {
       if (open) {
         keyboard.suspend();
-        // Artie's direction: the mark must never survive its context. The
-        // menu is a DOM panel drawn over the canvas, so a stationary mouse
-        // never fires `pointerleave` on it -- suspending the pointer glue
-        // directly is what clears a lit prop from underneath the backdrop.
+        // Derek's direction: the menu opening does not make the pointer's
+        // own position or the player's own reach any less true -- an
+        // already-lit prop stays lit under the backdrop (the menu is a
+        // DOM panel drawn over the canvas, so a stationary mouse never
+        // fires `pointerleave` on it). Suspending only ignores *new*
+        // pointer events -- no new hovers, no clicks -- until the menu
+        // closes.
         sceneHandle?.suspendPointer();
       } else {
         keyboard.resume();

@@ -70,7 +70,7 @@ Both are legal under existing decisions with no amendment required:
 | Out-of-fiction form | The browser cursor changes to a pointer |
 | Reachable but not hovered | No treatment. The world is not pre-lit |
 | Hovered but **not** reachable | Cursor changes; the in-world highlight is **withheld** — this is how the player learns reachability without being told |
-| Strength | Settled at 18% additive alpha (`render.highlight_alpha`), scaled by a player-facing dial floored at 20% and defaulted at 60% (`docs/architecture.md`'s Affordance section) — judged by hovering the densest street the test scene produces, at 3× zoom, against a dark prop (the trash bin) and a pale one (the shop window's furniture behind the glass); 18% is the weakest value that still read on both without needing colour to carry the state |
+| Strength | Settled at 50% additive alpha (`render.highlight_alpha`) as the ceiling, scaled by a player-facing dial floored at 20% and defaulted at 60% (`docs/architecture.md`'s Affordance section) — putting the default dial's own effective brighten at 30%. Judged on full-viewport screenshots of the densest street the test scene produces, unmarked against marked, against a dark prop (the trash bin) and a pale one (the shop counter), at the default dial and at the floor; a first value of 18% measured as only a ~5% brighten at the default dial and did not read reliably in that comparison even with the object already known, which is the failure this affordance exists to prevent |
 | Persistence | None. The highlight exists only while hovered and is never a state the world holds |
 
 **What is explicitly excluded:** no floating icons, no labels, no tooltips, no interaction prompts, no outline on every interactable at once, no pulsing to attract attention. These are the affordances the design laws forbid, and none is needed once hover carries the information.
@@ -235,7 +235,7 @@ Deferring accessibility is a legitimate call for a solo passion project. **Defer
 
 | # | Item | Disposition |
 |---|---|---|
-| **U1** | Affordance treatment strength — brightening amount | Settled (§1): 18% additive alpha as the ceiling, a `[20, 100]` player dial defaulted at 60%, both tuned by playing on the densest street the test scene produces |
+| **U1** | Affordance treatment strength — brightening amount | Settled (§1): 50% additive alpha as the ceiling (the default dial's own effective brighten is 30%), a `[20, 100]` player dial defaulted at 60%, judged on full-viewport marked-vs-unmarked screenshots of the densest street the test scene produces |
 | **U2** | Whether hands should hold more than one item | Starts at one. Revisit only if the civic-verb loop or a procedure demonstrably needs two |
 | **U3** | A1, the procedure interaction model | Unchanged — prototyped in Epic 8, under the two constraints in §6 |
 | **U4** | Container view dismissal on walking away — distance and whether it is animated | Falls out of the Epic 6 implementation; no decision needed in advance |
