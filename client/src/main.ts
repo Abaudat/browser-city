@@ -247,7 +247,15 @@ async function startStreetScene(): Promise<void> {
       storeyHeightPx,
       colliderSubcellsPerCell: movementConfig.subcellsPerCell,
       viewerFloor: () => handle.currentFloor(),
-      viewportCells: () => visibleCells(app, handle.currentFloor(), tileSizePx, storeyHeightPx),
+      viewportCells: () =>
+        visibleCells(
+          app.renderer.width,
+          app.renderer.height,
+          lastViewTransform ?? { zoom: 1, offsetX: 0, offsetY: 0 },
+          handle.currentFloor(),
+          tileSizePx,
+          storeyHeightPx,
+        ),
       entriesInCell: (floor, cellX, cellY) => handle.collidersInCell(floor, cellX, cellY),
       objects: (bounds) => handle.worldObjects(bounds),
       pool: () => handle.poolDrawables(),
@@ -270,22 +278,23 @@ async function startStreetScene(): Promise<void> {
 
 /**
  * Story 1.12: the cells currently on screen, on `floor` -- the window
- * every debug overlay's cost is bounded by. Derived from the renderer's
- * own size and `render/screen-position.ts`'s own inverse projection, so
- * it can never disagree with where the scene actually drew; the world
- * container's zoom and offset are undone by asking for the world point
- * at each canvas corner in the scene's own coordinate space.
+ * every debug overlay's cost is bounded by.
+ *
+ * Built from the camera the scene *reported* (`onViewTransform`) and
+ * `render/screen-position.ts`'s own inverse projection, never by reaching
+ * into the Pixi display list for a container's scale: the debug side
+ * consumes the scene's own declared events, exactly as the overlays
+ * consume `DebugWorldView` rather than the street.
  */
 function visibleCells(
-  app: Application,
+  rendererWidth: number,
+  rendererHeight: number,
+  camera: { readonly zoom: number; readonly offsetX: number; readonly offsetY: number },
   floor: number,
   tileSizePx: number,
   storeyHeightPx: number,
 ): CellBounds {
-  const world = app.stage.children[0];
-  const zoom = world?.scale.x ?? 1;
-  const offsetX = world?.position.x ?? 0;
-  const offsetY = world?.position.y ?? 0;
+  const { zoom, offsetX, offsetY } = camera;
   const topLeft = worldCellFromScreenPx(
     -offsetX / zoom,
     -offsetY / zoom,
@@ -294,8 +303,8 @@ function visibleCells(
     storeyHeightPx,
   );
   const bottomRight = worldCellFromScreenPx(
-    (app.renderer.width - offsetX) / zoom,
-    (app.renderer.height - offsetY) / zoom,
+    (rendererWidth - offsetX) / zoom,
+    (rendererHeight - offsetY) / zoom,
     floor,
     tileSizePx,
     storeyHeightPx,
