@@ -76,6 +76,66 @@ pub const MAX_FOOTPRINT_CELLS: i64 = 8;
 /// here, not by convention alone.
 pub const SPRITE_SHEET_ALLOWED_ROOT: &str = "ModernTileset/";
 
+/// Story 2.6: every atlas page is this wide, always -- the AC's own
+/// "2048x2048" read as a cap on both axes (Tim's direction). A page's own
+/// height is the smallest power of two (at least [`ATLAS_PAGE_MIN_HEIGHT`])
+/// that holds its packed shelves, never taller than this.
+pub const ATLAS_PAGE_WIDTH: u32 = 2048;
+
+/// The tallest an atlas page may ever be -- see [`ATLAS_PAGE_WIDTH`].
+pub const ATLAS_PAGE_MAX_HEIGHT: u32 = 2048;
+
+/// The shortest a packed page may ever be, before rounding up to the next
+/// power of two.
+pub const ATLAS_PAGE_MIN_HEIGHT: u32 = 16;
+
+/// NFR12's build-time assertion (Tim's direction): a single theme group
+/// that needs more pages than this fails the build, naming the group and
+/// what did not fit. Four themes at two pages each is the "around eight"
+/// simultaneously-bound textures a typical scene targets.
+pub const ATLAS_MAX_PAGES_PER_GROUP: usize = 2;
+
+/// A 1px border of extruded (edge-repeated, never transparent -- Artie's
+/// direction) pixels surrounds every packed rect on every side, always --
+/// nearest-neighbour sampling plus this is what stops bleed at a
+/// fractional camera position or a DPR-scaled canvas.
+pub const ATLAS_GUTTER_PX: u32 = 1;
+
+/// The one directory every packed atlas page lands in, relative to the
+/// repo root -- wholly owned by a `defs-build` run
+/// (`fsio::sync_binary_dir`), outside `client/`'s own build inputs but
+/// fetched by the client at runtime, so `ci.yml`'s `defs:` filter names it
+/// explicitly (`scripts/ci/check-atlas-filter.sh` pins the two together,
+/// the same idiom as `check-defs-sprite-root-filter.sh`).
+pub const ATLAS_PAGES_DIR: &str = "client/public/atlas";
+
+/// One packed object sprite's placement: `page` indexes
+/// [`Defs`]'s own `atlas_pages`; `x`/`y`/`w`/`h` are the object's whole
+/// sprite, in page pixels, gutter excluded. JSON-only (Tim's direction):
+/// the server never learns a page exists, so this never reaches
+/// `server/sim/src/generated/defs.rs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AtlasRect {
+    pub page: u32,
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+}
+
+/// One packed atlas page (story 2.6): `file` is content-hashed
+/// (`<group>-<hash>.png`, the hash over the page's own pixels -- never its
+/// PNG bytes, so re-encoding never renames a page whose content is
+/// unchanged), `group` is the theme-sorter-derived key every object on
+/// this page shares.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AtlasPageDef {
+    pub file: String,
+    pub group: String,
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Story 2.4 (FR128): the walkability invariant's own vocabulary, not a
 /// hard-coded allow-list of object keys (Tim's direction) -- an object
 /// with no `collider` must carry this tag, declared once in `defs/tags/

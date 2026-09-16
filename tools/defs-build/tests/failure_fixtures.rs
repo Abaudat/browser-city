@@ -15,8 +15,8 @@ mod support;
 use std::path::{Path, PathBuf};
 
 use support::{
-    build_err, build_err_enforcing_sheet_root, layer_codes, merged_tree, read_tree, sheet_dims,
-    valid_dir,
+    build_err, build_err_enforcing_sheet_root, layer_codes, merged_tree, object_sheet_bytes,
+    read_tree, sheet_dims, valid_dir,
 };
 
 #[test]
@@ -560,7 +560,14 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
         std::fs::write(&manifest_out, "sentinel manifest\n").unwrap();
 
         let files = merged_tree(category);
-        let result = defs_build::build(&files, &sheet_dims(), &layer_codes(), "", "test-version");
+        let result = defs_build::build(
+            &files,
+            &sheet_dims(),
+            &object_sheet_bytes(),
+            &layer_codes(),
+            "",
+            "test-version",
+        );
         assert!(result.is_err(), "'{category}' was expected to fail");
         if let Ok(output) = result {
             defs_build::fsio::atomic_write(&rust_out, &output.rust).unwrap();
@@ -592,6 +599,13 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
 #[test]
 fn the_valid_base_tree_builds_cleanly() {
     let files = read_tree(&valid_dir());
-    let result = defs_build::build(&files, &sheet_dims(), &layer_codes(), "", "test-version");
+    let result = defs_build::build(
+        &files,
+        &sheet_dims(),
+        &object_sheet_bytes(),
+        &layer_codes(),
+        "",
+        "test-version",
+    );
     assert!(result.is_ok(), "valid fixture failed: {:?}", result.err());
 }

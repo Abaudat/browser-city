@@ -74,6 +74,17 @@ check "the ws://127.0.0.1 local-dev fallback leaking into production fails" 1 ba
 d="$(good_dist)"
 check "the expected production URI missing from the bundle fails" 1 bash "$CHECK" "$d" "$BASE" "wss://a-different-uri.example/ws"
 
+# Story 2.6: every atlas page defs.json names must exist under dist/atlas/.
+d="$(good_dist)"
+mkdir -p "$d/atlas"
+printf '{"atlas_pages":[{"file":"city_props-abc.png"}]}' > "$d/defs/defs.json"
+printf 'fake png' > "$d/atlas/city_props-abc.png"
+check "every atlas page defs.json names exists under dist/atlas/ passes" 0 bash "$CHECK" "$d" "$BASE" "$URI"
+
+d="$(good_dist)"
+printf '{"atlas_pages":[{"file":"city_props-abc.png"}]}' > "$d/defs/defs.json"
+check "a defs.json-named atlas page missing from dist/atlas/ fails" 1 bash "$CHECK" "$d" "$BASE" "$URI"
+
 d="$(fake_dir)"
 check "a dist directory with no index.html fails" 1 bash "$CHECK" "$d" "$BASE" "$URI"
 

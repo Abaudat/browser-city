@@ -31,6 +31,28 @@ export interface SpriteRect {
   readonly h: number;
 }
 
+/** One packed atlas page placement (story 2.6): `page` indexes
+ * `Defs.atlasPages`; `x`/`y`/`w`/`h` are the object's whole sprite, in
+ * page pixels, the 1px gutter excluded. JSON-only, exactly like every
+ * field on this type -- the server never learns a page exists. */
+export interface AtlasRect {
+  readonly page: number;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** One packed atlas page (story 2.6): `file` is a content-hashed filename
+ * under `client/public/atlas/`, `group` is the theme-sorter-derived key
+ * every object on this page shares. */
+export interface AtlasPageDef {
+  readonly file: string;
+  readonly group: string;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface ObjectDef {
   readonly id: number;
   readonly key: string;
@@ -42,6 +64,10 @@ export interface ObjectDef {
    * name. */
   readonly layer: number;
   readonly sprite: SpriteRect;
+  /** Story 2.6: where this object's sprite lives in a packed atlas page --
+   * required, never optional (an object without one is a build failure,
+   * never a runtime fallback to `sprite.sheet`). */
+  readonly atlas: AtlasRect;
   readonly width: number;
   readonly height: number;
   /** Absent means walkable (FR128) -- there is no separate `walkable`
@@ -210,6 +236,10 @@ export interface Defs {
    * this -- generated once by `tools/defs-build` into both artefacts,
    * never a client-side literal. */
   readonly maxFootprintCells: number;
+  /** NFR12's build-time cap, emitted alongside `maxFootprintCells` --
+   * never a client-side literal. */
+  readonly atlasMaxPagesPerGroup: number;
+  readonly atlasPages: readonly AtlasPageDef[];
   readonly objects: readonly ObjectDef[];
   readonly items: readonly ItemDef[];
   readonly recipes: readonly RecipeDef[];

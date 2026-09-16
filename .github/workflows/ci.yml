@@ -129,6 +129,13 @@ jobs:
               # not just the client's own test (already covered by
               # fixtures/** below via its own filter membership elsewhere).
               - 'fixtures/**'
+              # Story 2.6: the packed atlas pages this job's own
+              # check-defs-current.sh regenerates and diffs -- outside
+              # client/**, so listed explicitly here
+              # (scripts/ci/check-atlas-filter.sh pins this line to
+              # tools/defs-build/src/model.rs's own ATLAS_PAGES_DIR, so
+              # the two can never drift).
+              - 'client/public/atlas/**'
             # Story 1.14, cycle 2 (Quentin's direction): the boot-budget
             # harness has never run on Linux (`boot-budget.yml` is
             # workflow_dispatch-only), and the script has Windows-specific
@@ -249,6 +256,8 @@ jobs:
         run: bash ../../scripts/ci/check-no-walkable-field.sh
       - name: story 2.2, ci.yml's defs filter covers the whole sprite-sheet allowed root
         run: bash ../../scripts/ci/check-defs-sprite-root-filter.sh
+      - name: story 2.6, ci.yml's defs filter covers the packed atlas pages directory
+        run: bash ../../scripts/ci/check-atlas-filter.sh
       - name: story 2.10 AC3, the rule engine never hardcodes a content key
         run: bash ../../scripts/ci/check-rule-engine-no-content-keys.sh
       # Quentin's direction, cycle 2: client-check's own filter (client/**,

@@ -12,8 +12,25 @@ edition = "2024"
 # Native-only tooling: never a dependency of `browser_city` or the client
 # bundle (docs/architecture.md's Stack table). `toml`, because `defs/` is
 # TOML (the naming table's own `city-props.toml` example); `serde`
-# (derive) is already-sanctioned native-only tooling. No other dependency
-# is approved for this crate.
+# (derive) is already-sanctioned native-only tooling. `png` (pinned exact)
+# is story 2.6's atlas packer: real PNG decode/encode is needed to pack
+# the used sprite subset (the tileset ships palette, RGB and RGBA
+# sources), and hand-rolling an inflate is not worth it for two calls
+# (Tim's direction, full impact analysis on issue #70) -- its transitive
+# closure (bitflags, crc32fast, fdeflate, flate2, miniz_oxide) is pure
+# Rust, MIT/Apache, no C, already cached by the `defs` job's
+# Swatinem/rust-cache. Never a dependency of `browser_city` or the client
+# bundle, same as `toml`/`serde` above.
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+png = "=0.18.1"
+
+# Property testing, story 2.6 (Quentin's direction): the packer's own
+# geometry is proptested (no-overlap, in-bounds, no-rotation, determinism)
+# -- docs/architecture.md's Stack table extends its existing "dev-dependency
+# of sim only" row to this crate too. Case count from PROPTEST_CASES (the
+# workflow-level env var `proptest` itself reads), exactly like `sim`'s own
+# proptests.
+[dev-dependencies]
+proptest = "1"

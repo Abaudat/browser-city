@@ -71,6 +71,22 @@ fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .into_iter()
         .collect();
 
+    // Story 2.6: every object's own `sprite.sheet`, read whole -- the
+    // atlas packer's real pixel input. Appearance part sheets are not
+    // included: they are not packed by this story (lazily-fetched
+    // `ImageBitmap`s stay their own thing -- docs/architecture.md's
+    // "Appearance" section).
+    let mut object_sheet_paths = object_sprite_sheet_paths(&raw);
+    object_sheet_paths.sort();
+    object_sheet_paths.dedup();
+    let object_sheet_paths_buf: Vec<PathBuf> =
+        object_sheet_paths.iter().map(PathBuf::from).collect();
+    let object_sheet_bytes: BTreeMap<String, Vec<u8>> =
+        fsio::read_bytes(root, &object_sheet_paths_buf)?
+            .into_iter()
+            .map(|(p, bytes)| (p.to_string_lossy().replace('\\', "/"), bytes))
+            .collect();
+
     // Story 2.2: a `layer` name resolves against the codes golden --
     // `sim::codes::layer`'s single append-only ladder -- never a second,
     // hand-maintained list in this crate.
@@ -80,6 +96,7 @@ fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let output = build(
         &text_files,
         &sheet_dims,
+        &object_sheet_bytes,
         &layer_codes,
         model::SPRITE_SHEET_ALLOWED_ROOT,
         &defs_version,
@@ -88,15 +105,22 @@ fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let rust_path = root.join("server/sim/src/generated/defs.rs");
     let json_path = root.join("client/public/defs/defs.json");
     let manifest_path = root.join("tools/defs-build/goldens/defs-manifest.golden");
+    let atlas_dir = root.join(model::ATLAS_PAGES_DIR);
     fsio::atomic_write(&rust_path, &output.rust)?;
     fsio::atomic_write(&json_path, &output.json)?;
     fsio::atomic_write(&manifest_path, &output.id_manifest)?;
+    // Story 2.6: this directory is wholly owned by this run -- anything
+    // in it this run did not write is deleted, so a stale page never
+    // outlives the group or object that produced it (Tim's direction).
+    fsio::sync_binary_dir(&atlas_dir, &output.atlas_pages)?;
 
     eprintln!(
-        "defs-build: wrote {}, {} and {} (defs_version {defs_version})",
+        "defs-build: wrote {}, {}, {} and {} atlas page(s) under {} (defs_version {defs_version})",
         rust_path.display(),
         json_path.display(),
-        manifest_path.display()
+        manifest_path.display(),
+        output.atlas_pages.len(),
+        atlas_dir.display()
     );
     Ok(())
 }

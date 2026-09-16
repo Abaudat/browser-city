@@ -11,7 +11,7 @@ cited here by identifier.
 | Server module                 | Rust, edition 2024, `crate-type = ["cdylib"]`, target `wasm32-unknown-unknown`                           |
 | Server, database, replication | SpacetimeDB 2.9.x — the `spacetimedb` crate                                                              |
 | Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the table-bounds registry), and the `browser_city` module crate, which depends on both |
-| Property testing (server)     | `proptest`, dev-dependency of `sim` only; case count from `PROPTEST_CASES`                              |
+| Property testing (server)     | `proptest`, dev-dependency of `sim` and `tools/defs-build` only; case count from `PROPTEST_CASES`       |
 | Property testing (client)     | `fast-check` 4.10.0, pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
 | E2E pixel compare             | `pixelmatch` 7.2.0 + `pngjs` 7.0.0 (`@types/pngjs` 6.0.5), pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
 | Boot-budget HTTPS preview     | `@vitejs/plugin-basic-ssl` 2.3.0, pinned, `devDependency` of `client` only; enabled only when `BC_BOOT_HTTPS=1` (the boot-budget harness), never for `npm run dev`/`preview` defaults, never in the built bundle |
@@ -28,7 +28,7 @@ cited here by identifier.
 | Art source                    | `ModernTileset/` — whole-object PNGs, nothing pre-split                                                  |
 | Backup encryption             | `gpg --symmetric`                                                                                        |
 | Backup tooling                | `scripts/ops/*.sh` shell `spacetime sql`/`spacetime call`/`describe --json`; `server/tools/world_backup` (native, `serde_json` `arbitrary_precision`) parses and canonicalises, never `jq` |
-| Defs tooling                  | `tools/defs-build` — standalone native Rust binary crate (own `Cargo.toml`/`Cargo.lock`/`rust-toolchain.toml`, outside both `server/`'s workspace and the client), depends only on `toml` and `serde`; never a dependency of `browser_city` or the client bundle |
+| Defs tooling                  | `tools/defs-build` — standalone native Rust binary crate (own `Cargo.toml`/`Cargo.lock`/`rust-toolchain.toml`, outside both `server/`'s workspace and the client), depends on `toml`, `serde` and `png` (pinned exact — story 2.6's atlas packer); never a dependency of `browser_city` or the client bundle |
 
 
 ## Authority
@@ -837,6 +837,47 @@ declare a `collider` -- both directions are wrong metadata, rejected by
 object key, never a hard-coded allow-list of object keys in either
 parser. The tag key is a single named constant (`UNDERFOOT_TAG_KEY`) on
 each side, never a repeated string literal.
+
+### Atlases
+
+Story 2.6: `tools/defs-build`'s own packer packs the *used* subset of
+`ModernTileset/` -- every object's own `sprite` rect, nothing an
+`[[object]]` does not name -- into 2048-wide pages (height the smallest
+power of two, at least 16px, that holds the page's own content, capped at
+2048), written wholly by that same `defs-build` run into
+`client/public/atlas/`, which it owns: anything under that directory a run
+did not just write is deleted, so a stale page never outlives the group or
+object that produced it. There is no separate atlas manifest under
+`defs/` -- every packer input already lives in `defs/objects/`.
+
+- A page's group is *derived* from its sheet's own theme-sorter directory
+  segment (the tileset's own organisation, e.g. `ME_Theme_Sorter_16x16/
+  3_City_Props_Singles_16x16` -> `city_props`), never a hand-typed
+  per-object field. A group never spans more than
+  `ATLAS_MAX_PAGES_PER_GROUP` (2) pages -- a build-time assertion, not a
+  hope: a group needing a third page fails the build naming the group and
+  what did not fit. Emitted into `defs.json` as `atlas_max_pages_per_group`
+  beside `max_footprint_cells`.
+- Every packed rect carries a permanent 1px border of extruded
+  (edge-repeated, never transparent) pixels on every side -- nearest-
+  neighbour sampling plus this is what stops bleed at a fractional camera
+  position or a DPR-scaled canvas.
+- A page's filename is content-hashed -- SHA-256 over the page's own
+  canonical RGBA pixel buffer (never its encoded PNG bytes), truncated to
+  `defs_version`'s own 16 hex characters -- so an unrelated group's page
+  never renames when another group's pixels change, and versioning is
+  free rather than a mechanism.
+- `defs.json`'s `atlas_pages` array (`file`, `group`, `width`, `height`)
+  and every object's own required `atlas` field (`{ page, x, y, w, h }`,
+  `page` an index into `atlas_pages`, the rect in page pixels, gutter
+  excluded) are JSON-only -- exactly like a rule row is Rust-only, this
+  never reaches `server/sim/src/generated/defs.rs` or the cross-parser
+  dump: the server never learns a page exists. `sprite` stays in both
+  artefacts as the authoring input.
+- The client loads a page only on first demand (`client/src/render/
+  atlas-pages.ts`, Pixi `Assets.load`, `scaleMode: "nearest"`, one shared
+  `Texture` per page, per-object frames cropped from it) -- never every
+  page at boot, only ones a placed object actually resolves to.
 
 ### Rules (`defs/rules/`, `defs/tags/`)
 

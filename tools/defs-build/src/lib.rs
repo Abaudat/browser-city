@@ -7,6 +7,7 @@
 //! direction: nothing about defs validity belongs anywhere but this
 //! crate's own tests).
 
+pub mod atlas;
 pub mod emit;
 pub mod error;
 pub mod fsio;
@@ -22,9 +23,10 @@ pub mod version;
 pub use error::DefsError;
 pub use model::Defs;
 
-/// The three rendered texts one successful [`build`] produces: the Rust
-/// include, the client JSON asset, and the append-only id/key manifest
-/// (Tim's direction) -- never written to disk by this crate itself; only
+/// The rendered texts and pages one successful [`build`] produces: the
+/// Rust include, the client JSON asset, the append-only id/key manifest
+/// (Tim's direction), and every packed atlas page's own filename plus PNG
+/// bytes (story 2.6) -- never written to disk by this crate itself; only
 /// the `defs-build` binary's own edge does that, and only once every
 /// stage has already succeeded.
 #[derive(Debug)]
@@ -32,6 +34,7 @@ pub struct BuildOutput {
     pub rust: String,
     pub json: String,
     pub id_manifest: String,
+    pub atlas_pages: Vec<(String, Vec<u8>)>,
 }
 
 /// Runs every stage over an already-collected `(path, text)` file list, the
@@ -49,16 +52,25 @@ pub struct BuildOutput {
 pub fn build(
     files: &[(std::path::PathBuf, String)],
     sheet_dims: &std::collections::BTreeMap<String, (u32, u32)>,
+    object_sheet_bytes: &std::collections::BTreeMap<String, Vec<u8>>,
     layer_codes: &std::collections::BTreeMap<String, u32>,
     sprite_sheet_allowed_root: &str,
     defs_version: &str,
 ) -> Result<BuildOutput, DefsError> {
     let raw = parse::parse_all(files)?;
     let defs = validate::validate(&raw, sheet_dims, layer_codes, sprite_sheet_allowed_root)?;
+    let atlas = atlas::build::build_atlas(&defs.objects, object_sheet_bytes)
+        .map_err(|e| DefsError::new("tools/defs-build/atlas", 0, 0, e))?;
     Ok(BuildOutput {
         rust: emit::emit_rust(&defs, defs_version),
-        json: emit::emit_json(&defs, defs_version),
+        json: emit::emit_json(&defs, defs_version, &atlas.pages, &atlas.atlas_by_object_id),
         id_manifest: emit::emit_id_manifest(&defs),
+        atlas_pages: atlas
+            .pages
+            .into_iter()
+            .zip(atlas.page_bytes)
+            .map(|(p, bytes)| (p.file, bytes))
+            .collect(),
     })
 }
 

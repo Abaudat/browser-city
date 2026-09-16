@@ -12,6 +12,8 @@ import type {
   AccessoryDef,
   AppearanceLayoutDef,
   AppearanceLayoutRow,
+  AtlasPageDef,
+  AtlasRect,
   BalanceDef,
   BodyDef,
   ChainDef,
@@ -172,6 +174,32 @@ function parseSpriteRect(value: unknown, path: string): SpriteRect {
   };
 }
 
+/** Story 2.6: an object's packed atlas placement -- required, never
+ * optional (Tim's direction: an object without one is a build failure,
+ * never a runtime fallback to `sprite.sheet`). */
+function parseAtlasRect(value: unknown, path: string): AtlasRect {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["page", "x", "y", "w", "h"], path);
+  return {
+    page: expectU32(obj.page, `${path}.page`),
+    x: expectU32(obj.x, `${path}.x`),
+    y: expectU32(obj.y, `${path}.y`),
+    w: expectU32(obj.w, `${path}.w`),
+    h: expectU32(obj.h, `${path}.h`),
+  };
+}
+
+function parseAtlasPage(value: unknown, path: string): AtlasPageDef {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["file", "group", "width", "height"], path);
+  return {
+    file: expectString(obj.file, `${path}.file`),
+    group: expectString(obj.group, `${path}.group`),
+    width: expectU32(obj.width, `${path}.width`),
+    height: expectU32(obj.height, `${path}.height`),
+  };
+}
+
 function parseObject(value: unknown, path: string): ObjectDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(
@@ -182,6 +210,7 @@ function parseObject(value: unknown, path: string): ObjectDef {
       "name",
       "layer",
       "sprite",
+      "atlas",
       "width",
       "height",
       "collider",
@@ -200,6 +229,7 @@ function parseObject(value: unknown, path: string): ObjectDef {
     name: expectString(obj.name, `${path}.name`),
     layer: expectU32(obj.layer, `${path}.layer`),
     sprite: parseSpriteRect(obj.sprite, `${path}.sprite`),
+    atlas: parseAtlasRect(obj.atlas, `${path}.atlas`),
     width: expectU32(obj.width, `${path}.width`),
     height: expectU32(obj.height, `${path}.height`),
     window: expectBoolean(obj.window, `${path}.window`),
@@ -472,6 +502,8 @@ export function parseDefs(data: unknown): Defs {
       "collider_subcells_per_cell",
       "interact_at_max_reach_cells",
       "max_footprint_cells",
+      "atlas_max_pages_per_group",
+      "atlas_pages",
       "objects",
       "items",
       "recipes",
@@ -500,6 +532,13 @@ export function parseDefs(data: unknown): Defs {
     "$.interact_at_max_reach_cells",
   );
   const maxFootprintCells = expectU32(root.max_footprint_cells, "$.max_footprint_cells");
+  const atlasMaxPagesPerGroup = expectU32(
+    root.atlas_max_pages_per_group,
+    "$.atlas_max_pages_per_group",
+  );
+  const atlasPages = expectArray(root.atlas_pages, "$.atlas_pages").map((v, i) =>
+    parseAtlasPage(v, `$.atlas_pages[${i}]`),
+  );
   const objects = expectArray(root.objects, "$.objects").map((v, i) =>
     parseObject(v, `$.objects[${i}]`),
   );
@@ -669,6 +708,7 @@ export function parseDefs(data: unknown): Defs {
     checkColliderWithinFootprint(object, colliderSubcellsPerCell);
     checkInteractAtReach(object, colliderSubcellsPerCell, interactAtMaxReachCells);
     checkObjectTags(object, tagIds);
+    checkObjectAtlasPage(object, atlasPages.length);
     // Story 2.4: the generic catch-all, checked last -- every other
     // object-level rejection above gets its own chance to fire on a
     // payload built to exercise it before this one does.
@@ -680,6 +720,8 @@ export function parseDefs(data: unknown): Defs {
     colliderSubcellsPerCell,
     interactAtMaxReachCells,
     maxFootprintCells,
+    atlasMaxPagesPerGroup,
+    atlasPages,
     objects,
     items,
     recipes,
@@ -695,6 +737,17 @@ export function parseDefs(data: unknown): Defs {
     uniforms,
     tags,
   };
+}
+
+/** Story 2.6: `atlas.page` must index a real entry in `atlasPages` -- a
+ * skipped check here is a check that passes on bad data, same as every
+ * other cross-reference below. */
+function checkObjectAtlasPage(object: ObjectDef, atlasPageCount: number): void {
+  if (object.atlas.page >= atlasPageCount) {
+    fail(
+      `object '${object.key}' names atlas page ${object.atlas.page} but only ${atlasPageCount} page(s) exist`,
+    );
+  }
 }
 
 /** A free-text display string (story 2.2) -- never empty. */
