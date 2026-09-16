@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Fixture-driven coverage for scripts/ci/check-layer-table-current.sh.
-# Every fixture is a scratch directory with the three files the script
-# reads -- never the live repo's own golden, codes.rs or layer-table.ts.
-# No git needed: unlike the append-only checks, this script never diffs
-# against a base ref, it only compares three files as they stand.
+# Every fixture is a scratch directory with the four files the script
+# reads -- never the live repo's own golden, codes.rs, layer-table.ts or
+# layer_codes.rs. No git needed: unlike the append-only checks, this
+# script never diffs against a base ref, it only compares the files as
+# they stand.
 set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 . "$TEST_DIR/harness.sh"
@@ -12,16 +13,27 @@ CHECK="$TEST_DIR/../../../scripts/ci/check-layer-table-current.sh"
 GOLDEN_PATH="server/sim/tests/goldens/codes_v1.golden"
 CODES_RS_PATH="server/sim/src/codes.rs"
 LAYER_TABLE_PATH="client/src/render/layer-table.ts"
+LAYER_CODES_RS_PATH="tools/defs-build/src/layer_codes.rs"
 
-# write_case <dir> <golden-content> <codes.rs-content> <layer-table.ts-content>
+# The one content every case below uses for layer_codes.rs unless it is
+# itself the thing under test (story 2.2 cycle 1: defs-build's own
+# DEPRECATED_LAYER_NAMES copy, checked against codes.rs's DEPRECATED_CODES
+# the same way layer-table.ts already is) -- matches CODES_RS_HAPPY's own
+# `&[1]` (only "overhead").
+LAYER_CODES_RS_HAPPY='pub const DEPRECATED_LAYER_NAMES: &[&str] = &["overhead"];
+'
+
+# write_case <dir> <golden-content> <codes.rs-content> <layer-table.ts-content> [layer_codes.rs-content]
 write_case() {
   local d="$1"
   rm -rf "$d"
-  mkdir -p "$d/$(dirname "$GOLDEN_PATH")" "$d/$(dirname "$CODES_RS_PATH")" "$d/$(dirname "$LAYER_TABLE_PATH")" "$d/scripts/ci"
+  mkdir -p "$d/$(dirname "$GOLDEN_PATH")" "$d/$(dirname "$CODES_RS_PATH")" \
+    "$d/$(dirname "$LAYER_TABLE_PATH")" "$d/$(dirname "$LAYER_CODES_RS_PATH")" "$d/scripts/ci"
   cp "$CHECK" "$d/scripts/ci/check-layer-table-current.sh"
   printf '%s' "$2" > "$d/$GOLDEN_PATH"
   printf '%s' "$3" > "$d/$CODES_RS_PATH"
   printf '%s' "$4" > "$d/$LAYER_TABLE_PATH"
+  printf '%s' "${5:-$LAYER_CODES_RS_HAPPY}" > "$d/$LAYER_CODES_RS_PATH"
 }
 
 run_check() { # <dir>

@@ -7,6 +7,7 @@
 
 import type { PlacedObject } from "../net/bindings/types";
 import { CHUNK_SIZE, chunkKey } from "./chunk";
+import { footprintOrigin } from "./footprint";
 import { cellsForRange } from "./subcells";
 
 /** A half-open rect in absolute sub-cell coordinates (not relative to any
@@ -172,8 +173,13 @@ export class CollisionGrid implements CollisionGridQuery {
       );
     }
 
-    const anchorXSub = row.x * this.subcellsPerCell;
-    const anchorYSub = row.y * this.subcellsPerCell;
+    // `def.collider` is declared relative to the footprint's own
+    // north-west sub-cell origin (`footprintOrigin`, the one place that
+    // arithmetic lives) -- only visible once an object is taller than one
+    // cell.
+    const origin = footprintOrigin(row.x, row.y, def);
+    const anchorXSub = origin.x * this.subcellsPerCell;
+    const anchorYSub = origin.y * this.subcellsPerCell;
     const rect: ColliderRectSubcells = {
       x0: anchorXSub + def.collider.x0,
       y0: anchorYSub + def.collider.y0,

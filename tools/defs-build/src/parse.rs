@@ -116,6 +116,9 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         path: path.clone(),
                         id: located(text, &o.id),
                         key: located(text, &o.key),
+                        name: located(text, &o.name),
+                        layer: located(text, &o.layer),
+                        sprite: located(text, &o.sprite),
                         width: o.width,
                         height: o.height,
                         collider: o.collider.as_ref().map(|c| located(text, c)),
@@ -294,16 +297,26 @@ mod tests {
             .collect()
     }
 
+    const OBJECT_TOML_HEADER: &str = "name = \"Trash Bin\"\nlayer = \"furniture\"\nsprite = { sheet = \"fixtures/objects/test.png\", x = 0, y = 0, w = 16, h = 16 }\n";
+
     #[test]
     fn parses_one_object_file_with_two_entries() {
         let f = files(&[(
             "defs/objects/city-props.toml",
-            "[[object]]\nid = 1\nkey = \"trash_bin\"\nwidth = 1\nheight = 1\n\n[[object]]\nid = 2\nkey = \"bench\"\nwidth = 2\nheight = 1\n",
+            &format!(
+                "[[object]]\nid = 1\nkey = \"trash_bin\"\n{OBJECT_TOML_HEADER}width = 1\nheight = 1\n\n[[object]]\nid = 2\nkey = \"bench\"\n{OBJECT_TOML_HEADER}width = 2\nheight = 1\n"
+            ),
         )]);
         let raw = parse_all(&f).unwrap();
         assert_eq!(raw.objects.len(), 2);
         assert_eq!(raw.objects[0].id.value, 1);
         assert_eq!(raw.objects[0].key.value, "trash_bin");
+        assert_eq!(raw.objects[0].name.value, "Trash Bin");
+        assert_eq!(raw.objects[0].layer.value, "furniture");
+        assert_eq!(
+            raw.objects[0].sprite.value.sheet,
+            "fixtures/objects/test.png"
+        );
         assert_eq!(raw.objects[1].width, 2);
     }
 

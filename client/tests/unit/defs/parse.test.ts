@@ -13,7 +13,19 @@ function validPayload(): Record<string, unknown> {
     defs_version: "abc123",
     collider_subcells_per_cell: 16,
     interact_at_max_reach_cells: 2,
-    objects: [{ id: 1, key: "trash_bin", width: 1, height: 1, window: false }],
+    max_footprint_cells: 8,
+    objects: [
+      {
+        id: 1,
+        key: "trash_bin",
+        name: "Trash Bin",
+        layer: 2,
+        sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
+        width: 1,
+        height: 1,
+        window: false,
+      },
+    ],
     items: [
       { id: 1, key: "bottle" },
       { id: 2, key: "recycled_glass" },
@@ -21,7 +33,10 @@ function validPayload(): Record<string, unknown> {
     recipes: [{ id: 1, key: "bottle_recycling", inputs: ["bottle"], outputs: ["recycled_glass"] }],
     professions: [{ id: 1, key: "sanitation_worker" }],
     chains: [{ id: 1, key: "plastic_bottle", links: ["sanitation_worker"] }],
-    balance: [{ key: "citizen.bar_decay.rest", value: 10, min: 0, max: 100 }],
+    balance: [
+      { key: "citizen.bar_decay.rest", value: 10, min: 0, max: 100 },
+      { key: "render.tile_size_px", value: 16, min: 1, max: 64 },
+    ],
     bodies: [],
     eyes: [],
     hairstyles: [],
@@ -36,7 +51,18 @@ describe("parseDefs", () => {
   it("parses a well-formed document into the plain Defs shape", () => {
     const defs = parseDefs(validPayload());
     expect(defs.defsVersion).toBe("abc123");
-    expect(defs.objects).toEqual([{ id: 1, key: "trash_bin", width: 1, height: 1, window: false }]);
+    expect(defs.objects).toEqual([
+      {
+        id: 1,
+        key: "trash_bin",
+        name: "Trash Bin",
+        layer: 2,
+        sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
+        width: 1,
+        height: 1,
+        window: false,
+      },
+    ]);
     expect(defs.recipes[0]?.inputs).toEqual(["bottle"]);
   });
 
@@ -137,7 +163,10 @@ describe("parseDefs", () => {
 
   it("accepts a balance value at the boundary", () => {
     const payload = validPayload();
-    payload.balance = [{ key: "a", value: 10, min: 0, max: 10 }];
+    payload.balance = [
+      { key: "a", value: 10, min: 0, max: 10 },
+      { key: "render.tile_size_px", value: 16, min: 1, max: 64 },
+    ];
     expect(() => parseDefs(payload)).not.toThrow();
   });
 
@@ -146,6 +175,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: false,
@@ -154,7 +186,18 @@ describe("parseDefs", () => {
     const defs = parseDefs(payload);
     expect(defs.objects[0]?.collider).toEqual({ x0: 4, y0: 4, x1: 12, y1: 12 });
 
-    payload.objects = [{ id: 1, key: "trash_bin", width: 1, height: 1, window: false }];
+    payload.objects = [
+      {
+        id: 1,
+        key: "trash_bin",
+        name: "Trash Bin",
+        layer: 2,
+        sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
+        width: 1,
+        height: 1,
+        window: false,
+      },
+    ];
     expect(parseDefs(payload).objects[0]?.collider).toBeUndefined();
   });
 
@@ -163,6 +206,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: false,
@@ -172,7 +218,18 @@ describe("parseDefs", () => {
     expect(defs.objects[0]?.interactAt).toEqual({ x0: 0, y0: 16, x1: 16, y1: 32 });
     expect(defs.interactAtMaxReachCells).toBe(2);
 
-    payload.objects = [{ id: 1, key: "trash_bin", width: 1, height: 1, window: false }];
+    payload.objects = [
+      {
+        id: 1,
+        key: "trash_bin",
+        name: "Trash Bin",
+        layer: 2,
+        sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
+        width: 1,
+        height: 1,
+        window: false,
+      },
+    ];
     expect(parseDefs(payload).objects[0]?.interactAt).toBeUndefined();
   });
 
@@ -181,6 +238,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: false,
@@ -194,6 +254,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: false,
@@ -208,6 +271,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: false,
@@ -221,6 +287,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: false,
@@ -235,6 +304,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: false,
@@ -248,6 +320,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: false,
@@ -261,6 +336,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: false,
@@ -274,6 +352,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: false,
@@ -287,6 +368,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: false,
@@ -300,6 +384,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
     };
@@ -311,6 +398,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: "nope",
@@ -323,6 +413,9 @@ describe("parseDefs", () => {
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "shop_window",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
       window: true,
@@ -373,7 +466,21 @@ describe("parseDefs", () => {
         (width, height, x0, y0, x1, y1) => {
           const payload = validPayload();
           payload.objects = [
-            { id: 1, key: "x", width, height, window: false, collider: { x0, y0, x1, y1 } },
+            {
+              id: 1,
+              key: "x",
+              name: "X",
+              layer: 2,
+              // Scaled to the generated width/height so this property
+              // never trips FR126's sprite/footprint check -- that rule
+              // has its own dedicated property test; this one is only
+              // about collider containment.
+              sprite: { sheet: "x.png", x: 0, y: 0, w: width * 16, h: height * 16 },
+              width,
+              height,
+              window: false,
+              collider: { x0, y0, x1, y1 },
+            },
           ];
           const maxX = width * 16;
           const maxY = height * 16;
@@ -591,10 +698,11 @@ describe("canonicalDump", () => {
     expect(dump).toBe(
       [
         "balance citizen.bar_decay.rest value=10 min=0 max=100",
+        "balance render.tile_size_px value=16 min=1 max=64",
         "chain plastic_bottle id=1 links=[sanitation_worker]",
         "item bottle id=1",
         "item recycled_glass id=2",
-        "object trash_bin id=1 height=1 width=1 collider=none interact_at=none window=false",
+        "object trash_bin id=1 name=Trash Bin layer=2 sprite=x.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false",
         "profession sanitation_worker id=1",
         "recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]",
         "",

@@ -1,0 +1,10 @@
+[[object]]
+id = 1
+key = "trash_bin"
+name = "Trash Bin"
+layer = "furniture"
+# Literally starts with "ModernTileset/", but normalises to
+# "client/public/defs/trash-bin-test.png" -- outside the allowed root.
+sprite = { sheet = "ModernTileset/../client/public/defs/trash-bin-test.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1

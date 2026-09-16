@@ -112,11 +112,17 @@ jobs:
               - 'client/public/defs/defs.json'
               - 'scripts/**'
               - '.github/**'
-              # Story 1.10: tools/defs-build reads these PNGs' own IHDR to
-              # verify the appearance layout invariant -- a PR that only
-              # swaps a part sheet must still run that check.
-              - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
-              - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
+              # Story 1.10/2.2: tools/defs-build reads every appearance
+              # part's and every object's own `sheet`/`sprite.sheet` IHDR,
+              # and a `sprite.sheet` may name any path under this whole
+              # root (`model.rs`'s `SPRITE_SHEET_ALLOWED_ROOT`) -- a PR
+              # that only swaps one vendor PNG anywhere under it must
+              # still run that check (Quentin's direction, cycle 1: the
+              # simpler of two acceptable fixes over narrowing to one
+              # subtree, which the previous two lines here did --
+              # `scripts/ci/check-defs-sprite-root-filter.sh` pins this
+              # line to that same constant, so the two can never drift).
+              - 'ModernTileset/**'
               # tools/defs-build/tests/shared_malformed_cases.rs does
               # include_str!(this file) -- a PR that only edits the shared
               # case list must still run the Rust half of the drift guard,
@@ -178,6 +184,10 @@ jobs:
       # filter (below) must stay a superset of it, or the two silently
       # drift apart.
       - run: bash scripts/ci/check-deploy-client-paths-current.sh
+      # story 2.2, cycle 2 (Quentin's direction): the defs: job must be
+      # the one running check-layer-table-current.sh, since client-check's
+      # own filter never covers tools/defs-build/**.
+      - run: bash scripts/ci/check-layer-table-guard-wired.sh
       # scripts/ci/'s own fast, no-toolchain-needed tests for its
       # mechanical guards (e.g. check-no-masks.sh's own pattern, story 1.7
       # cycle 2) -- runs here, not in `client-check`, since it needs
@@ -235,6 +245,19 @@ jobs:
         run: bash ../../scripts/ci/check-defs-version-bump.sh
       - name: story 2.1 AC3, nothing versions independently -- a direct pin
         run: bash ../../scripts/ci/check-defs-version-agrees.sh
+      - name: story 2.2 FR128, there is no separate walkable field anywhere in the schema
+        run: bash ../../scripts/ci/check-no-walkable-field.sh
+      - name: story 2.2, ci.yml's defs filter covers the whole sprite-sheet allowed root
+        run: bash ../../scripts/ci/check-defs-sprite-root-filter.sh
+      # Quentin's direction, cycle 2: client-check's own filter (client/**,
+      # server/**, scripts/**, .github/**, fixtures/**) never covers
+      # tools/defs-build/**, so a PR that only edits layer_codes.rs's own
+      # DEPRECATED_LAYER_NAMES would skip client-check entirely and this
+      # drift guard would never run. Runs here too -- plain text, no
+      # toolchain, costs nothing -- so the defs filter (which does cover
+      # tools/defs-build/**) is what actually protects it.
+      - name: story 2.2, defs-build's DEPRECATED_LAYER_NAMES never drifts from codes.rs
+        run: bash ../../scripts/ci/check-layer-table-current.sh
 
   check:
     name: check

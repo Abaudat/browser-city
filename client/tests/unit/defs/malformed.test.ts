@@ -6,6 +6,12 @@
 // (the module's own equivalent-category TOML fixtures live under
 // `tools/defs-build/tests/fixtures/invalid/`, checked against this same
 // list by `tools/defs-build/tests/shared_malformed_cases.rs`).
+//
+// `sprite-sheet-missing` and `sprite-outside-sheet-bounds` are
+// deliberately absent from the shared list: both need a real sheet's own
+// `IHDR` dimensions, which this client never reads -- the artefact it
+// parses only ever carries an already-validated `sprite` rect. They
+// exist as server-only `tools/defs-build` fixtures instead.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";

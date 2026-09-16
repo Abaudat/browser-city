@@ -14,7 +14,10 @@ mod support;
 
 use std::path::{Path, PathBuf};
 
-use support::{appearance_sheet_dims, build_err, merged_tree, read_tree, valid_dir};
+use support::{
+    build_err, build_err_enforcing_sheet_root, layer_codes, merged_tree, read_tree, sheet_dims,
+    valid_dir,
+};
 
 #[test]
 fn toml_syntax_error_names_the_offending_file_and_line() {
@@ -205,6 +208,124 @@ fn a_uniform_naming_an_unknown_profession_is_named() {
     assert!(err.message.contains("names unknown profession"));
 }
 
+/// Story 2.2: `layer` resolves against the codes golden, never a second
+/// hand-maintained list.
+#[test]
+fn an_object_naming_an_unknown_layer_is_named() {
+    let err = build_err("unknown-layer");
+    assert!(err.message.contains("unknown layer 'basement'"));
+}
+
+/// A deprecated layer may never be placed on, even though its own code
+/// still resolves.
+#[test]
+fn an_object_naming_a_deprecated_layer_is_named() {
+    let err = build_err("deprecated-layer");
+    assert!(err.message.contains("deprecated layer"));
+}
+
+/// A sprite whose width does not equal `width * tile_size_px` exactly is
+/// refused, naming the object.
+#[test]
+fn a_sprite_width_mismatching_the_footprint_is_named() {
+    let err = build_err("sprite-width-mismatches-footprint");
+    assert!(err.message.contains("does not equal its footprint width"));
+}
+
+/// A sprite height that is not a whole multiple of `tile_size_px` is
+/// refused.
+#[test]
+fn a_sprite_height_not_a_tile_multiple_is_named() {
+    let err = build_err("sprite-height-not-tile-multiple");
+    assert!(err.message.contains("whole multiple of tile_size_px"));
+}
+
+/// A sprite shorter than its own footprint's height is refused -- a tall
+/// prop may only overhang upward, never come up short.
+#[test]
+fn a_sprite_shorter_than_the_footprint_is_named() {
+    let err = build_err("sprite-shorter-than-footprint");
+    assert!(err.message.contains("shorter than its footprint height"));
+}
+
+/// An empty `name` is refused.
+#[test]
+fn an_empty_object_name_is_named() {
+    let err = build_err("empty-object-name");
+    assert!(err.message.contains("empty name"));
+}
+
+/// Story 2.2, cycle 2 (Quentin's direction): a `sprite.sheet` outside
+/// `SPRITE_SHEET_ALLOWED_ROOT` is refused -- the root is an enforced
+/// rule, not a CI-filter convention.
+#[test]
+fn a_sprite_sheet_outside_the_allowed_root_is_named() {
+    let err = build_err_enforcing_sheet_root("sprite-sheet-outside-allowed-root");
+    assert!(err.message.contains("is not under the allowed root"));
+}
+
+/// A `..`-laden sheet path that literally starts with the allowed root
+/// but normalises to something outside it is refused just the same --
+/// the check normalises `..` segments before comparing, so a path cannot
+/// present as rooted just because of what its string starts with.
+#[test]
+fn a_sprite_sheet_escaping_the_allowed_root_via_dot_dot_is_named() {
+    let err = build_err_enforcing_sheet_root("sprite-sheet-path-escape");
+    assert!(err.message.contains("is not under the allowed root"));
+}
+
+/// A sprite sheet path this crate never read `IHDR` dimensions for is a
+/// build error naming the object and the sheet.
+#[test]
+fn an_object_sprite_naming_a_sheet_never_read_is_named() {
+    let err = build_err("sprite-sheet-missing");
+    assert!(err.message.contains("dimensions were never read"));
+}
+
+/// A sprite rect with zero area is refused exactly like a zero-area
+/// collider.
+#[test]
+fn an_object_sprite_with_zero_area_is_named() {
+    let err = build_err("sprite-zero-area");
+    assert!(err.message.contains("zero width or height"));
+}
+
+/// A sprite rect reaching past its own sheet's real bounds is a build
+/// error.
+#[test]
+fn an_object_sprite_outside_its_sheet_is_named() {
+    let err = build_err("sprite-outside-sheet-bounds");
+    assert!(err.message.contains("does not fit inside sheet"));
+}
+
+/// A footprint width or height of 0 is refused -- every object occupies
+/// at least one cell.
+#[test]
+fn an_object_footprint_dimension_of_zero_is_named() {
+    let err = build_err("object-dimension-zero");
+    assert!(err.message.contains("footprint width or height of 0"));
+}
+
+/// FR127's cap: a 9-cell-wide footprint is refused, naming the object and
+/// directing the author to compose the structure from multiple objects.
+#[test]
+fn an_object_footprint_exceeding_the_cap_is_named() {
+    let err = build_err("footprint-cap-exceeded");
+    assert!(err.message.contains("exceeds MAX_FOOTPRINT_CELLS"));
+    assert!(
+        err.message
+            .contains("compose the structure from multiple objects")
+    );
+}
+
+/// FR128: there is no separate `walkable` flag anywhere in the schema --
+/// `deny_unknown_fields` refuses it exactly like any other unknown field.
+#[test]
+fn a_walkable_flag_is_named() {
+    let err = build_err("walkable-flag-rejected");
+    assert!(err.message.contains("walkable"));
+}
+
 /// Every category this module lists above has its own fixture directory
 /// under `tests/fixtures/invalid/` -- so a category added to one and not
 /// the other is a hard failure here, not a silent gap. `non-integer-id`
@@ -240,6 +361,20 @@ fn every_known_category_has_a_fixture_directory() {
         "appearance-id-too-large",
         "appearance-family-mismatch",
         "appearance-dangling-uniform-profession",
+        "unknown-layer",
+        "deprecated-layer",
+        "sprite-sheet-missing",
+        "sprite-sheet-outside-allowed-root",
+        "sprite-sheet-path-escape",
+        "sprite-zero-area",
+        "sprite-outside-sheet-bounds",
+        "sprite-width-mismatches-footprint",
+        "sprite-height-not-tile-multiple",
+        "sprite-shorter-than-footprint",
+        "object-dimension-zero",
+        "empty-object-name",
+        "footprint-cap-exceeded",
+        "walkable-flag-rejected",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)
@@ -286,7 +421,7 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
         std::fs::write(&manifest_out, "sentinel manifest\n").unwrap();
 
         let files = merged_tree(category);
-        let result = defs_build::build(&files, &appearance_sheet_dims(), "test-version");
+        let result = defs_build::build(&files, &sheet_dims(), &layer_codes(), "", "test-version");
         assert!(result.is_err(), "'{category}' was expected to fail");
         if let Ok(output) = result {
             defs_build::fsio::atomic_write(&rust_out, &output.rust).unwrap();
@@ -318,6 +453,6 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
 #[test]
 fn the_valid_base_tree_builds_cleanly() {
     let files = read_tree(&valid_dir());
-    let result = defs_build::build(&files, &appearance_sheet_dims(), "test-version");
+    let result = defs_build::build(&files, &sheet_dims(), &layer_codes(), "", "test-version");
     assert!(result.is_ok(), "valid fixture failed: {:?}", result.err());
 }

@@ -28,11 +28,13 @@
 
 import { compareDrawables, type Drawable } from "../render/sort-key";
 import { toSortUnits } from "../render/sort-units";
+import { footprintOrigin } from "../world/footprint";
 import type { FootprintEntry, FootprintQuery } from "../world/footprint-index";
 import type { Intent } from "./intent";
 
-/** A half-open integer rect in sub-cells, relative to an object's own
- * anchor cell -- `defs/`'s `interact_at`, unchanged. */
+/** A half-open integer rect in sub-cells, relative to the footprint's own
+ * north-west sub-cell origin (`world/footprint.ts`'s `footprintOrigin`)
+ * -- `defs/`'s `interact_at`, unchanged. */
 export interface ReachRect {
   readonly x0: number;
   readonly y0: number;
@@ -141,10 +143,11 @@ export function isWithinReach(
 
   const feetX = Math.floor(player.x * subcellsPerCell);
   const feetY = Math.floor(player.y * subcellsPerCell);
-  const x0 = anchor.anchorX * subcellsPerCell + rect.x0;
-  const y0 = anchor.anchorY * subcellsPerCell + rect.y0;
-  const x1 = anchor.anchorX * subcellsPerCell + rect.x1;
-  const y1 = anchor.anchorY * subcellsPerCell + rect.y1;
+  const origin = footprintOrigin(anchor.anchorX, anchor.anchorY, def);
+  const x0 = origin.x * subcellsPerCell + rect.x0;
+  const y0 = origin.y * subcellsPerCell + rect.y0;
+  const x1 = origin.x * subcellsPerCell + rect.x1;
+  const y1 = origin.y * subcellsPerCell + rect.y1;
 
   return feetX >= x0 && feetX < x1 && feetY >= y0 && feetY < y1;
 }
@@ -158,14 +161,15 @@ export function isWithinReach(
  */
 export function pickSortKey(
   entry: FootprintEntry,
-  def: PickObjectDef | undefined,
   floor: number,
   context: Pick<PickContext, "rankOf">,
 ): Drawable {
-  const bottomRow = entry.anchorY + Math.max(1, def?.height ?? 1) - 1;
+  // The anchor cell *is* the footprint's own south (bottom-drawn) row
+  // (`world/footprint.ts`'s doc comment) -- no arithmetic needed, and
+  // none should be re-derived here.
   return {
     x: toSortUnits(entry.anchorX),
-    y: toSortUnits(bottomRow),
+    y: toSortUnits(entry.anchorY),
     rank: context.rankOf(entry.layer),
     stableId: entry.objectId,
     floor,
@@ -186,7 +190,7 @@ export function topmostAt(
   floor: number,
   context: PickContext,
 ): FootprintEntry | undefined {
-  const { index, isVisible, drawnRectOf, objectDefs } = context;
+  const { index, isVisible, drawnRectOf } = context;
   let best: FootprintEntry | undefined;
   let bestKey: Drawable | undefined;
 
@@ -198,7 +202,7 @@ export function topmostAt(
     const rect = drawnRectOf?.(candidate.objectId);
     if (rect && !containsPoint(rect, point.worldXPx, point.worldYPx)) continue;
 
-    const key = pickSortKey(candidate, objectDefs.get(candidate.defId), floor, context);
+    const key = pickSortKey(candidate, floor, context);
     if (!bestKey || compareDrawables(key, bestKey) > 0) {
       best = candidate;
       bestKey = key;

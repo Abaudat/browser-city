@@ -7,6 +7,7 @@
 // the client must never be quietly lenient about input the module
 // rejects at build time.
 
+import { LAYER_TABLE } from "../render/layer-table";
 import type {
   AccessoryDef,
   AppearanceLayoutDef,
@@ -27,6 +28,7 @@ import type {
   RecipeDef,
   SheetSize,
   Slot,
+  SpriteRect,
   UniformDef,
 } from "./types";
 
@@ -145,14 +147,44 @@ function expectBoolean(value: unknown, path: string): boolean {
   return value;
 }
 
+function parseSpriteRect(value: unknown, path: string): SpriteRect {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["sheet", "x", "y", "w", "h"], path);
+  return {
+    sheet: expectString(obj.sheet, `${path}.sheet`),
+    x: expectU32(obj.x, `${path}.x`),
+    y: expectU32(obj.y, `${path}.y`),
+    w: expectU32(obj.w, `${path}.w`),
+    h: expectU32(obj.h, `${path}.h`),
+  };
+}
+
 function parseObject(value: unknown, path: string): ObjectDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "width", "height", "collider", "interact_at", "window"], path);
+  checkKnownKeys(
+    obj,
+    [
+      "id",
+      "key",
+      "name",
+      "layer",
+      "sprite",
+      "width",
+      "height",
+      "collider",
+      "interact_at",
+      "window",
+    ],
+    path,
+  );
   const collider = parseNullableCollider(obj.collider, `${path}.collider`);
   const interactAt = parseNullableCollider(obj.interact_at, `${path}.interact_at`);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
+    name: expectString(obj.name, `${path}.name`),
+    layer: expectU32(obj.layer, `${path}.layer`),
+    sprite: parseSpriteRect(obj.sprite, `${path}.sprite`),
     width: expectU32(obj.width, `${path}.width`),
     height: expectU32(obj.height, `${path}.height`),
     window: expectBoolean(obj.window, `${path}.window`),
@@ -414,6 +446,7 @@ export function parseDefs(data: unknown): Defs {
       "defs_version",
       "collider_subcells_per_cell",
       "interact_at_max_reach_cells",
+      "max_footprint_cells",
       "objects",
       "items",
       "recipes",
@@ -440,6 +473,7 @@ export function parseDefs(data: unknown): Defs {
     root.interact_at_max_reach_cells,
     "$.interact_at_max_reach_cells",
   );
+  const maxFootprintCells = expectU32(root.max_footprint_cells, "$.max_footprint_cells");
   const objects = expectArray(root.objects, "$.objects").map((v, i) =>
     parseObject(v, `$.objects[${i}]`),
   );
@@ -583,7 +617,25 @@ export function parseDefs(data: unknown): Defs {
     }
   }
 
+  const tileSizePx = balance.find((b) => b.key === "render.tile_size_px")?.value;
+  if (objects.length > 0 && tileSizePx === undefined) {
+    // A skipped check is a check that passes on bad data (Quentin's
+    // direction): a tree with objects but no `render.tile_size_px`
+    // balance key cannot check FR126's sprite/footprint agreement at
+    // all, exactly like `tools/defs-build`'s own `validate.rs` refuses
+    // this case rather than silently skipping it.
+    fail(
+      "defs/ declares an object but no 'render.tile_size_px' balance key -- FR126's sprite/footprint agreement cannot be checked without it",
+    );
+  }
   for (const object of objects) {
+    checkObjectName(object);
+    checkObjectLayer(object);
+    checkObjectFootprintCap(object, maxFootprintCells);
+    checkSpriteNonZeroArea(object);
+    if (tileSizePx !== undefined) {
+      checkSpriteMatchesFootprint(object, tileSizePx);
+    }
     checkColliderWithinFootprint(object, colliderSubcellsPerCell);
     checkInteractAtReach(object, colliderSubcellsPerCell, interactAtMaxReachCells);
   }
@@ -592,6 +644,7 @@ export function parseDefs(data: unknown): Defs {
     defsVersion,
     colliderSubcellsPerCell,
     interactAtMaxReachCells,
+    maxFootprintCells,
     objects,
     items,
     recipes,
@@ -606,6 +659,97 @@ export function parseDefs(data: unknown): Defs {
     appearanceLayouts,
     uniforms,
   };
+}
+
+/** A free-text display string (story 2.2) -- never empty. */
+function checkObjectName(object: ObjectDef): void {
+  if (object.name.trim().length === 0) {
+    fail(`object '${object.key}' has an empty name`);
+  }
+}
+
+/** `layer` resolves against `render/layer-table.ts` -- the client's own
+ * golden-guarded mirror of `sim::codes::layer`
+ * (`check-layer-table-current.sh`) -- exactly like `tools/defs-build`'s
+ * own `validate.rs` resolves the authored name against the codes golden.
+ * The runtime artefact carries only the numeric code, never the name, so
+ * this is a lookup, not a string comparison -- but an unknown or
+ * deprecated code must still be refused here, never accepted just
+ * because it parsed as a `u32` (Quentin's direction: a skipped check is a
+ * check that passes on bad data). */
+function checkObjectLayer(object: ObjectDef): void {
+  const row = LAYER_TABLE.find((r) => r.code === object.layer);
+  if (!row) {
+    const known = LAYER_TABLE.filter((r) => !r.deprecated)
+      .map((r) => r.code)
+      .join(", ");
+    fail(
+      `object '${object.key}' names unknown layer code ${object.layer} -- known codes are [${known}]`,
+    );
+  }
+  if (row.deprecated) {
+    fail(`object '${object.key}' names deprecated layer code ${object.layer} ('${row.name}')`);
+  }
+}
+
+/** FR127's cap, checked on `width` and `height` independently, exactly
+ * like `tools/defs-build`'s own `validate.rs` -- the error names the
+ * object and its size, and directs the author to compose the structure
+ * from multiple objects (the acceptance criterion's own sentence). Also
+ * refuses a footprint width or height of 0 -- every object occupies at
+ * least one cell. */
+function checkObjectFootprintCap(object: ObjectDef, maxFootprintCells: number): void {
+  if (object.width === 0 || object.height === 0) {
+    fail(
+      `object '${object.key}' has a footprint width or height of 0 -- every object occupies at least one cell`,
+    );
+  }
+  if (object.width > maxFootprintCells) {
+    fail(
+      `object '${object.key}' footprint width ${object.width} exceeds MAX_FOOTPRINT_CELLS (${maxFootprintCells}) -- compose the structure from multiple objects`,
+    );
+  }
+  if (object.height > maxFootprintCells) {
+    fail(
+      `object '${object.key}' footprint height ${object.height} exceeds MAX_FOOTPRINT_CELLS (${maxFootprintCells}) -- compose the structure from multiple objects`,
+    );
+  }
+}
+
+/** A sprite rect must have positive area -- checked independently of
+ * whether its sheet's real dimensions are known, exactly like `tools/
+ * defs-build`'s own `validate.rs`. */
+function checkSpriteNonZeroArea(object: ObjectDef): void {
+  if (object.sprite.w === 0 || object.sprite.h === 0) {
+    fail(`object '${object.key}' sprite rect has zero width or height`);
+  }
+}
+
+/** FR126's decomposition reads per-cell sub-rects from the sprite, so the
+ * sprite must agree with the footprint exactly, the same three checks
+ * `tools/defs-build`'s own `validate.rs` enforces at build time: `w`
+ * equals `width * tileSizePx` exactly, `h` is a whole multiple of
+ * `tileSizePx`, and `h >= height * tileSizePx` (a tall prop may overhang
+ * upward, never downward -- bottom-anchored). */
+function checkSpriteMatchesFootprint(object: ObjectDef, tileSizePx: number): void {
+  const sprite = object.sprite;
+  const expectedW = object.width * tileSizePx;
+  if (sprite.w !== expectedW) {
+    fail(
+      `object '${object.key}' sprite width ${sprite.w} does not equal its footprint width ${object.width} * tile_size_px ${tileSizePx} (${expectedW}px)`,
+    );
+  }
+  if (sprite.h % tileSizePx !== 0) {
+    fail(
+      `object '${object.key}' sprite height ${sprite.h} is not a whole multiple of tile_size_px ${tileSizePx}`,
+    );
+  }
+  const minH = object.height * tileSizePx;
+  if (sprite.h < minH) {
+    fail(
+      `object '${object.key}' sprite height ${sprite.h} is shorter than its footprint height ${object.height} * tile_size_px ${tileSizePx} (${minH}px)`,
+    );
+  }
 }
 
 /** FR128's containment rule (`inv_collider_within_footprint`): a declared
@@ -681,7 +825,7 @@ export function canonicalDump(defs: Defs): string {
     r ? `${r.x0},${r.y0},${r.x1},${r.y1}` : "none";
   for (const o of defs.objects) {
     lines.push(
-      `object ${o.key} id=${o.id} height=${o.height} width=${o.width} collider=${rect(o.collider)} interact_at=${rect(o.interactAt)} window=${o.window}`,
+      `object ${o.key} id=${o.id} name=${o.name} layer=${o.layer} sprite=${o.sprite.sheet}:${o.sprite.x},${o.sprite.y},${o.sprite.w},${o.sprite.h} height=${o.height} width=${o.width} collider=${rect(o.collider)} interact_at=${rect(o.interactAt)} window=${o.window}`,
     );
   }
   for (const i of defs.items) {

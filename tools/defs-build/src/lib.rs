@@ -10,6 +10,7 @@
 pub mod emit;
 pub mod error;
 pub mod fsio;
+pub mod layer_codes;
 pub mod model;
 pub mod naming;
 pub mod parse;
@@ -34,18 +35,26 @@ pub struct BuildOutput {
 }
 
 /// Runs every stage over an already-collected `(path, text)` file list, the
-/// `(width, height)` already read from every appearance part's own `sheet`
-/// file (story 1.10; empty for a tree with no `defs/appearance/` entries),
-/// and an already-computed `defs_version` -- the one function a caller
-/// needs once the filesystem edge has done its own job. Returns every
-/// rendered artefact, or the first [`DefsError`] found; writes nothing.
+/// `(width, height)` already read from every appearance part's and every
+/// object's own sheet file (story 1.10/2.2; empty for a tree with no such
+/// entries), the `name -> code` layer ladder already read from the codes
+/// golden ([`layer_codes::parse_layer_codes`]), the root every `sheet`/
+/// `sprite.sheet` must live under (`sprite_sheet_allowed_root` -- the real
+/// binary always passes [`model::SPRITE_SHEET_ALLOWED_ROOT`]; an empty
+/// string disables the check, which is this crate's own fixture trees'
+/// job, never a caller with real defs), and an already-computed
+/// `defs_version` -- the one function a caller needs once the filesystem
+/// edge has done its own job. Returns every rendered artefact, or the
+/// first [`DefsError`] found; writes nothing.
 pub fn build(
     files: &[(std::path::PathBuf, String)],
     sheet_dims: &std::collections::BTreeMap<String, (u32, u32)>,
+    layer_codes: &std::collections::BTreeMap<String, u32>,
+    sprite_sheet_allowed_root: &str,
     defs_version: &str,
 ) -> Result<BuildOutput, DefsError> {
     let raw = parse::parse_all(files)?;
-    let defs = validate::validate(&raw, sheet_dims)?;
+    let defs = validate::validate(&raw, sheet_dims, layer_codes, sprite_sheet_allowed_root)?;
     Ok(BuildOutput {
         rust: emit::emit_rust(&defs, defs_version),
         json: emit::emit_json(&defs, defs_version),
@@ -73,6 +82,19 @@ pub fn appearance_sheet_paths(raw: &model::RawDefs) -> Vec<String> {
     }
     for a in &raw.accessories {
         paths.insert(a.sheet.value.clone());
+    }
+    paths.into_iter().collect()
+}
+
+/// Every object `sprite.sheet` path an already-parsed [`model::RawDefs`]
+/// tree references (story 2.2) -- the list a caller (the `defs-build`
+/// binary) reads real `IHDR` dimensions for via `fsio::read_png_dims`
+/// before calling [`build`]. Pure: just walks the tree `parse_all`
+/// already built.
+pub fn object_sprite_sheet_paths(raw: &model::RawDefs) -> Vec<String> {
+    let mut paths: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for o in &raw.objects {
+        paths.insert(o.sprite.value.sheet.clone());
     }
     paths.into_iter().collect()
 }

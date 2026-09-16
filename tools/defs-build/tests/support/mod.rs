@@ -59,6 +59,26 @@ pub fn merged_tree(category: &str) -> Vec<(PathBuf, String)> {
 /// (16x32 cells, one direction, one frame) -- fixed here rather than read
 /// from a real file, since these tests exercise `validate`'s own logic,
 /// never `fsio`'s.
+/// The `(width, height)` every `tests/fixtures/valid/objects/*.toml`
+/// sprite sheet path needs to satisfy the valid tree's own objects --
+/// fixed here rather than read from a real file, exactly like
+/// [`appearance_sheet_dims`].
+pub fn object_sheet_dims() -> BTreeMap<String, (u32, u32)> {
+    [("fixtures/objects/trash-bin-test.png", (16, 16))]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect()
+}
+
+/// Both [`appearance_sheet_dims`] and [`object_sheet_dims`] merged --
+/// every fixture directory declares both kinds of sheet path, so every
+/// caller wants the union.
+pub fn sheet_dims() -> BTreeMap<String, (u32, u32)> {
+    let mut all = appearance_sheet_dims();
+    all.extend(object_sheet_dims());
+    all
+}
+
 pub fn appearance_sheet_dims() -> BTreeMap<String, (u32, u32)> {
     [
         ("fixtures/appearance/body-test.png", (16, 32)),
@@ -72,9 +92,49 @@ pub fn appearance_sheet_dims() -> BTreeMap<String, (u32, u32)> {
     .collect()
 }
 
+/// The `name -> code` layer ladder the valid tree's own objects resolve
+/// against -- a small, fixed subset of the real codes golden (Quentin's
+/// direction: these integration tests exercise `validate`/`build`'s own
+/// logic through real fixture trees, never `fsio`'s filesystem reads).
+pub fn layer_codes() -> BTreeMap<String, u32> {
+    [("furniture", 2u32), ("objects", 3u32), ("walls", 4u32)]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect()
+}
+
+/// `""` (never `defs_build::model::SPRITE_SHEET_ALLOWED_ROOT`): every
+/// fixture directory but the two dedicated to that check names sheet
+/// paths that live nowhere near `ModernTileset/` -- an empty root always
+/// passes (`validate.rs`'s own `sheet_is_under_root`), so those fixtures
+/// stay focused on the one thing each is testing.
 pub fn build_err(category: &str) -> defs_build::DefsError {
     let files = merged_tree(category);
-    defs_build::build(&files, &appearance_sheet_dims(), "test-version").expect_err(&format!(
+    defs_build::build(&files, &sheet_dims(), &layer_codes(), "", "test-version").expect_err(
+        &format!("fixture category '{category}' was expected to fail the build"),
+    )
+}
+
+/// Like [`build_err`], but enforces the real
+/// [`defs_build::model::SPRITE_SHEET_ALLOWED_ROOT`] -- the two fixture
+/// categories that exercise the sheet-root check itself
+/// (`sprite-sheet-outside-allowed-root`, `sprite-sheet-path-escape`) use
+/// this instead.
+///
+/// `mod support` is compiled fresh into every `tests/*.rs` binary that
+/// declares it; `failure_fixtures.rs` is the only one that calls this, so
+/// `shared_malformed_cases.rs`'s own copy sees it as unused.
+#[allow(dead_code)]
+pub fn build_err_enforcing_sheet_root(category: &str) -> defs_build::DefsError {
+    let files = merged_tree(category);
+    defs_build::build(
+        &files,
+        &sheet_dims(),
+        &layer_codes(),
+        defs_build::model::SPRITE_SHEET_ALLOWED_ROOT,
+        "test-version",
+    )
+    .expect_err(&format!(
         "fixture category '{category}' was expected to fail the build"
     ))
 }

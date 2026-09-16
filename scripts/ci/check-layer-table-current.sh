@@ -1,23 +1,31 @@
 #!/usr/bin/env bash
 # The client's one mirror of sim::codes::layer (client/src/render/
-# layer-table.ts, story 1.6 cycle 2) must never drift from the server's
-# golden-pinned mapping -- Quentin/Tim's direction: a hand-maintained
-# copy with no guard is not acceptable a second time. Parses
-# server/sim/tests/goldens/codes_v1.golden's `layer` rows (code, name,
-# rank, in order) and server/sim/src/codes.rs's own `DEPRECATED_CODES`
-# list, and fails if client/src/render/layer-table.ts's `LAYER_TABLE`
-# disagrees on any code, name, rank or deprecated flag. No cargo, no
-# node: both sides are read as plain text, so this runs in client-check
-# (whose filter already includes server/**) at effectively zero cost.
+# layer-table.ts, story 1.6 cycle 2) and tools/defs-build's own deprecated-
+# layer-name copy (layer_codes.rs's DEPRECATED_LAYER_NAMES, story 2.2
+# cycle 1) must never drift from the server's golden-pinned mapping --
+# Quentin/Tim's direction: a hand-maintained copy with no guard is not
+# acceptable a second time. Parses server/sim/tests/goldens/codes_v1.golden's
+# `layer` rows (code, name, rank, in order) and server/sim/src/codes.rs's
+# own `DEPRECATED_CODES` list, and fails if either mirror disagrees: the
+# client's `LAYER_TABLE` on any code, name, rank or deprecated flag, or
+# defs-build's `DEPRECATED_LAYER_NAMES` on the exact set of deprecated
+# names. No cargo, no node: every side is read as plain text, so this
+# runs in client-check (whose filter already includes server/**) at
+# effectively zero cost.
+# Usage: check-layer-table-current.sh [golden] [codes.rs] [layer-table.ts]
+#   [layer_codes.rs] -- every argument optional, defaulting to the real
+#   repo paths; `scripts/ci/tests/test-check-layer-table-current.sh` is
+#   the only caller that ever overrides them, with throwaway fakes
+#   planting a drift.
 set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-cd "$REPO_ROOT"
 
-GOLDEN="server/sim/tests/goldens/codes_v1.golden"
-CODES_RS="server/sim/src/codes.rs"
-LAYER_TABLE_TS="client/src/render/layer-table.ts"
+GOLDEN="${1:-$REPO_ROOT/server/sim/tests/goldens/codes_v1.golden}"
+CODES_RS="${2:-$REPO_ROOT/server/sim/src/codes.rs}"
+LAYER_TABLE_TS="${3:-$REPO_ROOT/client/src/render/layer-table.ts}"
+LAYER_CODES_RS="${4:-$REPO_ROOT/tools/defs-build/src/layer_codes.rs}"
 
-for f in "$GOLDEN" "$CODES_RS" "$LAYER_TABLE_TS"; do
+for f in "$GOLDEN" "$CODES_RS" "$LAYER_TABLE_TS" "$LAYER_CODES_RS"; do
   [ -f "$f" ] || { echo "check-layer-table-current: $f not found" >&2; exit 1; }
 done
 
@@ -90,9 +98,36 @@ while [ "$i" -le "$GOLDEN_COUNT" ] && [ "$i" -le "$CLIENT_COUNT" ]; do
   i=$((i + 1))
 done
 
+# --- defs-build's own deprecated-name copy ----------------------------------
+# The names DEPRECATED_CODES's own codes resolve to, via the golden --
+# never a second, independent list of deprecated names.
+DEPRECATED_NAMES=""
+for code in $DEPRECATED_CODES; do
+  name="$(printf '%s\n' "$GOLDEN_ROWS" | awk -v c="$code" '$2 == c { print $3 }')"
+  [ -n "$name" ] && DEPRECATED_NAMES="$DEPRECATED_NAMES
+$name"
+done
+DEPRECATED_NAMES="$(printf '%s\n' "$DEPRECATED_NAMES" | sed '/^$/d' | sort)"
+
+LAYER_CODES_DEPRECATED_LINE="$(grep -oE 'DEPRECATED_LAYER_NAMES: &\[&str\] = &\[[^]]*\]' "$LAYER_CODES_RS" || true)"
+if [ -z "$LAYER_CODES_DEPRECATED_LINE" ]; then
+  echo "check-layer-table-current: FAIL -- could not find DEPRECATED_LAYER_NAMES in $LAYER_CODES_RS" >&2
+  exit 1
+fi
+DEFS_BUILD_DEPRECATED="$(
+  printf '%s' "$LAYER_CODES_DEPRECATED_LINE" |
+    grep -oE '\[[^]]*\]$' | tr -d '[]"' | tr ',' '\n' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' |
+    sed '/^$/d' | sort
+)"
+
+if [ "$DEPRECATED_NAMES" != "$DEFS_BUILD_DEPRECATED" ]; then
+  echo "check-layer-table-current: FAIL -- sim::codes::layer::DEPRECATED_CODES resolves to names [$(printf '%s' "$DEPRECATED_NAMES" | tr '\n' ' ')] but $LAYER_CODES_RS's DEPRECATED_LAYER_NAMES is [$(printf '%s' "$DEFS_BUILD_DEPRECATED" | tr '\n' ' ')]" >&2
+  FAILED=1
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-layer-table-current: client/src/render/layer-table.ts matches codes_v1.golden and DEPRECATED_CODES exactly" >&2
+echo "check-layer-table-current: client/src/render/layer-table.ts and tools/defs-build's DEPRECATED_LAYER_NAMES both match codes_v1.golden and DEPRECATED_CODES exactly" >&2
 exit 0

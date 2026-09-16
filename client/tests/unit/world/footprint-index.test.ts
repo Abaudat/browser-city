@@ -1,10 +1,22 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { parseDefs } from "../../../src/defs/parse";
 import { chunkKey } from "../../../src/world/chunk";
 import type { ColliderSource } from "../../../src/world/collision-grid";
 import type { FootprintSource } from "../../../src/world/footprint-index";
 import { FootprintIndex } from "../../../src/world/footprint-index";
 import { WorldIndex } from "../../../src/world/world-index";
+
+const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+
+/** FR127's own cap, read from the real generated artefact -- never a
+ * literal 8 here (Quentin's direction): a change to `MAX_FOOTPRINT_CELLS`
+ * must widen or narrow this property's own generators automatically. */
+const MAX_FOOTPRINT_CELLS = parseDefs(
+  JSON.parse(readFileSync(`${REPO_ROOT}client/public/defs/defs.json`, "utf-8")),
+).maxFootprintCells;
 
 const SUBCELLS_PER_CELL = 16;
 
@@ -56,6 +68,29 @@ describe("FootprintIndex", () => {
     expect(index.objectsAt(0, 7, 2)).toEqual([]);
     expect(index.objectsAt(0, 3, 2)).toEqual([]);
     expect(index.objectsAt(0, 4, 3)).toEqual([]);
+  });
+
+  // Story 2.2's AC: the anchor is the footprint's smallest x, largest y
+  // cell, not its top-left -- an asymmetric, multi-row footprint (3 wide,
+  // 2 tall) is the only shape that can tell the two conventions apart,
+  // since every real def today is one cell tall.
+  it("an asymmetric multi-row footprint covers cells north of its anchor, never south", () => {
+    const threeByTwo: FootprintSource = { width: 3, height: 2 };
+    const index = indexWith(new Map([[1, threeByTwo]]));
+    index.insert(row({ objectId: 8n, x: 10, y: 5 }));
+    // Anchor row (south, y=5) and the one row north of it (y=4): both
+    // three cells wide, west end at x=10.
+    for (const y of [4, 5]) {
+      for (const x of [10, 11, 12]) {
+        expect(index.objectsAt(0, x, y).map((e) => e.objectId)).toEqual([8n]);
+      }
+    }
+    // Never south of the anchor row, never west/east of the footprint,
+    // never further north than the footprint's own height.
+    expect(index.objectsAt(0, 10, 6)).toEqual([]);
+    expect(index.objectsAt(0, 9, 5)).toEqual([]);
+    expect(index.objectsAt(0, 13, 5)).toEqual([]);
+    expect(index.objectsAt(0, 10, 3)).toEqual([]);
   });
 
   it("carries the def id and the layer code each pick needs", () => {
@@ -123,6 +158,40 @@ describe("FootprintIndex", () => {
     expect(() => index.insert(row({ objectId: 1n, orientation: 1 }))).toThrow(/orientation/);
   });
 
+  // Story 2.2's AC: several objects may share an anchor cell (a rug, a
+  // table and a glass). The sort layer (`render/sort-key.test.ts`) proves
+  // draw order; this proves the index itself never collapses or drops a
+  // row that shares an anchor with two others.
+  it("three objects on distinct layers sharing one anchor cell are all retained, and deleting the middle one leaves exactly the other two", () => {
+    const index = indexWith(
+      new Map([
+        [1, ONE_CELL],
+        [2, ONE_CELL],
+        [3, ONE_CELL],
+      ]),
+    );
+    const rug = row({ objectId: 10n, defId: 1, layer: 2, x: 6, y: 6 });
+    const table = row({ objectId: 11n, defId: 2, layer: 3, x: 6, y: 6 });
+    const glass = row({ objectId: 12n, defId: 3, layer: 3, x: 6, y: 6 });
+    index.insert(rug);
+    index.insert(table);
+    index.insert(glass);
+    expect(
+      index
+        .objectsAt(0, 6, 6)
+        .map((e) => e.objectId)
+        .sort(),
+    ).toEqual([10n, 11n, 12n]);
+
+    index.delete(table);
+    expect(
+      index
+        .objectsAt(0, 6, 6)
+        .map((e) => e.objectId)
+        .sort(),
+    ).toEqual([10n, 12n]);
+  });
+
   it("deleting one of two objects sharing a cell leaves the other", () => {
     const index = indexWith(new Map([[1, ONE_CELL]]));
     const a = row({ objectId: 1n, x: 3, y: 3 });
@@ -136,12 +205,14 @@ describe("FootprintIndex", () => {
   it("update is delete then insert, across a chunk boundary", () => {
     const index = indexWith(new Map([[1, TWO_BY_TWO]]));
     const before = row({ objectId: 1n, x: 1, y: 1 });
-    const after = row({ objectId: 1n, x: 31, y: 31 });
+    // The anchor is the footprint's south row (largest y): (31, 32)'s
+    // footprint covers rows 31 and 32, columns 31 and 32 -- spanning four
+    // chunks (CHUNK_SIZE is 32), the same property the pre-story-2.2
+    // anchor (31, 31) gave under the old top-left convention.
+    const after = row({ objectId: 1n, x: 31, y: 32 });
     index.insert(before);
     index.update(before, after);
     expect(index.objectsAt(0, 1, 1)).toEqual([]);
-    // A 2x2 footprint anchored at (31, 31) spans four cells across four
-    // chunks (CHUNK_SIZE is 32).
     expect(index.objectsAt(0, 31, 31)).toHaveLength(1);
     expect(index.objectsAt(0, 32, 31)).toHaveLength(1);
     expect(index.objectsAt(0, 31, 32)).toHaveLength(1);
@@ -257,6 +328,65 @@ describe("FootprintIndex", () => {
         },
       ),
       { numRuns: 40 },
+    );
+  });
+
+  // FR126: extent comes from the def, not from a per-cell row -- an
+  // oracle-based property, unlike `inv_footprint_index_matches_rebuild`
+  // above (which only proves the index agrees with *itself*, so an
+  // anchor-direction bug would appear on both sides and pass). The
+  // oracle is `{x..x+w-1} x {y-h+1..y}`, computed independently of
+  // `footprintOrigin`/`FootprintIndex`'s own arithmetic.
+  it("inv_footprint_extent_matches_declared_def", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: MAX_FOOTPRINT_CELLS }),
+        fc.integer({ min: 1, max: MAX_FOOTPRINT_CELLS }),
+        // Anchors straddling a chunk boundary (CHUNK_SIZE is 32) on both
+        // signs, so a chunk-key bug in the footprint origin shows up too.
+        fc.integer({ min: -40, max: 40 }),
+        fc.integer({ min: -40, max: 40 }),
+        (width, height, anchorX, anchorY) => {
+          const def: FootprintSource = { width, height };
+          const index = indexWith(new Map([[1, def]]));
+          const r = row({ objectId: 1n, x: anchorX, y: anchorY });
+          index.insert(r);
+
+          const expectedCells = new Set<string>();
+          for (let dx = 0; dx < width; dx++) {
+            for (let dy = 0; dy < height; dy++) {
+              expectedCells.add(`${anchorX + dx},${anchorY - dy}`);
+            }
+          }
+
+          // Every covered cell resolves to exactly one entry for this
+          // object (never a duplicate, never a different one).
+          const actualCells = new Set<string>();
+          for (let dx = -1; dx <= width; dx++) {
+            for (let dy = -1; dy <= height; dy++) {
+              const cellX = anchorX + dx;
+              const cellY = anchorY - dy;
+              const entries = index.objectsAt(0, cellX, cellY);
+              const key = `${cellX},${cellY}`;
+              if (expectedCells.has(key)) {
+                expect(entries.map((e) => e.objectId)).toEqual([1n]);
+                actualCells.add(key);
+              } else {
+                expect(entries).toEqual([]);
+              }
+            }
+          }
+          expect(actualCells).toEqual(expectedCells);
+
+          // Removing the row clears every one of those cells.
+          index.delete(r);
+          for (const key of expectedCells) {
+            const [cellX, cellY] = key.split(",").map(Number);
+            expect(index.objectsAt(0, cellX as number, cellY as number)).toEqual([]);
+          }
+        },
+      ),
+      { numRuns: 200 },
     );
   });
 });

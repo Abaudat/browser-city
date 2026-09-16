@@ -1,11 +1,18 @@
 [[object]]
 id = 1
 key = "trash_bin"
+name = "Trash Bin"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16/ME_Singles_Camping_16x16_Pier_Bin_1.png", x = 0, y = 0, w = 16, h = 16 }
 width = 1
 height = 1
 # A sub-tile collider (FR128): the bin's own body, not its whole cell --
 # half a cell wide and tall, centred in the cell. Sub-cells relative to
-# the anchor cell's top-left, COLLIDER_SUBCELLS_PER_CELL (16) per cell.
+# the footprint's own north-west sub-cell origin (its top-left, matching
+# the sprite's own pixel space -- not the same corner as the placed
+# anchor cell, which is the footprint's south-west corner; the two
+# coincide here because this object is one cell tall),
+# COLLIDER_SUBCELLS_PER_CELL (16) per cell.
 collider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }
 # FR148: where a player must stand to interact with the bin -- the whole
 # cell plus a quarter-cell skirt on every side, so you can use it from any
@@ -15,12 +22,18 @@ interact_at = { x0 = -4, y0 = -4, x1 = 20, y1 = 20 }
 [[object]]
 id = 2
 key = "park_bench"
+name = "Park Bench"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png", x = 0, y = 0, w = 32, h = 16 }
 width = 2
 height = 1
 
 [[object]]
 id = 3
 key = "shop_counter"
+name = "Shop Counter"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png", x = 0, y = 0, w = 48, h = 64 }
 width = 3
 height = 1
 # The whole cell of the counter's own footprint blocks (you cannot walk
@@ -32,6 +45,9 @@ interact_at = { x0 = 0, y0 = 16, x1 = 48, y1 = 32 }
 [[object]]
 id = 4
 key = "lamppost"
+name = "Street Lamp"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Street_Lamp_5.png", x = 0, y = 0, w = 16, h = 64 }
 width = 1
 height = 1
 # The story 1.8 worked example: a small base collider near the bottom of
@@ -41,6 +57,9 @@ collider = { x0 = 6, y0 = 10, x1 = 10, y1 = 14 }
 [[object]]
 id = 5
 key = "shop_window"
+name = "Shop Window"
+layer = "walls"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Balcony_Window_Left_1.png", x = 0, y = 0, w = 16, h = 16 }
 width = 1
 height = 1
 # Story 1.7 (FR121): a window wall tile -- solid like any other wall cell
@@ -52,6 +71,9 @@ collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
 [[object]]
 id = 6
 key = "wall_segment"
+name = "Wall Segment"
+layer = "walls"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Grass_Wall_1_1.png", x = 0, y = 0, w = 16, h = 16 }
 width = 1
 height = 1
 # One plain, solid wall cell -- the generic segment a wall run (a
@@ -63,6 +85,13 @@ collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
 [[object]]
 id = 7
 key = "bridge_deck"
+name = "Bridge Deck"
+layer = "objects"
+# Placeholder art (Artie's own curation is a later story): dimensions
+# only need to satisfy the footprint match today, since story 2.6's
+# packer -- the first thing that actually draws from this rect -- does
+# not exist yet.
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/10_Vehicles_Singles_16x16/ME_Singles_Vehicles_16x16_Car_Left_1.png", x = 0, y = 0, w = 64, h = 48 }
 width = 4
 height = 1
 # The walkable span of a footbridge: four cells of deck, no collider at
@@ -74,6 +103,9 @@ height = 1
 [[object]]
 id = 8
 key = "foot_stairs"
+name = "Foot Stairs"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Small_Stairs.png", x = 0, y = 0, w = 16, h = 32 }
 width = 1
 height = 1
 # A flight of steps between two floors: a physical, walkable prop, never

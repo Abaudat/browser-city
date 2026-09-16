@@ -49,9 +49,12 @@ export function isEmptyCellBounds(bounds: CellBounds): boolean {
  * 1.12, FR165): its identity, where it sits, how big its footprint is,
  * and the collider it declares -- or `undefined`, which is FR128's
  * walkability and a real state a debug overlay has to be able to show.
- * `collider` is the definition's own rect, relative to the anchor cell,
- * in sub-cells; translating it into world sub-cells is the reader's job,
- * exactly as it is `CollisionGrid`'s. */
+ * `collider` is the definition's own rect, in sub-cells, relative to the
+ * footprint's own north-west sub-cell origin -- not `anchorX`/`anchorY`
+ * themselves, which name the footprint's south-west corner
+ * (`world/footprint.ts`'s `footprintOrigin` converts between the two);
+ * translating it into world sub-cells is the reader's job, exactly as it
+ * is `CollisionGrid`'s. */
 export interface PlacedObjectView {
   readonly objectId: bigint;
   readonly defId: number;

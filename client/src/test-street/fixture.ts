@@ -459,7 +459,7 @@ function platformWalls(): readonly StreetProp[] {
       id: 62n,
       assetKey: "subwayWall",
       x: PLATFORM_X0,
-      y: PLATFORM_INTERIOR_Y0,
+      y: PLATFORM_INTERIOR_Y1,
       floor: SUBWAY_FLOOR,
       layer: "walls",
       footprint: { width: 1, height: PLATFORM_INTERIOR_Y1 - PLATFORM_INTERIOR_Y0 + 1 },
@@ -470,7 +470,7 @@ function platformWalls(): readonly StreetProp[] {
       id: 63n,
       assetKey: "subwayWall",
       x: PLATFORM_X1,
-      y: PLATFORM_INTERIOR_Y0,
+      y: PLATFORM_INTERIOR_Y1,
       floor: SUBWAY_FLOOR,
       layer: "walls",
       footprint: { width: 1, height: PLATFORM_INTERIOR_Y1 - PLATFORM_INTERIOR_Y0 + 1 },
@@ -540,7 +540,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     id: 4n,
     assetKey: "wallTile",
     x: WEST_WALL_X,
-    y: INTERIOR_Y0,
+    y: INTERIOR_Y1,
     floor: 0,
     layer: "walls",
     footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
@@ -554,7 +554,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     id: 5n,
     assetKey: "wallTile",
     x: PARTY_WALL_X,
-    y: INTERIOR_Y0,
+    y: INTERIOR_Y1,
     floor: 0,
     layer: "walls",
     footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
@@ -678,7 +678,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     id: 34n,
     assetKey: "wallTile",
     x: EAST_WALL_X_B,
-    y: INTERIOR_Y0,
+    y: INTERIOR_Y1,
     floor: 0,
     layer: "walls",
     footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
@@ -796,7 +796,10 @@ export const STREET_PROPS: readonly StreetProp[] = [
 ] as const;
 
 /** A collider-only rect, in whole cells, with no sprite and no place in
- * the depth-sorted pool. */
+ * the depth-sorted pool. `x`/`y` is the anchor cell -- the rect's
+ * smallest x, largest y cell (the object-def anchor convention every
+ * `PlacedObject` shares), not its top-left: it extends east and north
+ * from there. */
 export interface StreetBoundaryRect {
   readonly id: bigint;
   readonly x: number;
@@ -836,9 +839,12 @@ export interface StreetBoundaryRect {
  * resolver against it. The platform (floor -1) needs no separate entry
  * here: its own four walls (`platformWalls`) already close it. */
 export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
-  // West and east of the pavement.
-  { id: 101n, x: 0, y: SOUTH_WALL_Y, width: 1, height: 4 },
-  { id: 102n, x: 21, y: SOUTH_WALL_Y, width: 1, height: 4 },
+  // West and east of the pavement. Anchored at the south end of the
+  // 4-tall span (the object-def anchor convention: smallest x, largest
+  // y) -- `SOUTH_WALL_Y + 3` is the same four rows `SOUTH_WALL_Y..
+  // SOUTH_WALL_Y+3` a top-left anchor at `SOUTH_WALL_Y` used to cover.
+  { id: 101n, x: 0, y: SOUTH_WALL_Y + 3, width: 1, height: 4 },
+  { id: 102n, x: 21, y: SOUTH_WALL_Y + 3, width: 1, height: 4 },
   // South of the pavement.
   { id: 103n, x: 0, y: PAVEMENT_SOUTH_EDGE_Y, width: 21, height: 1 },
   // North of the pavement, either side of the terrace's own footprint --
