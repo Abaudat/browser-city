@@ -72,6 +72,16 @@ describe("buildSortLabels", () => {
     expect(labels.map((l) => l.stableId)).toEqual([1n]);
   });
 
+  it("culls on every side of the viewport, not only past its far corner", () => {
+    const bounds = { floor: 0, cellX0: 0, cellY0: 0, cellX1: 4, cellY1: 4 };
+    const west = drawable({ stableId: 1n, x: toSortUnits(-3), y: toSortUnits(2) });
+    const north = drawable({ stableId: 2n, x: toSortUnits(2), y: toSortUnits(-3) });
+    const inside = drawable({ stableId: 3n, x: toSortUnits(2), y: toSortUnits(2) });
+    const east = drawable({ stableId: 4n, x: toSortUnits(40), y: toSortUnits(2) });
+    const labels = buildSortLabels(viewOver([west, north, inside, east], [], bounds));
+    expect(labels.map((l) => l.stableId)).toEqual([3n]);
+  });
+
   it("keeps a bigint stable id exact, never narrowed through Number", () => {
     const huge = 9007199254740993n; // Number.MAX_SAFE_INTEGER + 2
     const [label] = buildSortLabels(viewOver([drawable({ stableId: huge })]));

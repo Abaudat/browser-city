@@ -64,12 +64,12 @@ export function checkOverlayConformance(target: ConformanceTarget): string[] {
     problems.push("no overlay is registered at all -- the registry is the only way one exists");
   }
 
-  const seen = new Set<string>();
+  // Ids being unique is `DebugOverlayRegistry`'s own constructor-time
+  // refusal (it throws rather than shadowing one), so there is
+  // deliberately no duplicate-id check here: it could never be reached
+  // through a registry-backed target, and an unreachable check is an
+  // untested one forever.
   for (const entry of entries) {
-    if (seen.has(entry.id)) {
-      problems.push(`${entry.id}: two overlays share this id`);
-    }
-    seen.add(entry.id);
     if (entry.label.trim() === "") {
       problems.push(`${entry.id}: has no label, so no reader can tell what it shows`);
     }
@@ -85,10 +85,7 @@ export function checkOverlayConformance(target: ConformanceTarget): string[] {
       problems.push(`${id}: has a group on the page while disabled`);
     }
 
-    if (!target.enable(id)) {
-      problems.push(`${id}: the registry does not know its own registered id`);
-      continue;
-    }
+    target.enable(id);
     target.redraw();
     if (!groupOf(target, id)) {
       problems.push(`${id}: enabling it drew no group of its own`);

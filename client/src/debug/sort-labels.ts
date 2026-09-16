@@ -49,15 +49,15 @@ function formatKey(d: Drawable): string {
 export function parseSortLabel(label: string): Drawable | undefined {
   const match = LABEL_PATTERN.exec(label);
   if (!match) return undefined;
-  const [, y, rank, x, stableId] = match;
-  if (y === undefined || rank === undefined || x === undefined || stableId === undefined) {
-    return undefined;
-  }
+  // Every group in `LABEL_PATTERN` is mandatory and the pattern is
+  // anchored, so a match has all four. Asserted rather than re-checked:
+  // a defensive branch here could never be reached, and an unreachable
+  // branch is an untested branch forever.
   return {
-    x: Number(x),
-    y: Number(y),
-    rank: Number(rank),
-    stableId: BigInt(stableId),
+    y: Number(match[1]),
+    rank: Number(match[2]),
+    x: Number(match[3]),
+    stableId: BigInt(match[4] as string),
     floor: 0,
   };
 }

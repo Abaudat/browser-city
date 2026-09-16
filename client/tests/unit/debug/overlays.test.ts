@@ -131,6 +131,37 @@ describe("mountDebugOverlays", () => {
     expect(document.querySelectorAll("[data-bc-debug]")).toHaveLength(0);
   });
 
+  it("warns through the console when no warning sink was injected", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const handle = mountDebugOverlays({
+      mount: host,
+      viewBoxWidth: 10,
+      viewBoxHeight: 10,
+      view: conformanceView(),
+      search: "?debug=navmesh",
+    });
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("navmesh"));
+    spy.mockRestore();
+    handle.destroy();
+  });
+
+  it("leaves a mount that already positions itself alone", () => {
+    const host = document.createElement("div");
+    host.style.position = "absolute";
+    document.body.appendChild(host);
+    const handle = mountDebugOverlays({
+      mount: host,
+      viewBoxWidth: 10,
+      viewBoxHeight: 10,
+      view: conformanceView(),
+      warn: () => {},
+    });
+    expect(host.style.position).toBe("absolute");
+    handle.destroy();
+  });
+
   it("positions itself against the canvas mount rather than the page", () => {
     const host = document.createElement("div");
     host.id = "test-street";

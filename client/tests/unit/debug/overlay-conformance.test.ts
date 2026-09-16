@@ -90,4 +90,80 @@ describe("the overlay contract itself", () => {
     expect(checkOverlayConformance(handle).join("\n")).toContain("no overlay is registered");
     handle.destroy();
   });
+
+  // The failures above are all about an overlay. These are about a
+  // *mount*: a future mount that forgot to remove a group, or that drew
+  // something before anybody asked, would sail past every test in this
+  // repo except this one.
+  describe("against a deliberately broken mount", () => {
+    function brokenTarget(behaviour: {
+      enabledAtStart?: boolean;
+      drawsGroup?: boolean;
+      removesGroup?: boolean;
+      staysEnabledOnDisable?: boolean;
+    }) {
+      const root = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      let enabled = behaviour.enabledAtStart ?? false;
+      return {
+        root,
+        list: () => [{ id: "broken", label: "broken", enabled }],
+        enable: () => {
+          enabled = true;
+          return true;
+        },
+        disable: () => {
+          enabled = behaviour.staysEnabledOnDisable ?? false;
+          return true;
+        },
+        toggle: () => {
+          enabled = !enabled;
+          return true;
+        },
+        redraw: () => {
+          const existing = root.querySelector('[data-bc-debug="broken"]');
+          if (enabled && !existing && (behaviour.drawsGroup ?? true)) {
+            const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            group.setAttribute("data-bc-debug", "broken");
+            root.appendChild(group);
+          }
+          if (!enabled && existing && (behaviour.removesGroup ?? true)) existing.remove();
+        },
+      };
+    }
+
+    it("catches a mount that draws before anything asked for it", () => {
+      const target = brokenTarget({ enabledAtStart: true });
+      target.redraw();
+      expect(checkOverlayConformance(target).join("\n")).toContain(
+        "is on before anything asked for it",
+      );
+    });
+
+    it("catches a mount that leaves a group on the page while disabled", () => {
+      const target = brokenTarget({ removesGroup: false });
+      target.enable();
+      target.redraw();
+      target.disable();
+      expect(checkOverlayConformance(target).join("\n")).toContain("has a group on the page");
+    });
+
+    it("catches a mount that draws no group when an overlay is enabled", () => {
+      const target = brokenTarget({ drawsGroup: false });
+      const problems = checkOverlayConformance(target).join("\n");
+      expect(problems).toContain("drew no group");
+      expect(problems).toContain("toggling it on drew no group");
+    });
+
+    it("catches a mount that leaks a group across a disable and across a toggle", () => {
+      const target = brokenTarget({ removesGroup: false });
+      const problems = checkOverlayConformance(target).join("\n");
+      expect(problems).toContain("left its group");
+      expect(problems).toContain("toggling it back off left its group behind");
+    });
+
+    it("catches a mount whose disable does not actually disable", () => {
+      const target = brokenTarget({ staysEnabledOnDisable: true });
+      expect(checkOverlayConformance(target).join("\n")).toContain("disabling twice left it");
+    });
+  });
 });

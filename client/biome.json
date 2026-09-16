@@ -157,6 +157,63 @@
       }
     },
     {
+      "includes": [
+        "src/render/**",
+        "src/world/**",
+        "src/input/**",
+        "src/ui/**",
+        "src/net/**",
+        "src/defs/**",
+        "src/boot/**",
+        "src/settings/**",
+        "src/test-street/**"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../debug/*", "../debug/**"]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/debug/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "pixi.js",
+                      "../net/*",
+                      "../net/**",
+                      "!../net/bindings/types",
+                      "../test-street/*",
+                      "../test-street/**",
+                      "../ui/*",
+                      "../ui/**"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/render/**", "src/net/**", "src/defs/**", "src/boot/**"],
       "linter": {
         "rules": {

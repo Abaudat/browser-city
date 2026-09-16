@@ -131,27 +131,23 @@ export function mountDebugOverlays(options: MountDebugOverlaysOptions): DebugOve
     return group;
   }
 
-  function dropGroup(id: string): void {
-    const group = groups.get(id);
-    if (!group) return;
-    group.remove();
-    groups.delete(id);
-  }
-
   function redraw(): void {
     const enabled = registry.enabledIds();
+    // A disabled overlay leaves nothing behind -- its whole group goes,
+    // rather than being emptied and kept.
+    for (const [id, group] of [...groups]) {
+      if (enabled.includes(id)) continue;
+      group.remove();
+      groups.delete(id);
+    }
     // The whole of "an overlay that is not enabled costs nothing": this
     // returns before touching `view` at all, so no grid query, no object
     // enumeration and no allocation happens on any event while every
     // overlay is off.
-    for (const id of [...groups.keys()]) {
-      if (!enabled.includes(id)) dropGroup(id);
-    }
     if (enabled.length === 0) return;
-    for (const id of enabled) {
-      const overlay = registry.overlay(id);
-      if (!overlay) continue;
-      const group = groupFor(id);
+    for (const overlay of registry.overlays()) {
+      if (!enabled.includes(overlay.id)) continue;
+      const group = groupFor(overlay.id);
       clearGroup(group);
       overlay.draw(group, view);
     }
