@@ -43,7 +43,7 @@ pub const INV_RULE_VERDICTS_DETERMINISTIC: &str =
 pub const INV_RULE_VERDICTS_INDEPENDENT_OF_INPUT_ORDER: &str =
     "shuffling fact order or rule row order does not change the sorted output";
 pub const INV_DISTRIBUTION_EVEN_LAYOUT_NEVER_VIOLATES: &str = "a generated perfectly even 1-per-N layout never violates; clustering all services into one bin always does; and a layout that satisfies the minimum spacing while sitting in one corner of the site still violates the coverage bound";
-pub const INV_RULE_VERDICTS_INVARIANT_UNDER_TAG_RELABELLING: &str = "consistently permuting every tag id across both the rules and the site never changes which cells violate, over all five kinds, with areas and a non-vacuous requirement/distribution";
+pub const INV_RULE_VERDICTS_INVARIANT_UNDER_TAG_RELABELLING: &str = "consistently relabelling every tag id, across both the rules and the site, to six arbitrary distinct ids never changes which cells violate, over all five kinds, with areas and a non-vacuous requirement/distribution";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -337,7 +337,7 @@ proptest! {
 }
 
 /// A fixed universe of six tag ids and two area ids the rule-engine
-/// property tests below share, so a single permutation (see
+/// property tests below share, so a single relabelling (see
 /// `inv_rule_verdicts_invariant_under_tag_relabelling`) can be applied
 /// consistently across every kind. Never the manifest's own ids -- these
 /// are the engine's own test vocabulary, disjoint from any real content.
@@ -352,7 +352,7 @@ const RULE_SUBJECT: TagId = 101;
 const RULE_PER_OR_WITHIN: TagId = 102;
 
 /// One rule per kind, every tag field drawn from `tags` (normally
-/// [`TAG_UNIVERSE`] itself, or a permutation of it) -- `min: 1` and
+/// [`TAG_UNIVERSE`] itself, or a relabelling of it) -- `min: 1` and
 /// `min_spacing > 0`/`max_distance > 0` deliberately, so Requirement and
 /// Distribution are never vacuous (Quentin's direction, PR #294 cycle
 /// 1).
@@ -416,7 +416,7 @@ fn five_rules(tags: [TagId; 6]) -> Vec<RuleDef> {
 /// Builds a site from `(x, y, floor, tag_mask, area_mask)` facts: bit `i`
 /// of `tag_mask` means the cell carries `tags[i]`; bit 0/1 of `area_mask`
 /// means the cell sits in [`AREA_A`]/[`AREA_B`]. `tags` is normally
-/// [`TAG_UNIVERSE`] or a permutation of it -- passing a permutation here
+/// [`TAG_UNIVERSE`] or a relabelling of it -- passing a relabelling here
 /// is how `inv_rule_verdicts_invariant_under_tag_relabelling` relabels
 /// the site consistently with a relabelled rule set.
 fn build_site(facts: &[(i32, i32, i8, u8, u8)], tags: [TagId; 6]) -> sim::rules::testing::Site {
@@ -497,22 +497,30 @@ proptest! {
     }
 
     /// `inv_rule_verdicts_invariant_under_tag_relabelling` (Quentin's
-    /// direction, PR #294 cycle 1, replacing the tautological
+    /// direction, PR #294 cycles 1-2, replacing the tautological
     /// `inv_generated_placement_never_violates_local_rules`): the
     /// behavioural proof of AC3's "never a bespoke branch" that a grep
     /// guard cannot give -- `check-rule-engine-no-content-keys.sh` only
     /// catches a hardcoded *quoted key*, never a hardcoded *tag id*
-    /// (`if subject == 7`). Consistently relabelling every tag id, in
-    /// both the rules and the site, by the same permutation must never
-    /// change which cells violate: the engine's behaviour depends only
-    /// on tag *equality*, never on any particular numeric id.
+    /// (`if subject == 7`, or `if subject == 42` for any id outside
+    /// [`TAG_UNIVERSE`]). The replacement tag set is six *arbitrary*
+    /// distinct `u32`s drawn from the full range, never a permutation of
+    /// [`TAG_UNIVERSE`]'s own six small numbers -- a permutation alone
+    /// would never exercise a branch hardcoded on an id above 6.
+    /// Consistently relabelling every tag id, in both the rules and the
+    /// site, must never change which cells violate: the engine's
+    /// behaviour depends only on tag *equality*, never on any particular
+    /// numeric id.
     #[test]
     fn inv_rule_verdicts_invariant_under_tag_relabelling(
         facts in facts_strategy(0..30),
-        perm_keys in proptest::collection::vec(any::<u32>(), 6),
+        replacement_tags in proptest::collection::btree_set(any::<u32>(), 6),
     ) {
-        let permuted: Vec<TagId> = shuffle(&TAG_UNIVERSE, &perm_keys);
-        let permuted_tags: [TagId; 6] = permuted.try_into().unwrap();
+        let permuted_tags: [TagId; 6] = replacement_tags
+            .into_iter()
+            .collect::<Vec<TagId>>()
+            .try_into()
+            .unwrap();
 
         let original_rules = five_rules(TAG_UNIVERSE);
         let permuted_rules = five_rules(permuted_tags);

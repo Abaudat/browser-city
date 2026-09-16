@@ -61,7 +61,7 @@ with no row here.
 | `inv_rule_verdicts_deterministic` | The same facts and rules always give identical violations (FR112, NFR25) | covered | `inv_rule_verdicts_deterministic` | 2.10 |
 | `inv_rule_verdicts_independent_of_input_order` | Shuffling fact order or rule row order does not change the sorted output (FR112, NFR25) | covered | `inv_rule_verdicts_independent_of_input_order` | 2.10 |
 | `inv_distribution_even_layout_never_violates` | A generated perfectly even 1-per-N layout never violates; clustering all services into one bin always does; a layout that satisfies the minimum spacing while sitting in one corner of the site still violates the coverage bound (AC2, FR112) | covered | `inv_distribution_even_layout_never_violates` | 2.10 |
-| `inv_rule_verdicts_invariant_under_tag_relabelling` | Consistently permuting every tag id across both the rules and the site never changes which cells violate, over all five kinds, with areas and a non-vacuous requirement/distribution -- the behavioural half of AC3's "never a bespoke branch" a grep guard cannot give (FR112) | covered | `inv_rule_verdicts_invariant_under_tag_relabelling` | 2.10 |
+| `inv_rule_verdicts_invariant_under_tag_relabelling` | Consistently relabelling every tag id, across both the rules and the site, to six arbitrary distinct ids never changes which cells violate, over all five kinds, with areas and a non-vacuous requirement/distribution -- the behavioural half of AC3's "never a bespoke branch" a grep guard cannot give (FR112) | covered | `inv_rule_verdicts_invariant_under_tag_relabelling` | 2.10 |
 
 ## Coverage scale (NFR29)
 
