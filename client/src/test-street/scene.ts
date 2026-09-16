@@ -1,11 +1,12 @@
 // The street scene's Pixi mount -- one of a small, named set of files
 // allowed to import `pixi.js` (`bootstrap.ts`,
-// `render/pixi-order.ts`/`render/pixi-visibility.ts`, and story 1.10's
-// `render/appearance/composite-canvas.ts`/`appearance-texture.ts` and
+// `render/pixi-order.ts`/`render/pixi-visibility.ts`/`render/pixi-highlight.ts`,
+// and story 1.10's `render/appearance/composite-canvas.ts`/`appearance-texture.ts` and
 // `test-street/citizens-layer.ts`/`test-street/compare-pipeline-vs-stack.ts`, each its
 // own real-canvas/Pixi adapter). Ordering itself is
 // `render/pixi-order.ts`'s job, visibility is `render/pixi-visibility.
-// ts`'s (story 1.7); this file's whole job is texture loading, sprite
+// ts`'s (story 1.7), FR173's affordance mark is `render/pixi-highlight.
+// ts`'s (story 1.15); this file's whole job is texture loading, sprite
 // construction, container wiring, keyboard input and the mount-time
 // geometry guard. Real LimeZu sprites only, loaded straight out of the
 // repo-root `ModernTileset/` (Artie's direction: no coloured rectangles,
@@ -36,6 +37,7 @@ import { AppearanceTextureCache } from "../render/appearance/appearance-texture"
 import type { AppearanceTuple } from "../render/appearance/composite";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName } from "../render/layer-table";
+import { HighlightApplier } from "../render/pixi-highlight";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
 import { floorOffsetPx, screenPositionPx } from "../render/screen-position";
@@ -221,24 +223,6 @@ const CANVAS_MARGIN_PX = 8;
  * never a second, separately-typed `floor < 0` check. */
 const SUBWAY_BACKGROUND = 0x000000;
 
-/** FR173's affordance mark, as one dial (Artie's direction, cycle 2):
- * how strongly the additive overlay copy of a hovered object's own
- * sprites is drawn. Additive blending brightens that object's own opaque
- * pixels neutrally; a tint can only multiply, which reads as stained
- * rather than lit and carries the state change in hue alone. A blend mode
- * is not a filter, so FR121's ban is untouched. */
-const HIGHLIGHT_ALPHA = 0.18;
-/** The overlay's blend mode -- one of Pixi's basic modes, which needs no
- * filter path in the renderer. */
-const HIGHLIGHT_BLEND_MODE = "add" as const;
-
-/** `buildHighlightOverlays`'s own alpha computation, pulled out as a pure
- * function so it is unit-testable without mounting a Pixi `Application`
- * (Quentin's direction, story 1.11). `strength` is the U1 dial, 0-100. */
-export function highlightOverlayAlpha(strength: number, sourceAlpha: number): number {
-  return HIGHLIGHT_ALPHA * (strength / 100) * sourceAlpha;
-}
-
 /** The layer code every ground-tile-pass group's own synthetic
  * `VisibilityDrawable` carries -- never read by `computeVisibility`'s
  * wall-layer check (a ground pass is never `isNearSide`), so any live
@@ -258,6 +242,12 @@ export interface MountStreetSceneOptions {
    * divided down to a plain `(0, 1)` fraction -- never a literal in this
    * file or in `render/visibility.ts`/`pixi-visibility.ts`. */
   readonly windowAlpha: number;
+  /** `render.highlight_alpha`'s resolved balance value (FR173), already
+   * divided down to a plain `(0, 1)` fraction -- the ceiling
+   * `render/highlight.ts`'s `highlightOverlayAlpha` scales by the U1
+   * display-strength dial, never a literal in `render/highlight.ts` or
+   * `render/pixi-highlight.ts`. */
+  readonly highlightAlpha: number;
   /** Read once from `defs/`'s `movement.*` balance keys (`main.ts`) --
    * never a literal in this file. */
   readonly movementConfig: MovementConfig;
@@ -325,8 +315,9 @@ export interface MountStreetSceneOptions {
    * never polled. */
   readonly onHighlightChange?: (objectId: bigint | undefined) => void;
   /** FR173's affordance dial (story 1.11, the U1 dial from `docs/ux.md`):
-   * 0-100, scaling `HIGHLIGHT_ALPHA` linearly. Required, not defaulted
-   * here (Tim's direction, cycle 2): `settings/display-settings.ts`'s
+   * 0-100, scaling `highlightAlpha` linearly (`render/highlight.ts`'s
+   * `highlightOverlayAlpha`). Required, not defaulted here (Tim's
+   * direction, cycle 2): `settings/display-settings.ts`'s
    * `DEFAULT_DISPLAY_SETTINGS` is the one place a default for this value
    * exists -- a second opinion on it here is exactly what let the range
    * `[20, 100]` and this file's own fallback of 100 disagree. */
@@ -366,6 +357,13 @@ export interface StreetSceneHandle {
    * options-menu slider while an object is marked is visible without a
    * re-hover. */
   setHighlightStrength(strength: number): void;
+  /** Clears the mark and ignores pointer input until [`resumePointer`]
+   * (Artie's direction: the mark must never survive its context) --
+   * `main.ts` calls this from the options menu's own `onOpenChange(true)`. */
+  suspendPointer(): void;
+  /** Re-resolves the hover at the last known pointer position, if any --
+   * `main.ts` calls this from `onOpenChange(false)`. */
+  resumePointer(): void;
 
   // Story 1.12 (FR165): the reads `main.ts` assembles a `DebugWorldView`
   // out of. Deliberately four plain reads rather than a `DebugWorldView`
@@ -605,6 +603,7 @@ export async function mountStreetScene(
     storeyHeightPx,
     rankOf,
     windowAlpha,
+    highlightAlpha,
     movementConfig,
     objectDefs,
     windowDefIds,
@@ -706,6 +705,25 @@ export async function mountStreetScene(
     return { drawable, view: sprite, assetKey: drawable.assetKey };
   });
 
+  // FR173's affordance mark (`render/highlight.ts`/`render/pixi-highlight.ts`):
+  // one `HighlightApplier` per scene, built once from the same
+  // `entries` this scene already has, and threaded through picking's own
+  // drawn-rect index below with no second lookup. `reorderFloor` (the one
+  // wrapper that calls `applyDepthOrder`) is the only place `reapply()`
+  // is ever called (Tim's direction) -- see that function, just below.
+  const spritesByObjectId = new Map<bigint, Sprite[]>();
+  for (const entry of entries) {
+    const id = entry.drawable.stableId;
+    const list = spritesByObjectId.get(id);
+    if (list) list.push(entry.view);
+    else spritesByObjectId.set(id, [entry.view]);
+  }
+  const highlightApplier = new HighlightApplier(
+    spritesByObjectId,
+    highlightAlpha,
+    highlightStrength,
+  );
+
   let walk: FloorWalkResult = {
     ...initialFloorWalkState(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor),
     transitioned: false,
@@ -765,6 +783,11 @@ export async function mountStreetScene(
       orderByFloor.set(floor, order);
     }
     applyDepthOrder(stacks.stackFor(floor).pool, list, order);
+    // The one call site (Tim's direction): `applyDepthOrder`'s own
+    // `removeChildren()` drops every overlay along with anything else it
+    // does not own, so every re-sort re-attaches whatever is currently
+    // marked. A no-op while nothing is marked.
+    highlightApplier.reapply();
   }
 
   function rebuildRenderOrder(): void {
@@ -997,72 +1020,17 @@ export async function mountStreetScene(
   const { keyboard } = options;
   const detachKeyboard = attachKeyboard(keyboard);
 
-  // FR173's affordance mark (Artie's direction, cycle 2): while an object
-  // is hovered and in reach, one extra sprite per drawable of that object
-  // -- same texture, same transform, drawn in the slot directly above its
-  // own source sprite -- composited additively. That brightens the
-  // object's own opaque pixels and nothing else: not its tile, not a box
-  // around it, and nothing left in the world once the pointer moves on.
-  // Built lazily on hover and destroyed on un-hover, so a scene at rest
-  // carries none of them.
-  const spritesByObjectId = new Map<bigint, Sprite[]>();
-  for (const entry of entries) {
-    const id = entry.drawable.stableId;
-    const list = spritesByObjectId.get(id);
-    if (list) list.push(entry.view);
-    else spritesByObjectId.set(id, [entry.view]);
-  }
-
-  let highlightedObjectId: bigint | undefined;
-  let highlightOverlays: Sprite[] = [];
-  // 0-100 (story 1.11's U1 dial); live-settable through the handle's own
-  // setHighlightStrength.
-  let currentHighlightStrength = highlightStrength;
-
-  function clearHighlightOverlays(): void {
-    for (const overlay of highlightOverlays) {
-      overlay.parent?.removeChild(overlay);
-      overlay.destroy();
-    }
-    highlightOverlays = [];
-  }
-
-  function buildHighlightOverlays(objectId: bigint): void {
-    for (const source of spritesByObjectId.get(objectId) ?? []) {
-      const parent = source.parent;
-      if (!parent || !source.visible) continue;
-      const overlay = new Sprite(source.texture);
-      overlay.anchor.set(source.anchor.x, source.anchor.y);
-      overlay.x = source.x;
-      overlay.y = source.y;
-      overlay.scale.set(source.scale.x, source.scale.y);
-      overlay.alpha = highlightOverlayAlpha(currentHighlightStrength, source.alpha);
-      overlay.blendMode = HIGHLIGHT_BLEND_MODE;
-      parent.addChildAt(overlay, parent.getChildIndex(source) + 1);
-      highlightOverlays.push(overlay);
-    }
-  }
-
+  // FR173's affordance mark: `highlightApplier` (built above, straight
+  // after `entries`) owns every overlay sprite this scene ever draws for
+  // it. `setHighlight` below is the whole of this file's own opinion on
+  // the mark -- gating `onHighlightChange` on the applier's own report of
+  // real change, never a second, separately-tracked id (Tim's direction).
   function setHighlight(objectId: bigint | undefined): void {
-    if (highlightedObjectId === objectId) return;
-    clearHighlightOverlays();
-    highlightedObjectId = objectId;
-    if (objectId !== undefined) buildHighlightOverlays(objectId);
-    onHighlightChange?.(objectId);
-  }
-
-  /** Re-attaches the overlays after something rebuilt the pool
-   * container's children: `applyDepthOrder` drops every child it does not
-   * own, and an overlay is deliberately not a pool member. */
-  function reapplyHighlight(): void {
-    if (highlightedObjectId === undefined) return;
-    clearHighlightOverlays();
-    buildHighlightOverlays(highlightedObjectId);
+    if (highlightApplier.set(objectId)) onHighlightChange?.(objectId);
   }
 
   function setHighlightStrength(strength: number): void {
-    currentHighlightStrength = strength;
-    reapplyHighlight();
+    highlightApplier.setStrength(strength);
   }
 
   // FR148's one pointer listener, on the canvas element itself -- no Pixi
@@ -1151,6 +1119,17 @@ export async function mountStreetScene(
     tick(ticker.deltaMS);
   });
 
+  // Artie's direction: the mark is not a snapshot. Unlike `pointer.refresh()`
+  // (called only from inside `tick()`, on a frame the player actually
+  // moved), this runs every frame regardless -- an animated prop, an
+  // appearance swap or a source streaming out of visibility while hovered
+  // must never leave a stale copy behind, and none of those are gated on
+  // the player's own movement. Cheap: a single comparison the instant
+  // nothing is marked, a plain field mirror per live overlay otherwise.
+  app.ticker.add(() => {
+    highlightApplier.refresh();
+  });
+
   function tick(deltaMS: number): void {
     const direction = keyboard.direction();
     if (direction.x === 0 && direction.y === 0) return;
@@ -1181,7 +1160,6 @@ export async function mountStreetScene(
       reorderFloor(floorBefore);
       reorderFloor(walk.floor);
       rebuildRenderOrder();
-      reapplyHighlight();
       onOrderChange?.(renderOrder);
     } else {
       const after = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
@@ -1190,7 +1168,6 @@ export async function mountStreetScene(
         // other member of every other pool is static.
         reorderFloor(walk.floor);
         rebuildRenderOrder();
-        reapplyHighlight();
         onOrderChange?.(renderOrder);
       }
     }
@@ -1321,6 +1298,8 @@ export async function mountStreetScene(
     },
     collidersInCell: (floor, cellX, cellY) => worldIndex.entriesInCell(floor, cellX, cellY),
     worldObjects: (bounds) => worldIndex.objects(bounds),
+    suspendPointer: () => pointer.suspend(),
+    resumePointer: () => pointer.resume(),
     destroy: () => {
       detachKeyboard();
       pointer.detach();

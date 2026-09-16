@@ -49,5 +49,17 @@ check "Array.prototype.filter(...) is never a false positive" 0 bash "$CHECK" "$
 d="$(plant 'expect(view.mask === null).toBe(true);')"
 check "a read comparing .mask to null is never a false positive" 0 bash "$CHECK" "$d"
 
+d="$(plant 'import { ColorBlend } from "pixi.js/advanced-blend-modes";')"
+check "an import from pixi.js/advanced-blend-modes" 1 bash "$CHECK" "$d"
+
+d="$(plant 'overlay.blendMode = "multiply";')"
+check "a basic blend mode literal (multiply) passes" 0 bash "$CHECK" "$d"
+
+d="$(plant 'overlay.blendMode = "color-dodge";')"
+check "an advanced blend mode literal (color-dodge)" 1 bash "$CHECK" "$d"
+
+d="$(plant 'overlay.blendMode = HIGHLIGHT_BLEND_MODE;')"
+check "a blend mode assigned from a named constant is never a false positive (nothing to grep)" 0 bash "$CHECK" "$d"
+
 summary
 exit $?

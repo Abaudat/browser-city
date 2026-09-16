@@ -442,11 +442,12 @@ surface's own per-surface rule injector.
   Audio, Display, Controls -- as stacked headings, never tabs. Every
   control has a real consumer or a persisted value a named later story
   reads. Display's highlight-strength slider is `[20, 100]`, default 60,
-  and drives `test-street/scene.ts`'s `highlightOverlayAlpha` live
-  through `StreetSceneHandle.setHighlightStrength`. The fullscreen row is
-  hidden when `document.documentElement.requestFullscreen` does not
-  exist; its label reflects `document.fullscreenElement`, kept live via
-  `fullscreenchange`.
+  and drives `render/highlight.ts`'s `highlightOverlayAlpha` live through
+  `StreetSceneHandle.setHighlightStrength` -- applied on every drag tick
+  ('input'), not only on release, through the menu's own
+  `onDisplayPreview`. The fullscreen row is hidden when
+  `document.documentElement.requestFullscreen` does not exist; its label
+  reflects `document.fullscreenElement`, kept live via `fullscreenchange`.
 - `settings/settings-storage.ts` is the one settings-storage idiom every
   group (`input/keybindings-storage.ts`, `settings/audio-settings.ts`,
   `settings/display-settings.ts`) shares, including its `isRecord`/
@@ -592,6 +593,39 @@ reorders a pool member.
 
 Retraction is keyed on `buildingId` alone, never `roomId`: a terrace shop
 is its own building, not a room of a shared one.
+
+### Affordance
+
+FR173's affordance mark: one additive overlay copy of each visible
+drawable of the hovered, in-reach object, inserted as a sibling directly
+above its own source sprite in the pool container -- never a pool member,
+never a separate top layer -- so it inherits the object's own FR123 sort
+for free. Re-attached by the one wrapper that calls `applyDepthOrder`
+(`test-street/scene.ts`'s `reorderFloor`); no other call site touches it
+after a re-sort. Its overlay tracks its source every frame it is alive --
+position, scale, anchor, texture, visibility and alpha all mirrored --
+never a snapshot taken at hover start.
+
+- `client/src/render/highlight.ts` is the pure half: `highlightOverlayAlpha`
+  and `highlightOverlaySpec`, zero PixiJS. Alpha is `render.highlight_alpha`
+  (a percent-integer balance key, `defs/balance/render.toml`, never a
+  TypeScript literal) times the U1 display-strength dial (`[20, 100]`,
+  default 60) times the source sprite's own alpha.
+- `client/src/render/pixi-highlight.ts`'s `HighlightApplier` is the only
+  code that constructs, inserts or destroys an overlay sprite. Built once
+  and destroyed on every hover transition, every strength change and
+  every re-sort; a scene at rest carries none (D17 -- the hovered id lives
+  in `input/pointer.ts`'s closure and in the applier alone, never on a
+  drawable, in settings, or in any per-object cache).
+- Only the four Pixi v8 basic blend modes (`normal`/`add`/`multiply`/
+  `screen`) are ever assigned anywhere under `client/src/`, and no import
+  from `pixi.js/advanced-blend-modes` exists -- every other blend mode is
+  an advanced one implemented as a filter under the hood, which FR121
+  bans; `scripts/ci/check-no-masks.sh` checks both mechanically.
+- The client's reachability predicate (`input/pick.ts`'s `isWithinReach`)
+  is the one the mark is permitted to promise, over the same `interact_at`
+  data the server will resolve a reducer click against -- never a second,
+  more generous copy.
 
 ### Appearance
 

@@ -66,11 +66,11 @@ Both are legal under existing decisions with no amendment required:
 | Aspect | Decision |
 |---|---|
 | Trigger | Pointer is over an object whose definition declares an interaction, **and** the player is within its `interact_at` reachability |
-| In-world form | A subtle outline or brightening applied to that object's drawables only |
+| In-world form | An additive brighten of that object's own drawables only — never a tint (stains rather than lights, and makes colour the sole carrier of the state), never an outline or a floating mark (would read as an icon) |
 | Out-of-fiction form | The browser cursor changes to a pointer |
 | Reachable but not hovered | No treatment. The world is not pre-lit |
 | Hovered but **not** reachable | Cursor changes; the in-world highlight is **withheld** — this is how the player learns reachability without being told |
-| Strength | The weakest treatment that survives a busy street at rush hour. Tuned by playing, not by specification |
+| Strength | Settled at 18% additive alpha (`render.highlight_alpha`), scaled by a player-facing dial floored at 20% and defaulted at 60% (`docs/architecture.md`'s Affordance section) — judged by hovering the densest street the test scene produces, at 3× zoom, against a dark prop (the trash bin) and a pale one (the shop window's furniture behind the glass); 18% is the weakest value that still read on both without needing colour to carry the state |
 | Persistence | None. The highlight exists only while hovered and is never a state the world holds |
 
 **What is explicitly excluded:** no floating icons, no labels, no tooltips, no interaction prompts, no outline on every interactable at once, no pulsing to attract attention. These are the affordances the design laws forbid, and none is needed once hover carries the information.
@@ -222,7 +222,7 @@ Deferring accessibility is a legitimate call for a solo passion project. **Defer
 
 | Item | v1 position |
 |---|---|
-| Interactable affordance strength | Tunable in the options menu. The lowest-cost hedge available, in a menu that already exists and already has a display section |
+| Interactable affordance strength | Tunable in the options menu, `[20, 100]`, default 60 — the floor stays above zero so the dial can never turn the affordance off entirely. The lowest-cost hedge available, in a menu that already exists and already has a display section |
 | Colour as sole carrier of state | **Avoided where cheap.** Prop state should differ in shape or content, not only in hue — a full bin has bags in it, not merely a different colour |
 | Text size | The DOM surface is three elements and inherits browser text sizing. No custom scaling in v1 |
 | Screen reader | **Out of scope for v1**, recorded as a decision. The game is a rendered world, and the DOM surface is a name prompt and an options menu |
@@ -235,7 +235,7 @@ Deferring accessibility is a legitimate call for a solo passion project. **Defer
 
 | # | Item | Disposition |
 |---|---|---|
-| **U1** | Affordance treatment strength — outline weight, brightening amount | Tuned by playing on a busy street at rush hour. Epic 1 ships a dial, not a final value |
+| **U1** | Affordance treatment strength — brightening amount | Settled (§1): 18% additive alpha as the ceiling, a `[20, 100]` player dial defaulted at 60%, both tuned by playing on the densest street the test scene produces |
 | **U2** | Whether hands should hold more than one item | Starts at one. Revisit only if the civic-verb loop or a procedure demonstrably needs two |
 | **U3** | A1, the procedure interaction model | Unchanged — prototyped in Epic 8, under the two constraints in §6 |
 | **U4** | Container view dismissal on walking away — distance and whether it is animated | Falls out of the Epic 6 implementation; no decision needed in advance |

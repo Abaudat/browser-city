@@ -1,5 +1,8 @@
-// The DOM glue for FR148: one `pointerdown` and one `pointermove`
-// listener on the canvas *element*, and nothing else. Deliberately no
+// The DOM glue for FR148: `pointerdown`/`pointermove`/`pointerleave` on
+// the canvas *element*, plus `window`'s own `blur`/`visibilitychange` --
+// the same idiom `input/keyboard.ts`'s `attachKeyboard` uses, and for the
+// same reason (Artie's direction, story 1.15: the mark must never survive
+// a lost focus or a hidden tab) -- and nothing else. Deliberately no
 // PixiJS -- no `eventMode`, no `interactive`, no `on("pointer…")` on any
 // display object anywhere (Tim's direction): per-sprite federated events
 // do not scale to a dense pool, and they would bypass the derived index
@@ -42,6 +45,10 @@ const CURSOR_REFUSED = "not-allowed";
 export interface PointerOptions {
   /** The canvas element itself -- never a Pixi display object. */
   readonly element: HTMLElement;
+  /** Where `window`'s own `blur`/`visibilitychange` are read from --
+   * `attachKeyboard`'s own idiom, injected for the same reason: a test
+   * mounts on a bare element with no real global `window` focus to drive. */
+  readonly target?: Window;
   /** Client coordinates to the world-pixel space `screenPositionPx`
    * produces, undoing whatever camera offset and zoom the scene applied.
    * Injected because the camera belongs to the scene, and this module
@@ -76,7 +83,20 @@ export interface PointerHandle {
    * ever been over it. Driven by the scene's own events (a movement step,
    * a visibility change), never polled per frame. */
   refresh(): void;
-  /** Removes every listener and cancels a pending cursor blip. */
+  /** Clears the mark and the cursor, and ignores every pointer event on
+   * the canvas element until [`resume`] (Artie's direction: the mark must
+   * never survive its context) -- `main.ts` calls this from the options
+   * menu's own `onOpenChange(true)`, since the menu is a DOM panel drawn
+   * over the canvas and a stationary mouse never fires `pointerleave` when
+   * something else is simply drawn on top of what it is over. */
+  suspend(): void;
+  /** Re-resolves the hover at the last known pointer position, if any --
+   * `main.ts` calls this from `onOpenChange(false)`, so a still-hovered,
+   * still-in-reach object re-lights the instant the menu closes rather
+   * than waiting for the mouse to move again. */
+  resume(): void;
+  /** Removes every listener (the canvas element's own, and `window`'s
+   * `blur`/`visibilitychange`) and cancels a pending cursor blip. */
   detach(): void;
 }
 
@@ -89,6 +109,7 @@ export interface PointerHandle {
 export function attachPointer(options: PointerOptions): PointerHandle {
   const {
     element,
+    target = window,
     toWorldPx,
     context,
     player,
@@ -103,6 +124,12 @@ export function attachPointer(options: PointerOptions): PointerHandle {
   let hoverCursor: string = CURSOR_DEFAULT;
   let blipTimer: ReturnType<typeof setTimeout> | undefined;
   let detached = false;
+  /** While the options menu (a DOM panel over the canvas) is open --
+   * `suspend`/`resume`, below. Every real pointer event on the canvas
+   * element is ignored while this is set: the menu's own backdrop
+   * intercepts them in a real browser, so this is defence in depth, not
+   * the primary mechanism. */
+  let suspended = false;
   /** Where the pointer last was, in client coordinates -- cleared when it
    * leaves, so a world change never revives a hover for a pointer that is
    * somewhere else entirely. */
@@ -170,7 +197,10 @@ export function attachPointer(options: PointerOptions): PointerHandle {
     if (blipTimer === undefined) setCursor(hoverCursor);
   }
 
-  const onPointerMove = (event: MouseEvent): void => applyHover(event.clientX, event.clientY);
+  const onPointerMove = (event: MouseEvent): void => {
+    if (suspended) return;
+    applyHover(event.clientX, event.clientY);
+  };
 
   const onPointerLeave = (): void => {
     lastClientX = undefined;
@@ -180,7 +210,36 @@ export function attachPointer(options: PointerOptions): PointerHandle {
     if (blipTimer === undefined) setCursor(hoverCursor);
   };
 
+  /** The mark and the cursor both fall back to their unmarked/default
+   * state -- used by [`suspend`] (the options menu, a DOM panel over the
+   * canvas, opening with the mouse held still) and by a real window
+   * `blur`/tab-hide (Artie's direction: the mark must never survive its
+   * context). Deliberately does not touch `lastClientX`/`lastClientY`: the
+   * pointer has not left the canvas, only lost focus or been covered, so
+   * [`resume`] or the next real player move can re-resolve the same
+   * position once it is meaningful again. */
+  function clearFeedback(): void {
+    hoverCursor = CURSOR_DEFAULT;
+    setHighlight(undefined);
+    if (blipTimer !== undefined) {
+      clearTimeout(blipTimer);
+      blipTimer = undefined;
+    }
+    setCursor(hoverCursor);
+  }
+
+  const onWindowBlur = (): void => {
+    if (detached) return;
+    clearFeedback();
+  };
+
+  const onVisibilityChange = (): void => {
+    if (detached) return;
+    if (target.document?.visibilityState === "hidden") clearFeedback();
+  };
+
   const onPointerDown = (event: MouseEvent): void => {
+    if (suspended) return;
     // Primary button only: a right-click opens the browser's own menu and
     // must never also act on the world.
     if (event.button !== 0) return;
@@ -208,15 +267,35 @@ export function attachPointer(options: PointerOptions): PointerHandle {
   element.addEventListener("pointermove", onPointerMove);
   element.addEventListener("pointerleave", onPointerLeave);
   element.addEventListener("pointerdown", onPointerDown);
+  target.addEventListener("blur", onWindowBlur);
+  target.document?.addEventListener("visibilitychange", onVisibilityChange);
 
   return {
     refresh: () => {
-      if (detached) return;
+      if (detached || suspended) return;
       if (lastClientX === undefined || lastClientY === undefined) return;
       applyHover(lastClientX, lastClientY);
     },
+    suspend: () => {
+      if (detached) return;
+      suspended = true;
+      clearFeedback();
+    },
+    resume: () => {
+      if (detached) return;
+      suspended = false;
+      // Re-resolve at the last known pointer position, if any -- the
+      // options menu closing with the mouse still where it was is the
+      // normal case, and this is what re-lights a still-hovered,
+      // still-in-reach object without needing the mouse to move again.
+      if (lastClientX !== undefined && lastClientY !== undefined) {
+        applyHover(lastClientX, lastClientY);
+      }
+    },
     detach: () => {
       detached = true;
+      target.removeEventListener("blur", onWindowBlur);
+      target.document?.removeEventListener("visibilitychange", onVisibilityChange);
       if (blipTimer !== undefined) {
         clearTimeout(blipTimer);
         blipTimer = undefined;

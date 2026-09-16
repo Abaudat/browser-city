@@ -39,6 +39,63 @@ function contextOf(query: FootprintQuery, isVisible?: (id: bigint) => boolean): 
 
 const BIN_CELL = { "0:5:5": [entry({ objectId: 100n })] };
 
+/** A bare, isolated `Window`-shaped fake -- never the real global `window`,
+ * so a test's own `blur()`/`hide()`/`show()` can never leak into (or be
+ * masked by) another test's listeners on the one real jsdom window every
+ * test file shares. Mirrors `input/keyboard.ts`'s own `attachKeyboard`
+ * test idiom (a second, injected target). */
+function fakeWindowTarget(): {
+  readonly target: Window;
+  blur(): void;
+  hide(): void;
+  show(): void;
+} {
+  const listeners = new Map<string, Set<() => void>>();
+  const docListeners = new Map<string, Set<() => void>>();
+  let visibilityState: DocumentVisibilityState = "visible";
+
+  const fakeDocument = {
+    addEventListener: (type: string, cb: () => void) => {
+      const set = docListeners.get(type) ?? new Set();
+      set.add(cb);
+      docListeners.set(type, set);
+    },
+    removeEventListener: (type: string, cb: () => void) => {
+      docListeners.get(type)?.delete(cb);
+    },
+    get visibilityState() {
+      return visibilityState;
+    },
+  };
+
+  const target = {
+    addEventListener: (type: string, cb: () => void) => {
+      const set = listeners.get(type) ?? new Set();
+      set.add(cb);
+      listeners.set(type, set);
+    },
+    removeEventListener: (type: string, cb: () => void) => {
+      listeners.get(type)?.delete(cb);
+    },
+    document: fakeDocument,
+  } as unknown as Window;
+
+  return {
+    target,
+    blur: () => {
+      for (const cb of listeners.get("blur") ?? []) cb();
+    },
+    hide: () => {
+      visibilityState = "hidden";
+      for (const cb of docListeners.get("visibilitychange") ?? []) cb();
+    },
+    show: () => {
+      visibilityState = "visible";
+      for (const cb of docListeners.get("visibilitychange") ?? []) cb();
+    },
+  };
+}
+
 interface Harness {
   readonly element: HTMLElement;
   readonly intents: Intent[];
@@ -47,7 +104,12 @@ interface Harness {
   cursor(): string;
   setPlayer(next: PickPlayer): void;
   refresh(): void;
+  suspend(): void;
+  resume(): void;
   detach(): void;
+  blurWindow(): void;
+  hideTab(): void;
+  showTab(): void;
 }
 
 /** Mounts the glue on a bare element with a world-pixel transform that is
@@ -63,9 +125,11 @@ function harness(
   const ignored: bigint[] = [];
   const highlights: (bigint | undefined)[] = [];
   let player = playerAt;
+  const fakeWindow = fakeWindowTarget();
 
   const pointer = attachPointer({
     element,
+    target: fakeWindow.target,
     toWorldPx: (clientX, clientY) => ({ x: clientX, y: clientY }),
     context: () => contextOf(queryOf(cells), isVisible),
     player: () => player,
@@ -86,7 +150,12 @@ function harness(
       player = next;
     },
     refresh: pointer.refresh,
+    suspend: pointer.suspend,
+    resume: pointer.resume,
     detach: pointer.detach,
+    blurWindow: fakeWindow.blur,
+    hideTab: fakeWindow.hide,
+    showTab: fakeWindow.show,
   };
 }
 
@@ -311,5 +380,124 @@ describe("click feedback", () => {
     // not write to it after the fact.
     expect(h.cursor()).toBe("not-allowed");
     vi.useRealTimers();
+  });
+});
+
+describe("the mark must never survive its context (Artie's direction)", () => {
+  it("suspend() clears the mark and the cursor, and resume() re-lights the same still-hovered object with the mouse untouched", () => {
+    const h = harness();
+    move(h, 5, 5);
+    expect(h.highlights.at(-1)).toBe(100n);
+    expect(h.cursor()).toBe("pointer");
+
+    h.suspend();
+    expect(h.highlights.at(-1)).toBeUndefined();
+    expect(h.cursor()).toBe("default");
+
+    h.resume();
+    expect(h.highlights.at(-1)).toBe(100n);
+    expect(h.cursor()).toBe("pointer");
+    h.detach();
+  });
+
+  it("ignores every pointer event on the canvas while suspended", () => {
+    const h = harness();
+    move(h, 5, 5);
+    h.suspend();
+    const before = h.highlights.length;
+
+    move(h, 5, 5);
+    click(h, 5, 5);
+    expect(h.highlights.length).toBe(before);
+    expect(h.intents).toEqual([]);
+    h.detach();
+  });
+
+  it("refresh() is a no-op while suspended", () => {
+    const h = harness();
+    move(h, 5, 5);
+    h.suspend();
+    const before = h.highlights.length;
+
+    h.setPlayer({ x: 20, y: 20, floor: 0 });
+    h.refresh();
+    expect(h.highlights.length).toBe(before);
+    h.detach();
+  });
+
+  it("resume() with the pointer never having moved never invents a hover", () => {
+    const h = harness();
+    h.suspend();
+    h.resume();
+    expect(h.highlights).toEqual([]);
+    expect(h.cursor()).toBe("default");
+    h.detach();
+  });
+
+  it("a window blur clears the mark and the cursor, without discarding the last pointer position", () => {
+    const h = harness();
+    move(h, 5, 5);
+    expect(h.highlights.at(-1)).toBe(100n);
+
+    h.blurWindow();
+    expect(h.highlights.at(-1)).toBeUndefined();
+    expect(h.cursor()).toBe("default");
+
+    // The pointer never left the canvas, only the window lost focus -- a
+    // world change (never only the mouse) can still re-resolve the same
+    // position through `refresh()`.
+    h.refresh();
+    expect(h.highlights.at(-1)).toBe(100n);
+    h.detach();
+  });
+
+  it("a blur cancels a pending refused-click cursor blip", () => {
+    vi.useFakeTimers();
+    const h = harness(BIN_CELL, { x: 20, y: 20, floor: 0 });
+    move(h, 5, 5);
+    click(h, 5, 5);
+    expect(h.cursor()).toBe("not-allowed");
+
+    h.blurWindow();
+    expect(h.cursor()).toBe("default");
+    vi.advanceTimersByTime(IGNORED_CURSOR_MS * 4);
+    // The blip must not resurrect the refused cursor after the fact.
+    expect(h.cursor()).toBe("default");
+    h.detach();
+    vi.useRealTimers();
+  });
+
+  it("the tab hiding (visibilitychange -> hidden) clears the mark; becoming visible again does not by itself relight it", () => {
+    const h = harness();
+    move(h, 5, 5);
+    expect(h.highlights.at(-1)).toBe(100n);
+
+    h.hideTab();
+    expect(h.highlights.at(-1)).toBeUndefined();
+    expect(h.cursor()).toBe("default");
+
+    h.showTab();
+    expect(h.highlights.at(-1)).toBeUndefined();
+    h.detach();
+  });
+
+  it("a blur/visibilitychange after detach never writes to the element again", () => {
+    const h = harness();
+    move(h, 5, 5);
+    h.detach();
+    const cursorAtDetach = h.cursor();
+    h.blurWindow();
+    h.hideTab();
+    expect(h.cursor()).toBe(cursorAtDetach);
+  });
+
+  it("suspend()/resume() after detach are no-ops, never writing to the element again", () => {
+    const h = harness();
+    move(h, 5, 5);
+    h.detach();
+    const cursorAtDetach = h.cursor();
+    h.suspend();
+    h.resume();
+    expect(h.cursor()).toBe(cursorAtDetach);
   });
 });

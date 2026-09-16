@@ -35,13 +35,16 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
+import { screenPositionPx } from "../../src/render/screen-position";
 import {
+  STREET_PROPS,
   type StreetWalkSegment,
   type StreetWalkUntil,
   streetBridgeLapRoute,
   streetWalkRoute,
+  TRASH_BIN_DEF_ID,
 } from "../../src/test-street/fixture";
-import { streetWalkInputs } from "../unit/test-street/street-world";
+import { committedDefs, streetWalkInputs } from "../unit/test-street/street-world";
 
 /** The frame budget the scene's own work must fit inside. A 60 FPS frame
  * is 16.7 ms end to end; the app's own work getting half of that leaves
@@ -93,6 +96,41 @@ function median(values: readonly number[]): number {
 
 /** How long a single segment is allowed. */
 const SEGMENT_TIMEOUT_MS = 60_000;
+
+/** Parks the mouse over a real interactable prop's own drawn rect, once,
+ * for the whole measured window (Tim's direction): before this, the
+ * measured walk left the pointer wherever Playwright's own default put
+ * it, so FR173's per-step hover resolution (`pointer.ts`'s `refresh`,
+ * called every step `tick()` actually moves) and its highlight-applier
+ * refresh (every frame, unconditionally) both ran *outside* the p95
+ * frame-work gate. The bin stays out of reach for the whole bridge lap
+ * (it never leaves the shopfront's own block), so this exercises the
+ * pick-resolution cost every real session pays on every step, not the
+ * additional per-overlay cost of a live mark -- that path's own cost is
+ * covered by the lifecycle-hammering unit test
+ * (`tests/unit/render/pixi-highlight.test.ts`) and the FR173 pixel e2e
+ * spec (`test-street.spec.ts`), neither of which is a frame-budget gate. */
+async function hoverAnInteractableProp(page: Page): Promise<void> {
+  const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
+  if (!bin) throw new Error("the fixture no longer places a trash bin");
+  const tileSizePx = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value;
+  const storeyHeightPx = committedDefs().balance.find(
+    (b) => b.key === "render.storey_height_px",
+  )?.value;
+  if (tileSizePx === undefined || storeyHeightPx === undefined) {
+    throw new Error("missing render balance keys");
+  }
+  const anchor = screenPositionPx(bin.x, bin.y, bin.floor, tileSizePx, storeyHeightPx);
+  const worldPx = { x: anchor.x, y: anchor.y - tileSizePx / 2 };
+  const view = await page.evaluate(() => window.__bc?.viewTransform);
+  if (!view) throw new Error("the street scene never recorded its view transform");
+  const box = await page.locator("#test-street canvas").boundingBox();
+  if (!box) throw new Error("no street canvas to hover");
+  await page.mouse.move(
+    box.x + worldPx.x * view.zoom + view.offsetX,
+    box.y + worldPx.y * view.zoom + view.offsetY,
+  );
+}
 
 /** Holds `segment.key` down, waits for its own release condition, and
  * releases it again -- entirely inside the page, in one `page.evaluate`
@@ -208,6 +246,12 @@ test("the frame path stays inside its work budget for a whole walked session (NF
   // floor transitions per lap: NFR2's "including an interior
   // transition", repeatedly rather than once.
   const lap = streetBridgeLapRoute();
+
+  // FR173: park the pointer over a real interactable prop for the whole
+  // measured window (Tim's direction) -- see `hoverAnInteractableProp`'s
+  // own doc comment. Before the warm-up, so the warm-up laps themselves
+  // already reflect the steady state the measured ones do.
+  await hoverAnInteractableProp(page);
 
   // Warm-up: laps with nothing recorded.
   const warmUpUntil = Date.now() + WARM_UP_MS;

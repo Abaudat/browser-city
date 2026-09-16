@@ -34,3 +34,19 @@ value = 50
 min = 1
 max = 99
 
+[[balance]]
+# FR173: the ceiling `render/highlight.ts`'s `highlightOverlayAlpha` scales
+# by the U1 display-strength dial (`settings/display-settings.ts`,
+# `[20, 100]`, default 60) -- a percent integer (never a TypeScript
+# literal), divided down to a plain `(0, 1)` fraction in `main.ts` the same
+# way `render.window_alpha` is. Settled by playing (Artie/Derek's
+# direction): hovered on the densest street the test scene produces, at
+# 3x zoom, against both a dark prop (the trash bin) and a pale one (the
+# shop window's furniture) -- 18% is the weakest additive brighten that
+# still reads on both without the object's own colour needing to carry the
+# state change.
+key = "render.highlight_alpha"
+value = 18
+min = 1
+max = 100
+
