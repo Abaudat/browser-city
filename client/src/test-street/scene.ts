@@ -1025,8 +1025,32 @@ export async function mountStreetScene(
   // it. `setHighlight` below is the whole of this file's own opinion on
   // the mark -- gating `onHighlightChange` on the applier's own report of
   // real change, never a second, separately-tracked id (Tim's direction).
+  //
+  // `highlightApplier.refresh()` (Artie's direction: the overlay tracks
+  // its source every frame it is alive, never a snapshot) only needs to
+  // run while something actually is alive -- so its own ticker callback
+  // is added and removed with the mark itself, never left registered for
+  // the scene's whole lifetime. A street of static props with nothing
+  // hovered -- the overwhelming majority of every session, including the
+  // whole of NFR2's own perf walk -- pays literally nothing for it,
+  // rather than one extra callback dispatch on every rendered frame
+  // forever for a feature idle 99% of the time.
+  let highlightTicking = false;
+  function refreshHighlightTick(): void {
+    highlightApplier.refresh();
+  }
+  function setHighlightTicking(active: boolean): void {
+    if (active === highlightTicking) return;
+    highlightTicking = active;
+    if (active) app.ticker.add(refreshHighlightTick);
+    else app.ticker.remove(refreshHighlightTick);
+  }
+
   function setHighlight(objectId: bigint | undefined): void {
-    if (highlightApplier.set(objectId)) onHighlightChange?.(objectId);
+    if (highlightApplier.set(objectId)) {
+      setHighlightTicking(objectId !== undefined);
+      onHighlightChange?.(objectId);
+    }
   }
 
   function setHighlightStrength(strength: number): void {
@@ -1117,17 +1141,6 @@ export async function mountStreetScene(
 
   app.ticker.add((ticker) => {
     tick(ticker.deltaMS);
-  });
-
-  // Artie's direction: the mark is not a snapshot. Unlike `pointer.refresh()`
-  // (called only from inside `tick()`, on a frame the player actually
-  // moved), this runs every frame regardless -- an animated prop, an
-  // appearance swap or a source streaming out of visibility while hovered
-  // must never leave a stale copy behind, and none of those are gated on
-  // the player's own movement. Cheap: a single comparison the instant
-  // nothing is marked, a plain field mirror per live overlay otherwise.
-  app.ticker.add(() => {
-    highlightApplier.refresh();
   });
 
   function tick(deltaMS: number): void {

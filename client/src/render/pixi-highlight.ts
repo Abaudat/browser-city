@@ -21,9 +21,13 @@
 // out of visibility while hovered must never leave a stale copy behind.
 // It is cheap to call every frame -- a plain field mirror per live
 // overlay, an id-existence check per source, and a single comparison the
-// instant nothing is marked -- so `test-street/scene.ts` calls it
-// unconditionally from its own per-frame ticker callback, never gated on
-// player movement the way `pointer.refresh()` is.
+// instant nothing is marked -- so `test-street/scene.ts` calls it from its
+// own per-frame ticker callback, never gated on player movement the way
+// `pointer.refresh()` is. That callback is itself only ever registered
+// while something is actually marked (added on `set()`'s first real
+// transition to a real id, removed on its transition back to `undefined`)
+// -- a street with nothing hovered, the overwhelming majority of every
+// session, pays not even one extra callback dispatch per frame for it.
 
 import { Sprite } from "pixi.js";
 import { highlightOverlaySpec } from "./highlight";
