@@ -490,6 +490,7 @@ pub struct RawDistributionRule {
     pub ratio: Spanned<i32>,
     pub tolerance_percent: Spanned<i32>,
     pub min_spacing: u32,
+    pub max_distance: Spanned<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -718,6 +719,7 @@ pub struct DistributionEntry {
     pub ratio: Located<i32>,
     pub tolerance_percent: Located<i32>,
     pub min_spacing: u32,
+    pub max_distance: Located<u32>,
 }
 
 #[derive(Debug)]
@@ -1000,6 +1002,7 @@ pub enum RuleKindDef {
         ratio: u32,
         tolerance_percent: u32,
         min_spacing: u32,
+        max_distance: u32,
     },
     Coherence {
         subject: u32,

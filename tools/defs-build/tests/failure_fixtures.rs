@@ -160,6 +160,18 @@ fn a_distribution_tolerance_of_zero_is_rejected() {
     );
 }
 
+/// AC2's coverage bound (Quentin's direction, PR #294 cycle 1): a zero
+/// `max_distance` can never express "evenly spread" -- refused just like
+/// a zero ratio or tolerance.
+#[test]
+fn a_distribution_max_distance_of_zero_is_rejected() {
+    let err = build_err("distribution-max-distance-zero");
+    assert_eq!(
+        err.to_string(),
+        "defs/rules/services.toml:9:16: distribution rule 'waste_per_seating' has max_distance 0 -- max_distance must be a positive integer"
+    );
+}
+
 #[test]
 fn a_placement_floor_min_above_floor_max_is_rejected() {
     let err = build_err("placement-floor-min-above-max");
@@ -452,6 +464,7 @@ fn every_known_category_has_a_fixture_directory() {
         "rule-dangling-tag-reference",
         "distribution-ratio-zero",
         "distribution-tolerance-non-positive",
+        "distribution-max-distance-zero",
         "placement-floor-min-above-max",
         "duplicate-rule-id",
     ];

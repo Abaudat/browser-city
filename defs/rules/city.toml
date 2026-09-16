@@ -14,7 +14,8 @@ floor_min = 0
 floor_max = 0
 
 # Distribution: roughly one waste bin per three seats, evenly spread (no
-# two bins closer than four cells).
+# two bins closer than four cells, and no seat further than twelve cells
+# from its nearest bin).
 [[distribution]]
 id = 2
 key = "waste_per_three_seating"
@@ -23,6 +24,7 @@ per = "seating"
 ratio = 3
 tolerance_percent = 50
 min_spacing = 4
+max_distance = 12
 
 # Coherence: a shop counter never shares a room with a stairwell.
 [[coherence]]

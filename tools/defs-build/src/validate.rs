@@ -339,6 +339,22 @@ fn check_distribution_ranges(entries: &[DistributionEntry]) -> Result<(), DefsEr
                 ),
             ));
         }
+        // AC2's "evenly spread" coverage bound (Quentin's direction, PR
+        // #294 cycle 1): a zero-cell coverage radius can never be
+        // satisfied by anything but a `per` cell placed exactly on a
+        // `subject` cell, which is not "spread" at all -- refused here,
+        // never a silently-vacuous row.
+        if e.max_distance.value == 0 {
+            return Err(DefsError::new(
+                &e.path,
+                e.max_distance.line,
+                e.max_distance.col,
+                format!(
+                    "distribution rule '{}' has max_distance 0 -- max_distance must be a positive integer",
+                    e.key.value
+                ),
+            ));
+        }
     }
     Ok(())
 }
@@ -412,6 +428,7 @@ fn build_distribution_rules(
                     ratio: e.ratio.value as u32,
                     tolerance_percent: e.tolerance_percent.value as u32,
                     min_spacing: e.min_spacing,
+                    max_distance: e.max_distance.value,
                 },
             })
         })

@@ -10,22 +10,37 @@
       "key": "trash_bin",
       "name": "Trash Bin",
       "layer": 2,
-      "sprite": { "sheet": "fixtures/objects/test.png", "x": 0, "y": 0, "w": 16, "h": 16 },
+      "sprite": {
+        "sheet": "fixtures/objects/test.png",
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
       "width": 2,
       "height": 1,
-      "window": false
+      "window": false,
+      "tags": []
     }
   ],
   "items": [],
   "recipes": [],
   "professions": [],
   "chains": [],
-  "balance": [{ "key": "render.tile_size_px", "value": 16, "min": 1, "max": 64 }],
+  "balance": [
+    {
+      "key": "render.tile_size_px",
+      "value": 16,
+      "min": 1,
+      "max": 64
+    }
+  ],
   "bodies": [],
   "eyes": [],
   "hairstyles": [],
   "outfits": [],
   "accessories": [],
   "appearance_layouts": [],
-  "uniforms": []
+  "uniforms": [],
+  "tags": []
 }

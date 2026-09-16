@@ -8,12 +8,19 @@
       "key": "trash_bin",
       "width": 1,
       "height": 1,
-      "collider": { "x0": 5, "y0": 5, "x1": 5, "y1": 9 }
+      "collider": {
+        "x0": 5,
+        "y0": 5,
+        "x1": 5,
+        "y1": 9
+      },
+      "tags": []
     }
   ],
   "items": [],
   "recipes": [],
   "professions": [],
   "chains": [],
-  "balance": []
+  "balance": [],
+  "tags": []
 }

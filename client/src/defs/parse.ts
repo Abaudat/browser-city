@@ -135,16 +135,6 @@ function expectU32Array(value: unknown, path: string): number[] {
   return expectArray(value, path).map((item, i) => expectU32(item, `${path}[${i}]`));
 }
 
-/** `tags` is optional on both the document root and an object (defaults
- * to empty when absent) -- story 2.10 landed after many existing fixtures
- * were authored, and "no tags declared" is exactly what an absent array
- * already means, so requiring the key to always be present would only
- * force a mechanical edit across every one of them for no behavioural
- * difference. A *present* `tags` value is still fully validated. */
-function expectArrayOrDefaultEmpty(value: unknown, path: string): unknown[] {
-  return value === undefined ? [] : expectArray(value, path);
-}
-
 /** An unknown field is a parse error here exactly as it is in `tools/
  * defs-build`'s `#[serde(deny_unknown_fields)]` (Quentin's direction). */
 function checkKnownKeys(
@@ -195,7 +185,7 @@ function parseObject(value: unknown, path: string): ObjectDef {
   );
   const collider = parseNullableCollider(obj.collider, `${path}.collider`);
   const interactAt = parseNullableCollider(obj.interact_at, `${path}.interact_at`);
-  const tags = expectU32Array(expectArrayOrDefaultEmpty(obj.tags, `${path}.tags`), `${path}.tags`);
+  const tags = expectU32Array(obj.tags, `${path}.tags`);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
@@ -535,9 +525,7 @@ export function parseDefs(data: unknown): Defs {
   const uniforms = expectArray(root.uniforms, "$.uniforms").map((v, i) =>
     parseUniform(v, `$.uniforms[${i}]`),
   );
-  const tags = expectArrayOrDefaultEmpty(root.tags, "$.tags").map((v, i) =>
-    parseTag(v, `$.tags[${i}]`),
-  );
+  const tags = expectArray(root.tags, "$.tags").map((v, i) => parseTag(v, `$.tags[${i}]`));
 
   checkNoDuplicateIdsOrKeys(objects, "object");
   checkNoDuplicateIdsOrKeys(items, "item");

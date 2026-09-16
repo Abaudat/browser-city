@@ -21,6 +21,7 @@ function validPayload(version: string): Record<string, unknown> {
     accessories: [],
     appearance_layouts: [],
     uniforms: [],
+    tags: [],
   };
 }
 

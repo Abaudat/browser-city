@@ -11,22 +11,26 @@
 //! kinds (Placement, Distribution, Coherence, Adjacency, Requirement) as
 //! data rows; extending the grammar within a kind is a new row, never a
 //! branch here keyed on a rule's key, id or a subject's tag --
-//! `scripts/ci/check-rule-engine-no-content-keys.sh` holds that
-//! mechanically, failing the build if any key from `tools/defs-build/
-//! goldens/defs-manifest.golden` ever appears as a literal under this
-//! module. Adding a sixth kind is a deliberate decision: the `match` on
-//! [`RuleKind`] has no `_ =>` arm, so it is a compile error until every
-//! kind is handled on purpose.
+//! `scripts/ci/check-rule-engine-no-content-keys.sh` and
+//! `inv_rule_verdicts_invariant_under_tag_relabelling` (`server/sim/
+//! tests/invariants.rs`) both hold that: the grep guard catches a
+//! hardcoded *quoted* key, the property test catches a hardcoded *id*
+//! (`if subject == 7`), which no grep could ever see. Adding a sixth kind
+//! is a deliberate decision: the `match` on [`RuleKind`] has no `_ =>`
+//! arm, so it is a compile error until every kind is handled on purpose.
 //!
 //! `RuleSite` is the one seam between this pure engine and whatever holds
-//! real geometry -- `world::fixture` and `sim::rules::testing::Site`
-//! today, Epic 3's generator state and story 2.11's harness (over world
-//! tables) later, all answering the exact same four questions over
-//! integer geometry: what tags a cell carries, which areas contain it,
-//! its four neighbours on the same floor, and which subjects an area
-//! contains. No `HashMap`, no floats (NFR25): "roughly one per N, evenly
-//! spread" is an integer ratio, an integer tolerance percent and an
-//! integer minimum spacing, all fields on the row, never constants here.
+//! real geometry -- `sim::rules::testing::Site` today, `world::fixture`,
+//! Epic 3's generator state and story 2.11's harness (over world tables)
+//! later, all answering the same three questions over integer geometry:
+//! what tags a cell carries, which areas contain it, and which subjects
+//! an area (or the whole site) contains. A same-floor neighbour is never
+//! asked of a `RuleSite` -- [`Direction::step`] is pure arithmetic no
+//! implementation could legitimately answer differently, so it is not a
+//! seam at all. No `HashMap`, no floats (NFR25): "roughly one per N,
+//! evenly spread" is an integer ratio, an integer tolerance percent, an
+//! integer minimum spacing and an integer maximum coverage distance, all
+//! fields on the row, never constants here.
 
 use std::collections::BTreeMap;
 
@@ -41,16 +45,8 @@ pub type TagId = u32;
 
 /// An area's id -- today `building_area`/`room_area`'s own row id
 /// (Tim's direction: "no new table is needed for this story"). Opaque to
-/// this module beyond [`WORLD_AREA`].
+/// this module.
 pub type AreaId = u64;
-
-/// The synthetic area every cell belongs to, implicitly, in addition to
-/// whatever real area(s) contain it. `subjects_in_area(WORLD_AREA, tag)`
-/// is how a rule with no container/within scans "the whole site" without
-/// a fifth enumeration primitive on [`RuleSite`] -- a real area id is
-/// never `0` (an id column starts at 1, like every other def kind's own
-/// append-only manifest).
-pub const WORLD_AREA: AreaId = 0;
 
 /// `(x, y, floor)` addressing (FR117) -- the same three-axis address
 /// `world` uses, but this module never depends on `world`: a `RuleSite`
@@ -112,29 +108,33 @@ impl Direction {
 /// The one seam between this pure engine and real geometry. Implemented
 /// by [`testing::Site`] here, by `world::fixture` and, later, by Epic
 /// 3's generator state and story 2.11's harness over world tables --
-/// never by a second evaluator.
+/// never by a second evaluator. Three questions only (Tim's direction,
+/// PR #294 cycle 1): a same-floor neighbour is [`Direction::step`], never
+/// a fourth trait method, since no site could legitimately answer it
+/// differently.
 pub trait RuleSite {
     /// Every tag `cell` carries, in no particular order.
     fn tags_at(&self, cell: Cell) -> &[TagId];
-    /// Every real area (never [`WORLD_AREA`]) that contains `cell`.
+    /// Every real area that contains `cell`.
     fn areas_containing(&self, cell: Cell) -> &[AreaId];
-    /// `cell`'s neighbour in `dir`, same floor.
-    fn neighbour(&self, cell: Cell, dir: Direction) -> Cell;
-    /// Every cell tagged `tag` within `area` ([`WORLD_AREA`] means the
-    /// whole site), sorted and deduplicated. A real implementation
+    /// Every cell tagged `tag`, sorted and deduplicated -- within `area`
+    /// when given, or the whole site when `None`. A real implementation
     /// indexes this once rather than rescanning every cell per call --
     /// `testing::SiteBuilder::build` is the worked example.
-    fn subjects_in_area(&self, area: AreaId, tag: TagId) -> &[Cell];
+    fn subjects_in_area(&self, area: Option<AreaId>, tag: TagId) -> &[Cell];
 }
 
 /// `mode = "allow" | "forbid"` on a `[[coherence]]` row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoherenceMode {
-    /// `subject` may only ever appear within an area also containing
-    /// `within` -- appearing outside every such area is the violation.
+    /// `subject` may only ever appear within a real area that also
+    /// contains `within` -- appearing outside every real area, or inside
+    /// one that does not contain `within`, is the violation.
     Allow,
-    /// `subject` may never appear within an area also containing
-    /// `within` -- appearing inside one is the violation.
+    /// `subject` may never appear within a real area that also contains
+    /// `within` -- appearing inside one is the violation; appearing
+    /// outside every real area never is (there is nothing to forbid
+    /// against).
     Forbid,
 }
 
@@ -156,9 +156,12 @@ pub enum RuleKind {
     /// (inclusive on both ends, either end optional); if `container` is
     /// given, the range only applies to a `subject` cell that sits in a
     /// real area also containing `container` -- a `subject` cell outside
-    /// every such area is not checked at all (Crew's decision: a
-    /// container-scoped placement rule says nothing about `subject`
-    /// appearing outside its container).
+    /// every such area is not checked at all (Crew's decision, pinned by
+    /// `placement_container_scoping_outside_any_matching_area_is_not_checked_by_design`:
+    /// a container-scoped placement rule says nothing about `subject`
+    /// appearing outside its container -- unlike Requirement, a
+    /// container here is a *filter* on which cells the rule applies to,
+    /// never a completeness demand).
     Placement {
         subject: TagId,
         container: Option<TagId>,
@@ -166,18 +169,28 @@ pub enum RuleKind {
         floor_max: Option<i8>,
     },
     /// `subject` at roughly one per `ratio` of `per`, within
-    /// `tolerance_percent` (rounded up), and no two `subject` cells
-    /// closer than `min_spacing` cells (Chebyshev distance) when
-    /// `min_spacing > 0`. Both measured over the whole site
-    /// ([`WORLD_AREA`]) -- a distribution is a global density, not a
-    /// per-container one. Zero `per` cells means the ratio check is
-    /// vacuously satisfied (never a division by zero).
+    /// `tolerance_percent` (rounded up); no two `subject` cells closer
+    /// than `min_spacing` cells (Chebyshev distance) when
+    /// `min_spacing > 0`; and every `per` cell within `max_distance`
+    /// cells (Chebyshev) of some `subject` cell -- "evenly spread"
+    /// (AC2) is the *conjunction* of the spacing floor and this coverage
+    /// ceiling: `min_spacing` alone only bounds how close two subjects
+    /// may sit, never how far a `per` cell may be from the nearest one,
+    /// so a cluster in one corner of an otherwise-empty city can satisfy
+    /// `min_spacing` while leaving most of `per` uncovered.
+    /// `max_distance` is always positive (`tools/defs-build` refuses
+    /// zero). Both measured over the whole site -- a distribution is a
+    /// global density, not a per-container one. Zero `per` cells means
+    /// the ratio check is vacuously satisfied (never a division by
+    /// zero); zero `subject` cells means every `per` cell is
+    /// uncovered by construction (nothing to cover it).
     Distribution {
         subject: TagId,
         per: TagId,
         ratio: u32,
         tolerance_percent: u32,
         min_spacing: u32,
+        max_distance: u32,
     },
     /// Whether `subject` may (`Allow`) or may never (`Forbid`) appear
     /// within a real area that also contains `within`.
@@ -198,7 +211,14 @@ pub enum RuleKind {
     /// Every real area containing a `container`-tagged cell must contain
     /// between `min` and `max` (inclusive, `max` optional) cells tagged
     /// `requires`. Zero `container` cells anywhere is vacuously met --
-    /// there is nothing to check (Quentin's boundary case).
+    /// there is nothing to check (Quentin's boundary case). A
+    /// `container` cell that sits in *no* real area at all is itself a
+    /// violation, unconditionally (Quentin's decision, pinned by
+    /// `requirement_container_outside_any_area_is_itself_a_violation`):
+    /// vacuous truth belongs to "zero containers", never to "a container
+    /// we have no area to scope `requires` against" -- unlike Placement,
+    /// a container here is the thing being demanded of, so "we could not
+    /// check it" reads as "it failed", not "it does not apply".
     Requirement {
         container: TagId,
         requires: TagId,
@@ -218,23 +238,26 @@ pub struct RuleDef {
 
 /// One rejection: `rule_id` and the offending `subject` cell (Quentin's
 /// direction: never a bool, never just the first violation). `evaluate`
-/// returns every violation, sorted by `(rule_id, subject)` -- a strict
-/// total order over two `Ord` fields -- so output never depends on rule
-/// or fact input order (NFR25).
+/// returns every *distinct* violation, sorted by `(rule_id, subject)` --
+/// a strict total order over two `Ord` fields, deduplicated after
+/// sorting -- so output never depends on rule or fact input order
+/// (NFR25) and a cell that fails the same rule for two different reasons
+/// (e.g. two failing containing areas under Requirement) is reported
+/// once, not once per reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Violation {
     pub rule_id: u32,
     pub subject: Cell,
 }
 
-/// A grid bucket key for the distribution spacing check: `min_spacing`
-/// cells per bucket edge, so only a 3x3 neighbourhood of buckets (never
-/// the whole cell set) can ever be within `min_spacing` of a given cell
-/// -- the "spatial binning, not an all-pairs scan" Quentin's direction
-/// asks for. `BTreeMap`, never `HashMap` (NFR25: deterministic
-/// iteration).
-fn bucket_of(cell: Cell, min_spacing: u32) -> (i8, i32, i32) {
-    let s = min_spacing.max(1) as i64;
+/// A grid bucket key for a spatial-binning check: `radius` cells per
+/// bucket edge, so only a 3x3 neighbourhood of buckets (never the whole
+/// cell set) can ever be within `radius` of a given cell -- the "spatial
+/// binning, not an all-pairs scan" Quentin's direction asks for, shared
+/// by both the spacing and the coverage half of Distribution. `BTreeMap`,
+/// never `HashMap` (NFR25: deterministic iteration).
+fn bucket_of(cell: Cell, radius: u32) -> (i8, i32, i32) {
+    let s = radius.max(1) as i64;
     let bx = (cell.x as i64).div_euclid(s) as i32;
     let by = (cell.y as i64).div_euclid(s) as i32;
     (cell.floor, bx, by)
@@ -285,13 +308,71 @@ fn distribution_spacing_violations(
     violations
 }
 
-/// Runs every rule in `rules` against `site`, returning every violation
-/// found, sorted by `(rule_id, subject)`. Never stops early (Tim's
-/// direction): a rule that fails on ten cells reports all ten. `O(rules *
-/// entities)`, never `O(rules * entities^2)` -- distribution's spacing
-/// check uses [`distribution_spacing_violations`]'s spatial buckets, and
-/// every other kind drives its scan off `site.subjects_in_area`, which a
-/// real `RuleSite` indexes once rather than rescanning per rule.
+/// The Distribution kind's coverage half (AC2's "evenly spread", Quentin's
+/// direction, PR #294 cycle 1): flags a `per` cell with no `subject` cell
+/// within `max_distance` (Chebyshev, same floor) -- catches a
+/// clustered-in-one-corner layout `min_spacing` alone cannot, since
+/// `min_spacing` only bounds how close two subjects may sit, never how
+/// far a `per` cell may be from the nearest one. Bucketed exactly like
+/// spacing: only a 3x3 neighbourhood of `max_distance`-sized buckets can
+/// ever be close enough, never an all-pairs scan. `subjects` empty means
+/// every `per` cell is uncovered by construction (there is nothing to
+/// cover it) -- `max_distance == 0` never reaches here (`tools/
+/// defs-build` refuses it at build time), but is handled the same total
+/// way rather than assumed away.
+fn distribution_coverage_violations(
+    rule_id: u32,
+    subjects: &[Cell],
+    per_cells: &[Cell],
+    max_distance: u32,
+) -> Vec<Violation> {
+    if subjects.is_empty() {
+        return per_cells
+            .iter()
+            .map(|&cell| Violation {
+                rule_id,
+                subject: cell,
+            })
+            .collect();
+    }
+    let mut buckets: BTreeMap<(i8, i32, i32), Vec<Cell>> = BTreeMap::new();
+    for &s in subjects {
+        let key = bucket_of(s, max_distance);
+        buckets.entry(key).or_default().push(s);
+    }
+    let mut violations = Vec::new();
+    for &p in per_cells {
+        let (f, bx, by) = bucket_of(p, max_distance);
+        let mut covered = false;
+        'search: for dx in -1..=1 {
+            for dy in -1..=1 {
+                if let Some(nearby) = buckets.get(&(f, bx + dx, by + dy)) {
+                    for &s in nearby {
+                        if chebyshev(p, s) <= max_distance as i64 {
+                            covered = true;
+                            break 'search;
+                        }
+                    }
+                }
+            }
+        }
+        if !covered {
+            violations.push(Violation {
+                rule_id,
+                subject: p,
+            });
+        }
+    }
+    violations
+}
+
+/// Runs every rule in `rules` against `site`, returning every distinct
+/// violation found, sorted by `(rule_id, subject)`. Never stops early
+/// (Tim's direction): a rule that fails on ten cells reports all ten.
+/// `O(rules * entities)`, never `O(rules * entities^2)` -- distribution's
+/// spacing and coverage checks use spatial buckets, and every other kind
+/// drives its scan off `site.subjects_in_area`, which a real `RuleSite`
+/// indexes once rather than rescanning per rule.
 pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
     let mut violations = Vec::new();
     for rule in rules {
@@ -302,12 +383,11 @@ pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
                 floor_min,
                 floor_max,
             } => {
-                for &cell in site.subjects_in_area(WORLD_AREA, subject) {
+                for &cell in site.subjects_in_area(None, subject) {
                     if let Some(container_tag) = container {
-                        let scoped = site
-                            .areas_containing(cell)
-                            .iter()
-                            .any(|&area| !site.subjects_in_area(area, container_tag).is_empty());
+                        let scoped = site.areas_containing(cell).iter().any(|&area| {
+                            !site.subjects_in_area(Some(area), container_tag).is_empty()
+                        });
                         if !scoped {
                             continue;
                         }
@@ -328,9 +408,10 @@ pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
                 ratio,
                 tolerance_percent,
                 min_spacing,
+                max_distance,
             } => {
-                let subjects = site.subjects_in_area(WORLD_AREA, subject);
-                let per_cells = site.subjects_in_area(WORLD_AREA, per);
+                let subjects = site.subjects_in_area(None, subject);
+                let per_cells = site.subjects_in_area(None, per);
                 let basis = per_cells.len() as u64;
                 if basis > 0 {
                     let actual = subjects.len() as u64;
@@ -353,17 +434,23 @@ pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
                     subjects,
                     min_spacing,
                 ));
+                violations.extend(distribution_coverage_violations(
+                    rule.id,
+                    subjects,
+                    per_cells,
+                    max_distance,
+                ));
             }
             RuleKind::Coherence {
                 subject,
                 within,
                 mode,
             } => {
-                for &cell in site.subjects_in_area(WORLD_AREA, subject) {
+                for &cell in site.subjects_in_area(None, subject) {
                     let within_present = site
                         .areas_containing(cell)
                         .iter()
-                        .any(|&area| !site.subjects_in_area(area, within).is_empty());
+                        .any(|&area| !site.subjects_in_area(Some(area), within).is_empty());
                     let violated = match mode {
                         CoherenceMode::Forbid => within_present,
                         CoherenceMode::Allow => !within_present,
@@ -386,10 +473,10 @@ pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
                     Some(d) => std::slice::from_ref(d),
                     None => &Direction::ALL,
                 };
-                for &cell in site.subjects_in_area(WORLD_AREA, a) {
+                for &cell in site.subjects_in_area(None, a) {
                     let has_b = dirs
                         .iter()
-                        .any(|&d| site.tags_at(site.neighbour(cell, d)).contains(&b));
+                        .any(|&d| site.tags_at(d.step(cell)).contains(&b));
                     let violated = match relation {
                         AdjacencyRelation::Require => !has_b,
                         AdjacencyRelation::Forbid => has_b,
@@ -408,9 +495,17 @@ pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
                 min,
                 max,
             } => {
-                for &cell in site.subjects_in_area(WORLD_AREA, container) {
-                    for &area in site.areas_containing(cell) {
-                        let count = site.subjects_in_area(area, requires).len() as u32;
+                for &cell in site.subjects_in_area(None, container) {
+                    let areas = site.areas_containing(cell);
+                    if areas.is_empty() {
+                        violations.push(Violation {
+                            rule_id: rule.id,
+                            subject: cell,
+                        });
+                        continue;
+                    }
+                    for &area in areas {
+                        let count = site.subjects_in_area(Some(area), requires).len() as u32;
                         if count < min || max.is_some_and(|m| count > m) {
                             violations.push(Violation {
                                 rule_id: rule.id,
@@ -423,6 +518,7 @@ pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
         }
     }
     violations.sort();
+    violations.dedup();
     violations
 }
 
@@ -490,8 +586,12 @@ mod tests {
         assert_eq!(evaluate(&[no_cafe_above_floor_2()], &over_max).len(), 1);
     }
 
+    /// Decision (Crew, PR #294 cycle 1, see `RuleKind::Placement`'s own
+    /// doc comment): a container-scoped placement rule says nothing
+    /// about a `subject` cell outside every area matching `container` --
+    /// it is not checked at all, neither pass nor fail.
     #[test]
-    fn placement_container_scopes_the_floor_check_to_cells_inside_it() {
+    fn placement_container_scoping_outside_any_matching_area_is_not_checked_by_design() {
         let rule = RuleDef {
             id: 2,
             key: "no_cafe_above_floor_2_downtown",
@@ -510,7 +610,6 @@ mod tests {
         // Inside a building area tagged BUILDING, above floor 2: violates.
         let inside = SiteBuilder::new()
             .cell(c(1, 1, 5), &[CAFE])
-            .cell(c(1, 1, 5), &[])
             .area(c(1, 1, 5), BUILDING_A)
             .cell(c(9, 9, 0), &[BUILDING])
             .area(c(9, 9, 0), BUILDING_A)
@@ -536,6 +635,7 @@ mod tests {
                 ratio: 2,
                 tolerance_percent: 0,
                 min_spacing: 3,
+                max_distance: 50,
             },
         }
     }
@@ -552,12 +652,15 @@ mod tests {
 
     #[test]
     fn distribution_violated_fixture_names_the_rule_and_a_subject() {
-        // 4 seating -> expected 2 waste, 0% tolerance; only 0 waste present.
+        // 4 seating -> expected 2 waste, 0% tolerance; only 1 waste present
+        // (placed centrally so it covers every seating cell within
+        // max_distance, isolating this fixture to the ratio check alone).
         let site = SiteBuilder::new()
             .cell(c(0, 0, 0), &[SEATING])
             .cell(c(10, 0, 0), &[SEATING])
             .cell(c(20, 0, 0), &[SEATING])
             .cell(c(30, 0, 0), &[SEATING])
+            .cell(c(15, 0, 0), &[WASTE])
             .build();
         let rule = RuleDef {
             id: 3,
@@ -568,12 +671,13 @@ mod tests {
                 ratio: 2,
                 tolerance_percent: 0,
                 min_spacing: 0,
+                max_distance: 50,
             },
         };
         let violations = evaluate(&[rule], &site);
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, 3);
-        assert_eq!(violations[0].subject, c(0, 0, 0));
+        assert_eq!(violations[0].subject, c(15, 0, 0));
     }
 
     #[test]
@@ -594,6 +698,7 @@ mod tests {
                 ratio: 2,
                 tolerance_percent: 50,
                 min_spacing: 0,
+                max_distance: 200,
             },
         };
         let at_tolerance = SiteBuilder::new()
@@ -631,6 +736,7 @@ mod tests {
                 ratio: 1,
                 tolerance_percent: 100,
                 min_spacing: 5,
+                max_distance: 50,
             },
         };
         let site = SiteBuilder::new()
@@ -658,6 +764,7 @@ mod tests {
                 ratio: 1,
                 tolerance_percent: 0,
                 min_spacing: 4,
+                max_distance: 50,
             },
         };
         let mut builder = SiteBuilder::new();
@@ -668,6 +775,136 @@ mod tests {
         }
         let site = builder.build();
         assert!(evaluate(&[rule], &site).is_empty());
+    }
+
+    /// AC2's "evenly spread" (Quentin's direction, PR #294 cycle 1):
+    /// every `per` cell must be covered by some `subject` cell within
+    /// `max_distance`, not merely far enough from its *nearest* sibling
+    /// -- `min_spacing` alone would pass this exact layout (the two
+    /// subjects are 6 apart, well past a spacing floor of 3), yet the
+    /// far corner of `per` cells is left uncovered.
+    #[test]
+    fn distribution_coverage_violates_when_a_per_cell_has_no_nearby_subject() {
+        let rule = RuleDef {
+            id: 14,
+            key: "waste_covers_seating",
+            kind: RuleKind::Distribution {
+                subject: WASTE,
+                per: SEATING,
+                ratio: 1,
+                tolerance_percent: 100,
+                min_spacing: 3,
+                max_distance: 5,
+            },
+        };
+        let site = SiteBuilder::new()
+            .cell(c(0, 0, 0), &[WASTE])
+            .cell(c(6, 0, 0), &[WASTE])
+            .cell(c(0, 0, 0), &[SEATING])
+            .cell(c(6, 0, 0), &[SEATING])
+            .cell(c(100, 0, 0), &[SEATING])
+            .build();
+        let violations = evaluate(&[rule], &site);
+        assert_eq!(
+            violations,
+            vec![Violation {
+                rule_id: 14,
+                subject: c(100, 0, 0)
+            }]
+        );
+    }
+
+    #[test]
+    fn distribution_coverage_boundary_exactly_at_max_distance_passes_one_past_fails() {
+        let rule = RuleDef {
+            id: 15,
+            key: "waste_covers_seating_boundary",
+            kind: RuleKind::Distribution {
+                subject: WASTE,
+                per: SEATING,
+                ratio: 1,
+                tolerance_percent: 100,
+                min_spacing: 0,
+                max_distance: 5,
+            },
+        };
+        let at_bound = SiteBuilder::new()
+            .cell(c(0, 0, 0), &[WASTE])
+            .cell(c(5, 0, 0), &[SEATING])
+            .build();
+        assert!(evaluate(&[rule], &at_bound).is_empty());
+
+        let one_past = SiteBuilder::new()
+            .cell(c(0, 0, 0), &[WASTE])
+            .cell(c(6, 0, 0), &[SEATING])
+            .build();
+        assert_eq!(
+            evaluate(&[rule], &one_past),
+            vec![Violation {
+                rule_id: 15,
+                subject: c(6, 0, 0)
+            }]
+        );
+    }
+
+    #[test]
+    fn distribution_coverage_zero_subjects_leaves_every_per_cell_uncovered() {
+        let rule = RuleDef {
+            id: 16,
+            key: "waste_covers_seating_none_placed",
+            kind: RuleKind::Distribution {
+                subject: WASTE,
+                per: SEATING,
+                ratio: 1,
+                tolerance_percent: 100,
+                min_spacing: 0,
+                max_distance: 5,
+            },
+        };
+        let site = SiteBuilder::new().cell(c(0, 0, 0), &[SEATING]).build();
+        assert_eq!(
+            evaluate(&[rule], &site),
+            vec![Violation {
+                rule_id: 16,
+                subject: c(0, 0, 0)
+            }]
+        );
+    }
+
+    #[test]
+    fn distribution_clustered_in_one_corner_fails_coverage_even_though_spacing_is_satisfied() {
+        // Ten subjects, four cells apart (comfortably past a spacing
+        // floor of 3), but all packed into one corner of a much larger
+        // city -- exactly the "evenly spread" failure AC2 names.
+        let rule = RuleDef {
+            id: 17,
+            key: "waste_spread_corner",
+            kind: RuleKind::Distribution {
+                subject: WASTE,
+                per: SEATING,
+                ratio: 1,
+                tolerance_percent: 1000,
+                min_spacing: 3,
+                max_distance: 20,
+            },
+        };
+        let mut builder = SiteBuilder::new();
+        for i in 0..10 {
+            builder = builder.cell(c(i * 4, 0, 0), &[WASTE]);
+        }
+        builder = builder
+            .cell(c(0, 0, 0), &[SEATING])
+            .cell(c(490, 0, 0), &[SEATING]);
+        let site = builder.build();
+
+        let violations = evaluate(&[rule], &site);
+        assert_eq!(
+            violations,
+            vec![Violation {
+                rule_id: 17,
+                subject: c(490, 0, 0)
+            }]
+        );
     }
 
     // --- coherence ----------------------------------------------------------
@@ -710,16 +947,20 @@ mod tests {
         );
     }
 
+    /// Decision (see `CoherenceMode::Forbid`'s own doc comment): a
+    /// subject outside every real area has nothing to forbid against.
     #[test]
-    fn coherence_boundary_outside_any_area_never_forbidden() {
-        // No real area at all -- forbid can never trigger with nothing to
-        // be "within".
+    fn coherence_forbid_mode_cell_outside_any_area_is_never_a_violation() {
         let site = SiteBuilder::new().cell(c(0, 0, 0), &[SKYSCRAPER]).build();
         assert!(evaluate(&[no_skyscraper_in_villa_district()], &site).is_empty());
     }
 
+    /// Decision (see `CoherenceMode::Allow`'s own doc comment): a
+    /// subject outside every real area -- symmetrically -- *is* a
+    /// violation under `Allow`, since it can never be "only within" an
+    /// area it is not in at all.
     #[test]
-    fn coherence_allow_mode_violates_when_outside_every_matching_area() {
+    fn coherence_allow_mode_cell_outside_any_area_is_a_violation() {
         let rule = RuleDef {
             id: 8,
             key: "wall_only_in_room",
@@ -906,6 +1147,66 @@ mod tests {
             .area(c(2, 0, 0), BUILDING_A)
             .build();
         assert_eq!(evaluate(&[rule], &site).len(), 1);
+    }
+
+    /// Decision (see `RuleKind::Requirement`'s own doc comment,
+    /// Quentin's direction PR #294 cycle 1): a container cell in *no*
+    /// real area at all is itself a violation, unconditionally --
+    /// including when `min == 0`, where "just count what's in scope"
+    /// would otherwise (wrongly) call it satisfied. Vacuous truth belongs
+    /// only to "zero container cells exist", never to "we found one but
+    /// could not scope it".
+    #[test]
+    fn requirement_container_outside_any_area_is_itself_a_violation() {
+        let rule = RuleDef {
+            id: 18,
+            key: "dwelling_needs_no_doors_but_needs_an_area",
+            kind: RuleKind::Requirement {
+                container: DWELLING,
+                requires: DOOR,
+                min: 0,
+                max: None,
+            },
+        };
+        let site = SiteBuilder::new().cell(c(0, 0, 0), &[DWELLING]).build();
+        assert_eq!(
+            evaluate(&[rule], &site),
+            vec![Violation {
+                rule_id: 18,
+                subject: c(0, 0, 0)
+            }]
+        );
+    }
+
+    /// A container cell inside two failing areas (e.g. a room nested in
+    /// a building, both scoped as real areas containing it) must be
+    /// reported once, not once per failing area (Tim's direction, PR
+    /// #294 cycle 1).
+    #[test]
+    fn requirement_deduplicates_a_container_cell_failing_in_two_areas_at_once() {
+        const ROOM_AREA: AreaId = 2;
+        let rule = RuleDef {
+            id: 19,
+            key: "dwelling_needs_a_door_in_every_area",
+            kind: RuleKind::Requirement {
+                container: DWELLING,
+                requires: DOOR,
+                min: 1,
+                max: None,
+            },
+        };
+        let site = SiteBuilder::new()
+            .cell(c(0, 0, 0), &[DWELLING])
+            .area(c(0, 0, 0), BUILDING_A)
+            .area(c(0, 0, 0), ROOM_AREA)
+            .build();
+        assert_eq!(
+            evaluate(&[rule], &site),
+            vec![Violation {
+                rule_id: 19,
+                subject: c(0, 0, 0)
+            }]
+        );
     }
 
     // --- cross-cutting ----------------------------------------------------------

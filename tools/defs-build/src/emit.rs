@@ -388,8 +388,9 @@ fn fmt_rule_kind_rust(kind: &RuleKindDef) -> String {
             ratio,
             tolerance_percent,
             min_spacing,
+            max_distance,
         } => format!(
-            "crate::rules::RuleKind::Distribution {{ subject: {subject}, per: {per}, ratio: {ratio}, tolerance_percent: {tolerance_percent}, min_spacing: {min_spacing} }}"
+            "crate::rules::RuleKind::Distribution {{ subject: {subject}, per: {per}, ratio: {ratio}, tolerance_percent: {tolerance_percent}, min_spacing: {min_spacing}, max_distance: {max_distance} }}"
         ),
         RuleKindDef::Coherence {
             subject,
@@ -1162,6 +1163,7 @@ mod tests {
                     ratio: 4,
                     tolerance_percent: 50,
                     min_spacing: 3,
+                    max_distance: 10,
                 },
             },
             RuleDef {
@@ -1199,7 +1201,7 @@ mod tests {
             "kind: crate::rules::RuleKind::Placement { subject: 1, container: Some(2), floor_min: Some(-1), floor_max: Some(2) }"
         ));
         assert!(out.contains(
-            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: 4, tolerance_percent: 50, min_spacing: 3 }"
+            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: 4, tolerance_percent: 50, min_spacing: 3, max_distance: 10 }"
         ));
         assert!(out.contains(
             "kind: crate::rules::RuleKind::Coherence { subject: 1, within: 2, mode: crate::rules::CoherenceMode::Forbid }"

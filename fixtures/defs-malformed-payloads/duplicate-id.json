@@ -3,11 +3,18 @@
   "defs_version": "test",
   "objects": [],
   "items": [
-    { "id": 1, "key": "bottle" },
-    { "id": 1, "key": "recycled_glass" }
+    {
+      "id": 1,
+      "key": "bottle"
+    },
+    {
+      "id": 1,
+      "key": "recycled_glass"
+    }
   ],
   "recipes": [],
   "professions": [],
   "chains": [],
-  "balance": []
+  "balance": [],
+  "tags": []
 }

@@ -14,10 +14,22 @@
   "hairstyles": [],
   "outfits": [],
   "accessories": [
-    { "id": 1, "key": "jacket", "family": "adult", "sheet": "x/jacket.png", "pool": "role_only" }
+    {
+      "id": 1,
+      "key": "jacket",
+      "family": "adult",
+      "sheet": "x/jacket.png",
+      "pool": "role_only"
+    }
   ],
   "appearance_layouts": [],
   "uniforms": [
-    { "id": 1, "key": "ghost", "profession": "nonexistent-profession", "accessory": "jacket" }
-  ]
+    {
+      "id": 1,
+      "key": "ghost",
+      "profession": "nonexistent-profession",
+      "accessory": "jacket"
+    }
+  ],
+  "tags": []
 }

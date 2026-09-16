@@ -11,3 +11,4 @@ per = "seating"
 ratio = 2
 tolerance_percent = 10
 min_spacing = 0
+max_distance = 10

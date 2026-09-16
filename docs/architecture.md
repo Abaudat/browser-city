@@ -820,24 +820,39 @@ is validated identically on both sides.
 &[RuleDef], site: &impl RuleSite) -> Vec<Violation>`, pure, over integer
 geometry only. Tags (`defs/tags/*.toml`, permanent id/key, append-only
 manifest like every other kind) are the engine's only vocabulary -- an
-object's optional `tags` field and a rule row's own subject/container/
-per/within/a/b/requires fields all resolve a tag name to its id at build
-time; the engine never sees a content key. `scripts/ci/check-rule-engine-
-no-content-keys.sh` fails the build if any manifest key ever appears as a
-literal under `server/sim/src/rules/`.
+object's `tags` field and a rule row's own subject/container/per/within/
+a/b/requires fields all resolve a tag name to its id at build time; the
+engine never sees a content key. `scripts/ci/check-rule-engine-no-
+content-keys.sh` fails the build if any manifest key ever appears as a
+quoted-string literal under `server/sim/src/rules/`; `inv_rule_verdicts_
+invariant_under_tag_relabelling` covers the gap that guard cannot (a
+hardcoded tag *id*, never a quoted key). `RuleSite` answers three
+questions over integer geometry -- tags at a cell, real areas containing
+it, subjects within an area or the whole site -- never a fourth "same-
+floor neighbour" method: `Direction::step` is pure arithmetic no
+implementation could legitimately answer differently.
 
 Five closed kinds, one TOML array table each under `defs/rules/*.toml`,
 any file: `[[placement]]`, `[[distribution]]`, `[[coherence]]`,
 `[[adjacency]]`, `[[requirement]]`. `RuleKind` is a closed Rust enum
 matched exhaustively (no `_ =>` arm) -- a sixth kind is a compile error
 until the match is updated on purpose. Every rule kind shares one id/key
-namespace ("rule") in the manifest.
+namespace ("rule") in the manifest. Distribution's "evenly spread" is a
+ratio, a minimum spacing and a maximum coverage distance (`max_distance`,
+always positive) together -- spacing alone bounds only how close two
+subjects may sit, never how far a `per` cell may be from the nearest one.
+`evaluate` returns every violation, sorted and deduplicated.
 
 Rule rows and the tag table are emitted into `server/sim/src/generated/
 defs.rs` only, as `static` tables (`TAGS`, `RULES`); tags also reach
-`client/public/defs/defs.json` (an object's `tags` field, validated
-against the tag table on both sides identically), rule rows never do --
-the client never evaluates a rule.
+`client/public/defs/defs.json` as a required field (an object's `tags`
+field, validated against the tag table on both sides identically), rule
+rows never do -- the client never evaluates a rule. `sim` never depends
+on `tools/defs-build` (or vice versa): each proves its own half of AC1
+independently, `tools/defs-build/tests/rule_emit_acceptance.rs` that a
+real TOML row renders the exact expected `RuleKind` literal, `server/sim/
+tests/rule_defs_current.rs` that the committed `sim::generated::defs::
+RULES` table itself evaluates correctly.
 
 There is no separate rule-set version: `defs_version` already hashes
 every tracked file under `defs/`, including `defs/rules/` and

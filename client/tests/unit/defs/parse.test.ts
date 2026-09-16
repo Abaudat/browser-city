@@ -24,6 +24,7 @@ function validPayload(): Record<string, unknown> {
         width: 1,
         height: 1,
         window: false,
+        tags: [],
       },
     ],
     items: [
@@ -44,6 +45,7 @@ function validPayload(): Record<string, unknown> {
     accessories: [],
     appearance_layouts: [],
     uniforms: [],
+    tags: [],
   };
 }
 
@@ -230,6 +232,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
+      tags: [],
       collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
     };
     const defs = parseDefs(payload);
@@ -245,6 +248,7 @@ describe("parseDefs", () => {
         width: 1,
         height: 1,
         window: false,
+        tags: [],
       },
     ];
     expect(parseDefs(payload).objects[0]?.collider).toBeUndefined();
@@ -261,6 +265,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
+      tags: [],
       interact_at: { x0: 0, y0: 16, x1: 16, y1: 32 },
     };
     const defs = parseDefs(payload);
@@ -277,6 +282,7 @@ describe("parseDefs", () => {
         width: 1,
         height: 1,
         window: false,
+        tags: [],
       },
     ];
     expect(parseDefs(payload).objects[0]?.interactAt).toBeUndefined();
@@ -293,6 +299,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
+      tags: [],
       interact_at: { x0: 0, y0: 16, x1: 0, y1: 32 },
     };
     expect(() => parseDefs(payload)).toThrow(/zero or negative area/);
@@ -309,6 +316,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
+      tags: [],
       // The bound is 2 cells * 16 sub-cells = 32 beyond the footprint.
       interact_at: { x0: -33, y0: 0, x1: 16, y1: 16 },
     };
@@ -326,6 +334,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
+      tags: [],
       interact_at: { x0: -32, y0: 0, x1: 16, y1: 16 },
     };
     expect(() => parseDefs(payload)).not.toThrow();
@@ -342,6 +351,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
+      tags: [],
       collider: { x0: 0, y0: 0, x1: 16, y1: 16 },
       interact_at: { x0: 4, y0: 4, x1: 12, y1: 12 },
     };
@@ -359,6 +369,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
+      tags: [],
       collider: { x0: 4.5, y0: 4, x1: 12, y1: 12 },
     };
     expect(() => parseDefs(payload)).toThrow(/expected an integer in \[-2\^31, 2\^31\)/);
@@ -375,6 +386,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
+      tags: [],
       collider: null,
     };
     expect(parseDefs(payload).objects[0]?.collider).toBeUndefined();
@@ -391,6 +403,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
+      tags: [],
       collider: { x0: 5, y0: 5, x1: 5, y1: 9 },
     };
     expect(() => parseDefs(payload)).toThrow(/zero or negative area/);
@@ -407,6 +420,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
+      tags: [],
       collider: { x0: 0, y0: 0, x1: 20, y1: 8 },
     };
     expect(() => parseDefs(payload)).toThrow(/does not fit inside its footprint/);
@@ -423,6 +437,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
+      tags: [],
       collider: { x0: 0, y0: 0, x1: 16, y1: 16 },
     };
     expect(() => parseDefs(payload)).not.toThrow();
@@ -438,6 +453,7 @@ describe("parseDefs", () => {
       sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
       width: 1,
       height: 1,
+      tags: [],
     };
     expect(() => parseDefs(payload)).toThrow(/expected a boolean/);
   });
@@ -453,6 +469,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: "nope",
+      tags: [],
     };
     expect(() => parseDefs(payload)).toThrow(/expected a boolean/);
   });
@@ -468,6 +485,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: true,
+      tags: [],
     };
     const defs = parseDefs(payload);
     expect(defs.objects[0]?.window).toBe(true);
@@ -528,6 +546,7 @@ describe("parseDefs", () => {
               width,
               height,
               window: false,
+              tags: [],
               collider: { x0, y0, x1, y1 },
             },
           ];

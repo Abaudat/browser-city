@@ -9,11 +9,19 @@
   "professions": [],
   "chains": [],
   "balance": [],
-  "bodies": [{ "id": 0, "key": "body_zero", "family": "adult", "sheet": "x/body.png" }],
+  "bodies": [
+    {
+      "id": 0,
+      "key": "body_zero",
+      "family": "adult",
+      "sheet": "x/body.png"
+    }
+  ],
   "eyes": [],
   "hairstyles": [],
   "outfits": [],
   "accessories": [],
   "appearance_layouts": [],
-  "uniforms": []
+  "uniforms": [],
+  "tags": []
 }
