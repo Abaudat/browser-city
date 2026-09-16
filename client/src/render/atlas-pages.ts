@@ -1,9 +1,10 @@
 // Story 2.6: the client's one reader for tools/defs-build's own atlas
 // packer -- loads a packed page only on first demand (Pixi `Assets.load`,
 // nearest-neighbour sampling, mipmaps off) and crops each object's own
-// `atlas` rect from it (`new Texture({ source, frame })`, never
-// `RenderTexture` -- docs/architecture.md's "Visibility" section bans it
-// anywhere under `client/src/`). Excluded from the coverage gate
+// `atlas` rect from it (`new Texture({ source, frame })`, a plain crop --
+// the render-to-texture construct docs/architecture.md's "Visibility"
+// section bans anywhere under `client/src/` is never used here).
+// Excluded from the coverage gate
 // (`client/vitest.config.ts`), like `appearance-texture.ts`: a thin
 // adapter over `Assets.load`, which needs a real browser Image-decode
 // runtime no node test environment provides. `atlasFrameRect` below is
