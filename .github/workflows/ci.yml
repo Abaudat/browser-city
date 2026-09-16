@@ -184,6 +184,10 @@ jobs:
       # filter (below) must stay a superset of it, or the two silently
       # drift apart.
       - run: bash scripts/ci/check-deploy-client-paths-current.sh
+      # story 2.2, cycle 2 (Quentin's direction): the defs: job must be
+      # the one running check-layer-table-current.sh, since client-check's
+      # own filter never covers tools/defs-build/**.
+      - run: bash scripts/ci/check-layer-table-guard-wired.sh
       # scripts/ci/'s own fast, no-toolchain-needed tests for its
       # mechanical guards (e.g. check-no-masks.sh's own pattern, story 1.7
       # cycle 2) -- runs here, not in `client-check`, since it needs
@@ -245,6 +249,15 @@ jobs:
         run: bash ../../scripts/ci/check-no-walkable-field.sh
       - name: story 2.2, ci.yml's defs filter covers the whole sprite-sheet allowed root
         run: bash ../../scripts/ci/check-defs-sprite-root-filter.sh
+      # Quentin's direction, cycle 2: client-check's own filter (client/**,
+      # server/**, scripts/**, .github/**, fixtures/**) never covers
+      # tools/defs-build/**, so a PR that only edits layer_codes.rs's own
+      # DEPRECATED_LAYER_NAMES would skip client-check entirely and this
+      # drift guard would never run. Runs here too -- plain text, no
+      # toolchain, costs nothing -- so the defs filter (which does cover
+      # tools/defs-build/**) is what actually protects it.
+      - name: story 2.2, defs-build's DEPRECATED_LAYER_NAMES never drifts from codes.rs
+        run: bash ../../scripts/ci/check-layer-table-current.sh
 
   check:
     name: check

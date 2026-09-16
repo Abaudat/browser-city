@@ -211,8 +211,7 @@ describe("pickSortKey", () => {
   // south than it is actually drawn.
   it("sorts a multi-row entry at its own anchor row, never one footprint further south", () => {
     const tallEntry = entry({ objectId: 1n, defId: TRASH_BIN_DEF, anchorX: 4, anchorY: 6 });
-    const tallDef = { width: 3, height: 2 };
-    const key = pickSortKey(tallEntry, tallDef, 0, contextOf(queryOf({})));
+    const key = pickSortKey(tallEntry, 0, contextOf(queryOf({})));
     expect(key.y).toBe(toSortUnits(6));
   });
 });
@@ -249,7 +248,7 @@ describe("topmostAt", () => {
             .filter((c) => visible.has(c.objectId))
             .map((c) => ({
               candidate: c,
-              key: pickSortKey(c, ctx.objectDefs.get(c.defId), 0, ctx),
+              key: pickSortKey(c, 0, ctx),
             }));
           if (visibleKeys.length === 0) {
             expect(picked).toBeUndefined();
@@ -455,7 +454,7 @@ describe("picking by what is drawn, not by the footprint cell", () => {
           }
           const keyed = eligible.map((c) => ({
             candidate: c,
-            key: pickSortKey(c, ctx.objectDefs.get(c.defId), 0, ctx),
+            key: pickSortKey(c, 0, ctx),
           }));
           const keys = keyed.map((k) => k.key);
           sortDrawablesInPlace(keys);

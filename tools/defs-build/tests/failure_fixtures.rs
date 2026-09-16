@@ -14,7 +14,10 @@ mod support;
 
 use std::path::{Path, PathBuf};
 
-use support::{build_err, layer_codes, merged_tree, read_tree, sheet_dims, valid_dir};
+use support::{
+    build_err, build_err_enforcing_sheet_root, layer_codes, merged_tree, read_tree, sheet_dims,
+    valid_dir,
+};
 
 #[test]
 fn toml_syntax_error_names_the_offending_file_and_line() {
@@ -252,6 +255,25 @@ fn an_empty_object_name_is_named() {
     assert!(err.message.contains("empty name"));
 }
 
+/// Story 2.2, cycle 2 (Quentin's direction): a `sprite.sheet` outside
+/// `SPRITE_SHEET_ALLOWED_ROOT` is refused -- the root is an enforced
+/// rule, not a CI-filter convention.
+#[test]
+fn a_sprite_sheet_outside_the_allowed_root_is_named() {
+    let err = build_err_enforcing_sheet_root("sprite-sheet-outside-allowed-root");
+    assert!(err.message.contains("is not under the allowed root"));
+}
+
+/// A `..`-laden sheet path that literally starts with the allowed root
+/// but normalises to something outside it is refused just the same --
+/// the check normalises `..` segments before comparing, so a path cannot
+/// present as rooted just because of what its string starts with.
+#[test]
+fn a_sprite_sheet_escaping_the_allowed_root_via_dot_dot_is_named() {
+    let err = build_err_enforcing_sheet_root("sprite-sheet-path-escape");
+    assert!(err.message.contains("is not under the allowed root"));
+}
+
 /// A sprite sheet path this crate never read `IHDR` dimensions for is a
 /// build error naming the object and the sheet.
 #[test]
@@ -342,6 +364,8 @@ fn every_known_category_has_a_fixture_directory() {
         "unknown-layer",
         "deprecated-layer",
         "sprite-sheet-missing",
+        "sprite-sheet-outside-allowed-root",
+        "sprite-sheet-path-escape",
         "sprite-zero-area",
         "sprite-outside-sheet-bounds",
         "sprite-width-mismatches-footprint",
@@ -397,7 +421,7 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
         std::fs::write(&manifest_out, "sentinel manifest\n").unwrap();
 
         let files = merged_tree(category);
-        let result = defs_build::build(&files, &sheet_dims(), &layer_codes(), "test-version");
+        let result = defs_build::build(&files, &sheet_dims(), &layer_codes(), "", "test-version");
         assert!(result.is_err(), "'{category}' was expected to fail");
         if let Ok(output) = result {
             defs_build::fsio::atomic_write(&rust_out, &output.rust).unwrap();
@@ -429,6 +453,6 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
 #[test]
 fn the_valid_base_tree_builds_cleanly() {
     let files = read_tree(&valid_dir());
-    let result = defs_build::build(&files, &sheet_dims(), &layer_codes(), "test-version");
+    let result = defs_build::build(&files, &sheet_dims(), &layer_codes(), "", "test-version");
     assert!(result.is_ok(), "valid fixture failed: {:?}", result.err());
 }

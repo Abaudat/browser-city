@@ -161,7 +161,6 @@ export function isWithinReach(
  */
 export function pickSortKey(
   entry: FootprintEntry,
-  _def: PickObjectDef | undefined,
   floor: number,
   context: Pick<PickContext, "rankOf">,
 ): Drawable {
@@ -191,7 +190,7 @@ export function topmostAt(
   floor: number,
   context: PickContext,
 ): FootprintEntry | undefined {
-  const { index, isVisible, drawnRectOf, objectDefs } = context;
+  const { index, isVisible, drawnRectOf } = context;
   let best: FootprintEntry | undefined;
   let bestKey: Drawable | undefined;
 
@@ -203,7 +202,7 @@ export function topmostAt(
     const rect = drawnRectOf?.(candidate.objectId);
     if (rect && !containsPoint(rect, point.worldXPx, point.worldYPx)) continue;
 
-    const key = pickSortKey(candidate, objectDefs.get(candidate.defId), floor, context);
+    const key = pickSortKey(candidate, floor, context);
     if (!bestKey || compareDrawables(key, bestKey) > 0) {
       best = candidate;
       bestKey = key;

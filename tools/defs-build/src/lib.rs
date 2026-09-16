@@ -38,7 +38,11 @@ pub struct BuildOutput {
 /// `(width, height)` already read from every appearance part's and every
 /// object's own sheet file (story 1.10/2.2; empty for a tree with no such
 /// entries), the `name -> code` layer ladder already read from the codes
-/// golden ([`layer_codes::parse_layer_codes`]), and an already-computed
+/// golden ([`layer_codes::parse_layer_codes`]), the root every `sheet`/
+/// `sprite.sheet` must live under (`sprite_sheet_allowed_root` -- the real
+/// binary always passes [`model::SPRITE_SHEET_ALLOWED_ROOT`]; an empty
+/// string disables the check, which is this crate's own fixture trees'
+/// job, never a caller with real defs), and an already-computed
 /// `defs_version` -- the one function a caller needs once the filesystem
 /// edge has done its own job. Returns every rendered artefact, or the
 /// first [`DefsError`] found; writes nothing.
@@ -46,10 +50,11 @@ pub fn build(
     files: &[(std::path::PathBuf, String)],
     sheet_dims: &std::collections::BTreeMap<String, (u32, u32)>,
     layer_codes: &std::collections::BTreeMap<String, u32>,
+    sprite_sheet_allowed_root: &str,
     defs_version: &str,
 ) -> Result<BuildOutput, DefsError> {
     let raw = parse::parse_all(files)?;
-    let defs = validate::validate(&raw, sheet_dims, layer_codes)?;
+    let defs = validate::validate(&raw, sheet_dims, layer_codes, sprite_sheet_allowed_root)?;
     Ok(BuildOutput {
         rust: emit::emit_rust(&defs, defs_version),
         json: emit::emit_json(&defs, defs_version),

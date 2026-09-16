@@ -103,9 +103,38 @@ pub fn layer_codes() -> BTreeMap<String, u32> {
         .collect()
 }
 
+/// `""` (never `defs_build::model::SPRITE_SHEET_ALLOWED_ROOT`): every
+/// fixture directory but the two dedicated to that check names sheet
+/// paths that live nowhere near `ModernTileset/` -- an empty root always
+/// passes (`validate.rs`'s own `sheet_is_under_root`), so those fixtures
+/// stay focused on the one thing each is testing.
 pub fn build_err(category: &str) -> defs_build::DefsError {
     let files = merged_tree(category);
-    defs_build::build(&files, &sheet_dims(), &layer_codes(), "test-version").expect_err(&format!(
+    defs_build::build(&files, &sheet_dims(), &layer_codes(), "", "test-version").expect_err(
+        &format!("fixture category '{category}' was expected to fail the build"),
+    )
+}
+
+/// Like [`build_err`], but enforces the real
+/// [`defs_build::model::SPRITE_SHEET_ALLOWED_ROOT`] -- the two fixture
+/// categories that exercise the sheet-root check itself
+/// (`sprite-sheet-outside-allowed-root`, `sprite-sheet-path-escape`) use
+/// this instead.
+///
+/// `mod support` is compiled fresh into every `tests/*.rs` binary that
+/// declares it; `failure_fixtures.rs` is the only one that calls this, so
+/// `shared_malformed_cases.rs`'s own copy sees it as unused.
+#[allow(dead_code)]
+pub fn build_err_enforcing_sheet_root(category: &str) -> defs_build::DefsError {
+    let files = merged_tree(category);
+    defs_build::build(
+        &files,
+        &sheet_dims(),
+        &layer_codes(),
+        defs_build::model::SPRITE_SHEET_ALLOWED_ROOT,
+        "test-version",
+    )
+    .expect_err(&format!(
         "fixture category '{category}' was expected to fail the build"
     ))
 }

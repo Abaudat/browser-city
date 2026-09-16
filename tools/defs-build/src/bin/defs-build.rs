@@ -10,7 +10,8 @@ use std::process::ExitCode;
 use std::collections::BTreeMap;
 
 use defs_build::{
-    appearance_sheet_paths, build, fsio, layer_codes, object_sprite_sheet_paths, parse, version,
+    appearance_sheet_paths, build, fsio, layer_codes, model, object_sprite_sheet_paths, parse,
+    version,
 };
 
 fn repo_root() -> PathBuf {
@@ -76,7 +77,13 @@ fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let codes_golden = fsio::read_codes_golden(root)?;
     let layer_codes = layer_codes::parse_layer_codes(&codes_golden);
 
-    let output = build(&text_files, &sheet_dims, &layer_codes, &defs_version)?;
+    let output = build(
+        &text_files,
+        &sheet_dims,
+        &layer_codes,
+        model::SPRITE_SHEET_ALLOWED_ROOT,
+        &defs_version,
+    )?;
 
     let rust_path = root.join("server/sim/src/generated/defs.rs");
     let json_path = root.join("client/public/defs/defs.json");
