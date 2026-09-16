@@ -123,9 +123,10 @@ impl WalkabilityGrid {
 /// The footprint's own north-west cell -- where a `collider` rect's local
 /// `(0, 0)` sub-cell sits in world cells -- from the anchor cell (the
 /// footprint's south-west corner) and its extent. The one place this
-/// arithmetic lives on the server, mirroring `client/src/world/
-/// footprint.ts`'s own `footprintOrigin` exactly (Tim's direction): `x` is
-/// unchanged, only `y` moves, north by `height - 1` cells.
+/// arithmetic lives on the server, mirroring the client's own equivalent
+/// exactly (Tim's direction, NFR30 -- a second, independent
+/// implementation, never a shared import): `x` is unchanged, only `y`
+/// moves, north by `height - 1` cells.
 pub fn footprint_origin(anchor_x: i32, anchor_y: i32, width: u32, height: u32) -> (i32, i32) {
     let _ = width;
     (anchor_x, anchor_y - (height as i32 - 1))
