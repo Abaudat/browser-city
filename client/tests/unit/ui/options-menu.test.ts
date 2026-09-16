@@ -16,6 +16,7 @@ interface Harness {
   readonly openStates: boolean[];
   readonly audioChanges: AudioSettings[];
   readonly displayChanges: DisplaySettings[];
+  readonly displayPreviews: DisplaySettings[];
   bindings(): Bindings;
 }
 
@@ -28,6 +29,7 @@ function mount(
   const openStates: boolean[] = [];
   const audioChanges: AudioSettings[] = [];
   const displayChanges: DisplaySettings[] = [];
+  const displayPreviews: DisplaySettings[] = [];
   let current = initial;
   const menu = mountOptionsMenu({
     container: document.body,
@@ -41,8 +43,17 @@ function mount(
     onAudioChange: (next) => audioChanges.push(next),
     initialDisplay,
     onDisplayChange: (next) => displayChanges.push(next),
+    onDisplayPreview: (next) => displayPreviews.push(next),
   });
-  return { menu, changes, openStates, audioChanges, displayChanges, bindings: () => current };
+  return {
+    menu,
+    changes,
+    openStates,
+    audioChanges,
+    displayChanges,
+    displayPreviews,
+    bindings: () => current,
+  };
 }
 
 function pressKey(code: string): void {
@@ -296,6 +307,21 @@ describe("Audio and Display sections", () => {
     expect(values).toEqual(["77%", "33%"]);
     // Never committed by 'input' alone -- only 'change' calls the callback.
     expect(h.audioChanges).toEqual([]);
+    expect(h.displayChanges).toEqual([]);
+    h.menu.destroy();
+  });
+
+  it("forwards every highlight-strength drag tick ('input') live through onDisplayPreview, unlike volume (Derek's direction)", () => {
+    const h = mount();
+    h.menu.open();
+    const highlight = document.querySelector<HTMLInputElement>("[data-bc-highlight-slider]");
+    if (!highlight) throw new Error("no highlight slider");
+    highlight.value = "77";
+    highlight.dispatchEvent(new Event("input", { bubbles: true }));
+    highlight.value = "33";
+    highlight.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(h.displayPreviews).toEqual([{ highlightStrength: 77 }, { highlightStrength: 33 }]);
+    // Never persisted by a preview alone -- only 'change' commits.
     expect(h.displayChanges).toEqual([]);
     h.menu.destroy();
   });

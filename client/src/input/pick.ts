@@ -120,6 +120,13 @@ export interface ReachAnchor {
  * epsilon, and no way for a float to make the same position read
  * differently on two frames. A definition with no `interact_at` is never
  * reachable, because it declares no interaction at all.
+ *
+ * This predicate is a promise about what the server will accept once
+ * Epic 8 wires a reducer to `interact_at` (Derek's direction): FR173's
+ * in-world mark exists only because this function said yes, so it must
+ * stay identical to whatever check that reducer applies -- never a
+ * second, even slightly more generous copy, which would turn the mark
+ * into a lie the server then refuses.
  */
 export function isWithinReach(
   anchor: ReachAnchor,

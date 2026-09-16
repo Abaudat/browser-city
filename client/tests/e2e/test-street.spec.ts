@@ -50,11 +50,14 @@
 // Look at what it produced before committing: a baseline is a human
 // claim that the picture is right, not whatever the runner happened to
 // generate.
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import pixelmatch from "pixelmatch";
+import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
 import { sortAcrossFloors } from "../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../src/render/layer-ranks";
 import { LAYER_TABLE } from "../../src/render/layer-table";
+import { screenPositionPx } from "../../src/render/screen-position";
 import { buildPlayerDrawable, buildPropDrawables } from "../../src/test-street/drawables";
 import {
   BRIDGE_DECK_Y,
@@ -72,6 +75,7 @@ import {
   type StreetWalkSegment,
   type StreetWalkUntil,
   streetWalkRoute,
+  TRASH_BIN_DEF_ID,
   WINDOW_DEF_ID,
 } from "../../src/test-street/fixture";
 import {
@@ -138,6 +142,188 @@ const UNDERPASS_MAX_DIFF_PIXELS = 200;
 
 const RANK_TABLE = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
 const CODE_BY_NAME = Object.fromEntries(LAYER_TABLE.map((row) => [row.name, row.code]));
+
+function balance(key: string): number {
+  const entry = committedDefs().balance.find((b) => b.key === key);
+  if (!entry) throw new Error(`no balance key '${key}'`);
+  return entry.value;
+}
+
+const TILE_SIZE_PX = balance("render.tile_size_px");
+const STOREY_HEIGHT_PX = balance("render.storey_height_px");
+
+function canvasOf(page: Page): Locator {
+  return page.locator("#test-street canvas");
+}
+
+/** A world pixel inside a cell's own drawn rect -- every drawable is
+ * bottom-centre anchored on its cell (`screenPositionPx`), so the anchor
+ * is the bottom-centre of that rect and half a tile above it is inside.
+ * The same idiom `intents.spec.ts` uses for its own hover points. */
+function worldPixelOfCell(cellX: number, cellY: number, floor: number) {
+  const anchor = screenPositionPx(cellX, cellY, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX);
+  return { x: anchor.x, y: anchor.y - TILE_SIZE_PX / 2 };
+}
+
+/** Converts a world pixel to the canvas offset to hover, through the
+ * scene's own recorded zoom and camera offset -- never a literal pixel. */
+async function canvasOffset(page: Page, worldPx: { x: number; y: number }) {
+  const view = await page.evaluate(() => window.__bc?.viewTransform);
+  if (!view) throw new Error("the street scene never recorded its view transform");
+  return { x: worldPx.x * view.zoom + view.offsetX, y: worldPx.y * view.zoom + view.offsetY };
+}
+
+async function hoverCell(page: Page, cellX: number, cellY: number, floor: number): Promise<void> {
+  const position = await canvasOffset(page, worldPixelOfCell(cellX, cellY, floor));
+  await canvasOf(page).hover({ position });
+}
+
+/** Drives the real U1 dial through the real options menu -- `Escape` opens
+ * it, the highlight slider's own committed ('change') value is what
+ * `main.ts` forwards into `StreetSceneHandle.setHighlightStrength`,
+ * `Escape` closes it again. Used by the FR173 pixel spec to derive a
+ * diff-coverage floor from the object's own dial-100 behaviour, never a
+ * hardcoded pixel count. */
+async function setHighlightStrengthViaMenu(page: Page, value: number): Promise<void> {
+  await page.keyboard.press("Escape");
+  const slider = page.locator("[data-bc-highlight-slider]");
+  await slider.fill(String(value));
+  await slider.dispatchEvent("change");
+  await page.keyboard.press("Escape");
+}
+
+/** The bin's own drawn rect, in canvas pixels, padded by a couple of
+ * pixels of rounding slack -- the region every FR173 overlay pixel for it
+ * must fall inside. The art is a real, known 16x32 LimeZu asset on a 1x1
+ * footprint (`test-street/fixture.ts`'s own doc comment for `id: 15`):
+ * one tile wide, two tiles tall, bottom-centre anchored, so it overhangs
+ * one tile above its own row -- never measured a second, hand-typed way. */
+async function binDrawnRectPx(
+  page: Page,
+): Promise<{ x0: number; y0: number; x1: number; y1: number }> {
+  const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
+  if (!bin) throw new Error("the fixture no longer places a trash bin");
+  const anchor = screenPositionPx(bin.x, bin.y, bin.floor, TILE_SIZE_PX, STOREY_HEIGHT_PX);
+  const worldRect = {
+    x0: anchor.x - TILE_SIZE_PX / 2,
+    y0: anchor.y - TILE_SIZE_PX * 2,
+    x1: anchor.x + TILE_SIZE_PX / 2,
+    y1: anchor.y,
+  };
+  const view = await page.evaluate(() => window.__bc?.viewTransform);
+  if (!view) throw new Error("the street scene never recorded its view transform");
+  const pad = 2;
+  return {
+    x0: worldRect.x0 * view.zoom + view.offsetX - pad,
+    y0: worldRect.y0 * view.zoom + view.offsetY - pad,
+    x1: worldRect.x1 * view.zoom + view.offsetX + pad,
+    y1: worldRect.y1 * view.zoom + view.offsetY + pad,
+  };
+}
+
+/** Every pixel that differs between two same-size PNG buffers, as
+ * coordinates -- `pixelmatch`/`pngjs` against a real diff image, never a
+ * committed baseline (the same runtime-captured idiom
+ * `connection-notice.spec.ts` uses), because what is under test here is a
+ * before/after relationship on one real session, not a fixed picture. */
+function pixelDiffCoords(a: Buffer, b: Buffer): readonly { x: number; y: number }[] {
+  const pngA = PNG.sync.read(a);
+  const pngB = PNG.sync.read(b);
+  expect(pngA.width).toBe(pngB.width);
+  expect(pngA.height).toBe(pngB.height);
+  const diff = new PNG({ width: pngA.width, height: pngA.height });
+  // Far more sensitive than `connection-notice.spec.ts`'s own
+  // `diffPixelCount` (0.1, pixelmatch's own default): the additive
+  // highlight this spec exists to catch is a genuinely subtle colour
+  // shift at the U1 dial's own default strength, well under pixelmatch's
+  // default perceptual threshold -- 0.1 measured zero diff pixels even
+  // directly over the hovered, in-reach bin. This canvas is deterministic
+  // and unantialiased (nearest-neighbour sampling, animations disabled),
+  // so there is no rendering noise for a lower threshold to wrongly pick
+  // up: a raw per-channel scan (this threshold's own calibration run)
+  // measured exactly zero difference anywhere outside the hovered
+  // object's own drawn rect. `diffMask: true` is load-bearing, not
+  // cosmetic: without it pixelmatch draws a dimmed copy of *both* input
+  // images into every output pixel, matching or not, all at full alpha --
+  // so the moment `count` (the real mismatch count) was non-zero
+  // anywhere, every pixel in the canvas looked like a "diff" to a scan of
+  // the output's own alpha channel. With the mask, only genuinely
+  // differing pixels are written.
+  const count = pixelmatch(pngA.data, pngB.data, diff.data, pngA.width, pngA.height, {
+    threshold: 0.02,
+    diffMask: true,
+  });
+  const coords: { x: number; y: number }[] = [];
+  if (count > 0) {
+    for (let y = 0; y < diff.height; y++) {
+      for (let x = 0; x < diff.width; x++) {
+        const i = (diff.width * y + x) << 2;
+        if (diff.data[i + 3] !== 0) coords.push({ x, y });
+      }
+    }
+  }
+  return coords;
+}
+
+/** Holds `segment.key` down, waits for its own release condition, and
+ * releases it again -- entirely inside the page, the same synthetic-
+ * `KeyboardEvent`/`requestAnimationFrame` idiom `street-perf.spec.ts`'s
+ * own `walkSegment` uses (see that file's own doc comment for why: real
+ * OS-level `page.keyboard.down`/`waitForFunction`/`page.keyboard.up` is
+ * the more faithful choice for a functional spec, but this spec's own
+ * mouse hovers immediately before each walked segment have shown the
+ * same round-trip-latency unreliability that spec already worked around
+ * -- an occasional real keydown arriving late enough to stall a
+ * `waitForFunction` for the whole 30s budget). This spec's own real-input
+ * proof already lives in "one walk down the test street" above; what FR173
+ * needs here is a reliable way to get the player into and out of one
+ * object's `interact_at`, not a second proof that OS-level input works. */
+async function walkSegmentSynthetic(page: Page, segment: StreetWalkSegment): Promise<void> {
+  const result = await page.evaluate(
+    ({ code, until, timeoutMs }) => {
+      return new Promise<{ met: boolean }>((resolve) => {
+        const met = (u: StreetWalkUntil): boolean => {
+          const position = window.__bc?.playerPosition;
+          if (!position) return false;
+          switch (u.kind) {
+            case "x-at-least":
+              return position.x >= u.value;
+            case "x-at-most":
+              return position.x <= u.value;
+            case "y-at-least":
+              return position.y >= u.value;
+            case "y-at-most":
+              return position.y <= u.value;
+            case "floor":
+              return window.__bc?.playerFloor === u.value;
+          }
+        };
+        const release = (ok: boolean) => {
+          window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
+          resolve({ met: ok });
+        };
+        const deadline = performance.now() + timeoutMs;
+        const tick = () => {
+          if (met(until)) {
+            release(true);
+            return;
+          }
+          if (performance.now() >= deadline) {
+            release(false);
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        window.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true }));
+        requestAnimationFrame(tick);
+      });
+    },
+    { code: segment.key, until: segment.until, timeoutMs: 30_000 },
+  );
+  if (!result.met) {
+    throw new Error(`walkSegmentSynthetic: '${segment.label}' never met its release condition`);
+  }
+}
 
 function rankOf(layer: string): number {
   const code = CODE_BY_NAME[layer];
@@ -601,4 +787,118 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   await page.reload();
   await waitForSceneReady(page);
   expect(await page.evaluate(() => window.__bc?.playerAppearance)).toEqual(appearanceAtStart);
+});
+
+test("FR173's affordance mark is a real pixel change, confined to the hovered object's own drawn rect (Quentin's direction)", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto("/?freezeCrowd=1");
+  await waitForSceneReady(page);
+
+  const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
+  if (!bin) throw new Error("the fixture no longer places a trash bin");
+  const binRect = await binDrawnRectPx(page);
+
+  // A cell well away from both interactable objects (the bin and the shop
+  // counter) -- any third cell never marks anything, so this is a safe,
+  // stable "pointer off the object" position on either side of the walk
+  // below.
+  const away = { x: bin.x + 6, y: bin.y, floor: bin.floor };
+
+  // --- pair A: before the walk, the bin is out of reach -------------------
+  // Two frames at the *same* player position (still at `PLAYER_START`,
+  // nothing has moved yet), so the only thing that can differ between them
+  // is the hover itself.
+  await hoverCell(page, away.x, away.y, away.floor);
+  const baselineOutOfReach = await canvasOf(page).screenshot({ animations: "disabled" });
+
+  await hoverCell(page, bin.x, bin.y, bin.floor);
+  expect(await page.evaluate(() => window.__bc?.highlightedObjectId ?? null)).toBeNull();
+  const hoveredOutOfReach = await canvasOf(page).screenshot({ animations: "disabled" });
+  // AC2's withholding rule, measured rather than asserted about internal
+  // state alone (Quentin's direction: this is the single most important
+  // assertion in this story, because it is the only one that proves
+  // reachability is taught by the highlight rather than told) -- zero
+  // tolerance, not merely "no highlighted id".
+  expect(pixelDiffCoords(baselineOutOfReach, hoveredOutOfReach)).toEqual([]);
+
+  // --- walk into the bin's own `interact_at` skirt -------------------------
+  // Real keyboard input (`walkSegmentSynthetic`'s own doc comment says why
+  // synthetic, not `page.keyboard`, in this one spec). The first four
+  // segments are `streetWalkRoute`'s own proven, committed ones (out of the
+  // shopfront door, resting against the lamppost's own base collider,
+  // clearing it, then south onto the pavement's real south edge) -- reused
+  // rather than re-derived, since they are already proven collision-safe.
+  // From there this walk diverges: east under the bin's own column, then
+  // north back up into its `interact_at` skirt -- approaching from due
+  // south is what clears both the shopfront's own south wall (whose
+  // collision a walker still grazes a hair's width below its own row) and
+  // the bin's own small centred base collider, which a straight approach
+  // along the bin's own row cannot do.
+  await hoverCell(page, away.x, away.y, away.floor); // mouse out of the way while walking
+  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 4)) {
+    await walkSegmentSynthetic(page, segment);
+  }
+  await walkSegmentSynthetic(page, {
+    label: "under-the-bin",
+    key: "ArrowRight",
+    until: { kind: "x-at-least", value: bin.x },
+  });
+  await walkSegmentSynthetic(page, {
+    label: "up-into-the-bins-reach",
+    key: "ArrowUp",
+    until: { kind: "y-at-most", value: bin.y + 1 },
+  });
+
+  // --- pair B: after the walk, the bin is in reach -------------------------
+  // Two (then three) frames at the walk's own resting position -- again,
+  // only the hover changes between them.
+  await hoverCell(page, away.x, away.y, away.floor);
+  const baselineInReach = await canvasOf(page).screenshot({ animations: "disabled" });
+
+  await hoverCell(page, bin.x, bin.y, bin.floor);
+  await expect
+    .poll(() => page.evaluate(() => window.__bc?.highlightedObjectId ?? null))
+    .toBe(bin.id.toString());
+  const hoveredInReach = await canvasOf(page).screenshot({ animations: "disabled" });
+  const diffFromBaseline = pixelDiffCoords(baselineInReach, hoveredInReach);
+  // Nothing bleeds onto the bin's own tile, its neighbours or the ground
+  // pass: every differing pixel lies inside the bin's own drawn rect.
+  for (const { x, y } of diffFromBaseline) {
+    expect(x).toBeGreaterThanOrEqual(binRect.x0);
+    expect(x).toBeLessThanOrEqual(binRect.x1);
+    expect(y).toBeGreaterThanOrEqual(binRect.y0);
+    expect(y).toBeLessThanOrEqual(binRect.y1);
+  }
+
+  // A floor derived from the object's own behaviour, not a magic number
+  // (Quentin's direction): `expect(...).toBeGreaterThan(0)` alone passes
+  // on one accidentally-lit pixel, which an overlay built at near-zero
+  // alpha, or built for only one of several source drawables, would still
+  // satisfy while the affordance itself was broken. The dial at 100 is
+  // the strongest this object can ever be marked, so its own diff-pixel
+  // coverage is the natural ceiling to hold the default dial's own
+  // coverage to a meaningful share of -- self-calibrating against the
+  // real art, never re-tuned by hand when the art changes.
+  await hoverCell(page, away.x, away.y, away.floor);
+  await setHighlightStrengthViaMenu(page, 100);
+  await hoverCell(page, bin.x, bin.y, bin.floor);
+  await expect
+    .poll(() => page.evaluate(() => window.__bc?.highlightedObjectId ?? null))
+    .toBe(bin.id.toString());
+  const hoveredAt100 = await canvasOf(page).screenshot({ animations: "disabled" });
+  const diffAt100 = pixelDiffCoords(baselineInReach, hoveredAt100);
+
+  const MIN_COVERAGE_RATIO = 0.5;
+  expect(diffAt100.length).toBeGreaterThan(0);
+  expect(diffFromBaseline.length).toBeGreaterThanOrEqual(diffAt100.length * MIN_COVERAGE_RATIO);
+
+  // The pointer moving on leaves nothing behind -- back to the baseline
+  // within zero tolerance, so "leaves nothing behind" is measured, not
+  // only asserted about `highlightedObjectId`.
+  await hoverCell(page, away.x, away.y, away.floor);
+  await expect.poll(() => page.evaluate(() => window.__bc?.highlightedObjectId ?? null)).toBeNull();
+  const afterLeaving = await canvasOf(page).screenshot({ animations: "disabled" });
+  expect(pixelDiffCoords(baselineInReach, afterLeaving)).toEqual([]);
 });

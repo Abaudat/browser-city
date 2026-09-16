@@ -104,6 +104,11 @@ async function startStreetScene(): Promise<void> {
   // `sprite.alpha` -- never a literal window alpha anywhere in this
   // client.
   const windowAlpha = getBalance(defs, "render.window_alpha") / 100;
+  // FR173: `render.highlight_alpha` is the same idiom -- a percent integer
+  // divided down to a plain `(0, 1)` fraction, threaded into the scene as
+  // the ceiling `render/highlight.ts`'s `highlightOverlayAlpha` scales by
+  // the U1 display-strength dial. Never a literal in `render/highlight.ts`.
+  const highlightAlpha = getBalance(defs, "render.highlight_alpha") / 100;
   const movementConfig = loadMovementConfig(defs);
 
   const rankTable = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
@@ -142,8 +147,20 @@ async function startStreetScene(): Promise<void> {
       saveBindings(storage, bindings);
     },
     onOpenChange: (open) => {
-      if (open) keyboard.suspend();
-      else keyboard.resume();
+      if (open) {
+        keyboard.suspend();
+        // Derek's direction: the menu opening does not make the pointer's
+        // own position or the player's own reach any less true -- an
+        // already-lit prop stays lit under the backdrop (the menu is a
+        // DOM panel drawn over the canvas, so a stationary mouse never
+        // fires `pointerleave` on it). Suspending only ignores *new*
+        // pointer events -- no new hovers, no clicks -- until the menu
+        // closes.
+        sceneHandle?.suspendPointer();
+      } else {
+        keyboard.resume();
+        sceneHandle?.resumePointer();
+      }
     },
     initialAudio: audio,
     onAudioChange: (next) => saveAudioSettings(storage, next),
@@ -152,6 +169,9 @@ async function startStreetScene(): Promise<void> {
       saveDisplaySettings(storage, next);
       sceneHandle?.setHighlightStrength(next.highlightStrength);
     },
+    // Derek's direction: a drag of the highlight slider is visible as a
+    // drag, live, before it commits -- never persisted by a preview alone.
+    onDisplayPreview: (next) => sceneHandle?.setHighlightStrength(next.highlightStrength),
   });
 
   // DEV-only, like every other `window.__bc`-adjacent test aid: a
@@ -182,6 +202,7 @@ async function startStreetScene(): Promise<void> {
     storeyHeightPx,
     rankOf: (code) => resolveRank(rankTable, code),
     windowAlpha,
+    highlightAlpha,
     movementConfig,
     objectDefs: objectDefsById(defs),
     windowDefIds: windowDefIds(defs),

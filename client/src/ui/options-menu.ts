@@ -9,9 +9,10 @@
 // a real consumer today or a persisted value a named later story reads
 // (Tim's wiring rule): Audio's volume/mute are FR153's audio story's
 // input; Display's highlight strength (the U1 dial, `docs/ux.md`) drives
-// `test-street/scene.ts`'s affordance overlay live, and its fullscreen
-// toggle drives `document.fullscreenElement` directly; Controls is
-// FR149's rebinding, unchanged. Nothing decorative is ever added here.
+// `render/highlight.ts`'s affordance overlay live through
+// `StreetSceneHandle.setHighlightStrength`, and its fullscreen toggle
+// drives `document.fullscreenElement` directly; Controls is FR149's
+// rebinding, unchanged. Nothing decorative is ever added here.
 //
 // Artie's rules, which are what the styling below is:
 //   - one small centred panel over a semi-transparent backdrop. The city
@@ -120,6 +121,13 @@ export interface OptionsMenuOptions {
   readonly onAudioChange: (audio: AudioSettings) => void;
   readonly initialDisplay: DisplaySettings;
   readonly onDisplayChange: (display: DisplaySettings) => void;
+  /** Called on every drag tick of the highlight-strength slider ('input'),
+   * live, before the value is committed -- so the world-side affordance
+   * (`StreetSceneHandle.setHighlightStrength`) is visible mid-drag rather
+   * than only on release (Derek's direction: tuning already costs a
+   * close-hover-reopen loop and must not also cost a release per step).
+   * Never persisted; `onDisplayChange` still owns the one committed write. */
+  readonly onDisplayPreview?: (display: DisplaySettings) => void;
 }
 
 export interface OptionsMenuHandle {
@@ -294,6 +302,7 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
     onAudioChange,
     initialDisplay,
     onDisplayChange,
+    onDisplayPreview,
   } = options;
   const doc = container.ownerDocument;
   ensureStyle(doc, STYLE_ID, STYLE_TEXT);
@@ -643,7 +652,11 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
   // Live readout on every drag tick ('input'), but only committed (and
   // persisted, through the caller's onAudioChange/onDisplayChange) on
   // 'change' -- the same idiom a native OS volume slider uses, so a drag
-  // never writes to storage on every intermediate tick.
+  // never writes to storage on every intermediate tick. The highlight
+  // slider additionally forwards every 'input' tick, live and unpersisted,
+  // through `onDisplayPreview` (Derek's direction): unlike volume, its
+  // effect is a world-side affordance a player is actively hovering to
+  // judge, so a drag has to be visible as a drag, not only on release.
   const onVolumeInput = (): void => {
     volumeValue.textContent = `${volumeSlider.value}%`;
   };
@@ -657,6 +670,7 @@ export function mountOptionsMenu(options: OptionsMenuOptions): OptionsMenuHandle
   };
   const onHighlightInput = (): void => {
     highlightValue.textContent = `${highlightSlider.value}%`;
+    onDisplayPreview?.({ ...display, highlightStrength: Number(highlightSlider.value) });
   };
   const onHighlightChange = (): void => {
     display = { ...display, highlightStrength: Number(highlightSlider.value) };
