@@ -1,5 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { DEBUG_STYLE } from "../../../src/debug/debug-style";
 import { buildSortLabels, parseSortLabel } from "../../../src/debug/sort-labels";
 import type { DebugWorldView } from "../../../src/debug/world-view";
 import { screenPositionPx } from "../../../src/render/screen-position";
@@ -58,10 +59,46 @@ describe("buildSortLabels", () => {
   });
 
   it("puts the label at the drawable's own anchor, through the renderer's projection", () => {
+    // `x` in sort units is 8 here, which takes stagger lane 8 % 3 = 2.
     const d = drawable({ stableId: 4n, x: toSortUnits(2), y: toSortUnits(6) });
     const [label] = buildSortLabels(viewOver([d]));
     const anchor = screenPositionPx(fromSortUnits(d.x), fromSortUnits(d.y), 0, TILE, STOREY);
-    expect({ x: label?.x, y: label?.y }).toEqual({ x: anchor.x, y: anchor.y });
+    expect(label?.x).toBe(anchor.x);
+    // Lifted by whole lanes only: the horizontal position is always the
+    // drawable's own anchor, so a label always belongs to the column it
+    // sits over.
+    expect((anchor.y - (label?.y ?? 0)) % (DEBUG_STYLE.lineHeightPx * 2)).toBe(0);
+  });
+
+  it("staggers adjacent drawables onto different baselines so a crowded row stays legible (AC3)", () => {
+    // A run of one-tile props: each key is far wider than a tile, so
+    // without staggering every label would print over its neighbours'.
+    const row = [0, 1, 2, 3].map((i) =>
+      drawable({ stableId: BigInt(i + 1), x: toSortUnits(i), y: toSortUnits(2) }),
+    );
+    const labels = buildSortLabels(viewOver(row));
+    expect(labels).toHaveLength(4);
+    for (let i = 1; i < labels.length; i++) {
+      expect(labels[i]?.y).not.toBe(labels[i - 1]?.y);
+    }
+  });
+
+  it("puts a drawable in the same lane every time, whatever else is on screen", () => {
+    const d = drawable({ stableId: 9n, x: toSortUnits(3), y: toSortUnits(3) });
+    const alone = buildSortLabels(viewOver([d]))[0]?.y;
+    const crowded = buildSortLabels(
+      viewOver([drawable({ stableId: 8n, x: toSortUnits(2), y: toSortUnits(3) }), d]),
+    )[1]?.y;
+    expect(crowded).toBe(alone);
+  });
+
+  it("staggers a negative sort-key position without ever landing outside its lanes", () => {
+    const west = drawable({ stableId: 1n, x: toSortUnits(-1), y: toSortUnits(0) });
+    const [label] = buildSortLabels(viewOver([west]));
+    const anchor = screenPositionPx(fromSortUnits(west.x), fromSortUnits(west.y), 0, TILE, STOREY);
+    const lift = anchor.y - (label?.y ?? 0);
+    expect(lift).toBeGreaterThanOrEqual(0);
+    expect(lift).toBeLessThanOrEqual(2 * DEBUG_STYLE.lineHeightPx * 2);
   });
 
   it("labels only the viewer's own floor, and only what is on screen", () => {

@@ -19,6 +19,17 @@ import { fromSortUnits } from "../render/sort-units";
 import { DEBUG_STYLE } from "./debug-style";
 import type { DebugWorldView } from "./world-view";
 
+/**
+ * How many baselines the readouts are staggered across (AC3: "when
+ * objects overlap, each drawable's sort key is legible"). A tile is
+ * `render.tile_size_px` wide and a key is ~20 monospace characters, so a
+ * row of adjacent one-tile props would otherwise print every label on top
+ * of its neighbours' -- the exact case the overlay is wanted for. Keyed
+ * on the drawable's own `x` in sort units, so which lane a label takes is
+ * stable frame to frame and never depends on iteration order.
+ */
+const STAGGER_LANES = 3;
+
 /** One readout, in world pixels at the drawable's own anchor. */
 export interface SortLabel {
   readonly stableId: bigint;
@@ -82,12 +93,17 @@ export function buildSortLabels(view: DebugWorldView): SortLabel[] {
     if (worldY < bounds.cellY0 || worldY > bounds.cellY1 + 1) continue;
     const order = view.orderOf(d.stableId);
     const anchor = screenPositionPx(worldX, worldY, floor, view.tileSizePx, view.storeyHeightPx);
+    // Two adjacent props never share a baseline: without this, a row of
+    // one-tile props prints every key over its neighbours'. The lane is a
+    // pure function of the drawable's own sort-key `x`, so it never
+    // flickers and never depends on what else is on screen.
+    const lane = ((d.x % STAGGER_LANES) + STAGGER_LANES) % STAGGER_LANES;
     labels.push({
       stableId: d.stableId,
       label: formatKey(d),
       orderLabel: order === undefined ? "[?]" : `[${order}]`,
       x: anchor.x,
-      y: anchor.y,
+      y: anchor.y - lane * DEBUG_STYLE.lineHeightPx * 2,
       fill: DEBUG_STYLE.palette.sortLabel,
     });
   }

@@ -638,6 +638,65 @@ is its own building, not a room of a shared one.
   construct one. Disposing a composite destroys every frame texture
   together with the base strip texture.
 
+## Debug tooling (client)
+
+`client/src/debug/` holds every debug overlay (FR165) and is compiled in
+behind a flag not exposed in production (FR168).
+
+- The gate is structural, not a runtime check: `main.ts` reaches this
+  directory through exactly one `if (import.meta.env.DEV) { const { … } =
+  await import("./debug/overlays"); }`. A dynamic import inside a
+  statically-false branch is a chunk Rollup never emits, so a production
+  build contains no overlay code for any input to activate. `ci.yml`'s
+  `client-build` greps the built assets for the `bc-debug`/`__bcDebug`
+  sentinels; `client/tests/e2e/deploy-smoke.spec.ts` drives every
+  registered overlay's activation against a real production build and
+  asserts nothing appears.
+- `main.ts` is the only importer. `client/biome.json` bans `../debug/**`
+  everywhere else, and `scripts/ci/check-debug-boundary.sh` (run by
+  `client-check`, tested by `scripts/ci/tests/`) re-checks that, that the
+  one import is dynamic and DEV-gated, and that `createElementNS` appears
+  nowhere under `client/src/` but `debug/`.
+- Overlays draw as one `<svg data-bc-debug="overlays">` mounted inside the
+  canvas mount (never `document.body`, so FR151's DOM-surface allowlist is
+  unaffected), `pointer-events: none`, its `viewBox` the renderer's own
+  logical size. One root `<g>` carries the scene's camera as
+  `matrix(zoom 0 0 zoom offsetX offsetY)`; inside it, one
+  `<g data-bc-debug="<overlay id>">` per enabled overlay. Nothing enters a
+  floor stack or the y-sorted pool, so the tool that inspects the sort can
+  never perturb it.
+- `debug/overlay-registry.ts` is the only way an overlay exists: a
+  `DebugOverlay` is `{ id, label, draw(group, view) }`, ids are unique and
+  URL-safe, and everything starts disabled.
+  `debug/overlay-conformance.ts` is the shared contract every registered
+  descriptor is run through (off by default, idempotent enable/disable, no
+  element left behind across a toggle, every colour from `DEBUG_STYLE`);
+  adding an overlay is one file plus one line in `debug/overlays.ts`'s
+  list, with no new test file.
+- `DebugWorldView` (`debug/world-view.ts`) is the only thing an overlay
+  may read. It extends `CollisionGridQuery`, so a collider is read from
+  the live grid `world/movement.ts` resolves against, never a second
+  expansion of `defs/`; `world/world-index.ts`'s `objects(bounds)` is the
+  one read-only enumeration of placed objects, bounded by a cell window,
+  and is what makes "declares no collider" visible at all. All geometry
+  goes through `render/screen-position.ts`.
+- Activation is the URL query `?debug=<id>,<id>` (unknown ids ignored with
+  one console warning naming the known ones) plus `window.__bcDebug`, the
+  registry's `list`/`enable`/`disable`/`toggle`/`redraw`. There is no
+  keyboard binding: `input/` is the only DOM input reader.
+- Redraws happen on the scene's own events (camera, order change, the
+  player's cell or floor changing), never on a per-frame ticker; with
+  every overlay disabled the redraw path returns before reading the world
+  at all, so NFR2's budget is untouched.
+- Style is data, in `debug/debug-style.ts`: one saturated palette, one
+  monospace face, hairlines with `vector-effect: non-scaling-stroke`. The
+  three collider states are decided in the pure builder and carried on
+  `data-bc-collider` as `collider`, `empty` (declared with no area) and
+  `none` (FR128's walkability), so they are assertable rather than only
+  visible.
+- `src/debug/**` is held to the same coverage bar as `src/render/**`, with
+  nothing excluded.
+
 ## Definitions (`defs/`)
 
 `defs/` is the single source of truth for game content data (NFR31),
