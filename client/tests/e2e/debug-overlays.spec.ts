@@ -71,10 +71,15 @@ test("the collision overlay draws every collider state over the real street (AC2
   expect(await overlay.locator('[data-bc-collider="collider"]').count()).toBeGreaterThan(0);
   expect(await overlay.locator('[data-bc-collider="none"]').count()).toBeGreaterThan(0);
 
-  // A collider rect lands where the collision system says it is: the
-  // overlay's own rect for an object must match the rect the page's own
-  // world index reports for it, in the same world pixels.
-  const mismatches = await page.evaluate(() => {
+  // Every rect drawn as a real collider has real extent -- and only
+  // that. This deliberately does *not* check where a collider landed:
+  // that claim is `inv_collision_overlay_shows_exactly_the_colliders`
+  // (the rects are exactly what the live grid reports) and
+  // `inv_overlay_projection_matches_renderer` (the projection is the
+  // renderer's own), both at unit level against the same builder this
+  // page runs. What this adds is that the real, mounted page reaches
+  // that builder at all and draws something with size.
+  const withoutExtent = await page.evaluate(() => {
     const out: string[] = [];
     for (const element of document.querySelectorAll('[data-bc-collider="collider"]')) {
       const width = Number(element.getAttribute("width"));
@@ -85,7 +90,7 @@ test("the collision overlay draws every collider state over the real street (AC2
     }
     return out;
   });
-  expect(mismatches, "every drawn collider must have real extent").toEqual([]);
+  expect(withoutExtent, "every rect drawn as a real collider must have real extent").toEqual([]);
 
   // Nothing the overlay draws may take a click meant for the world.
   expect(

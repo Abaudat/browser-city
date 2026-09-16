@@ -16,6 +16,7 @@
 import { screenPositionPx } from "../render/screen-position";
 import type { Drawable } from "../render/sort-key";
 import { fromSortUnits } from "../render/sort-units";
+import { isEmptyCellBounds } from "../world/world-index";
 import { DEBUG_STYLE } from "./debug-style";
 import type { DebugWorldView } from "./world-view";
 
@@ -24,9 +25,17 @@ import type { DebugWorldView } from "./world-view";
  * objects overlap, each drawable's sort key is legible"). A tile is
  * `render.tile_size_px` wide and a key is ~20 monospace characters, so a
  * row of adjacent one-tile props would otherwise print every label on top
- * of its neighbours' -- the exact case the overlay is wanted for. Keyed
- * on the drawable's own `x` in sort units, so which lane a label takes is
- * stable frame to frame and never depends on iteration order.
+ * of its neighbours' -- the exact case the overlay is wanted for.
+ *
+ * The lane is keyed on the drawable's own *tile column*, never on its `x`
+ * in sort units (Tim's direction, cycle 2): a sort-unit key only spreads
+ * adjacent tiles across lanes while `SORT_SUBDIVISIONS` happens to be
+ * coprime with this number, so moving that entirely unrelated constant to
+ * 3, 6, 9 or 12 would collapse every tile-aligned prop into lane 0 and
+ * take AC3's whole overlap guarantee with it, silently. A tile column is
+ * what actually decides whether two labels collide, so it is what decides
+ * the lane; it is also a pure function of the drawable's own position, so
+ * a label never moves between frames or depends on iteration order.
  */
 const STAGGER_LANES = 3;
 
@@ -82,6 +91,10 @@ export function parseSortLabel(label: string): Drawable | undefined {
  */
 export function buildSortLabels(view: DebugWorldView): SortLabel[] {
   const bounds = view.viewportCells();
+  // A window containing no cell is checked explicitly: unlike the loops
+  // in `collision-rects.ts`, this filters with `>=`/`<=`, which an
+  // inverted window would not make empty on its own.
+  if (isEmptyCellBounds(bounds)) return [];
   const floor = view.viewerFloor();
   const labels: SortLabel[] = [];
 
@@ -94,10 +107,11 @@ export function buildSortLabels(view: DebugWorldView): SortLabel[] {
     const order = view.orderOf(d.stableId);
     const anchor = screenPositionPx(worldX, worldY, floor, view.tileSizePx, view.storeyHeightPx);
     // Two adjacent props never share a baseline: without this, a row of
-    // one-tile props prints every key over its neighbours'. The lane is a
-    // pure function of the drawable's own sort-key `x`, so it never
-    // flickers and never depends on what else is on screen.
-    const lane = ((d.x % STAGGER_LANES) + STAGGER_LANES) % STAGGER_LANES;
+    // one-tile props prints every key over its neighbours'. Keyed on the
+    // tile column (`worldX`, already computed above), never on `d.x` in
+    // sort units -- see `STAGGER_LANES`.
+    const column = Math.floor(worldX);
+    const lane = ((column % STAGGER_LANES) + STAGGER_LANES) % STAGGER_LANES;
     labels.push({
       stableId: d.stableId,
       label: formatKey(d),

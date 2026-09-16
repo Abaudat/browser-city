@@ -28,6 +28,23 @@ export interface CellBounds {
   readonly cellY1: number;
 }
 
+/** A window containing no cell at all, on `floor` -- what a caller that
+ * cannot compute a real one returns (`render/screen-position.ts`'s
+ * `visibleCellBounds` for a degenerate camera). Its end deliberately
+ * precedes its start, so every `cellY0..cellY1` loop over it runs zero
+ * times, and it is finite, so no loop over it can ever fail to
+ * terminate. */
+export function emptyCellBounds(floor: number): CellBounds {
+  return { floor, cellX0: 0, cellY0: 0, cellX1: -1, cellY1: -1 };
+}
+
+/** Whether `bounds` contains no cell. Checked explicitly by any consumer
+ * that filters rather than loops -- a `for` over an inverted window is
+ * empty by construction, but a `>=`/`<=` range test is not. */
+export function isEmptyCellBounds(bounds: CellBounds): boolean {
+  return bounds.cellX1 < bounds.cellX0 || bounds.cellY1 < bounds.cellY0;
+}
+
 /** One placed object, as a reader outside `world/` may see it (story
  * 1.12, FR165): its identity, where it sits, how big its footprint is,
  * and the collider it declares -- or `undefined`, which is FR128's

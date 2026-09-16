@@ -660,7 +660,9 @@ behind a flag not exposed in production (FR168).
 - Overlays draw as one `<svg data-bc-debug="overlays">` mounted inside the
   canvas mount (never `document.body`, so FR151's DOM-surface allowlist is
   unaffected), `pointer-events: none`, its `viewBox` the renderer's own
-  logical size. One root `<g>` carries the scene's camera as
+  logical size -- re-read on every redraw, never captured at mount, so a
+  resize cannot leave the overlay projecting into a box the scene no
+  longer draws in. One root `<g>` carries the scene's camera as
   `matrix(zoom 0 0 zoom offsetX offsetY)`; inside it, one
   `<g data-bc-debug="<overlay id>">` per enabled overlay. Nothing enters a
   floor stack or the y-sorted pool, so the tool that inspects the sort can
@@ -674,12 +676,17 @@ behind a flag not exposed in production (FR168).
   adding an overlay is one file plus one line in `debug/overlays.ts`'s
   list, with no new test file.
 - `DebugWorldView` (`debug/world-view.ts`) is the only thing an overlay
-  may read. It extends `CollisionGridQuery`, so a collider is read from
-  the live grid `world/movement.ts` resolves against, never a second
+  may read. It extends `CollisionGridQuery`, so a real collider is read
+  from the live grid `world/movement.ts` resolves against, never a second
   expansion of `defs/`; `world/world-index.ts`'s `objects(bounds)` is the
   one read-only enumeration of placed objects, bounded by a cell window,
-  and is what makes "declares no collider" visible at all. All geometry
-  goes through `render/screen-position.ts`.
+  and is the source for the two states the grid cannot represent -- no
+  collider (FR128's walkability) and a collider declared with no area,
+  which `CollisionGrid` rasterises into no cell at all when it is
+  cell-aligned. All geometry goes through `render/screen-position.ts`,
+  including `visibleCellBounds`, the viewport window every overlay's cost
+  is bounded by; a camera that describes no rectangle yields an empty
+  window rather than an unbounded loop.
 - Activation is the URL query `?debug=<id>,<id>` (unknown ids ignored with
   one console warning naming the known ones) plus `window.__bcDebug`, the
   registry's `list`/`enable`/`disable`/`toggle`/`redraw`. There is no

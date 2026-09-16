@@ -15,8 +15,33 @@
 // the `__bcDebug` handle and the production off-means-off e2e check,
 // which drives its list from this same table -- that is AC5, mechanically
 // rather than as a convention.
+//
+// What a redraw costs, stated plainly, because an overlay author is
+// charged for it (Quentin's direction, cycle 2). There is no ticker: a
+// redraw happens only on an event, but "only on an event" is not the same
+// as "rarely", and these are the events and their real rates:
+//
+//   - the camera moving (`setViewTransform`): once, at mount, in this
+//     scene. A real, followed camera would make it per-frame-ish while
+//     the player walks.
+//   - the order changing (`main.ts`'s `onOrderChange`): every frame in
+//     which the player's own FR123 sort key changes -- so roughly
+//     `SORT_SUBDIVISIONS` times per tile walked, i.e. **every frame while
+//     walking** in practice, and never while standing still.
+//   - the player's cell or floor changing (`main.ts`'s `onPlayerMove`,
+//     deliberately gated down from its own per-frame callback): once per
+//     tile crossed.
+//   - `enable`/`disable`/`toggle`: once each, on demand.
+//
+// So with `?debug=sort` on and the player walking, every label element is
+// rebuilt every frame. That is an acceptable price for a dev tool and the
+// viewport culling is what bounds it -- a `draw` whose cost is not
+// bounded by the viewport will be felt. With every overlay off, `redraw`
+// returns before touching the world at all, so none of the above costs
+// anything.
 
 import { collisionOverlay } from "./collision-overlay";
+import { DEBUG_ROOT_MARKER, DEBUG_VIEW_MARKER } from "./debug-markers";
 import { parseDebugQuery, unknownOverlayWarning } from "./debug-query";
 import type { DebugOverlay, DebugOverlayEntry } from "./overlay-registry";
 import { DebugOverlayRegistry } from "./overlay-registry";
@@ -47,12 +72,18 @@ export interface MountDebugOverlaysOptions {
    * DOM-surface allowlist is checked against `document.body`'s own
    * children, and a debug overlay is not a UI surface. */
   readonly mount: HTMLElement;
-  /** The renderer's own logical size -- the coordinate space the scene's
-   * world container is positioned in, which is what the `viewBox` has to
-   * match for `screen-position.ts`'s output to land where the renderer
-   * drew. */
-  readonly viewBoxWidth: number;
-  readonly viewBoxHeight: number;
+  /** The renderer's own logical size, *read on every redraw* -- the
+   * coordinate space the scene's world container is positioned in, which
+   * is what the `viewBox` has to match for `screen-position.ts`'s output
+   * to land where the renderer drew.
+   *
+   * A getter rather than two numbers (Tim's direction, cycle 2): captured
+   * once, this would be correct only because `test-street/scene.ts`
+   * happens to do its final `resize` before `mountStreetScene` resolves
+   * and never resize again. Epic 3's real, resizable camera would inherit
+   * that as a silently misaligned overlay -- every hairline off by
+   * whatever the window did since boot. */
+  readonly rendererSize: () => { readonly width: number; readonly height: number };
   readonly view: DebugWorldView;
   /** `window.location.search`, injected. */
   readonly search?: string;
@@ -89,7 +120,7 @@ export interface DebugOverlaysHandle {
  * camera moving, the order changing, the player moving), never per frame.
  */
 export function mountDebugOverlays(options: MountDebugOverlaysOptions): DebugOverlaysHandle {
-  const { mount, view, viewBoxWidth, viewBoxHeight } = options;
+  const { mount, view, rendererSize } = options;
   const doc = mount.ownerDocument;
   const registry = new DebugOverlayRegistry(options.overlays ?? DEBUG_OVERLAYS);
   const warn = options.warn ?? ((message: string) => console.warn(message));
@@ -97,10 +128,17 @@ export function mountDebugOverlays(options: MountDebugOverlaysOptions): DebugOve
   const root = svgElement(doc, "svg", {
     // Never `data-bc-surface`: that attribute is FR151's DOM UI
     // allowlist, and this is not one of the three surfaces.
-    "data-bc-debug": "overlays",
-    viewBox: `0 0 ${viewBoxWidth} ${viewBoxHeight}`,
+    "data-bc-debug": DEBUG_ROOT_MARKER,
     preserveAspectRatio: "xMinYMin meet",
   });
+
+  /** Re-reads the renderer's logical size, so a resize can never leave
+   * the overlay projecting into a box the scene no longer draws in. */
+  function applyViewBox(): void {
+    const { width, height } = rendererSize();
+    root.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  }
+  applyViewBox();
   root.style.position = "absolute";
   root.style.inset = "0";
   root.style.width = "100%";
@@ -116,7 +154,7 @@ export function mountDebugOverlays(options: MountDebugOverlaysOptions): DebugOve
     mount.style.position = "relative";
   }
 
-  const viewGroup = svgElement(doc, "g", { "data-bc-debug": "view" });
+  const viewGroup = svgElement(doc, "g", { "data-bc-debug": DEBUG_VIEW_MARKER });
   root.appendChild(viewGroup);
   mount.appendChild(root);
 
@@ -145,6 +183,9 @@ export function mountDebugOverlays(options: MountDebugOverlaysOptions): DebugOve
     // enumeration and no allocation happens on any event while every
     // overlay is off.
     if (enabled.length === 0) return;
+    // Only once something is actually drawn -- so "every overlay off
+    // costs nothing" stays literally true, including this read.
+    applyViewBox();
     for (const overlay of registry.overlays()) {
       if (!enabled.includes(overlay.id)) continue;
       const group = groupFor(overlay.id);

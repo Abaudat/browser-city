@@ -6,7 +6,8 @@ import type { DebugWorldView } from "../../../src/debug/world-view";
 import { screenPositionPx } from "../../../src/render/screen-position";
 import type { Drawable } from "../../../src/render/sort-key";
 import { compareDrawables } from "../../../src/render/sort-key";
-import { fromSortUnits, toSortUnits } from "../../../src/render/sort-units";
+import { fromSortUnits, SORT_SUBDIVISIONS, toSortUnits } from "../../../src/render/sort-units";
+import { emptyCellBounds } from "../../../src/world/world-index";
 
 const TILE = 16;
 const STOREY = 48;
@@ -59,7 +60,6 @@ describe("buildSortLabels", () => {
   });
 
   it("puts the label at the drawable's own anchor, through the renderer's projection", () => {
-    // `x` in sort units is 8 here, which takes stagger lane 8 % 3 = 2.
     const d = drawable({ stableId: 4n, x: toSortUnits(2), y: toSortUnits(6) });
     const [label] = buildSortLabels(viewOver([d]));
     const anchor = screenPositionPx(fromSortUnits(d.x), fromSortUnits(d.y), 0, TILE, STOREY);
@@ -70,17 +70,40 @@ describe("buildSortLabels", () => {
     expect((anchor.y - (label?.y ?? 0)) % (DEBUG_STYLE.lineHeightPx * 2)).toBe(0);
   });
 
-  it("staggers adjacent drawables onto different baselines so a crowded row stays legible (AC3)", () => {
-    // A run of one-tile props: each key is far wider than a tile, so
-    // without staggering every label would print over its neighbours'.
-    const row = [0, 1, 2, 3].map((i) =>
-      drawable({ stableId: BigInt(i + 1), x: toSortUnits(i), y: toSortUnits(2) }),
+  it("staggers adjacent tiles onto different baselines so a crowded row stays legible (AC3)", () => {
+    // A run of one-tile props, one per *tile*: each key is far wider than
+    // a tile, so without staggering every label would print over its
+    // neighbours'. Adjacent tiles are what collide, so adjacent tiles are
+    // what must differ.
+    const row = [0, 1, 2, 3, 4, 5].map((tile) =>
+      drawable({ stableId: BigInt(tile + 1), x: toSortUnits(tile), y: toSortUnits(2) }),
     );
     const labels = buildSortLabels(viewOver(row));
-    expect(labels).toHaveLength(4);
+    expect(labels).toHaveLength(6);
     for (let i = 1; i < labels.length; i++) {
-      expect(labels[i]?.y).not.toBe(labels[i - 1]?.y);
+      expect(labels[i]?.y, `tiles ${i - 1} and ${i} share a baseline`).not.toBe(labels[i - 1]?.y);
     }
+  });
+
+  // The coupling Tim caught in cycle 1: keying the lane on `x` in sort
+  // units only works while `SORT_SUBDIVISIONS` is coprime with the lane
+  // count. This pins the decoupling -- two drawables one tile apart differ
+  // in lane whatever the subdivision count is, so a future change to it
+  // cannot silently take AC3's guarantee away.
+  it("keys the lane on the tile column, never on the sort-unit position", () => {
+    const here = drawable({ stableId: 1n, x: toSortUnits(4), y: toSortUnits(0) });
+    const nextTile = drawable({ stableId: 2n, x: toSortUnits(5), y: toSortUnits(0) });
+    // Two positions inside the *same* tile share a lane, because they
+    // sit in the same column and would not collide with each other any
+    // less for being drawn on different lines.
+    const sameTile = drawable({
+      stableId: 3n,
+      x: toSortUnits(4) + Math.floor(SORT_SUBDIVISIONS / 2),
+      y: toSortUnits(0),
+    });
+    const [a, b, c] = buildSortLabels(viewOver([here, nextTile, sameTile]));
+    expect(a?.y).not.toBe(b?.y);
+    expect(a?.y).toBe(c?.y);
   });
 
   it("puts a drawable in the same lane every time, whatever else is on screen", () => {
@@ -92,13 +115,18 @@ describe("buildSortLabels", () => {
     expect(crowded).toBe(alone);
   });
 
-  it("staggers a negative sort-key position without ever landing outside its lanes", () => {
+  it("staggers a negative tile column without ever landing outside its lanes", () => {
     const west = drawable({ stableId: 1n, x: toSortUnits(-1), y: toSortUnits(0) });
     const [label] = buildSortLabels(viewOver([west]));
     const anchor = screenPositionPx(fromSortUnits(west.x), fromSortUnits(west.y), 0, TILE, STOREY);
     const lift = anchor.y - (label?.y ?? 0);
     expect(lift).toBeGreaterThanOrEqual(0);
     expect(lift).toBeLessThanOrEqual(2 * DEBUG_STYLE.lineHeightPx * 2);
+  });
+
+  it("returns nothing at all for an empty viewport window", () => {
+    const d = drawable({ stableId: 1n });
+    expect(buildSortLabels(viewOver([d], [], emptyCellBounds(0)))).toEqual([]);
   });
 
   it("labels only the viewer's own floor, and only what is on screen", () => {

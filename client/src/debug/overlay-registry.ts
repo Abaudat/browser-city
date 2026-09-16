@@ -9,6 +9,7 @@
 // `debug/overlays.ts` owns every element that reaches the page, so
 // "enabled" can never drift from "drawn".
 
+import { RESERVED_OVERLAY_IDS } from "./debug-markers";
 import type { DebugWorldView } from "./world-view";
 
 /**
@@ -50,6 +51,11 @@ export class DebugOverlayRegistry {
       if (!ID_PATTERN.test(overlay.id)) {
         throw new Error(
           `DebugOverlayRegistry: '${overlay.id}' is not a usable overlay id -- ids are what ?debug= carries, so they must match ${String(ID_PATTERN)}`,
+        );
+      }
+      if (RESERVED_OVERLAY_IDS.includes(overlay.id)) {
+        throw new Error(
+          `DebugOverlayRegistry: '${overlay.id}' is reserved by the overlay surface itself (debug-markers.ts) -- an overlay registered under it would resolve to the surface's own group instead of its own`,
         );
       }
       if (this.byId.has(overlay.id)) {

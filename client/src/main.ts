@@ -24,7 +24,7 @@ import {
 import type { PingObservation } from "./net/observe-ping";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
-import { worldCellFromScreenPx } from "./render/screen-position";
+import { visibleCellBounds } from "./render/screen-position";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
@@ -32,7 +32,13 @@ import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, windowDefIds } from "./world/object-defs";
-import type { CellBounds } from "./world/world-index";
+
+/** Story 1.12: the camera a debug overlay sees before the scene has
+ * reported its own. It describes no rectangle, so
+ * `visibleCellBounds` yields an empty window rather than guessing -- an
+ * overlay drawn against a made-up camera would be drawn in the wrong
+ * place, which is worse than not yet drawn. */
+const NO_CAMERA_YET = { zoom: 0, offsetX: 0, offsetY: 0 } as const;
 
 async function main(): Promise<void> {
   // Story 1.14 (NFR1): the bundle term's own end -- module top-level
@@ -247,11 +253,14 @@ async function startStreetScene(): Promise<void> {
       storeyHeightPx,
       colliderSubcellsPerCell: movementConfig.subcellsPerCell,
       viewerFloor: () => handle.currentFloor(),
+      // The camera the scene itself reported (`onViewTransform`), never a
+      // container's scale read back off the Pixi display list; the
+      // projection is `render/screen-position.ts`'s, never restated here.
       viewportCells: () =>
-        visibleCells(
+        visibleCellBounds(
           app.renderer.width,
           app.renderer.height,
-          lastViewTransform ?? { zoom: 1, offsetX: 0, offsetY: 0 },
+          lastViewTransform ?? NO_CAMERA_YET,
           handle.currentFloor(),
           tileSizePx,
           storeyHeightPx,
@@ -263,8 +272,9 @@ async function startStreetScene(): Promise<void> {
     };
     debugOverlays = mountDebugOverlays({
       mount,
-      viewBoxWidth: app.renderer.width,
-      viewBoxHeight: app.renderer.height,
+      // Read on every redraw, never captured: a resize must not leave
+      // the overlay projecting into a box the scene no longer draws in.
+      rendererSize: () => ({ width: app.renderer.width, height: app.renderer.height }),
       view,
       search: window.location.search,
       exposeOn: window,
@@ -274,48 +284,6 @@ async function startStreetScene(): Promise<void> {
       debugOverlays.setViewTransform(zoom, offsetX, offsetY);
     }
   }
-}
-
-/**
- * Story 1.12: the cells currently on screen, on `floor` -- the window
- * every debug overlay's cost is bounded by.
- *
- * Built from the camera the scene *reported* (`onViewTransform`) and
- * `render/screen-position.ts`'s own inverse projection, never by reaching
- * into the Pixi display list for a container's scale: the debug side
- * consumes the scene's own declared events, exactly as the overlays
- * consume `DebugWorldView` rather than the street.
- */
-function visibleCells(
-  rendererWidth: number,
-  rendererHeight: number,
-  camera: { readonly zoom: number; readonly offsetX: number; readonly offsetY: number },
-  floor: number,
-  tileSizePx: number,
-  storeyHeightPx: number,
-): CellBounds {
-  const { zoom, offsetX, offsetY } = camera;
-  const topLeft = worldCellFromScreenPx(
-    -offsetX / zoom,
-    -offsetY / zoom,
-    floor,
-    tileSizePx,
-    storeyHeightPx,
-  );
-  const bottomRight = worldCellFromScreenPx(
-    (rendererWidth - offsetX) / zoom,
-    (rendererHeight - offsetY) / zoom,
-    floor,
-    tileSizePx,
-    storeyHeightPx,
-  );
-  return {
-    floor,
-    cellX0: topLeft.cellX,
-    cellY0: topLeft.cellY,
-    cellX1: bottomRight.cellX,
-    cellY1: bottomRight.cellY,
-  };
 }
 
 function getBalance(defs: Defs, key: string): number {

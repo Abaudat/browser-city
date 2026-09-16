@@ -16,8 +16,7 @@ function mount(overlays?: readonly DebugOverlay[]) {
   document.body.appendChild(host);
   return mountDebugOverlays({
     mount: host,
-    viewBoxWidth: 640,
-    viewBoxHeight: 480,
+    rendererSize: () => ({ width: 640, height: 480 }),
     view: conformanceView(),
     warn: () => {},
     ...(overlays ? { overlays } : {}),

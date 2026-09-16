@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import {
+  DEBUG_ROOT_MARKER,
+  DEBUG_VIEW_MARKER,
+  RESERVED_OVERLAY_IDS,
+} from "../../../src/debug/debug-markers";
 import type { DebugOverlay } from "../../../src/debug/overlay-registry";
 import { DebugOverlayRegistry } from "../../../src/debug/overlay-registry";
 
@@ -21,6 +26,25 @@ describe("DebugOverlayRegistry", () => {
     for (const bad of ["", "Collision", "sort order", "a,b", "1st"]) {
       expect(() => new DebugOverlayRegistry([overlay(bad)])).toThrow();
     }
+  });
+
+  // Quentin's direction, cycle 2: the overlay surface itself uses
+  // `data-bc-debug` for its root and its camera group, and the conformance
+  // suite resolves an overlay's group by exactly that attribute. An
+  // overlay registered as `view` would pass the id pattern and then
+  // silently resolve to the camera group -- surfacing as a baffling "has a
+  // group on the page while disabled" instead of a refusal here.
+  it("refuses an id the overlay surface itself already uses", () => {
+    expect(RESERVED_OVERLAY_IDS.length).toBeGreaterThan(0);
+    for (const reserved of RESERVED_OVERLAY_IDS) {
+      expect(() => new DebugOverlayRegistry([overlay(reserved)])).toThrow(/reserved/);
+    }
+  });
+
+  it("reads the reserved ids from the surface that defines them, never a second list", () => {
+    // The mount puts exactly these on its own elements; if it ever renames
+    // one, the registry's refusal follows it rather than going stale.
+    expect([...RESERVED_OVERLAY_IDS]).toEqual([DEBUG_ROOT_MARKER, DEBUG_VIEW_MARKER]);
   });
 
   it("starts with every overlay off -- a debug tool is never on by default", () => {

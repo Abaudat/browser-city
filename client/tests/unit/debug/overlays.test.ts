@@ -9,8 +9,7 @@ function mount(options: Partial<Parameters<typeof mountDebugOverlays>[0]> = {}) 
   document.body.appendChild(host);
   return mountDebugOverlays({
     mount: host,
-    viewBoxWidth: 640,
-    viewBoxHeight: 480,
+    rendererSize: () => ({ width: 640, height: 480 }),
     view: conformanceView(),
     warn: () => {},
     ...options,
@@ -75,7 +74,14 @@ describe("mountDebugOverlays", () => {
     const group = handle.root.querySelector('[data-bc-debug="collision"]');
     expect(group?.querySelectorAll('[data-bc-collider="collider"]')).toHaveLength(1);
     expect(group?.querySelectorAll('[data-bc-collider="none"]')).toHaveLength(1);
-    expect(group?.querySelectorAll('[data-bc-collider="empty"]')).toHaveLength(1);
+    // Both zero-area colliders in the fixture, including the cell-aligned
+    // one the collision grid holds nothing for at all.
+    expect(group?.querySelectorAll('[data-bc-collider="empty"]')).toHaveLength(2);
+    expect(
+      [...(group?.querySelectorAll('[data-bc-collider="empty"]') ?? [])].map((e) =>
+        e.getAttribute("data-bc-object"),
+      ),
+    ).toEqual(["3", "4"]);
     // The one with no collider is an unfilled, dashed outline; the real
     // one is filled. A reader can tell them apart without a legend.
     const none = group?.querySelector('[data-bc-collider="none"]');
@@ -125,6 +131,25 @@ describe("mountDebugOverlays", () => {
     expect(window.__bcDebug).toBeUndefined();
   });
 
+  // Tim's direction, cycle 2: captured once, the viewBox is correct only
+  // because today's throwaway street happens to resize before it hands
+  // back its handle. A real, resizable camera would inherit a silently
+  // misaligned overlay -- every hairline off by whatever the window did.
+  it("re-reads the renderer size on every redraw, so a resize cannot misalign it", () => {
+    let size = { width: 640, height: 480 };
+    const handle = mount({ rendererSize: () => size, search: "?debug=collision" });
+    expect(handle.root.getAttribute("viewBox")).toBe("0 0 640 480");
+    size = { width: 800, height: 600 };
+    handle.redraw();
+    expect(handle.root.getAttribute("viewBox")).toBe("0 0 800 600");
+    // ...and through the camera event too, which is what a resize is
+    // normally accompanied by.
+    size = { width: 1024, height: 768 };
+    handle.setViewTransform(2, 0, 0);
+    expect(handle.root.getAttribute("viewBox")).toBe("0 0 1024 768");
+    handle.destroy();
+  });
+
   it("leaves the page exactly as it found it when destroyed", () => {
     const handle = mount({ search: "?debug=collision,sort" });
     handle.destroy();
@@ -137,8 +162,7 @@ describe("mountDebugOverlays", () => {
     document.body.appendChild(host);
     const handle = mountDebugOverlays({
       mount: host,
-      viewBoxWidth: 10,
-      viewBoxHeight: 10,
+      rendererSize: () => ({ width: 10, height: 10 }),
       view: conformanceView(),
       search: "?debug=navmesh",
     });
@@ -153,8 +177,7 @@ describe("mountDebugOverlays", () => {
     document.body.appendChild(host);
     const handle = mountDebugOverlays({
       mount: host,
-      viewBoxWidth: 10,
-      viewBoxHeight: 10,
+      rendererSize: () => ({ width: 10, height: 10 }),
       view: conformanceView(),
       warn: () => {},
     });
@@ -168,8 +191,7 @@ describe("mountDebugOverlays", () => {
     document.body.appendChild(host);
     const handle = mountDebugOverlays({
       mount: host,
-      viewBoxWidth: 10,
-      viewBoxHeight: 10,
+      rendererSize: () => ({ width: 10, height: 10 }),
       view: conformanceView(),
       warn: () => {},
     });
