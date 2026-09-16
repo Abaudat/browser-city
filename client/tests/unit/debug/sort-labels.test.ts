@@ -83,13 +83,15 @@ describe("buildSortLabels", () => {
   // makes it mean something.
   it("round-trips: a printed label parses back to the key it was printed from", () => {
     const d = drawable({ stableId: 12345678901234567890n, x: -7, y: 42, rank: 50 });
-    const [label] = buildSortLabels(viewOver([d], [d.stableId], {
-      floor: 0,
-      cellX0: -1000,
-      cellY0: -1000,
-      cellX1: 1000,
-      cellY1: 1000,
-    }));
+    const [label] = buildSortLabels(
+      viewOver([d], [d.stableId], {
+        floor: 0,
+        cellX0: -1000,
+        cellY0: -1000,
+        cellX1: 1000,
+        cellY1: 1000,
+      }),
+    );
     expect(label && parseSortLabel(label.label)).toEqual({
       x: -7,
       y: 42,
@@ -123,9 +125,12 @@ describe("buildSortLabels", () => {
         ),
         (specs) => {
           const seen = new Set<bigint>();
-          const pool = specs
-            .filter((s) => !seen.has(s.stableId) && (seen.add(s.stableId), true))
-            .map((s) => drawable(s));
+          const pool: Drawable[] = [];
+          for (const spec of specs) {
+            if (seen.has(spec.stableId)) continue;
+            seen.add(spec.stableId);
+            pool.push(drawable(spec));
+          }
           const labels = buildSortLabels(
             viewOver(pool, [], {
               floor: 0,

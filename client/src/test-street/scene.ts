@@ -39,9 +39,11 @@ import { layerCodeByName } from "../render/layer-table";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
 import { floorOffsetPx, screenPositionPx } from "../render/screen-position";
+import type { Drawable } from "../render/sort-key";
 import { fromSortUnits, toSortUnits } from "../render/sort-units";
 import type { VisibilityState, VisibilityViewer } from "../render/visibility";
 import { isFloorCulled } from "../render/visibility";
+import type { GridEntry } from "../world/collision-grid";
 import {
   type FloorWalkResult,
   initialFloorWalkState,
@@ -51,6 +53,7 @@ import type { MovementConfig } from "../world/movement";
 import type { ObjectSource } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { TransitionIndex } from "../world/transitions";
+import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
 import { buildPlayerAppearanceTuple } from "./citizens";
 import { type CitizensLayerHandle, mountCitizensLayer } from "./citizens-layer";
@@ -363,6 +366,30 @@ export interface StreetSceneHandle {
    * options-menu slider while an object is marked is visible without a
    * re-hover. */
   setHighlightStrength(strength: number): void;
+
+  // Story 1.12 (FR165): the reads `main.ts` assembles a `DebugWorldView`
+  // out of. Deliberately four plain reads rather than a `DebugWorldView`
+  // built here: `test-street/` never imports `debug/` (nothing but
+  // `main.ts` does), and Epic 3's real pool will expose the same four
+  // facts from somewhere else entirely.
+
+  /** The floor the player is standing on right now. */
+  currentFloor(): number;
+  /** Every member of every floor's y-sorted pool, as the comparator sees
+   * them. The street crowd is not in here, because it is not in the
+   * sorted pool (`citizens.ts`) -- an overlay showing it would be
+   * claiming an ordering authority that does not exist. */
+  poolDrawables(): readonly Drawable[];
+  /** Where `stableId` came out in the order actually applied, or
+   * `undefined` when it is in no pool. Read from the same `renderOrder`
+   * the render path rebuilds, never re-sorted here. */
+  orderIndexOf(stableId: bigint): number | undefined;
+  /** FR128's live collision read -- the very same grid `world/movement.ts`
+   * resolves a step against. */
+  collidersInCell(floor: number, cellX: number, cellY: number): readonly GridEntry[];
+  /** Every placed object reaching into `bounds`, once each -- including
+   * the ones with no collider, which the grid above cannot report. */
+  worldObjects(bounds: CellBounds): Iterable<PlacedObjectView>;
 }
 
 function cropped(base: Texture, frame: Rectangle): Texture {
@@ -1272,6 +1299,13 @@ export async function mountStreetScene(
     UPDATE_PRIORITY.UTILITY,
   );
 
+  // Story 1.12: built once, here -- the pool's membership is fixed at
+  // mount (a floor transition moves the player between floor buckets, it
+  // does not change who is in the pool), and every `Drawable` in it is
+  // mutated in place as the player moves, so this array is always
+  // current without being rebuilt.
+  const allDrawables: readonly Drawable[] = members.map((m) => m.drawable);
+
   return {
     app,
     playerAppearance: playerTuple,
@@ -1279,6 +1313,14 @@ export async function mountStreetScene(
     keyboard,
     citizensLayer,
     setHighlightStrength,
+    currentFloor: () => walk.floor,
+    poolDrawables: () => allDrawables,
+    orderIndexOf: (stableId) => {
+      const index = renderOrder.indexOf(stableId);
+      return index === -1 ? undefined : index;
+    },
+    collidersInCell: (floor, cellX, cellY) => worldIndex.entriesInCell(floor, cellX, cellY),
+    worldObjects: (bounds) => worldIndex.objects(bounds),
     destroy: () => {
       detachKeyboard();
       pointer.detach();

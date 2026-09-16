@@ -121,7 +121,9 @@ describe("buildCollisionRects", () => {
     const world = worldWith(row({ objectId: 1n, defId: 1, x: 0, y: 0, floor: 2 }));
     const bounds = { floor: 2, cellX0: -2, cellY0: -2, cellX1: 2, cellY1: 2 };
     const [rect] = buildCollisionRects(viewOver(world, bounds));
-    expect(rect?.y).toBe(subcellRectPx({ x0: 0, y0: 0, x1: 1, y1: 1 }, 2, SUBCELLS, TILE, STOREY).y);
+    expect(rect?.y).toBe(
+      subcellRectPx({ x0: 0, y0: 0, x1: 1, y1: 1 }, 2, SUBCELLS, TILE, STOREY).y,
+    );
   });
 
   it("draws only the viewer's own floor", () => {
