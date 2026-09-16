@@ -433,6 +433,30 @@ describe("parseDefs", () => {
     expect(() => parseDefs(payload)).toThrow(/does not fit inside its footprint/);
   });
 
+  it("rejects a collider outside its own sprite bounds as a footprint containment failure (story 2.4 AC3)", () => {
+    // The corollary Tim's direction describes, not a duplicate check:
+    // the sprite always agrees with the footprint exactly
+    // (checkSpriteMatchesFootprint), so a collider outside the sprite is
+    // always outside the footprint too, and is refused by the exact same
+    // containment check and message.
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0] = {
+      id: 1,
+      key: "trash_bin",
+      name: "Trash Bin",
+      layer: 2,
+      sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
+      width: 1,
+      height: 1,
+      window: false,
+      tags: [],
+      collider: { x0: 0, y0: 0, x1: 20, y1: 8 },
+    };
+    expect(() => parseDefs(payload)).toThrow(
+      "object 'trash_bin' collider (0, 0)-(20, 8) does not fit inside its footprint (0, 0)-(16, 16) sub-cells",
+    );
+  });
+
   it("accepts a collider flush with the footprint edge (FR128)", () => {
     const payload = validPayload();
     (payload.objects as Record<string, unknown>[])[0] = {

@@ -309,22 +309,20 @@ its own dependency and `sim`'s own test builds enable for themselves;
 `browser_city` never enables it, so the published module never contains
 it.
 
-`sim::world::walkability` (story 2.4, FR128) is the two placement
-invariants over an *arrangement* of objects a single definition cannot
-express: a `WalkabilityGrid` is `FloorCollision`'s same dense-bitset
-idiom, but at sub-cell resolution (a whole-cell grid cannot express "a
-gap at least the player body's own width", since one cell is already
-narrower than the body). `rasterise` stamps a slice of sim-local
-placements (object def id, anchor cell, floor) into that grid using the
-real generated `ObjectDef`s. `erode` shrinks the grid by
+`sim::world::walkability`'s `WalkabilityGrid` is `FloorCollision`'s same
+dense-bitset idiom, at sub-cell resolution. `rasterise` stamps a slice of
+sim-local placements (object def id, anchor cell, floor) into that grid
+using the real generated `ObjectDef`s. `erode` shrinks the grid by
 `movement.player_body_width_subcells`/`_height_subcells` (never a
 literal); a sub-cell is body-passable in the result iff the whole body
-fits there. `enclosed_regions`/`narrow_passages` flood-fill iteratively
-(never recursive) and deterministically, reporting every enclosed region
-or every passage too narrow for the body, sorted by smallest sub-cell --
-never a single boolean verdict. Both take only a grid and bounds, so a
-future world-generation story rasterises a generated district into the
-same grid and calls the same two functions, unmodified, as a
+fits there. `enclosed_regions`/`narrow_passages` each take a grid, a seed
+and the grid's own bounds, and flood-fill iteratively (never recursive)
+and deterministically: every enclosed region, or every passage too
+narrow for the body, is reported as a sorted rect with its own cell
+count, never a single boolean verdict. A component touching any side of
+the grid's own bounds is never reported -- the grid is only ever a
+window onto a larger world -- so a generator rasterises a district into
+the same grid and calls the same two functions, unmodified, as a
 post-condition on what it placed.
 
 The client's mirror of these addressing, collision, transition and
@@ -832,15 +830,13 @@ whole multiple of `tile_size_px` and `h >= height * tile_size_px` -- a
 tall prop may overhang upward, never sideways or downward). Every field
 is validated identically on both sides.
 
-FR128's walkability rule is two-sided (story 2.4): an object with no
-`collider` must carry the `underfoot` tag (`defs/tags/city.toml`,
-permanent, append-only like every other tag), and an object that carries
-`underfoot` must not declare a `collider` -- both directions are wrong
-metadata, rejected by object key, never a hard-coded allow-list of object
-keys in either parser. The tag key is a single named constant
-(`UNDERFOOT_TAG_KEY`) on each side, never a repeated string literal, and
-lives outside `server/sim/src/rules/` so `check-rule-engine-no-content-
-keys.sh` is unaffected.
+FR128's walkability rule is two-sided: an object with no `collider` must
+carry the `underfoot` tag (`defs/tags/city.toml`, permanent, append-only
+like every other tag), and an object that carries `underfoot` must not
+declare a `collider` -- both directions are wrong metadata, rejected by
+object key, never a hard-coded allow-list of object keys in either
+parser. The tag key is a single named constant (`UNDERFOOT_TAG_KEY`) on
+each side, never a repeated string literal.
 
 ### Rules (`defs/rules/`, `defs/tags/`)
 

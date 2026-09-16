@@ -826,7 +826,14 @@ function checkSpriteMatchesFootprint(object: ObjectDef, tileSizePx: number): voi
  * height*colliderSubcellsPerCell` sub-cells -- the exact rule `tools/
  * defs-build`'s own `validate.rs` enforces at build time, checked again
  * here so the client is never quietly lenient about data it did not
- * build itself. */
+ * build itself.
+ *
+ * Story 2.4 AC3's "collider within sprite bounds" needs no separate
+ * check: `checkSpriteMatchesFootprint` already fixes the sprite to
+ * exactly the footprint's own extent, so a collider contained in the
+ * footprint is always contained in the sprite -- a collider outside the
+ * sprite is therefore always outside the footprint, and is refused right
+ * here, never a duplicate check. */
 function checkColliderWithinFootprint(object: ObjectDef, colliderSubcellsPerCell: number): void {
   const c = object.collider;
   if (!c) return;

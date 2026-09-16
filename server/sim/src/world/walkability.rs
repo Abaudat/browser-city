@@ -9,10 +9,11 @@
 //! [`WalkabilityGrid`] is the same shape and idiom as [`super::collision::
 //! FloorCollision`] -- a dense bitset over a [`super::Rect`], `checked_mul`,
 //! bounded, total -- except its `Rect` is in *sub-cells*
-//! (`crate::generated::defs::COLLIDER_SUBCELLS_PER_CELL` per cell), the
-//! resolution a one-cell-wide doorway (16 sub-cells) actually needs: at
-//! cell resolution "a gap at least the body width" is vacuously always
-//! true, since the player body is capped at one cell wide.
+//! (`crate::generated::defs::COLLIDER_SUBCELLS_PER_CELL` per cell): a cell
+//! is `COLLIDER_SUBCELLS_PER_CELL` (16) sub-cells wide, and the player
+//! body's own width is capped at that same 16, so a one-cell doorway
+//! always passes "at least the body width" at cell resolution -- the
+//! check is only real at the sub-cell resolution this grid has.
 
 use super::{Rect, cell_index};
 use crate::generated::defs;
@@ -122,13 +123,12 @@ impl WalkabilityGrid {
 
 /// The footprint's own north-west cell -- where a `collider` rect's local
 /// `(0, 0)` sub-cell sits in world cells -- from the anchor cell (the
-/// footprint's south-west corner) and its extent. The one place this
+/// footprint's south-west corner) and its own height. The one place this
 /// arithmetic lives on the server, mirroring the client's own equivalent
 /// exactly (Tim's direction, NFR30 -- a second, independent
 /// implementation, never a shared import): `x` is unchanged, only `y`
 /// moves, north by `height - 1` cells.
-pub fn footprint_origin(anchor_x: i32, anchor_y: i32, width: u32, height: u32) -> (i32, i32) {
-    let _ = width;
+pub fn footprint_origin(anchor_x: i32, anchor_y: i32, height: u32) -> (i32, i32) {
     (anchor_x, anchor_y - (height as i32 - 1))
 }
 
@@ -142,6 +142,25 @@ pub struct Placement {
     pub anchor_x: i32,
     pub anchor_y: i32,
     pub floor: i8,
+}
+
+/// Converts one local sub-cell coordinate (`origin * subcells_per_cell +
+/// local`) via `i64`, checked: `Err` rather than a silent wrap or an
+/// `overflow-checks` abort for a placement whose anchor is extreme enough
+/// that the stamped rect would not fit in `i32` -- every function in this
+/// module claims to be total, so this one may not be the exception.
+fn checked_subcell_coord(origin: i32, subcells_per_cell: i32, local: i32) -> Result<i32, String> {
+    let scaled = (origin as i64)
+        .checked_mul(subcells_per_cell as i64)
+        .and_then(|v| v.checked_add(local as i64))
+        .ok_or_else(|| {
+            format!(
+                "walkability::rasterise: origin {origin} * {subcells_per_cell} + {local} overflows i64"
+            )
+        })?;
+    i32::try_from(scaled).map_err(|_| {
+        format!("walkability::rasterise: sub-cell coordinate {scaled} does not fit in i32")
+    })
 }
 
 /// Rasterises every `placements` entry on `floor` into a [`WalkabilityGrid`]
@@ -172,13 +191,13 @@ pub fn rasterise(
         let Some(c) = def.collider else {
             continue;
         };
-        let (origin_x, origin_y) = footprint_origin(p.anchor_x, p.anchor_y, def.width, def.height);
+        let (origin_x, origin_y) = footprint_origin(p.anchor_x, p.anchor_y, def.height);
         let subcells_per_cell = defs::COLLIDER_SUBCELLS_PER_CELL;
         colliders.push(Rect {
-            x0: origin_x * subcells_per_cell + c.x0,
-            y0: origin_y * subcells_per_cell + c.y0,
-            x1: origin_x * subcells_per_cell + c.x1,
-            y1: origin_y * subcells_per_cell + c.y1,
+            x0: checked_subcell_coord(origin_x, subcells_per_cell, c.x0)?,
+            y0: checked_subcell_coord(origin_y, subcells_per_cell, c.y0)?,
+            x1: checked_subcell_coord(origin_x, subcells_per_cell, c.x1)?,
+            y1: checked_subcell_coord(origin_y, subcells_per_cell, c.y1)?,
         });
     }
     WalkabilityGrid::build(bounds, &colliders)
@@ -300,17 +319,33 @@ pub struct Finding {
     pub cell_count: u64,
 }
 
+/// One labelled component, internal to this module: the public [`Finding`]
+/// plus whether any of its own cells lies on `bounds`'s own perimeter.
+/// `bounds` is only ever a window onto a larger, open world (Tim's
+/// direction: this is what lets a caller chunk a district and call these
+/// functions unmodified per chunk), so a component touching that window's
+/// edge is never itself a report -- it continues into the next chunk (or
+/// the open world beyond it), which [`enclosed_regions`]/
+/// [`narrow_passages`] are not being asked about here.
+struct Component {
+    finding: Finding,
+    touches_edge: bool,
+}
+
 /// Labels every cell `passable` accepts into 4-connected components,
 /// iterative (an explicit `Vec`-backed stack, never recursion -- a
 /// generated district would blow the stack) and deterministic (raster
 /// scan order: row-major from `bounds`'s own north-west corner, so which
 /// component gets which label never depends on anything but `bounds` and
 /// `passable` themselves). Returns a label per sub-cell (`-1` = not
-/// passable) and one [`Finding`] per label, in label order.
-fn label_components(bounds: Rect, passable: impl Fn(i32, i32) -> bool) -> (Vec<i32>, Vec<Finding>) {
+/// passable) and one [`Component`] per label, in label order.
+fn label_components(
+    bounds: Rect,
+    passable: impl Fn(i32, i32) -> bool,
+) -> (Vec<i32>, Vec<Component>) {
     let total = total_subcells(bounds).unwrap_or(0) as usize;
     let mut labels = vec![-1i32; total];
-    let mut findings: Vec<Finding> = Vec::new();
+    let mut components: Vec<Component> = Vec::new();
     let mut stack: Vec<(i32, i32)> = Vec::new();
 
     for y in bounds.y0..bounds.y1 {
@@ -321,18 +356,23 @@ fn label_components(bounds: Rect, passable: impl Fn(i32, i32) -> bool) -> (Vec<i
             if labels[start_idx] != -1 || !passable(x, y) {
                 continue;
             }
-            let label = findings.len() as i32;
+            let label = components.len() as i32;
             labels[start_idx] = label;
             stack.clear();
             stack.push((x, y));
             let (mut x0, mut y0, mut x1, mut y1) = (x, y, x + 1, y + 1);
             let mut count: u64 = 0;
+            let mut touches_edge = false;
             while let Some((cx, cy)) = stack.pop() {
                 count += 1;
                 x0 = x0.min(cx);
                 y0 = y0.min(cy);
                 x1 = x1.max(cx + 1);
                 y1 = y1.max(cy + 1);
+                if cx == bounds.x0 || cx == bounds.x1 - 1 || cy == bounds.y0 || cy == bounds.y1 - 1
+                {
+                    touches_edge = true;
+                }
                 for (nx, ny) in [(cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)] {
                     if !bounds.contains(nx, ny) {
                         continue;
@@ -347,13 +387,31 @@ fn label_components(bounds: Rect, passable: impl Fn(i32, i32) -> bool) -> (Vec<i
                     stack.push((nx, ny));
                 }
             }
-            findings.push(Finding {
-                bounds: Rect { x0, y0, x1, y1 },
-                cell_count: count,
+            components.push(Component {
+                finding: Finding {
+                    bounds: Rect { x0, y0, x1, y1 },
+                    cell_count: count,
+                },
+                touches_edge,
             });
         }
     }
-    (labels, findings)
+    (labels, components)
+}
+
+/// Collects every component except the one labelled `exclude_label` and
+/// every edge-touching one, sorted by smallest sub-cell -- the one place
+/// [`enclosed_regions`] and [`narrow_passages`] both turn a label list
+/// into their final, public report.
+fn findings_excluding(components: Vec<Component>, exclude_label: i32) -> Vec<Finding> {
+    let mut result: Vec<Finding> = components
+        .into_iter()
+        .enumerate()
+        .filter(|(i, c)| *i as i32 != exclude_label && !c.touches_edge)
+        .map(|(_, c)| c.finding)
+        .collect();
+    result.sort_by_key(|f| (f.bounds.y0, f.bounds.x0));
+    result
 }
 
 /// AC5: every walkable region with no path back to `(seed_x, seed_y)` --
@@ -361,74 +419,71 @@ fn label_components(bounds: Rect, passable: impl Fn(i32, i32) -> bool) -> (Vec<i
 /// sub-cell (deterministic). A fully open grid, or one whose every
 /// walkable cell reaches the seed through a door, reports nothing; a
 /// region touching the grid edge is not itself a report (edge = open
-/// world, `bounds` is only ever a window onto it), it simply is not a
-/// distinct raw component within `bounds`.
-pub fn enclosed_regions(grid: &WalkabilityGrid, seed_x: i32, seed_y: i32) -> Vec<Finding> {
+/// world, `bounds` is only ever a window onto it). `Err` if the seed
+/// itself is out of bounds or blocked -- a miscomputed seed must fail
+/// loudly, never silently read as "nothing is enclosed".
+pub fn enclosed_regions(
+    grid: &WalkabilityGrid,
+    seed_x: i32,
+    seed_y: i32,
+) -> Result<Vec<Finding>, String> {
+    if !grid.is_passable(seed_x, seed_y) {
+        return Err(format!(
+            "enclosed_regions: seed ({seed_x}, {seed_y}) is out of bounds or blocked"
+        ));
+    }
     let bounds = grid.bounds;
-    let passable = |x: i32, y: i32| grid.is_passable(x, y);
-    let (labels, findings) = label_components(bounds, passable);
-    let seed_label = cell_index(bounds, seed_x, seed_y)
-        .filter(|_| grid.is_passable(seed_x, seed_y))
-        .map(|idx| labels[idx]);
-
-    let mut result: Vec<Finding> = findings
-        .into_iter()
-        .enumerate()
-        .filter(|(i, _)| Some(*i as i32) != seed_label)
-        .map(|(_, f)| f)
-        .collect();
-    result.sort_by_key(|f| (f.bounds.y0, f.bounds.x0));
-    result
+    let (labels, components) = label_components(bounds, |x, y| grid.is_passable(x, y));
+    // Safe: `is_passable` above already proved the seed is in bounds.
+    let seed_idx = cell_index(bounds, seed_x, seed_y).expect("seed already proved in bounds");
+    Ok(findings_excluding(components, labels[seed_idx]))
 }
 
 /// AC4: within the raw region reachable from `(seed_x, seed_y)`, every
 /// pocket that a `body_width x body_height` body can no longer reach once
 /// erosion is applied -- a passage too narrow for the body to fit through,
-/// reported the same way [`enclosed_regions`] reports a missing door.
-/// One algorithm run twice, not two (Tim's direction): [`erode`] plus this
-/// same [`label_components`] primitive, restricted to the raw-reachable
+/// reported the same way [`enclosed_regions`] reports a missing door, and
+/// exempting an edge-touching component the same way. One algorithm run
+/// twice, not two (Tim's direction): [`erode`] plus this same
+/// [`label_components`] primitive, restricted to the raw-reachable
 /// footprint so a chokepoint deep in an already-enclosed region (already
 /// reported by [`enclosed_regions`]) is not reported a second time here.
+/// `Err` if the seed is out of bounds or blocked (the same case
+/// [`enclosed_regions`] refuses), or if it is raw-passable but the body
+/// itself does not fit there (for example a seed hugging a wall) -- that
+/// case cannot be answered at all, and reporting every other component as
+/// "cut off" would be a wall of false positives, not a real finding.
 pub fn narrow_passages(
     grid: &WalkabilityGrid,
     seed_x: i32,
     seed_y: i32,
     body_width: i32,
     body_height: i32,
-) -> Vec<Finding> {
-    let bounds = grid.bounds;
-    let raw_passable = |x: i32, y: i32| grid.is_passable(x, y);
-    let (raw_labels, _) = label_components(bounds, raw_passable);
-    let Some(seed_idx) = cell_index(bounds, seed_x, seed_y) else {
-        return Vec::new();
-    };
+) -> Result<Vec<Finding>, String> {
     if !grid.is_passable(seed_x, seed_y) {
-        return Vec::new();
+        return Err(format!(
+            "narrow_passages: seed ({seed_x}, {seed_y}) is out of bounds or blocked"
+        ));
     }
+    let bounds = grid.bounds;
+    let (raw_labels, _) = label_components(bounds, |x, y| grid.is_passable(x, y));
+    let seed_idx = cell_index(bounds, seed_x, seed_y).expect("seed already proved in bounds");
     let raw_seed_label = raw_labels[seed_idx];
 
     let eroded = erode(grid, body_width, body_height);
+    if !eroded.is_passable(seed_x, seed_y) {
+        return Err(format!(
+            "narrow_passages: the {body_width}x{body_height} body does not fit at the seed ({seed_x}, {seed_y})"
+        ));
+    }
     let restricted = |x: i32, y: i32| -> bool {
         let Some(idx) = cell_index(bounds, x, y) else {
             return false;
         };
         raw_labels[idx] == raw_seed_label && eroded.is_passable(x, y)
     };
-    let (eroded_labels, findings) = label_components(bounds, restricted);
-    let seed_label2 = if eroded.is_passable(seed_x, seed_y) {
-        Some(eroded_labels[seed_idx])
-    } else {
-        None
-    };
-
-    let mut result: Vec<Finding> = findings
-        .into_iter()
-        .enumerate()
-        .filter(|(i, _)| Some(*i as i32) != seed_label2)
-        .map(|(_, f)| f)
-        .collect();
-    result.sort_by_key(|f| (f.bounds.y0, f.bounds.x0));
-    result
+    let (eroded_labels, components) = label_components(bounds, restricted);
+    Ok(findings_excluding(components, eroded_labels[seed_idx]))
 }
 
 #[cfg(test)]
@@ -485,10 +540,10 @@ mod tests {
     #[test]
     fn footprint_origin_matches_the_clients_own_footprintorigin() {
         // A 1-cell-tall object: origin equals the anchor exactly.
-        assert_eq!(footprint_origin(5, 5, 3, 1), (5, 5));
+        assert_eq!(footprint_origin(5, 5, 1), (5, 5));
         // A 3-cell-tall object anchored at (5, 5): origin moves north by
         // height - 1 = 2 cells, x unchanged.
-        assert_eq!(footprint_origin(5, 5, 1, 3), (5, 3));
+        assert_eq!(footprint_origin(5, 5, 3), (5, 3));
     }
 
     // --- rasterise ---------------------------------------------------
@@ -595,6 +650,51 @@ mod tests {
             floor: 0,
         }];
         assert!(rasterise(bounds, 0, placements, &[]).is_err());
+    }
+
+    /// Quentin's direction: an extreme anchor must return `Err`, never
+    /// overflow -- checked arithmetic throughout, not a reliance on
+    /// `overflow-checks` aborting the reducer for it.
+    #[test]
+    fn rasterise_errors_rather_than_overflows_on_an_extreme_anchor() {
+        let objects = &[defs::ObjectDef {
+            id: 1,
+            key: "wall_segment",
+            name: "Wall Segment",
+            layer: 0,
+            sprite: defs::SpriteRect {
+                sheet: "x",
+                x: 0,
+                y: 0,
+                w: 16,
+                h: 16,
+            },
+            width: 1,
+            height: 1,
+            collider: Some(defs::ColliderRect {
+                x0: 0,
+                y0: 0,
+                x1: 16,
+                y1: 16,
+            }),
+            interact_at: None,
+            window: false,
+            tags: &[],
+        }];
+        let bounds = Rect {
+            x0: 0,
+            y0: 0,
+            x1: 32,
+            y1: 32,
+        };
+        let placements = &[Placement {
+            def_id: 1,
+            anchor_x: i32::MAX / defs::COLLIDER_SUBCELLS_PER_CELL,
+            anchor_y: 0,
+            floor: 0,
+        }];
+        let err = rasterise(bounds, 0, placements, objects).unwrap_err();
+        assert!(err.contains("overflow") || err.contains("does not fit"));
     }
 
     // --- erode / doorway width ------------------------------------------
@@ -733,22 +833,37 @@ mod tests {
     #[test]
     fn a_fully_open_grid_reports_no_enclosed_region() {
         let grid = grid_from_art(&["....", "....", "....", "...."]);
-        assert!(enclosed_regions(&grid, 0, 0).is_empty());
+        assert!(enclosed_regions(&grid, 0, 0).unwrap().is_empty());
     }
 
     #[test]
     fn a_room_with_no_door_is_reported() {
-        let grid = grid_from_art(&["#####", "#...#", "#...#", "#####"]);
-        let findings = enclosed_regions(&grid, 0, 0);
-        assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].cell_count, 3 * 2);
+        // A 1-sub-cell margin of real, open exterior around the room --
+        // an out-of-bounds or blocked seed is an error now (Quentin's
+        // direction), so a fixture needs a real place to stand outside.
+        let grid = grid_from_art(&[
+            ".......", ".#####.", ".#...#.", ".#...#.", ".#####.", ".......",
+        ]);
+        let findings = enclosed_regions(&grid, 0, 0).unwrap();
+        assert_eq!(
+            findings,
+            vec![Finding {
+                bounds: Rect {
+                    x0: 2,
+                    y0: 2,
+                    x1: 5,
+                    y1: 4
+                },
+                cell_count: 3 * 2,
+            }]
+        );
     }
 
     #[test]
     fn the_same_room_with_a_door_is_not_reported() {
         // A gap in the north wall at x=2.
         let grid = grid_from_art(&["##.##", "#...#", "#...#", "#####"]);
-        assert!(enclosed_regions(&grid, 2, 0).is_empty());
+        assert!(enclosed_regions(&grid, 2, 0).unwrap().is_empty());
     }
 
     #[test]
@@ -756,28 +871,95 @@ mod tests {
         let grid = grid_from_art(&["###.###", "#.#.#.#", "###.###"]);
         // The seed sits in the open corridor column (x=3); both side
         // rooms are sealed.
-        let findings = enclosed_regions(&grid, 3, 0);
+        let findings = enclosed_regions(&grid, 3, 0).unwrap();
         assert_eq!(findings.len(), 2);
     }
 
+    /// Quentin/Tim's direction: a component touching any side of `bounds`
+    /// is never reported, because `bounds` is only ever a window onto a
+    /// larger, open world -- a wall splitting the window (`x=3`) leaves
+    /// both halves touching an edge (the seed's own half touches the
+    /// west edge; the other touches the east, north and south edges),
+    /// and neither is reported. A true sealed room, touching no edge, in
+    /// the same grid still is -- the two are told apart, not both waved
+    /// through.
     #[test]
-    fn a_region_touching_the_grid_edge_is_not_reported() {
-        // No wall at all along the west edge: the open area "touches"
-        // bounds.x0, and is reachable from the seed like any other open
-        // cell -- not a distinct component, so nothing is reported for
-        // it specifically.
-        let grid = grid_from_art(&["....", "....", "...."]);
-        assert!(enclosed_regions(&grid, 3, 2).is_empty());
+    fn edge_touching_components_are_never_reported_but_a_true_sealed_room_still_is() {
+        let grid = grid_from_art(&["...#....", "...#.###", "...#.#.#", "...#.###", "...#...."]);
+        let findings = enclosed_regions(&grid, 0, 0).unwrap();
+        assert_eq!(
+            findings,
+            vec![Finding {
+                bounds: Rect {
+                    x0: 6,
+                    y0: 2,
+                    x1: 7,
+                    y1: 3
+                },
+                cell_count: 1,
+            }]
+        );
+    }
+
+    #[test]
+    fn an_enclosed_room_with_a_narrow_internal_passage_is_reported_once_by_enclosed_regions_and_never_by_narrow_passages()
+     {
+        // A fully sealed room (no door to the exterior at all), split
+        // internally by a partial wall that only a single-subcell walker
+        // can cross (row 3). Raw connectivity still sees it as one whole
+        // room -- one report, not two -- and since the room shares no
+        // raw component with the seed at all, narrow_passages (which
+        // only ever restricts itself to the seed's own raw-reachable
+        // footprint) never looks at its interior, "no door" and "narrow
+        // internal passage" can never double-report the same pocket.
+        let grid = grid_from_art(&[".......", "#######", "#..#..#", "#.....#", "#######"]);
+        let findings = enclosed_regions(&grid, 0, 0).unwrap();
+        assert_eq!(
+            findings,
+            vec![Finding {
+                bounds: Rect {
+                    x0: 1,
+                    y0: 2,
+                    x1: 6,
+                    y1: 4
+                },
+                cell_count: 9,
+            }]
+        );
+        // A trivial 1x1 body here (the exterior strip is only one
+        // sub-cell deep, too shallow for a real player body to have any
+        // valid placement at all): the point of this test is the "never
+        // reported twice" property, which holds regardless of body size,
+        // since the room shares no raw component with the seed.
+        assert!(narrow_passages(&grid, 0, 0, 1, 1).unwrap().is_empty());
     }
 
     #[test]
     fn removing_a_door_never_reduces_the_number_of_reported_regions() {
         // Sealed room -> one report. Opening a door in it -> zero.
         // Removing the door again (closing it) can only add reports back,
-        // never remove one relative to the open state.
-        let sealed = grid_from_art(&["#####", "#...#", "#####"]);
-        let open = grid_from_art(&["##.##", "#...#", "#####"]);
-        assert!(enclosed_regions(&sealed, 0, 0).len() >= enclosed_regions(&open, 2, 0).len());
+        // never remove one relative to the open state. A margin of real
+        // open exterior around the room, same reason as the test above.
+        let sealed = grid_from_art(&[".......", ".#####.", ".#...#.", ".#####.", "......."]);
+        let open = grid_from_art(&[".......", ".##.##.", ".#...#.", ".#####.", "......."]);
+        assert!(
+            enclosed_regions(&sealed, 0, 0).unwrap().len()
+                >= enclosed_regions(&open, 0, 0).unwrap().len()
+        );
+    }
+
+    #[test]
+    fn an_out_of_bounds_seed_is_an_error_not_an_empty_report() {
+        let grid = grid_from_art(&["....", "...."]);
+        assert!(enclosed_regions(&grid, 100, 100).is_err());
+        assert!(narrow_passages(&grid, 100, 100, 1, 1).is_err());
+    }
+
+    #[test]
+    fn a_blocked_seed_is_an_error_not_an_empty_report() {
+        let grid = grid_from_art(&["#.", ".."]);
+        assert!(enclosed_regions(&grid, 0, 0).is_err());
+        assert!(narrow_passages(&grid, 0, 0, 1, 1).is_err());
     }
 
     // --- narrow_passages -----------------------------------------------
@@ -793,18 +975,87 @@ mod tests {
     fn a_passage_too_narrow_for_the_body_is_reported_even_though_raw_reachable() {
         let grid = grid_with_narrow_door();
         // Raw-reachable: the 1-wide door connects exterior and interior.
-        assert!(enclosed_regions(&grid, 0, 0).is_empty());
-        // A 2-wide body cannot fit through a 1-wide door: the interior is
-        // reported as cut off by a narrow passage.
-        let findings = narrow_passages(&grid, 0, 0, 2, 1);
-        assert!(!findings.is_empty());
+        assert!(enclosed_regions(&grid, 0, 0).unwrap().is_empty());
+        // A 2-wide body cannot fit through a 1-wide door: the interior's
+        // own single eroded-passable origin (2, 2) is reported, cut off.
+        let findings = narrow_passages(&grid, 0, 0, 2, 1).unwrap();
+        assert_eq!(
+            findings,
+            vec![Finding {
+                bounds: Rect {
+                    x0: 2,
+                    y0: 2,
+                    x1: 3,
+                    y1: 3
+                },
+                cell_count: 1,
+            }]
+        );
     }
 
     #[test]
     fn a_passage_at_least_the_body_width_reports_nothing() {
         let grid = grid_with_narrow_door();
         // A 1-wide body fits through the 1-wide door.
-        let findings = narrow_passages(&grid, 0, 0, 1, 1);
+        let findings = narrow_passages(&grid, 0, 0, 1, 1).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn narrow_passages_errors_when_the_body_does_not_fit_at_the_seed() {
+        // The seed sits flush against a wall (only 1 sub-cell of the
+        // 2-wide door is at x=0, the seed itself, and the body is 2
+        // wide): raw-passable, but no 2-wide window contains it.
+        let grid = grid_from_art(&["##.", "...", "##."]);
+        assert!(narrow_passages(&grid, 0, 1, 2, 2).is_err());
+    }
+
+    /// Quentin's direction: a raw-reachable pocket a real body can never
+    /// fit into at all -- not at the pocket, not anywhere along the only
+    /// path into it -- earns no eroded-passable sub-cell anywhere, so it
+    /// never earns a label and is silently absent from the report. This
+    /// is deliberate, not a gap: there is no rect to report for a body
+    /// placement that never exists, and it is pinned here so a generator
+    /// author learns this from a test, not in production.
+    #[test]
+    fn a_raw_reachable_pocket_the_body_never_fits_into_at_all_is_silently_not_reported() {
+        // A dead-end interior exactly 7 sub-cells wide (`x=9..16`),
+        // narrower than any real player body, reached only through a
+        // mouth (row 4) that is itself only ever as wide as the interior
+        // once the window's height touches the walled rows (5-7).
+        let colliders = vec![
+            Rect {
+                x0: 8,
+                y0: 5,
+                x1: 9,
+                y1: 8,
+            }, // west wall
+            Rect {
+                x0: 16,
+                y0: 5,
+                x1: 17,
+                y1: 8,
+            }, // east wall
+            Rect {
+                x0: 8,
+                y0: 8,
+                x1: 17,
+                y1: 9,
+            }, // south wall
+        ];
+        let bounds = Rect {
+            x0: 0,
+            y0: 0,
+            x1: 20,
+            y1: 12,
+        };
+        let grid = WalkabilityGrid::build(bounds, &colliders).unwrap();
+        // Raw-reachable: a single-subcell walker enters through the open
+        // mouth at row 4.
+        assert!(enclosed_regions(&grid, 2, 1).unwrap().is_empty());
+        // But no 8x4 body placement exists anywhere the pocket's own
+        // walls constrain -- silently absent, not an error.
+        let findings = narrow_passages(&grid, 2, 1, 8, 4).unwrap();
         assert!(findings.is_empty());
     }
 }

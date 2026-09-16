@@ -510,6 +510,15 @@ fn build_requirement_rules(
 /// `width*COLLIDER_SUBCELLS_PER_CELL x height*COLLIDER_SUBCELLS_PER_CELL`
 /// sub-cells (Tim's direction, story 1.8). Widened to `i64` throughout so
 /// no combination of `i32` collider bounds can overflow the comparison.
+///
+/// Story 2.4 AC3's "collider within sprite bounds" needs no separate
+/// check here: `check_object_sprite_matches_footprint` already fixes the
+/// sprite to exactly the footprint's own extent (`w == width *
+/// tile_size_px`, `h >= height * tile_size_px`, upward overhang only), so
+/// a collider contained in the footprint is always contained in the
+/// sprite -- a collider outside the sprite is therefore always outside
+/// the footprint, and is refused right here, by this same check, never a
+/// duplicate one.
 fn check_object_colliders(entries: &[ObjectEntry]) -> Result<(), DefsError> {
     for e in entries {
         let Some(collider) = &e.collider else {
@@ -1984,6 +1993,31 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
         assert!(err.message.contains("does not fit inside its footprint"));
+    }
+
+    /// Story 2.4 AC3: a collider outside its own sprite bounds is
+    /// rejected -- proven as the corollary Tim's direction describes,
+    /// never a duplicate check: `check_object_sprite_matches_footprint`
+    /// already fixes the sprite to exactly the footprint's own extent,
+    /// so a collider outside the sprite is always outside the footprint
+    /// too, and is refused by this exact same containment check.
+    #[test]
+    fn a_collider_outside_its_sprite_is_rejected_as_a_footprint_containment_failure() {
+        let f = files(&[
+            (
+                "defs/objects/x.toml",
+                &format!(
+                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 0, y0 = 0, x1 = 20, y1 = 8 }}\n"
+                ),
+            ),
+            ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+        ]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "defs/objects/x.toml:9:12: object 'a' collider (0, 0)-(20, 8) does not fit inside its footprint (0, 0)-(16, 16) sub-cells"
+        );
     }
 
     #[test]

@@ -14,7 +14,7 @@
 use sim::generated::defs;
 use sim::world::Rect;
 use sim::world::walkability::{
-    Placement, enclosed_regions, erode, narrow_passages, player_body_subcells, rasterise,
+    Finding, Placement, enclosed_regions, erode, narrow_passages, player_body_subcells, rasterise,
 };
 
 const WALL_SEGMENT_ID: u32 = 6;
@@ -104,12 +104,14 @@ fn the_canonical_block_with_a_wide_enough_door_is_reachable() {
     let grid = build_grid(&ring_placements(true, false));
     let (seed_x, seed_y) = seed_subcell();
     assert!(
-        enclosed_regions(&grid, seed_x, seed_y).is_empty(),
+        enclosed_regions(&grid, seed_x, seed_y).unwrap().is_empty(),
         "the interior must be reachable through a full-cell-wide door"
     );
     let (body_w, body_h) = player_body_subcells(defs::BALANCE);
     assert!(
-        narrow_passages(&grid, seed_x, seed_y, body_w, body_h).is_empty(),
+        narrow_passages(&grid, seed_x, seed_y, body_w, body_h)
+            .unwrap()
+            .is_empty(),
         "a full-cell-wide door must be wide enough for the player body"
     );
 }
@@ -118,7 +120,7 @@ fn the_canonical_block_with_a_wide_enough_door_is_reachable() {
 fn a_closed_ring_reports_the_interior_as_enclosed() {
     let grid = build_grid(&ring_placements(false, false));
     let (seed_x, seed_y) = seed_subcell();
-    let findings = enclosed_regions(&grid, seed_x, seed_y);
+    let findings = enclosed_regions(&grid, seed_x, seed_y).unwrap();
     assert_eq!(
         findings.len(),
         1,
@@ -130,24 +132,42 @@ fn a_closed_ring_reports_the_interior_as_enclosed() {
     assert_eq!(findings[0].cell_count, interior_subcells);
 }
 
-/// The lamppost's base collider (`x0=6, y0=10, x1=10, y1=14`) leaves six
-/// sub-cells clear on either side of it within the door cell -- less than
-/// the player body's own width (8) -- so a single-subcell raw walker
-/// still gets through (the door is not reported enclosed), but the body
-/// cannot: the interior is reported cut off by a narrow passage.
+/// Quentin's direction: the exact reported `Finding`, worked out by hand
+/// against the real, committed geometry, never by calling the code under
+/// test.
+///
+/// The lamppost's own collider band (`y0=10, y1=14`, real def) leaves six
+/// sub-cells clear on either side of it within the door cell (`x=64..80`)
+/// -- less than the player body's own width (8) -- so an 8x4 body window
+/// has no valid position for any origin `y` in `7..13` (its own window
+/// always touches the lamppost band there), which severs the door.
+/// Reachable-from-the-interior-side origins resume at `y=14` (bridging
+/// the last two door-height rows, `x` still confined to the 8-wide door
+/// span `64..72`) and widen into the fully open interior from `y=16`
+/// onward (`x` the interior's own valid span `16..104`), down to the
+/// interior's own southern limit at `y=76`: `9 + 9 + 61*89 = 5447`
+/// sub-cells, bounds `(16, 14)-(105, 77)`.
 #[test]
 fn a_lamppost_narrowing_the_door_below_body_width_cuts_off_the_interior() {
     let grid = build_grid(&ring_placements(true, true));
     let (seed_x, seed_y) = seed_subcell();
     assert!(
-        enclosed_regions(&grid, seed_x, seed_y).is_empty(),
+        enclosed_regions(&grid, seed_x, seed_y).unwrap().is_empty(),
         "a single-subcell walker still fits past the lamppost on either side"
     );
     let (body_w, body_h) = player_body_subcells(defs::BALANCE);
-    let findings = narrow_passages(&grid, seed_x, seed_y, body_w, body_h);
-    assert!(
-        !findings.is_empty(),
-        "the body (width {body_w}) cannot fit through either 6-sub-cell gap the lamppost leaves"
+    let findings = narrow_passages(&grid, seed_x, seed_y, body_w, body_h).unwrap();
+    assert_eq!(
+        findings,
+        vec![Finding {
+            bounds: Rect {
+                x0: 16,
+                y0: 14,
+                x1: 105,
+                y1: 77,
+            },
+            cell_count: 9 + 9 + 61 * 89,
+        }]
     );
 }
 

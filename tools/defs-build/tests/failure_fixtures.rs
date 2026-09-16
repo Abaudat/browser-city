@@ -422,8 +422,10 @@ fn a_walkable_flag_is_named() {
 #[test]
 fn a_colliderless_prop_not_tagged_underfoot_is_named() {
     let err = build_err("prop-no-collider-not-underfoot");
-    assert!(err.message.contains("trash_can"));
-    assert!(err.message.contains("underfoot"));
+    assert_eq!(
+        err.to_string(),
+        "defs/objects/city-props.toml:3:7: object 'trash_can' has no collider and is not tagged 'underfoot' -- every prop either blocks (a collider) or is explicitly walkable (the 'underfoot' tag); add one"
+    );
 }
 
 /// A manhole absent from the `underfoot` tag is rejected by name -- the
@@ -433,8 +435,10 @@ fn a_colliderless_prop_not_tagged_underfoot_is_named() {
 #[test]
 fn a_manhole_absent_from_the_underfoot_tag_is_named() {
     let err = build_err("manhole-not-tagged-underfoot");
-    assert!(err.message.contains("manhole"));
-    assert!(err.message.contains("underfoot"));
+    assert_eq!(
+        err.to_string(),
+        "defs/objects/city-props.toml:3:7: object 'manhole' has no collider and is not tagged 'underfoot' -- every prop either blocks (a collider) or is explicitly walkable (the 'underfoot' tag); add one"
+    );
 }
 
 /// The other direction of the same invariant: an object cannot declare a
@@ -443,8 +447,10 @@ fn a_manhole_absent_from_the_underfoot_tag_is_named() {
 #[test]
 fn an_object_tagged_underfoot_with_a_collider_is_named() {
     let err = build_err("underfoot-tag-with-collider");
-    assert!(err.message.contains("trash_bin"));
-    assert!(err.message.contains("declares both a collider"));
+    assert_eq!(
+        err.to_string(),
+        "defs/objects/city-props.toml:3:7: object 'trash_bin' declares both a collider and the 'underfoot' tag -- an object cannot both block and be explicitly walkable"
+    );
 }
 
 /// Every category this module lists above has its own fixture directory

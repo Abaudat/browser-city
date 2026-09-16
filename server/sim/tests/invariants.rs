@@ -49,6 +49,7 @@ pub const INV_DOORWAY_GAP_AT_LEAST_BODY_WIDTH_IS_ONE_COMPONENT_UNDER_EROSION: &s
 pub const INV_SEALED_RING_YIELDS_EXACTLY_ONE_ENCLOSED_REGION: &str =
     "a ring with no gap at all always yields exactly one enclosed region (FR128)";
 pub const INV_REMOVING_A_DOOR_NEVER_REDUCES_ENCLOSED_REGIONS: &str = "narrowing a ring's own doorway gap (down to and including closing it entirely) never reduces the number of reported enclosed regions (FR128)";
+pub const INV_RING_OPEN_TO_THE_WINDOW_EDGE_IS_NEVER_REPORTED: &str = "a ring's own interior, pushed flush against the window's own edge with no wall and no margin between them, is never reported enclosed, for any ring size (FR128)";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -667,6 +668,47 @@ fn ring_with_gap(gap_offset: i32, gap_width: i32) -> WalkabilityGrid {
 /// margin -- every `ring_with_gap` caller's own seed.
 const RING_EXTERIOR_SEED: (i32, i32) = (-RING_CELL_SUBCELLS / 2, -RING_CELL_SUBCELLS / 2);
 
+/// Tim's direction: a ring pushed against the window's own edge, its
+/// west wall entirely omitted and `bounds` itself cropped to start
+/// exactly at the interior's own west edge -- the interior touches
+/// `bounds.x0` directly, no wall and no margin between them, sealed on
+/// every other side (north has no door). Never reported: it continues
+/// (conceptually) past the window this grid is only ever a chunk of.
+fn ring_open_to_the_west_window_edge(ring_w_cells: i32, ring_h_cells: i32) -> WalkabilityGrid {
+    let cell = RING_CELL_SUBCELLS;
+    let w = ring_w_cells * cell;
+    let h = ring_h_cells * cell;
+    let margin = cell;
+    let interior_x0 = cell; // where a west wall's own east face would sit
+    let bounds = Rect {
+        x0: interior_x0,
+        y0: -margin,
+        x1: w + margin,
+        y1: h + margin,
+    };
+    let colliders = vec![
+        Rect {
+            x0: interior_x0,
+            y0: 0,
+            x1: w - cell,
+            y1: cell,
+        }, // north wall, no door
+        Rect {
+            x0: w - cell,
+            y0: 0,
+            x1: w,
+            y1: h,
+        }, // east wall
+        Rect {
+            x0: interior_x0,
+            y0: h - cell,
+            x1: w,
+            y1: h,
+        }, // south wall
+    ];
+    WalkabilityGrid::build(bounds, &colliders).expect("ring geometry is always valid")
+}
+
 /// `(gap_width, gap_offset)`, integer-only (NFR25: `sim` is
 /// integer/fixed-point, and that discipline holds in its own test suite
 /// too -- no `f64` fraction trick): `gap_width` ranges from the real
@@ -743,7 +785,7 @@ proptest! {
     #[test]
     fn inv_sealed_ring_yields_exactly_one_enclosed_region(gap_offset in 0i32..(RING_WALL_X1 - RING_WALL_X0)) {
         let grid = ring_with_gap(gap_offset, 0);
-        let findings = enclosed_regions(&grid, RING_EXTERIOR_SEED.0, RING_EXTERIOR_SEED.1);
+        let findings = enclosed_regions(&grid, RING_EXTERIOR_SEED.0, RING_EXTERIOR_SEED.1).unwrap();
         prop_assert_eq!(findings.len(), 1);
     }
 
@@ -761,8 +803,24 @@ proptest! {
         let narrow = wide_gap.min(narrow_gap);
         let wide_grid = ring_with_gap(gap_offset, wide);
         let narrow_grid = ring_with_gap(gap_offset, narrow);
-        let wide_count = enclosed_regions(&wide_grid, RING_EXTERIOR_SEED.0, RING_EXTERIOR_SEED.1).len();
-        let narrow_count = enclosed_regions(&narrow_grid, RING_EXTERIOR_SEED.0, RING_EXTERIOR_SEED.1).len();
+        let wide_count = enclosed_regions(&wide_grid, RING_EXTERIOR_SEED.0, RING_EXTERIOR_SEED.1).unwrap().len();
+        let narrow_count = enclosed_regions(&narrow_grid, RING_EXTERIOR_SEED.0, RING_EXTERIOR_SEED.1).unwrap().len();
         prop_assert!(narrow_count >= wide_count);
+    }
+
+    /// `inv_ring_open_to_the_window_edge_is_never_reported` (Tim's
+    /// direction): a ring's own interior, pushed flush against the
+    /// window's own edge with no wall and no margin between them, is
+    /// never reported enclosed -- for any ring size, not just one.
+    #[test]
+    fn inv_ring_open_to_the_window_edge_is_never_reported(
+        ring_w_cells in 3i32..=8,
+        ring_h_cells in 3i32..=8,
+    ) {
+        let grid = ring_open_to_the_west_window_edge(ring_w_cells, ring_h_cells);
+        let seed_x = ring_w_cells * RING_CELL_SUBCELLS / 2;
+        let seed_y = -RING_CELL_SUBCELLS / 2;
+        let findings = enclosed_regions(&grid, seed_x, seed_y).unwrap();
+        prop_assert!(findings.is_empty());
     }
 }
