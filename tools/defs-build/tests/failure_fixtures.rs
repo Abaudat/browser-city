@@ -107,6 +107,77 @@ fn an_out_of_range_balance_value_is_named() {
     );
 }
 
+// --- story 2.10: tags and the five rule kinds -------------------------------
+
+#[test]
+fn an_object_naming_an_unknown_tag_is_named() {
+    let err = build_err("dangling-object-tag-reference");
+    assert_eq!(
+        err.to_string(),
+        "defs/objects/city-props.toml:3:7: object 'trash_bin' names unknown tag 'nonexistent_tag' -- accepted tags are []"
+    );
+}
+
+#[test]
+fn an_unknown_rule_kind_is_named_with_its_own_line() {
+    let err = build_err("unknown-rule-kind");
+    assert_eq!(err.path, PathBuf::from("defs/rules/cafes.toml"));
+    assert!(err.message.contains("bogus"));
+}
+
+#[test]
+fn a_field_belonging_to_another_rule_kind_is_rejected() {
+    let err = build_err("rule-field-belongs-to-another-kind");
+    assert_eq!(err.path, PathBuf::from("defs/rules/cafes.toml"));
+    assert_eq!(err.line, 5);
+    assert!(err.message.contains("ratio"));
+}
+
+#[test]
+fn a_rule_naming_an_unknown_tag_is_named() {
+    let err = build_err("rule-dangling-tag-reference");
+    assert_eq!(
+        err.to_string(),
+        "defs/rules/cafes.toml:4:11: rule 'no_cafe_above_floor_2' names unknown tag 'cafe' in subject -- accepted tags are []"
+    );
+}
+
+#[test]
+fn a_distribution_ratio_of_zero_is_rejected() {
+    let err = build_err("distribution-ratio-zero");
+    assert_eq!(
+        err.to_string(),
+        "defs/rules/services.toml:6:9: distribution rule 'waste_per_seating' has ratio 0 -- ratio must be a positive integer"
+    );
+}
+
+#[test]
+fn a_distribution_tolerance_of_zero_is_rejected() {
+    let err = build_err("distribution-tolerance-non-positive");
+    assert_eq!(
+        err.to_string(),
+        "defs/rules/services.toml:7:21: distribution rule 'waste_per_seating' has tolerance_percent 0 -- tolerance_percent must be a positive integer"
+    );
+}
+
+#[test]
+fn a_placement_floor_min_above_floor_max_is_rejected() {
+    let err = build_err("placement-floor-min-above-max");
+    assert_eq!(
+        err.to_string(),
+        "defs/rules/cafes.toml:3:7: placement rule 'impossible_floor_range' has floor_min 3 greater than floor_max 1"
+    );
+}
+
+#[test]
+fn a_duplicate_rule_id_across_two_different_kinds_is_named() {
+    let err = build_err("duplicate-rule-id");
+    assert_eq!(
+        err.to_string(),
+        "defs/rules/cafes.toml:7:6: duplicate rule id 1 -- first declared at defs/rules/cafes.toml:2:6"
+    );
+}
+
 #[test]
 fn a_non_kebab_case_filename_is_rejected() {
     let err = build_err("bad-filename");
@@ -375,6 +446,14 @@ fn every_known_category_has_a_fixture_directory() {
         "empty-object-name",
         "footprint-cap-exceeded",
         "walkable-flag-rejected",
+        "dangling-object-tag-reference",
+        "unknown-rule-kind",
+        "rule-field-belongs-to-another-kind",
+        "rule-dangling-tag-reference",
+        "distribution-ratio-zero",
+        "distribution-tolerance-non-positive",
+        "placement-floor-min-above-max",
+        "duplicate-rule-id",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

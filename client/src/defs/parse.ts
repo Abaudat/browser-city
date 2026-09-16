@@ -29,6 +29,7 @@ import type {
   SheetSize,
   Slot,
   SpriteRect,
+  TagDef,
   UniformDef,
 } from "./types";
 
@@ -130,6 +131,20 @@ function expectStringArray(value: unknown, path: string): string[] {
   return expectArray(value, path).map((item, i) => expectString(item, `${path}[${i}]`));
 }
 
+function expectU32Array(value: unknown, path: string): number[] {
+  return expectArray(value, path).map((item, i) => expectU32(item, `${path}[${i}]`));
+}
+
+/** `tags` is optional on both the document root and an object (defaults
+ * to empty when absent) -- story 2.10 landed after many existing fixtures
+ * were authored, and "no tags declared" is exactly what an absent array
+ * already means, so requiring the key to always be present would only
+ * force a mechanical edit across every one of them for no behavioural
+ * difference. A *present* `tags` value is still fully validated. */
+function expectArrayOrDefaultEmpty(value: unknown, path: string): unknown[] {
+  return value === undefined ? [] : expectArray(value, path);
+}
+
 /** An unknown field is a parse error here exactly as it is in `tools/
  * defs-build`'s `#[serde(deny_unknown_fields)]` (Quentin's direction). */
 function checkKnownKeys(
@@ -174,11 +189,13 @@ function parseObject(value: unknown, path: string): ObjectDef {
       "collider",
       "interact_at",
       "window",
+      "tags",
     ],
     path,
   );
   const collider = parseNullableCollider(obj.collider, `${path}.collider`);
   const interactAt = parseNullableCollider(obj.interact_at, `${path}.interact_at`);
+  const tags = expectU32Array(expectArrayOrDefaultEmpty(obj.tags, `${path}.tags`), `${path}.tags`);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
@@ -188,8 +205,18 @@ function parseObject(value: unknown, path: string): ObjectDef {
     width: expectU32(obj.width, `${path}.width`),
     height: expectU32(obj.height, `${path}.height`),
     window: expectBoolean(obj.window, `${path}.window`),
+    tags,
     ...(collider ? { collider } : {}),
     ...(interactAt ? { interactAt } : {}),
+  };
+}
+
+function parseTag(value: unknown, path: string): TagDef {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["id", "key"], path);
+  return {
+    id: expectU32(obj.id, `${path}.id`),
+    key: expectString(obj.key, `${path}.key`),
   };
 }
 
@@ -460,6 +487,7 @@ export function parseDefs(data: unknown): Defs {
       "accessories",
       "appearance_layouts",
       "uniforms",
+      "tags",
     ],
     "$",
   );
@@ -507,6 +535,9 @@ export function parseDefs(data: unknown): Defs {
   const uniforms = expectArray(root.uniforms, "$.uniforms").map((v, i) =>
     parseUniform(v, `$.uniforms[${i}]`),
   );
+  const tags = expectArrayOrDefaultEmpty(root.tags, "$.tags").map((v, i) =>
+    parseTag(v, `$.tags[${i}]`),
+  );
 
   checkNoDuplicateIdsOrKeys(objects, "object");
   checkNoDuplicateIdsOrKeys(items, "item");
@@ -520,6 +551,7 @@ export function parseDefs(data: unknown): Defs {
   checkNoDuplicateIdsOrKeys(accessories, "accessory");
   checkNoDuplicateIdsOrKeys(appearanceLayouts, "appearance_layout");
   checkNoDuplicateIdsOrKeys(uniforms, "uniform");
+  checkNoDuplicateIdsOrKeys(tags, "tag");
   const seenBalanceKeys = new Set<string>();
   for (const entry of balance) {
     if (seenBalanceKeys.has(entry.key)) fail(`duplicate balance key '${entry.key}'`);
@@ -628,6 +660,7 @@ export function parseDefs(data: unknown): Defs {
       "defs/ declares an object but no 'render.tile_size_px' balance key -- FR126's sprite/footprint agreement cannot be checked without it",
     );
   }
+  const tagIds = new Set(tags.map((t) => t.id));
   for (const object of objects) {
     checkObjectName(object);
     checkObjectLayer(object);
@@ -638,6 +671,7 @@ export function parseDefs(data: unknown): Defs {
     }
     checkColliderWithinFootprint(object, colliderSubcellsPerCell);
     checkInteractAtReach(object, colliderSubcellsPerCell, interactAtMaxReachCells);
+    checkObjectTags(object, tagIds);
   }
 
   return {
@@ -658,6 +692,7 @@ export function parseDefs(data: unknown): Defs {
     accessories,
     appearanceLayouts,
     uniforms,
+    tags,
   };
 }
 
@@ -689,6 +724,18 @@ function checkObjectLayer(object: ObjectDef): void {
   }
   if (row.deprecated) {
     fail(`object '${object.key}' names deprecated layer code ${object.layer} ('${row.name}')`);
+  }
+}
+
+/** Story 2.10 (FR111): every tag id an object names must be a real row in
+ * `Defs.tags`, exactly like `tools/defs-build`'s own `validate.rs`
+ * resolves the same reference at build time -- the rule engine's only
+ * vocabulary is never a dangling id past this point. */
+function checkObjectTags(object: ObjectDef, tagIds: ReadonlySet<number>): void {
+  for (const tag of object.tags) {
+    if (!tagIds.has(tag)) {
+      fail(`object '${object.key}' names unknown tag id ${tag}`);
+    }
   }
 }
 
@@ -824,8 +871,9 @@ export function canonicalDump(defs: Defs): string {
   const rect = (r: ColliderRect | undefined): string =>
     r ? `${r.x0},${r.y0},${r.x1},${r.y1}` : "none";
   for (const o of defs.objects) {
+    const tags = [...o.tags].sort((a, b) => a - b).join(",");
     lines.push(
-      `object ${o.key} id=${o.id} name=${o.name} layer=${o.layer} sprite=${o.sprite.sheet}:${o.sprite.x},${o.sprite.y},${o.sprite.w},${o.sprite.h} height=${o.height} width=${o.width} collider=${rect(o.collider)} interact_at=${rect(o.interactAt)} window=${o.window}`,
+      `object ${o.key} id=${o.id} name=${o.name} layer=${o.layer} sprite=${o.sprite.sheet}:${o.sprite.x},${o.sprite.y},${o.sprite.w},${o.sprite.h} height=${o.height} width=${o.width} collider=${rect(o.collider)} interact_at=${rect(o.interactAt)} window=${o.window} tags=[${tags}]`,
     );
   }
   for (const i of defs.items) {
@@ -879,6 +927,9 @@ export function canonicalDump(defs: Defs): string {
     lines.push(
       `uniform ${u.key} id=${u.id} profession=${u.profession} outfit=${u.outfit ?? "none"} accessory=${u.accessory ?? "none"}`,
     );
+  }
+  for (const t of defs.tags) {
+    lines.push(`tag ${t.key} id=${t.id}`);
   }
   lines.sort();
   return `${lines.join("\n")}\n`;

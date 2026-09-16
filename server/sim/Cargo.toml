@@ -23,3 +23,12 @@ fixture = []
 [dev-dependencies]
 proptest = "=1.11.0"
 sim = { path = ".", features = ["fixture"] }
+# Cross-workspace on purpose (Tim's direction, story 2.10): `tools/
+# defs-build` declares its own `[workspace]` root, detached from this
+# one, precisely so a dependency edge like this stays a dev-only, test-time
+# convenience -- never a real build dependency (check-sim-purity.sh only
+# inspects normal/build edges). Lets `tests/rule_engine_acceptance.rs` run
+# a real TOML row through the actual `parse`/`validate` pipeline before
+# handing the result to this crate's own `rules::evaluate`, proving FR112's
+# "one source" end to end rather than by written policy alone.
+defs-build = { path = "../../tools/defs-build" }

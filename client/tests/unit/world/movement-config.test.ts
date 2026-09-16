@@ -21,6 +21,7 @@ function defsWith(balance: readonly { key: string; value: number }[]): Defs {
     accessories: [],
     appearanceLayouts: [],
     uniforms: [],
+    tags: [],
   };
 }
 

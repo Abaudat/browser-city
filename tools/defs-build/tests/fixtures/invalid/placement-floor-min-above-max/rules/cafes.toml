@@ -1,0 +1,6 @@
+[[placement]]
+id = 1
+key = "impossible_floor_range"
+subject = "cafe"
+floor_min = 3
+floor_max = 1

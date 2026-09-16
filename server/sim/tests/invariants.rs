@@ -10,6 +10,8 @@ use proptest::prelude::*;
 use sim::appearance;
 use sim::generated::defs::{self, Family, Pool};
 use sim::rng::{Rng, seed_from_ids};
+use sim::rules::testing::SiteBuilder;
+use sim::rules::{AdjacencyRelation, Cell, CoherenceMode, RuleDef, RuleKind, TagId, evaluate};
 use sim::world::{
     AreaSpec, FloorCollision, FloorSpec, NO_OWNER, Rect, TransitionSpec, WorldSpec, chunk_key,
     fixture,
@@ -34,6 +36,12 @@ pub const INV_APPEARANCE_DETERMINISTIC_FROM_ID: &str =
 pub const INV_APPEARANCE_INDICES_IN_RANGE: &str = "sim::appearance::generate never panics and every non-zero index it returns names a real manifest entry of the matching family";
 pub const INV_KIDS_PARTS_ONLY_ON_KIDS_BODIES: &str =
     "a kid family tuple only ever contains kid-family parts, and its accessory is always 0";
+pub const INV_RULE_VERDICTS_DETERMINISTIC: &str =
+    "the same facts and rules always give identical violations";
+pub const INV_RULE_VERDICTS_INDEPENDENT_OF_INPUT_ORDER: &str =
+    "shuffling fact order or rule row order does not change the sorted output";
+pub const INV_DISTRIBUTION_EVEN_LAYOUT_NEVER_VIOLATES: &str = "a generated perfectly even 1-per-N layout never violates; clustering all services into one bin always does";
+pub const INV_GENERATED_PLACEMENT_NEVER_VIOLATES_LOCAL_RULES: &str = "a placement built by filtering random candidates through evaluate yields zero violations when evaluate is run over the result, for the four local kinds";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -323,5 +331,147 @@ proptest! {
 
         let second = world.ownership_at(x, y, floor);
         prop_assert_eq!(first, second);
+    }
+}
+
+const RULE_SUBJECT: TagId = 1;
+const RULE_PER_OR_WITHIN: TagId = 2;
+
+fn site_of(cells: &[(i32, i32, i8)], tag: TagId) -> sim::rules::testing::Site {
+    let mut builder = SiteBuilder::new();
+    for &(x, y, floor) in cells {
+        builder = builder.cell(Cell::new(x, y, floor), &[tag]);
+    }
+    builder.build()
+}
+
+proptest! {
+    /// `inv_rule_verdicts_deterministic` (story 2.10, FR112): two
+    /// independent calls to `evaluate` over the identical facts and rules
+    /// always return the identical list of violations.
+    #[test]
+    fn inv_rule_verdicts_deterministic(
+        floor_max in -5i8..5,
+        cells in proptest::collection::vec((-20i32..20, -20i32..20, -5i8..5), 0..15),
+    ) {
+        let rules = vec![RuleDef {
+            id: 1,
+            key: "placement",
+            kind: RuleKind::Placement { subject: RULE_SUBJECT, container: None, floor_min: None, floor_max: Some(floor_max) },
+        }];
+        let site = site_of(&cells, RULE_SUBJECT);
+        prop_assert_eq!(evaluate(&rules, &site), evaluate(&rules, &site));
+    }
+
+    /// `inv_rule_verdicts_independent_of_input_order`: shuffling the
+    /// order facts were declared in, or the order rule rows are passed
+    /// in, never changes `evaluate`'s own (already-sorted) output.
+    #[test]
+    fn inv_rule_verdicts_independent_of_input_order(
+        cells in proptest::collection::vec((-20i32..20, -20i32..20, -5i8..5), 1..15),
+        reverse_rules in any::<bool>(),
+    ) {
+        let rules_forward = vec![
+            RuleDef { id: 1, key: "placement_a", kind: RuleKind::Placement { subject: RULE_SUBJECT, container: None, floor_min: None, floor_max: Some(0) } },
+            RuleDef { id: 2, key: "placement_b", kind: RuleKind::Placement { subject: RULE_SUBJECT, container: None, floor_min: Some(-2), floor_max: None } },
+        ];
+        let mut rules_other_order = rules_forward.clone();
+        if reverse_rules {
+            rules_other_order.reverse();
+        }
+
+        let site_forward = site_of(&cells, RULE_SUBJECT);
+        let mut reversed_cells = cells.clone();
+        reversed_cells.reverse();
+        let site_backward = site_of(&reversed_cells, RULE_SUBJECT);
+
+        prop_assert_eq!(
+            evaluate(&rules_forward, &site_forward),
+            evaluate(&rules_other_order, &site_backward)
+        );
+    }
+
+    /// `inv_distribution_even_layout_never_violates`: `n_groups` subject
+    /// cells spaced exactly `spacing` cells apart (the "evenly spread"
+    /// half of FR112) never violates; the same count of subject cells
+    /// clustered one cell apart (well inside `spacing`) always does.
+    #[test]
+    fn inv_distribution_even_layout_never_violates(n_groups in 2i32..15, spacing in 2u32..6) {
+        let ratio = 3u32;
+        let rule = RuleDef {
+            id: 1,
+            key: "distribution",
+            kind: RuleKind::Distribution {
+                subject: RULE_SUBJECT,
+                per: RULE_PER_OR_WITHIN,
+                ratio,
+                tolerance_percent: 0,
+                min_spacing: spacing,
+            },
+        };
+
+        let mut even = SiteBuilder::new();
+        for i in 0..n_groups {
+            even = even.cell(Cell::new(i * spacing as i32, 0, 0), &[RULE_SUBJECT]);
+        }
+        for i in 0..(n_groups * ratio as i32) {
+            even = even.cell(Cell::new(1000 + i, 0, 0), &[RULE_PER_OR_WITHIN]);
+        }
+        prop_assert!(evaluate(&[rule], &even.build()).is_empty());
+
+        let mut clustered = SiteBuilder::new();
+        for i in 0..n_groups {
+            clustered = clustered.cell(Cell::new(i, 0, 0), &[RULE_SUBJECT]);
+        }
+        for i in 0..(n_groups * ratio as i32) {
+            clustered = clustered.cell(Cell::new(1000 + i, 0, 0), &[RULE_PER_OR_WITHIN]);
+        }
+        prop_assert!(!evaluate(&[rule], &clustered.build()).is_empty());
+    }
+
+    /// `inv_generated_placement_never_violates_local_rules` (Tim's
+    /// direction): a candidate is accepted only when adding it to the
+    /// already-accepted set produces zero violations across placement,
+    /// coherence, adjacency and requirement -- the exact "ask the
+    /// engine, then place" cycle Epic 3's generator will run for real.
+    /// Re-evaluating the whole hypothetical set (not just the new
+    /// candidate's own cell) on every step is what proves a *later*
+    /// candidate can never retroactively invalidate an earlier one:
+    /// FR112 proven for the engine before the generator exists.
+    #[test]
+    fn inv_generated_placement_never_violates_local_rules(
+        candidates in proptest::collection::vec((-15i32..15, -15i32..15, -2i8..3, any::<bool>()), 0..30),
+    ) {
+        let rules = vec![
+            RuleDef { id: 1, key: "placement", kind: RuleKind::Placement { subject: RULE_SUBJECT, container: None, floor_min: Some(-1), floor_max: Some(1) } },
+            RuleDef { id: 2, key: "coherence", kind: RuleKind::Coherence { subject: RULE_SUBJECT, within: RULE_PER_OR_WITHIN, mode: CoherenceMode::Forbid } },
+            RuleDef { id: 3, key: "adjacency", kind: RuleKind::Adjacency { a: RULE_SUBJECT, b: RULE_PER_OR_WITHIN, relation: AdjacencyRelation::Forbid, direction: None } },
+            RuleDef { id: 4, key: "requirement", kind: RuleKind::Requirement { container: RULE_SUBJECT, requires: RULE_PER_OR_WITHIN, min: 0, max: None } },
+        ];
+
+        let mut accepted: Vec<(Cell, Vec<TagId>)> = Vec::new();
+        for (x, y, floor, carries_other_tag) in candidates {
+            let candidate = Cell::new(x, y, floor);
+            let mut tags = vec![RULE_SUBJECT];
+            if carries_other_tag {
+                tags.push(RULE_PER_OR_WITHIN);
+            }
+
+            let mut hypothetical = SiteBuilder::new();
+            for (cell, cell_tags) in &accepted {
+                hypothetical = hypothetical.cell(*cell, cell_tags);
+            }
+            hypothetical = hypothetical.cell(candidate, &tags);
+
+            if evaluate(&rules, &hypothetical.build()).is_empty() {
+                accepted.push((candidate, tags));
+            }
+        }
+
+        let mut final_site = SiteBuilder::new();
+        for (cell, cell_tags) in &accepted {
+            final_site = final_site.cell(*cell, cell_tags);
+        }
+        prop_assert!(evaluate(&rules, &final_site.build()).is_empty());
     }
 }

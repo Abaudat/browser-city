@@ -284,6 +284,7 @@ function defsWith(overrides: Partial<Defs> = {}): Defs {
     accessories: [],
     appearanceLayouts: [],
     uniforms: [],
+    tags: [],
     ...overrides,
   };
 }

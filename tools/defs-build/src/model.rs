@@ -143,6 +143,12 @@ pub struct RawObject {
     /// Optional, defaults to `false` -- most objects are not windows.
     #[serde(default)]
     pub window: bool,
+    /// Story 2.10 (FR111): the generic vocabulary a rule engine reasons
+    /// over -- never a literal object/def key. Optional, defaults to
+    /// empty; every named tag must already exist in `defs/tags/*.toml`
+    /// (`validate.rs`'s own dangling-reference check).
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -415,6 +421,130 @@ pub struct BalanceFile {
     pub balance: Vec<RawBalance>,
 }
 
+// --- tags (story 2.10, FR111): the rule engine's only vocabulary -----------
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawTag {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TagFile {
+    pub tag: Vec<RawTag>,
+}
+
+// --- rules (story 2.10, FR111/FR112): five closed constraint kinds ---------
+//
+// Tim's direction: a rule is a fixed-schema row, never a formula -- every
+// enum below is closed, `deny_unknown_fields` per kind, and every tag
+// reference is an authored key (resolved to a `sim::rules::TagId` in
+// `validate.rs`, never a literal object/def key past this crate).
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RawCoherenceMode {
+    Allow,
+    Forbid,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RawAdjacencyRelation {
+    Forbid,
+    Require,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RawDirection {
+    North,
+    East,
+    South,
+    West,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawPlacementRule {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    pub subject: Spanned<String>,
+    #[serde(default)]
+    pub container: Option<Spanned<String>>,
+    #[serde(default)]
+    pub floor_min: Option<i8>,
+    #[serde(default)]
+    pub floor_max: Option<i8>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawDistributionRule {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    pub subject: Spanned<String>,
+    pub per: Spanned<String>,
+    pub ratio: Spanned<i32>,
+    pub tolerance_percent: Spanned<i32>,
+    pub min_spacing: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawCoherenceRule {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    pub subject: Spanned<String>,
+    pub within: Spanned<String>,
+    pub mode: RawCoherenceMode,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawAdjacencyRule {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    pub a: Spanned<String>,
+    pub b: Spanned<String>,
+    pub relation: RawAdjacencyRelation,
+    #[serde(default)]
+    pub direction: Option<RawDirection>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawRequirementRule {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    pub container: Spanned<String>,
+    pub requires: Spanned<String>,
+    pub min: u32,
+    #[serde(default)]
+    pub max: Option<u32>,
+}
+
+/// `defs/rules/*.toml` may declare any mix of the five kinds below in one
+/// file (files are named by subject, e.g. `cafes.toml` -- Tim's
+/// direction), exactly like `AppearanceFile`'s own several-kinds-per-file
+/// shape.
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct RuleFile {
+    #[serde(default)]
+    pub placement: Vec<RawPlacementRule>,
+    #[serde(default)]
+    pub distribution: Vec<RawDistributionRule>,
+    #[serde(default)]
+    pub coherence: Vec<RawCoherenceRule>,
+    #[serde(default)]
+    pub adjacency: Vec<RawAdjacencyRule>,
+    #[serde(default)]
+    pub requirement: Vec<RawRequirementRule>,
+}
+
 // --- entries: one Raw* row plus the file it came from, spans resolved ------
 
 #[derive(Debug)]
@@ -433,6 +563,7 @@ pub struct ObjectEntry {
     pub collider: Option<Located<RawColliderRect>>,
     pub interact_at: Option<Located<RawColliderRect>>,
     pub window: bool,
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -559,6 +690,68 @@ pub struct UniformEntry {
     pub accessory: Option<String>,
 }
 
+#[derive(Debug)]
+pub struct TagEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+}
+
+#[derive(Debug)]
+pub struct PlacementEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub subject: Located<String>,
+    pub container: Option<Located<String>>,
+    pub floor_min: Option<i8>,
+    pub floor_max: Option<i8>,
+}
+
+#[derive(Debug)]
+pub struct DistributionEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub subject: Located<String>,
+    pub per: Located<String>,
+    pub ratio: Located<i32>,
+    pub tolerance_percent: Located<i32>,
+    pub min_spacing: u32,
+}
+
+#[derive(Debug)]
+pub struct CoherenceEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub subject: Located<String>,
+    pub within: Located<String>,
+    pub mode: RawCoherenceMode,
+}
+
+#[derive(Debug)]
+pub struct AdjacencyEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub a: Located<String>,
+    pub b: Located<String>,
+    pub relation: RawAdjacencyRelation,
+    pub direction: Option<RawDirection>,
+}
+
+#[derive(Debug)]
+pub struct RequirementEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub container: Located<String>,
+    pub requires: Located<String>,
+    pub min: u32,
+    pub max: Option<u32>,
+}
+
 /// An entry that carries a permanent, explicit numeric id and a key --
 /// every kind except `balance` (Tim's direction: balance seeds a future
 /// table by dotted key, never an id, in this story).
@@ -596,6 +789,12 @@ impl_id_key_entry!(OutfitEntry);
 impl_id_key_entry!(AccessoryEntry);
 impl_id_key_entry!(AppearanceLayoutEntry);
 impl_id_key_entry!(UniformEntry);
+impl_id_key_entry!(TagEntry);
+impl_id_key_entry!(PlacementEntry);
+impl_id_key_entry!(DistributionEntry);
+impl_id_key_entry!(CoherenceEntry);
+impl_id_key_entry!(AdjacencyEntry);
+impl_id_key_entry!(RequirementEntry);
 
 #[derive(Debug, Default)]
 pub struct RawDefs {
@@ -612,6 +811,12 @@ pub struct RawDefs {
     pub accessories: Vec<AccessoryEntry>,
     pub appearance_layouts: Vec<AppearanceLayoutEntry>,
     pub uniforms: Vec<UniformEntry>,
+    pub tags: Vec<TagEntry>,
+    pub placements: Vec<PlacementEntry>,
+    pub distributions: Vec<DistributionEntry>,
+    pub coherences: Vec<CoherenceEntry>,
+    pub adjacencies: Vec<AdjacencyEntry>,
+    pub requirements: Vec<RequirementEntry>,
 }
 
 // --- the plain, validated shapes emit.rs reads ------------------------------
@@ -648,6 +853,9 @@ pub struct ObjectDef {
     /// Present exactly when this object declares an interaction (FR148).
     pub interact_at: Option<ColliderRect>,
     pub window: bool,
+    /// Resolved tag ids (story 2.10, FR111), sorted and deduplicated --
+    /// the engine's only vocabulary, never a literal key past this point.
+    pub tags: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -766,6 +974,59 @@ pub struct UniformDef {
     pub accessory: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagDef {
+    pub id: u32,
+    pub key: String,
+}
+
+/// The validated, resolved (tag key -> id) shape of each rule kind --
+/// mirrors `sim::rules::RuleKind` variant for variant, field for field
+/// (Crew's decision: the two are hand-kept in sync, exactly like
+/// `Family`/`Pool`/`Slot` already are between this crate and `emit.rs`'s
+/// own generated text; `emit.rs`'s rule tests pin the exact printed Rust
+/// literal against this shape).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleKindDef {
+    Placement {
+        subject: u32,
+        container: Option<u32>,
+        floor_min: Option<i8>,
+        floor_max: Option<i8>,
+    },
+    Distribution {
+        subject: u32,
+        per: u32,
+        ratio: u32,
+        tolerance_percent: u32,
+        min_spacing: u32,
+    },
+    Coherence {
+        subject: u32,
+        within: u32,
+        mode: RawCoherenceMode,
+    },
+    Adjacency {
+        a: u32,
+        b: u32,
+        relation: RawAdjacencyRelation,
+        direction: Option<RawDirection>,
+    },
+    Requirement {
+        container: u32,
+        requires: u32,
+        min: u32,
+        max: Option<u32>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleDef {
+    pub id: u32,
+    pub key: String,
+    pub kind: RuleKindDef,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Defs {
     pub objects: Vec<ObjectDef>,
@@ -781,4 +1042,6 @@ pub struct Defs {
     pub accessories: Vec<AccessoryDef>,
     pub appearance_layouts: Vec<AppearanceLayoutDef>,
     pub uniforms: Vec<UniformDef>,
+    pub tags: Vec<TagDef>,
+    pub rules: Vec<RuleDef>,
 }

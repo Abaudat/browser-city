@@ -57,6 +57,20 @@ export interface ObjectDef {
   /** Story 1.7 (FR121): a window wall tile draws semi-transparently
    * (`render.window_alpha`) and retracts like any other front wall. */
   readonly window: boolean;
+  /** Story 2.10 (FR111): the rule engine's own vocabulary -- resolved tag
+   * ids, each naming a row in `Defs.tags`. Absent (or empty) means this
+   * object carries no tags. */
+  readonly tags: readonly number[];
+}
+
+/** One `defs/tags/*.toml` row (story 2.10, FR111) -- the rule engine's
+ * only vocabulary. The client never evaluates a rule (rule rows never
+ * reach this artefact, Tim's direction), but it does validate that every
+ * `ObjectDef.tags` entry names a real row here, exactly like `layer`
+ * resolves against the layer table. */
+export interface TagDef {
+  readonly id: number;
+  readonly key: string;
 }
 
 export interface ItemDef {
@@ -209,4 +223,5 @@ export interface Defs {
   readonly accessories: readonly AccessoryDef[];
   readonly appearanceLayouts: readonly AppearanceLayoutDef[];
   readonly uniforms: readonly UniformDef[];
+  readonly tags: readonly TagDef[];
 }

@@ -61,6 +61,7 @@ describe("parseDefs", () => {
         width: 1,
         height: 1,
         window: false,
+        tags: [],
       },
     ]);
     expect(defs.recipes[0]?.inputs).toEqual(["bottle"]);
@@ -168,6 +169,54 @@ describe("parseDefs", () => {
       { key: "render.tile_size_px", value: 16, min: 1, max: 64 },
     ];
     expect(() => parseDefs(payload)).not.toThrow();
+  });
+
+  // --- story 2.10: tags (FR111) ---------------------------------------------
+
+  it("defaults tags to an empty table and every object's tags to an empty array when absent", () => {
+    const defs = parseDefs(validPayload());
+    expect(defs.tags).toEqual([]);
+    expect(defs.objects[0]?.tags).toEqual([]);
+  });
+
+  it("parses a declared tag table and an object naming a real tag id", () => {
+    const payload = validPayload();
+    payload.tags = [{ id: 1, key: "waste" }];
+    (payload.objects as Record<string, unknown>[])[0].tags = [1];
+    const defs = parseDefs(payload);
+    expect(defs.tags).toEqual([{ id: 1, key: "waste" }]);
+    expect(defs.objects[0]?.tags).toEqual([1]);
+  });
+
+  it("rejects an object naming an unknown tag id", () => {
+    const payload = validPayload();
+    payload.tags = [{ id: 1, key: "waste" }];
+    (payload.objects as Record<string, unknown>[])[0].tags = [999];
+    expect(() => parseDefs(payload)).toThrow(/unknown tag id 999/);
+  });
+
+  it("rejects a duplicate tag id", () => {
+    const payload = validPayload();
+    payload.tags = [
+      { id: 1, key: "waste" },
+      { id: 1, key: "seating" },
+    ];
+    expect(() => parseDefs(payload)).toThrow(/duplicate tag id 1/);
+  });
+
+  it("rejects a duplicate tag key", () => {
+    const payload = validPayload();
+    payload.tags = [
+      { id: 1, key: "waste" },
+      { id: 2, key: "waste" },
+    ];
+    expect(() => parseDefs(payload)).toThrow(/duplicate tag key 'waste'/);
+  });
+
+  it("rejects an unknown field on a tag row", () => {
+    const payload = validPayload();
+    payload.tags = [{ id: 1, key: "waste", bogus: true }];
+    expect(() => parseDefs(payload)).toThrow(/unknown field 'bogus'/);
   });
 
   it("parses a present collider and leaves an absent one undefined", () => {
@@ -702,7 +751,7 @@ describe("canonicalDump", () => {
         "chain plastic_bottle id=1 links=[sanitation_worker]",
         "item bottle id=1",
         "item recycled_glass id=2",
-        "object trash_bin id=1 name=Trash Bin layer=2 sprite=x.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false",
+        "object trash_bin id=1 name=Trash Bin layer=2 sprite=x.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[]",
         "profession sanitation_worker id=1",
         "recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]",
         "",

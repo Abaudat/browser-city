@@ -28,5 +28,6 @@
   "object-dimension-zero",
   "empty-object-name",
   "footprint-cap-exceeded",
-  "walkable-flag-rejected"
+  "walkable-flag-rejected",
+  "dangling-tag-reference"
 ]

@@ -510,3 +510,16 @@ accessory 93 addon_accessory_28_military_general_hat
 appearance_layout 1 adult
 appearance_layout 2 kid
 uniform 1 sanitation_worker_uniform
+tag 1 waste
+tag 2 seating
+tag 3 counter
+tag 4 lighting
+tag 5 shopfront
+tag 6 wall
+tag 7 bridge
+tag 8 stairs
+rule 1 lighting_ground_floor_only
+rule 2 waste_per_three_seating
+rule 3 no_counter_in_a_stairwell
+rule 4 counter_faces_a_shopfront
+rule 5 walled_room_has_waste_bin

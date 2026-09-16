@@ -249,6 +249,8 @@ jobs:
         run: bash ../../scripts/ci/check-no-walkable-field.sh
       - name: story 2.2, ci.yml's defs filter covers the whole sprite-sheet allowed root
         run: bash ../../scripts/ci/check-defs-sprite-root-filter.sh
+      - name: story 2.10 AC3, the rule engine never hardcodes a content key
+        run: bash ../../scripts/ci/check-rule-engine-no-content-keys.sh
       # Quentin's direction, cycle 2: client-check's own filter (client/**,
       # server/**, scripts/**, .github/**, fixtures/**) never covers
       # tools/defs-build/**, so a PR that only edits layer_codes.rs's own
@@ -284,6 +286,8 @@ jobs:
       - run: bash ../scripts/ci/check-golden-version-bump.sh
       - run: bash ../scripts/ci/check-codes-append-only.sh
       - run: bash ../scripts/ci/check-schema-additive.sh
+      - name: story 2.10 AC3, the rule engine never hardcodes a content key
+        run: bash ../scripts/ci/check-rule-engine-no-content-keys.sh
 
   test:
     name: test
