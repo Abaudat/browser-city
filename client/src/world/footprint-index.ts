@@ -173,14 +173,18 @@ export class FootprintIndex implements FootprintQuery {
         `FootprintIndex: object ${row.objectId} has orientation ${row.orientation} -- rotated footprints are not supported until a story defines them`,
       );
     }
-    // The footprint, plus whatever the art draws outside it: upward from
-    // the anchor row (bottom-anchored sprites never overhang downward)
-    // and symmetrically sideways (they are centre-anchored).
+    // `row.x`/`row.y` are the anchor cell -- the footprint's smallest x,
+    // largest y cell (the object-def anchor AC), i.e. its south row's west end. The
+    // footprint's own cells span `height` rows north of and including the
+    // anchor row; the art may overhang further north still (bottom-
+    // anchored sprites never overhang south) and symmetrically sideways
+    // (they are centre-anchored).
     const up = def.drawOverhangCellsUp ?? 0;
     const side = def.drawOverhangCellsX ?? 0;
+    const northY = row.y - (def.height - 1);
     for (let dy = -up; dy < def.height; dy++) {
       for (let dx = -side; dx < def.width + side; dx++) {
-        fn(row.x + dx, row.y + dy);
+        fn(row.x + dx, northY + dy);
       }
     }
   }

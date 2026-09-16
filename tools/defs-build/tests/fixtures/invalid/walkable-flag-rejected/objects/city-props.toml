@@ -1,0 +1,13 @@
+[[object]]
+id = 1
+key = "trash_bin"
+name = "Trash Bin"
+layer = "furniture"
+sprite = { sheet = "fixtures/objects/trash-bin-test.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+# FR128: absence of a collider is walkability -- there is no separate
+# `walkable` flag anywhere in the schema. `deny_unknown_fields` refuses
+# this whether or not the flag would have matched the object's own
+# collider state.
+walkable = true

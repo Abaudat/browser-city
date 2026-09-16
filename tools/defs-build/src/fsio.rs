@@ -6,6 +6,21 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// The single append-only source of truth for `sim::codes::layer`'s
+/// numeric ladder (Tim's direction, story 2.2) -- the only place this
+/// crate ever reads a layer name's code from. Declared once, here, so no
+/// caller hard-codes the path itself.
+pub const CODES_GOLDEN_PATH: &str = "server/sim/tests/goldens/codes_v1.golden";
+
+/// Reads [`CODES_GOLDEN_PATH`]'s own text, relative to `repo_root` --
+/// [`crate::layer_codes::parse_layer_codes`] is the pure function that
+/// turns it into a `name -> code` map. A missing file is a hard error
+/// naming the path, exactly like [`read_text`].
+pub fn read_codes_golden(repo_root: &Path) -> io::Result<String> {
+    let path = repo_root.join(CODES_GOLDEN_PATH);
+    std::fs::read_to_string(&path).map_err(|e| io::Error::other(format!("{}: {e}", path.display())))
+}
+
 fn run_git_ls_files(repo_root: &Path, args: &[&str]) -> io::Result<Vec<PathBuf>> {
     let output = Command::new("git")
         .arg("-C")
@@ -304,6 +319,24 @@ mod tests {
         std::fs::write(dir.join("bad.png"), b"not a png").unwrap();
         let err = read_png_dims(&dir, &["bad.png".to_string()]).unwrap_err();
         assert!(err.to_string().contains("bad.png"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_codes_golden_reads_the_real_committed_golden() {
+        // `repo_root` from this crate's own `CARGO_MANIFEST_DIR` --
+        // `tools/defs-build/../..` is the repo root, exactly like the
+        // `defs-build` binary's own `repo_root()`.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let text = read_codes_golden(&root).unwrap();
+        assert!(text.contains("layer 2 furniture 10"));
+    }
+
+    #[test]
+    fn read_codes_golden_fails_naming_a_missing_path() {
+        let dir = make_scratch_dir("defs-build-test-codes-missing").unwrap();
+        let err = read_codes_golden(&dir).unwrap_err();
+        assert!(err.to_string().contains(CODES_GOLDEN_PATH));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

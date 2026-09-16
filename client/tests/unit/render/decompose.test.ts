@@ -28,10 +28,14 @@ describe("decomposeFootprint", () => {
             seen.add(key);
           }
 
+          // The anchor (x, y) is the footprint's south-west corner
+          // (smallest x, largest y -- story 2.2's AC): the footprint
+          // extends east and north from it, never south.
           const expectedAnchors = new Set<string>();
+          const northY = y - (height - 1);
           for (let dy = 0; dy < height; dy++) {
             for (let dx = 0; dx < width; dx++) {
-              expectedAnchors.add(`${x + dx},${y + dy}`);
+              expectedAnchors.add(`${x + dx},${northY + dy}`);
             }
           }
           expect(seen).toEqual(expectedAnchors);
@@ -52,6 +56,26 @@ describe("decomposeFootprint", () => {
       { x: 10, y: 5, sourceCol: 0, sourceRow: 0 },
       { x: 11, y: 5, sourceCol: 1, sourceRow: 0 },
       { x: 12, y: 5, sourceCol: 2, sourceRow: 0 },
+    ]);
+  });
+
+  // Story 2.2's AC: the anchor is the footprint's smallest x, largest y
+  // cell -- an asymmetric, multi-row footprint (3 wide, 2 tall) is the
+  // only shape that can tell that convention apart from a top-left
+  // anchor, since every 1-tall object (every real def today) reads
+  // identically either way.
+  it("an asymmetric multi-row footprint anchors at its south-west corner, not its top-left", () => {
+    const cells = decomposeFootprint({ x: 10, y: 5, width: 3, height: 2 });
+
+    expect(cells).toEqual([
+      // North row (y = 4, one above the anchor's own row): sourceRow 0.
+      { x: 10, y: 4, sourceCol: 0, sourceRow: 0 },
+      { x: 11, y: 4, sourceCol: 1, sourceRow: 0 },
+      { x: 12, y: 4, sourceCol: 2, sourceRow: 0 },
+      // South row (y = 5, the anchor's own row): sourceRow 1.
+      { x: 10, y: 5, sourceCol: 0, sourceRow: 1 },
+      { x: 11, y: 5, sourceCol: 1, sourceRow: 1 },
+      { x: 12, y: 5, sourceCol: 2, sourceRow: 1 },
     ]);
   });
 

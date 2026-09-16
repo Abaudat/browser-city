@@ -51,6 +51,18 @@ pub const COLLIDER_SUBCELLS_PER_CELL: i64 = 16;
 /// crate or a caller is a defect.
 pub const INTERACT_AT_MAX_REACH_CELLS: i64 = 2;
 
+/// FR127's cap: a footprint's `width` and `height` are each held to this,
+/// independently, so a footprint is never wider or taller than
+/// approximately 8 cells -- larger structures compose from multiple
+/// objects. Declared once, here, next to [`COLLIDER_SUBCELLS_PER_CELL`],
+/// and emitted into both generated artefacts by `emit.rs` -- a literal 8
+/// anywhere else in this crate or a caller is a defect. The region-
+/// subscription margin a future story adds depends on this being a real
+/// constant (never re-derived): `server/sim/src/world/chunk.rs` asserts
+/// at compile time that it never exceeds `CHUNK_SIZE`, once this constant
+/// reaches `sim::generated::defs` (see `emit.rs`).
+pub const MAX_FOOTPRINT_CELLS: i64 = 8;
+
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RawColliderRect {
@@ -60,21 +72,54 @@ pub struct RawColliderRect {
     pub y1: i32,
 }
 
+/// One whole-object sprite rectangle (Tim's direction, story 2.2): the
+/// tileset ships whole objects as single PNGs, so this is always one
+/// rectangle, never a composited set. `sheet` is a path relative to the
+/// repo root, under `ModernTileset/`; `x`/`y`/`w`/`h` are whole source
+/// pixels. No `page` field: story 2.6's packer does not exist yet, so the
+/// authored sheet path is the atlas page until it does -- this shape
+/// never changes once that story lands, only what a build step does with
+/// it.
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSpriteRect {
+    pub sheet: String,
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawObject {
     pub id: Spanned<u32>,
     pub key: Spanned<String>,
+    /// A free-text display string (Tim's direction) -- never used as a
+    /// lookup key; `key` stays the lookup. Never translated in this
+    /// story.
+    pub name: Spanned<String>,
+    /// The layer's own name, as declared in `sim::codes::layer`'s golden
+    /// (`server/sim/tests/goldens/codes_v1.golden`) -- resolved to its
+    /// numeric code at build time (`validate.rs`); the runtime artefacts
+    /// only ever carry the resolved code.
+    pub layer: Spanned<String>,
+    pub sprite: Spanned<RawSpriteRect>,
     pub width: u32,
     pub height: u32,
     /// A half-open integer rect in sub-cells relative to the footprint's
-    /// top-left anchor cell (FR128). Absent means walkable -- there is no
-    /// separate `walkable` flag anywhere.
+    /// own north-west sub-cell origin (its top-left, matching the
+    /// sprite's own pixel space -- FR128). Not the same corner as the
+    /// *anchor cell* a placed row's `x`/`y` names, which is the
+    /// footprint's smallest x, largest y cell (its south-west corner, the
+    /// AC's own convention): the two coincide only for a one-cell-tall
+    /// object, which is every object today. Absent means walkable --
+    /// there is no separate `walkable` flag anywhere.
     pub collider: Option<Spanned<RawColliderRect>>,
     /// Story 1.9 (FR148): where a player must stand to interact with this
     /// object -- a half-open integer rect in sub-cells relative to the
-    /// footprint's own anchor cell, the same unit a `collider` uses.
-    /// Unlike a `collider` it may reach outside the footprint (up to
+    /// same north-west sub-cell origin a `collider` uses. Unlike a
+    /// `collider` it may reach outside the footprint (up to
     /// [`INTERACT_AT_MAX_REACH_CELLS`] on every side). Its presence *is*
     /// the declaration that this object has an interaction; there is no
     /// separate `interactable` flag anywhere.
@@ -364,6 +409,12 @@ pub struct ObjectEntry {
     pub path: PathBuf,
     pub id: Located<u32>,
     pub key: Located<String>,
+    pub name: Located<String>,
+    /// The authored layer *name*, not yet resolved -- `validate.rs`
+    /// resolves it against the codes golden and stores the numeric code
+    /// on [`ObjectDef`].
+    pub layer: Located<String>,
+    pub sprite: Located<RawSpriteRect>,
     pub width: u32,
     pub height: u32,
     pub collider: Option<Located<RawColliderRect>>,
@@ -561,9 +612,23 @@ pub struct ColliderRect {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpriteRect {
+    pub sheet: String,
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectDef {
     pub id: u32,
     pub key: String,
+    pub name: String,
+    /// The resolved `sim::codes::layer` numeric code -- never the
+    /// authored name past `validate.rs`.
+    pub layer: u32,
+    pub sprite: SpriteRect,
     pub width: u32,
     pub height: u32,
     pub collider: Option<ColliderRect>,

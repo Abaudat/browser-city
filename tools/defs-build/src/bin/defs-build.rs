@@ -9,7 +9,9 @@ use std::process::ExitCode;
 
 use std::collections::BTreeMap;
 
-use defs_build::{appearance_sheet_paths, build, fsio, parse, version};
+use defs_build::{
+    appearance_sheet_paths, build, fsio, layer_codes, object_sprite_sheet_paths, parse, version,
+};
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -55,17 +57,26 @@ fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut text_files = fsio::read_text(root, &tracked)?;
     text_files.sort_by(|a, b| a.0.cmp(&b.0));
 
-    // Story 1.10: which sheets does the tree reference, so their real
-    // `IHDR` dimensions can be read before `validate` checks the layout
-    // invariant against them -- the one impure step `build` itself never
-    // performs (Quentin's direction: parse/validate/emit stay pure).
+    // Story 1.10/2.2: which sheets does the tree reference, so their real
+    // `IHDR` dimensions can be read before `validate` checks the layout/
+    // sprite invariants against them -- the one impure step `build` itself
+    // never performs (Quentin's direction: parse/validate/emit stay pure).
     let raw = parse::parse_all(&text_files)?;
-    let sheet_paths = appearance_sheet_paths(&raw);
+    let mut sheet_paths = appearance_sheet_paths(&raw);
+    sheet_paths.extend(object_sprite_sheet_paths(&raw));
+    sheet_paths.sort();
+    sheet_paths.dedup();
     let sheet_dims: BTreeMap<String, (u32, u32)> = fsio::read_png_dims(root, &sheet_paths)?
         .into_iter()
         .collect();
 
-    let output = build(&text_files, &sheet_dims, &defs_version)?;
+    // Story 2.2: a `layer` name resolves against the codes golden --
+    // `sim::codes::layer`'s single append-only ladder -- never a second,
+    // hand-maintained list in this crate.
+    let codes_golden = fsio::read_codes_golden(root)?;
+    let layer_codes = layer_codes::parse_layer_codes(&codes_golden);
+
+    let output = build(&text_files, &sheet_dims, &layer_codes, &defs_version)?;
 
     let rust_path = root.join("server/sim/src/generated/defs.rs");
     let json_path = root.join("client/public/defs/defs.json");

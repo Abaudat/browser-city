@@ -58,6 +58,29 @@ describe("FootprintIndex", () => {
     expect(index.objectsAt(0, 4, 3)).toEqual([]);
   });
 
+  // Story 2.2's AC: the anchor is the footprint's smallest x, largest y
+  // cell, not its top-left -- an asymmetric, multi-row footprint (3 wide,
+  // 2 tall) is the only shape that can tell the two conventions apart,
+  // since every real def today is one cell tall.
+  it("an asymmetric multi-row footprint covers cells north of its anchor, never south", () => {
+    const threeByTwo: FootprintSource = { width: 3, height: 2 };
+    const index = indexWith(new Map([[1, threeByTwo]]));
+    index.insert(row({ objectId: 8n, x: 10, y: 5 }));
+    // Anchor row (south, y=5) and the one row north of it (y=4): both
+    // three cells wide, west end at x=10.
+    for (const y of [4, 5]) {
+      for (const x of [10, 11, 12]) {
+        expect(index.objectsAt(0, x, y).map((e) => e.objectId)).toEqual([8n]);
+      }
+    }
+    // Never south of the anchor row, never west/east of the footprint,
+    // never further north than the footprint's own height.
+    expect(index.objectsAt(0, 10, 6)).toEqual([]);
+    expect(index.objectsAt(0, 9, 5)).toEqual([]);
+    expect(index.objectsAt(0, 13, 5)).toEqual([]);
+    expect(index.objectsAt(0, 10, 3)).toEqual([]);
+  });
+
   it("carries the def id and the layer code each pick needs", () => {
     const index = indexWith(new Map([[3, ONE_CELL]]));
     index.insert(row({ objectId: 9n, defId: 3, layer: 42, x: 1, y: 1 }));
@@ -136,12 +159,14 @@ describe("FootprintIndex", () => {
   it("update is delete then insert, across a chunk boundary", () => {
     const index = indexWith(new Map([[1, TWO_BY_TWO]]));
     const before = row({ objectId: 1n, x: 1, y: 1 });
-    const after = row({ objectId: 1n, x: 31, y: 31 });
+    // The anchor is the footprint's south row (largest y): (31, 32)'s
+    // footprint covers rows 31 and 32, columns 31 and 32 -- spanning four
+    // chunks (CHUNK_SIZE is 32), the same property the pre-story-2.2
+    // anchor (31, 31) gave under the old top-left convention.
+    const after = row({ objectId: 1n, x: 31, y: 32 });
     index.insert(before);
     index.update(before, after);
     expect(index.objectsAt(0, 1, 1)).toEqual([]);
-    // A 2x2 footprint anchored at (31, 31) spans four cells across four
-    // chunks (CHUNK_SIZE is 32).
     expect(index.objectsAt(0, 31, 31)).toHaveLength(1);
     expect(index.objectsAt(0, 32, 31)).toHaveLength(1);
     expect(index.objectsAt(0, 31, 32)).toHaveLength(1);

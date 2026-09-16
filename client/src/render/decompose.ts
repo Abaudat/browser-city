@@ -12,7 +12,14 @@
  * `height` come from `object_def`, in whole tiles, always >= 1. FR127
  * caps a real footprint at approximately 8x8; this function is total for
  * any positive integer extent -- the cap is enforced where a definition
- * is authored, not here. */
+ * is authored, not here.
+ *
+ * `x`/`y` are the anchor cell -- the footprint's smallest x, largest y
+ * cell (its south-west corner, story 2.2's AC), not its top-left: the
+ * footprint extends east (`x` increasing) and north (`y` decreasing) from
+ * it. Every object today is one cell tall, which hides this on sight; a
+ * multi-row footprint is the only way to tell the two conventions apart,
+ * which is exactly what the asymmetric test below pins. */
 export interface Footprint {
   readonly x: number;
   readonly y: number;
@@ -40,10 +47,13 @@ function assertPositiveInteger(value: number, name: string): void {
 /** Anchor cell plus extent in, `width * height` per-cell drawables out
  * (FR125), one per cell of the footprint, anchors covering the footprint
  * exactly once -- `inv_multicell_prop_covers_footprint_once`
- * (`client/tests/unit/render/decompose.test.ts`). Row-major so a 1xN
- * counter's cells come out in a stable, predictable walking order, though
- * nothing downstream depends on the order itself (the sort key does, and
- * it reads `x`/`y`, not array position). */
+ * (`client/tests/unit/render/decompose.test.ts`). Row-major, `sourceRow`
+ * 0 at the footprint's north (smallest-y) edge -- matching the sprite's
+ * own pixel space, top row first -- counting down to `height - 1` at the
+ * anchor's own row (the south, largest-y edge, story 2.2's AC). A 1xN
+ * counter's cells still come out in a stable, predictable walking order,
+ * though nothing downstream depends on the order itself (the sort key
+ * does, and it reads `x`/`y`, not array position). */
 export function decomposeFootprint(footprint: Footprint): readonly CellDrawable[] {
   assertPositiveInteger(footprint.width, "width");
   assertPositiveInteger(footprint.height, "height");
@@ -52,11 +62,12 @@ export function decomposeFootprint(footprint: Footprint): readonly CellDrawable[
   }
 
   const cells: CellDrawable[] = [];
+  const northY = footprint.y - (footprint.height - 1);
   for (let row = 0; row < footprint.height; row++) {
     for (let col = 0; col < footprint.width; col++) {
       cells.push({
         x: footprint.x + col,
-        y: footprint.y + row,
+        y: northY + row,
         sourceCol: col,
         sourceRow: row,
       });

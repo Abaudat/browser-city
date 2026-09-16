@@ -137,6 +137,42 @@ describe("CollisionGrid", () => {
     expect(() => grid.delete(row({ objectId: 42n, x: 6, y: 5 }))).not.toThrow();
   });
 
+  // Story 2.2's AC: the anchor is the footprint's smallest x, largest y
+  // cell, not its top-left -- an asymmetric, multi-row footprint (3 wide,
+  // 2 tall) with an off-centre collider is the only shape that can tell
+  // the two conventions apart, since every real def today is one cell
+  // tall.
+  it("an asymmetric multi-row footprint's collider rasterises relative to its south-west anchor, not its top-left", () => {
+    // A 3x2 footprint (48x32 sub-cells) with a collider covering only the
+    // north-east quadrant's own top-left sub-cell corner: x0=32 (east
+    // half), y0=0 (north row), a 4x4 sub-cell square.
+    const asymmetric: ColliderSource = {
+      width: 3,
+      height: 2,
+      collider: { x0: 32, y0: 0, x1: 36, y1: 4 },
+    };
+    const grid = gridWith(new Map([[1, asymmetric]]));
+    // Anchor at (10, 5): south row is y=5 (west end x=10), north row is
+    // y=4. The collider's sub-cell rect (32..36, 0..4) falls in the
+    // north row (y=4)'s third column (x=12): sub-cell x 32..36 is cell
+    // x=2 within the footprint -> world x = 10+2 = 12; sub-cell y 0..4 is
+    // the footprint's own north-most row -> world y = 4.
+    grid.insert(row({ objectId: 1n, x: 10, y: 5 }));
+    expect(grid.entriesInCell(0, 12, 4)).toHaveLength(1);
+    expect(grid.entriesInCell(0, 12, 4)[0]?.rect).toEqual({ x0: 192, y0: 64, x1: 196, y1: 68 });
+    // Every other one of the 6 footprint cells is untouched -- the
+    // collider occupies exactly the one sub-cell corner named above.
+    for (const [dx, dy] of [
+      [0, 5],
+      [1, 5],
+      [2, 5],
+      [0, 4],
+      [1, 4],
+    ]) {
+      expect(grid.entriesInCell(0, 10 + dx, dy)).toEqual([]);
+    }
+  });
+
   it("throws on a non-zero orientation, rather than silently using an unrotated collider", () => {
     const grid = gridWith(new Map([[1, DEF_WITH_COLLIDER]]));
     expect(() => grid.insert(row({ objectId: 1n, orientation: 1 }))).toThrow(/orientation/);

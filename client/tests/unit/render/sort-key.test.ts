@@ -272,3 +272,76 @@ describe("setDrawablePosition / setDrawableFloor", () => {
     expect(d).toEqual({ x: 1, y: 2, rank: 3, stableId: 9n, floor: -1 });
   });
 });
+
+// Story 2.2's AC: several objects may share an anchor cell (a rug, a
+// table and a glass) -- all three are retained (FR126: one row each,
+// never merged), and draw order follows `layer_rank` at draw time,
+// identical for every insertion order. The rug is on `furniture` (rank
+// 10); the table and the glass are both on `objects` (rank 20) -- the
+// same rank, on purpose, so the tiebreak below is pinned too.
+describe("several drawables sharing one anchor cell", () => {
+  const ANCHOR_X = 340;
+  const ANCHOR_Y = 120;
+  const FURNITURE_RANK = 10;
+  const OBJECTS_RANK = 20;
+
+  const rug: Drawable = {
+    x: ANCHOR_X,
+    y: ANCHOR_Y,
+    rank: FURNITURE_RANK,
+    stableId: 1n,
+    floor: 0,
+  };
+  const table: Drawable = {
+    x: ANCHOR_X,
+    y: ANCHOR_Y,
+    rank: OBJECTS_RANK,
+    stableId: 2n,
+    floor: 0,
+  };
+  const glass: Drawable = {
+    x: ANCHOR_X,
+    y: ANCHOR_Y,
+    rank: OBJECTS_RANK,
+    stableId: 3n,
+    floor: 0,
+  };
+
+  function permutations<T>(items: readonly T[]): T[][] {
+    if (items.length <= 1) return [items.slice()];
+    const out: T[][] = [];
+    for (let i = 0; i < items.length; i++) {
+      const rest = [...items.slice(0, i), ...items.slice(i + 1)];
+      for (const perm of permutations(rest)) {
+        out.push([items[i] as T, ...perm]);
+      }
+    }
+    return out;
+  }
+
+  const all = [rug, table, glass];
+  const insertionOrders = permutations(all);
+
+  it("has all 6 possible insertion orders for 3 distinct drawables", () => {
+    // Guards the test itself: a permutations() bug that silently returned
+    // fewer than 3! orders would make the loop below pass vacuously.
+    expect(insertionOrders).toHaveLength(6);
+  });
+
+  for (const order of insertionOrders) {
+    const names = order.map((d) => (d === rug ? "rug" : d === table ? "table" : "glass")).join(",");
+    it(`sorts to rug, table, glass regardless of insertion order (${names})`, () => {
+      const pool = [...order];
+      sortDrawablesInPlace(pool);
+      // All three retained -- FR126, never merged into one row.
+      expect(pool).toHaveLength(3);
+      // The rug (furniture, rank 10) always draws first.
+      expect(pool[0]).toBe(rug);
+      // The table and the glass (both objects, rank 20) tie on rank and
+      // on x/y (the same anchor cell) -- the documented tiebreak is
+      // stableId, ascending (`sort-key.ts`'s own comparator doc comment).
+      expect(pool[1]).toBe(table);
+      expect(pool[2]).toBe(glass);
+    });
+  }
+});

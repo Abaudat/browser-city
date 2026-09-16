@@ -39,6 +39,10 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "appearance-id-too-large" => "appearance-id-too-large",
         "appearance-family-mismatch" => "appearance-family-mismatch",
         "appearance-dangling-uniform-profession" => "appearance-dangling-uniform-profession",
+        "sprite-zero-area" => "sprite-zero-area",
+        "object-dimension-zero" => "object-dimension-zero",
+        "footprint-cap-exceeded" => "footprint-cap-exceeded",
+        "walkable-flag-rejected" => "walkable-flag-rejected",
         other => panic!(
             "shared case '{other}' has no mapped tests/fixtures/invalid/ directory -- add one to fixture_for()"
         ),

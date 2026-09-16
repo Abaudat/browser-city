@@ -18,5 +18,9 @@
   "appearance-id-zero",
   "appearance-id-too-large",
   "appearance-family-mismatch",
-  "appearance-dangling-uniform-profession"
+  "appearance-dangling-uniform-profession",
+  "sprite-zero-area",
+  "object-dimension-zero",
+  "footprint-cap-exceeded",
+  "walkable-flag-rejected"
 ]

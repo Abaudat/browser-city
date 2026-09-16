@@ -101,6 +101,7 @@ function defsWith(overrides: Partial<Defs> = {}): Defs {
     defsVersion: "test",
     colliderSubcellsPerCell: 16,
     interactAtMaxReachCells: 2,
+    maxFootprintCells: 8,
     objects: [],
     items: [],
     recipes: [],

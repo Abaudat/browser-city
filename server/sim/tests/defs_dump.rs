@@ -48,8 +48,19 @@ fn canonical_dump() -> String {
         let collider = rect(o.collider);
         let interact_at = rect(o.interact_at);
         lines.push(format!(
-            "object {} id={} height={} width={} collider={collider} interact_at={interact_at} window={}",
-            o.key, o.id, o.height, o.width, o.window
+            "object {} id={} name={} layer={} sprite={}:{},{},{},{} height={} width={} collider={collider} interact_at={interact_at} window={}",
+            o.key,
+            o.id,
+            o.name,
+            o.layer,
+            o.sprite.sheet,
+            o.sprite.x,
+            o.sprite.y,
+            o.sprite.w,
+            o.sprite.h,
+            o.height,
+            o.width,
+            o.window
         ));
     }
     for i in defs::ITEMS {

@@ -8,6 +8,13 @@ use super::collision::Rect;
 /// allowed to appear as a literal.
 pub const CHUNK_SIZE: i32 = 32;
 
+/// FR127's cap must never exceed a chunk's own edge, or the one-chunk
+/// subscription halo a multi-cell object's overhang relies on
+/// (`../../../src/tables/world.rs`'s `PlacedObject.chunk_key` doc comment)
+/// stops being enough -- checked at compile time, not by a comment, so
+/// this can never silently drift once `MAX_FOOTPRINT_CELLS` changes.
+const _: () = assert!(crate::generated::defs::MAX_FOOTPRINT_CELLS <= CHUNK_SIZE);
+
 /// Bit widths of `chunk_key`'s three packed fields. 24+24+8 = 56 of 64
 /// bits; the remaining 8 are reserved and always zero.
 const CHUNK_X_BITS: u32 = 24;

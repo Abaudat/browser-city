@@ -4,8 +4,12 @@
 // (docs/architecture.md's naming table) -- deliberately not the
 // `camelCase` this file's own variables use.
 
-/** A half-open integer rect in sub-cells, relative to the footprint's
- * top-left anchor cell (FR128) -- `defs/`'s own unit,
+/** A half-open integer rect in sub-cells, relative to the footprint's own
+ * north-west sub-cell origin (its top-left, matching the sprite's own
+ * pixel space) -- not the same thing as the *anchor cell* a placed row's
+ * `x`/`y` names, which is the footprint's smallest x, largest y cell (its
+ * south-west corner, story 2.2's AC); the two only coincide for a
+ * one-cell-tall object, which is every object today. `defs/`'s own unit,
  * `COLLIDER_SUBCELLS_PER_CELL` sub-cells per cell, never tied to
  * `render.tile_size_px`. */
 export interface ColliderRect {
@@ -15,9 +19,29 @@ export interface ColliderRect {
   readonly y1: number;
 }
 
+/** One whole-object sprite rectangle (story 2.2): the tileset ships whole
+ * objects as single PNGs, so this is always one rectangle, never a
+ * composited set. `sheet` is a path relative to the repo root, under
+ * `ModernTileset/`; `x`/`y`/`w`/`h` are whole source pixels. */
+export interface SpriteRect {
+  readonly sheet: string;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
 export interface ObjectDef {
   readonly id: number;
   readonly key: string;
+  /** A free-text display string (story 2.2) -- never a lookup key; `key`
+   * stays the lookup. */
+  readonly name: string;
+  /** The resolved `sim::codes::layer` numeric code (FR123) -- the runtime
+   * artefact only ever carries the resolved code, never the authored
+   * name. */
+  readonly layer: number;
+  readonly sprite: SpriteRect;
   readonly width: number;
   readonly height: number;
   /** Absent means walkable (FR128) -- there is no separate `walkable`
@@ -168,6 +192,10 @@ export interface Defs {
    * whole cells (story 1.9) -- generated once by `tools/defs-build` into
    * both artefacts, never a client-side literal. */
   readonly interactAtMaxReachCells: number;
+  /** FR127's cap: a footprint's `width` and `height` are each held to
+   * this -- generated once by `tools/defs-build` into both artefacts,
+   * never a client-side literal. */
+  readonly maxFootprintCells: number;
   readonly objects: readonly ObjectDef[];
   readonly items: readonly ItemDef[];
   readonly recipes: readonly RecipeDef[];

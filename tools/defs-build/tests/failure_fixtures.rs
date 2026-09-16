@@ -14,7 +14,7 @@ mod support;
 
 use std::path::{Path, PathBuf};
 
-use support::{appearance_sheet_dims, build_err, merged_tree, read_tree, valid_dir};
+use support::{build_err, layer_codes, merged_tree, read_tree, sheet_dims, valid_dir};
 
 #[test]
 fn toml_syntax_error_names_the_offending_file_and_line() {
@@ -205,6 +205,66 @@ fn a_uniform_naming_an_unknown_profession_is_named() {
     assert!(err.message.contains("names unknown profession"));
 }
 
+/// Story 2.2: `layer` resolves against the codes golden, never a second
+/// hand-maintained list.
+#[test]
+fn an_object_naming_an_unknown_layer_is_named() {
+    let err = build_err("unknown-layer");
+    assert!(err.message.contains("unknown layer 'basement'"));
+}
+
+/// A sprite sheet path this crate never read `IHDR` dimensions for is a
+/// build error naming the object and the sheet.
+#[test]
+fn an_object_sprite_naming_a_sheet_never_read_is_named() {
+    let err = build_err("sprite-sheet-missing");
+    assert!(err.message.contains("dimensions were never read"));
+}
+
+/// A sprite rect with zero area is refused exactly like a zero-area
+/// collider.
+#[test]
+fn an_object_sprite_with_zero_area_is_named() {
+    let err = build_err("sprite-zero-area");
+    assert!(err.message.contains("zero width or height"));
+}
+
+/// A sprite rect reaching past its own sheet's real bounds is a build
+/// error.
+#[test]
+fn an_object_sprite_outside_its_sheet_is_named() {
+    let err = build_err("sprite-outside-sheet-bounds");
+    assert!(err.message.contains("does not fit inside sheet"));
+}
+
+/// A footprint width or height of 0 is refused -- every object occupies
+/// at least one cell.
+#[test]
+fn an_object_footprint_dimension_of_zero_is_named() {
+    let err = build_err("object-dimension-zero");
+    assert!(err.message.contains("footprint width or height of 0"));
+}
+
+/// FR127's cap: a 9-cell-wide footprint is refused, naming the object and
+/// directing the author to compose the structure from multiple objects.
+#[test]
+fn an_object_footprint_exceeding_the_cap_is_named() {
+    let err = build_err("footprint-cap-exceeded");
+    assert!(err.message.contains("exceeds MAX_FOOTPRINT_CELLS"));
+    assert!(
+        err.message
+            .contains("compose the structure from multiple objects")
+    );
+}
+
+/// FR128: there is no separate `walkable` flag anywhere in the schema --
+/// `deny_unknown_fields` refuses it exactly like any other unknown field.
+#[test]
+fn a_walkable_flag_is_named() {
+    let err = build_err("walkable-flag-rejected");
+    assert!(err.message.contains("walkable"));
+}
+
 /// Every category this module lists above has its own fixture directory
 /// under `tests/fixtures/invalid/` -- so a category added to one and not
 /// the other is a hard failure here, not a silent gap. `non-integer-id`
@@ -240,6 +300,13 @@ fn every_known_category_has_a_fixture_directory() {
         "appearance-id-too-large",
         "appearance-family-mismatch",
         "appearance-dangling-uniform-profession",
+        "unknown-layer",
+        "sprite-sheet-missing",
+        "sprite-zero-area",
+        "sprite-outside-sheet-bounds",
+        "object-dimension-zero",
+        "footprint-cap-exceeded",
+        "walkable-flag-rejected",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)
@@ -286,7 +353,7 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
         std::fs::write(&manifest_out, "sentinel manifest\n").unwrap();
 
         let files = merged_tree(category);
-        let result = defs_build::build(&files, &appearance_sheet_dims(), "test-version");
+        let result = defs_build::build(&files, &sheet_dims(), &layer_codes(), "test-version");
         assert!(result.is_err(), "'{category}' was expected to fail");
         if let Ok(output) = result {
             defs_build::fsio::atomic_write(&rust_out, &output.rust).unwrap();
@@ -318,6 +385,6 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
 #[test]
 fn the_valid_base_tree_builds_cleanly() {
     let files = read_tree(&valid_dir());
-    let result = defs_build::build(&files, &appearance_sheet_dims(), "test-version");
+    let result = defs_build::build(&files, &sheet_dims(), &layer_codes(), "test-version");
     assert!(result.is_ok(), "valid fixture failed: {:?}", result.err());
 }

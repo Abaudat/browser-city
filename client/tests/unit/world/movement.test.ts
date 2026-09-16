@@ -43,7 +43,15 @@ interface Row {
 function buildGrid(colliders: readonly Rect[]): CollisionGrid {
   const defs = new Map<number, ColliderSource>();
   colliders.forEach((c, i) => {
-    defs.set(i, { width: 100000, height: 100000, collider: c });
+    // `height: 1` -- not `width`, which contributes nothing to a
+    // collider's absolute position -- because the anchor cell is the
+    // footprint's own south (largest-y) row: any height above 1 would
+    // shift `c`'s absolute position by `(height - 1)` cells even with
+    // `row.y` fixed at 0, which is not this helper's intent (`c` is
+    // already an absolute-feeling rect; a fake, oversized footprint is
+    // only ever needed to keep FR128's containment check, which
+    // `CollisionGrid` itself never runs, out of the way).
+    defs.set(i, { width: 100000, height: 1, collider: c });
   });
   const grid = new CollisionGrid(SUBCELLS_PER_CELL, defs);
   colliders.forEach((_, i) => {
