@@ -14,7 +14,9 @@ use sim::rules::testing::SiteBuilder;
 use sim::rules::{
     AdjacencyRelation, AreaId, Cell, CoherenceMode, RuleDef, RuleKind, TagId, evaluate,
 };
-use sim::world::walkability::{WalkabilityGrid, enclosed_regions, erode, player_body_subcells};
+use sim::world::walkability::{
+    WalkabilityGrid, enclosed_regions, erode, narrow_passages, player_body_subcells,
+};
 use sim::world::{
     AreaSpec, FloorCollision, FloorSpec, NO_OWNER, Rect, TransitionSpec, WorldSpec, cell_index,
     chunk_key, fixture,
@@ -49,7 +51,7 @@ pub const INV_DOORWAY_GAP_AT_LEAST_BODY_WIDTH_IS_ONE_COMPONENT_UNDER_EROSION: &s
 pub const INV_SEALED_RING_YIELDS_EXACTLY_ONE_ENCLOSED_REGION: &str =
     "a ring with no gap at all always yields exactly one enclosed region (FR128)";
 pub const INV_REMOVING_A_DOOR_NEVER_REDUCES_ENCLOSED_REGIONS: &str = "narrowing a ring's own doorway gap (down to and including closing it entirely) never reduces the number of reported enclosed regions (FR128)";
-pub const INV_RING_OPEN_TO_THE_WINDOW_EDGE_IS_NEVER_REPORTED: &str = "a ring's own interior, pushed flush against the window's own edge with no wall and no margin between them, is never reported enclosed, for any ring size (FR128)";
+pub const INV_RING_OPEN_TO_ANY_WINDOW_EDGE_IS_NEVER_REPORTED: &str = "a ring's own interior, pushed flush against any one of the window's own four edges with no wall and no margin between them, is never reported by enclosed_regions or by narrow_passages, for a door narrower than the real player body (FR128)";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -668,45 +670,163 @@ fn ring_with_gap(gap_offset: i32, gap_width: i32) -> WalkabilityGrid {
 /// margin -- every `ring_with_gap` caller's own seed.
 const RING_EXTERIOR_SEED: (i32, i32) = (-RING_CELL_SUBCELLS / 2, -RING_CELL_SUBCELLS / 2);
 
-/// Tim's direction: a ring pushed against the window's own edge, its
-/// west wall entirely omitted and `bounds` itself cropped to start
-/// exactly at the interior's own west edge -- the interior touches
-/// `bounds.x0` directly, no wall and no margin between them, sealed on
-/// every other side (north has no door). Never reported: it continues
-/// (conceptually) past the window this grid is only ever a chunk of.
-fn ring_open_to_the_west_window_edge(ring_w_cells: i32, ring_h_cells: i32) -> WalkabilityGrid {
+/// Quentin's direction, cycle 2: which of the window's own four sides a
+/// [`ring_open_to_edge`] ring is pushed flush against.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Edge {
+    North,
+    East,
+    South,
+    West,
+}
+
+fn opposite_edge(edge: Edge) -> Edge {
+    match edge {
+        Edge::North => Edge::South,
+        Edge::South => Edge::North,
+        Edge::East => Edge::West,
+        Edge::West => Edge::East,
+    }
+}
+
+const EDGE_RING_W: i32 = 6 * RING_CELL_SUBCELLS;
+const EDGE_RING_H: i32 = 4 * RING_CELL_SUBCELLS;
+
+/// A wall segment `gap` sub-cells wide, centred over local span
+/// `0..span_len`, split into (up to) two stub `Rect`s within the full
+/// wall extent `[full_lo, full_hi)` on the cross axis -- shared by both
+/// the horizontal (north/south) and vertical (east/west) wall builders
+/// below, called with the axes swapped.
+fn wall_stubs(full_lo: i32, full_hi: i32, span_len: i32, gap: i32) -> Vec<(i32, i32)> {
+    let door_start = (span_len - gap) / 2;
+    let door_end = door_start + gap;
+    let mut stubs = Vec::new();
+    if door_start > full_lo {
+        stubs.push((full_lo, door_start));
+    }
+    if door_end < full_hi {
+        stubs.push((door_end, full_hi));
+    }
+    stubs
+}
+
+/// A ring's interior (fixed size, `EDGE_RING_W x EDGE_RING_H`), pushed
+/// flush against one of the window's own four edges: the wall on that
+/// side is entirely omitted and `bounds` itself cropped to the
+/// interior's own boundary there, no wall and no margin between them.
+/// The other three sides keep a real wall and a generous margin, and the
+/// door -- `gap` sub-cells wide -- sits in the wall directly opposite the
+/// open edge, so the seed (in the margin beyond that door) must cross
+/// the door to reach the interior at all. Quentin's direction, cycle 2:
+/// the case that exposed the edge exemption's own bug, since an eroded
+/// origin can only ever touch `bounds.x0`/`bounds.y0` directly, never
+/// `bounds.x1 - 1`/`bounds.y1 - 1` -- pushing the ring against every one
+/// of the four sides in turn is what a west-only fixture could not catch.
+fn ring_open_to_edge(edge: Edge, gap: i32) -> (WalkabilityGrid, (i32, i32)) {
     let cell = RING_CELL_SUBCELLS;
-    let w = ring_w_cells * cell;
-    let h = ring_h_cells * cell;
     let margin = cell;
-    let interior_x0 = cell; // where a west wall's own east face would sit
+    let w = EDGE_RING_W;
+    let h = EDGE_RING_H;
+    let door_edge = opposite_edge(edge);
+
+    let west_present = edge != Edge::West;
+    let east_present = edge != Edge::East;
+    let north_present = edge != Edge::North;
+    let south_present = edge != Edge::South;
+
     let bounds = Rect {
-        x0: interior_x0,
-        y0: -margin,
-        x1: w + margin,
-        y1: h + margin,
+        x0: if west_present { -cell - margin } else { 0 },
+        x1: if east_present { w + cell + margin } else { w },
+        y0: if north_present { -cell - margin } else { 0 },
+        y1: if south_present { h + cell + margin } else { h },
     };
-    let colliders = vec![
-        Rect {
-            x0: interior_x0,
-            y0: 0,
-            x1: w - cell,
-            y1: cell,
-        }, // north wall, no door
-        Rect {
-            x0: w - cell,
-            y0: 0,
-            x1: w,
-            y1: h,
-        }, // east wall
-        Rect {
-            x0: interior_x0,
-            y0: h - cell,
-            x1: w,
-            y1: h,
-        }, // south wall
-    ];
-    WalkabilityGrid::build(bounds, &colliders).expect("ring geometry is always valid")
+
+    let mut colliders = Vec::new();
+    if west_present {
+        if door_edge == Edge::West {
+            for (y0, y1) in wall_stubs(-cell, h + cell, h, gap) {
+                colliders.push(Rect {
+                    x0: -cell,
+                    y0,
+                    x1: 0,
+                    y1,
+                });
+            }
+        } else {
+            colliders.push(Rect {
+                x0: -cell,
+                y0: -cell,
+                x1: 0,
+                y1: h + cell,
+            });
+        }
+    }
+    if east_present {
+        if door_edge == Edge::East {
+            for (y0, y1) in wall_stubs(-cell, h + cell, h, gap) {
+                colliders.push(Rect {
+                    x0: w,
+                    y0,
+                    x1: w + cell,
+                    y1,
+                });
+            }
+        } else {
+            colliders.push(Rect {
+                x0: w,
+                y0: -cell,
+                x1: w + cell,
+                y1: h + cell,
+            });
+        }
+    }
+    if north_present {
+        if door_edge == Edge::North {
+            for (x0, x1) in wall_stubs(-cell, w + cell, w, gap) {
+                colliders.push(Rect {
+                    x0,
+                    y0: -cell,
+                    x1,
+                    y1: 0,
+                });
+            }
+        } else {
+            colliders.push(Rect {
+                x0: -cell,
+                y0: -cell,
+                x1: w + cell,
+                y1: 0,
+            });
+        }
+    }
+    if south_present {
+        if door_edge == Edge::South {
+            for (x0, x1) in wall_stubs(-cell, w + cell, w, gap) {
+                colliders.push(Rect {
+                    x0,
+                    y0: h,
+                    x1,
+                    y1: h + cell,
+                });
+            }
+        } else {
+            colliders.push(Rect {
+                x0: -cell,
+                y0: h,
+                x1: w + cell,
+                y1: h + cell,
+            });
+        }
+    }
+
+    let grid = WalkabilityGrid::build(bounds, &colliders).expect("ring geometry is always valid");
+    let seed = match door_edge {
+        Edge::North => (w / 2, -cell - margin / 2),
+        Edge::South => (w / 2, h + cell + margin / 2),
+        Edge::East => (w + cell + margin / 2, h / 2),
+        Edge::West => (-cell - margin / 2, h / 2),
+    };
+    (grid, seed)
 }
 
 /// `(gap_width, gap_offset)`, integer-only (NFR25: `sim` is
@@ -808,19 +928,31 @@ proptest! {
         prop_assert!(narrow_count >= wide_count);
     }
 
-    /// `inv_ring_open_to_the_window_edge_is_never_reported` (Tim's
-    /// direction): a ring's own interior, pushed flush against the
-    /// window's own edge with no wall and no margin between them, is
-    /// never reported enclosed -- for any ring size, not just one.
+    /// `inv_ring_open_to_any_window_edge_is_never_reported` (Tim's
+    /// direction; parametrised over all four edges, Quentin's direction,
+    /// cycle 2): a ring's own interior, pushed flush against any one of
+    /// the window's own four edges with no wall and no margin between
+    /// them, is never reported -- by `enclosed_regions`, and by
+    /// `narrow_passages` too, using a door narrower than the real player
+    /// body so `narrow_passages` has something it could wrongly report.
+    /// The east/south cases are exactly what exposed this cycle's own
+    /// edge-exemption bug (an eroded origin can only ever touch
+    /// `bounds.x0`/`bounds.y0`, never `bounds.x1 - 1`/`bounds.y1 - 1`).
     #[test]
-    fn inv_ring_open_to_the_window_edge_is_never_reported(
-        ring_w_cells in 3i32..=8,
-        ring_h_cells in 3i32..=8,
+    fn inv_ring_open_to_any_window_edge_is_never_reported(
+        edge in prop_oneof![
+            Just(Edge::North),
+            Just(Edge::East),
+            Just(Edge::South),
+            Just(Edge::West),
+        ],
+        gap in 1i32..player_body_subcells(defs::BALANCE).0,
     ) {
-        let grid = ring_open_to_the_west_window_edge(ring_w_cells, ring_h_cells);
-        let seed_x = ring_w_cells * RING_CELL_SUBCELLS / 2;
-        let seed_y = -RING_CELL_SUBCELLS / 2;
-        let findings = enclosed_regions(&grid, seed_x, seed_y).unwrap();
-        prop_assert!(findings.is_empty());
+        let (body_w, body_h) = player_body_subcells(defs::BALANCE);
+        let (grid, (seed_x, seed_y)) = ring_open_to_edge(edge, gap);
+        let enclosed = enclosed_regions(&grid, seed_x, seed_y).unwrap();
+        prop_assert!(enclosed.is_empty());
+        let narrow = narrow_passages(&grid, seed_x, seed_y, body_w, body_h).unwrap();
+        prop_assert!(narrow.is_empty());
     }
 }

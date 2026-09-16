@@ -339,10 +339,26 @@ struct Component {
 /// component gets which label never depends on anything but `bounds` and
 /// `passable` themselves). Returns a label per sub-cell (`-1` = not
 /// passable) and one [`Component`] per label, in label order.
+///
+/// `body_extent` is what a labelled cell actually represents: `(1, 1)`
+/// for [`enclosed_regions`], where a cell is a sub-cell a single-subcell
+/// walker occupies, but `(body_width, body_height)` for
+/// [`narrow_passages`], where a cell is an *origin* -- the body's own
+/// north-west corner -- and the body itself covers `body_extent` sub-cells
+/// from it. Edge contact must be judged on the cells the body actually
+/// covers, not on the origin alone: an eroded origin can never equal
+/// `bounds.x1 - 1` (the horizontal erosion pass stops once `x +
+/// body_width > bounds.x1`), so checking the origin against the east/
+/// south edges the same way as the west/north ones would silently miss
+/// every component that runs off the east or south side of the window --
+/// exactly the false positive the edge exemption exists to prevent, on
+/// two of its four sides.
 fn label_components(
     bounds: Rect,
+    body_extent: (i32, i32),
     passable: impl Fn(i32, i32) -> bool,
 ) -> (Vec<i32>, Vec<Component>) {
+    let (body_w, body_h) = body_extent;
     let total = total_subcells(bounds).unwrap_or(0) as usize;
     let mut labels = vec![-1i32; total];
     let mut components: Vec<Component> = Vec::new();
@@ -369,7 +385,10 @@ fn label_components(
                 y0 = y0.min(cy);
                 x1 = x1.max(cx + 1);
                 y1 = y1.max(cy + 1);
-                if cx == bounds.x0 || cx == bounds.x1 - 1 || cy == bounds.y0 || cy == bounds.y1 - 1
+                if cx == bounds.x0
+                    || cy == bounds.y0
+                    || cx + body_w == bounds.x1
+                    || cy + body_h == bounds.y1
                 {
                     touches_edge = true;
                 }
@@ -433,7 +452,7 @@ pub fn enclosed_regions(
         ));
     }
     let bounds = grid.bounds;
-    let (labels, components) = label_components(bounds, |x, y| grid.is_passable(x, y));
+    let (labels, components) = label_components(bounds, (1, 1), |x, y| grid.is_passable(x, y));
     // Safe: `is_passable` above already proved the seed is in bounds.
     let seed_idx = cell_index(bounds, seed_x, seed_y).expect("seed already proved in bounds");
     Ok(findings_excluding(components, labels[seed_idx]))
@@ -466,7 +485,7 @@ pub fn narrow_passages(
         ));
     }
     let bounds = grid.bounds;
-    let (raw_labels, _) = label_components(bounds, |x, y| grid.is_passable(x, y));
+    let (raw_labels, _) = label_components(bounds, (1, 1), |x, y| grid.is_passable(x, y));
     let seed_idx = cell_index(bounds, seed_x, seed_y).expect("seed already proved in bounds");
     let raw_seed_label = raw_labels[seed_idx];
 
@@ -482,7 +501,12 @@ pub fn narrow_passages(
         };
         raw_labels[idx] == raw_seed_label && eroded.is_passable(x, y)
     };
-    let (eroded_labels, components) = label_components(bounds, restricted);
+    // (body_width, body_height): a labelled cell here is an eroded
+    // *origin*, and edge contact must be judged on the sub-cells the body
+    // itself covers from that origin, not the origin alone (see
+    // `label_components`'s own doc comment).
+    let (eroded_labels, components) =
+        label_components(bounds, (body_width, body_height), restricted);
     Ok(findings_excluding(components, eroded_labels[seed_idx]))
 }
 
@@ -999,6 +1023,23 @@ mod tests {
         // A 1-wide body fits through the 1-wide door.
         let findings = narrow_passages(&grid, 0, 0, 1, 1).unwrap();
         assert!(findings.is_empty());
+    }
+
+    /// Quentin's direction, cycle 2: the edge exemption's own bug this
+    /// cycle fixed only ever showed up on the east/south edges (an
+    /// eroded origin can never equal `bounds.x1 - 1`/`bounds.y1 - 1`, so
+    /// checking edge contact on the origin alone silently missed those
+    /// two sides) -- a hand-drawn grid for the east-edge case
+    /// specifically, readable without shrinking a proptest. The box's
+    /// own east wall is omitted and the grid's own east edge sits
+    /// exactly where the interior's east boundary would be, so the
+    /// interior's one valid 2x1-body origin (`x=2`) touches `bounds.x1`
+    /// (`4`) directly: `2 + body_width(2) == bounds.x1(4)`.
+    #[test]
+    fn a_passage_cut_off_flush_against_the_east_edge_is_never_reported() {
+        let grid = grid_from_art(&["....", ".#.#", ".#..", ".###", "...."]);
+        let findings = narrow_passages(&grid, 0, 0, 2, 1).unwrap();
+        assert_eq!(findings, Vec::new());
     }
 
     #[test]
