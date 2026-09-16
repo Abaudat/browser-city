@@ -115,6 +115,7 @@ function defsWith(overrides: Partial<Defs> = {}): Defs {
     accessories: [ACCESSORY, UNIFORM_ACCESSORY],
     appearanceLayouts: [ADULT_LAYOUT, KID_LAYOUT],
     uniforms: [],
+    tags: [],
     ...overrides,
   };
 }

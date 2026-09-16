@@ -52,6 +52,8 @@ enum Kind {
     Chains,
     Balance,
     Appearance,
+    Tags,
+    Rules,
 }
 
 /// `path` must read `defs/<kind>/<name>.toml` -- the kind is the second
@@ -75,12 +77,14 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
         "chains" => Ok(Kind::Chains),
         "balance" => Ok(Kind::Balance),
         "appearance" => Ok(Kind::Appearance),
+        "tags" => Ok(Kind::Tags),
+        "rules" => Ok(Kind::Rules),
         other => Err(DefsError::new(
             path,
             1,
             1,
             format!(
-                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/recipes/professions/chains/balance/appearance"
+                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/recipes/professions/chains/balance/appearance/tags/rules"
             ),
         )),
     }
@@ -124,6 +128,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         collider: o.collider.as_ref().map(|c| located(text, c)),
                         interact_at: o.interact_at.as_ref().map(|c| located(text, c)),
                         window: o.window,
+                        tags: o.tags,
                     });
                 }
             }
@@ -278,6 +283,75 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         profession: located(text, &u.profession),
                         outfit: u.outfit,
                         accessory: u.accessory,
+                    });
+                }
+            }
+            Kind::Tags => {
+                let file: TagFile = parse_toml(path, text)?;
+                for t in file.tag {
+                    raw.tags.push(TagEntry {
+                        path: path.clone(),
+                        id: located(text, &t.id),
+                        key: located(text, &t.key),
+                    });
+                }
+            }
+            Kind::Rules => {
+                let file: RuleFile = parse_toml(path, text)?;
+                for p in file.placement {
+                    raw.placements.push(PlacementEntry {
+                        path: path.clone(),
+                        id: located(text, &p.id),
+                        key: located(text, &p.key),
+                        subject: located(text, &p.subject),
+                        container: p.container.as_ref().map(|c| located(text, c)),
+                        floor_min: p.floor_min,
+                        floor_max: p.floor_max,
+                    });
+                }
+                for d in file.distribution {
+                    raw.distributions.push(DistributionEntry {
+                        path: path.clone(),
+                        id: located(text, &d.id),
+                        key: located(text, &d.key),
+                        subject: located(text, &d.subject),
+                        per: located(text, &d.per),
+                        ratio: located(text, &d.ratio),
+                        tolerance_percent: located(text, &d.tolerance_percent),
+                        min_spacing: d.min_spacing,
+                        max_distance: located(text, &d.max_distance),
+                    });
+                }
+                for coh in file.coherence {
+                    raw.coherences.push(CoherenceEntry {
+                        path: path.clone(),
+                        id: located(text, &coh.id),
+                        key: located(text, &coh.key),
+                        subject: located(text, &coh.subject),
+                        within: located(text, &coh.within),
+                        mode: coh.mode,
+                    });
+                }
+                for adj in file.adjacency {
+                    raw.adjacencies.push(AdjacencyEntry {
+                        path: path.clone(),
+                        id: located(text, &adj.id),
+                        key: located(text, &adj.key),
+                        a: located(text, &adj.a),
+                        b: located(text, &adj.b),
+                        relation: adj.relation,
+                        direction: adj.direction,
+                    });
+                }
+                for req in file.requirement {
+                    raw.requirements.push(RequirementEntry {
+                        path: path.clone(),
+                        id: located(text, &req.id),
+                        key: located(text, &req.key),
+                        container: located(text, &req.container),
+                        requires: located(text, &req.requires),
+                        min: req.min,
+                        max: req.max,
                     });
                 }
             }

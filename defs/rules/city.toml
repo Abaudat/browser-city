@@ -1,0 +1,54 @@
+# Story 2.10 (FR111/FR112): the generic rule engine's own data, evaluated
+# by `sim::rules::evaluate` -- never a bespoke branch in that engine.
+# Placeholder content against today's real tags (`defs/tags/city.toml`):
+# Epic 3's generator does not exist yet, so nothing here fires against a
+# real placement today; 2.12 lifts rows like these into worked examples
+# once it does. One row per kind, as Tim's direction asks.
+
+# Placement: a street lamp only ever stands at street level.
+[[placement]]
+id = 1
+key = "lighting_ground_floor_only"
+subject = "lighting"
+floor_min = 0
+floor_max = 0
+
+# Distribution: roughly one waste bin per three seats, evenly spread (no
+# two bins closer than four cells, and no seat further than twelve cells
+# from its nearest bin).
+[[distribution]]
+id = 2
+key = "waste_per_three_seating"
+subject = "waste"
+per = "seating"
+ratio = 3
+tolerance_percent = 50
+min_spacing = 4
+max_distance = 12
+
+# Coherence: a shop counter never shares a room with a stairwell.
+[[coherence]]
+id = 3
+key = "no_counter_in_a_stairwell"
+subject = "counter"
+within = "stairs"
+mode = "forbid"
+
+# Adjacency: a shop counter must have a shopfront somewhere on its
+# perimeter.
+[[adjacency]]
+id = 4
+key = "counter_faces_a_shopfront"
+a = "counter"
+b = "shopfront"
+relation = "require"
+
+# Requirement: a room containing a wall run has at least one waste bin
+# (a placeholder standing in for a future "every dwelling has a door"
+# row, since dwellings do not exist yet).
+[[requirement]]
+id = 5
+key = "walled_room_has_waste_bin"
+container = "wall"
+requires = "waste"
+min = 1

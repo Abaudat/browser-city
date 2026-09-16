@@ -15,4 +15,5 @@ pub mod demo_ping;
 #[rustfmt::skip]
 pub mod generated;
 pub mod rng;
+pub mod rules;
 pub mod world;

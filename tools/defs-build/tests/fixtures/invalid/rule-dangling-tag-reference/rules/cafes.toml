@@ -1,0 +1,5 @@
+[[placement]]
+id = 1
+key = "no_cafe_above_floor_2"
+subject = "cafe"
+floor_max = 2

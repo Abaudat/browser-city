@@ -47,8 +47,11 @@ fn canonical_dump() -> String {
         };
         let collider = rect(o.collider);
         let interact_at = rect(o.interact_at);
+        let mut tags: Vec<u32> = o.tags.to_vec();
+        tags.sort_unstable();
+        let tags: Vec<String> = tags.iter().map(|t| t.to_string()).collect();
         lines.push(format!(
-            "object {} id={} name={} layer={} sprite={}:{},{},{},{} height={} width={} collider={collider} interact_at={interact_at} window={}",
+            "object {} id={} name={} layer={} sprite={}:{},{},{},{} height={} width={} collider={collider} interact_at={interact_at} window={} tags=[{}]",
             o.key,
             o.id,
             o.name,
@@ -60,7 +63,8 @@ fn canonical_dump() -> String {
             o.sprite.h,
             o.height,
             o.width,
-            o.window
+            o.window,
+            tags.join(",")
         ));
     }
     for i in defs::ITEMS {
@@ -185,6 +189,9 @@ fn canonical_dump() -> String {
             u.outfit.unwrap_or("none"),
             u.accessory.unwrap_or("none")
         ));
+    }
+    for t in defs::TAGS {
+        lines.push(format!("tag {} id={}", t.key, t.id));
     }
 
     lines.sort();

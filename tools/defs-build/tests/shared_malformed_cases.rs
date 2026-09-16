@@ -59,6 +59,7 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "empty-object-name" => "empty-object-name",
         "footprint-cap-exceeded" => "footprint-cap-exceeded",
         "walkable-flag-rejected" => "walkable-flag-rejected",
+        "dangling-tag-reference" => "dangling-object-tag-reference",
         other => panic!(
             "shared case '{other}' has no mapped tests/fixtures/invalid/ directory -- add one to fixture_for()"
         ),

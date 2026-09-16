@@ -9,7 +9,14 @@
   "professions": [],
   "chains": [],
   "balance": [],
-  "bodies": [{ "id": 1, "key": "body_01", "family": "kid", "sheet": "x/body.png" }],
+  "bodies": [
+    {
+      "id": 1,
+      "key": "body_01",
+      "family": "kid",
+      "sheet": "x/body.png"
+    }
+  ],
   "eyes": [],
   "hairstyles": [],
   "outfits": [],
@@ -21,9 +28,18 @@
       "family": "adult",
       "cell_width": 16,
       "cell_height": 32,
-      "directions": ["down"],
-      "rows": [{ "animation": "idle", "row": 0, "frames_per_direction": 1 }]
+      "directions": [
+        "down"
+      ],
+      "rows": [
+        {
+          "animation": "idle",
+          "row": 0,
+          "frames_per_direction": 1
+        }
+      ]
     }
   ],
-  "uniforms": []
+  "uniforms": [],
+  "tags": []
 }

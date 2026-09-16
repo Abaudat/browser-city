@@ -91,6 +91,51 @@ fn check_id_key_dupes<T: IdKeyEntry>(entries: &[T], kind: &str) -> Result<(), De
     Ok(())
 }
 
+/// Like [`check_id_key_dupes`], but over a mixed slice of trait objects --
+/// the one place five otherwise-distinct entry kinds (placement,
+/// distribution, coherence, adjacency, requirement) share a single id/key
+/// namespace ("rule"), so a generic `&[T]` signature cannot express the
+/// check (Tim's direction: rule rows share one `sim::generated::defs::
+/// RULES` table, not five).
+fn check_rule_id_key_dupes(entries: &[&dyn IdKeyEntry]) -> Result<(), DefsError> {
+    let mut seen_ids: HashMap<u32, &dyn IdKeyEntry> = HashMap::new();
+    let mut seen_keys: HashMap<&str, &dyn IdKeyEntry> = HashMap::new();
+    for &e in entries {
+        if let Some(prev) = seen_ids.get(&e.id().value) {
+            return Err(DefsError::new(
+                e.path(),
+                e.id().line,
+                e.id().col,
+                format!(
+                    "duplicate rule id {} -- first declared at {}:{}:{}",
+                    e.id().value,
+                    prev.path().display(),
+                    prev.id().line,
+                    prev.id().col
+                ),
+            ));
+        }
+        seen_ids.insert(e.id().value, e);
+
+        if let Some(prev) = seen_keys.get(e.key().value.as_str()) {
+            return Err(DefsError::new(
+                e.path(),
+                e.key().line,
+                e.key().col,
+                format!(
+                    "duplicate rule key '{}' -- first declared at {}:{}:{}",
+                    e.key().value,
+                    prev.path().display(),
+                    prev.key().line,
+                    prev.key().col
+                ),
+            ));
+        }
+        seen_keys.insert(e.key().value.as_str(), e);
+    }
+    Ok(())
+}
+
 fn check_balance_key_dupes(entries: &[BalanceEntry]) -> Result<(), DefsError> {
     let mut seen: HashMap<&str, &BalanceEntry> = HashMap::new();
     for e in entries {
@@ -168,6 +213,296 @@ fn check_chain_profession_refs(
         }
     }
     Ok(())
+}
+
+// --- tags and rules (story 2.10, FR111/FR112) -------------------------------
+//
+// The rule engine's only vocabulary: a tag reference (an object's `tags`,
+// or a rule row's own subject/container/per/within/a/b/requires field)
+// resolves against `defs/tags/*.toml`'s own declared set here, exactly
+// like `resolve_object_layer` resolves a `layer` name against the codes
+// golden -- an undeclared name is refused, naming the accepted set.
+
+fn resolve_object_tags(
+    e: &ObjectEntry,
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<Vec<u32>, DefsError> {
+    let mut ids = Vec::with_capacity(e.tags.len());
+    for name in &e.tags {
+        match tag_ids.get(name.as_str()) {
+            Some(&id) => ids.push(id),
+            None => {
+                let accepted: Vec<&str> = tag_ids.keys().copied().collect();
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    e.key.col,
+                    format!(
+                        "object '{}' names unknown tag '{}' -- accepted tags are [{}]",
+                        e.key.value,
+                        name,
+                        accepted.join(", ")
+                    ),
+                ));
+            }
+        }
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    Ok(ids)
+}
+
+fn check_object_tags(
+    entries: &[ObjectEntry],
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<(), DefsError> {
+    for e in entries {
+        resolve_object_tags(e, tag_ids)?;
+    }
+    Ok(())
+}
+
+/// Resolves one rule row's own tag reference (`subject`, `container`,
+/// `per`, `within`, `a`, `b`, `requires`) against the declared tag set,
+/// naming the rule's own key and the offending field in the error --
+/// never a literal object/def key past this function.
+fn resolve_rule_tag(
+    loc: &Located<String>,
+    path: &std::path::Path,
+    rule_key: &str,
+    field: &str,
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<u32, DefsError> {
+    match tag_ids.get(loc.value.as_str()) {
+        Some(&id) => Ok(id),
+        None => {
+            let accepted: Vec<&str> = tag_ids.keys().copied().collect();
+            Err(DefsError::new(
+                path,
+                loc.line,
+                loc.col,
+                format!(
+                    "rule '{rule_key}' names unknown tag '{}' in {field} -- accepted tags are [{}]",
+                    loc.value,
+                    accepted.join(", ")
+                ),
+            ))
+        }
+    }
+}
+
+fn check_placement_floor_range(entries: &[PlacementEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        if let (Some(min), Some(max)) = (e.floor_min, e.floor_max)
+            && min > max
+        {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "placement rule '{}' has floor_min {min} greater than floor_max {max}",
+                    e.key.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// FR112's "roughly one per N, evenly spread" needs a strictly positive
+/// ratio and a strictly positive tolerance percent -- a distribution rule
+/// with either at zero or negative is a malformed row, not a valid "one
+/// per zero" or "zero tolerance" (Quentin's direction: named failure
+/// fixtures for both).
+fn check_distribution_ranges(entries: &[DistributionEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        if e.ratio.value <= 0 {
+            return Err(DefsError::new(
+                &e.path,
+                e.ratio.line,
+                e.ratio.col,
+                format!(
+                    "distribution rule '{}' has ratio {} -- ratio must be a positive integer",
+                    e.key.value, e.ratio.value
+                ),
+            ));
+        }
+        if e.tolerance_percent.value <= 0 {
+            return Err(DefsError::new(
+                &e.path,
+                e.tolerance_percent.line,
+                e.tolerance_percent.col,
+                format!(
+                    "distribution rule '{}' has tolerance_percent {} -- tolerance_percent must be a positive integer",
+                    e.key.value, e.tolerance_percent.value
+                ),
+            ));
+        }
+        // AC2's "evenly spread" coverage bound (Quentin's direction, PR
+        // #294 cycle 1): a zero-cell coverage radius can never be
+        // satisfied by anything but a `per` cell placed exactly on a
+        // `subject` cell, which is not "spread" at all -- refused here,
+        // never a silently-vacuous row.
+        if e.max_distance.value == 0 {
+            return Err(DefsError::new(
+                &e.path,
+                e.max_distance.line,
+                e.max_distance.col,
+                format!(
+                    "distribution rule '{}' has max_distance 0 -- max_distance must be a positive integer",
+                    e.key.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn check_requirement_range(entries: &[RequirementEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        if let Some(max) = e.max
+            && max < e.min
+        {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "requirement rule '{}' has max {max} below min {}",
+                    e.key.value, e.min
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn build_placement_rules(
+    entries: &[PlacementEntry],
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<Vec<RuleDef>, DefsError> {
+    entries
+        .iter()
+        .map(|e| {
+            let subject = resolve_rule_tag(&e.subject, &e.path, &e.key.value, "subject", tag_ids)?;
+            let container = match &e.container {
+                Some(loc) => Some(resolve_rule_tag(
+                    loc,
+                    &e.path,
+                    &e.key.value,
+                    "container",
+                    tag_ids,
+                )?),
+                None => None,
+            };
+            Ok(RuleDef {
+                id: e.id.value,
+                key: e.key.value.clone(),
+                kind: RuleKindDef::Placement {
+                    subject,
+                    container,
+                    floor_min: e.floor_min,
+                    floor_max: e.floor_max,
+                },
+            })
+        })
+        .collect()
+}
+
+fn build_distribution_rules(
+    entries: &[DistributionEntry],
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<Vec<RuleDef>, DefsError> {
+    entries
+        .iter()
+        .map(|e| {
+            let subject = resolve_rule_tag(&e.subject, &e.path, &e.key.value, "subject", tag_ids)?;
+            let per = resolve_rule_tag(&e.per, &e.path, &e.key.value, "per", tag_ids)?;
+            Ok(RuleDef {
+                id: e.id.value,
+                key: e.key.value.clone(),
+                kind: RuleKindDef::Distribution {
+                    subject,
+                    per,
+                    ratio: e.ratio.value as u32,
+                    tolerance_percent: e.tolerance_percent.value as u32,
+                    min_spacing: e.min_spacing,
+                    max_distance: e.max_distance.value,
+                },
+            })
+        })
+        .collect()
+}
+
+fn build_coherence_rules(
+    entries: &[CoherenceEntry],
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<Vec<RuleDef>, DefsError> {
+    entries
+        .iter()
+        .map(|e| {
+            let subject = resolve_rule_tag(&e.subject, &e.path, &e.key.value, "subject", tag_ids)?;
+            let within = resolve_rule_tag(&e.within, &e.path, &e.key.value, "within", tag_ids)?;
+            Ok(RuleDef {
+                id: e.id.value,
+                key: e.key.value.clone(),
+                kind: RuleKindDef::Coherence {
+                    subject,
+                    within,
+                    mode: e.mode,
+                },
+            })
+        })
+        .collect()
+}
+
+fn build_adjacency_rules(
+    entries: &[AdjacencyEntry],
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<Vec<RuleDef>, DefsError> {
+    entries
+        .iter()
+        .map(|e| {
+            let a = resolve_rule_tag(&e.a, &e.path, &e.key.value, "a", tag_ids)?;
+            let b = resolve_rule_tag(&e.b, &e.path, &e.key.value, "b", tag_ids)?;
+            Ok(RuleDef {
+                id: e.id.value,
+                key: e.key.value.clone(),
+                kind: RuleKindDef::Adjacency {
+                    a,
+                    b,
+                    relation: e.relation,
+                    direction: e.direction,
+                },
+            })
+        })
+        .collect()
+}
+
+fn build_requirement_rules(
+    entries: &[RequirementEntry],
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<Vec<RuleDef>, DefsError> {
+    entries
+        .iter()
+        .map(|e| {
+            let container =
+                resolve_rule_tag(&e.container, &e.path, &e.key.value, "container", tag_ids)?;
+            let requires =
+                resolve_rule_tag(&e.requires, &e.path, &e.key.value, "requires", tag_ids)?;
+            Ok(RuleDef {
+                id: e.id.value,
+                key: e.key.value.clone(),
+                kind: RuleKindDef::Requirement {
+                    container,
+                    requires,
+                    min: e.min,
+                    max: e.max,
+                },
+            })
+        })
+        .collect()
 }
 
 /// FR128's containment rule: a declared `collider` must have positive
@@ -941,6 +1276,12 @@ pub fn validate(
     check_key_format(&raw.accessories, "accessory")?;
     check_key_format(&raw.appearance_layouts, "appearance_layout")?;
     check_key_format(&raw.uniforms, "uniform")?;
+    check_key_format(&raw.tags, "tag")?;
+    check_key_format(&raw.placements, "placement")?;
+    check_key_format(&raw.distributions, "distribution")?;
+    check_key_format(&raw.coherences, "coherence")?;
+    check_key_format(&raw.adjacencies, "adjacency")?;
+    check_key_format(&raw.requirements, "requirement")?;
 
     check_id_key_dupes(&raw.objects, "object")?;
     check_id_key_dupes(&raw.items, "item")?;
@@ -955,6 +1296,22 @@ pub fn validate(
     check_id_key_dupes(&raw.accessories, "accessory")?;
     check_id_key_dupes(&raw.appearance_layouts, "appearance_layout")?;
     check_id_key_dupes(&raw.uniforms, "uniform")?;
+    check_id_key_dupes(&raw.tags, "tag")?;
+
+    // Every rule kind shares one id/key namespace ("rule"), the same
+    // namespace `emit_id_manifest` writes -- a `distribution` row and a
+    // `requirement` row may never collide, even though they parsed from
+    // different array tables.
+    let rule_entries: Vec<&dyn IdKeyEntry> = raw
+        .placements
+        .iter()
+        .map(|e| e as &dyn IdKeyEntry)
+        .chain(raw.distributions.iter().map(|e| e as &dyn IdKeyEntry))
+        .chain(raw.coherences.iter().map(|e| e as &dyn IdKeyEntry))
+        .chain(raw.adjacencies.iter().map(|e| e as &dyn IdKeyEntry))
+        .chain(raw.requirements.iter().map(|e| e as &dyn IdKeyEntry))
+        .collect();
+    check_rule_id_key_dupes(&rule_entries)?;
 
     check_appearance_id_not_zero(&raw.bodies, "body")?;
     check_appearance_id_not_zero(&raw.eyes, "eyes")?;
@@ -969,6 +1326,27 @@ pub fn validate(
     check_appearance_id_u16(&raw.hairstyles, "hairstyle")?;
     check_appearance_id_u16(&raw.outfits, "outfit")?;
     check_appearance_id_u16(&raw.accessories, "accessory")?;
+
+    let tag_ids: BTreeMap<&str, u32> = raw
+        .tags
+        .iter()
+        .map(|t| (t.key.value.as_str(), t.id.value))
+        .collect();
+    check_object_tags(&raw.objects, &tag_ids)?;
+    check_placement_floor_range(&raw.placements)?;
+    check_distribution_ranges(&raw.distributions)?;
+    check_requirement_range(&raw.requirements)?;
+    // Resolved eagerly (not deferred to the final assembly below) so a
+    // dangling tag reference on any rule kind fails the build here,
+    // alongside every other cross-reference check, rather than mixed in
+    // with the plain-shape assembly further down.
+    let mut rules: Vec<RuleDef> = Vec::new();
+    rules.extend(build_placement_rules(&raw.placements, &tag_ids)?);
+    rules.extend(build_distribution_rules(&raw.distributions, &tag_ids)?);
+    rules.extend(build_coherence_rules(&raw.coherences, &tag_ids)?);
+    rules.extend(build_adjacency_rules(&raw.adjacencies, &tag_ids)?);
+    rules.extend(build_requirement_rules(&raw.requirements, &tag_ids)?);
+    rules.sort_by(|a, b| a.key.cmp(&b.key));
 
     check_object_names(&raw.objects)?;
     check_object_layers(&raw.objects, layer_codes)?;
@@ -1123,6 +1501,7 @@ pub fn validate(
                     y1: c.value.y1,
                 }),
                 window: o.window,
+                tags: resolve_object_tags(o, &tag_ids).expect("tags already validated"),
             }
         })
         .collect();
@@ -1301,6 +1680,16 @@ pub fn validate(
         .collect();
     uniforms.sort_by(|a, b| a.key.cmp(&b.key));
 
+    let mut tags: Vec<TagDef> = raw
+        .tags
+        .iter()
+        .map(|t| TagDef {
+            id: t.id.value,
+            key: t.key.value.clone(),
+        })
+        .collect();
+    tags.sort_by(|a, b| a.key.cmp(&b.key));
+
     Ok(Defs {
         objects,
         items,
@@ -1315,6 +1704,8 @@ pub fn validate(
         accessories,
         appearance_layouts,
         uniforms,
+        tags,
+        rules,
     })
 }
 

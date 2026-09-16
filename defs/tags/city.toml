@@ -1,0 +1,36 @@
+# Story 2.10 (FR111): the rule engine's own vocabulary. A tag is declared
+# here, once, and referenced by an object's `tags` field or by a
+# `defs/rules/*.toml` row -- never a literal object/def key past this
+# file. Permanent ids, append-only (`tools/defs-build/goldens/defs-
+# manifest.golden`), exactly like every other def kind.
+[[tag]]
+id = 1
+key = "waste"
+
+[[tag]]
+id = 2
+key = "seating"
+
+[[tag]]
+id = 3
+key = "counter"
+
+[[tag]]
+id = 4
+key = "lighting"
+
+[[tag]]
+id = 5
+key = "shopfront"
+
+[[tag]]
+id = 6
+key = "wall"
+
+[[tag]]
+id = 7
+key = "bridge"
+
+[[tag]]
+id = 8
+key = "stairs"

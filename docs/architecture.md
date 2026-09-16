@@ -741,7 +741,8 @@ behind a flag not exposed in production (FR168).
 
 `defs/` is the single source of truth for game content data (NFR31),
 subdivided into `objects/`, `items/`, `recipes/`, `professions/`,
-`chains/`, `appearance/` and `balance/`, each a directory of TOML files
+`chains/`, `appearance/`, `balance/`, `tags/` and `rules/`, each a
+directory of TOML files
 (the naming table's `city-props.toml`). Neither build target writes here
 and neither runs the generator: `tools/defs-build/` is a standalone Rust binary crate
 outside both the server and client dependency graphs (its own
@@ -812,6 +813,40 @@ agrees with the footprint exactly (`w == width * tile_size_px`, `h` a
 whole multiple of `tile_size_px` and `h >= height * tile_size_px` -- a
 tall prop may overhang upward, never sideways or downward). Every field
 is validated identically on both sides.
+
+### Rules (`defs/rules/`, `defs/tags/`)
+
+`sim::rules` (FR111/FR112) is the one generic rule engine: `evaluate(rules:
+&[RuleDef], site: &impl RuleSite) -> Vec<Violation>`, pure, over integer
+geometry only. Tags (`defs/tags/*.toml`, permanent id/key, append-only
+manifest like every other kind) are the engine's only vocabulary -- an
+object's `tags` field and a rule row's own subject/container/per/within/
+a/b/requires fields all resolve a tag name to its id at build time; the
+engine never sees a content key. `scripts/ci/check-rule-engine-no-
+content-keys.sh` fails the build if any manifest key ever appears as a
+quoted-string literal under `server/sim/src/rules/`. `RuleSite` answers
+three questions over integer geometry -- tags at a cell, real areas
+containing it, subjects within an area or the whole site.
+
+Five closed kinds, one TOML array table each under `defs/rules/*.toml`,
+any file: `[[placement]]`, `[[distribution]]`, `[[coherence]]`,
+`[[adjacency]]`, `[[requirement]]`. `RuleKind` is a closed Rust enum
+matched exhaustively (no `_ =>` arm) -- a sixth kind is a compile error
+until the match is updated on purpose. Every rule kind shares one id/key
+namespace ("rule") in the manifest. Distribution's "evenly spread" is a
+ratio, a minimum spacing and a maximum coverage distance (`max_distance`,
+always positive) together. `evaluate` returns every violation, sorted
+and deduplicated.
+
+Rule rows and the tag table are emitted into `server/sim/src/generated/
+defs.rs` only, as `static` tables (`TAGS`, `RULES`); tags also reach
+`client/public/defs/defs.json` as a required field (an object's `tags`
+field, validated against the tag table on both sides identically), rule
+rows never do -- the client never evaluates a rule.
+
+There is no separate rule-set version: `defs_version` already hashes
+every tracked file under `defs/`, including `defs/rules/` and
+`defs/tags/`, and is the rule-set version FR108/FR109 refer to.
 
 ## Boot budget
 

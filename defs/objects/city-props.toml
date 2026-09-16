@@ -18,6 +18,9 @@ collider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }
 # cell plus a quarter-cell skirt on every side, so you can use it from any
 # direction without standing exactly on its own collider.
 interact_at = { x0 = -4, y0 = -4, x1 = 20, y1 = 20 }
+# Story 2.10 (FR111): the rule engine's own vocabulary -- `defs/tags/
+# city.toml`'s declared set, never a literal key past `tools/defs-build`.
+tags = ["waste"]
 
 [[object]]
 id = 2
@@ -27,6 +30,7 @@ layer = "furniture"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png", x = 0, y = 0, w = 32, h = 16 }
 width = 2
 height = 1
+tags = ["seating"]
 
 [[object]]
 id = 3
@@ -41,6 +45,7 @@ height = 1
 # full-width row immediately south, outside the footprint entirely.
 collider = { x0 = 0, y0 = 0, x1 = 48, y1 = 16 }
 interact_at = { x0 = 0, y0 = 16, x1 = 48, y1 = 32 }
+tags = ["counter"]
 
 [[object]]
 id = 4
@@ -53,6 +58,7 @@ height = 1
 # The story 1.8 worked example: a small base collider near the bottom of
 # the cell, so a player passes through the rest of the cell freely.
 collider = { x0 = 6, y0 = 10, x1 = 10, y1 = 14 }
+tags = ["lighting"]
 
 [[object]]
 id = 5
@@ -67,6 +73,7 @@ height = 1
 # and retracted like any other front wall.
 window = true
 collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
+tags = ["shopfront"]
 
 [[object]]
 id = 6
@@ -81,6 +88,7 @@ height = 1
 # The whole cell blocks. A doorway is the absence of a segment, never an
 # object of its own (FR118: a door is an ordinary walkable cell).
 collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
+tags = ["wall"]
 
 [[object]]
 id = 7
@@ -99,6 +107,7 @@ height = 1
 # and an entity on the floor below passes under it unobstructed -- the
 # deck occupies the same (x, y) as the street beneath it and never
 # contributes collision to it (FR117).
+tags = ["bridge"]
 
 [[object]]
 id = 8
@@ -111,3 +120,4 @@ height = 1
 # A flight of steps between two floors: a physical, walkable prop, never
 # a teleport tile. Which floors it joins is a `floor_transition` row
 # anchored on its cell (FR117), never a field here.
+tags = ["stairs"]

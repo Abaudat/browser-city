@@ -10,6 +10,10 @@ use proptest::prelude::*;
 use sim::appearance;
 use sim::generated::defs::{self, Family, Pool};
 use sim::rng::{Rng, seed_from_ids};
+use sim::rules::testing::SiteBuilder;
+use sim::rules::{
+    AdjacencyRelation, AreaId, Cell, CoherenceMode, RuleDef, RuleKind, TagId, evaluate,
+};
 use sim::world::{
     AreaSpec, FloorCollision, FloorSpec, NO_OWNER, Rect, TransitionSpec, WorldSpec, chunk_key,
     fixture,
@@ -34,6 +38,12 @@ pub const INV_APPEARANCE_DETERMINISTIC_FROM_ID: &str =
 pub const INV_APPEARANCE_INDICES_IN_RANGE: &str = "sim::appearance::generate never panics and every non-zero index it returns names a real manifest entry of the matching family";
 pub const INV_KIDS_PARTS_ONLY_ON_KIDS_BODIES: &str =
     "a kid family tuple only ever contains kid-family parts, and its accessory is always 0";
+pub const INV_RULE_VERDICTS_DETERMINISTIC: &str =
+    "the same facts and rules always give identical violations";
+pub const INV_RULE_VERDICTS_INDEPENDENT_OF_INPUT_ORDER: &str =
+    "shuffling fact order or rule row order does not change the sorted output";
+pub const INV_DISTRIBUTION_EVEN_LAYOUT_NEVER_VIOLATES: &str = "a generated perfectly even 1-per-N layout never violates; clustering all services into one bin always does; and a layout that satisfies the minimum spacing while sitting in one corner of the site still violates the coverage bound";
+pub const INV_RULE_VERDICTS_INVARIANT_UNDER_TAG_RELABELLING: &str = "consistently relabelling every tag id, across both the rules and the site, to six arbitrary distinct ids never changes which cells violate, over all five kinds, with areas and a non-vacuous requirement/distribution";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -323,5 +333,261 @@ proptest! {
 
         let second = world.ownership_at(x, y, floor);
         prop_assert_eq!(first, second);
+    }
+}
+
+/// A fixed universe of six tag ids and two area ids the rule-engine
+/// property tests below share, so a single relabelling (see
+/// `inv_rule_verdicts_invariant_under_tag_relabelling`) can be applied
+/// consistently across every kind. Never the manifest's own ids -- these
+/// are the engine's own test vocabulary, disjoint from any real content.
+const TAG_UNIVERSE: [TagId; 6] = [1, 2, 3, 4, 5, 6];
+const AREA_A: AreaId = 1;
+const AREA_B: AreaId = 2;
+
+/// The two tags [`inv_distribution_even_layout_never_violates`] uses on
+/// its own, single-kind fixture -- distinct from [`TAG_UNIVERSE`],
+/// which the all-five-kinds properties share.
+const RULE_SUBJECT: TagId = 101;
+const RULE_PER_OR_WITHIN: TagId = 102;
+
+/// One rule per kind, every tag field drawn from `tags` (normally
+/// [`TAG_UNIVERSE`] itself, or a relabelling of it) -- `min: 1` and
+/// `min_spacing > 0`/`max_distance > 0` deliberately, so Requirement and
+/// Distribution are never vacuous (Quentin's direction, PR #294 cycle
+/// 1).
+fn five_rules(tags: [TagId; 6]) -> Vec<RuleDef> {
+    let [t1, t2, t3, t4, t5, t6] = tags;
+    vec![
+        RuleDef {
+            id: 1,
+            key: "placement",
+            kind: RuleKind::Placement {
+                subject: t1,
+                container: None,
+                floor_min: Some(-3),
+                floor_max: Some(3),
+            },
+        },
+        RuleDef {
+            id: 2,
+            key: "distribution",
+            kind: RuleKind::Distribution {
+                subject: t2,
+                per: t3,
+                ratio: 2,
+                tolerance_percent: 50,
+                min_spacing: 3,
+                max_distance: 10,
+            },
+        },
+        RuleDef {
+            id: 3,
+            key: "coherence",
+            kind: RuleKind::Coherence {
+                subject: t4,
+                within: t5,
+                mode: CoherenceMode::Forbid,
+            },
+        },
+        RuleDef {
+            id: 4,
+            key: "adjacency",
+            kind: RuleKind::Adjacency {
+                a: t1,
+                b: t4,
+                relation: AdjacencyRelation::Forbid,
+                direction: None,
+            },
+        },
+        RuleDef {
+            id: 5,
+            key: "requirement",
+            kind: RuleKind::Requirement {
+                container: t6,
+                requires: t5,
+                min: 1,
+                max: None,
+            },
+        },
+    ]
+}
+
+/// Builds a site from `(x, y, floor, tag_mask, area_mask)` facts: bit `i`
+/// of `tag_mask` means the cell carries `tags[i]`; bit 0/1 of `area_mask`
+/// means the cell sits in [`AREA_A`]/[`AREA_B`]. `tags` is normally
+/// [`TAG_UNIVERSE`] or a relabelling of it -- passing a relabelling here
+/// is how `inv_rule_verdicts_invariant_under_tag_relabelling` relabels
+/// the site consistently with a relabelled rule set.
+fn build_site(facts: &[(i32, i32, i8, u8, u8)], tags: [TagId; 6]) -> sim::rules::testing::Site {
+    let mut builder = SiteBuilder::new();
+    for &(x, y, floor, tag_mask, area_mask) in facts {
+        let cell = Cell::new(x, y, floor);
+        let cell_tags: Vec<TagId> = (0..6)
+            .filter(|i| tag_mask & (1 << i) != 0)
+            .map(|i| tags[i])
+            .collect();
+        if !cell_tags.is_empty() {
+            builder = builder.cell(cell, &cell_tags);
+        }
+        if area_mask & 1 != 0 {
+            builder = builder.area(cell, AREA_A);
+        }
+        if area_mask & 2 != 0 {
+            builder = builder.area(cell, AREA_B);
+        }
+    }
+    builder.build()
+}
+
+/// A strategy for `(x, y, floor, tag_mask, area_mask)` facts covering all
+/// five kinds' subject/container/within/per tags and both areas.
+fn facts_strategy(
+    len: std::ops::Range<usize>,
+) -> impl Strategy<Value = Vec<(i32, i32, i8, u8, u8)>> {
+    proptest::collection::vec((-20i32..20, -20i32..20, -3i8..4, 0u8..64, 0u8..4), len)
+}
+
+/// A real shuffle (Quentin's direction, PR #294 cycle 1: "not
+/// `reverse()`"): pairs each item with an independently generated key
+/// and sorts by key, so the result is an arbitrary permutation of
+/// `items`, not a fixed one.
+fn shuffle<T: Clone>(items: &[T], keys: &[u32]) -> Vec<T> {
+    let mut paired: Vec<(u32, T)> = keys.iter().copied().zip(items.iter().cloned()).collect();
+    paired.sort_by_key(|(k, _)| *k);
+    paired.into_iter().map(|(_, v)| v).collect()
+}
+
+proptest! {
+    /// `inv_rule_verdicts_deterministic` (story 2.10, FR112): two
+    /// independent calls to `evaluate` over the identical facts and
+    /// rules -- all five kinds, areas included -- always return the
+    /// identical list of violations.
+    #[test]
+    fn inv_rule_verdicts_deterministic(facts in facts_strategy(0..30)) {
+        let rules = five_rules(TAG_UNIVERSE);
+        let site = build_site(&facts, TAG_UNIVERSE);
+        prop_assert_eq!(evaluate(&rules, &site), evaluate(&rules, &site));
+    }
+
+    /// `inv_rule_verdicts_independent_of_input_order`: a real shuffle of
+    /// the order facts were declared in, or the order rule rows are
+    /// passed in, never changes `evaluate`'s own (already-sorted,
+    /// deduplicated) output -- all five kinds, areas included.
+    #[test]
+    fn inv_rule_verdicts_independent_of_input_order(
+        (facts, fact_keys) in facts_strategy(1..30)
+            .prop_flat_map(|facts| {
+                let len = facts.len();
+                (Just(facts), proptest::collection::vec(any::<u32>(), len))
+            }),
+        rule_keys in proptest::collection::vec(any::<u32>(), 5),
+    ) {
+        let rules = five_rules(TAG_UNIVERSE);
+        let shuffled_rules = shuffle(&rules, &rule_keys);
+        let shuffled_facts = shuffle(&facts, &fact_keys);
+
+        let site = build_site(&facts, TAG_UNIVERSE);
+        let shuffled_site = build_site(&shuffled_facts, TAG_UNIVERSE);
+
+        prop_assert_eq!(
+            evaluate(&rules, &site),
+            evaluate(&shuffled_rules, &shuffled_site)
+        );
+    }
+
+    /// `inv_rule_verdicts_invariant_under_tag_relabelling` (Quentin's
+    /// direction, PR #294 cycles 1-2, replacing the tautological
+    /// `inv_generated_placement_never_violates_local_rules`): the
+    /// behavioural proof of AC3's "never a bespoke branch" that a grep
+    /// guard cannot give -- `check-rule-engine-no-content-keys.sh` only
+    /// catches a hardcoded *quoted key*, never a hardcoded *tag id*
+    /// (`if subject == 7`, or `if subject == 42` for any id outside
+    /// [`TAG_UNIVERSE`]). The replacement tag set is six *arbitrary*
+    /// distinct `u32`s drawn from the full range, never a permutation of
+    /// [`TAG_UNIVERSE`]'s own six small numbers -- a permutation alone
+    /// would never exercise a branch hardcoded on an id above 6.
+    /// Consistently relabelling every tag id, in both the rules and the
+    /// site, must never change which cells violate: the engine's
+    /// behaviour depends only on tag *equality*, never on any particular
+    /// numeric id.
+    #[test]
+    fn inv_rule_verdicts_invariant_under_tag_relabelling(
+        facts in facts_strategy(0..30),
+        replacement_tags in proptest::collection::btree_set(any::<u32>(), 6),
+    ) {
+        let permuted_tags: [TagId; 6] = replacement_tags
+            .into_iter()
+            .collect::<Vec<TagId>>()
+            .try_into()
+            .unwrap();
+
+        let original_rules = five_rules(TAG_UNIVERSE);
+        let permuted_rules = five_rules(permuted_tags);
+
+        let original_site = build_site(&facts, TAG_UNIVERSE);
+        let permuted_site = build_site(&facts, permuted_tags);
+
+        prop_assert_eq!(
+            evaluate(&original_rules, &original_site),
+            evaluate(&permuted_rules, &permuted_site)
+        );
+    }
+
+    /// `inv_distribution_even_layout_never_violates`: `n_groups` subject
+    /// cells spaced exactly `spacing` cells apart, each co-located with
+    /// its own covering `per` cell (so coverage is never the binding
+    /// constraint here), never violates. The same count clustered one
+    /// cell apart (well inside `spacing`) always does. A third layout --
+    /// subjects satisfying `min_spacing` but clustered in one corner
+    /// while `per` cells sit far away -- always violates the coverage
+    /// bound (Quentin's direction, PR #294 cycle 1): `min_spacing` alone
+    /// cannot express "evenly spread" (AC2), only `max_distance` can.
+    #[test]
+    fn inv_distribution_even_layout_never_violates(n_groups in 2i32..15, spacing in 2u32..6) {
+        let ratio = 1u32;
+        let rule = RuleDef {
+            id: 1,
+            key: "distribution",
+            kind: RuleKind::Distribution {
+                subject: RULE_SUBJECT,
+                per: RULE_PER_OR_WITHIN,
+                ratio,
+                tolerance_percent: 0,
+                min_spacing: spacing,
+                max_distance: spacing,
+            },
+        };
+
+        let mut even = SiteBuilder::new();
+        for i in 0..n_groups {
+            let cell = Cell::new(i * spacing as i32, 0, 0);
+            even = even
+                .cell(cell, &[RULE_SUBJECT])
+                .cell(cell, &[RULE_PER_OR_WITHIN]);
+        }
+        prop_assert!(evaluate(&[rule], &even.build()).is_empty());
+
+        let mut clustered = SiteBuilder::new();
+        for i in 0..n_groups {
+            let cell = Cell::new(i, 0, 0);
+            clustered = clustered
+                .cell(cell, &[RULE_SUBJECT])
+                .cell(cell, &[RULE_PER_OR_WITHIN]);
+        }
+        prop_assert!(!evaluate(&[rule], &clustered.build()).is_empty());
+
+        // Same subject layout as `even` (satisfies min_spacing), but the
+        // `per` cells sit far outside `max_distance` of every subject --
+        // "evenly spread" fails even though the spacing floor alone
+        // would have passed this exact subject placement.
+        let mut corner = SiteBuilder::new();
+        for i in 0..n_groups {
+            corner = corner.cell(Cell::new(i * spacing as i32, 0, 0), &[RULE_SUBJECT]);
+        }
+        for i in 0..n_groups {
+            corner = corner.cell(Cell::new(10_000 + i, 0, 0), &[RULE_PER_OR_WITHIN]);
+        }
+        prop_assert!(!evaluate(&[rule], &corner.build()).is_empty());
     }
 }

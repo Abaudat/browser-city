@@ -4,7 +4,21 @@
   "objects": [],
   "items": [],
   "recipes": [],
-  "professions": [{ "id": 1, "key": "sanitation_worker" }],
-  "chains": [{ "id": 1, "key": "plastic_bottle", "links": ["nonexistent-profession"] }],
-  "balance": []
+  "professions": [
+    {
+      "id": 1,
+      "key": "sanitation_worker"
+    }
+  ],
+  "chains": [
+    {
+      "id": 1,
+      "key": "plastic_bottle",
+      "links": [
+        "nonexistent-profession"
+      ]
+    }
+  ],
+  "balance": [],
+  "tags": []
 }
