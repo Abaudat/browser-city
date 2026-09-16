@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   floorOffsetPx,
   screenPositionPx,
+  subcellRectPx,
   worldCellFromScreenPx,
   worldPointFromScreenPx,
 } from "../../../src/render/screen-position";
@@ -146,5 +147,83 @@ describe("worldCellFromScreenPx", () => {
 
   it("floors toward negative infinity, so a negative cell is never truncated to zero", () => {
     expect(worldCellFromScreenPx(-1, -1, 0, 16, 48)).toEqual({ cellX: -1, cellY: -1 });
+  });
+});
+
+// Story 1.12 (FR165): the sub-cell projection the debug overlays draw
+// through. It is the *plain* world-to-screen projection -- the same one
+// `worldPointFromScreenPx` inverts -- never the bottom-centre anchor
+// placement `screenPositionPx` applies to a sprite, which is where a
+// drawable sits within its cell, not where the cell is.
+describe("subcellRectPx", () => {
+  it("turns a whole cell's worth of sub-cells into exactly one tile", () => {
+    const rect = subcellRectPx({ x0: 16, y0: 32, x1: 32, y1: 48 }, 0, 16, 16, 48);
+    expect(rect).toEqual({ x: 16, y: 32, width: 16, height: 16 });
+  });
+
+  it("applies FR124's floor offset through floorOffsetPx, never a second copy of it", () => {
+    const rect = subcellRectPx({ x0: 0, y0: 0, x1: 16, y1: 16 }, 2, 16, 16, 48);
+    expect(rect.y).toBe(floorOffsetPx(2, 48));
+    expect(rect.x).toBe(0);
+  });
+
+  it("keeps a zero-area rect zero-area rather than widening it to something visible", () => {
+    const rect = subcellRectPx({ x0: 8, y0: 0, x1: 8, y1: 16 }, 0, 16, 16, 48);
+    expect(rect).toEqual({ x: 8, y: 0, width: 0, height: 16 });
+  });
+
+  it("never rounds -- a sub-cell that falls between pixels is drawn where it is", () => {
+    // Truth beats pixel-snap for a measuring tool: rounding here would
+    // draw a collider up to half a pixel away from where collision
+    // actually resolves, which is the exact lie this overlay exists to
+    // expose.
+    const rect = subcellRectPx({ x0: 1, y0: 1, x1: 2, y1: 2 }, 0, 32, 16, 48);
+    expect(rect).toEqual({ x: 0.5, y: 0.5, width: 0.5, height: 0.5 });
+  });
+
+  // The overlay must land on the same pixels the renderer draws the cell
+  // over, for any cell, floor and projection constants -- expressed
+  // against `screen-position.ts`'s own inverse, so the overlay can never
+  // acquire a projection constant of its own.
+  it("inv_overlay_projection_matches_renderer", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: -40, max: 40 }),
+        fc.integer({ min: -40, max: 40 }),
+        fc.integer({ min: -3, max: 3 }),
+        fc.integer({ min: 1, max: 32 }).map((n) => n * 2),
+        fc.integer({ min: 1, max: 256 }),
+        fc.constantFrom(2, 4, 8, 16, 32),
+        fc.double({ min: 0, max: 0.999, noNaN: true }),
+        fc.double({ min: 0, max: 0.999, noNaN: true }),
+        (cellX, cellY, floor, tileSizePx, storeyHeightPx, subcellsPerCell, alongX, alongY) => {
+          // The sub-cell rect covering exactly cell (cellX, cellY).
+          const rect = subcellRectPx(
+            {
+              x0: cellX * subcellsPerCell,
+              y0: cellY * subcellsPerCell,
+              x1: (cellX + 1) * subcellsPerCell,
+              y1: (cellY + 1) * subcellsPerCell,
+            },
+            floor,
+            subcellsPerCell,
+            tileSizePx,
+            storeyHeightPx,
+          );
+          expect(rect.width).toBe(tileSizePx);
+          expect(rect.height).toBe(tileSizePx);
+          // Every pixel the overlay covers picks back to that same cell.
+          expect(
+            worldCellFromScreenPx(
+              rect.x + alongX * rect.width,
+              rect.y + alongY * rect.height,
+              floor,
+              tileSizePx,
+              storeyHeightPx,
+            ),
+          ).toEqual({ cellX, cellY });
+        },
+      ),
+    );
   });
 });

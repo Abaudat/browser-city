@@ -1,5 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { chunkKey } from "../../../src/world/chunk";
 import type { ColliderSource } from "../../../src/world/collision-grid";
 import type { FootprintSource } from "../../../src/world/footprint-index";
 import { FootprintIndex } from "../../../src/world/footprint-index";
@@ -295,5 +296,119 @@ describe("WorldIndex", () => {
     world.delete(after);
     expect(world.entriesInCell(0, 8, 8)).toEqual([]);
     expect(world.objectsAt(0, 8, 8)).toEqual([]);
+  });
+});
+
+// Story 1.12 (FR165): the read-only enumeration the debug overlays consume
+// -- every placed object in a cell window, once, whether or not it has a
+// collider. Driven off the footprint index (every object is in it), never
+// off the collision grid (which only knows colliders) and never a getter
+// handing out an internal map.
+describe("WorldIndex.objects", () => {
+  const defs = new Map<number, ColliderSource>([
+    [1, { width: 1, height: 1, collider: { x0: 0, y0: 0, x1: 16, y1: 16 } }],
+    [2, { width: 2, height: 1 }],
+    [3, { width: 1, height: 1, collider: { x0: 4, y0: 4, x1: 4, y1: 12 } }],
+  ]);
+  const wide = { floor: 0, cellX0: -40, cellY0: -40, cellX1: 40, cellY1: 40 };
+
+  function views(world: WorldIndex, bounds = wide) {
+    return [...world.objects(bounds)];
+  }
+
+  it("yields a placed object exactly once, however many cells it covers", () => {
+    const world = new WorldIndex(SUBCELLS_PER_CELL, defs);
+    world.insert(row({ objectId: 5n, defId: 2, x: 3, y: 3 }));
+    const found = views(world);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.objectId).toBe(5n);
+  });
+
+  it("carries the footprint, the anchor, the floor, the chunk key and the collider", () => {
+    const world = new WorldIndex(SUBCELLS_PER_CELL, defs);
+    world.insert(row({ objectId: 6n, defId: 1, x: 2, y: 7, floor: 0 }));
+    expect(views(world)[0]).toEqual({
+      objectId: 6n,
+      defId: 1,
+      floor: 0,
+      chunkKey: chunkKey(2, 7, 0),
+      anchorX: 2,
+      anchorY: 7,
+      width: 1,
+      height: 1,
+      collider: { x0: 0, y0: 0, x1: 16, y1: 16 },
+    });
+  });
+
+  it("enumerates an object with no collider at all -- that is the point (FR128)", () => {
+    const world = new WorldIndex(SUBCELLS_PER_CELL, defs);
+    world.insert(row({ objectId: 7n, defId: 2, x: 4, y: 4 }));
+    // Invisible to the collision grid, and still enumerable here.
+    expect(world.entriesInCell(0, 4, 4)).toEqual([]);
+    expect(views(world)[0]?.collider).toBeUndefined();
+  });
+
+  it("enumerates a zero-area collider, which blocks nothing but is not absent", () => {
+    const world = new WorldIndex(SUBCELLS_PER_CELL, defs);
+    world.insert(row({ objectId: 8n, defId: 3, x: 1, y: 1 }));
+    // The grid still holds it -- with a rect of no area, so it can never
+    // block a step. "Declared with no area" and "not declared at all" are
+    // two different facts, and this is the one that is not absent.
+    expect(world.entriesInCell(0, 1, 1)).toHaveLength(1);
+    expect(world.entriesInCell(0, 1, 1)[0]?.rect).toEqual({ x0: 20, y0: 20, x1: 20, y1: 28 });
+    expect(views(world)[0]?.collider).toEqual({ x0: 4, y0: 4, x1: 4, y1: 12 });
+  });
+
+  it("visits only the cell window it is given, and only its own floor", () => {
+    const world = new WorldIndex(SUBCELLS_PER_CELL, defs);
+    world.insert(row({ objectId: 1n, defId: 1, x: 0, y: 0, floor: 0 }));
+    world.insert(row({ objectId: 2n, defId: 1, x: 30, y: 30, floor: 0 }));
+    world.insert(row({ objectId: 3n, defId: 1, x: 0, y: 0, floor: 1 }));
+    const near = views(world, { floor: 0, cellX0: -1, cellY0: -1, cellX1: 1, cellY1: 1 });
+    expect(near.map((o) => o.objectId)).toEqual([1n]);
+  });
+
+  it("finds an object whose anchor is outside the window but whose footprint reaches into it", () => {
+    const world = new WorldIndex(SUBCELLS_PER_CELL, defs);
+    world.insert(row({ objectId: 9n, defId: 2, x: 4, y: 0 }));
+    const window = { floor: 0, cellX0: 5, cellY0: 0, cellX1: 5, cellY1: 0 };
+    expect(views(world, window).map((o) => o.objectId)).toEqual([9n]);
+  });
+
+  it("an unresolvable defId is skipped rather than yielded half-built", () => {
+    const world = new WorldIndex(SUBCELLS_PER_CELL, defs);
+    world.insert(row({ objectId: 1n, defId: 999 }));
+    expect(views(world)).toEqual([]);
+  });
+
+  it("follows the live index: a deleted object stops being enumerated", () => {
+    const world = new WorldIndex(SUBCELLS_PER_CELL, defs);
+    const r = row({ objectId: 4n, defId: 1, x: 2, y: 2 });
+    world.insert(r);
+    expect(views(world)).toHaveLength(1);
+    world.delete(r);
+    expect(views(world)).toEqual([]);
+  });
+
+  it("costs the window, not the world -- the same object count over a 100x larger world", () => {
+    // Quentin's direction: bounded by the viewport, never by how many
+    // objects the world holds. Counted as cells visited, through the
+    // public query the enumeration is built on.
+    function cellsVisited(objectCount: number): number {
+      const counting = new WorldIndex(SUBCELLS_PER_CELL, defs);
+      for (let i = 0; i < objectCount; i++) {
+        counting.insert(row({ objectId: BigInt(i + 1), defId: 1, x: i * 2, y: 0 }));
+      }
+      let visits = 0;
+      const spy = counting.objectsAt.bind(counting);
+      (counting as unknown as { objectsAt: typeof spy }).objectsAt = (f, x, y) => {
+        visits++;
+        return spy(f, x, y);
+      };
+      [...counting.objects({ floor: 0, cellX0: 0, cellY0: 0, cellX1: 3, cellY1: 3 })];
+      return visits;
+    }
+    expect(cellsVisited(4)).toBe(16);
+    expect(cellsVisited(400)).toBe(16);
   });
 });

@@ -37,6 +37,42 @@ export function screenPositionPx(
 }
 
 /**
+ * A half-open sub-cell rect in absolute world sub-cells, as the screen
+ * rect it covers on `floor` (story 1.12, FR165) -- the one place a
+ * sub-cell coordinate becomes a pixel, so a debug overlay drawn over the
+ * world never acquires a projection constant of its own
+ * (`inv_overlay_projection_matches_renderer`).
+ *
+ * This is the plain world-to-screen projection -- scale by the tile size,
+ * shift by [`floorOffsetPx`] -- the same one [`worldPointFromScreenPx`]
+ * inverts, never [`screenPositionPx`]'s bottom-centre anchor placement:
+ * those `+0.5`/`+1` terms say where a *sprite* sits within its cell, not
+ * where the cell is.
+ *
+ * Deliberately unrounded, unlike [`screenPositionPx`]: this measures
+ * rather than draws art, and rounding a sub-cell face to a whole pixel
+ * would put the drawn rect up to half a pixel away from where collision
+ * actually resolves. A zero-area rect stays zero-area for the same
+ * reason -- "declared with no area" is a state a reader has to be able to
+ * tell apart from a real one, not a rect to widen into visibility.
+ */
+export function subcellRectPx(
+  rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number },
+  floor: number,
+  subcellsPerCell: number,
+  tileSizePx: number,
+  storeyHeightPx: number,
+): { readonly x: number; readonly y: number; readonly width: number; readonly height: number } {
+  const pxPerSubcell = tileSizePx / subcellsPerCell;
+  return {
+    x: rect.x0 * pxPerSubcell,
+    y: rect.y0 * pxPerSubcell + floorOffsetPx(floor, storeyHeightPx),
+    width: (rect.x1 - rect.x0) * pxPerSubcell,
+    height: (rect.y1 - rect.y0) * pxPerSubcell,
+  };
+}
+
+/**
  * [`screenPositionPx`]'s inverse for picking (story 1.9, FR148): the
  * continuous world point a screen pixel falls on, for a viewer on
  * `floor`. The same two projection constants, read the same way -- the
