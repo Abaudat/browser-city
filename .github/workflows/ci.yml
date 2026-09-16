@@ -112,15 +112,17 @@ jobs:
               - 'client/public/defs/defs.json'
               - 'scripts/**'
               - '.github/**'
-              # Story 1.10: tools/defs-build reads these PNGs' own IHDR to
-              # verify the appearance layout invariant -- a PR that only
-              # swaps a part sheet must still run that check.
-              - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
-              - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
-              # Story 2.2: tools/defs-build reads every object's own
-              # `sprite.sheet` IHDR too -- a PR that only swaps one of
-              # these single-object PNGs must still run that check.
-              - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/**'
+              # Story 1.10/2.2: tools/defs-build reads every appearance
+              # part's and every object's own `sheet`/`sprite.sheet` IHDR,
+              # and a `sprite.sheet` may name any path under this whole
+              # root (`model.rs`'s `SPRITE_SHEET_ALLOWED_ROOT`) -- a PR
+              # that only swaps one vendor PNG anywhere under it must
+              # still run that check (Quentin's direction, cycle 1: the
+              # simpler of two acceptable fixes over narrowing to one
+              # subtree, which the previous two lines here did --
+              # `scripts/ci/check-defs-sprite-root-filter.sh` pins this
+              # line to that same constant, so the two can never drift).
+              - 'ModernTileset/**'
               # tools/defs-build/tests/shared_malformed_cases.rs does
               # include_str!(this file) -- a PR that only edits the shared
               # case list must still run the Rust half of the drift guard,
@@ -241,6 +243,8 @@ jobs:
         run: bash ../../scripts/ci/check-defs-version-agrees.sh
       - name: story 2.2 FR128, there is no separate walkable field anywhere in the schema
         run: bash ../../scripts/ci/check-no-walkable-field.sh
+      - name: story 2.2, ci.yml's defs filter covers the whole sprite-sheet allowed root
+        run: bash ../../scripts/ci/check-defs-sprite-root-filter.sh
 
   check:
     name: check

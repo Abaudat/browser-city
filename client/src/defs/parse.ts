@@ -7,6 +7,7 @@
 // the client must never be quietly lenient about input the module
 // rejects at build time.
 
+import { LAYER_TABLE } from "../render/layer-table";
 import type {
   AccessoryDef,
   AppearanceLayoutDef,
@@ -617,8 +618,19 @@ export function parseDefs(data: unknown): Defs {
   }
 
   const tileSizePx = balance.find((b) => b.key === "render.tile_size_px")?.value;
+  if (objects.length > 0 && tileSizePx === undefined) {
+    // A skipped check is a check that passes on bad data (Quentin's
+    // direction): a tree with objects but no `render.tile_size_px`
+    // balance key cannot check FR126's sprite/footprint agreement at
+    // all, exactly like `tools/defs-build`'s own `validate.rs` refuses
+    // this case rather than silently skipping it.
+    fail(
+      "defs/ declares an object but no 'render.tile_size_px' balance key -- FR126's sprite/footprint agreement cannot be checked without it",
+    );
+  }
   for (const object of objects) {
     checkObjectName(object);
+    checkObjectLayer(object);
     checkObjectFootprintCap(object, maxFootprintCells);
     checkSpriteNonZeroArea(object);
     if (tileSizePx !== undefined) {
@@ -653,6 +665,30 @@ export function parseDefs(data: unknown): Defs {
 function checkObjectName(object: ObjectDef): void {
   if (object.name.trim().length === 0) {
     fail(`object '${object.key}' has an empty name`);
+  }
+}
+
+/** `layer` resolves against `render/layer-table.ts` -- the client's own
+ * golden-guarded mirror of `sim::codes::layer`
+ * (`check-layer-table-current.sh`) -- exactly like `tools/defs-build`'s
+ * own `validate.rs` resolves the authored name against the codes golden.
+ * The runtime artefact carries only the numeric code, never the name, so
+ * this is a lookup, not a string comparison -- but an unknown or
+ * deprecated code must still be refused here, never accepted just
+ * because it parsed as a `u32` (Quentin's direction: a skipped check is a
+ * check that passes on bad data). */
+function checkObjectLayer(object: ObjectDef): void {
+  const row = LAYER_TABLE.find((r) => r.code === object.layer);
+  if (!row) {
+    const known = LAYER_TABLE.filter((r) => !r.deprecated)
+      .map((r) => r.code)
+      .join(", ");
+    fail(
+      `object '${object.key}' names unknown layer code ${object.layer} -- known codes are [${known}]`,
+    );
+  }
+  if (row.deprecated) {
+    fail(`object '${object.key}' names deprecated layer code ${object.layer} ('${row.name}')`);
   }
 }
 

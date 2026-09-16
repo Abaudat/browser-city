@@ -1,10 +1,22 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { parseDefs } from "../../../src/defs/parse";
 import type { Footprint } from "../../../src/render/decompose";
 import { decomposeFootprint } from "../../../src/render/decompose";
 
+const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+
+/** FR127's own cap, read from the real generated artefact -- never a
+ * literal 8 here (Quentin's direction): a change to `MAX_FOOTPRINT_CELLS`
+ * must widen or narrow this property's own generator automatically. */
+const MAX_FOOTPRINT_CELLS = parseDefs(
+  JSON.parse(readFileSync(`${REPO_ROOT}client/public/defs/defs.json`, "utf-8")),
+).maxFootprintCells;
+
 describe("decomposeFootprint", () => {
-  // FR125/FR127: for any extent up to the FR127 ~8x8 cap, decomposition
+  // FR125/FR127: for any extent up to FR127's own cap, decomposition
   // yields exactly width*height drawables, one per cell, anchors covering
   // the footprint exactly once, and the union of anchors equal to the
   // footprint.
@@ -13,8 +25,8 @@ describe("decomposeFootprint", () => {
       fc.property(
         fc.integer({ min: -100, max: 100 }),
         fc.integer({ min: -100, max: 100 }),
-        fc.integer({ min: 1, max: 8 }),
-        fc.integer({ min: 1, max: 8 }),
+        fc.integer({ min: 1, max: MAX_FOOTPRINT_CELLS }),
+        fc.integer({ min: 1, max: MAX_FOOTPRINT_CELLS }),
         (x, y, width, height) => {
           const footprint: Footprint = { x, y, width, height };
           const cells = decomposeFootprint(footprint);

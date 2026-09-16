@@ -213,6 +213,45 @@ fn an_object_naming_an_unknown_layer_is_named() {
     assert!(err.message.contains("unknown layer 'basement'"));
 }
 
+/// A deprecated layer may never be placed on, even though its own code
+/// still resolves.
+#[test]
+fn an_object_naming_a_deprecated_layer_is_named() {
+    let err = build_err("deprecated-layer");
+    assert!(err.message.contains("deprecated layer"));
+}
+
+/// A sprite whose width does not equal `width * tile_size_px` exactly is
+/// refused, naming the object.
+#[test]
+fn a_sprite_width_mismatching_the_footprint_is_named() {
+    let err = build_err("sprite-width-mismatches-footprint");
+    assert!(err.message.contains("does not equal its footprint width"));
+}
+
+/// A sprite height that is not a whole multiple of `tile_size_px` is
+/// refused.
+#[test]
+fn a_sprite_height_not_a_tile_multiple_is_named() {
+    let err = build_err("sprite-height-not-tile-multiple");
+    assert!(err.message.contains("whole multiple of tile_size_px"));
+}
+
+/// A sprite shorter than its own footprint's height is refused -- a tall
+/// prop may only overhang upward, never come up short.
+#[test]
+fn a_sprite_shorter_than_the_footprint_is_named() {
+    let err = build_err("sprite-shorter-than-footprint");
+    assert!(err.message.contains("shorter than its footprint height"));
+}
+
+/// An empty `name` is refused.
+#[test]
+fn an_empty_object_name_is_named() {
+    let err = build_err("empty-object-name");
+    assert!(err.message.contains("empty name"));
+}
+
 /// A sprite sheet path this crate never read `IHDR` dimensions for is a
 /// build error naming the object and the sheet.
 #[test]
@@ -301,10 +340,15 @@ fn every_known_category_has_a_fixture_directory() {
         "appearance-family-mismatch",
         "appearance-dangling-uniform-profession",
         "unknown-layer",
+        "deprecated-layer",
         "sprite-sheet-missing",
         "sprite-zero-area",
         "sprite-outside-sheet-bounds",
+        "sprite-width-mismatches-footprint",
+        "sprite-height-not-tile-multiple",
+        "sprite-shorter-than-footprint",
         "object-dimension-zero",
+        "empty-object-name",
         "footprint-cap-exceeded",
         "walkable-flag-rejected",
     ];

@@ -8,10 +8,10 @@
     {
       "id": 1,
       "key": "trash_bin",
-      "name": "Trash Bin",
+      "name": "",
       "layer": 2,
-      "sprite": { "sheet": "fixtures/objects/test.png", "x": 0, "y": 0, "w": 0, "h": 16 },
-      "width": 0,
+      "sprite": { "sheet": "fixtures/objects/test.png", "x": 0, "y": 0, "w": 16, "h": 16 },
+      "width": 1,
       "height": 1,
       "window": false
     }

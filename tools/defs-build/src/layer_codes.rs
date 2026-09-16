@@ -7,6 +7,17 @@
 
 use std::collections::BTreeMap;
 
+/// Layer names no object may ever declare (Tim's direction, cycle 1):
+/// mirrors `sim::codes::layer::DEPRECATED_CODES` (`overhead`) by name --
+/// this crate stays detached from `server/`'s own Cargo workspace
+/// (`Cargo.toml`'s own direction), so it can never depend on `sim`
+/// directly to read that list itself. Declared here, in its own file, so
+/// `scripts/ci/check-layer-table-current.sh` has one obvious place to
+/// parse it out of and compare against `server/sim/src/codes.rs`'s own
+/// `DEPRECATED_CODES` -- the same guard that already keeps `client/src/
+/// render/layer-table.ts`'s copy honest.
+pub const DEPRECATED_LAYER_NAMES: &[&str] = &["overhead"];
+
 /// Parses every `layer <code> <name> <rank>` line of the codes golden
 /// into `name -> code`. Every other kind's line (`matter_kind`,
 /// `provision`, ...) is ignored -- this crate only ever resolves layer

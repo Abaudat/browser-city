@@ -331,10 +331,9 @@ Player movement and collision are client-authoritative (FR137), permanent
 code under `client/src/world/`, driven by collider data in `defs/`.
 
 - A `collider` on an `[[object]]` is a half-open integer rect in
-  sub-cells relative to the footprint's own north-west sub-cell origin
-  (its top-left, matching the sprite's own pixel space -- see
-  "Definitions" for how that differs from the *anchor cell*);
-  `COLLIDER_SUBCELLS_PER_CELL` is generated into both artefacts and is
+  sub-cells relative to the footprint's own north-west cell (`world/
+  footprint.ts`'s `footprintOrigin`), not the placed row's own anchor
+  cell; `COLLIDER_SUBCELLS_PER_CELL` is generated into both artefacts and is
   never derived from `render.tile_size_px`. No `collider` means walkable
   (FR128); there is no `walkable` flag. Containment inside
   `width*height` sub-cells is enforced by `tools/defs-build` and again by
@@ -783,14 +782,14 @@ independent implementation (NFR30) -- deliberate duplication, not an
 oversight, pinned against drift by a shared canonical dump golden and a
 shared table of malformed-input cases both sides must reject.
 
-An `[[object]]` (story 2.2) carries `id`, `key`, `name` (a free-text
-display string, never a lookup key), `layer` (the layer's own name,
-resolved at build time against `sim::codes::layer`'s golden into the
-numeric code the runtime artefacts actually carry -- the string never
-reaches either runtime), `sprite` (one whole-object rectangle: `sheet` a
-path under `ModernTileset/`, `x`/`y`/`w`/`h` whole source pixels -- the
-tileset ships whole objects as single PNGs, so this never composites),
-`width`/`height` (the footprint, in cells, each independently capped at
+An `[[object]]` carries `id`, `key`, `name` (a free-text display string,
+never a lookup key), `layer` (the layer's own name, resolved at build
+time against `sim::codes::layer`'s golden into the numeric code the
+runtime artefacts actually carry -- the string never reaches either
+runtime), `sprite` (one whole-object rectangle: `sheet` a path under
+`ModernTileset/`, `x`/`y`/`w`/`h` whole source pixels -- the tileset ships
+whole objects as single PNGs, so this never composites), `width`/`height`
+(the footprint, in cells, each independently capped at
 `MAX_FOOTPRINT_CELLS` -- FR127, generated once and consumed by
 `sim::world`'s compile-time assert that it never exceeds `CHUNK_SIZE`,
 since the region-subscription halo depends on it), and two optional
@@ -798,19 +797,21 @@ sub-cell rects: `collider` (FR128, fits inside the footprint; its absence
 is what makes an object walkable -- there is no separate `walkable`
 field anywhere) and `interact_at` (FR148, reaches at most
 `INTERACT_AT_MAX_REACH_CELLS` beyond it, has positive area, and never
-lies entirely inside the object's own collider), each declared relative
-to the footprint's own north-west sub-cell origin (its top-left,
-matching the sprite's own pixel space) -- not the same corner as a
-placed row's own *anchor cell*, which is the footprint's smallest x,
-largest y cell (its south-west corner); the two coincide only for a
-one-cell-tall object, which is every object today. Three build-time checks
-apply only to `layer` and `sprite`: `layer` resolves against the codes
-golden (an unknown or deprecated name is refused, naming the accepted
-set); `sprite` fits entirely inside its own sheet's real `IHDR` bounds;
-and `sprite` agrees with the footprint exactly (`w == width *
-tile_size_px`, `h` a whole multiple of `tile_size_px` and `h >= height *
-tile_size_px` -- a tall prop may overhang upward, never sideways or
-downward). Every field is validated identically on both sides.
+lies entirely inside the object's own collider). A placed row's own
+anchor cell is the footprint's smallest x, largest y cell. `collider`/
+`interact_at` are declared relative to a different point, the
+footprint's own north-west cell (matching the sprite's own pixel space).
+`client/src/world/footprint.ts`'s `footprintOrigin` is the one place that
+converts an anchor cell to its footprint's north-west cell; every client
+module that needs to place a footprint-relative rect or cell calls it,
+never re-deriving the offset itself. Three build-time checks apply only
+to `layer` and `sprite`: `layer` resolves against the codes golden (an
+unknown or deprecated name is refused, naming the accepted set); `sprite`
+fits entirely inside its own sheet's real `IHDR` bounds; and `sprite`
+agrees with the footprint exactly (`w == width * tile_size_px`, `h` a
+whole multiple of `tile_size_px` and `h >= height * tile_size_px` -- a
+tall prop may overhang upward, never sideways or downward). Every field
+is validated identically on both sides.
 
 ## Boot budget
 

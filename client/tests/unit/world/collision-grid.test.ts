@@ -93,6 +93,35 @@ describe("CollisionGrid", () => {
     expect(grid.entriesInCell(0, 32, 0)).toHaveLength(1);
   });
 
+  // Story 2.2's AC: several objects may share an anchor cell (a rug, a
+  // table and a glass). Two of the three below declare colliders; the
+  // third (the rug) does not (FR128) -- deleting one collider-bearing
+  // object must never touch the other's sub-cells, and the walkable one
+  // must never have contributed anything to begin with.
+  it("three objects on distinct layers sharing one anchor cell: two colliders and a walkable one all retained, and deleting one collider leaves the other's sub-cells blocked", () => {
+    const grid = gridWith(
+      new Map([
+        [1, DEF_WITHOUT_COLLIDER],
+        [2, { width: 1, height: 1, collider: { x0: 0, y0: 0, x1: 8, y1: 8 } }],
+        [3, { width: 1, height: 1, collider: { x0: 8, y0: 8, x1: 16, y1: 16 } }],
+      ]),
+    );
+    const rug = row({ objectId: 10n, defId: 1, x: 6, y: 6 });
+    const table = row({ objectId: 11n, defId: 2, x: 6, y: 6 });
+    const glass = row({ objectId: 12n, defId: 3, x: 6, y: 6 });
+    grid.insert(rug);
+    grid.insert(table);
+    grid.insert(glass);
+    const entries = grid.entriesInCell(0, 6, 6);
+    expect(entries.map((e) => e.objectId).sort()).toEqual([11n, 12n]);
+
+    grid.delete(table);
+    const remaining = grid.entriesInCell(0, 6, 6);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.objectId).toBe(12n);
+    expect(remaining[0]?.rect).toEqual({ x0: 104, y0: 104, x1: 112, y1: 112 });
+  });
+
   it("deleting one of two overlapping colliders never unblocks the space the other still covers", () => {
     const grid = gridWith(
       new Map([

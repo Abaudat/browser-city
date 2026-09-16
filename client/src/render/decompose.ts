@@ -8,6 +8,8 @@
 // position). Pure, zero PixiJS, zero `net/bindings` -- runs once per
 // placed chunk, not per frame (Tim's direction).
 
+import { footprintOrigin } from "../world/footprint";
+
 /** One placed object's anchor cell and footprint (FR126/FR127): `width`/
  * `height` come from `object_def`, in whole tiles, always >= 1. FR127
  * caps a real footprint at approximately 8x8; this function is total for
@@ -62,12 +64,12 @@ export function decomposeFootprint(footprint: Footprint): readonly CellDrawable[
   }
 
   const cells: CellDrawable[] = [];
-  const northY = footprint.y - (footprint.height - 1);
+  const origin = footprintOrigin(footprint.x, footprint.y, footprint);
   for (let row = 0; row < footprint.height; row++) {
     for (let col = 0; col < footprint.width; col++) {
       cells.push({
-        x: footprint.x + col,
-        y: northY + row,
+        x: origin.x + col,
+        y: origin.y + row,
         sourceCol: col,
         sourceRow: row,
       });

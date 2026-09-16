@@ -291,14 +291,6 @@ fn check_object_names(entries: &[ObjectEntry]) -> Result<(), DefsError> {
     Ok(())
 }
 
-/// Mirrors `sim::codes::layer::DEPRECATED_CODES` (`overhead`): this crate
-/// stays detached from `server/`'s own Cargo workspace (`Cargo.toml`'s own
-/// direction), so it can never depend on `sim` directly to read that list
-/// itself -- a name added here must be kept in sync with that one by eye,
-/// the same way the two crates already keep `COLLIDER_SUBCELLS_PER_CELL`-
-/// style constants in sync.
-const DEPRECATED_LAYER_NAMES: &[&str] = &["overhead"];
-
 /// Resolves one object's authored `layer` name against the codes golden's
 /// own `name -> code` map (Tim's direction: resolved at build time, never
 /// at runtime) -- refusing an unknown or deprecated name, naming the
@@ -307,7 +299,7 @@ fn resolve_object_layer(
     e: &ObjectEntry,
     layer_codes: &BTreeMap<String, u32>,
 ) -> Result<u32, DefsError> {
-    if DEPRECATED_LAYER_NAMES.contains(&e.layer.value.as_str()) {
+    if crate::layer_codes::DEPRECATED_LAYER_NAMES.contains(&e.layer.value.as_str()) {
         return Err(DefsError::new(
             &e.path,
             e.layer.line,

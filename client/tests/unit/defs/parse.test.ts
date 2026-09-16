@@ -33,7 +33,10 @@ function validPayload(): Record<string, unknown> {
     recipes: [{ id: 1, key: "bottle_recycling", inputs: ["bottle"], outputs: ["recycled_glass"] }],
     professions: [{ id: 1, key: "sanitation_worker" }],
     chains: [{ id: 1, key: "plastic_bottle", links: ["sanitation_worker"] }],
-    balance: [{ key: "citizen.bar_decay.rest", value: 10, min: 0, max: 100 }],
+    balance: [
+      { key: "citizen.bar_decay.rest", value: 10, min: 0, max: 100 },
+      { key: "render.tile_size_px", value: 16, min: 1, max: 64 },
+    ],
     bodies: [],
     eyes: [],
     hairstyles: [],
@@ -160,7 +163,10 @@ describe("parseDefs", () => {
 
   it("accepts a balance value at the boundary", () => {
     const payload = validPayload();
-    payload.balance = [{ key: "a", value: 10, min: 0, max: 10 }];
+    payload.balance = [
+      { key: "a", value: 10, min: 0, max: 10 },
+      { key: "render.tile_size_px", value: 16, min: 1, max: 64 },
+    ];
     expect(() => parseDefs(payload)).not.toThrow();
   });
 
@@ -465,7 +471,11 @@ describe("parseDefs", () => {
               key: "x",
               name: "X",
               layer: 2,
-              sprite: { sheet: "x.png", x: 0, y: 0, w: 16, h: 16 },
+              // Scaled to the generated width/height so this property
+              // never trips FR126's sprite/footprint check -- that rule
+              // has its own dedicated property test; this one is only
+              // about collider containment.
+              sprite: { sheet: "x.png", x: 0, y: 0, w: width * 16, h: height * 16 },
               width,
               height,
               window: false,
@@ -688,6 +698,7 @@ describe("canonicalDump", () => {
     expect(dump).toBe(
       [
         "balance citizen.bar_decay.rest value=10 min=0 max=100",
+        "balance render.tile_size_px value=16 min=1 max=64",
         "chain plastic_bottle id=1 links=[sanitation_worker]",
         "item bottle id=1",
         "item recycled_glass id=2",

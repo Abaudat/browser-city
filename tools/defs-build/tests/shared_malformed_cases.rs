@@ -9,6 +9,16 @@
 //! fails the build, so the two suites can never silently drift apart on
 //! *which* categories of bad input are covered, even though the physical
 //! input format (TOML files vs. one JSON payload) necessarily differs.
+//!
+//! Not every category this crate rejects is shareable: `sprite-sheet-
+//! missing` and `sprite-outside-sheet-bounds` need a real sheet's `IHDR`
+//! dimensions (`fsio::read_png_dims`), which the client never reads --
+//! its own artefact only ever carries an already-validated `sprite` rect.
+//! Those two exist as `tests/fixtures/invalid/` categories and
+//! `failure_fixtures.rs` tests only, deliberately absent from
+//! `fixtures/defs-malformed-cases.v1.json` (JSON has no comment syntax to
+//! say so inline). Every other rejection category both sides can check
+//! from the payload alone belongs in the shared list.
 
 mod support;
 
@@ -39,8 +49,14 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "appearance-id-too-large" => "appearance-id-too-large",
         "appearance-family-mismatch" => "appearance-family-mismatch",
         "appearance-dangling-uniform-profession" => "appearance-dangling-uniform-profession",
+        "unknown-layer" => "unknown-layer",
+        "deprecated-layer" => "deprecated-layer",
         "sprite-zero-area" => "sprite-zero-area",
+        "sprite-width-mismatches-footprint" => "sprite-width-mismatches-footprint",
+        "sprite-height-not-tile-multiple" => "sprite-height-not-tile-multiple",
+        "sprite-shorter-than-footprint" => "sprite-shorter-than-footprint",
         "object-dimension-zero" => "object-dimension-zero",
+        "empty-object-name" => "empty-object-name",
         "footprint-cap-exceeded" => "footprint-cap-exceeded",
         "walkable-flag-rejected" => "walkable-flag-rejected",
         other => panic!(

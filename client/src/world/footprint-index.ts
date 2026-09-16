@@ -15,6 +15,7 @@
 
 import type { PlacedObject } from "../net/bindings/types";
 import { CHUNK_SIZE, chunkKey } from "./chunk";
+import { footprintOrigin } from "./footprint";
 
 /** The minimal shape this index needs from an object's definition -- the
  * footprint, and nothing else. `defs/`'s `ObjectDef` and
@@ -173,18 +174,17 @@ export class FootprintIndex implements FootprintQuery {
         `FootprintIndex: object ${row.objectId} has orientation ${row.orientation} -- rotated footprints are not supported until a story defines them`,
       );
     }
-    // `row.x`/`row.y` are the anchor cell -- the footprint's smallest x,
-    // largest y cell (the object-def anchor AC), i.e. its south row's west end. The
-    // footprint's own cells span `height` rows north of and including the
-    // anchor row; the art may overhang further north still (bottom-
-    // anchored sprites never overhang south) and symmetrically sideways
-    // (they are centre-anchored).
+    // The footprint's own cells span `height` rows north of and including
+    // the anchor row (`footprintOrigin`, the one place that arithmetic
+    // lives); the art may overhang further north still (bottom-anchored
+    // sprites never overhang south) and symmetrically sideways (they are
+    // centre-anchored).
     const up = def.drawOverhangCellsUp ?? 0;
     const side = def.drawOverhangCellsX ?? 0;
-    const northY = row.y - (def.height - 1);
+    const origin = footprintOrigin(row.x, row.y, def);
     for (let dy = -up; dy < def.height; dy++) {
       for (let dx = -side; dx < def.width + side; dx++) {
-        fn(row.x + dx, northY + dy);
+        fn(origin.x + dx, origin.y + dy);
       }
     }
   }

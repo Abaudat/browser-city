@@ -28,6 +28,7 @@
 // Both reads are bounded by the viewport, never by how much world exists.
 
 import { subcellRectPx } from "../render/screen-position";
+import { footprintOrigin } from "../world/footprint";
 import { isEmptyCellBounds } from "../world/world-index";
 import { DEBUG_STYLE } from "./debug-style";
 import type { DebugWorldView } from "./world-view";
@@ -109,8 +110,13 @@ export function buildCollisionRects(view: DebugWorldView): CollisionRect[] {
   // which is the whole failure mode AC2 names.
   for (const object of view.objects(bounds)) {
     if (drawn.has(object.objectId)) continue;
-    const anchorXSub = object.anchorX * colliderSubcellsPerCell;
-    const anchorYSub = object.anchorY * colliderSubcellsPerCell;
+    // `object.collider` (and the footprint outline below) are declared
+    // relative to the footprint's own north-west sub-cell origin
+    // (`world/footprint.ts`'s `footprintOrigin`, the one place that
+    // arithmetic lives), not `object.anchorX`/`anchorY` themselves.
+    const origin = footprintOrigin(object.anchorX, object.anchorY, object);
+    const anchorXSub = origin.x * colliderSubcellsPerCell;
+    const anchorYSub = origin.y * colliderSubcellsPerCell;
     const collider = object.collider;
 
     if (!collider) {

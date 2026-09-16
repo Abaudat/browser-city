@@ -63,6 +63,18 @@ pub const INTERACT_AT_MAX_REACH_CELLS: i64 = 2;
 /// reaches `sim::generated::defs` (see `emit.rs`).
 pub const MAX_FOOTPRINT_CELLS: i64 = 8;
 
+/// The one root a real `sprite.sheet` (or an appearance part's `sheet`)
+/// ever names in this repo, by vendor-art convention rather than an
+/// enforced rule (Quentin's direction, cycle 1: the simpler of two
+/// acceptable fixes -- the alternative was rejecting any `sprite.sheet`
+/// outside it, which was not taken). `.github/workflows/ci.yml`'s `defs:`
+/// filter watches this whole root
+/// (`scripts/ci/check-defs-sprite-root-filter.sh` pins the two together),
+/// so a PR that only swaps a vendor PNG anywhere under it still re-runs
+/// this crate's own `IHDR`-reading checks, regardless of which def
+/// happens to reference that file.
+pub const SPRITE_SHEET_ALLOWED_ROOT: &str = "ModernTileset/";
+
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RawColliderRect {

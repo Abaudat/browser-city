@@ -6,6 +6,7 @@ import { isWithinReach, pickSortKey, resolveClick, topmostAt } from "../../../sr
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { LAYER_TABLE } from "../../../src/render/layer-table";
 import { sortDrawablesInPlace } from "../../../src/render/sort-key";
+import { toSortUnits } from "../../../src/render/sort-units";
 import type { FootprintEntry, FootprintQuery } from "../../../src/world/footprint-index";
 
 const SUBCELLS = 16;
@@ -130,6 +131,8 @@ describe("isWithinReach", () => {
       fc.property(
         fc.integer({ min: -20, max: 20 }),
         fc.integer({ min: -20, max: 20 }),
+        fc.integer({ min: 1, max: 8 }),
+        fc.integer({ min: 1, max: 8 }),
         fc.integer({ min: -32, max: 0 }),
         fc.integer({ min: -32, max: 0 }),
         fc.integer({ min: 1, max: 48 }),
@@ -142,6 +145,8 @@ describe("isWithinReach", () => {
         (
           anchorX,
           anchorY,
+          width,
+          height,
           x0,
           y0,
           spanX,
@@ -153,27 +158,62 @@ describe("isWithinReach", () => {
           py,
         ) => {
           const rect = { x0, y0, x1: x0 + spanX, y1: y0 + spanY };
-          const def = { width: 2, height: 2, interactAt: rect };
+          const def = { width, height, interactAt: rect };
           const anchor = { anchorX, anchorY };
           const p = player(px, py, playerFloor);
 
           const actual = isWithinReach(anchor, def, p, objectFloor, subcellsPerCell);
 
-          // Independent model, in whole world-cell units throughout.
+          // Independent model, in whole world-cell units throughout,
+          // translated from the footprint's own north-west origin -- the
+          // anchor cell itself only when `height === 1`, `height - 1`
+          // cells further north otherwise (`world/footprint.ts`'s own
+          // convention, restated independently here rather than called).
+          const originY = anchorY - (height - 1);
           const feetX = Math.floor(px * subcellsPerCell) / subcellsPerCell;
           const feetY = Math.floor(py * subcellsPerCell) / subcellsPerCell;
           const expected =
             playerFloor === objectFloor &&
             feetX >= anchorX + rect.x0 / subcellsPerCell &&
             feetX < anchorX + rect.x1 / subcellsPerCell &&
-            feetY >= anchorY + rect.y0 / subcellsPerCell &&
-            feetY < anchorY + rect.y1 / subcellsPerCell;
+            feetY >= originY + rect.y0 / subcellsPerCell &&
+            feetY < originY + rect.y1 / subcellsPerCell;
 
           expect(actual).toBe(expected);
         },
       ),
       { numRuns: 400 },
     );
+  });
+
+  // Story 2.2 cycle 1 (Tim's direction): a 3-wide, 2-tall def is the only
+  // shape that can tell the footprint's north-west sub-cell origin
+  // (`interact_at`'s own local origin) apart from its south-west anchor
+  // cell -- a 1-tall def (every case above) reads identically either way.
+  it("translates interact_at from the footprint's north-west origin, not the anchor cell, for a multi-row def", () => {
+    const def = { width: 3, height: 2, interactAt: { x0: 0, y0: 0, x1: 48, y1: 16 } };
+    // Anchor at (10, 5): the footprint's north row is y = 4 (5 - (2-1)).
+    // interact_at's own local rect (y 0..16, i.e. sub-cell row 0) is that
+    // north row -- world y in [4, 5).
+    const anchor = { anchorX: 10, anchorY: 5 };
+    expect(isWithinReach(anchor, def, player(10.5, 4.5), 0, SUBCELLS)).toBe(true);
+    // Not the anchor's own row (y in [5, 6)) -- that would be the wrong
+    // answer under the old (incorrect) top-left-anchor arithmetic.
+    expect(isWithinReach(anchor, def, player(10.5, 5.5), 0, SUBCELLS)).toBe(false);
+  });
+});
+
+describe("pickSortKey", () => {
+  // Story 2.2 cycle 1 (Tim's direction): the anchor cell *is* the
+  // footprint's own south (bottom-drawn) row (`world/footprint.ts`'s own
+  // convention) -- a multi-row def must sort at its anchor's own y, never
+  // `anchorY + height - 1`, which would place it one footprint further
+  // south than it is actually drawn.
+  it("sorts a multi-row entry at its own anchor row, never one footprint further south", () => {
+    const tallEntry = entry({ objectId: 1n, defId: TRASH_BIN_DEF, anchorX: 4, anchorY: 6 });
+    const tallDef = { width: 3, height: 2 };
+    const key = pickSortKey(tallEntry, tallDef, 0, contextOf(queryOf({})));
+    expect(key.y).toBe(toSortUnits(6));
   });
 });
 

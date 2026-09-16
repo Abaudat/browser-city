@@ -236,6 +236,44 @@ describe("buildCollisionRects", () => {
     expect(rects[0]?.width).toBe(3 * TILE);
   });
 
+  // Story 2.2 cycle 1 (Tim's direction): a 3-wide, 2-tall def is the only
+  // shape that can tell the footprint's north-west sub-cell origin apart
+  // from its south-west anchor cell -- every def in `DEFS` above is one
+  // cell tall, which reads identically either way.
+  it("draws a multi-row footprint's outline and collider from its north-west origin, not its anchor cell", () => {
+    const tall = new Map<number, ColliderSource>([
+      [1, { width: 3, height: 2, collider: { x0: 0, y0: 0, x1: 3 * SUBCELLS, y1: SUBCELLS } }],
+    ]);
+    const world = new WorldIndex(SUBCELLS, tall);
+    // Anchor at (2, 3): the footprint's north-west origin is (2, 2).
+    world.insert(row({ objectId: 1n, defId: 1, x: 2, y: 3 }));
+    const rects = buildCollisionRects(viewOver(world));
+    expect(rects).toHaveLength(1);
+    expect(rects[0]).toMatchObject({
+      kind: "collider",
+      x: 2 * TILE,
+      y: 2 * TILE,
+      width: 3 * TILE,
+      // The collider's own declared height is 1 cell (y1 - y0 = SUBCELLS),
+      // not the footprint's full 2-cell height.
+      height: 1 * TILE,
+    });
+  });
+
+  it("draws a multi-row footprint's outline from its north-west origin when it has no collider", () => {
+    const tall = new Map<number, ColliderSource>([[1, { width: 3, height: 2 }]]);
+    const world = new WorldIndex(SUBCELLS, tall);
+    world.insert(row({ objectId: 1n, defId: 1, x: 2, y: 3 }));
+    const [rect] = buildCollisionRects(viewOver(world));
+    expect(rect).toMatchObject({
+      kind: "none",
+      x: 2 * TILE,
+      y: 2 * TILE,
+      width: 3 * TILE,
+      height: 2 * TILE,
+    });
+  });
+
   it("only ever uses colours from the shared palette", () => {
     const world = worldWith(
       row({ objectId: 1n, defId: 1, x: 0, y: 0 }),
