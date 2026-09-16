@@ -386,6 +386,18 @@ jobs:
     if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Story 2.4's own proptests build a real WalkabilityGrid per case and
+    # run erode/enclosed_regions/narrow_passages over it -- real work, not
+    # the plain arithmetic most of this suite's other proptests do.
+    # PROPTEST_CASES=4096 (the workflow-level default, calibrated for the
+    # `test` job's own --release run) times that per-case cost, under
+    # `cargo llvm-cov`'s unoptimized, instrumented build, blows this job's
+    # 10-minute budget. A job-level env wins over the workflow-level one
+    # for every step here; 256 (proptest's own upstream default) still
+    # exercises every property thoroughly -- the `test` job's release-mode
+    # run is what actually exhausts the input space at 4096.
+    env:
+      PROPTEST_CASES: 256
     defaults:
       run:
         working-directory: server
