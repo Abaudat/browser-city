@@ -76,6 +76,15 @@ pub const MAX_FOOTPRINT_CELLS: i64 = 8;
 /// here, not by convention alone.
 pub const SPRITE_SHEET_ALLOWED_ROOT: &str = "ModernTileset/";
 
+/// Story 2.4 (FR128): the walkability invariant's own vocabulary, not a
+/// hard-coded allow-list of object keys (Tim's direction) -- an object
+/// with no `collider` must carry this tag, declared once in `defs/tags/
+/// city.toml` like any other tag, and an object that carries this tag
+/// must not declare a `collider`. A single named constant here and in
+/// `client/src/defs/parse.ts`'s own copy, never a repeated string
+/// literal past either.
+pub const UNDERFOOT_TAG_KEY: &str = "underfoot";
+
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RawColliderRect {

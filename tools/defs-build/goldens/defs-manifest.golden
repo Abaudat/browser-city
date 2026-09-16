@@ -518,6 +518,7 @@ tag 5 shopfront
 tag 6 wall
 tag 7 bridge
 tag 8 stairs
+tag 9 underfoot
 rule 1 lighting_ground_floor_only
 rule 2 waste_per_three_seating
 rule 3 no_counter_in_a_stairwell

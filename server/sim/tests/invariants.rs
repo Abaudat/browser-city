@@ -14,9 +14,10 @@ use sim::rules::testing::SiteBuilder;
 use sim::rules::{
     AdjacencyRelation, AreaId, Cell, CoherenceMode, RuleDef, RuleKind, TagId, evaluate,
 };
+use sim::world::walkability::{WalkabilityGrid, enclosed_regions, erode, player_body_subcells};
 use sim::world::{
-    AreaSpec, FloorCollision, FloorSpec, NO_OWNER, Rect, TransitionSpec, WorldSpec, chunk_key,
-    fixture,
+    AreaSpec, FloorCollision, FloorSpec, NO_OWNER, Rect, TransitionSpec, WorldSpec, cell_index,
+    chunk_key, fixture,
 };
 
 pub const INV_NO_MATTER_STARVES: &str = "no matter starves indefinitely";
@@ -44,6 +45,10 @@ pub const INV_RULE_VERDICTS_INDEPENDENT_OF_INPUT_ORDER: &str =
     "shuffling fact order or rule row order does not change the sorted output";
 pub const INV_DISTRIBUTION_EVEN_LAYOUT_NEVER_VIOLATES: &str = "a generated perfectly even 1-per-N layout never violates; clustering all services into one bin always does; and a layout that satisfies the minimum spacing while sitting in one corner of the site still violates the coverage bound";
 pub const INV_RULE_VERDICTS_INVARIANT_UNDER_TAG_RELABELLING: &str = "consistently relabelling every tag id, across both the rules and the site, to six arbitrary distinct ids never changes which cells violate, over all five kinds, with areas and a non-vacuous requirement/distribution";
+pub const INV_DOORWAY_GAP_AT_LEAST_BODY_WIDTH_IS_ONE_COMPONENT_UNDER_EROSION: &str = "a ring with a doorway gap at least the player body's own width is always a single connected component once the walkability grid is eroded by the body (FR128)";
+pub const INV_SEALED_RING_YIELDS_EXACTLY_ONE_ENCLOSED_REGION: &str =
+    "a ring with no gap at all always yields exactly one enclosed region (FR128)";
+pub const INV_REMOVING_A_DOOR_NEVER_REDUCES_ENCLOSED_REGIONS: &str = "narrowing a ring's own doorway gap (down to and including closing it entirely) never reduces the number of reported enclosed regions (FR128)";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -589,5 +594,175 @@ proptest! {
             corner = corner.cell(Cell::new(10_000 + i, 0, 0), &[RULE_PER_OR_WITHIN]);
         }
         prop_assert!(!evaluate(&[rule], &corner.build()).is_empty());
+    }
+}
+
+// --- story 2.4: walkability (FR128) -----------------------------------
+
+/// One cell's worth of sub-cells (`COLLIDER_SUBCELLS_PER_CELL`, never a
+/// second literal 16).
+const RING_CELL_SUBCELLS: i32 = defs::COLLIDER_SUBCELLS_PER_CELL;
+/// An 8x6-cell ring, wall one cell thick, in sub-cells.
+const RING_W: i32 = 8 * RING_CELL_SUBCELLS;
+const RING_H: i32 = 6 * RING_CELL_SUBCELLS;
+/// The north wall's own span, minus its two corner cells -- a gap here
+/// never eats into a side wall.
+const RING_WALL_X0: i32 = RING_CELL_SUBCELLS;
+const RING_WALL_X1: i32 = RING_W - RING_CELL_SUBCELLS;
+
+/// A rectangular ring (walls one cell thick, sub-cell resolution) with a
+/// gap of `gap_width` sub-cells starting `gap_offset` sub-cells into the
+/// north wall's own interior span -- `gap_width` 0 means a fully sealed
+/// ring. The one fixture both new proptest invariants below share.
+fn ring_with_gap(gap_offset: i32, gap_width: i32) -> WalkabilityGrid {
+    let margin = RING_CELL_SUBCELLS;
+    let bounds = Rect {
+        x0: -margin,
+        y0: -margin,
+        x1: RING_W + margin,
+        y1: RING_H + margin,
+    };
+    let mut colliders = vec![
+        Rect {
+            x0: 0,
+            y0: 0,
+            x1: RING_CELL_SUBCELLS,
+            y1: RING_H,
+        }, // west
+        Rect {
+            x0: RING_W - RING_CELL_SUBCELLS,
+            y0: 0,
+            x1: RING_W,
+            y1: RING_H,
+        }, // east
+        Rect {
+            x0: 0,
+            y0: RING_H - RING_CELL_SUBCELLS,
+            x1: RING_W,
+            y1: RING_H,
+        }, // south
+    ];
+    let gap_start = (RING_WALL_X0 + gap_offset).clamp(RING_WALL_X0, RING_WALL_X1);
+    let gap_end = (gap_start + gap_width.max(0)).clamp(RING_WALL_X0, RING_WALL_X1);
+    if gap_start > RING_WALL_X0 {
+        colliders.push(Rect {
+            x0: RING_WALL_X0,
+            y0: 0,
+            x1: gap_start,
+            y1: RING_CELL_SUBCELLS,
+        });
+    }
+    if gap_end < RING_WALL_X1 {
+        colliders.push(Rect {
+            x0: gap_end,
+            y0: 0,
+            x1: RING_WALL_X1,
+            y1: RING_CELL_SUBCELLS,
+        });
+    }
+    WalkabilityGrid::build(bounds, &colliders).expect("ring geometry is always valid")
+}
+
+/// A cell just outside the ring's own north wall, in the always-open
+/// margin -- every `ring_with_gap` caller's own seed.
+const RING_EXTERIOR_SEED: (i32, i32) = (-RING_CELL_SUBCELLS / 2, -RING_CELL_SUBCELLS / 2);
+
+/// `(gap_width, gap_offset)`, integer-only (NFR25: `sim` is
+/// integer/fixed-point, and that discipline holds in its own test suite
+/// too -- no `f64` fraction trick): `gap_width` ranges from the real
+/// player body width up to the wall's own span, and `gap_offset` is
+/// generated *after* it (`prop_flat_map`) so it always leaves the gap
+/// fully inside the span.
+fn gap_at_least_body_width_strategy() -> impl Strategy<Value = (i32, i32)> {
+    let (body_w, _) = player_body_subcells(defs::BALANCE);
+    let span = RING_WALL_X1 - RING_WALL_X0;
+    (body_w..=span).prop_flat_map(move |gap_width| {
+        let max_offset = span - gap_width;
+        (Just(gap_width), 0..=max_offset)
+    })
+}
+
+/// The number of 4-connected components `grid`'s own passable sub-cells
+/// form, over its own declared bounds -- iterative, never recursive,
+/// deterministic (raster scan order).
+fn component_count(grid: &WalkabilityGrid) -> usize {
+    let bounds = grid.bounds();
+    let total = ((bounds.x1 - bounds.x0) as i64 * (bounds.y1 - bounds.y0) as i64) as usize;
+    let mut visited = vec![false; total];
+    let mut count = 0;
+    let mut stack: Vec<(i32, i32)> = Vec::new();
+    for y in bounds.y0..bounds.y1 {
+        for x in bounds.x0..bounds.x1 {
+            let idx = cell_index(bounds, x, y).unwrap();
+            if visited[idx] || !grid.is_passable(x, y) {
+                continue;
+            }
+            count += 1;
+            visited[idx] = true;
+            stack.clear();
+            stack.push((x, y));
+            while let Some((cx, cy)) = stack.pop() {
+                for (nx, ny) in [(cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)] {
+                    if !bounds.contains(nx, ny) {
+                        continue;
+                    }
+                    let nidx = cell_index(bounds, nx, ny).unwrap();
+                    if !visited[nidx] && grid.is_passable(nx, ny) {
+                        visited[nidx] = true;
+                        stack.push((nx, ny));
+                    }
+                }
+            }
+        }
+    }
+    count
+}
+
+proptest! {
+    /// `inv_doorway_gap_at_least_body_width_is_one_component_under_erosion`
+    /// (FR128): for any gap at least the real, generated
+    /// `movement.player_body_width_subcells` wide, anywhere within the
+    /// north wall's own span, eroding the ring by the real player body
+    /// always leaves exterior and interior joined into a single
+    /// component -- never split, regardless of exactly where the gap
+    /// sits.
+    #[test]
+    fn inv_doorway_gap_at_least_body_width_is_one_component_under_erosion(
+        (gap_width, gap_offset) in gap_at_least_body_width_strategy(),
+    ) {
+        let (body_w, body_h) = player_body_subcells(defs::BALANCE);
+        let grid = ring_with_gap(gap_offset, gap_width);
+        let eroded = erode(&grid, body_w, body_h);
+        prop_assert_eq!(component_count(&eroded), 1);
+    }
+
+    /// `inv_sealed_ring_yields_exactly_one_enclosed_region` (FR128): a
+    /// ring with no gap at all -- whatever its (always-zero) gap
+    /// position -- always reports exactly one enclosed region from any
+    /// exterior seed.
+    #[test]
+    fn inv_sealed_ring_yields_exactly_one_enclosed_region(gap_offset in 0i32..(RING_WALL_X1 - RING_WALL_X0)) {
+        let grid = ring_with_gap(gap_offset, 0);
+        let findings = enclosed_regions(&grid, RING_EXTERIOR_SEED.0, RING_EXTERIOR_SEED.1);
+        prop_assert_eq!(findings.len(), 1);
+    }
+
+    /// `inv_removing_a_door_never_reduces_enclosed_regions` (Quentin's
+    /// direction): narrowing a ring's own gap -- down to, and including,
+    /// closing it entirely -- never *reduces* the number of reported
+    /// enclosed regions from the same exterior seed.
+    #[test]
+    fn inv_removing_a_door_never_reduces_enclosed_regions(
+        gap_offset in 0i32..(RING_WALL_X1 - RING_WALL_X0),
+        wide_gap in 1i32..(RING_WALL_X1 - RING_WALL_X0),
+        narrow_gap in 0i32..(RING_WALL_X1 - RING_WALL_X0),
+    ) {
+        let wide = wide_gap.max(narrow_gap);
+        let narrow = wide_gap.min(narrow_gap);
+        let wide_grid = ring_with_gap(gap_offset, wide);
+        let narrow_grid = ring_with_gap(gap_offset, narrow);
+        let wide_count = enclosed_regions(&wide_grid, RING_EXTERIOR_SEED.0, RING_EXTERIOR_SEED.1).len();
+        let narrow_count = enclosed_regions(&narrow_grid, RING_EXTERIOR_SEED.0, RING_EXTERIOR_SEED.1).len();
+        prop_assert!(narrow_count >= wide_count);
     }
 }

@@ -228,10 +228,16 @@ fn a_zero_area_collider_is_named() {
     assert!(err.message.contains("zero or negative area"));
 }
 
+/// Quentin's direction, story 2.4: both rectangles, collider and
+/// footprint, in the same unit (sub-cells), in a fixed order, so the two
+/// are comparable by eye.
 #[test]
 fn a_collider_outside_its_footprint_is_named() {
     let err = build_err("collider-outside-footprint");
-    assert!(err.message.contains("does not fit inside its footprint"));
+    assert_eq!(
+        err.to_string(),
+        "defs/objects/city-props.toml:9:12: object 'trash_bin' collider (0, 0)-(20, 8) does not fit inside its footprint (0, 0)-(16, 16) sub-cells"
+    );
 }
 
 #[test]
@@ -409,6 +415,38 @@ fn a_walkable_flag_is_named() {
     assert!(err.message.contains("walkable"));
 }
 
+// --- story 2.4: the walkability invariant (FR128) ---------------------------
+
+/// A colliderless prop nobody tagged `underfoot` is rejected by name --
+/// the AC's own "trash can with no collision" example.
+#[test]
+fn a_colliderless_prop_not_tagged_underfoot_is_named() {
+    let err = build_err("prop-no-collider-not-underfoot");
+    assert!(err.message.contains("trash_can"));
+    assert!(err.message.contains("underfoot"));
+}
+
+/// A manhole absent from the `underfoot` tag is rejected by name -- the
+/// AC's other example. Not a second code path: the exact same generic
+/// check as the trash can above, exercised against a different content
+/// key so both of the AC's own examples are named tests.
+#[test]
+fn a_manhole_absent_from_the_underfoot_tag_is_named() {
+    let err = build_err("manhole-not-tagged-underfoot");
+    assert!(err.message.contains("manhole"));
+    assert!(err.message.contains("underfoot"));
+}
+
+/// The other direction of the same invariant: an object cannot declare a
+/// `collider` (it blocks) and the `underfoot` tag (it is explicitly
+/// walkable) at once -- contradictory metadata, rejected by name.
+#[test]
+fn an_object_tagged_underfoot_with_a_collider_is_named() {
+    let err = build_err("underfoot-tag-with-collider");
+    assert!(err.message.contains("trash_bin"));
+    assert!(err.message.contains("declares both a collider"));
+}
+
 /// Every category this module lists above has its own fixture directory
 /// under `tests/fixtures/invalid/` -- so a category added to one and not
 /// the other is a hard failure here, not a silent gap. `non-integer-id`
@@ -467,6 +505,9 @@ fn every_known_category_has_a_fixture_directory() {
         "distribution-max-distance-zero",
         "placement-floor-min-above-max",
         "duplicate-rule-id",
+        "prop-no-collider-not-underfoot",
+        "manhole-not-tagged-underfoot",
+        "underfoot-tag-with-collider",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

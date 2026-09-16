@@ -80,6 +80,14 @@ jobs:
               # direction: a defs change re-runs the build that consumes
               # its own generated half.
               - 'server/sim/src/generated/defs.rs'
+              # Story 2.4 (Quentin's direction): the doorway width check
+              # reads `movement.player_body_width_subcells`/`_height_
+              # subcells` from the generated balance seeds, never a
+              # literal -- a PR that only edits the source balance file
+              # (before defs.rs is regenerated to match) must still run
+              # `sim`'s own tests. `check-server-filter-covers-movement-
+              # balance.sh` pins this line so it can never silently drop.
+              - 'defs/balance/movement.toml'
             client:
               - 'client/**'
               - 'server/**'
@@ -188,6 +196,10 @@ jobs:
       # the one running check-layer-table-current.sh, since client-check's
       # own filter never covers tools/defs-build/**.
       - run: bash scripts/ci/check-layer-table-guard-wired.sh
+      # Story 2.4 (Quentin's direction): the server: filter must keep
+      # covering defs/balance/movement.toml, since sim::world::
+      # walkability's doorway threshold is read from it.
+      - run: bash scripts/ci/check-server-filter-covers-movement-balance.sh
       # scripts/ci/'s own fast, no-toolchain-needed tests for its
       # mechanical guards (e.g. check-no-masks.sh's own pattern, story 1.7
       # cycle 2) -- runs here, not in `client-check`, since it needs
