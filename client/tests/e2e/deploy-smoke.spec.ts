@@ -17,6 +17,7 @@
 // same honesty bar boot-marks.spec.ts holds every other mark to.
 import { expect, test } from "@playwright/test";
 import { BOOT_MARK } from "../../src/boot/boot-marks";
+import { DEBUG_OVERLAYS } from "../../src/debug/overlays";
 
 const EXPECT_WS_ORIGIN = process.env.BC_DEPLOY_EXPECT_WS_ORIGIN;
 const EXPECT_DB = process.env.BC_DEPLOY_EXPECT_DB;
@@ -102,4 +103,62 @@ test("the deployed client boots for real: connects, subscribes and reaches playe
   // checked last, so a real connection/subscription failure above reports
   // its own specific cause rather than being buried in this list.
   expect(failures, `failures:\n${failures.join("\n")}`).toEqual([]);
+});
+
+// Story 1.12 (AC1, FR168): "off means off", against a real *production*
+// build. Deliberately folded into this spec rather than given a server or
+// a Playwright project of its own (Quentin/Tim's direction) -- the
+// `deploy-smoke` project already runs against exactly the two targets
+// that matter, and against nothing else:
+//   - `ci.yml`'s `e2e` job, via `serve-for-deploy-smoke.mjs`'s
+//     production-base preview build, before merge;
+//   - `deploy.yml`'s `smoke` job, against the real deployed Pages URL.
+//
+// Every activation this drives comes from `DEBUG_OVERLAYS` itself, so an
+// overlay added later is covered by this negative test on the day it is
+// registered, with nothing to remember to update.
+test("no debug overlay can be activated in a production build (FR168, AC1)", async ({ page }) => {
+  const deployUrl = process.env.BC_DEPLOY_URL;
+  if (!deployUrl) {
+    throw new Error("deploy-smoke.spec.ts: BC_DEPLOY_URL must be set");
+  }
+
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(`page error: ${String(error)}`));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(`console error: ${message.text()}`);
+  });
+
+  const ids = DEBUG_OVERLAYS.map((o) => o.id);
+  const separator = deployUrl.includes("?") ? "&" : "?";
+  // Every id at once, and then each one on its own -- a build that
+  // somehow honoured only a single-id query would still be caught.
+  for (const query of [ids.join(","), ...ids]) {
+    await page.goto(`${deployUrl}${separator}debug=${query}`);
+    await page.waitForFunction(
+      (markName) => performance.getEntriesByName(markName).length > 0,
+      BOOT_MARK.PLAYER_CONTROLLABLE,
+      { timeout: 30_000 },
+    );
+
+    // Nothing drawn, by any of the markers the overlays use...
+    expect(await page.locator("[data-bc-debug]").count(), `?debug=${query} drew an overlay`).toBe(
+      0,
+    );
+    expect(await page.locator("[data-bc-collider]").count()).toBe(0);
+    expect(await page.locator("[data-bc-sort-label]").count()).toBe(0);
+    // ...and no handle to activate one with, because the module that
+    // would define it was never emitted into this build.
+    expect(
+      await page.evaluate(() => ({
+        debugHandle: typeof (window as unknown as { __bcDebug?: unknown }).__bcDebug,
+        e2eHook: typeof (window as unknown as { __bc?: unknown }).__bc,
+      })),
+      `?debug=${query} left a debug handle on the page`,
+    ).toEqual({ debugHandle: "undefined", e2eHook: "undefined" });
+  }
+
+  // And the query itself was not merely ignored loudly: a production
+  // build has nothing to say about `?debug=` at all.
+  expect(errors, `failures:\n${errors.join("\n")}`).toEqual([]);
 });

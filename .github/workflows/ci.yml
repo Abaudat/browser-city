@@ -418,6 +418,8 @@ jobs:
         run: bash ../scripts/ci/check-no-canvas-ui.sh
       - name: story 1.9 FR148, the input layer cannot reach a procedure or an interaction module
         run: bash ../scripts/ci/check-input-boundary.sh
+      - name: story 1.12 FR168, debug tooling is reachable only through main.ts's DEV-gated dynamic import
+        run: bash ../scripts/ci/check-debug-boundary.sh
       # The cargo-free half of check-trace-matrix.sh: the client inv_*
       # symmetry and the Guard-section path checks, at effectively zero
       # cost -- Tim's direction, so a client-only PR is never gated on
@@ -452,6 +454,21 @@ jobs:
         run: |
           if grep -rq '__bc' dist/assets/*.js; then
             echo "::error::window.__bc leaked into the production bundle -- import.meta.env.DEV did not strip it" >&2
+            exit 1
+          fi
+      # Story 1.12 (AC1, Tim/Quentin's direction): the debug overlays are
+      # behind a dynamic import inside a statically-false branch, so Rollup
+      # should never emit their chunk at all -- a production build does not
+      # contain them switched off, it does not contain them. These are the
+      # sentinels that stay true to that: the markup markers the overlays
+      # draw with and the module strings only they contain. Deliberately
+      # NOT the palette hex values: PixiJS ships its own CSS colour table,
+      # which contains `#ff00ff` (magenta/fuchsia), so grepping the palette
+      # literals would fail on a build with no debug code in it whatsoever.
+      - name: story 1.12 FR168, no debug overlay code reaches the production bundle
+        run: |
+          if grep -rlqE 'bc-debug|__bcDebug|data-bc-collider|data-bc-sort-label|no such overlay' dist/assets/*.js dist/index.html 2>/dev/null; then
+            echo "::error::debug overlay code (client/src/debug/**) leaked into the production bundle -- the import.meta.env.DEV dynamic-import gate stopped working (FR168)" >&2
             exit 1
           fi
       # Story 1.14 (Tim's direction): the decode-only harness and its

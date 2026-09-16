@@ -8,6 +8,7 @@ export default defineConfig({
       provider: "v8",
       include: [
         "src/boot/**",
+        "src/debug/**",
         "src/net/**",
         "src/defs/**",
         "src/render/**",
@@ -32,6 +33,13 @@ export default defineConfig({
       // the same way -- these are DOM-adjacent, but every one of their
       // effects is provable in jsdom, so there is no reason to exempt
       // them.
+      // Story 1.12: `src/debug/**` is in scope at the same bar as
+      // `src/render/**`, with nothing excluded -- including the SVG
+      // adapters, which jsdom exercises for real. "It is only debug code"
+      // is not a coverage exemption (Quentin's direction): debug code
+      // that is wrong is the exact failure mode these overlays exist to
+      // prevent, and an overlay that lies about a collider is worse than
+      // no overlay at all.
       // Story 1.10: `composite-canvas.ts` needs a real `OffscreenCanvas`
       // (an `OffscreenCanvas`-less node test cannot exercise it
       // meaningfully) and `part-sheets.ts` needs a real Vite

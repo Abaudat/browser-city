@@ -1,5 +1,6 @@
 import { Application } from "pixi.js";
 import { BOOT_MARK, markBoot } from "./boot/boot-marks";
+import type { DebugWorldView } from "./debug/world-view";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
@@ -23,6 +24,7 @@ import {
 import type { PingObservation } from "./net/observe-ping";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
+import { visibleCellBounds } from "./render/screen-position";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
@@ -30,6 +32,13 @@ import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, windowDefIds } from "./world/object-defs";
+
+/** Story 1.12: the camera a debug overlay sees before the scene has
+ * reported its own. It describes no rectangle, so
+ * `visibleCellBounds` yields an empty window rather than guessing -- an
+ * overlay drawn against a made-up camera would be drawn in the wrong
+ * place, which is worse than not yet drawn. */
+const NO_CAMERA_YET = { zoom: 0, offsetX: 0, offsetY: 0 } as const;
 
 async function main(): Promise<void> {
   // Story 1.14 (NFR1): the bundle term's own end -- module top-level
@@ -154,6 +163,16 @@ async function startStreetScene(): Promise<void> {
   const freezeCrowdForE2e =
     import.meta.env.DEV && new URLSearchParams(window.location.search).has("freezeCrowd");
 
+  // Story 1.12 (FR165/FR168): set only inside the DEV branch below, and
+  // only after the scene has mounted. Every callback that notifies it is
+  // a no-op until then, and in a production build there is nothing for it
+  // ever to hold.
+  let debugOverlays:
+    | { setViewTransform(z: number, x: number, y: number): void; redraw(): void }
+    | undefined;
+  let lastViewTransform: { zoom: number; offsetX: number; offsetY: number } | undefined;
+  let lastPlayerCell = "";
+
   // The render path's own resort event drives this hook directly
   // (Quentin's direction) -- never a ticker polling `getRenderOrder()`
   // every frame to see whether it changed.
@@ -168,8 +187,24 @@ async function startStreetScene(): Promise<void> {
     windowDefIds: windowDefIds(defs),
     startWithCrowdFrozen: freezeCrowdForE2e,
     highlightStrength: display.highlightStrength,
-    onOrderChange: recordRenderOrderForE2e,
-    onPlayerMove: recordPlayerPositionForE2e,
+    onOrderChange: (order) => {
+      recordRenderOrderForE2e(order);
+      debugOverlays?.redraw();
+    },
+    onPlayerMove: (x, y, floor) => {
+      recordPlayerPositionForE2e(x, y, floor);
+      // Story 1.12: `onPlayerMove` is the one callback here that really
+      // does fire every frame, so the overlays are redrawn on the *cell*
+      // or floor actually changing -- what moves the viewport or the
+      // viewer's own floor -- and never on the per-frame path. The
+      // player's own continuously-changing sort key is covered by
+      // `onOrderChange` above, which the scene fires exactly when that
+      // key changes.
+      const cell = `${Math.floor(x)},${Math.floor(y)},${floor}`;
+      if (cell === lastPlayerCell) return;
+      lastPlayerCell = cell;
+      debugOverlays?.redraw();
+    },
     onFrameWork: recordFrameWorkForE2e,
     onVisibilityChange: recordVisibilityForE2e,
     onMasksChecked: recordMasksCheckedForE2e,
@@ -180,7 +215,11 @@ async function startStreetScene(): Promise<void> {
     // this function is the whole of what Epic 8 has to do here.
     onIntent: recordIntentForE2e,
     onIgnored: recordIgnoredIntentForE2e,
-    onViewTransform: recordViewTransformForE2e,
+    onViewTransform: (zoom, offsetX, offsetY) => {
+      recordViewTransformForE2e(zoom, offsetX, offsetY);
+      lastViewTransform = { zoom, offsetX, offsetY };
+      debugOverlays?.setViewTransform(zoom, offsetX, offsetY);
+    },
     onHighlightChange: recordHighlightForE2e,
   });
   sceneHandle = handle;
@@ -195,6 +234,56 @@ async function startStreetScene(): Promise<void> {
   );
   exposeAppearanceCompareForE2e(handle.citizensLayer.compareForE2e);
   recordPlayerAppearanceForE2e(handle.playerAppearance);
+
+  // Story 1.12 (FR165/FR168): the whole of the debug tooling's gate, and
+  // the only import of `client/src/debug/` that exists (enforced by
+  // `client/biome.json`'s override and
+  // `scripts/ci/check-debug-boundary.sh`).
+  //
+  // A dynamic import inside a branch Vite statically evaluates to `false`
+  // is one Rollup never emits a chunk for: a production build does not
+  // contain the overlays switched off, it does not contain them at all,
+  // so there is no code for any input, query string or console call to
+  // activate (AC1). `ci.yml`'s `client-build` job greps the real built
+  // assets for the debug sentinels to keep that true.
+  if (import.meta.env.DEV) {
+    const { mountDebugOverlays } = await import("./debug/overlays");
+    const view: DebugWorldView = {
+      tileSizePx,
+      storeyHeightPx,
+      colliderSubcellsPerCell: movementConfig.subcellsPerCell,
+      viewerFloor: () => handle.currentFloor(),
+      // The camera the scene itself reported (`onViewTransform`), never a
+      // container's scale read back off the Pixi display list; the
+      // projection is `render/screen-position.ts`'s, never restated here.
+      viewportCells: () =>
+        visibleCellBounds(
+          app.renderer.width,
+          app.renderer.height,
+          lastViewTransform ?? NO_CAMERA_YET,
+          handle.currentFloor(),
+          tileSizePx,
+          storeyHeightPx,
+        ),
+      entriesInCell: (floor, cellX, cellY) => handle.collidersInCell(floor, cellX, cellY),
+      objects: (bounds) => handle.worldObjects(bounds),
+      pool: () => handle.poolDrawables(),
+      orderOf: (stableId) => handle.orderIndexOf(stableId),
+    };
+    debugOverlays = mountDebugOverlays({
+      mount,
+      // Read on every redraw, never captured: a resize must not leave
+      // the overlay projecting into a box the scene no longer draws in.
+      rendererSize: () => ({ width: app.renderer.width, height: app.renderer.height }),
+      view,
+      search: window.location.search,
+      exposeOn: window,
+    });
+    if (lastViewTransform) {
+      const { zoom, offsetX, offsetY } = lastViewTransform;
+      debugOverlays.setViewTransform(zoom, offsetX, offsetY);
+    }
+  }
 }
 
 function getBalance(defs: Defs, key: string): number {

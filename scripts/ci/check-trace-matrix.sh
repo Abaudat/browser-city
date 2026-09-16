@@ -204,6 +204,7 @@ GUARD_SECTIONS=(
   "World addressing"
   "Rendering"
   "Input and intents"
+  "Debug tooling"
   "Scheduled-reducer timing"
   "Backup and restore"
   "Boot budget"
