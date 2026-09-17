@@ -92,6 +92,23 @@ if [ -n "$LOCALHOST_MATCHES" ]; then
   FAILED=1
 fi
 
+# --- story 2.6: every atlas page the built defs.json names is actually
+# present under dist/atlas/ (Tim's direction) -- Vite copies client/
+# public/** verbatim, so a missing page here means the page was never
+# committed, not a build-tool problem, but the client would still 404
+# fetching it at runtime -- caught here, not only in a real browser. -----
+DEFS_JSON="$DIST_DIR/defs/defs.json"
+if [ -f "$DEFS_JSON" ]; then
+  while IFS= read -r file; do
+    file="${file%$'\r'}"
+    [ -z "$file" ] && continue
+    [ -f "$DIST_DIR/atlas/$file" ] || {
+      echo "check-pages-bundle: FAIL -- defs.json names atlas page '$file' but '$DIST_DIR/atlas/$file' does not exist" >&2
+      FAILED=1
+    }
+  done < <(jq -r '(.atlas_pages // [])[].file' "$DEFS_JSON")
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi

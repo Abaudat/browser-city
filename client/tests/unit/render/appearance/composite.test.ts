@@ -271,6 +271,8 @@ function defsWith(overrides: Partial<Defs> = {}): Defs {
     colliderSubcellsPerCell: 16,
     interactAtMaxReachCells: 2,
     maxFootprintCells: 8,
+    atlasMaxPagesPerGroup: 2,
+    atlasPages: [],
     objects: [],
     items: [],
     recipes: [],

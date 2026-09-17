@@ -113,6 +113,16 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
 // browser-less proxy and no throttling to be reliable. Budgets are set
 // from docs/spikes/1.14-boot-budget.md's own measured baseline (105
 // requests, ~3.0 MiB) with margin.
+//
+// Story 2.6 (Tim's direction, cycle 1): the shop counter now loads one
+// shared atlas page instead of its own individual image -- net zero
+// change in request count, and the page (11.4 KB for today's one-object
+// "street" group) is smaller than the individual PNG it replaced, so
+// this budget is left unchanged rather than tightened from an unverified
+// number: a local run measured far below both the old baseline and this
+// budget, but on different hardware/timing than the CI image the
+// baseline itself was measured on, and a budget tightened from that
+// alone risks flaking CI rather than actually guarding anything tighter.
 const ATLAS_REQUEST_BUDGET = 115;
 const ATLAS_BYTES_BUDGET = 3.4 * 1024 * 1024;
 

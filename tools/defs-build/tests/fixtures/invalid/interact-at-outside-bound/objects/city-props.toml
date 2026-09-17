@@ -3,7 +3,7 @@ id = 1
 key = "trash_bin"
 name = "Trash Bin"
 layer = "furniture"
-sprite = { sheet = "fixtures/objects/trash-bin-test.png", x = 0, y = 0, w = 16, h = 16 }
+sprite = { sheet = "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/trash-bin-test.png", x = 0, y = 0, w = 16, h = 16 }
 width = 1
 height = 1
 # INTERACT_AT_MAX_REACH_CELLS is 2 cells (32 sub-cells) beyond the

@@ -29,6 +29,11 @@ client/src/net/bindings/** linguist-generated
 server/sim/src/generated/defs.rs linguist-generated text eol=lf
 client/public/defs/defs.json linguist-generated text eol=lf
 
+# Story 2.6: packed atlas pages -- never hand-edited, guarded by the same
+# check-defs-current.sh (extended to diff this whole directory). Binary,
+# so no eol normalisation ever applies to it.
+client/public/atlas/** binary linguist-generated
+
 # Client sources: `npm run lint` is `biome check`, which formats to LF
 # (Biome's own default) and is the exact check CI runs. On a CRLF working
 # copy every file reports a format error, the 20-diagnostic cap truncates

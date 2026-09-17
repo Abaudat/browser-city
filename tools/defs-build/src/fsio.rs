@@ -143,6 +143,54 @@ pub fn atomic_write(path: &Path, contents: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// Like [`atomic_write`], but for binary content -- story 2.6's atlas
+/// pages.
+pub fn atomic_write_bytes(path: &Path, contents: &[u8]) -> io::Result<()> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| io::Error::other(format!("{} has no parent directory", path.display())))?;
+    std::fs::create_dir_all(dir)?;
+    let tmp = dir.join(format!(
+        ".{}.tmp-{}-{}",
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("defs-build-out"),
+        std::process::id(),
+        unique_suffix()
+    ));
+    std::fs::write(&tmp, contents)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Story 2.6 (Tim's direction): `dir` is wholly owned by the caller --
+/// every `(filename, bytes)` in `entries` is written (atomically, via
+/// [`atomic_write_bytes`]), and any pre-existing file under `dir` whose
+/// name is not in `entries` is deleted, so a stale page from a since-
+/// removed group or object never accumulates. `dir` is created if it does
+/// not exist yet; a subdirectory under `dir` is left alone (this crate
+/// never nests atlas pages).
+pub fn sync_binary_dir(dir: &Path, entries: &[(String, Vec<u8>)]) -> io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let wanted: std::collections::BTreeSet<&str> =
+        entries.iter().map(|(name, _)| name.as_str()).collect();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !wanted.contains(name) {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
+    for (name, bytes) in entries {
+        atomic_write_bytes(&dir.join(name), bytes)?;
+    }
+    Ok(())
+}
+
 fn unique_suffix() -> u128 {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -337,6 +385,55 @@ mod tests {
         let dir = make_scratch_dir("defs-build-test-codes-missing").unwrap();
         let err = read_codes_golden(&dir).unwrap_err();
         assert!(err.to_string().contains(CODES_GOLDEN_PATH));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn sync_binary_dir_writes_every_entry() {
+        let dir = make_scratch_dir("defs-build-test-sync").unwrap();
+        sync_binary_dir(
+            &dir,
+            &[
+                ("a.png".to_string(), vec![1, 2, 3]),
+                ("b.png".to_string(), vec![4, 5, 6]),
+            ],
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(dir.join("a.png")).unwrap(), vec![1, 2, 3]);
+        assert_eq!(std::fs::read(dir.join("b.png")).unwrap(), vec![4, 5, 6]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn sync_binary_dir_deletes_a_stale_file_not_in_this_runs_entries() {
+        let dir = make_scratch_dir("defs-build-test-sync-stale").unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("stale.png"), b"old").unwrap();
+        sync_binary_dir(&dir, &[("fresh.png".to_string(), vec![1])]).unwrap();
+        assert!(!dir.join("stale.png").exists());
+        assert!(dir.join("fresh.png").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn sync_binary_dir_creates_a_missing_directory() {
+        let dir = make_scratch_dir("defs-build-test-sync-missing").unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        sync_binary_dir(&dir, &[("a.png".to_string(), vec![9])]).unwrap();
+        assert_eq!(std::fs::read(dir.join("a.png")).unwrap(), vec![9]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn sync_binary_dir_leaves_no_tmp_file_behind() {
+        let dir = make_scratch_dir("defs-build-test-sync-tmp").unwrap();
+        sync_binary_dir(&dir, &[("a.png".to_string(), vec![1])]).unwrap();
+        let leftover: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp-"))
+            .collect();
+        assert!(leftover.is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

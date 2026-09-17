@@ -52,6 +52,46 @@ fn check_balance_key_format(entries: &[BalanceEntry]) -> Result<(), DefsError> {
     Ok(())
 }
 
+/// Story 2.6, Artie's direction: `defs/atlas/page-groups.toml`'s own
+/// `theme -> group` table, validated separately from [`validate`]'s main
+/// `Defs` tree -- it feeds the atlas packer alone, never an emitted
+/// artefact, so it never needs a place on [`Defs`] itself. A theme
+/// declared twice (even to the same group) is refused by name: one row
+/// per theme, always.
+pub fn validate_page_groups(raw: &RawDefs) -> Result<BTreeMap<String, String>, DefsError> {
+    let mut table = BTreeMap::new();
+    let mut first_seen: HashMap<&str, &PageGroupEntry> = HashMap::new();
+    for entry in &raw.page_groups {
+        if let Some(prev) = first_seen.get(entry.theme.value.as_str()) {
+            return Err(DefsError::new(
+                &entry.path,
+                entry.theme.line,
+                entry.theme.col,
+                format!(
+                    "theme '{}' already has a page_group row at {}:{}:{}",
+                    entry.theme.value,
+                    prev.path.display(),
+                    prev.theme.line,
+                    prev.theme.col
+                ),
+            ));
+        }
+        first_seen.insert(entry.theme.value.as_str(), entry);
+        table.insert(entry.theme.value.clone(), entry.group.value.clone());
+    }
+    if !table.values().any(|g| g == ATLAS_SHARED_GROUP) {
+        return Err(DefsError::new(
+            "defs/atlas/page-groups.toml",
+            0,
+            0,
+            format!(
+                "no theme maps to '{ATLAS_SHARED_GROUP}' -- the shared group every street scene binds is a structural requirement, not a convention; map at least one theme to it"
+            ),
+        ));
+    }
+    Ok(table)
+}
+
 fn check_id_key_dupes<T: IdKeyEntry>(entries: &[T], kind: &str) -> Result<(), DefsError> {
     let mut seen_ids: HashMap<u32, &T> = HashMap::new();
     let mut seen_keys: HashMap<&str, &T> = HashMap::new();
@@ -2708,5 +2748,46 @@ mod tests {
         )]);
         let err = parse_all(&f).unwrap_err();
         assert!(err.message.contains("teen"));
+    }
+
+    #[test]
+    fn validate_page_groups_returns_the_theme_to_group_table() {
+        let f = files(&[(
+            "defs/atlas/page-groups.toml",
+            "[[page_group]]\ntheme = \"camping\"\ngroup = \"street\"\n\n[[page_group]]\ntheme = \"kitchen\"\ngroup = \"kitchen\"\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let table = validate_page_groups(&raw).unwrap();
+        assert_eq!(table.get("camping").map(String::as_str), Some("street"));
+        assert_eq!(table.get("kitchen").map(String::as_str), Some("kitchen"));
+    }
+
+    #[test]
+    fn validate_page_groups_rejects_a_theme_declared_twice() {
+        let f = files(&[(
+            "defs/atlas/page-groups.toml",
+            "[[page_group]]\ntheme = \"camping\"\ngroup = \"street\"\n\n[[page_group]]\ntheme = \"camping\"\ngroup = \"other\"\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate_page_groups(&raw).unwrap_err();
+        assert!(err.message.contains("camping"));
+    }
+
+    #[test]
+    fn validate_page_groups_rejects_a_table_mapping_nothing_to_the_shared_group() {
+        let f = files(&[(
+            "defs/atlas/page-groups.toml",
+            "[[page_group]]\ntheme = \"kitchen\"\ngroup = \"kitchen\"\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate_page_groups(&raw).unwrap_err();
+        assert!(err.message.contains(ATLAS_SHARED_GROUP));
+    }
+
+    #[test]
+    fn validate_page_groups_rejects_an_empty_table() {
+        let raw = crate::model::RawDefs::default();
+        let err = validate_page_groups(&raw).unwrap_err();
+        assert!(err.message.contains(ATLAS_SHARED_GROUP));
     }
 }

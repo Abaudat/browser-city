@@ -20,7 +20,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 DEFS_RS="server/sim/src/generated/defs.rs"
-KNOWN_KINDS="objects items recipes professions chains balance appearance tags rules"
+KNOWN_KINDS="objects items recipes professions chains balance atlas appearance tags rules"
 
 _fail_or_skip() { # <message> -- hard fail under GITHUB_ACTIONS, soft skip otherwise
   if [ "${GITHUB_ACTIONS:-}" = "true" ]; then

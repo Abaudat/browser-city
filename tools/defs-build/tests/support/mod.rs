@@ -64,10 +64,13 @@ pub fn merged_tree(category: &str) -> Vec<(PathBuf, String)> {
 /// fixed here rather than read from a real file, exactly like
 /// [`appearance_sheet_dims`].
 pub fn object_sheet_dims() -> BTreeMap<String, (u32, u32)> {
-    [("fixtures/objects/trash-bin-test.png", (16, 16))]
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .collect()
+    [(
+        "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/trash-bin-test.png",
+        (16, 16),
+    )]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v))
+    .collect()
 }
 
 /// Both [`appearance_sheet_dims`] and [`object_sheet_dims`] merged --
@@ -77,6 +80,25 @@ pub fn sheet_dims() -> BTreeMap<String, (u32, u32)> {
     let mut all = appearance_sheet_dims();
     all.extend(object_sheet_dims());
     all
+}
+
+/// Real PNG bytes for every path [`object_sheet_dims`] declares -- story
+/// 2.6's atlas packer decodes real pixels, so `build()` needs more than a
+/// declared `(width, height)` for an object's own sheet (appearance
+/// sheets are never packed by this story; only `object_sheet_dims`'s
+/// paths need bytes). A solid colour is enough: these tests exercise
+/// `parse`/`validate`/the packer's own grouping and pass-through, never
+/// pixel content.
+pub fn object_sheet_bytes() -> BTreeMap<String, Vec<u8>> {
+    object_sheet_dims()
+        .into_iter()
+        .map(|(path, (w, h))| {
+            let rgba = vec![200u8; (w * h * 4) as usize];
+            let bytes = defs_build::atlas::image::encode_rgba8(w, h, &rgba)
+                .expect("fixture PNG encode must succeed");
+            (path, bytes)
+        })
+        .collect()
 }
 
 pub fn appearance_sheet_dims() -> BTreeMap<String, (u32, u32)> {
@@ -110,9 +132,17 @@ pub fn layer_codes() -> BTreeMap<String, u32> {
 /// stay focused on the one thing each is testing.
 pub fn build_err(category: &str) -> defs_build::DefsError {
     let files = merged_tree(category);
-    defs_build::build(&files, &sheet_dims(), &layer_codes(), "", "test-version").expect_err(
-        &format!("fixture category '{category}' was expected to fail the build"),
+    defs_build::build(
+        &files,
+        &sheet_dims(),
+        &object_sheet_bytes(),
+        &layer_codes(),
+        "",
+        "test-version",
     )
+    .expect_err(&format!(
+        "fixture category '{category}' was expected to fail the build"
+    ))
 }
 
 /// Like [`build_err`], but enforces the real
@@ -130,6 +160,7 @@ pub fn build_err_enforcing_sheet_root(category: &str) -> defs_build::DefsError {
     defs_build::build(
         &files,
         &sheet_dims(),
+        &object_sheet_bytes(),
         &layer_codes(),
         defs_build::model::SPRITE_SHEET_ALLOWED_ROOT,
         "test-version",

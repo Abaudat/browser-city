@@ -76,6 +76,83 @@ pub const MAX_FOOTPRINT_CELLS: i64 = 8;
 /// here, not by convention alone.
 pub const SPRITE_SHEET_ALLOWED_ROOT: &str = "ModernTileset/";
 
+/// Story 2.6: every atlas page is this wide, always -- the AC's own
+/// "2048x2048" read as a cap on both axes (Tim's direction). A page's own
+/// height is the smallest power of two (at least [`ATLAS_PAGE_MIN_HEIGHT`])
+/// that holds its packed shelves, never taller than this.
+pub const ATLAS_PAGE_WIDTH: u32 = 2048;
+
+/// The tallest an atlas page may ever be -- see [`ATLAS_PAGE_WIDTH`].
+pub const ATLAS_PAGE_MAX_HEIGHT: u32 = 2048;
+
+/// The shortest a packed page may ever be, before rounding up to the next
+/// power of two.
+pub const ATLAS_PAGE_MIN_HEIGHT: u32 = 16;
+
+/// NFR12's build-time assertion (Tim's direction): a single theme group
+/// that needs more pages than this fails the build, naming the group and
+/// what did not fit. Four themes at two pages each is the "around eight"
+/// simultaneously-bound textures a typical scene targets.
+pub const ATLAS_MAX_PAGES_PER_GROUP: usize = 2;
+
+/// NFR12's other half: a scene is the shared group plus at most one
+/// themed group -- a player is never on the street and inside a themed
+/// interior at once -- so the pages that can ever be simultaneously bound
+/// are `pages(ATLAS_SHARED_GROUP) + max over every other group of
+/// pages(group)`. That sum fails the build above this, naming both
+/// groups and their own page counts.
+pub const ATLAS_MAX_BOUND_PAGES: usize = 8;
+
+/// The one page group every theme a street kit's own single props draw
+/// from shares (`defs/atlas/page-groups.toml`'s own table) -- a themed
+/// district keeps its own group instead. At least one row in that table
+/// must map to this group; a table that maps nothing to it is a build
+/// error, because the shared set a street scene always binds is a
+/// structural requirement, not a convention any one row happens to
+/// establish.
+pub const ATLAS_SHARED_GROUP: &str = "street";
+
+/// A 1px border of extruded (edge-repeated, never transparent -- Artie's
+/// direction) pixels surrounds every packed rect on every side, always --
+/// nearest-neighbour sampling plus this is what stops bleed at a
+/// fractional camera position or a DPR-scaled canvas.
+pub const ATLAS_GUTTER_PX: u32 = 1;
+
+/// The one directory every packed atlas page lands in, relative to the
+/// repo root -- wholly owned by a `defs-build` run
+/// (`fsio::sync_binary_dir`), outside `client/`'s own build inputs but
+/// fetched by the client at runtime, so `ci.yml`'s `defs:` filter names it
+/// explicitly (`scripts/ci/check-atlas-filter.sh` pins the two together,
+/// the same idiom as `check-defs-sprite-root-filter.sh`).
+pub const ATLAS_PAGES_DIR: &str = "client/public/atlas";
+
+/// One packed object sprite's placement: `page` indexes
+/// [`Defs`]'s own `atlas_pages`; `x`/`y`/`w`/`h` are the object's whole
+/// sprite, in page pixels, gutter excluded. JSON-only (Tim's direction):
+/// the server never learns a page exists, so this never reaches
+/// `server/sim/src/generated/defs.rs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AtlasRect {
+    pub page: u32,
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+}
+
+/// One packed atlas page (story 2.6): `file` is content-hashed
+/// (`<group>-<hash>.png`, the hash over the page's own pixels -- never its
+/// PNG bytes, so re-encoding never renames a page whose content is
+/// unchanged), `group` is the theme-sorter-derived key every object on
+/// this page shares.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AtlasPageDef {
+    pub file: String,
+    pub group: String,
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Story 2.4 (FR128): the walkability invariant's own vocabulary, not a
 /// hard-coded allow-list of object keys (Tim's direction) -- an object
 /// with no `collider` must carry this tag, declared once in `defs/tags/
@@ -428,6 +505,39 @@ pub struct RawBalance {
 #[serde(deny_unknown_fields)]
 pub struct BalanceFile {
     pub balance: Vec<RawBalance>,
+}
+
+// --- atlas page groups (story 2.6, cycle 1, Artie's direction): maps a
+// theme-sorter-derived theme to the page group it actually shares -------
+
+/// One `theme -> group` mapping row (`defs/atlas/page-groups.toml`):
+/// `theme` is exactly [`crate::atlas::theme::theme_group`]'s own derived
+/// value (the folder segment, normalised), never a sheet path or an
+/// object key; `group` is the page group every sheet naming that theme
+/// actually packs onto. Artie's direction: every street-kit theme
+/// (terrain, city props, generic/floor-modular buildings, and whichever
+/// themed folders the street kit borrows single props from) maps to one
+/// shared `"street"` group; a themed district keeps its own group. A
+/// theme with no row here is a build error naming the theme -- there is
+/// no silent per-theme-folder default.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawPageGroup {
+    pub theme: Spanned<String>,
+    pub group: Spanned<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PageGroupFile {
+    pub page_group: Vec<RawPageGroup>,
+}
+
+#[derive(Debug)]
+pub struct PageGroupEntry {
+    pub path: PathBuf,
+    pub theme: Located<String>,
+    pub group: Located<String>,
 }
 
 // --- tags (story 2.10, FR111): the rule engine's only vocabulary -----------
@@ -815,6 +925,7 @@ pub struct RawDefs {
     pub professions: Vec<ProfessionEntry>,
     pub chains: Vec<ChainEntry>,
     pub balance: Vec<BalanceEntry>,
+    pub page_groups: Vec<PageGroupEntry>,
     pub bodies: Vec<BodyEntry>,
     pub eyes: Vec<EyesEntry>,
     pub hairstyles: Vec<HairstyleEntry>,

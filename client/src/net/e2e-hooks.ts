@@ -37,6 +37,10 @@ declare global {
        * id -- citizens sharing a tuple+override share an id (AC5). */
       appearanceTextureIds?: Record<string, number>;
       appearanceDistinctTextureCount?: number;
+      /** Story 2.6 (NFR12): how many distinct atlas pages the mounted
+       * street actually resolved a texture from -- `AtlasPageLoader.
+       * boundPageCount()` at mount time. */
+      distinctBoundAtlasPages?: number;
       /** Story 1.13: the player's own five stored part indices (FR61),
        * recorded once at mount. Unlike `appearanceTextureIds` -- opaque
        * per-session identity counters, assigned in texture-load order and
@@ -210,6 +214,16 @@ export function recordAppearanceTextureIdsForE2e(
   const bucket = window.__bc ?? { pings: [] };
   bucket.appearanceTextureIds = { ...idsById };
   bucket.appearanceDistinctTextureCount = distinctCount;
+  window.__bc = bucket;
+}
+
+/** Story 2.6 (NFR12): how many distinct atlas pages the mounted street
+ * actually resolved a texture from -- read once at mount and never
+ * again, the same idiom `recordAppearanceTextureIdsForE2e` uses. */
+export function recordDistinctBoundAtlasPagesForE2e(count: number): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.distinctBoundAtlasPages = count;
   window.__bc = bucket;
 }
 
