@@ -29,6 +29,21 @@ VERSION_LEN=16
   exit 1
 }
 
+# The same gotcha tools/defs-build/src/bin/defs-build.rs already guards
+# against for defs_version, applied here (PR #298's own CI failure was
+# exactly this): `git ls-files` only sees tracked files, so a freshly
+# generated binding not yet `git add`ed is invisible to this hash locally
+# but present the moment CI checks out a fully-committed tree -- fail
+# loudly rather than silently computing from a different tree than CI
+# will.
+UNTRACKED="$(git ls-files --others --exclude-standard -- "$BINDINGS_DIR")"
+if [ -n "$UNTRACKED" ]; then
+  echo "gen-protocol-version: FAIL -- $BINDINGS_DIR has untracked file(s) that a build elsewhere (e.g. CI) would not see:" >&2
+  printf '%s\n' "$UNTRACKED" >&2
+  echo "gen-protocol-version: git add them (or remove them) before regenerating" >&2
+  exit 1
+fi
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 BUF="$WORK/buf"
