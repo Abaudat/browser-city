@@ -31,5 +31,8 @@
   "walkable-flag-rejected",
   "dangling-tag-reference",
   "no-collider-not-underfoot",
-  "underfoot-with-collider"
+  "underfoot-with-collider",
+  "object-role-count-zero",
+  "object-role-count-two",
+  "role-layer-not-allowed"
 ]

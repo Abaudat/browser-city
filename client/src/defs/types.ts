@@ -89,14 +89,26 @@ export interface ObjectDef {
   readonly tags: readonly number[];
 }
 
+/** A role tag's own payload (story 2.9, FR119): the closed list of
+ * resolved `sim::codes::layer` codes an object carrying this role may
+ * sit on -- resolved codes, never authored names, exactly like
+ * `ObjectDef.layer`. */
+export interface RoleDef {
+  readonly layers: readonly number[];
+}
+
 /** One `defs/tags/*.toml` row (story 2.10, FR111) -- the rule engine's
  * only vocabulary. The client never evaluates a rule (rule rows never
  * reach this artefact, Tim's direction), but it does validate that every
  * `ObjectDef.tags` entry names a real row here, exactly like `layer`
- * resolves against the layer table. */
+ * resolves against the layer table. `role` (story 2.9) is present when
+ * this tag is a role -- every `ObjectDef` must carry exactly one
+ * role-bearing tag, and its own `layer` must be among that role's own
+ * `layers`. */
 export interface TagDef {
   readonly id: number;
   readonly key: string;
+  readonly role?: RoleDef;
 }
 
 export interface ItemDef {

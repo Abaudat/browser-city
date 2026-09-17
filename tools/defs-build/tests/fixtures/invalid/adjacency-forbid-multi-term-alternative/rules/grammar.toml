@@ -1,0 +1,13 @@
+# A `forbid` row's own violating pair must be unambiguous -- every
+# alternative must be a single `present: true` term. This one names two.
+[[adjacency]]
+id = 1
+key = "test_adjacency"
+a = "fixture"
+relation = "forbid"
+alternatives = [
+  [
+    { direction = "north", tag = "fixture" },
+    { direction = "south", tag = "fixture" },
+  ],
+]

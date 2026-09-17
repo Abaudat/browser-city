@@ -26,6 +26,11 @@ key = "shopfront"
 [[tag]]
 id = 6
 key = "wall"
+# Story 2.9 (AC1, FR119): a role tag's own payload -- the closed list of
+# layer names an object of this role may sit on. `id`/`key` are
+# untouched (the append-only manifest guard covers those two alone), so
+# adding this table to an existing tag is not a renumbering.
+role = { layers = ["walls"] }
 
 [[tag]]
 id = 7
@@ -44,3 +49,21 @@ key = "stairs"
 [[tag]]
 id = 9
 key = "underfoot"
+
+# Story 2.9 (AC3, FR119): the wall-closure primitive's own vocabulary --
+# an ordinary tag, never a role, carried by both `wall` and `threshold`
+# objects. A threshold interrupts the `wall` role but not a wall run: the
+# closure row (`defs/rules/grammar.toml`) counts either as a run
+# neighbour, so a doorway's own jambs are never free-standing stubs.
+[[tag]]
+id = 16
+key = "wall_run"
+
+# Marks a `threshold` that opens onto the exterior (pavement or road),
+# distinguishing a building's own street door from an interior door
+# between two rooms -- the building-level completeness primitive
+# (`defs/rules/grammar.toml`) asks for an area containing `wall` to hold
+# at least one of these, never an interior-only threshold.
+[[tag]]
+id = 17
+key = "entrance"

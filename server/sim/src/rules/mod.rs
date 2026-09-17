@@ -34,7 +34,7 @@
 
 use std::collections::BTreeMap;
 
-#[cfg(feature = "fixture")]
+#[cfg(feature = "test-fixtures")]
 pub mod testing;
 
 /// A tag's resolved numeric id (`defs/tags/*.toml`'s own append-only
@@ -145,6 +145,23 @@ pub enum AdjacencyRelation {
     Require,
 }
 
+/// One term of an adjacency alternative (story 2.9, FR119): `direction`'s
+/// same-floor neighbour of the subject cell must (`present: true`) or
+/// must not (`present: false`) carry `tag`. An alternative -- a `&[
+/// NeighbourTerm]` -- matches when every one of its terms holds;
+/// `RuleKind::Adjacency::alternatives` is an list of such alternatives,
+/// the engine's one shape for both the terse `b`(+`direction`) row and a
+/// hand-authored neighbourhood pattern (a corner, a doorway) --
+/// `tools/defs-build` lowers both authoring forms into this at build
+/// time, so this engine never special-cases which form a row used
+/// (Tim's direction).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NeighbourTerm {
+    pub direction: Direction,
+    pub tag: TagId,
+    pub present: bool,
+}
+
 /// The closed set of five constraint kinds (FR111/AC2). Exhaustively
 /// matched in [`evaluate`] with no `_ =>` arm: adding a sixth variant is a
 /// compile error everywhere this type is matched, until every match is
@@ -199,14 +216,21 @@ pub enum RuleKind {
         within: TagId,
         mode: CoherenceMode,
     },
-    /// Whether `a` must (`Require`) or must never (`Forbid`) have a
-    /// same-floor neighbour tagged `b`. `direction`, when given, checks
-    /// only that one side; absent, checks all four.
+    /// Whether every `a`-tagged cell must (`Require`) or must never
+    /// (`Forbid`) have a same-floor neighbourhood matching one of
+    /// `alternatives` -- each alternative a conjunction of
+    /// [`NeighbourTerm`]s, the whole list a disjunction ("this pattern,
+    /// or this one, or..."). `Require` violates when *no* alternative
+    /// matches; `Forbid` violates once per *matching* alternative (a
+    /// distinct violating pair per offending neighbour -- Quentin's
+    /// direction: never just the first). `tools/defs-build` refuses a
+    /// `Forbid` row whose alternatives are anything but a single
+    /// `present: true` term each, so a `Forbid` violation's matched
+    /// neighbour is always unambiguous (`Violation::other`).
     Adjacency {
         a: TagId,
-        b: TagId,
         relation: AdjacencyRelation,
-        direction: Option<Direction>,
+        alternatives: &'static [&'static [NeighbourTerm]],
     },
     /// Every real area containing a `container`-tagged cell must contain
     /// between `min` and `max` (inclusive, `max` optional) cells tagged
@@ -236,10 +260,14 @@ pub struct RuleDef {
     pub kind: RuleKind,
 }
 
-/// One rejection: `rule_id` and the offending `subject` cell (Quentin's
-/// direction: never a bool, never just the first violation). `evaluate`
-/// returns every *distinct* violation, sorted by `(rule_id, subject)` --
-/// a strict total order over two `Ord` fields, deduplicated after
+/// One rejection: `rule_id`, the offending `subject` cell (Quentin's
+/// direction: never a bool, never just the first violation), and --
+/// story 2.9 (FR119), Tim's direction -- `other`, the matched neighbour
+/// cell for an `Adjacency::Forbid` violation ("the violating pair"
+/// AC2 asks for), `None` for every other kind and for `Adjacency::
+/// Require` (an absence has no one cell to name). `evaluate` returns
+/// every *distinct* violation, sorted by `(rule_id, subject, other)` --
+/// a strict total order over three `Ord` fields, deduplicated after
 /// sorting -- so output never depends on rule or fact input order
 /// (NFR25) and a cell that fails the same rule for two different reasons
 /// (e.g. two failing containing areas under Requirement) is reported
@@ -248,6 +276,7 @@ pub struct RuleDef {
 pub struct Violation {
     pub rule_id: u32,
     pub subject: Cell,
+    pub other: Option<Cell>,
 }
 
 /// A grid bucket key for a spatial-binning check: `radius` cells per
@@ -301,6 +330,7 @@ fn distribution_spacing_violations(
             violations.push(Violation {
                 rule_id,
                 subject: cell,
+                other: None,
             });
         }
         buckets.entry((f, bx, by)).or_default().push(cell);
@@ -332,6 +362,7 @@ fn distribution_coverage_violations(
             .map(|&cell| Violation {
                 rule_id,
                 subject: cell,
+                other: None,
             })
             .collect();
     }
@@ -360,6 +391,7 @@ fn distribution_coverage_violations(
             violations.push(Violation {
                 rule_id,
                 subject: p,
+                other: None,
             });
         }
     }
@@ -398,6 +430,7 @@ pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
                         violations.push(Violation {
                             rule_id: rule.id,
                             subject: cell,
+                            other: None,
                         });
                     }
                 }
@@ -425,6 +458,7 @@ pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
                             violations.push(Violation {
                                 rule_id: rule.id,
                                 subject: anchor,
+                                other: None,
                             });
                         }
                     }
@@ -459,33 +493,55 @@ pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
                         violations.push(Violation {
                             rule_id: rule.id,
                             subject: cell,
+                            other: None,
                         });
                     }
                 }
             }
             RuleKind::Adjacency {
                 a,
-                b,
                 relation,
-                direction,
+                alternatives,
             } => {
-                let dirs: &[Direction] = match &direction {
-                    Some(d) => std::slice::from_ref(d),
-                    None => &Direction::ALL,
-                };
+                fn alt_matches(site: &impl RuleSite, alt: &[NeighbourTerm], cell: Cell) -> bool {
+                    alt.iter().all(|term| {
+                        site.tags_at(term.direction.step(cell)).contains(&term.tag) == term.present
+                    })
+                }
                 for &cell in site.subjects_in_area(None, a) {
-                    let has_b = dirs
-                        .iter()
-                        .any(|&d| site.tags_at(d.step(cell)).contains(&b));
-                    let violated = match relation {
-                        AdjacencyRelation::Require => !has_b,
-                        AdjacencyRelation::Forbid => has_b,
-                    };
-                    if violated {
-                        violations.push(Violation {
-                            rule_id: rule.id,
-                            subject: cell,
-                        });
+                    match relation {
+                        // No alternative matches this cell's neighbourhood
+                        // -- one violation, no single neighbour to name
+                        // (`other: None`): an absence is not a pair.
+                        AdjacencyRelation::Require => {
+                            let satisfied =
+                                alternatives.iter().any(|alt| alt_matches(site, alt, cell));
+                            if !satisfied {
+                                violations.push(Violation {
+                                    rule_id: rule.id,
+                                    subject: cell,
+                                    other: None,
+                                });
+                            }
+                        }
+                        // One violation per *matching* alternative --
+                        // `tools/defs-build` only ever lowers a `Forbid`
+                        // row's alternatives to single `present: true`
+                        // terms, so `alt[0]`'s own neighbour is always
+                        // the unambiguous violating pair (Tim's
+                        // direction).
+                        AdjacencyRelation::Forbid => {
+                            for alt in alternatives {
+                                if alt_matches(site, alt, cell) {
+                                    let other = alt.first().map(|t| t.direction.step(cell));
+                                    violations.push(Violation {
+                                        rule_id: rule.id,
+                                        subject: cell,
+                                        other,
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -501,6 +557,7 @@ pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
                         violations.push(Violation {
                             rule_id: rule.id,
                             subject: cell,
+                            other: None,
                         });
                         continue;
                     }
@@ -510,6 +567,7 @@ pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
                             violations.push(Violation {
                                 rule_id: rule.id,
                                 subject: cell,
+                                other: None,
                             });
                         }
                     }
@@ -572,7 +630,8 @@ mod tests {
             evaluate(&[no_cafe_above_floor_2()], &site),
             vec![Violation {
                 rule_id: 1,
-                subject: c(0, 0, 3)
+                subject: c(0, 0, 3),
+                other: None
             }]
         );
     }
@@ -618,7 +677,8 @@ mod tests {
             evaluate(&[rule], &inside),
             vec![Violation {
                 rule_id: 2,
-                subject: c(1, 1, 5)
+                subject: c(1, 1, 5),
+                other: None
             }]
         );
     }
@@ -748,7 +808,8 @@ mod tests {
             violations,
             vec![Violation {
                 rule_id: 5,
-                subject: c(1, 0, 0)
+                subject: c(1, 0, 0),
+                other: None
             }]
         );
     }
@@ -809,7 +870,8 @@ mod tests {
             violations,
             vec![Violation {
                 rule_id: 14,
-                subject: c(100, 0, 0)
+                subject: c(100, 0, 0),
+                other: None
             }]
         );
     }
@@ -842,7 +904,8 @@ mod tests {
             evaluate(&[rule], &one_past),
             vec![Violation {
                 rule_id: 15,
-                subject: c(6, 0, 0)
+                subject: c(6, 0, 0),
+                other: None
             }]
         );
     }
@@ -866,7 +929,8 @@ mod tests {
             evaluate(&[rule], &site),
             vec![Violation {
                 rule_id: 16,
-                subject: c(0, 0, 0)
+                subject: c(0, 0, 0),
+                other: None
             }]
         );
     }
@@ -902,7 +966,8 @@ mod tests {
             violations,
             vec![Violation {
                 rule_id: 17,
-                subject: c(490, 0, 0)
+                subject: c(490, 0, 0),
+                other: None
             }]
         );
     }
@@ -942,7 +1007,8 @@ mod tests {
             evaluate(&[no_skyscraper_in_villa_district()], &site),
             vec![Violation {
                 rule_id: 7,
-                subject: c(0, 0, 0)
+                subject: c(0, 0, 0),
+                other: None
             }]
         );
     }
@@ -990,9 +1056,12 @@ mod tests {
             key: "door_requires_wall_north",
             kind: RuleKind::Adjacency {
                 a: DOOR,
-                b: WALL,
                 relation: AdjacencyRelation::Require,
-                direction: Some(Direction::North),
+                alternatives: &[&[NeighbourTerm {
+                    direction: Direction::North,
+                    tag: WALL,
+                    present: true,
+                }]],
             },
         }
     }
@@ -1016,7 +1085,8 @@ mod tests {
             evaluate(&[door_requires_wall_to_the_north()], &site),
             vec![Violation {
                 rule_id: 9,
-                subject: c(0, 1, 0)
+                subject: c(0, 1, 0),
+                other: None
             }]
         );
     }
@@ -1042,9 +1112,12 @@ mod tests {
             key: "door_never_faces_wall_north",
             kind: RuleKind::Adjacency {
                 a: DOOR,
-                b: WALL,
                 relation: AdjacencyRelation::Forbid,
-                direction: Some(Direction::North),
+                alternatives: &[&[NeighbourTerm {
+                    direction: Direction::North,
+                    tag: WALL,
+                    present: true,
+                }]],
             },
         };
         let wall_to_south = SiteBuilder::new()
@@ -1060,6 +1133,96 @@ mod tests {
         assert_eq!(evaluate(&[rule], &wall_to_north).len(), 1);
     }
 
+    /// Story 2.9's own strengthening of AC2: a `Forbid` violation names
+    /// `other`, the exact matched neighbour cell -- "the violating pair",
+    /// not merely the subject.
+    #[test]
+    fn adjacency_forbid_violation_names_the_matched_neighbour_as_other() {
+        let rule = RuleDef {
+            id: 10,
+            key: "door_never_faces_wall_north",
+            kind: RuleKind::Adjacency {
+                a: DOOR,
+                relation: AdjacencyRelation::Forbid,
+                alternatives: &[&[NeighbourTerm {
+                    direction: Direction::North,
+                    tag: WALL,
+                    present: true,
+                }]],
+            },
+        };
+        let site = SiteBuilder::new()
+            .cell(c(0, 1, 0), &[DOOR])
+            .cell(c(0, 0, 0), &[WALL])
+            .build();
+        assert_eq!(
+            evaluate(&[rule], &site),
+            vec![Violation {
+                rule_id: 10,
+                subject: c(0, 1, 0),
+                other: Some(c(0, 0, 0)),
+            }]
+        );
+    }
+
+    /// A `Forbid` row with one alternative per direction (the any-side
+    /// lowering of a direction-less `b`) reports one violation per
+    /// offending side, never just the first -- distinct `other` cells
+    /// keep them distinct violations.
+    #[test]
+    fn adjacency_forbid_reports_one_violation_per_matching_alternative() {
+        let rule = RuleDef {
+            id: 10,
+            key: "no_wall_adjacent",
+            kind: RuleKind::Adjacency {
+                a: DOOR,
+                relation: AdjacencyRelation::Forbid,
+                alternatives: &[
+                    &[NeighbourTerm {
+                        direction: Direction::North,
+                        tag: WALL,
+                        present: true,
+                    }],
+                    &[NeighbourTerm {
+                        direction: Direction::East,
+                        tag: WALL,
+                        present: true,
+                    }],
+                    &[NeighbourTerm {
+                        direction: Direction::South,
+                        tag: WALL,
+                        present: true,
+                    }],
+                    &[NeighbourTerm {
+                        direction: Direction::West,
+                        tag: WALL,
+                        present: true,
+                    }],
+                ],
+            },
+        };
+        let site = SiteBuilder::new()
+            .cell(c(0, 0, 0), &[DOOR])
+            .cell(c(0, -1, 0), &[WALL])
+            .cell(c(1, 0, 0), &[WALL])
+            .build();
+        assert_eq!(
+            evaluate(&[rule], &site),
+            vec![
+                Violation {
+                    rule_id: 10,
+                    subject: c(0, 0, 0),
+                    other: Some(c(0, -1, 0)),
+                },
+                Violation {
+                    rule_id: 10,
+                    subject: c(0, 0, 0),
+                    other: Some(c(1, 0, 0)),
+                },
+            ]
+        );
+    }
+
     #[test]
     fn adjacency_without_a_direction_checks_all_four_neighbours() {
         let rule = RuleDef {
@@ -1067,9 +1230,29 @@ mod tests {
             key: "door_requires_wall_any_side",
             kind: RuleKind::Adjacency {
                 a: DOOR,
-                b: WALL,
                 relation: AdjacencyRelation::Require,
-                direction: None,
+                alternatives: &[
+                    &[NeighbourTerm {
+                        direction: Direction::North,
+                        tag: WALL,
+                        present: true,
+                    }],
+                    &[NeighbourTerm {
+                        direction: Direction::East,
+                        tag: WALL,
+                        present: true,
+                    }],
+                    &[NeighbourTerm {
+                        direction: Direction::South,
+                        tag: WALL,
+                        present: true,
+                    }],
+                    &[NeighbourTerm {
+                        direction: Direction::West,
+                        tag: WALL,
+                        present: true,
+                    }],
+                ],
             },
         };
         let wall_to_east = SiteBuilder::new()
@@ -1077,6 +1260,74 @@ mod tests {
             .cell(c(1, 0, 0), &[WALL])
             .build();
         assert!(evaluate(&[rule], &wall_to_east).is_empty());
+    }
+
+    /// A multi-term alternative (a neighbourhood pattern -- e.g. "wall to
+    /// the north AND wall to the south", the shape a corner or doorway
+    /// primitive needs) matches only when every one of its terms holds
+    /// (story 2.9, AC3).
+    #[test]
+    fn adjacency_multi_term_alternative_requires_every_term() {
+        let rule = RuleDef {
+            id: 11,
+            key: "door_between_two_walls",
+            kind: RuleKind::Adjacency {
+                a: DOOR,
+                relation: AdjacencyRelation::Require,
+                alternatives: &[&[
+                    NeighbourTerm {
+                        direction: Direction::North,
+                        tag: WALL,
+                        present: true,
+                    },
+                    NeighbourTerm {
+                        direction: Direction::South,
+                        tag: WALL,
+                        present: true,
+                    },
+                ]],
+            },
+        };
+        let only_north = SiteBuilder::new()
+            .cell(c(0, 1, 0), &[DOOR])
+            .cell(c(0, 0, 0), &[WALL])
+            .build();
+        assert_eq!(evaluate(&[rule], &only_north).len(), 1);
+
+        let both_sides = SiteBuilder::new()
+            .cell(c(0, 1, 0), &[DOOR])
+            .cell(c(0, 0, 0), &[WALL])
+            .cell(c(0, 2, 0), &[WALL])
+            .build();
+        assert!(evaluate(&[rule], &both_sides).is_empty());
+    }
+
+    /// A `present: false` term matches an *absent* tag -- the shape a
+    /// corner primitive needs ("wall to the north, no wall to the
+    /// east").
+    #[test]
+    fn adjacency_present_false_term_matches_an_absent_tag() {
+        let rule = RuleDef {
+            id: 11,
+            key: "door_requires_no_wall_east",
+            kind: RuleKind::Adjacency {
+                a: DOOR,
+                relation: AdjacencyRelation::Require,
+                alternatives: &[&[NeighbourTerm {
+                    direction: Direction::East,
+                    tag: WALL,
+                    present: false,
+                }]],
+            },
+        };
+        let wall_present = SiteBuilder::new()
+            .cell(c(0, 0, 0), &[DOOR])
+            .cell(c(1, 0, 0), &[WALL])
+            .build();
+        assert_eq!(evaluate(&[rule], &wall_present).len(), 1);
+
+        let wall_absent = SiteBuilder::new().cell(c(0, 0, 0), &[DOOR]).build();
+        assert!(evaluate(&[rule], &wall_absent).is_empty());
     }
 
     // --- requirement ----------------------------------------------------------
@@ -1115,7 +1366,8 @@ mod tests {
             evaluate(&[every_dwelling_has_a_door()], &site),
             vec![Violation {
                 rule_id: 12,
-                subject: c(0, 0, 0)
+                subject: c(0, 0, 0),
+                other: None
             }]
         );
     }
@@ -1173,7 +1425,8 @@ mod tests {
             evaluate(&[rule], &site),
             vec![Violation {
                 rule_id: 18,
-                subject: c(0, 0, 0)
+                subject: c(0, 0, 0),
+                other: None
             }]
         );
     }
@@ -1204,7 +1457,8 @@ mod tests {
             evaluate(&[rule], &site),
             vec![Violation {
                 rule_id: 19,
-                subject: c(0, 0, 0)
+                subject: c(0, 0, 0),
+                other: None
             }]
         );
     }
@@ -1243,19 +1497,23 @@ mod tests {
             vec![
                 Violation {
                     rule_id: 1,
-                    subject: c(1, 0, 3)
+                    subject: c(1, 0, 3),
+                    other: None
                 },
                 Violation {
                     rule_id: 1,
-                    subject: c(5, 0, 3)
+                    subject: c(5, 0, 3),
+                    other: None
                 },
                 Violation {
                     rule_id: 2,
-                    subject: c(1, 0, 3)
+                    subject: c(1, 0, 3),
+                    other: None
                 },
                 Violation {
                     rule_id: 2,
-                    subject: c(5, 0, 3)
+                    subject: c(5, 0, 3),
+                    other: None
                 },
             ]
         );

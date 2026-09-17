@@ -23,8 +23,13 @@ fn good_png() -> Vec<u8> {
 
 fn object_toml(id: u32, key: &str, sheet_dir: &str, sheet_file: &str) -> String {
     format!(
-        "[[object]]\nid = {id}\nkey = \"{key}\"\nname = \"{key}\"\nlayer = \"furniture\"\nsprite = {{ sheet = \"{sheet_dir}/{sheet_file}\", x = 0, y = 0, w = 16, h = 16 }}\nwidth = 1\nheight = 1\ncollider = {{ x0 = 4, y0 = 4, x1 = 12, y1 = 12 }}\n"
+        "[[object]]\nid = {id}\nkey = \"{key}\"\nname = \"{key}\"\nlayer = \"furniture\"\nsprite = {{ sheet = \"{sheet_dir}/{sheet_file}\", x = 0, y = 0, w = 16, h = 16 }}\nwidth = 1\nheight = 1\ncollider = {{ x0 = 4, y0 = 4, x1 = 12, y1 = 12 }}\ntags = [\"fixture\"]\n"
     )
+}
+
+/// Story 2.9: every object above needs exactly one role tag.
+fn roles_toml() -> &'static str {
+    "[[tag]]\nid = 1\nkey = \"fixture\"\nrole = { layers = [\"furniture\"] }\n"
 }
 
 fn layer_codes() -> BTreeMap<String, u32> {
@@ -51,11 +56,13 @@ fn page_groups_toml() -> &'static str {
 fn only_the_used_subset_is_read_a_corrupt_unreferenced_sheet_never_breaks_the_build() {
     let dir = fsio::make_scratch_dir("defs-build-test-used-subset").unwrap();
     std::fs::create_dir_all(dir.join("defs/objects")).unwrap();
+    std::fs::create_dir_all(dir.join("defs/tags")).unwrap();
     std::fs::create_dir_all(dir.join("defs/balance")).unwrap();
     std::fs::create_dir_all(dir.join("defs/atlas")).unwrap();
     std::fs::create_dir_all(dir.join(SHEET_DIR)).unwrap();
     std::fs::write(dir.join("defs/balance/render.toml"), tile_size_balance()).unwrap();
     std::fs::write(dir.join("defs/atlas/page-groups.toml"), page_groups_toml()).unwrap();
+    std::fs::write(dir.join("defs/tags/roles.toml"), roles_toml()).unwrap();
     std::fs::write(dir.join(SHEET_DIR).join("good.png"), good_png()).unwrap();
     std::fs::write(
         dir.join(SHEET_DIR).join("corrupt.png"),
@@ -74,6 +81,7 @@ fn only_the_used_subset_is_read_a_corrupt_unreferenced_sheet_never_breaks_the_bu
             PathBuf::from("defs/objects/a.toml"),
             PathBuf::from("defs/balance/render.toml"),
             PathBuf::from("defs/atlas/page-groups.toml"),
+            PathBuf::from("defs/tags/roles.toml"),
         ],
     )
     .unwrap();
@@ -117,11 +125,13 @@ fn packing_three_groups_is_byte_identical_under_a_real_shuffle_of_file_order() {
     std::fs::create_dir_all(dir.join("defs/objects")).unwrap();
     std::fs::create_dir_all(dir.join("defs/balance")).unwrap();
     std::fs::create_dir_all(dir.join("defs/atlas")).unwrap();
+    std::fs::create_dir_all(dir.join("defs/tags")).unwrap();
     std::fs::create_dir_all(dir.join(SHEET_DIR)).unwrap();
     std::fs::create_dir_all(dir.join(CAMPING_DIR)).unwrap();
     std::fs::create_dir_all(dir.join(SCHOOL_DIR)).unwrap();
     std::fs::write(dir.join("defs/balance/render.toml"), tile_size_balance()).unwrap();
     std::fs::write(dir.join("defs/atlas/page-groups.toml"), page_groups_toml()).unwrap();
+    std::fs::write(dir.join("defs/tags/roles.toml"), roles_toml()).unwrap();
     std::fs::write(dir.join(SHEET_DIR).join("good.png"), good_png()).unwrap();
     std::fs::write(dir.join(CAMPING_DIR).join("bin.png"), good_png()).unwrap();
     std::fs::write(dir.join(SCHOOL_DIR).join("bench.png"), good_png()).unwrap();
@@ -147,6 +157,7 @@ fn packing_three_groups_is_byte_identical_under_a_real_shuffle_of_file_order() {
         PathBuf::from("defs/objects/c.toml"),
         PathBuf::from("defs/balance/render.toml"),
         PathBuf::from("defs/atlas/page-groups.toml"),
+        PathBuf::from("defs/tags/roles.toml"),
     ];
     let forward = fsio::read_text(&dir, &paths).unwrap();
     // A real shuffle, not `reverse()` (one fixed permutation, indistinct

@@ -1,0 +1,10 @@
+[[adjacency]]
+id = 1
+key = "test_adjacency"
+a = "fixture"
+relation = "require"
+alternatives = [
+  [
+    { direction = "north", tag = "nonexistent_tag" },
+  ],
+]

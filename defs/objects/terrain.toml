@@ -1,0 +1,34 @@
+# Real objects for the outdoor ground-level roles (`wall`/`fixture`
+# already covered by `defs/objects/city-props.toml`). `floor`/`threshold`
+# carry no real object yet -- story 2.14 (issue #300) gives the atlas
+# packer a path for the sheets they need.
+
+[[object]]
+id = 9
+key = "grass_ground"
+name = "Grass"
+layer = "ground"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/1_Terrains_and_Fences_Singles_16x16/ME_Singles_Terrains_and_Fences_16x16_Grass_1_22.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "ground"]
+
+[[object]]
+id = 10
+key = "sidewalk_pavement"
+name = "Sidewalk"
+layer = "ground"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_26.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "pavement"]
+
+[[object]]
+id = 11
+key = "road_asphalt"
+name = "Road"
+layer = "ground"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Asphalt_1_Variation_26.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "road"]

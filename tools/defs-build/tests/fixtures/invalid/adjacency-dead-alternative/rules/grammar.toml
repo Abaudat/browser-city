@@ -1,0 +1,13 @@
+# Two terms naming the same direction and tag with opposite `present`
+# can never both hold -- this alternative can never match.
+[[adjacency]]
+id = 1
+key = "test_dead_alt"
+a = "fixture"
+relation = "require"
+alternatives = [
+  [
+    { direction = "north", tag = "fixture", present = true },
+    { direction = "north", tag = "fixture", present = false },
+  ],
+]

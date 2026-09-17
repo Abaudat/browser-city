@@ -27,7 +27,7 @@ function validPayload(): Record<string, unknown> {
         width: 1,
         height: 1,
         window: false,
-        tags: [],
+        tags: [1],
         collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
       },
     ],
@@ -49,7 +49,7 @@ function validPayload(): Record<string, unknown> {
     accessories: [],
     appearance_layouts: [],
     uniforms: [],
-    tags: [],
+    tags: [{ id: 1, key: "fixture", role: { layers: [2] } }],
   };
 }
 
@@ -68,7 +68,7 @@ describe("parseDefs", () => {
         width: 1,
         height: 1,
         window: false,
-        tags: [],
+        tags: [1],
         collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
       },
     ]);
@@ -181,19 +181,36 @@ describe("parseDefs", () => {
 
   // --- story 2.10: tags (FR111) ---------------------------------------------
 
-  it("defaults tags to an empty table and every object's tags to an empty array when absent", () => {
-    const defs = parseDefs(validPayload());
+  it("an empty top-level tags table parses to an empty array", () => {
+    const payload = validPayload();
+    payload.objects = [];
+    payload.tags = [];
+    const defs = parseDefs(payload);
     expect(defs.tags).toEqual([]);
-    expect(defs.objects[0]?.tags).toEqual([]);
+  });
+
+  // Story 2.9: every object now requires exactly one role tag, so an
+  // object with an empty `tags` array is rejected -- never silently
+  // accepted the way it was before this story.
+  it("an object with an empty tags array is rejected for carrying no role tag", () => {
+    const payload = validPayload();
+    (payload.objects as Record<string, unknown>[])[0].tags = [];
+    expect(() => parseDefs(payload)).toThrow(/carries 0 role tag\(s\)/);
   });
 
   it("parses a declared tag table and an object naming a real tag id", () => {
     const payload = validPayload();
-    payload.tags = [{ id: 1, key: "waste" }];
-    (payload.objects as Record<string, unknown>[])[0].tags = [1];
+    payload.tags = [
+      { id: 1, key: "waste" },
+      { id: 2, key: "fixture", role: { layers: [2] } },
+    ];
+    (payload.objects as Record<string, unknown>[])[0].tags = [1, 2];
     const defs = parseDefs(payload);
-    expect(defs.tags).toEqual([{ id: 1, key: "waste" }]);
-    expect(defs.objects[0]?.tags).toEqual([1]);
+    expect(defs.tags).toEqual([
+      { id: 1, key: "waste" },
+      { id: 2, key: "fixture", role: { layers: [2] } },
+    ]);
+    expect(defs.objects[0]?.tags).toEqual([1, 2]);
   });
 
   it("rejects an object naming an unknown tag id", () => {
@@ -227,6 +244,20 @@ describe("parseDefs", () => {
     expect(() => parseDefs(payload)).toThrow(/unknown field 'bogus'/);
   });
 
+  // Story 2.9: the `role` table itself is malformed input, checked the
+  // same way as every other field.
+  it("rejects a role whose layers is not an array", () => {
+    const payload = validPayload();
+    payload.tags = [{ id: 1, key: "fixture", role: { layers: "not-an-array" } }];
+    expect(() => parseDefs(payload)).toThrow(/expected an array/);
+  });
+
+  it("rejects an unknown field inside role", () => {
+    const payload = validPayload();
+    payload.tags = [{ id: 1, key: "fixture", role: { layers: [2], bogus: true } }];
+    expect(() => parseDefs(payload)).toThrow(/unknown field 'bogus'/);
+  });
+
   it("parses a present collider and leaves an absent one undefined", () => {
     const payload = validPayload();
     (payload.objects as Record<string, unknown>[])[0] = {
@@ -239,13 +270,16 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
-      tags: [],
+      tags: [1],
       collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
     };
     const defs = parseDefs(payload);
     expect(defs.objects[0]?.collider).toEqual({ x0: 4, y0: 4, x1: 12, y1: 12 });
 
-    payload.tags = [{ id: 1, key: "underfoot" }];
+    payload.tags = [
+      { id: 1, key: "underfoot" },
+      { id: 2, key: "fixture", role: { layers: [2] } },
+    ];
     payload.objects = [
       {
         id: 1,
@@ -257,7 +291,7 @@ describe("parseDefs", () => {
         width: 1,
         height: 1,
         window: false,
-        tags: [1],
+        tags: [1, 2],
       },
     ];
     expect(parseDefs(payload).objects[0]?.collider).toBeUndefined();
@@ -275,7 +309,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
-      tags: [],
+      tags: [1],
       collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
       interact_at: { x0: 0, y0: 16, x1: 16, y1: 32 },
     };
@@ -294,7 +328,7 @@ describe("parseDefs", () => {
         width: 1,
         height: 1,
         window: false,
-        tags: [],
+        tags: [1],
         collider: { x0: 4, y0: 4, x1: 12, y1: 12 },
       },
     ];
@@ -340,7 +374,10 @@ describe("parseDefs", () => {
 
   it("accepts an interact_at exactly at the declared reach bound (FR148)", () => {
     const payload = validPayload();
-    payload.tags = [{ id: 1, key: "underfoot" }];
+    payload.tags = [
+      { id: 1, key: "underfoot" },
+      { id: 2, key: "fixture", role: { layers: [2] } },
+    ];
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
@@ -351,7 +388,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
-      tags: [1],
+      tags: [1, 2],
       interact_at: { x0: -32, y0: 0, x1: 16, y1: 16 },
     };
     expect(() => parseDefs(payload)).not.toThrow();
@@ -396,7 +433,10 @@ describe("parseDefs", () => {
 
   it("treats an explicit null collider the same as an absent one", () => {
     const payload = validPayload();
-    payload.tags = [{ id: 1, key: "underfoot" }];
+    payload.tags = [
+      { id: 1, key: "underfoot" },
+      { id: 2, key: "fixture", role: { layers: [2] } },
+    ];
     (payload.objects as Record<string, unknown>[])[0] = {
       id: 1,
       key: "trash_bin",
@@ -407,7 +447,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
-      tags: [1],
+      tags: [1, 2],
       collider: null,
     };
     expect(parseDefs(payload).objects[0]?.collider).toBeUndefined();
@@ -486,7 +526,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: false,
-      tags: [],
+      tags: [1],
       collider: { x0: 0, y0: 0, x1: 16, y1: 16 },
     };
     expect(() => parseDefs(payload)).not.toThrow();
@@ -534,7 +574,10 @@ describe("parseDefs", () => {
     "accepts a colliderless '%s' tagged 'underfoot'",
     (key) => {
       const payload = validPayload();
-      payload.tags = [{ id: 1, key: "underfoot" }];
+      payload.tags = [
+        { id: 1, key: "underfoot" },
+        { id: 2, key: "fixture", role: { layers: [2] } },
+      ];
       (payload.objects as Record<string, unknown>[])[0] = {
         id: 1,
         key,
@@ -545,7 +588,7 @@ describe("parseDefs", () => {
         width: 1,
         height: 1,
         window: false,
-        tags: [1],
+        tags: [1, 2],
       };
       expect(() => parseDefs(payload)).not.toThrow();
     },
@@ -596,7 +639,7 @@ describe("parseDefs", () => {
       width: 1,
       height: 1,
       window: true,
-      tags: [],
+      tags: [1],
       collider: { x0: 0, y0: 0, x1: 16, y1: 16 },
     };
     const defs = parseDefs(payload);
@@ -659,7 +702,7 @@ describe("parseDefs", () => {
               width,
               height,
               window: false,
-              tags: [],
+              tags: [1],
               collider: { x0, y0, x1, y1 },
             },
           ];
@@ -883,9 +926,10 @@ describe("canonicalDump", () => {
         "chain plastic_bottle id=1 links=[sanitation_worker]",
         "item bottle id=1",
         "item recycled_glass id=2",
-        "object trash_bin id=1 name=Trash Bin layer=2 sprite=x.png:0,0,16,16 height=1 width=1 collider=4,4,12,12 interact_at=none window=false tags=[]",
+        "object trash_bin id=1 name=Trash Bin layer=2 sprite=x.png:0,0,16,16 height=1 width=1 collider=4,4,12,12 interact_at=none window=false tags=[1]",
         "profession sanitation_worker id=1",
         "recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]",
+        "tag fixture id=1 role=[2]",
         "",
       ].join("\n"),
     );

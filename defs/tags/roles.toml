@@ -1,0 +1,45 @@
+# Story 2.9 (AC1, FR119): the tile taxonomy's seven roles (ground,
+# pavement, road, wall, floor, threshold, fixture) as data, per Artie's
+# direction -- `wall` already existed as tag 6 (`defs/tags/city.toml`)
+# and gained its own `role` table there in place; the other six are new
+# tags here. A role is what a tag's own `role = { layers = [...] }`
+# table makes it -- never a second kind, never an enum in code. Every
+# `[[object]]` carries exactly one of these seven tags in its ordinary
+# `tags` list (`tools/defs-build`'s own `check_object_roles`); zero or
+# two is a build error, and a role whose `layers` does not include the
+# object's own `layer` is too.
+
+[[tag]]
+id = 10
+key = "ground"
+role = { layers = ["ground"] }
+
+[[tag]]
+id = 11
+key = "pavement"
+role = { layers = ["ground"] }
+
+[[tag]]
+id = 12
+key = "road"
+role = { layers = ["ground"] }
+
+[[tag]]
+id = 13
+key = "floor"
+role = { layers = ["ground"] }
+
+# A threshold interrupts a wall run (the arched-entryway art sits at the
+# walls layer, per Artie's direction) -- never the ground layer a plain
+# floor tile draws at.
+[[tag]]
+id = 14
+key = "threshold"
+role = { layers = ["walls"] }
+
+# A fixture is a discrete object placed atop a surface (furniture or a
+# street/room prop) -- never a surface tile itself.
+[[tag]]
+id = 15
+key = "fixture"
+role = { layers = ["furniture", "objects"] }

@@ -22,7 +22,7 @@
 
 mod chunk;
 mod collision;
-#[cfg(feature = "fixture")]
+#[cfg(feature = "test-fixtures")]
 pub mod fixture;
 pub mod walkability;
 

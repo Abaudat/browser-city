@@ -273,7 +273,8 @@ always derived from placed content, never stored per cell.
   that violates this. Areas are bucketed by `chunk_key` (`sim::world::
   World`'s internal `BTreeMap<u64, Vec<_>>`), so an ownership query costs
   one map lookup plus a scan of one chunk's rects, never every area in the
-  world.
+  world. A `room_area` never covers a `wall` cell, and a `threshold` cell
+  lies in exactly one `room_area`.
 - Floor transitions (FR117) are rows in `floor_transition`, anchor cell to
   target cell, never a boolean on an object and never a special layer. A
   door is never one of these rows (FR118): it is an ordinary walkable
@@ -935,12 +936,20 @@ rule above.
 geometry only. Tags (`defs/tags/*.toml`, permanent id/key, append-only
 manifest like every other kind) are the engine's only vocabulary -- an
 object's `tags` field and a rule row's own subject/container/per/within/
-a/b/requires fields all resolve a tag name to its id at build time; the
+a/requires fields all resolve a tag name to its id at build time; the
 engine never sees a content key. `scripts/ci/check-rule-engine-no-
 content-keys.sh` fails the build if any manifest key ever appears as a
 quoted-string literal under `server/sim/src/rules/`. `RuleSite` answers
 three questions over integer geometry -- tags at a cell, real areas
 containing it, subjects within an area or the whole site.
+
+A tag's own `[[tag]]` row may carry `role = { layers = [...] }`; its
+presence is what makes that tag a role. The closed taxonomy is ground,
+pavement, road, wall, floor, threshold, fixture. `layers` is the closed
+set of `sim::codes::layer` names an object of that role may sit on,
+resolved to codes at build time. Every `[[object]]` carries exactly one
+role tag in its ordinary `tags` list -- zero, two, or a layer outside the
+role's own `layers` all fail the build by object key.
 
 Five closed kinds, one TOML array table each under `defs/rules/*.toml`,
 any file: `[[placement]]`, `[[distribution]]`, `[[coherence]]`,
@@ -952,11 +961,29 @@ ratio, a minimum spacing and a maximum coverage distance (`max_distance`,
 always positive) together. `evaluate` returns every violation, sorted
 and deduplicated.
 
+Adjacency's engine shape is `Adjacency { a, relation, alternatives:
+&'static [&'static [NeighbourTerm]] }`, where `NeighbourTerm { direction,
+tag, present }` names one same-floor neighbour condition; an alternative
+matches when every one of its terms holds, and the row matches when any
+alternative does. `Require` violates when no alternative matches;
+`Forbid` violates once per matching alternative, and every `Forbid`
+alternative is exactly one `present: true` term. `[[adjacency]]` authors
+either the terse `b` (+ optional `direction`) form or a hand-authored
+`alternatives` pattern (an optional `rotate = true` lowers one authored
+alternative to its four 90-degree rotations); `tools/defs-build` lowers
+both into the same `alternatives` shape at build time. `Violation` carries
+`other: Option<Cell>`, the matched neighbour cell for a `Forbid`
+violation, `None` otherwise -- ordering is `(rule_id, subject, other)`.
+Two `Forbid` rows whose lowered constraint sets agree up to swapping
+which tag is the subject are refused at build time -- `road`/`floor` and
+`floor`/`road` are the same seam under two names. Room and building
+grammar primitives are ordinary rows in `defs/rules/*.toml`.
+
 Rule rows and the tag table are emitted into `server/sim/src/generated/
-defs.rs` only, as `static` tables (`TAGS`, `RULES`); tags also reach
-`client/public/defs/defs.json` as a required field (an object's `tags`
-field, validated against the tag table on both sides identically), rule
-rows never do -- the client never evaluates a rule.
+defs.rs` only, as `static` tables (`TAGS`, `RULES`); tags (role included)
+also reach `client/public/defs/defs.json` as a required field (an
+object's `tags` field, validated against the tag table on both sides
+identically), rule rows never do -- the client never evaluates a rule.
 
 There is no separate rule-set version: `defs_version` already hashes
 every tracked file under `defs/`, including `defs/rules/` and

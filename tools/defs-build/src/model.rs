@@ -547,6 +547,19 @@ pub struct PageGroupEntry {
 pub struct RawTag {
     pub id: Spanned<u32>,
     pub key: Spanned<String>,
+    /// Story 2.9 (FR119): present makes this tag a *role* -- the taxonomy
+    /// AC1 asks for is this table, never a second kind (Tim's direction).
+    #[serde(default)]
+    pub role: Option<RawRole>,
+}
+
+/// A role tag's own payload: the closed list of layer *names* an object
+/// carrying this role may sit on, resolved against the same codes golden
+/// `defs/objects/*.toml`'s own `layer` field resolves against.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct RawRole {
+    pub layers: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -576,7 +589,7 @@ pub enum RawAdjacencyRelation {
     Require,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum RawDirection {
     North,
@@ -622,16 +635,46 @@ pub struct RawCoherenceRule {
     pub mode: RawCoherenceMode,
 }
 
+/// One term of an authored `alternatives` neighbourhood pattern (story
+/// 2.9, FR119) -- `direction`'s neighbour of the subject cell must
+/// (`present: true`, the default) or must not (`present: false`) carry
+/// `tag`.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct RawNeighbourTerm {
+    pub direction: RawDirection,
+    pub tag: String,
+    #[serde(default = "RawNeighbourTerm::default_present")]
+    pub present: bool,
+}
+
+impl RawNeighbourTerm {
+    fn default_present() -> bool {
+        true
+    }
+}
+
+/// `[[adjacency]]` authors exactly one of two forms (Tim's direction):
+/// the terse `b` (+ optional `direction`) row this engine has always
+/// had, or a hand-authored `alternatives` neighbourhood pattern (a
+/// corner, a doorway) with an optional `rotate`. `tools/defs-build`
+/// lowers both into `sim::rules::RuleKind::Adjacency::alternatives` --
+/// the engine itself has exactly one path.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawAdjacencyRule {
     pub id: Spanned<u32>,
     pub key: Spanned<String>,
     pub a: Spanned<String>,
-    pub b: Spanned<String>,
-    pub relation: RawAdjacencyRelation,
+    #[serde(default)]
+    pub b: Option<Spanned<String>>,
     #[serde(default)]
     pub direction: Option<RawDirection>,
+    #[serde(default)]
+    pub alternatives: Option<Vec<Vec<RawNeighbourTerm>>>,
+    #[serde(default)]
+    pub rotate: bool,
+    pub relation: RawAdjacencyRelation,
 }
 
 #[derive(Debug, Deserialize)]
@@ -815,6 +858,7 @@ pub struct TagEntry {
     pub path: PathBuf,
     pub id: Located<u32>,
     pub key: Located<String>,
+    pub role: Option<RawRole>,
 }
 
 #[derive(Debug)]
@@ -857,9 +901,11 @@ pub struct AdjacencyEntry {
     pub id: Located<u32>,
     pub key: Located<String>,
     pub a: Located<String>,
-    pub b: Located<String>,
-    pub relation: RawAdjacencyRelation,
+    pub b: Option<Located<String>>,
     pub direction: Option<RawDirection>,
+    pub alternatives: Option<Vec<Vec<RawNeighbourTerm>>>,
+    pub rotate: bool,
+    pub relation: RawAdjacencyRelation,
 }
 
 #[derive(Debug)]
@@ -1096,10 +1142,27 @@ pub struct UniformDef {
     pub accessory: Option<String>,
 }
 
+/// A role's resolved payload: layer *codes*, not names (Tim's direction
+/// -- the runtime artefact only ever carries resolved codes, exactly
+/// like an object's own `layer` field).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoleDef {
+    pub layers: Vec<u32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TagDef {
     pub id: u32,
     pub key: String,
+    pub role: Option<RoleDef>,
+}
+
+/// One resolved (tag key -> id) [`RawNeighbourTerm`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NeighbourTermDef {
+    pub direction: RawDirection,
+    pub tag: u32,
+    pub present: bool,
 }
 
 /// The validated, resolved (tag key -> id) shape of each rule kind --
@@ -1108,7 +1171,7 @@ pub struct TagDef {
 /// `Family`/`Pool`/`Slot` already are between this crate and `emit.rs`'s
 /// own generated text; `emit.rs`'s rule tests pin the exact printed Rust
 /// literal against this shape).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuleKindDef {
     Placement {
         subject: u32,
@@ -1131,9 +1194,8 @@ pub enum RuleKindDef {
     },
     Adjacency {
         a: u32,
-        b: u32,
         relation: RawAdjacencyRelation,
-        direction: Option<RawDirection>,
+        alternatives: Vec<Vec<NeighbourTermDef>>,
     },
     Requirement {
         container: u32,

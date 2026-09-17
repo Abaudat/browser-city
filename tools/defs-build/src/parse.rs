@@ -305,6 +305,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         path: path.clone(),
                         id: located(text, &t.id),
                         key: located(text, &t.key),
+                        role: t.role.clone(),
                     });
                 }
             }
@@ -350,9 +351,11 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         id: located(text, &adj.id),
                         key: located(text, &adj.key),
                         a: located(text, &adj.a),
-                        b: located(text, &adj.b),
-                        relation: adj.relation,
+                        b: adj.b.as_ref().map(|b| located(text, b)),
                         direction: adj.direction,
+                        alternatives: adj.alternatives.clone(),
+                        rotate: adj.rotate,
+                        relation: adj.relation,
                     });
                 }
                 for req in file.requirement {

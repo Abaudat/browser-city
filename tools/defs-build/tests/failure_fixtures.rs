@@ -114,7 +114,7 @@ fn an_object_naming_an_unknown_tag_is_named() {
     let err = build_err("dangling-object-tag-reference");
     assert_eq!(
         err.to_string(),
-        "defs/objects/city-props.toml:3:7: object 'trash_bin' names unknown tag 'nonexistent_tag' -- accepted tags are []"
+        "defs/objects/city-props.toml:3:7: object 'trash_bin' names unknown tag 'nonexistent_tag' -- accepted tags are [fixture]"
     );
 }
 
@@ -138,7 +138,7 @@ fn a_rule_naming_an_unknown_tag_is_named() {
     let err = build_err("rule-dangling-tag-reference");
     assert_eq!(
         err.to_string(),
-        "defs/rules/cafes.toml:4:11: rule 'no_cafe_above_floor_2' names unknown tag 'cafe' in subject -- accepted tags are []"
+        "defs/rules/cafes.toml:4:11: rule 'no_cafe_above_floor_2' names unknown tag 'cafe' in subject -- accepted tags are [fixture]"
     );
 }
 
@@ -188,6 +188,71 @@ fn a_duplicate_rule_id_across_two_different_kinds_is_named() {
         err.to_string(),
         "defs/rules/cafes.toml:7:6: duplicate rule id 1 -- first declared at defs/rules/cafes.toml:2:6"
     );
+}
+
+// --- story 2.9: roles and the adjacency grammar (AC1/AC3, FR119) -----------
+
+#[test]
+fn an_object_with_no_role_tag_is_rejected() {
+    let err = build_err("object-role-count-zero");
+    assert!(err.message.contains("carries 0 role tag(s)"));
+    assert!(err.message.contains("trash_bin"));
+}
+
+#[test]
+fn an_object_with_two_role_tags_is_rejected() {
+    let err = build_err("object-role-count-two");
+    assert!(err.message.contains("carries 2 role tag(s)"));
+    assert!(err.message.contains("trash_bin"));
+}
+
+#[test]
+fn an_objects_layer_outside_its_own_roles_allowed_layers_is_rejected() {
+    let err = build_err("role-layer-not-allowed");
+    assert!(err.message.contains("role 'fixture'"));
+    assert!(err.message.contains("'walls'"));
+}
+
+#[test]
+fn a_role_naming_an_unknown_layer_is_rejected() {
+    let err = build_err("role-unknown-layer");
+    assert!(
+        err.message
+            .contains("tag 'fixture' role names unknown layer 'basement'")
+    );
+}
+
+#[test]
+fn an_adjacency_alternatives_term_naming_an_unknown_tag_is_rejected() {
+    let err = build_err("adjacency-alternatives-unknown-tag");
+    assert!(
+        err.message
+            .contains("names unknown tag 'nonexistent_tag' in alternatives")
+    );
+}
+
+#[test]
+fn a_forbid_row_with_a_multi_term_alternative_is_rejected() {
+    let err = build_err("adjacency-forbid-multi-term-alternative");
+    assert!(
+        err.message.contains(
+            "is a 'forbid' row but names an alternative that is not a single present tag"
+        )
+    );
+}
+
+#[test]
+fn two_forbid_rows_for_the_same_pair_with_subjects_swapped_are_rejected() {
+    let err = build_err("adjacency-symmetric-forbid-duplicate");
+    assert!(err.message.contains(
+        "adjacency rule 'y_never_touches_x' forbids a tag pair and direction already forbidden by 'x_never_touches_y'"
+    ));
+}
+
+#[test]
+fn an_adjacency_alternative_with_a_dead_contradictory_term_pair_is_rejected() {
+    let err = build_err("adjacency-dead-alternative");
+    assert!(err.message.contains("has a dead alternative"));
 }
 
 #[test]
@@ -514,6 +579,14 @@ fn every_known_category_has_a_fixture_directory() {
         "prop-no-collider-not-underfoot",
         "manhole-not-tagged-underfoot",
         "underfoot-tag-with-collider",
+        "object-role-count-zero",
+        "object-role-count-two",
+        "role-layer-not-allowed",
+        "role-unknown-layer",
+        "adjacency-alternatives-unknown-tag",
+        "adjacency-forbid-multi-term-alternative",
+        "adjacency-symmetric-forbid-duplicate",
+        "adjacency-dead-alternative",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)
