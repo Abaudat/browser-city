@@ -28,7 +28,7 @@ import {
   UPDATE_PRIORITY,
 } from "pixi.js";
 import { BOOT_MARK, markBoot } from "../boot/boot-marks";
-import type { Defs } from "../defs/types";
+import type { VerifiedDefs } from "../boot/handshake";
 import type { IgnoredSink, IntentSink } from "../input/intent";
 import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
@@ -235,8 +235,12 @@ const GROUND_LAYER_CODE = layerCodeByName("objects");
 export interface MountStreetSceneOptions {
   /** Story 1.10: the fetched, parsed defs document -- needed to build the
    * street crowd's real appearance textures (`citizens-layer.ts`) and, via
-   * `citizens.ts`, the tuples themselves. */
-  readonly defs: Defs;
+   * `citizens.ts`, the tuples themselves. Story 2.8 (FR147): typed as
+   * `VerifiedDefs`, not `Defs` -- `boot/handshake.ts`'s `markVerified` is
+   * the only way to produce one, so a caller cannot mount the scene with
+   * a defs document the FR147 handshake has not cleared (or explicitly
+   * decided is "unknown", never "known stale"). */
+  readonly defs: VerifiedDefs;
   /** Story 2.6: the already-resolved base a packed atlas page's own
    * filename is appended to (e.g. `` `${import.meta.env.BASE_URL}atlas/`
    * `` at the real call site) -- never hard-coded and never read from

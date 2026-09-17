@@ -114,6 +114,15 @@ describe("recordFrameWorkForE2e", () => {
 
     expect(window.__bc).toBeUndefined();
   });
+
+  it("story 2.8: frameCount increments on every call regardless of the timings toggle -- 'zero frames drawn' is provable before mount, unconditionally", () => {
+    expect(window.__bc?.frameCount).toBeUndefined();
+    recordFrameWorkForE2e(1);
+    expect(window.__bc?.frameCount).toBe(1);
+    recordFrameWorkForE2e(2);
+    recordFrameWorkForE2e(3);
+    expect(window.__bc?.frameCount).toBe(3);
+  });
 });
 
 describe("recordVisibilityForE2e", () => {

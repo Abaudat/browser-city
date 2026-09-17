@@ -254,6 +254,46 @@ describe("mountConnectionNotice", () => {
   });
 });
 
+describe("mountConnectionNotice -- 'updating' (story 2.8, FR147)", () => {
+  it("shows 'Updating…' immediately, with no debounce at all", () => {
+    const notice = mount();
+    notice.setStatus("updating");
+    expect(isVisible()).toBe(true);
+    expect(noticeText()).toBe("Updating…");
+    notice.destroy();
+  });
+
+  it("is sticky: a later 'connected' (the socket itself may be healthy) never hides or fades it", () => {
+    const notice = mount();
+    notice.setStatus("updating");
+    notice.setStatus("connected");
+    expect(isVisible()).toBe(true);
+    expect(noticeText()).toBe("Updating…");
+    vi.advanceTimersByTime(60_000);
+    expect(isVisible()).toBe(true);
+    expect(noticeText()).toBe("Updating…");
+    notice.destroy();
+  });
+
+  it("is sticky against a later 'disconnected'/'connecting' too -- nothing in this session clears it", () => {
+    const notice = mount();
+    notice.setStatus("updating");
+    notice.setStatus("disconnected");
+    notice.setStatus("connecting");
+    expect(noticeText()).toBe("Updating…");
+    notice.destroy();
+  });
+
+  it("never creates a second notice element", () => {
+    const notice = mount();
+    notice.setStatus("connecting");
+    vi.advanceTimersByTime(1000);
+    notice.setStatus("updating");
+    expect(document.querySelectorAll("[data-bc-notice]")).toHaveLength(1);
+    notice.destroy();
+  });
+});
+
 describe("ConnectionNoticeHandle", () => {
   it("element is the same node across the handle's lifetime", () => {
     let notice: ConnectionNoticeHandle | undefined;

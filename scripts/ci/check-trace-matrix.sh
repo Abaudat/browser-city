@@ -209,6 +209,7 @@ GUARD_SECTIONS=(
   "Backup and restore"
   "Boot budget"
   "Deploy"
+  "The defs_version handshake"
 )
 
 for section in "${GUARD_SECTIONS[@]}"; do

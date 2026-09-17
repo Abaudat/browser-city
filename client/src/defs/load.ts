@@ -1,8 +1,10 @@
-// Fetches and parses the generated defs asset. FR147's own handshake (the
-// server pushing its `defs_version` at connect) is a later story -- this
-// only has to make the single version available to it (Quentin's
-// assumption) and to never silently accept a stale deployment once a
-// caller does have an expected version to compare against.
+// Fetches and parses the generated defs asset. `boot/boot-gate.ts` is
+// FR147's own caller (story 2.8): the boot gate's first, unversioned
+// fetch is what "the client's own defs_version" means before any
+// comparison happens, and a `refetch-defs` verdict calls this again with
+// the server's own `defs_version` as `expectedVersion` -- never silently
+// accepting a stale deployment once a caller does have one to compare
+// against.
 
 import { parseDefs } from "./parse";
 import type { Defs } from "./types";
@@ -25,6 +27,12 @@ export class DefsVersionMismatchError extends Error {
  * [`DefsVersionMismatchError`] rather than silently accepting a stale
  * deployment (Tim's direction) -- never accepted, and never logged-and-
  * ignored either.
+ *
+ * `expectedVersion` stays optional only because `boot/boot-gate.ts`'s
+ * very first call has no server version to compare against yet -- every
+ * other call (a `refetch-defs` verdict) passes the server's own
+ * `defs_version`; no caller may omit it once one exists to compare
+ * against.
  */
 export async function fetchDefs(path: string, expectedVersion?: string): Promise<Defs> {
   const url = expectedVersion ? `${path}?v=${encodeURIComponent(expectedVersion)}` : path;

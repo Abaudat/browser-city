@@ -132,6 +132,12 @@ export const ModuleOwner = __t.object("ModuleOwner", {
 });
 export type ModuleOwner = __Infer<typeof ModuleOwner>;
 
+export const ModuleVersion = __t.object("ModuleVersion", {
+  defsVersion: __t.string(),
+  protocolVersion: __t.string(),
+});
+export type ModuleVersion = __Infer<typeof ModuleVersion>;
+
 export const NodeKind = __t.object("NodeKind", {
   code: __t.u32(),
   name: __t.string(),

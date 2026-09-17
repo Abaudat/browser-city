@@ -1,5 +1,9 @@
 import { Application } from "pixi.js";
+import { runBootGate } from "./boot/boot-gate";
 import { BOOT_MARK, markBoot } from "./boot/boot-marks";
+import type { VerifiedDefs } from "./boot/handshake";
+import { createHandshakeLatch, type HandshakeLatch } from "./boot/handshake-latch";
+import { readReloadedFor, writeReloadedFor } from "./boot/reloaded-for-storage";
 import type { DebugWorldView } from "./debug/world-view";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
@@ -23,11 +27,13 @@ import {
   recordVisibilityForE2e,
 } from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
+import { PROTOCOL_VERSION } from "./net/protocol-version";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
 import { visibleCellBounds } from "./render/screen-position";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
+import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
 import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
@@ -60,10 +66,26 @@ async function main(): Promise<void> {
     recordPingForE2e(observation);
   }
 
-  connect(onPing, (status) => notice.setStatus(status));
+  // Story 2.8 (FR147): `net/connection.ts`'s own callbacks start firing
+  // the instant `connect()` returns, well before `startStreetScene`'s own
+  // `runBootGate` has registered anything -- `latch` is the replay buffer
+  // that makes that race safe (`boot/handshake-latch.ts`). `onStatus`
+  // resolves the latch as unreachable only on the *first* not-connected
+  // report and only before it has already settled another way -- a later
+  // drop, after the handshake already arrived, is a no-op here (the
+  // latch has already settled).
+  const latch = createHandshakeLatch();
+  connect(
+    onPing,
+    (status) => {
+      notice.setStatus(status);
+      if (status === "disconnected") latch.resolveUnreachable();
+    },
+    (version) => latch.resolveHandshake(version),
+  );
 
   try {
-    await startStreetScene();
+    await startStreetScene(latch, () => notice.setStatus("updating"));
   } catch (error: unknown) {
     // NFR42: the street scene degrades to not-drawing, never takes the ping
     // round trip down with it.
@@ -82,21 +104,55 @@ async function main(): Promise<void> {
  * hand-maintained copy here. There is still no live `layer_code`
  * subscription in this story (Tim's scope call); wiring one is later
  * work.
+ *
+ * Story 2.8 (FR147): the scene is never mounted before `runBootGate`
+ * resolves a `VerifiedDefs` -- "never draws a stale frame" is structural
+ * (`test-street/scene.ts`'s own `MountStreetSceneOptions.defs` type), not
+ * a convention. `connect()` and the first, unversioned `fetchDefs` still
+ * start in parallel exactly as before (`latch` is what `connect()`
+ * already started feeding by the time this runs), and Pixi's own
+ * `Application.init()` runs concurrently with the boot gate too -- only
+ * the scene mount itself waits on it.
  */
-async function startStreetScene(): Promise<void> {
+async function startStreetScene(latch: HandshakeLatch, onDegrade: () => void): Promise<void> {
   const mount = document.getElementById("test-street");
   if (!mount) {
     console.error("[main] #test-street is missing from index.html");
     return;
   }
 
-  // Never a hard-coded leading-slash literal (client/tests/e2e/
-  // deploy-smoke.spec.ts caught exactly this: it 404s under GitHub
-  // Pages' own /browser-city/ base). `import.meta.env.BASE_URL` is
-  // Vite's own base-aware constant -- always the build's `base` value,
-  // with a trailing slash, so `/` locally and `/browser-city/` in
-  // production resolve to the same relative asset either way.
-  const defs = await fetchDefs(`${import.meta.env.BASE_URL}defs/defs.json`);
+  const app = new Application();
+  const appInitPromise = app.init({ preference: "webgpu", background: "#284028" });
+
+  const sessionStorage = resolveSessionStorage(() => window.sessionStorage);
+  const bootResult = await runBootGate({
+    fetchDefs,
+    // Never a hard-coded leading-slash literal (client/tests/e2e/
+    // deploy-smoke.spec.ts caught exactly this: it 404s under GitHub
+    // Pages' own /browser-city/ base). `import.meta.env.BASE_URL` is
+    // Vite's own base-aware constant -- always the build's `base` value,
+    // with a trailing slash, so `/` locally and `/browser-city/` in
+    // production resolve to the same relative asset either way.
+    defsPath: `${import.meta.env.BASE_URL}defs/defs.json`,
+    clientProtocolVersion: PROTOCOL_VERSION,
+    handshake: latch,
+    readReloadedFor: () => readReloadedFor(sessionStorage),
+    writeReloadedFor: (version) => writeReloadedFor(sessionStorage, version),
+    reload: () => window.location.reload(),
+    onDegrade,
+  });
+
+  await appInitPromise;
+  mount.appendChild(app.canvas);
+
+  if (!bootResult) {
+    // NFR42: the gate already handled the outcome (a reload is under way,
+    // or the connection notice now shows "updating") -- nothing left to
+    // render this session.
+    return;
+  }
+  const defs: VerifiedDefs = bootResult.defs;
+
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");
   // Story 1.7 (FR121): `render.window_alpha` is a percent integer (1-99,
@@ -113,10 +169,6 @@ async function startStreetScene(): Promise<void> {
   const movementConfig = loadMovementConfig(defs);
 
   const rankTable = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
-
-  const app = new Application();
-  await app.init({ preference: "webgpu", background: "#284028" });
-  mount.appendChild(app.canvas);
 
   // FR149: the player's own bindings, or the defaults if storage is
   // empty, blocked or unreadable -- never an error the player has to see
