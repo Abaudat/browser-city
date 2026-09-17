@@ -1,10 +1,15 @@
 //! The generic rule engine (FR111/FR112, story 2.10). One evaluator, one
-//! rule table (`sim::generated::defs::RULES`): Epic 3's generator asks "is
-//! this candidate legal" by calling [`evaluate`] against a hypothetical
-//! placement, story 2.11's harness calls it against persisted output, and
+//! rule table (`sim::generated::defs::RULES`), reachable only through
+//! [`RuleSet`] (story 2.11): Epic 3's generator asks "is this candidate
+//! legal" by calling [`evaluate`] against a hypothetical placement,
+//! `sim::validation::validate` calls it against persisted output, and
 //! there is never a second function that decides whether a rule holds --
 //! that is how FR112's "one source" becomes a property rather than a
-//! promise (Tim's direction).
+//! promise (Tim's direction). [`evaluate`] takes a [`RuleSet`], never a
+//! bare slice: a caller can wrap the committed table
+//! ([`RuleSet::committed`]) or, under test, an arbitrary one
+//! ([`RuleSet::for_test`]), but nothing outside `source`'s own module can
+//! construct a `RuleSet` any other way.
 //!
 //! The engine never sees a content key ("cafe", "villa_district"): it
 //! sees tag ids and integers. `defs/rules/*.toml` authors five closed
@@ -20,10 +25,11 @@
 //! arm, so it is a compile error until every kind is handled on purpose.
 //!
 //! `RuleSite` is the one seam between this pure engine and whatever holds
-//! real geometry -- `sim::rules::testing::Site` today, `world::fixture`,
-//! Epic 3's generator state and story 2.11's harness (over world tables)
-//! later, all answering the same three questions over integer geometry:
-//! what tags a cell carries, which areas contain it, and which subjects
+//! real geometry -- `sim::rules::testing::Site`, `world::fixture`,
+//! `sim::validation::PlacedSite` (story 2.11, over a real placed-object
+//! block) today, and Epic 3's generator state later, all answering the
+//! same three questions over integer geometry: what tags a cell carries,
+//! which areas contain it, and which subjects
 //! an area (or the whole site) contains. A same-floor neighbour is never
 //! asked of a `RuleSite` -- [`Direction::step`] is pure arithmetic no
 //! implementation could legitimately answer differently, so it is not a
@@ -34,8 +40,11 @@
 
 use std::collections::BTreeMap;
 
+mod source;
 #[cfg(feature = "test-fixtures")]
 pub mod testing;
+
+pub use source::RuleSet;
 
 /// A tag's resolved numeric id (`defs/tags/*.toml`'s own append-only
 /// manifest) -- the only vocabulary a rule or an object ever carries past
@@ -106,8 +115,8 @@ impl Direction {
 }
 
 /// The one seam between this pure engine and real geometry. Implemented
-/// by [`testing::Site`] here, by `world::fixture` and, later, by Epic
-/// 3's generator state and story 2.11's harness over world tables --
+/// by [`testing::Site`], by `world::fixture`, by `sim::validation::
+/// PlacedSite` (story 2.11) and, later, by Epic 3's generator state --
 /// never by a second evaluator. Three questions only (Tim's direction,
 /// PR #294 cycle 1): a same-floor neighbour is [`Direction::step`], never
 /// a fourth trait method, since no site could legitimately answer it
@@ -404,10 +413,13 @@ fn distribution_coverage_violations(
 /// `O(rules * entities)`, never `O(rules * entities^2)` -- distribution's
 /// spacing and coverage checks use spatial buckets, and every other kind
 /// drives its scan off `site.subjects_in_area`, which a real `RuleSite`
-/// indexes once rather than rescanning per rule.
-pub fn evaluate(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
+/// indexes once rather than rescanning per rule. `rules` is a
+/// [`RuleSet`], never a bare slice (FR112, story 2.11): the only two ways
+/// to build one are [`RuleSet::committed`] and, under test,
+/// [`RuleSet::for_test`].
+pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
     let mut violations = Vec::new();
-    for rule in rules {
+    for rule in rules.rules() {
         match rule.kind {
             RuleKind::Placement {
                 subject,
@@ -620,14 +632,17 @@ mod tests {
     #[test]
     fn placement_satisfied_fixture_has_no_violation() {
         let site = SiteBuilder::new().cell(c(0, 0, 2), &[CAFE]).build();
-        assert_eq!(evaluate(&[no_cafe_above_floor_2()], &site), vec![]);
+        assert_eq!(
+            evaluate(RuleSet::for_test(&[no_cafe_above_floor_2()]), &site),
+            vec![]
+        );
     }
 
     #[test]
     fn placement_violated_fixture_names_the_rule_and_the_cell() {
         let site = SiteBuilder::new().cell(c(0, 0, 3), &[CAFE]).build();
         assert_eq!(
-            evaluate(&[no_cafe_above_floor_2()], &site),
+            evaluate(RuleSet::for_test(&[no_cafe_above_floor_2()]), &site),
             vec![Violation {
                 rule_id: 1,
                 subject: c(0, 0, 3),
@@ -639,10 +654,13 @@ mod tests {
     #[test]
     fn placement_boundary_floor_equal_to_max_passes_max_plus_one_fails() {
         let at_max = SiteBuilder::new().cell(c(0, 0, 2), &[CAFE]).build();
-        assert!(evaluate(&[no_cafe_above_floor_2()], &at_max).is_empty());
+        assert!(evaluate(RuleSet::for_test(&[no_cafe_above_floor_2()]), &at_max).is_empty());
 
         let over_max = SiteBuilder::new().cell(c(0, 0, 3), &[CAFE]).build();
-        assert_eq!(evaluate(&[no_cafe_above_floor_2()], &over_max).len(), 1);
+        assert_eq!(
+            evaluate(RuleSet::for_test(&[no_cafe_above_floor_2()]), &over_max).len(),
+            1
+        );
     }
 
     /// Decision (Crew, PR #294 cycle 1, see `RuleKind::Placement`'s own
@@ -664,7 +682,7 @@ mod tests {
         // Outside any building area at all: the container-scoped rule
         // says nothing about it.
         let outside = SiteBuilder::new().cell(c(0, 0, 5), &[CAFE]).build();
-        assert!(evaluate(&[rule], &outside).is_empty());
+        assert!(evaluate(RuleSet::for_test(&[rule]), &outside).is_empty());
 
         // Inside a building area tagged BUILDING, above floor 2: violates.
         let inside = SiteBuilder::new()
@@ -674,7 +692,7 @@ mod tests {
             .area(c(9, 9, 0), BUILDING_A)
             .build();
         assert_eq!(
-            evaluate(&[rule], &inside),
+            evaluate(RuleSet::for_test(&[rule]), &inside),
             vec![Violation {
                 rule_id: 2,
                 subject: c(1, 1, 5),
@@ -707,7 +725,10 @@ mod tests {
             .cell(c(10, 0, 0), &[SEATING])
             .cell(c(5, 0, 0), &[WASTE])
             .build();
-        assert_eq!(evaluate(&[one_waste_per_2_seating()], &site), vec![]);
+        assert_eq!(
+            evaluate(RuleSet::for_test(&[one_waste_per_2_seating()]), &site),
+            vec![]
+        );
     }
 
     #[test]
@@ -734,7 +755,7 @@ mod tests {
                 max_distance: 50,
             },
         };
-        let violations = evaluate(&[rule], &site);
+        let violations = evaluate(RuleSet::for_test(&[rule]), &site);
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule_id, 3);
         assert_eq!(violations[0].subject, c(15, 0, 0));
@@ -743,7 +764,10 @@ mod tests {
     #[test]
     fn distribution_boundary_zero_per_cells_never_divides_by_zero() {
         let site = SiteBuilder::new().cell(c(0, 0, 0), &[WASTE]).build();
-        assert_eq!(evaluate(&[one_waste_per_2_seating()], &site), vec![]);
+        assert_eq!(
+            evaluate(RuleSet::for_test(&[one_waste_per_2_seating()]), &site),
+            vec![]
+        );
     }
 
     #[test]
@@ -770,7 +794,7 @@ mod tests {
             .cell(c(101, 0, 0), &[WASTE])
             .cell(c(102, 0, 0), &[WASTE])
             .build();
-        assert!(evaluate(&[rule], &at_tolerance).is_empty());
+        assert!(evaluate(RuleSet::for_test(&[rule]), &at_tolerance).is_empty());
 
         let past_tolerance = SiteBuilder::new()
             .cell(c(0, 0, 0), &[SEATING])
@@ -782,7 +806,10 @@ mod tests {
             .cell(c(102, 0, 0), &[WASTE])
             .cell(c(103, 0, 0), &[WASTE])
             .build();
-        assert_eq!(evaluate(&[rule], &past_tolerance).len(), 1);
+        assert_eq!(
+            evaluate(RuleSet::for_test(&[rule]), &past_tolerance).len(),
+            1
+        );
     }
 
     #[test]
@@ -803,7 +830,7 @@ mod tests {
             .cell(c(0, 0, 0), &[SEATING, WASTE])
             .cell(c(1, 0, 0), &[WASTE])
             .build();
-        let violations = evaluate(&[rule], &site);
+        let violations = evaluate(RuleSet::for_test(&[rule]), &site);
         assert_eq!(
             violations,
             vec![Violation {
@@ -835,7 +862,7 @@ mod tests {
                 .cell(c(i * 10, 0, 0), &[SEATING]);
         }
         let site = builder.build();
-        assert!(evaluate(&[rule], &site).is_empty());
+        assert!(evaluate(RuleSet::for_test(&[rule]), &site).is_empty());
     }
 
     /// AC2's "evenly spread" (Quentin's direction, PR #294 cycle 1):
@@ -865,7 +892,7 @@ mod tests {
             .cell(c(6, 0, 0), &[SEATING])
             .cell(c(100, 0, 0), &[SEATING])
             .build();
-        let violations = evaluate(&[rule], &site);
+        let violations = evaluate(RuleSet::for_test(&[rule]), &site);
         assert_eq!(
             violations,
             vec![Violation {
@@ -894,14 +921,14 @@ mod tests {
             .cell(c(0, 0, 0), &[WASTE])
             .cell(c(5, 0, 0), &[SEATING])
             .build();
-        assert!(evaluate(&[rule], &at_bound).is_empty());
+        assert!(evaluate(RuleSet::for_test(&[rule]), &at_bound).is_empty());
 
         let one_past = SiteBuilder::new()
             .cell(c(0, 0, 0), &[WASTE])
             .cell(c(6, 0, 0), &[SEATING])
             .build();
         assert_eq!(
-            evaluate(&[rule], &one_past),
+            evaluate(RuleSet::for_test(&[rule]), &one_past),
             vec![Violation {
                 rule_id: 15,
                 subject: c(6, 0, 0),
@@ -926,7 +953,7 @@ mod tests {
         };
         let site = SiteBuilder::new().cell(c(0, 0, 0), &[SEATING]).build();
         assert_eq!(
-            evaluate(&[rule], &site),
+            evaluate(RuleSet::for_test(&[rule]), &site),
             vec![Violation {
                 rule_id: 16,
                 subject: c(0, 0, 0),
@@ -961,7 +988,7 @@ mod tests {
             .cell(c(490, 0, 0), &[SEATING]);
         let site = builder.build();
 
-        let violations = evaluate(&[rule], &site);
+        let violations = evaluate(RuleSet::for_test(&[rule]), &site);
         assert_eq!(
             violations,
             vec![Violation {
@@ -990,7 +1017,10 @@ mod tests {
     fn coherence_satisfied_fixture_has_no_violation() {
         let site = SiteBuilder::new().cell(c(0, 0, 0), &[SKYSCRAPER]).build();
         assert_eq!(
-            evaluate(&[no_skyscraper_in_villa_district()], &site),
+            evaluate(
+                RuleSet::for_test(&[no_skyscraper_in_villa_district()]),
+                &site
+            ),
             vec![]
         );
     }
@@ -1004,7 +1034,10 @@ mod tests {
             .area(c(5, 5, 0), BUILDING_A)
             .build();
         assert_eq!(
-            evaluate(&[no_skyscraper_in_villa_district()], &site),
+            evaluate(
+                RuleSet::for_test(&[no_skyscraper_in_villa_district()]),
+                &site
+            ),
             vec![Violation {
                 rule_id: 7,
                 subject: c(0, 0, 0),
@@ -1018,7 +1051,13 @@ mod tests {
     #[test]
     fn coherence_forbid_mode_cell_outside_any_area_is_never_a_violation() {
         let site = SiteBuilder::new().cell(c(0, 0, 0), &[SKYSCRAPER]).build();
-        assert!(evaluate(&[no_skyscraper_in_villa_district()], &site).is_empty());
+        assert!(
+            evaluate(
+                RuleSet::for_test(&[no_skyscraper_in_villa_district()]),
+                &site
+            )
+            .is_empty()
+        );
     }
 
     /// Decision (see `CoherenceMode::Allow`'s own doc comment): a
@@ -1037,7 +1076,7 @@ mod tests {
             },
         };
         let outside = SiteBuilder::new().cell(c(0, 0, 0), &[WALL]).build();
-        assert_eq!(evaluate(&[rule], &outside).len(), 1);
+        assert_eq!(evaluate(RuleSet::for_test(&[rule]), &outside).len(), 1);
 
         let inside = SiteBuilder::new()
             .cell(c(0, 0, 0), &[WALL])
@@ -1045,7 +1084,7 @@ mod tests {
             .cell(c(1, 1, 0), &[ROOM])
             .area(c(1, 1, 0), BUILDING_A)
             .build();
-        assert!(evaluate(&[rule], &inside).is_empty());
+        assert!(evaluate(RuleSet::for_test(&[rule]), &inside).is_empty());
     }
 
     // --- adjacency ------------------------------------------------------------
@@ -1073,7 +1112,10 @@ mod tests {
             .cell(c(0, 0, 0), &[WALL])
             .build();
         assert_eq!(
-            evaluate(&[door_requires_wall_to_the_north()], &site),
+            evaluate(
+                RuleSet::for_test(&[door_requires_wall_to_the_north()]),
+                &site
+            ),
             vec![]
         );
     }
@@ -1082,7 +1124,10 @@ mod tests {
     fn adjacency_violated_fixture_names_the_rule_and_the_cell() {
         let site = SiteBuilder::new().cell(c(0, 1, 0), &[DOOR]).build();
         assert_eq!(
-            evaluate(&[door_requires_wall_to_the_north()], &site),
+            evaluate(
+                RuleSet::for_test(&[door_requires_wall_to_the_north()]),
+                &site
+            ),
             vec![Violation {
                 rule_id: 9,
                 subject: c(0, 1, 0),
@@ -1100,7 +1145,11 @@ mod tests {
             .cell(c(0, 2, 0), &[WALL])
             .build();
         assert_eq!(
-            evaluate(&[door_requires_wall_to_the_north()], &site).len(),
+            evaluate(
+                RuleSet::for_test(&[door_requires_wall_to_the_north()]),
+                &site
+            )
+            .len(),
             1
         );
     }
@@ -1124,13 +1173,16 @@ mod tests {
             .cell(c(0, 1, 0), &[DOOR])
             .cell(c(0, 2, 0), &[WALL])
             .build();
-        assert!(evaluate(&[rule], &wall_to_south).is_empty());
+        assert!(evaluate(RuleSet::for_test(&[rule]), &wall_to_south).is_empty());
 
         let wall_to_north = SiteBuilder::new()
             .cell(c(0, 1, 0), &[DOOR])
             .cell(c(0, 0, 0), &[WALL])
             .build();
-        assert_eq!(evaluate(&[rule], &wall_to_north).len(), 1);
+        assert_eq!(
+            evaluate(RuleSet::for_test(&[rule]), &wall_to_north).len(),
+            1
+        );
     }
 
     /// Story 2.9's own strengthening of AC2: a `Forbid` violation names
@@ -1156,7 +1208,7 @@ mod tests {
             .cell(c(0, 0, 0), &[WALL])
             .build();
         assert_eq!(
-            evaluate(&[rule], &site),
+            evaluate(RuleSet::for_test(&[rule]), &site),
             vec![Violation {
                 rule_id: 10,
                 subject: c(0, 1, 0),
@@ -1207,7 +1259,7 @@ mod tests {
             .cell(c(1, 0, 0), &[WALL])
             .build();
         assert_eq!(
-            evaluate(&[rule], &site),
+            evaluate(RuleSet::for_test(&[rule]), &site),
             vec![
                 Violation {
                     rule_id: 10,
@@ -1259,7 +1311,7 @@ mod tests {
             .cell(c(0, 0, 0), &[DOOR])
             .cell(c(1, 0, 0), &[WALL])
             .build();
-        assert!(evaluate(&[rule], &wall_to_east).is_empty());
+        assert!(evaluate(RuleSet::for_test(&[rule]), &wall_to_east).is_empty());
     }
 
     /// A multi-term alternative (a neighbourhood pattern -- e.g. "wall to
@@ -1292,14 +1344,14 @@ mod tests {
             .cell(c(0, 1, 0), &[DOOR])
             .cell(c(0, 0, 0), &[WALL])
             .build();
-        assert_eq!(evaluate(&[rule], &only_north).len(), 1);
+        assert_eq!(evaluate(RuleSet::for_test(&[rule]), &only_north).len(), 1);
 
         let both_sides = SiteBuilder::new()
             .cell(c(0, 1, 0), &[DOOR])
             .cell(c(0, 0, 0), &[WALL])
             .cell(c(0, 2, 0), &[WALL])
             .build();
-        assert!(evaluate(&[rule], &both_sides).is_empty());
+        assert!(evaluate(RuleSet::for_test(&[rule]), &both_sides).is_empty());
     }
 
     /// A `present: false` term matches an *absent* tag -- the shape a
@@ -1324,10 +1376,10 @@ mod tests {
             .cell(c(0, 0, 0), &[DOOR])
             .cell(c(1, 0, 0), &[WALL])
             .build();
-        assert_eq!(evaluate(&[rule], &wall_present).len(), 1);
+        assert_eq!(evaluate(RuleSet::for_test(&[rule]), &wall_present).len(), 1);
 
         let wall_absent = SiteBuilder::new().cell(c(0, 0, 0), &[DOOR]).build();
-        assert!(evaluate(&[rule], &wall_absent).is_empty());
+        assert!(evaluate(RuleSet::for_test(&[rule]), &wall_absent).is_empty());
     }
 
     // --- requirement ----------------------------------------------------------
@@ -1353,7 +1405,10 @@ mod tests {
             .cell(c(1, 0, 0), &[DOOR])
             .area(c(1, 0, 0), BUILDING_A)
             .build();
-        assert_eq!(evaluate(&[every_dwelling_has_a_door()], &site), vec![]);
+        assert_eq!(
+            evaluate(RuleSet::for_test(&[every_dwelling_has_a_door()]), &site),
+            vec![]
+        );
     }
 
     #[test]
@@ -1363,7 +1418,7 @@ mod tests {
             .area(c(0, 0, 0), BUILDING_A)
             .build();
         assert_eq!(
-            evaluate(&[every_dwelling_has_a_door()], &site),
+            evaluate(RuleSet::for_test(&[every_dwelling_has_a_door()]), &site),
             vec![Violation {
                 rule_id: 12,
                 subject: c(0, 0, 0),
@@ -1375,7 +1430,10 @@ mod tests {
     #[test]
     fn requirement_boundary_zero_dwellings_is_vacuously_met() {
         let site = SiteBuilder::new().cell(c(0, 0, 0), &[DOOR]).build();
-        assert_eq!(evaluate(&[every_dwelling_has_a_door()], &site), vec![]);
+        assert_eq!(
+            evaluate(RuleSet::for_test(&[every_dwelling_has_a_door()]), &site),
+            vec![]
+        );
     }
 
     #[test]
@@ -1398,7 +1456,7 @@ mod tests {
             .cell(c(2, 0, 0), &[DOOR])
             .area(c(2, 0, 0), BUILDING_A)
             .build();
-        assert_eq!(evaluate(&[rule], &site).len(), 1);
+        assert_eq!(evaluate(RuleSet::for_test(&[rule]), &site).len(), 1);
     }
 
     /// Decision (see `RuleKind::Requirement`'s own doc comment,
@@ -1422,7 +1480,7 @@ mod tests {
         };
         let site = SiteBuilder::new().cell(c(0, 0, 0), &[DWELLING]).build();
         assert_eq!(
-            evaluate(&[rule], &site),
+            evaluate(RuleSet::for_test(&[rule]), &site),
             vec![Violation {
                 rule_id: 18,
                 subject: c(0, 0, 0),
@@ -1454,7 +1512,7 @@ mod tests {
             .area(c(0, 0, 0), ROOM_AREA)
             .build();
         assert_eq!(
-            evaluate(&[rule], &site),
+            evaluate(RuleSet::for_test(&[rule]), &site),
             vec![Violation {
                 rule_id: 19,
                 subject: c(0, 0, 0),
@@ -1491,7 +1549,7 @@ mod tests {
                 floor_max: Some(2),
             },
         };
-        let violations = evaluate(&[high_id, low_id], &site);
+        let violations = evaluate(RuleSet::for_test(&[high_id, low_id]), &site);
         assert_eq!(
             violations,
             vec![

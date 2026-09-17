@@ -23,7 +23,7 @@
 
 mod support;
 
-use sim::rules::{AreaId, Cell, TagId, evaluate};
+use sim::rules::{AreaId, Cell, TagId};
 use support::grammar_rules;
 
 #[derive(Debug)]
@@ -287,7 +287,7 @@ fn every_room_grammar_fixture_case_matches_its_own_expected_rule_keys() {
             }
         }
         let site = builder.build();
-        let violations = evaluate(&rules, &site);
+        let violations = support::eval(&rules, &site);
 
         let mut actual_keys: Vec<&str> = violations
             .iter()

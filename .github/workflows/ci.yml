@@ -267,6 +267,8 @@ jobs:
         run: bash ../../scripts/ci/check-atlas-filter.sh
       - name: story 2.10 AC3, the rule engine never hardcodes a content key
         run: bash ../../scripts/ci/check-rule-engine-no-content-keys.sh
+      - name: story 2.11 AC1/AC4, the generator and the harness read one rule source
+        run: bash ../../scripts/ci/check-rule-source.sh
       # Quentin's direction, cycle 2: client-check's own filter (client/**,
       # server/**, scripts/**, .github/**, fixtures/**) never covers
       # tools/defs-build/**, so a PR that only edits layer_codes.rs's own
@@ -304,6 +306,8 @@ jobs:
       - run: bash ../scripts/ci/check-schema-additive.sh
       - name: story 2.10 AC3, the rule engine never hardcodes a content key
         run: bash ../scripts/ci/check-rule-engine-no-content-keys.sh
+      - name: story 2.11 AC1/AC4, the generator and the harness read one rule source
+        run: bash ../scripts/ci/check-rule-source.sh
 
   test:
     name: test

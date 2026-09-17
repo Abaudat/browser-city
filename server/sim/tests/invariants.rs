@@ -13,7 +13,7 @@ use sim::rng::{Rng, seed_from_ids};
 use sim::rules::testing::SiteBuilder;
 use sim::rules::{
     AdjacencyRelation, AreaId, Cell, CoherenceMode, Direction, NeighbourTerm, RuleDef, RuleKind,
-    RuleSite, TagId, Violation, evaluate,
+    RuleSite, TagId, Violation,
 };
 use sim::world::walkability::{
     WalkabilityGrid, enclosed_regions, erode, narrow_passages, player_body_subcells,
@@ -549,7 +549,7 @@ proptest! {
     fn inv_rule_verdicts_deterministic(facts in facts_strategy(0..30)) {
         let rules = five_rules(TAG_UNIVERSE);
         let site = build_site(&facts, TAG_UNIVERSE);
-        prop_assert_eq!(evaluate(&rules, &site), evaluate(&rules, &site));
+        prop_assert_eq!(support::eval(&rules, &site), support::eval(&rules, &site));
     }
 
     /// `inv_rule_verdicts_independent_of_input_order`: a real shuffle of
@@ -573,8 +573,8 @@ proptest! {
         let shuffled_site = build_site(&shuffled_facts, TAG_UNIVERSE);
 
         prop_assert_eq!(
-            evaluate(&rules, &site),
-            evaluate(&shuffled_rules, &shuffled_site)
+            support::eval(&rules, &site),
+            support::eval(&shuffled_rules, &shuffled_site)
         );
     }
 
@@ -611,8 +611,8 @@ proptest! {
         let permuted_site = build_site(&facts, permuted_tags);
 
         prop_assert_eq!(
-            evaluate(&original_rules, &original_site),
-            evaluate(&permuted_rules, &permuted_site)
+            support::eval(&original_rules, &original_site),
+            support::eval(&permuted_rules, &permuted_site)
         );
     }
 
@@ -648,7 +648,7 @@ proptest! {
                 .cell(cell, &[RULE_SUBJECT])
                 .cell(cell, &[RULE_PER_OR_WITHIN]);
         }
-        prop_assert!(evaluate(&[rule], &even.build()).is_empty());
+        prop_assert!(support::eval(&[rule], &even.build()).is_empty());
 
         let mut clustered = SiteBuilder::new();
         for i in 0..n_groups {
@@ -657,7 +657,7 @@ proptest! {
                 .cell(cell, &[RULE_SUBJECT])
                 .cell(cell, &[RULE_PER_OR_WITHIN]);
         }
-        prop_assert!(!evaluate(&[rule], &clustered.build()).is_empty());
+        prop_assert!(!support::eval(&[rule], &clustered.build()).is_empty());
 
         // Same subject layout as `even` (satisfies min_spacing), but the
         // `per` cells sit far outside `max_distance` of every subject --
@@ -670,7 +670,7 @@ proptest! {
         for i in 0..n_groups {
             corner = corner.cell(Cell::new(10_000 + i, 0, 0), &[RULE_PER_OR_WITHIN]);
         }
-        prop_assert!(!evaluate(&[rule], &corner.build()).is_empty());
+        prop_assert!(!support::eval(&[rule], &corner.build()).is_empty());
     }
 }
 
@@ -884,14 +884,14 @@ proptest! {
         };
 
         let clean = background_only().cell(subject_cell, &[RULE_SUBJECT]).build();
-        prop_assert!(evaluate(&[rule], &clean).is_empty());
+        prop_assert!(support::eval(&[rule], &clean).is_empty());
 
         let planted = background_only()
             .cell(subject_cell, &[RULE_SUBJECT])
             .cell(other_cell, &[RULE_PER_OR_WITHIN])
             .build();
         prop_assert_eq!(
-            evaluate(&[rule], &planted),
+            support::eval(&[rule], &planted),
             vec![Violation {
                 rule_id: 1,
                 subject: subject_cell,
@@ -902,7 +902,7 @@ proptest! {
         // Removing the planted neighbour again (background kept)
         // returns to zero violations.
         let removed = background_only().cell(subject_cell, &[RULE_SUBJECT]).build();
-        prop_assert!(evaluate(&[rule], &removed).is_empty());
+        prop_assert!(support::eval(&[rule], &removed).is_empty());
     }
 
     /// `inv_adjacency_direction_respected`: a single-term directional
@@ -960,8 +960,8 @@ proptest! {
             },
         };
 
-        let north_violations = evaluate(&[north_rule], &site);
-        let south_violations = evaluate(&[south_rule], &mirrored_site);
+        let north_violations = support::eval(&[north_rule], &site);
+        let south_violations = support::eval(&[south_rule], &mirrored_site);
         prop_assert_eq!(
             transformed_violation_set(&north_violations, mirror_y),
             transformed_violation_set(&south_violations, |c| c)
@@ -995,8 +995,8 @@ proptest! {
             rotated = rotated.cell(rotate90(cell), &[tag]);
         }
 
-        let original_violations = evaluate(&[rule], &original.build());
-        let rotated_violations = evaluate(&[rule], &rotated.build());
+        let original_violations = support::eval(&[rule], &original.build());
+        let rotated_violations = support::eval(&[rule], &rotated.build());
         prop_assert_eq!(
             transformed_violation_set(&original_violations, rotate90),
             transformed_violation_set(&rotated_violations, |c| c)
@@ -1039,7 +1039,7 @@ proptest! {
         let site = build(&facts);
         let shuffled_facts = shuffle(&facts, &shuffle_keys);
         let shuffled_site = build(&shuffled_facts);
-        prop_assert_eq!(evaluate(defs::RULES, &site), evaluate(defs::RULES, &shuffled_site));
+        prop_assert_eq!(support::eval(defs::RULES, &site), support::eval(defs::RULES, &shuffled_site));
     }
 
     /// `inv_well_formed_room_accepted` (AC4): a closed wall ring with a
@@ -1052,7 +1052,7 @@ proptest! {
     fn inv_well_formed_room_accepted(w in 5i32..10, h in 5i32..10, door_offset in 0u32..u32::MAX) {
         let door_x = 1 + (door_offset % (w - 2) as u32) as i32;
         let site = build_doored_room(w, h, door_x);
-        prop_assert_eq!(evaluate(&support::grammar_rules(), &site), vec![]);
+        prop_assert_eq!(support::eval(&support::grammar_rules(), &site), vec![]);
     }
 
     /// `inv_grammar_accepted_room_is_reachable` (Quentin's direction,
@@ -1070,7 +1070,7 @@ proptest! {
     fn inv_grammar_accepted_room_is_reachable(w in 5i32..10, h in 5i32..10, door_offset in 0u32..u32::MAX) {
         let door_x = 1 + (door_offset % (w - 2) as u32) as i32;
         let site = build_doored_room(w, h, door_x);
-        prop_assert_eq!(evaluate(&support::grammar_rules(), &site), vec![]);
+        prop_assert_eq!(support::eval(&support::grammar_rules(), &site), vec![]);
 
         let grid = walkability_grid_from_site(&site, w, h);
         let (body_w, body_h) = player_body_subcells(defs::BALANCE);
@@ -1190,7 +1190,7 @@ proptest! {
 
         let (mutated_site, expected_keys): (_, Vec<&str>) = match mutation {
             RoomMutation::DropWallCell => {
-                prop_assert!(evaluate(&grammar, &build_room(None, None, &door_tags, pavement)).is_empty());
+                prop_assert!(support::eval(&grammar, &build_room(None, None, &door_tags, pavement)).is_empty());
                 let drop_x = 1 + (drop_offset % (w - 2) as u32) as i32;
                 let dropped = Cell::new(drop_x, 0, 0);
                 (
@@ -1199,7 +1199,7 @@ proptest! {
                 )
             }
             RoomMutation::FloorTouchesGround => {
-                prop_assert!(evaluate(&grammar, &build_room(None, None, &door_tags, pavement)).is_empty());
+                prop_assert!(support::eval(&grammar, &build_room(None, None, &door_tags, pavement)).is_empty());
                 let floor_x = 2 + (floor_offset % (w - 3).max(1) as u32) as i32;
                 let ground_at = Cell::new(floor_x, 1, 0);
                 (
@@ -1292,7 +1292,7 @@ proptest! {
             }
         };
 
-        let violations = evaluate(&grammar, &mutated_site);
+        let violations = support::eval(&grammar, &mutated_site);
         let mut actual_keys: Vec<&str> = violations
             .iter()
             .map(|v| grammar.iter().find(|r| r.id == v.rule_id).unwrap().key)

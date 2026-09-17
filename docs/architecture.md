@@ -989,6 +989,25 @@ There is no separate rule-set version: `defs_version` already hashes
 every tracked file under `defs/`, including `defs/rules/` and
 `defs/tags/`, and is the rule-set version FR108/FR109 refer to.
 
+`sim::rules::RuleSet` (story 2.11, FR112) is the only thing `evaluate`
+accepts, and `RuleSet::committed` (wrapping `generated::defs::RULES`) is
+its only non-test constructor -- `RuleSet::for_test` and `rules::testing`
+are gated behind the `test-fixtures` feature. `sim::validation::validate`
+is the one validation harness: it takes no rules, object or balance
+argument, reads the committed defs itself, and composes `evaluate`
+against `RuleSet::committed` with 2.4's `enclosed_regions`/
+`narrow_passages` walkability checks over a real placed-object block,
+never stopping at the first defect. A candidate carries its own producing
+`defs_version`; `validate` refuses (`RuleSourceMismatch`) rather than
+validating one stamped with any other version. `sim::validation::
+PlacedSite` (the first real `RuleSite` over placed objects) stamps every
+cell of a placed object's footprint with every one of its tags, unioned
+where objects stack. `scripts/ci/check-rule-source.sh` fails the build if
+`test-fixtures` is enabled anywhere outside `server/sim/Cargo.toml`'s own
+self dev-dependency and `server/bounds/Cargo.toml`, if `for_test` is used
+outside `server/sim/src/rules/`, or if `RuleKind::` is matched in any
+other non-generated source file.
+
 ## Boot budget
 
 Boot milestones are marked only through `client/src/boot/boot-marks.ts`; NFR1
