@@ -60,17 +60,27 @@ async function fetchPageBitmap(baseUrl: string, file: string): Promise<ImageBitm
 // production's close-at-zero-references path for real, unaffected by
 // whatever this module does with its own state. `appearance.spec.ts`
 // calls `comparePipelineVsStack` dozens of times over for one fixed
-// tuple (the full `(animation, direction, frame)` grid); this cache's
-// own references are held for this module's whole lifetime, never
-// released, so each of that fixed tuple's handful of pages is decoded
-// exactly once rather than on every call -- a Playwright test page's own
-// page set is small and fixed, and the page (and this cache with it) is
-// torn down between tests.
-function makeStackPages(atlasBaseUrl: string) {
-  return createRefCountedCache<ImageBitmap>(
-    (file) => fetchPageBitmap(atlasBaseUrl, file),
-    (bitmap) => bitmap.close(),
-  );
+// tuple (the full `(animation, direction, frame)` grid); a *module-level*
+// singleton (never rebuilt per call, that was this file's own regression:
+// building a fresh cache inside `comparePipelineVsStack` re-fetched and
+// re-decoded every one of a handful of full-page PNGs on every one of
+// the 48+ grid cells, which is exactly the "re-fetches and re-decodes
+// the same PNGs from scratch" failure mode this module's own history
+// already names) means each of that fixed tuple's handful of pages is
+// decoded exactly once for the module's whole lifetime, never per call --
+// a Playwright test page's own page set is small and fixed, and the page
+// (and this cache with it) is torn down between tests. `atlasBaseUrl` is
+// effectively constant for one page's whole lifetime, so only the first
+// call's own value is ever used.
+let stackPages: ReturnType<typeof createRefCountedCache<ImageBitmap>> | undefined;
+function getStackPages(atlasBaseUrl: string) {
+  if (!stackPages) {
+    stackPages = createRefCountedCache<ImageBitmap>(
+      (file) => fetchPageBitmap(atlasBaseUrl, file),
+      (bitmap) => bitmap.close(),
+    );
+  }
+  return stackPages;
 }
 
 function readImageData(
@@ -130,7 +140,12 @@ export async function comparePipelineVsStack(
     );
   });
 
-  const stackPages = makeStackPages(atlasBaseUrl);
+  // Never released (the module-level cache's own doc comment): a page
+  // acquired once here stays decoded for this module's whole lifetime,
+  // reused by every later cell/tuple that names it, exactly like the
+  // pre-story-2.7 version of this file already did for individual vendor
+  // sheets.
+  const pages = getStackPages(atlasBaseUrl);
   const partByLayer: Readonly<Record<(typeof STACK_LAYER_ORDER)[number], ResolvedPart | null>> = {
     body: resolved.parts.body,
     eyes: resolved.parts.eyes,
@@ -139,35 +154,30 @@ export async function comparePipelineVsStack(
     accessory: resolved.parts.accessory,
     uniformAccessory: resolved.parts.uniformAccessory,
   };
-  const acquired: { file: string; bitmap: ImageBitmap; atlas: ResolvedPart["atlas"] }[] = [];
-  try {
-    for (const layer of STACK_LAYER_ORDER) {
-      if (layer === "hairstyle" && resolved.effectiveOutfit.hidesHairstyle) continue;
-      const part = partByLayer[layer];
-      if (!part) continue;
-      const page = defs.atlasPages[part.page];
-      if (!page)
-        throw new Error(`compare-pipeline-vs-stack: atlas page ${part.page} does not exist`);
-      const bitmap = await stackPages.acquire(page.file);
-      acquired.push({ file: page.file, bitmap, atlas: part.atlas });
-    }
-    const stack = readImageData(cell.width, cell.height, (ctx) => {
-      for (const { bitmap, atlas } of acquired) {
-        ctx.drawImage(
-          bitmap,
-          atlas.x + cell.x,
-          atlas.y + cell.y,
-          cell.width,
-          cell.height,
-          0,
-          0,
-          cell.width,
-          cell.height,
-        );
-      }
-    });
-    return { pipeline, stack };
-  } finally {
-    for (const { file, bitmap } of acquired) stackPages.release(file, bitmap);
+  const acquired: { bitmap: ImageBitmap; atlas: ResolvedPart["atlas"] }[] = [];
+  for (const layer of STACK_LAYER_ORDER) {
+    if (layer === "hairstyle" && resolved.effectiveOutfit.hidesHairstyle) continue;
+    const part = partByLayer[layer];
+    if (!part) continue;
+    const page = defs.atlasPages[part.page];
+    if (!page) throw new Error(`compare-pipeline-vs-stack: atlas page ${part.page} does not exist`);
+    const bitmap = await pages.acquire(page.file);
+    acquired.push({ bitmap, atlas: part.atlas });
   }
+  const stack = readImageData(cell.width, cell.height, (ctx) => {
+    for (const { bitmap, atlas } of acquired) {
+      ctx.drawImage(
+        bitmap,
+        atlas.x + cell.x,
+        atlas.y + cell.y,
+        cell.width,
+        cell.height,
+        0,
+        0,
+        cell.width,
+        cell.height,
+      );
+    }
+  });
+  return { pipeline, stack };
 }
