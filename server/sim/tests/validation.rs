@@ -65,6 +65,17 @@ fn subcells(cells: i32) -> i32 {
     cells * sim::generated::defs::COLLIDER_SUBCELLS_PER_CELL
 }
 
+/// A `Check::Rule` for the real committed rule named `key`, id and key
+/// both read off the same `RuleDef` -- never a hand-typed key that could
+/// drift from the id.
+fn rule_check(key: &'static str) -> Check {
+    let r = support::rule(key);
+    Check::Rule {
+        id: r.id,
+        key: r.key,
+    }
+}
+
 /// The tag [`sim::rules::evaluate`] treats as "the subject" for any
 /// `RuleKind` -- the tag it calls `site.subjects_in_area(None, ..)` with,
 /// so a rule with zero cells of this tag anywhere can never fire and
@@ -205,7 +216,7 @@ fn lighting_break_placements() -> Vec<Placement> {
 
 fn lighting_break_defects() -> Vec<Defect> {
     vec![Defect {
-        check: Check::Rule(support::rule("lighting_ground_floor_only").id),
+        check: rule_check("lighting_ground_floor_only"),
         location: Location::Cell {
             cell: Cell::new(0, 0, LIGHTING_FLOOR),
             other: None,
@@ -254,7 +265,7 @@ fn stairwell_break_areas() -> Vec<AreaSpec> {
 
 fn stairwell_break_defects() -> Vec<Defect> {
     let mut defects = vec![Defect {
-        check: Check::Rule(support::rule("no_counter_in_a_stairwell").id),
+        check: rule_check("no_counter_in_a_stairwell"),
         location: Location::Cell {
             cell: Cell::new(2, 0, STAIRWELL_FLOOR),
             other: None,
@@ -262,7 +273,7 @@ fn stairwell_break_defects() -> Vec<Defect> {
     }];
     for x in 0..3 {
         defects.push(Defect {
-            check: Check::Rule(support::rule("counter_faces_a_shopfront").id),
+            check: rule_check("counter_faces_a_shopfront"),
             location: Location::Cell {
                 cell: Cell::new(x, 0, STAIRWELL_FLOOR),
                 other: None,
@@ -351,7 +362,7 @@ fn sealed_ring_defects() -> Vec<Defect> {
     for (x, y) in sealed_ring_wall_cells() {
         for key in wall_container_rule_keys() {
             defects.push(Defect {
-                check: Check::Rule(support::rule(key).id),
+                check: rule_check(key),
                 location: Location::Cell {
                     cell: Cell::new(x, y, SEALED_RING_FLOOR),
                     other: None,
@@ -445,7 +456,7 @@ fn narrow_passage_defects() -> Vec<Defect> {
     // violate both.
     for (x, y) in narrow_passage_wall_cells() {
         defects.push(Defect {
-            check: Check::Rule(support::rule("building_has_an_entrance").id),
+            check: rule_check("building_has_an_entrance"),
             location: Location::Cell {
                 cell: Cell::new(base + x, base + y, NARROW_PASSAGE_FLOOR),
                 other: None,
@@ -457,7 +468,7 @@ fn narrow_passage_defects() -> Vec<Defect> {
     // remaining side-middles and the two south corners keep a valid pair.
     for &(x, y) in &[(0, 0), (2, 0)] {
         defects.push(Defect {
-            check: Check::Rule(support::rule("wall_is_part_of_a_straight_run_or_a_corner").id),
+            check: rule_check("wall_is_part_of_a_straight_run_or_a_corner"),
             location: Location::Cell {
                 cell: Cell::new(base + x, base + y, NARROW_PASSAGE_FLOOR),
                 other: None,
@@ -533,7 +544,53 @@ fn a_doorway_too_narrow_is_reported_and_only_it_changes_the_correct_block() {
     };
     let mut expected = narrow_passage_defects();
     expected.sort();
-    assert_eq!(validate(&candidate).unwrap(), expected);
+    let actual = validate(&candidate).unwrap();
+    assert_eq!(actual, expected);
+
+    // Quentin's direction: `walkability_defects_for` above calls the same
+    // `rasterise`/`narrow_passages`/`enclosed_regions` `validate` itself
+    // calls, so the equality above alone would stay green even if
+    // `validate` stopped wiring the walkability half in at all. This
+    // check never calls any of those three: exactly one `NarrowPassage`,
+    // no `EnclosedRegion` at all, and the reported rect sits inside the
+    // gap cell's own sub-cell span -- computed purely from
+    // `COLLIDER_SUBCELLS_PER_CELL` and the gap cell's own coordinates.
+    let narrow: Vec<&Defect> = actual
+        .iter()
+        .filter(|d| d.check == Check::NarrowPassage)
+        .collect();
+    assert_eq!(narrow.len(), 1, "expected exactly one NarrowPassage defect");
+    assert!(
+        actual.iter().all(|d| d.check != Check::EnclosedRegion),
+        "the gap is raw-passable, so no EnclosedRegion should ever be reported"
+    );
+    let gap_x = NARROW_PASSAGE_BASE + 1;
+    let cell_size = sim::generated::defs::COLLIDER_SUBCELLS_PER_CELL;
+    // x: tightly the gap cell's own column -- the cut-off pocket can
+    // never reach a column the ring's own side walls block. y: the
+    // ring's own full 3-cell span -- the pocket is the gap's own bottom
+    // margin (the trash_bin's collider only leaves room above and below
+    // its own centred block) *and* the interior room behind it, both
+    // real, walled-off cells, never anywhere outside the ring itself.
+    let x_bounds = (subcells(gap_x), subcells(gap_x) + cell_size);
+    let y_bounds = (
+        subcells(NARROW_PASSAGE_BASE),
+        subcells(NARROW_PASSAGE_BASE) + 3 * cell_size,
+    );
+    match narrow[0].location {
+        Location::SubcellRect { floor, rect } => {
+            assert_eq!(floor, NARROW_PASSAGE_FLOOR);
+            assert!(
+                rect.x0 >= x_bounds.0 && rect.x1 <= x_bounds.1,
+                "{rect:?} should sit inside the gap cell's own x span {x_bounds:?}"
+            );
+            assert!(
+                rect.y0 >= y_bounds.0 && rect.y1 <= y_bounds.1,
+                "{rect:?} should sit inside the ring's own y span {y_bounds:?}"
+            );
+        }
+        other => panic!("expected a SubcellRect location, got {other:?}"),
+    }
 }
 
 #[test]
@@ -550,7 +607,36 @@ fn a_sealed_wall_ring_with_no_door_is_reported() {
     };
     let mut expected = sealed_ring_defects();
     expected.sort();
-    assert_eq!(validate(&candidate).unwrap(), expected);
+    let actual = validate(&candidate).unwrap();
+    assert_eq!(actual, expected);
+
+    // Independent of `walkability_defects_for` (see the doorway test's
+    // own comment above for why): exactly one `EnclosedRegion`, whose
+    // rect is exactly the interior cell (1, 1)'s own full sub-cell
+    // block -- computed from `COLLIDER_SUBCELLS_PER_CELL` alone, never
+    // from calling `enclosed_regions` again.
+    let enclosed: Vec<&Defect> = actual
+        .iter()
+        .filter(|d| d.check == Check::EnclosedRegion)
+        .collect();
+    assert_eq!(
+        enclosed.len(),
+        1,
+        "expected exactly one EnclosedRegion defect"
+    );
+    assert!(actual.iter().all(|d| d.check != Check::NarrowPassage));
+    assert_eq!(
+        enclosed[0].location,
+        Location::SubcellRect {
+            floor: SEALED_RING_FLOOR,
+            rect: Rect {
+                x0: subcells(1),
+                y0: subcells(1),
+                x1: subcells(2),
+                y1: subcells(2),
+            },
+        }
+    );
 }
 
 /// Quentin's direction: pins the "container cell outside any real area"
@@ -575,7 +661,7 @@ fn a_wall_cell_outside_any_area_is_itself_a_violation_through_requirements_own_f
     let mut expected: Vec<Defect> = wall_container_rule_keys()
         .into_iter()
         .map(|key| Defect {
-            check: Check::Rule(support::rule(key).id),
+            check: rule_check(key),
             location: Location::Cell {
                 cell: Cell::new(0, 0, FALLBACK_FLOOR),
                 other: None,
@@ -583,7 +669,7 @@ fn a_wall_cell_outside_any_area_is_itself_a_violation_through_requirements_own_f
         })
         .collect();
     expected.push(Defect {
-        check: Check::Rule(support::rule("wall_is_part_of_a_straight_run_or_a_corner").id),
+        check: rule_check("wall_is_part_of_a_straight_run_or_a_corner"),
         location: Location::Cell {
             cell: Cell::new(0, 0, FALLBACK_FLOOR),
             other: None,
@@ -668,10 +754,10 @@ fn all_four_breaks_combined_report_every_defect_with_no_short_circuit() {
     // At least one rule violated at two different cells (Quentin's
     // direction): building_has_an_entrance fires on both the sealed-ring
     // and narrow-passage floors, at several distinct cells each.
-    let entrance_rule_id = support::rule("building_has_an_entrance").id;
+    let entrance_check = rule_check("building_has_an_entrance");
     let entrance_cells: std::collections::BTreeSet<_> = actual
         .iter()
-        .filter(|d| d.check == Check::Rule(entrance_rule_id))
+        .filter(|d| d.check == entrance_check)
         .map(|d| d.location)
         .collect();
     assert!(entrance_cells.len() >= 2);
@@ -716,7 +802,7 @@ fn the_same_site_stamped_with_the_committed_version_validates_normally() {
 #[test]
 fn a_rule_defect_renders_the_rule_key_and_the_full_cell_location() {
     let defect = Defect {
-        check: Check::Rule(support::rule("lighting_ground_floor_only").id),
+        check: rule_check("lighting_ground_floor_only"),
         location: Location::Cell {
             cell: Cell::new(0, 0, LIGHTING_FLOOR),
             other: None,
@@ -731,7 +817,7 @@ fn a_rule_defect_renders_the_rule_key_and_the_full_cell_location() {
 #[test]
 fn a_forbid_adjacency_defect_renders_the_other_cell_too() {
     let defect = Defect {
-        check: Check::Rule(support::rule("no_counter_in_a_stairwell").id),
+        check: rule_check("no_counter_in_a_stairwell"),
         location: Location::Cell {
             cell: Cell::new(2, 0, STAIRWELL_FLOOR),
             other: Some(Cell::new(3, 0, STAIRWELL_FLOOR)),

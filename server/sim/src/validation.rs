@@ -85,31 +85,35 @@ impl fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
-/// One thing [`validate`] checks a block against: a rule row (by id, from
-/// [`RuleSet::committed`]) or one of the two walkability checks. Closed
-/// and exhaustively matched wherever this is destructured (Tim's
+/// One thing [`validate`] checks a block against: a rule row (by id and
+/// key together, resolved once in [`validate`] itself through
+/// [`RuleSet::key_of`] -- never re-looked-up, and never a lookup that can
+/// fail once this value exists) or one of the two walkability checks.
+/// Closed and exhaustively matched wherever this is destructured (Tim's
 /// direction) -- a name is never `Finding` or `Violation`, both of which
-/// already exist elsewhere in this crate.
+/// already exist elsewhere in this crate. `id` is declared first so the
+/// derived `Ord` still orders purely on it (`key` is a pure function of
+/// `id`, so it can never disagree once `id` does).
+///
+/// Both fields are public, and `Check::Rule` is a value any caller can
+/// hand-build (a future generator test, a stale persisted report): rather
+/// than a lookup at `Display` time that would have to fail somehow for a
+/// `key` the caller made up or a `RuleSet` that has since changed shape,
+/// the key travels with the value -- rendering a `Defect` can never
+/// panic (Tim's direction).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Check {
-    Rule(u32),
+    Rule { id: u32, key: &'static str },
     EnclosedRegion,
     NarrowPassage,
 }
 
 impl Check {
     /// The rule's own `key`, or a fixed `walkability.*` name for the two
-    /// checks with no rule row behind them. Resolved through
-    /// [`RuleSet::key_of`], never by reading the generated rule table
-    /// directly (`check-rule-source.sh`'s own check (d)) -- a
-    /// `Check::Rule` this module ever constructs always names an id
-    /// [`rules::evaluate`] itself produced against [`RuleSet::committed`],
-    /// so the id is always present.
+    /// checks with no rule row behind them.
     fn name(&self) -> &'static str {
         match self {
-            Check::Rule(id) => RuleSet::committed()
-                .key_of(*id)
-                .expect("a Check::Rule always names an id from the committed RuleSet"),
+            Check::Rule { key, .. } => key,
             Check::EnclosedRegion => "walkability.enclosed_region",
             Check::NarrowPassage => "walkability.narrow_passage",
         }
@@ -255,30 +259,43 @@ impl PlacedSite {
         }
 
         // Bounded by placed cells times areas actually near them, never
-        // by placed cells times every area in the block (Tim's
-        // direction): for each area, `Cell`'s own `Ord` (x first, then y,
-        // then floor) lets `BTreeMap::range` slice `tags` down to exactly
-        // the cells whose `x` falls in the area's own span, before the
-        // `floor`/`contains` check narrows that slice further -- never a
-        // loop over the rect's own (potentially enormous) raw extent.
+        // by placed cells times every area in the block, and never by an
+        // area's own raw width times the whole city's height and floor
+        // count either (Tim's direction, cycle 2): the x-span is first
+        // clamped to the range `tags` itself actually spans -- the one
+        // step that keeps this total for an absurd rect, never a loop
+        // over its raw `i32` extent -- and then, for each remaining x,
+        // `Cell`'s own `Ord` (x first, then y, then floor) lets
+        // `BTreeMap::range` slice `tags` down to exactly that x's own
+        // cells whose `y` falls in the area's own span, before the
+        // `floor` check narrows that slice further.
         let mut areas: BTreeMap<Cell, Vec<AreaId>> = BTreeMap::new();
-        for (kind, area_list) in [
-            (AreaKind::Building, building_areas),
-            (AreaKind::Room, room_areas),
-        ] {
-            for a in area_list {
-                if a.rect.x0 >= a.rect.x1 {
-                    continue; // an empty or invalid rect contains nothing
-                }
-                let id = area_id_of[&(kind, a.owner_id)];
-                let lower = Cell::new(a.rect.x0, i32::MIN, i8::MIN);
-                let upper = Cell::new(a.rect.x1, i32::MIN, i8::MIN);
-                for (&cell, _) in tags.range(lower..upper) {
-                    if a.floor == cell.floor && a.rect.contains(cell.x, cell.y) {
-                        let entry = areas.entry(cell).or_default();
-                        if !entry.contains(&id) {
-                            entry.push(id);
+        if let (Some(&min_key), Some(&max_key)) = (tags.keys().next(), tags.keys().next_back()) {
+            let (placed_min_x, placed_max_x) = (min_key.x, max_key.x);
+            for (kind, area_list) in [
+                (AreaKind::Building, building_areas),
+                (AreaKind::Room, room_areas),
+            ] {
+                for a in area_list {
+                    if a.rect.x0 >= a.rect.x1 || a.rect.y0 >= a.rect.y1 {
+                        continue; // an empty or invalid rect contains nothing
+                    }
+                    let id = area_id_of[&(kind, a.owner_id)];
+                    let x0 = a.rect.x0.max(placed_min_x);
+                    let x1 = a.rect.x1.min(placed_max_x.saturating_add(1));
+                    let mut x = x0;
+                    while x < x1 {
+                        let lower = Cell::new(x, a.rect.y0, i8::MIN);
+                        let upper = Cell::new(x, a.rect.y1, i8::MIN);
+                        for (&cell, _) in tags.range(lower..upper) {
+                            if a.floor == cell.floor {
+                                let entry = areas.entry(cell).or_default();
+                                if !entry.contains(&id) {
+                                    entry.push(id);
+                                }
+                            }
                         }
+                        x = x.saturating_add(1);
                     }
                 }
             }
@@ -357,16 +374,23 @@ pub fn validate(candidate: &Candidate) -> Result<Vec<Defect>, ValidationError> {
     )
     .map_err(ValidationError::Unreadable)?;
 
-    let mut defects: Vec<Defect> = rules::evaluate(RuleSet::committed(), &site)
-        .into_iter()
-        .map(|v| Defect {
-            check: Check::Rule(v.rule_id),
+    let rule_set = RuleSet::committed();
+    let mut defects: Vec<Defect> = Vec::new();
+    for v in rules::evaluate(rule_set, &site) {
+        let key = rule_set.key_of(v.rule_id).ok_or_else(|| {
+            ValidationError::Unreadable(format!(
+                "sim::validation: evaluate produced a violation for unknown rule id {}",
+                v.rule_id
+            ))
+        })?;
+        defects.push(Defect {
+            check: Check::Rule { id: v.rule_id, key },
             location: Location::Cell {
                 cell: v.subject,
                 other: v.other,
             },
-        })
-        .collect();
+        });
+    }
 
     let (body_w, body_h) = walkability::player_body_subcells(defs::BALANCE);
     for fw in candidate.floors {
@@ -441,6 +465,25 @@ mod tests {
     fn a_walkability_check_renders_its_own_fixed_name() {
         assert_eq!(Check::EnclosedRegion.name(), "walkability.enclosed_region");
         assert_eq!(Check::NarrowPassage.name(), "walkability.narrow_passage");
+    }
+
+    /// Tim's direction: rendering a `Defect` must never panic, even for a
+    /// hand-built `Check::Rule` naming an id/key no committed row ever
+    /// had (a stale persisted report, a future generator test) -- there
+    /// is no lookup left in `Check::name`/`Display` to fail at all.
+    #[test]
+    fn a_hand_built_rule_check_naming_an_unknown_id_still_renders_without_panicking() {
+        let defect = Defect {
+            check: Check::Rule {
+                id: u32::MAX,
+                key: "not_a_real_rule",
+            },
+            location: Location::Cell {
+                cell: Cell::new(0, 0, 0),
+                other: None,
+            },
+        };
+        assert_eq!(defect.to_string(), "not_a_real_rule at (0, 0, 0)");
     }
 
     fn area(owner_id: u64, floor: i8, rect: Rect) -> AreaSpec {
@@ -586,51 +629,71 @@ mod tests {
     #[test]
     fn placed_site_builds_correctly_over_a_chunk_scale_block() {
         const ROWS: i32 = 50;
-        const COLS: i32 = 50; // 2500 placements
-        const AREAS_PER_ROW: i32 = 5; // 250 areas, 10 cells wide each
+        const COLS: i32 = 50; // 2500 placements per floor
+        const AREAS_PER_ROW: i32 = 5; // 250 areas per floor, 10 cells wide each
+        const FLOORS: [i8; 2] = [0, 1];
 
+        // Every band (`x0 = 0, 10, 20, 30, 40`) repeats identically on
+        // every row *and* on both floors -- the same x-span, stacked at
+        // every y and again at a second floor -- so a leak across y or
+        // across floor in the range-based area scan (Tim's direction,
+        // cycle 2) would show up as a cell claiming more than its own
+        // one area below.
         let mut placements = Vec::new();
-        for y in 0..ROWS {
-            for x in 0..COLS {
-                placements.push(Placement {
-                    def_id: lamppost_id(),
-                    anchor_x: x,
-                    anchor_y: y,
-                    floor: 0,
-                });
-            }
-        }
-
         let mut building_areas = Vec::new();
-        for y in 0..ROWS {
-            for band in 0..AREAS_PER_ROW {
-                let owner_id = (y * AREAS_PER_ROW + band) as u64 + 1;
-                building_areas.push(area(
-                    owner_id,
-                    0,
-                    Rect {
-                        x0: band * 10,
-                        y0: y,
-                        x1: band * 10 + 10,
-                        y1: y + 1,
-                    },
-                ));
+        for &floor in &FLOORS {
+            for y in 0..ROWS {
+                for x in 0..COLS {
+                    placements.push(Placement {
+                        def_id: lamppost_id(),
+                        anchor_x: x,
+                        anchor_y: y,
+                        floor,
+                    });
+                }
+                for band in 0..AREAS_PER_ROW {
+                    // Distinct across floors too, so a leaked cell would
+                    // show a foreign owner rather than coincidentally the
+                    // same one.
+                    let owner_id = (floor as i64 * ROWS as i64 * AREAS_PER_ROW as i64
+                        + (y * AREAS_PER_ROW + band) as i64
+                        + 1) as u64;
+                    building_areas.push(area(
+                        owner_id,
+                        floor,
+                        Rect {
+                            x0: band * 10,
+                            y0: y,
+                            x1: band * 10 + 10,
+                            y1: y + 1,
+                        },
+                    ));
+                }
             }
         }
 
         let site = PlacedSite::build(&placements, &building_areas, &[]).unwrap();
 
-        // Every placed cell falls in exactly one band's own area.
-        for y in [0, ROWS / 2, ROWS - 1] {
-            for x in [0, 15, 27, COLS - 1] {
-                let areas = site.areas_containing(Cell::new(x, y, 0));
-                assert_eq!(
-                    areas.len(),
-                    1,
-                    "cell ({x}, {y}) should sit in exactly one area, got {areas:?}"
-                );
+        // Every placed cell falls in exactly one band's own area, on
+        // both floors, never leaking into a different y's or a different
+        // floor's own area even though every one of them shares the same
+        // x-span.
+        for &floor in &FLOORS {
+            for y in [0, ROWS / 2, ROWS - 1] {
+                for x in [0, 15, 27, COLS - 1] {
+                    let areas = site.areas_containing(Cell::new(x, y, floor));
+                    assert_eq!(
+                        areas.len(),
+                        1,
+                        "cell ({x}, {y}, {floor}) should sit in exactly one area, got {areas:?}"
+                    );
+                }
             }
         }
+        // The same (x, y) on the two floors never shares an owner.
+        let owners_floor_0 = site.areas_containing(Cell::new(5, 5, 0)).to_vec();
+        let owners_floor_1 = site.areas_containing(Cell::new(5, 5, 1)).to_vec();
+        assert_ne!(owners_floor_0, owners_floor_1);
         // A cell no placement ever touched carries no area.
         assert!(site.areas_containing(Cell::new(-1, -1, 0)).is_empty());
     }

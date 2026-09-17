@@ -1007,9 +1007,9 @@ cells times areas. `scripts/ci/check-rule-source.sh` fails the build if
 `server/sim/Cargo.toml` names `test-fixtures` on any line but its own
 `[features]` declaration and self dev-dependency, if any other manifest
 but that one and `server/bounds/Cargo.toml` enables it, if the resolved
-feature graph for `browser_city` ever turns it on, or if `for_test`,
-`RuleKind` or `RULES` (the bare words) appear outside
-`server/sim/src/rules/`.
+feature graph for `browser_city` ever turns it on or cannot be resolved
+at all, or if `for_test`, `RuleKind` or `RULES` (the bare words) appear
+outside `server/sim/src/rules/`.
 
 ## Boot budget
 
