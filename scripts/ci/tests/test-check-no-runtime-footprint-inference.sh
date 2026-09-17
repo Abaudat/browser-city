@@ -16,11 +16,18 @@ plant() {
   local d
   d="$(fake_dir)"
   mkdir -p "$d/server/sim/src/generated" "$d/client/public/defs" \
-    "$d/client/src/render" "$d/server/sim/src" "$d/tools/defs-build/src"
+    "$d/client/src/render" "$d/server/sim/src" \
+    "$d/tools/defs-build/src/bin"
   printf 'pub const DEFS_VERSION: &str = "abc123";\n' \
     > "$d/server/sim/src/generated/defs.rs"
   printf '{ "defs_version": "abc123" }\n' > "$d/client/public/defs/defs.json"
-  printf 'pub mod propose;\n' > "$d/tools/defs-build/src/lib.rs"
+  printf 'pub mod propose;\npub mod validate;\n' > "$d/tools/defs-build/src/lib.rs"
+  printf 'pub fn propose() {}\n' > "$d/tools/defs-build/src/propose.rs"
+  printf 'pub fn validate() {}\n' > "$d/tools/defs-build/src/validate.rs"
+  # The proposer's own bin legitimately references `propose::` -- must
+  # never itself be flagged.
+  printf 'use defs_build::propose::propose;\nfn main() { propose(); }\n' \
+    > "$d/tools/defs-build/src/bin/defs-propose.rs"
   printf 'export function draw() {}\n' > "$d/client/src/render/draw.ts"
   printf 'pub fn simulate() {}\n' > "$d/server/sim/src/lib.rs"
   printf '%s' "$d"
@@ -53,6 +60,11 @@ check "'archetype' under server/ fails" 1 \
 d="$(plant)"
 printf 'use defs_build::propose::propose;\n' >> "$d/tools/defs-build/src/lib.rs"
 check "lib.rs referencing 'propose::' fails" 1 \
+  bash "$CHECK" "$d"
+
+d="$(plant)"
+printf 'use crate::propose::propose;\n' >> "$d/tools/defs-build/src/validate.rs"
+check "validate.rs (not lib.rs) referencing 'crate::propose' fails too" 1 \
   bash "$CHECK" "$d"
 
 d="$(plant)"

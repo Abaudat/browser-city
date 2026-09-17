@@ -1,0 +1,4 @@
+[[archetype]]
+key = "too_wide_inset"
+height = 1
+collider_inset = { left = 10, top = 0, right = 10, bottom = 0 }

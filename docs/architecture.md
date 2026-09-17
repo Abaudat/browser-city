@@ -870,20 +870,17 @@ object key, never a hard-coded allow-list of object keys in either
 parser. The tag key is a single named constant (`UNDERFOOT_TAG_KEY`) on
 each side, never a repeated string literal.
 
-An `[[object]]` may name an `archetype` (`defs/archetypes/*.toml`, key
-only, no id) instead of declaring its own `height` and/or `collider`
-directly -- an agent's classification of a proposed footprint, recorded
-in `defs/`, never in `tools/defs-build` itself. Each of `height` and
-`collider` has exactly one source (the object itself or the named
-archetype); both or neither is a build error. `tools/defs-build` lowers
-every archetype reference to a plain `height`/`collider` between parse
-and validation, so every existing check runs once, unchanged, on the
-lowered object. `archetype` is authoring-time only: it is never emitted
-into either generated artefact and never reaches a runtime. A companion
-offline binary, `defs-propose`, measures a first-guess footprint from a
-sprite's own lower-band alpha coverage and prints `[[object]]` stanzas
-to stdout only -- a starting point for an agent to classify, never an
-input to `tools/defs-build`'s own `build` path.
+An `[[object]]` may name an `archetype` instead of declaring its own
+`height` and/or `collider` directly -- `defs/archetypes/*.toml`, key
+only, no id, supplying `height` and/or `collider_inset`. Each of
+`height` and `collider` has exactly one source (the object itself or the
+named archetype); both or neither is a build error. `tools/defs-build`
+lowers every archetype reference to a plain `height`/`collider` between
+parse and validation. `archetype` is authoring-time only: it is never
+emitted into either generated artefact and never reaches a runtime. A
+companion offline binary, `defs-propose`, prints `[[object]]` stanzas to
+stdout only, and is never an input to `tools/defs-build`'s own `build`
+path.
 
 ### Atlases
 

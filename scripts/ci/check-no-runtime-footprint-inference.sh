@@ -8,10 +8,14 @@
 #      authoring-time only (Tim's direction) and must never reach a
 #      runtime artefact or a runtime's own source;
 #   2. the proposer module/crate is referenced only by its own bin
-#      (`src/bin/defs-propose.rs`) and its own tests -- never from
-#      `lib.rs`'s `build` path, and never from `client/src/` or `server/`
-#      (a `getImageData`/alpha-coverage identifier under `client/src/`
-#      would be the client's own version of the same mistake).
+#      (`src/bin/defs-propose.rs`) and its own tests -- never from any
+#      *other* file under `tools/defs-build/src/` (not just `lib.rs`'s
+#      own `build` path -- `validate.rs`, `emit.rs`, `atlas/*` and
+#      `parse.rs` could just as easily grow a `use crate::propose` and
+#      this must still catch it), and never from `client/src/` or
+#      `server/` (a `getImageData`/alpha-coverage identifier under
+#      `client/src/` would be the client's own version of the same
+#      mistake).
 #
 # Usage: check-no-runtime-footprint-inference.sh [repo-root]
 set -euo pipefail
@@ -21,7 +25,7 @@ RUST_OUT="$REPO_ROOT/server/sim/src/generated/defs.rs"
 JSON_OUT="$REPO_ROOT/client/public/defs/defs.json"
 CLIENT_SRC="$REPO_ROOT/client/src"
 SERVER_DIR="$REPO_ROOT/server"
-LIB_RS="$REPO_ROOT/tools/defs-build/src/lib.rs"
+DEFS_BUILD_SRC="$REPO_ROOT/tools/defs-build/src"
 
 FAILED=0
 
@@ -49,15 +53,25 @@ for dir in "$CLIENT_SRC" "$SERVER_DIR"; do
   fi
 done
 
-# --- 2. the proposer is never an input to `build` ------------------------
+# --- 2. the proposer is never an input to `build` (or to any other
+# module under tools/defs-build/src/) -------------------------------------
 #
 # `pub mod propose;` is the module's own required declaration -- this
-# looks for a *path* reference (`propose::`), which only a real caller
-# ever writes; the declaration line itself never contains `::`.
-if [ -f "$LIB_RS" ] && grep -qE 'propose::' "$LIB_RS" 2>/dev/null; then
-  echo "check-no-runtime-footprint-inference: FAIL -- $LIB_RS references 'propose::' -- the proposer must never be an input to build()'s own path:" >&2
-  grep -nE 'propose::' "$LIB_RS" >&2
-  FAILED=1
+# looks for a *path* reference (`propose::` or `crate::propose`), which
+# only a real caller ever writes; the declaration line itself never
+# contains either. Scoped to every file under `tools/defs-build/src/`
+# except the proposer's own two files (`propose.rs`, `bin/defs-propose.
+# rs`) and its own tests, never `lib.rs` alone -- `validate.rs`, `emit.
+# rs` and `atlas/*` all live under this same root and must be caught
+# exactly like `lib.rs` would be.
+if [ -d "$DEFS_BUILD_SRC" ]; then
+  MATCHES="$(grep -rlE 'propose::|crate::propose' "$DEFS_BUILD_SRC" --include='*.rs' \
+    | grep -vE '(^|/)propose\.rs$|(^|/)bin/defs-propose\.rs$' || true)"
+  if [ -n "$MATCHES" ]; then
+    echo "check-no-runtime-footprint-inference: FAIL -- 'propose::'/'crate::propose' referenced outside the proposer's own files -- the proposer must never be an input to build()'s own path:" >&2
+    echo "$MATCHES" >&2
+    FAILED=1
+  fi
 fi
 
 for dir in "$CLIENT_SRC" "$SERVER_DIR"; do

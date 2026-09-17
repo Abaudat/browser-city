@@ -211,6 +211,31 @@ fn an_archetype_with_a_negative_inset_is_named() {
 }
 
 #[test]
+fn an_archetype_supplying_neither_height_nor_collider_inset_is_named() {
+    let err = build_err("archetype-supplies-neither");
+    assert_eq!(
+        err.to_string(),
+        "defs/archetypes/city.toml:2:7: archetype 'empty' supplies neither height nor collider_inset -- an archetype must supply at least one"
+    );
+}
+
+/// Tim's direction, cycle 1: the one archetype-collider misfit only
+/// detectable after lowering (the object's own `width`, unknown to the
+/// archetype) is reported at the object's own `archetype = "..."` line,
+/// naming both the object and the archetype -- never at a line inside
+/// `defs/archetypes/`, which would point outside the file the error is
+/// about.
+#[test]
+fn an_archetype_collider_that_does_not_fit_a_narrow_objects_width_is_named_at_the_objects_own_archetype_line()
+ {
+    let err = build_err("archetype-collider-does-not-fit-object-width");
+    assert_eq!(
+        err.to_string(),
+        "defs/objects/city-props.toml:8:13: object 'trash_bin' collider (10, 0)-(6, 16) from archetype 'too_wide_inset' has zero or negative area"
+    );
+}
+
+#[test]
 fn an_unknown_rule_kind_is_named_with_its_own_line() {
     let err = build_err("unknown-rule-kind");
     assert_eq!(err.path, PathBuf::from("defs/rules/cafes.toml"));
@@ -689,6 +714,8 @@ fn every_known_category_has_a_fixture_directory() {
         "archetype-height-zero",
         "archetype-height-exceeds-cap",
         "archetype-negative-inset",
+        "archetype-supplies-neither",
+        "archetype-collider-does-not-fit-object-width",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

@@ -263,23 +263,30 @@ fn check_chain_profession_refs(
 // like `resolve_object_layer` resolves a `layer` name against the codes
 // golden -- an undeclared name is refused, naming the accepted set.
 
+/// Decoupled from any one entry shape (`path`/`key`/`tags` passed
+/// explicitly) so both the raw, unlowered object list (`check_object_
+/// tags`) and the lowered list (the final `ObjectDef` assembly) can call
+/// it -- lowering never touches `tags`, so the two always resolve
+/// identically anyway.
 fn resolve_object_tags(
-    e: &ObjectEntry,
+    path: &std::path::Path,
+    key: &Located<String>,
+    tags: &[String],
     tag_ids: &BTreeMap<&str, u32>,
 ) -> Result<Vec<u32>, DefsError> {
-    let mut ids = Vec::with_capacity(e.tags.len());
-    for name in &e.tags {
+    let mut ids = Vec::with_capacity(tags.len());
+    for name in tags {
         match tag_ids.get(name.as_str()) {
             Some(&id) => ids.push(id),
             None => {
                 let accepted: Vec<&str> = tag_ids.keys().copied().collect();
                 return Err(DefsError::new(
-                    &e.path,
-                    e.key.line,
-                    e.key.col,
+                    path,
+                    key.line,
+                    key.col,
                     format!(
                         "object '{}' names unknown tag '{}' -- accepted tags are [{}]",
-                        e.key.value,
+                        key.value,
                         name,
                         accepted.join(", ")
                     ),
@@ -297,7 +304,7 @@ fn check_object_tags(
     tag_ids: &BTreeMap<&str, u32>,
 ) -> Result<(), DefsError> {
     for e in entries {
-        resolve_object_tags(e, tag_ids)?;
+        resolve_object_tags(&e.path, &e.key, &e.tags, tag_ids)?;
     }
     Ok(())
 }
@@ -924,6 +931,17 @@ fn check_archetype_key_dupes(entries: &[ArchetypeEntry]) -> Result<(), DefsError
 /// declares one) is knowable here.
 fn check_archetype_self_consistency(entries: &[ArchetypeEntry]) -> Result<(), DefsError> {
     for a in entries {
+        if a.height.is_none() && a.collider_inset.is_none() {
+            return Err(DefsError::new(
+                &a.path,
+                a.key.line,
+                a.key.col,
+                format!(
+                    "archetype '{}' supplies neither height nor collider_inset -- an archetype must supply at least one",
+                    a.key.value
+                ),
+            ));
+        }
         if let Some(h) = &a.height {
             if h.value == 0 {
                 return Err(DefsError::new(
@@ -980,6 +998,28 @@ fn check_archetype_self_consistency(entries: &[ArchetypeEntry]) -> Result<(), De
     Ok(())
 }
 
+/// Story 2.3 (Tim's direction, cycle 1): the lowered shape every
+/// `check_object_*` geometry check and the final `ObjectDef` assembly
+/// take -- `height` is a plain `u32` (never `Option`), and there is no
+/// `archetype` field, so an object that has not gone through
+/// [`lower_object`] is a compile error at every one of those call
+/// sites, not a runtime `.expect()` away from one.
+#[derive(Debug)]
+struct LoweredObjectEntry {
+    path: std::path::PathBuf,
+    id: Located<u32>,
+    key: Located<String>,
+    name: Located<String>,
+    layer: Located<String>,
+    sprite: Located<RawSpriteRect>,
+    width: u32,
+    height: u32,
+    collider: Option<Located<RawColliderRect>>,
+    interact_at: Option<Located<RawColliderRect>>,
+    window: bool,
+    tags: Vec<String>,
+}
+
 /// Turns an archetype's own `collider_inset` into a concrete
 /// [`RawColliderRect`] once a real object's `width` and resolved
 /// `height` are known -- `left`/`top` from the footprint's own
@@ -996,16 +1036,38 @@ fn collider_from_inset(inset: RawColliderInset, width: u32, height: u32) -> RawC
     }
 }
 
+/// Shared by [`lower_object`] (the archetype-derived path, checked
+/// immediately so it can be reported at the right location -- Tim's
+/// direction, cycle 1) and [`check_object_colliders`] (the
+/// hand-authored path): `None` when `c` has positive area and fits
+/// inside `width x height`'s own footprint, sub-cells; otherwise the
+/// English fragment describing which of the two it failed, so both
+/// callers render the exact same wording for the exact same defect.
+fn collider_geometry_error(c: RawColliderRect, width: u32, height: u32) -> Option<String> {
+    if (c.x1 as i64) <= (c.x0 as i64) || (c.y1 as i64) <= (c.y0 as i64) {
+        return Some("has zero or negative area".to_string());
+    }
+    let max_x = width as i64 * COLLIDER_SUBCELLS_PER_CELL;
+    let max_y = height as i64 * COLLIDER_SUBCELLS_PER_CELL;
+    if (c.x0 as i64) < 0 || (c.y0 as i64) < 0 || (c.x1 as i64) > max_x || (c.y1 as i64) > max_y {
+        return Some(format!(
+            "does not fit inside its footprint (0, 0)-({max_x}, {max_y}) sub-cells"
+        ));
+    }
+    None
+}
+
 /// Story 2.3 (AC1/AC3): resolves one object's own `height`/`collider`
 /// against its optional `archetype` reference -- the one place any
 /// archetype is ever applied. Every field downstream (`check_object_*`,
-/// the final `ObjectDef` assembly) sees a plain, fully-resolved object,
-/// exactly as if it had never named an archetype (Tim's direction: no
-/// second copy of any existing check for the archetype path).
+/// the final `ObjectDef` assembly) sees a plain, fully-resolved
+/// [`LoweredObjectEntry`], exactly as if it had never named an archetype
+/// (Tim's direction: no second copy of any existing check for the
+/// archetype path).
 fn lower_object(
     e: &ObjectEntry,
     archetypes: &BTreeMap<&str, &ArchetypeEntry>,
-) -> Result<ObjectEntry, DefsError> {
+) -> Result<LoweredObjectEntry, DefsError> {
     let archetype = match &e.archetype {
         None => None,
         Some(loc) => match archetypes.get(loc.value.as_str()) {
@@ -1063,11 +1125,34 @@ fn lower_object(
         archetype.and_then(|a| a.collider_inset.as_ref()),
     ) {
         (Some(c), None) => Some(c.clone()),
-        (None, Some(inset)) => Some(Located::at(
-            collider_from_inset(inset.value, e.width, height),
-            inset.line,
-            inset.col,
-        )),
+        (None, Some(inset)) => {
+            let c = collider_from_inset(inset.value, e.width, height);
+            // Checked right here, not deferred to `check_object_colliders`
+            // (Tim's direction, cycle 1): the archetype's own file/line
+            // (`inset.line`/`inset.col`) names a location in
+            // `defs/archetypes/`, not in this object's own file, so a
+            // misfit reported there would point outside the file the
+            // error is about. Reported instead at the object's own
+            // `archetype = "..."` line, naming both.
+            let archetype_key = &e
+                .archetype
+                .as_ref()
+                .expect("archetype present in this branch")
+                .value;
+            let archetype_loc = e.archetype.as_ref().expect("checked above");
+            if let Some(problem) = collider_geometry_error(c, e.width, height) {
+                return Err(DefsError::new(
+                    &e.path,
+                    archetype_loc.line,
+                    archetype_loc.col,
+                    format!(
+                        "object '{}' collider ({}, {})-({}, {}) from archetype '{archetype_key}' {problem}",
+                        e.key.value, c.x0, c.y0, c.x1, c.y1
+                    ),
+                ));
+            }
+            Some(Located::at(c, archetype_loc.line, archetype_loc.col))
+        }
         (Some(_), Some(_)) => {
             return Err(DefsError::new(
                 &e.path,
@@ -1086,7 +1171,7 @@ fn lower_object(
         (None, None) => None,
     };
 
-    Ok(ObjectEntry {
+    Ok(LoweredObjectEntry {
         path: e.path.clone(),
         id: e.id.clone(),
         key: e.key.clone(),
@@ -1094,12 +1179,11 @@ fn lower_object(
         layer: e.layer.clone(),
         sprite: e.sprite.clone(),
         width: e.width,
-        height: Some(height),
+        height,
         collider,
         interact_at: e.interact_at.clone(),
         window: e.window,
         tags: e.tags.clone(),
-        archetype: e.archetype.clone(),
     })
 }
 
@@ -1109,7 +1193,7 @@ fn lower_object(
 fn lower_objects(
     entries: &[ObjectEntry],
     archetypes: &BTreeMap<&str, &ArchetypeEntry>,
-) -> Result<Vec<ObjectEntry>, DefsError> {
+) -> Result<Vec<LoweredObjectEntry>, DefsError> {
     entries
         .iter()
         .map(|e| lower_object(e, archetypes))
@@ -1119,8 +1203,12 @@ fn lower_objects(
 /// FR128's containment rule: a declared `collider` must have positive
 /// area and must fit entirely inside the object's own footprint, sized
 /// `width*COLLIDER_SUBCELLS_PER_CELL x height*COLLIDER_SUBCELLS_PER_CELL`
-/// sub-cells (Tim's direction, story 1.8). Widened to `i64` throughout so
-/// no combination of `i32` collider bounds can overflow the comparison.
+/// sub-cells (Tim's direction, story 1.8). Widened to `i64` throughout
+/// inside [`collider_geometry_error`] so no combination of `i32` collider
+/// bounds can overflow the comparison. Quentin's direction: both
+/// rectangles, collider and footprint, in the same unit (sub-cells) and a
+/// fixed order, so the two are comparable by eye rather than one being
+/// `WxH cells`.
 ///
 /// Story 2.4 AC3's "collider within sprite bounds" needs no separate
 /// check here: `check_object_sprite_matches_footprint` already fixes the
@@ -1130,45 +1218,19 @@ fn lower_objects(
 /// sprite -- a collider outside the sprite is therefore always outside
 /// the footprint, and is refused right here, by this same check, never a
 /// duplicate one.
-/// Every caller of this function only ever sees an entry from
-/// [`lower_objects`]'s own output -- `height` is always resolved by then
-/// (story 2.3).
-fn resolved_height(e: &ObjectEntry) -> u32 {
-    e.height
-        .expect("height already resolved by lower_object before any geometry check runs")
-}
-
-fn check_object_colliders(entries: &[ObjectEntry]) -> Result<(), DefsError> {
+fn check_object_colliders(entries: &[LoweredObjectEntry]) -> Result<(), DefsError> {
     for e in entries {
         let Some(collider) = &e.collider else {
             continue;
         };
         let c = collider.value;
-        if (c.x1 as i64) <= (c.x0 as i64) || (c.y1 as i64) <= (c.y0 as i64) {
+        if let Some(problem) = collider_geometry_error(c, e.width, e.height) {
             return Err(DefsError::new(
                 &e.path,
                 collider.line,
                 collider.col,
                 format!(
-                    "object '{}' collider ({}, {})-({}, {}) has zero or negative area",
-                    e.key.value, c.x0, c.y0, c.x1, c.y1
-                ),
-            ));
-        }
-        let max_x = e.width as i64 * COLLIDER_SUBCELLS_PER_CELL;
-        let max_y = resolved_height(e) as i64 * COLLIDER_SUBCELLS_PER_CELL;
-        if (c.x0 as i64) < 0 || (c.y0 as i64) < 0 || (c.x1 as i64) > max_x || (c.y1 as i64) > max_y
-        {
-            // Quentin's direction: both rectangles, collider and
-            // footprint, in the same unit (sub-cells) and a fixed order,
-            // so the two are comparable by eye rather than one being
-            // `WxH cells`.
-            return Err(DefsError::new(
-                &e.path,
-                collider.line,
-                collider.col,
-                format!(
-                    "object '{}' collider ({}, {})-({}, {}) does not fit inside its footprint (0, 0)-({max_x}, {max_y}) sub-cells",
+                    "object '{}' collider ({}, {})-({}, {}) {problem}",
                     e.key.value, c.x0, c.y0, c.x1, c.y1
                 ),
             ));
@@ -1186,7 +1248,7 @@ fn check_object_colliders(entries: &[ObjectEntry]) -> Result<(), DefsError> {
 /// after every other object-level rejection has already had its own
 /// chance to fire on a malformed row for its own reason -- this is the
 /// generic catch-all, not a specific geometry check.
-fn check_object_walkability_tag(entries: &[ObjectEntry]) -> Result<(), DefsError> {
+fn check_object_walkability_tag(entries: &[LoweredObjectEntry]) -> Result<(), DefsError> {
     for e in entries {
         let is_underfoot = e.tags.iter().any(|t| t == UNDERFOOT_TAG_KEY);
         match (&e.collider, is_underfoot) {
@@ -1278,7 +1340,7 @@ fn check_tag_role_layers(
 /// `check_object_walkability_tag` -- every more specific object-level
 /// rejection above gets its own chance to fire first (same reasoning as
 /// that check's own placement).
-fn check_object_roles(entries: &[ObjectEntry], tags: &[TagEntry]) -> Result<(), DefsError> {
+fn check_object_roles(entries: &[LoweredObjectEntry], tags: &[TagEntry]) -> Result<(), DefsError> {
     let roles_by_key: BTreeMap<&str, &RawRole> = tags
         .iter()
         .filter_map(|t| t.role.as_ref().map(|r| (t.key.value.as_str(), r)))
@@ -1332,7 +1394,7 @@ fn check_object_roles(entries: &[ObjectEntry], tags: &[TagEntry]) -> Result<(), 
 /// collider, so such a rect could never be reached. Widened to `i64`
 /// throughout, exactly like the collider check, so no combination of
 /// `i32` bounds can overflow a comparison.
-fn check_object_interact_at(entries: &[ObjectEntry]) -> Result<(), DefsError> {
+fn check_object_interact_at(entries: &[LoweredObjectEntry]) -> Result<(), DefsError> {
     for e in entries {
         let Some(interact_at) = &e.interact_at else {
             continue;
@@ -1352,8 +1414,7 @@ fn check_object_interact_at(entries: &[ObjectEntry]) -> Result<(), DefsError> {
 
         let reach = INTERACT_AT_MAX_REACH_CELLS * COLLIDER_SUBCELLS_PER_CELL;
         let max_x = e.width as i64 * COLLIDER_SUBCELLS_PER_CELL;
-        let height = resolved_height(e);
-        let max_y = height as i64 * COLLIDER_SUBCELLS_PER_CELL;
+        let max_y = e.height as i64 * COLLIDER_SUBCELLS_PER_CELL;
         if (r.x0 as i64) < -reach
             || (r.y0 as i64) < -reach
             || (r.x1 as i64) > max_x + reach
@@ -1365,7 +1426,7 @@ fn check_object_interact_at(entries: &[ObjectEntry]) -> Result<(), DefsError> {
                 interact_at.col,
                 format!(
                     "object '{}' interact_at ({}, {})-({}, {}) reaches further than {INTERACT_AT_MAX_REACH_CELLS} cell(s) beyond its own {}x{} footprint",
-                    e.key.value, r.x0, r.y0, r.x1, r.y1, e.width, height
+                    e.key.value, r.x0, r.y0, r.x1, r.y1, e.width, e.height
                 ),
             ));
         }
@@ -1574,7 +1635,7 @@ fn check_object_sprite_sheets(
 /// `tile_size_px`, and `h >= height * tile_size_px` (a tall prop may
 /// overhang upward, never downward -- bottom-anchored).
 fn check_object_sprite_matches_footprint(
-    entries: &[ObjectEntry],
+    entries: &[LoweredObjectEntry],
     tile_size_px: u32,
 ) -> Result<(), DefsError> {
     for e in entries {
@@ -1602,8 +1663,7 @@ fn check_object_sprite_matches_footprint(
                 ),
             ));
         }
-        let height = resolved_height(e);
-        let min_h = height * tile_size_px;
+        let min_h = e.height * tile_size_px;
         if sprite.h < min_h {
             return Err(DefsError::new(
                 &e.path,
@@ -1611,7 +1671,7 @@ fn check_object_sprite_matches_footprint(
                 e.sprite.col,
                 format!(
                     "object '{}' sprite height {} is shorter than its footprint height {} * tile_size_px {tile_size_px} ({min_h}px)",
-                    e.key.value, sprite.h, height
+                    e.key.value, sprite.h, e.height
                 ),
             ));
         }
@@ -1623,10 +1683,9 @@ fn check_object_sprite_matches_footprint(
 /// direction) -- the error names the object and its size, and directs the
 /// author to compose the structure from multiple objects (the acceptance
 /// criterion's own sentence).
-fn check_object_footprint_cap(entries: &[ObjectEntry]) -> Result<(), DefsError> {
+fn check_object_footprint_cap(entries: &[LoweredObjectEntry]) -> Result<(), DefsError> {
     for e in entries {
-        let height = resolved_height(e);
-        if e.width == 0 || height == 0 {
+        if e.width == 0 || e.height == 0 {
             return Err(DefsError::new(
                 &e.path,
                 e.key.line,
@@ -1648,14 +1707,14 @@ fn check_object_footprint_cap(entries: &[ObjectEntry]) -> Result<(), DefsError> 
                 ),
             ));
         }
-        if height as i64 > MAX_FOOTPRINT_CELLS {
+        if e.height as i64 > MAX_FOOTPRINT_CELLS {
             return Err(DefsError::new(
                 &e.path,
                 e.key.line,
                 e.key.col,
                 format!(
                     "object '{}' footprint height {} exceeds MAX_FOOTPRINT_CELLS ({MAX_FOOTPRINT_CELLS}) -- compose the structure from multiple objects",
-                    e.key.value, height
+                    e.key.value, e.height
                 ),
             ));
         }
@@ -2279,9 +2338,13 @@ pub fn validate(
     let mut objects: Vec<ObjectDef> = lowered_objects
         .iter()
         .map(|o| {
-            // Already checked by `check_object_layers` above; `validate`
-            // never partially resolves a tree it will go on to reject.
-            let layer = resolve_object_layer(o, layer_codes).expect("layer already validated");
+            // Already checked by `check_object_layers` above (over the
+            // raw, unlowered tree -- lowering never touches `layer`);
+            // `validate` never partially resolves a tree it will go on
+            // to reject.
+            let layer = *layer_codes
+                .get(&o.layer.value)
+                .expect("layer already validated");
             ObjectDef {
                 id: o.id.value,
                 key: o.key.value.clone(),
@@ -2295,7 +2358,7 @@ pub fn validate(
                     h: o.sprite.value.h,
                 },
                 width: o.width,
-                height: resolved_height(o),
+                height: o.height,
                 collider: o.collider.as_ref().map(|c| ColliderRect {
                     x0: c.value.x0,
                     y0: c.value.y0,
@@ -2309,7 +2372,8 @@ pub fn validate(
                     y1: c.value.y1,
                 }),
                 window: o.window,
-                tags: resolve_object_tags(o, &tag_ids).expect("tags already validated"),
+                tags: resolve_object_tags(&o.path, &o.key, &o.tags, &tag_ids)
+                    .expect("tags already validated"),
             }
         })
         .collect();

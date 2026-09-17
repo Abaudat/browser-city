@@ -1,47 +1,60 @@
 //! Story 2.3, Quentin's direction: a curated table of real tileset props,
-//! read as real PNGs (never a synthetic buffer), each pinned to an exact
-//! expected [`Proposal`]. Includes the 16x32 street-lamp-class prop
-//! (`foot_stairs`'s own sheet) and a real 112x64 vehicle from
-//! `ModernTileset/`, whose depth is asserted as an exact number, never
-//! `>= 2`.
+//! read as real PNGs (never a synthetic buffer). Includes the 16x32
+//! street-lamp-class prop (`foot_stairs`'s own sheet) and a real 112x64
+//! vehicle from `ModernTileset/`, whose depth is asserted as an exact
+//! number, never `>= 2`, by actually calling [`propose`] on the decoded
+//! PNG (never a constant copied into the table).
 //!
-//! The expected values below were captured from a real run of
-//! [`propose`] over each committed sheet (`cargo run --bin defs-propose`)
-//! -- they lock in the algorithm's own current behaviour as a regression
-//! gate. `propose`'s own output is a starting point, never authority
-//! (AC1): these numbers are not asserted to equal the real objects' own
-//! authored footprints (several intentionally differ, e.g.
-//! `shop_counter`'s authored depth is 1 cell, classified via the
-//! `full_cell_blocker` archetype -- the proposal alone measures 3, since
-//! the counter's own sprite has opaque pixels above its footprint too).
-//! Pending Derek/Artie's own sign-off on whether these are the *right*
-//! numbers to expect going forward, per Quentin's direction -- noted as
-//! an open item in this story's PR.
+//! Each row's `reason` explains, from the real art itself, why that
+//! outcome is right for the prop -- not what the algorithm happened to
+//! do. Where the outcome does not match this object's own authored/
+//! classified footprint, the row says so explicitly and names why
+//! (`Miss` -- an intentional design difference between raw alpha
+//! coverage and the real gameplay footprint, exactly what AC3's
+//! classification step exists to correct) rather than silently pass. No
+//! Derek/Artie sign-off channel exists in this run: this table's own
+//! judgement calls are Crew's, noted as such in this story's PR, pending
+//! a lead's review.
 
 use std::path::{Path, PathBuf};
 
 use defs_build::atlas::image::decode_rgba8;
 use defs_build::fsio;
 use defs_build::model::ColliderRect;
-use defs_build::propose::{Proposal, propose};
+use defs_build::propose::{Proposal, ProposeError, propose};
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+#[derive(Debug, PartialEq)]
+enum Expected {
+    /// The proposal's own footprint size (`width`/`height`) matches this
+    /// object's own real, authored (or archetype-classified) footprint
+    /// -- the collider may still be a documented, intentional miss.
+    Match(Proposal),
+    /// The proposal differs from this object's real footprint in a way
+    /// classification exists to correct -- documented, never silent.
+    Miss(Proposal),
+    /// The real art has a genuine gap between its own visible content
+    /// and its own sprite's bottom edge -- `propose` correctly declines
+    /// rather than guessing (AC1).
+    Refused(ProposeError),
+}
+
 struct Case {
     name: &'static str,
     sheet: &'static str,
-    expected: Proposal,
+    expected: Expected,
     reason: &'static str,
 }
 
 fn cases() -> Vec<Case> {
     vec![
         Case {
-            name: "trash_bin (16x16 fixture)",
+            name: "trash_bin",
             sheet: "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16/ME_Singles_Camping_16x16_Pier_Bin_1.png",
-            expected: Proposal {
+            expected: Expected::Miss(Proposal {
                 width: 1,
                 height: 1,
                 collider: Some(ColliderRect {
@@ -50,13 +63,13 @@ fn cases() -> Vec<Case> {
                     x1: 13,
                     y1: 16,
                 }),
-            },
-            reason: "one tile, band is the whole 16px sprite, opaque body roughly centred",
+            }),
+            reason: "footprint size (1x1) matches the real trash_bin's own authored width/height. Miss: the proposed collider (2,0)-(13,16) spans the tile's full height because the bin's lid/handle silhouette reaches near both the top and bottom of the cell; the real authored collider (4,4)-(12,12), a smaller centred box, deliberately leaves a walkable margin around the thin lid/handle art for gameplay feel -- exactly the kind of correction AC3's classification step is for.",
         },
         Case {
-            name: "park_bench (32x16, two cells wide)",
+            name: "park_bench",
             sheet: "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png",
-            expected: Proposal {
+            expected: Expected::Miss(Proposal {
                 width: 2,
                 height: 1,
                 collider: Some(ColliderRect {
@@ -65,13 +78,13 @@ fn cases() -> Vec<Case> {
                     x1: 32,
                     y1: 16,
                 }),
-            },
-            reason: "width from w/tile = 2; the sprite's own 16px height is the whole band",
+            }),
+            reason: "footprint size (2x1) matches the real park_bench's own authored width/height -- a bench is exactly two tiles wide. Miss: the proposed collider starts at y0=5 because the backrest's own alpha silhouette does not reach the top ~5 sub-cells of the tile; the real authored collider (0,0)-(32,12) blocks that whole region anyway, so a player cannot reach over the back of the bench -- a deliberate gameplay choice raw alpha coverage cannot know.",
         },
         Case {
-            name: "shop_counter (48x64, tall art above a one-cell footprint)",
+            name: "shop_counter",
             sheet: "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png",
-            expected: Proposal {
+            expected: Expected::Miss(Proposal {
                 width: 3,
                 height: 3,
                 collider: Some(ColliderRect {
@@ -80,13 +93,13 @@ fn cases() -> Vec<Case> {
                     x1: 47,
                     y1: 48,
                 }),
-            },
-            reason: "band = min(64,48,128) = 48px (3 cells); opaque contiguous from the bottom through the whole band -- this is exactly the over-proposal a reviewer corrects via the full_cell_blocker archetype (AC3), never authority (AC1)",
+            }),
+            reason: "Miss, by design: the counter's own art draws a tall shelf/backdrop rising three cells above its real one-cell floor footprint, so alpha coverage over-proposes depth 3 where the real object is 1 (classified via the full_cell_blocker archetype). This is exactly AC1's own worked case for why the proposal is a starting point, never authority -- a wide-canopy or tall-backdrop prop is expected to over-propose depth, and a reviewer corrects it by archetype, not by tuning the algorithm.",
         },
         Case {
-            name: "lamppost (16x64 street lamp)",
+            name: "lamppost",
             sheet: "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Street_Lamp_5.png",
-            expected: Proposal {
+            expected: Expected::Miss(Proposal {
                 width: 1,
                 height: 1,
                 collider: Some(ColliderRect {
@@ -95,28 +108,19 @@ fn cases() -> Vec<Case> {
                     x1: 15,
                     y1: 16,
                 }),
-            },
-            reason: "AC2: sprite height (64px, 4 cells of screen height) never inflates depth -- band = min(64,16,128) = 16px, one cell",
+            }),
+            reason: "footprint size (1x1) matches the real lamppost's own authored width/height, and AC2 holds: the sprite's own 64px screen height (4 cells) never inflates the footprint depth past 1. Miss: the proposed collider spans nearly the whole cell because it is the bounding box of the *entire visible pole and lamp head*, while the real, classified `pole` archetype collider (6,10)-(10,14) is only the physical post's own base, so a player can walk under the overhanging lamp arm -- exactly the correction archetype classification exists for.",
         },
         Case {
-            name: "shop_window (16x16)",
+            name: "shop_window",
             sheet: "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Balcony_Window_Left_1.png",
-            expected: Proposal {
-                width: 1,
-                height: 1,
-                collider: Some(ColliderRect {
-                    x0: 14,
-                    y0: 2,
-                    x1: 16,
-                    y1: 15,
-                }),
-            },
-            reason: "the window's own opaque frame sits toward one edge of the tile",
+            expected: Expected::Refused(ProposeError::BottomRowFullyTransparent),
+            reason: "the window frame's own opaque art finishes one pixel short of the sprite's own bottom edge (a real gap in the vendor art, not a rendering artefact of this test). propose() correctly declines rather than guessing a depth from art that never touches its own sprite's bottom row (AC1) -- the real object is still fully specified regardless, via the full_cell_blocker archetype, since the proposal is never authority.",
         },
         Case {
-            name: "wall_segment (16x16, fully opaque)",
+            name: "wall_segment",
             sheet: "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Grass_Wall_1_1.png",
-            expected: Proposal {
+            expected: Expected::Match(Proposal {
                 width: 1,
                 height: 1,
                 collider: Some(ColliderRect {
@@ -125,28 +129,19 @@ fn cases() -> Vec<Case> {
                     x1: 16,
                     y1: 16,
                 }),
-            },
-            reason: "fully opaque tile proposes the full cell -- exactly full_cell_blocker's own shape",
+            }),
+            reason: "an exact match: a plain, fully-opaque wall tile proposes exactly the full 1x1 cell, identical to the real wall_segment's own full_cell_blocker classification -- no correction needed for a prop this simple.",
         },
         Case {
-            name: "bridge_deck's placeholder sheet (64x48, four cells wide)",
+            name: "bridge_deck's own placeholder sheet",
             sheet: "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/10_Vehicles_Singles_16x16/ME_Singles_Vehicles_16x16_Car_Left_1.png",
-            expected: Proposal {
-                width: 4,
-                height: 1,
-                collider: Some(ColliderRect {
-                    x0: 1,
-                    y0: 0,
-                    x1: 62,
-                    y1: 15,
-                }),
-            },
-            reason: "width from w/tile = 4; band = min(48,64,128) = 48px (3 cells) but the opaque region is only contiguous through the bottom 16px, so depth = 1",
+            expected: Expected::Refused(ProposeError::BottomRowFullyTransparent),
+            reason: "this sheet is an explicitly-noted placeholder (defs/objects/city-props.toml's own comment: \"Artie's own curation is a later story\"), and the car art's own shadow/tire silhouette does not reach the sprite's own bottom pixel row. propose() correctly declines on this real gap; irrelevant to the deck's real footprint regardless, since bridge_deck is classified underfoot_flat (no collider at all) independent of any proposal.",
         },
         Case {
-            name: "foot_stairs (16x32) -- the street-lamp-class prop AC2 names",
+            name: "foot_stairs -- the 16x32 street-lamp-class prop AC2 names",
             sheet: "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Small_Stairs.png",
-            expected: Proposal {
+            expected: Expected::Match(Proposal {
                 width: 1,
                 height: 1,
                 collider: Some(ColliderRect {
@@ -155,13 +150,13 @@ fn cases() -> Vec<Case> {
                     x1: 13,
                     y1: 16,
                 }),
-            },
-            reason: "AC2's dominant class: one cell of floor under two cells of screen height -- band = min(32,16,128) = 16px, one cell",
+            }),
+            reason: "an exact match on footprint size: AC2's own dominant class (one cell of floor under two cells of screen height, 16x32) proposes depth 1, never inflated by the sprite's own extra screen height -- matching the real foot_stairs' own authored width. The proposed collider is discarded regardless once classified underfoot_flat (explicitly walkable, no collider at all), so it is neither a match nor a miss, just unused.",
         },
         Case {
-            name: "a real 112x64 vehicle (Bus_Left_1)",
+            name: "a real 112x64 vehicle (Bus_Left_1, not a committed object)",
             sheet: "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/10_Vehicles_Singles_16x16/ME_Singles_Vehicles_16x16_Bus_Left_1.png",
-            expected: Proposal {
+            expected: Expected::Match(Proposal {
                 width: 7,
                 height: 4,
                 collider: Some(ColliderRect {
@@ -170,14 +165,14 @@ fn cases() -> Vec<Case> {
                     x1: 112,
                     y1: 64,
                 }),
-            },
-            reason: "AC2: depth greater than one is common, not exceptional -- band = min(64,112,128) = 64px, the whole sprite, fully occupied bottom-up",
+            }),
+            reason: "AC2's own mandated case: depth greater than one is common, not exceptional, for a real vehicle -- the bus is fully opaque bottom-up over its own 4-cell height, so depth 4 is exactly right, not an over-proposal.",
         },
     ]
 }
 
 #[test]
-fn every_curated_real_prop_proposes_its_exact_pinned_footprint() {
+fn every_curated_real_prop_matches_its_documented_expectation() {
     let root = repo_root();
     for case in cases() {
         let bytes = fsio::read_bytes(&root, &[PathBuf::from(case.sheet)])
@@ -186,24 +181,50 @@ fn every_curated_real_prop_proposes_its_exact_pinned_footprint() {
             .1;
         let (w, h, rgba) = decode_rgba8(&bytes)
             .unwrap_or_else(|e| panic!("{}: cannot decode {}: {e}", case.name, case.sheet));
-        let proposal =
-            propose(w, h, &rgba).unwrap_or_else(|e| panic!("{}: propose() failed: {e}", case.name));
-        assert_eq!(
-            proposal, case.expected,
-            "{} ({}) -- {}",
-            case.name, case.sheet, case.reason
-        );
+        let actual = propose(w, h, &rgba);
+
+        match &case.expected {
+            Expected::Match(p) | Expected::Miss(p) => {
+                assert_eq!(
+                    actual.as_ref().unwrap_or_else(|e| panic!(
+                        "{} ({}): expected {:?}, propose() errored: {e}",
+                        case.name, case.sheet, p
+                    )),
+                    p,
+                    "{} ({}) -- {}",
+                    case.name,
+                    case.sheet,
+                    case.reason
+                );
+            }
+            Expected::Refused(want_err) => {
+                assert_eq!(
+                    actual.unwrap_err(),
+                    *want_err,
+                    "{} ({}) -- {}",
+                    case.name,
+                    case.sheet,
+                    case.reason
+                );
+            }
+        }
     }
 }
 
 /// AC2, spelled out as its own assertion (never folded into the table
 /// loop above, so a future edit to the table cannot silently drop it):
-/// the real 112x64 vehicle's own depth is exactly 4, not merely `>= 2`.
+/// the real 112x64 vehicle's own depth, measured by actually running
+/// `propose` on the decoded PNG (never a constant copied into the
+/// table), is exactly 4, not merely `>= 2`.
 #[test]
 fn the_real_112x64_vehicle_proposes_a_depth_of_exactly_4_cells() {
-    let vehicle = cases()
-        .into_iter()
-        .find(|c| c.sheet.contains("Bus_Left_1"))
-        .expect("the 112x64 vehicle case must be in the table");
-    assert_eq!(vehicle.expected.height, 4);
+    let root = repo_root();
+    let sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/10_Vehicles_Singles_16x16/ME_Singles_Vehicles_16x16_Bus_Left_1.png";
+    let bytes = fsio::read_bytes(&root, &[PathBuf::from(sheet)])
+        .unwrap()
+        .remove(0)
+        .1;
+    let (w, h, rgba) = decode_rgba8(&bytes).unwrap();
+    let proposal = propose(w, h, &rgba).unwrap();
+    assert_eq!(proposal.height, 4);
 }
