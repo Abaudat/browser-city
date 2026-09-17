@@ -388,3 +388,33 @@ fn a_building_with_no_entrance_is_rejected() {
     assert!(!violations.is_empty());
     assert!(violations.iter().all(|v| v.rule_id == rule.id));
 }
+
+/// Artie's direction (cycle 2): `entrance` is a claim, not just a tag --
+/// a threshold tagged `entrance` between two rooms, never touching the
+/// street, must still be rejected. Without this row, mislabelling any
+/// interior door `entrance` would satisfy `building_has_an_entrance` on
+/// a building with no real way in.
+#[test]
+fn an_entrance_tagged_threshold_between_two_floors_is_rejected() {
+    let threshold = tag_id("threshold");
+    let entrance = tag_id("entrance");
+    let wall = tag_id("wall");
+    let floor = tag_id("floor");
+    let door = Cell::new(0, 0, 0);
+    let site = sim::rules::testing::SiteBuilder::new()
+        .cell(door, &[threshold, entrance])
+        .cell(Cell::new(-1, 0, 0), &[wall])
+        .cell(Cell::new(1, 0, 0), &[wall])
+        .cell(Cell::new(0, -1, 0), &[floor])
+        .cell(Cell::new(0, 1, 0), &[floor])
+        .build();
+    let rule = rule("entrance_opens_onto_pavement");
+    assert_eq!(
+        evaluate(&[rule], &site),
+        vec![Violation {
+            rule_id: rule.id,
+            subject: door,
+            other: None,
+        }]
+    );
+}

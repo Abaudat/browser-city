@@ -245,7 +245,7 @@ fn a_forbid_row_with_a_multi_term_alternative_is_rejected() {
 fn two_forbid_rows_for_the_same_pair_with_subjects_swapped_are_rejected() {
     let err = build_err("adjacency-symmetric-forbid-duplicate");
     assert!(err.message.contains(
-        "adjacency rule 'y_never_touches_x' is the same physical constraint as 'x_never_touches_y'"
+        "adjacency rule 'y_never_touches_x' forbids a tag pair and direction already forbidden by 'x_never_touches_y'"
     ));
 }
 

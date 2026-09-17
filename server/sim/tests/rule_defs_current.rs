@@ -139,7 +139,7 @@ fn the_committed_walled_room_has_waste_bin_requirement_rule_fires_when_missing_a
     assert!(!evaluate(&[rule], &violated).is_empty());
 }
 
-// --- story 2.9: defs/rules/grammar.toml's own nine rows ---------------------
+// --- story 2.9: defs/rules/grammar.toml's own ten rows ----------------------
 
 #[test]
 fn the_committed_road_never_touches_wall_rule_fires_and_stays_silent() {
@@ -371,6 +371,32 @@ fn the_committed_building_has_an_entrance_rule_fires_and_stays_silent() {
     assert!(!evaluate(&[rule], &violated).is_empty());
 }
 
+/// Artie's direction (cycle 2): `entrance` opening onto pavement is
+/// checked in any of its four rotated orientations, not just the
+/// authored literal (`north`).
+#[test]
+fn the_committed_entrance_opens_onto_pavement_rule_fires_and_stays_silent() {
+    let rule = rule("entrance_opens_onto_pavement");
+    let entrance = tag_id("entrance");
+    let floor = tag_id("floor");
+    let pavement = tag_id("pavement");
+
+    // A rotated orientation: pavement to the west, not the authored
+    // literal (north).
+    let satisfied = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[entrance])
+        .cell(Cell::new(-1, 0, 0), &[pavement])
+        .build();
+    assert!(evaluate(&[rule], &satisfied).is_empty());
+
+    let violated = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[entrance])
+        .cell(Cell::new(-1, 0, 0), &[floor])
+        .cell(Cell::new(1, 0, 0), &[floor])
+        .build();
+    assert!(!evaluate(&[rule], &violated).is_empty());
+}
+
 /// Pins the set closed: a rule added to `defs/rules/city.toml` with no
 /// matching test above must fail this count, not ship silently untested
 /// (Quentin's direction, PR #294 cycle 2).
@@ -391,6 +417,7 @@ fn every_committed_rule_has_a_test_here() {
         "wall_is_part_of_a_straight_run_or_a_corner",
         "room_has_a_door",
         "building_has_an_entrance",
+        "entrance_opens_onto_pavement",
     ];
     assert_eq!(
         defs::RULES.len(),

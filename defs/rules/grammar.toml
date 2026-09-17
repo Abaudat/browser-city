@@ -128,3 +128,22 @@ key = "building_has_an_entrance"
 container = "wall"
 requires = "entrance"
 min = 1
+
+# Artie's direction (cycle 2): `entrance` is a claim, not just a tag --
+# a threshold tagged `entrance` must actually open onto the outside, or
+# `building_has_an_entrance` above is satisfied by a lie (an interior
+# door mislabelled `entrance` in a building with no real way in).
+# Pavement only, not "pavement or road": a door opening straight onto
+# the road is already refused for a floor cell (`floor_never_touches_
+# road_directly`), and it is refused for an entrance the same way.
+[[adjacency]]
+id = 15
+key = "entrance_opens_onto_pavement"
+a = "entrance"
+relation = "require"
+rotate = true
+alternatives = [
+  [
+    { direction = "north", tag = "pavement" },
+  ],
+]

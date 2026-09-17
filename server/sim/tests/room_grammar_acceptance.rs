@@ -258,13 +258,25 @@ fn load_cases() -> Vec<FixtureCase> {
         .collect()
 }
 
+/// Collects every mismatch across the whole fixture, rather than
+/// stopping at the first (Quentin's direction, cycle 2): an agent
+/// editing the fixture sees every broken case in one run, not one at a
+/// time across repeated edit/re-run cycles.
 #[test]
 fn every_room_grammar_fixture_case_matches_its_own_expected_rule_keys() {
     let cases = load_cases();
     assert!(!cases.is_empty());
     let rules = grammar_rules();
 
+    let mut seen_names = std::collections::BTreeSet::new();
+    let mut duplicate_names = Vec::new();
+    let mut failures = Vec::new();
+
     for case in &cases {
+        if !seen_names.insert(case.name.clone()) {
+            duplicate_names.push(case.name.clone());
+        }
+
         let mut builder = sim::rules::testing::SiteBuilder::new();
         for cell in &case.cells {
             let tag_ids: Vec<TagId> = cell.tags.iter().map(|t| support::tag_id(t)).collect();
@@ -293,10 +305,23 @@ fn every_room_grammar_fixture_case_matches_its_own_expected_rule_keys() {
         let mut expected: Vec<&str> = case.expected_rule_keys.iter().map(|s| s.as_str()).collect();
         expected.sort_unstable();
 
-        assert_eq!(
-            actual_keys, expected,
-            "case '{}': expected rule keys {:?}, got {:?} (violations: {:?})",
-            case.name, expected, actual_keys, violations
-        );
+        if actual_keys != expected {
+            failures.push(format!(
+                "case '{}': expected rule keys {:?}, got {:?} (violations: {:?})",
+                case.name, expected, actual_keys, violations
+            ));
+        }
     }
+
+    assert!(
+        duplicate_names.is_empty(),
+        "fixtures/room-grammar.v1.json: duplicate case name(s): {duplicate_names:?}"
+    );
+    assert!(
+        failures.is_empty(),
+        "{} of {} fixture case(s) failed:\n{}",
+        failures.len(),
+        cases.len(),
+        failures.join("\n")
+    );
 }

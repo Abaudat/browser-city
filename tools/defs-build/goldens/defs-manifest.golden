@@ -544,3 +544,4 @@ rule 11 doorway_formed_between_walls
 rule 12 wall_is_part_of_a_straight_run_or_a_corner
 rule 13 room_has_a_door
 rule 14 building_has_an_entrance
+rule 15 entrance_opens_onto_pavement

@@ -13,7 +13,7 @@ use sim::rng::{Rng, seed_from_ids};
 use sim::rules::testing::SiteBuilder;
 use sim::rules::{
     AdjacencyRelation, AreaId, Cell, CoherenceMode, Direction, NeighbourTerm, RuleDef, RuleKind,
-    TagId, Violation, evaluate,
+    RuleSite, TagId, Violation, evaluate,
 };
 use sim::world::walkability::{
     WalkabilityGrid, enclosed_regions, erode, narrow_passages, player_body_subcells,
@@ -57,7 +57,7 @@ pub const INV_GRAMMAR_ROTATE_INVARIANT: &str =
 pub const INV_GRAMMAR_VERDICT_TOTAL: &str = "the committed grammar rows never panic over any random composition, including empty, disconnected or out-of-range sites, and the same input always gives the same verdict";
 pub const INV_WELL_FORMED_ROOM_ACCEPTED: &str = "a closed wall ring with a floor interior and a real doorway on a random non-corner wall cell, at any size at or above the grammar minimum, is accepted";
 pub const INV_SINGLE_MUTATION_REJECTED_WITH_ITS_REASON: &str = "starting from an accepted room, one mutation from a fixed table, at a random valid position, is always rejected with that mutation's own named reason and no other";
-pub const INV_GRAMMAR_ACCEPTED_ROOM_IS_REACHABLE: &str = "every room the grammar accepts also passes 2.4's enclosed_regions check from an exterior seed -- the grammar and FR128's walkability invariant never disagree about whether a room is enterable";
+pub const INV_GRAMMAR_ACCEPTED_ROOM_IS_REACHABLE: &str = "every room the grammar accepts, rasterised from that same accepted site and eroded by the real player body, also passes 2.4's enclosed_regions and narrow_passages checks from an exterior seed -- the grammar and FR128's walkability invariant never disagree about whether a room is enterable";
 pub const INV_DOORWAY_GAP_AT_LEAST_BODY_WIDTH_IS_ONE_COMPONENT_UNDER_EROSION: &str = "a ring with a doorway gap at least the player body's own width is always a single connected component once the walkability grid is eroded by the body (FR128)";
 pub const INV_SEALED_RING_YIELDS_EXACTLY_ONE_ENCLOSED_REGION: &str =
     "a ring with no gap at all always yields exactly one enclosed region (FR128)";
@@ -746,28 +746,30 @@ fn build_doored_room(w: i32, h: i32, door_x: i32) -> sim::rules::testing::Site {
     b.build()
 }
 
-/// The sub-cell walkability grid for the exact same room
-/// [`build_doored_room`] describes: every wall cell (never the door) is
-/// a whole-cell collider, everything else open -- proving AC4's
-/// "composes a room" and FR128's own walkability check agree without
-/// tying this test to `world::fixture`'s own object-based rasterising.
-fn doored_room_walkability_grid(w: i32, h: i32, door_x: i32) -> WalkabilityGrid {
+/// The sub-cell walkability grid *for `site`'s own cells* (Quentin's
+/// direction, cycle 2: never derived from `(w, h, door_x)` alone, which
+/// would still pass even if the grammar had just accepted a door-less
+/// ring or a threshold tucked into a corner): every cell `site` itself
+/// tags `wall` becomes a whole-cell collider, everything else stays
+/// open. `w`/`h` size `bounds` only, wide enough to hold a seed outside
+/// the ring and the pavement cell immediately south of the door.
+fn walkability_grid_from_site(
+    site: &sim::rules::testing::Site,
+    w: i32,
+    h: i32,
+) -> WalkabilityGrid {
     let s = defs::COLLIDER_SUBCELLS_PER_CELL;
-    let door = (door_x, h - 1);
-    let mut colliders = Vec::new();
-    for x in 0..w {
-        for y in 0..h {
-            let on_perimeter = x == 0 || y == 0 || x == w - 1 || y == h - 1;
-            if on_perimeter && (x, y) != door {
-                colliders.push(Rect {
-                    x0: x * s,
-                    y0: y * s,
-                    x1: (x + 1) * s,
-                    y1: (y + 1) * s,
-                });
-            }
-        }
-    }
+    let wall = support::tag_id("wall");
+    let colliders: Vec<Rect> = site
+        .subjects_in_area(None, wall)
+        .iter()
+        .map(|cell| Rect {
+            x0: cell.x * s,
+            y0: cell.y * s,
+            x1: (cell.x + 1) * s,
+            y1: (cell.y + 1) * s,
+        })
+        .collect();
     let margin = s;
     let bounds = Rect {
         x0: -margin,
@@ -776,6 +778,44 @@ fn doored_room_walkability_grid(w: i32, h: i32, door_x: i32) -> WalkabilityGrid 
         y1: (h + 1) * s + margin,
     };
     WalkabilityGrid::build(bounds, &colliders).expect("room geometry is always valid")
+}
+
+/// The always-open sub-cell just outside a [`build_doored_room`]/
+/// [`walkability_grid_from_site`] ring's own north-west corner -- every
+/// caller's own exterior seed.
+fn doored_room_exterior_seed() -> (i32, i32) {
+    let s = defs::COLLIDER_SUBCELLS_PER_CELL;
+    (-s / 2, -s / 2)
+}
+
+/// Proves [`walkability_grid_from_site`] has teeth (Quentin's direction,
+/// cycle 2): fed a room with no door at all (`RoomMutation::NoDoor`'s own
+/// shape, built directly here rather than importing the proptest-only
+/// mutation table), it reports exactly the one enclosed region a sealed
+/// ring must -- if this helper silently produced an always-open grid
+/// regardless of `site`, this is the test that would catch it.
+#[test]
+fn walkability_grid_from_site_reports_one_enclosed_region_for_a_doorless_room() {
+    let wall = support::tag_id("wall");
+    let floor = support::tag_id("floor");
+    let (w, h) = (6, 6);
+    let mut b = SiteBuilder::new();
+    for x in 0..w {
+        for y in 0..h {
+            let cell = Cell::new(x, y, 0);
+            let on_perimeter = x == 0 || y == 0 || x == w - 1 || y == h - 1;
+            if on_perimeter {
+                b = b.cell(cell, &[wall]);
+            } else {
+                b = b.cell(cell, &[floor]);
+            }
+        }
+    }
+    let site = b.build();
+    let grid = walkability_grid_from_site(&site, w, h);
+    let seed = doored_room_exterior_seed();
+    let enclosed = enclosed_regions(&grid, seed.0, seed.1).unwrap();
+    assert_eq!(enclosed.len(), 1);
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1019,28 +1059,47 @@ proptest! {
         prop_assert_eq!(evaluate(&support::grammar_rules(), &site), vec![]);
     }
 
-    /// `inv_grammar_accepted_room_is_reachable` (Quentin's direction):
-    /// every room [`inv_well_formed_room_accepted`] accepts also passes
-    /// 2.4's own `enclosed_regions` check from an exterior seed -- the
-    /// grammar and FR128's walkability invariant are never two truths
-    /// that can drift apart.
+    /// `inv_grammar_accepted_room_is_reachable` (Quentin's direction,
+    /// cycles 1-2): every room [`inv_well_formed_room_accepted`] accepts
+    /// also passes 2.4's own `enclosed_regions` and `narrow_passages`
+    /// checks from an exterior seed -- the grammar and FR128's
+    /// walkability invariant are never two truths that can drift apart.
+    /// The collider grid is rasterised from the accepted site's own
+    /// cells ([`walkability_grid_from_site`]), never independently from
+    /// `(w, h, door_x)` alone, and eroded by the real, generated
+    /// `movement.player_body_width_subcells` -- if that balance value
+    /// ever grew past one cell, a grammar-accepted door would become
+    /// impassable, and this is the assertion that would go red.
     #[test]
     fn inv_grammar_accepted_room_is_reachable(w in 5i32..10, h in 5i32..10, door_offset in 0u32..u32::MAX) {
         let door_x = 1 + (door_offset % (w - 2) as u32) as i32;
-        prop_assert_eq!(evaluate(&support::grammar_rules(), &build_doored_room(w, h, door_x)), vec![]);
+        let site = build_doored_room(w, h, door_x);
+        prop_assert_eq!(evaluate(&support::grammar_rules(), &site), vec![]);
 
-        let grid = doored_room_walkability_grid(w, h, door_x);
-        let s = defs::COLLIDER_SUBCELLS_PER_CELL;
-        let enclosed = enclosed_regions(&grid, -s / 2, -s / 2).unwrap();
+        let grid = walkability_grid_from_site(&site, w, h);
+        let (body_w, body_h) = player_body_subcells(defs::BALANCE);
+        let eroded = erode(&grid, body_w, body_h);
+        let seed = doored_room_exterior_seed();
+        let enclosed = enclosed_regions(&eroded, seed.0, seed.1).unwrap();
         prop_assert!(enclosed.is_empty());
+        let narrow = narrow_passages(&grid, seed.0, seed.1, body_w, body_h).unwrap();
+        prop_assert!(narrow.is_empty());
     }
 
     /// `inv_single_mutation_rejected_with_its_reason` (AC4): starting
-    /// from an accepted room (or, for the two standalone pair cases, a
-    /// clean site translated to a random position), one mutation from
-    /// [`RoomMutation`] -- drawn at a random valid position -- is always
-    /// rejected, and every violation it produces names that mutation's
-    /// own row, never a different, unrelated one.
+    /// from an accepted room (or, for the four standalone pair cases, a
+    /// two-cell site translated to a random position and facing a random
+    /// one of the four directions), one mutation from [`RoomMutation`]
+    /// -- drawn at a random valid position -- is always rejected, and
+    /// the *exact* deduplicated set of rows it fires equals that
+    /// mutation's own named set, evaluated against every committed
+    /// grammar row (`support::grammar_rules()`), never just the one row
+    /// under test (Quentin's direction, cycle 2: evaluating against only
+    /// `[rule]` makes "rejected with *its* reason" a tautology, since no
+    /// other row can fire). Where a bare floor/wall cell with no area
+    /// also trips a Requirement row's own "container cell outside any
+    /// area" case, that row is named in the expected set too, the same
+    /// way `room_grammar_acceptance.rs`'s fixture already documents it.
     #[test]
     fn inv_single_mutation_rejected_with_its_reason(
         w in 6i32..10,
@@ -1050,6 +1109,7 @@ proptest! {
         floor_offset in 0u32..u32::MAX,
         dx in -50i32..50,
         dy in -50i32..50,
+        direction_idx in 0usize..4,
         mutation in prop_oneof![
             Just(RoomMutation::DropWallCell),
             Just(RoomMutation::FloorTouchesGround),
@@ -1062,6 +1122,7 @@ proptest! {
             Just(RoomMutation::RoadTouchesGround),
         ],
     ) {
+        let direction = Direction::ALL[direction_idx];
         let door_x = 1 + (door_offset % (w - 2) as u32) as i32;
         let wall = support::tag_id("wall");
         let wall_run = support::tag_id("wall_run");
@@ -1151,14 +1212,16 @@ proptest! {
                 )
             }
             // The stray wall cell south of the door (where pavement
-            // should be) is itself a free-standing stub -- coupled to
-            // the doorway's own rejection, not a second, unrelated
-            // reason.
+            // should be) is itself a free-standing stub, and the door's
+            // own `entrance` tag no longer opens onto pavement -- all
+            // three are coupled to the same one deliberate defect, not
+            // unrelated reasons.
             RoomMutation::DoorwayOpensOntoWall => (
                 build_room(None, None, &door_tags, wall),
                 vec![
                     "doorway_formed_between_walls",
                     "wall_is_part_of_a_straight_run_or_a_corner",
+                    "entrance_opens_onto_pavement",
                 ],
             ),
             // With no threshold at all, there is also no entrance --
@@ -1172,78 +1235,78 @@ proptest! {
                 build_room(None, None, &[threshold, wall_run], pavement),
                 vec!["building_has_an_entrance"],
             ),
+            // A bare floor cell carries no area, so `room_has_a_door`'s
+            // own "container cell outside any area" case fires too --
+            // named explicitly, not an unrelated reason.
             RoomMutation::FloorTouchesPavementDirectly => {
                 let room = Cell::new(dx, dy, 0);
-                let outside = Direction::East.step(room);
-                let rule = support::rule("floor_never_touches_pavement_directly");
-                let clean = SiteBuilder::new().cell(room, &[floor]).build();
-                prop_assert!(evaluate(&[rule], &clean).is_empty());
-                let violated = SiteBuilder::new()
+                let outside = direction.step(room);
+                let site = SiteBuilder::new()
                     .cell(room, &[floor])
                     .cell(outside, &[pavement])
                     .build();
-                let violations = evaluate(&[rule], &violated);
-                prop_assert!(!violations.is_empty());
-                prop_assert!(violations.iter().all(|v| v.rule_id == rule.id));
-                return Ok(());
+                (
+                    site,
+                    vec!["floor_never_touches_pavement_directly", "room_has_a_door"],
+                )
             }
             RoomMutation::FloorTouchesRoadDirectly => {
                 let room = Cell::new(dx, dy, 0);
-                let outside = Direction::East.step(room);
-                let rule = support::rule("floor_never_touches_road_directly");
-                let clean = SiteBuilder::new().cell(room, &[floor]).build();
-                prop_assert!(evaluate(&[rule], &clean).is_empty());
-                let violated = SiteBuilder::new()
+                let outside = direction.step(room);
+                let site = SiteBuilder::new()
                     .cell(room, &[floor])
                     .cell(outside, &[road])
                     .build();
-                let violations = evaluate(&[rule], &violated);
-                prop_assert!(!violations.is_empty());
-                prop_assert!(violations.iter().all(|v| v.rule_id == rule.id));
-                return Ok(());
+                (
+                    site,
+                    vec!["floor_never_touches_road_directly", "room_has_a_door"],
+                )
             }
+            // A bare wall cell carries no area, so both of `wall`'s own
+            // "container cell outside any area" Requirement rows fire
+            // too (`building_has_an_entrance`, `walled_room_has_waste_
+            // bin`), alongside its own missing `wall_run` neighbour
+            // (`wall_is_part_of_a_straight_run_or_a_corner`) -- all
+            // named alongside the pair this mutation is actually about.
             RoomMutation::RoadTouchesWall => {
                 let street = Cell::new(dx, dy, 0);
-                let facade = Direction::East.step(street);
-                let rule = support::rule("road_never_touches_wall");
-                let clean = SiteBuilder::new().cell(street, &[road]).build();
-                prop_assert!(evaluate(&[rule], &clean).is_empty());
-                let violated = SiteBuilder::new()
+                let facade = direction.step(street);
+                let site = SiteBuilder::new()
                     .cell(street, &[road])
                     .cell(facade, &[wall])
                     .build();
-                let violations = evaluate(&[rule], &violated);
-                prop_assert!(!violations.is_empty());
-                prop_assert!(violations.iter().all(|v| v.rule_id == rule.id));
-                return Ok(());
+                (
+                    site,
+                    vec![
+                        "road_never_touches_wall",
+                        "building_has_an_entrance",
+                        "wall_is_part_of_a_straight_run_or_a_corner",
+                        "walled_room_has_waste_bin",
+                    ],
+                )
             }
             RoomMutation::RoadTouchesGround => {
                 let street = Cell::new(dx, dy, 0);
-                let grass = Direction::East.step(street);
-                let rule = support::rule("road_never_touches_ground");
-                let clean = SiteBuilder::new().cell(street, &[road]).build();
-                prop_assert!(evaluate(&[rule], &clean).is_empty());
-                let violated = SiteBuilder::new()
+                let grass = direction.step(street);
+                let site = SiteBuilder::new()
                     .cell(street, &[road])
                     .cell(grass, &[ground])
                     .build();
-                let violations = evaluate(&[rule], &violated);
-                prop_assert!(!violations.is_empty());
-                prop_assert!(violations.iter().all(|v| v.rule_id == rule.id));
-                return Ok(());
+                (site, vec!["road_never_touches_ground"])
             }
         };
 
         let violations = evaluate(&grammar, &mutated_site);
-        prop_assert!(!violations.is_empty());
-        let expected_ids: Vec<u32> = expected_keys
+        let mut actual_keys: Vec<&str> = violations
             .iter()
-            .map(|k| grammar.iter().find(|r| r.key == *k).unwrap().id)
+            .map(|v| grammar.iter().find(|r| r.id == v.rule_id).unwrap().key)
             .collect();
-        prop_assert!(
-            violations.iter().all(|v| expected_ids.contains(&v.rule_id)),
-            "expected only {expected_keys:?} ({expected_ids:?}) to fire, got {violations:?}"
-        );
+        actual_keys.sort_unstable();
+        actual_keys.dedup();
+        let mut expected: Vec<&str> = expected_keys;
+        expected.sort_unstable();
+        expected.dedup();
+        prop_assert_eq!(actual_keys, expected);
     }
 }
 

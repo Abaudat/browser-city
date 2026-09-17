@@ -5,7 +5,7 @@
 # relies on this guard to keep their ids permanent -- a guard nobody has
 # seen fail is not a guard). Builds a scratch git repo per case (never
 # this repo's own history) with the golden at its real relative path, so
-# $2/$3's own testability seam is exercised the same way a real caller
+# $2's own testability seam is exercised the same way a real caller
 # never uses it.
 set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

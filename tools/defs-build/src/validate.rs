@@ -509,6 +509,17 @@ fn rotate_direction(d: RawDirection) -> RawDirection {
     }
 }
 
+/// The lowercase key an error message quotes back -- the same spelling
+/// `direction = "..."` is authored with in TOML.
+fn direction_key(d: RawDirection) -> &'static str {
+    match d {
+        RawDirection::North => "north",
+        RawDirection::East => "east",
+        RawDirection::South => "south",
+        RawDirection::West => "west",
+    }
+}
+
 fn resolve_neighbour_term(
     term: &RawNeighbourTerm,
     path: &std::path::Path,
@@ -669,13 +680,19 @@ fn build_adjacency_rules(
                                     && terms[i].tag == terms[j].tag
                                     && terms[i].present != terms[j].present
                                 {
+                                    let tag_key = tag_ids
+                                        .iter()
+                                        .find(|&(_, &id)| id == terms[i].tag)
+                                        .map(|(key, _)| *key)
+                                        .unwrap_or("<unknown tag>");
                                     return Err(DefsError::new(
                                         &e.path,
                                         e.key.line,
                                         e.key.col,
                                         format!(
-                                            "adjacency rule '{}' has a dead alternative -- it names {:?} at the same direction as its own tag with opposite 'present', so it can never match",
-                                            e.key.value, terms[i].tag
+                                            "adjacency rule '{}' has a dead alternative -- it names '{tag_key}' to the {} twice, once present and once absent, so it can never match",
+                                            e.key.value,
+                                            direction_key(terms[i].direction),
                                         ),
                                     ));
                                 }
@@ -731,34 +748,47 @@ fn build_adjacency_rules(
         .collect()
 }
 
-fn axis_of(d: RawDirection) -> u8 {
+/// The direction pointing the opposite way (north <-> south, east <->
+/// west) -- swapping which of a `Forbid` row's two tags is the subject
+/// only makes sense together with this flip: "a never has b to its
+/// north" is "b never has a to its south", never "...to its north".
+fn opposite_direction(d: RawDirection) -> RawDirection {
     match d {
-        RawDirection::North | RawDirection::South => 0,
-        RawDirection::East | RawDirection::West => 1,
+        RawDirection::North => RawDirection::South,
+        RawDirection::South => RawDirection::North,
+        RawDirection::East => RawDirection::West,
+        RawDirection::West => RawDirection::East,
     }
 }
 
 /// A `Forbid` row's own physical constraint, independent of which of the
 /// two tags is the row's own subject: each alternative (already
-/// guaranteed a single `present: true` term) becomes `(tag pair sorted,
-/// axis)` -- direction itself drops out, since "never touches to the
-/// north" and "never touches to the south" describe the same seam from
-/// the two different sides, and an any-direction row already covers
-/// both axes.
+/// guaranteed a single `present: true` term) becomes `(lo, hi,
+/// direction as seen from lo)`. When the subject is the smaller id it
+/// already is `lo` and the direction is kept as authored; when the
+/// subject is the larger id the tags swap and the direction flips to
+/// its opposite (see [`opposite_direction`]); when the two tags are
+/// equal, the only remaining freedom is that same subject swap, so the
+/// direction is normalised to whichever of itself and its opposite
+/// sorts first by `RawDirection`'s own declaration order -- north and
+/// south collapse together, and separately east and west, but a north
+/// row never collapses onto an east one.
 fn forbid_canonical_pairs(
     a: u32,
     alternatives: &[Vec<NeighbourTermDef>],
-) -> BTreeSet<(u32, u32, u8)> {
+) -> BTreeSet<(u32, u32, RawDirection)> {
     alternatives
         .iter()
         .map(|alt| {
             let term = alt[0];
-            let (lo, hi) = if a <= term.tag {
-                (a, term.tag)
-            } else {
-                (term.tag, a)
-            };
-            (lo, hi, axis_of(term.direction))
+            match a.cmp(&term.tag) {
+                std::cmp::Ordering::Less => (a, term.tag, term.direction),
+                std::cmp::Ordering::Greater => (term.tag, a, opposite_direction(term.direction)),
+                std::cmp::Ordering::Equal => {
+                    let d = term.direction.min(opposite_direction(term.direction));
+                    (a, term.tag, d)
+                }
+            }
         })
         .collect()
 }
@@ -766,12 +796,14 @@ fn forbid_canonical_pairs(
 /// One `Forbid` row's own canonical constraint set (see
 /// [`forbid_canonical_pairs`]) paired with its own key, so a later row
 /// can be compared against every one already seen.
-type ForbidCanonical<'a> = (BTreeSet<(u32, u32, u8)>, &'a str);
+type ForbidCanonical<'a> = (BTreeSet<(u32, u32, RawDirection)>, &'a str);
 
 /// Tim's direction: `road`/`floor` and `floor`/`road` (two `Forbid` rows
 /// with subjects swapped) flag the same pair twice under two names --
 /// refuse a second row whose lowered constraint set (up to swapping
-/// subjects) already exists, naming both keys.
+/// subjects) already exists, or is a subset of one already seen (or the
+/// reverse): a single-direction row already covered by an any-direction
+/// row of the same pair is just as redundant as an exact duplicate.
 fn check_no_symmetric_forbid_duplicates(
     entries: &[AdjacencyEntry],
     rules: &[RuleDef],
@@ -791,13 +823,13 @@ fn check_no_symmetric_forbid_duplicates(
         }
         let canonical = forbid_canonical_pairs(*a, alternatives);
         for (prev_canonical, prev_key) in &seen {
-            if *prev_canonical == canonical {
+            if canonical.is_subset(prev_canonical) || prev_canonical.is_subset(&canonical) {
                 return Err(DefsError::new(
                     &entry.path,
                     entry.key.line,
                     entry.key.col,
                     format!(
-                        "adjacency rule '{}' is the same physical constraint as '{prev_key}' (the same tag pair, up to swapping which one is the subject) -- keep one",
+                        "adjacency rule '{}' forbids a tag pair and direction already forbidden by '{prev_key}' (the same tag pair, up to swapping which one is the subject, and up to direction) -- keep one",
                         entry.key.value
                     ),
                 ));
@@ -3212,5 +3244,203 @@ mod tests {
         let raw = crate::model::RawDefs::default();
         let err = validate_page_groups(&raw).unwrap_err();
         assert!(err.message.contains(ATLAS_SHARED_GROUP));
+    }
+
+    // --- Tim's cycle 2 direction: `check_no_symmetric_forbid_duplicates`'s
+    // own canonicalisation, exercised directly against `AdjacencyEntry`
+    // rather than a whole parsed tree -- fine enough that a fixture-file
+    // roundtrip would only obscure which direction/subject combination is
+    // under test.
+
+    fn forbid_entry(
+        id: u32,
+        key: &str,
+        a: &str,
+        b: &str,
+        direction: Option<RawDirection>,
+    ) -> AdjacencyEntry {
+        AdjacencyEntry {
+            path: PathBuf::from("defs/rules/test.toml"),
+            id: Located::at(id, 1, 1),
+            key: Located::at(key.to_string(), 1, 1),
+            a: Located::at(a.to_string(), 1, 1),
+            b: Some(Located::at(b.to_string(), 1, 1)),
+            direction,
+            alternatives: None,
+            rotate: false,
+            relation: RawAdjacencyRelation::Forbid,
+        }
+    }
+
+    fn check_forbid_entries(entries: &[AdjacencyEntry]) -> Result<(), DefsError> {
+        let tag_ids: BTreeMap<&str, u32> = [("road", 1u32), ("floor", 2u32), ("wall", 3u32)]
+            .into_iter()
+            .collect();
+        let rules = build_adjacency_rules(entries, &tag_ids)?;
+        check_no_symmetric_forbid_duplicates(entries, &rules)
+    }
+
+    #[test]
+    fn same_subject_different_direction_is_not_a_duplicate() {
+        // "road never has floor to its north" and "...to its south" are
+        // two different physical constraints, not the same seam seen
+        // from two sides -- the bug this replaces collapsed both onto
+        // one "axis" and refused the second row.
+        let entries = [
+            forbid_entry(
+                1,
+                "road_never_north_of_floor",
+                "road",
+                "floor",
+                Some(RawDirection::North),
+            ),
+            forbid_entry(
+                2,
+                "road_never_south_of_floor",
+                "road",
+                "floor",
+                Some(RawDirection::South),
+            ),
+        ];
+        assert!(check_forbid_entries(&entries).is_ok());
+    }
+
+    #[test]
+    fn opposite_seam_same_direction_is_not_a_duplicate() {
+        // "road never has floor to its north" and "floor never has road
+        // to its north" describe different seams (the second is
+        // equivalent to "road never has floor to its *south*"), so they
+        // must both stand.
+        let entries = [
+            forbid_entry(
+                1,
+                "road_never_north_of_floor",
+                "road",
+                "floor",
+                Some(RawDirection::North),
+            ),
+            forbid_entry(
+                2,
+                "floor_never_north_of_road",
+                "floor",
+                "road",
+                Some(RawDirection::North),
+            ),
+        ];
+        assert!(check_forbid_entries(&entries).is_ok());
+    }
+
+    #[test]
+    fn subject_swapped_with_the_direction_flipped_is_the_same_constraint() {
+        let entries = [
+            forbid_entry(
+                1,
+                "road_never_north_of_floor",
+                "road",
+                "floor",
+                Some(RawDirection::North),
+            ),
+            forbid_entry(
+                2,
+                "floor_never_south_of_road",
+                "floor",
+                "road",
+                Some(RawDirection::South),
+            ),
+        ];
+        let err = check_forbid_entries(&entries).unwrap_err();
+        assert!(err.message.contains("floor_never_south_of_road"));
+        assert!(err.message.contains("road_never_north_of_floor"));
+    }
+
+    #[test]
+    fn a_directional_row_already_covered_by_an_any_direction_row_is_rejected() {
+        let entries = [
+            forbid_entry(1, "road_never_touches_wall", "road", "wall", None),
+            forbid_entry(
+                2,
+                "road_never_north_of_wall",
+                "road",
+                "wall",
+                Some(RawDirection::North),
+            ),
+        ];
+        let err = check_forbid_entries(&entries).unwrap_err();
+        assert!(err.message.contains("road_never_north_of_wall"));
+    }
+
+    #[test]
+    fn same_tag_row_north_and_south_are_the_same_constraint() {
+        let entries = [
+            forbid_entry(
+                1,
+                "wall_never_north_of_wall",
+                "wall",
+                "wall",
+                Some(RawDirection::North),
+            ),
+            forbid_entry(
+                2,
+                "wall_never_south_of_wall",
+                "wall",
+                "wall",
+                Some(RawDirection::South),
+            ),
+        ];
+        let err = check_forbid_entries(&entries).unwrap_err();
+        assert!(err.message.contains("wall_never_south_of_wall"));
+    }
+
+    #[test]
+    fn same_tag_row_north_and_east_are_different_constraints() {
+        let entries = [
+            forbid_entry(
+                1,
+                "wall_never_north_of_wall",
+                "wall",
+                "wall",
+                Some(RawDirection::North),
+            ),
+            forbid_entry(
+                2,
+                "wall_never_east_of_wall",
+                "wall",
+                "wall",
+                Some(RawDirection::East),
+            ),
+        ];
+        assert!(check_forbid_entries(&entries).is_ok());
+    }
+
+    #[test]
+    fn dead_alternative_error_names_the_tag_key_and_direction() {
+        let entries = [AdjacencyEntry {
+            path: PathBuf::from("defs/rules/test.toml"),
+            id: Located::at(1, 1, 1),
+            key: Located::at("contradiction".to_string(), 1, 1),
+            a: Located::at("wall".to_string(), 1, 1),
+            b: None,
+            direction: None,
+            alternatives: Some(vec![vec![
+                RawNeighbourTerm {
+                    direction: RawDirection::North,
+                    tag: "floor".to_string(),
+                    present: true,
+                },
+                RawNeighbourTerm {
+                    direction: RawDirection::North,
+                    tag: "floor".to_string(),
+                    present: false,
+                },
+            ]]),
+            rotate: false,
+            relation: RawAdjacencyRelation::Require,
+        }];
+        let tag_ids: BTreeMap<&str, u32> = [("road", 1u32), ("floor", 2u32), ("wall", 3u32)]
+            .into_iter()
+            .collect();
+        let err = build_adjacency_rules(&entries, &tag_ids).unwrap_err();
+        assert!(err.message.contains("'floor'"));
+        assert!(err.message.contains("north"));
     }
 }
