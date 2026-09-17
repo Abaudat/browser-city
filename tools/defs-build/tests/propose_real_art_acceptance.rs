@@ -36,9 +36,14 @@ enum Expected {
     /// The proposal differs from this object's real footprint in a way
     /// classification exists to correct -- documented, never silent.
     Miss(Proposal),
-    /// The real art has a genuine gap between its own visible content
-    /// and its own sprite's bottom edge -- `propose` correctly declines
-    /// rather than guessing (AC1).
+    /// The real art has a gap of a whole tile or more between its own
+    /// visible content and its own sprite's bottom edge -- `propose`
+    /// correctly declines rather than guessing (AC1). None of this
+    /// table's own curated real props hit this today (a gap smaller
+    /// than one tile, common in this tileset, is tolerated -- see
+    /// `propose.rs`'s own doc comment); kept for the next real prop
+    /// that does.
+    #[allow(dead_code)]
     Refused(ProposeError),
 }
 
@@ -114,8 +119,17 @@ fn cases() -> Vec<Case> {
         Case {
             name: "shop_window",
             sheet: "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Balcony_Window_Left_1.png",
-            expected: Expected::Refused(ProposeError::BottomRowFullyTransparent),
-            reason: "the window frame's own opaque art finishes one pixel short of the sprite's own bottom edge (a real gap in the vendor art, not a rendering artefact of this test). propose() correctly declines rather than guessing a depth from art that never touches its own sprite's bottom row (AC1) -- the real object is still fully specified regardless, via the full_cell_blocker archetype, since the proposal is never authority.",
+            expected: Expected::Miss(Proposal {
+                width: 1,
+                height: 1,
+                collider: Some(ColliderRect {
+                    x0: 14,
+                    y0: 2,
+                    x1: 16,
+                    y1: 15,
+                }),
+            }),
+            reason: "footprint size (1x1) matches the real shop_window's own authored width/height. The window frame's own opaque art finishes one pixel short of the sprite's own bottom edge -- tolerated (a gap smaller than one tile), depth still measured from the frame's own right-hand mullion, which runs rows 2-14. Miss: the proposed collider is only that thin vertical strip, while the real object is classified full_cell_blocker (the whole tile blocks, glass included) -- alpha coverage alone cannot know the glass should block too, exactly AC3's own correction case.",
         },
         Case {
             name: "wall_segment",
@@ -135,8 +149,17 @@ fn cases() -> Vec<Case> {
         Case {
             name: "bridge_deck's own placeholder sheet",
             sheet: "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/10_Vehicles_Singles_16x16/ME_Singles_Vehicles_16x16_Car_Left_1.png",
-            expected: Expected::Refused(ProposeError::BottomRowFullyTransparent),
-            reason: "this sheet is an explicitly-noted placeholder (defs/objects/city-props.toml's own comment: \"Artie's own curation is a later story\"), and the car art's own shadow/tire silhouette does not reach the sprite's own bottom pixel row. propose() correctly declines on this real gap; irrelevant to the deck's real footprint regardless, since bridge_deck is classified underfoot_flat (no collider at all) independent of any proposal.",
+            expected: Expected::Miss(Proposal {
+                width: 4,
+                height: 3,
+                collider: Some(ColliderRect {
+                    x0: 1,
+                    y0: 10,
+                    x1: 62,
+                    y1: 47,
+                }),
+            }),
+            reason: "this sheet is an explicitly-noted placeholder (defs/objects/city-props.toml's own comment: \"Artie's own curation is a later story\"), so any comparison to the deck's own real footprint is inherently a miss by construction: bridge_deck is classified underfoot_flat (no collider at all, width=4 stays explicit on the object), discarding any proposed collider regardless of what this placeholder car sprite measures. Footprint width (4) does match, coincidentally, since this placeholder happens to already be 4 tiles wide.",
         },
         Case {
             name: "foot_stairs -- the 16x32 street-lamp-class prop AC2 names",

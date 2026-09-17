@@ -57,12 +57,19 @@ pub enum ProposeError {
     /// that would make "no pixel above the band is ever read" false).
     LowerBandFullyTransparent,
     /// The band has an opaque pixel somewhere, but the sprite's own
-    /// bottom row does not -- every object in this tileset is
-    /// bottom-anchored (FR126: a sprite may overhang its footprint
-    /// upward, never downward), so a gap under the visible art (a
-    /// detached shadow, padding) leaves no bottom edge to measure depth
-    /// from. Never silently treated as depth 1 (AC1).
-    BottomRowFullyTransparent,
+    /// **bottom tile** (the last [`PROPOSE_TILE_SIZE_PX`] rows) does not
+    /// -- every object in this tileset is bottom-anchored (FR126: a
+    /// sprite may overhang its footprint upward, never downward), so a
+    /// gap this large under the visible art (at least one whole tile: a
+    /// detached shadow, a shifted layer) leaves no bottom tile to anchor
+    /// depth measurement to. A gap *smaller* than one tile is tolerated
+    /// instead (Quentin's direction, cycle 2: about a fifth of this
+    /// tileset's own real singles have a sub-cell padding row at their
+    /// own bottom edge, and refusing all of them would send that whole
+    /// fraction back to manual measurement) -- see [`propose`]'s own
+    /// doc comment for exactly how. Never silently treated as depth 1
+    /// either way (AC1).
+    BottomTileFullyTransparent,
     /// The measured footprint would be wider or deeper than
     /// [`MAX_FOOTPRINT_CELLS`] (FR127) -- named, never silently clamped.
     FootprintExceedsCap { cells: u32, cap: i64, axis: Axis },
@@ -97,9 +104,9 @@ impl std::fmt::Display for ProposeError {
                 f,
                 "the sprite's own lower band is fully transparent -- no proposal"
             ),
-            ProposeError::BottomRowFullyTransparent => write!(
+            ProposeError::BottomTileFullyTransparent => write!(
                 f,
-                "the sprite's own bottom row is fully transparent -- every sprite in this tileset is bottom-anchored, so depth cannot be measured from a gap"
+                "the sprite's own bottom tile (the last {PROPOSE_TILE_SIZE_PX}px) is fully transparent -- every sprite in this tileset is bottom-anchored, so depth cannot be measured from a gap this large"
             ),
             ProposeError::FootprintExceedsCap { cells, cap, axis } => write!(
                 f,
@@ -140,9 +147,31 @@ fn ceil_div(numerator: u32, denominator: u32) -> u32 {
 /// by `band_top_row`, never `0`: no pixel above the band is ever read,
 /// structurally, not merely asserted.
 ///
+/// Depth is the length of the **longest contiguous run of opaque rows
+/// that touches the sprite's own bottom tile** (the last
+/// [`PROPOSE_TILE_SIZE_PX`] rows), not necessarily a run starting at the
+/// sprite's own last pixel row (Quentin's direction, cycle 2): about a
+/// fifth of this tileset's real singles finish their own opaque art one
+/// or a few pixels short of their own canvas edge (a sub-cell padding/
+/// anti-aliasing row), and refusing every one of those would turn "a
+/// review task" back into "a measurement task" for a meaningful slice of
+/// the ~3,000-prop set. No run touching the bottom tile at all (the
+/// entire bottom tile empty) is still refused by name --
+/// [`ProposeError::BottomTileFullyTransparent`] -- because at that size
+/// it is no longer a rounding artefact, and silently anchoring to
+/// whatever is highest up the sprite would be a different, much larger
+/// guess. A gap *inside* the band, above the bottom tile, still stops a
+/// run exactly where it starts (see the "gap inside the band" test):
+/// this function never counts through it, and never lets a shorter run
+/// found deeper in a tolerated gap beat a longer, better-connected run
+/// immediately behind it -- taking the *longest* qualifying run (not,
+/// say, "the run starting at the single lowest opaque row") is what
+/// keeps turning one more pixel opaque from ever shrinking the result
+/// (monotonicity).
+///
 /// `rgba.len()` must equal `width_px * height_px * 4`; violating that is
 /// a caller bug, not a [`ProposeError`], so it panics via the slice
-/// index rather than being modelled as a fourth error variant.
+/// index rather than being modelled as a fifth error variant.
 pub fn propose(width_px: u32, height_px: u32, rgba: &[u8]) -> Result<Proposal, ProposeError> {
     if width_px == 0
         || height_px == 0
@@ -172,23 +201,48 @@ pub fn propose(width_px: u32, height_px: u32, rgba: &[u8]) -> Result<Proposal, P
         });
     }
 
-    // Depth: contiguous opaque rows counted from the very bottom row
-    // upward, stopping at the first empty row or the band's own top --
-    // never a row above the band. A transparent bottom row (a gap under
-    // the art) is refused by name, never silently reported as depth 1
-    // (Quentin's direction): every sprite here is bottom-anchored, so a
-    // footprint that does not touch the sprite's own bottom edge is not
-    // measurable at all, not a valid 1-cell guess.
+    // The bottom tile is always a subset of the band: `band_h_px` is a
+    // whole multiple of `PROPOSE_TILE_SIZE_PX` (the min of three whole
+    // multiples of it) and always at least one tile, since `width_px`/
+    // `height_px` are already checked whole-tile-multiple and non-zero
+    // above.
+    let bottom_tile_top_row = height_px - PROPOSE_TILE_SIZE_PX;
+
+    // Depth: the length of the *longest* maximal contiguous run of
+    // opaque rows that touches the bottom tile anywhere, scanned once
+    // from the sprite's own bottom edge upward to the band's own top --
+    // never a row above the band. Anchoring to "the single lowest
+    // opaque row in the bottom tile" (an earlier version of this
+    // function) is not monotonic: an isolated pixel added *closer* to
+    // the bottom edge, inside a tolerated gap, could become the new
+    // anchor and truncate the count, even though strictly more of the
+    // sprite is now opaque. Taking the longest run that touches the
+    // tile at all is monotonic (turning one more pixel opaque can only
+    // extend a run or add a new candidate run, never shrink the winning
+    // one) and is what actually makes "a gap smaller than one tile is
+    // tolerated" and "a gap of a whole tile or more is refused" both
+    // true at once: a short run entirely inside the gap can never beat
+    // the real run of solid art immediately behind it.
     let mut depth_px = 0u32;
+    let mut run_len = 0u32;
+    let mut run_touches_bottom_tile = false;
     for y in (band_top_row..height_px).rev() {
         if row_has_opaque_pixel(rgba, width_px, y) {
-            depth_px += 1;
+            run_len += 1;
+            run_touches_bottom_tile |= y >= bottom_tile_top_row;
         } else {
-            break;
+            if run_touches_bottom_tile {
+                depth_px = depth_px.max(run_len);
+            }
+            run_len = 0;
+            run_touches_bottom_tile = false;
         }
     }
+    if run_touches_bottom_tile {
+        depth_px = depth_px.max(run_len);
+    }
     if depth_px == 0 {
-        return Err(ProposeError::BottomRowFullyTransparent);
+        return Err(ProposeError::BottomTileFullyTransparent);
     }
     let depth_cells = ceil_div(depth_px, PROPOSE_TILE_SIZE_PX);
     if depth_cells as i64 > MAX_FOOTPRINT_CELLS {
@@ -200,12 +254,14 @@ pub fn propose(width_px: u32, height_px: u32, rgba: &[u8]) -> Result<Proposal, P
     }
 
     // Collider: the opaque bounding box inside the proposed footprint
-    // only (the bottom `depth_cells * tile_size_px` rows, every column),
-    // converted from pixels to sub-cells relative to the footprint's own
-    // north-west corner -- floor on the low edge, ceiling on the high
-    // edge, so the box never shrinks a partially-covered edge sub-cell
-    // away (monotonicity: turning one more pixel opaque never shrinks
-    // the proposal).
+    // only (the bottom `depth_cells * tile_size_px` rows, every column,
+    // still anchored to the sprite's own bottom edge -- the small gap
+    // measurement tolerates is a rendering artefact, not a positional
+    // shift of the object itself), converted from pixels to sub-cells
+    // relative to the footprint's own north-west corner -- floor on the
+    // low edge, ceiling on the high edge, so the box never shrinks a
+    // partially-covered edge sub-cell away (monotonicity: turning one
+    // more pixel opaque never shrinks the proposal).
     let footprint_h_px = depth_cells * PROPOSE_TILE_SIZE_PX;
     let footprint_top_row = height_px - footprint_h_px;
     let mut min_x: Option<u32> = None;
@@ -222,16 +278,27 @@ pub fn propose(width_px: u32, height_px: u32, rgba: &[u8]) -> Result<Proposal, P
             }
         }
     }
-    // `depth_px >= 1` (checked above) already proved the sprite's own
-    // bottom row (`height_px - 1`) is opaque, and `footprint_top_row <=
-    // height_px - depth_px` always (`footprint_h_px >= depth_px` by
-    // `ceil_div`), so that row lies inside this scan's own range -- every
-    // `Option` here is always `Some`. `expect`, never a silent fallback.
+    // The winning run (length `depth_px`) touches the bottom tile, so
+    // at least one of its rows lies at or after `bottom_tile_top_row =
+    // height_px - tile`; `footprint_h_px = depth_cells * tile >=
+    // depth_px` (`ceil_div`) makes `footprint_top_row = height_px -
+    // footprint_h_px <= height_px - tile = bottom_tile_top_row`, so that
+    // row is always inside `footprint_top_row..height_px`. Every
+    // `Option` here is therefore always `Some` -- `expect`, never a
+    // silent fallback.
     let (min_x, max_x, min_y, max_y) = (
-        min_x.expect("the sprite's own bottom row is opaque and lies inside the footprint scan"),
-        max_x.expect("the sprite's own bottom row is opaque and lies inside the footprint scan"),
-        min_y.expect("the sprite's own bottom row is opaque and lies inside the footprint scan"),
-        max_y.expect("the sprite's own bottom row is opaque and lies inside the footprint scan"),
+        min_x.expect(
+            "the bottom tile's own anchor row is opaque and lies inside the footprint scan",
+        ),
+        max_x.expect(
+            "the bottom tile's own anchor row is opaque and lies inside the footprint scan",
+        ),
+        min_y.expect(
+            "the bottom tile's own anchor row is opaque and lies inside the footprint scan",
+        ),
+        max_y.expect(
+            "the bottom tile's own anchor row is opaque and lies inside the footprint scan",
+        ),
     );
 
     let px_to_subcell_floor =
@@ -277,51 +344,27 @@ mod tests {
         vec![0u8; w as usize * h as usize * 4]
     }
 
-    /// Builds a `w`x`h` RGBA buffer from a flat pool of random bits,
-    /// indexed modulo the pool's own length so a single, modestly-sized
-    /// proptest strategy (independent of `w`/`h`) can still cover every
-    /// pixel of any sprite up to the cap -- a real, varied alpha mask,
-    /// never one fixed pixel or column (Quentin's direction).
-    fn sprite_from_bits(w: u32, h: u32, bits: &[bool]) -> Vec<u8> {
-        let mut rgba = transparent(w, h);
-        for y in 0..h {
-            for x in 0..w {
-                let idx = (y as usize * w as usize + x as usize) % bits.len();
-                if bits[idx] {
-                    set_alpha(&mut rgba, w, x, y, 255);
-                }
-            }
+    fn fill_row_opaque(rgba: &mut [u8], w: u32, y: u32) {
+        for x in 0..w {
+            set_alpha(rgba, w, x, y, 255);
         }
-        rgba
-    }
-
-    /// Large enough to cover a full `MAX_FOOTPRINT_CELLS`-square sprite
-    /// (128x128) without repeating too densely, small enough that
-    /// proptest's shrinker stays fast.
-    const BIT_POOL_LEN: usize = 128 * 128;
-
-    fn bit_pool() -> impl Strategy<Value = Vec<bool>> {
-        prop::collection::vec(prop::bool::ANY, BIT_POOL_LEN)
     }
 
     // --- pinned unit cases -------------------------------------------------
 
     /// The band boundary: for a 16x32 sprite, the band is
     /// `min(32, 16, 128) = 16px` tall, rows 16..32 (0-indexed from the
-    /// top). An opaque pixel exactly on the band's own top row (16) is
-    /// seen by the band scan -- proven here by its own distinct refusal
-    /// (`BottomRowFullyTransparent`, since row 16 alone leaves the
-    /// sprite's own bottom row, 31, empty) rather than the band-level one
-    /// (`LowerBandFullyTransparent`), which would fire instead if row 16
-    /// were invisible to the scan.
+    /// top) -- which is also exactly the sprite's own bottom tile here
+    /// (one tile). An opaque pixel exactly on the band's own top row
+    /// (16) is seen by the band scan and counted (it is inside the
+    /// bottom tile too, at this sprite size), so this proposes 1x1
+    /// rather than being invisible to the scan.
     #[test]
     fn an_opaque_pixel_exactly_on_the_bands_top_row_is_seen_by_the_band_scan() {
         let mut rgba = transparent(16, 32);
         set_alpha(&mut rgba, 16, 0, 16, 255);
-        assert_eq!(
-            propose(16, 32, &rgba).unwrap_err(),
-            ProposeError::BottomRowFullyTransparent
-        );
+        let p = propose(16, 32, &rgba).unwrap();
+        assert_eq!((p.width, p.height), (1, 1));
     }
 
     #[test]
@@ -380,17 +423,19 @@ mod tests {
     /// sprite whose only opaque pixels are in row 20. By hand: band =
     /// min(48, 32, 128) = 32px, rows 16..48, which contains row 20, so
     /// the band is not fully transparent -- but the sprite's own bottom
-    /// row (47) is transparent, so depth cannot be measured from it.
-    /// Previously panicked (`min_x.expect(...)`); now a named refusal.
+    /// *tile* (rows 32..48) is fully transparent, a gap of 27px, well
+    /// over one tile, so depth still cannot be measured. Previously
+    /// panicked (`min_x.expect(...)`); now a named refusal.
     #[test]
-    fn a_gap_below_the_only_opaque_row_is_flagged_never_a_panic_or_a_silent_1x1() {
+    fn a_gap_of_a_whole_tile_or_more_below_the_only_opaque_row_is_flagged_never_a_panic_or_a_silent_1x1()
+     {
         let mut rgba = transparent(32, 48);
         for x in 0..32 {
             set_alpha(&mut rgba, 32, x, 20, 255);
         }
         assert_eq!(
             propose(32, 48, &rgba).unwrap_err(),
-            ProposeError::BottomRowFullyTransparent
+            ProposeError::BottomTileFullyTransparent
         );
     }
 
@@ -406,6 +451,81 @@ mod tests {
         }
         let p = propose(32, 48, &rgba).unwrap();
         assert_eq!(p.width, 2);
+        assert_eq!(p.height, 1);
+    }
+
+    /// Quentin's direction, cycle 2: a gap *smaller* than one tile at
+    /// the sprite's own bottom edge is tolerated, not refused -- a
+    /// 16x16 sprite that is otherwise fully opaque but whose very last
+    /// row is transparent still proposes exactly 1x1, measured from row
+    /// 14 (the bottom tile's own lowest opaque row) upward.
+    #[test]
+    fn a_gap_smaller_than_one_tile_at_the_bottom_edge_still_proposes_1x1() {
+        let mut rgba = opaque(16, 16);
+        // Clear the sprite's own last row entirely -- a real gap under
+        // the art, smaller than one tile (only 1 of 16 rows).
+        for x in 0..16 {
+            set_alpha(&mut rgba, 16, x, 15, 0);
+        }
+        let p = propose(16, 16, &rgba).unwrap();
+        assert_eq!((p.width, p.height), (1, 1));
+    }
+
+    /// Quentin's direction, cycle 2: a gap that consumes the *whole*
+    /// bottom tile is still refused, even though real art sits directly
+    /// above it within the band -- proves the tolerance is bounded at
+    /// exactly one tile, not open-ended.
+    #[test]
+    fn a_gap_of_exactly_one_whole_tile_at_the_bottom_is_still_refused() {
+        // width = 32 (not 16), so the band spans two tiles and the
+        // "tile above the bottom one" is distinct from the band itself.
+        let mut rgba = transparent(32, 32);
+        // Opaque throughout the tile above the bottom one (rows 0..16);
+        // the bottom tile (rows 16..32) is left fully empty.
+        for y in 0..16 {
+            fill_row_opaque(&mut rgba, 32, y);
+        }
+        assert_eq!(
+            propose(32, 32, &rgba).unwrap_err(),
+            ProposeError::BottomTileFullyTransparent
+        );
+    }
+
+    /// The complement of the "gap inside the band" test below: with
+    /// nothing interrupting it, depth reaches the *whole* band (both
+    /// tiles), not just the bottom one -- so that test's own depth of 1
+    /// is really the gap stopping the count, not some other limit.
+    #[test]
+    fn depth_reaches_the_full_band_when_nothing_interrupts_it() {
+        let mut rgba = transparent(32, 48);
+        for y in 16..48 {
+            fill_row_opaque(&mut rgba, 32, y);
+        }
+        let p = propose(32, 48, &rgba).unwrap();
+        assert_eq!(p.height, 2);
+    }
+
+    /// The other half: a real gap strictly inside the band (not at the
+    /// bottom edge, and not consuming the whole bottom tile) still stops
+    /// the contiguous count exactly at the gap, never skipping over it
+    /// to include real art further up the same band. Band = min(48, 32,
+    /// 128) = 32px (rows 16..48, two tiles). Bottom tile (rows 32..48)
+    /// is fully opaque; rows 24..32 are transparent (an 8px gap, smaller
+    /// than a tile, but not at the very bottom edge); rows 16..24 are
+    /// opaque again. Depth must stop at the row 24..32 gap and never
+    /// count the rows 16..24 art beyond it.
+    #[test]
+    fn a_gap_inside_the_band_stops_the_contiguous_depth_count() {
+        let mut rgba = transparent(32, 48);
+        for y in 32..48 {
+            fill_row_opaque(&mut rgba, 32, y);
+        }
+        for y in 16..24 {
+            fill_row_opaque(&mut rgba, 32, y);
+        }
+        let p = propose(32, 48, &rgba).unwrap();
+        // Depth counted only from the bottom tile (16 opaque rows) --
+        // never reaching the further, disconnected opaque rows 16..24.
         assert_eq!(p.height, 1);
     }
 
@@ -486,7 +606,145 @@ mod tests {
         assert_ne!(short_p, tall_p);
     }
 
-    // --- property tests (the real proof of AC2, and of "never panics") ----
+    // --- structured shape generator (Quentin's direction, cycle 2) --------
+    //
+    // A pure per-pixel iid random mask (the cycle-1 generator) makes
+    // every one of the interesting shapes below astronomically
+    // unlikely: a 16px-wide row is fully transparent with probability
+    // 2^-16, so across thousands of cases the band/bottom-tile/gap
+    // refusal paths and the "depth stops at a gap" branch are
+    // essentially never exercised, and `propose_never_panics_always_ok_
+    // or_a_named_err` would not have caught the cycle-1 panic (which
+    // needed a transparent bottom row). `Shape` instead builds each
+    // sprite as one of a handful of named constructions, each of which
+    // *is* the situation a code path exists for -- a `prop_oneof!`
+    // choice among them, not per-pixel chance, is what actually reaches
+    // every `ProposeError` variant and the `Ok` path with depth short of
+    // the whole band.
+    #[derive(Debug, Clone)]
+    enum Shape {
+        /// Fully opaque -- depth always equals the whole band.
+        AllOpaque,
+        /// The whole band left empty (optionally with a stray opaque
+        /// pixel above it, to prove that pixel is never read).
+        BandEmpty { opaque_above: bool },
+        /// The bottom tile left empty; the rest of the band (at least
+        /// one further tile) fully opaque -- refused, never anchored to
+        /// the higher art.
+        BottomTileEmpty,
+        /// Fully opaque except the last `gap_rows` (1..15, so strictly
+        /// less than one tile) rows of the sprite -- must still
+        /// propose, anchored to the bottom tile's own lowest opaque
+        /// row.
+        SmallGapAtBottomEdge { gap_rows: u32 },
+        /// The bottom tile fully opaque, then a transparent gap of
+        /// `gap_tiles` (1 or 2) whole tiles, then fully opaque again
+        /// above that -- depth must stop at the gap, never reach the
+        /// higher art.
+        GapInsideBand { gap_tiles: u32 },
+        /// Per-pixel random at a randomised fill density (never fixed
+        /// at exactly one pixel or one column) -- kept for broad, less
+        /// targeted fuzzing alongside the named shapes above.
+        RandomDense { bits: Vec<bool> },
+    }
+
+    /// Generous fixed pool size (independent of any one case's own
+    /// `width_px`/`height_px`) so `RandomDense` can index into it
+    /// modulo its own length regardless of sprite size, up to the cap.
+    const BIT_POOL_LEN: usize = 128 * 128;
+
+    fn shape_strategy() -> impl Strategy<Value = Shape> {
+        prop_oneof![
+            2 => Just(Shape::AllOpaque),
+            2 => prop::bool::ANY.prop_map(|opaque_above| Shape::BandEmpty { opaque_above }),
+            2 => Just(Shape::BottomTileEmpty),
+            2 => (1u32..PROPOSE_TILE_SIZE_PX)
+                .prop_map(|gap_rows| Shape::SmallGapAtBottomEdge { gap_rows }),
+            2 => (1u32..3).prop_map(|gap_tiles| Shape::GapInsideBand { gap_tiles }),
+            3 => prop::collection::vec(prop::bool::ANY, BIT_POOL_LEN)
+                .prop_map(|bits| Shape::RandomDense { bits }),
+        ]
+    }
+
+    /// Renders `shape` onto a `width_px`x`height_px` canvas. Several
+    /// shapes need at least two tiles of band to mean anything
+    /// (`BottomTileEmpty`, `GapInsideBand`) -- when the band is too
+    /// short for that, they degrade to a harmless, still-valid
+    /// single-tile-band sprite (fully opaque) rather than being
+    /// unrepresentable; `shape_strategy`'s own weighting already gives
+    /// every path plenty of cases where the geometry does fit.
+    fn render(width_px: u32, height_px: u32, shape: &Shape) -> Vec<u8> {
+        let band_h_px = height_px
+            .min(width_px)
+            .min(MAX_FOOTPRINT_CELLS as u32 * PROPOSE_TILE_SIZE_PX);
+        let band_top_row = height_px - band_h_px;
+        let band_tiles = band_h_px / PROPOSE_TILE_SIZE_PX;
+        let mut rgba = transparent(width_px, height_px);
+        match *shape {
+            Shape::AllOpaque => {
+                for y in 0..height_px {
+                    fill_row_opaque(&mut rgba, width_px, y);
+                }
+            }
+            Shape::BandEmpty { opaque_above } => {
+                if opaque_above && band_top_row > 0 {
+                    set_alpha(&mut rgba, width_px, 0, band_top_row - 1, 255);
+                }
+            }
+            Shape::BottomTileEmpty => {
+                if band_tiles >= 2 {
+                    for y in band_top_row..(height_px - PROPOSE_TILE_SIZE_PX) {
+                        fill_row_opaque(&mut rgba, width_px, y);
+                    }
+                } else {
+                    for y in 0..height_px {
+                        fill_row_opaque(&mut rgba, width_px, y);
+                    }
+                }
+            }
+            Shape::SmallGapAtBottomEdge { gap_rows } => {
+                for y in 0..height_px {
+                    fill_row_opaque(&mut rgba, width_px, y);
+                }
+                let gap = gap_rows.min(PROPOSE_TILE_SIZE_PX - 1);
+                for y in (height_px - gap)..height_px {
+                    for x in 0..width_px {
+                        set_alpha(&mut rgba, width_px, x, y, 0);
+                    }
+                }
+            }
+            Shape::GapInsideBand { gap_tiles } => {
+                let gap_tiles = gap_tiles.min(band_tiles.saturating_sub(2));
+                if gap_tiles >= 1 {
+                    // Bottom tile: opaque.
+                    for y in (height_px - PROPOSE_TILE_SIZE_PX)..height_px {
+                        fill_row_opaque(&mut rgba, width_px, y);
+                    }
+                    // Above the gap (if any tiles remain): opaque too --
+                    // the depth loop must not reach these.
+                    let gap_top = height_px - PROPOSE_TILE_SIZE_PX * (1 + gap_tiles);
+                    for y in band_top_row..gap_top {
+                        fill_row_opaque(&mut rgba, width_px, y);
+                    }
+                } else {
+                    for y in 0..height_px {
+                        fill_row_opaque(&mut rgba, width_px, y);
+                    }
+                }
+            }
+            Shape::RandomDense { ref bits } => {
+                for y in 0..height_px {
+                    for x in 0..width_px {
+                        let idx = (y as usize * width_px as usize + x as usize) % bits.len();
+                        if bits[idx] {
+                            set_alpha(&mut rgba, width_px, x, y, 255);
+                        }
+                    }
+                }
+            }
+        }
+        rgba
+    }
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(
@@ -507,7 +765,7 @@ mod tests {
             width_tiles in 1u32..9,
             height_slack_tiles in 0u32..9,
             extra_tiles in 0u32..4,
-            bits in bit_pool(),
+            bits in prop::collection::vec(prop::bool::ANY, BIT_POOL_LEN),
         ) {
             // `base_height_tiles = width_tiles + height_slack_tiles`
             // (never drawn independently, then filtered) guarantees
@@ -524,7 +782,7 @@ mod tests {
             let width_px = width_tiles * PROPOSE_TILE_SIZE_PX;
             let base_height_px = base_height_tiles * PROPOSE_TILE_SIZE_PX;
 
-            let base = sprite_from_bits(width_px, base_height_px, &bits);
+            let base = render(width_px, base_height_px, &Shape::RandomDense { bits });
             let baseline = propose(width_px, base_height_px, &base);
 
             let extra_px = extra_tiles * PROPOSE_TILE_SIZE_PX;
@@ -542,20 +800,20 @@ mod tests {
         }
 
         /// Monotonicity: turning one more pixel opaque, anywhere in a
-        /// randomised sprite up to the cap, never shrinks the proposal
-        /// (never a smaller width/height, never a collider box that no
-        /// longer contains the previous one).
+        /// structured or randomised sprite up to the cap, never shrinks
+        /// the proposal (never a smaller width/height, never a collider
+        /// box that no longer contains the previous one).
         #[test]
         fn turning_a_pixel_opaque_never_shrinks_the_proposal(
             width_tiles in 1u32..9,
             height_tiles in 1u32..9,
-            bits in bit_pool(),
+            shape in shape_strategy(),
             extra_x in 0u32..128,
             extra_y in 0u32..128,
         ) {
             let width_px = width_tiles * PROPOSE_TILE_SIZE_PX;
             let height_px = height_tiles * PROPOSE_TILE_SIZE_PX;
-            let before = sprite_from_bits(width_px, height_px, &bits);
+            let before = render(width_px, height_px, &shape);
             let Ok(before_p) = propose(width_px, height_px, &before) else {
                 return Ok(());
             };
@@ -568,34 +826,51 @@ mod tests {
 
             prop_assert!(after_p.width >= before_p.width);
             prop_assert!(after_p.height >= before_p.height);
+            // `collider` is reported in sub-cells relative to *its own*
+            // proposal's footprint north-west corner -- when depth
+            // grows, that corner (`footprint_top_row`) itself moves up,
+            // so comparing raw `y0`/`y1` between two different-height
+            // proposals directly is not apples-to-apples (the sprite's
+            // own pixels did not move; only the coordinate origin did).
+            // Shift each into one shared frame, anchored to the
+            // sprite's own bottom edge (`height_px`, unchanged by this
+            // test), before comparing.
             if let (Some(b), Some(a)) = (before_p.collider, after_p.collider) {
+                let shift = |depth_cells: u32| -> i32 {
+                    let footprint_top_row_px = height_px - depth_cells * PROPOSE_TILE_SIZE_PX;
+                    (footprint_top_row_px * COLLIDER_SUBCELLS_PER_CELL as u32
+                        / PROPOSE_TILE_SIZE_PX) as i32
+                };
+                let (b_shift, a_shift) = (shift(before_p.height), shift(after_p.height));
                 prop_assert!(a.x0 <= b.x0);
-                prop_assert!(a.y0 <= b.y0);
+                prop_assert!(a.y0 + a_shift <= b.y0 + b_shift);
                 prop_assert!(a.x1 >= b.x1);
-                prop_assert!(a.y1 >= b.y1);
+                prop_assert!(a.y1 + a_shift >= b.y1 + b_shift);
             }
         }
 
         /// `propose` never panics over any whole-tile-multiple buffer,
-        /// any alpha pattern -- always `Ok` or a named `Err` (Quentin's
-        /// direction: this property alone would have found the cycle-1
-        /// panic immediately).
+        /// any of the named shapes above (each of which *is* one of
+        /// `ProposeError`'s own reachable paths, or the `Ok` path with
+        /// depth short of the whole band) -- always `Ok` or a named
+        /// `Err` (Quentin's direction: this property, with this
+        /// generator, is what would have found the cycle-1 panic).
         #[test]
         fn propose_never_panics_always_ok_or_a_named_err(
             width_tiles in 1u32..9,
             height_tiles in 1u32..9,
-            bits in bit_pool(),
+            shape in shape_strategy(),
         ) {
             let width_px = width_tiles * PROPOSE_TILE_SIZE_PX;
             let height_px = height_tiles * PROPOSE_TILE_SIZE_PX;
-            let rgba = sprite_from_bits(width_px, height_px, &bits);
+            let rgba = render(width_px, height_px, &shape);
             let _ = propose(width_px, height_px, &rgba);
         }
 
         /// Bounds: whenever a proposal is produced at all, over any
-        /// sprite size up to the cap and any alpha pattern, it is never
-        /// wider than `w / tile`, never deeper than `h / tile`, and
-        /// always agrees with `validate.rs`'s own footprint/collider
+        /// sprite size up to the cap and any of the named shapes, it is
+        /// never wider than `w / tile`, never deeper than `h / tile`,
+        /// and always agrees with `validate.rs`'s own footprint/collider
         /// rules -- proven by calling the real validator (Quentin's
         /// direction), never a re-implementation of its own checks here.
         /// The five keys the real proposer never emits (`id`/`key`/
@@ -605,11 +880,11 @@ mod tests {
         fn a_produced_proposal_always_fits_the_real_validator(
             width_tiles in 1u32..9,
             height_tiles in 1u32..9,
-            bits in bit_pool(),
+            shape in shape_strategy(),
         ) {
             let w = width_tiles * PROPOSE_TILE_SIZE_PX;
             let h = height_tiles * PROPOSE_TILE_SIZE_PX;
-            let rgba = sprite_from_bits(w, h, &bits);
+            let rgba = render(w, h, &shape);
 
             let Ok(p) = propose(w, h, &rgba) else {
                 return Ok(());
@@ -660,16 +935,17 @@ mod tests {
         }
 
         /// Determinism: the same buffer always gives the same output,
-        /// over any sprite size up to the cap and any alpha pattern.
+        /// over any sprite size up to the cap and any of the named
+        /// shapes.
         #[test]
         fn propose_is_deterministic(
             width_tiles in 1u32..9,
             height_tiles in 1u32..9,
-            bits in bit_pool(),
+            shape in shape_strategy(),
         ) {
             let w = width_tiles * PROPOSE_TILE_SIZE_PX;
             let h = height_tiles * PROPOSE_TILE_SIZE_PX;
-            let rgba = sprite_from_bits(w, h, &bits);
+            let rgba = render(w, h, &shape);
 
             let a = propose(w, h, &rgba);
             let b = propose(w, h, &rgba);
