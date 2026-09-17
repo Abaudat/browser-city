@@ -51,7 +51,7 @@ check "a bare identifier or ordinary prose using the same word is never a false 
 
 d="$(plant_manifest 'object 1 cafe')"
 mkdir -p "$d/no-engine-here"
-check "a missing engine directory is a pass, not a crash (nothing to check yet)" 0 \
+check "a missing engine directory fails closed, never a silent pass" 1 \
   bash "$CHECK" "$d/manifest.golden" "$d/does-not-exist"
 
 check "a missing manifest fails loudly" 1 \

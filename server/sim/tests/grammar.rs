@@ -17,7 +17,7 @@
 
 mod support;
 
-use sim::rules::{Cell, Violation, evaluate};
+use sim::rules::{Cell, Violation};
 use support::{grammar_rules, rule, tag_id};
 
 const BUILDING_AREA: u64 = 1;
@@ -72,7 +72,7 @@ fn well_formed_room_and_building() -> sim::rules::testing::Site {
 #[test]
 fn a_well_formed_room_and_building_has_zero_violations() {
     let site = well_formed_room_and_building();
-    assert_eq!(evaluate(&grammar_rules(), &site), vec![]);
+    assert_eq!(support::eval(&grammar_rules(), &site), vec![]);
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn dropping_a_wall_cell_leaves_its_two_neighbours_as_free_standing_stubs() {
     }
     let rule = rule("wall_is_part_of_a_straight_run_or_a_corner");
     assert_eq!(
-        evaluate(&[rule], &b.build()),
+        support::eval(&[rule], &b.build()),
         vec![
             Violation {
                 rule_id: rule.id,
@@ -130,7 +130,7 @@ fn a_wall_t_junction_and_a_four_way_crossing_both_pass() {
         .cell(Cell::new(0, 1, 0), &[wall, wall_run])
         .build();
     assert!(
-        evaluate(&[rule], &t_junction)
+        support::eval(&[rule], &t_junction)
             .iter()
             .all(|v| v.subject != centre)
     );
@@ -143,7 +143,7 @@ fn a_wall_t_junction_and_a_four_way_crossing_both_pass() {
         .cell(Cell::new(0, -1, 0), &[wall, wall_run])
         .build();
     assert!(
-        evaluate(&[rule], &four_way)
+        support::eval(&[rule], &four_way)
             .iter()
             .all(|v| v.subject != centre)
     );
@@ -165,7 +165,7 @@ fn a_floor_cell_open_directly_onto_ground_is_rejected_naming_the_pair() {
         .build();
     let rule = rule("floor_never_touches_bare_ground");
     assert_eq!(
-        evaluate(&[rule], &site),
+        support::eval(&[rule], &site),
         vec![Violation {
             rule_id: rule.id,
             subject: room,
@@ -186,7 +186,7 @@ fn a_floor_cell_open_directly_onto_pavement_is_rejected_naming_the_pair() {
         .build();
     let rule = rule("floor_never_touches_pavement_directly");
     assert_eq!(
-        evaluate(&[rule], &site),
+        support::eval(&[rule], &site),
         vec![Violation {
             rule_id: rule.id,
             subject: room,
@@ -207,7 +207,7 @@ fn a_floor_cell_open_directly_onto_road_is_rejected_naming_the_pair() {
         .build();
     let rule = rule("floor_never_touches_road_directly");
     assert_eq!(
-        evaluate(&[rule], &site),
+        support::eval(&[rule], &site),
         vec![Violation {
             rule_id: rule.id,
             subject: room,
@@ -228,7 +228,7 @@ fn a_road_cell_touching_a_building_wall_directly_is_rejected_naming_the_pair() {
         .build();
     let rule = rule("road_never_touches_wall");
     assert_eq!(
-        evaluate(&[rule], &site),
+        support::eval(&[rule], &site),
         vec![Violation {
             rule_id: rule.id,
             subject: street,
@@ -249,7 +249,7 @@ fn a_road_cell_touching_bare_ground_directly_is_rejected_naming_the_pair() {
         .build();
     let rule = rule("road_never_touches_ground");
     assert_eq!(
-        evaluate(&[rule], &site),
+        support::eval(&[rule], &site),
         vec![Violation {
             rule_id: rule.id,
             subject: street,
@@ -275,7 +275,7 @@ fn a_doorway_opening_onto_another_wall_is_rejected_naming_the_cell() {
         .build();
     let rule = rule("doorway_formed_between_walls");
     assert_eq!(
-        evaluate(&[rule], &site),
+        support::eval(&[rule], &site),
         vec![Violation {
             rule_id: rule.id,
             subject,
@@ -299,7 +299,7 @@ fn a_street_doorway_and_an_interior_doorway_are_both_accepted() {
         .cell(Cell::new(0, -1, 0), &[floor])
         .cell(Cell::new(0, 1, 0), &[pavement])
         .build();
-    assert!(evaluate(&[rule], &street_door).is_empty());
+    assert!(support::eval(&[rule], &street_door).is_empty());
 
     let interior_door = sim::rules::testing::SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[threshold])
@@ -308,7 +308,7 @@ fn a_street_doorway_and_an_interior_doorway_are_both_accepted() {
         .cell(Cell::new(0, -1, 0), &[floor])
         .cell(Cell::new(0, 1, 0), &[floor])
         .build();
-    assert!(evaluate(&[rule], &interior_door).is_empty());
+    assert!(support::eval(&[rule], &interior_door).is_empty());
 }
 
 /// A doorway placed on a corner -- Tim/Artie's own named broken variant
@@ -328,7 +328,7 @@ fn a_doorway_on_a_corner_is_rejected() {
         .build();
     let rule = rule("doorway_formed_between_walls");
     assert_eq!(
-        evaluate(&[rule], &site),
+        support::eval(&[rule], &site),
         vec![Violation {
             rule_id: rule.id,
             subject: corner,
@@ -355,7 +355,7 @@ fn a_room_with_no_door_is_rejected() {
         }
     }
     let rule = rule("room_has_a_door");
-    let violations = evaluate(&[rule], &b.build());
+    let violations = support::eval(&[rule], &b.build());
     assert!(!violations.is_empty());
     assert!(violations.iter().all(|v| v.rule_id == rule.id));
 }
@@ -384,7 +384,7 @@ fn a_building_with_no_entrance_is_rejected() {
         }
     }
     let rule = rule("building_has_an_entrance");
-    let violations = evaluate(&[rule], &b.build());
+    let violations = support::eval(&[rule], &b.build());
     assert!(!violations.is_empty());
     assert!(violations.iter().all(|v| v.rule_id == rule.id));
 }
@@ -410,7 +410,7 @@ fn an_entrance_tagged_threshold_between_two_floors_is_rejected() {
         .build();
     let rule = rule("entrance_opens_onto_pavement");
     assert_eq!(
-        evaluate(&[rule], &site),
+        support::eval(&[rule], &site),
         vec![Violation {
             rule_id: rule.id,
             subject: door,

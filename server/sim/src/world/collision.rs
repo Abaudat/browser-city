@@ -13,7 +13,7 @@ use super::chunk::{chunk_key, rect_is_within_one_chunk};
 /// inputs (including `i32::MIN`/`i32::MAX`) can overflow a comparison or
 /// subtraction -- `tests/invariants.rs`'s `inv_world_query_total` holds
 /// this to arbitrary `i32` input, not just realistic world sizes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Rect {
     pub x0: i32,
     pub y0: i32,

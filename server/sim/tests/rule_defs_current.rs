@@ -16,8 +16,8 @@
 mod support;
 
 use sim::generated::defs;
+use sim::rules::Cell;
 use sim::rules::testing::SiteBuilder;
-use sim::rules::{Cell, evaluate};
 use support::{rule, tag_id};
 
 #[test]
@@ -28,12 +28,12 @@ fn the_committed_ground_floor_only_placement_rule_fires_above_the_cap_and_stays_
     let at_cap = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[lighting])
         .build();
-    assert!(evaluate(&[rule], &at_cap).is_empty());
+    assert!(support::eval(&[rule], &at_cap).is_empty());
 
     let above_cap = SiteBuilder::new()
         .cell(Cell::new(0, 0, 1), &[lighting])
         .build();
-    let violations = evaluate(&[rule], &above_cap);
+    let violations = support::eval(&[rule], &above_cap);
     assert_eq!(violations.len(), 1);
     assert_eq!(violations[0].rule_id, rule.id);
     assert_eq!(violations[0].subject, Cell::new(0, 0, 1));
@@ -54,7 +54,7 @@ fn the_committed_waste_per_three_seating_distribution_rule_fires_with_no_waste_a
         .cell(Cell::new(1, 0, 0), &[seating, waste])
         .cell(Cell::new(2, 0, 0), &[seating])
         .build();
-    assert!(evaluate(&[rule], &satisfied).is_empty());
+    assert!(support::eval(&[rule], &satisfied).is_empty());
 
     // Same 3 seating cells, no waste at all: the ratio floor (0 waste for
     // 3 seating) fires.
@@ -63,7 +63,7 @@ fn the_committed_waste_per_three_seating_distribution_rule_fires_with_no_waste_a
         .cell(Cell::new(1, 0, 0), &[seating])
         .cell(Cell::new(2, 0, 0), &[seating])
         .build();
-    assert!(!evaluate(&[rule], &no_waste).is_empty());
+    assert!(!support::eval(&[rule], &no_waste).is_empty());
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn the_committed_no_counter_in_a_stairwell_coherence_rule_fires_when_sharing_an_
     let satisfied = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[counter])
         .build();
-    assert!(evaluate(&[rule], &satisfied).is_empty());
+    assert!(support::eval(&[rule], &satisfied).is_empty());
 
     let violated = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[counter])
@@ -85,7 +85,7 @@ fn the_committed_no_counter_in_a_stairwell_coherence_rule_fires_when_sharing_an_
         .cell(Cell::new(1, 0, 0), &[stairs])
         .area(Cell::new(1, 0, 0), AREA)
         .build();
-    assert!(!evaluate(&[rule], &violated).is_empty());
+    assert!(!support::eval(&[rule], &violated).is_empty());
 }
 
 /// Asymmetric on purpose (Quentin's direction, PR #294 cycle 2): a
@@ -102,18 +102,18 @@ fn the_committed_counter_faces_a_shopfront_adjacency_rule_is_asymmetric() {
     let counter_alone = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[counter])
         .build();
-    assert!(!evaluate(&[rule], &counter_alone).is_empty());
+    assert!(!support::eval(&[rule], &counter_alone).is_empty());
 
     let shopfront_alone = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[shopfront])
         .build();
-    assert!(evaluate(&[rule], &shopfront_alone).is_empty());
+    assert!(support::eval(&[rule], &shopfront_alone).is_empty());
 
     let counter_next_to_shopfront = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[counter])
         .cell(Cell::new(1, 0, 0), &[shopfront])
         .build();
-    assert!(evaluate(&[rule], &counter_next_to_shopfront).is_empty());
+    assert!(support::eval(&[rule], &counter_next_to_shopfront).is_empty());
 }
 
 #[test]
@@ -130,13 +130,13 @@ fn the_committed_walled_room_has_waste_bin_requirement_rule_fires_when_missing_a
         .cell(Cell::new(1, 0, 0), &[waste])
         .area(Cell::new(1, 0, 0), AREA)
         .build();
-    assert!(evaluate(&[rule], &satisfied).is_empty());
+    assert!(support::eval(&[rule], &satisfied).is_empty());
 
     let violated = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[wall])
         .area(Cell::new(0, 0, 0), AREA)
         .build();
-    assert!(!evaluate(&[rule], &violated).is_empty());
+    assert!(!support::eval(&[rule], &violated).is_empty());
 }
 
 // --- story 2.9: defs/rules/grammar.toml's own ten rows ----------------------
@@ -151,10 +151,10 @@ fn the_committed_road_never_touches_wall_rule_fires_and_stays_silent() {
         .cell(Cell::new(0, 0, 0), &[road])
         .cell(Cell::new(1, 0, 0), &[wall])
         .build();
-    assert!(!evaluate(&[rule], &violated).is_empty());
+    assert!(!support::eval(&[rule], &violated).is_empty());
 
     let satisfied = SiteBuilder::new().cell(Cell::new(0, 0, 0), &[road]).build();
-    assert!(evaluate(&[rule], &satisfied).is_empty());
+    assert!(support::eval(&[rule], &satisfied).is_empty());
 }
 
 #[test]
@@ -168,13 +168,13 @@ fn the_committed_road_never_touches_ground_rule_fires_and_stays_silent() {
         .cell(Cell::new(0, 0, 0), &[road])
         .cell(Cell::new(1, 0, 0), &[ground])
         .build();
-    assert!(!evaluate(&[rule], &violated).is_empty());
+    assert!(!support::eval(&[rule], &violated).is_empty());
 
     let satisfied = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[road])
         .cell(Cell::new(1, 0, 0), &[pavement])
         .build();
-    assert!(evaluate(&[rule], &satisfied).is_empty());
+    assert!(support::eval(&[rule], &satisfied).is_empty());
 }
 
 #[test]
@@ -187,14 +187,14 @@ fn the_committed_floor_never_touches_bare_ground_rule_fires_and_stays_silent() {
         .cell(Cell::new(0, 0, 0), &[floor])
         .cell(Cell::new(1, 0, 0), &[ground])
         .build();
-    assert!(!evaluate(&[rule], &violated).is_empty());
+    assert!(!support::eval(&[rule], &violated).is_empty());
 
     // An interior floor cell surrounded by more floor never fires.
     let satisfied = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[floor])
         .cell(Cell::new(1, 0, 0), &[floor])
         .build();
-    assert!(evaluate(&[rule], &satisfied).is_empty());
+    assert!(support::eval(&[rule], &satisfied).is_empty());
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn the_committed_floor_never_touches_pavement_directly_rule_fires_and_stays_sile
         .cell(Cell::new(0, 0, 0), &[floor])
         .cell(Cell::new(1, 0, 0), &[pavement])
         .build();
-    assert!(!evaluate(&[rule], &violated).is_empty());
+    assert!(!support::eval(&[rule], &violated).is_empty());
 
     // A threshold cell sits between them instead -- floor no longer
     // directly touches pavement.
@@ -217,7 +217,7 @@ fn the_committed_floor_never_touches_pavement_directly_rule_fires_and_stays_sile
         .cell(Cell::new(1, 0, 0), &[threshold])
         .cell(Cell::new(2, 0, 0), &[pavement])
         .build();
-    assert!(evaluate(&[rule], &satisfied).is_empty());
+    assert!(support::eval(&[rule], &satisfied).is_empty());
 }
 
 #[test]
@@ -230,12 +230,12 @@ fn the_committed_floor_never_touches_road_directly_rule_fires_and_stays_silent()
         .cell(Cell::new(0, 0, 0), &[floor])
         .cell(Cell::new(1, 0, 0), &[road])
         .build();
-    assert!(!evaluate(&[rule], &violated).is_empty());
+    assert!(!support::eval(&[rule], &violated).is_empty());
 
     let satisfied = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[floor])
         .build();
-    assert!(evaluate(&[rule], &satisfied).is_empty());
+    assert!(support::eval(&[rule], &satisfied).is_empty());
 }
 
 /// The doorway primitive (AC3): `rotate = true` lowers two authored
@@ -259,7 +259,7 @@ fn the_committed_doorway_formed_between_walls_rule_fires_and_stays_silent() {
         .cell(Cell::new(0, -1, 0), &[floor])
         .cell(Cell::new(0, 1, 0), &[pavement])
         .build();
-    assert!(evaluate(&[rule], &street_door).is_empty());
+    assert!(support::eval(&[rule], &street_door).is_empty());
 
     // The second authored alternative: floor on both remaining sides, a
     // door between two rooms rather than onto the street.
@@ -270,7 +270,7 @@ fn the_committed_doorway_formed_between_walls_rule_fires_and_stays_silent() {
         .cell(Cell::new(0, -1, 0), &[floor])
         .cell(Cell::new(0, 1, 0), &[floor])
         .build();
-    assert!(evaluate(&[rule], &interior_door).is_empty());
+    assert!(support::eval(&[rule], &interior_door).is_empty());
 
     // A doorway opening onto another wall (Artie's own named rejection
     // case) instead of floor/pavement/floor.
@@ -280,7 +280,7 @@ fn the_committed_doorway_formed_between_walls_rule_fires_and_stays_silent() {
         .cell(Cell::new(1, 0, 0), &[wall])
         .cell(Cell::new(0, -1, 0), &[wall])
         .build();
-    assert!(!evaluate(&[rule], &violated).is_empty());
+    assert!(!support::eval(&[rule], &violated).is_empty());
 }
 
 /// The corner/straight-run primitive (AC3): `rotate = true` lowers two
@@ -300,7 +300,7 @@ fn the_committed_wall_is_part_of_a_straight_run_or_a_corner_rule_fires_and_stays
     let stub = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[wall, wall_run])
         .build();
-    assert!(!evaluate(&[rule], &stub).is_empty());
+    assert!(!support::eval(&[rule], &stub).is_empty());
 
     // A closed 2x2 ring: every cell has exactly two wall_run neighbours,
     // each pair perpendicular (a corner) -- includes the south-west
@@ -311,7 +311,7 @@ fn the_committed_wall_is_part_of_a_straight_run_or_a_corner_rule_fires_and_stays
         .cell(Cell::new(1, 1, 0), &[wall, wall_run])
         .cell(Cell::new(0, 1, 0), &[wall, wall_run])
         .build();
-    assert!(evaluate(&[rule], &ring).is_empty());
+    assert!(support::eval(&[rule], &ring).is_empty());
 
     // A wall cell whose one flank is a threshold jamb (wall_run, not
     // wall) is not a stub either.
@@ -321,7 +321,7 @@ fn the_committed_wall_is_part_of_a_straight_run_or_a_corner_rule_fires_and_stays
         .cell(Cell::new(0, 1, 0), &[wall, wall_run])
         .build();
     assert!(
-        evaluate(&[rule], &jamb)
+        support::eval(&[rule], &jamb)
             .iter()
             .all(|v| v.subject != Cell::new(0, 0, 0))
     );
@@ -340,13 +340,13 @@ fn the_committed_room_has_a_door_rule_fires_and_stays_silent() {
         .cell(Cell::new(1, 0, 0), &[threshold])
         .area(Cell::new(1, 0, 0), AREA)
         .build();
-    assert!(evaluate(&[rule], &satisfied).is_empty());
+    assert!(support::eval(&[rule], &satisfied).is_empty());
 
     let violated = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[floor])
         .area(Cell::new(0, 0, 0), AREA)
         .build();
-    assert!(!evaluate(&[rule], &violated).is_empty());
+    assert!(!support::eval(&[rule], &violated).is_empty());
 }
 
 #[test]
@@ -362,13 +362,13 @@ fn the_committed_building_has_an_entrance_rule_fires_and_stays_silent() {
         .cell(Cell::new(1, 0, 0), &[entrance])
         .area(Cell::new(1, 0, 0), AREA)
         .build();
-    assert!(evaluate(&[rule], &satisfied).is_empty());
+    assert!(support::eval(&[rule], &satisfied).is_empty());
 
     let violated = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[wall])
         .area(Cell::new(0, 0, 0), AREA)
         .build();
-    assert!(!evaluate(&[rule], &violated).is_empty());
+    assert!(!support::eval(&[rule], &violated).is_empty());
 }
 
 /// Artie's direction (cycle 2): `entrance` opening onto pavement is
@@ -387,14 +387,14 @@ fn the_committed_entrance_opens_onto_pavement_rule_fires_and_stays_silent() {
         .cell(Cell::new(0, 0, 0), &[entrance])
         .cell(Cell::new(-1, 0, 0), &[pavement])
         .build();
-    assert!(evaluate(&[rule], &satisfied).is_empty());
+    assert!(support::eval(&[rule], &satisfied).is_empty());
 
     let violated = SiteBuilder::new()
         .cell(Cell::new(0, 0, 0), &[entrance])
         .cell(Cell::new(-1, 0, 0), &[floor])
         .cell(Cell::new(1, 0, 0), &[floor])
         .build();
-    assert!(!evaluate(&[rule], &violated).is_empty());
+    assert!(!support::eval(&[rule], &violated).is_empty());
 }
 
 /// Pins the set closed: a rule added to `defs/rules/city.toml` with no

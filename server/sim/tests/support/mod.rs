@@ -5,7 +5,30 @@
 //! them is dead code there -- `#[allow(dead_code)]` throughout.
 
 use sim::generated::defs;
-use sim::rules::{RuleDef, RuleKind, TagId};
+use sim::rules::{RuleDef, RuleKind, RuleSet, RuleSite, TagId, Violation};
+
+/// Story 2.11: every `tests/*.rs` call site moved from `evaluate(&rules,
+/// ..)` to this one helper (Tim's direction -- "mechanical, no assertion
+/// changes") once [`sim::rules::evaluate`] started taking a [`RuleSet`]
+/// rather than a bare slice. Wraps `rules` with [`RuleSet::for_test`],
+/// which only a `tests/`/`#[cfg(test)]` build can call at all.
+#[allow(dead_code)]
+pub fn eval(rules: &[RuleDef], site: &impl RuleSite) -> Vec<Violation> {
+    sim::rules::evaluate(RuleSet::for_test(rules), site)
+}
+
+/// The real committed object's own def id, resolved by key -- object
+/// keys are resolved through this module in `tests/validation.rs`
+/// exactly like `tag_id`/`rule` resolve a tag or rule key (Tim's
+/// direction), never a literal numeric id.
+#[allow(dead_code)]
+pub fn object_id(key: &str) -> u32 {
+    defs::OBJECTS
+        .iter()
+        .find(|o| o.key == key)
+        .unwrap_or_else(|| panic!("defs/objects/*.toml must still declare object '{key}'"))
+        .id
+}
 
 /// Whether `tag` is declared with a `role` table (story 2.9, AC1) --
 /// `defs::TAGS` is the one place that answers this, never a hand-copied

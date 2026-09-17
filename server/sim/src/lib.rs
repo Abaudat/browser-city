@@ -16,4 +16,5 @@ pub mod demo_ping;
 pub mod generated;
 pub mod rng;
 pub mod rules;
+pub mod validation;
 pub mod world;
