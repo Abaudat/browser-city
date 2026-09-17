@@ -29,8 +29,12 @@ fn referenced_tags(kind: &RuleKind) -> Vec<TagId> {
     match *kind {
         RuleKind::Placement { subject, .. } => vec![subject],
         RuleKind::Distribution { subject, per, .. } => vec![subject, per],
-        RuleKind::Coherence { subject, within, .. } => vec![subject, within],
-        RuleKind::Adjacency { a, alternatives, .. } => {
+        RuleKind::Coherence {
+            subject, within, ..
+        } => vec![subject, within],
+        RuleKind::Adjacency {
+            a, alternatives, ..
+        } => {
             let mut tags = vec![a];
             for alternative in alternatives {
                 tags.extend(alternative.iter().map(|term| term.tag));
@@ -38,7 +42,9 @@ fn referenced_tags(kind: &RuleKind) -> Vec<TagId> {
             tags
         }
         RuleKind::Requirement {
-            container, requires, ..
+            container,
+            requires,
+            ..
         } => vec![container, requires],
     }
 }

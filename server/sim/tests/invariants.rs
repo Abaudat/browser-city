@@ -753,11 +753,7 @@ fn build_doored_room(w: i32, h: i32, door_x: i32) -> sim::rules::testing::Site {
 /// tags `wall` becomes a whole-cell collider, everything else stays
 /// open. `w`/`h` size `bounds` only, wide enough to hold a seed outside
 /// the ring and the pavement cell immediately south of the door.
-fn walkability_grid_from_site(
-    site: &sim::rules::testing::Site,
-    w: i32,
-    h: i32,
-) -> WalkabilityGrid {
+fn walkability_grid_from_site(site: &sim::rules::testing::Site, w: i32, h: i32) -> WalkabilityGrid {
     let s = defs::COLLIDER_SUBCELLS_PER_CELL;
     let wall = support::tag_id("wall");
     let colliders: Vec<Rect> = site
