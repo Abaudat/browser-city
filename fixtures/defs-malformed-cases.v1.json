@@ -33,5 +33,6 @@
   "no-collider-not-underfoot",
   "underfoot-with-collider",
   "object-role-count-zero",
-  "object-role-count-two"
+  "object-role-count-two",
+  "role-layer-not-allowed"
 ]

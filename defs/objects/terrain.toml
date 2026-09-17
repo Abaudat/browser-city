@@ -1,34 +1,14 @@
-# Story 2.9 (AC1, FR119): real objects for the outdoor ground-level
-# roles that had none before this story (`wall` and `fixture` are
-# already covered by `defs/objects/city-props.toml`'s existing
-# catalogue). Sprites only from tile art already shipped (Artie's
-# direction): `modernexteriors-win/.../1_Terrains_and_Fences_Singles_
-# 16x16` and `2_City_Terrains_Singles_16x16`. Every plain 16x16
-# ground-level tile: no collider, `underfoot` explicit (FR128 -- a role
-# never implies it).
-#
-# `floor` and `threshold` (Artie's direction named `moderninteriors-
-# win/.../Room_Builder_subfiles`'s `Floors` and `Arched_Entryways`
-# sheets for these) are declared roles in `defs/tags/roles.toml` --
-# AC1's "role is data in defs/" -- but carry no real object here: those
-# two sheets ship with no `Theme_Sorter` directory segment at all (they
-# sit under `Room_Builder_subfiles/` instead), and `tools/defs-build`'s
-# atlas packer (story 2.6, AC2) derives a page's group from exactly that
-# segment -- there is no path through it for a sheet that has none. That
-# is a real gap between this tileset's own layout and the packer, not a
-# content decision; naming it here rather than adding an object the
-# packer cannot build (Artie's direction: "don't fake it"). The
-# grammar's own adjacency rows over `floor`/`threshold`
-# (`defs/rules/grammar.toml`) are unaffected -- they are tested against
-# hand-built fixtures, the same way every rule row is, real object or
-# not (2.10's own placeholder rows are the precedent).
+# Real objects for the outdoor ground-level roles (`wall`/`fixture`
+# already covered by `defs/objects/city-props.toml`). `floor`/`threshold`
+# carry no real object yet -- story 2.14 (issue #300) gives the atlas
+# packer a path for the sheets they need.
 
 [[object]]
 id = 9
 key = "grass_ground"
 name = "Grass"
 layer = "ground"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/1_Terrains_and_Fences_Singles_16x16/ME_Singles_Terrains_and_Fences_16x16_Grass_1_1.png", x = 0, y = 0, w = 16, h = 16 }
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/1_Terrains_and_Fences_Singles_16x16/ME_Singles_Terrains_and_Fences_16x16_Grass_1_22.png", x = 0, y = 0, w = 16, h = 16 }
 width = 1
 height = 1
 tags = ["underfoot", "ground"]
@@ -38,7 +18,7 @@ id = 10
 key = "sidewalk_pavement"
 name = "Sidewalk"
 layer = "ground"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png", x = 0, y = 0, w = 16, h = 16 }
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_26.png", x = 0, y = 0, w = 16, h = 16 }
 width = 1
 height = 1
 tags = ["underfoot", "pavement"]
@@ -48,7 +28,7 @@ id = 11
 key = "road_asphalt"
 name = "Road"
 layer = "ground"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Asphalt_1_Variation_1.png", x = 0, y = 0, w = 16, h = 16 }
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Asphalt_1_Variation_26.png", x = 0, y = 0, w = 16, h = 16 }
 width = 1
 height = 1
 tags = ["underfoot", "road"]

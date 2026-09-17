@@ -1,0 +1,13 @@
+[[adjacency]]
+id = 1
+key = "x_never_touches_y"
+a = "x"
+b = "y"
+relation = "forbid"
+
+[[adjacency]]
+id = 2
+key = "y_never_touches_x"
+a = "y"
+b = "x"
+relation = "forbid"

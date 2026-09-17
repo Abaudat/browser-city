@@ -659,6 +659,28 @@ fn build_adjacency_rules(
                                 tag_ids,
                             )?);
                         }
+                        // A dead alternative: two terms naming the same
+                        // direction and tag with opposite `present` can
+                        // never both hold, so the alternative can never
+                        // match anything (Tim's direction).
+                        for i in 0..terms.len() {
+                            for j in (i + 1)..terms.len() {
+                                if terms[i].direction == terms[j].direction
+                                    && terms[i].tag == terms[j].tag
+                                    && terms[i].present != terms[j].present
+                                {
+                                    return Err(DefsError::new(
+                                        &e.path,
+                                        e.key.line,
+                                        e.key.col,
+                                        format!(
+                                            "adjacency rule '{}' has a dead alternative -- it names {:?} at the same direction as its own tag with opposite 'present', so it can never match",
+                                            e.key.value, terms[i].tag
+                                        ),
+                                    ));
+                                }
+                            }
+                        }
                         if e.rotate {
                             let mut rotated = terms.clone();
                             for _ in 0..3 {
@@ -707,6 +729,83 @@ fn build_adjacency_rules(
             })
         })
         .collect()
+}
+
+fn axis_of(d: RawDirection) -> u8 {
+    match d {
+        RawDirection::North | RawDirection::South => 0,
+        RawDirection::East | RawDirection::West => 1,
+    }
+}
+
+/// A `Forbid` row's own physical constraint, independent of which of the
+/// two tags is the row's own subject: each alternative (already
+/// guaranteed a single `present: true` term) becomes `(tag pair sorted,
+/// axis)` -- direction itself drops out, since "never touches to the
+/// north" and "never touches to the south" describe the same seam from
+/// the two different sides, and an any-direction row already covers
+/// both axes.
+fn forbid_canonical_pairs(
+    a: u32,
+    alternatives: &[Vec<NeighbourTermDef>],
+) -> BTreeSet<(u32, u32, u8)> {
+    alternatives
+        .iter()
+        .map(|alt| {
+            let term = alt[0];
+            let (lo, hi) = if a <= term.tag {
+                (a, term.tag)
+            } else {
+                (term.tag, a)
+            };
+            (lo, hi, axis_of(term.direction))
+        })
+        .collect()
+}
+
+/// One `Forbid` row's own canonical constraint set (see
+/// [`forbid_canonical_pairs`]) paired with its own key, so a later row
+/// can be compared against every one already seen.
+type ForbidCanonical<'a> = (BTreeSet<(u32, u32, u8)>, &'a str);
+
+/// Tim's direction: `road`/`floor` and `floor`/`road` (two `Forbid` rows
+/// with subjects swapped) flag the same pair twice under two names --
+/// refuse a second row whose lowered constraint set (up to swapping
+/// subjects) already exists, naming both keys.
+fn check_no_symmetric_forbid_duplicates(
+    entries: &[AdjacencyEntry],
+    rules: &[RuleDef],
+) -> Result<(), DefsError> {
+    let mut seen: Vec<ForbidCanonical> = Vec::new();
+    for (entry, rule) in entries.iter().zip(rules.iter()) {
+        let RuleKindDef::Adjacency {
+            a,
+            relation,
+            alternatives,
+        } = &rule.kind
+        else {
+            continue;
+        };
+        if *relation != RawAdjacencyRelation::Forbid {
+            continue;
+        }
+        let canonical = forbid_canonical_pairs(*a, alternatives);
+        for (prev_canonical, prev_key) in &seen {
+            if *prev_canonical == canonical {
+                return Err(DefsError::new(
+                    &entry.path,
+                    entry.key.line,
+                    entry.key.col,
+                    format!(
+                        "adjacency rule '{}' is the same physical constraint as '{prev_key}' (the same tag pair, up to swapping which one is the subject) -- keep one",
+                        entry.key.value
+                    ),
+                ));
+            }
+        }
+        seen.push((canonical, &rule.key));
+    }
+    Ok(())
 }
 
 fn build_requirement_rules(
@@ -1734,7 +1833,9 @@ pub fn validate(
     rules.extend(build_placement_rules(&raw.placements, &tag_ids)?);
     rules.extend(build_distribution_rules(&raw.distributions, &tag_ids)?);
     rules.extend(build_coherence_rules(&raw.coherences, &tag_ids)?);
-    rules.extend(build_adjacency_rules(&raw.adjacencies, &tag_ids)?);
+    let adjacency_rules = build_adjacency_rules(&raw.adjacencies, &tag_ids)?;
+    check_no_symmetric_forbid_duplicates(&raw.adjacencies, &adjacency_rules)?;
+    rules.extend(adjacency_rules);
     rules.extend(build_requirement_rules(&raw.requirements, &tag_ids)?);
     rules.sort_by(|a, b| a.key.cmp(&b.key));
 

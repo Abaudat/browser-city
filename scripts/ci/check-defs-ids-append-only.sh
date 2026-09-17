@@ -10,10 +10,14 @@
 # check-codes-append-only.sh, copied verbatim (balance carries no id in
 # this story, so it is not in this golden).
 set -euo pipefail
-REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+# $2/$3 (repo root, golden path) are a testability seam only -- omitted
+# by every real caller, which always means this repo and this golden;
+# scripts/ci/tests/test-check-defs-ids-append-only.sh is the only caller
+# that ever passes them, pointed at a scratch git repo.
+REPO_ROOT="${2:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$REPO_ROOT"
 
-GOLDEN="tools/defs-build/goldens/defs-manifest.golden"
+GOLDEN="${3:-tools/defs-build/goldens/defs-manifest.golden}"
 
 _fail_or_skip() { # <message> -- hard fail under GITHUB_ACTIONS, soft skip otherwise
   if [ "${GITHUB_ACTIONS:-}" = "true" ]; then

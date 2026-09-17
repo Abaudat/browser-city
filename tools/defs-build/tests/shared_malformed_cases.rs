@@ -64,6 +64,7 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "underfoot-with-collider" => "underfoot-tag-with-collider",
         "object-role-count-zero" => "object-role-count-zero",
         "object-role-count-two" => "object-role-count-two",
+        "role-layer-not-allowed" => "role-layer-not-allowed",
         other => panic!(
             "shared case '{other}' has no mapped tests/fixtures/invalid/ directory -- add one to fixture_for()"
         ),

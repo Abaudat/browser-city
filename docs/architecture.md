@@ -943,13 +943,12 @@ three questions over integer geometry -- tags at a cell, real areas
 containing it, subjects within an area or the whole site.
 
 A tag's own `[[tag]]` row may carry `role = { layers = [...] }`; its
-presence is what makes that tag a role (FR119) -- the closed taxonomy
-(ground, pavement, road, wall, floor, threshold, fixture) is data, never
-a Rust/TypeScript enum. `layers` is the closed set of `sim::codes::layer`
-names an object of that role may sit on, resolved to codes at build time.
-Every `[[object]]` carries exactly one role tag in its ordinary `tags`
-list -- zero, two, or a layer outside the role's own `layers` all fail
-the build by object key.
+presence is what makes that tag a role. The closed taxonomy is ground,
+pavement, road, wall, floor, threshold, fixture. `layers` is the closed
+set of `sim::codes::layer` names an object of that role may sit on,
+resolved to codes at build time. Every `[[object]]` carries exactly one
+role tag in its ordinary `tags` list -- zero, two, or a layer outside the
+role's own `layers` all fail the build by object key.
 
 Five closed kinds, one TOML array table each under `defs/rules/*.toml`,
 any file: `[[placement]]`, `[[distribution]]`, `[[coherence]]`,
@@ -967,18 +966,17 @@ tag, present }` names one same-floor neighbour condition; an alternative
 matches when every one of its terms holds, and the row matches when any
 alternative does. `Require` violates when no alternative matches;
 `Forbid` violates once per matching alternative, and every `Forbid`
-alternative is exactly one `present: true` term, so the violating pair is
-always unambiguous. `[[adjacency]]` authors either the terse `b` (+
-optional `direction`) form or a hand-authored `alternatives` pattern (an
-optional `rotate = true` lowers one authored alternative to its four
-90-degree rotations); `tools/defs-build` lowers both into the same
-`alternatives` shape at build time, so the engine has exactly one path.
-`Violation` carries `other: Option<Cell>`, the matched neighbour cell for
-a `Forbid` violation, `None` otherwise -- ordering is `(rule_id, subject,
-other)`. Room and building grammar primitives (a corner, a doorway) are
-ordinary rows in `defs/rules/*.toml`, not a second module: "composing a
-room" is building a `RuleSite` and calling `evaluate`, and a construction's
-"named reason" is the violated row's own key.
+alternative is exactly one `present: true` term. `[[adjacency]]` authors
+either the terse `b` (+ optional `direction`) form or a hand-authored
+`alternatives` pattern (an optional `rotate = true` lowers one authored
+alternative to its four 90-degree rotations); `tools/defs-build` lowers
+both into the same `alternatives` shape at build time. `Violation` carries
+`other: Option<Cell>`, the matched neighbour cell for a `Forbid`
+violation, `None` otherwise -- ordering is `(rule_id, subject, other)`.
+Two `Forbid` rows whose lowered constraint sets agree up to swapping
+which tag is the subject are refused at build time -- `road`/`floor` and
+`floor`/`road` are the same seam under two names. Room and building
+grammar primitives are ordinary rows in `defs/rules/*.toml`.
 
 Rule rows and the tag table are emitted into `server/sim/src/generated/
 defs.rs` only, as `static` tables (`TAGS`, `RULES`); tags (role included)

@@ -1,46 +1,39 @@
 # Story 2.9 (AC2/AC3/AC4, FR119): the room/building grammar's own
-# primitives -- ordinary `[[adjacency]]` rows over the role tags
-# `defs/tags/roles.toml` (and `wall`, `defs/tags/city.toml`) declare,
-# evaluated by the same `sim::rules::evaluate` every other rule kind
-# uses (Tim's direction: this is never a second validator). Ids continue
-# after `defs/rules/city.toml`'s own five (permanent, append-only).
+# primitives -- ordinary `[[adjacency]]`/`[[requirement]]` rows over the
+# role tags `defs/tags/roles.toml` (and `wall`, `wall_run`, `entrance`,
+# `defs/tags/city.toml`) declare, evaluated by the same `sim::rules::
+# evaluate` every other rule kind uses (Tim's direction: this is never a
+# second validator).
 #
-# Scope (Crew's decision, named here on purpose rather than faked):
-# a kerb/verge edge variant between road and ground, a wall T-junction
-# or four-way crossing, a threshold's own wall jamb, and "no void cell
-# inside a composed area" are all left out of this row set -- the first
-# needs art this story's tile budget does not add (Artie's own
-# direction: "leave the construction out... name the missing piece");
-# the wall-junction and jamb shapes need either a counting primitive or
-# several more Forbid rows enumerating every *absence* pattern, which
-# this engine's Forbid form (a single `present: true` term per
-# alternative, so a violation's pair stays unambiguous) cannot state
-# directly; "no void" needs a primitive that asks "does this cell carry
-# any tag at all", which no rule kind here asks. Named for Derek/Tim to
-# pick up as a later row, not a code change.
+# Scope named on purpose rather than faked: a kerb/verge edge variant
+# between `road` and `ground` is left for a later story -- the art
+# exists (the rounded sidewalk-around-asphalt edges and corners visible
+# in `2_City_Terrains`), but cutting and packing it is real work this
+# story did not budget; until it lands, `road_never_touches_ground`
+# below refuses the bare seam rather than allow a wrong-looking result.
+# "No void cell inside a composed area" is out too: no rule kind here
+# asks "does this cell carry any tag at all".
 
-# Artie's direction #4, first bullet: a building faces pavement, never
-# raw ground -- road and floor are never in direct contact either
-# (pavement, or a formed doorway, always sits between).
 [[adjacency]]
 id = 6
-key = "road_never_touches_floor"
-a = "road"
-b = "floor"
-relation = "forbid"
-
-[[adjacency]]
-id = 7
 key = "road_never_touches_wall"
 a = "road"
 b = "wall"
 relation = "forbid"
 
-# Artie's direction #4, fourth and fifth bullets: a floor cell is only
-# ever legal next to another floor, a wall or a threshold -- touching
-# any bare ground-level surface directly means the room is not sealed.
-# An interior floor cell (surrounded by more floor) never triggers
-# this; only a cell at an unsealed boundary does.
+# Artie's direction: until the kerb/verge edge variant exists, pavement
+# is the only legal edge between road and ground.
+[[adjacency]]
+id = 7
+key = "road_never_touches_ground"
+a = "road"
+b = "ground"
+relation = "forbid"
+
+# A floor cell is only ever legal next to another floor, a wall or a
+# threshold -- touching any bare ground-level surface directly means the
+# room is not sealed. An interior floor cell (surrounded by more floor)
+# never triggers these; only a cell at an unsealed boundary does.
 [[adjacency]]
 id = 8
 key = "floor_never_touches_bare_ground"
@@ -55,6 +48,10 @@ a = "floor"
 b = "pavement"
 relation = "forbid"
 
+# `road`/`floor` is the same physical constraint as `floor`/`road` --
+# `tools/defs-build` refuses declaring it under both subjects
+# (`check_no_symmetric_forbid_duplicates`), so this is the only row for
+# that pair.
 [[adjacency]]
 id = 10
 key = "floor_never_touches_road_directly"
@@ -62,16 +59,13 @@ a = "floor"
 b = "road"
 relation = "forbid"
 
-# Artie's direction #5: a doorway is formed, not drawn -- "wall on two
-# opposite sides, either orientation" with floor on one remaining side
-# and pavement/floor on the other. One authored alternative, `rotate =
-# true` lowers it to the four orientations (Tim's direction) --
-# `inv_grammar_rotate_invariant` (`server/sim/tests/invariants.rs`)
-# pins that a 90-degree turn of the whole site never changes this row's
-# verdict.
+# The doorway primitive (AC3): wall on two opposite sides, and either
+# floor facing pavement (a street door) or floor facing floor (a door
+# between two rooms) on the remaining two. `rotate = true` lowers each
+# alternative to every orientation it has.
 [[adjacency]]
 id = 11
-key = "threshold_between_floor_and_pavement_flanked_by_walls"
+key = "doorway_formed_between_walls"
 a = "threshold"
 relation = "require"
 rotate = true
@@ -82,15 +76,23 @@ alternatives = [
     { direction = "east", tag = "floor" },
     { direction = "west", tag = "pavement" },
   ],
+  [
+    { direction = "north", tag = "wall" },
+    { direction = "south", tag = "wall" },
+    { direction = "east", tag = "floor" },
+    { direction = "west", tag = "floor" },
+  ],
 ]
 
-# Artie's direction #4, third bullet ("no free-standing wall stubs") and
-# #5 ("nobody places a corner, the grammar picks it"): every wall cell
-# is part of a straight run or a corner -- two same-axis wall neighbours
-# (a straight run) or two perpendicular ones (a corner). `rotate = true`
-# lowers the straight-run alternative to its two orientations and the
-# corner alternative to its four (deduplicated after canonicalisation,
-# `tools/defs-build`'s own `canonicalise_alternatives`).
+# The wall-closure primitive (AC3): every wall cell has two `wall_run`
+# neighbours, on the same axis (a straight run) or perpendicular (a
+# corner). `wall_run` -- never `wall` itself -- is what both `wall` and
+# `threshold` objects carry, so a doorway's own two jambs each still see
+# a run neighbour on their threshold side and are never free-standing
+# stubs. An alternative only constrains the two sides it names, so a
+# wall with three or four `wall_run` neighbours (a T-junction or a
+# four-way crossing) already satisfies one of them -- that is the
+# correct result, not an oversight to "fix" later.
 [[adjacency]]
 id = 12
 key = "wall_is_part_of_a_straight_run_or_a_corner"
@@ -99,11 +101,30 @@ relation = "require"
 rotate = true
 alternatives = [
   [
-    { direction = "north", tag = "wall" },
-    { direction = "south", tag = "wall" },
+    { direction = "north", tag = "wall_run" },
+    { direction = "south", tag = "wall_run" },
   ],
   [
-    { direction = "north", tag = "wall" },
-    { direction = "east", tag = "wall" },
+    { direction = "north", tag = "wall_run" },
+    { direction = "east", tag = "wall_run" },
   ],
 ]
+
+# Room completeness: every real area containing a floor cell holds at
+# least one doorway, interior or street-facing.
+[[requirement]]
+id = 13
+key = "room_has_a_door"
+container = "floor"
+requires = "threshold"
+min = 1
+
+# Building completeness: every real area containing a wall cell holds at
+# least one `entrance` -- a threshold that opens onto the exterior,
+# distinct from a purely interior door between two rooms.
+[[requirement]]
+id = 14
+key = "building_has_an_entrance"
+container = "wall"
+requires = "entrance"
+min = 1

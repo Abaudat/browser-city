@@ -242,6 +242,20 @@ fn a_forbid_row_with_a_multi_term_alternative_is_rejected() {
 }
 
 #[test]
+fn two_forbid_rows_for_the_same_pair_with_subjects_swapped_are_rejected() {
+    let err = build_err("adjacency-symmetric-forbid-duplicate");
+    assert!(err.message.contains(
+        "adjacency rule 'y_never_touches_x' is the same physical constraint as 'x_never_touches_y'"
+    ));
+}
+
+#[test]
+fn an_adjacency_alternative_with_a_dead_contradictory_term_pair_is_rejected() {
+    let err = build_err("adjacency-dead-alternative");
+    assert!(err.message.contains("has a dead alternative"));
+}
+
+#[test]
 fn a_non_kebab_case_filename_is_rejected() {
     let err = build_err("bad-filename");
     assert_eq!(err.path, PathBuf::from("defs/objects/CityProps.toml"));
@@ -571,6 +585,8 @@ fn every_known_category_has_a_fixture_directory() {
         "role-unknown-layer",
         "adjacency-alternatives-unknown-tag",
         "adjacency-forbid-multi-term-alternative",
+        "adjacency-symmetric-forbid-duplicate",
+        "adjacency-dead-alternative",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

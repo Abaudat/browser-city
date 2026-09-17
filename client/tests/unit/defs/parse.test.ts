@@ -244,6 +244,20 @@ describe("parseDefs", () => {
     expect(() => parseDefs(payload)).toThrow(/unknown field 'bogus'/);
   });
 
+  // Story 2.9: the `role` table itself is malformed input, checked the
+  // same way as every other field.
+  it("rejects a role whose layers is not an array", () => {
+    const payload = validPayload();
+    payload.tags = [{ id: 1, key: "fixture", role: { layers: "not-an-array" } }];
+    expect(() => parseDefs(payload)).toThrow(/expected an array/);
+  });
+
+  it("rejects an unknown field inside role", () => {
+    const payload = validPayload();
+    payload.tags = [{ id: 1, key: "fixture", role: { layers: [2], bogus: true } }];
+    expect(() => parseDefs(payload)).toThrow(/unknown field 'bogus'/);
+  });
+
   it("parses a present collider and leaves an absent one undefined", () => {
     const payload = validPayload();
     (payload.objects as Record<string, unknown>[])[0] = {

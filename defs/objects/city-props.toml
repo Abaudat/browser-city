@@ -79,7 +79,7 @@ window = true
 collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
 # Story 2.9 (AC1): a window is a wall variant -- solid, part of the
 # building envelope -- so its role tag is `wall`, not `fixture`.
-tags = ["shopfront", "wall"]
+tags = ["shopfront", "wall", "wall_run"]
 
 [[object]]
 id = 6
@@ -95,8 +95,9 @@ height = 1
 # object of its own (FR118: a door is an ordinary walkable cell).
 collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
 # Story 2.9 (AC1): `wall` is both a plain tag and this object's own role
-# tag (tag 6 carries the role table, `defs/tags/city.toml`).
-tags = ["wall"]
+# tag (tag 6 carries the role table, `defs/tags/city.toml`). `wall_run`
+# is the wall-closure primitive's own vocabulary (AC3).
+tags = ["wall", "wall_run"]
 
 [[object]]
 id = 7
