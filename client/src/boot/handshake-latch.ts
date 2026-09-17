@@ -23,13 +23,23 @@ export interface HandshakeLatch {
    * one already had by the time this is called. Safe to call more than
    * once; every caller resolves with the same settlement. */
   settled(): Promise<HandshakeSettlement>;
+  /** The most recent handshake version received, ever -- unlike
+   * `settled()`, this keeps updating on every later `resolveHandshake`
+   * call, including after the latch has already settled (cycle 2 review,
+   * Quentin's finding 1: a handshake landing in the gap between the boot
+   * gate settling and `main.ts` wiring up `post-mount-guard.ts` must not
+   * be silently dropped -- `boot-sequence.ts` is what reads this).
+   * `undefined` if none has ever arrived. */
+  latest(): HandshakeVersion | undefined;
 }
 
 /** Settles at most once: whichever of `resolveHandshake`/
  * `resolveUnreachable` is called first wins, and any later call is a
- * no-op. */
+ * no-op for `settled()` -- but `resolveHandshake` still updates
+ * `latest()` regardless. */
 export function createHandshakeLatch(): HandshakeLatch {
   let settlement: HandshakeSettlement | undefined;
+  let latestVersion: HandshakeVersion | undefined;
   let listeners: Array<(settlement: HandshakeSettlement) => void> = [];
 
   function settle(next: HandshakeSettlement): void {
@@ -40,7 +50,10 @@ export function createHandshakeLatch(): HandshakeLatch {
   }
 
   return {
-    resolveHandshake: (version) => settle({ kind: "handshake", version }),
+    resolveHandshake: (version) => {
+      latestVersion = version;
+      settle({ kind: "handshake", version });
+    },
     resolveUnreachable: () => settle({ kind: "unreachable" }),
     settled: () =>
       new Promise((resolve) => {
@@ -50,5 +63,6 @@ export function createHandshakeLatch(): HandshakeLatch {
         }
         listeners.push(resolve);
       }),
+    latest: () => latestVersion,
   };
 }

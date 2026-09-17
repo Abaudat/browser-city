@@ -1,9 +1,9 @@
 import { Application } from "pixi.js";
-import { runBootGate } from "./boot/boot-gate";
 import { BOOT_MARK, markBoot } from "./boot/boot-marks";
+import { runBootSequence } from "./boot/boot-sequence";
 import type { VerifiedDefs } from "./boot/handshake";
 import { createHandshakeLatch, type HandshakeLatch } from "./boot/handshake-latch";
-import { createPostMountGuard, type PostMountGuard } from "./boot/post-mount-guard";
+import type { PostMountGuard } from "./boot/post-mount-guard";
 import { readReloadedFor, writeReloadedFor } from "./boot/reloaded-for-storage";
 import type { DebugWorldView } from "./debug/world-view";
 import { fetchDefs } from "./defs/load";
@@ -69,8 +69,9 @@ async function main(): Promise<void> {
 
   // Story 2.8 (FR147): `net/connection.ts`'s own callbacks start firing
   // the instant `connect()` returns, well before `startStreetScene`'s own
-  // `runBootGate` has registered anything -- `latch` is the replay buffer
-  // that makes that race safe (`boot/handshake-latch.ts`). `onStatus`
+  // `runBootSequence` has registered anything -- `latch` is the replay
+  // buffer that makes that race safe (`boot/handshake-latch.ts`).
+  // `onStatus`
   // resolves the latch as unreachable only on the *first* not-connected
   // report and only before it has already settled another way -- a later
   // drop, after the handshake already arrived, is a no-op here (the
@@ -125,14 +126,20 @@ async function main(): Promise<void> {
  * subscription in this story (Tim's scope call); wiring one is later
  * work.
  *
- * Story 2.8 (FR147): the scene is never mounted before `runBootGate`
+ * Story 2.8 (FR147): the scene is never mounted before `runBootSequence`
  * resolves a `VerifiedDefs` -- "never draws a stale frame" is structural
  * (`test-street/scene.ts`'s own `MountStreetSceneOptions.defs` type), not
  * a convention. `connect()` and the first, unversioned `fetchDefs` still
  * start in parallel exactly as before (`latch` is what `connect()`
- * already started feeding by the time this runs), and Pixi's own
- * `Application.init()` runs concurrently with the boot gate too -- only
- * the scene mount itself waits on it.
+ * already started feeding by the time this runs).
+ *
+ * Cycle 2 review (Quentin's finding 1): `setPostMountGuard` is called the
+ * instant `runBootSequence` resolves, with no `await` in between -- in
+ * particular, *before* `Application.init()`'s own await, which used to
+ * leave a real async gap where a handshake landed nowhere. Pixi's own
+ * init still runs concurrently with the boot sequence (only the scene
+ * mount itself waits on it), it is just no longer between the sequence
+ * resolving and the guard being wired.
  */
 async function startStreetScene(
   latch: HandshakeLatch,
@@ -149,7 +156,7 @@ async function startStreetScene(
   const appInitPromise = app.init({ preference: "webgpu", background: "#284028" });
 
   const sessionStorage = resolveSessionStorage(() => window.sessionStorage);
-  const bootResult = await runBootGate({
+  const sequenceResult = await runBootSequence({
     fetchDefs,
     // Never a hard-coded leading-slash literal (client/tests/e2e/
     // deploy-smoke.spec.ts caught exactly this: it 404s under GitHub
@@ -162,40 +169,22 @@ async function startStreetScene(
     handshake: latch,
     readReloadedFor: () => readReloadedFor(sessionStorage),
     writeReloadedFor: (version) => writeReloadedFor(sessionStorage, version),
+    stopDrawing: () => app.ticker.stop(),
     reload: () => window.location.reload(),
     onDegrade,
   });
+  if (sequenceResult) setPostMountGuard(sequenceResult.guard);
 
   await appInitPromise;
   mount.appendChild(app.canvas);
 
-  if (!bootResult) {
-    // NFR42: the gate already handled the outcome (a reload is under way,
-    // or the connection notice now shows "updating") -- nothing left to
-    // render this session.
+  if (!sequenceResult) {
+    // NFR42: the sequence already handled the outcome (a reload is under
+    // way, or the connection notice now shows "updating") -- nothing left
+    // to render this session.
     return;
   }
-  const defs: VerifiedDefs = bootResult.defs;
-
-  // Cycle 1 review (Quentin's finding 1 / Tim's finding 3): the handshake
-  // stays live for the rest of the session. The reference version is
-  // whatever is actually about to render -- `defs.defsVersion` plus the
-  // compiled-in `PROTOCOL_VERSION` -- so a later republish this
-  // connection stays open across (or a late handshake following an
-  // `unreachable` mount) is compared against the real, current state,
-  // never a stale expectation. No live defs swap, no scene remount (Tim's
-  // direction): any mismatch stops the ticker, then takes the same
-  // guarded-reload path a boot-time mismatch does.
-  setPostMountGuard(
-    createPostMountGuard({
-      referenceVersion: { defsVersion: defs.defsVersion, protocolVersion: PROTOCOL_VERSION },
-      readReloadedFor: () => readReloadedFor(sessionStorage),
-      writeReloadedFor: (version) => writeReloadedFor(sessionStorage, version),
-      stopDrawing: () => app.ticker.stop(),
-      reload: () => window.location.reload(),
-      onDegrade,
-    }),
-  );
+  const defs: VerifiedDefs = sequenceResult.defs;
 
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");

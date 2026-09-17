@@ -31,8 +31,12 @@ export interface PostMountGuardDeps extends GuardedReloadDeps {
 export interface PostMountGuard {
   /** Feed every later handshake version `net/connection.ts` reports --
    * wired for the whole rest of the session, not just the first
-   * arrival. */
-  onHandshake(server: HandshakeVersion): void;
+   * arrival. Returns whether this call acted (stopped drawing and took
+   * the reload/updating path) -- `false` for a matching re-insert, and
+   * always `false` once the guard has already acted once
+   * (`boot-sequence.ts` uses the return value for its own catch-up
+   * replay, cycle 2 review). */
+  onHandshake(server: HandshakeVersion): boolean;
 }
 
 /** Acts on at most one mismatch: once this guard has stopped drawing and
@@ -42,9 +46,9 @@ export function createPostMountGuard(deps: PostMountGuardDeps): PostMountGuard {
   let acted = false;
   return {
     onHandshake(server) {
-      if (acted) return;
+      if (acted) return false;
       const verdict = decideHandshake(server, deps.referenceVersion, deps.readReloadedFor());
-      if (verdict === "proceed") return;
+      if (verdict === "proceed") return false;
 
       acted = true;
       deps.stopDrawing();
@@ -53,9 +57,10 @@ export function createPostMountGuard(deps: PostMountGuardDeps): PostMountGuard {
         verdict === "refetch-defs" ? decideReload(server, deps.readReloadedFor()) : verdict;
       if (reloadVerdict === "updating") {
         deps.onDegrade();
-        return;
+        return true;
       }
       attemptGuardedReload(deps, server);
+      return true;
     },
   };
 }

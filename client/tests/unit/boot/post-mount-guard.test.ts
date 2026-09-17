@@ -27,7 +27,7 @@ describe("createPostMountGuard", () => {
     const deps = baseDeps();
     const guard = createPostMountGuard(deps);
 
-    guard.onHandshake(REFERENCE);
+    expect(guard.onHandshake(REFERENCE)).toBe(false);
 
     expect(deps.stopDrawing).not.toHaveBeenCalled();
     expect(deps.reload).not.toHaveBeenCalled();
@@ -46,7 +46,7 @@ describe("createPostMountGuard", () => {
     });
     const guard = createPostMountGuard(deps);
 
-    guard.onHandshake({ defsVersion: "d2", protocolVersion: "p1" });
+    expect(guard.onHandshake({ defsVersion: "d2", protocolVersion: "p1" })).toBe(true);
 
     expect(calls).toEqual(["stopDrawing", "writeReloadedFor", "reload"]);
     expect(deps.onDegrade).not.toHaveBeenCalled();
@@ -105,8 +105,8 @@ describe("createPostMountGuard", () => {
     const deps = baseDeps();
     const guard = createPostMountGuard(deps);
 
-    guard.onHandshake({ defsVersion: "d2", protocolVersion: "p1" });
-    guard.onHandshake({ defsVersion: "d3", protocolVersion: "p1" });
+    expect(guard.onHandshake({ defsVersion: "d2", protocolVersion: "p1" })).toBe(true);
+    expect(guard.onHandshake({ defsVersion: "d3", protocolVersion: "p1" })).toBe(false);
 
     expect(deps.reload).toHaveBeenCalledTimes(1);
     expect(deps.stopDrawing).toHaveBeenCalledTimes(1);

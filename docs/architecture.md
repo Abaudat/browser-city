@@ -775,53 +775,34 @@ marker and are never hand-edited.
 
 ### The FR147 handshake
 
-A public anonymous view, `module_version` (`server/src/version.rs`),
-publishes exactly one row: `defs_version` (`server/sim/src/generated/
-defs.rs`'s own `DEFS_VERSION`) and `protocol_version`, a second,
-independent SHA-256 over every git-tracked file under `client/src/net/
-bindings/`, sorted by path, LF-normalised, truncated to 16 hex
-characters. `scripts/gen-protocol-version.sh` generates
-`server/src/generated/protocol_version.rs` and `client/src/net/
-protocol-version.ts`; `scripts/ci/check-bindings-current.sh` and
-`scripts/ci/check-protocol-version-agrees.sh` keep both current and equal
-to each other. `scripts/ci/check-view-live-refresh.sh` proves, against a
-real instance, that a subscription already held open across a republish
-is pushed the new row, and a fresh subscription opened after one reads it
-too.
+`module_version` (`server/src/version.rs`) is a public anonymous view of
+one row: `defs_version` and `protocol_version` -- a SHA-256 over every
+git-tracked file under `client/src/net/bindings/`, by the `defs_version`
+recipe. `scripts/gen-protocol-version.sh` generates `server/src/
+generated/protocol_version.rs` and `client/src/net/protocol-version.ts`,
+guarded by `scripts/ci/check-bindings-current.sh` and `check-protocol-
+version-agrees.sh`. `check-view-live-refresh.sh` pins that a republish
+reaches held and fresh subscriptions alike.
 
-`net/connection.ts` subscribes to `module_version` in the same
-`subscribe([...])` call that already carries `demo_ping` and hands the
-rest of the client a plain `{ defsVersion, protocolVersion }`, fired on
-every (re-)insert for the life of the connection. `boot/handshake.ts`'s
-`decideHandshake` compares it, by strict equality, against the client's
-own pair (the already-fetched `defs.json`'s `defsVersion` plus the
-compiled-in `protocol-version.ts` constant): both equal is `proceed`;
-only `defsVersion` differs is `refetch-defs` (`defs/load.ts`'s
-`fetchDefs`, cache-busted with the server's own version, one attempt --
-still stale or any other failure degrades, never retries); a
-`protocolVersion` difference, or a `refetch-defs` attempt that fails for
-any reason but a version mismatch, is `reload`. A `reload` writes the
-server version to a `sessionStorage` key first; if that write does not
-land (blocked storage, a throwing `reload()` itself), or the pair is
-already recorded for this exact server version, the answer is `updating`
-instead -- never an unguarded reload.
+`module_version` rides the initial `subscribe([...])` call -- never a
+second subscription, a reducer or a fetch. `boot/handshake.ts` compares
+by strict equality:
 
-`boot/boot-gate.ts` runs this once at boot, racing the handshake against
-an injected timeout (`unreachable` if it never settles at all) and
-treating a failed first `fetchDefs` as an unknown local `defsVersion`,
-never a silent bypass.
-`test-street/scene.ts`'s `MountStreetSceneOptions.defs` is typed
-`VerifiedDefs` (`boot/handshake.ts`), producible only by the gate -- the
-scene is structurally unmountable with a defs set the client knows to be
-stale. An unreachable connection is "unknown", not "known stale": the
-gate mounts the already-fetched defs.
+- Both equal: `proceed`.
+- Only `defs_version` differs, or the first `fetchDefs` failed: one
+  `fetchDefs` cache-busted with the server's version. Still stale is
+  `updating`; any other failure is `reload`.
+- `protocol_version` differs: `reload`.
+- `reload` happens once per server version, recorded under
+  `sessionStorage` key `bc.handshake.reloaded-for.v1` before reloading.
+  Already recorded, a failed write or a throwing reload is `updating`:
+  not drawing, the `updating` notice, no retry.
 
-`boot/post-mount-guard.ts` runs the same comparison for every handshake
-version that arrives after the gate has resolved -- a tab left open
-across a deploy, or a late arrival following an `unreachable` mount --
-against whatever actually mounted. A mismatch stops the Pixi ticker, then
-takes the same `reload`/`updating` path; there is no live defs swap and
-no scene remount once mounted.
+`mountStreetScene` takes a `VerifiedDefs`, produced only by `boot/
+boot-gate.ts`; an unreachable or timed-out connection mounts the fetched
+defs. After mount, `boot/post-mount-guard.ts` compares every later row
+against what mounted: a mismatch stops the ticker, then `reload` or
+`updating` -- never a live defs swap.
 
 An object, item, recipe, profession, chain, or appearance part/layout/
 uniform declares an explicit, permanent integer id in its own file --
