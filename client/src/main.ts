@@ -140,6 +140,16 @@ async function main(): Promise<void> {
  * init still runs concurrently with the boot sequence (only the scene
  * mount itself waits on it), it is just no longer between the sequence
  * resolving and the guard being wired.
+ *
+ * Cycle 3 review (Quentin's and Tim's converging findings): `app.init()`'s
+ * own promise is also passed *into* `runBootSequence` (as
+ * `appInitPromise`), which awaits it internally and replays the
+ * handshake a second time once it resolves -- a version that changes
+ * while WebGPU adapter/device creation is still in flight is caught
+ * there, before a renderer exists to stop, rather than mounting the
+ * scene anyway once `Application.init()` finally does resolve. `app.
+ * ticker` does not exist until then either, so `stopDrawing` is
+ * null-safe.
  */
 async function startStreetScene(
   latch: HandshakeLatch,
@@ -169,9 +179,15 @@ async function startStreetScene(
     handshake: latch,
     readReloadedFor: () => readReloadedFor(sessionStorage),
     writeReloadedFor: (version) => writeReloadedFor(sessionStorage, version),
-    stopDrawing: () => app.ticker.stop(),
+    // Cycle 3 review: `app.ticker` does not exist until `Application.
+    // init()` has run its own `TickerPlugin.init` -- a mismatch found by
+    // `runBootSequence`'s first replay (before `appInitPromise` is even
+    // awaited) can call this before that. Optional-chained, so it is a
+    // safe no-op rather than a `TypeError` either way.
+    stopDrawing: () => app.ticker?.stop(),
     reload: () => window.location.reload(),
     onDegrade,
+    appInitPromise,
   });
   if (sequenceResult) setPostMountGuard(sequenceResult.guard);
 

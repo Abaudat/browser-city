@@ -9,6 +9,18 @@
 // replays `handshake.latest()` -- the most recent version ever seen,
 // regardless of settlement -- through it once, synchronously, before
 // returning anything to mount.
+//
+// Cycle 3 review (Quentin's and Tim's converging findings): that first
+// replay closed the gap up to the gate resolving, but `Application.
+// init()`'s own await (a WebGPU adapter/device request) is *itself* real
+// async time between the first replay and `main.ts` ever being able to
+// wire the guard for real -- and at that point there may be no renderer,
+// so `stopDrawing()` calling into Pixi state can throw. `runBootSequence`
+// now awaits the caller's own `appInitPromise` after the first replay
+// and runs a *second* replay once it resolves (by which point a renderer
+// always exists), and a throwing `stopDrawing` must never prevent the
+// reload/degrade that follows either way (`post-mount-guard.ts`'s own
+// try/catch).
 import { describe, expect, it, vi } from "vitest";
 import { type BootSequenceDeps, runBootSequence } from "../../../src/boot/boot-sequence";
 import { createHandshakeLatch } from "../../../src/boot/handshake-latch";
@@ -17,6 +29,15 @@ import type { Defs } from "../../../src/defs/types";
 
 function defs(defsVersion: string): Defs {
   return { defsVersion } as unknown as Defs;
+}
+
+/** Flushes `n` microtask ticks -- used where a test must be certain a
+ * chained sequence of `await`s (`settled()` -> `settleWithTimeout`'s own
+ * wrapping -> `runBootGate` returning -> `runBootSequence`'s own first
+ * replay) has fully unwound before delivering the next event, rather
+ * than guessing an exact tick count. */
+async function flush(n = 8): Promise<void> {
+  for (let i = 0; i < n; i++) await Promise.resolve();
 }
 
 function baseDeps(
@@ -31,6 +52,7 @@ function baseDeps(
     reload: vi.fn(),
     onDegrade: vi.fn(),
     stopDrawing: vi.fn(),
+    appInitPromise: Promise.resolve(),
     ...overrides,
   };
 }
@@ -198,5 +220,98 @@ describe("runBootSequence", () => {
     const result = await promise;
     expect(result).toBeUndefined();
     expect(onDegrade).toHaveBeenCalledTimes(1);
+  });
+
+  describe("the second replay, after appInitPromise (cycle 3 review)", () => {
+    it("a version that changes while Application.init() is still pending is caught -- the scene is never mounted", async () => {
+      const latch = createHandshakeLatch();
+      const reload = vi.fn();
+      const writeReloadedFor = vi.fn(() => true);
+      let resolveAppInit: () => void = () => {};
+      const appInitPromise = new Promise<void>((resolve) => {
+        resolveAppInit = resolve;
+      });
+      const deps = baseDeps({ reload, writeReloadedFor, handshake: latch, appInitPromise });
+
+      const promise = runBootSequence(deps);
+      await flush();
+      // The gate settles on a match -- the first replay finds nothing,
+      // and moves on to await appInitPromise.
+      latch.resolveHandshake({ defsVersion: "d1", protocolVersion: "p1" });
+
+      // Enough ticks for the first replay to have already run (and found
+      // nothing) before delivering the next version -- appInitPromise
+      // itself stays pending until resolveAppInit() below, so there is
+      // no risk of racing past the *second* replay too.
+      await flush();
+      // Application.init() is still pending -- a republish arrives now,
+      // in the window the first replay cannot see.
+      latch.resolveHandshake({ defsVersion: "d9", protocolVersion: "p1" });
+
+      resolveAppInit();
+
+      const result = await promise;
+
+      expect(result).toBeUndefined();
+      expect(deps.stopDrawing).toHaveBeenCalledTimes(1);
+      expect(writeReloadedFor).toHaveBeenCalledWith({ defsVersion: "d9", protocolVersion: "p1" });
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it("a throwing stopDrawing during the second replay still reaches reload/degrade -- NFR42, no renderer yet is not a crash", async () => {
+      const latch = createHandshakeLatch();
+      const reload = vi.fn();
+      const writeReloadedFor = vi.fn(() => true);
+      const stopDrawing = vi.fn(() => {
+        throw new TypeError("Cannot read properties of undefined (reading 'stop')");
+      });
+      let resolveAppInit: () => void = () => {};
+      const appInitPromise = new Promise<void>((resolve) => {
+        resolveAppInit = resolve;
+      });
+      const deps = baseDeps({
+        reload,
+        writeReloadedFor,
+        stopDrawing,
+        handshake: latch,
+        appInitPromise,
+      });
+
+      const promise = runBootSequence(deps);
+      await flush();
+      latch.resolveHandshake({ defsVersion: "d1", protocolVersion: "p1" });
+
+      await flush();
+      latch.resolveHandshake({ defsVersion: "d9", protocolVersion: "p1" });
+
+      resolveAppInit();
+
+      const result = await promise;
+
+      expect(result).toBeUndefined();
+      expect(stopDrawing).toHaveBeenCalledTimes(1);
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it("no version change during Application.init() -- the ordinary path still mounts once it resolves", async () => {
+      const latch = createHandshakeLatch();
+      let resolveAppInit: () => void = () => {};
+      const appInitPromise = new Promise<void>((resolve) => {
+        resolveAppInit = resolve;
+      });
+      const deps = baseDeps({ handshake: latch, appInitPromise });
+
+      const promise = runBootSequence(deps);
+      await Promise.resolve();
+      await Promise.resolve();
+      latch.resolveHandshake({ defsVersion: "d1", protocolVersion: "p1" });
+
+      resolveAppInit();
+
+      const result = await promise;
+      expect(result?.defs.defsVersion).toBe("d1");
+      expect(deps.stopDrawing).not.toHaveBeenCalled();
+      expect(deps.reload).not.toHaveBeenCalled();
+    });
   });
 });

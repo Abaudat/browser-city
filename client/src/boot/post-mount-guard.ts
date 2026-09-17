@@ -24,7 +24,13 @@ export interface PostMountGuardDeps extends GuardedReloadDeps {
   /** Stops the world from drawing anything further. Called before a
    * reload or a degrade, never after -- "never draws a frame using a
    * definition set it knows to be stale" applies here too, not only at
-   * boot. */
+   * boot. May be called before a renderer exists at all (cycle 3
+   * review: this guard's own replay in `boot-sequence.ts` can run before
+   * `Application.init()` has), so a throw from this must never itself
+   * prevent the reload/degrade that follows -- this module already
+   * guards that (see `onHandshake`), but an implementation that can
+   * avoid throwing in the first place (a null-safe ticker stop) should
+   * still do so. */
   stopDrawing(): void;
 }
 
@@ -51,7 +57,14 @@ export function createPostMountGuard(deps: PostMountGuardDeps): PostMountGuard {
       if (verdict === "proceed") return false;
 
       acted = true;
-      deps.stopDrawing();
+      try {
+        deps.stopDrawing();
+      } catch {
+        // NFR42: nothing on the net path may throw -- this callback runs
+        // straight out of `net/connection.ts`'s own `onInsert`. A stop
+        // that could not land (no renderer yet) must never prevent the
+        // reload/degrade below.
+      }
 
       const reloadVerdict =
         verdict === "refetch-defs" ? decideReload(server, deps.readReloadedFor()) : verdict;

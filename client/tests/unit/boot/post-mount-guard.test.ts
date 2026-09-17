@@ -101,6 +101,34 @@ describe("createPostMountGuard", () => {
     expect(deps.reload).not.toHaveBeenCalled();
   });
 
+  it("a throwing stopDrawing (cycle 3 review, Tim's finding: app.ticker before Application.init() has run) still reaches reload/onDegrade, and never throws itself", () => {
+    const stopDrawing = vi.fn(() => {
+      throw new TypeError("Cannot read properties of undefined (reading 'stop')");
+    });
+    const reload = vi.fn();
+    const deps = baseDeps({ stopDrawing, reload });
+    const guard = createPostMountGuard(deps);
+
+    expect(() => guard.onHandshake({ defsVersion: "d2", protocolVersion: "p1" })).not.toThrow();
+
+    expect(stopDrawing).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("a throwing stopDrawing still degrades correctly on the updating path too", () => {
+    const stopDrawing = vi.fn(() => {
+      throw new Error("boom");
+    });
+    const onDegrade = vi.fn();
+    const server = { defsVersion: "d1", protocolVersion: "p2" };
+    const deps = baseDeps({ stopDrawing, onDegrade, readReloadedFor: () => server });
+    const guard = createPostMountGuard(deps);
+
+    expect(() => guard.onHandshake(server)).not.toThrow();
+
+    expect(onDegrade).toHaveBeenCalledTimes(1);
+  });
+
   it("acts at most once: a second mismatch after the first is a no-op", () => {
     const deps = baseDeps();
     const guard = createPostMountGuard(deps);
