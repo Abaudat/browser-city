@@ -1,16 +1,16 @@
 {
   "spacetimeVersion": "2.9.0",
-  "runDate": "2026-09-15T14:03:42Z",
+  "runDate": "2026-09-17T08:07:00Z",
   "pixiVersion": "8.20.1",
   "browserVersion": "153.0.8010.12",
   "playwrightVersion": "1.63.0",
   "hostInfo": {
-    "hostLabel": "Chonker",
-    "cpuModel": "Intel(R) Core(TM) i9-14900KF",
-    "logicalCores": 32,
-    "totalMemBytes": 68482256896,
-    "platform": "win32",
-    "release": "10.0.26200",
-    "ci": false
+    "hostLabel": "github-actions-runner",
+    "cpuModel": "AMD EPYC 7763 64-Core Processor",
+    "logicalCores": 4,
+    "totalMemBytes": 16766414848,
+    "platform": "linux",
+    "release": "6.17.0-1022-azure",
+    "ci": true
   }
 }
