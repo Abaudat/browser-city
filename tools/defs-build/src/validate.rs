@@ -52,6 +52,36 @@ fn check_balance_key_format(entries: &[BalanceEntry]) -> Result<(), DefsError> {
     Ok(())
 }
 
+/// Story 2.6, Artie's direction: `defs/atlas/page-groups.toml`'s own
+/// `theme -> group` table, validated separately from [`validate`]'s main
+/// `Defs` tree -- it feeds the atlas packer alone, never an emitted
+/// artefact, so it never needs a place on [`Defs`] itself. A theme
+/// declared twice (even to the same group) is refused by name: one row
+/// per theme, always.
+pub fn validate_page_groups(raw: &RawDefs) -> Result<BTreeMap<String, String>, DefsError> {
+    let mut table = BTreeMap::new();
+    let mut first_seen: HashMap<&str, &PageGroupEntry> = HashMap::new();
+    for entry in &raw.page_groups {
+        if let Some(prev) = first_seen.get(entry.theme.value.as_str()) {
+            return Err(DefsError::new(
+                &entry.path,
+                entry.theme.line,
+                entry.theme.col,
+                format!(
+                    "theme '{}' already has a page_group row at {}:{}:{}",
+                    entry.theme.value,
+                    prev.path.display(),
+                    prev.theme.line,
+                    prev.theme.col
+                ),
+            ));
+        }
+        first_seen.insert(entry.theme.value.as_str(), entry);
+        table.insert(entry.theme.value.clone(), entry.group.value.clone());
+    }
+    Ok(table)
+}
+
 fn check_id_key_dupes<T: IdKeyEntry>(entries: &[T], kind: &str) -> Result<(), DefsError> {
     let mut seen_ids: HashMap<u32, &T> = HashMap::new();
     let mut seen_keys: HashMap<&str, &T> = HashMap::new();

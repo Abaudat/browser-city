@@ -40,11 +40,6 @@ export default defineConfig({
       // that is wrong is the exact failure mode these overlays exist to
       // prevent, and an overlay that lies about a collider is worse than
       // no overlay at all.
-      // Story 2.6: `atlas-pages.ts` needs `Assets.load`'s real browser
-      // Image-decode runtime, exactly the same reason `part-sheets.ts` is
-      // excluded below -- its own pure logic lives in `atlas-frame.ts`
-      // instead (the `frame-rect.ts` split, one module below), which
-      // stays in scope by not being named here.
       // Story 1.10: `composite-canvas.ts` needs a real `OffscreenCanvas`
       // (an `OffscreenCanvas`-less node test cannot exercise it
       // meaningfully) and `part-sheets.ts` needs a real Vite
@@ -59,7 +54,6 @@ export default defineConfig({
         "src/render/appearance/composite-canvas.ts",
         "src/render/appearance/part-sheets.ts",
         "src/render/appearance/appearance-texture.ts",
-        "src/render/atlas-pages.ts",
       ],
       thresholds: {
         lines: 90,

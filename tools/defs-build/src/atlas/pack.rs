@@ -163,12 +163,23 @@ fn pack_group(group: &str, items: &[&PackItem]) -> Result<(Vec<u32>, Vec<LocalPl
             .map(|p| p.key.sheet.as_str())
             .collect();
         return Err(format!(
-            "group '{group}' needs {page_count} pages, more than ATLAS_MAX_PAGES_PER_GROUP ({ATLAS_MAX_PAGES_PER_GROUP}) -- did not fit: {}",
+            "{} -- did not fit: {}",
+            page_cap_error_prefix(group, page_count),
             overflow.join(", ")
         ));
     }
 
     Ok((page_content_heights, placements))
+}
+
+/// The exact, stable prefix of [`pack_group`]'s own per-group page-cap
+/// error -- exported so a caller (a proptest that must accept *only* this
+/// failure, or a unit test asserting the exact message) never matches on
+/// a loose substring of it.
+pub fn page_cap_error_prefix(group: &str, page_count: usize) -> String {
+    format!(
+        "group '{group}' needs {page_count} pages, more than ATLAS_MAX_PAGES_PER_GROUP ({ATLAS_MAX_PAGES_PER_GROUP})"
+    )
 }
 
 /// Packs every group in `items`, groups visited in sorted key order.
@@ -305,8 +316,10 @@ mod tests {
             item("crowded", "c.png", 0, 0, side, side, "c"),
         ];
         let err = pack_all(&items).unwrap_err();
-        assert!(err.contains("crowded"), "{err}");
-        assert!(err.contains('3'), "{err}");
+        assert!(
+            err.starts_with(&page_cap_error_prefix("crowded", 3)),
+            "expected the exact cap-error prefix naming 'crowded' and 3 pages, got: {err}"
+        );
     }
 
     #[test]
@@ -375,48 +388,128 @@ mod proptests {
     use super::*;
     use proptest::prelude::*;
 
-    fn rect_strategy() -> impl Strategy<Value = (u32, u32)> {
-        (1u32..200, 1u32..200)
+    /// Up to four groups -- multi-group packing (and cross-group
+    /// isolation) actually gets exercised, not just the single-group
+    /// case (Quentin's direction).
+    fn group_name() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just("a".to_string()),
+            Just("b".to_string()),
+            Just("c".to_string()),
+            Just("d".to_string()),
+        ]
+    }
+
+    /// A whole multiple of 16 (a tile), from 16px up to 1024px --
+    /// realistic sizes that actually spill a shelf, a page and the
+    /// per-group cap (Quentin's direction: the old 1..200 range, at most
+    /// 24 items, never totalled more than one shelf's worth of width).
+    fn tile_len() -> impl Strategy<Value = u32> {
+        (1u32..=64).prop_map(|n| n * 16)
+    }
+
+    fn item_dims_strategy() -> impl Strategy<Value = (String, u32, u32)> {
+        (group_name(), tile_len(), tile_len())
+    }
+
+    fn build_items(dims: &[(String, u32, u32)]) -> Vec<PackItem> {
+        dims.iter()
+            .enumerate()
+            .map(|(i, (group, w, h))| PackItem {
+                group: group.clone(),
+                source: SourceKey {
+                    sheet: format!("sheet-{i}.png"),
+                    x: 0,
+                    y: 0,
+                    w: *w,
+                    h: *h,
+                },
+                sort_key: format!("key-{i:04}"),
+            })
+            .collect()
+    }
+
+    /// `dims` paired with a real shuffle (`Vec::prop_shuffle`, never a
+    /// fixed `reverse()`) of its own index order -- Quentin's direction,
+    /// point 3.
+    fn dims_and_shuffle_strategy() -> impl Strategy<Value = (Vec<(String, u32, u32)>, Vec<usize>)> {
+        prop::collection::vec(item_dims_strategy(), 1..64).prop_flat_map(|dims| {
+            let indices: Vec<usize> = (0..dims.len()).collect();
+            Just(indices)
+                .prop_shuffle()
+                .prop_map(move |shuffled| (dims.clone(), shuffled))
+        })
+    }
+
+    /// The only failure a generated case may legitimately produce: this
+    /// crate's own per-group page cap, for a group that is actually
+    /// present in the input, at some page count `pack_group` could
+    /// plausibly report. A caller passing `false` for `must_be_cap_error`
+    /// on any other shape of failure fails the property outright
+    /// (Quentin's direction: an earlier version's `let Ok(result) = ...
+    /// else { return Ok(()) }` swallowed *every* error, so a regression
+    /// that always returns `Err` still passed).
+    fn is_an_acceptable_page_cap_error(err: &str, groups_present: &[&str]) -> bool {
+        groups_present
+            .iter()
+            .any(|g| (3..=64).any(|n| err.starts_with(&page_cap_error_prefix(g, n))))
+    }
+
+    fn is_power_of_two_in_range(n: u32) -> bool {
+        (ATLAS_PAGE_MIN_HEIGHT..=ATLAS_PAGE_MAX_HEIGHT).contains(&n) && (n & (n - 1)) == 0
     }
 
     proptest! {
         /// Quentin's direction: no two placed rects overlap once
         /// padding/extrusion is included, every rect sits fully inside
         /// 2048x2048, and there is no rotation -- asserted outright, not
-        /// merely absent.
+        /// merely absent. On success, also asserts the shape of every
+        /// page: it belongs to exactly one group, its height is a power
+        /// of two in range and holds its own placed content, and the
+        /// total placement count matches the number of distinct source
+        /// rects (Quentin's direction, point 2).
         #[test]
         fn placed_rects_never_overlap_and_always_fit_the_page_with_no_rotation(
-            dims in prop::collection::vec(rect_strategy(), 1..24)
+            dims in prop::collection::vec(item_dims_strategy(), 1..64)
         ) {
-            let items: Vec<PackItem> = dims
-                .iter()
-                .enumerate()
-                .map(|(i, (w, h))| PackItem {
-                    group: "g".to_string(),
-                    source: SourceKey {
-                        sheet: format!("sheet-{i}.png"),
-                        x: 0,
-                        y: 0,
-                        w: *w,
-                        h: *h,
-                    },
-                    sort_key: format!("key-{i:04}"),
-                })
-                .collect();
-
-            let result = pack_all(&items);
-            let Ok(result) = result else {
-                // Every generated rect is well within a page on its own
-                // (max 199px), so the only legitimate failure is the
-                // per-group page cap -- never "too big for a page".
-                return Ok(());
+            let items = build_items(&dims);
+            let groups_present: Vec<&str> = {
+                let mut gs: Vec<&str> = items.iter().map(|it| it.group.as_str()).collect();
+                gs.sort();
+                gs.dedup();
+                gs
             };
 
+            let result = match pack_all(&items) {
+                Ok(result) => result,
+                Err(err) => {
+                    prop_assert!(
+                        is_an_acceptable_page_cap_error(&err, &groups_present),
+                        "the only acceptable failure is this crate's own per-group page cap, got: {err}"
+                    );
+                    return Ok(());
+                }
+            };
+
+            // Distinct SourceKeys, never fewer (a dedup bug) or more (a
+            // duplicate placement) than what was actually packed.
+            let distinct_keys: std::collections::BTreeSet<&SourceKey> =
+                items.iter().map(|it| &it.source).collect();
+            prop_assert_eq!(result.placements.len(), distinct_keys.len());
+
             // Every placement, expanded by its own gutter halo, fits its
-            // page -- and no two halos overlap.
+            // page -- and no two halos overlap. Each page also belongs to
+            // exactly one group (every placement landing on it declared
+            // that same group), and its height is a real, in-range power
+            // of two that holds every placement's own content.
             let mut boxes: Vec<(u32, u32, u32, u32, u32)> = Vec::new(); // page,x0,y0,x1,y1
+            let mut content_bottom: std::collections::BTreeMap<u32, u32> = std::collections::BTreeMap::new();
+            let group_of_key: std::collections::BTreeMap<&SourceKey, &str> =
+                items.iter().map(|it| (&it.source, it.group.as_str())).collect();
             for (key, placement) in &result.placements {
                 let page = &result.pages[placement.page as usize];
+                prop_assert_eq!(*group_of_key.get(key).unwrap(), page.group.as_str());
+
                 let x0 = placement.x - ATLAS_GUTTER_PX;
                 let y0 = placement.y - ATLAS_GUTTER_PX;
                 let x1 = placement.x + key.w + ATLAS_GUTTER_PX;
@@ -434,32 +527,34 @@ mod proptests {
                     prop_assert!(!overlap, "two placed rects overlap on the same page");
                 }
                 boxes.push((placement.page, x0, y0, x1, y1));
+                let entry = content_bottom.entry(placement.page).or_insert(0);
+                *entry = (*entry).max(y1);
+            }
+            for (i, page) in result.pages.iter().enumerate() {
+                prop_assert!(
+                    is_power_of_two_in_range(page.height),
+                    "page {i} height {} is not a power of two in [{}, {}]",
+                    page.height, ATLAS_PAGE_MIN_HEIGHT, ATLAS_PAGE_MAX_HEIGHT
+                );
+                let bottom = content_bottom.get(&(i as u32)).copied().unwrap_or(0);
+                prop_assert!(
+                    page.height >= bottom,
+                    "page {i} height {} is shorter than its own placed content ({bottom})",
+                    page.height
+                );
             }
         }
 
         /// Determinism (Tim's direction): packing the same input twice,
-        /// and with the input shuffled, gives byte-identical results.
+        /// and with the input under a real shuffle (never `reverse()`,
+        /// one fixed permutation -- Quentin's direction, point 3), gives
+        /// byte-identical results.
         #[test]
         fn packing_is_deterministic_under_shuffling(
-            dims in prop::collection::vec(rect_strategy(), 1..16)
+            (dims, shuffled_indices) in dims_and_shuffle_strategy()
         ) {
-            let items: Vec<PackItem> = dims
-                .iter()
-                .enumerate()
-                .map(|(i, (w, h))| PackItem {
-                    group: "g".to_string(),
-                    source: SourceKey {
-                        sheet: format!("sheet-{i}.png"),
-                        x: 0,
-                        y: 0,
-                        w: *w,
-                        h: *h,
-                    },
-                    sort_key: format!("key-{i:04}"),
-                })
-                .collect();
-            let mut shuffled = items.clone();
-            shuffled.reverse();
+            let items = build_items(&dims);
+            let shuffled: Vec<PackItem> = shuffled_indices.iter().map(|&i| items[i].clone()).collect();
 
             let a = pack_all(&items);
             let b = pack_all(&shuffled);

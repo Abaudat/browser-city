@@ -51,6 +51,7 @@ enum Kind {
     Professions,
     Chains,
     Balance,
+    PageGroups,
     Appearance,
     Tags,
     Rules,
@@ -76,6 +77,7 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
         "professions" => Ok(Kind::Professions),
         "chains" => Ok(Kind::Chains),
         "balance" => Ok(Kind::Balance),
+        "atlas" => Ok(Kind::PageGroups),
         "appearance" => Ok(Kind::Appearance),
         "tags" => Ok(Kind::Tags),
         "rules" => Ok(Kind::Rules),
@@ -84,7 +86,7 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
             1,
             1,
             format!(
-                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/recipes/professions/chains/balance/appearance/tags/rules"
+                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/recipes/professions/chains/balance/atlas/appearance/tags/rules"
             ),
         )),
     }
@@ -184,6 +186,16 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         value: located(text, &b.value),
                         min: b.min,
                         max: b.max,
+                    });
+                }
+            }
+            Kind::PageGroups => {
+                let file: PageGroupFile = parse_toml(path, text)?;
+                for g in file.page_group {
+                    raw.page_groups.push(PageGroupEntry {
+                        path: path.clone(),
+                        theme: located(text, &g.theme),
+                        group: located(text, &g.group),
                     });
                 }
             }

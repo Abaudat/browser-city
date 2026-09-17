@@ -35,6 +35,7 @@ import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
 import type { AppearanceTuple } from "../render/appearance/composite";
+import { AtlasPageLoader } from "../render/atlas-pages";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -106,10 +107,11 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Poster_1.png",
     import.meta.url,
   ).href,
-  counter: new URL(
-    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png",
-    import.meta.url,
-  ).href,
+  // "counter" is story 2.6's own atlas-drawn prop -- the shop counter's
+  // `object_def.sprite` is byte-for-byte this same art, so it loads
+  // through `render/atlas-pages.ts`'s `AtlasPageLoader` instead of a
+  // `ModernTileset/` URL import (Tim's direction, cycle 1): see
+  // `mountStreetScene`'s own `textures.set("counter", ...)` below.
   // Shop B's own furniture: a grocer, not a second tiki bar (Artie's
   // "grounded city" direction).
   shelf: new URL(
@@ -235,6 +237,12 @@ export interface MountStreetSceneOptions {
    * street crowd's real appearance textures (`citizens-layer.ts`) and, via
    * `citizens.ts`, the tuples themselves. */
   readonly defs: Defs;
+  /** Story 2.6: the already-resolved base a packed atlas page's own
+   * filename is appended to (e.g. `` `${import.meta.env.BASE_URL}atlas/`
+   * `` at the real call site) -- never hard-coded and never read from
+   * `import.meta.env` in this file, the same idiom `main.ts` already uses
+   * for `defs/defs.json`'s own fetch path. */
+  readonly atlasBaseUrl: string;
   readonly tileSizePx: number;
   readonly storeyHeightPx: number;
   readonly rankOf: (layerCode: number) => number;
@@ -350,6 +358,12 @@ export interface StreetSceneHandle {
   /** Story 1.10: the mounted street crowd, for `main.ts` to wire its own
    * DEV-only `window.__bc` hooks against -- never read by this file. */
   readonly citizensLayer: CitizensLayerHandle;
+  /** Story 2.6 (NFR12): how many distinct atlas pages this mount actually
+   * resolved a texture from -- `AtlasPageLoader.boundPageCount()` at
+   * mount time, for `main.ts` to wire its own DEV-only `window.__bc` hook
+   * against, the same way it does for the crowd's own texture identity
+   * count. */
+  readonly distinctBoundAtlasPages: number;
   /** Removes every listener this scene attached (keyboard and pointer). */
   destroy(): void;
   /** Live-updates the FR173 highlight dial (0-100) -- re-applies
@@ -601,6 +615,7 @@ export async function mountStreetScene(
 ): Promise<StreetSceneHandle> {
   const {
     defs,
+    atlasBaseUrl,
     tileSizePx,
     storeyHeightPx,
     rankOf,
@@ -637,6 +652,18 @@ export async function mountStreetScene(
   textures.set("wallTileH", cropped(wallSheet, WALL_TILE_H_FRAME));
   textures.set("wallTileV", cropped(wallSheet, WALL_TILE_V_FRAME));
   textures.set("floor", cropped(textureFor("floorSheet", rawTextures), FLOOR_TILE_FRAME));
+
+  // Story 2.6 (Tim's direction, cycle 1): the shop counter is the one
+  // placed prop whose own `object_def.sprite` is byte-for-byte the art
+  // the street already draws, so it is the one prop this story proves
+  // the atlas reader end to end against -- loaded through
+  // `AtlasPageLoader` instead of a `ModernTileset/` URL import.
+  const atlasPageLoader = new AtlasPageLoader(atlasBaseUrl);
+  const counterDef = defs.objects.find((o) => o.key === "shop_counter");
+  if (!counterDef) {
+    throw new Error("scene: defs/ no longer declares 'shop_counter'");
+  }
+  textures.set("counter", await atlasPageLoader.objectTexture(defs, counterDef));
 
   const world = new Container();
   app.stage.addChild(world);
@@ -1286,6 +1313,7 @@ export async function mountStreetScene(
     getRenderOrder: () => renderOrder,
     keyboard,
     citizensLayer,
+    distinctBoundAtlasPages: atlasPageLoader.boundPageCount(),
     setHighlightStrength,
     currentFloor: () => walk.floor,
     poolDrawables: () => allDrawables,

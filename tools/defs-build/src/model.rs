@@ -95,6 +95,17 @@ pub const ATLAS_PAGE_MIN_HEIGHT: u32 = 16;
 /// simultaneously-bound textures a typical scene targets.
 pub const ATLAS_MAX_PAGES_PER_GROUP: usize = 2;
 
+/// NFR12's other half (Artie's direction, cycle 1): every page any object
+/// in the tree resolves to, summed across every group, fails the build
+/// above this, naming the pages. Today's `defs/` has exactly one implicit
+/// scene -- everything a street places -- so this total *is* that scene's
+/// own bound-page count; once a second scene exists that is never
+/// simultaneously loaded with the first (a themed district visited on its
+/// own, say), this must become a per-scene sum instead of a flat total
+/// across the whole tree, or it will fail a build for two scenes that are
+/// never actually bound together.
+pub const ATLAS_MAX_BOUND_PAGES: usize = 8;
+
 /// A 1px border of extruded (edge-repeated, never transparent -- Artie's
 /// direction) pixels surrounds every packed rect on every side, always --
 /// nearest-neighbour sampling plus this is what stops bleed at a
@@ -490,6 +501,39 @@ pub struct BalanceFile {
     pub balance: Vec<RawBalance>,
 }
 
+// --- atlas page groups (story 2.6, cycle 1, Artie's direction): maps a
+// theme-sorter-derived theme to the page group it actually shares -------
+
+/// One `theme -> group` mapping row (`defs/atlas/page-groups.toml`):
+/// `theme` is exactly [`crate::atlas::theme::theme_group`]'s own derived
+/// value (the folder segment, normalised), never a sheet path or an
+/// object key; `group` is the page group every sheet naming that theme
+/// actually packs onto. Artie's direction: every street-kit theme
+/// (terrain, city props, generic/floor-modular buildings, and whichever
+/// themed folders the street kit borrows single props from) maps to one
+/// shared `"street"` group; a themed district keeps its own group. A
+/// theme with no row here is a build error naming the theme -- there is
+/// no silent per-theme-folder default.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawPageGroup {
+    pub theme: Spanned<String>,
+    pub group: Spanned<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PageGroupFile {
+    pub page_group: Vec<RawPageGroup>,
+}
+
+#[derive(Debug)]
+pub struct PageGroupEntry {
+    pub path: PathBuf,
+    pub theme: Located<String>,
+    pub group: Located<String>,
+}
+
 // --- tags (story 2.10, FR111): the rule engine's only vocabulary -----------
 
 #[derive(Debug, Deserialize)]
@@ -875,6 +919,7 @@ pub struct RawDefs {
     pub professions: Vec<ProfessionEntry>,
     pub chains: Vec<ChainEntry>,
     pub balance: Vec<BalanceEntry>,
+    pub page_groups: Vec<PageGroupEntry>,
     pub bodies: Vec<BodyEntry>,
     pub eyes: Vec<EyesEntry>,
     pub hairstyles: Vec<HairstyleEntry>,

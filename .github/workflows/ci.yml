@@ -130,8 +130,9 @@ jobs:
               # fixtures/** below via its own filter membership elsewhere).
               - 'fixtures/**'
               # Story 2.6: the packed atlas pages this job's own
-              # check-defs-current.sh regenerates and diffs -- outside
-              # client/**, so listed explicitly here
+              # check-defs-current.sh regenerates and diffs -- inside
+              # client/**, but the `defs:` filter above does not include
+              # `client/**` itself, so listed explicitly here
               # (scripts/ci/check-atlas-filter.sh pins this line to
               # tools/defs-build/src/model.rs's own ATLAS_PAGES_DIR, so
               # the two can never drift).

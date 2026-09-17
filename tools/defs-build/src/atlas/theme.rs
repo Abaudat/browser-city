@@ -1,7 +1,16 @@
 //! Story 2.6, AC2: a page's group key is *derived* from a `sprite.sheet`
 //! path's own theme-sorter directory segment -- never a hand-written list,
-//! never a per-object field (Tim's direction). Pure: a `String` in,
-//! a `String` (or a named error) out.
+//! never a per-object field. Pure: a `String` in, a `String` (or a named
+//! error) out.
+//!
+//! The derived theme is not itself the page group: `resolve_page_group`
+//! maps it through `defs/atlas/page-groups.toml`'s own `theme -> group`
+//! table (a street kit's own single-prop borrows from several theme
+//! folders share one bound page set; a themed district keeps its own).
+//! A theme with no row is a build error naming it -- never a silent
+//! per-theme-folder default.
+
+use std::collections::BTreeMap;
 
 /// Whether a sheet's own theme-sorter root names a shadow variant --
 /// Artie's direction: mixing `Shadowless` and `Black_Shadow` copies of the
@@ -88,6 +97,18 @@ pub fn theme_group(sheet: &str) -> Result<String, String> {
             "sheet path '{sheet}' has no recognisable theme-sorter segment"
         )),
     }
+}
+
+/// Maps a derived theme (`theme_group`'s own output) to the page group it
+/// actually shares, via `defs/atlas/page-groups.toml`'s table -- a theme
+/// absent from it is a build error naming the theme, never a silent
+/// fallback to the theme itself.
+pub fn resolve_page_group(theme: &str, table: &BTreeMap<String, String>) -> Result<String, String> {
+    table.get(theme).cloned().ok_or_else(|| {
+        format!(
+            "theme '{theme}' has no row in defs/atlas/page-groups.toml -- add one naming the page group it shares"
+        )
+    })
 }
 
 /// AC2/Artie's direction: every sheet feeding one group must agree on
@@ -233,6 +254,24 @@ mod tests {
             shadow_variant("a/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/x.png"),
             ShadowVariant::Default
         );
+    }
+
+    #[test]
+    fn resolve_page_group_maps_a_known_theme() {
+        let table: BTreeMap<String, String> = [("camping".to_string(), "street".to_string())]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            resolve_page_group("camping", &table).as_deref(),
+            Ok("street")
+        );
+    }
+
+    #[test]
+    fn resolve_page_group_fails_naming_an_unmapped_theme() {
+        let table: BTreeMap<String, String> = BTreeMap::new();
+        let err = resolve_page_group("kitchen", &table).unwrap_err();
+        assert!(err.contains("kitchen"), "{err}");
     }
 
     #[test]

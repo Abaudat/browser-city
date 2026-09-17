@@ -62,7 +62,8 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
             .map(|(p, b)| (p.to_string_lossy().replace('\\', "/"), b))
             .collect();
 
-    let out = atlas::build::build_atlas(&defs.objects, &object_sheet_bytes).unwrap();
+    let page_groups = validate::validate_page_groups(&raw).unwrap();
+    let out = atlas::build::build_atlas(&defs.objects, &object_sheet_bytes, &page_groups).unwrap();
 
     for o in &defs.objects {
         let rect = out.atlas_by_object_id[&o.id];
@@ -88,56 +89,4 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
             }
         }
     }
-}
-
-/// Story 2.6, NFR12: the real defs/ tree's whole object set (today, the
-/// entire test street's world) resolves against a small number of pages
-/// -- the build-time assertion is `ATLAS_MAX_PAGES_PER_GROUP`
-/// (`atlas::pack`'s own per-group cap); this is the whole-scene half of
-/// the arithmetic Tim's direction names: real, tiny today, replaced by
-/// the client-side spawn-scene check once a spawn scene exists.
-#[test]
-fn the_real_defs_objects_resolve_against_at_most_eight_pages() {
-    let root = repo_root();
-    let tracked = fsio::list_git_tracked_files(&root, "defs").unwrap();
-    let mut text_files = fsio::read_text(&root, &tracked).unwrap();
-    text_files.sort_by(|a, b| a.0.cmp(&b.0));
-    let raw = parse::parse_all(&text_files).unwrap();
-
-    let mut object_sheet_paths = object_sprite_sheet_paths(&raw);
-    object_sheet_paths.sort();
-    object_sheet_paths.dedup();
-    let mut all_sheet_paths = appearance_sheet_paths(&raw);
-    all_sheet_paths.extend(object_sheet_paths.iter().cloned());
-    all_sheet_paths.sort();
-    all_sheet_paths.dedup();
-    let sheet_dims: BTreeMap<String, (u32, u32)> = fsio::read_png_dims(&root, &all_sheet_paths)
-        .unwrap()
-        .into_iter()
-        .collect();
-    let codes_golden = fsio::read_codes_golden(&root).unwrap();
-    let layer_codes = layer_codes::parse_layer_codes(&codes_golden);
-    let defs = validate::validate(
-        &raw,
-        &sheet_dims,
-        &layer_codes,
-        model::SPRITE_SHEET_ALLOWED_ROOT,
-    )
-    .unwrap();
-
-    let object_sheet_paths_buf: Vec<PathBuf> =
-        object_sheet_paths.iter().map(PathBuf::from).collect();
-    let object_sheet_bytes: BTreeMap<String, Vec<u8>> =
-        fsio::read_bytes(&root, &object_sheet_paths_buf)
-            .unwrap()
-            .into_iter()
-            .map(|(p, b)| (p.to_string_lossy().replace('\\', "/"), b))
-            .collect();
-
-    let out = atlas::build::build_atlas(&defs.objects, &object_sheet_bytes).unwrap();
-    assert!(
-        out.pages.len() <= 8,
-        "the real defs/ object set resolves against {} pages, more than the ~8 NFR12 targets",
-        out.pages.len()
-    );
 }

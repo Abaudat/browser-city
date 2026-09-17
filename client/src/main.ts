@@ -9,6 +9,7 @@ import { connect } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
   recordAppearanceTextureIdsForE2e,
+  recordDistinctBoundAtlasPagesForE2e,
   recordFrameWorkForE2e,
   recordHighlightForE2e,
   recordIgnoredIntentForE2e,
@@ -198,6 +199,7 @@ async function startStreetScene(): Promise<void> {
   // every frame to see whether it changed.
   const handle = await mountStreetScene(app, {
     defs,
+    atlasBaseUrl: `${import.meta.env.BASE_URL}atlas/`,
     tileSizePx,
     storeyHeightPx,
     rankOf: (code) => resolveRank(rankTable, code),
@@ -255,6 +257,7 @@ async function startStreetScene(): Promise<void> {
   );
   exposeAppearanceCompareForE2e(handle.citizensLayer.compareForE2e);
   recordPlayerAppearanceForE2e(handle.playerAppearance);
+  recordDistinctBoundAtlasPagesForE2e(handle.distinctBoundAtlasPages);
 
   // Story 1.12 (FR165/FR168): the whole of the debug tooling's gate, and
   // the only import of `client/src/debug/` that exists (enforced by

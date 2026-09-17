@@ -59,7 +59,8 @@ pub fn build(
 ) -> Result<BuildOutput, DefsError> {
     let raw = parse::parse_all(files)?;
     let defs = validate::validate(&raw, sheet_dims, layer_codes, sprite_sheet_allowed_root)?;
-    let atlas = atlas::build::build_atlas(&defs.objects, object_sheet_bytes)
+    let page_groups = validate::validate_page_groups(&raw)?;
+    let atlas = atlas::build::build_atlas(&defs.objects, object_sheet_bytes, &page_groups)
         .map_err(|e| DefsError::new("tools/defs-build/atlas", 0, 0, e))?;
     Ok(BuildOutput {
         rust: emit::emit_rust(&defs, defs_version),
