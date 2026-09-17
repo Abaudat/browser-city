@@ -78,3 +78,23 @@ describe("readReloadedFor", () => {
     expect(storage.data.size).toBe(0);
   });
 });
+
+describe("writeReloadedFor", () => {
+  it("returns true when the write actually lands", () => {
+    expect(writeReloadedFor(fakeStorage(), VERSION)).toBe(true);
+  });
+
+  it("returns false for null storage, never throwing", () => {
+    expect(() => writeReloadedFor(null, VERSION)).not.toThrow();
+    expect(writeReloadedFor(null, VERSION)).toBe(false);
+  });
+
+  it("returns false when setItem throws, never throwing itself", () => {
+    const storage = fakeStorage();
+    storage.setItem = () => {
+      throw new Error("quota exceeded");
+    };
+    expect(() => writeReloadedFor(storage, VERSION)).not.toThrow();
+    expect(writeReloadedFor(storage, VERSION)).toBe(false);
+  });
+});

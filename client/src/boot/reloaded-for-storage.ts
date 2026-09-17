@@ -40,7 +40,22 @@ export function readReloadedFor(storage: SettingsStorage | null): HandshakeVersi
   );
 }
 
-/** Records `version` as reloaded-for, before actually reloading. */
-export function writeReloadedFor(storage: SettingsStorage | null, version: HandshakeVersion): void {
-  saveVersioned(storage, RELOADED_FOR_STORAGE_KEY, RELOADED_FOR_VERSION, PAYLOAD_KEY, version);
+/** Records `version` as reloaded-for, before actually reloading. Returns
+ * whether the write actually landed (cycle 1 review, Tim's blocker
+ * finding): storage can be null, blocked or throwing (cookie-blocking
+ * settings, a sandboxed iframe, some private modes), and a caller must
+ * never fall through to an unguarded reload when it did not -- that is a
+ * reload storm against the client's own host for the whole
+ * publish-to-Pages propagation window of every deploy. */
+export function writeReloadedFor(
+  storage: SettingsStorage | null,
+  version: HandshakeVersion,
+): boolean {
+  return saveVersioned(
+    storage,
+    RELOADED_FOR_STORAGE_KEY,
+    RELOADED_FOR_VERSION,
+    PAYLOAD_KEY,
+    version,
+  );
 }

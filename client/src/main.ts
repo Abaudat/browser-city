@@ -3,6 +3,7 @@ import { runBootGate } from "./boot/boot-gate";
 import { BOOT_MARK, markBoot } from "./boot/boot-marks";
 import type { VerifiedDefs } from "./boot/handshake";
 import { createHandshakeLatch, type HandshakeLatch } from "./boot/handshake-latch";
+import { createPostMountGuard, type PostMountGuard } from "./boot/post-mount-guard";
 import { readReloadedFor, writeReloadedFor } from "./boot/reloaded-for-storage";
 import type { DebugWorldView } from "./debug/world-view";
 import { fetchDefs } from "./defs/load";
@@ -74,6 +75,16 @@ async function main(): Promise<void> {
   // report and only before it has already settled another way -- a later
   // drop, after the handshake already arrived, is a no-op here (the
   // latch has already settled).
+  //
+  // Cycle 1 review (Quentin's finding 1 / Tim's finding 3): the handshake
+  // does not stop mattering once `latch` has settled -- every later
+  // `onHandshake` call (a tab left open across a deploy, or the late
+  // arrival after an `unreachable` mount) is also fed to
+  // `postMountGuard`, set once `startStreetScene` has something mounted
+  // to compare against. Before that, it is `undefined` and the call is a
+  // no-op here -- the boot gate's own `latch` is what covers everything
+  // up to and including the first settlement.
+  let postMountGuard: PostMountGuard | undefined;
   const latch = createHandshakeLatch();
   connect(
     onPing,
@@ -81,11 +92,20 @@ async function main(): Promise<void> {
       notice.setStatus(status);
       if (status === "disconnected") latch.resolveUnreachable();
     },
-    (version) => latch.resolveHandshake(version),
+    (version) => {
+      latch.resolveHandshake(version);
+      postMountGuard?.onHandshake(version);
+    },
   );
 
   try {
-    await startStreetScene(latch, () => notice.setStatus("updating"));
+    await startStreetScene(
+      latch,
+      () => notice.setStatus("updating"),
+      (guard) => {
+        postMountGuard = guard;
+      },
+    );
   } catch (error: unknown) {
     // NFR42: the street scene degrades to not-drawing, never takes the ping
     // round trip down with it.
@@ -114,7 +134,11 @@ async function main(): Promise<void> {
  * `Application.init()` runs concurrently with the boot gate too -- only
  * the scene mount itself waits on it.
  */
-async function startStreetScene(latch: HandshakeLatch, onDegrade: () => void): Promise<void> {
+async function startStreetScene(
+  latch: HandshakeLatch,
+  onDegrade: () => void,
+  setPostMountGuard: (guard: PostMountGuard) => void,
+): Promise<void> {
   const mount = document.getElementById("test-street");
   if (!mount) {
     console.error("[main] #test-street is missing from index.html");
@@ -152,6 +176,26 @@ async function startStreetScene(latch: HandshakeLatch, onDegrade: () => void): P
     return;
   }
   const defs: VerifiedDefs = bootResult.defs;
+
+  // Cycle 1 review (Quentin's finding 1 / Tim's finding 3): the handshake
+  // stays live for the rest of the session. The reference version is
+  // whatever is actually about to render -- `defs.defsVersion` plus the
+  // compiled-in `PROTOCOL_VERSION` -- so a later republish this
+  // connection stays open across (or a late handshake following an
+  // `unreachable` mount) is compared against the real, current state,
+  // never a stale expectation. No live defs swap, no scene remount (Tim's
+  // direction): any mismatch stops the ticker, then takes the same
+  // guarded-reload path a boot-time mismatch does.
+  setPostMountGuard(
+    createPostMountGuard({
+      referenceVersion: { defsVersion: defs.defsVersion, protocolVersion: PROTOCOL_VERSION },
+      readReloadedFor: () => readReloadedFor(sessionStorage),
+      writeReloadedFor: (version) => writeReloadedFor(sessionStorage, version),
+      stopDrawing: () => app.ticker.stop(),
+      reload: () => window.location.reload(),
+      onDegrade,
+    }),
+  );
 
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");

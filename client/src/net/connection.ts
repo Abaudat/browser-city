@@ -60,6 +60,16 @@ export function connect(
       connection
         .subscriptionBuilder()
         .onApplied(() => markBoot(BOOT_MARK.SUBSCRIPTION_APPLIED))
+        .onError((ctx) => {
+          // Cycle 1 review (Tim's finding 6): with no `onError`, a
+          // rejected subscribe left the boot gate's own handshake latch
+          // waiting forever -- a blank canvas, no notice, worse than
+          // before this story. Reusing `onStatus("disconnected")` is
+          // deliberate: `main.ts` already resolves the latch as
+          // unreachable on that status, so this needs no new callback.
+          console.error("[net] subscription failed", ctx.event);
+          onStatus?.("disconnected");
+        })
         .subscribe(["SELECT * FROM demo_ping", "SELECT * FROM module_version"]);
     })
     .onConnectError((_ctx, error) => {

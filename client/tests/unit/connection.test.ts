@@ -25,6 +25,7 @@ interface FakeState {
   onDisconnectCb?: (ctx: unknown, error?: unknown) => void;
   subscribedSql?: string | string[];
   onAppliedCb?: () => void;
+  onSubscriptionErrorCb?: (ctx: { event?: unknown }) => void;
   onInsertCb?: (ctx: unknown, row: FakeRow) => void;
   onModuleVersionInsertCb?: (ctx: unknown, row: FakeModuleVersionRow) => void;
 }
@@ -34,6 +35,10 @@ const state: FakeState = {};
 const fakeSubscriptionBuilder = {
   onApplied: (cb: () => void) => {
     state.onAppliedCb = cb;
+    return fakeSubscriptionBuilder;
+  },
+  onError: (cb: (ctx: { event?: unknown }) => void) => {
+    state.onSubscriptionErrorCb = cb;
     return fakeSubscriptionBuilder;
   },
   subscribe: (sql: string | string[]) => {
@@ -96,6 +101,7 @@ beforeEach(() => {
   state.onDisconnectCb = undefined;
   state.subscribedSql = undefined;
   state.onAppliedCb = undefined;
+  state.onSubscriptionErrorCb = undefined;
   state.onInsertCb = undefined;
   state.onModuleVersionInsertCb = undefined;
 });
@@ -220,6 +226,22 @@ describe("connect", () => {
         state.onConnectCb?.(fakeConn);
         state.onDisconnectCb?.({}, undefined);
       }).not.toThrow();
+    });
+
+    it("a rejected subscription moves to 'disconnected' too (Tim's finding 6: no onError left the boot gate waiting forever)", () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const statuses: string[] = [];
+      connect(
+        () => {},
+        (status) => statuses.push(status),
+      );
+      state.onConnectCb?.(fakeConn);
+      expect(() =>
+        state.onSubscriptionErrorCb?.({ event: new Error("subscribe rejected") }),
+      ).not.toThrow();
+      expect(statuses).toEqual(["connecting", "connected", "disconnected"]);
+      expect(errorSpy).toHaveBeenCalled();
+      errorSpy.mockRestore();
     });
   });
 

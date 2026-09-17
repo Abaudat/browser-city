@@ -3,8 +3,12 @@
 // suite cannot reach -- the wire (how many frames the client actually
 // sends) and a real `fetch` (a routed-and-held response, not a fake).
 // Everything else (every branch of `decideHandshake`, the boot gate's own
-// order of calls, the bounded retry, the guarded reload) is unit-tested
-// in `tests/unit/boot/**`.
+// order of calls, the single refetch attempt, the guarded reload, the
+// post-mount mismatch, the handshake timeout) is unit-tested in
+// `tests/unit/boot/**` (Quentin's cycle 1 direction: unit tests with
+// fakes are the right layer for those, since the wire-level fact this
+// file exists to prove -- the view re-inserts on republish -- is already
+// covered by `scripts/ci/check-view-live-refresh.sh`).
 //
 // No `waitForTimeout` anywhere (the house rule -- see connection-notice.
 // spec.ts's own header): the "zero frames while the refetch is in
@@ -125,8 +129,10 @@ test("every defs request stays stale: no crash, no request storm, a visible noti
 
   await expect(notice(page)).toHaveText("Updating…", { timeout: 20_000 });
   expect(await frameCount(page)).toBe(0);
-  // Bounded: the initial unversioned fetch plus a small, fixed number of
-  // retries -- never an unbounded storm against the server.
-  expect(requestCount).toBeLessThanOrEqual(4);
+  // Exactly two: the initial unversioned fetch, then one cache-busted
+  // refetch -- never a retry loop (cycle 1 review, Tim's finding 4: the
+  // identical URL would only ever be answered by the browser's own HTTP
+  // cache on a second attempt, so a retry buys nothing).
+  expect(requestCount).toBe(2);
   expect(pageErrors).toEqual([]);
 });
