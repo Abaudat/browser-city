@@ -1,0 +1,3 @@
+[[archetype]]
+key = "bad_inset"
+collider_inset = { left = -1, top = 0, right = 0, bottom = 0 }

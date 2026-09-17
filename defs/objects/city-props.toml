@@ -43,11 +43,11 @@ name = "Shop Counter"
 layer = "furniture"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png", x = 0, y = 0, w = 48, h = 64 }
 width = 3
-height = 1
-# The whole cell of the counter's own footprint blocks (you cannot walk
-# through a counter), and FR148's reach is the customer side of it: the
-# full-width row immediately south, outside the footprint entirely.
-collider = { x0 = 0, y0 = 0, x1 = 48, y1 = 16 }
+# Story 2.3 (AC3): the counter's whole footprint blocks, whatever its own
+# width -- `full_cell_blocker`'s own worked case. FR148's reach is the
+# customer side of it: the full-width row immediately south, outside the
+# footprint entirely.
+archetype = "full_cell_blocker"
 interact_at = { x0 = 0, y0 = 16, x1 = 48, y1 = 32 }
 tags = ["counter", "fixture"]
 
@@ -58,10 +58,10 @@ name = "Street Lamp"
 layer = "objects"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Street_Lamp_5.png", x = 0, y = 0, w = 16, h = 64 }
 width = 1
-height = 1
-# The story 1.8 worked example: a small base collider near the bottom of
-# the cell, so a player passes through the rest of the cell freely.
-collider = { x0 = 6, y0 = 10, x1 = 10, y1 = 14 }
+# Story 2.3 (AC3): the story 1.8 worked example, now the `pole`
+# archetype's own defining case -- a small base collider near the bottom
+# of the cell, so a player passes through the rest of the cell freely.
+archetype = "pole"
 tags = ["lighting", "fixture"]
 
 [[object]]
@@ -71,12 +71,12 @@ name = "Shop Window"
 layer = "walls"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Balcony_Window_Left_1.png", x = 0, y = 0, w = 16, h = 16 }
 width = 1
-height = 1
 # Story 1.7 (FR121): a window wall tile -- solid like any other wall cell
 # (the whole cell), but drawn semi-transparently (`render.window_alpha`)
 # and retracted like any other front wall.
 window = true
-collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
+# Story 2.3 (AC3): the whole cell blocks -- `full_cell_blocker`.
+archetype = "full_cell_blocker"
 # Story 2.9 (AC1): a window is a wall variant -- solid, part of the
 # building envelope -- so its role tag is `wall`, not `fixture`.
 tags = ["shopfront", "wall", "wall_run"]
@@ -88,12 +88,12 @@ name = "Wall Segment"
 layer = "walls"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Grass_Wall_1_1.png", x = 0, y = 0, w = 16, h = 16 }
 width = 1
-height = 1
 # One plain, solid wall cell -- the generic segment a wall run (a
 # building facade, a bridge railing) is laid from, one cell at a time.
-# The whole cell blocks. A doorway is the absence of a segment, never an
-# object of its own (FR118: a door is an ordinary walkable cell).
-collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
+# The whole cell blocks (story 2.3's `full_cell_blocker` archetype). A
+# doorway is the absence of a segment, never an object of its own (FR118:
+# a door is an ordinary walkable cell).
+archetype = "full_cell_blocker"
 # Story 2.9 (AC1): `wall` is both a plain tag and this object's own role
 # tag (tag 6 carries the role table, `defs/tags/city.toml`). `wall_run`
 # is the wall-closure primitive's own vocabulary (AC3).
@@ -110,13 +110,14 @@ layer = "objects"
 # not exist yet.
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/10_Vehicles_Singles_16x16/ME_Singles_Vehicles_16x16_Car_Left_1.png", x = 0, y = 0, w = 64, h = 48 }
 width = 4
-height = 1
 # The walkable span of a footbridge: four cells of deck, no collider at
-# all (FR128), so an entity on the deck's own floor walks the whole span
-# and an entity on the floor below passes under it unobstructed -- the
-# deck occupies the same (x, y) as the street beneath it and never
-# contributes collision to it (FR117). Story 2.4 (FR128): explicitly
-# walkable, not merely absent a collider -- `underfoot`.
+# all (FR128, story 2.3's `underfoot_flat` archetype), so an entity on
+# the deck's own floor walks the whole span and an entity on the floor
+# below passes under it unobstructed -- the deck occupies the same (x,
+# y) as the street beneath it and never contributes collision to it
+# (FR117). Story 2.4 (FR128): explicitly walkable, not merely absent a
+# collider -- `underfoot`.
+archetype = "underfoot_flat"
 tags = ["bridge", "underfoot", "fixture"]
 
 [[object]]
@@ -126,9 +127,10 @@ name = "Foot Stairs"
 layer = "objects"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Small_Stairs.png", x = 0, y = 0, w = 16, h = 32 }
 width = 1
-height = 1
 # A flight of steps between two floors: a physical, walkable prop, never
 # a teleport tile. Which floors it joins is a `floor_transition` row
 # anchored on its cell (FR117), never a field here. Story 2.4 (FR128):
-# explicitly walkable -- `underfoot`.
+# explicitly walkable -- `underfoot` (story 2.3's `underfoot_flat`
+# archetype).
+archetype = "underfoot_flat"
 tags = ["stairs", "underfoot", "fixture"]

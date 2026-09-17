@@ -758,8 +758,8 @@ behind a flag not exposed in production (FR168).
 
 `defs/` is the single source of truth for game content data (NFR31),
 subdivided into `objects/`, `items/`, `recipes/`, `professions/`,
-`chains/`, `appearance/`, `balance/`, `tags/` and `rules/`, each a
-directory of TOML files
+`chains/`, `appearance/`, `balance/`, `tags/`, `rules/` and
+`archetypes/`, each a directory of TOML files
 (the naming table's `city-props.toml`). Neither build target writes here
 and neither runs the generator: `tools/defs-build/` is a standalone Rust binary crate
 outside both the server and client dependency graphs (its own
@@ -869,6 +869,21 @@ declare a `collider` -- both directions are wrong metadata, rejected by
 object key, never a hard-coded allow-list of object keys in either
 parser. The tag key is a single named constant (`UNDERFOOT_TAG_KEY`) on
 each side, never a repeated string literal.
+
+An `[[object]]` may name an `archetype` (`defs/archetypes/*.toml`, key
+only, no id) instead of declaring its own `height` and/or `collider`
+directly -- an agent's classification of a proposed footprint, recorded
+in `defs/`, never in `tools/defs-build` itself. Each of `height` and
+`collider` has exactly one source (the object itself or the named
+archetype); both or neither is a build error. `tools/defs-build` lowers
+every archetype reference to a plain `height`/`collider` between parse
+and validation, so every existing check runs once, unchanged, on the
+lowered object. `archetype` is authoring-time only: it is never emitted
+into either generated artefact and never reaches a runtime. A companion
+offline binary, `defs-propose`, measures a first-guess footprint from a
+sprite's own lower-band alpha coverage and prints `[[object]]` stanzas
+to stdout only -- a starting point for an agent to classify, never an
+input to `tools/defs-build`'s own `build` path.
 
 ### Atlases
 

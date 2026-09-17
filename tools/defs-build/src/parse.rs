@@ -55,6 +55,7 @@ enum Kind {
     Appearance,
     Tags,
     Rules,
+    Archetypes,
 }
 
 /// `path` must read `defs/<kind>/<name>.toml` -- the kind is the second
@@ -81,12 +82,13 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
         "appearance" => Ok(Kind::Appearance),
         "tags" => Ok(Kind::Tags),
         "rules" => Ok(Kind::Rules),
+        "archetypes" => Ok(Kind::Archetypes),
         other => Err(DefsError::new(
             path,
             1,
             1,
             format!(
-                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/recipes/professions/chains/balance/atlas/appearance/tags/rules"
+                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/recipes/professions/chains/balance/atlas/appearance/tags/rules/archetypes"
             ),
         )),
     }
@@ -131,6 +133,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         interact_at: o.interact_at.as_ref().map(|c| located(text, c)),
                         window: o.window,
                         tags: o.tags,
+                        archetype: o.archetype.as_ref().map(|a| located(text, a)),
                     });
                 }
             }
@@ -367,6 +370,17 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         requires: located(text, &req.requires),
                         min: req.min,
                         max: req.max,
+                    });
+                }
+            }
+            Kind::Archetypes => {
+                let file: ArchetypeFile = parse_toml(path, text)?;
+                for a in file.archetype {
+                    raw.archetypes.push(ArchetypeEntry {
+                        path: path.clone(),
+                        key: located(text, &a.key),
+                        height: a.height.as_ref().map(|h| located(text, h)),
+                        collider_inset: a.collider_inset.as_ref().map(|c| located(text, c)),
                     });
                 }
             }

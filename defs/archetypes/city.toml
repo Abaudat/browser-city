@@ -1,0 +1,29 @@
+# Story 2.3 (AC3): an agent's own classification of a proposed footprint,
+# recorded here -- never in `tools/defs-build` itself. Authoring-time
+# only: lowered away by `defs-build` before either generated artefact is
+# written (docs/architecture.md's "Definitions" section). Seeded with
+# only the shapes the objects already committed under `defs/objects/`
+# actually justify -- never invented ahead of real props that need them.
+
+# The lamppost's own base collider (story 1.8's worked example): a small
+# footprint-relative pole near the bottom of the cell, so a player passes
+# through the rest of the cell freely.
+[[archetype]]
+key = "pole"
+height = 1
+collider_inset = { left = 6, top = 10, right = 6, bottom = 2 }
+
+# A prop whose whole footprint blocks -- the collider fills every cell of
+# it exactly, regardless of how wide the footprint is (a counter, a wall
+# segment, a window).
+[[archetype]]
+key = "full_cell_blocker"
+height = 1
+collider_inset = { left = 0, top = 0, right = 0, bottom = 0 }
+
+# A one-cell-tall prop with no collider at all -- explicitly walkable
+# (FR128 still requires the object's own `underfoot` tag; this archetype
+# only ever supplies `height`, never a collider).
+[[archetype]]
+key = "underfoot_flat"
+height = 1

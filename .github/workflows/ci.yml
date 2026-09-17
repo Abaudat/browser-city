@@ -225,6 +225,13 @@ jobs:
           # this job alone needs history; the generator's own tests and
           # check-defs-current.sh only need HEAD.
           fetch-depth: 0
+      # Story 2.3, Quentin's direction: plain grep guards, no toolchain
+      # needed -- run before the cargo steps below so a violation fails
+      # in seconds, not after the whole build/test/coverage run.
+      - name: story 2.3 AC3, the proposer never hardcodes a committed key or sheet filename
+        run: bash ../../scripts/ci/check-proposer-no-content-keys.sh
+      - name: story 2.3 AC3/AC4, archetype and the proposer never reach a runtime
+        run: bash ../../scripts/ci/check-no-runtime-footprint-inference.sh
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: tools/defs-build

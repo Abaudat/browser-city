@@ -1,0 +1,3 @@
+[[archetype]]
+key = "full_cell"
+collider_inset = { left = 0, top = 0, right = 0, bottom = 0 }
