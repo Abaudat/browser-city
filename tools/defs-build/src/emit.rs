@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
     COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, INTERACT_AT_MAX_REACH_CELLS,
@@ -695,9 +696,9 @@ pub fn emit_json(
     // an object's own (Tim's direction); a part missing one is a
     // programming-invariant failure, since `build_character_pack_items`
     // always covers every part it is given.
-    let character_atlas_rect = |kind: &str, key: &str| -> AtlasRect {
+    let character_atlas_rect = |kind: PartKind, key: &str| -> AtlasRect {
         *atlas_by_character_part
-            .get(&(kind.to_string(), key.to_string()))
+            .get(&(kind.as_str().to_string(), key.to_string()))
             .unwrap_or_else(|| panic!("{kind} '{key}' has no packed atlas rect"))
     };
 
@@ -706,7 +707,7 @@ pub fn emit_json(
         let comma = if i + 1 < defs.bodies.len() { "," } else { "" };
         out.push_str(&format!(
             "    {{ \"atlas\": {}, \"family\": {}, \"id\": {}, \"key\": {}, \"pool\": {}, \"sheet\": {} }}{comma}\n",
-            fmt_atlas_rect_json(&character_atlas_rect("body", &b.key)),
+            fmt_atlas_rect_json(&character_atlas_rect(PartKind::Body, &b.key)),
             json_escape(b.family.as_str()),
             b.id,
             json_escape(&b.key),
@@ -721,7 +722,7 @@ pub fn emit_json(
         let comma = if i + 1 < defs.eyes.len() { "," } else { "" };
         out.push_str(&format!(
             "    {{ \"atlas\": {}, \"family\": {}, \"id\": {}, \"key\": {}, \"pool\": {}, \"sheet\": {} }}{comma}\n",
-            fmt_atlas_rect_json(&character_atlas_rect("eyes", &e.key)),
+            fmt_atlas_rect_json(&character_atlas_rect(PartKind::Eyes, &e.key)),
             json_escape(e.family.as_str()),
             e.id,
             json_escape(&e.key),
@@ -740,7 +741,7 @@ pub fn emit_json(
         };
         out.push_str(&format!(
             "    {{ \"atlas\": {}, \"color\": {}, \"family\": {}, \"id\": {}, \"key\": {}, \"rare\": {}, \"sheet\": {}, \"style\": {} }}{comma}\n",
-            fmt_atlas_rect_json(&character_atlas_rect("hairstyle", &h.key)),
+            fmt_atlas_rect_json(&character_atlas_rect(PartKind::Hairstyle, &h.key)),
             h.color,
             json_escape(h.family.as_str()),
             h.id,
@@ -757,7 +758,7 @@ pub fn emit_json(
         let comma = if i + 1 < defs.outfits.len() { "," } else { "" };
         out.push_str(&format!(
             "    {{ \"atlas\": {}, \"family\": {}, \"hides_hairstyle\": {}, \"id\": {}, \"key\": {}, \"pool\": {}, \"sheet\": {} }}{comma}\n",
-            fmt_atlas_rect_json(&character_atlas_rect("outfit", &o.key)),
+            fmt_atlas_rect_json(&character_atlas_rect(PartKind::Outfit, &o.key)),
             json_escape(o.family.as_str()),
             o.hides_hairstyle,
             o.id,
@@ -777,7 +778,7 @@ pub fn emit_json(
         };
         out.push_str(&format!(
             "    {{ \"atlas\": {}, \"family\": {}, \"id\": {}, \"key\": {}, \"pool\": {}, \"sheet\": {}, \"slot\": {} }}{comma}\n",
-            fmt_atlas_rect_json(&character_atlas_rect("accessory", &a.key)),
+            fmt_atlas_rect_json(&character_atlas_rect(PartKind::Accessory, &a.key)),
             json_escape(a.family.as_str()),
             a.id,
             json_escape(&a.key),

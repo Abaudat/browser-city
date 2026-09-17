@@ -154,7 +154,7 @@ export async function comparePipelineVsStack(
     accessory: resolved.parts.accessory,
     uniformAccessory: resolved.parts.uniformAccessory,
   };
-  const acquired: { bitmap: ImageBitmap; atlas: ResolvedPart["atlas"] }[] = [];
+  const acquired: { bitmap: ImageBitmap; atlas: ResolvedPart }[] = [];
   for (const layer of STACK_LAYER_ORDER) {
     if (layer === "hairstyle" && resolved.effectiveOutfit.hidesHairstyle) continue;
     const part = partByLayer[layer];
@@ -162,7 +162,7 @@ export async function comparePipelineVsStack(
     const page = defs.atlasPages[part.page];
     if (!page) throw new Error(`compare-pipeline-vs-stack: atlas page ${part.page} does not exist`);
     const bitmap = await pages.acquire(page.file);
-    acquired.push({ bitmap, atlas: part.atlas });
+    acquired.push({ bitmap, atlas: part });
   }
   const stack = readImageData(cell.width, cell.height, (ctx) => {
     for (const { bitmap, atlas } of acquired) {

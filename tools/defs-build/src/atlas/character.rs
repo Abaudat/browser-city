@@ -7,9 +7,13 @@
 //! [`crate::atlas::image::composite_with_extrusion`] pipeline
 //! `atlas::build::build_atlas` already uses for props (Quentin's
 //! direction: reuse the packer, never a parallel one). A part's own strip
-//! is PNG-encoded and folded into the same `sheet_bytes` map props
-//! already decode from, under a synthetic key ([`virtual_sheet_key`]) no
-//! real `ModernTileset/` sheet path can ever collide with.
+//! is handed to the compositing stage already decoded (Tim's direction,
+//! cycle 1: no PNG encode/decode round trip, no synthetic-URL clone of
+//! the object `sheet_bytes` map -- `atlas::build::build_atlas` folds
+//! [`CharacterPackItems::extra_decoded`] straight into its own decoded-
+//! sheets map). [`virtual_sheet_key`] is still what makes the strip's own
+//! `SourceKey` distinct from every real `ModernTileset/` sheet path; it
+//! now names a decoded-pixels entry, never PNG bytes.
 //!
 //! The strip layout mirrors `client/src/render/appearance/frame-rect.ts`'s
 //! `sourceFrameRect`/`compositeCellRect`/`compositeSheetSize` exactly: this
@@ -19,12 +23,43 @@
 
 use std::collections::BTreeMap;
 
-use crate::atlas::image::{decode_rgba8, encode_rgba8};
+use crate::atlas::image::decode_rgba8;
 use crate::atlas::pack::{PackItem, SourceKey};
 use crate::model::{
     AccessoryDef, AppearanceLayoutDef, BodyDef, CHARACTER_GROUP_PREFIX, EyesDef, Family,
     HairstyleDef, OutfitDef,
 };
+
+/// The five character part kinds this story packs -- a closed set, an
+/// enum rather than `&'static str` (Tim's direction, cycle 1) so a new
+/// kind is a compiler-checked match arm everywhere, never a string that
+/// could typo past every check silently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PartKind {
+    Body,
+    Eyes,
+    Hairstyle,
+    Outfit,
+    Accessory,
+}
+
+impl PartKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PartKind::Body => "body",
+            PartKind::Eyes => "eyes",
+            PartKind::Hairstyle => "hairstyle",
+            PartKind::Outfit => "outfit",
+            PartKind::Accessory => "accessory",
+        }
+    }
+}
+
+impl std::fmt::Display for PartKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
 /// One part this story packs: its own kind (for error messages and its
 /// own page group), key, family and sheet path -- gathered from every one
@@ -32,7 +67,7 @@ use crate::model::{
 /// runs once, generically, rather than five times by copy-paste.
 #[derive(Debug, Clone)]
 pub struct CharacterPartSource {
-    pub kind: &'static str,
+    pub kind: PartKind,
     pub key: String,
     pub family: Family,
     pub sheet: String,
@@ -40,8 +75,8 @@ pub struct CharacterPartSource {
 
 /// This part kind's own page group -- `character_body`, `character_eyes`,
 /// ... (Tim's direction: both families of one kind share one group).
-pub fn character_group(kind: &str) -> String {
-    format!("{CHARACTER_GROUP_PREFIX}{kind}")
+pub fn character_group(kind: PartKind) -> String {
+    format!("{CHARACTER_GROUP_PREFIX}{}", kind.as_str())
 }
 
 /// Every declared part, gathered from the five validated `Defs` slices --
@@ -59,7 +94,7 @@ pub fn collect_character_parts(
     );
     for b in bodies {
         out.push(CharacterPartSource {
-            kind: "body",
+            kind: PartKind::Body,
             key: b.key.clone(),
             family: b.family,
             sheet: b.sheet.clone(),
@@ -67,7 +102,7 @@ pub fn collect_character_parts(
     }
     for e in eyes {
         out.push(CharacterPartSource {
-            kind: "eyes",
+            kind: PartKind::Eyes,
             key: e.key.clone(),
             family: e.family,
             sheet: e.sheet.clone(),
@@ -75,7 +110,7 @@ pub fn collect_character_parts(
     }
     for h in hairstyles {
         out.push(CharacterPartSource {
-            kind: "hairstyle",
+            kind: PartKind::Hairstyle,
             key: h.key.clone(),
             family: h.family,
             sheet: h.sheet.clone(),
@@ -83,7 +118,7 @@ pub fn collect_character_parts(
     }
     for o in outfits {
         out.push(CharacterPartSource {
-            kind: "outfit",
+            kind: PartKind::Outfit,
             key: o.key.clone(),
             family: o.family,
             sheet: o.sheet.clone(),
@@ -91,7 +126,7 @@ pub fn collect_character_parts(
     }
     for a in accessories {
         out.push(CharacterPartSource {
-            kind: "accessory",
+            kind: PartKind::Accessory,
             key: a.key.clone(),
             family: a.family,
             sheet: a.sheet.clone(),
@@ -192,7 +227,7 @@ fn build_strip(
         ));
     }
 
-    if part.kind == "body" {
+    if part.kind == PartKind::Body {
         for (row_index, row) in layout.rows.iter().enumerate() {
             for dir_index in 0..layout.directions.len() {
                 for frame in 0..row.frames_per_direction {
@@ -224,43 +259,46 @@ fn build_strip(
 
 /// This part kind's own synthetic sheet key -- distinct from every real
 /// `ModernTileset/` path (the `character-strip://` scheme no real sheet
-/// path ever uses), so the strip's PNG bytes can be folded into the same
-/// `sheet_bytes` map `atlas::build::build_atlas` already decodes real
-/// sheets from, and packed through the exact same code.
-pub fn virtual_sheet_key(kind: &str, key: &str) -> String {
+/// path ever uses), so the strip's own decoded pixels can be folded into
+/// the same decoded-sheets map `atlas::build::build_atlas` already
+/// decodes real sheets into, and packed through the exact same code.
+pub fn virtual_sheet_key(kind: PartKind, key: &str) -> String {
     format!("character-strip://{kind}/{key}")
 }
 
 /// [`build_character_pack_items`]'s own result: one [`PackItem`] per part
 /// (same order as the `parts` slice it was given, so a caller can zip the
-/// two back together) plus every strip's own PNG-encoded bytes, keyed by
-/// [`virtual_sheet_key`] -- ready to fold into the `sheet_bytes` map the
-/// packer decodes from.
+/// two back together) plus every strip's own already-decoded pixels,
+/// keyed by [`virtual_sheet_key`] -- ready to fold straight into the
+/// decoded-sheets map the packer composites from (Tim's direction, cycle
+/// 1: no PNG encode/decode round trip).
 #[derive(Debug)]
 pub struct CharacterPackItems {
     pub items: Vec<PackItem>,
-    pub extra_sheet_bytes: BTreeMap<String, Vec<u8>>,
+    pub extra_decoded: BTreeMap<String, (u32, u32, Vec<u8>)>,
 }
 
 /// Builds every character part's own compact strip -- see
-/// [`CharacterPackItems`].
+/// [`CharacterPackItems`]. AC1(c) ("every part in a family shares one
+/// strip size") is proven by construction, not asserted here: `strip_size`
+/// is a pure function of the layout alone, and `layout_for_family` hands
+/// every part in a family that same layout object, so two parts in one
+/// family can never resolve to different sizes -- there is no code path
+/// left for a per-part check to catch (Tim/Quentin's direction, cycle 1:
+/// delete the unreachable guard rather than leave a dead check standing
+/// in for an invariant AC1(b)/(d) and `check_one_layout_per_family`
+/// already carry).
 pub fn build_character_pack_items(
     parts: &[CharacterPartSource],
     sheet_bytes: &BTreeMap<String, Vec<u8>>,
     layouts: &[AppearanceLayoutDef],
 ) -> Result<CharacterPackItems, String> {
     let mut items = Vec::with_capacity(parts.len());
-    let mut extra_sheet_bytes = BTreeMap::new();
+    let mut extra_decoded = BTreeMap::new();
     // Decode each real sheet at most once, even though no two parts ever
     // share one today -- mirrors `atlas::build::build_atlas`'s own
     // single-decode-per-sheet discipline.
     let mut decoded: BTreeMap<&str, (u32, u32, Vec<u8>)> = BTreeMap::new();
-    // AC1(c): every part in one family must resolve to the same strip
-    // size -- trivially true today (the size depends only on the shared
-    // layout), asserted anyway so the packer refuses the odd one out by
-    // key rather than trusting every part resolved the same layout
-    // (Tim's direction).
-    let mut expected_strip_size: BTreeMap<Family, (u32, u32)> = BTreeMap::new();
 
     for part in parts {
         let layout = layout_for_family(layouts, part.family).ok_or_else(|| {
@@ -271,21 +309,6 @@ pub fn build_character_pack_items(
                 part.family.as_str()
             )
         })?;
-
-        let (strip_w, strip_h) = strip_size(layout);
-        match expected_strip_size.get(&part.family) {
-            Some(&(ew, eh)) if (ew, eh) != (strip_w, strip_h) => {
-                return Err(format!(
-                    "{} '{}' family '{}' strip is {strip_w}x{strip_h}px but another part in the same family already packed to {ew}x{eh}px -- every part in a family must resolve to the same layout",
-                    part.kind,
-                    part.key,
-                    part.family.as_str()
-                ));
-            }
-            _ => {
-                expected_strip_size.insert(part.family, (strip_w, strip_h));
-            }
-        }
 
         if !decoded.contains_key(part.sheet.as_str()) {
             let bytes = sheet_bytes.get(&part.sheet).ok_or_else(|| {
@@ -305,13 +328,7 @@ pub fn build_character_pack_items(
         let (strip_w, strip_h, strip_rgba) = build_strip(part, layout, *w, *h, rgba)?;
 
         let virtual_key = virtual_sheet_key(part.kind, &part.key);
-        let png = encode_rgba8(strip_w, strip_h, &strip_rgba).map_err(|e| {
-            format!(
-                "{} '{}': failed to encode packed strip: {e}",
-                part.kind, part.key
-            )
-        })?;
-        extra_sheet_bytes.insert(virtual_key.clone(), png);
+        extra_decoded.insert(virtual_key.clone(), (strip_w, strip_h, strip_rgba));
 
         items.push(PackItem {
             group: character_group(part.kind),
@@ -328,13 +345,14 @@ pub fn build_character_pack_items(
 
     Ok(CharacterPackItems {
         items,
-        extra_sheet_bytes,
+        extra_decoded,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::atlas::image::encode_rgba8;
     use crate::model::AppearanceLayoutRowDef;
 
     fn layout(
@@ -377,7 +395,7 @@ mod tests {
         encode_rgba8(width, height, &rgba).unwrap()
     }
 
-    fn part(kind: &'static str, key: &str, family: Family, sheet: &str) -> CharacterPartSource {
+    fn part(kind: PartKind, key: &str, family: Family, sheet: &str) -> CharacterPartSource {
         CharacterPartSource {
             kind,
             key: key.to_string(),
@@ -385,6 +403,14 @@ mod tests {
             sheet: sheet.to_string(),
         }
     }
+
+    const ALL_KINDS: [PartKind; 5] = [
+        PartKind::Body,
+        PartKind::Eyes,
+        PartKind::Hairstyle,
+        PartKind::Outfit,
+        PartKind::Accessory,
+    ];
 
     #[test]
     fn strip_size_matches_the_layouts_own_declared_grid() {
@@ -401,12 +427,12 @@ mod tests {
     #[test]
     fn every_declared_kind_packs_when_its_sheet_fits_the_layout() {
         let l = one_direction_one_frame_layout(Family::Adult);
-        for kind in ["body", "eyes", "hairstyle", "outfit", "accessory"] {
+        for kind in ALL_KINDS {
             let p = part(kind, &format!("{kind}_test"), Family::Adult, "sheet.png");
             let mut bytes = BTreeMap::new();
             bytes.insert("sheet.png".to_string(), solid_sheet(16, 32, [1, 2, 3, 255]));
             let pack = build_character_pack_items(&[p], &bytes, std::slice::from_ref(&l)).unwrap();
-            let (items, extra) = (pack.items, pack.extra_sheet_bytes);
+            let (items, extra) = (pack.items, pack.extra_decoded);
             assert_eq!(items.len(), 1);
             assert_eq!(items[0].group, character_group(kind));
             assert_eq!(extra.len(), 1);
@@ -415,7 +441,7 @@ mod tests {
 
     #[test]
     fn a_part_naming_a_family_with_no_layout_is_named() {
-        let p = part("body", "body_01", Family::Kid, "sheet.png");
+        let p = part(PartKind::Body, "body_01", Family::Kid, "sheet.png");
         let mut bytes = BTreeMap::new();
         bytes.insert("sheet.png".to_string(), solid_sheet(16, 32, [1, 2, 3, 255]));
         let l = one_direction_one_frame_layout(Family::Adult);
@@ -427,7 +453,7 @@ mod tests {
 
     #[test]
     fn a_part_naming_a_sheet_never_read_is_named() {
-        let p = part("eyes", "eyes_01", Family::Adult, "missing.png");
+        let p = part(PartKind::Eyes, "eyes_01", Family::Adult, "missing.png");
         let l = one_direction_one_frame_layout(Family::Adult);
         let err = build_character_pack_items(&[p], &BTreeMap::new(), std::slice::from_ref(&l))
             .unwrap_err();
@@ -442,7 +468,7 @@ mod tests {
     /// small for the layout's own declared cell grid.
     #[test]
     fn a_declared_cell_reaching_past_the_decoded_sheet_is_named() {
-        let p = part("hairstyle", "hair_01", Family::Adult, "sheet.png");
+        let p = part(PartKind::Hairstyle, "hair_01", Family::Adult, "sheet.png");
         let mut bytes = BTreeMap::new();
         // Layout needs a 16x32 cell at (0,0); this sheet only decodes to
         // 16x16 -- smaller than the declared cell, even though nothing
@@ -461,7 +487,7 @@ mod tests {
 
     #[test]
     fn a_fully_transparent_strip_is_named() {
-        let p = part("outfit", "outfit_01", Family::Adult, "sheet.png");
+        let p = part(PartKind::Outfit, "outfit_01", Family::Adult, "sheet.png");
         let mut bytes = BTreeMap::new();
         bytes.insert("sheet.png".to_string(), solid_sheet(16, 32, [0, 0, 0, 0]));
         let l = one_direction_one_frame_layout(Family::Adult);
@@ -489,7 +515,7 @@ mod tests {
         let sheet_bytes = encode_rgba8(32, 32, &rgba).unwrap();
         let mut bytes = BTreeMap::new();
         bytes.insert("sheet.png".to_string(), sheet_bytes);
-        let p = part("body", "body_01", Family::Adult, "sheet.png");
+        let p = part(PartKind::Body, "body_01", Family::Adult, "sheet.png");
         let err = build_character_pack_items(&[p], &bytes, std::slice::from_ref(&l)).unwrap_err();
         assert!(err.contains("body_01"), "{err}");
         assert!(err.contains("fully transparent"), "{err}");
@@ -502,13 +528,18 @@ mod tests {
     #[test]
     fn every_non_body_kind_still_names_itself_on_a_decode_bounds_failure() {
         let l = one_direction_one_frame_layout(Family::Adult);
-        for kind in ["eyes", "hairstyle", "outfit", "accessory"] {
+        for kind in [
+            PartKind::Eyes,
+            PartKind::Hairstyle,
+            PartKind::Outfit,
+            PartKind::Accessory,
+        ] {
             let p = part(kind, &format!("{kind}_01"), Family::Adult, "sheet.png");
             let mut bytes = BTreeMap::new();
             bytes.insert("sheet.png".to_string(), solid_sheet(8, 8, [1, 2, 3, 255]));
             let err =
                 build_character_pack_items(&[p], &bytes, std::slice::from_ref(&l)).unwrap_err();
-            assert!(err.contains(kind), "{err}");
+            assert!(err.contains(kind.as_str()), "{err}");
             assert!(err.contains(&format!("{kind}_01")), "{err}");
             assert!(err.contains("sheet.png"), "{err}");
         }
@@ -526,16 +557,15 @@ mod tests {
         let sheet_bytes = encode_rgba8(4, 2, &rgba).unwrap();
         let mut bytes = BTreeMap::new();
         bytes.insert("sheet.png".to_string(), sheet_bytes);
-        let p = part("body", "body_01", Family::Adult, "sheet.png");
+        let p = part(PartKind::Body, "body_01", Family::Adult, "sheet.png");
         let pack = build_character_pack_items(&[p], &bytes, std::slice::from_ref(&l)).unwrap();
-        let (items, extra) = (pack.items, pack.extra_sheet_bytes);
-        let png = &extra[&items[0].source.sheet];
-        let (w, h, strip) = decode_rgba8(png).unwrap();
-        assert_eq!((w, h), (4, 2));
+        let (items, extra) = (pack.items, pack.extra_decoded);
+        let (w, h, strip) = &extra[&items[0].source.sheet];
+        assert_eq!((*w, *h), (4, 2));
         // "down" cell at (0,0): red.
-        assert_eq!(get_px(&strip, w, 0, 0), [255, 0, 0, 255]);
+        assert_eq!(get_px(strip, *w, 0, 0), [255, 0, 0, 255]);
         // "up" cell at (2,0): green.
-        assert_eq!(get_px(&strip, w, 2, 0), [0, 255, 0, 255]);
+        assert_eq!(get_px(strip, *w, 2, 0), [0, 255, 0, 255]);
     }
 
     /// A real vendor sheet has more rows than the layout ever declares
@@ -559,7 +589,7 @@ mod tests {
         let sheet_bytes = encode_rgba8(4, 20, &rgba).unwrap();
         let mut bytes = BTreeMap::new();
         bytes.insert("sheet.png".to_string(), sheet_bytes);
-        let p = part("eyes", "eyes_01", Family::Adult, "sheet.png");
+        let p = part(PartKind::Eyes, "eyes_01", Family::Adult, "sheet.png");
         let err = build_character_pack_items(&[p], &bytes, std::slice::from_ref(&l)).unwrap_err();
         assert!(
             err.contains("fully transparent"),
@@ -571,6 +601,7 @@ mod tests {
 #[cfg(test)]
 mod proptests {
     use super::*;
+    use crate::atlas::image::encode_rgba8;
     use crate::atlas::pack::pack_all;
     use crate::model::AppearanceLayoutRowDef;
     use proptest::prelude::*;
@@ -600,13 +631,13 @@ mod proptests {
         }
     }
 
-    fn kind_strategy() -> impl Strategy<Value = &'static str> {
+    fn kind_strategy() -> impl Strategy<Value = PartKind> {
         prop_oneof![
-            Just("body"),
-            Just("eyes"),
-            Just("hairstyle"),
-            Just("outfit"),
-            Just("accessory"),
+            Just(PartKind::Body),
+            Just(PartKind::Eyes),
+            Just(PartKind::Hairstyle),
+            Just(PartKind::Outfit),
+            Just(PartKind::Accessory),
         ]
     }
 
@@ -621,7 +652,7 @@ mod proptests {
                 .iter()
                 .enumerate()
                 .map(|(i, kind)| CharacterPartSource {
-                    kind,
+                    kind: *kind,
                     key: format!("{kind}-{i:04}"),
                     family: Family::Adult,
                     sheet: format!("sheet-{i}.png"),
@@ -659,7 +690,7 @@ mod proptests {
             let result_a = pack_all(&pack_a.items).unwrap();
             let result_b = pack_all(&pack_b.items).unwrap();
             prop_assert_eq!(result_a, result_b);
-            prop_assert_eq!(pack_a.extra_sheet_bytes, pack_b.extra_sheet_bytes);
+            prop_assert_eq!(pack_a.extra_decoded, pack_b.extra_decoded);
         }
     }
 }

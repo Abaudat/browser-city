@@ -17,6 +17,7 @@
 // background, so neighbouring frames must never bleed into each other at
 // a fractional camera position).
 
+import { compositeStripSize } from "../../defs/composite-strip";
 import type { AppearanceLayoutDef } from "../../defs/types";
 
 export interface FrameRect {
@@ -48,7 +49,10 @@ function checkFrame(row: { framesPerDirection: number }, frame: number, animatio
  * around every cell (default `0`, a packed atlas part strip's own tight
  * layout) -- exactly as many rows as `layout.rows` (in declaration
  * order) and as many columns as `framesPerDirection * directions.length`
- * needs. */
+ * needs. Re-exported under this name for this module's own callers;
+ * `defs/composite-strip.ts` owns the one implementation (Tim's
+ * direction, cycle 1: shared with `defs/parse.ts`'s own AC1 check,
+ * rather than each keeping its own copy). */
 export function compositeSheetSize(
   layout: AppearanceLayoutDef,
   gutter = 0,
@@ -56,14 +60,7 @@ export function compositeSheetSize(
   width: number;
   height: number;
 } {
-  const cellWidth = layout.cellWidth + 2 * gutter;
-  const cellHeight = layout.cellHeight + 2 * gutter;
-  const width = Math.max(
-    0,
-    ...layout.rows.map((r) => r.framesPerDirection * layout.directions.length * cellWidth),
-  );
-  const height = layout.rows.length * cellHeight;
-  return { width, height };
+  return compositeStripSize(layout, gutter);
 }
 
 /** The destination rect for `(animation, direction, frame)` in the

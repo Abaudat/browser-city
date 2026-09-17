@@ -13,13 +13,11 @@
 import type { AppearanceLayoutDef, AtlasRect, Defs, OutfitDef } from "../../defs/types";
 import { type AppearanceTuple, effectiveLayers, type UniformOverride } from "./composite";
 
-/** One layer's own packed location: the page it lives on (a file url is
- * resolved by the caller, this is just the page index into
- * `defs.atlasPages`) and its own rect on that page. */
-export interface ResolvedPart {
-  readonly page: number;
-  readonly atlas: AtlasRect;
-}
+/** One layer's own packed location -- `AtlasRect` itself already carries
+ * the page it lives on (`atlas.page`, resolved to a file url by the
+ * caller via `defs.atlasPages`), so this is just that rect, never a
+ * wrapper duplicating its own `page` field a second time. */
+export type ResolvedPart = AtlasRect;
 
 export interface ResolvedLayerParts {
   readonly body: ResolvedPart;
@@ -37,8 +35,7 @@ export interface ResolvedLayers {
 }
 
 function toPart(def: { atlas: AtlasRect } | undefined): ResolvedPart | null {
-  if (!def) return null;
-  return { page: def.atlas.page, atlas: def.atlas };
+  return def ? def.atlas : null;
 }
 
 /** Throws, naming the missing id/family, rather than silently drawing a
@@ -80,9 +77,9 @@ export function resolveLayers(
     layout,
     effectiveOutfit: outfit,
     parts: {
-      body: { page: body.atlas.page, atlas: body.atlas },
+      body: body.atlas,
       eyes: toPart(eyes),
-      outfit: { page: outfit.atlas.page, atlas: outfit.atlas },
+      outfit: outfit.atlas,
       hairstyle: toPart(hairstyle),
       accessory: toPart(civilianAccessory),
       uniformAccessory: toPart(uniformAccessory),

@@ -167,6 +167,16 @@ export async function mountCitizensLayer(
     direction: string,
     frame: number,
   ): Promise<{ pipeline: PixelSnapshot; stack: PixelSnapshot }> {
+    // Never a bare `cache.acquire` with no matching `release` -- this is
+    // called dozens of times over, once per grid cell, for a handful of
+    // fixed tuples (`appearance.spec.ts`'s own full comparison grid), and
+    // with no release each call would permanently hold its own slot,
+    // leaking one reference per call forever (Quentin's direction, cycle
+    // 1). `comparePipelineVsStack` reads every pixel it needs out of the
+    // texture synchronously, before its own promise resolves, so the
+    // texture reference is already dropped by the time `release` below
+    // runs -- never the other way (a release before the read completed
+    // could hand this exact slot to a new occupant mid-read).
     return cache
       .acquire(tuple, override)
       .then((frames) =>
@@ -179,7 +189,7 @@ export async function mountCitizensLayer(
           animation,
           direction,
           frame,
-        ),
+        ).finally(() => cache.release(tuple, override)),
       );
   }
 

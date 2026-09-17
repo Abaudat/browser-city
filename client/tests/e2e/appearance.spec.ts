@@ -127,6 +127,7 @@ test.describe("the real, mounted appearance pipeline", () => {
     // so the "distinct" half is just the crowd's own default mount.
     await page.goto("/");
     await ready(page);
+    const distinctCrowdSources = await page.evaluate(() => window.__bc?.allBoundTextureSources);
     const distinctCrowdPages = await page.evaluate(() => window.__bc?.distinctBoundAtlasPages);
 
     // `?identicalCrowd=1` (main.ts, DEV-only) mounts the exact same
@@ -134,15 +135,22 @@ test.describe("the real, mounted appearance pipeline", () => {
     // adult (and, separately, every kid) shares one tuple.
     await page.goto("/?identicalCrowd=1");
     await ready(page);
+    const identicalCrowdSources = await page.evaluate(() => window.__bc?.allBoundTextureSources);
     const identicalCrowdPages = await page.evaluate(() => window.__bc?.distinctBoundAtlasPages);
 
-    expect(distinctCrowdPages).toBeGreaterThan(0);
-    expect(identicalCrowdPages).toBeGreaterThan(0);
     // Deterministic counts (never a frame-time comparison, too noisy for
-    // PR CI -- Quentin's direction): the two must be equal, or at most a
-    // couple of extra character composite pages the distinct crowd's own
-    // wider variety spilled into, never a number that scales with N.
-    expect(distinctCrowdPages).toBeLessThanOrEqual((identicalCrowdPages ?? 0) + 2);
+    // PR CI -- Quentin's direction). `allBoundTextureSources` is
+    // *unfiltered* -- every distinct `TextureSource` reachable from the
+    // mounted display list, not narrowed to a known-page set -- so a
+    // regression back to one standalone texture per composited look
+    // would move this number; exact equality is the actual NFR12 proof.
+    // (`distinctBoundAtlasPages`, filtered to known atlas/composite
+    // pages, is checked too, but only as a secondary sanity check: shared
+    // props/tile pages plus the shared composite pages, same either way.)
+    expect(distinctCrowdSources).toBeGreaterThan(0);
+    expect(distinctCrowdSources).toBe(identicalCrowdSources);
+    expect(distinctCrowdPages).toBeGreaterThan(0);
+    expect(distinctCrowdPages).toBe(identicalCrowdPages);
   });
 
   test("the composite reads back byte-for-byte identical to an independent sprite stack, for fixed tuples", async ({

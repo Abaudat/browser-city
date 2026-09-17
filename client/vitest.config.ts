@@ -44,11 +44,15 @@ export default defineConfig({
       // (an `OffscreenCanvas`-less node test cannot exercise it
       // meaningfully) and `character-part-pages.ts` needs a real `fetch`
       // runtime -- both thin adapters over the pure logic in
-      // `composite.ts`/`composite-slots.ts`/`frame-rect.ts`/
-      // `resolve-layers.ts`/`appearance-cache.ts`, which stay in scope.
-      // `appearance-texture.ts` is the adapter composing those together
-      // plus the cache; no logic of its own remains once its inputs are
-      // each covered.
+      // `composite.ts`/`composite-slots.ts`/`composite-look-cache.ts`/
+      // `frame-rect.ts`/`resolve-layers.ts`/`appearance-cache.ts`, which
+      // stay in scope. `appearance-texture.ts` (cycle 1, Quentin/Tim's
+      // direction) owns real logic of its own -- the slot exhaustion/
+      // staleness plumbing, the release-on-failure catch, the build-
+      // once-per-slot frame cache -- so it is in scope too, tested with
+      // `pixi.js` mocked and `CompositePageProvider`/`CharacterPageLoader`
+      // fakes injected (`atlas-pages.test.ts`'s own idiom), never a real
+      // `OffscreenCanvas`/`fetch`.
       exclude: [
         "src/net/bindings/**",
         // Story 2.8: a generated constant, the same idiom as bindings/ --
@@ -57,7 +61,6 @@ export default defineConfig({
         "src/test-street/**",
         "src/render/appearance/composite-pages.ts",
         "src/render/appearance/character-part-pages.ts",
-        "src/render/appearance/appearance-texture.ts",
       ],
       thresholds: {
         lines: 90,

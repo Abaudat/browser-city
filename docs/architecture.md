@@ -577,9 +577,9 @@ it.
 
 The test street reads its remaining props straight out of the repo-root
 `ModernTileset/` at runtime (`new URL(..., import.meta.url)` asset
-imports), not out of `client/public/` (story 2.7: character part sheets
-no longer are -- they are packed, at build time, into
-`client/public/atlas/`, like every other atlas page). `deploy.yml`'s
+imports), not out of `client/public/`. Character part sheets are never
+read this way: they are packed, at build time, into
+`client/public/atlas/`, like every other atlas page. `deploy.yml`'s
 `deploy-client` job therefore checks out the whole repository -- never a
 sparse or `client/`-only checkout -- for as long as any client code reads
 assets from outside `client/`.
@@ -665,16 +665,20 @@ mirrored -- never a snapshot taken at hover start.
   `costume`), the same enum `outfit`/`accessory` already declare:
   `generate` draws `body` and `eyes` from the `civilian` pool only.
 - Layout (cell size, direction order, one row per animation) is declared
-  once per family (`adult`/`kid`) in `[[appearance_layout]]`, enforced
-  against every part sheet's real *decoded* pixels, not merely its
-  header (story 2.7, AC1): every family shares one cell size, a declared
-  cell must fit inside the decoded sheet, a packed strip is never fully
-  transparent, and a `body` strip's every cell holds at least one opaque
-  pixel -- each failure names the part's own kind, key and sheet.
+  once per family (`adult`/`kid`) in `[[appearance_layout]]`, along with
+  an `accepted_sizes` list of whole vendor-sheet dimensions the family
+  allows; a part's own sheet must decode to real `IHDR` pixel dimensions
+  in that list, and every declared row must fit inside every accepted
+  size. Layout is also enforced against every part sheet's real
+  *decoded* pixels, not merely its header: every family shares one cell
+  size, a declared cell must fit inside the decoded sheet, a packed
+  strip is never fully transparent, and a `body` strip's every cell
+  holds at least one opaque pixel -- each failure names the part's own
+  kind, key and sheet.
 - Every part is packed into its own family's compact strip by
-  `tools/defs-build` (story 2.6's packer), one CPU-only page group per
-  kind (`character_body`, `character_eyes`, ...), never bound to the
-  GPU. A part's own JSON-only `atlas` rect names its page and placement,
+  `tools/defs-build`'s packer, one CPU-only page group per kind
+  (`character_body`, `character_eyes`, ...), never bound to the GPU. A
+  part's own JSON-only `atlas` rect names its page and placement,
   exactly like an object's. The client fetches a packed page lazily,
   once per page, as a CPU-side `ImageBitmap`
   (`render/appearance/character-part-pages.ts`) -- never through Pixi's
@@ -688,8 +692,8 @@ mirrored -- never a snapshot taken at hover start.
   (`render/appearance/composite-slots.ts`). A slot's own frame `Texture`s
   are built once, on first occupancy, and reused by every later
   occupant; a page re-uploads at most once per tick. Slots are
-  ref-counted and LRU-bounded (`render/appearance/appearance-cache.ts`,
-  unchanged) -- `dispose` frees a slot instead of destroying a texture;
+  ref-counted and LRU-bounded (`render/appearance/appearance-cache.ts`)
+  -- `dispose` frees a slot instead of destroying a texture;
   exhaustion rejects the acquire, never a third page. A character on
   screen is one `Sprite` in the `characters`-rank pool -- distinct
   citizens sharing a page cost nothing extra over identical ones.
@@ -916,23 +920,21 @@ rule above.
   `ATLAS_SHARED_GROUP` (`"street"`) group; a themed district keeps its
   own group. A theme absent from the table fails the build naming it, and
   so does a table that maps nothing at all to `ATLAS_SHARED_GROUP`, or
-  one that maps a theme onto a `character_*` group (story 2.7, reserved
-  for the packer's own character-part groups below). A group never spans
+  one that maps a theme onto a `character_*` group -- those are reserved
+  for the packer's own character-part groups, one per declared part kind
+  (body/eyes/hairstyle/outfit/accessory; see "Appearance" above for the
+  CPU-only, per-look-compositing use they serve). A group never spans
   more than `ATLAS_MAX_PAGES_PER_GROUP` (2) pages. A scene is the shared
   group plus at most one themed group -- a player is never on the street
   and inside a themed interior at once -- plus the fixed
-  `CHARACTER_COMPOSITE_PAGES` every scene with a crowd on it binds (story
-  2.7): the shared group's own page count, plus the *worst* other
-  group's own page count (`character_*` groups excluded -- they are
-  CPU-only, never bound), plus `CHARACTER_COMPOSITE_PAGES`, never spans
-  more than `ATLAS_MAX_BOUND_PAGES` (8); a failure names all three terms
-  and the total. `atlas_max_pages_per_group`/`character_composite_pages`
-  are emitted into `defs.json`; the scene rule itself is the packer's
-  own, the client has no use for it.
-- Every declared character part (body/eyes/hairstyle/outfit/accessory)
-  is packed the same way, into its own `character_<kind>` page group --
-  see "Appearance" above for the CPU-only, per-look-compositing use this
-  atlas serves, distinct from every other group here.
+  `CHARACTER_COMPOSITE_PAGES` every scene with a crowd on it binds: the
+  shared group's own page count, plus the *worst* other group's own page
+  count (`character_*` groups excluded -- they are CPU-only, never
+  bound), plus `CHARACTER_COMPOSITE_PAGES`, never spans more than
+  `ATLAS_MAX_BOUND_PAGES` (8); a failure names all three terms and the
+  total. `atlas_max_pages_per_group`/`character_composite_pages` are
+  emitted into `defs.json`; the scene rule itself is the packer's own,
+  the client has no use for it.
 - Every packed rect carries a permanent 1px border of extruded
   (edge-repeated, never transparent) pixels on every side -- nearest-
   neighbour sampling plus this stops bleed at a fractional camera

@@ -8,6 +8,7 @@
 // rejects at build time.
 
 import { LAYER_TABLE } from "../render/layer-table";
+import { compositeStripSize } from "./composite-strip";
 import type {
   AccessoryDef,
   AppearanceLayoutDef,
@@ -558,6 +559,15 @@ export function parseDefs(data: unknown): Defs {
     root.character_composite_pages,
     "$.character_composite_pages",
   );
+  // Story 2.7 (Tim's direction, cycle 1): zero pages means no character
+  // could ever be composited at all -- a skipped check here is a check
+  // that passes on bad data, same as every other cross-reference in this
+  // file (`tools/defs-build`'s own `validate.rs` already rejects this
+  // build-time; the client parser must refuse it too, never trust a
+  // runtime `fetch` where the build step wouldn't).
+  if (characterCompositePages < 1) {
+    fail(`$.character_composite_pages: must be at least 1, got ${characterCompositePages}`);
+  }
   const atlasPages = expectArray(root.atlas_pages, "$.atlas_pages").map((v, i) =>
     parseAtlasPage(v, `$.atlas_pages[${i}]`),
   );
@@ -785,20 +795,6 @@ function checkObjectAtlasPage(object: ObjectDef, atlasPageCount: number): void {
       `object '${object.key}' names atlas page ${object.atlas.page} but only ${atlasPageCount} page(s) exist`,
     );
   }
-}
-
-/** Story 2.7: the compact strip's own total size -- mirrors
- * `render/appearance/frame-rect.ts`'s `compositeSheetSize` and
- * `tools/defs-build`'s own `strip_size` field for field (never imported
- * from `render/`: `defs/` stays the base layer every render module
- * depends on, never the other way). */
-function compositeStripSize(layout: AppearanceLayoutDef): { width: number; height: number } {
-  const width = Math.max(
-    0,
-    ...layout.rows.map((r) => r.framesPerDirection * layout.directions.length * layout.cellWidth),
-  );
-  const height = layout.rows.length * layout.cellHeight;
-  return { width, height };
 }
 
 type PartWithAtlas = { readonly key: string; readonly atlas: AtlasRect };

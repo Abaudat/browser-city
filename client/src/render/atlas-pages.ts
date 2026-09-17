@@ -170,3 +170,27 @@ export function countBoundAtlasPages(root: Container, ...providers: PageSourcePr
   }
   return found.size;
 }
+
+/**
+ * Every distinct `TextureSource` reachable from `root`'s own display list
+ * right now, *unfiltered* -- unlike [`countBoundAtlasPages`], never
+ * narrowed to a caller-supplied set of "known page" sources (Quentin's
+ * direction, story 2.7 cycle 1: a regression back to one standalone
+ * texture per composited look would contribute nothing to the filtered
+ * count, and the crowd-cost e2e proof would keep passing while the
+ * regression it exists to catch had already landed). Counts every
+ * `Sprite` at any depth, whatever texture it holds.
+ */
+export function countAllBoundTextureSources(root: Container): number {
+  const found = new Set<TextureSource>();
+  const stack: Container[] = [root];
+  while (stack.length > 0) {
+    // biome-ignore lint/style/noNonNullAssertion: length checked above
+    const container = stack.pop()!;
+    if (container instanceof Sprite) found.add(container.texture.source);
+    for (const child of container.children) {
+      stack.push(child as Container);
+    }
+  }
+  return found.size;
+}

@@ -12,6 +12,20 @@ import { Texture, type TextureSource } from "pixi.js";
 import type { CanvasLike } from "./composite";
 import { COMPOSITE_PAGE_SIZE } from "./composite-slots";
 
+/** What `appearance-texture.ts` needs from `CompositePageSet` -- an
+ * interface, not the class, so a unit test can inject a fake with no
+ * real `OffscreenCanvas`/Pixi `Texture` (Quentin/Tim's direction, cycle
+ * 1: the slot lifecycle this file composes stays testable even though
+ * this real adapter itself is not). */
+export interface CompositePageProvider {
+  readonly pageCount: number;
+  texture(pageIndex: number): Texture;
+  pageSources(): ReadonlySet<TextureSource>;
+  clearSlot(pageIndex: number, x: number, y: number, width: number, height: number): void;
+  contextFor(pageIndex: number): CanvasLike;
+  flush(): void;
+}
+
 interface CompositePage {
   readonly canvas: OffscreenCanvas;
   readonly ctx: OffscreenCanvasRenderingContext2D;
@@ -36,7 +50,7 @@ function buildPage(): CompositePage {
  * only marks the page dirty; `flush` (called once per ticker tick) is
  * what actually calls `update()`, and only for pages a draw actually
  * touched this tick. */
-export class CompositePageSet {
+export class CompositePageSet implements CompositePageProvider {
   private readonly pages: readonly CompositePage[];
 
   constructor(pageCount: number) {

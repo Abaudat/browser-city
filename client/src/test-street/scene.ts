@@ -35,7 +35,11 @@ import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
 import type { AppearanceTuple } from "../render/appearance/composite";
-import { AtlasPageLoader, countBoundAtlasPages } from "../render/atlas-pages";
+import {
+  AtlasPageLoader,
+  countAllBoundTextureSources,
+  countBoundAtlasPages,
+} from "../render/atlas-pages";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -377,6 +381,14 @@ export interface StreetSceneHandle {
    * DEV-only `window.__bc` hook against, the same way it does for the
    * crowd's own texture identity count. */
   readonly distinctBoundAtlasPages: number;
+  /** Every distinct `TextureSource` reachable from the mounted display
+   * list right now, *unfiltered* (`countAllBoundTextureSources` over
+   * `app.stage`, never narrowed to a known-page set) -- for
+   * `appearance.spec.ts`'s crowd-cost proof, which needs to see a
+   * regression back to one standalone texture per composited look that
+   * `distinctBoundAtlasPages` alone cannot (Quentin's direction, cycle
+   * 1). */
+  readonly allBoundTextureSources: number;
   /** Removes every listener this scene attached (keyboard and pointer). */
   destroy(): void;
   /** Live-updates the FR173 highlight dial (0-100) -- re-applies
@@ -1339,6 +1351,7 @@ export async function mountStreetScene(
     keyboard,
     citizensLayer,
     distinctBoundAtlasPages: countBoundAtlasPages(app.stage, atlasPageLoader, appearanceCache),
+    allBoundTextureSources: countAllBoundTextureSources(app.stage),
     setHighlightStrength,
     currentFloor: () => walk.floor,
     poolDrawables: () => allDrawables,

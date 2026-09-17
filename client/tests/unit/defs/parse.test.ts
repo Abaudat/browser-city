@@ -165,6 +165,13 @@ describe("parseDefs", () => {
     expect(() => parseDefs(payload)).toThrow(/unknown profession 'nope'/);
   });
 
+  // Story 2.7 (Tim's direction, cycle 1): zero composite pages means no
+  // character could ever be composited at all.
+  it("rejects character_composite_pages below 1", () => {
+    const payload = { ...validPayload(), character_composite_pages: 0 };
+    expect(() => parseDefs(payload)).toThrow(/character_composite_pages.*at least 1/);
+  });
+
   it("rejects an out-of-range balance value", () => {
     const payload = validPayload();
     payload.balance = [{ key: "a", value: 999, min: 0, max: 10 }];

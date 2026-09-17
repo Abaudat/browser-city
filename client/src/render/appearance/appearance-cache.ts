@@ -14,6 +14,19 @@
 // tuple to 0 references is not itself a reason to dispose it, since the
 // same tuple reappearing a moment later (a character walking back into
 // view) should not pay to rebuild.
+//
+// Eviction runs *before* `build`, not after (Quentin/Tim's direction,
+// story 2.7 cycle 1): when `dispose` frees an externally-limited resource
+// (a composite-page slot, `appearance-texture.ts`'s own use), the build
+// that needed that resource must see it freed in time to claim it --
+// evicting after insertion let a full, but mostly-unreferenced, pool
+// reject every other new look forever (`REJECTED, ok, REJECTED, ok, ...`
+// once the pool first filled), since the slot a build needed was not
+// freed until *after* that same build had already failed to claim one.
+// `dispose` itself must therefore be synchronous here too -- never a
+// `.then(...)` deferred to a microtask, which would free the resource one
+// tick too late for the very `build()` call this eviction pass is making
+// room for.
 
 export interface AppearanceCacheOptions<T> {
   readonly dispose: (value: T) => void;
@@ -43,7 +56,12 @@ export class AppearanceCache<T> {
    * it most-recently-used. `build` is the caller's own, taking `key` as a
    * closure rather than this cache decoding it back into whatever the
    * caller built it from -- there is only ever one encoding of a key to
-   * keep in sync this way, the caller's own. */
+   * keep in sync this way, the caller's own.
+   *
+   * On a miss, room is made *before* `build` runs (see the eviction-
+   * ordering note above the class): a fully-released, unreferenced entry
+   * is evicted first, synchronously, if inserting one more would put this
+   * cache over capacity. */
   acquire(key: string, build: () => T): T {
     const existing = this.entries.get(key);
     if (existing) {
@@ -56,9 +74,9 @@ export class AppearanceCache<T> {
       return existing.value;
     }
 
+    this.makeRoomForOneMore();
     const value = build();
     this.entries.set(key, { value, refCount: 1 });
-    this.evictOverCapacity();
     return value;
   }
 
@@ -91,8 +109,11 @@ export class AppearanceCache<T> {
     if (this.entries.get(key)?.value === value) this.entries.delete(key);
   }
 
-  private evictOverCapacity(): void {
-    while (this.entries.size > this.options.capacity) {
+  /** Evicts least-recently-used, unreferenced entries until inserting one
+   * more would not exceed capacity -- called *before* `build()`, not
+   * after (see the class's own doc comment). */
+  private makeRoomForOneMore(): void {
+    while (this.entries.size >= this.options.capacity) {
       const lruKey = this.leastRecentlyUsedEvictableKey();
       if (lruKey === undefined) return; // every entry is still referenced
       const entry = this.entries.get(lruKey);

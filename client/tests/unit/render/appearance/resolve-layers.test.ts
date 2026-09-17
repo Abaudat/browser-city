@@ -145,11 +145,11 @@ describe("resolveLayers", () => {
     expect(resolved.layout).toBe(ADULT_LAYOUT);
     expect(resolved.effectiveOutfit).toBe(OUTFIT);
     expect(resolved.parts).toEqual({
-      body: { page: 0, atlas: BODY.atlas },
-      eyes: { page: 1, atlas: EYES.atlas },
-      outfit: { page: 2, atlas: OUTFIT.atlas },
-      hairstyle: { page: 3, atlas: HAIRSTYLE.atlas },
-      accessory: { page: 4, atlas: ACCESSORY.atlas },
+      body: BODY.atlas,
+      eyes: EYES.atlas,
+      outfit: OUTFIT.atlas,
+      hairstyle: HAIRSTYLE.atlas,
+      accessory: ACCESSORY.atlas,
       uniformAccessory: null,
     });
   });
@@ -168,9 +168,9 @@ describe("resolveLayers", () => {
   it("a uniform override replaces the outfit layer and adds a uniformAccessory part", () => {
     const resolved = resolveLayers(defsWith(), TUPLE, { outfit: 7, accessory: 42 });
     expect(resolved.effectiveOutfit).toBe(ROLE_OUTFIT);
-    expect(resolved.parts.outfit).toEqual({ page: 2, atlas: ROLE_OUTFIT.atlas });
-    expect(resolved.parts.accessory).toEqual({ page: 4, atlas: ACCESSORY.atlas }); // different slot, kept
-    expect(resolved.parts.uniformAccessory).toEqual({ page: 4, atlas: UNIFORM_ACCESSORY.atlas });
+    expect(resolved.parts.outfit).toEqual(ROLE_OUTFIT.atlas);
+    expect(resolved.parts.accessory).toEqual(ACCESSORY.atlas); // different slot, kept
+    expect(resolved.parts.uniformAccessory).toEqual(UNIFORM_ACCESSORY.atlas);
   });
 
   it("a hidesHairstyle outfit is still reported so the caller can skip drawing hair", () => {
@@ -178,7 +178,7 @@ describe("resolveLayers", () => {
     expect(resolved.effectiveOutfit.hidesHairstyle).toBe(true);
     // the part is still resolved -- `drawComposite` is the one that
     // skips the layer, not this function
-    expect(resolved.parts.hairstyle).toEqual({ page: 3, atlas: HAIRSTYLE.atlas });
+    expect(resolved.parts.hairstyle).toEqual(HAIRSTYLE.atlas);
   });
 
   it("throws, naming the id, for a tuple.body with no matching def", () => {

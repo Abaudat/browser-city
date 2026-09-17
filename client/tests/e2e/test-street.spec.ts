@@ -603,18 +603,22 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   expect(appearanceAtStart?.eyes).toBeGreaterThan(0);
   expect(appearanceAtStart?.outfit).toBeGreaterThan(0);
 
-  // Story 2.6/2.7 (NFR12): the mounted street resolves against a small
-  // number of distinct atlas pages -- the shop counter's own "street"
-  // page (the only placed prop wired to `render/atlas-pages.ts` yet, the
-  // rest is Story 2.13's own scope) plus the street crowd's own shared
-  // character composite pages (`AppearanceTextureCache.pageSources`,
-  // folded in by `countBoundAtlasPages`) -- the assertion is the real
-  // one NFR12 names, not a placeholder. `appearance.spec.ts`'s own
-  // "different people cost about as much as identical ones" test is
-  // this same count's own budget proof.
+  // Story 2.6/2.7 (NFR12): the mounted street resolves against a small,
+  // exact number of distinct atlas pages -- the shop counter's own
+  // "street" page (the only placed prop wired to `render/atlas-pages.ts`
+  // yet, the rest is Story 2.13's own scope: 1 page) plus the street
+  // crowd's own shared character composite pages
+  // (`AppearanceTextureCache.pageSources`, folded in by
+  // `countBoundAtlasPages`): this street's own 46-citizen crowd fits its
+  // slots on the first shared composite page alone, so only 1 of the 2
+  // pages `CHARACTER_COMPOSITE_PAGES` reserves is ever actually bound --
+  // 2 total. A loose upper bound alone would still pass with the crowd's
+  // composite page never bound at all (every citizen invisible), so the
+  // assertion is the exact number NFR12 names, not a placeholder.
+  // `appearance.spec.ts`'s own "different people cost about as much as
+  // identical ones" test is this same count's own budget proof.
   const distinctBoundAtlasPages = await page.evaluate(() => window.__bc?.distinctBoundAtlasPages);
-  expect(distinctBoundAtlasPages).toBeGreaterThan(0);
-  expect(distinctBoundAtlasPages).toBeLessThanOrEqual(8);
+  expect(distinctBoundAtlasPages).toBe(2);
 
   // FR120, from inside: this building's own near-side walls are gone, and
   // the neighbour's are not -- keyed on the enclosure id, never proximity.

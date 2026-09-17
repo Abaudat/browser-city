@@ -103,10 +103,23 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
     )
     .unwrap();
 
+    // Tim's direction, cycle 1: every one of ~500+ objects/parts can
+    // share a page (a `character_*` page in particular is shared by
+    // hundreds of parts) -- decoding it once per item, not once per
+    // page, is what pushed the `defs` CI job from under a minute to
+    // ~8 minutes. Decoded here, once per page (never per item, never
+    // cloned), and borrowed by both loops below -- `out.page_bytes`'s
+    // own index is the page index, so this stays aligned by construction.
+    let decoded_pages: Vec<(u32, u32, Vec<u8>)> = out
+        .page_bytes
+        .iter()
+        .map(|bytes| atlas::image::decode_rgba8(bytes).unwrap())
+        .collect();
+
     for o in &defs.objects {
         let rect = out.atlas_by_object_id[&o.id];
-        let (page_w, page_h, page_rgba) =
-            atlas::image::decode_rgba8(&out.page_bytes[rect.page as usize]).unwrap();
+        let (page_w, page_h, page_rgba) = &decoded_pages[rect.page as usize];
+        let (page_w, page_h) = (*page_w, *page_h);
         assert!(rect.x + rect.w <= page_w && rect.y + rect.h <= page_h);
 
         let src_bytes = object_sheet_bytes.get(&o.sprite.sheet).unwrap();
@@ -142,8 +155,8 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
             .atlas_by_character_part
             .get(&(part.kind.to_string(), part.key.clone()))
             .unwrap_or_else(|| panic!("{} '{}' has no packed atlas rect", part.kind, part.key));
-        let (page_w, page_h, page_rgba) =
-            atlas::image::decode_rgba8(&out.page_bytes[rect.page as usize]).unwrap();
+        let (page_w, page_h, page_rgba) = &decoded_pages[rect.page as usize];
+        let (page_w, page_h) = (*page_w, *page_h);
         assert!(rect.x + rect.w <= page_w && rect.y + rect.h <= page_h);
         let (expected_w, expected_h) = strip_size(layout);
         assert_eq!((rect.w, rect.h), (expected_w, expected_h));

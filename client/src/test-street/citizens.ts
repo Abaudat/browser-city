@@ -267,7 +267,7 @@ function tupleFor(defs: Defs, family: Family, index: number): AppearanceTuple {
  * the exact same crowd -- same count, same positions, same uniforms --
  * but every adult (and, separately, every kid) shares one identical
  * tuple, when `identicalTuples` is set. Never the normal path: only
- * `client/tests/e2e/test-street.spec.ts`'s own "different people cost
+ * `client/tests/e2e/appearance.spec.ts`'s own "different people cost
  * about as much as identical ones" comparison sets it, to build the
  * crowd's "identical" half without duplicating this whole function. */
 export function buildCitizenFixtures(

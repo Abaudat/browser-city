@@ -124,9 +124,6 @@ pub fn build_atlas(
     let character_pack =
         build_character_pack_items(character_parts, appearance_sheet_bytes, appearance_layouts)?;
     let character_items = character_pack.items;
-    let mut sheet_bytes: BTreeMap<String, Vec<u8>> = sheet_bytes.clone();
-    sheet_bytes.extend(character_pack.extra_sheet_bytes);
-    let sheet_bytes = &sheet_bytes;
 
     let mut items = Vec::with_capacity(objects.len() + character_items.len());
     // Shadow-variant consistency is a per-theme concern (Artie's own art
@@ -154,8 +151,11 @@ pub fn build_atlas(
     let result = pack_all(&items)?;
     check_max_bound_pages(&result.pages)?;
 
-    // Decode every referenced sheet at most once.
-    let mut decoded: BTreeMap<&str, (u32, u32, Vec<u8>)> = BTreeMap::new();
+    // Every character strip is already decoded (Tim's direction, cycle
+    // 1: no PNG encode/decode round trip) -- folded straight in, keyed
+    // by its own virtual sheet key. Every real (object or, in principle,
+    // any other) sheet is decoded here, at most once.
+    let mut decoded: BTreeMap<String, (u32, u32, Vec<u8>)> = character_pack.extra_decoded;
     for source in result.placements.keys() {
         if decoded.contains_key(source.sheet.as_str()) {
             continue;
@@ -168,7 +168,7 @@ pub fn build_atlas(
         })?;
         let (w, h, rgba) =
             decode_rgba8(bytes).map_err(|e| format!("sheet '{}': {e}", source.sheet))?;
-        decoded.insert(source.sheet.as_str(), (w, h, rgba));
+        decoded.insert(source.sheet.clone(), (w, h, rgba));
     }
 
     let mut page_buffers: Vec<Vec<u8>> = result
