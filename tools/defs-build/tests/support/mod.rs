@@ -101,6 +101,23 @@ pub fn object_sheet_bytes() -> BTreeMap<String, Vec<u8>> {
         .collect()
 }
 
+/// Real PNG bytes for every path [`appearance_sheet_dims`] declares --
+/// story 2.7's character-part packer decodes real pixels, exactly like
+/// [`object_sheet_bytes`] -- a solid, non-transparent colour is enough
+/// (these tests exercise `parse`/`validate`/the packer's own strip
+/// building, never pixel content).
+pub fn appearance_sheet_bytes() -> BTreeMap<String, Vec<u8>> {
+    appearance_sheet_dims()
+        .into_iter()
+        .map(|(path, (w, h))| {
+            let rgba = vec![200u8; (w * h * 4) as usize];
+            let bytes = defs_build::atlas::image::encode_rgba8(w, h, &rgba)
+                .expect("fixture PNG encode must succeed");
+            (path, bytes)
+        })
+        .collect()
+}
+
 pub fn appearance_sheet_dims() -> BTreeMap<String, (u32, u32)> {
     [
         ("fixtures/appearance/body-test.png", (16, 32)),
@@ -142,6 +159,7 @@ pub fn build_err(category: &str) -> defs_build::DefsError {
         &files,
         &sheet_dims(),
         &object_sheet_bytes(),
+        &appearance_sheet_bytes(),
         &layer_codes(),
         "",
         "test-version",
@@ -167,6 +185,7 @@ pub fn build_err_enforcing_sheet_root(category: &str) -> defs_build::DefsError {
         &files,
         &sheet_dims(),
         &object_sheet_bytes(),
+        &appearance_sheet_bytes(),
         &layer_codes(),
         defs_build::model::SPRITE_SHEET_ALLOWED_ROOT,
         "test-version",

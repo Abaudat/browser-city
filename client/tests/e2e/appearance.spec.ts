@@ -1,16 +1,18 @@
-// Story 1.10's appearance-pipeline e2e spec: the runtime half of the
+// Story 1.10/2.7's appearance-pipeline e2e spec: the runtime half of the
 // appearance pipeline unit tests cannot reach -- a real browser, a real
-// `fetch` against the real `ModernTileset/` part sheets, a real
+// `fetch` against the real packed character atlas pages, a real
 // `OffscreenCanvas`, a real Pixi `Texture` -- proving three things the
 // pure unit tests only assume:
 //   1. the real, mounted composite reads back byte-for-byte identical to
 //      an independent five/six-sprite stack drawn straight from the same
-//      vendor sheets (`window.__bc.appearanceCompare`, wired to
+//      packed atlas pages (`window.__bc.appearanceCompare`, wired to
 //      `compare-pipeline-vs-stack.ts` through the real, mounted cache);
 //   2. citizens sharing a tuple+override share one real `Texture`
 //      instance, never one each (`window.__bc.appearanceTextureIds`);
-//   3. the real page fetches only the part sheets the crowd actually
-//      references, never the wider catalogue eagerly.
+//   3. the client reads zero vendor `Character_Generator` sheets at
+//      runtime (the Epic 1 shortcut is gone), and the real page fetches
+//      only the character atlas pages the crowd actually references,
+//      never the wider catalogue eagerly.
 import { expect, test } from "@playwright/test";
 import type { Defs } from "../../src/defs/types";
 import type {} from "../../src/net/e2e-hooks";
@@ -54,7 +56,7 @@ test.describe("the real, mounted appearance pipeline", () => {
     expect(distinctCount).toBeLessThan(citizenCount);
   });
 
-  test("the page fetches only part sheets the mounted crowd actually references", async ({
+  test("the client reads no vendor character sheets, only the character atlas pages the mounted crowd actually references", async ({
     page,
   }) => {
     const defs: Defs = committedDefs();
@@ -77,32 +79,70 @@ test.describe("the real, mounted appearance pipeline", () => {
       override: null,
     });
 
-    const expectedBasenames = new Set<string>();
+    const expectedPageFiles = new Set<string>();
     for (const { tuple, override } of tuplesAndOverrides) {
       const resolved = resolveLayers(defs, tuple, override);
-      for (const sheet of Object.values(resolved.sheets)) {
-        if (sheet) expectedBasenames.add(sheet.split("/").pop() as string);
+      for (const part of Object.values(resolved.parts)) {
+        if (part) expectedPageFiles.add(defs.atlasPages[part.page]?.file ?? "");
       }
     }
 
     const requestedCharacterGenPaths: string[] = [];
+    const requestedCharacterAtlasFiles = new Set<string>();
     page.on("request", (request) => {
       const url = request.url();
       if (url.includes("Character_Generator")) requestedCharacterGenPaths.push(url);
+      // Dev-mode URLs carry Vite's own `?import&url` query string (and,
+      // in dev, an `/@fs/...` absolute-path prefix) -- neither is part
+      // of the real filename, so both are stripped before comparing.
+      const withoutQuery = url.split("?")[0] ?? url;
+      const basename = decodeURIComponent(withoutQuery.split(/[/\\]/).pop() ?? "");
+      if (basename.startsWith("character_")) requestedCharacterAtlasFiles.add(basename);
     });
 
     await page.goto("/");
     await ready(page);
 
-    expect(requestedCharacterGenPaths.length).toBeGreaterThan(0);
-    for (const url of requestedCharacterGenPaths) {
-      // Dev-mode URLs carry Vite's own `?import&url` query string (and, in
-      // dev, an `/@fs/...` absolute-path prefix) -- neither is part of the
-      // real filename, so both are stripped before comparing.
-      const withoutQuery = url.split("?")[0] ?? url;
-      const basename = decodeURIComponent(withoutQuery.split(/[/\\]/).pop() ?? "");
-      expect(expectedBasenames.has(basename), `unexpected part-sheet request: ${url}`).toBe(true);
+    // The Epic 1 shortcut is gone entirely -- never a single request to a
+    // raw vendor character sheet (Quentin/Tim's direction).
+    expect(requestedCharacterGenPaths).toEqual([]);
+
+    // Only the character atlas pages the crowd actually needs, loaded
+    // lazily -- never the wider catalogue eagerly (`AtlasPageLoader`'s
+    // own idiom, story 2.6, reused here for character pages).
+    expect(requestedCharacterAtlasFiles.size).toBeGreaterThan(0);
+    for (const file of requestedCharacterAtlasFiles) {
+      expect(expectedPageFiles.has(file), `unexpected character atlas page request: ${file}`).toBe(
+        true,
+      );
     }
+  });
+
+  test("different people cost about as much as identical ones -- the same number of bound texture sources for N distinct tuples as for N identical ones (story 2.7, NFR12)", async ({
+    page,
+  }) => {
+    // The crowd's own normal fixtures (`citizens.ts`) already put
+    // `ADULT_COUNT` (40) + `KID_COUNT` (6) = 46 citizens on mostly-
+    // distinct tuples -- comfortably over the N >= 32 this AC asks for,
+    // so the "distinct" half is just the crowd's own default mount.
+    await page.goto("/");
+    await ready(page);
+    const distinctCrowdPages = await page.evaluate(() => window.__bc?.distinctBoundAtlasPages);
+
+    // `?identicalCrowd=1` (main.ts, DEV-only) mounts the exact same
+    // crowd -- same count, same positions, same uniforms -- but every
+    // adult (and, separately, every kid) shares one tuple.
+    await page.goto("/?identicalCrowd=1");
+    await ready(page);
+    const identicalCrowdPages = await page.evaluate(() => window.__bc?.distinctBoundAtlasPages);
+
+    expect(distinctCrowdPages).toBeGreaterThan(0);
+    expect(identicalCrowdPages).toBeGreaterThan(0);
+    // Deterministic counts (never a frame-time comparison, too noisy for
+    // PR CI -- Quentin's direction): the two must be equal, or at most a
+    // couple of extra character composite pages the distinct crowd's own
+    // wider variety spilled into, never a number that scales with N.
+    expect(distinctCrowdPages).toBeLessThanOrEqual((identicalCrowdPages ?? 0) + 2);
   });
 
   test("the composite reads back byte-for-byte identical to an independent sprite stack, for fixed tuples", async ({

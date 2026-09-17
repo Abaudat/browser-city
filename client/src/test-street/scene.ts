@@ -1,7 +1,7 @@
 // The street scene's Pixi mount -- one of a small, named set of files
 // allowed to import `pixi.js` (`bootstrap.ts`,
 // `render/pixi-order.ts`/`render/pixi-visibility.ts`/`render/pixi-highlight.ts`,
-// and story 1.10's `render/appearance/composite-canvas.ts`/`appearance-texture.ts` and
+// and story 1.10/2.7's `render/appearance/composite-pages.ts`/`appearance-texture.ts` and
 // `test-street/citizens-layer.ts`/`test-street/compare-pipeline-vs-stack.ts`, each its
 // own real-canvas/Pixi adapter). Ordering itself is
 // `render/pixi-order.ts`'s job, visibility is `render/pixi-visibility.
@@ -347,6 +347,14 @@ export interface MountStreetSceneOptions {
    * timing between mount and screenshot, which no baseline could ever
    * match twice. Absent (or `false`) means the crowd walks normally. */
   readonly startWithCrowdFrozen?: boolean;
+  /** Story 2.7 (Quentin's direction): collapses the street crowd's own
+   * distinct-per-citizen appearance tuples down to one shared tuple per
+   * family, same count and positions -- exists solely so `test-street.
+   * spec.ts`'s "different people cost about as much as identical ones"
+   * comparison can mount the "identical" half without a second crowd
+   * fixture module. Absent (or `false`) means the crowd's own tuples
+   * stay distinct, exactly as they always have. */
+  readonly crowdIdenticalTuples?: boolean;
 }
 
 export interface StreetSceneHandle {
@@ -639,6 +647,7 @@ export async function mountStreetScene(
     onViewTransform,
     onHighlightChange,
     startWithCrowdFrozen,
+    crowdIdenticalTuples,
     highlightStrength,
   } = options;
   const crowdFrozen = startWithCrowdFrozen ?? false;
@@ -778,7 +787,7 @@ export async function mountStreetScene(
   // `Premade_Character_01.png` crop -- shares `appearanceCache` with the
   // street crowd (`citizensLayer` below), so a player who happens to
   // match a crowd member's tuple reuses that texture too (AC5).
-  const appearanceCache = new AppearanceTextureCache(defs);
+  const appearanceCache = new AppearanceTextureCache(defs, atlasBaseUrl);
   const playerTuple = buildPlayerAppearanceTuple(defs);
   const playerFrames = await appearanceCache.acquire(playerTuple);
   const playerSprite = new Sprite(playerFrames.frame("idle", "down", 0));
@@ -1241,6 +1250,8 @@ export async function mountStreetScene(
     tileSizePx,
     appearanceCache,
     textureFor("sidewalk", textures),
+    atlasBaseUrl,
+    crowdIdenticalTuples ?? false,
   );
   // Story 1.14 (NFR1): the atlas term's own end -- every texture this
   // scene loads before its first frame (the static tiles above, the
@@ -1273,6 +1284,15 @@ export async function mountStreetScene(
   // concern otherwise.
   app.ticker.add((ticker) => {
     if (!crowdFrozen) citizensLayer.update(ticker.deltaMS);
+  });
+
+  // Story 2.7 (Tim's direction): a composite page re-uploads at most
+  // once per frame -- every look's own draw this tick only marks its
+  // page dirty; this is the one place `source.update()` actually runs,
+  // and only for a page a draw actually touched.
+  appearanceCache.flush();
+  app.ticker.add(() => {
+    appearanceCache.flush();
   });
 
   // The frame-work window's own closing bracket: below the render's own
@@ -1318,7 +1338,7 @@ export async function mountStreetScene(
     getRenderOrder: () => renderOrder,
     keyboard,
     citizensLayer,
-    distinctBoundAtlasPages: countBoundAtlasPages(app.stage, atlasPageLoader),
+    distinctBoundAtlasPages: countBoundAtlasPages(app.stage, atlasPageLoader, appearanceCache),
     setHighlightStrength,
     currentFloor: () => walk.floor,
     poolDrawables: () => allDrawables,

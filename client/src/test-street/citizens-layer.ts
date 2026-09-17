@@ -79,6 +79,8 @@ export async function mountCitizensLayer(
   tileSizePx: number,
   cache: AppearanceTextureCache,
   sidewalkTexture: Texture,
+  atlasBaseUrl: string,
+  identicalTuples = false,
 ): Promise<CitizensLayerHandle> {
   // The crowd's own pavement, painted before the citizens so it sits
   // underneath them -- real `ModernTileset` sidewalk tiles, the same
@@ -101,7 +103,7 @@ export async function mountCitizensLayer(
   world.addChild(layer);
 
   const fixtures = [
-    ...buildCitizenFixtures(defs),
+    ...buildCitizenFixtures(defs, identicalTuples),
     buildWalkerFixture(defs),
     buildUniformedWalkerFixture(defs),
   ];
@@ -168,7 +170,16 @@ export async function mountCitizensLayer(
     return cache
       .acquire(tuple, override)
       .then((frames) =>
-        comparePipelineVsStack(defs, frames.texture, tuple, override, animation, direction, frame),
+        comparePipelineVsStack(
+          defs,
+          atlasBaseUrl,
+          frames.frame(animation, direction, frame),
+          tuple,
+          override,
+          animation,
+          direction,
+          frame,
+        ),
       );
   }
 

@@ -40,8 +40,7 @@
         "!src/render/pixi-visibility.ts",
         "!src/render/pixi-highlight.ts",
         "!src/render/atlas-pages.ts",
-        "!src/render/appearance/composite-canvas.ts",
-        "!src/render/appearance/part-sheets.ts",
+        "!src/render/appearance/composite-pages.ts",
         "!src/render/appearance/appearance-texture.ts"
       ],
       "linter": {

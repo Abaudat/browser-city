@@ -7,10 +7,11 @@
 
 use std::collections::BTreeMap;
 
+use crate::atlas::character::{CharacterPartSource, build_character_pack_items};
 use crate::atlas::image::{SourceCrop, composite_with_extrusion, decode_rgba8, encode_rgba8};
 use crate::atlas::pack::{PackItem, PageMeta, SourceKey, pack_all};
 use crate::atlas::theme::{check_shadow_variants, resolve_page_group, theme_group};
-use crate::model::{AtlasPageDef, AtlasRect, ObjectDef};
+use crate::model::{AppearanceLayoutDef, AtlasPageDef, AtlasRect, ObjectDef};
 use crate::sha256::sha256_hex;
 use crate::version::DEFS_VERSION_LEN;
 
@@ -20,14 +21,23 @@ pub struct AtlasBuildOutput {
     /// PNG bytes for each page, aligned index-for-index with `pages`.
     pub page_bytes: Vec<Vec<u8>>,
     pub atlas_by_object_id: BTreeMap<u32, AtlasRect>,
+    /// Story 2.7: one packed rect per character part, keyed by `(kind,
+    /// key)` -- e.g. `("body", "body_01")` -- CPU-only, JSON-only, exactly
+    /// like `atlas_by_object_id` (Tim's direction).
+    pub atlas_by_character_part: BTreeMap<(String, String), AtlasRect>,
 }
 
-/// NFR12's scene-side half: a scene is the shared group
-/// ([`crate::model::ATLAS_SHARED_GROUP`]) plus at most one themed group --
-/// a player is never on the street and inside a themed interior at once --
-/// so the pages that can ever be simultaneously bound are the shared
-/// group's own page count plus the *worst* other group's own page count.
-/// Fails naming both groups and their counts when that sum exceeds
+/// NFR12's scene-side half (story 2.7's three-term rule, Tim's direction):
+/// a scene is the shared group ([`crate::model::ATLAS_SHARED_GROUP`]) plus
+/// at most one themed group -- a player is never on the street and inside
+/// a themed interior at once -- plus the fixed
+/// [`crate::model::CHARACTER_COMPOSITE_PAGES`] every scene with a crowd on
+/// it binds. Character-part groups
+/// ([`crate::model::CHARACTER_GROUP_PREFIX`]) are CPU-only compositing
+/// sources, never bound to the GPU, so they are excluded from both the
+/// shared and the worst-other-group terms -- only the flat
+/// `CHARACTER_COMPOSITE_PAGES` constant stands in for them. Fails naming
+/// all three terms and the total when that sum exceeds
 /// [`crate::model::ATLAS_MAX_BOUND_PAGES`].
 fn check_max_bound_pages(pages: &[PageMeta]) -> Result<(), String> {
     let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
@@ -40,17 +50,21 @@ fn check_max_bound_pages(pages: &[PageMeta]) -> Result<(), String> {
         .unwrap_or(0);
     let worst_other = counts
         .iter()
-        .filter(|(g, _)| **g != crate::model::ATLAS_SHARED_GROUP)
+        .filter(|(g, _)| {
+            **g != crate::model::ATLAS_SHARED_GROUP
+                && !g.starts_with(crate::model::CHARACTER_GROUP_PREFIX)
+        })
         .max_by_key(|(_, count)| **count);
 
     let (other_group, other_count) = match worst_other {
         Some((g, c)) => (*g, *c),
         None => ("", 0),
     };
-    let total = shared_count + other_count;
+    let character_pages = crate::model::CHARACTER_COMPOSITE_PAGES as usize;
+    let total = shared_count + other_count + character_pages;
     if total > crate::model::ATLAS_MAX_BOUND_PAGES {
         return Err(format!(
-            "a scene binding '{}' ({shared_count} page(s)) and '{other_group}' ({other_count} page(s)) would bind {total} pages, more than ATLAS_MAX_BOUND_PAGES ({})",
+            "a scene binding '{}' ({shared_count} page(s)), '{other_group}' ({other_count} page(s)) and {character_pages} character composite page(s) (CHARACTER_COMPOSITE_PAGES) would bind {total} pages, more than ATLAS_MAX_BOUND_PAGES ({})",
             crate::model::ATLAS_SHARED_GROUP,
             crate::model::ATLAS_MAX_BOUND_PAGES
         ));
@@ -79,20 +93,42 @@ fn sprite_key(o: &ObjectDef) -> SourceKey {
 /// `page_groups` is `defs/atlas/page-groups.toml`'s own validated
 /// `theme -> group` table (Artie's direction): a derived theme with no
 /// row fails the build naming it, before anything is packed.
+///
+/// Story 2.7: `character_parts` (every declared body/eyes/hairstyle/
+/// outfit/accessory) is packed through the exact same call to
+/// [`crate::atlas::pack::pack_all`] as every object's own sprite --
+/// `character::build_character_pack_items` builds each part's own compact
+/// strip and folds its PNG bytes into `sheet_bytes` under a synthetic key,
+/// so one packer, one composite loop, one page list covers both (Quentin's
+/// direction: reuse the packer, never a parallel one). `appearance_sheet_bytes`
+/// is every character part's own real, whole vendor sheet -- the strip
+/// source, read once, never a raw sheet an object could also reference
+/// (the two `sheet_bytes` maps address disjoint sets of paths).
 pub fn build_atlas(
     objects: &[ObjectDef],
     sheet_bytes: &BTreeMap<String, Vec<u8>>,
     page_groups: &BTreeMap<String, String>,
+    character_parts: &[CharacterPartSource],
+    appearance_sheet_bytes: &BTreeMap<String, Vec<u8>>,
+    appearance_layouts: &[AppearanceLayoutDef],
 ) -> Result<AtlasBuildOutput, String> {
-    if objects.is_empty() {
+    if objects.is_empty() && character_parts.is_empty() {
         return Ok(AtlasBuildOutput {
             pages: Vec::new(),
             page_bytes: Vec::new(),
             atlas_by_object_id: BTreeMap::new(),
+            atlas_by_character_part: BTreeMap::new(),
         });
     }
 
-    let mut items = Vec::with_capacity(objects.len());
+    let character_pack =
+        build_character_pack_items(character_parts, appearance_sheet_bytes, appearance_layouts)?;
+    let character_items = character_pack.items;
+    let mut sheet_bytes: BTreeMap<String, Vec<u8>> = sheet_bytes.clone();
+    sheet_bytes.extend(character_pack.extra_sheet_bytes);
+    let sheet_bytes = &sheet_bytes;
+
+    let mut items = Vec::with_capacity(objects.len() + character_items.len());
     // Shadow-variant consistency is a per-theme concern (Artie's own art
     // choice for one theme folder), checked before themes are ever
     // merged into a shared page group.
@@ -113,6 +149,7 @@ pub fn build_atlas(
     for (theme, sheets) in &sheets_by_theme {
         check_shadow_variants(theme, sheets)?;
     }
+    items.extend(character_items.clone());
 
     let result = pack_all(&items)?;
     check_max_bound_pages(&result.pages)?;
@@ -201,10 +238,29 @@ pub fn build_atlas(
         );
     }
 
+    let mut atlas_by_character_part = BTreeMap::new();
+    for (part, item) in character_parts.iter().zip(character_items.iter()) {
+        let placement = result
+            .placements
+            .get(&item.source)
+            .expect("every character part's own strip was packed above");
+        atlas_by_character_part.insert(
+            (part.kind.to_string(), part.key.clone()),
+            AtlasRect {
+                page: placement.page,
+                x: placement.x,
+                y: placement.y,
+                w: item.source.w,
+                h: item.source.h,
+            },
+        );
+    }
+
     Ok(AtlasBuildOutput {
         pages,
         page_bytes,
         atlas_by_object_id,
+        atlas_by_character_part,
     })
 }
 
@@ -261,7 +317,15 @@ mod tests {
 
     #[test]
     fn empty_objects_produce_no_pages() {
-        let out = build_atlas(&[], &BTreeMap::new(), &BTreeMap::new()).unwrap();
+        let out = build_atlas(
+            &[],
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &[],
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap();
         assert!(out.pages.is_empty());
         assert!(out.atlas_by_object_id.is_empty());
     }
@@ -276,7 +340,15 @@ mod tests {
         bytes.insert(CITY_PROPS.to_string(), tiny_png(16, 16, [1, 2, 3, 255]));
         bytes.insert(CAMPING.to_string(), tiny_png(16, 16, [4, 5, 6, 255]));
 
-        let out = build_atlas(&objects, &bytes, &identity_page_groups()).unwrap();
+        let out = build_atlas(
+            &objects,
+            &bytes,
+            &identity_page_groups(),
+            &[],
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap();
         assert_eq!(out.pages.len(), 2, "two distinct page groups, two pages");
         assert_eq!(out.atlas_by_object_id.len(), 2);
         let r1 = out.atlas_by_object_id[&1];
@@ -290,7 +362,15 @@ mod tests {
         let objects = vec![object(1, "lamp", CITY_PROPS, 16, 16)];
         let mut bytes = BTreeMap::new();
         bytes.insert(CITY_PROPS.to_string(), tiny_png(16, 16, [1, 2, 3, 255]));
-        let err = build_atlas(&objects, &bytes, &BTreeMap::new()).unwrap_err();
+        let err = build_atlas(
+            &objects,
+            &bytes,
+            &BTreeMap::new(),
+            &[],
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap_err();
         assert!(err.contains("city_props"), "{err}");
     }
 
@@ -316,12 +396,13 @@ mod tests {
     }
 
     /// NFR12: a two-page shared group beside a two-page themed group (the
-    /// worst either can be, `ATLAS_MAX_PAGES_PER_GROUP`) still passes
-    /// (2 + 2 = 4 <= 8); this is `check_max_bound_pages` tested directly
-    /// against a hand-built page list, past the per-group cap that would
-    /// otherwise make a themed group large enough to trip it
-    /// unreachable through `pack_all` itself -- naming both groups and
-    /// their own counts once the sum does exceed the cap.
+    /// worst either can be, `ATLAS_MAX_PAGES_PER_GROUP`) plus
+    /// `CHARACTER_COMPOSITE_PAGES` still passes (2 + 2 + 2 = 6 <= 8); this
+    /// is `check_max_bound_pages` tested directly against a hand-built
+    /// page list, past the per-group cap that would otherwise make a
+    /// themed group large enough to trip it unreachable through
+    /// `pack_all` itself -- naming both groups, `CHARACTER_COMPOSITE_PAGES`
+    /// and the total once the sum does exceed the cap.
     #[test]
     fn a_two_page_shared_group_and_a_seven_page_themed_group_fails_naming_both() {
         let mut pages = vec![
@@ -346,7 +427,100 @@ mod tests {
         let err = check_max_bound_pages(&pages).unwrap_err();
         assert!(err.contains(crate::model::ATLAS_SHARED_GROUP), "{err}");
         assert!(err.contains("kitchen"), "{err}");
+        assert!(err.contains("CHARACTER_COMPOSITE_PAGES"), "{err}");
+        assert!(err.contains("11"), "{err}");
+    }
+
+    /// Story 2.7: a scene passes when shared + worst themed +
+    /// `CHARACTER_COMPOSITE_PAGES` lands exactly on `ATLAS_MAX_BOUND_PAGES`
+    /// -- Quentin's direction, made-up page counts, never the real art's.
+    #[test]
+    fn a_scene_passes_exactly_at_the_bound_pages_limit() {
+        let mut pages = vec![PageMeta {
+            group: crate::model::ATLAS_SHARED_GROUP.to_string(),
+            width: 2048,
+            height: 16,
+        }];
+        for _ in 0..5 {
+            pages.push(PageMeta {
+                group: "kitchen".to_string(),
+                width: 2048,
+                height: 16,
+            });
+        }
+        // shared(1) + kitchen(5) + CHARACTER_COMPOSITE_PAGES(2) == 8.
+        assert!(check_max_bound_pages(&pages).is_ok());
+    }
+
+    /// Story 2.7: one page over that same limit fails, naming
+    /// `CHARACTER_COMPOSITE_PAGES` -- the character composite pages are
+    /// what pushed it over, not a themed group.
+    #[test]
+    fn character_composite_pages_pushing_a_scene_over_the_limit_fails_by_name() {
+        let mut pages = vec![PageMeta {
+            group: crate::model::ATLAS_SHARED_GROUP.to_string(),
+            width: 2048,
+            height: 16,
+        }];
+        for _ in 0..6 {
+            pages.push(PageMeta {
+                group: "kitchen".to_string(),
+                width: 2048,
+                height: 16,
+            });
+        }
+        // shared(1) + kitchen(6) + CHARACTER_COMPOSITE_PAGES(2) == 9.
+        let err = check_max_bound_pages(&pages).unwrap_err();
+        assert!(err.contains("CHARACTER_COMPOSITE_PAGES"), "{err}");
         assert!(err.contains('9'), "{err}");
+    }
+
+    /// Story 2.7 (Tim's direction): character-part groups are CPU-only,
+    /// never bound to the GPU, so they are excluded from the worst-other-
+    /// group term entirely -- a character group with far more pages than
+    /// any themed group must never itself trip the cap.
+    #[test]
+    fn a_character_part_group_is_excluded_from_the_worst_other_group_term() {
+        let pages = vec![
+            PageMeta {
+                group: crate::model::ATLAS_SHARED_GROUP.to_string(),
+                width: 2048,
+                height: 16,
+            },
+            PageMeta {
+                group: "kitchen".to_string(),
+                width: 2048,
+                height: 16,
+            },
+            PageMeta {
+                group: format!("{}body", crate::model::CHARACTER_GROUP_PREFIX),
+                width: 2048,
+                height: 16,
+            },
+            PageMeta {
+                group: format!("{}body", crate::model::CHARACTER_GROUP_PREFIX),
+                width: 2048,
+                height: 16,
+            },
+            PageMeta {
+                group: format!("{}body", crate::model::CHARACTER_GROUP_PREFIX),
+                width: 2048,
+                height: 16,
+            },
+            PageMeta {
+                group: format!("{}body", crate::model::CHARACTER_GROUP_PREFIX),
+                width: 2048,
+                height: 16,
+            },
+            PageMeta {
+                group: format!("{}body", crate::model::CHARACTER_GROUP_PREFIX),
+                width: 2048,
+                height: 16,
+            },
+        ];
+        // shared(1) + kitchen(1) + CHARACTER_COMPOSITE_PAGES(2) == 4,
+        // regardless of character_body's own 5 pages.
+        assert!(check_max_bound_pages(&pages).is_ok());
     }
 
     #[test]
@@ -365,7 +539,7 @@ mod tests {
         .into_iter()
         .collect();
 
-        let out = build_atlas(&objects, &bytes, &street).unwrap();
+        let out = build_atlas(&objects, &bytes, &street, &[], &BTreeMap::new(), &[]).unwrap();
         assert_eq!(out.pages.len(), 1, "merged themes share one page group");
         assert_eq!(out.pages[0].group, "street");
         let r1 = out.atlas_by_object_id[&1];
@@ -379,8 +553,24 @@ mod tests {
         let mut bytes = BTreeMap::new();
         bytes.insert(CITY_PROPS.to_string(), tiny_png(16, 16, [9, 9, 9, 255]));
 
-        let out_a = build_atlas(&objects, &bytes, &identity_page_groups()).unwrap();
-        let out_b = build_atlas(&objects, &bytes, &identity_page_groups()).unwrap();
+        let out_a = build_atlas(
+            &objects,
+            &bytes,
+            &identity_page_groups(),
+            &[],
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap();
+        let out_b = build_atlas(
+            &objects,
+            &bytes,
+            &identity_page_groups(),
+            &[],
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap();
         assert_eq!(out_a.pages[0].file, out_b.pages[0].file);
         assert!(out_a.pages[0].file.starts_with("city_props-"));
     }
@@ -394,11 +584,27 @@ mod tests {
         let mut bytes_a = BTreeMap::new();
         bytes_a.insert(CITY_PROPS.to_string(), tiny_png(16, 16, [1, 1, 1, 255]));
         bytes_a.insert(CAMPING.to_string(), tiny_png(16, 16, [2, 2, 2, 255]));
-        let out_a = build_atlas(&objects, &bytes_a, &identity_page_groups()).unwrap();
+        let out_a = build_atlas(
+            &objects,
+            &bytes_a,
+            &identity_page_groups(),
+            &[],
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap();
 
         let mut bytes_b = bytes_a.clone();
         bytes_b.insert(CITY_PROPS.to_string(), tiny_png(16, 16, [99, 99, 99, 255]));
-        let out_b = build_atlas(&objects, &bytes_b, &identity_page_groups()).unwrap();
+        let out_b = build_atlas(
+            &objects,
+            &bytes_b,
+            &identity_page_groups(),
+            &[],
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap();
 
         let camping_a = out_a.pages.iter().find(|p| p.group == "camping").unwrap();
         let camping_b = out_b.pages.iter().find(|p| p.group == "camping").unwrap();
@@ -426,7 +632,15 @@ mod tests {
     #[test]
     fn a_sheet_path_with_no_theme_sorter_segment_fails_naming_it() {
         let objects = vec![object(1, "x", "ModernTileset/Palettes/x.png", 16, 16)];
-        let err = build_atlas(&objects, &BTreeMap::new(), &BTreeMap::new()).unwrap_err();
+        let err = build_atlas(
+            &objects,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &[],
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap_err();
         assert!(err.contains("ModernTileset/Palettes/x.png"), "{err}");
     }
 
@@ -436,7 +650,15 @@ mod tests {
     #[test]
     fn a_referenced_sheet_missing_from_sheet_bytes_is_a_named_error() {
         let objects = vec![object(1, "lamp", CITY_PROPS, 16, 16)];
-        let err = build_atlas(&objects, &BTreeMap::new(), &identity_page_groups()).unwrap_err();
+        let err = build_atlas(
+            &objects,
+            &BTreeMap::new(),
+            &identity_page_groups(),
+            &[],
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap_err();
         assert!(err.contains(CITY_PROPS), "{err}");
         assert!(err.contains("never read"), "{err}");
     }
@@ -451,7 +673,15 @@ mod tests {
         let mut bytes = BTreeMap::new();
         bytes.insert(CITY_PROPS.to_string(), sheet_bytes);
 
-        let out = build_atlas(&objects, &bytes, &identity_page_groups()).unwrap();
+        let out = build_atlas(
+            &objects,
+            &bytes,
+            &identity_page_groups(),
+            &[],
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap();
         let rect = out.atlas_by_object_id[&1];
         let (pw, ph, page_rgba) = decode_rgba8(&out.page_bytes[rect.page as usize]).unwrap();
         assert!(rect.x + rect.w <= pw && rect.y + rect.h <= ph);

@@ -15,6 +15,7 @@ function validPayload(): Record<string, unknown> {
     interact_at_max_reach_cells: 2,
     max_footprint_cells: 8,
     atlas_max_pages_per_group: 2,
+    character_composite_pages: 2,
     atlas_pages: [{ file: "furniture-abc123.png", group: "furniture", width: 2048, height: 16 }],
     objects: [
       {
@@ -731,8 +732,33 @@ describe("parseDefs appearance (story 1.10)", () => {
     rows: [{ animation: "idle", row: 0, frames_per_direction: 1 }],
     accepted_sizes: [{ width: 16, height: 32 }],
   };
-  const BODY = { id: 1, key: "body_01", family: "adult", sheet: "x/body.png", pool: "civilian" };
-  const EYES = { id: 1, key: "eyes_01", family: "adult", sheet: "x/eyes.png", pool: "civilian" };
+  // LAYOUT declares 1 direction x 1 frame x 16px wide, 1 row x 32px tall
+  // -- every part's own compact strip is therefore exactly 16x32px
+  // (`compositeStripSize`), regardless of kind.
+  const PART_ATLAS = { page: 1, x: 0, y: 0, w: 16, h: 32 };
+  const CHARACTER_ATLAS_PAGES = [
+    { file: "character_body-abc.png", group: "character_body", width: 16, height: 32 },
+    { file: "character_eyes-abc.png", group: "character_eyes", width: 16, height: 32 },
+    { file: "character_outfit-abc.png", group: "character_outfit", width: 16, height: 32 },
+    { file: "character_hairstyle-abc.png", group: "character_hairstyle", width: 16, height: 32 },
+    { file: "character_accessory-abc.png", group: "character_accessory", width: 16, height: 32 },
+  ];
+  const BODY = {
+    id: 1,
+    key: "body_01",
+    family: "adult",
+    sheet: "x/body.png",
+    pool: "civilian",
+    atlas: { ...PART_ATLAS, page: 1 },
+  };
+  const EYES = {
+    id: 1,
+    key: "eyes_01",
+    family: "adult",
+    sheet: "x/eyes.png",
+    pool: "civilian",
+    atlas: { ...PART_ATLAS, page: 2 },
+  };
   const OUTFIT = {
     id: 1,
     key: "outfit_01",
@@ -740,6 +766,7 @@ describe("parseDefs appearance (story 1.10)", () => {
     sheet: "x/outfit.png",
     pool: "civilian",
     hides_hairstyle: false,
+    atlas: { ...PART_ATLAS, page: 3 },
   };
   const HAIRSTYLE = {
     id: 1,
@@ -749,6 +776,7 @@ describe("parseDefs appearance (story 1.10)", () => {
     style: 1,
     color: 1,
     rare: false,
+    atlas: { ...PART_ATLAS, page: 4 },
   };
   const ROLE_ACCESSORY = {
     id: 1,
@@ -757,6 +785,7 @@ describe("parseDefs appearance (story 1.10)", () => {
     sheet: "x/jacket.png",
     pool: "role_only",
     slot: "torso",
+    atlas: { ...PART_ATLAS, page: 5 },
   };
   const CIVILIAN_ACCESSORY = {
     id: 2,
@@ -765,11 +794,14 @@ describe("parseDefs appearance (story 1.10)", () => {
     sheet: "x/backpack.png",
     pool: "civilian",
     slot: "back",
+    atlas: { ...PART_ATLAS, page: 5 },
   };
 
   function appearancePayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    const base = validPayload();
     return {
-      ...validPayload(),
+      ...base,
+      atlas_pages: [...(base.atlas_pages as unknown[]), ...CHARACTER_ATLAS_PAGES],
       appearance_layouts: [LAYOUT],
       bodies: [BODY],
       eyes: [EYES],

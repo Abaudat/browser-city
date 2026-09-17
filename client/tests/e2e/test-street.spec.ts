@@ -603,11 +603,15 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   expect(appearanceAtStart?.eyes).toBeGreaterThan(0);
   expect(appearanceAtStart?.outfit).toBeGreaterThan(0);
 
-  // Story 2.6 (NFR12): the mounted street resolves against a small
-  // number of distinct atlas pages -- today just the shop counter's own
-  // "street" page, since it is the only placed prop wired to
-  // `render/atlas-pages.ts` yet (the rest is Story 2.13's own scope), but
-  // the assertion is the real one NFR12 names, not a placeholder.
+  // Story 2.6/2.7 (NFR12): the mounted street resolves against a small
+  // number of distinct atlas pages -- the shop counter's own "street"
+  // page (the only placed prop wired to `render/atlas-pages.ts` yet, the
+  // rest is Story 2.13's own scope) plus the street crowd's own shared
+  // character composite pages (`AppearanceTextureCache.pageSources`,
+  // folded in by `countBoundAtlasPages`) -- the assertion is the real
+  // one NFR12 names, not a placeholder. `appearance.spec.ts`'s own
+  // "different people cost about as much as identical ones" test is
+  // this same count's own budget proof.
   const distinctBoundAtlasPages = await page.evaluate(() => window.__bc?.distinctBoundAtlasPages);
   expect(distinctBoundAtlasPages).toBeGreaterThan(0);
   expect(distinctBoundAtlasPages).toBeLessThanOrEqual(8);

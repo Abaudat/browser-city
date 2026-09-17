@@ -1,16 +1,21 @@
-// Story 1.10 (AC5): the runtime half of the composite pipeline proof
+// Story 1.10/2.7 (AC5): the runtime half of the composite pipeline proof
 // `client/tests/e2e/appearance.spec.ts` needs -- that the real, mounted
-// composite (`part-sheets.ts`'s real `fetch`, `composite-canvas.ts`'s
-// real `OffscreenCanvas`) reads back byte-for-byte identical to an
-// independent five/six-layer stack, drawn straight from the same vendor
-// sheets via `sourceFrameRect`, never `composite.ts`'s own cell-packing
-// math a second time. Plain `Canvas2D` throughout, deliberately not
-// Pixi's own `renderer.extract`: a `Texture` frame-cropped from either an
+// composite (`character-part-pages.ts`'s real `fetch`, `composite-pages.ts`'s
+// real `OffscreenCanvas`-backed shared page) reads back byte-for-byte
+// identical to an independent five/six-layer stack, drawn straight from
+// the same *packed atlas pages* via each part's own `atlas` rect, never
+// `composite.ts`'s own layering code a second time (Quentin's direction,
+// story 2.7: the packed-pixels-equal-vendor-pixels half of this proof
+// already lives in `tools/defs-build`'s own Rust round-trip test; this
+// file only proves what the renderer draws for a fixed tuple equals an
+// independently-cropped stack of the very pages the renderer itself
+// reads). Plain `Canvas2D` throughout, deliberately not Pixi's own
+// `renderer.extract`: a `Texture` frame-cropped from either an
 // `ImageBitmap`-backed or a canvas-backed source read back wrong (fully
 // transparent, or fully opaque garbage) through a real WebGPU renderer's
 // extract path when tried here -- `Canvas2D.getImageData` over the exact
 // same underlying canvas/bitmap resources is what the real composite
-// (`composite-canvas.ts`) already trusts for identical work, and is what
+// (`composite-pages.ts`) already trusts for identical work, and is what
 // this file trusts too.
 //
 // Lives under `test-street/`, not `render/appearance/`: this is e2e test harness
@@ -22,11 +27,11 @@
 import type { Texture } from "pixi.js";
 import type { Defs } from "../defs/types";
 import type { AppearanceTuple, UniformOverride } from "../render/appearance/composite";
-import { compositeCellRect, sourceFrameRect } from "../render/appearance/frame-rect";
-import { fetchPartBitmap } from "../render/appearance/part-sheets";
+import { compositeCellRect } from "../render/appearance/frame-rect";
 import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
 import { createRefCountedCache } from "../render/appearance/ref-counted-cache";
-import { resolveLayers } from "../render/appearance/resolve-layers";
+import { type ResolvedPart, resolveLayers } from "../render/appearance/resolve-layers";
+import { atlasPageUrl } from "../render/atlas-url";
 
 const STACK_LAYER_ORDER = [
   "body",
@@ -37,20 +42,36 @@ const STACK_LAYER_ORDER = [
   "uniformAccessory",
 ] as const;
 
-// This module's own cache, entirely separate from `part-sheets.ts`'s
-// production one -- same `fetchPartBitmap` loader (the URL resolution is
-// shared; the state is not), so this e2e harness never perturbs the
-// production cache it is checking: the crowd's own real mount (through
-// `citizens-layer.ts`) still exercises production's close-at-zero-
-// references path for real, unaffected by whatever this module does with
-// its own state. `appearance.spec.ts` calls `comparePipelineVsStack`
-// dozens of times over for one fixed tuple (the full `(animation,
-// direction, frame)` grid); this cache's own references are held for
-// this module's whole lifetime, never released, so each of that fixed
-// tuple's handful of sheets is decoded exactly once rather than on every
-// call -- a Playwright test page's own sheet set is small and fixed, and
-// the page (and this cache with it) is torn down between tests.
-const stackImages = createRefCountedCache(fetchPartBitmap, (bitmap) => bitmap.close());
+async function fetchPageBitmap(baseUrl: string, file: string): Promise<ImageBitmap> {
+  const response = await fetch(atlasPageUrl(baseUrl, file));
+  if (!response.ok) {
+    throw new Error(
+      `compare-pipeline-vs-stack: '${file}' fetch failed with ${response.status} ${response.statusText}`,
+    );
+  }
+  const blob = await response.blob();
+  return createImageBitmap(blob);
+}
+
+// This module's own cache, entirely separate from `character-part-pages.ts`'s
+// production one -- same fetch, the state is not shared -- so this e2e
+// harness never perturbs the production cache it is checking: the
+// crowd's own real mount (through `citizens-layer.ts`) still exercises
+// production's close-at-zero-references path for real, unaffected by
+// whatever this module does with its own state. `appearance.spec.ts`
+// calls `comparePipelineVsStack` dozens of times over for one fixed
+// tuple (the full `(animation, direction, frame)` grid); this cache's
+// own references are held for this module's whole lifetime, never
+// released, so each of that fixed tuple's handful of pages is decoded
+// exactly once rather than on every call -- a Playwright test page's own
+// page set is small and fixed, and the page (and this cache with it) is
+// torn down between tests.
+function makeStackPages(atlasBaseUrl: string) {
+  return createRefCountedCache<ImageBitmap>(
+    (file) => fetchPageBitmap(atlasBaseUrl, file),
+    (bitmap) => bitmap.close(),
+  );
+}
 
 function readImageData(
   width: number,
@@ -68,15 +89,20 @@ function readImageData(
 
 /** Renders `(animation, direction, frame)` two independent ways for the
  * same `tuple`+`override` and reads both back as raw pixels: the real
- * composite's own already-drawn canvas (cropped to that one cell,
- * straight `Canvas2D`, no GPU roundtrip), and a fresh five/six-layer
- * stack built directly from `resolveLayers`'s own sheet paths, cropped
- * per layer via `sourceFrameRect` and stacked in the same draw order
- * `composite.ts`'s `LAYER_ORDER` declares -- the `hidesHairstyle` skip
- * included, so a hood outfit is proven the same way as everything else. */
+ * composite's own already-drawn, already-cropped per-frame `Texture`
+ * (`pipelineFrameTexture` -- the exact `Texture` a mounted citizen's own
+ * sprite would show, straight `Canvas2D`, no GPU roundtrip), and a fresh
+ * five/six-layer stack built directly from `resolveLayers`'s own packed-
+ * page references, cropped per layer via each part's own `atlas` rect
+ * plus the cell's local offset (`compositeCellRect`, gutter 0 -- the
+ * packed atlas strip's own tight layout, never the composite page's
+ * gutter-padded one) and stacked in the same draw order `composite.ts`'s
+ * `LAYER_ORDER` declares -- the `hidesHairstyle` skip included, so a
+ * hood outfit is proven the same way as everything else. */
 export async function comparePipelineVsStack(
   defs: Defs,
-  compositeTexture: Texture,
+  atlasBaseUrl: string,
+  pipelineFrameTexture: Texture,
   tuple: AppearanceTuple,
   override: UniformOverride | null,
   animation: string,
@@ -86,14 +112,17 @@ export async function comparePipelineVsStack(
   const resolved = resolveLayers(defs, tuple, override);
   const cell = compositeCellRect(resolved.layout, animation, direction, frame);
 
-  const compositeCanvas = compositeTexture.source.resource as OffscreenCanvas | HTMLCanvasElement;
+  const pipelineSource = pipelineFrameTexture.source.resource as
+    | OffscreenCanvas
+    | HTMLCanvasElement;
+  const frameRect = pipelineFrameTexture.frame;
   const pipeline = readImageData(cell.width, cell.height, (ctx) => {
     ctx.drawImage(
-      compositeCanvas,
-      cell.x,
-      cell.y,
-      cell.width,
-      cell.height,
+      pipelineSource,
+      frameRect.x,
+      frameRect.y,
+      frameRect.width,
+      frameRect.height,
       0,
       0,
       cell.width,
@@ -101,27 +130,44 @@ export async function comparePipelineVsStack(
     );
   });
 
-  const sheetByLayer: Readonly<Record<(typeof STACK_LAYER_ORDER)[number], string | null>> = {
-    body: resolved.sheets.body,
-    eyes: resolved.sheets.eyes,
-    outfit: resolved.sheets.outfit,
-    hairstyle: resolved.sheets.hairstyle,
-    accessory: resolved.sheets.accessory,
-    uniformAccessory: resolved.sheets.uniformAccessory,
+  const stackPages = makeStackPages(atlasBaseUrl);
+  const partByLayer: Readonly<Record<(typeof STACK_LAYER_ORDER)[number], ResolvedPart | null>> = {
+    body: resolved.parts.body,
+    eyes: resolved.parts.eyes,
+    outfit: resolved.parts.outfit,
+    hairstyle: resolved.parts.hairstyle,
+    accessory: resolved.parts.accessory,
+    uniformAccessory: resolved.parts.uniformAccessory,
   };
-  const src = sourceFrameRect(resolved.layout, animation, direction, frame);
-  const images: ImageBitmap[] = [];
-  for (const layer of STACK_LAYER_ORDER) {
-    if (layer === "hairstyle" && resolved.effectiveOutfit.hidesHairstyle) continue;
-    const sheet = sheetByLayer[layer];
-    if (!sheet) continue;
-    images.push(await stackImages.acquire(sheet));
-  }
-  const stack = readImageData(cell.width, cell.height, (ctx) => {
-    for (const image of images) {
-      ctx.drawImage(image, src.x, src.y, src.width, src.height, 0, 0, src.width, src.height);
+  const acquired: { file: string; bitmap: ImageBitmap; atlas: ResolvedPart["atlas"] }[] = [];
+  try {
+    for (const layer of STACK_LAYER_ORDER) {
+      if (layer === "hairstyle" && resolved.effectiveOutfit.hidesHairstyle) continue;
+      const part = partByLayer[layer];
+      if (!part) continue;
+      const page = defs.atlasPages[part.page];
+      if (!page)
+        throw new Error(`compare-pipeline-vs-stack: atlas page ${part.page} does not exist`);
+      const bitmap = await stackPages.acquire(page.file);
+      acquired.push({ file: page.file, bitmap, atlas: part.atlas });
     }
-  });
-
-  return { pipeline, stack };
+    const stack = readImageData(cell.width, cell.height, (ctx) => {
+      for (const { bitmap, atlas } of acquired) {
+        ctx.drawImage(
+          bitmap,
+          atlas.x + cell.x,
+          atlas.y + cell.y,
+          cell.width,
+          cell.height,
+          0,
+          0,
+          cell.width,
+          cell.height,
+        );
+      }
+    });
+    return { pipeline, stack };
+  } finally {
+    for (const { file, bitmap } of acquired) stackPages.release(file, bitmap);
+  }
 }

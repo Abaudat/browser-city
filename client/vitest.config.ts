@@ -40,22 +40,23 @@ export default defineConfig({
       // that is wrong is the exact failure mode these overlays exist to
       // prevent, and an overlay that lies about a collider is worse than
       // no overlay at all.
-      // Story 1.10: `composite-canvas.ts` needs a real `OffscreenCanvas`
+      // Story 1.10/2.7: `composite-pages.ts` needs a real `OffscreenCanvas`
       // (an `OffscreenCanvas`-less node test cannot exercise it
-      // meaningfully) and `part-sheets.ts` needs a real Vite
-      // `import.meta.glob`/`fetch` runtime -- both thin adapters over the
-      // pure logic in `composite.ts`/`frame-rect.ts`/`resolve-layers.ts`/
-      // `appearance-cache.ts`, which stay in scope. `appearance-texture.ts`
-      // is the adapter composing those two together plus the cache; no
-      // logic of its own remains once its inputs are each covered.
+      // meaningfully) and `character-part-pages.ts` needs a real `fetch`
+      // runtime -- both thin adapters over the pure logic in
+      // `composite.ts`/`composite-slots.ts`/`frame-rect.ts`/
+      // `resolve-layers.ts`/`appearance-cache.ts`, which stay in scope.
+      // `appearance-texture.ts` is the adapter composing those together
+      // plus the cache; no logic of its own remains once its inputs are
+      // each covered.
       exclude: [
         "src/net/bindings/**",
         // Story 2.8: a generated constant, the same idiom as bindings/ --
         // nothing to unit-test in a literal string assignment.
         "src/net/protocol-version.ts",
         "src/test-street/**",
-        "src/render/appearance/composite-canvas.ts",
-        "src/render/appearance/part-sheets.ts",
+        "src/render/appearance/composite-pages.ts",
+        "src/render/appearance/character-part-pages.ts",
         "src/render/appearance/appearance-texture.ts",
       ],
       thresholds: {

@@ -263,7 +263,17 @@ function tupleFor(defs: Defs, family: Family, index: number): AppearanceTuple {
  * its identical foot line (the close-crop screenshot's pairing), and
  * three adult pairs stand one tile apart facing each other, as if
  * talking. */
-export function buildCitizenFixtures(defs: Defs): readonly CitizenFixture[] {
+/** Story 2.7's own texture-budget proof (Quentin's direction): builds
+ * the exact same crowd -- same count, same positions, same uniforms --
+ * but every adult (and, separately, every kid) shares one identical
+ * tuple, when `identicalTuples` is set. Never the normal path: only
+ * `client/tests/e2e/test-street.spec.ts`'s own "different people cost
+ * about as much as identical ones" comparison sets it, to build the
+ * crowd's "identical" half without duplicating this whole function. */
+export function buildCitizenFixtures(
+  defs: Defs,
+  identicalTuples = false,
+): readonly CitizenFixture[] {
   const fixtures: CitizenFixture[] = [];
   const placed: { x: number; y: number }[] = [];
   for (const slot of RESERVED_ADULT_SLOTS.values()) placed.push(slot);
@@ -288,7 +298,7 @@ export function buildCitizenFixtures(defs: Defs): readonly CitizenFixture[] {
     if (!reserved) placed.push(local);
     fixtures.push({
       id: `adult-${i}`,
-      tuple: i < 3 ? sharedTuple : tupleFor(defs, "adult", i),
+      tuple: identicalTuples || i < 3 ? sharedTuple : tupleFor(defs, "adult", i),
       professionKey: SANITATION_WORKER_INDICES.has(i) ? "sanitation_worker" : undefined,
       gridX: PLAZA_X0 + local.x,
       gridY: PLAZA_Y0 + local.y,
@@ -303,7 +313,7 @@ export function buildCitizenFixtures(defs: Defs): readonly CitizenFixture[] {
     if (!reserved) placed.push(local);
     fixtures.push({
       id: `kid-${i}`,
-      tuple: i < 2 ? twinTuple : tupleFor(defs, "kid", i),
+      tuple: identicalTuples || i < 2 ? twinTuple : tupleFor(defs, "kid", i),
       gridX: PLAZA_X0 + local.x,
       gridY: PLAZA_Y0 + local.y,
       facing: reserved?.facing ?? facingFor(i + ADULT_COUNT),

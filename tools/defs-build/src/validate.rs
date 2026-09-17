@@ -76,6 +76,23 @@ pub fn validate_page_groups(raw: &RawDefs) -> Result<BTreeMap<String, String>, D
                 ),
             ));
         }
+        if entry
+            .group
+            .value
+            .starts_with(crate::model::CHARACTER_GROUP_PREFIX)
+        {
+            return Err(DefsError::new(
+                &entry.path,
+                entry.group.line,
+                entry.group.col,
+                format!(
+                    "theme '{}' maps to group '{}', which starts with '{}' -- that prefix is reserved for character-part groups the packer names itself, never a page_group row",
+                    entry.theme.value,
+                    entry.group.value,
+                    crate::model::CHARACTER_GROUP_PREFIX
+                ),
+            ));
+        }
         first_seen.insert(entry.theme.value.as_str(), entry);
         table.insert(entry.theme.value.clone(), entry.group.value.clone());
     }
@@ -1879,6 +1896,32 @@ fn check_sheet_fits_layout(
 /// a sheet happens to use that size.
 fn check_one_layout_per_family(layouts: &[AppearanceLayoutEntry]) -> Result<(), DefsError> {
     let mut seen: HashMap<Family, &AppearanceLayoutEntry> = HashMap::new();
+    // Story 2.7, AC1(e) (Tim's direction): every family's own strip is
+    // packed at the *same* cell size -- a character-part page group mixing
+    // strips of different cell sizes would need per-part page arithmetic
+    // the packer never does. Every `[[appearance_layout]]` must therefore
+    // declare the same `cell_width`/`cell_height` as the first one, failing
+    // by layout key.
+    if let Some(first) = layouts.first() {
+        for l in &layouts[1..] {
+            if l.cell_width != first.cell_width || l.cell_height != first.cell_height {
+                return Err(DefsError::new(
+                    &l.path,
+                    l.key.line,
+                    l.key.col,
+                    format!(
+                        "appearance_layout '{}' declares cell size {}x{}px but '{}' already declared {}x{}px -- every layout must share one cell size",
+                        l.key.value,
+                        l.cell_width,
+                        l.cell_height,
+                        first.key.value,
+                        first.cell_width,
+                        first.cell_height
+                    ),
+                ));
+            }
+        }
+    }
     for l in layouts {
         if let Some(prev) = seen.get(&l.family.value) {
             return Err(DefsError::new(
@@ -3548,6 +3591,22 @@ mod tests {
         assert!(err.message.contains("exactly one layout per family"));
     }
 
+    /// Story 2.7, AC1(e): every `[[appearance_layout]]` must share one
+    /// cell size -- a family declaring its own, different cell size is
+    /// rejected by its own key, naming both sizes.
+    #[test]
+    fn two_layouts_with_different_cell_sizes_are_rejected() {
+        let f = files(&[(
+            "defs/appearance/layouts.toml",
+            "[[appearance_layout]]\nid = 1\nkey = \"adult\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 16, height = 32 }]\n\n[[appearance_layout]]\nid = 2\nkey = \"kid\"\nfamily = \"kid\"\ncell_width = 12\ncell_height = 24\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 12, height = 24 }]\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").unwrap_err();
+        assert!(err.message.contains("kid"), "{}", err.message);
+        assert!(err.message.contains("16x32"), "{}", err.message);
+        assert!(err.message.contains("12x24"), "{}", err.message);
+    }
+
     fn appearance_and_profession_tree(uniform_toml: &str) -> Vec<(PathBuf, String)> {
         files(&[
             ("defs/appearance/layouts.toml", LAYOUT_TOML),
@@ -3715,6 +3774,21 @@ mod tests {
         let raw = crate::model::RawDefs::default();
         let err = validate_page_groups(&raw).unwrap_err();
         assert!(err.message.contains(ATLAS_SHARED_GROUP));
+    }
+
+    /// Story 2.7 (Tim's direction): `defs/atlas/page-groups.toml` may
+    /// never map a theme onto a `character_*` group -- that prefix is
+    /// reserved for the character-part packer's own groups.
+    #[test]
+    fn validate_page_groups_rejects_a_theme_mapped_to_a_character_prefixed_group() {
+        let f = files(&[(
+            "defs/atlas/page-groups.toml",
+            "[[page_group]]\ntheme = \"camping\"\ngroup = \"street\"\n\n[[page_group]]\ntheme = \"kitchen\"\ngroup = \"character_body\"\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate_page_groups(&raw).unwrap_err();
+        assert!(err.message.contains("kitchen"), "{}", err.message);
+        assert!(err.message.contains("character_body"), "{}", err.message);
     }
 
     // --- Tim's cycle 2 direction: `check_no_symmetric_forbid_duplicates`'s

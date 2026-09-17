@@ -1,12 +1,12 @@
-// Story 1.10 (FR61): pure pixel math over an `AppearanceLayoutDef` --
-// picking a source rect out of a part's own full sheet, and packing the
-// frames Browser City actually uses into a compact composite strip.
+// Story 1.10 (FR61) / Story 2.7: pure pixel math packing the frames
+// Browser City actually uses into a compact composite strip -- both
+// inside a packed atlas part strip (gutter 0) and inside one composite-
+// page slot (a positive gutter, story 2.7).
 import { describe, expect, it } from "vitest";
 import type { AppearanceLayoutDef } from "../../../../src/defs/types";
 import {
   compositeCellRect,
   compositeSheetSize,
-  sourceFrameRect,
 } from "../../../../src/render/appearance/frame-rect";
 
 const LAYOUT: AppearanceLayoutDef = {
@@ -23,37 +23,19 @@ const LAYOUT: AppearanceLayoutDef = {
   acceptedSizes: [{ width: 896, height: 656 }],
 };
 
-describe("sourceFrameRect", () => {
-  it("picks the declared row's y and the direction-block-plus-frame's x, in the sheet's own pixel grid", () => {
-    // idle, direction "up" (index 1), frame 3 -> column 1*6+3 = 9
-    const rect = sourceFrameRect(LAYOUT, "idle", "up", 3);
-    expect(rect).toEqual({ x: 9 * 16, y: 1 * 32, width: 16, height: 32 });
-  });
-
-  it("walk row uses row 2's y", () => {
-    const rect = sourceFrameRect(LAYOUT, "walk", "down", 0);
-    // direction "down" is index 3 -> column 3*6+0 = 18
-    expect(rect).toEqual({ x: 18 * 16, y: 2 * 32, width: 16, height: 32 });
-  });
-
-  it("throws on an animation the layout does not declare", () => {
-    expect(() => sourceFrameRect(LAYOUT, "run", "down", 0)).toThrow(/run/);
-  });
-
-  it("throws on a direction the layout does not declare", () => {
-    expect(() => sourceFrameRect(LAYOUT, "idle", "north", 0)).toThrow(/north/);
-  });
-
-  it("throws on a frame index outside the row's own frame count", () => {
-    expect(() => sourceFrameRect(LAYOUT, "idle", "down", 6)).toThrow(/frame/);
-    expect(() => sourceFrameRect(LAYOUT, "idle", "down", -1)).toThrow(/frame/);
-  });
-});
-
 describe("compositeSheetSize", () => {
   it("is exactly rows*cellHeight tall and framesPerDirection*directions*cellWidth wide -- never the sheet's own overhang", () => {
     // 2 rows (idle, walk) x 32px, 6 frames x 4 directions x 16px
     expect(compositeSheetSize(LAYOUT)).toEqual({ width: 6 * 4 * 16, height: 2 * 32 });
+  });
+
+  it("with a gutter, each cell's own pitch widens by 2*gutter on every axis", () => {
+    // 24 columns x (16+2)px, 2 rows x (32+2)px
+    expect(compositeSheetSize(LAYOUT, 1)).toEqual({ width: 24 * 18, height: 2 * 34 });
+  });
+
+  it("defaults to gutter 0, identical to calling it with 0 explicitly", () => {
+    expect(compositeSheetSize(LAYOUT)).toEqual(compositeSheetSize(LAYOUT, 0));
   });
 });
 
@@ -82,6 +64,57 @@ describe("compositeCellRect", () => {
           const key = `${cell.x},${cell.y}`;
           expect(seen.has(key)).toBe(false);
           seen.add(key);
+        }
+      }
+    }
+  });
+
+  it("throws on an animation the layout does not declare", () => {
+    expect(() => compositeCellRect(LAYOUT, "run", "down", 0)).toThrow(/run/);
+  });
+
+  it("throws on a direction the layout does not declare", () => {
+    expect(() => compositeCellRect(LAYOUT, "idle", "north", 0)).toThrow(/north/);
+  });
+
+  it("throws on a frame index outside the row's own frame count", () => {
+    expect(() => compositeCellRect(LAYOUT, "idle", "down", 6)).toThrow(/frame/);
+    expect(() => compositeCellRect(LAYOUT, "idle", "down", -1)).toThrow(/frame/);
+  });
+
+  it("with a gutter, offsets every cell's own origin by the gutter and widens the pitch, keeping the cell's own width/height unchanged", () => {
+    // idle, "up" (index 1), frame 3 -> column 1*6+3 = 9
+    const tight = compositeCellRect(LAYOUT, "idle", "up", 3);
+    const gutter = compositeCellRect(LAYOUT, "idle", "up", 3, 1);
+    expect(gutter).toEqual({
+      x: 9 * 18 + 1,
+      y: 0 * 34 + 1,
+      width: 16,
+      height: 32,
+    });
+    expect(gutter.width).toBe(tight.width);
+    expect(gutter.height).toBe(tight.height);
+  });
+
+  it("with a gutter, no two cells' own padded footprints (cell plus gutter halo) overlap", () => {
+    const gutter = 1;
+    const boxes: { x0: number; y0: number; x1: number; y1: number }[] = [];
+    for (const row of LAYOUT.rows) {
+      for (const direction of LAYOUT.directions) {
+        for (let frame = 0; frame < row.framesPerDirection; frame++) {
+          const cell = compositeCellRect(LAYOUT, row.animation, direction, frame, gutter);
+          const box = {
+            x0: cell.x - gutter,
+            y0: cell.y - gutter,
+            x1: cell.x + cell.width + gutter,
+            y1: cell.y + cell.height + gutter,
+          };
+          for (const other of boxes) {
+            const overlap =
+              box.x0 < other.x1 && other.x0 < box.x1 && box.y0 < other.y1 && other.y0 < box.y1;
+            expect(overlap).toBe(false);
+          }
+          boxes.push(box);
         }
       }
     }

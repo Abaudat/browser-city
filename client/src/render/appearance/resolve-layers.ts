@@ -1,28 +1,44 @@
 // Resolves a citizen's `AppearanceTuple` (+ optional `UniformOverride`) to
 // the concrete defs rows the composite actually needs: which
 // `AppearanceLayoutDef` (by the tuple's own body's family), which
-// `OutfitDef` (for `hidesHairstyle`), and each layer's own `sheet` path
-// (or `null` for "no layer"). Pure -- no `pixi.js`, no canvas, no
-// `fetch` -- so `appearance-texture.ts` (the one impure adapter that
-// turns these paths into loaded images and a composited `Texture`) stays
-// a thin wrapper over this and `composite.ts`.
+// `OutfitDef` (for `hidesHairstyle`), and each layer's own packed atlas
+// *page* (Story 2.7: `defs.atlasPages[part.atlas.page].file`) plus that
+// part's own `atlas` rect on that page -- never a `sheet` path (the Epic 1
+// shortcut is gone; the client reads no vendor character sheet at
+// runtime). Pure -- no `pixi.js`, no canvas, no `fetch` -- so
+// `appearance-texture.ts` (the one impure adapter that turns these page
+// references into loaded bitmaps and a drawn composite) stays a thin
+// wrapper over this and `composite.ts`.
 
-import type { AppearanceLayoutDef, Defs, OutfitDef } from "../../defs/types";
+import type { AppearanceLayoutDef, AtlasRect, Defs, OutfitDef } from "../../defs/types";
 import { type AppearanceTuple, effectiveLayers, type UniformOverride } from "./composite";
 
-export interface ResolvedLayerSheets {
-  readonly body: string;
-  readonly eyes: string | null;
-  readonly outfit: string;
-  readonly hairstyle: string | null;
-  readonly accessory: string | null;
-  readonly uniformAccessory: string | null;
+/** One layer's own packed location: the page it lives on (a file url is
+ * resolved by the caller, this is just the page index into
+ * `defs.atlasPages`) and its own rect on that page. */
+export interface ResolvedPart {
+  readonly page: number;
+  readonly atlas: AtlasRect;
+}
+
+export interface ResolvedLayerParts {
+  readonly body: ResolvedPart;
+  readonly eyes: ResolvedPart | null;
+  readonly outfit: ResolvedPart;
+  readonly hairstyle: ResolvedPart | null;
+  readonly accessory: ResolvedPart | null;
+  readonly uniformAccessory: ResolvedPart | null;
 }
 
 export interface ResolvedLayers {
   readonly layout: AppearanceLayoutDef;
   readonly effectiveOutfit: Pick<OutfitDef, "hidesHairstyle">;
-  readonly sheets: ResolvedLayerSheets;
+  readonly parts: ResolvedLayerParts;
+}
+
+function toPart(def: { atlas: AtlasRect } | undefined): ResolvedPart | null {
+  if (!def) return null;
+  return { page: def.atlas.page, atlas: def.atlas };
 }
 
 /** Throws, naming the missing id/family, rather than silently drawing a
@@ -63,13 +79,13 @@ export function resolveLayers(
   return {
     layout,
     effectiveOutfit: outfit,
-    sheets: {
-      body: body.sheet,
-      eyes: eyes?.sheet ?? null,
-      outfit: outfit.sheet,
-      hairstyle: hairstyle?.sheet ?? null,
-      accessory: civilianAccessory?.sheet ?? null,
-      uniformAccessory: uniformAccessory?.sheet ?? null,
+    parts: {
+      body: { page: body.atlas.page, atlas: body.atlas },
+      eyes: toPart(eyes),
+      outfit: { page: outfit.atlas.page, atlas: outfit.atlas },
+      hairstyle: toPart(hairstyle),
+      accessory: toPart(civilianAccessory),
+      uniformAccessory: toPart(uniformAccessory),
     },
   };
 }
