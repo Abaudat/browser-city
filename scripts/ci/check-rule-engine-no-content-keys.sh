@@ -30,8 +30,8 @@ ENGINE_DIR="${2:-"$REPO_ROOT/server/sim/src/rules"}"
 }
 
 if [ ! -d "$ENGINE_DIR" ]; then
-  echo "check-rule-engine-no-content-keys: $ENGINE_DIR not found -- nothing to check" >&2
-  exit 0
+  echo "check-rule-engine-no-content-keys: FAIL -- $ENGINE_DIR not found" >&2
+  exit 1
 fi
 
 FAILED=0

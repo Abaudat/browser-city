@@ -99,16 +99,19 @@ pub enum Check {
 
 impl Check {
     /// The rule's own `key`, or a fixed `walkability.*` name for the two
-    /// checks with no rule row behind them.
-    fn name(&self) -> String {
+    /// checks with no rule row behind them. Resolved through
+    /// [`RuleSet::key_of`], never by reading the generated rule table
+    /// directly (`check-rule-source.sh`'s own check (d)) -- a
+    /// `Check::Rule` this module ever constructs always names an id
+    /// [`rules::evaluate`] itself produced against [`RuleSet::committed`],
+    /// so the id is always present.
+    fn name(&self) -> &'static str {
         match self {
-            Check::Rule(id) => defs::RULES
-                .iter()
-                .find(|r| r.id == *id)
-                .map(|r| r.key.to_string())
-                .unwrap_or_else(|| format!("rule#{id}")),
-            Check::EnclosedRegion => "walkability.enclosed_region".to_string(),
-            Check::NarrowPassage => "walkability.narrow_passage".to_string(),
+            Check::Rule(id) => RuleSet::committed()
+                .key_of(*id)
+                .expect("a Check::Rule always names an id from the committed RuleSet"),
+            Check::EnclosedRegion => "walkability.enclosed_region",
+            Check::NarrowPassage => "walkability.narrow_passage",
         }
     }
 }
@@ -170,12 +173,17 @@ enum AreaKind {
     Room,
 }
 
-/// The first real [`RuleSite`] (story 2.11): resolves each placement's
-/// `def_id` through [`defs::OBJECTS`], uses
+/// The first real [`RuleSite`] over placed objects: resolves each
+/// placement's `def_id` through [`defs::OBJECTS`], uses
 /// [`walkability::footprint_origin`] (never a re-derived offset), stamps
 /// every footprint cell with every tag of the object (unioned where
 /// objects stack), and builds every index once in [`Self::build`] -- no
-/// per-call rescan, per [`RuleSite`]'s own contract.
+/// per-call rescan, per [`RuleSite`]'s own contract. [`Self::build`]
+/// itself is bounded by the number of placed cells and the number of
+/// areas, never by cells times areas (Tim's direction): it resolves each
+/// placement's object through a map built once, and walks each area's
+/// own `BTreeMap::range` slice of already-placed cells rather than
+/// scanning every cell against every area.
 pub struct PlacedSite {
     tags: BTreeMap<Cell, Vec<TagId>>,
     areas: BTreeMap<Cell, Vec<AreaId>>,
@@ -214,17 +222,20 @@ impl PlacedSite {
             .map(|(i, k)| (k, i as AreaId + 1))
             .collect();
 
+        // Resolved once, never a linear `find` over `defs::OBJECTS` per
+        // placement (Tim's direction): `O(objects)` here, `O(1)` per
+        // placement below.
+        let objects_by_id: BTreeMap<u32, &defs::ObjectDef> =
+            defs::OBJECTS.iter().map(|o| (o.id, o)).collect();
+
         let mut tags: BTreeMap<Cell, Vec<TagId>> = BTreeMap::new();
         for p in placements {
-            let def = defs::OBJECTS
-                .iter()
-                .find(|o| o.id == p.def_id)
-                .ok_or_else(|| {
-                    format!(
-                        "sim::validation: placement names unknown object def id {}",
-                        p.def_id
-                    )
-                })?;
+            let def = *objects_by_id.get(&p.def_id).ok_or_else(|| {
+                format!(
+                    "sim::validation: placement names unknown object def id {}",
+                    p.def_id
+                )
+            })?;
             let (origin_x, origin_y) =
                 walkability::footprint_origin(p.anchor_x, p.anchor_y, def.height);
             for dy in 0..def.height as i32 {
@@ -243,29 +254,37 @@ impl PlacedSite {
             v.sort_unstable();
         }
 
+        // Bounded by placed cells times areas actually near them, never
+        // by placed cells times every area in the block (Tim's
+        // direction): for each area, `Cell`'s own `Ord` (x first, then y,
+        // then floor) lets `BTreeMap::range` slice `tags` down to exactly
+        // the cells whose `x` falls in the area's own span, before the
+        // `floor`/`contains` check narrows that slice further -- never a
+        // loop over the rect's own (potentially enormous) raw extent.
         let mut areas: BTreeMap<Cell, Vec<AreaId>> = BTreeMap::new();
-        for &cell in tags.keys() {
-            let mut found = Vec::new();
-            for a in building_areas {
-                if a.floor == cell.floor && a.rect.contains(cell.x, cell.y) {
-                    let id = area_id_of[&(AreaKind::Building, a.owner_id)];
-                    if !found.contains(&id) {
-                        found.push(id);
+        for (kind, area_list) in [
+            (AreaKind::Building, building_areas),
+            (AreaKind::Room, room_areas),
+        ] {
+            for a in area_list {
+                if a.rect.x0 >= a.rect.x1 {
+                    continue; // an empty or invalid rect contains nothing
+                }
+                let id = area_id_of[&(kind, a.owner_id)];
+                let lower = Cell::new(a.rect.x0, i32::MIN, i8::MIN);
+                let upper = Cell::new(a.rect.x1, i32::MIN, i8::MIN);
+                for (&cell, _) in tags.range(lower..upper) {
+                    if a.floor == cell.floor && a.rect.contains(cell.x, cell.y) {
+                        let entry = areas.entry(cell).or_default();
+                        if !entry.contains(&id) {
+                            entry.push(id);
+                        }
                     }
                 }
             }
-            for a in room_areas {
-                if a.floor == cell.floor && a.rect.contains(cell.x, cell.y) {
-                    let id = area_id_of[&(AreaKind::Room, a.owner_id)];
-                    if !found.contains(&id) {
-                        found.push(id);
-                    }
-                }
-            }
-            if !found.is_empty() {
-                found.sort_unstable();
-                areas.insert(cell, found);
-            }
+        }
+        for v in areas.values_mut() {
+            v.sort_unstable();
         }
 
         let mut subjects_index: BTreeMap<(Option<AreaId>, TagId), Vec<Cell>> = BTreeMap::new();
@@ -557,6 +576,63 @@ mod tests {
         let a = site.areas_containing(Cell::new(0, 0, 0));
         let b = site.areas_containing(Cell::new(10, 0, 0));
         assert_eq!(a, b);
+    }
+
+    /// Tim's direction: a plain correctness test on a chunk-scale input
+    /// (thousands of placements, hundreds of areas) -- proves `build`
+    /// completes and answers correctly at a scale where the old
+    /// cells-times-areas scan would be the dominant cost, never a timing
+    /// assertion.
+    #[test]
+    fn placed_site_builds_correctly_over_a_chunk_scale_block() {
+        const ROWS: i32 = 50;
+        const COLS: i32 = 50; // 2500 placements
+        const AREAS_PER_ROW: i32 = 5; // 250 areas, 10 cells wide each
+
+        let mut placements = Vec::new();
+        for y in 0..ROWS {
+            for x in 0..COLS {
+                placements.push(Placement {
+                    def_id: lamppost_id(),
+                    anchor_x: x,
+                    anchor_y: y,
+                    floor: 0,
+                });
+            }
+        }
+
+        let mut building_areas = Vec::new();
+        for y in 0..ROWS {
+            for band in 0..AREAS_PER_ROW {
+                let owner_id = (y * AREAS_PER_ROW + band) as u64 + 1;
+                building_areas.push(area(
+                    owner_id,
+                    0,
+                    Rect {
+                        x0: band * 10,
+                        y0: y,
+                        x1: band * 10 + 10,
+                        y1: y + 1,
+                    },
+                ));
+            }
+        }
+
+        let site = PlacedSite::build(&placements, &building_areas, &[]).unwrap();
+
+        // Every placed cell falls in exactly one band's own area.
+        for y in [0, ROWS / 2, ROWS - 1] {
+            for x in [0, 15, 27, COLS - 1] {
+                let areas = site.areas_containing(Cell::new(x, y, 0));
+                assert_eq!(
+                    areas.len(),
+                    1,
+                    "cell ({x}, {y}) should sit in exactly one area, got {areas:?}"
+                );
+            }
+        }
+        // A cell no placement ever touched carries no area.
+        assert!(site.areas_containing(Cell::new(-1, -1, 0)).is_empty());
     }
 
     #[test]
