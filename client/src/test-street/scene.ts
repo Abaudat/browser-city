@@ -35,7 +35,7 @@ import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
 import type { AppearanceTuple } from "../render/appearance/composite";
-import { AtlasPageLoader } from "../render/atlas-pages";
+import { AtlasPageLoader, countBoundAtlasPages } from "../render/atlas-pages";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -358,11 +358,12 @@ export interface StreetSceneHandle {
   /** Story 1.10: the mounted street crowd, for `main.ts` to wire its own
    * DEV-only `window.__bc` hooks against -- never read by this file. */
   readonly citizensLayer: CitizensLayerHandle;
-  /** Story 2.6 (NFR12): how many distinct atlas pages this mount actually
-   * resolved a texture from -- `AtlasPageLoader.boundPageCount()` at
-   * mount time, for `main.ts` to wire its own DEV-only `window.__bc` hook
-   * against, the same way it does for the crowd's own texture identity
-   * count. */
+  /** Story 2.6 (NFR12): how many distinct atlas page `TextureSource`s are
+   * actually reachable from the mounted display list right now
+   * (`countBoundAtlasPages` over `app.stage`, not the loader's own
+   * request count -- Quentin's direction), for `main.ts` to wire its own
+   * DEV-only `window.__bc` hook against, the same way it does for the
+   * crowd's own texture identity count. */
   readonly distinctBoundAtlasPages: number;
   /** Removes every listener this scene attached (keyboard and pointer). */
   destroy(): void;
@@ -1313,7 +1314,7 @@ export async function mountStreetScene(
     getRenderOrder: () => renderOrder,
     keyboard,
     citizensLayer,
-    distinctBoundAtlasPages: atlasPageLoader.boundPageCount(),
+    distinctBoundAtlasPages: countBoundAtlasPages(app.stage, atlasPageLoader),
     setHighlightStrength,
     currentFloor: () => walk.floor,
     poolDrawables: () => allDrawables,

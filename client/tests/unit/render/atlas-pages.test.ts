@@ -26,14 +26,20 @@ vi.mock("pixi.js", () => {
       this.source = opts.source;
     }
   }
+  class FakeSprite {
+    children: unknown[] = [];
+    constructor(public texture: FakeTexture) {}
+  }
   return {
     Assets: { load: (...args: unknown[]) => loadMock(...args) },
     Rectangle: FakeRectangle,
     Texture: FakeTexture,
+    Sprite: FakeSprite,
   };
 });
 
-const { AtlasPageLoader } = await import("../../../src/render/atlas-pages");
+const { AtlasPageLoader, countBoundAtlasPages } = await import("../../../src/render/atlas-pages");
+const { Sprite } = await import("pixi.js");
 
 function fakeSourceTexture() {
   return { source: { scaleMode: undefined, autoGenerateMipmaps: undefined } };
@@ -98,5 +104,45 @@ describe("AtlasPageLoader", () => {
 
     await expect(loader.objectTexture(defs, OBJECT)).rejects.toThrow(/shop_counter/);
     expect(loadMock).not.toHaveBeenCalled();
+  });
+});
+
+// biome-ignore lint/suspicious/noExplicitAny: a minimal structural stand-in for a Pixi Container, not the real class
+type FakeContainer = { children: any[] };
+
+describe("countBoundAtlasPages", () => {
+  it("counts a sprite whose texture source came from this loader, anywhere in the tree", async () => {
+    loadMock.mockResolvedValue(fakeSourceTexture());
+    const loader = new AtlasPageLoader("/atlas/");
+    const texture = await loader.objectTexture(defsWith([PAGE]), OBJECT);
+
+    const sprite = new Sprite(texture);
+    const nested: FakeContainer = { children: [sprite] };
+    const root: FakeContainer = { children: [{ children: [] }, nested] };
+
+    // biome-ignore lint/suspicious/noExplicitAny: FakeContainer stands in for a real Pixi Container here
+    expect(countBoundAtlasPages(root as any, loader)).toBe(1);
+  });
+
+  it("never counts a sprite whose texture came from somewhere other than this loader", () => {
+    const loader = new AtlasPageLoader("/atlas/");
+    const unrelatedSprite = new Sprite({ source: { scaleMode: "linear" } } as never);
+    const root: FakeContainer = { children: [unrelatedSprite] };
+
+    // biome-ignore lint/suspicious/noExplicitAny: FakeContainer stands in for a real Pixi Container here
+    expect(countBoundAtlasPages(root as any, loader)).toBe(0);
+  });
+
+  it("counts one distinct page even when several sprites crop the same page's source", async () => {
+    loadMock.mockResolvedValue(fakeSourceTexture());
+    const loader = new AtlasPageLoader("/atlas/");
+    const textureA = await loader.objectTexture(defsWith([PAGE]), OBJECT);
+    const otherObject = { ...OBJECT, id: 2, key: "other" };
+    const textureB = await loader.objectTexture(defsWith([PAGE]), otherObject);
+
+    const root: FakeContainer = { children: [new Sprite(textureA), new Sprite(textureB)] };
+
+    // biome-ignore lint/suspicious/noExplicitAny: FakeContainer stands in for a real Pixi Container here
+    expect(countBoundAtlasPages(root as any, loader)).toBe(1);
   });
 });

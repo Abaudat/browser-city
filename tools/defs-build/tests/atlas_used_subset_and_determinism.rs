@@ -39,9 +39,12 @@ fn tile_size_balance() -> &'static str {
 
 /// Every theme these fixtures name kept as its own page group -- the
 /// packer's own `resolve_page_group` requires a row for every theme
-/// actually used.
+/// actually used. The unused `atlas_required` row satisfies
+/// `validate_page_groups`'s own structural requirement (at least one
+/// theme maps to `ATLAS_SHARED_GROUP`) without changing which page group
+/// any of these fixtures' real themes land in.
 fn page_groups_toml() -> &'static str {
-    "[[page_group]]\ntheme = \"city_props\"\ngroup = \"city_props\"\n\n[[page_group]]\ntheme = \"camping\"\ngroup = \"camping\"\n\n[[page_group]]\ntheme = \"school\"\ngroup = \"school\"\n"
+    "[[page_group]]\ntheme = \"city_props\"\ngroup = \"city_props\"\n\n[[page_group]]\ntheme = \"camping\"\ngroup = \"camping\"\n\n[[page_group]]\ntheme = \"school\"\ngroup = \"school\"\n\n[[page_group]]\ntheme = \"atlas_required\"\ngroup = \"street\"\n"
 }
 
 #[test]

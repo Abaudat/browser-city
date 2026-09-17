@@ -79,6 +79,16 @@ pub fn validate_page_groups(raw: &RawDefs) -> Result<BTreeMap<String, String>, D
         first_seen.insert(entry.theme.value.as_str(), entry);
         table.insert(entry.theme.value.clone(), entry.group.value.clone());
     }
+    if !table.values().any(|g| g == ATLAS_SHARED_GROUP) {
+        return Err(DefsError::new(
+            "defs/atlas/page-groups.toml",
+            0,
+            0,
+            format!(
+                "no theme maps to '{ATLAS_SHARED_GROUP}' -- the shared group every street scene binds is a structural requirement, not a convention; map at least one theme to it"
+            ),
+        ));
+    }
     Ok(table)
 }
 
@@ -2738,5 +2748,46 @@ mod tests {
         )]);
         let err = parse_all(&f).unwrap_err();
         assert!(err.message.contains("teen"));
+    }
+
+    #[test]
+    fn validate_page_groups_returns_the_theme_to_group_table() {
+        let f = files(&[(
+            "defs/atlas/page-groups.toml",
+            "[[page_group]]\ntheme = \"camping\"\ngroup = \"street\"\n\n[[page_group]]\ntheme = \"kitchen\"\ngroup = \"kitchen\"\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let table = validate_page_groups(&raw).unwrap();
+        assert_eq!(table.get("camping").map(String::as_str), Some("street"));
+        assert_eq!(table.get("kitchen").map(String::as_str), Some("kitchen"));
+    }
+
+    #[test]
+    fn validate_page_groups_rejects_a_theme_declared_twice() {
+        let f = files(&[(
+            "defs/atlas/page-groups.toml",
+            "[[page_group]]\ntheme = \"camping\"\ngroup = \"street\"\n\n[[page_group]]\ntheme = \"camping\"\ngroup = \"other\"\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate_page_groups(&raw).unwrap_err();
+        assert!(err.message.contains("camping"));
+    }
+
+    #[test]
+    fn validate_page_groups_rejects_a_table_mapping_nothing_to_the_shared_group() {
+        let f = files(&[(
+            "defs/atlas/page-groups.toml",
+            "[[page_group]]\ntheme = \"kitchen\"\ngroup = \"kitchen\"\n",
+        )]);
+        let raw = parse_all(&f).unwrap();
+        let err = validate_page_groups(&raw).unwrap_err();
+        assert!(err.message.contains(ATLAS_SHARED_GROUP));
+    }
+
+    #[test]
+    fn validate_page_groups_rejects_an_empty_table() {
+        let raw = crate::model::RawDefs::default();
+        let err = validate_page_groups(&raw).unwrap_err();
+        assert!(err.message.contains(ATLAS_SHARED_GROUP));
     }
 }

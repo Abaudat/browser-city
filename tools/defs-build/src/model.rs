@@ -95,16 +95,22 @@ pub const ATLAS_PAGE_MIN_HEIGHT: u32 = 16;
 /// simultaneously-bound textures a typical scene targets.
 pub const ATLAS_MAX_PAGES_PER_GROUP: usize = 2;
 
-/// NFR12's other half (Artie's direction, cycle 1): every page any object
-/// in the tree resolves to, summed across every group, fails the build
-/// above this, naming the pages. Today's `defs/` has exactly one implicit
-/// scene -- everything a street places -- so this total *is* that scene's
-/// own bound-page count; once a second scene exists that is never
-/// simultaneously loaded with the first (a themed district visited on its
-/// own, say), this must become a per-scene sum instead of a flat total
-/// across the whole tree, or it will fail a build for two scenes that are
-/// never actually bound together.
+/// NFR12's other half: a scene is the shared group plus at most one
+/// themed group -- a player is never on the street and inside a themed
+/// interior at once -- so the pages that can ever be simultaneously bound
+/// are `pages(ATLAS_SHARED_GROUP) + max over every other group of
+/// pages(group)`. That sum fails the build above this, naming both
+/// groups and their own page counts.
 pub const ATLAS_MAX_BOUND_PAGES: usize = 8;
+
+/// The one page group every theme a street kit's own single props draw
+/// from shares (`defs/atlas/page-groups.toml`'s own table) -- a themed
+/// district keeps its own group instead. At least one row in that table
+/// must map to this group; a table that maps nothing to it is a build
+/// error, because the shared set a street scene always binds is a
+/// structural requirement, not a convention any one row happens to
+/// establish.
+pub const ATLAS_SHARED_GROUP: &str = "street";
 
 /// A 1px border of extruded (edge-repeated, never transparent -- Artie's
 /// direction) pixels surrounds every packed rect on every side, always --

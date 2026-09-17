@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use crate::atlas::image::{SourceCrop, composite_with_extrusion, decode_rgba8, encode_rgba8};
-use crate::atlas::pack::{PackItem, SourceKey, pack_all};
+use crate::atlas::pack::{PackItem, PageMeta, SourceKey, pack_all};
 use crate::atlas::theme::{check_shadow_variants, resolve_page_group, theme_group};
 use crate::model::{AtlasPageDef, AtlasRect, ObjectDef};
 use crate::sha256::sha256_hex;
@@ -20,6 +20,42 @@ pub struct AtlasBuildOutput {
     /// PNG bytes for each page, aligned index-for-index with `pages`.
     pub page_bytes: Vec<Vec<u8>>,
     pub atlas_by_object_id: BTreeMap<u32, AtlasRect>,
+}
+
+/// NFR12's scene-side half: a scene is the shared group
+/// ([`crate::model::ATLAS_SHARED_GROUP`]) plus at most one themed group --
+/// a player is never on the street and inside a themed interior at once --
+/// so the pages that can ever be simultaneously bound are the shared
+/// group's own page count plus the *worst* other group's own page count.
+/// Fails naming both groups and their counts when that sum exceeds
+/// [`crate::model::ATLAS_MAX_BOUND_PAGES`].
+fn check_max_bound_pages(pages: &[PageMeta]) -> Result<(), String> {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for page in pages {
+        *counts.entry(page.group.as_str()).or_insert(0) += 1;
+    }
+    let shared_count = counts
+        .get(crate::model::ATLAS_SHARED_GROUP)
+        .copied()
+        .unwrap_or(0);
+    let worst_other = counts
+        .iter()
+        .filter(|(g, _)| **g != crate::model::ATLAS_SHARED_GROUP)
+        .max_by_key(|(_, count)| **count);
+
+    let (other_group, other_count) = match worst_other {
+        Some((g, c)) => (*g, *c),
+        None => ("", 0),
+    };
+    let total = shared_count + other_count;
+    if total > crate::model::ATLAS_MAX_BOUND_PAGES {
+        return Err(format!(
+            "a scene binding '{}' ({shared_count} page(s)) and '{other_group}' ({other_count} page(s)) would bind {total} pages, more than ATLAS_MAX_BOUND_PAGES ({})",
+            crate::model::ATLAS_SHARED_GROUP,
+            crate::model::ATLAS_MAX_BOUND_PAGES
+        ));
+    }
+    Ok(())
 }
 
 fn sprite_key(o: &ObjectDef) -> SourceKey {
@@ -79,21 +115,7 @@ pub fn build_atlas(
     }
 
     let result = pack_all(&items)?;
-
-    if result.pages.len() > crate::model::ATLAS_MAX_BOUND_PAGES {
-        let names: Vec<String> = result
-            .pages
-            .iter()
-            .enumerate()
-            .map(|(i, p)| format!("{}#{i}", p.group))
-            .collect();
-        return Err(format!(
-            "the whole defs/ tree resolves to {} pages, more than ATLAS_MAX_BOUND_PAGES ({}) -- pages: {}",
-            result.pages.len(),
-            crate::model::ATLAS_MAX_BOUND_PAGES,
-            names.join(", ")
-        ));
-    }
+    check_max_bound_pages(&result.pages)?;
 
     // Decode every referenced sheet at most once.
     let mut decoded: BTreeMap<&str, (u32, u32, Vec<u8>)> = BTreeMap::new();
@@ -272,34 +294,59 @@ mod tests {
         assert!(err.contains("city_props"), "{err}");
     }
 
-    /// NFR12, Artie's direction: the flat sum of every page across every
-    /// group in the whole tree fails the build once it passes
-    /// `ATLAS_MAX_BOUND_PAGES`, naming the pages -- distinct from the
-    /// per-group cap above, and asserted even when no single group is
-    /// anywhere near its own limit.
+    /// NFR12: a scene never binds more than the shared group plus one
+    /// themed group at once, so nine single-page themed groups sitting
+    /// beside a one-page shared group never trips the cap -- only the
+    /// *worst* other group counts, never their sum.
     #[test]
-    fn more_than_the_max_bound_pages_across_all_groups_fails_naming_them() {
-        let base = "ModernTileset/x/ME_Theme_Sorter_16x16";
-        let mut objects = Vec::new();
-        let mut bytes = BTreeMap::new();
-        let mut page_groups = BTreeMap::new();
-        for n in 1..=(crate::model::ATLAS_MAX_BOUND_PAGES + 1) {
-            let sheet = format!("{base}/{n}_T{n}_Singles_16x16/x.png");
-            let theme = format!("t{n}");
-            objects.push(object(n as u32, &format!("o{n}"), &sheet, 16, 16));
-            bytes.insert(sheet, tiny_png(16, 16, [n as u8, 0, 0, 255]));
-            page_groups.insert(theme, format!("g{n}"));
+    fn nine_single_page_themed_groups_beside_a_one_page_shared_group_pass() {
+        let mut pages = vec![PageMeta {
+            group: crate::model::ATLAS_SHARED_GROUP.to_string(),
+            width: 2048,
+            height: 16,
+        }];
+        for i in 0..9 {
+            pages.push(PageMeta {
+                group: format!("theme{i}"),
+                width: 2048,
+                height: 16,
+            });
         }
+        assert!(check_max_bound_pages(&pages).is_ok());
+    }
 
-        let err = build_atlas(&objects, &bytes, &page_groups).unwrap_err();
-        assert!(err.contains("ATLAS_MAX_BOUND_PAGES"), "{err}");
-        assert!(
-            err.contains(&format!(
-                "{} pages",
-                crate::model::ATLAS_MAX_BOUND_PAGES + 1
-            )),
-            "{err}"
-        );
+    /// NFR12: a two-page shared group beside a two-page themed group (the
+    /// worst either can be, `ATLAS_MAX_PAGES_PER_GROUP`) still passes
+    /// (2 + 2 = 4 <= 8); this is `check_max_bound_pages` tested directly
+    /// against a hand-built page list, past the per-group cap that would
+    /// otherwise make a themed group large enough to trip it
+    /// unreachable through `pack_all` itself -- naming both groups and
+    /// their own counts once the sum does exceed the cap.
+    #[test]
+    fn a_two_page_shared_group_and_a_seven_page_themed_group_fails_naming_both() {
+        let mut pages = vec![
+            PageMeta {
+                group: crate::model::ATLAS_SHARED_GROUP.to_string(),
+                width: 2048,
+                height: 16,
+            },
+            PageMeta {
+                group: crate::model::ATLAS_SHARED_GROUP.to_string(),
+                width: 2048,
+                height: 16,
+            },
+        ];
+        for _ in 0..7 {
+            pages.push(PageMeta {
+                group: "kitchen".to_string(),
+                width: 2048,
+                height: 16,
+            });
+        }
+        let err = check_max_bound_pages(&pages).unwrap_err();
+        assert!(err.contains(crate::model::ATLAS_SHARED_GROUP), "{err}");
+        assert!(err.contains("kitchen"), "{err}");
+        assert!(err.contains('9'), "{err}");
     }
 
     #[test]

@@ -862,13 +862,19 @@ rule above.
   16x16` -> `city_props`), then `defs/atlas/page-groups.toml`'s own
   `theme -> group` table, which every street-kit theme (terrain, city
   props, generic/floor-modular buildings, and whichever themed folders
-  the street kit borrows single props from) maps to one shared `"street"`
-  group; a themed district keeps its own group. A theme absent from the
-  table fails the build naming it. A group never spans more than
-  `ATLAS_MAX_PAGES_PER_GROUP` (2) pages, and the flat total across every
-  group in the tree never spans more than `ATLAS_MAX_BOUND_PAGES` (8) --
-  both fail the build by name when exceeded. Both constants are emitted
-  into `defs.json` beside `max_footprint_cells`.
+  the street kit borrows single props from) maps to one shared
+  `ATLAS_SHARED_GROUP` (`"street"`) group; a themed district keeps its
+  own group. A theme absent from the table fails the build naming it, and
+  so does a table that maps nothing at all to `ATLAS_SHARED_GROUP`. A
+  group never spans more than `ATLAS_MAX_PAGES_PER_GROUP` (2) pages. A
+  scene is the shared group plus at most one themed group -- a player is
+  never on the street and inside a themed interior at once -- so the
+  shared group's own page count plus the *worst* other group's own page
+  count never spans more than `ATLAS_MAX_BOUND_PAGES` (8); both fail the
+  build naming the offending group(s) and their own counts.
+  `atlas_max_pages_per_group` is emitted into `defs.json` beside
+  `max_footprint_cells`; the scene rule is the packer's own and the
+  client has no use for it.
 - Every packed rect carries a permanent 1px border of extruded
   (edge-repeated, never transparent) pixels on every side -- nearest-
   neighbour sampling plus this stops bleed at a fractional camera
