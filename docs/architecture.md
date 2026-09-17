@@ -274,10 +274,7 @@ always derived from placed content, never stored per cell.
   World`'s internal `BTreeMap<u64, Vec<_>>`), so an ownership query costs
   one map lookup plus a scan of one chunk's rects, never every area in the
   world. A `room_area` never covers a `wall` cell, and a `threshold` cell
-  lies in exactly one `room_area` -- the convention a generator (story
-  3.5) must honour for the room/building grammar's `[[requirement]]` rows
-  (story 2.9) to mean "room"/"building" rather than any real area that
-  happens to contain a `floor`/`wall` cell.
+  lies in exactly one `room_area`.
 - Floor transitions (FR117) are rows in `floor_transition`, anchor cell to
   target cell, never a boolean on an object and never a special layer. A
   door is never one of these rows (FR118): it is an ordinary walkable
