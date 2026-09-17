@@ -5,16 +5,24 @@
 // client.
 
 import { BOOT_MARK, markBoot } from "../boot/boot-marks";
+import type { HandshakeVersion } from "../boot/handshake";
 import { DbConnection } from "./bindings";
 import { NET_CONFIG } from "./config";
 import type { ConnectionStatus } from "./connection-status";
 import { observePingInsert, type PingObservation } from "./observe-ping";
 
+export type { HandshakeVersion } from "../boot/handshake";
 export type { ConnectionStatus } from "./connection-status";
 
 export type PingListener = (observation: PingObservation) => void;
 
 export type StatusListener = (status: ConnectionStatus) => void;
+
+/** Story 2.8 (FR147): fired with the `module_version` view row's own
+ * `defsVersion`/`protocolVersion` every time it (re-)inserts -- on the
+ * initial subscription apply, and again on any later republish this
+ * connection stays open across (a tab left open across a deploy). */
+export type HandshakeListener = (version: HandshakeVersion) => void;
 
 /**
  * Opens the connection, subscribes to `demo_ping`, and calls `onPing` for
@@ -30,7 +38,11 @@ export type StatusListener = (status: ConnectionStatus) => void;
  * successful connect are otherwise indistinguishable from this module's
  * only two ways of reaching "not connected").
  */
-export function connect(onPing: PingListener, onStatus?: StatusListener): DbConnection {
+export function connect(
+  onPing: PingListener,
+  onStatus?: StatusListener,
+  onHandshake?: HandshakeListener,
+): DbConnection {
   onStatus?.("connecting");
 
   const conn = DbConnection.builder()
@@ -42,10 +54,23 @@ export function connect(onPing: PingListener, onStatus?: StatusListener): DbConn
       // `onApplied` -- the two are never conflated under one mark.
       markBoot(BOOT_MARK.HANDSHAKE_OPEN);
       onStatus?.("connected");
+      // Story 2.8 (FR147): `module_version` rides the same subscribe
+      // call as `demo_ping` -- one subscribe message, one `onApplied`, no
+      // extra round trip on the common (matched-version) path.
       connection
         .subscriptionBuilder()
         .onApplied(() => markBoot(BOOT_MARK.SUBSCRIPTION_APPLIED))
-        .subscribe("SELECT * FROM demo_ping");
+        .onError((ctx) => {
+          // Cycle 1 review (Tim's finding 6): with no `onError`, a
+          // rejected subscribe left the boot gate's own handshake latch
+          // waiting forever -- a blank canvas, no notice, worse than
+          // before this story. Reusing `onStatus("disconnected")` is
+          // deliberate: `main.ts` already resolves the latch as
+          // unreachable on that status, so this needs no new callback.
+          console.error("[net] subscription failed", ctx.event);
+          onStatus?.("disconnected");
+        })
+        .subscribe(["SELECT * FROM demo_ping", "SELECT * FROM module_version"]);
     })
     .onConnectError((_ctx, error) => {
       // NFR42: the client degrades to not-drawing, never to crashing.
@@ -64,6 +89,15 @@ export function connect(onPing: PingListener, onStatus?: StatusListener): DbConn
 
   conn.db.demoPing.onInsert((_ctx, row) => {
     onPing(observePingInsert(row));
+  });
+
+  // Story 2.8 (FR147): `module_version` has no primary key (it is a
+  // view, not a table -- `server/src/version.rs`), so a change to its one
+  // row arrives as a delete-then-insert pair, never an `onUpdate`; this
+  // `onInsert` alone covers both the initial subscription apply and any
+  // later republish.
+  conn.db.moduleVersion.onInsert((_ctx, row) => {
+    onHandshake?.({ defsVersion: row.defsVersion, protocolVersion: row.protocolVersion });
   });
 
   return conn;

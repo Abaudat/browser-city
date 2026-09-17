@@ -1,6 +1,8 @@
 use spacetimedb::{ReducerContext, Table, Timestamp};
 
+mod generated;
 mod tables;
+mod version;
 
 /// The scaffold's smoke slice (story 1.1): proves a reducer write reaches a
 /// subscribed browser client end to end. Not schema -- kept deliberately

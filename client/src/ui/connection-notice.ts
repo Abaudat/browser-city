@@ -62,7 +62,12 @@ export interface ConnectionNoticeHandle {
    * boot); on a later `"connected"` while shown, switches to
    * "Reconnected" for `recoveredHoldMs`, then fades out over `fadeMs`.
    * Once shown, the notice stays up until an explicit `"connected"`
-   * call -- there is no internal retry or polling here. */
+   * call -- there is no internal retry or polling here.
+   *
+   * `"updating"` (story 2.8, FR147) is shown immediately, with no
+   * debounce, and is sticky: once entered, no later status (including
+   * `"connected"`) ever hides, fades or re-labels it -- the boot gate has
+   * already given up rendering this session. */
   setStatus(status: ConnectionStatus): void;
   destroy(): void;
 }
@@ -72,6 +77,13 @@ const STYLE_ID = "bc-connection-notice-style";
 const CONNECTING_MESSAGE = "Connecting…";
 const LOST_MESSAGE = "Connection lost";
 const RECOVERED_MESSAGE = "Reconnected";
+/** Story 2.8 (FR147): the boot gate gave up rendering this session -- a
+ * guarded reload already happened once for this exact server version and
+ * the mismatch is still there. Shown immediately, sticky for the rest of
+ * the session (see `setStatus` below): there is nothing later that
+ * clears it, since Tim's direction is no further automatic reload this
+ * session. */
+const UPDATING_MESSAGE = "Updating…";
 
 const DEFAULT_DEBOUNCE_MS = 1000;
 const DEFAULT_RECOVERED_HOLD_MS = 1500;
@@ -141,7 +153,7 @@ export function mountConnectionNotice(options: ConnectionNoticeOptions): Connect
   element.style.transitionDuration = `${fadeMs}ms`;
   container.appendChild(element);
 
-  let state: InternalState = "hidden";
+  let state: InternalState | "stuck" = "hidden";
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let holdTimer: ReturnType<typeof setTimeout> | undefined;
   let fadeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -223,6 +235,19 @@ export function mountConnectionNotice(options: ConnectionNoticeOptions): Connect
   }
 
   function setStatus(status: ConnectionStatus): void {
+    // FR147/NFR42: "stuck" is terminal once entered -- only a fresh page
+    // load (Tim's direction: no further automatic reload this session)
+    // ever leaves it, so nothing here un-sticks it, including a socket
+    // that is perfectly healthy.
+    if (state === "stuck") return;
+    if (status === "updating") {
+      clearTimers();
+      state = "stuck";
+      element.textContent = UPDATING_MESSAGE;
+      element.hidden = false;
+      delete element.dataset.bcFading;
+      return;
+    }
     if (status === "connected") {
       onConnected();
     } else {

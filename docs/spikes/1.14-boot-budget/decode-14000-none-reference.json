@@ -10,102 +10,102 @@
   },
   "samples": [
     {
-      "decodeMs": 17.899999976158142,
+      "decodeMs": 38.90000000002328,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 20.299999952316284,
+      "decodeMs": 32,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 18.299999952316284,
+      "decodeMs": 39,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 22.700000047683716,
+      "decodeMs": 33.5,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 19.5,
+      "decodeMs": 33.300000000046566,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 19.300000071525574,
+      "decodeMs": 32,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 19.700000047683716,
+      "decodeMs": 32.300000000046566,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 23.59999990463257,
+      "decodeMs": 38.39999999990687,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 19,
+      "decodeMs": 32.70000000006985,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 29.399999976158142,
+      "decodeMs": 32.5,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 22.90000009536743,
+      "decodeMs": 33.800000000046566,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 22.5,
+      "decodeMs": 32.40000000002328,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 18.40000009536743,
+      "decodeMs": 36.800000000046566,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 20,
+      "decodeMs": 31.70000000006985,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 22.700000047683716,
+      "decodeMs": 32.699999999953434,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 25.09999990463257,
+      "decodeMs": 41.79999999993015,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 19.40000009536743,
+      "decodeMs": 32.800000000046566,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 20.799999952316284,
+      "decodeMs": 39.800000000046566,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 29.09999990463257,
+      "decodeMs": 32,
       "rowCount": 14000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 23.899999976158142,
+      "decodeMs": 38.20000000006985,
       "rowCount": 14000,
       "bytesOnWire": 0
     }

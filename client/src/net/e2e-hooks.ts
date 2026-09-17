@@ -26,6 +26,12 @@ declare global {
       frameTimings?: number[];
       startFrameTimings?: () => void;
       stopFrameTimings?: () => number[];
+      /** Story 2.8 (FR147): how many ticker frames the mounted street
+       * scene has drawn, ever -- unlike `frameTimings`, never gated
+       * behind `startFrameTimings`, so `defs-handshake.spec.ts` can prove
+       * it stays 0 for the whole stale-defs window before the scene
+       * mounts at all. */
+      frameCount?: number;
       visibility?: Record<string, string>;
       visibilityAlpha?: Record<string, number>;
       masksAllNull?: boolean;
@@ -106,6 +112,7 @@ export function recordPlayerPositionForE2e(x: number, y: number, floor: number):
 export function recordFrameWorkForE2e(ms: number): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
+  bucket.frameCount = (bucket.frameCount ?? 0) + 1;
   if (bucket.frameTimings) bucket.frameTimings.push(ms);
   if (bucket.startFrameTimings) return;
   bucket.startFrameTimings = () => {

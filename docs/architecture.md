@@ -765,13 +765,44 @@ outside both the server and client dependency graphs (its own
 `Cargo.toml` with an empty `[workspace]` table, its own committed
 `Cargo.lock` and `rust-toolchain.toml`), and its two outputs are committed
 and kept current by `scripts/ci/check-defs-current.sh` -- the same idiom
-as `client/src/net/bindings`. `server/sim/src/generated/defs.rs` is a
-plain Rust module of `static`/`const` tables over `&'static str` and
-integers, no deserialisation or allocation at runtime; `client/public/
-defs/defs.json` is a canonical, static JSON asset fetched at runtime,
-cache-busted and compared against the FR147 handshake's own
-`defs_version`. Both begin with a generated-file marker and are never
-hand-edited.
+as `client/src/net/bindings` and `protocol-version` (below). `server/sim/
+src/generated/defs.rs` is a plain Rust module of `static`/`const` tables
+over `&'static str` and integers, no deserialisation or allocation at
+runtime; `client/public/defs/defs.json` is a canonical, static JSON asset
+fetched at runtime, cache-busted and compared against the FR147
+handshake's own `defs_version` (below). Both begin with a generated-file
+marker and are never hand-edited.
+
+### The FR147 handshake
+
+`module_version` (`server/src/version.rs`) is a public anonymous view of
+one row: `defs_version` and `protocol_version` -- a SHA-256 over every
+git-tracked file under `client/src/net/bindings/`, by the `defs_version`
+recipe. `scripts/gen-protocol-version.sh` generates `server/src/
+generated/protocol_version.rs` and `client/src/net/protocol-version.ts`,
+guarded by `scripts/ci/check-bindings-current.sh` and `check-protocol-
+version-agrees.sh`. `check-view-live-refresh.sh` pins that a republish
+reaches held and fresh subscriptions alike.
+
+`module_version` rides the initial `subscribe([...])` call -- never a
+second subscription, a reducer or a fetch. `boot/handshake.ts` compares
+by strict equality:
+
+- Both equal: `proceed`.
+- Only `defs_version` differs, or the first `fetchDefs` failed: one
+  `fetchDefs` cache-busted with the server's version. Still stale is
+  `updating`; any other failure is `reload`.
+- `protocol_version` differs: `reload`.
+- `reload` happens once per server version, recorded under
+  `sessionStorage` key `bc.handshake.reloaded-for.v1` before reloading.
+  Already recorded, a failed write or a throwing reload is `updating`:
+  not drawing, the `updating` notice, no retry.
+
+`mountStreetScene` takes a `VerifiedDefs`, produced only by `boot/
+boot-gate.ts`; an unreachable or timed-out connection mounts the fetched
+defs. After mount, `boot/post-mount-guard.ts` compares every later row
+against what mounted: a mismatch stops the ticker, then `reload` or
+`updating` -- never a live defs swap.
 
 An object, item, recipe, profession, chain, or appearance part/layout/
 uniform declares an explicit, permanent integer id in its own file --

@@ -5,5 +5,10 @@
 
 /** `"reconnecting"` is deliberately not a member yet: reconnection is
  * story 4.16's work; the union is built so that story adds the member
- * without reshaping either side. */
-export type ConnectionStatus = "connecting" | "connected" | "disconnected";
+ * without reshaping either side.
+ *
+ * `"updating"` (story 2.8, FR147): the boot gate gave up rendering this
+ * session -- a guarded reload already happened once for this exact
+ * server version and the mismatch is still there. Distinct from
+ * `"disconnected"`: the socket itself may be perfectly healthy. */
+export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "updating";

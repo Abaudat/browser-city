@@ -105,6 +105,12 @@ jobs:
               - 'fixtures/**'
               - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
               - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
+              # Story 2.8 (Quentin's direction): client/tests/e2e/defs-
+              # handshake.spec.ts exercises a stale defs_version, so a
+              # defs/**-only PR (client/**/server/** untouched) must still
+              # run it -- client/public/defs/** and client/public/atlas/**
+              # are already covered transitively via client/** above.
+              - 'defs/**'
             defs:
               - 'defs/**'
               - 'tools/defs-build/**'
@@ -389,6 +395,13 @@ jobs:
       # shared between the two steps.
       - name: story 1.4 AC3/AC4, the restore proven against a real SpacetimeDB instance
         run: bash scripts/ci/check-backup-restore.sh
+      # Story 2.8 (FR147): its own disposable local instance and port
+      # (3989), never 3987/3988 (the two steps above's own) -- run in the
+      # same job rather than a second one only because a module build is
+      # already available here (the same reasoning check-backup-restore.sh
+      # is here for), not because an instance is shared between the steps.
+      - name: story 2.8 FR147, a view over a compiled-in constant re-evaluates on a live republish
+        run: bash scripts/ci/check-view-live-refresh.sh
 
   coverage:
     name: coverage (sim)
@@ -456,8 +469,10 @@ jobs:
       # within the step that writes it -- so the CLI install and the check
       # that calls it cannot share one `run:` block.
       - run: bash ../scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
-      - name: bindings are exactly what the module generates
+      - name: bindings and protocol_version are exactly what the module generates
         run: bash ../scripts/ci/check-bindings-current.sh
+      - name: story 2.8 FR147, the two protocol_version artefacts agree
+        run: bash ../scripts/ci/check-protocol-version-agrees.sh
       - run: bash ../scripts/ci/check-no-shared-code.sh
       - name: the one client-side layer-rank mirror never drifts from the server golden
         run: bash ../scripts/ci/check-layer-table-current.sh

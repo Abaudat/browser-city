@@ -50,6 +50,9 @@ export default defineConfig({
       // logic of its own remains once its inputs are each covered.
       exclude: [
         "src/net/bindings/**",
+        // Story 2.8: a generated constant, the same idiom as bindings/ --
+        // nothing to unit-test in a literal string assignment.
+        "src/net/protocol-version.ts",
         "src/test-street/**",
         "src/render/appearance/composite-canvas.ts",
         "src/render/appearance/part-sheets.ts",

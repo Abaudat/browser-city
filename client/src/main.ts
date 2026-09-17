@@ -1,5 +1,10 @@
 import { Application } from "pixi.js";
 import { BOOT_MARK, markBoot } from "./boot/boot-marks";
+import { runBootSequence } from "./boot/boot-sequence";
+import type { VerifiedDefs } from "./boot/handshake";
+import { createHandshakeLatch, type HandshakeLatch } from "./boot/handshake-latch";
+import type { PostMountGuard } from "./boot/post-mount-guard";
+import { readReloadedFor, writeReloadedFor } from "./boot/reloaded-for-storage";
 import type { DebugWorldView } from "./debug/world-view";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
@@ -23,11 +28,13 @@ import {
   recordVisibilityForE2e,
 } from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
+import { PROTOCOL_VERSION } from "./net/protocol-version";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
 import { visibleCellBounds } from "./render/screen-position";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
+import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
 import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
@@ -60,10 +67,46 @@ async function main(): Promise<void> {
     recordPingForE2e(observation);
   }
 
-  connect(onPing, (status) => notice.setStatus(status));
+  // Story 2.8 (FR147): `net/connection.ts`'s own callbacks start firing
+  // the instant `connect()` returns, well before `startStreetScene`'s own
+  // `runBootSequence` has registered anything -- `latch` is the replay
+  // buffer that makes that race safe (`boot/handshake-latch.ts`).
+  // `onStatus`
+  // resolves the latch as unreachable only on the *first* not-connected
+  // report and only before it has already settled another way -- a later
+  // drop, after the handshake already arrived, is a no-op here (the
+  // latch has already settled).
+  //
+  // Cycle 1 review (Quentin's finding 1 / Tim's finding 3): the handshake
+  // does not stop mattering once `latch` has settled -- every later
+  // `onHandshake` call (a tab left open across a deploy, or the late
+  // arrival after an `unreachable` mount) is also fed to
+  // `postMountGuard`, set once `startStreetScene` has something mounted
+  // to compare against. Before that, it is `undefined` and the call is a
+  // no-op here -- the boot gate's own `latch` is what covers everything
+  // up to and including the first settlement.
+  let postMountGuard: PostMountGuard | undefined;
+  const latch = createHandshakeLatch();
+  connect(
+    onPing,
+    (status) => {
+      notice.setStatus(status);
+      if (status === "disconnected") latch.resolveUnreachable();
+    },
+    (version) => {
+      latch.resolveHandshake(version);
+      postMountGuard?.onHandshake(version);
+    },
+  );
 
   try {
-    await startStreetScene();
+    await startStreetScene(
+      latch,
+      () => notice.setStatus("updating"),
+      (guard) => {
+        postMountGuard = guard;
+      },
+    );
   } catch (error: unknown) {
     // NFR42: the street scene degrades to not-drawing, never takes the ping
     // round trip down with it.
@@ -82,21 +125,83 @@ async function main(): Promise<void> {
  * hand-maintained copy here. There is still no live `layer_code`
  * subscription in this story (Tim's scope call); wiring one is later
  * work.
+ *
+ * Story 2.8 (FR147): the scene is never mounted before `runBootSequence`
+ * resolves a `VerifiedDefs` -- "never draws a stale frame" is structural
+ * (`test-street/scene.ts`'s own `MountStreetSceneOptions.defs` type), not
+ * a convention. `connect()` and the first, unversioned `fetchDefs` still
+ * start in parallel exactly as before (`latch` is what `connect()`
+ * already started feeding by the time this runs).
+ *
+ * Cycle 2 review (Quentin's finding 1): `setPostMountGuard` is called the
+ * instant `runBootSequence` resolves, with no `await` in between -- in
+ * particular, *before* `Application.init()`'s own await, which used to
+ * leave a real async gap where a handshake landed nowhere. Pixi's own
+ * init still runs concurrently with the boot sequence (only the scene
+ * mount itself waits on it), it is just no longer between the sequence
+ * resolving and the guard being wired.
+ *
+ * Cycle 3 review (Quentin's and Tim's converging findings): `app.init()`'s
+ * own promise is also passed *into* `runBootSequence` (as
+ * `appInitPromise`), which awaits it internally and replays the
+ * handshake a second time once it resolves -- a version that changes
+ * while WebGPU adapter/device creation is still in flight is caught
+ * there, before a renderer exists to stop, rather than mounting the
+ * scene anyway once `Application.init()` finally does resolve. `app.
+ * ticker` does not exist until then either, so `stopDrawing` is
+ * null-safe.
  */
-async function startStreetScene(): Promise<void> {
+async function startStreetScene(
+  latch: HandshakeLatch,
+  onDegrade: () => void,
+  setPostMountGuard: (guard: PostMountGuard) => void,
+): Promise<void> {
   const mount = document.getElementById("test-street");
   if (!mount) {
     console.error("[main] #test-street is missing from index.html");
     return;
   }
 
-  // Never a hard-coded leading-slash literal (client/tests/e2e/
-  // deploy-smoke.spec.ts caught exactly this: it 404s under GitHub
-  // Pages' own /browser-city/ base). `import.meta.env.BASE_URL` is
-  // Vite's own base-aware constant -- always the build's `base` value,
-  // with a trailing slash, so `/` locally and `/browser-city/` in
-  // production resolve to the same relative asset either way.
-  const defs = await fetchDefs(`${import.meta.env.BASE_URL}defs/defs.json`);
+  const app = new Application();
+  const appInitPromise = app.init({ preference: "webgpu", background: "#284028" });
+
+  const sessionStorage = resolveSessionStorage(() => window.sessionStorage);
+  const sequenceResult = await runBootSequence({
+    fetchDefs,
+    // Never a hard-coded leading-slash literal (client/tests/e2e/
+    // deploy-smoke.spec.ts caught exactly this: it 404s under GitHub
+    // Pages' own /browser-city/ base). `import.meta.env.BASE_URL` is
+    // Vite's own base-aware constant -- always the build's `base` value,
+    // with a trailing slash, so `/` locally and `/browser-city/` in
+    // production resolve to the same relative asset either way.
+    defsPath: `${import.meta.env.BASE_URL}defs/defs.json`,
+    clientProtocolVersion: PROTOCOL_VERSION,
+    handshake: latch,
+    readReloadedFor: () => readReloadedFor(sessionStorage),
+    writeReloadedFor: (version) => writeReloadedFor(sessionStorage, version),
+    // Cycle 3 review: `app.ticker` does not exist until `Application.
+    // init()` has run its own `TickerPlugin.init` -- a mismatch found by
+    // `runBootSequence`'s first replay (before `appInitPromise` is even
+    // awaited) can call this before that. Optional-chained, so it is a
+    // safe no-op rather than a `TypeError` either way.
+    stopDrawing: () => app.ticker?.stop(),
+    reload: () => window.location.reload(),
+    onDegrade,
+    appInitPromise,
+  });
+  if (sequenceResult) setPostMountGuard(sequenceResult.guard);
+
+  await appInitPromise;
+  mount.appendChild(app.canvas);
+
+  if (!sequenceResult) {
+    // NFR42: the sequence already handled the outcome (a reload is under
+    // way, or the connection notice now shows "updating") -- nothing left
+    // to render this session.
+    return;
+  }
+  const defs: VerifiedDefs = sequenceResult.defs;
+
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");
   // Story 1.7 (FR121): `render.window_alpha` is a percent integer (1-99,
@@ -113,10 +218,6 @@ async function startStreetScene(): Promise<void> {
   const movementConfig = loadMovementConfig(defs);
 
   const rankTable = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
-
-  const app = new Application();
-  await app.init({ preference: "webgpu", background: "#284028" });
-  mount.appendChild(app.canvas);
 
   // FR149: the player's own bindings, or the defaults if storage is
   // empty, blocked or unreadable -- never an error the player has to see

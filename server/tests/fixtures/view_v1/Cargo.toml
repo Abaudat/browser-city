@@ -1,0 +1,15 @@
+[package]
+name = "view_fixture_v1"
+version = "0.1.0"
+edition = "2024"
+
+# Fixture for scripts/ci/check-view-live-refresh.sh (story 2.8's FR147
+# handshake) -- deliberately outside the `server` workspace (see its
+# Cargo.toml's `exclude`), so it never affects `cargo test --workspace` or
+# clippy.
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb = { version = "2.9.*" }

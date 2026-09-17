@@ -12,15 +12,22 @@ interface FakeRow {
   writtenAt: Timestamp;
 }
 
+interface FakeModuleVersionRow {
+  defsVersion: string;
+  protocolVersion: string;
+}
+
 interface FakeState {
   uri?: string;
   databaseName?: string;
   onConnectCb?: (connection: unknown) => void;
   onConnectErrorCb?: (ctx: unknown, error: unknown) => void;
   onDisconnectCb?: (ctx: unknown, error?: unknown) => void;
-  subscribedSql?: string;
+  subscribedSql?: string | string[];
   onAppliedCb?: () => void;
+  onSubscriptionErrorCb?: (ctx: { event?: unknown }) => void;
   onInsertCb?: (ctx: unknown, row: FakeRow) => void;
+  onModuleVersionInsertCb?: (ctx: unknown, row: FakeModuleVersionRow) => void;
 }
 
 const state: FakeState = {};
@@ -30,7 +37,11 @@ const fakeSubscriptionBuilder = {
     state.onAppliedCb = cb;
     return fakeSubscriptionBuilder;
   },
-  subscribe: (sql: string) => {
+  onError: (cb: (ctx: { event?: unknown }) => void) => {
+    state.onSubscriptionErrorCb = cb;
+    return fakeSubscriptionBuilder;
+  },
+  subscribe: (sql: string | string[]) => {
     state.subscribedSql = sql;
     return { unsubscribe: () => {} };
   },
@@ -42,6 +53,11 @@ const fakeConn = {
     demoPing: {
       onInsert: (cb: (ctx: unknown, row: FakeRow) => void) => {
         state.onInsertCb = cb;
+      },
+    },
+    moduleVersion: {
+      onInsert: (cb: (ctx: unknown, row: FakeModuleVersionRow) => void) => {
+        state.onModuleVersionInsertCb = cb;
       },
     },
   },
@@ -85,7 +101,9 @@ beforeEach(() => {
   state.onDisconnectCb = undefined;
   state.subscribedSql = undefined;
   state.onAppliedCb = undefined;
+  state.onSubscriptionErrorCb = undefined;
   state.onInsertCb = undefined;
+  state.onModuleVersionInsertCb = undefined;
 });
 
 describe("connect", () => {
@@ -97,12 +115,15 @@ describe("connect", () => {
     expect(conn).toBe(fakeConn);
   });
 
-  it("subscribes to demo_ping once the connection is established", () => {
+  it("subscribes to demo_ping and module_version, in one call, once the connection is established (FR147: no extra round trip)", () => {
     connect(() => {});
 
     state.onConnectCb?.(fakeConn);
 
-    expect(state.subscribedSql).toBe("SELECT * FROM demo_ping");
+    expect(state.subscribedSql).toEqual([
+      "SELECT * FROM demo_ping",
+      "SELECT * FROM module_version",
+    ]);
   });
 
   it("turns an onInsert row into a PingObservation via observePingInsert", () => {
@@ -204,6 +225,46 @@ describe("connect", () => {
         connect(() => {});
         state.onConnectCb?.(fakeConn);
         state.onDisconnectCb?.({}, undefined);
+      }).not.toThrow();
+    });
+
+    it("a rejected subscription moves to 'disconnected' too (Tim's finding 6: no onError left the boot gate waiting forever)", () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const statuses: string[] = [];
+      connect(
+        () => {},
+        (status) => statuses.push(status),
+      );
+      state.onConnectCb?.(fakeConn);
+      expect(() =>
+        state.onSubscriptionErrorCb?.({ event: new Error("subscribe rejected") }),
+      ).not.toThrow();
+      expect(statuses).toEqual(["connecting", "connected", "disconnected"]);
+      expect(errorSpy).toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+  });
+
+  describe("onHandshake (story 2.8, FR147)", () => {
+    it("is called with the module_version row's defsVersion/protocolVersion once it inserts", () => {
+      const received: Array<{ defsVersion: string; protocolVersion: string }> = [];
+      connect(
+        () => {},
+        undefined,
+        (version) => received.push(version),
+      );
+      state.onConnectCb?.(fakeConn);
+
+      state.onModuleVersionInsertCb?.({}, { defsVersion: "d1", protocolVersion: "p1" });
+
+      expect(received).toEqual([{ defsVersion: "d1", protocolVersion: "p1" }]);
+    });
+
+    it("connect() never throws when no onHandshake listener is given at all", () => {
+      expect(() => {
+        connect(() => {});
+        state.onConnectCb?.(fakeConn);
+        state.onModuleVersionInsertCb?.({}, { defsVersion: "d1", protocolVersion: "p1" });
       }).not.toThrow();
     });
   });
