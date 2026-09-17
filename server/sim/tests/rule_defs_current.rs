@@ -151,6 +151,163 @@ fn the_committed_walled_room_has_waste_bin_requirement_rule_fires_when_missing_a
     assert!(!evaluate(&[rule], &violated).is_empty());
 }
 
+// --- story 2.9: defs/rules/grammar.toml's own seven rows -------------------
+
+#[test]
+fn the_committed_road_never_touches_floor_rule_fires_and_stays_silent() {
+    let rule = rule("road_never_touches_floor");
+    let road = tag_id("road");
+    let floor = tag_id("floor");
+    let pavement = tag_id("pavement");
+
+    let violated = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[road])
+        .cell(Cell::new(1, 0, 0), &[floor])
+        .build();
+    assert!(!evaluate(&[rule], &violated).is_empty());
+
+    let satisfied = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[road])
+        .cell(Cell::new(1, 0, 0), &[pavement])
+        .build();
+    assert!(evaluate(&[rule], &satisfied).is_empty());
+}
+
+#[test]
+fn the_committed_road_never_touches_wall_rule_fires_and_stays_silent() {
+    let rule = rule("road_never_touches_wall");
+    let road = tag_id("road");
+    let wall = tag_id("wall");
+
+    let violated = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[road])
+        .cell(Cell::new(1, 0, 0), &[wall])
+        .build();
+    assert!(!evaluate(&[rule], &violated).is_empty());
+
+    let satisfied = SiteBuilder::new().cell(Cell::new(0, 0, 0), &[road]).build();
+    assert!(evaluate(&[rule], &satisfied).is_empty());
+}
+
+#[test]
+fn the_committed_floor_never_touches_bare_ground_rule_fires_and_stays_silent() {
+    let rule = rule("floor_never_touches_bare_ground");
+    let floor = tag_id("floor");
+    let ground = tag_id("ground");
+
+    let violated = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[floor])
+        .cell(Cell::new(1, 0, 0), &[ground])
+        .build();
+    assert!(!evaluate(&[rule], &violated).is_empty());
+
+    // An interior floor cell surrounded by more floor never fires.
+    let satisfied = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[floor])
+        .cell(Cell::new(1, 0, 0), &[floor])
+        .build();
+    assert!(evaluate(&[rule], &satisfied).is_empty());
+}
+
+#[test]
+fn the_committed_floor_never_touches_pavement_directly_rule_fires_and_stays_silent() {
+    let rule = rule("floor_never_touches_pavement_directly");
+    let floor = tag_id("floor");
+    let pavement = tag_id("pavement");
+    let threshold = tag_id("threshold");
+
+    let violated = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[floor])
+        .cell(Cell::new(1, 0, 0), &[pavement])
+        .build();
+    assert!(!evaluate(&[rule], &violated).is_empty());
+
+    // A threshold cell sits between them instead -- floor no longer
+    // directly touches pavement.
+    let satisfied = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[floor])
+        .cell(Cell::new(1, 0, 0), &[threshold])
+        .cell(Cell::new(2, 0, 0), &[pavement])
+        .build();
+    assert!(evaluate(&[rule], &satisfied).is_empty());
+}
+
+#[test]
+fn the_committed_floor_never_touches_road_directly_rule_fires_and_stays_silent() {
+    let rule = rule("floor_never_touches_road_directly");
+    let floor = tag_id("floor");
+    let road = tag_id("road");
+
+    let violated = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[floor])
+        .cell(Cell::new(1, 0, 0), &[road])
+        .build();
+    assert!(!evaluate(&[rule], &violated).is_empty());
+
+    let satisfied = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[floor])
+        .build();
+    assert!(evaluate(&[rule], &satisfied).is_empty());
+}
+
+/// The doorway primitive (AC3): `rotate = true` lowers one authored
+/// alternative to all four orientations -- this fixture checks a second
+/// orientation (the corridor running east-west) to prove the rotation
+/// actually reached the committed artefact, not only the orientation
+/// that happens to match the authored literal order.
+#[test]
+fn the_committed_threshold_between_floor_and_pavement_rule_fires_and_stays_silent() {
+    let rule = rule("threshold_between_floor_and_pavement_flanked_by_walls");
+    let threshold = tag_id("threshold");
+    let wall = tag_id("wall");
+    let floor = tag_id("floor");
+    let pavement = tag_id("pavement");
+
+    // A rotated orientation: wall east/west, floor/pavement north/south.
+    let satisfied = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[threshold])
+        .cell(Cell::new(-1, 0, 0), &[wall])
+        .cell(Cell::new(1, 0, 0), &[wall])
+        .cell(Cell::new(0, -1, 0), &[floor])
+        .cell(Cell::new(0, 1, 0), &[pavement])
+        .build();
+    assert!(evaluate(&[rule], &satisfied).is_empty());
+
+    // A doorway opening onto another wall (Artie's own named rejection
+    // case) instead of floor/pavement.
+    let violated = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[threshold])
+        .cell(Cell::new(-1, 0, 0), &[wall])
+        .cell(Cell::new(1, 0, 0), &[wall])
+        .cell(Cell::new(0, -1, 0), &[wall])
+        .build();
+    assert!(!evaluate(&[rule], &violated).is_empty());
+}
+
+/// The corner/straight-run primitive (AC3): `rotate = true` lowers two
+/// authored alternatives to six distinct patterns -- checked here via a
+/// corner orientation the literal authoring order did not name directly
+/// (south-west), proving the rotation reached the committed artefact.
+#[test]
+fn the_committed_wall_is_part_of_a_straight_run_or_a_corner_rule_fires_and_stays_silent() {
+    let rule = rule("wall_is_part_of_a_straight_run_or_a_corner");
+    let wall = tag_id("wall");
+
+    let stub = SiteBuilder::new().cell(Cell::new(0, 0, 0), &[wall]).build();
+    assert!(!evaluate(&[rule], &stub).is_empty());
+
+    // A closed 2x2 ring: every cell has exactly two wall neighbours,
+    // each pair perpendicular (a corner) -- includes the south-west
+    // orientation the literal authoring order did not name directly.
+    let ring = SiteBuilder::new()
+        .cell(Cell::new(0, 0, 0), &[wall])
+        .cell(Cell::new(1, 0, 0), &[wall])
+        .cell(Cell::new(1, 1, 0), &[wall])
+        .cell(Cell::new(0, 1, 0), &[wall])
+        .build();
+    assert!(evaluate(&[rule], &ring).is_empty());
+}
+
 /// Pins the set closed: a rule added to `defs/rules/city.toml` with no
 /// matching test above must fail this count, not ship silently untested
 /// (Quentin's direction, PR #294 cycle 2).
@@ -162,6 +319,13 @@ fn every_committed_rule_has_a_test_here() {
         "no_counter_in_a_stairwell",
         "counter_faces_a_shopfront",
         "walled_room_has_waste_bin",
+        "road_never_touches_floor",
+        "road_never_touches_wall",
+        "floor_never_touches_bare_ground",
+        "floor_never_touches_pavement_directly",
+        "floor_never_touches_road_directly",
+        "threshold_between_floor_and_pavement_flanked_by_walls",
+        "wall_is_part_of_a_straight_run_or_a_corner",
     ];
     assert_eq!(
         defs::RULES.len(),

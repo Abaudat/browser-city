@@ -935,12 +935,21 @@ rule above.
 geometry only. Tags (`defs/tags/*.toml`, permanent id/key, append-only
 manifest like every other kind) are the engine's only vocabulary -- an
 object's `tags` field and a rule row's own subject/container/per/within/
-a/b/requires fields all resolve a tag name to its id at build time; the
+a/requires fields all resolve a tag name to its id at build time; the
 engine never sees a content key. `scripts/ci/check-rule-engine-no-
 content-keys.sh` fails the build if any manifest key ever appears as a
 quoted-string literal under `server/sim/src/rules/`. `RuleSite` answers
 three questions over integer geometry -- tags at a cell, real areas
 containing it, subjects within an area or the whole site.
+
+A tag's own `[[tag]]` row may carry `role = { layers = [...] }`; its
+presence is what makes that tag a role (FR119) -- the closed taxonomy
+(ground, pavement, road, wall, floor, threshold, fixture) is data, never
+a Rust/TypeScript enum. `layers` is the closed set of `sim::codes::layer`
+names an object of that role may sit on, resolved to codes at build time.
+Every `[[object]]` carries exactly one role tag in its ordinary `tags`
+list -- zero, two, or a layer outside the role's own `layers` all fail
+the build by object key.
 
 Five closed kinds, one TOML array table each under `defs/rules/*.toml`,
 any file: `[[placement]]`, `[[distribution]]`, `[[coherence]]`,
@@ -952,11 +961,30 @@ ratio, a minimum spacing and a maximum coverage distance (`max_distance`,
 always positive) together. `evaluate` returns every violation, sorted
 and deduplicated.
 
+Adjacency's engine shape is `Adjacency { a, relation, alternatives:
+&'static [&'static [NeighbourTerm]] }`, where `NeighbourTerm { direction,
+tag, present }` names one same-floor neighbour condition; an alternative
+matches when every one of its terms holds, and the row matches when any
+alternative does. `Require` violates when no alternative matches;
+`Forbid` violates once per matching alternative, and every `Forbid`
+alternative is exactly one `present: true` term, so the violating pair is
+always unambiguous. `[[adjacency]]` authors either the terse `b` (+
+optional `direction`) form or a hand-authored `alternatives` pattern (an
+optional `rotate = true` lowers one authored alternative to its four
+90-degree rotations); `tools/defs-build` lowers both into the same
+`alternatives` shape at build time, so the engine has exactly one path.
+`Violation` carries `other: Option<Cell>`, the matched neighbour cell for
+a `Forbid` violation, `None` otherwise -- ordering is `(rule_id, subject,
+other)`. Room and building grammar primitives (a corner, a doorway) are
+ordinary rows in `defs/rules/*.toml`, not a second module: "composing a
+room" is building a `RuleSite` and calling `evaluate`, and a construction's
+"named reason" is the violated row's own key.
+
 Rule rows and the tag table are emitted into `server/sim/src/generated/
-defs.rs` only, as `static` tables (`TAGS`, `RULES`); tags also reach
-`client/public/defs/defs.json` as a required field (an object's `tags`
-field, validated against the tag table on both sides identically), rule
-rows never do -- the client never evaluates a rule.
+defs.rs` only, as `static` tables (`TAGS`, `RULES`); tags (role included)
+also reach `client/public/defs/defs.json` as a required field (an
+object's `tags` field, validated against the tag table on both sides
+identically), rule rows never do -- the client never evaluates a rule.
 
 There is no separate rule-set version: `defs_version` already hashes
 every tracked file under `defs/`, including `defs/rules/` and

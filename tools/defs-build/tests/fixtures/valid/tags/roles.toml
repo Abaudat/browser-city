@@ -1,0 +1,10 @@
+# Story 2.9: this crate's shared valid base tree needs exactly one role
+# tag its own `trash_bin` object (`objects/city-props.toml`, layer
+# "furniture") can carry. id 100 (never 1): some `tests/fixtures/invalid/`
+# overlays replace `defs/tags/city.toml` with their own id-1 tag, and the
+# merged tree must never collide on id with this file, which the merge
+# never replaces.
+[[tag]]
+id = 100
+key = "fixture"
+role = { layers = ["furniture"] }

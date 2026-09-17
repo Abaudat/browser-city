@@ -16,10 +16,18 @@ edition = "2024"
 # without a flag, the same trick that keeps a `#[cfg(test)]`-only item
 # reachable from this crate's own `tests/` (which link the library built
 # for `[dependencies]`, not for `[dev-dependencies]`).
-fixture = []
+#
+# Named `test-fixtures`, never `fixture` (story 2.9, Crew's decision): the
+# taxonomy's own `fixture` role tag key would otherwise appear as a
+# quoted literal under `server/sim/src/rules/` (this feature's own
+# `#[cfg(feature = "fixture")]`) and trip `check-rule-engine-no-content-
+# keys.sh`'s own AC3 guard -- a genuine collision between an unrelated
+# Cargo feature name and a manifest key, not a false positive the guard
+# should special-case.
+test-fixtures = []
 
 [dependencies]
 
 [dev-dependencies]
 proptest = "=1.11.0"
-sim = { path = ".", features = ["fixture"] }
+sim = { path = ".", features = ["test-fixtures"] }

@@ -497,6 +497,65 @@ fn build_coherence_rules(
         .collect()
 }
 
+/// One 90-degree clockwise rotation (north faces east, and so on --
+/// `sim::rules::Direction::ALL`'s own order): the `rotate = true`
+/// lowering applies this 0..4 times per alternative.
+fn rotate_direction(d: RawDirection) -> RawDirection {
+    match d {
+        RawDirection::North => RawDirection::East,
+        RawDirection::East => RawDirection::South,
+        RawDirection::South => RawDirection::West,
+        RawDirection::West => RawDirection::North,
+    }
+}
+
+fn resolve_neighbour_term(
+    term: &RawNeighbourTerm,
+    path: &std::path::Path,
+    rule_key: &str,
+    line: usize,
+    col: usize,
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<NeighbourTermDef, DefsError> {
+    match tag_ids.get(term.tag.as_str()) {
+        Some(&id) => Ok(NeighbourTermDef {
+            direction: term.direction,
+            tag: id,
+            present: term.present,
+        }),
+        None => {
+            let accepted: Vec<&str> = tag_ids.keys().copied().collect();
+            Err(DefsError::new(
+                path,
+                line,
+                col,
+                format!(
+                    "adjacency rule '{rule_key}' names unknown tag '{}' in alternatives -- accepted tags are [{}]",
+                    term.tag,
+                    accepted.join(", ")
+                ),
+            ))
+        }
+    }
+}
+
+/// Canonicalises one lowered alternative set: sorts each alternative's
+/// own terms, then sorts and deduplicates the alternative list itself --
+/// so two rows that mean the same neighbourhood pattern (authored in a
+/// different term/alternative order, or arrived at via a different
+/// `rotate` path) always lower to byte-identical generated text, and so
+/// `evaluate`'s own behaviour (already alternative-order-independent)
+/// never depends on it either.
+fn canonicalise_alternatives(mut alts: Vec<Vec<NeighbourTermDef>>) -> Vec<Vec<NeighbourTermDef>> {
+    for alt in &mut alts {
+        alt.sort();
+        alt.dedup();
+    }
+    alts.sort();
+    alts.dedup();
+    alts
+}
+
 fn build_adjacency_rules(
     entries: &[AdjacencyEntry],
     tag_ids: &BTreeMap<&str, u32>,
@@ -505,15 +564,145 @@ fn build_adjacency_rules(
         .iter()
         .map(|e| {
             let a = resolve_rule_tag(&e.a, &e.path, &e.key.value, "a", tag_ids)?;
-            let b = resolve_rule_tag(&e.b, &e.path, &e.key.value, "b", tag_ids)?;
+            let alternatives = match (&e.b, &e.alternatives) {
+                (Some(_), Some(_)) | (None, None) => {
+                    return Err(DefsError::new(
+                        &e.path,
+                        e.key.line,
+                        e.key.col,
+                        format!(
+                            "adjacency rule '{}' must set exactly one of 'b' or 'alternatives'",
+                            e.key.value
+                        ),
+                    ));
+                }
+                (Some(b_loc), None) => {
+                    if e.rotate {
+                        return Err(DefsError::new(
+                            &e.path,
+                            e.key.line,
+                            e.key.col,
+                            format!(
+                                "adjacency rule '{}' sets 'rotate' but 'rotate' only applies to 'alternatives'",
+                                e.key.value
+                            ),
+                        ));
+                    }
+                    let b = resolve_rule_tag(b_loc, &e.path, &e.key.value, "b", tag_ids)?;
+                    match e.direction {
+                        Some(direction) => vec![vec![NeighbourTermDef {
+                            direction,
+                            tag: b,
+                            present: true,
+                        }]],
+                        None => [
+                            RawDirection::North,
+                            RawDirection::East,
+                            RawDirection::South,
+                            RawDirection::West,
+                        ]
+                        .into_iter()
+                        .map(|direction| {
+                            vec![NeighbourTermDef {
+                                direction,
+                                tag: b,
+                                present: true,
+                            }]
+                        })
+                        .collect(),
+                    }
+                }
+                (None, Some(raw_alts)) => {
+                    if e.direction.is_some() {
+                        return Err(DefsError::new(
+                            &e.path,
+                            e.key.line,
+                            e.key.col,
+                            format!(
+                                "adjacency rule '{}' sets 'direction' but 'direction' only applies to 'b'",
+                                e.key.value
+                            ),
+                        ));
+                    }
+                    if raw_alts.is_empty() {
+                        return Err(DefsError::new(
+                            &e.path,
+                            e.key.line,
+                            e.key.col,
+                            format!(
+                                "adjacency rule '{}' declares an empty 'alternatives' list",
+                                e.key.value
+                            ),
+                        ));
+                    }
+                    let mut resolved: Vec<Vec<NeighbourTermDef>> = Vec::new();
+                    for raw_alt in raw_alts {
+                        if raw_alt.is_empty() {
+                            return Err(DefsError::new(
+                                &e.path,
+                                e.key.line,
+                                e.key.col,
+                                format!(
+                                    "adjacency rule '{}' declares an empty alternative in 'alternatives'",
+                                    e.key.value
+                                ),
+                            ));
+                        }
+                        let mut terms = Vec::with_capacity(raw_alt.len());
+                        for term in raw_alt {
+                            terms.push(resolve_neighbour_term(
+                                term,
+                                &e.path,
+                                &e.key.value,
+                                e.key.line,
+                                e.key.col,
+                                tag_ids,
+                            )?);
+                        }
+                        if e.rotate {
+                            let mut rotated = terms.clone();
+                            for _ in 0..3 {
+                                rotated = rotated
+                                    .iter()
+                                    .map(|t| NeighbourTermDef {
+                                        direction: rotate_direction(t.direction),
+                                        tag: t.tag,
+                                        present: t.present,
+                                    })
+                                    .collect();
+                                resolved.push(rotated.clone());
+                            }
+                        }
+                        resolved.push(terms);
+                    }
+                    resolved
+                }
+            };
+            // A `Forbid` row's own violating pair must be unambiguous
+            // (Tim's direction): every alternative is exactly one
+            // `present: true` term.
+            if e.relation == RawAdjacencyRelation::Forbid
+                && alternatives
+                    .iter()
+                    .any(|alt| alt.len() != 1 || !alt[0].present)
+            {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    e.key.col,
+                    format!(
+                        "adjacency rule '{}' is a 'forbid' row but names an alternative that is not a single present tag -- a forbid row's violating pair must be unambiguous",
+                        e.key.value
+                    ),
+                ));
+            }
             Ok(RuleDef {
                 id: e.id.value,
                 key: e.key.value.clone(),
                 kind: RuleKindDef::Adjacency {
                     a,
-                    b,
                     relation: e.relation,
-                    direction: e.direction,
+                    alternatives: canonicalise_alternatives(alternatives),
                 },
             })
         })
@@ -634,6 +823,112 @@ fn check_object_walkability_tag(entries: &[ObjectEntry]) -> Result<(), DefsError
                 ));
             }
             _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Story 2.9 (AC1, FR119): a role tag's own `layers` list must name real,
+/// non-deprecated layers -- exactly the same two refusals an object's own
+/// `layer` field gets (`resolve_object_layer`), since a role that could
+/// never legally sit anywhere is not a role at all.
+fn check_tag_role_layers(
+    tags: &[TagEntry],
+    layer_codes: &BTreeMap<String, u32>,
+) -> Result<(), DefsError> {
+    for t in tags {
+        let Some(role) = &t.role else { continue };
+        if role.layers.is_empty() {
+            return Err(DefsError::new(
+                &t.path,
+                t.key.line,
+                t.key.col,
+                format!(
+                    "tag '{}' declares a role with no layers -- a role with nowhere to sit is not a role",
+                    t.key.value
+                ),
+            ));
+        }
+        for layer in &role.layers {
+            if crate::layer_codes::DEPRECATED_LAYER_NAMES.contains(&layer.as_str()) {
+                return Err(DefsError::new(
+                    &t.path,
+                    t.key.line,
+                    t.key.col,
+                    format!(
+                        "tag '{}' role names deprecated layer '{layer}' -- a deprecated layer may never be placed on",
+                        t.key.value
+                    ),
+                ));
+            }
+            if !layer_codes.contains_key(layer) {
+                let accepted: Vec<&str> = layer_codes.keys().map(|s| s.as_str()).collect();
+                return Err(DefsError::new(
+                    &t.path,
+                    t.key.line,
+                    t.key.col,
+                    format!(
+                        "tag '{}' role names unknown layer '{layer}' -- accepted layers are [{}]",
+                        t.key.value,
+                        accepted.join(", ")
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Story 2.9 (AC1, FR119): every object carries exactly one role tag in
+/// its ordinary `tags` list -- zero (an unclassified tile, "a build
+/// error, not a silent default", Artie's direction) or two (an ambiguous
+/// one) are both refused by object key, never a second `role` field
+/// (Tim's direction) -- and that role's own `layers` list must include
+/// the object's own layer. Checked last among the object checks, after
+/// `check_object_walkability_tag` -- every more specific object-level
+/// rejection above gets its own chance to fire first (same reasoning as
+/// that check's own placement).
+fn check_object_roles(entries: &[ObjectEntry], tags: &[TagEntry]) -> Result<(), DefsError> {
+    let roles_by_key: BTreeMap<&str, &RawRole> = tags
+        .iter()
+        .filter_map(|t| t.role.as_ref().map(|r| (t.key.value.as_str(), r)))
+        .collect();
+    for e in entries {
+        let role_tags: Vec<&str> = e
+            .tags
+            .iter()
+            .map(|s| s.as_str())
+            .filter(|k| roles_by_key.contains_key(k))
+            .collect();
+        if role_tags.len() != 1 {
+            let accepted: Vec<&str> = roles_by_key.keys().copied().collect();
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "object '{}' carries {} role tag(s) ({}) -- exactly one is required (the declared role tags are [{}])",
+                    e.key.value,
+                    role_tags.len(),
+                    role_tags.join(", "),
+                    accepted.join(", ")
+                ),
+            ));
+        }
+        let role_key = role_tags[0];
+        let role = roles_by_key[role_key];
+        if !role.layers.iter().any(|l| l == &e.layer.value) {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "object '{}' has role '{role_key}' but layer '{}' is not among that role's allowed layers [{}]",
+                    e.key.value,
+                    e.layer.value,
+                    role.layers.join(", ")
+                ),
+            ));
         }
     }
     Ok(())
@@ -1427,6 +1722,7 @@ pub fn validate(
         .map(|t| (t.key.value.as_str(), t.id.value))
         .collect();
     check_object_tags(&raw.objects, &tag_ids)?;
+    check_tag_role_layers(&raw.tags, layer_codes)?;
     check_placement_floor_range(&raw.placements)?;
     check_distribution_ranges(&raw.distributions)?;
     check_requirement_range(&raw.requirements)?;
@@ -1465,6 +1761,9 @@ pub fn validate(
     // geometry, sprite) gets its own chance to fire on a fixture built to
     // exercise it before this generic catch-all ever runs.
     check_object_walkability_tag(&raw.objects)?;
+    // Story 2.9: after every other object-level rejection, same
+    // reasoning as `check_object_walkability_tag`'s own placement.
+    check_object_roles(&raw.objects, &raw.tags)?;
 
     let item_keys: BTreeSet<&str> = raw.items.iter().map(|i| i.key.value.as_str()).collect();
     check_recipe_item_refs(&raw.recipes, &item_keys)?;
@@ -1785,6 +2084,17 @@ pub fn validate(
         .map(|t| TagDef {
             id: t.id.value,
             key: t.key.value.clone(),
+            role: t.role.as_ref().map(|r| RoleDef {
+                layers: r
+                    .layers
+                    .iter()
+                    .map(|l| {
+                        *layer_codes
+                            .get(l)
+                            .expect("role layer name already validated by check_tag_role_layers")
+                    })
+                    .collect(),
+            }),
         })
         .collect();
     tags.sort_by(|a, b| a.key.cmp(&b.key));
@@ -1834,8 +2144,17 @@ mod tests {
     /// Story 2.4: declares the `underfoot` tag -- every fixture below that
     /// wants a colliderless object to pass the walkability invariant adds
     /// this file alongside its own `defs/tags/x.toml` and tags the object
-    /// `"underfoot"`.
-    const TAGS_UNDERFOOT_TOML: &str = "[[tag]]\nid = 1\nkey = \"underfoot\"\n";
+    /// `"underfoot"`. Story 2.9 also declares a `fixture` role tag here
+    /// (layer `furniture`, `OBJECT_HEADER`'s own layer) -- every object
+    /// fixture below now needs exactly one role tag too, and every one of
+    /// these fixtures already uses `OBJECT_HEADER`'s `layer = "furniture"`.
+    const TAGS_UNDERFOOT_TOML: &str = "[[tag]]\nid = 1\nkey = \"underfoot\"\n\n[[tag]]\nid = 2\nkey = \"fixture\"\nrole = { layers = [\"furniture\"] }\n";
+
+    /// Story 2.9: a fixture without `underfoot` at all still needs
+    /// exactly one role tag -- used by fixtures that declare no `defs/
+    /// tags/x.toml` of their own otherwise.
+    const TAGS_FIXTURE_ROLE_TOML: &str =
+        "[[tag]]\nid = 1\nkey = \"fixture\"\nrole = { layers = [\"furniture\"] }\n";
 
     fn object_sheet_dims() -> BTreeMap<String, (u32, u32)> {
         [("fixtures/objects/test.png".to_string(), (16u32, 16u32))]
@@ -1858,9 +2177,10 @@ mod tests {
             (
                 "defs/objects/city-props.toml",
                 &format!(
-                    "[[object]]\nid = 1\nkey = \"trash_bin\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 4, y0 = 4, x1 = 12, y1 = 12 }}\n"
+                    "[[object]]\nid = 1\nkey = \"trash_bin\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 4, y0 = 4, x1 = 12, y1 = 12 }}\ntags = [\"fixture\"]\n"
                 ),
             ),
+            ("defs/tags/roles.toml", TAGS_FIXTURE_ROLE_TOML),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
             (
                 "defs/items/sanitation.toml",
@@ -2066,9 +2386,10 @@ mod tests {
             (
                 "defs/objects/x.toml",
                 &format!(
-                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 0, y0 = 0, x1 = 16, y1 = 16 }}\n"
+                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 0, y0 = 0, x1 = 16, y1 = 16 }}\ntags = [\"fixture\"]\n"
                 ),
             ),
+            ("defs/tags/roles.toml", TAGS_FIXTURE_ROLE_TOML),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
@@ -2099,7 +2420,7 @@ mod tests {
                 (
                     "defs/objects/x.toml",
                     &format!(
-                        "[[object]]\nid = 1\nkey = \"{key}\"\n{OBJECT_HEADER}width = 1\nheight = 1\ntags = [\"underfoot\"]\n"
+                        "[[object]]\nid = 1\nkey = \"{key}\"\n{OBJECT_HEADER}width = 1\nheight = 1\ntags = [\"underfoot\", \"fixture\"]\n"
                     ),
                 ),
                 ("defs/balance/render.toml", BALANCE_RENDER_TOML),
@@ -2141,7 +2462,7 @@ mod tests {
             (
                 "defs/objects/x.toml",
                 &format!(
-                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 4, y0 = 4, x1 = 12, y1 = 12 }}\ntags = [\"underfoot\"]\n"
+                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 4, y0 = 4, x1 = 12, y1 = 12 }}\ntags = [\"underfoot\", \"fixture\"]\n"
                 ),
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
@@ -2158,7 +2479,7 @@ mod tests {
             (
                 "defs/objects/x.toml",
                 &format!(
-                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ntags = [\"underfoot\"]\n"
+                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ntags = [\"underfoot\", \"fixture\"]\n"
                 ),
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
@@ -2212,7 +2533,7 @@ mod tests {
             (
                 "defs/objects/x.toml",
                 &format!(
-                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ninteract_at = {{ x0 = {at}, y0 = 0, x1 = 16, y1 = 16 }}\ntags = [\"underfoot\"]\n"
+                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ninteract_at = {{ x0 = {at}, y0 = 0, x1 = 16, y1 = 16 }}\ntags = [\"underfoot\", \"fixture\"]\n"
                 ),
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
@@ -2245,9 +2566,10 @@ mod tests {
             (
                 "defs/objects/x.toml",
                 &format!(
-                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 4, y0 = 4, x1 = 12, y1 = 12 }}\ninteract_at = {{ x0 = 0, y0 = 16, x1 = 16, y1 = 32 }}\n"
+                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 4, y0 = 4, x1 = 12, y1 = 12 }}\ninteract_at = {{ x0 = 0, y0 = 16, x1 = 16, y1 = 32 }}\ntags = [\"fixture\"]\n"
                 ),
             ),
+            ("defs/tags/roles.toml", TAGS_FIXTURE_ROLE_TOML),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
@@ -2260,7 +2582,7 @@ mod tests {
             (
                 "defs/objects/x.toml",
                 &format!(
-                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ntags = [\"underfoot\"]\n"
+                    "[[object]]\nid = 1\nkey = \"a\"\n{OBJECT_HEADER}width = 1\nheight = 1\ntags = [\"underfoot\", \"fixture\"]\n"
                 ),
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
@@ -2392,7 +2714,7 @@ mod tests {
         let f = files(&[
             (
                 "defs/objects/x.toml",
-                "[[object]]\nid = 1\nkey = \"a\"\nname = \"A\"\nlayer = \"furniture\"\nsprite = { sheet = \"fixtures/objects/test.png\", x = 0, y = 0, w = 16, h = 32 }\nwidth = 1\nheight = 1\ntags = [\"underfoot\"]\n",
+                "[[object]]\nid = 1\nkey = \"a\"\nname = \"A\"\nlayer = \"furniture\"\nsprite = { sheet = \"fixtures/objects/test.png\", x = 0, y = 0, w = 16, h = 32 }\nwidth = 1\nheight = 1\ntags = [\"underfoot\", \"fixture\"]\n",
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
             ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
@@ -2422,7 +2744,7 @@ mod tests {
         let f = files(&[
             (
                 "defs/objects/x.toml",
-                "[[object]]\nid = 1\nkey = \"a\"\nname = \"A\"\nlayer = \"furniture\"\nsprite = { sheet = \"fixtures/objects/test.png\", x = 0, y = 0, w = 128, h = 128 }\nwidth = 8\nheight = 8\ntags = [\"underfoot\"]\n",
+                "[[object]]\nid = 1\nkey = \"a\"\nname = \"A\"\nlayer = \"furniture\"\nsprite = { sheet = \"fixtures/objects/test.png\", x = 0, y = 0, w = 128, h = 128 }\nwidth = 8\nheight = 8\ntags = [\"underfoot\", \"fixture\"]\n",
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
             ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),

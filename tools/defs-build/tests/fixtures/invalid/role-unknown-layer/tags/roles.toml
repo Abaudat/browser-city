@@ -1,0 +1,6 @@
+# Replaces the base tree's own tags/roles.toml: a role naming a layer
+# that does not exist.
+[[tag]]
+id = 100
+key = "fixture"
+role = { layers = ["basement"] }

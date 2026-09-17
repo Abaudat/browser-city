@@ -26,6 +26,11 @@ key = "shopfront"
 [[tag]]
 id = 6
 key = "wall"
+# Story 2.9 (AC1, FR119): a role tag's own payload -- the closed list of
+# layer names an object of this role may sit on. `id`/`key` are
+# untouched (the append-only manifest guard covers those two alone), so
+# adding this table to an existing tag is not a renumbering.
+role = { layers = ["walls"] }
 
 [[tag]]
 id = 7

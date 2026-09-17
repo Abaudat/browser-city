@@ -1,0 +1,6 @@
+# Added alongside the base tree's own tags/roles.toml (a second role
+# tag), so `object-role-count-two`'s object can carry two.
+[[tag]]
+id = 101
+key = "second_role"
+role = { layers = ["furniture"] }

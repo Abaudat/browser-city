@@ -191,7 +191,16 @@ fn canonical_dump() -> String {
         ));
     }
     for t in defs::TAGS {
-        lines.push(format!("tag {} id={}", t.key, t.id));
+        let role = match t.role {
+            None => "none".to_string(),
+            Some(r) => {
+                let mut layers: Vec<u32> = r.layers.to_vec();
+                layers.sort_unstable();
+                let layers: Vec<String> = layers.iter().map(|l| l.to_string()).collect();
+                format!("[{}]", layers.join(","))
+            }
+        };
+        lines.push(format!("tag {} id={} role={role}", t.key, t.id));
     }
 
     lines.sort();

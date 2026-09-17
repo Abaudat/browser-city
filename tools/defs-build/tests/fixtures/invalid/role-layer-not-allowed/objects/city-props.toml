@@ -2,13 +2,11 @@
 id = 1
 key = "trash_bin"
 name = "Trash Bin"
-layer = "furniture"
+layer = "walls"
 sprite = { sheet = "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/trash-bin-test.png", x = 0, y = 0, w = 16, h = 16 }
 width = 1
 height = 1
-# Story 2.4: this crate's shared valid base tree must satisfy the
-# walkability invariant on its own -- a collider, exactly like the real
-# trash_bin's own.
 collider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }
-# Story 2.9: every object carries exactly one role tag.
+# `fixture`'s own role only allows layer "furniture" -- "walls" is not
+# among them.
 tags = ["fixture"]

@@ -20,7 +20,8 @@ collider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }
 interact_at = { x0 = -4, y0 = -4, x1 = 20, y1 = 20 }
 # Story 2.10 (FR111): the rule engine's own vocabulary -- `defs/tags/
 # city.toml`'s declared set, never a literal key past `tools/defs-build`.
-tags = ["waste"]
+# Story 2.9 (AC1): `fixture` is this object's own role tag.
+tags = ["waste", "fixture"]
 
 [[object]]
 id = 2
@@ -33,7 +34,7 @@ height = 1
 # Story 2.4 (FR128): a bench blocks -- the whole two-cell seat/back
 # depth, leaving the front lip free to approach from.
 collider = { x0 = 0, y0 = 0, x1 = 32, y1 = 12 }
-tags = ["seating"]
+tags = ["seating", "fixture"]
 
 [[object]]
 id = 3
@@ -48,7 +49,7 @@ height = 1
 # full-width row immediately south, outside the footprint entirely.
 collider = { x0 = 0, y0 = 0, x1 = 48, y1 = 16 }
 interact_at = { x0 = 0, y0 = 16, x1 = 48, y1 = 32 }
-tags = ["counter"]
+tags = ["counter", "fixture"]
 
 [[object]]
 id = 4
@@ -61,7 +62,7 @@ height = 1
 # The story 1.8 worked example: a small base collider near the bottom of
 # the cell, so a player passes through the rest of the cell freely.
 collider = { x0 = 6, y0 = 10, x1 = 10, y1 = 14 }
-tags = ["lighting"]
+tags = ["lighting", "fixture"]
 
 [[object]]
 id = 5
@@ -76,7 +77,9 @@ height = 1
 # and retracted like any other front wall.
 window = true
 collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
-tags = ["shopfront"]
+# Story 2.9 (AC1): a window is a wall variant -- solid, part of the
+# building envelope -- so its role tag is `wall`, not `fixture`.
+tags = ["shopfront", "wall"]
 
 [[object]]
 id = 6
@@ -91,6 +94,8 @@ height = 1
 # The whole cell blocks. A doorway is the absence of a segment, never an
 # object of its own (FR118: a door is an ordinary walkable cell).
 collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
+# Story 2.9 (AC1): `wall` is both a plain tag and this object's own role
+# tag (tag 6 carries the role table, `defs/tags/city.toml`).
 tags = ["wall"]
 
 [[object]]
@@ -111,7 +116,7 @@ height = 1
 # deck occupies the same (x, y) as the street beneath it and never
 # contributes collision to it (FR117). Story 2.4 (FR128): explicitly
 # walkable, not merely absent a collider -- `underfoot`.
-tags = ["bridge", "underfoot"]
+tags = ["bridge", "underfoot", "fixture"]
 
 [[object]]
 id = 8
@@ -125,4 +130,4 @@ height = 1
 # a teleport tile. Which floors it joins is a `floor_transition` row
 # anchored on its cell (FR117), never a field here. Story 2.4 (FR128):
 # explicitly walkable -- `underfoot`.
-tags = ["stairs", "underfoot"]
+tags = ["stairs", "underfoot", "fixture"]

@@ -28,6 +28,7 @@ import type {
   Pool,
   ProfessionDef,
   RecipeDef,
+  RoleDef,
   SheetSize,
   Slot,
   SpriteRect,
@@ -239,12 +240,23 @@ function parseObject(value: unknown, path: string): ObjectDef {
   };
 }
 
+function parseRole(value: unknown, path: string): RoleDef {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["layers"], path);
+  return {
+    layers: expectU32Array(obj.layers, `${path}.layers`),
+  };
+}
+
 function parseTag(value: unknown, path: string): TagDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key"], path);
+  checkKnownKeys(obj, ["id", "key", "role"], path);
+  const role =
+    obj.role === null || obj.role === undefined ? undefined : parseRole(obj.role, `${path}.role`);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
+    ...(role ? { role } : {}),
   };
 }
 
@@ -696,6 +708,7 @@ export function parseDefs(data: unknown): Defs {
     );
   }
   const tagIds = new Set(tags.map((t) => t.id));
+  const tagsById = new Map(tags.map((t) => [t.id, t]));
   const underfootTagId = tags.find((t) => t.key === UNDERFOOT_TAG_KEY)?.id;
   for (const object of objects) {
     checkObjectName(object);
@@ -713,6 +726,8 @@ export function parseDefs(data: unknown): Defs {
     // object-level rejection above gets its own chance to fire on a
     // payload built to exercise it before this one does.
     checkObjectWalkabilityTag(object, underfootTagId);
+    // Story 2.9: after the walkability catch-all, same reasoning.
+    checkObjectRole(object, tagsById);
   }
 
   return {
@@ -790,6 +805,31 @@ function checkObjectTags(object: ObjectDef, tagIds: ReadonlySet<number>): void {
     if (!tagIds.has(tag)) {
       fail(`object '${object.key}' names unknown tag id ${tag}`);
     }
+  }
+}
+
+/** Story 2.9 (AC1, FR119): every object carries exactly one role tag in
+ * its ordinary `tags` list -- zero (an unclassified tile) or two
+ * (ambiguous) are both refused, and that role's own `layers` must
+ * include the object's own `layer` -- exactly like `tools/defs-build`'s
+ * own `check_object_roles` resolves the same invariant at build time. */
+function checkObjectRole(object: ObjectDef, tagsById: ReadonlyMap<number, TagDef>): void {
+  const roleTags = object.tags
+    .map((id) => tagsById.get(id))
+    .filter((t): t is TagDef => t?.role !== undefined);
+  if (roleTags.length !== 1) {
+    fail(
+      `object '${object.key}' carries ${roleTags.length} role tag(s) -- exactly one is required`,
+    );
+  }
+  const role = roleTags[0];
+  if (!role?.role) {
+    fail(`object '${object.key}' carries no resolvable role tag`);
+  }
+  if (!role.role.layers.includes(object.layer)) {
+    fail(
+      `object '${object.key}' has role '${role.key}' but layer ${object.layer} is not among that role's allowed layers [${role.role.layers.join(", ")}]`,
+    );
   }
 }
 
@@ -1012,7 +1052,8 @@ export function canonicalDump(defs: Defs): string {
     );
   }
   for (const t of defs.tags) {
-    lines.push(`tag ${t.key} id=${t.id}`);
+    const role = t.role ? `[${[...t.role.layers].sort((a, b) => a - b).join(",")}]` : "none";
+    lines.push(`tag ${t.key} id=${t.id} role=${role}`);
   }
   lines.sort();
   return `${lines.join("\n")}\n`;

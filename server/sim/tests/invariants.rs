@@ -12,7 +12,8 @@ use sim::generated::defs::{self, Family, Pool};
 use sim::rng::{Rng, seed_from_ids};
 use sim::rules::testing::SiteBuilder;
 use sim::rules::{
-    AdjacencyRelation, AreaId, Cell, CoherenceMode, RuleDef, RuleKind, TagId, evaluate,
+    AdjacencyRelation, AreaId, Cell, CoherenceMode, Direction, NeighbourTerm, RuleDef, RuleKind,
+    TagId, Violation, evaluate,
 };
 use sim::world::walkability::{
     WalkabilityGrid, enclosed_regions, erode, narrow_passages, player_body_subcells,
@@ -47,6 +48,13 @@ pub const INV_RULE_VERDICTS_INDEPENDENT_OF_INPUT_ORDER: &str =
     "shuffling fact order or rule row order does not change the sorted output";
 pub const INV_DISTRIBUTION_EVEN_LAYOUT_NEVER_VIOLATES: &str = "a generated perfectly even 1-per-N layout never violates; clustering all services into one bin always does; and a layout that satisfies the minimum spacing while sitting in one corner of the site still violates the coverage bound";
 pub const INV_RULE_VERDICTS_INVARIANT_UNDER_TAG_RELABELLING: &str = "consistently relabelling every tag id, across both the rules and the site, to six arbitrary distinct ids never changes which cells violate, over all five kinds, with areas and a non-vacuous requirement/distribution";
+pub const INV_ADJACENCY_FORBIDDEN_PAIR_IS_REPORTED_EXACTLY: &str = "a forbidden pair planted at a random position and orientation in an otherwise-clean grid is reported exactly once, naming both cells, and removing it again leaves zero violations";
+pub const INV_ADJACENCY_DIRECTION_RESPECTED: &str = "a directional single-term alternative fires only in its own orientation, and mirroring the grid together with the term's own direction never changes the violation count";
+pub const INV_GRAMMAR_ROTATE_INVARIANT: &str =
+    "a rotate = true row's verdict is invariant under rotating the whole site by 90 degrees";
+pub const INV_GRAMMAR_VERDICT_TOTAL: &str = "the committed grammar rows never panic over any random composition, including empty, disconnected or out-of-range sites, and the same input always gives the same verdict";
+pub const INV_WELL_FORMED_ROOM_ACCEPTED: &str = "a closed wall ring with a floor interior, built from the committed grammar primitives at any size at or above the grammar minimum, is accepted";
+pub const INV_SINGLE_MUTATION_REJECTED_WITH_ITS_REASON: &str = "starting from an accepted room, one mutation from a fixed table is always rejected with that mutation's own named reason";
 pub const INV_DOORWAY_GAP_AT_LEAST_BODY_WIDTH_IS_ONE_COMPONENT_UNDER_EROSION: &str = "a ring with a doorway gap at least the player body's own width is always a single connected component once the walkability grid is eroded by the body (FR128)";
 pub const INV_SEALED_RING_YIELDS_EXACTLY_ONE_ENCLOSED_REGION: &str =
     "a ring with no gap at all always yields exactly one enclosed region (FR128)";
@@ -359,6 +367,65 @@ const AREA_B: AreaId = 2;
 const RULE_SUBJECT: TagId = 101;
 const RULE_PER_OR_WITHIN: TagId = 102;
 
+/// Builds a `'static` one-term-per-direction alternative set naming
+/// `tag` -- the lowering `tools/defs-build` gives a direction-less `b`
+/// row. `RuleKind::Adjacency::alternatives` is typed exactly like the
+/// real generated `RULES` table it stands in for (`&'static [&'static
+/// [NeighbourTerm]]`), so a proptest-driven fixture built from a
+/// *runtime* tag id (never a `const`, so never rvalue-promotable) leaks
+/// its own small allocation here instead -- acceptable in a short-lived
+/// test process, never reachable from `sim`'s own published code.
+fn any_direction_alternatives(tag: TagId) -> &'static [&'static [NeighbourTerm]] {
+    let alts: Vec<&'static [NeighbourTerm]> = Direction::ALL
+        .into_iter()
+        .map(|direction| -> &'static [NeighbourTerm] {
+            Box::leak(Box::new([NeighbourTerm {
+                direction,
+                tag,
+                present: true,
+            }]))
+        })
+        .collect();
+    Box::leak(alts.into_boxed_slice())
+}
+
+/// A two-alternative, two-term-each pattern -- "`a` north of the subject
+/// and `b` south of it, or `a` east and `b` west" -- the corner/doorway
+/// shape story 2.9's grammar primitives actually use, built from runtime
+/// tag ids the same leaked-`'static` way as [`any_direction_alternatives`]
+/// (Quentin's direction: the relabelling invariant must exercise
+/// multi-term, multi-alternative rows too, not only the single-term
+/// any-direction lowering).
+fn two_term_alternatives(a: TagId, b: TagId) -> &'static [&'static [NeighbourTerm]] {
+    let alts: Vec<&'static [NeighbourTerm]> = vec![
+        Box::leak(Box::new([
+            NeighbourTerm {
+                direction: Direction::North,
+                tag: a,
+                present: true,
+            },
+            NeighbourTerm {
+                direction: Direction::South,
+                tag: b,
+                present: true,
+            },
+        ])),
+        Box::leak(Box::new([
+            NeighbourTerm {
+                direction: Direction::East,
+                tag: a,
+                present: true,
+            },
+            NeighbourTerm {
+                direction: Direction::West,
+                tag: b,
+                present: true,
+            },
+        ])),
+    ];
+    Box::leak(alts.into_boxed_slice())
+}
+
 /// One rule per kind, every tag field drawn from `tags` (normally
 /// [`TAG_UNIVERSE`] itself, or a relabelling of it) -- `min: 1` and
 /// `min_spacing > 0`/`max_distance > 0` deliberately, so Requirement and
@@ -403,9 +470,8 @@ fn five_rules(tags: [TagId; 6]) -> Vec<RuleDef> {
             key: "adjacency",
             kind: RuleKind::Adjacency {
                 a: t1,
-                b: t4,
-                relation: AdjacencyRelation::Forbid,
-                direction: None,
+                relation: AdjacencyRelation::Require,
+                alternatives: two_term_alternatives(t4, t5),
             },
         },
         RuleDef {
@@ -597,6 +663,305 @@ proptest! {
             corner = corner.cell(Cell::new(10_000 + i, 0, 0), &[RULE_PER_OR_WITHIN]);
         }
         prop_assert!(!evaluate(&[rule], &corner.build()).is_empty());
+    }
+}
+
+// --- story 2.9: the adjacency grammar (FR119) ---------------------------
+
+/// `defs/rules/grammar.toml`'s own seven keys -- filtered out of
+/// `defs::RULES` for the room-composition invariants below, so a
+/// placeholder `defs/rules/city.toml` row about an unrelated subject
+/// (e.g. "a walled room has a waste bin") never makes an otherwise
+/// grammar-accepted room look rejected. AC4 is about *this* grammar.
+const GRAMMAR_RULE_KEYS: [&str; 7] = [
+    "road_never_touches_floor",
+    "road_never_touches_wall",
+    "floor_never_touches_bare_ground",
+    "floor_never_touches_pavement_directly",
+    "floor_never_touches_road_directly",
+    "threshold_between_floor_and_pavement_flanked_by_walls",
+    "wall_is_part_of_a_straight_run_or_a_corner",
+];
+
+fn grammar_rules() -> Vec<RuleDef> {
+    defs::RULES
+        .iter()
+        .copied()
+        .filter(|r| GRAMMAR_RULE_KEYS.contains(&r.key))
+        .collect()
+}
+
+fn mirror_y(c: Cell) -> Cell {
+    Cell::new(c.x, -c.y, c.floor)
+}
+
+fn rotate90(c: Cell) -> Cell {
+    Cell::new(-c.y, c.x, c.floor)
+}
+
+/// A closed wall ring, one cell thick, `w` by `h` cells, with a floor
+/// interior -- the "well-formed room" every grammar-accepted-room
+/// invariant below builds from (Quentin's direction: "rooms generated
+/// from the primitives at any size at or above the grammar minimum").
+fn build_ring_room(w: i32, h: i32, wall: TagId, floor: TagId) -> sim::rules::testing::Site {
+    let mut b = SiteBuilder::new();
+    for x in 0..w {
+        for y in 0..h {
+            let cell = Cell::new(x, y, 0);
+            let on_perimeter = x == 0 || y == 0 || x == w - 1 || y == h - 1;
+            if on_perimeter {
+                b = b.cell(cell, &[wall]);
+            } else {
+                b = b.cell(cell, &[floor]);
+            }
+        }
+    }
+    b.build()
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RoomMutation {
+    /// Drops one wall cell from the ring entirely -- its two surviving
+    /// neighbours are left with only one wall neighbour each, a
+    /// free-standing stub (Artie's own named case).
+    DropWallCell,
+    /// Swaps one interior floor cell for bare ground -- its floor
+    /// neighbours now touch ground directly, an unsealed room.
+    FloorTouchesGround,
+}
+
+proptest! {
+    /// `inv_adjacency_forbidden_pair_is_reported_exactly` (AC2): a clean
+    /// single-cell site never violates a `Forbid` adjacency rule;
+    /// planting exactly one forbidden neighbour, at a random position
+    /// and in a random one of the four directions, reports exactly that
+    /// pair -- the subject cell and the matched neighbour -- and nothing
+    /// else. Removing it again returns to zero violations.
+    #[test]
+    fn inv_adjacency_forbidden_pair_is_reported_exactly(
+        x in -50i32..50,
+        y in -50i32..50,
+        floor in -3i8..4,
+        direction_idx in 0usize..4,
+    ) {
+        let direction = Direction::ALL[direction_idx];
+        let subject_cell = Cell::new(x, y, floor);
+        let other_cell = direction.step(subject_cell);
+        let rule = RuleDef {
+            id: 1,
+            key: "forbid_pair",
+            kind: RuleKind::Adjacency {
+                a: RULE_SUBJECT,
+                relation: AdjacencyRelation::Forbid,
+                alternatives: any_direction_alternatives(RULE_PER_OR_WITHIN),
+            },
+        };
+
+        let clean = SiteBuilder::new().cell(subject_cell, &[RULE_SUBJECT]).build();
+        prop_assert!(evaluate(&[rule], &clean).is_empty());
+
+        let planted = SiteBuilder::new()
+            .cell(subject_cell, &[RULE_SUBJECT])
+            .cell(other_cell, &[RULE_PER_OR_WITHIN])
+            .build();
+        prop_assert_eq!(
+            evaluate(&[rule], &planted),
+            vec![Violation {
+                rule_id: 1,
+                subject: subject_cell,
+                other: Some(other_cell),
+            }]
+        );
+    }
+
+    /// `inv_adjacency_direction_respected`: a single-term directional
+    /// alternative fires only in its own orientation -- mirroring the
+    /// whole site north-south together with the rule's own direction
+    /// (north becomes south) never changes how many cells violate.
+    #[test]
+    fn inv_adjacency_direction_respected(
+        facts in proptest::collection::vec((-10i32..10, -10i32..10, 1u8..4), 0..20),
+    ) {
+        let mut site_builder = SiteBuilder::new();
+        let mut mirrored_builder = SiteBuilder::new();
+        for &(x, y, mask) in &facts {
+            let cell = Cell::new(x, y, 0);
+            let mut tags = Vec::new();
+            if mask & 1 != 0 {
+                tags.push(RULE_SUBJECT);
+            }
+            if mask & 2 != 0 {
+                tags.push(RULE_PER_OR_WITHIN);
+            }
+            site_builder = site_builder.cell(cell, &tags);
+            mirrored_builder = mirrored_builder.cell(mirror_y(cell), &tags);
+        }
+        let site = site_builder.build();
+        let mirrored_site = mirrored_builder.build();
+
+        let north_rule = RuleDef {
+            id: 1,
+            key: "north",
+            kind: RuleKind::Adjacency {
+                a: RULE_SUBJECT,
+                relation: AdjacencyRelation::Require,
+                alternatives: &[&[NeighbourTerm {
+                    direction: Direction::North,
+                    tag: RULE_PER_OR_WITHIN,
+                    present: true,
+                }]],
+            },
+        };
+        let south_rule = RuleDef {
+            id: 1,
+            key: "south",
+            kind: RuleKind::Adjacency {
+                a: RULE_SUBJECT,
+                relation: AdjacencyRelation::Require,
+                alternatives: &[&[NeighbourTerm {
+                    direction: Direction::South,
+                    tag: RULE_PER_OR_WITHIN,
+                    present: true,
+                }]],
+            },
+        };
+
+        prop_assert_eq!(
+            evaluate(&[north_rule], &site).len(),
+            evaluate(&[south_rule], &mirrored_site).len()
+        );
+    }
+
+    /// `inv_grammar_rotate_invariant` (Tim's direction): the committed
+    /// `wall_is_part_of_a_straight_run_or_a_corner` row (`rotate = true`
+    /// in `defs/rules/grammar.toml`) gives the same violation count over
+    /// any site and that same site rotated 90 degrees -- the rotation
+    /// `tools/defs-build` lowered at build time really did reach the
+    /// committed artefact.
+    #[test]
+    fn inv_grammar_rotate_invariant(cells in proptest::collection::vec((-6i32..6, -6i32..6), 0..12)) {
+        let wall = defs::TAGS.iter().find(|t| t.key == "wall").unwrap().id;
+        let rule = *defs::RULES
+            .iter()
+            .find(|r| r.key == "wall_is_part_of_a_straight_run_or_a_corner")
+            .unwrap();
+
+        let mut original = SiteBuilder::new();
+        let mut rotated = SiteBuilder::new();
+        for &(x, y) in &cells {
+            let cell = Cell::new(x, y, 0);
+            original = original.cell(cell, &[wall]);
+            rotated = rotated.cell(rotate90(cell), &[wall]);
+        }
+
+        prop_assert_eq!(
+            evaluate(&[rule], &original.build()).len(),
+            evaluate(&[rule], &rotated.build()).len()
+        );
+    }
+
+    /// `inv_grammar_verdict_total` (AC2/AC4): the committed grammar rows
+    /// never panic over any random composition -- empty, disconnected,
+    /// or with cells at wildly out-of-range coordinates -- and the same
+    /// input always gives the same verdict (NFR25).
+    #[test]
+    fn inv_grammar_verdict_total(
+        facts in proptest::collection::vec((-1_000_000i32..1_000_000, -1_000_000i32..1_000_000, 0u8..128), 0..40),
+    ) {
+        let tag_keys = ["wall", "floor", "threshold", "pavement", "road", "ground", "fixture"];
+        let tag_ids: Vec<TagId> = tag_keys
+            .iter()
+            .map(|k| defs::TAGS.iter().find(|t| &t.key == k).unwrap().id)
+            .collect();
+        let mut builder = SiteBuilder::new();
+        for &(x, y, mask) in &facts {
+            let cell = Cell::new(x, y, 0);
+            let tags: Vec<TagId> = (0..tag_ids.len())
+                .filter(|i| mask & (1 << i) != 0)
+                .map(|i| tag_ids[i])
+                .collect();
+            if !tags.is_empty() {
+                builder = builder.cell(cell, &tags);
+            }
+        }
+        let site = builder.build();
+        prop_assert_eq!(evaluate(defs::RULES, &site), evaluate(defs::RULES, &site));
+    }
+
+    /// `inv_well_formed_room_accepted` (AC4): a closed wall ring with a
+    /// floor interior, at any size at or above the grammar's own
+    /// minimum (3x3 -- a 1-cell interior), satisfies every row in
+    /// `defs/rules/grammar.toml`.
+    #[test]
+    fn inv_well_formed_room_accepted(w in 3i32..10, h in 3i32..10) {
+        let wall = defs::TAGS.iter().find(|t| t.key == "wall").unwrap().id;
+        let floor = defs::TAGS.iter().find(|t| t.key == "floor").unwrap().id;
+        let site = build_ring_room(w, h, wall, floor);
+        prop_assert!(evaluate(&grammar_rules(), &site).is_empty());
+    }
+
+    /// `inv_single_mutation_rejected_with_its_reason` (AC4): starting
+    /// from an accepted room, one mutation from [`RoomMutation`] is
+    /// always rejected, and every violation it produces names that
+    /// mutation's own row -- never a different, unrelated one.
+    #[test]
+    fn inv_single_mutation_rejected_with_its_reason(
+        w in 5i32..9,
+        h in 5i32..9,
+        mutation in prop_oneof![Just(RoomMutation::DropWallCell), Just(RoomMutation::FloorTouchesGround)],
+    ) {
+        let wall = defs::TAGS.iter().find(|t| t.key == "wall").unwrap().id;
+        let floor = defs::TAGS.iter().find(|t| t.key == "floor").unwrap().id;
+        let ground = defs::TAGS.iter().find(|t| t.key == "ground").unwrap().id;
+        let rules = grammar_rules();
+
+        prop_assert!(evaluate(&rules, &build_ring_room(w, h, wall, floor)).is_empty());
+
+        let dropped_cell = Cell::new(1, 0, 0);
+        let mutated_cell = Cell::new(1, 1, 0);
+        let (mutated_site, expected_key) = match mutation {
+            RoomMutation::DropWallCell => {
+                let mut b = SiteBuilder::new();
+                for x in 0..w {
+                    for y in 0..h {
+                        let cell = Cell::new(x, y, 0);
+                        if cell == dropped_cell {
+                            continue;
+                        }
+                        let on_perimeter = x == 0 || y == 0 || x == w - 1 || y == h - 1;
+                        let tag = if on_perimeter { wall } else { floor };
+                        b = b.cell(cell, &[tag]);
+                    }
+                }
+                (b.build(), "wall_is_part_of_a_straight_run_or_a_corner")
+            }
+            RoomMutation::FloorTouchesGround => {
+                let mut b = SiteBuilder::new();
+                for x in 0..w {
+                    for y in 0..h {
+                        let cell = Cell::new(x, y, 0);
+                        let on_perimeter = x == 0 || y == 0 || x == w - 1 || y == h - 1;
+                        let tag = if on_perimeter {
+                            wall
+                        } else if cell == mutated_cell {
+                            ground
+                        } else {
+                            floor
+                        };
+                        b = b.cell(cell, &[tag]);
+                    }
+                }
+                (b.build(), "floor_never_touches_bare_ground")
+            }
+        };
+
+        let violations = evaluate(&rules, &mutated_site);
+        prop_assert!(!violations.is_empty());
+        let expected_id = rules.iter().find(|r| r.key == expected_key).unwrap().id;
+        prop_assert!(
+            violations.iter().all(|v| v.rule_id == expected_id),
+            "expected only '{expected_key}' (id {expected_id}) to fire, got {violations:?}"
+        );
     }
 }
 

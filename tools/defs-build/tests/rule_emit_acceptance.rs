@@ -96,7 +96,7 @@ fn every_remaining_kind_renders_its_own_exact_rule_kind_literal() {
     );
     assert!(
         adjacency.contains(
-            "kind: crate::rules::RuleKind::Adjacency { a: 1, b: 2, relation: crate::rules::AdjacencyRelation::Require, direction: Some(crate::rules::Direction::North) }"
+            "kind: crate::rules::RuleKind::Adjacency { a: 1, relation: crate::rules::AdjacencyRelation::Require, alternatives: &[&[crate::rules::NeighbourTerm { direction: crate::rules::Direction::North, tag: 2, present: true }]] }"
         ),
         "adjacency literal not found:\n{adjacency}"
     );
