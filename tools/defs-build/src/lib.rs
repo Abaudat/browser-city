@@ -15,6 +15,7 @@ pub mod layer_codes;
 pub mod model;
 pub mod naming;
 pub mod parse;
+pub mod propose;
 pub mod sha256;
 pub mod spans;
 pub mod validate;

@@ -118,6 +118,123 @@ fn an_object_naming_an_unknown_tag_is_named() {
     );
 }
 
+// --- story 2.3: footprint proposal and classification (archetypes) --------
+
+#[test]
+fn an_object_naming_an_unknown_archetype_is_named() {
+    let err = build_err("dangling-object-archetype-reference");
+    assert_eq!(
+        err.to_string(),
+        "defs/objects/city-props.toml:8:13: object 'trash_bin' names unknown archetype 'nonexistent_archetype' -- accepted archetypes are []"
+    );
+}
+
+#[test]
+fn an_object_declaring_height_and_naming_an_archetype_that_also_supplies_it_is_named() {
+    let err = build_err("archetype-height-declared-twice");
+    assert_eq!(
+        err.to_string(),
+        "defs/objects/city-props.toml:3:7: object 'trash_bin' declares its own height and names archetype 'full_cell' which also supplies height -- exactly one source is allowed"
+    );
+}
+
+#[test]
+fn an_object_declaring_no_height_and_no_archetype_height_is_named() {
+    let err = build_err("archetype-height-declared-nowhere");
+    assert_eq!(
+        err.to_string(),
+        "defs/objects/city-props.toml:3:7: object 'trash_bin' declares no height, and either names no archetype or names one with no height of its own -- exactly one source is required"
+    );
+}
+
+#[test]
+fn an_object_declaring_a_collider_and_naming_an_archetype_that_also_supplies_one_is_named() {
+    let err = build_err("archetype-collider-declared-twice");
+    assert_eq!(
+        err.to_string(),
+        "defs/objects/city-props.toml:3:7: object 'trash_bin' declares its own collider and names archetype 'full_cell' which also supplies a collider -- exactly one source is allowed"
+    );
+}
+
+#[test]
+fn an_archetype_collider_inset_that_does_not_fit_its_own_height_is_named() {
+    let err = build_err("archetype-collider-does-not-fit-footprint");
+    assert_eq!(
+        err.to_string(),
+        "defs/archetypes/city.toml:4:18: archetype 'too_tall' collider_inset does not fit its own footprint -- top 10 + bottom 10 leaves no room within height 1 cell(s) (16 sub-cells)"
+    );
+}
+
+#[test]
+fn a_duplicate_archetype_key_is_named() {
+    let err = build_err("duplicate-archetype-key");
+    assert_eq!(
+        err.to_string(),
+        "defs/archetypes/city.toml:6:7: duplicate archetype key 'pole' -- first declared at defs/archetypes/city.toml:2:7"
+    );
+}
+
+#[test]
+fn a_non_snake_case_archetype_key_is_rejected() {
+    let err = build_err("invalid-archetype-key-format");
+    assert_eq!(
+        err.to_string(),
+        "defs/archetypes/city.toml:2:7: invalid archetype key 'BadKey' -- keys must be snake_case (lowercase letters, digits, single underscores)"
+    );
+}
+
+#[test]
+fn an_archetype_declaring_height_zero_is_named() {
+    let err = build_err("archetype-height-zero");
+    assert_eq!(
+        err.to_string(),
+        "defs/archetypes/city.toml:3:10: archetype 'zero_height' declares height 0 -- every object occupies at least one cell"
+    );
+}
+
+#[test]
+fn an_archetype_height_exceeding_the_cap_is_named() {
+    let err = build_err("archetype-height-exceeds-cap");
+    assert_eq!(
+        err.to_string(),
+        "defs/archetypes/city.toml:3:10: archetype 'too_deep' height 9 exceeds MAX_FOOTPRINT_CELLS (8)"
+    );
+}
+
+#[test]
+fn an_archetype_with_a_negative_inset_is_named() {
+    let err = build_err("archetype-negative-inset");
+    assert_eq!(
+        err.to_string(),
+        "defs/archetypes/city.toml:3:18: archetype 'bad_inset' collider_inset (-1, 0, 0, 0) has a negative inset -- left/top/right/bottom must each be 0 or more"
+    );
+}
+
+#[test]
+fn an_archetype_supplying_neither_height_nor_collider_inset_is_named() {
+    let err = build_err("archetype-supplies-neither");
+    assert_eq!(
+        err.to_string(),
+        "defs/archetypes/city.toml:2:7: archetype 'empty' supplies neither height nor collider_inset -- an archetype must supply at least one"
+    );
+}
+
+/// Tim's direction, cycle 1: the one archetype-collider misfit only
+/// detectable after lowering (the object's own `width`, unknown to the
+/// archetype) is reported at the object's own `archetype = "..."` line,
+/// naming both the object and the archetype -- never at a line inside
+/// `defs/archetypes/`, which would point outside the file the error is
+/// about.
+#[test]
+fn an_archetype_collider_that_does_not_fit_a_narrow_objects_width_is_named_at_the_objects_own_archetype_line()
+ {
+    let err = build_err("archetype-collider-does-not-fit-object-width");
+    assert_eq!(
+        err.to_string(),
+        "defs/objects/city-props.toml:8:13: object 'trash_bin' collider (10, 0)-(6, 16) from archetype 'too_wide_inset' has zero or negative area"
+    );
+}
+
 #[test]
 fn an_unknown_rule_kind_is_named_with_its_own_line() {
     let err = build_err("unknown-rule-kind");
@@ -587,6 +704,18 @@ fn every_known_category_has_a_fixture_directory() {
         "adjacency-forbid-multi-term-alternative",
         "adjacency-symmetric-forbid-duplicate",
         "adjacency-dead-alternative",
+        "dangling-object-archetype-reference",
+        "archetype-height-declared-twice",
+        "archetype-height-declared-nowhere",
+        "archetype-collider-declared-twice",
+        "archetype-collider-does-not-fit-footprint",
+        "duplicate-archetype-key",
+        "invalid-archetype-key-format",
+        "archetype-height-zero",
+        "archetype-height-exceeds-cap",
+        "archetype-negative-inset",
+        "archetype-supplies-neither",
+        "archetype-collider-does-not-fit-object-width",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

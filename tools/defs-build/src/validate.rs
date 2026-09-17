@@ -263,23 +263,30 @@ fn check_chain_profession_refs(
 // like `resolve_object_layer` resolves a `layer` name against the codes
 // golden -- an undeclared name is refused, naming the accepted set.
 
+/// Decoupled from any one entry shape (`path`/`key`/`tags` passed
+/// explicitly) so both the raw, unlowered object list (`check_object_
+/// tags`) and the lowered list (the final `ObjectDef` assembly) can call
+/// it -- lowering never touches `tags`, so the two always resolve
+/// identically anyway.
 fn resolve_object_tags(
-    e: &ObjectEntry,
+    path: &std::path::Path,
+    key: &Located<String>,
+    tags: &[String],
     tag_ids: &BTreeMap<&str, u32>,
 ) -> Result<Vec<u32>, DefsError> {
-    let mut ids = Vec::with_capacity(e.tags.len());
-    for name in &e.tags {
+    let mut ids = Vec::with_capacity(tags.len());
+    for name in tags {
         match tag_ids.get(name.as_str()) {
             Some(&id) => ids.push(id),
             None => {
                 let accepted: Vec<&str> = tag_ids.keys().copied().collect();
                 return Err(DefsError::new(
-                    &e.path,
-                    e.key.line,
-                    e.key.col,
+                    path,
+                    key.line,
+                    key.col,
                     format!(
                         "object '{}' names unknown tag '{}' -- accepted tags are [{}]",
-                        e.key.value,
+                        key.value,
                         name,
                         accepted.join(", ")
                     ),
@@ -297,7 +304,7 @@ fn check_object_tags(
     tag_ids: &BTreeMap<&str, u32>,
 ) -> Result<(), DefsError> {
     for e in entries {
-        resolve_object_tags(e, tag_ids)?;
+        resolve_object_tags(&e.path, &e.key, &e.tags, tag_ids)?;
     }
     Ok(())
 }
@@ -865,11 +872,343 @@ fn build_requirement_rules(
         .collect()
 }
 
+// --- archetypes (story 2.3, AC3): authoring-time classification, lowered
+// away between parse and every existing geometry check -----------------
+
+/// An archetype key's own value is snake_case, same rule as any other
+/// kind's key (`check_key_format`) -- written by hand rather than reusing
+/// that generic helper because an archetype carries no `id` and so
+/// cannot implement [`IdKeyEntry`].
+fn check_archetype_key_format(entries: &[ArchetypeEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        if !is_snake_case(&e.key.value) {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "invalid archetype key '{}' -- keys must be snake_case (lowercase letters, digits, single underscores)",
+                    e.key.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// An archetype has no `id`, so it shares no numeric namespace with
+/// anything else -- but its own key must still be unique among
+/// archetypes (Tim's direction: "the archetype's own key", named once).
+fn check_archetype_key_dupes(entries: &[ArchetypeEntry]) -> Result<(), DefsError> {
+    let mut seen: HashMap<&str, &ArchetypeEntry> = HashMap::new();
+    for e in entries {
+        if let Some(prev) = seen.get(e.key.value.as_str()) {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "duplicate archetype key '{}' -- first declared at {}:{}:{}",
+                    e.key.value,
+                    prev.path.display(),
+                    prev.key.line,
+                    prev.key.col
+                ),
+            ));
+        }
+        seen.insert(e.key.value.as_str(), e);
+    }
+    Ok(())
+}
+
+/// Whatever an archetype can prove about itself, with no object in hand
+/// (Quentin's direction: "an archetype whose collider does not fit its
+/// own footprint refused by archetype name"). An archetype carries no
+/// `width`, so `collider_inset.left`/`right` can only ever be checked
+/// once applied to a real object's own footprint (`check_object_colliders`
+/// on the lowered entry, naming the object); only the vertical extent
+/// (`top`/`bottom` against the archetype's own `height`, when it
+/// declares one) is knowable here.
+fn check_archetype_self_consistency(entries: &[ArchetypeEntry]) -> Result<(), DefsError> {
+    for a in entries {
+        if a.height.is_none() && a.collider_inset.is_none() {
+            return Err(DefsError::new(
+                &a.path,
+                a.key.line,
+                a.key.col,
+                format!(
+                    "archetype '{}' supplies neither height nor collider_inset -- an archetype must supply at least one",
+                    a.key.value
+                ),
+            ));
+        }
+        if let Some(h) = &a.height {
+            if h.value == 0 {
+                return Err(DefsError::new(
+                    &a.path,
+                    h.line,
+                    h.col,
+                    format!(
+                        "archetype '{}' declares height 0 -- every object occupies at least one cell",
+                        a.key.value
+                    ),
+                ));
+            }
+            if h.value as i64 > MAX_FOOTPRINT_CELLS {
+                return Err(DefsError::new(
+                    &a.path,
+                    h.line,
+                    h.col,
+                    format!(
+                        "archetype '{}' height {} exceeds MAX_FOOTPRINT_CELLS ({MAX_FOOTPRINT_CELLS})",
+                        a.key.value, h.value
+                    ),
+                ));
+            }
+        }
+        if let Some(inset) = &a.collider_inset {
+            let c = inset.value;
+            if c.left < 0 || c.top < 0 || c.right < 0 || c.bottom < 0 {
+                return Err(DefsError::new(
+                    &a.path,
+                    inset.line,
+                    inset.col,
+                    format!(
+                        "archetype '{}' collider_inset ({}, {}, {}, {}) has a negative inset -- left/top/right/bottom must each be 0 or more",
+                        a.key.value, c.left, c.top, c.right, c.bottom
+                    ),
+                ));
+            }
+            if let Some(h) = &a.height {
+                let max_y = h.value as i64 * COLLIDER_SUBCELLS_PER_CELL;
+                if c.top as i64 + c.bottom as i64 >= max_y {
+                    return Err(DefsError::new(
+                        &a.path,
+                        inset.line,
+                        inset.col,
+                        format!(
+                            "archetype '{}' collider_inset does not fit its own footprint -- top {} + bottom {} leaves no room within height {} cell(s) ({max_y} sub-cells)",
+                            a.key.value, c.top, c.bottom, h.value
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Story 2.3 (Tim's direction, cycle 1): the lowered shape every
+/// `check_object_*` geometry check and the final `ObjectDef` assembly
+/// take -- `height` is a plain `u32` (never `Option`), and there is no
+/// `archetype` field, so an object that has not gone through
+/// [`lower_object`] is a compile error at every one of those call
+/// sites, not a runtime `.expect()` away from one.
+#[derive(Debug)]
+struct LoweredObjectEntry {
+    path: std::path::PathBuf,
+    id: Located<u32>,
+    key: Located<String>,
+    name: Located<String>,
+    layer: Located<String>,
+    sprite: Located<RawSpriteRect>,
+    width: u32,
+    height: u32,
+    collider: Option<Located<RawColliderRect>>,
+    interact_at: Option<Located<RawColliderRect>>,
+    window: bool,
+    tags: Vec<String>,
+}
+
+/// Turns an archetype's own `collider_inset` into a concrete
+/// [`RawColliderRect`] once a real object's `width` and resolved
+/// `height` are known -- `left`/`top` from the footprint's own
+/// north-west corner, `right`/`bottom` inset from its south-east corner,
+/// exactly like every hand-authored `collider` already is.
+fn collider_from_inset(inset: RawColliderInset, width: u32, height: u32) -> RawColliderRect {
+    let max_x = width as i64 * COLLIDER_SUBCELLS_PER_CELL;
+    let max_y = height as i64 * COLLIDER_SUBCELLS_PER_CELL;
+    RawColliderRect {
+        x0: inset.left,
+        y0: inset.top,
+        x1: (max_x - inset.right as i64) as i32,
+        y1: (max_y - inset.bottom as i64) as i32,
+    }
+}
+
+/// Shared by [`lower_object`] (the archetype-derived path, checked
+/// immediately so it can be reported at the right location -- Tim's
+/// direction, cycle 1) and [`check_object_colliders`] (the
+/// hand-authored path): `None` when `c` has positive area and fits
+/// inside `width x height`'s own footprint, sub-cells; otherwise the
+/// English fragment describing which of the two it failed, so both
+/// callers render the exact same wording for the exact same defect.
+fn collider_geometry_error(c: RawColliderRect, width: u32, height: u32) -> Option<String> {
+    if (c.x1 as i64) <= (c.x0 as i64) || (c.y1 as i64) <= (c.y0 as i64) {
+        return Some("has zero or negative area".to_string());
+    }
+    let max_x = width as i64 * COLLIDER_SUBCELLS_PER_CELL;
+    let max_y = height as i64 * COLLIDER_SUBCELLS_PER_CELL;
+    if (c.x0 as i64) < 0 || (c.y0 as i64) < 0 || (c.x1 as i64) > max_x || (c.y1 as i64) > max_y {
+        return Some(format!(
+            "does not fit inside its footprint (0, 0)-({max_x}, {max_y}) sub-cells"
+        ));
+    }
+    None
+}
+
+/// Story 2.3 (AC1/AC3): resolves one object's own `height`/`collider`
+/// against its optional `archetype` reference -- the one place any
+/// archetype is ever applied. Every field downstream (`check_object_*`,
+/// the final `ObjectDef` assembly) sees a plain, fully-resolved
+/// [`LoweredObjectEntry`], exactly as if it had never named an archetype
+/// (Tim's direction: no second copy of any existing check for the
+/// archetype path).
+fn lower_object(
+    e: &ObjectEntry,
+    archetypes: &BTreeMap<&str, &ArchetypeEntry>,
+) -> Result<LoweredObjectEntry, DefsError> {
+    let archetype = match &e.archetype {
+        None => None,
+        Some(loc) => match archetypes.get(loc.value.as_str()) {
+            Some(&a) => Some(a),
+            None => {
+                let accepted: Vec<&str> = archetypes.keys().copied().collect();
+                return Err(DefsError::new(
+                    &e.path,
+                    loc.line,
+                    loc.col,
+                    format!(
+                        "object '{}' names unknown archetype '{}' -- accepted archetypes are [{}]",
+                        e.key.value,
+                        loc.value,
+                        accepted.join(", ")
+                    ),
+                ));
+            }
+        },
+    };
+
+    let height = match (e.height, archetype.and_then(|a| a.height.as_ref())) {
+        (Some(h), None) => h,
+        (None, Some(h)) => h.value,
+        (Some(_), Some(_)) => {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "object '{}' declares its own height and names archetype '{}' which also supplies height -- exactly one source is allowed",
+                    e.key.value,
+                    e.archetype
+                        .as_ref()
+                        .expect("archetype present in this branch")
+                        .value
+                ),
+            ));
+        }
+        (None, None) => {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "object '{}' declares no height, and either names no archetype or names one with no height of its own -- exactly one source is required",
+                    e.key.value
+                ),
+            ));
+        }
+    };
+
+    let collider = match (
+        &e.collider,
+        archetype.and_then(|a| a.collider_inset.as_ref()),
+    ) {
+        (Some(c), None) => Some(c.clone()),
+        (None, Some(inset)) => {
+            let c = collider_from_inset(inset.value, e.width, height);
+            // Checked right here, not deferred to `check_object_colliders`
+            // (Tim's direction, cycle 1): the archetype's own file/line
+            // (`inset.line`/`inset.col`) names a location in
+            // `defs/archetypes/`, not in this object's own file, so a
+            // misfit reported there would point outside the file the
+            // error is about. Reported instead at the object's own
+            // `archetype = "..."` line, naming both.
+            let archetype_key = &e
+                .archetype
+                .as_ref()
+                .expect("archetype present in this branch")
+                .value;
+            let archetype_loc = e.archetype.as_ref().expect("checked above");
+            if let Some(problem) = collider_geometry_error(c, e.width, height) {
+                return Err(DefsError::new(
+                    &e.path,
+                    archetype_loc.line,
+                    archetype_loc.col,
+                    format!(
+                        "object '{}' collider ({}, {})-({}, {}) from archetype '{archetype_key}' {problem}",
+                        e.key.value, c.x0, c.y0, c.x1, c.y1
+                    ),
+                ));
+            }
+            Some(Located::at(c, archetype_loc.line, archetype_loc.col))
+        }
+        (Some(_), Some(_)) => {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "object '{}' declares its own collider and names archetype '{}' which also supplies a collider -- exactly one source is allowed",
+                    e.key.value,
+                    e.archetype
+                        .as_ref()
+                        .expect("archetype present in this branch")
+                        .value
+                ),
+            ));
+        }
+        (None, None) => None,
+    };
+
+    Ok(LoweredObjectEntry {
+        path: e.path.clone(),
+        id: e.id.clone(),
+        key: e.key.clone(),
+        name: e.name.clone(),
+        layer: e.layer.clone(),
+        sprite: e.sprite.clone(),
+        width: e.width,
+        height,
+        collider,
+        interact_at: e.interact_at.clone(),
+        window: e.window,
+        tags: e.tags.clone(),
+    })
+}
+
+/// Runs [`lower_object`] over every entry, in order -- the tree
+/// `check_object_footprint_cap` onward, and the final `ObjectDef`
+/// assembly, are all given this lowered list instead of `raw.objects`.
+fn lower_objects(
+    entries: &[ObjectEntry],
+    archetypes: &BTreeMap<&str, &ArchetypeEntry>,
+) -> Result<Vec<LoweredObjectEntry>, DefsError> {
+    entries
+        .iter()
+        .map(|e| lower_object(e, archetypes))
+        .collect()
+}
+
 /// FR128's containment rule: a declared `collider` must have positive
 /// area and must fit entirely inside the object's own footprint, sized
 /// `width*COLLIDER_SUBCELLS_PER_CELL x height*COLLIDER_SUBCELLS_PER_CELL`
-/// sub-cells (Tim's direction, story 1.8). Widened to `i64` throughout so
-/// no combination of `i32` collider bounds can overflow the comparison.
+/// sub-cells (Tim's direction, story 1.8). Widened to `i64` throughout
+/// inside [`collider_geometry_error`] so no combination of `i32` collider
+/// bounds can overflow the comparison. Quentin's direction: both
+/// rectangles, collider and footprint, in the same unit (sub-cells) and a
+/// fixed order, so the two are comparable by eye rather than one being
+/// `WxH cells`.
 ///
 /// Story 2.4 AC3's "collider within sprite bounds" needs no separate
 /// check here: `check_object_sprite_matches_footprint` already fixes the
@@ -879,37 +1218,19 @@ fn build_requirement_rules(
 /// sprite -- a collider outside the sprite is therefore always outside
 /// the footprint, and is refused right here, by this same check, never a
 /// duplicate one.
-fn check_object_colliders(entries: &[ObjectEntry]) -> Result<(), DefsError> {
+fn check_object_colliders(entries: &[LoweredObjectEntry]) -> Result<(), DefsError> {
     for e in entries {
         let Some(collider) = &e.collider else {
             continue;
         };
         let c = collider.value;
-        if (c.x1 as i64) <= (c.x0 as i64) || (c.y1 as i64) <= (c.y0 as i64) {
+        if let Some(problem) = collider_geometry_error(c, e.width, e.height) {
             return Err(DefsError::new(
                 &e.path,
                 collider.line,
                 collider.col,
                 format!(
-                    "object '{}' collider ({}, {})-({}, {}) has zero or negative area",
-                    e.key.value, c.x0, c.y0, c.x1, c.y1
-                ),
-            ));
-        }
-        let max_x = e.width as i64 * COLLIDER_SUBCELLS_PER_CELL;
-        let max_y = e.height as i64 * COLLIDER_SUBCELLS_PER_CELL;
-        if (c.x0 as i64) < 0 || (c.y0 as i64) < 0 || (c.x1 as i64) > max_x || (c.y1 as i64) > max_y
-        {
-            // Quentin's direction: both rectangles, collider and
-            // footprint, in the same unit (sub-cells) and a fixed order,
-            // so the two are comparable by eye rather than one being
-            // `WxH cells`.
-            return Err(DefsError::new(
-                &e.path,
-                collider.line,
-                collider.col,
-                format!(
-                    "object '{}' collider ({}, {})-({}, {}) does not fit inside its footprint (0, 0)-({max_x}, {max_y}) sub-cells",
+                    "object '{}' collider ({}, {})-({}, {}) {problem}",
                     e.key.value, c.x0, c.y0, c.x1, c.y1
                 ),
             ));
@@ -927,7 +1248,7 @@ fn check_object_colliders(entries: &[ObjectEntry]) -> Result<(), DefsError> {
 /// after every other object-level rejection has already had its own
 /// chance to fire on a malformed row for its own reason -- this is the
 /// generic catch-all, not a specific geometry check.
-fn check_object_walkability_tag(entries: &[ObjectEntry]) -> Result<(), DefsError> {
+fn check_object_walkability_tag(entries: &[LoweredObjectEntry]) -> Result<(), DefsError> {
     for e in entries {
         let is_underfoot = e.tags.iter().any(|t| t == UNDERFOOT_TAG_KEY);
         match (&e.collider, is_underfoot) {
@@ -1019,7 +1340,7 @@ fn check_tag_role_layers(
 /// `check_object_walkability_tag` -- every more specific object-level
 /// rejection above gets its own chance to fire first (same reasoning as
 /// that check's own placement).
-fn check_object_roles(entries: &[ObjectEntry], tags: &[TagEntry]) -> Result<(), DefsError> {
+fn check_object_roles(entries: &[LoweredObjectEntry], tags: &[TagEntry]) -> Result<(), DefsError> {
     let roles_by_key: BTreeMap<&str, &RawRole> = tags
         .iter()
         .filter_map(|t| t.role.as_ref().map(|r| (t.key.value.as_str(), r)))
@@ -1073,7 +1394,7 @@ fn check_object_roles(entries: &[ObjectEntry], tags: &[TagEntry]) -> Result<(), 
 /// collider, so such a rect could never be reached. Widened to `i64`
 /// throughout, exactly like the collider check, so no combination of
 /// `i32` bounds can overflow a comparison.
-fn check_object_interact_at(entries: &[ObjectEntry]) -> Result<(), DefsError> {
+fn check_object_interact_at(entries: &[LoweredObjectEntry]) -> Result<(), DefsError> {
     for e in entries {
         let Some(interact_at) = &e.interact_at else {
             continue;
@@ -1314,7 +1635,7 @@ fn check_object_sprite_sheets(
 /// `tile_size_px`, and `h >= height * tile_size_px` (a tall prop may
 /// overhang upward, never downward -- bottom-anchored).
 fn check_object_sprite_matches_footprint(
-    entries: &[ObjectEntry],
+    entries: &[LoweredObjectEntry],
     tile_size_px: u32,
 ) -> Result<(), DefsError> {
     for e in entries {
@@ -1362,7 +1683,7 @@ fn check_object_sprite_matches_footprint(
 /// direction) -- the error names the object and its size, and directs the
 /// author to compose the structure from multiple objects (the acceptance
 /// criterion's own sentence).
-fn check_object_footprint_cap(entries: &[ObjectEntry]) -> Result<(), DefsError> {
+fn check_object_footprint_cap(entries: &[LoweredObjectEntry]) -> Result<(), DefsError> {
     for e in entries {
         if e.width == 0 || e.height == 0 {
             return Err(DefsError::new(
@@ -1873,30 +2194,46 @@ pub fn validate(
 
     check_object_names(&raw.objects)?;
     check_object_layers(&raw.objects, layer_codes)?;
-    check_object_footprint_cap(&raw.objects)?;
-    check_object_colliders(&raw.objects)?;
-    check_object_interact_at(&raw.objects)?;
+
+    // Story 2.3 (AC3): every archetype checks out on its own first, then
+    // every object's own `height`/`collider` is resolved against
+    // whichever (if any) it names -- lowered *before* any existing
+    // geometry/footprint check below ever runs, so none of them need a
+    // second copy for the archetype path.
+    check_archetype_key_format(&raw.archetypes)?;
+    check_archetype_key_dupes(&raw.archetypes)?;
+    check_archetype_self_consistency(&raw.archetypes)?;
+    let archetypes_by_key: BTreeMap<&str, &ArchetypeEntry> = raw
+        .archetypes
+        .iter()
+        .map(|a| (a.key.value.as_str(), a))
+        .collect();
+    let lowered_objects = lower_objects(&raw.objects, &archetypes_by_key)?;
+
+    check_object_footprint_cap(&lowered_objects)?;
+    check_object_colliders(&lowered_objects)?;
+    check_object_interact_at(&lowered_objects)?;
     check_object_sprite_sheet_root(&raw.objects, sprite_sheet_allowed_root)?;
     check_object_sprite_sheets(&raw.objects, sheet_dims)?;
-    if !raw.objects.is_empty() {
+    if !lowered_objects.is_empty() {
         let tile_size_px = find_tile_size_px(&raw.balance).ok_or_else(|| {
             DefsError::new(
-                &raw.objects[0].path,
-                raw.objects[0].key.line,
-                raw.objects[0].key.col,
+                &lowered_objects[0].path,
+                lowered_objects[0].key.line,
+                lowered_objects[0].key.col,
                 "defs/ declares an object but no 'render.tile_size_px' balance key -- FR126's sprite/footprint agreement cannot be checked without it".to_string(),
             )
         })?;
-        check_object_sprite_matches_footprint(&raw.objects, tile_size_px)?;
+        check_object_sprite_matches_footprint(&lowered_objects, tile_size_px)?;
     }
     // Story 2.4: last among the object checks -- every other object-level
     // rejection above (name, layer, footprint cap, collider/interact_at
     // geometry, sprite) gets its own chance to fire on a fixture built to
     // exercise it before this generic catch-all ever runs.
-    check_object_walkability_tag(&raw.objects)?;
+    check_object_walkability_tag(&lowered_objects)?;
     // Story 2.9: after every other object-level rejection, same
     // reasoning as `check_object_walkability_tag`'s own placement.
-    check_object_roles(&raw.objects, &raw.tags)?;
+    check_object_roles(&lowered_objects, &raw.tags)?;
 
     let item_keys: BTreeSet<&str> = raw.items.iter().map(|i| i.key.value.as_str()).collect();
     check_recipe_item_refs(&raw.recipes, &item_keys)?;
@@ -1998,13 +2335,16 @@ pub fn validate(
         &raw.accessories,
     )?;
 
-    let mut objects: Vec<ObjectDef> = raw
-        .objects
+    let mut objects: Vec<ObjectDef> = lowered_objects
         .iter()
         .map(|o| {
-            // Already checked by `check_object_layers` above; `validate`
-            // never partially resolves a tree it will go on to reject.
-            let layer = resolve_object_layer(o, layer_codes).expect("layer already validated");
+            // Already checked by `check_object_layers` above (over the
+            // raw, unlowered tree -- lowering never touches `layer`);
+            // `validate` never partially resolves a tree it will go on
+            // to reject.
+            let layer = *layer_codes
+                .get(&o.layer.value)
+                .expect("layer already validated");
             ObjectDef {
                 id: o.id.value,
                 key: o.key.value.clone(),
@@ -2032,7 +2372,8 @@ pub fn validate(
                     y1: c.value.y1,
                 }),
                 window: o.window,
-                tags: resolve_object_tags(o, &tag_ids).expect("tags already validated"),
+                tags: resolve_object_tags(&o.path, &o.key, &o.tags, &tag_ids)
+                    .expect("tags already validated"),
             }
         })
         .collect();
@@ -2350,6 +2691,136 @@ mod tests {
         assert_eq!(defs.recipes[0].inputs, vec!["bottle"]);
         assert_eq!(defs.chains[0].links, vec!["sanitation_worker"]);
         assert_eq!(defs.balance[0].value, 10);
+    }
+
+    // --- story 2.3: archetypes -------------------------------------------
+
+    /// Tim's direction: lowering an object through an archetype must
+    /// produce the exact same `ObjectDef` a hand-authored, explicit
+    /// `height`/`collider` produces for the same geometry -- the proof
+    /// that a migration to an archetype changes no byte of either
+    /// generated artefact but `defs_version`.
+    #[test]
+    fn an_object_via_archetype_produces_the_same_object_def_as_the_explicit_equivalent() {
+        let explicit = files(&[
+            (
+                "defs/objects/city-props.toml",
+                &format!(
+                    "[[object]]\nid = 1\nkey = \"lamppost\"\n{OBJECT_HEADER}width = 1\nheight = 1\ncollider = {{ x0 = 6, y0 = 10, x1 = 10, y1 = 14 }}\ntags = [\"fixture\"]\n"
+                ),
+            ),
+            ("defs/tags/roles.toml", TAGS_FIXTURE_ROLE_TOML),
+            ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+        ]);
+        let via_archetype = files(&[
+            (
+                "defs/objects/city-props.toml",
+                &format!(
+                    "[[object]]\nid = 1\nkey = \"lamppost\"\n{OBJECT_HEADER}width = 1\narchetype = \"pole\"\ntags = [\"fixture\"]\n"
+                ),
+            ),
+            (
+                "defs/archetypes/city.toml",
+                "[[archetype]]\nkey = \"pole\"\nheight = 1\ncollider_inset = { left = 6, top = 10, right = 6, bottom = 2 }\n",
+            ),
+            ("defs/tags/roles.toml", TAGS_FIXTURE_ROLE_TOML),
+            ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+        ]);
+
+        let explicit_defs = validate(
+            &parse_all(&explicit).unwrap(),
+            &object_sheet_dims(),
+            &object_layer_codes(),
+            "",
+        )
+        .unwrap();
+        let archetype_defs = validate(
+            &parse_all(&via_archetype).unwrap(),
+            &object_sheet_dims(),
+            &object_layer_codes(),
+            "",
+        )
+        .unwrap();
+        assert_eq!(explicit_defs.objects, archetype_defs.objects);
+        assert_eq!(archetype_defs.objects[0].height, 1);
+        assert_eq!(
+            archetype_defs.objects[0].collider,
+            Some(ColliderRect {
+                x0: 6,
+                y0: 10,
+                x1: 10,
+                y1: 14
+            })
+        );
+    }
+
+    /// AC3's "collider supplied by neither means walkable" -- an
+    /// archetype that supplies only `height` leaves an object free to be
+    /// explicitly walkable via the ordinary `underfoot` tag, exactly as
+    /// if it had named no archetype at all.
+    #[test]
+    fn an_archetype_supplying_only_height_leaves_the_object_walkable_via_underfoot() {
+        let f = files(&[
+            (
+                "defs/objects/city-props.toml",
+                &format!(
+                    "[[object]]\nid = 1\nkey = \"bridge_deck\"\n{OBJECT_HEADER}width = 1\narchetype = \"flat\"\ntags = [\"underfoot\", \"fixture\"]\n"
+                ),
+            ),
+            (
+                "defs/archetypes/city.toml",
+                "[[archetype]]\nkey = \"flat\"\nheight = 1\n",
+            ),
+            ("defs/tags/roles.toml", TAGS_UNDERFOOT_TOML),
+            ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+        ]);
+        let defs = validate(
+            &parse_all(&f).unwrap(),
+            &object_sheet_dims(),
+            &object_layer_codes(),
+            "",
+        )
+        .unwrap();
+        assert_eq!(defs.objects[0].height, 1);
+        assert_eq!(defs.objects[0].collider, None);
+    }
+
+    /// `height` and `collider` each resolve their own source
+    /// independently -- an object may take one from the archetype and
+    /// declare the other itself.
+    #[test]
+    fn height_and_collider_may_come_from_different_sources() {
+        let f = files(&[
+            (
+                "defs/objects/city-props.toml",
+                &format!(
+                    "[[object]]\nid = 1\nkey = \"trash_bin\"\n{OBJECT_HEADER}width = 1\nheight = 1\narchetype = \"full_cell\"\ntags = [\"fixture\"]\n"
+                ),
+            ),
+            (
+                "defs/archetypes/city.toml",
+                "[[archetype]]\nkey = \"full_cell\"\ncollider_inset = { left = 0, top = 0, right = 0, bottom = 0 }\n",
+            ),
+            ("defs/tags/roles.toml", TAGS_FIXTURE_ROLE_TOML),
+            ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+        ]);
+        let defs = validate(
+            &parse_all(&f).unwrap(),
+            &object_sheet_dims(),
+            &object_layer_codes(),
+            "",
+        )
+        .unwrap();
+        assert_eq!(defs.objects[0].height, 1);
+        assert_eq!(
+            defs.objects[0].collider,
+            Some(ColliderRect {
+                x0: 0,
+                y0: 0,
+                x1: 16,
+                y1: 16
+            })
+        );
     }
 
     #[test]

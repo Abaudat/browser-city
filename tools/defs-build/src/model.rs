@@ -171,6 +171,46 @@ pub struct RawColliderRect {
     pub y1: i32,
 }
 
+/// Story 2.3: an archetype's own `collider_inset`, in sub-cells, one
+/// value per edge of the lowered footprint the archetype is applied to --
+/// `validate.rs`'s lowering step turns this into a concrete
+/// [`RawColliderRect`] once an object's own footprint (`width` and the
+/// resolved `height`) is known. Never tied to any one object's `width`
+/// (an archetype carries no width of its own -- Tim's direction), which
+/// is why `left`/`right` can only be checked for fit once applied to a
+/// real object, while `top`/`bottom` can already be checked against the
+/// archetype's own `height`, when it declares one.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RawColliderInset {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+/// Story 2.3 (AC3): one authored `[[archetype]]` row under
+/// `defs/archetypes/` -- an agent's recorded classification, key only,
+/// no `id` and never emitted into either generated artefact (Tim's
+/// direction: an archetype is authoring-time only, lowered away before
+/// `validate.rs`'s cross-reference checks run, so it carries no
+/// permanence burden and needs no id-manifest entry).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawArchetype {
+    pub key: Spanned<String>,
+    #[serde(default)]
+    pub height: Option<Spanned<u32>>,
+    #[serde(default)]
+    pub collider_inset: Option<Spanned<RawColliderInset>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchetypeFile {
+    pub archetype: Vec<RawArchetype>,
+}
+
 /// One whole-object sprite rectangle (Tim's direction, story 2.2): the
 /// tileset ships whole objects as single PNGs, so this is always one
 /// rectangle, never a composited set. `sheet` is a path relative to the
@@ -205,7 +245,13 @@ pub struct RawObject {
     pub layer: Spanned<String>,
     pub sprite: Spanned<RawSpriteRect>,
     pub width: u32,
-    pub height: u32,
+    /// Story 2.3: absent when an `archetype` supplies it instead --
+    /// `validate.rs`'s lowering step resolves this to a plain `u32`
+    /// before any existing geometry check ever runs (exactly one of this
+    /// field and the named archetype's own `height` must be present;
+    /// enforced there, never here).
+    #[serde(default)]
+    pub height: Option<u32>,
     /// A half-open integer rect in sub-cells relative to the footprint's
     /// own north-west sub-cell origin (its top-left, matching the
     /// sprite's own pixel space -- FR128). Not the same corner as the
@@ -213,8 +259,17 @@ pub struct RawObject {
     /// footprint's smallest x, largest y cell (its south-west corner, the
     /// AC's own convention): the two coincide only for a one-cell-tall
     /// object, which is every object today. Absent means walkable --
-    /// there is no separate `walkable` flag anywhere.
+    /// there is no separate `walkable` flag anywhere -- unless the named
+    /// `archetype` supplies one instead (story 2.3, same lowering step).
     pub collider: Option<Spanned<RawColliderRect>>,
+    /// Story 2.3 (AC3): the classification an agent recorded in `defs/`,
+    /// never in `tools/defs-build` itself -- names a `[[archetype]]` key
+    /// under `defs/archetypes/` that supplies this object's own `height`
+    /// and/or `collider` when this object does not declare them itself.
+    /// Optional: most objects declare both fields explicitly and name no
+    /// archetype at all.
+    #[serde(default)]
+    pub archetype: Option<Spanned<String>>,
     /// Story 1.9 (FR148): where a player must stand to interact with this
     /// object -- a half-open integer rect in sub-cells relative to the
     /// same north-west sub-cell origin a `collider` uses. Unlike a
@@ -540,6 +595,17 @@ pub struct PageGroupEntry {
     pub group: Located<String>,
 }
 
+// --- archetypes (story 2.3, AC3): authoring-time classification, never
+// emitted, never given an id --------------------------------------------
+
+#[derive(Debug)]
+pub struct ArchetypeEntry {
+    pub path: PathBuf,
+    pub key: Located<String>,
+    pub height: Option<Located<u32>>,
+    pub collider_inset: Option<Located<RawColliderInset>>,
+}
+
 // --- tags (story 2.10, FR111): the rule engine's only vocabulary -----------
 
 #[derive(Debug, Deserialize)]
@@ -722,11 +788,18 @@ pub struct ObjectEntry {
     pub layer: Located<String>,
     pub sprite: Located<RawSpriteRect>,
     pub width: u32,
-    pub height: u32,
+    /// Story 2.3: `None` before `validate.rs`'s lowering step runs (an
+    /// archetype supplies it instead); always `Some` on the lowered
+    /// entries every existing geometry check receives.
+    pub height: Option<u32>,
     pub collider: Option<Located<RawColliderRect>>,
     pub interact_at: Option<Located<RawColliderRect>>,
     pub window: bool,
     pub tags: Vec<String>,
+    /// Story 2.3 (AC3): the archetype key this object names, if any --
+    /// resolved and consumed by `validate.rs`'s lowering step, never read
+    /// past it.
+    pub archetype: Option<Located<String>>,
 }
 
 #[derive(Debug)]
@@ -972,6 +1045,7 @@ pub struct RawDefs {
     pub chains: Vec<ChainEntry>,
     pub balance: Vec<BalanceEntry>,
     pub page_groups: Vec<PageGroupEntry>,
+    pub archetypes: Vec<ArchetypeEntry>,
     pub bodies: Vec<BodyEntry>,
     pub eyes: Vec<EyesEntry>,
     pub hairstyles: Vec<HairstyleEntry>,

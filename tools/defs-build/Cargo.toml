@@ -8,6 +8,11 @@
 name = "defs-build"
 version = "0.1.0"
 edition = "2024"
+# Story 2.3: a second bin (`defs-propose`) joins `defs-build` in this same
+# crate -- a bare `cargo run` is ambiguous the moment there is more than
+# one, so this pins the existing one as the default. Every existing
+# script already passes `--bin defs-build` explicitly and is unaffected.
+default-run = "defs-build"
 
 # Native-only tooling: never a dependency of `browser_city` or the client
 # bundle (docs/architecture.md's Stack table). `toml`, because `defs/` is

@@ -130,6 +130,12 @@ pub fn layer_codes() -> BTreeMap<String, u32> {
 /// paths that live nowhere near `ModernTileset/` -- an empty root always
 /// passes (`validate.rs`'s own `sheet_is_under_root`), so those fixtures
 /// stay focused on the one thing each is testing.
+///
+/// `mod support` is compiled fresh into every `tests/*.rs` binary that
+/// declares it (same reasoning as `build_err_enforcing_sheet_root`'s own
+/// `#[allow(dead_code)]` below) -- a `tests/*.rs` file exercising `build`
+/// directly rather than through a failure fixture sees this as unused.
+#[allow(dead_code)]
 pub fn build_err(category: &str) -> defs_build::DefsError {
     let files = merged_tree(category);
     defs_build::build(
