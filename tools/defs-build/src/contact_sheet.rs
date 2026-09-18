@@ -16,7 +16,7 @@
 //! the sheet's own location to a real file on disk, proven by this
 //! crate's own `tests/contact_sheet_*.rs`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::{
     AtlasPageDef, AtlasRect, COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs,
@@ -298,7 +298,7 @@ header h1 { margin: 0 0 0.25rem 0; font-size: 1.1rem; }
 .swatch-overhang { background: rgba(255,255,255,0.18); }
 section.group { padding: 1rem 1.5rem; }
 section.group h2 { font-size: 1rem; border-bottom: 1px solid #444; padding-bottom: 0.25rem; }
-.cards { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+.cards { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; }
 .card { background: #1c1c1f; border: 1px solid #3a3a3f; border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; align-items: flex-start; }
 .card-body {
   position: relative;
@@ -371,17 +371,45 @@ fn hatch_defs_svg() -> String {
     )
 }
 
-/// One CSS rule per atlas page (Tim's direction, cycle 1: an inline
-/// `background-image`/`background-size` repeated on every card meant
-/// editing one street sprite renamed the page and rewrote every card line
-/// of its whole group). A card then carries only `class="page-{n}"` plus
-/// its own `background-position`; renaming a page touches this one line.
-fn render_page_rules(atlas_pages: &[AtlasPageDef]) -> String {
+/// One CSS class per atlas page, indexed by [`AtlasPageDef::group`] plus
+/// that page's own ordinal *within its group* -- never the global
+/// `atlas_pages` index (Tim's direction, cycle 2: keying by global index
+/// meant an unrelated group gaining or losing a page renumbered every
+/// later group's own pages, rewriting every card line of a group that
+/// changed nothing). Inserting or removing a page in one group can only
+/// ever renumber pages after it *within that same group*.
+fn page_classes(atlas_pages: &[AtlasPageDef]) -> Vec<String> {
+    let mut next_ordinal: BTreeMap<&str, u32> = BTreeMap::new();
+    atlas_pages
+        .iter()
+        .map(|page| {
+            let ordinal = next_ordinal.entry(page.group.as_str()).or_insert(0);
+            let class = format!("page-{}-{}", page.group, ordinal);
+            *ordinal += 1;
+            class
+        })
+        .collect()
+}
+
+/// One CSS rule per atlas page *this sheet actually references* (Tim's
+/// direction, cycle 2: `atlas_pages` also carries every character-part
+/// page, which no object card ever draws from -- a rule for one would be
+/// dead weight that still diffs on every character-art change). `used`
+/// is every page index some card's own `atlas.page` names.
+fn render_page_rules(
+    atlas_pages: &[AtlasPageDef],
+    classes: &[String],
+    used: &BTreeSet<u32>,
+) -> String {
     let mut out = String::new();
     for (i, page) in atlas_pages.iter().enumerate() {
+        if !used.contains(&(i as u32)) {
+            continue;
+        }
         let href = format!("../../{}/{}", crate::model::ATLAS_PAGES_DIR, page.file);
         out.push_str(&format!(
-            ".page-{i} {{ background-image: url('{href}'); background-size: {}px {}px; }}\n",
+            ".{} {{ background-image: url('{href}'); background-size: {}px {}px; }}\n",
+            classes[i],
             page.width * SCALE,
             page.height * SCALE
         ));
@@ -389,7 +417,13 @@ fn render_page_rules(atlas_pages: &[AtlasPageDef]) -> String {
     out
 }
 
-fn render_card(card: &CardInput, tile_size_px: u32, box_w: u32, box_h: u32) -> String {
+fn render_card(
+    card: &CardInput,
+    tile_size_px: u32,
+    box_w: u32,
+    box_h: u32,
+    page_class: &str,
+) -> String {
     let geo = project(card.obj, tile_size_px);
     let pad = INTERACT_AT_MAX_REACH_CELLS as f64 * tile_size_px as f64;
     let padded_w = geo.sprite_w + 2.0 * pad;
@@ -489,14 +523,13 @@ fn render_card(card: &CardInput, tile_size_px: u32, box_w: u32, box_h: u32) -> S
     svg.push_str("</svg>");
 
     let sprite_div = format!(
-        "<div class=\"sprite page-{page}\" style=\"left:{}px; top:{}px; width:{}px; height:{}px; background-position:-{}px -{}px;\"></div>",
+        "<div class=\"sprite {page_class}\" style=\"left:{}px; top:{}px; width:{}px; height:{}px; background-position:-{}px -{}px;\"></div>",
         (pad as u32) * SCALE,
         (pad as u32) * SCALE,
         card.obj.sprite.w * SCALE,
         card.obj.sprite.h * SCALE,
         card.atlas.x * SCALE,
         card.atlas.y * SCALE,
-        page = card.atlas.page,
     );
 
     let walkthrough_chip = if geo.collider.is_none() {
@@ -575,15 +608,30 @@ fn render_card(card: &CardInput, tile_size_px: u32, box_w: u32, box_h: u32) -> S
 /// (`emit::emit_id_manifest`'s output) -- printed beside `defs_version` so
 /// a reviewer can tell at a glance which build produced the sheet in
 /// front of them (Quentin's direction).
+///
+/// `tile_size_px` is `None` iff `cards` is empty -- `validate.rs`
+/// guarantees `Some` whenever there is at least one object, so resolving
+/// it here, beside its only reader, keeps the "no cards, no scale needed"
+/// case structurally unreachable rather than a fallback literal a caller
+/// could get wrong (Tim's direction, cycle 2).
 pub fn build(
     cards: &[CardInput],
-    tile_size_px: u32,
+    tile_size_px: Option<u32>,
     atlas_pages: &[AtlasPageDef],
     defs_version: &str,
     manifest_hash: &str,
 ) -> String {
+    let tile_size_px = if cards.is_empty() {
+        0
+    } else {
+        tile_size_px.expect(
+            "validate.rs guarantees Defs::tile_size_px is Some whenever objects is non-empty",
+        )
+    };
     let groups = group_and_sort(cards);
     let pad = INTERACT_AT_MAX_REACH_CELLS as f64 * tile_size_px as f64;
+    let page_classes = page_classes(atlas_pages);
+    let used_pages: BTreeSet<u32> = cards.iter().map(|c| c.atlas.page).collect();
     let mut out = String::new();
     out.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
     out.push_str("<!-- @generated by tools/defs-build -- do not edit by hand -->\n");
@@ -594,7 +642,7 @@ pub fn build(
     out.push_str("<style>\n");
     out.push_str(STYLE);
     out.push_str(TOGGLE_STYLE);
-    out.push_str(&render_page_rules(atlas_pages));
+    out.push_str(&render_page_rules(atlas_pages, &page_classes, &used_pages));
     out.push_str("</style>\n</head>\n<body>\n");
     out.push_str(TOGGLES_HTML);
     out.push_str("<div class=\"sticky-top\">\n");
@@ -634,7 +682,8 @@ pub fn build(
             .max()
             .unwrap_or(0);
         for card in group_cards {
-            out.push_str(&render_card(card, tile_size_px, box_w, box_h));
+            let page_class = &page_classes[card.atlas.page as usize];
+            out.push_str(&render_card(card, tile_size_px, box_w, box_h, page_class));
         }
         out.push_str("</div>\n</section>\n");
     }
@@ -908,13 +957,13 @@ mod tests {
     fn changing_a_declared_width_changes_the_emitted_footprint_width_attribute() {
         let obj_a = object(1, 1, 16);
         let cards_a = vec![card(&obj_a, None)];
-        let html_a = build(&cards_a, 16, &atlas_pages(), "v1", "m1");
+        let html_a = build(&cards_a, Some(16), &atlas_pages(), "v1", "m1");
 
         let mut obj_b = object(1, 1, 16);
         obj_b.sprite.w = 32;
         obj_b.width = 2;
         let cards_b = vec![card(&obj_b, None)];
-        let html_b = build(&cards_b, 16, &atlas_pages(), "v1", "m1");
+        let html_b = build(&cards_b, Some(16), &atlas_pages(), "v1", "m1");
 
         assert!(html_a.contains("data-width=\"1\""));
         assert!(html_b.contains("data-width=\"2\""));
@@ -931,7 +980,7 @@ mod tests {
             y1: 8,
         });
         let cards_a = vec![card(&obj_a, None)];
-        let html_a = build(&cards_a, 16, &atlas_pages(), "v1", "m1");
+        let html_a = build(&cards_a, Some(16), &atlas_pages(), "v1", "m1");
 
         let mut obj_b = object(1, 1, 16);
         obj_b.collider = Some(ColliderRect {
@@ -941,7 +990,7 @@ mod tests {
             y1: 16,
         });
         let cards_b = vec![card(&obj_b, None)];
-        let html_b = build(&cards_b, 16, &atlas_pages(), "v1", "m1");
+        let html_b = build(&cards_b, Some(16), &atlas_pages(), "v1", "m1");
 
         assert_ne!(html_a, html_b);
         // Padded by INTERACT_AT_MAX_REACH_CELLS * tile_size_px (2 * 16 =
@@ -973,7 +1022,7 @@ mod tests {
         let mut c = card(&obj, Some("pole"));
         c.tag_keys = vec!["fixture", "seating"];
         let cards = vec![c];
-        let html = build(&cards, 16, &atlas_pages(), "v1", "m1");
+        let html = build(&cards, Some(16), &atlas_pages(), "v1", "m1");
         assert!(html.contains("layer-interact"));
         assert!(html.contains("data-archetype=\"pole\""));
         assert!(html.contains("fixture, seating"));
@@ -995,7 +1044,7 @@ mod tests {
             y1: 1,
         });
         let cards = vec![card(&obj, None)];
-        let html = build(&cards, 24, &atlas_pages(), "v1", "m1");
+        let html = build(&cards, Some(24), &atlas_pages(), "v1", "m1");
         assert!(html.contains("width=\"1.500\" height=\"1.500\""));
     }
 
@@ -1003,7 +1052,7 @@ mod tests {
     fn a_walk_through_prop_is_marked_positively_never_by_blank_ink() {
         let obj = object(1, 1, 16);
         let cards = vec![card(&obj, None)];
-        let html = build(&cards, 16, &atlas_pages(), "v1", "m1");
+        let html = build(&cards, Some(16), &atlas_pages(), "v1", "m1");
         assert!(html.contains("data-collider=\"none\""));
         assert!(html.contains("WALK-THROUGH"));
     }
@@ -1013,7 +1062,7 @@ mod tests {
         let mut obj = object(1, 1, 16);
         obj.name = "<b>Bin</b> & \"friends\"".into();
         let cards = vec![card(&obj, None)];
-        let html = build(&cards, 16, &atlas_pages(), "v1", "m1");
+        let html = build(&cards, Some(16), &atlas_pages(), "v1", "m1");
         assert!(!html.contains("<b>Bin</b>"));
         assert!(html.contains("&lt;b&gt;Bin&lt;/b&gt;"));
         assert!(html.contains("&amp;"));
@@ -1023,14 +1072,14 @@ mod tests {
     fn build_is_byte_identical_across_two_calls_with_the_same_input() {
         let obj = object(1, 1, 16);
         let cards = vec![card(&obj, None)];
-        let a = build(&cards, 16, &atlas_pages(), "v1", "m1");
-        let b = build(&cards, 16, &atlas_pages(), "v1", "m1");
+        let a = build(&cards, Some(16), &atlas_pages(), "v1", "m1");
+        let b = build(&cards, Some(16), &atlas_pages(), "v1", "m1");
         assert_eq!(a, b);
     }
 
     #[test]
     fn the_header_carries_defs_version_and_the_manifest_hash() {
-        let html = build(&[], 16, &atlas_pages(), "abc123", "deadbeef");
+        let html = build(&[], Some(16), &atlas_pages(), "abc123", "deadbeef");
         assert!(html.contains("abc123"));
         assert!(html.contains("deadbeef"));
     }
@@ -1039,7 +1088,7 @@ mod tests {
     fn every_asset_url_is_a_relative_path_naming_the_objects_own_atlas_page() {
         let obj = object(1, 1, 16);
         let cards = vec![card(&obj, None)];
-        let html = build(&cards, 16, &atlas_pages(), "v1", "m1");
+        let html = build(&cards, Some(16), &atlas_pages(), "v1", "m1");
         assert!(html.contains("url('../../client/public/atlas/street-0123456789abcdef.png')"));
     }
 
@@ -1049,8 +1098,8 @@ mod tests {
         // sensitive to the value it is given -- a hardcoded placeholder
         // or a frozen-at-first-build value would pass every other test
         // here.
-        let html_a = build(&[], 16, &atlas_pages(), "v1", "aaaaaaaaaaaaaaaa");
-        let html_b = build(&[], 16, &atlas_pages(), "v1", "bbbbbbbbbbbbbbbb");
+        let html_a = build(&[], Some(16), &atlas_pages(), "v1", "aaaaaaaaaaaaaaaa");
+        let html_b = build(&[], Some(16), &atlas_pages(), "v1", "bbbbbbbbbbbbbbbb");
         assert_ne!(html_a, html_b);
         assert!(html_a.contains("manifest sha256 <code>aaaaaaaaaaaaaaaa</code>"));
         assert!(html_b.contains("manifest sha256 <code>bbbbbbbbbbbbbbbb</code>"));
@@ -1064,7 +1113,7 @@ mod tests {
     fn the_four_layer_toggles_are_structural_siblings_of_main_never_nested_in_the_legend() {
         let obj = object(1, 1, 16);
         let cards = vec![card(&obj, None)];
-        let html = build(&cards, 16, &atlas_pages(), "v1", "m1");
+        let html = build(&cards, Some(16), &atlas_pages(), "v1", "m1");
 
         let main_at = html.find("<main").expect("must emit <main>");
         let legend_start = html
@@ -1120,7 +1169,7 @@ mod tests {
             y1: 16,
         });
         let cards = vec![card(&obj, None)];
-        let html = build(&cards, 16, &atlas_pages(), "v1", "m1");
+        let html = build(&cards, Some(16), &atlas_pages(), "v1", "m1");
         for class in [
             "layer-footprint",
             "layer-collider",
@@ -1132,5 +1181,74 @@ mod tests {
                 "TOGGLE_STYLE names '{class}' but render_card never emits it"
             );
         }
+    }
+
+    // --- page classes are keyed by group + in-group ordinal, never the
+    // global atlas_pages index (Tim's direction, cycle 2) ----------------
+
+    #[test]
+    fn inserting_an_unrelated_leading_page_never_changes_a_cards_own_markup() {
+        let obj = object(1, 1, 16);
+
+        let pages_a = vec![AtlasPageDef {
+            file: "street-aaaaaaaaaaaaaaaa.png".into(),
+            group: "street".into(),
+            width: 2048,
+            height: 16,
+        }];
+        let mut card_a = card(&obj, None);
+        card_a.atlas.page = 0;
+        let html_a = build(&[card_a], Some(16), &pages_a, "v1", "m1");
+
+        // An unrelated leading page, of a different group, that no card
+        // references -- exactly a themed page gaining/losing a page, or a
+        // character-part page changing, while this object's own page is
+        // untouched. The same "street" page now sits at global index 1.
+        let pages_b = vec![
+            AtlasPageDef {
+                file: "character_body-zzzzzzzzzzzzzzzz.png".into(),
+                group: "character_body".into(),
+                width: 2048,
+                height: 16,
+            },
+            AtlasPageDef {
+                file: "street-aaaaaaaaaaaaaaaa.png".into(),
+                group: "street".into(),
+                width: 2048,
+                height: 16,
+            },
+        ];
+        let mut card_b = card(&obj, None);
+        card_b.atlas.page = 1;
+        let html_b = build(&[card_b], Some(16), &pages_b, "v1", "m1");
+
+        assert_eq!(
+            html_a, html_b,
+            "an unrelated leading page must never change a referencing card's own markup"
+        );
+    }
+
+    #[test]
+    fn a_page_no_card_references_gets_no_emitted_css_rule() {
+        let obj = object(1, 1, 16);
+        let pages = vec![
+            AtlasPageDef {
+                file: "character_body-zzzzzzzzzzzzzzzz.png".into(),
+                group: "character_body".into(),
+                width: 2048,
+                height: 16,
+            },
+            AtlasPageDef {
+                file: "street-aaaaaaaaaaaaaaaa.png".into(),
+                group: "street".into(),
+                width: 2048,
+                height: 16,
+            },
+        ];
+        let mut c = card(&obj, None);
+        c.atlas.page = 1;
+        let html = build(&[c], Some(16), &pages, "v1", "m1");
+        assert!(!html.contains("character_body"));
+        assert!(html.contains(".page-street-0 {"));
     }
 }

@@ -89,20 +89,12 @@ pub fn build(
     let manifest_hash = &sha256::sha256_hex(id_manifest.as_bytes())[..version::DEFS_VERSION_LEN];
 
     let cards = contact_sheet::cards(&raw, &defs, &atlas.atlas_by_object_id);
-    let tile_size_px = if defs.objects.is_empty() {
-        // No cards, so the scale this feeds into is never read -- 0 makes
-        // that structurally obvious rather than a plausible-looking
-        // literal that could quietly redraw every footprint at the wrong
-        // scale if the guarantee below ever weakened.
-        0
-    } else {
-        defs.tile_size_px.expect(
-            "validate.rs guarantees Defs::tile_size_px is Some whenever objects is non-empty",
-        )
-    };
+    // `contact_sheet::build` resolves `Defs::tile_size_px` itself, right
+    // beside its only reader -- structurally unreachable when `cards` is
+    // empty, never a fallback literal here (Tim's direction, cycle 2).
     let contact_sheet_html = contact_sheet::build(
         &cards,
-        tile_size_px,
+        defs.tile_size_px,
         &atlas.pages,
         defs_version,
         manifest_hash,

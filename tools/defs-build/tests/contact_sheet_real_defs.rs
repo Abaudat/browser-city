@@ -62,11 +62,16 @@ fn every_real_objects_key_appears_in_the_sheet_exactly_once() {
     }
 }
 
-/// One `.page-{n} { background-image: url('...'); background-size: WpxHpx; }`
-/// rule, parsed straight out of the emitted `<style>` block -- never
-/// re-derived from `atlas.rs`'s own numbers, so an emission bug here is
-/// caught even if the packer itself is correct.
+/// One `.page-{group}-{ordinal} { background-image: url('...');
+/// background-size: WpxHpx; }` rule, parsed straight out of the emitted
+/// `<style>` block -- never re-derived from `atlas.rs`'s own numbers, so
+/// an emission bug here is caught even if the packer itself is correct.
+/// `class` is the part after `.page-` (e.g. `street-0`), keyed by group
+/// plus in-group ordinal rather than the global `atlas_pages` index
+/// (Tim's direction, cycle 2): an unrelated group gaining or losing a
+/// page must never renumber another group's own classes.
 struct PageRule {
+    class: String,
     href: String,
     width: f64,
     height: f64,
@@ -75,7 +80,7 @@ struct PageRule {
 fn parse_page_rules(html: &str) -> Vec<PageRule> {
     let mut rules = Vec::new();
     for chunk in html.split(".page-").skip(1) {
-        // `{n} { background-image: url('HREF'); background-size: WpxHpx; }`
+        // `{class} { background-image: url('HREF'); background-size: WpxHpx; }`
         let Some(brace) = chunk.find('{') else {
             continue;
         };
@@ -87,8 +92,9 @@ fn parse_page_rules(html: &str) -> Vec<PageRule> {
         }
         let rule_body = &chunk[brace + 1..close];
         if !rule_body.contains("background-image") {
-            continue; // a `.page-N` reference elsewhere (a card's own class), not the rule itself
+            continue; // a `.page-<class>` reference elsewhere (a card's own class), not the rule itself
         }
+        let class = chunk[..brace].trim().to_string();
         let href_start = rule_body.find("url('").unwrap() + "url('".len();
         let href_end = rule_body[href_start..].find('\'').unwrap() + href_start;
         let href = rule_body[href_start..href_end].to_string();
@@ -100,6 +106,7 @@ fn parse_page_rules(html: &str) -> Vec<PageRule> {
         let h_end = after_w.find("px").unwrap();
         let height: f64 = after_w[..h_end].parse().unwrap();
         rules.push(PageRule {
+            class,
             href,
             width,
             height,
@@ -128,9 +135,30 @@ fn every_asset_url_resolves_to_a_real_committed_file_relative_to_the_sheets_own_
     }
 }
 
+/// Tim's direction, cycle 2: `atlas_pages` also carries every character-
+/// part page, which no object card ever draws from -- a rule for one
+/// would be dead weight that still diffs on every character-art change.
+#[test]
+fn no_emitted_page_rule_names_a_character_part_page() {
+    let output = build_real_output();
+    let rules = parse_page_rules(&output.contact_sheet);
+    assert!(
+        !rules.is_empty(),
+        "the contact sheet named no atlas page rule at all"
+    );
+    for rule in &rules {
+        assert!(
+            !rule.class.starts_with("character_"),
+            "'.page-{}' names a character-part page, which no object card ever references",
+            rule.class
+        );
+    }
+}
+
 /// Quentin's direction: every sprite rect the sheet actually draws
-/// (`.sprite page-N`'s own `background-position` plus its `width`/
-/// `height`) must lie inside the `.page-N` rule's own `background-size`.
+/// (`.sprite page-<class>`'s own `background-position` plus its `width`/
+/// `height`) must lie inside the `.page-<class>` rule's own
+/// `background-size`.
 #[test]
 fn every_sprite_rect_the_sheet_draws_lies_inside_its_own_named_atlas_page() {
     let output = build_real_output();
@@ -141,12 +169,10 @@ fn every_sprite_rect_the_sheet_draws_lies_inside_its_own_named_atlas_page() {
         .split("<div class=\"sprite page-")
         .skip(1)
     {
-        let page_end = card
+        let class_end = card
             .find('"')
             .expect("expected a closing quote after the page class");
-        let page_index: usize = card[..page_end]
-            .parse()
-            .expect("page class must be a plain index");
+        let class = &card[..class_end];
         let style_start = card
             .find("style=\"")
             .expect("sprite div must carry a style attr")
@@ -181,10 +207,13 @@ fn every_sprite_rect_the_sheet_draws_lies_inside_its_own_named_atlas_page() {
         let y_end = y_rest.find("px").unwrap();
         let y: f64 = y_rest[..y_end].parse().unwrap();
 
-        let page = &rules[page_index];
+        let page = rules
+            .iter()
+            .find(|r| r.class == class)
+            .unwrap_or_else(|| panic!("no emitted rule for page class '{class}'"));
         assert!(
             x + width <= page.width && y + height <= page.height,
-            "sprite rect ({x},{y})+({width}x{height}) does not fit inside page {page_index} ({}x{})",
+            "sprite rect ({x},{y})+({width}x{height}) does not fit inside page '{class}' ({}x{})",
             page.width,
             page.height
         );

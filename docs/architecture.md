@@ -964,7 +964,8 @@ rule above.
 `defs-build` run, guarded by `check-defs-current.sh`. Never under
 `client/public/` or `defs/`. Static HTML, no JS; references the atlas
 pages under `client/public/atlas/` by relative path, one CSS rule per
-page. Draws only the lowered geometry (footprint/collider/`interact_at`),
+referenced page, classed by group and in-group ordinal. Draws only the
+lowered geometry (footprint/collider/`interact_at`),
 grouped by declared archetype -- `check-no-runtime-footprint-inference.sh`
 holds that it reads no pixel.
 
