@@ -1040,6 +1040,27 @@ feature graph for `browser_city` ever turns it on or cannot be resolved
 at all, or if `for_test`, `RuleKind` or `RULES` (the bare words) appear
 outside `server/sim/src/rules/`.
 
+Story 2.12 (AC1/AC2/AC3, NFR27): every committed rule row carries a
+worked example and a deliberately failing case under `server/sim/tests/
+rule-examples/<rule_key>/` -- `pass*.grid` and `fail*.grid`, a small
+line-oriented format (`server/sim/tests/support/grid.rs`) declaring a
+tag legend, an optional set of opaque areas over a rect, a character grid
+(`.` empty, top row `y=0`, left column `x=0`) and, for a `fail` case, the
+exact rendered `sim::validation::Defect` lines the case must produce.
+`server/sim/tests/rule_examples.rs` evaluates every case against the
+*whole* committed `RuleSet` (never only its own rule) with exact-set
+assertion, and a completeness test fails by name if any committed rule
+key is missing a directory or a `pass`/`fail` case -- a new row with no
+example turns this red by construction. `scripts/dev/verify-defs.sh` is
+the one command an agent runs: it regenerates `defs/`, builds this test
+binary, then runs it, mapping each of the three steps to exit 2 (the
+harness itself could not run), exit 2 again (the harness binary would
+not build) and exit 1 (a named content failure) respectively -- 0 only
+when every case passed. `defs/README.md` (excluded from `defs-build`'s
+own parse by `fsio::is_defs_doc`, though still folded into
+`defs_version` like every other tracked path here) is the agent-facing
+copy of this same grammar.
+
 ## Boot budget
 
 Boot milestones are marked only through `client/src/boot/boot-marks.ts`; NFR1

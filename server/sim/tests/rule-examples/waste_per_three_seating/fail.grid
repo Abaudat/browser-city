@@ -1,0 +1,10 @@
+rule: waste_per_three_seating
+expect: fail
+floor: 0
+legend: S=seating
+grid:
+SSS
+violations:
+waste_per_three_seating at (0, 0, 0)
+waste_per_three_seating at (1, 0, 0)
+waste_per_three_seating at (2, 0, 0)

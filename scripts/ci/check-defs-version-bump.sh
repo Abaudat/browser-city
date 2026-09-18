@@ -55,6 +55,12 @@ fi
 FAILED=0
 while IFS= read -r path; do
   [ -n "$path" ] || continue
+  # Story 2.12: defs/README.md is agent-facing documentation, not a kind
+  # subdirectory -- it still folds into defs_version below (every tracked
+  # path under defs/ does), but it has no "kind" to classify.
+  if [ "$path" = "defs/README.md" ]; then
+    continue
+  fi
   # path is "defs/<kind>/...": the kind is the second path component.
   kind="$(printf '%s' "$path" | awk -F/ '{print $2}')"
   match=0

@@ -1,0 +1,9 @@
+rule: room_has_a_door
+expect: fail
+floor: 0
+legend: F=floor
+area: 1 0,0 1,1
+grid:
+F
+violations:
+room_has_a_door at (0, 0, 0)

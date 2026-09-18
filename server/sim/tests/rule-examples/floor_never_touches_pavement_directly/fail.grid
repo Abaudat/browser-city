@@ -1,0 +1,9 @@
+rule: floor_never_touches_pavement_directly
+expect: fail
+floor: 0
+legend: F=floor P=pavement
+grid:
+FP
+violations:
+floor_never_touches_pavement_directly at (0, 0, 0) <-> (1, 0, 0)
+room_has_a_door at (0, 0, 0)

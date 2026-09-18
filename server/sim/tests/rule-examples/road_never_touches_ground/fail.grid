@@ -1,0 +1,8 @@
+rule: road_never_touches_ground
+expect: fail
+floor: 0
+legend: R=road G=ground
+grid:
+RG
+violations:
+road_never_touches_ground at (0, 0, 0) <-> (1, 0, 0)

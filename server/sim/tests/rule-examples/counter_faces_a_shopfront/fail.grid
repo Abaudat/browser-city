@@ -1,0 +1,8 @@
+rule: counter_faces_a_shopfront
+expect: fail
+floor: 0
+legend: C=counter
+grid:
+C
+violations:
+counter_faces_a_shopfront at (0, 0, 0)

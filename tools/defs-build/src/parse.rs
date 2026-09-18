@@ -18,7 +18,12 @@ use crate::spans::line_col;
 /// (Quentin/Tim's direction: a `defs/items/notes.md` or a stray `.json`
 /// must be a hard, named build error, not quietly excluded before
 /// parsing ever sees it). Callers must never pre-filter the file list by
-/// extension.
+/// extension -- with exactly one named exception (story 2.12):
+/// `defs/README.md`, filtered out by `fsio::is_defs_doc` alone before a
+/// caller's own file list ever reaches this function, since it is
+/// agent-facing documentation for the rule-examples corpus, not a def.
+/// Every other non-`.toml` path still reaches this branch and fails here,
+/// by name.
 fn check_filename(path: &Path) -> Result<(), DefsError> {
     if path.extension().and_then(|e| e.to_str()) != Some("toml") {
         return Err(DefsError::new(

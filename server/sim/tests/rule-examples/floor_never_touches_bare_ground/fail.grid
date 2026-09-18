@@ -1,0 +1,9 @@
+rule: floor_never_touches_bare_ground
+expect: fail
+floor: 0
+legend: F=floor G=ground
+grid:
+FG
+violations:
+floor_never_touches_bare_ground at (0, 0, 0) <-> (1, 0, 0)
+room_has_a_door at (0, 0, 0)
