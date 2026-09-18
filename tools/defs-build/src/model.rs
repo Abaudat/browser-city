@@ -143,6 +143,14 @@ pub const ATLAS_GUTTER_PX: u32 = 1;
 /// the same idiom as `check-defs-sprite-root-filter.sh`).
 pub const ATLAS_PAGES_DIR: &str = "client/public/atlas";
 
+/// Story 2.5: the contact sheet's own committed path -- a fourth output
+/// of the same `defs-build` run, kept current by `scripts/ci/
+/// check-defs-current.sh` exactly like the other three. Lives under
+/// `tools/defs-build/`, never under `client/public/` (it would ship in
+/// the deployed Pages bundle) and never under `defs/` (it would fold into
+/// its own `defs_version` input and trip the untracked-file refusal).
+pub const CONTACT_SHEET_PATH: &str = "tools/defs-build/contact-sheet.html";
+
 /// One packed object sprite's placement: `page` indexes
 /// [`Defs`]'s own `atlas_pages`; `x`/`y`/`w`/`h` are the object's whole
 /// sprite, in page pixels, gutter excluded. JSON-only (Tim's direction):

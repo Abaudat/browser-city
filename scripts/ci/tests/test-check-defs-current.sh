@@ -28,11 +28,13 @@ fake_repo() {
   printf '{"v":1}' > "$d/client/public/defs/defs.json"
   printf 'object 1 a\n' > "$d/tools/defs-build/goldens/defs-manifest.golden"
   printf 'page-a-v1\n' > "$d/client/public/atlas/a.png"
+  printf '<html>v1</html>\n' > "$d/tools/defs-build/contact-sheet.html"
 
   printf 'rust v1\n' > "$d/canonical/defs.rs"
   printf '{"v":1}' > "$d/canonical/defs.json"
   printf 'object 1 a\n' > "$d/canonical/manifest.golden"
   printf 'page-a-v1\n' > "$d/canonical/atlas/a.png"
+  printf '<html>v1</html>\n' > "$d/canonical/contact-sheet.html"
 
   cat > "$d/regen.sh" <<EOF
 #!/usr/bin/env bash
@@ -40,6 +42,7 @@ set -euo pipefail
 cp "$d/canonical/defs.rs" "$d/server/sim/src/generated/defs.rs"
 cp "$d/canonical/defs.json" "$d/client/public/defs/defs.json"
 cp "$d/canonical/manifest.golden" "$d/tools/defs-build/goldens/defs-manifest.golden"
+cp "$d/canonical/contact-sheet.html" "$d/tools/defs-build/contact-sheet.html"
 rm -rf "$d/client/public/atlas"
 mkdir -p "$d/client/public/atlas"
 cp "$d/canonical/atlas/." -r "$d/client/public/atlas/" 2>/dev/null || cp -R "$d/canonical/atlas/." "$d/client/public/atlas/"
@@ -105,6 +108,18 @@ check_eq "case 3: cleanup restores the committed atlas dir byte-for-byte" "$befo
 d="$(fake_repo)"
 printf 'rust DRIFTED\n' > "$d/server/sim/src/generated/defs.rs"
 check "a stale generated Rust artefact still fails" 1 \
+  bash "$CHECK" "$d" "bash '$d/regen.sh'"
+
+# --- story 2.5: only the contact sheet is stale -----------------------------
+d="$(fake_repo)"
+printf '<html>DRIFTED</html>\n' > "$d/tools/defs-build/contact-sheet.html"
+check "a stale contact sheet (nothing else drifted) fails" 1 \
+  bash "$CHECK" "$d" "bash '$d/regen.sh'"
+
+# --- story 2.5: a missing contact sheet is a hard failure, not a build ------
+d="$(fake_repo)"
+rm "$d/tools/defs-build/contact-sheet.html"
+check "a missing contact sheet fails before any regen" 1 \
   bash "$CHECK" "$d" "bash '$d/regen.sh'"
 
 summary

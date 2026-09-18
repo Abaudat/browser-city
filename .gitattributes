@@ -29,6 +29,14 @@ client/src/net/bindings/** linguist-generated
 server/sim/src/generated/defs.rs linguist-generated text eol=lf
 client/public/defs/defs.json linguist-generated text eol=lf
 
+# Story 2.5: the contact sheet, the same generated-artefact idiom as the
+# two lines above -- also byte-compared against a fresh regen by
+# check-defs-current.sh. Its own fixture-tree golden
+# (tests/contact_sheet_fixture_golden.rs) is compared the same way, so it
+# needs the same forced LF.
+tools/defs-build/contact-sheet.html linguist-generated text eol=lf
+tools/defs-build/tests/goldens/contact-sheet.golden.html linguist-generated text eol=lf
+
 # Story 2.6: packed atlas pages -- never hand-edited, guarded by the same
 # check-defs-current.sh (extended to diff this whole directory). Binary,
 # so no eol normalisation ever applies to it.

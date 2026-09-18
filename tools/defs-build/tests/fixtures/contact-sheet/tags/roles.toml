@@ -1,0 +1,8 @@
+[[tag]]
+id = 1
+key = "fixture"
+role = { layers = ["furniture"] }
+
+[[tag]]
+id = 2
+key = "underfoot"

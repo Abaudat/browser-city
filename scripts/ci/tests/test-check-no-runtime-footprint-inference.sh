@@ -67,6 +67,22 @@ printf 'use crate::propose::propose;\n' >> "$d/tools/defs-build/src/validate.rs"
 check "validate.rs (not lib.rs) referencing 'crate::propose' fails too" 1 \
   bash "$CHECK" "$d"
 
+# --- story 2.5: contact_sheet.rs never reads pixel data ---------------------
+d="$(plant)"
+printf 'pub fn geometry() {}\n' > "$d/tools/defs-build/src/contact_sheet.rs"
+check "a clean contact_sheet.rs (declared geometry only) passes" 0 \
+  bash "$CHECK" "$d"
+
+d="$(plant)"
+printf 'use crate::atlas::image::decode_rgba8;\n' > "$d/tools/defs-build/src/contact_sheet.rs"
+check "contact_sheet.rs importing crate::atlas::image fails" 1 \
+  bash "$CHECK" "$d"
+
+d="$(plant)"
+printf 'fn f() { let px = get_px(&rgba, 1, 0, 0); }\n' > "$d/tools/defs-build/src/contact_sheet.rs"
+check "contact_sheet.rs calling get_px fails" 1 \
+  bash "$CHECK" "$d"
+
 d="$(plant)"
 printf 'const { data } = ctx.getImageData(0, 0, 1, 1);\n' >> "$d/client/src/render/draw.ts"
 check "'getImageData' under client/src/ (outside test-street) fails" 1 \

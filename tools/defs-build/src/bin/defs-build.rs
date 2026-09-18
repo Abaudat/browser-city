@@ -122,6 +122,7 @@ fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let json_path = root.join("client/public/defs/defs.json");
     let manifest_path = root.join("tools/defs-build/goldens/defs-manifest.golden");
     let atlas_dir = root.join(model::ATLAS_PAGES_DIR);
+    let contact_sheet_path = root.join(model::CONTACT_SHEET_PATH);
     fsio::atomic_write(&rust_path, &output.rust)?;
     fsio::atomic_write(&json_path, &output.json)?;
     fsio::atomic_write(&manifest_path, &output.id_manifest)?;
@@ -129,12 +130,17 @@ fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // in it this run did not write is deleted, so a stale page never
     // outlives the group or object that produced it (Tim's direction).
     fsio::sync_binary_dir(&atlas_dir, &output.atlas_pages)?;
+    // Story 2.5: the contact sheet -- a fourth committed output, kept
+    // current by the same `check-defs-current.sh` gate as the other
+    // three, no separate command.
+    fsio::atomic_write(&contact_sheet_path, &output.contact_sheet)?;
 
     eprintln!(
-        "defs-build: wrote {}, {}, {} and {} atlas page(s) under {} (defs_version {defs_version})",
+        "defs-build: wrote {}, {}, {}, {} and {} atlas page(s) under {} (defs_version {defs_version})",
         rust_path.display(),
         json_path.display(),
         manifest_path.display(),
+        contact_sheet_path.display(),
         output.atlas_pages.len(),
         atlas_dir.display()
     );

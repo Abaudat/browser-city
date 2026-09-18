@@ -23,12 +23,16 @@ REGEN_CMD="${2:-"cd '$REPO_ROOT/tools/defs-build' && cargo run --bin defs-build"
 RUST_OUT="$REPO_ROOT/server/sim/src/generated/defs.rs"
 JSON_OUT="$REPO_ROOT/client/public/defs/defs.json"
 MANIFEST_OUT="$REPO_ROOT/tools/defs-build/goldens/defs-manifest.golden"
+# Story 2.5: the contact sheet -- a fourth committed text output of the
+# same run, checked exactly like the other three (Quentin's direction):
+# AC3's "no manual step" needs no separate guard.
+CONTACT_SHEET_OUT="$REPO_ROOT/tools/defs-build/contact-sheet.html"
 # Story 2.6: the atlas pages the same `defs-build` run writes -- this
 # directory is wholly owned by that run (`fsio::sync_binary_dir`), so
 # "current" also means "nothing here that this run did not just emit".
 ATLAS_DIR="$REPO_ROOT/client/public/atlas"
 
-for f in "$RUST_OUT" "$JSON_OUT" "$MANIFEST_OUT"; do
+for f in "$RUST_OUT" "$JSON_OUT" "$MANIFEST_OUT" "$CONTACT_SHEET_OUT"; do
   [ -f "$f" ] || {
     echo "check-defs-current: $f not found" >&2
     exit 1
@@ -42,6 +46,7 @@ cleanup() {
     cp "$WORK/rust.committed" "$RUST_OUT"
     cp "$WORK/json.committed" "$JSON_OUT"
     cp "$WORK/manifest.committed" "$MANIFEST_OUT"
+    cp "$WORK/contact-sheet.committed" "$CONTACT_SHEET_OUT"
     rm -rf "$ATLAS_DIR"
     if [ -d "$WORK/atlas.committed" ]; then
       cp -R "$WORK/atlas.committed" "$ATLAS_DIR"
@@ -54,6 +59,7 @@ trap cleanup EXIT
 cp "$RUST_OUT" "$WORK/rust.committed"
 cp "$JSON_OUT" "$WORK/json.committed"
 cp "$MANIFEST_OUT" "$WORK/manifest.committed"
+cp "$CONTACT_SHEET_OUT" "$WORK/contact-sheet.committed"
 mkdir -p "$WORK/atlas.committed"
 [ -d "$ATLAS_DIR" ] && cp -R "$ATLAS_DIR/." "$WORK/atlas.committed/"
 
@@ -73,6 +79,10 @@ if ! diff -u "$WORK/json.committed" "$JSON_OUT" >&2; then
 fi
 if ! diff -u "$WORK/manifest.committed" "$MANIFEST_OUT" >&2; then
   echo "check-defs-current: FAIL -- $MANIFEST_OUT is stale" >&2
+  FAILED=1
+fi
+if ! diff -u "$WORK/contact-sheet.committed" "$CONTACT_SHEET_OUT" >&2; then
+  echo "check-defs-current: FAIL -- $CONTACT_SHEET_OUT is stale" >&2
   FAILED=1
 fi
 if ! diff -rq "$WORK/atlas.committed" "$ATLAS_DIR" >&2; then

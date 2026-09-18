@@ -1,0 +1,49 @@
+# Story 2.5: a small, dedicated fixture tree for the contact sheet's own
+# golden test -- never `tests/fixtures/valid/`, whose own goldens (the
+# emit/manifest/atlas-determinism suites) must not churn on a fixture
+# added for a different story. Four objects, each exercising one thing
+# this sheet must draw correctly: a bespoke (no archetype) prop with an
+# off-origin collider and an overspilling `interact_at`; two objects
+# sharing one archetype (grouping); a walk-through prop with no collider.
+
+[[object]]
+id = 1
+key = "bench_bespoke"
+name = "Bench"
+layer = "furniture"
+sprite = { sheet = "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/bench.png", x = 0, y = 0, w = 48, h = 16 }
+width = 3
+height = 1
+collider = { x0 = 16, y0 = 4, x1 = 32, y1 = 12 }
+interact_at = { x0 = 32, y0 = 0, x1 = 64, y1 = 16 }
+tags = ["fixture"]
+
+[[object]]
+id = 2
+key = "lamppost_pole"
+name = "Lamppost"
+layer = "furniture"
+sprite = { sheet = "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/lamppost.png", x = 0, y = 0, w = 16, h = 64 }
+width = 1
+archetype = "pole"
+tags = ["fixture"]
+
+[[object]]
+id = 3
+key = "sign_pole"
+name = "Sign"
+layer = "furniture"
+sprite = { sheet = "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/sign.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+archetype = "pole"
+tags = ["fixture"]
+
+[[object]]
+id = 4
+key = "planter_walkthrough"
+name = "Planter"
+layer = "furniture"
+sprite = { sheet = "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/planter.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["fixture", "underfoot"]

@@ -8,6 +8,7 @@
 //! crate's own tests).
 
 pub mod atlas;
+pub mod contact_sheet;
 pub mod emit;
 pub mod error;
 pub mod fsio;
@@ -26,16 +27,34 @@ pub use model::Defs;
 
 /// The rendered texts and pages one successful [`build`] produces: the
 /// Rust include, the client JSON asset, the append-only id/key manifest
-/// (Tim's direction), and every packed atlas page's own filename plus PNG
-/// bytes (story 2.6) -- never written to disk by this crate itself; only
-/// the `defs-build` binary's own edge does that, and only once every
-/// stage has already succeeded.
+/// (Tim's direction), every packed atlas page's own filename plus PNG
+/// bytes (story 2.6), and the contact sheet (story 2.5) -- never written
+/// to disk by this crate itself; only the `defs-build` binary's own edge
+/// does that, and only once every stage has already succeeded.
 #[derive(Debug)]
 pub struct BuildOutput {
     pub rust: String,
     pub json: String,
     pub id_manifest: String,
     pub atlas_pages: Vec<(String, Vec<u8>)>,
+    pub contact_sheet: String,
+}
+
+/// `defs/balance/render.toml`'s own `render.tile_size_px` -- the contact
+/// sheet's own geometry conversion needs it (Tim's direction: never
+/// assume 1 sub-cell == 1px). `validate.rs` already refuses a tree that
+/// declares an object but no such key, so this only ever falls back to a
+/// literal for the (already validated, hence vacuous) case of zero
+/// objects.
+fn find_tile_size_px(defs: &Defs) -> u32 {
+    defs.balance
+        .iter()
+        .find(|b| b.key == "render.tile_size_px")
+        .map(|b| b.value as u32)
+        // Only reachable with zero objects (nothing for the sheet to
+        // draw) -- validate.rs refuses this key's absence whenever any
+        // object exists.
+        .unwrap_or(16)
 }
 
 /// Runs every stage over an already-collected `(path, text)` file list, the
@@ -78,6 +97,64 @@ pub fn build(
         &defs.appearance_layouts,
     )
     .map_err(|e| DefsError::new("tools/defs-build/atlas", 0, 0, e))?;
+
+    let id_manifest = emit::emit_id_manifest(&defs);
+    // Quentin's direction: a short, deterministic fingerprint of this same
+    // build's own id manifest, printed on the contact sheet beside
+    // `defs_version` -- truncated the same way `defs_version` and every
+    // atlas page hash already are.
+    let manifest_hash = &sha256::sha256_hex(id_manifest.as_bytes())[..version::DEFS_VERSION_LEN];
+
+    // Story 2.3: `archetype` is authoring-time only and never reaches
+    // `ObjectDef` (Tim's direction) -- the contact sheet still needs it to
+    // group by, so it is read back here, from the pre-lowering entry, by
+    // key (unique -- `validate.rs` already enforces this). The raw
+    // entry's own `layer` (the authored name) and `path`/`key.line` (the
+    // def's own file/line) come from the same lookup.
+    let raw_objects_by_key: std::collections::BTreeMap<&str, &model::ObjectEntry> = raw
+        .objects
+        .iter()
+        .map(|e| (e.key.value.as_str(), e))
+        .collect();
+    let tag_key_by_id: std::collections::BTreeMap<u32, &str> =
+        defs.tags.iter().map(|t| (t.id, t.key.as_str())).collect();
+    let tile_size_px = find_tile_size_px(&defs);
+    let cards: Vec<contact_sheet::CardInput> = defs
+        .objects
+        .iter()
+        .map(|o| {
+            let raw_entry = raw_objects_by_key
+                .get(o.key.as_str())
+                .expect("every validated object came from a raw entry of the same key");
+            let mut tag_keys: Vec<&str> = o
+                .tags
+                .iter()
+                .map(|id| {
+                    *tag_key_by_id
+                        .get(id)
+                        .expect("every object tag id was resolved from a real tag")
+                })
+                .collect();
+            tag_keys.sort_unstable();
+            contact_sheet::CardInput {
+                obj: o,
+                layer_name: raw_entry.layer.value.as_str(),
+                archetype: raw_entry.archetype.as_ref().map(|a| a.value.as_str()),
+                tag_keys,
+                def_path: raw_entry.path.to_str().unwrap_or_default(),
+                def_line: raw_entry.key.line,
+                atlas: atlas.atlas_by_object_id[&o.id],
+            }
+        })
+        .collect();
+    let contact_sheet_html = contact_sheet::build(
+        &cards,
+        tile_size_px,
+        &atlas.pages,
+        defs_version,
+        manifest_hash,
+    );
+
     Ok(BuildOutput {
         rust: emit::emit_rust(&defs, defs_version),
         json: emit::emit_json(
@@ -87,13 +164,14 @@ pub fn build(
             &atlas.atlas_by_object_id,
             &atlas.atlas_by_character_part,
         ),
-        id_manifest: emit::emit_id_manifest(&defs),
+        id_manifest,
         atlas_pages: atlas
             .pages
             .into_iter()
             .zip(atlas.page_bytes)
             .map(|(p, bytes)| (p.file, bytes))
             .collect(),
+        contact_sheet: contact_sheet_html,
     })
 }
 
