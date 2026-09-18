@@ -153,7 +153,7 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
             .unwrap_or_else(|| panic!("no layout for family '{}'", part.family.as_str()));
         let rect = out
             .atlas_by_character_part
-            .get(&(part.kind.to_string(), part.key.clone()))
+            .get(&(part.kind, part.key.clone()))
             .unwrap_or_else(|| panic!("{} '{}' has no packed atlas rect", part.kind, part.key));
         let (page_w, page_h, page_rgba) = &decoded_pages[rect.page as usize];
         let (page_w, page_h) = (*page_w, *page_h);
@@ -218,7 +218,7 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
     // exactly one placement (no stray page for an unused row).
     let placed_character_pages: std::collections::BTreeSet<u32> = character_parts
         .iter()
-        .map(|part| out.atlas_by_character_part[&(part.kind.to_string(), part.key.clone())].page)
+        .map(|part| out.atlas_by_character_part[&(part.kind, part.key.clone())].page)
         .collect();
     let character_group_pages = out
         .pages

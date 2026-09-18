@@ -364,7 +364,30 @@ describe("AppearanceTextureCache", () => {
     expect(frames.frame("idle", "down", 0)).toBeDefined();
   });
 
-  it("a second family with a different cell geometry throws by name, never silently sharing the pool", async () => {
+  // Tim's direction, cycle 2: exhaustion is known synchronously too (the
+  // slot claim itself, inside `acquire`'s own `build` closure), and must
+  // surface as a rejection the same way a geometry mismatch does, never
+  // as an exception escaping `acquire` itself.
+  it("exhaustion (every slot still referenced) rejects by name, and never throws synchronously", async () => {
+    const compositePages = new FakeCompositePages(1);
+    const pageLoader = new DeferredPageLoader();
+    const cache = new AppearanceTextureCache(singleSlotDefs(), "", compositePages, pageLoader);
+
+    // Never released -- the pool's own one slot stays referenced.
+    await cache.acquire(TUPLE);
+
+    let rejection: Promise<unknown> | undefined;
+    expect(() => {
+      rejection = cache.acquire({ ...TUPLE, body: 2 });
+    }).not.toThrow();
+    await expect(rejection).rejects.toThrow(/every slot is in use/);
+  });
+
+  // Tim's direction, cycle 2: a promise-returning method rejects, it
+  // never throws -- even a failure known synchronously (the slot claim
+  // itself, inside `acquire`'s own `build` closure) must still surface
+  // as a rejection, never as an exception escaping `acquire` itself.
+  it("a second family with a different cell geometry rejects by name, never silently sharing the pool, and never throws synchronously", async () => {
     const defs = defsWith({
       appearanceLayouts: [LAYOUT, DIFFERENT_GEOMETRY_LAYOUT],
     });
@@ -374,7 +397,11 @@ describe("AppearanceTextureCache", () => {
 
     await cache.acquire(TUPLE);
     const kidTuple = { body: 11, eyes: 11, outfit: 11, hairstyle: 11, accessory: 11 };
-    expect(() => cache.acquire(kidTuple)).toThrow(/robot/);
+    let rejection: Promise<unknown> | undefined;
+    expect(() => {
+      rejection = cache.acquire(kidTuple);
+    }).not.toThrow();
+    await expect(rejection).rejects.toThrow(/robot/);
   });
 
   // Tim's direction, cycle 1: an entry evicted (its slot reassigned)

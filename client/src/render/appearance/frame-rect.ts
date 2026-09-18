@@ -1,13 +1,16 @@
 // Story 1.10 (FR61) / Story 2.7: pure pixel math over an
 // `AppearanceLayoutDef` -- no `pixi.js`, no canvas, no DOM.
-// `compositeCellRect`/`compositeSheetSize` address the *compact* strip a
-// part's own packed atlas rect holds (only the rows/directions/frames
-// this game actually uses -- an adult idle+walk strip is 2 rows x 24
-// columns of 16x32, never a copy of the much larger vendor sheet) --
-// `tools/defs-build`'s own `atlas::character::strip_size` mirrors this
-// exactly (with `gutter` always 0 on that side: the packed atlas strip
-// itself is never gutter-padded between frames, only the client's own
-// shared composite pages are).
+// `compositeCellRect` addresses the *compact* strip a part's own packed
+// atlas rect holds (only the rows/directions/frames this game actually
+// uses -- an adult idle+walk strip is 2 rows x 24 columns of 16x32,
+// never a copy of the much larger vendor sheet); the strip's own total
+// size is `defs/composite-strip.ts`'s `compositeStripSize`, the one
+// implementation this module's own callers import directly rather than
+// through a forwarder here (`tools/defs-build`'s own
+// `atlas::character::strip_size` mirrors that exactly, with `gutter`
+// always 0 on that side: the packed atlas strip itself is never
+// gutter-padded between frames, only the client's own shared composite
+// pages are).
 //
 // An optional `gutter` widens every cell's own pitch by that many pixels
 // on every side (still `0` by default, matching a packed atlas part
@@ -17,7 +20,6 @@
 // background, so neighbouring frames must never bleed into each other at
 // a fractional camera position).
 
-import { compositeStripSize } from "../../defs/composite-strip";
 import type { AppearanceLayoutDef } from "../../defs/types";
 
 export interface FrameRect {
@@ -43,24 +45,6 @@ function checkFrame(row: { framesPerDirection: number }, frame: number, animatio
       `frame-rect: frame ${frame} is out of range for animation '${animation}' (0..${row.framesPerDirection - 1})`,
     );
   }
-}
-
-/** The compact strip's own total size, `gutter` pixels of padding added
- * around every cell (default `0`, a packed atlas part strip's own tight
- * layout) -- exactly as many rows as `layout.rows` (in declaration
- * order) and as many columns as `framesPerDirection * directions.length`
- * needs. Re-exported under this name for this module's own callers;
- * `defs/composite-strip.ts` owns the one implementation (Tim's
- * direction, cycle 1: shared with `defs/parse.ts`'s own AC1 check,
- * rather than each keeping its own copy). */
-export function compositeSheetSize(
-  layout: AppearanceLayoutDef,
-  gutter = 0,
-): {
-  width: number;
-  height: number;
-} {
-  return compositeStripSize(layout, gutter);
 }
 
 /** The destination rect for `(animation, direction, frame)` in the

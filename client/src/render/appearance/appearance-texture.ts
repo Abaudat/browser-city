@@ -68,16 +68,18 @@ export interface CharacterPageLoader {
 
 /** One composited tuple+override's own texture set -- every frame
  * `Texture` is shared with (and outlives) this particular look: it
- * belongs to the slot, not the look. `destroy` therefore never destroys
- * a `Texture`; it only releases the slot claim, for the next distinct
- * look to claim (and redraw, `clearSlot` first). */
+ * belongs to the slot, not the look. Releasing a look is `cache.release`
+ * alone (`AppearanceTextureCache.release`, keyed on the tuple/override
+ * the caller itself already holds) -- never a second, unnamed way to
+ * drop a reference on a `CompositeFrames` instance itself (Tim's
+ * direction, cycle 2: a caller that called *both* would silently drop
+ * another holder's reference, since `AppearanceCache.release` clamps at
+ * zero rather than erroring on an extra call). */
 export class CompositeFrames {
   private readonly frames: ReadonlyMap<string, Texture>;
-  private readonly onDestroy: () => void;
 
-  constructor(frames: ReadonlyMap<string, Texture>, onDestroy: () => void) {
+  constructor(frames: ReadonlyMap<string, Texture>) {
     this.frames = frames;
-    this.onDestroy = onDestroy;
   }
 
   frame(animation: string, direction: string, frameIndex: number): Texture {
@@ -87,10 +89,6 @@ export class CompositeFrames {
       throw new Error(`appearance-texture: no pre-built frame for '${key}'`);
     }
     return found;
-  }
-
-  destroy(): void {
-    this.onDestroy();
   }
 }
 
@@ -215,11 +213,7 @@ export class AppearanceTextureCache {
     return frames;
   }
 
-  private async draw(
-    claim: SlotClaim,
-    resolved: ResolvedLayers,
-    onDestroy: () => void,
-  ): Promise<CompositeFrames> {
+  private async draw(claim: SlotClaim, resolved: ResolvedLayers): Promise<CompositeFrames> {
     const pageFiles = pageFilesFor(this.defs, resolved.parts);
     const bitmaps = await loadLayerImages(
       pageFiles,
@@ -265,31 +259,42 @@ export class AppearanceTextureCache {
     }
 
     const frames = this.framesForSlot(claim, resolved.layout);
-    return new CompositeFrames(frames, onDestroy);
+    return new CompositeFrames(frames);
   }
 
+  /** Never throws synchronously (Tim's direction, cycle 2): a
+   * promise-returning method rejects, it never throws -- a caller
+   * chaining straight off this call (`citizens-layer.ts`'s
+   * `compareForE2e`, `cache.acquire(...).then(...)`) must see every
+   * failure, including exhaustion and a cell-geometry mismatch, arrive
+   * as a rejection, never as an exception escaping this call itself.
+   * `this.cache.acquire`'s own `build` closure below still claims the
+   * slot synchronously, before any async work -- only where that throw
+   * surfaces changes here, not when it happens. */
   acquire(
     tuple: AppearanceTuple,
     override: UniformOverride | null = null,
   ): Promise<CompositeFrames> {
     const key = appearanceCacheKey(tuple, override);
-    const look = this.cache.acquire(key, () => {
-      // Claimed synchronously, before any async work -- exhaustion or a
-      // cell-geometry mismatch throws here, synchronously, out of
-      // `acquire` itself, never as a later rejection (Tim's direction).
-      const resolved = resolveLayers(this.defs, tuple, override);
-      const claim = this.slots.claim(resolved.layout);
-      const promise = this.draw(claim, resolved, () => this.release(tuple, override));
-      promise.catch(() => {
-        // A build failure releases its own slot immediately, exactly
-        // once (Quentin's direction, cycle 1), and forgets the cache
-        // entry so a retry gets a fresh attempt -- identity-guarded via
-        // `forget`, the same as every other cache in this pipeline.
-        this.cache.forget(key, look);
-        this.slots.release(claim);
+    let look: PendingLook;
+    try {
+      look = this.cache.acquire(key, () => {
+        const resolved = resolveLayers(this.defs, tuple, override);
+        const claim = this.slots.claim(resolved.layout);
+        const promise = this.draw(claim, resolved);
+        promise.catch(() => {
+          // A build failure releases its own slot immediately, exactly
+          // once (Quentin's direction, cycle 1), and forgets the cache
+          // entry so a retry gets a fresh attempt -- identity-guarded via
+          // `forget`, the same as every other cache in this pipeline.
+          this.cache.forget(key, look);
+          this.slots.release(claim);
+        });
+        return { claim, promise };
       });
-      return { claim, promise };
-    });
+    } catch (error: unknown) {
+      return Promise.reject(error);
+    }
     return look.promise;
   }
 

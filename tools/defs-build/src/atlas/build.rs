@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::atlas::character::{CharacterPartSource, build_character_pack_items};
+use crate::atlas::character::{CharacterPartSource, PartKind, build_character_pack_items};
 use crate::atlas::image::{SourceCrop, composite_with_extrusion, decode_rgba8, encode_rgba8};
 use crate::atlas::pack::{PackItem, PageMeta, SourceKey, pack_all};
 use crate::atlas::theme::{check_shadow_variants, resolve_page_group, theme_group};
@@ -22,9 +22,11 @@ pub struct AtlasBuildOutput {
     pub page_bytes: Vec<Vec<u8>>,
     pub atlas_by_object_id: BTreeMap<u32, AtlasRect>,
     /// Story 2.7: one packed rect per character part, keyed by `(kind,
-    /// key)` -- e.g. `("body", "body_01")` -- CPU-only, JSON-only, exactly
-    /// like `atlas_by_object_id` (Tim's direction).
-    pub atlas_by_character_part: BTreeMap<(String, String), AtlasRect>,
+    /// key)` -- e.g. `(PartKind::Body, "body_01")` -- CPU-only, JSON-only,
+    /// exactly like `atlas_by_object_id` (Tim's direction). `kind` is the
+    /// closed `PartKind` enum, never a string re-parsed/re-stringified at
+    /// every lookup (Tim's direction, cycle 2).
+    pub atlas_by_character_part: BTreeMap<(PartKind, String), AtlasRect>,
 }
 
 /// NFR12's scene-side half (story 2.7's three-term rule, Tim's direction):
@@ -245,7 +247,7 @@ pub fn build_atlas(
             .get(&item.source)
             .expect("every character part's own strip was packed above");
         atlas_by_character_part.insert(
-            (part.kind.to_string(), part.key.clone()),
+            (part.kind, part.key.clone()),
             AtlasRect {
                 page: placement.page,
                 x: placement.x,

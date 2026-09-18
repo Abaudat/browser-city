@@ -1,11 +1,10 @@
-// Story 2.7 (Tim's direction, cycle 1): the compact composite strip's own
-// total size -- one pure computation, owned by `defs/` (the base layer
-// every render module already depends on, never the other way), so
-// `defs/parse.ts`'s own AC1 cross-reference check
-// (`checkPartAtlasRect`) and `render/appearance/frame-rect.ts`'s
-// `compositeSheetSize` (re-exported there under that name for its own
-// callers) share the one implementation instead of two copies that could
-// drift. `tools/defs-build`'s own `strip_size` mirrors this exactly, with
+// Story 2.7 (Tim's direction): the compact composite strip's own total
+// size -- one pure computation, owned by `defs/` (the base layer every
+// render module already depends on, never the other way), so
+// `defs/parse.ts`'s own AC1 cross-reference check (`checkPartAtlasRect`)
+// and `render/appearance/composite-slots.ts`'s own slot arithmetic
+// import this directly, rather than each keeping its own copy.
+// `tools/defs-build`'s own `strip_size` mirrors this exactly, with
 // `gutter` always 0 on that side: the packed atlas strip itself is never
 // gutter-padded between frames, only the client's own shared composite
 // pages are (`gutter` here defaults to 0 for the same reason).

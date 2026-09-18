@@ -39,3 +39,12 @@ png = "=0.18.1"
 # proptests.
 [dev-dependencies]
 proptest = "1"
+
+# Story 2.7 (Tim's direction, cycle 2): the `defs` CI job's own unit/
+# fixture run decodes ~500 real vendor-sheet PNGs in a debug build --
+# `png`/`fdeflate`/`miniz_oxide` at `opt-level = 3` (dependencies only,
+# never this crate's own code, so its own tests still compile fast and
+# `llvm-cov` instrumentation is unaffected) is what brings that back
+# under budget.
+[profile.dev.package."*"]
+opt-level = 3

@@ -1,15 +1,15 @@
 // Story 2.7 (Tim's direction, AC3): pure slot arithmetic over
 // `CHARACTER_COMPOSITE_PAGES` shared, canvas-backed composite pages --
 // no `pixi.js`, no canvas. A "slot" is where one composited look's own
-// frames live: `compositeSheetSize(layout, COMPOSITE_CELL_GUTTER_PX)`'s
-// own pixel footprint (a transparent gutter around every frame cell,
-// `frame-rect.ts`'s own copy), tiled row-major across a fixed
-// `COMPOSITE_PAGE_SIZE` page, page 0 filled before page 1. Capacity is
-// derived from this arithmetic, never a literal -- `APPEARANCE_TEXTURE_
-// CACHE_CAPACITY` (the old one-texture-per-look cap) no longer exists.
+// frames live: `compositeStripSize(layout, COMPOSITE_CELL_GUTTER_PX)`'s
+// own pixel footprint (a transparent gutter around every frame cell),
+// tiled row-major across a fixed `COMPOSITE_PAGE_SIZE` page, page 0
+// filled before page 1. Capacity is derived from this arithmetic, never
+// a literal -- `APPEARANCE_TEXTURE_CACHE_CAPACITY` (the old
+// one-texture-per-look cap) no longer exists.
 
+import { compositeStripSize } from "../../defs/composite-strip";
 import type { AppearanceLayoutDef } from "../../defs/types";
-import { compositeSheetSize } from "./frame-rect";
 
 /** Every composite page is this many pixels square -- the same cap
  * `tools/defs-build`'s own atlas pages use (`ATLAS_PAGE_WIDTH`/
@@ -40,7 +40,7 @@ export interface SlotLayout {
 /** Derives one family layout's own slot capacity across `pageCount`
  * shared composite pages -- pure arithmetic, no allocation. */
 export function computeSlotLayout(layout: AppearanceLayoutDef, pageCount: number): SlotLayout {
-  const { width, height } = compositeSheetSize(layout, COMPOSITE_CELL_GUTTER_PX);
+  const { width, height } = compositeStripSize(layout, COMPOSITE_CELL_GUTTER_PX);
   const slotsPerRow = width > 0 ? Math.floor(COMPOSITE_PAGE_SIZE / width) : 0;
   const slotsPerCol = height > 0 ? Math.floor(COMPOSITE_PAGE_SIZE / height) : 0;
   const slotsPerPage = slotsPerRow * slotsPerCol;

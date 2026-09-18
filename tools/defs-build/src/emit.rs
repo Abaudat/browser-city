@@ -563,7 +563,7 @@ pub fn emit_json(
     defs_version: &str,
     atlas_pages: &[AtlasPageDef],
     atlas_by_object_id: &BTreeMap<u32, AtlasRect>,
-    atlas_by_character_part: &BTreeMap<(String, String), AtlasRect>,
+    atlas_by_character_part: &BTreeMap<(PartKind, String), AtlasRect>,
 ) -> String {
     let mut out = String::new();
     out.push_str("{\n");
@@ -698,7 +698,7 @@ pub fn emit_json(
     // always covers every part it is given.
     let character_atlas_rect = |kind: PartKind, key: &str| -> AtlasRect {
         *atlas_by_character_part
-            .get(&(kind.as_str().to_string(), key.to_string()))
+            .get(&(kind, key.to_string()))
             .unwrap_or_else(|| panic!("{kind} '{key}' has no packed atlas rect"))
     };
 
@@ -1123,7 +1123,7 @@ mod tests {
     /// Story 2.7: one packed rect for every appearance part [`sample`]
     /// declares, keyed by `(kind, key)` -- every `emit_json` test below
     /// shares this.
-    fn sample_character_atlas_map() -> BTreeMap<(String, String), AtlasRect> {
+    fn sample_character_atlas_map() -> BTreeMap<(PartKind, String), AtlasRect> {
         let rect = AtlasRect {
             page: 1,
             x: 2,
@@ -1132,14 +1132,14 @@ mod tests {
             h: 32,
         };
         [
-            ("body", "body_01"),
-            ("eyes", "eyes_01"),
-            ("hairstyle", "hairstyle_01_01"),
-            ("outfit", "outfit_01_01"),
-            ("accessory", "accessory_06_policeman_hat_01"),
+            (PartKind::Body, "body_01"),
+            (PartKind::Eyes, "eyes_01"),
+            (PartKind::Hairstyle, "hairstyle_01_01"),
+            (PartKind::Outfit, "outfit_01_01"),
+            (PartKind::Accessory, "accessory_06_policeman_hat_01"),
         ]
         .into_iter()
-        .map(|(kind, key)| ((kind.to_string(), key.to_string()), rect))
+        .map(|(kind, key)| ((kind, key.to_string()), rect))
         .collect()
     }
 

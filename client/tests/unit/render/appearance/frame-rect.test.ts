@@ -1,13 +1,13 @@
 // Story 1.10 (FR61) / Story 2.7: pure pixel math packing the frames
 // Browser City actually uses into a compact composite strip -- both
 // inside a packed atlas part strip (gutter 0) and inside one composite-
-// page slot (a positive gutter, story 2.7).
+// page slot (a positive gutter, story 2.7). The strip's own total size
+// is `defs/composite-strip.ts`'s own `compositeStripSize`, tested there
+// directly (`tests/unit/defs/composite-strip.test.ts`), not re-tested
+// here through a forwarder this module no longer has.
 import { describe, expect, it } from "vitest";
 import type { AppearanceLayoutDef } from "../../../../src/defs/types";
-import {
-  compositeCellRect,
-  compositeSheetSize,
-} from "../../../../src/render/appearance/frame-rect";
+import { compositeCellRect } from "../../../../src/render/appearance/frame-rect";
 
 const LAYOUT: AppearanceLayoutDef = {
   id: 1,
@@ -22,22 +22,6 @@ const LAYOUT: AppearanceLayoutDef = {
   ],
   acceptedSizes: [{ width: 896, height: 656 }],
 };
-
-describe("compositeSheetSize", () => {
-  it("is exactly rows*cellHeight tall and framesPerDirection*directions*cellWidth wide -- never the sheet's own overhang", () => {
-    // 2 rows (idle, walk) x 32px, 6 frames x 4 directions x 16px
-    expect(compositeSheetSize(LAYOUT)).toEqual({ width: 6 * 4 * 16, height: 2 * 32 });
-  });
-
-  it("with a gutter, each cell's own pitch widens by 2*gutter on every axis", () => {
-    // 24 columns x (16+2)px, 2 rows x (32+2)px
-    expect(compositeSheetSize(LAYOUT, 1)).toEqual({ width: 24 * 18, height: 2 * 34 });
-  });
-
-  it("defaults to gutter 0, identical to calling it with 0 explicitly", () => {
-    expect(compositeSheetSize(LAYOUT)).toEqual(compositeSheetSize(LAYOUT, 0));
-  });
-});
 
 describe("compositeCellRect", () => {
   it("packs rows in declaration order, starting at (0,0) of the compact strip", () => {
