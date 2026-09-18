@@ -1090,6 +1090,7 @@ mod tests {
                     floor_max: Some(2),
                 },
             }],
+            tile_size_px: Some(16),
         }
     }
 

@@ -1,29 +1,26 @@
-//! Story 2.5: a fourth output of the same `defs-build` run, alongside
-//! `defs.rs`/`defs.json`/the id manifest -- a single self-contained static
-//! HTML page (no JS, no build step) that draws every object's declared
-//! footprint/collider/`interact_at` over its own real, already-packed
-//! atlas pixels, grouped by archetype, so a plausible-but-wrong footprint
-//! (AC2's bench-marked-walk-through) is catchable by looking rather than
-//! by an invariant. Written to [`crate::model::CONTACT_SHEET_PATH`],
-//! committed like every other `defs-build` output and kept current by
-//! `scripts/ci/check-defs-current.sh` -- AC3's "no manual step" holds by
-//! construction, the same way it already does for the other three.
+//! Renders [`crate::model::CONTACT_SHEET_PATH`]: a fourth output of the
+//! same `defs-build` run, alongside `defs.rs`/`defs.json`/the id
+//! manifest, committed and kept current by `scripts/ci/
+//! check-defs-current.sh`. Static HTML, no JS, no build step; it
+//! references `client/public/atlas/`'s own committed pages by relative
+//! path (one CSS rule per page, never embedded), and draws every object's
+//! declared footprint/collider/`interact_at` over them, grouped by
+//! archetype.
 //!
 //! Every number this module draws comes from [`crate::model::ObjectDef`]'s
 //! own declared fields (Quentin's direction: never a re-derivation from
 //! `collider_inset`, never a pixel/alpha read) -- this file never decodes
 //! or composites a source image itself, and `scripts/ci/
 //! check-no-runtime-footprint-inference.sh` greps this exact file to keep
-//! that true. A thumbnail is drawn by referencing the already-committed
-//! atlas page PNG with CSS `background-position`/`background-size`
-//! (Quentin's direction: no compositing, no base64, no new image-encoding
-//! path) -- every asset URL this module emits is a relative path from the
-//! sheet's own location to a real file on disk, proven by this crate's own
-//! `tests/contact_sheet_*.rs`.
+//! that true. Every asset URL this module emits is a relative path from
+//! the sheet's own location to a real file on disk, proven by this
+//! crate's own `tests/contact_sheet_*.rs`.
+
+use std::collections::BTreeMap;
 
 use crate::model::{
-    AtlasPageDef, AtlasRect, COLLIDER_SUBCELLS_PER_CELL, ColliderRect, INTERACT_AT_MAX_REACH_CELLS,
-    ObjectDef,
+    AtlasPageDef, AtlasRect, COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs,
+    INTERACT_AT_MAX_REACH_CELLS, ObjectDef, ObjectEntry, RawDefs,
 };
 
 /// Fixed integer upscale (Artie's direction): one collider sub-cell lands
@@ -37,7 +34,7 @@ const COLOR_ANCHOR: &str = "#ffd23f";
 const COLOR_COLLIDER_FILL: &str = "rgba(214,64,50,0.35)";
 const COLOR_COLLIDER_STROKE: &str = "#d64032";
 const COLOR_INTERACT_STROKE: &str = "#4fb0d8";
-const COLOR_OVERHANG_TINT: &str = "rgba(255,255,255,0.10)";
+const COLOR_OVERHANG_TINT: &str = "rgba(255,255,255,0.18)";
 const COLOR_OVERHANG_BASELINE: &str = "#ffffff";
 const COLOR_WALKTHROUGH_HATCH: &str = "rgba(255,255,255,0.5)";
 
@@ -165,6 +162,55 @@ pub struct CardInput<'a> {
     pub atlas: AtlasRect,
 }
 
+/// Builds one [`CardInput`] per object in `defs.objects`, joining the
+/// validated, lowered [`ObjectDef`] (geometry, sprite, tags-as-ids)
+/// against the pre-lowering [`RawDefs`] (the archetype key -- authoring-
+/// time only, never reachable from `Defs` itself -- and the def's own
+/// file/line) and `atlas_by_object_id` (story 2.6's packer output). The
+/// one place this join happens (Tim's direction): `lib.rs::build` calls
+/// this and nothing else to get from a validated tree to a rendered
+/// sheet.
+pub fn cards<'a>(
+    raw: &'a RawDefs,
+    defs: &'a Defs,
+    atlas_by_object_id: &BTreeMap<u32, AtlasRect>,
+) -> Vec<CardInput<'a>> {
+    let raw_objects_by_key: BTreeMap<&str, &ObjectEntry> = raw
+        .objects
+        .iter()
+        .map(|e| (e.key.value.as_str(), e))
+        .collect();
+    let tag_key_by_id: BTreeMap<u32, &str> =
+        defs.tags.iter().map(|t| (t.id, t.key.as_str())).collect();
+    defs.objects
+        .iter()
+        .map(|o| {
+            let raw_entry = raw_objects_by_key
+                .get(o.key.as_str())
+                .expect("every validated object came from a raw entry of the same key");
+            let mut tag_keys: Vec<&str> = o
+                .tags
+                .iter()
+                .map(|id| {
+                    *tag_key_by_id
+                        .get(id)
+                        .expect("every object tag id was resolved from a real tag")
+                })
+                .collect();
+            tag_keys.sort_unstable();
+            CardInput {
+                obj: o,
+                layer_name: raw_entry.layer.value.as_str(),
+                archetype: raw_entry.archetype.as_ref().map(|a| a.value.as_str()),
+                tag_keys,
+                def_path: raw_entry.path.to_str().unwrap_or_default(),
+                def_line: raw_entry.key.line,
+                atlas: atlas_by_object_id[&o.id],
+            }
+        })
+        .collect()
+}
+
 fn html_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -232,39 +278,30 @@ body {
   color: #e8e8ea;
   font: 14px/1.4 -apple-system, "Segoe UI", sans-serif;
 }
-header {
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid #444;
-  position: sticky;
-  top: 0;
-  background: #1c1c1f;
-  z-index: 2;
-}
+.layer-toggle { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.sticky-top { position: sticky; top: 0; z-index: 2; background: #1c1c1f; }
+header { padding: 1rem 1.5rem; border-bottom: 1px solid #444; }
 header h1 { margin: 0 0 0.25rem 0; font-size: 1.1rem; }
 #legend {
-  position: sticky;
-  top: 0;
-  background: #1c1c1f;
   border-bottom: 1px solid #444;
   padding: 0.5rem 1.5rem;
   display: flex;
   flex-wrap: wrap;
   gap: 1rem;
   align-items: center;
-  z-index: 1;
 }
+#legend label { cursor: pointer; }
 #legend .swatch { display: inline-block; width: 1rem; height: 1rem; vertical-align: middle; margin-right: 0.25rem; border: 1px solid #888; }
 .swatch-footprint { border-style: dashed; }
 .swatch-collider { background: rgba(214,64,50,0.35); border-color: #d64032; }
 .swatch-interact { border-color: #4fb0d8; }
-.swatch-overhang { background: rgba(255,255,255,0.10); }
+.swatch-overhang { background: rgba(255,255,255,0.18); }
 section.group { padding: 1rem 1.5rem; }
 section.group h2 { font-size: 1rem; border-bottom: 1px solid #444; padding-bottom: 0.25rem; }
 .cards { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
-.card { background: #1c1c1f; border: 1px solid #3a3a3f; border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; }
+.card { background: #1c1c1f; border: 1px solid #3a3a3f; border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; align-items: flex-start; }
 .card-body {
   position: relative;
-  align-self: flex-end;
   background-color: #444;
   background-image:
     linear-gradient(45deg, #333 25%, transparent 25%), linear-gradient(-45deg, #333 25%, transparent 25%),
@@ -272,10 +309,11 @@ section.group h2 { font-size: 1rem; border-bottom: 1px solid #444; padding-botto
   background-size: 8px 8px;
   background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
 }
+.card-content { position: absolute; left: 0; bottom: 0; }
 .sprite { position: absolute; image-rendering: pixelated; image-rendering: crisp-edges; }
 .overlay { position: absolute; left: 0; top: 0; }
 .walkthrough-chip {
-  position: absolute; top: 2px; left: 2px; z-index: 3;
+  position: absolute; bottom: 2px; left: 2px; z-index: 3;
   background: #000a; color: #fff; font-size: 10px; letter-spacing: 0.05em;
   padding: 1px 4px; border-radius: 2px; pointer-events: none;
 }
@@ -285,17 +323,32 @@ dl.meta dt { color: #999; }
 dl.meta dd { margin: 0; text-align: right; word-break: break-all; }
 "#;
 
+/// The four layer-toggle inputs (Quentin/Tim/Artie's direction, cycle 1
+/// fix): direct children of `<body>`, before `<main>` -- the general
+/// sibling combinator in [`TOGGLE_STYLE`] only ever matches a *sibling*
+/// of the checkbox, so nesting one inside `#legend`/`<label>` (as cycle
+/// 1 did) makes every toggle inert. Visually hidden via `.layer-toggle`;
+/// `#legend`'s own `<label for="...">` still drives them.
+const TOGGLES_HTML: &str = r#"<input type="checkbox" id="toggle-footprint" class="layer-toggle" checked>
+<input type="checkbox" id="toggle-collider" class="layer-toggle" checked>
+<input type="checkbox" id="toggle-interact" class="layer-toggle" checked>
+<input type="checkbox" id="toggle-overhang" class="layer-toggle" checked>
+"#;
+
 const LEGEND_HTML: &str = r#"<div id="legend">
-  <label><input type="checkbox" id="toggle-footprint" checked> <span class="swatch swatch-footprint"></span>footprint</label>
-  <label><input type="checkbox" id="toggle-collider" checked> <span class="swatch swatch-collider"></span>collider</label>
-  <label><input type="checkbox" id="toggle-interact" checked> <span class="swatch swatch-interact"></span>interact_at</label>
-  <label><input type="checkbox" id="toggle-overhang" checked> <span class="swatch swatch-overhang"></span>overhang</label>
+  <label for="toggle-footprint"><span class="swatch swatch-footprint"></span>footprint</label>
+  <label for="toggle-collider"><span class="swatch swatch-collider"></span>collider</label>
+  <label for="toggle-interact"><span class="swatch swatch-interact"></span>interact_at</label>
+  <label for="toggle-overhang"><span class="swatch swatch-overhang"></span>overhang</label>
 </div>
 "#;
 
 /// Per-layer show/hide via the checkbox hack (pure CSS, no JS): every
-/// checkbox above is a sibling of `<main>`, so `:not(:checked) ~ main`
-/// hides that layer's own class everywhere inside it.
+/// checkbox is a direct child of `<body>`, preceding `<main>` -- a
+/// sibling of it, so `:not(:checked) ~ main` actually hides that layer's
+/// own class everywhere inside it. [`the_four_layer_toggles_are_structural_
+/// siblings_of_main_never_nested_in_the_legend`] pins the structure this
+/// selector depends on.
 const TOGGLE_STYLE: &str = r#"
 #toggle-footprint:not(:checked) ~ main .layer-footprint { display: none; }
 #toggle-collider:not(:checked) ~ main .layer-collider { display: none; }
@@ -303,31 +356,70 @@ const TOGGLE_STYLE: &str = r#"
 #toggle-overhang:not(:checked) ~ main .layer-overhang { display: none; }
 "#;
 
-fn render_card(card: &CardInput, tile_size_px: u32, atlas_pages: &[AtlasPageDef]) -> String {
+/// The two hatch patterns (walk-through, `interact_at`), declared once in
+/// a single hidden `<svg><defs>` at the top of `<main>` (Tim's direction,
+/// cycle 1: a per-card `<pattern>` was byte-identical on every card and
+/// re-declared per object) -- a card references `url(#walkthrough-hatch)`/
+/// `url(#interact-hatch)`, an id `fill`/`stroke` reference that resolves
+/// document-wide, never scoped to the card's own `<svg>`.
+fn hatch_defs_svg() -> String {
+    format!(
+        "<svg width=\"0\" height=\"0\" style=\"position:absolute\" aria-hidden=\"true\"><defs>\
+         <pattern id=\"walkthrough-hatch\" width=\"6\" height=\"6\" patternTransform=\"rotate(45)\" patternUnits=\"userSpaceOnUse\"><line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"6\" stroke=\"{COLOR_WALKTHROUGH_HATCH}\" stroke-width=\"2\" /></pattern>\
+         <pattern id=\"interact-hatch\" width=\"6\" height=\"6\" patternTransform=\"rotate(-45)\" patternUnits=\"userSpaceOnUse\"><line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"6\" stroke=\"{COLOR_INTERACT_STROKE}\" stroke-width=\"1.5\" /></pattern>\
+         </defs></svg>\n"
+    )
+}
+
+/// One CSS rule per atlas page (Tim's direction, cycle 1: an inline
+/// `background-image`/`background-size` repeated on every card meant
+/// editing one street sprite renamed the page and rewrote every card line
+/// of its whole group). A card then carries only `class="page-{n}"` plus
+/// its own `background-position`; renaming a page touches this one line.
+fn render_page_rules(atlas_pages: &[AtlasPageDef]) -> String {
+    let mut out = String::new();
+    for (i, page) in atlas_pages.iter().enumerate() {
+        let href = format!("../../{}/{}", crate::model::ATLAS_PAGES_DIR, page.file);
+        out.push_str(&format!(
+            ".page-{i} {{ background-image: url('{href}'); background-size: {}px {}px; }}\n",
+            page.width * SCALE,
+            page.height * SCALE
+        ));
+    }
+    out
+}
+
+fn render_card(card: &CardInput, tile_size_px: u32, box_w: u32, box_h: u32) -> String {
     let geo = project(card.obj, tile_size_px);
     let pad = INTERACT_AT_MAX_REACH_CELLS as f64 * tile_size_px as f64;
     let padded_w = geo.sprite_w + 2.0 * pad;
     let padded_h = geo.sprite_h + 2.0 * pad;
-    let page = &atlas_pages[card.atlas.page as usize];
-    let image_href = format!("../../{}/{}", crate::model::ATLAS_PAGES_DIR, page.file);
+    let content_w = (padded_w as u32) * SCALE;
+    let content_h = (padded_h as u32) * SCALE;
 
     let mut svg = String::new();
     svg.push_str(&format!(
         "<svg class=\"overlay\" viewBox=\"0 0 {} {}\" width=\"{}\" height=\"{}\">",
         fmt_num(padded_w),
         fmt_num(padded_h),
-        (padded_w as u32) * SCALE,
-        (padded_h as u32) * SCALE,
+        content_w,
+        content_h,
     ));
 
-    // Overhang band, drawn first (under everything else) plus its bold
-    // baseline at the footprint's own top edge.
+    // Overhang band, drawn first (under everything else): a fill plus a
+    // dashed outline on every edge (Artie's direction, cycle 1: a fill
+    // alone at 10% is invisible over a pale sprite) and a bold solid
+    // baseline drawn last, on top, at the footprint's own top edge --
+    // the dashed rect's own bottom edge reads as that solid line instead.
     if let Some(o) = &geo.overhang {
         svg.push_str(&format!(
-            "<g class=\"layer-overhang\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{COLOR_OVERHANG_TINT}\" /><line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{COLOR_OVERHANG_BASELINE}\" stroke-width=\"1.5\" /></g>",
-            fmt_num(pad + o.x), fmt_num(pad + o.y), fmt_num(o.w), fmt_num(o.h),
-            fmt_num(pad + geo.footprint.x), fmt_num(pad + geo.footprint.y),
-            fmt_num(pad + geo.footprint.x + geo.footprint.w), fmt_num(pad + geo.footprint.y),
+            "<g class=\"layer-overhang\"><rect x=\"{0}\" y=\"{1}\" width=\"{2}\" height=\"{3}\" fill=\"{COLOR_OVERHANG_TINT}\" /><rect x=\"{0}\" y=\"{1}\" width=\"{2}\" height=\"{3}\" fill=\"none\" stroke=\"{COLOR_OVERHANG_BASELINE}\" stroke-width=\"1\" stroke-dasharray=\"3,2\" /><line x1=\"{0}\" y1=\"{4}\" x2=\"{5}\" y2=\"{4}\" stroke=\"{COLOR_OVERHANG_BASELINE}\" stroke-width=\"1.5\" /></g>",
+            fmt_num(pad + o.x),
+            fmt_num(pad + o.y),
+            fmt_num(o.w),
+            fmt_num(o.h),
+            fmt_num(pad + geo.footprint.y),
+            fmt_num(pad + geo.footprint.x + geo.footprint.w),
         ));
     }
 
@@ -372,10 +464,11 @@ fn render_card(card: &CardInput, tile_size_px: u32, atlas_pages: &[AtlasPageDef]
         None => {
             let fp = &geo.footprint;
             svg.push_str(&format!(
-                "<pattern id=\"hatch-{0}\" width=\"6\" height=\"6\" patternTransform=\"rotate(45)\" patternUnits=\"userSpaceOnUse\"><line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"6\" stroke=\"{COLOR_WALKTHROUGH_HATCH}\" stroke-width=\"2\" /></pattern>\
-                 <rect x=\"{1}\" y=\"{2}\" width=\"{3}\" height=\"{4}\" fill=\"url(#hatch-{0})\" />",
-                card.obj.id,
-                fmt_num(pad + fp.x), fmt_num(pad + fp.y), fmt_num(fp.w), fmt_num(fp.h)
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"url(#walkthrough-hatch)\" />",
+                fmt_num(pad + fp.x),
+                fmt_num(pad + fp.y),
+                fmt_num(fp.w),
+                fmt_num(fp.h)
             ));
         }
     }
@@ -385,26 +478,25 @@ fn render_card(card: &CardInput, tile_size_px: u32, atlas_pages: &[AtlasPageDef]
     // when it overspills the footprint -- that overspill is the point.
     if let Some(r) = &geo.interact_at {
         svg.push_str(&format!(
-            "<g class=\"layer-interact\"><pattern id=\"interact-hatch-{0}\" width=\"6\" height=\"6\" patternTransform=\"rotate(-45)\" patternUnits=\"userSpaceOnUse\"><line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"6\" stroke=\"{COLOR_INTERACT_STROKE}\" stroke-width=\"1.5\" /></pattern>\
-             <rect x=\"{1}\" y=\"{2}\" width=\"{3}\" height=\"{4}\" fill=\"url(#interact-hatch-{0})\" stroke=\"{COLOR_INTERACT_STROKE}\" stroke-width=\"1\" /></g>",
-            card.obj.id,
-            fmt_num(pad + r.x), fmt_num(pad + r.y), fmt_num(r.w), fmt_num(r.h)
+            "<g class=\"layer-interact\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"url(#interact-hatch)\" stroke=\"{COLOR_INTERACT_STROKE}\" stroke-width=\"1\" /></g>",
+            fmt_num(pad + r.x),
+            fmt_num(pad + r.y),
+            fmt_num(r.w),
+            fmt_num(r.h)
         ));
     }
 
     svg.push_str("</svg>");
 
     let sprite_div = format!(
-        "<div class=\"sprite\" style=\"left:{}px; top:{}px; width:{}px; height:{}px; background-image:url('{}'); background-position:-{}px -{}px; background-size:{}px {}px;\"></div>",
+        "<div class=\"sprite page-{page}\" style=\"left:{}px; top:{}px; width:{}px; height:{}px; background-position:-{}px -{}px;\"></div>",
         (pad as u32) * SCALE,
         (pad as u32) * SCALE,
         card.obj.sprite.w * SCALE,
         card.obj.sprite.h * SCALE,
-        image_href,
         card.atlas.x * SCALE,
         card.atlas.y * SCALE,
-        page.width * SCALE,
-        page.height * SCALE,
+        page = card.atlas.page,
     );
 
     let walkthrough_chip = if geo.collider.is_none() {
@@ -435,7 +527,7 @@ fn render_card(card: &CardInput, tile_size_px: u32, atlas_pages: &[AtlasPageDef]
 
     format!(
         "<article class=\"card\" data-key=\"{key}\" data-id=\"{id}\" data-collider=\"{collider_attr}\" data-archetype=\"{archetype_attr_esc}\" data-width=\"{width}\" data-height=\"{height}\">\n\
-         <div class=\"card-body\" style=\"width:{padded_w_px}px; height:{padded_h_px}px;\">{sprite_div}{svg}{walkthrough_chip}</div>\n\
+         <div class=\"card-body\" style=\"width:{box_w}px; height:{box_h}px;\"><div class=\"card-content\" style=\"width:{content_w}px; height:{content_h}px;\">{sprite_div}{svg}{walkthrough_chip}</div></div>\n\
          <dl class=\"meta\">\n\
          <div><dt>key</dt><dd>{key}</dd></div>\n\
          <div><dt>name</dt><dd>{name}</dd></div>\n\
@@ -455,8 +547,10 @@ fn render_card(card: &CardInput, tile_size_px: u32, atlas_pages: &[AtlasPageDef]
         archetype_attr_esc = html_escape(archetype_attr),
         width = card.obj.width,
         height = card.obj.height,
-        padded_w_px = (padded_w as u32) * SCALE,
-        padded_h_px = (padded_h as u32) * SCALE,
+        box_w = box_w,
+        box_h = box_h,
+        content_w = content_w,
+        content_h = content_h,
         sprite_div = sprite_div,
         svg = svg,
         walkthrough_chip = walkthrough_chip,
@@ -471,9 +565,11 @@ fn render_card(card: &CardInput, tile_size_px: u32, atlas_pages: &[AtlasPageDef]
     )
 }
 
-/// Renders the whole contact sheet: one self-contained, `file://`-openable
-/// HTML page, byte-deterministic for a given input (no timestamp, no
-/// absolute path, no map-iteration order -- Tim's direction).
+/// Renders the whole contact sheet: one static HTML page, no JS, no build
+/// step -- it depends on `client/public/atlas/`'s own committed pages by
+/// relative path, referenced here, never embedded. Byte-deterministic for
+/// a given input (no timestamp, no absolute path, no map-iteration order
+/// -- Tim's direction).
 ///
 /// `manifest_hash` is a short hash over the same build's own id manifest
 /// (`emit::emit_id_manifest`'s output) -- printed beside `defs_version` so
@@ -487,6 +583,7 @@ pub fn build(
     manifest_hash: &str,
 ) -> String {
     let groups = group_and_sort(cards);
+    let pad = INTERACT_AT_MAX_REACH_CELLS as f64 * tile_size_px as f64;
     let mut out = String::new();
     out.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
     out.push_str("<!-- @generated by tools/defs-build -- do not edit by hand -->\n");
@@ -497,7 +594,10 @@ pub fn build(
     out.push_str("<style>\n");
     out.push_str(STYLE);
     out.push_str(TOGGLE_STYLE);
+    out.push_str(&render_page_rules(atlas_pages));
     out.push_str("</style>\n</head>\n<body>\n");
+    out.push_str(TOGGLES_HTML);
+    out.push_str("<div class=\"sticky-top\">\n");
     out.push_str(&format!(
         "<header><h1>Contact sheet</h1><p>defs_version <code>{}</code> &middot; manifest sha256 <code>{}</code> &middot; {} object(s)</p></header>\n",
         html_escape(defs_version),
@@ -505,7 +605,9 @@ pub fn build(
         cards.len()
     ));
     out.push_str(LEGEND_HTML);
+    out.push_str("</div>\n");
     out.push_str("<main>\n");
+    out.push_str(&hatch_defs_svg());
     for (archetype, group_cards) in &groups {
         let heading = archetype.unwrap_or("(no archetype -- bespoke)");
         out.push_str(&format!(
@@ -513,8 +615,26 @@ pub fn build(
             html_escape(archetype.unwrap_or("(none)")),
             html_escape(heading)
         ));
+        // Every card in a group shares one box, sized to the group's own
+        // widest and tallest sprite (Artie's direction, cycle 1: per-card
+        // boxes made the row-scan ragged and left the baseline only as
+        // reliable as two cards' metadata happening to be the same
+        // height) -- content sits bottom-left of that box
+        // (`.card-content`), so every footprint's own baseline lands on
+        // the same row regardless of a taller neighbour or a wrapped
+        // filename below it.
+        let box_w = group_cards
+            .iter()
+            .map(|c| ((c.obj.sprite.w as f64 + 2.0 * pad) as u32) * SCALE)
+            .max()
+            .unwrap_or(0);
+        let box_h = group_cards
+            .iter()
+            .map(|c| ((c.obj.sprite.h as f64 + 2.0 * pad) as u32) * SCALE)
+            .max()
+            .unwrap_or(0);
         for card in group_cards {
-            out.push_str(&render_card(card, tile_size_px, atlas_pages));
+            out.push_str(&render_card(card, tile_size_px, box_w, box_h));
         }
         out.push_str("</div>\n</section>\n");
     }
@@ -921,5 +1041,96 @@ mod tests {
         let cards = vec![card(&obj, None)];
         let html = build(&cards, 16, &atlas_pages(), "v1", "m1");
         assert!(html.contains("url('../../client/public/atlas/street-0123456789abcdef.png')"));
+    }
+
+    #[test]
+    fn two_different_manifest_hashes_produce_two_different_emitted_headers() {
+        // Quentin's direction: the render function must actually be
+        // sensitive to the value it is given -- a hardcoded placeholder
+        // or a frozen-at-first-build value would pass every other test
+        // here.
+        let html_a = build(&[], 16, &atlas_pages(), "v1", "aaaaaaaaaaaaaaaa");
+        let html_b = build(&[], 16, &atlas_pages(), "v1", "bbbbbbbbbbbbbbbb");
+        assert_ne!(html_a, html_b);
+        assert!(html_a.contains("manifest sha256 <code>aaaaaaaaaaaaaaaa</code>"));
+        assert!(html_b.contains("manifest sha256 <code>bbbbbbbbbbbbbbbb</code>"));
+    }
+
+    // --- the four layer toggles are structurally wired, not decorative
+    // (Quentin/Tim/Artie's direction, cycle 1: the checkbox hack silently
+    // did nothing because every input was nested inside the legend) ------
+
+    #[test]
+    fn the_four_layer_toggles_are_structural_siblings_of_main_never_nested_in_the_legend() {
+        let obj = object(1, 1, 16);
+        let cards = vec![card(&obj, None)];
+        let html = build(&cards, 16, &atlas_pages(), "v1", "m1");
+
+        let main_at = html.find("<main").expect("must emit <main>");
+        let legend_start = html
+            .find("<div id=\"legend\"")
+            .expect("must emit the legend");
+        let legend_end = html[legend_start..]
+            .find("</div>")
+            .map(|i| legend_start + i)
+            .expect("legend div must close");
+        let legend_html = &html[legend_start..legend_end];
+
+        for id in [
+            "toggle-footprint",
+            "toggle-collider",
+            "toggle-interact",
+            "toggle-overhang",
+        ] {
+            let input_at = html
+                .find(&format!("id=\"{id}\""))
+                .unwrap_or_else(|| panic!("must emit an input#{id}"));
+            assert!(
+                input_at < main_at,
+                "#{id} must appear before <main> (a later sibling of it)"
+            );
+            assert!(
+                !legend_html.contains(&format!("id=\"{id}\"")),
+                "#{id} must not be nested inside the legend -- the sibling combinator \
+                 in TOGGLE_STYLE only ever matches a sibling of the checkbox itself"
+            );
+            // The legend still drives it, via `for=`, from wherever it sits.
+            assert!(legend_html.contains(&format!("for=\"{id}\"")));
+        }
+    }
+
+    #[test]
+    fn every_layer_class_toggle_style_names_is_actually_emitted_by_render_card() {
+        // A card exercising every optional layer at once (collider,
+        // interact_at, overhang) plus the unconditional ones (footprint,
+        // and collider's own "none" branch elsewhere) -- if `TOGGLE_STYLE`
+        // ever names a class `render_card` stops emitting, this catches
+        // it structurally rather than leaving a dead selector.
+        let mut obj = object(2, 2, 64);
+        obj.collider = Some(ColliderRect {
+            x0: 0,
+            y0: 0,
+            x1: 16,
+            y1: 16,
+        });
+        obj.interact_at = Some(ColliderRect {
+            x0: 0,
+            y0: 0,
+            x1: 16,
+            y1: 16,
+        });
+        let cards = vec![card(&obj, None)];
+        let html = build(&cards, 16, &atlas_pages(), "v1", "m1");
+        for class in [
+            "layer-footprint",
+            "layer-collider",
+            "layer-interact",
+            "layer-overhang",
+        ] {
+            assert!(
+                html.contains(&format!("class=\"{class}\"")),
+                "TOGGLE_STYLE names '{class}' but render_card never emits it"
+            );
+        }
     }
 }

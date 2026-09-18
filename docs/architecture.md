@@ -960,20 +960,13 @@ rule above.
 
 ### Contact sheet
 
-Story 2.5: a fourth committed output of the same `defs-build` run, at
-`tools/defs-build/contact-sheet.html` (never under `client/public/` --
-it would ship in the deployed bundle -- or `defs/` -- it would fold into
-its own `defs_version` input), kept current by
-`scripts/ci/check-defs-current.sh` exactly like the other three. A
-single self-contained, `file://`-openable HTML page (no JS, no build
-step): every object's footprint/collider/`interact_at` overlaid on its
-own already-packed atlas pixels (referenced by relative path and CSS
-`background-position`, never re-composited or base64-embedded), grouped
-by declared archetype (bespoke objects naming none sorted first), so a
-plausible-but-wrong footprint is catchable by looking rather than by an
-invariant. `tools/defs-build/src/contact_sheet.rs` reads only the
-already-validated, lowered geometry -- never a pixel --
-`check-no-runtime-footprint-inference.sh` holds that.
+`tools/defs-build/contact-sheet.html`: a committed output of the same
+`defs-build` run, guarded by `check-defs-current.sh`. Never under
+`client/public/` or `defs/`. Static HTML, no JS; references the atlas
+pages under `client/public/atlas/` by relative path, one CSS rule per
+page. Draws only the lowered geometry (footprint/collider/`interact_at`),
+grouped by declared archetype -- `check-no-runtime-footprint-inference.sh`
+holds that it reads no pixel.
 
 ### Rules (`defs/rules/`, `defs/tags/`)
 

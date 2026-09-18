@@ -41,6 +41,16 @@ impl<T> Located<T> {
 /// literal 16 anywhere else in this crate or a caller is a defect.
 pub const COLLIDER_SUBCELLS_PER_CELL: i64 = 16;
 
+/// `defs/balance/*.toml`'s own dotted key for the pixels-per-cell scale a
+/// `collider`/`interact_at` sub-cell rect converts against (never
+/// [`COLLIDER_SUBCELLS_PER_CELL`] itself, which stays fixed when art
+/// scale changes -- see that constant's own doc). Declared once, here,
+/// so `validate.rs`'s own lookup (which resolves it onto [`Defs::
+/// tile_size_px`]) is the *only* place this string is ever spelled out;
+/// every other reader (the contact sheet included) reads the resolved
+/// field, never repeats this key.
+pub const RENDER_TILE_SIZE_PX_KEY: &str = "render.tile_size_px";
+
 /// How far beyond its own footprint an `interact_at` rect may reach, on
 /// every side, in whole cells (Tim's direction, story 1.9): unlike a
 /// `collider`, a reach rect is meant to extend outside the footprint (you
@@ -1328,4 +1338,10 @@ pub struct Defs {
     pub uniforms: Vec<UniformDef>,
     pub tags: Vec<TagDef>,
     pub rules: Vec<RuleDef>,
+    /// Story 2.5: `render.tile_size_px`, resolved once by `validate.rs`
+    /// and carried forward here -- `None` iff `objects` is empty (the one
+    /// case its absence is not already a hard error); a caller with any
+    /// object to draw may resolve this unconditionally, never with a
+    /// fallback literal of its own.
+    pub tile_size_px: Option<u32>,
 }

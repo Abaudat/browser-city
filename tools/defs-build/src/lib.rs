@@ -40,23 +40,6 @@ pub struct BuildOutput {
     pub contact_sheet: String,
 }
 
-/// `defs/balance/render.toml`'s own `render.tile_size_px` -- the contact
-/// sheet's own geometry conversion needs it (Tim's direction: never
-/// assume 1 sub-cell == 1px). `validate.rs` already refuses a tree that
-/// declares an object but no such key, so this only ever falls back to a
-/// literal for the (already validated, hence vacuous) case of zero
-/// objects.
-fn find_tile_size_px(defs: &Defs) -> u32 {
-    defs.balance
-        .iter()
-        .find(|b| b.key == "render.tile_size_px")
-        .map(|b| b.value as u32)
-        // Only reachable with zero objects (nothing for the sheet to
-        // draw) -- validate.rs refuses this key's absence whenever any
-        // object exists.
-        .unwrap_or(16)
-}
-
 /// Runs every stage over an already-collected `(path, text)` file list, the
 /// `(width, height)` already read from every appearance part's and every
 /// object's own sheet file (story 1.10/2.2; empty for a tree with no such
@@ -105,48 +88,18 @@ pub fn build(
     // atlas page hash already are.
     let manifest_hash = &sha256::sha256_hex(id_manifest.as_bytes())[..version::DEFS_VERSION_LEN];
 
-    // Story 2.3: `archetype` is authoring-time only and never reaches
-    // `ObjectDef` (Tim's direction) -- the contact sheet still needs it to
-    // group by, so it is read back here, from the pre-lowering entry, by
-    // key (unique -- `validate.rs` already enforces this). The raw
-    // entry's own `layer` (the authored name) and `path`/`key.line` (the
-    // def's own file/line) come from the same lookup.
-    let raw_objects_by_key: std::collections::BTreeMap<&str, &model::ObjectEntry> = raw
-        .objects
-        .iter()
-        .map(|e| (e.key.value.as_str(), e))
-        .collect();
-    let tag_key_by_id: std::collections::BTreeMap<u32, &str> =
-        defs.tags.iter().map(|t| (t.id, t.key.as_str())).collect();
-    let tile_size_px = find_tile_size_px(&defs);
-    let cards: Vec<contact_sheet::CardInput> = defs
-        .objects
-        .iter()
-        .map(|o| {
-            let raw_entry = raw_objects_by_key
-                .get(o.key.as_str())
-                .expect("every validated object came from a raw entry of the same key");
-            let mut tag_keys: Vec<&str> = o
-                .tags
-                .iter()
-                .map(|id| {
-                    *tag_key_by_id
-                        .get(id)
-                        .expect("every object tag id was resolved from a real tag")
-                })
-                .collect();
-            tag_keys.sort_unstable();
-            contact_sheet::CardInput {
-                obj: o,
-                layer_name: raw_entry.layer.value.as_str(),
-                archetype: raw_entry.archetype.as_ref().map(|a| a.value.as_str()),
-                tag_keys,
-                def_path: raw_entry.path.to_str().unwrap_or_default(),
-                def_line: raw_entry.key.line,
-                atlas: atlas.atlas_by_object_id[&o.id],
-            }
-        })
-        .collect();
+    let cards = contact_sheet::cards(&raw, &defs, &atlas.atlas_by_object_id);
+    let tile_size_px = if defs.objects.is_empty() {
+        // No cards, so the scale this feeds into is never read -- 0 makes
+        // that structurally obvious rather than a plausible-looking
+        // literal that could quietly redraw every footprint at the wrong
+        // scale if the guarantee below ever weakened.
+        0
+    } else {
+        defs.tile_size_px.expect(
+            "validate.rs guarantees Defs::tile_size_px is Some whenever objects is non-empty",
+        )
+    };
     let contact_sheet_html = contact_sheet::build(
         &cards,
         tile_size_px,
@@ -210,4 +163,86 @@ pub fn object_sprite_sheet_paths(raw: &model::RawDefs) -> Vec<String> {
         paths.insert(o.sprite.value.sheet.clone());
     }
     paths.into_iter().collect()
+}
+
+/// Every filesystem read [`build`] itself needs, collected from a real
+/// checkout at `root`, then handed straight to `build` -- the one place
+/// "the whole pipeline over a real `defs/` tree" lives, so a step added
+/// here is never silently skipped by one of its two callers (Quentin's
+/// direction): `bin/defs-build.rs`'s own edge, and this crate's own
+/// `tests/contact_sheet_real_defs.rs`, which used to hand-copy this same
+/// ~70 lines and would otherwise keep asserting against a pipeline the
+/// binary no longer runs the moment one of them changed alone.
+///
+/// What stays specific to the binary's own edge, not lifted here: the
+/// untracked-file refusal (must run before `defs_version` is computed,
+/// which the binary does before calling this) and writing every output to
+/// disk.
+pub fn build_from_repo_root(
+    root: &std::path::Path,
+    defs_version: &str,
+) -> Result<BuildOutput, Box<dyn std::error::Error>> {
+    let mut text_files = fsio::read_text(root, &fsio::list_defs_sources(root)?)?;
+    text_files.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // Story 1.10/2.2: which sheets does the tree reference, so their real
+    // `IHDR` dimensions can be read before `validate` checks the layout/
+    // sprite invariants against them -- the one impure step `build` itself
+    // never performs (Quentin's direction: parse/validate/emit stay pure).
+    let raw = parse::parse_all(&text_files)?;
+    let mut sheet_paths = appearance_sheet_paths(&raw);
+    sheet_paths.extend(object_sprite_sheet_paths(&raw));
+    sheet_paths.sort();
+    sheet_paths.dedup();
+    let sheet_dims: std::collections::BTreeMap<String, (u32, u32)> =
+        fsio::read_png_dims(root, &sheet_paths)?
+            .into_iter()
+            .collect();
+
+    // Story 2.6: every object's own `sprite.sheet`, read whole -- the
+    // atlas packer's real pixel input.
+    let mut object_sheet_paths = object_sprite_sheet_paths(&raw);
+    object_sheet_paths.sort();
+    object_sheet_paths.dedup();
+    let object_sheet_paths_buf: Vec<std::path::PathBuf> = object_sheet_paths
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+    let object_sheet_bytes: std::collections::BTreeMap<String, Vec<u8>> =
+        fsio::read_bytes(root, &object_sheet_paths_buf)?
+            .into_iter()
+            .map(|(p, bytes)| (p.to_string_lossy().replace('\\', "/"), bytes))
+            .collect();
+
+    // Story 2.7: every appearance part's own `sheet`, read whole -- the
+    // character-part packer's real pixel input.
+    let mut appearance_paths = appearance_sheet_paths(&raw);
+    appearance_paths.sort();
+    appearance_paths.dedup();
+    let appearance_sheet_paths_buf: Vec<std::path::PathBuf> = appearance_paths
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+    let appearance_sheet_bytes: std::collections::BTreeMap<String, Vec<u8>> =
+        fsio::read_bytes(root, &appearance_sheet_paths_buf)?
+            .into_iter()
+            .map(|(p, bytes)| (p.to_string_lossy().replace('\\', "/"), bytes))
+            .collect();
+
+    // Story 2.2: a `layer` name resolves against the codes golden --
+    // `sim::codes::layer`'s single append-only ladder -- never a second,
+    // hand-maintained list in this crate.
+    let codes_golden = fsio::read_codes_golden(root)?;
+    let layer_codes = layer_codes::parse_layer_codes(&codes_golden);
+
+    let output = build(
+        &text_files,
+        &sheet_dims,
+        &object_sheet_bytes,
+        &appearance_sheet_bytes,
+        &layer_codes,
+        model::SPRITE_SHEET_ALLOWED_ROOT,
+        defs_version,
+    )?;
+    Ok(output)
 }

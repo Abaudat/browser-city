@@ -7,35 +7,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+mod support;
+
 fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contact-sheet")
-}
-
-fn read_tree(dir: &Path) -> Vec<(PathBuf, String)> {
-    let mut out = Vec::new();
-    walk(dir, dir, &mut out);
-    out.sort_by(|a, b| a.0.cmp(&b.0));
-    out
-}
-
-fn walk(root: &Path, dir: &Path, out: &mut Vec<(PathBuf, String)>) {
-    let mut entries: Vec<_> = std::fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
-        .map(|e| e.unwrap().path())
-        .collect();
-    entries.sort();
-    for path in entries {
-        if path.is_dir() {
-            walk(root, &path, out);
-        } else {
-            let rel = path.strip_prefix(root).unwrap();
-            let rel_str = rel.to_string_lossy().replace('\\', "/");
-            let full = PathBuf::from(format!("defs/{rel_str}"));
-            let text = std::fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-            out.push((full, text));
-        }
-    }
 }
 
 /// The four sprite sheets `objects/props.toml` names, sized to match each
@@ -82,7 +57,8 @@ fn layer_codes() -> BTreeMap<String, u32> {
 }
 
 fn build_output() -> defs_build::BuildOutput {
-    let files = read_tree(&fixture_dir());
+    let mut files = support::read_tree(&fixture_dir());
+    files.sort_by(|a, b| a.0.cmp(&b.0));
     defs_build::build(
         &files,
         &sheet_dims(),

@@ -105,3 +105,8 @@ open it straight from the filesystem to catch a footprint that is
 plausible but wrong (a bench marked walk-through, say). It is generated,
 never hand-edited: a correction goes into `defs/objects/*.toml` (or its
 named archetype) and comes back on the next build.
+
+Known placeholder art, already reported: `bridge_deck` draws from
+`ME_Singles_Vehicles_16x16_Car_Left_1.png` (a car, not a bridge) pending
+Artie's own curation -- its footprint/collider are correct, only the
+sprite is a stand-in, so there is no need to re-report it on the sheet.
