@@ -1,0 +1,10 @@
+rules: no_counter_in_a_stairwell
+expect: fail
+floor: 0
+legend: C=counter S=shopfront A=stairs
+area: 1 0,0 1,2
+grid:
+CS
+A.
+violations:
+no_counter_in_a_stairwell at (0, 0, 0)

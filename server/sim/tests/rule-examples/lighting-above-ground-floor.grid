@@ -1,0 +1,8 @@
+rules: lighting_ground_floor_only
+expect: fail
+floor: 1
+legend: L=lighting
+grid:
+L
+violations:
+lighting_ground_floor_only at (0, 0, 1)

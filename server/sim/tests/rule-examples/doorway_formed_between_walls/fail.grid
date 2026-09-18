@@ -1,8 +1,0 @@
-rule: doorway_formed_between_walls
-expect: fail
-floor: 0
-legend: T=threshold
-grid:
-T
-violations:
-doorway_formed_between_walls at (0, 0, 0)

@@ -1,6 +1,0 @@
-rule: waste_per_three_seating
-expect: pass
-floor: 0
-legend: S=seating M=seating+waste
-grid:
-SMS

@@ -1,6 +1,0 @@
-rule: counter_faces_a_shopfront
-expect: pass
-floor: 0
-legend: C=counter S=shopfront
-grid:
-CS

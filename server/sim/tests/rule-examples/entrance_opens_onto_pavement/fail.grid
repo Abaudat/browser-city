@@ -1,8 +1,0 @@
-rule: entrance_opens_onto_pavement
-expect: fail
-floor: 0
-legend: E=entrance
-grid:
-E
-violations:
-entrance_opens_onto_pavement at (0, 0, 0)

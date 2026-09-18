@@ -53,22 +53,33 @@ pub fn list_git_tracked_files(repo_root: &Path, dir: &str) -> io::Result<Vec<Pat
     run_git_ls_files(repo_root, &["-z", dir])
 }
 
-/// Story 2.12: `defs/README.md` is agent-facing documentation for the
-/// rule-examples corpus (`server/sim/tests/rule-examples/`), not a def --
-/// it must never reach `parse::parse_all` (`check_filename` there would
-/// refuse its non-`.toml` extension as a stray file, the guard that
-/// exists precisely so an unclassified file under `defs/` is a loud build
-/// error, never a silent exclusion). This is the one, narrowly named
-/// exception: only this exact path is filtered, verified by extension and
-/// exact name so a genuinely stray `defs/items/notes.md` still fails
-/// loudly through `check_filename` exactly as before. `defs_version`'s
-/// own hash is untouched -- callers still pass the *unfiltered*
-/// `list_git_tracked_files` result to `read_bytes`/`compute_defs_version`,
-/// so a doc edit still bumps `defs_version` like every other tracked path
-/// under `defs/` (`check-defs-version-bump.sh`'s own allow-list carries
-/// the matching exception).
-pub fn is_defs_doc(path: &Path) -> bool {
+/// `defs/README.md` is agent-facing documentation, not a def.
+fn is_defs_doc(path: &Path) -> bool {
     path == Path::new("defs/README.md")
+}
+
+/// Every git-tracked file under `defs/` that [`crate::parse::parse_all`]
+/// should actually see -- every [`list_git_tracked_files`] result except
+/// `defs/README.md`. The one, narrowly named exception: `check_filename`
+/// would otherwise refuse the doc's non-`.toml` extension as a stray
+/// file, the guard that exists precisely so an unclassified file under
+/// `defs/` is a loud build error, never a silent exclusion -- so only
+/// this exact path is ever filtered, and a genuinely stray `defs/items/
+/// notes.md` still fails loudly through `check_filename` exactly as
+/// before. Every parsing call site (the `defs-build` binary, `tests/
+/// atlas_pixel_roundtrip.rs`, `tests/propose_report_only.rs`) calls this
+/// one function rather than filtering by hand, so there is exactly one
+/// place this exclusion can be forgotten, not four. `defs_version`'s own
+/// hash is untouched -- callers compute it from the *unfiltered*
+/// [`list_git_tracked_files`] result, so a doc edit still bumps
+/// `defs_version` like every other tracked path under `defs/`
+/// (`check-defs-version-bump.sh`'s own allow-list carries the matching
+/// exception).
+pub fn list_defs_sources(repo_root: &Path) -> io::Result<Vec<PathBuf>> {
+    Ok(list_git_tracked_files(repo_root, "defs")?
+        .into_iter()
+        .filter(|p| !is_defs_doc(p))
+        .collect())
 }
 
 /// Every path under `dir` that exists on disk but is not `git add`ed and
@@ -274,6 +285,24 @@ mod tests {
         assert!(!is_defs_doc(Path::new("defs/objects/README.md")));
         assert!(!is_defs_doc(Path::new("defs/items/notes.md")));
         assert!(!is_defs_doc(Path::new("README.md")));
+    }
+
+    #[test]
+    fn list_defs_sources_excludes_the_doc_but_keeps_every_other_tracked_file() {
+        let dir = make_scratch_dir("defs-build-test-sources").unwrap();
+        std::fs::create_dir_all(dir.join("defs/objects")).unwrap();
+        std::fs::write(dir.join("defs/objects/a.toml"), "x = 1\n").unwrap();
+        std::fs::write(dir.join("defs/README.md"), "# defs\n").unwrap();
+        git(&dir, &["init", "-q"]);
+        git(&dir, &["config", "user.email", "t@t.com"]);
+        git(&dir, &["config", "user.name", "t"]);
+        git(&dir, &["add", "defs"]);
+        git(&dir, &["commit", "-q", "-m", "init"]);
+
+        let sources = list_defs_sources(&dir).unwrap();
+
+        assert_eq!(sources, vec![PathBuf::from("defs/objects/a.toml")]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

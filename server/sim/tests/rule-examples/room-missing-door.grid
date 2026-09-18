@@ -1,0 +1,15 @@
+rules: room_has_a_door
+expect: fail
+floor: 0
+legend: W=wall+wall_run F=floor U=floor+waste D=threshold+wall_run+entrance P=pavement R=road
+area: 1 0,0 4,3
+area: 2 1,1 3,2
+grid:
+WWWW
+WFUW
+WDWW
+.P..
+.R..
+violations:
+room_has_a_door at (1, 1, 0)
+room_has_a_door at (2, 1, 0)

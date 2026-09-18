@@ -27,17 +27,7 @@ fn repo_root() -> PathBuf {
 fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
     let root = repo_root();
 
-    let tracked = fsio::list_git_tracked_files(&root, "defs").unwrap();
-    // Story 2.12: defs/README.md is agent-facing documentation, not a
-    // def -- filtered out here exactly like the defs-build binary's own
-    // call site, never fed to parse_all (fsio::is_defs_doc's own doc
-    // comment).
-    let defs_tracked: Vec<_> = tracked
-        .iter()
-        .filter(|p| !fsio::is_defs_doc(p))
-        .cloned()
-        .collect();
-    let mut text_files = fsio::read_text(&root, &defs_tracked).unwrap();
+    let mut text_files = fsio::read_text(&root, &fsio::list_defs_sources(&root).unwrap()).unwrap();
     text_files.sort_by(|a, b| a.0.cmp(&b.0));
     let raw = parse::parse_all(&text_files).unwrap();
 

@@ -1,16 +1,7 @@
-//! Story 2.12 (AC1/AC2): the small, line-oriented reader for `server/sim/
-//! tests/rule-examples/<rule_key>/*.grid` -- test-only, no library, scoped
-//! to exactly this corpus's own shape (Tim's direction, matching `tools/
-//! defs-build/tests/shared_malformed_cases.rs`'s own precedent of a tiny
-//! hand-rolled reader over a general-purpose parser dependency).
-//!
-//! A `.grid` file is a handful of `key: value` header lines, a `grid:`
-//! block (one character per cell, `.` reserved for "no tags"), and --
-//! only for a `fail` case -- a `violations:` block naming every violation
-//! the harness itself must report, in the exact text
-//! `sim::validation::Defect`'s own `Display` renders. See `../rule_examples.rs`'s
-//! own module doc for the full grammar; `defs/README.md` is the
-//! agent-facing copy of the same grammar.
+//! Story 2.12: the small, line-oriented reader for `server/sim/tests/
+//! rule-examples/*.grid` -- test-only, no library, scoped to exactly this
+//! corpus's own shape. See `../rule_examples.rs`'s own module doc for the
+//! full grammar; `defs/README.md` is the agent-facing copy of it.
 
 use std::path::Path;
 
@@ -24,187 +15,157 @@ pub enum Expect {
 }
 
 pub struct Case {
-    pub rule_key: String,
+    pub rules: Vec<String>,
     pub expect: Expect,
     pub floor: i8,
     pub site: sim::rules::testing::Site,
-    /// Declared in file order; a rendered `Defect` line each -- only ever
-    /// non-empty for a `Fail` case.
     pub declared_violations: Vec<String>,
-    /// The `grid:` block's own rows, verbatim, in the same top-row-is-y=0
-    /// order the site was built from -- a mismatch report re-prints this
-    /// with the actually-found subject/other cells marked (Tim's
-    /// direction), never re-derives it from the built site.
+    /// The `grid:` block's rows, verbatim -- a mismatch report re-prints
+    /// these with the actually-found subject/other cells marked, so the
+    /// original characters (not a re-render of the parsed site) matter.
     pub grid_lines: Vec<String>,
 }
 
 /// Parses one `.grid` file's own text into a [`Case`]. Panics, naming
-/// `path` and the offending line, on anything malformed -- this is a
-/// harness-cannot-run condition (exit 2 for `scripts/dev/verify-defs.sh`),
-/// never a silent skip.
+/// `path` and the offending line, on anything malformed.
 pub fn parse_case(path: &Path, text: &str) -> Case {
+    let fail = |line: usize, msg: &str| -> ! { panic!("{}:{}: {msg}", path.display(), line) };
+
     let lines: Vec<&str> = text.lines().collect();
-    let mut rule_key: Option<String> = None;
+    let grid_at = lines
+        .iter()
+        .position(|l| l.trim() == "grid:")
+        .unwrap_or_else(|| fail(lines.len().max(1), "missing a 'grid:' block"));
+    let violations_at = lines[grid_at + 1..]
+        .iter()
+        .position(|l| l.trim() == "violations:")
+        .map(|i| grid_at + 1 + i);
+    let grid_end = violations_at.unwrap_or(lines.len());
+
+    let mut rules: Option<Vec<String>> = None;
     let mut expect: Option<Expect> = None;
     let mut floor: i8 = 0;
-    let mut legend: std::collections::BTreeMap<char, Vec<TagId>> =
-        std::collections::BTreeMap::new();
-    let mut areas: Vec<(AreaId, i32, i32, i32, i32)> = Vec::new();
-
-    let mut i = 0;
-    let mut grid_start = None;
-    while i < lines.len() {
-        let raw = lines[i];
-        let line = raw.trim();
+    let mut floor_set = false;
+    let mut legend: std::collections::BTreeMap<char, Vec<TagId>> = Default::default();
+    let mut areas: Vec<(usize, AreaId, i32, i32, i32, i32)> = Vec::new();
+    for (i, line) in lines[..grid_at].iter().enumerate() {
+        let line_no = i + 1;
+        let line = line.trim();
         if line.is_empty() {
-            i += 1;
             continue;
         }
-        if line == "grid:" {
-            grid_start = Some(i + 1);
-            break;
-        }
         let Some((key, value)) = line.split_once(':') else {
-            panic!(
-                "{}:{}: expected a 'key: value' header line or 'grid:', got {line:?}",
-                path.display(),
-                i + 1
-            );
+            fail(line_no, "expected a 'key: value' header line or 'grid:'");
         };
         let value = value.trim();
         match key.trim() {
-            "rule" => rule_key = Some(value.to_string()),
-            "expect" => {
+            "rules" if rules.is_none() => {
+                rules = Some(value.split_whitespace().map(String::from).collect())
+            }
+            "expect" if expect.is_none() => {
                 expect = Some(match value {
                     "pass" => Expect::Pass,
                     "fail" => Expect::Fail,
-                    other => panic!(
-                        "{}:{}: 'expect' must be 'pass' or 'fail', got {other:?}",
-                        path.display(),
-                        i + 1
-                    ),
-                });
+                    _ => fail(line_no, "'expect' must be 'pass' or 'fail'"),
+                })
             }
-            "floor" => {
-                floor = value.parse().unwrap_or_else(|_| {
-                    panic!(
-                        "{}:{}: 'floor' must be an i8, got {value:?}",
-                        path.display(),
-                        i + 1
-                    )
-                });
+            "floor" if !floor_set => {
+                floor = value
+                    .parse()
+                    .unwrap_or_else(|_| fail(line_no, "'floor' must be an i8"));
+                floor_set = true;
             }
+            "rules" | "expect" | "floor" => fail(line_no, "duplicate header, already declared"),
             "legend" => {
                 for token in value.split_whitespace() {
                     let Some((ch, tags)) = token.split_once('=') else {
-                        panic!(
-                            "{}:{}: legend entry '{token}' must be '<char>=<tag>[+<tag>...]'",
-                            path.display(),
-                            i + 1
-                        );
+                        fail(line_no, "legend entry must be '<char>=<tag>[+<tag>...]'");
                     };
                     let mut chars = ch.chars();
-                    let c = chars.next().unwrap_or_else(|| {
-                        panic!(
-                            "{}:{}: legend entry '{token}' names no character",
-                            path.display(),
-                            i + 1
-                        )
-                    });
-                    if chars.next().is_some() {
-                        panic!(
-                            "{}:{}: legend entry '{token}' names more than one character",
-                            path.display(),
-                            i + 1
-                        );
-                    }
-                    if c == '.' {
-                        panic!(
-                            "{}:{}: '.' is reserved for an empty cell, it cannot be a legend entry",
-                            path.display(),
-                            i + 1
+                    let c = chars
+                        .next()
+                        .unwrap_or_else(|| fail(line_no, "legend entry names no character"));
+                    if chars.next().is_some() || c == '.' {
+                        fail(
+                            line_no,
+                            "legend character must be exactly one, and never '.'",
                         );
                     }
                     let ids: Vec<TagId> =
                         tags.split('+').map(|t| super::tag_id(t.trim())).collect();
-                    legend.insert(c, ids);
+                    if legend.insert(c, ids).is_some() {
+                        fail(line_no, "legend character declared twice");
+                    }
                 }
             }
             "area" => {
-                let mut parts = value.split_whitespace();
-                let id: AreaId = parts
-                    .next()
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or_else(|| {
-                        panic!("{}:{}: bad 'area' id in {value:?}", path.display(), i + 1)
-                    });
-                let rect: Vec<&str> = parts.collect();
-                if rect.len() != 2 {
-                    panic!(
-                        "{}:{}: 'area' must be '<id> <x0>,<y0> <x1>,<y1>', got {value:?}",
-                        path.display(),
-                        i + 1
-                    );
-                }
-                let parse_pair = |s: &str| -> (i32, i32) {
-                    let (a, b) = s.split_once(',').unwrap_or_else(|| {
-                        panic!("{}:{}: bad area corner {s:?}", path.display(), i + 1)
-                    });
+                let parts: Vec<&str> = value.split_whitespace().collect();
+                let [id, c0, c1] = parts[..] else {
+                    fail(line_no, "'area' must be '<id> <x0>,<y0> <x1>,<y1>'");
+                };
+                let id: AreaId = id.parse().unwrap_or_else(|_| fail(line_no, "bad area id"));
+                let corner = |s: &str| -> (i32, i32) {
+                    let (a, b) = s
+                        .split_once(',')
+                        .unwrap_or_else(|| fail(line_no, "bad area corner"));
                     (
-                        a.parse().unwrap_or_else(|_| {
-                            panic!("{}:{}: bad area corner {s:?}", path.display(), i + 1)
-                        }),
-                        b.parse().unwrap_or_else(|_| {
-                            panic!("{}:{}: bad area corner {s:?}", path.display(), i + 1)
-                        }),
+                        a.parse()
+                            .unwrap_or_else(|_| fail(line_no, "bad area corner")),
+                        b.parse()
+                            .unwrap_or_else(|_| fail(line_no, "bad area corner")),
                     )
                 };
-                let (x0, y0) = parse_pair(rect[0]);
-                let (x1, y1) = parse_pair(rect[1]);
-                areas.push((id, x0, y0, x1, y1));
+                let ((x0, y0), (x1, y1)) = (corner(c0), corner(c1));
+                areas.push((line_no, id, x0, y0, x1, y1));
             }
-            other => panic!("{}:{}: unknown header key '{other}'", path.display(), i + 1),
+            _ => fail(line_no, "unknown header key"),
         }
-        i += 1;
     }
 
-    let grid_start =
-        grid_start.unwrap_or_else(|| panic!("{}: missing a 'grid:' block", path.display()));
-    let rule_key =
-        rule_key.unwrap_or_else(|| panic!("{}: missing a 'rule:' header", path.display()));
-    let expect =
-        expect.unwrap_or_else(|| panic!("{}: missing an 'expect:' header", path.display()));
+    let rules = rules.unwrap_or_else(|| fail(lines.len().max(1), "missing a 'rules:' header"));
+    if rules.is_empty() {
+        fail(lines.len().max(1), "'rules:' names no key");
+    }
+    let expect = expect.unwrap_or_else(|| fail(lines.len().max(1), "missing an 'expect:' header"));
 
+    let grid_lines: Vec<String> = lines[grid_at + 1..grid_end]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let width = grid_lines.first().map_or(0, |r| r.chars().count());
     let mut builder = SiteBuilder::new();
-    let mut grid_lines: Vec<String> = Vec::new();
-    let mut y = 0i32;
-    let mut row_end = grid_start;
-    for &raw_row in &lines[grid_start..] {
-        if raw_row.trim() == "violations:" {
-            break;
+    for (row_i, row) in grid_lines.iter().enumerate() {
+        let line_no = grid_at + 2 + row_i;
+        if row.is_empty() {
+            fail(
+                line_no,
+                "a blank line is never allowed inside a 'grid:' block",
+            );
         }
-        if raw_row.is_empty() {
-            row_end += 1;
-            continue;
+        if row.chars().count() != width {
+            fail(
+                line_no,
+                "every grid row must be the same length as the first",
+            );
         }
-        grid_lines.push(raw_row.to_string());
-        for (x, ch) in raw_row.chars().enumerate() {
+        for (x, ch) in row.chars().enumerate() {
             if ch == '.' {
                 continue;
             }
-            let tags = legend.get(&ch).unwrap_or_else(|| {
-                panic!(
-                    "{}:{}: '{ch}' at column {x} is not declared in 'legend:'",
-                    path.display(),
-                    row_end + 1
-                )
-            });
-            builder = builder.cell(Cell::new(x as i32, y, floor), tags);
+            let tags = legend
+                .get(&ch)
+                .unwrap_or_else(|| fail(line_no, "character is not declared in 'legend:'"));
+            builder = builder.cell(Cell::new(x as i32, row_i as i32, floor), tags);
         }
-        y += 1;
-        row_end += 1;
     }
-    for (id, x0, y0, x1, y1) in areas {
+    let height = grid_lines.len() as i32;
+    for (line_no, id, x0, y0, x1, y1) in areas {
+        if x0 < 0 || y0 < 0 || x0 >= x1 || y0 >= y1 || x1 > width as i32 || y1 > height {
+            fail(
+                line_no,
+                "'area' rect must be non-negative, ordered, and inside the grid",
+            );
+        }
         for ax in x0..x1 {
             for ay in y0..y1 {
                 builder = builder.area(Cell::new(ax, ay, floor), id);
@@ -212,36 +173,195 @@ pub fn parse_case(path: &Path, text: &str) -> Case {
         }
     }
 
-    let mut declared_violations = Vec::new();
-    if row_end < lines.len() && lines[row_end].trim() == "violations:" {
-        for &raw in &lines[row_end + 1..] {
-            let line = raw.trim();
-            if line.is_empty() {
-                continue;
-            }
-            declared_violations.push(line.to_string());
-        }
-    }
-
+    let declared_violations: Vec<String> = match violations_at {
+        Some(v) => lines[v + 1..]
+            .iter()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .map(String::from)
+            .collect(),
+        None => Vec::new(),
+    };
     if expect == Expect::Fail && declared_violations.is_empty() {
-        panic!(
-            "{}: 'expect: fail' but no 'violations:' block (or it is empty) -- a fail case must declare at least one violation",
-            path.display()
+        fail(
+            lines.len(),
+            "'expect: fail' needs a non-empty 'violations:' block",
         );
     }
     if expect == Expect::Pass && !declared_violations.is_empty() {
-        panic!(
-            "{}: 'expect: pass' but a 'violations:' block is present -- a pass case must have none",
-            path.display()
+        fail(
+            lines.len(),
+            "'expect: pass' must have no 'violations:' block",
         );
     }
 
     Case {
-        rule_key,
+        rules,
         expect,
         floor,
         site: builder.build(),
         declared_violations,
         grid_lines,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Expect, parse_case};
+    use std::path::Path;
+
+    /// Runs `parse_case` against `text` and returns its own panic
+    /// message, for asserting the exact `path:line:` text a malformed
+    /// fixture produces (Quentin's direction) -- never merely that it
+    /// panicked.
+    fn err(text: &str) -> String {
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let result = std::panic::catch_unwind(|| parse_case(Path::new("f.grid"), text));
+        std::panic::set_hook(prev);
+        match result {
+            Ok(_) => panic!("expected parse_case to panic on:\n{text}"),
+            Err(payload) => *payload
+                .downcast::<String>()
+                .expect("panic! with format args always carries a String payload"),
+        }
+    }
+
+    const WELL_FORMED: &str = "rules: r\nexpect: pass\nlegend: W=wall\ngrid:\nW\n";
+
+    #[test]
+    fn a_well_formed_pass_case_parses() {
+        let case = parse_case(Path::new("f.grid"), WELL_FORMED);
+        assert_eq!(case.rules, vec!["r"]);
+        assert_eq!(case.expect, Expect::Pass);
+        assert!(case.declared_violations.is_empty());
+    }
+
+    #[test]
+    fn a_well_formed_fail_case_parses_its_declared_violations() {
+        let text =
+            "rules: r\nexpect: fail\nlegend: W=wall\ngrid:\nW\nviolations:\nr at (0, 0, 0)\n";
+        let case = parse_case(Path::new("f.grid"), text);
+        assert_eq!(case.declared_violations, vec!["r at (0, 0, 0)"]);
+    }
+
+    #[test]
+    fn missing_grid_block_is_named() {
+        assert_eq!(
+            err("rules: r\nexpect: pass\n"),
+            "f.grid:2: missing a 'grid:' block"
+        );
+    }
+
+    #[test]
+    fn missing_rules_header_is_named() {
+        assert_eq!(
+            err("expect: pass\ngrid:\nW\n"),
+            "f.grid:3: missing a 'rules:' header"
+        );
+    }
+
+    #[test]
+    fn missing_expect_header_is_named() {
+        assert_eq!(
+            err("rules: r\ngrid:\nW\n"),
+            "f.grid:3: missing an 'expect:' header"
+        );
+    }
+
+    #[test]
+    fn a_duplicate_rules_header_is_named() {
+        assert_eq!(
+            err("rules: r\nrules: r2\nexpect: pass\ngrid:\nW\n"),
+            "f.grid:2: duplicate header, already declared"
+        );
+    }
+
+    #[test]
+    fn a_duplicate_expect_header_is_named() {
+        assert_eq!(
+            err("rules: r\nexpect: pass\nexpect: fail\ngrid:\nW\n"),
+            "f.grid:3: duplicate header, already declared"
+        );
+    }
+
+    #[test]
+    fn a_duplicate_floor_header_is_named() {
+        assert_eq!(
+            err("rules: r\nexpect: pass\nfloor: 0\nfloor: 1\ngrid:\nW\n"),
+            "f.grid:4: duplicate header, already declared"
+        );
+    }
+
+    #[test]
+    fn a_legend_character_declared_twice_is_named() {
+        assert_eq!(
+            err("rules: r\nexpect: pass\nlegend: W=wall W=floor\ngrid:\nW\n"),
+            "f.grid:3: legend character declared twice"
+        );
+    }
+
+    #[test]
+    fn an_undeclared_grid_character_is_named() {
+        assert_eq!(
+            err("rules: r\nexpect: pass\ngrid:\nX\n"),
+            "f.grid:4: character is not declared in 'legend:'"
+        );
+    }
+
+    #[test]
+    fn a_ragged_grid_row_is_named() {
+        assert_eq!(
+            err("rules: r\nexpect: pass\nlegend: W=wall\ngrid:\nWW\nW\n"),
+            "f.grid:6: every grid row must be the same length as the first"
+        );
+    }
+
+    #[test]
+    fn a_blank_line_inside_the_grid_block_is_named() {
+        assert_eq!(
+            err("rules: r\nexpect: pass\nlegend: W=wall\ngrid:\nW\n\nW\n"),
+            "f.grid:6: a blank line is never allowed inside a 'grid:' block"
+        );
+    }
+
+    #[test]
+    fn an_area_rect_reaching_outside_the_grid_is_named() {
+        assert_eq!(
+            err("rules: r\nexpect: pass\nlegend: W=wall\narea: 1 0,0 2,1\ngrid:\nW\n"),
+            "f.grid:4: 'area' rect must be non-negative, ordered, and inside the grid"
+        );
+    }
+
+    #[test]
+    fn a_negative_area_corner_is_named() {
+        assert_eq!(
+            err("rules: r\nexpect: pass\nlegend: W=wall\narea: 1 -1,0 1,1\ngrid:\nW\n"),
+            "f.grid:4: 'area' rect must be non-negative, ordered, and inside the grid"
+        );
+    }
+
+    #[test]
+    fn a_reversed_area_rect_is_named() {
+        assert_eq!(
+            err("rules: r\nexpect: pass\nlegend: W=wall\narea: 1 1,0 0,1\ngrid:\nW\n"),
+            "f.grid:4: 'area' rect must be non-negative, ordered, and inside the grid"
+        );
+    }
+
+    #[test]
+    fn a_fail_case_with_no_violations_block_is_named() {
+        assert_eq!(
+            err("rules: r\nexpect: fail\nlegend: W=wall\ngrid:\nW\n"),
+            "f.grid:5: 'expect: fail' needs a non-empty 'violations:' block"
+        );
+    }
+
+    #[test]
+    fn a_pass_case_with_a_violations_block_is_named() {
+        assert_eq!(
+            err("rules: r\nexpect: pass\nlegend: W=wall\ngrid:\nW\nviolations:\nr at (0, 0, 0)\n"),
+            "f.grid:7: 'expect: pass' must have no 'violations:' block"
+        );
     }
 }
