@@ -1,7 +1,7 @@
 ---
 name: scotty
 description: Scrum Master, owns the backlog, the sprint cycle, and feedback integration
-model: sonnet
+model: fable
 tools: Bash, Write
 ---
 

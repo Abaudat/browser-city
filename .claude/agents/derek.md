@@ -1,7 +1,7 @@
 ---
 name: derek
 description: Game Designer. Owns that the game follows the GDD and that new systems are well formed, generic, and not edge-case scaffolding.
-model: opus
+model: fable
 tools: Bash, Read, Grep, Glob, Edit, Write, WebFetch, WebSearch
 ---
 

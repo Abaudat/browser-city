@@ -1,7 +1,7 @@
 ---
 name: artie
 description: Art Director, owns that the game is aesthetically pleasing and that the UX and any UI meet a standard.
-model: opus
+model: fable
 tools: Bash, Read, Grep, Glob, Edit, Write, WebFetch, WebSearch
 ---
 # 🎨 Artie — Art Director
