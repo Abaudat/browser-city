@@ -15,7 +15,11 @@
 #      this must still catch it), and never from `client/src/` or
 #      `server/` (a `getImageData`/alpha-coverage identifier under
 #      `client/src/` would be the client's own version of the same
-#      mistake).
+#      mistake);
+#   3. story 2.5's contact sheet (`tools/defs-build/src/contact_sheet.rs`)
+#      never reads a pixel to decide where a footprint is -- it must stay
+#      a renderer of declared geometry, never a second, self-agreeing
+#      measurement of the same thing (Quentin's direction).
 #
 # Usage: check-no-runtime-footprint-inference.sh [repo-root]
 set -euo pipefail
@@ -87,9 +91,22 @@ for dir in "$CLIENT_SRC" "$SERVER_DIR"; do
   fi
 done
 
+# --- 3. story 2.5: the contact sheet draws only declared geometry, never
+# a pixel/alpha read -- it must never become a second, self-agreeing
+# measurement of the same footprint (Quentin's direction). This file
+# alone is checked, in this same fast, pre-cargo position, so the sheet's
+# own renderer can never grow a dependency on `crate::atlas::image` (the
+# only place this crate decodes/composites pixels).
+CONTACT_SHEET_SRC="$DEFS_BUILD_SRC/contact_sheet.rs"
+if [ -f "$CONTACT_SHEET_SRC" ] && grep -qE 'atlas::image|decode_rgba8|encode_rgba8|composite_with_extrusion|png::|get_px' "$CONTACT_SHEET_SRC"; then
+  echo "check-no-runtime-footprint-inference: FAIL -- '$CONTACT_SHEET_SRC' reads pixel data; the contact sheet must draw only from declared geometry (width/height/collider/interact_at), referencing the atlas PNGs by path, never decoding them:" >&2
+  grep -nE 'atlas::image|decode_rgba8|encode_rgba8|composite_with_extrusion|png::|get_px' "$CONTACT_SHEET_SRC" >&2
+  FAILED=1
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-no-runtime-footprint-inference: 'archetype' and the proposer never reach a runtime artefact or a runtime's own source (AC3/AC4)" >&2
+echo "check-no-runtime-footprint-inference: 'archetype' and the proposer never reach a runtime artefact or a runtime's own source, and the contact sheet never reads a pixel (AC3/AC4, story 2.5)" >&2
 exit 0

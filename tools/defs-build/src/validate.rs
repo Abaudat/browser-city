@@ -1748,7 +1748,7 @@ fn check_object_footprint_cap(entries: &[LoweredObjectEntry]) -> Result<(), Defs
 fn find_tile_size_px(balance: &[BalanceEntry]) -> Option<u32> {
     balance
         .iter()
-        .find(|b| b.key.value == "render.tile_size_px")
+        .find(|b| b.key.value == crate::model::RENDER_TILE_SIZE_PX_KEY)
         .map(|b| b.value.value as u32)
 }
 
@@ -2258,7 +2258,12 @@ pub fn validate(
     check_object_interact_at(&lowered_objects)?;
     check_object_sprite_sheet_root(&raw.objects, sprite_sheet_allowed_root)?;
     check_object_sprite_sheets(&raw.objects, sheet_dims)?;
-    if !lowered_objects.is_empty() {
+    // Story 2.5 (Tim's direction): resolved once, here, and carried
+    // forward on `Defs` itself -- `None` iff there are no objects (the
+    // only case this key's absence is not already a hard error above),
+    // so a caller that does have objects to draw never needs a fallback
+    // literal of its own.
+    let tile_size_px: Option<u32> = if !lowered_objects.is_empty() {
         let tile_size_px = find_tile_size_px(&raw.balance).ok_or_else(|| {
             DefsError::new(
                 &lowered_objects[0].path,
@@ -2268,7 +2273,10 @@ pub fn validate(
             )
         })?;
         check_object_sprite_matches_footprint(&lowered_objects, tile_size_px)?;
-    }
+        Some(tile_size_px)
+    } else {
+        None
+    };
     // Story 2.4: last among the object checks -- every other object-level
     // rejection above (name, layer, footprint cap, collider/interact_at
     // geometry, sprite) gets its own chance to fire on a fixture built to
@@ -2632,6 +2640,7 @@ pub fn validate(
         uniforms,
         tags,
         rules,
+        tile_size_px,
     })
 }
 

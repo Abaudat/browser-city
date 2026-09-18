@@ -8,6 +8,7 @@
 //! crate's own tests).
 
 pub mod atlas;
+pub mod contact_sheet;
 pub mod emit;
 pub mod error;
 pub mod fsio;
@@ -26,16 +27,17 @@ pub use model::Defs;
 
 /// The rendered texts and pages one successful [`build`] produces: the
 /// Rust include, the client JSON asset, the append-only id/key manifest
-/// (Tim's direction), and every packed atlas page's own filename plus PNG
-/// bytes (story 2.6) -- never written to disk by this crate itself; only
-/// the `defs-build` binary's own edge does that, and only once every
-/// stage has already succeeded.
+/// (Tim's direction), every packed atlas page's own filename plus PNG
+/// bytes (story 2.6), and the contact sheet (story 2.5) -- never written
+/// to disk by this crate itself; only the `defs-build` binary's own edge
+/// does that, and only once every stage has already succeeded.
 #[derive(Debug)]
 pub struct BuildOutput {
     pub rust: String,
     pub json: String,
     pub id_manifest: String,
     pub atlas_pages: Vec<(String, Vec<u8>)>,
+    pub contact_sheet: String,
 }
 
 /// Runs every stage over an already-collected `(path, text)` file list, the
@@ -78,6 +80,26 @@ pub fn build(
         &defs.appearance_layouts,
     )
     .map_err(|e| DefsError::new("tools/defs-build/atlas", 0, 0, e))?;
+
+    let id_manifest = emit::emit_id_manifest(&defs);
+    // Quentin's direction: a short, deterministic fingerprint of this same
+    // build's own id manifest, printed on the contact sheet beside
+    // `defs_version` -- truncated the same way `defs_version` and every
+    // atlas page hash already are.
+    let manifest_hash = &sha256::sha256_hex(id_manifest.as_bytes())[..version::DEFS_VERSION_LEN];
+
+    let cards = contact_sheet::cards(&raw, &defs, &atlas.atlas_by_object_id);
+    // `contact_sheet::build` resolves `Defs::tile_size_px` itself, right
+    // beside its only reader -- structurally unreachable when `cards` is
+    // empty, never a fallback literal here (Tim's direction, cycle 2).
+    let contact_sheet_html = contact_sheet::build(
+        &cards,
+        defs.tile_size_px,
+        &atlas.pages,
+        defs_version,
+        manifest_hash,
+    );
+
     Ok(BuildOutput {
         rust: emit::emit_rust(&defs, defs_version),
         json: emit::emit_json(
@@ -87,13 +109,14 @@ pub fn build(
             &atlas.atlas_by_object_id,
             &atlas.atlas_by_character_part,
         ),
-        id_manifest: emit::emit_id_manifest(&defs),
+        id_manifest,
         atlas_pages: atlas
             .pages
             .into_iter()
             .zip(atlas.page_bytes)
             .map(|(p, bytes)| (p.file, bytes))
             .collect(),
+        contact_sheet: contact_sheet_html,
     })
 }
 
@@ -132,4 +155,86 @@ pub fn object_sprite_sheet_paths(raw: &model::RawDefs) -> Vec<String> {
         paths.insert(o.sprite.value.sheet.clone());
     }
     paths.into_iter().collect()
+}
+
+/// Every filesystem read [`build`] itself needs, collected from a real
+/// checkout at `root`, then handed straight to `build` -- the one place
+/// "the whole pipeline over a real `defs/` tree" lives, so a step added
+/// here is never silently skipped by one of its two callers (Quentin's
+/// direction): `bin/defs-build.rs`'s own edge, and this crate's own
+/// `tests/contact_sheet_real_defs.rs`, which used to hand-copy this same
+/// ~70 lines and would otherwise keep asserting against a pipeline the
+/// binary no longer runs the moment one of them changed alone.
+///
+/// What stays specific to the binary's own edge, not lifted here: the
+/// untracked-file refusal (must run before `defs_version` is computed,
+/// which the binary does before calling this) and writing every output to
+/// disk.
+pub fn build_from_repo_root(
+    root: &std::path::Path,
+    defs_version: &str,
+) -> Result<BuildOutput, Box<dyn std::error::Error>> {
+    let mut text_files = fsio::read_text(root, &fsio::list_defs_sources(root)?)?;
+    text_files.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // Story 1.10/2.2: which sheets does the tree reference, so their real
+    // `IHDR` dimensions can be read before `validate` checks the layout/
+    // sprite invariants against them -- the one impure step `build` itself
+    // never performs (Quentin's direction: parse/validate/emit stay pure).
+    let raw = parse::parse_all(&text_files)?;
+    let mut sheet_paths = appearance_sheet_paths(&raw);
+    sheet_paths.extend(object_sprite_sheet_paths(&raw));
+    sheet_paths.sort();
+    sheet_paths.dedup();
+    let sheet_dims: std::collections::BTreeMap<String, (u32, u32)> =
+        fsio::read_png_dims(root, &sheet_paths)?
+            .into_iter()
+            .collect();
+
+    // Story 2.6: every object's own `sprite.sheet`, read whole -- the
+    // atlas packer's real pixel input.
+    let mut object_sheet_paths = object_sprite_sheet_paths(&raw);
+    object_sheet_paths.sort();
+    object_sheet_paths.dedup();
+    let object_sheet_paths_buf: Vec<std::path::PathBuf> = object_sheet_paths
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+    let object_sheet_bytes: std::collections::BTreeMap<String, Vec<u8>> =
+        fsio::read_bytes(root, &object_sheet_paths_buf)?
+            .into_iter()
+            .map(|(p, bytes)| (p.to_string_lossy().replace('\\', "/"), bytes))
+            .collect();
+
+    // Story 2.7: every appearance part's own `sheet`, read whole -- the
+    // character-part packer's real pixel input.
+    let mut appearance_paths = appearance_sheet_paths(&raw);
+    appearance_paths.sort();
+    appearance_paths.dedup();
+    let appearance_sheet_paths_buf: Vec<std::path::PathBuf> = appearance_paths
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+    let appearance_sheet_bytes: std::collections::BTreeMap<String, Vec<u8>> =
+        fsio::read_bytes(root, &appearance_sheet_paths_buf)?
+            .into_iter()
+            .map(|(p, bytes)| (p.to_string_lossy().replace('\\', "/"), bytes))
+            .collect();
+
+    // Story 2.2: a `layer` name resolves against the codes golden --
+    // `sim::codes::layer`'s single append-only ladder -- never a second,
+    // hand-maintained list in this crate.
+    let codes_golden = fsio::read_codes_golden(root)?;
+    let layer_codes = layer_codes::parse_layer_codes(&codes_golden);
+
+    let output = build(
+        &text_files,
+        &sheet_dims,
+        &object_sheet_bytes,
+        &appearance_sheet_bytes,
+        &layer_codes,
+        model::SPRITE_SHEET_ALLOWED_ROOT,
+        defs_version,
+    )?;
+    Ok(output)
 }

@@ -958,6 +958,17 @@ rule above.
   from the loader's own cache so a later demand retries rather than
   replaying the same rejection for the rest of the session.
 
+### Contact sheet
+
+`tools/defs-build/contact-sheet.html`: a committed output of the same
+`defs-build` run, guarded by `check-defs-current.sh`. Never under
+`client/public/` or `defs/`. Static HTML, no JS; references the atlas
+pages under `client/public/atlas/` by relative path, one CSS rule per
+referenced page, classed by group and in-group ordinal. Draws only the
+lowered geometry (footprint/collider/`interact_at`),
+grouped by declared archetype -- `check-no-runtime-footprint-inference.sh`
+holds that it reads no pixel.
+
 ### Rules (`defs/rules/`, `defs/tags/`)
 
 `sim::rules` (FR111/FR112) is the one generic rule engine: `evaluate(rules:
