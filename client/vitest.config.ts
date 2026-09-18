@@ -40,23 +40,27 @@ export default defineConfig({
       // that is wrong is the exact failure mode these overlays exist to
       // prevent, and an overlay that lies about a collider is worse than
       // no overlay at all.
-      // Story 1.10: `composite-canvas.ts` needs a real `OffscreenCanvas`
+      // Story 1.10/2.7: `composite-pages.ts` needs a real `OffscreenCanvas`
       // (an `OffscreenCanvas`-less node test cannot exercise it
-      // meaningfully) and `part-sheets.ts` needs a real Vite
-      // `import.meta.glob`/`fetch` runtime -- both thin adapters over the
-      // pure logic in `composite.ts`/`frame-rect.ts`/`resolve-layers.ts`/
-      // `appearance-cache.ts`, which stay in scope. `appearance-texture.ts`
-      // is the adapter composing those two together plus the cache; no
-      // logic of its own remains once its inputs are each covered.
+      // meaningfully) and `character-part-pages.ts` needs a real `fetch`
+      // runtime -- both thin adapters over the pure logic in
+      // `composite.ts`/`composite-slots.ts`/`composite-look-cache.ts`/
+      // `frame-rect.ts`/`resolve-layers.ts`/`appearance-cache.ts`, which
+      // stay in scope. `appearance-texture.ts` (cycle 1, Quentin/Tim's
+      // direction) owns real logic of its own -- the slot exhaustion/
+      // staleness plumbing, the release-on-failure catch, the build-
+      // once-per-slot frame cache -- so it is in scope too, tested with
+      // `pixi.js` mocked and `CompositePageProvider`/`CharacterPageLoader`
+      // fakes injected (`atlas-pages.test.ts`'s own idiom), never a real
+      // `OffscreenCanvas`/`fetch`.
       exclude: [
         "src/net/bindings/**",
         // Story 2.8: a generated constant, the same idiom as bindings/ --
         // nothing to unit-test in a literal string assignment.
         "src/net/protocol-version.ts",
         "src/test-street/**",
-        "src/render/appearance/composite-canvas.ts",
-        "src/render/appearance/part-sheets.ts",
-        "src/render/appearance/appearance-texture.ts",
+        "src/render/appearance/composite-pages.ts",
+        "src/render/appearance/character-part-pages.ts",
       ],
       thresholds: {
         lines: 90,

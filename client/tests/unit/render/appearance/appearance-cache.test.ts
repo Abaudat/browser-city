@@ -195,6 +195,34 @@ describe("inv_composite_cache_bounded", () => {
     expect(a.destroyed).toBe(false);
   });
 
+  // Story 2.7 (Quentin/Tim's direction, cycle 1): reproduces the exact
+  // regression both leads found -- a full-but-unreferenced pool used to
+  // reject every other new key forever, because eviction ran *after*
+  // `build()` had already failed to find room. Fill capacity, release
+  // every entry (none evicted yet -- eviction only ever runs from
+  // `acquire`), then acquire N brand-new keys: every one must succeed,
+  // and the cache must never grow past capacity.
+  it("a full but entirely-unreferenced pool never rejects a new distinct key, however many are acquired in a row", () => {
+    const { build, dispose } = makeBuilder();
+    const capacity = 4;
+    const cache = new AppearanceCache<FakeTexture>({ dispose, capacity });
+
+    for (let i = 0; i < capacity; i++) {
+      cache.acquire(`fill-${i}`, build);
+      cache.release(`fill-${i}`);
+    }
+    expect(cache.size).toBe(capacity);
+
+    for (let i = 0; i < capacity * 3; i++) {
+      expect(() => {
+        const value = cache.acquire(`new-${i}`, build);
+        cache.release(`new-${i}`);
+        expect(value).toBeDefined();
+      }).not.toThrow();
+      expect(cache.size).toBeLessThanOrEqual(capacity);
+    }
+  });
+
   // The trace-matrix-registered name -- see the comment on
   // `inv_composite_cache_one_texture_per_tuple` above.
   it("inv_composite_cache_bounded", () => {

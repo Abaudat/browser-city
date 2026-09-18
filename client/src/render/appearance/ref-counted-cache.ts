@@ -1,11 +1,13 @@
 // A generic, ref-counted, in-flight-shared cache over an injected
 // `load`/`close` pair -- pure (no `fetch`, no `pixi.js`, nothing
 // browser-specific), so this is testable with fake async functions.
-// `part-sheets.ts` is the one production instance (`load` resolves and
-// fetches a vendor sheet, `close` calls `ImageBitmap.close()`);
+// `character-part-pages.ts`'s `CharacterPartPageLoader` is the one
+// production instance (`load` resolves and fetches a packed character
+// atlas page, `close` calls `ImageBitmap.close()`);
 // `test-street/compare-pipeline-vs-stack.ts` builds its own, entirely separate
-// instance over the same `load` function, so the e2e harness never shares
-// cache state with the production pipeline it is checking.
+// instance over the same `fetchCharacterPageBitmap` function, so the e2e
+// harness never shares cache state with the production pipeline it is
+// checking.
 
 export interface RefCountedCache<T> {
   /** Returns `key`'s in-flight or already-resolved value, calling `load`

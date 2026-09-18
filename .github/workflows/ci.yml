@@ -87,11 +87,6 @@ jobs:
               - '.github/**'
               - 'fixtures/**'
               - 'client/public/defs/defs.json'
-              # Story 1.10: the client loads character-part sheets straight
-              # out of this subtree at runtime (the same idiom story 1.6's
-              # demo scene already uses for other art).
-              - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
-              - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
               # Story 1.14, cycle 2 (Tim's direction): check-boot-budget-
               # report-current.sh regenerates docs/spikes/1.14-boot-
               # budget.md from exactly these paths.
@@ -103,8 +98,6 @@ jobs:
               - 'scripts/**'
               - '.github/**'
               - 'fixtures/**'
-              - 'ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**'
-              - 'ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**'
               # Story 2.8 (Quentin's direction): client/tests/e2e/defs-
               # handshake.spec.ts exercises a stale defs_version, so a
               # defs/**-only PR (client/**/server/** untouched) must still
@@ -495,6 +488,8 @@ jobs:
         run: bash ../scripts/ci/check-layer-table-current.sh
       - name: story 1.7 FR121, no masking/filter/render-texture construct under client/src/
         run: bash ../scripts/ci/check-no-masks.sh
+      - name: story 2.7, the Epic 1 raw character-part-sheet shortcut is gone, not bypassed
+        run: bash ../scripts/ci/check-no-raw-part-sheets.sh
       - name: story 1.11 FR150/FR152/FR151, no canvas-text construct or native dialog under client/src/
         run: bash ../scripts/ci/check-no-canvas-ui.sh
       - name: story 1.9 FR148, the input layer cannot reach a procedure or an interaction module

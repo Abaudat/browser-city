@@ -13,6 +13,7 @@
 import { Assets, type Container, Rectangle, Sprite, Texture, type TextureSource } from "pixi.js";
 import type { AtlasPageDef, Defs, ObjectDef } from "../defs/types";
 import { atlasFrameRect } from "./atlas-frame";
+import { atlasPageUrl } from "./atlas-url";
 
 /**
  * One shared cache of page `Texture`s (keyed by filename) and of the
@@ -81,7 +82,7 @@ export class AtlasPageLoader {
   private pageTexture(page: AtlasPageDef): Promise<Texture> {
     let promise = this.pages.get(page.file);
     if (!promise) {
-      promise = Assets.load<Texture>(`${this.baseUrl}${page.file}`)
+      promise = Assets.load<Texture>(atlasPageUrl(this.baseUrl, page.file))
         .then((texture) => {
           texture.source.scaleMode = "nearest";
           texture.source.autoGenerateMipmaps = false;
@@ -129,16 +130,32 @@ export class AtlasPageLoader {
   }
 }
 
+/** Anything that can report its own set of "known page" `TextureSource`s
+ * -- `AtlasPageLoader` (props/tiles) and `CompositePageSet` (story 2.7's
+ * shared character composite pages) both implement this, so
+ * [`countBoundAtlasPages`] can count either, or both together, without
+ * caring which. */
+export interface PageSourceProvider {
+  pageSources(): ReadonlySet<TextureSource>;
+}
+
 /**
  * NFR12's own "simultaneously bound" fact: the number of distinct atlas
  * page `TextureSource`s actually reachable from `root`'s own display
- * list right now (Quentin's direction) -- never the loader's own request
+ * list right now (Quentin's direction) -- never a loader's own request
  * count, which can't see a sprite that was later destroyed or one that
  * reached the tree some other way. Walks every descendant, `Sprite` or
  * not (a composite or a container can hold sprites at any depth).
+ * `providers` is one or more source-providers (Story 2.7: a street's own
+ * `AtlasPageLoader` plus its `CompositePageSet`, so a crowd's own shared
+ * composite pages count towards the same NFR12 total as tile/prop
+ * pages).
  */
-export function countBoundAtlasPages(root: Container, loader: AtlasPageLoader): number {
-  const pageSources = loader.pageSources();
+export function countBoundAtlasPages(root: Container, ...providers: PageSourceProvider[]): number {
+  const pageSources = new Set<TextureSource>();
+  for (const provider of providers) {
+    for (const source of provider.pageSources()) pageSources.add(source);
+  }
   const found = new Set<TextureSource>();
   const stack: Container[] = [root];
   while (stack.length > 0) {
@@ -147,6 +164,30 @@ export function countBoundAtlasPages(root: Container, loader: AtlasPageLoader): 
     if (container instanceof Sprite && pageSources.has(container.texture.source)) {
       found.add(container.texture.source);
     }
+    for (const child of container.children) {
+      stack.push(child as Container);
+    }
+  }
+  return found.size;
+}
+
+/**
+ * Every distinct `TextureSource` reachable from `root`'s own display list
+ * right now, *unfiltered* -- unlike [`countBoundAtlasPages`], never
+ * narrowed to a caller-supplied set of "known page" sources (Quentin's
+ * direction, story 2.7 cycle 1: a regression back to one standalone
+ * texture per composited look would contribute nothing to the filtered
+ * count, and the crowd-cost e2e proof would keep passing while the
+ * regression it exists to catch had already landed). Counts every
+ * `Sprite` at any depth, whatever texture it holds.
+ */
+export function countAllBoundTextureSources(root: Container): number {
+  const found = new Set<TextureSource>();
+  const stack: Container[] = [root];
+  while (stack.length > 0) {
+    // biome-ignore lint/style/noNonNullAssertion: length checked above
+    const container = stack.pop()!;
+    if (container instanceof Sprite) found.add(container.texture.source);
     for (const child of container.children) {
       stack.push(child as Container);
     }

@@ -72,10 +72,7 @@ fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     // Story 2.6: every object's own `sprite.sheet`, read whole -- the
-    // atlas packer's real pixel input. Appearance part sheets are not
-    // included: they are not packed by this story (lazily-fetched
-    // `ImageBitmap`s stay their own thing -- docs/architecture.md's
-    // "Appearance" section).
+    // atlas packer's real pixel input.
     let mut object_sheet_paths = object_sprite_sheet_paths(&raw);
     object_sheet_paths.sort();
     object_sheet_paths.dedup();
@@ -83,6 +80,20 @@ fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         object_sheet_paths.iter().map(PathBuf::from).collect();
     let object_sheet_bytes: BTreeMap<String, Vec<u8>> =
         fsio::read_bytes(root, &object_sheet_paths_buf)?
+            .into_iter()
+            .map(|(p, bytes)| (p.to_string_lossy().replace('\\', "/"), bytes))
+            .collect();
+
+    // Story 2.7: every appearance part's own `sheet`, read whole -- the
+    // character-part packer's real pixel input, now that this story packs
+    // character parts too.
+    let mut appearance_sheet_paths = appearance_sheet_paths(&raw);
+    appearance_sheet_paths.sort();
+    appearance_sheet_paths.dedup();
+    let appearance_sheet_paths_buf: Vec<PathBuf> =
+        appearance_sheet_paths.iter().map(PathBuf::from).collect();
+    let appearance_sheet_bytes: BTreeMap<String, Vec<u8>> =
+        fsio::read_bytes(root, &appearance_sheet_paths_buf)?
             .into_iter()
             .map(|(p, bytes)| (p.to_string_lossy().replace('\\', "/"), bytes))
             .collect();
@@ -97,6 +108,7 @@ fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         &text_files,
         &sheet_dims,
         &object_sheet_bytes,
+        &appearance_sheet_bytes,
         &layer_codes,
         model::SPRITE_SHEET_ALLOWED_ROOT,
         &defs_version,

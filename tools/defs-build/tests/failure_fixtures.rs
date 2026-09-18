@@ -15,8 +15,8 @@ mod support;
 use std::path::{Path, PathBuf};
 
 use support::{
-    build_err, build_err_enforcing_sheet_root, layer_codes, merged_tree, object_sheet_bytes,
-    read_tree, sheet_dims, valid_dir,
+    appearance_sheet_bytes, build_err, build_err_enforcing_sheet_root, layer_codes, merged_tree,
+    object_sheet_bytes, read_tree, sheet_dims, valid_dir,
 };
 
 #[test]
@@ -479,6 +479,48 @@ fn a_uniform_naming_an_unknown_profession_is_named() {
     assert!(err.message.contains("names unknown profession"));
 }
 
+/// Story 2.7, Quentin's direction, point 1: "a sheet whose size is
+/// accepted but whose grid doesn't fit, because that is the case the size
+/// check can't see" -- proven through a real, committed, mismatched PNG
+/// (`tests/fixtures/appearance-part-layout-mismatch/
+/// body-test-too-small.png`, a real 8x8 file), run through the real
+/// `defs_build::build` entry point, never a hand-built byte buffer alone.
+/// The valid tree's own fixed `sheet_dims()` (this suite's own header-only
+/// stand-in for a real `IHDR` read) still reports the declared, accepted
+/// 16x32 for this path -- the check that catches this is the
+/// character-atlas packer's own decoded-pixel-bounds check (AC1b), not
+/// `validate.rs`'s size check, which this real file would sail past.
+#[test]
+fn a_real_body_sheet_too_small_for_its_own_declared_layout_grid_is_named() {
+    let files = read_tree(&valid_dir());
+    let mut bytes = appearance_sheet_bytes();
+    let real_png = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/appearance-part-layout-mismatch/body-test-too-small.png"),
+    )
+    .unwrap();
+    bytes.insert("fixtures/appearance/body-test.png".to_string(), real_png);
+
+    let result = defs_build::build(
+        &files,
+        &sheet_dims(),
+        &object_sheet_bytes(),
+        &bytes,
+        &layer_codes(),
+        "",
+        "test-version",
+    );
+    let err = result.expect_err("a too-small real body sheet must fail the build");
+    assert!(err.message.contains("body"), "{}", err.message);
+    assert!(err.message.contains("body_test"), "{}", err.message);
+    assert!(
+        err.message
+            .contains("does not fit inside the decoded sheet"),
+        "{}",
+        err.message
+    );
+}
+
 /// Story 2.2: `layer` resolves against the codes golden, never a second
 /// hand-maintained list.
 #[test]
@@ -766,6 +808,7 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
             &files,
             &sheet_dims(),
             &object_sheet_bytes(),
+            &appearance_sheet_bytes(),
             &layer_codes(),
             "",
             "test-version",
@@ -805,6 +848,7 @@ fn the_valid_base_tree_builds_cleanly() {
         &files,
         &sheet_dims(),
         &object_sheet_bytes(),
+        &appearance_sheet_bytes(),
         &layer_codes(),
         "",
         "test-version",

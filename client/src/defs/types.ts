@@ -162,6 +162,11 @@ export interface BodyDef {
   readonly family: Family;
   readonly sheet: string;
   readonly pool: Pool;
+  /** Story 2.7: where this part's own packed compact strip lives in a
+   * packed `character_body` atlas page -- required, never optional,
+   * exactly like `ObjectDef.atlas` (Tim's direction). JSON-only: `sheet`
+   * stays the authoring input in both artefacts, `atlas` is JSON-only. */
+  readonly atlas: AtlasRect;
 }
 
 export interface EyesDef {
@@ -170,6 +175,7 @@ export interface EyesDef {
   readonly family: Family;
   readonly sheet: string;
   readonly pool: Pool;
+  readonly atlas: AtlasRect;
 }
 
 export interface HairstyleDef {
@@ -180,6 +186,7 @@ export interface HairstyleDef {
   readonly style: number;
   readonly color: number;
   readonly rare: boolean;
+  readonly atlas: AtlasRect;
 }
 
 export interface OutfitDef {
@@ -190,6 +197,7 @@ export interface OutfitDef {
   readonly pool: Pool;
   /** The frog/tiger kid pyjamas hide the hairstyle layer while worn. */
   readonly hidesHairstyle: boolean;
+  readonly atlas: AtlasRect;
 }
 
 export interface AccessoryDef {
@@ -199,6 +207,7 @@ export interface AccessoryDef {
   readonly sheet: string;
   readonly pool: Pool;
   readonly slot: Slot;
+  readonly atlas: AtlasRect;
 }
 
 export interface AppearanceLayoutRow {
@@ -251,6 +260,10 @@ export interface Defs {
   /** NFR12's build-time cap, emitted alongside `maxFootprintCells` --
    * never a client-side literal. */
   readonly atlasMaxPagesPerGroup: number;
+  /** Story 2.7 (Tim's direction): the fixed number of shared, canvas-
+   * backed composite pages every character look is drawn into -- never a
+   * client-side literal. Part of NFR12's own three-term bound-pages rule. */
+  readonly characterCompositePages: number;
   readonly atlasPages: readonly AtlasPageDef[];
   readonly objects: readonly ObjectDef[];
   readonly items: readonly ItemDef[];

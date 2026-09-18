@@ -1,13 +1,20 @@
-// Composites the appearance layers into one compact strip -- body -> eyes
-// -> outfit -> hairstyle -> accessory -> uniform accessory, `0` skipped,
-// nearest-neighbour sampled, no premultiply halo. Pure: no `pixi.js`, no
-// canvas, no DOM -- the one real-canvas adapter this feeds is
-// `composite-canvas.ts`, split out so that file alone needs the
+// Composites the appearance layers into one shared composite-page slot --
+// body -> eyes -> outfit -> hairstyle -> accessory -> uniform accessory,
+// `0` skipped, nearest-neighbour sampled, no premultiply halo. Pure: no
+// `pixi.js`, no canvas, no DOM -- the one real-canvas adapter this feeds
+// is `composite-pages.ts`, split out so that file alone needs the
 // coverage-gate carve-out (`client/vitest.config.ts`) an `OffscreenCanvas`
 // forces on it.
 
-import type { AccessoryDef, AppearanceLayoutDef, Defs, OutfitDef } from "../../defs/types";
-import { compositeCellRect, sourceFrameRect } from "./frame-rect";
+import type {
+  AccessoryDef,
+  AppearanceLayoutDef,
+  AtlasRect,
+  Defs,
+  OutfitDef,
+} from "../../defs/types";
+import { COMPOSITE_CELL_GUTTER_PX } from "./composite-slots";
+import { compositeCellRect } from "./frame-rect";
 
 /** The five stored layer indices (mirrors `sim::appearance::Appearance`,
  * FR61) -- `0` means "no layer" on `hairstyle`/`accessory` only. */
@@ -98,10 +105,17 @@ const LAYER_ORDER = [
 ] as const;
 type Layer = (typeof LAYER_ORDER)[number];
 
-/** One already-loaded part image per layer, or `null` for "no layer" --
- * the caller (`part-sheets.ts`) resolves ids to loaded images; this
- * module only draws them. */
-export type LayerImages = Readonly<Record<Layer, unknown | null>>;
+/** One already-loaded layer: the packed atlas *page* image this part's
+ * own strip lives on (never just the strip alone -- Story 2.7's page
+ * loader hands back a whole page, shared across every part packed onto
+ * it), plus that part's own `atlas` rect on that page. `null` is "no
+ * layer" -- the caller (`character-part-pages.ts`) resolves ids to loaded
+ * pages; this module only draws them. */
+export interface LayerImageEntry {
+  readonly image: unknown;
+  readonly atlas: AtlasRect;
+}
+export type LayerImages = Readonly<Record<Layer, LayerImageEntry | null>>;
 
 /** The minimal `CanvasRenderingContext2D` surface this module needs --
  * an interface rather than the DOM type, so a plain object can stand in
@@ -122,39 +136,52 @@ export interface CanvasLike {
 }
 
 /** Draws every declared `(animation, direction, frame)` cell of `layout`
- * into `ctx`'s compact composite strip, layer by layer in
- * `LAYER_ORDER`, cropping each layer's own full sheet at exactly that
- * cell (`sourceFrameRect`) and placing it at the same cell in the
- * compact strip (`compositeCellRect`) -- one frame index always picks
- * the matching cell on every sheet, because every part shares one
- * family layout. Skips a `null` layer image (the "no layer" sentinel)
- * and skips the hairstyle layer entirely when `effectiveOutfit.
- * hidesHairstyle` is set (the frog/tiger kid pyjama hoods), even when the
- * citizen has a hairstyle. */
+ * into `ctx`, layer by layer in `LAYER_ORDER`, at `slotOrigin` plus that
+ * cell's own gutter-padded position (`compositeCellRect` with
+ * [`COMPOSITE_CELL_GUTTER_PX`] -- a look's own destination is one slot in
+ * a shared composite page, story 2.7, never a fresh per-look canvas).
+ * Each layer's own source crop is its packed atlas page, at that layer's
+ * own `atlas` rect plus the *same* cell's tight, gutter-0 local offset
+ * (`compositeCellRect` with no gutter) -- the packed part strip
+ * `tools/defs-build` built is laid out exactly like the compact strip
+ * this function destination-packs, just without the gutter, so one frame
+ * index always picks the matching cell on every part's own page. Skips a
+ * `null` layer image (the "no layer" sentinel) and skips the hairstyle
+ * layer entirely when `effectiveOutfit.hidesHairstyle` is set (the
+ * frog/tiger kid pyjama hoods), even when the citizen has a hairstyle. */
 export function drawComposite(
   ctx: CanvasLike,
   layout: AppearanceLayoutDef,
   images: LayerImages,
   effectiveOutfit: Pick<OutfitDef, "hidesHairstyle">,
+  slotOrigin: { readonly x: number; readonly y: number },
 ): void {
   ctx.imageSmoothingEnabled = false;
   for (const row of layout.rows) {
     for (const direction of layout.directions) {
       for (let frame = 0; frame < row.framesPerDirection; frame++) {
-        const src = sourceFrameRect(layout, row.animation, direction, frame);
-        const dst = compositeCellRect(layout, row.animation, direction, frame);
+        const srcLocal = compositeCellRect(layout, row.animation, direction, frame);
+        const dst = compositeCellRect(
+          layout,
+          row.animation,
+          direction,
+          frame,
+          COMPOSITE_CELL_GUTTER_PX,
+        );
+        const dstX = slotOrigin.x + dst.x;
+        const dstY = slotOrigin.y + dst.y;
         for (const layer of LAYER_ORDER) {
           if (layer === "hairstyle" && effectiveOutfit.hidesHairstyle) continue;
-          const image = images[layer];
-          if (image === null || image === undefined) continue;
+          const entry = images[layer];
+          if (entry === null || entry === undefined) continue;
           ctx.drawImage(
-            image,
-            src.x,
-            src.y,
-            src.width,
-            src.height,
-            dst.x,
-            dst.y,
+            entry.image,
+            entry.atlas.x + srcLocal.x,
+            entry.atlas.y + srcLocal.y,
+            srcLocal.width,
+            srcLocal.height,
+            dstX,
+            dstY,
             dst.width,
             dst.height,
           );

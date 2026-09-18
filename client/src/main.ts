@@ -13,6 +13,7 @@ import { KeyboardState } from "./input/keyboard";
 import { connect } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
+  recordAllBoundTextureSourcesForE2e,
   recordAppearanceTextureIdsForE2e,
   recordDistinctBoundAtlasPagesForE2e,
   recordFrameWorkForE2e,
@@ -285,6 +286,16 @@ async function startStreetScene(
   const freezeCrowdForE2e =
     import.meta.env.DEV && new URLSearchParams(window.location.search).has("freezeCrowd");
 
+  // Story 2.7 (Quentin's direction): `appearance.spec.ts`'s own
+  // "different people cost about as much as identical ones" comparison
+  // mounts this same page twice, once with the crowd's own normal
+  // distinct tuples and once with this flag set, and compares
+  // `allBoundTextureSources` (and, as a secondary check, the atlas-page
+  // count `distinctBoundAtlasPages`) -- never a second crowd fixture
+  // module.
+  const identicalCrowdForE2e =
+    import.meta.env.DEV && new URLSearchParams(window.location.search).has("identicalCrowd");
+
   // Story 1.12 (FR165/FR168): set only inside the DEV branch below, and
   // only after the scene has mounted. Every callback that notifies it is
   // a no-op until then, and in a production build there is nothing for it
@@ -310,6 +321,7 @@ async function startStreetScene(
     objectDefs: objectDefsById(defs),
     windowDefIds: windowDefIds(defs),
     startWithCrowdFrozen: freezeCrowdForE2e,
+    crowdIdenticalTuples: identicalCrowdForE2e,
     highlightStrength: display.highlightStrength,
     onOrderChange: (order) => {
       recordRenderOrderForE2e(order);
@@ -359,6 +371,7 @@ async function startStreetScene(
   exposeAppearanceCompareForE2e(handle.citizensLayer.compareForE2e);
   recordPlayerAppearanceForE2e(handle.playerAppearance);
   recordDistinctBoundAtlasPagesForE2e(handle.distinctBoundAtlasPages);
+  recordAllBoundTextureSourcesForE2e(handle.allBoundTextureSources);
 
   // Story 1.12 (FR165/FR168): the whole of the debug tooling's gate, and
   // the only import of `client/src/debug/` that exists (enforced by

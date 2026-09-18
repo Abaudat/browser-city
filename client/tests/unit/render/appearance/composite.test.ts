@@ -12,6 +12,7 @@ import { parseDefs } from "../../../../src/defs/parse";
 import type {
   AccessoryDef,
   AppearanceLayoutDef,
+  AtlasRect,
   Defs,
   OutfitDef,
 } from "../../../../src/defs/types";
@@ -48,6 +49,8 @@ const LAYOUT: AppearanceLayoutDef = {
 
 const TUPLE: AppearanceTuple = { body: 1, eyes: 1, outfit: 5, hairstyle: 7, accessory: 9 };
 
+const PART_ATLAS: AtlasRect = { page: 0, x: 0, y: 0, w: 16, h: 32 };
+
 function outfitDef(overrides: Partial<OutfitDef> = {}): OutfitDef {
   return {
     id: 5,
@@ -56,6 +59,7 @@ function outfitDef(overrides: Partial<OutfitDef> = {}): OutfitDef {
     sheet: "x.png",
     pool: "civilian",
     hidesHairstyle: false,
+    atlas: PART_ATLAS,
     ...overrides,
   };
 }
@@ -68,6 +72,7 @@ function accessoryDef(overrides: Partial<AccessoryDef> = {}): AccessoryDef {
     sheet: "beard.png",
     pool: "civilian",
     slot: "face",
+    atlas: PART_ATLAS,
     ...overrides,
   };
 }
@@ -176,23 +181,27 @@ describe("appearanceCacheKey", () => {
   });
 });
 
+function layerEntry(name: string, atlas: AtlasRect = { page: 0, x: 0, y: 0, w: 16, h: 32 }) {
+  return { image: { name }, atlas };
+}
+
 describe("drawComposite", () => {
   it("draws body, eyes, outfit, hairstyle, accessory, uniformAccessory in that order, skipping any 0 layer", () => {
     const order: string[] = [];
     const images = {
-      body: { name: "body" },
-      eyes: { name: "eyes" },
-      outfit: { name: "outfit" },
-      hairstyle: { name: "hairstyle" },
+      body: layerEntry("body"),
+      eyes: layerEntry("eyes"),
+      outfit: layerEntry("outfit"),
+      hairstyle: layerEntry("hairstyle"),
       accessory: null, // e.g. tuple.accessory === 0
-      uniformAccessory: { name: "uniformAccessory" },
+      uniformAccessory: layerEntry("uniformAccessory"),
     };
     const spyCtx = {
       imageSmoothingEnabled: true,
       drawImage: (image: { name: string }) => order.push(image.name),
     };
 
-    drawComposite(spyCtx, LAYOUT, images, outfitDef());
+    drawComposite(spyCtx, LAYOUT, images, outfitDef(), { x: 0, y: 0 });
 
     expect(order).toEqual(["body", "eyes", "outfit", "hairstyle", "uniformAccessory"]);
   });
@@ -204,15 +213,15 @@ describe("drawComposite", () => {
       eyes: null,
       outfit: null,
       hairstyle: null,
-      accessory: { name: "beard" },
-      uniformAccessory: { name: "jacket" },
+      accessory: layerEntry("beard"),
+      uniformAccessory: layerEntry("jacket"),
     };
     const spyCtx = {
       imageSmoothingEnabled: true,
       drawImage: (image: { name: string }) => order.push(image.name),
     };
 
-    drawComposite(spyCtx, LAYOUT, images, outfitDef());
+    drawComposite(spyCtx, LAYOUT, images, outfitDef(), { x: 0, y: 0 });
 
     expect(order).toEqual(["beard", "jacket"]);
   });
@@ -220,11 +229,11 @@ describe("drawComposite", () => {
   it("skips the hairstyle layer entirely when the effective outfit hides it, even if the citizen has hair", () => {
     const order: string[] = [];
     const images = {
-      body: { name: "body" },
-      eyes: { name: "eyes" },
-      outfit: { name: "outfit" },
-      hairstyle: { name: "hairstyle" },
-      accessory: { name: "accessory" },
+      body: layerEntry("body"),
+      eyes: layerEntry("eyes"),
+      outfit: layerEntry("outfit"),
+      hairstyle: layerEntry("hairstyle"),
+      accessory: layerEntry("accessory"),
       uniformAccessory: null,
     };
     const spyCtx = {
@@ -232,7 +241,7 @@ describe("drawComposite", () => {
       drawImage: (image: { name: string }) => order.push(image.name),
     };
 
-    drawComposite(spyCtx, LAYOUT, images, outfitDef({ hidesHairstyle: true }));
+    drawComposite(spyCtx, LAYOUT, images, outfitDef({ hidesHairstyle: true }), { x: 0, y: 0 });
 
     expect(order).toEqual(["body", "eyes", "outfit", "accessory"]);
   });
@@ -260,8 +269,42 @@ describe("drawComposite", () => {
         uniformAccessory: null,
       },
       outfitDef(),
+      { x: 0, y: 0 },
     );
     expect(calls).toContain(false);
+  });
+
+  it("offsets every draw by the layer's own atlas rect (source) and the slot origin (destination)", () => {
+    const calls: number[][] = [];
+    const spyCtx = {
+      imageSmoothingEnabled: true,
+      drawImage: (
+        _image: unknown,
+        sx: number,
+        sy: number,
+        sw: number,
+        sh: number,
+        dx: number,
+        dy: number,
+        dw: number,
+        dh: number,
+      ) => calls.push([sx, sy, sw, sh, dx, dy, dw, dh]),
+    };
+    const images = {
+      body: layerEntry("body", { page: 3, x: 100, y: 200, w: 16, h: 32 }),
+      eyes: null,
+      outfit: null,
+      hairstyle: null,
+      accessory: null,
+      uniformAccessory: null,
+    };
+
+    drawComposite(spyCtx, LAYOUT, images, outfitDef(), { x: 500, y: 700 });
+
+    // LAYOUT has exactly one cell (one direction, one frame): source is
+    // the body's own atlas origin (no local offset for the only cell),
+    // destination is the slot origin plus the gutter (1px).
+    expect(calls).toEqual([[100, 200, 16, 32, 501, 701, 16, 32]]);
   });
 });
 
@@ -272,6 +315,7 @@ function defsWith(overrides: Partial<Defs> = {}): Defs {
     interactAtMaxReachCells: 2,
     maxFootprintCells: 8,
     atlasMaxPagesPerGroup: 2,
+    characterCompositePages: 2,
     atlasPages: [],
     objects: [],
     items: [],

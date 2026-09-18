@@ -54,6 +54,7 @@ pub fn build(
     files: &[(std::path::PathBuf, String)],
     sheet_dims: &std::collections::BTreeMap<String, (u32, u32)>,
     object_sheet_bytes: &std::collections::BTreeMap<String, Vec<u8>>,
+    appearance_sheet_bytes: &std::collections::BTreeMap<String, Vec<u8>>,
     layer_codes: &std::collections::BTreeMap<String, u32>,
     sprite_sheet_allowed_root: &str,
     defs_version: &str,
@@ -61,11 +62,31 @@ pub fn build(
     let raw = parse::parse_all(files)?;
     let defs = validate::validate(&raw, sheet_dims, layer_codes, sprite_sheet_allowed_root)?;
     let page_groups = validate::validate_page_groups(&raw)?;
-    let atlas = atlas::build::build_atlas(&defs.objects, object_sheet_bytes, &page_groups)
-        .map_err(|e| DefsError::new("tools/defs-build/atlas", 0, 0, e))?;
+    let character_parts = atlas::character::collect_character_parts(
+        &defs.bodies,
+        &defs.eyes,
+        &defs.hairstyles,
+        &defs.outfits,
+        &defs.accessories,
+    );
+    let atlas = atlas::build::build_atlas(
+        &defs.objects,
+        object_sheet_bytes,
+        &page_groups,
+        &character_parts,
+        appearance_sheet_bytes,
+        &defs.appearance_layouts,
+    )
+    .map_err(|e| DefsError::new("tools/defs-build/atlas", 0, 0, e))?;
     Ok(BuildOutput {
         rust: emit::emit_rust(&defs, defs_version),
-        json: emit::emit_json(&defs, defs_version, &atlas.pages, &atlas.atlas_by_object_id),
+        json: emit::emit_json(
+            &defs,
+            defs_version,
+            &atlas.pages,
+            &atlas.atlas_by_object_id,
+            &atlas.atlas_by_character_part,
+        ),
         id_manifest: emit::emit_id_manifest(&defs),
         atlas_pages: atlas
             .pages

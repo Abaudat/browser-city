@@ -8,6 +8,7 @@
 // rejects at build time.
 
 import { LAYER_TABLE } from "../render/layer-table";
+import { compositeStripSize } from "./composite-strip";
 import type {
   AccessoryDef,
   AppearanceLayoutDef,
@@ -351,31 +352,33 @@ function checkAppearanceIdNotZero(id: number, key: string, kind: string): void {
 
 function parseBody(value: unknown, path: string): BodyDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool"], path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool", "atlas"], path);
   return {
     id: expectAppearanceId(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     family: expectFamily(obj.family, `${path}.family`),
     sheet: expectString(obj.sheet, `${path}.sheet`),
     pool: expectPool(obj.pool, `${path}.pool`),
+    atlas: parseAtlasRect(obj.atlas, `${path}.atlas`),
   };
 }
 
 function parseEyes(value: unknown, path: string): EyesDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool"], path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool", "atlas"], path);
   return {
     id: expectAppearanceId(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     family: expectFamily(obj.family, `${path}.family`),
     sheet: expectString(obj.sheet, `${path}.sheet`),
     pool: expectPool(obj.pool, `${path}.pool`),
+    atlas: parseAtlasRect(obj.atlas, `${path}.atlas`),
   };
 }
 
 function parseHairstyle(value: unknown, path: string): HairstyleDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "family", "sheet", "style", "color", "rare"], path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "style", "color", "rare", "atlas"], path);
   return {
     id: expectAppearanceId(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
@@ -384,12 +387,13 @@ function parseHairstyle(value: unknown, path: string): HairstyleDef {
     style: expectU32(obj.style, `${path}.style`),
     color: expectU32(obj.color, `${path}.color`),
     rare: expectBoolean(obj.rare, `${path}.rare`),
+    atlas: parseAtlasRect(obj.atlas, `${path}.atlas`),
   };
 }
 
 function parseOutfit(value: unknown, path: string): OutfitDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool", "hides_hairstyle"], path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool", "hides_hairstyle", "atlas"], path);
   return {
     id: expectAppearanceId(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
@@ -397,12 +401,13 @@ function parseOutfit(value: unknown, path: string): OutfitDef {
     sheet: expectString(obj.sheet, `${path}.sheet`),
     pool: expectPool(obj.pool, `${path}.pool`),
     hidesHairstyle: expectBoolean(obj.hides_hairstyle, `${path}.hides_hairstyle`),
+    atlas: parseAtlasRect(obj.atlas, `${path}.atlas`),
   };
 }
 
 function parseAccessory(value: unknown, path: string): AccessoryDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool", "slot"], path);
+  checkKnownKeys(obj, ["id", "key", "family", "sheet", "pool", "slot", "atlas"], path);
   return {
     id: expectAppearanceId(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
@@ -410,6 +415,7 @@ function parseAccessory(value: unknown, path: string): AccessoryDef {
     sheet: expectString(obj.sheet, `${path}.sheet`),
     pool: expectPool(obj.pool, `${path}.pool`),
     slot: expectSlot(obj.slot, `${path}.slot`),
+    atlas: parseAtlasRect(obj.atlas, `${path}.atlas`),
   };
 }
 
@@ -515,6 +521,7 @@ export function parseDefs(data: unknown): Defs {
       "interact_at_max_reach_cells",
       "max_footprint_cells",
       "atlas_max_pages_per_group",
+      "character_composite_pages",
       "atlas_pages",
       "objects",
       "items",
@@ -548,6 +555,19 @@ export function parseDefs(data: unknown): Defs {
     root.atlas_max_pages_per_group,
     "$.atlas_max_pages_per_group",
   );
+  const characterCompositePages = expectU32(
+    root.character_composite_pages,
+    "$.character_composite_pages",
+  );
+  // Story 2.7 (Tim's direction, cycle 1): zero pages means no character
+  // could ever be composited at all -- a skipped check here is a check
+  // that passes on bad data, same as every other cross-reference in this
+  // file (`tools/defs-build`'s own `validate.rs` already rejects this
+  // build-time; the client parser must refuse it too, never trust a
+  // runtime `fetch` where the build step wouldn't).
+  if (characterCompositePages < 1) {
+    fail(`$.character_composite_pages: must be at least 1, got ${characterCompositePages}`);
+  }
   const atlasPages = expectArray(root.atlas_pages, "$.atlas_pages").map((v, i) =>
     parseAtlasPage(v, `$.atlas_pages[${i}]`),
   );
@@ -622,11 +642,22 @@ export function parseDefs(data: unknown): Defs {
     }
     layoutFamilies.add(layout.family);
   }
-  for (const part of [...bodies, ...eyes, ...hairstyles, ...outfits, ...accessories]) {
-    if (!layoutFamilies.has(part.family)) {
-      fail(
-        `'${part.key}' declares family '${part.family}' but no appearance_layout entry declares that family`,
-      );
+  const layoutByFamily = new Map(appearanceLayouts.map((l) => [l.family, l]));
+  for (const [kind, parts] of [
+    ["body", bodies],
+    ["eyes", eyes],
+    ["hairstyle", hairstyles],
+    ["outfit", outfits],
+    ["accessory", accessories],
+  ] as const) {
+    for (const part of parts) {
+      const layout = layoutByFamily.get(part.family);
+      if (!layout) {
+        fail(
+          `${kind} '${part.key}' declares family '${part.family}' but no appearance_layout entry declares that family`,
+        );
+      }
+      checkPartAtlasRect(kind, part, layout, atlasPages);
     }
   }
 
@@ -736,6 +767,7 @@ export function parseDefs(data: unknown): Defs {
     interactAtMaxReachCells,
     maxFootprintCells,
     atlasMaxPagesPerGroup,
+    characterCompositePages,
     atlasPages,
     objects,
     items,
@@ -761,6 +793,45 @@ function checkObjectAtlasPage(object: ObjectDef, atlasPageCount: number): void {
   if (object.atlas.page >= atlasPageCount) {
     fail(
       `object '${object.key}' names atlas page ${object.atlas.page} but only ${atlasPageCount} page(s) exist`,
+    );
+  }
+}
+
+type PartWithAtlas = { readonly key: string; readonly atlas: AtlasRect };
+
+/** Story 2.7: a character part's own `atlas` rect must name a real page
+ * (Story 2.6's own check, reused), that page's group must be this part's
+ * own `character_<kind>` group (never a themed/street page -- a part
+ * pointing at the wrong page would silently draw a stranger's pixels),
+ * the rect must fit inside the page, and its size must match exactly what
+ * `kind`'s own family layout declares -- a skipped check here is a check
+ * that passes on bad data, same as `checkObjectAtlasPage`. */
+function checkPartAtlasRect(
+  kind: string,
+  part: PartWithAtlas,
+  layout: AppearanceLayoutDef,
+  atlasPages: readonly AtlasPageDef[],
+): void {
+  const page = atlasPages[part.atlas.page];
+  if (!page) {
+    fail(
+      `${kind} '${part.key}' names atlas page ${part.atlas.page} but only ${atlasPages.length} page(s) exist`,
+    );
+    return;
+  }
+  const expectedGroup = `character_${kind}`;
+  if (page.group !== expectedGroup) {
+    fail(
+      `${kind} '${part.key}' names atlas page ${part.atlas.page} in group '${page.group}' but expected group '${expectedGroup}'`,
+    );
+  }
+  if (part.atlas.x + part.atlas.w > page.width || part.atlas.y + part.atlas.h > page.height) {
+    fail(`${kind} '${part.key}' atlas rect does not fit inside its own page`);
+  }
+  const strip = compositeStripSize(layout);
+  if (part.atlas.w !== strip.width || part.atlas.h !== strip.height) {
+    fail(
+      `${kind} '${part.key}' atlas rect is ${part.atlas.w}x${part.atlas.h}px but its own family layout needs ${strip.width}x${strip.height}px`,
     );
   }
 }

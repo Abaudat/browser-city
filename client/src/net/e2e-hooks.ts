@@ -47,6 +47,10 @@ declare global {
        * street actually resolved a texture from -- `AtlasPageLoader.
        * boundPageCount()` at mount time. */
       distinctBoundAtlasPages?: number;
+      /** Story 2.7 (NFR12): every distinct `TextureSource` reachable from
+       * the mounted display list, *unfiltered* -- see
+       * `recordAllBoundTextureSourcesForE2e`. */
+      allBoundTextureSources?: number;
       /** Story 1.13: the player's own five stored part indices (FR61),
        * recorded once at mount. Unlike `appearanceTextureIds` -- opaque
        * per-session identity counters, assigned in texture-load order and
@@ -231,6 +235,19 @@ export function recordDistinctBoundAtlasPagesForE2e(count: number): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.distinctBoundAtlasPages = count;
+  window.__bc = bucket;
+}
+
+/** Story 2.7 (NFR12, Quentin's direction cycle 1): every distinct
+ * `TextureSource` reachable from the mounted display list, *unfiltered*
+ * -- unlike `distinctBoundAtlasPages`, never narrowed to a known-page
+ * set, so `appearance.spec.ts`'s crowd-cost proof can catch a regression
+ * back to one standalone texture per composited look. Read once at
+ * mount, the same idiom every other one-shot hook here uses. */
+export function recordAllBoundTextureSourcesForE2e(count: number): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.allBoundTextureSources = count;
   window.__bc = bucket;
 }
 

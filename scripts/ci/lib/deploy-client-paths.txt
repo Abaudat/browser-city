@@ -16,6 +16,14 @@
 #     every line here must appear in ci.yml, not the reverse.
 #
 # Blank lines and #-comments are ignored by both readers.
+#
+# Story 2.7: the two `ModernTileset/.../Character_Generator/**` lines this
+# list used to carry are gone -- the client read those vendor part sheets
+# directly at runtime under Epic 1's shortcut (story 1.10); that shortcut
+# is removed, not bypassed, so the deployed client no longer reads them at
+# all. A vendor character-part PNG change now only ever reaches the
+# deployed client through `client/public/atlas/**`/`client/public/defs/
+# defs.json`, already covered by `client/**` below once `tools/defs-build`
+# regenerates them (`defs:`'s own filter, `ModernTileset/**`, already
+# covers re-running that regeneration).
 client/**
-ModernTileset/moderninteriors-win/2_Characters/Character_Generator/**
-ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/**

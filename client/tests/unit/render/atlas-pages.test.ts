@@ -38,7 +38,9 @@ vi.mock("pixi.js", () => {
   };
 });
 
-const { AtlasPageLoader, countBoundAtlasPages } = await import("../../../src/render/atlas-pages");
+const { AtlasPageLoader, countAllBoundTextureSources, countBoundAtlasPages } = await import(
+  "../../../src/render/atlas-pages"
+);
 const { Sprite } = await import("pixi.js");
 
 function fakeSourceTexture() {
@@ -144,5 +146,37 @@ describe("countBoundAtlasPages", () => {
 
     // biome-ignore lint/suspicious/noExplicitAny: FakeContainer stands in for a real Pixi Container here
     expect(countBoundAtlasPages(root as any, loader)).toBe(1);
+  });
+});
+
+// Quentin's direction, cycle 1 (NFR12): unlike `countBoundAtlasPages`,
+// never narrowed to a caller-supplied set of "known page" sources -- a
+// regression back to one standalone texture per composited look would
+// move this count, where the filtered one would not.
+describe("countAllBoundTextureSources", () => {
+  it("counts every sprite's own texture source, even one no provider ever named", () => {
+    const unrelatedSprite = new Sprite({ source: { scaleMode: "linear" } } as never);
+    const root: FakeContainer = { children: [unrelatedSprite] };
+
+    // biome-ignore lint/suspicious/noExplicitAny: FakeContainer stands in for a real Pixi Container here
+    expect(countAllBoundTextureSources(root as any)).toBe(1);
+  });
+
+  it("counts one distinct source shared by several sprites, at any depth", () => {
+    const source = { scaleMode: "linear" };
+    const a = new Sprite({ source } as never);
+    const b = new Sprite({ source } as never);
+    const nested: FakeContainer = { children: [b] };
+    const root: FakeContainer = { children: [a, nested] };
+
+    // biome-ignore lint/suspicious/noExplicitAny: FakeContainer stands in for a real Pixi Container here
+    expect(countAllBoundTextureSources(root as any)).toBe(1);
+  });
+
+  it("is zero for a tree with no sprites", () => {
+    const root: FakeContainer = { children: [{ children: [] }] };
+
+    // biome-ignore lint/suspicious/noExplicitAny: FakeContainer stands in for a real Pixi Container here
+    expect(countAllBoundTextureSources(root as any)).toBe(0);
   });
 });

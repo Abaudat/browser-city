@@ -575,12 +575,14 @@ subtracts `floor * storey_height_px`, and a drawable on a storey above the
 viewer's own must never sort as though it were on that floor because of
 it.
 
-The test street reads its remaining props and the character part sheets
-straight out of the repo-root `ModernTileset/` at runtime
-(`new URL(..., import.meta.url)` asset imports), not out of
-`client/public/`. `deploy.yml`'s `deploy-client` job therefore checks out
-the whole repository -- never a sparse or `client/`-only checkout -- for
-as long as any client code reads assets from outside `client/`.
+The test street reads its remaining props straight out of the repo-root
+`ModernTileset/` at runtime (`new URL(..., import.meta.url)` asset
+imports), not out of `client/public/`. Character part sheets are never
+read this way: they are packed, at build time, into
+`client/public/atlas/`, like every other atlas page. `deploy.yml`'s
+`deploy-client` job therefore checks out the whole repository -- never a
+sparse or `client/`-only checkout -- for as long as any client code reads
+assets from outside `client/`.
 
 ### Visibility
 
@@ -663,30 +665,38 @@ mirrored -- never a snapshot taken at hover start.
   `costume`), the same enum `outfit`/`accessory` already declare:
   `generate` draws `body` and `eyes` from the `civilian` pool only.
 - Layout (cell size, direction order, one row per animation) is declared
-  once per family (`adult`/`kid`) in `[[appearance_layout]]`, and
-  enforced against every part sheet's real dimensions: `tools/defs-build`
-  reads each PNG's `IHDR` (width/height only, no `png` crate) and rejects
-  a sheet whose size is not one of the layout's own declared
-  `accepted_sizes`.
-- Part sheets are fetched lazily, once per sheet, as CPU-side
-  `ImageBitmap`s (`fetch` + `createImageBitmap`) -- never through Pixi's
-  `Assets`/`Texture`. A bitmap is only needed while a composite is being
-  built: `part-sheets.ts` ref-counts each in-flight load and closes the
-  bitmap once every caller drawing from it has finished.
-- Exactly one composite `Texture` exists per unique tuple+override: the
-  five (or six, with a uniform accessory) layers are drawn in order via
-  `OffscreenCanvas.drawImage` onto one compact strip, nearest-neighbour
-  sampled, then wrapped in one Pixi `Texture.from` -- `RenderTexture`
-  stays banned anywhere under `client/src/` ("Visibility" above). This
-  texture is shared, reference-counted, and held in a bounded LRU
-  (`render/appearance/appearance-cache.ts`) that evicts only entries with
-  no outstanding reference. A character on screen is one `Sprite` in the
-  `characters`-rank pool.
-- Every `(animation, direction, frame)` cell of that compact strip is
-  cropped once into its own frame `Texture` when the composite is built,
-  never on a per-tick basis: callers look a frame up by index, they never
-  construct one. Disposing a composite destroys every frame texture
-  together with the base strip texture.
+  once per family (`adult`/`kid`) in `[[appearance_layout]]`, along with
+  an `accepted_sizes` list of whole vendor-sheet dimensions the family
+  allows; a part's own sheet must decode to real `IHDR` pixel dimensions
+  in that list, and every declared row must fit inside every accepted
+  size. Layout is also enforced against every part sheet's real
+  *decoded* pixels, not merely its header: every family shares one cell
+  size, a declared cell must fit inside the decoded sheet, a packed
+  strip is never fully transparent, and a `body` strip's every cell
+  holds at least one opaque pixel -- each failure names the part's own
+  kind, key and sheet.
+- Every part is packed into its own family's compact strip by
+  `tools/defs-build`'s packer, one CPU-only page group per kind
+  (`character_body`, `character_eyes`, ...), never bound to the GPU. A
+  part's own JSON-only `atlas` rect names its page and placement,
+  exactly like an object's. The client fetches a packed page lazily,
+  once per page, as a CPU-side `ImageBitmap`
+  (`render/appearance/character-part-pages.ts`) -- never through Pixi's
+  `Assets`/`Texture`, and never a raw vendor sheet
+  (`scripts/ci/check-no-raw-part-sheets.sh`).
+- A look is drawn into one **slot** of `CHARACTER_COMPOSITE_PAGES`
+  (`defs.json`) shared, canvas-backed 2048x2048 pages -- never a
+  `Texture` per look. A slot is a grid of frame cells at `cell + 1px`
+  transparent-gutter pitch (never extruded: a character sits on
+  transparent pixels); capacity is derived from that arithmetic
+  (`render/appearance/composite-slots.ts`). A slot's own frame `Texture`s
+  are built once, on first occupancy, and reused by every later
+  occupant; a page re-uploads at most once per tick. Slots are
+  ref-counted and LRU-bounded (`render/appearance/appearance-cache.ts`)
+  -- `dispose` frees a slot instead of destroying a texture;
+  exhaustion rejects the acquire, never a third page. A character on
+  screen is one `Sprite` in the `characters`-rank pool -- distinct
+  citizens sharing a page cost nothing extra over identical ones.
 
 ## Debug tooling (client)
 
@@ -909,16 +919,22 @@ rule above.
   the street kit borrows single props from) maps to one shared
   `ATLAS_SHARED_GROUP` (`"street"`) group; a themed district keeps its
   own group. A theme absent from the table fails the build naming it, and
-  so does a table that maps nothing at all to `ATLAS_SHARED_GROUP`. A
-  group never spans more than `ATLAS_MAX_PAGES_PER_GROUP` (2) pages. A
-  scene is the shared group plus at most one themed group -- a player is
-  never on the street and inside a themed interior at once -- so the
-  shared group's own page count plus the *worst* other group's own page
-  count never spans more than `ATLAS_MAX_BOUND_PAGES` (8); both fail the
-  build naming the offending group(s) and their own counts.
-  `atlas_max_pages_per_group` is emitted into `defs.json` beside
-  `max_footprint_cells`; the scene rule is the packer's own and the
-  client has no use for it.
+  so does a table that maps nothing at all to `ATLAS_SHARED_GROUP`, or
+  one that maps a theme onto a `character_*` group -- those are reserved
+  for the packer's own character-part groups, one per declared part kind
+  (body/eyes/hairstyle/outfit/accessory; see "Appearance" above for the
+  CPU-only, per-look-compositing use they serve). A group never spans
+  more than `ATLAS_MAX_PAGES_PER_GROUP` (2) pages. A scene is the shared
+  group plus at most one themed group -- a player is never on the street
+  and inside a themed interior at once -- plus the fixed
+  `CHARACTER_COMPOSITE_PAGES` every scene with a crowd on it binds: the
+  shared group's own page count, plus the *worst* other group's own page
+  count (`character_*` groups excluded -- they are CPU-only, never
+  bound), plus `CHARACTER_COMPOSITE_PAGES`, never spans more than
+  `ATLAS_MAX_BOUND_PAGES` (8); a failure names all three terms and the
+  total. `atlas_max_pages_per_group`/`character_composite_pages` are
+  emitted into `defs.json`; the scene rule itself is the packer's own,
+  the client has no use for it.
 - Every packed rect carries a permanent 1px border of extruded
   (edge-repeated, never transparent) pixels on every side -- nearest-
   neighbour sampling plus this stops bleed at a fractional camera
@@ -928,11 +944,12 @@ rule above.
   `defs_version`'s own 16 hex characters -- so an unrelated group's page
   never renames when another group's pixels change.
 - `defs.json`'s `atlas_pages` array (`file`, `group`, `width`, `height`)
-  and every object's own required `atlas` field (`{ page, x, y, w, h }`,
-  `page` an index into `atlas_pages`, the rect in page pixels, gutter
-  excluded) are JSON-only, like a rule row is Rust-only: never in
-  `server/sim/src/generated/defs.rs` or the cross-parser dump. `sprite`
-  stays in both artefacts as the authoring input.
+  and every object's/character part's own required `atlas` field
+  (`{ page, x, y, w, h }`, `page` an index into `atlas_pages`, the rect
+  in page pixels, gutter excluded) are JSON-only, like a rule row is
+  Rust-only: never in `server/sim/src/generated/defs.rs` or the
+  cross-parser dump. `sprite`/`sheet` stay in both artefacts as the
+  authoring input.
 - The client loads a page only on first demand (`client/src/render/
   atlas-pages.ts`'s `AtlasPageLoader`, Pixi `Assets.load`,
   `scaleMode: "nearest"`, one shared `Texture` per page, one shared

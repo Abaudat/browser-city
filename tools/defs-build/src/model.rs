@@ -112,6 +112,23 @@ pub const ATLAS_MAX_BOUND_PAGES: usize = 8;
 /// establish.
 pub const ATLAS_SHARED_GROUP: &str = "street";
 
+/// Story 2.7: every character-part page group's own name starts with this
+/// prefix (`character_body`, `character_eyes`, ...) -- CPU-only compositing
+/// sources, never bound to the GPU, so [`crate::atlas::build::check_max_bound_pages`]
+/// excludes every group with this prefix from its own worst-themed-group
+/// arithmetic, and `defs/atlas/page-groups.toml` may never map a theme onto
+/// one (Tim's direction: a themed prop group must never collide with a
+/// character-part group by name).
+pub const CHARACTER_GROUP_PREFIX: &str = "character_";
+
+/// Story 2.7 (Tim's direction): the fixed number of shared, canvas-backed
+/// composite pages every character look is drawn into at render time --
+/// never a per-look texture. Part of NFR12's own three-term bound-pages
+/// rule (`shared + worst themed + CHARACTER_COMPOSITE_PAGES <=
+/// ATLAS_MAX_BOUND_PAGES`), emitted into `defs.json` so the client never
+/// carries this as its own literal.
+pub const CHARACTER_COMPOSITE_PAGES: u32 = 2;
+
 /// A 1px border of extruded (edge-repeated, never transparent -- Artie's
 /// direction) pixels surrounds every packed rect on every side, always --
 /// nearest-neighbour sampling plus this is what stops bleed at a

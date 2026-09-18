@@ -9,6 +9,7 @@ function validPayload(version: string): Record<string, unknown> {
     interact_at_max_reach_cells: 2,
     max_footprint_cells: 8,
     atlas_max_pages_per_group: 2,
+    character_composite_pages: 2,
     atlas_pages: [],
     objects: [],
     items: [],
