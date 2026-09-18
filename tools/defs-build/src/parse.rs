@@ -13,12 +13,12 @@ use crate::model::*;
 use crate::naming::is_kebab_case;
 use crate::spans::line_col;
 
-/// Every git-tracked file under `defs/` must reach this branch or the
-/// `.toml`-extension one below it -- there is no third, silent path
-/// (Quentin/Tim's direction: a `defs/items/notes.md` or a stray `.json`
-/// must be a hard, named build error, not quietly excluded before
-/// parsing ever sees it). Callers must never pre-filter the file list by
-/// extension.
+/// Every file `fsio::list_defs_sources` hands `parse_all` must reach this
+/// branch or the `.toml`-extension one below it -- there is no third,
+/// silent path (Quentin/Tim's direction: a `defs/items/notes.md` or a
+/// stray `.json` must be a hard, named build error, not quietly excluded
+/// before parsing ever sees it; `list_defs_sources` is the one place that
+/// excludes `defs/README.md`, agent-facing documentation, not a def).
 fn check_filename(path: &Path) -> Result<(), DefsError> {
     if path.extension().and_then(|e| e.to_str()) != Some("toml") {
         return Err(DefsError::new(

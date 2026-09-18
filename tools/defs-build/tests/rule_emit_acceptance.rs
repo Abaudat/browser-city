@@ -5,8 +5,8 @@
 //! RuleKind::Placement` literal `server/sim/src/generated/defs.rs` would
 //! embed. `sim` never depends on this crate (or vice versa): the other
 //! half of AC1 -- that the *committed* artefact actually fires -- is
-//! proven independently in `server/sim/tests/rule_defs_current.rs`,
-//! against `sim::generated::defs::RULES` itself, never a hand
+//! proven independently in `server/sim/tests/rule_examples.rs` (story
+//! 2.12), against `sim::generated::defs::RULES` itself, never a hand
 //! translation of this crate's own validated tree.
 
 use std::collections::BTreeMap;

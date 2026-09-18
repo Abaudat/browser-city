@@ -27,8 +27,7 @@ fn repo_root() -> PathBuf {
 fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
     let root = repo_root();
 
-    let tracked = fsio::list_git_tracked_files(&root, "defs").unwrap();
-    let mut text_files = fsio::read_text(&root, &tracked).unwrap();
+    let mut text_files = fsio::read_text(&root, &fsio::list_defs_sources(&root).unwrap()).unwrap();
     text_files.sort_by(|a, b| a.0.cmp(&b.0));
     let raw = parse::parse_all(&text_files).unwrap();
 

@@ -51,11 +51,15 @@ fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let byte_files = fsio::read_bytes(root, &tracked)?;
     let defs_version = version::compute_defs_version(&byte_files);
 
-    // Every tracked path, not just `*.toml` ones (Quentin/Tim's
-    // direction): `parse_all`'s own `check_filename` is what must reject
-    // an unknown extension, named with its own path -- never a pre-filter
-    // that makes that branch unreachable and the file invisible.
-    let mut text_files = fsio::read_text(root, &tracked)?;
+    // Every def, not just `*.toml` ones (Quentin/Tim's direction):
+    // `parse_all`'s own `check_filename` is what must reject an unknown
+    // extension, named with its own path -- never a pre-filter that
+    // makes that branch unreachable and the file invisible.
+    // `list_defs_sources` alone owns the one exception (`defs/README.md`,
+    // agent-facing documentation), so it still folds into `defs_version`
+    // above (via the unfiltered `tracked`) but never reaches
+    // `check_filename`'s own non-`.toml` refusal.
+    let mut text_files = fsio::read_text(root, &fsio::list_defs_sources(root)?)?;
     text_files.sort_by(|a, b| a.0.cmp(&b.0));
 
     // Story 1.10/2.2: which sheets does the tree reference, so their real

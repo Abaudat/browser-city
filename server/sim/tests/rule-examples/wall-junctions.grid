@@ -1,0 +1,10 @@
+rules: wall_is_part_of_a_straight_run_or_a_corner
+expect: pass
+floor: 0
+legend: W=wall+wall_run E=entrance P=pavement U=waste
+area: 1 0,0 3,4
+grid:
+WWW
+WWW
+WWW
+EPU

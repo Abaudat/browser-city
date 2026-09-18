@@ -1,0 +1,16 @@
+rules: floor_never_touches_pavement_directly
+expect: fail
+floor: 0
+legend: W=wall+wall_run F=floor U=floor+waste D=threshold+wall_run+entrance P=pavement R=road
+area: 1 0,0 4,3
+area: 2 1,1 3,2
+area: 2 1,2 2,3
+area: 2 3,3 4,4
+grid:
+WWWW
+WFUW
+WDWW
+.P.F
+.R.P
+violations:
+floor_never_touches_pavement_directly at (3, 3, 0) <-> (3, 4, 0)
