@@ -162,18 +162,40 @@ document's own opening paragraph forbids.
 
 ### Plot subdivision
 
-- **Receives:** a street-network block.
-- **Hands down:** individual plots within the block.
+- **Receives:** a street-network block (and the land-use field, for each
+  block's own land use and density -- FR110's ordering, story 3.3
+  amendment: a pass reads every earlier pass's output it actually needs,
+  never only its immediate predecessor's).
+- **Hands down:** individual plots within the block, each recording its
+  own front-facing side, land use and density; a block with no street
+  frontage at all, or a face too narrow for one rhythm module, yields an
+  explicit `open` plot rather than a landlocked or missing one.
 - **Reads:** density, land-use mix.
-- **Evidence:** (added when the pass lands.)
+- **Evidence:** [`docs/generation/plots-seed-1.svg`](generation/plots-seed-1.svg),
+  [`-seed-2`](generation/plots-seed-2.svg), [`-seed-3`](generation/plots-seed-3.svg)
+  -- the street-network SVG's own block tint and streets as the backdrop,
+  every plot's outline on top (`open` ones hatched, front edge a heavier
+  stroke), a legend; same regen-and-diff guard as the rows above.
 
 ### Building envelope
 
 - **Receives:** a plot.
-- **Hands down:** a building footprint and its sealed exterior shell
-  (walls, entrance).
-- **Reads:** density, building age.
-- **Evidence:** (added when the pass lands.)
+- **Hands down:** a building footprint -- at this story, an abstract
+  outer rectangle only (no wall cells, no entrance cell yet; the sealed
+  exterior shell lands with the story that first rasterises one, which is
+  what `front` is recorded for), or a typed rejection when the plot
+  cannot hold its own land use's minimum usable interior -- never a
+  footprint shrunk below that minimum.
+- **Reads:** density, land-use mix (not building age: pass 5, building
+  type, has not run yet, so the "intended type" this pass sizes against
+  is the plot's own land use -- Tim's stated assumption, story 3.3).
+- **Evidence:** [`docs/generation/envelopes-seed-1.svg`](generation/envelopes-seed-1.svg),
+  [`-seed-2`](generation/envelopes-seed-2.svg), [`-seed-3`](generation/envelopes-seed-3.svg)
+  -- the same backdrop, every plot's own yard (a lighter tint, `open`
+  ones hatched) and every placed envelope (a darker, opaque fill, a door
+  tick on its own front edge), plus two insets at viewport scale (the
+  density peak and the farthest periphery) since a 12x11 envelope is
+  unreadable at 512-cell scale; same regen-and-diff guard.
 
 ### Building type
 
@@ -277,6 +299,41 @@ disagree.
 | generation.streets.p99_detour_percent | committed | Street network | the 99th-percentile detour ratio, over one city's own sampled pairs, must not exceed this -- `max_detour_percent` alone only bounds the single worst pair |
 | generation.streets.peripheral_low_band_floor_percent | committed | Street network | per-city anti-inversion floor: the low-density (periphery) mean block area must be at least this percent of the high-density (core) mean |
 | generation.streets.peripheral_pooled_min_ratio_percent | committed | Street network | pooled over a fixed seed range, summed low-band mean area over summed high-band mean area must be at least this percent -- the guard that actually fails a density-blind generator |
+| generation.plots.frontage_min_cells | committed | Plot subdivision | AC1: a plot fronts a street iff it shares at least this many world cells of edge length with a street-abutting side of its own block; corner-point contact is landlocked |
+| generation.plots.high_density_threshold | committed | Plot subdivision | the density at or above which a block's own build line sits flush on the pavement (setback 0, party walls); shared with the building-envelope pass's own side-gap step |
+| generation.plots.setback_periphery_cells | committed | Plot subdivision | the one shared build-line setback every plot on a below-threshold block sits behind |
+| generation.plots.residential_width_min_cells | committed | Plot subdivision | the rhythm-module width band a residential block face draws its plot widths from, minimum end |
+| generation.plots.commercial_width_min_cells | committed | Plot subdivision | same, commercial |
+| generation.plots.industrial_width_min_cells | committed | Plot subdivision | same, industrial |
+| generation.plots.institutional_width_min_cells | committed | Plot subdivision | same, institutional |
+| generation.plots.residential_width_max_cells | committed | Plot subdivision | the same residential band's maximum end |
+| generation.plots.commercial_width_max_cells | committed | Plot subdivision | same, commercial |
+| generation.plots.industrial_width_max_cells | committed | Plot subdivision | same, industrial |
+| generation.plots.institutional_width_max_cells | committed | Plot subdivision | same, institutional |
+| generation.plots.residential_row_depth_cells | committed | Plot subdivision | a residential plot's own depth from its block face inward |
+| generation.plots.commercial_row_depth_cells | committed | Plot subdivision | same, commercial |
+| generation.plots.industrial_row_depth_cells | committed | Plot subdivision | same, industrial |
+| generation.plots.institutional_row_depth_cells | committed | Plot subdivision | same, institutional |
+| generation.envelopes.wall_thickness_cells | committed | Building envelope | the wall ring's own thickness, both axes -- interior usable floor is the footprint minus two of these per axis |
+| generation.envelopes.residential_min_interior_width_cells | committed | Building envelope | the minimum usable interior width a residential footprint must clear, checked against the interior net |
+| generation.envelopes.commercial_min_interior_width_cells | committed | Building envelope | same, commercial |
+| generation.envelopes.industrial_min_interior_width_cells | committed | Building envelope | same, industrial |
+| generation.envelopes.institutional_min_interior_width_cells | committed | Building envelope | same, institutional |
+| generation.envelopes.residential_min_interior_depth_cells | committed | Building envelope | the same residential minimum's depth |
+| generation.envelopes.commercial_min_interior_depth_cells | committed | Building envelope | same, commercial |
+| generation.envelopes.industrial_min_interior_depth_cells | committed | Building envelope | same, industrial |
+| generation.envelopes.institutional_min_interior_depth_cells | committed | Building envelope | same, institutional |
+| generation.envelopes.max_width_cells | committed | Building envelope | the outer envelope ceiling, both axes, shared across every land use |
+| generation.envelopes.max_depth_cells | committed | Building envelope | the outer envelope ceiling's own depth |
+| generation.envelopes.side_gap_periphery_cells | committed | Building envelope | the total gap between two neighbouring envelopes on a below-threshold block -- half inset from each side; 0 at or above the threshold (party walls) |
+| generation.envelopes.mean_width_cells | committed | Building envelope | AC3's mean footprint width band, measured over the fixed seed range 0..256 |
+| generation.envelopes.mean_width_tolerance_cells | committed | Building envelope | the tolerance around the mean width band |
+| generation.envelopes.mean_depth_cells | committed | Building envelope | AC3's mean footprint depth band, same seed range |
+| generation.envelopes.mean_depth_tolerance_cells | committed | Building envelope | the tolerance around the mean depth band |
+| generation.envelopes.min_distinct_sizes | committed | Building envelope | NFR8/AC3's anti-cheat floor: the minimum number of distinct (width, depth) footprint pairs a district must show |
+| generation.envelopes.target_count_per_million_cells | committed | Building envelope | AC4's own building-count target, stated per one million site cells and scaled by real site area |
+| generation.envelopes.count_tolerance_percent | committed | Building envelope | AC4's tolerance band around the scaled target, as a percent |
+| generation.envelopes.max_rejected_plot_percent | committed | Building envelope | the maximum percent of attempted plots the envelope pass may reject, asserted per city |
 
 ## placement
 | key | status | pass | scope | reads | intent |
@@ -346,6 +403,12 @@ names; `unclaimed` otherwise -- checked mechanically, not by eye.
 | A street that jogs sideways within less than a minimum block length | coherence | | unclaimed |
 | A road that stops a few tiles short of the site edge instead of exiting cleanly through it | adjacency | | unclaimed |
 | A uniform, symmetric empty ring around the site's own periphery | distribution | | unclaimed |
+| A plot with no street frontage | adjacency | | unclaimed |
+| A building standing off its block face's shared build line | coherence | | unclaimed |
+| A 1-cell slit between two buildings | adjacency | | unclaimed |
+| Land inside a block that belongs to no plot | requirement | | unclaimed |
+| A building whose entrance faces the block interior or a side passage | adjacency | | unclaimed |
+| A vacant gap in an otherwise continuous high-density street wall | coherence | | unclaimed |
 
 The five `defs/rules/city.toml` rows and the `defs/rules/grammar.toml`
 rows above are placeholders and grammar primitives, not a claim on this

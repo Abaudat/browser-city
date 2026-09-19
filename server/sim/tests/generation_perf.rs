@@ -10,10 +10,15 @@
 //! and holds every output collection to an explicit ceiling derived from
 //! `GenerationConfig` itself, never a literal -- if segment count ever
 //! grew faster than the area, this ceiling (linear in coarse cell count)
-//! would be the thing that catches it, not a stopwatch.
+//! would be the thing that catches it, not a stopwatch. Story 3.3 (Tim's
+//! direction) extends this to plots and envelopes: their own ceilings are
+//! derived from `block area / minimum plot area`, still linear, and
+//! neither pass carries an `O(n^2)` risk of its own (plots cuts a fixed
+//! `FACE_PRIORITY` strip set per block; envelopes sizes one plot at a
+//! time).
 
 use sim::generated::defs;
-use sim::generation::{GenerationConfig, land_use, streets};
+use sim::generation::{GenerationConfig, envelopes, land_use, plots, streets};
 
 #[test]
 fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
@@ -81,4 +86,33 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // count, with every collection inside its linear ceiling, is most of
     // the property this test exists to pin.
     assert!(!net.blocks().is_empty());
+
+    let pm = plots::run(7, &lu, &net, &cfg);
+    // Every plot is at least `width_min * row_depth` world cells for its
+    // own land use -- the smallest such product over every land use
+    // bounds total plot count the same way `min_block_depth_cells^2`
+    // bounds block count above.
+    let min_plot_area = (0..4)
+        .map(|i| cfg.plot_width_min_cells[i] as u64 * cfg.plot_row_depth_cells[i] as u64)
+        .min()
+        .unwrap_or(1)
+        .max(1);
+    let max_plots = world_cells / min_plot_area;
+    assert!(
+        pm.plots().len() as u64 <= max_plots,
+        "plot count {} exceeds the structural ceiling {max_plots} derived from plot width/row-depth minimums",
+        pm.plots().len()
+    );
+    assert!(!pm.plots().is_empty());
+    assert!(
+        pm.landlocked_plots(net.blocks(), cfg.plot_frontage_min_cells)
+            .is_empty()
+    );
+
+    let em = envelopes::run(7, &pm, &cfg)
+        .unwrap_or_else(|e| panic!("the 1024 growth target must still clear AC4's tolerance: {e}"));
+    // Envelopes never outnumber the plots they were sized from -- no
+    // separate ceiling needed beyond `max_plots` above.
+    assert!(em.outcomes().len() as u64 <= max_plots);
+    assert!(!em.outcomes().is_empty());
 }

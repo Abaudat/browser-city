@@ -965,12 +965,16 @@ fn assign_uses(
 /// silent truncation, if `site`'s width/height is not a whole multiple of
 /// `cfg.coarse_cell_size_cells` -- a generator must never quietly leave
 /// cells unowned (Tim's direction).
-pub fn run(city_seed: u64, site: SiteBounds, cfg: &GenerationConfig) -> Result<LandUseMap, String> {
+pub fn run(
+    city_seed: u64,
+    site: SiteBounds,
+    cfg: &GenerationConfig,
+) -> Result<LandUseMap, super::GenerationError> {
     let cell_size = cfg.coarse_cell_size_cells.max(1);
     if site.width() % cell_size as i64 != 0 || site.height() % cell_size as i64 != 0 {
-        return Err(format!(
+        return Err(super::GenerationError::InvalidSite(format!(
             "land_use::run: site {site:?} is not a whole multiple of coarse_cell_size_cells ({cell_size})"
-        ));
+        )));
     }
 
     let mut rng = Rng::new(seed_from_ids(city_seed, PASS_ID));
@@ -1082,7 +1086,7 @@ mod tests {
             y1: 512,
         };
         let err = run(1, bad_site, &c).unwrap_err();
-        assert!(err.contains("whole multiple"));
+        assert!(err.to_string().contains("whole multiple"));
     }
 
     #[test]
