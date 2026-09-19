@@ -60,6 +60,19 @@ pub struct GenerationConfig {
     pub land_use_max_recursion_depth: u32,
     pub density_min: i32,
     pub density_max: i32,
+    /// The density peak's own minimum/maximum offset from the coarse
+    /// grid's geometric centre, each a percent of the grid's own half-
+    /// extent, applied independently (and with an independently seeded
+    /// sign) to x and y -- what makes the falloff asymmetric (NFR8; Artie's
+    /// direction: never "a perfect concentric square centred on (256,
+    /// 256)").
+    pub density_peak_offset_min_pct: i32,
+    pub density_peak_offset_max_pct: i32,
+    /// District-count shares (not area shares -- `docs/generation.md`
+    /// says so): the target number of districts (recursive-subdivision
+    /// leaves) each use gets is `round(total_leaves * share_pct / 100)`,
+    /// residential taking the remainder. Realised counts are asserted
+    /// against these targets exactly (`land_use::tests`).
     pub share_residential_pct: i32,
     pub share_commercial_pct: i32,
     pub share_industrial_pct: i32,
@@ -71,6 +84,12 @@ pub struct GenerationConfig {
     pub street_width_cells: i32,
     pub lane_width_cells: i32,
     pub arterial_jitter_pct: i32,
+    /// How close (world cells) a candidate arterial or block-split
+    /// position must be to an existing land-use district boundary to
+    /// snap onto it instead of its own jittered position -- Artie's
+    /// direction: streets are laid on land-use boundaries, a boundary
+    /// never cuts through the middle of a block.
+    pub boundary_snap_tolerance_cells: i32,
     pub block_size_min_cells: i32,
     pub block_size_max_cells: i32,
     pub min_block_depth_cells: i32,
@@ -78,8 +97,23 @@ pub struct GenerationConfig {
     pub split_jitter_pct: i32,
     pub max_recursion_depth: u32,
     pub max_lane_splits: u32,
+    /// A superblock's own first this-many splits are street tier;
+    /// further splits (even though still over the density target) drop
+    /// to lane tier -- Artie's direction: mostly one street-tier split
+    /// per long block, lanes doing the rest, so the core does not read
+    /// as "half asphalt".
+    pub max_street_splits_per_superblock: u32,
+    /// Two junctions on the same street must either coincide (a true
+    /// 4-way) or sit at least this many world cells apart -- never a
+    /// near-miss crossroad a cell or two off (Tim's direction).
+    pub junction_min_separation_cells: i32,
     pub max_detour_percent: i32,
     pub detour_min_manhattan_cells: i32,
+    /// The minimum number of distinct block widths (and, separately,
+    /// heights) a single generated network must show -- Quentin's
+    /// direction, cycle 1: "not a perfect grid" as a number, asserted
+    /// over arbitrary seeds, not a literal repeated in test files.
+    pub min_distinct_block_sizes: i64,
 }
 
 fn get(balance: &[defs::BalanceSeed], key: &str) -> i64 {
@@ -90,14 +124,20 @@ impl GenerationConfig {
     /// Reads every key this module needs from `balance` (a caller always
     /// passes [`defs::BALANCE`] in production; a test may pass a smaller
     /// fixture slice, the same injectable shape `walkability::
-    /// player_body_subcells` already uses). `Err`, never a panic, on a
-    /// cross-key inconsistency a single key's own `min`/`max` range cannot
-    /// express: the site extent not a whole multiple of the coarse cell
-    /// size, a street width that is odd (a split cannot give both sides an
-    /// exact, symmetric half-width), the four land-use shares not summing
-    /// to 100, or `land_use.max_leaf_cells` under twice `land_use.min_
-    /// leaf_cells` (see `land_use::subdivide`'s own doc comment for why
-    /// that ratio is what makes its minimum-leaf-size guarantee hold).
+    /// player_body_subcells` already uses). `balance` itself is trusted
+    /// to carry every key this function reads -- `crate::balance::value`
+    /// panics, naming the key, if one is missing; that is a defs-
+    /// authoring bug, not a runtime config error, so it is never folded
+    /// into this function's own `Result`. What *does* come back `Err`,
+    /// never a panic, is a cross-key inconsistency a single key's own
+    /// `min`/`max` range cannot express: the site extent not a whole
+    /// multiple of the coarse cell size, a street width that is odd (a
+    /// split cannot give both sides an exact, symmetric half-width), the
+    /// four land-use shares not summing to 100, `land_use.max_leaf_cells`
+    /// under twice `land_use.min_leaf_cells` (see `land_use::subdivide`'s
+    /// own doc comment for why that ratio is what makes its minimum-
+    /// leaf-size guarantee hold), or `density_peak_offset_min_pct` over
+    /// `density_peak_offset_max_pct`.
     pub fn from_balance(balance: &[defs::BalanceSeed]) -> Result<Self, String> {
         let cfg = GenerationConfig {
             site_extent_cells: get(balance, "generation.site_extent_cells") as i32,
@@ -110,6 +150,14 @@ impl GenerationConfig {
                 as u32,
             density_min: get(balance, "generation.land_use.density_min") as i32,
             density_max: get(balance, "generation.land_use.density_max") as i32,
+            density_peak_offset_min_pct: get(
+                balance,
+                "generation.land_use.density_peak_offset_min_pct",
+            ) as i32,
+            density_peak_offset_max_pct: get(
+                balance,
+                "generation.land_use.density_peak_offset_max_pct",
+            ) as i32,
             share_residential_pct: get(balance, "generation.land_use.share_residential_pct") as i32,
             share_commercial_pct: get(balance, "generation.land_use.share_commercial_pct") as i32,
             share_industrial_pct: get(balance, "generation.land_use.share_industrial_pct") as i32,
@@ -122,6 +170,10 @@ impl GenerationConfig {
             street_width_cells: get(balance, "generation.streets.street_width_cells") as i32,
             lane_width_cells: get(balance, "generation.streets.lane_width_cells") as i32,
             arterial_jitter_pct: get(balance, "generation.streets.arterial_jitter_pct") as i32,
+            boundary_snap_tolerance_cells: get(
+                balance,
+                "generation.streets.boundary_snap_tolerance_cells",
+            ) as i32,
             block_size_min_cells: get(balance, "generation.streets.block_size_min_cells") as i32,
             block_size_max_cells: get(balance, "generation.streets.block_size_max_cells") as i32,
             min_block_depth_cells: get(balance, "generation.streets.min_block_depth_cells") as i32,
@@ -129,11 +181,20 @@ impl GenerationConfig {
             split_jitter_pct: get(balance, "generation.streets.split_jitter_pct") as i32,
             max_recursion_depth: get(balance, "generation.streets.max_recursion_depth") as u32,
             max_lane_splits: get(balance, "generation.streets.max_lane_splits") as u32,
+            max_street_splits_per_superblock: get(
+                balance,
+                "generation.streets.max_street_splits_per_superblock",
+            ) as u32,
+            junction_min_separation_cells: get(
+                balance,
+                "generation.streets.junction_min_separation_cells",
+            ) as i32,
             max_detour_percent: get(balance, "generation.streets.max_detour_percent") as i32,
             detour_min_manhattan_cells: get(
                 balance,
                 "generation.streets.detour_min_manhattan_cells",
             ) as i32,
+            min_distinct_block_sizes: get(balance, "generation.streets.min_distinct_block_sizes"),
         };
 
         if cfg.coarse_cell_size_cells <= 0
@@ -174,6 +235,12 @@ impl GenerationConfig {
             return Err(format!(
                 "GenerationConfig: density_min ({}) is greater than density_max ({})",
                 cfg.density_min, cfg.density_max
+            ));
+        }
+        if cfg.density_peak_offset_min_pct > cfg.density_peak_offset_max_pct {
+            return Err(format!(
+                "GenerationConfig: density_peak_offset_min_pct ({}) is greater than density_peak_offset_max_pct ({})",
+                cfg.density_peak_offset_min_pct, cfg.density_peak_offset_max_pct
             ));
         }
         if cfg.block_size_min_cells > cfg.block_size_max_cells {
@@ -226,16 +293,24 @@ mod tests {
             seed("generation.land_use.max_recursion_depth", 8, 1, 20),
             seed("generation.land_use.density_min", 10, 0, 1000),
             seed("generation.land_use.density_max", 100, 0, 1000),
+            seed("generation.land_use.density_peak_offset_min_pct", 15, 0, 50),
+            seed("generation.land_use.density_peak_offset_max_pct", 40, 0, 50),
             seed("generation.land_use.share_residential_pct", 58, 0, 100),
             seed("generation.land_use.share_commercial_pct", 18, 0, 100),
             seed("generation.land_use.share_industrial_pct", 14, 0, 100),
             seed("generation.land_use.share_institutional_pct", 10, 0, 100),
             seed("generation.streets.arterial_count_ns", 3, 0, 4),
-            seed("generation.streets.arterial_count_ew", 3, 0, 4),
+            seed("generation.streets.arterial_count_ew", 2, 0, 4),
             seed("generation.streets.arterial_width_cells", 12, 2, 64),
             seed("generation.streets.street_width_cells", 8, 2, 64),
             seed("generation.streets.lane_width_cells", 4, 2, 64),
             seed("generation.streets.arterial_jitter_pct", 20, 0, 45),
+            seed(
+                "generation.streets.boundary_snap_tolerance_cells",
+                24,
+                0,
+                256,
+            ),
             seed("generation.streets.block_size_min_cells", 24, 4, 512),
             seed("generation.streets.block_size_max_cells", 96, 4, 512),
             seed("generation.streets.min_block_depth_cells", 16, 2, 256),
@@ -243,8 +318,21 @@ mod tests {
             seed("generation.streets.split_jitter_pct", 25, 0, 45),
             seed("generation.streets.max_recursion_depth", 12, 1, 64),
             seed("generation.streets.max_lane_splits", 4, 0, 16),
-            seed("generation.streets.max_detour_percent", 220, 100, 500),
+            seed(
+                "generation.streets.max_street_splits_per_superblock",
+                1,
+                0,
+                16,
+            ),
+            seed(
+                "generation.streets.junction_min_separation_cells",
+                28,
+                1,
+                256,
+            ),
+            seed("generation.streets.max_detour_percent", 350, 100, 500),
             seed("generation.streets.detour_min_manhattan_cells", 64, 1, 2048),
+            seed("generation.streets.min_distinct_block_sizes", 3, 1, 16),
         ]
     }
 
@@ -308,5 +396,58 @@ mod tests {
         let balance = with_override("generation.streets.block_size_min_cells", 200);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
         assert!(err.contains("block_size_min_cells"));
+    }
+
+    #[test]
+    fn from_balance_rejects_max_leaf_cells_under_twice_min_leaf_cells() {
+        let mut balance = valid_balance();
+        balance
+            .iter_mut()
+            .find(|b| b.key == "generation.land_use.min_leaf_cells")
+            .unwrap()
+            .value = 10;
+        balance
+            .iter_mut()
+            .find(|b| b.key == "generation.land_use.max_leaf_cells")
+            .unwrap()
+            .value = 15;
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.contains("max_leaf_cells"));
+    }
+
+    #[test]
+    fn from_balance_accepts_max_leaf_cells_at_exactly_twice_min_leaf_cells() {
+        let mut balance = valid_balance();
+        balance
+            .iter_mut()
+            .find(|b| b.key == "generation.land_use.min_leaf_cells")
+            .unwrap()
+            .value = 5;
+        balance
+            .iter_mut()
+            .find(|b| b.key == "generation.land_use.max_leaf_cells")
+            .unwrap()
+            .value = 10;
+        GenerationConfig::from_balance(&balance)
+            .expect("exactly twice must be accepted, not just over it");
+    }
+
+    #[test]
+    fn from_balance_rejects_a_non_positive_coarse_cell_size() {
+        // coarse_cell_size_cells' own declared min (1) already refuses 0
+        // at the defs/-authoring level; this pins the from_balance guard
+        // itself, independent of that authoring-time range, the same way
+        // every other cross-key check here is pinned against a
+        // deliberately-broken fixture rather than trusted from defs/.
+        let balance = with_override("generation.land_use.coarse_cell_size_cells", 0);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.contains("whole multiple"));
+    }
+
+    #[test]
+    fn from_balance_rejects_peak_offset_min_over_max() {
+        let balance = with_override("generation.land_use.density_peak_offset_min_pct", 45);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.contains("density_peak_offset_min_pct"));
     }
 }

@@ -136,10 +136,13 @@ document's own opening paragraph forbids.
   same field, adjacent to the one already there.
 - **Reads:** nothing -- it is the first pass, and the pass that
   authors the field every later pass reads.
-- **Evidence:** [`docs/generation/land-use.svg`](generation/land-use.svg)
+- **Evidence:** [`docs/generation/land-use-seed-1.svg`](generation/land-use-seed-1.svg),
+  [`-seed-2`](generation/land-use-seed-2.svg), [`-seed-3`](generation/land-use-seed-3.svg)
   -- flat colour per coarse cell (land use), density carried as opacity,
-  regenerated and diffed by `bounds/tests/generation_evidence_current.rs`
-  (`cargo run -p bounds --bin dump-generation` regenerates it).
+  a legend for the four uses; three seeds so the rules read as rules and
+  not one lucky roll. Regenerated and diffed by `bounds/tests/generation_
+  evidence_current.rs` (`cargo run -p bounds --bin dump-generation`
+  regenerates it).
 
 ### Street network
 
@@ -147,9 +150,13 @@ document's own opening paragraph forbids.
 - **Hands down:** the street graph (carriageway, pavement, kerb) blocks
   are subdivided from.
 - **Reads:** density.
-- **Evidence:** [`docs/generation/street-network.svg`](generation/street-network.svg)
+- **Evidence:** [`docs/generation/street-network-seed-1.svg`](generation/street-network-seed-1.svg),
+  [`-seed-2`](generation/street-network-seed-2.svg), [`-seed-3`](generation/street-network-seed-3.svg)
   -- the same land-use backdrop, dimmed, with the street graph on top by
-  tier (arterial/street/lane); same regen-and-diff guard as the row above.
+  tier (arterial/street/lane), a legend, and two 40x22-cell viewport
+  outlines (one at the density peak, one at the farthest periphery) so
+  the per-screen reading is judgeable directly from the image; same
+  regen-and-diff guard as the row above.
 
 ### Plot subdivision
 
@@ -234,7 +241,9 @@ disagree.
 | generation.land_use.split_jitter_pct | committed | Land use | how far a district split position may jitter from the rect's own midpoint |
 | generation.land_use.max_recursion_depth | committed | Land use | a safety cap on recursive district-subdivision depth |
 | generation.land_use.density_min | committed | Land use | density at the site's own edge |
-| generation.land_use.density_max | committed | Land use | density at the site's own centre |
+| generation.land_use.density_max | committed | Land use | density at the field's own peak |
+| generation.land_use.density_peak_offset_min_pct | committed | Land use | the density peak's own minimum offset from the site's geometric centre, as a percent of half the site extent (NFR8: never a perfectly concentric field) |
+| generation.land_use.density_peak_offset_max_pct | committed | Land use | the density peak's own maximum offset from the site's geometric centre, same unit |
 | generation.land_use.share_residential_pct | committed | Land use | the residential share of the land-use mix |
 | generation.land_use.share_commercial_pct | committed | Land use | the commercial share of the land-use mix |
 | generation.land_use.share_industrial_pct | committed | Land use | the industrial share of the land-use mix |
@@ -245,13 +254,17 @@ disagree.
 | generation.streets.street_width_cells | committed | Street network | a street-tier segment's own carriageway-plus-pavement width |
 | generation.streets.lane_width_cells | committed | Street network | a lane-tier segment's own carriageway-plus-pavement width |
 | generation.streets.arterial_jitter_pct | committed | Street network | how far an arterial may jitter from its own even band position |
+| generation.streets.boundary_snap_tolerance_cells | committed | Street network | an arterial or internal split snaps onto a nearby land-use district boundary within this many cells, rather than cutting through the middle of a district |
 | generation.streets.block_size_min_cells | committed | Street network | target block side length at the field's own maximum density |
 | generation.streets.block_size_max_cells | committed | Street network | target block side length at the field's own minimum density |
 | generation.streets.min_block_depth_cells | committed | Street network | the minimum margin a recursive split must leave on each side |
-| generation.streets.max_block_depth_cells | committed | Street network | a harder ceiling than the density target: a block whose side still exceeds this gets a further lane-tier split |
+| generation.streets.max_block_depth_cells | committed | Street network | a harder ceiling than the density target, applied to a block's own *shorter* side: a block whose short side still exceeds this gets a further lane-tier split |
+| generation.streets.max_street_splits_per_superblock | committed | Street network | how many street-tier (not lane-tier) cuts one superblock may take before an over-target block is split with a lane instead -- keeps the core from reading as half asphalt |
+| generation.streets.junction_min_separation_cells | committed | Street network | the minimum net gap, carriageway edge to carriageway edge, between two junctions on the same street line before the later one is snapped clear |
 | generation.streets.split_jitter_pct | committed | Street network | how far a block split position may jitter from the rect's own midpoint |
 | generation.streets.max_recursion_depth | committed | Street network | a safety cap on recursive block-subdivision depth |
 | generation.streets.max_lane_splits | committed | Street network | a safety cap on the extra lane-tier splits one over-deep block may take |
+| generation.streets.min_distinct_block_sizes | committed | Street network | the minimum number of distinct block widths, and separately heights, a city must show ("not a perfect grid") |
 | generation.streets.max_detour_percent | committed | Street network | the Manhattan-fitness ceiling 3.11's pathfinding estimator relies on |
 | generation.streets.detour_min_manhattan_cells | committed | Street network | pairs closer than this are excluded from the Manhattan-fitness sample |
 

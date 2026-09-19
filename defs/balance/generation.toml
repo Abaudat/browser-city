@@ -77,6 +77,23 @@ min = 0
 max = 1000
 
 [[balance]]
+# The density peak's own minimum offset from the coarse grid's geometric
+# centre, as a percent of the grid's own half-extent, applied
+# independently (and with an independently seeded sign) to x and y.
+key = "generation.land_use.density_peak_offset_min_pct"
+value = 15
+min = 0
+max = 50
+
+[[balance]]
+# The density peak's own maximum offset -- see `density_peak_offset_min_
+# pct`.
+key = "generation.land_use.density_peak_offset_max_pct"
+value = 40
+min = 0
+max = 50
+
+[[balance]]
 key = "generation.land_use.share_residential_pct"
 value = 58
 min = 0
@@ -111,8 +128,11 @@ min = 0
 max = 4
 
 [[balance]]
+# Fewer this way than `arterial_count_ns` (Artie's direction: "at most 3
+# one way and 2 the other" -- even arterial counts on both axes reads as
+# a tartan lattice).
 key = "generation.streets.arterial_count_ew"
-value = 3
+value = 2
 min = 0
 max = 4
 
@@ -146,6 +166,17 @@ min = 0
 max = 45
 
 [[balance]]
+# How close (world cells) a candidate arterial or block-split position
+# must be to an existing land-use district boundary to snap onto it
+# instead of its own jittered position (Artie's direction, cycle 1:
+# streets are laid on land-use boundaries; a boundary never cuts through
+# the middle of a block).
+key = "generation.streets.boundary_snap_tolerance_cells"
+value = 24
+min = 0
+max = 256
+
+[[balance]]
 # Target block side length at the field's own maximum density (the
 # commercial core).
 key = "generation.streets.block_size_min_cells"
@@ -171,18 +202,15 @@ min = 2
 max = 256
 
 [[balance]]
-# A harder ceiling than block_size_max_cells: even a block whose size
+# A harder ceiling than block_size_max_cells, applied to a block's own
+# *shorter* side only (Tim's direction, cycle 1: a 96x40 block is a
+# normal city block, a 96x96 one is not -- applying this to either axis
+# cancelled block_size_max_cells entirely): even a block whose size
 # already satisfies the local density target gets a further lane-tier
-# split if either side still exceeds this ("lanes only split over-deep
-# blocks", Artie's direction) -- a block-usability ceiling, independent
-# of density, low enough to matter in the sparse periphery where the
-# density-driven target alone would otherwise allow a much larger,
-# internally-unsplit block. Empirically load-bearing for the Manhattan-
-# fitness contract too (`generation.streets.max_detour_percent`): a large
-# unsplit periphery superblock is the dominant source of worst-case
-# detour, so lowering this value (with more arterials, below) is what
-# keeps the detour ratio in check without shrinking block_size_max_cells
-# itself.
+# split if its short side still exceeds this ("lanes only split
+# over-deep blocks", Artie's direction) -- a block-usability ceiling,
+# independent of density. Empirically load-bearing for the Manhattan-
+# fitness contract too (`generation.streets.max_detour_percent`).
 key = "generation.streets.max_block_depth_cells"
 value = 40
 min = 2
@@ -212,18 +240,43 @@ min = 0
 max = 16
 
 [[balance]]
+# A superblock's own first this-many splits are street tier; every split
+# after that drops to lane tier even while still over the density target
+# (Artie's direction, cycle 1: mostly one street-tier cut per long block,
+# lanes doing the rest -- otherwise the core reads as half asphalt).
+key = "generation.streets.max_street_splits_per_superblock"
+value = 1
+min = 0
+max = 16
+
+[[balance]]
+# Two junctions on the same street must either coincide (a true 4-way) or
+# sit at least this many world cells apart -- never a near-miss crossroad
+# a cell or two off (Tim's direction, cycle 1). At least the widest
+# street's own width (arterial_width_cells) plus min_block_depth_cells,
+# so a snap or push never itself creates an unusably shallow block.
+key = "generation.streets.junction_min_separation_cells"
+value = 28
+min = 1
+max = 256
+
+[[balance]]
 # The Manhattan-fitness contract 3.11's pathfinding estimator relies on:
 # over a deterministic sample of node pairs, BFS network distance /
-# Manhattan distance must not exceed this, expressed as a percentage
-# (220 = a ratio of 2.20). Set from measurement, not guessed: a scan of
-# 20000 seeds at this generator's other committed values found a worst
-# case near 200%, driven by pairs near a jittered arterial where the
-# nearest cross-street sits well off the straight line between them --
-# an inherent cost of "not a perfect grid" (T-junctions, jittered splits),
-# not a bug. 3.11's estimator must budget for this ratio, not assume a
-# tighter one.
+# Manhattan distance must not exceed this, expressed as a percentage.
+# Set from measurement, not guessed, and re-measured cycle 2 after the
+# arterial-count, block-depth, junction-snapping and boundary-snapping
+# changes moved the number: a scan of 5,000 seeds at this generator's
+# other committed values found a worst case of 293%, driven by pairs
+# near a jittered/boundary-snapped arterial where the nearest cross-
+# street sits well off the straight line between them -- an inherent
+# cost of "not a perfect grid" (T-junctions, jittered splits, boundary
+# snapping), not a bug. 350 is that measurement plus real margin.
+# 3.11's estimator must budget for this ratio, not assume a tighter one;
+# whoever tunes `generation.toml` next should re-run the same scan
+# rather than trust this comment to stay current forever.
 key = "generation.streets.max_detour_percent"
-value = 220
+value = 350
 min = 100
 max = 500
 
@@ -237,3 +290,13 @@ key = "generation.streets.detour_min_manhattan_cells"
 value = 64
 min = 1
 max = 2048
+
+[[balance]]
+# The minimum number of distinct block widths (and, separately, heights)
+# a single generated network must show -- Quentin's direction, cycle 1:
+# "not a perfect grid" as a number, asserted over arbitrary seeds, never
+# a literal repeated across test files.
+key = "generation.streets.min_distinct_block_sizes"
+value = 3
+min = 1
+max = 16

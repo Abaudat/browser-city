@@ -7,16 +7,68 @@
 //! GENERATION_VERSION`; `check-golden-version-bump.sh` fails a PR that
 //! touches the golden without bumping that constant.
 //!
+//! Pinned against a small, fixed, test-local [`frozen_config`] -- never
+//! the live `defs::BALANCE` -- because a designer retuning `defs/balance/
+//! generation.toml` (a data change, already covered by `defs_version`)
+//! must never also force a `GENERATION_VERSION` bump (an algorithm/
+//! seeding change) just because this golden ran against the live values
+//! (Tim's direction, cycle 1). The evidence SVGs (`bounds::generation_
+//! evidence`) keep using live balance -- that is their own job, showing
+//! what actually ships.
+//!
 //! Also checks: the same seed twice in one process is byte-identical, and
 //! running pass 2 twice over one pass-1 output is byte-identical (pass 2
 //! never mutates its own input).
 
-use sim::generated::defs;
 use sim::generation::{GENERATION_VERSION, GenerationConfig, LandUse, land_use, streets};
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
 const GOLDEN: &str = include_str!("goldens/generation_v1.golden");
+
+/// A frozen snapshot of `defs/balance/generation.toml`'s own values at
+/// the time this golden was last regenerated -- never read from `defs::
+/// BALANCE`. If `generation.toml` and this snapshot drift, that is
+/// expected and fine (that is exactly the point): only a change to
+/// `sim::generation`'s own algorithm or seeding is supposed to move this
+/// golden.
+fn frozen_config() -> GenerationConfig {
+    GenerationConfig {
+        site_extent_cells: 512,
+        coarse_cell_size_cells: 16,
+        land_use_min_leaf_cells: 4,
+        land_use_max_leaf_cells: 10,
+        land_use_split_jitter_pct: 30,
+        land_use_max_recursion_depth: 8,
+        density_min: 10,
+        density_max: 100,
+        density_peak_offset_min_pct: 15,
+        density_peak_offset_max_pct: 40,
+        share_residential_pct: 58,
+        share_commercial_pct: 18,
+        share_industrial_pct: 14,
+        share_institutional_pct: 10,
+        arterial_count_ns: 3,
+        arterial_count_ew: 2,
+        arterial_width_cells: 12,
+        street_width_cells: 8,
+        lane_width_cells: 4,
+        arterial_jitter_pct: 20,
+        boundary_snap_tolerance_cells: 24,
+        block_size_min_cells: 24,
+        block_size_max_cells: 96,
+        min_block_depth_cells: 16,
+        max_block_depth_cells: 40,
+        split_jitter_pct: 25,
+        max_recursion_depth: 12,
+        max_lane_splits: 4,
+        max_street_splits_per_superblock: 1,
+        junction_min_separation_cells: 28,
+        max_detour_percent: 350,
+        detour_min_manhattan_cells: 64,
+        min_distinct_block_sizes: 3,
+    }
+}
 
 /// A small, hand-rolled FNV-1a (test-only -- `sim` itself never depends
 /// on a hashing crate, NFR28) over the whole plan's own canonical text:
@@ -56,7 +108,8 @@ fn plan_digest(lu: &land_use::LandUseMap, net: &streets::StreetNetwork) -> u64 {
 }
 
 fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
-    let lu = land_use::run(seed, cfg.site(), cfg);
+    let lu =
+        land_use::run(seed, cfg.site(), cfg).expect("frozen_config's own site is always valid");
     let net = streets::run(seed, &lu, cfg);
 
     let regions = lu.regions();
@@ -71,19 +124,14 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
         .max()
         .unwrap_or(0);
 
-    // Ring densities: centre, mid-radius, outer ring -- three coarse
-    // cells along the diagonal from centre to corner.
-    let cx = lu.cols() / 2;
-    let cy = lu.rows() / 2;
-    let centre_density = lu.coarse_at(cx, cy).unwrap().density;
-    let mid_density = lu
-        .coarse_at(cx / 2 + cx / 2, cy / 2 + cy / 2 / 2)
-        .unwrap_or(lu.coarse_at(0, 0).unwrap())
-        .density;
-    let corner_density = lu.coarse_at(0, 0).unwrap().density;
+    // Real ring averages (innermost, mid, outermost of 3), from the
+    // field's own density peak -- not a fixed "centre"/"corner" sample,
+    // which the falloff's own real shape has no reason to agree with
+    // once the peak is off-centre (Quentin's direction, cycle 1).
+    let rings = lu.ring_averages(3);
 
     format!(
-        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} density=centre:{centre_density},mid:{mid_density},corner:{corner_density} digest={:016x}",
+        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} density_rings={rings:?} digest={:016x}",
         count(LandUse::Residential),
         count(LandUse::Commercial),
         count(LandUse::Industrial),
@@ -111,7 +159,7 @@ fn generation_output_matches_committed_golden() {
          whenever GENERATION_VERSION changes"
     );
 
-    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let cfg = frozen_config();
     let golden_lines: Vec<&str> = lines.collect();
     assert_eq!(
         golden_lines.len(),
@@ -127,14 +175,16 @@ fn generation_output_matches_committed_golden() {
             actual, golden_line,
             "generation output moved for seed {seed} -- if this is a deliberate change to \
              sim::generation's own algorithm or seeding, bump GENERATION_VERSION and regenerate \
-             the golden"
+             the golden. If it is only defs/balance/generation.toml being retuned, update \
+             frozen_config() in this file to match instead -- the golden pins the algorithm, \
+             never the data (Tim's direction, cycle 1)."
         );
     }
 }
 
 #[test]
 fn the_same_seed_twice_in_one_process_is_byte_identical() {
-    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let cfg = frozen_config();
     for seed in SEEDS {
         let a = summary_line(seed, &cfg);
         let b = summary_line(seed, &cfg);
@@ -144,8 +194,8 @@ fn the_same_seed_twice_in_one_process_is_byte_identical() {
 
 #[test]
 fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
-    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-    let lu = land_use::run(SEEDS[0], cfg.site(), &cfg);
+    let cfg = frozen_config();
+    let lu = land_use::run(SEEDS[0], cfg.site(), &cfg).unwrap();
     let net_a = streets::run(SEEDS[0], &lu, &cfg);
     let net_b = streets::run(SEEDS[0], &lu, &cfg);
     assert_eq!(plan_digest(&lu, &net_a), plan_digest(&lu, &net_b));

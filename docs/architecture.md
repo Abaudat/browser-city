@@ -1084,42 +1084,50 @@ row is still marked `planned`, or when `## Must never be seen`'s own
 
 ## Generation
 
-`sim::generation` (FR110, story 3.2 on): the generator's seven coarse-to-
-fine passes, pure functions and data only (NFR28) -- no table, no
-reducer, no client code. A pass's signature is fixed shape: the city
-seed, its own predecessor's output (by reference; a pass never mutates
-it and never imports a later pass) and `GenerationConfig` -- nothing
-else. Pass ids (`PASS_LAND_USE`..`PASS_PROP_PLACEMENT`) are append-only
-constants in FR110's own order; a pass not yet implemented still
-reserves its id. Each pass seeds its own `sim::rng::Rng` stream from
-`seed_from_ids(city_seed, PASS_ID)`, so adding a draw to one pass never
-reshuffles another.
+`sim::generation` (FR110): the generator's seven coarse-to-fine passes,
+pure functions and data only (NFR28) -- no table, no reducer, no client
+code. A pass's signature is fixed shape: the city seed, its own
+predecessor's output (by reference; a pass never mutates it and never
+imports a later pass) and `GenerationConfig` -- nothing else. Pass ids
+(`PASS_LAND_USE`..`PASS_PROP_PLACEMENT`) are append-only constants in
+FR110's own order; a pass not yet implemented still reserves its id.
+Each pass seeds its own `sim::rng::Rng` stream from `seed_from_ids
+(city_seed, PASS_ID)`, so adding a draw to one pass never reshuffles
+another; within pass 2, each superblock further seeds its own stream
+from `seed_from_ids(pass_seed, superblock_index)`, so one superblock's
+own draw count never reshuffles another's.
 
 Coordinates are world-absolute `i32` cells throughout; `SiteBounds` is
 `sim::world::Rect` reused, never a second rect type. `GenerationConfig::
 from_balance` reads every balance key the implemented passes need once,
-returning `Err` (never a panic) on a cross-key inconsistency a single
-key's own range cannot express (e.g. the site extent not a multiple of
-the coarse cell size).
+returning `Err` on a cross-key inconsistency a single key's own range
+cannot express (e.g. the site extent not a multiple of the coarse cell
+size) -- a missing balance key itself is not an `Err` case: `sim::
+balance::value` panics on that, the same as every other balance read in
+`sim`, since a missing key is a `defs/`-authoring bug, not a runtime
+config error. Pass 1 (`land_use::run`) itself also returns `Result`,
+refusing (never silently truncating) a site whose extent is not a whole
+multiple of the coarse cell size.
 
-Land use and the street network (3.2) are both grown by recursive axis-
-aligned subdivision of the coarse grid -- the same idiom in both passes,
-never a Voronoi diagram: nearest-seed Chebyshev-distance assignment can
-produce diagonal region boundaries and, rarer, disconnected same-use
-islands, found by property-testing arbitrary seeds. A rectangular
-partition cannot produce either defect by construction. `GENERATION_
-VERSION` is bumped whenever either pass's algorithm or seeding moves a
-fixed seed's output; `server/sim/tests/goldens/generation_v1.golden`
-is keyed to it, guarded by `check-golden-version-bump.sh`'s `generation_
-*` arm the same way `RNG_VERSION`/`APPEARANCE_VERSION` are.
+Pass 2's street graph keeps two junctions on the same street line either
+coincident (a true 4-way) or separated by `generation.streets.
+junction_min_separation_cells`, measured against the real net gap
+between the two streets' own carriageway edges, not their centrelines.
 
 Evidence: `bounds/src/generation_evidence.rs` renders both passes' own
-output at a fixed seed to `docs/generation/*.svg` (text, zero-dependency,
-diffable, renders in GitHub -- no image crate, since `sim` itself may
-never touch the filesystem or pull in a rendering dependency).
+output, for three committed seeds, to `docs/generation/*.svg`.
 `cargo run -p bounds --bin dump-generation` regenerates them;
 `bounds/tests/generation_evidence_current.rs` fails the build if the
 committed files and a fresh render ever disagree.
+
+`GENERATION_VERSION` is bumped whenever either pass's algorithm or
+seeding (never a `defs/balance/generation.toml` retune) moves a fixed
+seed's output; `server/sim/tests/generation_golden.rs` runs against a
+config frozen in the test itself, not live `defs::BALANCE`, so a
+balance retune alone never forces a version bump. `server/sim/tests/
+goldens/generation_v1.golden` is keyed to it, guarded by `check-golden-
+version-bump.sh`'s `generation_*` arm the same way `RNG_VERSION`/
+`APPEARANCE_VERSION` are.
 
 ## Boot budget
 

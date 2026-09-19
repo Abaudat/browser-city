@@ -70,6 +70,11 @@ pub const INV_GENERATION_STREETS_CONNECTED_AND_NOT_STRANDED: &str = "pass 2's st
 pub const INV_GENERATION_NO_DEAD_ENDS_AWAY_FROM_BOUNDARY: &str =
     "pass 2 never produces a degree-1 node away from the site boundary, for any seed (FR110, NFR8)";
 pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, BFS network distance never exceeds max_detour_percent of Manhattan distance, for any seed (FR110)";
+pub const INV_GENERATION_NOT_A_PERFECT_GRID: &str = "block width and height each take at least min_distinct_block_sizes distinct values, both junction kinds are present, and at least two street classes are present, for any seed (FR110, NFR8)";
+pub const INV_GENERATION_EXACT_TILING: &str = "every site cell is covered by exactly one block or by at least one street, and no two blocks overlap, for any seed (FR110)";
+pub const INV_GENERATION_INDUSTRIAL_NEVER_TOUCHES_COMMERCIAL: &str =
+    "no industrial coarse cell is ever adjacent to a commercial one, for any seed (FR110)";
+pub const INV_GENERATION_RESIDENTIAL_IS_THE_LARGEST_LAND_USE_BY_AREA: &str = "residential has more coarse cells than any other single land use, for any seed -- field-driven assignment (commercial at the peak, industrial one contiguous group, institutional the smallest leaves) structurally favours it over a blind weighted draw, but that only holds if something keeps checking it (FR110, Quentin's direction)";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -1671,22 +1676,27 @@ proptest! {
 }
 
 // Story 3.2: land use and the street network (FR110). A case is a full
-// 512x512 generation (both passes), so this block pins its own case count
-// rather than inheriting the workflow's PROPTEST_CASES -- the story-2.4
-// coverage-timeout lesson. Measured (release, `cargo test --release`):
-// ~90us/case; under the unoptimised `test` profile `coverage` builds:
-// ~0.5ms/case -- 64 cases costs single-digit milliseconds either way, so
-// this is a safety margin against a future PROPTEST_CASES bump, not a
-// response to an actual measured slowdown (stated in the PR per Quentin's
-// direction).
+// 512x512 generation (both passes); `inv_generation_exact_tiling`, the
+// priciest of these, rasterises the whole site into a dense per-cell
+// grid on top of that. Quentin's direction, cycle 1: the original
+// measurement here ("~90us/case") was wrong by two orders of magnitude,
+// and the case-count pin that followed from it (64) was consequently far
+// too low to find a real, rare defect -- corrected measurement (release,
+// `cargo test --release`, this whole block, 4,096 cases across all eight
+// properties): ~1.2ms/case, ~5s total. Under the unoptimised `test`
+// profile `coverage` builds at its own job-level `PROPTEST_CASES=256`:
+// ~5ms/case, ~1.3s total. Both are well inside their own job's budget at
+// the *workflow's* own `PROPTEST_CASES` (4,096 for `test`, 256 for
+// `coverage`), so this block inherits the ambient value like every other
+// proptest in this file, rather than pinning its own -- the story-2.4
+// coverage-timeout lesson does not apply here at this measured cost.
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
 
     /// `inv_generation_total_never_panics`.
     #[test]
     fn inv_generation_total_never_panics(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg);
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         // Reaching here without panicking is most of the property; a
         // handful of cheap structural reads on top prove the outputs are
@@ -1699,7 +1709,7 @@ proptest! {
     #[test]
     fn inv_generation_all_four_land_uses_present(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg);
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         for cy in 0..lu.rows() {
             for cx in 0..lu.cols() {
                 prop_assert!(lu.coarse_at(cx, cy).is_some());
@@ -1715,18 +1725,18 @@ proptest! {
     #[test]
     fn inv_generation_streets_connected_and_not_stranded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg);
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let reachable = net.reachable_from_first_node().unwrap();
         prop_assert_eq!(reachable.len(), net.nodes().len());
-        prop_assert!(net.stranded_regions(&lu, cfg.block_size_max_cells).is_empty());
+        prop_assert!(net.stranded_regions(&lu).is_empty());
     }
 
     /// `inv_generation_no_dead_ends_away_from_boundary`.
     #[test]
     fn inv_generation_no_dead_ends_away_from_boundary(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg);
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         prop_assert!(net.dead_end_nodes().is_empty());
     }
@@ -1735,7 +1745,7 @@ proptest! {
     #[test]
     fn inv_generation_detour_ratio_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg);
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let samples = net.detour_samples(14, cfg.detour_min_manhattan_cells as i64);
         for s in samples {
@@ -1745,5 +1755,125 @@ proptest! {
                 "seed {seed}: {:?}-{:?} ratio {pct}% over {}%", s.a, s.b, cfg.max_detour_percent
             );
         }
+    }
+
+    /// `inv_generation_not_a_perfect_grid` (Quentin's direction, cycle 1:
+    /// moved from a fixed seed sweep -- block width/height variety, both
+    /// junction kinds present, and at least two street classes present,
+    /// over arbitrary seeds rather than one lucky one).
+    #[test]
+    fn inv_generation_not_a_perfect_grid(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+
+        let mut widths: Vec<i64> = net.blocks().iter().map(|b| b.bounds.width()).collect();
+        let mut heights: Vec<i64> = net.blocks().iter().map(|b| b.bounds.height()).collect();
+        widths.sort();
+        widths.dedup();
+        heights.sort();
+        heights.dedup();
+        prop_assert!(widths.len() as i64 >= cfg.min_distinct_block_sizes, "seed {seed}: only {} distinct widths", widths.len());
+        prop_assert!(heights.len() as i64 >= cfg.min_distinct_block_sizes, "seed {seed}: only {} distinct heights", heights.len());
+
+        let (three, four) = net.junction_mix();
+        prop_assert!(three > 0, "seed {seed}: no 3-way junctions");
+        prop_assert!(four > 0, "seed {seed}: no 4-way junctions");
+
+        let classes: std::collections::BTreeSet<streets::StreetClass> = net.edges().iter().map(|e| e.class).collect();
+        prop_assert!(classes.len() >= 2, "seed {seed}: only one street class present: {classes:?}");
+    }
+
+    /// `inv_generation_exact_tiling` (Tim's direction, cycle 1): every
+    /// site cell is covered by exactly one block or by at least one
+    /// street, and no two blocks overlap.
+    #[test]
+    fn inv_generation_exact_tiling(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let side = cfg.site_extent_cells as usize;
+        let mut grid = vec![0u8; side * side];
+        let idx = |x: i32, y: i32| (y as usize) * side + (x as usize);
+        for b in net.blocks() {
+            for y in b.bounds.y0..b.bounds.y1 {
+                for x in b.bounds.x0..b.bounds.x1 {
+                    let i = idx(x, y);
+                    prop_assert_eq!(grid[i], 0, "seed {}: block/block overlap at ({},{})", seed, x, y);
+                    grid[i] = 1;
+                }
+            }
+        }
+        for e in net.edges() {
+            let r = e.rect();
+            let (x0, y0) = (r.x0.max(0), r.y0.max(0));
+            let (x1, y1) = (r.x1.min(cfg.site_extent_cells), r.y1.min(cfg.site_extent_cells));
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    let i = idx(x, y);
+                    prop_assert_ne!(grid[i], 1, "seed {}: street overlaps a block at ({},{})", seed, x, y);
+                    grid[i] = 2;
+                }
+            }
+        }
+        prop_assert!(grid.iter().all(|&v| v != 0), "seed {seed}: at least one cell has no ground at all");
+    }
+
+    /// `inv_generation_industrial_never_touches_commercial` (Artie's
+    /// direction, cycle 1).
+    #[test]
+    fn inv_generation_industrial_never_touches_commercial(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let (regions, labels) = lu.labeled_regions();
+        for (label, r) in regions.iter().enumerate() {
+            if r.use_ != land_use::LandUse::Industrial {
+                continue;
+            }
+            for cy in r.bounds.y0..r.bounds.y1 {
+                for cx in r.bounds.x0..r.bounds.x1 {
+                    if labels[(cy * lu.cols() + cx) as usize] != label as i32 {
+                        continue;
+                    }
+                    for (nx, ny) in [(cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)] {
+                        if let Some(cell) = lu.coarse_at(nx, ny) {
+                            prop_assert_ne!(cell.use_, land_use::LandUse::Commercial, "seed {}: industrial touches commercial at ({},{})", seed, nx, ny);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// `inv_generation_residential_is_the_largest_land_use_by_area`
+    /// (Quentin's direction, cycle 1): the balance keys are named
+    /// "shares", and `target_counts` only ever claims a *district count*
+    /// share -- with commercial and industrial each grown into a
+    /// contiguous block and institutional deliberately taking the
+    /// smallest leaves, an unweighted count share does not by itself
+    /// guarantee an area share. What is asserted here, over arbitrary
+    /// seeds, is the one thing the direction settled as the real
+    /// minimum: residential reads as the city's own majority land use.
+    #[test]
+    fn inv_generation_residential_is_the_largest_land_use_by_area(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let mut counts = [0i64; 4];
+        for cy in 0..lu.rows() {
+            for cx in 0..lu.cols() {
+                let idx = match lu.coarse_at(cx, cy).unwrap().use_ {
+                    land_use::LandUse::Residential => 0,
+                    land_use::LandUse::Commercial => 1,
+                    land_use::LandUse::Industrial => 2,
+                    land_use::LandUse::Institutional => 3,
+                };
+                counts[idx] += 1;
+            }
+        }
+        let max_other = counts[1].max(counts[2]).max(counts[3]);
+        prop_assert!(
+            counts[0] > max_other,
+            "seed {seed}: residential {} cells is not the largest use, counts={:?}", counts[0], counts
+        );
     }
 }

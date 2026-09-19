@@ -23,8 +23,20 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // live 512 value.
     cfg.site_extent_cells = 1024;
 
-    let lu = land_use::run(7, cfg.site(), &cfg);
+    let lu = land_use::run(7, cfg.site(), &cfg).unwrap();
     let net = streets::run(7, &lu, &cfg);
+
+    // Tim's direction, cycle 1: the checkers, not just `run` -- every
+    // graph query now routes through the adjacency index built once at
+    // construction (`StreetNetwork::degree`/`reachable_from`/`dijkstra_
+    // from`), so this exercises that it stays cheap at the growth
+    // target too, not only that `run` itself does.
+    let reachable = net.reachable_from_first_node().unwrap();
+    assert_eq!(reachable.len(), net.nodes().len());
+    assert!(net.stranded_regions(&lu).is_empty());
+    assert!(net.dead_end_nodes().is_empty());
+    let _ = net.junction_mix();
+    let _ = net.detour_samples(14, cfg.detour_min_manhattan_cells as i64);
 
     let coarse_cells = (lu.cols() as u64) * (lu.rows() as u64);
 
