@@ -1,0 +1,6 @@
+version=1
+seed=1 regions=res:2,com:1,ind:1,inst:3 nodes=165 edges=255 blocks=122 dead_ends=0 max_detour_pct=151 p99_detour_pct=138 density_rings=[79, 54, 24] digest=65403199f7dc3662
+seed=2 regions=res:2,com:1,ind:2,inst:3 nodes=169 edges=268 blocks=134 dead_ends=0 max_detour_pct=140 p99_detour_pct=123 density_rings=[80, 51, 22] digest=8ee502ca744dea80
+seed=3 regions=res:2,com:1,ind:1,inst:3 nodes=161 edges=252 blocks=126 dead_ends=0 max_detour_pct=141 p99_detour_pct=121 density_rings=[79, 54, 24] digest=ee5062f056a9f624
+seed=42 regions=res:2,com:1,ind:2,inst:3 nodes=176 edges=278 blocks=137 dead_ends=0 max_detour_pct=137 p99_detour_pct=129 density_rings=[80, 54, 25] digest=cae16ca15eec3eda
+seed=123456789 regions=res:5,com:1,ind:1,inst:3 nodes=189 edges=299 blocks=149 dead_ends=0 max_detour_pct=100 p99_detour_pct=125 density_rings=[80, 53, 24] digest=bc86bccad65f8a27

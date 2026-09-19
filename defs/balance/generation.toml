@@ -1,0 +1,420 @@
+# Story 3.2 (FR110 passes 1-2, NFR8): land use and the street network.
+# Every number here is a starting value, settled against
+# `docs/generation/*.svg` (`bounds`'s `dump-generation` binary), not a
+# literal in `server/sim/src/generation/`. `docs/generation.md`'s
+# `## parameters` table carries each key's intent.
+
+# --- land use (pass 1) -----------------------------------------------
+
+[[balance]]
+# World cells per coarse land-use cell. `generation.site_extent_cells`
+# must be a whole multiple of this (`GenerationConfig::from_balance`
+# rejects a mismatch) -- never `world::CHUNK_SIZE`, a subscription unit
+# and a zoning unit are unrelated.
+key = "generation.land_use.coarse_cell_size_cells"
+value = 16
+min = 1
+max = 128
+
+[[balance]]
+# The site's own square extent, in world cells. 512 is never a literal
+# anywhere in `sim::generation`.
+key = "generation.site_extent_cells"
+value = 512
+min = 64
+max = 2048
+
+[[balance]]
+# Every district (recursive-subdivision leaf) is at least this many
+# coarse cells on both axes -- the guaranteed lower bound on a region's
+# own area (`land_use::guaranteed_min_region_cells`), since a leaf can
+# only grow when merged with an adjacent same-use leaf, never shrink.
+# Lowered from 4 (Artie's direction, cycle 3): institutional needs
+# several small, non-adjacent pockets under roughly 2.5% of the site
+# each, which the raw leaf pool at the old 4/10 min/max was too coarse
+# to reliably supply (a single leaf at the old max alone was already
+# ~10% of the site) -- finer land-use grain overall is what makes a
+# small pocket a small leaf, rather than the smallest of a handful of
+# large ones.
+key = "generation.land_use.min_leaf_cells"
+value = 3
+min = 1
+max = 64
+
+[[balance]]
+# A leaf larger than this on either axis is split again. Must be at
+# least twice `min_leaf_cells` (`GenerationConfig::from_balance` rejects
+# a smaller value) -- otherwise an over-sized axis could be too narrow to
+# legally split in two while keeping both children at least `min_leaf_
+# cells`.
+key = "generation.land_use.max_leaf_cells"
+value = 6
+min = 2
+max = 128
+
+[[balance]]
+# How far a district split position may jitter from the rect's own
+# midpoint, as a percent of the rect's own length on the split axis.
+key = "generation.land_use.split_jitter_pct"
+value = 30
+min = 0
+max = 45
+
+[[balance]]
+# A safety cap on recursive subdivision depth -- generation is total, so
+# a pathological config still terminates rather than looping.
+key = "generation.land_use.max_recursion_depth"
+value = 8
+min = 1
+max = 20
+
+[[balance]]
+# Density at the site's own edge (Chebyshev distance from centre at its
+# maximum).
+key = "generation.land_use.density_min"
+value = 10
+min = 0
+max = 1000
+
+[[balance]]
+# Density at the site's own centre.
+key = "generation.land_use.density_max"
+value = 100
+min = 0
+max = 1000
+
+[[balance]]
+# The density peak's own minimum offset from the coarse grid's geometric
+# centre, as a percent of the grid's own half-extent, applied
+# independently (and with an independently seeded sign) to x and y.
+key = "generation.land_use.density_peak_offset_min_pct"
+value = 15
+min = 0
+max = 50
+
+[[balance]]
+# The density peak's own maximum offset -- see `density_peak_offset_min_
+# pct`.
+key = "generation.land_use.density_peak_offset_max_pct"
+value = 40
+min = 0
+max = 50
+
+[[balance]]
+key = "generation.land_use.share_residential_pct"
+value = 58
+min = 0
+max = 100
+
+[[balance]]
+key = "generation.land_use.share_commercial_pct"
+value = 18
+min = 0
+max = 100
+
+[[balance]]
+key = "generation.land_use.share_industrial_pct"
+value = 14
+min = 0
+max = 100
+
+[[balance]]
+# The four `share_*_pct` keys sum to 100 -- checked by
+# `GenerationConfig::from_balance`, not trusted from authoring.
+key = "generation.land_use.share_institutional_pct"
+value = 10
+min = 0
+max = 100
+
+[[balance]]
+# The hard floor `land_use::assign_institutional`'s own relaxed fallback
+# pass guarantees whenever any eligible leaf remains: "a school, a
+# clinic and a town hall do not share a campus" (Artie's direction,
+# cycle 3) needs several pockets, not just one non-degenerate one.
+# Verified at 15,000 arbitrary seeds: zero seeds land under this floor.
+# Moved off a bare `INSTITUTIONAL_MIN_POCKETS` constant onto this key
+# (Quentin's direction, cycle 4: a threshold literal in a test is a
+# reject) -- the generator's own fallback loop reads it too, so there is
+# one number, not two that can drift apart.
+key = "generation.land_use.institutional_min_pockets"
+value = 3
+min = 1
+max = 16
+
+[[balance]]
+# The AC's own area ceiling on any single institutional component, as a
+# percent of the site's own coarse-cell count. Not read by the generator
+# itself -- `assign_institutional`'s own per-leaf area cap
+# (`institutional_max_leaf_area`) is what actually keeps a pocket small;
+# this key is the outcome-side assertion. Measured worst case, this
+# generator's other committed values, over 15,000 seeds: 2.34% (the
+# relaxed fallback pass, which only ever runs when the strict pass alone
+# could not reach `institutional_min_pockets`, occasionally has to take
+# a larger leaf than the strict per-pocket cap would allow). 6% is that
+# plus real margin.
+key = "generation.land_use.institutional_max_pocket_share_percent"
+value = 6
+min = 1
+max = 100
+
+# --- street network (pass 2) ------------------------------------------
+
+[[balance]]
+# Seeded uniformly in `[arterial_count_ns_min, arterial_count_ns_max]`
+# (Artie's direction, cycle 2: a fixed count draws the same skeleton
+# every time regardless of colour).
+key = "generation.streets.arterial_count_ns_min"
+value = 2
+min = 0
+max = 4
+
+[[balance]]
+key = "generation.streets.arterial_count_ns_max"
+value = 3
+min = 0
+max = 4
+
+[[balance]]
+# Fewer this way than the NS pair (Artie's direction: "at most 3 one way
+# and 2 the other" -- equal arterial counts on both axes reads as a
+# tartan lattice).
+key = "generation.streets.arterial_count_ew_min"
+value = 1
+min = 0
+max = 4
+
+[[balance]]
+key = "generation.streets.arterial_count_ew_max"
+value = 2
+min = 0
+max = 4
+
+[[balance]]
+# Carriageway + pavement both sides (Artie's direction). Even, so a split
+# has an exact, symmetric half-width each side -- `GenerationConfig::
+# from_balance` rejects an odd value.
+key = "generation.streets.arterial_width_cells"
+value = 12
+min = 2
+max = 64
+
+[[balance]]
+key = "generation.streets.street_width_cells"
+value = 8
+min = 2
+max = 64
+
+[[balance]]
+key = "generation.streets.lane_width_cells"
+value = 4
+min = 2
+max = 64
+
+[[balance]]
+# How far an arterial may jitter from its own even band position, as a
+# percent of that band's own width -- high on purpose (Artie's
+# direction, cycle 2: a small jitter around an even band still reads as
+# a tartan; real, visibly uneven spacing needs room to actually move).
+key = "generation.streets.arterial_jitter_pct"
+value = 60
+min = 0
+max = 90
+
+[[balance]]
+# Target block side length at the field's own maximum density (the
+# commercial core) -- raised from an earlier 24 (Artie's direction,
+# cycle 2: commercial now subdivides with street tier, never lanes, so
+# the core needs a larger target to keep total street cover inside
+# 25-33% at street_width_cells=8; his own correction, not a measurement
+# of this generator).
+key = "generation.streets.block_size_min_cells"
+value = 40
+min = 4
+max = 512
+
+[[balance]]
+# Target block side length at the field's own minimum density (the
+# periphery).
+key = "generation.streets.block_size_max_cells"
+value = 128
+min = 4
+max = 512
+
+[[balance]]
+# The minimum margin a recursive split must leave on each side -- two
+# parallel streets closer than this leave a sliver block no plot can use
+# (Artie's direction).
+key = "generation.streets.min_block_depth_cells"
+value = 16
+min = 2
+max = 256
+
+[[balance]]
+# A harder ceiling than block_size_min/max_cells, applied to a block's
+# own *shorter* side only (Tim's direction, cycle 1: a 96x40 block is a
+# normal city block, a 96x96 one is not -- applying this to either axis
+# cancelled block_size_max_cells entirely): even a block whose size
+# already satisfies the local density target gets a further lane-tier
+# split if its short side still exceeds this ("lanes only split
+# over-deep blocks", Artie's direction). Interpolated the same shape as
+# block_size_min/max_cells (Tim's direction, cycle 2: a flat ceiling
+# chopped every block's own short side to the same value regardless of
+# density, cancelling the periphery's own visible size difference) --
+# this is the value at density_max, the tightest, core end.
+key = "generation.streets.max_block_depth_min_cells"
+value = 40
+min = 2
+max = 1024
+
+[[balance]]
+# The loosest, periphery end (density_min) of the same interpolation --
+# see max_block_depth_min_cells.
+key = "generation.streets.max_block_depth_max_cells"
+value = 120
+min = 2
+max = 1024
+
+[[balance]]
+# How far a split position may jitter from the rect's own midpoint, as a
+# percent of the rect's own length on the split axis.
+key = "generation.streets.split_jitter_pct"
+value = 25
+min = 0
+max = 45
+
+[[balance]]
+# A safety cap on recursive subdivision depth -- generation is total, so
+# a pathological config still terminates rather than looping.
+key = "generation.streets.max_recursion_depth"
+value = 12
+min = 1
+max = 64
+
+[[balance]]
+# A safety cap on the extra lane-tier splits one over-deep block may take.
+key = "generation.streets.max_lane_splits"
+value = 4
+min = 0
+max = 16
+
+[[balance]]
+# A superblock's own first this-many splits are street tier; every split
+# after that drops to lane tier even while still over the density target
+# (Artie's direction, cycle 1: mostly one street-tier cut per long block,
+# lanes doing the rest -- otherwise the core reads as half asphalt).
+key = "generation.streets.max_street_splits_per_superblock"
+value = 1
+min = 0
+max = 16
+
+[[balance]]
+# Where two different streets each cross the same third street, their
+# own crossings must either coincide (a true 4-way) or sit at least this
+# many world cells apart, centreline to centreline -- never a near-miss
+# staggered crossing a cell or two off (Tim's direction, cycle 1). Not a
+# bound on every pair of junctions on one street: an ordinary sequential
+# block split is governed by min_block_depth_cells instead (Tim's
+# direction, cycle 3 -- the two are different invariants, this key only
+# ever the narrower one).
+key = "generation.streets.junction_min_separation_cells"
+value = 28
+min = 1
+max = 256
+
+[[balance]]
+# Pairs at least this far apart (world cells, Manhattan) are where
+# `max_detour_percent`'s ratio applies -- closer pairs are bounded by
+# `max_detour_excess_cells` instead. 256 (half the site) so the pairs a
+# ratio actually says something about are site-crossing ones, not
+# adjacent-block hops a ratio exaggerates (Quentin's direction, cycle 3:
+# at the old 128, the ratio bound was redundant with the excess bound --
+# 320 cells / 128 alone already permits 350%). Re-measure by running
+# `server/sim/tests/invariants.rs`'s `inv_generation_detour_ratio_
+# bounded`/`inv_generation_p99_detour_ratio_bounded` at a high
+# PROPTEST_CASES whenever the street algorithm changes.
+key = "generation.streets.detour_long_pair_cells"
+value = 256
+min = 1
+max = 2048
+
+[[balance]]
+# The Manhattan-fitness ratio ceiling 3.11's pathfinding estimator relies
+# on, for pairs at least `detour_long_pair_cells` apart. Measured worst
+# case, this generator's other committed values, over 10,000 seeds:
+# 173%. 200 is that plus real margin -- re-measure the same way (see
+# detour_long_pair_cells's own comment) whenever the street algorithm
+# changes.
+key = "generation.streets.max_detour_percent"
+value = 200
+min = 100
+max = 500
+
+[[balance]]
+# The additive Manhattan-fitness ceiling, in world cells, applied to
+# every sampled pair regardless of distance -- what a short hop actually
+# pays for, where a ratio is dominated by a single jitter-driven jog.
+# Structurally bounded, not just measured (Quentin's direction, cycle
+# 3): the worst a rectilinear network should cost a route is going
+# around one largest block, so `from_balance` refuses a value over
+# `2 * block_size_max_cells + 2 * arterial_width_cells`. Measured worst
+# case, same scan: 258 cells; 280 is both that plus margin and exactly
+# that structural ceiling at this generator's other committed values.
+key = "generation.streets.max_detour_excess_cells"
+value = 280
+min = 1
+max = 2048
+
+[[balance]]
+# The 99th-percentile detour ratio, over one city's own sampled pairs,
+# must not exceed this -- `max_detour_percent` alone only bounds the
+# single worst pair. Sampled separately, over more pairs than the max/
+# excess bounds (DETOUR_P99_SAMPLE_MAX_NODES): a percentile over too few
+# pairs is just the maximum under another name (Tim's direction, cycle
+# 3). Measured worst case, same scan, 10,000 seeds: 175%; 200 is that
+# plus margin. Never above max_detour_percent (`from_balance` refuses
+# that).
+key = "generation.streets.p99_detour_percent"
+value = 200
+min = 100
+max = 500
+
+[[balance]]
+# The minimum number of distinct block widths (and, separately, heights)
+# a single generated network must show -- Quentin's direction, cycle 1:
+# "not a perfect grid" as a number, asserted over arbitrary seeds, never
+# a literal repeated across test files.
+key = "generation.streets.min_distinct_block_sizes"
+value = 3
+min = 1
+max = 16
+
+[[balance]]
+# Per-city anti-inversion floor: `StreetNetwork::mean_area_by_density_
+# band`'s own low-density (periphery) mean block area must be at least
+# this percent of the high-density (core) mean. Deliberately weak --
+# measured over 5,000 arbitrary seeds, 4,997 have the periphery mean
+# strictly larger outright; the 3 exceptions land within single-digit
+# percent of parity (worst observed ratio 72%), real split-jitter noise
+# rather than an inversion. This key alone cannot tell a healthy city
+# from a density-blind one (a uniform grid pools to 100%, comfortably
+# above 70%) -- `peripheral_pooled_min_ratio_percent` below is the guard
+# that can. Moved off a bare literal (Quentin's direction, cycle 4: a
+# threshold literal in a test is a reject).
+key = "generation.streets.peripheral_low_band_floor_percent"
+value = 70
+min = 1
+max = 100
+
+[[balance]]
+# The guard that actually fails when block size stops reading density:
+# pooled over a fixed seed range (`0..256`), summed low-density
+# (periphery) mean block area over summed high-density (core) mean must
+# be at least this percent. Measured, same scan: pooled ratio 241%
+# (per-city p5 159%, median 235%); a density-blind generator pools to
+# ~100%. 150 has real margin under the measured 241% while comfortably
+# failing a generator that stopped reading density at all (Quentin's
+# direction, cycle 4).
+key = "generation.streets.peripheral_pooled_min_ratio_percent"
+value = 150
+min = 100
+max = 1000

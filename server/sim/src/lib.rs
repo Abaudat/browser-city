@@ -4,8 +4,10 @@
 //! is passed in by its caller in `../src` (the reducer crate).
 
 pub mod appearance;
+pub mod balance;
 pub mod codes;
 pub mod demo_ping;
+pub mod generation;
 // `tools/defs-build` emits already-formatted text (docs/architecture.md's
 // "defs/" section), never by shelling out to `rustfmt` -- but its own
 // notion of "formatted" (one struct literal per array element, on one

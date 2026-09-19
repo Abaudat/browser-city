@@ -15,6 +15,17 @@
 #     constant counterpart, so it is exempt from that symmetry check alone.
 # Also bans `#[ignore]` outright -- a skipped test is an unautomated test.
 #
+# Every membership test below reads its own haystack via a here-string
+# (`grep ... <<< "$VAR"`), never `printf '%s\n' "$VAR" | grep ...`: under
+# `set -o pipefail`, a `grep -q` that quits the instant it finds a match
+# can SIGPIPE the still-writing `printf` on its left, and pipefail then
+# reports *that* broken-pipe exit code for the whole pipeline rather than
+# grep's own true answer -- a real, workspace-size-dependent race (story
+# 3.2 cycle 2's own CI run: every `covered` row started failing "no such
+# test exists" the moment the invariant list grew past whatever
+# buffering threshold triggers it), not a fixed threshold to raise. A
+# here-string has no concurrent writer process to race.
+#
 # `--client-only` (Tim's direction, story 1.6 cycle 2): runs only the
 # directions that need no cargo invocation at all -- the client inv_*
 # symmetry and the Guard-section path checks -- so `client-check` can run
@@ -116,18 +127,18 @@ while IFS='|' read -r _ id _ status test _; do
         # that a row wrongly claims one that does not. The full run
         # (`test` job) is what catches that.
         :
-      elif ! printf '%s\n' "$TEST_NAMES" | grep -qxF "$test" && ! printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$test"; then
+      elif ! grep -qxF "$test" <<< "$TEST_NAMES" && ! grep -qxF "$test" <<< "$CLIENT_INV_NAMES"; then
         echo "check-trace-matrix: FAIL -- '$id' claims coverage via '$test', but no such test exists" >&2
         FAILED=1
       fi
       ;;
     deferred)
       if [ "$CLIENT_ONLY" -eq 1 ]; then
-        if printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$id"; then
+        if grep -qxF "$id" <<< "$CLIENT_INV_NAMES"; then
           echo "check-trace-matrix: FAIL -- '$id' is 'deferred' but a client test named '$id' now exists -- flip its row to 'covered'" >&2
           FAILED=1
         fi
-      elif printf '%s\n' "$TEST_NAMES" | grep -qxF "$id" || printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$id"; then
+      elif grep -qxF "$id" <<< "$TEST_NAMES" || grep -qxF "$id" <<< "$CLIENT_INV_NAMES"; then
         echo "check-trace-matrix: FAIL -- '$id' is 'deferred' but a test named '$id' now exists -- flip its row to 'covered'" >&2
         FAILED=1
       fi
@@ -144,7 +155,7 @@ if [ "$CLIENT_ONLY" -eq 0 ]; then
       *inv_*) short="${name##*::}" ;;
       *) continue ;;
     esac
-    if ! printf '%s\n' "$MATRIX_IDS" | grep -qxF "$short"; then
+    if ! grep -qxF "$short" <<< "$MATRIX_IDS"; then
       echo "check-trace-matrix: FAIL -- test '$name' has no row in docs/trace-matrix.md" >&2
       FAILED=1
     fi
@@ -156,7 +167,7 @@ fi
 # tracked either.
 while IFS= read -r name; do
   [ -n "$name" ] || continue
-  if ! printf '%s\n' "$MATRIX_IDS" | grep -qxF "$name"; then
+  if ! grep -qxF "$name" <<< "$MATRIX_IDS"; then
     echo "check-trace-matrix: FAIL -- client test '$name' has no row in docs/trace-matrix.md" >&2
     FAILED=1
   fi
@@ -170,7 +181,7 @@ done <<< "$CLIENT_INV_NAMES"
 if [ "$CLIENT_ONLY" -eq 0 ]; then
   while IFS= read -r cid; do
     [ -n "$cid" ] || continue
-    if ! printf '%s\n' "$MATRIX_IDS" | grep -qxF "$cid"; then
+    if ! grep -qxF "$cid" <<< "$MATRIX_IDS"; then
       echo "check-trace-matrix: FAIL -- invariants.rs declares '$cid' but docs/trace-matrix.md has no row for it" >&2
       FAILED=1
     fi
@@ -178,10 +189,10 @@ if [ "$CLIENT_ONLY" -eq 0 ]; then
 
   while IFS= read -r mid; do
     [ -n "$mid" ] || continue
-    if printf '%s\n' "$CLIENT_INV_NAMES" | grep -qxF "$mid"; then
+    if grep -qxF "$mid" <<< "$CLIENT_INV_NAMES"; then
       continue
     fi
-    if ! printf '%s\n' "$CONSTANT_IDS" | grep -qxF "$mid"; then
+    if ! grep -qxF "$mid" <<< "$CONSTANT_IDS"; then
       echo "check-trace-matrix: FAIL -- docs/trace-matrix.md has a row for '$mid' but invariants.rs declares no such INV_ constant" >&2
       FAILED=1
     fi
@@ -201,6 +212,7 @@ GUARD_SECTIONS=(
   "Round trip and client/server boundary"
   "Schema permanence"
   "Definitions"
+  "Generation"
   "World addressing"
   "Rendering"
   "Input and intents"

@@ -297,16 +297,9 @@ pub fn erode(grid: &WalkabilityGrid, body_width: i32, body_height: i32) -> Walka
 /// signature accepts any slice so a test can pin the verdict to a
 /// deliberately different value).
 pub fn player_body_subcells(balance: &[defs::BalanceSeed]) -> (i32, i32) {
-    let get = |key: &str| -> i32 {
-        balance
-            .iter()
-            .find(|b| b.key == key)
-            .unwrap_or_else(|| panic!("sim::world::walkability: missing balance key '{key}'"))
-            .value as i32
-    };
     (
-        get("movement.player_body_width_subcells"),
-        get("movement.player_body_height_subcells"),
+        crate::balance::value(balance, "movement.player_body_width_subcells") as i32,
+        crate::balance::value(balance, "movement.player_body_height_subcells") as i32,
     )
 }
 

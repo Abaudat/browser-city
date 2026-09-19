@@ -35,6 +35,11 @@ client/public/defs/defs.json linguist-generated text eol=lf
 # (tests/contact_sheet_fixture_golden.rs) is compared the same way, so it
 # needs the same forced LF.
 tools/defs-build/contact-sheet.html linguist-generated text eol=lf
+
+# Story 3.2: generation evidence SVGs, the same idiom as the two lines
+# above -- byte-compared against a fresh render by bounds/tests/
+# generation_evidence_current.rs.
+docs/generation/*.svg linguist-generated text eol=lf
 tools/defs-build/tests/goldens/contact-sheet.golden.html linguist-generated text eol=lf
 
 # Story 2.6: packed atlas pages -- never hand-edited, guarded by the same

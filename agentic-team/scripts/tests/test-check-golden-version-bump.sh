@@ -8,19 +8,22 @@ TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CHECK="$TEST_DIR/../../../scripts/ci/check-golden-version-bump.sh"
 
 # fresh_repo -- a scratch git repo with rng.rs at RNG_VERSION 1, a
-# committed rng_v1.golden, appearance.rs at APPEARANCE_VERSION 1, and a
-# committed appearance_v1.golden, tagged "base". The real script is
-# copied in at scripts/ci/ so REPO_ROOT resolves inside the fixture.
+# committed rng_v1.golden, appearance.rs at APPEARANCE_VERSION 1, a
+# committed appearance_v1.golden, generation/mod.rs at GENERATION_VERSION
+# 1, and a committed generation_v1.golden, tagged "base". The real script
+# is copied in at scripts/ci/ so REPO_ROOT resolves inside the fixture.
 fresh_repo() {
   local d
   d="$(fake_dir)"
   rm -rf "$d"
-  mkdir -p "$d/server/sim/src" "$d/server/sim/tests/goldens" "$d/scripts/ci"
+  mkdir -p "$d/server/sim/src/generation" "$d/server/sim/tests/goldens" "$d/scripts/ci"
   cp "$CHECK" "$d/scripts/ci/check-golden-version-bump.sh"
   printf 'pub const RNG_VERSION: u32 = 1;\n' > "$d/server/sim/src/rng.rs"
   echo 'version=1' > "$d/server/sim/tests/goldens/rng_v1.golden"
   printf 'pub const APPEARANCE_VERSION: u32 = 1;\n' > "$d/server/sim/src/appearance.rs"
   echo 'version=1' > "$d/server/sim/tests/goldens/appearance_v1.golden"
+  printf 'pub const GENERATION_VERSION: u32 = 1;\n' > "$d/server/sim/src/generation/mod.rs"
+  echo 'version=1' > "$d/server/sim/tests/goldens/generation_v1.golden"
   git -C "$d" init -q
   git -C "$d" config user.email t@t.com
   git -C "$d" config user.name t
@@ -103,6 +106,35 @@ OUT="$(run_check "$D" 2>&1)"; CODE=$?
 check "exits non-zero" 1 bash -c "exit $CODE"
 check "names the unmoved APPEARANCE_VERSION" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF 'APPEARANCE_VERSION did not'" _ "$OUT"
+
+echo
+echo "green: generation golden moves alongside a GENERATION_VERSION bump"
+D="$(fresh_repo)"
+sed -i 's/GENERATION_VERSION: u32 = 1/GENERATION_VERSION: u32 = 2/' "$D/server/sim/src/generation/mod.rs"
+echo 'version=2' > "$D/server/sim/tests/goldens/generation_v1.golden"
+commit_changes "$D"
+check "bumped together -> exit 0" 0 run_check "$D"
+
+echo
+echo "red: generation golden moves with no GENERATION_VERSION bump"
+D="$(fresh_repo)"
+echo 'version=2' > "$D/server/sim/tests/goldens/generation_v1.golden"
+commit_changes "$D"
+OUT="$(run_check "$D" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the missing bump" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF 'no GENERATION_VERSION bump'" _ "$OUT"
+
+echo
+echo "red: generation/mod.rs changes but not the GENERATION_VERSION line itself"
+D="$(fresh_repo)"
+echo '// a comment, not a version bump' >> "$D/server/sim/src/generation/mod.rs"
+echo 'version=2' > "$D/server/sim/tests/goldens/generation_v1.golden"
+commit_changes "$D"
+OUT="$(run_check "$D" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the unmoved GENERATION_VERSION" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF 'GENERATION_VERSION did not'" _ "$OUT"
 
 echo
 echo "green: a codes_*.golden change is governed elsewhere, not by this script"

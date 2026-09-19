@@ -83,6 +83,11 @@ jobs:
               # and diffs this file -- a hand-edit here with no server/
               # change must still trip the job that catches it.
               - 'fixtures/**'
+              # Story 3.2: server/bounds/tests/generation_evidence_
+              # current.rs regenerates and diffs these SVGs -- a hand-edit
+              # here with no server/ change must still trip the job that
+              # catches it.
+              - 'docs/generation/**'
               # Explicit, though already implied by server/** -- Tim's
               # direction: a defs change re-runs the build that consumes
               # its own generated half.
