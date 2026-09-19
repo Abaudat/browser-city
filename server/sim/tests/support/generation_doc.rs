@@ -121,7 +121,10 @@ pub fn parse(path: &Path, text: &str) -> Doc {
                 ),
             };
             if !seen.insert(key.to_string()) {
-                fail(line_no, &format!("duplicate key '{key}' in section '{name}'"));
+                fail(
+                    line_no,
+                    &format!("duplicate key '{key}' in section '{name}'"),
+                );
             }
             rows.push(Row {
                 key: key.to_string(),
@@ -230,7 +233,10 @@ mod tests {
 
     #[test]
     fn a_missing_section_is_named() {
-        assert_eq!(err(""), "docs/generation.md:1: missing '## placement' section");
+        assert_eq!(
+            err(""),
+            "docs/generation.md:1: missing '## placement' section"
+        );
     }
 
     #[test]

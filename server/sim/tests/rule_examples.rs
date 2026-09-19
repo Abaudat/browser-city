@@ -178,8 +178,8 @@ fn every_committed_rule_has_at_least_one_pass_and_one_fail_example() {
 #[test]
 fn every_committed_rule_has_a_current_row_in_the_generation_document() {
     let doc_path = repo_root().join("docs/generation.md");
-    let text = std::fs::read_to_string(&doc_path)
-        .unwrap_or_else(|e| panic!("docs/generation.md: {e}"));
+    let text =
+        std::fs::read_to_string(&doc_path).unwrap_or_else(|e| panic!("docs/generation.md: {e}"));
     let doc = support::generation_doc::parse(Path::new("docs/generation.md"), &text);
 
     let mut failures: Vec<String> = Vec::new();
