@@ -1,0 +1,6 @@
+version=1
+seed=1 regions=res:2,com:4,ind:1,inst:2 nodes=434 edges=607 blocks=229 dead_ends=0 max_detour_pct=114 density=centre:98,mid:80,corner:10 digest=318595a4f22148e9
+seed=2 regions=res:2,com:3,ind:1,inst:3 nodes=491 edges=688 blocks=261 dead_ends=0 max_detour_pct=126 density=centre:98,mid:80,corner:10 digest=0811220bd7cc8937
+seed=3 regions=res:1,com:1,ind:3,inst:2 nodes=475 edges=671 blocks=253 dead_ends=0 max_detour_pct=123 density=centre:98,mid:80,corner:10 digest=1a70790038f70543
+seed=42 regions=res:1,com:3,ind:2,inst:2 nodes=472 edges=662 blocks=250 dead_ends=0 max_detour_pct=114 density=centre:98,mid:80,corner:10 digest=a75f6635be99bcd2
+seed=123456789 regions=res:2,com:3,ind:3,inst:1 nodes=457 edges=636 blocks=240 dead_ends=0 max_detour_pct=120 density=centre:98,mid:80,corner:10 digest=971d0a6adf23c67e

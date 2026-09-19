@@ -1,0 +1,239 @@
+# Story 3.2 (FR110 passes 1-2, NFR8): land use and the street network.
+# Every number here is a starting value, settled against
+# `docs/generation/*.svg` (`bounds`'s `dump-generation` binary), not a
+# literal in `server/sim/src/generation/`. `docs/generation.md`'s
+# `## parameters` table carries each key's intent.
+
+# --- land use (pass 1) -----------------------------------------------
+
+[[balance]]
+# World cells per coarse land-use cell. `generation.site_extent_cells`
+# must be a whole multiple of this (`GenerationConfig::from_balance`
+# rejects a mismatch) -- never `world::CHUNK_SIZE`, a subscription unit
+# and a zoning unit are unrelated.
+key = "generation.land_use.coarse_cell_size_cells"
+value = 16
+min = 1
+max = 128
+
+[[balance]]
+# The site's own square extent, in world cells. 512 is never a literal
+# anywhere in `sim::generation`.
+key = "generation.site_extent_cells"
+value = 512
+min = 64
+max = 2048
+
+[[balance]]
+# Every district (recursive-subdivision leaf) is at least this many
+# coarse cells on both axes -- the guaranteed lower bound on a region's
+# own area (`land_use::guaranteed_min_region_cells`), since a leaf can
+# only grow when merged with an adjacent same-use leaf, never shrink.
+key = "generation.land_use.min_leaf_cells"
+value = 4
+min = 1
+max = 64
+
+[[balance]]
+# A leaf larger than this on either axis is split again. Must be at
+# least twice `min_leaf_cells` (`GenerationConfig::from_balance` rejects
+# a smaller value) -- otherwise an over-sized axis could be too narrow to
+# legally split in two while keeping both children at least `min_leaf_
+# cells`.
+key = "generation.land_use.max_leaf_cells"
+value = 10
+min = 2
+max = 128
+
+[[balance]]
+# How far a district split position may jitter from the rect's own
+# midpoint, as a percent of the rect's own length on the split axis.
+key = "generation.land_use.split_jitter_pct"
+value = 30
+min = 0
+max = 45
+
+[[balance]]
+# A safety cap on recursive subdivision depth -- generation is total, so
+# a pathological config still terminates rather than looping.
+key = "generation.land_use.max_recursion_depth"
+value = 8
+min = 1
+max = 20
+
+[[balance]]
+# Density at the site's own edge (Chebyshev distance from centre at its
+# maximum).
+key = "generation.land_use.density_min"
+value = 10
+min = 0
+max = 1000
+
+[[balance]]
+# Density at the site's own centre.
+key = "generation.land_use.density_max"
+value = 100
+min = 0
+max = 1000
+
+[[balance]]
+key = "generation.land_use.share_residential_pct"
+value = 58
+min = 0
+max = 100
+
+[[balance]]
+key = "generation.land_use.share_commercial_pct"
+value = 18
+min = 0
+max = 100
+
+[[balance]]
+key = "generation.land_use.share_industrial_pct"
+value = 14
+min = 0
+max = 100
+
+[[balance]]
+# The four `share_*_pct` keys sum to 100 -- checked by
+# `GenerationConfig::from_balance`, not trusted from authoring.
+key = "generation.land_use.share_institutional_pct"
+value = 10
+min = 0
+max = 100
+
+# --- street network (pass 2) ------------------------------------------
+
+[[balance]]
+key = "generation.streets.arterial_count_ns"
+value = 3
+min = 0
+max = 4
+
+[[balance]]
+key = "generation.streets.arterial_count_ew"
+value = 3
+min = 0
+max = 4
+
+[[balance]]
+# Carriageway + pavement both sides (Artie's direction). Even, so a split
+# has an exact, symmetric half-width each side -- `GenerationConfig::
+# from_balance` rejects an odd value.
+key = "generation.streets.arterial_width_cells"
+value = 12
+min = 2
+max = 64
+
+[[balance]]
+key = "generation.streets.street_width_cells"
+value = 8
+min = 2
+max = 64
+
+[[balance]]
+key = "generation.streets.lane_width_cells"
+value = 4
+min = 2
+max = 64
+
+[[balance]]
+# How far an arterial may jitter from its own even band position, as a
+# percent of that band's own width.
+key = "generation.streets.arterial_jitter_pct"
+value = 20
+min = 0
+max = 45
+
+[[balance]]
+# Target block side length at the field's own maximum density (the
+# commercial core).
+key = "generation.streets.block_size_min_cells"
+value = 24
+min = 4
+max = 512
+
+[[balance]]
+# Target block side length at the field's own minimum density (the
+# periphery).
+key = "generation.streets.block_size_max_cells"
+value = 96
+min = 4
+max = 512
+
+[[balance]]
+# The minimum margin a recursive split must leave on each side -- two
+# parallel streets closer than this leave a sliver block no plot can use
+# (Artie's direction).
+key = "generation.streets.min_block_depth_cells"
+value = 16
+min = 2
+max = 256
+
+[[balance]]
+# A harder ceiling than block_size_max_cells: even a block whose size
+# already satisfies the local density target gets a further lane-tier
+# split if either side still exceeds this ("lanes only split over-deep
+# blocks", Artie's direction) -- a block-usability ceiling, independent
+# of density, low enough to matter in the sparse periphery where the
+# density-driven target alone would otherwise allow a much larger,
+# internally-unsplit block. Empirically load-bearing for the Manhattan-
+# fitness contract too (`generation.streets.max_detour_percent`): a large
+# unsplit periphery superblock is the dominant source of worst-case
+# detour, so lowering this value (with more arterials, below) is what
+# keeps the detour ratio in check without shrinking block_size_max_cells
+# itself.
+key = "generation.streets.max_block_depth_cells"
+value = 40
+min = 2
+max = 1024
+
+[[balance]]
+# How far a split position may jitter from the rect's own midpoint, as a
+# percent of the rect's own length on the split axis.
+key = "generation.streets.split_jitter_pct"
+value = 25
+min = 0
+max = 45
+
+[[balance]]
+# A safety cap on recursive subdivision depth -- generation is total, so
+# a pathological config still terminates rather than looping.
+key = "generation.streets.max_recursion_depth"
+value = 12
+min = 1
+max = 64
+
+[[balance]]
+# A safety cap on the extra lane-tier splits one over-deep block may take.
+key = "generation.streets.max_lane_splits"
+value = 4
+min = 0
+max = 16
+
+[[balance]]
+# The Manhattan-fitness contract 3.11's pathfinding estimator relies on:
+# over a deterministic sample of node pairs, BFS network distance /
+# Manhattan distance must not exceed this, expressed as a percentage
+# (220 = a ratio of 2.20). Set from measurement, not guessed: a scan of
+# 20000 seeds at this generator's other committed values found a worst
+# case near 200%, driven by pairs near a jittered arterial where the
+# nearest cross-street sits well off the straight line between them --
+# an inherent cost of "not a perfect grid" (T-junctions, jittered splits),
+# not a bug. 3.11's estimator must budget for this ratio, not assume a
+# tighter one.
+key = "generation.streets.max_detour_percent"
+value = 220
+min = 100
+max = 500
+
+[[balance]]
+# The Manhattan estimator is a citywide approximation, not a promise
+# about routing between neighbouring blocks: a single jitter-driven jog
+# dominates the ratio at short range even in a real city. Pairs closer
+# than this (world cells, Manhattan) are excluded from the detour-ratio
+# sample.
+key = "generation.streets.detour_min_manhattan_cells"
+value = 64
+min = 1
+max = 2048

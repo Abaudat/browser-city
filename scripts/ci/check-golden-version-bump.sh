@@ -57,6 +57,7 @@ fi
 FAILED=0
 CHANGED_RNG=""
 CHANGED_APPEARANCE=""
+CHANGED_GENERATION=""
 while IFS= read -r path; do
   [ -n "$path" ] || continue
   base_name="$(basename "$path")"
@@ -67,6 +68,10 @@ $path"
       ;;
     appearance_*.golden)
       CHANGED_APPEARANCE="$CHANGED_APPEARANCE
+$path"
+      ;;
+    generation_*.golden)
+      CHANGED_GENERATION="$CHANGED_GENERATION
 $path"
       ;;
     codes_*.golden)
@@ -118,6 +123,22 @@ if [ -n "$CHANGED_APPEARANCE" ]; then
     FAILED=1
   else
     echo "check-golden-version-bump: golden changed alongside an APPEARANCE_VERSION bump -- ok" >&2
+  fi
+fi
+
+if [ -n "$CHANGED_GENERATION" ]; then
+  CHANGED_GENERATION="$(printf '%s\n' "$CHANGED_GENERATION" | sed '/^$/d')"
+  CHANGED_GENERATION_VERSION="$(git diff --name-only "$MERGE_BASE" HEAD -- 'server/sim/src/generation/mod.rs')"
+  if [ -z "$CHANGED_GENERATION_VERSION" ]; then
+    echo "check-golden-version-bump: FAIL -- golden(s) changed with no GENERATION_VERSION bump:" >&2
+    printf '%s\n' "$CHANGED_GENERATION" >&2
+    FAILED=1
+  elif ! grep -qE '^[+-]pub const GENERATION_VERSION' <<<"$(git diff "$MERGE_BASE" HEAD -- 'server/sim/src/generation/mod.rs')"; then
+    echo "check-golden-version-bump: FAIL -- golden(s) changed but GENERATION_VERSION did not:" >&2
+    printf '%s\n' "$CHANGED_GENERATION" >&2
+    FAILED=1
+  else
+    echo "check-golden-version-bump: golden changed alongside a GENERATION_VERSION bump -- ok" >&2
   fi
 fi
 

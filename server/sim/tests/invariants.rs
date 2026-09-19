@@ -9,6 +9,7 @@
 use proptest::prelude::*;
 use sim::appearance;
 use sim::generated::defs::{self, Family, Pool};
+use sim::generation::{GenerationConfig, land_use, streets};
 use sim::rng::{Rng, seed_from_ids};
 use sim::rules::testing::SiteBuilder;
 use sim::rules::{
@@ -63,6 +64,12 @@ pub const INV_SEALED_RING_YIELDS_EXACTLY_ONE_ENCLOSED_REGION: &str =
     "a ring with no gap at all always yields exactly one enclosed region (FR128)";
 pub const INV_REMOVING_A_DOOR_NEVER_REDUCES_ENCLOSED_REGIONS: &str = "narrowing a ring's own doorway gap (down to and including closing it entirely) never reduces the number of reported enclosed regions (FR128)";
 pub const INV_RING_OPEN_TO_ANY_WINDOW_EDGE_IS_NEVER_REPORTED: &str = "a ring's own interior, pushed flush against any one of the window's own four edges with no wall and no margin between them, is never reported by enclosed_regions or by narrow_passages, for a door narrower than the real player body (FR128)";
+pub const INV_GENERATION_TOTAL_NEVER_PANICS: &str = "generation is total: for any seed, both passes return a valid plan or a typed error, never a panic (FR110)";
+pub const INV_GENERATION_ALL_FOUR_LAND_USES_PRESENT: &str = "pass 1's coarse grid is fully assigned (no unassigned cell) and every one of the four land uses appears at least once, for any seed (FR110)";
+pub const INV_GENERATION_STREETS_CONNECTED_AND_NOT_STRANDED: &str = "pass 2's street graph is a single connected component, and every pass-1 region borders a street, for any seed (FR110)";
+pub const INV_GENERATION_NO_DEAD_ENDS_AWAY_FROM_BOUNDARY: &str =
+    "pass 2 never produces a degree-1 node away from the site boundary, for any seed (FR110, NFR8)";
+pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, BFS network distance never exceeds max_detour_percent of Manhattan distance, for any seed (FR110)";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -1660,5 +1667,83 @@ proptest! {
         prop_assert!(enclosed.is_empty());
         let narrow = narrow_passages(&grid, seed_x, seed_y, body_w, body_h).unwrap();
         prop_assert!(narrow.is_empty());
+    }
+}
+
+// Story 3.2: land use and the street network (FR110). A case is a full
+// 512x512 generation (both passes), so this block pins its own case count
+// rather than inheriting the workflow's PROPTEST_CASES -- the story-2.4
+// coverage-timeout lesson. Measured (release, `cargo test --release`):
+// ~90us/case; under the unoptimised `test` profile `coverage` builds:
+// ~0.5ms/case -- 64 cases costs single-digit milliseconds either way, so
+// this is a safety margin against a future PROPTEST_CASES bump, not a
+// response to an actual measured slowdown (stated in the PR per Quentin's
+// direction).
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+    /// `inv_generation_total_never_panics`.
+    #[test]
+    fn inv_generation_total_never_panics(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg);
+        let net = streets::run(seed, &lu, &cfg);
+        // Reaching here without panicking is most of the property; a
+        // handful of cheap structural reads on top prove the outputs are
+        // not garbage.
+        prop_assert!(lu.cols() > 0 && lu.rows() > 0);
+        prop_assert!(!net.blocks().is_empty());
+    }
+
+    /// `inv_generation_all_four_land_uses_present`.
+    #[test]
+    fn inv_generation_all_four_land_uses_present(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg);
+        for cy in 0..lu.rows() {
+            for cx in 0..lu.cols() {
+                prop_assert!(lu.coarse_at(cx, cy).is_some());
+            }
+        }
+        let present = land_use::uses_present(&lu);
+        for u in land_use::LandUse::ALL {
+            prop_assert!(present.contains(&u));
+        }
+    }
+
+    /// `inv_generation_streets_connected_and_not_stranded`.
+    #[test]
+    fn inv_generation_streets_connected_and_not_stranded(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg);
+        let net = streets::run(seed, &lu, &cfg);
+        let reachable = net.reachable_from_first_node().unwrap();
+        prop_assert_eq!(reachable.len(), net.nodes().len());
+        prop_assert!(net.stranded_regions(&lu, cfg.block_size_max_cells).is_empty());
+    }
+
+    /// `inv_generation_no_dead_ends_away_from_boundary`.
+    #[test]
+    fn inv_generation_no_dead_ends_away_from_boundary(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg);
+        let net = streets::run(seed, &lu, &cfg);
+        prop_assert!(net.dead_end_nodes().is_empty());
+    }
+
+    /// `inv_generation_detour_ratio_bounded`.
+    #[test]
+    fn inv_generation_detour_ratio_bounded(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg);
+        let net = streets::run(seed, &lu, &cfg);
+        let samples = net.detour_samples(14, cfg.detour_min_manhattan_cells as i64);
+        for s in samples {
+            let pct = s.network * 100 / s.manhattan;
+            prop_assert!(
+                pct <= cfg.max_detour_percent as i64,
+                "seed {seed}: {:?}-{:?} ratio {pct}% over {}%", s.a, s.b, cfg.max_detour_percent
+            );
+        }
     }
 }

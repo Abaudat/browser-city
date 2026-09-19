@@ -73,14 +73,6 @@ pub struct Catalogue<'a> {
     pub accessory_none_chance: i64,
 }
 
-fn balance_value(key: &str) -> i64 {
-    defs::BALANCE
-        .iter()
-        .find(|b| b.key == key)
-        .map(|b| b.value)
-        .unwrap_or_else(|| panic!("sim::appearance: missing balance key '{key}'"))
-}
-
 /// The real, live `defs/appearance/` catalogue -- what a caller outside
 /// this module's own tests always wants.
 pub fn live_catalogue() -> Catalogue<'static> {
@@ -90,8 +82,14 @@ pub fn live_catalogue() -> Catalogue<'static> {
         hairstyles: defs::HAIRSTYLES,
         outfits: defs::OUTFITS,
         accessories: defs::ACCESSORIES,
-        hair_rare_chance: balance_value("citizen.appearance.hair_rare_chance"),
-        accessory_none_chance: balance_value("citizen.appearance.accessory_none_chance"),
+        hair_rare_chance: crate::balance::value(
+            defs::BALANCE,
+            "citizen.appearance.hair_rare_chance",
+        ),
+        accessory_none_chance: crate::balance::value(
+            defs::BALANCE,
+            "citizen.appearance.accessory_none_chance",
+        ),
     }
 }
 
