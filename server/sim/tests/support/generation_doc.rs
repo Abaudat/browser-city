@@ -203,7 +203,7 @@ fn parse_table(
             end_of_table = i;
             break;
         }
-        rows.push((i + 1, split_row(&fail, i + 1, line, n_columns, header)));
+        rows.push((i + 1, split_row(path, i + 1, line, n_columns, header)));
     }
     for (offset, &line) in lines[end_of_table..body_end].iter().enumerate() {
         if !line.trim().is_empty() {
@@ -244,7 +244,10 @@ fn parse_prose_table(
         .iter()
         .position(|l| l.trim() == header)
     else {
-        fail(heading_line + 1, &format!("section '{heading}' has no table"));
+        fail(
+            heading_line + 1,
+            &format!("section '{heading}' has no table"),
+        );
     };
     let header_i = body_start + header_rel;
     let sep_i = header_i + 1;
@@ -266,7 +269,7 @@ fn parse_prose_table(
             end_of_table = i;
             break;
         }
-        rows.push((i + 1, split_row(&fail, i + 1, line, n_columns, header)));
+        rows.push((i + 1, split_row(path, i + 1, line, n_columns, header)));
     }
     if end_of_table < body_end {
         for (offset, &line) in lines[(end_of_table + 1)..body_end].iter().enumerate() {
@@ -288,13 +291,18 @@ fn parse_prose_table(
 /// Splits one `| a | b | ... |` row into its own `n_columns` trimmed
 /// cells, failing (naming `line_no`) if the count disagrees.
 fn split_row(
-    fail: &impl Fn(usize, &str) -> !,
+    path: &Path,
     line_no: usize,
     line: &str,
     n_columns: usize,
     header: &str,
 ) -> Vec<String> {
-    let fields: Vec<String> = line.trim().split('|').map(|s| s.trim().to_string()).collect();
+    let fail = |line: usize, msg: &str| -> ! { panic!("{}:{}: {msg}", path.display(), line) };
+    let fields: Vec<String> = line
+        .trim()
+        .split('|')
+        .map(|s| s.trim().to_string())
+        .collect();
     if fields.len() != n_columns + 2 {
         fail(
             line_no,
@@ -420,7 +428,11 @@ fn build_balance_row(
 
     non_empty(path, line_no, "balance key", &key);
     if !seen_keys.insert(key.clone()) {
-        panic!("{}:{}: duplicate balance key '{key}'", path.display(), line_no);
+        panic!(
+            "{}:{}: duplicate balance key '{key}'",
+            path.display(),
+            line_no
+        );
     }
     let status = parse_status(path, line_no, &status);
     check_pass(path, line_no, &pass, passes);
@@ -456,7 +468,10 @@ fn build_catalogue_row(path: &Path, line_no: usize, cols: Vec<String>) -> Catalo
     let claimed_by: Vec<String> = if claimed_by.is_empty() {
         Vec::new()
     } else {
-        claimed_by.split('+').map(|s| s.trim().to_string()).collect()
+        claimed_by
+            .split('+')
+            .map(|s| s.trim().to_string())
+            .collect()
     };
     match status.as_str() {
         "claimed" | "unclaimed" => {}
@@ -574,7 +589,13 @@ pub fn parse(path: &Path, text: &str) -> Doc {
     let mut balance_seen: BTreeSet<String> = BTreeSet::new();
     let mut parameters = Vec::new();
     for (line_no, cols) in raw_balance_rows {
-        parameters.push(build_balance_row(path, line_no, cols, &passes, &mut balance_seen));
+        parameters.push(build_balance_row(
+            path,
+            line_no,
+            cols,
+            &passes,
+            &mut balance_seen,
+        ));
     }
 
     let raw_catalogue_rows =
@@ -707,7 +728,11 @@ pub fn check_catalogue(doc: &Doc) -> Vec<String> {
                 }
             }
         }
-        let expected_status = if derived_claimed { "claimed" } else { "unclaimed" };
+        let expected_status = if derived_claimed {
+            "claimed"
+        } else {
+            "unclaimed"
+        };
         if row.status != expected_status {
             failures.push(format!(
                 "'Must never be seen' row '{}' is marked '{}', but its own Claimed by column derives '{expected_status}'",
@@ -1222,7 +1247,10 @@ mod tests {
     fn an_empty_intent_is_named() {
         let mut lines = skeleton();
         let slot = kind_row_slot(&lines, "placement");
-        lines.insert(slot, "| some_key | committed | Prop placement | site | - |  |");
+        lines.insert(
+            slot,
+            "| some_key | committed | Prop placement | site | - |  |",
+        );
         let expected_line = line_of(&lines, "some_key");
         assert_eq!(
             err(&text_of(&lines)),
@@ -1234,8 +1262,14 @@ mod tests {
     fn a_duplicate_key_in_one_section_is_named() {
         let mut lines = skeleton();
         let slot = kind_row_slot(&lines, "placement");
-        lines.insert(slot, "| some_key | committed | Prop placement | site | - | a |");
-        lines.insert(slot + 1, "| some_key | planned | Prop placement | site | - | b |");
+        lines.insert(
+            slot,
+            "| some_key | committed | Prop placement | site | - | a |",
+        );
+        lines.insert(
+            slot + 1,
+            "| some_key | planned | Prop placement | site | - | b |",
+        );
         let expected_line = line_of(&lines, "some_key | planned");
         assert_eq!(
             err(&text_of(&lines)),
@@ -1348,10 +1382,7 @@ mod tests {
         let mut lines = skeleton();
         let slot = balance_row_slot(&lines);
         lines.insert(slot, "| a.balance.key | committed | Prop placement | a |");
-        lines.insert(
-            slot + 1,
-            "| a.balance.key | planned | Prop placement | b |",
-        );
+        lines.insert(slot + 1, "| a.balance.key | planned | Prop placement | b |");
         let expected_line = line_of(&lines, "a.balance.key | planned");
         assert_eq!(
             err(&text_of(&lines)),
