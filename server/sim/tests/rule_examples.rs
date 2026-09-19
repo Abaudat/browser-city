@@ -164,17 +164,13 @@ fn every_committed_rule_has_at_least_one_pass_and_one_fail_example() {
     );
 }
 
-/// Story 3.1 (FR111, AC2/AC3): `docs/generation.md`'s own copy of this
-/// commit's rule set. Every committed rule key has exactly one row
-/// under the document's section matching its own `RuleKind`, and that
-/// row's status is `committed` -- a `planned` row whose key is already
-/// committed means the document was never flipped when the rule
-/// landed, which is exactly the "never after" AC2 exists to catch. A
-/// `committed` row naming a key that either does not exist or sits
-/// under the wrong kind's section is an orphan. A `planned` row with no
-/// committed key of the same name passes -- "before the code" is the
-/// only direction the document and `defs/` may disagree in (Tim's
-/// direction).
+/// Story 3.1 (FR111): `docs/generation.md`'s own copy of this commit's
+/// rule set -- "before or with the code, never after". The comparison
+/// itself is `support::generation_doc::check_rules_current`, unit-tested
+/// there against planted disagreements; this is the one place it is run
+/// for real, against the real repo. Also asserts `docs/architecture.md`
+/// names `docs/generation.md` as the home of rule/generation-parameter
+/// intent (AC1) -- nothing else asserted that either.
 #[test]
 fn every_committed_rule_has_a_current_row_in_the_generation_document() {
     let doc_path = repo_root().join("docs/generation.md");
@@ -182,58 +178,24 @@ fn every_committed_rule_has_a_current_row_in_the_generation_document() {
         std::fs::read_to_string(&doc_path).unwrap_or_else(|e| panic!("docs/generation.md: {e}"));
     let doc = support::generation_doc::parse(Path::new("docs/generation.md"), &text);
 
-    let mut failures: Vec<String> = Vec::new();
+    let committed: Vec<(&str, &str)> = defs::RULES
+        .iter()
+        .map(|r| (r.key, generation_doc_section(&r.kind)))
+        .collect();
 
-    for rule in defs::RULES {
-        let section = generation_doc_section(&rule.kind);
-        let matches: Vec<&support::generation_doc::Row> =
-            doc[section].iter().filter(|r| r.key == rule.key).collect();
-        match matches.len() {
-            0 => failures.push(format!(
-                "'{}' is committed in defs/rules/ but has no row under docs/generation.md's '## {}' section",
-                rule.key, section
-            )),
-            1 => {
-                if matches[0].status != support::generation_doc::Status::Committed {
-                    failures.push(format!(
-                        "'{}' is committed in defs/rules/ but docs/generation.md still marks it 'planned' under '## {}' -- flip it to 'committed'",
-                        rule.key, section
-                    ));
-                }
-            }
-            _ => failures.push(format!(
-                "'{}' appears more than once under docs/generation.md's '## {}' section",
-                rule.key, section
-            )),
-        }
-    }
-
-    for &section in &support::generation_doc::KIND_SECTIONS {
-        for row in &doc[section] {
-            if row.status != support::generation_doc::Status::Committed {
-                continue;
-            }
-            if let Some(rule) = defs::RULES.iter().find(|r| r.key == row.key) {
-                let real_section = generation_doc_section(&rule.kind);
-                if real_section != section {
-                    failures.push(format!(
-                        "docs/generation.md marks '{}' committed under '## {}', but defs/rules/ has it under '{}' -- move the row",
-                        row.key, section, real_section
-                    ));
-                }
-            } else {
-                failures.push(format!(
-                    "docs/generation.md marks '{}' committed under '## {}', but no such rule key exists in defs/rules/ (orphan row)",
-                    row.key, section
-                ));
-            }
-        }
-    }
-
+    let failures = support::generation_doc::check_rules_current(&doc, &committed);
     assert!(
         failures.is_empty(),
-        "docs/generation.md and defs/rules/ disagree (story 3.1 AC2/AC3):\n{}",
+        "docs/generation.md and defs/rules/ disagree:\n{}",
         failures.join("\n")
+    );
+
+    let arch_path = repo_root().join("docs/architecture.md");
+    let arch_text =
+        std::fs::read_to_string(&arch_path).unwrap_or_else(|e| panic!("docs/architecture.md: {e}"));
+    assert!(
+        arch_text.contains("docs/generation.md"),
+        "docs/architecture.md must name docs/generation.md as the home of rule/generation-parameter intent"
     );
 }
 
