@@ -21,7 +21,8 @@
 //! can never drift from the code that produced it.
 
 use sim::generation::{
-    GenerationConfig, LandUse, StreetClass, StreetNetwork, land_use, land_use::LandUseMap,
+    GenerationConfig, LandUse, StreetClass, StreetNetwork, block_land_use, land_use,
+    land_use::LandUseMap,
 };
 
 /// The three fixed seeds every evidence SVG renders -- committed once,
@@ -125,8 +126,12 @@ fn land_use_legend(y0: i64) -> String {
     body
 }
 
-fn street_legend(y0: i64) -> String {
+/// Both legends stacked in one margin (four land uses, then three street
+/// tiers) -- Artie's direction, cycle 2: the street SVG's own legend
+/// named the tiers but not the land-use tint it also draws.
+fn combined_legend(y0: i64) -> String {
     let mut body = String::new();
+    body.push_str(&land_use_legend(y0));
     let mut x = 8;
     for class in [
         StreetClass::Arterial,
@@ -135,13 +140,13 @@ fn street_legend(y0: i64) -> String {
     ] {
         body.push_str(&format!(
             "<rect x=\"{x}\" y=\"{}\" width=\"16\" height=\"16\" fill=\"{}\"/>\n",
-            y0 + 4,
+            y0 + 32,
             street_fill(class)
         ));
         body.push_str(&format!(
             "<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">{}</text>\n",
             x + 20,
-            y0 + 16,
+            y0 + 44,
             street_label(class)
         ));
         x += 110;
@@ -205,15 +210,39 @@ fn viewport_outline(
     )
 }
 
-/// Pass 2's own evidence: land use dimmed as backdrop, streets on top by
-/// tier, a legend, and two 40x22-cell viewport outlines (density peak,
+/// Every finished block's own land use, flat colour, at `opacity_pct`'s
+/// own floor (density does not vary within a block's own tint here --
+/// the point of this backdrop is which use owns the block, not its
+/// density) -- Artie's direction, cycle 2: one land use per block,
+/// decided by majority coarse-cell area ([`block_land_use`]), so a
+/// change of tint only ever happens at a real block edge (a street),
+/// never mid-block the way a per-coarse-cell tint could.
+fn block_rects(map: &LandUseMap, net: &StreetNetwork) -> String {
+    let mut body = String::new();
+    for b in net.blocks() {
+        let use_ = block_land_use(map, b.bounds);
+        body.push_str(&format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" fill-opacity=\"0.55\"/>\n",
+            b.bounds.x0,
+            b.bounds.y0,
+            b.bounds.width(),
+            b.bounds.height(),
+            land_use_fill(use_)
+        ));
+    }
+    body
+}
+
+/// Pass 2's own evidence: one flat land-use tint per block (never per
+/// coarse cell -- Artie's direction, cycle 2), streets on top by tier, a
+/// combined legend, and two 40x22-cell viewport outlines (density peak,
 /// farthest periphery) -- Artie's direction, cycle 1.
-pub fn streets_svg(map: &LandUseMap, net: &StreetNetwork, cfg: &GenerationConfig) -> String {
+pub fn streets_svg(map: &LandUseMap, net: &StreetNetwork) -> String {
     let site = net.site();
     let (w, h) = (site.width(), site.height());
-    let legend_h = 28;
+    let legend_h = 56;
     let total_h = h + legend_h;
-    let mut body = land_use_rects(map, cfg, 60);
+    let mut body = block_rects(map, net);
     for e in net.edges() {
         let r = e.rect();
         body.push_str(&format!(
@@ -240,7 +269,7 @@ pub fn streets_svg(map: &LandUseMap, net: &StreetNetwork, cfg: &GenerationConfig
         "#1e88e5",
         "periphery",
     ));
-    let legend = street_legend(h);
+    let legend = combined_legend(h);
     format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{total_h}\" viewBox=\"0 0 {w} {total_h}\">\n\
          <rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{total_h}\" fill=\"#ffffff\"/>\n\
@@ -279,7 +308,7 @@ pub fn build_all() -> Vec<(u64, String, String)> {
             let lu = land_use::run(seed, cfg.site(), &cfg)
                 .expect("the live site is always a valid multiple of the coarse cell size");
             let net = sim::generation::streets::run(seed, &lu, &cfg);
-            (seed, land_use_svg(&lu, &cfg), streets_svg(&lu, &net, &cfg))
+            (seed, land_use_svg(&lu, &cfg), streets_svg(&lu, &net))
         })
         .collect()
 }

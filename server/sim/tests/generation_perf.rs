@@ -36,7 +36,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     assert!(net.stranded_regions(&lu).is_empty());
     assert!(net.dead_end_nodes().is_empty());
     let _ = net.junction_mix();
-    let _ = net.detour_samples(14, cfg.detour_min_manhattan_cells as i64);
+    let _ = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
 
     let coarse_cells = (lu.cols() as u64) * (lu.rows() as u64);
 

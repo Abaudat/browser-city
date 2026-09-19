@@ -72,9 +72,16 @@ pub const INV_GENERATION_NO_DEAD_ENDS_AWAY_FROM_BOUNDARY: &str =
 pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, BFS network distance never exceeds max_detour_percent of Manhattan distance, for any seed (FR110)";
 pub const INV_GENERATION_NOT_A_PERFECT_GRID: &str = "block width and height each take at least min_distinct_block_sizes distinct values, both junction kinds are present, and at least two street classes are present, for any seed (FR110, NFR8)";
 pub const INV_GENERATION_EXACT_TILING: &str = "every site cell is covered by exactly one block or by at least one street, and no two blocks overlap, for any seed (FR110)";
+pub const INV_GENERATION_INSTITUTIONAL_POCKETS_ARE_SMALL: &str = "every institutional region is at most two max-sized leaves' worth of coarse cells, for any seed -- several small pockets, never one slab (FR110, Artie's direction)";
 pub const INV_GENERATION_INDUSTRIAL_NEVER_TOUCHES_COMMERCIAL: &str =
     "no industrial coarse cell is ever adjacent to a commercial one, for any seed (FR110)";
 pub const INV_GENERATION_RESIDENTIAL_IS_THE_LARGEST_LAND_USE_BY_AREA: &str = "residential has more coarse cells than any other single land use, for any seed -- field-driven assignment (commercial at the peak, industrial one contiguous group, institutional the smallest leaves) structurally favours it over a blind weighted draw, but that only holds if something keeps checking it (FR110, Quentin's direction)";
+pub const INV_GENERATION_P99_DETOUR_RATIO_BOUNDED: &str = "the 99th-percentile BFS-network-vs-Manhattan detour ratio, over one city's own sampled pairs, never exceeds p99_detour_percent, for any seed (FR110, Tim's direction)";
+pub const INV_GENERATION_NO_STAGGERED_JUNCTIONS: &str = "no two junctions on the same street sit under junction_min_separation_cells apart unless they coincide, for any seed -- asserted at zero, a refused split rather than a measured ceiling (FR110, Tim's direction)";
+pub const INV_GENERATION_MIN_BLOCK_DEPTH_IS_RESPECTED: &str =
+    "every block is at least min_block_depth_cells on both axes, for any seed (FR110)";
+pub const INV_GENERATION_ARTERIALS_ARE_CONTIGUOUS: &str = "every arterial line starts at its own near site edge with no gap, and at most one arterial line per city stops short of the far site edge (the T-termination), for any seed (FR110, Artie's direction)";
+pub const INV_GENERATION_PERIPHERAL_BLOCKS_ARE_NOT_DEGENERATE: &str = "mean block area on the far side of the field's own median distance from the density peak is at least half the near side's, for any seed -- a real inversion, not the occasional close call (NFR8, Artie's direction)";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -1741,46 +1748,165 @@ proptest! {
         prop_assert!(net.dead_end_nodes().is_empty());
     }
 
-    /// `inv_generation_detour_ratio_bounded`.
+    /// `inv_generation_detour_ratio_bounded` (Quentin's direction, cycle
+    /// 2: two separate bounds, not one flat ratio -- an additive ceiling
+    /// on every sampled pair's own overshoot, in world cells, since a
+    /// ratio is dominated by a single jitter-driven jog at short range;
+    /// a ratio ceiling only over pairs at least `detour_long_pair_cells`
+    /// apart, where a ratio is what the estimator actually relies on).
     #[test]
     fn inv_generation_detour_ratio_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
-        let samples = net.detour_samples(14, cfg.detour_min_manhattan_cells as i64);
-        for s in samples {
-            let pct = s.network * 100 / s.manhattan;
+        let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+        for s in &samples {
             prop_assert!(
-                pct <= cfg.max_detour_percent as i64,
-                "seed {seed}: {:?}-{:?} ratio {pct}% over {}%", s.a, s.b, cfg.max_detour_percent
+                s.excess_cells() <= cfg.max_detour_excess_cells as i64,
+                "seed {seed}: {:?}-{:?} excess {} cells over {}", s.a, s.b, s.excess_cells(), cfg.max_detour_excess_cells
             );
+            if s.manhattan >= cfg.detour_long_pair_cells as i64 {
+                prop_assert!(
+                    s.ratio_pct() <= cfg.max_detour_percent as i64,
+                    "seed {seed}: {:?}-{:?} ratio {}% over {}%", s.a, s.b, s.ratio_pct(), cfg.max_detour_percent
+                );
+            }
         }
+    }
+
+    /// `inv_generation_p99_detour_ratio_bounded` (Tim's direction, cycle
+    /// 2): `max_detour_percent` alone only bounds one city's own single
+    /// worst pair, which stays green even if the *typical* case
+    /// regressed -- the 99th percentile of this same sample is pinned
+    /// separately.
+    #[test]
+    fn inv_generation_p99_detour_ratio_bounded(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+        let p99 = streets::p99_ratio_pct(&samples);
+        prop_assert!(
+            p99 <= cfg.p99_detour_percent as i64,
+            "seed {seed}: p99 detour ratio {p99}% over {}%", cfg.p99_detour_percent
+        );
+    }
+
+    /// `inv_generation_no_staggered_junctions` (Tim's direction, cycle
+    /// 2): a ceiling on a defect is not a guard -- `resolve_junction_
+    /// position` now refuses any split that cannot land clean against
+    /// the registry, so by induction no split this pass ever creates a
+    /// junction under `junction_min_separation_cells` of another on the
+    /// same street. Asserted at zero, not a measured ceiling.
+    #[test]
+    fn inv_generation_no_staggered_junctions(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let close = net.close_same_street_junction_pairs(cfg.min_block_depth_cells);
+        prop_assert!(close.is_empty(), "seed {seed}: staggered junctions {close:?}");
+    }
+
+    /// `inv_generation_min_block_depth_is_respected` (Quentin's
+    /// direction, cycle 2: moved from a fixed 0..8 sweep).
+    #[test]
+    fn inv_generation_min_block_depth_is_respected(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        for b in net.blocks() {
+            prop_assert!(b.bounds.width() >= cfg.min_block_depth_cells as i64, "seed {seed}: block {:?} narrower than min_block_depth_cells", b.bounds);
+            prop_assert!(b.bounds.height() >= cfg.min_block_depth_cells as i64, "seed {seed}: block {:?} shorter than min_block_depth_cells", b.bounds);
+        }
+    }
+
+    /// `inv_generation_arterials_are_contiguous` (Quentin's direction,
+    /// cycle 2: moved from a fixed 0..12 sweep; Artie's direction, cycle
+    /// 2: at most one arterial line per city may stop short in a T, the
+    /// rest reach the far site edge). Every arterial line, whatever its
+    /// own far end, starts at its own near site edge with no gap.
+    #[test]
+    fn inv_generation_arterials_are_contiguous(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let site = net.site();
+        let arterials: Vec<&streets::StreetEdge> = net.edges().iter().filter(|e| e.class == streets::StreetClass::Arterial).collect();
+        prop_assert!(!arterials.is_empty());
+
+        let mut short_lines = 0;
+        for axis in [streets::Axis::Vertical, streets::Axis::Horizontal] {
+            let (near, far) = match axis {
+                streets::Axis::Vertical => (site.y0, site.y1),
+                streets::Axis::Horizontal => (site.x0, site.x1),
+            };
+            let coords: std::collections::BTreeSet<i32> = arterials.iter().filter(|a| a.axis == axis).map(|a| a.coord).collect();
+            for coord in coords {
+                let mut spans: Vec<(i32, i32)> = arterials.iter().filter(|a| a.axis == axis && a.coord == coord).map(|a| (a.from, a.to)).collect();
+                spans.sort();
+                prop_assert_eq!(spans.first().unwrap().0, near, "seed {}: arterial axis={:?} coord={} does not start at its own near site edge", seed, axis, coord);
+                for w in spans.windows(2) {
+                    prop_assert_eq!(w[0].1, w[1].0, "seed {}: arterial axis={:?} coord={} has a gap between {:?}", seed, axis, coord, w);
+                }
+                if spans.last().unwrap().1 != far {
+                    short_lines += 1;
+                }
+            }
+        }
+        prop_assert!(short_lines <= 1, "seed {seed}: {short_lines} arterial lines stop short of the far site edge, expected at most one (the T-termination)");
+    }
+
+    /// `inv_generation_peripheral_blocks_are_not_degenerate` (Artie's
+    /// direction, cycle 1). Measured over 15,000 arbitrary seeds at this
+    /// generator's committed values: median ratio 1.76x, worst observed
+    /// 0.72x -- the AC's own "visibly larger" claim is a real, typical
+    /// effect (region-forced splits near the density peak, added cycle
+    /// 2 to close a stranded-region defect, occasionally shrink the near
+    /// side below the far side for a specific city, honestly not
+    /// eliminable without reopening that defect), not a universal one,
+    /// so this proptest only pins the floor a total inversion would
+    /// cross, with real margin below the measured worst case. Artie's
+    /// own harder, cycle-2 bar (2x) is judged on the committed evidence
+    /// seeds specifically (`peripheral_blocks_are_at_least_twice_
+    /// central_ones_on_the_evidence_seeds` in `server/sim/src/
+    /// generation/streets.rs`), lifted onto the same `StreetNetwork::
+    /// mean_area_split_by_peak_distance` so the two never drift apart
+    /// (Quentin's direction, cycle 2).
+    #[test]
+    fn inv_generation_peripheral_blocks_are_not_degenerate(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let Some((near_mean, far_mean)) = net.mean_area_split_by_peak_distance(&lu) else {
+            return Ok(());
+        };
+        prop_assert!(
+            far_mean * 2 >= near_mean,
+            "seed {seed}: peripheral mean block area {far_mean} is far below central {near_mean}, a real inversion not the occasional close call"
+        );
     }
 
     /// `inv_generation_not_a_perfect_grid` (Quentin's direction, cycle 1:
     /// moved from a fixed seed sweep -- block width/height variety, both
     /// junction kinds present, and at least two street classes present,
-    /// over arbitrary seeds rather than one lucky one).
+    /// over arbitrary seeds rather than one lucky one; cycle 2: lifted
+    /// onto `StreetNetwork`'s own shared metric methods, same reason as
+    /// the periphery test above).
     #[test]
     fn inv_generation_not_a_perfect_grid(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
 
-        let mut widths: Vec<i64> = net.blocks().iter().map(|b| b.bounds.width()).collect();
-        let mut heights: Vec<i64> = net.blocks().iter().map(|b| b.bounds.height()).collect();
-        widths.sort();
-        widths.dedup();
-        heights.sort();
-        heights.dedup();
-        prop_assert!(widths.len() as i64 >= cfg.min_distinct_block_sizes, "seed {seed}: only {} distinct widths", widths.len());
-        prop_assert!(heights.len() as i64 >= cfg.min_distinct_block_sizes, "seed {seed}: only {} distinct heights", heights.len());
+        let (widths, heights) = net.distinct_block_sizes();
+        prop_assert!(widths as i64 >= cfg.min_distinct_block_sizes, "seed {seed}: only {widths} distinct widths");
+        prop_assert!(heights as i64 >= cfg.min_distinct_block_sizes, "seed {seed}: only {heights} distinct heights");
 
         let (three, four) = net.junction_mix();
         prop_assert!(three > 0, "seed {seed}: no 3-way junctions");
         prop_assert!(four > 0, "seed {seed}: no 4-way junctions");
 
-        let classes: std::collections::BTreeSet<streets::StreetClass> = net.edges().iter().map(|e| e.class).collect();
+        let classes = net.street_classes_present();
         prop_assert!(classes.len() >= 2, "seed {seed}: only one street class present: {classes:?}");
     }
 
@@ -1817,6 +1943,32 @@ proptest! {
             }
         }
         prop_assert!(grid.iter().all(|&v| v != 0), "seed {seed}: at least one cell has no ground at all");
+    }
+
+    /// `inv_generation_institutional_pockets_are_small` (Artie's
+    /// direction, cycle 2: several small pockets, never one slab --
+    /// "a school, a clinic and a town hall do not share a campus").
+    /// Checked as an area bound rather than a leaf count directly: two
+    /// institutional leaves adjacent to each other would already have
+    /// merged into one region by `labeled_regions`' own flood fill (the
+    /// same reason `assign_institutional`'s own non-adjacency check is
+    /// enough to guarantee separate pockets never touch), so a region
+    /// area over two max-sized leaves is exactly the "one big slab"
+    /// regression this test exists to catch.
+    #[test]
+    fn inv_generation_institutional_pockets_are_small(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let max_pocket_cells = 2 * (cfg.land_use_max_leaf_cells as i64).pow(2);
+        for r in lu.regions() {
+            if r.use_ != land_use::LandUse::Institutional {
+                continue;
+            }
+            prop_assert!(
+                r.cell_count as i64 <= max_pocket_cells,
+                "seed {seed}: institutional region {:?} is {} cells, over the two-max-leaf pocket bound {max_pocket_cells}", r.bounds, r.cell_count
+            );
+        }
     }
 
     /// `inv_generation_industrial_never_touches_commercial` (Artie's

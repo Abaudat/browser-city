@@ -1112,7 +1112,20 @@ multiple of the coarse cell size.
 Pass 2's street graph keeps two junctions on the same street line either
 coincident (a true 4-way) or separated by `generation.streets.
 junction_min_separation_cells`, measured against the real net gap
-between the two streets' own carriageway edges, not their centrelines.
+between the two streets' own carriageway edges, not their centrelines --
+never merely reduced: `resolve_junction_position` refuses any split
+that cannot land clean against the registry, and the caller keeps the
+rect as a leaf block rather than create a known-defective junction, so
+by induction no split this pass ever creates one (Tim's direction,
+cycle 2).
+
+Land use and the street network are independently generated fields (no
+land-use-boundary snapping) -- a block's own land use is decided once,
+after subdivision, by majority coarse-cell area (`generation::
+block_land_use`), so a change of use only ever reads at a real block
+edge. `subdivide` still forces a split whenever the current rect spans
+more than one land-use region, which is what keeps every region
+touching a street (AC2) without that snapping.
 
 Evidence: `bounds/src/generation_evidence.rs` renders both passes' own
 output, for three committed seeds, to `docs/generation/*.svg`.

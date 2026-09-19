@@ -27,8 +27,10 @@
 //! commercial core grows from the district nearest the density peak (so
 //! it is never placed by chance on a starved cell), industrial grows as
 //! one contiguous group anchored at a seeded site edge and refuses to
-//! touch commercial, institutional takes the smallest remaining districts
-//! at the busiest internal boundaries, and residential takes the rest
+//! touch commercial, institutional is several small, mutually non-
+//! adjacent pockets at the busiest internal boundaries -- never one
+//! slab, "a school, a clinic and a town hall do not share a campus"
+//! (Artie's direction, cycle 2) -- and residential takes the rest
 //! (Artie's direction, cycle 1 -- "a factory district at the city's core
 //! ... is not physically sensible").
 
@@ -220,38 +222,6 @@ impl LandUseMap {
             *l = new_label_of[*l as usize];
         }
         (sorted, labels)
-    }
-
-    /// Every world-cell coordinate where two side-by-side coarse cells
-    /// carry *different* land uses -- a real district boundary (a same-
-    /// use boundary between two merged leaves is invisible, so it is
-    /// never returned: nothing changes there for a street to sit on top
-    /// of). `vertical` selects x-coordinates (a boundary running north-
-    /// south) or y-coordinates (east-west). Unsorted, may repeat --
-    /// callers needing a clean list call `.sort_unstable()`/`.dedup()`
-    /// themselves (`streets::boundary_coords` does).
-    pub fn district_boundaries(&self, vertical: bool) -> Vec<i32> {
-        let mut coords = Vec::new();
-        if vertical {
-            for y in 0..self.rows {
-                for x in 1..self.cols {
-                    if self.coarse_at(x - 1, y).unwrap().use_ != self.coarse_at(x, y).unwrap().use_
-                    {
-                        coords.push(self.site.x0 + x * self.cell_size);
-                    }
-                }
-            }
-        } else {
-            for x in 0..self.cols {
-                for y in 1..self.rows {
-                    if self.coarse_at(x, y - 1).unwrap().use_ != self.coarse_at(x, y).unwrap().use_
-                    {
-                        coords.push(self.site.y0 + y * self.cell_size);
-                    }
-                }
-            }
-        }
-        coords
     }
 
     /// Buckets every coarse cell by Chebyshev distance from
@@ -662,23 +632,39 @@ fn grow_contiguous_avoiding(
     }
 }
 
-/// Assigns `target` institutional districts among the still-unassigned
-/// leaves: each pick maximises the count of *distinct* already-assigned
-/// uses among its own neighbours (a proxy for "sits where districts
-/// meet", the busiest internal boundaries -- streets 2 lays arterials
-/// along major land-use boundaries, so this is what puts institutional
-/// beside them without pass 1 knowing a street coordinate), tie-broken
-/// toward the smallest leaf (Artie's direction: "small districts, not
-/// 10x10 slabs").
+/// Every pocket [`assign_institutional`] grows is at most this many
+/// leaves -- Artie's direction, cycle 2: "a school, a clinic and a town
+/// hall do not share a campus", never one slab.
+const INSTITUTIONAL_POCKET_MAX_LEAVES: usize = 2;
+
+/// Assigns `target` institutional leaves as several small, mutually
+/// non-adjacent pockets (never one contiguous slab, Artie's direction,
+/// cycle 2), each at most [`INSTITUTIONAL_POCKET_MAX_LEAVES`] leaves: a
+/// new pocket's own seed maximises the count of *distinct* already-
+/// assigned uses among its own neighbours (a proxy for "sits where
+/// districts meet", the busiest internal boundaries -- streets 2 lays
+/// arterials along major land-use boundaries, so this is what puts
+/// institutional beside them without pass 1 knowing a street
+/// coordinate) among leaves that do not themselves touch an existing
+/// institutional leaf, tie-broken toward the smallest leaf ("small
+/// districts, not 10x10 slabs"); a pocket's own second leaf, if the cap
+/// allows one, is simply the first unassigned neighbour of the seed.
+/// "Each pocket touches an arterial" is Artie's own further ask, and is
+/// not enforced here: pass 1 authors the land-use field before pass 2
+/// lays a single street, so nothing in this module can know where an
+/// arterial will fall (FR110's own ordering) -- a genuine architectural
+/// boundary, not a shortcut.
 fn assign_institutional(
     leaves: &[Rect],
     adjacency: &[Vec<usize>],
     assigned: &mut [Option<LandUse>],
     target: usize,
 ) {
-    for _ in 0..target {
-        let pick = (0..leaves.len())
+    let mut remaining = target;
+    while remaining > 0 {
+        let seed = (0..leaves.len())
             .filter(|&i| assigned[i].is_none())
+            .filter(|&i| !leaf_touches_use(i, adjacency, assigned, LandUse::Institutional))
             .max_by_key(|&i| {
                 let mut distinct = BTreeSet::new();
                 for &n in &adjacency[i] {
@@ -693,8 +679,22 @@ fn assign_institutional(
                     std::cmp::Reverse(i),
                 )
             });
-        let Some(idx) = pick else { break };
-        assigned[idx] = Some(LandUse::Institutional);
+        let Some(seed) = seed else { break };
+        assigned[seed] = Some(LandUse::Institutional);
+        remaining -= 1;
+
+        let mut pocket_size = 1;
+        while pocket_size < INSTITUTIONAL_POCKET_MAX_LEAVES && remaining > 0 {
+            let extra = adjacency[seed]
+                .iter()
+                .copied()
+                .filter(|&i| assigned[i].is_none())
+                .min_by_key(|&i| (leaves[i].width() * leaves[i].height(), i));
+            let Some(extra) = extra else { break };
+            assigned[extra] = Some(LandUse::Institutional);
+            remaining -= 1;
+            pocket_size += 1;
+        }
     }
 }
 
@@ -728,10 +728,10 @@ fn edge_target_point(edge: Edge, cols: i32, rows: i32) -> (i32, i32) {
 /// weighted draw (Artie's direction, cycle 1): commercial grows from the
 /// leaf nearest the density peak toward higher density; industrial grows
 /// as one contiguous group from a seeded site edge, never touching
-/// commercial; institutional takes the smallest, most-boundary-adjacent
-/// remaining leaves; residential takes the rest. Target counts
-/// ([`target_counts`]) are exact district-count shares, so every use is
-/// present whenever `leaves.len() >= 4`.
+/// commercial; institutional takes several small, non-adjacent pockets
+/// of the smallest, most-boundary-adjacent remaining leaves; residential
+/// takes the rest. Target counts ([`target_counts`]) are exact district-
+/// count shares, so every use is present whenever `leaves.len() >= 4`.
 fn assign_uses(
     rng: &mut Rng,
     leaves: &[Rect],

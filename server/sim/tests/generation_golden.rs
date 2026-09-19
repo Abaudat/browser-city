@@ -20,6 +20,7 @@
 //! running pass 2 twice over one pass-1 output is byte-identical (pass 2
 //! never mutates its own input).
 
+use sim::generation::streets::DETOUR_SAMPLE_MAX_NODES;
 use sim::generation::{GENERATION_VERSION, GenerationConfig, LandUse, land_use, streets};
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
@@ -48,24 +49,28 @@ fn frozen_config() -> GenerationConfig {
         share_commercial_pct: 18,
         share_industrial_pct: 14,
         share_institutional_pct: 10,
-        arterial_count_ns: 3,
-        arterial_count_ew: 2,
+        arterial_count_ns_min: 2,
+        arterial_count_ns_max: 3,
+        arterial_count_ew_min: 1,
+        arterial_count_ew_max: 2,
         arterial_width_cells: 12,
         street_width_cells: 8,
         lane_width_cells: 4,
-        arterial_jitter_pct: 20,
-        boundary_snap_tolerance_cells: 24,
-        block_size_min_cells: 24,
+        arterial_jitter_pct: 60,
+        block_size_min_cells: 40,
         block_size_max_cells: 96,
         min_block_depth_cells: 16,
-        max_block_depth_cells: 40,
+        max_block_depth_min_cells: 40,
+        max_block_depth_max_cells: 80,
         split_jitter_pct: 25,
         max_recursion_depth: 12,
         max_lane_splits: 4,
         max_street_splits_per_superblock: 1,
         junction_min_separation_cells: 28,
-        max_detour_percent: 350,
-        detour_min_manhattan_cells: 64,
+        detour_long_pair_cells: 128,
+        max_detour_percent: 200,
+        max_detour_excess_cells: 80,
+        p99_detour_percent: 160,
         min_distinct_block_sizes: 3,
     }
 }
@@ -117,12 +122,9 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
 
     let dead_ends = net.dead_end_nodes().len();
     let node_count = net.nodes().len();
-    let samples = net.detour_samples(14, cfg.detour_min_manhattan_cells as i64);
-    let max_detour_pct = samples
-        .iter()
-        .map(|s| s.network * 100 / s.manhattan)
-        .max()
-        .unwrap_or(0);
+    let samples = net.detour_samples(DETOUR_SAMPLE_MAX_NODES);
+    let max_detour_pct = samples.iter().map(|s| s.ratio_pct()).max().unwrap_or(0);
+    let p99_detour_pct = streets::p99_ratio_pct(&samples);
 
     // Real ring averages (innermost, mid, outermost of 3), from the
     // field's own density peak -- not a fixed "centre"/"corner" sample,
@@ -131,7 +133,7 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
     let rings = lu.ring_averages(3);
 
     format!(
-        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} density_rings={rings:?} digest={:016x}",
+        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} digest={:016x}",
         count(LandUse::Residential),
         count(LandUse::Commercial),
         count(LandUse::Industrial),
@@ -173,11 +175,15 @@ fn generation_output_matches_committed_golden() {
         let actual = summary_line(seed, &cfg);
         assert_eq!(
             actual, golden_line,
-            "generation output moved for seed {seed} -- if this is a deliberate change to \
-             sim::generation's own algorithm or seeding, bump GENERATION_VERSION and regenerate \
-             the golden. If it is only defs/balance/generation.toml being retuned, update \
-             frozen_config() in this file to match instead -- the golden pins the algorithm, \
-             never the data (Tim's direction, cycle 1)."
+            "generation output moved for seed {seed}. frozen_config() never reads live \
+             defs::BALANCE, so a defs/balance/generation.toml retune alone cannot move this \
+             golden at all -- this diff can only be sim::generation's own algorithm or seeding \
+             changing. Bump GENERATION_VERSION and regenerate the golden. (If you meant to \
+             retune generation.toml, this test does not exercise that at all -- check \
+             fixtures/defs-dump.v1.golden instead; if you meant to update frozen_config() itself \
+             to a new set of pinned values, that IS an algorithm-adjacent change from this \
+             golden's own point of view and still needs the version bump.) (Quentin's \
+             direction, cycle 2.)"
         );
     }
 }

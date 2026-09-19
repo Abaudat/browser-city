@@ -149,14 +149,16 @@ document's own opening paragraph forbids.
 - **Receives:** the land-use split and the parameter field.
 - **Hands down:** the street graph (carriageway, pavement, kerb) blocks
   are subdivided from.
-- **Reads:** density.
+- **Reads:** density, land use.
 - **Evidence:** [`docs/generation/street-network-seed-1.svg`](generation/street-network-seed-1.svg),
   [`-seed-2`](generation/street-network-seed-2.svg), [`-seed-3`](generation/street-network-seed-3.svg)
-  -- the same land-use backdrop, dimmed, with the street graph on top by
-  tier (arterial/street/lane), a legend, and two 40x22-cell viewport
-  outlines (one at the density peak, one at the farthest periphery) so
-  the per-screen reading is judgeable directly from the image; same
-  regen-and-diff guard as the row above.
+  -- one land-use tint per finished block (majority coarse-cell area,
+  never per coarse cell -- a change of tint only ever falls at a real
+  block edge), the street graph on top by tier (arterial/street/lane), a
+  combined legend, and two 40x22-cell viewport outlines (one at the
+  density peak, one at the farthest periphery) so the per-screen reading
+  is judgeable directly from the image; same regen-and-diff guard as the
+  row above.
 
 ### Plot subdivision
 
@@ -248,25 +250,29 @@ disagree.
 | generation.land_use.share_commercial_pct | committed | Land use | the commercial share of the land-use mix |
 | generation.land_use.share_industrial_pct | committed | Land use | the industrial share of the land-use mix |
 | generation.land_use.share_institutional_pct | committed | Land use | the institutional share of the land-use mix; the four shares sum to a whole |
-| generation.streets.arterial_count_ns | committed | Street network | how many north-south arterials the site gets |
-| generation.streets.arterial_count_ew | committed | Street network | how many east-west arterials the site gets |
+| generation.streets.arterial_count_ns_min | committed | Street network | the minimum north-south arterial count -- seeded uniformly in `[..._min, ..._max]`, never a fixed count |
+| generation.streets.arterial_count_ns_max | committed | Street network | the maximum north-south arterial count |
+| generation.streets.arterial_count_ew_min | committed | Street network | the minimum east-west arterial count |
+| generation.streets.arterial_count_ew_max | committed | Street network | the maximum east-west arterial count |
 | generation.streets.arterial_width_cells | committed | Street network | an arterial's own carriageway-plus-pavement width |
 | generation.streets.street_width_cells | committed | Street network | a street-tier segment's own carriageway-plus-pavement width |
 | generation.streets.lane_width_cells | committed | Street network | a lane-tier segment's own carriageway-plus-pavement width |
 | generation.streets.arterial_jitter_pct | committed | Street network | how far an arterial may jitter from its own even band position |
-| generation.streets.boundary_snap_tolerance_cells | committed | Street network | an arterial or internal split snaps onto a nearby land-use district boundary within this many cells, rather than cutting through the middle of a district |
 | generation.streets.block_size_min_cells | committed | Street network | target block side length at the field's own maximum density |
 | generation.streets.block_size_max_cells | committed | Street network | target block side length at the field's own minimum density |
 | generation.streets.min_block_depth_cells | committed | Street network | the minimum margin a recursive split must leave on each side |
-| generation.streets.max_block_depth_cells | committed | Street network | a harder ceiling than the density target, applied to a block's own *shorter* side: a block whose short side still exceeds this gets a further lane-tier split |
-| generation.streets.max_street_splits_per_superblock | committed | Street network | how many street-tier (not lane-tier) cuts one superblock may take before an over-target block is split with a lane instead -- keeps the core from reading as half asphalt |
-| generation.streets.junction_min_separation_cells | committed | Street network | the minimum net gap, carriageway edge to carriageway edge, between two junctions on the same street line before the later one is snapped clear |
+| generation.streets.max_block_depth_min_cells | committed | Street network | a harder ceiling than the density target, applied to a block's own *shorter* side, at the field's own maximum density: a block whose short side still exceeds this gets a further lane-tier split |
+| generation.streets.max_block_depth_max_cells | committed | Street network | the same ceiling's own value at the field's own minimum density -- interpolated like `block_size_min/max_cells`, so the periphery's own larger blocks are not cancelled by a flat ceiling |
+| generation.streets.max_street_splits_per_superblock | committed | Street network | how many street-tier (not lane-tier) cuts one superblock may take before an over-target block is split with a lane instead -- keeps the core from reading as half asphalt; commercial blocks are exempt (always street tier) |
+| generation.streets.junction_min_separation_cells | committed | Street network | the minimum net gap, carriageway edge to carriageway edge, between two junctions on the same street line -- a split that cannot land clean against this is refused outright, never merely snapped clear |
 | generation.streets.split_jitter_pct | committed | Street network | how far a block split position may jitter from the rect's own midpoint |
 | generation.streets.max_recursion_depth | committed | Street network | a safety cap on recursive block-subdivision depth |
-| generation.streets.max_lane_splits | committed | Street network | a safety cap on the extra lane-tier splits one over-deep block may take |
+| generation.streets.max_lane_splits | committed | Street network | a safety cap on the extra lane-tier splits one over-deep block may take (bypassed when the block still spans more than one land-use region -- AC2's "never stranded" is a hard bound) |
 | generation.streets.min_distinct_block_sizes | committed | Street network | the minimum number of distinct block widths, and separately heights, a city must show ("not a perfect grid") |
-| generation.streets.max_detour_percent | committed | Street network | the Manhattan-fitness ceiling 3.11's pathfinding estimator relies on |
-| generation.streets.detour_min_manhattan_cells | committed | Street network | pairs closer than this are excluded from the Manhattan-fitness sample |
+| generation.streets.detour_long_pair_cells | committed | Street network | `max_detour_percent`'s own ratio applies only to pairs at least this far apart (Manhattan); closer pairs are bounded by `max_detour_excess_cells` instead |
+| generation.streets.max_detour_percent | committed | Street network | the Manhattan-fitness ratio ceiling 3.11's pathfinding estimator relies on, for long pairs |
+| generation.streets.max_detour_excess_cells | committed | Street network | the additive Manhattan-fitness ceiling (world cells), applied to every sampled pair regardless of distance |
+| generation.streets.p99_detour_percent | committed | Street network | the 99th-percentile detour ratio, over one city's own sampled pairs, must not exceed this -- `max_detour_percent` alone only bounds the single worst pair |
 
 ## placement
 | key | status | pass | scope | reads | intent |
