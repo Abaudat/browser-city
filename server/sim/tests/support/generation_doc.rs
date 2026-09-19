@@ -131,10 +131,16 @@ fn parse_table(
     let fail = |line: usize, msg: &str| -> ! { panic!("{}:{}: {msg}", path.display(), line) };
 
     if body_start >= body_end {
-        fail(heading_line + 1, &format!("section '{section_label}' has no table"));
+        fail(
+            heading_line + 1,
+            &format!("section '{section_label}' has no table"),
+        );
     }
     if lines[body_start].trim() != header {
-        fail(body_start + 1, &format!("table header must be exactly '{header}'"));
+        fail(
+            body_start + 1,
+            &format!("table header must be exactly '{header}'"),
+        );
     }
     let sep_i = body_start + 1;
     if sep_i >= body_end || lines[sep_i].trim().is_empty() {
@@ -154,7 +160,11 @@ fn parse_table(
         if line.trim().is_empty() {
             break;
         }
-        let fields: Vec<String> = line.trim().split('|').map(|s| s.trim().to_string()).collect();
+        let fields: Vec<String> = line
+            .trim()
+            .split('|')
+            .map(|s| s.trim().to_string())
+            .collect();
         if fields.len() != n_columns + 2 {
             fail(
                 i + 1,
@@ -316,15 +326,17 @@ pub fn parse(path: &Path, text: &str) -> Doc {
     }
 
     // The pass vocabulary -- collected once, checked against by every row.
-    let (passes_heading, passes_body_start, passes_body_end) =
-        section_bounds(&lines, "## Passes")
-            .unwrap_or_else(|| fail(lines.len().max(1), "missing '## Passes' section"));
+    let (passes_heading, passes_body_start, passes_body_end) = section_bounds(&lines, "## Passes")
+        .unwrap_or_else(|| fail(lines.len().max(1), "missing '## Passes' section"));
     let passes: Vec<String> = lines[passes_body_start..passes_body_end]
         .iter()
         .filter_map(|l| l.trim().strip_prefix("### ").map(|s| s.trim().to_string()))
         .collect();
     if passes.is_empty() {
-        fail(passes_heading + 1, "'## Passes' has no '### ' pass headings");
+        fail(
+            passes_heading + 1,
+            "'## Passes' has no '### ' pass headings",
+        );
     }
 
     let mut sections: BTreeMap<&'static str, Vec<Row>> =
@@ -445,7 +457,9 @@ pub fn check_rules_current(doc: &Doc, committed: &[(&str, &str)]) -> Vec<String>
 
 #[cfg(test)]
 mod tests {
-    use super::{BalanceRow, Doc, PARAMETER_NAMES, Row, SCOPES, Status, check_rules_current, parse};
+    use super::{
+        BalanceRow, Doc, PARAMETER_NAMES, Row, SCOPES, Status, check_rules_current, parse,
+    };
     use std::collections::BTreeMap;
     use std::path::Path;
 
@@ -589,7 +603,10 @@ mod tests {
         lines.drain(0..4); // '## Passes', blank, '### Prop placement', blank
         assert_eq!(
             err(&text_of(&lines)),
-            format!("docs/generation.md:{}: missing '## Passes' section", lines.len())
+            format!(
+                "docs/generation.md:{}: missing '## Passes' section",
+                lines.len()
+            )
         );
     }
 
@@ -669,7 +686,10 @@ mod tests {
     #[test]
     fn an_empty_key_is_named() {
         let mut lines = skeleton();
-        lines.insert(7, "|  | committed | Prop placement | site | - | an intent |");
+        lines.insert(
+            7,
+            "|  | committed | Prop placement | site | - | an intent |",
+        );
         assert_eq!(
             err(&text_of(&lines)),
             "docs/generation.md:8: row's own key column is empty"
@@ -679,7 +699,10 @@ mod tests {
     #[test]
     fn an_unknown_status_is_named() {
         let mut lines = skeleton();
-        lines.insert(7, "| some_key | maybe | Prop placement | site | - | an intent |");
+        lines.insert(
+            7,
+            "| some_key | maybe | Prop placement | site | - | an intent |",
+        );
         assert_eq!(
             err(&text_of(&lines)),
             "docs/generation.md:8: unknown status 'maybe' -- must be 'committed' or 'planned'"
@@ -744,10 +767,7 @@ mod tests {
     #[test]
     fn an_empty_intent_is_named() {
         let mut lines = skeleton();
-        lines.insert(
-            7,
-            "| some_key | committed | Prop placement | site | - |  |",
-        );
+        lines.insert(7, "| some_key | committed | Prop placement | site | - |  |");
         assert_eq!(
             err(&text_of(&lines)),
             "docs/generation.md:8: row's own intent column is empty"
@@ -757,7 +777,10 @@ mod tests {
     #[test]
     fn a_duplicate_key_in_one_section_is_named() {
         let mut lines = skeleton();
-        lines.insert(7, "| some_key | committed | Prop placement | site | - | a |");
+        lines.insert(
+            7,
+            "| some_key | committed | Prop placement | site | - | a |",
+        );
         lines.insert(8, "| some_key | planned | Prop placement | site | - | b |");
         assert_eq!(
             err(&text_of(&lines)),
@@ -772,7 +795,10 @@ mod tests {
         // separator) is index 11 in the unmodified skeleton -- inserted
         // first so placement's own slot (index 7) is unaffected by it.
         lines.insert(11, "| some_key | planned | Prop placement | site | - | b |");
-        lines.insert(7, "| some_key | committed | Prop placement | site | - | a |");
+        lines.insert(
+            7,
+            "| some_key | committed | Prop placement | site | - | a |",
+        );
         let expected_line = lines
             .iter()
             .position(|l| l.contains("some_key | planned"))
@@ -866,8 +892,10 @@ mod tests {
     // -- check_rules_current: the pure AC2/AC3 comparison, planted ------
 
     fn mk_doc(rows_by_section: &[(&'static str, Vec<Row>)]) -> Doc {
-        let mut sections: BTreeMap<&'static str, Vec<Row>> =
-            super::KIND_SECTIONS.iter().map(|&k| (k, Vec::new())).collect();
+        let mut sections: BTreeMap<&'static str, Vec<Row>> = super::KIND_SECTIONS
+            .iter()
+            .map(|&k| (k, Vec::new()))
+            .collect();
         for (s, rows) in rows_by_section {
             sections.insert(*s, rows.clone());
         }
@@ -915,10 +943,7 @@ mod tests {
 
     #[test]
     fn check_rules_current_flags_a_row_under_the_wrong_section() {
-        let doc = mk_doc(&[(
-            "adjacency",
-            vec![row("some_key", Status::Committed)],
-        )]);
+        let doc = mk_doc(&[("adjacency", vec![row("some_key", Status::Committed)])]);
         let failures = check_rules_current(&doc, &[("some_key", "placement")]);
         assert_eq!(
             failures,
@@ -931,10 +956,7 @@ mod tests {
 
     #[test]
     fn check_rules_current_flags_an_orphan_committed_row() {
-        let doc = mk_doc(&[(
-            "placement",
-            vec![row("orphan_key", Status::Committed)],
-        )]);
+        let doc = mk_doc(&[("placement", vec![row("orphan_key", Status::Committed)])]);
         let failures = check_rules_current(&doc, &[]);
         assert_eq!(
             failures,
@@ -947,20 +969,14 @@ mod tests {
 
     #[test]
     fn check_rules_current_allows_a_planned_row_with_no_committed_key() {
-        let doc = mk_doc(&[(
-            "placement",
-            vec![row("future_key", Status::Planned)],
-        )]);
+        let doc = mk_doc(&[("placement", vec![row("future_key", Status::Planned)])]);
         let failures = check_rules_current(&doc, &[]);
         assert!(failures.is_empty());
     }
 
     #[test]
     fn check_rules_current_passes_when_everything_agrees() {
-        let doc = mk_doc(&[(
-            "placement",
-            vec![row("some_key", Status::Committed)],
-        )]);
+        let doc = mk_doc(&[("placement", vec![row("some_key", Status::Committed)])]);
         let failures = check_rules_current(&doc, &[("some_key", "placement")]);
         assert!(failures.is_empty());
     }
