@@ -331,6 +331,50 @@ impl StreetNetwork {
         Some((near_sum / near_count, far_sum / far_count))
     }
 
+    /// NFR8's block-size falloff, measured by what `target_block_size`
+    /// actually reads -- density, not distance from the peak (Tim's
+    /// direction, cycle 3: the median-distance-split above is noisy
+    /// enough, on its own, to occasionally invert; density bands are the
+    /// mechanism itself, not a proxy for it). Mean block area for blocks
+    /// sampled in the bottom third of `density_min..density_max` (the
+    /// periphery) against the top third (the core); blocks in the
+    /// middle third count toward neither. `None` if either band is
+    /// empty.
+    pub fn mean_area_by_density_band(
+        &self,
+        land_use: &LandUseMap,
+        cfg: &GenerationConfig,
+    ) -> Option<(i64, i64)> {
+        let span = (cfg.density_max - cfg.density_min).max(1) as i64;
+        let low_max = cfg.density_min as i64 + span / 3;
+        let high_min = cfg.density_min as i64 + span - span / 3;
+        let site = land_use.site();
+        let density_of = |b: &Block| -> i64 {
+            let cx = ((b.bounds.x0 + b.bounds.x1) / 2).clamp(site.x0, site.x1 - 1);
+            let cy = ((b.bounds.y0 + b.bounds.y1) / 2).clamp(site.y0, site.y1 - 1);
+            land_use
+                .at_world(cx, cy)
+                .expect("every in-site point has a land-use cell")
+                .density as i64
+        };
+        let (mut low_sum, mut low_count, mut high_sum, mut high_count) = (0i64, 0i64, 0i64, 0i64);
+        for b in &self.blocks {
+            let d = density_of(b);
+            let area = b.bounds.width() * b.bounds.height();
+            if d <= low_max {
+                low_sum += area;
+                low_count += 1;
+            } else if d >= high_min {
+                high_sum += area;
+                high_count += 1;
+            }
+        }
+        if low_count == 0 || high_count == 0 {
+            return None;
+        }
+        Some((low_sum / low_count, high_sum / high_count))
+    }
+
     /// Every pair of same-street crossings whose *net* gap (the distance
     /// between the two crossing streets' own near carriageway edges, not
     /// the raw distance between their centrelines) is under `min_gap`
@@ -546,8 +590,17 @@ impl StreetNetwork {
 /// [`StreetNetwork::detour_samples`]/`all_pair_samples`'s own shared
 /// sample width -- named so the same number is never a repeated literal
 /// across the golden, the invariants and the unit tests (Quentin's
-/// direction, cycle 2).
+/// direction, cycle 2). Used for the max/excess bounds, where a handful
+/// of pairs is enough to find the worst one.
 pub const DETOUR_SAMPLE_MAX_NODES: usize = 14;
+
+/// A separate, larger sample width for [`p99_ratio_pct`] alone (Tim's
+/// direction, cycle 3): 14 nodes is ~91 pairs, whose own 99th percentile
+/// is just its maximum under another name -- the same number as the
+/// tail bound, never a second, independent statistic. ~64 nodes is
+/// ~2,000 pairs, cheap (Dijkstra through the adjacency index is
+/// microseconds per source), enough for a real percentile to exist.
+pub const DETOUR_P99_SAMPLE_MAX_NODES: usize = 64;
 
 /// One [`StreetNetwork::detour_samples`] entry.
 #[derive(Debug, Clone, Copy)]
@@ -1146,10 +1199,14 @@ fn subdivide(
         return;
     }
 
-    let axis = if phys.width() >= phys.height() {
+    let preferred_axis = if phys.width() >= phys.height() {
         Axis::Vertical
     } else {
         Axis::Horizontal
+    };
+    let other_axis = match preferred_axis {
+        Axis::Vertical => Axis::Horizontal,
+        Axis::Horizontal => Axis::Vertical,
     };
     let next_lane_depth = if class == StreetClass::Lane {
         lane_depth + 1
@@ -1161,7 +1218,19 @@ fn subdivide(
     } else {
         street_depth
     };
-    if let Some((p1, p2, t1, t2, edge)) = try_split(phys, topo, axis, class, cfg, rng, junctions) {
+    // The preferred axis (the longer side) first; if `try_split` refuses
+    // it (no position clean against the junction registry, or no room
+    // once margins are subtracted), try the other axis before giving up
+    // (Tim's direction, cycle 2) -- a region-forced split in particular
+    // must not silently fail on its own first-choice axis and strand a
+    // small region that the other axis could have carved a street
+    // around.
+    let split = try_split(phys, topo, preferred_axis, class, cfg, rng, junctions)
+        .map(|r| (preferred_axis, r))
+        .or_else(|| {
+            try_split(phys, topo, other_axis, class, cfg, rng, junctions).map(|r| (other_axis, r))
+        });
+    if let Some((_, (p1, p2, t1, t2, edge))) = split {
         segments.push(edge);
         subdivide(
             p1,
@@ -1701,55 +1770,13 @@ mod tests {
         assert_eq!(a.blocks, b.blocks);
     }
 
-    #[test]
-    fn the_street_graph_is_fully_connected() {
-        let c = cfg();
-        for seed in 0u64..12 {
-            let (_, net) = network(seed, &c);
-            let reachable = net.reachable_from_first_node().unwrap();
-            assert_eq!(
-                reachable.len(),
-                net.nodes().len(),
-                "seed {seed}: only {} of {} nodes reachable",
-                reachable.len(),
-                net.nodes().len()
-            );
-        }
-    }
-
-    #[test]
-    fn no_land_use_region_is_stranded() {
-        let c = cfg();
-        for seed in 0u64..12 {
-            let (lu, net) = network(seed, &c);
-            let stranded = net.stranded_regions(&lu);
-            assert!(
-                stranded.is_empty(),
-                "seed {seed}: stranded regions {stranded:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn there_are_no_dead_ends_away_from_the_site_boundary() {
-        let c = cfg();
-        for seed in 0u64..12 {
-            let (_, net) = network(seed, &c);
-            let dead_ends = net.dead_end_nodes();
-            assert!(dead_ends.is_empty(), "seed {seed}: dead ends {dead_ends:?}");
-        }
-    }
-
-    /// True iff `a` and `b` share only a boundary (touching, not
-    /// interior-overlapping) -- the expected relationship between a block
-    /// and the street immediately beside it. Still used by [`build_graph`]
-    /// unit tests below.
-    #[allow(dead_code)]
-    fn rects_are_adjacent_only(a: Rect, b: Rect) -> bool {
-        let overlap_x = a.x0.max(b.x0) < a.x1.min(b.x1);
-        let overlap_y = a.y0.max(b.y0) < a.y1.min(b.y1);
-        !(overlap_x && overlap_y)
-    }
+    // `the_street_graph_is_fully_connected`, `no_land_use_region_is_
+    // stranded` and `there_are_no_dead_ends_away_from_the_site_boundary`
+    // (each a 0..12 fixed-seed sweep) removed, cycle 3 (Quentin's
+    // direction): each duplicated an `inv_generation_*` arbitrary-seed
+    // proptest in `server/sim/tests/invariants.rs` exactly.
+    // `rects_are_adjacent_only`, their own last remaining caller,
+    // removed with them.
 
     // Every fixed-seed sweep that used to live here (block overlap, min
     // depth, arterial edge reach, boundary exit, peripheral block size,
@@ -2024,5 +2051,228 @@ mod tests {
             "with no street anywhere, every region must be reported stranded"
         );
         assert!(!stranded.is_empty());
+    }
+
+    // Quentin's direction, cycle 3: `close_same_street_junction_pairs`
+    // must itself be seen to both fire and stay quiet -- "the most
+    // dangerous kind" of checker is one that can only ever return
+    // `vec![]`, since a broken always-empty implementation is
+    // indistinguishable from a correct one without a fixture proving
+    // otherwise.
+
+    #[test]
+    fn close_same_street_junction_pairs_reports_two_close_t_junctions_on_one_street() {
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 500,
+            y1: 500,
+        };
+        let edges = vec![
+            horizontal(200, 0, 500),
+            vertical(100, 150, 200),
+            vertical(110, 150, 200),
+        ];
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
+        let close = net.close_same_street_junction_pairs(16);
+        assert!(
+            close.contains(&((100, 200), (110, 200))),
+            "two T-junctions 10 cells apart on the same street were not reported: {close:?}"
+        );
+    }
+
+    #[test]
+    fn close_same_street_junction_pairs_does_not_report_a_true_coincident_four_way() {
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 500,
+            y1: 500,
+        };
+        let edges = vec![
+            horizontal(200, 0, 500),
+            vertical(100, 150, 200),
+            vertical(100, 200, 250),
+        ];
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
+        let close = net.close_same_street_junction_pairs(16);
+        assert!(
+            close.is_empty(),
+            "a single coincident crossing must never be reported as close to itself: {close:?}"
+        );
+    }
+
+    #[test]
+    fn close_same_street_junction_pairs_does_not_report_a_pair_just_over_the_separation() {
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 500,
+            y1: 500,
+        };
+        // Net gap = (150 - lane_half=2) - (100 + lane_half=2) = 46,
+        // comfortably over a min_gap of 16.
+        let edges = vec![
+            horizontal(200, 0, 500),
+            vertical(100, 150, 200),
+            vertical(150, 150, 200),
+        ];
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
+        let close = net.close_same_street_junction_pairs(16);
+        assert!(
+            close.is_empty(),
+            "a pair with a real net gap of 46 cells must not be reported against a 16-cell minimum: {close:?}"
+        );
+    }
+
+    // Quentin's direction, cycle 3: `mean_area_split_by_peak_distance`/
+    // `mean_area_by_density_band` need a fixture proving they can
+    // report "not larger" -- a uniform grid whose blocks ignore density
+    // entirely.
+
+    #[test]
+    fn mean_area_by_density_band_reports_parity_for_a_uniform_grid() {
+        // A tiny, single-coarse-cell-per-quadrant land_use field over a
+        // matching 100x100 site, so every quadrant's own sample point
+        // falls in a *different* coarse cell -- irrelevant here, since
+        // the point of this fixture is that every block is identically
+        // sized (2500 cells) regardless of which density band its own
+        // sample lands in (a uniform grid the way Artie's own AC rules
+        // out, block size that does not read density at all).
+        let mut small_cfg = cfg();
+        small_cfg.site_extent_cells = 100;
+        small_cfg.coarse_cell_size_cells = 50;
+        let lu = land_use::run(1, small_cfg.site(), &small_cfg).unwrap();
+
+        let site = small_cfg.site();
+        let edges = vec![vertical(50, 0, 100), horizontal(50, 0, 100)];
+        let blocks = vec![
+            Block {
+                bounds: Rect {
+                    x0: 0,
+                    y0: 0,
+                    x1: 50,
+                    y1: 50,
+                },
+            },
+            Block {
+                bounds: Rect {
+                    x0: 50,
+                    y0: 0,
+                    x1: 100,
+                    y1: 50,
+                },
+            },
+            Block {
+                bounds: Rect {
+                    x0: 0,
+                    y0: 50,
+                    x1: 50,
+                    y1: 100,
+                },
+            },
+            Block {
+                bounds: Rect {
+                    x0: 50,
+                    y0: 50,
+                    x1: 100,
+                    y1: 100,
+                },
+            },
+        ];
+        let net = StreetNetwork::test_fixture(site, edges, blocks);
+
+        let Some((low, high)) = net.mean_area_by_density_band(&lu, &small_cfg) else {
+            // Every block landed in the middle band (neither the bottom
+            // nor top third) -- a legitimate `None`, not a test
+            // failure; the uniform-size property still held regardless.
+            assert!(
+                net.blocks()
+                    .iter()
+                    .all(|b| b.bounds.width() * b.bounds.height() == 2500)
+            );
+            return;
+        };
+        assert_eq!(
+            low, high,
+            "a uniform grid's own blocks must report equal means in both density bands, got {low} vs {high}"
+        );
+    }
+
+    // Quentin's direction, cycle 3: `p99_ratio_pct`'s own nearest-rank
+    // arithmetic needs direct unit tests -- empty, one sample, exactly
+    // 100 samples, 101 samples.
+
+    fn sample_with_ratio(pct: i64) -> DetourSample {
+        DetourSample {
+            a: (0, 0),
+            b: (pct as i32, 0),
+            network: pct,
+            manhattan: 100,
+        }
+    }
+
+    #[test]
+    fn p99_ratio_pct_of_an_empty_slice_is_zero() {
+        assert_eq!(p99_ratio_pct(&[]), 0);
+    }
+
+    #[test]
+    fn p99_ratio_pct_of_one_sample_is_that_sample() {
+        let samples = [sample_with_ratio(137)];
+        assert_eq!(p99_ratio_pct(&samples), 137);
+    }
+
+    #[test]
+    fn p99_ratio_pct_of_exactly_100_samples_is_the_99th() {
+        // Ratios 100, 101, ..., 199 (100 samples): the 99th percentile
+        // by nearest-rank is index ceil(100*0.99)-1 = 98, i.e. the
+        // second-highest value, 198 -- not the maximum (199).
+        let samples: Vec<DetourSample> = (100..200).map(sample_with_ratio).collect();
+        assert_eq!(p99_ratio_pct(&samples), 198);
+    }
+
+    // Quentin's direction, cycle 3: `target_block_size` (and the
+    // interpolated depth ceiling) is the mechanism AC4/NFR8 actually
+    // stand on -- provable directly, not only inferred from the
+    // generator's own output.
+
+    #[test]
+    fn target_block_size_is_monotone_non_increasing_in_density() {
+        let c = cfg();
+        let mut prev = target_block_size(c.density_min, &c);
+        for d in (c.density_min + 1)..=c.density_max {
+            let cur = target_block_size(d, &c);
+            assert!(
+                cur <= prev,
+                "target_block_size({d}) = {cur} is greater than target_block_size({}) = {prev}",
+                d - 1
+            );
+            prev = cur;
+        }
+    }
+
+    #[test]
+    fn target_block_depth_is_monotone_non_increasing_in_density() {
+        let c = cfg();
+        let mut prev = target_block_depth(c.density_min, &c);
+        for d in (c.density_min + 1)..=c.density_max {
+            let cur = target_block_depth(d, &c);
+            assert!(
+                cur <= prev,
+                "target_block_depth({d}) = {cur} is greater than target_block_depth({}) = {prev}",
+                d - 1
+            );
+            prev = cur;
+        }
+    }
+
+    #[test]
+    fn p99_ratio_pct_of_101_samples_is_the_99th() {
+        // 101 samples: rank = ceil(101*0.99)-1 = ceil(99.99)-1 = 99,
+        // the 100th-smallest of 101 values (index 99), one below the
+        // maximum.
+        let samples: Vec<DetourSample> = (100..201).map(sample_with_ratio).collect();
+        assert_eq!(p99_ratio_pct(&samples), 199);
     }
 }

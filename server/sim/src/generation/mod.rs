@@ -280,6 +280,20 @@ impl GenerationConfig {
                 cfg.max_block_depth_min_cells, cfg.max_block_depth_max_cells
             ));
         }
+        let detour_excess_ceiling =
+            2 * cfg.block_size_max_cells as i64 + 2 * cfg.arterial_width_cells as i64;
+        if cfg.max_detour_excess_cells as i64 > detour_excess_ceiling {
+            return Err(format!(
+                "GenerationConfig: max_detour_excess_cells ({}) is greater than the structural ceiling 2*block_size_max_cells + 2*arterial_width_cells ({detour_excess_ceiling}) -- the worst a rectilinear network should cost a route is going around one largest block",
+                cfg.max_detour_excess_cells
+            ));
+        }
+        if cfg.p99_detour_percent > cfg.max_detour_percent {
+            return Err(format!(
+                "GenerationConfig: p99_detour_percent ({}) is greater than max_detour_percent ({}) -- the typical case cannot be worse than the tail ceiling",
+                cfg.p99_detour_percent, cfg.max_detour_percent
+            ));
+        }
         if cfg.arterial_count_ns_min > cfg.arterial_count_ns_max {
             return Err(format!(
                 "GenerationConfig: arterial_count_ns_min ({}) is greater than arterial_count_ns_max ({})",
@@ -542,6 +556,22 @@ mod tests {
         let balance = with_override("generation.streets.max_block_depth_min_cells", 200);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
         assert!(err.contains("max_block_depth_min_cells"));
+    }
+
+    #[test]
+    fn from_balance_rejects_p99_detour_percent_over_max_detour_percent() {
+        let balance = with_override("generation.streets.p99_detour_percent", 500);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.contains("p99_detour_percent"));
+    }
+
+    #[test]
+    fn from_balance_rejects_max_detour_excess_cells_over_the_structural_ceiling() {
+        // fixture: block_size_max_cells=96, arterial_width_cells=12 ->
+        // ceiling = 2*96 + 2*12 = 216.
+        let balance = with_override("generation.streets.max_detour_excess_cells", 217);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.contains("max_detour_excess_cells"));
     }
 
     #[test]

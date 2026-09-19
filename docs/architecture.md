@@ -1109,15 +1109,21 @@ config error. Pass 1 (`land_use::run`) itself also returns `Result`,
 refusing (never silently truncating) a site whose extent is not a whole
 multiple of the coarse cell size.
 
-Pass 2's street graph keeps two junctions on the same street line either
-coincident (a true 4-way) or separated by `generation.streets.
-junction_min_separation_cells`, measured against the real net gap
-between the two streets' own carriageway edges, not their centrelines --
-never merely reduced: `resolve_junction_position` refuses any split
-that cannot land clean against the registry, and the caller keeps the
-rect as a leaf block rather than create a known-defective junction, so
-by induction no split this pass ever creates one (Tim's direction,
-cycle 2).
+Pass 2's own junction registry enforces one specific case: where two
+*different* streets each cross the same third street (a staggered
+crossing), their own crossing points are either coincident (a true
+4-way) or at least `generation.streets.junction_min_separation_cells`
+apart, centreline to centreline (`resolve_junction_position`'s own doc
+comment argues why this holds for every split this pass ever creates).
+This is narrower than "every pair of junctions on one street": two
+junctions from an ordinary sequential block split are governed by
+`min_block_depth_cells` instead (`try_split` never places a split
+closer than that to either end of its own parent rect), a different,
+already-enforced margin, not this registry.
+`StreetNetwork::close_same_street_junction_pairs` checks the net gap
+(carriageway edge to carriageway edge) between every same-line pair, of
+either kind, against `min_block_depth_cells` -- asserted empty over
+arbitrary seeds.
 
 Land use and the street network are independently generated fields (no
 land-use-boundary snapping) -- a block's own land use is decided once,

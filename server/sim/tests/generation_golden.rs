@@ -124,7 +124,8 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
     let node_count = net.nodes().len();
     let samples = net.detour_samples(DETOUR_SAMPLE_MAX_NODES);
     let max_detour_pct = samples.iter().map(|s| s.ratio_pct()).max().unwrap_or(0);
-    let p99_detour_pct = streets::p99_ratio_pct(&samples);
+    let p99_samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
+    let p99_detour_pct = streets::p99_ratio_pct(&p99_samples);
 
     // Real ring averages (innermost, mid, outermost of 3), from the
     // field's own density peak -- not a fixed "centre"/"corner" sample,

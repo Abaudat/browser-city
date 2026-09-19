@@ -433,6 +433,34 @@ fn leaves_touch(a: Rect, b: Rect) -> bool {
     touch_vertical || touch_horizontal
 }
 
+/// [`leaves_touch`]'s own stronger relation: also true for two leaves
+/// that share only a corner. Institutional pockets must stay clear of
+/// each other by this relation ("no two components touching, including
+/// diagonally", Artie's direction, cycle 3); every other land use's own
+/// adjacency rule stays the weaker, edge-only [`leaves_touch`].
+fn leaves_touch_including_diagonal(a: Rect, b: Rect) -> bool {
+    a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1
+}
+
+/// Whether leaf `idx` touches (edge or corner) any leaf already assigned
+/// [`LandUse::Institutional`] other than `exclude` (its own pocket's own
+/// seed, when checking a pocket's second leaf; `idx` itself otherwise).
+/// `O(leaves.len())` -- institutional leaves are a small minority of a
+/// small total, and this only ever runs while assigning them.
+fn touches_institutional_other_than(
+    idx: usize,
+    exclude: usize,
+    leaves: &[Rect],
+    assigned: &[Option<LandUse>],
+) -> bool {
+    (0..leaves.len()).any(|j| {
+        j != idx
+            && j != exclude
+            && assigned[j] == Some(LandUse::Institutional)
+            && leaves_touch_including_diagonal(leaves[idx], leaves[j])
+    })
+}
+
 fn leaf_adjacency(leaves: &[Rect]) -> Vec<Vec<usize>> {
     let n = leaves.len();
     let mut adjacency = vec![Vec::new(); n];
@@ -453,9 +481,21 @@ fn nearest_leaf_to(leaves: &[Rect], tx: i32, ty: i32) -> usize {
         .expect("leaves is never empty: at least one leaf always exists")
 }
 
+/// Institutional's own district-count share alone rarely produces
+/// enough leaves for [`assign_institutional`]'s own "at least three
+/// pockets" bar (Artie's direction, cycle 3): a raw leaf count around
+/// 20 at this generator's committed leaf sizes, at a 10% share, is only
+/// ever 2 leaves -- one pocket, never three. A floor, scaled down for a
+/// small total rather than a fixed number that could starve every other
+/// use on one: `min(6, total / 3)`.
+fn institutional_leaf_floor(total: usize) -> usize {
+    6.min(total / 3)
+}
+
 /// `district_seed_count` targets, one per [`LandUse::ALL`] entry in the
 /// same order, computed from `cfg`'s own district-count shares
-/// (`round(total * share / 100)`, minimum 1 once `total >= 4`);
+/// (`round(total * share / 100)`, minimum 1 once `total >= 4`,
+/// institutional additionally floored by [`institutional_leaf_floor`]);
 /// residential (`ALL[0]`) always takes whatever is left, so the four
 /// counts sum to exactly `total`.
 fn target_counts(total: usize, cfg: &GenerationConfig) -> [usize; 4] {
@@ -468,7 +508,10 @@ fn target_counts(total: usize, cfg: &GenerationConfig) -> [usize; 4] {
     let mut counts = [0usize; 4];
     let mut assigned = 0usize;
     for i in 1..4 {
-        let want = ((total as i64 * shares[i] as i64 + 50) / 100) as usize;
+        let mut want = ((total as i64 * shares[i] as i64 + 50) / 100) as usize;
+        if i == 3 {
+            want = want.max(institutional_leaf_floor(total));
+        }
         // Never claim more than leaves room for one of every other use
         // (including residential) still to get at least one district.
         let reserve_for_others = 4 - i;
@@ -637,64 +680,168 @@ fn grow_contiguous_avoiding(
 /// hall do not share a campus", never one slab.
 const INSTITUTIONAL_POCKET_MAX_LEAVES: usize = 2;
 
+/// No leaf over this own area (coarse cells) is ever taken for
+/// institutional -- Artie's direction, cycle 3: "no component above
+/// roughly 2.5% of the site (about 6,500 cells -- two minimum leaves)".
+/// A single leaf at `land_use_max_leaf_cells` alone can already exceed
+/// that on its own, so "smallest available" is not enough by itself;
+/// this is the structural bound that makes the 2.5% component cap hold
+/// regardless of which leaves happen to still be unassigned by the time
+/// institutional's own turn comes. `min * (min + 1)`, not `min * min`:
+/// measured at 3,000 seeds, the exact-minimum square left too few
+/// eligible leaves (19.7% of seeds under three pockets); one step
+/// looser keeps 99%+ of seeds at three or more while the worst measured
+/// component still lands under 2.5% (2.3%).
+fn institutional_max_leaf_area(cfg: &GenerationConfig) -> i64 {
+    let min = cfg.land_use_min_leaf_cells as i64;
+    min * (min + 1)
+}
+
+/// The minimum number of institutional pockets a site must reach before
+/// [`assign_institutional`] stops preferring small, eligible leaves and
+/// falls back to relaxing the area cap just enough to place one more
+/// (Artie's direction, cycle 3: "at least three institutional
+/// components per site" is the floor this AC needs, never merely the
+/// typical case).
+const INSTITUTIONAL_MIN_POCKETS: usize = 3;
+
+/// One [`assign_institutional`] pocket-seed search, `max_area` the only
+/// difference between the strict and relaxed passes.
+fn institutional_seed_candidate(
+    leaves: &[Rect],
+    adjacency: &[Vec<usize>],
+    assigned: &[Option<LandUse>],
+    max_area: i64,
+) -> Option<usize> {
+    (0..leaves.len())
+        .filter(|&i| assigned[i].is_none())
+        .filter(|&i| leaves[i].width() * leaves[i].height() <= max_area)
+        .filter(|&i| !touches_institutional_other_than(i, usize::MAX, leaves, assigned))
+        .min_by_key(|&i| {
+            let area = leaves[i].width() * leaves[i].height();
+            let mut distinct = BTreeSet::new();
+            for &n in &adjacency[i] {
+                if let Some(u) = assigned[n] {
+                    distinct.insert(u);
+                }
+            }
+            (area, std::cmp::Reverse(distinct.len()), i)
+        })
+}
+
+/// Grows one pocket from `seed`, up to [`INSTITUTIONAL_POCKET_MAX_LEAVES`]
+/// total, each further leaf under `max_area` and never touching a
+/// *different* pocket. Returns how many leaves it placed (at least 1).
+fn institutional_grow_pocket(
+    leaves: &[Rect],
+    adjacency: &[Vec<usize>],
+    assigned: &mut [Option<LandUse>],
+    seed: usize,
+    max_area: i64,
+    max_pocket_leaves: usize,
+    remaining: &mut usize,
+) -> usize {
+    assigned[seed] = Some(LandUse::Institutional);
+    *remaining -= 1;
+    let mut pocket_size = 1;
+    while pocket_size < max_pocket_leaves && *remaining > 0 {
+        let extra = adjacency[seed]
+            .iter()
+            .copied()
+            .filter(|&i| assigned[i].is_none())
+            .filter(|&i| leaves[i].width() * leaves[i].height() <= max_area)
+            .filter(|&i| !touches_institutional_other_than(i, seed, leaves, assigned))
+            .min_by_key(|&i| (leaves[i].width() * leaves[i].height(), i));
+        let Some(extra) = extra else { break };
+        assigned[extra] = Some(LandUse::Institutional);
+        *remaining -= 1;
+        pocket_size += 1;
+    }
+    pocket_size
+}
+
 /// Assigns `target` institutional leaves as several small, mutually
 /// non-adjacent pockets (never one contiguous slab, Artie's direction,
-/// cycle 2), each at most [`INSTITUTIONAL_POCKET_MAX_LEAVES`] leaves: a
-/// new pocket's own seed maximises the count of *distinct* already-
-/// assigned uses among its own neighbours (a proxy for "sits where
-/// districts meet", the busiest internal boundaries -- streets 2 lays
-/// arterials along major land-use boundaries, so this is what puts
-/// institutional beside them without pass 1 knowing a street
-/// coordinate) among leaves that do not themselves touch an existing
-/// institutional leaf, tie-broken toward the smallest leaf ("small
-/// districts, not 10x10 slabs"); a pocket's own second leaf, if the cap
-/// allows one, is simply the first unassigned neighbour of the seed.
+/// cycle 2), each at most [`INSTITUTIONAL_POCKET_MAX_LEAVES`] leaves and
+/// each leaf under [`institutional_max_leaf_area`]: a new pocket's own
+/// seed picks the smallest eligible leaf first ("small districts, not
+/// 10x10 slabs" -- Artie's direction, cycle 3: ranking by "busiest
+/// boundary" first and size only as a tie-break was picking the
+/// *biggest* leaves wedged between two other districts, exactly the
+/// campus-sized slab this pass exists to avoid), tie-broken toward the
+/// leaf with the most distinct already-assigned neighbouring uses (a
+/// proxy for "sits where districts meet" -- streets 2 lays arterials
+/// along major land-use boundaries, so this is what puts institutional
+/// beside them without pass 1 knowing a street coordinate); a pocket's
+/// own second leaf, if the cap allows one, is the smallest eligible
+/// neighbour of the seed. Every candidate, seed or second leaf, is
+/// filtered against every *other* already-placed institutional leaf by
+/// [`leaves_touch_including_diagonal`] (Artie's direction, cycle 3: "no
+/// two components touching, including diagonally") -- checked for every
+/// leaf a pocket takes, not only its own seed, since a pocket's own
+/// second leaf sitting next to a *different* pocket would otherwise fuse
+/// the two despite each seed choice individually respecting
+/// non-adjacency.
+///
+/// If the strict (small-leaf) pass alone would leave the site under
+/// [`INSTITUTIONAL_MIN_POCKETS`] pockets, a second pass with no area cap
+/// (still respecting non-adjacency) places one more pocket at a time
+/// until the floor is met or no eligible leaf remains at all -- a
+/// handful of seeds have too few genuinely small, mutually non-adjacent
+/// leaves for the strict pass alone to reach three pockets, and "at
+/// least three" is a harder requirement than "small" when the two are
+/// ever in tension.
+///
 /// "Each pocket touches an arterial" is Artie's own further ask, and is
 /// not enforced here: pass 1 authors the land-use field before pass 2
 /// lays a single street, so nothing in this module can know where an
 /// arterial will fall (FR110's own ordering) -- a genuine architectural
-/// boundary, not a shortcut.
+/// boundary, not a shortcut (Artie's direction, cycle 3: withdrawn as a
+/// requirement for exactly this reason).
 fn assign_institutional(
     leaves: &[Rect],
     adjacency: &[Vec<usize>],
     assigned: &mut [Option<LandUse>],
     target: usize,
+    cfg: &GenerationConfig,
 ) {
+    let max_area = institutional_max_leaf_area(cfg);
     let mut remaining = target;
+    let mut pockets = 0usize;
     while remaining > 0 {
-        let seed = (0..leaves.len())
-            .filter(|&i| assigned[i].is_none())
-            .filter(|&i| !leaf_touches_use(i, adjacency, assigned, LandUse::Institutional))
-            .max_by_key(|&i| {
-                let mut distinct = BTreeSet::new();
-                for &n in &adjacency[i] {
-                    if let Some(u) = assigned[n] {
-                        distinct.insert(u);
-                    }
-                }
-                let area = leaves[i].width() * leaves[i].height();
-                (
-                    distinct.len(),
-                    std::cmp::Reverse(area),
-                    std::cmp::Reverse(i),
-                )
-            });
-        let Some(seed) = seed else { break };
-        assigned[seed] = Some(LandUse::Institutional);
-        remaining -= 1;
-
-        let mut pocket_size = 1;
-        while pocket_size < INSTITUTIONAL_POCKET_MAX_LEAVES && remaining > 0 {
-            let extra = adjacency[seed]
-                .iter()
-                .copied()
-                .filter(|&i| assigned[i].is_none())
-                .min_by_key(|&i| (leaves[i].width() * leaves[i].height(), i));
-            let Some(extra) = extra else { break };
-            assigned[extra] = Some(LandUse::Institutional);
-            remaining -= 1;
-            pocket_size += 1;
-        }
+        let Some(seed) = institutional_seed_candidate(leaves, adjacency, assigned, max_area) else {
+            break;
+        };
+        institutional_grow_pocket(
+            leaves,
+            adjacency,
+            assigned,
+            seed,
+            max_area,
+            INSTITUTIONAL_POCKET_MAX_LEAVES,
+            &mut remaining,
+        );
+        pockets += 1;
+    }
+    // The fallback pass caps each pocket at a single leaf (never the
+    // usual two): a relaxed-cap seed can already be close to the area
+    // ceiling on its own, and a second relaxed-cap leaf next to it can
+    // push a single component well past it (measured: two near-maximum
+    // leaves reached 6.7% of the site before this cap existed).
+    while pockets < INSTITUTIONAL_MIN_POCKETS && remaining > 0 {
+        let Some(seed) = institutional_seed_candidate(leaves, adjacency, assigned, i64::MAX) else {
+            break;
+        };
+        institutional_grow_pocket(
+            leaves,
+            adjacency,
+            assigned,
+            seed,
+            i64::MAX,
+            1,
+            &mut remaining,
+        );
+        pockets += 1;
     }
 }
 
@@ -783,7 +930,7 @@ fn assign_uses(
         );
     }
 
-    assign_institutional(leaves, &adjacency, &mut assigned, counts[3]);
+    assign_institutional(leaves, &adjacency, &mut assigned, counts[3], cfg);
 
     assigned
         .into_iter()

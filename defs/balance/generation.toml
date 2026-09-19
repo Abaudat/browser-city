@@ -29,8 +29,15 @@ max = 2048
 # coarse cells on both axes -- the guaranteed lower bound on a region's
 # own area (`land_use::guaranteed_min_region_cells`), since a leaf can
 # only grow when merged with an adjacent same-use leaf, never shrink.
+# Lowered from 4 (Artie's direction, cycle 3): institutional needs
+# several small, non-adjacent pockets under roughly 2.5% of the site
+# each, which the raw leaf pool at the old 4/10 min/max was too coarse
+# to reliably supply (a single leaf at the old max alone was already
+# ~10% of the site) -- finer land-use grain overall is what makes a
+# small pocket a small leaf, rather than the smallest of a handful of
+# large ones.
 key = "generation.land_use.min_leaf_cells"
-value = 4
+value = 3
 min = 1
 max = 64
 
@@ -41,7 +48,7 @@ max = 64
 # legally split in two while keeping both children at least `min_leaf_
 # cells`.
 key = "generation.land_use.max_leaf_cells"
-value = 10
+value = 6
 min = 2
 max = 128
 
@@ -270,11 +277,14 @@ min = 0
 max = 16
 
 [[balance]]
-# Two junctions on the same street must either coincide (a true 4-way) or
-# sit at least this many world cells apart -- never a near-miss crossroad
-# a cell or two off (Tim's direction, cycle 1). At least the widest
-# street's own width (arterial_width_cells) plus min_block_depth_cells,
-# so a snap or push never itself creates an unusably shallow block.
+# Where two different streets each cross the same third street, their
+# own crossings must either coincide (a true 4-way) or sit at least this
+# many world cells apart, centreline to centreline -- never a near-miss
+# staggered crossing a cell or two off (Tim's direction, cycle 1). Not a
+# bound on every pair of junctions on one street: an ordinary sequential
+# block split is governed by min_block_depth_cells instead (Tim's
+# direction, cycle 3 -- the two are different invariants, this key only
+# ever the narrower one).
 key = "generation.streets.junction_min_separation_cells"
 value = 28
 min = 1
@@ -283,24 +293,28 @@ max = 256
 [[balance]]
 # Pairs at least this far apart (world cells, Manhattan) are where
 # `max_detour_percent`'s ratio applies -- closer pairs are bounded by
-# `max_detour_excess_cells` instead. Re-measure by running `server/sim/
-# tests/invariants.rs`'s `inv_generation_detour_ratio_bounded`/`inv_
-# generation_p99_detour_ratio_bounded` at a high PROPTEST_CASES whenever
-# the street algorithm changes.
+# `max_detour_excess_cells` instead. 256 (half the site) so the pairs a
+# ratio actually says something about are site-crossing ones, not
+# adjacent-block hops a ratio exaggerates (Quentin's direction, cycle 3:
+# at the old 128, the ratio bound was redundant with the excess bound --
+# 320 cells / 128 alone already permits 350%). Re-measure by running
+# `server/sim/tests/invariants.rs`'s `inv_generation_detour_ratio_
+# bounded`/`inv_generation_p99_detour_ratio_bounded` at a high
+# PROPTEST_CASES whenever the street algorithm changes.
 key = "generation.streets.detour_long_pair_cells"
-value = 128
+value = 256
 min = 1
 max = 2048
 
 [[balance]]
 # The Manhattan-fitness ratio ceiling 3.11's pathfinding estimator relies
 # on, for pairs at least `detour_long_pair_cells` apart. Measured worst
-# case, this generator's other committed values, over 15,000 seeds:
-# 246%. 280 is that plus real margin -- re-measure the same way (see
+# case, this generator's other committed values, over 10,000 seeds:
+# 173%. 200 is that plus real margin -- re-measure the same way (see
 # detour_long_pair_cells's own comment) whenever the street algorithm
 # changes.
 key = "generation.streets.max_detour_percent"
-value = 280
+value = 200
 min = 100
 max = 500
 
@@ -308,19 +322,28 @@ max = 500
 # The additive Manhattan-fitness ceiling, in world cells, applied to
 # every sampled pair regardless of distance -- what a short hop actually
 # pays for, where a ratio is dominated by a single jitter-driven jog.
-# Measured worst case, same scan: 272 cells; 320 is that plus margin.
+# Structurally bounded, not just measured (Quentin's direction, cycle
+# 3): the worst a rectilinear network should cost a route is going
+# around one largest block, so `from_balance` refuses a value over
+# `2 * block_size_max_cells + 2 * arterial_width_cells`. Measured worst
+# case, same scan: 258 cells; 280 is both that plus margin and exactly
+# that structural ceiling at this generator's other committed values.
 key = "generation.streets.max_detour_excess_cells"
-value = 320
+value = 280
 min = 1
 max = 2048
 
 [[balance]]
 # The 99th-percentile detour ratio, over one city's own sampled pairs,
 # must not exceed this -- `max_detour_percent` alone only bounds the
-# single worst pair. Measured worst case, same scan (30,000 seeds): 442%;
-# 480 is that plus margin.
+# single worst pair. Sampled separately, over more pairs than the max/
+# excess bounds (DETOUR_P99_SAMPLE_MAX_NODES): a percentile over too few
+# pairs is just the maximum under another name (Tim's direction, cycle
+# 3). Measured worst case, same scan, 10,000 seeds: 175%; 200 is that
+# plus margin. Never above max_detour_percent (`from_balance` refuses
+# that).
 key = "generation.streets.p99_detour_percent"
-value = 480
+value = 200
 min = 100
 max = 500
 
