@@ -215,7 +215,15 @@ mod tests {
         let text = "## placement\n\
              | key | status | pass | intent |\n\
              | --- | --- | --- | --- |\n\
-             | a_future_rule | planned | prop placement | not built yet |\n";
+             | a_future_rule | planned | prop placement | not built yet |\n\
+             \n\
+             ## distribution\n| key | status | pass | intent |\n| --- | --- | --- | --- |\n\
+             \n\
+             ## coherence\n| key | status | pass | intent |\n| --- | --- | --- | --- |\n\
+             \n\
+             ## adjacency\n| key | status | pass | intent |\n| --- | --- | --- | --- |\n\
+             \n\
+             ## requirement\n| key | status | pass | intent |\n| --- | --- | --- | --- |\n";
         let doc = parse(Path::new("docs/generation.md"), text);
         assert_eq!(doc["placement"][0].status, Status::Planned);
     }
