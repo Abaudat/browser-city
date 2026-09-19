@@ -1071,6 +1071,13 @@ own test binary, then runs it, exit `0` only when every case passed,
 excluded from `defs-build`'s own parse, though still folded into
 `defs_version` like every other tracked path here.
 
+`docs/generation.md` (story 3.1, FR111) is the home of rule and
+generation-parameter *intent*, keyed by rule key / balance key, never a
+value -- never under `defs/`, so a prose edit never bumps `defs_version`.
+`server/sim/tests/rule_examples.rs` fails when a committed rule key has
+no row under its own kind's section there, or when a committed key's row
+is still marked `planned`.
+
 ## Boot budget
 
 Boot milestones are marked only through `client/src/boot/boot-marks.ts`; NFR1

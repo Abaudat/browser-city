@@ -20,6 +20,7 @@ docs/               what the game is
   requirements.md     every FR and NFR, one line each — the only place a requirement is stated
   gdd.md              the game design: pillars, mechanics, progression, art and audio
   ux.md               the UX specification: affordance, carrying, container views, first session
+  generation.md       the city generator's own rule set: passes, parameters, rules by kind
 
 agentic-team/       who builds it
   high-level-agentic-flow.mmd   the flowchart the orchestrator executes

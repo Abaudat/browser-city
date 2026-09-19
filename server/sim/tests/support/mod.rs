@@ -13,6 +13,12 @@ use sim::rules::{RuleDef, RuleKind, RuleSet, RuleSite, TagId, Violation};
 #[allow(dead_code)]
 pub mod grid;
 
+// Story 3.1: `docs/generation.md`'s own five-kind-section table reader --
+// used only by `rule_examples.rs`, `#[allow(dead_code)]` throughout like
+// every other item here for the test binaries that do not use it.
+#[allow(dead_code)]
+pub mod generation_doc;
+
 /// Story 2.11: every `tests/*.rs` call site moved from `evaluate(&rules,
 /// ..)` to this one helper (Tim's direction -- "mechanical, no assertion
 /// changes") once [`sim::rules::evaluate`] started taking a [`RuleSet`]

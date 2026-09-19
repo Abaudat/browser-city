@@ -84,6 +84,19 @@ fn primary_tag(kind: &RuleKind) -> sim::rules::TagId {
     }
 }
 
+/// Story 3.1 (AC3): the `docs/generation.md` section a rule's own key
+/// must sit under -- exhaustive (no `_ =>` arm), same discipline as
+/// `primary_tag`'s own match: a sixth kind is a compile error here too.
+fn generation_doc_section(kind: &RuleKind) -> &'static str {
+    match kind {
+        RuleKind::Placement { .. } => "placement",
+        RuleKind::Distribution { .. } => "distribution",
+        RuleKind::Coherence { .. } => "coherence",
+        RuleKind::Adjacency { .. } => "adjacency",
+        RuleKind::Requirement { .. } => "requirement",
+    }
+}
+
 fn render(rule_set: &RuleSet<'static>, v: Violation) -> String {
     let key = rule_set.key_of(v.rule_id).unwrap_or("<unknown-rule>");
     Defect {
@@ -148,6 +161,79 @@ fn every_committed_rule_has_at_least_one_pass_and_one_fail_example() {
     assert!(
         orphans.is_empty(),
         "a case's 'rules:' header names key(s) that are no longer committed: {orphans:?}"
+    );
+}
+
+/// Story 3.1 (FR111, AC2/AC3): `docs/generation.md`'s own copy of this
+/// commit's rule set. Every committed rule key has exactly one row
+/// under the document's section matching its own `RuleKind`, and that
+/// row's status is `committed` -- a `planned` row whose key is already
+/// committed means the document was never flipped when the rule
+/// landed, which is exactly the "never after" AC2 exists to catch. A
+/// `committed` row naming a key that either does not exist or sits
+/// under the wrong kind's section is an orphan. A `planned` row with no
+/// committed key of the same name passes -- "before the code" is the
+/// only direction the document and `defs/` may disagree in (Tim's
+/// direction).
+#[test]
+fn every_committed_rule_has_a_current_row_in_the_generation_document() {
+    let doc_path = repo_root().join("docs/generation.md");
+    let text = std::fs::read_to_string(&doc_path)
+        .unwrap_or_else(|e| panic!("docs/generation.md: {e}"));
+    let doc = support::generation_doc::parse(Path::new("docs/generation.md"), &text);
+
+    let mut failures: Vec<String> = Vec::new();
+
+    for rule in defs::RULES {
+        let section = generation_doc_section(&rule.kind);
+        let matches: Vec<&support::generation_doc::Row> =
+            doc[section].iter().filter(|r| r.key == rule.key).collect();
+        match matches.len() {
+            0 => failures.push(format!(
+                "'{}' is committed in defs/rules/ but has no row under docs/generation.md's '## {}' section",
+                rule.key, section
+            )),
+            1 => {
+                if matches[0].status != support::generation_doc::Status::Committed {
+                    failures.push(format!(
+                        "'{}' is committed in defs/rules/ but docs/generation.md still marks it 'planned' under '## {}' -- flip it to 'committed'",
+                        rule.key, section
+                    ));
+                }
+            }
+            _ => failures.push(format!(
+                "'{}' appears more than once under docs/generation.md's '## {}' section",
+                rule.key, section
+            )),
+        }
+    }
+
+    for &section in &support::generation_doc::KIND_SECTIONS {
+        for row in &doc[section] {
+            if row.status != support::generation_doc::Status::Committed {
+                continue;
+            }
+            if let Some(rule) = defs::RULES.iter().find(|r| r.key == row.key) {
+                let real_section = generation_doc_section(&rule.kind);
+                if real_section != section {
+                    failures.push(format!(
+                        "docs/generation.md marks '{}' committed under '## {}', but defs/rules/ has it under '{}' -- move the row",
+                        row.key, section, real_section
+                    ));
+                }
+            } else {
+                failures.push(format!(
+                    "docs/generation.md marks '{}' committed under '## {}', but no such rule key exists in defs/rules/ (orphan row)",
+                    row.key, section
+                ));
+            }
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "docs/generation.md and defs/rules/ disagree (story 3.1 AC2/AC3):\n{}",
+        failures.join("\n")
     );
 }
 
