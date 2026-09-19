@@ -21,8 +21,9 @@ key is committed -- is a red build (`server/sim/tests/rule_examples.rs`).
 
 The lowercase headings below (`## parameters` and the five `## <kind>`
 sections) are machine-read, fixed shape -- exact heading text, one
-table each, checked at every build. Every other, Title Case section is
-free prose.
+table each, checked at every build. So is "## Must never be seen"'s own
+`Claimed by`/`Status` pair, even though its heading is Title Case.
+Every other section is free prose.
 
 ## Design laws
 
@@ -54,11 +55,11 @@ generator sets, not generator-private knobs.
 
 **Density has one definition: how tightly plots are packed along a
 block** (the GDD's own wording). "Props visible per screen of street"
-(below) and "the citizen density a busy screen can support" (story
-3.7's own acceptance test) are *consequences* a rule derives from that
-packing, not second meanings of the word -- a rule that wants either of
-those reads the packing value and derives them, it never states them as
-if they were the parameter itself.
+(below) and the citizen density a busy screen can support (a
+consequence the gentrification loop reads later) are *consequences* a
+rule derives from that packing, not second meanings of the word -- a
+rule that wants either of those reads the packing value and derives
+them, it never states them as if they were the parameter itself.
 
 **Land-use mix is not a scalar.** The GDD names four uses --
 residential, commercial, industrial, institutional -- so the parameter
@@ -76,9 +77,36 @@ first values land.
 | Parameter | Unit | Range | Visible carrier |
 | --- | --- | --- | --- |
 | Density | plots per unit street length, integer | not yet ranged in `defs/` | plot packing along `2_City_Terrains`/`1_Terrains_and_Fences` ground coverage, and street-prop cadence (bins, benches, lamps, trees) from `3_City_Props` -- more plots and more props per screen at the high end, wide gaps and few props at the low end |
-| Building age | integer, newer to older | not yet ranged in `defs/` | building-*family* choice only -- the provided art has no weathering, wear or damage variant on a facade (checked: the only aged/broken pieces in `ModernTileset/` are one `Condo_Door_4_Broken`, a few broken garden pillars and subway graffiti, none of them a facade set), so the range is narrowed to which family a plot draws from among `4_Generic_Buildings`, `5_Floor_Modular_Buildings`, `7_Villas` and `9_Shopping_Center_and_Markets` |
-| Affluence | integer, poorer to richer | not yet ranged in `defs/` | which exterior family appears (`7_Villas`' detached houses at the high end vs `4_Generic_Buildings`' condo blocks at the low/mid end) and which `moderninteriors` theme dresses the interior (e.g. `26_Condominium_Singles` vs a plain `1_Interiors` room); prop density (a furnished vs. sparse room) is a generator output the rules produce, never a sprite variant -- no "sparse" or "furnished" sheet exists to carry it directly |
+| Building age | integer, newer to older | not yet ranged in `defs/` | facade variant *within* `4_Generic_Buildings`, never family choice (family is Land-use mix's and Affluence's own carrier, see below): older end is the base `Condo` set (visible fire-escape ladders, weathered stonework in the art itself) and `Condo_7`'s modular set (arched ground-floor entrances, brick, bay-front windows, white cornices); newer end is `Condo_1`/`Condo_2` (flat rendered facades, plain rectangular windows, no applied ornament). No weathering variant exists on any of them, so age reads through architectural style alone, never a building visibly ageing in place. `5_Floor_Modular_Buildings` varies by ground-floor shop type, not by age; `7_Villas` and `9_Shopping_Center_and_Markets` ship one building style each -- neither carries an age range |
+| Affluence | integer, poorer to richer | not yet ranged in `defs/` | which exterior family appears (`7_Villas`' detached houses at the high end vs `4_Generic_Buildings`' condo blocks at the low/mid end) and which `moderninteriors` theme dresses the interior (e.g. `26_Condominium_Singles` vs the plain `1_Generic` theme); prop density (a furnished vs. sparse room) is a generator output the rules produce, never a sprite variant -- no "sparse" or "furnished" sheet exists to carry it directly |
 | Land-use mix | four shares (residential / commercial / industrial / institutional), integer, summing to a whole | not yet ranged in `defs/` | which family appears at all along a street: `4_Generic_Buildings`/`5_Floor_Modular_Buildings`/`7_Villas` (residential), `9_Shopping_Center_and_Markets`/`16_Office` (commercial), `8_Worksite` (industrial -- the only dedicated industrial family the tileset ships; the industrial end of this range is thin by construction, not by design choice), institutional families per FR116 once a later story adds them |
+
+Three carriers, three parameters, never shared: building *family*
+carries Land-use mix and, within a family, which family, Affluence;
+facade *variant within* `4_Generic_Buildings` carries Building age;
+plot packing and street-prop cadence carry Density. A row that reuses
+a carrier already claimed above is wrong on sight.
+
+## Rule scope and reads
+
+Two columns on every rule row below read from closed vocabularies.
+
+**`scope`** is the largest extent the engine must see to judge the
+rule: `cell` (the subject and its immediate same-floor neighbours),
+`room`, `building`, `neighbourhood`, `site`. The test for choosing: if
+generating more city next door (Epic 14) could change whether an
+existing placement still passes, the rule is `neighbourhood` or
+`site`; if it could not, the rule is smaller than that. `site` is the
+exception the city-grows design law above is about -- a row scoped
+`site` owes its own row an answer to how it behaves when the site is
+extended, stated in its intent or found in "Does not fit" below.
+
+**`reads`** lists the neighbourhood parameters (by name, from the
+table above, `+`-joined) whose value changes what the rule demands, or
+`-` when none. Until "Does not fit"'s first gap below (a rule's
+numbers cannot vary with a neighbourhood parameter) is closed, every
+committed row is necessarily `-` -- a `reads` value naming an actual
+parameter is itself evidence that gap has been closed.
 
 ## Passes
 
@@ -196,12 +224,12 @@ disagree.
 ## placement
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| lighting_ground_floor_only | committed | Prop placement | site | - | **placeholder** -- a street lamp standing on an upper-storey ledge instead of at street level |
+| lighting_ground_floor_only | committed | Prop placement | cell | - | **placeholder** -- a street lamp standing on an upper-storey ledge instead of at street level |
 
 ## distribution
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| waste_per_three_seating | committed | Prop placement | site | - | **placeholder** -- seating with no bin anywhere nearby, or every bin clumped in one corner while the rest of the street collects litter |
+| waste_per_three_seating | committed | Prop placement | site | - | **placeholder** -- seating with no bin anywhere nearby, or every bin clumped in one corner while the rest of the street collects litter; scoped `site` because distribution's own coverage math already is -- "Does not fit"'s distribution gap below is this row's own answer to how it behaves when the site grows |
 
 ## coherence
 | key | status | pass | scope | reads | intent |
@@ -231,10 +259,10 @@ disagree.
 
 ## Must never be seen
 
-Seeded now as intents, not rules. Each row's `Status` is `unclaimed`
-until the key(s) in its `Claimed by` column are `committed` in a kind
-table above -- an empty `Claimed by` and `unclaimed` is the default for
-every row until a pass claims it; nothing else flips it.
+Seeded now as intents, not rules. `Status` is `claimed` exactly when
+`Claimed by` names at least one key and every key it names is
+`committed` in a kind table above under the section `Expected kind`
+names; `unclaimed` otherwise -- checked mechanically, not by eye.
 
 | Visual failure | Expected kind | Claimed by | Status |
 | --- | --- | --- | --- |
@@ -248,7 +276,8 @@ every row until a pass claims it; nothing else flips it.
 | A door blocked by a prop sitting on its own threshold cell | requirement | | unclaimed |
 | Street furniture placed on the carriageway | placement | | unclaimed |
 | Pavement furniture leaving less than one walkable cell of pavement | adjacency | | unclaimed |
-| The same facade or the same prop sprite repeated side by side with no variation, beyond what a real terrace would do | distribution | | unclaimed |
+| The same facade repeated side by side with no variation, beyond what a real terrace would do | distribution | | unclaimed |
+| The same prop sprite repeated side by side with no variation | distribution | | unclaimed |
 | A shopfront with no counter behind it | requirement | | unclaimed |
 | A building with no entrance anywhere on its own perimeter | requirement | building_has_an_entrance | claimed |
 | Interior-sheet props placed on the street | coherence | | unclaimed |
@@ -276,10 +305,8 @@ assumed:
   range); none reads a parameter's value at generation time. "Service
   coverage thinning with affluence or toward the periphery" (the
   friction-is-content law above) cannot be written as a rule until this
-  exists. The story that first needs a rule to vary with a parameter
-  owns adding the mechanism -- assumed to be story 3.7, since parameter
-  dependence is what a neighbourhood-character story needs first; name
-  the earlier one if Scotty's ordering says otherwise.
+  exists. Owned by the neighbourhood-character story, unless an earlier
+  pass needs it first.
 - **Distribution cannot be scoped below the whole site.** A
   distribution row's ratio, spacing and coverage are "measured over the
   whole site... never a per-container one" (`sim::rules::mod.rs`), so
@@ -289,8 +316,8 @@ assumed:
   the friction-is-content law calls a design defect if service
   coverage should instead thin toward the periphery. The periphery as a
   density falloff cannot be judged by the harness (FR112: generator and
-  harness read one source) until this exists. The story that first adds
-  a real distribution row owns it -- assumed to be story 3.6.
+  harness read one source) until this exists. Owned by the first story
+  that adds a real distribution row.
 
 A rule that cannot be expressed as one of the five kinds over tags for
 any other reason is written here too, with why -- a signal that a

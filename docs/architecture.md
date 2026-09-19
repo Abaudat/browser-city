@@ -1075,10 +1075,12 @@ excluded from `defs-build`'s own parse, though still folded into
 *intent*, keyed by rule key / balance key, never under `defs/`. Its
 machine-read sections are the five kinds plus `## parameters`, exact
 heading text, one table each; a rule row's `pass` column must name a
-`### ` heading under its own `## Passes` section. `server/sim/tests/
-rule_examples.rs` fails when a committed rule key has no row under its
-own kind's section there, or when a committed key's row is still marked
-`planned`.
+`### ` heading under its own `## Passes` section, and its `reads`
+column must name a row in the `## Neighbourhood parameters` table.
+`server/sim/tests/rule_examples.rs` fails when a committed rule key has
+no row under its own kind's section there, or when a committed key's
+row is still marked `planned`, or when `## Must never be seen`'s own
+`Status` disagrees with what its `Claimed by` column derives.
 
 ## Boot budget
 

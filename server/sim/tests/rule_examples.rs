@@ -165,12 +165,14 @@ fn every_committed_rule_has_at_least_one_pass_and_one_fail_example() {
 }
 
 /// Story 3.1 (FR111): `docs/generation.md`'s own copy of this commit's
-/// rule set -- "before or with the code, never after". The comparison
-/// itself is `support::generation_doc::check_rules_current`, unit-tested
-/// there against planted disagreements; this is the one place it is run
-/// for real, against the real repo. Also asserts `docs/architecture.md`
-/// names `docs/generation.md` as the home of rule/generation-parameter
-/// intent (AC1) -- nothing else asserted that either.
+/// rule set -- "before or with the code, never after" -- and its own
+/// "Must never be seen" catalogue's `Claimed by`/`Status` derivation.
+/// Both comparisons are pure functions in `support::generation_doc`,
+/// unit-tested there against planted disagreements; this is the one
+/// place either is run for real, against the real repo. Also asserts
+/// `docs/architecture.md` names `docs/generation.md` as the home of
+/// rule/generation-parameter intent (AC1) -- nothing else asserted that
+/// either.
 #[test]
 fn every_committed_rule_has_a_current_row_in_the_generation_document() {
     let doc_path = repo_root().join("docs/generation.md");
@@ -183,7 +185,8 @@ fn every_committed_rule_has_a_current_row_in_the_generation_document() {
         .map(|r| (r.key, generation_doc_section(&r.kind)))
         .collect();
 
-    let failures = support::generation_doc::check_rules_current(&doc, &committed);
+    let mut failures = support::generation_doc::check_rules_current(&doc, &committed);
+    failures.extend(support::generation_doc::check_catalogue(&doc));
     assert!(
         failures.is_empty(),
         "docs/generation.md and defs/rules/ disagree:\n{}",
