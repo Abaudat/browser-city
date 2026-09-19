@@ -133,6 +133,74 @@ pub struct Block {
     pub bounds: Rect,
 }
 
+/// One of the four world-axis directions a block face or a plot/envelope
+/// front can point -- `North`/`South` step `y`, `East`/`West` step `x`,
+/// the same convention `sim::rules::Direction` already uses (`North` is
+/// `-y`), so a later pass that reads both never has to translate between
+/// two axis conventions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Side {
+    North,
+    East,
+    South,
+    West,
+}
+
+impl Side {
+    pub const ALL: [Side; 4] = [Side::North, Side::East, Side::South, Side::West];
+}
+
+/// Which of a block's own four sides abut a real street rect, `false`
+/// wherever a side instead sits directly on the site boundary -- Tim's
+/// direction: "there is no perimeter street: a block side on the site
+/// boundary fronts nothing".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Sides {
+    pub north: bool,
+    pub east: bool,
+    pub south: bool,
+    pub west: bool,
+}
+
+impl Sides {
+    pub fn get(&self, side: Side) -> bool {
+        match side {
+            Side::North => self.north,
+            Side::East => self.east,
+            Side::South => self.south,
+            Side::West => self.west,
+        }
+    }
+
+    /// Whether this block has any street frontage at all -- `false` only
+    /// for a degenerate "sliver" block whose every side sits on the site
+    /// boundary (Artie's own named case: a whole face, or a sliver block,
+    /// that cannot hold a single building).
+    pub fn any(&self) -> bool {
+        self.north || self.east || self.south || self.west
+    }
+}
+
+/// A block's own street-abutting sides -- Tim's direction: "a small
+/// `Sides` value, set where pass 2 builds blocks". A pure function of
+/// `bounds`/`site` rather than a field stored on [`Block`] itself: every
+/// non-boundary side of a leaf block was always produced by a real split
+/// (an arterial or an internal one), and `Block::bounds` is already inset
+/// from that split's own street rect (this struct's own doc comment) --
+/// so a side abuts a street *iff* it does not coincide with the site's
+/// own boundary, by construction, for every block this pass ever
+/// produces. Deriving it here rather than storing it means it can never
+/// drift from `bounds`, and pass 3 reads it in `O(1)` per block, never
+/// scanning [`StreetNetwork::edges`].
+pub fn block_sides(bounds: Rect, site: SiteBounds) -> Sides {
+    Sides {
+        north: bounds.y0 != site.y0,
+        south: bounds.y1 != site.y1,
+        west: bounds.x0 != site.x0,
+        east: bounds.x1 != site.x1,
+    }
+}
+
 /// Pass 2's own output: sorted nodes (intersections), sorted edges and the
 /// sorted block rects left between them (Tim's direction). No tiles, no
 /// `ObjectDef` placements here.
@@ -2407,5 +2475,55 @@ mod tests {
         // maximum.
         let samples: Vec<DetourSample> = (100..201).map(sample_with_ratio).collect();
         assert_eq!(p99_ratio_pct(&samples), 199);
+    }
+
+    // --- story 3.3: `block_sides` (pass 3's own frontage knowledge) ------
+
+    fn site_512() -> SiteBounds {
+        SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 512,
+            y1: 512,
+        }
+    }
+
+    #[test]
+    fn block_sides_reports_every_side_on_the_interior_as_street_abutting() {
+        let sides = block_sides(
+            Rect {
+                x0: 40,
+                y0: 40,
+                x1: 100,
+                y1: 100,
+            },
+            site_512(),
+        );
+        assert!(sides.north && sides.south && sides.east && sides.west);
+        assert!(sides.any());
+    }
+
+    #[test]
+    fn block_sides_reports_a_side_on_the_site_boundary_as_not_abutting() {
+        let sides = block_sides(
+            Rect {
+                x0: 0,
+                y0: 40,
+                x1: 100,
+                y1: 100,
+            },
+            site_512(),
+        );
+        assert!(!sides.west, "the west side sits on the site boundary");
+        assert!(sides.north && sides.south && sides.east);
+    }
+
+    #[test]
+    fn block_sides_reports_no_frontage_at_all_for_a_block_spanning_the_whole_site() {
+        let sides = block_sides(site_512(), site_512());
+        assert!(!sides.any());
+        for side in Side::ALL {
+            assert!(!sides.get(side));
+        }
     }
 }

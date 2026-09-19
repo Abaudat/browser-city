@@ -21,8 +21,8 @@
 //! can never drift from the code that produced it.
 
 use sim::generation::{
-    GenerationConfig, LandUse, StreetClass, StreetNetwork, block_land_use, land_use,
-    land_use::LandUseMap,
+    EnvelopeMap, EnvelopeOutcome, GenerationConfig, LandUse, Plot, PlotMap, Side, StreetClass,
+    StreetNetwork, block_land_use, envelopes, land_use, land_use::LandUseMap, plots,
 };
 
 /// The three fixed seeds every evidence SVG renders -- committed once,
@@ -295,11 +295,339 @@ pub fn streets_svg_path(seed: u64) -> std::path::PathBuf {
         .join(format!("street-network-seed-{seed}.svg"))
 }
 
-/// Builds both SVGs for every seed in [`EVIDENCE_SEEDS`] from the live
-/// `defs::BALANCE` config -- the one place both `dump-generation` and
-/// `tests/generation_evidence_current.rs` build them, so the two can
-/// never drift in how they call `sim::generation`.
-pub fn build_all() -> Vec<(u64, String, String)> {
+pub fn plots_svg_path(seed: u64) -> std::path::PathBuf {
+    crate::world_fixture::repo_root_dir()
+        .join("docs")
+        .join("generation")
+        .join(format!("plots-seed-{seed}.svg"))
+}
+
+pub fn envelopes_svg_path(seed: u64) -> std::path::PathBuf {
+    crate::world_fixture::repo_root_dir()
+        .join("docs")
+        .join("generation")
+        .join(format!("envelopes-seed-{seed}.svg"))
+}
+
+/// A plot's own front-edge segment, in world cells -- the heavier stroke
+/// `plots_svg` draws and the anchor `envelopes_svg`'s own door tick is
+/// drawn from.
+fn front_edge_segment(bounds: sim::world::Rect, front: Side) -> (i32, i32, i32, i32) {
+    match front {
+        Side::North => (bounds.x0, bounds.y0, bounds.x1, bounds.y0),
+        Side::South => (bounds.x0, bounds.y1, bounds.x1, bounds.y1),
+        Side::West => (bounds.x0, bounds.y0, bounds.x0, bounds.y1),
+        Side::East => (bounds.x1, bounds.y0, bounds.x1, bounds.y1),
+    }
+}
+
+fn front_edge_midpoint(bounds: sim::world::Rect, front: Side) -> (i32, i32) {
+    match front {
+        Side::North => ((bounds.x0 + bounds.x1) / 2, bounds.y0),
+        Side::South => ((bounds.x0 + bounds.x1) / 2, bounds.y1),
+        Side::West => (bounds.x0, (bounds.y0 + bounds.y1) / 2),
+        Side::East => (bounds.x1, (bounds.y0 + bounds.y1) / 2),
+    }
+}
+
+/// A short outward-pointing offset from `front`'s own edge -- the door
+/// tick's own direction, always away from the building's own interior.
+fn front_edge_outward(front: Side) -> (i32, i32) {
+    match front {
+        Side::North => (0, -4),
+        Side::South => (0, 4),
+        Side::West => (-4, 0),
+        Side::East => (4, 0),
+    }
+}
+
+/// `<defs>` for the diagonal hatch every `open` plot is filled with --
+/// Artie's direction: "`open` plots hatched".
+const HATCH_DEFS: &str = "<defs><pattern id=\"open-hatch\" width=\"5\" height=\"5\" patternTransform=\"rotate(45)\" patternUnits=\"userSpaceOnUse\"><rect width=\"5\" height=\"5\" fill=\"#f2f2f2\"/><line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"5\" stroke=\"#9e9e9e\" stroke-width=\"2\"/></pattern></defs>\n";
+
+/// Every plot's own outline, `open` ones hatched, front edge a heavier
+/// stroke -- Artie's own evidence conventions for the plot-subdivision
+/// SVG.
+fn plot_rects(pm: &PlotMap) -> String {
+    let mut body = String::new();
+    for p in pm.plots() {
+        let fill = if p.open { "url(#open-hatch)" } else { "none" };
+        body.push_str(&format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{fill}\" stroke=\"#333333\" stroke-width=\"0.5\"/>\n",
+            p.bounds.x0,
+            p.bounds.y0,
+            p.bounds.width(),
+            p.bounds.height(),
+        ));
+        let (x0, y0, x1, y1) = front_edge_segment(p.bounds, p.front);
+        body.push_str(&format!(
+            "<line x1=\"{x0}\" y1=\"{y0}\" x2=\"{x1}\" y2=\"{y1}\" stroke=\"#d81b60\" stroke-width=\"2\"/>\n"
+        ));
+    }
+    body
+}
+
+/// Every plot's own yard backdrop (a lighter tint of its own block's own
+/// use, `open` plots hatched) and every placed envelope's own footprint
+/// (a darker, opaque fill of the same tint, a door tick on its own front
+/// edge) -- Artie's own evidence conventions for the building-envelope
+/// SVG.
+fn envelope_rects(pm: &PlotMap, em: &EnvelopeMap) -> String {
+    let mut body = String::new();
+    for p in pm.plots() {
+        if p.open {
+            body.push_str(&format!(
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"url(#open-hatch)\" stroke=\"#999999\" stroke-width=\"0.5\"/>\n",
+                p.bounds.x0, p.bounds.y0, p.bounds.width(), p.bounds.height(),
+            ));
+        } else {
+            body.push_str(&format!(
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" fill-opacity=\"0.25\" stroke=\"#999999\" stroke-width=\"0.5\"/>\n",
+                p.bounds.x0, p.bounds.y0, p.bounds.width(), p.bounds.height(), land_use_fill(p.land_use)
+            ));
+        }
+    }
+    for outcome in em.outcomes() {
+        let EnvelopeOutcome::Placed(e) = outcome else {
+            continue;
+        };
+        let plot: &Plot = &pm.plots()[e.plot as usize];
+        body.push_str(&format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" fill-opacity=\"0.9\" stroke=\"#111111\" stroke-width=\"0.5\"/>\n",
+            e.footprint.x0, e.footprint.y0, e.footprint.width(), e.footprint.height(), land_use_fill(plot.land_use)
+        ));
+        let (mx, my) = front_edge_midpoint(e.footprint, e.front);
+        let (dx, dy) = front_edge_outward(e.front);
+        body.push_str(&format!(
+            "<line x1=\"{mx}\" y1=\"{my}\" x2=\"{}\" y2=\"{}\" stroke=\"#d81b60\" stroke-width=\"2\"/>\n",
+            mx + dx,
+            my + dy
+        ));
+    }
+    body
+}
+
+fn plots_legend(y0: i64) -> String {
+    let mut body = land_use_legend(y0);
+    body.push_str(&format!(
+        "<rect x=\"8\" y=\"{}\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"#333333\"/>\n\
+         <text x=\"28\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">plot</text>\n",
+        y0 + 32,
+        y0 + 44
+    ));
+    body.push_str(&format!(
+        "<rect x=\"120\" y=\"{}\" width=\"16\" height=\"16\" fill=\"url(#open-hatch)\" stroke=\"#333333\"/>\n\
+         <text x=\"140\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">open plot</text>\n",
+        y0 + 32,
+        y0 + 44
+    ));
+    body.push_str(&format!(
+        "<line x1=\"260\" y1=\"{}\" x2=\"276\" y2=\"{}\" stroke=\"#d81b60\" stroke-width=\"2\"/>\n\
+         <text x=\"282\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">front edge</text>\n",
+        y0 + 40,
+        y0 + 40,
+        y0 + 44
+    ));
+    body
+}
+
+fn envelopes_legend(y0: i64) -> String {
+    let mut body = land_use_legend(y0);
+    body.push_str(&format!(
+        "<rect x=\"8\" y=\"{}\" width=\"16\" height=\"16\" fill=\"#bfe3bf\" fill-opacity=\"0.25\" stroke=\"#999999\"/>\n\
+         <text x=\"28\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">yard</text>\n",
+        y0 + 32,
+        y0 + 44
+    ));
+    body.push_str(&format!(
+        "<rect x=\"120\" y=\"{}\" width=\"16\" height=\"16\" fill=\"#bfe3bf\" fill-opacity=\"0.9\" stroke=\"#111111\"/>\n\
+         <text x=\"140\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">envelope</text>\n",
+        y0 + 32,
+        y0 + 44
+    ));
+    body.push_str(&format!(
+        "<rect x=\"250\" y=\"{}\" width=\"16\" height=\"16\" fill=\"url(#open-hatch)\" stroke=\"#999999\"/>\n\
+         <text x=\"270\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">open plot</text>\n",
+        y0 + 32,
+        y0 + 44
+    ));
+    body.push_str(&format!(
+        "<line x1=\"390\" y1=\"{}\" x2=\"406\" y2=\"{}\" stroke=\"#d81b60\" stroke-width=\"2\"/>\n\
+         <text x=\"412\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">door</text>\n",
+        y0 + 40,
+        y0 + 40,
+        y0 + 44
+    ));
+    body
+}
+
+/// A nested, self-contained `<svg>` cropped to `(vx, vy, vw, vh)` (world
+/// cells) and scaled to fill a `(w, h)` screen box at `(x, y)` -- SVG's
+/// own `viewBox` does the crop-and-scale, so `body` (the full-site
+/// content) is reused verbatim rather than re-filtered by bounds.
+#[allow(clippy::too_many_arguments)]
+fn nested_view(
+    body: &str,
+    x: i64,
+    y: i64,
+    w: i64,
+    h: i64,
+    vx: i32,
+    vy: i32,
+    vw: i32,
+    vh: i32,
+    stroke: &str,
+    label: &str,
+) -> String {
+    format!(
+        "<text x=\"{x}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"11\" fill=\"{stroke}\">{label}</text>\n\
+         <svg x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\" viewBox=\"{vx} {vy} {vw} {vh}\">\n\
+         <rect x=\"{vx}\" y=\"{vy}\" width=\"{vw}\" height=\"{vh}\" fill=\"#ffffff\"/>\n\
+         {body}</svg>\n\
+         <rect x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"2\"/>\n",
+        y - 4
+    )
+}
+
+/// Pass 3's own evidence: block tint and streets as the backdrop
+/// (`streets_svg`'s own base), every plot's outline on top, `open` ones
+/// hatched, front edges a heavier stroke, a legend covering land use,
+/// plot, open plot and front edge.
+pub fn plots_svg(map: &LandUseMap, net: &StreetNetwork, pm: &PlotMap) -> String {
+    let site = net.site();
+    let (w, h) = (site.width(), site.height());
+    let legend_h = 56;
+    let total_h = h + legend_h;
+    let mut body = block_rects(map, net);
+    for e in net.edges() {
+        let r = e.rect();
+        body.push_str(&format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
+            r.x0,
+            r.y0,
+            r.width(),
+            r.height(),
+            street_fill(e.class)
+        ));
+    }
+    body.push_str(&plot_rects(pm));
+    let legend = plots_legend(h);
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{total_h}\" viewBox=\"0 0 {w} {total_h}\">\n\
+         {HATCH_DEFS}<rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{total_h}\" fill=\"#ffffff\"/>\n\
+         {body}{legend}</svg>\n"
+    )
+}
+
+/// Pass 4's own evidence: the same block/street backdrop, every plot's
+/// own yard (a lighter tint, `open` ones hatched) and every placed
+/// envelope (a darker, opaque fill, a door tick on its own front edge),
+/// plus two insets at viewport scale (the density peak and the farthest
+/// periphery) -- a 12x11 envelope is unreadable at 512-cell scale, so
+/// this is the only scale the street wall, the 0-or-2 gaps and the build
+/// line can actually be judged at (Artie's direction).
+pub fn envelopes_svg(
+    map: &LandUseMap,
+    net: &StreetNetwork,
+    pm: &PlotMap,
+    em: &EnvelopeMap,
+) -> String {
+    let site = net.site();
+    let (w, h) = (site.width(), site.height());
+    let legend_h = 72;
+    let inset_h: i64 = 260;
+    let total_h = h + legend_h + inset_h;
+    let mut body = block_rects(map, net);
+    for e in net.edges() {
+        let r = e.rect();
+        body.push_str(&format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
+            r.x0,
+            r.y0,
+            r.width(),
+            r.height(),
+            street_fill(e.class)
+        ));
+    }
+    body.push_str(&envelope_rects(pm, em));
+
+    // The insets reuse `body` verbatim (cropped and scaled by their own
+    // `viewBox`) -- captured *before* the main map's own outline overlay
+    // is appended, so that overlay's own small, main-map-scale label text
+    // is never magnified into an oversized inset label (found by a
+    // rendered screenshot, not by eye on the raw SVG text).
+    let content_for_insets = body.clone();
+
+    let (peak_point, far_point) = peak_and_far_points(map);
+    body.push_str(&viewport_outline(
+        peak_point.0,
+        peak_point.1,
+        site,
+        "#d81b60",
+        "core",
+    ));
+    body.push_str(&viewport_outline(
+        far_point.0,
+        far_point.1,
+        site,
+        "#1e88e5",
+        "periphery",
+    ));
+
+    let inset_w: i64 = (w / 2) - 12;
+    let inset_y = h + legend_h + 24;
+    let peak_vx = (peak_point.0 - VIEWPORT_W / 2).clamp(site.x0, site.x1 - VIEWPORT_W);
+    let peak_vy = (peak_point.1 - VIEWPORT_H / 2).clamp(site.y0, site.y1 - VIEWPORT_H);
+    let far_vx = (far_point.0 - VIEWPORT_W / 2).clamp(site.x0, site.x1 - VIEWPORT_W);
+    let far_vy = (far_point.1 - VIEWPORT_H / 2).clamp(site.y0, site.y1 - VIEWPORT_H);
+    let insets = nested_view(
+        &content_for_insets,
+        8,
+        inset_y,
+        inset_w,
+        inset_h - 32,
+        peak_vx,
+        peak_vy,
+        VIEWPORT_W,
+        VIEWPORT_H,
+        "#d81b60",
+        "core (viewport scale)",
+    ) + &nested_view(
+        &content_for_insets,
+        16 + inset_w,
+        inset_y,
+        inset_w,
+        inset_h - 32,
+        far_vx,
+        far_vy,
+        VIEWPORT_W,
+        VIEWPORT_H,
+        "#1e88e5",
+        "periphery (viewport scale)",
+    );
+
+    let legend = envelopes_legend(h);
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{total_h}\" viewBox=\"0 0 {w} {total_h}\">\n\
+         {HATCH_DEFS}<rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{total_h}\" fill=\"#ffffff\"/>\n\
+         {body}{legend}{insets}</svg>\n"
+    )
+}
+
+/// Every evidence document [`EVIDENCE_SEEDS`] commits, for one seed.
+pub struct EvidenceSvgs {
+    pub seed: u64,
+    pub land_use: String,
+    pub streets: String,
+    pub plots: String,
+    pub envelopes: String,
+}
+
+/// Builds every evidence SVG for every seed in [`EVIDENCE_SEEDS`] from
+/// the live `defs::BALANCE` config -- the one place both `dump-
+/// generation` and `tests/generation_evidence_current.rs` build them, so
+/// the two can never drift in how they call `sim::generation`.
+pub fn build_all() -> Vec<EvidenceSvgs> {
     let cfg = GenerationConfig::from_balance(sim::generated::defs::BALANCE)
         .expect("live defs/ must be a valid GenerationConfig");
     EVIDENCE_SEEDS
@@ -308,7 +636,16 @@ pub fn build_all() -> Vec<(u64, String, String)> {
             let lu = land_use::run(seed, cfg.site(), &cfg)
                 .expect("the live site is always a valid multiple of the coarse cell size");
             let net = sim::generation::streets::run(seed, &lu, &cfg);
-            (seed, land_use_svg(&lu, &cfg), streets_svg(&lu, &net))
+            let pm = plots::run(seed, &lu, &net, &cfg);
+            let em = envelopes::run(seed, &pm, &cfg)
+                .expect("the live committed config must clear AC4's own tolerance");
+            EvidenceSvgs {
+                seed,
+                land_use: land_use_svg(&lu, &cfg),
+                streets: streets_svg(&lu, &net),
+                plots: plots_svg(&lu, &net, &pm),
+                envelopes: envelopes_svg(&lu, &net, &pm, &em),
+            }
         })
         .collect()
 }

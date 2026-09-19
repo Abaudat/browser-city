@@ -1,11 +1,14 @@
-//! The determinism harness for story 3.2 (FR110 passes 1-2), Quentin's
-//! direction -- same idiom as `determinism_golden.rs`/`appearance_golden.
-//! rs`: regenerates both passes for a fixed seed set and compares a
-//! readable summary plus a digest against the committed
-//! `tests/goldens/generation_v1.golden`, so a diff names what moved
-//! rather than just "hash differs". Keyed by `sim::generation::
+//! The determinism harness for stories 3.2-3.3 (FR110 passes 1-4),
+//! Quentin's direction -- same idiom as `determinism_golden.rs`/
+//! `appearance_golden.rs`: regenerates all four passes for a fixed seed
+//! set and compares a readable summary plus a digest against the
+//! committed `tests/goldens/generation_v2.golden`, so a diff names what
+//! moved rather than just "hash differs". Keyed by `sim::generation::
 //! GENERATION_VERSION`; `check-golden-version-bump.sh` fails a PR that
-//! touches the golden without bumping that constant.
+//! touches the golden without bumping that constant. `generation_v1.
+//! golden` (passes 1-2 only) is retired with this file -- Tim's
+//! direction, cycle 3.3: one golden covering every implemented pass, not
+//! two side by side.
 //!
 //! Pinned against a small, fixed, test-local [`frozen_config`] -- never
 //! the live `defs::BALANCE` -- because a designer retuning `defs/balance/
@@ -21,11 +24,13 @@
 //! never mutates its own input).
 
 use sim::generation::streets::DETOUR_SAMPLE_MAX_NODES;
-use sim::generation::{GENERATION_VERSION, GenerationConfig, LandUse, land_use, streets};
+use sim::generation::{
+    GENERATION_VERSION, GenerationConfig, LandUse, envelopes, land_use, plots, streets,
+};
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
-const GOLDEN: &str = include_str!("goldens/generation_v1.golden");
+const GOLDEN: &str = include_str!("goldens/generation_v2.golden");
 
 /// A frozen snapshot of `defs/balance/generation.toml`'s own values at
 /// the time this golden was last regenerated -- never read from `defs::
@@ -76,14 +81,35 @@ fn frozen_config() -> GenerationConfig {
         peripheral_pooled_min_ratio_percent: 150,
         institutional_min_pockets: 3,
         institutional_max_pocket_share_percent: 6,
+        plot_frontage_min_cells: 3,
+        plot_high_density_threshold: 55,
+        plot_setback_periphery_cells: 2,
+        plot_width_min_cells: [8, 10, 12, 12],
+        plot_width_max_cells: [12, 16, 20, 20],
+        plot_row_depth_cells: [14, 12, 18, 18],
+        envelope_wall_thickness_cells: 1,
+        envelope_min_interior_width_cells: [4, 6, 8, 8],
+        envelope_min_interior_depth_cells: [4, 6, 8, 8],
+        envelope_max_width_cells: 20,
+        envelope_max_depth_cells: 16,
+        envelope_side_gap_periphery_cells: 2,
+        envelope_mean_width_cells: 9,
+        envelope_mean_width_tolerance_cells: 2,
+        envelope_mean_depth_cells: 10,
+        envelope_mean_depth_tolerance_cells: 2,
+        envelope_min_distinct_sizes: 6,
+        envelope_target_count_per_million_cells: 3410,
+        envelope_count_tolerance_percent: 15,
+        envelope_max_rejected_plot_percent: 12,
     }
 }
 
 /// A small, hand-rolled FNV-1a (test-only -- `sim` itself never depends
 /// on a hashing crate, NFR28) over the whole plan's own canonical text:
 /// every land-use cell's use and density, every block's bounds, every
-/// edge's axis/coord/range/class, in the deterministic order each
-/// already returns them.
+/// edge's axis/coord/range/class, every plot's own bounds/front/use/
+/// density/open, and every envelope outcome, in the deterministic order
+/// each already returns them.
 fn fnv1a(text: &str) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for byte in text.as_bytes() {
@@ -93,7 +119,12 @@ fn fnv1a(text: &str) -> u64 {
     hash
 }
 
-fn plan_digest(lu: &land_use::LandUseMap, net: &streets::StreetNetwork) -> u64 {
+fn plan_digest(
+    lu: &land_use::LandUseMap,
+    net: &streets::StreetNetwork,
+    pm: &plots::PlotMap,
+    em: &Result<envelopes::EnvelopeMap, sim::generation::GenerationError>,
+) -> u64 {
     let mut text = String::new();
     for cy in 0..lu.rows() {
         for cx in 0..lu.cols() {
@@ -113,6 +144,47 @@ fn plan_digest(lu: &land_use::LandUseMap, net: &streets::StreetNetwork) -> u64 {
             e.axis, e.coord, e.from, e.to, e.class, e.width_cells
         ));
     }
+    for p in pm.plots() {
+        text.push_str(&format!(
+            "plot {},{},{},{} block={} front={:?} use={:?} density={} open={}\n",
+            p.bounds.x0,
+            p.bounds.y0,
+            p.bounds.x1,
+            p.bounds.y1,
+            p.block,
+            p.front,
+            p.land_use,
+            p.density,
+            p.open
+        ));
+    }
+    match em {
+        Ok(em) => {
+            for o in em.outcomes() {
+                match o {
+                    envelopes::EnvelopeOutcome::Placed(e) => text.push_str(&format!(
+                        "envelope placed plot={} {},{},{},{} front={:?}\n",
+                        e.plot,
+                        e.footprint.x0,
+                        e.footprint.y0,
+                        e.footprint.x1,
+                        e.footprint.y1,
+                        e.front
+                    )),
+                    envelopes::EnvelopeOutcome::Rejected {
+                        plot,
+                        class,
+                        reason,
+                    } => {
+                        text.push_str(&format!(
+                            "envelope rejected plot={plot} class={class:?} reason={reason:?}\n"
+                        ));
+                    }
+                }
+            }
+        }
+        Err(err) => text.push_str(&format!("envelopes err={err}\n")),
+    }
     fnv1a(&text)
 }
 
@@ -120,6 +192,8 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
     let lu =
         land_use::run(seed, cfg.site(), cfg).expect("frozen_config's own site is always valid");
     let net = streets::run(seed, &lu, cfg);
+    let pm = plots::run(seed, &lu, &net, cfg);
+    let em = envelopes::run(seed, &pm, cfg);
 
     let regions = lu.regions();
     let count = |u: LandUse| regions.iter().filter(|r| r.use_ == u).count();
@@ -137,15 +211,22 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
     // once the peak is off-centre (Quentin's direction, cycle 1).
     let rings = lu.ring_averages(3);
 
+    let open_plots = pm.plots().iter().filter(|p| p.open).count();
+    let (placed, rejected) = match &em {
+        Ok(em) => (em.placed_count(), em.rejected_count()),
+        Err(_) => (-1, -1),
+    };
+
     format!(
-        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} digest={:016x}",
+        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} plots={} open_plots={open_plots} envelopes_placed={placed} envelopes_rejected={rejected} digest={:016x}",
         count(LandUse::Residential),
         count(LandUse::Commercial),
         count(LandUse::Industrial),
         count(LandUse::Institutional),
         net.edges().len(),
         net.blocks().len(),
-        plan_digest(&lu, &net),
+        pm.plots().len(),
+        plan_digest(&lu, &net, &pm, &em),
     )
 }
 
@@ -161,7 +242,7 @@ fn generation_output_matches_committed_golden() {
         });
     assert_eq!(
         golden_version, GENERATION_VERSION,
-        "tests/goldens/generation_v1.golden is keyed to version {golden_version} but \
+        "tests/goldens/generation_v2.golden is keyed to version {golden_version} but \
          sim::generation::GENERATION_VERSION is {GENERATION_VERSION} -- regenerate the golden \
          whenever GENERATION_VERSION changes"
     );
@@ -209,5 +290,12 @@ fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
     let lu = land_use::run(SEEDS[0], cfg.site(), &cfg).unwrap();
     let net_a = streets::run(SEEDS[0], &lu, &cfg);
     let net_b = streets::run(SEEDS[0], &lu, &cfg);
-    assert_eq!(plan_digest(&lu, &net_a), plan_digest(&lu, &net_b));
+    let pm_a = plots::run(SEEDS[0], &lu, &net_a, &cfg);
+    let pm_b = plots::run(SEEDS[0], &lu, &net_b, &cfg);
+    let em_a = envelopes::run(SEEDS[0], &pm_a, &cfg);
+    let em_b = envelopes::run(SEEDS[0], &pm_b, &cfg);
+    assert_eq!(
+        plan_digest(&lu, &net_a, &pm_a, &em_a),
+        plan_digest(&lu, &net_b, &pm_b, &em_b)
+    );
 }
