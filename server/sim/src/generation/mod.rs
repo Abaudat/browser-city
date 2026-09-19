@@ -136,6 +136,32 @@ pub struct GenerationConfig {
     /// direction, cycle 1: "not a perfect grid" as a number, asserted
     /// over arbitrary seeds, not a literal repeated in test files.
     pub min_distinct_block_sizes: i64,
+    /// Per-city anti-inversion floor for `StreetNetwork::mean_area_by_
+    /// density_band`: the low-density (periphery) mean block area must
+    /// be at least this percent of the high-density (core) mean --
+    /// deliberately weak (real split-jitter noise puts a handful of
+    /// seeds, out of 5,000 measured, within a hair of parity), never the
+    /// guard that a density-blind generator fails (that is `peripheral_
+    /// pooled_min_ratio_percent`, below) (Quentin's direction, cycle 4: a
+    /// threshold literal in a test is a reject).
+    pub peripheral_low_band_floor_percent: i32,
+    /// The guard that actually fails on a density-blind generator: pooled
+    /// over a fixed seed range (`0..256`), summed low-band mean area over
+    /// summed high-band mean area must be at least this percent -- a
+    /// density-blind network pools to ~100 (parity), this generator to
+    /// ~241 (Quentin's direction, cycle 4).
+    pub peripheral_pooled_min_ratio_percent: i32,
+    /// The hard floor on institutional pocket count `land_use::assign_
+    /// institutional`'s own relaxed fallback pass guarantees whenever any
+    /// eligible leaf remains (Artie's direction, cycle 3; moved off a
+    /// bare constant onto a balance key, Quentin's direction, cycle 4: a
+    /// threshold literal in a test is a reject).
+    pub institutional_min_pockets: i64,
+    /// The AC's own area ceiling on any single institutional component,
+    /// as a percent of the site's own coarse-cell count (Artie's
+    /// direction, cycle 3; moved off a bare literal, Quentin's direction,
+    /// cycle 4).
+    pub institutional_max_pocket_share_percent: i64,
 }
 
 fn get(balance: &[defs::BalanceSeed], key: &str) -> i64 {
@@ -220,6 +246,22 @@ impl GenerationConfig {
                 as i32,
             p99_detour_percent: get(balance, "generation.streets.p99_detour_percent") as i32,
             min_distinct_block_sizes: get(balance, "generation.streets.min_distinct_block_sizes"),
+            peripheral_low_band_floor_percent: get(
+                balance,
+                "generation.streets.peripheral_low_band_floor_percent",
+            ) as i32,
+            peripheral_pooled_min_ratio_percent: get(
+                balance,
+                "generation.streets.peripheral_pooled_min_ratio_percent",
+            ) as i32,
+            institutional_min_pockets: get(
+                balance,
+                "generation.land_use.institutional_min_pockets",
+            ),
+            institutional_max_pocket_share_percent: get(
+                balance,
+                "generation.land_use.institutional_max_pocket_share_percent",
+            ),
         };
 
         if cfg.coarse_cell_size_cells <= 0
@@ -292,6 +334,14 @@ impl GenerationConfig {
             return Err(format!(
                 "GenerationConfig: p99_detour_percent ({}) is greater than max_detour_percent ({}) -- the typical case cannot be worse than the tail ceiling",
                 cfg.p99_detour_percent, cfg.max_detour_percent
+            ));
+        }
+        if cfg.peripheral_low_band_floor_percent as i64
+            > cfg.peripheral_pooled_min_ratio_percent as i64
+        {
+            return Err(format!(
+                "GenerationConfig: peripheral_low_band_floor_percent ({}) is greater than peripheral_pooled_min_ratio_percent ({}) -- the per-city anti-inversion floor cannot ask for more than the pooled, density-blind-failing guard does",
+                cfg.peripheral_low_band_floor_percent, cfg.peripheral_pooled_min_ratio_percent
             ));
         }
         if cfg.arterial_count_ns_min > cfg.arterial_count_ns_max {
@@ -433,6 +483,25 @@ mod tests {
             seed("generation.streets.max_detour_excess_cells", 80, 1, 2048),
             seed("generation.streets.p99_detour_percent", 160, 100, 500),
             seed("generation.streets.min_distinct_block_sizes", 3, 1, 16),
+            seed(
+                "generation.streets.peripheral_low_band_floor_percent",
+                70,
+                1,
+                100,
+            ),
+            seed(
+                "generation.streets.peripheral_pooled_min_ratio_percent",
+                150,
+                100,
+                1000,
+            ),
+            seed("generation.land_use.institutional_min_pockets", 3, 1, 16),
+            seed(
+                "generation.land_use.institutional_max_pocket_share_percent",
+                6,
+                1,
+                100,
+            ),
         ]
     }
 
@@ -572,6 +641,13 @@ mod tests {
         let balance = with_override("generation.streets.max_detour_excess_cells", 217);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
         assert!(err.contains("max_detour_excess_cells"));
+    }
+
+    #[test]
+    fn from_balance_rejects_peripheral_low_band_floor_percent_over_pooled_min_ratio_percent() {
+        let balance = with_override("generation.streets.peripheral_low_band_floor_percent", 200);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.contains("peripheral_low_band_floor_percent"));
     }
 
     #[test]

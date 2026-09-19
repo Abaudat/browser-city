@@ -100,6 +100,34 @@ pub struct LandUseMap {
 }
 
 impl LandUseMap {
+    /// A hand-built map for a test fixture that needs known densities at
+    /// known coarse cells -- `land_use::run`'s own seeded field cannot be
+    /// steered to put a density in a specific band deterministically
+    /// (the `RuleSet`-precedent test-only-constructor idiom `streets::
+    /// StreetNetwork::test_fixture` already uses; `cells.len()` must be
+    /// exactly `cols * rows`, row-major, same indexing `coarse_at` reads
+    /// -- a caller's own contract, not checked here).
+    #[cfg(any(test, feature = "test-fixtures"))]
+    pub fn test_fixture(
+        site: SiteBounds,
+        cell_size: i32,
+        cols: i32,
+        rows: i32,
+        peak_cx: i32,
+        peak_cy: i32,
+        cells: Vec<LandUseCell>,
+    ) -> Self {
+        Self {
+            site,
+            cell_size,
+            cols,
+            rows,
+            peak_cx,
+            peak_cy,
+            cells,
+        }
+    }
+
     pub fn site(&self) -> SiteBounds {
         self.site
     }
@@ -697,14 +725,6 @@ fn institutional_max_leaf_area(cfg: &GenerationConfig) -> i64 {
     min * (min + 1)
 }
 
-/// The minimum number of institutional pockets a site must reach before
-/// [`assign_institutional`] stops preferring small, eligible leaves and
-/// falls back to relaxing the area cap just enough to place one more
-/// (Artie's direction, cycle 3: "at least three institutional
-/// components per site" is the floor this AC needs, never merely the
-/// typical case).
-const INSTITUTIONAL_MIN_POCKETS: usize = 3;
-
 /// One [`assign_institutional`] pocket-seed search, `max_area` the only
 /// difference between the strict and relaxed passes.
 fn institutional_seed_candidate(
@@ -784,13 +804,13 @@ fn institutional_grow_pocket(
 /// non-adjacency.
 ///
 /// If the strict (small-leaf) pass alone would leave the site under
-/// [`INSTITUTIONAL_MIN_POCKETS`] pockets, a second pass with no area cap
-/// (still respecting non-adjacency) places one more pocket at a time
-/// until the floor is met or no eligible leaf remains at all -- a
-/// handful of seeds have too few genuinely small, mutually non-adjacent
-/// leaves for the strict pass alone to reach three pockets, and "at
-/// least three" is a harder requirement than "small" when the two are
-/// ever in tension.
+/// [`GenerationConfig::institutional_min_pockets`] pockets, a second pass
+/// with no area cap (still respecting non-adjacency) places one more
+/// pocket at a time until the floor is met or no eligible leaf remains
+/// at all -- a handful of seeds have too few genuinely small, mutually
+/// non-adjacent leaves for the strict pass alone to reach the floor, and
+/// the floor is a harder requirement than "small" when the two are ever
+/// in tension.
 ///
 /// "Each pocket touches an arterial" is Artie's own further ask, and is
 /// not enforced here: pass 1 authors the land-use field before pass 2
@@ -828,7 +848,7 @@ fn assign_institutional(
     // ceiling on its own, and a second relaxed-cap leaf next to it can
     // push a single component well past it (measured: two near-maximum
     // leaves reached 6.7% of the site before this cap existed).
-    while pockets < INSTITUTIONAL_MIN_POCKETS && remaining > 0 {
+    while pockets < cfg.institutional_min_pockets as usize && remaining > 0 {
         let Some(seed) = institutional_seed_candidate(leaves, adjacency, assigned, i64::MAX) else {
             break;
         };

@@ -72,6 +72,10 @@ fn frozen_config() -> GenerationConfig {
         max_detour_excess_cells: 80,
         p99_detour_percent: 160,
         min_distinct_block_sizes: 3,
+        peripheral_low_band_floor_percent: 70,
+        peripheral_pooled_min_ratio_percent: 150,
+        institutional_min_pockets: 3,
+        institutional_max_pocket_share_percent: 6,
     }
 }
 

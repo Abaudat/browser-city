@@ -126,6 +126,37 @@ value = 10
 min = 0
 max = 100
 
+[[balance]]
+# The hard floor `land_use::assign_institutional`'s own relaxed fallback
+# pass guarantees whenever any eligible leaf remains: "a school, a
+# clinic and a town hall do not share a campus" (Artie's direction,
+# cycle 3) needs several pockets, not just one non-degenerate one.
+# Verified at 15,000 arbitrary seeds: zero seeds land under this floor.
+# Moved off a bare `INSTITUTIONAL_MIN_POCKETS` constant onto this key
+# (Quentin's direction, cycle 4: a threshold literal in a test is a
+# reject) -- the generator's own fallback loop reads it too, so there is
+# one number, not two that can drift apart.
+key = "generation.land_use.institutional_min_pockets"
+value = 3
+min = 1
+max = 16
+
+[[balance]]
+# The AC's own area ceiling on any single institutional component, as a
+# percent of the site's own coarse-cell count. Not read by the generator
+# itself -- `assign_institutional`'s own per-leaf area cap
+# (`institutional_max_leaf_area`) is what actually keeps a pocket small;
+# this key is the outcome-side assertion. Measured worst case, this
+# generator's other committed values, over 15,000 seeds: 2.34% (the
+# relaxed fallback pass, which only ever runs when the strict pass alone
+# could not reach `institutional_min_pockets`, occasionally has to take
+# a larger leaf than the strict per-pocket cap would allow). 6% is that
+# plus real margin.
+key = "generation.land_use.institutional_max_pocket_share_percent"
+value = 6
+min = 1
+max = 100
+
 # --- street network (pass 2) ------------------------------------------
 
 [[balance]]
@@ -356,3 +387,34 @@ key = "generation.streets.min_distinct_block_sizes"
 value = 3
 min = 1
 max = 16
+
+[[balance]]
+# Per-city anti-inversion floor: `StreetNetwork::mean_area_by_density_
+# band`'s own low-density (periphery) mean block area must be at least
+# this percent of the high-density (core) mean. Deliberately weak --
+# measured over 5,000 arbitrary seeds, 4,997 have the periphery mean
+# strictly larger outright; the 3 exceptions land within single-digit
+# percent of parity (worst observed ratio 72%), real split-jitter noise
+# rather than an inversion. This key alone cannot tell a healthy city
+# from a density-blind one (a uniform grid pools to 100%, comfortably
+# above 70%) -- `peripheral_pooled_min_ratio_percent` below is the guard
+# that can. Moved off a bare literal (Quentin's direction, cycle 4: a
+# threshold literal in a test is a reject).
+key = "generation.streets.peripheral_low_band_floor_percent"
+value = 70
+min = 1
+max = 100
+
+[[balance]]
+# The guard that actually fails when block size stops reading density:
+# pooled over a fixed seed range (`0..256`), summed low-density
+# (periphery) mean block area over summed high-density (core) mean must
+# be at least this percent. Measured, same scan: pooled ratio 241%
+# (per-city p5 159%, median 235%); a density-blind generator pools to
+# ~100%. 150 has real margin under the measured 241% while comfortably
+# failing a generator that stopped reading density at all (Quentin's
+# direction, cycle 4).
+key = "generation.streets.peripheral_pooled_min_ratio_percent"
+value = 150
+min = 100
+max = 1000

@@ -72,7 +72,7 @@ pub const INV_GENERATION_NO_DEAD_ENDS_AWAY_FROM_BOUNDARY: &str =
 pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, BFS network distance never exceeds max_detour_percent of Manhattan distance, for any seed (FR110)";
 pub const INV_GENERATION_NOT_A_PERFECT_GRID: &str = "block width and height each take at least min_distinct_block_sizes distinct values, both junction kinds are present, and at least two street classes are present, for any seed (FR110, NFR8)";
 pub const INV_GENERATION_EXACT_TILING: &str = "every site cell is covered by exactly one block or by at least one street, and no two blocks overlap, for any seed (FR110)";
-pub const INV_GENERATION_INSTITUTIONAL_POCKETS_ARE_SMALL: &str = "at least three mutually non-adjacent (edge or corner) institutional components per site, none over roughly 6% of the site's own coarse-cell count, for any seed (FR110, Artie's direction)";
+pub const INV_GENERATION_INSTITUTIONAL_POCKETS_ARE_SMALL: &str = "at least institutional_min_pockets mutually non-adjacent (edge or corner) institutional components per site, none over institutional_max_pocket_share_percent of the site's own coarse-cell count, for any seed (FR110, Artie's direction)";
 pub const INV_GENERATION_INDUSTRIAL_NEVER_TOUCHES_COMMERCIAL: &str =
     "no industrial coarse cell is ever adjacent to a commercial one, for any seed (FR110)";
 pub const INV_GENERATION_RESIDENTIAL_IS_THE_LARGEST_LAND_USE_BY_AREA: &str = "residential has more coarse cells than any other single land use, for any seed -- field-driven assignment (commercial at the peak, industrial one contiguous group, institutional the smallest leaves) structurally favours it over a blind weighted draw, but that only holds if something keeps checking it (FR110, Quentin's direction)";
@@ -1865,10 +1865,16 @@ proptest! {
     /// strictly larger than the core (high-density) mean; the 3
     /// exceptions land within single-digit percent of parity (worst
     /// ratio 0.72x), real split-jitter noise rather than an inversion --
-    /// `>= 0.7x` is the margin that keeps all 5,000 green while still
-    /// failing hard the moment density stops driving block size at all.
-    /// Artie's own harder, cycle-2 bar (2x) is judged on the committed
-    /// evidence seeds specifically
+    /// `peripheral_low_band_floor_percent` is the margin that keeps all
+    /// 5,000 green. This per-city floor alone cannot tell a healthy city
+    /// from a density-blind one, though: a uniform grid pools to parity
+    /// (1.0x), comfortably above 0.7x
+    /// (`mean_area_by_density_band_reports_parity_for_a_uniform_grid` in
+    /// `server/sim/src/generation/streets.rs` shows exactly this).
+    /// `peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor`,
+    /// below, is the guard that actually fails on that defect (Quentin's
+    /// direction, cycle 4). Artie's own harder, cycle-2 bar (2x) is
+    /// judged on the committed evidence seeds specifically
     /// (`peripheral_blocks_are_at_least_1_6x_central_ones_on_the_
     /// evidence_seeds` in `server/sim/src/generation/streets.rs`), kept
     /// on `mean_area_split_by_peak_distance` (Tim's direction, cycle 3:
@@ -1881,21 +1887,12 @@ proptest! {
         let net = streets::run(seed, &lu, &cfg);
         // Density bands (bottom third vs top third of density_min..
         // density_max), not distance from the peak -- what `target_
-        // block_size` actually reads (Tim's direction, cycle 3). Not a
-        // strict `>`: measured at 5,000 seeds, 3 land within a few
-        // percent of parity (worst observed ratio 0.72, the rest at
-        // 0.9+) -- real jitter-driven near-ties, not an inversion this
-        // generator can eliminate outright without re-litigating split
-        // jitter itself. `>= 0.7x` keeps every one of the 5,000 green
-        // while still failing hard if density stopped driving block
-        // size at all (a uniform grid would land at 1.0x either way,
-        // not comfortably above the 0.9 typical case this margin sits
-        // well under).
+        // block_size` actually reads (Tim's direction, cycle 3).
         let Some((low_mean, high_mean)) = net.mean_area_by_density_band(&lu, &cfg) else {
             return Ok(());
         };
         prop_assert!(
-            low_mean * 10 >= high_mean * 7,
+            low_mean * 100 >= high_mean * cfg.peripheral_low_band_floor_percent as i64,
             "seed {seed}: periphery (low-density) mean block area {low_mean} is well below core (high-density) {high_mean}"
         );
     }
@@ -1962,19 +1959,21 @@ proptest! {
     /// `inv_generation_institutional_pockets_are_small` (Artie's
     /// direction, cycle 3, replacing the weaker cycle-2 bound of the
     /// same name after three review cycles measured it was not enough):
-    /// at least three mutually non-adjacent (edge or corner)
-    /// institutional components per site, none over roughly 2.5% of the
-    /// site's own coarse-cell count. The `>= 3` half is a hard,
-    /// zero-tolerance floor (`assign_institutional`'s own fallback pass
+    /// at least `institutional_min_pockets` mutually non-adjacent (edge
+    /// or corner) institutional components per site, none over
+    /// `institutional_max_pocket_share_percent` of the site's own
+    /// coarse-cell count. The pocket-count half is a hard, zero-
+    /// tolerance floor (`assign_institutional`'s own fallback pass
     /// guarantees it whenever any eligible leaf remains, verified at
-    /// 5,000 arbitrary seeds); the area half carries a wider margin
-    /// (6%, not 2.5%) because that same fallback -- relaxing the small-
-    /// leaf cap only when the strict pass alone could not reach three
-    /// pockets -- occasionally has to take a larger leaf than the
-    /// strict cap would allow (measured worst case 5.0% over the same
-    /// 5,000 seeds). "At least three" is the harder, more frequently
-    /// re-raised requirement of the two; when they are ever in tension,
-    /// the AC's own floor wins.
+    /// 15,000 arbitrary seeds); the area half carries a wider margin
+    /// (6%, not the ~2.5% a single leaf cap alone would suggest) because
+    /// that same fallback -- relaxing the small-leaf cap only when the
+    /// strict pass alone could not reach the pocket-count floor --
+    /// occasionally has to take a larger leaf than the strict cap would
+    /// allow (measured worst case 2.34% over the same 15,000 seeds, well
+    /// under the 6% ceiling's own margin). The pocket-count floor is the
+    /// harder, more frequently re-raised requirement of the two; when
+    /// they are ever in tension, the AC's own floor wins.
     #[test]
     fn inv_generation_institutional_pockets_are_small(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -1984,13 +1983,13 @@ proptest! {
         let inst_count = regions.iter().filter(|r| r.use_ == land_use::LandUse::Institutional).count();
 
         prop_assert!(
-            inst_count >= 3,
-            "seed {seed}: only {inst_count} institutional components, expected at least 3"
+            inst_count as i64 >= cfg.institutional_min_pockets,
+            "seed {seed}: only {inst_count} institutional components, expected at least {}", cfg.institutional_min_pockets
         );
         for r in regions.iter().filter(|r| r.use_ == land_use::LandUse::Institutional) {
             prop_assert!(
-                r.cell_count as i64 * 100 <= total_coarse_cells * 6,
-                "seed {seed}: institutional component {:?} is {} of {} coarse cells (over 6%)", r.bounds, r.cell_count, total_coarse_cells
+                r.cell_count as i64 * 100 <= total_coarse_cells * cfg.institutional_max_pocket_share_percent,
+                "seed {seed}: institutional component {:?} is {} of {} coarse cells (over {}%)", r.bounds, r.cell_count, total_coarse_cells, cfg.institutional_max_pocket_share_percent
             );
         }
         // Real per-cell diagonal adjacency, not a bounding-box
@@ -2080,4 +2079,31 @@ proptest! {
             "seed {seed}: residential {} cells is not the largest use, counts={:?}", counts[0], counts
         );
     }
+}
+
+/// The guard `inv_generation_peripheral_blocks_are_not_degenerate` cannot
+/// be, by its own doc comment: pooled over a fixed, non-random seed range
+/// (deterministic -- never flaky, unlike a fresh `any::<u64>()` draw each
+/// CI run), summed low-band mean area over summed high-band mean area
+/// must clear `peripheral_pooled_min_ratio_percent` -- a density-blind
+/// generator pools to ~100%, this one to ~241% (Quentin's direction,
+/// cycle 4: "the only test that goes red if `subdivide` stops reading
+/// density is a three-seed test tuned to one seed").
+#[test]
+fn peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let (mut low_sum, mut high_sum) = (0i64, 0i64);
+    for seed in 0u64..256 {
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        if let Some((low, high)) = net.mean_area_by_density_band(&lu, &cfg) {
+            low_sum += low;
+            high_sum += high;
+        }
+    }
+    assert!(
+        low_sum * 100 >= high_sum * cfg.peripheral_pooled_min_ratio_percent as i64,
+        "pooled over seeds 0..256: low-band sum {low_sum} is under {}% of high-band sum {high_sum}",
+        cfg.peripheral_pooled_min_ratio_percent
+    );
 }

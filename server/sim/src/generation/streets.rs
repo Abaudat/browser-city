@@ -1902,10 +1902,15 @@ mod tests {
         // direction, cycle 2): if the shipped keys would let this maze
         // through, this test must go red, not pass on a number picked
         // to make it pass. Sized with real margin over `max_detour_
-        // excess_cells` (260, cycle 2's own measured-plus-margin value)
-        // rather than the tightest maze that would still fail today --
-        // a smaller maze keeps needing to grow every time that ceiling
-        // is re-measured upward.
+        // excess_cells` (280, this cycle's own structurally-derived
+        // value) rather than the tightest maze that would still fail
+        // today -- a smaller maze keeps needing to grow every time that
+        // ceiling is re-measured upward. Must assert against every
+        // committed detour bound, not just the excess one (Quentin's
+        // direction, cycle 4): the 300-cell Manhattan distance is over
+        // `detour_long_pair_cells` (256), so the 300% ratio is also
+        // checked against both `max_detour_percent` and `p99_detour_
+        // percent`.
         let c = cfg();
         let site = SiteBounds {
             x0: 0,
@@ -1937,6 +1942,26 @@ mod tests {
             worst_excess > c.max_detour_excess_cells as i64,
             "expected the maze's own overshoot ({worst_excess} cells) to exceed the committed max_detour_excess_cells ({})",
             c.max_detour_excess_cells
+        );
+
+        let worst_long_ratio = samples
+            .iter()
+            .filter(|s| s.manhattan >= c.detour_long_pair_cells as i64)
+            .map(DetourSample::ratio_pct)
+            .max()
+            .expect("the U corridor's own pair is a long pair");
+        assert!(
+            worst_long_ratio > c.max_detour_percent as i64,
+            "expected the maze's own long-pair ratio ({worst_long_ratio}%) to exceed the committed max_detour_percent ({}%)",
+            c.max_detour_percent
+        );
+
+        let p99_samples = net.detour_samples(DETOUR_P99_SAMPLE_MAX_NODES);
+        let p99 = p99_ratio_pct(&p99_samples);
+        assert!(
+            p99 > c.p99_detour_percent as i64,
+            "expected the maze's own p99 ratio ({p99}%) to exceed the committed p99_detour_percent ({}%)",
+            c.p99_detour_percent
         );
     }
 
@@ -2130,20 +2155,54 @@ mod tests {
     // report "not larger" -- a uniform grid whose blocks ignore density
     // entirely.
 
-    #[test]
-    fn mean_area_by_density_band_reports_parity_for_a_uniform_grid() {
-        // A tiny, single-coarse-cell-per-quadrant land_use field over a
-        // matching 100x100 site, so every quadrant's own sample point
-        // falls in a *different* coarse cell -- irrelevant here, since
-        // the point of this fixture is that every block is identically
-        // sized (2500 cells) regardless of which density band its own
-        // sample lands in (a uniform grid the way Artie's own AC rules
-        // out, block size that does not read density at all).
+    /// A hand-built 2x2 coarse `LandUseMap` (`LandUseMap::test_fixture`,
+    /// Quentin's direction, cycle 4: a fixture must reach the code it
+    /// exists for deterministically, never depend on what `land_use::
+    /// run` happens to produce for a given seed) -- the top row's own two
+    /// cells at a density in the bottom third (`density_min..density_
+    /// max`'s low band), the bottom row's own two cells at a density in
+    /// the top third (the high band), over a matching 100x100 site with
+    /// `coarse_cell_size_cells = 50`, so every block's own centre sample
+    /// point lands deterministically in one row or the other, never the
+    /// (unused) middle band.
+    fn two_band_land_use(
+        low_density: i32,
+        high_density: i32,
+    ) -> (GenerationConfig, land_use::LandUseMap) {
         let mut small_cfg = cfg();
         small_cfg.site_extent_cells = 100;
         small_cfg.coarse_cell_size_cells = 50;
-        let lu = land_use::run(1, small_cfg.site(), &small_cfg).unwrap();
+        let cell = |density: i32| land_use::LandUseCell {
+            use_: land_use::LandUse::Residential,
+            density,
+        };
+        let lu = land_use::LandUseMap::test_fixture(
+            small_cfg.site(),
+            50,
+            2,
+            2,
+            0,
+            0,
+            vec![
+                cell(low_density),
+                cell(low_density),
+                cell(high_density),
+                cell(high_density),
+            ],
+        );
+        (small_cfg, lu)
+    }
 
+    #[test]
+    fn mean_area_by_density_band_reports_parity_for_a_uniform_grid() {
+        // Every quadrant block identically sized (2,500 cells) regardless
+        // of which density band its own sample lands in -- a uniform
+        // grid the way Artie's own AC rules out, block size that does
+        // not read density at all. `None` is a hard failure here, not an
+        // escape hatch (Quentin's direction, cycle 4): the fixture is
+        // built so both bands are always populated, so a `None` can only
+        // mean the method itself broke.
+        let (small_cfg, lu) = two_band_land_use(20, 90);
         let site = small_cfg.site();
         let edges = vec![vertical(50, 0, 100), horizontal(50, 0, 100)];
         let blocks = vec![
@@ -2182,20 +2241,94 @@ mod tests {
         ];
         let net = StreetNetwork::test_fixture(site, edges, blocks);
 
-        let Some((low, high)) = net.mean_area_by_density_band(&lu, &small_cfg) else {
-            // Every block landed in the middle band (neither the bottom
-            // nor top third) -- a legitimate `None`, not a test
-            // failure; the uniform-size property still held regardless.
-            assert!(
-                net.blocks()
-                    .iter()
-                    .all(|b| b.bounds.width() * b.bounds.height() == 2500)
-            );
-            return;
-        };
+        let (low, high) = net
+            .mean_area_by_density_band(&lu, &small_cfg)
+            .expect("both bands are populated by construction");
         assert_eq!(
             low, high,
             "a uniform grid's own blocks must report equal means in both density bands, got {low} vs {high}"
+        );
+        // Tied to the pooled guard the way the maze fixture is tied to
+        // the excess key (Quentin's direction, cycle 4): a density-blind
+        // network's own parity result must fail the pooled floor.
+        assert!(
+            low * 100 < high * small_cfg.peripheral_pooled_min_ratio_percent as i64,
+            "a uniform grid's own parity ratio (100%) must be under peripheral_pooled_min_ratio_percent ({}%)",
+            small_cfg.peripheral_pooled_min_ratio_percent
+        );
+    }
+
+    #[test]
+    fn mean_area_by_density_band_reports_a_real_difference_not_only_parity() {
+        // The mirror of the fixture above: one large block in the
+        // low-density (periphery) row, four small blocks in the
+        // high-density (core) row -- proves the method has been seen to
+        // report low > high (the healthy shape this generator's own
+        // output takes), not only parity (Quentin's direction, cycle 4).
+        let (small_cfg, lu) = two_band_land_use(20, 90);
+        let site = small_cfg.site();
+        let edges = vec![
+            horizontal(50, 0, 100),
+            vertical(25, 50, 100),
+            vertical(50, 50, 100),
+            vertical(75, 50, 100),
+        ];
+        let blocks = vec![
+            // The whole top row: one 100x50 block, centre (50,25) samples
+            // coarse cell (1,0), a low-density cell.
+            Block {
+                bounds: Rect {
+                    x0: 0,
+                    y0: 0,
+                    x1: 100,
+                    y1: 50,
+                },
+            },
+            // The bottom row split into four 25x50 blocks, every centre
+            // sampling a high-density cell.
+            Block {
+                bounds: Rect {
+                    x0: 0,
+                    y0: 50,
+                    x1: 25,
+                    y1: 100,
+                },
+            },
+            Block {
+                bounds: Rect {
+                    x0: 25,
+                    y0: 50,
+                    x1: 50,
+                    y1: 100,
+                },
+            },
+            Block {
+                bounds: Rect {
+                    x0: 50,
+                    y0: 50,
+                    x1: 75,
+                    y1: 100,
+                },
+            },
+            Block {
+                bounds: Rect {
+                    x0: 75,
+                    y0: 50,
+                    x1: 100,
+                    y1: 100,
+                },
+            },
+        ];
+        let net = StreetNetwork::test_fixture(site, edges, blocks);
+
+        let (low, high) = net
+            .mean_area_by_density_band(&lu, &small_cfg)
+            .expect("both bands are populated by construction");
+        assert_eq!(low, 5000, "the single periphery block is 100x50");
+        assert_eq!(high, 1250, "each of the four core blocks is 25x50");
+        assert!(
+            low > high,
+            "expected the periphery mean to exceed the core mean, got low={low} high={high}"
         );
     }
 
