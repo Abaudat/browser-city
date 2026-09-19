@@ -140,13 +140,14 @@ fn build_adjacency(nodes: &[(i32, i32)], edges: &[StreetEdge]) -> BTreeMap<(i32,
 }
 
 impl StreetNetwork {
-    /// A test-only escape hatch (the `RuleSet::for_test` precedent):
-    /// builds a `StreetNetwork` from raw parts, so a unit or hand-fixture
+    /// A test-only escape hatch (the same precedent `sim::rules::RuleSet`
+    /// itself sets for a raw-parts constructor): builds a `StreetNetwork`
+    /// from raw parts, so a unit or hand-fixture
     /// test can pin a checker's own behaviour (a maze, a uniform grid, a
     /// disconnected pair, a landlocked region) without running the real
     /// generator. Gated so it never reaches the published wasm module.
     #[cfg(any(test, feature = "test-fixtures"))]
-    pub fn for_test(site: SiteBounds, edges: Vec<StreetEdge>, blocks: Vec<Block>) -> Self {
+    pub fn test_fixture(site: SiteBounds, edges: Vec<StreetEdge>, blocks: Vec<Block>) -> Self {
         let (nodes, edges) = build_graph(&edges);
         let adjacency = build_adjacency(&nodes, &edges);
         StreetNetwork {
@@ -1639,9 +1640,10 @@ mod tests {
     // fail is not coverage". `build_graph` stands under every graph
     // checker and had none of its own; the checkers themselves were only
     // ever exercised against real generator output, so nothing proved
-    // they *can* report a defect. `StreetNetwork::for_test` (the
-    // `RuleSet::for_test` precedent) exists so these fixtures can hand
-    // one a network the real generator would never produce.
+    // they *can* report a defect. `StreetNetwork::test_fixture` (the
+    // same raw-parts-constructor precedent `sim::rules::RuleSet` itself
+    // sets) exists so these fixtures can hand one a network the real
+    // generator would never produce.
 
     fn vertical(coord: i32, from: i32, to: i32) -> StreetEdge {
         StreetEdge {
@@ -1757,7 +1759,7 @@ mod tests {
             vertical(80, 20, 80),
             horizontal(50, 20, 35),
         ];
-        let net = StreetNetwork::for_test(site, edges, Vec::new());
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
 
         let dead_ends = net.dead_end_nodes();
         assert!(
@@ -1823,7 +1825,7 @@ mod tests {
                 },
             },
         ];
-        let net = StreetNetwork::for_test(site, edges, blocks);
+        let net = StreetNetwork::test_fixture(site, edges, blocks);
 
         let (three, four) = net.junction_mix();
         assert_eq!(three, 0, "a uniform grid must have no 3-way junctions");
@@ -1865,7 +1867,7 @@ mod tests {
             vertical(200, 100, 120),
             horizontal(110, 190, 210),
         ];
-        let net = StreetNetwork::for_test(site, edges, Vec::new());
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
         let reachable = net.reachable_from_first_node().unwrap();
         assert!(
             reachable.len() < net.nodes().len(),
@@ -1880,7 +1882,7 @@ mod tests {
         let c = cfg();
         let lu = land_use::run(3, c.site(), &c).unwrap();
         // No street at all: nothing can touch any region's own cells.
-        let net = StreetNetwork::for_test(c.site(), Vec::new(), Vec::new());
+        let net = StreetNetwork::test_fixture(c.site(), Vec::new(), Vec::new());
         let stranded = net.stranded_regions(&lu);
         assert_eq!(
             stranded.len(),
