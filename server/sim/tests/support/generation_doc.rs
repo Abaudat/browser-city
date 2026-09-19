@@ -118,6 +118,7 @@ fn section_bounds(lines: &[&str], heading: &str) -> Option<(usize, usize, usize)
 /// rows until the first blank line or `body_end`. Returns each data
 /// row's own columns (trimmed, the table's leading/trailing empty
 /// fields already stripped), paired with its 1-indexed line number.
+#[allow(clippy::too_many_arguments)]
 fn parse_table(
     path: &Path,
     lines: &[&str],
@@ -155,8 +156,7 @@ fn parse_table(
     }
 
     let mut rows = Vec::new();
-    for i in (body_start + 2)..body_end {
-        let line = lines[i];
+    for (i, &line) in lines.iter().enumerate().take(body_end).skip(body_start + 2) {
         if line.trim().is_empty() {
             break;
         }
