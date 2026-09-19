@@ -12,6 +12,7 @@
 //! Story 4.12 hangs the metrics sampler off this same registry; nothing
 //! here needs to change for that.
 
+pub mod generation_evidence;
 pub mod schema;
 pub mod world_fixture;
 

@@ -305,8 +305,8 @@ extent or one over `sim::world::MAX_CELLS_PER_FLOOR`, rather than
 allocating unboundedly.
 
 `sim::world::fixture` (the hand-authored conformance world) is compiled
-only behind `sim`'s `fixture` Cargo feature, which `bounds` enables for
-its own dependency and `sim`'s own test builds enable for themselves;
+only behind `sim`'s `test-fixtures` Cargo feature, which `bounds` enables
+for its own dependency and `sim`'s own test builds enable for themselves;
 `browser_city` never enables it, so the published module never contains
 it.
 
@@ -1081,6 +1081,45 @@ column must name a row in the `## Neighbourhood parameters` table.
 no row under its own kind's section there, or when a committed key's
 row is still marked `planned`, or when `## Must never be seen`'s own
 `Status` disagrees with what its `Claimed by` column derives.
+
+## Generation
+
+`sim::generation` (FR110, story 3.2 on): the generator's seven coarse-to-
+fine passes, pure functions and data only (NFR28) -- no table, no
+reducer, no client code. A pass's signature is fixed shape: the city
+seed, its own predecessor's output (by reference; a pass never mutates
+it and never imports a later pass) and `GenerationConfig` -- nothing
+else. Pass ids (`PASS_LAND_USE`..`PASS_PROP_PLACEMENT`) are append-only
+constants in FR110's own order; a pass not yet implemented still
+reserves its id. Each pass seeds its own `sim::rng::Rng` stream from
+`seed_from_ids(city_seed, PASS_ID)`, so adding a draw to one pass never
+reshuffles another.
+
+Coordinates are world-absolute `i32` cells throughout; `SiteBounds` is
+`sim::world::Rect` reused, never a second rect type. `GenerationConfig::
+from_balance` reads every balance key the implemented passes need once,
+returning `Err` (never a panic) on a cross-key inconsistency a single
+key's own range cannot express (e.g. the site extent not a multiple of
+the coarse cell size).
+
+Land use and the street network (3.2) are both grown by recursive axis-
+aligned subdivision of the coarse grid -- the same idiom in both passes,
+never a Voronoi diagram: nearest-seed Chebyshev-distance assignment can
+produce diagonal region boundaries and, rarer, disconnected same-use
+islands, found by property-testing arbitrary seeds. A rectangular
+partition cannot produce either defect by construction. `GENERATION_
+VERSION` is bumped whenever either pass's algorithm or seeding moves a
+fixed seed's output; `server/sim/tests/goldens/generation_v1.golden`
+is keyed to it, guarded by `check-golden-version-bump.sh`'s `generation_
+*` arm the same way `RNG_VERSION`/`APPEARANCE_VERSION` are.
+
+Evidence: `bounds/src/generation_evidence.rs` renders both passes' own
+output at a fixed seed to `docs/generation/*.svg` (text, zero-dependency,
+diffable, renders in GitHub -- no image crate, since `sim` itself may
+never touch the filesystem or pull in a rendering dependency).
+`cargo run -p bounds --bin dump-generation` regenerates them;
+`bounds/tests/generation_evidence_current.rs` fails the build if the
+committed files and a fresh render ever disagree.
 
 ## Boot budget
 

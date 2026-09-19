@@ -201,6 +201,7 @@ GUARD_SECTIONS=(
   "Round trip and client/server boundary"
   "Schema permanence"
   "Definitions"
+  "Generation"
   "World addressing"
   "Rendering"
   "Input and intents"
