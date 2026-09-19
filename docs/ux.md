@@ -32,6 +32,8 @@ For a long time that was taken to mean the project needed no UX specification at
 
 **The governing constraints**, inherited and not restated elsewhere: no HUD, no counters, no objective markers (GDD design law); progression carried diegetically; *gamey affordances exist only where the experience genuinely breaks without them* (GDD design rule); D17's canvas rule; and D16's rule that **input produces intents, not actions**.
 
+**Street-appearance rules** — the visual failures a generated street must never show — live in `docs/generation.md`'s own "Must never be seen" catalogue, not here: this document covers player-facing UI surfaces, not generation content.
+
 ---
 
 ## 1 — Interactable affordance

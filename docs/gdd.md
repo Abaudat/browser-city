@@ -655,6 +655,12 @@ See § Game Mechanics M2 and M3 for the full rate table. Summary:
 
 ## Level Design Framework
 
+Rule and generation-parameter content lives in `docs/generation.md`,
+organised by pass (FR110) and by constraint kind (FR111); this section
+states intent, `docs/generation.md` turns it into rules, and
+`defs/rules/*.toml` holds the executable data -- nothing is stated in
+two of the three.
+
 ### The city is generated, not authored
 
 **Everything is procedurally generated from a city seed** — street layout, plot subdivision, building exteriors, and interiors. Nothing is hand-placed. This follows directly from the design law *systemic content only*: a solo developer cannot author a city, but can grow one.

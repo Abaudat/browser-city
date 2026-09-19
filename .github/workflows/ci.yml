@@ -72,6 +72,13 @@ jobs:
               - 'scripts/**'
               - '.github/**'
               - 'docs/trace-matrix.md'
+              # server/sim/tests/rule_examples.rs (every_committed_rule_
+              # has_a_current_row_in_the_generation_document) reads this
+              # file directly -- a docs-only edit that drops or misdates
+              # a committed rule's own row must still trip the `test`
+              # job, exactly like docs/trace-matrix.md above (story 3.1,
+              # Quentin's direction).
+              - 'docs/generation.md'
               # server/bounds/tests/world_fixture_current.rs regenerates
               # and diffs this file -- a hand-edit here with no server/
               # change must still trip the job that catches it.

@@ -84,6 +84,19 @@ fn primary_tag(kind: &RuleKind) -> sim::rules::TagId {
     }
 }
 
+/// Story 3.1 (AC3): the `docs/generation.md` section a rule's own key
+/// must sit under -- exhaustive (no `_ =>` arm), same discipline as
+/// `primary_tag`'s own match: a sixth kind is a compile error here too.
+fn generation_doc_section(kind: &RuleKind) -> &'static str {
+    match kind {
+        RuleKind::Placement { .. } => "placement",
+        RuleKind::Distribution { .. } => "distribution",
+        RuleKind::Coherence { .. } => "coherence",
+        RuleKind::Adjacency { .. } => "adjacency",
+        RuleKind::Requirement { .. } => "requirement",
+    }
+}
+
 fn render(rule_set: &RuleSet<'static>, v: Violation) -> String {
     let key = rule_set.key_of(v.rule_id).unwrap_or("<unknown-rule>");
     Defect {
@@ -148,6 +161,44 @@ fn every_committed_rule_has_at_least_one_pass_and_one_fail_example() {
     assert!(
         orphans.is_empty(),
         "a case's 'rules:' header names key(s) that are no longer committed: {orphans:?}"
+    );
+}
+
+/// Story 3.1 (FR111): `docs/generation.md`'s own copy of this commit's
+/// rule set -- "before or with the code, never after" -- and its own
+/// "Must never be seen" catalogue's `Claimed by`/`Status` derivation.
+/// Both comparisons are pure functions in `support::generation_doc`,
+/// unit-tested there against planted disagreements; this is the one
+/// place either is run for real, against the real repo. Also asserts
+/// `docs/architecture.md` names `docs/generation.md` as the home of
+/// rule/generation-parameter intent (AC1) -- nothing else asserted that
+/// either.
+#[test]
+fn every_committed_rule_has_a_current_row_in_the_generation_document() {
+    let doc_path = repo_root().join("docs/generation.md");
+    let text =
+        std::fs::read_to_string(&doc_path).unwrap_or_else(|e| panic!("docs/generation.md: {e}"));
+    let doc = support::generation_doc::parse(Path::new("docs/generation.md"), &text);
+
+    let committed: Vec<(&str, &str)> = defs::RULES
+        .iter()
+        .map(|r| (r.key, generation_doc_section(&r.kind)))
+        .collect();
+
+    let mut failures = support::generation_doc::check_rules_current(&doc, &committed);
+    failures.extend(support::generation_doc::check_catalogue(&doc));
+    assert!(
+        failures.is_empty(),
+        "docs/generation.md and defs/rules/ disagree:\n{}",
+        failures.join("\n")
+    );
+
+    let arch_path = repo_root().join("docs/architecture.md");
+    let arch_text =
+        std::fs::read_to_string(&arch_path).unwrap_or_else(|e| panic!("docs/architecture.md: {e}"));
+    assert!(
+        arch_text.contains("docs/generation.md"),
+        "docs/architecture.md must name docs/generation.md as the home of rule/generation-parameter intent"
     );
 }
 
