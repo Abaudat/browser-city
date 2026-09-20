@@ -2203,6 +2203,29 @@ fn feasible_independent_set(
     backtrack(cells, existing, min_spacing, k, 0, &mut chosen)
 }
 
+/// The largest `k <= upper_bound` for which [`feasible_independent_set`]
+/// holds -- Quentin's direction, PR #317 cycle 4: "the invariant stops
+/// exempting and starts bounding". A quadrant whose own real geometry
+/// cannot hold `expected` (too little eligible land, or real candidates
+/// that cannot mutually clear `min_spacing`) is not let off entirely
+/// (the old skip-the-assertion exemption); it owes exactly what its own
+/// geometry can hold, `k`, and `k == 0` is still a real, always-true
+/// assertion (`subjects_in_q >= 0`), never a skipped one. `upper_bound`
+/// is always small in real content (`expected`, rarely above 2-3), so a
+/// linear scan down from it, each step one more exhaustive search, is
+/// cheap.
+fn max_feasible_independent_set_size(
+    cells: &[(i32, i32)],
+    existing: &[(i32, i32)],
+    min_spacing: u32,
+    upper_bound: usize,
+) -> usize {
+    (0..=upper_bound)
+        .rev()
+        .find(|&k| feasible_independent_set(cells, existing, min_spacing, k))
+        .unwrap_or(0)
+}
+
 proptest! {
     /// `inv_generation_every_plot_fronts_a_street`.
     #[test]
@@ -2874,37 +2897,31 @@ proptest! {
     /// actually feed (its `per` tag is carried by at least one committed
     /// building type -- read generically off `RuleSet::iter()`/
     /// `as_distribution` and `content.building_types`, never a key list
-    /// in this test), and every site quadrant that holds at least one
-    /// *hard-eligible*, *unclaimed* candidate for the row's own subject
-    /// (the physical exemption Quentin's/Derek's direction both name: a
-    /// quadrant genuinely cannot owe what it has no eligible land,
-    /// interior or site context to hold at all -- land use, an earlier
-    /// story's own pass 3, is not quadrant-aware, so a real dwelling
-    /// population can share a quadrant with zero eligible envelopes;
-    /// that periphery case is excluded, not required. "Unclaimed":
-    /// hard-eligible in isolation is not the same as available -- an
-    /// envelope a *sibling* distribution row's own subject tag already
-    /// claimed, at its own earlier turn in ascending rule id order, was
-    /// real, structurally-eligible land this row could never have used
-    /// either way, the same real competition `welfare_office_present`/
+    /// in this test), and every site quadrant with `expected > 0`
+    /// (`per_in_quadrant / ratio`), the row's own subjects placed there
+    /// clears `required = max_feasible_independent_set_size(...,
+    /// expected)` -- the largest `k <= expected` this quadrant's own
+    /// real geometry (hard-eligible, unclaimed land; `min_spacing`
+    /// packing, within the quadrant and against this same row's own
+    /// subjects already placed in a neighbour) can actually hold
+    /// (Quentin's direction, PR #317 cycle 4: "stops exempting and
+    /// starts bounding" -- a quadrant with no real land or no feasible
+    /// packing is never let off the assertion entirely, `k == 0`
+    /// included; it owes exactly what its own geometry can give,
+    /// bounded separately by `the_no_eligible_land_exemption_fires_
+    /// rarely_over_seeds_0_to_256` below so a `k` shortfall can never
+    /// quietly become the next escape hatch). "Unclaimed": hard-eligible
+    /// in isolation is not the same as available -- an envelope a
+    /// *sibling* distribution row's own subject tag already claimed, at
+    /// its own earlier turn in ascending rule id order, was real,
+    /// structurally-eligible land this row could never have used either
+    /// way, the same real competition `welfare_office_present`/
     /// `shelter_present` share for institutional-or-commercial land
-    /// (measured, PR #317 cycle 2) -- bounded separately by
-    /// `the_no_eligible_land_exemption_fires_rarely_over_seeds_0_to_256`
-    /// below, so neither half of this exemption can quietly become the
-    /// next escape hatch), the
-    /// row's own subjects placed in that quadrant clears its own
-    /// catchment floor, `required = expected = per_in_quadrant / ratio`
-    /// -- never discounted by the row's own site-wide `tolerance_
-    /// percent` (Quentin's/Derek's direction, PR #317 cycle 3: that
-    /// tolerance belongs to the site-wide ratio check `sim::rules::
-    /// evaluate`'s own Distribution kind computes, where the unplaced
-    /// remainder lives -- applying it here too let `required` round
-    /// down to zero for every real catchment size at the 55%/70%
-    /// tolerances a prior cycle carried, making this a `subjects_in_q
-    /// >= 0` no-op). `catchment_floors`' own guarantee is exact: a
-    /// catchment is owed `expected` and nothing less, so the physical-
-    /// shortage exemption above is the only escape, never a percentage
-    /// on top of it.
+    /// (measured, PR #317 cycle 2). `required` is never discounted by
+    /// the row's own site-wide `tolerance_percent` (Quentin's/Derek's
+    /// direction, PR #317 cycle 3: that tolerance belongs to the
+    /// site-wide ratio check `sim::rules::evaluate`'s own Distribution
+    /// kind computes, where the unplaced remainder lives).
     /// A quadrant's own bucket is [`sim::generation::building_types::
     /// catchment_of`] over [`sim::generation::site::front_cell`] -- the
     /// one public, already-independently-tested definition of catchment
@@ -3039,16 +3056,16 @@ proptest! {
                     .filter(|&(&other_q, _)| other_q != q)
                     .flat_map(|(_, cells)| cells.iter().copied())
                     .collect();
-                let physically_short = !feasible_independent_set(
+                // The largest `k <= expected` this quadrant's own real
+                // geometry can hold (Quentin's direction, PR #317 cycle
+                // 4: "stops exempting and starts bounding") -- always
+                // asserted, `k == 0` included, never skipped.
+                let required = max_feasible_independent_set_size(
                     cells,
                     &existing_elsewhere,
                     row.min_spacing,
                     expected as usize,
-                );
-                if physically_short {
-                    continue;
-                }
-                let required = expected;
+                ) as u64;
                 let subjects_in_q = subj_by_q.get(&q).copied().unwrap_or(0);
                 prop_assert!(
                     subjects_in_q >= required,
@@ -3061,15 +3078,20 @@ proptest! {
 }
 
 /// Companion to `inv_generation_no_quadrant_lacks_its_required_services`:
-/// bounds the physical-shortage exemption's own firing rate over the
-/// fixed seed range 0..256, so it can never quietly grow into the next
-/// escape hatch (Quentin's direction, PR #317 cycle 2) -- a committed
-/// ceiling, re-derived from real measurement, not "however often it
-/// happens to fire today". "Physical shortage" (PR #317 cycle 3): not
-/// only too few hard-eligible candidates, but too few that can coexist
-/// under the row's own `min_spacing` (`feasible_independent_set`) --
-/// two real candidates sitting in the same small pocket are exactly as
-/// unplaceable-both as one candidate that does not exist.
+/// bounds how often a quadrant's own real geometry forces `required`
+/// below `expected` (`max_feasible_independent_set_size(...) <
+/// expected`) over the fixed seed range 0..256, so that can never
+/// quietly grow into the next escape hatch (Quentin's direction, PR
+/// #317 cycles 2 and 4: cycle 2's own boolean "exempt or not" became
+/// cycle 4's own bound, so this now counts every seed/quadrant/row
+/// where the bound is real and strictly under `expected`, not only a
+/// total failure) -- a committed ceiling, re-derived from real
+/// measurement, not "however often it happens to fire today". The
+/// shortfall itself: not only too few hard-eligible candidates, but too
+/// few that can coexist under the row's own `min_spacing`
+/// (`feasible_independent_set`) -- two real candidates sitting in the
+/// same small pocket are exactly as unplaceable-both as one candidate
+/// that does not exist.
 #[test]
 fn the_no_eligible_land_exemption_fires_rarely_over_seeds_0_to_256() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -3177,28 +3199,28 @@ fn the_no_eligible_land_exemption_fires_rarely_over_seeds_0_to_256() {
                     .filter(|&(&other_q, _)| other_q != q)
                     .flat_map(|(_, cells)| cells.iter().copied())
                     .collect();
-                if !feasible_independent_set(
+                let required = max_feasible_independent_set_size(
                     cells,
                     &existing_elsewhere,
                     row.min_spacing,
                     expected as usize,
-                ) {
+                );
+                if required < expected as usize {
                     exempted += 1;
                 }
             }
         }
     }
 
-    // Measured (PR #317 cycle 3, `cargo test -p sim --release --test
+    // Measured (PR #317 cycle 4, `cargo test -p sim --release --test
     // invariants the_no_eligible_land_exemption_fires_rarely -- --nocapture`
-    // after the floor-only catchment rewrite and the min-spacing-packing
-    // half of the exemption): re-derive this ceiling whenever the
-    // balance/content driving it changes.
+    // after the invariant switched from skipping to bounding): re-derive
+    // this ceiling whenever the balance/content driving it changes.
     let ceiling_percent = 10u64;
     let fired_percent = exempted.saturating_mul(100) / checked.max(1);
     assert!(
         fired_percent <= ceiling_percent,
-        "the no-eligible-land exemption fired for {exempted}/{checked} (seed, quadrant, row) triples ({fired_percent}%) over seeds 0..256, past the committed ceiling of {ceiling_percent}%"
+        "the quadrant's own real geometry forced required < expected for {exempted}/{checked} (seed, quadrant, row) triples ({fired_percent}%) over seeds 0..256, past the committed ceiling of {ceiling_percent}%"
     );
 }
 
@@ -3213,13 +3235,13 @@ fn the_no_eligible_land_exemption_fires_rarely_over_seeds_0_to_256() {
 /// owes zero per quadrant almost everywhere by design, so it is exempt
 /// here -- the two real multi-instance rows (`welfare_office_present`,
 /// `shelter_present`) are not. `required` is computed exactly as the
-/// main invariant now computes it (no tolerance discount, the same
-/// physical-shortage exemption) -- cycle 2's own version counted
-/// `expected >= 1` instead, which is not what the main invariant
-/// actually asserts, and passed over the exact no-op cycle 3's own
-/// review caught. A *committed, substantial* share of (seed, quadrant)
-/// pairs must land on a real, asserted, non-exempt `required >= 1` --
-/// not "more than zero".
+/// main invariant now computes it (no tolerance discount,
+/// `max_feasible_independent_set_size` -- PR #317 cycle 4: bounding,
+/// not exempting) -- cycle 2's own version counted `expected >= 1`
+/// instead, which is not what the main invariant actually asserts, and
+/// passed over the exact no-op cycle 3's own review caught. A
+/// *committed, substantial* share of (seed, quadrant) pairs must land
+/// on a real, asserted `required >= 1` -- not "more than zero".
 #[test]
 fn the_quadrant_floor_is_not_vacuous_for_every_multi_instance_row_over_seeds_0_to_256() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -3335,29 +3357,28 @@ fn the_quadrant_floor_is_not_vacuous_for_every_multi_instance_row_over_seeds_0_t
                     .filter(|&(&other_q, _)| other_q != q)
                     .flat_map(|(_, cells)| cells.iter().copied())
                     .collect();
-                if !feasible_independent_set(
+                // `required` here, computed exactly as the main
+                // invariant computes it (PR #317 cycle 4: bounding, not
+                // exempting) -- a real, non-trivial floor is asserted
+                // whenever the quadrant's own real geometry can hold at
+                // least one.
+                let required = max_feasible_independent_set_size(
                     cells,
                     &existing_elsewhere,
                     row.min_spacing,
                     expected as usize,
-                ) {
-                    continue;
+                );
+                if required >= 1 {
+                    *nonzero_required.get_mut(&row.id).unwrap() += 1;
                 }
-                // `required` here, unexempted and asserted -- exactly
-                // what the main invariant checks -- is always `>= 1`
-                // since `expected >= 1` was just established above.
-                *nonzero_required.get_mut(&row.id).unwrap() += 1;
             }
         }
     }
 
-    // Measured (PR #317 cycle 3, `cargo test -p sim --release --test
+    // Measured (PR #317 cycle 4, `cargo test -p sim --release --test
     // invariants the_quadrant_floor_is_not_vacuous -- --nocapture` after
-    // dropping the tolerance discount): welfare_office_present 46%,
-    // shelter_present 85%, over seeds 0..256 -- 40% leaves welfare_
-    // office_present's own real margin while still being a genuine,
-    // substantial floor. Re-derive whenever the ratios or catchment
-    // extent change.
+    // the invariant switched from skipping to bounding): re-derive
+    // whenever the ratios or catchment extent change.
     let floor_share_percent = 40u64;
     for row in &dist_rows {
         let total = total_pairs[&row.id];

@@ -259,10 +259,12 @@ document's own opening paragraph forbids.
   so no two unrelated types can ever collide onto one swatch), a
   distinct marker for every type that is the subject of a committed
   distribution row this pass actually feeds (map and legend read the
-  shape from the same row list and the same index), the catchment grid
-  with dwellings/owed/placed per row and a physically-short catchment
-  marked, legend derived from what the district actually places; same
-  regen-and-diff guard.
+  shape from the same row list and the same index), a dashed catchment
+  grid with a pink wash over a physically-short catchment (no text on
+  the map itself -- the per/owed/placed figures live in a panel below
+  it, one line per catchment, so labels never cover a building), legend
+  derived from what the district actually places; same regen-and-diff
+  guard.
 
 ### Interior layout
 

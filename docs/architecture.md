@@ -1233,28 +1233,38 @@ catchment boundary clusters. Within either pool, candidates are ranked
 -- never chosen by a distance search -- first by how many of the
 subject type's own `prefers_site` contexts they match, then by
 `density_affinity`, then by a seeded draw key (total in practice, so a
-distance tie-break is never reached). `place_row` backtracks over that
-rank order rather than a plain first-fit scan: a top-ranked candidate
-that conflicts (by `min_spacing`) with every other real candidate, none
-of which conflict with each other, must never strand an achievable
-target (found by `proptest`, PR #317 cycle 3) -- backtracking only ever
-decides whether a candidate already offered in rank order is kept,
-never reorders the pool itself.
+distance tie-break is never reached). `place_row` first runs plain
+first-fit over that rank order (the floor: a target's placed count is
+never below what first-fit alone would give), then a depth-first search
+bounded by `PLACEMENT_SEARCH_NODE_BUDGET` (a fixed node count, never
+wall-clock, since maximum independent set on a spacing graph is NP-hard
+and this runs inside world creation) for a fuller selection: a top-
+ranked candidate that conflicts (by `min_spacing`) with every other
+real candidate, none of which conflict with each other, must never
+strand an achievable target (found by `proptest`, PR #317 cycle 3) --
+the search only ever decides whether a candidate already offered in
+rank order is kept, never reorders the pool itself. On a `target`
+genuinely unreachable from the pool, `place_row` returns the largest
+real selection the search found within its own budget, never an empty
+one (PR #317 cycle 4: an earlier version popped every tentative choice
+back out on failure, silently placing zero where `target - 1` was
+real).
 
 The per-catchment floor is a real, unconditional guarantee, never
 discounted by the row's own site-wide `tolerance_percent` (that
 tolerance belongs only to the site-wide ratio check `sim::rules::
 evaluate`'s own Distribution kind runs, where the unplaced remainder
 lives): a catchment is owed exactly `floor(per-tag count in that
-catchment / ratio)`, full stop, with one narrow escape -- a catchment
-that genuinely cannot hold that many, either because too few hard-
-eligible envelopes exist there at all, or because the ones that do
-cannot mutually clear `min_spacing` from each other or from this same
-row's own subjects already placed in a neighbouring catchment (`min_
-spacing` is a site-wide constraint, never scoped to one catchment).
-`inv_generation_no_quadrant_lacks_its_required_services` (`server/sim/
-tests/invariants.rs`) asserts this per seed, per catchment, over
-arbitrary `u64` seeds, computing that same exemption independently.
+catchment / ratio)`, bounded down only by what the catchment's own real
+geometry can hold -- the largest `k` for which some subset of its own
+hard-eligible, unclaimed candidates is pairwise-`min_spacing`-clear (of
+each other and of this same row's own subjects already placed in a
+neighbouring catchment, since `min_spacing` is a site-wide constraint,
+never scoped to one catchment). `inv_generation_no_quadrant_lacks_its_
+required_services` (`server/sim/tests/invariants.rs`) asserts `placed
+>= k` per seed, per catchment, over arbitrary `u64` seeds, computing
+that same `k` independently -- never skipping the assertion outright,
+even where `k` is `0`.
 
 `DistrictSite` (`generation::site`) is the one `RuleSite` a *finished*
 district presents to `sim::rules::evaluate` -- one subject cell per
@@ -1283,9 +1293,11 @@ own type is the subject of a committed distribution row this pass
 actually feeds with a marker shape read from that one row list's own
 position (map and legend share the identical list and index -- a
 second, `placed`-filtered list with its own index was PR #317 cycle 3's
-own map/legend mismatch), overlays the catchment grid with dwellings/
-owed/placed per distribution row, and marks a catchment that used the
-physical-shortage exemption. `cargo run -p bounds --bin dump-generation`
+own map/legend mismatch), overlays a dashed catchment grid with a pink
+wash over a physically-short catchment (no text on the map -- PR #317
+cycle 4: five-line label plates on the map itself covered half a
+catchment; the per/owed/placed figures now live in a panel below the
+map, one line per catchment). `cargo run -p bounds --bin dump-generation`
 regenerates them; `bounds/tests/generation_evidence_current.rs` fails
 the build if the committed files and a fresh render ever disagree.
 

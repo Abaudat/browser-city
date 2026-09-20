@@ -198,3 +198,39 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
         );
     }
 }
+
+/// Tim's direction, PR #317 cycle 4: pass 5's own distribution-override
+/// selection (`building_types::place_row`, over `backtrack_search`) is
+/// an exhaustive independent-set search bounded by a committed node
+/// budget, never a stopwatch -- the structural ceiling this file's own
+/// convention already asks for. A few hundred candidates laid out in
+/// tight, mutually-`min_spacing`-conflicting clusters (so the real
+/// maximum independent set is small -- one per cluster), a `target`
+/// above the cluster count so it is unreachable and the search cannot
+/// short-circuit on early success: the node count the search actually
+/// used never exceeds the committed budget, and the selection it
+/// returns is still the real maximum (one per cluster), never fewer.
+#[test]
+fn placement_search_stays_within_its_own_node_budget_at_a_few_hundred_candidates() {
+    const CLUSTERS: usize = 25;
+    const PER_CLUSTER: usize = 20; // 500 candidates total.
+    const MIN_SPACING: u32 = 10;
+    let target = CLUSTERS + 10; // unreachable: only CLUSTERS are ever mutually compatible.
+
+    let (best_len, nodes) = sim::generation::building_types::placement_search_node_budget_probe(
+        CLUSTERS,
+        PER_CLUSTER,
+        MIN_SPACING,
+        target,
+    );
+
+    assert_eq!(
+        best_len, CLUSTERS,
+        "the real maximum here is exactly one candidate per cluster"
+    );
+    assert!(
+        nodes <= sim::generation::building_types::PLACEMENT_SEARCH_NODE_BUDGET,
+        "the search used {nodes} nodes, past its own {}-node budget",
+        sim::generation::building_types::PLACEMENT_SEARCH_NODE_BUDGET
+    );
+}

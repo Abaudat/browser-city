@@ -374,24 +374,139 @@ fn catchment_floors(
     (floors, remainder)
 }
 
+/// The bounded search's own work ceiling, in nodes visited (a candidate
+/// tried, whether kept or rejected) -- never wall-clock (Tim's
+/// direction, PR #317 cycle 4: "a node count, one named constant or
+/// balance key, never wall-clock"). A `target`-of-2-or-3 real candidate
+/// pool clears in a handful of nodes; this only ever matters for a
+/// genuinely adversarial pool (a few hundred mutually-conflicting
+/// candidates and an unreachable target), where exhaustive search is
+/// NP-hard in general and must not be allowed to run away inside a
+/// world-creation path.
+pub const PLACEMENT_SEARCH_NODE_BUDGET: u64 = 20_000;
+
+/// The plain first-fit-in-rank-order scan: the floor every real search
+/// below must never fall under (Tim's direction, PR #317 cycle 4 --
+/// "an invariant that a row's placed count... is never below what plain
+/// first-fit in rank order would have placed"). Skips a candidate only
+/// for a real `min_spacing` violation against `existing` or an
+/// already-chosen candidate; never backtracks.
+fn first_fit(
+    pool: &[usize],
+    target: usize,
+    min_spacing: u32,
+    ctx: &[Context],
+    existing: &[(i32, i32)],
+) -> Vec<usize> {
+    let mut chosen: Vec<usize> = Vec::new();
+    for &idx in pool {
+        if chosen.len() >= target {
+            break;
+        }
+        let cell = (ctx[idx].x, ctx[idx].y);
+        let too_close = min_spacing > 0
+            && (existing
+                .iter()
+                .any(|&other| chebyshev(cell, other) < min_spacing)
+                || chosen
+                    .iter()
+                    .any(|&c| chebyshev((ctx[c].x, ctx[c].y), cell) < min_spacing));
+        if too_close {
+            continue;
+        }
+        chosen.push(idx);
+    }
+    chosen
+}
+
+/// Depth-first search for a `target`-size, pairwise-`min_spacing`-clear
+/// (and clear of `existing`) subset of `pool`, offered in the caller's
+/// own [`rank_key`] order -- never reordered, only ever accepted or
+/// skipped (Derek's own "never ahead of affinity" holds: backtracking
+/// decides *whether* a candidate is kept, never *reorders* the pool it
+/// is offered). Bounded by [`PLACEMENT_SEARCH_NODE_BUDGET`] nodes
+/// (`*nodes`, threaded through so a caller -- and a test -- can see
+/// exactly how much work ran); `*best` is updated to the *largest*
+/// selection seen so far, ties kept at the earliest-found (rank-order-
+/// preferred) one, so a caller that must give up on `target` still
+/// gets the best real partial the search reached, never nothing
+/// (Quentin's/Tim's direction, PR #317 cycle 4: the previous version
+/// only ever committed a selection on full success, popping every
+/// tentative choice back out on failure -- an infeasible `target`
+/// silently placed zero, not `target - 1`).
+#[allow(clippy::too_many_arguments)]
+fn backtrack_search(
+    pool: &[usize],
+    start: usize,
+    target: usize,
+    min_spacing: u32,
+    ctx: &[Context],
+    existing: &[(i32, i32)],
+    chosen: &mut Vec<usize>,
+    best: &mut Vec<usize>,
+    nodes: &mut u64,
+) -> bool {
+    if chosen.len() > best.len() {
+        *best = chosen.clone();
+    }
+    if chosen.len() == target {
+        return true;
+    }
+    if pool.len().saturating_sub(start) < target - chosen.len() {
+        return false;
+    }
+    for i in start..pool.len() {
+        if *nodes >= PLACEMENT_SEARCH_NODE_BUDGET {
+            return false;
+        }
+        *nodes += 1;
+        let idx = pool[i];
+        let cell = (ctx[idx].x, ctx[idx].y);
+        let too_close = min_spacing > 0
+            && (existing
+                .iter()
+                .any(|&other| chebyshev(cell, other) < min_spacing)
+                || chosen
+                    .iter()
+                    .any(|&c| chebyshev((ctx[c].x, ctx[c].y), cell) < min_spacing));
+        if too_close {
+            continue;
+        }
+        chosen.push(idx);
+        if backtrack_search(
+            pool,
+            i + 1,
+            target,
+            min_spacing,
+            ctx,
+            existing,
+            chosen,
+            best,
+            nodes,
+        ) {
+            return true;
+        }
+        chosen.pop();
+    }
+    false
+}
+
 /// Picks up to `target` indices from `pool` (already ranked by
 /// [`rank_key`], best first), skipping anything within `min_spacing` of
 /// an already-chosen cell -- shared by both the per-catchment floor
 /// placement and the site-wide remainder placement, so the two are one
 /// code path, never a duplicated filter/assign block. Never removes a
-/// candidate for any reason but a real spacing violation: a floor or a
-/// remainder that cannot be filled from a starved or exhausted pool is
-/// left short, not padded from elsewhere -- but a first-fit-in-rank-
-/// order scan can genuinely strand an achievable target (three real
-/// candidates where the top-ranked one alone conflicts with each of the
-/// other two, though the other two do not conflict with each other,
-/// found by `proptest`, PR #317 cycle 3), so this backtracks: it only
-/// ever abandons a tentatively-chosen candidate when the *remaining*
-/// pool provably cannot still reach `target` without it, never a
-/// distance search re-ranking candidates by anything but the caller's
-/// own [`rank_key`] order (Derek's own "never ahead of affinity" holds
-/// -- backtracking only decides *whether* a candidate is kept, never
-/// *reorders* the pool it is offered in).
+/// candidate for any reason but a real spacing violation. Runs
+/// [`first_fit`] first (the floor), then [`backtrack_search`] bounded
+/// by [`PLACEMENT_SEARCH_NODE_BUDGET`] to try for better (a first-fit-
+/// in-rank-order scan can genuinely strand an achievable target: three
+/// real candidates where the top-ranked one alone conflicts with each
+/// of the other two, though the other two do not conflict with each
+/// other, found by `proptest`, PR #317 cycle 3), and returns whichever
+/// found more (first-fit on a tie, since it is what the search's own
+/// `best` already prefers by construction). A `target` genuinely
+/// unreachable from `pool` is left short at the best real selection
+/// found, never padded from elsewhere and never silently zero.
 fn place_row(
     pool: &[usize],
     target: u64,
@@ -399,51 +514,84 @@ fn place_row(
     ctx: &[Context],
     chosen_cells: &mut Vec<(i32, i32)>,
 ) -> Vec<usize> {
-    fn backtrack(
-        pool: &[usize],
-        start: usize,
-        target: usize,
-        min_spacing: u32,
-        ctx: &[Context],
-        existing: &[(i32, i32)],
-        chosen: &mut Vec<usize>,
-    ) -> bool {
-        if chosen.len() == target {
-            return true;
-        }
-        if pool.len().saturating_sub(start) < target - chosen.len() {
-            return false;
-        }
-        for i in start..pool.len() {
-            let idx = pool[i];
-            let cell = (ctx[idx].x, ctx[idx].y);
-            let too_close = min_spacing > 0
-                && (existing
-                    .iter()
-                    .any(|&other| chebyshev(cell, other) < min_spacing)
-                    || chosen
-                        .iter()
-                        .any(|&c| chebyshev((ctx[c].x, ctx[c].y), cell) < min_spacing));
-            if too_close {
-                continue;
-            }
-            chosen.push(idx);
-            if backtrack(pool, i + 1, target, min_spacing, ctx, existing, chosen) {
-                return true;
-            }
-            chosen.pop();
-        }
-        false
-    }
-
     let target = target as usize;
     let existing = chosen_cells.clone();
-    let mut chosen = Vec::new();
-    backtrack(pool, 0, target, min_spacing, ctx, &existing, &mut chosen);
+
+    let baseline = first_fit(pool, target, min_spacing, ctx, &existing);
+    let chosen = if baseline.len() == target {
+        baseline
+    } else {
+        let mut best = baseline;
+        let mut chosen = Vec::new();
+        let mut nodes = 0u64;
+        backtrack_search(
+            pool,
+            0,
+            target,
+            min_spacing,
+            ctx,
+            &existing,
+            &mut chosen,
+            &mut best,
+            &mut nodes,
+        );
+        best
+    };
+
     for &i in &chosen {
         chosen_cells.push((ctx[i].x, ctx[i].y));
     }
     chosen
+}
+
+/// Test-only (`sim/tests/generation_perf.rs`'s own growth-target suite,
+/// Tim's direction, PR #317 cycle 4: "the same shape added to
+/// generation_perf.rs at 1024"): builds `clusters` groups of
+/// `per_cluster` mutually-`min_spacing`-conflicting synthetic
+/// candidates each (clusters themselves never conflicting with one
+/// another), runs the bounded search for `target` (set above `clusters`
+/// so it is unreachable), and returns `(best.len(), nodes_used)` --
+/// never exposes [`Context`]/[`backtrack_search`] themselves, so this
+/// module's own internals stay private everywhere but this one narrow,
+/// purpose-built seam.
+#[cfg(any(test, feature = "test-fixtures"))]
+pub fn placement_search_node_budget_probe(
+    clusters: usize,
+    per_cluster: usize,
+    min_spacing: u32,
+    target: usize,
+) -> (usize, u64) {
+    let mut ctx = Vec::new();
+    for c in 0..clusters {
+        for i in 0..per_cluster {
+            ctx.push(Context {
+                land_use_idx: 0,
+                density: 50,
+                interior_width: 5,
+                interior_depth: 5,
+                site_context: [false; 4],
+                x: (c as i32) * 1000 + (i as i32 % 2),
+                y: 0,
+                catchment: (0, 0),
+            });
+        }
+    }
+    let pool: Vec<usize> = (0..ctx.len()).collect();
+    let mut best = first_fit(&pool, target, min_spacing, &ctx, &[]);
+    let mut chosen = Vec::new();
+    let mut nodes = 0u64;
+    backtrack_search(
+        &pool,
+        0,
+        target,
+        min_spacing,
+        &ctx,
+        &[],
+        &mut chosen,
+        &mut best,
+        &mut nodes,
+    );
+    (best.len(), nodes)
 }
 
 /// Runs pass 5. `envelopes`/`plots`/`streets` are pass 4's/3's/2's own
@@ -609,6 +757,7 @@ mod tests {
     use crate::generated::defs;
     use crate::generation::{GenerationConfig, GenerationContent, land_use, plots as plots_mod};
     use crate::generation::{envelopes, streets};
+    use proptest::prelude::*;
 
     fn cfg() -> GenerationConfig {
         GenerationConfig::from_balance(defs::BALANCE).unwrap()
@@ -912,5 +1061,137 @@ mod tests {
              candidate 0's own conflict with both"
         );
         assert!(chosen.contains(&1) && chosen.contains(&2));
+    }
+
+    #[test]
+    fn place_row_places_the_best_real_partial_when_the_target_is_unreachable() {
+        // Quentin's/Tim's direction, PR #317 cycle 4: an infeasible
+        // `target` must be left at the best real selection the pool can
+        // give, never silently empty. Three candidates, all pairwise
+        // within `min_spacing` of each other -- at most one can ever be
+        // chosen -- `target = 2`.
+        let cell = |x: i32| Context {
+            land_use_idx: 0,
+            density: 50,
+            interior_width: 5,
+            interior_depth: 5,
+            site_context: [false; 4],
+            x,
+            y: 0,
+            catchment: (0, 0),
+        };
+        let ctx = vec![cell(0), cell(5), cell(9)];
+        let pool: Vec<usize> = vec![0, 1, 2];
+        let mut chosen_cells = Vec::new();
+        let chosen = place_row(&pool, 2, 15, &ctx, &mut chosen_cells);
+        assert_eq!(
+            chosen.len(),
+            1,
+            "no pair of these three candidates clears min_spacing 15 -- the best achievable is \
+             exactly one, never zero (the previous version popped every tentative choice back \
+             out on failure and returned empty)"
+        );
+        assert_eq!(
+            chosen,
+            vec![0],
+            "rank order's own top candidate is what first_fit -- the floor -- already picks"
+        );
+    }
+
+    #[test]
+    fn backtrack_search_stays_within_its_own_node_budget_on_an_adversarial_pool() {
+        // Tim's direction, PR #317 cycle 4: "count the nodes, do not
+        // time them". A few hundred candidates, laid out in tight
+        // mutually-conflicting clusters (so the real maximum independent
+        // set is small -- one per cluster) with a `target` above the
+        // cluster count, so the target is unreachable and the search
+        // cannot short-circuit on early success; asserts the node count
+        // the search actually used never exceeds the committed budget,
+        // never a wall-clock ceiling.
+        const CLUSTERS: i32 = 20;
+        const PER_CLUSTER: i32 = 15;
+        let mut ctx = Vec::new();
+        for c in 0..CLUSTERS {
+            // Every candidate in one cluster sits within 1 cell of every
+            // other in the same cluster (mutually conflicting under
+            // min_spacing 10), clusters themselves 1000 cells apart
+            // (never conflicting with another cluster).
+            for i in 0..PER_CLUSTER {
+                ctx.push(Context {
+                    land_use_idx: 0,
+                    density: 50,
+                    interior_width: 5,
+                    interior_depth: 5,
+                    site_context: [false; 4],
+                    x: c * 1000 + (i % 2),
+                    y: 0,
+                    catchment: (0, 0),
+                });
+            }
+        }
+        let pool: Vec<usize> = (0..ctx.len()).collect();
+        let target = (CLUSTERS as usize) + 5; // unreachable: only CLUSTERS are ever mutually compatible
+        let mut best = first_fit(&pool, target, 10, &ctx, &[]);
+        let mut chosen = Vec::new();
+        let mut nodes = 0u64;
+        backtrack_search(
+            &pool,
+            0,
+            target,
+            10,
+            &ctx,
+            &[],
+            &mut chosen,
+            &mut best,
+            &mut nodes,
+        );
+        assert!(
+            nodes <= PLACEMENT_SEARCH_NODE_BUDGET,
+            "backtrack_search used {nodes} nodes, past its own {PLACEMENT_SEARCH_NODE_BUDGET}-node budget"
+        );
+        assert_eq!(
+            best.len(),
+            CLUSTERS as usize,
+            "the real maximum here is exactly one candidate per cluster"
+        );
+    }
+
+    proptest! {
+        /// Tim's direction, PR #317 cycle 4: "an invariant that a row's
+        /// placed count in a catchment is never below what plain
+        /// first-fit in rank order would have placed" -- over arbitrary
+        /// small synthetic pools (never real generated content, which
+        /// this property does not need), `place_row`'s own result is
+        /// never shorter than `first_fit`'s own, whatever the geometry.
+        #[test]
+        fn place_row_is_never_worse_than_plain_first_fit_in_rank_order(
+            xs in proptest::collection::vec(-200i32..200, 1..40),
+            target in 1u64..10,
+            min_spacing in 0u32..40,
+        ) {
+            let ctx: Vec<Context> = xs
+                .iter()
+                .map(|&x| Context {
+                    land_use_idx: 0,
+                    density: 50,
+                    interior_width: 5,
+                    interior_depth: 5,
+                    site_context: [false; 4],
+                    x,
+                    y: 0,
+                    catchment: (0, 0),
+                })
+                .collect();
+            let pool: Vec<usize> = (0..ctx.len()).collect();
+
+            let baseline = first_fit(&pool, target as usize, min_spacing, &ctx, &[]);
+            let mut chosen_cells = Vec::new();
+            let chosen = place_row(&pool, target, min_spacing, &ctx, &mut chosen_cells);
+            prop_assert!(
+                chosen.len() >= baseline.len(),
+                "place_row found {} but plain first-fit alone finds {}",
+                chosen.len(), baseline.len()
+            );
+        }
     }
 }

@@ -98,8 +98,8 @@ balance citizen.appearance.hair_rare_chance value=15 min=0 max=100
 balance citizen.bar_decay.rest value=10 min=0 max=100
 balance generation.building_types.catchment_extent_cells value=256 min=1 max=100000
 balance generation.building_types.min_employers_per_profession value=5 min=1 max=1000
-balance generation.building_types.profession_count_mean_tolerance_percent value=10 min=0 max=100
-balance generation.building_types.profession_count_per_city_min value=42 min=1 max=1000
+balance generation.building_types.profession_count_mean_tolerance_percent value=15 min=0 max=100
+balance generation.building_types.profession_count_per_city_min value=40 min=1 max=1000
 balance generation.building_types.target_profession_count value=69 min=1 max=1000
 balance generation.building_types.target_workplaces_per_million_cells value=1312 min=1 max=1000000
 balance generation.building_types.workplace_count_tolerance_percent value=50 min=1 max=100

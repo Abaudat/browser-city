@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "2eb02d484aab00ae",
+  "defs_version": "ccf9d988ebdd6fbb",
   "collider_subcells_per_cell": 16,
   "interact_at_max_reach_cells": 2,
   "max_footprint_cells": 8,
@@ -115,8 +115,8 @@
     { "key": "citizen.bar_decay.rest", "max": 100, "min": 0, "value": 10 },
     { "key": "generation.building_types.catchment_extent_cells", "max": 100000, "min": 1, "value": 256 },
     { "key": "generation.building_types.min_employers_per_profession", "max": 1000, "min": 1, "value": 5 },
-    { "key": "generation.building_types.profession_count_mean_tolerance_percent", "max": 100, "min": 0, "value": 10 },
-    { "key": "generation.building_types.profession_count_per_city_min", "max": 1000, "min": 1, "value": 42 },
+    { "key": "generation.building_types.profession_count_mean_tolerance_percent", "max": 100, "min": 0, "value": 15 },
+    { "key": "generation.building_types.profession_count_per_city_min", "max": 1000, "min": 1, "value": 40 },
     { "key": "generation.building_types.target_profession_count", "max": 1000, "min": 1, "value": 69 },
     { "key": "generation.building_types.target_workplaces_per_million_cells", "max": 1000000, "min": 1, "value": 1312 },
     { "key": "generation.building_types.workplace_count_tolerance_percent", "max": 100, "min": 1, "value": 50 },

@@ -45,7 +45,7 @@ min_interior_width_cells = 8
 min_interior_depth_cells = 8
 weight = 0
 prefers_site = ["arterial", "street"]
-professions = ["dispatcher", "mechanic", "sanitation_worker", "conductor"]
+professions = ["dispatcher", "mechanic", "sanitation_worker", "driver"]
 
 [[building_type]]
 id = 29
