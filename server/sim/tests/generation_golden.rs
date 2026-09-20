@@ -1,7 +1,7 @@
 //! The determinism harness for stories 3.2-3.4 (FR110 passes 1-5): same
 //! idiom as `determinism_golden.rs`/`appearance_golden.rs`. Regenerates
 //! all five passes for a fixed seed set and compares a readable summary
-//! plus a digest against the committed `tests/goldens/generation_v4.
+//! plus a digest against the committed `tests/goldens/generation_v5.
 //! golden`, so a diff names what moved rather than just "hash differs".
 //! Keyed by `sim::generation::GENERATION_VERSION`; `check-golden-version-
 //! bump.sh` fails a PR that touches the golden without bumping that
@@ -40,7 +40,7 @@ use sim::rules::{CoherenceMode, RuleDef, RuleKind, RuleSet};
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
-const GOLDEN: &str = include_str!("goldens/generation_v4.golden");
+const GOLDEN: &str = include_str!("goldens/generation_v5.golden");
 
 /// A frozen snapshot of `defs/balance/generation.toml`'s own values at
 /// the time this golden was last regenerated -- never read from `defs::
@@ -401,7 +401,7 @@ fn generation_output_matches_committed_golden() {
         });
     assert_eq!(
         golden_version, GENERATION_VERSION,
-        "tests/goldens/generation_v4.golden is keyed to version {golden_version} but \
+        "tests/goldens/generation_v5.golden is keyed to version {golden_version} but \
          sim::generation::GENERATION_VERSION is {GENERATION_VERSION} -- regenerate the golden \
          whenever GENERATION_VERSION changes"
     );

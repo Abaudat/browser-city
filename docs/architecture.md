@@ -1233,7 +1233,28 @@ catchment boundary clusters. Within either pool, candidates are ranked
 -- never chosen by a distance search -- first by how many of the
 subject type's own `prefers_site` contexts they match, then by
 `density_affinity`, then by a seeded draw key (total in practice, so a
-distance tie-break is never reached).
+distance tie-break is never reached). `place_row` backtracks over that
+rank order rather than a plain first-fit scan: a top-ranked candidate
+that conflicts (by `min_spacing`) with every other real candidate, none
+of which conflict with each other, must never strand an achievable
+target (found by `proptest`, PR #317 cycle 3) -- backtracking only ever
+decides whether a candidate already offered in rank order is kept,
+never reorders the pool itself.
+
+The per-catchment floor is a real, unconditional guarantee, never
+discounted by the row's own site-wide `tolerance_percent` (that
+tolerance belongs only to the site-wide ratio check `sim::rules::
+evaluate`'s own Distribution kind runs, where the unplaced remainder
+lives): a catchment is owed exactly `floor(per-tag count in that
+catchment / ratio)`, full stop, with one narrow escape -- a catchment
+that genuinely cannot hold that many, either because too few hard-
+eligible envelopes exist there at all, or because the ones that do
+cannot mutually clear `min_spacing` from each other or from this same
+row's own subjects already placed in a neighbouring catchment (`min_
+spacing` is a site-wide constraint, never scoped to one catchment).
+`inv_generation_no_quadrant_lacks_its_required_services` (`server/sim/
+tests/invariants.rs`) asserts this per seed, per catchment, over
+arbitrary `u64` seeds, computing that same exemption independently.
 
 `DistrictSite` (`generation::site`) is the one `RuleSite` a *finished*
 district presents to `sim::rules::evaluate` -- one subject cell per
@@ -1251,12 +1272,22 @@ under `server/sim/src/generation/`.
 
 Evidence: `bounds/src/generation_evidence.rs` renders every implemented
 pass's own output, for three committed seeds, to `docs/generation/*.svg`
--- pass 5's own file additionally tints each envelope by its derived
-class, marks every municipal-service envelope by its own civic tag, and
-overlays the catchment grid with dwellings/owed/placed per distribution
-row. `cargo run -p bounds --bin dump-generation` regenerates them;
-`bounds/tests/generation_evidence_current.rs` fails the build if the
-committed files and a fresh render ever disagree.
+-- pass 5's own file additionally tints each envelope by a derived,
+structural `TypeClass` (never a tag name or a hash: is the `per` basis
+of a committed distribution row, housing; is named by a committed
+coherence row's own `subject`/`within`, the two form extremes; has
+posts, workplace; both housing and posts, mixed use; none of these,
+vacant/yard -- six fixed classes, a fixed palette, so two unrelated
+types can never collide onto one swatch), marks every envelope whose
+own type is the subject of a committed distribution row this pass
+actually feeds with a marker shape read from that one row list's own
+position (map and legend share the identical list and index -- a
+second, `placed`-filtered list with its own index was PR #317 cycle 3's
+own map/legend mismatch), overlays the catchment grid with dwellings/
+owed/placed per distribution row, and marks a catchment that used the
+physical-shortage exemption. `cargo run -p bounds --bin dump-generation`
+regenerates them; `bounds/tests/generation_evidence_current.rs` fails
+the build if the committed files and a fresh render ever disagree.
 
 `GENERATION_VERSION` is bumped whenever any implemented pass's algorithm
 or seeding (never a `defs/balance/generation.toml` or
@@ -1267,7 +1298,7 @@ deliberately unrelated ids/keys, not live `defs::BALANCE`/
 `defs::BUILDING_TYPES`, so a balance or content retune alone never
 forces a version bump, and the same shape of output against a wholly
 different content table is itself proof the generator never branches on
-a content key. `server/sim/tests/goldens/generation_v4.golden` is keyed
+a content key. `server/sim/tests/goldens/generation_v5.golden` is keyed
 to it, guarded by `check-golden-version-bump.sh`'s `generation_*` arm the
 same way `RNG_VERSION`/`APPEARANCE_VERSION` are.
 

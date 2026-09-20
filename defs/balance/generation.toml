@@ -858,28 +858,36 @@ max = 1000
 
 [[balance]]
 # The pooled band around the target above, as a percent. Measured over
-# 5,000 seeds after the cycle-2 trade-sharing pass: mean 57.2, stddev
-# 3.3 -- short of 69 by a real, structural reason, not an untried one:
-# the profession *catalog* itself now totals exactly 69 rows (folding
-# the employer-prefixed duplicates cycle 2 named removed 8 rows outright
-# -- `waiter`/`post_clerk`/`depot_dispatcher`/`depot_mechanic`/
-# `refuse_collector`/`council_clerk`/`council_administrator` folded into
-# an existing shared trade, `shelter_attendant`/`launderette_attendant`
+# 50,000 seeds after the cycle-3 trade-sharing pass (PR #317 cycle 3):
+# mean 63.6, stddev 2.7 -- inside 10% of 69 (62.1) with real margin. The
+# profession *catalog* itself totals exactly 69 rows (folding the
+# employer-prefixed duplicates cycle 2 named removed 8 rows outright --
+# `waiter`/`post_clerk`/`depot_dispatcher`/`depot_mechanic`/`refuse_
+# collector`/`council_clerk`/`council_administrator` folded into an
+# existing shared trade, `shelter_attendant`/`launderette_attendant`
 # folded into one new `attendant`), and `councillor`/`surgeon` stay
 # structurally singleton (one employer only, by design, per Derek's own
-# direction) -- so `target_profession_count = 69` now asks for full
-# catalog saturation in every city, including the two rows that can
-# never count. Institutional land is also still a small, fixed share of
-# the site (the cycle-1 finding this comment used to cite alone), which
-# caps several institutional-only trades near the 5-employer floor on
-# top of that ceiling. Closing this needs either a larger catalog (more
-# building types/professions, real content authoring outside this
-# tuning pass's own remaining budget) or more institutional land (a
-# retune outside this pass's own scope) -- a tension this pass surfaced,
-# not one it can resolve alone. 20% covers the measured mean with real
-# margin. Re-derive after every retune.
+# direction) -- so `target_profession_count = 69` asks for essentially
+# full catalog saturation in every city, including the two rows that
+# can never count. Closed this cycle (Quentin's direction, PR #317
+# cycle 3) by sharing institutional-only trades onto a second, honest
+# building type where the theme supports it, never a new profession
+# key: a hospital's own `doctor`, already a clinic's; a clinic's own
+# `orderly`, already a hospital's; a school's own `nurse`, already a
+# clinic's and a hospital's; a shelter's own `caseworker`/`counsellor`,
+# already a welfare office's, and a welfare office's own `support_
+# worker`, already a shelter's; a recycling facility's own `sanitation_
+# worker`, already a depot's, and a depot's own `conductor`, already a
+# transit office's; a school and a library sharing `teacher`/`teaching_
+# assistant`/`archivist`; a police station and a fire station sharing
+# `officer`/`detective`/`firefighter`/`paramedic`/`dispatcher`; an
+# office block's own `administrator`, already shared among school/
+# police/fire/transit/council, and a bank branch's own `detective`,
+# already a police/fire station's. 10% is a real band with margin now
+# that the mean sits comfortably clear of the target. Re-derive after
+# every retune.
 key = "generation.building_types.profession_count_mean_tolerance_percent"
-value = 20
+value = 10
 min = 0
 max = 100
 
@@ -898,12 +906,16 @@ max = 1000
 # count_mean_tolerance_percent` above lacks entirely -- the pooled mean
 # alone lets a single unlucky city sit far below it and nothing notices.
 # A weak any-seed floor, the same sigma-margin rule `generation.
-# envelopes.count_tolerance_percent` states: measured mean 57.2, stddev
-# 3.3 over 5,000 seeds; mean - 5.5*stddev = 39.05, and the real measured
-# min over that same run is 42 -- comfortably above it. 35 leaves real
-# margin under both. Re-derive after every retune.
+# envelopes.count_tolerance_percent` states. Re-measured after the
+# cycle-3 trade-sharing pass (PR #317 cycle 3): mean 63.6, stddev 2.7
+# over 50,000 seeds; mean - 5.5*stddev = 48.75, but the real measured
+# min over that same run is 47 -- below the sigma bound (a real, rarer-
+# than-5.5-sigma tail city, not a fitting error), so the sigma formula
+# is not trusted blindly here: 42 leaves real, visible margin under the
+# actually-measured min rather than under an optimistic estimate.
+# Re-derive after every retune.
 key = "generation.building_types.profession_count_per_city_min"
-value = 35
+value = 42
 min = 1
 max = 1000
 

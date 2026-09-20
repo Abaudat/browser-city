@@ -45,7 +45,7 @@ min_interior_width_cells = 8
 min_interior_depth_cells = 8
 weight = 0
 prefers_site = ["arterial", "street"]
-professions = ["dispatcher", "mechanic", "sanitation_worker"]
+professions = ["dispatcher", "mechanic", "sanitation_worker", "conductor"]
 
 [[building_type]]
 id = 29
@@ -69,7 +69,7 @@ density_max = 100
 min_interior_width_cells = 8
 min_interior_depth_cells = 8
 weight = 24
-professions = ["sorter", "machine_operator", "forklift_operator", "supervisor", "driver"]
+professions = ["sorter", "machine_operator", "forklift_operator", "supervisor", "driver", "sanitation_worker"]
 
 [[building_type]]
 id = 31

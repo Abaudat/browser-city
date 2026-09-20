@@ -251,12 +251,18 @@ document's own opening paragraph forbids.
   once citizens are seeded onto housing.
 - **Evidence:** [`docs/generation/building-types-seed-1.svg`](generation/building-types-seed-1.svg),
   [`-2`](generation/building-types-seed-2.svg), [`-3`](generation/building-types-seed-3.svg)
-  -- envelopes tinted by their own tag *set* (no per-key branch: a
-  hashed palette index over the sorted tag ids, so two types sharing a
-  tag set always share a tint), a distinct marker for every type that
-  is the subject of a committed distribution row, the catchment grid
-  with dwellings/owed/placed per row, legend derived from what the
-  district actually places; same regen-and-diff guard.
+  -- envelopes tinted by a derived, structural class (no per-key branch
+  and no hash: is the `per` basis of a distribution row, housing; is
+  named by a coherence row's own `subject`/`within`, the two form
+  extremes; has posts, workplace; both housing and posts, mixed use;
+  none of these, vacant/yard -- six fixed classes over a fixed palette,
+  so no two unrelated types can ever collide onto one swatch), a
+  distinct marker for every type that is the subject of a committed
+  distribution row this pass actually feeds (map and legend read the
+  shape from the same row list and the same index), the catchment grid
+  with dwellings/owed/placed per row and a physically-short catchment
+  marked, legend derived from what the district actually places; same
+  regen-and-diff guard.
 
 ### Interior layout
 

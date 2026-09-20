@@ -381,7 +381,17 @@ fn catchment_floors(
 /// code path, never a duplicated filter/assign block. Never removes a
 /// candidate for any reason but a real spacing violation: a floor or a
 /// remainder that cannot be filled from a starved or exhausted pool is
-/// left short, not padded from elsewhere.
+/// left short, not padded from elsewhere -- but a first-fit-in-rank-
+/// order scan can genuinely strand an achievable target (three real
+/// candidates where the top-ranked one alone conflicts with each of the
+/// other two, though the other two do not conflict with each other,
+/// found by `proptest`, PR #317 cycle 3), so this backtracks: it only
+/// ever abandons a tentatively-chosen candidate when the *remaining*
+/// pool provably cannot still reach `target` without it, never a
+/// distance search re-ranking candidates by anything but the caller's
+/// own [`rank_key`] order (Derek's own "never ahead of affinity" holds
+/// -- backtracking only decides *whether* a candidate is kept, never
+/// *reorders* the pool it is offered in).
 fn place_row(
     pool: &[usize],
     target: u64,
@@ -389,21 +399,49 @@ fn place_row(
     ctx: &[Context],
     chosen_cells: &mut Vec<(i32, i32)>,
 ) -> Vec<usize> {
+    fn backtrack(
+        pool: &[usize],
+        start: usize,
+        target: usize,
+        min_spacing: u32,
+        ctx: &[Context],
+        existing: &[(i32, i32)],
+        chosen: &mut Vec<usize>,
+    ) -> bool {
+        if chosen.len() == target {
+            return true;
+        }
+        if pool.len().saturating_sub(start) < target - chosen.len() {
+            return false;
+        }
+        for i in start..pool.len() {
+            let idx = pool[i];
+            let cell = (ctx[idx].x, ctx[idx].y);
+            let too_close = min_spacing > 0
+                && (existing
+                    .iter()
+                    .any(|&other| chebyshev(cell, other) < min_spacing)
+                    || chosen
+                        .iter()
+                        .any(|&c| chebyshev((ctx[c].x, ctx[c].y), cell) < min_spacing));
+            if too_close {
+                continue;
+            }
+            chosen.push(idx);
+            if backtrack(pool, i + 1, target, min_spacing, ctx, existing, chosen) {
+                return true;
+            }
+            chosen.pop();
+        }
+        false
+    }
+
+    let target = target as usize;
+    let existing = chosen_cells.clone();
     let mut chosen = Vec::new();
-    for &i in pool {
-        if chosen.len() as u64 >= target {
-            break;
-        }
-        let cell = (ctx[i].x, ctx[i].y);
-        let too_close = min_spacing > 0
-            && chosen_cells
-                .iter()
-                .any(|&other| chebyshev(cell, other) < min_spacing);
-        if too_close {
-            continue;
-        }
-        chosen.push(i);
-        chosen_cells.push(cell);
+    backtrack(pool, 0, target, min_spacing, ctx, &existing, &mut chosen);
+    for &i in &chosen {
+        chosen_cells.push((ctx[i].x, ctx[i].y));
     }
     chosen
 }
@@ -840,5 +878,39 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn place_row_backtracks_past_a_top_ranked_candidate_that_would_strand_the_target() {
+        // Real shape found by `proptest`, PR #317 cycle 3
+        // (`inv_generation_no_quadrant_lacks_its_required_services`): the
+        // pool's own best-ranked candidate (index 0, first in `pool`)
+        // conflicts with both other candidates, though those two do not
+        // conflict with each other -- a naive first-fit-in-rank-order
+        // scan takes candidate 0, then strands `target = 2` (both 1 and
+        // 2 conflict with 0), even though {1, 2} is a real, feasible
+        // pair. `place_row` must find it.
+        let cell = |x: i32| Context {
+            land_use_idx: 0,
+            density: 50,
+            interior_width: 5,
+            interior_depth: 5,
+            site_context: [false; 4],
+            x,
+            y: 0,
+            catchment: (0, 0),
+        };
+        let ctx = vec![cell(0), cell(-14), cell(14)];
+        let pool: Vec<usize> = vec![0, 1, 2];
+        let mut chosen_cells = Vec::new();
+        let chosen = place_row(&pool, 2, 15, &ctx, &mut chosen_cells);
+        assert_eq!(
+            chosen.len(),
+            2,
+            "candidates 1 and 2 (x=-14, x=14, 28 cells apart) are mutually compatible at \
+             min_spacing 15 -- the target was achievable and must be found, not stranded by \
+             candidate 0's own conflict with both"
+        );
+        assert!(chosen.contains(&1) && chosen.contains(&2));
     }
 }

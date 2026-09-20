@@ -56,7 +56,7 @@ min_interior_depth_cells = 8
 weight = 0
 prefers_site = ["arterial"]
 density_affinity = 1
-professions = ["nurse", "orderly", "receptionist", "surgeon", "paramedic"]
+professions = ["nurse", "orderly", "receptionist", "surgeon", "paramedic", "doctor"]
 
 [[building_type]]
 id = 37
@@ -69,7 +69,7 @@ min_interior_width_cells = 6
 min_interior_depth_cells = 6
 weight = 0
 density_affinity = -1
-professions = ["caseworker", "clerk", "counsellor"]
+professions = ["caseworker", "clerk", "counsellor", "support_worker"]
 
 [[building_type]]
 id = 38
@@ -82,7 +82,7 @@ min_interior_width_cells = 7
 min_interior_depth_cells = 7
 weight = 0
 density_affinity = -1
-professions = ["attendant", "cook", "support_worker"]
+professions = ["attendant", "cook", "support_worker", "caseworker", "counsellor"]
 
 [[building_type]]
 id = 39
@@ -94,7 +94,7 @@ density_max = 100
 min_interior_width_cells = 6
 min_interior_depth_cells = 6
 weight = 20
-professions = ["teacher", "teaching_assistant", "administrator", "cleaner", "librarian", "custodian"]
+professions = ["teacher", "teaching_assistant", "administrator", "cleaner", "librarian", "custodian", "archivist", "nurse"]
 
 [[building_type]]
 id = 40
@@ -106,7 +106,7 @@ density_max = 100
 min_interior_width_cells = 7
 min_interior_depth_cells = 7
 weight = 20
-professions = ["nurse", "receptionist", "doctor", "pharmacist"]
+professions = ["nurse", "receptionist", "doctor", "pharmacist", "orderly"]
 
 [[building_type]]
 id = 41
@@ -118,7 +118,7 @@ density_max = 100
 min_interior_width_cells = 7
 min_interior_depth_cells = 7
 weight = 20
-professions = ["librarian", "clerk", "archivist", "custodian"]
+professions = ["librarian", "clerk", "archivist", "custodian", "teaching_assistant", "teacher"]
 
 [[building_type]]
 id = 42
@@ -130,7 +130,7 @@ density_max = 100
 min_interior_width_cells = 6
 min_interior_depth_cells = 6
 weight = 20
-professions = ["officer", "administrator", "detective"]
+professions = ["officer", "administrator", "detective", "firefighter", "paramedic"]
 
 [[building_type]]
 id = 43
@@ -142,7 +142,7 @@ density_max = 100
 min_interior_width_cells = 6
 min_interior_depth_cells = 6
 weight = 20
-professions = ["firefighter", "administrator", "paramedic"]
+professions = ["firefighter", "administrator", "paramedic", "officer", "detective", "dispatcher"]
 
 [[building_type]]
 id = 44

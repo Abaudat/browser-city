@@ -41,7 +41,7 @@ density_max = 100
 min_interior_width_cells = 6
 min_interior_depth_cells = 6
 weight = 12
-professions = ["clerk", "accountant", "receptionist", "secretary", "manager"]
+professions = ["clerk", "accountant", "receptionist", "secretary", "manager", "administrator"]
 
 [[building_type]]
 id = 8
@@ -197,7 +197,7 @@ density_max = 100
 min_interior_width_cells = 6
 min_interior_depth_cells = 6
 weight = 10
-professions = ["bank_teller", "manager", "security_guard", "loan_officer"]
+professions = ["bank_teller", "manager", "security_guard", "loan_officer", "detective"]
 
 [[building_type]]
 id = 21
