@@ -792,3 +792,77 @@ key = "generation.envelopes.max_rejected_plot_percent"
 value = 1
 min = 0
 max = 100
+
+# --- building types (pass 5) -------------------------------------------
+
+[[balance]]
+# AC4's own workplace-count target, stated per one million site cells and
+# scaled by real site area inside `District::check_workplace_count` --
+# the Scale Baseline's ~344 workplaces at 512x512 (262,144 cells,
+# docs/gdd.md), never a measurement: 1312 * 262144 / 1e6 = ~344.
+key = "generation.building_types.target_workplaces_per_million_cells"
+value = 1312
+min = 1
+max = 1000000
+
+[[balance]]
+# The per-seed tolerance band around the scaled workplace target, as a
+# percent -- the wild-deviation guard, same shape as
+# `generation.envelopes.count_tolerance_percent`. Wider than the
+# building-count guard's own 21%: workplace count is a *derived*
+# quantity (every placed type whose own `professions` list is non-empty),
+# not a placement pass 4 tunes directly, and `defs/building-types/*.toml`'s
+# own weights are not yet precisely tuned to the Scale Baseline's 344 --
+# measured over 5,000 seeds (`cargo run -p bounds --release --bin
+# measure-generation`): mean 386, stddev 31.1, min 265, max 525. 60%
+# covers min (344*0.4=137.6) and max (344*1.6=550.4) with real margin.
+# Tightening this (and the pooled tolerance below) is real building-type
+# content-tuning work a later story owns -- this story's own workplace
+# count is emergent, not padded to hit a number (Derek's direction).
+key = "generation.building_types.workplace_count_tolerance_percent"
+value = 60
+min = 1
+max = 100
+
+[[balance]]
+# The pooled half: the mean workplace count over the fixed seed range
+# 0..256 must sit within this percent of the scaled target. The measured
+# pooled mean (386) sits ~12% above the target (344) -- 15% covers it
+# with a little margin; see the per-seed key's own comment.
+key = "generation.building_types.workplace_mean_count_tolerance_percent"
+value = 15
+min = 0
+max = 100
+
+[[balance]]
+# Quentin/Tim's direction: the distinct-profession-depth invariant's own
+# balance keys, read directly (never threaded through `GenerationConfig`
+# -- profession depth is an invariant, not a `generate()`-time verdict,
+# the same distinction Tim draws for it). Measured over 5,000 seeds:
+# mean 13.0, stddev 0.4 -- far short of the GDD's ~69 (docs/gdd.md),
+# because this story authors 28 professions across 16 building types as
+# vocabulary (Derek's direction), not the full roster: reaching ~69 with
+# real 5+-employer depth is real building-type/profession content
+# authoring a later story owns. This key is honestly re-measured, not
+# padded toward 69.
+key = "generation.building_types.target_profession_count"
+value = 13
+min = 1
+max = 1000
+
+[[balance]]
+# The pooled band around the target above, as a percent.
+key = "generation.building_types.profession_count_mean_tolerance_percent"
+value = 10
+min = 0
+max = 100
+
+[[balance]]
+# The minimum number of distinct placed workplaces a profession must be
+# held by to count toward the target above (the GDD's "5+ employers
+# each") -- a monopsony (a singleton institution's own post) is
+# institutional friction, deliberately excluded (Derek's direction).
+key = "generation.building_types.min_employers_per_profession"
+value = 5
+min = 1
+max = 1000

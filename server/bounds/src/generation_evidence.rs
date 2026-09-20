@@ -21,8 +21,8 @@
 //! can never drift from the code that produced it.
 
 use sim::generation::{
-    Block, EnvelopeMap, EnvelopeOutcome, GenerationConfig, LandUse, PlotMap, Side, StreetClass,
-    StreetNetwork, block_land_use, land_use::LandUseMap,
+    Block, EnvelopeMap, EnvelopeOutcome, GenerationConfig, GenerationContent, LandUse, PlotMap,
+    Side, StreetClass, StreetNetwork, block_land_use, land_use::LandUseMap,
 };
 
 /// The three fixed seeds every evidence SVG renders -- committed once,
@@ -624,10 +624,11 @@ pub struct EvidenceSvgs {
 pub fn build_all() -> Vec<EvidenceSvgs> {
     let cfg = GenerationConfig::from_balance(sim::generated::defs::BALANCE)
         .expect("live defs/ must be a valid GenerationConfig");
+    let content = GenerationContent::committed();
     EVIDENCE_SEEDS
         .iter()
         .map(|&seed| {
-            let d = sim::generation::generate(seed, &cfg)
+            let d = sim::generation::generate(seed, &cfg, &content)
                 .expect("the live committed config must generate every evidence seed");
             EvidenceSvgs {
                 seed,

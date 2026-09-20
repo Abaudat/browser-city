@@ -1,7 +1,7 @@
-//! The determinism harness for stories 3.2-3.3 (FR110 passes 1-4): same
+//! The determinism harness for stories 3.2-3.4 (FR110 passes 1-5): same
 //! idiom as `determinism_golden.rs`/`appearance_golden.rs`. Regenerates
-//! all four passes for a fixed seed set and compares a readable summary
-//! plus a digest against the committed `tests/goldens/generation_v2.
+//! all five passes for a fixed seed set and compares a readable summary
+//! plus a digest against the committed `tests/goldens/generation_v3.
 //! golden`, so a diff names what moved rather than just "hash differs".
 //! Keyed by `sim::generation::GENERATION_VERSION`; `check-golden-version-
 //! bump.sh` fails a PR that touches the golden without bumping that
@@ -17,18 +17,30 @@
 //! The evidence SVGs (`bounds::generation_evidence`) keep using live
 //! balance -- that is their own job, showing what actually ships.
 //!
+//! Story 3.4 extends the same discipline to content: [`frozen_content`]
+//! freezes a tiny building-type table under deliberately unrelated
+//! ids/keys (never `defs::BUILDING_TYPES`') and an empty rule set --
+//! retuning `defs/building-types/*.toml` or `defs/rules/generation.toml`
+//! (also covered by `defs_version`) must never force a version bump
+//! either, and the generator producing the same shape of output against
+//! a wholly different content table is itself proof it never branches on
+//! a content key (Tim's direction).
+//!
 //! Also checks: the same seed twice in one process is byte-identical, and
 //! running pass 2 twice over one pass-1 output is byte-identical (pass 2
 //! never mutates its own input).
 
+use sim::generated::defs::{BuildingTypeDef, BuildingTypePost};
 use sim::generation::streets::DETOUR_SAMPLE_MAX_NODES;
 use sim::generation::{
-    GENERATION_VERSION, GenerationConfig, LandUse, envelopes, land_use, plan, plots, streets,
+    GENERATION_VERSION, GenerationConfig, GenerationContent, LandUse, envelopes, land_use, plan,
+    plots, streets,
 };
+use sim::rules::RuleSet;
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
-const GOLDEN: &str = include_str!("goldens/generation_v2.golden");
+const GOLDEN: &str = include_str!("goldens/generation_v3.golden");
 
 /// A frozen snapshot of `defs/balance/generation.toml`'s own values at
 /// the time this golden was last regenerated -- never read from `defs::
@@ -107,6 +119,74 @@ fn frozen_config() -> GenerationConfig {
         envelope_count_tolerance_percent: 21,
         envelope_mean_count_tolerance_percent: 3,
         envelope_max_rejected_plot_percent: 5,
+        workplace_target_count_per_million_cells: 1312,
+        workplace_count_tolerance_percent: 30,
+        workplace_mean_count_tolerance_percent: 5,
+    }
+}
+
+/// Deliberately unrelated ids/keys and shape from the real committed
+/// `defs/building-types/*.toml` (Tim's direction) -- one generic type per
+/// land use, covering `frozen_config`'s own full density range, weight
+/// 1, no posts. Never `defs::BUILDING_TYPES`.
+const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
+    BuildingTypeDef {
+        id: 9001,
+        key: "frozen_res",
+        tags: &[9101],
+        land_uses: &["residential"],
+        density_min: 0,
+        density_max: 100,
+        min_interior_width_cells: 4,
+        min_interior_depth_cells: 4,
+        weight: 1,
+        professions: &[],
+    },
+    BuildingTypeDef {
+        id: 9002,
+        key: "frozen_com",
+        tags: &[9102],
+        land_uses: &["commercial"],
+        density_min: 0,
+        density_max: 100,
+        min_interior_width_cells: 6,
+        min_interior_depth_cells: 6,
+        weight: 1,
+        professions: &[BuildingTypePost {
+            profession: "frozen_clerk",
+            headcount: 1,
+        }],
+    },
+    BuildingTypeDef {
+        id: 9003,
+        key: "frozen_ind",
+        tags: &[9103],
+        land_uses: &["industrial"],
+        density_min: 0,
+        density_max: 100,
+        min_interior_width_cells: 8,
+        min_interior_depth_cells: 8,
+        weight: 1,
+        professions: &[],
+    },
+    BuildingTypeDef {
+        id: 9004,
+        key: "frozen_inst",
+        tags: &[9104],
+        land_uses: &["institutional"],
+        density_min: 0,
+        density_max: 100,
+        min_interior_width_cells: 8,
+        min_interior_depth_cells: 8,
+        weight: 1,
+        professions: &[],
+    },
+];
+
+fn frozen_content() -> GenerationContent<'static> {
+    GenerationContent {
+        rules: RuleSet::for_test(&[]),
+        building_types: FROZEN_BUILDING_TYPES,
     }
 }
 
@@ -130,6 +210,7 @@ fn plan_digest(
     net: &streets::StreetNetwork,
     pm: &plots::PlotMap,
     em: &envelopes::EnvelopeMap,
+    bt: &sim::generation::BuildingTypeMap,
 ) -> u64 {
     let mut text = String::new();
     for cy in 0..lu.rows() {
@@ -181,12 +262,27 @@ fn plan_digest(
             }
         }
     }
+    let mut assignments: Vec<_> = bt.assignments().to_vec();
+    assignments.sort();
+    for a in &assignments {
+        text.push_str(&format!(
+            "type plot={} building_type={}\n",
+            a.plot, a.building_type
+        ));
+    }
     fnv1a(&text)
 }
 
 fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
-    let d = plan(seed, cfg).expect("frozen_config's own site is always valid");
-    let (lu, net, pm, em) = (&d.land_use, &d.streets, &d.plots, &d.envelopes);
+    let content = frozen_content();
+    let d = plan(seed, cfg, &content).expect("frozen_config's own site is always valid");
+    let (lu, net, pm, em, bt) = (
+        &d.land_use,
+        &d.streets,
+        &d.plots,
+        &d.envelopes,
+        &d.building_types,
+    );
     let count_verdict = d.check_building_count(cfg).is_ok();
 
     let regions = lu.regions();
@@ -207,9 +303,11 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
 
     let open_plots = pm.plots().iter().filter(|p| p.open).count();
     let (placed, rejected) = (em.placed_count(), em.rejected_count());
+    let types_placed = bt.assignments().len();
+    let distinct_types = bt.distinct_types().len();
 
     format!(
-        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} plots={} open_plots={open_plots} envelopes_placed={placed} envelopes_rejected={rejected} count_ok={count_verdict} digest={:016x}",
+        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} plots={} open_plots={open_plots} envelopes_placed={placed} envelopes_rejected={rejected} types_placed={types_placed} distinct_types={distinct_types} count_ok={count_verdict} digest={:016x}",
         count(LandUse::Residential),
         count(LandUse::Commercial),
         count(LandUse::Industrial),
@@ -217,7 +315,7 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
         net.edges().len(),
         net.blocks().len(),
         pm.plots().len(),
-        plan_digest(lu, net, pm, em),
+        plan_digest(lu, net, pm, em, bt),
     )
 }
 
@@ -233,7 +331,7 @@ fn generation_output_matches_committed_golden() {
         });
     assert_eq!(
         golden_version, GENERATION_VERSION,
-        "tests/goldens/generation_v2.golden is keyed to version {golden_version} but \
+        "tests/goldens/generation_v3.golden is keyed to version {golden_version} but \
          sim::generation::GENERATION_VERSION is {GENERATION_VERSION} -- regenerate the golden \
          whenever GENERATION_VERSION changes"
     );
@@ -273,6 +371,7 @@ fn the_same_seed_twice_in_one_process_is_byte_identical() {
 #[test]
 fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
     let cfg = frozen_config();
+    let content = frozen_content();
     let lu = land_use::run(SEEDS[0], cfg.site(), &cfg).unwrap();
     let net_a = streets::run(SEEDS[0], &lu, &cfg);
     let net_b = streets::run(SEEDS[0], &lu, &cfg);
@@ -280,8 +379,10 @@ fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
     let pm_b = plots::run(SEEDS[0], &lu, &net_b, &cfg); // generation-entry-point: allow
     let em_a = envelopes::run(SEEDS[0], &pm_a, &cfg); // generation-entry-point: allow
     let em_b = envelopes::run(SEEDS[0], &pm_b, &cfg); // generation-entry-point: allow
+    let bt_a = sim::generation::building_types::run(SEEDS[0], &em_a, &pm_a, &content); // generation-entry-point: allow
+    let bt_b = sim::generation::building_types::run(SEEDS[0], &em_b, &pm_b, &content); // generation-entry-point: allow
     assert_eq!(
-        plan_digest(&lu, &net_a, &pm_a, &em_a),
-        plan_digest(&lu, &net_b, &pm_b, &em_b)
+        plan_digest(&lu, &net_a, &pm_a, &em_a, &bt_a),
+        plan_digest(&lu, &net_b, &pm_b, &em_b, &bt_b)
     );
 }

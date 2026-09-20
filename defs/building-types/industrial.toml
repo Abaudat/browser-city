@@ -9,7 +9,7 @@
 [[building_type]]
 id = 9
 key = "workshop"
-tags = ["workshop", "form_low"]
+tags = ["workshop"]
 land_uses = ["industrial"]
 density_min = 0
 density_max = 100
@@ -24,7 +24,7 @@ professions = [
 [[building_type]]
 id = 10
 key = "warehouse"
-tags = ["warehouse", "form_low"]
+tags = ["warehouse"]
 land_uses = ["industrial"]
 density_min = 0
 density_max = 100
@@ -39,7 +39,7 @@ professions = [
 [[building_type]]
 id = 11
 key = "depot"
-tags = ["municipal_service", "depot", "form_low"]
+tags = ["municipal_service", "depot"]
 land_uses = ["industrial"]
 density_min = 0
 density_max = 100

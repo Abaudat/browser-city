@@ -269,6 +269,56 @@ pub struct RuleDef {
     pub kind: RuleKind,
 }
 
+/// A `Distribution` row's own fields, read-only (story 3.4) -- for the
+/// one caller outside this module that legitimately needs a row's own
+/// ratio/spacing/coverage numbers to place candidates constructively
+/// (Epic 3's `sim::generation::building_types`, which places distributed
+/// types *before* the whole-site `evaluate` verdict can run at all).
+/// [`RuleDef::as_distribution`] is this module's one seam for that: it
+/// narrows to the one kind and never hands back `RuleKind` itself, so
+/// `RuleKind` still never has to appear in a `src/` file outside this
+/// module (`check-rule-source.sh`) -- a caller reads a row's own
+/// numbers, it never gets to match on the engine's closed kind enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DistributionRow {
+    pub id: u32,
+    pub key: &'static str,
+    pub subject: TagId,
+    pub per: TagId,
+    pub ratio: u32,
+    pub tolerance_percent: u32,
+    pub min_spacing: u32,
+    pub max_distance: u32,
+}
+
+impl RuleDef {
+    /// `Some` iff this row is a `Distribution` row; `None` for every
+    /// other kind. The one place outside `evaluate` itself that reads
+    /// into `RuleKind`.
+    pub fn as_distribution(&self) -> Option<DistributionRow> {
+        match self.kind {
+            RuleKind::Distribution {
+                subject,
+                per,
+                ratio,
+                tolerance_percent,
+                min_spacing,
+                max_distance,
+            } => Some(DistributionRow {
+                id: self.id,
+                key: self.key,
+                subject,
+                per,
+                ratio,
+                tolerance_percent,
+                min_spacing,
+                max_distance,
+            }),
+            _ => None,
+        }
+    }
+}
+
 /// One rejection: `rule_id`, the offending `subject` cell (Quentin's
 /// direction: never a bool, never just the first violation), and --
 /// story 2.9 (FR119), Tim's direction -- `other`, the matched neighbour

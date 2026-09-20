@@ -7,16 +7,33 @@
 # type" holds without a special-cased fallback.
 #
 # Siting bands stand in for Derek's richer intent (arterial frontage,
-# corner-ness) -- `sim::generation::GenerationConfig`'s own building-type
-# eligibility today reads only land use and density (Tim's schema); see
-# the PR description for this simplification.
+# corner-ness, "toward the density peak" for council/hospital, "not at
+# the peak" for welfare_office/shelter) -- `sim::generation::
+# GenerationConfig`'s own building-type eligibility today reads only
+# land use and density (Tim's schema); see the PR description for this
+# simplification. None of the four restricts its own density band: `land_
+# use::assign_institutional`'s own placement never guarantees an
+# institutional pocket reaches any particular density band for every
+# seed (pockets are sited for spacing, not for density), so pairing a
+# density restriction with a `weight = 0`, distribution-only type made a
+# structurally-unplaceable seed a real generation failure for a
+# meaningful fraction of seeds (measured, `measure-generation`) --
+# exactly the kind of "never a silently missing hospital" case AC2
+# exists to prevent, but a defs-content mistake causing it, not a real
+# land shortage. Open across the whole density range until a later story
+# adds a real peak-affinity signal; none of the four carries a form-class
+# tag either, for the same reason `commercial.toml`/`industrial.toml`
+# don't: two different institution kinds sharing one block (each free to
+# land anywhere a `weight = 0` override reaches) must never trip AC1's
+# own coherence row, which is about dwelling form class, not institution
+# kind.
 
 [[building_type]]
 id = 12
 key = "council"
-tags = ["municipal_service", "council", "form_mid"]
+tags = ["municipal_service", "council"]
 land_uses = ["institutional"]
-density_min = 50
+density_min = 0
 density_max = 100
 min_interior_width_cells = 8
 min_interior_depth_cells = 8
@@ -30,9 +47,9 @@ professions = [
 [[building_type]]
 id = 13
 key = "hospital"
-tags = ["municipal_service", "hospital", "form_high"]
+tags = ["municipal_service", "hospital"]
 land_uses = ["institutional"]
-density_min = 50
+density_min = 0
 density_max = 100
 min_interior_width_cells = 10
 min_interior_depth_cells = 10
@@ -47,10 +64,10 @@ professions = [
 [[building_type]]
 id = 14
 key = "welfare_office"
-tags = ["municipal_service", "welfare_office", "form_low"]
+tags = ["municipal_service", "welfare_office"]
 land_uses = ["institutional"]
 density_min = 0
-density_max = 55
+density_max = 100
 min_interior_width_cells = 6
 min_interior_depth_cells = 6
 weight = 0
@@ -62,10 +79,10 @@ professions = [
 [[building_type]]
 id = 15
 key = "shelter"
-tags = ["municipal_service", "shelter", "form_low"]
+tags = ["municipal_service", "shelter"]
 land_uses = ["institutional"]
 density_min = 0
-density_max = 55
+density_max = 100
 min_interior_width_cells = 7
 min_interior_depth_cells = 7
 weight = 0
@@ -77,7 +94,7 @@ professions = [
 [[building_type]]
 id = 16
 key = "public_hall"
-tags = ["form_mid"]
+tags = []
 land_uses = ["institutional"]
 density_min = 0
 density_max = 100

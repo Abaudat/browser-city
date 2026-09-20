@@ -14,10 +14,17 @@
 //! count, rejection percent, open-plot percent (by count and by area),
 //! unplotted percent and per-city mean envelope width/depth (x10).
 
+use std::collections::BTreeMap;
+
 use sim::generated::defs;
-use sim::generation::{GenerationConfig, envelopes};
+use sim::generation::{GenerationConfig, GenerationContent, building_types, envelopes};
 
 const SEED_COUNT: u64 = 50_000;
+/// Story 3.4's own pass adds `sim::rules::evaluate` over the whole
+/// finished district on top of pass 5's own placement -- measured over a
+/// smaller range than the four-pass stats above so this binary still
+/// finishes in a reasonable time; still large enough to see a real tail.
+const BUILDING_TYPE_SEED_COUNT: u64 = 5_000;
 
 struct Stats {
     values: Vec<i64>,
@@ -70,6 +77,7 @@ impl Stats {
 
 fn main() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).expect("committed balance is valid");
+    let content = GenerationContent::committed();
     let site = cfg.site();
     println!(
         "measure-generation: {SEED_COUNT} seeds at {}x{} cells",
@@ -90,7 +98,7 @@ fn main() {
     let mut sliver_blocks = 0u64;
 
     for seed in 0..SEED_COUNT {
-        let d = sim::generation::plan(seed, &cfg).expect("pass 1 is total");
+        let d = sim::generation::plan(seed, &cfg, &content).expect("pass 1 is total");
         let (net, pm, em) = (&d.streets, &d.plots, &d.envelopes);
 
         let placed = em.placed_count();
@@ -150,4 +158,66 @@ fn main() {
     Stats::new(unplotted_percent).print("unplotted_percent");
     Stats::new(mean_width_x10).print("mean_width_cells_x10");
     Stats::new(mean_depth_x10).print("mean_depth_cells_x10");
+
+    // -- story 3.4: building types -------------------------------------
+    let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let mut dwelling_count = Vec::with_capacity(BUILDING_TYPE_SEED_COUNT as usize);
+    let mut workplace_count = Vec::with_capacity(BUILDING_TYPE_SEED_COUNT as usize);
+    let mut per_tag_min: BTreeMap<u32, i64> = BTreeMap::new();
+    let mut per_tag_sum: BTreeMap<u32, i64> = BTreeMap::new();
+    let mut rule_violation_seeds = 0u64;
+    // Per seed: how many distinct professions this one city employs at
+    // >=5 distinct workplaces -- pooled (meaned) over every seed below,
+    // the same two-step AC4 shape as building/workplace count.
+    let mut deep_profession_count = Vec::with_capacity(BUILDING_TYPE_SEED_COUNT as usize);
+
+    for seed in 0..BUILDING_TYPE_SEED_COUNT {
+        let d = sim::generation::plan(seed, &cfg, &content).expect("pass 1 is total");
+        let mut tag_counts: BTreeMap<u32, i64> = BTreeMap::new();
+        let mut workplaces = 0i64;
+        let mut employers_this_city: BTreeMap<&str, u64> = BTreeMap::new();
+        for a in d.building_types.assignments() {
+            let def = by_id[&a.building_type];
+            for &t in def.tags {
+                *tag_counts.entry(t).or_insert(0) += 1;
+            }
+            if building_types::is_workplace(def) {
+                workplaces += 1;
+                for p in def.professions {
+                    *employers_this_city.entry(p.profession).or_insert(0) += 1;
+                }
+            }
+        }
+        dwelling_count.push(*tag_counts.get(&18).unwrap_or(&0)); // "dwelling" tag id
+        workplace_count.push(workplaces);
+        for (&tag, &count) in &tag_counts {
+            per_tag_sum
+                .entry(tag)
+                .and_modify(|s| *s += count)
+                .or_insert(count);
+            per_tag_min
+                .entry(tag)
+                .and_modify(|m| *m = (*m).min(count))
+                .or_insert(count);
+        }
+        deep_profession_count
+            .push(employers_this_city.values().filter(|&&c| c >= 5).count() as i64);
+        if d.check_rules(&content).is_err() {
+            rule_violation_seeds += 1;
+        }
+    }
+
+    Stats::new(dwelling_count).print("dwelling_count");
+    Stats::new(workplace_count).print("workplace_count");
+    println!(
+        "seeds (0..{BUILDING_TYPE_SEED_COUNT}) with a real rule violation: {rule_violation_seeds}"
+    );
+    println!("per-tag placed count, min and pooled mean over 0..{BUILDING_TYPE_SEED_COUNT}:");
+    for (&tag, &min) in &per_tag_min {
+        let mean = per_tag_sum[&tag] as f64 / BUILDING_TYPE_SEED_COUNT as f64;
+        println!("  tag {tag}: min={min} mean={mean:.2}");
+    }
+    Stats::new(deep_profession_count)
+        .print("professions_employed_by_5_plus_workplaces_per_city (Scale Baseline target ~69)");
 }

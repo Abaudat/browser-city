@@ -19,7 +19,7 @@
 //! envelopes sizes one plot at a time).
 
 use sim::generated::defs;
-use sim::generation::{GenerationConfig, LandUse, generate, land_use, streets};
+use sim::generation::{GenerationConfig, GenerationContent, LandUse, generate, land_use, streets};
 
 #[test]
 fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
@@ -28,11 +28,17 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // cells (16), same divisibility rule `from_balance` enforces for the
     // live 512 value.
     cfg.site_extent_cells = 1024;
+    let content = GenerationContent::committed();
 
     // The one entry point, not a hand-chain (`docs/architecture.md`): at
     // the growth target the count band scales with site area, so a seed
-    // that clears it at 512 clears it here too.
-    let d = generate(7, &cfg)
+    // that clears it at 512 clears it here too. Includes pass 5's own
+    // `rules::evaluate` over the whole finished `DistrictSite` (story
+    // 3.4) -- distribution's spacing/coverage checks are the first real
+    // pairwise cost the generator pays, bucketed rather than all-pairs
+    // (`sim::rules::mod.rs`), so this growth-target run is itself the
+    // structural proof that stays linear too.
+    let d = generate(7, &cfg, &content)
         .unwrap_or_else(|e| panic!("the 1024 growth target must still generate: {e}"));
     let lu = &d.land_use;
     let net = &d.streets;
@@ -146,4 +152,15 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // separate ceiling needed beyond `max_plots` above.
     assert!(em.outcomes().len() as u64 <= max_plots);
     assert!(!em.outcomes().is_empty());
+
+    // Story 3.4: one type assignment per placed envelope, never more --
+    // pass 5's own candidate-pair cost (the distribution overrides'
+    // greedy spacing scan) is linear in envelope count times institution
+    // count, never envelopes squared: every candidate list is built in
+    // one pass over `placed`, and the spacing check compares only
+    // against this row's own already-chosen set, never all pairs.
+    assert_eq!(
+        d.building_types.assignments().len(),
+        em.placed_count() as usize
+    );
 }

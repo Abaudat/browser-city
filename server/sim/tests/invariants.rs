@@ -9,7 +9,7 @@
 use proptest::prelude::*;
 use sim::appearance;
 use sim::generated::defs::{self, Family, Pool};
-use sim::generation::{GenerationConfig, envelopes, land_use, plots, streets};
+use sim::generation::{GenerationConfig, GenerationContent, envelopes, land_use, plots, streets};
 use sim::rng::{Rng, seed_from_ids};
 use sim::rules::testing::SiteBuilder;
 use sim::rules::{
@@ -102,6 +102,14 @@ pub const INV_GENERATION_OPEN_PLOTS_ARE_NEVER_SLIVERS: &str = "every open plot's
 pub const INV_GENERATION_NO_OPEN_PLOT_ON_A_BUILT_FACE_AT_HIGH_DENSITY: &str = "in a block at or above high_density_threshold, no open plot touches a street-abutting side that also holds a building, for any seed (story 3.3 AC1)";
 pub const INV_GENERATION_PLOT_STATE_IS_CONSISTENT: &str = "a non-open plot always has a front -- the one illegal (open, front) combination never occurs, for any seed (story 3.3 AC1)";
 pub const INV_GENERATION_BUILDING_COUNT_MEAN_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean placed-building count sits within mean_count_tolerance_percent of the Scale Baseline target scaled to the site (story 3.3 AC4, NFR14)";
+pub const INV_GENERATION_BUILDING_TYPE_PASS_NEVER_PANICS: &str = "pass 5 always produces exactly one type assignment per placed envelope, for any seed (story 3.4, FR110)";
+pub const INV_GENERATION_EVERY_PLACED_TYPE_MATCHES_ITS_OWN_LAND_USE_AND_DENSITY_BAND: &str = "every placed envelope's own assigned building type carries the plot's own land use, and the plot's density falls inside that type's own [density_min, density_max] band, for any seed (story 3.4 AC1, FR116)";
+pub const INV_GENERATION_COMMITTED_RULES_HOLD_FOR_ANY_SEED: &str = "sim::rules::evaluate over the whole finished district's own DistrictSite, against the committed rule table, finds no violation, for any seed (story 3.4 AC1/AC2, FR112)";
+pub const INV_GENERATION_REQUIRED_INSTITUTIONS_ARE_PRESENT_WHEN_THEIR_OWN_TARGET_IS_NONZERO: &str = "for every committed distribution row, whenever its own basis/ratio target is at least 1, the district places at least one subject, for any seed (story 3.4 AC2)";
+pub const INV_GENERATION_WORKPLACE_COUNT_WITHIN_TOLERANCE: &str = "at the committed config, generation succeeds (generate returns Ok -- District::check_workplace_count clears the per-seed band) for any seed (story 3.4 AC4)";
+pub const INV_GENERATION_WORKPLACE_COUNT_MEAN_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean workplace count sits within workplace_mean_count_tolerance_percent of the Scale Baseline target scaled to the site (story 3.4 AC4, NFR14)";
+pub const INV_GENERATION_PROFESSION_DEPTH_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean count of professions held by at least min_employers_per_profession distinct placed workplaces sits within the committed tolerance of target_profession_count (story 3.4, GDD Scale Baseline)";
+pub const INV_GENERATION_BUILDING_TYPE_INDEPENDENT_OF_ENVELOPE_ORDER: &str = "shuffling pass 4's own placed-envelope order and re-running pass 5 over the shuffled list never changes any envelope's own assigned type, for any seed (story 3.4, NFR25)";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -1731,7 +1739,7 @@ proptest! {
     #[test]
     fn inv_generation_total_never_panics(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         // Reaching here without panicking is most of the property; a
         // handful of cheap structural reads on top prove the outputs are
@@ -1744,7 +1752,7 @@ proptest! {
     #[test]
     fn inv_generation_all_four_land_uses_present(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         for cy in 0..lu.rows() {
             for cx in 0..lu.cols() {
                 prop_assert!(lu.coarse_at(cx, cy).is_some());
@@ -1760,7 +1768,7 @@ proptest! {
     #[test]
     fn inv_generation_streets_connected_and_not_stranded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let reachable = net.reachable_from_first_node().unwrap();
         prop_assert_eq!(reachable.len(), net.nodes().len());
@@ -1771,7 +1779,7 @@ proptest! {
     #[test]
     fn inv_generation_no_dead_ends_away_from_boundary(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         prop_assert!(net.dead_end_nodes().is_empty());
     }
@@ -1785,7 +1793,7 @@ proptest! {
     #[test]
     fn inv_generation_detour_ratio_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
         for s in &samples {
@@ -1810,7 +1818,7 @@ proptest! {
     #[test]
     fn inv_generation_p99_detour_ratio_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
         let p99 = streets::p99_ratio_pct(&samples);
@@ -1829,7 +1837,7 @@ proptest! {
     #[test]
     fn inv_generation_no_staggered_junctions(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let close = net.close_same_street_junction_pairs(cfg.min_block_depth_cells);
         prop_assert!(close.is_empty(), "seed {seed}: staggered junctions {close:?}");
@@ -1840,7 +1848,7 @@ proptest! {
     #[test]
     fn inv_generation_min_block_depth_is_respected(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         for b in net.blocks() {
             prop_assert!(b.bounds.width() >= cfg.min_block_depth_cells as i64, "seed {seed}: block {:?} narrower than min_block_depth_cells", b.bounds);
@@ -1856,7 +1864,7 @@ proptest! {
     #[test]
     fn inv_generation_arterials_are_contiguous(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let site = net.site();
         let arterials: Vec<&streets::StreetEdge> = net.edges().iter().filter(|e| e.class == streets::StreetClass::Arterial).collect();
@@ -1911,7 +1919,7 @@ proptest! {
     #[test]
     fn inv_generation_peripheral_blocks_are_not_degenerate(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         // Density bands (bottom third vs top third of density_min..
         // density_max), not distance from the peak -- what `target_
@@ -1934,7 +1942,7 @@ proptest! {
     #[test]
     fn inv_generation_not_a_perfect_grid(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
 
         let (widths, heights) = net.distinct_block_sizes();
@@ -1955,7 +1963,7 @@ proptest! {
     #[test]
     fn inv_generation_exact_tiling(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let side = cfg.site_extent_cells as usize;
         let mut grid = vec![0u8; side * side];
@@ -2005,7 +2013,7 @@ proptest! {
     #[test]
     fn inv_generation_institutional_pockets_are_small(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let total_coarse_cells = (lu.cols() as i64) * (lu.rows() as i64);
         let (regions, labels) = lu.labeled_regions();
         let inst_count = regions.iter().filter(|r| r.use_ == land_use::LandUse::Institutional).count();
@@ -2055,7 +2063,7 @@ proptest! {
     #[test]
     fn inv_generation_industrial_never_touches_commercial(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let (regions, labels) = lu.labeled_regions();
         for (label, r) in regions.iter().enumerate() {
             if r.use_ != land_use::LandUse::Industrial {
@@ -2088,7 +2096,7 @@ proptest! {
     #[test]
     fn inv_generation_residential_is_the_largest_land_use_by_area(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let mut counts = [0i64; 4];
         for cy in 0..lu.rows() {
             for cx in 0..lu.cols() {
@@ -2125,7 +2133,8 @@ proptest! {
     #[test]
     fn inv_generation_every_plot_fronts_a_street(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let (net, pm) = (&d.streets, &d.plots);
         prop_assert!(!pm.plots().is_empty());
         let offenders = pm.landlocked_plots(net.blocks(), cfg.plot_frontage_min_cells);
@@ -2136,7 +2145,8 @@ proptest! {
     #[test]
     fn inv_generation_plots_tile_their_block(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let (net, pm) = (&d.streets, &d.plots);
 
         for p in pm.plots() {
@@ -2174,7 +2184,8 @@ proptest! {
     #[test]
     fn inv_generation_open_plot_percent_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let pm = &d.plots;
         prop_assert!(
             pm.open_count_percent() <= cfg.plot_max_open_percent_by_count,
@@ -2194,7 +2205,8 @@ proptest! {
     #[test]
     fn inv_generation_unplotted_percent_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let (net, pm) = (&d.streets, &d.plots);
         prop_assert!(
             pm.unplotted_percent(net.blocks()) <= cfg.plot_max_unplotted_percent,
@@ -2210,7 +2222,7 @@ proptest! {
     #[test]
     fn inv_generation_block_sides_matches_a_real_street_edge(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         for b in net.blocks() {
             let sides = sim::generation::block_sides(b.bounds, net.site());
@@ -2234,7 +2246,7 @@ proptest! {
     #[test]
     fn inv_generation_block_plots_independent_of_other_blocks(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         prop_assume!(!net.blocks().is_empty());
         let block = net.blocks()[net.blocks().len() / 2];
@@ -2266,7 +2278,7 @@ proptest! {
     #[test]
     fn inv_generation_envelope_independent_of_other_plots(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let pm = plots::run(seed, &lu, &net, &cfg); // generation-entry-point: allow
         let full = envelopes::run(seed, &pm, &cfg); // generation-entry-point: allow
@@ -2297,7 +2309,8 @@ proptest! {
     #[test]
     fn inv_generation_envelope_size_within_its_class_band(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let (pm, em) = (&d.plots, &d.envelopes);
         for e in em.envelopes() {
             let p = pm.plots()[e.plot as usize];
@@ -2319,7 +2332,8 @@ proptest! {
     #[test]
     fn inv_generation_envelope_inside_its_own_plot(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let (pm, em) = (&d.plots, &d.envelopes);
         for e in em.envelopes() {
             let p = pm.plots()[e.plot as usize];
@@ -2339,7 +2353,8 @@ proptest! {
     #[test]
     fn inv_generation_envelope_gaps_are_zero_or_at_least_two(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let (pm, em) = (&d.plots, &d.envelopes);
         // Every pair of envelopes in one block, whichever face each
         // belongs to, on both axes: the rule is about what the player
@@ -2381,7 +2396,8 @@ proptest! {
     #[test]
     fn inv_generation_open_plots_are_never_slivers(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         for p in d.plots.plots().iter().filter(|p| p.open) {
             let short = p.bounds.width().min(p.bounds.height());
             if short >= cfg.plot_open_min_side_cells as i64 {
@@ -2402,7 +2418,8 @@ proptest! {
     fn inv_generation_no_open_plot_on_a_built_face_at_high_density(seed in any::<u64>()) {
         use sim::generation::Side;
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let touches = |p: Rect, block: Rect, side: Side| -> bool {
             match side {
                 Side::North => p.y0 == block.y0,
@@ -2437,7 +2454,8 @@ proptest! {
     #[test]
     fn inv_generation_plot_state_is_consistent(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         for p in d.plots.plots() {
             prop_assert!(p.open || p.front.is_some(), "seed {seed}: non-open plot {:?} has no front", p.bounds);
         }
@@ -2448,7 +2466,8 @@ proptest! {
     #[test]
     fn inv_generation_envelope_sizes_are_varied(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let em = &d.envelopes;
         let sizes: std::collections::BTreeSet<(i64, i64)> = em.envelopes().map(|e| (e.along_face_cells(), e.depth_cells())).collect();
         prop_assert!(
@@ -2464,7 +2483,8 @@ proptest! {
     #[test]
     fn inv_generation_envelope_mean_size_within_a_weak_per_city_band(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let em = &d.envelopes;
         let (mut sum_w, mut sum_d, mut n) = (0i64, 0i64, 0i64);
         for e in em.envelopes() {
@@ -2489,7 +2509,8 @@ proptest! {
     #[test]
     fn inv_generation_building_count_within_tolerance(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let result = sim::generation::generate(seed, &cfg);
+        let content = GenerationContent::committed();
+        let result = sim::generation::generate(seed, &cfg, &content);
         prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
     }
 
@@ -2497,7 +2518,8 @@ proptest! {
     #[test]
     fn inv_generation_envelope_rejection_rate_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let em = &d.envelopes;
         prop_assert!(
             em.rejected_percent() <= cfg.envelope_max_rejected_plot_percent,
@@ -2509,12 +2531,160 @@ proptest! {
     #[test]
     fn inv_generation_all_four_passes_never_panic(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let content = GenerationContent::committed();
         // `generate` is the entry point under test here; the hand-chain
         // below is what must still yield plots when its count check errs.
-        let _ = sim::generation::generate(seed, &cfg);
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let _ = sim::generation::generate(seed, &cfg, &content);
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let pm = &d.plots;
         prop_assert!(!pm.plots().is_empty());
+    }
+
+    /// `inv_generation_building_type_pass_never_panics`: pass 5 always
+    /// produces exactly one assignment per placed envelope, for any seed
+    /// (story 3.4, FR110).
+    #[test]
+    fn inv_generation_building_type_pass_never_panics(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        prop_assert_eq!(
+            d.building_types.assignments().len(),
+            d.envelopes.placed_count() as usize
+        );
+    }
+
+    /// `inv_generation_every_placed_type_matches_its_own_land_use_and_density_band`
+    /// (AC1, story 3.4): every placed envelope's own assigned building
+    /// type carries the plot's own land use and its density falls inside
+    /// the type's own `[density_min, density_max]` band -- the eligibility
+    /// half of "coherent with its own neighbourhood", for any seed, never
+    /// only the handful of fixed seeds `building_types.rs`'s own unit test
+    /// covers.
+    #[test]
+    fn inv_generation_every_placed_type_matches_its_own_land_use_and_density_band(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+            content.building_types.iter().map(|b| (b.id, b)).collect();
+        for a in d.building_types.assignments() {
+            let plot = &d.plots.plots()[a.plot as usize];
+            let def = by_id[&a.building_type];
+            let key = sim::generation::land_use_key(plot.land_use);
+            prop_assert!(
+                def.land_uses.contains(&key),
+                "seed {seed}: plot {} (use {key:?}) got type {} which does not carry that land use",
+                a.plot, def.key
+            );
+            prop_assert!(
+                plot.density >= def.density_min && plot.density <= def.density_max,
+                "seed {seed}: plot {} density {} outside type {}'s own band [{}, {}]",
+                a.plot, plot.density, def.key, def.density_min, def.density_max
+            );
+        }
+    }
+
+    /// `inv_generation_committed_rules_hold_for_any_seed` (AC1/AC2, story
+    /// 3.4, FR112): `sim::rules::evaluate` over the whole finished
+    /// district's own `DistrictSite`, against the committed rule table,
+    /// finds no violation, for any seed -- named explicitly (rather than
+    /// only inferred from `generate` returning `Ok`, `inv_generation_
+    /// building_count_within_tolerance`'s own job) so a coherence or
+    /// distribution regression reads by its own name.
+    #[test]
+    fn inv_generation_committed_rules_hold_for_any_seed(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let result = d.check_rules(&content);
+        prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
+    }
+
+    /// `inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero`
+    /// (AC2, story 3.4): for every committed `[[distribution]]` row, read
+    /// generically (never a literal building-type/tag key), whenever its
+    /// own `basis / ratio` target is at least 1, the district actually
+    /// places at least one subject -- an institution that cannot be
+    /// placed is a typed error `check_rules` reports, but this invariant
+    /// names AC2's own "the district holds every required kind" claim by
+    /// itself, for any seed.
+    #[test]
+    fn inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+            content.building_types.iter().map(|b| (b.id, b)).collect();
+        let mut tag_counts: std::collections::BTreeMap<TagId, u64> = std::collections::BTreeMap::new();
+        for a in d.building_types.assignments() {
+            for &t in by_id[&a.building_type].tags {
+                *tag_counts.entry(t).or_insert(0) += 1;
+            }
+        }
+        let mut dist_rows: Vec<sim::rules::DistributionRow> =
+            content.rules.iter().filter_map(|r| r.as_distribution()).collect();
+        dist_rows.sort_by_key(|d| d.id);
+        for row in &dist_rows {
+            let basis = tag_counts.get(&row.per).copied().unwrap_or(0);
+            let target = basis / (row.ratio.max(1) as u64);
+            if target == 0 {
+                continue;
+            }
+            let actual = tag_counts.get(&row.subject).copied().unwrap_or(0);
+            prop_assert!(
+                actual > 0,
+                "seed {seed}: rule {} has target {target} but placed 0",
+                row.key
+            );
+        }
+    }
+
+    /// `inv_generation_workplace_count_within_tolerance` (AC4, story 3.4):
+    /// the same shape as `inv_generation_building_count_within_tolerance`
+    /// -- `generate`'s own `check_workplace_count` clears the per-seed
+    /// band, for any seed.
+    #[test]
+    fn inv_generation_workplace_count_within_tolerance(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let content = GenerationContent::committed();
+        let result = sim::generation::generate(seed, &cfg, &content);
+        prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
+    }
+
+    /// `inv_generation_building_type_independent_of_envelope_order` (NFR25,
+    /// story 3.4): shuffling pass 4's own placed-envelope order and
+    /// re-running pass 5 over the shuffled list never changes any
+    /// envelope's own assigned type -- each envelope's own draw is seeded
+    /// from its own footprint bounds, never its position in the list.
+    #[test]
+    fn inv_generation_building_type_independent_of_envelope_order(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let content = GenerationContent::committed();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let original: std::collections::BTreeMap<u32, u32> = d
+            .building_types
+            .assignments()
+            .iter()
+            .map(|a| (a.plot, a.building_type))
+            .collect();
+
+        let mut outcomes: Vec<envelopes::EnvelopeOutcome> = d.envelopes.outcomes().to_vec();
+        let mut shuffle_rng = Rng::new(seed_from_ids(seed, 0xB01D_7A9E));
+        for i in (1..outcomes.len()).rev() {
+            let j = (shuffle_rng.next_u64() % (i as u64 + 1)) as usize;
+            outcomes.swap(i, j);
+        }
+        let shuffled_envelopes = envelopes::EnvelopeMap::test_fixture(outcomes);
+        let shuffled = sim::generation::building_types::run(seed, &shuffled_envelopes, &d.plots, &content); // generation-entry-point: allow
+        for a in shuffled.assignments() {
+            prop_assert_eq!(
+                Some(&a.building_type),
+                original.get(&a.plot),
+                "seed {}: plot {}'s own draw moved when only envelope list order changed",
+                seed, a.plot
+            );
+        }
     }
 }
 
@@ -2543,8 +2713,9 @@ const PINNED_BUILDING_COUNT_SEEDS: [u64; 2] = [18_959, 33_799];
 #[test]
 fn building_count_holds_at_individually_measured_extreme_seeds() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
     for seed in PINNED_BUILDING_COUNT_SEEDS {
-        sim::generation::generate(seed, &cfg)
+        sim::generation::generate(seed, &cfg, &content)
             .unwrap_or_else(|e| panic!("pinned seed {seed} unexpectedly failed tolerance: {e}"));
     }
 }
@@ -2554,9 +2725,10 @@ fn building_count_holds_at_individually_measured_extreme_seeds() {
 #[test]
 fn inv_generation_envelope_mean_size_matches_the_committed_band() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
     let (mut sum_w, mut sum_d, mut n) = (0i64, 0i64, 0i64);
     for seed in 0u64..256 {
-        let d = sim::generation::plan(seed, &cfg).unwrap();
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let em = &d.envelopes;
         for e in em.envelopes() {
             sum_w += e.along_face_cells();
@@ -2589,12 +2761,13 @@ fn inv_generation_envelope_mean_size_matches_the_committed_band() {
 #[test]
 fn inv_generation_building_count_mean_matches_the_scale_baseline() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
     let site = cfg.site();
     let target = cfg.building_count_target(site.width() * site.height());
     let n: i64 = 256;
     let sum: i64 = (0..n as u64)
         .map(|seed| {
-            sim::generation::plan(seed, &cfg)
+            sim::generation::plan(seed, &cfg, &content)
                 .unwrap()
                 .envelopes
                 .placed_count()
@@ -2604,6 +2777,93 @@ fn inv_generation_building_count_mean_matches_the_scale_baseline() {
     assert!(
         sum >= (target - tol) * n && sum <= (target + tol) * n,
         "pooled mean count {} is outside [{}, {}] around the Scale Baseline target {target}",
+        sum / n,
+        target - tol,
+        target + tol
+    );
+}
+
+/// `inv_generation_workplace_count_mean_matches_the_scale_baseline` (AC4,
+/// story 3.4): the same shape as `inv_generation_building_count_mean_
+/// matches_the_scale_baseline`, over workplace count -- every placed
+/// envelope whose own assigned type has at least one post.
+#[test]
+fn inv_generation_workplace_count_mean_matches_the_scale_baseline() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let site = cfg.site();
+    let target = cfg.workplace_count_target(site.width() * site.height());
+    let n: i64 = 256;
+    let sum: i64 = (0..n as u64)
+        .map(|seed| {
+            let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+            d.building_types
+                .assignments()
+                .iter()
+                .filter(|a| sim::generation::building_types::is_workplace(by_id[&a.building_type]))
+                .count() as i64
+        })
+        .sum();
+    let tol = target * cfg.workplace_mean_count_tolerance_percent / 100;
+    assert!(
+        sum >= (target - tol) * n && sum <= (target + tol) * n,
+        "pooled mean workplace count {} is outside [{}, {}] around the Scale Baseline target {target}",
+        sum / n,
+        target - tol,
+        target + tol
+    );
+}
+
+/// `inv_generation_profession_depth_matches_the_scale_baseline` (story
+/// 3.4, Tim's direction): pooled over the fixed seed range 0..256, the
+/// mean count of distinct professions held by at least `min_employers_
+/// per_profession` distinct placed workplaces (within one city) sits
+/// within the committed tolerance of `target_profession_count` -- read
+/// directly off `defs::BALANCE` (never threaded through
+/// `GenerationConfig`: this is an invariant, not a `generate()`-time
+/// verdict, Tim's own distinction).
+#[test]
+fn inv_generation_profession_depth_matches_the_scale_baseline() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let target = sim::balance::value(
+        defs::BALANCE,
+        "generation.building_types.target_profession_count",
+    );
+    let tolerance_pct = sim::balance::value(
+        defs::BALANCE,
+        "generation.building_types.profession_count_mean_tolerance_percent",
+    );
+    let min_employers = sim::balance::value(
+        defs::BALANCE,
+        "generation.building_types.min_employers_per_profession",
+    ) as u64;
+
+    let n: i64 = 256;
+    let sum: i64 = (0..n as u64)
+        .map(|seed| {
+            let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+            let mut employers: std::collections::BTreeMap<&str, u64> =
+                std::collections::BTreeMap::new();
+            for a in d.building_types.assignments() {
+                let def = by_id[&a.building_type];
+                if sim::generation::building_types::is_workplace(def) {
+                    for p in def.professions {
+                        *employers.entry(p.profession).or_insert(0) += 1;
+                    }
+                }
+            }
+            employers.values().filter(|&&c| c >= min_employers).count() as i64
+        })
+        .sum();
+    let tol = target * tolerance_pct / 100;
+    assert!(
+        sum >= (target - tol) * n && sum <= (target + tol) * n,
+        "pooled mean profession depth {} is outside [{}, {}] around the target {target}",
         sum / n,
         target - tol,
         target + tol
