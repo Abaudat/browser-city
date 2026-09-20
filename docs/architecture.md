@@ -1100,23 +1100,34 @@ list -- so one block's (or plot's) own draw count never reshuffles
 another's, and adding a plot to one block never moves any other block's
 or plot's draws.
 
-`generation::plan(city_seed, &cfg) -> Result<District, GenerationError>`
-chains every implemented pass in order with no verdict on the result
-(only pass 1's own site check can fail). `District::check_building_count
-(&cfg)` holds AC4's count verdict, a property of the whole district.
-`generation::generate` is `plan` plus that check, and is what production
-calls. `scripts/ci/check-generation-entry-point.sh` fails the build on
-any `plots::run(`/`envelopes::run(` call under `server/sim/tests/` or
-`server/bounds/` not marked `// generation-entry-point: allow` -- the
-marker is reserved for the two independence properties and the golden's
-pass-2-run-twice test, which deliberately feed one pass a perturbed or
-repeated predecessor; single-pass unit tests live in the pass's own
-module. `GenerationError` is
-the one error type across every implemented pass (`InvalidConfig` from
+`generation::plan(city_seed, &cfg, &content) -> Result<District,
+GenerationError>` chains every implemented pass in order with no verdict
+on the result (only pass 1's own site check can fail). `content` is
+`GenerationContent { rules: RuleSet<'_>, building_types: &[BuildingTypeDef]
+}` (story 3.4) -- every content table a pass reads, loaded once
+(`GenerationContent::committed()` wraps `RuleSet::committed()` and
+`defs::BUILDING_TYPES`) and passed down as a struct, never a literal read
+from `defs::` inside a pass; one signature, no `plan_with` twin.
+`District::check_building_count(&cfg)` holds AC4's building-count
+verdict; `District::check_rules(&content)` holds FR112's verdict over the
+finished district's own `DistrictSite` (`sim::rules::evaluate` must find
+no violation); `District::check_workplace_count(&cfg, &content)` holds
+AC4's workplace-count verdict, the same two-band shape as building count.
+`generation::generate` is `plan` plus all three, in that order, and is
+what production calls. `scripts/ci/check-generation-entry-point.sh` fails
+the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`
+call under `server/sim/tests/` or `server/bounds/` not marked `//
+generation-entry-point: allow` -- the marker is reserved for the
+independence properties and the golden's pass-2-run-twice test, which
+deliberately feed one pass a perturbed or repeated predecessor;
+single-pass unit tests live in the pass's own module. `GenerationError`
+is the one error type across every implemented pass (`InvalidConfig` from
 `GenerationConfig::from_balance`, `InvalidSite { site,
 coarse_cell_size_cells }` from pass 1, `BuildingCountOutOfTolerance {
-got, min, max }` from the district's own count check) -- never a
-`Result<_, String>` per pass.
+got, min, max }` from the district's own count check, `RuleViolations {
+count, first }` from `check_rules`, `WorkplaceCountOutOfTolerance { got,
+min, max }` from `check_workplace_count`) -- never a `Result<_, String>`
+per pass.
 
 Coordinates are world-absolute `i32` cells throughout; `SiteBounds` is
 `sim::world::Rect` reused, never a second rect type. `GenerationConfig::
@@ -1179,20 +1190,55 @@ scaled by the real site area and `count_tolerance_percent`; the pooled
 mean over a fixed seed range is held to that same target within
 `mean_count_tolerance_percent`.
 
+Pass 5 (building type, story 3.4, FR116) hands down what each placed
+envelope *is*: a `defs::BuildingTypeDef` id, from a new def kind
+(`defs/building-types/*.toml` -> `tools/defs-build` ->
+`sim::generated::defs::BUILDING_TYPES`, a permanent append-only
+id/key). A row carries only `tags`, `land_uses`, `density_min`/`_max`,
+`min_interior_width_cells`/`_depth_cells`, `weight` and `professions`
+(profession key + headcount pairs, keys into `defs/professions/`) --
+never a `count`/`unique`/`required` field: how many of something exist
+is a rule (a `[[distribution]]` row), never a field on the type.
+`building_types::run` places constructively: a weighted draw among every
+type eligible for an envelope's own plot (land use and density band)
+first, seeded from the envelope's own footprint (`rect_seed_key`, never
+list position); then, for every committed `[[distribution]]` row, read
+generically through `sim::rules::RuleDef::as_distribution` (never by
+matching the rule engine's own closed kind enum) in ascending rule id
+order, an override onto a named institution among the still-eligible
+envelopes, greedily respecting that row's own `min_spacing`. `DistrictSite`
+(`generation::site`) is the one `RuleSite` a generated district presents
+to `sim::rules::evaluate` -- one subject cell per typed building (its
+front-edge midpoint, floor 0, tagged with its own type's `tags`), one
+area per block (`AreaId = rect_seed_key(block bounds)`) -- built once,
+from the same fields, by both pass 5's own placement code path (nothing
+calls `evaluate` per candidate; it is whole-site) and
+`District::check_rules`. `scripts/ci/check-generator-no-content-keys.sh`
+holds the generator to the same content-blindness
+`check-rule-engine-no-content-keys.sh` holds the rule engine to: no
+building-type/tag/profession/rule key as a quoted literal under
+`server/sim/src/generation/`.
+
 Evidence: `bounds/src/generation_evidence.rs` renders every implemented
-pass's own output, for three committed seeds, to `docs/generation/*.svg`.
-`cargo run -p bounds --bin dump-generation` regenerates them;
-`bounds/tests/generation_evidence_current.rs` fails the build if the
+pass's own output through pass 4, for three committed seeds, to
+`docs/generation/*.svg` -- pass 5's own evidence is not built yet (see
+this story's own PR description). `cargo run -p bounds --bin
+dump-generation` regenerates them; `bounds/tests/
+generation_evidence_current.rs` fails the build if the
 committed files and a fresh render ever disagree.
 
 `GENERATION_VERSION` is bumped whenever any implemented pass's algorithm
-or seeding (never a `defs/balance/generation.toml` retune) moves a fixed
-seed's output; `server/sim/tests/generation_golden.rs` runs against a
-config frozen in the test itself, not live `defs::BALANCE`, so a
-balance retune alone never forces a version bump. `server/sim/tests/
-goldens/generation_v2.golden` is keyed to it, guarded by `check-golden-
-version-bump.sh`'s `generation_*` arm the same way `RNG_VERSION`/
-`APPEARANCE_VERSION` are.
+or seeding (never a `defs/balance/generation.toml` or
+`defs/building-types/`/`defs/rules/` retune) moves a fixed seed's
+output; `server/sim/tests/generation_golden.rs` runs against a config
+and a small `GenerationContent` both frozen in the test itself, under
+deliberately unrelated ids/keys, not live `defs::BALANCE`/
+`defs::BUILDING_TYPES`, so a balance or content retune alone never
+forces a version bump, and the same shape of output against a wholly
+different content table is itself proof the generator never branches on
+a content key. `server/sim/tests/goldens/generation_v3.golden` is keyed
+to it, guarded by `check-golden-version-bump.sh`'s `generation_*` arm the
+same way `RNG_VERSION`/`APPEARANCE_VERSION` are.
 
 ## Boot budget
 

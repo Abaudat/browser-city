@@ -85,9 +85,7 @@ fn eligible_types<'a>(
     density: i32,
 ) -> impl Iterator<Item = &'a defs::BuildingTypeDef> {
     building_types.iter().filter(move |b| {
-        b.land_uses.contains(&land_use_key)
-            && density >= b.density_min
-            && density <= b.density_max
+        b.land_uses.contains(&land_use_key) && density >= b.density_min && density <= b.density_max
     })
 }
 

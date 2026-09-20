@@ -218,11 +218,26 @@ document's own opening paragraph forbids.
 
 ### Building type
 
-- **Receives:** a sealed envelope.
-- **Hands down:** what the building *is* (residential, a named
-  institution, a shop family, a workplace).
-- **Reads:** affluence, land-use mix.
-- **Evidence:** (added when the pass lands.)
+- **Receives:** every placed envelope (pass 4) and each one's own plot
+  (pass 3, for land use and density).
+- **Hands down:** a `defs/building-types/*.toml` id per placed envelope
+  -- never a Rust category. "Institution", "workplace" and "residential"
+  are all *derived*: a workplace is any type whose own `professions`
+  list is non-empty; a municipal service is any type carrying the
+  `municipal_service` tag; a dwelling is any type carrying `dwelling`.
+  Placement is two steps: a weighted draw among every type eligible for
+  an envelope's own plot (land use and density band), then a
+  distribution-row override for each named institution (depot, council,
+  hospital, welfare office, shelter), read generically off the committed
+  rule set (`sim::rules::RuleDef::as_distribution`) in ascending rule id
+  order -- never a hand-named placer. A required institution that cannot
+  be placed is a typed `GenerationError`, never a silently missing one.
+- **Reads:** density, land-use mix (not affluence yet: no pass has
+  authored it on the parameter field -- 3.7 does; this pass's own
+  `density`/`land_uses` eligibility is what stands in for Derek's richer
+  siting intent today, see "Does not fit" below).
+- **Evidence:** not built this story -- see PR #issue-81's own
+  description for why.
 
 ### Interior layout
 
@@ -361,6 +376,12 @@ disagree.
 | generation.envelopes.count_tolerance_percent | committed | Building envelope | AC4's per-seed tolerance band around the scaled target, as a percent -- the wild-deviation guard |
 | generation.envelopes.mean_count_tolerance_percent | committed | Building envelope | AC4's pooled band: the mean placed count over the fixed seed range 0..256 must sit within this percent of the scaled target |
 | generation.envelopes.max_rejected_plot_percent | committed | Building envelope | the maximum percent of attempted plots the envelope pass may reject, asserted per city |
+| generation.building_types.target_workplaces_per_million_cells | committed | Building type | AC4's own workplace-count target -- the Scale Baseline's ~344 at 512x512 (`docs/gdd.md`), stated per one million site cells and scaled by real site area, never a measurement |
+| generation.building_types.workplace_count_tolerance_percent | committed | Building type | AC4's per-seed tolerance band around the scaled workplace target, as a percent |
+| generation.building_types.workplace_mean_count_tolerance_percent | committed | Building type | AC4's pooled band: the mean workplace count over the fixed seed range 0..256 must sit within this percent of the scaled target |
+| generation.building_types.target_profession_count | committed | Building type | the pooled target for the count of professions held by at least `min_employers_per_profession` distinct placed workplaces -- honestly re-measured (13) against this story's own real content, not padded toward the GDD's ~69, which real profession/building-type content authoring a later story owns |
+| generation.building_types.profession_count_mean_tolerance_percent | committed | Building type | the pooled band around `target_profession_count`, as a percent |
+| generation.building_types.min_employers_per_profession | committed | Building type | the GDD's own "5+ employers each" -- the minimum distinct placed workplaces a profession must be held by to count toward the target above; a singleton institution's own post is deliberately excluded |
 
 ## placement
 | key | status | pass | scope | reads | intent |
@@ -486,10 +507,20 @@ assumed:
   expensive exception" the city-grows law above asks each such row to
   explain, and a whole-site constant with a coverage ceiling is what
   the friction-is-content law calls a design defect if service
-  coverage should instead thin toward the periphery. The periphery as a
-  density falloff cannot be judged by the harness (FR112: generator and
-  harness read one source) until this exists. Owned by the first story
-  that adds a real distribution row.
+  coverage should instead thin toward the periphery. Story 3.4 is the
+  first story with real distribution rows (`depot_present`,
+  `council_present`, `hospital_present`, `welfare_office_present`,
+  `shelter_present`) and does not close this gap: every one of those
+  rows sets `max_distance` past the site's own diagonal, so the engine's
+  own coverage half never fires at all (Derek's direction: no coverage
+  ceiling on a municipal row); "evenly spread" is enforced only as the
+  spacing half, whole-site, plus a generation-level invariant
+  (`inv_generation_committed_rules_hold_for_any_seed`), never a
+  catchment-scoped rule row. Tim's direction for this story: no
+  per-container scoping in the engine, since that is a real engine
+  feature ("a separate task, never a quiet engine edit"), not something
+  this story's own generator change should carry quietly. Owned by a
+  named follow-on story.
 
 A rule that cannot be expressed as one of the five kinds over tags for
 any other reason is written here too, with why -- a signal that a
