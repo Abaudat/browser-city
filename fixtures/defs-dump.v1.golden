@@ -604,23 +604,66 @@ outfit outfit_32_05 id=129 family=adult sheet=ModernTileset/moderninteriors-win/
 outfit outfit_33_01 id=130 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_33_01.png pool=civilian hides_hairstyle=false
 outfit outfit_33_02 id=131 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_33_02.png pool=civilian hides_hairstyle=false
 outfit outfit_33_03 id=132 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_33_03.png pool=civilian hides_hairstyle=false
+profession accountant id=7
+profession barista id=4
+profession cashier id=3
+profession clerk id=6
+profession council_administrator id=19
+profession council_clerk id=18
+profession councillor id=20
+profession depot_dispatcher id=15
+profession depot_mechanic id=16
+profession foreman id=12
+profession forklift_operator id=14
+profession hospital_nurse id=21
+profession hospital_orderly id=22
+profession hospital_receptionist id=23
+profession machinist id=11
+profession market_porter id=10
+profession market_vendor id=9
+profession receptionist id=8
+profession refuse_collector id=17
 profession sanitation_worker id=1
+profession server id=5
+profession shelter_attendant id=27
+profession shelter_cook id=28
+profession shop_clerk id=2
+profession surgeon id=24
+profession warehouse_worker id=13
+profession welfare_caseworker id=25
+profession welfare_clerk id=26
 recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]
 tag bridge id=7 role=none
+tag cafe id=26 role=none
+tag council id=21 role=none
 tag counter id=3 role=none
+tag depot id=20 role=none
+tag dwelling id=18 role=none
 tag entrance id=17 role=none
 tag fixture id=15 role=[2,3]
 tag floor id=13 role=[0]
+tag form_high id=33 role=none
+tag form_low id=31 role=none
+tag form_mid id=32 role=none
 tag ground id=10 role=[0]
+tag hospital id=22 role=none
 tag lighting id=4 role=none
+tag market id=30 role=none
+tag municipal_service id=19 role=none
+tag office id=27 role=none
 tag pavement id=11 role=[0]
 tag road id=12 role=[0]
 tag seating id=2 role=none
+tag shelter id=24 role=none
+tag shop id=25 role=none
 tag shopfront id=5 role=none
 tag stairs id=8 role=none
 tag threshold id=14 role=[4]
 tag underfoot id=9 role=none
 tag wall id=6 role=[4]
 tag wall_run id=16 role=none
+tag warehouse id=29 role=none
 tag waste id=1 role=none
+tag welfare_office id=23 role=none
+tag workshop id=28 role=none
 uniform sanitation_worker_uniform id=1 profession=sanitation_worker outfit=none accessory=addon_accessory_21_worker_jacket

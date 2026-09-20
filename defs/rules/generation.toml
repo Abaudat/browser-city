@@ -1,0 +1,85 @@
+# Story 3.4 (FR112/FR116): the building-type pass's own committed rule
+# rows, evaluated by the one `sim::rules::evaluate` -- the generator
+# (`sim::generation::building_types::run`) and the harness
+# (`sim::generation::District::check_rules`) read this same table, never
+# a second copy.
+#
+# Coherence (AC1, "no skyscraper among villas"): the two form-class
+# extremes never share a block. `plots.density` is uniform per block
+# (`sim::generation::block_land_use`'s own precedent), and the committed
+# form-class density bands (`defs/building-types/*.toml`) only overlap at
+# their edges, so this fires only on a genuine authoring mistake -- a
+# type whose band spans both extremes -- never on ordinary generated
+# output.
+[[coherence]]
+id = 20
+key = "no_high_rise_within_a_low_rise_block"
+subject = "form_high"
+within = "form_low"
+mode = "forbid"
+
+# Distribution (AC2, presence): each named institution is a distribution
+# row over the `dwelling` tag with a large ratio -- never a count field
+# on the building type itself (Tim's direction: "how many of something
+# exist is a rule"). `max_distance` is set past the site's own diagonal
+# on every row below on purpose (Derek's direction: no coverage ceiling
+# on a municipal row -- friction is content, a city is never made
+# uniformly convenient). Ratios are chosen so the expected count never
+# floors to zero across the fixed seed range 0..256 at the committed
+# config (see server/bounds/src/bin/measure_generation.rs); the city-
+# grows law (docs/generation.md) is what a larger site's own larger
+# dwelling count already answers -- a four-times-larger site wants more
+# than one hospital.
+[[distribution]]
+id = 21
+key = "depot_present"
+subject = "depot"
+per = "dwelling"
+ratio = 300
+tolerance_percent = 100
+min_spacing = 40
+max_distance = 2000
+
+[[distribution]]
+id = 22
+key = "council_present"
+subject = "council"
+per = "dwelling"
+ratio = 300
+tolerance_percent = 100
+min_spacing = 40
+max_distance = 2000
+
+[[distribution]]
+id = 23
+key = "hospital_present"
+subject = "hospital"
+per = "dwelling"
+ratio = 300
+tolerance_percent = 100
+min_spacing = 40
+max_distance = 2000
+
+# Welfare offices and shelters sit where land is cheap, at real number --
+# never a singleton -- so their own even-spread half (min_spacing) does
+# real work; Derek's direction: the walk to them is content, so no
+# coverage ceiling here either.
+[[distribution]]
+id = 24
+key = "welfare_office_present"
+subject = "welfare_office"
+per = "dwelling"
+ratio = 150
+tolerance_percent = 100
+min_spacing = 24
+max_distance = 2000
+
+[[distribution]]
+id = 25
+key = "shelter_present"
+subject = "shelter"
+per = "dwelling"
+ratio = 100
+tolerance_percent = 100
+min_spacing = 20
+max_distance = 2000

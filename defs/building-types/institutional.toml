@@ -1,0 +1,87 @@
+# Story 3.4 (FR116). `council`/`hospital`/`welfare_office`/`shelter` all
+# carry `weight = 0` (see `industrial.toml`'s own comment on `depot`):
+# each is placed exclusively by its own distribution row
+# (defs/rules/generation.toml), never by the ordinary weighted fill.
+# `public_hall` is the institutional-land filler every other
+# institutional envelope resolves to, so "every envelope has exactly one
+# type" holds without a special-cased fallback.
+#
+# Siting bands stand in for Derek's richer intent (arterial frontage,
+# corner-ness) -- `sim::generation::GenerationConfig`'s own building-type
+# eligibility today reads only land use and density (Tim's schema); see
+# the PR description for this simplification.
+
+[[building_type]]
+id = 12
+key = "council"
+tags = ["municipal_service", "council", "form_mid"]
+land_uses = ["institutional"]
+density_min = 50
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 0
+professions = [
+  { profession = "council_clerk", headcount = 2 },
+  { profession = "council_administrator", headcount = 1 },
+  { profession = "councillor", headcount = 3 },
+]
+
+[[building_type]]
+id = 13
+key = "hospital"
+tags = ["municipal_service", "hospital", "form_high"]
+land_uses = ["institutional"]
+density_min = 50
+density_max = 100
+min_interior_width_cells = 10
+min_interior_depth_cells = 10
+weight = 0
+professions = [
+  { profession = "hospital_nurse", headcount = 4 },
+  { profession = "hospital_orderly", headcount = 2 },
+  { profession = "hospital_receptionist", headcount = 1 },
+  { profession = "surgeon", headcount = 2 },
+]
+
+[[building_type]]
+id = 14
+key = "welfare_office"
+tags = ["municipal_service", "welfare_office", "form_low"]
+land_uses = ["institutional"]
+density_min = 0
+density_max = 55
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 0
+professions = [
+  { profession = "welfare_caseworker", headcount = 2 },
+  { profession = "welfare_clerk", headcount = 1 },
+]
+
+[[building_type]]
+id = 15
+key = "shelter"
+tags = ["municipal_service", "shelter", "form_low"]
+land_uses = ["institutional"]
+density_min = 0
+density_max = 55
+min_interior_width_cells = 7
+min_interior_depth_cells = 7
+weight = 0
+professions = [
+  { profession = "shelter_attendant", headcount = 2 },
+  { profession = "shelter_cook", headcount = 1 },
+]
+
+[[building_type]]
+id = 16
+key = "public_hall"
+tags = ["form_mid"]
+land_uses = ["institutional"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 10
+professions = [{ profession = "clerk", headcount = 1 }]

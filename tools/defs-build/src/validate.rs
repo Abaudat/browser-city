@@ -272,6 +272,133 @@ fn check_chain_profession_refs(
     Ok(())
 }
 
+/// Story 3.4 (FR116): resolves one building type's own `tags` against the
+/// declared tag set -- the same shape [`resolve_object_tags`] already
+/// uses, decoupled from that entry's own shape the same way.
+fn resolve_building_type_tags(
+    path: &std::path::Path,
+    key: &Located<String>,
+    tags: &[String],
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<Vec<u32>, DefsError> {
+    let mut ids = Vec::with_capacity(tags.len());
+    for name in tags {
+        match tag_ids.get(name.as_str()) {
+            Some(&id) => ids.push(id),
+            None => {
+                let accepted: Vec<&str> = tag_ids.keys().copied().collect();
+                return Err(DefsError::new(
+                    path,
+                    key.line,
+                    key.col,
+                    format!(
+                        "building type '{}' names unknown tag '{}' -- accepted tags are [{}]",
+                        key.value,
+                        name,
+                        accepted.join(", ")
+                    ),
+                ));
+            }
+        }
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    Ok(ids)
+}
+
+fn check_building_type_tags(
+    entries: &[BuildingTypeEntry],
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<(), DefsError> {
+    for e in entries {
+        resolve_building_type_tags(&e.path, &e.key, &e.tags, tag_ids)?;
+    }
+    Ok(())
+}
+
+/// A profession key named on a building type's own `professions` list
+/// must already exist in `defs/professions/`, exactly like
+/// [`check_chain_profession_refs`] -- unknown key = defs-build error
+/// (Tim's direction), never a silently-skipped post. Zero headcount is
+/// refused too: a post nobody staffs is not a post.
+fn check_building_type_profession_refs(
+    entries: &[BuildingTypeEntry],
+    profession_keys: &BTreeSet<&str>,
+) -> Result<(), DefsError> {
+    for e in entries {
+        for post in &e.professions {
+            if !profession_keys.contains(post.profession.as_str()) {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    e.key.col,
+                    format!(
+                        "building type '{}' names unknown profession '{}' in professions",
+                        e.key.value, post.profession
+                    ),
+                ));
+            }
+            if post.headcount == 0 {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    e.key.col,
+                    format!(
+                        "building type '{}' declares a post for profession '{}' with headcount 0 -- a post nobody staffs is not a post",
+                        e.key.value, post.profession
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Every cross-key range a single field's own declared range cannot
+/// express (story 3.4): `density_min <= density_max`, at least one
+/// `land_uses` entry (an unplaceable type is a defs-authoring bug, never
+/// silently generated nowhere) and a strictly positive minimum interior
+/// on both axes (zero would mean "any envelope holds it", which is never
+/// intended).
+fn check_building_type_ranges(entries: &[BuildingTypeEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        if e.density_min > e.density_max {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "building type '{}' has density_min ({}) greater than density_max ({})",
+                    e.key.value, e.density_min, e.density_max
+                ),
+            ));
+        }
+        if e.land_uses.is_empty() {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "building type '{}' names no land_uses -- it could never be placed",
+                    e.key.value
+                ),
+            ));
+        }
+        if e.min_interior_width_cells == 0 || e.min_interior_depth_cells == 0 {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "building type '{}' has a zero minimum interior dimension",
+                    e.key.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 // --- tags and rules (story 2.10, FR111/FR112) -------------------------------
 //
 // The rule engine's only vocabulary: a tag reference (an object's `tags`,
@@ -2152,6 +2279,7 @@ pub fn validate(
     check_key_format(&raw.recipes, "recipe")?;
     check_key_format(&raw.professions, "profession")?;
     check_key_format(&raw.chains, "chain")?;
+    check_key_format(&raw.building_types, "building_type")?;
     check_balance_key_format(&raw.balance)?;
     check_key_format(&raw.bodies, "body")?;
     check_key_format(&raw.eyes, "eyes")?;
@@ -2172,6 +2300,7 @@ pub fn validate(
     check_id_key_dupes(&raw.recipes, "recipe")?;
     check_id_key_dupes(&raw.professions, "profession")?;
     check_id_key_dupes(&raw.chains, "chain")?;
+    check_id_key_dupes(&raw.building_types, "building_type")?;
     check_balance_key_dupes(&raw.balance)?;
     check_id_key_dupes(&raw.bodies, "body")?;
     check_id_key_dupes(&raw.eyes, "eyes")?;
@@ -2217,6 +2346,8 @@ pub fn validate(
         .map(|t| (t.key.value.as_str(), t.id.value))
         .collect();
     check_object_tags(&raw.objects, &tag_ids)?;
+    check_building_type_tags(&raw.building_types, &tag_ids)?;
+    check_building_type_ranges(&raw.building_types)?;
     check_tag_role_layers(&raw.tags, layer_codes)?;
     check_placement_floor_range(&raw.placements)?;
     check_distribution_ranges(&raw.distributions)?;
@@ -2295,6 +2426,7 @@ pub fn validate(
         .map(|p| p.key.value.as_str())
         .collect();
     check_chain_profession_refs(&raw.chains, &profession_keys)?;
+    check_building_type_profession_refs(&raw.building_types, &profession_keys)?;
 
     check_balance_range(&raw.balance)?;
 
@@ -2485,6 +2617,41 @@ pub fn validate(
         .collect();
     chains.sort_by(|a, b| a.key.cmp(&b.key));
 
+    let mut building_types: Vec<BuildingTypeDef> = raw
+        .building_types
+        .iter()
+        .map(|b| BuildingTypeDef {
+            id: b.id.value,
+            key: b.key.value.clone(),
+            tags: resolve_building_type_tags(&b.path, &b.key, &b.tags, &tag_ids)
+                .expect("tags already validated"),
+            land_uses: {
+                let mut v = b.land_uses.clone();
+                v.sort();
+                v.dedup();
+                v
+            },
+            density_min: b.density_min,
+            density_max: b.density_max,
+            min_interior_width_cells: b.min_interior_width_cells,
+            min_interior_depth_cells: b.min_interior_depth_cells,
+            weight: b.weight,
+            professions: {
+                let mut v: Vec<BuildingTypePostDef> = b
+                    .professions
+                    .iter()
+                    .map(|p| BuildingTypePostDef {
+                        profession: p.profession.clone(),
+                        headcount: p.headcount,
+                    })
+                    .collect();
+                v.sort_by(|a, c| a.profession.cmp(&c.profession));
+                v
+            },
+        })
+        .collect();
+    building_types.sort_by(|a, b| a.key.cmp(&b.key));
+
     let mut balance: Vec<BalanceDef> = raw
         .balance
         .iter()
@@ -2630,6 +2797,7 @@ pub fn validate(
         recipes,
         professions,
         chains,
+        building_types,
         balance,
         bodies,
         eyes,

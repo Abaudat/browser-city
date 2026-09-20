@@ -1,0 +1,17 @@
+# Story 3.4: vocabulary only -- staffs `defs/building-types/industrial.toml`.
+
+[[profession]]
+id = 11
+key = "machinist"
+
+[[profession]]
+id = 12
+key = "foreman"
+
+[[profession]]
+id = 13
+key = "warehouse_worker"
+
+[[profession]]
+id = 14
+key = "forklift_operator"

@@ -1,0 +1,8 @@
+rules: depot_present
+expect: fail
+floor: 0
+legend: D=depot
+grid:
+DD
+violations:
+depot_present at (1, 0, 0)

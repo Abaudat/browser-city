@@ -1,0 +1,83 @@
+# Story 3.4 (FR116): the building-type pass's own vocabulary. Whether a
+# type is a dwelling, a workplace or a named institution is carried here,
+# as tags -- never a stored category, never a Rust enum variant, never a
+# string literal under server/sim/src/generation/
+# (check-generator-no-content-keys.sh). "Institution", "workplace" and
+# "residential" are all *derived*: a workplace is any building type whose
+# `professions` list is non-empty; a municipal service is any type
+# carrying `municipal_service`.
+
+# Carried by every building type that holds one dwelling (this pass's own
+# unit: one placed building is one dwelling -- Tim's direction).
+[[tag]]
+id = 18
+key = "dwelling"
+
+# Carried by every named institution below, so a generic "every municipal
+# service kind is present" check can iterate one tag rather than a
+# literal list.
+[[tag]]
+id = 19
+key = "municipal_service"
+
+[[tag]]
+id = 20
+key = "depot"
+
+[[tag]]
+id = 21
+key = "council"
+
+[[tag]]
+id = 22
+key = "hospital"
+
+[[tag]]
+id = 23
+key = "welfare_office"
+
+[[tag]]
+id = 24
+key = "shelter"
+
+[[tag]]
+id = 25
+key = "shop"
+
+[[tag]]
+id = 26
+key = "cafe"
+
+[[tag]]
+id = 27
+key = "office"
+
+[[tag]]
+id = 28
+key = "workshop"
+
+[[tag]]
+id = 29
+key = "warehouse"
+
+[[tag]]
+id = 30
+key = "market"
+
+# The coherence pass's own form-class scale (AC1, "no skyscraper among
+# villas"): a building type carries exactly one of these three, and
+# `no_high_rise_within_a_low_rise_block` (defs/rules/generation.toml)
+# forbids the two extremes sharing a block. Never a type key, never a
+# sprite family choice (docs/generation.md's three-carriers rule is
+# untouched by this story).
+[[tag]]
+id = 31
+key = "form_low"
+
+[[tag]]
+id = 32
+key = "form_mid"
+
+[[tag]]
+id = 33
+key = "form_high"

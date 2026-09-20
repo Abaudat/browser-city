@@ -1,0 +1,6 @@
+rules: welfare_office_present
+expect: pass
+floor: 0
+legend: W=welfare_office
+grid:
+W.

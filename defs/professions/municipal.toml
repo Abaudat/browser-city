@@ -1,0 +1,61 @@
+# Story 3.4: vocabulary only -- staffs `defs/building-types/
+# institutional.toml`'s named institutions. Most of these are held by a
+# singleton employer today (a monopsony is institutional friction, not a
+# bug -- Derek's direction): they sit on top of the pooled profession-
+# depth target, deliberately not counted toward it.
+
+[[profession]]
+id = 15
+key = "depot_dispatcher"
+
+[[profession]]
+id = 16
+key = "depot_mechanic"
+
+[[profession]]
+id = 17
+key = "refuse_collector"
+
+[[profession]]
+id = 18
+key = "council_clerk"
+
+[[profession]]
+id = 19
+key = "council_administrator"
+
+[[profession]]
+id = 20
+key = "councillor"
+
+[[profession]]
+id = 21
+key = "hospital_nurse"
+
+[[profession]]
+id = 22
+key = "hospital_orderly"
+
+[[profession]]
+id = 23
+key = "hospital_receptionist"
+
+[[profession]]
+id = 24
+key = "surgeon"
+
+[[profession]]
+id = 25
+key = "welfare_caseworker"
+
+[[profession]]
+id = 26
+key = "welfare_clerk"
+
+[[profession]]
+id = 27
+key = "shelter_attendant"
+
+[[profession]]
+id = 28
+key = "shelter_cook"

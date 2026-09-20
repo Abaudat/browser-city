@@ -1,0 +1,6 @@
+rules: depot_present
+expect: pass
+floor: 0
+legend: D=depot
+grid:
+D.

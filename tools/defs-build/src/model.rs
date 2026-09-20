@@ -374,6 +374,70 @@ pub struct ProfessionFile {
     pub profession: Vec<RawProfession>,
 }
 
+/// Story 3.4 (FR116): the four land uses `sim::generation::LandUse`
+/// already carries, spelled the same way here so a `defs/building-types/`
+/// row and the generator agree without a second enum reappearing under
+/// `server/sim/src/generation/` (which only ever reads the resolved
+/// string back via [`RawLandUse::as_str`], never matches on a literal
+/// building-type/tag/profession key).
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum RawLandUse {
+    Residential,
+    Commercial,
+    Industrial,
+    Institutional,
+}
+
+impl RawLandUse {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RawLandUse::Residential => "residential",
+            RawLandUse::Commercial => "commercial",
+            RawLandUse::Industrial => "industrial",
+            RawLandUse::Institutional => "institutional",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawBuildingTypePost {
+    pub profession: String,
+    pub headcount: u32,
+}
+
+/// Story 3.4 (FR116, Tim's direction): a building type is a def kind, not
+/// Rust -- this row carries only `tags`/`land_uses`/`density_min`/
+/// `density_max`/`min_interior_width_cells`/`min_interior_depth_cells`/
+/// `weight`/`professions`. Whether a type is a workplace, an institution
+/// or a dwelling is never stored here: it is derived from `tags` (a
+/// `municipal_service`/`dwelling`/etc. tag) or from `professions` being
+/// non-empty (a workplace), read only by `sim::generation`, never
+/// hardcoded in it.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawBuildingType {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub land_uses: Vec<RawLandUse>,
+    pub density_min: i32,
+    pub density_max: i32,
+    pub min_interior_width_cells: u32,
+    pub min_interior_depth_cells: u32,
+    pub weight: u32,
+    #[serde(default)]
+    pub professions: Vec<RawBuildingTypePost>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildingTypeFile {
+    pub building_type: Vec<RawBuildingType>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawChain {
@@ -868,6 +932,27 @@ pub struct ChainEntry {
     pub links: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct BuildingTypePostEntry {
+    pub profession: String,
+    pub headcount: u32,
+}
+
+#[derive(Debug)]
+pub struct BuildingTypeEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub tags: Vec<String>,
+    pub land_uses: Vec<RawLandUse>,
+    pub density_min: i32,
+    pub density_max: i32,
+    pub min_interior_width_cells: u32,
+    pub min_interior_depth_cells: u32,
+    pub weight: u32,
+    pub professions: Vec<BuildingTypePostEntry>,
+}
+
 #[derive(Debug)]
 pub struct BalanceEntry {
     pub path: PathBuf,
@@ -1057,6 +1142,7 @@ impl_id_key_entry!(ItemEntry);
 impl_id_key_entry!(RecipeEntry);
 impl_id_key_entry!(ProfessionEntry);
 impl_id_key_entry!(ChainEntry);
+impl_id_key_entry!(BuildingTypeEntry);
 impl_id_key_entry!(BodyEntry);
 impl_id_key_entry!(EyesEntry);
 impl_id_key_entry!(HairstyleEntry);
@@ -1078,6 +1164,7 @@ pub struct RawDefs {
     pub recipes: Vec<RecipeEntry>,
     pub professions: Vec<ProfessionEntry>,
     pub chains: Vec<ChainEntry>,
+    pub building_types: Vec<BuildingTypeEntry>,
     pub balance: Vec<BalanceEntry>,
     pub page_groups: Vec<PageGroupEntry>,
     pub archetypes: Vec<ArchetypeEntry>,
@@ -1153,6 +1240,31 @@ pub struct RecipeDef {
 pub struct ProfessionDef {
     pub id: u32,
     pub key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildingTypePostDef {
+    pub profession: String,
+    pub headcount: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildingTypeDef {
+    pub id: u32,
+    pub key: String,
+    /// Resolved tag ids (story 2.10, FR111) -- the engine's only
+    /// vocabulary; whether a type is a dwelling or a named institution is
+    /// carried here, never as a second stored category.
+    pub tags: Vec<u32>,
+    pub land_uses: Vec<RawLandUse>,
+    pub density_min: i32,
+    pub density_max: i32,
+    pub min_interior_width_cells: u32,
+    pub min_interior_depth_cells: u32,
+    pub weight: u32,
+    /// Non-empty iff this type is a workplace -- never a second stored
+    /// bool.
+    pub professions: Vec<BuildingTypePostDef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1328,6 +1440,7 @@ pub struct Defs {
     pub recipes: Vec<RecipeDef>,
     pub professions: Vec<ProfessionDef>,
     pub chains: Vec<ChainDef>,
+    pub building_types: Vec<BuildingTypeDef>,
     pub balance: Vec<BalanceDef>,
     pub bodies: Vec<BodyDef>,
     pub eyes: Vec<EyesDef>,

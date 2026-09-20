@@ -1,0 +1,40 @@
+# Story 3.4: vocabulary only -- id + key, per Derek's direction. Work
+# loops arrive with the job stories; nothing here is a work-loop def.
+# Staffs `defs/building-types/commercial.toml` and the residential
+# `corner_shop` row.
+
+[[profession]]
+id = 2
+key = "shop_clerk"
+
+[[profession]]
+id = 3
+key = "cashier"
+
+[[profession]]
+id = 4
+key = "barista"
+
+[[profession]]
+id = 5
+key = "server"
+
+[[profession]]
+id = 6
+key = "clerk"
+
+[[profession]]
+id = 7
+key = "accountant"
+
+[[profession]]
+id = 8
+key = "receptionist"
+
+[[profession]]
+id = 9
+key = "market_vendor"
+
+[[profession]]
+id = 10
+key = "market_porter"

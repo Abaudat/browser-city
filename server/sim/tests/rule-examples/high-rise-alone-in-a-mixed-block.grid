@@ -1,0 +1,7 @@
+rules: no_high_rise_within_a_low_rise_block
+expect: pass
+floor: 0
+legend: F=form_high M=form_mid
+area: 1 0,0 2,1
+grid:
+FM

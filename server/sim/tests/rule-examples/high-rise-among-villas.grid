@@ -1,0 +1,9 @@
+rules: no_high_rise_within_a_low_rise_block
+expect: fail
+floor: 0
+legend: F=form_high L=form_low
+area: 1 0,0 2,1
+grid:
+FL
+violations:
+no_high_rise_within_a_low_rise_block at (0, 0, 0)

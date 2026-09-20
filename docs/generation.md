@@ -371,11 +371,17 @@ disagree.
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
 | waste_per_three_seating | committed | Prop placement | site | - | **placeholder** -- seating with no bin anywhere nearby, or every bin clumped in one corner while the rest of the street collects litter; scoped `site` because distribution's own coverage math already is -- "Does not fit"'s distribution gap below is this row's own answer to how it behaves when the site grows |
+| depot_present | committed | Building type | site | - | a depot per roughly `ratio` dwellings, never clustered with another depot -- "the district has a depot" (AC2); `max_distance` set past the site's own diagonal on purpose (no coverage ceiling on a municipal row, Derek's direction) |
+| council_present | committed | Building type | site | - | same shape, the council |
+| hospital_present | committed | Building type | site | - | same shape, the hospital |
+| welfare_office_present | committed | Building type | site | - | welfare offices at a real ratio (never a singleton), spaced apart -- they sit where land is cheap, and the walk to them is content (Derek's direction), never guaranteed near |
+| shelter_present | committed | Building type | site | - | same shape, shelters |
 
 ## coherence
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
 | no_counter_in_a_stairwell | committed | Interior layout | room | - | **placeholder** -- a shop till standing on a stairwell landing |
+| no_high_rise_within_a_low_rise_block | committed | Building type | building | - | AC1, "no skyscraper among villas": a `form_high` building never shares a block with a `form_low` one -- the form-class scale is `defs/tags/generation.toml`'s own vocabulary, never a type key |
 
 ## adjacency
 | key | status | pass | scope | reads | intent |

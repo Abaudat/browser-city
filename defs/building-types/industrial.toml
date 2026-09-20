@@ -1,0 +1,53 @@
+# Story 3.4 (FR116). `depot`'s `weight = 0`: it is never drawn by the
+# ordinary weighted fill (`sim::generation::building_types::run`'s own
+# fill step never picks a zero-weight type) -- it exists on industrial
+# land only where the `depot_present` distribution row
+# (defs/rules/generation.toml) places it, keeping its own placed count
+# exactly the row's own target, never inflated by an unrelated fill
+# draw.
+
+[[building_type]]
+id = 9
+key = "workshop"
+tags = ["workshop", "form_low"]
+land_uses = ["industrial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 20
+professions = [
+  { profession = "machinist", headcount = 2 },
+  { profession = "foreman", headcount = 1 },
+]
+
+[[building_type]]
+id = 10
+key = "warehouse"
+tags = ["warehouse", "form_low"]
+land_uses = ["industrial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 10
+min_interior_depth_cells = 10
+weight = 20
+professions = [
+  { profession = "warehouse_worker", headcount = 3 },
+  { profession = "forklift_operator", headcount = 1 },
+]
+
+[[building_type]]
+id = 11
+key = "depot"
+tags = ["municipal_service", "depot", "form_low"]
+land_uses = ["industrial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 10
+min_interior_depth_cells = 10
+weight = 0
+professions = [
+  { profession = "depot_dispatcher", headcount = 1 },
+  { profession = "depot_mechanic", headcount = 1 },
+  { profession = "refuse_collector", headcount = 4 },
+]
