@@ -1086,16 +1086,37 @@ row is still marked `planned`, or when `## Must never be seen`'s own
 
 `sim::generation` (FR110): the generator's seven coarse-to-fine passes,
 pure functions and data only (NFR28) -- no table, no reducer, no client
-code. A pass's signature is fixed shape: the city seed, its own
-predecessor's output (by reference; a pass never mutates it and never
-imports a later pass) and `GenerationConfig` -- nothing else. Pass ids
-(`PASS_LAND_USE`..`PASS_PROP_PLACEMENT`) are append-only constants in
-FR110's own order; a pass not yet implemented still reserves its id.
-Each pass seeds its own `sim::rng::Rng` stream from `seed_from_ids
-(city_seed, PASS_ID)`, so adding a draw to one pass never reshuffles
-another; within pass 2, each superblock further seeds its own stream
-from `seed_from_ids(pass_seed, superblock_index)`, so one superblock's
-own draw count never reshuffles another's.
+code. A pass's signature is: the city seed, `&` the outputs of *earlier*
+passes it actually reads (never a later pass, never by mutation) and
+`GenerationConfig` -- nothing else. Pass ids (`PASS_LAND_USE`..
+`PASS_PROP_PLACEMENT`) are append-only constants in FR110's own order; a
+pass not yet implemented still reserves its id. Each pass seeds its own
+`sim::rng::Rng` stream from `seed_from_ids(city_seed, PASS_ID)`, so
+adding a draw to one pass never reshuffles another; within pass 2, each
+superblock further seeds its own stream from `seed_from_ids(pass_seed,
+superblock_index)`, and within passes 3-4 each block and each plot from
+its own bounds (`generation::rect_seed_key`), never its position in a
+list -- so one block's (or plot's) own draw count never reshuffles
+another's, and adding a plot to one block never moves any other block's
+or plot's draws.
+
+`generation::plan(city_seed, &cfg) -> Result<District, GenerationError>`
+chains every implemented pass in order with no verdict on the result
+(only pass 1's own site check can fail). `District::check_building_count
+(&cfg)` holds AC4's count verdict, a property of the whole district.
+`generation::generate` is `plan` plus that check, and is what production
+calls. `scripts/ci/check-generation-entry-point.sh` fails the build on
+any `plots::run(`/`envelopes::run(` call under `server/sim/tests/` or
+`server/bounds/` not marked `// generation-entry-point: allow` -- the
+marker is reserved for the two independence properties and the golden's
+pass-2-run-twice test, which deliberately feed one pass a perturbed or
+repeated predecessor; single-pass unit tests live in the pass's own
+module. `GenerationError` is
+the one error type across every implemented pass (`InvalidConfig` from
+`GenerationConfig::from_balance`, `InvalidSite { site,
+coarse_cell_size_cells }` from pass 1, `BuildingCountOutOfTolerance {
+got, min, max }` from the district's own count check) -- never a
+`Result<_, String>` per pass.
 
 Coordinates are world-absolute `i32` cells throughout; `SiteBounds` is
 `sim::world::Rect` reused, never a second rect type. `GenerationConfig::
@@ -1133,18 +1154,43 @@ edge. `subdivide` still forces a split whenever the current rect spans
 more than one land-use region, which is what keeps every region
 touching a street (AC2) without that snapping.
 
-Evidence: `bounds/src/generation_evidence.rs` renders both passes' own
-output, for three committed seeds, to `docs/generation/*.svg`.
+Which of a block's own four sides abut a real street is
+`generation::block_sides(bounds, site)`: a side abuts a street iff it
+does not coincide with the site's own boundary -- a pure O(1) function
+of the block's own bounds against the site's, never a stored field and
+never a scan of `StreetNetwork::edges` per block, guarded by the
+invariant `inv_generation_block_sides_matches_a_real_street_edge`
+against the real street edges. Pass 3 (plot subdivision) reads this to
+cut only street-abutting faces into plots, never landlocking one; every
+cell of a block belongs to a plot, and land no row claims is one
+explicit `open` plot, never silent remainder. Pass 4 (the building
+envelope) sizes a footprint from each plot's own geometry, land use and
+density, always inside its own plot, at or above that land use's minimum
+usable interior (checked against the interior net, footprint minus the
+wall ring, never the outer rectangle) -- a plot that cannot hold that
+minimum yields a typed `EnvelopeOutcome::Rejected`, counted, never a
+footprint shrunk below it, and pass 3 never hands it one.
+Building count itself fails generation: `District::check_building_count`
+returns `Err(GenerationError::BuildingCountOutOfTolerance)` when the
+realised placed-envelope count for a seed sits outside `[min, max]`,
+derived from `generation.envelopes.target_count_per_million_cells` (the
+Scale Baseline figure, never a measurement of the generator itself)
+scaled by the real site area and `count_tolerance_percent`; the pooled
+mean over a fixed seed range is held to that same target within
+`mean_count_tolerance_percent`.
+
+Evidence: `bounds/src/generation_evidence.rs` renders every implemented
+pass's own output, for three committed seeds, to `docs/generation/*.svg`.
 `cargo run -p bounds --bin dump-generation` regenerates them;
 `bounds/tests/generation_evidence_current.rs` fails the build if the
 committed files and a fresh render ever disagree.
 
-`GENERATION_VERSION` is bumped whenever either pass's algorithm or
-seeding (never a `defs/balance/generation.toml` retune) moves a fixed
+`GENERATION_VERSION` is bumped whenever any implemented pass's algorithm
+or seeding (never a `defs/balance/generation.toml` retune) moves a fixed
 seed's output; `server/sim/tests/generation_golden.rs` runs against a
 config frozen in the test itself, not live `defs::BALANCE`, so a
 balance retune alone never forces a version bump. `server/sim/tests/
-goldens/generation_v1.golden` is keyed to it, guarded by `check-golden-
+goldens/generation_v2.golden` is keyed to it, guarded by `check-golden-
 version-bump.sh`'s `generation_*` arm the same way `RNG_VERSION`/
 `APPEARANCE_VERSION` are.
 

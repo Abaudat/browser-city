@@ -10,10 +10,16 @@
 //! and holds every output collection to an explicit ceiling derived from
 //! `GenerationConfig` itself, never a literal -- if segment count ever
 //! grew faster than the area, this ceiling (linear in coarse cell count)
-//! would be the thing that catches it, not a stopwatch.
+//! would be the thing that catches it, not a stopwatch. Story 3.3 extends
+//! this to plots and envelopes: their own ceilings are derived from
+//! `block area / minimum plot area` plus a small, bounded per-block slack
+//! for `open` plots (never more than a handful per block, whatever their
+//! own size), still linear, and neither pass carries an `O(n^2)` risk of
+//! its own (plots cuts a fixed `FACE_PRIORITY` strip set per block;
+//! envelopes sizes one plot at a time).
 
 use sim::generated::defs;
-use sim::generation::{GenerationConfig, land_use, streets};
+use sim::generation::{GenerationConfig, LandUse, generate, land_use, streets};
 
 #[test]
 fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
@@ -23,8 +29,13 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // live 512 value.
     cfg.site_extent_cells = 1024;
 
-    let lu = land_use::run(7, cfg.site(), &cfg).unwrap();
-    let net = streets::run(7, &lu, &cfg);
+    // The one entry point, not a hand-chain (`docs/architecture.md`): at
+    // the growth target the count band scales with site area, so a seed
+    // that clears it at 512 clears it here too.
+    let d = generate(7, &cfg)
+        .unwrap_or_else(|e| panic!("the 1024 growth target must still generate: {e}"));
+    let lu = &d.land_use;
+    let net = &d.streets;
 
     // Tim's direction, cycle 1: the checkers, not just `run` -- every
     // graph query now routes through the adjacency index built once at
@@ -33,7 +44,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // target too, not only that `run` itself does.
     let reachable = net.reachable_from_first_node().unwrap();
     assert_eq!(reachable.len(), net.nodes().len());
-    assert!(net.stranded_regions(&lu).is_empty());
+    assert!(net.stranded_regions(lu).is_empty());
     assert!(net.dead_end_nodes().is_empty());
     let _ = net.junction_mix();
     let _ = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
@@ -81,4 +92,58 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // count, with every collection inside its linear ceiling, is most of
     // the property this test exists to pin.
     assert!(!net.blocks().is_empty());
+
+    let pm = &d.plots;
+    // Every non-`open` plot is at least `width_min * envelope_limits(use)
+    // .min_depth_cells` world cells for its own land use -- `plots::run`'s
+    // own `axis_rows` never hands a real row less depth than that (its
+    // own `min_needed` floor) -- so the smallest such product over every
+    // land use bounds non-`open` plot count the same way `min_block_
+    // depth_cells^2` bounds block count above. `open` plots are not
+    // bounded by area (a sliver can be 1 cell), but are bounded in count:
+    // at most one per block face plus one core, so a small constant slack
+    // per block.
+    let min_plot_area = (0..4)
+        .map(|i| {
+            let limits = cfg.envelope_limits(LandUse::ALL[i]);
+            cfg.plot_width_min_cells[i] as u64 * limits.min_depth_cells as u64
+        })
+        .min()
+        .unwrap_or(1)
+        .max(1);
+    let max_open_plots_per_block = 5u64; // 4 faces + 1 core, generously.
+    let max_plots = world_cells / min_plot_area + max_blocks * max_open_plots_per_block;
+    assert!(
+        pm.plots().len() as u64 <= max_plots,
+        "plot count {} exceeds the structural ceiling {max_plots} derived from plot width/envelope-depth minimums",
+        pm.plots().len()
+    );
+    assert!(!pm.plots().is_empty());
+    assert!(
+        pm.landlocked_plots(net.blocks(), cfg.plot_frontage_min_cells)
+            .is_empty()
+    );
+    // The ceiling's own derivation, true rather than merely loose: every
+    // non-`open` plot really does clear its own land use's minimum area.
+    for p in pm.plots() {
+        if p.open {
+            continue;
+        }
+        let limits = cfg.envelope_limits(p.land_use);
+        let area = p.bounds.width() * p.bounds.height();
+        let min_area =
+            cfg.plot_width_min_cells[p.land_use as usize] as i64 * limits.min_depth_cells as i64;
+        assert!(
+            area >= min_area,
+            "non-open plot {:?} (use {:?}) has area {area} under its own minimum {min_area}",
+            p.bounds,
+            p.land_use
+        );
+    }
+
+    let em = &d.envelopes;
+    // Envelopes never outnumber the plots they were sized from -- no
+    // separate ceiling needed beyond `max_plots` above.
+    assert!(em.outcomes().len() as u64 <= max_plots);
+    assert!(!em.outcomes().is_empty());
 }

@@ -27,3 +27,7 @@ serde_json = "1"
 # `sim/Cargo.toml`), so the hand-authored geometry it gates never reaches
 # the published wasm module.
 sim = { path = "../sim", features = ["test-fixtures"] }
+
+[[bin]]
+name = "measure-generation"
+path = "src/bin/measure_generation.rs"

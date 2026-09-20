@@ -1,34 +1,150 @@
-//! Story 3.2 (FR110): the first two of the generator's seven coarse-to-fine
-//! passes -- land use, then the street network. Pure functions and data
-//! only (NFR28): every input is passed in by the caller, nothing here
-//! reads a table, a clock or the filesystem.
+//! Stories 3.2-3.3 (FR110): the first four of the generator's seven
+//! coarse-to-fine passes -- land use, the street network, plot
+//! subdivision, then the building envelope. Pure functions and data only
+//! (NFR28): every input is passed in by the caller, nothing here reads a
+//! table, a clock or the filesystem.
 //!
 //! A pass's own signature carries FR110's ordering, not convention: a pass
-//! takes the city seed, its own predecessor's output and [`GenerationConfig`]
+//! takes the city seed, `&` the outputs of *earlier* passes it actually
+//! reads (never a later pass, never by mutation) and [`GenerationConfig`]
 //! -- nothing else. `streets::run` takes [`land_use::LandUseMap`] by
-//! reference and cannot mutate it; `land_use.rs` never imports `streets`.
-//! Persisting the generated city or walking it is later stories' job (this
-//! module hands down an abstract plan, never a `PlacedObject`); there is no
-//! table and no reducer here.
+//! reference and cannot mutate it; `land_use.rs` never imports `streets`,
+//! and no pass ever imports a pass later than itself. Persisting the
+//! generated city or walking it is later stories' job (this module hands
+//! down an abstract plan, never a `PlacedObject`); there is no table and
+//! no reducer here.
 //!
 //! Each pass seeds its own [`crate::rng::Rng`] stream from
 //! [`crate::rng::seed_from_ids`]`(city_seed, PASS_ID)`, so adding a draw to
 //! one pass never reshuffles another. Pass ids are append-only, in FR110's
-//! own order -- a pass not yet implemented still reserves its id.
+//! own order -- a pass not yet implemented still reserves its id. Within a
+//! pass, each block (pass 2 on) and each plot (pass 4) further seeds its
+//! own stream from stable geometry (its own bounds, never a list index or
+//! position), so adding or moving one block or plot never reshuffles
+//! another's draws.
+//!
+//! [`plan`] chains every implemented pass in order with no verdict;
+//! [`generate`] is `plan` plus [`District::check_building_count`], what
+//! production calls. Every cross-pass harness calls one of the two rather
+//! than hand-chaining the four `run` functions; each pass's own `run`
+//! stays public for its own unit tests and for the two properties that
+//! deliberately feed one pass a perturbed predecessor.
 
+pub mod envelopes;
 pub mod land_use;
+pub mod plots;
 pub mod streets;
 
+pub use envelopes::{Envelope, EnvelopeMap, EnvelopeOutcome, RejectReason};
 pub use land_use::{LandUse, LandUseCell, LandUseMap, Region};
-pub use streets::{Block, StreetClass, StreetEdge, StreetNetwork};
+pub use plots::{Plot, PlotMap};
+pub use streets::{Block, Side, Sides, StreetClass, StreetEdge, StreetNetwork, block_sides};
 
 use crate::generated::defs;
+use crate::rng::seed_from_ids;
 
-/// Bumped whenever either pass's algorithm or seeding changes in a way
-/// that could move its output for a fixed seed -- `tests/goldens/
-/// generation_v1.golden` is keyed to this, exactly like `sim::rng::
+/// A stable RNG seed key derived purely from a rect's own geometry, never
+/// from its position in a list -- what a block or a plot seeds its own
+/// stream from, so adding or moving an unrelated one never reshuffles
+/// this one's draws.
+pub fn rect_seed_key(r: SiteBounds) -> u64 {
+    let lo = seed_from_ids(r.x0 as u32 as u64, r.y0 as u32 as u64);
+    let hi = seed_from_ids(r.x1 as u32 as u64, r.y1 as u32 as u64);
+    seed_from_ids(lo, hi)
+}
+
+/// Bumped whenever any implemented pass's algorithm or seeding changes in
+/// a way that could move its output for a fixed seed -- `tests/goldens/
+/// generation_v2.golden` is keyed to this, exactly like `sim::rng::
 /// RNG_VERSION`/`sim::appearance::APPEARANCE_VERSION`.
-pub const GENERATION_VERSION: u32 = 1;
+pub const GENERATION_VERSION: u32 = 2;
+
+/// Every way generation itself can fail, across every implemented pass --
+/// one type, never a `Result<_, String>` per pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GenerationError {
+    /// A balance-key configuration is internally inconsistent
+    /// (`GenerationConfig::from_balance`'s own cross-key checks).
+    InvalidConfig(String),
+    /// Pass 1: `site`'s own extent is not a whole multiple of `coarse_
+    /// cell_size_cells` -- refused, never silently truncated.
+    InvalidSite {
+        site: SiteBounds,
+        coarse_cell_size_cells: i32,
+    },
+    /// Pass 4: the realised building count for this seed/config sits
+    /// outside `[min, max]` -- a seed that trips this is a world that
+    /// fails to create, never a silently thin or overcrowded city.
+    BuildingCountOutOfTolerance { got: i64, min: i64, max: i64 },
+}
+
+impl std::fmt::Display for GenerationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GenerationError::InvalidConfig(msg) => write!(f, "{msg}"),
+            GenerationError::InvalidSite {
+                site,
+                coarse_cell_size_cells,
+            } => write!(
+                f,
+                "land_use::run: site {site:?} is not a whole multiple of coarse_cell_size_cells ({coarse_cell_size_cells})"
+            ),
+            GenerationError::BuildingCountOutOfTolerance { got, min, max } => write!(
+                f,
+                "generation::envelopes: building count {got} is outside tolerance [{min}, {max}]"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for GenerationError {}
+
+/// One finished city plan: every implemented pass's own output, in order.
+/// Never a `PlacedObject` -- still the abstract plan this module has
+/// always handed down (FR110).
+#[derive(Debug, Clone)]
+pub struct District {
+    pub land_use: LandUseMap,
+    pub streets: StreetNetwork,
+    pub plots: PlotMap,
+    pub envelopes: EnvelopeMap,
+}
+
+impl District {
+    /// AC4's own verdict on this finished district: `Err(GenerationError::
+    /// BuildingCountOutOfTolerance)` when the realised placed-envelope
+    /// count sits outside [`GenerationConfig::building_count_band`] for
+    /// its own site -- a property of the whole plan, never folded into
+    /// pass 4's own placement.
+    pub fn check_building_count(&self, cfg: &GenerationConfig) -> Result<(), GenerationError> {
+        envelopes::check_building_count(&self.envelopes, self.plots.site(), cfg)
+    }
+}
+
+/// Chains every implemented pass, in FR110's own order, with no verdict
+/// on the result -- only pass 1's own site check can fail. What a
+/// harness that must inspect every pass of an outlier city calls.
+pub fn plan(city_seed: u64, cfg: &GenerationConfig) -> Result<District, GenerationError> {
+    let land_use = land_use::run(city_seed, cfg.site(), cfg)?;
+    let streets = streets::run(city_seed, &land_use, cfg);
+    let plots = plots::run(city_seed, &land_use, &streets, cfg);
+    let envelopes = envelopes::run(city_seed, &plots, cfg);
+    Ok(District {
+        land_use,
+        streets,
+        plots,
+        envelopes,
+    })
+}
+
+/// The one entry point production calls: [`plan`], then
+/// [`District::check_building_count`] -- a seed whose district fails AC4
+/// is a world that fails to create.
+pub fn generate(city_seed: u64, cfg: &GenerationConfig) -> Result<District, GenerationError> {
+    let district = plan(city_seed, cfg)?;
+    district.check_building_count(cfg)?;
+    Ok(district)
+}
 
 /// FR110's seven passes, coarse to fine -- append-only, never renumbered.
 /// A pass not yet implemented still reserves its own id here.
@@ -162,10 +278,143 @@ pub struct GenerationConfig {
     /// direction, cycle 3; moved off a bare literal, Quentin's direction,
     /// cycle 4).
     pub institutional_max_pocket_share_percent: i64,
+
+    // --- plots (pass 3) ---------------------------------------------
+    /// AC1: a plot fronts a street iff it shares at least this many world
+    /// cells of *edge length* with a street-abutting side of its own
+    /// block (corner-point contact is landlocked) -- the one frontage
+    /// definition [`plots::PlotMap::landlocked_plots`] checks.
+    pub plot_frontage_min_cells: i32,
+    /// The density (`land_use::LandUseCell::density`) at or above which a
+    /// block's own build line sits flush on the pavement (setback 0,
+    /// party-wall packing) -- below it, a block gets the single shared
+    /// `plot_setback_periphery_cells` setback instead. Shared with
+    /// `envelopes.rs`'s own side-gap step (same density line decides
+    /// both).
+    pub plot_high_density_threshold: i32,
+    /// The one shared build-line setback every plot on a below-threshold
+    /// block sits behind -- one line for the whole face.
+    pub plot_setback_periphery_cells: i32,
+    /// Per land use ([`LandUse::ALL`] order), the row of plot widths (the
+    /// row axis, along the block face) a block of that use draws its
+    /// rhythm module widths from, minimum end.
+    pub plot_width_min_cells: [i32; 4],
+    /// Per land use, the same band's maximum end.
+    pub plot_width_max_cells: [i32; 4],
+    /// Per land use, the ceiling on a plot's own depth from its block
+    /// face inward (before the build-line setback is subtracted) -- two
+    /// opposing rows meet at the block's own mid-line whenever it is
+    /// shallower than twice this; past that, each row stops here and the
+    /// leftover between them is the block's own core.
+    pub plot_row_depth_cells: [i32; 4],
+    /// The most a block's own leftover core (after every abutting face
+    /// has cut its own row) may reach, on either axis, before it becomes
+    /// an explicit, recorded `open` plot rather than being absorbed into
+    /// the rows as rear yard -- at `density_max` (the peak); see
+    /// [`Self::max_core_depth_cells`].
+    pub plot_max_core_depth_cells: i32,
+    /// The same ceiling at `density_min` (the periphery) -- deep rear
+    /// gardens there, a small yard at the core.
+    pub plot_max_core_depth_periphery_cells: i32,
+    /// The minimum short side of any `open` plot this pass creates of its
+    /// own accord (a core) -- a residue narrower than this is never a plot
+    /// of its own.
+    pub plot_open_min_side_cells: i32,
+    /// The maximum percent of a district's own plots that may be `open`,
+    /// by count.
+    pub plot_max_open_percent_by_count: i64,
+    /// The same ceiling's own area half: `open` plots can be
+    /// individually rare but each cover a large share of the district's
+    /// own plotted land.
+    pub plot_max_open_percent_by_area: i64,
+    /// The maximum percent of every block's own summed area that may
+    /// belong to no plot at all, citywide.
+    pub plot_max_unplotted_percent: i64,
+
+    // --- building envelopes (pass 4) ---------------------------------
+    /// The wall ring's own thickness, both axes -- interior usable floor
+    /// is the plot-derived footprint minus two of these per axis.
+    pub envelope_wall_thickness_cells: i32,
+    /// Per land use, the minimum *usable interior* width a footprint must
+    /// clear -- checked against the interior net (footprint minus the
+    /// wall ring), never the outer rectangle.
+    pub envelope_min_interior_width_cells: [i32; 4],
+    /// Per land use, the same minimum's depth.
+    pub envelope_min_interior_depth_cells: [i32; 4],
+    /// The outer envelope ceiling, both axes shared across every land
+    /// use.
+    pub envelope_max_width_cells: i32,
+    pub envelope_max_depth_cells: i32,
+    /// The total gap between two neighbouring envelopes on a below-
+    /// `plot_high_density_threshold` block -- half inset from each side,
+    /// so it must be even (`from_balance` refuses an odd value). 0 at or
+    /// above the threshold (party walls).
+    pub envelope_side_gap_periphery_cells: i32,
+    /// The most a footprint's own size draw may trim back from filling
+    /// its plot's own available extent, on each axis independently --
+    /// AC3's variety comes from this small trim and from the plot
+    /// rhythm's own widths, never from a uniform draw down to the class
+    /// minimum.
+    pub envelope_size_trim_max_cells: i32,
+    /// AC3's mean band, measured over the fixed seed range `0..256` at
+    /// this generator's own committed config.
+    pub envelope_mean_width_cells: i32,
+    pub envelope_mean_width_tolerance_cells: i32,
+    pub envelope_mean_depth_cells: i32,
+    pub envelope_mean_depth_tolerance_cells: i32,
+    /// NFR8/AC3's anti-cheat floor: the minimum number of distinct `(w,
+    /// d)` footprint pairs a single generated district must show -- a
+    /// city of identical boxes satisfies a mean band too.
+    pub envelope_min_distinct_sizes: i64,
+    /// AC4's own target, stated at the 512 reference extent per one
+    /// million site cells and scaled by real site area inside `envelopes
+    /// ::run` -- never a bare count, so NFR14's 1024 growth target (four
+    /// times the cells) does not fail this for no reason.
+    pub envelope_target_count_per_million_cells: i64,
+    /// AC4's per-seed tolerance band around the scaled target, as a
+    /// percent -- the wild-deviation guard.
+    pub envelope_count_tolerance_percent: i64,
+    /// AC4's pooled band: the mean placed count over a fixed seed range
+    /// must sit within this percent of the scaled target.
+    pub envelope_mean_count_tolerance_percent: i64,
+    /// The maximum percent of attempted (non-`open`) plots the envelope
+    /// pass may reject, asserted per city -- without it a generator that
+    /// rejects half the district still passes every other property until
+    /// AC4 catches it for the wrong reason.
+    pub envelope_max_rejected_plot_percent: i64,
 }
 
 fn get(balance: &[defs::BalanceSeed], key: &str) -> i64 {
     crate::balance::value(balance, key)
+}
+
+/// `LandUse`'s own balance-key naming segment, [`LandUse::ALL`] order --
+/// the one place a per-land-use key's own name is built, shared by
+/// `from_balance` and `docs/generation.md`'s own key list.
+fn land_use_key(u: LandUse) -> &'static str {
+    match u {
+        LandUse::Residential => "residential",
+        LandUse::Commercial => "commercial",
+        LandUse::Industrial => "industrial",
+        LandUse::Institutional => "institutional",
+    }
+}
+
+/// Reads one balance key per [`LandUse::ALL`] entry, substituting `{}` in
+/// `template` for [`land_use_key`] -- the one place a per-land-use key
+/// quartet is read, shared by every `plot_*`/`envelope_*` array field.
+fn per_use_i32(balance: &[defs::BalanceSeed], template: &str) -> [i32; 4] {
+    LandUse::ALL.map(|u| get(balance, &template.replace("{}", land_use_key(u))) as i32)
+}
+
+/// [`GenerationConfig::envelope_limits`]'s own return: the footprint
+/// (outer-rectangle) size band one land use's envelopes must stay inside.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnvelopeLimits {
+    pub min_width_cells: i32,
+    pub min_depth_cells: i32,
+    pub max_width_cells: i32,
+    pub max_depth_cells: i32,
 }
 
 impl GenerationConfig {
@@ -187,7 +436,7 @@ impl GenerationConfig {
     /// leaf-size guarantee hold), `density_peak_offset_min_pct` over
     /// `density_peak_offset_max_pct`, or an arterial count's own `_min`
     /// over its `_max`.
-    pub fn from_balance(balance: &[defs::BalanceSeed]) -> Result<Self, String> {
+    pub fn from_balance(balance: &[defs::BalanceSeed]) -> Result<Self, GenerationError> {
         let cfg = GenerationConfig {
             site_extent_cells: get(balance, "generation.site_extent_cells") as i32,
             coarse_cell_size_cells: get(balance, "generation.land_use.coarse_cell_size_cells")
@@ -262,15 +511,85 @@ impl GenerationConfig {
                 balance,
                 "generation.land_use.institutional_max_pocket_share_percent",
             ),
+
+            plot_frontage_min_cells: get(balance, "generation.plots.frontage_min_cells") as i32,
+            plot_high_density_threshold: get(balance, "generation.plots.high_density_threshold")
+                as i32,
+            plot_setback_periphery_cells: get(balance, "generation.plots.setback_periphery_cells")
+                as i32,
+            plot_width_min_cells: per_use_i32(balance, "generation.plots.{}_width_min_cells"),
+            plot_width_max_cells: per_use_i32(balance, "generation.plots.{}_width_max_cells"),
+            plot_row_depth_cells: per_use_i32(balance, "generation.plots.{}_row_depth_cells"),
+            plot_max_core_depth_cells: get(balance, "generation.plots.max_core_depth_cells") as i32,
+            plot_max_core_depth_periphery_cells: get(
+                balance,
+                "generation.plots.max_core_depth_periphery_cells",
+            ) as i32,
+            plot_open_min_side_cells: get(balance, "generation.plots.open_min_side_cells") as i32,
+            plot_max_open_percent_by_count: get(
+                balance,
+                "generation.plots.max_open_percent_by_count",
+            ),
+            plot_max_open_percent_by_area: get(
+                balance,
+                "generation.plots.max_open_percent_by_area",
+            ),
+            plot_max_unplotted_percent: get(balance, "generation.plots.max_unplotted_percent"),
+
+            envelope_wall_thickness_cells: get(balance, "generation.envelopes.wall_thickness_cells")
+                as i32,
+            envelope_min_interior_width_cells: per_use_i32(
+                balance,
+                "generation.envelopes.{}_min_interior_width_cells",
+            ),
+            envelope_min_interior_depth_cells: per_use_i32(
+                balance,
+                "generation.envelopes.{}_min_interior_depth_cells",
+            ),
+            envelope_max_width_cells: get(balance, "generation.envelopes.max_width_cells") as i32,
+            envelope_max_depth_cells: get(balance, "generation.envelopes.max_depth_cells") as i32,
+            envelope_side_gap_periphery_cells: get(
+                balance,
+                "generation.envelopes.side_gap_periphery_cells",
+            ) as i32,
+            envelope_size_trim_max_cells: get(balance, "generation.envelopes.size_trim_max_cells")
+                as i32,
+            envelope_mean_width_cells: get(balance, "generation.envelopes.mean_width_cells") as i32,
+            envelope_mean_width_tolerance_cells: get(
+                balance,
+                "generation.envelopes.mean_width_tolerance_cells",
+            ) as i32,
+            envelope_mean_depth_cells: get(balance, "generation.envelopes.mean_depth_cells") as i32,
+            envelope_mean_depth_tolerance_cells: get(
+                balance,
+                "generation.envelopes.mean_depth_tolerance_cells",
+            ) as i32,
+            envelope_min_distinct_sizes: get(balance, "generation.envelopes.min_distinct_sizes"),
+            envelope_target_count_per_million_cells: get(
+                balance,
+                "generation.envelopes.target_count_per_million_cells",
+            ),
+            envelope_count_tolerance_percent: get(
+                balance,
+                "generation.envelopes.count_tolerance_percent",
+            ),
+            envelope_mean_count_tolerance_percent: get(
+                balance,
+                "generation.envelopes.mean_count_tolerance_percent",
+            ),
+            envelope_max_rejected_plot_percent: get(
+                balance,
+                "generation.envelopes.max_rejected_plot_percent",
+            ),
         };
 
         if cfg.coarse_cell_size_cells <= 0
             || cfg.site_extent_cells % cfg.coarse_cell_size_cells != 0
         {
-            return Err(format!(
+            return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: site extent {} is not a whole multiple of coarse cell size {}",
                 cfg.site_extent_cells, cfg.coarse_cell_size_cells
-            ));
+            )));
         }
         for (name, w) in [
             ("arterial_width_cells", cfg.arterial_width_cells),
@@ -278,9 +597,9 @@ impl GenerationConfig {
             ("lane_width_cells", cfg.lane_width_cells),
         ] {
             if w % 2 != 0 {
-                return Err(format!(
+                return Err(GenerationError::InvalidConfig(format!(
                     "GenerationConfig: generation.streets.{name} ({w}) must be even"
-                ));
+                )));
             }
         }
         let share_sum = cfg.share_residential_pct
@@ -288,76 +607,266 @@ impl GenerationConfig {
             + cfg.share_industrial_pct
             + cfg.share_institutional_pct;
         if share_sum != 100 {
-            return Err(format!(
+            return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: land-use shares sum to {share_sum}, not 100"
-            ));
+            )));
         }
         if cfg.land_use_max_leaf_cells < 2 * cfg.land_use_min_leaf_cells {
-            return Err(format!(
+            return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: land_use.max_leaf_cells ({}) must be at least twice land_use.min_leaf_cells ({}) -- otherwise an over-sized axis could be too small to legally split",
                 cfg.land_use_max_leaf_cells, cfg.land_use_min_leaf_cells
-            ));
+            )));
         }
         if cfg.density_min > cfg.density_max {
-            return Err(format!(
+            return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: density_min ({}) is greater than density_max ({})",
                 cfg.density_min, cfg.density_max
-            ));
+            )));
         }
         if cfg.density_peak_offset_min_pct > cfg.density_peak_offset_max_pct {
-            return Err(format!(
+            return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: density_peak_offset_min_pct ({}) is greater than density_peak_offset_max_pct ({})",
                 cfg.density_peak_offset_min_pct, cfg.density_peak_offset_max_pct
-            ));
+            )));
         }
         if cfg.block_size_min_cells > cfg.block_size_max_cells {
-            return Err(format!(
+            return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: block_size_min_cells ({}) is greater than block_size_max_cells ({})",
                 cfg.block_size_min_cells, cfg.block_size_max_cells
-            ));
+            )));
         }
         if cfg.max_block_depth_min_cells > cfg.max_block_depth_max_cells {
-            return Err(format!(
+            return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: max_block_depth_min_cells ({}) is greater than max_block_depth_max_cells ({})",
                 cfg.max_block_depth_min_cells, cfg.max_block_depth_max_cells
-            ));
+            )));
         }
         let detour_excess_ceiling =
             2 * cfg.block_size_max_cells as i64 + 2 * cfg.arterial_width_cells as i64;
         if cfg.max_detour_excess_cells as i64 > detour_excess_ceiling {
-            return Err(format!(
+            return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: max_detour_excess_cells ({}) is greater than the structural ceiling 2*block_size_max_cells + 2*arterial_width_cells ({detour_excess_ceiling}) -- the worst a rectilinear network should cost a route is going around one largest block",
                 cfg.max_detour_excess_cells
-            ));
+            )));
         }
         if cfg.p99_detour_percent > cfg.max_detour_percent {
-            return Err(format!(
+            return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: p99_detour_percent ({}) is greater than max_detour_percent ({}) -- the typical case cannot be worse than the tail ceiling",
                 cfg.p99_detour_percent, cfg.max_detour_percent
-            ));
+            )));
         }
         if cfg.peripheral_low_band_floor_percent as i64
             > cfg.peripheral_pooled_min_ratio_percent as i64
         {
-            return Err(format!(
+            return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: peripheral_low_band_floor_percent ({}) is greater than peripheral_pooled_min_ratio_percent ({}) -- the per-city anti-inversion floor cannot ask for more than the pooled, density-blind-failing guard does",
                 cfg.peripheral_low_band_floor_percent, cfg.peripheral_pooled_min_ratio_percent
-            ));
+            )));
         }
         if cfg.arterial_count_ns_min > cfg.arterial_count_ns_max {
-            return Err(format!(
+            return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: arterial_count_ns_min ({}) is greater than arterial_count_ns_max ({})",
                 cfg.arterial_count_ns_min, cfg.arterial_count_ns_max
-            ));
+            )));
         }
         if cfg.arterial_count_ew_min > cfg.arterial_count_ew_max {
-            return Err(format!(
+            return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: arterial_count_ew_min ({}) is greater than arterial_count_ew_max ({})",
                 cfg.arterial_count_ew_min, cfg.arterial_count_ew_max
-            ));
+            )));
+        }
+        if cfg.envelope_side_gap_periphery_cells % 2 != 0 {
+            return Err(GenerationError::InvalidConfig(format!(
+                "GenerationConfig: generation.envelopes.side_gap_periphery_cells ({}) must be even -- half is inset from each of two neighbouring envelopes",
+                cfg.envelope_side_gap_periphery_cells
+            )));
+        }
+        for u in LandUse::ALL {
+            let i = u as usize;
+            if cfg.plot_width_min_cells[i] > cfg.plot_width_max_cells[i] {
+                return Err(GenerationError::InvalidConfig(format!(
+                    "GenerationConfig: generation.plots.{}_width_min_cells ({}) is greater than {}_width_max_cells ({})",
+                    land_use_key(u),
+                    cfg.plot_width_min_cells[i],
+                    land_use_key(u),
+                    cfg.plot_width_max_cells[i]
+                )));
+            }
+            let min_footprint_w =
+                cfg.envelope_min_interior_width_cells[i] + 2 * cfg.envelope_wall_thickness_cells;
+            let min_footprint_d =
+                cfg.envelope_min_interior_depth_cells[i] + 2 * cfg.envelope_wall_thickness_cells;
+            if min_footprint_w > cfg.plot_width_min_cells[i] {
+                return Err(GenerationError::InvalidConfig(format!(
+                    "GenerationConfig: {} envelope minimum footprint width ({min_footprint_w}) is larger than the {} plot minimum ({}) can ever hold",
+                    land_use_key(u),
+                    land_use_key(u),
+                    cfg.plot_width_min_cells[i]
+                )));
+            }
+            if min_footprint_d > cfg.plot_row_depth_cells[i] {
+                return Err(GenerationError::InvalidConfig(format!(
+                    "GenerationConfig: {} envelope minimum footprint depth ({min_footprint_d}) is larger than the {} plot row depth ({}) can ever hold",
+                    land_use_key(u),
+                    land_use_key(u),
+                    cfg.plot_row_depth_cells[i]
+                )));
+            }
+            if min_footprint_w > cfg.envelope_max_width_cells {
+                return Err(GenerationError::InvalidConfig(format!(
+                    "GenerationConfig: {} envelope minimum footprint width ({min_footprint_w}) is greater than envelopes.max_width_cells ({})",
+                    land_use_key(u),
+                    cfg.envelope_max_width_cells
+                )));
+            }
+            if min_footprint_d > cfg.envelope_max_depth_cells {
+                return Err(GenerationError::InvalidConfig(format!(
+                    "GenerationConfig: {} envelope minimum footprint depth ({min_footprint_d}) is greater than envelopes.max_depth_cells ({})",
+                    land_use_key(u),
+                    cfg.envelope_max_depth_cells
+                )));
+            }
+            // A plot at exactly its own class's minimum width/row depth
+            // must still clear the *periphery* side gap/setback -- the
+            // worst case `envelopes::place_one` ever subtracts from an
+            // ordinary plot (a corner plot is cut wider by exactly the
+            // extra inset its corner edge carries, so this is its case
+            // too) -- or every below-`plot_high_density_threshold` block
+            // of this use rejects its own minimum-width plot by
+            // construction, not by bad luck.
+            if min_footprint_w + cfg.envelope_side_gap_periphery_cells > cfg.plot_width_min_cells[i]
+            {
+                return Err(GenerationError::InvalidConfig(format!(
+                    "GenerationConfig: {} envelope minimum footprint width ({min_footprint_w}) plus envelopes.side_gap_periphery_cells ({}) is greater than plots.{}_width_min_cells ({}) -- every periphery plot at the class minimum would be rejected",
+                    land_use_key(u),
+                    cfg.envelope_side_gap_periphery_cells,
+                    land_use_key(u),
+                    cfg.plot_width_min_cells[i]
+                )));
+            }
+            if min_footprint_d + cfg.plot_setback_periphery_cells > cfg.plot_row_depth_cells[i] {
+                return Err(GenerationError::InvalidConfig(format!(
+                    "GenerationConfig: {} envelope minimum footprint depth ({min_footprint_d}) plus plots.setback_periphery_cells ({}) is greater than plots.{}_row_depth_cells ({}) -- every periphery plot at the class minimum would be rejected",
+                    land_use_key(u),
+                    cfg.plot_setback_periphery_cells,
+                    land_use_key(u),
+                    cfg.plot_row_depth_cells[i]
+                )));
+            }
+            // An ordinary (non-corner, non-rhythm-remainder) plot's own
+            // width never exceeds `plot_width_max_cells`, so keeping that
+            // at or under `envelope_max_width_cells` is what keeps a
+            // two-real-neighbour plot from ever needing its own footprint
+            // capped -- `envelopes::anchored_span`'s own asymmetric-slack
+            // rule exists for the rarer, single-neighbour corner/
+            // remainder case, not for this one.
+            if cfg.plot_width_max_cells[i] > cfg.envelope_max_width_cells {
+                return Err(GenerationError::InvalidConfig(format!(
+                    "GenerationConfig: plots.{}_width_max_cells ({}) is greater than envelopes.max_width_cells ({})",
+                    land_use_key(u),
+                    cfg.plot_width_max_cells[i],
+                    cfg.envelope_max_width_cells
+                )));
+            }
+        }
+        let overall_min_footprint_w = (0..4)
+            .map(|i| {
+                cfg.envelope_min_interior_width_cells[i] + 2 * cfg.envelope_wall_thickness_cells
+            })
+            .min()
+            .unwrap_or(0);
+        if cfg.envelope_mean_width_cells < overall_min_footprint_w
+            || cfg.envelope_mean_width_cells > cfg.envelope_max_width_cells
+        {
+            return Err(GenerationError::InvalidConfig(format!(
+                "GenerationConfig: envelopes.mean_width_cells ({}) is outside [{overall_min_footprint_w}, {}]",
+                cfg.envelope_mean_width_cells, cfg.envelope_max_width_cells
+            )));
+        }
+        let overall_min_footprint_d = (0..4)
+            .map(|i| {
+                cfg.envelope_min_interior_depth_cells[i] + 2 * cfg.envelope_wall_thickness_cells
+            })
+            .min()
+            .unwrap_or(0);
+        if cfg.envelope_mean_depth_cells < overall_min_footprint_d
+            || cfg.envelope_mean_depth_cells > cfg.envelope_max_depth_cells
+        {
+            return Err(GenerationError::InvalidConfig(format!(
+                "GenerationConfig: envelopes.mean_depth_cells ({}) is outside [{overall_min_footprint_d}, {}]",
+                cfg.envelope_mean_depth_cells, cfg.envelope_max_depth_cells
+            )));
         }
 
         Ok(cfg)
+    }
+
+    /// Per-land-use envelope size limits, computed once here rather than
+    /// re-derived by `envelopes::run` per plot: the minimum footprint is
+    /// the class's own minimum usable interior plus two wall rings, the
+    /// maximum is the shared outer ceiling.
+    pub fn envelope_limits(&self, use_: LandUse) -> EnvelopeLimits {
+        let i = use_ as usize;
+        EnvelopeLimits {
+            min_width_cells: self.envelope_min_interior_width_cells[i]
+                + 2 * self.envelope_wall_thickness_cells,
+            min_depth_cells: self.envelope_min_interior_depth_cells[i]
+                + 2 * self.envelope_wall_thickness_cells,
+            max_width_cells: self.envelope_max_width_cells,
+            max_depth_cells: self.envelope_max_depth_cells,
+        }
+    }
+
+    /// AC4's own `[min, max]` placed-building-count band for a site of
+    /// `site_cells` world cells -- the one derivation `envelopes::run`,
+    /// `generation_perf.rs` and the invariants all share, rather than each
+    /// repeating `target * (100 +- tolerance) / 100`.
+    pub fn building_count_band(&self, site_cells: i64) -> (i64, i64) {
+        let target = self.building_count_target(site_cells);
+        let tolerance = self.envelope_count_tolerance_percent;
+        let min = target * (100 - tolerance) / 100;
+        let max = target * (100 + tolerance) / 100;
+        (min, max)
+    }
+
+    /// AC4's own scaled target for a site of `site_cells` world cells --
+    /// the Scale Baseline figure, never a measurement.
+    pub fn building_count_target(&self, site_cells: i64) -> i64 {
+        (self.envelope_target_count_per_million_cells * site_cells) / 1_000_000
+    }
+
+    /// The most a block at `density` may leave as a core before it becomes
+    /// an explicit `open` plot: interpolated between `plot_max_core_depth_
+    /// periphery_cells` (at `density_min`) and `plot_max_core_depth_cells`
+    /// (at `density_max`), integer only.
+    pub fn max_core_depth_cells(&self, density: i32) -> i32 {
+        let span_density = (self.density_max - self.density_min).max(1);
+        let span = self.plot_max_core_depth_periphery_cells - self.plot_max_core_depth_cells;
+        let clamped = density.clamp(self.density_min, self.density_max);
+        let d = clamped - self.density_min;
+        self.plot_max_core_depth_periphery_cells - (span * d) / span_density
+    }
+
+    /// The one shared build-line setback a block at `density` sits behind
+    /// -- 0 at or above `plot_high_density_threshold` (flush on the
+    /// pavement), `plot_setback_periphery_cells` below it.
+    pub fn setback_cells(&self, density: i32) -> i32 {
+        if density >= self.plot_high_density_threshold {
+            0
+        } else {
+            self.plot_setback_periphery_cells
+        }
+    }
+
+    /// The total gap between two neighbouring envelopes at `density` --
+    /// 0 at or above `plot_high_density_threshold` (party walls),
+    /// `envelope_side_gap_periphery_cells` below it.
+    pub fn side_gap_cells(&self, density: i32) -> i32 {
+        if density >= self.plot_high_density_threshold {
+            0
+        } else {
+            self.envelope_side_gap_periphery_cells
+        }
     }
 
     /// The site bounds this config describes: `[0, site_extent_cells)`
@@ -502,6 +1011,104 @@ mod tests {
                 1,
                 100,
             ),
+            seed("generation.plots.frontage_min_cells", 3, 1, 16),
+            seed("generation.plots.high_density_threshold", 60, 0, 1000),
+            seed("generation.plots.setback_periphery_cells", 2, 0, 8),
+            seed("generation.plots.residential_width_min_cells", 10, 2, 64),
+            seed("generation.plots.commercial_width_min_cells", 12, 2, 64),
+            seed("generation.plots.industrial_width_min_cells", 14, 2, 64),
+            seed("generation.plots.institutional_width_min_cells", 14, 2, 64),
+            seed("generation.plots.residential_width_max_cells", 14, 2, 64),
+            seed("generation.plots.commercial_width_max_cells", 18, 2, 64),
+            seed("generation.plots.industrial_width_max_cells", 22, 2, 64),
+            seed("generation.plots.institutional_width_max_cells", 22, 2, 64),
+            seed("generation.plots.residential_row_depth_cells", 14, 2, 64),
+            seed("generation.plots.commercial_row_depth_cells", 12, 2, 64),
+            seed("generation.plots.industrial_row_depth_cells", 16, 2, 64),
+            seed("generation.plots.institutional_row_depth_cells", 16, 2, 64),
+            seed("generation.plots.max_core_depth_cells", 8, 2, 64),
+            seed(
+                "generation.plots.max_core_depth_periphery_cells",
+                32,
+                2,
+                128,
+            ),
+            seed("generation.plots.open_min_side_cells", 8, 1, 64),
+            seed("generation.plots.max_open_percent_by_count", 15, 0, 100),
+            seed("generation.plots.max_open_percent_by_area", 15, 0, 100),
+            seed("generation.plots.max_unplotted_percent", 20, 0, 100),
+            seed("generation.envelopes.wall_thickness_cells", 1, 1, 4),
+            seed(
+                "generation.envelopes.residential_min_interior_width_cells",
+                4,
+                1,
+                64,
+            ),
+            seed(
+                "generation.envelopes.commercial_min_interior_width_cells",
+                6,
+                1,
+                64,
+            ),
+            seed(
+                "generation.envelopes.industrial_min_interior_width_cells",
+                8,
+                1,
+                64,
+            ),
+            seed(
+                "generation.envelopes.institutional_min_interior_width_cells",
+                8,
+                1,
+                64,
+            ),
+            seed(
+                "generation.envelopes.residential_min_interior_depth_cells",
+                4,
+                1,
+                64,
+            ),
+            seed(
+                "generation.envelopes.commercial_min_interior_depth_cells",
+                6,
+                1,
+                64,
+            ),
+            seed(
+                "generation.envelopes.industrial_min_interior_depth_cells",
+                8,
+                1,
+                64,
+            ),
+            seed(
+                "generation.envelopes.institutional_min_interior_depth_cells",
+                8,
+                1,
+                64,
+            ),
+            seed("generation.envelopes.max_width_cells", 22, 4, 64),
+            seed("generation.envelopes.max_depth_cells", 16, 4, 64),
+            seed("generation.envelopes.side_gap_periphery_cells", 4, 0, 16),
+            seed("generation.envelopes.size_trim_max_cells", 2, 0, 16),
+            seed("generation.envelopes.mean_width_cells", 12, 2, 64),
+            seed("generation.envelopes.mean_width_tolerance_cells", 4, 0, 32),
+            seed("generation.envelopes.mean_depth_cells", 11, 2, 64),
+            seed("generation.envelopes.mean_depth_tolerance_cells", 4, 0, 32),
+            seed("generation.envelopes.min_distinct_sizes", 3, 1, 64),
+            seed(
+                "generation.envelopes.target_count_per_million_cells",
+                3410,
+                0,
+                1_000_000,
+            ),
+            seed("generation.envelopes.count_tolerance_percent", 15, 0, 100),
+            seed(
+                "generation.envelopes.mean_count_tolerance_percent",
+                3,
+                0,
+                100,
+            ),
+            seed("generation.envelopes.max_rejected_plot_percent", 5, 0, 100),
         ]
     }
 
@@ -536,35 +1143,35 @@ mod tests {
     fn from_balance_rejects_a_site_extent_not_a_multiple_of_the_coarse_cell_size() {
         let balance = with_override("generation.site_extent_cells", 500);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("whole multiple"));
+        assert!(err.to_string().contains("whole multiple"));
     }
 
     #[test]
     fn from_balance_rejects_an_odd_street_width() {
         let balance = with_override("generation.streets.street_width_cells", 7);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("must be even"));
+        assert!(err.to_string().contains("must be even"));
     }
 
     #[test]
     fn from_balance_rejects_shares_not_summing_to_100() {
         let balance = with_override("generation.land_use.share_residential_pct", 59);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("sum to"));
+        assert!(err.to_string().contains("sum to"));
     }
 
     #[test]
     fn from_balance_rejects_density_min_over_density_max() {
         let balance = with_override("generation.land_use.density_min", 200);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("density_min"));
+        assert!(err.to_string().contains("density_min"));
     }
 
     #[test]
     fn from_balance_rejects_block_size_min_over_max() {
         let balance = with_override("generation.streets.block_size_min_cells", 200);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("block_size_min_cells"));
+        assert!(err.to_string().contains("block_size_min_cells"));
     }
 
     #[test]
@@ -581,7 +1188,7 @@ mod tests {
             .unwrap()
             .value = 15;
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("max_leaf_cells"));
+        assert!(err.to_string().contains("max_leaf_cells"));
     }
 
     #[test]
@@ -610,28 +1217,28 @@ mod tests {
         // deliberately-broken fixture rather than trusted from defs/.
         let balance = with_override("generation.land_use.coarse_cell_size_cells", 0);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("whole multiple"));
+        assert!(err.to_string().contains("whole multiple"));
     }
 
     #[test]
     fn from_balance_rejects_peak_offset_min_over_max() {
         let balance = with_override("generation.land_use.density_peak_offset_min_pct", 45);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("density_peak_offset_min_pct"));
+        assert!(err.to_string().contains("density_peak_offset_min_pct"));
     }
 
     #[test]
     fn from_balance_rejects_max_block_depth_min_over_max() {
         let balance = with_override("generation.streets.max_block_depth_min_cells", 200);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("max_block_depth_min_cells"));
+        assert!(err.to_string().contains("max_block_depth_min_cells"));
     }
 
     #[test]
     fn from_balance_rejects_p99_detour_percent_over_max_detour_percent() {
         let balance = with_override("generation.streets.p99_detour_percent", 500);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("p99_detour_percent"));
+        assert!(err.to_string().contains("p99_detour_percent"));
     }
 
     #[test]
@@ -640,27 +1247,95 @@ mod tests {
         // ceiling = 2*96 + 2*12 = 216.
         let balance = with_override("generation.streets.max_detour_excess_cells", 217);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("max_detour_excess_cells"));
+        assert!(err.to_string().contains("max_detour_excess_cells"));
     }
 
     #[test]
     fn from_balance_rejects_peripheral_low_band_floor_percent_over_pooled_min_ratio_percent() {
         let balance = with_override("generation.streets.peripheral_low_band_floor_percent", 200);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("peripheral_low_band_floor_percent"));
+        assert!(
+            err.to_string()
+                .contains("peripheral_low_band_floor_percent")
+        );
     }
 
     #[test]
     fn from_balance_rejects_arterial_count_ns_min_over_max() {
         let balance = with_override("generation.streets.arterial_count_ns_min", 4);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("arterial_count_ns_min"));
+        assert!(err.to_string().contains("arterial_count_ns_min"));
     }
 
     #[test]
     fn from_balance_rejects_arterial_count_ew_min_over_max() {
         let balance = with_override("generation.streets.arterial_count_ew_min", 4);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.contains("arterial_count_ew_min"));
+        assert!(err.to_string().contains("arterial_count_ew_min"));
+    }
+
+    #[test]
+    fn from_balance_rejects_an_odd_envelope_side_gap() {
+        let balance = with_override("generation.envelopes.side_gap_periphery_cells", 3);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.to_string().contains("side_gap_periphery_cells"));
+    }
+
+    #[test]
+    fn from_balance_rejects_plot_width_min_over_max_for_a_land_use() {
+        let balance = with_override("generation.plots.residential_width_min_cells", 20);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.to_string().contains("residential_width_min_cells"));
+    }
+
+    #[test]
+    fn from_balance_rejects_an_envelope_minimum_the_plot_minimum_can_never_hold() {
+        let balance = with_override(
+            "generation.envelopes.residential_min_interior_width_cells",
+            20,
+        );
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.to_string().contains("plot minimum"));
+    }
+
+    #[test]
+    fn from_balance_rejects_an_envelope_minimum_over_its_own_class_max() {
+        let balance = with_override("generation.envelopes.max_width_cells", 4);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.to_string().contains("max_width_cells"));
+    }
+
+    #[test]
+    fn from_balance_rejects_a_mean_width_outside_its_own_band() {
+        let balance = with_override("generation.envelopes.mean_width_cells", 100);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.to_string().contains("mean_width_cells"));
+    }
+
+    #[test]
+    fn envelope_limits_reads_the_live_defs() {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        for u in LandUse::ALL {
+            let limits = cfg.envelope_limits(u);
+            assert!(limits.min_width_cells <= limits.max_width_cells);
+            assert!(limits.min_depth_cells <= limits.max_depth_cells);
+        }
+    }
+
+    #[test]
+    fn generate_is_plan_plus_the_building_count_verdict() {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let planned = plan(11, &cfg).unwrap();
+        let generated = generate(11, &cfg).unwrap();
+        assert_eq!(planned.plots.plots(), generated.plots.plots());
+        assert_eq!(planned.envelopes.outcomes(), generated.envelopes.outcomes());
+
+        let mut starved = cfg;
+        starved.envelope_target_count_per_million_cells *= 100;
+        assert!(plan(11, &starved).is_ok(), "plan carries no count verdict");
+        assert!(matches!(
+            generate(11, &starved),
+            Err(GenerationError::BuildingCountOutOfTolerance { .. })
+        ));
     }
 }
