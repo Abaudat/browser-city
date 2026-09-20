@@ -1,13 +1,13 @@
 //! The determinism harness for stories 3.2-3.3 (FR110 passes 1-4): same
 //! idiom as `determinism_golden.rs`/`appearance_golden.rs`. Regenerates
 //! all four passes for a fixed seed set and compares a readable summary
-//! plus a digest against the committed `tests/goldens/generation_v3.
+//! plus a digest against the committed `tests/goldens/generation_v2.
 //! golden`, so a diff names what moved rather than just "hash differs".
 //! Keyed by `sim::generation::GENERATION_VERSION`; `check-golden-version-
 //! bump.sh` fails a PR that touches the golden without bumping that
-//! constant. Per-pass calls, not `generate`, because the summary line
-//! must still report land-use/street/plot stats when pass 4's own count
-//! check fails (`generate` would drop everything on that one `Err`).
+//! constant. Built on `generation::plan` (no count verdict), with the
+//! verdict itself reported as one `count_ok` field, so the summary line
+//! still names every pass's own stats for an outlier seed.
 //!
 //! Pinned against a small, fixed, test-local [`frozen_config`] -- never
 //! the live `defs::BALANCE` -- because a designer retuning `defs/balance/
@@ -23,12 +23,12 @@
 
 use sim::generation::streets::DETOUR_SAMPLE_MAX_NODES;
 use sim::generation::{
-    GENERATION_VERSION, GenerationConfig, LandUse, envelopes, land_use, plots, streets,
+    GENERATION_VERSION, GenerationConfig, LandUse, envelopes, land_use, plan, plots, streets,
 };
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
-const GOLDEN: &str = include_str!("goldens/generation_v3.golden");
+const GOLDEN: &str = include_str!("goldens/generation_v2.golden");
 
 /// A frozen snapshot of `defs/balance/generation.toml`'s own values at
 /// the time this golden was last regenerated -- never read from `defs::
@@ -86,6 +86,8 @@ fn frozen_config() -> GenerationConfig {
         plot_width_max_cells: [12, 16, 20, 20],
         plot_row_depth_cells: [14, 12, 18, 18],
         plot_max_core_depth_cells: 8,
+        plot_max_core_depth_periphery_cells: 32,
+        plot_open_min_side_cells: 8,
         plot_max_open_percent_by_count: 15,
         plot_max_open_percent_by_area: 15,
         plot_max_unplotted_percent: 20,
@@ -103,6 +105,7 @@ fn frozen_config() -> GenerationConfig {
         envelope_min_distinct_sizes: 6,
         envelope_target_count_per_million_cells: 3418,
         envelope_count_tolerance_percent: 21,
+        envelope_mean_count_tolerance_percent: 3,
         envelope_max_rejected_plot_percent: 5,
     }
 }
@@ -126,7 +129,7 @@ fn plan_digest(
     lu: &land_use::LandUseMap,
     net: &streets::StreetNetwork,
     pm: &plots::PlotMap,
-    em: &Result<envelopes::EnvelopeMap, sim::generation::GenerationError>,
+    em: &envelopes::EnvelopeMap,
 ) -> u64 {
     let mut text = String::new();
     for cy in 0..lu.rows() {
@@ -161,42 +164,30 @@ fn plan_digest(
             p.open
         ));
     }
-    match em {
-        Ok(em) => {
-            for o in em.outcomes() {
-                match o {
-                    envelopes::EnvelopeOutcome::Placed(e) => text.push_str(&format!(
-                        "envelope placed plot={} {},{},{},{} front={:?}\n",
-                        e.plot,
-                        e.footprint.x0,
-                        e.footprint.y0,
-                        e.footprint.x1,
-                        e.footprint.y1,
-                        e.front
-                    )),
-                    envelopes::EnvelopeOutcome::Rejected {
-                        plot,
-                        class,
-                        reason,
-                    } => {
-                        text.push_str(&format!(
-                            "envelope rejected plot={plot} class={class:?} reason={reason:?}\n"
-                        ));
-                    }
-                }
+    for o in em.outcomes() {
+        match o {
+            envelopes::EnvelopeOutcome::Placed(e) => text.push_str(&format!(
+                "envelope placed plot={} {},{},{},{} front={:?}\n",
+                e.plot, e.footprint.x0, e.footprint.y0, e.footprint.x1, e.footprint.y1, e.front
+            )),
+            envelopes::EnvelopeOutcome::Rejected {
+                plot,
+                class,
+                reason,
+            } => {
+                text.push_str(&format!(
+                    "envelope rejected plot={plot} class={class:?} reason={reason:?}\n"
+                ));
             }
         }
-        Err(err) => text.push_str(&format!("envelopes err={err}\n")),
     }
     fnv1a(&text)
 }
 
 fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
-    let lu =
-        land_use::run(seed, cfg.site(), cfg).expect("frozen_config's own site is always valid");
-    let net = streets::run(seed, &lu, cfg);
-    let pm = plots::run(seed, &lu, &net, cfg);
-    let em = envelopes::run(seed, &pm, cfg);
+    let d = plan(seed, cfg).expect("frozen_config's own site is always valid");
+    let (lu, net, pm, em) = (&d.land_use, &d.streets, &d.plots, &d.envelopes);
+    let count_verdict = d.check_building_count(cfg).is_ok();
 
     let regions = lu.regions();
     let count = |u: LandUse| regions.iter().filter(|r| r.use_ == u).count();
@@ -215,13 +206,10 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
     let rings = lu.ring_averages(3);
 
     let open_plots = pm.plots().iter().filter(|p| p.open).count();
-    let (placed, rejected) = match &em {
-        Ok(em) => (em.placed_count(), em.rejected_count()),
-        Err(_) => (-1, -1),
-    };
+    let (placed, rejected) = (em.placed_count(), em.rejected_count());
 
     format!(
-        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} plots={} open_plots={open_plots} envelopes_placed={placed} envelopes_rejected={rejected} digest={:016x}",
+        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} plots={} open_plots={open_plots} envelopes_placed={placed} envelopes_rejected={rejected} count_ok={count_verdict} digest={:016x}",
         count(LandUse::Residential),
         count(LandUse::Commercial),
         count(LandUse::Industrial),
@@ -229,7 +217,7 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
         net.edges().len(),
         net.blocks().len(),
         pm.plots().len(),
-        plan_digest(&lu, &net, &pm, &em),
+        plan_digest(lu, net, pm, em),
     )
 }
 
@@ -245,7 +233,7 @@ fn generation_output_matches_committed_golden() {
         });
     assert_eq!(
         golden_version, GENERATION_VERSION,
-        "tests/goldens/generation_v3.golden is keyed to version {golden_version} but \
+        "tests/goldens/generation_v2.golden is keyed to version {golden_version} but \
          sim::generation::GENERATION_VERSION is {GENERATION_VERSION} -- regenerate the golden \
          whenever GENERATION_VERSION changes"
     );

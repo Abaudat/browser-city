@@ -1100,18 +1100,20 @@ list -- so one block's (or plot's) own draw count never reshuffles
 another's, and adding a plot to one block never moves any other block's
 or plot's draws.
 
-`generation::generate(city_seed, &cfg) -> Result<District, GenerationError>`
-is the one entry point that chains every implemented pass in order,
-returning a `District` (every pass's own output together). The golden,
-perf, evidence and invariants harnesses call the per-pass `run`
-functions directly instead, because each must still inspect passes 1-3
-when pass 4's own count check returns `Err` (`generate` drops everything
-on that one `Err`); `generate`'s own tests pin that it equals that
-chain. `GenerationError` is the one error type across every implemented
-pass (`InvalidConfig` from `GenerationConfig::from_balance`,
-`InvalidSite { site, coarse_cell_size_cells }` from pass 1's own extent
-check, `BuildingCountOutOfTolerance { got, min, max }` from pass 4's own
-count guard) -- never a `Result<_, String>` per pass.
+`generation::plan(city_seed, &cfg) -> Result<District, GenerationError>`
+chains every implemented pass in order with no verdict on the result
+(only pass 1's own site check can fail). `District::check_building_count
+(&cfg)` holds AC4's count verdict, a property of the whole district.
+`generation::generate` is `plan` plus that check, and is what production
+calls; every cross-pass harness (golden, perf, evidence, invariants)
+calls `plan` or `generate`, and the per-pass `run` functions are called
+directly only by single-pass unit tests and by the two properties that
+deliberately feed one pass a perturbed predecessor. `GenerationError` is
+the one error type across every implemented pass (`InvalidConfig` from
+`GenerationConfig::from_balance`, `InvalidSite { site,
+coarse_cell_size_cells }` from pass 1, `BuildingCountOutOfTolerance {
+got, min, max }` from the district's own count check) -- never a
+`Result<_, String>` per pass.
 
 Coordinates are world-absolute `i32` cells throughout; `SiteBounds` is
 `sim::world::Rect` reused, never a second rect type. `GenerationConfig::
@@ -1156,22 +1158,24 @@ of the block's own bounds against the site's, never a stored field and
 never a scan of `StreetNetwork::edges` per block, guarded by the
 invariant `inv_generation_block_sides_matches_a_real_street_edge`
 against the real street edges. Pass 3 (plot subdivision) reads this to
-cut only street-abutting faces into plots, never landlocking one, cuts
-opposite rows through to the block's mid-line, and records a core deeper
-than `max_core_depth_cells` as one explicit `open` plot; pass 4 (the
-building envelope) sizes a footprint from each plot's own geometry, land
-use and density, always inside its own plot, at or above that land use's
-minimum usable interior (checked against the interior net, footprint
-minus the wall ring, never the outer rectangle) -- a plot that cannot
-hold that minimum yields a typed `EnvelopeOutcome::Rejected`, counted,
-never a footprint shrunk below it. A plot's own row bounds (the union of
-every plot sharing its block and front) decide which of its row-axis
-edges are corners; pass 4 derives them from the plot list alone.
-Building count itself fails generation: `envelopes::run` returns
-`Err(GenerationError::BuildingCountOutOfTolerance)` when the realised
-placed-envelope count for a seed sits outside `[min, max]`, derived from
-`generation.envelopes.target_count_per_million_cells` scaled by the real
-site area and `count_tolerance_percent`.
+cut only street-abutting faces into plots, never landlocking one; every
+cell of a block belongs to a plot, and land no row claims is one
+explicit `open` plot, never silent remainder. Pass 4 (the building
+envelope) sizes a footprint from each plot's own geometry, land use and
+density, always inside its own plot, at or above that land use's minimum
+usable interior (checked against the interior net, footprint minus the
+wall ring, never the outer rectangle) -- a plot that cannot hold that
+minimum yields a typed `EnvelopeOutcome::Rejected`, counted, never a
+footprint shrunk below it, and pass 3 never hands it one. Building count
+fails generation against the Scale Baseline figure, never against a
+measurement of the generator itself.
+Building count itself fails generation: `District::check_building_count`
+returns `Err(GenerationError::BuildingCountOutOfTolerance)` when the
+realised placed-envelope count for a seed sits outside `[min, max]`,
+derived from `generation.envelopes.target_count_per_million_cells` (the
+Scale Baseline figure) scaled by the real site area and
+`count_tolerance_percent`; the pooled mean over a fixed seed range is
+held to that same target within `mean_count_tolerance_percent`.
 
 Evidence: `bounds/src/generation_evidence.rs` renders every implemented
 pass's own output, for three committed seeds, to `docs/generation/*.svg`.

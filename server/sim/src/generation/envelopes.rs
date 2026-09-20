@@ -41,16 +41,24 @@
 //! above it, the inset is 0 (party walls, footprint flush with its own
 //! plot's edges).
 //!
-//! **Building count fails generation.** [`run`] returns
-//! [`super::GenerationError::BuildingCountOutOfTolerance`] when the
-//! realised placed-envelope count, over the whole district, sits outside
-//! [`super::GenerationConfig::building_count_band`] -- a seed that trips
-//! this is a world that fails to create, never a silently thin or
+//! **Never exactly one cell of slack.** A footprint that would leave 1
+//! cell of yard on any edge (a capped width, a depth trim) is moved off
+//! it ([`never_one_cell_slack`]), so the gap to whatever envelope lies
+//! behind or beside it -- a back-to-back rear, a side row's own end -- is
+//! always 0 or at least 2, on either axis.
+//!
+//! **Building count fails generation -- but not here.** [`run`] is
+//! infallible, like passes 2-3; [`check_building_count`] (reached via
+//! `District::check_building_count`, inside `generation::generate`)
+//! returns [`super::GenerationError::BuildingCountOutOfTolerance`] when
+//! the realised placed-envelope count, over the whole district, sits
+//! outside [`super::GenerationConfig::building_count_band`] -- a seed that
+//! trips this is a world that fails to create, never a silently thin or
 //! overcrowded city.
 
 use super::plots::{Plot, PlotMap};
 use super::streets::Side;
-use super::{GenerationConfig, GenerationError, LandUse, rect_seed_key};
+use super::{GenerationConfig, GenerationError, LandUse, SiteBounds, rect_seed_key};
 use crate::rng::{Rng, seed_from_ids};
 use crate::world::Rect;
 
@@ -246,6 +254,27 @@ pub fn row_bounds_by_block_front(plots: &[Plot]) -> std::collections::BTreeMap<(
     row_bounds
 }
 
+/// A `len` that leaves exactly 1 cell of slack inside `avail` is moved
+/// off it -- one cell shorter when the class minimum allows, one cell
+/// longer (filling `avail`) when the ceiling does -- so the yard a
+/// footprint leaves on any edge is always 0 or at least 2 cells, and the
+/// gap to whatever envelope lies beyond it can never be 1 (`docs/
+/// generation.md`, "A 1-cell slit between two buildings"). Unchanged
+/// when neither move stays inside `[min, max]` (a hand-built config
+/// only: every committed class has `max - min >= 2`).
+fn never_one_cell_slack(len: i64, avail: i64, min: i64, max: i64) -> i64 {
+    if avail - len != 1 {
+        return len;
+    }
+    if len > min {
+        len - 1
+    } else if len < max {
+        len + 1
+    } else {
+        len
+    }
+}
+
 /// Positions a `len`-long span inside `[lo, hi]`, anchored flush to
 /// whichever side is *not* a corner (`corner_lo`/`corner_hi`, from
 /// [`row_axis_is_corner`]) -- a real neighbour-facing edge never carries
@@ -267,9 +296,8 @@ fn anchored_span(len: i32, lo: i32, hi: i32, corner_lo: bool, corner_hi: bool) -
         return lo;
     }
     match (corner_lo, corner_hi) {
-        (false, true) => lo,
         (true, false) => hi - len,
-        _ => (lo + hi) / 2 - len / 2,
+        _ => lo,
     }
 }
 
@@ -382,11 +410,20 @@ pub fn place_one(
 
     // The along-face size always fills what the plot makes available --
     // never trimmed, never jittered smaller: side gaps and the build
-    // line are exact, by construction, never "exact plus jitter".
-    let footprint_along = avail_along.min(limits.max_width_cells as i64);
+    // line are exact, by construction, never "exact plus jitter". A plot
+    // wider than the class ceiling leaves slack, which never measures
+    // exactly 1 (see [`never_one_cell_slack`]).
+    let footprint_along = never_one_cell_slack(
+        avail_along.min(limits.max_width_cells as i64),
+        avail_along,
+        limits.min_width_cells as i64,
+        limits.max_width_cells as i64,
+    );
 
     // Depth fills the same way, minus a small keyed trim for variety --
-    // never below the class minimum.
+    // never below the class minimum, and never leaving exactly 1 cell of
+    // rear yard: whatever lies behind (a back-to-back rear, a side-row
+    // plot's own end, an open core) is then 0 or at least 2 cells away.
     let depth_filled = avail_depth.min(limits.max_depth_cells as i64);
     let trim_max = cfg.envelope_size_trim_max_cells as i64;
     let trim = if trim_max > 0 {
@@ -394,7 +431,12 @@ pub fn place_one(
     } else {
         0
     };
-    let footprint_depth = (depth_filled - trim).max(limits.min_depth_cells as i64);
+    let footprint_depth = never_one_cell_slack(
+        (depth_filled - trim).max(limits.min_depth_cells as i64),
+        avail_depth,
+        limits.min_depth_cells as i64,
+        limits.max_depth_cells as i64,
+    );
 
     let footprint = build_footprint(
         plot.bounds,
@@ -412,10 +454,11 @@ pub fn place_one(
     })
 }
 
-/// [`run`]'s own outcome-building half, exposed so a checker can inspect
-/// every outcome independently of AC4's own whole-district count verdict
-/// below (an outlier city is still worth inspecting, not just the ones
-/// that clear tolerance). Every non-`open` plot gets exactly one
+/// Runs pass 4 -- infallible, like passes 2-3: AC4's own whole-district
+/// count verdict is a property of the finished district, checked by
+/// [`check_building_count`] (via `District::check_building_count`), never
+/// folded into placement, so every outcome can be inspected for an
+/// outlier city too. Every non-`open` plot gets exactly one
 /// [`EnvelopeOutcome`], via [`place_one`]; each plot seeds its own RNG
 /// stream from its own bounds ([`rect_seed_key`]), never from its
 /// position in `plots.plots()`. Each plot's own row bounds (see
@@ -424,7 +467,7 @@ pub fn place_one(
 /// bounding rect, which an `East`/`West` row's own row axis need not
 /// match (plots.rs's own [`super::plots::FACE_PRIORITY`] cut order can
 /// shrink it).
-pub fn place_all(city_seed: u64, plots: &PlotMap, cfg: &GenerationConfig) -> EnvelopeMap {
+pub fn run(city_seed: u64, plots: &PlotMap, cfg: &GenerationConfig) -> EnvelopeMap {
     let pass_seed = seed_from_ids(city_seed, PASS_ID);
     let row_bounds = row_bounds_by_block_front(plots.plots());
     let mut outcomes = Vec::new();
@@ -446,18 +489,16 @@ pub fn place_all(city_seed: u64, plots: &PlotMap, cfg: &GenerationConfig) -> Env
     EnvelopeMap { outcomes }
 }
 
-/// Runs pass 4: [`place_all`], then checks the realised placed-envelope
-/// count for this seed against [`super::GenerationConfig::
-/// building_count_band`] -- `Err` outside it.
-pub fn run(
-    city_seed: u64,
-    plots: &PlotMap,
+/// AC4's own verdict: the realised placed-envelope count in `map`, for a
+/// district on `site`, against [`super::GenerationConfig::
+/// building_count_band`] -- `Err` outside it. A seed that trips this is a
+/// world that fails to create.
+pub fn check_building_count(
+    map: &EnvelopeMap,
+    site: SiteBounds,
     cfg: &GenerationConfig,
-) -> Result<EnvelopeMap, GenerationError> {
-    let map = place_all(city_seed, plots, cfg);
-
+) -> Result<(), GenerationError> {
     let placed = map.placed_count();
-    let site = plots.site();
     let site_cells = site.width() * site.height();
     let (min, max) = cfg.building_count_band(site_cells);
     if placed < min || placed > max {
@@ -467,8 +508,7 @@ pub fn run(
             max,
         });
     }
-
-    Ok(map)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -528,8 +568,8 @@ mod tests {
         let lu = land_use::run(11, c.site(), &c).unwrap();
         let net = streets::run(11, &lu, &c);
         let pm = plots_mod::run(11, &lu, &net, &c);
-        let a = run(11, &pm, &c).unwrap();
-        let b = run(11, &pm, &c).unwrap();
+        let a = run(11, &pm, &c);
+        let b = run(11, &pm, &c);
         assert_eq!(a.outcomes(), b.outcomes());
     }
 
@@ -539,7 +579,7 @@ mod tests {
         let lu = land_use::run(23, c.site(), &c).unwrap();
         let net = streets::run(23, &lu, &c);
         let pm = plots_mod::run(23, &lu, &net, &c);
-        let full = place_all(23, &pm, &c);
+        let full = run(23, &pm, &c);
 
         for (i, p) in pm.plots().iter().enumerate() {
             if p.open {
@@ -655,6 +695,19 @@ mod tests {
     }
 
     #[test]
+    fn a_footprint_never_leaves_exactly_one_cell_of_slack() {
+        // Fits exactly, or leaves 2: untouched.
+        assert_eq!(never_one_cell_slack(12, 12, 8, 16), 12);
+        assert_eq!(never_one_cell_slack(12, 14, 8, 16), 12);
+        // Leaves 1: one shorter when the floor allows...
+        assert_eq!(never_one_cell_slack(12, 13, 8, 16), 11);
+        // ...one longer (filling) when it does not but the ceiling does...
+        assert_eq!(never_one_cell_slack(8, 9, 8, 16), 9);
+        // ...unchanged only when neither move stays in the band.
+        assert_eq!(never_one_cell_slack(8, 9, 8, 8), 8);
+    }
+
+    #[test]
     fn a_high_density_plot_fills_its_full_along_face_width_exactly() {
         // At or above the density threshold, the footprint's own
         // along-face size is never smaller than the plot's own full
@@ -693,7 +746,7 @@ mod tests {
         let lu = land_use::run(7, c.site(), &c).unwrap();
         let net = streets::run(7, &lu, &c);
         let pm = plots_mod::run(7, &lu, &net, &c);
-        let map = run(7, &pm, &c).unwrap();
+        let map = run(7, &pm, &c);
         for e in map.envelopes() {
             let p = pm.plots()[e.plot as usize];
             assert!(
@@ -724,7 +777,7 @@ mod tests {
             true,
         );
         let pm = plots_mod::PlotMap::test_fixture(site_512(), vec![plot]);
-        let map = place_all(1, &pm, &cfg());
+        let map = run(1, &pm, &cfg());
         assert!(map.outcomes().is_empty());
     }
 
@@ -778,7 +831,7 @@ mod tests {
         let lu = land_use::run(3, c.site(), &c).unwrap();
         let net = streets::run(3, &lu, &c);
         let pm = plots_mod::run(3, &lu, &net, &c);
-        let err = run(3, &pm, &c).unwrap_err();
+        let err = check_building_count(&run(3, &pm, &c), pm.site(), &c).unwrap_err();
         assert!(matches!(
             err,
             GenerationError::BuildingCountOutOfTolerance { .. }
@@ -792,7 +845,7 @@ mod tests {
         let lu = land_use::run(3, c.site(), &c).unwrap();
         let net = streets::run(3, &lu, &c);
         let pm = plots_mod::run(3, &lu, &net, &c);
-        let err = run(3, &pm, &c).unwrap_err();
+        let err = check_building_count(&run(3, &pm, &c), pm.site(), &c).unwrap_err();
         assert!(matches!(
             err,
             GenerationError::BuildingCountOutOfTolerance { .. }
@@ -818,6 +871,7 @@ mod tests {
         c.envelope_target_count_per_million_cells = 100 * 1_000_000 / site_cells;
         c.envelope_count_tolerance_percent = 10;
         let (min, max) = c.building_count_band(site_cells);
+        assert_eq!((min, max), (90, 110), "the band itself, before it is used");
 
         let limits = c.envelope_limits(LandUse::Residential);
         let plot_bounds = |i: i32| Rect {
@@ -841,10 +895,11 @@ mod tests {
             plots_mod::PlotMap::test_fixture(site, plots)
         };
 
-        assert!(run(1, &make_plots(min - 1), &c).is_err(), "min-1 must fail");
-        assert!(run(1, &make_plots(min), &c).is_ok(), "min must pass");
-        assert!(run(1, &make_plots(max), &c).is_ok(), "max must pass");
-        assert!(run(1, &make_plots(max + 1), &c).is_err(), "max+1 must fail");
+        let verdict = |n: i64| check_building_count(&run(1, &make_plots(n), &c), site, &c);
+        assert!(verdict(min - 1).is_err(), "min-1 must fail");
+        assert!(verdict(min).is_ok(), "min must pass");
+        assert!(verdict(max).is_ok(), "max must pass");
+        assert!(verdict(max + 1).is_err(), "max+1 must fail");
     }
 
     #[test]
@@ -854,7 +909,7 @@ mod tests {
             let lu = land_use::run(seed, c.site(), &c).unwrap();
             let net = streets::run(seed, &lu, &c);
             let pm = plots_mod::run(seed, &lu, &net, &c);
-            run(seed, &pm, &c)
+            check_building_count(&run(seed, &pm, &c), pm.site(), &c)
                 .unwrap_or_else(|e| panic!("seed {seed} unexpectedly failed tolerance: {e}"));
         }
     }

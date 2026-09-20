@@ -13,32 +13,39 @@
 //!
 //! **Cutting, not packing.** Each block's own street-abutting faces (in
 //! [`FACE_PRIORITY`] order) are cut into a row each, depth chosen per
-//! [`axis_rows`]: two opposing abutting faces meet at the block's own
-//! mid-line (remainder 0) up to `plot_row_depth_cells`; past that ceiling,
-//! or on a single-sided axis whose own far side is not a real building
-//! depth away, the leftover becomes an explicit `open` core once it
-//! exceeds `plot_max_core_depth_cells` (never silent). A face is only
-//! ever cut into real, non-`open` plots when its own row clears its land
-//! use's minimum usable depth plus the block's own setback -- a row that
-//! cannot is never created at all, so a non-`open` plot is never
-//! statically unbuildable. A strip's own row length is filled with a
-//! small rhythm of 2-3 module widths (drawn once per block face, cycled
-//! end to end -- a terrace, never a fresh random width per plot), the
-//! final module absorbing the remainder so the row is covered exactly.
-//! Processing a face claims the *full* extent of what remains, including
-//! any corner a later face's own row would otherwise have reached, so the
-//! earlier face in [`FACE_PRIORITY`] gets the wider, corner-inclusive row.
-//! No rejection-sampling or retry loop anywhere, so generation stays
-//! total and bounded.
+//! [`axis_rows`]: the North/South pair first, spanning the block's full
+//! width; the band left between them is the East/West pair's own row
+//! length. Two opposing rows meet at the block's own mid-line up to
+//! `plot_row_depth_cells`; a core left between rows (or behind a single
+//! row) at or under the density-interpolated ceiling
+//! ([`super::GenerationConfig::max_core_depth_cells`]) is absorbed back
+//! into those rows as rear yard, split at the mid-line -- so is a band no
+//! East/West row can use while an East/West street abuts it (a band too
+//! short for one module must never sit as an open hole between two corner
+//! buildings). A face is only ever cut when its own row clears its land
+//! use's minimum usable depth plus the block's own setback, and is long
+//! enough for one module with both corner extras -- so a non-`open` plot
+//! is never statically unbuildable. A strip's own row length is filled
+//! with a small rhythm of 2-3 module widths (drawn once per block face,
+//! cycled end to end -- a terrace, never a fresh random width per plot),
+//! the two end plots cut wider by exactly the corner inset pass 4 takes
+//! from them, the final module absorbing the remainder so the row is
+//! covered exactly. Processing a face claims the *full* extent of what
+//! remains, including any corner a later face's own row would otherwise
+//! have reached, so the earlier face in [`FACE_PRIORITY`] gets the wider,
+//! corner-inclusive row. No rejection-sampling or retry loop anywhere, so
+//! generation stays total and bounded.
 //!
-//! **No silent orphan land beyond a stated ceiling.** A block with no
-//! street frontage at all gets one whole-block `open` plot; a block core
-//! left over past `plot_max_core_depth_cells` becomes one explicit `open`
-//! plot (`front: None` -- it fronts no single street), recorded and drawn
-//! distinctly in the evidence, never left as unaccounted remainder. A
-//! leftover at or under that ceiling stays unplotted remainder
-//! ([`PlotMap::remainder_cells`]), never modelled as a `Plot`/yard type of
-//! its own -- small enough not to read as a void.
+//! **No silent orphan land, no sliver `open` plot.** Every cell of every
+//! block belongs to a plot. A block with no street frontage at all, or
+//! too small on some axis for one module, gets one whole-block `open`
+//! plot; a core past the ceiling becomes one explicit `open` plot
+//! (`front: None` -- it fronts no single street), recorded and drawn
+//! distinctly in the evidence, never left as unaccounted remainder. By
+//! construction such a core is wider than the ceiling on the axis that
+//! left it and at least one module on the other, so its short side always
+//! clears `plot_open_min_side_cells` -- a residue narrower than that is
+//! never a plot of its own.
 //!
 //! The build line and any front-garden setback are an *envelope* (pass 4)
 //! concern, applied when a footprint is placed inside its own plot -- a
@@ -64,6 +71,12 @@ pub const PASS_ID: u64 = super::PASS_PLOT_SUBDIVISION;
 /// explicit leftover core), `Some` otherwise, always. `open` is the
 /// explicit fallback for land this pass could not usefully cut into a
 /// real building lot, never a landlocked or silently missing plot.
+///
+/// The two fields carry the state twice, and exactly one of the four
+/// combinations is illegal: `open == false && front == None` (a building
+/// lot fronting nothing). This pass never produces it, and
+/// `inv_generation_plot_state_is_consistent` asserts so over arbitrary
+/// seeds -- pass 4's own `expect` rests on that.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Plot {
     pub bounds: Rect,
@@ -338,6 +351,7 @@ fn rhythm_plots(
     row_len: i64,
     width_min: i32,
     width_max: i32,
+    corner_extra: i32,
     rng: &mut Rng,
 ) -> Vec<Rect> {
     if row_len <= 0 || width_min <= 0 {
@@ -357,20 +371,35 @@ fn rhythm_plots(
         })
         .collect();
 
+    // The row's two end plots are corners: each is cut wider by exactly
+    // the extra inset its corner edge carries in pass 4 (`corner_extra`,
+    // the setback less half the side gap), so a corner plot's own usable
+    // width is never under an ordinary module's.
+    let extra = corner_extra.max(0) as i64;
+    let last_min = width_min as i64 + extra;
     let mut out = Vec::new();
     let mut cursor: i64 = 0;
     let mut wi = 0usize;
     while cursor < row_len {
         let mut w = widths[wi % widths.len()];
+        if wi == 0 {
+            w += extra;
+        }
         wi += 1;
         let remaining_len = row_len - cursor;
-        if w >= remaining_len || remaining_len - w < width_min as i64 {
+        if w >= remaining_len || remaining_len - w < last_min {
             w = remaining_len;
         }
         out.push(row_span_rect(strip, side, cursor, cursor + w));
         cursor += w;
     }
     out
+}
+
+/// The least row length a face needs to hold one rhythm module once
+/// both of its end plots carry their own corner extra.
+fn row_min_len(width_min: i32, corner_extra: i32) -> i64 {
+    width_min as i64 + 2 * corner_extra.max(0) as i64
 }
 
 /// The depth given to each of two opposing faces on one axis (`dim` world
@@ -382,15 +411,24 @@ fn rhythm_plots(
 /// under this is never handed to a real, non-`open` plot, by
 /// construction, so a statically unbuildable plot can never be created.
 ///
-/// Two abutting faces meet at the block's own mid-line, remainder 0, as
-/// long as `target` reaches it (`dim / 2 <= target`); past that, each
-/// gets exactly `target` and the leftover in between is reported so the
-/// caller can expose it once it grows past `plot_max_core_depth_cells`
-/// (never silently). A single abutting face on this axis gets up to
-/// `target`, the rest of `dim` reported the same way. If even the
-/// available depth cannot clear `min_needed`, that side gets no row at
-/// all (`0`) -- its own leftover then spans the whole of `dim`.
-fn axis_rows(dim: i64, has_a: bool, has_b: bool, target: i32, min_needed: i32) -> (i32, i32) {
+/// Two abutting faces meet at the block's own mid-line as long as
+/// `target` reaches it; past that, each gets `target` and the leftover in
+/// between is the core. A single abutting face on this axis gets up to
+/// `target`, the rest of `dim` is the core. If even the available depth
+/// cannot clear `min_needed`, that side gets no row at all (`0`).
+///
+/// A core of `max_core` or less is then absorbed back into the rows as
+/// rear yard ([`absorb`]), so two back-to-back rows always meet
+/// (remainder 0) unless what lies between them is a real, `open`-plot-
+/// sized core.
+fn axis_rows(
+    dim: i64,
+    has_a: bool,
+    has_b: bool,
+    target: i32,
+    min_needed: i32,
+    max_core: i32,
+) -> (i32, i32) {
     let dim = dim.max(0);
     let one_sided = |has: bool| -> i32 {
         if !has {
@@ -399,7 +437,7 @@ fn axis_rows(dim: i64, has_a: bool, has_b: bool, target: i32, min_needed: i32) -
         let depth = (target as i64).min(dim) as i32;
         if depth >= min_needed { depth } else { 0 }
     };
-    match (has_a, has_b) {
+    let (a, b) = match (has_a, has_b) {
         (false, false) => (0, 0),
         (true, false) => (one_sided(true), 0),
         (false, true) => (0, one_sided(true)),
@@ -411,6 +449,24 @@ fn axis_rows(dim: i64, has_a: bool, has_b: bool, target: i32, min_needed: i32) -
                 (one_sided(true), 0)
             }
         }
+    };
+    let core = dim - a as i64 - b as i64;
+    if core > 0 && core <= max_core as i64 {
+        absorb(a, b, core as i32)
+    } else {
+        (a, b)
+    }
+}
+
+/// Hands `extra` cells of depth back to the rows on one axis: split at
+/// the mid-line when both exist (the first-priority face taking the odd
+/// cell), whole to the one that does, nothing when neither does.
+fn absorb(a: i32, b: i32, extra: i32) -> (i32, i32) {
+    match (a > 0, b > 0) {
+        (true, true) => (a + (extra + 1) / 2, b + extra / 2),
+        (true, false) => (a + extra, b),
+        (false, true) => (a, b + extra),
+        (false, false) => (a, b),
     }
 }
 
@@ -460,22 +516,51 @@ pub fn run(
         let width_max = cfg.plot_width_max_cells[use_ as usize];
         let row_depth = cfg.plot_row_depth_cells[use_ as usize];
         let limits = cfg.envelope_limits(use_);
-        let min_needed = limits.min_depth_cells + cfg.setback_cells(density);
+        let setback = cfg.setback_cells(density);
+        let min_needed = limits.min_depth_cells + setback;
+        let max_core = cfg.max_core_depth_cells(density);
+        let corner_extra = (setback - cfg.side_gap_cells(density) / 2).max(0);
+        let row_min = row_min_len(width_min, corner_extra);
+        let (width, height) = (block.bounds.width(), block.bounds.height());
 
-        let (south_depth, north_depth) = axis_rows(
-            block.bounds.height(),
-            sides.south,
-            sides.north,
-            row_depth,
-            min_needed,
-        );
-        let (east_depth, west_depth) = axis_rows(
-            block.bounds.width(),
-            sides.east,
-            sides.west,
-            row_depth,
-            min_needed,
-        );
+        // The North/South pair is cut first and spans the block's full
+        // width; the band left between those two rows is the East/West
+        // pair's own row length. A face is only ever cut when its row can
+        // hold one full module with both corner extras.
+        // No absorption on this axis yet (`max_core` 0): the band is
+        // offered to the East/West faces first, below.
+        let (mut south_depth, mut north_depth) = if width >= row_min {
+            axis_rows(height, sides.south, sides.north, row_depth, min_needed, 0)
+        } else {
+            (0, 0)
+        };
+        let band = height - south_depth as i64 - north_depth as i64;
+        let (mut east_depth, mut west_depth) = (0, 0);
+        if band > 0 {
+            if (sides.east || sides.west) && band >= row_min {
+                let (e, w) = axis_rows(
+                    width, sides.east, sides.west, row_depth, min_needed, max_core,
+                );
+                east_depth = e;
+                west_depth = w;
+            }
+            if east_depth == 0 && west_depth == 0 {
+                // No East/West row can use the band. It is absorbed into
+                // the North/South rows as rear yard -- split at the
+                // mid-line -- when it is under the core ceiling, or
+                // whenever an East/West street abuts it (a band too short
+                // for one module must never sit as an open hole between
+                // two corner buildings on that street). Only a band past
+                // the ceiling with no street of its own survives as a
+                // core, below.
+                let absorb_band = band <= max_core as i64 || sides.east || sides.west;
+                if absorb_band {
+                    let (s, n) = absorb(south_depth, north_depth, band as i32);
+                    south_depth = s;
+                    north_depth = n;
+                }
+            }
+        }
         let depth_for = |side: Side| match side {
             Side::South => south_depth,
             Side::North => north_depth,
@@ -484,7 +569,6 @@ pub fn run(
         };
 
         let mut remaining = block.bounds;
-        let mut any_placed = false;
         for &side in FACE_PRIORITY.iter() {
             let depth = depth_for(side);
             if depth <= 0 {
@@ -497,70 +581,44 @@ pub fn run(
                 Side::North | Side::South => strip.width(),
                 Side::East | Side::West => strip.height(),
             };
-            if row_len < width_min as i64 {
-                // This face's own row -- often a thin leftover once an
-                // earlier face in `FACE_PRIORITY` has already claimed the
-                // corner -- cannot hold even one rhythm module: an
-                // explicit open plot rather than a landlocked sliver or
-                // land dropped silently. `open` plots are exempt from
-                // `landlocked_plots`.
-                if strip.is_valid() {
-                    plots.push(Plot {
-                        bounds: strip,
-                        block: block_index,
-                        front: Some(side),
-                        land_use: use_,
-                        density,
-                        open: true,
-                    });
-                    any_placed = true;
-                }
-            } else {
-                let cut = rhythm_plots(strip, side, row_len, width_min, width_max, &mut rng);
-                debug_assert!(
-                    !cut.is_empty(),
-                    "row_len >= width_min > 0 always yields at least one rhythm module"
-                );
-                for bounds in cut {
-                    plots.push(Plot {
-                        bounds,
-                        block: block_index,
-                        front: Some(side),
-                        land_use: use_,
-                        density,
-                        open: false,
-                    });
-                }
-                any_placed = true;
+            debug_assert!(
+                row_len >= row_min,
+                "a face is only ever cut when its own row can hold one module"
+            );
+            let cut = rhythm_plots(
+                strip,
+                side,
+                row_len,
+                width_min,
+                width_max,
+                corner_extra,
+                &mut rng,
+            );
+            debug_assert!(
+                !cut.is_empty(),
+                "row_len >= row_min > 0 always yields a module"
+            );
+            for bounds in cut {
+                plots.push(Plot {
+                    bounds,
+                    block: block_index,
+                    front: Some(side),
+                    land_use: use_,
+                    density,
+                    open: false,
+                });
             }
             remaining = rest;
         }
 
-        // The core left after every abutting face has cut its own row:
-        // an explicit, recorded open plot once it exceeds the stated
-        // maximum yard depth on either axis, never a silent void.
-        if remaining.is_valid()
-            && (remaining.width() > cfg.plot_max_core_depth_cells as i64
-                || remaining.height() > cfg.plot_max_core_depth_cells as i64)
-        {
+        // Whatever no row claimed is the block's own core: one explicit,
+        // recorded open plot (a future yard, park or car park), never a
+        // silent void. By construction it is past the core ceiling on the
+        // axis that left it (an ordinary block), or the whole block (a
+        // block no face could cut at all).
+        if remaining.width() > 0 && remaining.height() > 0 {
             plots.push(Plot {
                 bounds: remaining,
-                block: block_index,
-                front: None,
-                land_use: use_,
-                density,
-                open: true,
-            });
-            any_placed = true;
-        }
-
-        if !any_placed {
-            // Totality fallback against a degenerate config where no
-            // axis could clear even one row and the leftover core itself
-            // never exceeded the yard-depth ceiling: a whole-block open
-            // plot rather than a block with no plot at all.
-            plots.push(Plot {
-                bounds: block.bounds,
                 block: block_index,
                 front: None,
                 land_use: use_,
@@ -852,7 +910,53 @@ mod tests {
             y1: 10,
         };
         let mut rng = Rng::new(1);
-        assert!(rhythm_plots(strip, Side::South, 0, 6, 10, &mut rng).is_empty());
+        assert!(rhythm_plots(strip, Side::South, 0, 6, 10, 0, &mut rng).is_empty());
+    }
+
+    #[test]
+    fn absorb_splits_a_core_at_the_mid_line_with_the_odd_cell_to_the_first_face() {
+        assert_eq!(absorb(10, 10, 5), (13, 12));
+        assert_eq!(absorb(10, 0, 5), (15, 0));
+        assert_eq!(absorb(0, 10, 5), (0, 15));
+        assert_eq!(absorb(0, 0, 5), (0, 0));
+    }
+
+    #[test]
+    fn axis_rows_absorbs_a_core_at_or_under_the_ceiling_and_leaves_a_bigger_one() {
+        // 40 deep, two 12-deep rows: a 16-cell core, absorbed at a
+        // ceiling of 16 (rows meet, 20/20), left at a ceiling of 8.
+        assert_eq!(axis_rows(40, true, true, 12, 10, 16), (20, 20));
+        assert_eq!(axis_rows(40, true, true, 12, 10, 8), (12, 12));
+        // One face only: the whole leftover goes to it under the ceiling.
+        assert_eq!(axis_rows(20, true, false, 12, 10, 8), (20, 0));
+        assert_eq!(axis_rows(40, true, false, 12, 10, 8), (12, 0));
+        // A face that cannot clear the minimum gets no row at all.
+        assert_eq!(axis_rows(8, true, true, 12, 10, 8), (0, 0));
+    }
+
+    #[test]
+    fn rhythm_plots_cuts_both_end_plots_wider_by_the_corner_extra() {
+        let strip = Rect {
+            x0: 0,
+            y0: 0,
+            x1: 40,
+            y1: 10,
+        };
+        let mut rng = Rng::new(5);
+        let cut = rhythm_plots(strip, Side::South, strip.width(), 8, 8, 1, &mut rng);
+        assert_eq!(
+            cut.first().unwrap().width(),
+            9,
+            "first plot: module plus extra"
+        );
+        assert!(
+            cut.last().unwrap().width() >= 9,
+            "last plot: never under module plus extra"
+        );
+        for p in &cut[1..cut.len() - 1] {
+            assert_eq!(p.width(), 8, "an interior plot is the plain module");
+        }
+        assert_eq!(cut.iter().map(|p| p.width()).sum::<i64>(), 40);
     }
 
     #[test]
@@ -864,7 +968,7 @@ mod tests {
             y1: 12,
         };
         let mut rng = Rng::new(42);
-        let cut = rhythm_plots(strip, Side::South, strip.width(), 6, 10, &mut rng);
+        let cut = rhythm_plots(strip, Side::South, strip.width(), 6, 10, 0, &mut rng);
         assert!(!cut.is_empty());
         let mut cursor = strip.x0;
         for r in &cut {
@@ -889,7 +993,7 @@ mod tests {
             y1: 12,
         };
         let mut rng = Rng::new(99);
-        let cut = rhythm_plots(strip, Side::South, strip.width(), 6, 10, &mut rng);
+        let cut = rhythm_plots(strip, Side::South, strip.width(), 6, 10, 0, &mut rng);
         assert!(cut.len() > RHYTHM_MODULE_MAX as usize);
         let widths: std::collections::BTreeSet<i64> =
             cut[..cut.len() - 1].iter().map(|r| r.width()).collect();

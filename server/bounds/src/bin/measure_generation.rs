@@ -15,7 +15,7 @@
 //! unplotted percent and per-city mean envelope width/depth (x10).
 
 use sim::generated::defs;
-use sim::generation::{GenerationConfig, envelopes, land_use, plots, streets};
+use sim::generation::{GenerationConfig, envelopes};
 
 const SEED_COUNT: u64 = 50_000;
 
@@ -85,14 +85,31 @@ fn main() {
     let mut mean_width_x10 = Vec::with_capacity(SEED_COUNT as usize);
     let mut mean_depth_x10 = Vec::with_capacity(SEED_COUNT as usize);
     let (mut too_narrow, mut too_shallow) = (0u64, 0u64);
+    let (mut min_count, mut max_count) = ((i64::MAX, 0u64), (i64::MIN, 0u64));
+    let mut open_slivers = 0u64;
+    let mut sliver_blocks = 0u64;
 
     for seed in 0..SEED_COUNT {
-        let lu = land_use::run(seed, site, &cfg).expect("pass 1 is total");
-        let net = streets::run(seed, &lu, &cfg);
-        let pm = plots::run(seed, &lu, &net, &cfg);
-        let em = envelopes::place_all(seed, &pm, &cfg);
+        let d = sim::generation::plan(seed, &cfg).expect("pass 1 is total");
+        let (net, pm, em) = (&d.streets, &d.plots, &d.envelopes);
 
-        building_count.push(em.placed_count());
+        let placed = em.placed_count();
+        if placed < min_count.0 {
+            min_count = (placed, seed);
+        }
+        if placed > max_count.0 {
+            max_count = (placed, seed);
+        }
+        building_count.push(placed);
+        for p in pm.plots() {
+            let short = p.bounds.width().min(p.bounds.height());
+            if p.open && short < cfg.plot_open_min_side_cells as i64 {
+                open_slivers += 1;
+                if p.bounds == net.blocks()[p.block as usize].bounds {
+                    sliver_blocks += 1;
+                }
+            }
+        }
         rejected_percent.push(em.rejected_percent());
         for o in em.outcomes() {
             if let envelopes::EnvelopeOutcome::Rejected { reason, .. } = o {
@@ -119,8 +136,15 @@ fn main() {
     }
 
     Stats::new(building_count).print("building_count");
+    println!(
+        "building_count extremes: min {} at seed {}, max {} at seed {} (pin both in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)",
+        min_count.0, min_count.1, max_count.0, max_count.1
+    );
     Stats::new(rejected_percent).print("rejected_percent");
     println!("rejections by reason: too_narrow={too_narrow} too_shallow={too_shallow}");
+    println!(
+        "open plots with a short side under open_min_side_cells: {open_slivers} ({sliver_blocks} of them whole sliver blocks from pass 2)"
+    );
     Stats::new(open_percent_by_count).print("open_percent_by_count");
     Stats::new(open_percent_by_area).print("open_percent_by_area");
     Stats::new(unplotted_percent).print("unplotted_percent");

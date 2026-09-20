@@ -23,12 +23,12 @@
 //! position), so adding or moving one block or plot never reshuffles
 //! another's draws.
 //!
-//! [`generate`] is the one entry point that chains every implemented pass
-//! in order; every harness that needs the whole plan calls it rather than
-//! hand-chaining the four `run` functions itself. Each pass's own `run`
-//! stays public too, for its own unit tests and for a caller that
-//! genuinely needs one pass's own output independent of a later pass's
-//! own verdict.
+//! [`plan`] chains every implemented pass in order with no verdict;
+//! [`generate`] is `plan` plus [`District::check_building_count`], what
+//! production calls. Every cross-pass harness calls one of the two rather
+//! than hand-chaining the four `run` functions; each pass's own `run`
+//! stays public for its own unit tests and for the two properties that
+//! deliberately feed one pass a perturbed predecessor.
 
 pub mod envelopes;
 pub mod land_use;
@@ -55,9 +55,9 @@ pub fn rect_seed_key(r: SiteBounds) -> u64 {
 
 /// Bumped whenever any implemented pass's algorithm or seeding changes in
 /// a way that could move its output for a fixed seed -- `tests/goldens/
-/// generation_v3.golden` is keyed to this, exactly like `sim::rng::
+/// generation_v2.golden` is keyed to this, exactly like `sim::rng::
 /// RNG_VERSION`/`sim::appearance::APPEARANCE_VERSION`.
-pub const GENERATION_VERSION: u32 = 3;
+pub const GENERATION_VERSION: u32 = 2;
 
 /// Every way generation itself can fail, across every implemented pass --
 /// one type, never a `Result<_, String>` per pass.
@@ -110,20 +110,40 @@ pub struct District {
     pub envelopes: EnvelopeMap,
 }
 
-/// The one entry point that chains every implemented pass, in FR110's own
-/// order. A caller that needs the whole plan uses this, not a hand-
-/// written chain of the four `run` functions.
-pub fn generate(city_seed: u64, cfg: &GenerationConfig) -> Result<District, GenerationError> {
+impl District {
+    /// AC4's own verdict on this finished district: `Err(GenerationError::
+    /// BuildingCountOutOfTolerance)` when the realised placed-envelope
+    /// count sits outside [`GenerationConfig::building_count_band`] for
+    /// its own site -- a property of the whole plan, never folded into
+    /// pass 4's own placement.
+    pub fn check_building_count(&self, cfg: &GenerationConfig) -> Result<(), GenerationError> {
+        envelopes::check_building_count(&self.envelopes, self.plots.site(), cfg)
+    }
+}
+
+/// Chains every implemented pass, in FR110's own order, with no verdict
+/// on the result -- only pass 1's own site check can fail. What a
+/// harness that must inspect every pass of an outlier city calls.
+pub fn plan(city_seed: u64, cfg: &GenerationConfig) -> Result<District, GenerationError> {
     let land_use = land_use::run(city_seed, cfg.site(), cfg)?;
     let streets = streets::run(city_seed, &land_use, cfg);
     let plots = plots::run(city_seed, &land_use, &streets, cfg);
-    let envelopes = envelopes::run(city_seed, &plots, cfg)?;
+    let envelopes = envelopes::run(city_seed, &plots, cfg);
     Ok(District {
         land_use,
         streets,
         plots,
         envelopes,
     })
+}
+
+/// The one entry point production calls: [`plan`], then
+/// [`District::check_building_count`] -- a seed whose district fails AC4
+/// is a world that fails to create.
+pub fn generate(city_seed: u64, cfg: &GenerationConfig) -> Result<District, GenerationError> {
+    let district = plan(city_seed, cfg)?;
+    district.check_building_count(cfg)?;
+    Ok(district)
 }
 
 /// FR110's seven passes, coarse to fine -- append-only, never renumbered.
@@ -289,9 +309,17 @@ pub struct GenerationConfig {
     pub plot_row_depth_cells: [i32; 4],
     /// The most a block's own leftover core (after every abutting face
     /// has cut its own row) may reach, on either axis, before it becomes
-    /// an explicit, recorded `open` plot rather than silent unplotted
-    /// remainder.
+    /// an explicit, recorded `open` plot rather than being absorbed into
+    /// the rows as rear yard -- at `density_max` (the peak); see
+    /// [`Self::max_core_depth_cells`].
     pub plot_max_core_depth_cells: i32,
+    /// The same ceiling at `density_min` (the periphery) -- deep rear
+    /// gardens there, a small yard at the core.
+    pub plot_max_core_depth_periphery_cells: i32,
+    /// The minimum short side of any `open` plot this pass creates of its
+    /// own accord (a core) -- a residue narrower than this is never a plot
+    /// of its own.
+    pub plot_open_min_side_cells: i32,
     /// The maximum percent of a district's own plots that may be `open`,
     /// by count.
     pub plot_max_open_percent_by_count: i64,
@@ -343,8 +371,12 @@ pub struct GenerationConfig {
     /// ::run` -- never a bare count, so NFR14's 1024 growth target (four
     /// times the cells) does not fail this for no reason.
     pub envelope_target_count_per_million_cells: i64,
-    /// AC4's tolerance band around the scaled target, as a percent.
+    /// AC4's per-seed tolerance band around the scaled target, as a
+    /// percent -- the wild-deviation guard.
     pub envelope_count_tolerance_percent: i64,
+    /// AC4's pooled band: the mean placed count over a fixed seed range
+    /// must sit within this percent of the scaled target.
+    pub envelope_mean_count_tolerance_percent: i64,
     /// The maximum percent of attempted (non-`open`) plots the envelope
     /// pass may reject, asserted per city -- without it a generator that
     /// rejects half the district still passes every other property until
@@ -489,6 +521,11 @@ impl GenerationConfig {
             plot_width_max_cells: per_use_i32(balance, "generation.plots.{}_width_max_cells"),
             plot_row_depth_cells: per_use_i32(balance, "generation.plots.{}_row_depth_cells"),
             plot_max_core_depth_cells: get(balance, "generation.plots.max_core_depth_cells") as i32,
+            plot_max_core_depth_periphery_cells: get(
+                balance,
+                "generation.plots.max_core_depth_periphery_cells",
+            ) as i32,
+            plot_open_min_side_cells: get(balance, "generation.plots.open_min_side_cells") as i32,
             plot_max_open_percent_by_count: get(
                 balance,
                 "generation.plots.max_open_percent_by_count",
@@ -535,6 +572,10 @@ impl GenerationConfig {
             envelope_count_tolerance_percent: get(
                 balance,
                 "generation.envelopes.count_tolerance_percent",
+            ),
+            envelope_mean_count_tolerance_percent: get(
+                balance,
+                "generation.envelopes.mean_count_tolerance_percent",
             ),
             envelope_max_rejected_plot_percent: get(
                 balance,
@@ -686,18 +727,19 @@ impl GenerationConfig {
                 )));
             }
             // A plot at exactly its own class's minimum width/row depth
-            // must still clear the *periphery* insets -- the worst case
-            // `envelopes::place_one` ever subtracts: a corner plot's own
-            // corner edge is inset by `setback`, its other edge by half
-            // the side gap -- or every below-`plot_high_density_threshold`
-            // block of this use rejects its own minimum-width corner plot
-            // by construction, not by bad luck.
-            let half_gap = cfg.envelope_side_gap_periphery_cells / 2;
-            let worst_row_insets = half_gap + cfg.plot_setback_periphery_cells.max(half_gap);
-            if min_footprint_w + worst_row_insets > cfg.plot_width_min_cells[i] {
+            // must still clear the *periphery* side gap/setback -- the
+            // worst case `envelopes::place_one` ever subtracts from an
+            // ordinary plot (a corner plot is cut wider by exactly the
+            // extra inset its corner edge carries, so this is its case
+            // too) -- or every below-`plot_high_density_threshold` block
+            // of this use rejects its own minimum-width plot by
+            // construction, not by bad luck.
+            if min_footprint_w + cfg.envelope_side_gap_periphery_cells > cfg.plot_width_min_cells[i]
+            {
                 return Err(GenerationError::InvalidConfig(format!(
-                    "GenerationConfig: {} envelope minimum footprint width ({min_footprint_w}) plus a periphery corner plot's own row insets ({worst_row_insets}: half of envelopes.side_gap_periphery_cells plus plots.setback_periphery_cells) is greater than plots.{}_width_min_cells ({}) -- every periphery corner plot at the class minimum would be rejected",
+                    "GenerationConfig: {} envelope minimum footprint width ({min_footprint_w}) plus envelopes.side_gap_periphery_cells ({}) is greater than plots.{}_width_min_cells ({}) -- every periphery plot at the class minimum would be rejected",
                     land_use_key(u),
+                    cfg.envelope_side_gap_periphery_cells,
                     land_use_key(u),
                     cfg.plot_width_min_cells[i]
                 )));
@@ -780,11 +822,29 @@ impl GenerationConfig {
     /// `generation_perf.rs` and the invariants all share, rather than each
     /// repeating `target * (100 +- tolerance) / 100`.
     pub fn building_count_band(&self, site_cells: i64) -> (i64, i64) {
-        let target = (self.envelope_target_count_per_million_cells * site_cells) / 1_000_000;
+        let target = self.building_count_target(site_cells);
         let tolerance = self.envelope_count_tolerance_percent;
         let min = target * (100 - tolerance) / 100;
         let max = target * (100 + tolerance) / 100;
         (min, max)
+    }
+
+    /// AC4's own scaled target for a site of `site_cells` world cells --
+    /// the Scale Baseline figure, never a measurement.
+    pub fn building_count_target(&self, site_cells: i64) -> i64 {
+        (self.envelope_target_count_per_million_cells * site_cells) / 1_000_000
+    }
+
+    /// The most a block at `density` may leave as a core before it becomes
+    /// an explicit `open` plot: interpolated between `plot_max_core_depth_
+    /// periphery_cells` (at `density_min`) and `plot_max_core_depth_cells`
+    /// (at `density_max`), integer only.
+    pub fn max_core_depth_cells(&self, density: i32) -> i32 {
+        let span_density = (self.density_max - self.density_min).max(1);
+        let span = self.plot_max_core_depth_periphery_cells - self.plot_max_core_depth_cells;
+        let clamped = density.clamp(self.density_min, self.density_max);
+        let d = clamped - self.density_min;
+        self.plot_max_core_depth_periphery_cells - (span * d) / span_density
     }
 
     /// The one shared build-line setback a block at `density` sits behind
@@ -967,6 +1027,13 @@ mod tests {
             seed("generation.plots.industrial_row_depth_cells", 16, 2, 64),
             seed("generation.plots.institutional_row_depth_cells", 16, 2, 64),
             seed("generation.plots.max_core_depth_cells", 8, 2, 64),
+            seed(
+                "generation.plots.max_core_depth_periphery_cells",
+                32,
+                2,
+                128,
+            ),
+            seed("generation.plots.open_min_side_cells", 8, 1, 64),
             seed("generation.plots.max_open_percent_by_count", 15, 0, 100),
             seed("generation.plots.max_open_percent_by_area", 15, 0, 100),
             seed("generation.plots.max_unplotted_percent", 20, 0, 100),
@@ -1035,6 +1102,12 @@ mod tests {
                 1_000_000,
             ),
             seed("generation.envelopes.count_tolerance_percent", 15, 0, 100),
+            seed(
+                "generation.envelopes.mean_count_tolerance_percent",
+                3,
+                0,
+                100,
+            ),
             seed("generation.envelopes.max_rejected_plot_percent", 5, 0, 100),
         ]
     }
@@ -1250,23 +1323,19 @@ mod tests {
     }
 
     #[test]
-    fn generate_equals_the_four_passes_hand_chained() {
+    fn generate_is_plan_plus_the_building_count_verdict() {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let seed = 11;
-        let d = generate(seed, &cfg).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
-        let net = streets::run(seed, &lu, &cfg);
-        let pm = plots::run(seed, &lu, &net, &cfg);
-        let em = envelopes::run(seed, &pm, &cfg).unwrap();
-        for cy in 0..lu.rows() {
-            for cx in 0..lu.cols() {
-                assert_eq!(d.land_use.coarse_at(cx, cy), lu.coarse_at(cx, cy));
-            }
-        }
-        assert_eq!(d.streets.nodes(), net.nodes());
-        assert_eq!(d.streets.edges(), net.edges());
-        assert_eq!(d.streets.blocks(), net.blocks());
-        assert_eq!(d.plots.plots(), pm.plots());
-        assert_eq!(d.envelopes.outcomes(), em.outcomes());
+        let planned = plan(11, &cfg).unwrap();
+        let generated = generate(11, &cfg).unwrap();
+        assert_eq!(planned.plots.plots(), generated.plots.plots());
+        assert_eq!(planned.envelopes.outcomes(), generated.envelopes.outcomes());
+
+        let mut starved = cfg;
+        starved.envelope_target_count_per_million_cells *= 100;
+        assert!(plan(11, &starved).is_ok(), "plan carries no count verdict");
+        assert!(matches!(
+            generate(11, &starved),
+            Err(GenerationError::BuildingCountOutOfTolerance { .. })
+        ));
     }
 }

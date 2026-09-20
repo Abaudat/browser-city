@@ -523,7 +523,12 @@ pub fn envelopes_svg(
     let site = net.site();
     let (w, h) = (site.width(), site.height());
     let legend_h = 88;
-    let inset_h: i64 = 260;
+    // The inset frames are exactly 40:22, so "viewport scale" is
+    // literally the viewport: a renderer that does not clip shows no
+    // more rows than the viewBox names.
+    let inset_w: i64 = (w / 2) - 12;
+    let inset_box_h: i64 = inset_w * VIEWPORT_H as i64 / VIEWPORT_W as i64;
+    let inset_h: i64 = inset_box_h + 32;
     let total_h = h + legend_h + inset_h;
     let mut body = block_rects(map, net);
     for e in net.edges() {
@@ -563,7 +568,6 @@ pub fn envelopes_svg(
         "periphery",
     ));
 
-    let inset_w: i64 = (w / 2) - 12;
     let inset_y = h + legend_h + 24;
     let core_vx = (core_point.0 - VIEWPORT_W / 2).clamp(site.x0, site.x1 - VIEWPORT_W);
     let core_vy = (core_point.1 - VIEWPORT_H / 2).clamp(site.y0, site.y1 - VIEWPORT_H);
@@ -574,7 +578,7 @@ pub fn envelopes_svg(
         8,
         inset_y,
         inset_w,
-        inset_h - 32,
+        inset_box_h,
         core_vx,
         core_vy,
         VIEWPORT_W,
@@ -586,7 +590,7 @@ pub fn envelopes_svg(
         16 + inset_w,
         inset_y,
         inset_w,
-        inset_h - 32,
+        inset_box_h,
         periphery_vx,
         periphery_vy,
         VIEWPORT_W,

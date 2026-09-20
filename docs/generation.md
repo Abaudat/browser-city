@@ -169,13 +169,18 @@ document's own opening paragraph forbids.
   own front-facing side, land use and density. Faces are cut in a fixed
   order -- south, north, east, west, regardless of street tier -- and
   the face cut first takes the corner, so a south-facing corner plot
-  (facade to the camera) is the wider one. Opposite rows run through to
-  the block's mid-line and meet; only a core deeper than
-  `max_core_depth_cells` on either axis stays open, as one explicit,
-  recorded `open` plot (a future yard, park or car park), never silent
-  unowned land. A block with no street frontage at all, or a strip too
-  shallow to hold its own class's minimum envelope plus setback, yields
-  an `open` plot too rather than a landlocked or unbuildable one.
+  (facade to the camera) is the wider one, and a corner plot is cut
+  wider by exactly the inset its corner edge carries. Opposite rows run
+  through to the block's mid-line and meet; a core at or under the
+  density-interpolated ceiling (`max_core_depth_cells` at the peak,
+  `max_core_depth_periphery_cells` at the edge -- deep gardens there) is
+  absorbed into the rows as rear yard, and only a core past it stays
+  open, as one explicit, recorded `open` plot (a future yard, park or
+  car park) whose short side always clears `open_min_side_cells`. A face
+  remainder too short for one module is never a plot of its own: it is
+  absorbed into the rows beside it. A block with no street frontage at
+  all, or too small on some axis for one module, yields one whole-block
+  `open` plot rather than a landlocked or unbuildable one.
 - **Reads:** density, land-use mix.
 - **Evidence:** [`docs/generation/envelopes-seed-1.svg`](generation/envelopes-seed-1.svg),
   [`-seed-2`](generation/envelopes-seed-2.svg), [`-seed-3`](generation/envelopes-seed-3.svg)
@@ -328,7 +333,9 @@ disagree.
 | generation.plots.commercial_row_depth_cells | committed | Plot subdivision | same, commercial |
 | generation.plots.industrial_row_depth_cells | committed | Plot subdivision | same, industrial |
 | generation.plots.institutional_row_depth_cells | committed | Plot subdivision | same, institutional |
-| generation.plots.max_core_depth_cells | committed | Plot subdivision | the most a block's own leftover core may reach on either axis before it becomes an explicit `open` plot rather than being absorbed by the rows meeting at the mid-line |
+| generation.plots.max_core_depth_cells | committed | Plot subdivision | the most a block's own leftover core may reach on either axis before it becomes an explicit `open` plot rather than being absorbed into the rows as rear yard -- at the density peak |
+| generation.plots.max_core_depth_periphery_cells | committed | Plot subdivision | the same ceiling at the periphery, interpolated by density between the two: deep rear gardens there, a small yard at the core |
+| generation.plots.open_min_side_cells | committed | Plot subdivision | the minimum short side of any `open` plot this pass creates of its own accord -- a residue narrower than this is never a plot of its own |
 | generation.plots.max_open_percent_by_count | committed | Plot subdivision | the maximum percent of a district's plots that may be `open`, by count -- asserted per city |
 | generation.plots.max_open_percent_by_area | committed | Plot subdivision | the same ceiling by plotted area |
 | generation.plots.max_unplotted_percent | committed | Plot subdivision | the maximum percent of every block's summed area that may belong to no plot at all, citywide |
@@ -350,8 +357,9 @@ disagree.
 | generation.envelopes.mean_depth_cells | committed | Building envelope | AC3's own mean footprint depth (11), same two bands |
 | generation.envelopes.mean_depth_tolerance_cells | committed | Building envelope | the tolerance around the mean depth |
 | generation.envelopes.min_distinct_sizes | committed | Building envelope | NFR8/AC3's anti-cheat floor: the minimum number of distinct (width, depth) footprint pairs a district must show |
-| generation.envelopes.target_count_per_million_cells | committed | Building envelope | AC4's own building-count target, stated per one million site cells and scaled by real site area |
-| generation.envelopes.count_tolerance_percent | committed | Building envelope | AC4's tolerance band around the scaled target, as a percent |
+| generation.envelopes.target_count_per_million_cells | committed | Building envelope | AC4's own building-count target -- the Scale Baseline's ~894 at 512x512, stated per one million site cells and scaled by real site area, never a measurement |
+| generation.envelopes.count_tolerance_percent | committed | Building envelope | AC4's per-seed tolerance band around the scaled target, as a percent -- the wild-deviation guard |
+| generation.envelopes.mean_count_tolerance_percent | committed | Building envelope | AC4's pooled band: the mean placed count over the fixed seed range 0..256 must sit within this percent of the scaled target |
 | generation.envelopes.max_rejected_plot_percent | committed | Building envelope | the maximum percent of attempted plots the envelope pass may reject, asserted per city |
 
 ## placement
@@ -438,16 +446,19 @@ generation-pass rule claims them -- `building_has_an_entrance` is the
 one exception, because "a building has no entrance" is the same claim
 at either scale.
 
-Until a rule claims them, four of the pass 3-4 rows are guarded by a
+Until a rule claims them, five of the pass 3-4 rows are guarded by a
 proptest invariant each (`server/sim/tests/invariants.rs`) rather than
 by nothing: "A plot with no street frontage" by
 `inv_generation_every_plot_fronts_a_street`; "A 1-cell slit between two
-buildings" by `inv_generation_envelope_gaps_are_zero_or_at_least_two`;
-"Land inside a block that belongs to no plot" by
+buildings" by `inv_generation_envelope_gaps_are_zero_or_at_least_two`
+(every pair of envelopes in a block, both axes, whichever face each
+belongs to); "Land inside a block that belongs to no plot" by
 `inv_generation_unplotted_percent_bounded` (an explicit `open` core is a
-plot); and a building under its own class's floor (8x8 outer for
-residential, the smallest) by
-`inv_generation_envelope_size_within_its_class_band`.
+plot) and `inv_generation_open_plots_are_never_slivers`; "A vacant gap in
+an otherwise continuous high-density street wall" by
+`inv_generation_no_open_plot_on_a_built_face_at_high_density`; and a
+building under its own class's floor (8x8 outer for residential, the
+smallest) by `inv_generation_envelope_size_within_its_class_band`.
 
 ## Does not fit
 

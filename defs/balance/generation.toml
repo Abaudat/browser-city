@@ -459,49 +459,49 @@ max = 8
 # end -- size distribution visibly skewed by block use: residential
 # narrower, commercial/industrial/institutional wider.
 key = "generation.plots.residential_width_min_cells"
-value = 11
+value = 10
 min = 2
 max = 64
 
 [[balance]]
 key = "generation.plots.commercial_width_min_cells"
-value = 11
+value = 10
 min = 2
 max = 64
 
 [[balance]]
 key = "generation.plots.industrial_width_min_cells"
-value = 13
-min = 2
-max = 64
-
-[[balance]]
-key = "generation.plots.institutional_width_min_cells"
-value = 13
-min = 2
-max = 64
-
-[[balance]]
-key = "generation.plots.residential_width_max_cells"
 value = 12
 min = 2
 max = 64
 
 [[balance]]
+key = "generation.plots.institutional_width_min_cells"
+value = 12
+min = 2
+max = 64
+
+[[balance]]
+key = "generation.plots.residential_width_max_cells"
+value = 11
+min = 2
+max = 64
+
+[[balance]]
 key = "generation.plots.commercial_width_max_cells"
-value = 16
+value = 11
 min = 2
 max = 64
 
 [[balance]]
 key = "generation.plots.industrial_width_max_cells"
-value = 20
+value = 14
 min = 2
 max = 64
 
 [[balance]]
 key = "generation.plots.institutional_width_max_cells"
-value = 20
+value = 14
 min = 2
 max = 64
 
@@ -509,7 +509,7 @@ max = 64
 # Per land use, the plot's own depth from its block face inward --
 # residential narrower and deeper, commercial wider on the frontage.
 key = "generation.plots.residential_row_depth_cells"
-value = 14
+value = 12
 min = 4
 max = 64
 
@@ -521,24 +521,45 @@ max = 64
 
 [[balance]]
 key = "generation.plots.industrial_row_depth_cells"
-value = 18
+value = 14
 min = 4
 max = 64
 
 [[balance]]
 key = "generation.plots.institutional_row_depth_cells"
-value = 18
+value = 14
 min = 4
 max = 64
 
 [[balance]]
 # The most a block's own leftover core (after every abutting face has
 # cut its own row) may reach, on either axis, before it becomes an
-# explicit, recorded `open` plot rather than silent unplotted remainder
-# -- a rear-yard depth, not a building depth.
+# explicit, recorded `open` plot rather than being absorbed into the rows
+# as rear yard -- at the density peak. Interpolated by density down to
+# `max_core_depth_periphery_cells` at the periphery, the same shape as
+# `streets.block_size_min/max_cells`.
 key = "generation.plots.max_core_depth_cells"
 value = 8
 min = 2
+max = 64
+
+[[balance]]
+# The same ceiling at the periphery: deep rear gardens there, a small
+# yard at the core, an `open` core only in a genuinely oversized block.
+key = "generation.plots.max_core_depth_periphery_cells"
+value = 64
+min = 2
+max = 128
+
+[[balance]]
+# The minimum short side of any `open` plot this pass creates of its own
+# accord (a leftover core): a residue narrower than this is never a plot
+# of its own, it is absorbed into the rows beside it as yard. Matches the
+# building floor, so a later pass can always dress it as a park, a yard
+# or a car park.
+key = "generation.plots.open_min_side_cells"
+value = 8
+min = 1
 max = 64
 
 [[balance]]
@@ -546,18 +567,21 @@ max = 64
 # count -- an unbounded escape hatch otherwise (a generator could mark
 # every awkward plot open and still pass every other AC1 property).
 # Measured over 50,000 seeds at this generator's other committed values
-# (`cargo run -p bounds --release --bin measure-generation`): max 24%,
-# p99 20%, p50 15%. 26 is that plus margin.
+# (`cargo run -p bounds --release --bin measure-generation`): max 3%,
+# p99 2%, p50 1% -- an open plot is only ever a block's own leftover core
+# past the density-interpolated `max_core_depth_*` ceiling. 5 is that
+# plus margin.
 key = "generation.plots.max_open_percent_by_count"
-value = 26
+value = 5
 min = 0
 max = 100
 
 [[balance]]
-# The same ceiling's own area half. Same scan: max 35%, p99 30%, p50 24%;
-# 38 is that plus margin.
+# The same ceiling's own area half. Same scan: max 32%, p99 25%, p50 14%
+# (the cores of the genuinely oversized periphery blocks); 35 is that
+# plus margin.
 key = "generation.plots.max_open_percent_by_area"
-value = 38
+value = 35
 min = 0
 max = 100
 
@@ -676,7 +700,7 @@ max = 16
 # `inv_generation_envelope_mean_size_matches_the_committed_band`), and
 # every single city's own mean within a weak band four times as wide.
 # Measured over 50,000 seeds (`cargo run -p bounds --release --bin
-# measure-generation`): per-city mean width 12.6, min 11.7, max 13.7.
+# measure-generation`): per-city mean width 11.3, min 10.6, max 12.3.
 key = "generation.envelopes.mean_width_cells"
 value = 12
 min = 4
@@ -690,7 +714,7 @@ max = 32
 
 [[balance]]
 # AC3's own "around 12x11", depth half. Same 50,000-seed scan: per-city
-# mean depth 11.4, min 10.4, max 12.2.
+# mean depth 11.0, min 9.9, max 12.3.
 key = "generation.envelopes.mean_depth_cells"
 value = 11
 min = 4
@@ -715,41 +739,54 @@ max = 64
 # AC4's own target, stated at the 512 reference extent per one million
 # site cells and scaled by real site area inside `envelopes::run` --
 # never a bare count, so NFR14's 1024 growth target (four times the
-# cells) does not fail this for no reason. Measured over 50,000 seeds at
-# this generator's other committed values (`cargo run -p bounds --release
-# --bin measure-generation`): mean 780, standard deviation 27.8, min 666,
-# max 904 (512x512, 262,144 cells). 2975 is that mean per million cells
-# -- see `count_tolerance_percent`'s own comment for how the band around
-# it is set.
+# cells) does not fail this for no reason. 3410 is the Scale Baseline's
+# own ~894 buildings at 512x512 (262,144 cells) -- the figure the
+# citizen, workplace and cost model is sized on -- never a measurement:
+# the generator is tuned to it (`mean_count_tolerance_percent`, below),
+# and a generator that drifts fails, it does not move this key.
 key = "generation.envelopes.target_count_per_million_cells"
-value = 2975
+value = 3410
 min = 1
 max = 1000000
 
 [[balance]]
-# AC4's tolerance band around the scaled target, as a percent, set by a
-# stated rule rather than narrative: at least 5.5 standard deviations
-# from the mean (measured 27.8 over the 50,000-seed scan above), so an
-# arbitrary-seed failure is a roughly one-in-a-million event rather than
-# a number tuned to the observed sample's own min/max. 5.5 * 27.8 / 780 =
-# 19.6%; 21 clears it with a little real margin, and comfortably covers
-# the measured min (780-666=114, 14.6%) and max (904-780=124, 15.9%).
+# AC4's per-seed tolerance band around the scaled target, as a percent
+# -- the wild-deviation guard, set by a stated rule rather than
+# narrative: at least 5.5 standard deviations from the target, so an
+# arbitrary-seed failure is a roughly four-in-a-hundred-million event
+# (two-sided) rather than a number tuned to the observed sample's own
+# min/max. Measured over 50,000 seeds (`cargo run -p bounds --release
+# --bin measure-generation`): mean 910, standard deviation 29.9, min 777,
+# max 1,048. 5.5 * 29.9 / 894 = 18.4%; 21 clears it with real margin, and
+# covers the measured min (894-777=117, 13.1%) and max (1048-894=154,
+# 17.2%). Re-derived from the harness's own sigma after every retune.
 key = "generation.envelopes.count_tolerance_percent"
 value = 21
 min = 1
 max = 100
 
 [[balance]]
+# AC4's pooled half: the mean placed count over the fixed seed range
+# `0..256` must sit within this percent of the scaled target (`server/
+# sim/tests/invariants.rs`'s `inv_generation_building_count_mean_matches_
+# the_scale_baseline`) -- the assertion that actually tests the target,
+# never merged with the per-seed wild-deviation band above.
+key = "generation.envelopes.mean_count_tolerance_percent"
+value = 3
+min = 0
+max = 100
+
+[[balance]]
 # Rejection rate gets its own key, asserted per city -- without it a
 # generator that rejects half the district still passes every other
 # property until AC4 catches it for the wrong reason. Measured over the
-# same 50,000-seed scan: mean 0.0%, p99 1%, max 3% -- every remaining
-# rejection is `PlotTooNarrow` on a periphery row that holds a single
-# plot (both row edges are corners, so both are inset by the setback);
-# `plots::run`'s own row-depth floor and `from_balance`'s corner-width
-# check rule out every other case by construction. 5 is the measured max
-# plus margin.
+# same 50,000-seed scan: zero rejections in 50,000 cities -- `plots::run`
+# never hands pass 4 a plot it cannot build (row depth clears the class
+# minimum plus setback; a corner plot is cut wider by the inset its
+# corner edge carries), so `Rejected` is reachable only from a hand-built
+# fixture. 1 is the ceiling a single real rejection would already breach
+# in any city under 100 plots.
 key = "generation.envelopes.max_rejected_plot_percent"
-value = 5
+value = 1
 min = 0
 max = 100

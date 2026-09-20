@@ -1,6 +1,0 @@
-version=3
-seed=1 regions=res:2,com:1,ind:1,inst:3 nodes=165 edges=255 blocks=122 dead_ends=0 max_detour_pct=151 p99_detour_pct=138 density_rings=[79, 54, 24] plots=1096 open_plots=134 envelopes_placed=925 envelopes_rejected=37 digest=89bacc0c141d3add
-seed=2 regions=res:2,com:1,ind:2,inst:3 nodes=169 edges=268 blocks=134 dead_ends=0 max_detour_pct=140 p99_detour_pct=123 density_rings=[80, 51, 22] plots=1066 open_plots=158 envelopes_placed=869 envelopes_rejected=39 digest=c41677ee16cbbe5e
-seed=3 regions=res:2,com:1,ind:1,inst:3 nodes=161 edges=252 blocks=126 dead_ends=0 max_detour_pct=141 p99_detour_pct=121 density_rings=[79, 54, 24] plots=1067 open_plots=160 envelopes_placed=865 envelopes_rejected=42 digest=acfb139598b745bf
-seed=42 regions=res:2,com:1,ind:2,inst:3 nodes=176 edges=278 blocks=137 dead_ends=0 max_detour_pct=137 p99_detour_pct=129 density_rings=[80, 54, 25] plots=1119 open_plots=144 envelopes_placed=939 envelopes_rejected=36 digest=7d8434e3ec73e215
-seed=123456789 regions=res:5,com:1,ind:1,inst:3 nodes=189 edges=299 blocks=149 dead_ends=0 max_detour_pct=100 p99_detour_pct=125 density_rings=[80, 53, 24] plots=1084 open_plots=123 envelopes_placed=910 envelopes_rejected=51 digest=474cfb84d5cc3bc1
