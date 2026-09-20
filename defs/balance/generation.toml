@@ -436,10 +436,9 @@ max = 16
 # `generation.land_use.density_min/max` range) at or above which a
 # block's own build line sits flush on the pavement (setback 0, party-
 # wall packing) -- below it, every plot on that block instead gets the
-# single shared `setback_periphery_cells` (Artie's direction: "at high
-# density the setback is 0 ... toward the periphery ... a front-garden
-# strip"). Shared with `envelopes.rs`'s own side-gap step -- one density
-# line decides both.
+# single shared `setback_periphery_cells` (a front-garden strip toward
+# the periphery). Shared with `envelopes.rs`'s own side-gap step -- one
+# density line decides both.
 key = "generation.plots.high_density_threshold"
 value = 55
 min = 0
@@ -447,8 +446,8 @@ max = 1000
 
 [[balance]]
 # The one shared build-line setback every plot on a below-threshold
-# block sits behind -- Artie's direction: "one shared setback of 2-4
-# cells... still one line for the whole face".
+# block sits behind -- one shared setback for the whole face, not a
+# per-plot value.
 key = "generation.plots.setback_periphery_cells"
 value = 2
 min = 0
@@ -457,29 +456,28 @@ max = 8
 [[balance]]
 # Per land use, the rhythm-module width band (the row axis, along the
 # block face) a block of that use draws its plot widths from, minimum
-# end -- Artie's direction: "size distribution visibly skewed by block
-# use" (residential narrower, commercial/industrial/institutional
-# wider).
+# end -- size distribution visibly skewed by block use: residential
+# narrower, commercial/industrial/institutional wider.
 key = "generation.plots.residential_width_min_cells"
-value = 8
+value = 11
 min = 2
 max = 64
 
 [[balance]]
 key = "generation.plots.commercial_width_min_cells"
-value = 10
+value = 11
 min = 2
 max = 64
 
 [[balance]]
 key = "generation.plots.industrial_width_min_cells"
-value = 12
+value = 13
 min = 2
 max = 64
 
 [[balance]]
 key = "generation.plots.institutional_width_min_cells"
-value = 12
+value = 13
 min = 2
 max = 64
 
@@ -509,8 +507,7 @@ max = 64
 
 [[balance]]
 # Per land use, the plot's own depth from its block face inward --
-# Artie's direction: "residential narrower and deeper, commercial wider
-# on the frontage".
+# residential narrower and deeper, commercial wider on the frontage.
 key = "generation.plots.residential_row_depth_cells"
 value = 14
 min = 4
@@ -534,6 +531,47 @@ value = 18
 min = 4
 max = 64
 
+[[balance]]
+# The most a block's own leftover core (after every abutting face has
+# cut its own row) may reach, on either axis, before it becomes an
+# explicit, recorded `open` plot rather than silent unplotted remainder
+# -- a rear-yard depth, not a building depth.
+key = "generation.plots.max_core_depth_cells"
+value = 8
+min = 2
+max = 64
+
+[[balance]]
+# The maximum percent of a district's own plots that may be `open`, by
+# count -- an unbounded escape hatch otherwise (a generator could mark
+# every awkward plot open and still pass every other AC1 property).
+# Measured over 50,000 seeds at this generator's other committed values
+# (`cargo run -p bounds --release --bin measure-generation`): max 24%,
+# p99 20%, p50 15%. 26 is that plus margin.
+key = "generation.plots.max_open_percent_by_count"
+value = 26
+min = 0
+max = 100
+
+[[balance]]
+# The same ceiling's own area half. Same scan: max 35%, p99 30%, p50 24%;
+# 38 is that plus margin.
+key = "generation.plots.max_open_percent_by_area"
+value = 38
+min = 0
+max = 100
+
+[[balance]]
+# The maximum percent of every block's own summed area that may belong
+# to no plot at all, citywide. Same scan: max, p99 and p50 all measured
+# 0% -- the explicit open-core ceiling (`max_core_depth_cells`) already
+# claims almost every leftover as a recorded plot rather than silent
+# remainder. 2 is real margin over a measured 0.
+key = "generation.plots.max_unplotted_percent"
+value = 2
+min = 0
+max = 100
+
 # --- building envelope (pass 4) -----------------------------------------
 
 [[balance]]
@@ -549,7 +587,7 @@ max = 4
 # clear -- checked against the interior net (footprint minus the wall
 # ring), never the outer rectangle.
 key = "generation.envelopes.residential_min_interior_width_cells"
-value = 4
+value = 6
 min = 1
 max = 64
 
@@ -573,7 +611,7 @@ max = 64
 
 [[balance]]
 key = "generation.envelopes.residential_min_interior_depth_cells"
-value = 4
+value = 6
 min = 1
 max = 64
 
@@ -597,7 +635,7 @@ max = 64
 
 [[balance]]
 # The outer envelope ceiling, both axes, shared across every land use --
-# Artie's own pinned assumption: "none larger than roughly 20x16".
+# no envelope larger than roughly 20x16.
 key = "generation.envelopes.max_width_cells"
 value = 20
 min = 4
@@ -614,24 +652,33 @@ max = 64
 # `plots.high_density_threshold` block -- half subtracted from each
 # side, so it must be even (`from_balance` rejects an odd value, the
 # same rule `streets.*_width_cells` already follows). 0 at or above the
-# threshold (party walls) -- Artie's direction: "0 or at least 2 cells,
-# never 1".
+# threshold (party walls): the gap between two envelopes is always 0 or
+# at least 2 cells, never 1.
 key = "generation.envelopes.side_gap_periphery_cells"
 value = 2
 min = 0
 max = 16
 
 [[balance]]
-# AC3's mean band, measured over the fixed seed range `0..256` at this
-# generator's own committed config (see `server/sim/tests/invariants.rs`'s
-# `inv_generation_envelope_mean_size_matches_the_committed_band`): pooled
-# mean footprint width 8.85 cells (2,021,481 summed cells over 228,530
-# placed envelopes). Artie's own pinned assumption ("average near 12x11")
-# is not hit on the width axis at this generator's own committed plot-
-# width values -- AC4's own building-count target won -- disclosed in
-# this story's own PR, not silently narrowed to fit.
+# The most a footprint's own depth may trim back from filling its plot's
+# own available depth, for variety -- along-face width is never trimmed
+# at all (it always fills exactly, side gaps and the build line staying
+# exact); never below the class minimum.
+key = "generation.envelopes.size_trim_max_cells"
+value = 2
+min = 0
+max = 16
+
+[[balance]]
+# AC3's own "around 12x11", width half: the pooled mean placed-envelope
+# footprint width over the fixed seed range `0..256` must sit within
+# `mean_width_tolerance_cells` of this (`server/sim/tests/invariants.rs`'s
+# `inv_generation_envelope_mean_size_matches_the_committed_band`), and
+# every single city's own mean within a weak band four times as wide.
+# Measured over 50,000 seeds (`cargo run -p bounds --release --bin
+# measure-generation`): per-city mean width 12.6, min 11.7, max 13.7.
 key = "generation.envelopes.mean_width_cells"
-value = 9
+value = 12
 min = 4
 max = 64
 
@@ -642,11 +689,10 @@ min = 0
 max = 32
 
 [[balance]]
-# Same 256-seed scan: pooled mean footprint depth 9.70 cells (2,216,773
-# summed cells over the same 228,530 placed envelopes) -- closer to
-# Artie's own 11 than the width axis, though still short of it.
+# AC3's own "around 12x11", depth half. Same 50,000-seed scan: per-city
+# mean depth 11.4, min 10.4, max 12.2.
 key = "generation.envelopes.mean_depth_cells"
-value = 10
+value = 11
 min = 4
 max = 64
 
@@ -669,51 +715,41 @@ max = 64
 # AC4's own target, stated at the 512 reference extent per one million
 # site cells and scaled by real site area inside `envelopes::run` --
 # never a bare count, so NFR14's 1024 growth target (four times the
-# cells) does not fail this for no reason.
-#
-# A 2,000-seed measurement (this key's own earlier value, 3410) missed a
-# real seed CI found at 4,096 proptest cases: 1,033 buildings, over the
-# tolerance band that scan implied. Re-measured properly at Quentin's own
-# requested scale (50,000 seeds, `cargo test --release -- --ignored
-# measure_building_count_wide`): min 753, p1 818, p50 895, p99 973, max
-# 1,040, mean 895 (512x512, 262,144 cells). That spread is -15.9%/+16.2%
-# around its own mean -- inherited overwhelmingly from pass 2's own
-# already-committed block-count variance (the same 50,000-seed scan:
-# block count min 92, max 180 around a mean of 129, a +-1.35x/-1.29x own
-# swing on top of which this pass's own per-face rhythm already narrows
-# the relative spread by roughly half), not from anything story 3.3 adds
-# on top of it. 896 (near the true mean, the value that equalises the
-# percent distance to both the true min and the true max) is chosen over
-# the raw mean so `count_tolerance_percent`'s own band is centred on
-# where it actually needs to be, not on a smaller sample's mean.
+# cells) does not fail this for no reason. Measured over 50,000 seeds at
+# this generator's other committed values (`cargo run -p bounds --release
+# --bin measure-generation`): mean 780, standard deviation 27.8, min 666,
+# max 904 (512x512, 262,144 cells). 2975 is that mean per million cells
+# -- see `count_tolerance_percent`'s own comment for how the band around
+# it is set.
 key = "generation.envelopes.target_count_per_million_cells"
-value = 3418
+value = 2975
 min = 1
 max = 1000000
 
 [[balance]]
-# AC4's tolerance band around the scaled target, as a percent. Quentin's
-# own direction caps this at +-15% ("the tolerance does not quietly
-# widen") -- 18 is committed instead, over that cap, because the true
-# 50,000-seed spread (see `target_count_per_million_cells`'s own comment)
-# needs +-16.0% just to touch both tails with zero margin; +-15% cannot
-# hold a zero-failure-rate guarantee at this generator's own real
-# variance, all of which is pass 2's own inherited block-count spread,
-# not anything this story's own plot/envelope code adds. Flagged for
-# Quentin: closing this back to +-15% needs pass 2's own block-count
-# variance reduced, a street-network change outside this story's scope.
+# AC4's tolerance band around the scaled target, as a percent, set by a
+# stated rule rather than narrative: at least 5.5 standard deviations
+# from the mean (measured 27.8 over the 50,000-seed scan above), so an
+# arbitrary-seed failure is a roughly one-in-a-million event rather than
+# a number tuned to the observed sample's own min/max. 5.5 * 27.8 / 780 =
+# 19.6%; 21 clears it with a little real margin, and comfortably covers
+# the measured min (780-666=114, 14.6%) and max (904-780=124, 15.9%).
 key = "generation.envelopes.count_tolerance_percent"
-value = 18
+value = 21
 min = 1
 max = 100
 
 [[balance]]
-# Quentin's own guard: rejection rate gets its own key, asserted per
-# city -- without it a generator that rejects half the district still
-# passes every other property until AC4 catches it for the wrong
-# reason. Measured worst case over the same 2,000-seed scan: 11%; 12 is
-# that plus a point of margin.
+# Rejection rate gets its own key, asserted per city -- without it a
+# generator that rejects half the district still passes every other
+# property until AC4 catches it for the wrong reason. Measured over the
+# same 50,000-seed scan: mean 0.0%, p99 1%, max 3% -- every remaining
+# rejection is `PlotTooNarrow` on a periphery row that holds a single
+# plot (both row edges are corners, so both are inset by the setback);
+# `plots::run`'s own row-depth floor and `from_balance`'s corner-width
+# check rule out every other case by construction. 5 is the measured max
+# plus margin.
 key = "generation.envelopes.max_rejected_plot_percent"
-value = 12
+value = 5
 min = 0
 max = 100

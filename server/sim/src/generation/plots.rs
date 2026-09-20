@@ -2,9 +2,7 @@
 //! block (pass 2's own output, blocks and their [`super::block_sides`]
 //! frontage) plus the land-use field (pass 1, for density and use) and
 //! cuts each block's own street-abutting faces into individual plots.
-//! Reads density and land-use mix, per Tim's signature amendment
-//! (`super`'s own module doc comment): a pass now takes every earlier
-//! pass's output it actually needs, not only its immediate predecessor's.
+//! Reads density and land-use mix.
 //!
 //! **Frontage is never re-derived.** A plot fronts a street iff it shares
 //! at least `generation.plots.frontage_min_cells` of *edge length* with a
@@ -14,51 +12,63 @@
 //! `StreetNetwork::edges` per block.
 //!
 //! **Cutting, not packing.** Each block's own street-abutting faces (in
-//! [`FACE_PRIORITY`] order) are cut into a depth-`plot_row_depth_cells`
-//! strip each; a strip's own row length is filled with a small rhythm of
-//! 2-3 module widths (drawn once per block face, cycled end to end -- a
-//! terrace, never a fresh random width per plot, Artie's direction), the
+//! [`FACE_PRIORITY`] order) are cut into a row each, depth chosen per
+//! [`axis_rows`]: two opposing abutting faces meet at the block's own
+//! mid-line (remainder 0) up to `plot_row_depth_cells`; past that ceiling,
+//! or on a single-sided axis whose own far side is not a real building
+//! depth away, the leftover becomes an explicit `open` core once it
+//! exceeds `plot_max_core_depth_cells` (never silent). A face is only
+//! ever cut into real, non-`open` plots when its own row clears its land
+//! use's minimum usable depth plus the block's own setback -- a row that
+//! cannot is never created at all, so a non-`open` plot is never
+//! statically unbuildable. A strip's own row length is filled with a
+//! small rhythm of 2-3 module widths (drawn once per block face, cycled
+//! end to end -- a terrace, never a fresh random width per plot), the
 //! final module absorbing the remainder so the row is covered exactly.
 //! Processing a face claims the *full* extent of what remains, including
 //! any corner a later face's own row would otherwise have reached, so the
-//! earlier face in [`FACE_PRIORITY`] gets the wider, corner-inclusive row
-//! (Artie's own "corner plots are cut first... are the largest"). No
-//! rejection-sampling or retry loop anywhere: every abutting face always
-//! yields at least one plot (an `open` one when its own strip cannot hold
-//! a real rhythm module), so generation stays total and bounded.
+//! earlier face in [`FACE_PRIORITY`] gets the wider, corner-inclusive row.
+//! No rejection-sampling or retry loop anywhere, so generation stays
+//! total and bounded.
 //!
-//! **Plots need not tile their block** (Tim's own simpler contract): they
-//! are always disjoint and always inside their own block, but a deep
-//! block's own core, left after every abutting face has cut its own row,
-//! is simply unplotted remainder -- [`PlotMap::remainder_cells`] returns
-//! it, never modelled as a `Plot`/yard type of its own. A block with no
-//! street frontage at all (a sliver block, Artie's own named case) gets
-//! one whole-block `open` plot instead of a landlocked building.
+//! **No silent orphan land beyond a stated ceiling.** A block with no
+//! street frontage at all gets one whole-block `open` plot; a block core
+//! left over past `plot_max_core_depth_cells` becomes one explicit `open`
+//! plot (`front: None` -- it fronts no single street), recorded and drawn
+//! distinctly in the evidence, never left as unaccounted remainder. A
+//! leftover at or under that ceiling stays unplotted remainder
+//! ([`PlotMap::remainder_cells`]), never modelled as a `Plot`/yard type of
+//! its own -- small enough not to read as a void.
 //!
 //! The build line and any front-garden setback are an *envelope* (pass 4)
 //! concern, applied when a footprint is placed inside its own plot -- a
-//! plot's own bounds already include that margin as part of its own land
-//! (Artie's direction: "a front-garden strip", part of the property, not
-//! public land).
+//! plot's own bounds already include that margin as part of its own land.
+//!
+//! Each block seeds its own RNG stream from its own bounds
+//! ([`super::rect_seed_key`]), never from its position in `streets::
+//! blocks()` -- adding or moving an unrelated block never reshuffles this
+//! one's own draws (`inv_generation_block_plots_independent_of_other_
+//! blocks` in `server/sim/tests/invariants.rs`).
 
 use super::land_use::LandUseMap;
 use super::streets::{Block, Side, StreetNetwork, block_sides};
-use super::{GenerationConfig, LandUse, SiteBounds, block_land_use};
+use super::{GenerationConfig, LandUse, SiteBounds, block_land_use, rect_seed_key};
 use crate::rng::{Rng, seed_from_ids};
 use crate::world::Rect;
 
 pub const PASS_ID: u64 = super::PASS_PLOT_SUBDIVISION;
 
-/// One plot: a sub-rect of its own block, always inside it, front-facing
-/// [`Side`] recorded so pass 4's entrance always opens onto it. `open` is
-/// Artie's own explicit fallback -- a plot this pass could not usefully
-/// cut into a real building lot (a sliver block, or a face too narrow for
-/// even one rhythm module) rather than a landlocked or missing one.
+/// One plot: a sub-rect of its own block, always inside it. `front` is
+/// the street-abutting side this plot's own row was cut from -- `None`
+/// for an `open` plot that fronts no single street (a sliver block, or an
+/// explicit leftover core), `Some` otherwise, always. `open` is the
+/// explicit fallback for land this pass could not usefully cut into a
+/// real building lot, never a landlocked or silently missing plot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Plot {
     pub bounds: Rect,
     pub block: u32,
-    pub front: Side,
+    pub front: Option<Side>,
     pub land_use: LandUse,
     pub density: i32,
     pub open: bool,
@@ -92,30 +102,33 @@ impl PlotMap {
         &self.plots
     }
 
-    /// AC1: every plot (an `open` one exempted -- it owns no single
-    /// street-abutting *frontage strip* of its own, its whole block's own
-    /// [`super::Sides`] already stands for it) whose own `front` edge
-    /// either does not sit on a street-abutting side of its own block at
-    /// all, or shares under `frontage_min_cells` of edge length with it
-    /// (corner-point contact included) -- empty over any real generator
-    /// output, since this pass only ever cuts a plot from a street-
-    /// abutting strip.
+    /// AC1: every non-`open` plot (`open` ones are exempt -- they own no
+    /// single street-abutting *frontage strip* of their own) whose own
+    /// `front` is `None`, does not sit on a street-abutting side of its
+    /// own block, or shares under `frontage_min_cells` of edge length
+    /// with it (corner-point contact included) -- empty over any real
+    /// generator output, since this pass only ever cuts a non-`open` plot
+    /// from a street-abutting strip that clears the minimum.
     pub fn landlocked_plots(&self, blocks: &[Block], frontage_min_cells: i32) -> Vec<usize> {
         let mut out = Vec::new();
         for (i, p) in self.plots.iter().enumerate() {
             if p.open {
                 continue;
             }
+            let Some(front) = p.front else {
+                out.push(i);
+                continue;
+            };
             let Some(b) = blocks.get(p.block as usize) else {
                 out.push(i);
                 continue;
             };
             let sides = block_sides(b.bounds, self.site);
-            if !sides.get(p.front) {
+            if !sides.get(front) {
                 out.push(i);
                 continue;
             }
-            let shared = shared_edge_length(p.bounds, b.bounds, p.front);
+            let shared = shared_edge_length(p.bounds, b.bounds, front);
             if shared < frontage_min_cells as i64 {
                 out.push(i);
             }
@@ -123,9 +136,8 @@ impl PlotMap {
         out
     }
 
-    /// AC1's own tiling half, Tim's simpler contract (this module's own
-    /// doc comment): `block`'s own area minus the summed area of its own
-    /// plots -- always `>= 0` when every plot is inside its own block and
+    /// `block`'s own area minus the summed area of its own plots --
+    /// always `>= 0` when every plot is inside its own block and
     /// mutually disjoint, the explicit account for land this pass leaves
     /// unplotted rather than a silent gap. `None` if `block_index` names
     /// no real block.
@@ -139,6 +151,56 @@ impl PlotMap {
             .map(|p| p.bounds.width() * p.bounds.height())
             .sum();
         Some(block_area - plot_area)
+    }
+
+    /// The percent of all plots in this district that are `open` -- an
+    /// unbounded escape hatch otherwise (a generator could mark every
+    /// awkward plot `open` and still pass every other AC1 property).
+    /// `0` for an empty map.
+    pub fn open_count_percent(&self) -> i64 {
+        if self.plots.is_empty() {
+            return 0;
+        }
+        let open = self.plots.iter().filter(|p| p.open).count() as i64;
+        open * 100 / self.plots.len() as i64
+    }
+
+    /// The same ceiling's own area half: `open` plots can be individually
+    /// rare but each cover a large share of the district's own plotted
+    /// land. `0` if no plot has any area at all.
+    pub fn open_area_percent(&self) -> i64 {
+        let total: i64 = self
+            .plots
+            .iter()
+            .map(|p| p.bounds.width() * p.bounds.height())
+            .sum();
+        if total == 0 {
+            return 0;
+        }
+        let open: i64 = self
+            .plots
+            .iter()
+            .filter(|p| p.open)
+            .map(|p| p.bounds.width() * p.bounds.height())
+            .sum();
+        open * 100 / total
+    }
+
+    /// The percent of every block's own summed area that belongs to no
+    /// plot at all (the citywide sum of [`Self::remainder_cells`]) -- the
+    /// bound that keeps a deep block's own small, silent leftover from
+    /// growing into a district-wide void nothing ever checks.
+    pub fn unplotted_percent(&self, blocks: &[Block]) -> i64 {
+        let total_block_area: i64 = blocks.iter().map(|b| b.bounds.width() * b.bounds.height()).sum();
+        if total_block_area == 0 {
+            return 0;
+        }
+        let total_plot_area: i64 = self
+            .plots
+            .iter()
+            .map(|p| p.bounds.width() * p.bounds.height())
+            .sum();
+        (total_block_area - total_plot_area).max(0) * 100 / total_block_area
     }
 }
 
@@ -161,19 +223,18 @@ fn shared_edge_length(plot: Rect, block: Rect, side: Side) -> i64 {
 }
 
 /// The fixed priority order a block's own street-abutting faces are cut
-/// in -- south first (Artie's own tileset note: a south-facing front
-/// shows its facade to the camera), then north, then east, then west.
-/// Processing a face claims the full extent of `remaining` on its own
-/// axis at that moment, including any corner a later face's own row
-/// would otherwise have reached, so the earlier face here gets the
-/// wider, corner-inclusive row (Artie's own "corner plots are cut
-/// first... are the largest plots on the block").
+/// in -- south first (a south-facing front shows its facade to the
+/// camera), then north, then east, then west, the same order regardless
+/// of street tier. Processing a face claims the full extent of
+/// `remaining` on its own axis at that moment, including any corner a
+/// later face's own row would otherwise have reached, so the earlier
+/// face here gets the wider, corner-inclusive row.
 pub const FACE_PRIORITY: [Side; 4] = [Side::South, Side::North, Side::East, Side::West];
 
 /// An algorithm shape, not tunable content (the same precedent
 /// `streets::DETOUR_SAMPLE_MAX_NODES` sets): a rhythm of 2-3 module
-/// widths, never a fresh random width per plot (Artie's direction: "a
-/// terrace is a repeated module").
+/// widths, never a fresh random width per plot -- a terrace is a
+/// repeated module.
 const RHYTHM_MODULE_MIN: u32 = 2;
 const RHYTHM_MODULE_MAX: u32 = 3;
 
@@ -309,12 +370,53 @@ fn rhythm_plots(
     out
 }
 
+/// The depth given to each of two opposing faces on one axis (`dim` world
+/// cells long overall), `a` the [`FACE_PRIORITY`]-first of the pair
+/// (South of the North/South pair, East of the East/West pair). `target`
+/// is the land use's own row-depth ceiling; `min_needed` is the least
+/// depth a row must clear to ever hold that use's own minimum envelope
+/// (interior plus wall ring plus the block's own setback) -- a depth
+/// under this is never handed to a real, non-`open` plot, by
+/// construction, so a statically unbuildable plot can never be created.
+///
+/// Two abutting faces meet at the block's own mid-line, remainder 0, as
+/// long as `target` reaches it (`dim / 2 <= target`); past that, each
+/// gets exactly `target` and the leftover in between is reported so the
+/// caller can expose it once it grows past `plot_max_core_depth_cells`
+/// (never silently). A single abutting face on this axis gets up to
+/// `target`, the rest of `dim` reported the same way. If even the
+/// available depth cannot clear `min_needed`, that side gets no row at
+/// all (`0`) -- its own leftover then spans the whole of `dim`.
+fn axis_rows(dim: i64, has_a: bool, has_b: bool, target: i32, min_needed: i32) -> (i32, i32) {
+    let dim = dim.max(0);
+    let one_sided = |has: bool| -> i32 {
+        if !has {
+            return 0;
+        }
+        let depth = (target as i64).min(dim) as i32;
+        if depth >= min_needed { depth } else { 0 }
+    };
+    match (has_a, has_b) {
+        (false, false) => (0, 0),
+        (true, false) => (one_sided(true), 0),
+        (false, true) => (0, one_sided(true)),
+        (true, true) => {
+            let each = (target as i64).min(dim / 2) as i32;
+            if each >= min_needed {
+                (each, each)
+            } else {
+                (one_sided(true), 0)
+            }
+        }
+    }
+}
+
 /// Runs pass 3: for each of pass 2's own blocks, resolves its land use
 /// (via [`super::block_land_use`], never a second majority computation)
 /// and density once, then cuts every street-abutting face
-/// ([`super::block_sides`]) into a rhythm of plots. Each block seeds its
-/// own RNG stream from `(pass_seed, block_index)`, so one block's own
-/// draw count never reshuffles another's.
+/// ([`super::block_sides`]) into a rhythm of plots, per [`axis_rows`].
+/// Each block seeds its own RNG stream from its own bounds
+/// ([`rect_seed_key`]), never from its position in `streets.blocks()`.
 pub fn run(
     city_seed: u64,
     land_use: &LandUseMap,
@@ -334,17 +436,16 @@ pub fn run(
             .at_world(sample_x, sample_y)
             .map_or(cfg.density_min, |c| c.density);
 
-        let mut rng = Rng::new(seed_from_ids(pass_seed, block_index as u64));
+        let mut rng = Rng::new(seed_from_ids(pass_seed, rect_seed_key(block.bounds)));
         let sides = block_sides(block.bounds, site);
 
         if !sides.any() {
-            // Artie's own named sliver-block case: no face fronts a
-            // street at all -- one explicit open plot, never a
-            // landlocked building.
+            // A sliver block: no face fronts a street at all -- one
+            // explicit open plot, never a landlocked building.
             plots.push(Plot {
                 bounds: block.bounds,
                 block: block_index,
-                front: Side::South,
+                front: None,
                 land_use: use_,
                 density,
                 open: true,
@@ -355,14 +456,38 @@ pub fn run(
         let width_min = cfg.plot_width_min_cells[use_ as usize];
         let width_max = cfg.plot_width_max_cells[use_ as usize];
         let row_depth = cfg.plot_row_depth_cells[use_ as usize];
+        let limits = cfg.envelope_limits(use_);
+        let min_needed = limits.min_depth_cells + cfg.setback_cells(density);
+
+        let (south_depth, north_depth) = axis_rows(
+            block.bounds.height(),
+            sides.south,
+            sides.north,
+            row_depth,
+            min_needed,
+        );
+        let (east_depth, west_depth) = axis_rows(
+            block.bounds.width(),
+            sides.east,
+            sides.west,
+            row_depth,
+            min_needed,
+        );
+        let depth_for = |side: Side| match side {
+            Side::South => south_depth,
+            Side::North => north_depth,
+            Side::East => east_depth,
+            Side::West => west_depth,
+        };
 
         let mut remaining = block.bounds;
         let mut any_placed = false;
         for &side in FACE_PRIORITY.iter() {
-            if !sides.get(side) {
+            let depth = depth_for(side);
+            if depth <= 0 {
                 continue;
             }
-            let Some((strip, rest)) = cut_strip(remaining, side, row_depth) else {
+            let Some((strip, rest)) = cut_strip(remaining, side, depth) else {
                 continue;
             };
             let row_len = match side {
@@ -373,15 +498,14 @@ pub fn run(
                 // This face's own row -- often a thin leftover once an
                 // earlier face in `FACE_PRIORITY` has already claimed the
                 // corner -- cannot hold even one rhythm module: an
-                // explicit open plot (Artie's own "whole face ... cannot
-                // hold a single building" fallback) rather than a
-                // landlocked sliver or land dropped silently. `open`
-                // plots are exempt from `landlocked_plots`.
+                // explicit open plot rather than a landlocked sliver or
+                // land dropped silently. `open` plots are exempt from
+                // `landlocked_plots`.
                 if strip.is_valid() {
                     plots.push(Plot {
                         bounds: strip,
                         block: block_index,
-                        front: side,
+                        front: Some(side),
                         land_use: use_,
                         density,
                         open: true,
@@ -398,7 +522,7 @@ pub fn run(
                     plots.push(Plot {
                         bounds,
                         block: block_index,
-                        front: side,
+                        front: Some(side),
                         land_use: use_,
                         density,
                         open: false,
@@ -408,19 +532,34 @@ pub fn run(
             }
             remaining = rest;
         }
+
+        // The core left after every abutting face has cut its own row:
+        // an explicit, recorded open plot once it exceeds the stated
+        // maximum yard depth on either axis, never a silent void.
+        if remaining.is_valid()
+            && (remaining.width() > cfg.plot_max_core_depth_cells as i64
+                || remaining.height() > cfg.plot_max_core_depth_cells as i64)
+        {
+            plots.push(Plot {
+                bounds: remaining,
+                block: block_index,
+                front: None,
+                land_use: use_,
+                density,
+                open: true,
+            });
+            any_placed = true;
+        }
+
         if !any_placed {
-            // Unreachable at the committed config (every abutting face's
-            // own row clears `width_min`) -- kept for totality against an
-            // arbitrary/degenerate config: a whole-block open plot rather
-            // than a block with no plot at all.
-            let fallback_side = FACE_PRIORITY
-                .into_iter()
-                .find(|&s| sides.get(s))
-                .expect("sides.any() is true, so at least one FACE_PRIORITY entry is set");
+            // Totality fallback against a degenerate config where no
+            // axis could clear even one row and the leftover core itself
+            // never exceeded the yard-depth ceiling: a whole-block open
+            // plot rather than a block with no plot at all.
             plots.push(Plot {
                 bounds: block.bounds,
                 block: block_index,
-                front: fallback_side,
+                front: None,
                 land_use: use_,
                 density,
                 open: true,
@@ -548,7 +687,7 @@ mod tests {
         Plot {
             bounds,
             block: 0,
-            front,
+            front: Some(front),
             land_use: LandUse::Residential,
             density: 50,
             open: false,
@@ -609,10 +748,9 @@ mod tests {
 
     #[test]
     fn landlocked_plots_accepts_a_plot_straddling_the_block_edge_as_landlocked_too() {
-        // "Straddling the block edge" (Quentin's own named fixture): the
-        // plot's own front coordinate does not match the block's real
-        // edge at all (it sits one cell inside), so it shares nothing --
-        // reported the same as an interior plot.
+        // The plot's own front coordinate does not match the block's
+        // real edge at all (it sits one cell inside), so it shares
+        // nothing -- reported the same as an interior plot.
         let plot = fixture_plot(
             Rect {
                 x0: 0,

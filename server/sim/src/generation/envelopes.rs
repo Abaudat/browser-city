@@ -1,10 +1,9 @@
 //! Pass 4 (FR110, story 3.3): the building envelope. Receives pass 3's own
-//! plots; hands down each non-`open` plot's own footprint (an abstract
-//! rect -- no wall cells, no entrance cell, no `ObjectDef` yet: the sealed
-//! shell lands with the story that first rasterises, `front` is what it
-//! will need, Tim's own stated assumption). Reads density (the party-
-//! wall/side-gap and build-line step) and each plot's own land use (the
-//! per-class minimum usable interior).
+//! plots; hands down each non-`open` plot's own footprint (an abstract rect --
+//! no wall cells, no entrance cell, no `ObjectDef` yet: the sealed shell
+//! lands with the story that first rasterises, `front` is what it will
+//! need). Reads density (the party-wall/side-gap and build-line step)
+//! and each plot's own land use (the per-class minimum usable interior).
 //!
 //! **Rejection, never shrinking.** A plot too small for its own class's
 //! minimum usable interior yields [`EnvelopeOutcome::Rejected`] -- a typed
@@ -12,42 +11,50 @@
 //! `Option::None` that disappears and never a footprint clamped below the
 //! minimum. The minimum is checked against the *interior net* (the
 //! footprint minus the wall ring on both axes), computed once in
-//! [`super::GenerationConfig::envelope_limits`].
+//! [`super::GenerationConfig::envelope_limits`]. `plots::run`'s own row
+//! depths already keep any real (non-`open`) plot at or above this
+//! minimum, so this is now a defensive guard against a hand-built
+//! fixture, not a path real generator output reaches.
+//!
+//! **Fill, then trim -- never a uniform draw down to the minimum.** A
+//! footprint's own along-face size always fills its plot's full
+//! available width exactly (variety there comes only from the plot
+//! rhythm's own module widths, never from shaving the frontage); its
+//! depth fills the plot's own available depth minus a small, keyed random
+//! trim (`generation.envelopes.size_trim_max_cells`), never below the
+//! class minimum.
 //!
 //! **The build line.** Every envelope on the same plot side of the same
 //! block sits the same `setback` cells behind that side's own true
 //! street-facing edge -- one shared value per block (density-derived, a
-//! step function of `generation.plots.high_density_threshold`), so every
-//! block face reads as one continuous street wall, never a building
-//! standing proud of or behind its neighbours (Artie's direction).
+//! step function of `generation.plots.high_density_threshold`). A corner
+//! plot -- one whose own row-axis edge coincides with its own *row*'s
+//! edge (the union of every plot sharing its block and front; see
+//! [`row_axis_is_corner`]), not necessarily its block's raw bounding
+//! rect -- insets that edge by the same `setback` instead of the row
+//! gap, so its footprint sits flush to both streets' own build lines,
+//! not just its own front's.
 //!
 //! **Side gaps are 0 or `side_gap_periphery_cells`, never 1.** Below the
 //! density threshold, every footprint insets by half that gap from its
-//! own plot's row-axis edges, so two neighbouring buildings end up the
-//! full gap apart; at or above it, the inset is 0 (party walls, footprint
-//! flush with its own plot's edges).
+//! own plot's row-axis edges (unless that edge is a corner, above); at or
+//! above it, the inset is 0 (party walls, footprint flush with its own
+//! plot's edges).
 //!
 //! **Building count fails generation.** [`run`] returns
 //! [`super::GenerationError::BuildingCountOutOfTolerance`] when the
 //! realised placed-envelope count, over the whole district, sits outside
-//! `[min, max]` derived from `generation.envelopes.target_count_per_
-//! million_cells` scaled by the real site area -- a seed that trips this
-//! is a world that fails to create, never a silently thin or overcrowded
-//! city.
+//! [`super::GenerationConfig::building_count_band`] -- a seed that trips
+//! this is a world that fails to create, never a silently thin or
+//! overcrowded city.
 
-use super::plots::PlotMap;
+use super::plots::{Plot, PlotMap};
 use super::streets::Side;
-use super::{GenerationConfig, GenerationError, LandUse};
+use super::{GenerationConfig, GenerationError, LandUse, rect_seed_key};
 use crate::rng::{Rng, seed_from_ids};
 use crate::world::Rect;
 
 pub const PASS_ID: u64 = super::PASS_BUILDING_ENVELOPE;
-
-/// The intended building class an envelope is sized for -- at this pass,
-/// exactly its own plot's land use: pass 5 (building type) has not run
-/// yet, so "intended type" is the plot's land use (Tim's own stated
-/// assumption).
-pub type EnvelopeClass = LandUse;
 
 /// One placed envelope: an abstract outer-rectangle footprint, always
 /// inside its own plot, `front` copied from that plot (never re-derived)
@@ -76,9 +83,8 @@ impl Envelope {
     }
 }
 
-/// Why a plot could not hold its own class's minimum envelope -- Quentin's
-/// direction: "hands the envelope pass a plot one cell too small on each
-/// axis in turn", checked in this order (narrow before shallow).
+/// Why a plot could not hold its own class's minimum envelope, checked in
+/// this order (narrow before shallow).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RejectReason {
     PlotTooNarrow,
@@ -86,13 +92,13 @@ pub enum RejectReason {
 }
 
 /// Every non-`open` plot's own outcome -- a typed result, never an
-/// `Option::None` that disappears (Quentin's direction).
+/// `Option::None` that disappears.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EnvelopeOutcome {
     Placed(Envelope),
     Rejected {
         plot: u32,
-        class: EnvelopeClass,
+        class: LandUse,
         reason: RejectReason,
     },
 }
@@ -136,11 +142,10 @@ impl EnvelopeMap {
             .count() as i64
     }
 
-    /// Quentin's own guard: rejection rate gets its own key, asserted per
-    /// city -- without it a generator that rejects half the district
-    /// still passes every other property until AC4 catches it for the
-    /// wrong reason. `0` when no plot attempted an envelope at all
-    /// (nothing to reject).
+    /// Rejection rate gets its own key, asserted per city -- without it a
+    /// generator that rejects half the district still passes every other
+    /// property until AC4 catches it for the wrong reason. `0` when no
+    /// plot attempted an envelope at all (nothing to reject).
     pub fn rejected_percent(&self) -> i64 {
         if self.outcomes.is_empty() {
             return 0;
@@ -163,64 +168,125 @@ fn depth_extent(bounds: Rect, front: Side) -> i64 {
     }
 }
 
-/// The total side gap between two neighbouring envelopes on a block below
-/// `plot_high_density_threshold` -- 0 at or above it (party walls),
-/// Artie's direction: "0 or at least 2 cells, never 1".
-fn side_gap_for(density: i32, cfg: &GenerationConfig) -> i32 {
-    if density >= cfg.plot_high_density_threshold {
-        0
-    } else {
-        cfg.envelope_side_gap_periphery_cells
+/// Whether each of a plot's own two row-edges is the outer edge of its
+/// own *row* -- `row_bounds`, the row-axis span this plot's own row of
+/// same-front plots tiles together (plots.rs's [`FACE_PRIORITY`] cut
+/// order: a North or South row always spans its own block's own full
+/// width, since neither face's own cut ever shrinks the other's row
+/// axis, but an East or West row spans only the strip left after South
+/// and North have each already taken theirs -- so a plot flush with its
+/// own *block*'s raw bounding rect on that axis is not always the same
+/// plot as one flush with its own *row*'s). An edge flush with its own
+/// row's own bound is a corner, flush to that street's own build line
+/// too; any other edge is shared with another same-front plot and must
+/// stay tight. A plain inset *value* cannot carry this distinction on
+/// its own: at or above the density threshold both `setback` and
+/// `half_gap` are 0, so a corner and a neighbour edge become numerically
+/// identical -- [`anchored_span`] needs the boolean, not the (possibly
+/// zero) inset.
+fn row_axis_is_corner(plot_bounds: Rect, row_bounds: Rect, front: Side) -> (bool, bool) {
+    match front {
+        Side::North | Side::South => (
+            plot_bounds.x0 == row_bounds.x0,
+            plot_bounds.x1 == row_bounds.x1,
+        ),
+        Side::East | Side::West => (
+            plot_bounds.y0 == row_bounds.y0,
+            plot_bounds.y1 == row_bounds.y1,
+        ),
     }
 }
 
-/// The one shared build-line setback every envelope on a below-threshold
-/// block sits behind its own plot's true street-facing edge -- Artie's
-/// direction: "at high density the setback is 0... toward the periphery
-/// ... one shared setback of 2-4 cells".
-fn setback_for(density: i32, cfg: &GenerationConfig) -> i32 {
-    if density >= cfg.plot_high_density_threshold {
-        0
-    } else {
-        cfg.plot_setback_periphery_cells
-    }
+/// The row-axis inset on each of a plot's own two row-edges: `setback`
+/// on a corner edge (see [`row_axis_is_corner`]), `half_gap` otherwise
+/// (an ordinary neighbour-facing edge).
+fn row_axis_insets(plot_bounds: Rect, row_bounds: Rect, front: Side, half_gap: i32, setback: i32) -> (i32, i32) {
+    let (corner_lo, corner_hi) = row_axis_is_corner(plot_bounds, row_bounds, front);
+    (
+        if corner_lo { setback } else { half_gap },
+        if corner_hi { setback } else { half_gap },
+    )
 }
 
-/// Clamps `[a0, a0+len)` to fit inside `[lo, hi]` without changing `len`
-/// -- the footprint's own row-axis placement is centred first, then
-/// nudged back inside its own inset range by this if rounding pushed it
-/// out by a cell.
-fn clamp_span(a0: i32, len: i32, lo: i32, hi: i32) -> i32 {
-    if a0 < lo {
-        lo
-    } else if a0 + len > hi {
-        hi - len
-    } else {
-        a0
+/// The row-axis span every plot sharing a `(block, front)` tiles
+/// together (see [`row_axis_is_corner`]) -- the union of their own row-
+/// axis extents, keyed by every `(block, front)` pair `plots` actually
+/// has. A `BTreeMap`, not a `HashMap`: this is folded once per whole
+/// `PlotMap` and looked up per plot, never iterated, but NFR28 rules out
+/// an unordered collection on principle everywhere in this module.
+pub fn row_bounds_by_block_front(plots: &[Plot]) -> std::collections::BTreeMap<(u32, Side), Rect> {
+    let mut row_bounds: std::collections::BTreeMap<(u32, Side), Rect> = std::collections::BTreeMap::new();
+    for p in plots {
+        let Some(front) = p.front else { continue };
+        row_bounds
+            .entry((p.block, front))
+            .and_modify(|acc| {
+                *acc = match front {
+                    Side::North | Side::South => Rect {
+                        x0: acc.x0.min(p.bounds.x0),
+                        x1: acc.x1.max(p.bounds.x1),
+                        ..*acc
+                    },
+                    Side::East | Side::West => Rect {
+                        y0: acc.y0.min(p.bounds.y0),
+                        y1: acc.y1.max(p.bounds.y1),
+                        ..*acc
+                    },
+                }
+            })
+            .or_insert(p.bounds);
+    }
+    row_bounds
+}
+
+/// Positions a `len`-long span inside `[lo, hi]`, anchored flush to
+/// whichever side is *not* a corner (`corner_lo`/`corner_hi`, from
+/// [`row_axis_is_corner`]) -- a real neighbour-facing edge never carries
+/// the slack a capped, oversized plot (a corner or a rhythm-remainder
+/// plot wider than `max_width_cells`) leaves once its footprint is
+/// smaller than the plot's own available span; that slack goes to the
+/// corner/street edge instead, where it reads as extra frontage margin,
+/// never a 1-cell slit toward a real neighbour. A plain inset-value
+/// comparison cannot make this call: at or above the density threshold
+/// both `setback` and `half_gap` are 0, so a corner and a neighbour edge
+/// are numerically identical even though only one of them may ever carry
+/// slack. Centred only when both edges are corners or both are
+/// neighbours (an ordinary interior plot is never capped in practice,
+/// since `from_balance` refuses a class's own `max_width_cells` over
+/// `envelopes.max_width_cells`).
+fn anchored_span(len: i32, lo: i32, hi: i32, corner_lo: bool, corner_hi: bool) -> i32 {
+    let avail = hi - lo;
+    if len >= avail {
+        return lo;
+    }
+    match (corner_lo, corner_hi) {
+        (false, true) => lo,
+        (true, false) => hi - len,
+        _ => (lo + hi) / 2 - len / 2,
     }
 }
 
 /// Builds the outer-rectangle footprint inside `plot_bounds`: `along_face`
-/// centred on the row axis (inset by `half_gap` from each of `plot_
-/// bounds`' own row-axis edges), `depth` measured inward from `front`'s
-/// own true street-facing edge, offset by `setback`.
+/// anchored on the row axis by [`anchored_span`] (inset by [`row_axis_
+/// insets`] from each of `plot_bounds`' own row-axis edges), `depth`
+/// measured inward from `front`'s own true street-facing edge, offset by
+/// `setback`.
+#[allow(clippy::too_many_arguments)]
 fn build_footprint(
     plot_bounds: Rect,
+    row_bounds: Rect,
     front: Side,
     along_face: i32,
     depth: i32,
     half_gap: i32,
     setback: i32,
 ) -> Rect {
+    let (inset_lo, inset_hi) = row_axis_insets(plot_bounds, row_bounds, front, half_gap, setback);
+    let (corner_lo, corner_hi) = row_axis_is_corner(plot_bounds, row_bounds, front);
     match front {
         Side::North => {
-            let cx = ((plot_bounds.x0 + plot_bounds.x1) / 2) - along_face / 2;
-            let x0 = clamp_span(
-                cx,
-                along_face,
-                plot_bounds.x0 + half_gap,
-                plot_bounds.x1 - half_gap,
-            );
+            let (lo, hi) = (plot_bounds.x0 + inset_lo, plot_bounds.x1 - inset_hi);
+            let x0 = anchored_span(along_face, lo, hi, corner_lo, corner_hi);
             let y0 = plot_bounds.y0 + setback;
             Rect {
                 x0,
@@ -230,13 +296,8 @@ fn build_footprint(
             }
         }
         Side::South => {
-            let cx = ((plot_bounds.x0 + plot_bounds.x1) / 2) - along_face / 2;
-            let x0 = clamp_span(
-                cx,
-                along_face,
-                plot_bounds.x0 + half_gap,
-                plot_bounds.x1 - half_gap,
-            );
+            let (lo, hi) = (plot_bounds.x0 + inset_lo, plot_bounds.x1 - inset_hi);
+            let x0 = anchored_span(along_face, lo, hi, corner_lo, corner_hi);
             let y1 = plot_bounds.y1 - setback;
             Rect {
                 x0,
@@ -246,13 +307,8 @@ fn build_footprint(
             }
         }
         Side::West => {
-            let cy = ((plot_bounds.y0 + plot_bounds.y1) / 2) - along_face / 2;
-            let y0 = clamp_span(
-                cy,
-                along_face,
-                plot_bounds.y0 + half_gap,
-                plot_bounds.y1 - half_gap,
-            );
+            let (lo, hi) = (plot_bounds.y0 + inset_lo, plot_bounds.y1 - inset_hi);
+            let y0 = anchored_span(along_face, lo, hi, corner_lo, corner_hi);
             let x0 = plot_bounds.x0 + setback;
             Rect {
                 x0,
@@ -262,13 +318,8 @@ fn build_footprint(
             }
         }
         Side::East => {
-            let cy = ((plot_bounds.y0 + plot_bounds.y1) / 2) - along_face / 2;
-            let y0 = clamp_span(
-                cy,
-                along_face,
-                plot_bounds.y0 + half_gap,
-                plot_bounds.y1 - half_gap,
-            );
+            let (lo, hi) = (plot_bounds.y0 + inset_lo, plot_bounds.y1 - inset_hi);
+            let y0 = anchored_span(along_face, lo, hi, corner_lo, corner_hi);
             let x1 = plot_bounds.x1 - setback;
             Rect {
                 x0: x1 - depth,
@@ -284,20 +335,27 @@ fn build_footprint(
 /// geometry is decided, called by [`run`] for every non-`open` plot and
 /// directly by this module's own unit tests (never re-derived by them),
 /// so a fixture can pin the sizing/rejection logic without also having to
-/// satisfy AC4's whole-district count tolerance.
+/// satisfy AC4's whole-district count tolerance. `row_bounds` is this
+/// plot's own row's row-axis span (see [`row_axis_is_corner`]), for the
+/// corner build-line check.
 pub fn place_one(
-    plot: &super::plots::Plot,
+    plot: &Plot,
     plot_index: u32,
+    row_bounds: Rect,
     rng: &mut Rng,
     cfg: &GenerationConfig,
 ) -> EnvelopeOutcome {
+    let front = plot
+        .front
+        .expect("a non-open plot always has a front, by plots::run's own construction");
     let limits = cfg.envelope_limits(plot.land_use);
-    let half_gap = side_gap_for(plot.density, cfg) / 2;
-    let setback = setback_for(plot.density, cfg);
+    let half_gap = cfg.side_gap_cells(plot.density) / 2;
+    let setback = cfg.setback_cells(plot.density);
+    let (inset_lo, inset_hi) = row_axis_insets(plot.bounds, row_bounds, front, half_gap, setback);
 
-    let along_total = along_face_extent(plot.bounds, plot.front);
-    let depth_total = depth_extent(plot.bounds, plot.front);
-    let avail_along = along_total - 2 * half_gap as i64;
+    let along_total = along_face_extent(plot.bounds, front);
+    let depth_total = depth_extent(plot.bounds, front);
+    let avail_along = along_total - inset_lo as i64 - inset_hi as i64;
     let avail_depth = depth_total - setback as i64;
 
     if avail_along < limits.min_width_cells as i64 {
@@ -315,26 +373,26 @@ pub fn place_one(
         };
     }
 
-    let along_hi = avail_along.min(limits.max_width_cells as i64);
-    let along_lo = limits.min_width_cells as i64;
-    let footprint_along = along_lo
-        + if along_hi > along_lo {
-            (rng.next_u64() % (along_hi - along_lo + 1) as u64) as i64
-        } else {
-            0
-        };
-    let depth_hi = avail_depth.min(limits.max_depth_cells as i64);
-    let depth_lo = limits.min_depth_cells as i64;
-    let footprint_depth = depth_lo
-        + if depth_hi > depth_lo {
-            (rng.next_u64() % (depth_hi - depth_lo + 1) as u64) as i64
-        } else {
-            0
-        };
+    // The along-face size always fills what the plot makes available --
+    // never trimmed, never jittered smaller: side gaps and the build
+    // line are exact, by construction, never "exact plus jitter".
+    let footprint_along = avail_along.min(limits.max_width_cells as i64);
+
+    // Depth fills the same way, minus a small keyed trim for variety --
+    // never below the class minimum.
+    let depth_filled = avail_depth.min(limits.max_depth_cells as i64);
+    let trim_max = cfg.envelope_size_trim_max_cells as i64;
+    let trim = if trim_max > 0 {
+        (rng.next_u64() % (trim_max + 1) as u64) as i64
+    } else {
+        0
+    };
+    let footprint_depth = (depth_filled - trim).max(limits.min_depth_cells as i64);
 
     let footprint = build_footprint(
         plot.bounds,
-        plot.front,
+        row_bounds,
+        front,
         footprint_along as i32,
         footprint_depth as i32,
         half_gap,
@@ -343,49 +401,54 @@ pub fn place_one(
     EnvelopeOutcome::Placed(Envelope {
         plot: plot_index,
         footprint,
-        front: plot.front,
+        front,
     })
 }
 
-/// [`run`]'s own outcome-building half, lifted out so a test can exercise
-/// it directly (one `open` plot, a handful of plots) without also having
-/// to satisfy AC4's own whole-district count tolerance below. Every non-
-/// `open` plot gets exactly one [`EnvelopeOutcome`], via [`place_one`];
-/// each plot seeds its own RNG stream from `(pass_seed, plot_index)`, so
-/// one plot's own draw never reshuffles another's.
-fn build_outcomes(city_seed: u64, plots: &PlotMap, cfg: &GenerationConfig) -> Vec<EnvelopeOutcome> {
+/// [`run`]'s own outcome-building half, exposed so a checker can inspect
+/// every outcome independently of AC4's own whole-district count verdict
+/// below (an outlier city is still worth inspecting, not just the ones
+/// that clear tolerance). Every non-`open` plot gets exactly one
+/// [`EnvelopeOutcome`], via [`place_one`]; each plot seeds its own RNG
+/// stream from its own bounds ([`rect_seed_key`]), never from its
+/// position in `plots.plots()`. Each plot's own row bounds (see
+/// [`row_axis_is_corner`]) come from `plots` alone -- the union of every
+/// plot sharing its `(block, front)` -- never from a block's raw
+/// bounding rect, which an `East`/`West` row's own row axis need not
+/// match (plots.rs's own [`super::plots::FACE_PRIORITY`] cut order can
+/// shrink it).
+pub fn place_all(city_seed: u64, plots: &PlotMap, cfg: &GenerationConfig) -> EnvelopeMap {
     let pass_seed = seed_from_ids(city_seed, PASS_ID);
+    let row_bounds = row_bounds_by_block_front(plots.plots());
     let mut outcomes = Vec::new();
     for (i, p) in plots.plots().iter().enumerate() {
         if p.open {
             continue;
         }
         let plot_index = i as u32;
-        let mut rng = Rng::new(seed_from_ids(pass_seed, plot_index as u64));
-        outcomes.push(place_one(p, plot_index, &mut rng, cfg));
+        let front = p
+            .front
+            .expect("a non-open plot always has a front, by plots::run's own construction");
+        let bounds = row_bounds
+            .get(&(p.block, front))
+            .copied()
+            .unwrap_or(p.bounds);
+        let mut rng = Rng::new(seed_from_ids(pass_seed, rect_seed_key(p.bounds)));
+        outcomes.push(place_one(p, plot_index, bounds, &mut rng, cfg));
     }
-    outcomes
+    EnvelopeMap { outcomes }
 }
 
-/// Runs pass 4: [`build_outcomes`] for every non-`open` plot, then checks
-/// the realised placed-envelope count for this seed against AC4's own
-/// tolerance band -- `Err` outside it.
-pub fn run(
-    city_seed: u64,
-    plots: &PlotMap,
-    cfg: &GenerationConfig,
-) -> Result<EnvelopeMap, GenerationError> {
-    let map = EnvelopeMap {
-        outcomes: build_outcomes(city_seed, plots, cfg),
-    };
+/// Runs pass 4: [`place_all`], then checks the realised placed-envelope
+/// count for this seed against [`super::GenerationConfig::
+/// building_count_band`] -- `Err` outside it.
+pub fn run(city_seed: u64, plots: &PlotMap, cfg: &GenerationConfig) -> Result<EnvelopeMap, GenerationError> {
+    let map = place_all(city_seed, plots, cfg);
 
     let placed = map.placed_count();
     let site = plots.site();
     let site_cells = site.width() * site.height();
-    let target = (cfg.envelope_target_count_per_million_cells * site_cells) / 1_000_000;
-    let tolerance = cfg.envelope_count_tolerance_percent;
-    let min = target * (100 - tolerance) / 100;
-    let max = target * (100 + tolerance) / 100;
+    let (min, max) = cfg.building_count_band(site_cells);
     if placed < min || placed > max {
         return Err(GenerationError::BuildingCountOutOfTolerance {
             got: placed,
@@ -420,7 +483,7 @@ mod tests {
         plots_mod::Plot {
             bounds,
             block: 0,
-            front,
+            front: Some(front),
             land_use: use_,
             density,
             open,
@@ -436,6 +499,18 @@ mod tests {
         }
     }
 
+    /// A row bounds generous enough that `row_axis_insets` never treats
+    /// the fixture plot's own edges as a corner (its edges sit strictly
+    /// inside it, not flush with it).
+    fn loose_row_bounds() -> Rect {
+        Rect {
+            x0: -1000,
+            y0: -1000,
+            x1: 1000,
+            y1: 1000,
+        }
+    }
+
     #[test]
     fn run_is_deterministic_for_the_same_seed() {
         let c = cfg();
@@ -445,6 +520,35 @@ mod tests {
         let a = run(11, &pm, &c).unwrap();
         let b = run(11, &pm, &c).unwrap();
         assert_eq!(a.outcomes(), b.outcomes());
+    }
+
+    #[test]
+    fn an_envelope_placed_from_a_plot_alone_equals_the_one_placed_in_the_full_run() {
+        let c = cfg();
+        let lu = land_use::run(23, c.site(), &c).unwrap();
+        let net = streets::run(23, &lu, &c);
+        let pm = plots_mod::run(23, &lu, &net, &c);
+        let full = place_all(23, &pm, &c);
+
+        for (i, p) in pm.plots().iter().enumerate() {
+            if p.open {
+                continue;
+            }
+            let front = p.front.unwrap();
+            let bounds = row_bounds_by_block_front(pm.plots())[&(p.block, front)];
+            let pass_seed = seed_from_ids(23, PASS_ID);
+            let mut rng = Rng::new(seed_from_ids(pass_seed, rect_seed_key(p.bounds)));
+            let alone = place_one(p, i as u32, bounds, &mut rng, &c);
+            let in_full = full
+                .outcomes()
+                .iter()
+                .find(|o| match o {
+                    EnvelopeOutcome::Placed(e) => e.plot == i as u32,
+                    EnvelopeOutcome::Rejected { plot, .. } => *plot == i as u32,
+                })
+                .unwrap();
+            assert_eq!(alone, *in_full, "plot index {i}");
+        }
     }
 
     #[test]
@@ -459,7 +563,7 @@ mod tests {
         };
         let plot = fixture_plot(bounds, Side::South, LandUse::Residential, 90, false);
         let mut rng = Rng::new(1);
-        let outcome = place_one(&plot, 0, &mut rng, &c);
+        let outcome = place_one(&plot, 0, loose_row_bounds(), &mut rng, &c);
         assert!(matches!(
             outcome,
             EnvelopeOutcome::Rejected {
@@ -481,7 +585,7 @@ mod tests {
         };
         let plot = fixture_plot(bounds, Side::South, LandUse::Residential, 90, false);
         let mut rng = Rng::new(1);
-        let outcome = place_one(&plot, 0, &mut rng, &c);
+        let outcome = place_one(&plot, 0, loose_row_bounds(), &mut rng, &c);
         assert!(matches!(
             outcome,
             EnvelopeOutcome::Rejected {
@@ -506,7 +610,7 @@ mod tests {
         };
         let plot = fixture_plot(bounds, Side::South, LandUse::Residential, density, false);
         let mut rng = Rng::new(1);
-        match place_one(&plot, 0, &mut rng, &c) {
+        match place_one(&plot, 0, loose_row_bounds(), &mut rng, &c) {
             EnvelopeOutcome::Placed(e) => {
                 assert_eq!(e.along_face_cells(), limits.min_width_cells as i64);
                 assert_eq!(e.depth_cells(), limits.min_depth_cells as i64);
@@ -528,7 +632,7 @@ mod tests {
         };
         let plot = fixture_plot(bounds, Side::North, LandUse::Commercial, density, false);
         let mut rng = Rng::new(1);
-        match place_one(&plot, 0, &mut rng, &c) {
+        match place_one(&plot, 0, loose_row_bounds(), &mut rng, &c) {
             EnvelopeOutcome::Placed(e) => {
                 assert!(e.along_face_cells() >= limits.min_width_cells as i64);
                 assert!(e.along_face_cells() <= limits.max_width_cells as i64);
@@ -536,6 +640,39 @@ mod tests {
                 assert!(e.depth_cells() <= limits.max_depth_cells as i64);
             }
             EnvelopeOutcome::Rejected { .. } => panic!("a generous plot must fit"),
+        }
+    }
+
+    #[test]
+    fn a_high_density_plot_fills_its_full_along_face_width_exactly() {
+        // At or above the density threshold, the footprint's own
+        // along-face size is never smaller than the plot's own full
+        // width -- variety comes from the plot rhythm and depth alone,
+        // never from shaving the frontage.
+        let c = cfg();
+        let limits = c.envelope_limits(LandUse::Residential);
+        let width = limits.min_width_cells + 3;
+        let bounds = Rect {
+            x0: 0,
+            y0: 0,
+            x1: width,
+            y1: limits.max_depth_cells + 30,
+        };
+        let plot = fixture_plot(
+            bounds,
+            Side::South,
+            LandUse::Residential,
+            c.plot_high_density_threshold,
+            false,
+        );
+        for seed in 0u64..20 {
+            let mut rng = Rng::new(seed);
+            match place_one(&plot, 0, loose_row_bounds(), &mut rng, &c) {
+                EnvelopeOutcome::Placed(e) => {
+                    assert_eq!(e.along_face_cells(), width as i64, "seed {seed}");
+                }
+                EnvelopeOutcome::Rejected { .. } => panic!("seed {seed}: must fit"),
+            }
         }
     }
 
@@ -557,7 +694,7 @@ mod tests {
                 e.footprint,
                 p.bounds
             );
-            assert_eq!(e.front, p.front);
+            assert_eq!(Some(e.front), p.front);
         }
     }
 
@@ -576,8 +713,8 @@ mod tests {
             true,
         );
         let pm = plots_mod::PlotMap::test_fixture(site_512(), vec![plot]);
-        let outcomes = build_outcomes(1, &pm, &cfg());
-        assert!(outcomes.is_empty());
+        let map = place_all(1, &pm, &cfg());
+        assert!(map.outcomes().is_empty());
     }
 
     #[test]
@@ -651,6 +788,46 @@ mod tests {
         ));
     }
 
+    /// The tolerance guard's own boundary, `target * (100 +- tol) / 100`,
+    /// exercised exactly at `min-1`/`min`/`max`/`max+1` via a fixture
+    /// with an exact, known placed count -- never only against a
+    /// generated city whose count happens to land somewhere in the band.
+    #[test]
+    fn the_tolerance_boundary_is_exact_at_min_and_max() {
+        let mut c = cfg();
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 1000,
+            y1: 1000,
+        };
+        let site_cells = site.width() * site.height();
+        // Pick a target/tolerance that gives round, easy-to-hit numbers:
+        // target = 100, tolerance = 10% -> band [90, 110].
+        c.envelope_target_count_per_million_cells = 100 * 1_000_000 / site_cells;
+        c.envelope_count_tolerance_percent = 10;
+        let (min, max) = c.building_count_band(site_cells);
+
+        let limits = c.envelope_limits(LandUse::Residential);
+        let plot_bounds = |i: i32| Rect {
+            x0: i * 200,
+            y0: 0,
+            x1: i * 200 + limits.min_width_cells + 4,
+            y1: limits.min_depth_cells + 4,
+        };
+        let make_plots = |n: i64| -> plots_mod::PlotMap {
+            let plots = (0..n)
+                .map(|i| fixture_plot(plot_bounds(i as i32), Side::South, LandUse::Residential, c.plot_high_density_threshold, false))
+                .collect();
+            plots_mod::PlotMap::test_fixture(site, plots)
+        };
+
+        assert!(run(1, &make_plots(min - 1), &c).is_err(), "min-1 must fail");
+        assert!(run(1, &make_plots(min), &c).is_ok(), "min must pass");
+        assert!(run(1, &make_plots(max), &c).is_ok(), "max must pass");
+        assert!(run(1, &make_plots(max + 1), &c).is_err(), "max+1 must fail");
+    }
+
     #[test]
     fn run_succeeds_at_the_committed_config_on_a_handful_of_seeds() {
         let c = cfg();
@@ -663,3 +840,4 @@ mod tests {
         }
     }
 }
+

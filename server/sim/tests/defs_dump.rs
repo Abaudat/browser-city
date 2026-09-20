@@ -217,3 +217,4 @@ fn matches_the_shared_golden_both_parsers_are_checked_against() {
         "sim::generated::defs's own canonical dump moved out of sync with fixtures/defs-dump.v1.golden -- if this is a deliberate defs/ change, the client's own tests/unit/defs/dump-golden.test.ts must agree too"
     );
 }
+

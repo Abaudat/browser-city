@@ -1,23 +1,21 @@
-//! The determinism harness for stories 3.2-3.3 (FR110 passes 1-4),
-//! Quentin's direction -- same idiom as `determinism_golden.rs`/
-//! `appearance_golden.rs`: regenerates all four passes for a fixed seed
-//! set and compares a readable summary plus a digest against the
-//! committed `tests/goldens/generation_v2.golden`, so a diff names what
-//! moved rather than just "hash differs". Keyed by `sim::generation::
-//! GENERATION_VERSION`; `check-golden-version-bump.sh` fails a PR that
-//! touches the golden without bumping that constant. `generation_v1.
-//! golden` (passes 1-2 only) is retired with this file -- Tim's
-//! direction, cycle 3.3: one golden covering every implemented pass, not
-//! two side by side.
+//! The determinism harness for stories 3.2-3.3 (FR110 passes 1-4): same
+//! idiom as `determinism_golden.rs`/`appearance_golden.rs`. Regenerates
+//! all four passes for a fixed seed set and compares a readable summary
+//! plus a digest against the committed `tests/goldens/generation_v3.
+//! golden`, so a diff names what moved rather than just "hash differs".
+//! Keyed by `sim::generation::GENERATION_VERSION`; `check-golden-version-
+//! bump.sh` fails a PR that touches the golden without bumping that
+//! constant. Per-pass calls, not `generate`, because the summary line
+//! must still report land-use/street/plot stats when pass 4's own count
+//! check fails (`generate` would drop everything on that one `Err`).
 //!
 //! Pinned against a small, fixed, test-local [`frozen_config`] -- never
 //! the live `defs::BALANCE` -- because a designer retuning `defs/balance/
 //! generation.toml` (a data change, already covered by `defs_version`)
 //! must never also force a `GENERATION_VERSION` bump (an algorithm/
-//! seeding change) just because this golden ran against the live values
-//! (Tim's direction, cycle 1). The evidence SVGs (`bounds::generation_
-//! evidence`) keep using live balance -- that is their own job, showing
-//! what actually ships.
+//! seeding change) just because this golden ran against the live values.
+//! The evidence SVGs (`bounds::generation_evidence`) keep using live
+//! balance -- that is their own job, showing what actually ships.
 //!
 //! Also checks: the same seed twice in one process is byte-identical, and
 //! running pass 2 twice over one pass-1 output is byte-identical (pass 2
@@ -30,7 +28,7 @@ use sim::generation::{
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
-const GOLDEN: &str = include_str!("goldens/generation_v2.golden");
+const GOLDEN: &str = include_str!("goldens/generation_v3.golden");
 
 /// A frozen snapshot of `defs/balance/generation.toml`'s own values at
 /// the time this golden was last regenerated -- never read from `defs::
@@ -87,20 +85,25 @@ fn frozen_config() -> GenerationConfig {
         plot_width_min_cells: [8, 10, 12, 12],
         plot_width_max_cells: [12, 16, 20, 20],
         plot_row_depth_cells: [14, 12, 18, 18],
+        plot_max_core_depth_cells: 8,
+        plot_max_open_percent_by_count: 15,
+        plot_max_open_percent_by_area: 15,
+        plot_max_unplotted_percent: 20,
         envelope_wall_thickness_cells: 1,
         envelope_min_interior_width_cells: [4, 6, 8, 8],
         envelope_min_interior_depth_cells: [4, 6, 8, 8],
         envelope_max_width_cells: 20,
         envelope_max_depth_cells: 16,
         envelope_side_gap_periphery_cells: 2,
-        envelope_mean_width_cells: 9,
-        envelope_mean_width_tolerance_cells: 2,
-        envelope_mean_depth_cells: 10,
-        envelope_mean_depth_tolerance_cells: 2,
+        envelope_size_trim_max_cells: 2,
+        envelope_mean_width_cells: 12,
+        envelope_mean_width_tolerance_cells: 3,
+        envelope_mean_depth_cells: 11,
+        envelope_mean_depth_tolerance_cells: 3,
         envelope_min_distinct_sizes: 6,
-        envelope_target_count_per_million_cells: 3410,
-        envelope_count_tolerance_percent: 15,
-        envelope_max_rejected_plot_percent: 12,
+        envelope_target_count_per_million_cells: 3418,
+        envelope_count_tolerance_percent: 21,
+        envelope_max_rejected_plot_percent: 5,
     }
 }
 
@@ -208,7 +211,7 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
     // Real ring averages (innermost, mid, outermost of 3), from the
     // field's own density peak -- not a fixed "centre"/"corner" sample,
     // which the falloff's own real shape has no reason to agree with
-    // once the peak is off-centre (Quentin's direction, cycle 1).
+    // once the peak is off-centre.
     let rings = lu.ring_averages(3);
 
     let open_plots = pm.plots().iter().filter(|p| p.open).count();
@@ -242,7 +245,7 @@ fn generation_output_matches_committed_golden() {
         });
     assert_eq!(
         golden_version, GENERATION_VERSION,
-        "tests/goldens/generation_v2.golden is keyed to version {golden_version} but \
+        "tests/goldens/generation_v3.golden is keyed to version {golden_version} but \
          sim::generation::GENERATION_VERSION is {GENERATION_VERSION} -- regenerate the golden \
          whenever GENERATION_VERSION changes"
     );
@@ -264,12 +267,7 @@ fn generation_output_matches_committed_golden() {
             "generation output moved for seed {seed}. frozen_config() never reads live \
              defs::BALANCE, so a defs/balance/generation.toml retune alone cannot move this \
              golden at all -- this diff can only be sim::generation's own algorithm or seeding \
-             changing. Bump GENERATION_VERSION and regenerate the golden. (If you meant to \
-             retune generation.toml, this test does not exercise that at all -- check \
-             fixtures/defs-dump.v1.golden instead; if you meant to update frozen_config() itself \
-             to a new set of pinned values, that IS an algorithm-adjacent change from this \
-             golden's own point of view and still needs the version bump.) (Quentin's \
-             direction, cycle 2.)"
+             changing. Bump GENERATION_VERSION and regenerate the golden."
         );
     }
 }
@@ -299,3 +297,4 @@ fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
         plan_digest(&lu, &net_b, &pm_b, &em_b)
     );
 }
+

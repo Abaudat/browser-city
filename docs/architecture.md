@@ -1088,27 +1088,30 @@ row is still marked `planned`, or when `## Must never be seen`'s own
 pure functions and data only (NFR28) -- no table, no reducer, no client
 code. A pass's signature is: the city seed, `&` the outputs of *earlier*
 passes it actually reads (never a later pass, never by mutation) and
-`GenerationConfig` -- nothing else (amended, story 3.3: pass 3 needs both
-blocks and land use/density, so "its own predecessor's output" no longer
-holds). Pass ids (`PASS_LAND_USE`..`PASS_PROP_PLACEMENT`) are append-only
-constants in FR110's own order; a pass not yet implemented still reserves
-its id. Each pass seeds its own `sim::rng::Rng` stream from `seed_from_ids
-(city_seed, PASS_ID)`, so adding a draw to one pass never reshuffles
-another; within pass 2, each superblock, and within passes 3-4, each
-block/plot, further seeds its own stream from `seed_from_ids(pass_seed,
-block_index)`, so one block's (or plot's) own draw count never reshuffles
-another's.
+`GenerationConfig` -- nothing else. Pass ids (`PASS_LAND_USE`..
+`PASS_PROP_PLACEMENT`) are append-only constants in FR110's own order; a
+pass not yet implemented still reserves its id. Each pass seeds its own
+`sim::rng::Rng` stream from `seed_from_ids(city_seed, PASS_ID)`, so
+adding a draw to one pass never reshuffles another; within pass 2, each
+superblock further seeds its own stream from `seed_from_ids(pass_seed,
+superblock_index)`, and within passes 3-4 each block and each plot from
+its own bounds (`generation::rect_seed_key`), never its position in a
+list -- so one block's (or plot's) own draw count never reshuffles
+another's, and adding a plot to one block never moves any other block's
+or plot's draws.
 
 `generation::generate(city_seed, &cfg) -> Result<District, GenerationError>`
 is the one entry point that chains every implemented pass in order,
-returning a `District` (every pass's own output together) -- the golden,
-perf, evidence and invariants harnesses all call it rather than each
-hand-chaining the four `run` functions itself, so the chain can never
-drift between callers. Each pass's own `run` stays public for its own
-unit tests. `GenerationError` is the one error type across every
-implemented pass (`InvalidSite` from pass 1's own extent check,
-`BuildingCountOutOfTolerance` from pass 4's own count guard) -- never a
-`Result<_, String>` per pass.
+returning a `District` (every pass's own output together). The golden,
+perf, evidence and invariants harnesses call the per-pass `run`
+functions directly instead, because each must still inspect passes 1-3
+when pass 4's own count check returns `Err` (`generate` drops everything
+on that one `Err`); `generate`'s own tests pin that it equals that
+chain. `GenerationError` is the one error type across every implemented
+pass (`InvalidConfig` from `GenerationConfig::from_balance`,
+`InvalidSite { site, coarse_cell_size_cells }` from pass 1's own extent
+check, `BuildingCountOutOfTolerance { got, min, max }` from pass 4's own
+count guard) -- never a `Result<_, String>` per pass.
 
 Coordinates are world-absolute `i32` cells throughout; `SiteBounds` is
 `sim::world::Rect` reused, never a second rect type. `GenerationConfig::
@@ -1146,20 +1149,24 @@ edge. `subdivide` still forces a split whenever the current rect spans
 more than one land-use region, which is what keeps every region
 touching a street (AC2) without that snapping.
 
-Pass 2's own `Block` carries which of its own four sides abut a real
-street, `generation::block_sides(bounds, site)`: a pure function of the
-block's own bounds against the site's, never a stored field (so it can
-never drift from `bounds`) and never a scan of `StreetNetwork::edges` per
-block -- a side abuts a street iff it does not coincide with the site's
-own boundary, which holds by construction for every leaf block this pass
-ever produces (`try_split`'s own inset argument). Pass 3 (plot
-subdivision) reads this to cut only street-abutting faces into plots,
-never landlocking one; pass 4 (the building envelope) sizes a footprint
-from each plot's own geometry, land use and density, always inside its
-own plot, at or above that land use's minimum usable interior (checked
-against the interior net, footprint minus the wall ring, never the outer
-rectangle) -- a plot that cannot hold that minimum yields a typed
-`EnvelopeOutcome::Rejected`, counted, never a footprint shrunk below it.
+Which of a block's own four sides abut a real street is
+`generation::block_sides(bounds, site)`: a side abuts a street iff it
+does not coincide with the site's own boundary -- a pure O(1) function
+of the block's own bounds against the site's, never a stored field and
+never a scan of `StreetNetwork::edges` per block, guarded by the
+invariant `inv_generation_block_sides_matches_a_real_street_edge`
+against the real street edges. Pass 3 (plot subdivision) reads this to
+cut only street-abutting faces into plots, never landlocking one, cuts
+opposite rows through to the block's mid-line, and records a core deeper
+than `max_core_depth_cells` as one explicit `open` plot; pass 4 (the
+building envelope) sizes a footprint from each plot's own geometry, land
+use and density, always inside its own plot, at or above that land use's
+minimum usable interior (checked against the interior net, footprint
+minus the wall ring, never the outer rectangle) -- a plot that cannot
+hold that minimum yields a typed `EnvelopeOutcome::Rejected`, counted,
+never a footprint shrunk below it. A plot's own row bounds (the union of
+every plot sharing its block and front) decide which of its row-axis
+edges are corners; pass 4 derives them from the plot list alone.
 Building count itself fails generation: `envelopes::run` returns
 `Err(GenerationError::BuildingCountOutOfTolerance)` when the realised
 placed-envelope count for a seed sits outside `[min, max]`, derived from

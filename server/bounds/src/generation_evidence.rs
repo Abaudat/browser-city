@@ -21,8 +21,8 @@
 //! can never drift from the code that produced it.
 
 use sim::generation::{
-    EnvelopeMap, EnvelopeOutcome, GenerationConfig, LandUse, Plot, PlotMap, Side, StreetClass,
-    StreetNetwork, block_land_use, envelopes, land_use, land_use::LandUseMap, plots,
+    Block, EnvelopeMap, EnvelopeOutcome, GenerationConfig, LandUse, PlotMap, Side, StreetClass,
+    StreetNetwork, block_land_use, land_use::LandUseMap,
 };
 
 /// The three fixed seeds every evidence SVG renders -- committed once,
@@ -295,13 +295,6 @@ pub fn streets_svg_path(seed: u64) -> std::path::PathBuf {
         .join(format!("street-network-seed-{seed}.svg"))
 }
 
-pub fn plots_svg_path(seed: u64) -> std::path::PathBuf {
-    crate::world_fixture::repo_root_dir()
-        .join("docs")
-        .join("generation")
-        .join(format!("plots-seed-{seed}.svg"))
-}
-
 pub fn envelopes_svg_path(seed: u64) -> std::path::PathBuf {
     crate::world_fixture::repo_root_dir()
         .join("docs")
@@ -341,49 +334,53 @@ fn front_edge_outward(front: Side) -> (i32, i32) {
     }
 }
 
-/// `<defs>` for the diagonal hatch every `open` plot is filled with --
-/// Artie's direction: "`open` plots hatched".
-const HATCH_DEFS: &str = "<defs><pattern id=\"open-hatch\" width=\"5\" height=\"5\" patternTransform=\"rotate(45)\" patternUnits=\"userSpaceOnUse\"><rect width=\"5\" height=\"5\" fill=\"#f2f2f2\"/><line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"5\" stroke=\"#9e9e9e\" stroke-width=\"2\"/></pattern></defs>\n";
+/// `<style>` classes shared by every rect/line this module draws --
+/// `class=` instead of repeating `fill`/`fill-opacity`/`stroke`/`stroke-
+/// width` on every one of the thousands of elements a 512-cell district
+/// draws, which is most of this file's own byte weight.
+const STYLE_DEFS: &str = "<defs><pattern id=\"open-hatch\" width=\"5\" height=\"5\" patternTransform=\"rotate(45)\" patternUnits=\"userSpaceOnUse\"><rect width=\"5\" height=\"5\" fill=\"#f2f2f2\"/><line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"5\" stroke=\"#9e9e9e\" stroke-width=\"2\"/></pattern><pattern id=\"rejected-hatch\" width=\"5\" height=\"5\" patternTransform=\"rotate(-45)\" patternUnits=\"userSpaceOnUse\"><rect width=\"5\" height=\"5\" fill=\"#fde0e0\"/><line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"5\" stroke=\"#c0392b\" stroke-width=\"2\"/></pattern></defs>\n<style>.plot{stroke:#999;stroke-width:0.5}.yard{fill-opacity:0.25;stroke:#999;stroke-width:0.5}.open{fill:url(#open-hatch);stroke:#999;stroke-width:0.5}.rejected{fill:url(#rejected-hatch);stroke:#c0392b;stroke-width:0.5}.envelope{fill-opacity:0.9;stroke:#111;stroke-width:0.5}.front{stroke:#d81b60;stroke-width:2}</style>\n";
 
-/// Every plot's own outline, `open` ones hatched, front edge a heavier
-/// stroke -- Artie's own evidence conventions for the plot-subdivision
-/// SVG.
-fn plot_rects(pm: &PlotMap) -> String {
+/// Every plot's own yard backdrop (a lighter tint of its own block's own
+/// use, `open` plots hatched, `rejected` plots hatched red so a reviewer
+/// never mistakes a missing-tooth rejection for an empty yard) and every
+/// placed envelope's own footprint (a darker, opaque fill of the same
+/// tint, a door tick on its own front edge) -- the same file, and the
+/// same legend, serves both the plot-subdivision and building-envelope
+/// evidence rows.
+fn plot_and_envelope_rects(pm: &PlotMap, em: &EnvelopeMap) -> String {
     let mut body = String::new();
-    for p in pm.plots() {
-        let fill = if p.open { "url(#open-hatch)" } else { "none" };
+    let rejected: std::collections::BTreeSet<u32> = em
+        .outcomes()
+        .iter()
+        .filter_map(|o| match o {
+            EnvelopeOutcome::Rejected { plot, .. } => Some(*plot),
+            EnvelopeOutcome::Placed(_) => None,
+        })
+        .collect();
+    for (i, p) in pm.plots().iter().enumerate() {
+        let class = if p.open {
+            "plot open"
+        } else if rejected.contains(&(i as u32)) {
+            "plot rejected"
+        } else {
+            "plot yard"
+        };
+        let fill = if p.open || rejected.contains(&(i as u32)) {
+            String::new()
+        } else {
+            format!(" fill=\"{}\"", land_use_fill(p.land_use))
+        };
         body.push_str(&format!(
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{fill}\" stroke=\"#333333\" stroke-width=\"0.5\"/>\n",
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" class=\"{class}\"{fill}/>\n",
             p.bounds.x0,
             p.bounds.y0,
             p.bounds.width(),
             p.bounds.height(),
         ));
-        let (x0, y0, x1, y1) = front_edge_segment(p.bounds, p.front);
-        body.push_str(&format!(
-            "<line x1=\"{x0}\" y1=\"{y0}\" x2=\"{x1}\" y2=\"{y1}\" stroke=\"#d81b60\" stroke-width=\"2\"/>\n"
-        ));
-    }
-    body
-}
-
-/// Every plot's own yard backdrop (a lighter tint of its own block's own
-/// use, `open` plots hatched) and every placed envelope's own footprint
-/// (a darker, opaque fill of the same tint, a door tick on its own front
-/// edge) -- Artie's own evidence conventions for the building-envelope
-/// SVG.
-fn envelope_rects(pm: &PlotMap, em: &EnvelopeMap) -> String {
-    let mut body = String::new();
-    for p in pm.plots() {
-        if p.open {
+        if let Some(front) = p.front {
+            let (x0, y0, x1, y1) = front_edge_segment(p.bounds, front);
             body.push_str(&format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"url(#open-hatch)\" stroke=\"#999999\" stroke-width=\"0.5\"/>\n",
-                p.bounds.x0, p.bounds.y0, p.bounds.width(), p.bounds.height(),
-            ));
-        } else {
-            body.push_str(&format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" fill-opacity=\"0.25\" stroke=\"#999999\" stroke-width=\"0.5\"/>\n",
-                p.bounds.x0, p.bounds.y0, p.bounds.width(), p.bounds.height(), land_use_fill(p.land_use)
+                "<line x1=\"{x0}\" y1=\"{y0}\" x2=\"{x1}\" y2=\"{y1}\" class=\"front\"/>\n"
             ));
         }
     }
@@ -391,15 +388,19 @@ fn envelope_rects(pm: &PlotMap, em: &EnvelopeMap) -> String {
         let EnvelopeOutcome::Placed(e) = outcome else {
             continue;
         };
-        let plot: &Plot = &pm.plots()[e.plot as usize];
+        let plot = &pm.plots()[e.plot as usize];
         body.push_str(&format!(
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" fill-opacity=\"0.9\" stroke=\"#111111\" stroke-width=\"0.5\"/>\n",
-            e.footprint.x0, e.footprint.y0, e.footprint.width(), e.footprint.height(), land_use_fill(plot.land_use)
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" class=\"envelope\" fill=\"{}\"/>\n",
+            e.footprint.x0,
+            e.footprint.y0,
+            e.footprint.width(),
+            e.footprint.height(),
+            land_use_fill(plot.land_use)
         ));
         let (mx, my) = front_edge_midpoint(e.footprint, e.front);
         let (dx, dy) = front_edge_outward(e.front);
         body.push_str(&format!(
-            "<line x1=\"{mx}\" y1=\"{my}\" x2=\"{}\" y2=\"{}\" stroke=\"#d81b60\" stroke-width=\"2\"/>\n",
+            "<line x1=\"{mx}\" y1=\"{my}\" x2=\"{}\" y2=\"{}\" class=\"front\"/>\n",
             mx + dx,
             my + dy
         ));
@@ -407,56 +408,27 @@ fn envelope_rects(pm: &PlotMap, em: &EnvelopeMap) -> String {
     body
 }
 
-fn plots_legend(y0: i64) -> String {
+fn plots_and_envelopes_legend(y0: i64) -> String {
     let mut body = land_use_legend(y0);
+    let swatch = |x: i32, y: i64, class: &str, fill: Option<&str>, label: &str| -> String {
+        let fill_attr = fill.map(|f| format!(" fill=\"{f}\"")).unwrap_or_default();
+        format!(
+            "<rect x=\"{x}\" y=\"{y}\" width=\"16\" height=\"16\" class=\"{class}\"{fill_attr}/>\n\
+             <text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">{label}</text>\n",
+            x + 20,
+            y + 12
+        )
+    };
+    body.push_str(&swatch(8, y0 + 32, "plot yard", Some("#bfe3bf"), "yard"));
+    body.push_str(&swatch(140, y0 + 32, "plot envelope", Some("#bfe3bf"), "envelope"));
+    body.push_str(&swatch(280, y0 + 32, "plot open", None, "open plot"));
+    body.push_str(&swatch(400, y0 + 32, "plot rejected", None, "rejected"));
     body.push_str(&format!(
-        "<rect x=\"8\" y=\"{}\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"#333333\"/>\n\
-         <text x=\"28\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">plot</text>\n",
-        y0 + 32,
-        y0 + 44
-    ));
-    body.push_str(&format!(
-        "<rect x=\"120\" y=\"{}\" width=\"16\" height=\"16\" fill=\"url(#open-hatch)\" stroke=\"#333333\"/>\n\
-         <text x=\"140\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">open plot</text>\n",
-        y0 + 32,
-        y0 + 44
-    ));
-    body.push_str(&format!(
-        "<line x1=\"260\" y1=\"{}\" x2=\"276\" y2=\"{}\" stroke=\"#d81b60\" stroke-width=\"2\"/>\n\
-         <text x=\"282\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">front edge</text>\n",
-        y0 + 40,
-        y0 + 40,
-        y0 + 44
-    ));
-    body
-}
-
-fn envelopes_legend(y0: i64) -> String {
-    let mut body = land_use_legend(y0);
-    body.push_str(&format!(
-        "<rect x=\"8\" y=\"{}\" width=\"16\" height=\"16\" fill=\"#bfe3bf\" fill-opacity=\"0.25\" stroke=\"#999999\"/>\n\
-         <text x=\"28\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">yard</text>\n",
-        y0 + 32,
-        y0 + 44
-    ));
-    body.push_str(&format!(
-        "<rect x=\"120\" y=\"{}\" width=\"16\" height=\"16\" fill=\"#bfe3bf\" fill-opacity=\"0.9\" stroke=\"#111111\"/>\n\
-         <text x=\"140\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">envelope</text>\n",
-        y0 + 32,
-        y0 + 44
-    ));
-    body.push_str(&format!(
-        "<rect x=\"250\" y=\"{}\" width=\"16\" height=\"16\" fill=\"url(#open-hatch)\" stroke=\"#999999\"/>\n\
-         <text x=\"270\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">open plot</text>\n",
-        y0 + 32,
-        y0 + 44
-    ));
-    body.push_str(&format!(
-        "<line x1=\"390\" y1=\"{}\" x2=\"406\" y2=\"{}\" stroke=\"#d81b60\" stroke-width=\"2\"/>\n\
-         <text x=\"412\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">door</text>\n",
-        y0 + 40,
-        y0 + 40,
-        y0 + 44
+        "<line x1=\"8\" y1=\"{}\" x2=\"24\" y2=\"{}\" class=\"front\"/>\n\
+         <text x=\"30\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">front edge / door</text>\n",
+        y0 + 60,
+        y0 + 60,
+        y0 + 64
     ));
     body
 }
@@ -489,52 +461,46 @@ fn nested_view(
     )
 }
 
-/// Pass 3's own evidence: block tint and streets as the backdrop
-/// (`streets_svg`'s own base), every plot's outline on top, `open` ones
-/// hatched, front edges a heavier stroke, a legend covering land use,
-/// plot, open plot and front edge.
-pub fn plots_svg(map: &LandUseMap, net: &StreetNetwork, pm: &PlotMap) -> String {
-    let site = net.site();
-    let (w, h) = (site.width(), site.height());
-    let legend_h = 56;
-    let total_h = h + legend_h;
-    let mut body = block_rects(map, net);
-    for e in net.edges() {
-        let r = e.rect();
-        body.push_str(&format!(
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
-            r.x0,
-            r.y0,
-            r.width(),
-            r.height(),
-            street_fill(e.class)
-        ));
-    }
-    body.push_str(&plot_rects(pm));
-    let legend = plots_legend(h);
-    format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{total_h}\" viewBox=\"0 0 {w} {total_h}\">\n\
-         {HATCH_DEFS}<rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{total_h}\" fill=\"#ffffff\"/>\n\
-         {body}{legend}</svg>\n"
-    )
-}
-
-/// Pass 4's own evidence: the same block/street backdrop, every plot's
-/// own yard (a lighter tint, `open` ones hatched) and every placed
-/// envelope (a darker, opaque fill, a door tick on its own front edge),
-/// plus two insets at viewport scale (the density peak and the farthest
-/// periphery) -- a 12x11 envelope is unreadable at 512-cell scale, so
-/// this is the only scale the street wall, the 0-or-2 gaps and the build
-/// line can actually be judged at (Artie's direction).
-pub fn envelopes_svg(
+/// Among a district's own residential blocks (the one land use the two
+/// insets below always compare, so plot packing alone is what differs
+/// between them, never a land-use difference too), the one nearest the
+/// density peak and the one farthest from it, by centre point -- `None`
+/// if the district has no residential block at all.
+fn residential_core_and_periphery_points(
     map: &LandUseMap,
     net: &StreetNetwork,
-    pm: &PlotMap,
-    em: &EnvelopeMap,
-) -> String {
+) -> Option<((i32, i32), (i32, i32))> {
+    let (peak_point, _) = peak_and_far_points(map);
+    let residential: Vec<&Block> = net
+        .blocks()
+        .iter()
+        .filter(|b| block_land_use(map, b.bounds) == LandUse::Residential)
+        .collect();
+    let centre = |b: &Block| ((b.bounds.x0 + b.bounds.x1) / 2, (b.bounds.y0 + b.bounds.y1) / 2);
+    let dist = |c: (i32, i32)| (c.0 - peak_point.0).abs().max((c.1 - peak_point.1).abs());
+    let core = residential.iter().map(|b| centre(b)).min_by_key(|&c| dist(c))?;
+    let periphery = residential.iter().map(|b| centre(b)).max_by_key(|&c| dist(c))?;
+    Some((core, periphery))
+}
+
+/// The one evidence document for both plot subdivision (pass 3) and the
+/// building envelope (pass 4) -- `docs/generation.md`'s own Evidence
+/// lines for both passes cite this same file, since the envelope SVG
+/// already draws every plot's own outline and front edge underneath its
+/// envelopes. Block tint and streets as the backdrop (`streets_svg`'s own
+/// base), every plot's own yard (a lighter tint, `open` ones hatched grey,
+/// rejected ones hatched red), every placed envelope (a darker, opaque
+/// fill, a door tick on its own front edge), plus two insets at viewport
+/// scale -- a 12x11 envelope is unreadable at 512-cell scale, so this is
+/// the only scale the street wall, the 0-or-2 gaps and the build line can
+/// actually be judged at. Both insets are the district's own residential
+/// blocks specifically (the core one and the farthest-periphery one), so
+/// plot packing alone is what differs between them, never a land-use
+/// difference too.
+pub fn envelopes_svg(map: &LandUseMap, net: &StreetNetwork, pm: &PlotMap, em: &EnvelopeMap) -> String {
     let site = net.site();
     let (w, h) = (site.width(), site.height());
-    let legend_h = 72;
+    let legend_h = 88;
     let inset_h: i64 = 260;
     let total_h = h + legend_h + inset_h;
     let mut body = block_rects(map, net);
@@ -549,7 +515,7 @@ pub fn envelopes_svg(
             street_fill(e.class)
         ));
     }
-    body.push_str(&envelope_rects(pm, em));
+    body.push_str(&plot_and_envelope_rects(pm, em));
 
     // The insets reuse `body` verbatim (cropped and scaled by their own
     // `viewBox`) -- captured *before* the main map's own outline overlay
@@ -558,17 +524,12 @@ pub fn envelopes_svg(
     // rendered screenshot, not by eye on the raw SVG text).
     let content_for_insets = body.clone();
 
-    let (peak_point, far_point) = peak_and_far_points(map);
+    let (core_point, periphery_point) =
+        residential_core_and_periphery_points(map, net).unwrap_or_else(|| peak_and_far_points(map));
+    body.push_str(&viewport_outline(core_point.0, core_point.1, site, "#d81b60", "core"));
     body.push_str(&viewport_outline(
-        peak_point.0,
-        peak_point.1,
-        site,
-        "#d81b60",
-        "core",
-    ));
-    body.push_str(&viewport_outline(
-        far_point.0,
-        far_point.1,
+        periphery_point.0,
+        periphery_point.1,
         site,
         "#1e88e5",
         "periphery",
@@ -576,50 +537,51 @@ pub fn envelopes_svg(
 
     let inset_w: i64 = (w / 2) - 12;
     let inset_y = h + legend_h + 24;
-    let peak_vx = (peak_point.0 - VIEWPORT_W / 2).clamp(site.x0, site.x1 - VIEWPORT_W);
-    let peak_vy = (peak_point.1 - VIEWPORT_H / 2).clamp(site.y0, site.y1 - VIEWPORT_H);
-    let far_vx = (far_point.0 - VIEWPORT_W / 2).clamp(site.x0, site.x1 - VIEWPORT_W);
-    let far_vy = (far_point.1 - VIEWPORT_H / 2).clamp(site.y0, site.y1 - VIEWPORT_H);
+    let core_vx = (core_point.0 - VIEWPORT_W / 2).clamp(site.x0, site.x1 - VIEWPORT_W);
+    let core_vy = (core_point.1 - VIEWPORT_H / 2).clamp(site.y0, site.y1 - VIEWPORT_H);
+    let periphery_vx = (periphery_point.0 - VIEWPORT_W / 2).clamp(site.x0, site.x1 - VIEWPORT_W);
+    let periphery_vy = (periphery_point.1 - VIEWPORT_H / 2).clamp(site.y0, site.y1 - VIEWPORT_H);
     let insets = nested_view(
         &content_for_insets,
         8,
         inset_y,
         inset_w,
         inset_h - 32,
-        peak_vx,
-        peak_vy,
+        core_vx,
+        core_vy,
         VIEWPORT_W,
         VIEWPORT_H,
         "#d81b60",
-        "core (viewport scale)",
+        "residential core (viewport scale)",
     ) + &nested_view(
         &content_for_insets,
         16 + inset_w,
         inset_y,
         inset_w,
         inset_h - 32,
-        far_vx,
-        far_vy,
+        periphery_vx,
+        periphery_vy,
         VIEWPORT_W,
         VIEWPORT_H,
         "#1e88e5",
-        "periphery (viewport scale)",
+        "residential periphery (viewport scale)",
     );
 
-    let legend = envelopes_legend(h);
+    let legend = plots_and_envelopes_legend(h);
     format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{total_h}\" viewBox=\"0 0 {w} {total_h}\">\n\
-         {HATCH_DEFS}<rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{total_h}\" fill=\"#ffffff\"/>\n\
+         {STYLE_DEFS}<rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{total_h}\" fill=\"#ffffff\"/>\n\
          {body}{legend}{insets}</svg>\n"
     )
 }
 
 /// Every evidence document [`EVIDENCE_SEEDS`] commits, for one seed.
+/// `envelopes` serves both the plot-subdivision and building-envelope
+/// Evidence rows in `docs/generation.md` -- one file for both passes.
 pub struct EvidenceSvgs {
     pub seed: u64,
     pub land_use: String,
     pub streets: String,
-    pub plots: String,
     pub envelopes: String,
 }
 
@@ -633,18 +595,13 @@ pub fn build_all() -> Vec<EvidenceSvgs> {
     EVIDENCE_SEEDS
         .iter()
         .map(|&seed| {
-            let lu = land_use::run(seed, cfg.site(), &cfg)
-                .expect("the live site is always a valid multiple of the coarse cell size");
-            let net = sim::generation::streets::run(seed, &lu, &cfg);
-            let pm = plots::run(seed, &lu, &net, &cfg);
-            let em = envelopes::run(seed, &pm, &cfg)
-                .expect("the live committed config must clear AC4's own tolerance");
+            let d = sim::generation::generate(seed, &cfg)
+                .expect("the live committed config must generate every evidence seed");
             EvidenceSvgs {
                 seed,
-                land_use: land_use_svg(&lu, &cfg),
-                streets: streets_svg(&lu, &net),
-                plots: plots_svg(&lu, &net, &pm),
-                envelopes: envelopes_svg(&lu, &net, &pm, &em),
+                land_use: land_use_svg(&d.land_use, &cfg),
+                streets: streets_svg(&d.land_use, &d.streets),
+                envelopes: envelopes_svg(&d.land_use, &d.streets, &d.plots, &d.envelopes),
             }
         })
         .collect()

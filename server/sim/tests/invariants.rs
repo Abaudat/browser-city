@@ -84,13 +84,20 @@ pub const INV_GENERATION_ARTERIALS_ARE_CONTIGUOUS: &str = "every arterial line s
 pub const INV_GENERATION_PERIPHERAL_BLOCKS_ARE_NOT_DEGENERATE: &str = "mean block area in the bottom third of the density range is at least 0.7x the top third's, for any seed (NFR8, Tim's/Artie's direction)";
 pub const INV_GENERATION_EVERY_PLOT_FRONTS_A_STREET: &str = "every non-open plot shares at least frontage_min_cells of edge length with a street-abutting side of its own block, for any seed (story 3.3 AC1, FR110)";
 pub const INV_GENERATION_PLOTS_TILE_THEIR_BLOCK: &str = "every plot is inside its own block, no two plots overlap, and a block's own area minus its plots' summed area (the explicit remainder) is never negative, for any seed (story 3.3 AC1, FR110)";
-pub const INV_GENERATION_NO_ENVELOPE_BELOW_ITS_CLASS_MINIMUM: &str = "every placed envelope's footprint is at least its own land use's minimum (interior plus the wall ring) on both axes, for any seed (story 3.3 AC2, FR110, FR115)";
+pub const INV_GENERATION_ENVELOPE_SIZE_WITHIN_ITS_CLASS_BAND: &str = "every placed envelope's footprint is within its own land use's [min, max] band on both axes (the minimum interior plus the wall ring; the shared outer ceiling), for any seed (story 3.3 AC2/AC3, FR110, FR115)";
 pub const INV_GENERATION_ENVELOPE_INSIDE_ITS_OWN_PLOT: &str = "every placed envelope's footprint is inside its own plot's bounds, and its own front matches that plot's front, for any seed (story 3.3 AC2, FR110)";
 pub const INV_GENERATION_ENVELOPE_SIZES_ARE_VARIED: &str = "a district shows at least min_distinct_sizes distinct (along_face, depth) envelope footprint pairs, for any seed -- a city of identical boxes must not satisfy the mean band alone (story 3.3 AC3, NFR8)";
 pub const INV_GENERATION_BUILDING_COUNT_WITHIN_TOLERANCE: &str = "at the committed config, generation succeeds (envelopes::run returns Ok) for any seed (story 3.3 AC4, FR110)";
-pub const INV_GENERATION_ENVELOPE_REJECTION_RATE_BOUNDED: &str = "the percent of attempted (non-open) plots rejected by the envelope pass never exceeds max_rejected_plot_percent, for any seed (story 3.3 AC4, Quentin's direction)";
+pub const INV_GENERATION_ENVELOPE_REJECTION_RATE_BOUNDED: &str = "the percent of attempted (non-open) plots rejected by the envelope pass never exceeds max_rejected_plot_percent, for any seed (story 3.3 AC4)";
 pub const INV_GENERATION_ALL_FOUR_PASSES_NEVER_PANIC: &str = "inv_generation_total_never_panics extended to all four implemented passes: for any seed, generation reaches a plan or a typed error, never a panic, and pass 3 always produces at least one plot (story 3.3, FR110)";
 pub const INV_GENERATION_ENVELOPE_MEAN_SIZE_MATCHES_THE_COMMITTED_BAND: &str = "pooled over the fixed seed range 0..256, the mean placed-envelope footprint width and depth each sit within their own committed +- tolerance band (story 3.3 AC3)";
+pub const INV_GENERATION_OPEN_PLOT_PERCENT_BOUNDED: &str = "the percent of a district's plots that are open never exceeds max_open_percent_by_count, and their share of plotted area never exceeds max_open_percent_by_area, for any seed (story 3.3 AC1)";
+pub const INV_GENERATION_UNPLOTTED_PERCENT_BOUNDED: &str = "the percent of every block's summed area that belongs to no plot at all never exceeds max_unplotted_percent, for any seed (story 3.3 AC1)";
+pub const INV_GENERATION_BLOCK_SIDES_MATCHES_A_REAL_STREET_EDGE: &str = "for every block and side, block_sides equals whether some StreetEdge::rect() touches that side, for any seed (story 3.3 AC1, FR110)";
+pub const INV_GENERATION_BLOCK_PLOTS_INDEPENDENT_OF_OTHER_BLOCKS: &str = "a block cut standalone yields the same plots as the same block cut inside the full city -- each block seeds its own stream from its own bounds, never its position in pass 2's list, for any seed (story 3.3, NFR25)";
+pub const INV_GENERATION_ENVELOPE_INDEPENDENT_OF_OTHER_PLOTS: &str = "an envelope placed from its own plot alone equals the one placed inside the full run -- each plot seeds its own stream from its own bounds, never its position in the plot list, for any seed (story 3.3, NFR25)";
+pub const INV_GENERATION_ENVELOPE_GAPS_ARE_ZERO_OR_AT_LEAST_TWO: &str = "between any two envelopes on the same face of the same block, the row-axis gap is 0 or at least 2 cells, never 1, for any seed (story 3.3 AC2)";
+pub const INV_GENERATION_ENVELOPE_MEAN_SIZE_WITHIN_A_WEAK_PER_CITY_BAND: &str = "every single city's own mean placed-envelope footprint width and depth sit within a band MEAN_SIZE_WEAK_TOLERANCE_MULTIPLIER times the committed pooled tolerance, for any seed (story 3.3 AC3)";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -2100,6 +2107,15 @@ proptest! {
 
 // Story 3.3: plot subdivision and the building envelope (FR110, FR115).
 // A case is a full 512x512 generation of all four passes.
+
+/// The per-city mean-size band's own weak multiplier over the tight
+/// pooled tolerance (`inv_generation_envelope_mean_size_matches_the_
+/// committed_band` below): one city's own sample is noisier than the
+/// pooled 256-seed one, so this property only ever catches a gross
+/// regression (the mean collapsing toward the class minimum), never
+/// tunes the mean itself -- an algorithm shape, not tunable content.
+const MEAN_SIZE_WEAK_TOLERANCE_MULTIPLIER: i32 = 4;
+
 proptest! {
     /// `inv_generation_every_plot_fronts_a_street`.
     #[test]
@@ -2131,7 +2147,7 @@ proptest! {
         }
         // No two plots of the same block overlap -- grouped per block so
         // this stays linear in plot count overall rather than O(plots^2)
-        // over the whole district (Quentin's own cost warning).
+        // over the whole district.
         let mut by_block: std::collections::BTreeMap<u32, Vec<Rect>> = std::collections::BTreeMap::new();
         for p in pm.plots() {
             by_block.entry(p.block).or_default().push(p.bounds);
@@ -2150,22 +2166,146 @@ proptest! {
         }
     }
 
-    /// `inv_generation_no_envelope_below_its_class_minimum`.
+    /// `inv_generation_open_plot_percent_bounded`: `open` is an escape
+    /// hatch, not a free pass -- a generator that marks every awkward
+    /// plot `open` must not still clear AC1's other properties.
     #[test]
-    fn inv_generation_no_envelope_below_its_class_minimum(seed in any::<u64>()) {
+    fn inv_generation_open_plot_percent_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let pm = plots::run(seed, &lu, &net, &cfg);
-        let em = match envelopes::run(seed, &pm, &cfg) {
-            Ok(em) => em,
-            Err(_) => return Ok(()), // AC4's own tolerance guard, a separate property below.
-        };
+        prop_assert!(
+            pm.open_count_percent() <= cfg.plot_max_open_percent_by_count,
+            "seed {seed}: {}% of plots are open, over max_open_percent_by_count {}",
+            pm.open_count_percent(), cfg.plot_max_open_percent_by_count
+        );
+        prop_assert!(
+            pm.open_area_percent() <= cfg.plot_max_open_percent_by_area,
+            "seed {seed}: {}% of plot area is open, over max_open_percent_by_area {}",
+            pm.open_area_percent(), cfg.plot_max_open_percent_by_area
+        );
+    }
+
+    /// `inv_generation_unplotted_percent_bounded`: a deep block's own
+    /// small, silent leftover must never grow into a district-wide void
+    /// nothing checks.
+    #[test]
+    fn inv_generation_unplotted_percent_bounded(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let pm = plots::run(seed, &lu, &net, &cfg);
+        prop_assert!(
+            pm.unplotted_percent(net.blocks()) <= cfg.plot_max_unplotted_percent,
+            "seed {seed}: {}% of block area is unplotted, over max_unplotted_percent {}",
+            pm.unplotted_percent(net.blocks()), cfg.plot_max_unplotted_percent
+        );
+    }
+
+    /// `inv_generation_block_sides_matches_a_real_street_edge`: `block_
+    /// sides`'s own "not on the site boundary" argument, guarded rather
+    /// than only argued -- for every block and side, it agrees with a
+    /// real per-edge scan of `StreetNetwork::edges`.
+    #[test]
+    fn inv_generation_block_sides_matches_a_real_street_edge(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        for b in net.blocks() {
+            let sides = sim::generation::block_sides(b.bounds, net.site());
+            for side in sim::generation::Side::ALL {
+                let touches = net.edges().iter().any(|e| block_edge_touches_street(b.bounds, e.rect(), side));
+                prop_assert_eq!(
+                    sides.get(side), touches,
+                    "seed {}: block {:?} side {:?}: block_sides says {}, real scan says {}",
+                    seed, b.bounds, side, sides.get(side), touches
+                );
+            }
+        }
+    }
+
+    /// `inv_generation_block_plots_independent_of_other_blocks`: cutting
+    /// one block standalone gives byte-identical plots to that same
+    /// block cut inside the full city -- each block seeds its own stream
+    /// from its own bounds, never its position in `streets.blocks()`, so
+    /// adding a block to Epic 14's own grown city never reshuffles an
+    /// existing one's own plots.
+    #[test]
+    fn inv_generation_block_plots_independent_of_other_blocks(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        prop_assume!(!net.blocks().is_empty());
+        let block = net.blocks()[net.blocks().len() / 2];
+
+        let full_pm = plots::run(seed, &lu, &net, &cfg);
+        let mut in_full: Vec<plots::Plot> = full_pm
+            .plots()
+            .iter()
+            .filter(|p| net.blocks()[p.block as usize].bounds == block.bounds)
+            .copied()
+            .collect();
+
+        let standalone_net = streets::StreetNetwork::test_fixture(net.site(), Vec::new(), vec![block]);
+        let standalone_pm = plots::run(seed, &lu, &standalone_net, &cfg);
+        let mut standalone: Vec<plots::Plot> = standalone_pm.plots().to_vec();
+
+        in_full.sort_by_key(|p| (p.bounds.y0, p.bounds.x0));
+        standalone.sort_by_key(|p| (p.bounds.y0, p.bounds.x0));
+        let normalise = |p: &plots::Plot| (p.bounds, p.front, p.land_use, p.density, p.open);
+        let in_full_norm: Vec<_> = in_full.iter().map(normalise).collect();
+        let standalone_norm: Vec<_> = standalone.iter().map(normalise).collect();
+        prop_assert_eq!(in_full_norm, standalone_norm, "seed {}", seed);
+    }
+
+    /// `inv_generation_envelope_independent_of_other_plots`: an envelope
+    /// placed from its own plot alone matches the one placed inside the
+    /// full run -- each plot seeds its own stream from its own bounds,
+    /// never its position in `plots.plots()`.
+    #[test]
+    fn inv_generation_envelope_independent_of_other_plots(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let pm = plots::run(seed, &lu, &net, &cfg);
+        let full = envelopes::place_all(seed, &pm, &cfg);
+        let pass_seed = seed_from_ids(seed, envelopes::PASS_ID);
+        let row_bounds = envelopes::row_bounds_by_block_front(pm.plots());
+        for (i, p) in pm.plots().iter().enumerate() {
+            if p.open {
+                continue;
+            }
+            let front = p.front.unwrap();
+            let bounds = row_bounds[&(p.block, front)];
+            let mut rng = Rng::new(seed_from_ids(pass_seed, sim::generation::rect_seed_key(p.bounds)));
+            let alone = envelopes::place_one(p, i as u32, bounds, &mut rng, &cfg);
+            let in_full = full.outcomes()[full.outcomes().iter().position(|o| match o {
+                envelopes::EnvelopeOutcome::Placed(e) => e.plot == i as u32,
+                envelopes::EnvelopeOutcome::Rejected { plot, .. } => *plot == i as u32,
+            }).unwrap()];
+            prop_assert_eq!(alone, in_full, "seed {}: plot index {}", seed, i);
+        }
+    }
+
+    /// `inv_generation_envelope_size_within_its_class_band`: both bounds,
+    /// both axes -- the floor (already the class minimum by construction,
+    /// via `plots::run`'s own row depths) and the ceiling
+    /// (`envelope_limits`'s own `max_*`), checked against the map
+    /// [`envelopes::place_all`] always returns, independent of AC4's own
+    /// count verdict (an outlier city is still worth inspecting).
+    #[test]
+    fn inv_generation_envelope_size_within_its_class_band(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let pm = plots::run(seed, &lu, &net, &cfg);
+        let em = envelopes::place_all(seed, &pm, &cfg);
         for e in em.envelopes() {
             let p = pm.plots()[e.plot as usize];
             let limits = cfg.envelope_limits(p.land_use);
-            prop_assert!(e.along_face_cells() >= limits.min_width_cells as i64, "seed {seed}: envelope {:?} under its own class's minimum width", e.footprint);
-            prop_assert!(e.depth_cells() >= limits.min_depth_cells as i64, "seed {seed}: envelope {:?} under its own class's minimum depth", e.footprint);
+            prop_assert!(e.along_face_cells() >= limits.min_width_cells as i64 && e.along_face_cells() <= limits.max_width_cells as i64, "seed {seed}: envelope {:?} width outside its own class band", e.footprint);
+            prop_assert!(e.depth_cells() >= limits.min_depth_cells as i64 && e.depth_cells() <= limits.max_depth_cells as i64, "seed {seed}: envelope {:?} depth outside its own class band", e.footprint);
         }
     }
 
@@ -2175,19 +2315,16 @@ proptest! {
     /// disjoint (`inv_generation_plots_tile_their_block`, and disjoint
     /// across blocks by `inv_generation_exact_tiling`'s own block-
     /// disjointness) -- envelopes are therefore disjoint by construction,
-    /// never re-derived with an O(envelopes^2) scan (Quentin's own cost
-    /// warning; `envelope_footprints_from_two_different_plots_never_
-    /// overlap` below pins this reasoning against a hand-built fixture).
+    /// never re-derived with an O(envelopes^2) scan
+    /// (`envelope_footprints_from_two_different_plots_never_overlap`
+    /// below pins this reasoning against a hand-built fixture).
     #[test]
     fn inv_generation_envelope_inside_its_own_plot(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let pm = plots::run(seed, &lu, &net, &cfg);
-        let em = match envelopes::run(seed, &pm, &cfg) {
-            Ok(em) => em,
-            Err(_) => return Ok(()),
-        };
+        let em = envelopes::place_all(seed, &pm, &cfg);
         for e in em.envelopes() {
             let p = pm.plots()[e.plot as usize];
             prop_assert!(
@@ -2195,22 +2332,63 @@ proptest! {
                     && p.bounds.y0 <= e.footprint.y0 && e.footprint.y1 <= p.bounds.y1,
                 "seed {seed}: envelope {:?} escapes plot {:?}", e.footprint, p.bounds
             );
-            prop_assert_eq!(e.front, p.front);
+            prop_assert_eq!(Some(e.front), p.front);
+        }
+    }
+
+    /// `inv_generation_envelope_gaps_are_zero_or_at_least_two`: same-face
+    /// neighbouring envelopes, and back-to-back rears, are either flush
+    /// (party walls) or at least 2 cells apart -- never a 1-cell slit
+    /// (Artie's own "must never be seen" row this story adds).
+    #[test]
+    fn inv_generation_envelope_gaps_are_zero_or_at_least_two(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let pm = plots::run(seed, &lu, &net, &cfg);
+        let em = envelopes::place_all(seed, &pm, &cfg);
+        // Grouped by (block, front) -- the gap contract is about same-face
+        // rhythm neighbours, never an unrelated pair of envelopes that
+        // merely happen to sit near each other across a lane or a corner
+        // (and grouping first keeps this linear in envelope count overall,
+        // never an O(envelopes^2) scan over the whole district).
+        let mut by_face: std::collections::BTreeMap<(u32, sim::generation::Side), Vec<Rect>> = std::collections::BTreeMap::new();
+        for e in em.envelopes() {
+            let front = pm.plots()[e.plot as usize].front.expect("a placed envelope's own plot always has a front");
+            let block = pm.plots()[e.plot as usize].block;
+            by_face.entry((block, front)).or_default().push(e.footprint);
+        }
+        for ((block, front), envs) in by_face {
+            for i in 0..envs.len() {
+                for j in (i + 1)..envs.len() {
+                    let (a, b) = (envs[i], envs[j]);
+                    let gap = match front {
+                        sim::generation::Side::North | sim::generation::Side::South => {
+                            let y_overlap = a.y0.max(b.y0) < a.y1.min(b.y1);
+                            if !y_overlap { continue; }
+                            if a.x1 <= b.x0 { b.x0 - a.x1 } else if b.x1 <= a.x0 { a.x0 - b.x1 } else { continue; }
+                        }
+                        sim::generation::Side::East | sim::generation::Side::West => {
+                            let x_overlap = a.x0.max(b.x0) < a.x1.min(b.x1);
+                            if !x_overlap { continue; }
+                            if a.y1 <= b.y0 { b.y0 - a.y1 } else if b.y1 <= a.y0 { a.y0 - b.y1 } else { continue; }
+                        }
+                    };
+                    prop_assert!(gap == 0 || gap >= 2, "seed {seed}: block {block} front {front:?}: envelopes {a:?} and {b:?} are {gap} cells apart");
+                }
+            }
         }
     }
 
     /// `inv_generation_envelope_sizes_are_varied` -- a city of identical
-    /// boxes satisfies AC3's mean band too (Quentin's direction).
+    /// boxes satisfies AC3's mean band too.
     #[test]
     fn inv_generation_envelope_sizes_are_varied(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let pm = plots::run(seed, &lu, &net, &cfg);
-        let em = match envelopes::run(seed, &pm, &cfg) {
-            Ok(em) => em,
-            Err(_) => return Ok(()),
-        };
+        let em = envelopes::place_all(seed, &pm, &cfg);
         let sizes: std::collections::BTreeSet<(i64, i64)> = em.envelopes().map(|e| (e.along_face_cells(), e.depth_cells())).collect();
         prop_assert!(
             sizes.len() as i64 >= cfg.envelope_min_distinct_sizes,
@@ -2218,16 +2396,41 @@ proptest! {
         );
     }
 
-    /// `inv_generation_building_count_within_tolerance`: a seed that trips
-    /// AC4's own tolerance guard is a world that fails to create, so the
-    /// acceptable failure rate over arbitrary seeds is zero.
+    /// `inv_generation_envelope_mean_size_within_a_weak_per_city_band`: a
+    /// loose, per-arbitrary-seed companion to the tight pooled assertion
+    /// below -- catches a gross regression (the mean collapsing toward
+    /// the class minimum) on every seed, not just the fixed 0..256 range.
     #[test]
-    fn inv_generation_building_count_within_tolerance(seed in any::<u64>()) {
+    fn inv_generation_envelope_mean_size_within_a_weak_per_city_band(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let pm = plots::run(seed, &lu, &net, &cfg);
-        let result = envelopes::run(seed, &pm, &cfg);
+        let em = envelopes::place_all(seed, &pm, &cfg);
+        let (mut sum_w, mut sum_d, mut n) = (0i64, 0i64, 0i64);
+        for e in em.envelopes() {
+            sum_w += e.along_face_cells();
+            sum_d += e.depth_cells();
+            n += 1;
+        }
+        prop_assume!(n > 0);
+        let tol_w = (cfg.envelope_mean_width_tolerance_cells * MEAN_SIZE_WEAK_TOLERANCE_MULTIPLIER) as i64;
+        let tol_d = (cfg.envelope_mean_depth_tolerance_cells * MEAN_SIZE_WEAK_TOLERANCE_MULTIPLIER) as i64;
+        let (lo_w, hi_w) = (cfg.envelope_mean_width_cells as i64 - tol_w, cfg.envelope_mean_width_cells as i64 + tol_w);
+        let (lo_d, hi_d) = (cfg.envelope_mean_depth_cells as i64 - tol_d, cfg.envelope_mean_depth_cells as i64 + tol_d);
+        prop_assert!(sum_w >= lo_w * n && sum_w <= hi_w * n, "seed {seed}: per-city mean width {} outside weak band [{lo_w}, {hi_w}]", sum_w / n);
+        prop_assert!(sum_d >= lo_d * n && sum_d <= hi_d * n, "seed {seed}: per-city mean depth {} outside weak band [{lo_d}, {hi_d}]", sum_d / n);
+    }
+
+    /// `inv_generation_building_count_within_tolerance`: a seed that trips
+    /// AC4's own tolerance guard is a world that fails to create, so the
+    /// acceptable failure rate over arbitrary seeds is engineered to be
+    /// negligible (`count_tolerance_percent`'s own key comment states the
+    /// sigma-based rule), not merely hoped for.
+    #[test]
+    fn inv_generation_building_count_within_tolerance(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let result = sim::generation::generate(seed, &cfg);
         prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
     }
 
@@ -2238,32 +2441,63 @@ proptest! {
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let pm = plots::run(seed, &lu, &net, &cfg);
-        let em = match envelopes::run(seed, &pm, &cfg) {
-            Ok(em) => em,
-            Err(_) => return Ok(()),
-        };
+        let em = envelopes::place_all(seed, &pm, &cfg);
         prop_assert!(
             em.rejected_percent() <= cfg.envelope_max_rejected_plot_percent,
             "seed {seed}: rejected {}%, over max_rejected_plot_percent {}", em.rejected_percent(), cfg.envelope_max_rejected_plot_percent
         );
     }
 
-    /// `inv_generation_total_never_panics` extended to all four passes
-    /// (Quentin's direction: "extended to run all four passes").
+    /// `inv_generation_total_never_panics` extended to all four passes.
     #[test]
     fn inv_generation_all_four_passes_never_panic(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        // `generate` is the entry point under test here; the hand-chain
+        // below is what must still yield plots when its count check errs.
+        let _ = sim::generation::generate(seed, &cfg);
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let pm = plots::run(seed, &lu, &net, &cfg);
-        let _ = envelopes::run(seed, &pm, &cfg);
         prop_assert!(!pm.plots().is_empty());
     }
 }
 
+fn block_edge_touches_street(block: Rect, street: Rect, side: sim::generation::Side) -> bool {
+    use sim::generation::Side;
+    match side {
+        Side::North => street.y1 == block.y0 && street.x0 < block.x1 && block.x0 < street.x1,
+        Side::South => street.y0 == block.y1 && street.x0 < block.x1 && block.x0 < street.x1,
+        Side::West => street.x1 == block.x0 && street.y0 < block.y1 && block.y0 < street.y1,
+        Side::East => street.x0 == block.x1 && street.y0 < block.y1 && block.y0 < street.y1,
+    }
+}
+
+/// The seeds a 50,000-seed scan found at or near the true extremes of the
+/// building-count distribution at this generator's own committed config
+/// (see `generation.envelopes.count_tolerance_percent`'s own key comment
+/// for the measurement), plus the one CI itself found failing before
+/// that scan -- pinned here so a generator change that shifts the
+/// distribution fails deterministically, every run.
+const PINNED_BUILDING_COUNT_SEEDS: [u64; 3] = [10_913_822_634_098_035_655, 17_840, 33_799];
+
+/// A handful of individually-measured seeds, pinned as fixed-seed tests
+/// asserting `Ok` -- a generator change that shifts the building-count
+/// distribution fails these deterministically, every run, rather than
+/// only occasionally through the arbitrary-seed property above.
+#[test]
+fn building_count_holds_at_individually_measured_extreme_seeds() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    for seed in PINNED_BUILDING_COUNT_SEEDS {
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let pm = plots::run(seed, &lu, &net, &cfg);
+        envelopes::run(seed, &pm, &cfg)
+            .unwrap_or_else(|e| panic!("pinned seed {seed} unexpectedly failed tolerance: {e}"));
+    }
+}
+
 /// AC3's tight pooled mean-size assertion, over the fixed seed range
-/// `0..256` (Quentin's direction: "a weak per-city band in the proptest
-/// and a tight pooled assertion" against the committed key +- tolerance).
+/// `0..256`, against the committed key +- tolerance.
 #[test]
 fn inv_generation_envelope_mean_size_matches_the_committed_band() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -2272,9 +2506,7 @@ fn inv_generation_envelope_mean_size_matches_the_committed_band() {
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let pm = plots::run(seed, &lu, &net, &cfg);
-        let Ok(em) = envelopes::run(seed, &pm, &cfg) else {
-            continue;
-        };
+        let em = envelopes::place_all(seed, &pm, &cfg);
         for e in em.envelopes() {
             sum_w += e.along_face_cells();
             sum_d += e.depth_cells();
@@ -2302,13 +2534,17 @@ fn inv_generation_envelope_mean_size_matches_the_committed_band() {
 /// its_own_plot`'s own non-overlap reasoning actually holds: two
 /// envelopes built from two plots that do not themselves overlap never
 /// overlap either, exercising `Envelope`/`Plot` directly rather than only
-/// ever seeing real generator output (Quentin's own "a metric that has
-/// never been seen to fail is not coverage" -- here the reverse: a
-/// structural argument that has never been seen demonstrated).
+/// ever seeing real generator output.
 #[test]
 fn envelope_footprints_from_two_different_plots_never_overlap() {
     use sim::generation::{LandUse, Side};
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let row_bounds = Rect {
+        x0: -1000,
+        y0: -1000,
+        x1: 1000,
+        y1: 1000,
+    };
     let left = plots::Plot {
         bounds: Rect {
             x0: 0,
@@ -2317,7 +2553,7 @@ fn envelope_footprints_from_two_different_plots_never_overlap() {
             y1: 20,
         },
         block: 0,
-        front: Side::South,
+        front: Some(Side::South),
         land_use: LandUse::Residential,
         density: cfg.plot_high_density_threshold,
         open: false,
@@ -2330,15 +2566,15 @@ fn envelope_footprints_from_two_different_plots_never_overlap() {
             y1: 20,
         },
         block: 0,
-        front: Side::South,
+        front: Some(Side::South),
         land_use: LandUse::Residential,
         density: cfg.plot_high_density_threshold,
         open: false,
     };
     let mut rng_a = Rng::new(1);
     let mut rng_b = Rng::new(2);
-    let a = envelopes::place_one(&left, 0, &mut rng_a, &cfg);
-    let b = envelopes::place_one(&right, 1, &mut rng_b, &cfg);
+    let a = envelopes::place_one(&left, 0, row_bounds, &mut rng_a, &cfg);
+    let b = envelopes::place_one(&right, 1, row_bounds, &mut rng_b, &cfg);
     let (envelopes::EnvelopeOutcome::Placed(a), envelopes::EnvelopeOutcome::Placed(b)) = (a, b)
     else {
         panic!("both plots must fit their class minimum");
@@ -2348,6 +2584,52 @@ fn envelope_footprints_from_two_different_plots_never_overlap() {
         && a.footprint.y0 < b.footprint.y1
         && b.footprint.y0 < a.footprint.y1;
     assert!(!overlap, "{:?} and {:?} overlap", a.footprint, b.footprint);
+}
+
+/// A hand-built negative fixture proving `inv_generation_open_plot_
+/// percent_bounded` can actually fail: a district where most plots are
+/// marked `open` trips both the count and area ceilings.
+#[test]
+fn open_percent_fixtures_fail_a_district_of_mostly_open_plots() {
+    use sim::generation::{LandUse, Side};
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let site = sim::generation::SiteBounds {
+        x0: 0,
+        y0: 0,
+        x1: 512,
+        y1: 512,
+    };
+    let open_plot = |i: i32| plots::Plot {
+        bounds: Rect {
+            x0: i * 20,
+            y0: 0,
+            x1: i * 20 + 20,
+            y1: 20,
+        },
+        block: 0,
+        front: None,
+        land_use: LandUse::Residential,
+        density: 50,
+        open: true,
+    };
+    let real_plot = plots::Plot {
+        bounds: Rect {
+            x0: 200,
+            y0: 100,
+            x1: 220,
+            y1: 120,
+        },
+        block: 0,
+        front: Some(Side::South),
+        land_use: LandUse::Residential,
+        density: 50,
+        open: false,
+    };
+    let mut fixture_plots: Vec<plots::Plot> = (0..9).map(open_plot).collect();
+    fixture_plots.push(real_plot);
+    let pm = plots::PlotMap::test_fixture(site, fixture_plots);
+    assert!(pm.open_count_percent() > cfg.plot_max_open_percent_by_count);
+    assert!(pm.open_area_percent() > cfg.plot_max_open_percent_by_area);
 }
 
 /// The guard `inv_generation_peripheral_blocks_are_not_degenerate` cannot
