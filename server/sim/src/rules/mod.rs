@@ -11,7 +11,7 @@
 //! ([`RuleSet::for_test`]), but nothing outside `source`'s own module can
 //! construct a `RuleSet` any other way.
 //!
-//! The engine never sees a content key ("cafe", "villa_district"): it
+//! The engine never sees a content key ("flying_saucer", "villa_district"): it
 //! sees tag ids and integers. `defs/rules/*.toml` authors five closed
 //! kinds (Placement, Distribution, Coherence, Adjacency, Requirement) as
 //! data rows; extending the grammar within a kind is a new row, never a
