@@ -4,7 +4,7 @@
 //! `target_count_per_million_cells`, `count_tolerance_percent`,
 //! `mean_width/depth_cells`) over seeds `0..50_000` at the committed
 //! `defs::BALANCE`. A binary, not a test: too slow for every CI run, and
-//! `scripts/ci/check-trace-matrix.sh` refuses an `#[ignore]`d test.
+//! `scripts/ci/check-trace-matrix.sh` refuses a skipped test.
 //!
 //! ```text
 //! cargo run -p bounds --release --bin measure-generation

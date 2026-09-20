@@ -200,7 +200,13 @@ fn row_axis_is_corner(plot_bounds: Rect, row_bounds: Rect, front: Side) -> (bool
 /// The row-axis inset on each of a plot's own two row-edges: `setback`
 /// on a corner edge (see [`row_axis_is_corner`]), `half_gap` otherwise
 /// (an ordinary neighbour-facing edge).
-fn row_axis_insets(plot_bounds: Rect, row_bounds: Rect, front: Side, half_gap: i32, setback: i32) -> (i32, i32) {
+fn row_axis_insets(
+    plot_bounds: Rect,
+    row_bounds: Rect,
+    front: Side,
+    half_gap: i32,
+    setback: i32,
+) -> (i32, i32) {
     let (corner_lo, corner_hi) = row_axis_is_corner(plot_bounds, row_bounds, front);
     (
         if corner_lo { setback } else { half_gap },
@@ -215,7 +221,8 @@ fn row_axis_insets(plot_bounds: Rect, row_bounds: Rect, front: Side, half_gap: i
 /// `PlotMap` and looked up per plot, never iterated, but NFR28 rules out
 /// an unordered collection on principle everywhere in this module.
 pub fn row_bounds_by_block_front(plots: &[Plot]) -> std::collections::BTreeMap<(u32, Side), Rect> {
-    let mut row_bounds: std::collections::BTreeMap<(u32, Side), Rect> = std::collections::BTreeMap::new();
+    let mut row_bounds: std::collections::BTreeMap<(u32, Side), Rect> =
+        std::collections::BTreeMap::new();
     for p in plots {
         let Some(front) = p.front else { continue };
         row_bounds
@@ -442,7 +449,11 @@ pub fn place_all(city_seed: u64, plots: &PlotMap, cfg: &GenerationConfig) -> Env
 /// Runs pass 4: [`place_all`], then checks the realised placed-envelope
 /// count for this seed against [`super::GenerationConfig::
 /// building_count_band`] -- `Err` outside it.
-pub fn run(city_seed: u64, plots: &PlotMap, cfg: &GenerationConfig) -> Result<EnvelopeMap, GenerationError> {
+pub fn run(
+    city_seed: u64,
+    plots: &PlotMap,
+    cfg: &GenerationConfig,
+) -> Result<EnvelopeMap, GenerationError> {
     let map = place_all(city_seed, plots, cfg);
 
     let placed = map.placed_count();
@@ -817,7 +828,15 @@ mod tests {
         };
         let make_plots = |n: i64| -> plots_mod::PlotMap {
             let plots = (0..n)
-                .map(|i| fixture_plot(plot_bounds(i as i32), Side::South, LandUse::Residential, c.plot_high_density_threshold, false))
+                .map(|i| {
+                    fixture_plot(
+                        plot_bounds(i as i32),
+                        Side::South,
+                        LandUse::Residential,
+                        c.plot_high_density_threshold,
+                        false,
+                    )
+                })
                 .collect();
             plots_mod::PlotMap::test_fixture(site, plots)
         };
@@ -840,4 +859,3 @@ mod tests {
         }
     }
 }
-

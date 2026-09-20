@@ -515,10 +515,8 @@ impl GenerationConfig {
                 balance,
                 "generation.envelopes.side_gap_periphery_cells",
             ) as i32,
-            envelope_size_trim_max_cells: get(
-                balance,
-                "generation.envelopes.size_trim_max_cells",
-            ) as i32,
+            envelope_size_trim_max_cells: get(balance, "generation.envelopes.size_trim_max_cells")
+                as i32,
             envelope_mean_width_cells: get(balance, "generation.envelopes.mean_width_cells") as i32,
             envelope_mean_width_tolerance_cells: get(
                 balance,
@@ -1183,7 +1181,10 @@ mod tests {
     fn from_balance_rejects_peripheral_low_band_floor_percent_over_pooled_min_ratio_percent() {
         let balance = with_override("generation.streets.peripheral_low_band_floor_percent", 200);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.to_string().contains("peripheral_low_band_floor_percent"));
+        assert!(
+            err.to_string()
+                .contains("peripheral_low_band_floor_percent")
+        );
     }
 
     #[test]

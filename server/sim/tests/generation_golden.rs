@@ -297,4 +297,3 @@ fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
         plan_digest(&lu, &net_b, &pm_b, &em_b)
     );
 }
-

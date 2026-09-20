@@ -131,7 +131,8 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
         }
         let limits = cfg.envelope_limits(p.land_use);
         let area = p.bounds.width() * p.bounds.height();
-        let min_area = cfg.plot_width_min_cells[p.land_use as usize] as i64 * limits.min_depth_cells as i64;
+        let min_area =
+            cfg.plot_width_min_cells[p.land_use as usize] as i64 * limits.min_depth_cells as i64;
         assert!(
             area >= min_area,
             "non-open plot {:?} (use {:?}) has area {area} under its own minimum {min_area}",

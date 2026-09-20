@@ -420,7 +420,13 @@ fn plots_and_envelopes_legend(y0: i64) -> String {
         )
     };
     body.push_str(&swatch(8, y0 + 32, "plot yard", Some("#bfe3bf"), "yard"));
-    body.push_str(&swatch(140, y0 + 32, "plot envelope", Some("#bfe3bf"), "envelope"));
+    body.push_str(&swatch(
+        140,
+        y0 + 32,
+        "plot envelope",
+        Some("#bfe3bf"),
+        "envelope",
+    ));
     body.push_str(&swatch(280, y0 + 32, "plot open", None, "open plot"));
     body.push_str(&swatch(400, y0 + 32, "plot rejected", None, "rejected"));
     body.push_str(&format!(
@@ -476,10 +482,21 @@ fn residential_core_and_periphery_points(
         .iter()
         .filter(|b| block_land_use(map, b.bounds) == LandUse::Residential)
         .collect();
-    let centre = |b: &Block| ((b.bounds.x0 + b.bounds.x1) / 2, (b.bounds.y0 + b.bounds.y1) / 2);
+    let centre = |b: &Block| {
+        (
+            (b.bounds.x0 + b.bounds.x1) / 2,
+            (b.bounds.y0 + b.bounds.y1) / 2,
+        )
+    };
     let dist = |c: (i32, i32)| (c.0 - peak_point.0).abs().max((c.1 - peak_point.1).abs());
-    let core = residential.iter().map(|b| centre(b)).min_by_key(|&c| dist(c))?;
-    let periphery = residential.iter().map(|b| centre(b)).max_by_key(|&c| dist(c))?;
+    let core = residential
+        .iter()
+        .map(|b| centre(b))
+        .min_by_key(|&c| dist(c))?;
+    let periphery = residential
+        .iter()
+        .map(|b| centre(b))
+        .max_by_key(|&c| dist(c))?;
     Some((core, periphery))
 }
 
@@ -497,7 +514,12 @@ fn residential_core_and_periphery_points(
 /// blocks specifically (the core one and the farthest-periphery one), so
 /// plot packing alone is what differs between them, never a land-use
 /// difference too.
-pub fn envelopes_svg(map: &LandUseMap, net: &StreetNetwork, pm: &PlotMap, em: &EnvelopeMap) -> String {
+pub fn envelopes_svg(
+    map: &LandUseMap,
+    net: &StreetNetwork,
+    pm: &PlotMap,
+    em: &EnvelopeMap,
+) -> String {
     let site = net.site();
     let (w, h) = (site.width(), site.height());
     let legend_h = 88;
@@ -526,7 +548,13 @@ pub fn envelopes_svg(map: &LandUseMap, net: &StreetNetwork, pm: &PlotMap, em: &E
 
     let (core_point, periphery_point) =
         residential_core_and_periphery_points(map, net).unwrap_or_else(|| peak_and_far_points(map));
-    body.push_str(&viewport_outline(core_point.0, core_point.1, site, "#d81b60", "core"));
+    body.push_str(&viewport_outline(
+        core_point.0,
+        core_point.1,
+        site,
+        "#d81b60",
+        "core",
+    ));
     body.push_str(&viewport_outline(
         periphery_point.0,
         periphery_point.1,

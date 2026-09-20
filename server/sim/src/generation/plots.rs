@@ -191,7 +191,10 @@ impl PlotMap {
     /// bound that keeps a deep block's own small, silent leftover from
     /// growing into a district-wide void nothing ever checks.
     pub fn unplotted_percent(&self, blocks: &[Block]) -> i64 {
-        let total_block_area: i64 = blocks.iter().map(|b| b.bounds.width() * b.bounds.height()).sum();
+        let total_block_area: i64 = blocks
+            .iter()
+            .map(|b| b.bounds.width() * b.bounds.height())
+            .sum();
         if total_block_area == 0 {
             return 0;
         }
