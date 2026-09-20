@@ -41,10 +41,11 @@ tags = ["municipal_service", "depot"]
 land_uses = ["industrial"]
 density_min = 0
 density_max = 100
-min_interior_width_cells = 10
-min_interior_depth_cells = 10
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
 weight = 0
-professions = ["depot_dispatcher", "depot_mechanic", "refuse_collector"]
+prefers_site = ["arterial", "street"]
+professions = ["dispatcher", "mechanic", "sanitation_worker"]
 
 [[building_type]]
 id = 29
@@ -124,3 +125,17 @@ professions = [
   "supervisor",
   "driver",
 ]
+
+# A storage yard is content, not a gap (Derek's direction, PR #317
+# cycle 2) -- same lever as `commercial.toml`'s own `vacant_unit`, on
+# industrial land: no `professions`, never a workplace.
+[[building_type]]
+id = 46
+key = "storage_yard"
+tags = ["workshop"]
+land_uses = ["industrial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 10

@@ -617,15 +617,14 @@ pub fn envelopes_svg(
 }
 
 /// Story 3.4's own evidence: every placed envelope tinted by its own
-/// *derived* class -- never a stored category, the same derivation the
-/// generator itself uses (Derek's direction, PR #317 cycle 2). A
-/// municipal-service type gets a distinct marker per its own *other*
-/// tag (depot/council/hospital/welfare_office/shelter today, but never
-/// named here: the marker palette is assigned by the sorted list of
-/// distinct civic tags [`content`] actually carries, so a new
-/// institution kind gets its own marker with no code change), plus the
-/// catchment grid pass 5's own allocation is scoped to, each cell
-/// annotated per distribution row with dwellings/owed/placed.
+/// tag *set* (Tim's direction, PR #317 cycle 2: derive from data, no
+/// per-key branch -- a tag renamed must never silently repaint the
+/// map), a distinct marker for every type that is the *subject of a
+/// committed distribution row* ("sited by a rule" is the data-derived
+/// definition of "civic", never a tag name -- `as_distribution` gives
+/// that set directly), plus the catchment grid pass 5's own allocation
+/// is scoped to, each cell annotated per distribution row with
+/// dwellings/owed/placed.
 fn tag_key(id: u32) -> &'static str {
     defs::TAGS
         .iter()
@@ -634,52 +633,55 @@ fn tag_key(id: u32) -> &'static str {
         .unwrap_or("?")
 }
 
-/// A type's own derived class tint -- dwelling (by form), workplace,
-/// municipal service, or a neutral fallback for anything else (a
-/// `weight = 0` singleton with no distribution row targeting it, say).
+const TYPE_TINT_PALETTE: [&str; 8] = [
+    "#f4d03f", "#e67e22", "#c0392b", "#3498db", "#8e44ad", "#16a085", "#2c3e50", "#95a5a6",
+];
+
+/// A stable FNV-1a hash over a type's own sorted tag ids -- the one
+/// place a `[u32]` tag set becomes a palette index, so two types with
+/// the same tag set always share a tint, and no comparison against any
+/// one tag's own name ever appears.
+fn tag_set_hash(tags: &[u32]) -> u64 {
+    let mut sorted = tags.to_vec();
+    sorted.sort_unstable();
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for t in &sorted {
+        hash ^= *t as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+/// A type's own derived tint: its own tag set's hash, mapped onto one
+/// colour in a fixed palette.
 fn building_type_tint(def: &defs::BuildingTypeDef) -> &'static str {
-    let has = |key: &str| def.tags.iter().any(|&t| tag_key(t) == key);
-    if has("municipal_service") {
-        "#8e44ad"
-    } else if has("form_high") {
-        "#c0392b"
-    } else if has("form_mid") {
-        "#e67e22"
-    } else if has("form_low") {
-        "#f4d03f"
-    } else if !def.professions.is_empty() {
-        "#3498db"
-    } else {
-        "#95a5a6"
-    }
+    TYPE_TINT_PALETTE[(tag_set_hash(def.tags) % TYPE_TINT_PALETTE.len() as u64) as usize]
 }
 
-const CIVIC_MARKER_SHAPES: [&str; 6] = ["circle", "square", "triangle", "diamond", "star", "plus"];
+const MARKER_SHAPES: [&str; 6] = ["circle", "square", "triangle", "diamond", "star", "plus"];
 
-/// The sorted, distinct list of "civic" tags -- every tag, other than
-/// `municipal_service` itself, carried by a type that also carries
-/// `municipal_service` -- content actually declares. Sorted by key, so
-/// marker assignment is stable across a run, not dependent on id order.
-fn civic_tags(content: &GenerationContent) -> Vec<&'static str> {
-    let mut tags: std::collections::BTreeSet<&'static str> = std::collections::BTreeSet::new();
-    for b in content.building_types {
-        if b.tags.iter().any(|&t| tag_key(t) == "municipal_service") {
-            for &t in b.tags {
-                let key = tag_key(t);
-                if key != "municipal_service" {
-                    tags.insert(key);
-                }
-            }
-        }
-    }
-    tags.into_iter().collect()
+/// Every committed `[[distribution]]` row's own subject tag, sorted by
+/// rule id -- the marker palette's own index order, so it stays stable
+/// across a run and does not depend on iteration order.
+fn distribution_subject_tags(content: &GenerationContent) -> Vec<sim::rules::DistributionRow> {
+    let mut rows: Vec<sim::rules::DistributionRow> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .collect();
+    rows.sort_by_key(|r| r.id);
+    rows
 }
 
-fn marker_shape(civic: &[&str], key: &str) -> &'static str {
-    match civic.iter().position(|&k| k == key) {
-        Some(i) => CIVIC_MARKER_SHAPES[i % CIVIC_MARKER_SHAPES.len()],
-        None => "circle",
-    }
+/// `None` if `def` is not the subject of any committed distribution
+/// row; otherwise the marker shape assigned to that row.
+fn marker_shape_for(
+    rows: &[sim::rules::DistributionRow],
+    def: &defs::BuildingTypeDef,
+) -> Option<&'static str> {
+    rows.iter()
+        .position(|r| def.tags.contains(&r.subject))
+        .map(|i| MARKER_SHAPES[i % MARKER_SHAPES.len()])
 }
 
 /// One small SVG marker, centred on `(cx, cy)`, shaped by `shape` --
@@ -783,6 +785,16 @@ fn catchment_overlay(
         .rules
         .iter()
         .filter_map(|r| r.as_distribution())
+        // Only this pass's own rows (Derek's direction, PR #317 cycle
+        // 2): a row like an earlier story's own street-furniture rule,
+        // whose `per` tag no building type ever carries, has nothing to
+        // do with this pass and clutters the catchment labels.
+        .filter(|row| {
+            content
+                .building_types
+                .iter()
+                .any(|b| b.tags.contains(&row.per))
+        })
         .collect();
     dist_rows.sort_by_key(|r| r.id);
 
@@ -840,49 +852,70 @@ fn catchment_overlay(
     body
 }
 
-fn building_types_legend(content: &GenerationContent, y0: i64) -> String {
+/// The legend's own two halves, both derived from the district's own
+/// *placed* types, never from the full committed catalog (so the
+/// legend only ever shows what the map itself draws): one swatch per
+/// distinct tint actually placed, labelled by the union of tag keys
+/// every type sharing that tint carries; one marker per distribution
+/// row that actually placed a subject, labelled by the row's own key.
+/// Wrapped at a fixed column count so a wide tag-key label can never
+/// run under the next entry.
+fn building_types_legend(
+    placed_defs: &[&defs::BuildingTypeDef],
+    subject_rows: &[sim::rules::DistributionRow],
+    y0: i64,
+) -> String {
     let mut body = String::new();
-    let entries: [(&str, &str); 5] = [
-        ("#f4d03f", "dwelling (low)"),
-        ("#e67e22", "dwelling (mid)"),
-        ("#c0392b", "dwelling (high)"),
-        ("#3498db", "workplace"),
-        ("#95a5a6", "other"),
-    ];
-    let mut x = 8;
-    for (fill, label) in entries {
-        body.push_str(&format!(
-            "<rect x=\"{x}\" y=\"{}\" width=\"16\" height=\"16\" fill=\"{fill}\"/>\n",
-            y0 + 4
-        ));
-        body.push_str(&format!(
-            "<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">{label}</text>\n",
-            x + 20,
-            y0 + 16
-        ));
-        x += 130;
+    let mut by_tint: std::collections::BTreeMap<&'static str, std::collections::BTreeSet<u32>> =
+        std::collections::BTreeMap::new();
+    for def in placed_defs {
+        by_tint
+            .entry(building_type_tint(def))
+            .or_default()
+            .extend(def.tags.iter().copied());
     }
-    let civic = civic_tags(content);
-    let mut cx = 8;
-    for key in &civic {
-        let shape = marker_shape(&civic, key);
-        body.push_str(&marker(cx + 8, (y0 + 40) as i32, shape, "#8e44ad"));
+    const COLS: i32 = 4;
+    let mut row = 0i64;
+    for (i, (fill, tags)) in by_tint.iter().enumerate() {
+        let col = i as i32 % COLS;
+        row = row.max(i as i64 / COLS as i64);
+        let x = 8 + col * 160;
+        let y = y0 + 4 + (i as i64 / COLS as i64) * 20;
+        let label: Vec<&str> = tags.iter().map(|&t| tag_key(t)).collect();
         body.push_str(&format!(
-            "<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">{key}</text>\n",
-            cx + 20,
-            y0 + 44
+            "<rect x=\"{x}\" y=\"{y}\" width=\"14\" height=\"14\" fill=\"{fill}\"/>\n"
         ));
-        cx += 110;
+        body.push_str(&format!(
+            "<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"10\" fill=\"#111\">{}</text>\n",
+            x + 18,
+            y + 12,
+            label.join(", ")
+        ));
+    }
+    let tint_rows = row + 1;
+
+    for (i, r) in subject_rows.iter().enumerate() {
+        let shape = MARKER_SHAPES[i % MARKER_SHAPES.len()];
+        let col = i as i32 % COLS;
+        let x = 8 + col * 160;
+        let y = y0 + 8 + tint_rows * 20 + (i as i64 / COLS as i64) * 20;
+        body.push_str(&marker(x + 7, y as i32, shape, "#111"));
+        body.push_str(&format!(
+            "<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"10\" fill=\"#111\">{}</text>\n",
+            x + 18,
+            y + 4,
+            r.key
+        ));
     }
     body
 }
 
 /// Pass 5's own evidence: the same block/street backdrop as `envelopes_
-/// svg`, every placed envelope tinted by its own derived class, a
-/// distinct marker over every municipal-service envelope (per its own
-/// civic tag), the catchment grid with dwellings/owed/placed per
-/// distribution row, and a legend derived from `content` rather than
-/// hand-named.
+/// svg`, every placed envelope tinted by its own tag-set-derived class,
+/// a distinct marker over every envelope whose own assigned type is the
+/// subject of a committed distribution row, the catchment grid with
+/// dwellings/owed/placed per distribution row, and a legend derived
+/// from what this district actually places rather than hand-named.
 pub fn building_types_svg(
     map: &LandUseMap,
     net: &StreetNetwork,
@@ -894,11 +927,21 @@ pub fn building_types_svg(
 ) -> String {
     let site = net.site();
     let (w, h) = (site.width(), site.height());
-    let civic_rows = (civic_tags(content).len() as i64 / 4).max(0);
-    let legend_h = 60 + civic_rows * 20;
-    let total_h = h + legend_h;
     let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
         content.building_types.iter().map(|b| (b.id, b)).collect();
+    let subject_rows = distribution_subject_tags(content);
+    let placed_ids: std::collections::BTreeSet<u32> =
+        bt.assignments().iter().map(|a| a.building_type).collect();
+    let placed_defs: Vec<&defs::BuildingTypeDef> = placed_ids.iter().map(|id| by_id[id]).collect();
+    let placed_subject_rows: Vec<sim::rules::DistributionRow> = subject_rows
+        .iter()
+        .filter(|r| placed_defs.iter().any(|d| d.tags.contains(&r.subject)))
+        .copied()
+        .collect();
+    let legend_rows =
+        (placed_defs.len() as i64 + 3) / 4 + (placed_subject_rows.len() as i64 + 3) / 4;
+    let legend_h = 40 + legend_rows * 20;
+    let total_h = h + legend_h;
 
     let mut body = block_rects(map, net);
     for e in net.edges() {
@@ -913,7 +956,6 @@ pub fn building_types_svg(
         ));
     }
 
-    let civic = civic_tags(content);
     for outcome in em.outcomes() {
         let EnvelopeOutcome::Placed(e) = outcome else {
             continue;
@@ -938,21 +980,15 @@ pub fn building_types_svg(
             e.footprint.height(),
             building_type_tint(def)
         ));
-        if def.tags.iter().any(|&t| tag_key(t) == "municipal_service") {
-            let civic_key = def
-                .tags
-                .iter()
-                .map(|&t| tag_key(t))
-                .find(|&k| k != "municipal_service")
-                .unwrap_or("?");
+        if let Some(shape) = marker_shape_for(&subject_rows, def) {
             let (mx, my) = front_edge_midpoint(e.footprint, e.front);
-            body.push_str(&marker(mx, my, marker_shape(&civic, civic_key), "#111"));
+            body.push_str(&marker(mx, my, shape, "#111"));
         }
     }
 
     body.push_str(&catchment_overlay(site, cfg, content, &by_id, bt, em));
 
-    let legend = building_types_legend(content, h);
+    let legend = building_types_legend(&placed_defs, &placed_subject_rows, h);
     format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{total_h}\" viewBox=\"0 0 {w} {total_h}\">\n\
          <rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{total_h}\" fill=\"#ffffff\"/>\n\

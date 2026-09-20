@@ -1,8 +1,13 @@
 # Story 3.4: vocabulary only -- staffs `defs/building-types/
-# industrial.toml`. `depot_dispatcher`/`depot_mechanic`/`refuse_collector`
-# are held only by the singleton `depot` type -- a monopsony is
-# institutional friction, deliberately excluded from the pooled
-# profession-depth target (Derek's direction).
+# industrial.toml`. `depot`'s own employer-prefixed posts were folded
+# into shared trades (PR #317 cycle 2, Derek's direction): `dispatcher`
+# (`defs/professions/municipal.toml`, also `transit_office`), `mechanic`
+# (below, also `vehicle_repair_garage`) and `sanitation_worker`
+# (`defs/professions/sanitation.toml`, the chain-linked launch job) --
+# `depot` is still the only employer holding no `min_employers_per_
+# profession` threshold of its own (a monopsony is institutional
+# friction, deliberately excluded from the pooled profession-depth
+# target), it just no longer needs its own dead-end keys to say so.
 
 [[profession]]
 id = 38
@@ -63,15 +68,3 @@ key = "driver"
 [[profession]]
 id = 52
 key = "parts_clerk"
-
-[[profession]]
-id = 53
-key = "depot_dispatcher"
-
-[[profession]]
-id = 54
-key = "depot_mechanic"
-
-[[profession]]
-id = 55
-key = "refuse_collector"

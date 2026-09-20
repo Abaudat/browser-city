@@ -149,7 +149,7 @@ density_max = 100
 min_interior_width_cells = 5
 min_interior_depth_cells = 5
 weight = 10
-professions = ["launderette_attendant"]
+professions = ["attendant"]
 
 [[building_type]]
 id = 17
@@ -173,7 +173,7 @@ density_max = 100
 min_interior_width_cells = 6
 min_interior_depth_cells = 6
 weight = 10
-professions = ["cook", "server", "waiter"]
+professions = ["cook", "server"]
 
 [[building_type]]
 id = 19
@@ -209,7 +209,7 @@ density_max = 100
 min_interior_width_cells = 6
 min_interior_depth_cells = 6
 weight = 10
-professions = ["post_clerk", "clerk", "postal_worker"]
+professions = ["clerk", "postal_worker"]
 
 [[building_type]]
 id = 22
@@ -281,3 +281,19 @@ professions = [
   "projectionist",
   "assistant_manager",
 ]
+
+# A shuttered shopfront is content in this game, not a gap (Derek's
+# direction, PR #317 cycle 2): the one lever that brings the workplace-
+# count pooled mean down to the Scale Baseline target without inflating
+# any one workplace type's own weight -- no `professions`, so it is
+# never a workplace at all.
+[[building_type]]
+id = 45
+key = "vacant_unit"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 12

@@ -1,0 +1,10 @@
+[[building_type]]
+id = 1
+key = "fixture_house"
+tags = []
+land_uses = ["residential"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 1

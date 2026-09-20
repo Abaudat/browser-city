@@ -207,8 +207,9 @@ fn main() {
         for (&p, &c) in &employers_this_city {
             *profession_sum.entry(p).or_insert(0) += c;
         }
-        if d.check_rules(&content).is_err() {
+        if let Err(e) = d.check_rules(&content) {
             rule_violation_seeds += 1;
+            eprintln!("seed {seed}: real rule violation: {e:?}");
         }
     }
 

@@ -677,6 +677,51 @@ fn an_object_tagged_underfoot_with_a_collider_is_named() {
     );
 }
 
+/// PR #317 cycle 2 (Quentin's/Tim's direction): `check_building_type_
+/// density_coverage`'s own three independent-existence branches, folded
+/// into one joint condition this cycle -- a failure fixture for each way
+/// the joint condition, not any one clause alone, can trip.
+#[test]
+fn a_land_use_with_no_weighted_building_type_at_all_is_named() {
+    let err = build_err("building-type-no-weighted-type-for-land-use");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: no weight > 0 building type is eligible for land use 'residential' at all"
+    );
+}
+
+#[test]
+fn a_density_gap_no_weighted_building_type_covers_is_named() {
+    let err = build_err("building-type-density-gap");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: no weight > 0 building type with no site-context restriction covers land use 'residential' at density 51 and fits its own smallest envelope (5x5 interior) -- a defs-authoring gap the fill step would hit on a real seed"
+    );
+}
+
+#[test]
+fn a_building_type_too_large_for_its_own_land_uses_smallest_envelope_is_named() {
+    let err = build_err("building-type-interior-too-large");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: no weight > 0 building type with no site-context restriction covers land use 'residential' at density 0 and fits its own smallest envelope (5x5 interior) -- a defs-authoring gap the fill step would hit on a real seed"
+    );
+}
+
+/// The joint condition's own new clause this cycle: a `requires_site`
+/// restriction (a corner, or a given street tier) is never guaranteed to
+/// exist on every envelope of a given land use and density, so a fill
+/// type covering a density only via a site-restricted row leaves the
+/// same real gap a too-large interior does.
+#[test]
+fn a_density_covered_only_by_a_site_restricted_building_type_is_named() {
+    let err = build_err("building-type-site-restricted");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: no weight > 0 building type with no site-context restriction covers land use 'residential' at density 0 and fits its own smallest envelope (5x5 interior) -- a defs-authoring gap the fill step would hit on a real seed"
+    );
+}
+
 /// Every category this module lists above has its own fixture directory
 /// under `tests/fixtures/invalid/` -- so a category added to one and not
 /// the other is a hard failure here, not a silent gap. `non-integer-id`
@@ -758,6 +803,10 @@ fn every_known_category_has_a_fixture_directory() {
         "archetype-negative-inset",
         "archetype-supplies-neither",
         "archetype-collider-does-not-fit-object-width",
+        "building-type-no-weighted-type-for-land-use",
+        "building-type-density-gap",
+        "building-type-interior-too-large",
+        "building-type-site-restricted",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

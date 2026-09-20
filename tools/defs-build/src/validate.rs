@@ -388,21 +388,25 @@ fn check_building_type_ranges(entries: &[BuildingTypeEntry]) -> Result<(), DefsE
     Ok(())
 }
 
-/// Story 3.4 (PR #317 cycle 1, Tim's direction): a defs-authoring gap
-/// must fail `defs-build`, never panic in the published module. For
-/// every land use and every density in `generation.land_use.density_
-/// min..density_max`, at least one `weight > 0` type must be eligible
-/// (`building_types::run`'s own baseline fill draws only among those) --
-/// otherwise a real generated seed could land a plot the fill step has
-/// nothing to place. And, for every land use, at least one eligible
-/// `weight > 0` type's own minimum interior must fit the smallest
-/// envelope that land use can ever produce (`generation.envelopes.
-/// {use}_min_interior_width_cells`/`_depth_cells`) -- otherwise every
-/// fill type for that land use could be structurally unplaceable on the
-/// land use's own smallest real envelope. A no-op when `entries` is
-/// empty (nothing to cover) or -- like `find_tile_size_px` -- when the
-/// generation balance keys are not present at all (a fixture with no
-/// generation config to check against).
+/// Story 3.4 (PR #317 cycle 2, Quentin's/Tim's direction): a defs-
+/// authoring gap must fail `defs-build`, never panic in the published
+/// module -- and the three conditions the fill step's own eligibility
+/// (`building_types::hard_eligible`) needs *jointly*, never as three
+/// independent existence checks (cycle 1's own bug: a band covered only
+/// by a `requires_site`-restricted or oversized type passed every
+/// separate check and still aborted world creation, the exact shape the
+/// `hospital` regression this cycle found). For every land use and every
+/// density in `generation.land_use.density_min..density_max`, at least
+/// one `weight > 0` type must, at once: carry no `requires_site`
+/// restriction (the only site contexts `check_building_type_density_
+/// coverage` can prove exist on *every* envelope of a given land use and
+/// density -- a corner or a given street tier is never guaranteed),
+/// cover that density, and fit that land use's own smallest envelope
+/// (`generation.envelopes.{use}_min_interior_width_cells`/
+/// `_depth_cells`). A no-op when `entries` is empty (nothing to cover)
+/// or -- like `find_tile_size_px` -- when the generation balance keys
+/// are not present at all (a fixture with no generation config to check
+/// against).
 fn check_building_type_density_coverage(
     entries: &[BuildingTypeEntry],
     balance: &[BalanceEntry],
@@ -454,31 +458,93 @@ fn check_building_type_density_coverage(
             ));
         }
         for density in density_min..=density_max {
-            let covered = fill_rows
-                .iter()
-                .any(|e| density >= e.density_min as i64 && density <= e.density_max as i64);
-            if !covered {
+            let jointly_eligible = fill_rows.iter().any(|e| {
+                e.requires_site.is_empty()
+                    && density >= e.density_min as i64
+                    && density <= e.density_max as i64
+                    && (e.min_interior_width_cells as i64) <= min_w
+                    && (e.min_interior_depth_cells as i64) <= min_d
+            });
+            if !jointly_eligible {
                 return Err(DefsError::new(
                     &first.path,
                     first.key.line,
                     first.key.col,
                     format!(
-                        "no weight > 0 building type is eligible for land use '{use_name}' at density {density} -- a defs-authoring gap the fill step would hit on a real seed"
+                        "no weight > 0 building type with no site-context restriction covers land use '{use_name}' at density {density} and fits its own smallest envelope ({min_w}x{min_d} interior) -- a defs-authoring gap the fill step would hit on a real seed"
                     ),
                 ));
             }
         }
-        let fits_smallest = fill_rows.iter().any(|e| {
-            (e.min_interior_width_cells as i64) <= min_w
-                && (e.min_interior_depth_cells as i64) <= min_d
+    }
+    Ok(())
+}
+
+/// Story 3.4 (PR #317 cycle 2, Quentin's direction): the same joint-
+/// eligibility question, asked of every committed `[[distribution]]`
+/// row's own subject -- a type distribution places is never filtered
+/// by the ordinary fill's own `weight > 0` gate, so `check_building_
+/// type_density_coverage` above never sees it. If a subject type's own
+/// minimum interior fits none of its own declared land uses' smallest
+/// envelope, it is structurally unplaceable everywhere -- a `defs-build`
+/// failure by name, never a `GenerationError::RuleViolations` on
+/// whichever rare seed first tries to place it. A no-op when there are
+/// no rows, no building types, or (like the check above) the generation
+/// balance keys are not present at all.
+fn check_distribution_subject_fits_its_own_land_use(
+    building_types: &[BuildingTypeEntry],
+    distributions: &[DistributionEntry],
+    balance: &[BalanceEntry],
+) -> Result<(), DefsError> {
+    if distributions.is_empty() || building_types.is_empty() {
+        return Ok(());
+    }
+    let get = |key: &str| -> Option<i64> {
+        balance
+            .iter()
+            .find(|b| b.key.value == key)
+            .map(|b| b.value.value)
+    };
+    const LAND_USE_NAMES: [&str; 4] = ["residential", "commercial", "industrial", "institutional"];
+
+    for row in distributions {
+        let subject_types: Vec<&BuildingTypeEntry> = building_types
+            .iter()
+            .filter(|b| b.tags.iter().any(|t| t == &row.subject.value))
+            .collect();
+        if subject_types.is_empty() {
+            // An unresolved tag reference is a different, already-
+            // checked failure (rule tag resolution below); nothing to
+            // ask a fit question about here.
+            continue;
+        }
+        let fits_somewhere = subject_types.iter().any(|b| {
+            b.land_uses.iter().any(|u| {
+                let use_name = LAND_USE_NAMES[u.index()];
+                let (Some(min_w), Some(min_d)) = (
+                    get(&format!(
+                        "generation.envelopes.{use_name}_min_interior_width_cells"
+                    )),
+                    get(&format!(
+                        "generation.envelopes.{use_name}_min_interior_depth_cells"
+                    )),
+                ) else {
+                    // No config to check this land use against --
+                    // never fail on an absent balance key.
+                    return true;
+                };
+                (b.min_interior_width_cells as i64) <= min_w
+                    && (b.min_interior_depth_cells as i64) <= min_d
+            })
         });
-        if !fits_smallest {
+        if !fits_somewhere {
             return Err(DefsError::new(
-                &first.path,
-                first.key.line,
-                first.key.col,
+                &row.path,
+                row.key.line,
+                row.key.col,
                 format!(
-                    "no weight > 0 building type for land use '{use_name}' fits that land use's own smallest envelope ({min_w}x{min_d} interior)"
+                    "distribution row '{}' names subject '{}', but every building type carrying that tag has a minimum interior too large for every land use it declares -- structurally unplaceable on any envelope",
+                    row.key.value, row.subject.value
                 ),
             ));
         }
@@ -2436,6 +2502,11 @@ pub fn validate(
     check_building_type_tags(&raw.building_types, &tag_ids)?;
     check_building_type_ranges(&raw.building_types)?;
     check_building_type_density_coverage(&raw.building_types, &raw.balance)?;
+    check_distribution_subject_fits_its_own_land_use(
+        &raw.building_types,
+        &raw.distributions,
+        &raw.balance,
+    )?;
     check_tag_role_layers(&raw.tags, layer_codes)?;
     check_placement_floor_range(&raw.placements)?;
     check_distribution_ranges(&raw.distributions)?;
@@ -2719,7 +2790,8 @@ pub fn validate(
             min_interior_width_cells: b.min_interior_width_cells,
             min_interior_depth_cells: b.min_interior_depth_cells,
             weight: b.weight,
-            requires_corner: b.requires_corner,
+            requires_site: crate::model::site_context_mask(&b.requires_site),
+            prefers_site: crate::model::site_context_mask(&b.prefers_site),
             density_affinity: b.density_affinity,
             professions: {
                 let mut v: Vec<String> = b.professions.clone();

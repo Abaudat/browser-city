@@ -1196,37 +1196,44 @@ a `defs::BuildingTypeDef` id, from the `building-types` def kind
 `sim::generated::defs::BUILDING_TYPES`, a permanent append-only
 id/key). A row carries `tags`, `land_uses` (a `[bool; 4]` mask, one per
 `LandUse` variant), `density_min`/`_max`, `min_interior_width_cells`/
-`_depth_cells`, `weight`, `requires_corner`, `density_affinity` (a soft
-siting preference a distribution override ranks candidates by) and
-`professions` (a plain profession key list, into `defs/professions/`)
--- never a `count`/`unique`/`required` field: how many of something
-exist is a rule (a `[[distribution]]` row), never a field on the type.
-"Institution", "workplace" and "dwelling" are all *derived*, never a
-stored category: a workplace is any type whose own `professions` is
-non-empty, a municipal service carries the `municipal_service` tag, a
-dwelling carries `dwelling`.
+`_depth_cells`, `weight`, `requires_site`/`prefers_site` (each a
+`[bool; 4]` mask over the same closed structural vocabulary --
+`corner`, and the street tier an envelope's own front faces:
+`arterial`/`street`/`lane`, `tools/defs-build`'s own `RawSiteContext`
+order), `density_affinity` and `professions` (a plain profession key
+list, into `defs/professions/`) -- never a `count`/`unique`/`required`
+field: how many of something exist is a rule (a `[[distribution]]`
+row), never a field on the type. "Institution", "workplace" and
+"dwelling" are all *derived*, never a stored category: a workplace is
+any type whose own `professions` is non-empty, a municipal service
+carries the `municipal_service` tag, a dwelling carries `dwelling`.
 
 `building_types::run` places constructively, in two steps: a weighted
-draw among every type eligible for an envelope's own plot (land use,
-density band, minimum interior, corner-ness) first, seeded from the
-envelope's own footprint (`rect_seed_key`, never list position); then,
-for every committed `[[distribution]]` row, read generically through
-`sim::rules::RuleDef::as_distribution` (never by matching the rule
-engine's own closed kind enum) in ascending rule id order, an override
-onto a named institution among the still-eligible envelopes. A row's
-own whole-site target (`per`-tag count / `ratio`, the same figure
-`sim::rules::evaluate`'s own Distribution check computes) is allocated
-per catchment -- a fixed-extent square tiling the site
-(`GenerationConfig::building_type_catchment_extent_cells`) -- by
-largest-remainder apportionment (every catchment's own floor
-guaranteed, the site's own remaining budget going to the catchments
-owed the most first), so the sum across catchments always equals the
-site-wide target; a site-wide spillover pass tops up any shortfall a
-catchment whose own eligible land and the row's own subject do not
-spatially correlate would otherwise leave. Within a catchment,
-candidates are chosen by a deterministic farthest-point search, ranked
-first by the subject type's own `density_affinity`, tie-broken by a
-seeded draw key, respecting that row's own `min_spacing`.
+draw among every *hard*-eligible type for an envelope's own plot (land
+use, density band, minimum interior, every `requires_site` context it
+demands) first, seeded from the envelope's own footprint
+(`rect_seed_key`, never list position); then, for every committed
+`[[distribution]]` row, read generically through `sim::rules::RuleDef::
+as_distribution` (never by matching the rule engine's own closed kind
+enum) in ascending rule id order, an override onto a named institution
+among the still-eligible envelopes. A row's own whole-site target
+(`per`-tag count / `ratio`, the same figure `sim::rules::evaluate`'s
+own Distribution check computes) splits into a *floor* per catchment --
+a fixed-extent square tiling the site (`GenerationConfig::building_
+type_catchment_extent_cells`) -- and a site-wide *remainder*: each
+catchment owes exactly `floor(per-tag count in that catchment /
+ratio)`, never a share inflated by how much of the `per` tag it happens
+to hold (a proportional remainder drags a civic building toward
+whichever catchment holds the most dwellings, not toward its own
+preferred site); the units the floors do not account for are placed
+site-wide instead. Both the per-catchment floor and the site-wide
+remainder place through the one `place_row`, sharing one running
+`min_spacing` state (`chosen_cells`) so nothing before or after a
+catchment boundary clusters. Within either pool, candidates are ranked
+-- never chosen by a distance search -- first by how many of the
+subject type's own `prefers_site` contexts they match, then by
+`density_affinity`, then by a seeded draw key (total in practice, so a
+distance tie-break is never reached).
 
 `DistrictSite` (`generation::site`) is the one `RuleSite` a *finished*
 district presents to `sim::rules::evaluate` -- one subject cell per
@@ -1260,7 +1267,7 @@ deliberately unrelated ids/keys, not live `defs::BALANCE`/
 `defs::BUILDING_TYPES`, so a balance or content retune alone never
 forces a version bump, and the same shape of output against a wholly
 different content table is itself proof the generator never branches on
-a content key. `server/sim/tests/goldens/generation_v3.golden` is keyed
+a content key. `server/sim/tests/goldens/generation_v4.golden` is keyed
 to it, guarded by `check-golden-version-bump.sh`'s `generation_*` arm the
 same way `RNG_VERSION`/`APPEARANCE_VERSION` are.
 

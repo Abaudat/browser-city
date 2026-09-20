@@ -23,31 +23,50 @@ mode = "forbid"
 # large ratio -- never a count field on the building type itself (Tim's
 # direction: "how many of something exist is a rule"). The generator
 # reads `ratio`/`min_spacing` exactly as the engine does; AC3's own
-# "evenly spread" is enforced by the generator allocating this row's own
+# "evenly spread" is enforced by the generator splitting this row's own
 # whole-site target (`floor(total dwellings / ratio)`, the same figure
-# the engine's own Distribution check computes) per catchment,
-# proportional to the dwellings in each catchment, rounded down, the
-# site's own remaining budget apportioned to the catchments with the
-# largest remainder first -- so the sum across catchments always equals
-# the engine's own site-wide expectation, and no catchment is ever
-# skipped that its own share entitles it to (`inv_generation_no_
-# quadrant_lacks_its_required_services`). `tolerance_percent` is set so
-# the ratio floor stays meaningful (never `100`, which makes the lower
-# bound zero) while still covering the real placement shortfall a
-# catchment with too few eligible candidates can leave (measured,
-# `measure-generation`).
+# the engine's own Distribution check computes) into a *floor* per
+# catchment -- never a share inflated by how many dwellings a catchment
+# happens to hold -- plus a site-wide remainder placed by ranking
+# (`sim::generation::building_types`'s own module doc), so no catchment
+# is ever owed less than its own floor entitles it to
+# (`inv_generation_no_quadrant_lacks_its_required_services`).
+# `tolerance_percent` is set so the ratio floor stays meaningful (never
+# `100`, which makes the lower bound zero) while still covering the real
+# placement shortfall a catchment with too few eligible candidates can
+# leave (measured, `measure-generation`).
 #
 # `max_distance` is set past the site's own diagonal on every row below
 # on purpose (Derek's direction: no coverage ceiling on a municipal row
 # -- friction is content, a city is never made uniformly convenient);
 # past a 2000-cell site this stops being a sentinel and starts being a
 # real (if still generous) ceiling -- a later story's own concern.
+#
+# `depot_present`/`council_present`/`hospital_present` share `ratio =
+# 350` (PR #317 cycle 2, Derek's direction: "the AC says *a* depot, *a*
+# council building, *a* hospital"): dwelling count over 5,000
+# *sequentially* measured seeds runs [440, 726], mean 585
+# (`measure-generation`), which first suggested 400 -- but a genuinely
+# random `proptest` sweep (never sequential 0..N, the same lesson this
+# story's own hospital `min_interior` bug taught) found a real basis of
+# 397 within a few thousand cases, below 400. 350 keeps `floor(dwellings
+# / ratio)` at exactly 1 across both that measured range and real random
+# sampling, with margin, never 2 short of dwelling counts near 700. At
+# this ratio a catchment's own floor is 0 almost everywhere (585/4
+# catchments is nowhere near 350), so these three place almost entirely
+# through the site-wide remainder step -- ranked by `prefers_site`/
+# `density_affinity`, never tied to whichever catchment happens to hold
+# the most dwellings. "Across the measured seed range", not a hard
+# guarantee for literally every possible seed: a basis under 350 (or,
+# rarely, over 700) is architecturally possible and is not treated as a
+# bug (`inv_generation_required_institutions_are_present_when_their_own_
+# target_is_nonzero`'s own doc comment says so).
 [[distribution]]
 id = 21
 key = "depot_present"
 subject = "depot"
 per = "dwelling"
-ratio = 300
+ratio = 350
 tolerance_percent = 25
 min_spacing = 40
 max_distance = 2000
@@ -57,7 +76,7 @@ id = 22
 key = "council_present"
 subject = "council"
 per = "dwelling"
-ratio = 300
+ratio = 350
 tolerance_percent = 25
 min_spacing = 40
 max_distance = 2000
@@ -67,7 +86,7 @@ id = 23
 key = "hospital_present"
 subject = "hospital"
 per = "dwelling"
-ratio = 300
+ratio = 350
 tolerance_percent = 25
 min_spacing = 40
 max_distance = 2000
@@ -75,14 +94,30 @@ max_distance = 2000
 # Welfare offices and shelters sit where land is cheap, at real number --
 # never a singleton -- so their own even-spread half (min_spacing) does
 # real work; Derek's direction: the walk to them is content, so no
-# coverage ceiling here either.
+# coverage ceiling here either. `ratio` back near the cycle-1 figures
+# (150/100, PR #317 cycle 2, Derek's direction) -- lowering them to
+# 60/50 last cycle to satisfy a site-wide presence check crowded both
+# types onto the same small pockets of cheap (institutional-or-
+# commercial) land competing for the same envelopes, which starved the
+# per-quadrant floor by min_spacing more than it needed to; the higher
+# ratio keeps a real, non-singleton spread while leaving each catchment
+# a floor small enough to actually fit.
+#
+# `tolerance_percent` wider than the other three rows above, and wider
+# than either carried last cycle: these two share the same scarce
+# institutional-or-commercial land (a real, measured shortfall, not
+# noise -- pooled mean placed count sits under its own ratio target for
+# both, `measure-generation`), so their own site-wide floor needs real
+# margin to clear `cargo run -p bounds --release --bin measure-
+# generation`'s own real-rule-violation count on every one of 5,000
+# measured seeds. Re-derive after every retune.
 [[distribution]]
 id = 24
 key = "welfare_office_present"
 subject = "welfare_office"
 per = "dwelling"
-ratio = 60
-tolerance_percent = 25
+ratio = 150
+tolerance_percent = 55
 min_spacing = 24
 max_distance = 2000
 
@@ -91,7 +126,7 @@ id = 25
 key = "shelter_present"
 subject = "shelter"
 per = "dwelling"
-ratio = 50
-tolerance_percent = 25
+ratio = 100
+tolerance_percent = 70
 min_spacing = 20
 max_distance = 2000

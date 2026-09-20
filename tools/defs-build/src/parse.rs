@@ -196,7 +196,8 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         min_interior_width_cells: b.min_interior_width_cells,
                         min_interior_depth_cells: b.min_interior_depth_cells,
                         weight: b.weight,
-                        requires_corner: b.requires_corner,
+                        requires_site: b.requires_site,
+                        prefers_site: b.prefers_site,
                         density_affinity: b.density_affinity,
                         professions: b.professions,
                     });

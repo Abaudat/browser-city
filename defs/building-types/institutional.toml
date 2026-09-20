@@ -40,8 +40,9 @@ density_max = 100
 min_interior_width_cells = 8
 min_interior_depth_cells = 8
 weight = 0
+prefers_site = ["arterial"]
 density_affinity = 1
-professions = ["council_clerk", "council_administrator", "councillor"]
+professions = ["clerk", "administrator", "councillor"]
 
 [[building_type]]
 id = 36
@@ -53,6 +54,7 @@ density_max = 100
 min_interior_width_cells = 8
 min_interior_depth_cells = 8
 weight = 0
+prefers_site = ["arterial"]
 density_affinity = 1
 professions = ["nurse", "orderly", "receptionist", "surgeon", "paramedic"]
 
@@ -80,7 +82,7 @@ min_interior_width_cells = 7
 min_interior_depth_cells = 7
 weight = 0
 density_affinity = -1
-professions = ["shelter_attendant", "cook", "support_worker"]
+professions = ["attendant", "cook", "support_worker"]
 
 [[building_type]]
 id = 39

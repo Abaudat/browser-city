@@ -1,0 +1,23 @@
+[[balance]]
+key = "generation.land_use.density_min"
+value = 0
+min = 0
+max = 100
+
+[[balance]]
+key = "generation.land_use.density_max"
+value = 100
+min = 0
+max = 100
+
+[[balance]]
+key = "generation.envelopes.residential_min_interior_width_cells"
+value = 5
+min = 1
+max = 64
+
+[[balance]]
+key = "generation.envelopes.residential_min_interior_depth_cells"
+value = 5
+min = 1
+max = 64

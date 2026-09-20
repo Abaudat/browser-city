@@ -149,7 +149,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str(
-        "pub struct BuildingTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub land_uses: [bool; 4],\n    pub density_min: i32,\n    pub density_max: i32,\n    pub min_interior_width_cells: u32,\n    pub min_interior_depth_cells: u32,\n    pub weight: u32,\n    pub requires_corner: bool,\n    pub density_affinity: i32,\n    pub professions: &'static [&'static str],\n}\n\n",
+        "pub struct BuildingTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub land_uses: [bool; 4],\n    pub density_min: i32,\n    pub density_max: i32,\n    pub min_interior_width_cells: u32,\n    pub min_interior_depth_cells: u32,\n    pub weight: u32,\n    pub requires_site: [bool; 4],\n    pub prefers_site: [bool; 4],\n    pub density_affinity: i32,\n    pub professions: &'static [&'static str],\n}\n\n",
     );
     out.push_str("pub const BUILDING_TYPES: &[BuildingTypeDef] = &[\n");
     for b in &defs.building_types {
@@ -158,9 +158,17 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
             "[{}, {}, {}, {}]",
             b.land_uses[0], b.land_uses[1], b.land_uses[2], b.land_uses[3]
         );
+        let requires_site = format!(
+            "[{}, {}, {}, {}]",
+            b.requires_site[0], b.requires_site[1], b.requires_site[2], b.requires_site[3]
+        );
+        let prefers_site = format!(
+            "[{}, {}, {}, {}]",
+            b.prefers_site[0], b.prefers_site[1], b.prefers_site[2], b.prefers_site[3]
+        );
         let professions = fmt_str_slice(&b.professions);
         out.push_str(&format!(
-            "    BuildingTypeDef {{ id: {}, key: {:?}, tags: &{tags}, land_uses: {land_uses}, density_min: {}, density_max: {}, min_interior_width_cells: {}, min_interior_depth_cells: {}, weight: {}, requires_corner: {}, density_affinity: {}, professions: &{professions} }},\n",
+            "    BuildingTypeDef {{ id: {}, key: {:?}, tags: &{tags}, land_uses: {land_uses}, density_min: {}, density_max: {}, min_interior_width_cells: {}, min_interior_depth_cells: {}, weight: {}, requires_site: {requires_site}, prefers_site: {prefers_site}, density_affinity: {}, professions: &{professions} }},\n",
             b.id,
             b.key,
             b.density_min,
@@ -168,7 +176,6 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
             b.min_interior_width_cells,
             b.min_interior_depth_cells,
             b.weight,
-            b.requires_corner,
             b.density_affinity,
         ));
     }
@@ -1051,7 +1058,8 @@ mod tests {
                 min_interior_width_cells: 6,
                 min_interior_depth_cells: 6,
                 weight: 10,
-                requires_corner: false,
+                requires_site: [false, false, false, false],
+                prefers_site: [false, false, false, false],
                 density_affinity: 0,
                 professions: vec!["sanitation_worker".into()],
             }],

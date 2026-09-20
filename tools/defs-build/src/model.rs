@@ -423,6 +423,44 @@ pub fn land_use_mask(land_uses: &[RawLandUse]) -> [bool; 4] {
     mask
 }
 
+/// PR #317 cycle 2 (Derek's direction): the closed structural vocabulary
+/// a building type's own `requires_site`/`prefers_site` reads -- a plot
+/// geometry fact (`corner`) and the street tier an envelope's own front
+/// faces (`arterial`/`street`/`lane`), the same standing as `RawLandUse`
+/// above: `sim::generation` derives these per envelope from passes 2-4
+/// and indexes the resolved `[bool; 4]` mask by position, never by a
+/// compared string.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum RawSiteContext {
+    Corner,
+    Arterial,
+    Street,
+    Lane,
+}
+
+impl RawSiteContext {
+    /// This variant's own index into the `[bool; 4]` mask
+    /// `BuildingTypeDef::requires_site`/`prefers_site` carry.
+    pub fn index(self) -> usize {
+        match self {
+            RawSiteContext::Corner => 0,
+            RawSiteContext::Arterial => 1,
+            RawSiteContext::Street => 2,
+            RawSiteContext::Lane => 3,
+        }
+    }
+}
+
+/// [`RawSiteContext::index`], folded the same way [`land_use_mask`] is.
+pub fn site_context_mask(contexts: &[RawSiteContext]) -> [bool; 4] {
+    let mut mask = [false; 4];
+    for &c in contexts {
+        mask[c.index()] = true;
+    }
+    mask
+}
+
 /// Story 3.4 (FR116, Tim's direction): a building type is a def kind, not
 /// Rust -- this row carries only `tags`/`land_uses`/`density_min`/
 /// `density_max`/`min_interior_width_cells`/`min_interior_depth_cells`/
@@ -446,19 +484,25 @@ pub struct RawBuildingType {
     pub min_interior_width_cells: u32,
     pub min_interior_depth_cells: u32,
     pub weight: u32,
-    /// Hard eligibility (story 3.4, Derek's direction, PR #317 cycle 1):
-    /// only a corner envelope (one whose own row-axis edge is the outer
-    /// edge of its own row *and* that perpendicular block side is itself
-    /// street-abutting) is ever eligible for this type. `false` (the
-    /// default) means ordinary, non-corner-restricted eligibility.
+    /// Hard eligibility (Derek's direction, PR #317 cycle 2): every
+    /// context named here must hold for an envelope, or it is never a
+    /// candidate at all -- `corner_shop` requires `["corner"]`. Empty
+    /// (the default) means no site-context restriction.
     #[serde(default)]
-    pub requires_corner: bool,
+    pub requires_site: Vec<RawSiteContext>,
     /// Soft siting for a distribution-placed type (Derek's direction):
-    /// among otherwise-eligible candidates, rank by density in this
-    /// direction before falling back to the seeded draw order -- `> 0`
-    /// prefers the highest-density eligible envelope first, `< 0` the
-    /// lowest, `0` (the default) no preference. Never consulted by the
-    /// ordinary weighted fill.
+    /// candidates are ranked first by how many of these contexts they
+    /// match (most first), then by `density_affinity`, then by the
+    /// seeded draw order. Empty (the default) means no preference at
+    /// this step. Never consulted by the ordinary weighted fill.
+    #[serde(default)]
+    pub prefers_site: Vec<RawSiteContext>,
+    /// Soft siting for a distribution-placed type (Derek's direction):
+    /// among otherwise-equally-ranked candidates, rank by density in
+    /// this direction before falling back to the seeded draw order --
+    /// `> 0` prefers the highest-density eligible envelope first, `< 0`
+    /// the lowest, `0` (the default) no preference. Never consulted by
+    /// the ordinary weighted fill.
     #[serde(default)]
     pub density_affinity: i32,
     #[serde(default)]
@@ -977,7 +1021,8 @@ pub struct BuildingTypeEntry {
     pub min_interior_width_cells: u32,
     pub min_interior_depth_cells: u32,
     pub weight: u32,
-    pub requires_corner: bool,
+    pub requires_site: Vec<RawSiteContext>,
+    pub prefers_site: Vec<RawSiteContext>,
     pub density_affinity: i32,
     pub professions: Vec<String>,
 }
@@ -1290,8 +1335,13 @@ pub struct BuildingTypeDef {
     pub min_interior_width_cells: u32,
     pub min_interior_depth_cells: u32,
     pub weight: u32,
-    /// Hard eligibility: only a corner envelope is ever eligible.
-    pub requires_corner: bool,
+    /// A `[bool; 4]` mask, [`RawSiteContext`]-order: hard eligibility --
+    /// every set context must hold for the envelope, or it is never a
+    /// candidate.
+    pub requires_site: [bool; 4],
+    /// Same order: soft siting, ranked by match count before
+    /// `density_affinity`.
+    pub prefers_site: [bool; 4],
     /// Soft siting for a distribution-placed type: `> 0` prefers the
     /// highest-density eligible candidate first, `< 0` the lowest, `0`
     /// no preference. Never consulted by the ordinary weighted fill.

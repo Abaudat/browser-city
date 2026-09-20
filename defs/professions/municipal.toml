@@ -1,17 +1,16 @@
 # Story 3.4: vocabulary only -- staffs `defs/building-types/
-# institutional.toml`. `council_clerk`/`council_administrator`/
-# `councillor` (council) and `surgeon` (hospital) are held only by their
-# own singleton type -- deliberately excluded from the pooled profession-
-# depth target, same reasoning as `industry.toml`'s own three depot-only
-# keys.
+# institutional.toml`. `councillor` (council) and `surgeon` (hospital)
+# are held only by their own singleton type -- deliberately excluded
+# from the pooled profession-depth target. `council`'s own clerk/
+# administrator posts were folded into the shared `clerk`/`administrator`
+# trades below (PR #317 cycle 2, Derek's direction), and `shelter`'s own
+# attendant post into `attendant` (`defs/professions/commerce.toml`,
+# also `launderette`) -- see `industry.toml`'s own header for the same
+# fold on `depot`.
 
 [[profession]]
 id = 56
 key = "caseworker"
-
-[[profession]]
-id = 57
-key = "shelter_attendant"
 
 [[profession]]
 id = 58
@@ -76,14 +75,6 @@ key = "support_worker"
 [[profession]]
 id = 73
 key = "custodian"
-
-[[profession]]
-id = 74
-key = "council_clerk"
-
-[[profession]]
-id = 75
-key = "council_administrator"
 
 [[profession]]
 id = 76
