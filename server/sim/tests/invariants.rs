@@ -102,7 +102,7 @@ pub const INV_GENERATION_OPEN_PLOTS_ARE_NEVER_SLIVERS: &str = "every open plot's
 pub const INV_GENERATION_NO_OPEN_PLOT_ON_A_BUILT_FACE_AT_HIGH_DENSITY: &str = "in a block at or above high_density_threshold, no open plot touches a street-abutting side that also holds a building, for any seed (story 3.3 AC1)";
 pub const INV_GENERATION_PLOT_STATE_IS_CONSISTENT: &str = "a non-open plot always has a front -- the one illegal (open, front) combination never occurs, for any seed (story 3.3 AC1)";
 pub const INV_GENERATION_BUILDING_COUNT_MEAN_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean placed-building count sits within mean_count_tolerance_percent of the Scale Baseline target scaled to the site (story 3.3 AC4, NFR14)";
-pub const INV_GENERATION_BUILDING_TYPE_PASS_NEVER_PANICS: &str = "pass 5 always produces exactly one type assignment per placed envelope, for any seed (story 3.4, FR110)";
+pub const INV_GENERATION_EVERY_ENVELOPE_HAS_EXACTLY_ONE_TYPE: &str = "pass 5 always produces exactly one type assignment per placed envelope, and every assigned id resolves in the committed content, for any seed (story 3.4 AC1, FR110)";
 pub const INV_GENERATION_EVERY_PLACED_TYPE_MATCHES_ITS_OWN_LAND_USE_AND_DENSITY_BAND: &str = "every placed envelope's own assigned building type carries the plot's own land use, and the plot's density falls inside that type's own [density_min, density_max] band, for any seed (story 3.4 AC1, FR116)";
 pub const INV_GENERATION_COMMITTED_RULES_HOLD_FOR_ANY_SEED: &str = "sim::rules::evaluate over the whole finished district's own DistrictSite, against the committed rule table, finds no violation, for any seed (story 3.4 AC1/AC2, FR112)";
 pub const INV_GENERATION_REQUIRED_INSTITUTIONS_ARE_PRESENT_WHEN_THEIR_OWN_TARGET_IS_NONZERO: &str = "for every committed distribution row, whenever its own basis/ratio target is at least 1, the district places at least one subject, for any seed (story 3.4 AC2)";
@@ -110,6 +110,7 @@ pub const INV_GENERATION_WORKPLACE_COUNT_WITHIN_TOLERANCE: &str = "at the commit
 pub const INV_GENERATION_WORKPLACE_COUNT_MEAN_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean workplace count sits within workplace_mean_count_tolerance_percent of the Scale Baseline target scaled to the site (story 3.4 AC4, NFR14)";
 pub const INV_GENERATION_PROFESSION_DEPTH_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean count of professions held by at least min_employers_per_profession distinct placed workplaces sits within the committed tolerance of target_profession_count (story 3.4, GDD Scale Baseline)";
 pub const INV_GENERATION_BUILDING_TYPE_INDEPENDENT_OF_ENVELOPE_ORDER: &str = "shuffling pass 4's own placed-envelope order and re-running pass 5 over the shuffled list never changes any envelope's own assigned type, for any seed (story 3.4, NFR25)";
+pub const INV_GENERATION_NO_QUADRANT_LACKS_ITS_REQUIRED_SERVICES: &str = "pooled over the fixed seed range 0..256, for every distribution row a building type actually feeds, the pooled subjects placed across every site quadrant holding eligible land for its subject clears the pooled per-quadrant ratio/tolerance lower bound the site-wide Distribution check computes (story 3.4 AC3)";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -1739,7 +1740,7 @@ proptest! {
     #[test]
     fn inv_generation_total_never_panics(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         // Reaching here without panicking is most of the property; a
         // handful of cheap structural reads on top prove the outputs are
@@ -1752,7 +1753,7 @@ proptest! {
     #[test]
     fn inv_generation_all_four_land_uses_present(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         for cy in 0..lu.rows() {
             for cx in 0..lu.cols() {
                 prop_assert!(lu.coarse_at(cx, cy).is_some());
@@ -1768,7 +1769,7 @@ proptest! {
     #[test]
     fn inv_generation_streets_connected_and_not_stranded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let reachable = net.reachable_from_first_node().unwrap();
         prop_assert_eq!(reachable.len(), net.nodes().len());
@@ -1779,7 +1780,7 @@ proptest! {
     #[test]
     fn inv_generation_no_dead_ends_away_from_boundary(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         prop_assert!(net.dead_end_nodes().is_empty());
     }
@@ -1793,7 +1794,7 @@ proptest! {
     #[test]
     fn inv_generation_detour_ratio_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
         for s in &samples {
@@ -1818,7 +1819,7 @@ proptest! {
     #[test]
     fn inv_generation_p99_detour_ratio_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
         let p99 = streets::p99_ratio_pct(&samples);
@@ -1837,7 +1838,7 @@ proptest! {
     #[test]
     fn inv_generation_no_staggered_junctions(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let close = net.close_same_street_junction_pairs(cfg.min_block_depth_cells);
         prop_assert!(close.is_empty(), "seed {seed}: staggered junctions {close:?}");
@@ -1848,7 +1849,7 @@ proptest! {
     #[test]
     fn inv_generation_min_block_depth_is_respected(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         for b in net.blocks() {
             prop_assert!(b.bounds.width() >= cfg.min_block_depth_cells as i64, "seed {seed}: block {:?} narrower than min_block_depth_cells", b.bounds);
@@ -1864,7 +1865,7 @@ proptest! {
     #[test]
     fn inv_generation_arterials_are_contiguous(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let site = net.site();
         let arterials: Vec<&streets::StreetEdge> = net.edges().iter().filter(|e| e.class == streets::StreetClass::Arterial).collect();
@@ -1919,7 +1920,7 @@ proptest! {
     #[test]
     fn inv_generation_peripheral_blocks_are_not_degenerate(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         // Density bands (bottom third vs top third of density_min..
         // density_max), not distance from the peak -- what `target_
@@ -1942,7 +1943,7 @@ proptest! {
     #[test]
     fn inv_generation_not_a_perfect_grid(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
 
         let (widths, heights) = net.distinct_block_sizes();
@@ -1963,7 +1964,7 @@ proptest! {
     #[test]
     fn inv_generation_exact_tiling(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let side = cfg.site_extent_cells as usize;
         let mut grid = vec![0u8; side * side];
@@ -2013,7 +2014,7 @@ proptest! {
     #[test]
     fn inv_generation_institutional_pockets_are_small(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let total_coarse_cells = (lu.cols() as i64) * (lu.rows() as i64);
         let (regions, labels) = lu.labeled_regions();
         let inst_count = regions.iter().filter(|r| r.use_ == land_use::LandUse::Institutional).count();
@@ -2063,7 +2064,7 @@ proptest! {
     #[test]
     fn inv_generation_industrial_never_touches_commercial(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let (regions, labels) = lu.labeled_regions();
         for (label, r) in regions.iter().enumerate() {
             if r.use_ != land_use::LandUse::Industrial {
@@ -2096,7 +2097,7 @@ proptest! {
     #[test]
     fn inv_generation_residential_is_the_largest_land_use_by_area(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let mut counts = [0i64; 4];
         for cy in 0..lu.rows() {
             for cx in 0..lu.cols() {
@@ -2222,7 +2223,7 @@ proptest! {
     #[test]
     fn inv_generation_block_sides_matches_a_real_street_edge(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         for b in net.blocks() {
             let sides = sim::generation::block_sides(b.bounds, net.site());
@@ -2246,7 +2247,7 @@ proptest! {
     #[test]
     fn inv_generation_block_plots_independent_of_other_blocks(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         prop_assume!(!net.blocks().is_empty());
         let block = net.blocks()[net.blocks().len() / 2];
@@ -2278,7 +2279,7 @@ proptest! {
     #[test]
     fn inv_generation_envelope_independent_of_other_plots(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-                let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let pm = plots::run(seed, &lu, &net, &cfg); // generation-entry-point: allow
         let full = envelopes::run(seed, &pm, &cfg); // generation-entry-point: allow
@@ -2540,11 +2541,12 @@ proptest! {
         prop_assert!(!pm.plots().is_empty());
     }
 
-    /// `inv_generation_building_type_pass_never_panics`: pass 5 always
-    /// produces exactly one assignment per placed envelope, for any seed
-    /// (story 3.4, FR110).
+    /// `inv_generation_every_envelope_has_exactly_one_type`: pass 5 always
+    /// produces exactly one assignment per placed envelope, and every
+    /// assigned id resolves in the committed content, for any seed
+    /// (story 3.4 AC1, FR110).
     #[test]
-    fn inv_generation_building_type_pass_never_panics(seed in any::<u64>()) {
+    fn inv_generation_every_envelope_has_exactly_one_type(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
         let d = sim::generation::plan(seed, &cfg, &content).unwrap();
@@ -2552,6 +2554,13 @@ proptest! {
             d.building_types.assignments().len(),
             d.envelopes.placed_count() as usize
         );
+        for a in d.building_types.assignments() {
+            prop_assert!(
+                content.building_types.iter().any(|b| b.id == a.building_type),
+                "seed {seed}: plot {} names unresolvable building type {}",
+                a.plot, a.building_type
+            );
+        }
     }
 
     /// `inv_generation_every_placed_type_matches_its_own_land_use_and_density_band`
@@ -2571,16 +2580,24 @@ proptest! {
         for a in d.building_types.assignments() {
             let plot = &d.plots.plots()[a.plot as usize];
             let def = by_id[&a.building_type];
-            let key = sim::generation::land_use_key(plot.land_use);
             prop_assert!(
-                def.land_uses.contains(&key),
-                "seed {seed}: plot {} (use {key:?}) got type {} which does not carry that land use",
-                a.plot, def.key
+                def.land_uses[plot.land_use as usize],
+                "seed {seed}: plot {} (use {:?}) got type {} which does not carry that land use",
+                a.plot, plot.land_use, def.key
             );
             prop_assert!(
                 plot.density >= def.density_min && plot.density <= def.density_max,
                 "seed {seed}: plot {} density {} outside type {}'s own band [{}, {}]",
                 a.plot, plot.density, def.key, def.density_min, def.density_max
+            );
+            let e = d.envelopes.envelopes().find(|e| e.plot == a.plot).unwrap();
+            let interior_w = e.along_face_cells() - 2 * cfg.envelope_wall_thickness_cells as i64;
+            let interior_d = e.depth_cells() - 2 * cfg.envelope_wall_thickness_cells as i64;
+            prop_assert!(
+                def.min_interior_width_cells as i64 <= interior_w
+                    && def.min_interior_depth_cells as i64 <= interior_d,
+                "seed {seed}: plot {} interior {interior_w}x{interior_d} is under type {}'s own minimum {}x{}",
+                a.plot, def.key, def.min_interior_width_cells, def.min_interior_depth_cells
             );
         }
     }
@@ -2602,13 +2619,23 @@ proptest! {
     }
 
     /// `inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero`
-    /// (AC2, story 3.4): for every committed `[[distribution]]` row, read
-    /// generically (never a literal building-type/tag key), whenever its
-    /// own `basis / ratio` target is at least 1, the district actually
-    /// places at least one subject -- an institution that cannot be
-    /// placed is a typed error `check_rules` reports, but this invariant
-    /// names AC2's own "the district holds every required kind" claim by
-    /// itself, for any seed.
+    /// (AC2, story 3.4): for every distribution row this pass's own
+    /// overrides can actually feed (its `per` tag is carried by at least
+    /// one committed building type -- an earlier story's own street-
+    /// furniture rule, say, is a different pass's own concern), read
+    /// generically (never a literal building-type/tag key), the
+    /// `basis / ratio` target is at least 1 for any seed (the balance
+    /// comment only claims this over the fixed 0..256 range this test's
+    /// own sibling pools over; here it is asserted for real, any seed),
+    /// and the district actually places at least one subject -- an
+    /// institution that cannot be placed is a typed error `check_rules`
+    /// reports, but this invariant names AC2's own "the district holds
+    /// every required kind" claim by itself, for any seed. Also AC2's
+    /// own "shops and cafes" half: at least one placed type carries the
+    /// `shop` tag and at least one carries `cafe`, read off `defs::TAGS`
+    /// by key (a test file, never scanned by `check-generator-no-
+    /// content-keys.sh`), not a `[[distribution]]` row -- neither is
+    /// distributed, both are ordinary weighted fill.
     #[test]
     fn inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -2622,20 +2649,43 @@ proptest! {
                 *tag_counts.entry(t).or_insert(0) += 1;
             }
         }
-        let mut dist_rows: Vec<sim::rules::DistributionRow> =
-            content.rules.iter().filter_map(|r| r.as_distribution()).collect();
+        let mut dist_rows: Vec<sim::rules::DistributionRow> = content
+            .rules
+            .iter()
+            .filter_map(|r| r.as_distribution())
+            // Only this pass's own rows -- a row whose `per` tag no
+            // committed building type ever carries (an earlier story's
+            // own street-furniture rule, say) belongs to a different
+            // pass entirely and is out of scope for a building-type
+            // basis/target claim.
+            .filter(|row| content.building_types.iter().any(|b| b.tags.contains(&row.per)))
+            .collect();
         dist_rows.sort_by_key(|d| d.id);
         for row in &dist_rows {
             let basis = tag_counts.get(&row.per).copied().unwrap_or(0);
             let target = basis / (row.ratio.max(1) as u64);
-            if target == 0 {
-                continue;
-            }
+            prop_assert!(
+                target >= 1,
+                "seed {seed}: rule {} has a basis of {basis} over ratio {}, giving target {target} < 1",
+                row.key, row.ratio
+            );
             let actual = tag_counts.get(&row.subject).copied().unwrap_or(0);
             prop_assert!(
                 actual > 0,
                 "seed {seed}: rule {} has target {target} but placed 0",
                 row.key
+            );
+        }
+
+        for &wanted in &["shop", "cafe"] {
+            let tag_id = defs::TAGS
+                .iter()
+                .find(|t| t.key == wanted)
+                .map(|t| t.id)
+                .unwrap_or_else(|| panic!("committed tags must carry a '{wanted}' entry"));
+            prop_assert!(
+                tag_counts.get(&tag_id).copied().unwrap_or(0) > 0,
+                "seed {seed}: no placed building carries the '{wanted}' tag",
             );
         }
     }
@@ -2676,7 +2726,7 @@ proptest! {
             outcomes.swap(i, j);
         }
         let shuffled_envelopes = envelopes::EnvelopeMap::test_fixture(outcomes);
-        let shuffled = sim::generation::building_types::run(seed, &shuffled_envelopes, &d.plots, &content); // generation-entry-point: allow
+        let shuffled = sim::generation::building_types::run(seed, &shuffled_envelopes, &d.plots, &d.streets, &cfg, &content); // generation-entry-point: allow
         for a in shuffled.assignments() {
             prop_assert_eq!(
                 Some(&a.building_type),
@@ -2685,6 +2735,207 @@ proptest! {
                 seed, a.plot
             );
         }
+    }
+}
+
+/// `inv_generation_no_quadrant_lacks_its_required_services` (AC3, story
+/// 3.4, Quentin's/Tim's own pre-registered spec): pooled over the fixed
+/// seed range 0..256 -- like this file's other Scale Baseline means, a
+/// plain `#[test]`, never `proptest!` -- for every distribution row this
+/// pass's own overrides can actually feed (its `per` tag is carried by
+/// at least one committed building type -- read generically off
+/// `RuleSet::iter()`/`as_distribution` and `content.building_types`,
+/// never a key list in this test; a row like an earlier story's own
+/// street-furniture rule, whose `per` tag no building type ever
+/// carries, is a different pass's own concern and out of scope here),
+/// summed across every site quadrant that holds at least one envelope
+/// the row's own subject type's `land_uses` allows at all (a quadrant
+/// with none is architecturally un-placeable for that subject -- land
+/// use, an earlier story's own pass 3, is not quadrant-aware, so a real
+/// dwelling population can share a quadrant with zero eligible land;
+/// that periphery case is excluded, not required, per Derek's own
+/// direction), the pooled subjects placed clears the pooled lower bound
+/// `sim::rules::evaluate`'s own site-wide Distribution ratio check
+/// computes per quadrant (`expected = per_in_quadrant / ratio`,
+/// `required = expected - ceil(expected * tolerance_percent / 100)`) --
+/// Tim's own formula, in the engine's own established shape, summed
+/// rather than asserted per quadrant: a single seed's own single
+/// quadrant is real min_spacing packing noise (measured,
+/// `cargo run -p sim --release --example measure_quadrant_tolerance`,
+/// PR #317 cycle 2: per-(seed, quadrant) deficits above the per-quadrant
+/// floor run as high as 3-4 units on `welfare_office_present`/
+/// `shelter_present`, the two tightest-ratio rows, out of ~11,600
+/// samples each over 3,000 seeds -- a real property over one quadrant
+/// at a time would eventually flake in CI on a random `proptest` case),
+/// but the pooled sum comfortably clears it (measured, same run: pooled
+/// actual/required over seeds 0..256 is ~1.21 for `welfare_office_
+/// present` and ~1.17 for `shelter_present`) -- the same "weak, pooled
+/// band over real per-instance variance" shape this file's own envelope-
+/// size and Scale-Baseline-mean invariants already use, not a new
+/// pattern. A quadrant's own bucket is derived independently of pass 5's
+/// internal catchment field: each placed envelope's own footprint
+/// centre, in doubled coordinates (so an even-width footprint's true
+/// centre is exact, never rounded), floored against the doubled site
+/// origin and doubled extent.
+#[test]
+fn inv_generation_no_quadrant_lacks_its_required_services() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let site = cfg.site();
+    let extent = (cfg.building_type_catchment_extent_cells as i64).max(1);
+
+    let mut dist_rows: Vec<sim::rules::DistributionRow> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .filter(|row| {
+            content
+                .building_types
+                .iter()
+                .any(|b| b.tags.contains(&row.per))
+        })
+        .collect();
+    dist_rows.sort_by_key(|d| d.id);
+
+    let mut pooled_required: std::collections::BTreeMap<u32, u64> =
+        dist_rows.iter().map(|r| (r.id, 0u64)).collect();
+    let mut pooled_actual: std::collections::BTreeMap<u32, u64> =
+        dist_rows.iter().map(|r| (r.id, 0u64)).collect();
+
+    for seed in 0..256u64 {
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let mut quadrant_of: std::collections::BTreeMap<u32, (i64, i64)> =
+            std::collections::BTreeMap::new();
+        let mut land_use_present_in_q: std::collections::BTreeMap<(i64, i64), [bool; 4]> =
+            std::collections::BTreeMap::new();
+        for e in d.envelopes.envelopes() {
+            let cx2 = e.footprint.x0 as i64 + e.footprint.x1 as i64;
+            let cy2 = e.footprint.y0 as i64 + e.footprint.y1 as i64;
+            let qx = (cx2 - 2 * site.x0 as i64).div_euclid(2 * extent);
+            let qy = (cy2 - 2 * site.y0 as i64).div_euclid(2 * extent);
+            quadrant_of.insert(e.plot, (qx, qy));
+            let plot = &d.plots.plots()[e.plot as usize];
+            land_use_present_in_q.entry((qx, qy)).or_insert([false; 4])[plot.land_use as usize] =
+                true;
+        }
+
+        for row in &dist_rows {
+            let subject_def = content
+                .building_types
+                .iter()
+                .find(|b| b.tags.contains(&row.subject));
+            let mut per_by_q: std::collections::BTreeMap<(i64, i64), u64> =
+                std::collections::BTreeMap::new();
+            let mut subj_by_q: std::collections::BTreeMap<(i64, i64), u64> =
+                std::collections::BTreeMap::new();
+            for a in d.building_types.assignments() {
+                let def = by_id[&a.building_type];
+                let q = quadrant_of[&a.plot];
+                if def.tags.contains(&row.per) {
+                    *per_by_q.entry(q).or_insert(0) += 1;
+                }
+                if def.tags.contains(&row.subject) {
+                    *subj_by_q.entry(q).or_insert(0) += 1;
+                }
+            }
+            let ratio = row.ratio.max(1) as u64;
+            for (&q, &per_in_q) in &per_by_q {
+                if let Some(subject_def) = subject_def {
+                    let has_eligible_land = land_use_present_in_q.get(&q).is_some_and(|present| {
+                        (0..4).any(|i| present[i] && subject_def.land_uses[i])
+                    });
+                    if !has_eligible_land {
+                        continue;
+                    }
+                }
+                let subjects_in_q = subj_by_q.get(&q).copied().unwrap_or(0);
+                let expected = per_in_q / ratio;
+                let tolerance = (expected * row.tolerance_percent as u64).div_ceil(100);
+                let required = expected.saturating_sub(tolerance);
+                *pooled_required.get_mut(&row.id).unwrap() += required;
+                *pooled_actual.get_mut(&row.id).unwrap() += subjects_in_q;
+            }
+        }
+    }
+
+    for row in &dist_rows {
+        let required = pooled_required[&row.id];
+        let actual = pooled_actual[&row.id];
+        assert!(
+            actual >= required,
+            "rule {}: pooled over seeds 0..256, placed {actual} subjects across every eligible quadrant but the pooled per-quadrant floor needs {required}",
+            row.key
+        );
+    }
+}
+
+/// Companion to `inv_generation_no_quadrant_lacks_its_required_services`:
+/// proves that invariant is not vacuously true by construction -- over
+/// the fixed seed range 0..256, every distribution row it actually
+/// checks (the same "`per` tag is carried by a committed building type"
+/// relevance filter) has at least one seed/quadrant pair where
+/// `per_in_quadrant > 0`, so the invariant's own lower bound is a real
+/// check on a real placement at least once per row, never a `0 >= 0`
+/// no-op every time.
+#[test]
+fn quadrant_floor_check_is_not_vacuous_over_seeds_0_to_256() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let site = cfg.site();
+    let extent = (cfg.building_type_catchment_extent_cells as i64).max(1);
+
+    let mut dist_rows: Vec<sim::rules::DistributionRow> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .filter(|row| {
+            content
+                .building_types
+                .iter()
+                .any(|b| b.tags.contains(&row.per))
+        })
+        .collect();
+    dist_rows.sort_by_key(|d| d.id);
+    let mut exercised: std::collections::BTreeMap<u32, bool> =
+        dist_rows.iter().map(|r| (r.id, false)).collect();
+
+    for seed in 0..256u64 {
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let mut quadrant_of: std::collections::BTreeMap<u32, (i64, i64)> =
+            std::collections::BTreeMap::new();
+        for e in d.envelopes.envelopes() {
+            let cx2 = e.footprint.x0 as i64 + e.footprint.x1 as i64;
+            let cy2 = e.footprint.y0 as i64 + e.footprint.y1 as i64;
+            let qx = (cx2 - 2 * site.x0 as i64).div_euclid(2 * extent);
+            let qy = (cy2 - 2 * site.y0 as i64).div_euclid(2 * extent);
+            quadrant_of.insert(e.plot, (qx, qy));
+        }
+        for row in &dist_rows {
+            let mut per_by_q: std::collections::BTreeMap<(i64, i64), u64> =
+                std::collections::BTreeMap::new();
+            for a in d.building_types.assignments() {
+                let def = by_id[&a.building_type];
+                if def.tags.contains(&row.per) {
+                    *per_by_q.entry(quadrant_of[&a.plot]).or_insert(0) += 1;
+                }
+            }
+            if per_by_q.values().any(|&c| c > 0) {
+                exercised.insert(row.id, true);
+            }
+        }
+    }
+
+    for row in &dist_rows {
+        assert!(
+            exercised[&row.id],
+            "rule {} never had a single quadrant with a nonzero per-tag count over seeds 0..256 -- \
+             the quadrant invariant is vacuous for this row",
+            row.key
+        );
     }
 }
 
@@ -2852,8 +3103,8 @@ fn inv_generation_profession_depth_matches_the_scale_baseline() {
             for a in d.building_types.assignments() {
                 let def = by_id[&a.building_type];
                 if sim::generation::building_types::is_workplace(def) {
-                    for p in def.professions {
-                        *employers.entry(p.profession).or_insert(0) += 1;
+                    for &p in def.professions {
+                        *employers.entry(p).or_insert(0) += 1;
                     }
                 }
             }
@@ -2970,6 +3221,444 @@ fn open_percent_fixtures_fail_a_district_of_mostly_open_plots() {
     let pm = plots::PlotMap::test_fixture(site, fixture_plots);
     assert!(pm.open_count_percent() > cfg.plot_max_open_percent_by_count);
     assert!(pm.open_area_percent() > cfg.plot_max_open_percent_by_area);
+}
+
+/// Assembles a minimal, hand-built [`sim::generation::District`] from
+/// exactly the plots, envelope outcomes and type assignments a planted-
+/// violation test needs -- `land_use` and `streets`' own edges are never
+/// read by `check_rules` (it only ever builds a [`sim::generation::
+/// DistrictSite`] off `envelopes`/`plots`/`streets`/`building_types`), so
+/// they carry the smallest fixture that still type-checks.
+fn planted_district(
+    site: sim::generation::SiteBounds,
+    plot_list: Vec<plots::Plot>,
+    outcomes: Vec<sim::generation::EnvelopeOutcome>,
+    assignments: Vec<sim::generation::TypeAssignment>,
+    blocks: Vec<sim::generation::Block>,
+) -> sim::generation::District {
+    sim::generation::District {
+        land_use: land_use::LandUseMap::test_fixture(
+            site,
+            512,
+            1,
+            1,
+            0,
+            0,
+            vec![land_use::LandUseCell {
+                use_: sim::generation::LandUse::Residential,
+                density: 0,
+            }],
+        ),
+        streets: streets::StreetNetwork::test_fixture(site, Vec::new(), blocks),
+        plots: plots::PlotMap::test_fixture(site, plot_list),
+        envelopes: envelopes::EnvelopeMap::test_fixture(outcomes),
+        building_types: sim::generation::BuildingTypeMap::test_fixture(assignments),
+    }
+}
+
+/// Quentin's direction (PR #317 cycle 2): a hand-built district per
+/// constraint, proving `District::check_rules` reports each by its own
+/// committed rule key -- the `.grid` examples already prove the engine
+/// itself; nothing before this proved `DistrictSite` presents a *real
+/// generated* district to it correctly. Two `depot`s well inside
+/// `depot_present`'s own `min_spacing`, nothing else placed at all (so
+/// the ratio check's own `basis` is 0 and stays silent) -- the reported
+/// violation must name `depot_present`'s own rule id.
+#[test]
+fn check_rules_reports_a_planted_min_spacing_violation_by_its_own_rule_key() {
+    use sim::generation::{LandUse, Side};
+    let content = GenerationContent::committed();
+    let site = sim::generation::SiteBounds {
+        x0: 0,
+        y0: 0,
+        x1: 512,
+        y1: 512,
+    };
+    let depot = content
+        .building_types
+        .iter()
+        .find(|b| b.key == "depot")
+        .expect("committed content carries a 'depot' building type");
+    let row = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .find(|r| r.key == "depot_present")
+        .expect("committed content carries a 'depot_present' distribution row");
+
+    let footprints = [
+        Rect {
+            x0: 100,
+            y0: 100,
+            x1: 110,
+            y1: 110,
+        },
+        Rect {
+            x0: 112,
+            y0: 100,
+            x1: 122,
+            y1: 110,
+        },
+    ];
+    let plot_list: Vec<plots::Plot> = footprints
+        .iter()
+        .map(|&bounds| plots::Plot {
+            bounds,
+            block: 0,
+            front: Some(Side::South),
+            land_use: LandUse::Industrial,
+            density: 50,
+            open: false,
+        })
+        .collect();
+    let outcomes: Vec<sim::generation::EnvelopeOutcome> = footprints
+        .iter()
+        .enumerate()
+        .map(|(i, &footprint)| {
+            sim::generation::EnvelopeOutcome::Placed(sim::generation::Envelope {
+                plot: i as u32,
+                footprint,
+                front: Side::South,
+            })
+        })
+        .collect();
+    let assignments: Vec<sim::generation::TypeAssignment> = (0..footprints.len())
+        .map(|i| sim::generation::TypeAssignment {
+            plot: i as u32,
+            building_type: depot.id,
+        })
+        .collect();
+    let blocks = vec![sim::generation::Block { bounds: site }];
+    let d = planted_district(site, plot_list, outcomes, assignments, blocks);
+
+    let err = d
+        .check_rules(&content)
+        .expect_err("two depots well inside min_spacing must violate depot_present");
+    match err {
+        sim::generation::GenerationError::RuleViolations { first, .. } => {
+            assert_eq!(
+                first.rule_id, row.id,
+                "the reported violation must name depot_present's own rule id"
+            );
+        }
+        other => panic!("expected RuleViolations, got {other:?}"),
+    }
+}
+
+/// Companion to the min-spacing test above: every committed distribution
+/// row shares the same `per = "dwelling"` basis, and Distribution's own
+/// coverage half (`max_distance`) flags *every* dwelling as uncovered
+/// the moment a row's own subject count is zero -- so isolating one
+/// missing institution means every *other* row must clear its own
+/// ratio band and have at least one subject placed somewhere, not just
+/// the targeted row's own absence. 300 `villa`s (so `depot_present`/
+/// `council_present`/`hospital_present`, ratio 300, each expect 1 with a
+/// tolerance-25% band of `[0, 2]`, and `welfare_office_present`, ratio
+/// 60, expects 5 with a band of `[3, 7]`) plus one `depot`, one
+/// `council`, one `hospital` and five `welfare_office`s, satisfying
+/// every one of those four bands -- and zero `shelter`s at all, where
+/// `shelter_present`'s own ratio 50 ⇒ expected 6, tolerance-25% band
+/// `[4, 8]`, so 0 clears neither its own coverage nor its own ratio
+/// lower bound. All `form_low`, one area, so the coherence row stays
+/// silent too.
+#[test]
+fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_key() {
+    use sim::generation::{LandUse, Side};
+    let content = GenerationContent::committed();
+    let site = sim::generation::SiteBounds {
+        x0: 0,
+        y0: 0,
+        x1: 512,
+        y1: 512,
+    };
+    let type_of = |key: &str| {
+        content
+            .building_types
+            .iter()
+            .find(|b| b.key == key)
+            .unwrap_or_else(|| panic!("committed content carries a '{key}' building type"))
+    };
+    let row = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .find(|r| r.key == "shelter_present")
+        .expect("committed content carries a 'shelter_present' distribution row");
+
+    // 300 dwellings on a 20x15 grid, spaced 12 cells apart on each axis.
+    let mut footprints = Vec::new();
+    for row_i in 0..15i32 {
+        for col in 0..20i32 {
+            let x0 = col * 12;
+            let y0 = row_i * 12;
+            footprints.push(Rect {
+                x0,
+                y0,
+                x1: x0 + 8,
+                y1: y0 + 8,
+            });
+        }
+    }
+    let mut keys: Vec<&str> = vec!["villa"; footprints.len()];
+    // One depot, one council, one hospital, five welfare_offices, placed
+    // past the dwelling grid's own bottom edge, well spaced from each
+    // other (min_spacing never enters this test's own scope).
+    let extra_keys = [
+        "depot",
+        "council",
+        "hospital",
+        "welfare_office",
+        "welfare_office",
+        "welfare_office",
+        "welfare_office",
+        "welfare_office",
+    ];
+    for (i, &key) in extra_keys.iter().enumerate() {
+        let x0 = (i as i32) * 60;
+        let y0 = 400;
+        footprints.push(Rect {
+            x0,
+            y0,
+            x1: x0 + 8,
+            y1: y0 + 8,
+        });
+        keys.push(key);
+    }
+
+    let plot_list: Vec<plots::Plot> = footprints
+        .iter()
+        .map(|&bounds| plots::Plot {
+            bounds,
+            block: 0,
+            front: Some(Side::South),
+            land_use: LandUse::Residential,
+            density: 20,
+            open: false,
+        })
+        .collect();
+    let outcomes: Vec<sim::generation::EnvelopeOutcome> = footprints
+        .iter()
+        .enumerate()
+        .map(|(i, &footprint)| {
+            sim::generation::EnvelopeOutcome::Placed(sim::generation::Envelope {
+                plot: i as u32,
+                footprint,
+                front: Side::South,
+            })
+        })
+        .collect();
+    let assignments: Vec<sim::generation::TypeAssignment> = keys
+        .iter()
+        .enumerate()
+        .map(|(i, &key)| sim::generation::TypeAssignment {
+            plot: i as u32,
+            building_type: type_of(key).id,
+        })
+        .collect();
+    let blocks = vec![sim::generation::Block { bounds: site }];
+    let d = planted_district(site, plot_list, outcomes, assignments, blocks);
+
+    let err = d
+        .check_rules(&content)
+        .expect_err("300 dwellings, every other institution present, and zero shelters must violate shelter_present");
+    match err {
+        sim::generation::GenerationError::RuleViolations { first, .. } => {
+            assert_eq!(
+                first.rule_id, row.id,
+                "the reported violation must name shelter_present's own rule id"
+            );
+        }
+        other => panic!("expected RuleViolations, got {other:?}"),
+    }
+}
+
+/// Companion to the two tests above: a `condo_block` (`form_high`) and a
+/// `villa` (`form_low`) sharing the same block -- `no_high_rise_within_
+/// a_low_rise_block`'s own coherence violation, AC1.
+#[test]
+fn check_rules_reports_a_planted_coherence_violation_by_its_own_rule_key() {
+    use sim::generation::{LandUse, Side};
+    let content = GenerationContent::committed();
+    let site = sim::generation::SiteBounds {
+        x0: 0,
+        y0: 0,
+        x1: 512,
+        y1: 512,
+    };
+    let villa = content
+        .building_types
+        .iter()
+        .find(|b| b.key == "villa")
+        .expect("committed content carries a 'villa' building type");
+    let condo = content
+        .building_types
+        .iter()
+        .find(|b| b.key == "condo_block")
+        .expect("committed content carries a 'condo_block' building type");
+    let row = content
+        .rules
+        .iter()
+        .find(|r| r.key == "no_high_rise_within_a_low_rise_block")
+        .expect(
+            "committed content carries the 'no_high_rise_within_a_low_rise_block' coherence row",
+        );
+
+    let footprints = [
+        Rect {
+            x0: 100,
+            y0: 100,
+            x1: 110,
+            y1: 110,
+        },
+        Rect {
+            x0: 112,
+            y0: 100,
+            x1: 122,
+            y1: 110,
+        },
+    ];
+    // Same block on both, so both cells land in the same `AreaId`.
+    let plot_list: Vec<plots::Plot> = footprints
+        .iter()
+        .map(|&bounds| plots::Plot {
+            bounds,
+            block: 0,
+            front: Some(Side::South),
+            land_use: LandUse::Residential,
+            density: 50,
+            open: false,
+        })
+        .collect();
+    let outcomes: Vec<sim::generation::EnvelopeOutcome> = footprints
+        .iter()
+        .enumerate()
+        .map(|(i, &footprint)| {
+            sim::generation::EnvelopeOutcome::Placed(sim::generation::Envelope {
+                plot: i as u32,
+                footprint,
+                front: Side::South,
+            })
+        })
+        .collect();
+    let assignments = vec![
+        sim::generation::TypeAssignment {
+            plot: 0,
+            building_type: villa.id,
+        },
+        sim::generation::TypeAssignment {
+            plot: 1,
+            building_type: condo.id,
+        },
+    ];
+    let blocks = vec![sim::generation::Block { bounds: site }];
+    let d = planted_district(site, plot_list, outcomes, assignments, blocks);
+
+    let err = d
+        .check_rules(&content)
+        .expect_err("a condo_block and a villa sharing one block must violate the coherence row");
+    match err {
+        sim::generation::GenerationError::RuleViolations { first, .. } => {
+            assert_eq!(
+                first.rule_id, row.id,
+                "the reported violation must name no_high_rise_within_a_low_rise_block's own rule id"
+            );
+        }
+        other => panic!("expected RuleViolations, got {other:?}"),
+    }
+}
+
+/// Quentin's direction (PR #317 cycle 2): a hand-built envelope too
+/// small for one committed-shaped type but not another, over its own
+/// small two-type content table (never `GenerationContent::
+/// committed()`, whose own `tools/defs-build` coverage check already
+/// guarantees every real plot has a type that fits) -- proves
+/// `building_types::run`'s own `min_interior_*_cells` eligibility check
+/// is real, not read by nothing.
+#[test]
+fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_fit() {
+    use sim::generation::{LandUse, Side};
+    use sim::world::Rect;
+
+    let c = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let wall = c.envelope_wall_thickness_cells;
+    // Interior net exactly 6x6 -- fits `fixture_fits`, never
+    // `fixture_too_big`.
+    let width = 6 + 2 * wall;
+    let depth = 6 + 2 * wall;
+    let footprint = Rect {
+        x0: 100,
+        y0: 100,
+        x1: 100 + width,
+        y1: 100 + depth,
+    };
+    let plot = plots::Plot {
+        bounds: footprint,
+        block: 0,
+        front: Some(Side::South),
+        land_use: LandUse::Residential,
+        density: 50,
+        open: false,
+    };
+    let site = sim::generation::SiteBounds {
+        x0: 0,
+        y0: 0,
+        x1: 512,
+        y1: 512,
+    };
+    let pm = plots::PlotMap::test_fixture(site, vec![plot]);
+    let em = envelopes::EnvelopeMap::test_fixture(vec![sim::generation::EnvelopeOutcome::Placed(
+        sim::generation::Envelope {
+            plot: 0,
+            footprint,
+            front: Side::South,
+        },
+    )]);
+    let block = sim::generation::Block { bounds: footprint };
+    let net = streets::StreetNetwork::test_fixture(site, Vec::new(), vec![block]);
+
+    let fits = defs::BuildingTypeDef {
+        id: 9001,
+        key: "fixture_fits",
+        tags: &[],
+        land_uses: [true, false, false, false],
+        density_min: 0,
+        density_max: 100,
+        min_interior_width_cells: 6,
+        min_interior_depth_cells: 6,
+        weight: 1,
+        requires_corner: false,
+        density_affinity: 0,
+        professions: &[],
+    };
+    let too_big = defs::BuildingTypeDef {
+        id: 9002,
+        key: "fixture_too_big",
+        tags: &[],
+        land_uses: [true, false, false, false],
+        density_min: 0,
+        density_max: 100,
+        min_interior_width_cells: 20,
+        min_interior_depth_cells: 20,
+        weight: 1,
+        requires_corner: false,
+        density_affinity: 0,
+        professions: &[],
+    };
+    let types = [fits, too_big];
+    let content = GenerationContent {
+        rules: sim::rules::RuleSet::for_test(&[]),
+        building_types: &types,
+    };
+
+    for seed in 0..200u64 {
+        let map = sim::generation::building_types::run(seed, &em, &pm, &net, &c, &content); // generation-entry-point: allow
+        assert_eq!(map.assignments().len(), 1);
+        assert_eq!(
+            map.assignments()[0].building_type,
+            fits.id,
+            "seed {seed}: the too-small envelope must never draw the too-big type"
+        );
+    }
 }
 
 /// The guard `inv_generation_peripheral_blocks_are_not_degenerate` cannot

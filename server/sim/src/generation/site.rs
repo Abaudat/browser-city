@@ -1,8 +1,11 @@
-//! Story 3.4 (FR112): `DistrictSite`, the one [`RuleSite`] a generated
-//! [`super::District`] presents to `sim::rules::evaluate` -- both the
-//! constructive pass (`building_types::run`, over a partial district) and
-//! the finished-district verdict (`District::check_rules`) build this
-//! same type from the same fields, never a second adapter.
+//! Story 3.4 (FR112): `DistrictSite`, the one [`RuleSite`] a finished
+//! [`super::District`]'s own verdict (`District::check_rules`) evaluates
+//! `sim::rules::evaluate` against. The constructive pass
+//! (`building_types::run`, over a partial district, before every
+//! envelope has an assignment) shares only [`front_cell`] with this
+//! module -- the same one subject-cell rule this type's own `build`
+//! uses -- never a `DistrictSite` itself, since `evaluate` needs a
+//! finished district's full tag/area index, not a partial one.
 //!
 //! One subject cell per typed building (its front-edge midpoint, floor
 //! 0), one area per block (`AreaId` = [`super::rect_seed_key`] of the
@@ -131,5 +134,137 @@ impl RuleSite for DistrictSite {
         self.subjects_index
             .get(&(area, tag))
             .unwrap_or(&self.empty_cells)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::generated::defs;
+    use crate::generation::building_types;
+    use crate::generation::{GenerationConfig, GenerationContent, land_use, plots as plots_mod};
+    use crate::generation::{envelopes, streets};
+    use crate::world::Rect;
+    use std::collections::BTreeMap as Map;
+
+    #[test]
+    fn front_cell_steps_to_the_midpoint_of_the_named_face() {
+        let footprint = Rect {
+            x0: 10,
+            y0: 20,
+            x1: 16,
+            y1: 24,
+        };
+        assert_eq!(front_cell(footprint, Side::North), (12, 20));
+        assert_eq!(front_cell(footprint, Side::South), (12, 23));
+        assert_eq!(front_cell(footprint, Side::West), (10, 21));
+        assert_eq!(front_cell(footprint, Side::East), (15, 21));
+    }
+
+    fn cfg() -> GenerationConfig {
+        GenerationConfig::from_balance(defs::BALANCE).unwrap()
+    }
+
+    struct Built {
+        site: DistrictSite,
+        em: EnvelopeMap,
+        pm: PlotMap,
+        assignments: Vec<building_types::TypeAssignment>,
+        by_id: Map<u32, &'static defs::BuildingTypeDef>,
+    }
+
+    fn built_site(seed: u64) -> Built {
+        let c = cfg();
+        let lu = land_use::run(seed, c.site(), &c).unwrap();
+        let net = streets::run(seed, &lu, &c);
+        let pm = plots_mod::run(seed, &lu, &net, &c);
+        let em = envelopes::run(seed, &pm, &c);
+        let content = GenerationContent::committed();
+        let types = building_types::run(seed, &em, &pm, &net, &c, &content);
+        let by_id: Map<u32, &defs::BuildingTypeDef> =
+            content.building_types.iter().map(|b| (b.id, b)).collect();
+        let site = DistrictSite::build(&em, &pm, &net, types.assignments(), &by_id);
+        let assignments = types.assignments().to_vec();
+        Built {
+            site,
+            em,
+            pm,
+            assignments,
+            by_id,
+        }
+    }
+
+    #[test]
+    fn every_placed_envelopes_front_cell_carries_its_own_types_tags() {
+        let b = built_site(41);
+        for a in &b.assignments {
+            let e = b.em.envelopes().find(|e| e.plot == a.plot).unwrap();
+            let (x, y) = front_cell(e.footprint, e.front);
+            let cell = Cell::new(x, y, 0);
+            let def = b.by_id[&a.building_type];
+            let mut expected: Vec<TagId> = def.tags.to_vec();
+            expected.sort_unstable();
+            let mut got: Vec<TagId> = b.site.tags_at(cell).to_vec();
+            got.sort_unstable();
+            assert_eq!(
+                got, expected,
+                "plot {}'s own front cell must carry exactly its assigned type's tags",
+                a.plot
+            );
+        }
+    }
+
+    #[test]
+    fn a_cell_with_no_placed_building_carries_no_tags_or_areas() {
+        let b = built_site(41);
+        // The site's own top-left corner is street/plot land, never a
+        // building's own front-edge midpoint for any real seed.
+        let cell = Cell::new(b.pm.site().x0, b.pm.site().y0, 0);
+        assert!(b.site.tags_at(cell).is_empty());
+        assert!(b.site.areas_containing(cell).is_empty());
+    }
+
+    #[test]
+    fn subjects_in_area_none_returns_every_cell_with_that_tag_site_wide() {
+        let b = built_site(41);
+        // Pick a tag a real placed type actually carries.
+        let (tag, cell, area) = b
+            .assignments
+            .iter()
+            .find_map(|a| {
+                let def = b.by_id[&a.building_type];
+                let &tag = def.tags.first()?;
+                let e = b.em.envelopes().find(|e| e.plot == a.plot)?;
+                let (x, y) = front_cell(e.footprint, e.front);
+                let cell = Cell::new(x, y, 0);
+                let area = b.site.areas_containing(cell).first().copied();
+                Some((tag, cell, area))
+            })
+            .expect("a real generated district places at least one tagged type");
+
+        let site_wide = b.site.subjects_in_area(None, tag);
+        assert!(
+            site_wide.contains(&cell),
+            "the site-wide subject list for a tag must include every cell carrying it"
+        );
+
+        if let Some(area) = area {
+            let scoped = b.site.subjects_in_area(Some(area), tag);
+            assert!(
+                scoped.contains(&cell),
+                "the area-scoped subject list must include a cell in that same area"
+            );
+            assert!(
+                scoped.len() <= site_wide.len(),
+                "an area-scoped subject list is never larger than the site-wide one"
+            );
+        }
+    }
+
+    #[test]
+    fn subjects_in_area_for_an_unused_tag_is_empty() {
+        let b = built_site(41);
+        // TagId 999_999 is never a real committed tag.
+        assert!(b.site.subjects_in_area(None, 999_999).is_empty());
     }
 }

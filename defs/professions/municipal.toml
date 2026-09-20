@@ -1,61 +1,94 @@
 # Story 3.4: vocabulary only -- staffs `defs/building-types/
-# institutional.toml`'s named institutions. Most of these are held by a
-# singleton employer today (a monopsony is institutional friction, not a
-# bug -- Derek's direction): they sit on top of the pooled profession-
-# depth target, deliberately not counted toward it.
+# institutional.toml`. `council_clerk`/`council_administrator`/
+# `councillor` (council) and `surgeon` (hospital) are held only by their
+# own singleton type -- deliberately excluded from the pooled profession-
+# depth target, same reasoning as `industry.toml`'s own three depot-only
+# keys.
 
 [[profession]]
-id = 15
-key = "depot_dispatcher"
+id = 56
+key = "caseworker"
 
 [[profession]]
-id = 16
-key = "depot_mechanic"
-
-[[profession]]
-id = 17
-key = "refuse_collector"
-
-[[profession]]
-id = 18
-key = "council_clerk"
-
-[[profession]]
-id = 19
-key = "council_administrator"
-
-[[profession]]
-id = 20
-key = "councillor"
-
-[[profession]]
-id = 21
-key = "hospital_nurse"
-
-[[profession]]
-id = 22
-key = "hospital_orderly"
-
-[[profession]]
-id = 23
-key = "hospital_receptionist"
-
-[[profession]]
-id = 24
-key = "surgeon"
-
-[[profession]]
-id = 25
-key = "welfare_caseworker"
-
-[[profession]]
-id = 26
-key = "welfare_clerk"
-
-[[profession]]
-id = 27
+id = 57
 key = "shelter_attendant"
 
 [[profession]]
-id = 28
-key = "shelter_cook"
+id = 58
+key = "teacher"
+
+[[profession]]
+id = 59
+key = "teaching_assistant"
+
+[[profession]]
+id = 60
+key = "nurse"
+
+[[profession]]
+id = 61
+key = "orderly"
+
+[[profession]]
+id = 62
+key = "doctor"
+
+[[profession]]
+id = 63
+key = "librarian"
+
+[[profession]]
+id = 64
+key = "officer"
+
+[[profession]]
+id = 65
+key = "firefighter"
+
+[[profession]]
+id = 66
+key = "dispatcher"
+
+[[profession]]
+id = 67
+key = "archivist"
+
+[[profession]]
+id = 68
+key = "detective"
+
+[[profession]]
+id = 69
+key = "paramedic"
+
+[[profession]]
+id = 70
+key = "conductor"
+
+[[profession]]
+id = 71
+key = "counsellor"
+
+[[profession]]
+id = 72
+key = "support_worker"
+
+[[profession]]
+id = 73
+key = "custodian"
+
+[[profession]]
+id = 74
+key = "council_clerk"
+
+[[profession]]
+id = 75
+key = "council_administrator"
+
+[[profession]]
+id = 76
+key = "councillor"
+
+[[profession]]
+id = 77
+key = "surgeon"

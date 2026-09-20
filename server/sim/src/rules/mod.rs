@@ -314,7 +314,10 @@ impl RuleDef {
                 min_spacing,
                 max_distance,
             }),
-            _ => None,
+            RuleKind::Placement { .. }
+            | RuleKind::Coherence { .. }
+            | RuleKind::Adjacency { .. }
+            | RuleKind::Requirement { .. } => None,
         }
     }
 }

@@ -30,13 +30,13 @@
 //! running pass 2 twice over one pass-1 output is byte-identical (pass 2
 //! never mutates its own input).
 
-use sim::generated::defs::{BuildingTypeDef, BuildingTypePost};
+use sim::generated::defs::BuildingTypeDef;
 use sim::generation::streets::DETOUR_SAMPLE_MAX_NODES;
 use sim::generation::{
     GENERATION_VERSION, GenerationConfig, GenerationContent, LandUse, envelopes, land_use, plan,
     plots, streets,
 };
-use sim::rules::RuleSet;
+use sim::rules::{CoherenceMode, RuleDef, RuleKind, RuleSet};
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
@@ -122,70 +122,134 @@ fn frozen_config() -> GenerationConfig {
         workplace_target_count_per_million_cells: 1312,
         workplace_count_tolerance_percent: 30,
         workplace_mean_count_tolerance_percent: 5,
+        building_type_catchment_extent_cells: 256,
     }
 }
 
 /// Deliberately unrelated ids/keys and shape from the real committed
-/// `defs/building-types/*.toml` (Tim's direction) -- one generic type per
-/// land use, covering `frozen_config`'s own full density range, weight
-/// 1, no posts. Never `defs::BUILDING_TYPES`.
+/// `defs/building-types/*.toml` (Tim's direction) -- covering `frozen_
+/// config`'s own full density range. Never `defs::BUILDING_TYPES`.
+/// Two residential rows (`frozen_res`/`frozen_res_b`, distinct form
+/// tags) so the frozen coherence row below has real subject material,
+/// and a weight-0 institutional row (`frozen_inst_subject`) so the
+/// frozen distribution row's own override half is exercised too -- an
+/// empty rule set (as this golden shipped at first, PR #317 cycle 1)
+/// left the override half of the pass, and the content-key proof, both
+/// unexercised (Tim's direction).
 const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
     BuildingTypeDef {
         id: 9001,
         key: "frozen_res",
-        tags: &[9101],
-        land_uses: &["residential"],
+        tags: &[9101, 9105],
+        land_uses: [true, false, false, false],
         density_min: 0,
         density_max: 100,
         min_interior_width_cells: 4,
         min_interior_depth_cells: 4,
         weight: 1,
+        requires_corner: false,
+        density_affinity: 0,
+        professions: &[],
+    },
+    BuildingTypeDef {
+        id: 9005,
+        key: "frozen_res_b",
+        tags: &[9101, 9106],
+        land_uses: [true, false, false, false],
+        density_min: 0,
+        density_max: 100,
+        min_interior_width_cells: 4,
+        min_interior_depth_cells: 4,
+        weight: 1,
+        requires_corner: false,
+        density_affinity: 0,
         professions: &[],
     },
     BuildingTypeDef {
         id: 9002,
         key: "frozen_com",
         tags: &[9102],
-        land_uses: &["commercial"],
+        land_uses: [false, true, false, false],
         density_min: 0,
         density_max: 100,
         min_interior_width_cells: 6,
         min_interior_depth_cells: 6,
         weight: 1,
-        professions: &[BuildingTypePost {
-            profession: "frozen_clerk",
-            headcount: 1,
-        }],
+        requires_corner: false,
+        density_affinity: 0,
+        professions: &["frozen_clerk"],
     },
     BuildingTypeDef {
         id: 9003,
         key: "frozen_ind",
         tags: &[9103],
-        land_uses: &["industrial"],
+        land_uses: [false, false, true, false],
         density_min: 0,
         density_max: 100,
         min_interior_width_cells: 8,
         min_interior_depth_cells: 8,
         weight: 1,
+        requires_corner: false,
+        density_affinity: 0,
         professions: &[],
     },
     BuildingTypeDef {
         id: 9004,
         key: "frozen_inst",
         tags: &[9104],
-        land_uses: &["institutional"],
+        land_uses: [false, false, false, true],
         density_min: 0,
         density_max: 100,
         min_interior_width_cells: 8,
         min_interior_depth_cells: 8,
         weight: 1,
+        requires_corner: false,
+        density_affinity: 0,
         professions: &[],
+    },
+    BuildingTypeDef {
+        id: 9006,
+        key: "frozen_inst_subject",
+        tags: &[9107],
+        land_uses: [false, false, false, true],
+        density_min: 0,
+        density_max: 100,
+        min_interior_width_cells: 8,
+        min_interior_depth_cells: 8,
+        weight: 0,
+        requires_corner: false,
+        density_affinity: 0,
+        professions: &[],
+    },
+];
+
+const FROZEN_RULES: &[RuleDef] = &[
+    RuleDef {
+        id: 9201,
+        key: "frozen_coherence",
+        kind: RuleKind::Coherence {
+            subject: 9106,
+            within: 9105,
+            mode: CoherenceMode::Forbid,
+        },
+    },
+    RuleDef {
+        id: 9202,
+        key: "frozen_distribution",
+        kind: RuleKind::Distribution {
+            subject: 9107,
+            per: 9101,
+            ratio: 50,
+            tolerance_percent: 20,
+            min_spacing: 10,
+            max_distance: 2000,
+        },
     },
 ];
 
 fn frozen_content() -> GenerationContent<'static> {
     GenerationContent {
-        rules: RuleSet::for_test(&[]),
+        rules: RuleSet::for_test(FROZEN_RULES),
         building_types: FROZEN_BUILDING_TYPES,
     }
 }
@@ -379,8 +443,8 @@ fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
     let pm_b = plots::run(SEEDS[0], &lu, &net_b, &cfg); // generation-entry-point: allow
     let em_a = envelopes::run(SEEDS[0], &pm_a, &cfg); // generation-entry-point: allow
     let em_b = envelopes::run(SEEDS[0], &pm_b, &cfg); // generation-entry-point: allow
-    let bt_a = sim::generation::building_types::run(SEEDS[0], &em_a, &pm_a, &content); // generation-entry-point: allow
-    let bt_b = sim::generation::building_types::run(SEEDS[0], &em_b, &pm_b, &content); // generation-entry-point: allow
+    let bt_a = sim::generation::building_types::run(SEEDS[0], &em_a, &pm_a, &net_a, &cfg, &content); // generation-entry-point: allow
+    let bt_b = sim::generation::building_types::run(SEEDS[0], &em_b, &pm_b, &net_b, &cfg, &content); // generation-entry-point: allow
     assert_eq!(
         plan_digest(&lu, &net_a, &pm_a, &em_a, &bt_a),
         plan_digest(&lu, &net_b, &pm_b, &em_b, &bt_b)

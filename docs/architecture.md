@@ -1104,7 +1104,7 @@ or plot's draws.
 GenerationError>` chains every implemented pass in order with no verdict
 on the result (only pass 1's own site check can fail). `content` is
 `GenerationContent { rules: RuleSet<'_>, building_types: &[BuildingTypeDef]
-}` (story 3.4) -- every content table a pass reads, loaded once
+}` -- every content table a pass reads, loaded once
 (`GenerationContent::committed()` wraps `RuleSet::committed()` and
 `defs::BUILDING_TYPES`) and passed down as a struct, never a literal read
 from `defs::` inside a pass; one signature, no `plan_with` twin.
@@ -1190,41 +1190,65 @@ scaled by the real site area and `count_tolerance_percent`; the pooled
 mean over a fixed seed range is held to that same target within
 `mean_count_tolerance_percent`.
 
-Pass 5 (building type, story 3.4, FR116) hands down what each placed
-envelope *is*: a `defs::BuildingTypeDef` id, from a new def kind
+Pass 5 (building type, FR116) hands down what each placed envelope *is*:
+a `defs::BuildingTypeDef` id, from the `building-types` def kind
 (`defs/building-types/*.toml` -> `tools/defs-build` ->
 `sim::generated::defs::BUILDING_TYPES`, a permanent append-only
-id/key). A row carries only `tags`, `land_uses`, `density_min`/`_max`,
-`min_interior_width_cells`/`_depth_cells`, `weight` and `professions`
-(profession key + headcount pairs, keys into `defs/professions/`) --
-never a `count`/`unique`/`required` field: how many of something exist
-is a rule (a `[[distribution]]` row), never a field on the type.
-`building_types::run` places constructively: a weighted draw among every
-type eligible for an envelope's own plot (land use and density band)
-first, seeded from the envelope's own footprint (`rect_seed_key`, never
-list position); then, for every committed `[[distribution]]` row, read
-generically through `sim::rules::RuleDef::as_distribution` (never by
-matching the rule engine's own closed kind enum) in ascending rule id
-order, an override onto a named institution among the still-eligible
-envelopes, greedily respecting that row's own `min_spacing`. `DistrictSite`
-(`generation::site`) is the one `RuleSite` a generated district presents
-to `sim::rules::evaluate` -- one subject cell per typed building (its
-front-edge midpoint, floor 0, tagged with its own type's `tags`), one
-area per block (`AreaId = rect_seed_key(block bounds)`) -- built once,
-from the same fields, by both pass 5's own placement code path (nothing
-calls `evaluate` per candidate; it is whole-site) and
-`District::check_rules`. `scripts/ci/check-generator-no-content-keys.sh`
-holds the generator to the same content-blindness
-`check-rule-engine-no-content-keys.sh` holds the rule engine to: no
-building-type/tag/profession/rule key as a quoted literal under
-`server/sim/src/generation/`.
+id/key). A row carries `tags`, `land_uses` (a `[bool; 4]` mask, one per
+`LandUse` variant), `density_min`/`_max`, `min_interior_width_cells`/
+`_depth_cells`, `weight`, `requires_corner`, `density_affinity` (a soft
+siting preference a distribution override ranks candidates by) and
+`professions` (a plain profession key list, into `defs/professions/`)
+-- never a `count`/`unique`/`required` field: how many of something
+exist is a rule (a `[[distribution]]` row), never a field on the type.
+"Institution", "workplace" and "dwelling" are all *derived*, never a
+stored category: a workplace is any type whose own `professions` is
+non-empty, a municipal service carries the `municipal_service` tag, a
+dwelling carries `dwelling`.
+
+`building_types::run` places constructively, in two steps: a weighted
+draw among every type eligible for an envelope's own plot (land use,
+density band, minimum interior, corner-ness) first, seeded from the
+envelope's own footprint (`rect_seed_key`, never list position); then,
+for every committed `[[distribution]]` row, read generically through
+`sim::rules::RuleDef::as_distribution` (never by matching the rule
+engine's own closed kind enum) in ascending rule id order, an override
+onto a named institution among the still-eligible envelopes. A row's
+own whole-site target (`per`-tag count / `ratio`, the same figure
+`sim::rules::evaluate`'s own Distribution check computes) is allocated
+per catchment -- a fixed-extent square tiling the site
+(`GenerationConfig::building_type_catchment_extent_cells`) -- by
+largest-remainder apportionment (every catchment's own floor
+guaranteed, the site's own remaining budget going to the catchments
+owed the most first), so the sum across catchments always equals the
+site-wide target; a site-wide spillover pass tops up any shortfall a
+catchment whose own eligible land and the row's own subject do not
+spatially correlate would otherwise leave. Within a catchment,
+candidates are chosen by a deterministic farthest-point search, ranked
+first by the subject type's own `density_affinity`, tie-broken by a
+seeded draw key, respecting that row's own `min_spacing`.
+
+`DistrictSite` (`generation::site`) is the one `RuleSite` a *finished*
+district presents to `sim::rules::evaluate` -- one subject cell per
+typed building (its front-edge midpoint, floor 0, tagged with its own
+type's `tags`), one area per block (`AreaId = rect_seed_key(block
+bounds)`) -- built once, from the same fields, by `District::
+check_rules`. Pass 5's own constructive placement shares only
+`front_cell`, the same one-subject-cell rule, since `evaluate` needs a
+finished district's full tag/area index, never a partial one; it never
+calls `evaluate` per candidate, and is whole-site. `scripts/ci/
+check-generator-no-content-keys.sh` holds the generator to the same
+content-blindness `check-rule-engine-no-content-keys.sh` holds the rule
+engine to: no building-type/tag/profession/rule key as a quoted literal
+under `server/sim/src/generation/`.
 
 Evidence: `bounds/src/generation_evidence.rs` renders every implemented
-pass's own output through pass 4, for three committed seeds, to
-`docs/generation/*.svg` -- pass 5's own evidence is not built yet (see
-this story's own PR description). `cargo run -p bounds --bin
-dump-generation` regenerates them; `bounds/tests/
-generation_evidence_current.rs` fails the build if the
+pass's own output, for three committed seeds, to `docs/generation/*.svg`
+-- pass 5's own file additionally tints each envelope by its derived
+class, marks every municipal-service envelope by its own civic tag, and
+overlays the catchment grid with dwellings/owed/placed per distribution
+row. `cargo run -p bounds --bin dump-generation` regenerates them;
+`bounds/tests/generation_evidence_current.rs` fails the build if the
 committed files and a fresh render ever disagree.
 
 `GENERATION_VERSION` is bumped whenever any implemented pass's algorithm

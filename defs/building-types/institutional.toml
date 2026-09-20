@@ -2,34 +2,36 @@
 # carry `weight = 0` (see `industrial.toml`'s own comment on `depot`):
 # each is placed exclusively by its own distribution row
 # (defs/rules/generation.toml), never by the ordinary weighted fill.
-# `public_hall` is the institutional-land filler every other
-# institutional envelope resolves to, so "every envelope has exactly one
-# type" holds without a special-cased fallback.
+# `school`/`clinic`/`library`/`police_station`/`fire_station`/`transit_
+# office` are the institutional-land fill -- real civic variety (Derek's
+# direction, PR #317 cycle 1), replacing the earlier single generic
+# filler.
 #
-# Siting bands stand in for Derek's richer intent (arterial frontage,
-# corner-ness, "toward the density peak" for council/hospital, "not at
-# the peak" for welfare_office/shelter) -- `sim::generation::
-# GenerationConfig`'s own building-type eligibility today reads only
-# land use and density (Tim's schema); see the PR description for this
-# simplification. None of the four restricts its own density band: `land_
+# None of the four singleton rows restricts its own density band: `land_
 # use::assign_institutional`'s own placement never guarantees an
 # institutional pocket reaches any particular density band for every
 # seed (pockets are sited for spacing, not for density), so pairing a
 # density restriction with a `weight = 0`, distribution-only type made a
 # structurally-unplaceable seed a real generation failure for a
-# meaningful fraction of seeds (measured, `measure-generation`) --
-# exactly the kind of "never a silently missing hospital" case AC2
-# exists to prevent, but a defs-content mistake causing it, not a real
-# land shortage. Open across the whole density range until a later story
-# adds a real peak-affinity signal; none of the four carries a form-class
-# tag either, for the same reason `commercial.toml`/`industrial.toml`
-# don't: two different institution kinds sharing one block (each free to
-# land anywhere a `weight = 0` override reaches) must never trip AC1's
-# own coherence row, which is about dwelling form class, not institution
-# kind.
+# meaningful fraction of seeds (measured, `measure-generation`, PR #317
+# cycle 1). `density_affinity` (below) is the soft, never-failing
+# replacement: the distribution override ranks eligible candidates by it
+# rather than restricting eligibility outright. None of the four carries
+# a form-class tag either: two different institution kinds sharing one
+# block (each free to land anywhere a `weight = 0` override reaches)
+# must never trip AC1's own coherence row, which is about dwelling form
+# class, not institution kind.
+#
+# `hospital`'s own `min_interior_*_cells` was 10x10 until PR #317 cycle
+# 2: a real seed (`707006151588701530`, found by `proptest`, not by
+# measurement over a sequential range) had zero institutional envelopes
+# clearing 10x10 at all, so a required, always-`weight = 0` institution
+# had nowhere it could ever be placed -- the same class of bug the
+# earlier industrial/institutional min-interior reductions fixed.
+# Lowered to 8x8, matching `council`'s own figure.
 
 [[building_type]]
-id = 12
+id = 35
 key = "council"
 tags = ["municipal_service", "council"]
 land_uses = ["institutional"]
@@ -38,67 +40,116 @@ density_max = 100
 min_interior_width_cells = 8
 min_interior_depth_cells = 8
 weight = 0
-professions = [
-  { profession = "council_clerk", headcount = 2 },
-  { profession = "council_administrator", headcount = 1 },
-  { profession = "councillor", headcount = 3 },
-]
+density_affinity = 1
+professions = ["council_clerk", "council_administrator", "councillor"]
 
 [[building_type]]
-id = 13
+id = 36
 key = "hospital"
 tags = ["municipal_service", "hospital"]
 land_uses = ["institutional"]
 density_min = 0
 density_max = 100
-min_interior_width_cells = 10
-min_interior_depth_cells = 10
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
 weight = 0
-professions = [
-  { profession = "hospital_nurse", headcount = 4 },
-  { profession = "hospital_orderly", headcount = 2 },
-  { profession = "hospital_receptionist", headcount = 1 },
-  { profession = "surgeon", headcount = 2 },
-]
+density_affinity = 1
+professions = ["nurse", "orderly", "receptionist", "surgeon", "paramedic"]
 
 [[building_type]]
-id = 14
+id = 37
 key = "welfare_office"
 tags = ["municipal_service", "welfare_office"]
-land_uses = ["institutional"]
+land_uses = ["institutional", "commercial"]
 density_min = 0
 density_max = 100
 min_interior_width_cells = 6
 min_interior_depth_cells = 6
 weight = 0
-professions = [
-  { profession = "welfare_caseworker", headcount = 2 },
-  { profession = "welfare_clerk", headcount = 1 },
-]
+density_affinity = -1
+professions = ["caseworker", "clerk", "counsellor"]
 
 [[building_type]]
-id = 15
+id = 38
 key = "shelter"
 tags = ["municipal_service", "shelter"]
-land_uses = ["institutional"]
+land_uses = ["institutional", "commercial"]
 density_min = 0
 density_max = 100
 min_interior_width_cells = 7
 min_interior_depth_cells = 7
 weight = 0
-professions = [
-  { profession = "shelter_attendant", headcount = 2 },
-  { profession = "shelter_cook", headcount = 1 },
-]
+density_affinity = -1
+professions = ["shelter_attendant", "cook", "support_worker"]
 
 [[building_type]]
-id = 16
-key = "public_hall"
+id = 39
+key = "school"
 tags = []
 land_uses = ["institutional"]
 density_min = 0
 density_max = 100
 min_interior_width_cells = 6
 min_interior_depth_cells = 6
-weight = 10
-professions = [{ profession = "clerk", headcount = 1 }]
+weight = 20
+professions = ["teacher", "teaching_assistant", "administrator", "cleaner", "librarian", "custodian"]
+
+[[building_type]]
+id = 40
+key = "clinic"
+tags = []
+land_uses = ["institutional"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 7
+min_interior_depth_cells = 7
+weight = 20
+professions = ["nurse", "receptionist", "doctor", "pharmacist"]
+
+[[building_type]]
+id = 41
+key = "library"
+tags = []
+land_uses = ["institutional"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 7
+min_interior_depth_cells = 7
+weight = 20
+professions = ["librarian", "clerk", "archivist", "custodian"]
+
+[[building_type]]
+id = 42
+key = "police_station"
+tags = []
+land_uses = ["institutional"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 20
+professions = ["officer", "administrator", "detective"]
+
+[[building_type]]
+id = 43
+key = "fire_station"
+tags = []
+land_uses = ["institutional"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 20
+professions = ["firefighter", "administrator", "paramedic"]
+
+[[building_type]]
+id = 44
+key = "transit_office"
+tags = []
+land_uses = ["institutional"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 20
+professions = ["clerk", "administrator", "dispatcher", "conductor", "custodian"]

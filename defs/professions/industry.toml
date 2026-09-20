@@ -1,17 +1,77 @@
-# Story 3.4: vocabulary only -- staffs `defs/building-types/industrial.toml`.
+# Story 3.4: vocabulary only -- staffs `defs/building-types/
+# industrial.toml`. `depot_dispatcher`/`depot_mechanic`/`refuse_collector`
+# are held only by the singleton `depot` type -- a monopsony is
+# institutional friction, deliberately excluded from the pooled
+# profession-depth target (Derek's direction).
 
 [[profession]]
-id = 11
+id = 38
 key = "machinist"
 
 [[profession]]
-id = 12
+id = 39
 key = "foreman"
 
 [[profession]]
-id = 13
+id = 40
 key = "warehouse_worker"
 
 [[profession]]
-id = 14
+id = 41
 key = "forklift_operator"
+
+[[profession]]
+id = 42
+key = "machine_operator"
+
+[[profession]]
+id = 43
+key = "quality_inspector"
+
+[[profession]]
+id = 44
+key = "sorter"
+
+[[profession]]
+id = 45
+key = "printer_operator"
+
+[[profession]]
+id = 46
+key = "bookbinder"
+
+[[profession]]
+id = 47
+key = "mechanic"
+
+[[profession]]
+id = 48
+key = "yard_worker"
+
+[[profession]]
+id = 49
+key = "food_packer"
+
+[[profession]]
+id = 50
+key = "supervisor"
+
+[[profession]]
+id = 51
+key = "driver"
+
+[[profession]]
+id = 52
+key = "parts_clerk"
+
+[[profession]]
+id = 53
+key = "depot_dispatcher"
+
+[[profession]]
+id = 54
+key = "depot_mechanic"
+
+[[profession]]
+id = 55
+key = "refuse_collector"

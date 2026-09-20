@@ -234,10 +234,21 @@ document's own opening paragraph forbids.
   be placed is a typed `GenerationError`, never a silently missing one.
 - **Reads:** density, land-use mix (not affluence yet: no pass has
   authored it on the parameter field -- 3.7 does; this pass's own
-  `density`/`land_uses` eligibility is what stands in for Derek's richer
-  siting intent today, see "Does not fit" below).
-- **Evidence:** not built this story -- see PR #issue-81's own
-  description for why.
+  `density`/`land_uses` eligibility, plus each type's own
+  `density_affinity` -- a soft siting preference a distribution
+  override ranks candidates by, never a hard filter -- is what stands
+  in for Derek's richer siting intent today, see "Does not fit" below).
+- Accepted as built, recorded so nobody relitigates it: one residential
+  building = one dwelling for `per` purposes (Tim's unit). It
+  understates the dense core's own need -- a `condo_block` owes what a
+  `villa` owes -- and a dwellings-per-type count becomes unavoidable
+  once citizens are seeded onto housing.
+- **Evidence:** [`docs/generation/building-types-seed-1.svg`](generation/building-types-seed-1.svg),
+  [`-2`](generation/building-types-seed-2.svg), [`-3`](generation/building-types-seed-3.svg)
+  -- envelopes tinted by derived class (dwelling by form, workplace,
+  municipal service), a distinct marker per municipal/civic tag, the
+  catchment grid with dwellings/owed/placed per row, legend derived
+  from `defs`; same regen-and-diff guard.
 
 ### Interior layout
 
@@ -379,9 +390,10 @@ disagree.
 | generation.building_types.target_workplaces_per_million_cells | committed | Building type | AC4's own workplace-count target -- the Scale Baseline's ~344 at 512x512 (`docs/gdd.md`), stated per one million site cells and scaled by real site area, never a measurement |
 | generation.building_types.workplace_count_tolerance_percent | committed | Building type | AC4's per-seed tolerance band around the scaled workplace target, as a percent |
 | generation.building_types.workplace_mean_count_tolerance_percent | committed | Building type | AC4's pooled band: the mean workplace count over the fixed seed range 0..256 must sit within this percent of the scaled target |
-| generation.building_types.target_profession_count | committed | Building type | the pooled target for the count of professions held by at least `min_employers_per_profession` distinct placed workplaces -- honestly re-measured (13) against this story's own real content, not padded toward the GDD's ~69, which real profession/building-type content authoring a later story owns |
-| generation.building_types.profession_count_mean_tolerance_percent | committed | Building type | the pooled band around `target_profession_count`, as a percent |
+| generation.building_types.target_profession_count | committed | Building type | the pooled target for the count of professions held by at least `min_employers_per_profession` distinct placed workplaces -- the GDD's own ~69, never re-centred on a measurement |
+| generation.building_types.profession_count_mean_tolerance_percent | committed | Building type | the pooled band around `target_profession_count`, as a percent -- institutional land is a small, fixed share of the site (an earlier pass's own limit, not this pass's), which caps the professions unique to one of the six institutional-land fill types close to `min_employers_per_profession`'s own floor; the measured pooled mean sits under `target_profession_count` for that reason, with margin |
 | generation.building_types.min_employers_per_profession | committed | Building type | the GDD's own "5+ employers each" -- the minimum distinct placed workplaces a profession must be held by to count toward the target above; a singleton institution's own post is deliberately excluded |
+| generation.building_types.catchment_extent_cells | committed | Building type | AC3's own catchment: the fixed-extent square (world cells) a `[[distribution]]` row's own site-wide target is allocated over -- 256 at launch, exactly the four quadrants of a 512x512 site |
 
 ## placement
 | key | status | pass | scope | reads | intent |
@@ -500,27 +512,34 @@ assumed:
   friction-is-content law above) cannot be written as a rule until this
   exists. Owned by the neighbourhood-character story, unless an earlier
   pass needs it first.
-- **Distribution cannot be scoped below the whole site.** A
-  distribution row's ratio, spacing and coverage are "measured over the
+- **A `[[distribution]]` row itself cannot be scoped below the whole
+  site.** A row's ratio, spacing and coverage are "measured over the
   whole site... never a per-container one" (`sim::rules::mod.rs`), so
   every distribution row is whole-site by construction -- itself "the
   expensive exception" the city-grows law above asks each such row to
   explain, and a whole-site constant with a coverage ceiling is what
   the friction-is-content law calls a design defect if service
-  coverage should instead thin toward the periphery. Story 3.4 is the
-  first story with real distribution rows (`depot_present`,
-  `council_present`, `hospital_present`, `welfare_office_present`,
-  `shelter_present`) and does not close this gap: every one of those
-  rows sets `max_distance` past the site's own diagonal, so the engine's
-  own coverage half never fires at all (Derek's direction: no coverage
-  ceiling on a municipal row); "evenly spread" is enforced only as the
-  spacing half, whole-site, plus a generation-level invariant
-  (`inv_generation_committed_rules_hold_for_any_seed`), never a
-  catchment-scoped rule row. Tim's direction for this story: no
-  per-container scoping in the engine, since that is a real engine
-  feature ("a separate task, never a quiet engine edit"), not something
-  this story's own generator change should carry quietly. Owned by a
-  named follow-on story.
+  coverage should instead thin toward the periphery. Story 3.4's own
+  five real rows (`depot_present`, `council_present`,
+  `hospital_present`, `welfare_office_present`, `shelter_present`) each
+  set `max_distance` past the site's own diagonal, so the engine's own
+  coverage half never fires at all (Derek's direction: no coverage
+  ceiling on a municipal row). "Evenly spread" is closed on the
+  generator side instead: `sim::generation::building_types::run`
+  allocates each row's own whole-site target (the same figure the
+  engine's own ratio check computes) per catchment -- a fixed-extent
+  square tiling the site (`generation.building_types.catchment_extent_
+  cells`) -- by largest-remainder apportionment, and
+  `inv_generation_no_quadrant_lacks_its_required_services` checks that
+  allocation holds, pooled, for real. The gap this leaves is narrower
+  than "distribution is whole-site": a `[[distribution]]` row's own
+  ratio/spacing/coverage fields still cannot themselves be scoped below
+  the whole site -- only the generator's own constructive placement can
+  -- so a rule-row author still cannot express "evenly spread" as data
+  the engine checks on its own. Issue #84 owns closing that (Tim's
+  direction for this story: no per-container scoping in the engine
+  itself, since that is a real engine feature, not something this
+  story's own generator change should carry quietly).
 
 A rule that cannot be expressed as one of the five kinds over tags for
 any other reason is written here too, with why -- a signal that a

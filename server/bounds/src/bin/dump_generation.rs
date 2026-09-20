@@ -6,7 +6,7 @@
 //! ever disagree.
 
 use bounds::generation_evidence::{
-    build_all, envelopes_svg_path, land_use_svg_path, streets_svg_path,
+    build_all, building_types_svg_path, envelopes_svg_path, land_use_svg_path, streets_svg_path,
 };
 
 fn write(path: std::path::PathBuf, content: &str) {
@@ -24,5 +24,6 @@ fn main() {
         write(land_use_svg_path(svgs.seed), &svgs.land_use);
         write(streets_svg_path(svgs.seed), &svgs.streets);
         write(envelopes_svg_path(svgs.seed), &svgs.envelopes);
+        write(building_types_svg_path(svgs.seed), &svgs.building_types);
     }
 }

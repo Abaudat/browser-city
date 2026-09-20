@@ -18,25 +18,37 @@ subject = "form_high"
 within = "form_low"
 mode = "forbid"
 
-# Distribution (AC2, presence): each named institution is a distribution
-# row over the `dwelling` tag with a large ratio -- never a count field
-# on the building type itself (Tim's direction: "how many of something
-# exist is a rule"). `max_distance` is set past the site's own diagonal
-# on every row below on purpose (Derek's direction: no coverage ceiling
-# on a municipal row -- friction is content, a city is never made
-# uniformly convenient). Ratios are chosen so the expected count never
-# floors to zero across the fixed seed range 0..256 at the committed
-# config (see server/bounds/src/bin/measure_generation.rs); the city-
-# grows law (docs/generation.md) is what a larger site's own larger
-# dwelling count already answers -- a four-times-larger site wants more
-# than one hospital.
+# Distribution (AC2/AC3, presence and even spread): each named
+# institution is a distribution row over the `dwelling` tag with a
+# large ratio -- never a count field on the building type itself (Tim's
+# direction: "how many of something exist is a rule"). The generator
+# reads `ratio`/`min_spacing` exactly as the engine does; AC3's own
+# "evenly spread" is enforced by the generator allocating this row's own
+# whole-site target (`floor(total dwellings / ratio)`, the same figure
+# the engine's own Distribution check computes) per catchment,
+# proportional to the dwellings in each catchment, rounded down, the
+# site's own remaining budget apportioned to the catchments with the
+# largest remainder first -- so the sum across catchments always equals
+# the engine's own site-wide expectation, and no catchment is ever
+# skipped that its own share entitles it to (`inv_generation_no_
+# quadrant_lacks_its_required_services`). `tolerance_percent` is set so
+# the ratio floor stays meaningful (never `100`, which makes the lower
+# bound zero) while still covering the real placement shortfall a
+# catchment with too few eligible candidates can leave (measured,
+# `measure-generation`).
+#
+# `max_distance` is set past the site's own diagonal on every row below
+# on purpose (Derek's direction: no coverage ceiling on a municipal row
+# -- friction is content, a city is never made uniformly convenient);
+# past a 2000-cell site this stops being a sentinel and starts being a
+# real (if still generous) ceiling -- a later story's own concern.
 [[distribution]]
 id = 21
 key = "depot_present"
 subject = "depot"
 per = "dwelling"
 ratio = 300
-tolerance_percent = 100
+tolerance_percent = 25
 min_spacing = 40
 max_distance = 2000
 
@@ -46,7 +58,7 @@ key = "council_present"
 subject = "council"
 per = "dwelling"
 ratio = 300
-tolerance_percent = 100
+tolerance_percent = 25
 min_spacing = 40
 max_distance = 2000
 
@@ -56,7 +68,7 @@ key = "hospital_present"
 subject = "hospital"
 per = "dwelling"
 ratio = 300
-tolerance_percent = 100
+tolerance_percent = 25
 min_spacing = 40
 max_distance = 2000
 
@@ -69,8 +81,8 @@ id = 24
 key = "welfare_office_present"
 subject = "welfare_office"
 per = "dwelling"
-ratio = 150
-tolerance_percent = 100
+ratio = 60
+tolerance_percent = 25
 min_spacing = 24
 max_distance = 2000
 
@@ -79,7 +91,7 @@ id = 25
 key = "shelter_present"
 subject = "shelter"
 per = "dwelling"
-ratio = 100
-tolerance_percent = 100
+ratio = 50
+tolerance_percent = 25
 min_spacing = 20
 max_distance = 2000

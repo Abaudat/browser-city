@@ -20,9 +20,11 @@
 //! regenerates and diffs on every server PR, so the picture Artie reviews
 //! can never drift from the code that produced it.
 
+use sim::generated::defs;
 use sim::generation::{
-    Block, EnvelopeMap, EnvelopeOutcome, GenerationConfig, GenerationContent, LandUse, PlotMap,
-    Side, StreetClass, StreetNetwork, block_land_use, land_use::LandUseMap,
+    Block, BuildingTypeMap, EnvelopeMap, EnvelopeOutcome, GenerationConfig, GenerationContent,
+    LandUse, PlotMap, Side, StreetClass, StreetNetwork, block_land_use, building_types,
+    land_use::LandUseMap,
 };
 
 /// The three fixed seeds every evidence SVG renders -- committed once,
@@ -300,6 +302,13 @@ pub fn envelopes_svg_path(seed: u64) -> std::path::PathBuf {
         .join("docs")
         .join("generation")
         .join(format!("envelopes-seed-{seed}.svg"))
+}
+
+pub fn building_types_svg_path(seed: u64) -> std::path::PathBuf {
+    crate::world_fixture::repo_root_dir()
+        .join("docs")
+        .join("generation")
+        .join(format!("building-types-seed-{seed}.svg"))
 }
 
 /// A plot's own front-edge segment, in world cells -- the heavier stroke
@@ -607,6 +616,350 @@ pub fn envelopes_svg(
     )
 }
 
+/// Story 3.4's own evidence: every placed envelope tinted by its own
+/// *derived* class -- never a stored category, the same derivation the
+/// generator itself uses (Derek's direction, PR #317 cycle 2). A
+/// municipal-service type gets a distinct marker per its own *other*
+/// tag (depot/council/hospital/welfare_office/shelter today, but never
+/// named here: the marker palette is assigned by the sorted list of
+/// distinct civic tags [`content`] actually carries, so a new
+/// institution kind gets its own marker with no code change), plus the
+/// catchment grid pass 5's own allocation is scoped to, each cell
+/// annotated per distribution row with dwellings/owed/placed.
+fn tag_key(id: u32) -> &'static str {
+    defs::TAGS
+        .iter()
+        .find(|t| t.id == id)
+        .map(|t| t.key)
+        .unwrap_or("?")
+}
+
+/// A type's own derived class tint -- dwelling (by form), workplace,
+/// municipal service, or a neutral fallback for anything else (a
+/// `weight = 0` singleton with no distribution row targeting it, say).
+fn building_type_tint(def: &defs::BuildingTypeDef) -> &'static str {
+    let has = |key: &str| def.tags.iter().any(|&t| tag_key(t) == key);
+    if has("municipal_service") {
+        "#8e44ad"
+    } else if has("form_high") {
+        "#c0392b"
+    } else if has("form_mid") {
+        "#e67e22"
+    } else if has("form_low") {
+        "#f4d03f"
+    } else if !def.professions.is_empty() {
+        "#3498db"
+    } else {
+        "#95a5a6"
+    }
+}
+
+const CIVIC_MARKER_SHAPES: [&str; 6] = ["circle", "square", "triangle", "diamond", "star", "plus"];
+
+/// The sorted, distinct list of "civic" tags -- every tag, other than
+/// `municipal_service` itself, carried by a type that also carries
+/// `municipal_service` -- content actually declares. Sorted by key, so
+/// marker assignment is stable across a run, not dependent on id order.
+fn civic_tags(content: &GenerationContent) -> Vec<&'static str> {
+    let mut tags: std::collections::BTreeSet<&'static str> = std::collections::BTreeSet::new();
+    for b in content.building_types {
+        if b.tags.iter().any(|&t| tag_key(t) == "municipal_service") {
+            for &t in b.tags {
+                let key = tag_key(t);
+                if key != "municipal_service" {
+                    tags.insert(key);
+                }
+            }
+        }
+    }
+    tags.into_iter().collect()
+}
+
+fn marker_shape(civic: &[&str], key: &str) -> &'static str {
+    match civic.iter().position(|&k| k == key) {
+        Some(i) => CIVIC_MARKER_SHAPES[i % CIVIC_MARKER_SHAPES.len()],
+        None => "circle",
+    }
+}
+
+/// One small SVG marker, centred on `(cx, cy)`, shaped by `shape` --
+/// distinct enough at a glance that two civic tags never read the same
+/// even before the legend is checked.
+fn marker(cx: i32, cy: i32, shape: &str, stroke: &str) -> String {
+    let r = 5;
+    match shape {
+        "square" => format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"1.5\"/>\n",
+            cx - r,
+            cy - r,
+            r * 2,
+            r * 2
+        ),
+        "triangle" => format!(
+            "<polygon points=\"{},{} {},{} {},{}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"1.5\"/>\n",
+            cx,
+            cy - r,
+            cx - r,
+            cy + r,
+            cx + r,
+            cy + r
+        ),
+        "diamond" => format!(
+            "<polygon points=\"{},{} {},{} {},{} {},{}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"1.5\"/>\n",
+            cx,
+            cy - r,
+            cx + r,
+            cy,
+            cx,
+            cy + r,
+            cx - r,
+            cy
+        ),
+        "star" => format!(
+            "<polygon points=\"{},{} {},{} {},{} {},{} {},{}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"1.5\"/>\n",
+            cx,
+            cy - r,
+            cx + r / 3,
+            cy - r / 3,
+            cx + r,
+            cy,
+            cx + r / 3,
+            cy + r / 3,
+            cx,
+            cy + r
+        ),
+        "plus" => format!(
+            "<line x1=\"{}\" y1=\"{cy}\" x2=\"{}\" y2=\"{cy}\" stroke=\"{stroke}\" stroke-width=\"1.5\"/>\n\
+             <line x1=\"{cx}\" y1=\"{}\" x2=\"{cx}\" y2=\"{}\" stroke=\"{stroke}\" stroke-width=\"1.5\"/>\n",
+            cx - r,
+            cx + r,
+            cy - r,
+            cy + r
+        ),
+        _ => format!(
+            "<circle cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"1.5\"/>\n"
+        ),
+    }
+}
+
+/// The catchment grid pass 5's own distribution overrides allocate
+/// targets over, drawn as light gridlines, with dwellings/owed/placed
+/// per committed distribution row annotated in each cell it covers.
+fn catchment_overlay(
+    site: sim::generation::SiteBounds,
+    cfg: &GenerationConfig,
+    content: &GenerationContent,
+    by_id: &std::collections::BTreeMap<u32, &defs::BuildingTypeDef>,
+    bt: &BuildingTypeMap,
+    em: &EnvelopeMap,
+) -> String {
+    let extent = cfg.building_type_catchment_extent_cells.max(1);
+    let mut body = String::new();
+    let mut x = site.x0;
+    while x < site.x1 {
+        body.push_str(&format!(
+            "<line x1=\"{x}\" y1=\"{}\" x2=\"{x}\" y2=\"{}\" stroke=\"#555\" stroke-width=\"1\" stroke-dasharray=\"4 3\"/>\n",
+            site.y0, site.y1
+        ));
+        x += extent;
+    }
+    let mut y = site.y0;
+    while y < site.y1 {
+        body.push_str(&format!(
+            "<line x1=\"{}\" y1=\"{y}\" x2=\"{}\" y2=\"{y}\" stroke=\"#555\" stroke-width=\"1\" stroke-dasharray=\"4 3\"/>\n",
+            site.x0, site.x1
+        ));
+        y += extent;
+    }
+
+    let plot_of_envelope: std::collections::BTreeMap<u32, (i32, i32)> = em
+        .envelopes()
+        .map(|e| {
+            let (fx, fy) = front_edge_midpoint(e.footprint, e.front);
+            (e.plot, (fx, fy))
+        })
+        .collect();
+    let mut dist_rows: Vec<sim::rules::DistributionRow> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .collect();
+    dist_rows.sort_by_key(|r| r.id);
+
+    let mut per_by_catchment_and_row: std::collections::BTreeMap<(u32, i32, i32), u64> =
+        std::collections::BTreeMap::new();
+    let mut subj_by_catchment_and_row: std::collections::BTreeMap<(u32, i32, i32), u64> =
+        std::collections::BTreeMap::new();
+    for a in bt.assignments() {
+        let Some(&(x, y)) = plot_of_envelope.get(&a.plot) else {
+            continue;
+        };
+        let (cx, cy) = building_types::catchment_of(x, y, site, extent);
+        let def = by_id[&a.building_type];
+        for row in &dist_rows {
+            if def.tags.contains(&row.per) {
+                *per_by_catchment_and_row
+                    .entry((row.id, cx, cy))
+                    .or_insert(0) += 1;
+            }
+            if def.tags.contains(&row.subject) {
+                *subj_by_catchment_and_row
+                    .entry((row.id, cx, cy))
+                    .or_insert(0) += 1;
+            }
+        }
+    }
+
+    let mut cy = site.y0;
+    while cy < site.y1 {
+        let mut cx = site.x0;
+        while cx < site.x1 {
+            let (gx, gy) = ((cx - site.x0) / extent, (cy - site.y0) / extent);
+            let mut ty = cy + 12;
+            for row in &dist_rows {
+                let per = per_by_catchment_and_row
+                    .get(&(row.id, gx, gy))
+                    .copied()
+                    .unwrap_or(0);
+                let owed = per / (row.ratio.max(1) as u64);
+                let placed = subj_by_catchment_and_row
+                    .get(&(row.id, gx, gy))
+                    .copied()
+                    .unwrap_or(0);
+                body.push_str(&format!(
+                    "<text x=\"{}\" y=\"{ty}\" font-family=\"sans-serif\" font-size=\"7\" fill=\"#333\">{}: {per}/{owed}/{placed}</text>\n",
+                    cx + 4,
+                    row.key
+                ));
+                ty += 8;
+            }
+            cx += extent;
+        }
+        cy += extent;
+    }
+    body
+}
+
+fn building_types_legend(content: &GenerationContent, y0: i64) -> String {
+    let mut body = String::new();
+    let entries: [(&str, &str); 5] = [
+        ("#f4d03f", "dwelling (low)"),
+        ("#e67e22", "dwelling (mid)"),
+        ("#c0392b", "dwelling (high)"),
+        ("#3498db", "workplace"),
+        ("#95a5a6", "other"),
+    ];
+    let mut x = 8;
+    for (fill, label) in entries {
+        body.push_str(&format!(
+            "<rect x=\"{x}\" y=\"{}\" width=\"16\" height=\"16\" fill=\"{fill}\"/>\n",
+            y0 + 4
+        ));
+        body.push_str(&format!(
+            "<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">{label}</text>\n",
+            x + 20,
+            y0 + 16
+        ));
+        x += 130;
+    }
+    let civic = civic_tags(content);
+    let mut cx = 8;
+    for key in &civic {
+        let shape = marker_shape(&civic, key);
+        body.push_str(&marker(cx + 8, (y0 + 40) as i32, shape, "#8e44ad"));
+        body.push_str(&format!(
+            "<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">{key}</text>\n",
+            cx + 20,
+            y0 + 44
+        ));
+        cx += 110;
+    }
+    body
+}
+
+/// Pass 5's own evidence: the same block/street backdrop as `envelopes_
+/// svg`, every placed envelope tinted by its own derived class, a
+/// distinct marker over every municipal-service envelope (per its own
+/// civic tag), the catchment grid with dwellings/owed/placed per
+/// distribution row, and a legend derived from `content` rather than
+/// hand-named.
+pub fn building_types_svg(
+    map: &LandUseMap,
+    net: &StreetNetwork,
+    pm: &PlotMap,
+    em: &EnvelopeMap,
+    bt: &BuildingTypeMap,
+    cfg: &GenerationConfig,
+    content: &GenerationContent,
+) -> String {
+    let site = net.site();
+    let (w, h) = (site.width(), site.height());
+    let civic_rows = (civic_tags(content).len() as i64 / 4).max(0);
+    let legend_h = 60 + civic_rows * 20;
+    let total_h = h + legend_h;
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+
+    let mut body = block_rects(map, net);
+    for e in net.edges() {
+        let r = e.rect();
+        body.push_str(&format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
+            r.x0,
+            r.y0,
+            r.width(),
+            r.height(),
+            street_fill(e.class)
+        ));
+    }
+
+    let civic = civic_tags(content);
+    for outcome in em.outcomes() {
+        let EnvelopeOutcome::Placed(e) = outcome else {
+            continue;
+        };
+        let Some(a) = bt.assignments().iter().find(|a| a.plot == e.plot) else {
+            continue;
+        };
+        let def = by_id[&a.building_type];
+        let plot = &pm.plots()[e.plot as usize];
+        body.push_str(&format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"#999\" stroke-width=\"0.5\"/>\n",
+            plot.bounds.x0,
+            plot.bounds.y0,
+            plot.bounds.width(),
+            plot.bounds.height(),
+        ));
+        body.push_str(&format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" fill-opacity=\"0.9\" stroke=\"#111\" stroke-width=\"0.5\"/>\n",
+            e.footprint.x0,
+            e.footprint.y0,
+            e.footprint.width(),
+            e.footprint.height(),
+            building_type_tint(def)
+        ));
+        if def.tags.iter().any(|&t| tag_key(t) == "municipal_service") {
+            let civic_key = def
+                .tags
+                .iter()
+                .map(|&t| tag_key(t))
+                .find(|&k| k != "municipal_service")
+                .unwrap_or("?");
+            let (mx, my) = front_edge_midpoint(e.footprint, e.front);
+            body.push_str(&marker(mx, my, marker_shape(&civic, civic_key), "#111"));
+        }
+    }
+
+    body.push_str(&catchment_overlay(site, cfg, content, &by_id, bt, em));
+
+    let legend = building_types_legend(content, h);
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{total_h}\" viewBox=\"0 0 {w} {total_h}\">\n\
+         <rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{total_h}\" fill=\"#ffffff\"/>\n\
+         {body}{legend}</svg>\n"
+    )
+}
+
 /// Every evidence document [`EVIDENCE_SEEDS`] commits, for one seed.
 /// `envelopes` serves both the plot-subdivision and building-envelope
 /// Evidence rows in `docs/generation.md` -- one file for both passes.
@@ -615,6 +968,7 @@ pub struct EvidenceSvgs {
     pub land_use: String,
     pub streets: String,
     pub envelopes: String,
+    pub building_types: String,
 }
 
 /// Builds every evidence SVG for every seed in [`EVIDENCE_SEEDS`] from
@@ -635,6 +989,15 @@ pub fn build_all() -> Vec<EvidenceSvgs> {
                 land_use: land_use_svg(&d.land_use, &cfg),
                 streets: streets_svg(&d.land_use, &d.streets),
                 envelopes: envelopes_svg(&d.land_use, &d.streets, &d.plots, &d.envelopes),
+                building_types: building_types_svg(
+                    &d.land_use,
+                    &d.streets,
+                    &d.plots,
+                    &d.envelopes,
+                    &d.building_types,
+                    &cfg,
+                    &content,
+                ),
             }
         })
         .collect()

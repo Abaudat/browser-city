@@ -4,10 +4,14 @@
 # land only where the `depot_present` distribution row
 # (defs/rules/generation.toml) places it, keeping its own placed count
 # exactly the row's own target, never inflated by an unrelated fill
-# draw.
+# draw. `bottling_plant`/`recycling_facility` are the plastic-bottle
+# reference chain's own future industrial end (`defs/chains/
+# sanitation.toml`'s own `plastic_bottle` chain, `sanitation_worker`
+# link) -- named now so the job stories have a workplace to attach the
+# loop to, no chain wiring here (Derek's direction).
 
 [[building_type]]
-id = 9
+id = 26
 key = "workshop"
 tags = ["workshop"]
 land_uses = ["industrial"]
@@ -15,14 +19,11 @@ density_min = 0
 density_max = 100
 min_interior_width_cells = 8
 min_interior_depth_cells = 8
-weight = 20
-professions = [
-  { profession = "machinist", headcount = 2 },
-  { profession = "foreman", headcount = 1 },
-]
+weight = 16
+professions = ["machinist", "foreman"]
 
 [[building_type]]
-id = 10
+id = 27
 key = "warehouse"
 tags = ["warehouse"]
 land_uses = ["industrial"]
@@ -30,14 +31,11 @@ density_min = 0
 density_max = 100
 min_interior_width_cells = 10
 min_interior_depth_cells = 10
-weight = 20
-professions = [
-  { profession = "warehouse_worker", headcount = 3 },
-  { profession = "forklift_operator", headcount = 1 },
-]
+weight = 16
+professions = ["warehouse_worker", "forklift_operator", "supervisor", "driver"]
 
 [[building_type]]
-id = 11
+id = 28
 key = "depot"
 tags = ["municipal_service", "depot"]
 land_uses = ["industrial"]
@@ -46,8 +44,83 @@ density_max = 100
 min_interior_width_cells = 10
 min_interior_depth_cells = 10
 weight = 0
+professions = ["depot_dispatcher", "depot_mechanic", "refuse_collector"]
+
+[[building_type]]
+id = 29
+key = "bottling_plant"
+tags = ["workshop"]
+land_uses = ["industrial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 20
+professions = ["machine_operator", "quality_inspector", "warehouse_worker", "supervisor", "driver"]
+
+[[building_type]]
+id = 30
+key = "recycling_facility"
+tags = ["workshop"]
+land_uses = ["industrial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 24
+professions = ["sorter", "machine_operator", "forklift_operator", "supervisor", "driver"]
+
+[[building_type]]
+id = 31
+key = "print_works"
+tags = ["workshop"]
+land_uses = ["industrial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 14
+professions = ["printer_operator", "bookbinder", "machine_operator"]
+
+[[building_type]]
+id = 32
+key = "vehicle_repair_garage"
+tags = ["workshop"]
+land_uses = ["industrial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 15
+professions = ["mechanic", "receptionist", "parts_clerk"]
+
+[[building_type]]
+id = 33
+key = "builders_yard"
+tags = ["workshop"]
+land_uses = ["industrial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 24
+professions = ["yard_worker", "forklift_operator", "sales_assistant", "foreman", "driver"]
+
+[[building_type]]
+id = 34
+key = "food_plant"
+tags = ["workshop"]
+land_uses = ["industrial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 22
 professions = [
-  { profession = "depot_dispatcher", headcount = 1 },
-  { profession = "depot_mechanic", headcount = 1 },
-  { profession = "refuse_collector", headcount = 4 },
+  "machine_operator",
+  "quality_inspector",
+  "food_packer",
+  "warehouse_worker",
+  "supervisor",
+  "driver",
 ]

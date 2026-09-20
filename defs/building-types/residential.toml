@@ -45,7 +45,9 @@ weight = 25
 
 # The mixed-use row Derek's direction asks for: shop below, flat above --
 # an ordinary residential-eligible row that also carries a post, not a
-# commercial plot teleported into a terrace.
+# commercial plot teleported into a terrace. `requires_corner = true` is
+# the row's own hard eligibility (Derek's direction, PR #317 cycle 1): a
+# corner shop is on a corner by construction, never by accident.
 [[building_type]]
 id = 4
 key = "corner_shop"
@@ -56,4 +58,5 @@ density_max = 100
 min_interior_width_cells = 5
 min_interior_depth_cells = 5
 weight = 8
-professions = [{ profession = "shop_clerk", headcount = 1 }]
+requires_corner = true
+professions = ["shop_clerk"]

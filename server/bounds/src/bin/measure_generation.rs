@@ -171,6 +171,7 @@ fn main() {
     // >=5 distinct workplaces -- pooled (meaned) over every seed below,
     // the same two-step AC4 shape as building/workplace count.
     let mut deep_profession_count = Vec::with_capacity(BUILDING_TYPE_SEED_COUNT as usize);
+    let mut profession_sum: BTreeMap<&str, u64> = BTreeMap::new();
 
     for seed in 0..BUILDING_TYPE_SEED_COUNT {
         let d = sim::generation::plan(seed, &cfg, &content).expect("pass 1 is total");
@@ -184,8 +185,8 @@ fn main() {
             }
             if building_types::is_workplace(def) {
                 workplaces += 1;
-                for p in def.professions {
-                    *employers_this_city.entry(p.profession).or_insert(0) += 1;
+                for &p in def.professions {
+                    *employers_this_city.entry(p).or_insert(0) += 1;
                 }
             }
         }
@@ -203,6 +204,9 @@ fn main() {
         }
         deep_profession_count
             .push(employers_this_city.values().filter(|&&c| c >= 5).count() as i64);
+        for (&p, &c) in &employers_this_city {
+            *profession_sum.entry(p).or_insert(0) += c;
+        }
         if d.check_rules(&content).is_err() {
             rule_violation_seeds += 1;
         }
@@ -217,6 +221,17 @@ fn main() {
     for (&tag, &min) in &per_tag_min {
         let mean = per_tag_sum[&tag] as f64 / BUILDING_TYPE_SEED_COUNT as f64;
         println!("  tag {tag}: min={min} mean={mean:.2}");
+    }
+    let mut by_mean: Vec<(&str, f64)> = profession_sum
+        .iter()
+        .map(|(&p, &s)| (p, s as f64 / BUILDING_TYPE_SEED_COUNT as f64))
+        .collect();
+    by_mean.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    println!("per-profession pooled mean employer count (below 5 shown first):");
+    for (p, mean) in &by_mean {
+        if *mean < 8.0 {
+            println!("  {p}: {mean:.2}");
+        }
     }
     Stats::new(deep_profession_count)
         .print("professions_employed_by_5_plus_workplaces_per_city (Scale Baseline target ~69)");

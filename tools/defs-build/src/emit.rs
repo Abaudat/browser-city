@@ -149,33 +149,18 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str(
-        "pub struct BuildingTypePost {\n    pub profession: &'static str,\n    pub headcount: u32,\n}\n\n",
-    );
-    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str(
-        "pub struct BuildingTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub land_uses: &'static [&'static str],\n    pub density_min: i32,\n    pub density_max: i32,\n    pub min_interior_width_cells: u32,\n    pub min_interior_depth_cells: u32,\n    pub weight: u32,\n    pub professions: &'static [BuildingTypePost],\n}\n\n",
+        "pub struct BuildingTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub land_uses: [bool; 4],\n    pub density_min: i32,\n    pub density_max: i32,\n    pub min_interior_width_cells: u32,\n    pub min_interior_depth_cells: u32,\n    pub weight: u32,\n    pub requires_corner: bool,\n    pub density_affinity: i32,\n    pub professions: &'static [&'static str],\n}\n\n",
     );
     out.push_str("pub const BUILDING_TYPES: &[BuildingTypeDef] = &[\n");
     for b in &defs.building_types {
         let tags = fmt_u32_slice(&b.tags);
-        let land_uses = fmt_str_slice(
-            &b.land_uses
-                .iter()
-                .map(|u| u.as_str().to_string())
-                .collect::<Vec<_>>(),
+        let land_uses = format!(
+            "[{}, {}, {}, {}]",
+            b.land_uses[0], b.land_uses[1], b.land_uses[2], b.land_uses[3]
         );
-        let posts: Vec<String> = b
-            .professions
-            .iter()
-            .map(|p| {
-                format!(
-                    "BuildingTypePost {{ profession: {:?}, headcount: {} }}",
-                    p.profession, p.headcount
-                )
-            })
-            .collect();
+        let professions = fmt_str_slice(&b.professions);
         out.push_str(&format!(
-            "    BuildingTypeDef {{ id: {}, key: {:?}, tags: &{tags}, land_uses: &{land_uses}, density_min: {}, density_max: {}, min_interior_width_cells: {}, min_interior_depth_cells: {}, weight: {}, professions: &[{}] }},\n",
+            "    BuildingTypeDef {{ id: {}, key: {:?}, tags: &{tags}, land_uses: {land_uses}, density_min: {}, density_max: {}, min_interior_width_cells: {}, min_interior_depth_cells: {}, weight: {}, requires_corner: {}, density_affinity: {}, professions: &{professions} }},\n",
             b.id,
             b.key,
             b.density_min,
@@ -183,7 +168,8 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
             b.min_interior_width_cells,
             b.min_interior_depth_cells,
             b.weight,
-            posts.join(", "),
+            b.requires_corner,
+            b.density_affinity,
         ));
     }
     out.push_str("];\n\n");
@@ -1059,16 +1045,15 @@ mod tests {
                 id: 1,
                 key: "corner_shop".into(),
                 tags: vec![1],
-                land_uses: vec![RawLandUse::Residential],
+                land_uses: [true, false, false, false],
                 density_min: 0,
                 density_max: 100,
                 min_interior_width_cells: 6,
                 min_interior_depth_cells: 6,
                 weight: 10,
-                professions: vec![BuildingTypePostDef {
-                    profession: "sanitation_worker".into(),
-                    headcount: 1,
-                }],
+                requires_corner: false,
+                density_affinity: 0,
+                professions: vec!["sanitation_worker".into()],
             }],
             balance: vec![BalanceDef {
                 key: "citizen.bar_decay.rest".into(),

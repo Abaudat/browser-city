@@ -153,14 +153,48 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     assert!(em.outcomes().len() as u64 <= max_plots);
     assert!(!em.outcomes().is_empty());
 
-    // Story 3.4: one type assignment per placed envelope, never more --
-    // pass 5's own candidate-pair cost (the distribution overrides'
-    // greedy spacing scan) is linear in envelope count times institution
-    // count, never envelopes squared: every candidate list is built in
-    // one pass over `placed`, and the spacing check compares only
-    // against this row's own already-chosen set, never all pairs.
+    // Story 3.4: one type assignment per placed envelope, never more.
     assert_eq!(
         d.building_types.assignments().len(),
         em.placed_count() as usize
     );
+
+    // Pass 5's own distribution-override scan (Quentin's direction, PR
+    // #317 cycle 2): each row's own farthest-point selection re-scans its
+    // whole remaining candidate pool per pick, so its real cost is
+    // candidates x chosen -- `envelope count x (per-tag count / ratio)`
+    // -- quadratic in site area with a small constant (`1 / ratio`), not
+    // linear as an earlier comment here claimed. What keeps that
+    // constant small, and the ceiling this asserts: `chosen` never
+    // exceeds `sim::rules::evaluate`'s own site-wide Distribution target
+    // (`basis / ratio`, floor) -- the same bound `inv_generation_
+    // building_type_pass::a_committed_distribution_row_never_exceeds_
+    // its_own_site_wide_target` holds at the live config, checked here
+    // at the 1024 growth target instead.
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let mut tag_counts: std::collections::BTreeMap<sim::rules::TagId, u64> =
+        std::collections::BTreeMap::new();
+    for a in d.building_types.assignments() {
+        for &t in by_id[&a.building_type].tags {
+            *tag_counts.entry(t).or_insert(0) += 1;
+        }
+    }
+    let mut dist_rows: Vec<sim::rules::DistributionRow> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .collect();
+    dist_rows.sort_by_key(|r| r.id);
+    for row in &dist_rows {
+        let basis = tag_counts.get(&row.per).copied().unwrap_or(0);
+        let ratio = row.ratio.max(1) as u64;
+        let ceiling = basis / ratio;
+        let chosen = tag_counts.get(&row.subject).copied().unwrap_or(0);
+        assert!(
+            chosen <= ceiling,
+            "rule {} placed {chosen} subjects, past the ratio-derived ceiling {ceiling} (basis {basis} / ratio {ratio})",
+            row.key
+        );
+    }
 }

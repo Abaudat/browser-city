@@ -238,7 +238,7 @@ pub fn plan(
     let streets = streets::run(city_seed, &land_use, cfg);
     let plots = plots::run(city_seed, &land_use, &streets, cfg);
     let envelopes = envelopes::run(city_seed, &plots, cfg);
-    let building_types = building_types::run(city_seed, &envelopes, &plots, content);
+    let building_types = building_types::run(city_seed, &envelopes, &plots, &streets, cfg, content);
     Ok(District {
         land_use,
         streets,
@@ -514,6 +514,11 @@ pub struct GenerationConfig {
     /// The pooled band: the mean workplace count over a fixed seed range
     /// must sit within this percent of the scaled target.
     pub workplace_mean_count_tolerance_percent: i64,
+    /// AC3: the fixed-extent square (world cells) a `[[distribution]]`
+    /// row's own target is allocated over -- 256 at launch, so at the
+    /// committed 512x512 site this *is* AC3's own quadrants; never a
+    /// hardcoded 2x2 of the site (Derek's direction).
+    pub building_type_catchment_extent_cells: i32,
 }
 
 fn get(balance: &[defs::BalanceSeed], key: &str) -> i64 {
@@ -522,11 +527,13 @@ fn get(balance: &[defs::BalanceSeed], key: &str) -> i64 {
 
 /// `LandUse`'s own balance-key naming segment, [`LandUse::ALL`] order --
 /// the one place a per-land-use key's own name is built, shared by
-/// `from_balance`, `docs/generation.md`'s own key list, and (story 3.4)
-/// `building_types.rs`'s own land-use eligibility check -- the same
-/// string a `defs/building-types/*.toml` row's own `land_uses` entry
-/// carries.
-pub fn land_use_key(u: LandUse) -> &'static str {
+/// `from_balance` and `docs/generation.md`'s own key list. Private
+/// (PR #317 cycle 1, Tim's direction): `building_types.rs`'s own
+/// eligibility check indexes `BuildingTypeDef::land_uses`'s `[bool; 4]`
+/// mask by `LandUse as usize` directly, never a `&str` -- a generator
+/// comparing strings is a content key reaching it in substance even when
+/// a textual guard cannot see it.
+fn land_use_key(u: LandUse) -> &'static str {
     match u {
         LandUse::Residential => "residential",
         LandUse::Commercial => "commercial",
@@ -729,6 +736,10 @@ impl GenerationConfig {
                 balance,
                 "generation.building_types.workplace_mean_count_tolerance_percent",
             ),
+            building_type_catchment_extent_cells: get(
+                balance,
+                "generation.building_types.catchment_extent_cells",
+            ) as i32,
         };
 
         if cfg.coarse_cell_size_cells <= 0
@@ -1291,6 +1302,12 @@ mod tests {
                 5,
                 0,
                 100,
+            ),
+            seed(
+                "generation.building_types.catchment_extent_cells",
+                256,
+                1,
+                100000,
             ),
         ]
     }

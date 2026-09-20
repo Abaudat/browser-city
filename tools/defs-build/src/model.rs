@@ -398,13 +398,29 @@ impl RawLandUse {
             RawLandUse::Institutional => "institutional",
         }
     }
+
+    /// This variant's own index into the `[bool; 4]` mask
+    /// [`BuildingTypeDef::land_uses`] carries -- residential, commercial,
+    /// industrial, institutional, the declared order above.
+    pub fn index(self) -> usize {
+        match self {
+            RawLandUse::Residential => 0,
+            RawLandUse::Commercial => 1,
+            RawLandUse::Industrial => 2,
+            RawLandUse::Institutional => 3,
+        }
+    }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RawBuildingTypePost {
-    pub profession: String,
-    pub headcount: u32,
+/// [`RawLandUse::index`], folded over a row's own `land_uses` list --
+/// the one place a `Vec<RawLandUse>` becomes the `[bool; 4]` mask
+/// `BuildingTypeDef` carries.
+pub fn land_use_mask(land_uses: &[RawLandUse]) -> [bool; 4] {
+    let mut mask = [false; 4];
+    for &u in land_uses {
+        mask[u.index()] = true;
+    }
+    mask
 }
 
 /// Story 3.4 (FR116, Tim's direction): a building type is a def kind, not
@@ -414,7 +430,9 @@ pub struct RawBuildingTypePost {
 /// or a dwelling is never stored here: it is derived from `tags` (a
 /// `municipal_service`/`dwelling`/etc. tag) or from `professions` being
 /// non-empty (a workplace), read only by `sim::generation`, never
-/// hardcoded in it.
+/// hardcoded in it. `professions` is a plain list of profession keys --
+/// no per-post headcount: nothing reads one yet (Tim's direction, PR
+/// #317 cycle 1), so it is not a field until a pass does.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawBuildingType {
@@ -428,8 +446,23 @@ pub struct RawBuildingType {
     pub min_interior_width_cells: u32,
     pub min_interior_depth_cells: u32,
     pub weight: u32,
+    /// Hard eligibility (story 3.4, Derek's direction, PR #317 cycle 1):
+    /// only a corner envelope (one whose own row-axis edge is the outer
+    /// edge of its own row *and* that perpendicular block side is itself
+    /// street-abutting) is ever eligible for this type. `false` (the
+    /// default) means ordinary, non-corner-restricted eligibility.
     #[serde(default)]
-    pub professions: Vec<RawBuildingTypePost>,
+    pub requires_corner: bool,
+    /// Soft siting for a distribution-placed type (Derek's direction):
+    /// among otherwise-eligible candidates, rank by density in this
+    /// direction before falling back to the seeded draw order -- `> 0`
+    /// prefers the highest-density eligible envelope first, `< 0` the
+    /// lowest, `0` (the default) no preference. Never consulted by the
+    /// ordinary weighted fill.
+    #[serde(default)]
+    pub density_affinity: i32,
+    #[serde(default)]
+    pub professions: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -932,12 +965,6 @@ pub struct ChainEntry {
     pub links: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct BuildingTypePostEntry {
-    pub profession: String,
-    pub headcount: u32,
-}
-
 #[derive(Debug)]
 pub struct BuildingTypeEntry {
     pub path: PathBuf,
@@ -950,7 +977,9 @@ pub struct BuildingTypeEntry {
     pub min_interior_width_cells: u32,
     pub min_interior_depth_cells: u32,
     pub weight: u32,
-    pub professions: Vec<BuildingTypePostEntry>,
+    pub requires_corner: bool,
+    pub density_affinity: i32,
+    pub professions: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -1243,12 +1272,6 @@ pub struct ProfessionDef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BuildingTypePostDef {
-    pub profession: String,
-    pub headcount: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildingTypeDef {
     pub id: u32,
     pub key: String,
@@ -1256,15 +1279,27 @@ pub struct BuildingTypeDef {
     /// vocabulary; whether a type is a dwelling or a named institution is
     /// carried here, never as a second stored category.
     pub tags: Vec<u32>,
-    pub land_uses: Vec<RawLandUse>,
+    /// A `[bool; 4]` mask, [`crate::model::LandUse::ALL`]-equivalent order
+    /// (residential, commercial, industrial, institutional) -- never a
+    /// `&str` past this point (PR #317 cycle 1, Tim's direction): a
+    /// generator comparing strings is a content key reaching it in
+    /// substance even when the guard cannot see it textually.
+    pub land_uses: [bool; 4],
     pub density_min: i32,
     pub density_max: i32,
     pub min_interior_width_cells: u32,
     pub min_interior_depth_cells: u32,
     pub weight: u32,
-    /// Non-empty iff this type is a workplace -- never a second stored
-    /// bool.
-    pub professions: Vec<BuildingTypePostDef>,
+    /// Hard eligibility: only a corner envelope is ever eligible.
+    pub requires_corner: bool,
+    /// Soft siting for a distribution-placed type: `> 0` prefers the
+    /// highest-density eligible candidate first, `< 0` the lowest, `0`
+    /// no preference. Never consulted by the ordinary weighted fill.
+    pub density_affinity: i32,
+    /// Profession keys this type staffs -- non-empty iff this type is a
+    /// workplace, never a second stored bool. No per-post headcount:
+    /// nothing reads one yet.
+    pub professions: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
