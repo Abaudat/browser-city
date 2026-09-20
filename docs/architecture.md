@@ -1105,10 +1105,13 @@ chains every implemented pass in order with no verdict on the result
 (only pass 1's own site check can fail). `District::check_building_count
 (&cfg)` holds AC4's count verdict, a property of the whole district.
 `generation::generate` is `plan` plus that check, and is what production
-calls; every cross-pass harness (golden, perf, evidence, invariants)
-calls `plan` or `generate`, and the per-pass `run` functions are called
-directly only by single-pass unit tests and by the two properties that
-deliberately feed one pass a perturbed predecessor. `GenerationError` is
+calls. `scripts/ci/check-generation-entry-point.sh` fails the build on
+any `plots::run(`/`envelopes::run(` call under `server/sim/tests/` or
+`server/bounds/` not marked `// generation-entry-point: allow` -- the
+marker is reserved for the two independence properties and the golden's
+pass-2-run-twice test, which deliberately feed one pass a perturbed or
+repeated predecessor; single-pass unit tests live in the pass's own
+module. `GenerationError` is
 the one error type across every implemented pass (`InvalidConfig` from
 `GenerationConfig::from_balance`, `InvalidSite { site,
 coarse_cell_size_cells }` from pass 1, `BuildingCountOutOfTolerance {
@@ -1166,16 +1169,15 @@ density, always inside its own plot, at or above that land use's minimum
 usable interior (checked against the interior net, footprint minus the
 wall ring, never the outer rectangle) -- a plot that cannot hold that
 minimum yields a typed `EnvelopeOutcome::Rejected`, counted, never a
-footprint shrunk below it, and pass 3 never hands it one. Building count
-fails generation against the Scale Baseline figure, never against a
-measurement of the generator itself.
+footprint shrunk below it, and pass 3 never hands it one.
 Building count itself fails generation: `District::check_building_count`
 returns `Err(GenerationError::BuildingCountOutOfTolerance)` when the
 realised placed-envelope count for a seed sits outside `[min, max]`,
 derived from `generation.envelopes.target_count_per_million_cells` (the
-Scale Baseline figure) scaled by the real site area and
-`count_tolerance_percent`; the pooled mean over a fixed seed range is
-held to that same target within `mean_count_tolerance_percent`.
+Scale Baseline figure, never a measurement of the generator itself)
+scaled by the real site area and `count_tolerance_percent`; the pooled
+mean over a fixed seed range is held to that same target within
+`mean_count_tolerance_percent`.
 
 Evidence: `bounds/src/generation_evidence.rs` renders every implemented
 pass's own output, for three committed seeds, to `docs/generation/*.svg`.

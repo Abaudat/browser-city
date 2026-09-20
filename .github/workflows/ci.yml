@@ -347,6 +347,7 @@ jobs:
       - name: native tests, including the property suite, in release
         run: cargo test --workspace --exclude browser_city --exclude sched_timing_spike --exclude boot_budget_spike --release
       - run: bash ../scripts/ci/check-trace-matrix.sh
+      - run: bash ../scripts/ci/check-generation-entry-point.sh
 
   build:
     name: build

@@ -146,7 +146,7 @@ balance generation.plots.institutional_width_max_cells value=14 min=2 max=64
 balance generation.plots.institutional_width_min_cells value=12 min=2 max=64
 balance generation.plots.max_core_depth_cells value=8 min=2 max=64
 balance generation.plots.max_core_depth_periphery_cells value=64 min=2 max=128
-balance generation.plots.max_open_percent_by_area value=35 min=0 max=100
+balance generation.plots.max_open_percent_by_area value=40 min=0 max=100
 balance generation.plots.max_open_percent_by_count value=5 min=0 max=100
 balance generation.plots.max_unplotted_percent value=2 min=0 max=100
 balance generation.plots.open_min_side_cells value=8 min=1 max=64

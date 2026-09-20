@@ -577,11 +577,13 @@ min = 0
 max = 100
 
 [[balance]]
-# The same ceiling's own area half. Same scan: max 32%, p99 25%, p50 14%
-# (the cores of the genuinely oversized periphery blocks); 35 is that
-# plus margin.
+# The same ceiling's own area half (the cores of the genuinely oversized
+# periphery blocks). Same scan: mean 13.9%, standard deviation 4.7, p99
+# 25%, max 32%. Set by the same rule as `envelopes.count_tolerance_
+# percent`: at least 5.5 standard deviations from the harness's own mean
+# (13.9 + 5.5 * 4.7 = 39.8), so 40 -- never "measured max plus margin".
 key = "generation.plots.max_open_percent_by_area"
-value = 35
+value = 40
 min = 0
 max = 100
 

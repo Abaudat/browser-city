@@ -276,10 +276,10 @@ fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
     let lu = land_use::run(SEEDS[0], cfg.site(), &cfg).unwrap();
     let net_a = streets::run(SEEDS[0], &lu, &cfg);
     let net_b = streets::run(SEEDS[0], &lu, &cfg);
-    let pm_a = plots::run(SEEDS[0], &lu, &net_a, &cfg);
-    let pm_b = plots::run(SEEDS[0], &lu, &net_b, &cfg);
-    let em_a = envelopes::run(SEEDS[0], &pm_a, &cfg);
-    let em_b = envelopes::run(SEEDS[0], &pm_b, &cfg);
+    let pm_a = plots::run(SEEDS[0], &lu, &net_a, &cfg); // generation-entry-point: allow
+    let pm_b = plots::run(SEEDS[0], &lu, &net_b, &cfg); // generation-entry-point: allow
+    let em_a = envelopes::run(SEEDS[0], &pm_a, &cfg); // generation-entry-point: allow
+    let em_b = envelopes::run(SEEDS[0], &pm_b, &cfg); // generation-entry-point: allow
     assert_eq!(
         plan_digest(&lu, &net_a, &pm_a, &em_a),
         plan_digest(&lu, &net_b, &pm_b, &em_b)

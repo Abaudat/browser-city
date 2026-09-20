@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "1f45ecfda20aacd8",
+  "defs_version": "deb5001bceeb937b",
   "collider_subcells_per_cell": 16,
   "interact_at_max_reach_cells": 2,
   "max_footprint_cells": 8,
@@ -95,7 +95,7 @@
     { "key": "generation.plots.institutional_width_min_cells", "max": 64, "min": 2, "value": 12 },
     { "key": "generation.plots.max_core_depth_cells", "max": 64, "min": 2, "value": 8 },
     { "key": "generation.plots.max_core_depth_periphery_cells", "max": 128, "min": 2, "value": 64 },
-    { "key": "generation.plots.max_open_percent_by_area", "max": 100, "min": 0, "value": 35 },
+    { "key": "generation.plots.max_open_percent_by_area", "max": 100, "min": 0, "value": 40 },
     { "key": "generation.plots.max_open_percent_by_count", "max": 100, "min": 0, "value": 5 },
     { "key": "generation.plots.max_unplotted_percent", "max": 100, "min": 0, "value": 2 },
     { "key": "generation.plots.open_min_side_cells", "max": 64, "min": 1, "value": 8 },
