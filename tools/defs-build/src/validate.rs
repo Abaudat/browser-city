@@ -450,9 +450,7 @@ fn check_building_type_density_coverage(
                 &first.path,
                 first.key.line,
                 first.key.col,
-                format!(
-                    "no weight > 0 building type is eligible for land use '{use_name}' at all"
-                ),
+                format!("no weight > 0 building type is eligible for land use '{use_name}' at all"),
             ));
         }
         for density in density_min..=density_max {
