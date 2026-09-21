@@ -113,27 +113,26 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
 // browser-less proxy and no throttling to be reliable.
 //
 // Story 2.13 (Quentin's direction, cycle 2): both budgets are set from a
-// real CI run of this branch, never a local machine (a local run
-// measures far fewer requests than CI does at this exact checkpoint --
-// player-controllable fires quickly enough on an unthrottled machine
-// that most of the street crowd's own async composite-texture requests
-// have not even started yet, so only a slower/throttled environment like
-// CI's own runner lets more of them land inside the window this test
-// measures), and tight rather than padded -- request count is exact
-// (deterministic: the same fixed set of images always loads before
-// player-controllable, machine speed notwithstanding), bytes carries a
-// 5% margin rounded up to the next 16 KiB (headers only; PNGs are not
+// real CI run of this branch, never a local machine -- tight rather than
+// padded: request count is exact (deterministic: the same fixed set of
+// images always loads before player-controllable), bytes carries a 5%
+// margin rounded up to the next 16 KiB (headers only; PNGs are not
 // re-compressed in transit). Measured on `ci.yml`'s own `e2e` job, run
-// 35643671262: MEASURED_REQUEST_COUNT requests, MEASURED_BYTES bytes --
-// ATLAS_BYTES_BUDGET is `MEASURED_BYTES * 1.05` rounded up to the next
-// 16 KiB. Story 2.6/2.13's own atlas rewiring retired four raw
-// `ModernTileset/` imports (`window`, `trashBin`, `bridgeDeck`,
-// `bridgeStairs`) in favour of the shared "street" atlas page every
-// `defId`-placed prop now draws from -- re-measure this spike (this
-// comment, not a separate file) the day the boot path's own image set
-// changes again.
-const ATLAS_REQUEST_BUDGET = 115;
-const ATLAS_BYTES_BUDGET = 3.4 * 1024 * 1024;
+// 35645657574: 10 requests, 1,347,996 bytes -- ATLAS_BYTES_BUDGET is
+// `1347996 * 1.05` rounded up to the next 16 KiB. Both figures are far
+// below the story 2.6 baseline (115 requests, 3.4 MiB) this replaces,
+// which was never a measurement of this test's own dev-server harness at
+// all -- it borrowed docs/spikes/1.14-boot-budget.md's own "105 requests,
+// ~3.0 MiB" figure, itself a measurement of a different harness entirely
+// (a throttled, production build, not this spec's own `chromium` project
+// against the Vite dev server). Story 2.6/2.13's
+// own atlas rewiring retired four raw `ModernTileset/` imports (`window`,
+// `trashBin`, `bridgeDeck`, `bridgeStairs`) in favour of the shared
+// "street" atlas page every `defId`-placed prop now draws from --
+// re-measure this spike (this comment, not a separate file) the day the
+// boot path's own image set changes again.
+const ATLAS_REQUEST_BUDGET = 10;
+const ATLAS_BYTES_BUDGET = Math.ceil((1_347_996 * 1.05) / (16 * 1024)) * (16 * 1024);
 
 test("the atlas request count and byte total before player-controllable stay inside budget (NFR1)", async ({
   page,
