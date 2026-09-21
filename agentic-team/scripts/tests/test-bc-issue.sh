@@ -4,8 +4,11 @@
 # write-story's and write-blockers' dependencies, current's 0/1/2-active cases, transition
 # (including the epic that closes with its last story),
 # scope's lead-label handling, backlog's unscoped read, create-demo's call
-# sequence, the demo-current/demo-commented/demo-for gates, and the
-# integrate-feedback/write-epic/write-story half of integrating-feedback.
+# sequence, write-demo's checklist lint, the demo-current/demo-commented/
+# demo-for gates, and the integrate-feedback/write-epic/write-story/
+# write-feedback-reply half of integrating-feedback -- including the reply
+# gate: Reviewed is set only once a feedback-reply comment is actually on
+# the thread.
 set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$TEST_DIR/.."
@@ -321,6 +324,106 @@ check "write-demo with a missing body file exits 2" 2 \
   run "$FAKE_WD_EMPTY" "" write-demo 3 "$FAKE_WD_EMPTY/nope.md"
 
 echo
+echo "write-demo: checklist lines are linted for player-facing language before anything is created:"
+
+FAKE_LINT_ITER='[{"id":"sp3id","title":"Sprint 3","startDate":"2026-09-12","duration":7}]'
+
+# lint_body <dir> <checklist-line> -> path to a body file carrying it, plus a
+# harmless summary paragraph -- the lint never touches the summary.
+lint_body() {
+  local dir="$1" line="$2" f
+  f="$dir/lint-body.md"
+  printf 'A short summary for Adrian.\n\n%s\n' "$line" > "$f"
+  printf '%s' "$f"
+}
+
+lint_bad() { # <name> <checklist-line>
+  local name="$1" line="$2" d body
+  d="$(fake_dir)"
+  printf '%s' "$FAKE_LINT_ITER" > "$d/project_iterations.json"
+  body="$(lint_body "$d" "$line")"
+  check "$name: rejected, exit 3" 3 run "$d" "" write-demo 3 "$body"
+  check "$name: created nothing"  1 test -f "$d/calls.log"
+}
+
+lint_good() { # <name> <checklist-line>
+  local name="$1" line="$2" d body
+  d="$(fake_dir)"
+  printf '%s' "$FAKE_LINT_ITER" > "$d/project_iterations.json"
+  printf '999\n' > "$d/gh_issue_create.json"
+  body="$(lint_body "$d" "$line")"
+  check "$name: passes, exit 0" 0 run "$d" "" write-demo 3 "$body"
+}
+
+# Adrian's own complaint, verbatim -- the acceptance criterion this lint exists for.
+ADRIAN_LINE='- [ ] Walk through a defs/ object definition and its packed atlas entry'
+FAKE_LINT_ADRIAN="$(fake_dir)"
+printf '%s' "$FAKE_LINT_ITER" > "$FAKE_LINT_ADRIAN/project_iterations.json"
+ADRIAN_BODY="$(lint_body "$FAKE_LINT_ADRIAN" "$ADRIAN_LINE")"
+check "Adrian's literal complaint line is rejected, exit 3" 3 \
+  run "$FAKE_LINT_ADRIAN" "" write-demo 3 "$ADRIAN_BODY"
+LINT_ERR="$(run "$FAKE_LINT_ADRIAN" "" write-demo 3 "$ADRIAN_BODY" 2>&1 1>/dev/null)"
+check "and the offending line is named in stderr" 0 \
+  bash -c 'printf "%s" "$1" | grep -qF -- "$2"' _ "$LINT_ERR" "$ADRIAN_LINE"
+check "and no gh_issue_create appears in the call log" 1 \
+  test -f "$FAKE_LINT_ADRIAN/calls.log"
+
+# Rule: a backtick anywhere in the line.
+lint_bad  "backtick"    "- [ ] Watch the team land a \`parry()\` combo"
+lint_good "no backtick" "- [ ] Watch the team land a parry combo"
+
+# Rule: a path-like token -- a slash between word characters, or a token
+# ending in a source/doc extension.
+lint_bad  "path-like token (slash)"     "- [ ] Confirm the client/server handshake on login"
+lint_bad  "path-like token (extension)" "- [ ] Check the new config.yml loads correctly"
+lint_good "no path"                     "- [ ] Confirm the login screen appears"
+
+# Rule: a snake_case or camelCase token of the kind that only appears in code.
+lint_bad  "snake_case token" "- [ ] Watch the walk_speed increase in the new zone"
+lint_bad  "camelCase token"  "- [ ] Watch the questLog fill up with new markers"
+lint_good "plain English"    "- [ ] Watch the player walk through the new zone"
+
+# Rule: the denylist, seeded from Adrian's actual complaint and its siblings.
+lint_bad  "denylist word (reducer)" "- [ ] Confirm the reducer runs without errors"
+lint_good "denylist word absent"    "- [ ] Confirm building placement works smoothly"
+
+# Ambiguous English words never belong on the denylist -- a lint that rejects
+# "sit at a table" is worse than none.
+lint_good "ambiguous word: table"       "- [ ] Sit at the crafting table and place an item"
+lint_good "ambiguous word: build"       "- [ ] Build a house in the new district"
+lint_good "ambiguous word: test (verb)" "- [ ] Test the new elevator by riding it up"
+
+# One bad line among good ones rejects the whole body.
+FAKE_LINT_MIX="$(fake_dir)"
+printf '%s' "$FAKE_LINT_ITER" > "$FAKE_LINT_MIX/project_iterations.json"
+MIX_BODY="$FAKE_LINT_MIX/mix.md"
+printf 'A short summary for Adrian.\n\n- [ ] Watch the player walk through the new zone\n- [ ] Confirm the reducer runs without errors\n- [ ] Watch the team land a parry combo\n' \
+  > "$MIX_BODY"
+check "one bad line among good ones rejects the whole body, exit 3" 3 \
+  run "$FAKE_LINT_MIX" "" write-demo 3 "$MIX_BODY"
+check "and nothing was created" 1 test -f "$FAKE_LINT_MIX/calls.log"
+
+# The summary paragraph is never linted -- only checkbox lines are.
+FAKE_LINT_SUMMARY="$(fake_dir)"
+printf '%s' "$FAKE_LINT_ITER" > "$FAKE_LINT_SUMMARY/project_iterations.json"
+printf '999\n' > "$FAKE_LINT_SUMMARY/gh_issue_create.json"
+SUMMARY_BODY="$FAKE_LINT_SUMMARY/summary.md"
+printf 'The team refactored the defs/ pipeline and shipped a new endpoint.\n\n- [ ] Watch the player walk through the new zone\n' \
+  > "$SUMMARY_BODY"
+check "jargon in the summary paragraph is not linted" 0 \
+  run "$FAKE_LINT_SUMMARY" "" write-demo 3 "$SUMMARY_BODY"
+
+# A checklist is not required at all -- a sprint of pure process work has
+# nothing player-visible to show, and an empty checklist must not be forced.
+FAKE_LINT_EMPTY="$(fake_dir)"
+printf '%s' "$FAKE_LINT_ITER" > "$FAKE_LINT_EMPTY/project_iterations.json"
+printf '999\n' > "$FAKE_LINT_EMPTY/gh_issue_create.json"
+EMPTY_CL_BODY="$FAKE_LINT_EMPTY/no-checklist.md"
+printf 'The team spent the sprint on internal process work only.\n' > "$EMPTY_CL_BODY"
+check "an empty checklist still passes" 0 \
+  run "$FAKE_LINT_EMPTY" "" write-demo 3 "$EMPTY_CL_BODY"
+
+echo
 echo "demo-current: marker in the body wins over sprintTitle, and the 'none open' case:"
 
 FAKE_DCUR1="$(fake_dir)"
@@ -516,6 +619,60 @@ check "write-blockers with an unknown blocker exits 2"   2 run "$FAKE_WB2" "" wr
 check "and none of those wrote anything" 1 test -f "$FAKE_WB2/calls.log"
 
 echo
+echo "write-feedback-reply: Scotty's report back to Adrian -- idempotent upsert, marked so a retry never reads it back as feedback:"
+
+FAKE_FR="$(fake_dir)"
+FR_BODY="$FAKE_FR/scotty-reply.md"
+printf 'I opened #122 to tighten the parry window; everything else you raised is already on the backlog.\n' > "$FR_BODY"
+echo '[]' > "$FAKE_FR/gh_issue_comments.900.json"
+printf '55\n' > "$FAKE_FR/gh_comment_create.json"
+
+check_out "write-feedback-reply creates a new comment, prints its id" 0 55 \
+  run "$FAKE_FR" "" write-feedback-reply 900 "$FR_BODY"
+check "write-feedback-reply posted on the demo issue" 0 \
+  log_has "$FAKE_FR/calls.log" '^gh_comment_create 900 '
+check "write-feedback-reply never edited (nothing to find yet)" 1 \
+  log_has "$FAKE_FR/calls.log" '^gh_comment_edit'
+# The marker itself is render_feedback_reply's contract, covered by
+# test-markers.sh's own round trip -- this suite only needs the call shape.
+
+# Idempotent upsert: a retry (integrating-feedback dies before Reviewed and
+# runs again) must edit the same comment, never post a second one.
+FAKE_FR2="$(fake_dir)"
+FR2_BODY1="$FAKE_FR2/reply1.md"
+printf 'First ruling.\n' > "$FR2_BODY1"
+echo '[]' > "$FAKE_FR2/gh_issue_comments.900.json"
+printf '55\n' > "$FAKE_FR2/gh_comment_create.json"
+run "$FAKE_FR2" "" write-feedback-reply 900 "$FR2_BODY1" >/dev/null
+cat > "$FAKE_FR2/gh_issue_comments.900.json" <<'JSON'
+[{"id":55,"body":"### Scotty's reply\n\nFirst ruling.\n\n<!-- bc:feedback-reply -->"}]
+JSON
+FR2_BODY2="$FAKE_FR2/reply2.md"
+printf 'Second ruling, after a retry.\n' > "$FR2_BODY2"
+check_out "write-feedback-reply on a retry edits the existing comment" 0 55 \
+  run "$FAKE_FR2" "" write-feedback-reply 900 "$FR2_BODY2"
+check "and it is an edit, not a second create" 0 \
+  log_has "$FAKE_FR2/calls.log" '^gh_comment_edit 55 '
+CREATE_COUNT="$(grep -c '^gh_comment_create' "$FAKE_FR2/calls.log")"
+check_out "exactly one create across both calls" 0 1 printf '%s' "$CREATE_COUNT"
+
+FAKE_FR_ERR="$(fake_dir)"
+printf 'A reply.\n' > "$FAKE_FR_ERR/body.md"
+printf '   \n' > "$FAKE_FR_ERR/empty.md"
+MARKED_BODY="$FAKE_FR_ERR/marked.md"
+printf 'A reply with a marker already in it.\n\n<!-- bc:demo 3 -->\n' > "$MARKED_BODY"
+
+check "write-feedback-reply with a missing issue argument exits 2" 2 \
+  run "$FAKE_FR_ERR" "" write-feedback-reply
+check "write-feedback-reply with a missing body file exits 2" 2 \
+  run "$FAKE_FR_ERR" "" write-feedback-reply 900 "$FAKE_FR_ERR/nope.md"
+check "write-feedback-reply with an empty body exits 2" 2 \
+  run "$FAKE_FR_ERR" "" write-feedback-reply 900 "$FAKE_FR_ERR/empty.md"
+check "write-feedback-reply with a body carrying a bc: marker exits 2" 2 \
+  run "$FAKE_FR_ERR" "" write-feedback-reply 900 "$MARKED_BODY"
+check "none of those posted anything" 1 test -f "$FAKE_FR_ERR/calls.log"
+
+echo
 echo "integrate-feedback: hands the thread to Scotty, then reports what the board gained:"
 
 FAKE_FB="$(fake_dir)"
@@ -532,6 +689,17 @@ cat > "$FAKE_FB/project_items.seq" <<'JSON'
 [{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},{"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120}]
 [{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},{"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120},{"number":122,"title":"Tighten the parry window","state":"OPEN","status":"Backlog","priority":"Standard","size":"S","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120}]
 JSON
+# Scotty's own write-feedback-reply call, standing in via the overlay trick
+# create-demo's test above already uses: the board read back AFTER his
+# session carries his reply comment, alongside the human one.
+mkdir -p "$FAKE_FB/bc_scotty.judge-feedback.md.d"
+cat > "$FAKE_FB/bc_scotty.judge-feedback.md.d/gh_issue_comments.900.json" <<'JSON'
+[
+  {"id":1,"body":"Parrying feels floaty — can we tighten it?"},
+  {"id":2,"body":"### Sprint 3 Demo\n\nSummary.\n\n<!-- bc:demo 3 -->"},
+  {"id":3,"body":"### Scotty's reply\n\nOpened #122 to tighten it.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
 
 check_out "integrate-feedback reports the demo and what the board gained" 0 \
   '{"demo":900,"created":1}' run "$FAKE_FB" "" integrate-feedback 900
@@ -546,9 +714,17 @@ FAKE_FB0="$(fake_dir)"
 printf 'Demo body.\n' > "$FAKE_FB0/gh_issue_body.900.json"
 echo '[{"id":1,"body":"Looks good."}]' > "$FAKE_FB0/gh_issue_comments.900.json"
 # One fixture, so the count before equals the count after: feedback that asked
-# for nothing new still advances the demo, reporting a gain of zero.
+# for nothing new still advances the demo, reporting a gain of zero. Feedback
+# that opened nothing still owes Adrian a reply saying so.
 echo '[{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null}]' \
   > "$FAKE_FB0/project_items.json"
+mkdir -p "$FAKE_FB0/bc_scotty.judge-feedback.md.d"
+cat > "$FAKE_FB0/bc_scotty.judge-feedback.md.d/gh_issue_comments.900.json" <<'JSON'
+[
+  {"id":1,"body":"Looks good."},
+  {"id":2,"body":"### Scotty's reply\n\nNothing to open -- already covered.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
 
 check_out "integrate-feedback reports a gain of zero when the backlog did not grow" 0 \
   '{"demo":900,"created":0}' run "$FAKE_FB0" "" integrate-feedback 900
@@ -556,6 +732,20 @@ check "and the demo still moved to Reviewed" 0 \
   log_has "$FAKE_FB0/calls.log" '^project_set_single 900 Status Reviewed$'
 
 check "integrate-feedback with no issue argument exits 2" 2 run "$FAKE_FB0" "" integrate-feedback
+
+# Reviewed is a gate, not a hope: if Scotty's session comes back with no
+# feedback-reply comment on the thread, integrate-feedback fails loudly
+# rather than trusting that he wrote one.
+FAKE_FB_NOREPLY="$(fake_dir)"
+printf 'Demo body.\n' > "$FAKE_FB_NOREPLY/gh_issue_body.900.json"
+echo '[{"id":1,"body":"Looks good."}]' > "$FAKE_FB_NOREPLY/gh_issue_comments.900.json"
+echo '[{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null}]' \
+  > "$FAKE_FB_NOREPLY/project_items.json"
+# No bc_scotty overlay at all: he left no reply behind.
+check "integrate-feedback with no reply on the thread exits 2" 2 \
+  run "$FAKE_FB_NOREPLY" "" integrate-feedback 900
+check "and the demo was NOT marked Reviewed" 1 \
+  log_has "$FAKE_FB_NOREPLY/calls.log" '^project_set_single 900 Status Reviewed$'
 
 
 echo

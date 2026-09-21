@@ -87,6 +87,15 @@ check_out "demo body: sprint number"      0 3 marker_get "$S" "demo"
 check     "demo body: is not a human comment" 1 is_human_comment "$S"
 
 echo
+echo "the feedback-reply marker: Scotty's report back to Adrian:"
+
+S="$(render_feedback_reply "We opened #122 to tighten the parry window.")"
+check     "feedback reply: bc:feedback-reply present"     0 has_marker "$S" "feedback-reply"
+check     "feedback reply: is not a human comment"        1 is_human_comment "$S"
+check     "feedback reply: the ruling is carried through"  0 \
+  bash -c "printf '%s' \"\$1\" | grep -q 'tighten the parry window'" _ "$S"
+
+echo
 echo "the epic import's provenance markers:"
 
 S="$(render_epic_body 0 "The epic outcome, in one paragraph.")"

@@ -167,6 +167,17 @@ DEMO_ONLY='[{number:41,title:"Sprint 1 Demo",state:"OPEN",status:"In progress",p
   "$JQ" -n -c '[{number:41,title:"Sprint 1 Demo",state:"OPEN",status:"In progress",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null},{number:43,title:"Tighten the parry window",state:"OPEN",status:"Backlog",priority:"Standard",size:"S",sprintId:null,sprintTitle:null,labels:["story"],isParent:false,parent:null}]'
 } > "$F_INTEGRATING/project_items.seq"
 echo '[{"id":1,"body":"Parrying feels floaty — can we tighten it?"}]' > "$F_INTEGRATING/gh_issue_comments.41.json"
+# Scotty's own write-feedback-reply call, standing in via the overlay trick
+# creating-demo-issue's own fixture uses below: the thread read back AFTER
+# his session carries his reply comment, marked so it is not fed back as
+# feedback on a retry.
+mkdir -p "$F_INTEGRATING/bc_scotty.judge-feedback.md.d"
+cat > "$F_INTEGRATING/bc_scotty.judge-feedback.md.d/gh_issue_comments.41.json" <<'JSON'
+[
+  {"id":1,"body":"Parrying feels floaty — can we tighten it?"},
+  {"id":2,"body":"### Scotty's reply\n\nOpened #43 to tighten it.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
 
 check_out "integrating-feedback: integrated, exit 0" 0 \
   "integrating-feedback integrated 1 new backlog items from demo #41" \
@@ -181,16 +192,41 @@ check "integrating-feedback: did NOT close the sprint in the same tick" 1 \
 # Feedback that asks for nothing new -- praise, a question, a note about work
 # already on the backlog -- leaves the count unchanged and still advances the
 # demo: the sprint must not stall on a comment there was nothing to open for.
+# Adrian still gets a reply saying so.
 F_INTEGRATE_NOOP="$(fake_dir)"
 write_iterations "$F_INTEGRATE_NOOP"
 "$JQ" -n -c '[{number:44,title:"Sprint 1 Demo",state:"OPEN",status:"In progress",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null}]' \
   > "$F_INTEGRATE_NOOP/project_items.json"
 echo '[{"id":1,"body":"Looks great, ship it!"}]' > "$F_INTEGRATE_NOOP/gh_issue_comments.44.json"
+mkdir -p "$F_INTEGRATE_NOOP/bc_scotty.judge-feedback.md.d"
+cat > "$F_INTEGRATE_NOOP/bc_scotty.judge-feedback.md.d/gh_issue_comments.44.json" <<'JSON'
+[
+  {"id":1,"body":"Looks great, ship it!"},
+  {"id":2,"body":"### Scotty's reply\n\nNothing to open -- already on the backlog.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
 check_out "integrating-feedback: feedback that opened nothing still integrates, exit 0" 0 \
   "integrating-feedback integrated 0 new backlog items from demo #44" \
   run "$F_INTEGRATE_NOOP" "$NOW_MIDSPRINT"
 check "integrating-feedback: and the demo moved to Reviewed" 0 \
   log_has "$F_INTEGRATE_NOOP/calls.log" '^project_set_single 44 Status Reviewed$'
+
+# No reply on the thread when Scotty's session comes back -- integrate-
+# feedback re-derives the gate from GitHub rather than trusting his word, so
+# the tick reports broken instead of silently marking Reviewed.
+F_INTEGRATE_NOREPLY="$(fake_dir)"
+write_iterations "$F_INTEGRATE_NOREPLY"
+"$JQ" -n -c '[{number:45,title:"Sprint 1 Demo",state:"OPEN",status:"In progress",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null}]' \
+  > "$F_INTEGRATE_NOREPLY/project_items.json"
+echo '[{"id":1,"body":"Parrying feels floaty — can we tighten it?"}]' > "$F_INTEGRATE_NOREPLY/gh_issue_comments.45.json"
+# No bc_scotty overlay at all: his session finished but left no reply behind.
+check_out "integrating-feedback: no reply -> broken, exit 2" 2 \
+  "integrating-feedback broken feedback integration failed for demo #45" \
+  run "$F_INTEGRATE_NOREPLY" "$NOW_MIDSPRINT"
+check "integrating-feedback: and the demo was NOT marked Reviewed" 1 \
+  log_has "$F_INTEGRATE_NOREPLY/calls.log" '^project_set_single 45 Status Reviewed$'
+check "integrating-feedback: and the sprint was NOT closed" 1 \
+  log_has "$F_INTEGRATE_NOREPLY/calls.log" '^gh_issue_close'
 
 # =============================================================================
 echo
