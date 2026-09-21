@@ -66,18 +66,36 @@ describe("defCellTexture", () => {
   it("resolves every defId drawable through the loader's own objectTexture", async () => {
     const object = objectDef();
     const defs = { objects: [object] } as unknown as Defs;
-    const loader = { objectTexture: vi.fn().mockResolvedValue({ source: "page-a", height: 32 }) };
+    const loader = {
+      objectTexture: vi
+        .fn()
+        .mockResolvedValue({ source: "page-a", frame: { x: 0, y: 0, height: 32 } }),
+    };
 
     await defCellTexture(defs, object, loader, 0, TILE_SIZE_PX);
 
     expect(loader.objectTexture).toHaveBeenCalledWith(defs, object);
   });
 
-  it("a one-cell def (the repeat case) yields, per cell, a frame of exactly one tile from the same page source -- four placements, one TextureSource, four identical frames", async () => {
+  // Real placements are almost never at the page's own (0, 0) -- the shop
+  // counter alone gets that spot; every other object's own whole-sprite
+  // crop starts somewhere else on the shared page. Both fixtures below
+  // place their own base texture's `frame` away from the origin
+  // (`x: 87, y: 1`, a real measured `shop_window` placement) so a crop
+  // that silently drops that offset and reads from the page's own origin
+  // instead -- cropping whatever neighbouring object the packer happened
+  // to place there -- fails here, not only on a real mounted scene.
+  const PAGE_OFFSET = { x: 87, y: 1 };
+
+  it("a one-cell def (the repeat case) yields, per cell, a frame of exactly one tile from the same page source, offset by the object's own page placement -- four placements, one TextureSource, four identical frames", async () => {
     const deckDef = objectDef({ id: 7, key: "bridge_deck", width: 1, height: 1 });
     const defs = { objects: [deckDef] } as unknown as Defs;
     const pageSource = { name: "street-page" };
-    const loader = { objectTexture: vi.fn().mockResolvedValue({ source: pageSource, height: 16 }) };
+    const loader = {
+      objectTexture: vi
+        .fn()
+        .mockResolvedValue({ source: pageSource, frame: { ...PAGE_OFFSET, height: 16 } }),
+    };
 
     const frames = await Promise.all(
       [0, 0, 0, 0].map(() => defCellTexture(defs, deckDef, loader, 0, TILE_SIZE_PX)),
@@ -85,7 +103,12 @@ describe("defCellTexture", () => {
 
     for (const frame of frames) {
       expect(frame.source).toBe(pageSource);
-      expect(frame.frame).toEqual({ x: 0, y: 0, width: TILE_SIZE_PX, height: 16 });
+      expect(frame.frame).toEqual({
+        x: PAGE_OFFSET.x,
+        y: PAGE_OFFSET.y,
+        width: TILE_SIZE_PX,
+        height: 16,
+      });
     }
     // The loader itself is what caches by object id (Artie's direction,
     // `atlas-pages.ts`) -- this module never duplicates that cache, so a
@@ -93,20 +116,24 @@ describe("defCellTexture", () => {
     // how many times this function is asked for the same def.
   });
 
-  it("a wide def (the slice case) yields, per cell, a distinct whole-tile frame from the same page source", async () => {
+  it("a wide def (the slice case) yields, per cell, a distinct whole-tile frame from the same page source, each offset by the object's own page placement", async () => {
     const windowDef = objectDef({ id: 5, key: "shop_window", width: 3, height: 1 });
     const defs = { objects: [windowDef] } as unknown as Defs;
     const pageSource = { name: "street-page" };
-    const loader = { objectTexture: vi.fn().mockResolvedValue({ source: pageSource, height: 32 }) };
+    const loader = {
+      objectTexture: vi
+        .fn()
+        .mockResolvedValue({ source: pageSource, frame: { ...PAGE_OFFSET, height: 32 } }),
+    };
 
     const frames = await Promise.all(
       [0, 1, 2].map((col) => defCellTexture(defs, windowDef, loader, col, TILE_SIZE_PX)),
     );
 
     expect(frames.map((f) => f.frame)).toEqual([
-      { x: 0, y: 0, width: TILE_SIZE_PX, height: 32 },
-      { x: 16, y: 0, width: TILE_SIZE_PX, height: 32 },
-      { x: 32, y: 0, width: TILE_SIZE_PX, height: 32 },
+      { x: PAGE_OFFSET.x, y: PAGE_OFFSET.y, width: TILE_SIZE_PX, height: 32 },
+      { x: PAGE_OFFSET.x + 16, y: PAGE_OFFSET.y, width: TILE_SIZE_PX, height: 32 },
+      { x: PAGE_OFFSET.x + 32, y: PAGE_OFFSET.y, width: TILE_SIZE_PX, height: 32 },
     ]);
     for (const frame of frames) expect(frame.source).toBe(pageSource);
   });

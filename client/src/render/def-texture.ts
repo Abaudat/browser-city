@@ -40,6 +40,13 @@ export function objectDefById(defs: Defs, defId: number): ObjectDef {
  * arithmetic a wide def slices by -- two placements of the same def id
  * share the loader's own cached `Texture`, and so the same `TextureSource`,
  * without this function doing anything special for it.
+ *
+ * `base`'s own `frame` is already offset to wherever the packer placed
+ * this object's whole sprite on the page (`AtlasPageLoader.objectTexture`'s
+ * own crop) -- the per-cell frame this function builds has to start from
+ * that same offset, not from the page's own origin, or a sourceCol > 0
+ * (or even `sourceCol === 0` on any object the packer did not place at
+ * the page's own `(0, 0)`) crops a neighbouring object's pixels instead.
  */
 export async function defCellTexture(
   defs: Defs,
@@ -49,6 +56,11 @@ export async function defCellTexture(
   tileSizePx: number,
 ): Promise<Texture> {
   const base = await loader.objectTexture(defs, object);
-  const frame = new Rectangle(sourceCol * tileSizePx, 0, tileSizePx, base.height);
+  const frame = new Rectangle(
+    base.frame.x + sourceCol * tileSizePx,
+    base.frame.y,
+    tileSizePx,
+    base.frame.height,
+  );
   return new Texture({ source: base.source, frame, dynamic: false });
 }
