@@ -9,6 +9,7 @@
 // scene.test.ts`) -- this spec only proves what real layout and real
 // frames can show. Runs in the default `chromium` project.
 import { expect, type Page, test } from "@playwright/test";
+import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
 import {
   PLATFORM_LANDING_X,
@@ -327,32 +328,59 @@ test.describe("camera/viewport (NFR48)", () => {
       await route.continue();
     });
 
-    await page.addInitScript(() => {
+    // Cycle 2 (Quentin's direction, finding 2): samples the real, live
+    // `window.__bc.worldTransform` -- `world`'s own `scale`/`position`,
+    // read straight off the mounted `Container` -- never
+    // `viewTransform.zoom`, which only ever echoes the `ZOOM` constant
+    // `computeCamera` was called with and would report the same single
+    // value on a build that still had the mount-time jump. Sampling
+    // starts the instant `worldTransform` exists -- `main.ts`'s
+    // `onWorldReady` exposes it the moment `world` itself does, before
+    // this scene's own asset-loading awaits let the ticker render a
+    // frame with it -- so a jump between "world exists but at its own
+    // default (0, 0)" and "world at its final, camera-applied position"
+    // has nowhere left to hide.
+    await page.addInitScript((atlasReadyMark: string) => {
       const samples: {
         w: number;
         h: number;
         rectW: number;
         rectH: number;
-        zoom: number | null;
+        scaleX: number;
+        scaleY: number;
+        x: number;
+        y: number;
       }[] = [];
-      (window as unknown as { __bcLoadSamples: typeof samples }).__bcLoadSamples = samples;
+      let samplesBeforeAtlasReady = 0;
+      Object.assign(window as unknown as Record<string, unknown>, {
+        __bcLoadSamples: samples,
+        __bcSamplesBeforeAtlasReady: () => samplesBeforeAtlasReady,
+      });
       function tick(): void {
         const canvas = document.querySelector("#test-street canvas");
+        const worldTransform = window.__bc?.worldTransform;
         const done = performance.getEntriesByName("bc-boot:player-controllable").length > 0;
-        if (canvas instanceof HTMLCanvasElement) {
+        if (canvas instanceof HTMLCanvasElement && worldTransform) {
+          const t = worldTransform();
           const rect = canvas.getBoundingClientRect();
           samples.push({
             w: canvas.width,
             h: canvas.height,
             rectW: Math.round(rect.width),
             rectH: Math.round(rect.height),
-            zoom: window.__bc?.viewTransform?.zoom ?? null,
+            scaleX: t.scaleX,
+            scaleY: t.scaleY,
+            x: t.x,
+            y: t.y,
           });
+          if (performance.getEntriesByName(atlasReadyMark).length === 0) {
+            samplesBeforeAtlasReady += 1;
+          }
         }
         if (!done) requestAnimationFrame(tick);
       }
       requestAnimationFrame(tick);
-    });
+    }, BOOT_MARK.ATLAS_READY);
 
     await page.goto("/");
     await waitForPlayerControllable(page, 45_000);
@@ -366,34 +394,40 @@ test.describe("camera/viewport (NFR48)", () => {
               h: number;
               rectW: number;
               rectH: number;
-              zoom: number | null;
+              scaleX: number;
+              scaleY: number;
+              x: number;
+              y: number;
             }[];
           }
         ).__bcLoadSamples ?? [],
     );
+    const samplesBeforeAtlasReady = await page.evaluate(
+      () =>
+        (
+          window as unknown as { __bcSamplesBeforeAtlasReady?: () => number }
+        ).__bcSamplesBeforeAtlasReady?.() ?? 0,
+    );
+
+    // Non-vacuity (cycle 2): at least two frames must have been sampled
+    // while `world` already had content on it *and* the atlas was still
+    // loading -- otherwise this could pass on a fast machine, or one
+    // where the delayed responses happened to land after mount, having
+    // never actually observed the load in progress.
     expect(
-      samples.length,
-      "the delayed atlas responses must make loading span at least two sampled frames",
+      samplesBeforeAtlasReady,
+      "at least two frames with real content on `world` must be sampled before ATLAS_READY",
     ).toBeGreaterThanOrEqual(2);
 
-    // The canvas's own size and client rect never move, from the very
-    // first sampled frame (which can predate the scene mount, while the
-    // canvas shows only its background colour) through player-controllable
-    // -- there is no reflow (`main.ts`'s `resizeTo: window`, set once).
-    const sizes = new Set(samples.map((s) => `${s.w}x${s.h}@${s.rectW}x${s.rectH}`));
+    // Exactly one distinct (canvas size, client rect, scale, position)
+    // tuple, from the first frame `world` had a child through
+    // player-controllable: no resize, no reflow, no zoom jump and no
+    // position jump.
+    const tuples = new Set(samples.map((s) => JSON.stringify(s)));
     expect(
-      [...sizes],
-      "the canvas's own size/client rect must never change while loading",
+      [...tuples],
+      "canvas size/rect and the world container's own scale/position must never change while loading",
     ).toHaveLength(1);
-
-    // The camera's own zoom, once it exists (content is being
-    // positioned), never changes either -- there is no zoom jump. Frames
-    // sampled before the scene has mounted report `zoom: null`, which is
-    // "nothing is drawn yet", not a second zoom value.
-    const zooms = new Set(samples.map((s) => s.zoom).filter((z): z is number => z !== null));
-    expect([...zooms], "camera zoom must never change once the scene starts drawing").toHaveLength(
-      1,
-    );
   });
 });
 

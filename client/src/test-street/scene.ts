@@ -317,6 +317,18 @@ export interface MountStreetSceneOptions {
    * into a canvas one (story 1.9's e2e spec computes its click points
    * that way rather than hard-coding a pixel). */
   readonly onViewTransform?: (zoom: number, offsetX: number, offsetY: number) => void;
+  /** Called once, synchronously, the instant `world` (the container every
+   * ground tile and drawable is a descendant of) exists -- before any
+   * asset-loading `await` in this function has a chance to let the
+   * ticker render a frame with it. The callback receives a live getter
+   * over the real container's own `scale`/`position`, so a caller (`main.
+   * ts`, wiring `client/tests/e2e/camera-viewport.spec.ts`'s AC4 load
+   * spec) can observe the real, mounted transform for every frame of the
+   * whole load, not only after `mountStreetScene`'s own promise
+   * resolves. */
+  readonly onWorldReady?: (
+    worldTransform: () => { scaleX: number; scaleY: number; x: number; y: number },
+  ) => void;
   /** Story 1.9 (FR148): where a click's intent goes. One injected sink,
    * and the only thing Epic 8 has to replace -- this scene neither knows
    * nor decides what an intent means. Absent means intents are simply
@@ -672,6 +684,7 @@ export async function mountStreetScene(
     onIntent,
     onIgnored,
     onViewTransform,
+    onWorldReady,
     onHighlightChange,
     startWithCrowdFrozen,
     crowdIdenticalTuples,
@@ -717,6 +730,12 @@ export async function mountStreetScene(
   // more.
   world.scale.set(ZOOM);
   app.stage.addChild(world);
+  onWorldReady?.(() => ({
+    scaleX: world.scale.x,
+    scaleY: world.scale.y,
+    x: world.position.x,
+    y: world.position.y,
+  }));
 
   // Story 1.13 (Tim's direction): one four-pass stack per floor -- three
   // flat passes then the y-sorted pool, declared in order even while

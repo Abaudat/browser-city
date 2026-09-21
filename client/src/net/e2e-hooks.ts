@@ -81,6 +81,12 @@ declare global {
        * only reader; it must never be recomputed from `viewTransform`,
        * which is the thing under test. */
       playerScreenBounds?: () => { x: number; y: number; width: number; height: number };
+      /** Cycle 2 (Quentin's direction, finding 2): the world container's
+       * own real, live `scale`/`position` -- a callable, read fresh every
+       * call from the real, mounted `Container`, never a value recorded
+       * once and never recomputed from `viewTransform`. `camera-viewport.
+       * spec.ts`'s AC4 load spec is the only reader. */
+      worldTransform?: () => { scaleX: number; scaleY: number; x: number; y: number };
     };
   }
 }
@@ -296,5 +302,16 @@ export function exposePlayerScreenBoundsForE2e(
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.playerScreenBounds = getter;
+  window.__bc = bucket;
+}
+
+/** Cycle 2 (Quentin's direction, finding 2): the same idiom, for the
+ * world container's own real, live `scale`/`position`. */
+export function exposeWorldTransformForE2e(
+  getter: NonNullable<NonNullable<Window["__bc"]>["worldTransform"]>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.worldTransform = getter;
   window.__bc = bucket;
 }

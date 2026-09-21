@@ -14,6 +14,7 @@ import { connect } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
   exposePlayerScreenBoundsForE2e,
+  exposeWorldTransformForE2e,
   recordAllBoundTextureSourcesForE2e,
   recordAppearanceTextureIdsForE2e,
   recordDistinctBoundAtlasPagesForE2e,
@@ -370,6 +371,12 @@ async function startStreetScene(
       lastViewTransform = { zoom, offsetX, offsetY };
       debugOverlays?.setViewTransform(zoom, offsetX, offsetY);
     },
+    // Cycle 2 (Quentin's direction, finding 2): exposed the instant
+    // `world` exists inside `mountStreetScene`, not once its own promise
+    // resolves -- `window.__bc.worldTransform` must be observable for
+    // every frame of the load, the same way `onViewTransform` above is
+    // meant to be, not only after every asset has already loaded.
+    onWorldReady: (worldTransform) => exposeWorldTransformForE2e(worldTransform),
     onHighlightChange: recordHighlightForE2e,
   });
   sceneHandle = handle;
