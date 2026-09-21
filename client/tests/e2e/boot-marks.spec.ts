@@ -125,15 +125,16 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
 // never merely bounded, and bytes still carries a 5% margin (headers only;
 // PNGs are not re-compressed in transit).
 //
-// PROVISIONAL-PENDING-CI: carried over from the previous (timing-windowed)
-// measurement while this harness change is proven out locally -- re-set
-// from a real `ci.yml` `e2e` run of *this* commit before this PR is asked
-// to be reviewed again (Quentin's direction: never a placeholder or a
-// number this exact harness did not itself measure). 10 requests,
-// 1,347,996 bytes -- ATLAS_BYTES_BUDGET is that byte figure times 1.05,
-// rounded up to the next 16 KiB. Both are far below the story 2.6 baseline
-// (115 requests, 3.4 MiB) this replaces, which was never a measurement of
-// this test's own dev-server harness at all -- it borrowed docs/spikes/
+// Both figures are set from a real CI run of this exact (post-networkidle)
+// harness, never a local machine, on `ci.yml`'s own `e2e` job, run
+// 35650638526: 10 requests, 1,347,996 bytes -- identical to the previous,
+// timing-windowed measurement, confirming the old window was never
+// actually racing anything on this deterministic fixture; the fix is
+// still real (see above), it simply had nothing to catch here today.
+// ATLAS_BYTES_BUDGET is that byte figure times 1.05, rounded up to the
+// next 16 KiB. Both are far below the story 2.6 baseline (115 requests,
+// 3.4 MiB) this replaces, which was never a measurement of this test's
+// own dev-server harness at all -- it borrowed docs/spikes/
 // 1.14-boot-budget.md's own "105 requests, ~3.0 MiB" figure, itself a
 // measurement of a different harness entirely (a throttled, production
 // build, not this spec's own `chromium` project against the Vite dev
