@@ -71,21 +71,35 @@ that a later story turns out to rest on — say so on the existing story:
 
 It only ever adds blockers; a blocker stops blocking when it is closed.
 
+Finally, reply to Adrian on the demo issue with what you decided and why.
+This is the only way he sees your ruling, and it is required even when you
+opened nothing — an empty answer still owes him a "why":
+
+    bash {{scripts}}/bc-issue.sh write-feedback-reply {{demo}} <bodyfile>
+
+`<bodyfile>` holds your reply's prose only. For each thing he raised, say
+where it landed — the issue you opened or amended, that the backlog already
+covered it, or that you did not act on it and why. Calling it twice is safe:
+it edits your existing reply rather than posting a second one, so re-running
+this job after a crash never leaves him two replies.
+
 Rules:
 - Plain markdown in every body file. No preamble, no headings the script
   writes for you, no code fences, no `<!-- bc: -->` markers, no `Closes #`.
-- Both calls put the new issue on the board in `Backlog`, on no sprint. That
-  is correct: nothing is planned into a sprint — a story goes onto one when
-  the team starts it. Never set Status, Priority, Size or a sprint yourself,
-  and never create an issue or a dependency any other way.
+- Both `write-epic`/`write-story` calls put the new issue on the board in
+  `Backlog`, on no sprint. That is correct: nothing is planned into a sprint
+  — a story goes onto one when the team starts it. Never set Status,
+  Priority, Size or a sprint yourself, and never create an issue or a
+  dependency any other way.
 - Base everything on the feedback and the backlog you were given. Do not
   invent work Adrian did not ask for. If the backlog already covers everything
   he raised, or he raised nothing to build, open nothing and say so — an empty
   answer is a real one here, and padding it with work he did not ask for is
   worse than no work at all.
-- Do not comment on the demo issue and do not move it — the script does that
-  once your work is on the board.
+- Do not comment on the demo issue any other way than through
+  `write-feedback-reply`, and do not move it — the script does that once your
+  work is on the board.
 
 If a call exits non-zero, report what it printed and stop. Otherwise reply
 with the issue numbers you opened. Your reply is not the artefact; the
-backlog is.
+backlog is — and neither is complete until `write-feedback-reply` has run.

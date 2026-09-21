@@ -77,8 +77,9 @@ carries it in one call, so the two are never out of step.
 
 | Command | What it does |
 |---|---|
-| `bash <scripts>/bc-issue.sh write-demo <sprint> <bodyfile>` | Opens the `Sprint <n> Demo` issue with `<bodyfile>` as its body, labels it `demo`, adds it to the board and scopes it into Sprint `<n>`. Prints the new issue number. |
+| `bash <scripts>/bc-issue.sh write-demo <sprint> <bodyfile>` | Opens the `Sprint <n> Demo` issue with `<bodyfile>` as its body, labels it `demo`, adds it to the board and scopes it into Sprint `<n>`. Prints the new issue number. Every `- [ ] ` checklist line is linted for player-facing language; a jargon line exits 3 and creates nothing, naming each offending line on stderr — rewrite it and call again. |
 | `bash <scripts>/bc-comment.sh write-breaker <pr> <bodyfile>` | Posts the breaker comment on the PR with `<bodyfile>` as the note, adds the `breaker` label and assigns Adrian. Prints the new comment id. Exits 1 and writes nothing if a breaker comment already exists. |
+| `bash <scripts>/bc-issue.sh write-feedback-reply <demo-issue> <bodyfile>` | Posts (or edits, if you already replied) your reply to Adrian's demo feedback on Sprint Demo issue `<demo-issue>`, marked so it is never read back as feedback itself on a retry. Required even when you opened nothing. Prints the comment id. |
 | `bash <scripts>/bc-issue.sh write-epic <n> "<title>" <bodyfile> <priority>` | Opens epic `<n>` with `<bodyfile>` as its preamble, labels it `epic`, puts it on the board in `Backlog` on no sprint, and sets Priority. Prints the new issue number. |
 | `bash <scripts>/bc-issue.sh write-story <epic-issue> <id> "<title>" <bodyfile> <size> <priority> <leads-csv> <blocked-by-csv>` | Opens a story, labels it `story` plus one `lead:<role>` per lead in `<leads-csv>` (`-` for none — quentin is always in scope), links it as a sub-issue of `<epic-issue>`, marks it blocked by each issue in `<blocked-by-csv>` (GitHub's native issue dependencies; `-` for none), puts it on the board in `Backlog` on no sprint, and sets Size and Priority. Prints the new issue number. |
 | `bash <scripts>/bc-issue.sh write-blockers <issue> <blocker>...` | Marks an existing story blocked by each `<blocker>` — for a story you have just opened that must land *before* one already on the backlog. Adds only; a blocker stops blocking when it is closed. Prints the issue number. |
@@ -99,11 +100,11 @@ story's blockers, priority and size are what decide when it is worked — get
 them right at creation, because a story with no blockers may be started next.
 
 `<bodyfile>` holds your prose only. The scripts write the `### Sprint N Demo`
-/ `### Breaker` / `### Task request` / `## Amendment` heading, the
-`@`-mention of Adrian and the `<!-- bc:demo -->` / `<!-- bc:breaker -->` /
-`<!-- bc:epic -->` / `<!-- bc:story -->` / `<!-- bc:taskreq:<role> -->`
-marker — do not write any of them yourself, and do not create the issue or
-comment any other way.
+/ `### Breaker` / `### Scotty's reply` / `### Task request` / `## Amendment`
+heading, the `@`-mention of Adrian and the `<!-- bc:demo -->` /
+`<!-- bc:breaker -->` / `<!-- bc:feedback-reply -->` / `<!-- bc:epic -->` /
+`<!-- bc:story -->` / `<!-- bc:taskreq:<role> -->` marker — do not write any
+of them yourself, and do not create the issue or comment any other way.
 
 Ruling on a task request, `amend-story` or `write-story` comes **first** and
 `resolve-task-request` after, so a ruling that says a story exists is one
@@ -128,6 +129,10 @@ comment, Crew's comment, or the status comment.
 (`request-task`), or that request was already ruled on
 (`resolve-task-request`) · `2` bad arguments, an unknown
 size/priority/lead/outcome, `crew` calling `request-task`, an empty
-body file, or the comment this command must edit does not exist (the
-orchestrator creates every stub — if yours is missing, stop and say so rather
-than creating one).
+body file, a body file carrying a `<!-- bc: -->` marker of its own
+(`write-feedback-reply`), or the comment this command must edit does not
+exist (the orchestrator creates every stub — if yours is missing, stop and
+say so rather than creating one) · `3` (`write-demo` only) one or more
+checklist lines read as engineering jargon rather than something Adrian can
+see or do — named on stderr; nothing was created, rewrite those lines and
+call again.

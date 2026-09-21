@@ -9,7 +9,7 @@ flowchart TD
     %% ---------- Sprint Demo ----------
     demo-active -->|"yes — In Progress"| demo-has-feedback{"Adrian has<br/>commented on it?"}
     demo-has-feedback -->|no| sleep
-    demo-has-feedback -->|yes| integrating-feedback["Integrate Adrian's feedback:<br/>new epics and stories, Backlog,<br/>then mark the Demo issue Reviewed"]
+    demo-has-feedback -->|yes| integrating-feedback["Integrate Adrian's feedback:<br/>new epics and stories, Backlog,<br/>reply to Adrian,<br/>then mark the Demo issue Reviewed"]
     integrating-feedback --> closing-sprint["Close the Sprint:<br/>carry the story in flight to the next Sprint,<br/>close the Demo issue"]
     closing-sprint --> sleep
 

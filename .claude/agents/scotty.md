@@ -35,7 +35,9 @@ Read these.
 
 - All tasks completed this Sprint (using command `bash <scripts>/bc-sprint.sh items <n> Done`)
 
-Then, write a short description of what the team is demoing this Sprint (only the highlights, not longer than 3 sentences) and create the Sprint demo issue (using command `bash <scripts>/bc-issue.sh write-demo <n> <bodyfile>`).
+Then, write a short description of what the team is demoing this Sprint (only the highlights, not longer than 3 sentences) and a checklist of what to show, one `- [ ] ` line per item. Every line is phrased for what Adrian, watching as a player/producer, can directly see or do — never an implementation term: "Walk through a defs/ object definition and its packed atlas entry" is exactly what not to write, "Place a building and watch it appear in the district" is. A sprint with nothing player-visible (pure process or tooling work) gets no checklist line at all rather than an invented one — leave it empty and say so in the summary.
+
+Then create the Sprint demo issue (using command `bash <scripts>/bc-issue.sh write-demo <n> <bodyfile>`). It lints every checklist line and exits 3, naming each offending line, if one reads as engineering jargon — nothing is created yet, so rewrite exactly those lines and call it again.
 
 ## 4. When you are dispatched to escalate a circuit breaker
 
@@ -60,6 +62,8 @@ Analyze the stakeholder's feedback on the Sprint demo issue. Think about what ot
 Then create new epics, stories accordingly (using commands `bash <scripts>/bc-issue.sh write-epic <n> "<title>" <bodyfile> <priority>` and `bash <scripts>/bc-issue.sh write-story <epic-issue> <id> "<title>" <bodyfile> <size> <priority> <leads-csv> <blocked-by-csv>`). If new requirements are required, add a requirement to create those to the stories.
 
 Make sure to set the correct size, criticity and blockers (section 2) to the created issues, and to put them in the right epic (feedback on the current increment of work should be integrated to the current epic, whereas improvements/new features for later can be created into subsequent epics or new epics).
+
+Finally, reply to Adrian on the Sprint demo issue with what you decided and why (using command `bash <scripts>/bc-issue.sh write-feedback-reply <issue> <bodyfile>`). This is the only way he sees your ruling, and it is required even when you opened nothing — say so plainly. The call is an idempotent upsert: re-running it edits your existing reply rather than posting a second one, so a retry after a crash never leaves him two.
 
 ## 6. When you are dispatched to rule on a task-creation request
 

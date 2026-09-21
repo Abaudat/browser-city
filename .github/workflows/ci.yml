@@ -212,6 +212,11 @@ jobs:
       # cycle 2) -- runs here, not in `client-check`, since it needs
       # nothing client-check's own toolchain provides.
       - run: bash scripts/ci/tests/run-all.sh
+      # check-scotty-commands.sh -- Story 4.17: keeps scotty.md, the prompts
+      # and the bc-sdlc skill table honest against bc-issue.sh's own usage().
+      # Runs before run-all.sh's much larger fixture suite, same reasoning as
+      # check-agent-tooling.sh above.
+      - run: bash scripts/ci/check-scotty-commands.sh
       - run: bash agentic-team/scripts/tests/run-all.sh
 
   defs:
