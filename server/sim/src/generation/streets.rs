@@ -229,6 +229,12 @@ fn build_adjacency(nodes: &[(i32, i32)], edges: &[StreetEdge]) -> BTreeMap<(i32,
     adjacency
 }
 
+/// [`StreetNetwork::dijkstra`]'s own distance/predecessor return types,
+/// named so the pair is never spelled out twice (clippy's own type-
+/// complexity floor).
+type DijkstraDist = BTreeMap<(i32, i32), i64>;
+type DijkstraPrev = BTreeMap<(i32, i32), (i32, i32)>;
+
 impl StreetNetwork {
     /// A test-only escape hatch (the same precedent `sim::rules::RuleSet`
     /// itself sets for a raw-parts constructor): builds a `StreetNetwork`
@@ -632,8 +638,24 @@ impl StreetNetwork {
         out
     }
 
-    fn dijkstra_from(&self, start: (i32, i32)) -> BTreeMap<(i32, i32), i64> {
+    /// Dijkstra from `start`, returning both the distance map and each
+    /// visited node's own predecessor on its shortest route -- the one
+    /// graph search [`Self::dijkstra_from`] (needs only distance) and
+    /// [`Self::shortest_path`] (needs the route too) are both thin
+    /// callers of (Tim's direction, story 3.18 cycle 1: two Dijkstras
+    /// copied line for line was a real defect surface, `StreetNetwork`
+    /// gets one implementation). `target`, if given, stops the search
+    /// the instant it is popped off the heap rather than exhausting
+    /// every reachable node -- `shortest_path`'s own early exit,
+    /// preserved verbatim; `dijkstra_from` passes `None` and always
+    /// explores everything reachable, its own original behaviour.
+    fn dijkstra(
+        &self,
+        start: (i32, i32),
+        target: Option<(i32, i32)>,
+    ) -> (DijkstraDist, DijkstraPrev) {
         let mut dist: BTreeMap<(i32, i32), i64> = BTreeMap::new();
+        let mut prev: BTreeMap<(i32, i32), (i32, i32)> = BTreeMap::new();
         let mut heap: BinaryHeap<std::cmp::Reverse<(i64, (i32, i32))>> = BinaryHeap::new();
         dist.insert(start, 0);
         heap.push(std::cmp::Reverse((0, start)));
@@ -641,40 +663,7 @@ impl StreetNetwork {
             if dist.get(&n).is_some_and(|&best| d > best) {
                 continue;
             }
-            for &ei in self.adjacency.get(&n).map(Vec::as_slice).unwrap_or(&[]) {
-                let e = &self.edges[ei];
-                let other = if e.start() == n { e.end() } else { e.start() };
-                let nd = d + e.length();
-                if dist.get(&other).is_none_or(|&best| nd < best) {
-                    dist.insert(other, nd);
-                    heap.push(std::cmp::Reverse((nd, other)));
-                }
-            }
-        }
-        dist
-    }
-
-    /// The node sequence of one shortest route from `a` to `b` (inclusive
-    /// of both endpoints), by network distance -- the same Dijkstra
-    /// [`Self::dijkstra_from`] already runs, with predecessors tracked
-    /// alongside distance so the route itself, not only its length, can
-    /// be drawn (`bounds::generation_evidence`'s own worst-case-seed
-    /// overlay, story 3.18). Empty if `b` is unreachable from `a`,
-    /// `[a]` if `a == b`.
-    pub fn shortest_path(&self, a: (i32, i32), b: (i32, i32)) -> Vec<(i32, i32)> {
-        if a == b {
-            return vec![a];
-        }
-        let mut dist: BTreeMap<(i32, i32), i64> = BTreeMap::new();
-        let mut prev: BTreeMap<(i32, i32), (i32, i32)> = BTreeMap::new();
-        let mut heap: BinaryHeap<std::cmp::Reverse<(i64, (i32, i32))>> = BinaryHeap::new();
-        dist.insert(a, 0);
-        heap.push(std::cmp::Reverse((0, a)));
-        while let Some(std::cmp::Reverse((d, n))) = heap.pop() {
-            if dist.get(&n).is_some_and(|&best| d > best) {
-                continue;
-            }
-            if n == b {
+            if target == Some(n) {
                 break;
             }
             for &ei in self.adjacency.get(&n).map(Vec::as_slice).unwrap_or(&[]) {
@@ -688,6 +677,29 @@ impl StreetNetwork {
                 }
             }
         }
+        (dist, prev)
+    }
+
+    fn dijkstra_from(&self, start: (i32, i32)) -> BTreeMap<(i32, i32), i64> {
+        self.dijkstra(start, None).0
+    }
+
+    /// The node sequence of one shortest route from `a` to `b` (inclusive
+    /// of both endpoints), by network distance -- [`Self::dijkstra`]'s
+    /// own predecessor map, walked back from `b` to `a`, so the route
+    /// itself, not only its length, can be drawn (`bounds::generation_
+    /// evidence`'s own worst-case-seed overlay, story 3.18). Empty if `b`
+    /// is unreachable from `a`, `[a]` if `a == b`. Test-only: the
+    /// published wasm module has no consumer for a route today
+    /// (`invariants.rs` and `bounds` both build against `test-fixtures`,
+    /// the same gate `test_fixture` above uses); ungate the day a real
+    /// one lands.
+    #[cfg(any(test, feature = "test-fixtures"))]
+    pub fn shortest_path(&self, a: (i32, i32), b: (i32, i32)) -> Vec<(i32, i32)> {
+        if a == b {
+            return vec![a];
+        }
+        let (dist, prev) = self.dijkstra(a, Some(b));
         if !dist.contains_key(&b) {
             return Vec::new();
         }
@@ -717,22 +729,32 @@ pub const DETOUR_SAMPLE_MAX_NODES: usize = 14;
 /// microseconds per source), enough for a real percentile to exist.
 pub const DETOUR_P99_SAMPLE_MAX_NODES: usize = 64;
 
-/// The worst detour-excess seeds found so far, one source of truth for
-/// both `invariants.rs`'s own pinned-seed regression test and `bounds`'s
-/// worst-case evidence SVGs (story 3.18) -- a failure found by luck
-/// becomes a deterministic case, the same `PINNED_BUILDING_COUNT_SEEDS`
-/// precedent, never re-derived twice. `10_778_299_729_582_344_780` (PR
-/// #317 cycle 5) and `10_818_714_075_226_271_966` (story 3.18's own
-/// `measure-generation` re-measurement, its exhaustive-pair argmax) were
-/// both found by a genuinely random sweep, never hunted for;
-/// `12_073_828_753_114_949_265` is this story's own seed, reported on PR
-/// #315. Every one of these still ends its own worst sampled pair on a
-/// boundary exit (degree 1, on the site boundary) -- see
-/// `detour_excess_holds_at_pinned_boundary_exit_seeds`.
-pub const PINNED_DETOUR_SEEDS: [u64; 3] = [
-    10_778_299_729_582_344_780,
-    12_073_828_753_114_949_265,
-    10_818_714_075_226_271_966,
+/// The worst detour-excess seeds found so far, `(seed, exhaustive_excess)`
+/// -- one source of truth for both `invariants.rs`'s own pinned-seed
+/// regression test and `bounds`'s worst-case evidence SVGs, a failure
+/// found by luck becoming a deterministic case, the same `PINNED_
+/// BUILDING_COUNT_SEEDS` precedent, never re-derived twice. The second
+/// element is `detour_samples(usize::MAX)`'s own worst-pair excess for
+/// that seed -- the exhaustive population `max_detour_excess_cells` is
+/// actually keyed against, never the cheap `DETOUR_SAMPLE_MAX_NODES`
+/// sample -- asserted by equality, not just an upper bound, so a moved
+/// figure (pass 2 or a streets key changed) is a red test, not a stale
+/// comment (Quentin's direction, story 3.18 cycle 1). `10_778_299_
+/// 729_582_344_780` (PR #317 cycle 5) was found by a genuinely random
+/// `proptest` run; `12_073_828_753_114_949_265` is this story's own
+/// seed, reported on PR #315; `10_818_714_075_226_271_966` is this
+/// story's own `measure-generation` re-measurement's exhaustive-pair
+/// argmax -- the mixed-seed harness's own deterministic search, not
+/// luck. Every one of these still ends its own worst *sampled*
+/// (`DETOUR_SAMPLE_MAX_NODES`) pair on a boundary exit (degree 1, on
+/// the site boundary) -- see `detour_excess_holds_at_pinned_boundary_
+/// exit_seeds`. Test-only, the same gate `test_fixture` above uses:
+/// nothing outside `invariants.rs`/`bounds` reads this today.
+#[cfg(any(test, feature = "test-fixtures"))]
+pub const PINNED_DETOUR_SEEDS: [(u64, i64); 3] = [
+    (10_778_299_729_582_344_780, 292),
+    (12_073_828_753_114_949_265, 284),
+    (10_818_714_075_226_271_966, 328),
 ];
 
 /// One [`StreetNetwork::detour_samples`] entry.
@@ -2035,9 +2057,8 @@ mod tests {
         // direction, cycle 2): if the shipped keys would let this maze
         // through, this test must go red, not pass on a number picked
         // to make it pass. Sized with real margin over `max_detour_
-        // excess_cells` (416 as of story 3.18's own re-measurement, a
-        // measured value, never a structural one -- see `docs/
-        // generation.md`'s street-network pass) rather than the
+        // excess_cells` (a measured value, never a structural one -- see
+        // `docs/generation.md`'s street-network pass) rather than the
         // tightest maze that would still fail today -- a smaller maze
         // keeps needing to grow every time that ceiling is re-measured
         // upward. Must assert against every
@@ -2140,6 +2161,57 @@ mod tests {
             vec![(100, 100), (100, 250), (100, 400), (400, 400), (400, 100)],
             "the shortest path must go round the U, not straight across the gap: {path:?}"
         );
+    }
+
+    #[test]
+    fn shortest_path_picks_the_shorter_distance_route_not_the_fewer_hop_one() {
+        // Two vertex-disjoint (except at the shared endpoints) routes
+        // between (0,0) and (300,0): a 3-edge, 900-cell "L" the long way
+        // round, and a 5-edge, 500-cell zigzag through an intermediate
+        // box. An implementation that returns *any* path, or picks by
+        // hop count rather than summed edge length, passes every other
+        // `shortest_path_*` fixture here (each has exactly one route or
+        // none) but fails this one by returning the 3-hop, 900-cell "L"
+        // instead of the 5-hop, 500-cell zigzag (Quentin's direction,
+        // story 3.18 cycle 1).
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 300,
+            y1: 300,
+        };
+        let edges = vec![
+            // The long "L", 3 edges, 900 cells total.
+            vertical(0, 0, 300),
+            horizontal(300, 0, 300),
+            vertical(300, 0, 300),
+            // The short zigzag, 5 edges, 500 cells total.
+            horizontal(0, 0, 100),
+            vertical(100, 0, 100),
+            horizontal(100, 100, 200),
+            vertical(200, 0, 100),
+            horizontal(0, 200, 300),
+        ];
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
+        let (a, b) = ((0, 0), (300, 0));
+        let path = net.shortest_path(a, b);
+        assert_eq!(
+            path,
+            vec![(0, 0), (100, 0), (100, 100), (200, 100), (200, 0), (300, 0)],
+            "expected the shorter-distance zigzag (500 cells, 5 hops), not the fewer-hop L \
+             (900 cells, 3 hops): {path:?}"
+        );
+        // The returned path's own summed edge length must equal
+        // `dijkstra_from`'s own distance for the same pair -- the two
+        // are now one shared implementation (`Self::dijkstra`), but this
+        // is the cross-check that they never silently disagree again.
+        let path_length: i64 = path
+            .windows(2)
+            .map(|w| ((w[1].0 - w[0].0).abs() + (w[1].1 - w[0].1).abs()) as i64)
+            .sum();
+        let dijkstra_distance = net.dijkstra_from(a)[&b];
+        assert_eq!(path_length, dijkstra_distance);
+        assert_eq!(path_length, 500);
     }
 
     #[test]

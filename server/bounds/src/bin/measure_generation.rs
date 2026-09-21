@@ -32,10 +32,15 @@
 //! `detour_excess_cells_exhaustive` measures the same statistic over
 //! *every* non-both-boundary node pair (`streets::detour_samples(usize::
 //! MAX)`), the population `max_detour_excess_cells` is actually keyed
-//! against (story 3.18, Tim's direction: 91 sampled pairs is not a
-//! contract for an estimator 3.11 runs between any two nodes) -- its own
-//! max, argmax seed/pair, and the ten largest per-seed worsts, so the
-//! tail is visible rather than only its single maximum.
+//! against (Tim's direction: 91 sampled pairs is not a contract for an
+//! estimator 3.11 runs between any two nodes) -- its own max, argmax
+//! seed/pair, and the ten largest per-seed worsts, so the tail is
+//! visible rather than only its single maximum. `detour_excess_cells_
+//! exhaustive_both_endpoints_interior` is the same exhaustive scan
+//! restricted to pairs with neither endpoint on the site boundary --
+//! the player-felt figure (Artie's direction), since every worst pair
+//! measured so far has one foot on the boundary, where the city stops
+//! and almost nobody stands.
 
 use std::collections::BTreeMap;
 
@@ -164,6 +169,11 @@ fn main() {
     // the tail beyond the single maximum is visible too.
     let mut detour_excess_worst: DetourWorst = (i64::MIN, 0, (0, 0), (0, 0));
     let mut detour_excess_top10: Vec<DetourWorst> = Vec::new();
+    // Artie's direction, story 3.18 cycle 1: the player-felt figure is the
+    // worst pair with *both* endpoints off the boundary -- every drawn
+    // worst case so far has one foot on the site edge, where the city
+    // stops and almost nobody stands.
+    let mut detour_excess_both_interior_max: DetourWorst = (i64::MIN, 0, (0, 0), (0, 0));
 
     for i in 0..SEED_COUNT {
         let seed = mixed_seed(i);
@@ -178,9 +188,9 @@ fn main() {
             }
         }
 
-        let seed_worst = net
-            .detour_samples(usize::MAX)
-            .into_iter()
+        let exhaustive = net.detour_samples(usize::MAX);
+        let seed_worst = exhaustive
+            .iter()
             .map(|s| (s.excess_cells(), seed, s.a, s.b))
             .max_by_key(|&(excess, ..)| excess);
         if let Some(w) = seed_worst {
@@ -192,6 +202,16 @@ fn main() {
             if detour_excess_top10.len() > 10 {
                 detour_excess_top10.remove(0);
             }
+        }
+        let seed_both_interior_worst = exhaustive
+            .iter()
+            .filter(|s| !net.is_on_boundary(s.a) && !net.is_on_boundary(s.b))
+            .map(|s| (s.excess_cells(), seed, s.a, s.b))
+            .max_by_key(|&(excess, ..)| excess);
+        if let Some(w) = seed_both_interior_worst
+            && w.0 > detour_excess_both_interior_max.0
+        {
+            detour_excess_both_interior_max = w;
         }
 
         let placed = em.placed_count();
@@ -257,13 +277,20 @@ fn main() {
         detour_excess_max.0, detour_excess_max.1, detour_excess_max.2, detour_excess_max.3
     );
     println!(
-        "detour_excess_cells_exhaustive max: {} at seed {} ({:?}-{:?}) -- the number max_detour_excess_cells's own margin rule is applied to; pin the seed in invariants.rs's PINNED_DETOUR_SEEDS if it moves",
+        "detour_excess_cells_exhaustive max: {} at seed {} ({:?}-{:?}) -- the number max_detour_excess_cells's own margin rule is applied to; pin the seed (with this exhaustive figure) in streets::PINNED_DETOUR_SEEDS if it moves",
         detour_excess_worst.0, detour_excess_worst.1, detour_excess_worst.2, detour_excess_worst.3
     );
     println!("detour_excess_cells_exhaustive top 10 per-seed worsts (ascending):");
     for (excess, seed, a, b) in &detour_excess_top10 {
         println!("  {excess} at seed {seed} ({a:?}-{b:?})");
     }
+    println!(
+        "detour_excess_cells_exhaustive_both_endpoints_interior max: {} at seed {} ({:?}-{:?}) -- the player-felt figure: the worst pair with neither endpoint on the site boundary",
+        detour_excess_both_interior_max.0,
+        detour_excess_both_interior_max.1,
+        detour_excess_both_interior_max.2,
+        detour_excess_both_interior_max.3
+    );
 
     // -- story 3.4: building types -------------------------------------
     let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =

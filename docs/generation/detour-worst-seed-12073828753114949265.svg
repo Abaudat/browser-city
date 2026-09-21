@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="596" viewBox="0 0 512 596">
-<rect x="0" y="0" width="512" height="596" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="528" height="640" viewBox="-8 -8 528 640">
+<rect x="-8" y="-8" width="528" height="640" fill="#ffffff"/>
 <rect x="0" y="0" width="16" height="45" fill="#bfe3bf" fill-opacity="0.55"/>
 <rect x="20" y="0" width="31" height="17" fill="#bfe3bf" fill-opacity="0.55"/>
 <rect x="55" y="0" width="49" height="17" fill="#ddc2ef" fill-opacity="0.55"/>
@@ -379,27 +379,31 @@
 <rect x="307" y="437" width="74" height="4" fill="#a6a6a6"/>
 <rect x="381" y="437" width="50" height="4" fill="#a6a6a6"/>
 <rect x="431" y="437" width="81" height="4" fill="#a6a6a6"/>
-<polyline points="86,19 108,19 108,47 180,47 180,75 180,104 210,104 210,161 269,161 307,161 307,118 342,118 386,118 386,73 431,73 460,73 460,42 460,0" fill="none" stroke="#ff8f00" stroke-width="2.5"/>
-<polyline points="86,19 86,0 460,0" fill="none" stroke="#ff8f00" stroke-width="1.5" stroke-dasharray="6 4"/>
-<circle cx="86" cy="19" r="5" fill="none" stroke="#ff8f00" stroke-width="1.5"/>
+<rect x="180" y="285" width="40" height="22" fill="none" stroke="#d81b60" stroke-width="1"/>
+<text x="180" y="283" font-family="sans-serif" font-size="6" fill="#d81b60">core</text>
+<rect x="472" y="490" width="40" height="22" fill="none" stroke="#1e88e5" stroke-width="1"/>
+<text x="472" y="488" font-family="sans-serif" font-size="6" fill="#1e88e5">periphery</text>
+<polyline points="108,19 108,47 180,47 180,75 180,104 210,104 210,161 269,161 307,161 307,118 342,118 386,118 386,73 431,73 460,73 460,42 460,0" fill="none" stroke="#ff8f00" stroke-width="2.5"/>
+<polyline points="108,19 108,0 460,0" fill="none" stroke="#ff8f00" stroke-width="1.5" stroke-dasharray="6 4"/>
+<circle cx="108" cy="19" r="5" fill="none" stroke="#ff8f00" stroke-width="1.5"/>
 <circle cx="460" cy="0" r="5" fill="none" stroke="#ff8f00" stroke-width="1.5"/>
-<rect x="8" y="516" width="16" height="16" fill="#bfe3bf"/>
-<text x="28" y="528" font-family="sans-serif" font-size="12" fill="#111">residential</text>
-<rect x="148" y="516" width="16" height="16" fill="#bcd9f7"/>
-<text x="168" y="528" font-family="sans-serif" font-size="12" fill="#111">commercial</text>
-<rect x="288" y="516" width="16" height="16" fill="#f2cf9e"/>
-<text x="308" y="528" font-family="sans-serif" font-size="12" fill="#111">industrial</text>
-<rect x="428" y="516" width="16" height="16" fill="#ddc2ef"/>
-<text x="448" y="528" font-family="sans-serif" font-size="12" fill="#111">institutional</text>
-<rect x="8" y="544" width="16" height="16" fill="#2b2b2b"/>
-<text x="28" y="556" font-family="sans-serif" font-size="12" fill="#111">arterial</text>
-<rect x="118" y="544" width="16" height="16" fill="#6e6e6e"/>
-<text x="138" y="556" font-family="sans-serif" font-size="12" fill="#111">street</text>
-<rect x="228" y="544" width="16" height="16" fill="#a6a6a6"/>
-<text x="248" y="556" font-family="sans-serif" font-size="12" fill="#111">lane</text>
-<line x1="8" y1="580" x2="32" y2="580" stroke="#ff8f00" stroke-width="2.5"/>
-<text x="38" y="584" font-family="sans-serif" font-size="11" fill="#111">shortest street route</text>
-<line x1="200" y1="580" x2="224" y2="580" stroke="#ff8f00" stroke-width="1.5" stroke-dasharray="6 4"/>
-<text x="230" y="584" font-family="sans-serif" font-size="11" fill="#111">Manhattan L</text>
-<text x="8" y="594" font-family="sans-serif" font-size="11" fill="#111">worst pair (86, 19)-(460, 0): excess 284 cells (network 677, Manhattan 393)</text>
+<rect x="8" y="524" width="16" height="16" fill="#bfe3bf"/>
+<text x="28" y="536" font-family="sans-serif" font-size="12" fill="#111">residential</text>
+<rect x="148" y="524" width="16" height="16" fill="#bcd9f7"/>
+<text x="168" y="536" font-family="sans-serif" font-size="12" fill="#111">commercial</text>
+<rect x="288" y="524" width="16" height="16" fill="#f2cf9e"/>
+<text x="308" y="536" font-family="sans-serif" font-size="12" fill="#111">industrial</text>
+<rect x="428" y="524" width="16" height="16" fill="#ddc2ef"/>
+<text x="448" y="536" font-family="sans-serif" font-size="12" fill="#111">institutional</text>
+<rect x="8" y="552" width="16" height="16" fill="#2b2b2b"/>
+<text x="28" y="564" font-family="sans-serif" font-size="12" fill="#111">arterial</text>
+<rect x="118" y="552" width="16" height="16" fill="#6e6e6e"/>
+<text x="138" y="564" font-family="sans-serif" font-size="12" fill="#111">street</text>
+<rect x="228" y="552" width="16" height="16" fill="#a6a6a6"/>
+<text x="248" y="564" font-family="sans-serif" font-size="12" fill="#111">lane</text>
+<line x1="8" y1="588" x2="32" y2="588" stroke="#ff8f00" stroke-width="2.5"/>
+<text x="38" y="592" font-family="sans-serif" font-size="11" fill="#111">shortest street route</text>
+<line x1="200" y1="588" x2="224" y2="588" stroke="#ff8f00" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="230" y="592" font-family="sans-serif" font-size="11" fill="#111">Manhattan L</text>
+<text x="8" y="616" font-family="sans-serif" font-size="12" fill="#111">worst pair (108, 19)-(460, 0): excess 284 cells (network 655, Manhattan 371)</text>
 </svg>

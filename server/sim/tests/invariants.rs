@@ -69,7 +69,7 @@ pub const INV_GENERATION_ALL_FOUR_LAND_USES_PRESENT: &str = "pass 1's coarse gri
 pub const INV_GENERATION_STREETS_CONNECTED_AND_NOT_STRANDED: &str = "pass 2's street graph is a single connected component, and every pass-1 region borders a street, for any seed (FR110)";
 pub const INV_GENERATION_NO_DEAD_ENDS_AWAY_FROM_BOUNDARY: &str =
     "pass 2 never produces a degree-1 node away from the site boundary, for any seed (FR110, NFR8)";
-pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, additive excess never exceeds max_detour_excess_cells, and (for pairs at least detour_long_pair_cells apart) BFS network distance never exceeds max_detour_percent of Manhattan distance, for any seed (FR110, story 3.18)";
+pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, additive excess never exceeds max_detour_excess_cells, and (for pairs at least detour_long_pair_cells apart) BFS network distance never exceeds max_detour_percent of Manhattan distance, for any seed (FR110)";
 pub const INV_GENERATION_NOT_A_PERFECT_GRID: &str = "block width and height each take at least min_distinct_block_sizes distinct values, both junction kinds are present, and at least two street classes are present, for any seed (FR110, NFR8)";
 pub const INV_GENERATION_EXACT_TILING: &str = "every site cell is covered by exactly one block or by at least one street, and no two blocks overlap, for any seed (FR110)";
 pub const INV_GENERATION_INSTITUTIONAL_POCKETS_ARE_SMALL: &str = "at least institutional_min_pockets mutually non-adjacent (edge or corner) institutional components per site, none over institutional_max_pocket_share_percent of the site's own coarse-cell count, for any seed (FR110, Artie's direction)";
@@ -1801,7 +1801,15 @@ proptest! {
         for s in &samples {
             prop_assert!(
                 s.excess_cells() <= cfg.max_detour_excess_cells as i64,
-                "seed {seed}: {:?}-{:?} excess {} cells over {}", s.a, s.b, s.excess_cells(), cfg.max_detour_excess_cells
+                "seed {seed}: {:?}-{:?} excess {} cells over the measured ceiling {} -- \
+                 max_detour_excess_cells is a measured value (see generation.toml's own \
+                 comment and docs/generation.md's street-network pass), not a bug in your \
+                 change unless it touches server/sim/src/generation/streets.rs or a \
+                 generation.streets.* key. To fix: add this seed to streets::PINNED_DETOUR_\
+                 SEEDS with its own exhaustive excess (`detour_samples(usize::MAX)`'s own \
+                 worst pair), then re-run `cargo run -p bounds --release --bin measure-\
+                 generation` and re-apply max_detour_excess_cells's own margin rule",
+                s.a, s.b, s.excess_cells(), cfg.max_detour_excess_cells
             );
             if s.manhattan >= cfg.detour_long_pair_cells as i64 {
                 prop_assert!(
@@ -3476,8 +3484,19 @@ fn block_edge_touches_street(block: Rect, street: Rect, side: sim::generation::S
 /// --release --bin measure-generation` prints both) -- copied from its
 /// output, never hunted for, and re-taken whenever the harness is re-run
 /// after a retune. Pinned so a generator change that shifts the
-/// distribution fails deterministically, every run.
-const PINNED_BUILDING_COUNT_SEEDS: [u64; 2] = [18_959, 33_799];
+/// distribution fails deterministically, every run. The first pair
+/// (`18_959`/`33_799`) is PR #317 cycle 5's own sequential-scan
+/// argmin/argmax (777/1,048); the second (story 3.18's own mixed-seed
+/// scan, min 786/max 1,025) is a *different* pair, not a replacement --
+/// the harness stopped scanning `0..50_000` sequentially, so the two
+/// pairs are two independent findings, both still valid regression
+/// cases, kept side by side (Tim's direction, story 3.18 cycle 1).
+const PINNED_BUILDING_COUNT_SEEDS: [u64; 4] = [
+    18_959,
+    33_799,
+    1_722_240_287_980_749_281,
+    8_629_247_394_359_087_537,
+];
 
 /// A handful of individually-measured seeds, pinned as fixed-seed tests
 /// asserting `Ok` -- a generator change that shifts the building-count
@@ -3493,33 +3512,42 @@ fn building_count_holds_at_individually_measured_extreme_seeds() {
     }
 }
 
-/// The pinned seeds' own worst sampled pair, asserted against the
-/// committed ceiling (never a stale hardcoded number, so a real
-/// retune's own new committed value is what this checks against) *and*
+/// Each pinned seed's own worst *exhaustive* pair (`detour_samples(
+/// usize::MAX)`, the population `max_detour_excess_cells` is actually
+/// keyed against -- never the cheap `DETOUR_SAMPLE_MAX_NODES` sample,
+/// which is `inv_generation_detour_ratio_bounded`'s own job), asserted
+/// by **equality** against `streets::PINNED_DETOUR_SEEDS`'s own recorded
+/// figure -- never just an upper bound, so a pass-2 or streets-key
+/// change that moves a pinned seed's own worst pair goes red here
+/// instead of leaving a stale number sitting silently in a toml comment
+/// (Quentin's direction, story 3.18 cycle 1). Each worst pair is also
 /// asserted to still end on a boundary exit -- degree 1, on the site's
 /// own boundary, the ordinary way every street ends, not a special "T-
-/// terminated dead-end spur" case (story 3.18, Tim's direction: that
-/// framing was wrong -- see `docs/generation.md`'s street-network pass)
-/// -- so this pins the mechanism each seed was kept for, not just a
-/// cell count that could quietly stop meaning what it once did.
+/// terminated dead-end spur" case (Tim's direction: that framing was
+/// wrong -- see `docs/generation.md`'s street-network pass) -- so this
+/// pins the mechanism each seed was kept for too.
 #[test]
 fn detour_excess_holds_at_pinned_boundary_exit_seeds() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-    for seed in streets::PINNED_DETOUR_SEEDS {
+    for (seed, expected_exhaustive_excess) in streets::PINNED_DETOUR_SEEDS {
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
-        let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+        let samples = net.detour_samples(usize::MAX);
         let worst = samples
             .iter()
             .max_by_key(|s| s.excess_cells())
             .unwrap_or_else(|| panic!("pinned seed {seed} sampled no pairs at all"));
-        assert!(
-            worst.excess_cells() <= cfg.max_detour_excess_cells as i64,
-            "pinned seed {seed}: worst pair {:?}-{:?} excess {} exceeds the committed ceiling {}",
+        assert_eq!(
+            worst.excess_cells(),
+            expected_exhaustive_excess,
+            "pinned seed {seed}: exhaustive worst pair {:?}-{:?} now measures {} cells, not \
+             the pinned {expected_exhaustive_excess} -- pass 2 or a generation.streets.* key \
+             moved this seed; re-run `cargo run -p bounds --release --bin measure-generation`, \
+             re-apply max_detour_excess_cells's own margin rule, and update this seed's own \
+             row in streets::PINNED_DETOUR_SEEDS",
             worst.a,
             worst.b,
             worst.excess_cells(),
-            cfg.max_detour_excess_cells
         );
         let on_a_boundary_exit = |n: (i32, i32)| net.degree(n) == 1 && net.is_on_boundary(n);
         assert!(
@@ -3531,6 +3559,44 @@ fn detour_excess_holds_at_pinned_boundary_exit_seeds() {
             worst.b
         );
     }
+}
+
+/// Quentin's direction, story 3.18 cycle 1: `max_detour_excess_cells`'s
+/// own margin rule (its own `generation.toml` comment: the largest
+/// pinned exhaustive excess, times 1.25, rounded up to a multiple of 8,
+/// never above the loosening guard) was prose in three files and
+/// arithmetic in none. Applied here mechanically against the live
+/// committed config, so a retune that quietly stops following its own
+/// stated rule goes red rather than only reading wrong on review.
+/// Integer arithmetic throughout (NFR28): `* 5` then a ceiling `/ 4` is
+/// exactly `* 1.25` rounded up (never a float), then a ceiling `/ 8 *
+/// 8` rounds up to the next multiple of 8.
+#[test]
+fn max_detour_excess_cells_matches_its_own_margin_rule() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let largest_pinned_exhaustive_excess = streets::PINNED_DETOUR_SEEDS
+        .iter()
+        .map(|&(_, excess)| excess)
+        .max()
+        .expect("PINNED_DETOUR_SEEDS is never empty");
+    let times_1_25 = (largest_pinned_exhaustive_excess * 5 + 3) / 4;
+    let expected = (times_1_25 + 7) / 8 * 8;
+    assert_eq!(
+        cfg.max_detour_excess_cells as i64, expected,
+        "max_detour_excess_cells ({}) no longer matches its own margin rule -- the largest \
+         pinned exhaustive excess ({largest_pinned_exhaustive_excess}) times 1.25, rounded up \
+         to a multiple of 8, is {expected}; re-derive by hand from `measure-generation`'s own \
+         output and update generation.toml's own key (or this test, if the rule itself \
+         changed)",
+        cfg.max_detour_excess_cells
+    );
+    assert!(
+        cfg.max_detour_excess_cells as i64 <= cfg.detour_excess_loosening_guard(),
+        "max_detour_excess_cells ({}) exceeds its own loosening guard ({}) -- from_balance \
+         should already have refused this",
+        cfg.max_detour_excess_cells,
+        cfg.detour_excess_loosening_guard()
+    );
 }
 
 /// AC3's tight pooled mean-size assertion, over the fixed seed range

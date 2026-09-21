@@ -235,15 +235,10 @@ fn block_rects(map: &LandUseMap, net: &StreetNetwork) -> String {
     body
 }
 
-/// Pass 2's own evidence: one flat land-use tint per block (never per
-/// coarse cell -- Artie's direction, cycle 2), streets on top by tier, a
-/// combined legend, and two 40x22-cell viewport outlines (density peak,
-/// farthest periphery) -- Artie's direction, cycle 1.
-pub fn streets_svg(map: &LandUseMap, net: &StreetNetwork) -> String {
-    let site = net.site();
-    let (w, h) = (site.width(), site.height());
-    let legend_h = 56;
-    let total_h = h + legend_h;
+/// The block tint backdrop plus every street edge on top by tier --
+/// shared by [`streets_svg`] and [`detour_worst_svg`] (Tim's direction,
+/// story 3.18 cycle 1: the same loop existed twice, verbatim).
+fn street_backdrop(map: &LandUseMap, net: &StreetNetwork) -> String {
     let mut body = block_rects(map, net);
     for e in net.edges() {
         let r = e.rect();
@@ -256,6 +251,19 @@ pub fn streets_svg(map: &LandUseMap, net: &StreetNetwork) -> String {
             street_fill(e.class)
         ));
     }
+    body
+}
+
+/// Pass 2's own evidence: one flat land-use tint per block (never per
+/// coarse cell -- Artie's direction, cycle 2), streets on top by tier, a
+/// combined legend, and two 40x22-cell viewport outlines (density peak,
+/// farthest periphery) -- Artie's direction, cycle 1.
+pub fn streets_svg(map: &LandUseMap, net: &StreetNetwork) -> String {
+    let site = net.site();
+    let (w, h) = (site.width(), site.height());
+    let legend_h = 56;
+    let total_h = h + legend_h;
+    let mut body = street_backdrop(map, net);
     let (peak_point, far_point) = peak_and_far_points(map);
     body.push_str(&viewport_outline(
         peak_point.0,
@@ -285,42 +293,62 @@ pub fn streets_svg(map: &LandUseMap, net: &StreetNetwork) -> String {
 /// story 3.18).
 const DETOUR_OVERLAY_COLOR: &str = "#ff8f00";
 
+/// The margin (world cells) [`detour_worst_svg`] leaves around the site
+/// on every side -- every pinned seed's own worst pair ends on a
+/// boundary exit by construction (`docs/generation.md`'s street-network
+/// pass), so a marker or the dashed Manhattan L sitting on the site edge
+/// is the common case, not the exception, and must never be half-clipped
+/// by the canvas (Artie's direction, story 3.18 cycle 1). Overlay files
+/// only -- the twelve base evidence files keep their exact canvas.
+const DETOUR_OVERLAY_MARGIN: i64 = 8;
+
 /// Story 3.18's own new evidence: one picture per `streets::
 /// PINNED_DETOUR_SEEDS` entry -- the same block/street backdrop, tier
-/// styling and legend `streets_svg` draws (unchanged), plus an overlay:
-/// that seed's own worst sampled pair (`streets::DETOUR_SAMPLE_MAX_
-/// NODES`, the same scope the pinned-seed regression test in `invariants.
-/// rs` checks) as two markers, the shortest street route between them as
-/// one solid stroke, the Manhattan L between them as one dashed stroke,
-/// and the excess in cells added to the legend -- so the argument
-/// `docs/generation.md`'s street-network pass makes ("around one largest
-/// block and out to a boundary exit") is checkable by looking at the
-/// actual route, not only asserted.
+/// styling, legend and viewport outlines [`streets_svg`] draws
+/// (unchanged, `DETOUR_OVERLAY_MARGIN` aside), plus an overlay: that
+/// seed's own worst *exhaustive* pair (`detour_samples(usize::MAX)`, the
+/// same population `max_detour_excess_cells` is keyed against -- never
+/// the cheap `DETOUR_SAMPLE_MAX_NODES` sample the pinned-seed regression
+/// test checks, a different job) as two markers, the shortest street
+/// route between them as one solid stroke, the Manhattan L between them
+/// as one dashed stroke, and the excess in cells on its own legend row --
+/// so the argument `docs/generation.md`'s street-network pass makes is
+/// checkable by looking at the actual route, not only asserted.
 pub fn detour_worst_svg(map: &LandUseMap, net: &StreetNetwork) -> String {
     let site = net.site();
     let (w, h) = (site.width(), site.height());
-    // 56 for `combined_legend`'s own content (`streets_svg`'s own
-    // budget), plus two more rows for the overlay legend below it.
-    let legend_h = 56 + 28;
-    let total_h = h + legend_h;
-    let mut body = block_rects(map, net);
-    for e in net.edges() {
-        let r = e.rect();
-        body.push_str(&format!(
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
-            r.x0,
-            r.y0,
-            r.width(),
-            r.height(),
-            street_fill(e.class)
-        ));
-    }
+    let m = DETOUR_OVERLAY_MARGIN;
+    // `combined_legend`'s own budget (`streets_svg`'s 56), plus two more
+    // 28px rows below it: the route/Manhattan-L swatches, then the
+    // excess figure on its own row, at the same cadence as every other
+    // legend row (Artie's direction: it is the headline figure, not a
+    // footnote crammed under the swatch row).
+    let legend_h = 56 + 28 * 2;
+    let total_w = w + 2 * m;
+    let total_h = 2 * m + h + legend_h;
 
-    let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+    let mut body = street_backdrop(map, net);
+    let (peak_point, far_point) = peak_and_far_points(map);
+    body.push_str(&viewport_outline(
+        peak_point.0,
+        peak_point.1,
+        site,
+        "#d81b60",
+        "core",
+    ));
+    body.push_str(&viewport_outline(
+        far_point.0,
+        far_point.1,
+        site,
+        "#1e88e5",
+        "periphery",
+    ));
+
+    let samples = net.detour_samples(usize::MAX);
     let worst = samples
         .iter()
         .max_by_key(|s| s.excess_cells())
-        .expect("a pinned detour seed always samples at least one pair");
+        .expect("a pinned detour seed always samples at least one pair, exhaustively");
 
     let route = net.shortest_path(worst.a, worst.b);
     if route.len() >= 2 {
@@ -341,15 +369,18 @@ pub fn detour_worst_svg(map: &LandUseMap, net: &StreetNetwork) -> String {
     body.push_str(&marker(ax, ay, "circle", DETOUR_OVERLAY_COLOR));
     body.push_str(&marker(bx, by, "circle", DETOUR_OVERLAY_COLOR));
 
-    let legend = combined_legend(h);
-    let row1_y = h + 56 + 12;
-    let row2_y = h + 56 + 26;
+    // Legend content sits below the map's own margin, `h + m` down, so it
+    // never crowds the bottom overlay markers.
+    let legend_y0 = h + m;
+    let legend = combined_legend(legend_y0);
+    let row1_y = legend_y0 + 56 + 12;
+    let row2_y = row1_y + 28;
     let overlay_legend = format!(
         "<line x1=\"8\" y1=\"{row1_y}\" x2=\"32\" y2=\"{row1_y}\" stroke=\"{DETOUR_OVERLAY_COLOR}\" stroke-width=\"2.5\"/>\n\
          <text x=\"38\" y=\"{}\" font-family=\"sans-serif\" font-size=\"11\" fill=\"#111\">shortest street route</text>\n\
          <line x1=\"200\" y1=\"{row1_y}\" x2=\"224\" y2=\"{row1_y}\" stroke=\"{DETOUR_OVERLAY_COLOR}\" stroke-width=\"1.5\" stroke-dasharray=\"6 4\"/>\n\
          <text x=\"230\" y=\"{}\" font-family=\"sans-serif\" font-size=\"11\" fill=\"#111\">Manhattan L</text>\n\
-         <text x=\"8\" y=\"{row2_y}\" font-family=\"sans-serif\" font-size=\"11\" fill=\"#111\">worst pair {:?}-{:?}: excess {} cells (network {}, Manhattan {})</text>\n",
+         <text x=\"8\" y=\"{row2_y}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#111\">worst pair {:?}-{:?}: excess {} cells (network {}, Manhattan {})</text>\n",
         row1_y + 4,
         row1_y + 4,
         worst.a,
@@ -358,9 +389,10 @@ pub fn detour_worst_svg(map: &LandUseMap, net: &StreetNetwork) -> String {
         worst.network,
         worst.manhattan,
     );
+    let neg_m = -m;
     format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{total_h}\" viewBox=\"0 0 {w} {total_h}\">\n\
-         <rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{total_h}\" fill=\"#ffffff\"/>\n\
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{total_w}\" height=\"{total_h}\" viewBox=\"{neg_m} {neg_m} {total_w} {total_h}\">\n\
+         <rect x=\"{neg_m}\" y=\"{neg_m}\" width=\"{total_w}\" height=\"{total_h}\" fill=\"#ffffff\"/>\n\
          {body}{legend}{overlay_legend}</svg>\n"
     )
 }
@@ -1373,7 +1405,7 @@ pub fn build_detour_worst_svgs() -> Vec<(u64, String)> {
     let content = GenerationContent::committed();
     streets::PINNED_DETOUR_SEEDS
         .iter()
-        .map(|&seed| {
+        .map(|&(seed, _exhaustive_excess)| {
             let d = sim::generation::plan(seed, &cfg, &content)
                 .expect("pass 1 is total over the live committed config");
             (seed, detour_worst_svg(&d.land_use, &d.streets))

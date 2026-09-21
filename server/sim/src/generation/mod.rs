@@ -800,32 +800,13 @@ impl GenerationConfig {
                 cfg.max_block_depth_min_cells, cfg.max_block_depth_max_cells
             )));
         }
-        // Not a worst-case claim (story 3.18, Tim's direction): this
-        // generator has no tight structural bound on detour excess to
-        // derive one from. A guillotine partition can lay running bond
-        // (full-width cuts, independently jittered cross cuts), so a
-        // straight crossing is blocked at every course and excess grows
-        // with distance, not with block size; leaf size is not capped at
-        // `block_size_max_cells` either (`try_split` refusal, `max_lane_
-        // splits`, `max_recursion_depth` can all leave an over-target
-        // leaf). Both the 2x and the later 3x formula here were a story
-        // fitted to the last failing seed, not a derivation -- "T-
-        // terminated dead-end spur" was even the wrong mechanism: the
-        // degree-1 nodes a worst pair ends on are the ordinary boundary
-        // exits every street has (there is no perimeter street), reached
-        // one way, not a special spur case.
-        //
-        // So this is a loosening guard, not a worst-case claim: the
-        // loosest additive ceiling this codebase accepts, stated as a
-        // formula in largest-block units so it scales when the block
-        // keys are retuned, coefficient the smallest integer that still
-        // admits the committed `max_detour_excess_cells` (re-derive by
-        // hand whenever either value changes).
-        let detour_excess_loosening_guard =
-            4 * cfg.block_size_max_cells as i64 + 2 * cfg.arterial_width_cells as i64;
+        // `detour_excess_loosening_guard` is a config-consistency guard,
+        // never a worst-case claim -- see `docs/generation.md`'s street-
+        // network pass for why no tight structural bound exists.
+        let detour_excess_loosening_guard = cfg.detour_excess_loosening_guard();
         if cfg.max_detour_excess_cells as i64 > detour_excess_loosening_guard {
             return Err(GenerationError::InvalidConfig(format!(
-                "GenerationConfig: max_detour_excess_cells ({}) is greater than the loosening guard 4*block_size_max_cells + 2*arterial_width_cells ({detour_excess_loosening_guard}) -- not a worst-case claim, just the loosest additive ceiling this codebase accepts",
+                "GenerationConfig: max_detour_excess_cells ({}) is greater than the loosening guard ({detour_excess_loosening_guard}) -- not a worst-case claim, just the loosest additive ceiling this codebase accepts (see docs/generation.md's street-network pass)",
                 cfg.max_detour_excess_cells
             )));
         }
@@ -1078,7 +1059,28 @@ impl GenerationConfig {
             y1: self.site_extent_cells,
         }
     }
+
+    /// The loosest additive `max_detour_excess_cells` this codebase
+    /// accepts, in largest-block units -- a config-consistency guard,
+    /// never a worst-case claim (this generator has no tight structural
+    /// bound to derive one from; see `docs/generation.md`'s street-
+    /// network pass for the argument). `from_balance`'s own refusal and
+    /// every test that checks the guard (`mod.rs`'s own coefficient
+    /// test, `invariants.rs`'s own margin-rule test) all call this one
+    /// method, so the formula exists in exactly one place.
+    pub fn detour_excess_loosening_guard(&self) -> i64 {
+        DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT * self.block_size_max_cells as i64
+            + 2 * self.arterial_width_cells as i64
+    }
 }
+
+/// [`GenerationConfig::detour_excess_loosening_guard`]'s own coefficient
+/// on `block_size_max_cells` -- the smallest integer that still admits
+/// the committed `max_detour_excess_cells`, checked mechanically by
+/// `detour_excess_loosening_guard_coefficient_is_the_smallest_that_
+/// admits_the_committed_value` rather than re-derived by hand and left
+/// unverified (Tim's direction, story 3.18 cycle 1).
+const DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT: i64 = 4;
 
 /// A block's own land use, decided once by majority coarse-cell *area*
 /// rather than tinted per cell -- Artie's direction, cycle 2: boundary-
@@ -1480,6 +1482,38 @@ mod tests {
         let balance = with_override("generation.streets.max_detour_excess_cells", 408);
         GenerationConfig::from_balance(&balance)
             .expect("the loosening guard itself must be accepted, not just values under it");
+    }
+
+    /// Tim's direction, story 3.18 cycle 1: "coefficient the smallest
+    /// integer that still admits the committed value" was a claim with
+    /// no test. Checked against the *live* committed `defs::BALANCE`
+    /// (never the fixture above, which exists only to pin the formula's
+    /// shape): the committed `max_detour_excess_cells` must clear one
+    /// coefficient lower (or `DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT`
+    /// is no longer minimal) and must not clear the guard itself (or
+    /// `from_balance` would already have refused it).
+    #[test]
+    fn detour_excess_loosening_guard_coefficient_is_the_smallest_that_admits_the_committed_value() {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let guard = cfg.detour_excess_loosening_guard();
+        let one_coefficient_lower = (DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT - 1)
+            * cfg.block_size_max_cells as i64
+            + 2 * cfg.arterial_width_cells as i64;
+        assert!(
+            cfg.max_detour_excess_cells as i64 > one_coefficient_lower,
+            "max_detour_excess_cells ({}) already clears coefficient {} ({one_coefficient_lower}) \
+             -- DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT ({}) is no longer the smallest integer \
+             that admits the committed value, lower it",
+            cfg.max_detour_excess_cells,
+            DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT - 1,
+            DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT
+        );
+        assert!(
+            cfg.max_detour_excess_cells as i64 <= guard,
+            "max_detour_excess_cells ({}) exceeds its own loosening guard ({guard}) -- \
+             from_balance should already have refused this",
+            cfg.max_detour_excess_cells
+        );
     }
 
     #[test]

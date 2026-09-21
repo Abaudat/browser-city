@@ -1141,12 +1141,12 @@ config error. Pass 1 (`land_use::run`) itself also returns `Result`,
 refusing (never silently truncating) a site whose extent is not a whole
 multiple of the coarse cell size.
 
-A measured generation ceiling (e.g. `generation.streets.max_detour_
+A measured generation ceiling (`generation.streets.max_detour_
 excess_cells`) is set from `cargo run -p bounds --release --bin
 measure-generation`'s own output by the margin rule stated in that key's
 own `defs/` comment; a `from_balance` refusal alongside one is a
-config-consistency (loosening) guard, never a generator worst-case claim
-(story 3.18).
+config-consistency (loosening) guard, never a generator worst-case
+claim.
 
 Pass 2's own junction registry enforces one specific case: where two
 *different* streets each cross the same third street (a staggered
