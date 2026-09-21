@@ -176,8 +176,9 @@ const UNDERPASS_MAX_DIFF_PIXELS = 200;
 // further south are not (nothing walks the player there, since the
 // strip itself is not walkable) -- `appearance.spec.ts` is what guards
 // citizen compositing itself, independent of framing. Measured on CI
-// (`update-visual-baselines.yml`'s own regeneration run, then a real
-// `ci.yml` `e2e` run against the committed baseline): 0px differed.
+// (`update-visual-baselines.yml`'s own regeneration run, then `ci.yml`'s
+// `e2e` job, two consecutive runs of commit 63b1e1f7: 35615960969,
+// re-run to the same run id): 0px differed on both.
 const CROWD_STREET_MAX_DIFF_PIXELS = 200;
 
 const RANK_TABLE = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
