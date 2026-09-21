@@ -57,7 +57,8 @@ import type {} from "../../src/net/e2e-hooks";
 import { sortAcrossFloors } from "../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../src/render/layer-ranks";
 import { LAYER_TABLE } from "../../src/render/layer-table";
-import { screenPositionPx } from "../../src/render/screen-position";
+import { screenPositionPx, visibleCellBounds } from "../../src/render/screen-position";
+import { buildCitizenFixtures } from "../../src/test-street/citizens";
 import { buildPlayerDrawable, buildPropDrawables } from "../../src/test-street/drawables";
 import {
   BRIDGE_DECK_Y,
@@ -142,6 +143,28 @@ const INTERIOR_MAX_DIFF_PIXELS = 150;
 // a little more headroom because the walk that reaches it is longer.
 // Measured on CI, the same two runs: 0px differed on both.
 const UNDERPASS_MAX_DIFF_PIXELS = 200;
+
+// The crowd-street checkpoint (cycle 2, Quentin's direction, finding 5):
+// the camera/viewport story's own regenerated 1920x1080 baselines are a
+// cropped sliver of what master's world-fitted canvas guarded -- the
+// whole crowd street (~46 citizens) included. This checkpoint restores
+// that coverage, taken at the exact same real, collider-rested position
+// `underpass.png` already proves is jitter-free run to run -- a second
+// position of its own would have to re-earn that same proof, and an
+// early version that tried one (a plain `y-at-least` threshold release,
+// not a rest) measured a five-figure pixel diff between two otherwise
+// identical runs purely from release-lag position jitter, confirming
+// why every checkpoint in this file is a real rest and never a
+// threshold. The frozen crowd (`?freezeCrowd=1`, already set for the
+// whole test) and the real, computed `visibleCellBounds` prove a real,
+// substantial slice of the crowd is actually in frame before the shot
+// is ever taken -- never a vacuous "the crowd exists somewhere" claim.
+// Not yet measured on CI (no baseline exists to compare against a real
+// run); this is a same-order-of-magnitude estimate over
+// `UNDERPASS_MAX_DIFF_PIXELS`, sized for a frame with far more drawn
+// content (the whole crowd, not one avatar or one window) -- revisit
+// once `update-visual-baselines.yml` and a real CI run have measured it.
+const CROWD_STREET_MAX_DIFF_PIXELS = 400;
 
 const RANK_TABLE = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
 const CODE_BY_NAME = Object.fromEntries(LAYER_TABLE.map((row) => [row.name, row.code]));
@@ -708,7 +731,7 @@ test("one walk down the test street: collision, depth order, retraction, floors 
     orderAtLamppost.indexOf(lamppostProp.id.toString()),
   );
 
-  // --- under the bridge --------------------------------------------------
+  // --- under the bridge ----------------------------------------------------
   await walkSegment(page, segment("past-the-lamppost"));
   await walkSegment(page, segment("off-the-crossing-row"));
   await walkSegment(page, segment("east-along-the-crossing"));
@@ -728,6 +751,42 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // reading as clipped at the canvas edge instead of visibly under a
   // deck.
   await screenshot("underpass.png", UNDERPASS_MAX_DIFF_PIXELS);
+
+  // The camera/viewport story's own regenerated baselines are cropped to
+  // the viewport, unlike master's world-fitted canvas -- this checkpoint
+  // (cycle 2, Quentin's direction, finding 5) restores the crowd's own
+  // pixel coverage, at the exact same real, collider-rested position
+  // `underpass.png` already proved jitter-free -- never a new position of
+  // its own to re-prove that for.
+  const crowdView = await page.evaluate(() => window.__bc?.viewTransform);
+  if (!crowdView) throw new Error("the street scene never recorded its view transform");
+  const crowdVisible = visibleCellBounds(
+    1920,
+    1080,
+    crowdView,
+    underTheBridge.floor,
+    TILE_SIZE_PX,
+    STOREY_HEIGHT_PX,
+  );
+  // Never vacuous (Quentin's own recurring direction across this suite):
+  // a real, substantial slice of the crowd -- not one stray citizen at
+  // the frame's own edge -- must actually be in view before the shot is
+  // taken, or this checkpoint would silently stop proving anything the
+  // moment the crowd's own placement or the camera's own framing moved.
+  const crowd = buildCitizenFixtures(committedDefs());
+  const crowdOnScreen = crowd.filter(
+    (c) =>
+      c.gridX >= crowdVisible.cellX0 &&
+      c.gridX <= crowdVisible.cellX1 &&
+      c.gridY >= crowdVisible.cellY0 &&
+      c.gridY <= crowdVisible.cellY1,
+  );
+  expect(
+    crowdOnScreen.length,
+    "a real, substantial slice of the crowd must be in frame for this checkpoint to mean anything",
+  ).toBeGreaterThan(crowd.length / 4);
+
+  await screenshot("crowd-street.png", CROWD_STREET_MAX_DIFF_PIXELS);
 
   // Two floors at one (x, y), both drawn: the deck above is not culled
   // (FR122 culls by sign, and both floors are street-side), and the
