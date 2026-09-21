@@ -3,27 +3,50 @@
 //! (`max_open_percent_by_count/area`, `max_unplotted_percent`,
 //! `max_rejected_plot_percent`, `target_count_per_million_cells`,
 //! `count_tolerance_percent`, `mean_width/depth_cells`, `max_detour_
-//! excess_cells`) over seeds `0..50_000` at the committed
-//! `defs::BALANCE`. A binary, not a test: too slow for every CI run, and
-//! `scripts/ci/check-trace-matrix.sh` refuses a skipped test.
+//! excess_cells`) over 50,000 seeds at the committed `defs::BALANCE`. A
+//! binary, not a test: too slow for every CI run, and `scripts/ci/check-
+//! trace-matrix.sh` refuses a skipped test.
 //!
 //! ```text
 //! cargo run -p bounds --release --bin measure-generation
 //! ```
 //!
+//! The 50,000 seeds are never `0..50_000` sequentially -- a genuinely
+//! random sweep has twice found a worse case than a sequential scan ever
+//! did (PR #317 cycle 5's own 276-vs-296 gap). Each seed is instead
+//! derived from its own loop index through `sim::rng::seed_from_ids`
+//! (NFR25's own pinned splitmix64-based mixer, the same one every pass
+//! seeds its own RNG stream from -- never a second, ad hoc mixer, and
+//! never a crate RNG), so the 50,000 draws are spread across the full
+//! `u64` space, fully deterministic and reproducible by anyone running
+//! this binary (story 3.18's own direction).
+//!
 //! Prints min/p1/p50/p99/max, mean and standard deviation for building
 //! count, rejection percent, open-plot percent (by count and by area),
 //! unplotted percent, per-city mean envelope width/depth (x10) and
-//! street-network detour excess (one entry per sampled pair, every
-//! seed) -- the last re-derives `generation.streets.max_detour_excess_
-//! cells`'s own comment (PR #317 cycle 5: "put the worst-excess
-//! statistic in measure-generation", never a temporary, uncommitted
-//! property).
+//! street-network detour excess sampled at `streets::DETOUR_SAMPLE_
+//! MAX_NODES` (one entry per sampled pair, every seed) -- the last
+//! re-derives `generation.streets.max_detour_excess_cells`'s own comment
+//! (PR #317 cycle 5: "put the worst-excess statistic in measure-
+//! generation", never a temporary, uncommitted property). Separately,
+//! `detour_excess_cells_exhaustive` measures the same statistic over
+//! *every* non-both-boundary node pair (`streets::detour_samples(usize::
+//! MAX)`), the population `max_detour_excess_cells` is actually keyed
+//! against (Tim's direction: 91 sampled pairs is not a contract for an
+//! estimator 3.11 runs between any two nodes) -- its own max, argmax
+//! seed/pair, and the ten largest per-seed worsts, so the tail is
+//! visible rather than only its single maximum. `detour_excess_cells_
+//! exhaustive_both_endpoints_interior` is the same exhaustive scan
+//! restricted to pairs with neither endpoint on the site boundary --
+//! the player-felt figure (Artie's direction), since every worst pair
+//! measured so far has one foot on the boundary, where the city stops
+//! and almost nobody stands.
 
 use std::collections::BTreeMap;
 
 use sim::generated::defs;
 use sim::generation::{GenerationConfig, GenerationContent, building_types, envelopes, streets};
+use sim::rng::seed_from_ids;
 
 const SEED_COUNT: u64 = 50_000;
 /// Story 3.4's own pass adds `sim::rules::evaluate` over the whole
@@ -31,6 +54,33 @@ const SEED_COUNT: u64 = 50_000;
 /// smaller range than the four-pass stats above so this binary still
 /// finishes in a reasonable time; still large enough to see a real tail.
 const BUILDING_TYPE_SEED_COUNT: u64 = 5_000;
+
+/// Salt for [`seed_from_ids`] below -- distinct from every other caller's
+/// own salt (`0` is pass 1's own city-seed role in `seed_from_ids(city_
+/// seed, PASS_ID)` elsewhere in this codebase) so this harness's own
+/// mixed stream is never accidentally the same sequence a real pass
+/// seeds itself from.
+const MEASURE_SEED_SALT: u64 = 0xB0F0_5EED;
+/// A second, distinct salt for the building-type loop below -- its own
+/// index range overlaps the first loop's, so reusing [`MEASURE_SEED_SALT`]
+/// would measure the same 5,000 cities twice under two different names
+/// rather than 5,000 further ones.
+const MEASURE_BUILDING_TYPE_SEED_SALT: u64 = 0xB0F0_5EE1;
+
+/// This loop index's own measured seed -- spread over the full `u64`
+/// space by `seed_from_ids` (see the module doc above), never the index
+/// itself.
+fn mixed_seed(index: u64) -> u64 {
+    seed_from_ids(MEASURE_SEED_SALT, index)
+}
+
+fn mixed_building_type_seed(index: u64) -> u64 {
+    seed_from_ids(MEASURE_BUILDING_TYPE_SEED_SALT, index)
+}
+
+/// (excess cells, seed, node a, node b) -- one detour-excess extreme,
+/// named so the tuple is never spelled out four times over.
+type DetourWorst = (i64, u64, (i32, i32), (i32, i32));
 
 struct Stats {
     values: Vec<i64>,
@@ -110,9 +160,23 @@ fn main() {
     // the same additive Manhattan-fitness overshoot `generation.
     // streets.max_detour_excess_cells` bounds.
     let mut detour_excess: Vec<i64> = Vec::new();
-    let mut detour_excess_max: (i64, u64, (i32, i32), (i32, i32)) = (i64::MIN, 0, (0, 0), (0, 0));
+    let mut detour_excess_max: DetourWorst = (i64::MIN, 0, (0, 0), (0, 0));
+    // The exhaustive-pair statistic `max_detour_excess_cells` is actually
+    // keyed against (this module's own doc comment): every non-both-
+    // boundary pair, not the cheap `DETOUR_SAMPLE_MAX_NODES` sample above.
+    // `detour_excess_worst.0` is the running max; `detour_excess_top10`
+    // holds the ten largest *per-seed* worsts seen so far, ascending, so
+    // the tail beyond the single maximum is visible too.
+    let mut detour_excess_worst: DetourWorst = (i64::MIN, 0, (0, 0), (0, 0));
+    let mut detour_excess_top10: Vec<DetourWorst> = Vec::new();
+    // Artie's direction, story 3.18 cycle 1: the player-felt figure is the
+    // worst pair with *both* endpoints off the boundary -- every drawn
+    // worst case so far has one foot on the site edge, where the city
+    // stops and almost nobody stands.
+    let mut detour_excess_both_interior_max: DetourWorst = (i64::MIN, 0, (0, 0), (0, 0));
 
-    for seed in 0..SEED_COUNT {
+    for i in 0..SEED_COUNT {
+        let seed = mixed_seed(i);
         let d = sim::generation::plan(seed, &cfg, &content).expect("pass 1 is total");
         let (net, pm, em) = (&d.streets, &d.plots, &d.envelopes);
 
@@ -122,6 +186,32 @@ fn main() {
             if excess > detour_excess_max.0 {
                 detour_excess_max = (excess, seed, s.a, s.b);
             }
+        }
+
+        let exhaustive = net.detour_samples(usize::MAX);
+        let seed_worst = exhaustive
+            .iter()
+            .map(|s| (s.excess_cells(), seed, s.a, s.b))
+            .max_by_key(|&(excess, ..)| excess);
+        if let Some(w) = seed_worst {
+            if w.0 > detour_excess_worst.0 {
+                detour_excess_worst = w;
+            }
+            detour_excess_top10.push(w);
+            detour_excess_top10.sort_unstable_by_key(|&(excess, ..)| excess);
+            if detour_excess_top10.len() > 10 {
+                detour_excess_top10.remove(0);
+            }
+        }
+        let seed_both_interior_worst = exhaustive
+            .iter()
+            .filter(|s| !net.is_on_boundary(s.a) && !net.is_on_boundary(s.b))
+            .map(|s| (s.excess_cells(), seed, s.a, s.b))
+            .max_by_key(|&(excess, ..)| excess);
+        if let Some(w) = seed_both_interior_worst
+            && w.0 > detour_excess_both_interior_max.0
+        {
+            detour_excess_both_interior_max = w;
         }
 
         let placed = em.placed_count();
@@ -181,10 +271,25 @@ fn main() {
     Stats::new(unplotted_percent).print("unplotted_percent");
     Stats::new(mean_width_x10).print("mean_width_cells_x10");
     Stats::new(mean_depth_x10).print("mean_depth_cells_x10");
-    Stats::new(detour_excess).print("detour_excess_cells");
+    Stats::new(detour_excess).print("detour_excess_cells_sampled_14node");
     println!(
-        "detour_excess_cells worst: {} at seed {} ({:?}-{:?}) -- pin the seed in invariants.rs's PINNED_DETOUR_SEEDS if it moves",
+        "detour_excess_cells_sampled_14node worst: {} at seed {} ({:?}-{:?})",
         detour_excess_max.0, detour_excess_max.1, detour_excess_max.2, detour_excess_max.3
+    );
+    println!(
+        "detour_excess_cells_exhaustive max: {} at seed {} ({:?}-{:?}) -- the number max_detour_excess_cells's own margin rule is applied to; pin the seed (with this exhaustive figure) in streets::PINNED_DETOUR_SEEDS if it moves",
+        detour_excess_worst.0, detour_excess_worst.1, detour_excess_worst.2, detour_excess_worst.3
+    );
+    println!("detour_excess_cells_exhaustive top 10 per-seed worsts (ascending):");
+    for (excess, seed, a, b) in &detour_excess_top10 {
+        println!("  {excess} at seed {seed} ({a:?}-{b:?})");
+    }
+    println!(
+        "detour_excess_cells_exhaustive_both_endpoints_interior max: {} at seed {} ({:?}-{:?}) -- the player-felt figure: the worst pair with neither endpoint on the site boundary",
+        detour_excess_both_interior_max.0,
+        detour_excess_both_interior_max.1,
+        detour_excess_both_interior_max.2,
+        detour_excess_both_interior_max.3
     );
 
     // -- story 3.4: building types -------------------------------------
@@ -201,7 +306,8 @@ fn main() {
     let mut deep_profession_count = Vec::with_capacity(BUILDING_TYPE_SEED_COUNT as usize);
     let mut profession_sum: BTreeMap<&str, u64> = BTreeMap::new();
 
-    for seed in 0..BUILDING_TYPE_SEED_COUNT {
+    for i in 0..BUILDING_TYPE_SEED_COUNT {
+        let seed = mixed_building_type_seed(i);
         let d = sim::generation::plan(seed, &cfg, &content).expect("pass 1 is total");
         let mut tag_counts: BTreeMap<u32, i64> = BTreeMap::new();
         let mut workplaces = 0i64;

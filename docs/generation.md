@@ -158,7 +158,92 @@ document's own opening paragraph forbids.
   combined legend, and two 40x22-cell viewport outlines (one at the
   density peak, one at the farthest periphery) so the per-screen reading
   is judgeable directly from the image; same regen-and-diff guard as the
-  row above.
+  row above. Plus one worst-case-seed picture per entry in `streets::
+  PINNED_DETOUR_SEEDS` -- [`docs/generation/detour-worst-seed-
+  10778299729582344780.svg`](generation/detour-worst-seed-10778299729582344780.svg),
+  [`-12073828753114949265`](generation/detour-worst-seed-12073828753114949265.svg),
+  [`-10818714075226271966`](generation/detour-worst-seed-10818714075226271966.svg)
+  -- the same street-network render (same tints, same tier styling, same
+  legend, same two viewport outlines) with an overlay: that seed's own
+  worst *exhaustive* pair (`detour_samples(usize::MAX)`'s own argmax,
+  the population `max_detour_excess_cells` is keyed against, never the
+  cheap `DETOUR_SAMPLE_MAX_NODES` sample) as two markers, the shortest
+  street route between them as one solid stroke, the Manhattan L between
+  them as one dashed stroke, both in a colour no tint or tier already
+  uses, and the excess in cells on its own legend row, so the actual
+  route is checkable by looking, not just asserted. An 8-cell margin
+  around the site (overlay files only) keeps a boundary-sitting marker
+  or dashed stroke from ever being clipped by the canvas -- every pinned
+  seed's own worst pair ends on a boundary exit, so this is the common
+  case, not the exception. Same regen-and-diff guard, a separate file
+  set from the twelve above (never a byte of those twelve moves when
+  only these three are added or a pinned seed changes).
+
+### The detour-excess bound (story 3.18)
+
+`generation.streets.max_detour_excess_cells` has no tight structural
+bound to derive: a guillotine partition can lay running bond (full-width
+cuts, independently jittered cross cuts), so a straight crossing is
+blocked at every course and excess grows with distance travelled, not
+with block size, and leaf size is not capped at `block_size_max_cells`
+either (`try_split` refusal, `max_lane_splits` and `max_recursion_depth`
+can all leave an over-target leaf). Two earlier formulas here (a 2x, then
+a 3x multiple of `block_size_max_cells`) were each a story fitted to the
+last failing seed, not a derivation -- including "T-terminated dead-end
+spur", which named the wrong mechanism: the degree-1 node a worst pair
+ends on is the *ordinary* boundary exit every street has -- there is no
+perimeter street (`generation::block_sides`, `docs/architecture.md`'s
+Generation section: a block side abuts a street iff it does not
+coincide with the site's own boundary), so every street simply ends at
+the boundary, reached one way, never a special spur case.
+
+The three pinned seeds' own worst-case pictures (linked above) show two
+different mechanisms, not one, both ending on a boundary exit:
+`10818714075226271966` and `10778299729582344780` each go around one
+large peripheral block with a couple of minor jogs; `12073828753114949265`
+is the running-bond mechanism directly, a staircase of many short jogs
+threading the industrial band's own interior. A picture that instead
+showed a block with no way through, reading as a wall, would be a pass-2
+finding, not evidence for this key -- none of the three does.
+
+`max_detour_excess_cells` is a *measured* value, re-derived by `cargo
+run -p bounds --release --bin measure-generation`: the exhaustive-pair
+max (every non-both-boundary node pair, not the cheap 14-node sample
+`inv_generation_detour_ratio_bounded` checks on arbitrary seeds) over the
+harness's own 50,000 mixed seeds, times 1.25, rounded up to a multiple of
+8 -- see the key's own comment in `defs/balance/generation.toml` for the
+current run's numbers. `GenerationConfig::from_balance` separately
+refuses a value over `4 * block_size_max_cells + 2 * arterial_width_cells`
+-- a loosening guard that scales with the block keys, never a worst-case
+claim.
+
+**What actually protects master.** `inv_generation_detour_ratio_bounded`
+runs on arbitrary seeds, in every CI run, but only ever samples the
+cheap 14-node width -- its own worst reading from this same run was 322
+(seed `10818714075226271966` again), 6 cells under the 328-cell
+exhaustive figure the key is set from. That 6-cell gap is not the
+margin; the margin is the stated 1.25 factor, nothing else, over a tail
+that is still growing: this run's own ten largest per-seed worsts,
+ascending, were 272, 274, 274, 276, 278, 284, 284, 286, 306, 328. A
+future 50,000-seed run finding a new worst above 416 remains possible --
+that is what re-measuring on a retune, and pinning what a random sweep
+finds, both exist for.
+
+For scale: the worst pinned seed today (`10818714075226271966`, 328
+cells exhaustive) is about eight viewport-widths of extra walking for the
+worst pair of the worst city found in 50,000 genuinely random draws --
+accepted as a rare tail. That figure still has one foot on the site
+boundary, though, where the city stops and almost nobody stands; the
+same run's own worst pair with *both* endpoints off the boundary --
+the player-felt figure -- was 252 cells (seed `15392363585947492682`,
+pair `(358, 23)`-`(479, 27)`), well under 328. The maze fixture
+`a_maze_fails_dead_ends_and_detour` (a U-shaped corridor, no real route
+through) overshoots by 600 cells, real margin over the 416-cell
+committed value and a stated distance from "our worst real city" to "a
+maze", not just a pass/fail. If a future re-measurement moves the
+exhaustive max itself past roughly 360, that PR owes the new worst
+seed's own picture and Artie's own judgement again on whether the
+result still reads as a city.
 
 ### Plot subdivision
 
