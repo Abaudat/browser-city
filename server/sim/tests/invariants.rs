@@ -3493,6 +3493,52 @@ fn building_count_holds_at_individually_measured_extreme_seeds() {
     }
 }
 
+/// PR #317 cycle 5 (Quentin's direction): a failure found by luck
+/// becomes a deterministic test, `PINNED_BUILDING_COUNT_SEEDS`'s own
+/// precedent -- otherwise the next streets retune re-breaks the
+/// T-terminated-spur case and only luck finds it again. Found by a
+/// genuinely random `proptest` run against `inv_generation_detour_
+/// ratio_bounded`, never hunted for.
+const PINNED_DETOUR_SEEDS: [u64; 1] = [10_778_299_729_582_344_780];
+
+/// The pinned seed's own worst sampled pair, asserted against the
+/// committed ceiling (never a stale hardcoded number, so a real
+/// retune's own new committed value is what this checks against) *and*
+/// asserted to still end on a T-terminated dead-end spur -- degree 1,
+/// on the site's own boundary -- so this pins the mechanism the seed
+/// was kept for, not just a cell count that could quietly stop meaning
+/// what it once did.
+#[test]
+fn detour_excess_holds_at_a_pinned_t_terminated_spur_seed() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    for seed in PINNED_DETOUR_SEEDS {
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+        let worst = samples
+            .iter()
+            .max_by_key(|s| s.excess_cells())
+            .unwrap_or_else(|| panic!("pinned seed {seed} sampled no pairs at all"));
+        assert!(
+            worst.excess_cells() <= cfg.max_detour_excess_cells as i64,
+            "pinned seed {seed}: worst pair {:?}-{:?} excess {} exceeds the committed ceiling {}",
+            worst.a,
+            worst.b,
+            worst.excess_cells(),
+            cfg.max_detour_excess_cells
+        );
+        let on_a_t_terminated_spur = |n: (i32, i32)| net.degree(n) == 1 && net.is_on_boundary(n);
+        assert!(
+            on_a_t_terminated_spur(worst.a) || on_a_t_terminated_spur(worst.b),
+            "pinned seed {seed}: worst pair {:?}-{:?} no longer ends on a T-terminated dead-end \
+             spur (degree 1, on the site boundary) -- the mechanism this seed was pinned for \
+             moved; re-measure and re-pin",
+            worst.a,
+            worst.b
+        );
+    }
+}
+
 /// AC3's tight pooled mean-size assertion, over the fixed seed range
 /// `0..256`, against the committed key +- tolerance.
 #[test]

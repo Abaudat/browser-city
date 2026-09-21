@@ -1,8 +1,9 @@
-//! Re-measures every statistically-derived key in `generation.plots.*`
-//! and `generation.envelopes.*` (`max_open_percent_by_count/area`,
-//! `max_unplotted_percent`, `max_rejected_plot_percent`,
-//! `target_count_per_million_cells`, `count_tolerance_percent`,
-//! `mean_width/depth_cells`) over seeds `0..50_000` at the committed
+//! Re-measures every statistically-derived key in `generation.plots.*`,
+//! `generation.envelopes.*` and `generation.streets.*`
+//! (`max_open_percent_by_count/area`, `max_unplotted_percent`,
+//! `max_rejected_plot_percent`, `target_count_per_million_cells`,
+//! `count_tolerance_percent`, `mean_width/depth_cells`, `max_detour_
+//! excess_cells`) over seeds `0..50_000` at the committed
 //! `defs::BALANCE`. A binary, not a test: too slow for every CI run, and
 //! `scripts/ci/check-trace-matrix.sh` refuses a skipped test.
 //!
@@ -12,12 +13,17 @@
 //!
 //! Prints min/p1/p50/p99/max, mean and standard deviation for building
 //! count, rejection percent, open-plot percent (by count and by area),
-//! unplotted percent and per-city mean envelope width/depth (x10).
+//! unplotted percent, per-city mean envelope width/depth (x10) and
+//! street-network detour excess (one entry per sampled pair, every
+//! seed) -- the last re-derives `generation.streets.max_detour_excess_
+//! cells`'s own comment (PR #317 cycle 5: "put the worst-excess
+//! statistic in measure-generation", never a temporary, uncommitted
+//! property).
 
 use std::collections::BTreeMap;
 
 use sim::generated::defs;
-use sim::generation::{GenerationConfig, GenerationContent, building_types, envelopes};
+use sim::generation::{GenerationConfig, GenerationContent, building_types, envelopes, streets};
 
 const SEED_COUNT: u64 = 50_000;
 /// Story 3.4's own pass adds `sim::rules::evaluate` over the whole
@@ -96,10 +102,27 @@ fn main() {
     let (mut min_count, mut max_count) = ((i64::MAX, 0u64), (i64::MIN, 0u64));
     let mut open_slivers = 0u64;
     let mut sliver_blocks = 0u64;
+    // The detour-excess ceiling's own worst-case statistic (PR #317
+    // cycle 5, Quentin's direction: "put the worst-excess statistic in
+    // measure-generation so the number in the comment can be
+    // re-derived", never a temporary, uncommitted property). One entry
+    // per sampled pair, every seed -- `DetourSample::excess_cells()`,
+    // the same additive Manhattan-fitness overshoot `generation.
+    // streets.max_detour_excess_cells` bounds.
+    let mut detour_excess: Vec<i64> = Vec::new();
+    let mut detour_excess_max: (i64, u64, (i32, i32), (i32, i32)) = (i64::MIN, 0, (0, 0), (0, 0));
 
     for seed in 0..SEED_COUNT {
         let d = sim::generation::plan(seed, &cfg, &content).expect("pass 1 is total");
         let (net, pm, em) = (&d.streets, &d.plots, &d.envelopes);
+
+        for s in net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES) {
+            let excess = s.excess_cells();
+            detour_excess.push(excess);
+            if excess > detour_excess_max.0 {
+                detour_excess_max = (excess, seed, s.a, s.b);
+            }
+        }
 
         let placed = em.placed_count();
         if placed < min_count.0 {
@@ -158,6 +181,11 @@ fn main() {
     Stats::new(unplotted_percent).print("unplotted_percent");
     Stats::new(mean_width_x10).print("mean_width_cells_x10");
     Stats::new(mean_depth_x10).print("mean_depth_cells_x10");
+    Stats::new(detour_excess).print("detour_excess_cells");
+    println!(
+        "detour_excess_cells worst: {} at seed {} ({:?}-{:?}) -- pin the seed in invariants.rs's PINNED_DETOUR_SEEDS if it moves",
+        detour_excess_max.0, detour_excess_max.1, detour_excess_max.2, detour_excess_max.3
+    );
 
     // -- story 3.4: building types -------------------------------------
     let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
