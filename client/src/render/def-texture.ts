@@ -1,66 +1,27 @@
-// Story 2.13: the texture-resolution step for a `defId`-placed prop,
-// extracted out of `test-street/scene.ts` (Tim's direction) -- pure-ish
-// (its only side effect is the one `Texture` allocation `cropped` already
-// does, the same idiom `atlas-pages.ts` itself uses), sharing
-// `atlas-frame.ts`'s own "no pixi.js import beyond `Texture`/`Rectangle`"
-// discipline. `scene.ts` is the only caller; `AtlasPageLoader` is the only
-// real implementation of `DefObjectTextureLoader`, kept as an interface
-// here so a test can stub it the way `atlas-pages.test.ts` already does.
+// Story 2.13: the one place `defId -> ObjectDef` resolution happens for a
+// def-placed prop (Tim's direction, cycle 2: build the index once rather
+// than a linear `find` per drawable, the same idiom `world/object-defs.ts`'s
+// own `objectDefsById` already uses). `scene.ts` is the only caller. Never
+// imports `pixi.js` -- the per-cell crop and its own cache now live on
+// `AtlasPageLoader.objectCellTexture` (`atlas-pages.ts`), next to the
+// per-object cache it already had; this module is pure data lookup.
 
-import { Rectangle, Texture } from "pixi.js";
 import type { Defs, ObjectDef } from "../defs/types";
 
-/** The one method this module needs from `AtlasPageLoader` -- narrowed to
- * an interface so a unit test can stub it with no real `pixi.js` decode
- * behind it, the same idiom `atlas-pages.test.ts` already uses for the
- * loader itself. */
-export interface DefObjectTextureLoader {
-  objectTexture(defs: Defs, object: ObjectDef): Promise<Texture>;
+/** Every real `defs/objects` entry, keyed by its own `id` -- built once
+ * per mount (`scene.ts`), never a fresh linear `Array.find` per drawable. */
+export function buildObjectDefIndex(defs: Defs): ReadonlyMap<number, ObjectDef> {
+  return new Map(defs.objects.map((object) => [object.id, object]));
 }
 
-/** Resolves the `ObjectDef` a `defId` names, or throws naming the id --
- * the one place `scene.ts` looks a `defId` up against the fetched
- * document, so every caller gets the same, named failure rather than a
+/** Resolves the `ObjectDef` a `defId` names against an already-built
+ * index, or throws naming the id -- the one place `scene.ts` looks a
+ * `defId` up, so every caller gets the same, named failure rather than a
  * silent `undefined` read. */
-export function objectDefById(defs: Defs, defId: number): ObjectDef {
-  const object = defs.objects.find((candidate) => candidate.id === defId);
+export function objectDefById(index: ReadonlyMap<number, ObjectDef>, defId: number): ObjectDef {
+  const object = index.get(defId);
   if (!object) {
     throw new Error(`def-texture: defs/ has no object with id ${defId}`);
   }
   return object;
-}
-
-/**
- * One def-placed prop's own per-cell texture (Tim's direction): the def's
- * whole atlas-cropped sprite (`loader.objectTexture`), further cropped to
- * the exact `tileSizePx`-wide column `sourceCol` names. No "repeat"
- * branch: `tools/defs-build`'s own validator already fixes `object.atlas`'s
- * width to exactly `object.width * tile_size_px` (FR126), so a one-cell
- * def (`sourceCol` always 0) crops to its own whole extent by the same
- * arithmetic a wide def slices by -- two placements of the same def id
- * share the loader's own cached `Texture`, and so the same `TextureSource`,
- * without this function doing anything special for it.
- *
- * `base`'s own `frame` is already offset to wherever the packer placed
- * this object's whole sprite on the page (`AtlasPageLoader.objectTexture`'s
- * own crop) -- the per-cell frame this function builds has to start from
- * that same offset, not from the page's own origin, or a sourceCol > 0
- * (or even `sourceCol === 0` on any object the packer did not place at
- * the page's own `(0, 0)`) crops a neighbouring object's pixels instead.
- */
-export async function defCellTexture(
-  defs: Defs,
-  object: ObjectDef,
-  loader: DefObjectTextureLoader,
-  sourceCol: number,
-  tileSizePx: number,
-): Promise<Texture> {
-  const base = await loader.objectTexture(defs, object);
-  const frame = new Rectangle(
-    base.frame.x + sourceCol * tileSizePx,
-    base.frame.y,
-    tileSizePx,
-    base.frame.height,
-  );
-  return new Texture({ source: base.source, frame, dynamic: false });
 }

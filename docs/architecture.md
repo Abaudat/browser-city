@@ -576,8 +576,7 @@ subtracts `floor * storey_height_px`, and a drawable on a storey above the
 viewer's own must never sort as though it were on that floor because of
 it.
 
-Only a test-street row with no `object_def` (ground tiles, the shops' own
-plain wall runs, the poster, loose furniture) reads its art straight out of
+Only a test-street row with no `object_def` reads its art straight out of
 the repo-root `ModernTileset/` at runtime (`new URL(..., import.meta.url)`
 asset imports), not out of `client/public/`. A row placed by a real
 `object_def` draws only through its packed `atlas` rect (`AtlasPageLoader`),
@@ -874,11 +873,8 @@ fits entirely inside its own sheet's real `IHDR` bounds; and `sprite`
 agrees with the footprint exactly (`w == width * tile_size_px`, `h` a
 whole multiple of `tile_size_px` and `h >= height * tile_size_px` -- a
 tall prop may overhang upward, never sideways or downward). `sprite` never
-repeats: a surface wider than its own art (story 2.13's `bridge_deck`, a
-16x16 pavement tile spanning a four-cell footbridge) is a one-cell object
-placed once per cell, the same way `wall_segment`'s own wall run already
-is -- never a `repeat` field on `sprite`. Every field is validated
-identically on both sides.
+repeats: a surface wider than its own art is a one-cell object placed
+once per cell. Every field is validated identically on both sides.
 
 FR128's walkability rule is two-sided: an object with no `collider` must
 carry the `underfoot` tag (`defs/tags/city.toml`, permanent, append-only
@@ -926,11 +922,9 @@ rule above.
   props, generic/floor-modular buildings, and whichever themed folders
   the street kit borrows single props from) maps to one shared
   `ATLAS_SHARED_GROUP` (`"street"`) group; a themed district keeps its
-  own group. A handful of sheet families ship in one flat folder with no
-  further theme-sorter subfolder to derive from (`Room_Builder_subfiles/`
-  is the one this tileset actually uses) -- the folder segment itself is
-  the theme there (`room_builder`), checked before the theme-sorter-root
-  derivation. A theme absent from the table fails the build naming it, and
+  own group. A sheet under `Room_Builder_subfiles/`, with no theme-sorter
+  subfolder of its own, has theme `room_builder`. A theme absent from the
+  table fails the build naming it, and
   so does a table that maps nothing at all to `ATLAS_SHARED_GROUP`, or
   one that maps a theme onto a `character_*` group -- those are reserved
   for the packer's own character-part groups, one per declared part kind

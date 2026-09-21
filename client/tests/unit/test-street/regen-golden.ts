@@ -25,7 +25,12 @@ import {
   SUBWAY_FLOOR,
 } from "../../../src/test-street/fixture";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
-import { lamppostRestY, streetOwnershipIndex, streetWindowDefIds } from "./street-world";
+import {
+  lamppostRestY,
+  streetObjectSources,
+  streetOwnershipIndex,
+  streetWindowDefIds,
+} from "./street-world";
 
 const CODE_BY_NAME: Record<string, number> = Object.fromEntries(
   LAYER_TABLE.map((row) => [row.name, row.code]),
@@ -39,7 +44,13 @@ function rankOf(layer: string): number {
 }
 
 const ownership = streetOwnershipIndex();
-const props = () => buildPropDrawables({ rankOf, ownership, windowDefIds: streetWindowDefIds() });
+const props = () =>
+  buildPropDrawables({
+    rankOf,
+    ownership,
+    windowDefIds: streetWindowDefIds(),
+    objectDefs: streetObjectSources(),
+  });
 
 function orderAt(x: number, y: number, floor: number): string[] {
   const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);

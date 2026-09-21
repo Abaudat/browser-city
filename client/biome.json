@@ -40,7 +40,6 @@
         "!src/render/pixi-visibility.ts",
         "!src/render/pixi-highlight.ts",
         "!src/render/atlas-pages.ts",
-        "!src/render/def-texture.ts",
         "!src/render/appearance/composite-pages.ts",
         "!src/render/appearance/appearance-texture.ts"
       ],

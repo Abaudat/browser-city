@@ -37,6 +37,7 @@ import {
   lamppostRestY,
   shopfrontExitRestY,
   streetMovementConfig,
+  streetObjectSources,
   streetOwnershipIndex,
   streetWindowDefIds,
   streetWorldIndex,
@@ -67,6 +68,7 @@ function buildStreetProps() {
     rankOf,
     ownership: streetOwnershipIndex(),
     windowDefIds: streetWindowDefIds(),
+    objectDefs: streetObjectSources(),
   });
 }
 

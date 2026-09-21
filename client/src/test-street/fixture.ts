@@ -64,7 +64,6 @@ interface StreetPropBase {
   readonly y: number;
   readonly floor: number;
   readonly layer: StreetLayer;
-  readonly footprint?: StreetFootprint;
   readonly solid?: true;
   /** For a `wallTile`/`wallStub` prop only: which run this wall segment
    * belongs to -- a north/south (front/back) run is `"horizontal"`, an
@@ -84,7 +83,12 @@ interface StreetPropBase {
  * `render/atlas-pages.ts`'s `AtlasPageLoader` (`render/def-texture.ts`).
  * Never carries `assetKey`/`sourceCol`/`sourceRow` -- a `defId` row that
  * could still name a raw asset is exactly the shortcut this story
- * retires. */
+ * retires. Never carries `footprint` either (Tim's direction, cycle 2):
+ * its extent comes only from the placed object's own `object_def` --
+ * `buildPropDrawables` reads `width`/`height` straight off the resolved
+ * def, so a def that changes its own width (`shop_window`, story 2.13)
+ * can never leave a hand-restated footprint quietly out of step with it
+ * again. */
 export interface StreetPropByDef extends StreetPropBase {
   readonly defId: number;
 }
@@ -92,9 +96,12 @@ export interface StreetPropByDef extends StreetPropBase {
 /** A prop placed by a hand-picked asset key into `scene.ts`'s own raw
  * `ModernTileset/` texture table -- street-only harness geometry with no
  * real `defs/objects` entry behind it (ground tiles, the shops' plain
- * wall runs, the poster, loose furniture). Never carries `defId`. */
+ * wall runs, the poster, loose furniture). Never carries `defId`. Only
+ * this variant may declare its own `footprint`: there is no `object_def`
+ * for `buildPropDrawables` to read one from instead. */
 export interface StreetPropByAsset extends StreetPropBase {
   readonly assetKey: string;
+  readonly footprint?: StreetFootprint;
 }
 
 /** One placed prop in the street scene -- a discriminated union (Tim's/
@@ -158,20 +165,21 @@ const INTERIOR_Y1 = 5;
 // Shop A: west wall, four interior columns, then the party wall it shares
 // with shop B (Artie's direction: the shared wall line has no gap and no
 // doubled wall -- shop B declares no west wall of its own; this column is
-// it). Every front run is door, then a `WINDOW_WIDTH`-wide window, then a
-// full-height wall pier at the far corner (Artie's cycle-2 direction: a
-// window must never run straight into the corner with no wall pier
-// between it and the next building, or the two shopfronts blur into one
-// continuous glazed strip) -- `DOOR_X_A`/`DOOR_X_B` are the only two
-// numbers hand-picked below; everything else (window position, pier
-// position, `PLAYER_START`, `LAMPPOST_CELL`) is derived from them, never
-// a second hand-patched literal.
+// it). Every front run is door, then a window (`shop_window`'s own def
+// `width`, story 2.13: three cells, read by `buildPropDrawables` straight
+// off the def, never restated here), then a full-height wall pier at the
+// far corner (Artie's cycle-2 direction: a window must never run straight
+// into the corner with no wall pier between it and the next building, or
+// the two shopfronts blur into one continuous glazed strip) --
+// `DOOR_X_A`/`DOOR_X_B` are the only two numbers hand-picked below;
+// everything else (window position, pier position, `PLAYER_START`,
+// `LAMPPOST_CELL`) is derived from them, never a second hand-patched
+// literal.
 const WEST_WALL_X = 3;
 const PARTY_WALL_X = 8;
 const INTERIOR_X0_A = 4;
 const DOOR_X_A = WEST_WALL_X + 1;
 const WINDOW_X_A = DOOR_X_A + 1;
-const WINDOW_WIDTH = 3;
 
 // Shop B: starts immediately east of the party wall, its own four
 // interior columns, its own east wall.
@@ -584,23 +592,23 @@ export const STREET_PROPS: readonly StreetProp[] = [
     wallOrientation: "horizontal",
   },
   // The shop window (FR121): a real `defs/objects` wall tile, `window =
-  // true`, `WINDOW_WIDTH` cells wide starting right after the door --
-  // its own def art (story 2.13: `ME_Singles_Office_16x16_Window_1_
+  // true`, three cells wide starting right after the door -- its own def
+  // art (story 2.13: `ME_Singles_Office_16x16_Window_1_
   // Middle_Modular.png`, 48x32px, the def's own `width = 3`) is exactly
-  // that many tiles wide, so the footprint matches the art exactly and
-  // draws through `render/atlas-pages.ts`'s `AtlasPageLoader`, never
-  // overhanging over the door (Artie's direction). It stops one cell
-  // short of the party wall -- id 40 below is that last cell, a full
-  // wall pier, so the window never runs straight into the corner (Artie's
-  // cycle-2 direction). Its collider comes from `defs/`, so it is placed
-  // by `defId` like the lamppost, never `solid: true`.
+  // that many tiles wide, and `buildPropDrawables` reads that width
+  // straight off the def (Tim's direction, cycle 2), so the footprint can
+  // never fall out of step with the art again -- never overhanging over
+  // the door (Artie's direction). It stops one cell short of the party
+  // wall -- id 40 below is that last cell, a full wall pier, so the
+  // window never runs straight into the corner (Artie's cycle-2
+  // direction). Its collider comes from `defs/`, so it is placed by
+  // `defId` like the lamppost, never `solid: true`.
   {
     id: 6n,
     x: WINDOW_X_A,
     y: SOUTH_WALL_Y,
     floor: 0,
     layer: "walls",
-    footprint: { width: WINDOW_WIDTH, height: 1 },
     defId: WINDOW_DEF_ID,
   },
   // West wall: the near/far occlusion worked example -- decomposed
@@ -661,16 +669,17 @@ export const STREET_PROPS: readonly StreetProp[] = [
   },
 
   // The counter (FR125's worked example): real art is 48x64px, exactly
-  // 3 tiles wide. Story 1.9: placed by `defId` rather than `solid`, so
-  // both its collider and its FR148 reach rect come from `defs/` -- the
-  // wide interaction target, reachable only from the customer side.
+  // 3 tiles wide -- `buildPropDrawables` reads that width straight off
+  // the def, never a hand-restated `footprint` (Tim's direction, cycle
+  // 2). Story 1.9: placed by `defId` rather than `solid`, so both its
+  // collider and its FR148 reach rect come from `defs/` -- the wide
+  // interaction target, reachable only from the customer side.
   {
     id: 8n,
     x: INTERIOR_X0_A,
     y: INTERIOR_Y0,
     floor: 0,
     layer: "furniture",
-    footprint: { width: 3, height: 1 },
     defId: SHOP_COUNTER_DEF_ID,
   },
 
@@ -742,7 +751,6 @@ export const STREET_PROPS: readonly StreetProp[] = [
     y: SOUTH_WALL_Y,
     floor: 0,
     layer: "walls",
-    footprint: { width: WINDOW_WIDTH, height: 1 },
     defId: WINDOW_DEF_ID,
   },
   {
@@ -1131,7 +1139,11 @@ export function streetColliderSources(
 ): ReadonlyMap<number, ColliderSource> {
   const sources = new Map<number, ColliderSource>();
   for (const prop of STREET_PROPS) {
-    if (!prop.solid) continue;
+    // `solid` is street-only geometry (`StreetPropBase`'s own doc
+    // comment) -- a `defId` row's collision comes from `defs/` instead,
+    // read elsewhere, so it never reaches this branch and never needs a
+    // `footprint` here.
+    if (isDefStreetProp(prop) || !prop.solid) continue;
     const { width, height } = prop.footprint ?? { width: 1, height: 1 };
     sources.set(streetDefId(prop.id), {
       width,
@@ -1197,6 +1209,25 @@ export function streetPlacedRows(): readonly PlacedObject[] {
   return rows;
 }
 
+/** A `StreetProp`'s own width, whichever variant it is (story 2.13, Tim's
+ * direction, cycle 2): a `defId` row's own width is read from the
+ * resolved def, never a hand-restated `footprint` it cannot carry;
+ * `objectDefs` is the same shape `buildPropDrawables` already takes
+ * (`world/object-defs.ts`'s `objectDefsById`, or the committed
+ * `defs.json` in a test). Throws naming the def when `objectDefs` has no
+ * entry for it. */
+function streetPropWidth(
+  prop: StreetProp,
+  objectDefs: ReadonlyMap<number, { readonly width: number; readonly height: number }>,
+): number {
+  if (!isDefStreetProp(prop)) return prop.footprint?.width ?? 1;
+  const source = objectDefs.get(prop.defId);
+  if (!source) {
+    throw new Error(`streetPropWidth: objectDefs has no entry for defId ${prop.defId}`);
+  }
+  return source.width;
+}
+
 /** Every `furniture` prop that sits directly behind some window wall tile
  * (a real `defs/objects` entry with `window = true`, placed by
  * `WINDOW_DEF_ID`): the same floor, strictly north of that window's own
@@ -1206,19 +1237,23 @@ export function streetPlacedRows(): readonly PlacedObject[] {
  * never a hand-typed id list and never every floor-0 furniture prop
  * regardless of whether a window is actually in front of it, so this set
  * can never pass vacuously and a re-laid street that drops the case fails
- * here rather than only looking wrong on screen. */
-export function furnitureBehindWindows(): readonly bigint[] {
+ * here rather than only looking wrong on screen. `objectDefs` resolves
+ * both the window's and a `defId`-placed furniture prop's (the counter)
+ * own real width -- see [`streetPropWidth`]. */
+export function furnitureBehindWindows(
+  objectDefs: ReadonlyMap<number, { readonly width: number; readonly height: number }>,
+): readonly bigint[] {
   const windows = STREET_PROPS.filter(
     (prop) => isDefStreetProp(prop) && prop.defId === WINDOW_DEF_ID,
   );
   const ids = new Set<bigint>();
   for (const prop of STREET_PROPS) {
     if (prop.layer !== "furniture") continue;
-    const propWidth = prop.footprint?.width ?? 1;
+    const propWidth = streetPropWidth(prop, objectDefs);
     for (const window of windows) {
       if (prop.floor !== window.floor) continue;
       if (prop.y >= window.y) continue;
-      const windowWidth = window.footprint?.width ?? 1;
+      const windowWidth = streetPropWidth(window, objectDefs);
       const overlaps = prop.x < window.x + windowWidth && window.x < prop.x + propWidth;
       if (overlaps) {
         ids.add(prop.id);

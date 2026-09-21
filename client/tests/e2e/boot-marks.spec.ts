@@ -112,29 +112,37 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
 // runs on every client PR (the default `chromium` project), needs no
 // browser-less proxy and no throttling to be reliable.
 //
-// Story 2.13 (Quentin's direction, cycle 2): both budgets are set from a
-// real CI run of this branch, never a local machine -- tight rather than
-// padded: request count is exact (deterministic: the same fixed set of
-// images always loads before player-controllable), bytes carries a 5%
-// margin rounded up to the next 16 KiB (headers only; PNGs are not
-// re-compressed in transit). Measured on `ci.yml`'s own `e2e` job, run
-// 35645657574: 10 requests, 1,347,996 bytes -- ATLAS_BYTES_BUDGET is
-// `1347996 * 1.05` rounded up to the next 16 KiB. Both figures are far
-// below the story 2.6 baseline (115 requests, 3.4 MiB) this replaces,
-// which was never a measurement of this test's own dev-server harness at
-// all -- it borrowed docs/spikes/1.14-boot-budget.md's own "105 requests,
-// ~3.0 MiB" figure, itself a measurement of a different harness entirely
-// (a throttled, production build, not this spec's own `chromium` project
-// against the Vite dev server). Story 2.6/2.13's
-// own atlas rewiring retired four raw `ModernTileset/` imports (`window`,
-// `trashBin`, `bridgeDeck`, `bridgeStairs`) in favour of the shared
-// "street" atlas page every `defId`-placed prop now draws from --
-// re-measure this spike (this comment, not a separate file) the day the
-// boot path's own image set changes again.
-const ATLAS_REQUEST_BUDGET = 10;
+// Story 2.13, cycle 2 (Quentin's direction, finding 2): this measures the
+// full, settled image set the mount actually fetches, never a window
+// bounded by the mark's own timing. A `responseEnd <= playerControllable`
+// filter is a race between the mark and whichever request happens to
+// still be in flight -- pinned exactly it flakes the day a slower runner
+// tips one request across that line, pinned loosely it stops guarding
+// anything. "How much of that set lands before the mark" is
+// `boot-budget.yml`'s own question, not this deterministic gate's --
+// `page.waitForLoadState("networkidle")` after the mark is what settles
+// the set before it is ever counted, so request count is asserted exactly,
+// never merely bounded, and bytes still carries a 5% margin (headers only;
+// PNGs are not re-compressed in transit).
+//
+// PROVISIONAL-PENDING-CI: carried over from the previous (timing-windowed)
+// measurement while this harness change is proven out locally -- re-set
+// from a real `ci.yml` `e2e` run of *this* commit before this PR is asked
+// to be reviewed again (Quentin's direction: never a placeholder or a
+// number this exact harness did not itself measure). 10 requests,
+// 1,347,996 bytes -- ATLAS_BYTES_BUDGET is that byte figure times 1.05,
+// rounded up to the next 16 KiB. Both are far below the story 2.6 baseline
+// (115 requests, 3.4 MiB) this replaces, which was never a measurement of
+// this test's own dev-server harness at all -- it borrowed docs/spikes/
+// 1.14-boot-budget.md's own "105 requests, ~3.0 MiB" figure, itself a
+// measurement of a different harness entirely (a throttled, production
+// build, not this spec's own `chromium` project against the Vite dev
+// server). Re-measure this spike (this comment, not a separate file) the
+// day the boot path's own image set changes again.
+const ATLAS_REQUEST_COUNT = 10;
 const ATLAS_BYTES_BUDGET = Math.ceil((1_347_996 * 1.05) / (16 * 1024)) * (16 * 1024);
 
-test("the atlas request count and byte total before player-controllable stay inside budget (NFR1)", async ({
+test("the atlas request count and byte total the mount actually fetches, once settled, stay inside budget (NFR1)", async ({
   page,
 }, testInfo) => {
   await page.goto("/");
@@ -143,12 +151,14 @@ test("the atlas request count and byte total before player-controllable stay ins
     undefined,
     { timeout: 30_000 },
   );
+  // The full, settled set: waited for after the mark, never a filter on
+  // Resource Timing entries by the mark's own timestamp (see the comment
+  // above this test).
+  await page.waitForLoadState("networkidle");
 
   const { requestCount, bytes, urls } = await page.evaluate(() => {
-    const playerControllable = performance.getEntriesByName("bc-boot:player-controllable")[0]
-      ?.startTime as number;
     const images = (performance.getEntriesByType("resource") as PerformanceResourceTiming[]).filter(
-      (e) => /\.(png|jpe?g|webp)$/i.test(e.name) && e.responseEnd <= playerControllable,
+      (e) => /\.(png|jpe?g|webp)$/i.test(e.name),
     );
     return {
       requestCount: images.length,
@@ -171,8 +181,8 @@ test("the atlas request count and byte total before player-controllable stay ins
 
   expect(
     requestCount,
-    `atlas request count grew to ${requestCount}, over the ${ATLAS_REQUEST_BUDGET}-request budget -- re-measure this spike (this file's own comment) if this is deliberate. Fetched:\n${urls.join("\n")}`,
-  ).toBeLessThanOrEqual(ATLAS_REQUEST_BUDGET);
+    `atlas request count is ${requestCount}, not the ${ATLAS_REQUEST_COUNT} this deterministic set always settles to -- re-measure this spike (this file's own comment) if this is a deliberate change to the image set the mount fetches. Fetched:\n${urls.join("\n")}`,
+  ).toBe(ATLAS_REQUEST_COUNT);
   expect(
     bytes,
     `atlas bytes grew to ${(bytes / 1024 / 1024).toFixed(2)} MiB, over the ${(ATLAS_BYTES_BUDGET / 1024 / 1024).toFixed(2)} MiB budget -- re-measure this spike (this file's own comment) if this is deliberate. Fetched:\n${urls.join("\n")}`,

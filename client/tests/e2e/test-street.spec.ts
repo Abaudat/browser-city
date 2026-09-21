@@ -85,6 +85,7 @@ import {
 } from "../../src/test-street/fixture";
 import {
   committedDefs,
+  streetObjectSources,
   streetOwnershipIndex,
   streetWalkInputs,
   streetWindowDefIds,
@@ -370,6 +371,7 @@ function expectedOrderFor(x: number, y: number, floor: number): string[] {
     rankOf,
     ownership,
     windowDefIds: streetWindowDefIds(),
+    objectDefs: streetObjectSources(),
   });
   const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
   return sortAcrossFloors([...props, player], (d) => d).map((d) => d.stableId.toString());
@@ -789,7 +791,9 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // never every floor-0 furniture prop regardless of whether a window
   // actually sits in front of it, which would pass vacuously on a
   // re-laid street.
-  const furnitureBehindTheWindow = furnitureBehindWindows().map((id) => id.toString());
+  const furnitureBehindTheWindow = furnitureBehindWindows(streetObjectSources()).map((id) =>
+    id.toString(),
+  );
   expect(furnitureBehindTheWindow.length).toBeGreaterThan(0);
   for (const id of furnitureBehindTheWindow) {
     expect(outsideVisibility[id]).not.toBe("hidden");

@@ -41,7 +41,7 @@ import {
   countBoundAtlasPages,
 } from "../render/atlas-pages";
 import { type Camera, computeCamera, worldPxFromClient } from "../render/camera";
-import { defCellTexture, objectDefById } from "../render/def-texture";
+import { buildObjectDefIndex, objectDefById } from "../render/def-texture";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -503,21 +503,29 @@ function textureFor(assetKey: string, textures: ReadonlyMap<string, Texture>): T
 }
 
 /** One drawable's own real texture (story 2.13): a `defId` drawable draws
- * only through `render/def-texture.ts`'s `defCellTexture`, resolved
- * through `AtlasPageLoader` -- never a `ModernTileset/` import; an
- * `assetKey` drawable keeps drawing from `scene.ts`'s own raw texture
- * table via `sliceTexture`, exactly as before. The one place this file
- * dispatches on the `PropDrawable` union's own discriminant. */
+ * only through `AtlasPageLoader.objectCellTexture` -- never a
+ * `ModernTileset/` import; an `assetKey` drawable keeps drawing from
+ * `scene.ts`'s own raw texture table via `sliceTexture`, exactly as
+ * before. The one place this file dispatches on the `PropDrawable`
+ * union's own discriminant. `objectDefIndex` is built once at mount
+ * (Tim's direction, cycle 2) -- never a fresh linear `find` per drawable. */
 function resolvePropTexture(
   drawable: PropDrawable,
   defs: VerifiedDefs,
+  objectDefIndex: ReturnType<typeof buildObjectDefIndex>,
   atlasPageLoader: AtlasPageLoader,
   textures: ReadonlyMap<string, Texture>,
   tileSizePx: number,
 ): Promise<Texture> {
   if (isDefPropDrawable(drawable)) {
-    const object = objectDefById(defs, drawable.defId);
-    return defCellTexture(defs, object, atlasPageLoader, drawable.sourceCol, tileSizePx);
+    const object = objectDefById(objectDefIndex, drawable.defId);
+    return atlasPageLoader.objectCellTexture(
+      defs,
+      object,
+      drawable.sourceCol,
+      drawable.sourceRow,
+      tileSizePx,
+    );
   }
   const base = textureFor(drawable.assetKey, textures);
   return Promise.resolve(sliceTexture(base, drawable, tileSizePx));
@@ -532,12 +540,20 @@ function createSprite(texture: Texture): Sprite {
   return sprite;
 }
 
-/** The key `SCREEN_Y_NUDGE_PX` looks a drawable's own screen-space nudge
- * up by -- only an `assetKey` drawable can ever have one (`"glass"`
- * today); a `defId` drawable's own def id can never collide with an
- * asset key string, so this always misses cleanly for one, exactly like
- * every other `assetKey` this table does not name. */
-function spriteNudgeKey(drawable: PropDrawable): string {
+/** `SCREEN_Y_NUDGE_PX`'s own screen-space nudge, in pixels -- structurally
+ * unreachable from a `defId` drawable (Tim's direction, cycle 2: not
+ * merely "misses today"), so no `"def:<id>"` entry could ever apply one
+ * to a def row: an `assetKey` drawable looks its own key up in the
+ * table; a `defId` drawable is never even offered the chance to. */
+function assetNudgePx(drawable: PropDrawable): number {
+  return isDefPropDrawable(drawable) ? 0 : (SCREEN_Y_NUDGE_PX[drawable.assetKey] ?? 0);
+}
+
+/** A debug-only label for a drawable (`PoolEntry.label`,
+ * `assertNoOverhangBeyondStorey`'s own failure message) -- never read to
+ * pick a texture or a nudge; `resolvePropTexture`/`assetNudgePx` do that
+ * from the drawable itself. */
+function debugLabel(drawable: PropDrawable): string {
   return isDefPropDrawable(drawable) ? `def:${drawable.defId}` : drawable.assetKey;
 }
 
@@ -548,11 +564,11 @@ function positionSprite(
   floor: number,
   tileSizePx: number,
   storeyHeightPx: number,
-  nudgeKey: string,
+  nudgePx: number,
 ): void {
   const pos = screenPositionPx(worldX, worldY, floor, tileSizePx, storeyHeightPx);
   sprite.x = pos.x;
-  sprite.y = pos.y + (SCREEN_Y_NUDGE_PX[nudgeKey] ?? 0);
+  sprite.y = pos.y + nudgePx;
 }
 
 /** Mount-time geometry guard (Artie's direction): a drawable's art may
@@ -586,8 +602,9 @@ export function assertNoOverhangBeyondStorey(
 interface PoolEntry extends OrderedMember<PropDrawable>, VisibilityMember<PropDrawable> {
   /** A debug-only label (Artie's `assertNoOverhangBeyondStorey` failure
    * message) -- the drawable's own `assetKey`, or `def:<id>` for a
-   * `defId` drawable (`spriteNudgeKey`'s own idiom). Never read to pick a
-   * texture; `resolvePropTexture` does that from the drawable itself. */
+   * `defId` drawable (`debugLabel`'s own idiom). Never read to pick a
+   * texture or a nudge; `resolvePropTexture`/`assetNudgePx` do that from
+   * the drawable itself. */
   readonly label: string;
   readonly view: Sprite;
 }
@@ -786,6 +803,9 @@ export async function mountStreetScene(
   // `resolvePropTexture`. This loader is the one place a packed atlas
   // page is ever fetched.
   const atlasPageLoader = new AtlasPageLoader(atlasBaseUrl);
+  // Built once (Tim's direction, cycle 2): every `defId` lookup below goes
+  // through this index, never a fresh linear `Array.find` per drawable.
+  const objectDefIndex = buildObjectDefIndex(defs);
 
   const world = new Container();
   // The camera/viewport story (Quentin's direction): zoom is set here,
@@ -902,6 +922,7 @@ export async function mountStreetScene(
     rankOf: (layer) => rankOf(layerCodeByName(layer)),
     ownership,
     windowDefIds,
+    objectDefs,
   }).map((d) =>
     isDefPropDrawable(d) ? d : { ...d, assetKey: wallAssetOf(d.assetKey, d.wallOrientation) },
   );
@@ -911,6 +932,7 @@ export async function mountStreetScene(
       const texture = await resolvePropTexture(
         drawable,
         defs,
+        objectDefIndex,
         atlasPageLoader,
         textures,
         tileSizePx,
@@ -923,9 +945,9 @@ export async function mountStreetScene(
         drawable.floor,
         tileSizePx,
         storeyHeightPx,
-        spriteNudgeKey(drawable),
+        assetNudgePx(drawable),
       );
-      return { drawable, view: sprite, label: spriteNudgeKey(drawable) };
+      return { drawable, view: sprite, label: debugLabel(drawable) };
     }),
   );
 
@@ -969,7 +991,7 @@ export async function mountStreetScene(
   const playerFrames = await appearanceCache.acquire(playerTuple);
   const playerSprite = new Sprite(playerFrames.frame("idle", "down", 0));
   playerSprite.anchor.set(0.5, 1);
-  positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, "player");
+  positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, 0);
   const playerEntry: PoolEntry = {
     drawable: playerDrawable,
     view: playerSprite,
@@ -1316,7 +1338,7 @@ export async function mountStreetScene(
     onPlayerMove?.(walk.x, walk.y, walk.floor);
 
     updatePlayerDrawable(playerDrawable, walk.x, walk.y, walk.floor);
-    positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, "player");
+    positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, 0);
 
     // Only re-sort when the player's own sort key actually moved to a
     // new sub-tile unit (Tim's direction): a street of static props

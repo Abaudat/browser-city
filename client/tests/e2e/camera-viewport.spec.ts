@@ -378,10 +378,10 @@ test.describe("camera/viewport (NFR48)", () => {
       codes: ["ArrowUp"] as const,
       // Back through the door, the only gap in shop A's own front wall
       // (the shopfront window's own collision now spans its real,
-      // def-declared width, `WINDOW_WIDTH` cells, story 2.13 -- x = 7.3
-      // (this case's own former setup) now falls inside it): rests
-      // already start on this same column (`PLAYER_START.x`), so no
-      // further x setup is needed before turning north.
+      // def-declared width, three cells, story 2.13 -- x = 7.3 (this
+      // case's own former setup) now falls inside it): rests already
+      // start on this same column (`PLAYER_START.x`), so no further x
+      // setup is needed before turning north.
       setup: [REST_DOWN_TO_PAVEMENT] as const,
     },
     {

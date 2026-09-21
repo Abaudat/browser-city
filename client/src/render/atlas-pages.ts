@@ -12,7 +12,7 @@
 
 import { Assets, type Container, Rectangle, Sprite, Texture, type TextureSource } from "pixi.js";
 import type { AtlasPageDef, Defs, ObjectDef } from "../defs/types";
-import { atlasFrameRect } from "./atlas-frame";
+import { atlasFrameRect, defCellFrameRect } from "./atlas-frame";
 import { atlasPageUrl } from "./atlas-url";
 
 /**
@@ -36,6 +36,15 @@ export class AtlasPageLoader {
   private readonly baseUrl: string;
   private readonly pages = new Map<string, Promise<Texture>>();
   private readonly objectTextures = new Map<number, Promise<Texture>>();
+  /** Story 2.13 (Tim's direction, cycle 2): one shared cropped `Texture`
+   * per `(object id, column)`, next to [`objectTextures`] above -- a
+   * `defId`-placed prop's own per-cell texture is built at most once no
+   * matter how many placements of the same def (four `bridge_deck`
+   * placements share one; a generated city sharing one def across many
+   * placed cells shares one per column that def ever needs), never a
+   * fresh `Texture` allocated on every call the way `defCellTexture` used
+   * to. */
+  private readonly objectCellTextures = new Map<string, Promise<Texture>>();
   /** Every page `TextureSource` this loader has actually resolved --
    * populated only once a page's own load settles, never while pending
    * (Quentin's direction: the mounted-scene page count must read what
@@ -126,6 +135,62 @@ export class AtlasPageLoader {
         throw err;
       });
     this.objectTextures.set(object.id, promise);
+    return promise;
+  }
+
+  /**
+   * One def-placed prop's own per-cell texture (story 2.13, Tim's
+   * direction cycle 2): the def's whole atlas-cropped sprite
+   * ([`objectTexture`], already cached above), further cropped to the
+   * exact `tileSizePx`-wide column `sourceCol` names
+   * ([`defCellFrameRect`]'s own pure math, `atlas-frame.ts`) -- cached
+   * per `(object id, column)`, shared and never destroyed by an
+   * individual caller, the same shape [`objectTexture`]'s own cache
+   * already has. A rejected load is evicted the same way
+   * [`objectTexture`]'s own cache is (Artie's direction): one dropped
+   * page request must not permanently hide this cell for the rest of the
+   * session.
+   *
+   * `object.height` is checked here, not in `defCellFrameRect` (never
+   * silent, Tim's direction): every real `defs/objects` entry is one row
+   * tall today, so `sourceRow` is accepted for a future caller that slices
+   * a taller def's own rows properly, but this throws naming the object
+   * rather than silently drawing only its own top row on every row the
+   * day a taller one exists.
+   */
+  objectCellTexture(
+    defs: Defs,
+    object: ObjectDef,
+    sourceCol: number,
+    _sourceRow: number,
+    tileSizePx: number,
+  ): Promise<Texture> {
+    if (object.height > 1) {
+      return Promise.reject(
+        new Error(
+          `atlas-pages: object '${object.key}' is ${object.height} cells tall -- per-cell ` +
+            "slicing along the vertical axis is not supported yet",
+        ),
+      );
+    }
+    const key = `${object.id}:${sourceCol}`;
+    let promise = this.objectCellTextures.get(key);
+    if (promise) return promise;
+
+    promise = this.objectTexture(defs, object)
+      .then((base) => {
+        const frame = defCellFrameRect(base.frame, sourceCol, tileSizePx);
+        return new Texture({
+          source: base.source,
+          frame: new Rectangle(frame.x, frame.y, frame.width, frame.height),
+          dynamic: false,
+        });
+      })
+      .catch((err: unknown) => {
+        this.objectCellTextures.delete(key);
+        throw err;
+      });
+    this.objectCellTextures.set(key, promise);
     return promise;
   }
 }

@@ -10,7 +10,14 @@ import { type Drawable, setDrawableFloor, setDrawablePosition } from "../render/
 import { toSortUnits } from "../render/sort-units";
 import { isNearSideWall, type VisibilityDrawable } from "../render/visibility";
 import { NO_OWNER, type OwnershipIndex } from "../world/ownership";
-import { isDefStreetProp, PLAYER_STABLE_ID, STREET_PROPS, type StreetLayer } from "./fixture";
+import {
+  isDefStreetProp,
+  PLAYER_STABLE_ID,
+  STREET_PROPS,
+  type StreetFootprint,
+  type StreetLayer,
+  type StreetPropByDef,
+} from "./fixture";
 
 /** Every field a `Drawable` carries regardless of where its art comes
  * from, plus what `render/visibility.ts` needs to decide its
@@ -77,6 +84,29 @@ export interface BuildPropDrawablesOptions {
   readonly rankOf: (layer: StreetLayer) => number;
   readonly ownership: OwnershipIndex;
   readonly windowDefIds: ReadonlySet<number>;
+  /** Real `defs/objects` footprints (story 2.13, Tim's direction, cycle
+   * 2): a `defId` row's own extent is read from here, from the resolved
+   * def's own `width`/`height`, never a hand-restated `footprint` field
+   * on the row itself -- `scene.ts`'s own `objectDefs` (`world/object-defs.
+   * ts`'s `objectDefsById`), so this can never fall out of step with the
+   * def's own real art the way a restated number could. */
+  readonly objectDefs: ReadonlyMap<number, { readonly width: number; readonly height: number }>;
+}
+
+/** A `defId` row's own extent, read from the resolved def -- throws
+ * naming the def when `objectDefs` has no entry for it, rather than
+ * silently falling back to a 1x1 footprint for a row this street placed
+ * by a real id (Tim's direction: never a hand-restated number, and never
+ * a silent wrong one either). */
+function defFootprint(
+  prop: StreetPropByDef,
+  objectDefs: BuildPropDrawablesOptions["objectDefs"],
+): StreetFootprint {
+  const source = objectDefs.get(prop.defId);
+  if (!source) {
+    throw new Error(`buildPropDrawables: objectDefs has no entry for defId ${prop.defId}`);
+  }
+  return { width: source.width, height: source.height };
 }
 
 const WALLS_LAYER_CODE = layerCodeByName("walls");
@@ -94,12 +124,14 @@ const STUB_LAYER_CODE = layerCodeByName("furniture");
  * (Tim's direction: a generated building must retract correctly with no
  * fixture-only tag to remember). */
 export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDrawable[] {
-  const { rankOf, ownership, windowDefIds } = options;
+  const { rankOf, ownership, windowDefIds, objectDefs } = options;
   const drawables: PropDrawable[] = [];
   for (const prop of STREET_PROPS) {
     const rank = rankOf(prop.layer);
     const layerCode = layerCodeByName(prop.layer);
-    const footprint = prop.footprint ?? { width: 1, height: 1 };
+    const footprint = isDefStreetProp(prop)
+      ? defFootprint(prop, objectDefs)
+      : (prop.footprint ?? { width: 1, height: 1 });
     const isDef = isDefStreetProp(prop);
     const isWindow = isDef && windowDefIds.has(prop.defId);
     const cells = decomposeFootprint({

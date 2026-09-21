@@ -1,40 +1,12 @@
-// Story 2.13, Quentin's direction: the texture-resolution step a
-// `defId`-placed prop draws through, tested against a stubbed loader --
-// no real `pixi.js` decode runtime, the same idiom `atlas-pages.test.ts`
-// already uses. `def-texture.ts` itself is excluded from the coverage
-// gate (needs the real `pixi.js` `Texture`/`Rectangle` constructs this
-// mock stands in for).
-import { describe, expect, it, vi } from "vitest";
+// Story 2.13, Tim's direction (cycle 2): `def-texture.ts` is now pure
+// `defId -> ObjectDef` lookup, no `pixi.js` at all -- the per-cell crop and
+// its own cache moved onto `AtlasPageLoader.objectCellTexture`
+// (`atlas-pages.test.ts` covers that; `atlas-frame.test.ts` covers the pure
+// crop math it shares). This file only proves the index this module builds
+// once per mount, and the named-failure lookup against it.
+import { describe, expect, it } from "vitest";
 import type { Defs, ObjectDef } from "../../../src/defs/types";
-
-vi.mock("pixi.js", () => {
-  class FakeRectangle {
-    constructor(
-      public x: number,
-      public y: number,
-      public width: number,
-      public height: number,
-    ) {}
-  }
-  class FakeTexture {
-    source: unknown;
-    frame?: FakeRectangle;
-    height: number;
-    constructor(opts: { source: unknown; frame?: FakeRectangle; height?: number }) {
-      this.source = opts.source;
-      this.frame = opts.frame;
-      // A whole-object crop's own height is whatever the caller passed in
-      // (the fake page source below); a further per-cell crop (this
-      // module's own `new Texture({ frame, ... })` call) carries no
-      // explicit height of its own, so it inherits the frame's -- exactly
-      // how a real cropped `pixi.js` `Texture` reports `.height`.
-      this.height = opts.height ?? opts.frame?.height ?? 0;
-    }
-  }
-  return { Rectangle: FakeRectangle, Texture: FakeTexture };
-});
-
-const { defCellTexture, objectDefById } = await import("../../../src/render/def-texture");
+import { buildObjectDefIndex, objectDefById } from "../../../src/render/def-texture";
 
 function objectDef(overrides: Partial<ObjectDef> = {}): ObjectDef {
   return {
@@ -47,94 +19,29 @@ function objectDef(overrides: Partial<ObjectDef> = {}): ObjectDef {
   } as unknown as ObjectDef;
 }
 
-const TILE_SIZE_PX = 16;
+describe("buildObjectDefIndex", () => {
+  it("keys every defs/objects entry by its own id", () => {
+    const a = objectDef({ id: 5 });
+    const b = objectDef({ id: 7, key: "bridge_deck" });
+    const defs = { objects: [a, b] } as unknown as Defs;
 
-describe("objectDefById", () => {
-  it("finds the object a defId names", () => {
-    const object = objectDef({ id: 7 });
-    const defs = { objects: [object] } as unknown as Defs;
-    expect(objectDefById(defs, 7)).toBe(object);
-  });
+    const index = buildObjectDefIndex(defs);
 
-  it("throws naming the id when defs/ has no such object", () => {
-    const defs = { objects: [] } as unknown as Defs;
-    expect(() => objectDefById(defs, 42)).toThrow(/42/);
+    expect(index.get(5)).toBe(a);
+    expect(index.get(7)).toBe(b);
+    expect(index.size).toBe(2);
   });
 });
 
-describe("defCellTexture", () => {
-  it("resolves every defId drawable through the loader's own objectTexture", async () => {
-    const object = objectDef();
-    const defs = { objects: [object] } as unknown as Defs;
-    const loader = {
-      objectTexture: vi
-        .fn()
-        .mockResolvedValue({ source: "page-a", frame: { x: 0, y: 0, height: 32 } }),
-    };
-
-    await defCellTexture(defs, object, loader, 0, TILE_SIZE_PX);
-
-    expect(loader.objectTexture).toHaveBeenCalledWith(defs, object);
+describe("objectDefById", () => {
+  it("finds the object a defId names in an already-built index", () => {
+    const object = objectDef({ id: 7 });
+    const index = buildObjectDefIndex({ objects: [object] } as unknown as Defs);
+    expect(objectDefById(index, 7)).toBe(object);
   });
 
-  // Real placements are almost never at the page's own (0, 0) -- the shop
-  // counter alone gets that spot; every other object's own whole-sprite
-  // crop starts somewhere else on the shared page. Both fixtures below
-  // place their own base texture's `frame` away from the origin
-  // (`x: 87, y: 1`, a real measured `shop_window` placement) so a crop
-  // that silently drops that offset and reads from the page's own origin
-  // instead -- cropping whatever neighbouring object the packer happened
-  // to place there -- fails here, not only on a real mounted scene.
-  const PAGE_OFFSET = { x: 87, y: 1 };
-
-  it("a one-cell def (the repeat case) yields, per cell, a frame of exactly one tile from the same page source, offset by the object's own page placement -- four placements, one TextureSource, four identical frames", async () => {
-    const deckDef = objectDef({ id: 7, key: "bridge_deck", width: 1, height: 1 });
-    const defs = { objects: [deckDef] } as unknown as Defs;
-    const pageSource = { name: "street-page" };
-    const loader = {
-      objectTexture: vi
-        .fn()
-        .mockResolvedValue({ source: pageSource, frame: { ...PAGE_OFFSET, height: 16 } }),
-    };
-
-    const frames = await Promise.all(
-      [0, 0, 0, 0].map(() => defCellTexture(defs, deckDef, loader, 0, TILE_SIZE_PX)),
-    );
-
-    for (const frame of frames) {
-      expect(frame.source).toBe(pageSource);
-      expect(frame.frame).toEqual({
-        x: PAGE_OFFSET.x,
-        y: PAGE_OFFSET.y,
-        width: TILE_SIZE_PX,
-        height: 16,
-      });
-    }
-    // The loader itself is what caches by object id (Artie's direction,
-    // `atlas-pages.ts`) -- this module never duplicates that cache, so a
-    // real `AtlasPageLoader` calls the network at most once regardless of
-    // how many times this function is asked for the same def.
-  });
-
-  it("a wide def (the slice case) yields, per cell, a distinct whole-tile frame from the same page source, each offset by the object's own page placement", async () => {
-    const windowDef = objectDef({ id: 5, key: "shop_window", width: 3, height: 1 });
-    const defs = { objects: [windowDef] } as unknown as Defs;
-    const pageSource = { name: "street-page" };
-    const loader = {
-      objectTexture: vi
-        .fn()
-        .mockResolvedValue({ source: pageSource, frame: { ...PAGE_OFFSET, height: 32 } }),
-    };
-
-    const frames = await Promise.all(
-      [0, 1, 2].map((col) => defCellTexture(defs, windowDef, loader, col, TILE_SIZE_PX)),
-    );
-
-    expect(frames.map((f) => f.frame)).toEqual([
-      { x: PAGE_OFFSET.x, y: PAGE_OFFSET.y, width: TILE_SIZE_PX, height: 32 },
-      { x: PAGE_OFFSET.x + 16, y: PAGE_OFFSET.y, width: TILE_SIZE_PX, height: 32 },
-      { x: PAGE_OFFSET.x + 32, y: PAGE_OFFSET.y, width: TILE_SIZE_PX, height: 32 },
-    ]);
-    for (const frame of frames) expect(frame.source).toBe(pageSource);
+  it("throws naming the id when the index has no such object", () => {
+    const index = buildObjectDefIndex({ objects: [] } as unknown as Defs);
+    expect(() => objectDefById(index, 42)).toThrow(/42/);
   });
 });
