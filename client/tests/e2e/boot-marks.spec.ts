@@ -160,11 +160,15 @@ test("the atlas request count and byte total before player-controllable stay ins
 
   // Quentin's direction: readable from any CI run without a debug push,
   // pass or fail, and an over-budget failure names the offending URLs
-  // rather than only a number.
+  // rather than only a number. Both a `test.info()` annotation (machine-
+  // readable) and a plain `console.log` (visible straight in the `list`
+  // reporter's own captured output, which `ci.yml`'s `e2e` job uses, no
+  // extra tooling needed to view it).
   testInfo.annotations.push(
     { type: "atlas-request-count", description: String(requestCount) },
     { type: "atlas-bytes", description: String(bytes) },
   );
+  console.log(`NFR1: atlas requestCount=${requestCount} bytes=${bytes}`);
 
   expect(
     requestCount,
