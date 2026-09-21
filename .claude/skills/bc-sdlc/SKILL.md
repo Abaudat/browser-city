@@ -1,6 +1,6 @@
 ---
 name: bc-sdlc
-description: 'The Browser City SDLC scripts — how Crew, the leads (tim, derek, quentin, artie) and Scotty write their work onto a task issue, a PR or the board. Use when you are Crew opening a PR or addressing review comments, a lead writing an analysis direction or a review verdict or asking for a task to be created, or Scotty opening the Sprint Demo issue, posting a breaker note, ruling on a lead''s task request, scoping the next sprint, or opening epics and stories from demo feedback.'
+description: 'The Browser City SDLC scripts — how Crew, the leads (tim, derek, quentin, artie) and Scotty write their work onto a task issue, a PR or the board. Use when you are Crew opening a PR or addressing review comments, a lead writing an analysis direction or a review verdict or asking for a task to be created, or Scotty opening the Sprint Demo issue, posting a breaker note, ruling on a lead''s task request, or opening epics and stories (with their blockers) from demo feedback.'
 ---
 
 # bc-sdlc — the scripted SDLC surface
@@ -79,16 +79,24 @@ carries it in one call, so the two are never out of step.
 |---|---|
 | `bash <scripts>/bc-issue.sh write-demo <sprint> <bodyfile>` | Opens the `Sprint <n> Demo` issue with `<bodyfile>` as its body, labels it `demo`, adds it to the board and scopes it into Sprint `<n>`. Prints the new issue number. |
 | `bash <scripts>/bc-comment.sh write-breaker <pr> <bodyfile>` | Posts the breaker comment on the PR with `<bodyfile>` as the note, adds the `breaker` label and assigns Adrian. Prints the new comment id. Exits 1 and writes nothing if a breaker comment already exists. |
-| `bash <scripts>/bc-sprint.sh write-scope <sprint> <story>...` | Moves each story onto Sprint `<n>`, defaulting to `Backlog` any the board has no Status for. Only open, unfinished stories on no sprint count — an epic, the Demo issue or an unknown number is dropped — and so is any story whose epic comes after an epic that still has stories you did not pick. Names what it dropped, and why, on stderr. Prints `{"scoped":[...],"sprint":"Sprint n"}`. Make **one** call with every pick in it. |
 | `bash <scripts>/bc-issue.sh write-epic <n> "<title>" <bodyfile> <priority>` | Opens epic `<n>` with `<bodyfile>` as its preamble, labels it `epic`, puts it on the board in `Backlog` on no sprint, and sets Priority. Prints the new issue number. |
-| `bash <scripts>/bc-issue.sh write-story <epic-issue> <id> "<title>" <bodyfile> <size> <priority> <leads-csv>` | Opens a story, labels it `story` plus one `lead:<role>` per lead in `<leads-csv>` (`-` for none — quentin is always in scope), links it as a sub-issue of `<epic-issue>`, puts it on the board in `Backlog` on no sprint, and sets Size and Priority. Prints the new issue number. |
-| `bash <scripts>/bc-issue.sh epic-context <issue>` | Reads the story's epic and every sibling story with status, size and priority, as JSON. A read, not a write — this is what a task-request ruling is made against. Exits 1 if the story is in no epic. |
+| `bash <scripts>/bc-issue.sh write-story <epic-issue> <id> "<title>" <bodyfile> <size> <priority> <leads-csv> <blocked-by-csv>` | Opens a story, labels it `story` plus one `lead:<role>` per lead in `<leads-csv>` (`-` for none — quentin is always in scope), links it as a sub-issue of `<epic-issue>`, marks it blocked by each issue in `<blocked-by-csv>` (GitHub's native issue dependencies; `-` for none), puts it on the board in `Backlog` on no sprint, and sets Size and Priority. Prints the new issue number. |
+| `bash <scripts>/bc-issue.sh write-blockers <issue> <blocker>...` | Marks an existing story blocked by each `<blocker>` — for a story you have just opened that must land *before* one already on the backlog. Adds only; a blocker stops blocking when it is closed. Prints the issue number. |
+| `bash <scripts>/bc-issue.sh epic-context <issue>` | Reads the story's epic and every sibling story with status, size, priority and open blockers, as JSON. A read, not a write — this is what a task-request ruling is made against. Exits 1 if the story is in no epic. |
 | `bash <scripts>/bc-issue.sh amend-story <issue> <bodyfile> [<size>] [<priority>]` | Appends `<bodyfile>`'s prose to an existing story under an `## Amendment` heading, leaving its original prose and its `<!-- bc:story -->` marker intact, and sets Size / Priority if given. Prints the issue number. |
 | `bash <scripts>/bc-comment.sh resolve-task-request <pr> <role> <outcome> <bodyfile>` | Stamps your ruling on the lead's own task-request comment. `<outcome>` is `DENIED`, `AMENDED` or `CREATED`; `<bodyfile>` is **required** and holds two or three sentences naming what you amended or opened. Exits 1 if that request was already ruled on. |
 
 `<epic-issue>` is the epic's **issue** number, not its epic number. `<size>` is
 one of `XS S M L XL`, `<priority>` one of `Blocker Critical Standard Low`; a
 value outside those lists is exit 2, never a silently unset field.
+`<blocked-by-csv>` and `<blocker>` are **issue** numbers too, and one that does
+not exist is exit 2.
+
+Nobody plans a sprint. The orchestrator starts, from the whole backlog and in
+no epic order, the story with the highest Priority, then the smallest Size,
+that **no open issue blocks**, and puts it on the sprint as it starts it. So a
+story's blockers, priority and size are what decide when it is worked — get
+them right at creation, because a story with no blockers may be started next.
 
 `<bodyfile>` holds your prose only. The scripts write the `### Sprint N Demo`
 / `### Breaker` / `### Task request` / `## Amendment` heading, the
@@ -103,20 +111,20 @@ whose story exists. `amend-story` is the only command here that touches an
 issue somebody else's work already rests on: it appends, never rewrites, so
 the prose the leads pre-registered against stays where it was.
 
-Nothing sets Status, Priority, Size or a sprint but these calls: every one of
-them puts what it creates where it belongs, so never follow one with a board
-edit of your own. `write-epic` and `write-story` deliberately leave their
-issue on **no** sprint — `write-scope` is what scopes work in, later. That
-holds for a story you open on a task-request ruling too: what ties it to the
-work in play is its epic — `write-story` links it there as a sub-issue — not a
+Nothing sets Status, Priority, Size, a blocker or a sprint but these calls:
+every one of them puts what it creates where it belongs, so never follow one
+with a board edit of your own. `write-epic` and `write-story` deliberately
+leave their issue on **no** sprint, and nothing of yours ever puts one there —
+the orchestrator does, when the story is started. That holds for a story you
+open on a task-request ruling too: what ties it to the work in play is its
+epic — `write-story` links it there as a sub-issue — and its blockers, not a
 sprint. Nothing else on the board is yours either: never edit a lead's
 comment, Crew's comment, or the status comment.
 
 ## Exit codes
 
 `0` did it · `1` nothing to do — a breaker comment already exists
-(`write-breaker`), none of the issues you passed was still a candidate
-(`write-scope`), your previous task request is still awaiting a ruling
+(`write-breaker`), your previous task request is still awaiting a ruling
 (`request-task`), or that request was already ruled on
 (`resolve-task-request`) · `2` bad arguments, an unknown
 size/priority/lead/outcome, `crew` calling `request-task`, an empty

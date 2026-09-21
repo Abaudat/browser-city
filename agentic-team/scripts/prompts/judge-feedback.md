@@ -3,7 +3,7 @@ This is your `integrating-feedback` call.
 Sprint Demo issue #{{demo}} has feedback on it from Adrian. You will be given
 the demo body, every human comment on it, and the current backlog (each item
 as an issue number, title, whether it is an epic or a story of one, its
-priority and its size).
+priority, its size and the open issues it is blocked by).
 
 Read `docs/requirements.md` first — the feedback has to land against the
 functional and non-functional requirements that are already written down, not
@@ -31,7 +31,7 @@ and nothing else. `<priority>` is one of `Blocker`, `Critical`, `Standard`,
 Then open each story under its epic:
 
     bash {{scripts}}/bc-issue.sh write-story <epic-issue> <id> "<title>" \
-      <bodyfile> <size> <priority> <leads-csv>
+      <bodyfile> <size> <priority> <leads-csv> <blocked-by-csv>
 
 - `<epic-issue>` is the epic's ISSUE number — the one write-epic printed, or
   the one the backlog list shows for an existing epic. Not the epic number.
@@ -46,14 +46,38 @@ Then open each story under its epic:
 - `<leads-csv>` is the leads whose direction the story needs, e.g.
   `derek,tim`, or `-` for none. Quentin is always in scope and does not need
   listing.
+- `<blocked-by-csv>` is the issue numbers of the open stories that must be
+  merged before this one can be built or verified, e.g. `97,132`, or `-` for
+  none. Think before writing `-`: the team starts, from the whole backlog and
+  in no epic order, whichever story has the highest priority and smallest size
+  **and no open blocker** — so a story with no blockers may be started next,
+  before anything you merely assumed would come first. Name the specific
+  stories whose systems, tables or decisions this one uses, in any epic; do
+  not name an epic, and do not list a story just because its number is lower.
+
+Priority is one scale across the whole backlog, not one per epic, because the
+pick ignores epics: `Blocker` is only for a defect or gap in an increment that
+has already shipped or been demoed, or a fix to the team's own process;
+`Critical` is work on the dependency path to the nearest milestone the team
+has not reached yet — a blocker, direct or indirect, of the next falsification
+point or acceptance walk; `Standard` is the rest of the MVP path; `Low` is
+explicitly optional polish and everything post-MVP. A story is never `Blocker`
+or `Critical` because others wait on it — that is what blockers are for.
+
+If a new story must land **before** a story that already exists — feedback
+that a later story turns out to rest on — say so on the existing story:
+
+    bash {{scripts}}/bc-issue.sh write-blockers <existing-issue> <new-issue> [<issue>...]
+
+It only ever adds blockers; a blocker stops blocking when it is closed.
 
 Rules:
 - Plain markdown in every body file. No preamble, no headings the script
   writes for you, no code fences, no `<!-- bc: -->` markers, no `Closes #`.
 - Both calls put the new issue on the board in `Backlog`, on no sprint. That
-  is correct: `starting-next-sprint` scopes it later. Never set Status,
-  Priority, Size or a sprint yourself, and never create an issue any other
-  way.
+  is correct: nothing is planned into a sprint — a story goes onto one when
+  the team starts it. Never set Status, Priority, Size or a sprint yourself,
+  and never create an issue or a dependency any other way.
 - Base everything on the feedback and the backlog you were given. Do not
   invent work Adrian did not ask for. If the backlog already covers everything
   he raised, or he raised nothing to build, open nothing and say so — an empty

@@ -23,37 +23,48 @@ agentic-team/scripts/
     fake.sh                 BC_FAKE test double: replays JSON, logs writes
 
   bc-budget.sh    LEVEL 2 — the budget gate: available / spent / broken
-  bc-issue.sh     LEVEL 2 — issues: next/current/transition/scope/backlog/demo-*/epics+stories/amend
+  bc-issue.sh     LEVEL 2 — issues: next/current/transition/scope/backlog/demo-*/epics+stories+blockers/amend
   bc-comment.sh    LEVEL 2 — the structured-comment reads and writes
   bc-pr.sh          LEVEL 2 — PRs: open/attach/merge/for-issue/head
-  bc-sprint.sh       LEVEL 2 — sprints: current/next/over/items/close/start/write-scope
+  bc-sprint.sh       LEVEL 2 — sprints: current/next/over/items/close/scope-in
   bc-session.sh       LEVEL 2 — Orca/Claude session lifecycle, and Scotty's sprint session
 
   prompts/        dispatch-*.md (sent into a running role session) and
                   judge-*.md (the jobs sent into Scotty's sprint session)
 
-  Five actions in the flow need judgement rather than derivation, and each is
-  a `judge-*.md` job for Scotty — the agent reduced to those five calls in
-  `.claude/agents/scotty.md`. All five produce an artefact rather than an
-  answer, and all five run through `bc-session.sh scotty`: the rendered
+  Four actions in the flow need judgement rather than derivation, and each is
+  a `judge-*.md` job for Scotty — the agent reduced to those four calls in
+  `.claude/agents/scotty.md`. All four produce an artefact rather than an
+  answer, and all four run through `bc-session.sh scotty`: the rendered
   prompt is sent as a message into Scotty's session for the Sprint in play —
   one Orca terminal per Sprint, in `$BC_SCOTTY_WORKTREE`, that Adrian can
   watch and answer like any role's — and the call returns once he is back at
   his idle prompt. Each job then calls a level-2 `write-*` command itself:
   `judge-demo-summary.md` writes the Sprint Demo body and opens the issue via
   `bc-issue.sh write-demo`, `judge-breaker.md` writes the breaker note and
-  posts it via `bc-comment.sh write-breaker`, `judge-sprint-scope.md` picks
-  the next sprint's stories and moves them via `bc-sprint.sh write-scope`,
+  posts it via `bc-comment.sh write-breaker`,
   `judge-feedback.md` turns Adrian's demo feedback into backlog work via
-  `bc-issue.sh write-epic` / `write-story`, and `judge-task-request.md` rules
+  `bc-issue.sh write-epic` / `write-story` / `write-blockers`, and `judge-task-request.md` rules
   on a lead's mid-review request for work via `bc-issue.sh amend-story` or
   `write-story` — the new story going under the epic of the PR'd issue — then
   stamps the ruling via `bc-comment.sh resolve-task-request`. The judgement
   and the thing carrying it are made in one call, so neither can exist without
   the other; the caller learns what was created by reading the board or the
   PR back once he is done — the Demo issue on that sprint, the breaker
-  comment, the offered stories now on the next sprint — since his reply is
-  not the product.
+  comment — since his reply is not the product.
+
+  Scoping is NOT one of them. There is no sprint planning: whenever no story
+  is active, starting-dev-cycle takes `bc-issue.sh next` — of every open
+  Backlog story on the board, any epic, the one no open issue blocks with the
+  highest Priority, then the smallest Size, then the lowest number — and
+  `bc-sprint.sh scope-in` puts it on the sprint in play as it starts. The
+  rule is a sort, so it is the orchestrator's; what it sorts on is Scotty's:
+  GitHub's native issue dependencies ("blocked by"), Priority and Size, all
+  set when a story is opened. `write-story` therefore takes the story's
+  blockers as a required argument. The team stops only when nothing in the
+  backlog is startable — and if that is because every story left is blocked,
+  the sleep reason says so, since a cycle or a blocker nobody can pick is a
+  stall that otherwise looks exactly like a finished backlog.
 
   `judge-feedback.md` and `judge-task-request.md` have no one artefact to look
   for: each may write an unknown number of things. Both re-read the state
@@ -92,8 +103,8 @@ prints JSON or a bare value on stdout, follows the exit contract below. Four
 of the six — `bc-comment.sh`, `bc-pr.sh`, `bc-issue.sh` and `bc-sprint.sh` —
 are also invoked by the agents themselves (leads writing their
 analysis/review, Crew opening a PR and marking it addressed, Scotty opening
-the Sprint Demo issue, posting the breaker note, scoping the next sprint and
-opening epics and stories from demo feedback), which is what keeps one writer
+the Sprint Demo issue, posting the breaker note and opening epics and
+stories, with their blockers, from demo feedback), which is what keeps one writer
 per comment. That agent-facing subset — and only it — is documented in
 `.claude/skills/bc-sdlc`.
 
@@ -245,7 +256,7 @@ both stdout and `$BC_WAKE_REASON`, then exits with:
 | Code | Meaning | Examples |
 |---|---|---|
 | `0` | acted | `leads-analysed nudged tim,derek on #12`, `merging-pr merged PR #15 for #12` |
-| `1` | slept — nothing to do | `budget-available sleep session=0.91 cap=0.85 resumes=2026-08-30T21:00:00Z`, `demo-active sleep demo #40 awaiting feedback`, `starting-dev-cycle sleep backlog empty` |
+| `1` | slept — nothing to do | `budget-available sleep session=0.91 cap=0.85 resumes=2026-08-30T21:00:00Z`, `demo-active sleep demo #40 awaiting feedback`, `starting-dev-cycle sleep backlog empty`, `starting-dev-cycle sleep 12 Backlog stories, every one blocked by an open issue` |
 | `2` | broken | a level-2 script failed somewhere it shouldn't have — `budget-available broken unparseable rate monitor response: ...` |
 
 Everything else — diagnostics, warnings, subprocess stderr — goes to
@@ -259,6 +270,7 @@ stderr; stdout carries only that one reason line.
 | `BC_NOW=<epoch or ISO timestamp>` | Pins "now" for every sprint/demo-hour/clock decision (`bc-sprint over`, `demo-current`, etc). | unset (real clock) |
 | `BC_WAKE_REASON=<file>` | Where the one-line reason gets written. | `$(bc_state_dir)/wake-reason.txt` — see `lib/paths.sh`; falls back to `${TMPDIR:-$TEMP}/bc-wake-reason.txt` if that can't be resolved. |
 | `BC_ENV_FILE=<file>` | A file of `BC_*=value` lines sourced by every bc-* process — including the ones the role sessions run in their own Orca terminals, which inherit nothing from the orchestrator's environment. The e2e run uses it to point `BC_BASE_BRANCH` at a throwaway base. | `~/.browsercity/env.sh` (absent = defaults) |
+| `BC_ONLY_ISSUE=<issue>` | Narrows `bc-issue.sh next` to that one story. The pick is board-wide, so the e2e run sets it (through `BC_ENV_FILE`) to its throwaway story; without it a run would start whatever real work outranks that story. | unset (whole backlog) |
 | `BC_READY_TIMEOUT_S=<s>` | How long `bc-session spawn`/`start` wait for the new terminal to show Claude's idle prompt (✳ title + `agentIdentity: claude`) before giving up with a warning. | 90 |
 | `BC_CLOSE_RETRIES=<n>` | How many rounds `orca terminal close` gets per pane, two seconds apart, each round trying a plain close and then `--tab`. | 3 |
 | `BC_STOP_TIMEOUT_S=<s>` | How long `bc-session stop-all` keeps closing and re-listing before it reports panes still open as exit 2. Orca refuses to close some busy panes with `terminal_handle_stale` (reliably the oldest Claude pane in a worktree) for up to a minute, then accepts the same call, so stop-all trusts the listing, not the close's answer. | 120 |
@@ -329,8 +341,8 @@ Not part of `run-all.sh`: it drives the real board, repo and Orca. It pushes
 a throwaway `e2e-base` branch from the current HEAD (the task worktree
 branches from HEAD too, so the PR diff is only Crew's work) and points
 `BC_BASE_BRANCH` at it through
-`BC_ENV_FILE`, creates a throwaway parent + sub-issue (`lead:tim`, Sprint =
-current, Backlog, Standard), ticks `orchestrator.sh` every 60 s until the
+`BC_ENV_FILE`, creates a throwaway parent + sub-issue (`lead:tim`, on no sprint, Backlog,
+Standard) and sets `BC_ONLY_ISSUE` to it, ticks `orchestrator.sh` every 60 s until the
 sub-issue is Done (or 60 min), once closes every role terminal at
 `To analyze` to check the next tick resumes each session without
 duplicating it, and then — from an EXIT trap, so Ctrl-C or a timeout also

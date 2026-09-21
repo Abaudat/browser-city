@@ -26,6 +26,16 @@
 # -- is a legitimate outcome, so the Demo issue moves to Reviewed either way
 # and the sprint rolls on the next tick rather than the node retrying forever.
 #
+# `next` is the whole of scoping. There is no sprint planning step: the
+# backlog is one pool, and whenever the team is free the orchestrator starts
+# the story `next` names -- no open blocker, then highest Priority, then
+# smallest Size, then lowest number -- from whichever epic it hangs off. What
+# orders the work is the board's Priority and Size plus GitHub's native issue
+# dependencies, which is why `write-story` takes a story's blockers as a
+# required argument and `write-blockers` exists for a story already open: a
+# story opened without them is one the picker may start before its
+# foundations exist.
+#
 # `epic-context` and `amend-story` serve judging-task-request, where a lead
 # has asked mid-review for work its PR cannot carry. epic-context is the read
 # that makes the ruling possible -- the epic and every sibling story, so
@@ -50,7 +60,7 @@ bc_init
 usage() {
   cat >&2 <<'EOF'
 usage: bc-issue.sh <command> [args]
-  next                        -- highest-priority Backlog issue on this sprint
+  next                        -- the startable story: no open blocker, by priority, then size
   current                     -- the single sub-issue in an active status
   transition <issue> <status> -- set Status (and close on Done)
   scope <issue>                -- comma-joined leads in scope, quentin always
@@ -63,8 +73,10 @@ usage: bc-issue.sh <command> [args]
   integrate-feedback <issue>     -- turn the demo's feedback into backlog work
   write-epic <n> <title> <bodyfile> <priority>
                                  -- Scotty, integrating-feedback: open an epic
-  write-story <epic> <id> <title> <bodyfile> <size> <priority> <leads-csv>
+  write-story <epic> <id> <title> <bodyfile> <size> <priority> <leads-csv> <blocked-by-csv>
                                  -- Scotty, integrating-feedback: open a story
+  write-blockers <issue> <blocker>...
+                                 -- Scotty: mark an existing story blocked by others
   epic-context <issue>           -- judging-task-request: the story's epic and every sibling
   amend-story <issue> <bodyfile> [<size>] [<priority>]
                                  -- Scotty, judging-task-request: fold work into an existing story
@@ -122,6 +134,40 @@ _bc_issue_close_epic_if_last() { # <issue> -> parent number on stdout if closed
   printf '%s' "$parent"
 }
 
+# _bc_issue_blockers <csv-or-dash> <command> -> the blocker numbers, space
+# separated ("-" is none), or exit 2 on anything that is not an issue number.
+_bc_issue_blockers() {
+  local csv="$1" who="$2" b out=()
+  [ "$csv" != "-" ] || return 0
+  local IFS=','
+  for b in $csv; do
+    [ -n "$b" ] || continue
+    b="${b#\#}"
+    case "$b" in
+      ''|*[!0-9]*) echo "bc-issue $who: not an issue number: $b" >&2; return 2 ;;
+    esac
+    out+=("$b")
+  done
+  IFS=' '
+  printf '%s' "${out[*]}"
+}
+
+# _bc_issue_block <issue> <space-separated blockers> <command> -- marks <issue>
+# blocked by each. A blocker that does not resolve to an issue is exit 2, loud:
+# a dependency silently not written is a story the picker starts too early.
+_bc_issue_block() {
+  local issue="$1" who="$3" b id
+  for b in $2; do
+    id="$(gh_issue_id "$b" 2>/dev/null)"
+    if [ -z "$id" ]; then
+      echo "bc-issue $who: no such issue to be blocked by: #$b" >&2
+      return 2
+    fi
+    gh_issue_add_blocker "$issue" "$id" || {
+      echo "bc-issue $who: could not mark #$issue blocked by #$b" >&2; return 2; }
+  done
+}
+
 # scope logic shared by `next` (embeds it) and `scope` (prints it).
 _bc_issue_scope() { # <issue> -> comma-joined roles on stdout
   local issue="$1" labels role present="" out=()
@@ -148,30 +194,44 @@ shift || true
 case "$cmd" in
 
 next)
-  cur="$(project_iteration_for_date)"
-  [ -n "$cur" ] || exit 1
-  curid="$(printf '%s' "$cur" | "$JQ" -r '.id')"
-
   items="$(project_items)" || { echo "bc-issue next: could not read project items" >&2; exit 2; }
 
-  # An epic is a grouping and nothing more: it is never started, and its own
-  # Sprint field says nothing about whether its stories are in scope -- a
-  # sprint routinely holds stories from several epics. So the sprint is read
-  # off the story itself, and the epic only ever comes back as context.
-  # Backlog is the only startable Status (an issue closed by hand keeps
-  # whatever Status it had, hence the OPEN gate), and the Demo issue is the
-  # sprint's own summary, never work to pick up.
-  pick="$(printf '%s' "$items" | "$JQ" -c --arg cur "$curid" '
+  # The pool is the whole board, not a sprint: every open story in Backlog,
+  # from any epic. An epic is a grouping and is never started -- it only ever
+  # comes back as context; the Demo issue is a sprint's summary, never work;
+  # an issue closed by hand keeps whatever Status it had, hence the OPEN gate.
+  # Of those, the startable ones are the ones no open issue blocks
+  # (project_items drops closed blockers), and the order among them is
+  # Priority, then Size -- the small story first, so something ships sooner
+  # and unblocks more -- then issue number.
+  #
+  # BC_ONLY_ISSUE narrows the pool to one story. It exists for the e2e run:
+  # with no sprint to fence its throwaway story in, a run would otherwise
+  # start whatever real work outranks it.
+  pool="$(printf '%s' "$items" | "$JQ" -c --arg only "${BC_ONLY_ISSUE:-}" '
+    [ .[] | select(.isParent!=true and .state=="OPEN" and .status=="Backlog"
+        and ((.labels|index("demo"))|not)
+        and ($only == "" or (.number|tostring) == $only)) ]
+  ')"
+  pick="$(printf '%s' "$pool" | "$JQ" -c '
     def prank: if . == "Blocker" then 0 elif . == "Critical" then 1
                 elif . == "Standard" then 2 elif . == "Low" then 3 else 4 end;
-    [ .[] | select(.isParent!=true and .state=="OPEN"
-        and .sprintId==$cur and .status=="Backlog"
-        and ((.labels|index("demo"))|not)) ]
-    | sort_by([(.priority|prank), .number])
+    def srank: if . == "XS" then 0 elif . == "S" then 1 elif . == "M" then 2
+                elif . == "L" then 3 elif . == "XL" then 4 else 5 end;
+    [ .[] | select((.blockedBy // []) | length == 0) ]
+    | sort_by([(.priority|prank), (.size|srank), .number])
     | .[0] // empty
     | {number, parent}
   ')"
-  [ -n "$pick" ] || exit 1
+  if [ -z "$pick" ]; then
+    # A backlog with stories in it and none startable is not an empty backlog:
+    # it is a dependency on something nobody will ever pick -- a cycle, or a
+    # blocker that is off the board or not in Backlog. Said on stdout, where
+    # the orchestrator's sleep reason picks it up.
+    blocked="$(printf '%s' "$pool" | "$JQ" 'length')"
+    [ "$blocked" -eq 0 ] || printf '%s Backlog stories, every one blocked by an open issue\n' "$blocked"
+    exit 1
+  fi
 
   n="$(printf '%s' "$pick" | "$JQ" -r '.number')"
   p="$(printf '%s' "$pick" | "$JQ" -r '.parent')"
@@ -224,10 +284,11 @@ backlog)
   # The backlog is what is on the board but on no sprint: open, sprintId null,
   # and not a Demo issue (one belongs to the sprint it summarises and is never
   # groomed). Sub-issues are included -- Scotty grooms stories, and a story's
-  # epic is exactly what he needs to see next to its priority and size.
+  # epic and open blockers are exactly what he needs to see next to its
+  # priority and size.
   out="$(printf '%s' "$items" | "$JQ" -c '
     [ .[] | select(.state=="OPEN" and .sprintId==null and ((.labels|index("demo"))|not))
-      | {number, title, status, priority, size, epic: .parent, isEpic: .isParent} ]
+      | {number, title, status, priority, size, epic: .parent, isEpic: .isParent, blockedBy: (.blockedBy // [])} ]
     | sort_by(.number)
   ')"
   printf '%s\n' "$out"
@@ -412,6 +473,7 @@ integrate-feedback)
     printf '%s' "$items" | "$JQ" -r '
       .[] | select(.state=="OPEN" and .sprintId==null and ((.labels|index("demo"))|not))
       | "- #\(.number) \(.title) — \(if .isParent then "epic" else "story of #\(.parent // "nothing")" end), priority: \(.priority // "unset"), size: \(.size // "unset")"
+        + (if ((.blockedBy // []) | length) > 0 then ", blocked by: \(.blockedBy | map("#\(.)") | join(" "))" else "" end)
     ' | tr -d '\r'
   } > "$input"
 
@@ -457,8 +519,8 @@ write-epic)
     exit 2
   fi
 
-  # Backlog, and on no sprint: new work is groomed into a sprint later, by
-  # starting-next-sprint, never here.
+  # Backlog, and on no sprint: an epic is a grouping and is never scoped, and
+  # its stories go onto a sprint one at a time, as starting-dev-cycle picks them.
   project_item "$new" >/dev/null
   project_set_single "$new" Status Backlog
   project_set_single "$new" Priority "$prio"
@@ -469,11 +531,16 @@ write-epic)
 
 write-story)
   parent="${1:-}" sid="${2:-}" title="${3:-}" bodyfile="${4:-}"
-  size="${5:-}" prio="${6:-}" leads="${7:-}"
+  size="${5:-}" prio="${6:-}" leads="${7:-}" blockers="${8:-}"
   [ -n "$parent" ] && [ -n "$sid" ] && [ -n "$title" ] && [ -n "$bodyfile" ] \
-    && [ -n "$size" ] && [ -n "$prio" ] && [ -n "$leads" ] || { usage; exit 2; }
+    && [ -n "$size" ] && [ -n "$prio" ] && [ -n "$leads" ] && [ -n "$blockers" ] || { usage; exit 2; }
   _bc_issue_check_option "$size" "$_BC_SIZES" size write-story || exit 2
   _bc_issue_check_option "$prio" "$_BC_PRIORITIES" priority write-story || exit 2
+  # Required, "-" for none, for the same reason <leads-csv> is: the picker
+  # starts any story nothing blocks, so "what must land first" has to be an
+  # answer Scotty gave rather than a question he was never asked. Parsed
+  # before the issue exists -- a typo must not leave a story open and unblocked.
+  blocker_list="$(_bc_issue_blockers "$blockers" write-story)" || exit 2
 
   # Lead scope is a label, never a line in the body -- `bc-issue scope` reads
   # it back off the labels and quentin is added there whether or not he was
@@ -511,12 +578,38 @@ write-story)
     gh_issue_add_subissue "$parent" "$child"
   fi
 
+  # Blockers before the board: a story is startable the moment it is in
+  # Backlog with nothing blocking it, so the dependencies land first.
+  _bc_issue_block "$new" "$blocker_list" write-story || exit 2
+
   project_item "$new" >/dev/null
   project_set_single "$new" Status Backlog
   project_set_single "$new" Size "$size"
   project_set_single "$new" Priority "$prio"
 
   printf '%s\n' "$new"
+  exit 0
+  ;;
+
+write-blockers)
+  # For a story that is already open: work Scotty has just created that must
+  # land BEFORE it (a fix an existing story turns out to rest on), or a
+  # dependency grooming missed. Adds, never removes -- a blocker stops
+  # blocking by being closed, which is the only way one should.
+  issue="${1:-}"
+  [ -n "$issue" ] || { usage; exit 2; }
+  shift
+  [ "$#" -gt 0 ] || { usage; exit 2; }
+  case "$issue" in *[!0-9]*) echo "bc-issue write-blockers: not an issue number: $issue" >&2; exit 2 ;; esac
+  blocker_list="$(_bc_issue_blockers "$(IFS=','; printf '%s' "$*")" write-blockers)" || exit 2
+  for b in $blocker_list; do
+    if [ "$b" = "$issue" ]; then
+      echo "bc-issue write-blockers: #$issue cannot block itself" >&2
+      exit 2
+    fi
+  done
+  _bc_issue_block "$issue" "$blocker_list" write-blockers || exit 2
+  printf '%s\n' "$issue"
   exit 0
   ;;
 
@@ -552,7 +645,7 @@ epic-context)
       epicTitle: (map(select(.number==$epic)) | .[0].title // null),
       epicBody: $body,
       stories: [ .[] | select(.parent==$epic)
-                 | {number, title, state, status, size, priority} ]
+                 | {number, title, state, status, size, priority, blockedBy: (.blockedBy // [])} ]
                  | sort_by(.number)
     }'
   exit 0

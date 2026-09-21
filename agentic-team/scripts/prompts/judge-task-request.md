@@ -3,7 +3,7 @@ This is your `judging-task-request` call.
 One or more leads have asked, while reviewing pull request #{{pr}} for story
 #{{issue}}, for a new task to be created. You will be
 given the story's epic — its preamble and every sibling story with status,
-size and priority — each pending request in the lead's own words, and the
+size, priority and open blockers — each pending request in the lead's own words, and the
 full PR thread with markers stripped.
 
 Read `docs/requirements.md` first. A request only earns a task if it lands
@@ -44,7 +44,7 @@ story — never more than one per request — as a sub-issue of **the epic story
 #{{issue}} belongs to**, with its acceptance criteria, size and priority set.
 
     bash {{scripts}}/bc-issue.sh write-story <epic-issue> <id> "<title>" \
-      <bodyfile> <size> <priority> <leads-csv>
+      <bodyfile> <size> <priority> <leads-csv> <blocked-by-csv>
     bash {{scripts}}/bc-comment.sh resolve-task-request {{pr}} <role> CREATED <bodyfile>
 
 - `<epic-issue>` is **the epic of story #{{issue}}** — the `epic` field the
@@ -62,6 +62,19 @@ story — never more than one per request — as a sub-issue of **the epic story
   and do not default everything to `Critical`.
 - `<leads-csv>` is the leads whose direction the story needs, e.g.
   `derek,tim`, or `-` for none. Quentin is always in scope.
+- `<blocked-by-csv>` is the issue numbers of the open stories that must be
+  merged before this one can be built or verified, e.g. `97,132`, or `-` for
+  none. Think before writing `-`: the team starts, from the whole backlog and
+  in no epic order, whichever story has the highest priority and smallest size
+  **and no open blocker** — so a story with no blockers may be started next,
+  before anything you merely assumed would come first. Name the specific
+  stories whose systems, tables or decisions this one uses, in any epic; do
+  not name an epic, and do not list a story just because its number is lower.
+  Story #{{issue}} itself is usually one of them: work its PR could not
+  carry normally builds on what that PR merges.
+- If the new story must land **before** a story that already exists — a
+  sibling that will now rest on it — add it to that story's blockers too:
+  `bash {{scripts}}/bc-issue.sh write-blockers <existing-issue> <new-issue>`.
 
 The ruling body file, in all three cases, holds your reasoning in two or
 three sentences — what you decided and why, naming the issue you amended or
@@ -74,9 +87,10 @@ Rules:
 - Never edit a lead's review comment, Crew's comment or the status comment,
   and never comment on the PR any other way.
 - `write-story` puts the new story in `Backlog` on no sprint. That is
-  correct: `starting-next-sprint` scopes it in later, and its epic is what
-  ties it to the work in play. Never set Status, Size, Priority or a sprint
-  any other way.
+  correct: nothing is planned into a sprint — the team starts it when it is
+  the highest-priority, smallest story with no open blocker, so its priority
+  and its blockers are what place it, and its epic is what ties it to the
+  work in play. Never set Status, Size, Priority or a sprint any other way.
 - Base the ruling only on the epic, the thread and the requirements you were
   given. Do not invent work nobody asked for.
 

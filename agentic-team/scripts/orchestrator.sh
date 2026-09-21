@@ -180,14 +180,16 @@ case "$budget_rc" in
 esac
 
 # =============================================================================
-# demo-active / demo-has-feedback / integrating-feedback / closing-sprint /
-# starting-next-sprint -- the Sprint Demo. A demo In progress with a human
-# comment on it is Scotty's to integrate: integrate-feedback turns the
-# feedback into backlog work -- however much of it the feedback actually
-# calls for, which may be none -- and then moves the Demo issue to Reviewed.
-# That transition is what closing-sprint/starting-next-sprint react to on a
-# later tick, so the two nodes stay one wake apart; an integration that died
-# before the transition left the demo In progress and simply retries.
+# demo-active / demo-has-feedback / integrating-feedback / closing-sprint --
+# the Sprint Demo. A demo In progress with a human comment on it is Scotty's
+# to integrate: integrate-feedback turns the feedback into backlog work --
+# however much of it the feedback actually calls for, which may be none --
+# and then moves the Demo issue to Reviewed. That transition is what
+# closing-sprint reacts to on a later tick, so the two nodes stay one wake
+# apart; an integration that died before the transition left the demo In
+# progress and simply retries. Closing is all the sprint boundary is: nothing
+# is scoped into the next sprint here, because starting-dev-cycle scopes each
+# story in as it picks it.
 # =============================================================================
 demo_json="$(bc_issue demo-current)"; demo_rc=$?
 if [ "$demo_rc" -eq 2 ]; then
@@ -214,11 +216,7 @@ if [ "$demo_rc" -eq 0 ]; then
       if [ "$close_rc" -ne 0 ]; then
         finish 2 "closing-sprint" "broken" "sprint close failed for demo #$dnum"
       fi
-      bc_sprint start >/dev/null 2>&1; start_rc=$?
-      if [ "$start_rc" -eq 2 ]; then
-        finish 2 "starting-next-sprint" "broken" "sprint start failed after closing for demo #$dnum"
-      fi
-      finish 0 "starting-next-sprint" "closed the sprint and started the next" "after demo #$dnum"
+      finish 0 "closing-sprint" "closed the sprint" "after demo #$dnum"
       ;;
     *)
       finish 1 "demo-active" "sleep" "demo #$dnum in unexpected status $dstatus"
@@ -258,18 +256,29 @@ fi
 
 if [ "$cur_rc" -eq 1 ]; then
   # =========================================================================
-  # starting-dev-cycle -- no sub-issue active: start a new dev cycle. Status
-  # is transitioned BEFORE any side effect it announces (a crash after this
-  # claims #n but before the stubs land is healed at "To analyze", which
-  # re-creates the missing stubs before judging anything -- not a duplicate
-  # pick next tick).
+  # starting-dev-cycle -- no sub-issue active: start a new dev cycle. The
+  # pick comes from the whole backlog, any epic -- the highest-priority,
+  # smallest story no open issue blocks -- and is scoped onto the sprint in
+  # play here, as it starts: this is the only way work ever reaches a sprint,
+  # so the team stops only when the backlog has nothing startable, never
+  # because a plan ran out. Status is transitioned BEFORE any side effect it
+  # announces (a crash after this claims #n but before the stubs land is
+  # healed at "To analyze", which re-creates the missing stubs before judging
+  # anything -- not a duplicate pick next tick). A crash between scope-in and
+  # the transition leaves a Backlog story on the sprint; the same pick is
+  # made again next tick, and if the board moved on instead, closing-sprint
+  # puts the stray back in the pool.
   # =========================================================================
   pick="$(bc_issue next)"; rc=$?
-  [ "$rc" -eq 0 ] || finish 1 "starting-dev-cycle" "sleep" "backlog empty"
+  [ "$rc" -ne 2 ] || finish 2 "starting-dev-cycle" "broken" "could not read the backlog"
+  # On exit 1 `next` says nothing for an empty backlog, and says so when there
+  # ARE stories but every one is blocked -- a stall Adrian should see.
+  [ "$rc" -eq 0 ] || finish 1 "starting-dev-cycle" "sleep" "${pick:-backlog empty}"
 
   n="$(printf '%s' "$pick" | "$JQ" -r '.number')"
   scope="$(printf '%s' "$pick" | "$JQ" -r '.scope')"
 
+  bc_sprint scope-in "$n" >/dev/null || finish 2 "starting-dev-cycle" "broken" "could not scope #$n into a sprint"
   bc_issue transition "$n" "To analyze" || finish 2 "starting-dev-cycle" "broken" "transition to To analyze failed for #$n"
   wt="$(bc_session worktree "$n")" || finish 2 "starting-dev-cycle" "broken" "worktree failed for #$n"
 

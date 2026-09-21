@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Fixture-driven coverage for scripts/bc-issue.sh: next's priority ordering
-# and its sprint/Backlog/open gates, current's 0/1/2-active cases, transition
+# Fixture-driven coverage for scripts/bc-issue.sh: next's whole-backlog pick
+# (no open blocker, then priority, size, number) and its Backlog/open gates,
+# write-story's and write-blockers' dependencies, current's 0/1/2-active cases, transition
 # (including the epic that closes with its last story),
 # scope's lead-label handling, backlog's unscoped read, create-demo's call
 # sequence, the demo-current/demo-commented/demo-for gates, and the
@@ -27,74 +28,100 @@ write_iterations() { # <dir> -- Sprint 1 active on 2026-09-01..2026-09-04
 JSON
 }
 
-echo "next: the sprint's own Backlog stories, by priority -- epics never enter into it:"
+echo "next: the whole backlog's startable stories, by priority then size -- sprints and epics never enter into it:"
 
 FAKE_N1="$(fake_dir)"
-write_iterations "$FAKE_N1"
 cat > "$FAKE_N1/project_items.json" <<'JSON'
 [
-  {"number":100,"title":"Epic A, itself on no sprint","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null},
-  {"number":101,"title":"Sub of A, already active","state":"OPEN","status":"In progress","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100},
-  {"number":102,"title":"Sub of A, done","state":"CLOSED","status":"Done","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100},
-  {"number":103,"title":"Sub of A, closed by hand but still Backlog","state":"CLOSED","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100},
-  {"number":104,"title":"Sub of A, Backlog but on no sprint","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":100},
-  {"number":300,"title":"Epic C, on the sprint but never startable","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
-  {"number":301,"title":"Sub of C, backlog, on the sprint","state":"OPEN","status":"Backlog","priority":"Low","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":300},
-  {"number":201,"title":"Sub of B, backlog, on the sprint, higher priority","state":"OPEN","status":"Backlog","priority":"Critical","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":200},
-  {"number":999,"title":"Sprint 1 Demo, Backlog on the sprint but not work","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null}
+  {"number":100,"title":"Epic A, never startable","state":"OPEN","status":"Backlog","priority":"Blocker","size":null,"sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null,"blockedBy":[]},
+  {"number":101,"title":"Sub of A, already active","state":"OPEN","status":"In progress","priority":"Blocker","size":"S","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100,"blockedBy":[]},
+  {"number":102,"title":"Sub of A, done","state":"CLOSED","status":"Done","priority":"Blocker","size":"S","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100,"blockedBy":[]},
+  {"number":103,"title":"Sub of A, closed by hand but still Backlog","state":"CLOSED","status":"Backlog","priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":100,"blockedBy":[]},
+  {"number":104,"title":"Sub of A, Blocker but blocked by an open story","state":"OPEN","status":"Backlog","priority":"Blocker","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":100,"blockedBy":[301]},
+  {"number":301,"title":"Sub of C, Low, on no sprint","state":"OPEN","status":"Backlog","priority":"Low","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":300,"blockedBy":[]},
+  {"number":201,"title":"Sub of B, Critical, a LATER epic, on no sprint","state":"OPEN","status":"Backlog","priority":"Critical","size":"L","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":200,"blockedBy":[]},
+  {"number":999,"title":"Sprint 1 Demo, Backlog but not work","state":"OPEN","status":"Backlog","priority":"Blocker","size":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null,"blockedBy":[]}
 ]
 JSON
 echo '["lead:tim"]' > "$FAKE_N1/gh_issue_labels.json"
 
-# 201 beats 301 on priority even though its epic (200) is not on the board at
-# all, and every higher-priority candidate is excluded for a different reason:
-# 100/300 are epics, 101 is not Backlog, 102/103 are closed, 104 is on no
-# sprint, 999 is the Demo issue.
-check_out "next: picks the sprint's highest-priority Backlog story, whatever epic it hangs off" 0   '{"number":201,"parent":200,"scope":"quentin,tim"}'   run "$FAKE_N1" 2026-09-02T08:00:00Z next
+# 201 is on no sprint and hangs off an epic that is not even on the board, and
+# it still wins: every higher-priority candidate is out for its own reason --
+# 100 is an epic, 101 is not Backlog, 102/103 are closed, 999 is the Demo
+# issue, and 104, the Blocker, is blocked by the open 301. No iterations
+# fixture exists here at all: `next` no longer asks what sprint it is.
+check_out "next: the highest-priority unblocked Backlog story, any epic, on no sprint" 0   '{"number":201,"parent":200,"scope":"quentin,tim"}'   run "$FAKE_N1" 2026-09-02T08:00:00Z next
+check "next: reads only -- wrote nothing" 1 test -f "$FAKE_N1/calls.log"
+
+# project_items carries OPEN blockers only, so a story whose blocker has been
+# closed arrives with an empty list and is startable again -- 104 now beats 201.
+FAKE_N1B="$(fake_dir)"
+sed 's/"blockedBy":\[301\]/"blockedBy":[]/' "$FAKE_N1/project_items.json" > "$FAKE_N1B/project_items.json"
+echo '[]' > "$FAKE_N1B/gh_issue_labels.json"
+check_out "next: once its blocker closes, the Blocker story is the pick" 0   '{"number":104,"parent":100,"scope":"quentin"}'   run "$FAKE_N1B" "" next
+
+# BC_ONLY_ISSUE fences the e2e run in: the pick is board-wide, so its
+# throwaway story has to be the only thing `next` can see.
+check_out "next: BC_ONLY_ISSUE narrows the pool to that one story" 0   '{"number":301,"parent":300,"scope":"quentin"}' \
+  env BC_ONLY_ISSUE=301 BC_FAKE="$FAKE_N1B" bash "$BC_ISSUE" next
+check "next: BC_ONLY_ISSUE naming a blocked story starts nothing else" 1 \
+  env BC_ONLY_ISSUE=104 BC_FAKE="$FAKE_N1" bash "$BC_ISSUE" next
 
 FAKE_N2="$(fake_dir)"
-write_iterations "$FAKE_N2"
 cat > "$FAKE_N2/project_items.json" <<'JSON'
 [
-  {"number":400,"title":"Epic D","state":"OPEN","status":"Backlog","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
-  {"number":401,"title":"Sub, Standard priority","state":"OPEN","status":"Backlog","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":400},
-  {"number":402,"title":"Sub, Blocker priority, lower number","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":400},
-  {"number":403,"title":"Sub, Blocker priority, higher number","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":400}
+  {"number":401,"title":"Standard, tiny","state":"OPEN","status":"Backlog","priority":"Standard","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":400},
+  {"number":402,"title":"Blocker, L, lowest number","state":"OPEN","status":"Backlog","priority":"Blocker","size":"L","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":400},
+  {"number":403,"title":"Blocker, size unset","state":"OPEN","status":"Backlog","priority":"Blocker","size":null,"sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":400},
+  {"number":404,"title":"Blocker, S, higher number","state":"OPEN","status":"Backlog","priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":500},
+  {"number":405,"title":"Blocker, S, higher number still","state":"OPEN","status":"Backlog","priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":500}
 ]
 JSON
 echo '[]' > "$FAKE_N2/gh_issue_labels.json"
 
-check_out "next: among tied top-priority stories, picks the lowest number" 0   '{"number":402,"parent":400,"scope":"quentin"}'   run "$FAKE_N2" 2026-09-02T08:00:00Z next
+# Priority first (401's XS does not beat a Blocker), then size (404's S beats
+# 402's L and 403's unset, which sorts last), then number (404 before 405).
+# These fixtures carry no blockedBy key at all: absent reads as unblocked.
+check_out "next: within the top priority the smallest story goes first, lowest number on a tie" 0   '{"number":404,"parent":500,"scope":"quentin"}'   run "$FAKE_N2" "" next
 
 # A story that hangs off no epic is ordinary work and starts like any other;
 # its parent comes back as null rather than the pick being skipped.
 FAKE_N3="$(fake_dir)"
-write_iterations "$FAKE_N3"
 cat > "$FAKE_N3/project_items.json" <<'JSON'
 [
-  {"number":500,"title":"Standalone story on the sprint","state":"OPEN","status":"Backlog","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null}
+  {"number":500,"title":"Standalone story","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":null,"blockedBy":[]}
 ]
 JSON
 echo '[]' > "$FAKE_N3/gh_issue_labels.json"
-check_out "next: an epic-less story is startable, with a null parent" 0   '{"number":500,"parent":null,"scope":"quentin"}'   run "$FAKE_N3" 2026-09-02T08:00:00Z next
+check_out "next: an epic-less story is startable, with a null parent" 0   '{"number":500,"parent":null,"scope":"quentin"}'   run "$FAKE_N3" "" next
 
-# Statuses past Backlog belong to `current`, not `next` -- a sprint whose
-# every story is under way has nothing left to start.
+# Statuses past Backlog belong to `current`, not `next`, and an unset Status
+# is not Backlog either.
 FAKE_N4="$(fake_dir)"
-write_iterations "$FAKE_N4"
 cat > "$FAKE_N4/project_items.json" <<'JSON'
 [
-  {"number":600,"title":"Reviewed, not startable","state":"OPEN","status":"Reviewed","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null},
-  {"number":601,"title":"Status unset, not startable either","state":"OPEN","status":null,"priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null}
+  {"number":600,"title":"Reviewed, not startable","state":"OPEN","status":"Reviewed","priority":"Blocker","size":"S","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null,"blockedBy":[]},
+  {"number":601,"title":"Status unset, not startable either","state":"OPEN","status":null,"priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":null,"blockedBy":[]}
 ]
 JSON
-check "next: nothing in Backlog on the sprint -> exit 1" 1 run "$FAKE_N4" 2026-09-02T08:00:00Z next
+check_out "next: nothing in Backlog -> exit 1, silent" 1 '' run "$FAKE_N4" "" next
+
+# Stories left, none startable: a cycle, or a blocker nobody can pick. That is
+# a stall, not an empty backlog, and `next` says so for the wake reason.
+FAKE_N5="$(fake_dir)"
+cat > "$FAKE_N5/project_items.json" <<'JSON'
+[
+  {"number":700,"title":"Blocked by 701","state":"OPEN","status":"Backlog","priority":"Critical","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":null,"blockedBy":[701]},
+  {"number":701,"title":"Blocked by 700","state":"OPEN","status":"Backlog","priority":"Critical","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":null,"blockedBy":[700]}
+]
+JSON
+check_out "next: every Backlog story blocked -> exit 1, and it says so" 1 \
+  '2 Backlog stories, every one blocked by an open issue' run "$FAKE_N5" "" next
 
 FAKE_N0="$(fake_dir)"
-write_iterations "$FAKE_N0"
 echo '[]' > "$FAKE_N0/project_items.json"
-check "next: no current sprint -> exit 1" 1 run "$FAKE_N0" 2026-12-25T08:00:00Z next
-check "next: nothing to start -> exit 1" 1 run "$FAKE_N0" 2026-09-02T08:00:00Z next
+check_out "next: an empty board -> exit 1, silent" 1 '' run "$FAKE_N0" "" next
+check "next: an unreadable board -> exit 2" 2 run "$(fake_dir)" "" next
 
 echo
 echo "current: 0 / 1 / 2 active sub-issues (and the demo issue is never 'current'):"
@@ -354,13 +381,13 @@ check "demo-for: no demo issue for that sprint -> exit 1" 1 run "$FAKE_DF" "" de
 
 
 echo
-echo "backlog: open work on the board, on no sprint:"
+echo "backlog: open work on the board, on no sprint, with its open blockers:"
 
 FAKE_BL="$(fake_dir)"
 cat > "$FAKE_BL/project_items.json" <<'JSON'
 [
   {"number":120,"title":"Epic 3 — Combat","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},
-  {"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120},
+  {"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120,"blockedBy":[119]},
   {"number":130,"title":"Already on a sprint","state":"OPEN","status":"In progress","priority":"Blocker","size":"S","sprintId":"sp2","sprintTitle":"Sprint 2","labels":["story"],"isParent":false,"parent":120},
   {"number":140,"title":"Shipped last sprint","state":"CLOSED","status":"Done","priority":"Low","size":"XS","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120},
   {"number":150,"title":"Sprint 2 Demo","state":"OPEN","status":"In progress","priority":null,"size":null,"sprintId":null,"sprintTitle":null,"labels":["demo"],"isParent":false,"parent":null}
@@ -368,7 +395,7 @@ cat > "$FAKE_BL/project_items.json" <<'JSON'
 JSON
 
 check_out "backlog: the unscoped open work, epic link and all" 0 \
-  '[{"number":120,"title":"Epic 3 — Combat","status":"Backlog","priority":"Critical","size":null,"epic":null,"isEpic":true},{"number":121,"title":"Parry","status":"Backlog","priority":"Standard","size":"M","epic":120,"isEpic":false}]' \
+  '[{"number":120,"title":"Epic 3 — Combat","status":"Backlog","priority":"Critical","size":null,"epic":null,"isEpic":true,"blockedBy":[]},{"number":121,"title":"Parry","status":"Backlog","priority":"Standard","size":"M","epic":120,"isEpic":false,"blockedBy":[119]}]' \
   run "$FAKE_BL" "" backlog
 check "backlog: reads only -- wrote nothing" 1 test -f "$FAKE_BL/calls.log"
 
@@ -409,44 +436,84 @@ check "write-epic with a missing argument exits 2" 2 \
 check "and none of those created anything" 1 test -f "$FAKE_WE2/calls.log"
 
 echo
-echo "write-story: opens it, labels its leads, links it under its epic:"
+echo "write-story: opens it, labels its leads, links it under its epic, marks its blockers:"
 
 FAKE_WT="$(fake_dir)"
 WT_BODY="$FAKE_WT/scotty-story.md"
 printf 'As a player, I can parry.\n\n- Timing window is 200ms\n' > "$WT_BODY"
 printf '401\n' > "$FAKE_WT/gh_issue_create.json"
 printf 'I_kwDO401\n' > "$FAKE_WT/gh_issue_id.401.json"
+printf 'I_kwDO97\n'  > "$FAKE_WT/gh_issue_id.97.json"
+printf 'I_kwDO132\n' > "$FAKE_WT/gh_issue_id.132.json"
 
 check_out "write-story prints the new issue number" 0 401 \
-  run "$FAKE_WT" "" write-story 400 3.1 "Parry" "$WT_BODY" M Standard derek,tim
+  run "$FAKE_WT" "" write-story 400 3.1 "Parry" "$WT_BODY" M Standard derek,tim 97,#132
 check "write-story labelled it story + one label per lead" 0 \
   log_has "$FAKE_WT/calls.log" '^gh_issue_create Parry .* story,lead:derek,lead:tim$'
 check "write-story linked it under its epic by DATABASE id" 0 \
   log_has "$FAKE_WT/calls.log" '^gh_issue_add_subissue 400 I_kwDO401$'
+check "write-story marked it blocked by the first, by DATABASE id" 0 \
+  log_has "$FAKE_WT/calls.log" '^gh_issue_add_blocker 401 I_kwDO97$'
+check "write-story marked it blocked by the second, '#' and all" 0 \
+  log_has "$FAKE_WT/calls.log" '^gh_issue_add_blocker 401 I_kwDO132$'
 check "write-story put it in Backlog"  0 log_has "$FAKE_WT/calls.log" '^project_set_single 401 Status Backlog$'
 check "write-story set its Size"       0 log_has "$FAKE_WT/calls.log" '^project_set_single 401 Size M$'
 check "write-story set its Priority"   0 log_has "$FAKE_WT/calls.log" '^project_set_single 401 Priority Standard$'
 check "write-story scoped it into NO sprint" 1 log_has "$FAKE_WT/calls.log" '^project_set_iteration'
+# A story is startable the moment it is in Backlog with nothing blocking it.
+check_out "write-story wrote the blockers BEFORE the story reached Backlog" 0 blocker \
+  sh -c 'grep -E "^(gh_issue_add_blocker|project_set_single 401 Status)" "$1" | head -1 | sed "s/^gh_issue_add_blocker.*/blocker/"' _ "$FAKE_WT/calls.log"
 
 FAKE_WT_NL="$(fake_dir)"
 printf 'A story.\n' > "$FAKE_WT_NL/body.md"
 printf '402\n' > "$FAKE_WT_NL/gh_issue_create.json"
-check_out "write-story with '-' leads takes the story label alone" 0 402 \
-  run "$FAKE_WT_NL" "" write-story 400 3.2 "Riposte" "$FAKE_WT_NL/body.md" S Low -
+check_out "write-story with '-' leads and '-' blockers takes the story label alone" 0 402 \
+  run "$FAKE_WT_NL" "" write-story 400 3.2 "Riposte" "$FAKE_WT_NL/body.md" S Low - -
 check "and quentin was NOT written as a label (scope adds him on read)" 0 \
   log_has "$FAKE_WT_NL/calls.log" '^gh_issue_create Riposte .* story$'
+check "and '-' wrote no blocker" 1 log_has "$FAKE_WT_NL/calls.log" '^gh_issue_add_blocker'
+
+# No gh_issue_id fixture for 98: the blocker does not resolve to an issue.
+FAKE_WT3="$(fake_dir)"
+printf 'A story.\n' > "$FAKE_WT3/body.md"
+printf '403\n' > "$FAKE_WT3/gh_issue_create.json"
+check "write-story with a blocker that does not exist exits 2" 2 \
+  run "$FAKE_WT3" "" write-story 400 3.3 "Feint" "$FAKE_WT3/body.md" S Low - 98
+check "and the story it could not block never reached Backlog" 1 \
+  log_has "$FAKE_WT3/calls.log" '^project_set_single 403 Status Backlog$'
 
 FAKE_WT2="$(fake_dir)"
 printf 'A story.\n' > "$FAKE_WT2/body.md"
 check "write-story with an unknown size exits 2" 2 \
-  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" Huge Standard derek
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" Huge Standard derek -
 check "write-story with an unknown priority exits 2" 2 \
-  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Urgent derek
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Urgent derek -
 check "write-story with an unknown lead exits 2" 2 \
-  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Standard bob
-check "write-story with a missing argument exits 2" 2 \
-  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Standard
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Standard bob -
+check "write-story with a blocker that is not a number exits 2" 2 \
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Standard derek 97,story-3.2
+check "write-story with no blockers argument exits 2 -- '-' has to be said" 2 \
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Standard derek
 check "and none of those created anything" 1 test -f "$FAKE_WT2/calls.log"
+
+echo
+echo "write-blockers: an existing story, blocked by others:"
+
+FAKE_WB="$(fake_dir)"
+printf 'I_kwDO97\n'  > "$FAKE_WB/gh_issue_id.97.json"
+printf 'I_kwDO132\n' > "$FAKE_WB/gh_issue_id.132.json"
+check_out "write-blockers prints the blocked issue" 0 150 run "$FAKE_WB" "" write-blockers 150 97 132
+check "write-blockers wrote the first dependency"  0 log_has "$FAKE_WB/calls.log" '^gh_issue_add_blocker 150 I_kwDO97$'
+check "write-blockers wrote the second dependency" 0 log_has "$FAKE_WB/calls.log" '^gh_issue_add_blocker 150 I_kwDO132$'
+check "write-blockers touched nothing on the board" 1 log_has "$FAKE_WB/calls.log" '^project_'
+
+FAKE_WB2="$(fake_dir)"
+printf 'I_kwDO97\n' > "$FAKE_WB2/gh_issue_id.97.json"
+check "write-blockers with no blocker exits 2"           2 run "$FAKE_WB2" "" write-blockers 150
+check "write-blockers on itself exits 2"                 2 run "$FAKE_WB2" "" write-blockers 97 97
+check "write-blockers with a non-numeric issue exits 2"  2 run "$FAKE_WB2" "" write-blockers story 97
+check "write-blockers with an unknown blocker exits 2"   2 run "$FAKE_WB2" "" write-blockers 150 4242
+check "and none of those wrote anything" 1 test -f "$FAKE_WB2/calls.log"
 
 echo
 echo "integrate-feedback: hands the thread to Scotty, then reports what the board gained:"

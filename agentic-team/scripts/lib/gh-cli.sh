@@ -270,3 +270,13 @@ gh_content_put() { # <branch> <path> <file> [blob-sha] -- blob-sha replaces an e
   rm -f "$b64" "$payload"
   return "$rc"
 }
+
+# --- appended by the continuous-scoping work ---------------------------------
+# GitHub's native issue dependencies: "<n> is blocked by <blocker>". Like
+# gh_issue_add_subissue, the endpoint takes the blocker's DATABASE id, not its
+# number -- gh_issue_id converts. The read side needs no primitive of its own:
+# project_items already carries each story's open blockers.
+gh_issue_add_blocker() { # <n> <blocker-database-id>
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_issue_add_blocker "$@"; return; }
+  "$GH" api "repos/$BC_REPO/issues/$1/dependencies/blocked_by" -F issue_id="$2" >/dev/null 2>&1
+}

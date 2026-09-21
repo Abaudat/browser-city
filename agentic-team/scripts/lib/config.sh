@@ -69,6 +69,9 @@ _BC_CONFIG_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # .claude/agents holds scotty.md, and one Orca already knows.
 : "${BC_SCOTTY_WORKTREE:=$BC_MAIN_CHECKOUT}"
 : "${BC_BASE_BRANCH:=master}"
+# Empty = pick from the whole backlog. The e2e run sets it to its throwaway
+# story so `bc-issue.sh next` can start nothing else.
+: "${BC_ONLY_ISSUE:=}"
 : "${BC_REQUIRED_CHECK:=ci}"
 
 # Resolves the four external tools once per process into $GH $JQ $ORCA
