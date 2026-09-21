@@ -94,147 +94,307 @@ async function assertPlayerCentred(page: Page): Promise<void> {
 }
 
 /**
- * Holds `codes` (one direction, or two for a diagonal) until the
+ * Starts an in-page sampler (without blocking on it) that runs until the
  * player's own world position has moved more than half the viewport's
  * own world-pixel extent from where it started, or a real collider stops
  * it (no position change for several consecutive animation frames) --
  * whichever comes first. Sampled every animation frame, from inside the
- * page (no round trip to miss a frame across). Reports the maximum
- * deviation of the player sprite's own real, drawn centre
- * (`playerScreenBounds`, never `viewTransform`) from the canvas's own
- * centre, over every sampled frame, and whether the world position ever
- * actually changed -- so a direction that is blocked from the very first
- * frame cannot pass this vacuously.
+ * page (no round trip to miss a frame across). Returns a function that
+ * awaits the sampler's own result: the maximum deviation of the player
+ * sprite's own real, drawn centre (`playerScreenBounds`, never
+ * `viewTransform`) from the canvas's own centre, over every sampled
+ * frame, and how far the player actually travelled on each axis -- so a
+ * direction blocked after one step cannot pass a minimum-distance check
+ * vacuously.
+ *
+ * Deliberately split from the real key hold itself (cycle 2, Quentin's
+ * direction, finding 8): the caller drives movement with real
+ * `page.keyboard.down`/`up`, dispatched from Node, never a synthetic
+ * `window.dispatchEvent` inside the page -- the same real-input idiom
+ * `test-street.spec.ts`/`enclosure.spec.ts` already use elsewhere in
+ * this suite.
  */
+async function startFollowSample(
+  page: Page,
+  tileSizePx: number,
+): Promise<
+  () => Promise<{
+    maxDeviationPx: number;
+    travelledCellsX: number;
+    travelledCellsY: number;
+    samples: number;
+  }>
+> {
+  await page.evaluate((tileSizePx: number) => {
+    const canvas = document.querySelector("#test-street canvas");
+    if (!(canvas instanceof HTMLCanvasElement))
+      throw new Error("startFollowSample: no street canvas");
+    const startPos = window.__bc?.playerPosition;
+    const zoom = window.__bc?.viewTransform?.zoom;
+    if (!startPos || !zoom) throw new Error("startFollowSample: scene not ready");
+    const rect = canvas.getBoundingClientRect();
+    const halfViewportCellsX = rect.width / zoom / tileSizePx / 2;
+    const halfViewportCellsY = rect.height / zoom / tileSizePx / 2;
+    const startX = startPos.x;
+    const startY = startPos.y;
+
+    const sample = new Promise<{
+      maxDeviationPx: number;
+      travelledCellsX: number;
+      travelledCellsY: number;
+      samples: number;
+    }>((resolve) => {
+      let maxDeviationPx = 0;
+      let restFrames = 0;
+      let samples = 0;
+      let lastPos = { x: startX, y: startY };
+      // A hard safety cap (60s of frames): every real termination path is
+      // travel or a collider rest, this only guards against a genuine bug
+      // hanging the test instead of failing it.
+      const MAX_SAMPLES = 3_600;
+
+      function tick(): void {
+        const bounds = window.__bc?.playerScreenBounds?.();
+        const pos = window.__bc?.playerPosition;
+        if (bounds && pos) {
+          // The bottom-centre anchor (`test-street/scene.ts`'s own
+          // `anchor.set(0.5, 1)`), never the bounding box's own vertical
+          // centre -- see `assertPlayerCentred`'s own doc comment for why.
+          const centreX = bounds.x + bounds.width / 2;
+          const centreY = bounds.y + bounds.height;
+          maxDeviationPx = Math.max(
+            maxDeviationPx,
+            Math.abs(centreX - rect.width / 2),
+            Math.abs(centreY - rect.height / 2),
+          );
+
+          const moved = pos.x !== lastPos.x || pos.y !== lastPos.y;
+          restFrames = moved ? 0 : restFrames + 1;
+          lastPos = { x: pos.x, y: pos.y };
+
+          const travelledCellsX = Math.abs(pos.x - startX);
+          const travelledCellsY = Math.abs(pos.y - startY);
+          const doneByTravel =
+            travelledCellsX > halfViewportCellsX || travelledCellsY > halfViewportCellsY;
+          const doneByRest = restFrames >= 6;
+
+          samples += 1;
+          if (doneByTravel || doneByRest || samples >= MAX_SAMPLES) {
+            resolve({ maxDeviationPx, travelledCellsX, travelledCellsY, samples });
+            return;
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+    (window as unknown as { __bcFollowSample: typeof sample }).__bcFollowSample = sample;
+  }, tileSizePx);
+
+  return () =>
+    page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __bcFollowSample: {
+              maxDeviationPx: number;
+              travelledCellsX: number;
+              travelledCellsY: number;
+              samples: number;
+            };
+          }
+        ).__bcFollowSample,
+    );
+}
+
+/** Holds `codes` (one direction, or two for a diagonal) with real,
+ * OS-level key events, waits for `startFollowSample`'s own sampler to
+ * finish, then releases them. */
 async function holdAndSampleFollow(
   page: Page,
   codes: readonly string[],
   tileSizePx: number,
-): Promise<{ maxDeviationPx: number; travelled: boolean; samples: number }> {
-  return page.evaluate(
-    ({ codes, tileSizePx }) => {
-      return new Promise<{ maxDeviationPx: number; travelled: boolean; samples: number }>(
-        (resolve, reject) => {
-          const canvas = document.querySelector("#test-street canvas");
-          if (!(canvas instanceof HTMLCanvasElement)) {
-            reject(new Error("holdAndSampleFollow: no street canvas"));
-            return;
-          }
-          const startPos = window.__bc?.playerPosition;
-          const zoom = window.__bc?.viewTransform?.zoom;
-          if (!startPos || !zoom) {
-            reject(new Error("holdAndSampleFollow: scene not ready"));
-            return;
-          }
-          const rect = canvas.getBoundingClientRect();
-          const halfViewportCellsX = rect.width / zoom / tileSizePx / 2;
-          const halfViewportCellsY = rect.height / zoom / tileSizePx / 2;
-          const startX = startPos.x;
-          const startY = startPos.y;
+): Promise<{
+  maxDeviationPx: number;
+  travelledCellsX: number;
+  travelledCellsY: number;
+  samples: number;
+}> {
+  const awaitSample = await startFollowSample(page, tileSizePx);
+  for (const code of codes) await page.keyboard.down(code);
+  const result = await awaitSample();
+  for (const code of codes) await page.keyboard.up(code);
+  return result;
+}
 
-          for (const code of codes) {
-            window.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true }));
-          }
+/** The minimum real travel a held direction must demonstrate for the
+ * follow proof to mean anything (cycle 2, Quentin's direction, finding
+ * 8) -- a direction blocked after one step must fail this, not "prove"
+ * following. Every setup route in the `followCase` list below was
+ * verified empirically, before this file was committed, by driving the
+ * real, mounted scene through this exact same `walkToOpenSpot` (a real
+ * `ArrowDown` rest is `(4.5, 8.625)`; `ArrowDown` + 6 cells east + rest
+ * west lands `(10.5, 8.625) -> (1.25, 8.625)`, ~9.3 cells; `ArrowDown` +
+ * 3 cells east + rest north lands `(7.5, 8.625) -> (7.5, 2.25)`, ~6.4
+ * cells; the same plus a further rest south returns to `(7.5, 9)`, ~6.75
+ * cells -- the pavement itself is too shallow north-south for 3 cells
+ * anywhere, which is why the south case detours through the interior
+ * instead) -- never guessed, and never trusted from arithmetic alone. */
+const MIN_TRAVELLED_CELLS = 3;
 
-          let maxDeviationPx = 0;
-          let travelled = false;
-          let restFrames = 0;
-          let samples = 0;
-          let lastPos = { x: startPos.x, y: startPos.y };
-          // A hard safety cap (60s of frames): every real termination path
-          // is travel or a collider rest, this only guards against a
-          // genuine bug hanging the test instead of failing it.
-          const MAX_SAMPLES = 3_600;
+type ArrowKey = "ArrowDown" | "ArrowRight" | "ArrowUp" | "ArrowLeft";
 
-          function finish(): void {
-            for (const code of codes) {
-              window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
+type SetupStep =
+  /** Holds `key` until a real collider stops the player (no position
+   * change for several consecutive animation frames) or a generous
+   * safety timeout. Requires movement to have actually started before a
+   * lack of further movement counts as a rest, so a step that starts
+   * already resting (a bad setup sequence) times out loudly instead of
+   * returning immediately having moved nowhere. */
+  | { readonly kind: "rest"; readonly key: ArrowKey }
+  /** Holds `key` for the real, calculated wall-clock duration
+   * `cells`/`movement.walk_speed_millicells_per_s` takes to cover, for a
+   * mid-corridor point a continuous walk only ever passes through
+   * (`kind: "rest"` cannot land there -- there is nothing to rest
+   * against). Never a bare millisecond literal. */
+  | { readonly kind: "cells"; readonly key: ArrowKey; readonly cells: number };
+
+/** Real, held keyboard input, one `SetupStep` at a time -- the setup leg
+ * for each follow case below, never measured itself. */
+async function walkToOpenSpot(page: Page, steps: readonly SetupStep[]): Promise<void> {
+  for (const step of steps) {
+    if (step.kind === "rest") {
+      await walkUntilRest(page, step.key);
+    } else {
+      await walkForCells(page, step.key, step.cells);
+    }
+  }
+}
+
+async function walkUntilRest(page: Page, key: ArrowKey): Promise<void> {
+  await page.keyboard.down(key);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const start = window.__bc?.playerPosition;
+        if (!start) {
+          reject(new Error("walkUntilRest: no starting player position"));
+          return;
+        }
+        let last = { x: start.x, y: start.y };
+        let hasMoved = false;
+        let restFrames = 0;
+        let frames = 0;
+        const MAX_FRAMES = 600; // 10s of frames, a safety cap
+        function tick(): void {
+          const pos = window.__bc?.playerPosition;
+          if (pos) {
+            const moved = pos.x !== last.x || pos.y !== last.y;
+            if (moved) hasMoved = true;
+            restFrames = moved ? 0 : restFrames + 1;
+            last = { x: pos.x, y: pos.y };
+            if (hasMoved && restFrames >= 10) {
+              resolve();
+              return;
             }
-            resolve({ maxDeviationPx, travelled, samples });
           }
-
-          function tick(): void {
-            const bounds = window.__bc?.playerScreenBounds?.();
-            const pos = window.__bc?.playerPosition;
-            if (bounds && pos) {
-              // The bottom-centre anchor (`test-street/scene.ts`'s own
-              // `anchor.set(0.5, 1)`), never the bounding box's own
-              // vertical centre -- see `assertPlayerCentred`'s own doc
-              // comment for why.
-              const centreX = bounds.x + bounds.width / 2;
-              const centreY = bounds.y + bounds.height;
-              maxDeviationPx = Math.max(
-                maxDeviationPx,
-                Math.abs(centreX - rect.width / 2),
-                Math.abs(centreY - rect.height / 2),
-              );
-
-              const moved = pos.x !== lastPos.x || pos.y !== lastPos.y;
-              if (moved) travelled = true;
-              restFrames = moved ? 0 : restFrames + 1;
-              lastPos = { x: pos.x, y: pos.y };
-
-              const travelledCellsX = Math.abs(pos.x - startX);
-              const travelledCellsY = Math.abs(pos.y - startY);
-              const doneByTravel =
-                travelledCellsX > halfViewportCellsX || travelledCellsY > halfViewportCellsY;
-              const doneByRest = restFrames >= 6;
-
-              samples += 1;
-              if (doneByTravel || doneByRest || samples >= MAX_SAMPLES) {
-                finish();
-                return;
-              }
-            }
-            requestAnimationFrame(tick);
+          frames += 1;
+          if (frames >= MAX_FRAMES) {
+            reject(new Error(`walkUntilRest: never came to rest within ${MAX_FRAMES} frames`));
+            return;
           }
           requestAnimationFrame(tick);
-        },
-      );
-    },
-    { codes, tileSizePx },
+        }
+        requestAnimationFrame(tick);
+      }),
   );
+  await page.keyboard.up(key);
+}
+
+async function walkForCells(page: Page, key: ArrowKey, cells: number): Promise<void> {
+  const speed = committedDefs().balance.find(
+    (b) => b.key === "movement.walk_speed_millicells_per_s",
+  )?.value;
+  if (!speed) throw new Error("no movement.walk_speed_millicells_per_s balance key");
+  const ms = (cells * 1_000_000) / speed;
+  await page.keyboard.down(key);
+  await page.waitForTimeout(ms);
+  await page.keyboard.up(key);
 }
 
 test.describe("camera/viewport (NFR48)", () => {
   test.use({ viewport: { width: 1280, height: 720 } });
 
-  test("the camera stays centred on the player through continuous movement in every direction", async ({
-    page,
-  }) => {
-    test.setTimeout(120_000);
-    await page.goto("/");
-    await waitForSceneReady(page);
-    await assertPlayerCentred(page);
+  // One case per direction, each its own `page.goto` (cycle 2, Quentin's
+  // direction, finding 8): every setup route below is real, empirically
+  // verified fixture geometry (`MIN_TRAVELLED_CELLS`'s own doc comment),
+  // reached by its own real-keyboard setup walk from `PLAYER_START` --
+  // never a teleport hook. A fresh load per case means one direction's
+  // own release lag can never carry into another's start point.
+  const REST_DOWN_TO_PAVEMENT: SetupStep = { kind: "rest", key: "ArrowDown" };
+  for (const followCase of [
+    {
+      name: "east",
+      codes: ["ArrowRight"] as const,
+      setup: [REST_DOWN_TO_PAVEMENT] as const,
+    },
+    {
+      name: "west",
+      codes: ["ArrowLeft"] as const,
+      setup: [REST_DOWN_TO_PAVEMENT, { kind: "cells", key: "ArrowRight", cells: 6 }] as const,
+    },
+    {
+      name: "north",
+      codes: ["ArrowUp"] as const,
+      setup: [REST_DOWN_TO_PAVEMENT, { kind: "cells", key: "ArrowRight", cells: 3 }] as const,
+    },
+    {
+      name: "south",
+      codes: ["ArrowDown"] as const,
+      // Detours through shop A's own interior (never crossing back out
+      // the door): the pavement itself is too shallow north-south for
+      // `MIN_TRAVELLED_CELLS` anywhere, but this same column, walked
+      // north first, reaches the interior's own north wall with real
+      // room to spare south of it.
+      setup: [
+        REST_DOWN_TO_PAVEMENT,
+        { kind: "cells", key: "ArrowRight", cells: 3 },
+        { kind: "rest", key: "ArrowUp" },
+      ] as const,
+    },
+    {
+      name: "north-east (diagonal)",
+      codes: ["ArrowUp", "ArrowRight"] as const,
+      setup: [REST_DOWN_TO_PAVEMENT] as const,
+    },
+  ] satisfies { name: string; codes: readonly ArrowKey[]; setup: readonly SetupStep[] }[]) {
+    test(`the camera stays centred while holding ${followCase.name}, and travels at least ${MIN_TRAVELLED_CELLS} cells`, async ({
+      page,
+    }) => {
+      test.setTimeout(60_000);
+      await page.goto("/");
+      await waitForSceneReady(page);
+      await assertPlayerCentred(page);
 
-    // Open pavement, not the shop interior: room enough in most
-    // directions for a real, sustained hold, and the same rest
-    // `enclosure.spec.ts` already proves is reachable this way.
-    await walkTo(page, "ArrowDown", { x: PLAYER_START.x, y: lamppostRestY() });
-    await assertPlayerCentred(page);
+      await walkToOpenSpot(page, followCase.setup);
+      await assertPlayerCentred(page);
 
-    for (const codes of [
-      ["ArrowRight"],
-      ["ArrowLeft"],
-      ["ArrowUp"],
-      ["ArrowDown"],
-      ["ArrowUp", "ArrowRight"], // the diagonal
-    ]) {
-      const result = await holdAndSampleFollow(page, codes, TILE_SIZE_PX);
+      const result = await holdAndSampleFollow(page, followCase.codes, TILE_SIZE_PX);
+      const travelled = Math.max(result.travelledCellsX, result.travelledCellsY);
       expect(
-        result.travelled,
-        `holding ${codes.join("+")} must actually move the player, or this proves nothing`,
-      ).toBe(true);
-      expect(
-        result.samples,
-        `at least one frame must have been sampled for ${codes.join("+")}`,
-      ).toBeGreaterThan(0);
+        travelled,
+        `holding ${followCase.codes.join("+")} only travelled ${travelled.toFixed(2)} cells ` +
+          `(x: ${result.travelledCellsX.toFixed(2)}, y: ${result.travelledCellsY.toFixed(2)}) in ` +
+          `${result.samples} sampled frames -- must be at least ${MIN_TRAVELLED_CELLS}, or this proves ` +
+          "nothing about a sustained follow",
+      ).toBeGreaterThanOrEqual(MIN_TRAVELLED_CELLS);
       expect(
         result.maxDeviationPx,
-        `camera must keep the player within 1px of centre while holding ${codes.join("+")}`,
+        `camera must keep the player within 1px of centre while holding ${followCase.codes.join("+")} ` +
+          `(travelled x: ${result.travelledCellsX.toFixed(2)}, y: ${result.travelledCellsY.toFixed(2)} cells)`,
       ).toBeLessThanOrEqual(1);
-    }
-  });
+    });
+  }
 
   test("the camera stays centred immediately after a real floor transition", async ({ page }) => {
     await page.goto("/");
@@ -261,16 +421,30 @@ test.describe("camera/viewport (NFR48)", () => {
       // Pixi's own `ResizePlugin` reacts to the real `resize` event
       // through a `requestAnimationFrame`-debounced call to
       // `renderer.resize` (`main.ts`'s `resizeTo: window`) -- never
-      // synchronous with `setViewportSize` itself, so this waits for the
-      // canvas to actually have caught up before asserting anything about
-      // it, the same way a real user's next paint would.
+      // synchronous with `setViewportSize` itself. This scene's own
+      // camera (`applyCamera`, in the ticker) can legitimately still be
+      // one frame behind that resize under real scheduling pressure (its
+      // own `requestAnimationFrame` chain, separate from Pixi's), so this
+      // waits for the canvas to have caught up *and* the player to have
+      // re-centred inside it -- never asserts the instant the canvas
+      // alone matches, which is a real race, not only a test one.
       await page.waitForFunction(
         (expected) => {
           const canvas = document.querySelector("#test-street canvas");
           if (!(canvas instanceof HTMLCanvasElement)) return false;
           const rect = canvas.getBoundingClientRect();
+          if (
+            Math.round(rect.width) !== expected.width ||
+            Math.round(rect.height) !== expected.height
+          ) {
+            return false;
+          }
+          const bounds = window.__bc?.playerScreenBounds?.();
+          if (!bounds) return false;
+          const centreX = bounds.x + bounds.width / 2;
+          const centreY = bounds.y + bounds.height;
           return (
-            Math.round(rect.width) === expected.width && Math.round(rect.height) === expected.height
+            Math.abs(centreX - rect.width / 2) <= 1 && Math.abs(centreY - rect.height / 2) <= 1
           );
         },
         size,
