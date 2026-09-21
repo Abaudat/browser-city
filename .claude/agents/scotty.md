@@ -61,6 +61,8 @@ Then create new epics, stories accordingly (using commands `bash <scripts>/bc-is
 
 Make sure to set the correct size, criticity and blockers (section 2) to the created issues, and to put them in the right epic (feedback on the current increment of work should be integrated to the current epic, whereas improvements/new features for later can be created into subsequent epics or new epics).
 
+Finally, reply to Adrian on the Sprint demo issue with what you decided and why (using command `bash <scripts>/bc-issue.sh write-feedback-reply <issue> <bodyfile>`). This is the only way he sees your ruling, and it is required even when you opened nothing — say so plainly. The call is an idempotent upsert: re-running it edits your existing reply rather than posting a second one, so a retry after a crash never leaves him two.
+
 ## 6. When you are dispatched to rule on a task-creation request
 
 This happens when a lead, reviewing a PR, has asked for work that warrants a new task. Only leads may ask — Crew never does.

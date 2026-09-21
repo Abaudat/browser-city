@@ -26,6 +26,16 @@
 # -- is a legitimate outcome, so the Demo issue moves to Reviewed either way
 # and the sprint rolls on the next tick rather than the node retrying forever.
 #
+# `write-feedback-reply` closes the loop the other way: it is Scotty's own
+# call, an idempotent upsert keyed on the `<!-- bc:feedback-reply -->` marker
+# so a retry edits his one reply rather than piling up a second, and the
+# marker keeps `is_human_comment` from ever reading his own reply back as
+# more feedback. It is a gate, not a courtesy -- integrate-feedback re-reads
+# the thread after handing Scotty the job and refuses to mark the Demo issue
+# Reviewed unless the reply is actually there, the same "re-derive from
+# GitHub, never trust the session's word" principle the created-count already
+# follows.
+#
 # `next` is the whole of scoping. There is no sprint planning step: the
 # backlog is one pool, and whenever the team is free the orchestrator starts
 # the story `next` names -- no open blocker, then highest Priority, then
@@ -71,6 +81,8 @@ usage: bc-issue.sh <command> [args]
   demo-commented <issue>        -- has a human commented on it
   demo-for <n>                  -- does a Sprint n Demo issue exist
   integrate-feedback <issue>     -- turn the demo's feedback into backlog work
+  write-feedback-reply <issue> <bodyfile>
+                                 -- Scotty, integrating-feedback: reply to Adrian (idempotent upsert)
   write-epic <n> <title> <bodyfile> <priority>
                                  -- Scotty, integrating-feedback: open an epic
   write-story <epic> <id> <title> <bodyfile> <size> <priority> <leads-csv> <blocked-by-csv>
@@ -111,6 +123,79 @@ _bc_issue_body() {
     return 2
   fi
   printf '%s' "$text"
+}
+
+# write-demo's checklist lint (Story 4.17): mechanical rules only, never a
+# judgement call an LLM prompt rule could not be asserted against. One data
+# file next to the prompts, not code, so the next piece of demo feedback of
+# this kind is a one-line change with a one-line test.
+_BC_DEMO_DENYLIST_FILE="$_BC_ISSUE_DIR/prompts/demo-checklist-denylist.txt"
+
+# _bc_demo_lint_line <checklist-line> -> the reason it is rejected on
+# stdout, exit 1 ; nothing on stdout, exit 0, if it is clean. Every rule is
+# mechanical -- no reading for tone, only for the shape engineering jargon
+# actually takes -- so an ambiguous English word (table, build, test-as-verb)
+# is never caught by accident.
+_bc_demo_lint_line() {
+  local line="$1" word
+  case "$line" in
+    *'`'*)
+      printf 'contains a backtick'
+      return 1
+      ;;
+  esac
+  # A path-like token: a slash with a word character on each side (client/
+  # server), or a token ending in a source/doc extension (config.yml).
+  if printf '%s' "$line" | grep -Eq '[[:alnum:]_]/[[:alnum:]_]'; then
+    printf 'looks like a file path'
+    return 1
+  fi
+  if printf '%s' "$line" | grep -Eiq '[[:alnum:]_]\.(md|rs|ts|json|sh|yml)([[:space:].,;:!?]|$)'; then
+    printf 'looks like a file path'
+    return 1
+  fi
+  # snake_case (walk_speed) or camelCase (questLog) -- a run of lowercase
+  # letters immediately broken by an underscore or an uppercase letter is the
+  # shape an identifier takes and plain English does not.
+  if printf '%s' "$line" | grep -Eq '[a-zA-Z0-9]_[a-zA-Z0-9]'; then
+    printf 'contains a snake_case identifier'
+    return 1
+  fi
+  if printf '%s' "$line" | grep -Eq '[a-z]+[A-Z][a-zA-Z]*'; then
+    printf 'contains a camelCase identifier'
+    return 1
+  fi
+  if [ -f "$_BC_DEMO_DENYLIST_FILE" ]; then
+    while IFS= read -r word; do
+      [ -n "$word" ] || continue
+      if printf '%s' "$line" | grep -Eiq -- "(^|[^a-zA-Z])${word}([^a-zA-Z]|$)"; then
+        printf "uses the engineering term '%s'" "$word"
+        return 1
+      fi
+    done < "$_BC_DEMO_DENYLIST_FILE"
+  fi
+  return 0
+}
+
+# _bc_demo_lint <bodyfile> -- 0 every checklist line is clean ; 1 at least
+# one is rejected, each one named on stderr with its reason. Only `- [ ] `
+# lines are linted -- the summary paragraph is prose for Adrian, not a
+# player-visible moment, and a checklist with no lines at all (a sprint of
+# pure process work) is not forced to invent one.
+_bc_demo_lint() {
+  local f="$1" line reason bad=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '- [ ] '*)
+        reason="$(_bc_demo_lint_line "$line")"
+        if [ -n "$reason" ]; then
+          echo "bc-issue write-demo: rejected checklist line ($reason): $line" >&2
+          bad=1
+        fi
+        ;;
+    esac
+  done < "$f"
+  [ "$bad" -eq 0 ]
 }
 
 # An epic exists only to group its stories, so it is never transitioned on its
@@ -357,6 +442,11 @@ write-demo)
     echo "bc-issue write-demo: the body file is empty" >&2
     exit 2
   fi
+  # Player-facing checklist, Story 4.17: a distinct exit code (3), never
+  # confused with the exit-2 usage/infra failures above -- judge-demo-
+  # summary.md rewrites the named lines and calls back rather than treating
+  # this as broken.
+  _bc_demo_lint "$bodyfile" || exit 3
   sprint="$(project_iterations | "$JQ" -c --arg t "Sprint $n" 'map(select(.title==$t)) | .[0] // empty')"
   if [ -z "$sprint" ]; then
     echo "bc-issue write-demo: no iteration titled 'Sprint $n'" >&2
@@ -494,10 +584,81 @@ integrate-feedback)
   # demo In progress for that would stall every sprint behind it. A tick that
   # dies BEFORE this line still leaves the demo In progress and simply runs
   # again -- that is what makes the node safe to retry, not the count.
+  #
+  # But Reviewed is gated on Adrian actually having a reply: re-read the
+  # thread rather than trust Scotty's session came back clean, the same
+  # principle the created-count already follows. A tick that dies before this
+  # gate leaves the demo In progress and simply runs again.
+  after_comments="$(gh_issue_comments "$issue" 2>/dev/null)" || after_comments='[]'
+  acount="$(printf '%s' "$after_comments" | "$JQ" 'length' 2>/dev/null || printf 0)"
+  replied=1
+  i=0
+  while [ "$i" -lt "$acount" ]; do
+    cbody="$(printf '%s' "$after_comments" | "$JQ" -r --argjson i "$i" '.[$i].body' | tr -d '\r')"
+    if has_marker "$cbody" "feedback-reply"; then
+      replied=0
+      break
+    fi
+    i=$((i + 1))
+  done
+  if [ "$replied" -ne 0 ]; then
+    echo "bc-issue integrate-feedback: judge-feedback.md left no feedback-reply on demo #$issue" >&2
+    exit 2
+  fi
+
   project_set_single "$issue" Status Reviewed || {
     echo "bc-issue integrate-feedback: failed to mark demo #$issue Reviewed" >&2; exit 2; }
 
   printf '{"demo":%s,"created":%s}\n' "$issue" "$((after - before))"
+  exit 0
+  ;;
+
+write-feedback-reply)
+  # Scotty's own call, the report Adrian was never getting before Story 4.17:
+  # an idempotent upsert keyed on the `<!-- bc:feedback-reply -->` marker, so
+  # a retry after a tick died mid-integration edits the same reply rather
+  # than posting a second one, and the marker keeps the reply itself from
+  # ever being read back as more feedback.
+  issue="${1:-}" bodyfile="${2:-}"
+  [ -n "$issue" ] && [ -n "$bodyfile" ] || { usage; exit 2; }
+  reply="$(_bc_issue_body "$bodyfile" write-feedback-reply)" || exit 2
+  if printf '%s' "$reply" | grep -Fq -- '<!-- bc:'; then
+    echo "bc-issue write-feedback-reply: the body file must not contain a bc: marker" >&2
+    exit 2
+  fi
+
+  comments="$(gh_issue_comments "$issue" 2>/dev/null)" || comments='[]'
+  count="$(printf '%s' "$comments" | "$JQ" 'length' 2>/dev/null || printf 0)"
+  existing=""
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    cbody="$(printf '%s' "$comments" | "$JQ" -r --argjson i "$i" '.[$i].body' | tr -d '\r')"
+    if has_marker "$cbody" "feedback-reply"; then
+      existing="$(printf '%s' "$comments" | "$JQ" -r --argjson i "$i" '.[$i].id')"
+      break
+    fi
+    i=$((i + 1))
+  done
+
+  out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-feedback-reply-out.XXXXXX")"
+  render_feedback_reply "$reply" > "$out"
+  if [ -n "$existing" ]; then
+    gh_comment_edit "$existing" "$out" || {
+      echo "bc-issue write-feedback-reply: gh_comment_edit failed" >&2; rm -f "$out"; exit 2; }
+    rm -f "$out"
+    printf '%s\n' "$existing"
+    exit 0
+  fi
+
+  newid="$(gh_comment_create "$issue" "$out")"
+  rc=$?
+  rm -f "$out"
+  if [ "$rc" -ne 0 ]; then
+    echo "bc-issue write-feedback-reply: gh_comment_create failed" >&2
+    exit 2
+  fi
+  [ -n "$newid" ] || newid=ok
+  printf '%s\n' "$newid"
   exit 0
   ;;
 

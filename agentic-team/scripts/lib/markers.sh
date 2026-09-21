@@ -122,6 +122,25 @@ ${summary}
 EOF
 }
 
+# --- appended by the feedback-reply work: Scotty's report back to Adrian ----
+# integrating-feedback used to be a dead end for Adrian -- his feedback went
+# onto the board and he never heard back. `bc:feedback-reply` is the marker
+# that makes the report findable AND keeps it out of the feedback loop:
+# `is_human_comment` keys on "<!-- bc:", so a reply carrying this marker is
+# never read back as more feedback by demo-commented/integrate-feedback on a
+# later tick, however Scotty re-runs.
+
+render_feedback_reply() { # <text>
+  local text="$1"
+  cat <<EOF
+### Scotty's reply
+
+${text}
+
+<!-- bc:feedback-reply -->
+EOF
+}
+
 # --- appended by the bc-epic.sh work: the migration's provenance markers ----
 # `bc:epic <n>` and `bc:story <id>` are what make the epic import idempotent
 # and what the round-trip check reads. They are provenance ONLY -- Story 0.20
