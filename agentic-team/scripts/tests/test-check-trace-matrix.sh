@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Fixture-driven coverage for scripts/ci/check-trace-matrix.sh's
-# GUARD_SECTIONS loop (every section named in that array) -- a scratch
-# two-crate Cargo workspace
-# (never the live repo's own) so `cargo test --workspace --exclude
-# browser_city -- --list` has something real to run against. One fixture
-# directory is built once and reused across cases below (only
-# docs/trace-matrix.md changes between runs), since neither crate has any
-# source for a rebuild to pick up.
+# Fixture-driven coverage for scripts/ci/check-trace-matrix.sh's full
+# (cargo) mode -- a scratch two-crate Cargo workspace (never the live
+# repo's own) so `cargo test --workspace --exclude browser_city --
+# --list` has something real to run against. Complements scripts/ci/
+# tests/test-check-trace-matrix.sh, which drives the Guard-section
+# lookup itself (fn/title/case/prefix resolution, discovery, statuses)
+# without cargo -- this file's own job is the pieces that need a real
+# Rust test suite: the covered/deferred Test-column symmetry, the
+# INV_ constant<->matrix registry, and --client-only genuinely never
+# invoking cargo at all. One fixture directory is built once and reused
+# across cases below (only docs/trace-matrix.md changes between runs),
+# since neither crate has any source for a rebuild to pick up.
 set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 . "$TEST_DIR/harness.sh"
@@ -53,43 +57,25 @@ git -C "$D" config user.name t
 git -C "$D" add -A
 git -C "$D" commit -q -m base
 
-# Every section name check-trace-matrix.sh's own GUARD_SECTIONS array
-# lists, read from the script itself rather than restated here -- a
-# section added to that array must never be able to break this test's own
-# green fixture (it did once: story 1.9's "Input and intents").
-guard_sections() {
-  # Only the leading indent and the surrounding quotes come off: a
-  # section name's own internal spaces are part of the heading.
-  sed -n '/^GUARD_SECTIONS=(/,/^)/p' "$CHECK" | sed -nE 's/^[[:space:]]+"(.+)"$/\1/p'
-}
-
-write_matrix() { # <heading to use in place of "Schema permanence"> [extra-id-table-row]
-  {
-    cat <<EOF
+# write_matrix -- one guard table ("## Schema permanence", named for no
+# reason but precedent -- discovery does not care what it is called), a
+# single `covered` row whose Guard cell is a bare path with no name to
+# resolve. [extra-id-table-row] extends the first (inv_*) table only.
+write_matrix() { # [extra-id-table-row]
+  cat > "$D/docs/trace-matrix.md" <<EOF
 # Trace matrix
 
 | Invariant id | Description | Status | Test | Story |
 | --- | --- | --- | --- | --- |
 | \`inv_something_never_starves\` | something never starves | deferred | | someday |
-${2:-}
-EOF
-    # One Guard table per section the checker requires, in its own order.
-    # "Schema permanence" is the one case names, so it is the one \$1
-    # renames -- that is how the "a renamed section must fail" case is
-    # built.
-    while IFS= read -r section; do
-      [ -n "$section" ] || continue
-      [ "$section" = "Schema permanence" ] && section="$1"
-      cat <<EOF
+${1:-}
 
-## $section
+## Schema permanence
 
 | Requirement | Status | Guard |
 | --- | --- | --- |
-| A $section requirement | covered | \`docs/trace-matrix.md\` |
+| A Schema permanence requirement | covered | \`docs/trace-matrix.md\` |
 EOF
-    done < <(guard_sections)
-  } > "$D/docs/trace-matrix.md"
 }
 
 run_check() { # [extra-arg...]
@@ -113,30 +99,42 @@ clear_client_tests() {
   mkdir -p "$D/client/tests/unit"
 }
 
-echo "green: both sections present, every Guard path real (warms cargo's build cache)"
-write_matrix "Schema permanence"
-check "both sections valid -> exit 0" 0 run_check
+echo "green: the guard table present, its Guard path real (warms cargo's build cache)"
+write_matrix
+check "the fixture matrix -> exit 0" 0 run_check
 
 echo
 echo "red: a Guard path that does not exist"
-write_matrix "Schema permanence"
-sed -i '/## Schema permanence/,$ s#`docs/trace-matrix.md`#`docs/does-not-exist.md`#' "$D/docs/trace-matrix.md"
+write_matrix
+sed -i 's#`docs/trace-matrix.md`#`docs/does-not-exist.md`#' "$D/docs/trace-matrix.md"
 OUT="$(run_check 2>&1)"; CODE=$?
 check "exits non-zero" 1 bash -c "exit $CODE"
 check "names the missing path" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF 'does-not-exist.md'" _ "$OUT"
 
 echo
-echo "red: the Schema permanence section renamed -- must fail, not pass by finding nothing"
-write_matrix "Schema permanence (renamed)"
+echo "green: a guard table under a heading this file never named before is still checked (discovery, not a fixed list -- the full-cargo-mode proof this story's own scripts/ci/tests fixtures cannot give, since they never run cargo at all)"
+write_matrix
+{
+  cat <<'EXTRA'
+
+## A section invented for this run alone
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| A requirement under a never-before-seen heading | covered | `docs/trace-matrix.md` |
+EXTRA
+} >> "$D/docs/trace-matrix.md"
+check "an extra, unregistered guard table still passes when its own Guard path is real" 0 run_check
+sed -i '/## A section invented for this run alone/,$ s#`docs/trace-matrix.md`#`docs/does-not-exist.md`#' "$D/docs/trace-matrix.md"
 OUT="$(run_check 2>&1)"; CODE=$?
-check "exits non-zero" 1 bash -c "exit $CODE"
-check "names the missing section" 0 bash -c \
-  "printf '%s' \"\$1\" | grep -qF \"no '## Schema permanence' section found\"" _ "$OUT"
+check "and still fails when that same table's own Guard path is not (discovery, not decoration)" 1 bash -c "exit $CODE"
+check "names the missing path under the never-before-seen heading" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF 'does-not-exist.md'" _ "$OUT"
 
 echo
 echo "red: a client inv_* test with no matrix row fails"
-write_matrix "Schema permanence"
+write_matrix
 clear_client_tests
 write_client_test "render/sort-key.test.ts" "inv_client_only_no_row"
 OUT="$(run_check 2>&1)"; CODE=$?
@@ -146,7 +144,7 @@ check "names the unregistered client test" 0 bash -c \
 
 echo
 echo "red: a matrix row claims a client inv_* test that does not exist, full run"
-write_matrix "Schema permanence" '| `inv_client_ghost` | a client invariant nothing implements | covered | `inv_client_ghost` | -- |'
+write_matrix '| `inv_client_ghost` | a client invariant nothing implements | covered | `inv_client_ghost` | -- |'
 clear_client_tests
 OUT="$(run_check 2>&1)"; CODE=$?
 check "exits non-zero" 1 bash -c "exit $CODE"
@@ -155,7 +153,7 @@ check "names the missing test" 0 bash -c \
 
 echo
 echo "red: a deferred row whose client test now exists fails"
-write_matrix "Schema permanence" '| `inv_client_now_exists` | a client invariant now covered | deferred | | someday |'
+write_matrix '| `inv_client_now_exists` | a client invariant now covered | deferred | | someday |'
 clear_client_tests
 write_client_test "demo/player-step.test.ts" "inv_client_now_exists"
 OUT="$(run_check 2>&1)"; CODE=$?
@@ -165,7 +163,7 @@ check "says to flip the row to covered" 0 bash -c \
 
 echo
 echo "green: --client-only exits 0 on an agreeing fixture, and never invokes cargo"
-write_matrix "Schema permanence"
+write_matrix
 clear_client_tests
 CARGO_SENTINEL_DIR="$(fake_dir)"
 rm -rf "$CARGO_SENTINEL_DIR"
@@ -183,7 +181,7 @@ check "cargo was never invoked" 1 bash -c "[ -e '$CARGO_SENTINEL' ]"
 
 echo
 echo "red: --client-only still catches a client-symmetry failure, without cargo on PATH"
-write_matrix "Schema permanence"
+write_matrix
 clear_client_tests
 write_client_test "render/sort-key.test.ts" "inv_client_only_no_row"
 rm -f "$CARGO_SENTINEL"
@@ -193,9 +191,9 @@ check "cargo still was never invoked" 1 bash -c "[ -e '$CARGO_SENTINEL' ]"
 clear_client_tests
 
 echo
-echo "green: a Requirement cell with an apostrophe in a monitored section still passes (PR #288 cycle 2: the trimming step used to be xargs, which aborts on an unmatched quote -- any natural-English apostrophe there crashed the whole check)"
-write_matrix "Schema permanence"
-sed -i "s#A World addressing requirement#A World addressing requirement -- Quentin's direction#" "$D/docs/trace-matrix.md"
+echo "green: a Requirement cell with an apostrophe in a guard table still passes (PR #288 cycle 2: the trimming step used to be xargs, which aborts on an unmatched quote -- any natural-English apostrophe there crashed the whole check)"
+write_matrix
+sed -i "s#A Schema permanence requirement#A Schema permanence requirement -- Quentin's direction#" "$D/docs/trace-matrix.md"
 check "an apostrophe in a covered Requirement cell -> exit 0" 0 run_check
 
 summary

@@ -349,6 +349,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+      # story 3.17: a dangling Guard-cell name (a renamed/deleted
+      # fn/test/case) fails in seconds, first, before paying for
+      # rust-cache and a release cargo test -- the full run below still
+      # covers everything this mode cannot see (the Rust suite itself,
+      # the INV_ constant<->matrix symmetry).
+      - run: bash ../scripts/ci/check-trace-matrix.sh --client-only
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: server
@@ -486,6 +492,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+      # The cargo-free half of check-trace-matrix.sh: the client inv_*
+      # symmetry and the Guard-section path/name checks, at effectively
+      # zero cost -- needs neither cargo nor node, so it runs first,
+      # before setup-node/npm ci pay for the toolchain a dangling name
+      # does not need (Tim's direction).
+      - name: client-side trace-matrix symmetry (no cargo)
+        run: bash ../scripts/ci/check-trace-matrix.sh --client-only
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: client/.nvmrc
@@ -518,13 +531,6 @@ jobs:
         run: bash ../scripts/ci/check-input-boundary.sh
       - name: story 1.12 FR168, debug tooling is reachable only through main.ts's DEV-gated dynamic import
         run: bash ../scripts/ci/check-debug-boundary.sh
-      # The cargo-free half of check-trace-matrix.sh: the client inv_*
-      # symmetry and the Guard-section path checks, at effectively zero
-      # cost -- Tim's direction, so a client-only PR is never gated on
-      # the full run's release cargo test/clippy/wasm build (that stays
-      # in the server-gated `test` job).
-      - name: client-side trace-matrix symmetry (no cargo)
-        run: bash ../scripts/ci/check-trace-matrix.sh --client-only
       - name: story 1.14, docs/spikes/1.14-boot-budget.md is exactly the generator's own output
         run: bash ../scripts/ci/check-boot-budget-report-current.sh
 
