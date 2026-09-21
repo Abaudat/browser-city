@@ -23,12 +23,14 @@
 // third boot of the same scene costs the slowest job in the repo real
 // wall time.
 //
-// Two `toHaveScreenshot` checks (Quentin's direction) catch what no
+// Three `toHaveScreenshot` checks (Quentin's direction) catch what no
 // id-based assertion can: "every check passes and it looks wrong". A
-// fixed 1920x1080 viewport (`test.use` below), `animations: "disabled"`,
-// an absolute `maxDiffPixels` sized to the objects under test (never a
-// ratio of the whole canvas -- a ratio loose enough to let the avatar or
-// a window vanish is not a regression check), and a masked ping
+// fixed 1920x1080 viewport (`test.use` below) for all but the crowd-street
+// checkpoint, which resizes to NFR48's own largest supported viewport
+// (2560x1440) and back (its own comment says why), `animations:
+// "disabled"`, an absolute `maxDiffPixels` sized to the objects under test
+// (never a ratio of the whole canvas -- a ratio loose enough to let the
+// avatar or a window vanish is not a regression check), and a masked ping
 // indicator (fixed-position, recolours on a ping this scene does not
 // control) keep them meaningful rather than perpetually flaky.
 // `?freezeCrowd=1` (a DEV-only query flag, `main.ts`) starts the street
@@ -50,14 +52,16 @@
 // Look at what it produced before committing: a baseline is a human
 // claim that the picture is right, not whatever the runner happened to
 // generate.
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { createHash } from "node:crypto";
+import { expect, type Page, test } from "@playwright/test";
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
 import { sortAcrossFloors } from "../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../src/render/layer-ranks";
 import { LAYER_TABLE } from "../../src/render/layer-table";
-import { screenPositionPx } from "../../src/render/screen-position";
+import { screenPositionPx, visibleCellBounds } from "../../src/render/screen-position";
+import { buildCitizenFixtures } from "../../src/test-street/citizens";
 import { buildPlayerDrawable, buildPropDrawables } from "../../src/test-street/drawables";
 import {
   BRIDGE_DECK_Y,
@@ -84,15 +88,19 @@ import {
   streetWalkInputs,
   streetWindowDefIds,
 } from "../unit/test-street/street-world";
+import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
 
 // The whole walk is one test on purpose: it is one continuous journey,
 // and splitting it would re-boot and re-walk the scene per assertion.
 test.describe.configure({ mode: "serial" });
 
-// The fixed viewport the two `toHaveScreenshot` checks need -- applies to
-// the whole test, not only those two moments, which is fine: nothing else
-// this spec asserts depends on the window size (the canvas itself is
-// sized to the world's own bounds, never to the viewport).
+// The fixed viewport `interior.png`/`underpass.png` need -- applies to
+// the whole test except the crowd-street checkpoint's own brief resize
+// (and restore, before the walk continues). The canvas is sized to the
+// viewport now, always (`main.ts`'s `resizeTo: window`), and the camera
+// keeps the player centred inside it, so a fixed viewport here also pins
+// exactly what the player sees at each checkpoint, not only the canvas's
+// own pixel dimensions.
 test.use({ viewport: { width: 1920, height: 1080 } });
 
 // A pixel budget in proportion to the objects under test, not the whole
@@ -140,6 +148,39 @@ const INTERIOR_MAX_DIFF_PIXELS = 150;
 // Measured on CI, the same two runs: 0px differed on both.
 const UNDERPASS_MAX_DIFF_PIXELS = 200;
 
+// The crowd-street checkpoint (cycle 2, Quentin's direction, finding 5):
+// the camera/viewport story's own regenerated 1920x1080 baselines are a
+// cropped sliver of what master's world-fitted canvas guarded -- the
+// whole crowd street (~46 citizens) included. This checkpoint restores
+// real, non-duplicate coverage of it: taken at the exact same real,
+// collider-rested position `underpass.png` already proves is jitter-free
+// run to run (a second position of its own would have to re-earn that
+// same proof, and an early version that tried one -- a plain
+// `y-at-least` threshold release, not a rest -- measured a five-figure
+// pixel diff between two otherwise identical runs purely from
+// release-lag position jitter), but resized to NFR48's own largest
+// supported viewport (2560x1440) rather than the fixed 1920x1080 every
+// other checkpoint here uses. Cycle 2 found the first version of this
+// checkpoint (same position, same 1920x1080 viewport as `underpass.png`)
+// was byte-identical to it -- a `covered` claim with nothing behind it,
+// since nothing on screen had actually changed between the two shots.
+// The larger viewport is a genuinely different frame: taller and wider,
+// so the crowd strip's own rows are more visible, not merely re-shot.
+// `assertBaselinesDiffer` below is the standing guard against this
+// collapsing back into a duplicate unnoticed. The frozen crowd
+// (`?freezeCrowd=1`, already set for the whole test) and the real,
+// computed `visibleCellBounds` prove a real, substantial (more than
+// half) slice of the crowd is actually in frame before the shot is ever
+// taken -- never a vacuous "the crowd exists somewhere" claim. Only the
+// crowd strip's own rows inside this frame are pixel-guarded; rows
+// further south are not (nothing walks the player there, since the
+// strip itself is not walkable) -- `appearance.spec.ts` is what guards
+// citizen compositing itself, independent of framing. Measured on CI
+// (`update-visual-baselines.yml`'s own regeneration run, then `ci.yml`'s
+// `e2e` job, two consecutive runs of commit 63b1e1f7: 35615960969,
+// re-run to the same run id): 0px differed on both.
+const CROWD_STREET_MAX_DIFF_PIXELS = 200;
+
 const RANK_TABLE = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
 const CODE_BY_NAME = Object.fromEntries(LAYER_TABLE.map((row) => [row.name, row.code]));
 
@@ -152,10 +193,6 @@ function balance(key: string): number {
 const TILE_SIZE_PX = balance("render.tile_size_px");
 const STOREY_HEIGHT_PX = balance("render.storey_height_px");
 
-function canvasOf(page: Page): Locator {
-  return page.locator("#test-street canvas");
-}
-
 /** A world pixel inside a cell's own drawn rect -- every drawable is
  * bottom-centre anchored on its cell (`screenPositionPx`), so the anchor
  * is the bottom-centre of that rect and half a tile above it is inside.
@@ -165,16 +202,8 @@ function worldPixelOfCell(cellX: number, cellY: number, floor: number) {
   return { x: anchor.x, y: anchor.y - TILE_SIZE_PX / 2 };
 }
 
-/** Converts a world pixel to the canvas offset to hover, through the
- * scene's own recorded zoom and camera offset -- never a literal pixel. */
-async function canvasOffset(page: Page, worldPx: { x: number; y: number }) {
-  const view = await page.evaluate(() => window.__bc?.viewTransform);
-  if (!view) throw new Error("the street scene never recorded its view transform");
-  return { x: worldPx.x * view.zoom + view.offsetX, y: worldPx.y * view.zoom + view.offsetY };
-}
-
 async function hoverCell(page: Page, cellX: number, cellY: number, floor: number): Promise<void> {
-  const position = await canvasOffset(page, worldPixelOfCell(cellX, cellY, floor));
+  const position = await canvasOffsetForWorldPx(page, worldPixelOfCell(cellX, cellY, floor));
   await canvasOf(page).hover({ position });
 }
 
@@ -210,14 +239,14 @@ async function binDrawnRectPx(
     x1: anchor.x + TILE_SIZE_PX / 2,
     y1: anchor.y,
   };
-  const view = await page.evaluate(() => window.__bc?.viewTransform);
-  if (!view) throw new Error("the street scene never recorded its view transform");
   const pad = 2;
+  const topLeft = await canvasOffsetForWorldPx(page, { x: worldRect.x0, y: worldRect.y0 });
+  const bottomRight = await canvasOffsetForWorldPx(page, { x: worldRect.x1, y: worldRect.y1 });
   return {
-    x0: worldRect.x0 * view.zoom + view.offsetX - pad,
-    y0: worldRect.y0 * view.zoom + view.offsetY - pad,
-    x1: worldRect.x1 * view.zoom + view.offsetX + pad,
-    y1: worldRect.y1 * view.zoom + view.offsetY + pad,
+    x0: topLeft.x - pad,
+    y0: topLeft.y - pad,
+    x1: bottomRight.x + pad,
+    y1: bottomRight.y + pad,
   };
 }
 
@@ -361,6 +390,63 @@ async function playerState(page: Page): Promise<PlayerState> {
     throw new Error("the page reported no player position");
   }
   return { x: state.x, y: state.y, floor: state.floor };
+}
+
+/** Waits for a real `page.setViewportSize` resize to have actually landed
+ * -- both the canvas's own client rect matching the new size and the
+ * camera having re-centred inside it -- before anything reads either
+ * (`camera-viewport.spec.ts`'s own idiom, cycle 2: the canvas resize and
+ * the camera's own next `requestAnimationFrame` are separate chains, so
+ * asserting the instant the canvas alone matches is a real race, not
+ * only a test one). */
+async function waitForViewportSize(
+  page: Page,
+  size: { readonly width: number; readonly height: number },
+): Promise<void> {
+  await page.waitForFunction(
+    (expected) => {
+      const canvas = document.querySelector("#test-street canvas");
+      if (!(canvas instanceof HTMLCanvasElement)) return false;
+      const rect = canvas.getBoundingClientRect();
+      if (
+        Math.round(rect.width) !== expected.width ||
+        Math.round(rect.height) !== expected.height
+      ) {
+        return false;
+      }
+      const bounds = window.__bc?.playerScreenBounds?.();
+      if (!bounds) return false;
+      const centreX = bounds.x + bounds.width / 2;
+      const centreY = bounds.y + bounds.height;
+      return Math.abs(centreX - rect.width / 2) <= 1 && Math.abs(centreY - rect.height / 2) <= 1;
+    },
+    size,
+    { timeout: 10_000 },
+  );
+}
+
+/** The player sprite's own real, drawn centre against the canvas's own
+ * current centre (`camera-viewport.spec.ts`'s own `assertPlayerCentred`,
+ * repeated here rather than imported across spec files) -- the bottom-
+ * centre anchor, never the bounding box's own geometric middle. */
+async function assertPlayerCentred(page: Page): Promise<void> {
+  const deviation = await page.evaluate(() => {
+    const canvas = document.querySelector("#test-street canvas");
+    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("no street canvas");
+    const bounds = window.__bc?.playerScreenBounds?.();
+    if (!bounds) throw new Error("no playerScreenBounds hook");
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: Math.abs(bounds.x + bounds.width / 2 - rect.width / 2),
+      y: Math.abs(bounds.y + bounds.height - rect.height / 2),
+    };
+  });
+  expect(deviation.x, "player horizontal centring").toBeLessThanOrEqual(1);
+  expect(deviation.y, "player vertical centring").toBeLessThanOrEqual(1);
+}
+
+function sha256(buffer: Buffer): string {
+  return createHash("sha256").update(buffer).digest("hex");
 }
 
 async function waitForSceneReady(page: Page): Promise<void> {
@@ -717,7 +803,7 @@ test("one walk down the test street: collision, depth order, retraction, floors 
     orderAtLamppost.indexOf(lamppostProp.id.toString()),
   );
 
-  // --- under the bridge --------------------------------------------------
+  // --- under the bridge ----------------------------------------------------
   await walkSegment(page, segment("past-the-lamppost"));
   await walkSegment(page, segment("off-the-crossing-row"));
   await walkSegment(page, segment("east-along-the-crossing"));
@@ -737,6 +823,62 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // reading as clipped at the canvas edge instead of visibly under a
   // deck.
   await screenshot("underpass.png", UNDERPASS_MAX_DIFF_PIXELS);
+  const underpassHash = sha256(await canvas.screenshot({ animations: "disabled" }));
+
+  // The camera/viewport story's own regenerated baselines are cropped to
+  // the viewport, unlike master's world-fitted canvas -- this checkpoint
+  // (cycle 2, Quentin's direction, finding 5) restores real, non-duplicate
+  // crowd coverage: the exact same real, collider-rested position
+  // `underpass.png` already proved jitter-free, resized to NFR48's own
+  // largest supported viewport instead of reusing its 1920x1080 one --
+  // `CROWD_STREET_MAX_DIFF_PIXELS`'s own doc comment says why.
+  const CROWD_STREET_VIEWPORT = { width: 2560, height: 1440 };
+  await page.setViewportSize(CROWD_STREET_VIEWPORT);
+  await waitForViewportSize(page, CROWD_STREET_VIEWPORT);
+  await assertPlayerCentred(page);
+
+  const crowdView = await page.evaluate(() => window.__bc?.viewTransform);
+  if (!crowdView) throw new Error("the street scene never recorded its view transform");
+  const crowdVisible = visibleCellBounds(
+    CROWD_STREET_VIEWPORT.width,
+    CROWD_STREET_VIEWPORT.height,
+    crowdView,
+    underTheBridge.floor,
+    TILE_SIZE_PX,
+    STOREY_HEIGHT_PX,
+  );
+  // Never vacuous (Quentin's own recurring direction across this suite):
+  // a real, *substantial* (more than half, cycle 2) slice of the crowd --
+  // not one stray citizen at the frame's own edge -- must actually be in
+  // view before the shot is taken, or this checkpoint would silently stop
+  // proving anything the moment the crowd's own placement or the camera's
+  // own framing moved.
+  const crowd = buildCitizenFixtures(committedDefs());
+  const crowdOnScreen = crowd.filter(
+    (c) =>
+      c.gridX >= crowdVisible.cellX0 &&
+      c.gridX <= crowdVisible.cellX1 &&
+      c.gridY >= crowdVisible.cellY0 &&
+      c.gridY <= crowdVisible.cellY1,
+  );
+  expect(
+    crowdOnScreen.length,
+    "more than half the crowd must be in frame for this checkpoint to mean anything",
+  ).toBeGreaterThan(crowd.length / 2);
+
+  await screenshot("crowd-street.png", CROWD_STREET_MAX_DIFF_PIXELS);
+  // The standing guard against this checkpoint silently collapsing back
+  // into a duplicate of `underpass.png` (cycle 2 found the first version
+  // of it already had): the two real, captured buffers must differ.
+  const crowdStreetHash = sha256(await canvas.screenshot({ animations: "disabled" }));
+  expect(crowdStreetHash, "crowd-street.png must not be byte-identical to underpass.png").not.toBe(
+    underpassHash,
+  );
+
+  // Restored before the walk continues: every other checkpoint and wait
+  // in this test assumes the fixed 1920x1080 viewport `test.use` set.
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await waitForViewportSize(page, { width: 1920, height: 1080 });
 
   // Two floors at one (x, y), both drawn: the deck above is not culled
   // (FR122 culls by sign, and both floors are street-side), and the
@@ -815,7 +957,6 @@ test("FR173's affordance mark is a real pixel change, confined to the hovered ob
 
   const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
   if (!bin) throw new Error("the fixture no longer places a trash bin");
-  const binRect = await binDrawnRectPx(page);
 
   // A cell well away from both interactable objects (the bin and the shop
   // counter) -- any third cell never marks anything, so this is a safe,
@@ -869,6 +1010,13 @@ test("FR173's affordance mark is a real pixel change, confined to the hovered ob
   });
 
   // --- pair B: after the walk, the bin is in reach -------------------------
+  // The camera/viewport story: the camera follows the player, so the
+  // bin's own drawn rect moved on screen along with the walk above --
+  // computed fresh here, at the walk's own resting position, never at
+  // the pre-walk position `binDrawnRectPx` would have reported before
+  // the camera ever moved.
+  const binRect = await binDrawnRectPx(page);
+
   // Two (then three) frames at the walk's own resting position -- again,
   // only the hover changes between them.
   await hoverCell(page, away.x, away.y, away.floor);

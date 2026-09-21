@@ -40,6 +40,7 @@ import {
   countAllBoundTextureSources,
   countBoundAtlasPages,
 } from "../render/atlas-pages";
+import { type Camera, computeCamera, worldPxFromClient } from "../render/camera";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -219,7 +220,6 @@ const SCREEN_Y_NUDGE_PX: Readonly<Partial<Record<string, number>>> = {
 };
 
 const ZOOM = 3;
-const CANVAS_MARGIN_PX = 8;
 
 /** Colour the app background switches to while the viewer is on any
  * below-ground floor (Artie's direction: what surrounds the subway
@@ -317,6 +317,18 @@ export interface MountStreetSceneOptions {
    * into a canvas one (story 1.9's e2e spec computes its click points
    * that way rather than hard-coding a pixel). */
   readonly onViewTransform?: (zoom: number, offsetX: number, offsetY: number) => void;
+  /** Called once, synchronously, the instant `world` (the container every
+   * ground tile and drawable is a descendant of) exists -- before any
+   * asset-loading `await` in this function has a chance to let the
+   * ticker render a frame with it. The callback receives a live getter
+   * over the real container's own `scale`/`position`, so a caller (`main.
+   * ts`, wiring `client/tests/e2e/camera-viewport.spec.ts`'s AC4 load
+   * spec) can observe the real, mounted transform for every frame of the
+   * whole load, not only after `mountStreetScene`'s own promise
+   * resolves. */
+  readonly onWorldReady?: (
+    worldTransform: () => { scaleX: number; scaleY: number; x: number; y: number },
+  ) => void;
   /** Story 1.9 (FR148): where a click's intent goes. One injected sink,
    * and the only thing Epic 8 has to replace -- this scene neither knows
    * nor decides what an intent means. Absent means intents are simply
@@ -389,6 +401,14 @@ export interface StreetSceneHandle {
    * `distinctBoundAtlasPages` alone cannot (Quentin's direction, cycle
    * 1). */
   readonly allBoundTextureSources: number;
+  /** The player sprite's own real, live global screen bounds (Pixi's own
+   * `getBounds()`, which walks every ancestor transform, camera
+   * included) -- a getter, not a value snapshotted once, so
+   * `camera-viewport.spec.ts` can sample the *actual drawn position*
+   * every frame without ever recomputing it from `viewTransform` itself
+   * (Quentin's direction: a follow-camera proof must never check its own
+   * implementation). */
+  playerScreenBounds(): { x: number; y: number; width: number; height: number };
   /** Removes every listener this scene attached (keyboard and pointer). */
   destroy(): void;
   /** Live-updates the FR173 highlight dial (0-100) -- re-applies
@@ -529,37 +549,20 @@ function positionSprite(
   sprite.y = pos.y + (SCREEN_Y_NUDGE_PX[assetKey] ?? 0);
 }
 
-/** Mount-time geometry guard (Artie's direction): a scene made of
- * off-canvas sprites must fail loudly, not pass every check silently.
- * Throws naming the first sprite whose drawn bounds fall outside
- * `[0, canvasWidth] x [0, canvasHeight]`. */
-export function assertSpritesWithinCanvas(
-  sprites: Iterable<{
-    readonly label: string;
-    readonly bounds: { x: number; y: number; width: number; height: number };
-  }>,
-  canvasWidth: number,
-  canvasHeight: number,
-): void {
-  for (const { label, bounds } of sprites) {
-    const withinX = bounds.x >= -0.5 && bounds.x + bounds.width <= canvasWidth + 0.5;
-    const withinY = bounds.y >= -0.5 && bounds.y + bounds.height <= canvasHeight + 0.5;
-    if (!withinX || !withinY) {
-      throw new Error(
-        `assertSpritesWithinCanvas: '${label}' is drawn at (${bounds.x}, ${bounds.y}) size ` +
-          `${bounds.width}x${bounds.height}, outside the ${canvasWidth}x${canvasHeight} canvas`,
-      );
-    }
-  }
-}
-
-/** Mount-time geometry guard, in the same family as
- * [`assertSpritesWithinCanvas`] (Artie's direction): a drawable's art may
+/** Mount-time geometry guard (Artie's direction): a drawable's art may
  * overhang above its own anchor row (bottom-centre anchoring makes that
  * the normal case), but never by more than one storey. The off-canvas
  * wall this pair replaced overhung by a factor of thirteen; this is the
  * rule that would have caught it directly, by name, instead of only via
- * where the sprite happened to land on screen. */
+ * where the sprite happened to land on screen.
+ *
+ * Its own former sibling, `assertSpritesWithinCanvas`, is gone (the
+ * camera/viewport story, Quentin's direction): the canvas is sized to the
+ * viewport now, never fitted to the world's own content, so "every sprite
+ * is drawn within the canvas" stopped being a fact about the *scene* the
+ * moment the world could be larger than what is on screen at once -- a
+ * prop two blocks from the player is correctly off-canvas. This guard
+ * survives because it never depended on the canvas at all. */
 export function assertNoOverhangBeyondStorey(
   sprites: Iterable<{ readonly label: string; readonly overhangPx: number }>,
   storeyHeightPx: number,
@@ -623,6 +626,93 @@ function stateFromWrite(write: SpriteVisibilityWrite): VisibilityState {
 }
 
 /**
+ * The camera/viewport story's own wiring, factored out for its own unit
+ * test (Quentin's direction): the one call every ticker frame makes to
+ * apply the camera. Its signature is the structural guarantee that it
+ * can never call `renderer.resize`/`world.getLocalBounds` -- it does not
+ * receive a renderer or the world's own bounds, only the pure inputs
+ * `render/camera.ts`'s `computeCamera` takes (`world` itself supplies the
+ * zoom), plus the `Container` to write the result onto. It only ever
+ * writes `world.position` -- never `world.scale` -- so `ZOOM` set once at
+ * mount (before this container had a single child) stays exactly what it
+ * was set to, call after call.
+ *
+ * Zoom is read from `world.scale.x` (cycle 2, Quentin's direction), never
+ * taken as a second, free parameter next to a container that already
+ * carries its own scale: two numbers that are supposed to always agree
+ * is two sources of truth, and a unit test could pass with them silently
+ * disagreeing. Throws if `world.scale.x` and `.y` themselves disagree --
+ * this scene never sets them independently, so that can only mean a
+ * caller broke the one-zoom-for-everything invariant this whole module
+ * exists to hold.
+ */
+export function applyCameraToWorld(
+  world: Container,
+  playerScreenX: number,
+  playerScreenY: number,
+  viewportWidth: number,
+  viewportHeight: number,
+): Camera {
+  if (world.scale.x !== world.scale.y) {
+    throw new Error(
+      `applyCameraToWorld: world.scale is not uniform (x=${world.scale.x}, y=${world.scale.y}) -- ` +
+        "this scene only ever sets one zoom for both axes",
+    );
+  }
+  const camera = computeCamera(
+    playerScreenX,
+    playerScreenY,
+    viewportWidth,
+    viewportHeight,
+    world.scale.x,
+  );
+  world.position.set(camera.offsetX, camera.offsetY);
+  return camera;
+}
+
+/**
+ * The picker's own inverse projection (cycle 2, Quentin's direction):
+ * client pixels to the world-pixel space `screen-position.ts` produces,
+ * through `render/camera.ts`'s `worldPxFromClient` -- the same function
+ * `applyCameraToWorld`'s own camera is built for, so the real, mounted
+ * picker and the real, mounted camera can never quietly drift onto two
+ * different projections. `canvasRect`/`screenWidth`/`screenHeight` are
+ * plain numbers rather than a live `HTMLCanvasElement`/`Application` so
+ * this is callable from a unit test with no canvas or GPU; the real call
+ * site supplies them from `app.canvas.getBoundingClientRect()` and
+ * `app.screen` (logical units -- never `renderer.width`/`height`, which
+ * are device pixels and only match while `resolution` is 1).
+ */
+export function clientToWorldPx(
+  clientX: number,
+  clientY: number,
+  canvasRect: {
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+    readonly height: number;
+  },
+  screenWidth: number,
+  screenHeight: number,
+  world: Container,
+): { readonly x: number; readonly y: number } {
+  const scaleX = canvasRect.width > 0 ? screenWidth / canvasRect.width : 1;
+  const scaleY = canvasRect.height > 0 ? screenHeight / canvasRect.height : 1;
+  const logicalX = (clientX - canvasRect.left) * scaleX;
+  const logicalY = (clientY - canvasRect.top) * scaleY;
+  if (world.scale.x !== world.scale.y) {
+    throw new Error(
+      `clientToWorldPx: world.scale is not uniform (x=${world.scale.x}, y=${world.scale.y})`,
+    );
+  }
+  return worldPxFromClient(logicalX, logicalY, {
+    zoom: world.scale.x,
+    offsetX: world.position.x,
+    offsetY: world.position.y,
+  });
+}
+
+/**
  * Mounts the committed street scene (`fixture.ts`) into `app`, wires
  * keyboard movement and floor transitions for the player, keeps the pool
  * container's children ordered by `render/pixi-order.ts`'s
@@ -657,6 +747,7 @@ export async function mountStreetScene(
     onIntent,
     onIgnored,
     onViewTransform,
+    onWorldReady,
     onHighlightChange,
     startWithCrowdFrozen,
     crowdIdenticalTuples,
@@ -692,7 +783,66 @@ export async function mountStreetScene(
   textures.set("counter", await atlasPageLoader.objectTexture(defs, counterDef));
 
   const world = new Container();
+  // The camera/viewport story (Quentin's direction): zoom is set here,
+  // before this container has a single child and before it is even
+  // attached to the stage, and never touched again -- only the camera's
+  // own `position` (below, `applyCamera`) changes after this point, once
+  // per frame. The renderer's own size is the caller's concern
+  // (`main.ts`'s `resizeTo: window`, never `app.renderer.resize` called
+  // from here): this scene never sizes the canvas to its own content any
+  // more.
+  world.scale.set(ZOOM);
+
+  // The player's own starting state (cycle 2, Quentin's direction):
+  // computed synchronously from `PLAYER_START` alone, so it is available
+  // here -- before `world` has a single child, before it is even
+  // attached to the stage, and before any of the awaits above or below
+  // this point (texture/atlas/appearance/crowd loads, all network-bound)
+  // next suspend this function. The camera is applied immediately after,
+  // in the same synchronous stretch, so `world.position` is already its
+  // final value the instant the first real content becomes a child of
+  // it -- no frame is ever drawn with the world at its own default
+  // `(0, 0)` position while ground tiles or props already sit inside it,
+  // the exact defect (a mount-time jump) this cycle's finding 1 named.
+  let walk: FloorWalkResult = {
+    ...initialFloorWalkState(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor),
+    transitioned: false,
+  };
+
+  // `app.screen` is the renderer's *logical* size (cycle 2, Quentin's
+  // direction) -- the same space `world.position`/`world.scale` live in.
+  // `app.renderer.width`/`height` are device pixels and match only while
+  // `resolution` is 1; reading them here would silently de-centre the
+  // player the day `autoDensity`/a non-1 `resolution` is ever turned on.
+  let lastCamera: Camera | undefined;
+  function applyCamera(): void {
+    const anchor = screenPositionPx(walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx);
+    const camera = applyCameraToWorld(
+      world,
+      anchor.x,
+      anchor.y,
+      app.screen.width,
+      app.screen.height,
+    );
+    if (
+      !lastCamera ||
+      lastCamera.zoom !== camera.zoom ||
+      lastCamera.offsetX !== camera.offsetX ||
+      lastCamera.offsetY !== camera.offsetY
+    ) {
+      lastCamera = camera;
+      onViewTransform?.(camera.zoom, camera.offsetX, camera.offsetY);
+    }
+  }
+  applyCamera();
+
   app.stage.addChild(world);
+  onWorldReady?.(() => ({
+    scaleX: world.scale.x,
+    scaleY: world.scale.y,
+    x: world.position.x,
+    y: world.position.y,
+  }));
 
   // Story 1.13 (Tim's direction): one four-pass stack per floor -- three
   // flat passes then the y-sorted pool, declared in order even while
@@ -783,10 +933,6 @@ export async function mountStreetScene(
     app.ticker,
   );
 
-  let walk: FloorWalkResult = {
-    ...initialFloorWalkState(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor),
-    transitioned: false,
-  };
   const playerDrawable = buildPlayerDrawable(
     rankOf(layerCodeByName("characters")),
     walk.x,
@@ -879,40 +1025,6 @@ export async function mountStreetScene(
     storeyHeightPx,
   );
 
-  // Camera: translate the world container so its whole content (every
-  // floor, both storeys, every overhang) sits inside the canvas with a
-  // small margin, then size the canvas to fit exactly -- Artie's
-  // direction: nothing this scene contains may be drawn off-canvas.
-  // Computed once, over every sprite regardless of its later visibility
-  // state, so the canvas never needs to resize again once the player
-  // starts walking between floors and enclosures.
-  const worldBounds = world.getLocalBounds();
-  const canvasWidth = Math.ceil(worldBounds.width * ZOOM) + CANVAS_MARGIN_PX * 2;
-  const canvasHeight = Math.ceil(worldBounds.height * ZOOM) + CANVAS_MARGIN_PX * 2;
-  app.renderer.resize(canvasWidth, canvasHeight);
-  world.scale.set(ZOOM);
-  world.position.set(
-    CANVAS_MARGIN_PX - worldBounds.x * ZOOM,
-    CANVAS_MARGIN_PX - worldBounds.y * ZOOM,
-  );
-
-  // `sprite.getBounds()` already returns bounds in the stage's global
-  // space -- it walks every ancestor transform, including `world`'s
-  // scale and position just set above -- so this reads real drawn pixel
-  // bounds directly, with no second application of the zoom or camera
-  // offset.
-  assertSpritesWithinCanvas(
-    [...groundSprites, ...members.map((m) => m.view)].map((sprite) => {
-      const b = sprite.getBounds();
-      return {
-        label: `${sprite.constructor.name}@(${Math.round(sprite.x)},${Math.round(sprite.y)})`,
-        bounds: { x: b.x, y: b.y, width: b.width, height: b.height },
-      };
-    }),
-    canvasWidth,
-    canvasHeight,
-  );
-
   // FR121: no masking or aperture system anywhere in the real, mounted
   // display list -- checked directly against every sprite and every
   // ground-pass container this scene actually built, not only by the
@@ -922,14 +1034,6 @@ export async function mountStreetScene(
   // would fail every unmasked sprite in this scene.
   const everyMaskableView = [...members.map((m) => m.view), ...groundContainersByFloor.values()];
   onMasksChecked?.(everyMaskableView.every((view) => view.mask == null));
-
-  // `onViewTransform` fires once, later, after the street crowd's own
-  // camera re-fit below -- never here, while the camera is still only
-  // fitted to the pre-crowd content and about to move again. A caller
-  // reading `window.__bc.viewTransform` the moment it first appears must
-  // see the one, final transform every click/hover computation the rest
-  // of this scene's own lifetime will actually use, never a value that
-  // is about to go stale.
 
   // The derived indexes: real `defs/objects` footprints, colliders and
   // FR148 reach rects (`objectDefs`, resolved from the fetched document
@@ -1129,23 +1233,18 @@ export async function mountStreetScene(
   });
   const pointer = attachPointer({
     element: app.canvas,
-    // Client pixels to the world-pixel space `screenPositionPx` produces:
-    // undo the canvas's own CSS scaling, then the camera offset and zoom
-    // this scene applied to the world container.
-    toWorldPx: (clientX, clientY) => {
-      const rect = app.canvas.getBoundingClientRect();
-      // `app.screen` is in the renderer's *logical* units -- the same
-      // space `world.position`/`world.scale` live in. `canvas.width` is in
-      // device pixels and matches only while `resolution` is 1, so the day
-      // someone turns on `autoDensity` for HiDPI it would put every click
-      // on the wrong cell with nothing to catch it.
-      const scaleX = rect.width > 0 ? app.screen.width / rect.width : 1;
-      const scaleY = rect.height > 0 ? app.screen.height / rect.height : 1;
-      return {
-        x: ((clientX - rect.left) * scaleX - world.position.x) / world.scale.x,
-        y: ((clientY - rect.top) * scaleY - world.position.y) / world.scale.y,
-      };
-    },
+    // `clientToWorldPx` (above): the one projection every click, hover
+    // and camera-centring computation in this client shares -- never a
+    // second, hand-derived copy of the camera's own arithmetic.
+    toWorldPx: (clientX, clientY) =>
+      clientToWorldPx(
+        clientX,
+        clientY,
+        app.canvas.getBoundingClientRect(),
+        app.screen.width,
+        app.screen.height,
+        world,
+      ),
     context: pickContext,
     player: () => ({ x: walk.x, y: walk.y, floor: walk.floor }),
     tileSizePx,
@@ -1182,7 +1281,14 @@ export async function mountStreetScene(
 
   function tick(deltaMS: number): void {
     const direction = keyboard.direction();
-    if (direction.x === 0 && direction.y === 0) return;
+    if (direction.x === 0 && direction.y === 0) {
+      // Still applied on an idle frame (Quentin's direction): a window
+      // resize does not move the player, but the camera's own offset has
+      // to react to it the instant `app.renderer.width`/`height` do,
+      // never only on the next keypress.
+      applyCamera();
+      return;
+    }
 
     const before = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
     const floorBefore = walk.floor;
@@ -1240,6 +1346,12 @@ export async function mountStreetScene(
     // not only when the player enters a new cell. It is still an event --
     // a frame where nothing moved returns above and never reaches here.
     pointer.refresh();
+
+    // The camera, last: a pure function of the *new* position this same
+    // frame just computed, applied in the same tick as the move so there
+    // is never a frame where the player is drawn off-centre (Quentin's
+    // "applied in the same ticker frame as the move" direction).
+    applyCamera();
   }
 
   // Story 1.10: the street crowd, a second, additive layer under `world`
@@ -1250,12 +1362,15 @@ export async function mountStreetScene(
   // (`onOrderChange`/`onPlayerMove`/`onVisibilityChange`/
   // `onMasksChecked`, and the keyboard itself) has already fired -- those
   // all run synchronously, in this same function body, before this
-  // `await`; only `mountStreetScene`'s own promise (`onViewTransform`
-  // included, deliberately fired only once, below) waits on the crowd's
-  // own network-bound texture loads. The camera fit above already sized
-  // the canvas to the pre-crowd content; the crowd needs its own second,
-  // one-time re-fit once it exists, since Artie's "nothing this scene
-  // contains may be drawn off-canvas" applies to it too.
+  // `await`; only `mountStreetScene`'s own promise waits on the crowd's
+  // own network-bound texture loads. The camera/viewport story (Quentin's
+  // direction): there is no second camera fit here any more -- the canvas
+  // was never sized to this scene's own content, crowd included, so the
+  // crowd needs none of its own. `onViewTransform`/`window.__bc.
+  // viewTransform` already fired, live, from `applyCamera()`'s own first
+  // call above; `appearance-test-support.ts`/`intents.spec.ts` wait on
+  // the boot mark below instead of on its mere existence for exactly this
+  // reason -- it is no longer a one-shot readiness signal.
   const citizensLayer = await mountCitizensLayer(
     world,
     defs,
@@ -1272,17 +1387,6 @@ export async function mountStreetScene(
   // is no real atlas yet, so this pairs with Resource Timing's own
   // per-image request count and byte total for everything awaited above.
   markBoot(BOOT_MARK.ATLAS_READY);
-  const worldBoundsWithCrowd = world.getLocalBounds();
-  const canvasWidthWithCrowd = Math.ceil(worldBoundsWithCrowd.width * ZOOM) + CANVAS_MARGIN_PX * 2;
-  const canvasHeightWithCrowd =
-    Math.ceil(worldBoundsWithCrowd.height * ZOOM) + CANVAS_MARGIN_PX * 2;
-  app.renderer.resize(canvasWidthWithCrowd, canvasHeightWithCrowd);
-  world.scale.set(ZOOM);
-  world.position.set(
-    CANVAS_MARGIN_PX - worldBoundsWithCrowd.x * ZOOM,
-    CANVAS_MARGIN_PX - worldBoundsWithCrowd.y * ZOOM,
-  );
-  onViewTransform?.(ZOOM, world.position.x, world.position.y);
 
   // Story 1.10: the one walking citizen's own animation, always
   // ticking -- unlike the player's own ticker above, this must never
@@ -1352,6 +1456,10 @@ export async function mountStreetScene(
     citizensLayer,
     distinctBoundAtlasPages: countBoundAtlasPages(app.stage, atlasPageLoader, appearanceCache),
     allBoundTextureSources: countAllBoundTextureSources(app.stage),
+    playerScreenBounds: () => {
+      const b = playerSprite.getBounds();
+      return { x: b.x, y: b.y, width: b.width, height: b.height };
+    },
     setHighlightStrength,
     currentFloor: () => walk.floor,
     poolDrawables: () => allDrawables,

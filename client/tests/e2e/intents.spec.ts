@@ -10,7 +10,7 @@
 // moved its camera would otherwise start clicking empty pavement while
 // still passing.
 import { mkdirSync } from "node:fs";
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { KEYBINDINGS_STORAGE_KEY } from "../../src/input/keybindings-storage";
 import type {} from "../../src/net/e2e-hooks";
 import { screenPositionPx } from "../../src/render/screen-position";
@@ -21,6 +21,8 @@ import {
   TRASH_BIN_DEF_ID,
 } from "../../src/test-street/fixture";
 import { committedDefs } from "../unit/test-street/street-world";
+import { waitForPlayerControllable } from "./boot-test-support";
+import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
 
 const COUNTER_ID = 8n;
 const BIN_ID = 15n;
@@ -69,30 +71,21 @@ async function ready(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
     timeout: 10_000,
   });
-  await page.waitForFunction(() => window.__bc?.viewTransform !== undefined, undefined, {
-    timeout: 10_000,
-  });
-}
-
-function canvasOf(page: Page): Locator {
-  return page.locator("#test-street canvas");
-}
-
-/** Converts a world pixel to the canvas offset to click, through the
- * scene's own recorded zoom and camera offset. */
-async function canvasOffset(page: Page, worldPx: { x: number; y: number }) {
-  const view = await page.evaluate(() => window.__bc?.viewTransform);
-  if (!view) throw new Error("the street scene never recorded its view transform");
-  return { x: worldPx.x * view.zoom + view.offsetX, y: worldPx.y * view.zoom + view.offsetY };
+  // The camera/viewport story (Quentin's direction): `viewTransform` is
+  // live now, updated every frame the camera moves, so its mere
+  // existence stopped being a one-shot readiness signal -- the boot mark
+  // is what actually promises the scene has mounted and is accepting
+  // input.
+  await waitForPlayerControllable(page, 10_000);
 }
 
 async function clickCell(page: Page, cellX: number, cellY: number, floor: number): Promise<void> {
-  const position = await canvasOffset(page, worldPixelOfCell(cellX, cellY, floor));
+  const position = await canvasOffsetForWorldPx(page, worldPixelOfCell(cellX, cellY, floor));
   await canvasOf(page).click({ position });
 }
 
 async function hoverCell(page: Page, cellX: number, cellY: number, floor: number): Promise<void> {
-  const position = await canvasOffset(page, worldPixelOfCell(cellX, cellY, floor));
+  const position = await canvasOffsetForWorldPx(page, worldPixelOfCell(cellX, cellY, floor));
   await canvasOf(page).hover({ position });
 }
 
@@ -249,11 +242,11 @@ test("a click on the drawn part of a tall prop hits that prop, not the cell behi
   // the lid must hit the bin.
   const bin = propById(BIN_ID, TRASH_BIN_DEF_ID);
   const lid = worldPixelOfCell(bin.x, bin.y - 1, bin.floor);
-  await canvasOf(page).hover({ position: await canvasOffset(page, lid) });
+  await canvasOf(page).hover({ position: await canvasOffsetForWorldPx(page, lid) });
   await canvasOf(page).screenshot({ path: `${SHOT_DIR}/hover-bin-lid.png` });
   await expect(canvasOf(page)).toHaveCSS("cursor", "pointer");
 
-  await canvasOf(page).click({ position: await canvasOffset(page, lid) });
+  await canvasOf(page).click({ position: await canvasOffsetForWorldPx(page, lid) });
   const seen = await Promise.all([intents(page), ignoredIntents(page)]);
   const touchedTheBin =
     seen[0].some((i) => i.objectId === BIN_ID.toString()) || seen[1].includes(BIN_ID.toString());
