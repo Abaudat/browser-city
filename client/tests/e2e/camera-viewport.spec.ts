@@ -376,10 +376,13 @@ test.describe("camera/viewport (NFR48)", () => {
     {
       name: "north",
       codes: ["ArrowUp"] as const,
-      setup: [
-        REST_DOWN_TO_PAVEMENT,
-        { kind: "x-at-least", key: "ArrowRight", value: 7.3 },
-      ] as const,
+      // Back through the door, the only gap in shop A's own front wall
+      // (the shopfront window's own collision now spans its real,
+      // def-declared width, `WINDOW_WIDTH` cells, story 2.13 -- x = 7.3
+      // (this case's own former setup) now falls inside it): rests
+      // already start on this same column (`PLAYER_START.x`), so no
+      // further x setup is needed before turning north.
+      setup: [REST_DOWN_TO_PAVEMENT] as const,
     },
     {
       name: "south",
@@ -388,12 +391,9 @@ test.describe("camera/viewport (NFR48)", () => {
       // the door): the pavement itself is too shallow north-south for
       // `MIN_TRAVELLED_CELLS` anywhere, but this same column, walked
       // north first, reaches the interior's own north wall with real
-      // room to spare south of it.
-      setup: [
-        REST_DOWN_TO_PAVEMENT,
-        { kind: "x-at-least", key: "ArrowRight", value: 7.3 },
-        { kind: "rest", key: "ArrowUp" },
-      ] as const,
+      // room to spare south of it. Back through the door -- the "north"
+      // case's own doc comment says why no x setup is needed first.
+      setup: [REST_DOWN_TO_PAVEMENT, { kind: "rest", key: "ArrowUp" }] as const,
     },
     {
       name: "north-east (diagonal)",

@@ -8,8 +8,13 @@
 // Nothing here re-proves a geometric or ordering fact: those are the
 // property tests in `tests/unit/render/**` and `tests/unit/world/**`.
 // This file only asserts what is true of *this* street's data.
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
+import { LAYER_TABLE } from "../../../src/render/layer-table";
 import { isNearSideWall } from "../../../src/render/visibility";
+import { buildPropDrawables, isDefPropDrawable } from "../../../src/test-street/drawables";
 import {
   BRIDGE_DECK_DEF_ID,
   BRIDGE_DECK_WIDTH,
@@ -19,11 +24,13 @@ import {
   BRIDGE_X0,
   BRIDGE_X1,
   furnitureBehindWindows,
+  isDefStreetProp,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
   PLAYER_START,
   STREET_BOUNDARY,
   STREET_BUILDING_AREAS,
+  STREET_GROUND_TILES,
   STREET_PROPS,
   STREET_ROOM_AREAS,
   STREET_TRANSITIONS,
@@ -43,6 +50,7 @@ import {
   streetMovementConfig,
   streetOwnershipIndex,
   streetWalkInputs,
+  streetWindowDefIds,
   streetWorldIndex,
 } from "./street-world";
 
@@ -88,9 +96,16 @@ describe("the hand-laid test street (AC1, AC2)", () => {
       if (x === BRIDGE_UNDER_PILLAR_X) continue;
       expect(isCellStandable(world, config, x, BRIDGE_DECK_Y, PLAYER_START.floor)).toBe(true);
     }
+    // Story 2.13 (Tim's direction): no `repeat` axis -- `bridge_deck` is a
+    // one-cell def, placed `BRIDGE_DECK_WIDTH` times, one per deck column,
+    // the same shape the parapet already uses.
     const deck = objectDef(BRIDGE_DECK_DEF_ID);
-    expect(deck.width).toBe(BRIDGE_DECK_WIDTH);
+    expect(deck.width).toBe(1);
     expect(deck.collider).toBeUndefined();
+    const deckPlacements = STREET_PROPS.filter(
+      (prop) => isDefStreetProp(prop) && prop.defId === BRIDGE_DECK_DEF_ID,
+    );
+    expect(deckPlacements.length).toBe(BRIDGE_DECK_WIDTH);
   });
 
   it("has at least one transition cell on each of the floors the walk visits", () => {
@@ -113,7 +128,9 @@ describe("the hand-laid test street (AC1, AC2)", () => {
   });
 
   it("has at least one window wall tile, placed by its real defs/ id", () => {
-    const windows = STREET_PROPS.filter((prop) => prop.defId === WINDOW_DEF_ID);
+    const windows = STREET_PROPS.filter(
+      (prop) => isDefStreetProp(prop) && prop.defId === WINDOW_DEF_ID,
+    );
     expect(windows.length).toBeGreaterThan(0);
     expect(objectDef(WINDOW_DEF_ID).window).toBe(true);
   });
@@ -141,7 +158,9 @@ describe("the hand-laid test street (AC1, AC2)", () => {
     const footprintArea = lamppost.width * lamppost.height * subcells * subcells;
     const colliderArea = (collider.x1 - collider.x0) * (collider.y1 - collider.y0);
     expect(colliderArea).toBeLessThan(footprintArea);
-    expect(STREET_PROPS.some((prop) => prop.defId === LAMPPOST_DEF_ID)).toBe(true);
+    expect(
+      STREET_PROPS.some((prop) => isDefStreetProp(prop) && prop.defId === LAMPPOST_DEF_ID),
+    ).toBe(true);
   });
 
   it("closes every floor it declares, so the player can never walk off the drawn world", () => {
@@ -312,5 +331,107 @@ describe("the scripted walk (AC3)", () => {
     expect(state.floor).toBe(PLAYER_START.floor);
     expect(state.cellX).toBe(arrived.cellX);
     expect(state.cellY).toBe(arrived.cellY);
+  });
+});
+
+// Story 2.13 (Tim's direction): the architecture made absolute, not just
+// convention -- a `defId` row can never carry an `assetKey` (the type
+// already forbids it; this is the runtime witness over every real
+// drawable this fixture produces), and no raw `ModernTileset/` import in
+// `scene.ts` may name a sheet any real `defs/objects` entry's own
+// `sprite.sheet` also names -- the second half is what stops the
+// shortcut growing back the moment someone reaches for `new URL(...)`
+// instead of the atlas for a def that already has one.
+describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => {
+  function rankOf(layer: string): number {
+    const table = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
+    const code = LAYER_TABLE.find((row) => row.name === layer)?.code;
+    if (code === undefined) throw new Error(`unknown street layer ${layer}`);
+    return resolveRank(table, code);
+  }
+
+  function sceneSource(): string {
+    return readFileSync(
+      fileURLToPath(new URL("../../../src/test-street/scene.ts", import.meta.url)),
+      "utf-8",
+    );
+  }
+
+  /** `scene.ts`'s own `ASSET_URLS` table, key -> the sheet it names
+   * (repo-root-relative, matching `sprite.sheet`'s own shape). Parsed
+   * from the committed source, never hand-copied, so this stays in sync
+   * with the real table by construction. */
+  function sheetByAssetKey(sceneSrc: string): Map<string, string> {
+    const table = new Map<string, string>();
+    for (const match of sceneSrc.matchAll(/(\w+):\s*new URL\(\s*"([^"]+)"/g)) {
+      const [, key, raw] = match;
+      if (!key || !raw) continue;
+      table.set(key, raw.replace(/^(\.\.\/)+/, ""));
+    }
+    return table;
+  }
+
+  it("every defId drawable this fixture produces carries no assetKey", () => {
+    const drawables = buildPropDrawables({
+      rankOf,
+      ownership,
+      windowDefIds: streetWindowDefIds(),
+    });
+    const defDrawables = drawables.filter(isDefPropDrawable);
+    expect(defDrawables.length).toBeGreaterThan(0);
+    for (const drawable of defDrawables) {
+      expect("assetKey" in drawable, `drawable ${drawable.stableId} carries both`).toBe(false);
+    }
+  });
+
+  const propAssetKeys = new Set(
+    STREET_PROPS.filter(
+      (prop): prop is Extract<typeof prop, { assetKey: string }> => !isDefStreetProp(prop),
+    ).map((prop) => prop.assetKey),
+  );
+
+  it("no ModernTileset/ import a real StreetProp row still uses names a sheet a real defs/objects entry's own sprite already names", () => {
+    const sheets = sheetByAssetKey(sceneSource());
+    expect(sheets.size).toBeGreaterThan(0);
+
+    const defSheets = new Set(defs.objects.map((object) => object.sprite.sheet));
+    for (const [key, sheet] of sheets) {
+      // A flat ground pass (`STREET_GROUND_TILES`) is out of scope for
+      // this story (Quentin's direction: "the ground passes ... still
+      // bind raw sheets after this story") -- it is never a `defId`-
+      // eligible row, so an `ASSET_URLS` key no real `StreetProp` row
+      // uses (`sidewalk`, `floorSheet`, `subwayFloor`, `subwayEdge`) is
+      // exempt: its own raw import sharing bytes with an unrelated def's
+      // sprite is not the shortcut this guard exists to catch.
+      if (!propAssetKeys.has(key)) continue;
+      expect(
+        defSheets.has(sheet),
+        `scene.ts's '${key}' still imports '${sheet}' raw for a real StreetProp row, but a real defs/objects entry's own sprite already names it -- draw it through the atlas instead`,
+      ).toBe(false);
+    }
+  });
+
+  it("every ASSET_URLS key is still referenced -- by a real StreetProp row, a ground pass, or a scene.ts crop base", () => {
+    // The ratchet against a dead import: a key a `defId` retarget just
+    // orphaned (`window`, `trashBin`, `bridgeDeck`, `bridgeStairs`, story
+    // 2.13) must actually be deleted from `ASSET_URLS`, not merely
+    // unreferenced -- a stray entry still costs a boot request for
+    // nothing on screen.
+    const sceneSrc = sceneSource();
+    const declaredKeys = [...sheetByAssetKey(sceneSrc).keys()];
+    expect(declaredKeys.length).toBeGreaterThan(0);
+
+    const groundAssetKeys = new Set(STREET_GROUND_TILES.map((tiles) => tiles.assetKey));
+    const cropBaseKeys = new Set(
+      [...sceneSrc.matchAll(/textureFor\(\s*"(\w+)"/g)]
+        .map((m) => m[1])
+        .filter((k) => k !== undefined),
+    );
+    for (const key of declaredKeys) {
+      const used = propAssetKeys.has(key) || groundAssetKeys.has(key) || cropBaseKeys.has(key);
+      expect(used, `ASSET_URLS key '${key}' is declared but never referenced -- delete it`).toBe(
+        true,
+      );
+    }
   });
 });

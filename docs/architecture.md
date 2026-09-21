@@ -557,15 +557,16 @@ build the moment it disagrees with the golden.
 
 A multi-cell prop (FR125/FR126) decomposes into one per-cell drawable per
 cell of its footprint, each with its own anchor and its own source
-sub-rect -- a placeholder sub-rect until an atlas exists, but the field is
-never optional. Extent comes from the placed object's `object_def`
-(`defs/`), never a hardcoded number, and is capped at approximately 8x8
-(FR127). A per-cell sub-rect is only ever legal on whole-tile boundaries:
-either the source art is already exactly one tile long on the decomposed
-axis (every cell repeats it whole) or exactly `cells * tile_size_px` long
-(sliced into equal whole-pixel cells) -- anything else, including any
-horizontal overhang, is refused at mount rather than drawn stretched or
-fractional.
+sub-rect, never optional. Extent comes from the placed object's
+`object_def` (`defs/`), never a hardcoded number, and is capped at
+approximately 8x8 (FR127). A per-cell sub-rect is only ever legal on
+whole-tile boundaries: either the source art is already exactly one tile
+long on the decomposed axis (every cell repeats it whole) or exactly
+`cells * tile_size_px` long (sliced into equal whole-pixel cells) --
+anything else, including any horizontal overhang, is refused at mount
+rather than drawn stretched or fractional. A def-placed prop's per-cell
+sub-rect is cut from its own packed `atlas` rect (`render/def-texture.ts`),
+never from a raw `ModernTileset/` import.
 
 `render.tile_size_px` and `render.storey_height_px` are balance keys
 (`defs/balance/render.toml`), not TypeScript literals, so they fold into
@@ -575,10 +576,13 @@ subtracts `floor * storey_height_px`, and a drawable on a storey above the
 viewer's own must never sort as though it were on that floor because of
 it.
 
-The test street reads its remaining props straight out of the repo-root
-`ModernTileset/` at runtime (`new URL(..., import.meta.url)` asset
-imports), not out of `client/public/`. Character part sheets are never
-read this way: they are packed, at build time, into
+Only a test-street row with no `object_def` (ground tiles, the shops' own
+plain wall runs, the poster, loose furniture) reads its art straight out of
+the repo-root `ModernTileset/` at runtime (`new URL(..., import.meta.url)`
+asset imports), not out of `client/public/`. A row placed by a real
+`object_def` draws only through its packed `atlas` rect (`AtlasPageLoader`),
+never a `ModernTileset/` import of its own. Character part sheets are never
+read the raw-import way either: they are packed, at build time, into
 `client/public/atlas/`, like every other atlas page. `deploy.yml`'s
 `deploy-client` job therefore checks out the whole repository -- never a
 sparse or `client/`-only checkout -- for as long as any client code reads
@@ -869,8 +873,12 @@ unknown or deprecated name is refused, naming the accepted set); `sprite`
 fits entirely inside its own sheet's real `IHDR` bounds; and `sprite`
 agrees with the footprint exactly (`w == width * tile_size_px`, `h` a
 whole multiple of `tile_size_px` and `h >= height * tile_size_px` -- a
-tall prop may overhang upward, never sideways or downward). Every field
-is validated identically on both sides.
+tall prop may overhang upward, never sideways or downward). `sprite` never
+repeats: a surface wider than its own art (story 2.13's `bridge_deck`, a
+16x16 pavement tile spanning a four-cell footbridge) is a one-cell object
+placed once per cell, the same way `wall_segment`'s own wall run already
+is -- never a `repeat` field on `sprite`. Every field is validated
+identically on both sides.
 
 FR128's walkability rule is two-sided: an object with no `collider` must
 carry the `underfoot` tag (`defs/tags/city.toml`, permanent, append-only
@@ -918,7 +926,11 @@ rule above.
   props, generic/floor-modular buildings, and whichever themed folders
   the street kit borrows single props from) maps to one shared
   `ATLAS_SHARED_GROUP` (`"street"`) group; a themed district keeps its
-  own group. A theme absent from the table fails the build naming it, and
+  own group. A handful of sheet families ship in one flat folder with no
+  further theme-sorter subfolder to derive from (`Room_Builder_subfiles/`
+  is the one this tileset actually uses) -- the folder segment itself is
+  the theme there (`room_builder`), checked before the theme-sorter-root
+  derivation. A theme absent from the table fails the build naming it, and
   so does a table that maps nothing at all to `ATLAS_SHARED_GROUP`, or
   one that maps a theme onto a `character_*` group -- those are reserved
   for the packer's own character-part groups, one per declared part kind

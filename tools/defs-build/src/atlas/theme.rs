@@ -30,6 +30,24 @@ fn is_theme_sorter_segment(segment: &str) -> bool {
     lower.starts_with("theme_sorter") || lower.ends_with("theme_sorter_16x16")
 }
 
+/// Story 2.13: a handful of sheet families the tileset ships outside any
+/// `Theme_Sorter*` tree entirely -- a single flat folder, never a themed
+/// subfolder to sort further into (unlike `Theme_Sorter_Singles/12_Kitchen_
+/// Singles/...`, `Room_Builder_subfiles/` holds every modular room-building
+/// sheet -- walls, floors -- directly). The folder segment itself is the
+/// theme here, checked before the theme-sorter-root derivation below so a
+/// path naming one of these never falls through to "no recognisable
+/// theme-sorter segment".
+fn flat_theme_segment(sheet: &str) -> Option<&'static str> {
+    sheet.split('/').find_map(|segment| {
+        if segment.eq_ignore_ascii_case("room_builder_subfiles") {
+            Some("room_builder")
+        } else {
+            None
+        }
+    })
+}
+
 /// The theme-sorter root segment itself (e.g. `"Theme_Sorter_Black_Shadow_
 /// Singles"`), the one segment [`is_theme_sorter_segment`] matched --
 /// [`shadow_variant`] and [`theme_group`] both start from this so neither
@@ -80,6 +98,9 @@ fn normalize_theme_segment(raw: &str) -> String {
 /// sheet path with no recognisable theme-sorter segment is a build error
 /// naming the path -- never a silent default group.
 pub fn theme_group(sheet: &str) -> Result<String, String> {
+    if let Some(theme) = flat_theme_segment(sheet) {
+        return Ok(theme.to_string());
+    }
     let segments: Vec<&str> = sheet.split('/').collect();
     let idx = segments.iter().position(|s| is_theme_sorter_segment(s));
     match idx {
@@ -219,6 +240,17 @@ mod tests {
         for (sheet, expected) in cases {
             assert_eq!(theme_group(sheet).as_deref(), Ok(expected), "{sheet}");
         }
+    }
+
+    #[test]
+    fn derives_the_room_builder_theme_for_a_flat_non_theme_sorter_folder() {
+        assert_eq!(
+            theme_group(
+                "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png"
+            )
+            .as_deref(),
+            Ok("room_builder")
+        );
     }
 
     #[test]

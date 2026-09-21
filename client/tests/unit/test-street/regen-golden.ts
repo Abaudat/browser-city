@@ -114,10 +114,10 @@ const out = [
   orderLiteral("STREET_GOLDEN_ORDER", orderAt(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor)),
   orderLiteral(
     "STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH",
-    // `LAMPPOST_CELL.x`, not `PLAYER_START.x` -- the lamppost no longer
-    // shares the door's own column (`LAMPPOST_CELL`'s own doc comment
-    // says why), so the rest position this golden pins is the lamppost's
-    // own cell centre, matching where the scripted walk's own
+    // Story 2.13: `LAMPPOST_CELL.x`, not `PLAYER_START.x` -- the lamppost
+    // no longer shares the door's own column (`LAMPPOST_CELL`'s own doc
+    // comment says why), so the rest position this golden pins is the
+    // lamppost's own cell centre, matching where the scripted walk's own
     // "part-way-through-the-lamppost" checkpoint actually lands.
     orderAt(LAMPPOST_CELL.x + 0.5, lamppostRestY(), PLAYER_START.floor),
   ),

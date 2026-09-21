@@ -96,9 +96,9 @@ describe("the story 1.6 street scene's committed ordering", () => {
     // above is, so a wrong golden here fails with a diff in the fastest
     // job instead of a ten-second timeout in the slowest one.
     const props = buildStreetProps();
-    // `LAMPPOST_CELL.x`, not `PLAYER_START.x` -- the lamppost no longer
-    // shares the door's own column (`LAMPPOST_CELL`'s own doc comment says
-    // why).
+    // Story 2.13: `LAMPPOST_CELL.x`, not `PLAYER_START.x` -- the lamppost
+    // no longer shares the door's own column (`LAMPPOST_CELL`'s own doc
+    // comment says why).
     const player = buildPlayerDrawable(
       rankOf("characters"),
       LAMPPOST_CELL.x + 0.5,
@@ -223,8 +223,9 @@ describe("the street scene's committed visibility (story 1.7 cycle 2, Quentin's 
   });
 
   it("at the lamppost rest point outside", () => {
-    // `LAMPPOST_CELL.x`, not `PLAYER_START.x` -- see `LAMPPOST_CELL`'s own
-    // doc comment for why they no longer share a column.
+    // Story 2.13: `LAMPPOST_CELL.x`, not `PLAYER_START.x` -- see
+    // `LAMPPOST_CELL`'s own doc comment for why they no longer share a
+    // column.
     expect(visibilityAt(LAMPPOST_CELL.x + 0.5, lamppostRestY(), PLAYER_START.floor)).toEqual(
       STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE,
     );
@@ -325,7 +326,7 @@ describe("the player can never walk off the drawn world", () => {
     );
   });
 
-  it("walking straight south rests at the shopfront exit, short of the lamppost", () => {
+  it("walking straight south rests at the shopfront exit, short of the lamppost (story 2.13)", () => {
     // The lamppost no longer shares the door's own column (`LAMPPOST_CELL`'s
     // own doc comment says why), so a straight south walk out of the door
     // now rests against `SHOPFRONT_EXIT_REST_COLLIDER` instead -- the

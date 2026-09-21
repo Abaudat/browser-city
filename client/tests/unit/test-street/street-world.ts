@@ -95,19 +95,19 @@ export function streetWorldIndex(): WorldIndex {
   return world;
 }
 
-/** Where the player comes to rest walking straight south out of the door:
- * the south face of `SHOPFRONT_EXIT_REST_COLLIDER`, one row north of the
- * lamppost's own row (`LAMPPOST_CELL.y - 1`) -- that constant's own doc
- * comment says why this rest exists now that the lamppost no longer
- * shares the door's own column. */
+/** Where the player comes to rest walking straight south out of the door
+ * (story 2.13): the south face of `SHOPFRONT_EXIT_REST_COLLIDER`, one row
+ * north of the lamppost's own row (`LAMPPOST_CELL.y - 1`) -- that
+ * constant's own doc comment says why this rest exists now that the
+ * lamppost no longer shares the door's own column. */
 export function shopfrontExitRestY(): number {
   const config = streetMovementConfig();
   return LAMPPOST_CELL.y - 1 + SHOPFRONT_EXIT_REST_COLLIDER.y0 / config.subcellsPerCell;
 }
 
-/** Where the player comes to rest approaching the lamppost from the west:
- * the west face of `LAMPPOST_APPROACH_REST_COLLIDER`. See that constant's
- * own doc comment for why this leg needs a rest at all. */
+/** Where the player comes to rest approaching the lamppost from the west
+ * (story 2.13): the west face of `LAMPPOST_APPROACH_REST_COLLIDER`. See
+ * that constant's own doc comment for why this leg needs a rest at all. */
 export function lamppostApproachRestX(): number {
   const config = streetMovementConfig();
   const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;

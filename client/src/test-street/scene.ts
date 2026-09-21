@@ -41,6 +41,7 @@ import {
   countBoundAtlasPages,
 } from "../render/atlas-pages";
 import { type Camera, computeCamera, worldPxFromClient } from "../render/camera";
+import { defCellTexture, objectDefById } from "../render/def-texture";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -68,7 +69,9 @@ import { type CitizensLayerHandle, mountCitizensLayer } from "./citizens-layer";
 import {
   buildPlayerDrawable,
   buildPropDrawables,
+  isDefPropDrawable,
   type PropDrawable,
+  type PropDrawableByAsset,
   updatePlayerDrawable,
 } from "./drawables";
 import {
@@ -104,28 +107,17 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
     "../../../ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png",
     import.meta.url,
   ).href,
-  window: new URL(
-    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Window_1_Middle_Modular.png",
-    import.meta.url,
-  ).href,
   poster: new URL(
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Poster_1.png",
     import.meta.url,
   ).href,
-  // The street lamp's real art (Artie's direction): the def already named
-  // this exact sprite -- the street itself was the one drawing the wrong
-  // art (a picnic table borrowed over this def's own pole collider).
-  lamppost: new URL(
-    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Street_Lamp_5.png",
-    import.meta.url,
-  ).href,
-  // "counter" is story 2.6's own atlas-drawn prop -- the shop counter's
-  // `object_def.sprite` is byte-for-byte this same art, so it loads
-  // through `render/atlas-pages.ts`'s `AtlasPageLoader` instead of a
-  // `ModernTileset/` URL import (Tim's direction, cycle 1): see
-  // `mountStreetScene`'s own `textures.set("counter", ...)` below.
-  // Shop B's own furniture: a grocer, not a second tiki bar (Artie's
-  // "grounded city" direction).
+  // Story 2.6/2.13: every `defId`-placed prop (the counter, the window,
+  // the bin, the lamppost, the wall segment, the bridge deck, the foot
+  // stairs) draws through `render/atlas-pages.ts`'s `AtlasPageLoader`
+  // instead of a `ModernTileset/` URL import -- see `resolvePropTexture`
+  // below. Only a row with no real `defs/objects` id belongs in this
+  // table. Shop B's own furniture: a grocer, not a second tiki bar
+  // (Artie's "grounded city" direction).
   shelf: new URL(
     "../../../ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_113.png",
     import.meta.url,
@@ -140,13 +132,6 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
   ).href,
   glass: new URL(
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16/ME_Singles_Camping_16x16_Bottle_1.png",
-    import.meta.url,
-  ).href,
-  // Story 1.9's interaction target on the pavement: a real single street
-  // bin from the city-props pack, 16x32px -- one cell wide, bottom
-  // anchored, overhanging one tile upward like every other tall prop.
-  trashBin: new URL(
-    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Small_Closed_Trash_Can.png",
     import.meta.url,
   ).href,
   awning: new URL(
@@ -168,20 +153,6 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
   ).href,
   subwayBench: new URL(
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Two_Seats_Grey_Bench_Frontal_1.png",
-    import.meta.url,
-  ).href,
-  // Story 1.13's footbridge: a concrete deck (the same city pavement
-  // tile the street below it is paved with, repeated per deck cell) and
-  // a flight of steps at each end. Real LimeZu art, no new PNGs.
-  bridgeDeck: new URL(
-    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png",
-    import.meta.url,
-  ).href,
-  // One cell wide (16x48), so a flight of steps on a one-cell footprint
-  // overhangs upward like every other tall prop and never sideways over
-  // the deck it lands on.
-  bridgeStairs: new URL(
-    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Small_2.png",
     import.meta.url,
   ).href,
   subwayWall: new URL(
@@ -475,7 +446,11 @@ function cropped(base: Texture, frame: Rectangle): Texture {
  * horizontal mismatch -- throws at mount rather than drawing a stretched
  * lie.
  */
-export function sliceTexture(base: Texture, drawable: PropDrawable, tileSizePx: number): Texture {
+export function sliceTexture(
+  base: Texture,
+  drawable: PropDrawableByAsset,
+  tileSizePx: number,
+): Texture {
   const { footprintWidth, footprintHeight, sourceCol, sourceRow, assetKey } = drawable;
 
   if (footprintWidth === 1 && footprintHeight === 1) {
@@ -527,19 +502,43 @@ function textureFor(assetKey: string, textures: ReadonlyMap<string, Texture>): T
   return texture;
 }
 
-function createSprite(
+/** One drawable's own real texture (story 2.13): a `defId` drawable draws
+ * only through `render/def-texture.ts`'s `defCellTexture`, resolved
+ * through `AtlasPageLoader` -- never a `ModernTileset/` import; an
+ * `assetKey` drawable keeps drawing from `scene.ts`'s own raw texture
+ * table via `sliceTexture`, exactly as before. The one place this file
+ * dispatches on the `PropDrawable` union's own discriminant. */
+function resolvePropTexture(
   drawable: PropDrawable,
+  defs: VerifiedDefs,
+  atlasPageLoader: AtlasPageLoader,
   textures: ReadonlyMap<string, Texture>,
   tileSizePx: number,
-): Sprite {
+): Promise<Texture> {
+  if (isDefPropDrawable(drawable)) {
+    const object = objectDefById(defs, drawable.defId);
+    return defCellTexture(defs, object, atlasPageLoader, drawable.sourceCol, tileSizePx);
+  }
   const base = textureFor(drawable.assetKey, textures);
-  const texture = sliceTexture(base, drawable, tileSizePx);
+  return Promise.resolve(sliceTexture(base, drawable, tileSizePx));
+}
+
+function createSprite(texture: Texture): Sprite {
   const sprite = new Sprite(texture);
   // Bottom-centre origin pinned to the cell's bottom edge (Artie's
   // direction): a tall sprite overhangs upward out of its footprint,
   // never downward.
   sprite.anchor.set(0.5, 1);
   return sprite;
+}
+
+/** The key `SCREEN_Y_NUDGE_PX` looks a drawable's own screen-space nudge
+ * up by -- only an `assetKey` drawable can ever have one (`"glass"`
+ * today); a `defId` drawable's own def id can never collide with an
+ * asset key string, so this always misses cleanly for one, exactly like
+ * every other `assetKey` this table does not name. */
+function spriteNudgeKey(drawable: PropDrawable): string {
+  return isDefPropDrawable(drawable) ? `def:${drawable.defId}` : drawable.assetKey;
 }
 
 function positionSprite(
@@ -549,11 +548,11 @@ function positionSprite(
   floor: number,
   tileSizePx: number,
   storeyHeightPx: number,
-  assetKey: string,
+  nudgeKey: string,
 ): void {
   const pos = screenPositionPx(worldX, worldY, floor, tileSizePx, storeyHeightPx);
   sprite.x = pos.x;
-  sprite.y = pos.y + (SCREEN_Y_NUDGE_PX[assetKey] ?? 0);
+  sprite.y = pos.y + (SCREEN_Y_NUDGE_PX[nudgeKey] ?? 0);
 }
 
 /** Mount-time geometry guard (Artie's direction): a drawable's art may
@@ -585,7 +584,11 @@ export function assertNoOverhangBeyondStorey(
 }
 
 interface PoolEntry extends OrderedMember<PropDrawable>, VisibilityMember<PropDrawable> {
-  readonly assetKey: string;
+  /** A debug-only label (Artie's `assertNoOverhangBeyondStorey` failure
+   * message) -- the drawable's own `assetKey`, or `def:<id>` for a
+   * `defId` drawable (`spriteNudgeKey`'s own idiom). Never read to pick a
+   * texture; `resolvePropTexture` does that from the drawable itself. */
+  readonly label: string;
   readonly view: Sprite;
 }
 
@@ -777,17 +780,12 @@ export async function mountStreetScene(
   textures.set("wallTileV", cropped(wallSheet, WALL_TILE_V_FRAME));
   textures.set("floor", cropped(textureFor("floorSheet", rawTextures), FLOOR_TILE_FRAME));
 
-  // Story 2.6 (Tim's direction, cycle 1): the shop counter is the one
-  // placed prop whose own `object_def.sprite` is byte-for-byte the art
-  // the street already draws, so it is the one prop this story proves
-  // the atlas reader end to end against -- loaded through
-  // `AtlasPageLoader` instead of a `ModernTileset/` URL import.
+  // Story 2.6/2.13: every `defId`-placed prop draws through
+  // `AtlasPageLoader` instead of a `ModernTileset/` URL import -- its own
+  // per-cell texture is resolved per drawable, below, by
+  // `resolvePropTexture`. This loader is the one place a packed atlas
+  // page is ever fetched.
   const atlasPageLoader = new AtlasPageLoader(atlasBaseUrl);
-  const counterDef = defs.objects.find((o) => o.key === "shop_counter");
-  if (!counterDef) {
-    throw new Error("scene: defs/ no longer declares 'shop_counter'");
-  }
-  textures.set("counter", await atlasPageLoader.objectTexture(defs, counterDef));
 
   const world = new Container();
   // The camera/viewport story (Quentin's direction): zoom is set here,
@@ -894,28 +892,42 @@ export async function mountStreetScene(
   const ownership = new OwnershipIndex(STREET_BUILDING_AREAS, STREET_ROOM_AREAS);
   const transitions = new TransitionIndex(STREET_TRANSITIONS);
 
-  const propDrawables = buildPropDrawables({
+  // `wallAssetOf`'s swatch picker only ever applies to a hand-picked
+  // `assetKey` drawable (a wall run with no real `defs/objects` id behind
+  // it) -- a `defId` wall (the window, the bridge's own parapet cells) is
+  // one def, one sprite, chosen once in `defs/objects/city-props.toml`,
+  // never swapped per placement on the client (Tim's direction, story
+  // 2.13).
+  const propDrawables: readonly PropDrawable[] = buildPropDrawables({
     rankOf: (layer) => rankOf(layerCodeByName(layer)),
     ownership,
     windowDefIds,
-  }).map((d) => ({
-    ...d,
-    assetKey: wallAssetOf(d.assetKey, d.wallOrientation),
-  }));
+  }).map((d) =>
+    isDefPropDrawable(d) ? d : { ...d, assetKey: wallAssetOf(d.assetKey, d.wallOrientation) },
+  );
 
-  const entries: PoolEntry[] = propDrawables.map((drawable) => {
-    const sprite = createSprite(drawable, textures, tileSizePx);
-    positionSprite(
-      sprite,
-      fromSortUnits(drawable.x),
-      fromSortUnits(drawable.y),
-      drawable.floor,
-      tileSizePx,
-      storeyHeightPx,
-      drawable.assetKey,
-    );
-    return { drawable, view: sprite, assetKey: drawable.assetKey };
-  });
+  const entries: PoolEntry[] = await Promise.all(
+    propDrawables.map(async (drawable) => {
+      const texture = await resolvePropTexture(
+        drawable,
+        defs,
+        atlasPageLoader,
+        textures,
+        tileSizePx,
+      );
+      const sprite = createSprite(texture);
+      positionSprite(
+        sprite,
+        fromSortUnits(drawable.x),
+        fromSortUnits(drawable.y),
+        drawable.floor,
+        tileSizePx,
+        storeyHeightPx,
+        spriteNudgeKey(drawable),
+      );
+      return { drawable, view: sprite, label: spriteNudgeKey(drawable) };
+    }),
+  );
 
   // FR173's affordance mark (`render/highlight.ts`/`render/pixi-highlight.ts`):
   // one `HighlightApplier` per scene, built once from the same
@@ -961,7 +973,7 @@ export async function mountStreetScene(
   const playerEntry: PoolEntry = {
     drawable: playerDrawable,
     view: playerSprite,
-    assetKey: "player",
+    label: "player",
   };
   const members: PoolEntry[] = [...entries, playerEntry];
 
@@ -1026,7 +1038,7 @@ export async function mountStreetScene(
   // was measured the same way (624px of overhang against a 48px storey).
   assertNoOverhangBeyondStorey(
     members.map((m) => ({
-      label: `${m.assetKey}#${m.drawable.stableId}`,
+      label: `${m.label}#${m.drawable.stableId}`,
       overhangPx: m.view.height - tileSizePx,
     })),
     storeyHeightPx,

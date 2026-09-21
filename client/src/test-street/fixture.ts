@@ -51,23 +51,20 @@ export interface StreetFootprint {
   readonly height: number;
 }
 
-/** One placed prop in the street scene. `x`/`y` are the anchor cell (world
- * tile coordinates); `assetKey` names an entry in `scene.ts`'s asset
- * table -- this module knows nothing about textures or PixiJS.
+/** Every field a placed prop carries regardless of where its art comes
+ * from. `x`/`y` are the anchor cell (world tile coordinates).
  *
  * Collision comes from one of two places, never a hand-typed sub-cell
  * rect: `defId` names a real `defs/objects` entry and uses that entry's
  * own `collider`; `solid` is street-only geometry (the shops' plain walls,
  * which are not `defs/` objects) blocking the prop's whole footprint. */
-export interface StreetProp {
+interface StreetPropBase {
   readonly id: bigint;
-  readonly assetKey: string;
   readonly x: number;
   readonly y: number;
   readonly floor: number;
   readonly layer: StreetLayer;
   readonly footprint?: StreetFootprint;
-  readonly defId?: number;
   readonly solid?: true;
   /** For a `wallTile`/`wallStub` prop only: which run this wall segment
    * belongs to -- a north/south (front/back) run is `"horizontal"`, an
@@ -80,6 +77,37 @@ export interface StreetProp {
    * wall to a flush side-wall tile). Unused, and meaningless, for every
    * other layer. */
   readonly wallOrientation?: "horizontal" | "vertical";
+}
+
+/** A prop placed by a real `defs/objects` id (story 2.13): its texture
+ * identity is the def id alone, resolved only through
+ * `render/atlas-pages.ts`'s `AtlasPageLoader` (`render/def-texture.ts`).
+ * Never carries `assetKey`/`sourceCol`/`sourceRow` -- a `defId` row that
+ * could still name a raw asset is exactly the shortcut this story
+ * retires. */
+export interface StreetPropByDef extends StreetPropBase {
+  readonly defId: number;
+}
+
+/** A prop placed by a hand-picked asset key into `scene.ts`'s own raw
+ * `ModernTileset/` texture table -- street-only harness geometry with no
+ * real `defs/objects` entry behind it (ground tiles, the shops' plain
+ * wall runs, the poster, loose furniture). Never carries `defId`. */
+export interface StreetPropByAsset extends StreetPropBase {
+  readonly assetKey: string;
+}
+
+/** One placed prop in the street scene -- a discriminated union (Tim's/
+ * Quentin's direction, story 2.13): a `defId` row has no `assetKey` field
+ * at all, and an `assetKey` row has no `defId`, so the seam this story
+ * retires cannot regress without a type error. */
+export type StreetProp = StreetPropByDef | StreetPropByAsset;
+
+/** Narrows a [`StreetProp`] to its `defId` variant -- the one place this
+ * module's own discriminant check lives, never repeated as a bare
+ * `"defId" in prop` at each call site. */
+export function isDefStreetProp(prop: StreetProp): prop is StreetPropByDef {
+  return "defId" in prop;
 }
 
 /** `defs/objects/city-props.toml`'s own `lamppost` id -- the street places
@@ -164,47 +192,49 @@ export const PLAYER_START = { x: DOOR_X_A + 0.5, y: 4, floor: 0 } as const;
 export const PLAYER_STABLE_ID = 1000n;
 
 /** The anchor cell of the lamppost, out on the pavement -- a real collider
- * read from `defs/objects/city-props.toml`. Artie's direction: `x` is
- * `PARTY_WALL_X`, in front of the pier between the two shops, not
- * `DOOR_X_A` -- a 64px-tall lamp at the door's own column would draw
- * through the awning and across the doorway, and nobody plants a lamp in
- * front of a door. `y` is unchanged, so everything keyed on its row
- * (`STAIRS_Y`, `lamppostRestY()`) is untouched. */
+ * read from `defs/objects/city-props.toml`. Story 2.13 (Artie's
+ * direction): `x` is `PARTY_WALL_X`, in front of the pier between the two
+ * shops, not `DOOR_X_A` -- a 64px-tall lamp at the door's own column would
+ * draw through the awning and across the doorway, and nobody plants a
+ * lamp in front of a door. `y` is unchanged, so everything keyed on its
+ * row (`STAIRS_Y`, `lamppostRestY()`) is untouched. */
 export const LAMPPOST_CELL = { x: PARTY_WALL_X, y: 8 } as const;
 
 /** Where the scripted walk's own approach to the lamppost comes to rest,
- * one row north of it: a real collider, not a coordinate threshold -- the
- * same "a rest absorbs release lag, a threshold does not" reasoning
- * `PAVEMENT_CROSSING_REST_COLLIDER` and the underpass checkpoint below
- * already rely on. Moving the lamppost off the door's own column
- * (`LAMPPOST_CELL`'s own doc comment says why) means walking south out of
- * the door no longer lands the walker on a collider by coincidence, the
- * way it used to when the two shared a column -- without a rest here, an
- * overshot south exit could carry the walker anywhere from this row to
- * the pavement's own south edge before the walk ever turns east, handing
- * the eastward leg an uncontrolled starting row. Solid from a margin of
- * exactly one body-height (`y0 = 4` -- `movement.player_body_height_
- * subcells`, never a smaller margin: the walker's own body extends that
- * far *above* its own feet, so a shorter margin would rest the feet low
- * enough in the row that the body's own top edge still reaches back into
- * the wall row above it, where the shopfront window's own collider spans
- * the door's neighbouring cells) down to the row's own south edge. Also
- * short enough that the walker's own body never reaches the trash bin's
- * own collider two cells further along this same row (touching only,
- * never overlapping: the bin's own top face sits at 0.25 cells into its
- * row, exactly where this rest's own margin ends). */
+ * one row north of it (story 2.13): a real collider, not a coordinate
+ * threshold -- the same "a rest absorbs release lag, a threshold does
+ * not" reasoning `PAVEMENT_CROSSING_REST_COLLIDER` and the underpass
+ * checkpoint below already rely on. Moving the lamppost off the door's
+ * own column (`LAMPPOST_CELL`'s own doc comment says why) means walking
+ * south out of the door no longer lands the walker on a collider by
+ * coincidence, the way it used to when the two shared a column -- without
+ * a rest here, an overshot south exit could carry the walker anywhere
+ * from this row to the pavement's own south edge before the walk ever
+ * turns east, handing the eastward leg an uncontrolled starting row.
+ * Solid from a margin of exactly one body-height (`y0 = 4` --
+ * `movement.player_body_height_subcells`, never a smaller margin: the
+ * walker's own body extends that far *above* its own feet, so a shorter
+ * margin would rest the feet low enough in the row that the body's own
+ * top edge still reaches back into the wall row above it, where the
+ * shopfront window's own collider now spans the door's neighbouring
+ * cells -- found the hard way, resting at a smaller margin caught the
+ * very next segment on that window's own west face) down to the row's
+ * own south edge. Also short enough that the walker's own body never
+ * reaches the trash bin's own collider two cells further along this same
+ * row (touching only, never overlapping: the bin's own top face sits at
+ * 0.25 cells into its row, exactly where this rest's own margin ends). */
 export const SHOPFRONT_EXIT_REST_COLLIDER = { x0: 0, y0: 4, x1: 16, y1: 16 } as const;
 
 /** Where the scripted walk's own eastward approach to the lamppost comes
- * to rest: the same "release lag absorbed by a real collider" reasoning
- * as `SHOPFRONT_EXIT_REST_COLLIDER` above, now for the x axis -- an east
- * wall across the lamppost's own approach row, solid from its own cell's
- * centre (`x0 = 8`) so the walker's own body still comes to rest inside
- * the lamppost's own cell (never short of it), with its centre well
- * inside the pole collider's own overlap tolerance once the next segment
- * turns south into it. Confined to this one row (never the lamppost's
- * own row, one further south) so it never blocks the walk leaving the
- * lamppost's cell eastward afterward, on that other row. */
+ * to rest (story 2.13): the same "release lag absorbed by a real
+ * collider" reasoning as `SHOPFRONT_EXIT_REST_COLLIDER` above, now for the
+ * x axis -- an east wall across the lamppost's own approach row, solid
+ * from its own cell's centre (`x0 = 8`) so the walker's own body still
+ * comes to rest inside the lamppost's own cell (never short of it), with
+ * its centre well inside the pole collider's own overlap tolerance once
+ * the next segment turns south into it. Confined to this one row (never
+ * the lamppost's own row, one further south) so it never blocks the walk
+ * leaving the lamppost's cell eastward afterward, on that other row. */
 export const LAMPPOST_APPROACH_REST_COLLIDER = { x0: 8, y0: 0, x1: 16, y1: 16 } as const;
 
 /** Story 1.7 ownership ids (Tim's direction): the enclosure key is
@@ -555,9 +585,10 @@ export const STREET_PROPS: readonly StreetProp[] = [
   },
   // The shop window (FR121): a real `defs/objects` wall tile, `window =
   // true`, `WINDOW_WIDTH` cells wide starting right after the door --
-  // its own art (`ME_Singles_Office_16x16_Window_1_Middle_Modular.png`,
-  // 48x32px) is exactly that many tiles wide, so the footprint matches
-  // the art exactly and `sliceTexture` slices it cleanly, never
+  // its own def art (story 2.13: `ME_Singles_Office_16x16_Window_1_
+  // Middle_Modular.png`, 48x32px, the def's own `width = 3`) is exactly
+  // that many tiles wide, so the footprint matches the art exactly and
+  // draws through `render/atlas-pages.ts`'s `AtlasPageLoader`, never
   // overhanging over the door (Artie's direction). It stops one cell
   // short of the party wall -- id 40 below is that last cell, a full
   // wall pier, so the window never runs straight into the corner (Artie's
@@ -565,7 +596,6 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // by `defId` like the lamppost, never `solid: true`.
   {
     id: 6n,
-    assetKey: "window",
     x: WINDOW_X_A,
     y: SOUTH_WALL_Y,
     floor: 0,
@@ -636,7 +666,6 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // wide interaction target, reachable only from the customer side.
   {
     id: 8n,
-    assetKey: "counter",
     x: INTERIOR_X0_A,
     y: INTERIOR_Y0,
     floor: 0,
@@ -658,9 +687,11 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // pavement, two cells east of shop A's door, so walking out of the door
   // and along the pavement crosses its reach boundary. Its collider and
   // its `interact_at` both come from `defs/objects`'s own `trash_bin`.
+  // Story 2.13: the def's own sprite now names the street's own bin
+  // (`Small_Closed_Trash_Can.png`, Artie's direction), so this row draws
+  // through the atlas, never a `ModernTileset/` import of its own.
   {
     id: 15n,
-    assetKey: "trashBin",
     x: DOOR_X_A + 2,
     y: SOUTH_WALL_Y + 1,
     floor: 0,
@@ -670,13 +701,12 @@ export const STREET_PROPS: readonly StreetProp[] = [
 
   // The street lamp (story 1.8's known-solid rest point the scripted walk
   // -- `streetWalkRoute` below -- and `drawables.test.ts` walk the player
-  // into): draws the def's own real `Street_Lamp_5` art (Artie's
-  // direction -- the def always named this sprite; the street itself was
-  // the one borrowing a picnic table over its pole collider) instead of
-  // borrowing `"table"`.
+  // into): story 2.13 retargets this row to draw the def's own real
+  // `Street_Lamp_5` art (Artie's direction -- the def always named this
+  // sprite; the street itself was the one borrowing a picnic table over
+  // its pole collider) instead of borrowing `"table"`.
   {
     id: 14n,
-    assetKey: "lamppost",
     x: LAMPPOST_CELL.x,
     y: LAMPPOST_CELL.y,
     floor: 0,
@@ -708,7 +738,6 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // wall side gets (id 40).
   {
     id: 32n,
-    assetKey: "window",
     x: WINDOW_X_B,
     y: SOUTH_WALL_Y,
     floor: 0,
@@ -777,26 +806,27 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // `PLATFORM_UP_ANCHOR_X`, were covering the bench almost completely
   // when the two sat one cell apart).
   // --- The footbridge (story 1.13) -------------------------------------
-  // The deck itself: one multi-cell prop, placed by its real `defs/`
-  // id, so its "no collider at all" comes from `defs/objects` rather
-  // than from this fixture choosing not to give it one.
-  {
-    id: 70n,
-    assetKey: "bridgeDeck",
-    x: BRIDGE_X0,
+  // The deck itself: story 2.13 (Tim's direction) -- `bridge_deck` is a
+  // one-cell def (a real 16x16 pavement tile, the same city sidewalk tile
+  // the street below it is paved with), not a four-cell def with a
+  // `repeat` axis, so the deck is `BRIDGE_DECK_WIDTH` separate `defId`
+  // placements, one per column, the same shape the parapet just below
+  // already uses. Its "no collider at all" still comes from `defs/objects`
+  // rather than from this fixture choosing not to give it one.
+  ...Array.from({ length: BRIDGE_DECK_WIDTH }, (_, index) => ({
+    id: BigInt(65 + index),
+    x: BRIDGE_X0 + index,
     y: BRIDGE_DECK_Y,
     floor: BRIDGE_FLOOR,
-    layer: "objects",
-    footprint: { width: BRIDGE_DECK_WIDTH, height: 1 },
+    layer: "objects" as const,
     defId: BRIDGE_DECK_DEF_ID,
-  },
+  })),
   // The parapet along the deck's own north edge: real `wall_segment`
   // cells, one per deck column. Owned by no building, so they are never
   // retracted however close the player stands (FR120 is keyed on
   // ownership, never proximity).
   ...Array.from({ length: BRIDGE_DECK_WIDTH }, (_, index) => ({
     id: BigInt(71 + index),
-    assetKey: "wallTile",
     x: BRIDGE_X0 + index,
     y: BRIDGE_DECK_Y - 1,
     floor: BRIDGE_FLOOR,
@@ -808,7 +838,6 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // each the physical thing a `floor_transition` row is anchored on.
   {
     id: 80n,
-    assetKey: "bridgeStairs",
     x: BRIDGE_UP_ANCHOR_X,
     y: BRIDGE_UP_ANCHOR_Y,
     floor: STREET_FLOOR,
@@ -817,7 +846,6 @@ export const STREET_PROPS: readonly StreetProp[] = [
   },
   {
     id: 81n,
-    assetKey: "bridgeStairs",
     x: BRIDGE_DOWN_ANCHOR_X,
     y: BRIDGE_DOWN_ANCHOR_Y,
     floor: BRIDGE_FLOOR,
@@ -899,8 +927,8 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
     width: 21 - (EAST_WALL_X_B + 1),
     height: 1,
   },
-  // The scripted walk's own two lamppost-approach rests
-  // (`SHOPFRONT_EXIT_REST_COLLIDER`/`LAMPPOST_APPROACH_REST_COLLIDER`'s own
+  // The scripted walk's own two lamppost-approach rests (story 2.13;
+  // `SHOPFRONT_EXIT_REST_COLLIDER`/`LAMPPOST_APPROACH_REST_COLLIDER`'s own
   // doc comments say why each exists): the door's own column, then the
   // lamppost's own column, both on the lamppost's approach row.
   {
@@ -1134,7 +1162,11 @@ export function streetColliderSources(
 export function streetPlacedRows(): readonly PlacedObject[] {
   const rows: PlacedObject[] = [];
   for (const prop of STREET_PROPS) {
-    const defId = prop.defId ?? (prop.solid ? streetDefId(prop.id) : undefined);
+    const defId = isDefStreetProp(prop)
+      ? prop.defId
+      : prop.solid
+        ? streetDefId(prop.id)
+        : undefined;
     if (defId === undefined) continue;
     rows.push({
       objectId: prop.id,
@@ -1176,7 +1208,9 @@ export function streetPlacedRows(): readonly PlacedObject[] {
  * can never pass vacuously and a re-laid street that drops the case fails
  * here rather than only looking wrong on screen. */
 export function furnitureBehindWindows(): readonly bigint[] {
-  const windows = STREET_PROPS.filter((prop) => prop.defId === WINDOW_DEF_ID);
+  const windows = STREET_PROPS.filter(
+    (prop) => isDefStreetProp(prop) && prop.defId === WINDOW_DEF_ID,
+  );
   const ids = new Set<bigint>();
   for (const prop of STREET_PROPS) {
     if (prop.layer !== "furniture") continue;
@@ -1267,14 +1301,15 @@ export const STREET_WALK_DIRECTIONS: Readonly<Record<StreetWalkKey, { x: number;
  * caller so this module stays free of `defs/` (and of any filesystem or
  * fetch). */
 export interface StreetWalkInputs {
-  /** Where a walk straight south out of shop A's door comes to rest: the
-   * south face of `SHOPFRONT_EXIT_REST_COLLIDER`, a real collider now
-   * that the lamppost no longer shares the door's own column -- see that
-   * constant's own doc comment for why. */
+  /** Where a walk straight south out of shop A's door comes to rest
+   * (story 2.13): the south face of `SHOPFRONT_EXIT_REST_COLLIDER`, a
+   * real collider now that the lamppost no longer shares the door's own
+   * column -- see that constant's own doc comment for why. */
   readonly shopfrontExitRestY: number;
   /** Where the walk's own approach to the lamppost comes to rest, moving
-   * east: the west face of `LAMPPOST_APPROACH_REST_COLLIDER`. See that
-   * constant's own doc comment for why this leg needs a rest at all. */
+   * east (story 2.13): the west face of `LAMPPOST_APPROACH_REST_COLLIDER`.
+   * See that constant's own doc comment for why this leg needs a rest at
+   * all. */
   readonly lamppostApproachRestX: number;
   /** Where a walk into the lamppost comes to rest: the top face of the
    * lamppost's own base collider. */
@@ -1314,20 +1349,20 @@ export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSe
   return [
     // Out of the door, onto the pavement: the building's own near-side
     // walls come back the moment the player is no longer inside it. Rests
-    // against `SHOPFRONT_EXIT_REST_COLLIDER` rather than a bare
-    // `y-at-least SOUTH_WALL_Y + 1` threshold -- that constant's own doc
-    // comment says why a real rest is needed here now that the lamppost
-    // no longer sits on this same column to absorb any overshoot by
-    // coincidence.
+    // against `SHOPFRONT_EXIT_REST_COLLIDER` (story 2.13) rather than a
+    // bare `y-at-least SOUTH_WALL_Y + 1` threshold -- that constant's own
+    // doc comment says why a real rest is needed here now that the
+    // lamppost no longer sits on this same column to absorb any overshoot
+    // by coincidence.
     {
       label: "outside-the-shopfront",
       key: "ArrowDown",
       until: { kind: "y-at-least", value: inputs.shopfrontExitRestY },
     },
-    // East to the lamppost's own column (`LAMPPOST_CELL`'s own doc comment
-    // says why it moved off the door's column): a rest against
-    // `LAMPPOST_APPROACH_REST_COLLIDER`, so the southward segment just
-    // below always starts centred on the lamppost's own narrow base
+    // East to the lamppost's own column (story 2.13; `LAMPPOST_CELL`'s own
+    // doc comment says why it moved off the door's column): a rest
+    // against `LAMPPOST_APPROACH_REST_COLLIDER`, so the southward segment
+    // just below always starts centred on the lamppost's own narrow base
     // collider, immune to how much release lag this leg itself carries.
     {
       label: "east-to-the-lamppost",
