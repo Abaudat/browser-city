@@ -128,16 +128,40 @@ _bc_issue_body() {
 # write-demo's checklist lint (Story 4.17): mechanical rules only, never a
 # judgement call an LLM prompt rule could not be asserted against. One data
 # file next to the prompts, not code, so the next piece of demo feedback of
-# this kind is a one-line change with a one-line test.
-_BC_DEMO_DENYLIST_FILE="$_BC_ISSUE_DIR/prompts/demo-checklist-denylist.txt"
+# this kind is a one-line change with a one-line test. BC_DEMO_DENYLIST_FILE
+# overrides the path -- only the test suite sets it, to exercise a missing,
+# empty, CRLF or regex-metacharacter-bearing denylist without ever touching
+# the real one.
+_BC_DEMO_DENYLIST_FILE="${BC_DEMO_DENYLIST_FILE:-$_BC_ISSUE_DIR/prompts/demo-checklist-denylist.txt}"
 
-# _bc_demo_lint_line <checklist-line> -> the reason it is rejected on
-# stdout, exit 1 ; nothing on stdout, exit 0, if it is clean. Every rule is
-# mechanical -- no reading for tone, only for the shape engineering jargon
-# actually takes -- so an ambiguous English word (table, build, test-as-verb)
-# is never caught by accident.
+# _bc_demo_escape_word <word> -> the word with every ERE metacharacter
+# backslash-escaped, so a denylist entry like "node.js" or "C++" is matched
+# literally -- never errors (an unescaped "++"  is invalid ERE) and never
+# over-matches ("." meaning "any character").
+_bc_demo_escape_word() {
+  printf '%s' "$1" | sed -e 's/[][\.^$*+?(){}|]/\\&/g'
+}
+
+# _bc_demo_denylist_words -> one entry per line on stdout, blank lines and a
+# trailing CR (a CRLF checkout, or a tree read before this fix) stripped ;
+# exit 1 if the file is missing or reads as zero entries. A gate whose data
+# file is broken must fail loud -- silently skipping the rule would let
+# every word in it through unnoticed.
+_bc_demo_denylist_words() {
+  local words
+  [ -f "$_BC_DEMO_DENYLIST_FILE" ] || return 1
+  words="$(sed -e 's/\r$//' "$_BC_DEMO_DENYLIST_FILE" | grep -v '^[[:space:]]*$' || true)"
+  [ -n "$words" ] || return 1
+  printf '%s\n' "$words"
+}
+
+# _bc_demo_lint_line <checklist-line> <denylist-words, one per line> -> the
+# reason it is rejected on stdout, exit 1 ; nothing on stdout, exit 0, if it
+# is clean. Every rule is mechanical -- no reading for tone, only for the
+# shape engineering jargon actually takes -- so an ambiguous English word
+# (table, build, test-as-verb) is never caught by accident.
 _bc_demo_lint_line() {
-  local line="$1" word
+  local line="$1" words="$2" word ew
   case "$line" in
     *'`'*)
       printf 'contains a backtick'
@@ -165,37 +189,55 @@ _bc_demo_lint_line() {
     printf 'contains a camelCase identifier'
     return 1
   fi
-  if [ -f "$_BC_DEMO_DENYLIST_FILE" ]; then
-    while IFS= read -r word; do
-      [ -n "$word" ] || continue
-      if printf '%s' "$line" | grep -Eiq -- "(^|[^a-zA-Z])${word}([^a-zA-Z]|$)"; then
-        printf "uses the engineering term '%s'" "$word"
-        return 1
-      fi
-    done < "$_BC_DEMO_DENYLIST_FILE"
-  fi
+  # Each entry matches as a word, plus the common inflections (plural,
+  # past participle, gerund) -- not an open-ended prefix, or "CI" would eat
+  # "city" and "PR" would eat "press"/"price". Escaped, so a metacharacter
+  # in the entry is matched literally rather than as a wildcard.
+  while IFS= read -r word; do
+    [ -n "$word" ] || continue
+    ew="$(_bc_demo_escape_word "$word")"
+    if printf '%s' "$line" | grep -Eiq -- "(^|[^a-zA-Z])${ew}(s|es|ed|ing)?([^a-zA-Z]|\$)"; then
+      printf "uses the engineering term '%s'" "$word"
+      return 1
+    fi
+  done <<< "$words"
   return 0
 }
 
 # _bc_demo_lint <bodyfile> -- 0 every checklist line is clean ; 1 at least
-# one is rejected, each one named on stderr with its reason. Only `- [ ] `
-# lines are linted -- the summary paragraph is prose for Adrian, not a
-# player-visible moment, and a checklist with no lines at all (a sprint of
-# pure process work) is not forced to invent one.
+# one is rejected as jargon or as the wrong shape, each named on stderr with
+# its reason ; 2 the denylist itself is broken (an infra failure, distinct
+# from both). Every markdown list item is in scope -- any bullet
+# (`-`/`*`/`+`/`N.`, any indent, any checkbox state) that is not the
+# canonical `- [ ] ` form is itself rejected, so Scotty drifting to a
+# different bullet never silently disables the gate for that sprint. The
+# summary paragraph -- anything that is not a list item at all -- is never
+# linted, and a checklist with no lines at all (a sprint of pure process
+# work) is not forced to invent one.
 _bc_demo_lint() {
-  local f="$1" line reason bad=0
+  local f="$1" line reason bad=0 words
+  words="$(_bc_demo_denylist_words)" || {
+    echo "bc-issue write-demo: the checklist denylist is missing or empty: $_BC_DEMO_DENYLIST_FILE" >&2
+    return 2
+  }
   while IFS= read -r line || [ -n "$line" ]; do
+    printf '%s' "$line" | grep -Eq '^[[:space:]]*([-*+]|[0-9]+\.)[[:space:]]' || continue
     case "$line" in
       '- [ ] '*)
-        reason="$(_bc_demo_lint_line "$line")"
+        reason="$(_bc_demo_lint_line "$line" "$words")"
         if [ -n "$reason" ]; then
           echo "bc-issue write-demo: rejected checklist line ($reason): $line" >&2
           bad=1
         fi
         ;;
+      *)
+        echo "bc-issue write-demo: rejected checklist line (checklist lines must start with '- [ ] '): $line" >&2
+        bad=1
+        ;;
     esac
   done < "$f"
-  [ "$bad" -eq 0 ]
+  [ "$bad" -eq 0 ] || return 1
+  return 0
 }
 
 # An epic exists only to group its stories, so it is never transitioned on its
@@ -442,11 +484,17 @@ write-demo)
     echo "bc-issue write-demo: the body file is empty" >&2
     exit 2
   fi
-  # Player-facing checklist, Story 4.17: a distinct exit code (3), never
-  # confused with the exit-2 usage/infra failures above -- judge-demo-
-  # summary.md rewrites the named lines and calls back rather than treating
-  # this as broken.
-  _bc_demo_lint "$bodyfile" || exit 3
+  # Player-facing checklist, Story 4.17: a rejected line is a distinct exit
+  # code (3), never confused with the exit-2 usage/infra failures here --
+  # judge-demo-summary.md rewrites the named lines and calls back rather
+  # than treating this as broken. A broken denylist is exit 2, an infra
+  # failure like the ones around it, not a lint verdict.
+  _bc_demo_lint "$bodyfile"; rc=$?
+  case "$rc" in
+    0) : ;;
+    1) exit 3 ;;
+    *) exit 2 ;;
+  esac
   sprint="$(project_iterations | "$JQ" -c --arg t "Sprint $n" 'map(select(.title==$t)) | .[0] // empty')"
   if [ -z "$sprint" ]; then
     echo "bc-issue write-demo: no iteration titled 'Sprint $n'" >&2
@@ -589,7 +637,13 @@ integrate-feedback)
   # thread rather than trust Scotty's session came back clean, the same
   # principle the created-count already follows. A tick that dies before this
   # gate leaves the demo In progress and simply runs again.
-  after_comments="$(gh_issue_comments "$issue" 2>/dev/null)" || after_comments='[]'
+  # A failed re-read is a GitHub read error, not Scotty's fault -- give it
+  # its own message rather than folding it into "left no feedback-reply",
+  # which would blame his session for a network hiccup on our end.
+  after_comments="$(gh_issue_comments "$issue" 2>/dev/null)" || {
+    echo "bc-issue integrate-feedback: could not re-read #$issue's comments to confirm the reply" >&2
+    exit 2
+  }
   acount="$(printf '%s' "$after_comments" | "$JQ" 'length' 2>/dev/null || printf 0)"
   replied=1
   i=0
@@ -627,7 +681,13 @@ write-feedback-reply)
     exit 2
   fi
 
-  comments="$(gh_issue_comments "$issue" 2>/dev/null)" || comments='[]'
+  # A failed read is an infra failure, never "no reply exists yet" -- reading
+  # it as [] would create a second reply on exactly the flaky-network retry
+  # the upsert exists to protect against.
+  comments="$(gh_issue_comments "$issue" 2>/dev/null)" || {
+    echo "bc-issue write-feedback-reply: could not read #$issue's comments" >&2
+    exit 2
+  }
   count="$(printf '%s' "$comments" | "$JQ" 'length' 2>/dev/null || printf 0)"
   existing=""
   i=0

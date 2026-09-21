@@ -5,9 +5,11 @@
 # (.claude/skills/bc-sdlc/SKILL.md) honest against bc-issue.sh's own usage()
 # -- a doc naming a subcommand that does not exist is a call nobody can make
 # -- and keeps `write-feedback-reply` and `write-demo` (Story 4.17's
-# integrating-feedback reply step) named in all three, so the reply step can
-# never silently drop out of one of them while the other two still describe
-# it. Pure static check over the working tree: no gh, no orca, no claude.
+# integrating-feedback reply step) named in scotty.md, the bc-sdlc skill and
+# the ONE prompt that actually owns each call -- "named in any prompt" would
+# pass a command that drifted into the wrong prompt entirely, so each is
+# pinned to its own file rather than the prompts directory as a whole. Pure
+# static check over the working tree: no gh, no orca, no claude.
 #
 # Usage: check-scotty-commands.sh [root_dir]
 # root_dir defaults to the repo root; the unit tests point it at a fixture
@@ -21,7 +23,13 @@ SCOTTY="$ROOT/.claude/agents/scotty.md"
 PROMPTS_DIR="$ROOT/agentic-team/scripts/prompts"
 SKILL="$ROOT/.claude/skills/bc-sdlc/SKILL.md"
 
-REQUIRED_EVERYWHERE=(write-feedback-reply write-demo)
+# <subcommand> -> the one prompt (basename under $PROMPTS_DIR) that owns the
+# call -- judge-demo-summary.md is creating-demo-issue's job, judge-feedback.md
+# is integrating-feedback's, and neither call belongs in the other's prompt.
+declare -A REQUIRED_PROMPT=(
+  [write-demo]="judge-demo-summary.md"
+  [write-feedback-reply]="judge-feedback.md"
+)
 
 FAILED=0
 fail() { echo "check-scotty-commands: FAIL -- $1" >&2; FAILED=1; }
@@ -76,12 +84,13 @@ for p in "${PROMPT_FILES[@]}"; do
 done
 
 # --- direction 2: the reply step is named everywhere it must be --------------
-for cmd in "${REQUIRED_EVERYWHERE[@]}"; do
+for cmd in "${!REQUIRED_PROMPT[@]}"; do
+  prompt_file="$PROMPTS_DIR/${REQUIRED_PROMPT[$cmd]}"
   if ! grep -qF "bc-issue.sh $cmd" "$SCOTTY"; then
     fail "'$cmd' is not named in $SCOTTY"
   fi
-  if ! grep -lF "bc-issue.sh $cmd" "${PROMPT_FILES[@]}" >/dev/null 2>&1; then
-    fail "'$cmd' is not named in any prompt under $PROMPTS_DIR"
+  if [ ! -f "$prompt_file" ] || ! grep -qF "bc-issue.sh $cmd" "$prompt_file"; then
+    fail "'$cmd' is not named in $prompt_file"
   fi
   if ! grep -qF "bc-issue.sh $cmd" "$SKILL"; then
     fail "'$cmd' is not named in $SKILL"

@@ -35,7 +35,9 @@ Read these.
 
 - All tasks completed this Sprint (using command `bash <scripts>/bc-sprint.sh items <n> Done`)
 
-Then, write a short description of what the team is demoing this Sprint (only the highlights, not longer than 3 sentences) and create the Sprint demo issue (using command `bash <scripts>/bc-issue.sh write-demo <n> <bodyfile>`).
+Then, write a short description of what the team is demoing this Sprint (only the highlights, not longer than 3 sentences) and a checklist of what to show, one `- [ ] ` line per item. Every line is phrased for what Adrian, watching as a player/producer, can directly see or do — never an implementation term: "Walk through a defs/ object definition and its packed atlas entry" is exactly what not to write, "Place a building and watch it appear in the district" is. A sprint with nothing player-visible (pure process or tooling work) gets no checklist line at all rather than an invented one — leave it empty and say so in the summary.
+
+Then create the Sprint demo issue (using command `bash <scripts>/bc-issue.sh write-demo <n> <bodyfile>`). It lints every checklist line and exits 3, naming each offending line, if one reads as engineering jargon — nothing is created yet, so rewrite exactly those lines and call it again.
 
 ## 4. When you are dispatched to escalate a circuit breaker
 

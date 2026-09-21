@@ -103,13 +103,43 @@ check "names the exact offending message" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF \"'write-demo' is not named in \$2/.claude/agents/scotty.md\"" _ "$OUT" "$D3"
 
 echo
-echo "red: no prompt mentions write-feedback-reply at all"
+echo "red: judge-feedback.md never mentions write-feedback-reply"
 D4="$(fresh_fixture)"
 sed -i '/write-feedback-reply/d' "$D4/agentic-team/scripts/prompts/judge-feedback.md"
 OUT="$(run_check "$D4" 2>&1)"; CODE=$?
 check "exits non-zero" 1 bash -c "exit $CODE"
 check "names the exact offending message" 0 bash -c \
-  "printf '%s' \"\$1\" | grep -qF \"'write-feedback-reply' is not named in any prompt\"" _ "$OUT"
+  "printf '%s' \"\$1\" | grep -qF \"'write-feedback-reply' is not named in \$2/agentic-team/scripts/prompts/judge-feedback.md\"" _ "$OUT" "$D4"
+
+echo
+echo "red: write-feedback-reply is named in the WRONG prompt -- 'any prompt' is not enough, it must be judge-feedback.md's own"
+D6="$(fresh_fixture)"
+sed -i '/write-feedback-reply/d' "$D6/agentic-team/scripts/prompts/judge-feedback.md"
+cat >> "$D6/agentic-team/scripts/prompts/judge-demo-summary.md" <<'MD'
+
+Reply to Adrian (misplaced on purpose):
+
+    bash {{scripts}}/bc-issue.sh write-feedback-reply {{demo}} <bodyfile>
+MD
+OUT="$(run_check "$D6" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the exact offending message" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF \"'write-feedback-reply' is not named in \$2/agentic-team/scripts/prompts/judge-feedback.md\"" _ "$OUT" "$D6"
+
+echo
+echo "red: write-demo is named in the WRONG prompt -- must be judge-demo-summary.md's own"
+D7="$(fresh_fixture)"
+sed -i '/write-demo/d' "$D7/agentic-team/scripts/prompts/judge-demo-summary.md"
+cat >> "$D7/agentic-team/scripts/prompts/judge-feedback.md" <<'MD'
+
+Open the demo (misplaced on purpose):
+
+    bash {{scripts}}/bc-issue.sh write-demo {{sprint}} {{bodyfile}}
+MD
+OUT="$(run_check "$D7" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the exact offending message" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF \"'write-demo' is not named in \$2/agentic-team/scripts/prompts/judge-demo-summary.md\"" _ "$OUT" "$D7"
 
 echo
 echo "red: bc-issue.sh missing entirely"

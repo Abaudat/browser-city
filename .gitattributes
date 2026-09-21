@@ -1,6 +1,10 @@
 *.sh text eol=lf
 *.cmd text eol=crlf
 
+# Read line-by-line by bc-issue.sh's write-demo lint -- a CRLF checkout would
+# leave every entry carrying a trailing \r that never matches (Story 4.17).
+agentic-team/scripts/prompts/demo-checklist-denylist.txt text eol=lf
+
 # defs/ content and its own test fixtures: tools/defs-build/tests/
 # failure_fixtures.rs asserts an exact line:column against these files, and
 # defs_version is a hash over defs/ itself -- both must read identical

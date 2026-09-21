@@ -20,6 +20,19 @@ run() { # <fakedir> <now-or-empty> <args...>
   BC_FAKE="$fake" BC_NOW="$now" bash "$BC_ISSUE" "$@"
 }
 
+# run_dl <denylist-path-or-empty> <fakedir> <now-or-empty> <args...> -- same
+# as run, plus an optional BC_DEMO_DENYLIST_FILE override for write-demo's
+# lint tests (a missing/empty/CRLF/regex-bearing denylist, injected without
+# ever touching the real prompts/demo-checklist-denylist.txt).
+run_dl() {
+  local dl="$1" fake="$2" now="$3"; shift 3
+  if [ -n "$dl" ]; then
+    BC_DEMO_DENYLIST_FILE="$dl" BC_FAKE="$fake" BC_NOW="$now" bash "$BC_ISSUE" "$@"
+  else
+    BC_FAKE="$fake" BC_NOW="$now" bash "$BC_ISSUE" "$@"
+  fi
+}
+
 log_has() { grep -Eq -- "$2" "$1"; } # <file> <regex>
 
 write_iterations() { # <dir> -- Sprint 1 active on 2026-09-01..2026-09-04
@@ -337,22 +350,36 @@ lint_body() {
   printf '%s' "$f"
 }
 
-lint_bad() { # <name> <checklist-line>
-  local name="$1" line="$2" d body
+lint_bad() { # <name> <checklist-line> [denylist-override]
+  local name="$1" line="$2" dl="${3:-}" d body
   d="$(fake_dir)"
   printf '%s' "$FAKE_LINT_ITER" > "$d/project_iterations.json"
   body="$(lint_body "$d" "$line")"
-  check "$name: rejected, exit 3" 3 run "$d" "" write-demo 3 "$body"
+  check "$name: rejected, exit 3" 3 run_dl "$dl" "$d" "" write-demo 3 "$body"
   check "$name: created nothing"  1 test -f "$d/calls.log"
 }
 
-lint_good() { # <name> <checklist-line>
-  local name="$1" line="$2" d body
+lint_good() { # <name> <checklist-line> [denylist-override]
+  local name="$1" line="$2" dl="${3:-}" d body
   d="$(fake_dir)"
   printf '%s' "$FAKE_LINT_ITER" > "$d/project_iterations.json"
   printf '999\n' > "$d/gh_issue_create.json"
   body="$(lint_body "$d" "$line")"
-  check "$name: passes, exit 0" 0 run "$d" "" write-demo 3 "$body"
+  check "$name: passes, exit 0" 0 run_dl "$dl" "$d" "" write-demo 3 "$body"
+}
+
+# shape_bad <name> <line> -- a list-item shape that is not the canonical
+# "- [ ] " bullet: itself rejected, exit 3, before the jargon rules even run.
+shape_bad() {
+  local name="$1" line="$2" d body err
+  d="$(fake_dir)"
+  printf '%s' "$FAKE_LINT_ITER" > "$d/project_iterations.json"
+  body="$(lint_body "$d" "$line")"
+  check "$name: rejected, exit 3" 3 run "$d" "" write-demo 3 "$body"
+  err="$(run "$d" "" write-demo 3 "$body" 2>&1 1>/dev/null)"
+  check "$name: names the required form" 0 \
+    bash -c 'printf "%s" "$1" | grep -qF -- "$2"' _ "$err" "checklist lines must start with '- [ ] '"
+  check "$name: created nothing" 1 test -f "$d/calls.log"
 }
 
 # Adrian's own complaint, verbatim -- the acceptance criterion this lint exists for.
@@ -392,6 +419,72 @@ lint_good "denylist word absent"    "- [ ] Confirm building placement works smoo
 lint_good "ambiguous word: table"       "- [ ] Sit at the crafting table and place an item"
 lint_good "ambiguous word: build"       "- [ ] Build a house in the new district"
 lint_good "ambiguous word: test (verb)" "- [ ] Test the new elevator by riding it up"
+
+echo
+echo "write-demo: the denylist catches inflected forms (plural/participle), never via an open-ended prefix that would eat plain English:"
+
+lint_bad  "inflected: schemas"    "- [ ] Show the new database schemas"
+lint_bad  "inflected: reducers"   "- [ ] Walk through the reducers that place buildings"
+lint_bad  "inflected: refactored" "- [ ] Show the refactored street generator"
+lint_bad  "inflected: unit tests" "- [ ] Show the unit tests passing"
+lint_bad  "inflected: endpoints"  "- [ ] Show the new API endpoints"
+
+lint_good "CI never eats 'city'"  "- [ ] Walk around the city"
+lint_good "PR never eats 'press'" "- [ ] Press the button"
+lint_good "PR never eats 'price'" "- [ ] Watch the price change"
+
+echo
+echo "write-demo: a denylist entry with regex metacharacters is matched literally -- never errors, never over-matches:"
+
+REGEX_DENYLIST="$(fake_dir)/denylist-regex.txt"
+printf 'node.js\n' > "$REGEX_DENYLIST"
+lint_bad  "literal entry with a dot matches itself"  "- [ ] Read about node.js on the client" "$REGEX_DENYLIST"
+lint_good "the dot is literal, not 'any character'"  "- [ ] Read about nodexjs on the client" "$REGEX_DENYLIST"
+
+CPP_DENYLIST="$(fake_dir)/denylist-cpp.txt"
+printf 'c++\n' > "$CPP_DENYLIST"
+lint_bad  "literal entry with a plus matches itself"        "- [ ] Show off the c++ prototype" "$CPP_DENYLIST"
+lint_good "a plus-bearing entry never crashes the lint"      "- [ ] Show off the new district"  "$CPP_DENYLIST"
+
+echo
+echo "write-demo: the denylist survives a CRLF checkout -- a Windows autocrlf tree with no .gitattributes protection yet, or one read before this fix:"
+
+CRLF_DENYLIST="$(fake_dir)/denylist-crlf.txt"
+printf 'reducer\r\natlas\r\n' > "$CRLF_DENYLIST"
+lint_bad "a CRLF denylist entry still matches" "- [ ] Confirm the reducer runs without errors" "$CRLF_DENYLIST"
+
+echo
+echo "write-demo: a missing or empty denylist file is an infra failure, not a silent skip -- exit 2, never 3, and nothing is created even for an otherwise-clean checklist:"
+
+FAKE_DL_MISSING="$(fake_dir)"
+printf '%s' "$FAKE_LINT_ITER" > "$FAKE_DL_MISSING/project_iterations.json"
+MISSING_DL="$FAKE_DL_MISSING/nonexistent-denylist.txt"
+MISSING_BODY="$(lint_body "$FAKE_DL_MISSING" "- [ ] Watch the player walk through the new zone")"
+check "missing denylist file: exit 2, not 3" 2 \
+  run_dl "$MISSING_DL" "$FAKE_DL_MISSING" "" write-demo 3 "$MISSING_BODY"
+MISSING_ERR="$(run_dl "$MISSING_DL" "$FAKE_DL_MISSING" "" write-demo 3 "$MISSING_BODY" 2>&1 1>/dev/null)"
+check "missing denylist file: names it on stderr" 0 \
+  bash -c 'printf "%s" "$1" | grep -qF -- "$2"' _ "$MISSING_ERR" "$MISSING_DL"
+check "missing denylist file: created nothing" 1 test -f "$FAKE_DL_MISSING/calls.log"
+
+FAKE_DL_EMPTY="$(fake_dir)"
+printf '%s' "$FAKE_LINT_ITER" > "$FAKE_DL_EMPTY/project_iterations.json"
+EMPTY_DL="$FAKE_DL_EMPTY/empty-denylist.txt"
+printf '\n\n   \n' > "$EMPTY_DL"
+EMPTY_DL_BODY="$(lint_body "$FAKE_DL_EMPTY" "- [ ] Watch the player walk through the new zone")"
+check "denylist file with zero entries: exit 2, not 3" 2 \
+  run_dl "$EMPTY_DL" "$FAKE_DL_EMPTY" "" write-demo 3 "$EMPTY_DL_BODY"
+check "denylist file with zero entries: created nothing" 1 test -f "$FAKE_DL_EMPTY/calls.log"
+
+echo
+echo "write-demo: only the canonical '- [ ] ' bullet is linted as a checklist line -- any other list-item shape is itself rejected, exit 3, so drifting to a different bullet never silently disables the gate:"
+
+shape_bad "asterisk bullet"           "* [ ] Show the new zone"
+shape_bad "indented hyphen bullet"    "  - [ ] Show the new zone"
+shape_bad "checked box"               "- [x] Show the new zone"
+shape_bad "extra space after hyphen"  "-  [ ] Show the new zone"
+shape_bad "ordered-list bullet"       "1. [ ] Show the new zone"
+shape_bad "plain bullet, no checkbox" "- Show the new zone"
 
 # One bad line among good ones rejects the whole body.
 FAKE_LINT_MIX="$(fake_dir)"
@@ -469,6 +562,17 @@ cat > "$FAKE_CM_NO/gh_issue_comments.43.json" <<'JSON'
 ]
 JSON
 check_out "demo-commented: only stub comments -> no" 1 no run "$FAKE_CM_NO" "" demo-commented 43
+
+# Scotty's own reply must never read as Adrian having commented again -- the
+# retry protection `write-feedback-reply`'s marker exists for, pinned at the
+# call site that actually matters, not just in the marker's own round trip.
+FAKE_CM_REPLY_ONLY="$(fake_dir)"
+cat > "$FAKE_CM_REPLY_ONLY/gh_issue_comments.44.json" <<'JSON'
+[
+  {"id":1,"body":"### Scotty's reply\n\nOpened #122 to tighten it.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
+check_out "demo-commented: only Scotty's own reply present -> no" 1 no run "$FAKE_CM_REPLY_ONLY" "" demo-commented 44
 
 echo
 echo "demo-for: a demo issue exists for the sprint, or it does not:"
@@ -672,6 +776,17 @@ check "write-feedback-reply with a body carrying a bc: marker exits 2" 2 \
   run "$FAKE_FR_ERR" "" write-feedback-reply 900 "$MARKED_BODY"
 check "none of those posted anything" 1 test -f "$FAKE_FR_ERR/calls.log"
 
+# A failed read of the thread is an infra failure, never "no reply exists
+# yet" -- the fallback that read as [] used to create a second reply on
+# exactly the flaky-network retry the upsert exists to protect against.
+FAKE_FR_READFAIL="$(fake_dir)"
+READFAIL_BODY="$FAKE_FR_READFAIL/reply.md"
+printf 'A reply.\n' > "$READFAIL_BODY"
+# No gh_issue_comments.<n>.json fixture at all -- the read itself fails.
+check "write-feedback-reply with a failed thread read exits 2" 2 \
+  run "$FAKE_FR_READFAIL" "" write-feedback-reply 900 "$READFAIL_BODY"
+check "and nothing was posted" 1 test -f "$FAKE_FR_READFAIL/calls.log"
+
 echo
 echo "integrate-feedback: hands the thread to Scotty, then reports what the board gained:"
 
@@ -709,6 +824,34 @@ check "integrate-feedback opened nothing itself" 1 \
   log_has "$FAKE_FB/calls.log" '^gh_issue_create'
 check "integrate-feedback marked the demo Reviewed" 0 \
   log_has "$FAKE_FB/calls.log" '^project_set_single 900 Status Reviewed$'
+
+# A retry: the thread already carries Scotty's earlier reply alongside
+# Adrian's comment (the tick died between the reply and Reviewed, so this
+# ran again). The input handed to judge-feedback.md must still carry
+# Adrian's own text -- and must NOT carry the reply's, or Scotty would be
+# fed his own ruling back to himself as though it were more feedback.
+FAKE_FB_RETRY="$(fake_dir)"
+printf 'The team shipped a crash fix.\n' > "$FAKE_FB_RETRY/gh_issue_body.901.json"
+cat > "$FAKE_FB_RETRY/gh_issue_comments.901.json" <<'JSON'
+[
+  {"id":1,"body":"Parrying feels floaty — can we tighten it?"},
+  {"id":2,"body":"### Scotty's reply\n\nOpened #122 to tighten it.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
+echo '[{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null}]' \
+  > "$FAKE_FB_RETRY/project_items.json"
+mkdir -p "$FAKE_FB_RETRY/bc_scotty.judge-feedback.md.d"
+cat > "$FAKE_FB_RETRY/bc_scotty.judge-feedback.md.d/gh_issue_comments.901.json" <<'JSON'
+[
+  {"id":1,"body":"Parrying feels floaty — can we tighten it?"},
+  {"id":2,"body":"### Scotty's reply\n\nOpened #122 to tighten it.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
+run "$FAKE_FB_RETRY" "" integrate-feedback 901 >/dev/null
+check "integrate-feedback's input carries Adrian's comment" 0 \
+  log_has "$FAKE_FB_RETRY/bc_scotty.judge-feedback.md.input" 'Parrying feels floaty'
+check "integrate-feedback's input does NOT carry Scotty's own reply back to him" 1 \
+  log_has "$FAKE_FB_RETRY/bc_scotty.judge-feedback.md.input" "Opened #122 to tighten it"
 
 FAKE_FB0="$(fake_dir)"
 printf 'Demo body.\n' > "$FAKE_FB0/gh_issue_body.900.json"
