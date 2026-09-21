@@ -233,13 +233,21 @@ async function holdAndSampleFollow(
  * following. Every setup route in the `followCase` list below was
  * verified empirically, before this file was committed, by driving the
  * real, mounted scene through this exact same `walkToOpenSpot` (a real
- * `ArrowDown` rest is `(4.5, 8.625)`; `ArrowDown` + 6 cells east + rest
- * west lands `(10.5, 8.625) -> (1.25, 8.625)`, ~9.3 cells; `ArrowDown` +
- * 3 cells east + rest north lands `(7.5, 8.625) -> (7.5, 2.25)`, ~6.4
- * cells; the same plus a further rest south returns to `(7.5, 9)`, ~6.75
- * cells -- the pavement itself is too shallow north-south for 3 cells
+ * `ArrowDown` rest is `(4.5, 8.625)`; from there, crossing `x >= 10` then
+ * resting west lands back around `(1.25, 8.625)`, ~9.3 cells; crossing
+ * `x >= 7.3` then resting north lands around `(7.5, 2.25)`, ~6.4 cells;
+ * the same plus a further rest south returns to `(7.5, 9)`, ~6.75 cells
+ * -- the pavement itself is too shallow north-south for 3 cells
  * anywhere, which is why the south case detours through the interior
- * instead) -- never guessed, and never trusted from arithmetic alone. */
+ * instead) -- never guessed, and never trusted from arithmetic alone. A
+ * fixed real-time hold (`cells / movement.walk_speed_millicells_per_s`)
+ * was tried first and measured fine locally, but failed on CI: a stalled
+ * frame's own `deltaMs` is clamped to 100ms (`docs/architecture.md`'s
+ * own movement rule), so on a loaded runner simulated time can fall well
+ * behind wall-clock time and a timed hold quietly covers far fewer
+ * cells. Every setup step below waits on the real, authoritative game
+ * state itself instead, never an assumed elapsed-time-to-distance
+ * conversion. */
 const MIN_TRAVELLED_CELLS = 3;
 
 type ArrowKey = "ArrowDown" | "ArrowRight" | "ArrowUp" | "ArrowLeft";
@@ -252,12 +260,13 @@ type SetupStep =
    * already resting (a bad setup sequence) times out loudly instead of
    * returning immediately having moved nowhere. */
   | { readonly kind: "rest"; readonly key: ArrowKey }
-  /** Holds `key` for the real, calculated wall-clock duration
-   * `cells`/`movement.walk_speed_millicells_per_s` takes to cover, for a
-   * mid-corridor point a continuous walk only ever passes through
-   * (`kind: "rest"` cannot land there -- there is nothing to rest
-   * against). Never a bare millisecond literal. */
-  | { readonly kind: "cells"; readonly key: ArrowKey; readonly cells: number };
+  /** Holds `key` until the player's own real `x` crosses `value`, then
+   * releases immediately -- for a mid-corridor point a continuous walk
+   * only ever passes through (`kind: "rest"` cannot land there -- there
+   * is nothing to rest against). Waits on the real game state, never a
+   * calculated real-time duration (see `MIN_TRAVELLED_CELLS`'s own doc
+   * comment for why that failed on CI). */
+  | { readonly kind: "x-at-least"; readonly key: ArrowKey; readonly value: number };
 
 /** Real, held keyboard input, one `SetupStep` at a time -- the setup leg
  * for each follow case below, never measured itself. */
@@ -266,7 +275,7 @@ async function walkToOpenSpot(page: Page, steps: readonly SetupStep[]): Promise<
     if (step.kind === "rest") {
       await walkUntilRest(page, step.key);
     } else {
-      await walkForCells(page, step.key, step.cells);
+      await walkUntilXAtLeast(page, step.key, step.value);
     }
   }
 }
@@ -311,14 +320,13 @@ async function walkUntilRest(page: Page, key: ArrowKey): Promise<void> {
   await page.keyboard.up(key);
 }
 
-async function walkForCells(page: Page, key: ArrowKey, cells: number): Promise<void> {
-  const speed = committedDefs().balance.find(
-    (b) => b.key === "movement.walk_speed_millicells_per_s",
-  )?.value;
-  if (!speed) throw new Error("no movement.walk_speed_millicells_per_s balance key");
-  const ms = (cells * 1_000_000) / speed;
+async function walkUntilXAtLeast(page: Page, key: ArrowKey, value: number): Promise<void> {
   await page.keyboard.down(key);
-  await page.waitForTimeout(ms);
+  await page.waitForFunction(
+    (value: number) => (window.__bc?.playerPosition?.x ?? Number.NEGATIVE_INFINITY) >= value,
+    value,
+    { timeout: 15_000 },
+  );
   await page.keyboard.up(key);
 }
 
@@ -341,12 +349,15 @@ test.describe("camera/viewport (NFR48)", () => {
     {
       name: "west",
       codes: ["ArrowLeft"] as const,
-      setup: [REST_DOWN_TO_PAVEMENT, { kind: "cells", key: "ArrowRight", cells: 6 }] as const,
+      setup: [REST_DOWN_TO_PAVEMENT, { kind: "x-at-least", key: "ArrowRight", value: 10 }] as const,
     },
     {
       name: "north",
       codes: ["ArrowUp"] as const,
-      setup: [REST_DOWN_TO_PAVEMENT, { kind: "cells", key: "ArrowRight", cells: 3 }] as const,
+      setup: [
+        REST_DOWN_TO_PAVEMENT,
+        { kind: "x-at-least", key: "ArrowRight", value: 7.3 },
+      ] as const,
     },
     {
       name: "south",
@@ -358,7 +369,7 @@ test.describe("camera/viewport (NFR48)", () => {
       // room to spare south of it.
       setup: [
         REST_DOWN_TO_PAVEMENT,
-        { kind: "cells", key: "ArrowRight", cells: 3 },
+        { kind: "x-at-least", key: "ArrowRight", value: 7.3 },
         { kind: "rest", key: "ArrowUp" },
       ] as const,
     },
