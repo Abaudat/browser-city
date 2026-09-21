@@ -17,6 +17,7 @@ import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import { buildPlayerDrawable, buildPropDrawables } from "../../../src/test-street/drawables";
 import {
+  LAMPPOST_CELL,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
   PLAYER_START,
@@ -113,7 +114,12 @@ const out = [
   orderLiteral("STREET_GOLDEN_ORDER", orderAt(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor)),
   orderLiteral(
     "STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH",
-    orderAt(PLAYER_START.x, lamppostRestY(), PLAYER_START.floor),
+    // `LAMPPOST_CELL.x`, not `PLAYER_START.x` -- the lamppost no longer
+    // shares the door's own column (`LAMPPOST_CELL`'s own doc comment
+    // says why), so the rest position this golden pins is the lamppost's
+    // own cell centre, matching where the scripted walk's own
+    // "part-way-through-the-lamppost" checkpoint actually lands.
+    orderAt(LAMPPOST_CELL.x + 0.5, lamppostRestY(), PLAYER_START.floor),
   ),
   mapLiteral(
     "STREET_VISIBILITY_AT_REST_IN_SHOP_A",
@@ -121,7 +127,7 @@ const out = [
   ),
   mapLiteral(
     "STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE",
-    visibilityAt(PLAYER_START.x, lamppostRestY(), PLAYER_START.floor),
+    visibilityAt(LAMPPOST_CELL.x + 0.5, lamppostRestY(), PLAYER_START.floor),
   ),
   mapLiteral(
     "STREET_VISIBILITY_ON_SUBWAY_LANDING",

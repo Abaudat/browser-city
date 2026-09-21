@@ -112,6 +112,13 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Poster_1.png",
     import.meta.url,
   ).href,
+  // The street lamp's real art (Artie's direction): the def already named
+  // this exact sprite -- the street itself was the one drawing the wrong
+  // art (a picnic table borrowed over this def's own pole collider).
+  lamppost: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Street_Lamp_5.png",
+    import.meta.url,
+  ).href,
   // "counter" is story 2.6's own atlas-drawn prop -- the shop counter's
   // `object_def.sprite` is byte-for-byte this same art, so it loads
   // through `render/atlas-pages.ts`'s `AtlasPageLoader` instead of a

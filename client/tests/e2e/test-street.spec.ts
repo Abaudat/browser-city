@@ -772,6 +772,11 @@ test("one walk down the test street: collision, depth order, retraction, floors 
     expect(outsideVisibility[id]).not.toBe("hidden");
   }
 
+  // --- east to the lamppost's own column ----------------------------------
+  // The lamppost moved off the door's own column (`LAMPPOST_CELL`'s own
+  // doc comment says why), so this leg is new.
+  await walkSegment(page, segment("east-to-the-lamppost"));
+
   // --- part-way through the lamppost -------------------------------------
   await walkSegment(page, segment("part-way-through-the-lamppost"));
   const atLamppost = await playerState(page);
@@ -983,19 +988,17 @@ test("FR173's affordance mark is a real pixel change, confined to the hovered ob
 
   // --- walk into the bin's own `interact_at` skirt -------------------------
   // Real keyboard input (`walkSegmentSynthetic`'s own doc comment says why
-  // synthetic, not `page.keyboard`, in this one spec). The first four
-  // segments are `streetWalkRoute`'s own proven, committed ones (out of the
-  // shopfront door, resting against the lamppost's own base collider,
-  // clearing it, then south onto the pavement's real south edge) -- reused
-  // rather than re-derived, since they are already proven collision-safe.
-  // From there this walk diverges: east under the bin's own column, then
-  // north back up into its `interact_at` skirt -- approaching from due
-  // south is what clears both the shopfront's own south wall (whose
-  // collision a walker still grazes a hair's width below its own row) and
-  // the bin's own small centred base collider, which a straight approach
-  // along the bin's own row cannot do.
+  // synthetic, not `page.keyboard`, in this one spec). The first segment is
+  // `streetWalkRoute`'s own proven, committed one (out of the shopfront
+  // door, resting against `SHOPFRONT_EXIT_REST_COLLIDER`) -- reused rather
+  // than re-derived, since it is already proven collision-safe. The bin
+  // now sits between the door and the lamppost's own new column
+  // (`LAMPPOST_CELL`'s own doc comment says why it moved), so the rest of
+  // the route's own lamppost detour is no longer on the way -- this walk
+  // diverges straight from there: east under the bin's own column, then
+  // north back up into its `interact_at` skirt.
   await hoverCell(page, away.x, away.y, away.floor); // mouse out of the way while walking
-  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 4)) {
+  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 1)) {
     await walkSegmentSynthetic(page, segment);
   }
   await walkSegmentSynthetic(page, {

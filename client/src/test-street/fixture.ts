@@ -163,10 +163,49 @@ const WINDOW_X_B = DOOR_X_B + 1;
 export const PLAYER_START = { x: DOOR_X_A + 0.5, y: 4, floor: 0 } as const;
 export const PLAYER_STABLE_ID = 1000n;
 
-/** The anchor cell of the lamppost the player walks into when leaving
- * shop A by its door: the same column as `DOOR_X_A`, out on the pavement.
- * A real collider read from `defs/objects/city-props.toml`. */
-export const LAMPPOST_CELL = { x: DOOR_X_A, y: 8 } as const;
+/** The anchor cell of the lamppost, out on the pavement -- a real collider
+ * read from `defs/objects/city-props.toml`. Artie's direction: `x` is
+ * `PARTY_WALL_X`, in front of the pier between the two shops, not
+ * `DOOR_X_A` -- a 64px-tall lamp at the door's own column would draw
+ * through the awning and across the doorway, and nobody plants a lamp in
+ * front of a door. `y` is unchanged, so everything keyed on its row
+ * (`STAIRS_Y`, `lamppostRestY()`) is untouched. */
+export const LAMPPOST_CELL = { x: PARTY_WALL_X, y: 8 } as const;
+
+/** Where the scripted walk's own approach to the lamppost comes to rest,
+ * one row north of it: a real collider, not a coordinate threshold -- the
+ * same "a rest absorbs release lag, a threshold does not" reasoning
+ * `PAVEMENT_CROSSING_REST_COLLIDER` and the underpass checkpoint below
+ * already rely on. Moving the lamppost off the door's own column
+ * (`LAMPPOST_CELL`'s own doc comment says why) means walking south out of
+ * the door no longer lands the walker on a collider by coincidence, the
+ * way it used to when the two shared a column -- without a rest here, an
+ * overshot south exit could carry the walker anywhere from this row to
+ * the pavement's own south edge before the walk ever turns east, handing
+ * the eastward leg an uncontrolled starting row. Solid from a margin of
+ * exactly one body-height (`y0 = 4` -- `movement.player_body_height_
+ * subcells`, never a smaller margin: the walker's own body extends that
+ * far *above* its own feet, so a shorter margin would rest the feet low
+ * enough in the row that the body's own top edge still reaches back into
+ * the wall row above it, where the shopfront window's own collider spans
+ * the door's neighbouring cells) down to the row's own south edge. Also
+ * short enough that the walker's own body never reaches the trash bin's
+ * own collider two cells further along this same row (touching only,
+ * never overlapping: the bin's own top face sits at 0.25 cells into its
+ * row, exactly where this rest's own margin ends). */
+export const SHOPFRONT_EXIT_REST_COLLIDER = { x0: 0, y0: 4, x1: 16, y1: 16 } as const;
+
+/** Where the scripted walk's own eastward approach to the lamppost comes
+ * to rest: the same "release lag absorbed by a real collider" reasoning
+ * as `SHOPFRONT_EXIT_REST_COLLIDER` above, now for the x axis -- an east
+ * wall across the lamppost's own approach row, solid from its own cell's
+ * centre (`x0 = 8`) so the walker's own body still comes to rest inside
+ * the lamppost's own cell (never short of it), with its centre well
+ * inside the pole collider's own overlap tolerance once the next segment
+ * turns south into it. Confined to this one row (never the lamppost's
+ * own row, one further south) so it never blocks the walk leaving the
+ * lamppost's cell eastward afterward, on that other row. */
+export const LAMPPOST_APPROACH_REST_COLLIDER = { x0: 8, y0: 0, x1: 16, y1: 16 } as const;
 
 /** Story 1.7 ownership ids (Tim's direction): the enclosure key is
  * `buildingId`, resolved from the ownership index -- never hand-typed on
@@ -629,12 +668,15 @@ export const STREET_PROPS: readonly StreetProp[] = [
     defId: TRASH_BIN_DEF_ID,
   },
 
-  // A solid obstacle straight south of shop A's door, on the pavement
-  // (story 1.8): the known-solid rest point `render-order.spec.ts` and
-  // `drawables.test.ts` walk the player into.
+  // The street lamp (story 1.8's known-solid rest point the scripted walk
+  // -- `streetWalkRoute` below -- and `drawables.test.ts` walk the player
+  // into): draws the def's own real `Street_Lamp_5` art (Artie's
+  // direction -- the def always named this sprite; the street itself was
+  // the one borrowing a picnic table over its pole collider) instead of
+  // borrowing `"table"`.
   {
     id: 14n,
-    assetKey: "table",
+    assetKey: "lamppost",
     x: LAMPPOST_CELL.x,
     y: LAMPPOST_CELL.y,
     floor: 0,
@@ -856,6 +898,26 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
     y: SOUTH_WALL_Y - 1,
     width: 21 - (EAST_WALL_X_B + 1),
     height: 1,
+  },
+  // The scripted walk's own two lamppost-approach rests
+  // (`SHOPFRONT_EXIT_REST_COLLIDER`/`LAMPPOST_APPROACH_REST_COLLIDER`'s own
+  // doc comments say why each exists): the door's own column, then the
+  // lamppost's own column, both on the lamppost's approach row.
+  {
+    id: 120n,
+    x: DOOR_X_A,
+    y: SOUTH_WALL_Y + 1,
+    width: 1,
+    height: 1,
+    collider: SHOPFRONT_EXIT_REST_COLLIDER,
+  },
+  {
+    id: 121n,
+    x: LAMPPOST_CELL.x,
+    y: SOUTH_WALL_Y + 1,
+    width: 1,
+    height: 1,
+    collider: LAMPPOST_APPROACH_REST_COLLIDER,
   },
   // The footbridge's own ring, one storey up: the deck is the only
   // standable thing on `BRIDGE_FLOOR`, so everything around it is closed
@@ -1206,7 +1268,16 @@ export const STREET_WALK_DIRECTIONS: Readonly<Record<StreetWalkKey, { x: number;
  * fetch). */
 export interface StreetWalkInputs {
   /** Where a walk straight south out of shop A's door comes to rest: the
-   * top face of the lamppost's own base collider. */
+   * south face of `SHOPFRONT_EXIT_REST_COLLIDER`, a real collider now
+   * that the lamppost no longer shares the door's own column -- see that
+   * constant's own doc comment for why. */
+  readonly shopfrontExitRestY: number;
+  /** Where the walk's own approach to the lamppost comes to rest, moving
+   * east: the west face of `LAMPPOST_APPROACH_REST_COLLIDER`. See that
+   * constant's own doc comment for why this leg needs a rest at all. */
+  readonly lamppostApproachRestX: number;
+  /** Where a walk into the lamppost comes to rest: the top face of the
+   * lamppost's own base collider. */
   readonly lamppostRestY: number;
   /** Where the walk's own crossing leg comes to rest: the west face of
    * `PAVEMENT_CROSSING_REST_COLLIDER`. See `PAVEMENT_CROSSING_REST_X`'s
@@ -1242,18 +1313,33 @@ export interface StreetWalkInputs {
 export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
   return [
     // Out of the door, onto the pavement: the building's own near-side
-    // walls come back the moment the player is no longer inside it.
+    // walls come back the moment the player is no longer inside it. Rests
+    // against `SHOPFRONT_EXIT_REST_COLLIDER` rather than a bare
+    // `y-at-least SOUTH_WALL_Y + 1` threshold -- that constant's own doc
+    // comment says why a real rest is needed here now that the lamppost
+    // no longer sits on this same column to absorb any overshoot by
+    // coincidence.
     {
       label: "outside-the-shopfront",
       key: "ArrowDown",
-      until: { kind: "y-at-least", value: SOUTH_WALL_Y + 1 },
+      until: { kind: "y-at-least", value: inputs.shopfrontExitRestY },
+    },
+    // East to the lamppost's own column (`LAMPPOST_CELL`'s own doc comment
+    // says why it moved off the door's column): a rest against
+    // `LAMPPOST_APPROACH_REST_COLLIDER`, so the southward segment just
+    // below always starts centred on the lamppost's own narrow base
+    // collider, immune to how much release lag this leg itself carries.
+    {
+      label: "east-to-the-lamppost",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: inputs.lamppostApproachRestX },
     },
     // Into the lamppost, coming to rest against its own small base
     // collider part-way into its cell.
     {
       label: "part-way-through-the-lamppost",
       key: "ArrowDown",
-      until: { kind: "y-at-least", value: inputs.lamppostRestY - 0.01 },
+      until: { kind: "y-at-least", value: inputs.lamppostRestY },
     },
     // East just far enough to clear the lamppost's own collider: resting
     // against its north face (the segment above) leaves the walker

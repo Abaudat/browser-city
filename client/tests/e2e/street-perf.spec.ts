@@ -363,7 +363,11 @@ test("the frame path stays inside its work budget for a whole walked session (NF
 
   const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
   if (!bin) throw new Error("the fixture no longer places a trash bin");
-  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 4)) {
+  // The bin sits between the door and the lamppost's own new column
+  // (`LAMPPOST_CELL`'s own doc comment says why it moved), so only the
+  // door-exit segment is needed before turning toward it -- the rest of
+  // the route's own lamppost detour is no longer on the way.
+  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 1)) {
     await walkSegment(page, segment);
   }
   await walkSegment(page, {

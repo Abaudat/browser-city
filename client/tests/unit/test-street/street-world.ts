@@ -17,11 +17,13 @@ import {
   BRIDGE_UNDER_EXIT_Y,
   BRIDGE_UNDER_PILLAR_COLLIDER,
   BRIDGE_UNDER_PILLAR_X,
+  LAMPPOST_APPROACH_REST_COLLIDER,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
   PAVEMENT_CROSSING_REST_COLLIDER,
   PAVEMENT_CROSSING_REST_X,
   PLAYER_START,
+  SHOPFRONT_EXIT_REST_COLLIDER,
   STREET_BUILDING_AREAS,
   STREET_ROOM_AREAS,
   STREET_TRANSITIONS,
@@ -94,6 +96,25 @@ export function streetWorldIndex(): WorldIndex {
 }
 
 /** Where the player comes to rest walking straight south out of the door:
+ * the south face of `SHOPFRONT_EXIT_REST_COLLIDER`, one row north of the
+ * lamppost's own row (`LAMPPOST_CELL.y - 1`) -- that constant's own doc
+ * comment says why this rest exists now that the lamppost no longer
+ * shares the door's own column. */
+export function shopfrontExitRestY(): number {
+  const config = streetMovementConfig();
+  return LAMPPOST_CELL.y - 1 + SHOPFRONT_EXIT_REST_COLLIDER.y0 / config.subcellsPerCell;
+}
+
+/** Where the player comes to rest approaching the lamppost from the west:
+ * the west face of `LAMPPOST_APPROACH_REST_COLLIDER`. See that constant's
+ * own doc comment for why this leg needs a rest at all. */
+export function lamppostApproachRestX(): number {
+  const config = streetMovementConfig();
+  const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  return LAMPPOST_CELL.x + LAMPPOST_APPROACH_REST_COLLIDER.x0 / config.subcellsPerCell - halfWidth;
+}
+
+/** Where the player comes to rest walking into the lamppost:
  * the top face of the lamppost's own base collider, read from `defs/` --
  * never a number restated in a test or in the fixture. */
 export function lamppostRestY(): number {
@@ -166,6 +187,8 @@ export function bridgeExitRestY(): number {
  * can drift from another about what a rest position actually is. */
 export function streetWalkInputs(): StreetWalkInputs {
   return {
+    shopfrontExitRestY: shopfrontExitRestY(),
+    lamppostApproachRestX: lamppostApproachRestX(),
     lamppostRestY: lamppostRestY(),
     pavementCrossingRestX: pavementCrossingRestX(),
     bridgeUnderRestY: bridgeUnderRestY(),
