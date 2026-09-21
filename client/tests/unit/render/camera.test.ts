@@ -57,7 +57,13 @@ describe("computeCamera", () => {
   // The camera/viewport story's central claim (AC2): for any player
   // position, any viewport size in the supported range and any zoom, the
   // player's own screen anchor projects to the viewport's centre, within
-  // 1px -- whole-pixel snapping of the offset is the only allowed error.
+  // half a pixel -- `Math.round`'s own worst case, and the tightest bound
+  // that still holds for every input. Cycle 2 (Quentin's direction): a 1px
+  // bound was loose enough to let a `floor`/`ceil` swap or a half-pixel
+  // bias through undetected; 0.5 (plus a float epsilon for the arithmetic
+  // itself, never for the rounding) is the real guarantee `computeCamera`
+  // makes. The e2e follow spec keeps its own, looser 1px budget -- real
+  // compositor/measurement noise on top of this exact guarantee.
   it("inv_camera_centres_player", () => {
     fc.assert(
       fc.property(
@@ -75,8 +81,9 @@ describe("computeCamera", () => {
             zoom,
           );
           const projected = clientFromWorldPx(playerScreenX, playerScreenY, camera);
-          expect(Math.abs(projected.x - viewportWidth / 2)).toBeLessThanOrEqual(1);
-          expect(Math.abs(projected.y - viewportHeight / 2)).toBeLessThanOrEqual(1);
+          const epsilon = 1e-9;
+          expect(Math.abs(projected.x - viewportWidth / 2)).toBeLessThanOrEqual(0.5 + epsilon);
+          expect(Math.abs(projected.y - viewportHeight / 2)).toBeLessThanOrEqual(0.5 + epsilon);
         },
       ),
       { numRuns: 500 },

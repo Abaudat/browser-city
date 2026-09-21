@@ -40,7 +40,7 @@ import {
   countAllBoundTextureSources,
   countBoundAtlasPages,
 } from "../render/atlas-pages";
-import { type Camera, computeCamera } from "../render/camera";
+import { type Camera, computeCamera, worldPxFromClient } from "../render/camera";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -631,10 +631,20 @@ function stateFromWrite(write: SpriteVisibilityWrite): VisibilityState {
  * apply the camera. Its signature is the structural guarantee that it
  * can never call `renderer.resize`/`world.getLocalBounds` -- it does not
  * receive a renderer or the world's own bounds, only the pure inputs
- * `render/camera.ts`'s `computeCamera` takes, plus the `Container` to
- * write the result onto. It only ever writes `world.position` -- never
- * `world.scale` -- so `ZOOM` set once at mount (before this container had
- * a single child) stays exactly what it was set to, call after call.
+ * `render/camera.ts`'s `computeCamera` takes (`world` itself supplies the
+ * zoom), plus the `Container` to write the result onto. It only ever
+ * writes `world.position` -- never `world.scale` -- so `ZOOM` set once at
+ * mount (before this container had a single child) stays exactly what it
+ * was set to, call after call.
+ *
+ * Zoom is read from `world.scale.x` (cycle 2, Quentin's direction), never
+ * taken as a second, free parameter next to a container that already
+ * carries its own scale: two numbers that are supposed to always agree
+ * is two sources of truth, and a unit test could pass with them silently
+ * disagreeing. Throws if `world.scale.x` and `.y` themselves disagree --
+ * this scene never sets them independently, so that can only mean a
+ * caller broke the one-zoom-for-everything invariant this whole module
+ * exists to hold.
  */
 export function applyCameraToWorld(
   world: Container,
@@ -642,11 +652,64 @@ export function applyCameraToWorld(
   playerScreenY: number,
   viewportWidth: number,
   viewportHeight: number,
-  zoom: number,
 ): Camera {
-  const camera = computeCamera(playerScreenX, playerScreenY, viewportWidth, viewportHeight, zoom);
+  if (world.scale.x !== world.scale.y) {
+    throw new Error(
+      `applyCameraToWorld: world.scale is not uniform (x=${world.scale.x}, y=${world.scale.y}) -- ` +
+        "this scene only ever sets one zoom for both axes",
+    );
+  }
+  const camera = computeCamera(
+    playerScreenX,
+    playerScreenY,
+    viewportWidth,
+    viewportHeight,
+    world.scale.x,
+  );
   world.position.set(camera.offsetX, camera.offsetY);
   return camera;
+}
+
+/**
+ * The picker's own inverse projection (cycle 2, Quentin's direction):
+ * client pixels to the world-pixel space `screen-position.ts` produces,
+ * through `render/camera.ts`'s `worldPxFromClient` -- the same function
+ * `applyCameraToWorld`'s own camera is built for, so the real, mounted
+ * picker and the real, mounted camera can never quietly drift onto two
+ * different projections. `canvasRect`/`screenWidth`/`screenHeight` are
+ * plain numbers rather than a live `HTMLCanvasElement`/`Application` so
+ * this is callable from a unit test with no canvas or GPU; the real call
+ * site supplies them from `app.canvas.getBoundingClientRect()` and
+ * `app.screen` (logical units -- never `renderer.width`/`height`, which
+ * are device pixels and only match while `resolution` is 1).
+ */
+export function clientToWorldPx(
+  clientX: number,
+  clientY: number,
+  canvasRect: {
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+    readonly height: number;
+  },
+  screenWidth: number,
+  screenHeight: number,
+  world: Container,
+): { readonly x: number; readonly y: number } {
+  const scaleX = canvasRect.width > 0 ? screenWidth / canvasRect.width : 1;
+  const scaleY = canvasRect.height > 0 ? screenHeight / canvasRect.height : 1;
+  const logicalX = (clientX - canvasRect.left) * scaleX;
+  const logicalY = (clientY - canvasRect.top) * scaleY;
+  if (world.scale.x !== world.scale.y) {
+    throw new Error(
+      `clientToWorldPx: world.scale is not uniform (x=${world.scale.x}, y=${world.scale.y})`,
+    );
+  }
+  return worldPxFromClient(logicalX, logicalY, {
+    zoom: world.scale.x,
+    offsetX: world.position.x,
+    offsetY: world.position.y,
+  });
 }
 
 /**
@@ -729,6 +792,50 @@ export async function mountStreetScene(
   // from here): this scene never sizes the canvas to its own content any
   // more.
   world.scale.set(ZOOM);
+
+  // The player's own starting state (cycle 2, Quentin's direction):
+  // computed synchronously from `PLAYER_START` alone, so it is available
+  // here -- before `world` has a single child, before it is even
+  // attached to the stage, and before any of the awaits above or below
+  // this point (texture/atlas/appearance/crowd loads, all network-bound)
+  // next suspend this function. The camera is applied immediately after,
+  // in the same synchronous stretch, so `world.position` is already its
+  // final value the instant the first real content becomes a child of
+  // it -- no frame is ever drawn with the world at its own default
+  // `(0, 0)` position while ground tiles or props already sit inside it,
+  // the exact defect (a mount-time jump) this cycle's finding 1 named.
+  let walk: FloorWalkResult = {
+    ...initialFloorWalkState(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor),
+    transitioned: false,
+  };
+
+  // `app.screen` is the renderer's *logical* size (cycle 2, Quentin's
+  // direction) -- the same space `world.position`/`world.scale` live in.
+  // `app.renderer.width`/`height` are device pixels and match only while
+  // `resolution` is 1; reading them here would silently de-centre the
+  // player the day `autoDensity`/a non-1 `resolution` is ever turned on.
+  let lastCamera: Camera | undefined;
+  function applyCamera(): void {
+    const anchor = screenPositionPx(walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx);
+    const camera = applyCameraToWorld(
+      world,
+      anchor.x,
+      anchor.y,
+      app.screen.width,
+      app.screen.height,
+    );
+    if (
+      !lastCamera ||
+      lastCamera.zoom !== camera.zoom ||
+      lastCamera.offsetX !== camera.offsetX ||
+      lastCamera.offsetY !== camera.offsetY
+    ) {
+      lastCamera = camera;
+      onViewTransform?.(camera.zoom, camera.offsetX, camera.offsetY);
+    }
+  }
+  applyCamera();
+
   app.stage.addChild(world);
   onWorldReady?.(() => ({
     scaleX: world.scale.x,
@@ -826,10 +933,6 @@ export async function mountStreetScene(
     app.ticker,
   );
 
-  let walk: FloorWalkResult = {
-    ...initialFloorWalkState(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor),
-    transitioned: false,
-  };
   const playerDrawable = buildPlayerDrawable(
     rankOf(layerCodeByName("characters")),
     walk.x,
@@ -921,46 +1024,6 @@ export async function mountStreetScene(
     })),
     storeyHeightPx,
   );
-
-  // Camera (the camera/viewport story, Quentin's direction): the world
-  // container's own translation, from `render/camera.ts`'s pure
-  // `computeCamera` -- a function of the player's own screen anchor
-  // (`screenPositionPx`, floor included), the renderer's *current* size
-  // and `ZOOM` alone. No easing, no lag, no world-edge clamp: the player
-  // is exactly centred, every frame, for as long as it keeps moving.
-  // `applyCamera` never calls `app.renderer.resize` or
-  // `world.getLocalBounds()` -- the renderer's own size only ever
-  // changes from a real resize event (`main.ts`'s own `resizeTo:
-  // window`), never from this scene, and this function has no way to
-  // reach it even if it wanted to. Applied once here (so
-  // `onViewTransform`/`window.__bc.viewTransform` is live from the very
-  // first frame, not once after the crowd's own textures finish
-  // loading), and again every frame from `tick()` below, in the same
-  // frame as any movement that frame applied -- `onViewTransform` only
-  // actually fires when the camera's own numbers changed, so an idle
-  // frame with no resize costs one comparison and nothing else.
-  let lastCamera: Camera | undefined;
-  function applyCamera(): void {
-    const anchor = screenPositionPx(walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx);
-    const camera = applyCameraToWorld(
-      world,
-      anchor.x,
-      anchor.y,
-      app.renderer.width,
-      app.renderer.height,
-      ZOOM,
-    );
-    if (
-      !lastCamera ||
-      lastCamera.zoom !== camera.zoom ||
-      lastCamera.offsetX !== camera.offsetX ||
-      lastCamera.offsetY !== camera.offsetY
-    ) {
-      lastCamera = camera;
-      onViewTransform?.(camera.zoom, camera.offsetX, camera.offsetY);
-    }
-  }
-  applyCamera();
 
   // FR121: no masking or aperture system anywhere in the real, mounted
   // display list -- checked directly against every sprite and every
@@ -1170,23 +1233,18 @@ export async function mountStreetScene(
   });
   const pointer = attachPointer({
     element: app.canvas,
-    // Client pixels to the world-pixel space `screenPositionPx` produces:
-    // undo the canvas's own CSS scaling, then the camera offset and zoom
-    // this scene applied to the world container.
-    toWorldPx: (clientX, clientY) => {
-      const rect = app.canvas.getBoundingClientRect();
-      // `app.screen` is in the renderer's *logical* units -- the same
-      // space `world.position`/`world.scale` live in. `canvas.width` is in
-      // device pixels and matches only while `resolution` is 1, so the day
-      // someone turns on `autoDensity` for HiDPI it would put every click
-      // on the wrong cell with nothing to catch it.
-      const scaleX = rect.width > 0 ? app.screen.width / rect.width : 1;
-      const scaleY = rect.height > 0 ? app.screen.height / rect.height : 1;
-      return {
-        x: ((clientX - rect.left) * scaleX - world.position.x) / world.scale.x,
-        y: ((clientY - rect.top) * scaleY - world.position.y) / world.scale.y,
-      };
-    },
+    // `clientToWorldPx` (above): the one projection every click, hover
+    // and camera-centring computation in this client shares -- never a
+    // second, hand-derived copy of the camera's own arithmetic.
+    toWorldPx: (clientX, clientY) =>
+      clientToWorldPx(
+        clientX,
+        clientY,
+        app.canvas.getBoundingClientRect(),
+        app.screen.width,
+        app.screen.height,
+        world,
+      ),
     context: pickContext,
     player: () => ({ x: walk.x, y: walk.y, floor: walk.floor }),
     tileSizePx,
