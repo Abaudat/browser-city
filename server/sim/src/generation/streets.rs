@@ -653,6 +653,53 @@ impl StreetNetwork {
         }
         dist
     }
+
+    /// The node sequence of one shortest route from `a` to `b` (inclusive
+    /// of both endpoints), by network distance -- the same Dijkstra
+    /// [`Self::dijkstra_from`] already runs, with predecessors tracked
+    /// alongside distance so the route itself, not only its length, can
+    /// be drawn (`bounds::generation_evidence`'s own worst-case-seed
+    /// overlay, story 3.18). Empty if `b` is unreachable from `a`,
+    /// `[a]` if `a == b`.
+    pub fn shortest_path(&self, a: (i32, i32), b: (i32, i32)) -> Vec<(i32, i32)> {
+        if a == b {
+            return vec![a];
+        }
+        let mut dist: BTreeMap<(i32, i32), i64> = BTreeMap::new();
+        let mut prev: BTreeMap<(i32, i32), (i32, i32)> = BTreeMap::new();
+        let mut heap: BinaryHeap<std::cmp::Reverse<(i64, (i32, i32))>> = BinaryHeap::new();
+        dist.insert(a, 0);
+        heap.push(std::cmp::Reverse((0, a)));
+        while let Some(std::cmp::Reverse((d, n))) = heap.pop() {
+            if dist.get(&n).is_some_and(|&best| d > best) {
+                continue;
+            }
+            if n == b {
+                break;
+            }
+            for &ei in self.adjacency.get(&n).map(Vec::as_slice).unwrap_or(&[]) {
+                let e = &self.edges[ei];
+                let other = if e.start() == n { e.end() } else { e.start() };
+                let nd = d + e.length();
+                if dist.get(&other).is_none_or(|&best| nd < best) {
+                    dist.insert(other, nd);
+                    prev.insert(other, n);
+                    heap.push(std::cmp::Reverse((nd, other)));
+                }
+            }
+        }
+        if !dist.contains_key(&b) {
+            return Vec::new();
+        }
+        let mut path = vec![b];
+        let mut cur = b;
+        while cur != a {
+            cur = prev[&cur];
+            path.push(cur);
+        }
+        path.reverse();
+        path
+    }
 }
 
 /// [`StreetNetwork::detour_samples`]/`all_pair_samples`'s own shared
@@ -669,6 +716,24 @@ pub const DETOUR_SAMPLE_MAX_NODES: usize = 14;
 /// ~2,000 pairs, cheap (Dijkstra through the adjacency index is
 /// microseconds per source), enough for a real percentile to exist.
 pub const DETOUR_P99_SAMPLE_MAX_NODES: usize = 64;
+
+/// The worst detour-excess seeds found so far, one source of truth for
+/// both `invariants.rs`'s own pinned-seed regression test and `bounds`'s
+/// worst-case evidence SVGs (story 3.18) -- a failure found by luck
+/// becomes a deterministic case, the same `PINNED_BUILDING_COUNT_SEEDS`
+/// precedent, never re-derived twice. `10_778_299_729_582_344_780` (PR
+/// #317 cycle 5) and `10_818_714_075_226_271_966` (story 3.18's own
+/// `measure-generation` re-measurement, its exhaustive-pair argmax) were
+/// both found by a genuinely random sweep, never hunted for;
+/// `12_073_828_753_114_949_265` is this story's own seed, reported on PR
+/// #315. Every one of these still ends its own worst sampled pair on a
+/// boundary exit (degree 1, on the site boundary) -- see
+/// `detour_excess_holds_at_pinned_boundary_exit_seeds`.
+pub const PINNED_DETOUR_SEEDS: [u64; 3] = [
+    10_778_299_729_582_344_780,
+    12_073_828_753_114_949_265,
+    10_818_714_075_226_271_966,
+];
 
 /// One [`StreetNetwork::detour_samples`] entry.
 #[derive(Debug, Clone, Copy)]
@@ -1970,10 +2035,12 @@ mod tests {
         // direction, cycle 2): if the shipped keys would let this maze
         // through, this test must go red, not pass on a number picked
         // to make it pass. Sized with real margin over `max_detour_
-        // excess_cells` (280, this cycle's own structurally-derived
-        // value) rather than the tightest maze that would still fail
-        // today -- a smaller maze keeps needing to grow every time that
-        // ceiling is re-measured upward. Must assert against every
+        // excess_cells` (416 as of story 3.18's own re-measurement, a
+        // measured value, never a structural one -- see `docs/
+        // generation.md`'s street-network pass) rather than the
+        // tightest maze that would still fail today -- a smaller maze
+        // keeps needing to grow every time that ceiling is re-measured
+        // upward. Must assert against every
         // committed detour bound, not just the excess one (Quentin's
         // direction, cycle 4): the 300-cell Manhattan distance is over
         // `detour_long_pair_cells` (256), so the 300% ratio is also
@@ -2031,6 +2098,61 @@ mod tests {
             "expected the maze's own p99 ratio ({p99}%) to exceed the committed p99_detour_percent ({}%)",
             c.p99_detour_percent
         );
+    }
+
+    #[test]
+    fn shortest_path_of_a_node_to_itself_is_that_one_node() {
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 100,
+            y1: 100,
+        };
+        let net = StreetNetwork::test_fixture(site, vec![horizontal(50, 0, 100)], Vec::new());
+        assert_eq!(net.shortest_path((0, 50), (0, 50)), vec![(0, 50)]);
+    }
+
+    #[test]
+    fn shortest_path_follows_the_u_shaped_corridor_around_the_maze() {
+        // The same U-shaped maze `a_maze_fails_dead_ends_and_detour` uses
+        // -- the route from (100,100) to (400,100) cannot cross the gap
+        // directly, it must go the long way round via (100,400) and
+        // (400,400) (the overlay `bounds::generation_evidence` draws for
+        // story 3.18's own worst-case-seed evidence, proven here against
+        // a hand-built shape whose correct route is known by
+        // construction, not read off the algorithm under test).
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 500,
+            y1: 500,
+        };
+        let edges = vec![
+            vertical(100, 100, 400),
+            horizontal(400, 100, 400),
+            vertical(400, 100, 400),
+            horizontal(250, 100, 175),
+        ];
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
+        let path = net.shortest_path((100, 100), (400, 100));
+        assert_eq!(
+            path,
+            vec![(100, 100), (100, 250), (100, 400), (400, 400), (400, 100)],
+            "the shortest path must go round the U, not straight across the gap: {path:?}"
+        );
+    }
+
+    #[test]
+    fn shortest_path_is_empty_between_two_disjoint_components() {
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 200,
+            y1: 200,
+        };
+        let edges = vec![horizontal(10, 0, 50), horizontal(150, 100, 200)];
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
+        assert!(net.shortest_path((0, 10), (200, 150)).is_empty());
     }
 
     #[test]

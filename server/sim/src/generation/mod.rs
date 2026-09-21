@@ -800,20 +800,32 @@ impl GenerationConfig {
                 cfg.max_block_depth_min_cells, cfg.max_block_depth_max_cells
             )));
         }
-        // 3 (not 2) * block_size_max_cells: a T-terminated dead-end spur
-        // (Artie's direction: "at most one arterial line per city stops
-        // short of the far site edge") is reachable by exactly one path,
-        // so the worst real route pays for both going around one
-        // largest block *and* walking out to and back from such a spur
-        // -- found by a genuinely random CI seed (never sequential
-        // measurement, which had missed it), not a bug: `(70, 18)` to a
-        // T-terminated boundary node paid 292 cells of excess against
-        // the old 2x formula's own 280-cell ceiling.
-        let detour_excess_ceiling =
-            3 * cfg.block_size_max_cells as i64 + 2 * cfg.arterial_width_cells as i64;
-        if cfg.max_detour_excess_cells as i64 > detour_excess_ceiling {
+        // Not a worst-case claim (story 3.18, Tim's direction): this
+        // generator has no tight structural bound on detour excess to
+        // derive one from. A guillotine partition can lay running bond
+        // (full-width cuts, independently jittered cross cuts), so a
+        // straight crossing is blocked at every course and excess grows
+        // with distance, not with block size; leaf size is not capped at
+        // `block_size_max_cells` either (`try_split` refusal, `max_lane_
+        // splits`, `max_recursion_depth` can all leave an over-target
+        // leaf). Both the 2x and the later 3x formula here were a story
+        // fitted to the last failing seed, not a derivation -- "T-
+        // terminated dead-end spur" was even the wrong mechanism: the
+        // degree-1 nodes a worst pair ends on are the ordinary boundary
+        // exits every street has (there is no perimeter street), reached
+        // one way, not a special spur case.
+        //
+        // So this is a loosening guard, not a worst-case claim: the
+        // loosest additive ceiling this codebase accepts, stated as a
+        // formula in largest-block units so it scales when the block
+        // keys are retuned, coefficient the smallest integer that still
+        // admits the committed `max_detour_excess_cells` (re-derive by
+        // hand whenever either value changes).
+        let detour_excess_loosening_guard =
+            4 * cfg.block_size_max_cells as i64 + 2 * cfg.arterial_width_cells as i64;
+        if cfg.max_detour_excess_cells as i64 > detour_excess_loosening_guard {
             return Err(GenerationError::InvalidConfig(format!(
-                "GenerationConfig: max_detour_excess_cells ({}) is greater than the structural ceiling 3*block_size_max_cells + 2*arterial_width_cells ({detour_excess_ceiling}) -- the worst a rectilinear network should cost a route is going around one largest block plus walking out to and back from a T-terminated dead-end spur",
+                "GenerationConfig: max_detour_excess_cells ({}) is greater than the loosening guard 4*block_size_max_cells + 2*arterial_width_cells ({detour_excess_loosening_guard}) -- not a worst-case claim, just the loosest additive ceiling this codebase accepts",
                 cfg.max_detour_excess_cells
             )));
         }
@@ -1451,12 +1463,23 @@ mod tests {
     }
 
     #[test]
-    fn from_balance_rejects_max_detour_excess_cells_over_the_structural_ceiling() {
+    fn from_balance_rejects_max_detour_excess_cells_over_the_loosening_guard() {
         // fixture: block_size_max_cells=96, arterial_width_cells=12 ->
-        // ceiling = 3*96 + 2*12 = 312.
-        let balance = with_override("generation.streets.max_detour_excess_cells", 313);
+        // guard = 4*96 + 2*12 = 408.
+        let balance = with_override("generation.streets.max_detour_excess_cells", 409);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
         assert!(err.to_string().contains("max_detour_excess_cells"));
+        assert!(err.to_string().contains("loosening guard"));
+    }
+
+    #[test]
+    fn from_balance_accepts_max_detour_excess_cells_at_the_loosening_guard() {
+        // Same fixture as above, right on the boundary: the guard itself
+        // (408) is admitted, only a value strictly over it is refused
+        // (AC4's mechanical both-sides-of-the-boundary check).
+        let balance = with_override("generation.streets.max_detour_excess_cells", 408);
+        GenerationConfig::from_balance(&balance)
+            .expect("the loosening guard itself must be accepted, not just values under it");
     }
 
     #[test]

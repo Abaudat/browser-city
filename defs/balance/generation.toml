@@ -352,29 +352,27 @@ max = 500
 [[balance]]
 # The additive Manhattan-fitness ceiling, in world cells, applied to
 # every sampled pair regardless of distance -- what a short hop actually
-# pays for, where a ratio is dominated by a single jitter-driven jog.
-# Structurally bounded as well as measured (Quentin's direction, cycles
-# 3 and 5, PR #294 and #317): the worst a rectilinear network should
-# cost a route is going around one largest block *and* walking out to
-# and back from a T-terminated dead-end spur (Artie's direction: "at
-# most one arterial line per city stops short of the far site edge"),
-# reachable by exactly one path -- `from_balance` refuses a value over
-# `3 * block_size_max_cells + 2 * arterial_width_cells` (408 at this
-# generator's other committed values), a separate, higher refusal
-# ceiling than the value below, the same shape `max_detour_percent`
-# holds. The spur case was found too narrow by a genuinely random CI
-# seed (`10778299729582344780`, pinned as `invariants.rs`'s own
-# `detour_excess_holds_at_a_pinned_t_terminated_spur_seed`, `PINNED_
-# DETOUR_SEEDS`): 292 cells against the old (2x-formula, spur-blind)
-# 280-cell value. Re-measured, `cargo run -p bounds --release --bin
-# measure-generation`'s own `detour_excess_cells` statistic: worst 276
-# over 50,000 *sequential* seeds -- a genuinely random `proptest` sweep
-# (never sequential, the same lesson this story's own content tuning
-# learned) found 296 over ~230,000 seeds. 320 is that plus the same
-# ~8% order of margin the original 258-to-280 value held, real margin
-# under the 408 structural ceiling.
+# pays for, where a ratio is dominated by a single jitter-driven jog. A
+# *measured* value (this generator has no tight structural bound to
+# derive one from -- see `docs/generation.md`'s street-network pass for
+# why), re-derived by `cargo run -p bounds --release --bin measure-
+# generation`. Margin rule: the exhaustive-pair max (every non-both-
+# boundary node pair, not just the cheap `DETOUR_SAMPLE_MAX_NODES`
+# sample `inv_generation_detour_ratio_bounded` checks) over the
+# harness's own 50,000 mixed seeds, times 1.25, rounded up to a multiple
+# of 8. Story 3.18's own run: exhaustive max 328, at seed
+# `10818714075226271966` -- 328 * 1.25 = 410, rounded up to 416.
+# `from_balance` separately refuses a value over `4 *
+# block_size_max_cells + 2 * arterial_width_cells` (536 at this
+# generator's other committed values) -- a loosening guard, never a
+# worst-case claim (`GenerationConfig::from_balance`'s own comment).
+# `10778299729582344780`, `12073828753114949265` and
+# `10818714075226271966` are pinned as `invariants.rs`'s own
+# `PINNED_DETOUR_SEEDS` (`detour_excess_holds_at_pinned_boundary_exit_
+# seeds`) -- every one found by a genuinely random sweep, never hunted
+# for; a sequential scan had missed all three.
 key = "generation.streets.max_detour_excess_cells"
-value = 320
+value = 416
 min = 1
 max = 2048
 

@@ -69,7 +69,7 @@ pub const INV_GENERATION_ALL_FOUR_LAND_USES_PRESENT: &str = "pass 1's coarse gri
 pub const INV_GENERATION_STREETS_CONNECTED_AND_NOT_STRANDED: &str = "pass 2's street graph is a single connected component, and every pass-1 region borders a street, for any seed (FR110)";
 pub const INV_GENERATION_NO_DEAD_ENDS_AWAY_FROM_BOUNDARY: &str =
     "pass 2 never produces a degree-1 node away from the site boundary, for any seed (FR110, NFR8)";
-pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, BFS network distance never exceeds max_detour_percent of Manhattan distance, for any seed (FR110)";
+pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, additive excess never exceeds max_detour_excess_cells, and (for pairs at least detour_long_pair_cells apart) BFS network distance never exceeds max_detour_percent of Manhattan distance, for any seed (FR110, story 3.18)";
 pub const INV_GENERATION_NOT_A_PERFECT_GRID: &str = "block width and height each take at least min_distinct_block_sizes distinct values, both junction kinds are present, and at least two street classes are present, for any seed (FR110, NFR8)";
 pub const INV_GENERATION_EXACT_TILING: &str = "every site cell is covered by exactly one block or by at least one street, and no two blocks overlap, for any seed (FR110)";
 pub const INV_GENERATION_INSTITUTIONAL_POCKETS_ARE_SMALL: &str = "at least institutional_min_pockets mutually non-adjacent (edge or corner) institutional components per site, none over institutional_max_pocket_share_percent of the site's own coarse-cell count, for any seed (FR110, Artie's direction)";
@@ -3493,25 +3493,19 @@ fn building_count_holds_at_individually_measured_extreme_seeds() {
     }
 }
 
-/// PR #317 cycle 5 (Quentin's direction): a failure found by luck
-/// becomes a deterministic test, `PINNED_BUILDING_COUNT_SEEDS`'s own
-/// precedent -- otherwise the next streets retune re-breaks the
-/// T-terminated-spur case and only luck finds it again. Found by a
-/// genuinely random `proptest` run against `inv_generation_detour_
-/// ratio_bounded`, never hunted for.
-const PINNED_DETOUR_SEEDS: [u64; 1] = [10_778_299_729_582_344_780];
-
-/// The pinned seed's own worst sampled pair, asserted against the
+/// The pinned seeds' own worst sampled pair, asserted against the
 /// committed ceiling (never a stale hardcoded number, so a real
 /// retune's own new committed value is what this checks against) *and*
-/// asserted to still end on a T-terminated dead-end spur -- degree 1,
-/// on the site's own boundary -- so this pins the mechanism the seed
-/// was kept for, not just a cell count that could quietly stop meaning
-/// what it once did.
+/// asserted to still end on a boundary exit -- degree 1, on the site's
+/// own boundary, the ordinary way every street ends, not a special "T-
+/// terminated dead-end spur" case (story 3.18, Tim's direction: that
+/// framing was wrong -- see `docs/generation.md`'s street-network pass)
+/// -- so this pins the mechanism each seed was kept for, not just a
+/// cell count that could quietly stop meaning what it once did.
 #[test]
-fn detour_excess_holds_at_a_pinned_t_terminated_spur_seed() {
+fn detour_excess_holds_at_pinned_boundary_exit_seeds() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-    for seed in PINNED_DETOUR_SEEDS {
+    for seed in streets::PINNED_DETOUR_SEEDS {
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
@@ -3527,12 +3521,12 @@ fn detour_excess_holds_at_a_pinned_t_terminated_spur_seed() {
             worst.excess_cells(),
             cfg.max_detour_excess_cells
         );
-        let on_a_t_terminated_spur = |n: (i32, i32)| net.degree(n) == 1 && net.is_on_boundary(n);
+        let on_a_boundary_exit = |n: (i32, i32)| net.degree(n) == 1 && net.is_on_boundary(n);
         assert!(
-            on_a_t_terminated_spur(worst.a) || on_a_t_terminated_spur(worst.b),
-            "pinned seed {seed}: worst pair {:?}-{:?} no longer ends on a T-terminated dead-end \
-             spur (degree 1, on the site boundary) -- the mechanism this seed was pinned for \
-             moved; re-measure and re-pin",
+            on_a_boundary_exit(worst.a) || on_a_boundary_exit(worst.b),
+            "pinned seed {seed}: worst pair {:?}-{:?} no longer ends on a boundary exit (degree \
+             1, on the site boundary) -- the mechanism this seed was pinned for moved; \
+             re-measure and re-pin",
             worst.a,
             worst.b
         );

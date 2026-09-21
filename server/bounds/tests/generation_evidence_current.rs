@@ -2,7 +2,8 @@
 //! current output, in the same style as `world_fixture_current.rs`.
 
 use bounds::generation_evidence::{
-    build_all, building_types_svg_path, envelopes_svg_path, land_use_svg_path, streets_svg_path,
+    build_all, build_detour_worst_svgs, building_types_svg_path, detour_worst_svg_path,
+    envelopes_svg_path, land_use_svg_path, streets_svg_path,
 };
 
 fn assert_current(path: std::path::PathBuf, expected: &str) {
@@ -27,5 +28,8 @@ fn generation_evidence_is_current() {
         assert_current(streets_svg_path(svgs.seed), &svgs.streets);
         assert_current(envelopes_svg_path(svgs.seed), &svgs.envelopes);
         assert_current(building_types_svg_path(svgs.seed), &svgs.building_types);
+    }
+    for (seed, svg) in build_detour_worst_svgs() {
+        assert_current(detour_worst_svg_path(seed), &svg);
     }
 }

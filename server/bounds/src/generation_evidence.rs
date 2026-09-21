@@ -24,7 +24,7 @@ use sim::generated::defs;
 use sim::generation::{
     Block, BuildingTypeMap, EnvelopeMap, EnvelopeOutcome, GenerationConfig, GenerationContent,
     LandUse, PlotMap, Side, StreetClass, StreetNetwork, block_land_use, building_types,
-    land_use::LandUseMap,
+    land_use::LandUseMap, streets,
 };
 
 /// The three fixed seeds every evidence SVG renders -- committed once,
@@ -279,6 +279,92 @@ pub fn streets_svg(map: &LandUseMap, net: &StreetNetwork) -> String {
     )
 }
 
+/// The overlay colour [`detour_worst_svg`] draws its route/L/markers in --
+/// distinct from every [`land_use_fill`] and every [`street_fill`] so it
+/// reads over all four tints and both extra styles (Artie's direction,
+/// story 3.18).
+const DETOUR_OVERLAY_COLOR: &str = "#ff8f00";
+
+/// Story 3.18's own new evidence: one picture per `streets::
+/// PINNED_DETOUR_SEEDS` entry -- the same block/street backdrop, tier
+/// styling and legend `streets_svg` draws (unchanged), plus an overlay:
+/// that seed's own worst sampled pair (`streets::DETOUR_SAMPLE_MAX_
+/// NODES`, the same scope the pinned-seed regression test in `invariants.
+/// rs` checks) as two markers, the shortest street route between them as
+/// one solid stroke, the Manhattan L between them as one dashed stroke,
+/// and the excess in cells added to the legend -- so the argument
+/// `docs/generation.md`'s street-network pass makes ("around one largest
+/// block and out to a boundary exit") is checkable by looking at the
+/// actual route, not only asserted.
+pub fn detour_worst_svg(map: &LandUseMap, net: &StreetNetwork) -> String {
+    let site = net.site();
+    let (w, h) = (site.width(), site.height());
+    // 56 for `combined_legend`'s own content (`streets_svg`'s own
+    // budget), plus two more rows for the overlay legend below it.
+    let legend_h = 56 + 28;
+    let total_h = h + legend_h;
+    let mut body = block_rects(map, net);
+    for e in net.edges() {
+        let r = e.rect();
+        body.push_str(&format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
+            r.x0,
+            r.y0,
+            r.width(),
+            r.height(),
+            street_fill(e.class)
+        ));
+    }
+
+    let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+    let worst = samples
+        .iter()
+        .max_by_key(|s| s.excess_cells())
+        .expect("a pinned detour seed always samples at least one pair");
+
+    let route = net.shortest_path(worst.a, worst.b);
+    if route.len() >= 2 {
+        let points = route
+            .iter()
+            .map(|(x, y)| format!("{x},{y}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        body.push_str(&format!(
+            "<polyline points=\"{points}\" fill=\"none\" stroke=\"{DETOUR_OVERLAY_COLOR}\" stroke-width=\"2.5\"/>\n"
+        ));
+    }
+    let (ax, ay) = worst.a;
+    let (bx, by) = worst.b;
+    body.push_str(&format!(
+        "<polyline points=\"{ax},{ay} {ax},{by} {bx},{by}\" fill=\"none\" stroke=\"{DETOUR_OVERLAY_COLOR}\" stroke-width=\"1.5\" stroke-dasharray=\"6 4\"/>\n"
+    ));
+    body.push_str(&marker(ax, ay, "circle", DETOUR_OVERLAY_COLOR));
+    body.push_str(&marker(bx, by, "circle", DETOUR_OVERLAY_COLOR));
+
+    let legend = combined_legend(h);
+    let row1_y = h + 56 + 12;
+    let row2_y = h + 56 + 26;
+    let overlay_legend = format!(
+        "<line x1=\"8\" y1=\"{row1_y}\" x2=\"32\" y2=\"{row1_y}\" stroke=\"{DETOUR_OVERLAY_COLOR}\" stroke-width=\"2.5\"/>\n\
+         <text x=\"38\" y=\"{}\" font-family=\"sans-serif\" font-size=\"11\" fill=\"#111\">shortest street route</text>\n\
+         <line x1=\"200\" y1=\"{row1_y}\" x2=\"224\" y2=\"{row1_y}\" stroke=\"{DETOUR_OVERLAY_COLOR}\" stroke-width=\"1.5\" stroke-dasharray=\"6 4\"/>\n\
+         <text x=\"230\" y=\"{}\" font-family=\"sans-serif\" font-size=\"11\" fill=\"#111\">Manhattan L</text>\n\
+         <text x=\"8\" y=\"{row2_y}\" font-family=\"sans-serif\" font-size=\"11\" fill=\"#111\">worst pair {:?}-{:?}: excess {} cells (network {}, Manhattan {})</text>\n",
+        row1_y + 4,
+        row1_y + 4,
+        worst.a,
+        worst.b,
+        worst.excess_cells(),
+        worst.network,
+        worst.manhattan,
+    );
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{total_h}\" viewBox=\"0 0 {w} {total_h}\">\n\
+         <rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{total_h}\" fill=\"#ffffff\"/>\n\
+         {body}{legend}{overlay_legend}</svg>\n"
+    )
+}
+
 /// Where the committed evidence for `seed` lives -- absolute, resolved
 /// from this crate's own manifest dir (`crate::world_fixture::
 /// repo_root_dir`'s idiom), never relative to whatever directory a
@@ -309,6 +395,17 @@ pub fn building_types_svg_path(seed: u64) -> std::path::PathBuf {
         .join("docs")
         .join("generation")
         .join(format!("building-types-seed-{seed}.svg"))
+}
+
+/// Story 3.18: one picture per entry in `streets::PINNED_DETOUR_SEEDS`,
+/// a separate file set from the twelve `EVIDENCE_SEEDS` files above --
+/// never a byte of those twelve moves when a pinned detour seed is added
+/// or its own worst pair shifts.
+pub fn detour_worst_svg_path(seed: u64) -> std::path::PathBuf {
+    crate::world_fixture::repo_root_dir()
+        .join("docs")
+        .join("generation")
+        .join(format!("detour-worst-seed-{seed}.svg"))
 }
 
 /// A plot's own front-edge segment, in world cells -- the heavier stroke
@@ -1260,6 +1357,26 @@ pub fn build_all() -> Vec<EvidenceSvgs> {
                     &content,
                 ),
             }
+        })
+        .collect()
+}
+
+/// One `(seed, svg)` pair per entry in `streets::PINNED_DETOUR_SEEDS` --
+/// `dump-generation`'s own second output set (story 3.18), built from
+/// `plan` alone (never `generate`'s building-count/rules/workplace-count
+/// verdicts, which a detour-worst seed has no reason to also satisfy)
+/// since only pass 1 (land use) and pass 2 (streets) feed [`detour_worst_
+/// svg`].
+pub fn build_detour_worst_svgs() -> Vec<(u64, String)> {
+    let cfg = GenerationConfig::from_balance(sim::generated::defs::BALANCE)
+        .expect("live defs/ must be a valid GenerationConfig");
+    let content = GenerationContent::committed();
+    streets::PINNED_DETOUR_SEEDS
+        .iter()
+        .map(|&seed| {
+            let d = sim::generation::plan(seed, &cfg, &content)
+                .expect("pass 1 is total over the live committed config");
+            (seed, detour_worst_svg(&d.land_use, &d.streets))
         })
         .collect()
 }
