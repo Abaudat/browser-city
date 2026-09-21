@@ -1337,10 +1337,9 @@ build.
 
 ## Toolchain
 
-CI guard tables: `docs/trace-matrix.md`'s `| Requirement | Status | Guard |`
-tables are recognised by that exact header; `check-trace-matrix.sh` checks
-every `covered` cell's paths and declared names (NFR47).
-
+`docs/trace-matrix.md`'s `| Requirement | Status | Guard |` tables are
+recognised by that exact header; `check-trace-matrix.sh` checks every
+`covered`/`partial` cell's paths and declared names (NFR47).
 
 | Prerequisite    | Notes                                                          |
 | --------------- | -------------------------------------------------------------- |

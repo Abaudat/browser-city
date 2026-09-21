@@ -2,26 +2,30 @@
 # Fixture-driven coverage for scripts/ci/check-trace-matrix.sh's full
 # (cargo) mode -- a scratch two-crate Cargo workspace (never the live
 # repo's own) so `cargo test --workspace --exclude browser_city --
-# --list` has something real to run against. Complements scripts/ci/
-# tests/test-check-trace-matrix.sh, which drives the Guard-section
-# lookup itself (fn/title/case/prefix resolution, discovery, statuses)
-# without cargo -- this file's own job is the pieces that need a real
-# Rust test suite: the covered/deferred Test-column symmetry, the
-# INV_ constant<->matrix registry, and --client-only genuinely never
-# invoking cargo at all. One fixture directory is built once and reused
-# across cases below (only docs/trace-matrix.md changes between runs),
-# since neither crate has any source for a rebuild to pick up.
+# --list` has something real to run against. Complements
+# test-check-trace-matrix.sh, which drives the Guard-section lookup
+# itself (fn/title/case/prefix resolution, discovery, statuses) without
+# cargo -- this file's own job is the pieces that need a real Rust test
+# suite: the covered/deferred Test-column symmetry, the INV_
+# constant<->matrix registry, and the AC3 proof that the Guard-section
+# lookup genuinely runs in full mode too, not only under --client-only.
+# One fixture directory is built once and reused across cases below
+# (only docs/trace-matrix.md changes between runs), since neither crate
+# has any source for a rebuild to pick up.
+#
+# Not a cp of the script into a fake `scripts/ci/`: the positional root
+# argument this story added exists precisely so a self-test never has to
+# fake its own copy of the tree layout around the script it is testing.
 set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 . "$TEST_DIR/harness.sh"
-CHECK="$TEST_DIR/../../../scripts/ci/check-trace-matrix.sh"
+CHECK="$TEST_DIR/../check-trace-matrix.sh"
 
 command -v cargo >/dev/null 2>&1 || { echo "SKIP: no cargo on PATH"; exit 0; }
 
 D="$(fake_dir)"
 rm -rf "$D"
-mkdir -p "$D/docs" "$D/server/sim/src" "$D/server/sim/tests" "$D/server/browser_city/src" "$D/scripts/ci" "$D/client/tests/unit"
-cp "$CHECK" "$D/scripts/ci/check-trace-matrix.sh"
+mkdir -p "$D/docs" "$D/server/sim/src" "$D/server/sim/tests" "$D/server/browser_city/src" "$D/client/tests/unit"
 
 cat > "$D/server/Cargo.toml" <<'TOML'
 [workspace]
@@ -79,7 +83,7 @@ EOF
 }
 
 run_check() { # [extra-arg...]
-  ( cd "$D" && bash scripts/ci/check-trace-matrix.sh "$@" )
+  bash "$CHECK" "$@" "$D"
 }
 
 # write_client_test <relative-path-under-client/tests/unit> <inv-name...>
@@ -113,7 +117,7 @@ check "names the missing path" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF 'does-not-exist.md'" _ "$OUT"
 
 echo
-echo "green: a guard table under a heading this file never named before is still checked (discovery, not a fixed list -- the full-cargo-mode proof this story's own scripts/ci/tests fixtures cannot give, since they never run cargo at all)"
+echo "green: a guard table under a heading this file never named before is still checked (discovery, not a fixed list -- the full-cargo-mode proof scripts/ci/tests/test-check-trace-matrix.sh's own fixtures cannot give, since they never run cargo at all)"
 write_matrix
 {
   cat <<'EXTRA'
@@ -131,6 +135,15 @@ OUT="$(run_check 2>&1)"; CODE=$?
 check "and still fails when that same table's own Guard path is not (discovery, not decoration)" 1 bash -c "exit $CODE"
 check "names the missing path under the never-before-seen heading" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF 'does-not-exist.md'" _ "$OUT"
+
+echo
+echo "red (AC3): a dangling Guard-cell name fails in full (cargo) mode too, not only under --client-only"
+write_matrix
+sed -i 's#`docs/trace-matrix.md`#`server/sim/src/lib.rs` -- `totally_gone_fn`#' "$D/docs/trace-matrix.md"
+OUT="$(run_check 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the dangling token" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF 'totally_gone_fn'" _ "$OUT"
 
 echo
 echo "red: a client inv_* test with no matrix row fails"
@@ -176,7 +189,7 @@ exit 1
 SH
 chmod +x "$CARGO_SENTINEL_DIR/cargo"
 check "client-only exits 0 without cargo on PATH" 0 bash -c \
-  "cd '$D' && PATH=\"$CARGO_SENTINEL_DIR:$PATH\" bash scripts/ci/check-trace-matrix.sh --client-only"
+  "PATH=\"$CARGO_SENTINEL_DIR:$PATH\" bash '$CHECK' --client-only '$D'"
 check "cargo was never invoked" 1 bash -c "[ -e '$CARGO_SENTINEL' ]"
 
 echo
@@ -186,7 +199,7 @@ clear_client_tests
 write_client_test "render/sort-key.test.ts" "inv_client_only_no_row"
 rm -f "$CARGO_SENTINEL"
 check "client-only exits non-zero on the same fixture" 1 bash -c \
-  "cd '$D' && PATH=\"$CARGO_SENTINEL_DIR:$PATH\" bash scripts/ci/check-trace-matrix.sh --client-only"
+  "PATH=\"$CARGO_SENTINEL_DIR:$PATH\" bash '$CHECK' --client-only '$D'"
 check "cargo still was never invoked" 1 bash -c "[ -e '$CARGO_SENTINEL' ]"
 clear_client_tests
 

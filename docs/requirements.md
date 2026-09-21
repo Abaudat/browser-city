@@ -287,4 +287,4 @@ Every functional and non-functional requirement for BrowserCity, one line each. 
 - **NFR44** — Logging is by exception, not by event, with structured fields; logs and observability are separate systems and must not be merged
 - **NFR45** — Balance parameters live in tables and are runtime-tunable; constants are compiled; definitions are baked under `defs_version`
 - **NFR46** — Live parameters and seed values are visibly marked, because tuning a seed value on a running world has no effect
-- **NFR47** — A `covered` row in the trace matrix names a guard that exists: every path and every test it cites is checked mechanically in CI, and a dangling one fails the build
+- **NFR47** — A `covered` or `partial` row in the trace matrix names a guard that exists: every path and every test it cites is checked mechanically in CI, and a dangling one fails the build

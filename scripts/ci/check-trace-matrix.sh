@@ -141,14 +141,14 @@ fi
 # | id | description | status | test | story |
 MATRIX_ROWS="$(grep -E '^\| `' "$MATRIX" || true)"
 MATRIX_IDS="$(printf '%s\n' "$MATRIX_ROWS" | awk -F'|' '{print $2}' | tr -d '`' | xargs -n1 2>/dev/null || true)"
-# Set form for the Guard-section lookup's own inv_* resolver, below: an
-# associative-array membership test, not a `grep -qxF ... <<<` subprocess
-# per inv_* candidate (Tim's low-single-digit-seconds budget).
-declare -A MATRIX_ID_SET
-while IFS= read -r mid; do
-  [ -n "$mid" ] || continue
-  MATRIX_ID_SET["$mid"]=1
-done <<< "$MATRIX_IDS"
+# COVERED_MATRIX_ID_SET (populated below, from `covered` rows only) is the
+# Guard-section lookup's own inv_* resolver: an id whose own row is
+# `deferred`/`planned` is a claim no test yet exists for, by definition,
+# so a Guard cell citing it must still resolve through a real path, never
+# take this shortcut (Quentin's direction) -- an associative-array
+# membership test, not a `grep -qxF ... <<<` subprocess per inv_*
+# candidate (Tim's low-single-digit-seconds budget).
+declare -A COVERED_MATRIX_ID_SET
 
 # --- parse the invariant registry's INV_* constants --------------------------
 # `|| true`: an `invariants.rs` declaring zero INV_ constants (every self
@@ -182,6 +182,7 @@ while IFS='|' read -r _ id _ status test _; do
   [ -n "$id" ] || continue
   case "$status" in
     covered)
+      COVERED_MATRIX_ID_SET["$id"]=1
       if [ -z "$test" ]; then
         echo "check-trace-matrix: FAIL -- '$id' is 'covered' but names no test" >&2
         FAILED=1
@@ -264,74 +265,130 @@ if [ "$CLIENT_ONLY" -eq 0 ]; then
   done <<< "$MATRIX_IDS"
 fi
 
-# --- Guard-section tables: every `covered` row's Guard column names guards
-# that are real, checked mechanically rather than by eye -- a guard renamed
-# or deleted without updating the row is a lie the matrix would otherwise
-# keep telling. Not part of the `inv_*`/`INV_*` id symmetry above (these are
-# guard requirements that span the client/server boundary, the CI graph
-# itself, or a permanent schema decision, not a `sim` invariant).
+# --- Guard-section tables: every `covered`/`partial` row's Guard column
+# names guards that are real, checked mechanically rather than by eye -- a
+# guard renamed or deleted without updating the row is a lie the matrix
+# would otherwise keep telling. Not part of the `inv_*`/`INV_*` id symmetry
+# above (these are guard requirements that span the client/server
+# boundary, the CI graph itself, or a permanent schema decision, not a
+# `sim` invariant).
 #
 # Guard tables are discovered by their header row, never a hardcoded
 # section-title list (the list this replaces let a whole table -- "The
 # hand-laid test street" -- go unchecked for going unregistered): any line
 # reading exactly "| Requirement | Status | Guard |" opens a guard table,
-# whose rows run until the next "## " heading or the file's end. A row is
+# whose rows run until the next "## " heading or the file's end -- a blank
+# or otherwise non-`|` line inside a table (between its header and the
+# next heading) is skipped, never mistaken for the table's own end, or a
+# row two lines after it would silently vanish (Tim's direction). A row is
 # the remainder of the line after its third "|" (minus the closing one),
 # never a fixed-field split -- a Guard cell that itself contains a literal
 # "|" is real data, not a fourth column.
 GUARD_HEADER='| Requirement | Status | Guard |'
 
-# A header typo ("| Requirement | status | Guard |", extra/missing spaces)
-# would otherwise just fail to match GUARD_HEADER and vanish from the count
-# below with no error at all -- so this checks every table header whose
-# first cell is exactly "Requirement" is the exact guard header, and fails
-# loud on any that is not. Anchored on "| Requirement |" (a second "|"
-# right after the cell), never a bare "| Requirement " prefix -- a data
-# row whose own Requirement prose happens to start with the word
-# "Requirement" (story 2.10's "Requirement never double-counts...") is not
-# a header and must never be mistaken for one.
-while IFS= read -r line; do
-  [ -n "$line" ] || continue
-  if [ "$line" != "$GUARD_HEADER" ]; then
-    echo "check-trace-matrix: FAIL -- '$line' starts a Requirement table but is not the exact guard header '$GUARD_HEADER'" >&2
-    FAILED=1
+# Every table header in the matrix -- a "|"-line immediately followed by
+# its own "| --- |"-shaped separator line -- must be exactly one of the
+# three header shapes this file actually uses. A closed set, not "the
+# first cell says Requirement": that open-ended check cannot tell
+# "Requirment" (a typo, invisible to it and to every row below it) from a
+# table this file has never had, and a `grep -Fxc` of the very literal
+# string the discovery pass already looked for can never disagree with
+# it -- a tautological floor, replaced rather than kept for show (Tim's
+# and Quentin's direction). Read with `mapfile`, not `awk ... getline`:
+# `getline` inside a `/^\|/` rule consumes the *next* input line for every
+# data row too, not only real headers, so a header sitting right after a
+# data row (no blank line between them) is silently skipped -- the same
+# false-negative shape as the bug this whole check exists to close.
+KNOWN_TABLE_HEADERS=(
+  '| Invariant id | Description | Status | Test | Story |'
+  '| Metric | Status | Blocked on |'
+  "$GUARD_HEADER"
+)
+mapfile -t MATRIX_LINES < "$MATRIX"
+for ((mi = 0; mi < ${#MATRIX_LINES[@]} - 1; mi++)); do
+  mline="${MATRIX_LINES[$mi]%$'\r'}"
+  case "$mline" in
+    '|'*) ;;
+    *) continue ;;
+  esac
+  mnext="${MATRIX_LINES[$((mi + 1))]%$'\r'}"
+  if [[ "$mnext" =~ ^\|([[:space:]]*-+[[:space:]]*\|)+[[:space:]]*$ ]]; then
+    known=0
+    for k in "${KNOWN_TABLE_HEADERS[@]}"; do
+      if [ "$mline" = "$k" ]; then
+        known=1
+        break
+      fi
+    done
+    if [ "$known" -eq 0 ]; then
+      echo "check-trace-matrix: FAIL -- '$mline' is a table header (followed by its own separator row) but is not one of this matrix's known header shapes" >&2
+      FAILED=1
+    fi
+    [ "$mline" = "$GUARD_HEADER" ] && GUARD_TABLE_COUNT=$((${GUARD_TABLE_COUNT:-0} + 1))
   fi
-done < <(grep -E '^\| Requirement \|' "$MATRIX" || true)
-
-GUARD_ROWS="$(awk -v hdr="$GUARD_HEADER" '
-  /^## / { section = substr($0, 4); intable = 0; next }
-  $0 == hdr { intable = 1; sawsep = 0; next }
-  intable && !sawsep { sawsep = 1; next }
-  intable && /^\|/ {
-    if ($0 ~ /^\|[ \t]*-+[ \t]*\|/) { next }
-    print section "\x1f" $0
-    next
-  }
-  { intable = 0 }
-' "$MATRIX")"
-
-GUARD_TABLE_COUNT="$(awk -v hdr="$GUARD_HEADER" '$0 == hdr { c++ } END { print c + 0 }' "$MATRIX")"
-GUARD_TABLE_COUNT_GREP="$(grep -Fxc -- "$GUARD_HEADER" "$MATRIX" || true)"
-if [ "$GUARD_TABLE_COUNT" -lt "$GUARD_TABLE_COUNT_GREP" ]; then
-  echo "check-trace-matrix: FAIL -- found $GUARD_TABLE_COUNT guard tables by section discovery but $GUARD_TABLE_COUNT_GREP guard-header lines exist in $MATRIX" >&2
-  FAILED=1
-fi
-if [ "$GUARD_TABLE_COUNT" -eq 0 ]; then
+done
+if [ "${GUARD_TABLE_COUNT:-0}" -eq 0 ]; then
   echo "check-trace-matrix: FAIL -- no '$GUARD_HEADER' guard table found in $MATRIX" >&2
   FAILED=1
 fi
+
+# A blank/prose line inside a table is skipped (`intable { next }`) --
+# never closes it early -- so the only floor left against a table that
+# discovery opens but never actually reads a row from (a stray extra
+# blank line right after the header/separator, an all-comment table) is
+# counting rows per table directly: zero is red, naming the section.
+GUARD_ROWS_RAW="$(awk -v hdr="$GUARD_HEADER" '
+  function close_table() {
+    if (intable && rowcount == 0) {
+      print "\x02ZEROROWS\x1f" section
+    }
+    intable = 0
+  }
+  /^## / { close_table(); section = substr($0, 4); next }
+  $0 == hdr { close_table(); intable = 1; sawsep = 0; rowcount = 0; next }
+  intable && !sawsep { sawsep = 1; next }
+  intable && /^\|/ {
+    if ($0 ~ /^\|[ \t]*-+[ \t]*\|/) { next }
+    rowcount++
+    print section "\x1f" $0
+    next
+  }
+  intable { next }
+  END { close_table() }
+' "$MATRIX")"
+
+GUARD_ROWS=""
+while IFS= read -r grrow; do
+  case "$grrow" in
+    $'\x02ZEROROWS\x1f'*)
+      zsection="${grrow#*$'\x1f'}"
+      echo "check-trace-matrix: FAIL -- '## $zsection' is a guard table with zero rows" >&2
+      FAILED=1
+      ;;
+    *)
+      GUARD_ROWS+="$grrow"$'\n'
+      ;;
+  esac
+done <<< "$GUARD_ROWS_RAW"
 
 # A backticked, `/`-free token that looks like a Rust/TypeScript/shell
 # identifier -- the only shape this story's lookup ever tries to resolve.
 # camelCase, `Type::path`, kebab-case and anything else with an uppercase
 # letter, `:`, `-`, `.` or `(` is deliberately out of scope (Tim's
 # direction): the matrix cites plenty of those and none of them are a
-# name a source file declares in one of the forms below. The optional
-# trailing `*` (a prefix candidate) is checked separately from "carries
-# at least one underscore" below, never folded into one regex: the real
-# matrix's own prefix candidates (`from_balance_rejects_*`) put the `*`
-# directly after the trailing underscore, with no further word character
-# between them, a shape `(_[a-z0-9]+)+\*?` cannot match at all.
+# name a source file declares in one of the forms below. Also out of
+# scope, on purpose: a name that survives only inside a `/* */` block
+# comment or a string literal still reads as declared -- `//`/`#`-only
+# line stripping covers the realistic "a deleted case, its name left in
+# a leftover comment" failure mode this story is actually about; a Rust
+# lexer in bash is not in this story's budget (Tim's direction).
+#
+# The optional trailing `*` (a prefix candidate) is checked separately
+# from "carries at least one underscore" below, never folded into one
+# regex: the real matrix's own prefix candidates
+# (`from_balance_rejects_*`) put the `*` directly after the trailing
+# underscore, with no further word character between them, a shape
+# `(_[a-z0-9]+)+\*?` cannot match at all.
 CANDIDATE_RE='^[a-z][a-z0-9_]*\*?$'
 # is_candidate <token> -- CANDIDATE_RE plus "carries at least one
 # underscore before its optional star" (snake_case, never a bare word).
@@ -365,17 +422,31 @@ TITLE_RE="^[a-z0-9 ,.'-]+\$"
 # lookup in low single digits of seconds over the real matrix (Tim's
 # budget) rather than one process per token the way a naive `grep -r`
 # per candidate would.
-declare -A DIR_LIST_CACHE FILE_CONTENT_CACHE FILE_RS_CACHE
+# Markdown is never a guard: excluded from every resolver below (`.md`
+# files still have their own existence checked in pass 1, same as any
+# other path) -- otherwise a cell citing `docs/` or `docs/trace-matrix.md`
+# itself "resolves" every name it cites, because the whole-word tier
+# finds the name sitting right there in the very row that cites it
+# (Quentin's direction).
+is_markdown() { case "$1" in *.md) return 0 ;; *) return 1 ;; esac; }
 
-files_under() { # <repo-relative path> -- prints one file per line
+declare -A DIR_LIST_CACHE FILE_CONTENT_CACHE STRIPPED_CACHE
+
+# files_under <repo-relative path> -- sets REPLY, one file per line (or
+# the path itself, for a bare file). No subshell (never called through a
+# `< <(...)` process substitution, which throws its own assignments to
+# DIR_LIST_CACHE away on return) -- every caller feeds a loop from REPLY
+# via a here-string instead, so the memo is real: a directory cited by
+# several candidates runs `git ls-files` once, not once per candidate.
+files_under() {
   local p="$1"
   if [ -d "$REPO_ROOT/$p" ]; then
     if [ -z "${DIR_LIST_CACHE[$p]+x}" ]; then
       DIR_LIST_CACHE[$p]="$(cd "$REPO_ROOT" && git ls-files -- "$p" 2>/dev/null)"
     fi
-    printf '%s\n' "${DIR_LIST_CACHE[$p]}"
+    REPLY="${DIR_LIST_CACHE[$p]}"
   else
-    printf '%s\n' "$p"
+    REPLY="$p"
   fi
 }
 
@@ -388,64 +459,80 @@ file_content() {
   REPLY="${FILE_CONTENT_CACHE[$f]}"
 }
 
-# rs_content <file> -- sets REPLY to the file with every `//`-only comment
-# line blanked, read/stripped once: a deleted fn whose name survives in a
-# leftover comment must still read as gone.
-rs_content() {
-  local f="$1" line out=""
-  if [ -z "${FILE_RS_CACHE[$f]+x}" ]; then
+# stripped_content <file> <comment-prefix> -- sets REPLY to <file> with
+# every comment-only line (leading whitespace then exactly
+# <comment-prefix>) blanked, read/stripped once per (file, prefix): a
+# deleted fn/case/title whose name survives in a leftover comment must
+# still read as gone, for `.rs`/`.ts` (`//`) and the whole-word tier's
+# own `.sh`/`.toml`/`.yml` files (`#`) alike -- one shared helper keyed
+# by prefix rather than a separate one per extension (Quentin's
+# direction).
+stripped_content() {
+  local f="$1" prefix="$2" line out=""
+  local key="$f"$'\x1f'"$prefix"
+  if [ -z "${STRIPPED_CACHE[$key]+x}" ]; then
     file_content "$f"
     while IFS= read -r line; do
-      [[ "$line" =~ ^[[:space:]]*// ]] && continue
+      [[ "$line" =~ ^[[:space:]]*${prefix} ]] && continue
       out+="$line"$'\n'
     done <<< "$REPLY"
-    FILE_RS_CACHE[$f]="$out"
+    STRIPPED_CACHE[$key]="$out"
   fi
-  REPLY="${FILE_RS_CACHE[$f]}"
+  REPLY="${STRIPPED_CACHE[$key]}"
 }
 
 rs_fn_exists() { # <file> <exact-name>
-  rs_content "$1"
+  stripped_content "$1" '//'
   [[ "$REPLY" =~ fn[[:space:]]+$2[[:space:]]*[\(\<] ]]
 }
 rs_fn_prefix_exists() { # <file> <prefix>
-  rs_content "$1"
+  stripped_content "$1" '//'
   [[ "$REPLY" =~ fn[[:space:]]+$2[A-Za-z0-9_]*[[:space:]]*[\(\<] ]]
 }
 
 # A client test/case title as a complete quoted string, single, double or
-# backtick quoted. Every needle is built and matched as a quoted `[[ ==
-# *"$needle"* ]]` bash pattern, never a constructed regex or an
-# interpolated `grep` argument: a real client title routinely carries an
+# backtick quoted -- a `.ts` `it(...)`/`test(...)` name, or a `.sh`
+# `check`/`check_contains` case label (same idiom, so one resolver, not
+# two: story 3.17's own `## CI guards` row cites its self-tests' own case
+# titles in exactly this shape). Every needle is built and matched as a
+# quoted `[[ == *"$needle"* ]]` bash pattern, never a constructed regex or
+# an interpolated `grep` argument: a real title routinely carries an
 # apostrophe or a comma (`...collider rasterises relative to its
 # south-west anchor, not its top-left`), which an unescaped regex would
 # either fail to build or match wrongly (the xargs-apostrophe crash this
 # file's own header already warns about, same class of bug, different
 # tool) -- a quoted bash pattern segment is matched literally regardless.
-ts_title_exists() { # <file> <exact-title>
-  file_content "$1"
+# <comment-prefix> is `//` for `.ts`, `#` for `.sh` -- the caller (by
+# extension) decides, never a guess: a `.sh` comment surviving a deleted
+# `check "case name" ...` line uses `#`, and a `//`-only strip would
+# leave it standing.
+quoted_title_exists() { # <file> <exact-title> <comment-prefix>
+  stripped_content "$1" "$3"
   local n1="'$2'" n2="\"$2\"" n3="\`$2\`"
   [[ "$REPLY" == *"$n1"* || "$REPLY" == *"$n2"* || "$REPLY" == *"$n3"* ]]
 }
-ts_title_prefix_exists() { # <file> <prefix>
-  file_content "$1"
+quoted_title_prefix_exists() { # <file> <prefix> <comment-prefix>
+  stripped_content "$1" "$3"
   local n1="'$2" n2="\"$2" n3="\`$2"
   [[ "$REPLY" == *"$n1"* || "$REPLY" == *"$n2"* || "$REPLY" == *"$n3"* ]]
 }
 
-# Every other tracked extension (.sh/.toml/.yml/.json/.txt, etc): a
-# whole-word match -- what covers a `.sh` case label and a `key =
-# "rule_id"` row in a `defs/rules/*.toml` file alike, with one tier
-# rather than one per extension. Candidates only ever carry
-# `[a-z0-9_]` (CANDIDATE_RE), always regex-safe, so this can build a real
-# word-boundary regex without escaping anything.
+# Every other tracked extension (.toml/.yml/.json/.txt, etc; `.sh` is
+# handled by quoted_title_exists above, not this tier): a whole-word
+# match -- what covers a `key = "rule_id"` row in a `defs/rules/*.toml`
+# file. Candidates only ever carry `[a-z0-9_]` (CANDIDATE_RE), always
+# regex-safe, so this can build a real word-boundary regex without
+# escaping anything -- on both ends for an exact name, and anchored only
+# on its own left/start edge for a prefix (`real_rule_*` must not resolve
+# against a `# xreal_rule_...` comment purely because "real_rule_" is a
+# substring of it somewhere in the middle).
 word_exists() { # <file> <exact-word>
-  file_content "$1"
+  stripped_content "$1" '#'
   [[ "$REPLY" =~ (^|[^A-Za-z0-9_])$2([^A-Za-z0-9_]|$) ]]
 }
 word_prefix_exists() { # <file> <prefix>
-  file_content "$1"
-  [[ "$REPLY" == *"$2"* ]]
+  stripped_content "$1" '#'
+  [[ "$REPLY" =~ (^|[^A-Za-z0-9_])$2 ]]
 }
 
 # resolve_exact/_prefix -- <name> <cell-path>... : true if some file under
@@ -455,14 +542,17 @@ resolve_exact() {
   local name="$1" p f
   shift
   for p in "$@"; do
+    files_under "$p"
     while IFS= read -r f; do
       [ -n "$f" ] || continue
+      is_markdown "$f" && continue
       case "$f" in
         *.rs) rs_fn_exists "$f" "$name" && return 0 ;;
-        *.ts) ts_title_exists "$f" "$name" && return 0 ;;
+        *.ts) quoted_title_exists "$f" "$name" '//' && return 0 ;;
+        *.sh) quoted_title_exists "$f" "$name" '#' && return 0 ;;
         *) word_exists "$f" "$name" && return 0 ;;
       esac
-    done < <(files_under "$p")
+    done <<< "$REPLY"
   done
   return 1
 }
@@ -470,14 +560,17 @@ resolve_prefix() {
   local prefix="$1" p f
   shift
   for p in "$@"; do
+    files_under "$p"
     while IFS= read -r f; do
       [ -n "$f" ] || continue
+      is_markdown "$f" && continue
       case "$f" in
         *.rs) rs_fn_prefix_exists "$f" "$prefix" && return 0 ;;
-        *.ts) ts_title_prefix_exists "$f" "$prefix" && return 0 ;;
+        *.ts) quoted_title_prefix_exists "$f" "$prefix" '//' && return 0 ;;
+        *.sh) quoted_title_prefix_exists "$f" "$prefix" '#' && return 0 ;;
         *) word_prefix_exists "$f" "$prefix" && return 0 ;;
       esac
-    done < <(files_under "$p")
+    done <<< "$REPLY"
   done
   return 1
 }
@@ -485,18 +578,21 @@ resolve_title() { # <title> <cell-path>...
   local title="$1" p f
   shift
   for p in "$@"; do
+    files_under "$p"
     while IFS= read -r f; do
       [ -n "$f" ] || continue
+      is_markdown "$f" && continue
       case "$f" in
-        *.ts) ts_title_exists "$f" "$title" && return 0 ;;
+        *.ts) quoted_title_exists "$f" "$title" '//' && return 0 ;;
+        *.sh) quoted_title_exists "$f" "$title" '#' && return 0 ;;
       esac
-    done < <(files_under "$p")
+    done <<< "$REPLY"
   done
   return 1
 }
 
 # A cell qualifies for title candidates only if it names at least one
-# client test file -- keeps a spaced-but-unrelated token (`cargo run
+# client test/case file -- keeps a spaced-but-unrelated token (`cargo run
 # --bin defs-build`, `const _: () = assert!(...)`) out of the lookup
 # entirely rather than trying and failing to resolve it.
 cell_has_test_path() {
@@ -514,10 +610,10 @@ check_guard_row() { # <section> <requirement> <status> <guard>
   local section="$1" requirement="$2" status="$3" guard="$4"
 
   case "$status" in
-    covered) ;;
-    deferred | planned | partial) return 0 ;;
+    covered | partial) ;;
+    deferred | planned) return 0 ;;
     *)
-      echo "check-trace-matrix: FAIL -- '${requirement:0:80}' (## $section) has status '$status', which is none of covered/deferred/planned/partial" >&2
+      echo "check-trace-matrix: FAIL -- '${requirement:0:80}' (## $section) has status '$status', which is none of covered/partial/deferred/planned" >&2
       FAILED=1
       return 0
       ;;
@@ -535,7 +631,7 @@ check_guard_row() { # <section> <requirement> <status> <guard>
   done
 
   if [ "${#tokens[@]}" -eq 0 ]; then
-    echo "check-trace-matrix: FAIL -- '${requirement:0:80}' (## $section) is 'covered' but its Guard column names no backtick-quoted guard" >&2
+    echo "check-trace-matrix: FAIL -- '${requirement:0:80}' (## $section) is '$status' but its Guard column names no backtick-quoted guard" >&2
     FAILED=1
     return 0
   fi
@@ -547,12 +643,14 @@ check_guard_row() { # <section> <requirement> <status> <guard>
   # -- a biome.json glob override (`render/**`), a brace-expanded set of
   # fixture files, or a command line with a flag appended
   # (`check-trace-matrix.sh --client-only`) is real prose, not a
-  # filesystem path this check can resolve.
+  # filesystem path this check can resolve. A token starting with `/`
+  # (`/browser-city/`, the Pages base path) is a URL, not a repo-relative
+  # path either, for the same reason (Quentin's direction).
   local -a cell_paths=() scoped_names=() scoped_files=()
   local tok path sym seen_path=0
   for tok in "${tokens[@]}"; do
     case "$tok" in
-      *'*'* | *'{'* | *' '*) continue ;;
+      *'*'* | *'{'* | *' '* | '/'*) continue ;;
       */*) ;;
       *) continue ;;
     esac
@@ -578,7 +676,7 @@ check_guard_row() { # <section> <requirement> <status> <guard>
   done
 
   if [ "$seen_path" -eq 0 ]; then
-    echo "check-trace-matrix: FAIL -- '${requirement:0:80}' (## $section) is 'covered' but its Guard column names no backtick-quoted path" >&2
+    echo "check-trace-matrix: FAIL -- '${requirement:0:80}' (## $section) is '$status' but its Guard column names no backtick-quoted path" >&2
     FAILED=1
     return 0
   fi
@@ -624,7 +722,7 @@ check_guard_row() { # <section> <requirement> <status> <guard>
           FAILED=1
         fi
       else
-        if [[ "$tok" == inv_* ]] && [ -n "${MATRIX_ID_SET[$tok]+x}" ]; then
+        if [[ "$tok" == inv_* ]] && [ -n "${COVERED_MATRIX_ID_SET[$tok]+x}" ]; then
           continue
         fi
         if ! resolve_exact "$tok" "${cell_paths[@]}"; then
