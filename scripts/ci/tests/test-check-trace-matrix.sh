@@ -34,7 +34,7 @@ git_track() { # <dir> -- makes a fake tree a real git work tree
 plant_common_files() { # <dir>
   local d="$1"
   mkdir -p "$d/docs" "$d/server/sim/tests" "$d/client/tests/unit" \
-    "$d/src/dir" "$d/scripts" "$d/defs/rules"
+    "$d/src/dir" "$d/scripts" "$d/scripts/ci/tests" "$d/defs/rules"
   : > "$d/server/sim/tests/invariants.rs"
 
   cat > "$d/src/widget.rs" <<'EOF'
@@ -72,6 +72,13 @@ EOF
   cat > "$d/docs/notes.md" <<'EOF'
 totally_gone_test is written about here, but Markdown is never a guard.
 EOF
+  cat > "$d/src/spaced.test.ts" <<'EOF'
+// it("an old spaced ts case", () => {});
+EOF
+  cat > "$d/scripts/ci/tests/old-spaced.sh" <<'EOF'
+#!/usr/bin/env bash
+# check "an old spaced sh case" 0 true
+EOF
 }
 
 # --- the shared clean tree ---------------------------------------------
@@ -81,8 +88,9 @@ EOF
 # (with an apostrophe and a comma), a `.sh` case label, an `inv_*` id
 # resolved against the matrix's own first table (no Rust file needed), a
 # `path::symbol` form, a directory searched recursively, a spaced
-# code-snippet token that is never mistaken for a title, and a
-# glob/flagged token that is never existence-checked as a path. Plus one
+# code-snippet token that is never mistaken for a title, a glob/flagged
+# token that is never existence-checked as a path, and a leading-slash
+# token (`/browser-city/`'s own shape) treated the same way. Plus one
 # `deferred` and one `planned` row citing a name that resolves nowhere
 # (exempt), and one `partial` row citing a name that does resolve
 # (checked exactly like `covered`, so it must stay green here). Every row
@@ -115,6 +123,7 @@ plant_clean_tree() {
 | A directory is searched recursively | covered | `src/dir/` -- `nested_dir_fn` |
 | A spaced code snippet is never a title, in a cell with a title path too | covered | `src/widget.test.ts` -- `some_code(1, 2)` |
 | A glob/flagged token is never existence-checked | covered | `src/widget.rs` -- `src/**`, `check-trace-matrix.sh --client-only` |
+| A leading-slash token is never existence-checked as a path | covered | `src/widget.rs` -- `widget_creates_ok`, `/some-base-path/` |
 | A dangling name on a deferred row is exempt | deferred | `src/widget.rs` -- `nowhere_at_all` |
 | A dangling name on a planned row is exempt | planned | `src/widget.rs` -- `nowhere_at_all` |
 | A partial row is checked exactly like covered | partial | `src/widget.rs` -- `widget_creates_ok` |
@@ -153,8 +162,10 @@ plant_holes_tree() {
 | An inv_* id whose own invariant row is not covered must not resolve via the shortcut | covered | `src/widget.rs` -- `inv_widget_not_covered` |
 | Markdown is never a guard, even when it quotes the name itself | covered | `docs/notes.md` -- `totally_gone_test` |
 | A name surviving only in a hash comment does not resolve (whole-word tier) | covered | `defs/rules/old.toml` -- `old_rule_id` |
-| A name surviving only in a hash comment does not resolve (.sh title tier) | covered | `scripts/old-case.sh` -- `old_case_name` |
-| A title surviving only in a slash comment does not resolve (.ts title tier) | covered | `src/widget.test.ts` -- `old_ts_case` |
+| A name surviving only in a hash comment does not resolve (.sh resolve_exact arm) | covered | `scripts/old-case.sh` -- `old_case_name` |
+| A name surviving only in a slash comment does not resolve (.ts resolve_exact arm) | covered | `src/widget.test.ts` -- `old_ts_case` |
+| A spaced title surviving only in a slash comment does not resolve (.ts resolve_title arm) | covered | `src/spaced.test.ts` -- `an old spaced ts case` |
+| A spaced title surviving only in a hash comment does not resolve (.sh resolve_title arm) | covered | `scripts/ci/tests/old-spaced.sh` -- `an old spaced sh case` |
 | A prefix occurring only mid-word does not resolve | covered | `defs/rules/mid.toml` -- `real_rule_*` |
 EOF
   git_track "$d"
@@ -253,10 +264,14 @@ check_contains "a name that appears only inside a cited .md file is still dangli
   "totally_gone_test" "$out"
 check_contains "a name left only in a # comment (whole-word tier, .toml) is dangling" \
   "old_rule_id" "$out"
-check_contains "a name left only in a # comment (.sh title tier) is dangling" \
+check_contains "a name left only in a # comment (.sh resolve_exact arm) is dangling" \
   "old_case_name" "$out"
-check_contains "a title left only in a // comment (.ts title tier) is dangling" \
+check_contains "a name left only in a // comment (.ts resolve_exact arm) is dangling" \
   "old_ts_case" "$out"
+check_contains "a spaced title left only in a // comment (.ts resolve_title arm) is dangling" \
+  "an old spaced ts case" "$out"
+check_contains "a spaced title left only in a # comment (.sh resolve_title arm) is dangling" \
+  "an old spaced sh case" "$out"
 check_contains "a prefix that only occurs mid-word never resolves" \
   "real_rule_*" "$out"
 
@@ -356,6 +371,39 @@ out="$(bash "$CHECK" --client-only "$d" 2>&1)"
 check "a '| Requirment |' header (typo) alongside one real, valid guard table still fails" 1 \
   bash "$CHECK" --client-only "$d"
 check_contains "the failure names the exact mistyped header line" "Requirment" "$out"
+
+# the same typo, but its own separator row uses GitHub's alignment-colon
+# syntax (`:---`/`:---:`/`---:`) -- legal markdown that renders
+# identically to plain dashes, and must still be recognised as a
+# separator row, so the mistyped header above it is still caught rather
+# than silently invisible.
+d="$(fake_dir)"
+mkdir -p "$d/docs" "$d/server/sim/tests" "$d/client/tests/unit"
+cat > "$d/docs/real.md" <<'EOF'
+real
+EOF
+cat > "$d/docs/trace-matrix.md" <<'EOF'
+# Trace matrix
+
+## Real section
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| A real resolvable row | covered | `docs/real.md` |
+
+## Typo section, aligned separator
+
+| Requirment | Status | Guard |
+| :--- | :---: | ---: |
+| A row under a mistyped header with an aligned separator | covered | `gone_name_here` |
+EOF
+: > "$d/server/sim/tests/invariants.rs"
+git_track "$d"
+out="$(bash "$CHECK" --client-only "$d" 2>&1)"
+check "a mistyped header over an alignment-colon separator still fails" 1 \
+  bash "$CHECK" --client-only "$d"
+check_contains "the failure names the aligned-separator table's own mistyped header" \
+  "not one of this matrix's known header shapes" "$out"
 
 # a blank line between a table's separator row and its first data row
 # must never be mistaken for the table's own end -- the row after it is

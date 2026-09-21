@@ -287,9 +287,13 @@ fi
 GUARD_HEADER='| Requirement | Status | Guard |'
 
 # Every table header in the matrix -- a "|"-line immediately followed by
-# its own "| --- |"-shaped separator line -- must be exactly one of the
-# three header shapes this file actually uses. A closed set, not "the
-# first cell says Requirement": that open-ended check cannot tell
+# its own "| --- |"-shaped separator line (alignment colons, `:---`/
+# `:---:`/`---:`, admitted too: legal GitHub markdown that renders
+# identically to plain dashes, so a mistyped header sitting over one must
+# still be recognised as a header, not silently invisible) -- must be
+# exactly one of the three header shapes this file actually uses. A
+# closed set, not "the first cell says Requirement": that open-ended
+# check cannot tell
 # "Requirment" (a typo, invisible to it and to every row below it) from a
 # table this file has never had, and a `grep -Fxc` of the very literal
 # string the discovery pass already looked for can never disagree with
@@ -312,7 +316,7 @@ for ((mi = 0; mi < ${#MATRIX_LINES[@]} - 1; mi++)); do
     *) continue ;;
   esac
   mnext="${MATRIX_LINES[$((mi + 1))]%$'\r'}"
-  if [[ "$mnext" =~ ^\|([[:space:]]*-+[[:space:]]*\|)+[[:space:]]*$ ]]; then
+  if [[ "$mnext" =~ ^\|([[:space:]]*:?-+:?[[:space:]]*\|)+[[:space:]]*$ ]]; then
     known=0
     for k in "${KNOWN_TABLE_HEADERS[@]}"; do
       if [ "$mline" = "$k" ]; then
@@ -348,7 +352,7 @@ GUARD_ROWS_RAW="$(awk -v hdr="$GUARD_HEADER" '
   $0 == hdr { close_table(); intable = 1; sawsep = 0; rowcount = 0; next }
   intable && !sawsep { sawsep = 1; next }
   intable && /^\|/ {
-    if ($0 ~ /^\|[ \t]*-+[ \t]*\|/) { next }
+    if ($0 ~ /^\|[ \t]*:?-+:?[ \t]*\|/) { next }
     rowcount++
     print section "\x1f" $0
     next
@@ -378,10 +382,13 @@ done <<< "$GUARD_ROWS_RAW"
 # direction): the matrix cites plenty of those and none of them are a
 # name a source file declares in one of the forms below. Also out of
 # scope, on purpose: a name that survives only inside a `/* */` block
-# comment or a string literal still reads as declared -- `//`/`#`-only
-# line stripping covers the realistic "a deleted case, its name left in
-# a leftover comment" failure mode this story is actually about; a Rust
-# lexer in bash is not in this story's budget (Tim's direction).
+# comment, a string literal, or a trailing comment sharing a line with
+# real code (`fn real_one() {} // fn gone() {}`) still reads as
+# declared -- only a comment-*only* line is blanked. `//`/`#`-only line
+# stripping covers the realistic "a deleted case, its name left in a
+# leftover comment on its own line" failure mode this story is actually
+# about; a Rust lexer in bash is not in this story's budget (Tim's
+# direction).
 #
 # The optional trailing `*` (a prefix candidate) is checked separately
 # from "carries at least one underscore" below, never folded into one
