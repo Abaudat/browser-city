@@ -800,11 +800,20 @@ impl GenerationConfig {
                 cfg.max_block_depth_min_cells, cfg.max_block_depth_max_cells
             )));
         }
+        // 3 (not 2) * block_size_max_cells: a T-terminated dead-end spur
+        // (Artie's direction: "at most one arterial line per city stops
+        // short of the far site edge") is reachable by exactly one path,
+        // so the worst real route pays for both going around one
+        // largest block *and* walking out to and back from such a spur
+        // -- found by a genuinely random CI seed (never sequential
+        // measurement, which had missed it), not a bug: `(70, 18)` to a
+        // T-terminated boundary node paid 292 cells of excess against
+        // the old 2x formula's own 280-cell ceiling.
         let detour_excess_ceiling =
-            2 * cfg.block_size_max_cells as i64 + 2 * cfg.arterial_width_cells as i64;
+            3 * cfg.block_size_max_cells as i64 + 2 * cfg.arterial_width_cells as i64;
         if cfg.max_detour_excess_cells as i64 > detour_excess_ceiling {
             return Err(GenerationError::InvalidConfig(format!(
-                "GenerationConfig: max_detour_excess_cells ({}) is greater than the structural ceiling 2*block_size_max_cells + 2*arterial_width_cells ({detour_excess_ceiling}) -- the worst a rectilinear network should cost a route is going around one largest block",
+                "GenerationConfig: max_detour_excess_cells ({}) is greater than the structural ceiling 3*block_size_max_cells + 2*arterial_width_cells ({detour_excess_ceiling}) -- the worst a rectilinear network should cost a route is going around one largest block plus walking out to and back from a T-terminated dead-end spur",
                 cfg.max_detour_excess_cells
             )));
         }
@@ -1444,8 +1453,8 @@ mod tests {
     #[test]
     fn from_balance_rejects_max_detour_excess_cells_over_the_structural_ceiling() {
         // fixture: block_size_max_cells=96, arterial_width_cells=12 ->
-        // ceiling = 2*96 + 2*12 = 216.
-        let balance = with_override("generation.streets.max_detour_excess_cells", 217);
+        // ceiling = 3*96 + 2*12 = 312.
+        let balance = with_override("generation.streets.max_detour_excess_cells", 313);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
         assert!(err.to_string().contains("max_detour_excess_cells"));
     }
