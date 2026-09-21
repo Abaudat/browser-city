@@ -50,7 +50,7 @@
 // Look at what it produced before committing: a baseline is a human
 // claim that the picture is right, not whatever the runner happened to
 // generate.
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
@@ -84,15 +84,18 @@ import {
   streetWalkInputs,
   streetWindowDefIds,
 } from "../unit/test-street/street-world";
+import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
 
 // The whole walk is one test on purpose: it is one continuous journey,
 // and splitting it would re-boot and re-walk the scene per assertion.
 test.describe.configure({ mode: "serial" });
 
 // The fixed viewport the two `toHaveScreenshot` checks need -- applies to
-// the whole test, not only those two moments, which is fine: nothing else
-// this spec asserts depends on the window size (the canvas itself is
-// sized to the world's own bounds, never to the viewport).
+// the whole test, not only those two moments. The canvas is sized to the
+// viewport now, always (`main.ts`'s `resizeTo: window`), and the camera
+// keeps the player centred inside it, so a fixed viewport here also pins
+// exactly what the player sees at each checkpoint, not only the canvas's
+// own pixel dimensions.
 test.use({ viewport: { width: 1920, height: 1080 } });
 
 // A pixel budget in proportion to the objects under test, not the whole
@@ -152,10 +155,6 @@ function balance(key: string): number {
 const TILE_SIZE_PX = balance("render.tile_size_px");
 const STOREY_HEIGHT_PX = balance("render.storey_height_px");
 
-function canvasOf(page: Page): Locator {
-  return page.locator("#test-street canvas");
-}
-
 /** A world pixel inside a cell's own drawn rect -- every drawable is
  * bottom-centre anchored on its cell (`screenPositionPx`), so the anchor
  * is the bottom-centre of that rect and half a tile above it is inside.
@@ -165,16 +164,8 @@ function worldPixelOfCell(cellX: number, cellY: number, floor: number) {
   return { x: anchor.x, y: anchor.y - TILE_SIZE_PX / 2 };
 }
 
-/** Converts a world pixel to the canvas offset to hover, through the
- * scene's own recorded zoom and camera offset -- never a literal pixel. */
-async function canvasOffset(page: Page, worldPx: { x: number; y: number }) {
-  const view = await page.evaluate(() => window.__bc?.viewTransform);
-  if (!view) throw new Error("the street scene never recorded its view transform");
-  return { x: worldPx.x * view.zoom + view.offsetX, y: worldPx.y * view.zoom + view.offsetY };
-}
-
 async function hoverCell(page: Page, cellX: number, cellY: number, floor: number): Promise<void> {
-  const position = await canvasOffset(page, worldPixelOfCell(cellX, cellY, floor));
+  const position = await canvasOffsetForWorldPx(page, worldPixelOfCell(cellX, cellY, floor));
   await canvasOf(page).hover({ position });
 }
 
@@ -210,14 +201,14 @@ async function binDrawnRectPx(
     x1: anchor.x + TILE_SIZE_PX / 2,
     y1: anchor.y,
   };
-  const view = await page.evaluate(() => window.__bc?.viewTransform);
-  if (!view) throw new Error("the street scene never recorded its view transform");
   const pad = 2;
+  const topLeft = await canvasOffsetForWorldPx(page, { x: worldRect.x0, y: worldRect.y0 });
+  const bottomRight = await canvasOffsetForWorldPx(page, { x: worldRect.x1, y: worldRect.y1 });
   return {
-    x0: worldRect.x0 * view.zoom + view.offsetX - pad,
-    y0: worldRect.y0 * view.zoom + view.offsetY - pad,
-    x1: worldRect.x1 * view.zoom + view.offsetX + pad,
-    y1: worldRect.y1 * view.zoom + view.offsetY + pad,
+    x0: topLeft.x - pad,
+    y0: topLeft.y - pad,
+    x1: bottomRight.x + pad,
+    y1: bottomRight.y + pad,
   };
 }
 
@@ -815,7 +806,6 @@ test("FR173's affordance mark is a real pixel change, confined to the hovered ob
 
   const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
   if (!bin) throw new Error("the fixture no longer places a trash bin");
-  const binRect = await binDrawnRectPx(page);
 
   // A cell well away from both interactable objects (the bin and the shop
   // counter) -- any third cell never marks anything, so this is a safe,
@@ -869,6 +859,13 @@ test("FR173's affordance mark is a real pixel change, confined to the hovered ob
   });
 
   // --- pair B: after the walk, the bin is in reach -------------------------
+  // The camera/viewport story: the camera follows the player, so the
+  // bin's own drawn rect moved on screen along with the walk above --
+  // computed fresh here, at the walk's own resting position, never at
+  // the pre-walk position `binDrawnRectPx` would have reported before
+  // the camera ever moved.
+  const binRect = await binDrawnRectPx(page);
+
   // Two (then three) frames at the walk's own resting position -- again,
   // only the hover changes between them.
   await hoverCell(page, away.x, away.y, away.floor);

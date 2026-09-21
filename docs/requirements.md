@@ -233,6 +233,7 @@ Every functional and non-functional requirement for BrowserCity, one line each. 
 
 - **NFR1** — Cold boot to player-controllable in under 1 second, measured from navigation on a mid-range laptop over a typical domestic connection, including load, with no character creation ceremony
 - **NFR2** — Sustained 60 FPS at 1080p over a 10-minute session including a busy street at rush hour and an interior transition
+- **NFR48** — The camera keeps the player centred at all times during continuous movement in any direction, with no easing, lag or world-edge clamp; the page renders full-viewport with no browser scroll bar in either axis, at any supported viewport size from 800x600 to 2560x1440, either orientation; and the scene's own incremental load renders at its final camera zoom throughout, with no zoom jump or reflow once loading completes
 - **NFR3** — The server tick is continuous and never spins down; the city simulates with zero clients connected
 - **NFR4** — Reconnection has zero seam; nothing is suspended, so nothing needs resuming
 - **NFR5** — Browser exclusive and non-negotiable - no install, no plugin, no download gate

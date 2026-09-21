@@ -231,11 +231,11 @@ describe("the street scene's committed visibility (story 1.7 cycle 2, Quentin's 
 });
 
 describe("the player can never walk off the drawn world", () => {
-  // The scene's mount-time canvas-bounds guard (`assertSpritesWithinCanvas`)
-  // only ever runs once, against the player's *starting* position -- it
-  // can never catch a walk that leaves the drawn ground later. Nothing
-  // clamps the player any more (story 1.8 deleted `PLAYER_BOUNDS`), so
-  // the only thing keeping the avatar on the pavement is the fixture's
+  // The camera now follows the player everywhere the fixture's own
+  // colliders let it walk (the camera/viewport story), so there is no
+  // mount-time canvas-bounds guard here any more to catch a stray walk --
+  // nothing clamps the player either (story 1.8 deleted `PLAYER_BOUNDS`),
+  // so the only thing keeping the avatar on the pavement is the fixture's
   // own boundary colliders; this walks the real resolver against the real
   // grid to prove that ring is actually closed, rather than trusting the
   // rect list by eye.

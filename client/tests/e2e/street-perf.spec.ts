@@ -45,6 +45,7 @@ import {
   TRASH_BIN_DEF_ID,
 } from "../../src/test-street/fixture";
 import { committedDefs, streetWalkInputs } from "../unit/test-street/street-world";
+import { canvasOffsetForWorldPx } from "./camera-test-support";
 
 /** The frame budget the scene's own work must fit inside. A 60 FPS frame
  * is 16.7 ms end to end; the app's own work getting half of that leaves
@@ -128,14 +129,10 @@ async function hoverAnInteractableProp(page: Page): Promise<void> {
   }
   const anchor = screenPositionPx(bin.x, bin.y, bin.floor, tileSizePx, storeyHeightPx);
   const worldPx = { x: anchor.x, y: anchor.y - tileSizePx / 2 };
-  const view = await page.evaluate(() => window.__bc?.viewTransform);
-  if (!view) throw new Error("the street scene never recorded its view transform");
+  const canvasOffset = await canvasOffsetForWorldPx(page, worldPx);
   const box = await page.locator("#test-street canvas").boundingBox();
   if (!box) throw new Error("no street canvas to hover");
-  await page.mouse.move(
-    box.x + worldPx.x * view.zoom + view.offsetX,
-    box.y + worldPx.y * view.zoom + view.offsetY,
-  );
+  await page.mouse.move(box.x + canvasOffset.x, box.y + canvasOffset.y);
 }
 
 /** Holds `segment.key` down, waits for its own release condition, and

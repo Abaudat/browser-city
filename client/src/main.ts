@@ -13,6 +13,7 @@ import { KeyboardState } from "./input/keyboard";
 import { connect } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
+  exposePlayerScreenBoundsForE2e,
   recordAllBoundTextureSourcesForE2e,
   recordAppearanceTextureIdsForE2e,
   recordDistinctBoundAtlasPagesForE2e,
@@ -164,7 +165,20 @@ async function startStreetScene(
   }
 
   const app = new Application();
-  const appInitPromise = app.init({ preference: "webgpu", background: "#284028" });
+  // The camera/viewport story (Quentin's direction): the renderer's own
+  // size is the window's, always -- Pixi's own `ResizePlugin` is what
+  // owns this (`resizeTo: window`), applied once, synchronously, right
+  // here, and again only from its own `window` `resize` listener (a
+  // `requestAnimationFrame`-debounced call to `renderer.resize`, never
+  // the ticker). `resolution`/`autoDensity` stay at their defaults (1,
+  // `false`): the canvas's own CSS box is exactly `renderer.width x
+  // renderer.height`, so a `deviceScaleFactor` above 1 changes nothing
+  // about how big the canvas reads in the page.
+  const appInitPromise = app.init({
+    preference: "webgpu",
+    background: "#284028",
+    resizeTo: window,
+  });
 
   const sessionStorage = resolveSessionStorage(() => window.sessionStorage);
   const sequenceResult = await runBootSequence({
@@ -372,6 +386,7 @@ async function startStreetScene(
   recordPlayerAppearanceForE2e(handle.playerAppearance);
   recordDistinctBoundAtlasPagesForE2e(handle.distinctBoundAtlasPages);
   recordAllBoundTextureSourcesForE2e(handle.allBoundTextureSources);
+  exposePlayerScreenBoundsForE2e(handle.playerScreenBounds);
 
   // Story 1.12 (FR165/FR168): the whole of the debug tooling's gate, and
   // the only import of `client/src/debug/` that exists (enforced by

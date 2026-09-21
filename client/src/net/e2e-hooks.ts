@@ -74,6 +74,13 @@ declare global {
         direction: string,
         frame: number,
       ) => Promise<{ pipeline: PixelSnapshot; stack: PixelSnapshot }>;
+      /** The camera/viewport story (Quentin's direction): the player
+       * sprite's own real, live global screen bounds -- a callable, read
+       * fresh every call from the real, mounted `Sprite.getBounds()`,
+       * never a value recorded once. `camera-viewport.spec.ts` is the
+       * only reader; it must never be recomputed from `viewTransform`,
+       * which is the thing under test. */
+      playerScreenBounds?: () => { x: number; y: number; width: number; height: number };
     };
   }
 }
@@ -276,5 +283,18 @@ export function exposeAppearanceCompareForE2e(
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.appearanceCompare = compare;
+  window.__bc = bucket;
+}
+
+/** The camera/viewport story: exposes the real, mounted scene's own
+ * `playerScreenBounds` getter directly -- a callable, the same idiom
+ * [`exposeAppearanceCompareForE2e`] uses, so every call reads the real
+ * sprite's bounds at that instant rather than a value frozen at mount. */
+export function exposePlayerScreenBoundsForE2e(
+  getter: NonNullable<NonNullable<Window["__bc"]>["playerScreenBounds"]>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.playerScreenBounds = getter;
   window.__bc = bucket;
 }

@@ -18,17 +18,13 @@
          the panels for `background`, so a resize or a slow first frame
          never flashes white.
 
-         Deliberately no `height: 100%`/`overflow: hidden` here: the
-         street scene's own canvas is sized to the world's own bounds,
-         never to the viewport (`test-street.spec.ts`'s own comment, story
-         1.13) -- clipping to exactly the viewport height would cut off
-         the part of a taller-than-viewport world a fixed test viewport
-         cannot show, which is exactly what broke `test-street.spec.ts`'s
-         own screenshots the first time this rule was tried (a real
-         Pixi/CDP compositor clip, not a snapshot-noise flake). A resizable
-         canvas that always matches the viewport is a later story's
-         concern; nothing here should force scrollbars, but nothing here
-         may clip real content either. -->
+         `height: 100%`/`overflow: hidden` on `html`/`body` (the camera/
+         viewport story, Quentin's direction): the street scene's own
+         canvas is sized to the viewport now, always (`main.ts`'s
+         `resizeTo: window`), never to the world's own content, so there
+         is nothing left for a taller-than-viewport world to overflow --
+         this is belt and braces against a stray sub-pixel rounding
+         mismatch ever growing a scroll bar, never a clip on real content. -->
     <style>
       :root {
         /* Tells every browser to paint its own built-in controls dark
@@ -53,6 +49,8 @@
       body {
         margin: 0;
         padding: 0;
+        height: 100%;
+        overflow: hidden;
         background: var(--bc-panel-bg);
       }
       #test-street canvas {
