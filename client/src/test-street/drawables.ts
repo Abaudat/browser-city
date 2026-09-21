@@ -40,8 +40,8 @@ interface PropDrawableBase extends Drawable, VisibilityDrawable {
 }
 
 /** A drawable for a prop placed by a real `defs/objects` id (story 2.13):
- * its texture comes only from `render/def-texture.ts`, resolved through
- * `render/atlas-pages.ts`'s `AtlasPageLoader` -- never carries `assetKey`. */
+ * its texture comes only from `render/atlas-pages.ts`'s
+ * `AtlasPageLoader.objectCellTexture` -- never carries `assetKey`. */
 export interface PropDrawableByDef extends PropDrawableBase {
   readonly defId: number;
 }

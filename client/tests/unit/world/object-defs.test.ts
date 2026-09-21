@@ -1,12 +1,12 @@
-// Story 2.13, Tim's direction (cycle 2): `def-texture.ts` is now pure
-// `defId -> ObjectDef` lookup, no `pixi.js` at all -- the per-cell crop and
-// its own cache moved onto `AtlasPageLoader.objectCellTexture`
-// (`atlas-pages.test.ts` covers that; `atlas-frame.test.ts` covers the pure
-// crop math it shares). This file only proves the index this module builds
-// once per mount, and the named-failure lookup against it.
+// Story 2.13, Tim's direction (cycle 2): `buildObjectDefIndex`/
+// `objectDefById` moved here from the now-deleted `render/def-texture.ts`
+// -- an `id -> ObjectDef` index is exactly what this module already
+// builds for `objectDefsById`, just keyed to a different shape, so both
+// live beside each other rather than in a second, `render/`-only file
+// with nothing left to do with textures.
 import { describe, expect, it } from "vitest";
 import type { Defs, ObjectDef } from "../../../src/defs/types";
-import { buildObjectDefIndex, objectDefById } from "../../../src/render/def-texture";
+import { buildObjectDefIndex, objectDefById } from "../../../src/world/object-defs";
 
 function objectDef(overrides: Partial<ObjectDef> = {}): ObjectDef {
   return {

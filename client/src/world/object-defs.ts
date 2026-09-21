@@ -4,7 +4,7 @@
 // reaches the running client through here -- nothing hand-types a rect
 // that `defs/objects` already declares.
 
-import type { Defs } from "../defs/types";
+import type { Defs, ObjectDef } from "../defs/types";
 import type { ColliderRectSubcells, ColliderSource } from "./collision-grid";
 
 /** Everything the derived indexes and a pick need from one `defs/`
@@ -44,4 +44,25 @@ export function objectDefsById(defs: Defs): ReadonlyMap<number, ObjectSource> {
  * literal. */
 export function windowDefIds(defs: Defs): ReadonlySet<number> {
   return new Set(defs.objects.filter((o) => o.window).map((o) => o.id));
+}
+
+/** Every real `defs/objects` entry, keyed by its own `id` (story 2.13,
+ * Tim's direction cycle 2: next to [`objectDefsById`] above, which
+ * indexes the same array for a different, narrower shape) -- built once
+ * per mount (`render/test-street/scene.ts`), never a fresh linear
+ * `Array.find` per drawable. */
+export function buildObjectDefIndex(defs: Defs): ReadonlyMap<number, ObjectDef> {
+  return new Map(defs.objects.map((object) => [object.id, object]));
+}
+
+/** Resolves the `ObjectDef` a `defId` names against an already-built
+ * [`buildObjectDefIndex`] index, or throws naming the id -- the one place
+ * a `defId`-placed prop's own def is looked up, so every caller gets the
+ * same, named failure rather than a silent `undefined` read. */
+export function objectDefById(index: ReadonlyMap<number, ObjectDef>, defId: number): ObjectDef {
+  const object = index.get(defId);
+  if (!object) {
+    throw new Error(`object-defs: defs/ has no object with id ${defId}`);
+  }
+  return object;
 }

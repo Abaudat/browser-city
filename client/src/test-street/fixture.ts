@@ -80,7 +80,7 @@ interface StreetPropBase {
 
 /** A prop placed by a real `defs/objects` id (story 2.13): its texture
  * identity is the def id alone, resolved only through
- * `render/atlas-pages.ts`'s `AtlasPageLoader` (`render/def-texture.ts`).
+ * `render/atlas-pages.ts`'s `AtlasPageLoader.objectCellTexture`.
  * Never carries `assetKey`/`sourceCol`/`sourceRow` -- a `defId` row that
  * could still name a raw asset is exactly the shortcut this story
  * retires. Never carries `footprint` either (Tim's direction, cycle 2):

@@ -565,8 +565,9 @@ long on the decomposed axis (every cell repeats it whole) or exactly
 `cells * tile_size_px` long (sliced into equal whole-pixel cells) --
 anything else, including any horizontal overhang, is refused at mount
 rather than drawn stretched or fractional. A def-placed prop's per-cell
-sub-rect is cut from its own packed `atlas` rect (`render/def-texture.ts`),
-never from a raw `ModernTileset/` import.
+sub-rect is cut from its own packed `atlas` rect
+(`render/atlas-pages.ts`'s `AtlasPageLoader.objectCellTexture`), never
+from a raw `ModernTileset/` import.
 
 `render.tile_size_px` and `render.storey_height_px` are balance keys
 (`defs/balance/render.toml`), not TypeScript literals, so they fold into

@@ -41,7 +41,6 @@ import {
   countBoundAtlasPages,
 } from "../render/atlas-pages";
 import { type Camera, computeCamera, worldPxFromClient } from "../render/camera";
-import { buildObjectDefIndex, objectDefById } from "../render/def-texture";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -59,7 +58,7 @@ import {
   stepAndTransition,
 } from "../world/floor-walk";
 import type { MovementConfig } from "../world/movement";
-import type { ObjectSource } from "../world/object-defs";
+import { buildObjectDefIndex, type ObjectSource, objectDefById } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
@@ -519,13 +518,7 @@ function resolvePropTexture(
 ): Promise<Texture> {
   if (isDefPropDrawable(drawable)) {
     const object = objectDefById(objectDefIndex, drawable.defId);
-    return atlasPageLoader.objectCellTexture(
-      defs,
-      object,
-      drawable.sourceCol,
-      drawable.sourceRow,
-      tileSizePx,
-    );
+    return atlasPageLoader.objectCellTexture(defs, object, drawable.sourceCol, tileSizePx);
   }
   const base = textureFor(drawable.assetKey, textures);
   return Promise.resolve(sliceTexture(base, drawable, tileSizePx));

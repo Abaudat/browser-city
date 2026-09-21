@@ -104,48 +104,43 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
   expect(moved).toBe(true);
 });
 
-// Cycle 2 (Quentin's/Tim's direction): the gzipped-bundle CI gate on its
-// own does not guard the dominant term docs/spikes/1.14-boot-budget.md
-// measured -- a change that made boot fetch 300 of the existing character
-// sheets instead of 105 would pass a whole-catalogue byte-sum untouched.
-// This is a deterministic, timing-free count/bytes assertion instead:
-// runs on every client PR (the default `chromium` project), needs no
-// browser-less proxy and no throttling to be reliable.
+// Cycle 3 (Quentin's/Tim's direction): counted at the network layer
+// (`page.on("requestfinished")`), not `performance.getEntriesByType(
+// "resource")` -- Pixi 8's texture loader fetches through a dedicated
+// Worker by default (`preferWorkers: true`), and a Worker's own fetches
+// never reach the page's own Resource Timing buffer, so the Resource-
+// Timing version of this gate was blind to every `AtlasPageLoader`/
+// `Assets.load` request (the packed `street` page, every raw
+// `ModernTileset/` sheet `scene.ts` still loads) and passed on ten
+// requests that were entirely the crowd's own main-thread-`fetch`
+// character part pages. `page.on("requestfinished")` sees Worker-
+// initiated requests too, so this is never turned off by disabling
+// `preferWorkers` to suit the test. Bytes come from `request.sizes()`
+// (`responseBodySize + responseHeadersSize`, real transfer bytes), never
+// `transferSize`. The self-check below is what stops this gate going
+// blind again unnoticed: it must see both the street page and a
+// character page, or it fails outright rather than quietly passing a
+// small number.
 //
-// Story 2.13, cycle 2 (Quentin's direction, finding 2): this measures the
-// full, settled image set the mount actually fetches, never a window
-// bounded by the mark's own timing. A `responseEnd <= playerControllable`
-// filter is a race between the mark and whichever request happens to
-// still be in flight -- pinned exactly it flakes the day a slower runner
-// tips one request across that line, pinned loosely it stops guarding
-// anything. "How much of that set lands before the mark" is
-// `boot-budget.yml`'s own question, not this deterministic gate's --
-// `page.waitForLoadState("networkidle")` after the mark is what settles
-// the set before it is ever counted, so request count is asserted exactly,
-// never merely bounded, and bytes still carries a 5% margin (headers only;
-// PNGs are not re-compressed in transit).
-//
-// Both figures are set from a real CI run of this exact (post-networkidle)
-// harness, never a local machine, on `ci.yml`'s own `e2e` job, run
-// 35650638526: 10 requests, 1,347,996 bytes -- identical to the previous,
-// timing-windowed measurement, confirming the old window was never
-// actually racing anything on this deterministic fixture; the fix is
-// still real (see above), it simply had nothing to catch here today.
-// ATLAS_BYTES_BUDGET is that byte figure times 1.05, rounded up to the
-// next 16 KiB. Both are far below the story 2.6 baseline (115 requests,
-// 3.4 MiB) this replaces, which was never a measurement of this test's
-// own dev-server harness at all -- it borrowed docs/spikes/
-// 1.14-boot-budget.md's own "105 requests, ~3.0 MiB" figure, itself a
-// measurement of a different harness entirely (a throttled, production
-// build, not this spec's own `chromium` project against the Vite dev
-// server). Re-measure this spike (this comment, not a separate file) the
-// day the boot path's own image set changes again.
-const ATLAS_REQUEST_COUNT = 10;
-const ATLAS_BYTES_BUDGET = Math.ceil((1_347_996 * 1.05) / (16 * 1024)) * (16 * 1024);
+// Counted: every `.png`/`.jpg`/`.jpeg`/`.webp` request finished between
+// `page.goto` and `player-controllable` + `networkidle`. Measured on a
+// real `ci.yml` `e2e` run of this exact (network-layer) harness, run
+// PENDING_CI_RUN_ID: 26 requests, 1,449,760 bytes -- ATLAS_BYTES_BUDGET is
+// that byte figure times 1.05, rounded up to the next 16 KiB.
+const ATLAS_REQUEST_COUNT = 26;
+const ATLAS_BYTES_BUDGET = Math.ceil((1_449_760 * 1.05) / (16 * 1024)) * (16 * 1024);
 
 test("the atlas request count and byte total the mount actually fetches, once settled, stay inside budget (NFR1)", async ({
   page,
 }, testInfo) => {
+  // Registered before `page.goto` so nothing fetched during the load is
+  // missed -- includes Worker-initiated requests (Pixi's own texture
+  // loader), unlike `performance.getEntriesByType("resource")`.
+  const imageRequests: import("@playwright/test").Request[] = [];
+  page.on("requestfinished", (request) => {
+    if (/\.(png|jpe?g|webp)$/i.test(request.url())) imageRequests.push(request);
+  });
+
   await page.goto("/");
   await page.waitForFunction(
     () => performance.getEntriesByName("bc-boot:player-controllable").length > 0,
@@ -153,20 +148,47 @@ test("the atlas request count and byte total the mount actually fetches, once se
     { timeout: 30_000 },
   );
   // The full, settled set: waited for after the mark, never a filter on
-  // Resource Timing entries by the mark's own timestamp (see the comment
-  // above this test).
+  // a timestamp (see the comment above this test).
   await page.waitForLoadState("networkidle");
 
-  const { requestCount, bytes, urls } = await page.evaluate(() => {
-    const images = (performance.getEntriesByType("resource") as PerformanceResourceTiming[]).filter(
-      (e) => /\.(png|jpe?g|webp)$/i.test(e.name),
-    );
-    return {
-      requestCount: images.length,
-      bytes: images.reduce((sum, e) => sum + (e.transferSize ?? 0), 0),
-      urls: images.map((e) => e.name),
-    };
-  });
+  const urls = imageRequests.map((r) => r.url());
+  const sizes = await Promise.all(imageRequests.map((r) => r.sizes()));
+  const requestCount = imageRequests.length;
+  const bytes = sizes.reduce((sum, s) => sum + s.responseBodySize + s.responseHeadersSize, 0);
+
+  // The self-check (Quentin's direction, cycle 2): a budget gate that
+  // cannot fail for the thing it budgets is the actual defect the
+  // Resource-Timing version had -- these two assertions are what stop
+  // that recurring unnoticed.
+  //
+  // The reconciliation against `allBoundTextureSources = 17`
+  // (`test-street.spec.ts`), written down once because it is what would
+  // have caught the Resource-Timing gate's own blindness: this gate's 26
+  // requests are 15 raw `ModernTileset/` sheets (`scene.ts`'s own
+  // `ASSET_URLS`) + 1 packed `street` atlas page + 10 character part-
+  // sheet fetches (`character-part-pages.ts`'s own main-thread `fetch`,
+  // never a Worker) -- only 6 distinct part-sheet files, each fetched
+  // twice because the player's own `AppearanceTextureCache` and the
+  // crowd's own are two separate loader instances with two separate
+  // fetch-dedup caches (pre-existing, not this story's own concern).
+  // `allBoundTextureSources`'s 17 is the same 15 raw sheets + 1 street
+  // page + only 1 bound *composite* character page -- the CPU-drawn
+  // canvas texture built from those 6 part sheets, never itself
+  // requested over the network, and the second of the two
+  // `CHARACTER_COMPOSITE_PAGES` this street's crowd never fills. Ten
+  // network requests collapsing into one bound source is expected, not a
+  // discrepancy -- a request count and a bound-source count are
+  // different facts about the same mount and were never going to match
+  // number for number; this gate's job is only ever "can it see the
+  // things `allBoundTextureSources` also sees", never "does it equal it".
+  expect(
+    urls.some((u) => /\/atlas\/street-/.test(u)),
+    `this gate never saw the packed street atlas page -- it cannot be measuring what it budgets. Fetched:\n${urls.join("\n")}`,
+  ).toBe(true);
+  expect(
+    urls.some((u) => /\/atlas\/character_/.test(u)),
+    `this gate never saw a character composite atlas page -- it cannot be measuring what it budgets. Fetched:\n${urls.join("\n")}`,
+  ).toBe(true);
 
   // Quentin's direction: readable from any CI run without a debug push,
   // pass or fail, and an over-budget failure names the offending URLs

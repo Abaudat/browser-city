@@ -139,7 +139,7 @@ describe("AtlasPageLoader.objectCellTexture", () => {
       atlas: { page: 0, x: 87, y: 1, w: 16, h: 16 },
     };
 
-    const texture = await loader.objectCellTexture(defs, object, 0, 0, TILE_SIZE_PX);
+    const texture = await loader.objectCellTexture(defs, object, 0, TILE_SIZE_PX);
 
     expect(texture.frame).toEqual({ x: 87, y: 1, width: TILE_SIZE_PX, height: 16 });
   });
@@ -156,7 +156,7 @@ describe("AtlasPageLoader.objectCellTexture", () => {
     };
 
     const frames = await Promise.all(
-      [0, 1, 2].map((col) => loader.objectCellTexture(defs, window, col, 0, TILE_SIZE_PX)),
+      [0, 1, 2].map((col) => loader.objectCellTexture(defs, window, col, TILE_SIZE_PX)),
     );
 
     expect(frames.map((t) => t.frame)).toEqual([
@@ -180,10 +180,10 @@ describe("AtlasPageLoader.objectCellTexture", () => {
     // Four placements of the same one-cell def, the exact bridge_deck
     // shape (Tim's direction, story 2.13).
     const [a, b, c, d] = await Promise.all([
-      loader.objectCellTexture(defs, deck, 0, 0, TILE_SIZE_PX),
-      loader.objectCellTexture(defs, deck, 0, 0, TILE_SIZE_PX),
-      loader.objectCellTexture(defs, deck, 0, 0, TILE_SIZE_PX),
-      loader.objectCellTexture(defs, deck, 0, 0, TILE_SIZE_PX),
+      loader.objectCellTexture(defs, deck, 0, TILE_SIZE_PX),
+      loader.objectCellTexture(defs, deck, 0, TILE_SIZE_PX),
+      loader.objectCellTexture(defs, deck, 0, TILE_SIZE_PX),
+      loader.objectCellTexture(defs, deck, 0, TILE_SIZE_PX),
     ]);
 
     expect(a).toBe(b);
@@ -203,8 +203,8 @@ describe("AtlasPageLoader.objectCellTexture", () => {
       atlas: { page: 0, x: 87, y: 1, w: 48, h: 32 },
     };
 
-    const first = await loader.objectCellTexture(defs, window, 0, 0, TILE_SIZE_PX);
-    const second = await loader.objectCellTexture(defs, window, 1, 0, TILE_SIZE_PX);
+    const first = await loader.objectCellTexture(defs, window, 0, TILE_SIZE_PX);
+    const second = await loader.objectCellTexture(defs, window, 1, TILE_SIZE_PX);
 
     expect(first).not.toBe(second);
   });
@@ -215,7 +215,7 @@ describe("AtlasPageLoader.objectCellTexture", () => {
     const defs = defsWith([PAGE]);
     const tall = { ...OBJECT, id: 9, key: "tall_thing", height: 2 };
 
-    await expect(loader.objectCellTexture(defs, tall, 0, 0, TILE_SIZE_PX)).rejects.toThrow(
+    await expect(loader.objectCellTexture(defs, tall, 0, TILE_SIZE_PX)).rejects.toThrow(
       /tall_thing/,
     );
   });
@@ -231,12 +231,12 @@ describe("AtlasPageLoader.objectCellTexture", () => {
       atlas: { page: 0, x: 87, y: 1, w: 16, h: 16 },
     };
 
-    await expect(loader.objectCellTexture(defs, deck, 0, 0, TILE_SIZE_PX)).rejects.toThrow(
+    await expect(loader.objectCellTexture(defs, deck, 0, TILE_SIZE_PX)).rejects.toThrow(
       "network drop",
     );
 
     loadMock.mockResolvedValueOnce(fakeSourceTexture());
-    await expect(loader.objectCellTexture(defs, deck, 0, 0, TILE_SIZE_PX)).resolves.toBeDefined();
+    await expect(loader.objectCellTexture(defs, deck, 0, TILE_SIZE_PX)).resolves.toBeDefined();
     expect(loadMock).toHaveBeenCalledTimes(2);
   });
 });

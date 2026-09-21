@@ -153,16 +153,17 @@ export class AtlasPageLoader {
    *
    * `object.height` is checked here, not in `defCellFrameRect` (never
    * silent, Tim's direction): every real `defs/objects` entry is one row
-   * tall today, so `sourceRow` is accepted for a future caller that slices
-   * a taller def's own rows properly, but this throws naming the object
-   * rather than silently drawing only its own top row on every row the
-   * day a taller one exists.
+   * tall today, so this throws naming the object rather than silently
+   * drawing only its own top row the day a taller one exists -- no
+   * `sourceRow` parameter here (Tim's direction, cycle 2: a parameter kept
+   * "for a future caller" that slices rows properly is dead API today,
+   * not a real one; the day row-slicing is real, this signature grows the
+   * parameter it needs then).
    */
   objectCellTexture(
     defs: Defs,
     object: ObjectDef,
     sourceCol: number,
-    _sourceRow: number,
     tileSizePx: number,
   ): Promise<Texture> {
     if (object.height > 1) {
