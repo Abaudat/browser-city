@@ -258,8 +258,11 @@ CUR_SPRINT="$(project_iteration_for_date)"
 CUR_SPRINT_ID="$(printf '%s' "$CUR_SPRINT" | "$JQ" -r '.id')"
 [ -n "$CUR_SPRINT_ID" ] && [ "$CUR_SPRINT_ID" != "null" ] \
   || { echo "=== e2e: FATAL: no current sprint iteration for today ==="; exit 2; }
-project_set_iteration "$PARENT_NUM" "$CUR_SPRINT_ID"
-project_set_iteration "$SUB_NUM" "$CUR_SPRINT_ID"
+# Neither issue is put on the sprint: the orchestrator scopes the story in
+# itself when it picks it, and that is part of what this run exercises. What
+# fences the run in is BC_ONLY_ISSUE -- the pick is board-wide, so without it
+# the first tick would start whatever real story outranks a Standard one.
+printf 'BC_ONLY_ISSUE=%s\n' "$SUB_NUM" >> "$ENV_FILE"
 project_set_single "$PARENT_NUM" Status Backlog
 project_set_single "$SUB_NUM" Status Backlog
 project_set_single "$PARENT_NUM" Priority Standard

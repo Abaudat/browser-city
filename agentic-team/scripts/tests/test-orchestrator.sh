@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fixture-driven coverage for scripts/orchestrator.sh: one scenario per edge
-# of agentic-team/high-level-agentic-flow.mmd (demo-active/demo-has-feedback/closing-sprint/starting-next-sprint, sprint-over/creating-demo-issue, starting-dev-cycle,
+# of agentic-team/high-level-agentic-flow.mmd (demo-active/demo-has-feedback/closing-sprint, sprint-over/creating-demo-issue, starting-dev-cycle,
 # leads-analysed/dispatching-implementation, pr-opened/opening-leads-review, breaker-tripped-tripping-breaker, task-requested/judging-task-request, ci-status/dispatching-ci-fix, crew-addressed/reopening-leads-review), plus the two crash-idempotency repairs and
 # the two hard-failure propagations (bc-issue current's exit 2, an empty
 # backlog). Runs orchestrator.sh as a real subprocess -- BC_FAKE drives the
@@ -194,14 +194,20 @@ check "integrating-feedback: and the demo moved to Reviewed" 0 \
 
 # =============================================================================
 echo
-echo "closing-sprint -> starting-next-sprint: Sprint Demo Reviewed -> close the sprint, start the next"
+echo "closing-sprint: Sprint Demo Reviewed -> close the sprint, and scope NOTHING into the next"
 # =============================================================================
 F_SPRINT_ROLLOVER="$(fake_dir)"
 write_iterations "$F_SPRINT_ROLLOVER"
-"$JQ" -n -c '[{number:42,title:"Sprint 1 Demo",state:"OPEN",status:"Reviewed",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null}]' \
-  > "$F_SPRINT_ROLLOVER/project_items.json"
-check_out "closing-sprint/starting-next-sprint: closed and started, exit 0" 0 "starting-next-sprint closed the sprint and started the next after demo #42" \
+# 50 is ready, unblocked backlog work. Closing must leave it exactly where it
+# is: it reaches a sprint when starting-dev-cycle picks it, on a later tick.
+"$JQ" -n -c '[
+  {number:42,title:"Sprint 1 Demo",state:"OPEN",status:"Reviewed",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null},
+  {number:50,title:"Ready backlog story",state:"OPEN",status:"Backlog",priority:"Blocker",size:"S",sprintId:null,sprintTitle:null,labels:["story"],isParent:false,parent:null,blockedBy:[]}
+]' > "$F_SPRINT_ROLLOVER/project_items.json"
+check_out "closing-sprint: closed, exit 0" 0 "closing-sprint closed the sprint after demo #42" \
   run "$F_SPRINT_ROLLOVER" "$NOW_MIDSPRINT"
+check "closing-sprint: scoped nothing into any sprint" 1 log_has "$F_SPRINT_ROLLOVER/calls.log" '^project_set_iteration'
+check "closing-sprint: never called Scotty" 1 log_has "$F_SPRINT_ROLLOVER/calls.log" '^bc_scotty'
 check "closing-sprint: closed the demo issue (Status Done)" 0 log_has "$F_SPRINT_ROLLOVER/calls.log" '^project_set_single 42 Status Done$'
 check "closing-sprint: closed the demo issue on GitHub" 0 log_has "$F_SPRINT_ROLLOVER/calls.log" '^gh_issue_close 42$'
 
@@ -240,13 +246,14 @@ check "sprint-over guarded: wrote nothing at all (falls through to an empty-back
 
 # =============================================================================
 echo
-echo "starting-dev-cycle: no active sub-issue -- picks, transitions, spawns, stubs, dispatches"
+echo "starting-dev-cycle: no active sub-issue -- picks from the whole backlog, scopes in, transitions, spawns, stubs, dispatches"
 # =============================================================================
 F_DEV_CYCLE="$(fake_dir)"
 write_iterations "$F_DEV_CYCLE"
 "$JQ" -n -c '[
-  {number:900,title:"Parent",state:"OPEN",status:"Backlog",priority:"Standard",sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:[],isParent:true,parent:null},
-  {number:901,title:"Sub",state:"OPEN",status:"Backlog",priority:"Standard",sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["lead:tim"],isParent:false,parent:900}
+  {number:900,title:"Parent",state:"OPEN",status:"Backlog",priority:"Standard",sprintId:null,sprintTitle:null,labels:[],isParent:true,parent:null},
+  {number:899,title:"Blocker, but blocked by the open 901",state:"OPEN",status:"Backlog",priority:"Blocker",size:"XS",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:900,blockedBy:[901]},
+  {number:901,title:"Sub, on no sprint",state:"OPEN",status:"Backlog",priority:"Standard",size:"M",sprintId:null,sprintTitle:null,labels:["lead:tim"],isParent:false,parent:900,blockedBy:[]}
 ]' > "$F_DEV_CYCLE/project_items.json"
 echo '["lead:tim"]' > "$F_DEV_CYCLE/gh_issue_labels.901.json"
 printf 'WT901' > "$F_DEV_CYCLE/orca_worktree_path.issue:901.json"
@@ -262,6 +269,11 @@ echo '{"result":{"wait":{"satisfied":true}}}' > "$F_DEV_CYCLE/orca_terminal_wait
 OUT_DEV_CYCLE="$(run "$F_DEV_CYCLE" "$NOW_MIDSPRINT")"; RC_DEV_CYCLE=$?
 check_out "starting-dev-cycle: exit 0, dispatched both leads" 0 "starting-dev-cycle started dev cycle, dispatched quentin,tim on #901" \
   bash -c 'printf %s "$1"' _ "$OUT_DEV_CYCLE"
+check "starting-dev-cycle: scoped the pick onto the sprint in play" 0 \
+  log_has "$F_DEV_CYCLE/calls.log" '^project_set_iteration 901 cd18e696$'
+check "starting-dev-cycle: never touched the blocked story" 1 log_has "$F_DEV_CYCLE/calls.log" '(^| )899( |$)'
+check_out "starting-dev-cycle: scoped in BEFORE the transition" 0 project_set_iteration \
+  sh -c 'grep -E "^project_set_(iteration|single) 901" "$1" | head -1 | cut -d" " -f1' _ "$F_DEV_CYCLE/calls.log"
 check "starting-dev-cycle: transition to To analyze logged before any terminal create" 0 \
   line_before "$F_DEV_CYCLE/calls.log" '^project_set_single 901 Status To analyze$' '^orca_terminal_create'
 check "starting-dev-cycle: spawned quentin" 0 \
@@ -811,5 +823,29 @@ write_iterations "$F_EMPTY"
 echo '[]' > "$F_EMPTY/project_items.json"
 check_out "starting-dev-cycle: empty backlog -> sleep, exit 1" 1 "starting-dev-cycle sleep backlog empty" run "$F_EMPTY" "$NOW_MIDSPRINT"
 check "starting-dev-cycle: empty backlog wrote nothing" 1 test -f "$F_EMPTY/calls.log"
+
+echo
+echo "starting-dev-cycle: stories left but every one blocked -> sleep, and the wake reason says so"
+F_ALL_BLOCKED="$(fake_dir)"
+write_iterations "$F_ALL_BLOCKED"
+"$JQ" -n -c '[
+  {number:910,title:"Waits on 911",state:"OPEN",status:"Backlog",priority:"Critical",size:"S",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:null,blockedBy:[911]},
+  {number:911,title:"Waits on 910",state:"OPEN",status:"Backlog",priority:"Critical",size:"S",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:null,blockedBy:[910]}
+]' > "$F_ALL_BLOCKED/project_items.json"
+check_out "starting-dev-cycle: all blocked -> sleep, exit 1, named" 1 \
+  "starting-dev-cycle sleep 2 Backlog stories, every one blocked by an open issue" run "$F_ALL_BLOCKED" "$NOW_MIDSPRINT"
+check "starting-dev-cycle: all blocked wrote nothing" 1 test -f "$F_ALL_BLOCKED/calls.log"
+
+echo
+echo "starting-dev-cycle: a pick but no sprint iteration to put it on -> broken, nothing started"
+F_NO_SPRINT="$(fake_dir)"
+write_iterations "$F_NO_SPRINT"
+"$JQ" -n -c '[{number:920,title:"Ready",state:"OPEN",status:"Backlog",priority:"Standard",size:"S",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:null,blockedBy:[]}]' \
+  > "$F_NO_SPRINT/project_items.json"
+echo '[]' > "$F_NO_SPRINT/gh_issue_labels.920.json"
+check_out "starting-dev-cycle: no iteration -> broken, exit 2" 2 \
+  "starting-dev-cycle broken could not scope #920 into a sprint" run "$F_NO_SPRINT" "2026-12-25T08:00:00Z"
+check "starting-dev-cycle: no iteration -> nothing written, the story never transitioned" 1 \
+  test -f "$F_NO_SPRINT/calls.log"
 
 summary

@@ -10,9 +10,8 @@ flowchart TD
     demo-active -->|"yes — In Progress"| demo-has-feedback{"Adrian has<br/>commented on it?"}
     demo-has-feedback -->|no| sleep
     demo-has-feedback -->|yes| integrating-feedback["Integrate Adrian's feedback:<br/>new epics and stories, Backlog,<br/>then mark the Demo issue Reviewed"]
-    integrating-feedback --> closing-sprint["Close the Sprint:<br/>move remaining issues back to the backlog,<br/>close the Demo issue"]
-    closing-sprint --> starting-next-sprint["Start the next Sprint:<br/>scope in tasks for the week's demo"]
-    starting-next-sprint --> sleep
+    integrating-feedback --> closing-sprint["Close the Sprint:<br/>carry the story in flight to the next Sprint,<br/>close the Demo issue"]
+    closing-sprint --> sleep
 
     %% ---------- Demo due ----------
     demo-active -->|no| sprint-over{"Sprint over?"}
@@ -53,5 +52,5 @@ flowchart TD
     crew-addressed -->|yes| reopening-leads-review["Mark Leads review"] --> sleep
 
     %% ---------- New dev cycle ----------
-    subissue-active -->|no| starting-dev-cycle["Start a new dev cycle:<br/>pick the highest-priority sub-issue of the<br/>highest-priority issue in the Sprint backlog,<br/>mark it To Analyze, dispatch the leads in scope"]
+    subissue-active -->|no| starting-dev-cycle["Start a new dev cycle:<br/>pick, from the whole backlog and any epic,<br/>the highest-priority, smallest story<br/>with no open blocker,<br/>put it on the Sprint, mark it To Analyze,<br/>dispatch the leads in scope"]
     starting-dev-cycle --> sleep
