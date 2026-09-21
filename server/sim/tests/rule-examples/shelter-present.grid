@@ -1,0 +1,6 @@
+rules: shelter_present
+expect: pass
+floor: 0
+legend: S=shelter
+grid:
+S.

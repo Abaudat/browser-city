@@ -374,6 +374,147 @@ pub struct ProfessionFile {
     pub profession: Vec<RawProfession>,
 }
 
+/// Story 3.4 (FR116): the four land uses `sim::generation::LandUse`
+/// already carries, spelled the same way here so a `defs/building-types/`
+/// row and the generator agree without a second enum reappearing under
+/// `server/sim/src/generation/` (which only ever reads the resolved
+/// string back via [`RawLandUse::as_str`], never matches on a literal
+/// building-type/tag/profession key).
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum RawLandUse {
+    Residential,
+    Commercial,
+    Industrial,
+    Institutional,
+}
+
+impl RawLandUse {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RawLandUse::Residential => "residential",
+            RawLandUse::Commercial => "commercial",
+            RawLandUse::Industrial => "industrial",
+            RawLandUse::Institutional => "institutional",
+        }
+    }
+
+    /// This variant's own index into the `[bool; 4]` mask
+    /// [`BuildingTypeDef::land_uses`] carries -- residential, commercial,
+    /// industrial, institutional, the declared order above.
+    pub fn index(self) -> usize {
+        match self {
+            RawLandUse::Residential => 0,
+            RawLandUse::Commercial => 1,
+            RawLandUse::Industrial => 2,
+            RawLandUse::Institutional => 3,
+        }
+    }
+}
+
+/// [`RawLandUse::index`], folded over a row's own `land_uses` list --
+/// the one place a `Vec<RawLandUse>` becomes the `[bool; 4]` mask
+/// `BuildingTypeDef` carries.
+pub fn land_use_mask(land_uses: &[RawLandUse]) -> [bool; 4] {
+    let mut mask = [false; 4];
+    for &u in land_uses {
+        mask[u.index()] = true;
+    }
+    mask
+}
+
+/// PR #317 cycle 2 (Derek's direction): the closed structural vocabulary
+/// a building type's own `requires_site`/`prefers_site` reads -- a plot
+/// geometry fact (`corner`) and the street tier an envelope's own front
+/// faces (`arterial`/`street`/`lane`), the same standing as `RawLandUse`
+/// above: `sim::generation` derives these per envelope from passes 2-4
+/// and indexes the resolved `[bool; 4]` mask by position, never by a
+/// compared string.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum RawSiteContext {
+    Corner,
+    Arterial,
+    Street,
+    Lane,
+}
+
+impl RawSiteContext {
+    /// This variant's own index into the `[bool; 4]` mask
+    /// `BuildingTypeDef::requires_site`/`prefers_site` carry.
+    pub fn index(self) -> usize {
+        match self {
+            RawSiteContext::Corner => 0,
+            RawSiteContext::Arterial => 1,
+            RawSiteContext::Street => 2,
+            RawSiteContext::Lane => 3,
+        }
+    }
+}
+
+/// [`RawSiteContext::index`], folded the same way [`land_use_mask`] is.
+pub fn site_context_mask(contexts: &[RawSiteContext]) -> [bool; 4] {
+    let mut mask = [false; 4];
+    for &c in contexts {
+        mask[c.index()] = true;
+    }
+    mask
+}
+
+/// Story 3.4 (FR116, Tim's direction): a building type is a def kind, not
+/// Rust -- this row carries only `tags`/`land_uses`/`density_min`/
+/// `density_max`/`min_interior_width_cells`/`min_interior_depth_cells`/
+/// `weight`/`professions`. Whether a type is a workplace, an institution
+/// or a dwelling is never stored here: it is derived from `tags` (a
+/// `municipal_service`/`dwelling`/etc. tag) or from `professions` being
+/// non-empty (a workplace), read only by `sim::generation`, never
+/// hardcoded in it. `professions` is a plain list of profession keys --
+/// no per-post headcount: nothing reads one yet (Tim's direction, PR
+/// #317 cycle 1), so it is not a field until a pass does.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawBuildingType {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub land_uses: Vec<RawLandUse>,
+    pub density_min: i32,
+    pub density_max: i32,
+    pub min_interior_width_cells: u32,
+    pub min_interior_depth_cells: u32,
+    pub weight: u32,
+    /// Hard eligibility (Derek's direction, PR #317 cycle 2): every
+    /// context named here must hold for an envelope, or it is never a
+    /// candidate at all -- `corner_shop` requires `["corner"]`. Empty
+    /// (the default) means no site-context restriction.
+    #[serde(default)]
+    pub requires_site: Vec<RawSiteContext>,
+    /// Soft siting for a distribution-placed type (Derek's direction):
+    /// candidates are ranked first by how many of these contexts they
+    /// match (most first), then by `density_affinity`, then by the
+    /// seeded draw order. Empty (the default) means no preference at
+    /// this step. Never consulted by the ordinary weighted fill.
+    #[serde(default)]
+    pub prefers_site: Vec<RawSiteContext>,
+    /// Soft siting for a distribution-placed type (Derek's direction):
+    /// among otherwise-equally-ranked candidates, rank by density in
+    /// this direction before falling back to the seeded draw order --
+    /// `> 0` prefers the highest-density eligible envelope first, `< 0`
+    /// the lowest, `0` (the default) no preference. Never consulted by
+    /// the ordinary weighted fill.
+    #[serde(default)]
+    pub density_affinity: i32,
+    #[serde(default)]
+    pub professions: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildingTypeFile {
+    pub building_type: Vec<RawBuildingType>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawChain {
@@ -869,6 +1010,24 @@ pub struct ChainEntry {
 }
 
 #[derive(Debug)]
+pub struct BuildingTypeEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub tags: Vec<String>,
+    pub land_uses: Vec<RawLandUse>,
+    pub density_min: i32,
+    pub density_max: i32,
+    pub min_interior_width_cells: u32,
+    pub min_interior_depth_cells: u32,
+    pub weight: u32,
+    pub requires_site: Vec<RawSiteContext>,
+    pub prefers_site: Vec<RawSiteContext>,
+    pub density_affinity: i32,
+    pub professions: Vec<String>,
+}
+
+#[derive(Debug)]
 pub struct BalanceEntry {
     pub path: PathBuf,
     pub key: Located<String>,
@@ -1057,6 +1216,7 @@ impl_id_key_entry!(ItemEntry);
 impl_id_key_entry!(RecipeEntry);
 impl_id_key_entry!(ProfessionEntry);
 impl_id_key_entry!(ChainEntry);
+impl_id_key_entry!(BuildingTypeEntry);
 impl_id_key_entry!(BodyEntry);
 impl_id_key_entry!(EyesEntry);
 impl_id_key_entry!(HairstyleEntry);
@@ -1078,6 +1238,7 @@ pub struct RawDefs {
     pub recipes: Vec<RecipeEntry>,
     pub professions: Vec<ProfessionEntry>,
     pub chains: Vec<ChainEntry>,
+    pub building_types: Vec<BuildingTypeEntry>,
     pub balance: Vec<BalanceEntry>,
     pub page_groups: Vec<PageGroupEntry>,
     pub archetypes: Vec<ArchetypeEntry>,
@@ -1153,6 +1314,42 @@ pub struct RecipeDef {
 pub struct ProfessionDef {
     pub id: u32,
     pub key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildingTypeDef {
+    pub id: u32,
+    pub key: String,
+    /// Resolved tag ids (story 2.10, FR111) -- the engine's only
+    /// vocabulary; whether a type is a dwelling or a named institution is
+    /// carried here, never as a second stored category.
+    pub tags: Vec<u32>,
+    /// A `[bool; 4]` mask, [`crate::model::LandUse::ALL`]-equivalent order
+    /// (residential, commercial, industrial, institutional) -- never a
+    /// `&str` past this point (PR #317 cycle 1, Tim's direction): a
+    /// generator comparing strings is a content key reaching it in
+    /// substance even when the guard cannot see it textually.
+    pub land_uses: [bool; 4],
+    pub density_min: i32,
+    pub density_max: i32,
+    pub min_interior_width_cells: u32,
+    pub min_interior_depth_cells: u32,
+    pub weight: u32,
+    /// A `[bool; 4]` mask, [`RawSiteContext`]-order: hard eligibility --
+    /// every set context must hold for the envelope, or it is never a
+    /// candidate.
+    pub requires_site: [bool; 4],
+    /// Same order: soft siting, ranked by match count before
+    /// `density_affinity`.
+    pub prefers_site: [bool; 4],
+    /// Soft siting for a distribution-placed type: `> 0` prefers the
+    /// highest-density eligible candidate first, `< 0` the lowest, `0`
+    /// no preference. Never consulted by the ordinary weighted fill.
+    pub density_affinity: i32,
+    /// Profession keys this type staffs -- non-empty iff this type is a
+    /// workplace, never a second stored bool. No per-post headcount:
+    /// nothing reads one yet.
+    pub professions: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1328,6 +1525,7 @@ pub struct Defs {
     pub recipes: Vec<RecipeDef>,
     pub professions: Vec<ProfessionDef>,
     pub chains: Vec<ChainDef>,
+    pub building_types: Vec<BuildingTypeDef>,
     pub balance: Vec<BalanceDef>,
     pub bodies: Vec<BodyDef>,
     pub eyes: Vec<EyesDef>,

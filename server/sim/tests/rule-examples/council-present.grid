@@ -1,0 +1,6 @@
+rules: council_present
+expect: pass
+floor: 0
+legend: C=council
+grid:
+C.

@@ -63,6 +63,17 @@ impl<'a> RuleSet<'a> {
         self.rules
     }
 
+    /// A public, read-only view over every row this set carries (story
+    /// 3.4, Tim's direction: "reading a row is not judging one") --
+    /// [`super::evaluate`] stays the one place that decides whether a row
+    /// holds; this is what a constructive placer (Epic 3's generator)
+    /// reads a row's own numbers through, via [`RuleDef::as_distribution`]
+    /// -- never `RULES` itself, which stays unreachable outside this
+    /// module (`check-rule-source.sh`).
+    pub fn iter(&self) -> std::slice::Iter<'a, RuleDef> {
+        self.rules.iter()
+    }
+
     /// The rule's own `key`, resolved through this `RuleSet` rather than
     /// a caller reading `defs::RULES` directly -- `check-rule-source.sh`
     /// fails the build if any non-generated `src/` file outside this

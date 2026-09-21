@@ -96,6 +96,14 @@ appearance_layout kid id=2 family=kid cell_width=16 cell_height=32 directions=[r
 balance citizen.appearance.accessory_none_chance value=70 min=0 max=100
 balance citizen.appearance.hair_rare_chance value=15 min=0 max=100
 balance citizen.bar_decay.rest value=10 min=0 max=100
+balance generation.building_types.catchment_extent_cells value=256 min=1 max=100000
+balance generation.building_types.min_employers_per_profession value=5 min=1 max=1000
+balance generation.building_types.profession_count_mean_tolerance_percent value=15 min=0 max=100
+balance generation.building_types.profession_count_per_city_min value=40 min=1 max=1000
+balance generation.building_types.target_profession_count value=69 min=1 max=1000
+balance generation.building_types.target_workplaces_per_million_cells value=1312 min=1 max=1000000
+balance generation.building_types.workplace_count_tolerance_percent value=50 min=1 max=100
+balance generation.building_types.workplace_mean_count_tolerance_percent value=3 min=0 max=100
 balance generation.envelopes.commercial_min_interior_depth_cells value=6 min=1 max=64
 balance generation.envelopes.commercial_min_interior_width_cells value=6 min=1 max=64
 balance generation.envelopes.count_tolerance_percent value=21 min=1 max=100
@@ -168,7 +176,7 @@ balance generation.streets.junction_min_separation_cells value=28 min=1 max=256
 balance generation.streets.lane_width_cells value=4 min=2 max=64
 balance generation.streets.max_block_depth_max_cells value=120 min=2 max=1024
 balance generation.streets.max_block_depth_min_cells value=40 min=2 max=1024
-balance generation.streets.max_detour_excess_cells value=280 min=1 max=2048
+balance generation.streets.max_detour_excess_cells value=320 min=1 max=2048
 balance generation.streets.max_detour_percent value=200 min=100 max=500
 balance generation.streets.max_lane_splits value=4 min=0 max=16
 balance generation.streets.max_recursion_depth value=12 min=1 max=64
@@ -604,23 +612,107 @@ outfit outfit_32_05 id=129 family=adult sheet=ModernTileset/moderninteriors-win/
 outfit outfit_33_01 id=130 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_33_01.png pool=civilian hides_hairstyle=false
 outfit outfit_33_02 id=131 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_33_02.png pool=civilian hides_hairstyle=false
 outfit outfit_33_03 id=132 family=adult sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Outfits/16x16/Outfit_33_03.png pool=civilian hides_hairstyle=false
+profession accountant id=25
+profession administrator id=26
+profession archivist id=67
+profession assistant_manager id=37
+profession attendant id=19
+profession baker id=14
+profession bank_teller id=27
+profession barista id=10
+profession bartender id=12
+profession bookbinder id=46
+profession bookseller id=18
+profession butcher id=15
+profession caseworker id=56
+profession cashier id=3
+profession cleaner id=6
+profession clerk id=24
+profession concierge id=32
+profession conductor id=70
+profession cook id=8
+profession councillor id=76
+profession counsellor id=71
+profession custodian id=73
+profession detective id=68
+profession dispatcher id=66
+profession doctor id=62
+profession driver id=51
+profession firefighter id=65
+profession food_packer id=49
+profession foreman id=39
+profession forklift_operator id=41
+profession greengrocer id=16
+profession hairdresser id=20
+profession librarian id=63
+profession loan_officer id=34
+profession machine_operator id=42
+profession machinist id=38
+profession manager id=5
+profession market_porter id=23
+profession market_vendor id=22
+profession mechanic id=47
+profession nurse id=60
+profession officer id=64
+profession orderly id=61
+profession paramedic id=69
+profession parts_clerk id=52
+profession pharmacist id=17
+profession postal_worker id=35
+profession printer_operator id=45
+profession projectionist id=33
+profession quality_inspector id=43
+profession receptionist id=13
+profession sales_assistant id=31
 profession sanitation_worker id=1
+profession secretary id=36
+profession security_guard id=7
+profession server id=9
+profession shop_clerk id=2
+profession sorter id=44
+profession stock_clerk id=4
+profession supervisor id=50
+profession support_worker id=72
+profession surgeon id=77
+profession tailor id=21
+profession teacher id=58
+profession teaching_assistant id=59
+profession trainer id=29
+profession usher id=30
+profession warehouse_worker id=40
+profession yard_worker id=48
 recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]
 tag bridge id=7 role=none
+tag cafe id=26 role=none
+tag council id=21 role=none
 tag counter id=3 role=none
+tag depot id=20 role=none
+tag dwelling id=18 role=none
 tag entrance id=17 role=none
 tag fixture id=15 role=[2,3]
 tag floor id=13 role=[0]
+tag form_high id=33 role=none
+tag form_low id=31 role=none
+tag form_mid id=32 role=none
 tag ground id=10 role=[0]
+tag hospital id=22 role=none
 tag lighting id=4 role=none
+tag market id=30 role=none
+tag municipal_service id=19 role=none
+tag office id=27 role=none
 tag pavement id=11 role=[0]
 tag road id=12 role=[0]
 tag seating id=2 role=none
+tag shelter id=24 role=none
+tag shop id=25 role=none
 tag shopfront id=5 role=none
 tag stairs id=8 role=none
 tag threshold id=14 role=[4]
 tag underfoot id=9 role=none
 tag wall id=6 role=[4]
 tag wall_run id=16 role=none
+tag warehouse id=29 role=none
 tag waste id=1 role=none
+tag welfare_office id=23 role=none
+tag workshop id=28 role=none
 uniform sanitation_worker_uniform id=1 profession=sanitation_worker outfit=none accessory=addon_accessory_21_worker_jacket

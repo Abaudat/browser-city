@@ -30,18 +30,23 @@
 //! stays public for its own unit tests and for the two properties that
 //! deliberately feed one pass a perturbed predecessor.
 
+pub mod building_types;
 pub mod envelopes;
 pub mod land_use;
 pub mod plots;
+pub mod site;
 pub mod streets;
 
+pub use building_types::{BuildingTypeMap, TypeAssignment};
 pub use envelopes::{Envelope, EnvelopeMap, EnvelopeOutcome, RejectReason};
 pub use land_use::{LandUse, LandUseCell, LandUseMap, Region};
 pub use plots::{Plot, PlotMap};
+pub use site::DistrictSite;
 pub use streets::{Block, Side, Sides, StreetClass, StreetEdge, StreetNetwork, block_sides};
 
 use crate::generated::defs;
 use crate::rng::seed_from_ids;
+use crate::rules::{RuleSet, Violation};
 
 /// A stable RNG seed key derived purely from a rect's own geometry, never
 /// from its position in a list -- what a block or a plot seeds its own
@@ -55,9 +60,9 @@ pub fn rect_seed_key(r: SiteBounds) -> u64 {
 
 /// Bumped whenever any implemented pass's algorithm or seeding changes in
 /// a way that could move its output for a fixed seed -- `tests/goldens/
-/// generation_v2.golden` is keyed to this, exactly like `sim::rng::
+/// generation_v6.golden` is keyed to this, exactly like `sim::rng::
 /// RNG_VERSION`/`sim::appearance::APPEARANCE_VERSION`.
-pub const GENERATION_VERSION: u32 = 2;
+pub const GENERATION_VERSION: u32 = 6;
 
 /// Every way generation itself can fail, across every implemented pass --
 /// one type, never a `Result<_, String>` per pass.
@@ -76,6 +81,16 @@ pub enum GenerationError {
     /// outside `[min, max]` -- a seed that trips this is a world that
     /// fails to create, never a silently thin or overcrowded city.
     BuildingCountOutOfTolerance { got: i64, min: i64, max: i64 },
+    /// Pass 5 (FR112): `sim::rules::evaluate` found at least one
+    /// violation over the finished district's own [`DistrictSite`] --
+    /// `count` is the total, `first` the first (sorted) violation, never
+    /// a fallback placement that skips the rules.
+    RuleViolations { count: usize, first: Violation },
+    /// Pass 5 (AC4): the realised workplace count (every placed envelope
+    /// whose assigned type has at least one post) sits outside `[min,
+    /// max]` -- the same shape as [`GenerationError::
+    /// BuildingCountOutOfTolerance`].
+    WorkplaceCountOutOfTolerance { got: i64, min: i64, max: i64 },
 }
 
 impl std::fmt::Display for GenerationError {
@@ -93,11 +108,43 @@ impl std::fmt::Display for GenerationError {
                 f,
                 "generation::envelopes: building count {got} is outside tolerance [{min}, {max}]"
             ),
+            GenerationError::RuleViolations { count, first } => write!(
+                f,
+                "generation::building_types: {count} rule violation(s), first: rule {} at ({}, {}, {})",
+                first.rule_id, first.subject.x, first.subject.y, first.subject.floor
+            ),
+            GenerationError::WorkplaceCountOutOfTolerance { got, min, max } => write!(
+                f,
+                "generation::building_types: workplace count {got} is outside tolerance [{min}, {max}]"
+            ),
         }
     }
 }
 
 impl std::error::Error for GenerationError {}
+
+/// Every content table [`plan`]/[`generate`] read, loaded once and
+/// passed down as a struct -- Tim's direction: content is an input, one
+/// signature, no `plan_with` twin, and the golden (which freezes a small,
+/// deliberately-unrelated content table alongside its frozen config)
+/// proves the generator never branches on a key.
+#[derive(Debug, Clone, Copy)]
+pub struct GenerationContent<'a> {
+    pub rules: RuleSet<'a>,
+    pub building_types: &'a [defs::BuildingTypeDef],
+}
+
+impl GenerationContent<'static> {
+    /// The one non-test constructor: the committed rule table
+    /// ([`RuleSet::committed`]) and `defs::BUILDING_TYPES` -- production
+    /// reaches content only ever through this call.
+    pub fn committed() -> Self {
+        GenerationContent {
+            rules: RuleSet::committed(),
+            building_types: defs::BUILDING_TYPES,
+        }
+    }
+}
 
 /// One finished city plan: every implemented pass's own output, in order.
 /// Never a `PlacedObject` -- still the abstract plan this module has
@@ -108,6 +155,7 @@ pub struct District {
     pub streets: StreetNetwork,
     pub plots: PlotMap,
     pub envelopes: EnvelopeMap,
+    pub building_types: BuildingTypeMap,
 }
 
 impl District {
@@ -119,30 +167,100 @@ impl District {
     pub fn check_building_count(&self, cfg: &GenerationConfig) -> Result<(), GenerationError> {
         envelopes::check_building_count(&self.envelopes, self.plots.site(), cfg)
     }
+
+    /// Builds this district's own [`DistrictSite`] -- the one adapter
+    /// both this check and pass 5's own placement build from the same
+    /// fields (FR112).
+    pub fn site(&self, content: &GenerationContent) -> DistrictSite {
+        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+            content.building_types.iter().map(|b| (b.id, b)).collect();
+        DistrictSite::build(
+            &self.envelopes,
+            &self.plots,
+            &self.streets,
+            self.building_types.assignments(),
+            &by_id,
+        )
+    }
+
+    /// FR112's other half over a *finished* district: `sim::rules::
+    /// evaluate` against this district's own [`DistrictSite`] must be
+    /// empty, or generation fails with `Err(GenerationError::
+    /// RuleViolations)` naming the total count and the first violation --
+    /// never a fallback placement that quietly skips a rule.
+    pub fn check_rules(&self, content: &GenerationContent) -> Result<(), GenerationError> {
+        let site = self.site(content);
+        let violations = crate::rules::evaluate(content.rules, &site);
+        match violations.first().copied() {
+            Some(first) => Err(GenerationError::RuleViolations {
+                count: violations.len(),
+                first,
+            }),
+            None => Ok(()),
+        }
+    }
+
+    /// AC4's workplace-count verdict: every placed envelope whose
+    /// assigned type has at least one post (Tim's direction: a workplace
+    /// is derived, never a stored category), against
+    /// [`GenerationConfig::workplace_count_band`].
+    pub fn check_workplace_count(
+        &self,
+        cfg: &GenerationConfig,
+        content: &GenerationContent,
+    ) -> Result<(), GenerationError> {
+        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+            content.building_types.iter().map(|b| (b.id, b)).collect();
+        let got = self
+            .building_types
+            .assignments()
+            .iter()
+            .filter(|a| building_types::is_workplace(by_id[&a.building_type]))
+            .count() as i64;
+        let site_cells = self.plots.site().width() * self.plots.site().height();
+        let (min, max) = cfg.workplace_count_band(site_cells);
+        if got < min || got > max {
+            return Err(GenerationError::WorkplaceCountOutOfTolerance { got, min, max });
+        }
+        Ok(())
+    }
 }
 
 /// Chains every implemented pass, in FR110's own order, with no verdict
 /// on the result -- only pass 1's own site check can fail. What a
 /// harness that must inspect every pass of an outlier city calls.
-pub fn plan(city_seed: u64, cfg: &GenerationConfig) -> Result<District, GenerationError> {
+pub fn plan(
+    city_seed: u64,
+    cfg: &GenerationConfig,
+    content: &GenerationContent,
+) -> Result<District, GenerationError> {
     let land_use = land_use::run(city_seed, cfg.site(), cfg)?;
     let streets = streets::run(city_seed, &land_use, cfg);
     let plots = plots::run(city_seed, &land_use, &streets, cfg);
     let envelopes = envelopes::run(city_seed, &plots, cfg);
+    let building_types = building_types::run(city_seed, &envelopes, &plots, &streets, cfg, content);
     Ok(District {
         land_use,
         streets,
         plots,
         envelopes,
+        building_types,
     })
 }
 
 /// The one entry point production calls: [`plan`], then
-/// [`District::check_building_count`] -- a seed whose district fails AC4
-/// is a world that fails to create.
-pub fn generate(city_seed: u64, cfg: &GenerationConfig) -> Result<District, GenerationError> {
-    let district = plan(city_seed, cfg)?;
+/// [`District::check_building_count`], [`District::check_rules`] and
+/// [`District::check_workplace_count`] -- a seed whose district fails any
+/// of the three is a world that fails to create.
+pub fn generate(
+    city_seed: u64,
+    cfg: &GenerationConfig,
+    content: &GenerationContent,
+) -> Result<District, GenerationError> {
+    let district = plan(city_seed, cfg, content)?;
     district.check_building_count(cfg)?;
+    district.check_rules(content)?;
+    district.check_workplace_count(cfg, content)?;
     Ok(district)
 }
 
@@ -382,6 +500,25 @@ pub struct GenerationConfig {
     /// rejects half the district still passes every other property until
     /// AC4 catches it for the wrong reason.
     pub envelope_max_rejected_plot_percent: i64,
+
+    // --- building types (pass 5) --------------------------------------
+    /// AC4's own workplace-count target, stated at the 512 reference
+    /// extent per one million site cells and scaled by real site area
+    /// inside `District::check_workplace_count` -- the Scale Baseline's
+    /// ~344 at 512x512 (`docs/gdd.md`), never a measurement.
+    pub workplace_target_count_per_million_cells: i64,
+    /// The per-seed tolerance band around the scaled workplace target, as
+    /// a percent -- the wild-deviation guard, same shape as
+    /// `envelope_count_tolerance_percent`.
+    pub workplace_count_tolerance_percent: i64,
+    /// The pooled band: the mean workplace count over a fixed seed range
+    /// must sit within this percent of the scaled target.
+    pub workplace_mean_count_tolerance_percent: i64,
+    /// AC3: the fixed-extent square (world cells) a `[[distribution]]`
+    /// row's own target is allocated over -- 256 at launch, so at the
+    /// committed 512x512 site this *is* AC3's own quadrants; never a
+    /// hardcoded 2x2 of the site (Derek's direction).
+    pub building_type_catchment_extent_cells: i32,
 }
 
 fn get(balance: &[defs::BalanceSeed], key: &str) -> i64 {
@@ -390,7 +527,12 @@ fn get(balance: &[defs::BalanceSeed], key: &str) -> i64 {
 
 /// `LandUse`'s own balance-key naming segment, [`LandUse::ALL`] order --
 /// the one place a per-land-use key's own name is built, shared by
-/// `from_balance` and `docs/generation.md`'s own key list.
+/// `from_balance` and `docs/generation.md`'s own key list. Private
+/// (PR #317 cycle 1, Tim's direction): `building_types.rs`'s own
+/// eligibility check indexes `BuildingTypeDef::land_uses`'s `[bool; 4]`
+/// mask by `LandUse as usize` directly, never a `&str` -- a generator
+/// comparing strings is a content key reaching it in substance even when
+/// a textual guard cannot see it.
 fn land_use_key(u: LandUse) -> &'static str {
     match u {
         LandUse::Residential => "residential",
@@ -581,6 +723,23 @@ impl GenerationConfig {
                 balance,
                 "generation.envelopes.max_rejected_plot_percent",
             ),
+
+            workplace_target_count_per_million_cells: get(
+                balance,
+                "generation.building_types.target_workplaces_per_million_cells",
+            ),
+            workplace_count_tolerance_percent: get(
+                balance,
+                "generation.building_types.workplace_count_tolerance_percent",
+            ),
+            workplace_mean_count_tolerance_percent: get(
+                balance,
+                "generation.building_types.workplace_mean_count_tolerance_percent",
+            ),
+            building_type_catchment_extent_cells: get(
+                balance,
+                "generation.building_types.catchment_extent_cells",
+            ) as i32,
         };
 
         if cfg.coarse_cell_size_cells <= 0
@@ -641,11 +800,20 @@ impl GenerationConfig {
                 cfg.max_block_depth_min_cells, cfg.max_block_depth_max_cells
             )));
         }
+        // 3 (not 2) * block_size_max_cells: a T-terminated dead-end spur
+        // (Artie's direction: "at most one arterial line per city stops
+        // short of the far site edge") is reachable by exactly one path,
+        // so the worst real route pays for both going around one
+        // largest block *and* walking out to and back from such a spur
+        // -- found by a genuinely random CI seed (never sequential
+        // measurement, which had missed it), not a bug: `(70, 18)` to a
+        // T-terminated boundary node paid 292 cells of excess against
+        // the old 2x formula's own 280-cell ceiling.
         let detour_excess_ceiling =
-            2 * cfg.block_size_max_cells as i64 + 2 * cfg.arterial_width_cells as i64;
+            3 * cfg.block_size_max_cells as i64 + 2 * cfg.arterial_width_cells as i64;
         if cfg.max_detour_excess_cells as i64 > detour_excess_ceiling {
             return Err(GenerationError::InvalidConfig(format!(
-                "GenerationConfig: max_detour_excess_cells ({}) is greater than the structural ceiling 2*block_size_max_cells + 2*arterial_width_cells ({detour_excess_ceiling}) -- the worst a rectilinear network should cost a route is going around one largest block",
+                "GenerationConfig: max_detour_excess_cells ({}) is greater than the structural ceiling 3*block_size_max_cells + 2*arterial_width_cells ({detour_excess_ceiling}) -- the worst a rectilinear network should cost a route is going around one largest block plus walking out to and back from a T-terminated dead-end spur",
                 cfg.max_detour_excess_cells
             )));
         }
@@ -833,6 +1001,23 @@ impl GenerationConfig {
     /// the Scale Baseline figure, never a measurement.
     pub fn building_count_target(&self, site_cells: i64) -> i64 {
         (self.envelope_target_count_per_million_cells * site_cells) / 1_000_000
+    }
+
+    /// AC4's own `[min, max]` workplace-count band for a site of
+    /// `site_cells` world cells -- the same shape as
+    /// [`Self::building_count_band`].
+    pub fn workplace_count_band(&self, site_cells: i64) -> (i64, i64) {
+        let target = self.workplace_count_target(site_cells);
+        let tolerance = self.workplace_count_tolerance_percent;
+        let min = target * (100 - tolerance) / 100;
+        let max = target * (100 + tolerance) / 100;
+        (min, max)
+    }
+
+    /// AC4's own scaled workplace target for a site of `site_cells` world
+    /// cells -- the Scale Baseline figure, never a measurement.
+    pub fn workplace_count_target(&self, site_cells: i64) -> i64 {
+        (self.workplace_target_count_per_million_cells * site_cells) / 1_000_000
     }
 
     /// The most a block at `density` may leave as a core before it becomes
@@ -1109,6 +1294,30 @@ mod tests {
                 100,
             ),
             seed("generation.envelopes.max_rejected_plot_percent", 5, 0, 100),
+            seed(
+                "generation.building_types.target_workplaces_per_million_cells",
+                1312,
+                0,
+                1_000_000,
+            ),
+            seed(
+                "generation.building_types.workplace_count_tolerance_percent",
+                30,
+                0,
+                100,
+            ),
+            seed(
+                "generation.building_types.workplace_mean_count_tolerance_percent",
+                5,
+                0,
+                100,
+            ),
+            seed(
+                "generation.building_types.catchment_extent_cells",
+                256,
+                1,
+                100000,
+            ),
         ]
     }
 
@@ -1244,8 +1453,8 @@ mod tests {
     #[test]
     fn from_balance_rejects_max_detour_excess_cells_over_the_structural_ceiling() {
         // fixture: block_size_max_cells=96, arterial_width_cells=12 ->
-        // ceiling = 2*96 + 2*12 = 216.
-        let balance = with_override("generation.streets.max_detour_excess_cells", 217);
+        // ceiling = 3*96 + 2*12 = 312.
+        let balance = with_override("generation.streets.max_detour_excess_cells", 313);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
         assert!(err.to_string().contains("max_detour_excess_cells"));
     }
@@ -1325,17 +1534,37 @@ mod tests {
     #[test]
     fn generate_is_plan_plus_the_building_count_verdict() {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let planned = plan(11, &cfg).unwrap();
-        let generated = generate(11, &cfg).unwrap();
+        let content = GenerationContent::committed();
+        let planned = plan(11, &cfg, &content).unwrap();
+        let generated = generate(11, &cfg, &content).unwrap();
         assert_eq!(planned.plots.plots(), generated.plots.plots());
         assert_eq!(planned.envelopes.outcomes(), generated.envelopes.outcomes());
 
         let mut starved = cfg;
         starved.envelope_target_count_per_million_cells *= 100;
-        assert!(plan(11, &starved).is_ok(), "plan carries no count verdict");
+        assert!(
+            plan(11, &starved, &content).is_ok(),
+            "plan carries no count verdict"
+        );
         assert!(matches!(
-            generate(11, &starved),
+            generate(11, &starved, &content),
             Err(GenerationError::BuildingCountOutOfTolerance { .. })
+        ));
+    }
+
+    #[test]
+    fn generate_fails_the_workplace_count_verdict_when_the_target_is_starved() {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let content = GenerationContent::committed();
+        let mut starved = cfg;
+        starved.workplace_target_count_per_million_cells *= 1000;
+        assert!(
+            plan(11, &starved, &content).is_ok(),
+            "plan carries no workplace count verdict"
+        );
+        assert!(matches!(
+            generate(11, &starved, &content),
+            Err(GenerationError::WorkplaceCountOutOfTolerance { .. })
         ));
     }
 }

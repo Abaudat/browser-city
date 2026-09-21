@@ -1,0 +1,299 @@
+# Story 3.4 (FR116): commercial-land workplace variety (Derek's
+# assumption B: a small set of generic types, never one type repeated;
+# Derek's cycle-1 direction: real variety, 2-4 posts per type, common
+# professions shared across types so they clear 5+ employers naturally).
+# `general_retail`/`cafe` cover the full density and site-context range
+# as the safety net every other, narrower row can lean on --
+# `check_building_type_density_coverage` (`tools/defs-build`) holds this
+# for real rather than trusting it.
+
+[[building_type]]
+id = 5
+key = "general_retail"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 20
+professions = ["shop_clerk", "cashier"]
+
+[[building_type]]
+id = 6
+key = "cafe"
+tags = ["cafe"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 16
+professions = ["barista", "server"]
+
+[[building_type]]
+id = 7
+key = "office_block"
+tags = ["office"]
+land_uses = ["commercial"]
+density_min = 40
+density_max = 100
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 12
+professions = ["clerk", "accountant", "receptionist", "secretary", "manager", "administrator", "security_guard", "cleaner"]
+
+[[building_type]]
+id = 8
+key = "market_hall"
+tags = ["market"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 16
+professions = ["market_vendor", "market_porter"]
+
+[[building_type]]
+id = 9
+key = "bakery"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 12
+professions = ["baker", "shop_clerk"]
+
+[[building_type]]
+id = 10
+key = "butcher"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 12
+professions = ["butcher", "shop_clerk"]
+
+[[building_type]]
+id = 11
+key = "greengrocer"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 12
+professions = ["greengrocer", "shop_clerk"]
+
+[[building_type]]
+id = 12
+key = "pharmacy"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 9
+professions = ["pharmacist", "shop_clerk"]
+
+[[building_type]]
+id = 13
+key = "hardware_shop"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 9
+professions = ["shop_clerk", "sales_assistant"]
+
+[[building_type]]
+id = 14
+key = "bookshop"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 12
+professions = ["bookseller", "cashier", "sales_assistant"]
+
+[[building_type]]
+id = 15
+key = "clothes_shop"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 12
+professions = ["tailor", "cashier", "sales_assistant"]
+
+[[building_type]]
+id = 16
+key = "launderette"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 10
+professions = ["attendant"]
+
+[[building_type]]
+id = 17
+key = "hairdresser"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 12
+professions = ["hairdresser"]
+
+[[building_type]]
+id = 18
+key = "restaurant"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 10
+professions = ["cook", "server"]
+
+[[building_type]]
+id = 19
+key = "pub"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 12
+professions = ["bartender", "cook", "server"]
+
+[[building_type]]
+id = 20
+key = "bank_branch"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 10
+professions = ["bank_teller", "manager", "security_guard", "loan_officer"]
+
+[[building_type]]
+id = 21
+key = "post_office"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 10
+professions = ["clerk", "postal_worker", "driver"]
+
+[[building_type]]
+id = 22
+key = "supermarket"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 15
+professions = [
+  "cashier",
+  "shop_clerk",
+  "stock_clerk",
+  "manager",
+  "security_guard",
+  "cleaner",
+  "assistant_manager",
+]
+
+[[building_type]]
+id = 23
+key = "hotel"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 15
+professions = [
+  "receptionist",
+  "cleaner",
+  "cook",
+  "manager",
+  "concierge",
+  "assistant_manager",
+  "security_guard",
+]
+
+[[building_type]]
+id = 24
+key = "gym"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 10
+professions = ["receptionist", "trainer", "cleaner"]
+
+[[building_type]]
+id = 25
+key = "cinema"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
+weight = 15
+professions = [
+  "cashier",
+  "usher",
+  "cleaner",
+  "security_guard",
+  "projectionist",
+  "assistant_manager",
+]
+
+# A shuttered shopfront is content in this game, not a gap (Derek's
+# direction, PR #317 cycle 2): the one lever that brings the workplace-
+# count pooled mean down to the Scale Baseline target without inflating
+# any one workplace type's own weight -- no `professions`, so it is
+# never a workplace at all.
+[[building_type]]
+id = 45
+key = "vacant_unit"
+tags = ["shop"]
+land_uses = ["commercial"]
+density_min = 0
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 12

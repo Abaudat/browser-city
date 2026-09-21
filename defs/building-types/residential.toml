@@ -1,0 +1,62 @@
+# Story 3.4 (FR116): every dwelling-holding type eligible on residential
+# land. Every row here carries the `dwelling` tag -- this pass's own
+# "one building is one dwelling" unit (Tim's direction) -- so the
+# residential envelope count is, by construction, the dwelling count the
+# distribution rows below read `per`.
+#
+# Density bands overlap only slightly at their edges: `plots.density` is
+# uniform per block, so within any one block only neighbouring bands can
+# ever compete, keeping `no_high_rise_within_a_low_rise_block`
+# (defs/rules/generation.toml) a real guard rather than a rule that can
+# never fire.
+
+[[building_type]]
+id = 1
+key = "villa"
+tags = ["dwelling", "form_low"]
+land_uses = ["residential"]
+density_min = 0
+density_max = 45
+min_interior_width_cells = 6
+min_interior_depth_cells = 6
+weight = 30
+
+[[building_type]]
+id = 2
+key = "terrace_house"
+tags = ["dwelling", "form_mid"]
+land_uses = ["residential"]
+density_min = 35
+density_max = 75
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 40
+
+[[building_type]]
+id = 3
+key = "condo_block"
+tags = ["dwelling", "form_high"]
+land_uses = ["residential"]
+density_min = 60
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 25
+
+# The mixed-use row Derek's direction asks for: shop below, flat above --
+# an ordinary residential-eligible row that also carries a post, not a
+# commercial plot teleported into a terrace. `requires_site = ["corner"]`
+# is the row's own hard eligibility (Derek's direction): a corner shop
+# is on a corner by construction, never by accident.
+[[building_type]]
+id = 4
+key = "corner_shop"
+tags = ["dwelling", "shop", "form_mid"]
+land_uses = ["residential"]
+density_min = 30
+density_max = 100
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 8
+requires_site = ["corner"]
+professions = ["shop_clerk"]

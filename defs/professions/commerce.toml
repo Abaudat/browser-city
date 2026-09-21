@@ -1,0 +1,143 @@
+# Story 3.4: vocabulary only -- id + key, per Derek's direction. Work
+# loops arrive with the job stories; nothing here is a work-loop def.
+# Staffs `defs/building-types/{residential,commercial}.toml`. Keys name
+# trades, never employers (Derek's direction, PR #317 cycle 1): a
+# profession shared across several building types is how it reaches
+# the GDD's own "5+ employers each", and how a citizen changes employer
+# without changing trade.
+
+[[profession]]
+id = 2
+key = "shop_clerk"
+
+[[profession]]
+id = 3
+key = "cashier"
+
+[[profession]]
+id = 4
+key = "stock_clerk"
+
+[[profession]]
+id = 5
+key = "manager"
+
+[[profession]]
+id = 6
+key = "cleaner"
+
+[[profession]]
+id = 7
+key = "security_guard"
+
+[[profession]]
+id = 8
+key = "cook"
+
+[[profession]]
+id = 9
+key = "server"
+
+[[profession]]
+id = 10
+key = "barista"
+
+[[profession]]
+id = 12
+key = "bartender"
+
+[[profession]]
+id = 13
+key = "receptionist"
+
+[[profession]]
+id = 14
+key = "baker"
+
+[[profession]]
+id = 15
+key = "butcher"
+
+[[profession]]
+id = 16
+key = "greengrocer"
+
+[[profession]]
+id = 17
+key = "pharmacist"
+
+[[profession]]
+id = 18
+key = "bookseller"
+
+[[profession]]
+id = 19
+key = "attendant"
+
+[[profession]]
+id = 20
+key = "hairdresser"
+
+[[profession]]
+id = 21
+key = "tailor"
+
+[[profession]]
+id = 22
+key = "market_vendor"
+
+[[profession]]
+id = 23
+key = "market_porter"
+
+[[profession]]
+id = 24
+key = "clerk"
+
+[[profession]]
+id = 25
+key = "accountant"
+
+[[profession]]
+id = 26
+key = "administrator"
+
+[[profession]]
+id = 27
+key = "bank_teller"
+
+[[profession]]
+id = 29
+key = "trainer"
+
+[[profession]]
+id = 30
+key = "usher"
+
+[[profession]]
+id = 31
+key = "sales_assistant"
+
+[[profession]]
+id = 32
+key = "concierge"
+
+[[profession]]
+id = 33
+key = "projectionist"
+
+[[profession]]
+id = 34
+key = "loan_officer"
+
+[[profession]]
+id = 35
+key = "postal_worker"
+
+[[profession]]
+id = 36
+key = "secretary"
+
+[[profession]]
+id = 37
+key = "assistant_manager"

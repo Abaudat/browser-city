@@ -218,11 +218,53 @@ document's own opening paragraph forbids.
 
 ### Building type
 
-- **Receives:** a sealed envelope.
-- **Hands down:** what the building *is* (residential, a named
-  institution, a shop family, a workplace).
-- **Reads:** affluence, land-use mix.
-- **Evidence:** (added when the pass lands.)
+- **Receives:** every placed envelope (pass 4) and each one's own plot
+  (pass 3, for land use and density).
+- **Hands down:** a `defs/building-types/*.toml` id per placed envelope
+  -- never a Rust category. "Institution", "workplace" and "residential"
+  are all *derived*: a workplace is any type whose own `professions`
+  list is non-empty; a municipal service is any type carrying the
+  `municipal_service` tag; a dwelling is any type carrying `dwelling`.
+  Placement is two steps: a weighted draw among every *hard*-eligible
+  type for an envelope's own plot (land use, density band, minimum
+  interior, every `requires_site` context it demands), then a
+  distribution-row override for each named institution (depot, council,
+  hospital, welfare office, shelter), read generically off the committed
+  rule set (`sim::rules::RuleDef::as_distribution`) in ascending rule id
+  order -- never a hand-named placer. Sited, not sprinkled (Derek's
+  direction): an override's own target splits into a per-catchment
+  floor and a site-wide remainder, and within either pool candidates
+  rank by how many of the subject type's own `prefers_site` contexts
+  they match, then `density_affinity`, then a seeded draw key -- never a
+  shuffled list taken greedily. A required institution that cannot be
+  placed is a typed `GenerationError`, never a silently missing one.
+- **Reads:** density, land-use mix (not affluence yet: no pass has
+  authored it on the parameter field -- 3.7 does), plus each envelope's
+  own structural site context (a corner, and the street tier its front
+  faces) -- a type's own `requires_site`/`prefers_site` read this, never
+  a content key reaching the generator (a closed, generator-derived
+  vocabulary, the same standing as `land_uses`).
+- Accepted as built, recorded so nobody relitigates it: one residential
+  building = one dwelling for `per` purposes (Tim's unit). It
+  understates the dense core's own need -- a `condo_block` owes what a
+  `villa` owes -- and a dwellings-per-type count becomes unavoidable
+  once citizens are seeded onto housing.
+- **Evidence:** [`docs/generation/building-types-seed-1.svg`](generation/building-types-seed-1.svg),
+  [`-2`](generation/building-types-seed-2.svg), [`-3`](generation/building-types-seed-3.svg)
+  -- envelopes tinted by a derived, structural class (no per-key branch
+  and no hash: is the `per` basis of a distribution row, housing; is
+  named by a coherence row's own `subject`/`within`, the two form
+  extremes; has posts, workplace; both housing and posts, mixed use;
+  none of these, vacant/yard -- six fixed classes over a fixed palette,
+  so no two unrelated types can ever collide onto one swatch), a
+  distinct marker for every type that is the subject of a committed
+  distribution row this pass actually feeds (map and legend read the
+  shape from the same row list and the same index), a dashed catchment
+  grid with a pink wash over a physically-short catchment (no text on
+  the map itself -- the per/owed/placed figures live in a panel below
+  it, one line per catchment, so labels never cover a building), legend
+  derived from what the district actually places; same regen-and-diff
+  guard.
 
 ### Interior layout
 
@@ -361,6 +403,14 @@ disagree.
 | generation.envelopes.count_tolerance_percent | committed | Building envelope | AC4's per-seed tolerance band around the scaled target, as a percent -- the wild-deviation guard |
 | generation.envelopes.mean_count_tolerance_percent | committed | Building envelope | AC4's pooled band: the mean placed count over the fixed seed range 0..256 must sit within this percent of the scaled target |
 | generation.envelopes.max_rejected_plot_percent | committed | Building envelope | the maximum percent of attempted plots the envelope pass may reject, asserted per city |
+| generation.building_types.target_workplaces_per_million_cells | committed | Building type | AC4's own workplace-count target -- the Scale Baseline's ~344 at 512x512 (`docs/gdd.md`), stated per one million site cells and scaled by real site area, never a measurement |
+| generation.building_types.workplace_count_tolerance_percent | committed | Building type | AC4's per-seed tolerance band around the scaled workplace target, as a percent |
+| generation.building_types.workplace_mean_count_tolerance_percent | committed | Building type | AC4's pooled band: the mean workplace count over the fixed seed range 0..256 must sit within this percent of the scaled target |
+| generation.building_types.target_profession_count | committed | Building type | the pooled target for the count of professions held by at least `min_employers_per_profession` distinct placed workplaces -- the GDD's own ~69, never re-centred on a measurement |
+| generation.building_types.profession_count_mean_tolerance_percent | committed | Building type | the pooled band around `target_profession_count`, as a percent -- the profession catalog itself totals exactly `target_profession_count` rows, two of which stay structurally singleton by design, and institutional land is a small, fixed share of the site (an earlier pass's own limit, not this pass's); the measured pooled mean sits under `target_profession_count` for those reasons, with margin |
+| generation.building_types.profession_count_per_city_min | committed | Building type | a weak, any-seed floor on the count of professions held by at least `min_employers_per_profession` distinct placed workplaces in one city -- the per-city half the pooled mean above says nothing about |
+| generation.building_types.min_employers_per_profession | committed | Building type | the GDD's own "5+ employers each" -- the minimum distinct placed workplaces a profession must be held by to count toward the target above; a singleton institution's own post is deliberately excluded |
+| generation.building_types.catchment_extent_cells | committed | Building type | AC3's own catchment: the fixed-extent square (world cells) a `[[distribution]]` row's own site-wide target is allocated over -- 256 at launch, exactly the four quadrants of a 512x512 site |
 
 ## placement
 | key | status | pass | scope | reads | intent |
@@ -371,11 +421,17 @@ disagree.
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
 | waste_per_three_seating | committed | Prop placement | site | - | **placeholder** -- seating with no bin anywhere nearby, or every bin clumped in one corner while the rest of the street collects litter; scoped `site` because distribution's own coverage math already is -- "Does not fit"'s distribution gap below is this row's own answer to how it behaves when the site grows |
+| depot_present | committed | Building type | site | - | a depot per roughly `ratio` dwellings, never clustered with another depot -- "the district has a depot" (AC2); `max_distance` set past the site's own diagonal on purpose (no coverage ceiling on a municipal row, Derek's direction) |
+| council_present | committed | Building type | site | - | same shape, the council |
+| hospital_present | committed | Building type | site | - | same shape, the hospital |
+| welfare_office_present | committed | Building type | site | - | welfare offices at a real ratio (never a singleton), spaced apart -- they sit where land is cheap, and the walk to them is content (Derek's direction), never guaranteed near |
+| shelter_present | committed | Building type | site | - | same shape, shelters |
 
 ## coherence
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
 | no_counter_in_a_stairwell | committed | Interior layout | room | - | **placeholder** -- a shop till standing on a stairwell landing |
+| no_high_rise_within_a_low_rise_block | committed | Building type | building | - | AC1, "no skyscraper among villas": a `form_high` building never shares a block with a `form_low` one -- the form-class scale is `defs/tags/generation.toml`'s own vocabulary, never a type key |
 
 ## adjacency
 | key | status | pass | scope | reads | intent |
@@ -473,17 +529,37 @@ assumed:
   friction-is-content law above) cannot be written as a rule until this
   exists. Owned by the neighbourhood-character story, unless an earlier
   pass needs it first.
-- **Distribution cannot be scoped below the whole site.** A
-  distribution row's ratio, spacing and coverage are "measured over the
+- **A `[[distribution]]` row itself cannot be scoped below the whole
+  site.** A row's ratio, spacing and coverage are "measured over the
   whole site... never a per-container one" (`sim::rules::mod.rs`), so
   every distribution row is whole-site by construction -- itself "the
   expensive exception" the city-grows law above asks each such row to
   explain, and a whole-site constant with a coverage ceiling is what
   the friction-is-content law calls a design defect if service
-  coverage should instead thin toward the periphery. The periphery as a
-  density falloff cannot be judged by the harness (FR112: generator and
-  harness read one source) until this exists. Owned by the first story
-  that adds a real distribution row.
+  coverage should instead thin toward the periphery. Story 3.4's own
+  five real rows (`depot_present`, `council_present`,
+  `hospital_present`, `welfare_office_present`, `shelter_present`) each
+  set `max_distance` past the site's own diagonal, so the engine's own
+  coverage half never fires at all (Derek's direction: no coverage
+  ceiling on a municipal row). "Evenly spread" is closed on the
+  generator side instead: `sim::generation::building_types::run`
+  splits each row's own whole-site target (the same figure the engine's
+  own ratio check computes) into a floor per catchment -- a fixed-extent
+  square tiling the site (`generation.building_types.catchment_extent_
+  cells`) -- and a site-wide remainder (PR #317 cycle 2: never a
+  proportional remainder, which handed a civic building's own share to
+  whichever catchment held the most dwellings rather than its own
+  preferred site), and `inv_generation_no_quadrant_lacks_its_required_
+  services` checks every catchment clears its own floor, per seed, for
+  real. The gap this leaves is narrower
+  than "distribution is whole-site": a `[[distribution]]` row's own
+  ratio/spacing/coverage fields still cannot themselves be scoped below
+  the whole site -- only the generator's own constructive placement can
+  -- so a rule-row author still cannot express "evenly spread" as data
+  the engine checks on its own. Issue #84 owns closing that (Tim's
+  direction for this story: no per-container scoping in the engine
+  itself, since that is a real engine feature, not something this
+  story's own generator change should carry quietly).
 
 A rule that cannot be expressed as one of the five kinds over tags for
 any other reason is written here too, with why -- a signal that a

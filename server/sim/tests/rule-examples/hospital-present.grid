@@ -1,0 +1,6 @@
+rules: hospital_present
+expect: pass
+floor: 0
+legend: H=hospital
+grid:
+H.

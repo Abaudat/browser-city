@@ -50,6 +50,7 @@ enum Kind {
     Recipes,
     Professions,
     Chains,
+    BuildingTypes,
     Balance,
     PageGroups,
     Appearance,
@@ -77,6 +78,7 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
         "recipes" => Ok(Kind::Recipes),
         "professions" => Ok(Kind::Professions),
         "chains" => Ok(Kind::Chains),
+        "building-types" => Ok(Kind::BuildingTypes),
         "balance" => Ok(Kind::Balance),
         "atlas" => Ok(Kind::PageGroups),
         "appearance" => Ok(Kind::Appearance),
@@ -88,7 +90,7 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
             1,
             1,
             format!(
-                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/recipes/professions/chains/balance/atlas/appearance/tags/rules/archetypes"
+                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/recipes/professions/chains/building-types/balance/atlas/appearance/tags/rules/archetypes"
             ),
         )),
     }
@@ -177,6 +179,27 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         id: located(text, &c.id),
                         key: located(text, &c.key),
                         links: c.links,
+                    });
+                }
+            }
+            Kind::BuildingTypes => {
+                let file: BuildingTypeFile = parse_toml(path, text)?;
+                for b in file.building_type {
+                    raw.building_types.push(BuildingTypeEntry {
+                        path: path.clone(),
+                        id: located(text, &b.id),
+                        key: located(text, &b.key),
+                        tags: b.tags,
+                        land_uses: b.land_uses,
+                        density_min: b.density_min,
+                        density_max: b.density_max,
+                        min_interior_width_cells: b.min_interior_width_cells,
+                        min_interior_depth_cells: b.min_interior_depth_cells,
+                        weight: b.weight,
+                        requires_site: b.requires_site,
+                        prefers_site: b.prefers_site,
+                        density_affinity: b.density_affinity,
+                        professions: b.professions,
                     });
                 }
             }

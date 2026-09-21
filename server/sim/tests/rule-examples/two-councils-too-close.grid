@@ -1,0 +1,8 @@
+rules: council_present
+expect: fail
+floor: 0
+legend: C=council
+grid:
+CC
+violations:
+council_present at (1, 0, 0)

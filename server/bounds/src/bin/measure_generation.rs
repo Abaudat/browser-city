@@ -1,8 +1,9 @@
-//! Re-measures every statistically-derived key in `generation.plots.*`
-//! and `generation.envelopes.*` (`max_open_percent_by_count/area`,
-//! `max_unplotted_percent`, `max_rejected_plot_percent`,
-//! `target_count_per_million_cells`, `count_tolerance_percent`,
-//! `mean_width/depth_cells`) over seeds `0..50_000` at the committed
+//! Re-measures every statistically-derived key in `generation.plots.*`,
+//! `generation.envelopes.*` and `generation.streets.*`
+//! (`max_open_percent_by_count/area`, `max_unplotted_percent`,
+//! `max_rejected_plot_percent`, `target_count_per_million_cells`,
+//! `count_tolerance_percent`, `mean_width/depth_cells`, `max_detour_
+//! excess_cells`) over seeds `0..50_000` at the committed
 //! `defs::BALANCE`. A binary, not a test: too slow for every CI run, and
 //! `scripts/ci/check-trace-matrix.sh` refuses a skipped test.
 //!
@@ -12,12 +13,24 @@
 //!
 //! Prints min/p1/p50/p99/max, mean and standard deviation for building
 //! count, rejection percent, open-plot percent (by count and by area),
-//! unplotted percent and per-city mean envelope width/depth (x10).
+//! unplotted percent, per-city mean envelope width/depth (x10) and
+//! street-network detour excess (one entry per sampled pair, every
+//! seed) -- the last re-derives `generation.streets.max_detour_excess_
+//! cells`'s own comment (PR #317 cycle 5: "put the worst-excess
+//! statistic in measure-generation", never a temporary, uncommitted
+//! property).
+
+use std::collections::BTreeMap;
 
 use sim::generated::defs;
-use sim::generation::{GenerationConfig, envelopes};
+use sim::generation::{GenerationConfig, GenerationContent, building_types, envelopes, streets};
 
 const SEED_COUNT: u64 = 50_000;
+/// Story 3.4's own pass adds `sim::rules::evaluate` over the whole
+/// finished district on top of pass 5's own placement -- measured over a
+/// smaller range than the four-pass stats above so this binary still
+/// finishes in a reasonable time; still large enough to see a real tail.
+const BUILDING_TYPE_SEED_COUNT: u64 = 5_000;
 
 struct Stats {
     values: Vec<i64>,
@@ -70,6 +83,7 @@ impl Stats {
 
 fn main() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).expect("committed balance is valid");
+    let content = GenerationContent::committed();
     let site = cfg.site();
     println!(
         "measure-generation: {SEED_COUNT} seeds at {}x{} cells",
@@ -88,10 +102,27 @@ fn main() {
     let (mut min_count, mut max_count) = ((i64::MAX, 0u64), (i64::MIN, 0u64));
     let mut open_slivers = 0u64;
     let mut sliver_blocks = 0u64;
+    // The detour-excess ceiling's own worst-case statistic (PR #317
+    // cycle 5, Quentin's direction: "put the worst-excess statistic in
+    // measure-generation so the number in the comment can be
+    // re-derived", never a temporary, uncommitted property). One entry
+    // per sampled pair, every seed -- `DetourSample::excess_cells()`,
+    // the same additive Manhattan-fitness overshoot `generation.
+    // streets.max_detour_excess_cells` bounds.
+    let mut detour_excess: Vec<i64> = Vec::new();
+    let mut detour_excess_max: (i64, u64, (i32, i32), (i32, i32)) = (i64::MIN, 0, (0, 0), (0, 0));
 
     for seed in 0..SEED_COUNT {
-        let d = sim::generation::plan(seed, &cfg).expect("pass 1 is total");
+        let d = sim::generation::plan(seed, &cfg, &content).expect("pass 1 is total");
         let (net, pm, em) = (&d.streets, &d.plots, &d.envelopes);
+
+        for s in net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES) {
+            let excess = s.excess_cells();
+            detour_excess.push(excess);
+            if excess > detour_excess_max.0 {
+                detour_excess_max = (excess, seed, s.a, s.b);
+            }
+        }
 
         let placed = em.placed_count();
         if placed < min_count.0 {
@@ -150,4 +181,87 @@ fn main() {
     Stats::new(unplotted_percent).print("unplotted_percent");
     Stats::new(mean_width_x10).print("mean_width_cells_x10");
     Stats::new(mean_depth_x10).print("mean_depth_cells_x10");
+    Stats::new(detour_excess).print("detour_excess_cells");
+    println!(
+        "detour_excess_cells worst: {} at seed {} ({:?}-{:?}) -- pin the seed in invariants.rs's PINNED_DETOUR_SEEDS if it moves",
+        detour_excess_max.0, detour_excess_max.1, detour_excess_max.2, detour_excess_max.3
+    );
+
+    // -- story 3.4: building types -------------------------------------
+    let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let mut dwelling_count = Vec::with_capacity(BUILDING_TYPE_SEED_COUNT as usize);
+    let mut workplace_count = Vec::with_capacity(BUILDING_TYPE_SEED_COUNT as usize);
+    let mut per_tag_min: BTreeMap<u32, i64> = BTreeMap::new();
+    let mut per_tag_sum: BTreeMap<u32, i64> = BTreeMap::new();
+    let mut rule_violation_seeds = 0u64;
+    // Per seed: how many distinct professions this one city employs at
+    // >=5 distinct workplaces -- pooled (meaned) over every seed below,
+    // the same two-step AC4 shape as building/workplace count.
+    let mut deep_profession_count = Vec::with_capacity(BUILDING_TYPE_SEED_COUNT as usize);
+    let mut profession_sum: BTreeMap<&str, u64> = BTreeMap::new();
+
+    for seed in 0..BUILDING_TYPE_SEED_COUNT {
+        let d = sim::generation::plan(seed, &cfg, &content).expect("pass 1 is total");
+        let mut tag_counts: BTreeMap<u32, i64> = BTreeMap::new();
+        let mut workplaces = 0i64;
+        let mut employers_this_city: BTreeMap<&str, u64> = BTreeMap::new();
+        for a in d.building_types.assignments() {
+            let def = by_id[&a.building_type];
+            for &t in def.tags {
+                *tag_counts.entry(t).or_insert(0) += 1;
+            }
+            if building_types::is_workplace(def) {
+                workplaces += 1;
+                for &p in def.professions {
+                    *employers_this_city.entry(p).or_insert(0) += 1;
+                }
+            }
+        }
+        dwelling_count.push(*tag_counts.get(&18).unwrap_or(&0)); // "dwelling" tag id
+        workplace_count.push(workplaces);
+        for (&tag, &count) in &tag_counts {
+            per_tag_sum
+                .entry(tag)
+                .and_modify(|s| *s += count)
+                .or_insert(count);
+            per_tag_min
+                .entry(tag)
+                .and_modify(|m| *m = (*m).min(count))
+                .or_insert(count);
+        }
+        deep_profession_count
+            .push(employers_this_city.values().filter(|&&c| c >= 5).count() as i64);
+        for (&p, &c) in &employers_this_city {
+            *profession_sum.entry(p).or_insert(0) += c;
+        }
+        if let Err(e) = d.check_rules(&content) {
+            rule_violation_seeds += 1;
+            eprintln!("seed {seed}: real rule violation: {e:?}");
+        }
+    }
+
+    Stats::new(dwelling_count).print("dwelling_count");
+    Stats::new(workplace_count).print("workplace_count");
+    println!(
+        "seeds (0..{BUILDING_TYPE_SEED_COUNT}) with a real rule violation: {rule_violation_seeds}"
+    );
+    println!("per-tag placed count, min and pooled mean over 0..{BUILDING_TYPE_SEED_COUNT}:");
+    for (&tag, &min) in &per_tag_min {
+        let mean = per_tag_sum[&tag] as f64 / BUILDING_TYPE_SEED_COUNT as f64;
+        println!("  tag {tag}: min={min} mean={mean:.2}");
+    }
+    let mut by_mean: Vec<(&str, f64)> = profession_sum
+        .iter()
+        .map(|(&p, &s)| (p, s as f64 / BUILDING_TYPE_SEED_COUNT as f64))
+        .collect();
+    by_mean.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    println!("per-profession pooled mean employer count (below 5 shown first):");
+    for (p, mean) in &by_mean {
+        if *mean < 8.0 {
+            println!("  {p}: {mean:.2}");
+        }
+    }
+    Stats::new(deep_profession_count)
+        .print("professions_employed_by_5_plus_workplaces_per_city (Scale Baseline target ~69)");
 }

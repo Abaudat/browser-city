@@ -19,7 +19,7 @@
 //! envelopes sizes one plot at a time).
 
 use sim::generated::defs;
-use sim::generation::{GenerationConfig, LandUse, generate, land_use, streets};
+use sim::generation::{GenerationConfig, GenerationContent, LandUse, generate, land_use, streets};
 
 #[test]
 fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
@@ -28,11 +28,17 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // cells (16), same divisibility rule `from_balance` enforces for the
     // live 512 value.
     cfg.site_extent_cells = 1024;
+    let content = GenerationContent::committed();
 
     // The one entry point, not a hand-chain (`docs/architecture.md`): at
     // the growth target the count band scales with site area, so a seed
-    // that clears it at 512 clears it here too.
-    let d = generate(7, &cfg)
+    // that clears it at 512 clears it here too. Includes pass 5's own
+    // `rules::evaluate` over the whole finished `DistrictSite` (story
+    // 3.4) -- distribution's spacing/coverage checks are the first real
+    // pairwise cost the generator pays, bucketed rather than all-pairs
+    // (`sim::rules::mod.rs`), so this growth-target run is itself the
+    // structural proof that stays linear too.
+    let d = generate(7, &cfg, &content)
         .unwrap_or_else(|e| panic!("the 1024 growth target must still generate: {e}"));
     let lu = &d.land_use;
     let net = &d.streets;
@@ -146,4 +152,85 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // separate ceiling needed beyond `max_plots` above.
     assert!(em.outcomes().len() as u64 <= max_plots);
     assert!(!em.outcomes().is_empty());
+
+    // Story 3.4: one type assignment per placed envelope, never more.
+    assert_eq!(
+        d.building_types.assignments().len(),
+        em.placed_count() as usize
+    );
+
+    // Pass 5's own distribution-override scan (Quentin's direction, PR
+    // #317 cycle 2): each row's own farthest-point selection re-scans its
+    // whole remaining candidate pool per pick, so its real cost is
+    // candidates x chosen -- `envelope count x (per-tag count / ratio)`
+    // -- quadratic in site area with a small constant (`1 / ratio`), not
+    // linear as an earlier comment here claimed. What keeps that
+    // constant small, and the ceiling this asserts: `chosen` never
+    // exceeds `sim::rules::evaluate`'s own site-wide Distribution target
+    // (`basis / ratio`, floor) -- the same bound `inv_generation_
+    // building_type_pass::a_committed_distribution_row_never_exceeds_
+    // its_own_site_wide_target` holds at the live config, checked here
+    // at the 1024 growth target instead.
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let mut tag_counts: std::collections::BTreeMap<sim::rules::TagId, u64> =
+        std::collections::BTreeMap::new();
+    for a in d.building_types.assignments() {
+        for &t in by_id[&a.building_type].tags {
+            *tag_counts.entry(t).or_insert(0) += 1;
+        }
+    }
+    let mut dist_rows: Vec<sim::rules::DistributionRow> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .collect();
+    dist_rows.sort_by_key(|r| r.id);
+    for row in &dist_rows {
+        let basis = tag_counts.get(&row.per).copied().unwrap_or(0);
+        let ratio = row.ratio.max(1) as u64;
+        let ceiling = basis / ratio;
+        let chosen = tag_counts.get(&row.subject).copied().unwrap_or(0);
+        assert!(
+            chosen <= ceiling,
+            "rule {} placed {chosen} subjects, past the ratio-derived ceiling {ceiling} (basis {basis} / ratio {ratio})",
+            row.key
+        );
+    }
+}
+
+/// Tim's direction, PR #317 cycle 4: pass 5's own distribution-override
+/// selection (`building_types::place_row`, over `backtrack_search`) is
+/// an exhaustive independent-set search bounded by a committed node
+/// budget, never a stopwatch -- the structural ceiling this file's own
+/// convention already asks for. A few hundred candidates laid out in
+/// tight, mutually-`min_spacing`-conflicting clusters (so the real
+/// maximum independent set is small -- one per cluster), a `target`
+/// above the cluster count so it is unreachable and the search cannot
+/// short-circuit on early success: the node count the search actually
+/// used never exceeds the committed budget, and the selection it
+/// returns is still the real maximum (one per cluster), never fewer.
+#[test]
+fn placement_search_stays_within_its_own_node_budget_at_a_few_hundred_candidates() {
+    const CLUSTERS: usize = 25;
+    const PER_CLUSTER: usize = 20; // 500 candidates total.
+    const MIN_SPACING: u32 = 10;
+    let target = CLUSTERS + 10; // unreachable: only CLUSTERS are ever mutually compatible.
+
+    let (best_len, nodes) = sim::generation::building_types::placement_search_node_budget_probe(
+        CLUSTERS,
+        PER_CLUSTER,
+        MIN_SPACING,
+        target,
+    );
+
+    assert_eq!(
+        best_len, CLUSTERS,
+        "the real maximum here is exactly one candidate per cluster"
+    );
+    assert!(
+        nodes <= sim::generation::building_types::PLACEMENT_SEARCH_NODE_BUDGET,
+        "the search used {nodes} nodes, past its own {}-node budget",
+        sim::generation::building_types::PLACEMENT_SEARCH_NODE_BUDGET
+    );
 }

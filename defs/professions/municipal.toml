@@ -1,0 +1,85 @@
+# Story 3.4: vocabulary only -- staffs `defs/building-types/
+# institutional.toml`. `councillor` (council) and `surgeon` (hospital)
+# are held only by their own singleton type -- deliberately excluded
+# from the pooled profession-depth target. `council`'s own clerk/
+# administrator posts were folded into the shared `clerk`/`administrator`
+# trades below (PR #317 cycle 2, Derek's direction), and `shelter`'s own
+# attendant post into `attendant` (`defs/professions/commerce.toml`,
+# also `launderette`) -- see `industry.toml`'s own header for the same
+# fold on `depot`.
+
+[[profession]]
+id = 56
+key = "caseworker"
+
+[[profession]]
+id = 58
+key = "teacher"
+
+[[profession]]
+id = 59
+key = "teaching_assistant"
+
+[[profession]]
+id = 60
+key = "nurse"
+
+[[profession]]
+id = 61
+key = "orderly"
+
+[[profession]]
+id = 62
+key = "doctor"
+
+[[profession]]
+id = 63
+key = "librarian"
+
+[[profession]]
+id = 64
+key = "officer"
+
+[[profession]]
+id = 65
+key = "firefighter"
+
+[[profession]]
+id = 66
+key = "dispatcher"
+
+[[profession]]
+id = 67
+key = "archivist"
+
+[[profession]]
+id = 68
+key = "detective"
+
+[[profession]]
+id = 69
+key = "paramedic"
+
+[[profession]]
+id = 70
+key = "conductor"
+
+[[profession]]
+id = 71
+key = "counsellor"
+
+[[profession]]
+id = 72
+key = "support_worker"
+
+[[profession]]
+id = 73
+key = "custodian"
+
+[[profession]]
+id = 76
+key = "councillor"
+
+[[profession]]
+id = 77
+key = "surgeon"

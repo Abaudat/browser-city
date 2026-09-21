@@ -353,14 +353,28 @@ max = 500
 # The additive Manhattan-fitness ceiling, in world cells, applied to
 # every sampled pair regardless of distance -- what a short hop actually
 # pays for, where a ratio is dominated by a single jitter-driven jog.
-# Structurally bounded, not just measured (Quentin's direction, cycle
-# 3): the worst a rectilinear network should cost a route is going
-# around one largest block, so `from_balance` refuses a value over
-# `2 * block_size_max_cells + 2 * arterial_width_cells`. Measured worst
-# case, same scan: 258 cells; 280 is both that plus margin and exactly
-# that structural ceiling at this generator's other committed values.
+# Structurally bounded as well as measured (Quentin's direction, cycles
+# 3 and 5, PR #294 and #317): the worst a rectilinear network should
+# cost a route is going around one largest block *and* walking out to
+# and back from a T-terminated dead-end spur (Artie's direction: "at
+# most one arterial line per city stops short of the far site edge"),
+# reachable by exactly one path -- `from_balance` refuses a value over
+# `3 * block_size_max_cells + 2 * arterial_width_cells` (408 at this
+# generator's other committed values), a separate, higher refusal
+# ceiling than the value below, the same shape `max_detour_percent`
+# holds. The spur case was found too narrow by a genuinely random CI
+# seed (`10778299729582344780`, pinned as `invariants.rs`'s own
+# `detour_excess_holds_at_a_pinned_t_terminated_spur_seed`, `PINNED_
+# DETOUR_SEEDS`): 292 cells against the old (2x-formula, spur-blind)
+# 280-cell value. Re-measured, `cargo run -p bounds --release --bin
+# measure-generation`'s own `detour_excess_cells` statistic: worst 276
+# over 50,000 *sequential* seeds -- a genuinely random `proptest` sweep
+# (never sequential, the same lesson this story's own content tuning
+# learned) found 296 over ~230,000 seeds. 320 is that plus the same
+# ~8% order of margin the original 258-to-280 value held, real margin
+# under the 408 structural ceiling.
 key = "generation.streets.max_detour_excess_cells"
-value = 280
+value = 320
 min = 1
 max = 2048
 
@@ -792,3 +806,153 @@ key = "generation.envelopes.max_rejected_plot_percent"
 value = 1
 min = 0
 max = 100
+
+# --- building types (pass 5) -------------------------------------------
+
+[[balance]]
+# AC4's own workplace-count target, stated per one million site cells and
+# scaled by real site area inside `District::check_workplace_count` --
+# the Scale Baseline's ~344 workplaces at 512x512 (262,144 cells,
+# docs/gdd.md), never a measurement: 1312 * 262144 / 1e6 = ~344.
+key = "generation.building_types.target_workplaces_per_million_cells"
+value = 1312
+min = 1
+max = 1000000
+
+[[balance]]
+# The per-seed tolerance band around the scaled workplace target, as a
+# percent -- the wild-deviation guard, same shape as
+# `generation.envelopes.count_tolerance_percent`. Wider than the
+# building-count guard's own 21%: workplace count is a *derived*
+# quantity (every placed type whose own `professions` list is non-empty),
+# not a placement pass 4 tunes directly. Measured over 5,000 seeds
+# (`cargo run -p bounds --release --bin measure-generation`, after
+# adding `vacant_unit`/`storage_yard` -- no-post filler types, PR #317
+# cycle 2, Derek's direction: "a shuttered shopfront is content, not a
+# gap" -- to tune the pooled mean onto the target instead of widening the
+# band around it): mean 345.4, stddev 30.0, min 230, max 473. 5.5 * 30.0
+# / 344 = 48.0%; 50% covers the measured min (344-230=114, 33.1%) and max
+# (473-344=129, 37.5%) with real margin, the same sigma rule
+# `generation.envelopes.count_tolerance_percent` states. Re-derive after
+# every retune.
+key = "generation.building_types.workplace_count_tolerance_percent"
+value = 50
+min = 1
+max = 100
+
+[[balance]]
+# The pooled half: the mean workplace count over the exact fixed seed
+# range 0..256 `inv_generation_workplace_count_mean_matches_the_scale_
+# baseline` pools over must sit within this percent of the scaled target
+# (344). Tuned onto the target this cycle (Quentin's/Tim's direction:
+# "tune to the target, not the band to the mean") rather than widened
+# around a measured miss -- the pooled-over-0..256 mean now lands within
+# 3% of 344, the same order 3.3 holds building count to. Re-derive after
+# every retune.
+key = "generation.building_types.workplace_mean_count_tolerance_percent"
+value = 3
+min = 0
+max = 100
+
+[[balance]]
+# The GDD Scale Baseline's own figure (docs/gdd.md, NFR14), never a
+# measurement (PR #317 cycle 1: this exact key was rejected once already
+# at a measured 13) -- content is authored, and tuned, to meet it. 44
+# building types across `defs/building-types/*.toml`, 69 profession rows
+# (`defs/professions/*.toml`), heavily cross-shared (Derek's direction,
+# cycle 2: name trades, not employers -- `council_clerk`/`post_clerk`
+# folded into one shared `clerk`, `depot_mechanic` into `mechanic`, and
+# so on -- a profession held by several building types is how it clears
+# 5+ employers and how a citizen changes employer without changing
+# trade).
+key = "generation.building_types.target_profession_count"
+value = 69
+min = 1
+max = 1000
+
+[[balance]]
+# The pooled band around the target above, as a percent. The profession
+# *catalog* itself totals exactly 69 rows (folding the employer-
+# prefixed duplicates cycle 2 named removed 8 rows outright --
+# `waiter`/`post_clerk`/`depot_dispatcher`/`depot_mechanic`/`refuse_
+# collector`/`council_clerk`/`council_administrator` folded into an
+# existing shared trade, `shelter_attendant`/`launderette_attendant`
+# folded into one new `attendant`), and `councillor`/`surgeon` stay
+# structurally singleton (one employer only, by design, per Derek's own
+# direction) -- so `target_profession_count = 69` asks for essentially
+# full catalog saturation in every city, including the two rows that
+# can never count.
+#
+# PR #317 cycle 4 (Derek's direction): a post is listed on a building
+# type only if a citizen walking into that building would expect to
+# find that trade working there -- cycle 3's own detective-at-bank-
+# branch, firefighter/paramedic-at-police-station, officer/detective-
+# at-fire-station, conductor-at-depot and teacher/teaching_assistant-
+# at-library moved the mean by posting trades nowhere real, and were
+# reverted. Honest sharing kept or added instead: `doctor` at hospital
+# (already a clinic's); `orderly` at clinic (already a hospital's);
+# `nurse`/`cook` at school (already a clinic's/hospital's, and a
+# hotel's/pub's); `caseworker`/`counsellor` at shelter and `support_
+# worker` at welfare office (each already the other's); `sanitation_
+# worker` at recycling facility (already a depot's); `administrator` at
+# office block (already shared among school/police/fire/transit/
+# council), hospital and clinic; `security_guard`/`cleaner` at office
+# block (already at supermarket/cinema/hotel and elsewhere);
+# `receptionist` at council, library, police station, fire station and
+# transit office (every front desk a real one); `dispatcher` at fire
+# station (already a depot's/transit office's); `driver` at depot and
+# post office (already at warehouse/builders yard/food plant);
+# `mechanic` at transit office (already at vehicle repair garage).
+# Measured, `cargo run -p bounds --release --bin measure-generation`:
+# mean 61.2, stddev 3.3 over 50,000 seeds -- 11% short of 69, a real,
+# disclosed content-depth gap (institutional land is a small, fixed
+# share of the site, and several trades genuinely belong to only one or
+# two building types) that closes as job stories add building types,
+# not a target this PR can honestly close further without inventing a
+# post nobody holds. 15% covers the measured mean with real margin.
+# Re-derive after every retune.
+key = "generation.building_types.profession_count_mean_tolerance_percent"
+value = 15
+min = 0
+max = 100
+
+[[balance]]
+# The minimum number of distinct placed workplaces a profession must be
+# held by to count toward the target above (the GDD's "5+ employers
+# each") -- a monopsony (a singleton institution's own post) is
+# institutional friction, deliberately excluded (Derek's direction).
+key = "generation.building_types.min_employers_per_profession"
+value = 5
+min = 1
+max = 1000
+
+[[balance]]
+# Quentin's direction, PR #317 cycle 2: the per-city half `profession_
+# count_mean_tolerance_percent` above lacks entirely -- the pooled mean
+# alone lets a single unlucky city sit far below it and nothing notices.
+# A weak any-seed floor, the same sigma-margin rule `generation.
+# envelopes.count_tolerance_percent` states. Re-measured after reverting
+# the dishonest trade-sharing (PR #317 cycle 4): mean 61.2, stddev 3.3
+# over 50,000 seeds; mean - 5.5*stddev = 43.05, and the real measured
+# min over that same run is 44 -- comfortably above it this time. 40
+# leaves real margin under both. Re-derive after every retune.
+key = "generation.building_types.profession_count_per_city_min"
+value = 40
+min = 1
+max = 1000
+
+[[balance]]
+# AC3 (Derek's/Tim's direction, PR #317 cycle 1): a distribution row's
+# own target is allocated per catchment -- a fixed-extent square of the
+# parameter field, proportional to the dwellings in that catchment,
+# rounded down, the site's own remaining budget then apportioned to the
+# catchments with the largest remainder first (so the sum across
+# catchments matches the whole-site floor(dwellings/ratio) the engine's
+# own Distribution check reads). 256 at launch: the site is 512x512, so
+# catchments are exactly AC3's own quadrants; never a hardcoded 2x2 of
+# the site -- a grown site (Epic 14) adds catchments, it never re-judges
+# an old one.
+key = "generation.building_types.catchment_extent_cells"
+value = 256
+min = 1
+max = 100000

@@ -14,6 +14,23 @@ carries a permanent `id`/`key`. `sim::rules::evaluate` is the one
 evaluator; see `docs/architecture.md`'s "Rules" section for the full
 grammar of each kind.
 
+## Building types
+
+`defs/building-types/*.toml` (story 3.4, FR116): what a generated
+envelope *is* -- `sim::generation::building_types` reads this kind, never
+a Rust enum. A row: permanent `id`/`key`; `tags` (real tags, like an
+object's own); `land_uses` (one or more of `residential`/`commercial`/
+`industrial`/`institutional`); `density_min`/`density_max`; `min_interior_
+width_cells`/`min_interior_depth_cells`; `weight` (the ordinary weighted-
+fill draw -- `0` means "placed only by a `[[distribution]]` row's own
+override, never fill"); `professions` (`{ profession = "<key>", headcount
+= <n> }` pairs, keys into `defs/professions/*.toml`). No `count`/
+`unique`/`required` field: how many of a type exist is a rule
+(`[[distribution]]`), never a field on the type itself. "Institution",
+"workplace" and "residential" are all *derived* -- from `tags`
+(`municipal_service`, `dwelling`) or from `professions` being non-empty
+-- never a stored category.
+
 ## The example corpus
 
 Every committed rule key must be named by at least one passing example

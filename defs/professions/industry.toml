@@ -1,0 +1,70 @@
+# Story 3.4: vocabulary only -- staffs `defs/building-types/
+# industrial.toml`. `depot`'s own employer-prefixed posts were folded
+# into shared trades (PR #317 cycle 2, Derek's direction): `dispatcher`
+# (`defs/professions/municipal.toml`, also `transit_office`), `mechanic`
+# (below, also `vehicle_repair_garage`) and `sanitation_worker`
+# (`defs/professions/sanitation.toml`, the chain-linked launch job) --
+# `depot` is still the only employer holding no `min_employers_per_
+# profession` threshold of its own (a monopsony is institutional
+# friction, deliberately excluded from the pooled profession-depth
+# target), it just no longer needs its own dead-end keys to say so.
+
+[[profession]]
+id = 38
+key = "machinist"
+
+[[profession]]
+id = 39
+key = "foreman"
+
+[[profession]]
+id = 40
+key = "warehouse_worker"
+
+[[profession]]
+id = 41
+key = "forklift_operator"
+
+[[profession]]
+id = 42
+key = "machine_operator"
+
+[[profession]]
+id = 43
+key = "quality_inspector"
+
+[[profession]]
+id = 44
+key = "sorter"
+
+[[profession]]
+id = 45
+key = "printer_operator"
+
+[[profession]]
+id = 46
+key = "bookbinder"
+
+[[profession]]
+id = 47
+key = "mechanic"
+
+[[profession]]
+id = 48
+key = "yard_worker"
+
+[[profession]]
+id = 49
+key = "food_packer"
+
+[[profession]]
+id = 50
+key = "supervisor"
+
+[[profession]]
+id = 51
+key = "driver"
+
+[[profession]]
+id = 52
+key = "parts_clerk"

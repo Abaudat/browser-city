@@ -11,7 +11,7 @@
 //! ([`RuleSet::for_test`]), but nothing outside `source`'s own module can
 //! construct a `RuleSet` any other way.
 //!
-//! The engine never sees a content key ("cafe", "villa_district"): it
+//! The engine never sees a content key ("flying_saucer", "villa_district"): it
 //! sees tag ids and integers. `defs/rules/*.toml` authors five closed
 //! kinds (Placement, Distribution, Coherence, Adjacency, Requirement) as
 //! data rows; extending the grammar within a kind is a new row, never a
@@ -267,6 +267,97 @@ pub struct RuleDef {
     pub id: u32,
     pub key: &'static str,
     pub kind: RuleKind,
+}
+
+/// A `Distribution` row's own fields, read-only (story 3.4) -- for the
+/// one caller outside this module that legitimately needs a row's own
+/// ratio/spacing/coverage numbers to place candidates constructively
+/// (Epic 3's `sim::generation::building_types`, which places distributed
+/// types *before* the whole-site `evaluate` verdict can run at all).
+/// [`RuleDef::as_distribution`] is this module's one seam for that: it
+/// narrows to the one kind and never hands back `RuleKind` itself, so
+/// `RuleKind` still never has to appear in a `src/` file outside this
+/// module (`check-rule-source.sh`) -- a caller reads a row's own
+/// numbers, it never gets to match on the engine's closed kind enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DistributionRow {
+    pub id: u32,
+    pub key: &'static str,
+    pub subject: TagId,
+    pub per: TagId,
+    pub ratio: u32,
+    pub tolerance_percent: u32,
+    pub min_spacing: u32,
+    pub max_distance: u32,
+}
+
+/// A `Coherence` row's own fields, read-only (PR #317 cycle 3) -- the
+/// same seam [`DistributionRow`] gives `sim::generation::building_types`,
+/// for the one caller outside this module that legitimately needs a
+/// row's own subject/within tags without ever matching on `RuleKind`
+/// itself: `bounds::generation_evidence`'s own structural (never
+/// tag-name-hashed) tint classes read a coherence row's two named
+/// extremes the same generic way it reads a distribution row's subject.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoherenceRow {
+    pub id: u32,
+    pub key: &'static str,
+    pub subject: TagId,
+    pub within: TagId,
+    pub mode: CoherenceMode,
+}
+
+impl RuleDef {
+    /// `Some` iff this row is a `Distribution` row; `None` for every
+    /// other kind. The one place outside `evaluate` itself that reads
+    /// into `RuleKind`.
+    pub fn as_distribution(&self) -> Option<DistributionRow> {
+        match self.kind {
+            RuleKind::Distribution {
+                subject,
+                per,
+                ratio,
+                tolerance_percent,
+                min_spacing,
+                max_distance,
+            } => Some(DistributionRow {
+                id: self.id,
+                key: self.key,
+                subject,
+                per,
+                ratio,
+                tolerance_percent,
+                min_spacing,
+                max_distance,
+            }),
+            RuleKind::Placement { .. }
+            | RuleKind::Coherence { .. }
+            | RuleKind::Adjacency { .. }
+            | RuleKind::Requirement { .. } => None,
+        }
+    }
+
+    /// `Some` iff this row is a `Coherence` row; `None` for every other
+    /// kind -- [`CoherenceRow`]'s own doc comment.
+    pub fn as_coherence(&self) -> Option<CoherenceRow> {
+        match self.kind {
+            RuleKind::Coherence {
+                subject,
+                within,
+                mode,
+            } => Some(CoherenceRow {
+                id: self.id,
+                key: self.key,
+                subject,
+                within,
+                mode,
+            }),
+            RuleKind::Placement { .. }
+            | RuleKind::Distribution { .. }
+            | RuleKind::Adjacency { .. }
+            | RuleKind::Requirement { .. } => None,
+        }
+    }
 }
 
 /// One rejection: `rule_id`, the offending `subject` cell (Quentin's

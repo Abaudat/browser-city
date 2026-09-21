@@ -1100,23 +1100,34 @@ list -- so one block's (or plot's) own draw count never reshuffles
 another's, and adding a plot to one block never moves any other block's
 or plot's draws.
 
-`generation::plan(city_seed, &cfg) -> Result<District, GenerationError>`
-chains every implemented pass in order with no verdict on the result
-(only pass 1's own site check can fail). `District::check_building_count
-(&cfg)` holds AC4's count verdict, a property of the whole district.
-`generation::generate` is `plan` plus that check, and is what production
-calls. `scripts/ci/check-generation-entry-point.sh` fails the build on
-any `plots::run(`/`envelopes::run(` call under `server/sim/tests/` or
-`server/bounds/` not marked `// generation-entry-point: allow` -- the
-marker is reserved for the two independence properties and the golden's
-pass-2-run-twice test, which deliberately feed one pass a perturbed or
-repeated predecessor; single-pass unit tests live in the pass's own
-module. `GenerationError` is
-the one error type across every implemented pass (`InvalidConfig` from
+`generation::plan(city_seed, &cfg, &content) -> Result<District,
+GenerationError>` chains every implemented pass in order with no verdict
+on the result (only pass 1's own site check can fail). `content` is
+`GenerationContent { rules: RuleSet<'_>, building_types: &[BuildingTypeDef]
+}` -- every content table a pass reads, loaded once
+(`GenerationContent::committed()` wraps `RuleSet::committed()` and
+`defs::BUILDING_TYPES`) and passed down as a struct, never a literal read
+from `defs::` inside a pass; one signature, no `plan_with` twin.
+`District::check_building_count(&cfg)` holds AC4's building-count
+verdict; `District::check_rules(&content)` holds FR112's verdict over the
+finished district's own `DistrictSite` (`sim::rules::evaluate` must find
+no violation); `District::check_workplace_count(&cfg, &content)` holds
+AC4's workplace-count verdict, the same two-band shape as building count.
+`generation::generate` is `plan` plus all three, in that order, and is
+what production calls. `scripts/ci/check-generation-entry-point.sh` fails
+the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`
+call under `server/sim/tests/` or `server/bounds/` not marked `//
+generation-entry-point: allow` -- the marker is reserved for the
+independence properties and the golden's pass-2-run-twice test, which
+deliberately feed one pass a perturbed or repeated predecessor;
+single-pass unit tests live in the pass's own module. `GenerationError`
+is the one error type across every implemented pass (`InvalidConfig` from
 `GenerationConfig::from_balance`, `InvalidSite { site,
 coarse_cell_size_cells }` from pass 1, `BuildingCountOutOfTolerance {
-got, min, max }` from the district's own count check) -- never a
-`Result<_, String>` per pass.
+got, min, max }` from the district's own count check, `RuleViolations {
+count, first }` from `check_rules`, `WorkplaceCountOutOfTolerance { got,
+min, max }` from `check_workplace_count`) -- never a `Result<_, String>`
+per pass.
 
 Coordinates are world-absolute `i32` cells throughout; `SiteBounds` is
 `sim::world::Rect` reused, never a second rect type. `GenerationConfig::
@@ -1179,20 +1190,129 @@ scaled by the real site area and `count_tolerance_percent`; the pooled
 mean over a fixed seed range is held to that same target within
 `mean_count_tolerance_percent`.
 
+Pass 5 (building type, FR116) hands down what each placed envelope *is*:
+a `defs::BuildingTypeDef` id, from the `building-types` def kind
+(`defs/building-types/*.toml` -> `tools/defs-build` ->
+`sim::generated::defs::BUILDING_TYPES`, a permanent append-only
+id/key). A row carries `tags`, `land_uses` (a `[bool; 4]` mask, one per
+`LandUse` variant), `density_min`/`_max`, `min_interior_width_cells`/
+`_depth_cells`, `weight`, `requires_site`/`prefers_site` (each a
+`[bool; 4]` mask over the same closed structural vocabulary --
+`corner`, and the street tier an envelope's own front faces:
+`arterial`/`street`/`lane`, `tools/defs-build`'s own `RawSiteContext`
+order), `density_affinity` and `professions` (a plain profession key
+list, into `defs/professions/`) -- never a `count`/`unique`/`required`
+field: how many of something exist is a rule (a `[[distribution]]`
+row), never a field on the type. "Institution", "workplace" and
+"dwelling" are all *derived*, never a stored category: a workplace is
+any type whose own `professions` is non-empty, a municipal service
+carries the `municipal_service` tag, a dwelling carries `dwelling`.
+
+`building_types::run` places constructively, in two steps: a weighted
+draw among every *hard*-eligible type for an envelope's own plot (land
+use, density band, minimum interior, every `requires_site` context it
+demands) first, seeded from the envelope's own footprint
+(`rect_seed_key`, never list position); then, for every committed
+`[[distribution]]` row, read generically through `sim::rules::RuleDef::
+as_distribution` (never by matching the rule engine's own closed kind
+enum) in ascending rule id order, an override onto a named institution
+among the still-eligible envelopes. A row's own whole-site target
+(`per`-tag count / `ratio`, the same figure `sim::rules::evaluate`'s
+own Distribution check computes) splits into a *floor* per catchment --
+a fixed-extent square tiling the site (`GenerationConfig::building_
+type_catchment_extent_cells`) -- and a site-wide *remainder*: each
+catchment owes exactly `floor(per-tag count in that catchment /
+ratio)`, never a share inflated by how much of the `per` tag it happens
+to hold (a proportional remainder drags a civic building toward
+whichever catchment holds the most dwellings, not toward its own
+preferred site); the units the floors do not account for are placed
+site-wide instead. Both the per-catchment floor and the site-wide
+remainder place through the one `place_row`, sharing one running
+`min_spacing` state (`chosen_cells`) so nothing before or after a
+catchment boundary clusters. Within either pool, candidates are ranked
+-- never chosen by a distance search -- first by how many of the
+subject type's own `prefers_site` contexts they match, then by
+`density_affinity`, then by a seeded draw key (total in practice, so a
+distance tie-break is never reached). `place_row` first runs plain
+first-fit over that rank order (the floor: a target's placed count is
+never below what first-fit alone would give), then a depth-first search
+bounded by `PLACEMENT_SEARCH_NODE_BUDGET` (a fixed node count, never
+wall-clock, since maximum independent set on a spacing graph is NP-hard
+and this runs inside world creation) for a fuller selection: a top-
+ranked candidate that conflicts (by `min_spacing`) with every other
+real candidate, none of which conflict with each other, must never
+strand an achievable target (found by `proptest`, PR #317 cycle 3) --
+the search only ever decides whether a candidate already offered in
+rank order is kept, never reorders the pool itself. On a `target`
+genuinely unreachable from the pool, `place_row` returns the largest
+real selection the search found within its own budget, never an empty
+one (PR #317 cycle 4: an earlier version popped every tentative choice
+back out on failure, silently placing zero where `target - 1` was
+real).
+
+The per-catchment floor is a real, unconditional guarantee, never
+discounted by the row's own site-wide `tolerance_percent` (that
+tolerance belongs only to the site-wide ratio check `sim::rules::
+evaluate`'s own Distribution kind runs, where the unplaced remainder
+lives): a catchment is owed exactly `floor(per-tag count in that
+catchment / ratio)`, bounded down only by what the catchment's own real
+geometry can hold -- the largest `k` for which some subset of its own
+hard-eligible, unclaimed candidates is pairwise-`min_spacing`-clear (of
+each other and of this same row's own subjects already placed in a
+neighbouring catchment, since `min_spacing` is a site-wide constraint,
+never scoped to one catchment). `inv_generation_no_quadrant_lacks_its_
+required_services` (`server/sim/tests/invariants.rs`) asserts `placed
+>= k` per seed, per catchment, over arbitrary `u64` seeds, computing
+that same `k` independently -- never skipping the assertion outright,
+even where `k` is `0`.
+
+`DistrictSite` (`generation::site`) is the one `RuleSite` a *finished*
+district presents to `sim::rules::evaluate` -- one subject cell per
+typed building (its front-edge midpoint, floor 0, tagged with its own
+type's `tags`), one area per block (`AreaId = rect_seed_key(block
+bounds)`) -- built once, from the same fields, by `District::
+check_rules`. Pass 5's own constructive placement shares only
+`front_cell`, the same one-subject-cell rule, since `evaluate` needs a
+finished district's full tag/area index, never a partial one; it never
+calls `evaluate` per candidate, and is whole-site. `scripts/ci/
+check-generator-no-content-keys.sh` holds the generator to the same
+content-blindness `check-rule-engine-no-content-keys.sh` holds the rule
+engine to: no building-type/tag/profession/rule key as a quoted literal
+under `server/sim/src/generation/`.
+
 Evidence: `bounds/src/generation_evidence.rs` renders every implemented
-pass's own output, for three committed seeds, to `docs/generation/*.svg`.
-`cargo run -p bounds --bin dump-generation` regenerates them;
-`bounds/tests/generation_evidence_current.rs` fails the build if the
-committed files and a fresh render ever disagree.
+pass's own output, for three committed seeds, to `docs/generation/*.svg`
+-- pass 5's own file additionally tints each envelope by a derived,
+structural `TypeClass` (never a tag name or a hash: is the `per` basis
+of a committed distribution row, housing; is named by a committed
+coherence row's own `subject`/`within`, the two form extremes; has
+posts, workplace; both housing and posts, mixed use; none of these,
+vacant/yard -- six fixed classes, a fixed palette, so two unrelated
+types can never collide onto one swatch), marks every envelope whose
+own type is the subject of a committed distribution row this pass
+actually feeds with a marker shape read from that one row list's own
+position (map and legend share the identical list and index -- a
+second, `placed`-filtered list with its own index was PR #317 cycle 3's
+own map/legend mismatch), overlays a dashed catchment grid with a pink
+wash over a physically-short catchment (no text on the map -- PR #317
+cycle 4: five-line label plates on the map itself covered half a
+catchment; the per/owed/placed figures now live in a panel below the
+map, one line per catchment). `cargo run -p bounds --bin dump-generation`
+regenerates them; `bounds/tests/generation_evidence_current.rs` fails
+the build if the committed files and a fresh render ever disagree.
 
 `GENERATION_VERSION` is bumped whenever any implemented pass's algorithm
-or seeding (never a `defs/balance/generation.toml` retune) moves a fixed
-seed's output; `server/sim/tests/generation_golden.rs` runs against a
-config frozen in the test itself, not live `defs::BALANCE`, so a
-balance retune alone never forces a version bump. `server/sim/tests/
-goldens/generation_v2.golden` is keyed to it, guarded by `check-golden-
-version-bump.sh`'s `generation_*` arm the same way `RNG_VERSION`/
-`APPEARANCE_VERSION` are.
+or seeding (never a `defs/balance/generation.toml` or
+`defs/building-types/`/`defs/rules/` retune) moves a fixed seed's
+output; `server/sim/tests/generation_golden.rs` runs against a config
+and a small `GenerationContent` both frozen in the test itself, under
+deliberately unrelated ids/keys, not live `defs::BALANCE`/
+`defs::BUILDING_TYPES`, so a balance or content retune alone never
+forces a version bump, and the same shape of output against a wholly
+different content table is itself proof the generator never branches on
+a content key. `server/sim/tests/goldens/generation_v5.golden` is keyed
+to it, guarded by `check-golden-version-bump.sh`'s `generation_*` arm the
+same way `RNG_VERSION`/`APPEARANCE_VERSION` are.
 
 ## Boot budget
 
