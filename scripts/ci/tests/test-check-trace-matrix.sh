@@ -79,18 +79,24 @@ EOF
 #!/usr/bin/env bash
 # check "an old spaced sh case" 0 true
 EOF
+  cat > "$d/src/punct.test.ts" <<'EOF'
+it("Some Title (with parens) and # hash", () => {});
+EOF
 }
 
 # --- the shared clean tree ---------------------------------------------
 # One guard table ("## Widgets") whose rows exercise every resolver:
 # a Rust `fn`, a Rust `fn` prefix, a second Rust path searched even
 # though the first one does not declare the name, a client test title
-# (with an apostrophe and a comma), a `.sh` case label, an `inv_*` id
-# resolved against the matrix's own first table (no Rust file needed), a
-# `path::symbol` form, a directory searched recursively, a spaced
-# code-snippet token that is never mistaken for a title, a glob/flagged
-# token that is never existence-checked as a path, and a leading-slash
-# token (`/browser-city/`'s own shape) treated the same way. Plus one
+# (with an apostrophe and a comma), a title with an uppercase letter,
+# parentheses and a `#` (the title tier has no character-class filter --
+# any spaced token in a cell naming a test path is a title candidate), a
+# `.sh` case label, an `inv_*` id resolved against the matrix's own first
+# table (no Rust file needed), a `path::symbol` form, a directory
+# searched recursively, a spaced token in a cell with no test path at all
+# (still out of scope, unlike the title above), a glob/flagged token that
+# is never existence-checked as a path, and a leading-slash token
+# (`/browser-city/`'s own shape) treated the same way. Plus one
 # `deferred` and one `planned` row citing a name that resolves nowhere
 # (exempt), and one `partial` row citing a name that does resolve
 # (checked exactly like `covered`, so it must stay green here). Every row
@@ -117,11 +123,12 @@ plant_clean_tree() {
 | A Rust prefix resolves | covered | `src/widget.rs` -- `widget_prefix_match_case_*` |
 | A second cited path is searched too | covered | `src/widget.rs`, `src/extra.rs` -- `extra_only_fn` |
 | A client title with punctuation resolves | covered | `src/widget.test.ts` -- `widget doesn't fail, even with a comma` |
+| A client title with an uppercase letter, parentheses and a hash resolves (no title shape filter) | covered | `src/punct.test.ts` -- `Some Title (with parens) and # hash` |
 | A .sh case label resolves | covered | `scripts/widget.sh` -- `widget_case_label` |
 | An inv_* id resolves against the matrix's own table | covered | `scripts/widget.sh` -- `inv_widget_ok` |
 | A path::symbol form resolves the symbol in that one file | covered | `src/lib.rs::build` |
 | A directory is searched recursively | covered | `src/dir/` -- `nested_dir_fn` |
-| A spaced code snippet is never a title, in a cell with a title path too | covered | `src/widget.test.ts` -- `some_code(1, 2)` |
+| A spaced token in a cell with no test path at all is out of scope | covered | `src/widget.rs` -- `cargo run --bin defs-build` |
 | A glob/flagged token is never existence-checked | covered | `src/widget.rs` -- `src/**`, `check-trace-matrix.sh --client-only` |
 | A leading-slash token is never existence-checked as a path | covered | `src/widget.rs` -- `widget_creates_ok`, `/some-base-path/` |
 | A dangling name on a deferred row is exempt | deferred | `src/widget.rs` -- `nowhere_at_all` |
@@ -167,6 +174,7 @@ plant_holes_tree() {
 | A spaced title surviving only in a slash comment does not resolve (.ts resolve_title arm) | covered | `src/spaced.test.ts` -- `an old spaced ts case` |
 | A spaced title surviving only in a hash comment does not resolve (.sh resolve_title arm) | covered | `scripts/ci/tests/old-spaced.sh` -- `an old spaced sh case` |
 | A prefix occurring only mid-word does not resolve | covered | `defs/rules/mid.toml` -- `real_rule_*` |
+| A spaced token in a cell that does name a test path is a title candidate with no shape filter, uppercase/parens/hash included | covered | `src/widget.test.ts` -- `some_code(1, 2)` |
 EOF
   git_track "$d"
   printf '%s' "$d"
@@ -206,6 +214,16 @@ sed -i "s/doesn't fail, even with a comma/renders fine/" "$d/src/widget.test.ts"
 out="$(bash "$CHECK" --client-only "$d" 2>&1)"
 check "a client title changed fails" 1 bash "$CHECK" --client-only "$d"
 check_contains "the failure names the changed title" "widget doesn't fail, even with a comma" "$out"
+
+# --- a title with an uppercase letter, parentheses and a hash, once
+# renamed, still fails -- proves the title tier has no character-class
+# blind spot (a prior version of this file silently ignored any title
+# outside [a-z0-9 ,.'-], which is exactly this shape) ------------------------
+d="$(plant_clean_tree)"
+sed -i 's/Some Title (with parens) and # hash/Some Title renamed entirely/' "$d/src/punct.test.ts"
+out="$(bash "$CHECK" --client-only "$d" 2>&1)"
+check "a title with uppercase/parens/hash, once renamed, fails" 1 bash "$CHECK" --client-only "$d"
+check_contains "the failure names the renamed punctuated title" "Some Title (with parens) and # hash" "$out"
 
 # --- .sh case removed --------------------------------------------------------
 d="$(plant_clean_tree)"
@@ -274,6 +292,8 @@ check_contains "a spaced title left only in a # comment (.sh resolve_title arm) 
   "an old spaced sh case" "$out"
 check_contains "a prefix that only occurs mid-word never resolves" \
   "real_rule_*" "$out"
+check_contains "a spaced code snippet in a cell with a test path is now a checked title, and dangles" \
+  "some_code(1, 2)" "$out"
 
 # --- a dangling name on a partial row fails, exactly like covered ----------
 d="$(plant_clean_tree)"

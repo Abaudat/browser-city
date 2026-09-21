@@ -405,15 +405,23 @@ is_candidate() {
   [[ "$stem" == *_* ]]
 }
 
-# A backticked, spaced token is a *title* candidate shape only when it
-# reads as an English test title -- lowercase words, digits, spaces and
-# the punctuation a real title actually carries (apostrophe, comma,
-# period, hyphen). A code snippet quoted for illustration
-# (`textures.set("counter", ...)`, `MountStreetSceneOptions.defs:
-# VerifiedDefs`) has a space too but carries parens, quotes, a colon or
-# an uppercase letter -- none of which a title ever does -- so it is
-# never mistaken for one, title-file-in-cell or not.
-TITLE_RE="^[a-z0-9 ,.'-]+\$"
+# Every backticked, spaced token in a cell that names a test/case file
+# (`cell_has_test_path`) is a title candidate, no shape filter -- a real
+# title routinely carries an uppercase letter, parentheses, `#`, `_`,
+# `/` or `:` (`a guard table under a never-registered heading is still
+# checked (discovery, not a list)`), so a character-class filter here
+# does not distinguish "not a title" from "a title with punctuation" --
+# it silently un-checks the second one, exactly the failure mode this
+# whole story exists to close (a prior version of this file had one;
+# three of this guard's own `## CI guards` citations were themselves
+# silently unchecked because of it). A spaced token that is genuinely
+# not a title -- a code snippet quoted for illustration
+# (`textures.set("counter", ...)`) -- belongs in the Requirement cell,
+# never the Guard cell; moving it there is the repair, not loosening
+# this check. The one thing still out of scope: a title containing a
+# literal backtick or an escaped double quote cannot be cited verbatim
+# in a markdown cell at all, so none is asked for here (none exists
+# among today's real titles).
 
 # Every lookup below is memoised, one subprocess (at most) per distinct
 # repo-relative path or file, never one per candidate token: a cell citing
@@ -704,16 +712,17 @@ check_guard_row() { # <section> <requirement> <status> <guard>
 
   # --- pass 3: every non-path backticked token -- name/prefix candidates
   # resolve against the cell's own existing paths (never repo-wide); a
-  # spaced token resolves as a client title only when the cell itself
-  # names a test file; anything else (camelCase, `Type::path`, a bare
-  # word with no underscore, an untitled spaced phrase) is out of scope
-  # and silently ignored.
+  # spaced token resolves as a client title, no shape filter, only when
+  # the cell itself names a test file; anything else (camelCase,
+  # `Type::path`, a bare word with no underscore, or any spaced token in
+  # a cell with no test path at all) is out of scope and silently
+  # ignored.
   for tok in "${tokens[@]}"; do
     case "$tok" in
       */*) continue ;;
     esac
     if [[ "$tok" == *" "* ]]; then
-      if [ "$has_test_path" -eq 1 ] && [[ "$tok" =~ $TITLE_RE ]]; then
+      if [ "$has_test_path" -eq 1 ]; then
         if ! resolve_title "$tok" "${cell_paths[@]}"; then
           echo "check-trace-matrix: FAIL -- '${requirement:0:80}' (## $section) cites '$tok', but no test/case title by that name exists under: ${cell_paths[*]}" >&2
           FAILED=1
