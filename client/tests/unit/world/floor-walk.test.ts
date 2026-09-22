@@ -50,9 +50,15 @@ describe("initialFloorWalkState", () => {
 });
 
 describe("stepAndTransition", () => {
-  const transitions = new TransitionIndex([
-    { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
-  ]);
+  // `skipPairSymmetry`: this suite is testing `stepAndTransition`'s own
+  // edge-triggered gating, never `TransitionIndex`'s own pair-symmetry
+  // rule (story 15.2) -- a single, deliberately one-way transition (and,
+  // below, a same-cell mutual pair) would otherwise fail construction
+  // before any of these tests got to run at all.
+  const transitions = new TransitionIndex(
+    [{ x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 }],
+    { skipPairSymmetry: true },
+  );
 
   it("does not consult the transition index at all while the step stays inside the same cell", () => {
     const state: FloorWalkState = { x: 4.5, y: 0.5, floor: 0, cellX: 4, cellY: 0 };
@@ -99,10 +105,17 @@ describe("stepAndTransition", () => {
     // construction: two transitions whose targets are each other's own
     // anchor. Landing on either, and continuing to hold the same
     // direction, must settle on the far side, never oscillate.
-    const mutual = new TransitionIndex([
-      { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
-      { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
-    ]);
+    // skipPairSymmetry: this is the exact same-cell mutual shape story
+    // 15.2's own pair-symmetry rule refuses by construction -- this
+    // suite's whole point is that stepAndTransition's own edge-triggered
+    // gating alone never bounces on it, so it must still be constructible.
+    const mutual = new TransitionIndex(
+      [
+        { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
+        { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
+      ],
+      { skipPairSymmetry: true },
+    );
 
     fc.assert(
       fc.property(
@@ -140,10 +153,17 @@ describe("stepAndTransition", () => {
     // impossible: landing on one transition's anchor and having the very
     // next step immediately fire the other (a still-held or newly-issued
     // key re-checked against a cell that is itself an anchor).
-    const mutual = new TransitionIndex([
-      { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
-      { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
-    ]);
+    // skipPairSymmetry: this is the exact same-cell mutual shape story
+    // 15.2's own pair-symmetry rule refuses by construction -- this
+    // suite's whole point is that stepAndTransition's own edge-triggered
+    // gating alone never bounces on it, so it must still be constructible.
+    const mutual = new TransitionIndex(
+      [
+        { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
+        { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
+      ],
+      { skipPairSymmetry: true },
+    );
     const directions = [
       { x: 1, y: 0 },
       { x: -1, y: 0 },

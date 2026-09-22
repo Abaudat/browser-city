@@ -30,7 +30,9 @@ import {
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
   PLAYER_START,
+  STAIRS_ENTRY_DIRECTION,
   STAIRS_X,
+  STAIRS_Y,
   STREET_BOUNDARY,
   STREET_BUILDING_AREAS,
   STREET_EXIT_X,
@@ -54,7 +56,13 @@ import {
 } from "../../../src/world/floor-walk";
 import { footprintCells, footprintOrigin } from "../../../src/world/footprint";
 import { step } from "../../../src/world/movement";
-import { NO_OWNER } from "../../../src/world/ownership";
+import { cellOf, NO_OWNER } from "../../../src/world/ownership";
+import {
+  blockedNeighborsOf,
+  forwardOpenNeighbor,
+  pairTransitions,
+  reverseOpenNeighbor,
+} from "../../../src/world/transitions";
 import { checkWorldSpec } from "../../../src/world/world-spec";
 import {
   committedDefs,
@@ -425,8 +433,16 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
   });
 
   it("the undrawn world-edge ring lies strictly outside every drawn ground-tile pass", () => {
+    // A rect with its own declared partial `collider` (story 15.2, cycle
+    // 2, Quentin's finding 3) is never the world-edge *ring* this check
+    // means -- it is a thin, disclosed sliver on top of real, walkable
+    // ground (the bridge's own south rail, id 110, is the original
+    // example; the underpass approach's own id 107 is a second), the same
+    // "declares its own partial shape" exemption guard (b) below already
+    // gives a drawn prop with a real collider override.
     const failures: string[] = [];
     for (const rect of STREET_BOUNDARY) {
+      if (rect.collider) continue;
       const floor = rect.floor ?? PLAYER_START.floor;
       for (let dy = 0; dy < rect.height; dy++) {
         for (let dx = 0; dx < rect.width; dx++) {
@@ -446,7 +462,7 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
     expect(failures).toEqual([]);
   });
 
-  it("(b) no uncollided solid: every walls-layer drawable and every solid row rasterises a collider into every one of its own footprint cells", () => {
+  it("(b) no uncollided solid: every walls-layer drawable and every solid row rasterises a real collider somewhere in its own footprint, and blocks the whole footprint unless it declares its own partial shape", () => {
     const failures: string[] = [];
     for (const prop of STREET_PROPS) {
       if (prop.layer !== "walls" && prop.solid !== true) continue;
@@ -456,15 +472,31 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
         failures.push(`prop ${prop.id}: no collider source for defId ${defId}`);
         continue;
       }
-      for (const cell of footprintCells(prop.x, prop.y, source)) {
-        const own = world
-          .entriesInCell(prop.floor, cell.x, cell.y)
-          .some((entry) => entry.objectId === prop.id);
-        if (!own) {
-          failures.push(
-            `prop ${prop.id} (layer '${prop.layer}'${prop.solid ? ", solid" : ""}) draws over (${cell.x}, ${cell.y}, floor ${prop.floor}) with no collider there`,
-          );
-        }
+      const cells = footprintCells(prop.x, prop.y, source);
+      const collidedCells = cells.filter((cell) =>
+        world.entriesInCell(prop.floor, cell.x, cell.y).some((entry) => entry.objectId === prop.id),
+      );
+      if (collidedCells.length === 0) {
+        failures.push(
+          `prop ${prop.id} (layer '${prop.layer}'${prop.solid ? ", solid" : ""}) draws a whole footprint at floor ${prop.floor} with no collider anywhere in it`,
+        );
+        continue;
+      }
+      // A row with no custom collider shape of its own (every asset row
+      // relying on `streetColliderSources`' own default full-footprint
+      // rect, and every `defId` row) blocks its whole footprint, same as
+      // ever. A row that declares its own partial shape (story 15.2's own
+      // "one entrance" stairwell: real drawn railings on some cells, a
+      // real walkable opening on others) opts out of that -- its own
+      // correctness is what "the six collision/transition regressions"
+      // describe's own one-entrance geometry test checks instead, not a
+      // blanket "every cell" rule that would refuse the opening by
+      // construction.
+      const hasCustomShape = !isDefStreetProp(prop) && prop.collider !== undefined;
+      if (!hasCustomShape && collidedCells.length !== cells.length) {
+        failures.push(
+          `prop ${prop.id} (layer '${prop.layer}'${prop.solid ? ", solid" : ""}) draws over ${cells.length} cell(s) at floor ${prop.floor} but only ${collidedCells.length} collide, with no custom collider shape declared`,
+        );
       }
     }
     expect(failures).toEqual([]);
@@ -585,55 +617,213 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     expect(rect.x1 - rect.x0).toBeCloseTo(1, 9); // the whole cell, not half of it
   });
 
-  it("5. the subway stairwell's own surrounding barrier blocks the far part of its cell, but never the step-in approach either transition anchor needs", () => {
-    const stairsDown = STREET_PROPS.find((p) => p.id === 50n);
-    if (!stairsDown) throw new Error("no prop with id 50 (subwayStairsDown)");
-    const rect = propColliderRect(stairsDown);
-    // From the near (south) side, walking deeper into the stairwell's own
-    // cell -- never through a transition, `movement.ts`'s `step` alone --
-    // stops at the barrier's own south face.
-    const restNorth = walkToRest(
-      { x: stairsDown.x + 0.5, y: stairsDown.y + 0.9 },
-      { x: 0, y: -1 },
-      stairsDown.floor,
+  it("5. the subway stairwell's own opening is enterable from exactly one side: a step from each of its three other neighbours is refused by the grid, and the entry side is not (Quentin's finding 1)", () => {
+    // "A stairwell has one top and one bottom": neither anchor is a bare
+    // cell in open pavement any more -- real, drawn geometry (the
+    // stairwell's own railings and its own back, both real `STREET_PROPS`
+    // rows) surrounds each one on every side but its own single entry.
+    // This is the grid-level half finding 1 asks for, never re-deriving
+    // which side is the entry side: `pairTransitions`'s own pairing
+    // records it, as `d`.
+    const { pairings } = pairTransitions(STREET_TRANSITIONS);
+    const subway = pairings.find(
+      (p) =>
+        p.forward.x === STAIRS_X &&
+        p.forward.y === STAIRS_Y &&
+        p.forward.floor === PLAYER_START.floor,
     );
-    expect(restNorth.y).toBeCloseTo(rect.y1 + bodyHeightCells, 9);
-    // The real, committed approach every open side this street actually
-    // uses (`lamppostRestY()`'s own row) still clears it -- the guard this
-    // story's own cycle 1 needed the hard way (a wider band caught this).
-    const clearApproach = step(
-      { x: stairsDown.x - 2, y: lamppostRestY() },
-      { x: 1, y: 0 },
-      16,
-      world,
-      stairsDown.floor,
-      config,
+    if (!subway) throw new Error("no mirrored pairing found for the subway's own down transition");
+
+    function assertOneEntrance(
+      anchor: { readonly x: number; readonly y: number },
+      floor: number,
+      open: {
+        readonly cell: { readonly x: number; readonly y: number };
+        readonly direction: { readonly x: number; readonly y: number };
+      },
+    ): void {
+      // The entry side: walking from the open neighbour's own centre,
+      // toward the anchor, actually reaches it.
+      const entered = walkToRest(
+        { x: open.cell.x + 0.5, y: open.cell.y + 0.5 },
+        open.direction,
+        floor,
+      );
+      expect(
+        cellOf(entered.x) === anchor.x && cellOf(entered.y) === anchor.y,
+        `entering ${JSON.stringify(anchor)} from its own open side ${JSON.stringify(open.cell)} was refused -- ended at (${entered.x}, ${entered.y})`,
+      ).toBe(true);
+
+      // Every other neighbour: a step from it into the anchor is refused
+      // -- approached from one cell further out (a real, non-entry
+      // neighbour is real drawn geometry, solid over its own whole
+      // cell, so starting dead centre inside it would test the resolver's
+      // own "already overlapping" edge case instead of a real approach;
+      // starting one cell further out and walking the same direction a
+      // real player would is what "a step from that neighbour" means).
+      // The walker's cell must never become the anchor's.
+      for (const blocked of blockedNeighborsOf(anchor, open.direction)) {
+        const direction = { x: anchor.x - blocked.x, y: anchor.y - blocked.y };
+        const approachFrom = { x: blocked.x - direction.x, y: blocked.y - direction.y };
+        const result = walkToRest(
+          { x: approachFrom.x + 0.5, y: approachFrom.y + 0.5 },
+          direction,
+          floor,
+        );
+        expect(
+          cellOf(result.x) === anchor.x && cellOf(result.y) === anchor.y,
+          `entering ${JSON.stringify(anchor)} via its own non-entry neighbour ${JSON.stringify(blocked)} was NOT refused -- ended at (${result.x}, ${result.y})`,
+        ).toBe(false);
+      }
+    }
+
+    assertOneEntrance(
+      { x: subway.forward.x, y: subway.forward.y },
+      subway.forward.floor,
+      forwardOpenNeighbor(subway),
     );
-    expect(clearApproach.x).toBeGreaterThan(stairsDown.x - 2);
+    assertOneEntrance(
+      { x: subway.reverse.x, y: subway.reverse.y },
+      subway.reverse.floor,
+      reverseOpenNeighbor(subway),
+    );
   });
 
-  it("6. the subway transition pair is a real mirror: down, then the reverse input, lands back beside the stairwell -- never a detour through an unrelated direction", () => {
+  it("6. the subway transition pair is a real mirror: down the demo's own way (left), then the reverse input (right), lands back beside the stairwell -- never a detour through an unrelated direction", () => {
     const transitions = streetTransitionIndex();
+    // The issue's own literal report: "descended by walking left" --
+    // approaching from the stairwell's own east side, holding ArrowLeft.
     let down: FloorWalkResult = {
-      ...initialFloorWalkState(STAIRS_X - 2, lamppostRestY(), PLAYER_START.floor),
+      ...initialFloorWalkState(STAIRS_X + 2, STAIRS_Y + 0.5, PLAYER_START.floor),
       transitioned: false,
     };
     for (let i = 0; i < 200 && !down.transitioned; i++) {
-      down = stepAndTransition(down, { x: 1, y: 0 }, 16, world, config, transitions);
+      down = stepAndTransition(down, STAIRS_ENTRY_DIRECTION, 16, world, config, transitions);
     }
     expect(down.floor).toBe(SUBWAY_FLOOR);
     expect(down.cellX).toBe(PLATFORM_LANDING_X);
     expect(down.cellY).toBe(PLATFORM_LANDING_Y);
 
-    // The reverse input (the opposite key from the one that walked down):
-    // no detour through an unrelated direction, straight back up.
+    // The reverse input (the opposite key from the one that walked down,
+    // ArrowRight): no detour through an unrelated direction, straight
+    // back up.
     let up: FloorWalkResult = { ...down, transitioned: false };
+    const reverseDirection = { x: -STAIRS_ENTRY_DIRECTION.x, y: -STAIRS_ENTRY_DIRECTION.y };
     for (let i = 0; i < 200 && !up.transitioned; i++) {
-      up = stepAndTransition(up, { x: -1, y: 0 }, 16, world, config, transitions);
+      up = stepAndTransition(up, reverseDirection, 16, world, config, transitions);
     }
     expect(up.floor).toBe(PLAYER_START.floor);
     expect(up.cellX).toBe(STREET_EXIT_X);
     expect(up.cellY).toBe(STREET_EXIT_Y);
+  });
+});
+
+// Story 15.2 (Quentin's finding 2): the fixture-level half of "a drawn
+// silhouette and its collider agree" for the `assetKey` rows that bypass
+// `tools/defs-build` entirely -- the stairwell's own real 48x64px art
+// silently overhanging a bare 1x1 footprint both ways was never checked
+// anywhere, which is exactly how its own collider ended up nowhere near
+// what was actually drawn. Reads the same committed `scene.ts` source
+// `ASSET_URLS` table the "no raw-asset seam" describe block below already
+// parses (never a hand-copied duplicate), plus the two `WALL_TILE_*_FRAME`
+// rectangles `wallTile`/`wallStub` rows draw from instead of their own raw
+// sheet. Promoting the stairwell (and the interior wall tile) to real
+// `[[object]]` entries, so this guard becomes redundant for them, is
+// Quentin's own follow-up task request (defs-build's own alpha-band
+// check), out of scope here.
+describe("silhouette agreement: a solid or walls-layer assetKey row's own declared footprint matches its real art dimensions in tiles (FR126, Quentin's finding 2)", () => {
+  const SILHOUETTE_REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+  // `defs/balance/render.tile_size_px`'s own committed value -- read
+  // directly rather than through `committedDefs()`'s balance array here,
+  // since every other value this describe block needs (`ASSET_URLS`, the
+  // wall frames) is likewise read straight from committed source text.
+  const TILE_SIZE_PX = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value;
+  if (TILE_SIZE_PX === undefined) {
+    throw new Error("render.tile_size_px missing from the committed defs.json");
+  }
+
+  function sceneSource(): string {
+    return readFileSync(
+      fileURLToPath(new URL("../../../src/test-street/scene.ts", import.meta.url)),
+      "utf-8",
+    );
+  }
+
+  function sheetByAssetKey(sceneSrc: string): Map<string, string> {
+    const table = new Map<string, string>();
+    for (const match of sceneSrc.matchAll(/(\w+):\s*new URL\(\s*"([^"]+)"/g)) {
+      const [, key, raw] = match;
+      if (!key || !raw) continue;
+      table.set(key, raw.replace(/^(\.\.\/)+/, ""));
+    }
+    return table;
+  }
+
+  /** `WALL_TILE_H_FRAME`/`WALL_TILE_V_FRAME`'s own real pixel dimensions
+   * -- the crop `wallAssetOf` actually draws for a `wallTile`/`wallStub`
+   * row, never the raw multi-tile sheet behind them. */
+  function wallTileFrameSizes(sceneSrc: string): Map<"H" | "V", { w: number; h: number }> {
+    const frames = new Map<"H" | "V", { w: number; h: number }>();
+    for (const match of sceneSrc.matchAll(
+      /const WALL_TILE_(H|V)_FRAME = new Rectangle\(\s*\d+,\s*\d+,\s*(\d+),\s*(\d+)\)/g,
+    )) {
+      const [, axis, w, h] = match;
+      if (axis !== "H" && axis !== "V") continue;
+      if (!w || !h) continue;
+      frames.set(axis, { w: Number(w), h: Number(h) });
+    }
+    return frames;
+  }
+
+  function pngSizePx(repoRootRelativePath: string): {
+    readonly width: number;
+    readonly height: number;
+  } {
+    const buf = readFileSync(`${SILHOUETTE_REPO_ROOT}${repoRootRelativePath}`);
+    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+  }
+
+  it("art width equals the declared footprint width in tiles (or is a single repeating tile), and art height is at least the declared footprint height (or repeats)", () => {
+    const sceneSrc = sceneSource();
+    const sheets = sheetByAssetKey(sceneSrc);
+    const wallFrames = wallTileFrameSizes(sceneSrc);
+    expect(wallFrames.size).toBe(2); // both frames must have parsed, or this guard is silently blind
+    const failures: string[] = [];
+
+    for (const prop of STREET_PROPS) {
+      // A `defId` row's own sprite/footprint agreement is `tools/defs-
+      // build`'s job (FR126, checked at build time against the real
+      // sheet); this guard is only for the rows that bypass it.
+      if (isDefStreetProp(prop)) continue;
+      if (prop.layer !== "walls" && prop.solid !== true) continue;
+
+      const footprint = prop.footprint ?? { width: 1, height: 1 };
+      let art: { readonly width: number; readonly height: number };
+      if (prop.assetKey === "wallTile" || prop.assetKey === "wallStub") {
+        const axis = prop.wallOrientation === "vertical" ? "V" : "H";
+        const frame = wallFrames.get(axis);
+        if (!frame) throw new Error(`no WALL_TILE_${axis}_FRAME parsed from scene.ts`);
+        art = { width: frame.w, height: frame.h };
+      } else {
+        const sheet = sheets.get(prop.assetKey);
+        if (!sheet) throw new Error(`no ASSET_URLS entry for '${prop.assetKey}' in scene.ts`);
+        art = pngSizePx(sheet);
+      }
+
+      const widthOk = art.width === TILE_SIZE_PX || art.width === footprint.width * TILE_SIZE_PX;
+      const heightOk = art.height === TILE_SIZE_PX || art.height >= footprint.height * TILE_SIZE_PX;
+      if (!widthOk) {
+        failures.push(
+          `prop ${prop.id} ('${prop.assetKey}'): real art is ${art.width}px wide, matching neither a single repeating tile (${TILE_SIZE_PX}px) nor its own declared footprint width (${footprint.width} tile(s), ${footprint.width * TILE_SIZE_PX}px)`,
+        );
+      }
+      if (!heightOk) {
+        failures.push(
+          `prop ${prop.id} ('${prop.assetKey}'): real art is ${art.height}px tall, shorter than its own declared footprint height (${footprint.height} tile(s), ${footprint.height * TILE_SIZE_PX}px) and not a single repeating tile`,
+        );
+      }
+    }
+    expect(failures).toEqual([]);
   });
 });
 

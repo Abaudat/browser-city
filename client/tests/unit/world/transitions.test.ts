@@ -12,26 +12,29 @@ import {
 } from "../../../src/world/transitions";
 
 describe("TransitionIndex", () => {
+  // skipPairSymmetry: these specs are deliberately one-way test data
+  // (this suite is about anchor lookup, never story 15.2's own pair-
+  // symmetry rule, which has its own describe blocks below).
   const specs: TransitionSpec[] = [
     { x: 18, y: 0, floor: 0, targetX: 18, targetY: 0, targetFloor: -1 },
     { x: 23, y: 0, floor: 0, targetX: 23, targetY: 0, targetFloor: 1 },
   ];
 
   it("returns undefined for a cell that is not a transition anchor", () => {
-    const index = new TransitionIndex(specs);
+    const index = new TransitionIndex(specs, { skipPairSymmetry: true });
     expect(index.transitionAt(0, 0, 0)).toBeUndefined();
     // A door is never a transition (FR118): an ordinary walkable cell.
     expect(index.transitionAt(5, 1, 0)).toBeUndefined();
   });
 
   it("resolves the anchor's own target floor and position", () => {
-    const index = new TransitionIndex(specs);
+    const index = new TransitionIndex(specs, { skipPairSymmetry: true });
     expect(index.transitionAt(18, 0, 0)).toEqual({ x: 18, y: 0, floor: -1 });
     expect(index.transitionAt(23, 0, 0)).toEqual({ x: 23, y: 0, floor: 1 });
   });
 
   it("never matches the same (x, y) on a different floor", () => {
-    const index = new TransitionIndex(specs);
+    const index = new TransitionIndex(specs, { skipPairSymmetry: true });
     expect(index.transitionAt(18, 0, -1)).toBeUndefined();
   });
 
@@ -40,7 +43,9 @@ describe("TransitionIndex", () => {
       { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
       { x: 5, y: 0, floor: 0, targetX: 9, targetY: 9, targetFloor: 1 },
     ];
-    expect(() => new TransitionIndex(duplicated)).toThrow(/duplicate transition anchor/);
+    expect(() => new TransitionIndex(duplicated, { skipPairSymmetry: true })).toThrow(
+      /duplicate transition anchor/,
+    );
   });
 
   it("the same anchor cell on two different floors is not a duplicate", () => {
@@ -48,7 +53,11 @@ describe("TransitionIndex", () => {
       { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
       { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
     ];
-    expect(() => new TransitionIndex(specs2)).not.toThrow();
+    expect(() => new TransitionIndex(specs2, { skipPairSymmetry: true })).not.toThrow();
+  });
+
+  it("pair symmetry is on by default: an unpaired transition throws with no options at all", () => {
+    expect(() => new TransitionIndex(specs)).toThrow(/transition pair symmetry violated/);
   });
 });
 
@@ -142,8 +151,8 @@ describe("checkTransitionPairSymmetry (story 15.2, Quentin's direction)", () => 
   });
 });
 
-describe("TransitionIndex's own pairSymmetry option (story 15.2)", () => {
-  it("throws naming the problem when opted in and the pair does not mirror", () => {
+describe("TransitionIndex's own pair-symmetry rule (story 15.2, Quentin's finding 5: on by default, never an opt-in)", () => {
+  it("throws naming the problem with no options at all when the pair does not mirror", () => {
     const down: TransitionSpec = {
       x: 16,
       y: 8,
@@ -160,12 +169,25 @@ describe("TransitionIndex's own pairSymmetry option (story 15.2)", () => {
       targetY: 8,
       targetFloor: 0,
     };
-    expect(
-      () => new TransitionIndex([down, upNorthOfLanding], { isStandable: ALWAYS_STANDABLE }),
-    ).toThrow(/transition pair symmetry violated/);
+    expect(() => new TransitionIndex([down, upNorthOfLanding])).toThrow(
+      /transition pair symmetry violated/,
+    );
   });
 
-  it("does not throw when opted in and every transition mirrors a real reverse", () => {
+  it("does not throw when every transition mirrors a real reverse, with no options at all", () => {
+    const down: TransitionSpec = {
+      x: 16,
+      y: 8,
+      floor: 0,
+      targetX: 16,
+      targetY: 3,
+      targetFloor: -1,
+    };
+    const up: TransitionSpec = { x: 15, y: 3, floor: -1, targetX: 15, targetY: 8, targetFloor: 0 };
+    expect(() => new TransitionIndex([down, up])).not.toThrow();
+  });
+
+  it("also checks standability when isStandable is supplied, on top of the always-on pairing half", () => {
     const down: TransitionSpec = {
       x: 16,
       y: 8,
@@ -176,14 +198,21 @@ describe("TransitionIndex's own pairSymmetry option (story 15.2)", () => {
     };
     const up: TransitionSpec = { x: 15, y: 3, floor: -1, targetX: 15, targetY: 8, targetFloor: 0 };
     expect(() => new TransitionIndex([down, up], { isStandable: ALWAYS_STANDABLE })).not.toThrow();
+    expect(
+      () =>
+        new TransitionIndex([down, up], {
+          isStandable: (x, y, floor) => !(x === 15 && y === 3 && floor === -1),
+        }),
+    ).toThrow(/transition pair symmetry violated/);
   });
 
-  it("stays lenient by default (not opted in), the same mutually-targeting-identical-cell shape world/floor-walk.test.ts relies on", () => {
+  it("skipPairSymmetry is the named, visible escape hatch a test double uses -- the same mutually-targeting-identical-cell shape world/floor-walk.test.ts relies on", () => {
     const mutual: TransitionSpec[] = [
       { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
       { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
     ];
-    expect(() => new TransitionIndex(mutual)).not.toThrow();
+    expect(() => new TransitionIndex(mutual)).toThrow(/transition pair symmetry violated/);
+    expect(() => new TransitionIndex(mutual, { skipPairSymmetry: true })).not.toThrow();
   });
 });
 

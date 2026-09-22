@@ -288,12 +288,28 @@ always derived from placed content, never stored per cell.
   anchor cell offset by the same `-d` -- so walking the forward direction
   through one, then its exact opposite through the other, returns an
   entity to the cell it started from, never a detour through an unrelated
-  direction. The client's `world/transitions.ts` mirrors this as
-  `checkTransitionPairSymmetry`, an opt-in half of `TransitionIndex`'s own
-  constructor (a `pairSymmetry` option, never the default -- a test double
-  that deliberately constructs an invalid pair to prove `floor-walk.ts`'s
-  own edge-triggered gating alone never bounces must keep doing so
-  unopted-in); real world data opts in.
+  direction. A stairwell has one top and one bottom: the *other* three
+  neighbours of each anchor (every axis-aligned direction but the one `d`
+  names) must each refuse a step into it -- real colliders on the drawn
+  railings, never a rule that only checks the pairing shape and stops
+  there.
+  The client's `world/transitions.ts` mirrors the pairing half as
+  `checkTransitionPairSymmetry`, pairing transitions one to one
+  (`pairTransitions`, never a plain `find` that lets two forwards claim
+  one reverse) and exposing each pairing's own `d` so a caller
+  (`street-conformance.test.ts`'s own "one entrance" geometry check) never
+  re-derives which neighbour is the entry side. This half is pure (no
+  grid) and runs on every `TransitionIndex` construction by default --
+  never an opt-in, so a subscription that hands this class real
+  transitions is checked the same way the committed street's own fixture
+  is. The standability half (both cells a pairing's own reverse
+  introduces must be standable for the real body) runs additionally when
+  `isStandable` is supplied. `skipPairSymmetry` is the named, visible
+  escape hatch a test double uses to construct an intentionally invalid
+  pair (`world/floor-walk.test.ts`'s own same-cell mutually-targeting
+  fixture, proving `stepAndTransition`'s edge-triggered gating alone never
+  bounces on it) -- the lenient path is a visible choice in that one test
+  file, never a silent default in `world/`.
 
 Chunking is the unit of subscription and of cost (FR145). `CHUNK_SIZE`
 (32 tiles, one floor) is declared once, in `sim::world`; a literal 32
@@ -518,18 +534,25 @@ are, though it is still exercised by real tests
 The street contributes no collider that is not drawn on the same floor
 (story 15.2): every `STREET_PROPS` row that carries a `solid` flag or a
 `defId` also carries a real sprite, at that same footprint -- a scripted
-walk's own rest is a face of that real prop's collider, never a bare
-`StreetBoundaryRect` shaped only to stop a test at a convenient sub-cell
-face. `STREET_BOUNDARY` exists for exactly one thing: the undrawn ring
-that closes the edge of the drawn world on one floor, so an avatar can
-never walk into the void beyond it -- nothing else belongs there.
-`client/tests/unit/test-street/street-conformance.test.ts`'s own
-conformance guard holds both directions generically, over the whole
-fixture: every collider cell traces back to a real prop's own drawn
-footprint or the undrawn `STREET_BOUNDARY` ring (never anything else),
-that ring itself never overlaps a drawn ground-tile pass, and every
-`walls`-layer or `solid` row's own footprint is fully collided, one entry
-per cell.
+walk's own rest is a face of that real prop's collider wherever a real
+prop can carry one. `STREET_BOUNDARY` is the named exception, in two
+shapes: the undrawn ring that closes the edge of the drawn world on one
+floor, and a handful of *partial*, sub-cell rects (a rect's own
+`collider` override) that give a scripted walk a real, immune rest where
+no real prop's own footprint sits -- the footbridge's own south rail, the
+subway stairwell's own upper-row band, the underpass checkpoint's own
+kerb and curb faces. A partial rect never makes a whole cell look open
+and be blocked (the guard below only exempts a rect that declares one);
+it is still visibly disclosed, by name, in the fixture and in this
+document, never a bare full-cell `StreetBoundaryRect` shaped only to stop
+a test at a convenient face. `client/tests/unit/test-street/
+street-conformance.test.ts`'s own conformance guard holds both directions
+generically, over the whole fixture: every collider cell traces back to a
+real prop's own drawn footprint or a `STREET_BOUNDARY` rect (never
+anything else), a *full-cell* `STREET_BOUNDARY` rect never overlaps a
+drawn ground-tile pass (a partial one may, by declared exception), and
+every `walls`-layer or `solid` row's own footprint is fully collided, one
+entry per cell, unless it declares its own partial shape.
 
 A frame draws four passes per floor, in this fixed order, declared even
 when a pass is empty: three flat passes -- ground, ground decals, ground

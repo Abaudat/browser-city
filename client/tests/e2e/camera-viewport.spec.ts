@@ -15,13 +15,13 @@ import {
   LAMPPOST_CELL,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
-  PLAYER_START,
+  type StreetWalkSegment,
+  streetWalkRoute,
 } from "../../src/test-street/fixture";
 import {
   committedDefs,
-  lamppostApproachRestX,
-  lamppostRestY,
-  shopfrontExitRestY,
+  lamppostApproachX,
+  streetWalkInputs,
 } from "../unit/test-street/street-world";
 import { waitForPlayerControllable } from "./boot-test-support";
 
@@ -71,6 +71,44 @@ async function walkTo(
     { timeout: 15_000 },
   );
   await page.keyboard.up(key);
+}
+
+/** Holds a segment's own key through real, OS-level `page.keyboard` input
+ * until its own `until` is met against the real, live `window.__bc`
+ * state, then releases -- the exact same `StreetWalkSegment` shape and
+ * release conditions `streetWalkRoute` declares once and
+ * `street-conformance.test.ts` already proves collision-feasible under
+ * real release lag (`enclosure.spec.ts`'s own idiom, and its own doc
+ * comment says why this reuses `streetWalkRoute` rather than a shorter,
+ * hand-rolled version: the lamppost's own approach is a waypoint now, not
+ * a rest, so missing its real collider on a slow round trip is a real
+ * risk a shorter walk does not have the extra segments to recover from). */
+async function walkRealSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
+  await page.keyboard.down(segment.key);
+  await page.waitForFunction(
+    (until) => {
+      const pos = window.__bc?.playerPosition;
+      const floor = window.__bc?.playerFloor;
+      if (!pos || floor === undefined) return false;
+      switch (until.kind) {
+        case "x-at-least":
+          return pos.x >= until.value;
+        case "x-at-most":
+          return pos.x <= until.value;
+        case "y-at-least":
+          return pos.y >= until.value;
+        case "y-at-most":
+          return pos.y <= until.value;
+        case "floor":
+          return floor === until.value;
+        case "cell":
+          return Math.floor(pos.x) === until.x && Math.floor(pos.y) === until.y;
+      }
+    },
+    segment.until,
+    { timeout: 15_000 },
+  );
+  await page.keyboard.up(segment.key);
 }
 
 /** One centre check against the player sprite's own real, live global
@@ -239,10 +277,11 @@ async function holdAndSampleFollow(
  * following. Every setup route in the `followCase` list below was
  * verified empirically, before this file was committed, by driving the
  * real, mounted scene through this exact same `walkToOpenSpot` (a real
- * `ArrowDown` rest is `(4.5, 7.25)` -- `SHOPFRONT_EXIT_REST_COLLIDER`'s
- * own doc comment says why the lamppost no longer sits on this column;
- * from there, east to the lamppost's own approach rest, south into its
- * own base collider, east past it and on to `x >= 10`, then resting west
+ * `ArrowDown` rest against the trash bin lands at `(4.5, 7.25)` --
+ * `shopfrontExitRestY()`'s own doc comment says why the lamppost no
+ * longer sits on this column; from there, east to a waypoint centred on
+ * the lamppost's own base collider, south into it, east past it and on
+ * to `x >= 10`, then resting west
  * lands back around `(1.25, 8.625)`, ~9.3 cells; crossing `x >= 7.3` then
  * resting north lands around `(7.5, 2.25)`, ~6.4 cells; the same plus a
  * further rest south returns to `(7.5, 9)`, ~6.75 cells -- the pavement
@@ -348,6 +387,11 @@ test.describe("camera/viewport (NFR48)", () => {
   // reached by its own real-keyboard setup walk from `PLAYER_START` --
   // never a teleport hook. A fresh load per case means one direction's
   // own release lag can never carry into another's start point.
+  // Story 15.2, cycle 2 (Quentin's finding 3): the doormat this used to
+  // rest against carried an undrawn collider; the real trash bin beside
+  // it gives the exact same real, natural rest instead
+  // (`shopfrontExitRestY`'s own doc comment says why), so
+  // `REST_DOWN_TO_PAVEMENT` stays a plain `"rest"` step.
   const REST_DOWN_TO_PAVEMENT: SetupStep = { kind: "rest", key: "ArrowDown" };
   for (const followCase of [
     {
@@ -358,16 +402,16 @@ test.describe("camera/viewport (NFR48)", () => {
     {
       name: "west",
       codes: ["ArrowLeft"] as const,
-      // `LAMPPOST_APPROACH_REST_COLLIDER` now walls off row 7 at the
-      // lamppost's own column (`LAMPPOST_CELL`'s own doc comment says
-      // why the lamppost moved there), so a plain east crossing on this
-      // row no longer reaches `x >= 10` -- the same three-rest detour the
-      // scripted walk (`fixture.ts`'s `streetWalkRoute`) uses gets past
-      // it: east to the wall, south into the lamppost's own base
-      // collider, then on east, clear of it.
+      // The lamppost's own base collider (`LAMPPOST_CELL`'s own doc
+      // comment says why the lamppost moved there) walls off its own
+      // column, so a plain east crossing on this row no longer reaches
+      // `x >= 10` -- the same detour the scripted walk (`fixture.ts`'s
+      // `streetWalkRoute`) uses gets past it: east to a waypoint centred
+      // on the lamppost's own collider, south into it, then on east,
+      // clear of it.
       setup: [
         REST_DOWN_TO_PAVEMENT,
-        { kind: "x-at-least", key: "ArrowRight", value: lamppostApproachRestX() },
+        { kind: "x-at-least", key: "ArrowRight", value: lamppostApproachX() },
         { kind: "rest", key: "ArrowDown" },
         { kind: "x-at-least", key: "ArrowRight", value: LAMPPOST_CELL.x + 1 },
         { kind: "x-at-least", key: "ArrowRight", value: 10 },
@@ -433,18 +477,19 @@ test.describe("camera/viewport (NFR48)", () => {
     await page.goto("/");
     await waitForSceneReady(page);
 
-    // Onto the pavement, then east to the lamppost's own column, then south
-    // into its own base collider -- the same three real rests the scripted
-    // walk (`fixture.ts`'s `streetWalkRoute`) uses (`enclosure.spec.ts`'s
-    // own idiom).
-    await walkTo(page, "ArrowDown", { x: PLAYER_START.x, y: shopfrontExitRestY() });
-    await walkTo(page, "ArrowRight", { x: lamppostApproachRestX(), y: shopfrontExitRestY() });
-    await walkTo(page, "ArrowDown", { x: lamppostApproachRestX(), y: lamppostRestY() });
-    // The stairwell shares the lamppost's own row (`enclosure.spec.ts`'s
-    // own idiom) -- a pure east walk reaches its anchor cell with no
-    // direction change, and the transition fires the instant the
-    // player's own cell matches it.
-    await walkTo(page, "ArrowRight", { x: PLATFORM_LANDING_X + 0.5, y: PLATFORM_LANDING_Y + 0.5 });
+    // Onto the pavement, all the way to the underpass checkpoint's own
+    // south rest, east of the stairwell -- `streetWalkRoute`'s own first
+    // nine segments (`walkRealSegment`'s own doc comment says why,
+    // `enclosure.spec.ts`'s own idiom: the stairwell's own one open side
+    // is its east face, `STAIRS_ENTRY_DIRECTION`'s own doc comment says
+    // why approaching from the lamppost's own row instead never arrives).
+    for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 9)) {
+      await walkRealSegment(page, segment);
+    }
+    // The demo's own reported entry (issue #310): walking left (west)
+    // into the stairs, and the transition fires the instant the player's
+    // own cell matches it.
+    await walkTo(page, "ArrowLeft", { x: PLATFORM_LANDING_X + 0.5, y: PLATFORM_LANDING_Y + 0.5 });
     expect(await page.evaluate(() => window.__bc?.playerFloor)).toBe(-1);
 
     await assertPlayerCentred(page);

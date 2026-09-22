@@ -209,7 +209,11 @@ describe("world conformance fixture", () => {
       targetY: t.target_y,
       targetFloor: t.target_floor,
     }));
-    const index = new TransitionIndex(specs);
+    // skipPairSymmetry: this is a parity check against the Rust oracle's
+    // own fixture (`fixtures/world-conformance.v1.json`), whose two
+    // transitions are one-way test data, not story 15.2's own real-world
+    // pair-symmetry shape -- unrelated to what this test proves.
+    const index = new TransitionIndex(specs, { skipPairSymmetry: true });
     const transitionCases = fixture.cases.filter((c) => c.expect_transition !== null);
     expect(transitionCases.length).toBeGreaterThan(0);
     for (const c of fixture.cases) {

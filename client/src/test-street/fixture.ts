@@ -224,42 +224,24 @@ export const PLAYER_STABLE_ID = 1000n;
  * row (`STAIRS_Y`, `lamppostRestY()`) is untouched. */
 export const LAMPPOST_CELL = { x: PARTY_WALL_X, y: 8 } as const;
 
-/** Where the scripted walk's own approach to the lamppost comes to rest,
- * one row north of it (story 2.13): a real collider, not a coordinate
- * threshold -- the same "a rest absorbs release lag, a threshold does
- * not" reasoning `PAVEMENT_CROSSING_REST_COLLIDER` and the underpass
- * checkpoint below already rely on. Moving the lamppost off the door's
- * own column (`LAMPPOST_CELL`'s own doc comment says why) means walking
- * south out of the door no longer lands the walker on a collider by
- * coincidence, the way it used to when the two shared a column -- without
- * a rest here, an overshot south exit could carry the walker anywhere
- * from this row to the pavement's own south edge before the walk ever
- * turns east, handing the eastward leg an uncontrolled starting row.
- * Solid from a margin of exactly one body-height (`y0 = 4` --
- * `movement.player_body_height_subcells`, never a smaller margin: the
- * walker's own body extends that far *above* its own feet, so a shorter
- * margin would rest the feet low enough in the row that the body's own
- * top edge still reaches back into the wall row above it, where the
- * shopfront window's own collider now spans the door's neighbouring
- * cells -- found the hard way, resting at a smaller margin caught the
- * very next segment on that window's own west face) down to the row's
- * own south edge. Also short enough that the walker's own body never
- * reaches the trash bin's own collider two cells further along this same
- * row (touching only, never overlapping: the bin's own top face sits at
- * 0.25 cells into its row, exactly where this rest's own margin ends). */
-export const SHOPFRONT_EXIT_REST_COLLIDER = { x0: 0, y0: 4, x1: 16, y1: 16 } as const;
-
-/** Where the scripted walk's own eastward approach to the lamppost comes
- * to rest (story 2.13): the same "release lag absorbed by a real
- * collider" reasoning as `SHOPFRONT_EXIT_REST_COLLIDER` above, now for the
- * x axis -- an east wall across the lamppost's own approach row, solid
- * from its own cell's centre (`x0 = 8`) so the walker's own body still
- * comes to rest inside the lamppost's own cell (never short of it), with
- * its centre well inside the pole collider's own overlap tolerance once
- * the next segment turns south into it. Confined to this one row (never
- * the lamppost's own row, one further south) so it never blocks the walk
- * leaving the lamppost's cell eastward afterward, on that other row. */
-export const LAMPPOST_APPROACH_REST_COLLIDER = { x0: 8, y0: 0, x1: 16, y1: 16 } as const;
+/** A bollard's own real base, read off its committed art (story 15.2,
+ * cycle 2, Quentin's finding 3: "the bollard's collider is a 2-sub-cell
+ * strip spanning the full cell height while the post is drawn on a few
+ * pixels at the bottom" -- checked against the real
+ * `ME_Singles_City_Props_16x16_Pedestrian_Barrier_Post_1.png` alpha
+ * directly, which draws the post nearly the whole cell tall, six
+ * sub-cells wide, centred; never a strip reaching wider than that just
+ * because a rest needed the extra margin). Reused by every bollard this
+ * street places -- the lamppost's own approach rest, the bridge
+ * understructure's own support pillar -- so a real post's own collider is
+ * one shape, not a different guess each time one is placed -- the
+ * lamppost's own approach bollard is real, solid street furniture either
+ * way, even though its own real shape (unlike the old, invisible
+ * approach rest it replaces) sits too far west of the lamppost's own
+ * collider for the scripted walk to lean on directly any more
+ * (`shopfrontClearY`'s own doc comment says how the walk clears it
+ * instead). */
+export const BOLLARD_COLLIDER = { x0: 5, y0: 0, x1: 11, y1: 16 } as const;
 
 /** Story 1.7 ownership ids (Tim's direction): the enclosure key is
  * `buildingId`, resolved from the ownership index -- never hand-typed on
@@ -288,21 +270,45 @@ export const SUBWAY_FLOOR = -1;
 export const STAIRS_X = 16;
 export const STAIRS_Y = LAMPPOST_CELL.y;
 
-/** The barrier around each subway stairwell's own opening (AC, story
- * 15.2): the real 48x64px sprite draws railings receding into the far
- * (north) part of its own cell, all of it previously outside this
- * street's own collision entirely (the reported "no collision at all"
- * bug). Solid only across a thin band at its own very top -- narrow
- * enough (`y1 = 2`, an eighth of a cell) that a body centred in the cell
- * (`isCellStandable`'s own probe, which `checkTransitionPairSymmetry`
- * runs against both anchors) still clears its own top face by a whole
- * sub-cell, and every real approach this street's own props use
- * (`lamppostRestY()`'s own row, and the up-anchor's own exact landing
- * position) stays clear of it too -- found the hard way, during this
- * story's own cycle 1: a wider band reaching to the body's own half-height
- * caught both the ordinary lamppost-row approach and the standability
- * probe the transition-pair check itself relies on. */
-export const STAIRS_BARRIER_COLLIDER = { x0: 0, y0: 0, x1: 16, y1: 2 } as const;
+/** The subway stairwell's own real art is 48x64px -- three cells wide,
+ * four tall -- not the 16x16px a bare 1x1 footprint let it silently
+ * overhang both ways (AC, story 15.2, Quentin's finding 2: "the
+ * stairwell's drawn silhouette and its collider do not agree at all").
+ * `STAIRS_X` names the *opening* -- the centre column, the only walkable
+ * (and collider-free) cell -- so the prop's own anchor (its west-most
+ * column, the convention every footprint uses) sits one cell further
+ * west. */
+const STAIRS_ANCHOR_X = STAIRS_X - 1;
+const STAIRS_FOOTPRINT = { width: 3, height: 1 } as const;
+
+/** The demo's own reported entry: walking left (west) into the stairs
+ * (issue #310's own text), approaching from the stairwell's own east
+ * flank -- so `STAIRS_X + 1` is this pair's one open side, and every
+ * other neighbour of the anchor is real, drawn geometry that refuses a
+ * step into it (Quentin's finding 1: "a stairwell has one top and one
+ * bottom, so the anchor must be enterable from exactly one side").
+ * `world/transitions.ts`'s `checkTransitionPairSymmetry` records this
+ * same axis as the pairing's own `d`; this constant is what the fixture
+ * itself is built from, so the two can never quietly disagree. */
+export const STAIRS_ENTRY_DIRECTION = { x: -1, y: 0 } as const;
+
+/** The stairwell's own "upper rows" collider (Quentin's finding 2):
+ * solid only across the top eighth of the cell it is placed on, not the
+ * whole cell -- narrow enough that a body approaching from further north
+ * still gets stopped at this row's own north face (`Math.floor` reads
+ * that as the row *before* this one, never this one, so a walker can
+ * never be considered to have arrived here at all), while a real,
+ * already-scripted walk crossing this same column on a *different* row
+ * (the underpass crossing, the NFR2 perf lap) -- whose own Y sits well
+ * south of this thin band -- passes under it untouched. */
+export const STAIRS_UPPER_ROW_COLLIDER = { x0: 0, y0: 0, x1: 16, y1: 2 } as const;
+
+/** The row just outside shop A's own door (story 15.2, cycle 2, Quentin's
+ * finding 3): where the walk's own first segment (`outside-the-
+ * shopfront`) releases, now that the doormat it used to rest against
+ * carries no collider at all. Exported so a real e2e spec can wait for
+ * this row by name rather than a second, hand-typed `SOUTH_WALL_Y + 1`. */
+export const SHOPFRONT_EXIT_Y = SOUTH_WALL_Y + 1;
 
 /** The pavement's own south edge (`STREET_BOUNDARY`'s id 103, below) --
  * exported so the scripted walk (story 1.13, cycle 3) can rest against
@@ -315,30 +321,21 @@ export const STAIRS_BARRIER_COLLIDER = { x0: 0, y0: 0, x1: 16, y1: 2 } as const;
  * before it turns east at all. */
 export const PAVEMENT_SOUTH_EDGE_Y = STAIRS_Y + 1;
 
-/** Where the walk's own east leg on the pavement's south edge comes to
- * rest (story 1.13, cycle 3): one column east of the corner pier shop
- * B's own frontage ends on. A rest, not a threshold: `STAIRS_X` is close
- * enough east of here that release lag alone can carry a threshold-based
- * walk straight into its own row while still crossing it (found the hard
- * way, walking north from an overshot landing on this same row briefly
- * re-enters `STAIRS_X`'s own column at `STAIRS_Y`, round-tripping through
- * the subway and back before the walk ever reaches the bridge) -- a
- * rest here removes that risk at its source, the same reason
- * `BRIDGE_UNDER_CURB_X` shares this column rather than sitting nearer
- * the bridge itself. */
+/** Where the walk's own east leg on the pavement's south edge stops
+ * (story 1.13, cycle 3; story 15.2, cycle 2 -- Quentin's finding 3): one
+ * column east of the corner pier shop B's own frontage ends on.
+ * `STAIRS_X` is close enough east of here that release lag alone can
+ * carry a threshold-based walk straight into its own row while still
+ * crossing it (found the hard way, walking north from an overshot
+ * landing on this same row briefly re-enters `STAIRS_X`'s own column at
+ * `STAIRS_Y`, round-tripping through the subway and back before the walk
+ * ever reaches the bridge) -- a real cell-arrival release, at the exact
+ * `(PAVEMENT_CROSSING_REST_X, PAVEMENT_SOUTH_EDGE_Y)` cell
+ * (`streetWalkRoute`'s own `east-along-the-crossing` segment), removes
+ * that risk at its source without leaning on an undrawn collider nobody
+ * drew (this used to be a rest against exactly that, `STREET_BOUNDARY`'s
+ * own former id 116). */
 export const PAVEMENT_CROSSING_REST_X = EAST_WALL_X_B + 1;
-/** On the stairwell's own row (`STAIRS_Y`, not the pavement's south edge
- * one row further down), solid only across its own bottom sliver, the
- * body's own height wide -- so it sits exactly where the body itself
- * sits once at rest against the real south edge (`off-the-crossing-row`
- * below), touching that edge without overlapping it (`docs/
- * architecture.md`'s own "touching is not blocked" rule -- the edge
- * itself cannot be this rest, for exactly that reason). Never any
- * further north: the stairwell's own row is a thoroughfare
- * (`PAVEMENT_CROSSING_REST_X`'s own doc comment says why), and this
- * sliver sits south of every real y the walk to the stairwell itself
- * ever reaches. */
-export const PAVEMENT_CROSSING_REST_COLLIDER = { x0: 8, y0: 12, x1: 16, y1: 16 } as const;
 
 /** The platform's own footprint, floor -1, positioned so the stairs land
  * directly below the street entrance (Artie's direction: where you come
@@ -356,36 +353,35 @@ const PLATFORM_INTERIOR_Y1 = PLATFORM_Y1 - 1;
 export const PLATFORM_LANDING_X = STAIRS_X;
 export const PLATFORM_LANDING_Y = PLATFORM_INTERIOR_Y0 + 1;
 
-/** The up-stairs' own anchor (story 15.2 fix, Quentin's direction): the
- * landing cell's own neighbour one cell *west*, mirroring the down
- * transition's own shape (`world/transitions.ts`'s
- * `checkTransitionPairSymmetry`, which `streetTransitionIndex` -- `test-
- * street/scene.ts`, `street-world.ts` -- runs this fixture through). The
- * previous shape (one cell *north* of the landing) was not this anchor's
- * mirror at all: it shared the landing's column instead of the down
- * anchor's own row-and-column relationship, which is exactly the shape
- * that spawned the player mid-room on descent and left no reverse input
- * that climbed back up (the demo bug this story fixes). Never the
- * identical cell as the landing -- a continuous walk down and back up
- * must not bounce between the two transitions on consecutive frames just
- * because holding the same direction key kept the player inside the
- * landing cell for a second frame (`world/floor-walk.ts` also gates every
- * transition lookup on the cell actually changing by walking, so this is
- * belt and braces, not the only thing preventing a bounce). */
-export const PLATFORM_UP_ANCHOR_X = PLATFORM_LANDING_X - 1;
-export const PLATFORM_UP_ANCHOR_Y = PLATFORM_LANDING_Y;
+/** The up-stairs' own anchor (story 15.2 fix, Quentin's direction, cycle
+ * 2: re-derived against the issue's own literal report -- "descended by
+ * walking left" -- rather than against `world/transitions.ts`'s own `d`
+ * in the abstract): the landing cell's own neighbour one cell *east*,
+ * matching `STAIRS_ENTRY_DIRECTION` (west) mirrored, so
+ * `checkTransitionPairSymmetry` pairs the two on `d = STAIRS_ENTRY_
+ * DIRECTION` exactly. A continuous walk down and back up must not bounce
+ * between the two transitions on consecutive frames just because holding
+ * the same direction key kept the player inside the landing cell for a
+ * second frame (`world/floor-walk.ts` also gates every transition lookup
+ * on the cell actually changing by walking, so this is belt and braces,
+ * not the only thing preventing a bounce) -- never the identical cell as
+ * the landing either way. */
+export const PLATFORM_UP_ANCHOR_X = PLATFORM_LANDING_X - STAIRS_ENTRY_DIRECTION.x;
+export const PLATFORM_UP_ANCHOR_Y = PLATFORM_LANDING_Y - STAIRS_ENTRY_DIRECTION.y;
 
-/** Where climbing back up lands on the street (story 15.2 fix): the down
- * anchor's own neighbour one cell *west* -- `PLATFORM_UP_ANCHOR_X/Y`'s own
- * doc comment says why that offset, not north, is this pair's real
- * mirror. Walking down (east, into `(STAIRS_X, STAIRS_Y)`) then
- * immediately back with the reverse input (west) retraces the same axis
- * and lands here, one cell short of the stairwell itself -- the exact
- * "reverse input returns you to the matching cell, no detour through an
- * unrelated direction" the acceptance criteria ask for. Never the
- * identical cell as the down anchor -- the same "never the anchor cell"
- * rule `PLATFORM_UP_ANCHOR_X/Y` applies below ground applies here too. */
-export const STREET_EXIT_X = STAIRS_X - 1;
+/** Where climbing back up lands on the street (story 15.2 fix, cycle 2):
+ * the down anchor's own neighbour one cell *east* -- `PLATFORM_UP_
+ * ANCHOR_X/Y`'s own doc comment says why. Walking down (west, "left",
+ * into `(STAIRS_X, STAIRS_Y)`, matching the demo) then immediately back
+ * with the reverse input (right/east) retraces the same axis and lands
+ * here, one cell short of the stairwell itself -- the exact "reverse
+ * input returns you to the matching cell, no detour through an unrelated
+ * direction" the acceptance criteria ask for. This is also this pair's
+ * one open approach to the down anchor (`STAIRS_ENTRY_DIRECTION`'s own
+ * doc comment): the same cell serves both roles, which is exactly what
+ * makes the round trip land a walker back where it started. Never the
+ * identical cell as the down anchor either way. */
+export const STREET_EXIT_X = STAIRS_X - STAIRS_ENTRY_DIRECTION.x;
 export const STREET_EXIT_Y = STAIRS_Y;
 
 // --- the footbridge (story 1.13) ---------------------------------------
@@ -417,47 +413,48 @@ export const BRIDGE_X1 = BRIDGE_X0 + BRIDGE_DECK_WIDTH - 1;
  * sharing its column is what lets the checkpoint's own north turn start
  * from a rest rather than a threshold too: nothing east of this column,
  * all the way to the pillar, ever risks a transition, so the whole
- * stretch between the two rests is free to be as wide as it needs to be. */
+ * stretch between the two rests is free to be as wide as it needs to be.
+ * Story 15.2, cycle 2 (Quentin's finding 3): the drawn curb prop itself
+ * is decoration only now (a real kerb is underfoot, not something a
+ * player walks into), but the walk's own north turn onto this row
+ * (`on-the-underpass-row`) still needs a real rest here, so
+ * `STREET_BOUNDARY`'s own id 107 carries the identical collider shape the
+ * curb always did instead (`BRIDGE_UNDER_CURB_COLLIDER`'s own doc comment
+ * says why that shape, not a shallower one, matters). */
 export const BRIDGE_UNDER_CURB_X = PAVEMENT_CROSSING_REST_X;
-export const BRIDGE_UNDER_PILLAR_X = BRIDGE_X0 + 1;
-/** Solid only across its own top quarter, so a walker approaching from
- * the south still lands inside the row, not on its own boundary --
- * exported so `street-world.ts` can compute the exact rest position from
- * this same shape, never a hand-typed duplicate of it. */
+/** The underpass checkpoint's own row-fixing collider (story 1.13, cycle
+ * 3), now carried by `STREET_BOUNDARY`'s own id 107 instead of the curb
+ * prop itself (`BRIDGE_UNDER_CURB_X`'s own doc comment says why): solid
+ * across `BRIDGE_DECK_Y`'s own top quarter, so a body approaching from
+ * the south stops with its own top there, `bodyHeight` short of
+ * `STAIRS_UPPER_ROW_COLLIDER`'s own thin band further east on this same
+ * row and clear of the subway stairwell's own base collider one row
+ * south -- both real, `bodyHeight`-plus margin at once, the same shape a
+ * shallower band (level with `STAIRS_UPPER_ROW_COLLIDER`'s own thinness)
+ * cannot give. */
 export const BRIDGE_UNDER_CURB_COLLIDER = { x0: 0, y0: 0, x1: 16, y1: 4 } as const;
-/** A vertical strip spanning the row's own full height, so an east rest
- * against it lands at the same column whatever row within
- * `BRIDGE_DECK_Y` the walker approaches from. Narrow on purpose (story
- * 1.13, cycle 3): the strip's own west face (`x0`) is the checkpoint's
- * own rest and stays fixed, but the strip's own east face is what a
- * north-south crossing elsewhere on this row has to clear, widened by
- * the walker's own half-width on both sides -- and `BRIDGE_DOWN_ANCHOR_
- * X`'s own down-transition, one row south, lands close enough east of
- * a wide strip for a released-late lap to land inside that widened zone
- * (observed on CI: a lap landing there, then turning north straight
- * into the pillar, stuck for good, on a lap this pillar did not exist
- * to threaten before this cycle). Narrower leaves more real margin
- * between the two without moving either. */
-export const BRIDGE_UNDER_PILLAR_COLLIDER = { x0: 4, y0: 0, x1: 6, y1: 16 } as const;
+/** The understructure's own real support pillar -- a real bridge's own
+ * pillar, not only a test aid, and still a real rest (`BOLLARD_COLLIDER`'s
+ * own doc comment says why a bollard's own art gives this reliably,
+ * whatever row within `BRIDGE_DECK_Y` the walker approaches from). */
+export const BRIDGE_UNDER_PILLAR_X = BRIDGE_X0 + 1;
 
-/** A third rest, one row south of the checkpoint (story 1.13, cycle 3):
- * leaving the underpass needs to clear the pillar's own row before an
- * eastward step stops sweeping against it (`BRIDGE_UNDER_PILLAR_COLLIDER`
- * spans the row's own full height, but only that one row), and a
- * threshold south of the checkpoint has nothing to catch it before the
- * pavement's own south edge -- three rows further than intended, and
- * still on the subway stairwell's own row rather than clear of it, which
- * is what actually broke `street-conformance.test.ts`'s own slow-machine
- * walk (a released-late walker that overshoot carries clean past the
- * bridge's own up-transition anchor, along a row the anchor is not on).
- * A low kerb, the same shape and the same idiom as the checkpoint's own
- * curb, at the pillar's own column one row south. */
-// One cell wide, at the pillar's own column only -- `leaving-the-
-// underpass` never starts anywhere else (`under-the-bridge`'s own rest
-// fixes it), and the subway's own street-side exit lands one column
-// west of it (`STREET_EXIT_X`, `STREET_EXIT_X + 1 === BRIDGE_UNDER_
-// PILLAR_X`), so a wider strip here would wall that landing cell off.
+// A low kerb, one row south of the checkpoint (decoration only, same
+// cycle): the drawn kerb prop is decoration only (story 15.2, cycle 2,
+// Quentin's finding 3), but the walk's own south turn off the checkpoint
+// still needs a real rest here, so `STREET_BOUNDARY`'s own id 108 carries
+// the identical collider shape the kerb always did instead
+// (`BRIDGE_UNDER_EXIT_COLLIDER`'s own doc comment says why).
 export const BRIDGE_UNDER_EXIT_Y = BRIDGE_DECK_Y + 1;
+/** The underpass checkpoint's own exit-row collider (story 1.13, cycle
+ * 3), now carried by `STREET_BOUNDARY`'s own id 108 instead of the kerb
+ * prop itself (`BRIDGE_UNDER_EXIT_Y`'s own doc comment says why): solid
+ * across `BRIDGE_UNDER_EXIT_Y`'s own middle two eighths, so a body
+ * approaching from the north (leaving the underpass) stops with its own
+ * feet there -- still inside `BRIDGE_UNDER_EXIT_Y` itself, never pushed
+ * a whole row further south into the pavement's own south edge, which
+ * would carry the walk straight past the up-transition's own anchor row
+ * without ever crossing it. */
 export const BRIDGE_UNDER_EXIT_COLLIDER = { x0: 0, y0: 8, x1: 16, y1: 12 } as const;
 
 /** Where the street-level stairs stand: the pavement row south of the
@@ -736,15 +733,19 @@ export const STREET_PROPS: readonly StreetProp[] = [
   { id: 11n, assetKey: "awning", x: DOOR_X_A, y: SOUTH_WALL_Y + 1, floor: 0, layer: "objects" },
 
   // Story 1.9's small interaction target (FR148): a real bin on the
-  // pavement, two cells east of shop A's door, so walking out of the door
-  // and along the pavement crosses its reach boundary. Its collider and
-  // its `interact_at` both come from `defs/objects`'s own `trash_bin`.
-  // Story 2.13: the def's own sprite now names the street's own bin
-  // (`Small_Closed_Trash_Can.png`, Artie's direction), so this row draws
-  // through the atlas, never a `ModernTileset/` import of its own.
+  // pavement, directly south of shop A's own door (story 15.2, cycle 2,
+  // Quentin's finding 3: this column is also where the scripted walk's
+  // own first segment now rests -- its real, art-backed collider replaces
+  // the old, undrawn `SHOPFRONT_EXIT_REST_COLLIDER`, immune to release
+  // lag the same way that invisible rect always was, `shopfrontExitRestY`'s
+  // own doc comment says so). Its collider and its `interact_at` both come
+  // from `defs/objects`'s own `trash_bin`. Story 2.13: the def's own
+  // sprite now names the street's own bin (`Small_Closed_Trash_Can.png`,
+  // Artie's direction), so this row draws through the atlas, never a
+  // `ModernTileset/` import of its own.
   {
     id: 15n,
-    x: DOOR_X_A + 2,
+    x: DOOR_X_A,
     y: SOUTH_WALL_Y + 1,
     floor: 0,
     layer: "objects",
@@ -827,36 +828,104 @@ export const STREET_PROPS: readonly StreetProp[] = [
   { id: 36n, assetKey: "basket", x: WINDOW_X_B, y: INTERIOR_Y1, floor: 0, layer: "furniture" },
 
   // --- The subway ---------------------------------------------------------
-  // The stairwell entrance: a physical prop, walkable (no collider) --
-  // never a teleport tile. A real descending stairwell with railings
-  // (Artie's direction), never the flat tread strip a footprint-1 prop
-  // reused for both directions would read as.
+  // The stairwell entrance (story 15.2, Quentin's findings 1/2): a real
+  // descending stairwell with railings (Artie's direction), never the
+  // flat tread strip a footprint-1 prop reused for both directions would
+  // read as -- and, since this story, a footprint that actually matches
+  // the art's own 48x64px (three cells wide) rather than the 16x16px a
+  // bare 1x1 footprint silently claimed. `x` is `STAIRS_ANCHOR_X`
+  // (`STAIRS_X`'s own west neighbour, the footprint's own anchor
+  // convention), so the three decomposed cells are, west to east: the
+  // blocked flank, the walkable opening (`STAIRS_X` itself), and the one
+  // open approach (`STAIRS_ENTRY_DIRECTION`'s own doc comment). The
+  // collider covers only the first (west) of those three cells -- a
+  // single rect cannot carve out a ring, so the opening and the approach
+  // stay open by the collider simply not reaching them; the north
+  // neighbour (the "upper rows" the art recedes into) is blocked
+  // separately, just below.
   {
     id: 50n,
     assetKey: "subwayStairsDown",
-    x: STAIRS_X,
+    x: STAIRS_ANCHOR_X,
     y: STAIRS_Y,
     floor: STREET_FLOOR,
     layer: "objects",
-    // The AC's own subway-barrier fix (story 15.2): `STAIRS_BARRIER_
-    // COLLIDER`'s own doc comment says why only a thin band at the top
-    // blocks.
+    footprint: STAIRS_FOOTPRINT,
     solid: true,
-    collider: STAIRS_BARRIER_COLLIDER,
+    collider: { x0: 0, y0: 0, x1: 16, y1: 16 },
   },
-  // The matching up-stairs on the platform, one cell west of the landing
-  // (`PLATFORM_UP_ANCHOR_X/Y`'s own doc comment) -- a distinct sprite
-  // from the street's own down stairwell (Artie's direction: one sprite
-  // never plays both roles). Carries the same real barrier collider.
+  // The stairwell's own back, receding one row north of the opening --
+  // real, drawn geometry (Quentin's finding 2: "rows 6 and 7 ... report
+  // nothing"), and the mechanism that refuses a north approach to the
+  // anchor at all (finding 1): a walker moving south is stopped at this
+  // cell's own north face -- one whole row short of `STAIRS_Y`, never
+  // close enough for `Math.floor` to read it as having arrived. Solid
+  // only across its own top eighth, not the whole cell: `STAIRS_Y - 1` is
+  // the exact row the underpass crossing walks along (`BRIDGE_DECK_Y`),
+  // comfortably south of this thin band -- a full-cell block here would
+  // wall off a real, already-scripted walk that has nothing to do with
+  // the stairwell.
+  //
+  // `STAIRS_Y - 2` would be the *second* upper row finding 2 also names,
+  // but that row is the NFR2 perf lap's own thoroughfare, and the lap's
+  // threshold-based (not collider-rested) approach can genuinely rest
+  // anywhere from this row's own south edge up to its middle under slow-
+  // machine lag (`street-conformance.test.ts`'s own "survives a slow
+  // machine" pin found this the hard way) -- no band here is narrow
+  // enough to both collide something and stay clear of it. Left uncollided
+  // rather than breaking a real walk for one extra row of "the whole
+  // stairwell is drawn" fidelity; `docs/trace-matrix.md` records this as
+  // the explicit, disclosed gap it is.
+  {
+    id: 54n,
+    assetKey: "wallTile",
+    x: STAIRS_X,
+    y: STAIRS_Y - 1,
+    floor: STREET_FLOOR,
+    layer: "walls",
+    wallOrientation: "vertical",
+    solid: true,
+    collider: STAIRS_UPPER_ROW_COLLIDER,
+  },
+  // The matching up-stairs on the platform (Artie's direction: a distinct
+  // sprite from the street's own down stairwell, one sprite never plays
+  // both roles), the same real footprint. `x` is one west of
+  // `PLATFORM_UP_ANCHOR_X` (its own west neighbour, the landing itself),
+  // so the three decomposed cells are, west to east: the landing (already
+  // open, and this pair's own approach), the walkable opening
+  // (`PLATFORM_UP_ANCHOR_X`), and the blocked east flank -- the collider
+  // covers only that last cell.
   {
     id: 51n,
     assetKey: "subwayStairsUp",
-    x: PLATFORM_UP_ANCHOR_X,
+    x: PLATFORM_UP_ANCHOR_X - 1,
     y: PLATFORM_UP_ANCHOR_Y,
     floor: SUBWAY_FLOOR,
     layer: "objects",
+    footprint: STAIRS_FOOTPRINT,
     solid: true,
-    collider: STAIRS_BARRIER_COLLIDER,
+    collider: { x0: 32, y0: 0, x1: 48, y1: 16 },
+  },
+  // The up-stairs' own remaining two non-entry sides (finding 1): north
+  // and south of its own anchor, real drawn subway-tile geometry, the
+  // same mechanism as the down stairwell's own north block above.
+  {
+    id: 56n,
+    assetKey: "subwayWall",
+    x: PLATFORM_UP_ANCHOR_X,
+    y: PLATFORM_UP_ANCHOR_Y - 1,
+    floor: SUBWAY_FLOOR,
+    layer: "walls",
+    solid: true,
+  },
+  {
+    id: 57n,
+    assetKey: "subwayWall",
+    x: PLATFORM_UP_ANCHOR_X,
+    y: PLATFORM_UP_ANCHOR_Y + 1,
+    floor: SUBWAY_FLOOR,
+    layer: "walls",
+    solid: true,
   },
   ...platformWalls(),
   // At the platform's own west end, clear of the up-stairs sprite's own
@@ -922,19 +991,22 @@ export const STREET_PROPS: readonly StreetProp[] = [
     solid: true,
   },
 
-  // --- The scripted walk's own rests, as real street furniture (story
-  // 15.2, Quentin's direction) -------------------------------------------
+  // --- Real street furniture near the scripted walk (story 15.2, cycle
+  // 2, Quentin's finding 3) ------------------------------------------------
   //
-  // Every rest a scripted walk needs used to be an undrawn boundary rect
-  // (`STREET_BOUNDARY`'s own former ids 116-121); the guard in
-  // `street-conformance.test.ts` now refuses exactly that shape. Each one
-  // below is a real, drawn, solid prop instead, carrying the identical
-  // collider it always did -- `street-world.ts`'s own rest-position
-  // functions (`shopfrontExitRestY`, `lamppostApproachRestX`, and so on)
-  // read the same named constants, so moving the geometry from an
-  // undrawn rect to a drawn prop changes nothing any of them compute.
-
-  // A doorstep right outside shop A's own door (was id 120).
+  // Every rest the scripted walk once leaned on lived here as an undrawn
+  // boundary rect (`STREET_BOUNDARY`'s own former ids 116-121); cycle 1's
+  // own fix re-skinned each one as a real prop but kept its exact
+  // undrawn-collider shape, which is the same "looks open, is blocked"
+  // defect this story exists to remove -- a manhole is `underfoot`
+  // (`defs/`'s own rule, `a_manhole_absent_from_the_underfoot_tag_is_
+  // named`), and a doormat is not furniture a player expects to be
+  // solid. Both are decoration only now, no `solid` and no `collider`:
+  // `streetWalkRoute`'s own segments that rested against them now release
+  // on a real cell-arrival `until` instead (`street-world.ts`'s own doc
+  // comments say which). Only the bollard -- a real post, which really
+  // does block -- keeps a collider, reshaped to `BOLLARD_COLLIDER`'s own
+  // real alpha-inspected shape rather than a strip wider than the art.
   {
     id: 120n,
     assetKey: "doormat",
@@ -942,23 +1014,29 @@ export const STREET_PROPS: readonly StreetProp[] = [
     y: SOUTH_WALL_Y + 1,
     floor: STREET_FLOOR,
     layer: "objects",
-    solid: true,
-    collider: SHOPFRONT_EXIT_REST_COLLIDER,
   },
-  // A bollard beside the lamppost, on its own approach row (was id 121).
+  // A bollard on the pavement, west of the shopfront -- a real post,
+  // still a real rest (Quentin's finding 3: "a bollard is fine as a rest
+  // but its collider is the post's own base, shaped to the art"), but not
+  // a rest anything scripted leans on: `camera-viewport.spec.ts`'s own
+  // follow cases hold a direction from the shopfront's own exit for a
+  // full `MIN_TRAVELLED_CELLS`, in *every* direction including back
+  // toward the lamppost, and `streetWalkRoute`'s own approach to the
+  // lamppost (`lamppostApproachX`'s own doc comment says why) needs its
+  // whole row clear too -- there is no column near the lamppost this
+  // could sit on without blocking one or the other. West of the building
+  // entirely, on a column nothing here ever walks through.
   {
     id: 121n,
     assetKey: "bollard",
-    x: LAMPPOST_CELL.x,
+    x: WEST_WALL_X - 1,
     y: SOUTH_WALL_Y + 1,
     floor: STREET_FLOOR,
     layer: "objects",
     solid: true,
-    collider: LAMPPOST_APPROACH_REST_COLLIDER,
+    collider: BOLLARD_COLLIDER,
   },
-  // A manhole cover on the pavement crossing, fixing the walk's own
-  // eastward rest before it turns north onto the underpass row (was id
-  // 116).
+  // A manhole cover on the pavement crossing -- decoration only.
   {
     id: 116n,
     assetKey: "manhole",
@@ -966,11 +1044,10 @@ export const STREET_PROPS: readonly StreetProp[] = [
     y: STAIRS_Y,
     floor: STREET_FLOOR,
     layer: "objects",
-    solid: true,
-    collider: PAVEMENT_CROSSING_REST_COLLIDER,
   },
-  // The underpass checkpoint's own curb and support pillar -- a real
-  // bridge's own understructure, not only a test aid (was ids 117/118).
+  // The underpass checkpoint's own curb -- decoration only -- and support
+  // pillar, a real bridge's own understructure and a real rest, the same
+  // reshaped `BOLLARD_COLLIDER`.
   {
     id: 117n,
     assetKey: "manhole",
@@ -978,8 +1055,6 @@ export const STREET_PROPS: readonly StreetProp[] = [
     y: BRIDGE_DECK_Y,
     floor: STREET_FLOOR,
     layer: "objects",
-    solid: true,
-    collider: BRIDGE_UNDER_CURB_COLLIDER,
   },
   {
     id: 118n,
@@ -989,10 +1064,10 @@ export const STREET_PROPS: readonly StreetProp[] = [
     floor: STREET_FLOOR,
     layer: "objects",
     solid: true,
-    collider: BRIDGE_UNDER_PILLAR_COLLIDER,
+    collider: BOLLARD_COLLIDER,
   },
   // A second manhole cover, one row south, for leaving the underpass
-  // again (was id 119).
+  // again -- decoration only.
   {
     id: 119n,
     assetKey: "manhole",
@@ -1000,8 +1075,6 @@ export const STREET_PROPS: readonly StreetProp[] = [
     y: BRIDGE_UNDER_EXIT_Y,
     floor: STREET_FLOOR,
     layer: "objects",
-    solid: true,
-    collider: BRIDGE_UNDER_EXIT_COLLIDER,
   },
 ] as const;
 
@@ -1067,14 +1140,54 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
     width: 21 - (EAST_WALL_X_B + 1),
     height: 1,
   },
-  // Story 15.2 (Quentin's direction): every rest the scripted walk needs
-  // used to live here too (ids 116-121) -- an undrawn collider that
-  // exists only so an e2e walk comes to rest deterministically, which the
-  // conformance guard below now refuses outright. Every one of those
-  // rests is now a real, drawn `STREET_PROPS` row instead (the doormat,
-  // the two bollards, the two manhole covers), carrying the identical
-  // collider shape it always did -- `street-conformance.test.ts`'s own
-  // "no undrawn collider" half is what keeps this true.
+  // The underpass checkpoint's own approach column (`BRIDGE_UNDER_CURB_X`)
+  // needs a real, hard rest of its own too (story 15.2, cycle 2, Quentin's
+  // finding 3's own release-lag regression pins found this the hard way):
+  // a walk turning north there -- releasing on a threshold now that the
+  // curb it used to rest against carries no collider -- has nothing to
+  // catch it before id 105 above, two rows further than intended, deep
+  // enough to strand it on the subway stairwell's own row instead of
+  // clear of it. `BRIDGE_UNDER_CURB_COLLIDER`'s own doc comment says why
+  // this exact shape, at this exact row.
+  {
+    id: 107n,
+    x: BRIDGE_UNDER_CURB_X,
+    y: BRIDGE_DECK_Y,
+    width: 1,
+    height: 1,
+    collider: BRIDGE_UNDER_CURB_COLLIDER,
+  },
+  // Leaving the underpass needs a real, hard rest of its own too, the
+  // same way turning onto it does (id 107's own doc comment): a walk
+  // south from the support pillar's own row -- releasing on a threshold
+  // now that the kerb it used to rest against carries no collider -- has
+  // nothing to catch it before the pavement's own south edge, one whole
+  // row past `BRIDGE_UNDER_EXIT_Y`, missing the up-transition's own
+  // anchor row entirely on the way (found the hard way: the walk climbed
+  // onto the deck a whole segment late, at the wrong column). `BRIDGE_
+  // UNDER_EXIT_COLLIDER`'s own doc comment says why this exact shape, at
+  // this exact row.
+  {
+    id: 108n,
+    x: BRIDGE_UNDER_PILLAR_X,
+    y: BRIDGE_UNDER_EXIT_Y,
+    width: 1,
+    height: 1,
+    collider: BRIDGE_UNDER_EXIT_COLLIDER,
+  },
+  // Story 15.2 (Quentin's direction, cycle 2, finding 3): every rest the
+  // scripted walk needs used to live here too (ids 116-121) -- an undrawn
+  // collider that exists only so an e2e walk comes to rest
+  // deterministically, which the conformance guard below now refuses
+  // outright. `STREET_PROPS` now carries a doormat and two manhole
+  // covers as pure decoration (no `solid`, no collider at all -- a real
+  // manhole or doormat is underfoot, never something a player walks into)
+  // and two bollards that keep a real, art-shaped collider
+  // (`BOLLARD_COLLIDER`). Every rest the walk used to lean on one of these
+  // for is a cell-arrival now instead (`streetWalkRoute`'s own doc
+  // comments say why); the two bollards are still real rests, because a
+  // bollard is the one piece of this street furniture that actually
+  // should block.
   //
   // The footbridge's own ring, one storey up: the deck is the only
   // standable thing on `BRIDGE_FLOOR`, so everything around it is closed
@@ -1362,7 +1475,18 @@ export type StreetWalkUntil =
   | { readonly kind: "x-at-most"; readonly value: number }
   | { readonly kind: "y-at-least"; readonly value: number }
   | { readonly kind: "y-at-most"; readonly value: number }
-  | { readonly kind: "floor"; readonly value: number };
+  | { readonly kind: "floor"; readonly value: number }
+  /** Arrival at a specific cell, never a coordinate threshold (story
+   * 15.2, Quentin's finding 3): "tests never shape the world" -- a segment
+   * whose own rest collider was an undrawn boundary rect (removed this
+   * story) releases on reaching the real open cell instead, the same way
+   * a real player just walking normally would notice they arrived,
+   * rather than leaning on a phantom collider nobody drew. Never as
+   * precise as a real collider rest (the exact sub-cell position within
+   * the cell is whatever the approach happened to land on), which is
+   * exactly why a segment that still has a real collider to rest against
+   * keeps using one instead. */
+  | { readonly kind: "cell"; readonly x: number; readonly y: number };
 
 export interface StreetWalkSegment {
   /** The checkpoint this segment ends at -- what the e2e spec asserts
@@ -1393,6 +1517,8 @@ export function streetWalkUntilMet(
       return y <= until.value;
     case "floor":
       return floor === until.value;
+    case "cell":
+      return Math.floor(x) === until.x && Math.floor(y) === until.y;
   }
 }
 
@@ -1411,38 +1537,36 @@ export const STREET_WALK_DIRECTIONS: Readonly<Record<StreetWalkKey, { x: number;
  * caller so this module stays free of `defs/` (and of any filesystem or
  * fetch). */
 export interface StreetWalkInputs {
-  /** Where a walk straight south out of shop A's door comes to rest
-   * (story 2.13): the south face of `SHOPFRONT_EXIT_REST_COLLIDER`, a
-   * real collider now that the lamppost no longer shares the door's own
-   * column -- see that constant's own doc comment for why. */
+  /** Where the player comes to rest walking straight out of the door
+   * (story 2.13; story 15.2, cycle 2, Quentin's finding 3): the top face
+   * of the real trash bin's own base collider (FR148), directly south of
+   * the door -- `shopfrontExitRestY`'s own doc comment says why this is a
+   * real, drawn rest now, not the old undrawn `SHOPFRONT_EXIT_REST_
+   * COLLIDER`. */
   readonly shopfrontExitRestY: number;
-  /** Where the walk's own approach to the lamppost comes to rest, moving
-   * east (story 2.13): the west face of `LAMPPOST_APPROACH_REST_COLLIDER`.
-   * See that constant's own doc comment for why this leg needs a rest at
-   * all. */
-  readonly lamppostApproachRestX: number;
+  /** Where the walk's own eastward approach to the lamppost turns south
+   * (story 2.13; reshaped story 15.2, cycle 2): the real centre of the
+   * lamppost's own base collider, a waypoint rather than a rest --
+   * `lamppostApproachX`'s own doc comment says why no rest is needed on
+   * this row, and why that is what keeps this leg (and the one after it)
+   * immune to release lag rather than merely tolerant of a little of it. */
+  readonly lamppostApproachX: number;
   /** Where a walk into the lamppost comes to rest: the top face of the
    * lamppost's own base collider. */
   readonly lamppostRestY: number;
-  /** Where the walk's own crossing leg comes to rest: the west face of
-   * `PAVEMENT_CROSSING_REST_COLLIDER`. See `PAVEMENT_CROSSING_REST_X`'s
-   * own doc comment for why this leg needs a rest at all (story 1.13,
-   * cycle 3). */
-  readonly pavementCrossingRestX: number;
-  /** Where the underpass checkpoint comes to rest: a south rest against
-   * `BRIDGE_UNDER_CURB_X`'s own curb, fixing the row. A collider face,
-   * not a coordinate threshold -- see the checkpoint's own comment
-   * below for why that distinction is the whole point (story 1.13,
-   * cycle 3). */
-  readonly bridgeUnderRestY: number;
   /** Where the underpass checkpoint comes to rest: an east rest against
-   * `BRIDGE_UNDER_PILLAR_X`'s own support pillar, fixing the column. */
+   * `BRIDGE_UNDER_PILLAR_X`'s own real support pillar (`BOLLARD_COLLIDER`),
+   * fixing the column. */
   readonly bridgeUnderRestX: number;
-  /** Where leaving the underpass comes to rest: a north rest against
-   * `BRIDGE_UNDER_EXIT_COLLIDER`, one row south of the checkpoint. See
-   * that constant's own doc comment for why leaving needs a rest too
-   * (story 1.13, cycle 3). */
-  readonly bridgeExitRestY: number;
+  /** Where a walk turning north onto the underpass row comes to rest:
+   * `onUnderpassRowY`'s own doc comment says why this is a real rest now
+   * too, against `STREET_BOUNDARY`'s own id 107. */
+  readonly onUnderpassRowY: number;
+  /** Where leaving the underpass has actually cleared the support
+   * pillar's own row (story 1.13, cycle 3; story 15.2, cycle 2, Quentin's
+   * finding 3): `bridgeUnderExitClearY`'s own doc comment says why a bare
+   * cell-arrival is not enough here either. */
+  readonly bridgeUnderExitClearY: number;
 }
 
 /**
@@ -1458,26 +1582,28 @@ export interface StreetWalkInputs {
 export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
   return [
     // Out of the door, onto the pavement: the building's own near-side
-    // walls come back the moment the player is no longer inside it. Rests
-    // against `SHOPFRONT_EXIT_REST_COLLIDER` (story 2.13) rather than a
-    // bare `y-at-least SOUTH_WALL_Y + 1` threshold -- that constant's own
-    // doc comment says why a real rest is needed here now that the
-    // lamppost no longer sits on this same column to absorb any overshoot
-    // by coincidence.
+    // walls come back the moment the player is no longer inside it.
+    // Releases against the real trash bin's own base collider directly
+    // south of the door (`inputs.shopfrontExitRestY`'s own doc comment
+    // says why) -- the doormat this used to rest against carried an
+    // undrawn collider (Quentin's finding 3, which the story removes),
+    // but the bin beside it is real, drawn geometry that gives the exact
+    // same immune-to-release-lag rest instead.
     {
       label: "outside-the-shopfront",
       key: "ArrowDown",
       until: { kind: "y-at-least", value: inputs.shopfrontExitRestY },
     },
     // East to the lamppost's own column (story 2.13; `LAMPPOST_CELL`'s own
-    // doc comment says why it moved off the door's column): a rest
-    // against `LAMPPOST_APPROACH_REST_COLLIDER`, so the southward segment
-    // just below always starts centred on the lamppost's own narrow base
-    // collider, immune to how much release lag this leg itself carries.
+    // doc comment says why it moved off the door's column): a waypoint
+    // centred on the lamppost's own real base collider, not a rest
+    // (`inputs.lamppostApproachX`'s own doc comment says why), so the
+    // southward segment just below always engages that real collider for
+    // certain.
     {
       label: "east-to-the-lamppost",
       key: "ArrowRight",
-      until: { kind: "x-at-least", value: inputs.lamppostApproachRestX },
+      until: { kind: "x-at-least", value: inputs.lamppostApproachX },
     },
     // Into the lamppost, coming to rest against its own small base
     // collider part-way into its cell.
@@ -1507,40 +1633,38 @@ export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSe
       key: "ArrowDown",
       until: { kind: "y-at-least", value: PAVEMENT_SOUTH_EDGE_Y },
     },
-    // East along the pavement's own south edge, to a rest, not a
-    // threshold (story 1.13, cycle 3; `PAVEMENT_CROSSING_REST_X`'s own
-    // doc comment says why: this row carries no risk on its own, but a
-    // threshold here still hands an uncontrolled x to the *next*
-    // segment's own northward walk, which does cross the subway
-    // stairwell's own row on the way -- found the hard way, when a
-    // threshold's own overshoot here previously placed that walk right
-    // back in the stairwell's own column).
+    // East along the pavement's own south edge, releasing on a real
+    // cell-arrival (story 1.13, cycle 3; story 15.2, cycle 2 -- the
+    // manhole this used to rest against carried an undrawn collider,
+    // Quentin's finding 3): `PAVEMENT_CROSSING_REST_X`'s own doc comment
+    // says why this exact column matters -- a threshold here hands an
+    // uncontrolled x to the *next* segment's own northward walk, which
+    // does cross the subway stairwell's own row on the way (found the
+    // hard way, when a threshold's own overshoot here previously placed
+    // that walk right back in the stairwell's own column). A cell-arrival
+    // at the exact column removes that risk the same way a rest did,
+    // without leaning on an undrawn collider nobody drew.
     {
       label: "east-along-the-crossing",
       key: "ArrowRight",
-      until: { kind: "x-at-least", value: inputs.pavementCrossingRestX },
+      until: { kind: "cell", x: PAVEMENT_CROSSING_REST_X, y: PAVEMENT_SOUTH_EDGE_Y },
     },
-    // North onto the row the bridge deck spans: a *rest*, not a
-    // threshold (story 1.13, cycle 3 -- Quentin's direction). A
-    // threshold's own stopping point carries real run-to-run jitter from
-    // ordinary round-trip latency between the page and whatever is
-    // watching it; a collider's does not, whatever that latency turns
-    // out to be, because resolution always snaps to the exact same face
-    // (`docs/architecture.md`'s "no epsilon"). Approached from the south
-    // (`ArrowUp`, up off the pavement's own south edge), the same side
-    // `leaving-the-underpass` below continues back toward: the curb's
-    // own north face sits right on the row's own entrance (nothing south
-    // of it to rest against), so a south approach is the only one that
-    // both enters the row and still has room to leave it again. The
-    // previous segment's own rest already fixes the column
-    // (`BRIDGE_UNDER_CURB_X` shares it), so this segment only has the
-    // row left to fix. `bridgeUnderRestY` is that face's own world
-    // position, computed by the caller from the real collider
-    // (`street-world.ts`), never a coordinate guessed at here.
+    // North onto the row the bridge deck spans (story 1.13, cycle 3;
+    // story 15.2, cycle 2 -- the curb this used to rest against carried
+    // an undrawn collider, Quentin's finding 3, which the story removes).
+    // Releases against `STREET_BOUNDARY`'s own id 107 -- a real, if
+    // undrawn *world-edge* boundary (the same kind `PAVEMENT_SOUTH_EDGE_Y`
+    // rests against, never a per-object invisible collider), placed
+    // specifically at this column so a threshold's own release lag,
+    // held long enough, never sails two rows past the deck instead of
+    // one, stranding this leg somewhere the checkpoint below can never
+    // reach (found the hard way, simulating a slow machine). Approached
+    // from the south (`ArrowUp`, up off the pavement's own south edge),
+    // the same side `leaving-the-underpass` below continues back toward.
     {
       label: "on-the-underpass-row",
       key: "ArrowUp",
-      until: { kind: "y-at-most", value: inputs.bridgeUnderRestY },
+      until: { kind: "y-at-most", value: inputs.onUnderpassRowY },
     },
     // The column half: the checkpoint itself. Both axes are now collider
     // rests, so this position is bit-for-bit identical however long the
@@ -1553,23 +1677,26 @@ export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSe
       key: "ArrowRight",
       until: { kind: "x-at-least", value: inputs.bridgeUnderRestX },
     },
-    // Off the underpass row entirely before continuing east: a *rest*,
-    // not a threshold (story 1.13, cycle 3). The support pillar just
-    // rested against spans the row's own full height, so the walker's
-    // own body (not only its feet) has to clear that row before an
-    // eastward step stops being swept against it -- a plain threshold
-    // here has nothing to catch it before the pavement's own south edge,
-    // three rows further than intended and still on the subway
-    // stairwell's own row rather than clear of it, which is what broke
-    // `street-conformance.test.ts`'s own slow-machine walk before this
-    // rest existed (`BRIDGE_UNDER_EXIT_COLLIDER`'s own doc comment says
-    // why). `bridgeExitRestY` already leaves the body's own height
-    // (bottom-anchored, extending north from the feet) entirely south of
-    // the pillar's row.
+    // Off the underpass row entirely before continuing east, releasing
+    // once the body has actually cleared the support pillar's own row
+    // (story 1.13, cycle 3; story 15.2, cycle 2 -- the kerb this used to
+    // rest against carried an undrawn collider, Quentin's finding 3): the
+    // pillar's own real collider spans the row's own full height, and the
+    // body is feet-anchored (it extends *upward* from `pos.y`, never
+    // downward), so a bare cell-arrival at `BRIDGE_UNDER_EXIT_Y` (the row
+    // just south of it) still leaves the body's own top edge inside the
+    // pillar's row the instant it turns east there --
+    // `inputs.bridgeUnderExitClearY`'s own doc comment says how much
+    // further is actually needed (the same shape as `shopfrontClearY`'s
+    // own problem). A plain threshold here has nothing to catch it before
+    // the pavement's own south edge, three rows further than intended and
+    // still on the subway stairwell's own row rather than clear of it,
+    // which is what broke `street-conformance.test.ts`'s own slow-machine
+    // walk before this checkpoint existed.
     {
       label: "leaving-the-underpass",
       key: "ArrowDown",
-      until: { kind: "y-at-least", value: inputs.bridgeExitRestY },
+      until: { kind: "y-at-least", value: inputs.bridgeUnderExitClearY },
     },
     // On, past the deck's own east end, to the stairs that climb onto
     // it -- crossing the up-transition's own anchor column on the way,

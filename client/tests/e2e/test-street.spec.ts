@@ -327,6 +327,8 @@ async function walkSegmentSynthetic(page: Page, segment: StreetWalkSegment): Pro
               return position.y <= u.value;
             case "floor":
               return window.__bc?.playerFloor === u.value;
+            case "cell":
+              return Math.floor(position.x) === u.x && Math.floor(position.y) === u.y;
           }
         };
         const release = (ok: boolean) => {
@@ -1025,8 +1027,9 @@ test("FR173's affordance mark is a real pixel change, confined to the hovered ob
   // Real keyboard input (`walkSegmentSynthetic`'s own doc comment says why
   // synthetic, not `page.keyboard`, in this one spec). The first segment is
   // `streetWalkRoute`'s own proven, committed one (out of the shopfront
-  // door, resting against `SHOPFRONT_EXIT_REST_COLLIDER`) -- reused rather
-  // than re-derived, since it is already proven collision-safe. Story 2.13:
+  // door, releasing on the real cell-arrival at `SHOPFRONT_EXIT_Y`) --
+  // reused rather than re-derived, since it is already proven
+  // collision-safe. Story 2.13:
   // the bin now sits between the door and the lamppost's own new column
   // (`LAMPPOST_CELL`'s own doc comment says why it moved), so the rest of
   // the route's own lamppost/underpass detour is no longer on the way --
