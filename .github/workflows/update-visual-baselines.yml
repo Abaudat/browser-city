@@ -52,9 +52,17 @@ jobs:
         with:
           fetch-depth: 1
       - run: rustup toolchain install
+      # `shared-key: e2e` (matching `ci.yml`'s own "e2e" job): this job
+      # builds the exact same `server` workspace `serve-for-e2e.mjs`
+      # publishes for every e2e run, so it reuses that job's own cache
+      # instead of building one from cold under its own job-derived key,
+      # which this workflow's own rare, on-demand dispatch would otherwise
+      # never keep warm -- a cold build routinely outruns the 30s
+      # `webServer` startup budget `playwright.config.ts` gives it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: server
+          shared-key: e2e
       - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:

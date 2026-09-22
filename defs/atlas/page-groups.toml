@@ -55,3 +55,11 @@ group = "street"
 [[page_group]]
 theme = "vehicles"
 group = "street"
+
+[[page_group]]
+theme = "subway_and_train_station"
+group = "street"
+
+[[page_group]]
+theme = "room_builder"
+group = "street"

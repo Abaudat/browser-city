@@ -3,7 +3,10 @@ id = 1
 key = "trash_bin"
 name = "Trash Bin"
 layer = "furniture"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16/ME_Singles_Camping_16x16_Pier_Bin_1.png", x = 0, y = 0, w = 16, h = 16 }
+# Story 2.13: the street's own bin (a pier bin belongs on a pier, not a
+# shopping street -- Artie's direction) -- 16x32px, the extra 16px
+# upward overhang like every other tall prop.
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Small_Closed_Trash_Can.png", x = 0, y = 0, w = 16, h = 32 }
 width = 1
 height = 1
 # A sub-tile collider (FR128): the bin's own body, not its whole cell --
@@ -56,6 +59,10 @@ id = 4
 key = "lamppost"
 name = "Street Lamp"
 layer = "objects"
+# Story 2.13: this sprite already named the real street lamp -- the test
+# street itself was the one drawing the wrong art (a picnic table borrowed
+# over this def's own pole collider). The street now draws this rect
+# instead of borrowing another prop's asset (Artie's direction).
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Street_Lamp_5.png", x = 0, y = 0, w = 16, h = 64 }
 width = 1
 # Story 2.3 (AC3): the story 1.8 worked example, now the `pole`
@@ -69,8 +76,12 @@ id = 5
 key = "shop_window"
 name = "Shop Window"
 layer = "walls"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Balcony_Window_Left_1.png", x = 0, y = 0, w = 16, h = 16 }
-width = 1
+# Story 2.13: the shopfront window is one three-cell glazing unit, not a
+# one-cell balcony window -- both shops on the test street place it
+# three wide already (Artie's direction). 48x32px, exactly three tiles
+# wide.
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Window_1_Middle_Modular.png", x = 0, y = 0, w = 48, h = 32 }
+width = 3
 # Story 1.7 (FR121): a window wall tile -- solid like any other wall cell
 # (the whole cell), but drawn semi-transparently (`render.window_alpha`)
 # and retracted like any other front wall.
@@ -86,7 +97,11 @@ id = 6
 key = "wall_segment"
 name = "Wall Segment"
 layer = "walls"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Grass_Wall_1_1.png", x = 0, y = 0, w = 16, h = 16 }
+# Story 2.13: a generic city wall cell, not a garden grass wall (Artie's
+# direction) -- the same flush swatch (`WALL_TILE_V_FRAME`) the bridge's
+# own four parapet cells already drew from the interior Room Builder
+# sheet at the harness level.
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png", x = 0, y = 528, w = 16, h = 16 }
 width = 1
 # One plain, solid wall cell -- the generic segment a wall run (a
 # building facade, a bridge railing) is laid from, one cell at a time.
@@ -104,19 +119,20 @@ id = 7
 key = "bridge_deck"
 name = "Bridge Deck"
 layer = "objects"
-# Placeholder art (Artie's own curation is a later story): dimensions
-# only need to satisfy the footprint match today, since story 2.6's
-# packer -- the first thing that actually draws from this rect -- does
-# not exist yet.
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/10_Vehicles_Singles_16x16/ME_Singles_Vehicles_16x16_Car_Left_1.png", x = 0, y = 0, w = 64, h = 48 }
-width = 4
-# The walkable span of a footbridge: four cells of deck, no collider at
-# all (FR128, story 2.3's `underfoot_flat` archetype), so an entity on
-# the deck's own floor walks the whole span and an entity on the floor
-# below passes under it unobstructed -- the deck occupies the same (x,
-# y) as the street beneath it and never contributes collision to it
-# (FR117). Story 2.4 (FR128): explicitly walkable, not merely absent a
-# collider -- `underfoot`.
+# Story 2.13 (Tim's direction): no `repeat` axis on `sprite` -- a surface
+# wider than its art is a one-cell object placed once per cell, the same
+# way `wall_segment`'s own parapet run already is. The deck is one real
+# 16x16 pavement tile (the same city sidewalk tile the street below it is
+# paved with); the test street places `BRIDGE_DECK_WIDTH` (4) of these,
+# one per deck column, rather than this def declaring a 4-wide footprint.
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+# The walkable span of a footbridge: no collider at all (FR128, story
+# 2.3's `underfoot_flat` archetype), so an entity on the deck's own floor
+# walks the whole span and an entity on the floor below passes under it
+# unobstructed -- the deck occupies the same (x, y) as the street beneath
+# it and never contributes collision to it (FR117). Story 2.4 (FR128):
+# explicitly walkable, not merely absent a collider -- `underfoot`.
 archetype = "underfoot_flat"
 tags = ["bridge", "underfoot", "fixture"]
 
@@ -125,7 +141,10 @@ id = 8
 key = "foot_stairs"
 name = "Foot Stairs"
 layer = "objects"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Small_Stairs.png", x = 0, y = 0, w = 16, h = 32 }
+# Story 2.13: concrete station steps, not garden steps -- a concrete
+# footbridge does not land on a garden stair (Artie's direction).
+# 16x48px, one cell wide.
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Small_2.png", x = 0, y = 0, w = 16, h = 48 }
 width = 1
 # A flight of steps between two floors: a physical, walkable prop, never
 # a teleport tile. Which floors it joins is a `floor_transition` row

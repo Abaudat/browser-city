@@ -104,56 +104,110 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
   expect(moved).toBe(true);
 });
 
-// Cycle 2 (Quentin's/Tim's direction): the gzipped-bundle CI gate on its
-// own does not guard the dominant term docs/spikes/1.14-boot-budget.md
-// measured -- a change that made boot fetch 300 of the existing character
-// sheets instead of 105 would pass a whole-catalogue byte-sum untouched.
-// This is a deterministic, timing-free count/bytes assertion instead:
-// runs on every client PR (the default `chromium` project), needs no
-// browser-less proxy and no throttling to be reliable. Budgets are set
-// from docs/spikes/1.14-boot-budget.md's own measured baseline (105
-// requests, ~3.0 MiB) with margin.
+// Cycle 3 (Quentin's/Tim's direction): counted at the network layer
+// (`page.on("requestfinished")`), not `performance.getEntriesByType(
+// "resource")` -- Pixi 8's texture loader fetches through a dedicated
+// Worker by default (`preferWorkers: true`), and a Worker's own fetches
+// never reach the page's own Resource Timing buffer, so the Resource-
+// Timing version of this gate was blind to every `AtlasPageLoader`/
+// `Assets.load` request (the packed `street` page, every raw
+// `ModernTileset/` sheet `scene.ts` still loads) and passed on ten
+// requests that were entirely the crowd's own main-thread-`fetch`
+// character part pages. `page.on("requestfinished")` sees Worker-
+// initiated requests too, so this is never turned off by disabling
+// `preferWorkers` to suit the test. Bytes come from `request.sizes()`
+// (`responseBodySize + responseHeadersSize`, real transfer bytes), never
+// `transferSize`. The self-check below is what stops this gate going
+// blind again unnoticed: it must see both the street page and a
+// character page, or it fails outright rather than quietly passing a
+// small number.
 //
-// Story 2.6 (Tim's direction, cycle 1): the shop counter now loads one
-// shared atlas page instead of its own individual image -- net zero
-// change in request count, and the page (11.4 KB for today's one-object
-// "street" group) is smaller than the individual PNG it replaced, so
-// this budget is left unchanged rather than tightened from an unverified
-// number: a local run measured far below both the old baseline and this
-// budget, but on different hardware/timing than the CI image the
-// baseline itself was measured on, and a budget tightened from that
-// alone risks flaking CI rather than actually guarding anything tighter.
-const ATLAS_REQUEST_BUDGET = 115;
-const ATLAS_BYTES_BUDGET = 3.4 * 1024 * 1024;
+// Counted: every `.png`/`.jpg`/`.jpeg`/`.webp` request finished between
+// `page.goto` and `player-controllable` + `networkidle`. Measured on a
+// real `ci.yml` `e2e` run of this exact (network-layer) harness, run
+// 35654353650: 26 requests, 1,449,760 bytes -- ATLAS_BYTES_BUDGET is that
+// byte figure times 1.05, rounded up to the next 16 KiB.
+const ATLAS_REQUEST_COUNT = 26;
+const ATLAS_BYTES_BUDGET = Math.ceil((1_449_760 * 1.05) / (16 * 1024)) * (16 * 1024);
 
-test("the atlas request count and byte total before player-controllable stay inside budget (NFR1)", async ({
+test("the atlas request count and byte total the mount actually fetches, once settled, stay inside budget (NFR1)", async ({
   page,
-}) => {
+}, testInfo) => {
+  // Registered before `page.goto` so nothing fetched during the load is
+  // missed -- includes Worker-initiated requests (Pixi's own texture
+  // loader), unlike `performance.getEntriesByType("resource")`.
+  const imageRequests: import("@playwright/test").Request[] = [];
+  page.on("requestfinished", (request) => {
+    if (/\.(png|jpe?g|webp)$/i.test(request.url())) imageRequests.push(request);
+  });
+
   await page.goto("/");
   await page.waitForFunction(
     () => performance.getEntriesByName("bc-boot:player-controllable").length > 0,
     undefined,
     { timeout: 30_000 },
   );
+  // The full, settled set: waited for after the mark, never a filter on
+  // a timestamp (see the comment above this test).
+  await page.waitForLoadState("networkidle");
 
-  const { requestCount, bytes } = await page.evaluate(() => {
-    const playerControllable = performance.getEntriesByName("bc-boot:player-controllable")[0]
-      ?.startTime as number;
-    const images = (performance.getEntriesByType("resource") as PerformanceResourceTiming[]).filter(
-      (e) => /\.(png|jpe?g|webp)$/i.test(e.name) && e.responseEnd <= playerControllable,
-    );
-    return {
-      requestCount: images.length,
-      bytes: images.reduce((sum, e) => sum + (e.transferSize ?? 0), 0),
-    };
-  });
+  const urls = imageRequests.map((r) => r.url());
+  const sizes = await Promise.all(imageRequests.map((r) => r.sizes()));
+  const requestCount = imageRequests.length;
+  const bytes = sizes.reduce((sum, s) => sum + s.responseBodySize + s.responseHeadersSize, 0);
+
+  // The self-check (Quentin's direction, cycle 2): a budget gate that
+  // cannot fail for the thing it budgets is the actual defect the
+  // Resource-Timing version had -- these two assertions are what stop
+  // that recurring unnoticed.
+  //
+  // The reconciliation against `allBoundTextureSources = 17`
+  // (`test-street.spec.ts`), written down once because it is what would
+  // have caught the Resource-Timing gate's own blindness: this gate's 26
+  // requests are 15 raw `ModernTileset/` sheets (`scene.ts`'s own
+  // `ASSET_URLS`) + 1 packed `street` atlas page + 10 character part-
+  // sheet fetches (`character-part-pages.ts`'s own main-thread `fetch`,
+  // never a Worker) -- only 6 distinct part-sheet files, each fetched
+  // twice because the player's own `AppearanceTextureCache` and the
+  // crowd's own are two separate loader instances with two separate
+  // fetch-dedup caches (pre-existing, not this story's own concern).
+  // `allBoundTextureSources`'s 17 is the same 15 raw sheets + 1 street
+  // page + only 1 bound *composite* character page -- the CPU-drawn
+  // canvas texture built from those 6 part sheets, never itself
+  // requested over the network, and the second of the two
+  // `CHARACTER_COMPOSITE_PAGES` this street's crowd never fills. Ten
+  // network requests collapsing into one bound source is expected, not a
+  // discrepancy -- a request count and a bound-source count are
+  // different facts about the same mount and were never going to match
+  // number for number; this gate's job is only ever "can it see the
+  // things `allBoundTextureSources` also sees", never "does it equal it".
+  expect(
+    urls.some((u) => /\/atlas\/street-/.test(u)),
+    `this gate never saw the packed street atlas page -- it cannot be measuring what it budgets. Fetched:\n${urls.join("\n")}`,
+  ).toBe(true);
+  expect(
+    urls.some((u) => /\/atlas\/character_/.test(u)),
+    `this gate never saw a character composite atlas page -- it cannot be measuring what it budgets. Fetched:\n${urls.join("\n")}`,
+  ).toBe(true);
+
+  // Quentin's direction: readable from any CI run without a debug push,
+  // pass or fail, and an over-budget failure names the offending URLs
+  // rather than only a number. Both a `test.info()` annotation (machine-
+  // readable) and a plain `console.log` (visible straight in the `list`
+  // reporter's own captured output, which `ci.yml`'s `e2e` job uses, no
+  // extra tooling needed to view it).
+  testInfo.annotations.push(
+    { type: "atlas-request-count", description: String(requestCount) },
+    { type: "atlas-bytes", description: String(bytes) },
+  );
+  console.log(`NFR1: atlas requestCount=${requestCount} bytes=${bytes}`);
 
   expect(
     requestCount,
-    `atlas request count grew to ${requestCount}, over the ${ATLAS_REQUEST_BUDGET}-request budget (docs/spikes/1.14-boot-budget.md) -- re-measure the spike if this is deliberate`,
-  ).toBeLessThanOrEqual(ATLAS_REQUEST_BUDGET);
+    `atlas request count is ${requestCount}, not the ${ATLAS_REQUEST_COUNT} this deterministic set always settles to -- re-measure this spike (this file's own comment) if this is a deliberate change to the image set the mount fetches. Fetched:\n${urls.join("\n")}`,
+  ).toBe(ATLAS_REQUEST_COUNT);
   expect(
     bytes,
-    `atlas bytes grew to ${(bytes / 1024 / 1024).toFixed(2)} MiB, over the ${(ATLAS_BYTES_BUDGET / 1024 / 1024).toFixed(1)} MiB budget (docs/spikes/1.14-boot-budget.md) -- re-measure the spike if this is deliberate`,
+    `atlas bytes grew to ${(bytes / 1024 / 1024).toFixed(2)} MiB, over the ${(ATLAS_BYTES_BUDGET / 1024 / 1024).toFixed(2)} MiB budget -- re-measure this spike (this file's own comment) if this is deliberate. Fetched:\n${urls.join("\n")}`,
   ).toBeLessThanOrEqual(ATLAS_BYTES_BUDGET);
 });

@@ -16,6 +16,7 @@ import {
   BRIDGE_X1,
   INTERIOR_FLOOR_TILES,
   INTERIOR_FLOOR_TILES_B,
+  LAMPPOST_CELL,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
   PLAYER_START,
@@ -34,7 +35,9 @@ import {
 } from "./golden";
 import {
   lamppostRestY,
+  shopfrontExitRestY,
   streetMovementConfig,
+  streetObjectSources,
   streetOwnershipIndex,
   streetWindowDefIds,
   streetWorldIndex,
@@ -65,6 +68,7 @@ function buildStreetProps() {
     rankOf,
     ownership: streetOwnershipIndex(),
     windowDefIds: streetWindowDefIds(),
+    objectDefs: streetObjectSources(),
   });
 }
 
@@ -94,9 +98,12 @@ describe("the story 1.6 street scene's committed ordering", () => {
     // above is, so a wrong golden here fails with a diff in the fastest
     // job instead of a ten-second timeout in the slowest one.
     const props = buildStreetProps();
+    // Story 2.13: `LAMPPOST_CELL.x`, not `PLAYER_START.x` -- the lamppost
+    // no longer shares the door's own column (`LAMPPOST_CELL`'s own doc
+    // comment says why).
     const player = buildPlayerDrawable(
       rankOf("characters"),
-      PLAYER_START.x,
+      LAMPPOST_CELL.x + 0.5,
       lamppostRestY(),
       PLAYER_START.floor,
     );
@@ -218,7 +225,10 @@ describe("the street scene's committed visibility (story 1.7 cycle 2, Quentin's 
   });
 
   it("at the lamppost rest point outside", () => {
-    expect(visibilityAt(PLAYER_START.x, lamppostRestY(), PLAYER_START.floor)).toEqual(
+    // Story 2.13: `LAMPPOST_CELL.x`, not `PLAYER_START.x` -- see
+    // `LAMPPOST_CELL`'s own doc comment for why they no longer share a
+    // column.
+    expect(visibilityAt(LAMPPOST_CELL.x + 0.5, lamppostRestY(), PLAYER_START.floor)).toEqual(
       STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE,
     );
   });
@@ -318,12 +328,17 @@ describe("the player can never walk off the drawn world", () => {
     );
   });
 
-  it("walking straight south rests against the lamppost, still on the last pavement row", () => {
+  it("walking straight south rests at the shopfront exit, short of the lamppost (story 2.13)", () => {
+    // The lamppost no longer shares the door's own column (`LAMPPOST_CELL`'s
+    // own doc comment says why), so a straight south walk out of the door
+    // now rests against `SHOPFRONT_EXIT_REST_COLLIDER` instead -- the
+    // scripted walk's own "east-to-the-lamppost" segment is what actually
+    // reaches the lamppost afterward (`street-conformance.test.ts`).
     let pos: Vec2 = { x: PLAYER_START.x, y: PLAYER_START.y };
     for (let i = 0; i < 400; i++) {
       pos = step(pos, { x: 0, y: 1 }, 16, grid, PLAYER_START.floor, config);
     }
-    expect(pos.y).toBeCloseTo(lamppostRestY(), 9);
+    expect(pos.y).toBeCloseTo(shopfrontExitRestY(), 9);
     expect(isOnDrawnGround(pos)).toBe(true);
   });
 

@@ -69,6 +69,7 @@ import {
   BRIDGE_X0,
   BRIDGE_X1,
   furnitureBehindWindows,
+  isDefStreetProp,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
   PLAYER_STABLE_ID,
@@ -84,6 +85,7 @@ import {
 } from "../../src/test-street/fixture";
 import {
   committedDefs,
+  streetObjectSources,
   streetOwnershipIndex,
   streetWalkInputs,
   streetWindowDefIds,
@@ -230,7 +232,7 @@ async function setHighlightStrengthViaMenu(page: Page, value: number): Promise<v
 async function binDrawnRectPx(
   page: Page,
 ): Promise<{ x0: number; y0: number; x1: number; y1: number }> {
-  const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
+  const bin = STREET_PROPS.find((p) => isDefStreetProp(p) && p.defId === TRASH_BIN_DEF_ID);
   if (!bin) throw new Error("the fixture no longer places a trash bin");
   const anchor = screenPositionPx(bin.x, bin.y, bin.floor, TILE_SIZE_PX, STOREY_HEIGHT_PX);
   const worldRect = {
@@ -369,6 +371,7 @@ function expectedOrderFor(x: number, y: number, floor: number): string[] {
     rankOf,
     ownership,
     windowDefIds: streetWindowDefIds(),
+    objectDefs: streetObjectSources(),
   });
   const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
   return sortAcrossFloors([...props, player], (d) => d).map((d) => d.stableId.toString());
@@ -566,8 +569,8 @@ function wallIdsOwnedBy(buildingId: bigint): string[] {
 }
 
 function windowIds(): string[] {
-  return STREET_PROPS.filter((prop) => prop.defId === WINDOW_DEF_ID).map((prop) =>
-    prop.id.toString(),
+  return STREET_PROPS.filter((prop) => isDefStreetProp(prop) && prop.defId === WINDOW_DEF_ID).map(
+    (prop) => prop.id.toString(),
   );
 }
 
@@ -689,22 +692,44 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   expect(appearanceAtStart?.eyes).toBeGreaterThan(0);
   expect(appearanceAtStart?.outfit).toBeGreaterThan(0);
 
-  // Story 2.6/2.7 (NFR12): the mounted street resolves against a small,
-  // exact number of distinct atlas pages -- the shop counter's own
-  // "street" page (the only placed prop wired to `render/atlas-pages.ts`
-  // yet, the rest is Story 2.13's own scope: 1 page) plus the street
-  // crowd's own shared character composite pages
+  // Story 2.6/2.13 (NFR12): the mounted street resolves against a small,
+  // exact number of distinct atlas pages -- every `defId`-placed prop's
+  // own "street" page (all nine rows share the one page: 1 page) plus the
+  // street crowd's own shared character composite pages
   // (`AppearanceTextureCache.pageSources`, folded in by
   // `countBoundAtlasPages`): this street's own 46-citizen crowd fits its
   // slots on the first shared composite page alone, so only 1 of the 2
   // pages `CHARACTER_COMPOSITE_PAGES` reserves is ever actually bound --
   // 2 total. A loose upper bound alone would still pass with the crowd's
   // composite page never bound at all (every citizen invisible), so the
-  // assertion is the exact number NFR12 names, not a placeholder.
-  // `appearance.spec.ts`'s own "different people cost about as much as
-  // identical ones" test is this same count's own budget proof.
+  // assertion is the exact number NFR12 names, not a placeholder. Never
+  // `toBeLessThanOrEqual(8)` here: the `<= 8` bound is already asserted
+  // by name at build time in `atlas/build.rs`; this job is to catch a
+  // page silently not bound, or an extra one bound, on the real mounted
+  // scene. `appearance.spec.ts`'s own "different people cost about as
+  // much as identical ones" test is this same count's own budget proof.
   const distinctBoundAtlasPages = await page.evaluate(() => window.__bc?.distinctBoundAtlasPages);
   expect(distinctBoundAtlasPages).toBe(2);
+
+  // Story 2.13 (Quentin's direction): `distinctBoundAtlasPages` is
+  // filtered to pages the loader/appearance cache know about, so on its
+  // own it is blind to a raw `ModernTileset/` import a `defId` retarget
+  // should have retired -- the ratchet against that is the *unfiltered*
+  // count of every distinct `TextureSource` the mounted display list
+  // actually binds. Measured before this story (commit c3adca7e, the
+  // same nine-`defId`-row street, still on raw imports): 20. After: 17 --
+  // the four raw sheets `window`/`trashBin`/`bridgeDeck`/`bridgeStairs`
+  // retired drop the count by three, not four, because `bridgeDeck` and
+  // the ground pass's own `sidewalk` sheet already named the identical
+  // `ModernTileset/` file before this story, so removing the former
+  // `bridgeDeck` import never dropped a source Pixi's own `Assets` cache
+  // had not already deduplicated by URL. Ground tiles, the shops' own
+  // plain wall runs, the poster and loose furniture still bind raw
+  // sheets after this story (out of scope, Quentin's direction) -- this
+  // is not yet the whole mounted street's own NFR12 fact, only every
+  // `defId`-placed row's.
+  const allBoundTextureSources = await page.evaluate(() => window.__bc?.allBoundTextureSources);
+  expect(allBoundTextureSources).toBe(17);
 
   // FR120, from inside: this building's own near-side walls are gone, and
   // the neighbour's are not -- keyed on the enclosure id, never proximity.
@@ -766,11 +791,18 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // never every floor-0 furniture prop regardless of whether a window
   // actually sits in front of it, which would pass vacuously on a
   // re-laid street.
-  const furnitureBehindTheWindow = furnitureBehindWindows().map((id) => id.toString());
+  const furnitureBehindTheWindow = furnitureBehindWindows(streetObjectSources()).map((id) =>
+    id.toString(),
+  );
   expect(furnitureBehindTheWindow.length).toBeGreaterThan(0);
   for (const id of furnitureBehindTheWindow) {
     expect(outsideVisibility[id]).not.toBe("hidden");
   }
+
+  // --- east to the lamppost's own column ----------------------------------
+  // Story 2.13: the lamppost moved off the door's own column
+  // (`LAMPPOST_CELL`'s own doc comment says why), so this leg is new.
+  await walkSegment(page, segment("east-to-the-lamppost"));
 
   // --- part-way through the lamppost -------------------------------------
   await walkSegment(page, segment("part-way-through-the-lamppost"));
@@ -797,7 +829,9 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // behind) is a pure fact about the comparator, proven exhaustively by
   // `inv_depth_order_total_and_stable`; walking it again here would only
   // re-prove it slower.
-  const lamppostProp = STREET_PROPS.find((prop) => prop.defId === LAMPPOST_DEF_ID);
+  const lamppostProp = STREET_PROPS.find(
+    (prop) => isDefStreetProp(prop) && prop.defId === LAMPPOST_DEF_ID,
+  );
   if (!lamppostProp) throw new Error("no lamppost in the street");
   expect(orderAtLamppost.indexOf(PLAYER_STABLE_ID.toString())).toBeGreaterThan(
     orderAtLamppost.indexOf(lamppostProp.id.toString()),
@@ -955,7 +989,7 @@ test("FR173's affordance mark is a real pixel change, confined to the hovered ob
   await page.goto("/?freezeCrowd=1");
   await waitForSceneReady(page);
 
-  const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
+  const bin = STREET_PROPS.find((p) => isDefStreetProp(p) && p.defId === TRASH_BIN_DEF_ID);
   if (!bin) throw new Error("the fixture no longer places a trash bin");
 
   // A cell well away from both interactable objects (the bin and the shop
@@ -983,19 +1017,17 @@ test("FR173's affordance mark is a real pixel change, confined to the hovered ob
 
   // --- walk into the bin's own `interact_at` skirt -------------------------
   // Real keyboard input (`walkSegmentSynthetic`'s own doc comment says why
-  // synthetic, not `page.keyboard`, in this one spec). The first four
-  // segments are `streetWalkRoute`'s own proven, committed ones (out of the
-  // shopfront door, resting against the lamppost's own base collider,
-  // clearing it, then south onto the pavement's real south edge) -- reused
-  // rather than re-derived, since they are already proven collision-safe.
-  // From there this walk diverges: east under the bin's own column, then
-  // north back up into its `interact_at` skirt -- approaching from due
-  // south is what clears both the shopfront's own south wall (whose
-  // collision a walker still grazes a hair's width below its own row) and
-  // the bin's own small centred base collider, which a straight approach
-  // along the bin's own row cannot do.
+  // synthetic, not `page.keyboard`, in this one spec). The first segment is
+  // `streetWalkRoute`'s own proven, committed one (out of the shopfront
+  // door, resting against `SHOPFRONT_EXIT_REST_COLLIDER`) -- reused rather
+  // than re-derived, since it is already proven collision-safe. Story 2.13:
+  // the bin now sits between the door and the lamppost's own new column
+  // (`LAMPPOST_CELL`'s own doc comment says why it moved), so the rest of
+  // the route's own lamppost/underpass detour is no longer on the way --
+  // this walk diverges straight from there: east under the bin's own
+  // column, then north back up into its `interact_at` skirt.
   await hoverCell(page, away.x, away.y, away.floor); // mouse out of the way while walking
-  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 4)) {
+  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 1)) {
     await walkSegmentSynthetic(page, segment);
   }
   await walkSegmentSynthetic(page, {

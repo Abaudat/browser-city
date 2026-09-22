@@ -35,7 +35,11 @@ import {
   STREET_VISIBILITY_AT_REST_IN_SHOP_A,
   STREET_VISIBILITY_ON_SUBWAY_LANDING,
 } from "../unit/test-street/golden";
-import { lamppostRestY } from "../unit/test-street/street-world";
+import {
+  lamppostApproachRestX,
+  lamppostRestY,
+  shopfrontExitRestY,
+} from "../unit/test-street/street-world";
 
 async function waitForSceneReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
@@ -134,7 +138,14 @@ test.describe("story 1.7: enclosure visibility", () => {
     await page.goto("/");
     await waitForSceneReady(page);
 
-    await walkTo(page, "ArrowDown", { x: PLAYER_START.x, y: lamppostRestY() });
+    // `computeVisibility` only ever reads the viewer's own `(floor,
+    // buildingId)`, never its exact position (the subway test below's own
+    // comment says so too), so any real position outside the shop gives
+    // the same golden -- `shopfrontExitRestY()`, the real collider rest a
+    // straight south walk out of the door reaches (`SHOPFRONT_EXIT_REST_
+    // COLLIDER`'s own doc comment says why the lamppost itself no longer
+    // sits on this column).
+    await walkTo(page, "ArrowDown", { x: PLAYER_START.x, y: shopfrontExitRestY() });
     // The visibility hook only fires when the player's own cell changes
     // (Tim's direction) -- wait for the real, event-driven update rather
     // than a fixed delay.
@@ -151,7 +162,16 @@ test.describe("story 1.7: enclosure visibility", () => {
     await page.goto("/");
     await waitForSceneReady(page);
 
-    await walkTo(page, "ArrowDown", { x: PLAYER_START.x, y: lamppostRestY() });
+    // Onto the pavement, then east to the lamppost's own column, then south
+    // into its own base collider -- the same three real rests the scripted
+    // walk (`fixture.ts`'s `streetWalkRoute`) uses, reused here rather than
+    // re-derived: `lamppostRestY()`'s own cell floor is `STAIRS_Y`
+    // (`LAMPPOST_CELL.y`), which is what the next segment's own east walk
+    // needs to reach the stairwell's anchor cell with no further direction
+    // change.
+    await walkTo(page, "ArrowDown", { x: PLAYER_START.x, y: shopfrontExitRestY() });
+    await walkTo(page, "ArrowRight", { x: lamppostApproachRestX(), y: shopfrontExitRestY() });
+    await walkTo(page, "ArrowDown", { x: lamppostApproachRestX(), y: lamppostRestY() });
 
     // The stairwell shares the lamppost's own row (`STAIRS_Y`, `fixture.ts`'s
     // own doc comment) -- a pure east walk reaches its anchor cell with no

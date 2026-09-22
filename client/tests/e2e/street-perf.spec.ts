@@ -37,6 +37,7 @@ import { expect, type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { screenPositionPx } from "../../src/render/screen-position";
 import {
+  isDefStreetProp,
   STREET_PROPS,
   type StreetWalkSegment,
   type StreetWalkUntil,
@@ -118,7 +119,7 @@ const MARKED_PHASE_MS = 5_000;
  * `refresh` -- see that phase's own comment for why it is measured on its
  * own window rather than folded into the lap). */
 async function hoverAnInteractableProp(page: Page): Promise<void> {
-  const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
+  const bin = STREET_PROPS.find((p) => isDefStreetProp(p) && p.defId === TRASH_BIN_DEF_ID);
   if (!bin) throw new Error("the fixture no longer places a trash bin");
   const tileSizePx = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value;
   const storeyHeightPx = committedDefs().balance.find(
@@ -361,9 +362,13 @@ test("the frame path stays inside its work budget for a whole walked session (NF
     timeout: 60_000,
   });
 
-  const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
+  const bin = STREET_PROPS.find((p) => isDefStreetProp(p) && p.defId === TRASH_BIN_DEF_ID);
   if (!bin) throw new Error("the fixture no longer places a trash bin");
-  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 4)) {
+  // Story 2.13: the bin sits between the door and the lamppost's own new
+  // column (`LAMPPOST_CELL`'s own doc comment says why it moved), so only
+  // the door-exit segment is needed before turning toward it -- the rest
+  // of the route's own lamppost/underpass detour is no longer on the way.
+  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 1)) {
     await walkSegment(page, segment);
   }
   await walkSegment(page, {

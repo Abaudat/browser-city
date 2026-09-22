@@ -15,6 +15,7 @@ import { KEYBINDINGS_STORAGE_KEY } from "../../src/input/keybindings-storage";
 import type {} from "../../src/net/e2e-hooks";
 import { screenPositionPx } from "../../src/render/screen-position";
 import {
+  isDefStreetProp,
   PLAYER_START,
   SHOP_COUNTER_DEF_ID,
   STREET_PROPS,
@@ -45,7 +46,7 @@ const SUBCELLS_PER_CELL = committedDefs().colliderSubcellsPerCell;
  * this spec's clicks with it. */
 function propById(id: bigint, expectedDefId: number) {
   const prop = STREET_PROPS.find((p) => p.id === id);
-  if (!prop || prop.defId !== expectedDefId) {
+  if (!prop || !isDefStreetProp(prop) || prop.defId !== expectedDefId) {
     throw new Error(`fixture prop ${id} is no longer placed by defs id ${expectedDefId}`);
   }
   return prop;

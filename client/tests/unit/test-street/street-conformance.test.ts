@@ -8,8 +8,13 @@
 // Nothing here re-proves a geometric or ordering fact: those are the
 // property tests in `tests/unit/render/**` and `tests/unit/world/**`.
 // This file only asserts what is true of *this* street's data.
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
+import { LAYER_TABLE } from "../../../src/render/layer-table";
 import { isNearSideWall } from "../../../src/render/visibility";
+import { buildPropDrawables, isDefPropDrawable } from "../../../src/test-street/drawables";
 import {
   BRIDGE_DECK_DEF_ID,
   BRIDGE_DECK_WIDTH,
@@ -19,11 +24,13 @@ import {
   BRIDGE_X0,
   BRIDGE_X1,
   furnitureBehindWindows,
+  isDefStreetProp,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
   PLAYER_START,
   STREET_BOUNDARY,
   STREET_BUILDING_AREAS,
+  STREET_GROUND_TILES,
   STREET_PROPS,
   STREET_ROOM_AREAS,
   STREET_TRANSITIONS,
@@ -41,8 +48,10 @@ import {
   lamppostRestY,
   simulateStreetWalk,
   streetMovementConfig,
+  streetObjectSources,
   streetOwnershipIndex,
   streetWalkInputs,
+  streetWindowDefIds,
   streetWorldIndex,
 } from "./street-world";
 
@@ -88,9 +97,16 @@ describe("the hand-laid test street (AC1, AC2)", () => {
       if (x === BRIDGE_UNDER_PILLAR_X) continue;
       expect(isCellStandable(world, config, x, BRIDGE_DECK_Y, PLAYER_START.floor)).toBe(true);
     }
+    // Story 2.13 (Tim's direction): no `repeat` axis -- `bridge_deck` is a
+    // one-cell def, placed `BRIDGE_DECK_WIDTH` times, one per deck column,
+    // the same shape the parapet already uses.
     const deck = objectDef(BRIDGE_DECK_DEF_ID);
-    expect(deck.width).toBe(BRIDGE_DECK_WIDTH);
+    expect(deck.width).toBe(1);
     expect(deck.collider).toBeUndefined();
+    const deckPlacements = STREET_PROPS.filter(
+      (prop) => isDefStreetProp(prop) && prop.defId === BRIDGE_DECK_DEF_ID,
+    );
+    expect(deckPlacements.length).toBe(BRIDGE_DECK_WIDTH);
   });
 
   it("has at least one transition cell on each of the floors the walk visits", () => {
@@ -113,7 +129,9 @@ describe("the hand-laid test street (AC1, AC2)", () => {
   });
 
   it("has at least one window wall tile, placed by its real defs/ id", () => {
-    const windows = STREET_PROPS.filter((prop) => prop.defId === WINDOW_DEF_ID);
+    const windows = STREET_PROPS.filter(
+      (prop) => isDefStreetProp(prop) && prop.defId === WINDOW_DEF_ID,
+    );
     expect(windows.length).toBeGreaterThan(0);
     expect(objectDef(WINDOW_DEF_ID).window).toBe(true);
   });
@@ -123,13 +141,20 @@ describe("the hand-laid test street (AC1, AC2)", () => {
     // own row, x-overlapping its footprint) -- not merely "any furniture
     // somewhere on the floor", which would pass even if no window sat in
     // front of any of it.
-    expect(furnitureBehindWindows().length).toBeGreaterThan(0);
+    expect(furnitureBehindWindows(streetObjectSources()).length).toBeGreaterThan(0);
   });
 
   it("has a prop wider than one cell", () => {
-    const multiCell = STREET_PROPS.filter(
-      (prop) => (prop.footprint?.width ?? 1) > 1 || (prop.footprint?.height ?? 1) > 1,
-    );
+    // A `defId` row's own extent comes from the def, never a `footprint`
+    // field it cannot carry (story 2.13, Tim's direction) -- `objectDef`
+    // is the same real-`defs.json` lookup this file already uses.
+    function widthOf(prop: (typeof STREET_PROPS)[number]): number {
+      return isDefStreetProp(prop) ? objectDef(prop.defId).width : (prop.footprint?.width ?? 1);
+    }
+    function heightOf(prop: (typeof STREET_PROPS)[number]): number {
+      return isDefStreetProp(prop) ? objectDef(prop.defId).height : (prop.footprint?.height ?? 1);
+    }
+    const multiCell = STREET_PROPS.filter((prop) => widthOf(prop) > 1 || heightOf(prop) > 1);
     expect(multiCell.length).toBeGreaterThan(0);
   });
 
@@ -141,7 +166,9 @@ describe("the hand-laid test street (AC1, AC2)", () => {
     const footprintArea = lamppost.width * lamppost.height * subcells * subcells;
     const colliderArea = (collider.x1 - collider.x0) * (collider.y1 - collider.y0);
     expect(colliderArea).toBeLessThan(footprintArea);
-    expect(STREET_PROPS.some((prop) => prop.defId === LAMPPOST_DEF_ID)).toBe(true);
+    expect(
+      STREET_PROPS.some((prop) => isDefStreetProp(prop) && prop.defId === LAMPPOST_DEF_ID),
+    ).toBe(true);
   });
 
   it("closes every floor it declares, so the player can never walk off the drawn world", () => {
@@ -312,5 +339,154 @@ describe("the scripted walk (AC3)", () => {
     expect(state.floor).toBe(PLAYER_START.floor);
     expect(state.cellX).toBe(arrived.cellX);
     expect(state.cellY).toBe(arrived.cellY);
+  });
+});
+
+// Story 2.13 (Tim's direction): the architecture made absolute, not just
+// convention -- a `defId` row can never carry an `assetKey` (the type
+// already forbids it; this is the runtime witness over every real
+// drawable this fixture produces), and no raw `ModernTileset/` import in
+// `scene.ts` may name a sheet any real `defs/objects` entry's own
+// `sprite.sheet` also names -- the second half is what stops the
+// shortcut growing back the moment someone reaches for `new URL(...)`
+// instead of the atlas for a def that already has one.
+describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => {
+  function rankOf(layer: string): number {
+    const table = buildLayerRankTable(LAYER_TABLE.map(({ code, rank }) => ({ code, rank })));
+    const code = LAYER_TABLE.find((row) => row.name === layer)?.code;
+    if (code === undefined) throw new Error(`unknown street layer ${layer}`);
+    return resolveRank(table, code);
+  }
+
+  function sceneSource(): string {
+    return readFileSync(
+      fileURLToPath(new URL("../../../src/test-street/scene.ts", import.meta.url)),
+      "utf-8",
+    );
+  }
+
+  /** `scene.ts`'s own `ASSET_URLS` table, key -> the sheet it names
+   * (repo-root-relative, matching `sprite.sheet`'s own shape). Parsed
+   * from the committed source, never hand-copied, so this stays in sync
+   * with the real table by construction. */
+  function sheetByAssetKey(sceneSrc: string): Map<string, string> {
+    const table = new Map<string, string>();
+    for (const match of sceneSrc.matchAll(/(\w+):\s*new URL\(\s*"([^"]+)"/g)) {
+      const [, key, raw] = match;
+      if (!key || !raw) continue;
+      table.set(key, raw.replace(/^(\.\.\/)+/, ""));
+    }
+    return table;
+  }
+
+  it("every defId drawable this fixture produces carries no assetKey", () => {
+    const drawables = buildPropDrawables({
+      rankOf,
+      ownership,
+      windowDefIds: streetWindowDefIds(),
+      objectDefs: streetObjectSources(),
+    });
+    const defDrawables = drawables.filter(isDefPropDrawable);
+    expect(defDrawables.length).toBeGreaterThan(0);
+    for (const drawable of defDrawables) {
+      expect("assetKey" in drawable, `drawable ${drawable.stableId} carries both`).toBe(false);
+    }
+  });
+
+  // Quentin's direction, cycle 2: the real bug this PR shipped and fixed
+  // (`defCellFrameRect`'s own doc comment says the whole story) was only
+  // possible because one real object -- the shop counter -- happened to
+  // pack at its own page's `(0, 0)`, so a per-cell crop that silently
+  // ignored the whole-sprite placement was right for it by accident. If
+  // that ever stops being true for every object (the packer always
+  // extrudes a border, so nothing should ever pack flush against a page's
+  // own origin), a loader that made the same mistake again would once
+  // again be right by accident for whichever object packs first -- this
+  // closes that hole over the real, committed atlas, not a fixture.
+  it("no real defs/objects entry's own atlas rect starts at its page's own origin -- every one sits behind the packer's own extrusion border", () => {
+    expect(defs.objects.length).toBeGreaterThan(0);
+    for (const object of defs.objects) {
+      expect(
+        object.atlas.x > 0 && object.atlas.y > 0,
+        `object '${object.key}' packs at (${object.atlas.x}, ${object.atlas.y}) -- flush against its page's own origin, with no extrusion border to catch a per-cell crop that ignores its own placement`,
+      ).toBe(true);
+    }
+  });
+
+  const propAssetKeys = new Set(
+    STREET_PROPS.filter(
+      (prop): prop is Extract<typeof prop, { assetKey: string }> => !isDefStreetProp(prop),
+    ).map((prop) => prop.assetKey),
+  );
+
+  // Story 2.13, Tim's direction (cycle 2): the only two `ASSET_URLS` keys
+  // this guard accepts sharing a sheet with a real `defs/objects` sprite
+  // today -- both crop-base/ground-pass keys no real `StreetProp` row's
+  // own `assetKey` ever literally names (`wallTile`, not `wallSheet`,
+  // is what a wall row carries), so the old "not referenced by a real
+  // row" check exempted them structurally, by construction, even though
+  // `wall_segment`'s def now names the exact file `wallSheet` crops
+  // (`Room_Builder_Walls_16x16.png`) and `bridge_deck`'s def now names
+  // the exact file `sidewalk` paints (`Sidewalk_1_1.png`) -- both real,
+  // accepted collisions (a wall pass still crops `wallSheet` for its own
+  // non-`defId` cells; the ground pass still paints `sidewalk` outside
+  // any def's own footprint), never a shortcut regrowing. Never grows
+  // silently: a key lands here only by a human adding it, and this test
+  // fails the day one of these two stops actually colliding, so the list
+  // can only shrink.
+  const ACCEPTED_SHEET_COLLISIONS = new Set(["wallSheet", "sidewalk"]);
+
+  it("no ModernTileset/ import a real StreetProp row still uses names a sheet a real defs/objects entry's own sprite already names", () => {
+    const sheets = sheetByAssetKey(sceneSource());
+    expect(sheets.size).toBeGreaterThan(0);
+
+    const defSheets = new Set(defs.objects.map((object) => object.sprite.sheet));
+    for (const [key, sheet] of sheets) {
+      const collides = defSheets.has(sheet);
+      if (ACCEPTED_SHEET_COLLISIONS.has(key)) {
+        expect(
+          collides,
+          `'${key}' is on the accepted-collision allow-list but no longer collides with any real def's sprite -- remove it from ACCEPTED_SHEET_COLLISIONS`,
+        ).toBe(true);
+        continue;
+      }
+      if (!propAssetKeys.has(key)) {
+        // A ground-pass-only or crop-base key with no accepted reason to
+        // collide (not `wallSheet`/`sidewalk`) must still never collide.
+        expect(
+          collides,
+          `'${key}' (not used by a real StreetProp row) newly collides with a real def's sprite '${sheet}' -- either route it through the atlas or add it to ACCEPTED_SHEET_COLLISIONS with a reason`,
+        ).toBe(false);
+        continue;
+      }
+      expect(
+        collides,
+        `scene.ts's '${key}' still imports '${sheet}' raw for a real StreetProp row, but a real defs/objects entry's own sprite already names it -- draw it through the atlas instead`,
+      ).toBe(false);
+    }
+  });
+
+  it("every ASSET_URLS key is still referenced -- by a real StreetProp row, a ground pass, or a scene.ts crop base", () => {
+    // The ratchet against a dead import: a key a `defId` retarget just
+    // orphaned (`window`, `trashBin`, `bridgeDeck`, `bridgeStairs`, story
+    // 2.13) must actually be deleted from `ASSET_URLS`, not merely
+    // unreferenced -- a stray entry still costs a boot request for
+    // nothing on screen.
+    const sceneSrc = sceneSource();
+    const declaredKeys = [...sheetByAssetKey(sceneSrc).keys()];
+    expect(declaredKeys.length).toBeGreaterThan(0);
+
+    const groundAssetKeys = new Set(STREET_GROUND_TILES.map((tiles) => tiles.assetKey));
+    const cropBaseKeys = new Set(
+      [...sceneSrc.matchAll(/textureFor\(\s*"(\w+)"/g)]
+        .map((m) => m[1])
+        .filter((k) => k !== undefined),
+    );
+    for (const key of declaredKeys) {
+      const used = propAssetKeys.has(key) || groundAssetKeys.has(key) || cropBaseKeys.has(key);
+      expect(used, `ASSET_URLS key '${key}' is declared but never referenced -- delete it`).toBe(
+        true,
+      );
+    }
   });
 });

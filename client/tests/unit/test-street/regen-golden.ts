@@ -17,6 +17,7 @@ import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import { buildPlayerDrawable, buildPropDrawables } from "../../../src/test-street/drawables";
 import {
+  LAMPPOST_CELL,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
   PLAYER_START,
@@ -24,7 +25,12 @@ import {
   SUBWAY_FLOOR,
 } from "../../../src/test-street/fixture";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
-import { lamppostRestY, streetOwnershipIndex, streetWindowDefIds } from "./street-world";
+import {
+  lamppostRestY,
+  streetObjectSources,
+  streetOwnershipIndex,
+  streetWindowDefIds,
+} from "./street-world";
 
 const CODE_BY_NAME: Record<string, number> = Object.fromEntries(
   LAYER_TABLE.map((row) => [row.name, row.code]),
@@ -38,7 +44,13 @@ function rankOf(layer: string): number {
 }
 
 const ownership = streetOwnershipIndex();
-const props = () => buildPropDrawables({ rankOf, ownership, windowDefIds: streetWindowDefIds() });
+const props = () =>
+  buildPropDrawables({
+    rankOf,
+    ownership,
+    windowDefIds: streetWindowDefIds(),
+    objectDefs: streetObjectSources(),
+  });
 
 function orderAt(x: number, y: number, floor: number): string[] {
   const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
@@ -113,7 +125,12 @@ const out = [
   orderLiteral("STREET_GOLDEN_ORDER", orderAt(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor)),
   orderLiteral(
     "STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH",
-    orderAt(PLAYER_START.x, lamppostRestY(), PLAYER_START.floor),
+    // Story 2.13: `LAMPPOST_CELL.x`, not `PLAYER_START.x` -- the lamppost
+    // no longer shares the door's own column (`LAMPPOST_CELL`'s own doc
+    // comment says why), so the rest position this golden pins is the
+    // lamppost's own cell centre, matching where the scripted walk's own
+    // "part-way-through-the-lamppost" checkpoint actually lands.
+    orderAt(LAMPPOST_CELL.x + 0.5, lamppostRestY(), PLAYER_START.floor),
   ),
   mapLiteral(
     "STREET_VISIBILITY_AT_REST_IN_SHOP_A",
@@ -121,7 +138,7 @@ const out = [
   ),
   mapLiteral(
     "STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE",
-    visibilityAt(PLAYER_START.x, lamppostRestY(), PLAYER_START.floor),
+    visibilityAt(LAMPPOST_CELL.x + 0.5, lamppostRestY(), PLAYER_START.floor),
   ),
   mapLiteral(
     "STREET_VISIBILITY_ON_SUBWAY_LANDING",

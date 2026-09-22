@@ -22,8 +22,15 @@ vi.mock("pixi.js", () => {
   }
   class FakeTexture {
     source: { scaleMode?: string; autoGenerateMipmaps?: boolean };
-    constructor(opts: { source: { scaleMode?: string; autoGenerateMipmaps?: boolean } }) {
+    frame?: FakeRectangle;
+    height: number;
+    constructor(opts: {
+      source: { scaleMode?: string; autoGenerateMipmaps?: boolean };
+      frame?: FakeRectangle;
+    }) {
       this.source = opts.source;
+      this.frame = opts.frame;
+      this.height = opts.frame?.height ?? 0;
     }
   }
   class FakeSprite {
@@ -57,7 +64,11 @@ const OBJECT: ObjectDef = {
   id: 1,
   key: "shop_counter",
   atlas: { page: 0, x: 1, y: 1, w: 48, h: 64 },
+  width: 3,
+  height: 1,
 } as unknown as ObjectDef;
+
+const TILE_SIZE_PX = 16;
 
 beforeEach(() => {
   loadMock.mockReset();
@@ -106,6 +117,127 @@ describe("AtlasPageLoader", () => {
 
     await expect(loader.objectTexture(defs, OBJECT)).rejects.toThrow(/shop_counter/);
     expect(loadMock).not.toHaveBeenCalled();
+  });
+});
+
+// Story 2.13, cycle 2 (Tim's direction): the per-cell cache lives here,
+// next to `objectTexture`'s own per-object cache -- a `defId` placed
+// several times (four `bridge_deck` cells, a generated city sharing one
+// def across many placements) must share one `Texture` per column, never
+// allocate a fresh one on every call.
+describe("AtlasPageLoader.objectCellTexture", () => {
+  it("crops a one-cell def to the whole sprite's own placement, offset by the object's own page rect -- never the page's own origin", async () => {
+    loadMock.mockResolvedValue(fakeSourceTexture());
+    const loader = new AtlasPageLoader("/atlas/");
+    const defs = defsWith([PAGE]);
+    // A real measured placement, away from the page's own (0, 0) -- the
+    // exact shape of the bug this cache-and-crop step fixed.
+    const object = {
+      ...OBJECT,
+      id: 7,
+      key: "bridge_deck",
+      atlas: { page: 0, x: 87, y: 1, w: 16, h: 16 },
+    };
+
+    const texture = await loader.objectCellTexture(defs, object, 0, TILE_SIZE_PX);
+
+    expect(texture.frame).toEqual({ x: 87, y: 1, width: TILE_SIZE_PX, height: 16 });
+  });
+
+  it("slices a wide def's own cells, each offset from the same whole-sprite placement", async () => {
+    loadMock.mockResolvedValue(fakeSourceTexture());
+    const loader = new AtlasPageLoader("/atlas/");
+    const defs = defsWith([PAGE]);
+    const window = {
+      ...OBJECT,
+      id: 5,
+      key: "shop_window",
+      atlas: { page: 0, x: 87, y: 1, w: 48, h: 32 },
+    };
+
+    const frames = await Promise.all(
+      [0, 1, 2].map((col) => loader.objectCellTexture(defs, window, col, TILE_SIZE_PX)),
+    );
+
+    expect(frames.map((t) => t.frame)).toEqual([
+      { x: 87, y: 1, width: TILE_SIZE_PX, height: 32 },
+      { x: 103, y: 1, width: TILE_SIZE_PX, height: 32 },
+      { x: 119, y: 1, width: TILE_SIZE_PX, height: 32 },
+    ]);
+  });
+
+  it("shares one Texture per (object id, column) across repeated demand -- never a fresh allocation per call", async () => {
+    loadMock.mockResolvedValue(fakeSourceTexture());
+    const loader = new AtlasPageLoader("/atlas/");
+    const defs = defsWith([PAGE]);
+    const deck = {
+      ...OBJECT,
+      id: 7,
+      key: "bridge_deck",
+      atlas: { page: 0, x: 87, y: 1, w: 16, h: 16 },
+    };
+
+    // Four placements of the same one-cell def, the exact bridge_deck
+    // shape (Tim's direction, story 2.13).
+    const [a, b, c, d] = await Promise.all([
+      loader.objectCellTexture(defs, deck, 0, TILE_SIZE_PX),
+      loader.objectCellTexture(defs, deck, 0, TILE_SIZE_PX),
+      loader.objectCellTexture(defs, deck, 0, TILE_SIZE_PX),
+      loader.objectCellTexture(defs, deck, 0, TILE_SIZE_PX),
+    ]);
+
+    expect(a).toBe(b);
+    expect(a).toBe(c);
+    expect(a).toBe(d);
+    expect(loadMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a distinct column gets a distinct Texture, even for the same object", async () => {
+    loadMock.mockResolvedValue(fakeSourceTexture());
+    const loader = new AtlasPageLoader("/atlas/");
+    const defs = defsWith([PAGE]);
+    const window = {
+      ...OBJECT,
+      id: 5,
+      key: "shop_window",
+      atlas: { page: 0, x: 87, y: 1, w: 48, h: 32 },
+    };
+
+    const first = await loader.objectCellTexture(defs, window, 0, TILE_SIZE_PX);
+    const second = await loader.objectCellTexture(defs, window, 1, TILE_SIZE_PX);
+
+    expect(first).not.toBe(second);
+  });
+
+  it("rejects naming the object when it is more than one cell tall, rather than silently cropping only its top row", async () => {
+    loadMock.mockResolvedValue(fakeSourceTexture());
+    const loader = new AtlasPageLoader("/atlas/");
+    const defs = defsWith([PAGE]);
+    const tall = { ...OBJECT, id: 9, key: "tall_thing", height: 2 };
+
+    await expect(loader.objectCellTexture(defs, tall, 0, TILE_SIZE_PX)).rejects.toThrow(
+      /tall_thing/,
+    );
+  });
+
+  it("evicts a rejected per-cell load so the next demand retries instead of replaying the rejection forever", async () => {
+    loadMock.mockRejectedValueOnce(new Error("network drop"));
+    const loader = new AtlasPageLoader("/atlas/");
+    const defs = defsWith([PAGE]);
+    const deck = {
+      ...OBJECT,
+      id: 7,
+      key: "bridge_deck",
+      atlas: { page: 0, x: 87, y: 1, w: 16, h: 16 },
+    };
+
+    await expect(loader.objectCellTexture(defs, deck, 0, TILE_SIZE_PX)).rejects.toThrow(
+      "network drop",
+    );
+
+    loadMock.mockResolvedValueOnce(fakeSourceTexture());
+    await expect(loader.objectCellTexture(defs, deck, 0, TILE_SIZE_PX)).resolves.toBeDefined();
+    expect(loadMock).toHaveBeenCalledTimes(2);
   });
 });
 

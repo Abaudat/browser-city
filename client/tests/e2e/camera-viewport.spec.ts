@@ -12,11 +12,17 @@ import { expect, type Page, test } from "@playwright/test";
 import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
 import {
+  LAMPPOST_CELL,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
   PLAYER_START,
 } from "../../src/test-street/fixture";
-import { committedDefs, lamppostRestY } from "../unit/test-street/street-world";
+import {
+  committedDefs,
+  lamppostApproachRestX,
+  lamppostRestY,
+  shopfrontExitRestY,
+} from "../unit/test-street/street-world";
 import { waitForPlayerControllable } from "./boot-test-support";
 
 function balance(key: string): number {
@@ -233,13 +239,16 @@ async function holdAndSampleFollow(
  * following. Every setup route in the `followCase` list below was
  * verified empirically, before this file was committed, by driving the
  * real, mounted scene through this exact same `walkToOpenSpot` (a real
- * `ArrowDown` rest is `(4.5, 8.625)`; from there, crossing `x >= 10` then
- * resting west lands back around `(1.25, 8.625)`, ~9.3 cells; crossing
- * `x >= 7.3` then resting north lands around `(7.5, 2.25)`, ~6.4 cells;
- * the same plus a further rest south returns to `(7.5, 9)`, ~6.75 cells
- * -- the pavement itself is too shallow north-south for 3 cells
- * anywhere, which is why the south case detours through the interior
- * instead) -- never guessed, and never trusted from arithmetic alone. A
+ * `ArrowDown` rest is `(4.5, 7.25)` -- `SHOPFRONT_EXIT_REST_COLLIDER`'s
+ * own doc comment says why the lamppost no longer sits on this column;
+ * from there, east to the lamppost's own approach rest, south into its
+ * own base collider, east past it and on to `x >= 10`, then resting west
+ * lands back around `(1.25, 8.625)`, ~9.3 cells; crossing `x >= 7.3` then
+ * resting north lands around `(7.5, 2.25)`, ~6.4 cells; the same plus a
+ * further rest south returns to `(7.5, 9)`, ~6.75 cells -- the pavement
+ * itself is too shallow north-south for 3 cells anywhere, which is why
+ * the south case detours through the interior instead) -- never guessed,
+ * and never trusted from arithmetic alone. A
  * fixed real-time hold (`cells / movement.walk_speed_millicells_per_s`)
  * was tried first and measured fine locally, but failed on CI: a stalled
  * frame's own `deltaMs` is clamped to 100ms (`docs/architecture.md`'s
@@ -349,15 +358,31 @@ test.describe("camera/viewport (NFR48)", () => {
     {
       name: "west",
       codes: ["ArrowLeft"] as const,
-      setup: [REST_DOWN_TO_PAVEMENT, { kind: "x-at-least", key: "ArrowRight", value: 10 }] as const,
+      // `LAMPPOST_APPROACH_REST_COLLIDER` now walls off row 7 at the
+      // lamppost's own column (`LAMPPOST_CELL`'s own doc comment says
+      // why the lamppost moved there), so a plain east crossing on this
+      // row no longer reaches `x >= 10` -- the same three-rest detour the
+      // scripted walk (`fixture.ts`'s `streetWalkRoute`) uses gets past
+      // it: east to the wall, south into the lamppost's own base
+      // collider, then on east, clear of it.
+      setup: [
+        REST_DOWN_TO_PAVEMENT,
+        { kind: "x-at-least", key: "ArrowRight", value: lamppostApproachRestX() },
+        { kind: "rest", key: "ArrowDown" },
+        { kind: "x-at-least", key: "ArrowRight", value: LAMPPOST_CELL.x + 1 },
+        { kind: "x-at-least", key: "ArrowRight", value: 10 },
+      ] as const,
     },
     {
       name: "north",
       codes: ["ArrowUp"] as const,
-      setup: [
-        REST_DOWN_TO_PAVEMENT,
-        { kind: "x-at-least", key: "ArrowRight", value: 7.3 },
-      ] as const,
+      // Back through the door, the only gap in shop A's own front wall
+      // (the shopfront window's own collision now spans its real,
+      // def-declared width, three cells, story 2.13 -- x = 7.3 (this
+      // case's own former setup) now falls inside it): rests already
+      // start on this same column (`PLAYER_START.x`), so no further x
+      // setup is needed before turning north.
+      setup: [REST_DOWN_TO_PAVEMENT] as const,
     },
     {
       name: "south",
@@ -366,12 +391,9 @@ test.describe("camera/viewport (NFR48)", () => {
       // the door): the pavement itself is too shallow north-south for
       // `MIN_TRAVELLED_CELLS` anywhere, but this same column, walked
       // north first, reaches the interior's own north wall with real
-      // room to spare south of it.
-      setup: [
-        REST_DOWN_TO_PAVEMENT,
-        { kind: "x-at-least", key: "ArrowRight", value: 7.3 },
-        { kind: "rest", key: "ArrowUp" },
-      ] as const,
+      // room to spare south of it. Back through the door -- the "north"
+      // case's own doc comment says why no x setup is needed first.
+      setup: [REST_DOWN_TO_PAVEMENT, { kind: "rest", key: "ArrowUp" }] as const,
     },
     {
       name: "north-east (diagonal)",
@@ -411,7 +433,13 @@ test.describe("camera/viewport (NFR48)", () => {
     await page.goto("/");
     await waitForSceneReady(page);
 
-    await walkTo(page, "ArrowDown", { x: PLAYER_START.x, y: lamppostRestY() });
+    // Onto the pavement, then east to the lamppost's own column, then south
+    // into its own base collider -- the same three real rests the scripted
+    // walk (`fixture.ts`'s `streetWalkRoute`) uses (`enclosure.spec.ts`'s
+    // own idiom).
+    await walkTo(page, "ArrowDown", { x: PLAYER_START.x, y: shopfrontExitRestY() });
+    await walkTo(page, "ArrowRight", { x: lamppostApproachRestX(), y: shopfrontExitRestY() });
+    await walkTo(page, "ArrowDown", { x: lamppostApproachRestX(), y: lamppostRestY() });
     // The stairwell shares the lamppost's own row (`enclosure.spec.ts`'s
     // own idiom) -- a pure east walk reaches its anchor cell with no
     // direction change, and the transition fires the instant the
