@@ -49,6 +49,7 @@ ModernTileset/      the licensed 16x16 art source
 ```bash
 bash agentic-team/scripts/orchestrator.sh    # one tick of the team's wake
 bash agentic-team/scripts/tests/run-all.sh   # the orchestrator's test suite
+node scripts/team-usage.mjs                  # the team's token usage per role, model and issue, in the terminal
 cd server && spacetime publish --yes         # build and publish the module locally
 cd client && npm ci && npm run dev           # the browser client, against the local module
 ```
