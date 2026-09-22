@@ -494,6 +494,8 @@ async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void
             return position.y <= until.value;
           case "floor":
             return floor === until.value;
+          case "cell":
+            return Math.floor(position.x) === until.x && Math.floor(position.y) === until.y;
         }
       },
       segment.until,
