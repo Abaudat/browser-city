@@ -125,8 +125,8 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
 // Counted: every `.png`/`.jpg`/`.jpeg`/`.webp` request finished between
 // `page.goto` and `player-controllable` + `networkidle`. Measured on a
 // real `ci.yml` `e2e` run of this exact (network-layer) harness, run
-// PENDING_CI_RUN_ID: 26 requests, 1,449,760 bytes -- ATLAS_BYTES_BUDGET is
-// that byte figure times 1.05, rounded up to the next 16 KiB.
+// 35654353650: 26 requests, 1,449,760 bytes -- ATLAS_BYTES_BUDGET is that
+// byte figure times 1.05, rounded up to the next 16 KiB.
 const ATLAS_REQUEST_COUNT = 26;
 const ATLAS_BYTES_BUDGET = Math.ceil((1_449_760 * 1.05) / (16 * 1024)) * (16 * 1024);
 
