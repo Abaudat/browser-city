@@ -166,6 +166,22 @@ const ASSET_URLS: Readonly<Record<string, string>> = {
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Binary_Edge_Left_Down_1.png",
     import.meta.url,
   ).href,
+  // Story 15.2: every rest the scripted walk needs is now a real, drawn
+  // prop (`fixture.ts`'s own doc comment, "The scripted walk's own rests,
+  // as real street furniture", says why) -- flat, single-tile street
+  // furniture, never sliced (`sliceTexture`'s 1x1 no-op case).
+  doormat: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/10_Vehicles_Singles_16x16/ME_Singles_Vehicles_16x16_Gas_Station_Doormat_1.png",
+    import.meta.url,
+  ).href,
+  bollard: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Pedestrian_Barrier_Post_1.png",
+    import.meta.url,
+  ).href,
+  manhole: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Manhole_1.png",
+    import.meta.url,
+  ).href,
 };
 
 /** `wallTileH`/`wallTileV` are two real, whole-tile sub-rects of the same

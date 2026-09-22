@@ -95,6 +95,21 @@ export function streetWorldIndex(): WorldIndex {
   return world;
 }
 
+/** The street's own `TransitionIndex`, built with pair symmetry enforced
+ * (story 15.2, Quentin's direction) -- opted in here, and only here plus
+ * `scene.ts`'s own mount, because this is the one place the *committed*
+ * street data is actually turned into a `TransitionIndex`; `world/
+ * floor-walk.test.ts`'s own mutually-targeting-pair cases deliberately
+ * construct the shape this rejects and must keep doing so unopted-in
+ * (`TransitionIndex`'s own constructor doc comment says why). */
+export function streetTransitionIndex(): TransitionIndex {
+  const world = streetWorldIndex();
+  const config = streetMovementConfig();
+  return new TransitionIndex(STREET_TRANSITIONS, {
+    isStandable: (x, y, floor) => isCellStandable(world, config, x, y, floor),
+  });
+}
+
 /** Where the player comes to rest walking straight south out of the door
  * (story 2.13): the south face of `SHOPFRONT_EXIT_REST_COLLIDER`, one row
  * north of the lamppost's own row (`LAMPPOST_CELL.y - 1`) -- that
@@ -255,7 +270,7 @@ export function simulateStreetWalk(
   const releaseLagSteps = options.releaseLagSteps ?? 0;
   const config = streetMovementConfig();
   const world = streetWorldIndex();
-  const transitions = new TransitionIndex(STREET_TRANSITIONS);
+  const transitions = streetTransitionIndex();
 
   let state: FloorWalkResult = options.start ?? {
     ...initialFloorWalkState(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor),

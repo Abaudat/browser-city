@@ -281,6 +281,19 @@ always derived from placed content, never stored per cell.
   cell. Both the anchor and the target cell must be standable on their own
   declared floor; `WorldSpec::build` rejects a world with a transition
   that violates this.
+- A two-way transition is a pair, and a pair must be an honest mirror of
+  itself (story 15.2): for some axis-aligned unit step `d`, the reverse
+  transition's own anchor is the forward one's landing cell offset by
+  `-d`, and the reverse transition's own landing is the forward one's
+  anchor cell offset by the same `-d` -- so walking the forward direction
+  through one, then its exact opposite through the other, returns an
+  entity to the cell it started from, never a detour through an unrelated
+  direction. The client's `world/transitions.ts` mirrors this as
+  `checkTransitionPairSymmetry`, an opt-in half of `TransitionIndex`'s own
+  constructor (a `pairSymmetry` option, never the default -- a test double
+  that deliberately constructs an invalid pair to prove `floor-walk.ts`'s
+  own edge-triggered gating alone never bounces must keep doing so
+  unopted-in); real world data opts in.
 
 Chunking is the unit of subscription and of cost (FR145). `CHUNK_SIZE`
 (32 tiles, one floor) is declared once, in `sim::world`; a literal 32
@@ -501,6 +514,22 @@ one import in `main.ts`. `sort-key.ts`, `decompose.ts`, `layer-ranks.ts`,
 under `test-street/` is held to the coverage bar the permanent modules
 are, though it is still exercised by real tests
 (`client/vitest.config.ts`'s coverage `include`/`exclude`).
+
+The street contributes no collider that is not drawn on the same floor
+(story 15.2): every `STREET_PROPS` row that carries a `solid` flag or a
+`defId` also carries a real sprite, at that same footprint -- a scripted
+walk's own rest is a face of that real prop's collider, never a bare
+`StreetBoundaryRect` shaped only to stop a test at a convenient sub-cell
+face. `STREET_BOUNDARY` exists for exactly one thing: the undrawn ring
+that closes the edge of the drawn world on one floor, so an avatar can
+never walk into the void beyond it -- nothing else belongs there.
+`client/tests/unit/test-street/street-conformance.test.ts`'s own
+conformance guard holds both directions generically, over the whole
+fixture: every collider cell traces back to a real prop's own drawn
+footprint or the undrawn `STREET_BOUNDARY` ring (never anything else),
+that ring itself never overlaps a drawn ground-tile pass, and every
+`walls`-layer or `solid` row's own footprint is fully collided, one entry
+per cell.
 
 A frame draws four passes per floor, in this fixed order, declared even
 when a pass is empty: three flat passes -- ground, ground decals, ground

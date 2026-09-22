@@ -193,12 +193,16 @@ test.describe("story 1.7: enclosure visibility", () => {
     expect(platformVisibility["ground:-1"]).toBe("normal");
     expect(platformVisibility["ground:0"]).toBe("hidden");
 
-    // Walking north from the landing reaches the up-stairs' own anchor,
-    // one cell further in (`fixture.ts`'s `PLATFORM_UP_ANCHOR_X/Y`), and
-    // lands one cell beside the stairwell (`STREET_EXIT_X/Y`) -- never
-    // the down anchor's own cell, which would re-trigger the descent the
-    // instant a still-held key is checked against it again.
-    await walkTo(page, "ArrowUp", { x: STREET_EXIT_X + 0.5, y: STREET_EXIT_Y + 0.5 });
+    // Story 15.2: the reverse input (`ArrowLeft`, the mirror of the
+    // `ArrowRight` that walked down) climbs straight back up -- no detour
+    // through an unrelated direction. Walking west from the landing
+    // reaches the up-stairs' own anchor, one cell further in (`fixture.ts`'s
+    // `PLATFORM_UP_ANCHOR_X/Y`, the landing's own mirror per
+    // `world/transitions.ts`'s `checkTransitionPairSymmetry`), and lands
+    // one cell beside the stairwell (`STREET_EXIT_X/Y`) -- never the down
+    // anchor's own cell, which would re-trigger the descent the instant a
+    // still-held key is checked against it again.
+    await walkTo(page, "ArrowLeft", { x: STREET_EXIT_X + 0.5, y: STREET_EXIT_Y + 0.5 });
     await page.waitForFunction(() => window.__bc?.visibility?.["60"] === "hidden", undefined, {
       timeout: 15_000,
     });

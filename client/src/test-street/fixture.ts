@@ -102,6 +102,22 @@ export interface StreetPropByDef extends StreetPropBase {
 export interface StreetPropByAsset extends StreetPropBase {
   readonly assetKey: string;
   readonly footprint?: StreetFootprint;
+  /** A sub-cell collider override for a `solid` asset-placed prop
+   * (`COLLIDER_SUBCELLS_PER_CELL` per cell, relative to the footprint's
+   * own north-west sub-cell origin) -- absent means the whole footprint
+   * blocks, the historical default every plain wall run still relies on.
+   * Story 15.2 (Quentin's direction): every rest a scripted walk needs is
+   * a real, drawn prop's own collider, never an undrawn boundary rect
+   * shaped only to stop a test at a convenient sub-cell face -- this is
+   * what lets a small, real streetscape prop (a bollard, a manhole, a
+   * doorstep) carry a collider narrower than its own cell, the same way a
+   * `defs/objects` entry's `collider` can. */
+  readonly collider?: {
+    readonly x0: number;
+    readonly y0: number;
+    readonly x1: number;
+    readonly y1: number;
+  };
 }
 
 /** One placed prop in the street scene -- a discriminated union (Tim's/
@@ -272,6 +288,22 @@ export const SUBWAY_FLOOR = -1;
 export const STAIRS_X = 16;
 export const STAIRS_Y = LAMPPOST_CELL.y;
 
+/** The barrier around each subway stairwell's own opening (AC, story
+ * 15.2): the real 48x64px sprite draws railings receding into the far
+ * (north) part of its own cell, all of it previously outside this
+ * street's own collision entirely (the reported "no collision at all"
+ * bug). Solid only across a thin band at its own very top -- narrow
+ * enough (`y1 = 2`, an eighth of a cell) that a body centred in the cell
+ * (`isCellStandable`'s own probe, which `checkTransitionPairSymmetry`
+ * runs against both anchors) still clears its own top face by a whole
+ * sub-cell, and every real approach this street's own props use
+ * (`lamppostRestY()`'s own row, and the up-anchor's own exact landing
+ * position) stays clear of it too -- found the hard way, during this
+ * story's own cycle 1: a wider band reaching to the body's own half-height
+ * caught both the ordinary lamppost-row approach and the standability
+ * probe the transition-pair check itself relies on. */
+export const STAIRS_BARRIER_COLLIDER = { x0: 0, y0: 0, x1: 16, y1: 2 } as const;
+
 /** The pavement's own south edge (`STREET_BOUNDARY`'s id 103, below) --
  * exported so the scripted walk (story 1.13, cycle 3) can rest against
  * it by name rather than a second, hand-typed `9`. The stairwell shares
@@ -324,25 +356,36 @@ const PLATFORM_INTERIOR_Y1 = PLATFORM_Y1 - 1;
 export const PLATFORM_LANDING_X = STAIRS_X;
 export const PLATFORM_LANDING_Y = PLATFORM_INTERIOR_Y0 + 1;
 
-/** The up-stairs' own anchor, one cell north of the landing (never the
- * identical cell): a continuous walk down and back up must not bounce
- * between the two transitions on consecutive frames just because holding
- * the same direction key kept the player inside the landing cell for a
- * second frame -- one cell of separation is what a caller's continued
- * momentum naturally clears (`world/floor-walk.ts` now also gates every
+/** The up-stairs' own anchor (story 15.2 fix, Quentin's direction): the
+ * landing cell's own neighbour one cell *west*, mirroring the down
+ * transition's own shape (`world/transitions.ts`'s
+ * `checkTransitionPairSymmetry`, which `streetTransitionIndex` -- `test-
+ * street/scene.ts`, `street-world.ts` -- runs this fixture through). The
+ * previous shape (one cell *north* of the landing) was not this anchor's
+ * mirror at all: it shared the landing's column instead of the down
+ * anchor's own row-and-column relationship, which is exactly the shape
+ * that spawned the player mid-room on descent and left no reverse input
+ * that climbed back up (the demo bug this story fixes). Never the
+ * identical cell as the landing -- a continuous walk down and back up
+ * must not bounce between the two transitions on consecutive frames just
+ * because holding the same direction key kept the player inside the
+ * landing cell for a second frame (`world/floor-walk.ts` also gates every
  * transition lookup on the cell actually changing by walking, so this is
  * belt and braces, not the only thing preventing a bounce). */
-export const PLATFORM_UP_ANCHOR_X = PLATFORM_LANDING_X;
-export const PLATFORM_UP_ANCHOR_Y = PLATFORM_LANDING_Y - 1;
+export const PLATFORM_UP_ANCHOR_X = PLATFORM_LANDING_X - 1;
+export const PLATFORM_UP_ANCHOR_Y = PLATFORM_LANDING_Y;
 
-/** Where climbing back up lands on the street: one cell east of the
- * stairwell's own anchor (`STAIRS_X`/`STAIRS_Y`), never that identical
- * cell -- the same "never the anchor cell" rule `PLATFORM_UP_ANCHOR_X/Y`
- * applies below ground applies here too. Still immediately beside the
- * stairwell prop (Artie's "where you come out must physically match
- * where you went in"), just not the single tile that triggers the
- * descent. */
-export const STREET_EXIT_X = STAIRS_X + 1;
+/** Where climbing back up lands on the street (story 15.2 fix): the down
+ * anchor's own neighbour one cell *west* -- `PLATFORM_UP_ANCHOR_X/Y`'s own
+ * doc comment says why that offset, not north, is this pair's real
+ * mirror. Walking down (east, into `(STAIRS_X, STAIRS_Y)`) then
+ * immediately back with the reverse input (west) retraces the same axis
+ * and lands here, one cell short of the stairwell itself -- the exact
+ * "reverse input returns you to the matching cell, no detour through an
+ * unrelated direction" the acceptance criteria ask for. Never the
+ * identical cell as the down anchor -- the same "never the anchor cell"
+ * rule `PLATFORM_UP_ANCHOR_X/Y` applies below ground applies here too. */
+export const STREET_EXIT_X = STAIRS_X - 1;
 export const STREET_EXIT_Y = STAIRS_Y;
 
 // --- the footbridge (story 1.13) ---------------------------------------
@@ -795,11 +838,16 @@ export const STREET_PROPS: readonly StreetProp[] = [
     y: STAIRS_Y,
     floor: STREET_FLOOR,
     layer: "objects",
+    // The AC's own subway-barrier fix (story 15.2): `STAIRS_BARRIER_
+    // COLLIDER`'s own doc comment says why only a thin band at the top
+    // blocks.
+    solid: true,
+    collider: STAIRS_BARRIER_COLLIDER,
   },
-  // The matching up-stairs on the platform, one cell north of the
-  // landing (`PLATFORM_UP_ANCHOR_X/Y`'s own doc comment) -- a distinct
-  // sprite from the street's own down stairwell (Artie's direction: one
-  // sprite never plays both roles).
+  // The matching up-stairs on the platform, one cell west of the landing
+  // (`PLATFORM_UP_ANCHOR_X/Y`'s own doc comment) -- a distinct sprite
+  // from the street's own down stairwell (Artie's direction: one sprite
+  // never plays both roles). Carries the same real barrier collider.
   {
     id: 51n,
     assetKey: "subwayStairsUp",
@@ -807,6 +855,8 @@ export const STREET_PROPS: readonly StreetProp[] = [
     y: PLATFORM_UP_ANCHOR_Y,
     floor: SUBWAY_FLOOR,
     layer: "objects",
+    solid: true,
+    collider: STAIRS_BARRIER_COLLIDER,
   },
   ...platformWalls(),
   // At the platform's own west end, clear of the up-stairs sprite's own
@@ -870,6 +920,88 @@ export const STREET_PROPS: readonly StreetProp[] = [
     layer: "furniture",
     footprint: { width: 2, height: 1 },
     solid: true,
+  },
+
+  // --- The scripted walk's own rests, as real street furniture (story
+  // 15.2, Quentin's direction) -------------------------------------------
+  //
+  // Every rest a scripted walk needs used to be an undrawn boundary rect
+  // (`STREET_BOUNDARY`'s own former ids 116-121); the guard in
+  // `street-conformance.test.ts` now refuses exactly that shape. Each one
+  // below is a real, drawn, solid prop instead, carrying the identical
+  // collider it always did -- `street-world.ts`'s own rest-position
+  // functions (`shopfrontExitRestY`, `lamppostApproachRestX`, and so on)
+  // read the same named constants, so moving the geometry from an
+  // undrawn rect to a drawn prop changes nothing any of them compute.
+
+  // A doorstep right outside shop A's own door (was id 120).
+  {
+    id: 120n,
+    assetKey: "doormat",
+    x: DOOR_X_A,
+    y: SOUTH_WALL_Y + 1,
+    floor: STREET_FLOOR,
+    layer: "objects",
+    solid: true,
+    collider: SHOPFRONT_EXIT_REST_COLLIDER,
+  },
+  // A bollard beside the lamppost, on its own approach row (was id 121).
+  {
+    id: 121n,
+    assetKey: "bollard",
+    x: LAMPPOST_CELL.x,
+    y: SOUTH_WALL_Y + 1,
+    floor: STREET_FLOOR,
+    layer: "objects",
+    solid: true,
+    collider: LAMPPOST_APPROACH_REST_COLLIDER,
+  },
+  // A manhole cover on the pavement crossing, fixing the walk's own
+  // eastward rest before it turns north onto the underpass row (was id
+  // 116).
+  {
+    id: 116n,
+    assetKey: "manhole",
+    x: PAVEMENT_CROSSING_REST_X,
+    y: STAIRS_Y,
+    floor: STREET_FLOOR,
+    layer: "objects",
+    solid: true,
+    collider: PAVEMENT_CROSSING_REST_COLLIDER,
+  },
+  // The underpass checkpoint's own curb and support pillar -- a real
+  // bridge's own understructure, not only a test aid (was ids 117/118).
+  {
+    id: 117n,
+    assetKey: "manhole",
+    x: BRIDGE_UNDER_CURB_X,
+    y: BRIDGE_DECK_Y,
+    floor: STREET_FLOOR,
+    layer: "objects",
+    solid: true,
+    collider: BRIDGE_UNDER_CURB_COLLIDER,
+  },
+  {
+    id: 118n,
+    assetKey: "bollard",
+    x: BRIDGE_UNDER_PILLAR_X,
+    y: BRIDGE_DECK_Y,
+    floor: STREET_FLOOR,
+    layer: "objects",
+    solid: true,
+    collider: BRIDGE_UNDER_PILLAR_COLLIDER,
+  },
+  // A second manhole cover, one row south, for leaving the underpass
+  // again (was id 119).
+  {
+    id: 119n,
+    assetKey: "manhole",
+    x: BRIDGE_UNDER_PILLAR_X,
+    y: BRIDGE_UNDER_EXIT_Y,
+    floor: STREET_FLOOR,
+    layer: "objects",
+    solid: true,
+    collider: BRIDGE_UNDER_EXIT_COLLIDER,
   },
 ] as const;
 
@@ -935,26 +1067,15 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
     width: 21 - (EAST_WALL_X_B + 1),
     height: 1,
   },
-  // The scripted walk's own two lamppost-approach rests (story 2.13;
-  // `SHOPFRONT_EXIT_REST_COLLIDER`/`LAMPPOST_APPROACH_REST_COLLIDER`'s own
-  // doc comments say why each exists): the door's own column, then the
-  // lamppost's own column, both on the lamppost's approach row.
-  {
-    id: 120n,
-    x: DOOR_X_A,
-    y: SOUTH_WALL_Y + 1,
-    width: 1,
-    height: 1,
-    collider: SHOPFRONT_EXIT_REST_COLLIDER,
-  },
-  {
-    id: 121n,
-    x: LAMPPOST_CELL.x,
-    y: SOUTH_WALL_Y + 1,
-    width: 1,
-    height: 1,
-    collider: LAMPPOST_APPROACH_REST_COLLIDER,
-  },
+  // Story 15.2 (Quentin's direction): every rest the scripted walk needs
+  // used to live here too (ids 116-121) -- an undrawn collider that
+  // exists only so an e2e walk comes to rest deterministically, which the
+  // conformance guard below now refuses outright. Every one of those
+  // rests is now a real, drawn `STREET_PROPS` row instead (the doormat,
+  // the two bollards, the two manhole covers), carrying the identical
+  // collider shape it always did -- `street-conformance.test.ts`'s own
+  // "no undrawn collider" half is what keeps this true.
+  //
   // The footbridge's own ring, one storey up: the deck is the only
   // standable thing on `BRIDGE_FLOOR`, so everything around it is closed
   // off. Its north side needs no entry -- the parapet (real
@@ -977,68 +1098,6 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
   { id: 112n, x: BRIDGE_X1 + 1, y: BRIDGE_DECK_Y, width: 1, height: 1, floor: BRIDGE_FLOOR },
   { id: 113n, x: BRIDGE_X0 - 1, y: BRIDGE_DECK_Y - 1, width: 1, height: 1, floor: BRIDGE_FLOOR },
   { id: 114n, x: BRIDGE_X1 + 1, y: BRIDGE_DECK_Y - 1, width: 1, height: 1, floor: BRIDGE_FLOOR },
-  // The scripted walk's own crossing rest (story 1.13, cycle 3;
-  // `PAVEMENT_CROSSING_REST_X`'s own doc comment says why): the same
-  // column the underpass checkpoint's own curb sits on, so the walk's
-  // eastward crossing and its northward turn onto the underpass row are
-  // both rests, back to back, with no threshold-driven guesswork
-  // between them.
-  {
-    id: 116n,
-    x: PAVEMENT_CROSSING_REST_X,
-    y: STAIRS_Y,
-    width: 1,
-    height: 1,
-    collider: PAVEMENT_CROSSING_REST_COLLIDER,
-  },
-  // The underpass checkpoint's own rest colliders (story 1.13, cycle 3 --
-  // Quentin's direction): "the street exists precisely to be shaped for
-  // its own tests". A screenshot needs a *rest*, never a timed threshold
-  // -- a threshold's own stopping point carries real run-to-run jitter
-  // from ordinary round-trip latency, a collider's does not, regardless
-  // of timing, because resolution always snaps to the exact same face.
-  //
-  // Two separate colliders, not one, and on the street's own floor
-  // (`STREET_FLOOR`, the default) -- never the deck's own floor above,
-  // which never contributes to this floor's collision (FR117): a south
-  // rest fixes the row (a low curb, solid only across its own top
-  // quarter so a walker approaching from the south still lands *inside*
-  // the row rather than on its own boundary, the same "solid only across
-  // part of the cell" idiom the deck's south rail above already uses,
-  // sitting well west of the bridge's own span -- `BRIDGE_UNDER_CURB_X`'s
-  // own doc comment says why), and a separate east rest fixes the column
-  // (`BRIDGE_UNDER_PILLAR_X`, a support pillar -- a real bridge's own
-  // understructure, not only a test aid -- solid across a vertical strip
-  // spanning the row's own full height). Neither sits on
-  // `BRIDGE_DOWN_ANCHOR_X`/`BRIDGE_UP_ANCHOR_X` so neither ever
-  // interferes with the transition columns the rest of the walk and the
-  // perf lap both still use.
-  {
-    id: 117n,
-    x: BRIDGE_UNDER_CURB_X,
-    y: BRIDGE_DECK_Y,
-    width: 1,
-    height: 1,
-    collider: BRIDGE_UNDER_CURB_COLLIDER,
-  },
-  {
-    id: 118n,
-    x: BRIDGE_UNDER_PILLAR_X,
-    y: BRIDGE_DECK_Y,
-    width: 1,
-    height: 1,
-    collider: BRIDGE_UNDER_PILLAR_COLLIDER,
-  },
-  // A third rest, one row south, for leaving the underpass again
-  // (`BRIDGE_UNDER_EXIT_COLLIDER`'s own doc comment says why).
-  {
-    id: 119n,
-    x: BRIDGE_UNDER_PILLAR_X,
-    y: BRIDGE_UNDER_EXIT_Y,
-    width: 1,
-    height: 1,
-    collider: BRIDGE_UNDER_EXIT_COLLIDER,
-  },
 ] as const;
 
 /** One flat-pass ground tile group (FR123: three flat passes before the
@@ -1077,18 +1136,29 @@ export const INTERIOR_FLOOR_TILES_B: StreetGroundTiles = {
   y1: SOUTH_WALL_Y,
 };
 
-// One row deeper than the terrace needs, because a bottom-anchored sprite
-// paints a row lower than the cell its body occupies: the player resting
-// against the lamppost must still be drawn over pavement, not past its
-// last painted row. Widened east to cover both shops and the subway
-// stairwell.
+// Covers every row the pavement is actually standable on -- through the
+// lamppost's own row (`STAIRS_Y`) -- and stops there. Widened east to
+// cover both shops and the subway stairwell.
+//
+// Story 15.2 (Quentin's direction): `y1` used to reach one row further,
+// through `PAVEMENT_SOUTH_EDGE_Y` itself -- painting the world-edge ring's
+// own row (`STREET_BOUNDARY`'s id 103, solid across its whole width) as
+// if it were ordinary, walkable pavement. That is the "looks open, is
+// blocked" half of this story's own defect class: a player could never
+// actually stand in that row (the boundary ring fills it completely), but
+// the sidewalk texture said otherwise. The conformance guard's own "world
+// edge lies strictly outside the drawn ground" check is what catches a
+// future regression of this same mistake. `PAVEMENT_SOUTH_EDGE_Y` itself
+// is unaffected: a walker still rests against the ring's own north face,
+// which sits exactly one row past this texture's own last painted row,
+// same as ever.
 export const SIDEWALK_TILES: StreetGroundTiles = {
   assetKey: "sidewalk",
   floor: STREET_FLOOR,
   x0: 1,
   y0: SOUTH_WALL_Y,
   x1: 21,
-  y1: 10,
+  y1: PAVEMENT_SOUTH_EDGE_Y,
 };
 
 /** The platform's own floor pass, floor -1 -- Artie's direction: what
@@ -1148,7 +1218,12 @@ export function streetColliderSources(
     sources.set(streetDefId(prop.id), {
       width,
       height,
-      collider: { x0: 0, y0: 0, x1: width * subcellsPerCell, y1: height * subcellsPerCell },
+      collider: prop.collider ?? {
+        x0: 0,
+        y0: 0,
+        x1: width * subcellsPerCell,
+        y1: height * subcellsPerCell,
+      },
     });
   }
   for (const rect of STREET_BOUNDARY) {
