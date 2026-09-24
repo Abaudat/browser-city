@@ -1,50 +1,35 @@
-# BrowserCity
+<p align="center">
+  <img src="docs/readme/hero.png" width="880" alt="Browser City, a city sim built by six AI agents. The six agents stand on a pixel-art street in front of a hardware store.">
+</p>
 
-A persistent, browser-based life simulation set in a city that runs whether or not anyone is
-watching. The server is a SpacetimeDB module; the client is a thin PixiJS renderer. The game is
-built by an agentic team that takes its work from GitHub.
+<p align="center">
+  <a href="https://abaudat.github.io/browser-city/"><img src="docs/readme/play.png" width="880" alt="Play in your browser"></a>
+</p>
 
-**Play the live build:** <https://abaudat.github.io/browser-city/>
+<p align="center">
+  <img src="docs/readme/premise.png" width="880" alt="The premise. Scotty, Scrum Master: Welcome to Browser City, a city sim that keeps running whether or not anyone is watching. Nobody on the team building it is human. Six AI agents take work from a GitHub board, argue about it in comments, write the code, review it and ship it. Players play the game and tell us what to build next. 6 agents. All state on GitHub. Always running.">
+</p>
 
-## Milestones
+<p align="center">
+  <img src="docs/readme/team.png" width="880" alt="The team. Four leads direct and review. Only Crew touches the code. Scotty keeps the cycle turning. Scotty, Scrum Master (Fable): runs the cycle, turns demo feedback into stories and rules on task requests. Crew, Implementer (Sonnet): the only one who writes to the repo, implements the story and opens the PR. Tim, Tech Lead (Fable): keeps the code simple and the stack used well, owns CI and deploys. Derek, Game Designer (Fable): guards the design doc, every feature must be a real system, not a one-off. Quentin, QA (Fable): owns TDD, the trace matrix and CI tests, so players never meet a bug. Artie, Art Director (Fable): owns how the city looks and feels, from the pixel art to the UI.">
+</p>
 
-Where each live-build milestone lands in the epics, pinned to the story that first delivers it.
-Three of them have no story yet. Source: the [epics and stories on GitHub](https://github.com/Abaudat/browser-city/issues?q=label%3Aepic).
+<p align="center">
+  <img src="docs/readme/process.png" width="880" alt="How a story ships. 1 Pick: the orchestrator takes the highest-priority, smallest story nothing blocks. 2 Analyze: each lead in scope writes its direction on the issue. 3 Build: Crew implements the story and opens a pull request. 4 Review: CI goes green, then every lead approves; after 8 rounds, the Product Owner is paged. Changes asked send it back to Crew. 5 Merge: merged and marked Done, the next story starts. At the end of every Sprint, Scotty opens a Demo issue, the Product Owner plays the build and comments, and Scotty turns the feedback into new epics and stories. All state lives on GitHub: the board, issues, PRs and comments.">
+</p>
 
-![Milestone timeline across the epics](docs/milestones.png)
+## Explore the repo
 
-## Layout
+| Where | What you'll find |
+| --- | --- |
+| [`.claude/agents/`](.claude/agents/) | The six role prompts |
+| [`agentic-team/`](agentic-team/) | The flowchart the orchestrator runs, and the scripts that run it |
+| [`docs/`](docs/) | What the game is: requirements, game design, UX |
+| [Issues and board](https://github.com/Abaudat/browser-city/issues) | Every epic, story, direction and review, in the team's own words |
+| [`server/`](server/) · [`client/`](client/) | The SpacetimeDB module (Rust) and the PixiJS browser client |
 
-```
-docs/               what the game is
-  requirements.md     every FR and NFR, one line each — the only place a requirement is stated
-  gdd.md              the game design: pillars, mechanics, progression, art and audio
-  ux.md               the UX specification: affordance, carrying, container views, first session
-  generation.md       the city generator's own rule set: passes, parameters, rules by kind
-
-agentic-team/       who builds it
-  high-level-agentic-flow.mmd   the flowchart the orchestrator executes
-  scripts/                      that flowchart made executable — see its README
-
-server/             the SpacetimeDB module (Rust) — see its README
-client/             the browser client (TypeScript + PixiJS, Vite) — see its own package.json
-ModernTileset/      the licensed 16x16 art source
-.claude/            agent definitions and skills for the team's roles
-```
-
-## Where each thing lives, and only there
-
-- **Requirements** are in `docs/requirements.md`. Nothing else numbers them; everything else cites
-  them by identifier.
-- **The plan** is on the GitHub board: one issue per epic, one sub-issue per story. Each story
-  issue carries its acceptance criteria and names the FRs and NFRs it delivers. No epic or story
-  is described in this repository.
-- **Status** is on the board too, in its Status, Size, Priority and Sprint fields. It is never
-  recorded in a file.
-- **Design** is in `docs/gdd.md` and `docs/ux.md`. They describe the game, not the work.
-- **How the team operates** is in `agentic-team/`. The roles themselves are in `.claude/agents/`.
-
-## Running things
+<details>
+<summary><b>Run it locally</b></summary>
 
 ```bash
 bash agentic-team/scripts/orchestrator.sh    # one tick of the team's wake
@@ -53,3 +38,9 @@ node scripts/team-usage.mjs                  # the team's token usage per role, 
 cd server && spacetime publish --yes         # build and publish the module locally
 cd client && npm ci && npm run dev           # the browser client, against the local module
 ```
+
+</details>
+
+---
+
+<sub>Pixel art: Modern Interiors and Modern Exteriors by LimeZu, used under licence.</sub>
