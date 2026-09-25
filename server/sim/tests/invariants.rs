@@ -11,6 +11,8 @@ use sim::appearance;
 use sim::generated::defs::{self, Family, Pool};
 use sim::generation::{GenerationConfig, GenerationContent, envelopes, land_use, plots, streets};
 use sim::rng::{Rng, seed_from_ids};
+use sim::routing::estimate::{Correction, Rates, estimate};
+use sim::routing::{Point, TransportMode};
 use sim::rules::testing::SiteBuilder;
 use sim::rules::{
     AdjacencyRelation, AreaId, Cell, CoherenceMode, Direction, NeighbourTerm, RuleDef, RuleKind,
@@ -69,6 +71,12 @@ pub const INV_GENERATION_ALL_FOUR_LAND_USES_PRESENT: &str = "pass 1's coarse gri
 pub const INV_GENERATION_STREETS_CONNECTED_AND_NOT_STRANDED: &str = "pass 2's street graph is a single connected component, and every pass-1 region borders a street, for any seed (FR110)";
 pub const INV_GENERATION_NO_DEAD_ENDS_AWAY_FROM_BOUNDARY: &str =
     "pass 2 never produces a degree-1 node away from the site boundary, for any seed (FR110, NFR8)";
+pub const INV_ESTIMATE_IS_A_METRIC: &str = "the routing estimate is zero exactly when two cells coincide, symmetric, and obeys the triangle inequality, for any three cells on one floor and any mode (FR131)";
+pub const INV_ESTIMATE_IS_A_METRIC_ACROSS_FLOORS: &str = "the routing estimate obeys the triangle inequality across floors too, for any correction factor (FR131)";
+pub const INV_ESTIMATE_IS_ORIGIN_INDEPENDENT: &str = "translating both endpoints by the same offset never changes the routing estimate, and no i32 coordinate panics or wraps (FR131)";
+pub const INV_FASTER_MODE_NEVER_COSTS_MORE: &str = "a mode with a higher speed percent never returns a larger estimate, and a strictly smaller one over a non-zero distance when the percents differ enough to matter (FR131)";
+pub const INV_FLOOR_PENALTY_IS_ADDITIVE_AND_FLAT: &str = "changing floor adds exactly floor_change_penalty_milliminutes per floor crossed, whatever the mode or the horizontal distance (FR131)";
+pub const INV_GENERATION_MANHATTAN_BEATS_EUCLIDEAN: &str = "over a generated city's own sampled node pairs, Manhattan distance is a closer estimate of network distance than Euclidean, in total and on a clear majority of pairs (FR131)";
 pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, additive excess never exceeds max_detour_excess_cells, and (for pairs at least detour_long_pair_cells apart) BFS network distance never exceeds max_detour_percent of Manhattan distance, for any seed (FR110)";
 pub const INV_GENERATION_NOT_A_PERFECT_GRID: &str = "block width and height each take at least min_distinct_block_sizes distinct values, both junction kinds are present, and at least two street classes are present, for any seed (FR110, NFR8)";
 pub const INV_GENERATION_EXACT_TILING: &str = "every site cell is covered by exactly one block or by at least one street, and no two blocks overlap, for any seed (FR110)";
@@ -1835,6 +1843,41 @@ proptest! {
         prop_assert!(
             p99 <= cfg.p99_detour_percent as i64,
             "seed {seed}: p99 detour ratio {p99}% over {}%", cfg.p99_detour_percent
+        );
+    }
+
+    /// `inv_generation_manhattan_beats_euclidean` (FR131, AC2): over real
+    /// generated geometry, never a hand-drawn grid. Euclidean is an
+    /// integer `isqrt`, so no float enters `sim`.
+    #[test]
+    fn inv_generation_manhattan_beats_euclidean(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
+        let (mut man_err, mut euc_err, mut man_wins, mut euc_wins) = (0i64, 0i64, 0usize, 0usize);
+        for s in &samples {
+            let dx = (s.a.0 as i64 - s.b.0 as i64).abs();
+            let dy = (s.a.1 as i64 - s.b.1 as i64).abs();
+            // Rounded to nearest: a floor would bias the comparison.
+            let euclid = ((4 * (dx * dx + dy * dy)).isqrt() + 1) / 2;
+            let (m, e) = ((s.network - s.manhattan).abs(), (s.network - euclid).abs());
+            man_err += m;
+            euc_err += e;
+            man_wins += usize::from(m < e);
+            euc_wins += usize::from(e < m);
+        }
+        prop_assert!(!samples.is_empty(), "seed {seed}: no sampled pairs");
+        prop_assert!(
+            man_err < euc_err,
+            "seed {seed}: summed |network - manhattan| {man_err} is not under summed \
+             |network - euclidean| {euc_err} over {} pairs", samples.len()
+        );
+        // Ties (axis-aligned pairs, where both agree) are neither side's win.
+        prop_assert!(
+            man_wins * 10 >= (man_wins + euc_wins) * 9,
+            "seed {seed}: Manhattan closer on {man_wins} pairs, Euclidean on {euc_wins} -- \
+             under the committed 90% of decided pairs"
         );
     }
 
@@ -4313,4 +4356,103 @@ fn peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor() {
         "pooled over seeds 0..256: low-band sum {low_sum} is under {}% of high-band sum {high_sum}",
         cfg.peripheral_pooled_min_ratio_percent
     );
+}
+
+// Story 3.11: the travel-time estimator (FR131). A handful of integer ops
+// per case, so 4,096 cases are pinned here rather than inherited.
+fn rates() -> Rates {
+    Rates::from_balance(defs::BALANCE)
+}
+
+fn arb_mode() -> impl Strategy<Value = TransportMode> {
+    prop_oneof![
+        Just(TransportMode::Walk),
+        Just(TransportMode::Bike),
+        Just(TransportMode::Transit)
+    ]
+}
+
+fn arb_point() -> impl Strategy<Value = Point> {
+    (any::<i32>(), any::<i32>(), any::<i8>()).prop_map(|(x, y, floor)| Point { x, y, floor })
+}
+
+fn arb_correction() -> impl Strategy<Value = Correction> {
+    (Correction::MIN_PERCENT..=Correction::MAX_PERCENT)
+        .prop_map(|p| Correction::percent(p).unwrap())
+}
+
+fn est(a: Point, b: Point, m: TransportMode) -> i64 {
+    estimate(&rates(), a, b, m, Correction::NONE).0
+}
+
+fn est_c(a: Point, b: Point, m: TransportMode, c: Correction) -> i64 {
+    estimate(&rates(), a, b, m, c).0
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 4096, ..ProptestConfig::default() })]
+
+    /// `inv_estimate_is_a_metric`.
+    #[test]
+    fn inv_estimate_is_a_metric(
+        a in arb_point(), b in arb_point(), c in arb_point(), m in arb_mode(),
+        floor in any::<i8>(), k in arb_correction(),
+    ) {
+        let (a, b, c) = (Point { floor, ..a }, Point { floor, ..b }, Point { floor, ..c });
+        prop_assert_eq!(est_c(a, b, m, k) == 0, a == b);
+        prop_assert_eq!(est_c(a, b, m, k), est_c(b, a, m, k));
+        prop_assert!(est_c(a, c, m, k) <= est_c(a, b, m, k) + est_c(b, c, m, k));
+    }
+
+    /// The triangle inequality across floors too: the correction is applied
+    /// once, so the floor penalty rounds with the travel time.
+    #[test]
+    fn inv_estimate_is_a_metric_across_floors(
+        a in arb_point(), b in arb_point(), c in arb_point(), m in arb_mode(), k in arb_correction(),
+    ) {
+        prop_assert!(est_c(a, c, m, k) <= est_c(a, b, m, k) + est_c(b, c, m, k));
+    }
+
+    /// `inv_estimate_is_origin_independent`.
+    #[test]
+    fn inv_estimate_is_origin_independent(
+        a in arb_point(), b in arb_point(), dx in any::<i32>(), dy in any::<i32>(), m in arb_mode(),
+        k in arb_correction(),
+    ) {
+        let shift = |p: Point| Point { x: p.x.wrapping_add(dx), y: p.y.wrapping_add(dy), ..p };
+        // A wrapped shift is not a translation; only compare when neither moved out of i32.
+        let ok = |p: Point| p.x.checked_add(dx).is_some() && p.y.checked_add(dy).is_some();
+        est_c(a, b, m, k); // total for any input
+        if ok(a) && ok(b) {
+            prop_assert_eq!(est_c(a, b, m, k), est_c(shift(a), shift(b), m, k));
+        }
+    }
+
+    /// `inv_faster_mode_never_costs_more`.
+    #[test]
+    fn inv_faster_mode_never_costs_more(
+        a in arb_point(), b in arb_point(), m1 in arb_mode(), m2 in arb_mode(), k in arb_correction(),
+    ) {
+        let r = rates();
+        let (fast, slow) = if r.percent(m1) >= r.percent(m2) { (m1, m2) } else { (m2, m1) };
+        let (ef, es) = (est_c(a, b, fast, k), est_c(a, b, slow, k));
+        prop_assert!(ef <= es);
+        let manhattan = (a.x as i64 - b.x as i64).abs() + (a.y as i64 - b.y as i64).abs();
+        // One cell already differs by tens of milliminutes between modes.
+        if manhattan >= 1 && r.percent(fast) > r.percent(slow) {
+            prop_assert!(ef < es);
+        }
+    }
+
+    /// `inv_floor_penalty_is_additive_and_flat`.
+    #[test]
+    fn inv_floor_penalty_is_additive_and_flat(a in arb_point(), b in arb_point(), m in arb_mode(), f2 in any::<i8>()) {
+        let same = Point { floor: a.floor, ..b };
+        let other = Point { floor: f2, ..b };
+        let floors = (a.floor as i64 - f2 as i64).abs();
+        prop_assert_eq!(
+            est(a, other, m) - est(a, same, m),
+            floors * rates().floor_change_penalty_milliminutes
+        );
+    }
 }

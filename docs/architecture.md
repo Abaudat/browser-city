@@ -1377,6 +1377,14 @@ a content key. `server/sim/tests/goldens/generation_v5.golden` is keyed
 to it, guarded by `check-golden-version-bump.sh`'s `generation_*` arm the
 same way `RNG_VERSION`/`APPEARANCE_VERSION` are.
 
+## Routing
+
+- `server/sim/src/routing/` owns the estimate, the graph and the search.
+- `Milliminutes` is the sole cost unit under `routing/`.
+- The estimate is Manhattan distance x the derived walking rate x the mode percent, plus a per-floor penalty: pure, cache-free and table-free, enforced by `scripts/ci/check-routing-estimate-purity.sh`.
+- `sim::time::REAL_MS_PER_CITY_MINUTE` is the one server-side FR1 constant.
+- Transport modes are `routing.speed_percent.*` multipliers on `movement.walk_speed_millicells_per_s`, never absolute speeds.
+
 ## Boot budget
 
 Boot milestones are marked only through `client/src/boot/boot-marks.ts`; NFR1

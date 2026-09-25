@@ -1,0 +1,29 @@
+# In-city travel-time estimator (FR131, story 3.11). Transport modes are
+# multipliers on the one canonical walking speed,
+# `movement.walk_speed_millicells_per_s`, never absolute speeds -- walking
+# is pinned at exactly 100 so the ladder is always relative to it.
+
+[[balance]]
+key = "routing.speed_percent.walk"
+value = 100
+min = 100
+max = 100
+
+[[balance]]
+key = "routing.speed_percent.bike"
+value = 200
+min = 100
+max = 1000
+
+[[balance]]
+key = "routing.speed_percent.transit"
+value = 300
+min = 100
+max = 1000
+
+[[balance]]
+# Charged once per floor of |floor difference| between the two endpoints.
+key = "routing.floor_change_penalty_milliminutes"
+value = 1000
+min = 0
+max = 600000
