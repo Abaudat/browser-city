@@ -962,23 +962,23 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
   },
   // Around the subway entrance: west of the treads, east of and below the
   // entrance cells, and the pavement's south edge east of them.
-  { id: 106n, x: STAIRWELL_X0 - 1, y: STAIRS_Y, width: 1, height: 1 },
+  { id: 130n, x: STAIRWELL_X0 - 1, y: STAIRS_Y, width: 1, height: 1 },
   {
-    id: 107n,
+    id: 131n,
     x: SUBWAY_ENTRANCE_X1 + 1,
     y: STAIRWELL_Y0,
     width: 21 - (SUBWAY_ENTRANCE_X1 + 1),
     height: 1,
   },
   {
-    id: 108n,
+    id: 132n,
     x: SUBWAY_ENTRANCE_X1 + 1,
     y: STAIRS_Y,
     width: 1,
     height: STAIRS_Y - STAIRWELL_Y0,
   },
   {
-    id: 109n,
+    id: 133n,
     x: SUBWAY_ENTRANCE_X0,
     y: STAIRS_Y + 1,
     width: SUBWAY_ENTRANCE_X1 - SUBWAY_ENTRANCE_X0 + 1,
