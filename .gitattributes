@@ -61,3 +61,7 @@ client/**/*.ts text eol=lf
 client/**/*.mjs text eol=lf
 client/**/*.json text eol=lf
 client/**/*.html text eol=lf
+
+# Markdown under docs/: trace-matrix.md is diffed row by row and blamed per row;
+# a CRLF checkout would make every line a change (story 15.7).
+docs/**/*.md text eol=lf
