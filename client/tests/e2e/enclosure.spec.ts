@@ -37,6 +37,8 @@ import {
   STREET_VISIBILITY_ON_SUBWAY_LANDING,
 } from "../unit/test-street/golden";
 import { shopfrontExitRestY, streetWalkInputs } from "../unit/test-street/street-world";
+import { canvasOf } from "./camera-test-support";
+import { SCREENSHOT_OPTIONS } from "./screenshot-support";
 
 async function waitForSceneReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
@@ -148,6 +150,12 @@ async function walkRealSegment(page: Page, segment: StreetWalkSegment): Promise<
   }
 }
 
+// Pinned like every other baseline spec, so the picture is the same size everywhere.
+test.use({ viewport: { width: 1920, height: 1080 } });
+
+// Well under the stairwell's own area (~49k device pixels at zoom).
+const PLATFORM_MAX_DIFF_PIXELS = 200;
+
 test.describe("story 1.7: enclosure visibility", () => {
   test("at rest inside shop A matches the committed visibility golden, every mounted sprite's mask is null, and a translucent sprite's alpha is render.window_alpha", async ({
     page,
@@ -219,7 +227,8 @@ test.describe("story 1.7: enclosure visibility", () => {
   test("entering the subway culls the street and reveals the platform; leaving it reverses that", async ({
     page,
   }) => {
-    await page.goto("/");
+    // `freezeCrowd` so no citizen's walk frame can leak into the platform picture.
+    await page.goto("/?freezeCrowd=1");
     await waitForSceneReady(page);
 
     // From the shop to the stairwell's own opening and down it the demo's
@@ -242,6 +251,13 @@ test.describe("story 1.7: enclosure visibility", () => {
     // the subway's own ground pass is now visible, the street's is not.
     expect(platformVisibility["ground:-1"]).toBe("normal");
     expect(platformVisibility["ground:0"]).toBe("hidden");
+
+    // Story 15.7: the platform baseline -- the treads visibly step up from
+    // the landing to the east wall, the green up-arrow on the wall above.
+    await expect(canvasOf(page)).toHaveScreenshot("platform.png", {
+      ...SCREENSHOT_OPTIONS,
+      maxDiffPixels: PLATFORM_MAX_DIFF_PIXELS,
+    });
 
     // Story 15.2: the reverse input (`ArrowRight`, the mirror of the
     // `ArrowLeft` that walked down) climbs straight back up -- no detour
