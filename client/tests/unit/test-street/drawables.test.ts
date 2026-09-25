@@ -141,9 +141,11 @@ describe("the story 1.6 street scene's committed ordering", () => {
 
   it("a table and the glass on it share an anchor; the rank tiebreak keeps the glass on top", () => {
     const props = buildStreetProps();
-    const table = props.find((p) => p.stableId === 9n);
     const glass = props.find((p) => p.stableId === 10n);
-    if (!table || !glass) throw new Error("unreachable");
+    if (!glass) throw new Error("unreachable");
+    // The table is decomposed per cell; the glass shares its south-west one.
+    const table = props.find((p) => p.stableId === 9n && p.x === glass.x && p.y === glass.y);
+    if (!table) throw new Error("no table cell at the glass's own anchor");
     expect(table.x).toBe(glass.x);
     expect(table.y).toBe(glass.y);
     expect(compareDrawables(table, glass)).toBeLessThan(0);
@@ -328,18 +330,21 @@ describe("the player can never walk off the drawn world", () => {
     );
   });
 
-  it("walking straight south rests at the shopfront exit, short of the lamppost (story 2.13)", () => {
-    // The lamppost no longer shares the door's own column (`LAMPPOST_CELL`'s
-    // own doc comment says why), so a straight south walk out of the door
-    // now rests against `SHOPFRONT_EXIT_REST_COLLIDER` instead -- the
-    // scripted walk's own "east-to-the-lamppost" segment is what actually
-    // reaches the lamppost afterward (`street-conformance.test.ts`).
+  it("walking straight south rests against the real trash bin directly south of the door (story 2.13; story 15.2, cycle 2, Quentin's finding 3)", () => {
+    // The lamppost no longer shares the door's own column (`LAMPPOST_
+    // CELL`'s own doc comment says why), so a straight south walk out of
+    // the door now rests against the real trash bin's own base collider
+    // instead (FR148, story 1.9; `shopfrontExitRestY`'s own doc comment
+    // in `street-world.ts` says why this replaces the old, undrawn
+    // `SHOPFRONT_EXIT_REST_COLLIDER`, Quentin's finding 3) -- the scripted
+    // walk's own "east-to-the-lamppost" segment is what actually reaches
+    // the lamppost, from here (`street-conformance.test.ts`).
     let pos: Vec2 = { x: PLAYER_START.x, y: PLAYER_START.y };
     for (let i = 0; i < 400; i++) {
       pos = step(pos, { x: 0, y: 1 }, 16, grid, PLAYER_START.floor, config);
+      expect(isOnDrawnGround(pos), `left the drawn world at (${pos.x}, ${pos.y})`).toBe(true);
     }
     expect(pos.y).toBeCloseTo(shopfrontExitRestY(), 9);
-    expect(isOnDrawnGround(pos)).toBe(true);
   });
 
   // Story 1.13, cycle 2 (Quentin's direction): the bridge's own east end

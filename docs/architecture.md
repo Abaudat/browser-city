@@ -281,6 +281,35 @@ always derived from placed content, never stored per cell.
   cell. Both the anchor and the target cell must be standable on their own
   declared floor; `WorldSpec::build` rejects a world with a transition
   that violates this.
+- A two-way transition is a pair, and a pair must be an honest mirror of
+  itself (story 15.2): for some axis-aligned unit step `d`, the reverse
+  transition's own anchor is the forward one's landing cell offset by
+  `-d`, and the reverse transition's own landing is the forward one's
+  anchor cell offset by the same `-d` -- so walking the forward direction
+  through one, then its exact opposite through the other, returns an
+  entity to the cell it started from, never a detour through an unrelated
+  direction. A stairwell has one top and one bottom: the *other* three
+  neighbours of each anchor (every axis-aligned direction but the one `d`
+  names) must each refuse a step into it -- real colliders on the drawn
+  railings, never a rule that only checks the pairing shape and stops
+  there.
+  The client's `world/transitions.ts` mirrors the pairing half as
+  `checkTransitionPairSymmetry`, pairing transitions one to one
+  (`pairTransitions`, never a plain `find` that lets two forwards claim
+  one reverse) and exposing each pairing's own `d` so a caller
+  (`street-conformance.test.ts`'s own "one entrance" geometry check) never
+  re-derives which neighbour is the entry side. This half is pure (no
+  grid) and runs on every `TransitionIndex` construction by default --
+  never an opt-in, so a subscription that hands this class real
+  transitions is checked the same way the committed street's own fixture
+  is. The standability half (both cells a pairing's own reverse
+  introduces must be standable for the real body) runs additionally when
+  `isStandable` is supplied. `skipPairSymmetry` is the named, visible
+  escape hatch a test double uses to construct an intentionally invalid
+  pair (`world/floor-walk.test.ts`'s own same-cell mutually-targeting
+  fixture, proving `stepAndTransition`'s edge-triggered gating alone never
+  bounces on it) -- the lenient path is a visible choice in that one test
+  file, never a silent default in `world/`.
 
 Chunking is the unit of subscription and of cost (FR145). `CHUNK_SIZE`
 (32 tiles, one floor) is declared once, in `sim::world`; a literal 32
@@ -501,6 +530,26 @@ one import in `main.ts`. `sort-key.ts`, `decompose.ts`, `layer-ranks.ts`,
 under `test-street/` is held to the coverage bar the permanent modules
 are, though it is still exercised by real tests
 (`client/vitest.config.ts`'s coverage `include`/`exclude`).
+
+The street contributes no collider that is not drawn on the same floor
+(story 15.2): every `STREET_PROPS` row that carries a `solid` flag or a
+`defId` also carries a real sprite at that same footprint, and its
+collider lies inside that footprint. An asset-placed solid prop may
+declare several collider rects shaped to its art (`colliders`): the
+first is fed under the prop's own id, each further one as a collider part
+(`streetColliderPartId`) with the prop's own anchor and footprint.
+`STREET_BOUNDARY` is exactly one thing: the undrawn ring that closes the
+edge of the drawn world, in whole cells, every one outside every drawn
+ground pass on its floor. The one exemption is the footbridge's south rail
+(id 110), a sub-cell strip that keeps a walker leaning on it inside the
+deck's own row. `client/tests/unit/test-street/street-conformance.test.ts`
+holds this over the whole fixture: every collider cell traces back to a
+drawn prop's own footprint or the ring; no ring rect but id 110 carries a
+collider, and none overlaps a drawn ground pass; every `walls`-layer,
+`furniture`-layer or `solid` row collides in its own footprint (all of
+it, unless it declares its own shape), bar an explicit, reasoned
+allow-list; and each subway stairwell's footprint is non-standable
+everywhere but its tread path.
 
 A frame draws four passes per floor, in this fixed order, declared even
 when a pass is empty: three flat passes -- ground, ground decals, ground

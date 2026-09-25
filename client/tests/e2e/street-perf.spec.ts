@@ -173,6 +173,8 @@ async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void
               return position.y <= u.value;
             case "floor":
               return floor === u.value;
+            case "cell":
+              return Math.floor(position.x) === u.x && Math.floor(position.y) === u.y;
           }
         };
         const release = (ok: boolean) => {

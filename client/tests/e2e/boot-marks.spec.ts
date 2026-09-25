@@ -123,12 +123,14 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
 // small number.
 //
 // Counted: every `.png`/`.jpg`/`.jpeg`/`.webp` request finished between
-// `page.goto` and `player-controllable` + `networkidle`. Measured on a
-// real `ci.yml` `e2e` run of this exact (network-layer) harness, run
-// 35654353650: 26 requests, 1,449,760 bytes -- ATLAS_BYTES_BUDGET is that
-// byte figure times 1.05, rounded up to the next 16 KiB.
-const ATLAS_REQUEST_COUNT = 26;
-const ATLAS_BYTES_BUDGET = Math.ceil((1_449_760 * 1.05) / (16 * 1024)) * (16 * 1024);
+// `page.goto` and `player-controllable` + `networkidle`. Re-measured for
+// story 15.2 (three new raw street-only textures -- a doormat, a bollard,
+// a manhole cover -- replacing the six undrawn "rest collider" boundary
+// rects the scripted walk used to lean on): 29 requests, 1,451,572 bytes
+// -- ATLAS_BYTES_BUDGET is that byte figure times 1.05, rounded up to the
+// next 16 KiB.
+const ATLAS_REQUEST_COUNT = 29;
+const ATLAS_BYTES_BUDGET = Math.ceil((1_451_572 * 1.05) / (16 * 1024)) * (16 * 1024);
 
 test("the atlas request count and byte total the mount actually fetches, once settled, stay inside budget (NFR1)", async ({
   page,

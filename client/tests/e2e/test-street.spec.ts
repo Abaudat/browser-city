@@ -327,6 +327,8 @@ async function walkSegmentSynthetic(page: Page, segment: StreetWalkSegment): Pro
               return position.y <= u.value;
             case "floor":
               return window.__bc?.playerFloor === u.value;
+            case "cell":
+              return Math.floor(position.x) === u.x && Math.floor(position.y) === u.y;
           }
         };
         const release = (ok: boolean) => {
@@ -472,30 +474,60 @@ async function waitForSceneReady(page: Page): Promise<void> {
 /** Holds one key until the page itself reports the segment's own release
  * condition -- never a fixed wait. The condition is the street module's
  * own data; only the switch over its shape lives here, because it has to
- * run inside the page. */
+ * run inside the page.
+ *
+ * The key goes down through real, OS-level `page.keyboard` input, but it
+ * is released *inside* the page, on the animation frame the condition is
+ * first seen true (a `keyup` with the same `code` -- `input/keyboard.ts`
+ * binds `.code` and never checks `isTrusted`). The real `page.keyboard.up`
+ * after it only resets Playwright's own key state. Releasing from Node
+ * instead costs a round trip, and a slow runner's round trip carries the
+ * walker past a waypoint the next segment depends on (story 15.2 cycle
+ * 2: `east-to-the-lamppost` overshot the lamppost's own collider on CI
+ * and the south leg walked straight by). An in-page release overshoots
+ * by at most one more tick, and `street-conformance.test.ts` pins that
+ * margin at the resolver's own delta clamp. */
 async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
   await page.keyboard.down(segment.key);
   try {
-    await page.waitForFunction(
-      (until: StreetWalkUntil) => {
-        const position = window.__bc?.playerPosition;
-        const floor = window.__bc?.playerFloor;
-        if (!position || floor === undefined) return false;
-        switch (until.kind) {
-          case "x-at-least":
-            return position.x >= until.value;
-          case "x-at-most":
-            return position.x <= until.value;
-          case "y-at-least":
-            return position.y >= until.value;
-          case "y-at-most":
-            return position.y <= until.value;
-          case "floor":
-            return floor === until.value;
-        }
-      },
-      segment.until,
-      { timeout: 30_000 },
+    await page.evaluate(
+      ({ until, code, timeoutMs }) =>
+        new Promise<void>((resolve, reject) => {
+          const met = (u: StreetWalkUntil): boolean => {
+            const position = window.__bc?.playerPosition;
+            const floor = window.__bc?.playerFloor;
+            if (!position || floor === undefined) return false;
+            switch (u.kind) {
+              case "x-at-least":
+                return position.x >= u.value;
+              case "x-at-most":
+                return position.x <= u.value;
+              case "y-at-least":
+                return position.y >= u.value;
+              case "y-at-most":
+                return position.y <= u.value;
+              case "floor":
+                return floor === u.value;
+              case "cell":
+                return Math.floor(position.x) === u.x && Math.floor(position.y) === u.y;
+            }
+          };
+          const deadline = performance.now() + timeoutMs;
+          const tick = (): void => {
+            if (met(until)) {
+              window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
+              resolve();
+              return;
+            }
+            if (performance.now() >= deadline) {
+              reject(new Error(`walkSegment: ${JSON.stringify(until)} never met`));
+              return;
+            }
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        }),
+      { until: segment.until, code: segment.key, timeoutMs: 30_000 },
     );
   } finally {
     await page.keyboard.up(segment.key);
@@ -728,8 +760,14 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // sheets after this story (out of scope, Quentin's direction) -- this
   // is not yet the whole mounted street's own NFR12 fact, only every
   // `defId`-placed row's.
+  //
+  // Story 15.2: +3, for the three new raw street-only textures (a
+  // doormat, a bollard, a manhole cover) that replaced the six undrawn
+  // "rest collider" boundary rects the scripted walk used to lean on --
+  // every rest is now a real, drawn prop instead (`fixture.ts`'s own doc
+  // comment says why).
   const allBoundTextureSources = await page.evaluate(() => window.__bc?.allBoundTextureSources);
-  expect(allBoundTextureSources).toBe(17);
+  expect(allBoundTextureSources).toBe(20);
 
   // FR120, from inside: this building's own near-side walls are gone, and
   // the neighbour's are not -- keyed on the enclosure id, never proximity.
@@ -839,7 +877,6 @@ test("one walk down the test street: collision, depth order, retraction, floors 
 
   // --- under the bridge ----------------------------------------------------
   await walkSegment(page, segment("past-the-lamppost"));
-  await walkSegment(page, segment("off-the-crossing-row"));
   await walkSegment(page, segment("east-along-the-crossing"));
   await walkSegment(page, segment("on-the-underpass-row"));
   await walkSegment(page, segment("under-the-bridge"));
@@ -1019,8 +1056,9 @@ test("FR173's affordance mark is a real pixel change, confined to the hovered ob
   // Real keyboard input (`walkSegmentSynthetic`'s own doc comment says why
   // synthetic, not `page.keyboard`, in this one spec). The first segment is
   // `streetWalkRoute`'s own proven, committed one (out of the shopfront
-  // door, resting against `SHOPFRONT_EXIT_REST_COLLIDER`) -- reused rather
-  // than re-derived, since it is already proven collision-safe. Story 2.13:
+  // door, releasing on the real cell-arrival at `SHOPFRONT_EXIT_Y`) --
+  // reused rather than re-derived, since it is already proven
+  // collision-safe. Story 2.13:
   // the bin now sits between the door and the lamppost's own new column
   // (`LAMPPOST_CELL`'s own doc comment says why it moved), so the rest of
   // the route's own lamppost/underpass detour is no longer on the way --

@@ -11,19 +11,16 @@ import { fileURLToPath } from "node:url";
 import { parseDefs } from "../../../src/defs/parse";
 import type { Defs } from "../../../src/defs/types";
 import {
+  BOLLARD_COLLIDER,
   BRIDGE_DECK_Y,
-  BRIDGE_UNDER_CURB_COLLIDER,
-  BRIDGE_UNDER_EXIT_COLLIDER,
+  BRIDGE_UNDER_CURB_X,
   BRIDGE_UNDER_EXIT_Y,
-  BRIDGE_UNDER_PILLAR_COLLIDER,
   BRIDGE_UNDER_PILLAR_X,
-  LAMPPOST_APPROACH_REST_COLLIDER,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
-  PAVEMENT_CROSSING_REST_COLLIDER,
-  PAVEMENT_CROSSING_REST_X,
   PLAYER_START,
-  SHOPFRONT_EXIT_REST_COLLIDER,
+  SHOPFRONT_EXIT_Y,
+  STAIRS_Y,
   STREET_BUILDING_AREAS,
   STREET_ROOM_AREAS,
   STREET_TRANSITIONS,
@@ -33,14 +30,15 @@ import {
   streetColliderSources,
   streetPlacedRows,
   streetWalkUntilMet,
+  TRASH_BIN_DEF_ID,
 } from "../../../src/test-street/fixture";
+
 import {
   type FloorWalkResult,
   initialFloorWalkState,
   stepAndTransition,
 } from "../../../src/world/floor-walk";
 import type { MovementConfig } from "../../../src/world/movement";
-import { step } from "../../../src/world/movement";
 import { loadMovementConfig } from "../../../src/world/movement-config";
 import type { ObjectSource } from "../../../src/world/object-defs";
 import { objectDefsById, windowDefIds } from "../../../src/world/object-defs";
@@ -95,23 +93,74 @@ export function streetWorldIndex(): WorldIndex {
   return world;
 }
 
-/** Where the player comes to rest walking straight south out of the door
- * (story 2.13): the south face of `SHOPFRONT_EXIT_REST_COLLIDER`, one row
- * north of the lamppost's own row (`LAMPPOST_CELL.y - 1`) -- that
- * constant's own doc comment says why this rest exists now that the
- * lamppost no longer shares the door's own column. */
-export function shopfrontExitRestY(): number {
+/** The street's own `TransitionIndex`. Pair symmetry (both halves: real
+ * mirrored pairing and standability) is checked unconditionally by the
+ * constructor itself (story 15.2, cycle 2, Quentin's finding 5) -- this
+ * call supplies `isStandable` to opt into the standability half on top of
+ * that; `world/floor-walk.test.ts`'s own mutually-targeting-pair cases are
+ * the ones that need the named escape hatch (`skipPairSymmetry: true`),
+ * because they deliberately construct the one shape a real committed
+ * scene must never have. */
+export function streetTransitionIndex(): TransitionIndex {
+  const world = streetWorldIndex();
   const config = streetMovementConfig();
-  return LAMPPOST_CELL.y - 1 + SHOPFRONT_EXIT_REST_COLLIDER.y0 / config.subcellsPerCell;
+  return new TransitionIndex(STREET_TRANSITIONS, {
+    isStandable: (x, y, floor) => isCellStandable(world, config, x, y, floor),
+  });
 }
 
-/** Where the player comes to rest approaching the lamppost from the west
- * (story 2.13): the west face of `LAMPPOST_APPROACH_REST_COLLIDER`. See
- * that constant's own doc comment for why this leg needs a rest at all. */
-export function lamppostApproachRestX(): number {
+/** Where the player comes to rest walking straight out of the door
+ * (story 2.13; story 15.2, cycle 2, Quentin's finding 3): the top face of
+ * the real trash bin's own base collider (FR148, story 1.9), directly
+ * south of the door -- a real, drawn rest replacing the old, undrawn
+ * `SHOPFRONT_EXIT_REST_COLLIDER`, immune to release lag the exact same
+ * way that invisible rect always was (once resting against a real
+ * collider, holding the key longer moves nothing further). Also clears
+ * the wall above by construction: the bin's own top face already sits
+ * south of the wall's own row. */
+export function shopfrontExitRestY(): number {
+  const defs = committedDefs();
+  const bin = defs.objects.find((object) => object.id === TRASH_BIN_DEF_ID);
+  if (!bin?.collider) {
+    throw new Error(`shopfrontExitRestY: def ${TRASH_BIN_DEF_ID} has no collider in defs.json`);
+  }
+  return SHOPFRONT_EXIT_Y + bin.collider.y0 / defs.colliderSubcellsPerCell;
+}
+
+/** Where the walk's own eastward approach to the lamppost turns south
+ * (story 2.13; story 15.2, cycle 2, Quentin's finding 3): a waypoint,
+ * not a rest -- nothing real on the approach row stops a walk there, and
+ * no real prop's own collider face lands inside the window below at
+ * cell granularity. The next, southward segment only rests on the
+ * lamppost's own base collider if the body still overlaps that collider
+ * in x, so every position from here to `lamppostApproachMaxX` works and
+ * anything past it walks straight by. This is the *first* sub-cell column
+ * that overlaps (the collider's own west face, less the body's own
+ * half-width, plus one sub-cell), not the collider's centre, so all of
+ * the window's width is left for release lag to overshoot into. */
+export function lamppostApproachX(): number {
+  const defs = committedDefs();
   const config = streetMovementConfig();
+  const lamppost = defs.objects.find((object) => object.id === LAMPPOST_DEF_ID);
+  if (!lamppost?.collider) {
+    throw new Error(`lamppostApproachX: def ${LAMPPOST_DEF_ID} has no collider in defs.json`);
+  }
   const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
-  return LAMPPOST_CELL.x + LAMPPOST_APPROACH_REST_COLLIDER.x0 / config.subcellsPerCell - halfWidth;
+  return LAMPPOST_CELL.x + (lamppost.collider.x0 + 1) / defs.colliderSubcellsPerCell - halfWidth;
+}
+
+/** The far edge of `lamppostApproachX`'s own window: the last `x` whose
+ * body still overlaps the lamppost's own base collider (its east face
+ * plus the body's own half-width, exclusive). */
+export function lamppostApproachMaxX(): number {
+  const defs = committedDefs();
+  const config = streetMovementConfig();
+  const lamppost = defs.objects.find((object) => object.id === LAMPPOST_DEF_ID);
+  if (!lamppost?.collider) {
+    throw new Error(`lamppostApproachMaxX: def ${LAMPPOST_DEF_ID} has no collider in defs.json`);
+  }
+  const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  return LAMPPOST_CELL.x + lamppost.collider.x1 / defs.colliderSubcellsPerCell + halfWidth;
 }
 
 /** Where the player comes to rest walking into the lamppost:
@@ -126,83 +175,82 @@ export function lamppostRestY(): number {
   return LAMPPOST_CELL.y + lamppost.collider.y0 / defs.colliderSubcellsPerCell;
 }
 
-/** Where the walk's own crossing leg comes to rest: the west face of
- * `PAVEMENT_CROSSING_REST_COLLIDER`, the same "feet/body edge touches
- * the near face" shape every other rest in this file uses, computed from
- * the real collider and the real movement config, never a hand-typed
- * number (story 1.13, cycle 3; `PAVEMENT_CROSSING_REST_X`'s own doc
- * comment says why this leg needs a rest at all). */
-export function pavementCrossingRestX(): number {
-  const config = streetMovementConfig();
-  const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
-  return (
-    PAVEMENT_CROSSING_REST_X +
-    PAVEMENT_CROSSING_REST_COLLIDER.x0 / config.subcellsPerCell -
-    halfWidth
-  );
-}
-
-/** Where the underpass checkpoint's own row is fixed: approaching the
- * curb from the south (walking north, up into the underpass row from the
- * subway stairwell's own row), the body's own top edge -- `bodyHeight`
- * north of `pos.y`, the value that always names the feet, bottom-
- * anchored -- stops at the curb's own south face (`collider.y1`). Not a
- * south approach: the curb's own north face sits exactly on the row's
- * own entrance (`collider.y0` is `0`), so a walker coming from the north
- * side never enters the row at all, and could never leave it southward
- * either, since the same face is in the way both times. Computed from
- * the real collider shape and the real movement config, never a
- * hand-typed number (story 1.13, cycle 3). */
-export function bridgeUnderRestY(): number {
-  const config = streetMovementConfig();
-  const bodyHeight = config.bodyHeightSubcells / config.subcellsPerCell;
-  return BRIDGE_DECK_Y + BRIDGE_UNDER_CURB_COLLIDER.y1 / config.subcellsPerCell + bodyHeight;
-}
-
 /** Where the underpass checkpoint's own column is fixed: approaching the
  * pillar from the west (walking east), the body's own east edge stops at
- * the pillar's own west face (`collider.x0`), so the body's own centre
- * (`pos.x`) lands that far short by the body's own half-width. */
+ * the support pillar's own west face (`BOLLARD_COLLIDER.x0`, story 15.2,
+ * cycle 2 -- the same real bollard shape every bollard in the fixture
+ * uses), so the body's own centre (`pos.x`) lands that far short by the
+ * body's own half-width. */
 export function bridgeUnderRestX(): number {
   const config = streetMovementConfig();
   const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
-  return (
-    BRIDGE_UNDER_PILLAR_X + BRIDGE_UNDER_PILLAR_COLLIDER.x0 / config.subcellsPerCell - halfWidth
-  );
+  return BRIDGE_UNDER_PILLAR_X + BOLLARD_COLLIDER.x0 / config.subcellsPerCell - halfWidth;
 }
 
-/** Where leaving the underpass comes to rest: the north face of
- * `BRIDGE_UNDER_EXIT_COLLIDER`, one row south of the checkpoint -- the
- * same "feet touch the near face" shape every rest in this file uses,
- * chosen so the body's own top edge (not only its feet) clears the
- * pillar's own row (`BRIDGE_UNDER_EXIT_COLLIDER`'s own doc comment says
- * why leaving needs a rest at all). */
-export function bridgeExitRestY(): number {
+/** The first column whose body overlaps the underpass bollard's own
+ * collider (its west face, less the body's half-width, plus one
+ * sub-cell) -- a waypoint, leaving the whole overlap window for release
+ * lag, like `lamppostApproachX`. */
+export function underpassTurnX(): number {
   const config = streetMovementConfig();
-  return BRIDGE_UNDER_EXIT_Y + BRIDGE_UNDER_EXIT_COLLIDER.y0 / config.subcellsPerCell;
+  const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  return BRIDGE_UNDER_CURB_X + (BOLLARD_COLLIDER.x0 + 1) / config.subcellsPerCell - halfWidth;
+}
+
+/** The far edge of `underpassTurnX`'s own window. */
+export function underpassTurnMaxX(): number {
+  const config = streetMovementConfig();
+  const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  return BRIDGE_UNDER_CURB_X + BOLLARD_COLLIDER.x1 / config.subcellsPerCell + halfWidth;
+}
+
+/** Walking north onto the deck's row, the body's top rests on the
+ * underpass bollard's own south face (the bollard stands one row north). */
+export function onUnderpassRowY(): number {
+  const config = streetMovementConfig();
+  return BRIDGE_DECK_Y - 1 + BOLLARD_COLLIDER.y1 / config.subcellsPerCell + bodyHeightCells();
+}
+
+/** The body's own height, in cells (feet-anchored: it extends upward
+ * from `pos.y`). */
+function bodyHeightCells(): number {
+  const config = streetMovementConfig();
+  return config.bodyHeightSubcells / config.subcellsPerCell;
+}
+
+/** The first `y` in `BRIDGE_UNDER_EXIT_Y` whose body clears the support
+ * pillar's own row. */
+export function bridgeUnderExitClearY(): number {
+  return BRIDGE_UNDER_EXIT_Y + bodyHeightCells();
+}
+
+/** The first `y` in the stairwell's tread row whose body clears the
+ * stairwell's upper railing. */
+export function subwayTreadRowY(): number {
+  return STAIRS_Y + bodyHeightCells();
 }
 
 /** Every real value [`streetWalkRoute`] needs, assembled once -- the one
- * call site every unit test and e2e spec goes through, so none of them
- * can drift from another about what a rest position actually is. */
+ * call site every unit test and e2e spec goes through. */
 export function streetWalkInputs(): StreetWalkInputs {
   return {
     shopfrontExitRestY: shopfrontExitRestY(),
-    lamppostApproachRestX: lamppostApproachRestX(),
+    lamppostApproachX: lamppostApproachX(),
     lamppostRestY: lamppostRestY(),
-    pavementCrossingRestX: pavementCrossingRestX(),
-    bridgeUnderRestY: bridgeUnderRestY(),
+    underpassTurnX: underpassTurnX(),
+    onUnderpassRowY: onUnderpassRowY(),
     bridgeUnderRestX: bridgeUnderRestX(),
-    bridgeExitRestY: bridgeExitRestY(),
+    bridgeUnderExitClearY: bridgeUnderExitClearY(),
+    subwayTreadRowY: subwayTreadRowY(),
   };
 }
 
 /** Whether a whole cell can be stood on, on its own floor: the real
- * player body, centred in the cell the way a floor transition lands it
- * (`world/floor-walk.ts` puts the player at the cell's own centre), tested
- * against the real collision grid by taking a zero-length step and seeing
- * whether the resolver moved the body at all. Never a second, hand-written
- * overlap test. */
+ * player body, centred in the cell the way a floor transition lands it,
+ * overlaps no collider entry in the real grid (half-open, so touching a
+ * face is not overlapping). An overlap test, not a probe step: the
+ * resolver never blocks a body that already overlaps a collider, so a
+ * probe reads a cell inside a wall as standable. */
 export function isCellStandable(
   world: WorldIndex,
   config: MovementConfig,
@@ -210,21 +258,24 @@ export function isCellStandable(
   y: number,
   floor: number,
 ): boolean {
-  const centre = { x: x + 0.5, y: y + 0.5 };
-  // A tiny probe step in each axis direction: a body already inside a
-  // collider is pushed out (or refused) by the resolver, so a standable
-  // cell is one where a probe this small changes nothing measurable.
-  const probeMs = 1;
-  for (const dir of [
-    { x: 1, y: 0 },
-    { x: -1, y: 0 },
-    { x: 0, y: 1 },
-    { x: 0, y: -1 },
-  ]) {
-    const moved = step(centre, dir, probeMs, world, floor, config);
-    const expected = config.walkSpeedCellsPerMs * probeMs;
-    const actual = Math.hypot(moved.x - centre.x, moved.y - centre.y);
-    if (actual < expected - 1e-9) return false;
+  const s = config.subcellsPerCell;
+  const halfWidth = config.bodyWidthSubcells / 2;
+  const cx = (x + 0.5) * s;
+  const feet = (y + 0.5) * s;
+  const body = {
+    x0: cx - halfWidth,
+    x1: cx + halfWidth,
+    y0: feet - config.bodyHeightSubcells,
+    y1: feet,
+  };
+  for (let cy = Math.floor(body.y0 / s); cy <= Math.floor((body.y1 - 1) / s); cy++) {
+    for (let cellX = Math.floor(body.x0 / s); cellX <= Math.floor((body.x1 - 1) / s); cellX++) {
+      for (const { rect } of world.entriesInCell(floor, cellX, cy)) {
+        if (rect.x0 < body.x1 && body.x0 < rect.x1 && rect.y0 < body.y1 && body.y0 < rect.y1) {
+          return false;
+        }
+      }
+    }
   }
   return true;
 }
@@ -255,7 +306,7 @@ export function simulateStreetWalk(
   const releaseLagSteps = options.releaseLagSteps ?? 0;
   const config = streetMovementConfig();
   const world = streetWorldIndex();
-  const transitions = new TransitionIndex(STREET_TRANSITIONS);
+  const transitions = streetTransitionIndex();
 
   let state: FloorWalkResult = options.start ?? {
     ...initialFloorWalkState(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor),

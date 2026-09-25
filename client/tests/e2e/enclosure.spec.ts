@@ -24,22 +24,19 @@
 import { expect, type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import {
-  PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
   PLAYER_START,
   STREET_EXIT_X,
   STREET_EXIT_Y,
+  type StreetWalkSegment,
+  streetSubwayApproachRoute,
 } from "../../src/test-street/fixture";
 import {
   STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE,
   STREET_VISIBILITY_AT_REST_IN_SHOP_A,
   STREET_VISIBILITY_ON_SUBWAY_LANDING,
 } from "../unit/test-street/golden";
-import {
-  lamppostApproachRestX,
-  lamppostRestY,
-  shopfrontExitRestY,
-} from "../unit/test-street/street-world";
+import { shopfrontExitRestY, streetWalkInputs } from "../unit/test-street/street-world";
 
 async function waitForSceneReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
@@ -86,6 +83,69 @@ async function walkTo(
     { timeout: 15_000 },
   );
   await page.keyboard.up(key);
+}
+
+/** Holds a segment's own key through real, OS-level `page.keyboard` input
+ * until its own `until` is met against the real, live `window.__bc`
+ * state, then releases -- the exact same `StreetWalkSegment` shape and
+ * release conditions `streetWalkRoute` declares once and
+ * `street-conformance.test.ts` already proves collision-feasible under
+ * real release lag, never a second, hand-rolled "east then south"
+ * sequence of this spec's own that could quietly drift from it (story
+ * 15.2, cycle 2, Quentin's finding 3: the lamppost's own approach is a
+ * waypoint now, not a rest, so a shorter, two-step version of this same
+ * walk risks missing the lamppost's own real collider on a slow round
+ * trip -- `streetWalkRoute`'s own extra segments around it are exactly
+ * what already survive that, proven at unit level). */
+async function walkRealSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
+  // Released inside the page on the frame the condition is first met, never
+  // after a Node round trip (`test-street.spec.ts`'s own `walkSegment` doc
+  // comment says why: a slow runner's round trip overshoots the lamppost's
+  // own approach waypoint).
+  await page.keyboard.down(segment.key);
+  try {
+    await page.evaluate(
+      ({ until, code, timeoutMs }) =>
+        new Promise<void>((resolve, reject) => {
+          const met = (u: StreetWalkSegment["until"]): boolean => {
+            const pos = window.__bc?.playerPosition;
+            const floor = window.__bc?.playerFloor;
+            if (!pos || floor === undefined) return false;
+            switch (u.kind) {
+              case "x-at-least":
+                return pos.x >= u.value;
+              case "x-at-most":
+                return pos.x <= u.value;
+              case "y-at-least":
+                return pos.y >= u.value;
+              case "y-at-most":
+                return pos.y <= u.value;
+              case "floor":
+                return floor === u.value;
+              case "cell":
+                return Math.floor(pos.x) === u.x && Math.floor(pos.y) === u.y;
+            }
+          };
+          const deadline = performance.now() + timeoutMs;
+          const tick = (): void => {
+            if (met(until)) {
+              window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
+              resolve();
+              return;
+            }
+            if (performance.now() >= deadline) {
+              reject(new Error(`walkRealSegment: ${JSON.stringify(until)} never met`));
+              return;
+            }
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        }),
+      { until: segment.until, code: segment.key, timeoutMs: 15_000 },
+    );
+  } finally {
+    await page.keyboard.up(segment.key);
+  }
 }
 
 test.describe("story 1.7: enclosure visibility", () => {
@@ -141,10 +201,10 @@ test.describe("story 1.7: enclosure visibility", () => {
     // `computeVisibility` only ever reads the viewer's own `(floor,
     // buildingId)`, never its exact position (the subway test below's own
     // comment says so too), so any real position outside the shop gives
-    // the same golden -- `shopfrontExitRestY()`, the real collider rest a
-    // straight south walk out of the door reaches (`SHOPFRONT_EXIT_REST_
-    // COLLIDER`'s own doc comment says why the lamppost itself no longer
-    // sits on this column).
+    // the same golden -- `shopfrontExitRestY()`, the real trash-bin rest a
+    // straight south walk out of the door reaches (story 15.2, cycle 2,
+    // Quentin's finding 3, `shopfrontExitRestY`'s own doc comment says
+    // why).
     await walkTo(page, "ArrowDown", { x: PLAYER_START.x, y: shopfrontExitRestY() });
     // The visibility hook only fires when the player's own cell changes
     // (Tim's direction) -- wait for the real, event-driven update rather
@@ -162,26 +222,16 @@ test.describe("story 1.7: enclosure visibility", () => {
     await page.goto("/");
     await waitForSceneReady(page);
 
-    // Onto the pavement, then east to the lamppost's own column, then south
-    // into its own base collider -- the same three real rests the scripted
-    // walk (`fixture.ts`'s `streetWalkRoute`) uses, reused here rather than
-    // re-derived: `lamppostRestY()`'s own cell floor is `STAIRS_Y`
-    // (`LAMPPOST_CELL.y`), which is what the next segment's own east walk
-    // needs to reach the stairwell's anchor cell with no further direction
-    // change.
-    await walkTo(page, "ArrowDown", { x: PLAYER_START.x, y: shopfrontExitRestY() });
-    await walkTo(page, "ArrowRight", { x: lamppostApproachRestX(), y: shopfrontExitRestY() });
-    await walkTo(page, "ArrowDown", { x: lamppostApproachRestX(), y: lamppostRestY() });
-
-    // The stairwell shares the lamppost's own row (`STAIRS_Y`, `fixture.ts`'s
-    // own doc comment) -- a pure east walk reaches its anchor cell with no
-    // direction change. It has no collider (never a teleport tile): the
-    // transition fires the moment the player's own cell matches
-    // `(STAIRS_X, STAIRS_Y)`, landing at a real, predictable position.
-    await walkTo(page, "ArrowRight", {
-      x: PLATFORM_LANDING_X + 0.5,
-      y: PLATFORM_LANDING_Y + 0.5,
-    });
+    // From the shop to the stairwell's own opening and down it the demo's
+    // own way (issue #310: walking left), through real OS-level keyboard
+    // input driving the release conditions `street-conformance.test.ts`
+    // proves under release lag. The transition fires the moment the
+    // player's own cell matches `(STAIRS_X, STAIRS_Y)`.
+    for (const segment of streetSubwayApproachRoute(streetWalkInputs())) {
+      await walkRealSegment(page, segment);
+    }
+    const landed = await page.evaluate(() => window.__bc?.playerPosition);
+    expect(landed && Math.floor(landed.y)).toBe(PLATFORM_LANDING_Y);
     await page.waitForFunction(() => window.__bc?.visibility?.["60"] !== "hidden", undefined, {
       timeout: 15_000,
     });
@@ -193,12 +243,16 @@ test.describe("story 1.7: enclosure visibility", () => {
     expect(platformVisibility["ground:-1"]).toBe("normal");
     expect(platformVisibility["ground:0"]).toBe("hidden");
 
-    // Walking north from the landing reaches the up-stairs' own anchor,
-    // one cell further in (`fixture.ts`'s `PLATFORM_UP_ANCHOR_X/Y`), and
-    // lands one cell beside the stairwell (`STREET_EXIT_X/Y`) -- never
-    // the down anchor's own cell, which would re-trigger the descent the
-    // instant a still-held key is checked against it again.
-    await walkTo(page, "ArrowUp", { x: STREET_EXIT_X + 0.5, y: STREET_EXIT_Y + 0.5 });
+    // Story 15.2: the reverse input (`ArrowRight`, the mirror of the
+    // `ArrowLeft` that walked down) climbs straight back up -- no detour
+    // through an unrelated direction. Walking east from the landing
+    // reaches the up-stairs' own anchor, one cell further in (`fixture.ts`'s
+    // `PLATFORM_UP_ANCHOR_X/Y`, the landing's own mirror per
+    // `world/transitions.ts`'s `checkTransitionPairSymmetry`), and lands
+    // one cell beside the stairwell (`STREET_EXIT_X/Y`) -- never the down
+    // anchor's own cell, which would re-trigger the descent the instant a
+    // still-held key is checked against it again.
+    await walkTo(page, "ArrowRight", { x: STREET_EXIT_X + 0.5, y: STREET_EXIT_Y + 0.5 });
     await page.waitForFunction(() => window.__bc?.visibility?.["60"] === "hidden", undefined, {
       timeout: 15_000,
     });
