@@ -550,3 +550,874 @@ collider, and none overlaps a drawn ground pass; every `walls`-layer,
 it, unless it declares its own shape), bar an explicit, reasoned
 allow-list; and each subway stairwell's footprint is non-standable
 everywhere but its tread path.
+
+A frame draws four passes per floor, in this fixed order, declared even
+when a pass is empty: three flat passes -- ground, ground decals, ground
+objects -- followed by one y-sorted pool. A flat pass is never
+depth-sorted and never occludes anything; anything with visible vertical
+extent, however small, belongs in the pool instead (FR123).
+
+Each floor gets its own such stack (`render/floor-stacks.ts`), and the
+stacks draw in ascending floor order: every drawable on a higher floor is
+drawn after every drawable on a lower one. That, and nothing else, is how
+two storeys whose screen rects overlap -- a bridge deck over the street it
+spans -- are resolved; floor never enters the sort key (FR124), and no
+z-offset or container trick is used in scene code. The comparator orders
+within one floor's pool only. Content above the player's own floor is
+hidden only where the player is covered by it, through the ownership-keyed
+rule under "Visibility" below, never a floor-specific check in scene
+code.
+
+The pool's sort key is `(y, rank, x, stableId)`, most significant first,
+implemented once in `render/sort-key.ts` and nowhere else -- that
+comparator is the sole ordering authority, reached through
+`render/pixi-order.ts`'s `applyDepthOrder` (the one Pixi-touching
+adapter for it), and a pool container's `sortableChildren` is `false`
+everywhere one exists. Every component is an integer: `y`/`x` are world
+*position*, in FR123 sort units (`render/sort-units.ts`'s
+`SORT_SUBDIVISIONS` per tile), never a raw tile index and never a
+screen-space or floor-adjusted value -- a continuous, moving character
+needs sub-tile resolution to sort correctly against a static prop it is
+passing, and every caller that builds a drawable must convert a tile
+coordinate through `toSortUnits` or it silently mixes units. `rank`
+comes from `sim::codes::layer` (below), never a literal; `stableId` is a
+`bigint` end to end (`object_id` for a placed drawable, a character's id
+for a character) and is never narrowed through `Number`. Floor is never a
+term in the key (FR124): it is applied only once, as a vertical screen
+offset (`render/screen-position.ts`'s `floorOffsetPx`), when a drawable
+is positioned on screen. Occlusion between floors is entirely
+"Visibility" below's job, not the sort key's.
+
+`sim::codes::layer`'s rank ladder (FR123) is minted in tens, leaving every
+in-between number free for a future layer to slot into without
+renumbering anything: `furniture` 10, `objects` 20, `walls` 30,
+`wall_decals` 40, `characters` 50. `ground` keeps rank 0 and is the flat
+ground pass's layer -- never a pool member, so its rank is never compared
+against a pool rank. `overhead` (code 1, rank 1) is deprecated: its row
+stays seeded forever (deprecation is a usage ban, not a deletion), but
+nothing may place new content on it, and a rank lookup that resolves an
+unknown or deprecated code throws rather than sorting it silently. A
+rank's number is as permanent as its code and pinned by the same codes
+golden. `client/src/render/layer-table.ts` is the client's one mirror of
+that ladder -- every other client module that needs a code, a name, a
+rank or the deprecated set reads it from there, never a second
+hand-typed copy, and `scripts/ci/check-layer-table-current.sh` fails the
+build the moment it disagrees with the golden.
+
+A multi-cell prop (FR125/FR126) decomposes into one per-cell drawable per
+cell of its footprint, each with its own anchor and its own source
+sub-rect, never optional. Extent comes from the placed object's
+`object_def` (`defs/`), never a hardcoded number, and is capped at
+approximately 8x8 (FR127). A per-cell sub-rect is only ever legal on
+whole-tile boundaries: either the source art is already exactly one tile
+long on the decomposed axis (every cell repeats it whole) or exactly
+`cells * tile_size_px` long (sliced into equal whole-pixel cells) --
+anything else, including any horizontal overhang, is refused at mount
+rather than drawn stretched or fractional. A def-placed prop's per-cell
+sub-rect is cut from its own packed `atlas` rect
+(`render/atlas-pages.ts`'s `AtlasPageLoader.objectCellTexture`), never
+from a raw `ModernTileset/` import.
+
+`render.tile_size_px` and `render.storey_height_px` are balance keys
+(`defs/balance/render.toml`), not TypeScript literals, so they fold into
+`defs_version` and stay reviewable alongside the art. `storey_height_px`
+is the floor screen offset FR124 describes: a drawable's screen position
+subtracts `floor * storey_height_px`, and a drawable on a storey above the
+viewer's own must never sort as though it were on that floor because of
+it.
+
+Only a test-street row with no `object_def` reads its art straight out of
+the repo-root `ModernTileset/` at runtime (`new URL(..., import.meta.url)`
+asset imports), not out of `client/public/`. A row placed by a real
+`object_def` draws only through its packed `atlas` rect (`AtlasPageLoader`),
+never a `ModernTileset/` import of its own. Character part sheets are never
+read the raw-import way either: they are packed, at build time, into
+`client/public/atlas/`, like every other atlas page. `deploy.yml`'s
+`deploy-client` job therefore checks out the whole repository -- never a
+sparse or `client/`-only checkout -- for as long as any client code reads
+assets from outside `client/`.
+
+### Visibility
+
+FR120-FR122's enclosure visibility is decided by one pure function,
+applied strictly after the FR123 sort, and never itself adds, removes or
+reorders a pool member.
+
+- `client/src/render/visibility.ts`'s `computeVisibility` is the only
+  visibility rule and imports no `pixi.js` (Biome enforces this);
+  `client/src/render/pixi-visibility.ts`'s `VisibilityApplier` is the only
+  code that writes `sprite.visible`/`sprite.alpha`, and never adds,
+  removes or reorders pool members.
+- Visibility is recomputed only on a change of the viewer's own cell
+  ownership or floor, and applies to every pass -- the flat ground passes
+  as well as the sorted pool.
+- Retraction: a `walls` drawable that is near-side (the cell directly
+  south of it, on the same floor, is not owned by the same building) and
+  owned by the viewer's own building is hidden; a building's floors above
+  the viewer's own current floor are hidden the same way while the viewer
+  is inside it.
+- Windows: an `[[object]]` with `window = true` in `defs/` draws at
+  `render.window_alpha` percent (`defs/balance/render.toml`, never a
+  TypeScript literal) once it is not hidden; masks, filters, render
+  textures and stencils are banned anywhere under `client/src/`
+  (`scripts/ci/check-no-masks.sh`).
+- Floors of opposite sign are never co-visible, compared by sign alone
+  against the viewer's own floor, never against the literal `-1`.
+
+Retraction is keyed on `buildingId` alone, never `roomId`: a terrace shop
+is its own building, not a room of a shared one.
+
+### Affordance
+
+FR173's affordance mark: one additive overlay copy of each visible
+drawable of the hovered, in-reach object, inserted as a sibling directly
+above its own source sprite in the pool container -- never a pool member,
+never a separate top layer. Re-attached by the one wrapper that calls
+`applyDepthOrder` (`test-street/scene.ts`'s `reorderFloor`); no other call
+site touches it after a re-sort. Its overlay tracks its source every frame
+it is alive -- position, scale, anchor, texture, visibility and alpha all
+mirrored -- never a snapshot taken at hover start.
+
+- `client/src/render/highlight.ts` is the pure half: `highlightOverlayAlpha`
+  and `highlightOverlaySpec`, zero PixiJS. Alpha is `render.highlight_alpha`
+  (a percent-integer balance key, `defs/balance/render.toml`, never a
+  TypeScript literal) times the U1 display-strength dial (`[20, 100]`,
+  default 60) times the source sprite's own alpha.
+- `client/src/render/pixi-highlight.ts`'s `HighlightApplier` is the only
+  code that constructs, inserts or destroys an overlay sprite, and owns
+  its own per-frame `refresh` ticker subscription, live only while
+  something is marked. Built on the first hover transition, torn down on
+  the transition back to `undefined`; a scene at rest carries none (D17
+  -- the hovered id lives in `input/pointer.ts`'s closure and in the
+  applier alone, never on a drawable, in settings, or in any per-object
+  cache).
+- Only the four Pixi v8 basic blend modes (`normal`/`add`/`multiply`/
+  `screen`) are ever assigned anywhere under `client/src/`, and no import
+  from `pixi.js/advanced-blend-modes` exists; `scripts/ci/check-no-masks.sh`
+  checks both mechanically.
+- `input/pick.ts`'s `isWithinReach` is the same predicate the server will
+  resolve a reducer click against -- never a second, more generous copy.
+
+### Appearance
+
+- A citizen's appearance is five stored `u16` part ids (FR61): `body`,
+  `eyes`, `outfit`, `hairstyle`, `accessory`. `0` means "no layer",
+  legal only on `hairstyle`/`accessory`; `body`/`eyes`/`outfit` are
+  never absent.
+- Generated exactly once, server-side, by `sim::appearance::generate` at
+  citizen creation, seeded from the citizen id alone (`sim::rng`), and
+  stored. Nothing ever re-derives an existing citizen's tuple.
+- A profession's uniform (FR62: `[[uniform]]` in `defs/appearance/`) is a
+  render-time override of the outfit and/or accessory layer, resolved by
+  the client from `defs.json`, and never written back into the stored
+  tuple. A uniform accessory is an additional layer, not a replacement:
+  it removes the citizen's own civilian accessory only when both declare
+  the same `slot` (a helmet removes a beanie; a jacket over a beard keeps
+  the beard).
+- `body` and `eyes` each carry a `pool` (`civilian`/`role_only`/
+  `costume`), the same enum `outfit`/`accessory` already declare:
+  `generate` draws `body` and `eyes` from the `civilian` pool only.
+- Layout (cell size, direction order, one row per animation) is declared
+  once per family (`adult`/`kid`) in `[[appearance_layout]]`, along with
+  an `accepted_sizes` list of whole vendor-sheet dimensions the family
+  allows; a part's own sheet must decode to real `IHDR` pixel dimensions
+  in that list, and every declared row must fit inside every accepted
+  size. Layout is also enforced against every part sheet's real
+  *decoded* pixels, not merely its header: every family shares one cell
+  size, a declared cell must fit inside the decoded sheet, a packed
+  strip is never fully transparent, and a `body` strip's every cell
+  holds at least one opaque pixel -- each failure names the part's own
+  kind, key and sheet.
+- Every part is packed into its own family's compact strip by
+  `tools/defs-build`'s packer, one CPU-only page group per kind
+  (`character_body`, `character_eyes`, ...), never bound to the GPU. A
+  part's own JSON-only `atlas` rect names its page and placement,
+  exactly like an object's. The client fetches a packed page lazily,
+  once per page, as a CPU-side `ImageBitmap`
+  (`render/appearance/character-part-pages.ts`) -- never through Pixi's
+  `Assets`/`Texture`, and never a raw vendor sheet
+  (`scripts/ci/check-no-raw-part-sheets.sh`).
+- A look is drawn into one **slot** of `CHARACTER_COMPOSITE_PAGES`
+  (`defs.json`) shared, canvas-backed 2048x2048 pages -- never a
+  `Texture` per look. A slot is a grid of frame cells at `cell + 1px`
+  transparent-gutter pitch (never extruded: a character sits on
+  transparent pixels); capacity is derived from that arithmetic
+  (`render/appearance/composite-slots.ts`). A slot's own frame `Texture`s
+  are built once, on first occupancy, and reused by every later
+  occupant; a page re-uploads at most once per tick. Slots are
+  ref-counted and LRU-bounded (`render/appearance/appearance-cache.ts`)
+  -- `dispose` frees a slot instead of destroying a texture;
+  exhaustion rejects the acquire, never a third page. A character on
+  screen is one `Sprite` in the `characters`-rank pool -- distinct
+  citizens sharing a page cost nothing extra over identical ones.
+
+## Debug tooling (client)
+
+`client/src/debug/` holds every debug overlay (FR165) and is compiled in
+behind a flag not exposed in production (FR168).
+
+- The gate is structural, not a runtime check: `main.ts` reaches this
+  directory through exactly one `if (import.meta.env.DEV) { const { … } =
+  await import("./debug/overlays"); }`. A dynamic import inside a
+  statically-false branch is a chunk Rollup never emits, so a production
+  build contains no overlay code for any input to activate. `ci.yml`'s
+  `client-build` greps the built assets for the `bc-debug`/`__bcDebug`
+  sentinels; `client/tests/e2e/deploy-smoke.spec.ts` drives every
+  registered overlay's activation against a real production build and
+  asserts nothing appears.
+- `main.ts` is the only importer. `client/biome.json` bans `../debug/**`
+  everywhere else, and `scripts/ci/check-debug-boundary.sh` (run by
+  `client-check`, tested by `scripts/ci/tests/`) re-checks that, that the
+  one import is dynamic and DEV-gated, and that `createElementNS` appears
+  nowhere under `client/src/` but `debug/`.
+- Overlays draw as one `<svg data-bc-debug="overlays">` mounted inside the
+  canvas mount (never `document.body`, so FR151's DOM-surface allowlist is
+  unaffected), `pointer-events: none`, its `viewBox` the renderer's own
+  logical size -- re-read on every redraw, never captured at mount, so a
+  resize cannot leave the overlay projecting into a box the scene no
+  longer draws in. One root `<g>` carries the scene's camera as
+  `matrix(zoom 0 0 zoom offsetX offsetY)`; inside it, one
+  `<g data-bc-debug="<overlay id>">` per enabled overlay. Nothing enters a
+  floor stack or the y-sorted pool, so the tool that inspects the sort can
+  never perturb it.
+- `debug/overlay-registry.ts` is the only way an overlay exists: a
+  `DebugOverlay` is `{ id, label, draw(group, view) }`, ids are unique and
+  URL-safe, and everything starts disabled.
+  `debug/overlay-conformance.ts` is the shared contract every registered
+  descriptor is run through (off by default, idempotent enable/disable, no
+  element left behind across a toggle, every colour from `DEBUG_STYLE`);
+  adding an overlay is one file plus one line in `debug/overlays.ts`'s
+  list, with no new test file.
+- `DebugWorldView` (`debug/world-view.ts`) is the only thing an overlay
+  may read. It extends `CollisionGridQuery`, so a real collider is read
+  from the live grid `world/movement.ts` resolves against, never a second
+  expansion of `defs/`; `world/world-index.ts`'s `objects(bounds)` is the
+  one read-only enumeration of placed objects, bounded by a cell window,
+  and is the source for the two states the grid cannot represent -- no
+  collider (FR128's walkability) and a collider declared with no area,
+  which `CollisionGrid` rasterises into no cell at all when it is
+  cell-aligned. All geometry goes through `render/screen-position.ts`,
+  including `visibleCellBounds`, the viewport window every overlay's cost
+  is bounded by; a camera that describes no rectangle yields an empty
+  window rather than an unbounded loop.
+- Activation is the URL query `?debug=<id>,<id>` (unknown ids ignored with
+  one console warning naming the known ones) plus `window.__bcDebug`, the
+  registry's `list`/`enable`/`disable`/`toggle`/`redraw`. There is no
+  keyboard binding: `input/` is the only DOM input reader.
+- Redraws happen on the scene's own events (camera, order change, the
+  player's cell or floor changing), never on a per-frame ticker; with
+  every overlay disabled the redraw path returns before reading the world
+  at all, so NFR2's budget is untouched.
+- Style is data, in `debug/debug-style.ts`: one saturated palette, one
+  monospace face, hairlines with `vector-effect: non-scaling-stroke`. The
+  three collider states are decided in the pure builder and carried on
+  `data-bc-collider` as `collider`, `empty` (declared with no area) and
+  `none` (FR128's walkability), so they are assertable rather than only
+  visible.
+- `src/debug/**` is held to the same coverage bar as `src/render/**`, with
+  nothing excluded.
+
+## Definitions (`defs/`)
+
+`defs/` is the single source of truth for game content data (NFR31),
+subdivided into `objects/`, `items/`, `recipes/`, `professions/`,
+`chains/`, `appearance/`, `balance/`, `tags/`, `rules/` and
+`archetypes/`, each a directory of TOML files
+(the naming table's `city-props.toml`). Neither build target writes here
+and neither runs the generator: `tools/defs-build/` is a standalone Rust binary crate
+outside both the server and client dependency graphs (its own
+`Cargo.toml` with an empty `[workspace]` table, its own committed
+`Cargo.lock` and `rust-toolchain.toml`), and its two outputs are committed
+and kept current by `scripts/ci/check-defs-current.sh` -- the same idiom
+as `client/src/net/bindings` and `protocol-version` (below). `server/sim/
+src/generated/defs.rs` is a plain Rust module of `static`/`const` tables
+over `&'static str` and integers, no deserialisation or allocation at
+runtime; `client/public/defs/defs.json` is a canonical, static JSON asset
+fetched at runtime, cache-busted and compared against the FR147
+handshake's own `defs_version` (below). Both begin with a generated-file
+marker and are never hand-edited.
+
+### The FR147 handshake
+
+`module_version` (`server/src/version.rs`) is a public anonymous view of
+one row: `defs_version` and `protocol_version` -- a SHA-256 over every
+git-tracked file under `client/src/net/bindings/`, by the `defs_version`
+recipe. `scripts/gen-protocol-version.sh` generates `server/src/
+generated/protocol_version.rs` and `client/src/net/protocol-version.ts`,
+guarded by `scripts/ci/check-bindings-current.sh` and `check-protocol-
+version-agrees.sh`. `check-view-live-refresh.sh` pins that a republish
+reaches held and fresh subscriptions alike.
+
+`module_version` rides the initial `subscribe([...])` call -- never a
+second subscription, a reducer or a fetch. `boot/handshake.ts` compares
+by strict equality:
+
+- Both equal: `proceed`.
+- Only `defs_version` differs, or the first `fetchDefs` failed: one
+  `fetchDefs` cache-busted with the server's version. Still stale is
+  `updating`; any other failure is `reload`.
+- `protocol_version` differs: `reload`.
+- `reload` happens once per server version, recorded under
+  `sessionStorage` key `bc.handshake.reloaded-for.v1` before reloading.
+  Already recorded, a failed write or a throwing reload is `updating`:
+  not drawing, the `updating` notice, no retry.
+
+`mountStreetScene` takes a `VerifiedDefs`, produced only by `boot/
+boot-gate.ts`; an unreachable or timed-out connection mounts the fetched
+defs. After mount, `boot/post-mount-guard.ts` compares every later row
+against what mounted: a mismatch stops the ticker, then `reload` or
+`updating` -- never a live defs swap.
+
+An object, item, recipe, profession, chain, or appearance part/layout/
+uniform declares an explicit, permanent integer id in its own file --
+never one derived from file order, position or a hash. An id or a key,
+once merged, is never
+renumbered, reused or retired: `tools/defs-build/goldens/defs-manifest.
+golden` pins the append-only `kind id key` list, guarded by
+`scripts/ci/check-defs-ids-append-only.sh`. `defs/balance/` entries seed
+data (NFR45), keyed by a dotted `snake_case` balance key, not an id.
+
+A single `defs_version` -- a SHA-256 over every git-tracked file under
+`defs/`, sorted by path, LF-normalised -- covers every input, including
+the prop atlases, character-part atlases and the audio manifest once
+those land; their own manifests belong under `defs/`, not beside their
+producing pipeline, so that they fold into this one version rather than
+versioning independently. `defs_version` is computed, never hand-bumped,
+identical in both generated artefacts, and guarded by
+`scripts/ci/check-defs-version-bump.sh`. It does not hash the
+`ModernTileset/` PNGs themselves: vendor art is treated as immutable, and
+replacing a sheet in place (rather than adding a new one under a new
+part id) is not a change `defs_version` detects.
+
+The server and client each parse the generated source with their own
+independent implementation (NFR30) -- deliberate duplication, not an
+oversight, pinned against drift by a shared canonical dump golden and a
+shared table of malformed-input cases both sides must reject.
+
+An `[[object]]` carries `id`, `key`, `name` (a free-text display string,
+never a lookup key), `layer` (the layer's own name, resolved at build
+time against `sim::codes::layer`'s golden into the numeric code the
+runtime artefacts actually carry -- the string never reaches either
+runtime), `sprite` (one whole-object rectangle: `sheet` a path under
+`ModernTileset/`, `x`/`y`/`w`/`h` whole source pixels -- the tileset ships
+whole objects as single PNGs, so this never composites), `width`/`height`
+(the footprint, in cells, each independently capped at
+`MAX_FOOTPRINT_CELLS` -- FR127, generated once and consumed by
+`sim::world`'s compile-time assert that it never exceeds `CHUNK_SIZE`,
+since the region-subscription halo depends on it), and two optional
+sub-cell rects: `collider` (FR128, fits inside the footprint; its absence
+is what makes an object walkable -- there is no separate `walkable`
+field anywhere) and `interact_at` (FR148, reaches at most
+`INTERACT_AT_MAX_REACH_CELLS` beyond it, has positive area, and never
+lies entirely inside the object's own collider). A placed row's own
+anchor cell is the footprint's smallest x, largest y cell. `collider`/
+`interact_at` are declared relative to a different point, the
+footprint's own north-west cell (matching the sprite's own pixel space).
+`client/src/world/footprint.ts`'s `footprintOrigin` is the one place that
+converts an anchor cell to its footprint's north-west cell; every client
+module that needs to place a footprint-relative rect or cell calls it,
+never re-deriving the offset itself. Three build-time checks apply only
+to `layer` and `sprite`: `layer` resolves against the codes golden (an
+unknown or deprecated name is refused, naming the accepted set); `sprite`
+fits entirely inside its own sheet's real `IHDR` bounds; and `sprite`
+agrees with the footprint exactly (`w == width * tile_size_px`, `h` a
+whole multiple of `tile_size_px` and `h >= height * tile_size_px` -- a
+tall prop may overhang upward, never sideways or downward). `sprite` never
+repeats: a surface wider than its own art is a one-cell object placed
+once per cell. Every field is validated identically on both sides.
+
+FR128's walkability rule is two-sided: an object with no `collider` must
+carry the `underfoot` tag (`defs/tags/city.toml`, permanent, append-only
+like every other tag), and an object that carries `underfoot` must not
+declare a `collider` -- both directions are wrong metadata, rejected by
+object key, never a hard-coded allow-list of object keys in either
+parser. The tag key is a single named constant (`UNDERFOOT_TAG_KEY`) on
+each side, never a repeated string literal.
+
+An `[[object]]` may name an `archetype` instead of declaring its own
+`height` and/or `collider` directly -- `defs/archetypes/*.toml`, key
+only, no id, supplying `height` and/or `collider_inset`. Each of
+`height` and `collider` has exactly one source (the object itself or the
+named archetype); both or neither is a build error. `tools/defs-build`
+lowers every archetype reference to a plain `height`/`collider` between
+parse and validation. `archetype` is authoring-time only: it is never
+emitted into either generated artefact and never reaches a runtime. A
+companion offline binary, `defs-propose`, prints `[[object]]` stanzas to
+stdout only, and is never an input to `tools/defs-build`'s own `build`
+path.
+
+### Atlases
+
+`tools/defs-build`'s own packer packs the *used* subset of
+`ModernTileset/` -- every object's own `sprite` rect, nothing an
+`[[object]]` does not name -- into 2048-wide pages (height the smallest
+power of two, at least 16px, that holds the page's own content, capped at
+2048), written wholly by that same `defs-build` run into
+`client/public/atlas/`, which it owns: anything under that directory a run
+did not write this time is deleted, so a stale page never outlives the
+group or object that produced it. There is no separate atlas manifest
+under `defs/` -- every packer input already lives in `defs/objects/`, and
+`defs/atlas/page-groups.toml` (below) is the one other input, so both fold
+into `defs_version` the same way every other file under `defs/` does.
+Replacing a vendor PNG in place (rather than adding a new one under a new
+id) changes the page hash and `defs.json`, caught by `check-defs-current`
+and refetched by the browser under its new name, even though it does not
+change `defs_version` -- consistent with vendor art's own immutability
+rule above.
+
+- A page's group comes from two steps: the sheet's own theme-sorter
+  directory segment (e.g. `ME_Theme_Sorter_16x16/3_City_Props_Singles_
+  16x16` -> `city_props`), then `defs/atlas/page-groups.toml`'s own
+  `theme -> group` table, which every street-kit theme (terrain, city
+  props, generic/floor-modular buildings, and whichever themed folders
+  the street kit borrows single props from) maps to one shared
+  `ATLAS_SHARED_GROUP` (`"street"`) group; a themed district keeps its
+  own group. A sheet under `Room_Builder_subfiles/`, with no theme-sorter
+  subfolder of its own, has theme `room_builder`. A theme absent from the
+  table fails the build naming it, and
+  so does a table that maps nothing at all to `ATLAS_SHARED_GROUP`, or
+  one that maps a theme onto a `character_*` group -- those are reserved
+  for the packer's own character-part groups, one per declared part kind
+  (body/eyes/hairstyle/outfit/accessory; see "Appearance" above for the
+  CPU-only, per-look-compositing use they serve). A group never spans
+  more than `ATLAS_MAX_PAGES_PER_GROUP` (2) pages. A scene is the shared
+  group plus at most one themed group -- a player is never on the street
+  and inside a themed interior at once -- plus the fixed
+  `CHARACTER_COMPOSITE_PAGES` every scene with a crowd on it binds: the
+  shared group's own page count, plus the *worst* other group's own page
+  count (`character_*` groups excluded -- they are CPU-only, never
+  bound), plus `CHARACTER_COMPOSITE_PAGES`, never spans more than
+  `ATLAS_MAX_BOUND_PAGES` (8); a failure names all three terms and the
+  total. `atlas_max_pages_per_group`/`character_composite_pages` are
+  emitted into `defs.json`; the scene rule itself is the packer's own,
+  the client has no use for it.
+- Every packed rect carries a permanent 1px border of extruded
+  (edge-repeated, never transparent) pixels on every side -- nearest-
+  neighbour sampling plus this stops bleed at a fractional camera
+  position or a DPR-scaled canvas.
+- A page's filename is content-hashed -- SHA-256 over the page's own
+  canonical RGBA pixel buffer (never its encoded PNG bytes), truncated to
+  `defs_version`'s own 16 hex characters -- so an unrelated group's page
+  never renames when another group's pixels change.
+- `defs.json`'s `atlas_pages` array (`file`, `group`, `width`, `height`)
+  and every object's/character part's own required `atlas` field
+  (`{ page, x, y, w, h }`, `page` an index into `atlas_pages`, the rect
+  in page pixels, gutter excluded) are JSON-only, like a rule row is
+  Rust-only: never in `server/sim/src/generated/defs.rs` or the
+  cross-parser dump. `sprite`/`sheet` stay in both artefacts as the
+  authoring input.
+- The client loads a page only on first demand (`client/src/render/
+  atlas-pages.ts`'s `AtlasPageLoader`, Pixi `Assets.load`,
+  `scaleMode: "nearest"`, one shared `Texture` per page, one shared
+  cropped `Texture` per object id) -- never every page at boot, only ones
+  a placed object actually resolves to. A rejected page load is evicted
+  from the loader's own cache so a later demand retries rather than
+  replaying the same rejection for the rest of the session.
+
+### Contact sheet
+
+`tools/defs-build/contact-sheet.html`: a committed output of the same
+`defs-build` run, guarded by `check-defs-current.sh`. Never under
+`client/public/` or `defs/`. Static HTML, no JS; references the atlas
+pages under `client/public/atlas/` by relative path, one CSS rule per
+referenced page, classed by group and in-group ordinal. Draws only the
+lowered geometry (footprint/collider/`interact_at`),
+grouped by declared archetype -- `check-no-runtime-footprint-inference.sh`
+holds that it reads no pixel.
+
+### Rules (`defs/rules/`, `defs/tags/`)
+
+`sim::rules` (FR111/FR112) is the one generic rule engine: `evaluate(rules:
+&[RuleDef], site: &impl RuleSite) -> Vec<Violation>`, pure, over integer
+geometry only. Tags (`defs/tags/*.toml`, permanent id/key, append-only
+manifest like every other kind) are the engine's only vocabulary -- an
+object's `tags` field and a rule row's own subject/container/per/within/
+a/requires fields all resolve a tag name to its id at build time; the
+engine never sees a content key. `scripts/ci/check-rule-engine-no-
+content-keys.sh` fails the build if any manifest key ever appears as a
+quoted-string literal under `server/sim/src/rules/`. `RuleSite` answers
+three questions over integer geometry -- tags at a cell, real areas
+containing it, subjects within an area or the whole site.
+
+A tag's own `[[tag]]` row may carry `role = { layers = [...] }`; its
+presence is what makes that tag a role. The closed taxonomy is ground,
+pavement, road, wall, floor, threshold, fixture. `layers` is the closed
+set of `sim::codes::layer` names an object of that role may sit on,
+resolved to codes at build time. Every `[[object]]` carries exactly one
+role tag in its ordinary `tags` list -- zero, two, or a layer outside the
+role's own `layers` all fail the build by object key.
+
+Five closed kinds, one TOML array table each under `defs/rules/*.toml`,
+any file: `[[placement]]`, `[[distribution]]`, `[[coherence]]`,
+`[[adjacency]]`, `[[requirement]]`. `RuleKind` is a closed Rust enum
+matched exhaustively (no `_ =>` arm) -- a sixth kind is a compile error
+until the match is updated on purpose. Every rule kind shares one id/key
+namespace ("rule") in the manifest. Distribution's "evenly spread" is a
+ratio, a minimum spacing and a maximum coverage distance (`max_distance`,
+always positive) together. `evaluate` returns every violation, sorted
+and deduplicated.
+
+Adjacency's engine shape is `Adjacency { a, relation, alternatives:
+&'static [&'static [NeighbourTerm]] }`, where `NeighbourTerm { direction,
+tag, present }` names one same-floor neighbour condition; an alternative
+matches when every one of its terms holds, and the row matches when any
+alternative does. `Require` violates when no alternative matches;
+`Forbid` violates once per matching alternative, and every `Forbid`
+alternative is exactly one `present: true` term. `[[adjacency]]` authors
+either the terse `b` (+ optional `direction`) form or a hand-authored
+`alternatives` pattern (an optional `rotate = true` lowers one authored
+alternative to its four 90-degree rotations); `tools/defs-build` lowers
+both into the same `alternatives` shape at build time. `Violation` carries
+`other: Option<Cell>`, the matched neighbour cell for a `Forbid`
+violation, `None` otherwise -- ordering is `(rule_id, subject, other)`.
+Two `Forbid` rows whose lowered constraint sets agree up to swapping
+which tag is the subject are refused at build time -- `road`/`floor` and
+`floor`/`road` are the same seam under two names. Room and building
+grammar primitives are ordinary rows in `defs/rules/*.toml`.
+
+Rule rows and the tag table are emitted into `server/sim/src/generated/
+defs.rs` only, as `static` tables (`TAGS`, `RULES`); tags (role included)
+also reach `client/public/defs/defs.json` as a required field (an
+object's `tags` field, validated against the tag table on both sides
+identically), rule rows never do -- the client never evaluates a rule.
+
+There is no separate rule-set version: `defs_version` already hashes
+every tracked file under `defs/`, including `defs/rules/` and
+`defs/tags/`, and is the rule-set version FR108/FR109 refer to.
+
+`sim::rules::RuleSet` is the only thing `evaluate` accepts, and
+`RuleSet::committed` (wrapping `generated::defs::RULES`) is its only
+non-test constructor -- `RuleSet::for_test` and `rules::testing` are
+gated behind the `test-fixtures` feature. `sim::validation::validate` is
+the one validation harness: it takes no rules, object or balance
+argument, reads the committed defs itself, and composes `evaluate`
+against `RuleSet::committed` with the enclosed-region/narrow-passage
+walkability checks over a real placed-object block, never stopping at
+the first defect. A candidate carries its own producing `defs_version`;
+`validate` refuses (`RuleSourceMismatch`) rather than validating one
+stamped with any other version. `sim::validation::PlacedSite` (a
+`RuleSite` over placed objects) stamps every cell of a placed object's
+footprint with every one of its tags, unioned where objects stack, and
+its own indexing cost is bounded by placed cells and areas, never by
+cells times areas. `scripts/ci/check-rule-source.sh` fails the build if
+`server/sim/Cargo.toml` names `test-fixtures` on any line but its own
+`[features]` declaration and self dev-dependency, if any other manifest
+but that one and `server/bounds/Cargo.toml` enables it, if the resolved
+feature graph for `browser_city` ever turns it on or cannot be resolved
+at all, or if `for_test`, `RuleKind` or `RULES` (the bare words) appear
+outside `server/sim/src/rules/`.
+
+Every committed rule key is named by at least one passing and one
+deliberately failing example under `server/sim/tests/rule-examples/
+*.grid` -- flat, no per-rule directory: a case's own `rules:` header
+lists every key it is a worked example for. A small line-oriented format
+(`server/sim/tests/support/grid.rs`) declares a tag legend, an optional
+set of opaque areas over a rect, a character grid (`.` empty, top row
+`y=0`, left column `x=0`) and, for a `fail` case, the exact rendered
+`sim::validation::Defect` lines it must produce. `server/sim/tests/
+rule_examples.rs` evaluates every case against the *whole* committed
+`RuleSet` (never only the rule(s) it names) with exact-set assertion,
+enforces that every committed key has a case both ways, and that a
+`fail` case is a small change over a `pass` case sharing one of its
+rules, never an unrelated toy world. `scripts/dev/verify-defs.sh` is the
+one command an agent runs: it regenerates `defs/`, builds the corpus's
+own test binary, then runs it, exit `0` only when every case passed,
+`1` for a named failure, `2` when the harness itself could not build.
+`defs/README.md` is the agent-facing copy of this same grammar --
+excluded from `defs-build`'s own parse, though still folded into
+`defs_version` like every other tracked path here.
+
+`docs/generation.md` (FR111) is the home of rule and generation-parameter
+*intent*, keyed by rule key / balance key, never under `defs/`. Its
+machine-read sections are the five kinds plus `## parameters`, exact
+heading text, one table each; a rule row's `pass` column must name a
+`### ` heading under its own `## Passes` section, and its `reads`
+column must name a row in the `## Neighbourhood parameters` table.
+`server/sim/tests/rule_examples.rs` fails when a committed rule key has
+no row under its own kind's section there, or when a committed key's
+row is still marked `planned`, or when `## Must never be seen`'s own
+`Status` disagrees with what its `Claimed by` column derives.
+
+## Generation
+
+`sim::generation` (FR110): the generator's seven coarse-to-fine passes,
+pure functions and data only (NFR28) -- no table, no reducer, no client
+code. A pass's signature is: the city seed, `&` the outputs of *earlier*
+passes it actually reads (never a later pass, never by mutation) and
+`GenerationConfig` -- nothing else. Pass ids (`PASS_LAND_USE`..
+`PASS_PROP_PLACEMENT`) are append-only constants in FR110's own order; a
+pass not yet implemented still reserves its id. Each pass seeds its own
+`sim::rng::Rng` stream from `seed_from_ids(city_seed, PASS_ID)`, so
+adding a draw to one pass never reshuffles another; within pass 2, each
+superblock further seeds its own stream from `seed_from_ids(pass_seed,
+superblock_index)`, and within passes 3-4 each block and each plot from
+its own bounds (`generation::rect_seed_key`), never its position in a
+list -- so one block's (or plot's) own draw count never reshuffles
+another's, and adding a plot to one block never moves any other block's
+or plot's draws.
+
+`generation::plan(city_seed, &cfg, &content) -> Result<District,
+GenerationError>` chains every implemented pass in order with no verdict
+on the result (only pass 1's own site check can fail). `content` is
+`GenerationContent { rules: RuleSet<'_>, building_types: &[BuildingTypeDef]
+}` -- every content table a pass reads, loaded once
+(`GenerationContent::committed()` wraps `RuleSet::committed()` and
+`defs::BUILDING_TYPES`) and passed down as a struct, never a literal read
+from `defs::` inside a pass; one signature, no `plan_with` twin.
+`District::check_building_count(&cfg)` holds AC4's building-count
+verdict; `District::check_rules(&content)` holds FR112's verdict over the
+finished district's own `DistrictSite` (`sim::rules::evaluate` must find
+no violation); `District::check_workplace_count(&cfg, &content)` holds
+AC4's workplace-count verdict, the same two-band shape as building count.
+`generation::generate` is `plan` plus all three, in that order, and is
+what production calls. `scripts/ci/check-generation-entry-point.sh` fails
+the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`
+call under `server/sim/tests/` or `server/bounds/` not marked `//
+generation-entry-point: allow` -- the marker is reserved for the
+independence properties and the golden's pass-2-run-twice test, which
+deliberately feed one pass a perturbed or repeated predecessor;
+single-pass unit tests live in the pass's own module. `GenerationError`
+is the one error type across every implemented pass (`InvalidConfig` from
+`GenerationConfig::from_balance`, `InvalidSite { site,
+coarse_cell_size_cells }` from pass 1, `BuildingCountOutOfTolerance {
+got, min, max }` from the district's own count check, `RuleViolations {
+count, first }` from `check_rules`, `WorkplaceCountOutOfTolerance { got,
+min, max }` from `check_workplace_count`) -- never a `Result<_, String>`
+per pass.
+
+Coordinates are world-absolute `i32` cells throughout; `SiteBounds` is
+`sim::world::Rect` reused, never a second rect type. `GenerationConfig::
+from_balance` reads every balance key the implemented passes need once,
+returning `Err` on a cross-key inconsistency a single key's own range
+cannot express (e.g. the site extent not a multiple of the coarse cell
+size) -- a missing balance key itself is not an `Err` case: `sim::
+balance::value` panics on that, the same as every other balance read in
+`sim`, since a missing key is a `defs/`-authoring bug, not a runtime
+config error. Pass 1 (`land_use::run`) itself also returns `Result`,
+refusing (never silently truncating) a site whose extent is not a whole
+multiple of the coarse cell size.
+
+A measured generation ceiling (`generation.streets.max_detour_
+excess_cells`) is set from `cargo run -p bounds --release --bin
+measure-generation`'s own output by the margin rule stated in that key's
+own `defs/` comment; a `from_balance` refusal alongside one is a
+config-consistency (loosening) guard, never a generator worst-case
+claim.
+
+Pass 2's own junction registry enforces one specific case: where two
+*different* streets each cross the same third street (a staggered
+crossing), their own crossing points are either coincident (a true
+4-way) or at least `generation.streets.junction_min_separation_cells`
+apart, centreline to centreline (`resolve_junction_position`'s own doc
+comment argues why this holds for every split this pass ever creates).
+This is narrower than "every pair of junctions on one street": two
+junctions from an ordinary sequential block split are governed by
+`min_block_depth_cells` instead (`try_split` never places a split
+closer than that to either end of its own parent rect), a different,
+already-enforced margin, not this registry.
+`StreetNetwork::close_same_street_junction_pairs` checks the net gap
+(carriageway edge to carriageway edge) between every same-line pair, of
+either kind, against `min_block_depth_cells` -- asserted empty over
+arbitrary seeds.
+
+Land use and the street network are independently generated fields (no
+land-use-boundary snapping) -- a block's own land use is decided once,
+after subdivision, by majority coarse-cell area (`generation::
+block_land_use`), so a change of use only ever reads at a real block
+edge. `subdivide` still forces a split whenever the current rect spans
+more than one land-use region, which is what keeps every region
+touching a street (AC2) without that snapping.
+
+Which of a block's own four sides abut a real street is
+`generation::block_sides(bounds, site)`: a side abuts a street iff it
+does not coincide with the site's own boundary -- a pure O(1) function
+of the block's own bounds against the site's, never a stored field and
+never a scan of `StreetNetwork::edges` per block, guarded by the
+invariant `inv_generation_block_sides_matches_a_real_street_edge`
+against the real street edges. Pass 3 (plot subdivision) reads this to
+cut only street-abutting faces into plots, never landlocking one; every
+cell of a block belongs to a plot, and land no row claims is one
+explicit `open` plot, never silent remainder. Pass 4 (the building
+envelope) sizes a footprint from each plot's own geometry, land use and
+density, always inside its own plot, at or above that land use's minimum
+usable interior (checked against the interior net, footprint minus the
+wall ring, never the outer rectangle) -- a plot that cannot hold that
+minimum yields a typed `EnvelopeOutcome::Rejected`, counted, never a
+footprint shrunk below it, and pass 3 never hands it one.
+Building count itself fails generation: `District::check_building_count`
+returns `Err(GenerationError::BuildingCountOutOfTolerance)` when the
+realised placed-envelope count for a seed sits outside `[min, max]`,
+derived from `generation.envelopes.target_count_per_million_cells` (the
+Scale Baseline figure, never a measurement of the generator itself)
+scaled by the real site area and `count_tolerance_percent`; the pooled
+mean over a fixed seed range is held to that same target within
+`mean_count_tolerance_percent`.
+
+Pass 5 (building type, FR116) hands down what each placed envelope *is*:
+a `defs::BuildingTypeDef` id, from the `building-types` def kind
+(`defs/building-types/*.toml` -> `tools/defs-build` ->
+`sim::generated::defs::BUILDING_TYPES`, a permanent append-only
+id/key). A row carries `tags`, `land_uses` (a `[bool; 4]` mask, one per
+`LandUse` variant), `density_min`/`_max`, `min_interior_width_cells`/
+`_depth_cells`, `weight`, `requires_site`/`prefers_site` (each a
+`[bool; 4]` mask over the same closed structural vocabulary --
+`corner`, and the street tier an envelope's own front faces:
+`arterial`/`street`/`lane`, `tools/defs-build`'s own `RawSiteContext`
+order), `density_affinity` and `professions` (a plain profession key
+list, into `defs/professions/`) -- never a `count`/`unique`/`required`
+field: how many of something exist is a rule (a `[[distribution]]`
+row), never a field on the type. "Institution", "workplace" and
+"dwelling" are all *derived*, never a stored category: a workplace is
+any type whose own `professions` is non-empty, a municipal service
+carries the `municipal_service` tag, a dwelling carries `dwelling`.
+
+`building_types::run` places constructively, in two steps: a weighted
+draw among every *hard*-eligible type for an envelope's own plot (land
+use, density band, minimum interior, every `requires_site` context it
+demands) first, seeded from the envelope's own footprint
+(`rect_seed_key`, never list position); then, for every committed
+`[[distribution]]` row, read generically through `sim::rules::RuleDef::
+as_distribution` (never by matching the rule engine's own closed kind
+enum) in ascending rule id order, an override onto a named institution
+among the still-eligible envelopes. A row's own whole-site target
+(`per`-tag count / `ratio`, the same figure `sim::rules::evaluate`'s
+own Distribution check computes) splits into a *floor* per catchment --
+a fixed-extent square tiling the site (`GenerationConfig::building_
+type_catchment_extent_cells`) -- and a site-wide *remainder*: each
+catchment owes exactly `floor(per-tag count in that catchment /
+ratio)`, never a share inflated by how much of the `per` tag it happens
+to hold (a proportional remainder drags a civic building toward
+whichever catchment holds the most dwellings, not toward its own
+preferred site); the units the floors do not account for are placed
+site-wide instead. Both the per-catchment floor and the site-wide
+remainder place through the one `place_row`, sharing one running
+`min_spacing` state (`chosen_cells`) so nothing before or after a
+catchment boundary clusters. Within either pool, candidates are ranked
+-- never chosen by a distance search -- first by how many of the
+subject type's own `prefers_site` contexts they match, then by
+`density_affinity`, then by a seeded draw key (total in practice, so a
+distance tie-break is never reached). `place_row` first runs plain
+first-fit over that rank order (the floor: a target's placed count is
+never below what first-fit alone would give), then a depth-first search
+bounded by `PLACEMENT_SEARCH_NODE_BUDGET` (a fixed node count, never
+wall-clock, since maximum independent set on a spacing graph is NP-hard
+and this runs inside world creation) for a fuller selection: a top-
+ranked candidate that conflicts (by `min_spacing`) with every other
+real candidate, none of which conflict with each other, must never
+strand an achievable target (found by `proptest`, PR #317 cycle 3) --
+the search only ever decides whether a candidate already offered in
+rank order is kept, never reorders the pool itself. On a `target`
+genuinely unreachable from the pool, `place_row` returns the largest
+real selection the search found within its own budget, never an empty
+one (PR #317 cycle 4: an earlier version popped every tentative choice
+back out on failure, silently placing zero where `target - 1` was
+real).
+
+The per-catchment floor is a real, unconditional guarantee, never
+discounted by the row's own site-wide `tolerance_percent` (that
+tolerance belongs only to the site-wide ratio check `sim::rules::
+evaluate`'s own Distribution kind runs, where the unplaced remainder
+lives): a catchment is owed exactly `floor(per-tag count in that
+catchment / ratio)`, bounded down only by what the catchment's own real
+geometry can hold -- the largest `k` for which some subset of its own
+hard-eligible, unclaimed candidates is pairwise-`min_spacing`-clear (of
+each other and of this same row's own subjects already placed in a
+neighbouring catchment, since `min_spacing` is a site-wide constraint,
+never scoped to one catchment). `inv_generation_no_quadrant_lacks_its_
+required_services` (`server/sim/tests/invariants.rs`) asserts `placed
+>= k` per seed, per catchment, over arbitrary `u64` seeds, computing
+that same `k` independently -- never skipping the assertion outright,
+even where `k` is `0`.
+
+`DistrictSite` (`generation::site`) is the one `RuleSite` a *finished*
+district presents to `sim::rules::evaluate` -- one subject cell per
+typed building (its front-edge midpoint, floor 0, tagged with its own
+type's `tags`), one area per block (`AreaId = rect_seed_key(block
+bounds)`) -- built once, from the same fields, by `District::
+check_rules`. Pass 5's own constructive placement shares only
+`front_cell`, the same one-subject-cell rule, since `evaluate` needs a
+finished district's full tag/area index, never a partial one; it never
+calls `evaluate` per candidate, and is whole-site. `scripts/ci/
+check-generator-no-content-keys.sh` holds the generator to the same
+content-blindness `check-rule-engine-no-content-keys.sh` holds the rule
+engine to: no building-type/tag/profession/rule key as a quoted literal
+under `server/sim/src/generation/`.
+
+Evidence: `bounds/src/generation_evidence.rs` renders every implemented
+pass's own output, for three committed seeds, to `docs/generation/*.svg`
+-- pass 5's own file additionally tints each envelope by a derived,
+structural `TypeClass` (never a tag name or a hash: is the `per` basis
+of a committed distribution row, housing; is named by a committed
+coherence row's own `subject`/`within`, the two form extremes; has
+posts, workplace; both housing and posts, mixed use; none of these,
+vacant/yard -- six fixed classes, a fixed palette, so two unrelated
+types can never collide onto one swatch), marks every envelope whose
+own type is the subject of a committed distribution row this pass
+actually feeds with a marker shape read from that one row list's own
+position (map and legend share the identical list and index -- a
+second, `placed`-filtered list with its own index was PR #317 cycle 3's
+own map/legend mismatch), overlays a dashed catchment grid with a pink
+wash over a physically-short catchment (no text on the map -- PR #317
+cycle 4: five-line label plates on the map itself covered half a
+catchment; the per/owed/placed figures now live in a panel below the
+map, one line per catchment). `cargo run -p bounds --bin dump-generation`
+regenerates them; `bounds/tests/generation_evidence_current.rs` fails
+the build if the committed files and a fresh render ever disagree.
+
+`GENERATION_VERSION` is bumped whenever any implemented pass's algorithm
+or seeding (never a `defs/balance/generation.toml` or
+`defs/building-types/`/`defs/rules/` retune) moves a fixed seed's
+output; `server/sim/tests/generation_golden.rs` runs against a config
+and a small `GenerationContent` both frozen in the test itself, under
+deliberately unrelated ids/keys, not live `defs::BALANCE`/
+`defs::BUILDING_TYPES`, so a balance or content retune alone never
+forces a version bump, and the same shape of output against a wholly
+different content table is itself proof the generator never branches on
+a content key. `server/sim/tests/goldens/generation_v5.golden` is keyed
+to it, guarded by `check-golden-version-bump.sh`'s `generation_*` arm the
+same way `RNG_VERSION`/`APPEARANCE_VERSION` are.
+
+## Boot budget
+
+Boot milestones are marked only through `client/src/boot/boot-marks.ts`; NFR1
+is measured by `scripts/dev/run-boot-budget-spike.sh` against a production
+build.
+
+## Naming
+
+
+| Element                            | Convention             | Example                               |
+| ---------------------------------- | ---------------------- | ------------------------------------- |
+| Rust modules, functions, fields    | `snake_case`           | `score_matter`                        |
+| Rust types                         | `PascalCase`           | `MatterKind`                          |
+| TypeScript files                   | `kebab-case.ts`        | `sort-key.ts`                         |
+| TypeScript types and classes       | `PascalCase`           | `CollisionGrid`                       |
+| TypeScript functions and variables | `camelCase`            | `deriveCitizenPosition`               |
+| Files in `defs/`                   | `kebab-case`           | `city-props.toml`                     |
+| Data keys                          | `snake_case`           | matches Rust, so no translation layer |
+| Balance keys                       | dotted `snake_case`    | `citizen.bar_decay.rest`              |
+| Table names                        | `snake_case`, singular | `citizen_state`                       |
+
+## Toolchain
+
+`docs/trace-matrix.md`'s `| Requirement | Status | Guard |` tables are
+recognised by that exact header; `check-trace-matrix.sh` checks every
+`covered`/`partial` cell's paths and declared names (NFR47).
+
+| Prerequisite    | Notes                                                          |
+| --------------- | -------------------------------------------------------------- |
+| Rust via rustup | with `rustup target add wasm32-unknown-unknown`                |
+| SpacetimeDB CLI | `spacetime dev` for hot reload, `spacetime publish` to release |
+| SpacetimeDB CLI default server | `spacetime server set-default local`, so a flagless `spacetime mcp` also resolves to `local` |
+| Node.js         | 22.x, pinned in `client/.nvmrc`; client build                  |
+
+Agent tooling — declared in `.mcp.json` and `.claude/settings.json`, first-party only:
+
+<!-- bc:agent-tooling:start -->
+| Tool | Provided as | Pinned version | Notes |
+| --- | --- | --- | --- |
+| `spacetimedb` | `spacetime mcp` CLI subcommand, `.mcp.json` | 2.9.* | `--server local` explicit; database name from the local spacetime config, never hard-coded; approved via `enabledMcpjsonServers`, not an interactive prompt |
+| `context7` | hosted HTTP MCP, `.mcp.json` | hosted, unpinnable | needs `${CONTEXT7_API_KEY}`, degrades to unauthenticated if unset; a lookup tool, never a source of truth over this file or `docs/requirements.md`; approved via `enabledMcpjsonServers` |
+| `spacetimedb@spacetimedb-plugins` | Claude plugin marketplace `clockworklabs/SpacetimeDB`, `.claude/settings.json` | v2.9.0 | its bundled `spacetime mcp` (no `--server` flag) is blocked by `deniedMcpServers`' `serverCommand: ["spacetime", "mcp"]`, an exact match read from that tag's `.claude-plugin/marketplace.json` on 2026-09-07; only its skills load; re-read that file and update this row and the deny entry together whenever `ref` bumps |
+| `pixijs-skills@pixijs-skills` | Claude plugin marketplace `pixijs/pixijs-skills`, `.claude/settings.json` | floating on `main` | official PixiJS v8 rendering skills |
+<!-- bc:agent-tooling:end -->
