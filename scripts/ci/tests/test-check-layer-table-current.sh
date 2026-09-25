@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/ci/check-layer-table-current.sh's own fast, no-real-tree
 # coverage: plants a matching set of fakes (golden, codes.rs,
-# layer-table.ts, layer_codes.rs) and asserts it passes, then plants each
+# layer-table.ts, defs_codes.rs) and asserts it passes, then plants each
 # kind of drift in turn and asserts it fails -- a guard nobody has seen
 # fail is not a guard. Every case here uses the script's own optional
 # path arguments (added for exactly this), never the real repo files.
@@ -27,7 +27,7 @@ LAYER_TABLE_TS_CONTENT='export const LAYER_TABLE = [
 LAYER_CODES_RS_CONTENT='pub const DEPRECATED_LAYER_NAMES: &[&str] = &["overhead"];
 '
 
-# plant <golden> <codes.rs> <layer-table.ts> <layer_codes.rs> -- writes
+# plant <golden> <codes.rs> <layer-table.ts> <defs_codes.rs> -- writes
 # the four fakes into a fresh dir and prints its path.
 plant() {
   local d
@@ -35,13 +35,13 @@ plant() {
   printf '%s' "$1" > "$d/codes_v1.golden"
   printf '%s' "$2" > "$d/codes.rs"
   printf '%s' "$3" > "$d/layer-table.ts"
-  printf '%s' "$4" > "$d/layer_codes.rs"
+  printf '%s' "$4" > "$d/defs_codes.rs"
   printf '%s' "$d"
 }
 
 d="$(plant "$GOLDEN_CONTENT" "$CODES_RS_CONTENT" "$LAYER_TABLE_TS_CONTENT" "$LAYER_CODES_RS_CONTENT")"
 check "a matching set of fakes passes" 0 \
-  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/layer_codes.rs"
+  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/defs_codes.rs"
 
 d="$(plant "$GOLDEN_CONTENT" "$CODES_RS_CONTENT" \
   'export const LAYER_TABLE = [
@@ -51,7 +51,7 @@ d="$(plant "$GOLDEN_CONTENT" "$CODES_RS_CONTENT" \
 ];
 ' "$LAYER_CODES_RS_CONTENT")"
 check "a client rank mismatch fails" 1 \
-  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/layer_codes.rs"
+  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/defs_codes.rs"
 
 d="$(plant "$GOLDEN_CONTENT" "$CODES_RS_CONTENT" \
   'export const LAYER_TABLE = [
@@ -61,28 +61,28 @@ d="$(plant "$GOLDEN_CONTENT" "$CODES_RS_CONTENT" \
 ];
 ' "$LAYER_CODES_RS_CONTENT")"
 check "a client deprecated-flag mismatch fails" 1 \
-  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/layer_codes.rs"
+  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/defs_codes.rs"
 
 # The planted drift this cycle's own review asked for: defs-build's own
-# DEPRECATED_LAYER_NAMES copy (tools/defs-build/src/layer_codes.rs) can
+# DEPRECATED_LAYER_NAMES copy (tools/defs-build/src/defs_codes.rs) can
 # drift from sim::codes::layer::DEPRECATED_CODES without this check
 # catching it, until now.
 d="$(plant "$GOLDEN_CONTENT" "$CODES_RS_CONTENT" "$LAYER_TABLE_TS_CONTENT" \
   'pub const DEPRECATED_LAYER_NAMES: &[&str] = &[];
 ')"
 check "defs-build's DEPRECATED_LAYER_NAMES missing a name the server deprecated fails" 1 \
-  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/layer_codes.rs"
+  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/defs_codes.rs"
 
 d="$(plant "$GOLDEN_CONTENT" "$CODES_RS_CONTENT" "$LAYER_TABLE_TS_CONTENT" \
   'pub const DEPRECATED_LAYER_NAMES: &[&str] = &["overhead", "furniture"];
 ')"
 check "defs-build's DEPRECATED_LAYER_NAMES naming an extra, non-deprecated layer fails" 1 \
-  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/layer_codes.rs"
+  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/defs_codes.rs"
 
 d="$(plant "$GOLDEN_CONTENT" "$CODES_RS_CONTENT" "$LAYER_TABLE_TS_CONTENT" 'pub const NOTHING_HERE: u32 = 0;
 ')"
-check "a layer_codes.rs missing DEPRECATED_LAYER_NAMES entirely fails" 1 \
-  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/layer_codes.rs"
+check "a defs_codes.rs missing DEPRECATED_LAYER_NAMES entirely fails" 1 \
+  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/defs_codes.rs"
 
 summary
 exit $?

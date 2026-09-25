@@ -29,8 +29,7 @@ fn ac1_no_cafe_above_floor_2_renders_the_exact_rule_kind_literal() {
     let defs = defs_build::validate::validate(
         &raw,
         &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
+        &defs_build::codes::CodeTables::default(),
         "",
     )
     .expect("this tree is valid by construction");
@@ -66,8 +65,7 @@ fn emit_rust_for(rule_toml: &str) -> String {
     let defs = defs_build::validate::validate(
         &raw,
         &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
+        &defs_build::codes::CodeTables::default(),
         "",
     )
     .expect("this tree is valid by construction");

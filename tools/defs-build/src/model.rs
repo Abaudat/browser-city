@@ -353,8 +353,8 @@ pub struct RawItem {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawBulk {
-    pub width: u32,
-    pub height: u32,
+    pub width: Spanned<u32>,
+    pub height: Spanned<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1002,8 +1002,8 @@ pub struct ItemEntry {
     pub key: Located<String>,
     pub unit: Located<String>,
     pub shelf_life_minutes: Located<u32>,
-    pub bulk_width: u32,
-    pub bulk_height: u32,
+    pub bulk_width: Located<u32>,
+    pub bulk_height: Located<u32>,
 }
 
 #[derive(Debug)]

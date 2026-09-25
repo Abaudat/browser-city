@@ -934,12 +934,9 @@ function checkObjectWalkabilityTag(object: ObjectDef, underfootTagId: number | u
   }
 }
 
-/** FR127's cap, checked on `width` and `height` independently, exactly
- * like `tools/defs-build`'s own `validate.rs` -- the error names the
- * object and its size, and directs the author to compose the structure
- * from multiple objects (the acceptance criterion's own sentence). Also
- * refuses a footprint width or height of 0 -- every object occupies at
- * least one cell. */
+/** Mirrors `validate.rs`'s `check_item_fields`: an item's bulk is the world
+ * footprint reused unchanged (FR94), so it shares the object cap and
+ * refusal of 0; its shelf life is bounded by `MAX_SHELF_LIFE_MINUTES`. */
 function checkItemFields(
   item: ItemDef,
   maxFootprintCells: number,
@@ -965,6 +962,12 @@ function checkItemFields(
   }
 }
 
+/** FR127's cap, checked on `width` and `height` independently, exactly
+ * like `tools/defs-build`'s own `validate.rs` -- the error names the
+ * object and its size, and directs the author to compose the structure
+ * from multiple objects (the acceptance criterion's own sentence). Also
+ * refuses a footprint width or height of 0 -- every object occupies at
+ * least one cell. */
 function checkObjectFootprintCap(object: ObjectDef, maxFootprintCells: number): void {
   if (object.width === 0 || object.height === 0) {
     fail(

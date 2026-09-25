@@ -10,14 +10,13 @@ mod support;
 use std::collections::BTreeMap;
 
 use support::{
-    appearance_sheet_bytes, layer_codes, object_sheet_dims, read_tree, sheet_dims, unit_codes,
-    valid_dir,
+    appearance_sheet_bytes, code_tables, object_sheet_dims, read_tree, sheet_dims, valid_dir,
 };
 
 #[test]
 fn swapping_an_object_sheets_alpha_never_changes_either_generated_artefact() {
     let files = read_tree(&valid_dir());
-    let layer_codes = layer_codes();
+    let code_tables = code_tables();
     let sheet_dims = sheet_dims();
 
     let (sheet, (w, h)) = object_sheet_dims()
@@ -50,8 +49,7 @@ fn swapping_an_object_sheets_alpha_never_changes_either_generated_artefact() {
         &sheet_dims,
         &object_sheet_bytes_a,
         &appearance_sheet_bytes(),
-        &layer_codes,
-        &unit_codes(),
+        &code_tables,
         "",
         "test-version",
     )
@@ -61,8 +59,7 @@ fn swapping_an_object_sheets_alpha_never_changes_either_generated_artefact() {
         &sheet_dims,
         &object_sheet_bytes_b,
         &appearance_sheet_bytes(),
-        &layer_codes,
-        &unit_codes(),
+        &code_tables,
         "",
         "test-version",
     )

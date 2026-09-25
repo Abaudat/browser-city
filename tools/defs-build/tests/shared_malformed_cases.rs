@@ -70,6 +70,10 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "item-missing-unit" => "item-missing-unit",
         "item-unit-wrong-type" => "item-unit-wrong-type",
         "item-bulk-zero" => "item-bulk-zero",
+        "item-missing-shelf-life" => "item-missing-shelf-life",
+        "item-missing-bulk" => "item-missing-bulk",
+        "item-shelf-life-wrong-type" => "item-shelf-life-wrong-type",
+        "item-bulk-height-cap-exceeded" => "item-bulk-height-cap-exceeded",
         "item-bulk-footprint-cap-exceeded" => "item-bulk-footprint-cap-exceeded",
         "item-shelf-life-out-of-range" => "item-shelf-life-out-of-range",
         other => panic!(

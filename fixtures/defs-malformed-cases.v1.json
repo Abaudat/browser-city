@@ -39,5 +39,9 @@
   "item-unit-wrong-type",
   "item-bulk-zero",
   "item-bulk-footprint-cap-exceeded",
-  "item-shelf-life-out-of-range"
+  "item-shelf-life-out-of-range",
+  "item-missing-shelf-life",
+  "item-missing-bulk",
+  "item-shelf-life-wrong-type",
+  "item-bulk-height-cap-exceeded"
 ]

@@ -15,8 +15,7 @@ use std::path::{Path, PathBuf};
 
 use defs_build::atlas::character::{collect_character_parts, strip_size};
 use defs_build::{
-    appearance_sheet_paths, atlas, fsio, layer_codes, model, object_sprite_sheet_paths, parse,
-    validate,
+    appearance_sheet_paths, atlas, codes, fsio, model, object_sprite_sheet_paths, parse, validate,
 };
 
 fn repo_root() -> PathBuf {
@@ -46,13 +45,11 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
         .collect();
 
     let codes_golden = fsio::read_codes_golden(&root).unwrap();
-    let layer_codes = layer_codes::parse_codes(&codes_golden, "layer");
-    let unit_codes = layer_codes::parse_codes(&codes_golden, "unit");
+    let code_tables = codes::CodeTables::parse(&codes_golden);
     let defs = validate::validate(
         &raw,
         &sheet_dims,
-        &layer_codes,
-        &unit_codes,
+        &code_tables,
         model::SPRITE_SHEET_ALLOWED_ROOT,
     )
     .unwrap();
