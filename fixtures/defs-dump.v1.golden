@@ -195,6 +195,10 @@ balance render.highlight_alpha value=50 min=1 max=100
 balance render.storey_height_px value=48 min=1 max=256
 balance render.tile_size_px value=16 min=1 max=64
 balance render.window_alpha value=50 min=1 max=99
+balance routing.floor_change_penalty_milliminutes value=1000 min=0 max=600000
+balance routing.speed_percent.bike value=200 min=100 max=1000
+balance routing.speed_percent.transit value=300 min=100 max=1000
+balance routing.speed_percent.walk value=100 min=100 max=100
 body body_01 id=1 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_01.png
 body body_02 id=2 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_02.png
 body body_03 id=3 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_03.png

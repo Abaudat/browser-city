@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "d34ef6b0a40d2f83",
+  "defs_version": "79a6dbb46a3feaaa",
   "collider_subcells_per_cell": 16,
   "interact_at_max_reach_cells": 2,
   "max_footprint_cells": 8,
@@ -211,7 +211,11 @@
     { "key": "render.highlight_alpha", "max": 100, "min": 1, "value": 50 },
     { "key": "render.storey_height_px", "max": 256, "min": 1, "value": 48 },
     { "key": "render.tile_size_px", "max": 64, "min": 1, "value": 16 },
-    { "key": "render.window_alpha", "max": 99, "min": 1, "value": 50 }
+    { "key": "render.window_alpha", "max": 99, "min": 1, "value": 50 },
+    { "key": "routing.floor_change_penalty_milliminutes", "max": 600000, "min": 0, "value": 1000 },
+    { "key": "routing.speed_percent.bike", "max": 1000, "min": 100, "value": 200 },
+    { "key": "routing.speed_percent.transit", "max": 1000, "min": 100, "value": 300 },
+    { "key": "routing.speed_percent.walk", "max": 100, "min": 100, "value": 100 }
   ],
   "bodies": [
     { "atlas": { "h": 64, "page": 1, "w": 384, "x": 1, "y": 1 }, "family": "adult", "id": 1, "key": "body_01", "pool": "civilian", "sheet": "ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_01.png" },
