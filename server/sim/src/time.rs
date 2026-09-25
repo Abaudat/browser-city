@@ -4,6 +4,9 @@
 
 pub use crate::generated::defs::REAL_MS_PER_CITY_MINUTE;
 
+// `CityTime::real_ms_into_minute` is a u16.
+const _: () = assert!(REAL_MS_PER_CITY_MINUTE > 0 && REAL_MS_PER_CITY_MINUTE <= u16::MAX as i64);
+
 pub const CITY_MINUTES_PER_HOUR: i64 = 60;
 pub const CITY_HOURS_PER_DAY: i64 = 24;
 pub const CITY_MINUTES_PER_DAY: i64 = CITY_MINUTES_PER_HOUR * CITY_HOURS_PER_DAY;
@@ -20,7 +23,9 @@ pub struct CityTime {
     pub minute: u8,
     /// `day` mod 7 -- the only calendar cycle the game defines (rent).
     pub weekday: u8,
-    /// Real milliseconds elapsed inside the current city minute.
+    /// Real milliseconds elapsed inside the current city minute. For
+    /// rendering interpolation only; no reducer, rule or gameplay decision
+    /// may read this field -- the minute is the smallest unit of city time.
     pub real_ms_into_minute: u16,
 }
 

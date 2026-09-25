@@ -560,8 +560,9 @@ export function parseDefs(data: unknown): Defs {
   const maxShelfLifeMinutes = expectU32(root.max_shelf_life_minutes, "$.max_shelf_life_minutes");
   const realMsPerCityMinute = expectU32(root.real_ms_per_city_minute, "$.real_ms_per_city_minute");
   // FR1: a zero rate would divide by zero in every city-time derivation.
-  if (realMsPerCityMinute < 1) {
-    fail(`$.real_ms_per_city_minute: must be at least 1, got ${realMsPerCityMinute}`);
+  // and `sim::time` carries the sub-minute remainder in a u16.
+  if (realMsPerCityMinute < 1 || realMsPerCityMinute > 65_535) {
+    fail(`$.real_ms_per_city_minute: must be in [1, 65535], got ${realMsPerCityMinute}`);
   }
   const atlasMaxPagesPerGroup = expectU32(
     root.atlas_max_pages_per_group,

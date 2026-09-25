@@ -716,11 +716,17 @@ pub fn restore_module_owner(ctx: &ReducerContext, rows: Vec<ModuleOwner>) -> Res
 pub fn restore_world_clock(ctx: &ReducerContext, rows: Vec<WorldClock>) -> Result<(), String> {
     require_owner(ctx)?;
     require_restore_open(ctx)?;
-    // Exactly one row: an empty export must never delete the only epoch.
+    // Exactly one row, keyed 0: an empty export must never delete the only epoch.
     if rows.len() != 1 {
         return Err(format!(
             "restore_world_clock requires exactly one row, got {}",
             rows.len()
+        ));
+    }
+    if let Some(row) = rows.iter().find(|r| r.id != 0) {
+        return Err(format!(
+            "restore_world_clock requires id 0 (the one-row table's key), got {}",
+            row.id
         ));
     }
     let existing: Vec<u8> = ctx.db.world_clock().iter().map(|r| r.id).collect();

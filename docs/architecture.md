@@ -92,13 +92,13 @@ docs/spikes/1.3-scheduled-reducer-timing.md.
 
 ## Time
 
-- In-city time is a pure function of one durable row and the server's `now`: `sim::time::city_time(epoch_at, now)` returns `CityTime { day, hour, minute, weekday, real_ms_into_minute }`, integer arithmetic only, `weekday` being `day` mod 7. The smallest unit of city time is the minute.
-- `REAL_MS_PER_CITY_MINUTE` (FR1, 2500) is a fixed constant in `tools/defs-build/src/model.rs`, emitted into `sim/src/generated/defs.rs` and `client/public/defs/defs.json` (`real_ms_per_city_minute`, refused by `client/src/defs/parse.ts` when missing or below 1). Every derived constant is an expression over it in `sim::time` and `client/src/time/city-time.ts`.
+- In-city time is a pure function of one durable row and the server's `now`: `sim::time::city_time(epoch_at, now)` returns `CityTime { day, hour, minute, weekday, real_ms_into_minute }`, integer arithmetic only, `weekday` being `day` mod 7. The smallest unit of city time is the minute; `real_ms_into_minute` exists for rendering interpolation only, and no reducer, rule or gameplay decision may read it.
+- `REAL_MS_PER_CITY_MINUTE` (FR1, 2500) is a fixed constant in `tools/defs-build/src/model.rs`, emitted into `sim/src/generated/defs.rs` and `client/public/defs/defs.json` (`real_ms_per_city_minute`, refused by `client/src/defs/parse.ts` when missing or below 1). `sim::time` derives its constants as expressions over it and refuses a value above `u16::MAX` at compile time.
 - `world_clock` is a public one-row table (`id` 0, `epoch_at`): the real instant of day 0, 00:00, written from `init` only and never rewritten by a republish. It is restored by `restore_world_clock`.
 - The server holds the epoch; clients derive time arithmetically and are never told it. Nothing ticks the clock: `world_clock_schedule` carries no row and no per-minute broadcast exists.
 - The client subscribes to `world_clock` and estimates the server's clock from the `sync_clock` procedure (returns `ctx.timestamp`, reads and writes nothing): on connect, every 5 real minutes and when the tab becomes visible. The estimate advances on `performance.now()`; nothing under `client/src/time/` reads `Date.now()`, and it imports no `net/`, `pixi.js` or DOM global.
 - `fixtures/city-clock-conformance.v1.json` pins `sim::time` and `client/src/time/city-time.ts` to each other.
-- A later dev-build clock jump or multiplier rewrites the `world_clock` row.
+- A later dev-build clock jump rewrites `epoch_at`; a multiplier is additive when FR163 comes.
 
 ## Backup
 

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { cityConstants, cityTime } from "../../../src/time/city-time";
+import { cityTime } from "../../../src/time/city-time";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const RATE = 2500;
@@ -26,12 +26,9 @@ const defsJson = JSON.parse(readFileSync(`${REPO_ROOT}client/public/defs/defs.js
 };
 
 describe("city constants", () => {
-  it("derives every constant from the generated rate, exactly (FR1)", () => {
-    const c = cityConstants(defsJson.real_ms_per_city_minute);
+  it("the rate is exact: 24 hours of 60 minutes is one real hour (FR1)", () => {
     expect(24 * 60 * defsJson.real_ms_per_city_minute).toBe(3_600_000);
-    expect(c.realMsPerCityHour).toBe(150_000);
-    expect(c.realMsPerCityDay).toBe(3_600_000);
-    expect(c.minutesPerDay).toBe(1440);
+    expect(cityTime(0n, 150_000_000n, defsJson.real_ms_per_city_minute).hour).toBe(1);
   });
 
   it("the fixture and the generated defs agree on the rate", () => {

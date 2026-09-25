@@ -11,30 +11,15 @@ export interface CityTime {
   readonly minute: number;
   /** `day` mod 7 -- the only calendar cycle the game defines. */
   readonly weekday: number;
-  /** Real milliseconds elapsed inside the current city minute. */
+  /** Real milliseconds elapsed inside the current city minute. For
+   * rendering interpolation only; no reducer, rule or gameplay decision may
+   * read this field -- the minute is the smallest unit of city time. */
   readonly realMsIntoMinute: number;
-}
-
-export interface CityConstants {
-  readonly minutesPerHour: number;
-  readonly minutesPerDay: number;
-  readonly realMsPerCityHour: number;
-  readonly realMsPerCityDay: number;
 }
 
 const MINUTES_PER_HOUR = 60;
 const HOURS_PER_DAY = 24;
 const DAYS_PER_WEEK = 7n;
-
-/** Every derived constant, from the one generated rate. */
-export function cityConstants(realMsPerCityMinute: number): CityConstants {
-  return {
-    minutesPerHour: MINUTES_PER_HOUR,
-    minutesPerDay: MINUTES_PER_HOUR * HOURS_PER_DAY,
-    realMsPerCityHour: realMsPerCityMinute * MINUTES_PER_HOUR,
-    realMsPerCityDay: realMsPerCityMinute * MINUTES_PER_HOUR * HOURS_PER_DAY,
-  };
-}
 
 /** Floor division and non-negative remainder, correct for negative `a`. */
 function divMod(a: bigint, b: bigint): [bigint, bigint] {

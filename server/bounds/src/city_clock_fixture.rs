@@ -1,5 +1,5 @@
 //! `fixtures/city-clock-conformance.v1.json`: hand-typed `(epoch, now) ->
-//! city time` rows that `sim::time` (`tests/city_clock_conformance.rs`) and
+//! city time` rows that `sim::time` (`bounds/tests/city_clock_fixture_current.rs`) and
 //! the client's `time/city-time.ts` are both checked against (NFR30). The
 //! expected values are typed by hand from the FR1 constants, never computed
 //! by the functions under test. Instants are microseconds since the Unix

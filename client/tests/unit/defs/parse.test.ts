@@ -108,7 +108,10 @@ describe("parseDefs", () => {
     delete missing.real_ms_per_city_minute;
     expect(() => parseDefs(missing)).toThrow(/real_ms_per_city_minute: expected a number/);
     expect(() => parseDefs({ ...validPayload(), real_ms_per_city_minute: 0 })).toThrow(
-      /real_ms_per_city_minute: must be at least 1/,
+      /real_ms_per_city_minute: must be in \[1, 65535\]/,
+    );
+    expect(() => parseDefs({ ...validPayload(), real_ms_per_city_minute: 65_536 })).toThrow(
+      /real_ms_per_city_minute: must be in \[1, 65535\]/,
     );
     expect(() => parseDefs({ ...validPayload(), real_ms_per_city_minute: -2500 })).toThrow(
       /real_ms_per_city_minute: expected an integer/,
