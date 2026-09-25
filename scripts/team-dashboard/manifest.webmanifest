@@ -1,0 +1,8 @@
+{
+  "name": "Browser City · Team HQ",
+  "short_name": "Team HQ",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#221f33",
+  "theme_color": "#221f33"
+}
