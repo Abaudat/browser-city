@@ -94,6 +94,34 @@
       }
     },
     {
+      "includes": ["src/time/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "window": "time/** is the pure in-city clock layer -- DOM access belongs in main.ts",
+                  "document": "time/** is the pure in-city clock layer -- DOM access belongs in main.ts"
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["pixi.js", "../net/*", "../net/**"]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/world/**"],
       "linter": {
         "rules": {

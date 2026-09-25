@@ -6,6 +6,7 @@
 
 import type { AppearanceTuple, UniformOverride } from "../render/appearance/composite";
 import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
+import type { CityTime } from "../time/city-time";
 import type { PingObservation } from "./observe-ping";
 
 declare global {
@@ -74,6 +75,15 @@ declare global {
         direction: string,
         frame: number,
       ) => Promise<{ pipeline: PixelSnapshot; stack: PixelSnapshot }>;
+      /** Story 4.1: the in-city time this client currently derives --
+       * a callable, read fresh every call, `undefined` until the epoch
+       * row, the defs and a first server sample are all in. */
+      cityTime?: () => CityTime | undefined;
+      /** Story 4.1: the subscribed `world_clock` row -- its `epoch_at`
+       * (microseconds, as a decimal string) and how many inserts and
+       * updates the client has been sent for it, so a spec can prove no
+       * per-tick broadcast exists. */
+      worldClock?: { epochMicros: string; inserts: number; updates: number };
       /** The camera/viewport story (Quentin's direction): the player
        * sprite's own real, live global screen bounds -- a callable, read
        * fresh every call from the real, mounted `Sprite.getBounds()`,
@@ -313,5 +323,28 @@ export function exposeWorldTransformForE2e(
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.worldTransform = getter;
+  window.__bc = bucket;
+}
+
+/** Story 4.1: the `world_clock` row as the client received it, counting
+ * every insert and update -- `city-clock.spec.ts` asserts exactly one
+ * insert and zero updates over three in-city minutes. */
+export function recordWorldClockForE2e(epochMicros: bigint, kind: "insert" | "update"): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  const prev = bucket.worldClock ?? { epochMicros: "", inserts: 0, updates: 0 };
+  bucket.worldClock = {
+    epochMicros: epochMicros.toString(),
+    inserts: prev.inserts + (kind === "insert" ? 1 : 0),
+    updates: prev.updates + (kind === "update" ? 1 : 0),
+  };
+  window.__bc = bucket;
+}
+
+/** Story 4.1: exposes the client's derived in-city time as a callable. */
+export function exposeCityTimeForE2e(getter: () => CityTime | undefined): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.cityTime = getter;
   window.__bc = bucket;
 }

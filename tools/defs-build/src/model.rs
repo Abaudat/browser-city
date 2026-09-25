@@ -41,6 +41,11 @@ impl<T> Located<T> {
 /// literal 16 anywhere else in this crate or a caller is a defect.
 pub const COLLIDER_SUBCELLS_PER_CELL: i64 = 16;
 
+/// FR1: real milliseconds per in-city minute (60 real minutes = one day).
+/// The only hand-typed copy; emitted into both generated artefacts, read by
+/// `sim::time` and the client's `time/city-time.ts`.
+pub const REAL_MS_PER_CITY_MINUTE: i64 = 2500;
+
 /// `defs/balance/*.toml`'s own dotted key for the pixels-per-cell scale a
 /// `collider`/`interact_at` sub-cell rect converts against (never
 /// [`COLLIDER_SUBCELLS_PER_CELL`] itself, which stays fixed when art

@@ -148,7 +148,7 @@ P2 (indifference) and the player-experience goal of **being needed** pull in opp
 
 #### The clock
 
-**One in-city day = 60 real minutes. One in-city hour = 2.5 real minutes.** The clock is *detached* from real-world time and runs continuously whether or not anyone is connected, so every player rotates through all in-city hours across their real week rather than always logging in to the same time of day.
+**One in-city day = 60 real minutes. One in-city hour = 2.5 real minutes.** The clock is *detached* from real-world time: in-city midnight is aligned to no real midnight, the city has no notion of a real weekday or timezone, and it runs continuously whether or not anyone is connected. Because a real hour spans a whole in-city day, a player with a fixed evening slot arrives at whichever in-city hour their real minute lands on and sees every in-city hour across a week of ordinary sessions, rather than always logging in to the same time of day. The smallest unit of city time is the minute.
 
 #### The day's time budget — a starting player
 

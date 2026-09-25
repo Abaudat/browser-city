@@ -51,6 +51,7 @@
 #      anonymous caller (reseed_codes, as check-live-migration.sh proves
 #      for AC3 -- proven again here because restore is what could have
 #      broken it, by leaving two owner rows or the wrong one);
+#  10a. world_clock's whole row (id, epoch_at) is equal by value in the restored database;
 #  11. five refusals, each asserted directly: a non-fresh target, a
 #      schema mismatch, a wrong restoring identity, a `restore_*` call
 #      with no restore open, and `restore_module_owner` given a row
@@ -340,6 +341,15 @@ while IFS= read -r table; do
   [ "$a" = "$b" ] || fail "scheduled table '$table': restored '$DST' has $b row(s), a freshly published reference has $a -- schedules are derived state and must never be restored"
 done <<< "$(bc_table_names scheduled)"
 ok "every scheduled table in the restored database matches a freshly published reference (compared by row count -- schedules are derived state, never restored, so both are always empty today)"
+
+# --- 10a: world_clock's epoch survives by value ------------------------------
+# The row-count check alone would pass a restore that re-ran init's own
+# `ctx.timestamp` -- shifting the epoch retimes every in-city timestamp.
+SRC_EPOCH="$(column_values_live "$SRC" world_clock id)/$(column_values_live "$SRC" world_clock epoch_at)"
+DST_EPOCH="$(column_values_live "$DST" world_clock id)/$(column_values_live "$DST" world_clock epoch_at)"
+[ "$SRC_EPOCH" != "/" ] || fail "'$SRC' has no world_clock epoch_at to compare"
+[ "$SRC_EPOCH" = "$DST_EPOCH" ] || fail "restored world_clock row (id/epoch_at) is '$DST_EPOCH', the source's was '$SRC_EPOCH' -- restore must carry the epoch through by value"
+ok "restored world_clock row (id and epoch_at) equals the source's ($SRC_EPOCH)"
 
 # --- 10: module_owner / require_owner --------------------------------------
 OWNER_COUNT="$(row_count_live "$DST" module_owner)"

@@ -15,6 +15,9 @@ pub const MAX_FOOTPRINT_CELLS: i32 = 8;
 /// The longest an item may take to spoil, in minutes; 0 means never.
 pub const MAX_SHELF_LIFE_MINUTES: u32 = 525600;
 
+/// FR1: real milliseconds per in-city minute.
+pub const REAL_MS_PER_CITY_MINUTE: i64 = 2500;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColliderRect {
     pub x0: i32,

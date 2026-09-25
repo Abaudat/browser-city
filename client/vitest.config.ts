@@ -17,6 +17,7 @@ export default defineConfig({
         "src/input/**",
         "src/ui/**",
         "src/settings/**",
+        "src/time/**",
       ],
       // `src/net/bindings/**` is generated (never hand-tested). `src/
       // test-street/**` is throwaway harness code (Tim's direction: fenced off

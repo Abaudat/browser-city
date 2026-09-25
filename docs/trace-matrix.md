@@ -84,6 +84,11 @@ with no row here.
 | `inv_estimate_is_a_metric` | The routing estimate is zero exactly when two cells coincide, symmetric, and obeys the triangle inequality, for any three cells on one floor and any mode (FR131) | covered | `inv_estimate_is_a_metric` | 3.11 |
 | `inv_estimate_is_a_metric_across_floors` | The triangle inequality also holds across floors, for any correction factor (FR131) | covered | `inv_estimate_is_a_metric_across_floors` | 3.11 |
 | `inv_estimate_is_origin_independent` | Translating both endpoints by the same offset never changes the estimate, and no i32 coordinate panics or wraps (FR131) | covered | `inv_estimate_is_origin_independent` | 3.11 |
+| `inv_city_time_depends_only_on_elapsed` | For any epoch and any two instants, the in-city delta is floor((t2-e)/k) - floor((t1-e)/k), whatever the epoch's own value: in-city time advances exactly with elapsed real time at the fixed rate (FR1, FR3) | covered | `inv_city_time_depends_only_on_elapsed` | 4.1 |
+| `inv_city_time_conversion_exact` | The day/hour/minute decomposition round-trips to the elapsed milliseconds for every instant, before the epoch and beyond i32/u32 ms included, with every field in range and no panic (FR1) | covered | `inv_city_time_conversion_exact` | 4.1 |
+| `inv_city_hour_depends_only_on_real_hour_phase` | In-city time of day depends only on elapsed real ms modulo one real hour, so the same real hh:mm on any two days gives the same in-city hour, while a 30-minute session crosses half the day (FR1, FR2) | covered | `inv_city_hour_depends_only_on_real_hour_phase` | 4.1 |
+| `inv_skewed_client_corrected` | A client whose wall clock is hours wrong, or jumps mid-session, derives the server's in-city time within one in-city minute once reconciled (FR3) | covered | `inv_skewed_client_corrected` | 4.1 |
+| `inv_wall_clock_jump_never_moves_city_time` | For any monotonic reading and any wall-clock jump, the derived server time never changes: the estimate advances on the monotonic clock only | covered | `inv_wall_clock_jump_never_moves_city_time` | 4.1 |
 | `inv_faster_mode_never_costs_more` | A mode with a higher speed percent never returns a larger estimate, and a strictly smaller one over a long enough distance (FR131) | covered | `inv_faster_mode_never_costs_more` | 3.11 |
 | `inv_floor_penalty_is_additive_and_flat` | Changing floor adds exactly `floor_change_penalty_milliminutes` per floor crossed, whatever the mode or distance (FR131) | covered | `inv_floor_penalty_is_additive_and_flat` | 3.11 |
 | `inv_generation_manhattan_beats_euclidean` | Over a generated city's sampled node pairs, Manhattan is a closer estimate of network distance than Euclidean, in total and on a clear majority of pairs (FR131) | covered | `inv_generation_manhattan_beats_euclidean` | 3.11 |
@@ -621,6 +626,19 @@ Story 6.1 (FR86, NFR30, NFR36): an item carries a unit, a shelf life and a bulk.
 | Every item carries `unit`, `shelf_life_minutes` and `bulk`, and both parsers reject a row lacking one or holding a bad value (FR86) | covered | `tools/defs-build/tests/shared_malformed_cases.rs` -- `every_shared_case_maps_to_a_fixture_that_fails_the_build`; `client/tests/unit/defs/parse.test.ts` -- `rejects an item missing unit, shelf_life_minutes or bulk` |
 | An item's `unit` is a `u32` code pinned by the codes golden, never an enum (NFR36) | covered | `server/sim/tests/codes.rs` -- `unit_matches_golden_and_is_unique` |
 | Server and client agree on every item field (FR86, NFR30) | covered | `server/sim/tests/defs_dump.rs` -- `matches_the_shared_golden_both_parsers_are_checked_against`; `client/tests/unit/defs/dump-golden.test.ts` -- `matches the shared golden both parsers are checked against` |
+
+## In-city clock
+
+Story 4.1 (FR1-FR3, NFR3): the clock is one durable epoch row and a pure function.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| The FR1 conversion is exact, and the constant has one hand-typed home with a generated mirror both sides read (FR1) | covered | `server/sim/src/time.rs` -- `conversion_is_exact`; `client/tests/unit/time/city-time.test.ts` -- `the rate is exact: 24 hours of 60 minutes is one real hour (FR1)`; `client/tests/unit/defs/parse.test.ts` -- `rejects a missing, zero or negative real_ms_per_city_minute (FR1)` |
+| Server and client derive identical city time for the same inputs (NFR30) | covered | `server/bounds/tests/city_clock_fixture_current.rs` -- `sim_time_matches_every_city_clock_case`, `city_clock_fixture_is_current`; `client/tests/unit/time/city-time.test.ts` -- `cityTime conformance with sim::time` |
+| The client reconciles on connect, on a cadence and on tab visibility, and a failed sample keeps the old estimate (FR3) | covered | `client/tests/unit/time/clock-sync.test.ts` -- `re-samples on a fixed cadence, exercised by fake timers`, `re-samples when the tab becomes visible again`, `a failed sample keeps the previous estimate and never throws` |
+| A client with a wrong wall clock derives the server's city time, and the clock table is inserted once and never updated (no per-tick broadcast) | covered | `client/tests/e2e/city-clock.spec.ts` -- `a client with a wrong wall clock derives the server's in-city time`, `the clock table is inserted once and never updated as in-city time passes` |
+| A republish never resets the epoch (a deploy never resets the city to dawn) | covered | `scripts/ci/check-live-migration.sh` -- `a republish must not reset the city clock` |
+| A restore carries the epoch through by value | covered | `scripts/ci/check-backup-restore.sh` -- `10a: world_clock's epoch survives by value` |
 
 ## CI guards
 

@@ -6,7 +6,10 @@
 
 import { BOOT_MARK, markBoot } from "../boot/boot-marks";
 import type { HandshakeVersion } from "../boot/handshake";
+import type { ClockSync } from "../time/clock-sync";
+import type { ServerClock } from "../time/server-clock";
 import { DbConnection } from "./bindings";
+import { startNetClockSync, type VisibilitySource } from "./clock-sync";
 import { NET_CONFIG } from "./config";
 import type { ConnectionStatus } from "./connection-status";
 import { observePingInsert, type PingObservation } from "./observe-ping";
@@ -23,6 +26,18 @@ export type StatusListener = (status: ConnectionStatus) => void;
  * initial subscription apply, and again on any later republish this
  * connection stays open across (a tab left open across a deploy). */
 export type HandshakeListener = (version: HandshakeVersion) => void;
+
+/** Story 4.1 (FR1-FR3): what the in-city clock needs from the connection --
+ * the shared skew estimate the sync round trips feed, and the epoch row's
+ * `epoch_at` (microseconds since the Unix epoch) on insert and on any later
+ * rewrite. */
+export interface ClockWiring {
+  readonly serverClock: ServerClock;
+  /** The page's `document`, passed in by `main.ts` (DOM globals stay out
+   * of `net/`). */
+  readonly visibility: VisibilitySource;
+  readonly onEpoch: (epochMicros: bigint, kind: "insert" | "update") => void;
+}
 
 /**
  * Opens the connection, subscribes to `demo_ping`, and calls `onPing` for
@@ -42,8 +57,10 @@ export function connect(
   onPing: PingListener,
   onStatus?: StatusListener,
   onHandshake?: HandshakeListener,
+  clock?: ClockWiring,
 ): DbConnection {
   onStatus?.("connecting");
+  let clockSync: ClockSync | undefined;
 
   const conn = DbConnection.builder()
     .withUri(NET_CONFIG.uri)
@@ -70,7 +87,14 @@ export function connect(
           console.error("[net] subscription failed", ctx.event);
           onStatus?.("disconnected");
         })
-        .subscribe(["SELECT * FROM demo_ping", "SELECT * FROM module_version"]);
+        .subscribe([
+          "SELECT * FROM demo_ping",
+          "SELECT * FROM module_version",
+          "SELECT * FROM world_clock",
+        ]);
+      // Story 4.1: the first stamped round trip rides the same connect
+      // moment; a reconnect is a new `connect()` and so a new sync.
+      if (clock) clockSync = startNetClockSync(connection, clock.serverClock, clock.visibility);
     })
     .onConnectError((_ctx, error) => {
       // NFR42: the client degrades to not-drawing, never to crashing.
@@ -83,6 +107,7 @@ export function connect(
       // callback touches nothing but status, never the Pixi Application,
       // the scene, its ticker or any pool.
       if (error) console.error("[net] connection dropped", error);
+      clockSync?.stop();
       onStatus?.("disconnected");
     })
     .build();
@@ -99,6 +124,17 @@ export function connect(
   conn.db.moduleVersion.onInsert((_ctx, row) => {
     onHandshake?.({ defsVersion: row.defsVersion, protocolVersion: row.protocolVersion });
   });
+
+  if (clock) {
+    // `world_clock` is subscribed (not merely read once) so an FR163 epoch
+    // rewrite reaches a running client without a reload.
+    conn.db.worldClock.onInsert((_ctx, row) => {
+      clock.onEpoch(row.epochAt.microsSinceUnixEpoch, "insert");
+    });
+    conn.db.worldClock.onUpdate((_ctx, _old, row) => {
+      clock.onEpoch(row.epochAt.microsSinceUnixEpoch, "update");
+    });
+  }
 
   return conn;
 }

@@ -55,13 +55,16 @@ import RestoreReasonCodeReducer from "./restore_reason_code_reducer";
 import RestoreRoomReducer from "./restore_room_reducer";
 import RestoreRoomAreaReducer from "./restore_room_area_reducer";
 import RestoreUnitReducer from "./restore_unit_reducer";
+import RestoreWorldClockReducer from "./restore_world_clock_reducer";
 import SendPingReducer from "./send_ping_reducer";
 
 // Import all procedure arg schemas
+import * as SyncClockProcedure from "./sync_clock_procedure";
 
 // Import all table schema definitions
 import DemoPingRow from "./demo_ping_table";
 import ModuleVersionRow from "./module_version_table";
+import WorldClockRow from "./world_clock_table";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -78,6 +81,17 @@ const tablesSchema = __schema({
       { name: 'demo_ping_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, DemoPingRow),
+  worldClock: __table({
+    name: 'world_clock',
+    indexes: [
+      { accessor: 'id', name: 'world_clock_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'world_clock_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, WorldClockRow),
   moduleVersion: __table({
     name: 'module_version',
     indexes: [
@@ -110,17 +124,21 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_room", RestoreRoomReducer),
   __reducerSchema("restore_room_area", RestoreRoomAreaReducer),
   __reducerSchema("restore_unit", RestoreUnitReducer),
+  __reducerSchema("restore_world_clock", RestoreWorldClockReducer),
   __reducerSchema("send_ping", SendPingReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
+  __procedureSchema("sync_clock", SyncClockProcedure.params, SyncClockProcedure.returnType),
 );
 
 type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "tables"> & {
   tables: typeof tablesSchema.schemaType.tables & {
     /** @deprecated Use `demoPing` instead. This alias will be removed in the next major version. */
     readonly "demo_ping": Omit<typeof tablesSchema.schemaType.tables["demoPing"], "accessorName"> & { readonly accessorName: "demo_ping" };
+    /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */
+    readonly "world_clock": Omit<typeof tablesSchema.schemaType.tables["worldClock"], "accessorName"> & { readonly accessorName: "world_clock" };
     /** @deprecated Use `moduleVersion` instead. This alias will be removed in the next major version. */
     readonly "module_version": Omit<typeof tablesSchema.schemaType.tables["moduleVersion"], "accessorName"> & { readonly accessorName: "module_version" };
   };
@@ -142,6 +160,7 @@ const REMOTE_MODULE = {
 
 const tableAccessorAliases = {
   "demo_ping": "demoPing",
+  "world_clock": "worldClock",
   "module_version": "moduleVersion",
 } as const;
 
@@ -165,6 +184,8 @@ type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>["db"];
 export type DbView = __DbViewBase & {
   /** @deprecated Use `demoPing` instead. This alias will be removed in the next major version. */
   readonly "demo_ping": __DbViewBase["demoPing"];
+  /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */
+  readonly "world_clock": __DbViewBase["worldClock"];
   /** @deprecated Use `moduleVersion` instead. This alias will be removed in the next major version. */
   readonly "module_version": __DbViewBase["moduleVersion"];
 };
@@ -173,6 +194,8 @@ type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
 export type Tables = __TablesBase & {
   /** @deprecated Use `demoPing` instead. This alias will be removed in the next major version. */
   readonly "demo_ping": __TablesBase["demoPing"];
+  /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */
+  readonly "world_clock": __TablesBase["worldClock"];
   /** @deprecated Use `moduleVersion` instead. This alias will be removed in the next major version. */
   readonly "module_version": __TablesBase["moduleVersion"];
 };

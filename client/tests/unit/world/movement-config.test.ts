@@ -9,6 +9,7 @@ function defsWith(balance: readonly { key: string; value: number }[]): Defs {
     interactAtMaxReachCells: 2,
     maxFootprintCells: 8,
     maxShelfLifeMinutes: 525_600,
+    realMsPerCityMinute: 2500,
     atlasMaxPagesPerGroup: 2,
     characterCompositePages: 2,
     atlasPages: [],

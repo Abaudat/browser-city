@@ -5,6 +5,7 @@
 //! yet, not because they were forgotten.
 
 pub mod citizen;
+pub mod clock;
 pub mod codes;
 pub mod identity;
 pub mod ops;

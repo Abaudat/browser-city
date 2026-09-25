@@ -79,6 +79,7 @@ use spacetimedb::{Identity, ReducerContext, Table, Timestamp};
 use crate::{DemoPing, demo_ping};
 
 use super::citizen::{Citizen, CitizenState, citizen, citizen_state};
+use super::clock::{WorldClock, world_clock};
 use super::codes::{
     MatterKind, NodeKind, Provision, ReasonCode, Unit, matter_kind, node_kind, provision,
     reason_code, unit,
@@ -115,6 +116,7 @@ fn require_restore_open(ctx: &ReducerContext) -> Result<(), String> {
 #[allow(dead_code)] // read by `restore_coverage.rs` as source text, not Rust code
 const INIT_SEEDED_TABLES: &[&str] = &[
     "module_owner",
+    "world_clock",
     "matter_kind",
     "provision",
     "reason_code",
@@ -706,6 +708,33 @@ pub fn restore_module_owner(ctx: &ReducerContext, rows: Vec<ModuleOwner>) -> Res
     }
     for row in rows {
         ctx.db.module_owner().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_world_clock(ctx: &ReducerContext, rows: Vec<WorldClock>) -> Result<(), String> {
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    // Exactly one row, keyed 0: an empty export must never delete the only epoch.
+    if rows.len() != 1 {
+        return Err(format!(
+            "restore_world_clock requires exactly one row, got {}",
+            rows.len()
+        ));
+    }
+    if let Some(row) = rows.iter().find(|r| r.id != 0) {
+        return Err(format!(
+            "restore_world_clock requires id 0 (the one-row table's key), got {}",
+            row.id
+        ));
+    }
+    let existing: Vec<u8> = ctx.db.world_clock().iter().map(|r| r.id).collect();
+    for id in existing {
+        ctx.db.world_clock().id().delete(id);
+    }
+    for row in rows {
+        ctx.db.world_clock().insert(row);
     }
     Ok(())
 }

@@ -199,6 +199,12 @@ export const Unit = __t.object("Unit", {
 });
 export type Unit = __Infer<typeof Unit>;
 
+export const WorldClock = __t.object("WorldClock", {
+  id: __t.u8(),
+  epochAt: __t.timestamp(),
+});
+export type WorldClock = __Infer<typeof WorldClock>;
+
 export const WorldClockSchedule = __t.object("WorldClockSchedule", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),

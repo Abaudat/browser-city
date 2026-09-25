@@ -7,7 +7,7 @@ Every functional and non-functional requirement for BrowserCity, one line each. 
 ### Time and the core loop
 
 - **FR1** — One in-city day equals 60 real minutes; one in-city hour equals 2.5 real minutes
-- **FR2** — The in-city clock is detached from real-world time, so a player rotates through all in-city hours across their real week
+- **FR2** — The in-city clock is detached from real-world time: in-city midnight is aligned to no real boundary, and because a real hour spans a whole in-city day, ordinary sessions cover every in-city hour
 - **FR3** — The clock advances continuously whether or not any client is connected; the server never spins down
 - **FR4** — The player's day is composed of sleep (8 in-city hours), work (8h), commute (2h) and own-time (6h)
 - **FR5** — The core loop runs wake -> commute -> shift -> paid -> spend -> rent -> sleep, and repeats

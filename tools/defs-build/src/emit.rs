@@ -10,8 +10,8 @@ use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
     COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, INTERACT_AT_MAX_REACH_CELLS,
-    MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, NeighbourTermDef, RawAdjacencyRelation,
-    RawCoherenceMode, RawDirection, RoleDef, RuleKindDef, SpriteRect,
+    MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, NeighbourTermDef, REAL_MS_PER_CITY_MINUTE,
+    RawAdjacencyRelation, RawCoherenceMode, RawDirection, RoleDef, RuleKindDef, SpriteRect,
 };
 
 // `RawLandUse::as_str` is used via the fully-qualified method call above,
@@ -75,6 +75,10 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 
     out.push_str(&format!(
         "/// The longest an item may take to spoil, in minutes; 0 means never.\npub const MAX_SHELF_LIFE_MINUTES: u32 = {MAX_SHELF_LIFE_MINUTES};\n\n"
+    ));
+
+    out.push_str(&format!(
+        "/// FR1: real milliseconds per in-city minute.\npub const REAL_MS_PER_CITY_MINUTE: i64 = {REAL_MS_PER_CITY_MINUTE};\n\n"
     ));
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
@@ -627,6 +631,9 @@ pub fn emit_json(
     ));
     out.push_str(&format!(
         "  \"max_shelf_life_minutes\": {MAX_SHELF_LIFE_MINUTES},\n"
+    ));
+    out.push_str(&format!(
+        "  \"real_ms_per_city_minute\": {REAL_MS_PER_CITY_MINUTE},\n"
     ));
     out.push_str(&format!(
         "  \"atlas_max_pages_per_group\": {ATLAS_MAX_PAGES_PER_GROUP},\n"
@@ -1231,6 +1238,7 @@ mod tests {
         assert!(out.contains("pub const COLLIDER_SUBCELLS_PER_CELL: i32 = 16;"));
         assert!(out.contains("pub const INTERACT_AT_MAX_REACH_CELLS: i32 = 2;"));
         assert!(out.contains("pub const MAX_FOOTPRINT_CELLS: i32 = 8;"));
+        assert!(out.contains("pub const REAL_MS_PER_CITY_MINUTE: i64 = 2500;"));
         assert!(!out.contains('\r'));
     }
 
@@ -1289,7 +1297,8 @@ mod tests {
         assert!(lines[4].contains("\"interact_at_max_reach_cells\": 2"));
         assert!(lines[5].contains("\"max_footprint_cells\": 8"));
         assert!(lines[6].contains("\"max_shelf_life_minutes\": 525600"));
-        assert!(lines[7].contains("\"atlas_max_pages_per_group\": 2"));
+        assert!(lines[7].contains("\"real_ms_per_city_minute\": 2500"));
+        assert!(lines[8].contains("\"atlas_max_pages_per_group\": 2"));
         assert!(!out.contains('\r'));
     }
 
