@@ -946,6 +946,33 @@
       ]
     },
     {
+      "accessor": "unit",
+      "struct_name": "Unit",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "code",
+          "ty": "u32",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "name",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "world_clock_schedule",
       "struct_name": "WorldClockSchedule",
       "public": false,

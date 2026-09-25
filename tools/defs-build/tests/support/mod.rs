@@ -142,6 +142,15 @@ pub fn layer_codes() -> BTreeMap<String, u32> {
         .collect()
 }
 
+/// The `name -> code` unit set the valid tree's items resolve against --
+/// a fixed subset of the real codes golden, like [`layer_codes`].
+pub fn unit_codes() -> BTreeMap<String, u32> {
+    [("piece", 0u32), ("gram", 1u32), ("millilitre", 2u32)]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect()
+}
+
 /// `""` (never `defs_build::model::SPRITE_SHEET_ALLOWED_ROOT`): every
 /// fixture directory but the two dedicated to that check names sheet
 /// paths that live nowhere near `ModernTileset/` -- an empty root always
@@ -161,6 +170,7 @@ pub fn build_err(category: &str) -> defs_build::DefsError {
         &object_sheet_bytes(),
         &appearance_sheet_bytes(),
         &layer_codes(),
+        &unit_codes(),
         "",
         "test-version",
     )
@@ -187,6 +197,7 @@ pub fn build_err_enforcing_sheet_root(category: &str) -> defs_build::DefsError {
         &object_sheet_bytes(),
         &appearance_sheet_bytes(),
         &layer_codes(),
+        &unit_codes(),
         defs_build::model::SPRITE_SHEET_ALLOWED_ROOT,
         "test-version",
     )

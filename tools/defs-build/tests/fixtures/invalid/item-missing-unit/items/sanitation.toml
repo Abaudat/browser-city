@@ -1,0 +1,5 @@
+[[item]]
+id = 1
+key = "bottle"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }

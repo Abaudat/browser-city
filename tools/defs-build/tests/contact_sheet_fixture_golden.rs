@@ -65,6 +65,7 @@ fn build_output() -> defs_build::BuildOutput {
         &sheet_bytes(),
         &BTreeMap::new(),
         &layer_codes(),
+        &support::unit_codes(),
         "",
         "fixture-version",
     )

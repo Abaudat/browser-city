@@ -456,8 +456,8 @@ hairstyle kid_hairstyle_kid_6_2 id=227 family=kid sheet=ModernTileset/moderninte
 hairstyle kid_hairstyle_kid_6_3 id=228 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_3.png style=6 color=3 rare=false
 hairstyle kid_hairstyle_kid_6_4 id=229 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_4.png style=6 color=4 rare=false
 hairstyle kid_hairstyle_kid_6_5 id=230 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_5.png style=6 color=5 rare=true
-item bottle id=1
-item recycled_glass id=2
+item bottle id=1 unit=0 shelf_life_minutes=0 width=1 height=1
+item recycled_glass id=2 unit=0 shelf_life_minutes=0 width=1 height=1
 object bridge_deck id=7 name=Bridge Deck layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[7,9,15]
 object foot_stairs id=8 name=Foot Stairs layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Small_2.png:0,0,16,48 height=1 width=1 collider=none interact_at=none window=false tags=[8,9,15]
 object grass_ground id=9 name=Grass layer=0 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/1_Terrains_and_Fences_Singles_16x16/ME_Singles_Terrains_and_Fences_16x16_Grass_1_22.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[9,10]

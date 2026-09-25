@@ -160,7 +160,12 @@ echo "check-live-migration: reseed_codes must be idempotent -- proven nowhere el
 publish "$REPO_ROOT/server" bc-live-migration-codes "$DATA_DIR/codes-v1.log" \
   || fail "could not publish the real module" "$DATA_DIR/codes-v1.log"
 
-CODE_TABLES="matter_kind provision reason_code node_kind"
+CODE_TABLES="matter_kind provision reason_code node_kind unit layer_code"
+# A table added to seed_all_codes must join CODE_TABLES, or its idempotency
+# goes unproven: count the seeded tables in the source and compare.
+SEEDED_COUNT="$(sed -n '/^pub fn seed_all_codes/,/^}/p' "$REPO_ROOT/server/src/tables/codes.rs" | grep -c '^        *ctx\.db\.[a-z_]*()\.insert(')"
+LISTED_COUNT="$(wc -w <<<"$CODE_TABLES")"
+[ "$SEEDED_COUNT" -eq "$LISTED_COUNT" ]   || fail "seed_all_codes seeds $SEEDED_COUNT table(s) but CODE_TABLES lists $LISTED_COUNT -- add the new companion table to CODE_TABLES so reseed_codes' idempotency is proven for it"
 declare -A BEFORE_COUNT
 for table in $CODE_TABLES; do
   count="$(row_count bc-live-migration-codes "$table")"
@@ -175,7 +180,7 @@ for table in $CODE_TABLES; do
   after="$(row_count bc-live-migration-codes "$table")"
   [ "$after" = "${BEFORE_COUNT[$table]}" ] || fail "table '$table' row count changed across a re-seed (${BEFORE_COUNT[$table]} -> $after) -- seed_all_codes is not idempotent" "$DATA_DIR/reseed.log"
 done
-echo "check-live-migration: ok -- reseed_codes changed nothing on a second call, across all four companion tables" >&2
+echo "check-live-migration: ok -- reseed_codes changed nothing on a second call, across every companion table" >&2
 
 echo "check-live-migration: reseed_codes must reject a caller that is not the module owner" >&2
 OWNER_REJECTION_PATTERN="this reducer may only be invoked by the module owner"

@@ -21,3 +21,6 @@ layer 3 objects 20
 layer 4 walls 30
 layer 5 wall_decals 40
 layer 6 characters 50
+unit 0 piece
+unit 1 gram
+unit 2 millilitre

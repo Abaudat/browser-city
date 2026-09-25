@@ -114,6 +114,13 @@ export interface TagDef {
 export interface ItemDef {
   readonly id: number;
   readonly key: string;
+  /** A `sim::codes::unit` code (never a name). */
+  readonly unit: number;
+  /** Minutes until an instance spoils; 0 means it never does. */
+  readonly shelfLifeMinutes: number;
+  /** The item's world footprint, in whole cells (FR94). */
+  readonly width: number;
+  readonly height: number;
 }
 
 export interface RecipeDef {
@@ -257,6 +264,9 @@ export interface Defs {
    * this -- generated once by `tools/defs-build` into both artefacts,
    * never a client-side literal. */
   readonly maxFootprintCells: number;
+  /** The longest an item may take to spoil, in minutes -- generated once
+   * by `tools/defs-build`, never a client-side literal. */
+  readonly maxShelfLifeMinutes: number;
   /** NFR12's build-time cap, emitted alongside `maxFootprintCells` --
    * never a client-side literal. */
   readonly atlasMaxPagesPerGroup: number;

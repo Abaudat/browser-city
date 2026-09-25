@@ -837,6 +837,17 @@ fetched at runtime, cache-busted and compared against the FR147
 handshake's own `defs_version` (below). Both begin with a generated-file
 marker and are never hand-edited.
 
+An `[[item]]` (FR86) is `id`, `key`, `unit`, `shelf_life_minutes` and
+`bulk`, all required. `unit` is a name resolved at build time against
+`sim::codes::unit`'s golden, the way an object's `layer` is: it is a
+`u32` code with a companion `unit` table, never an enum, and only the code
+reaches either artefact. `shelf_life_minutes` is a `u32`, `0` meaning it
+never spoils, capped at `MAX_SHELF_LIFE_MINUTES`. `bulk = { width, height
+}` is the item's world footprint in whole cells (FR94), 1 to
+`MAX_FOOTPRINT_CELLS` per axis. The item id's companion data is the
+generated `ITEMS` / `defs.json` pair; there is no item database table
+until a server reader needs one.
+
 ### The FR147 handshake
 
 `module_version` (`server/src/version.rs`) is a public anonymous view of

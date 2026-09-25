@@ -1,0 +1,38 @@
+{
+  "generated_by": "tools/defs-build -- do not edit by hand",
+  "defs_version": "test",
+  "collider_subcells_per_cell": 16,
+  "interact_at_max_reach_cells": 2,
+  "max_footprint_cells": 8,
+  "max_shelf_life_minutes": 525600,
+  "objects": [],
+  "items": [
+    {
+      "id": 1,
+      "key": "bottle",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 9,
+      "height": 1
+    }
+  ],
+  "recipes": [],
+  "professions": [],
+  "chains": [],
+  "balance": [
+    {
+      "key": "render.tile_size_px",
+      "value": 16,
+      "min": 1,
+      "max": 64
+    }
+  ],
+  "bodies": [],
+  "eyes": [],
+  "hairstyles": [],
+  "outfits": [],
+  "accessories": [],
+  "appearance_layouts": [],
+  "uniforms": [],
+  "tags": []
+}

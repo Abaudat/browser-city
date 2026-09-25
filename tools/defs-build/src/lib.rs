@@ -52,17 +52,25 @@ pub struct BuildOutput {
 /// `defs_version` -- the one function a caller needs once the filesystem
 /// edge has done its own job. Returns every rendered artefact, or the
 /// first [`DefsError`] found; writes nothing.
+#[allow(clippy::too_many_arguments)]
 pub fn build(
     files: &[(std::path::PathBuf, String)],
     sheet_dims: &std::collections::BTreeMap<String, (u32, u32)>,
     object_sheet_bytes: &std::collections::BTreeMap<String, Vec<u8>>,
     appearance_sheet_bytes: &std::collections::BTreeMap<String, Vec<u8>>,
     layer_codes: &std::collections::BTreeMap<String, u32>,
+    unit_codes: &std::collections::BTreeMap<String, u32>,
     sprite_sheet_allowed_root: &str,
     defs_version: &str,
 ) -> Result<BuildOutput, DefsError> {
     let raw = parse::parse_all(files)?;
-    let defs = validate::validate(&raw, sheet_dims, layer_codes, sprite_sheet_allowed_root)?;
+    let defs = validate::validate(
+        &raw,
+        sheet_dims,
+        layer_codes,
+        unit_codes,
+        sprite_sheet_allowed_root,
+    )?;
     let page_groups = validate::validate_page_groups(&raw)?;
     let character_parts = atlas::character::collect_character_parts(
         &defs.bodies,
@@ -225,7 +233,8 @@ pub fn build_from_repo_root(
     // `sim::codes::layer`'s single append-only ladder -- never a second,
     // hand-maintained list in this crate.
     let codes_golden = fsio::read_codes_golden(root)?;
-    let layer_codes = layer_codes::parse_layer_codes(&codes_golden);
+    let layer_codes = layer_codes::parse_codes(&codes_golden, "layer");
+    let unit_codes = layer_codes::parse_codes(&codes_golden, "unit");
 
     let output = build(
         &text_files,
@@ -233,6 +242,7 @@ pub fn build_from_repo_root(
         &object_sheet_bytes,
         &appearance_sheet_bytes,
         &layer_codes,
+        &unit_codes,
         model::SPRITE_SHEET_ALLOWED_ROOT,
         defs_version,
     )?;

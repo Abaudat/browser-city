@@ -31,6 +31,17 @@ override, never fill"); `professions` (`{ profession = "<key>", headcount
 (`municipal_service`, `dwelling`) or from `professions` being non-empty
 -- never a stored category.
 
+## Items
+
+`defs/items/*.toml` (story 6.1, FR86): a new item is a row, never code. A
+row: permanent `id`/`key`; `unit` (a name from `sim::codes::unit`'s golden
+`server/sim/tests/goldens/codes_v1.golden`, e.g. `piece`, `gram`,
+`millilitre` -- an unknown name fails the build); `shelf_life_minutes`
+(whole minutes until an instance spoils, `0` = never, at most
+`MAX_SHELF_LIFE_MINUTES`); `bulk = { width = <n>, height = <n> }` (world
+footprint in cells, each 1 to `MAX_FOOTPRINT_CELLS`). All five are
+required; there are no defaults.
+
 ## The example corpus
 
 Every committed rule key must be named by at least one passing example

@@ -34,5 +34,10 @@
   "underfoot-with-collider",
   "object-role-count-zero",
   "object-role-count-two",
-  "role-layer-not-allowed"
+  "role-layer-not-allowed",
+  "item-missing-unit",
+  "item-unit-wrong-type",
+  "item-bulk-zero",
+  "item-bulk-footprint-cap-exceeded",
+  "item-shelf-life-out-of-range"
 ]

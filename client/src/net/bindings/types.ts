@@ -193,6 +193,12 @@ export const RoomArea = __t.object("RoomArea", {
 });
 export type RoomArea = __Infer<typeof RoomArea>;
 
+export const Unit = __t.object("Unit", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type Unit = __Infer<typeof Unit>;
+
 export const WorldClockSchedule = __t.object("WorldClockSchedule", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),

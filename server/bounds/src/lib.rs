@@ -113,6 +113,11 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         kind: BoundKind::Mechanical,
     },
     TableBound {
+        accessor: "unit",
+        max_rows: 64,
+        kind: BoundKind::Mechanical,
+    },
+    TableBound {
         accessor: "layer_code",
         max_rows: 64,
         kind: BoundKind::Mechanical,

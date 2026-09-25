@@ -73,6 +73,10 @@ pub const INTERACT_AT_MAX_REACH_CELLS: i64 = 2;
 /// reaches `sim::generated::defs` (see `emit.rs`).
 pub const MAX_FOOTPRINT_CELLS: i64 = 8;
 
+/// The longest an item may take to spoil: one year of game minutes. `0`
+/// means it never spoils; anything above this is a typo, not a shelf life.
+pub const MAX_SHELF_LIFE_MINUTES: u32 = 525_600;
+
 /// The one root a `sprite.sheet` or an appearance part's `sheet` may ever
 /// name (Quentin's direction, cycle 2): enforced in `validate.rs`
 /// (`check_object_sprite_sheet_root`/`check_appearance_sheet_root`) after
@@ -338,6 +342,19 @@ pub struct ObjectFile {
 pub struct RawItem {
     pub id: Spanned<u32>,
     pub key: Spanned<String>,
+    /// A `sim::codes::unit` name, resolved against the codes golden.
+    pub unit: Spanned<String>,
+    /// Minutes until an instance spoils; `0` means it never does.
+    pub shelf_life_minutes: Spanned<u32>,
+    /// The item's world footprint, in whole cells.
+    pub bulk: RawBulk,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawBulk {
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -983,6 +1000,10 @@ pub struct ItemEntry {
     pub path: PathBuf,
     pub id: Located<u32>,
     pub key: Located<String>,
+    pub unit: Located<String>,
+    pub shelf_life_minutes: Located<u32>,
+    pub bulk_width: u32,
+    pub bulk_height: u32,
 }
 
 #[derive(Debug)]
@@ -1300,6 +1321,11 @@ pub struct ObjectDef {
 pub struct ItemDef {
     pub id: u32,
     pub key: String,
+    /// A `sim::codes::unit` code, never a name.
+    pub unit: u32,
+    pub shelf_life_minutes: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

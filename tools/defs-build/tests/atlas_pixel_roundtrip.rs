@@ -46,11 +46,13 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
         .collect();
 
     let codes_golden = fsio::read_codes_golden(&root).unwrap();
-    let layer_codes = layer_codes::parse_layer_codes(&codes_golden);
+    let layer_codes = layer_codes::parse_codes(&codes_golden, "layer");
+    let unit_codes = layer_codes::parse_codes(&codes_golden, "unit");
     let defs = validate::validate(
         &raw,
         &sheet_dims,
         &layer_codes,
+        &unit_codes,
         model::SPRITE_SHEET_ALLOWED_ROOT,
     )
     .unwrap();

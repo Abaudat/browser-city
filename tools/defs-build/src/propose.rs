@@ -926,7 +926,13 @@ mod tests {
                     .collect();
             let layer_codes: std::collections::BTreeMap<String, u32> =
                 [("objects".to_string(), 3u32)].into_iter().collect();
-            let result = crate::validate::validate(&raw, &sheet_dims, &layer_codes, "");
+            let result = crate::validate::validate(
+                &raw,
+                &sheet_dims,
+                &layer_codes,
+                &std::collections::BTreeMap::new(),
+                "",
+            );
             prop_assert!(
                 result.is_ok(),
                 "propose() output failed the real validator: {:?}",

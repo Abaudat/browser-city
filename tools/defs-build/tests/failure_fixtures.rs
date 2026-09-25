@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use support::{
     appearance_sheet_bytes, build_err, build_err_enforcing_sheet_root, layer_codes, merged_tree,
-    object_sheet_bytes, read_tree, sheet_dims, valid_dir,
+    object_sheet_bytes, read_tree, sheet_dims, unit_codes, valid_dir,
 };
 
 #[test]
@@ -31,7 +31,7 @@ fn unknown_key_is_named_with_its_own_line() {
     let err = build_err("unknown-key");
     assert_eq!(
         err.to_string(),
-        "defs/items/sanitation.toml:4:1: unknown field `bogus`, expected `id` or `key`"
+        "defs/items/sanitation.toml:7:1: unknown field `bogus`, expected one of `id`, `key`, `unit`, `shelf_life_minutes`, `bulk`"
     );
 }
 
@@ -58,7 +58,7 @@ fn duplicate_id_within_one_file_is_named() {
     let err = build_err("duplicate-id-in-file");
     assert_eq!(
         err.to_string(),
-        "defs/items/sanitation.toml:6:6: duplicate item id 1 -- first declared at defs/items/sanitation.toml:2:6"
+        "defs/items/sanitation.toml:9:6: duplicate item id 1 -- first declared at defs/items/sanitation.toml:2:6"
     );
 }
 
@@ -76,7 +76,7 @@ fn duplicate_key_within_one_file_is_named() {
     let err = build_err("duplicate-key-in-file");
     assert_eq!(
         err.to_string(),
-        "defs/items/sanitation.toml:7:7: duplicate item key 'bottle' -- first declared at defs/items/sanitation.toml:3:7"
+        "defs/items/sanitation.toml:10:7: duplicate item key 'bottle' -- first declared at defs/items/sanitation.toml:3:7"
     );
 }
 
@@ -507,6 +507,7 @@ fn a_real_body_sheet_too_small_for_its_own_declared_layout_grid_is_named() {
         &object_sheet_bytes(),
         &bytes,
         &layer_codes(),
+        &unit_codes(),
         "",
         "test-version",
     );
@@ -757,6 +758,15 @@ fn every_known_category_has_a_fixture_directory() {
         "appearance-id-too-large",
         "appearance-family-mismatch",
         "appearance-dangling-uniform-profession",
+        "item-missing-unit",
+        "item-unknown-unit",
+        "item-unit-wrong-type",
+        "item-missing-shelf-life",
+        "item-missing-bulk",
+        "item-bulk-zero",
+        "item-bulk-footprint-cap-exceeded",
+        "item-shelf-life-out-of-range",
+        "item-shelf-life-wrong-type",
         "unknown-layer",
         "deprecated-layer",
         "sprite-sheet-missing",
@@ -859,6 +869,7 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
             &object_sheet_bytes(),
             &appearance_sheet_bytes(),
             &layer_codes(),
+            &unit_codes(),
             "",
             "test-version",
         );
@@ -899,6 +910,7 @@ fn the_valid_base_tree_builds_cleanly() {
         &object_sheet_bytes(),
         &appearance_sheet_bytes(),
         &layer_codes(),
+        &unit_codes(),
         "",
         "test-version",
     );

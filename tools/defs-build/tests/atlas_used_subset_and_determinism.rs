@@ -36,6 +36,10 @@ fn layer_codes() -> BTreeMap<String, u32> {
     [("furniture".to_string(), 2u32)].into_iter().collect()
 }
 
+fn unit_codes() -> BTreeMap<String, u32> {
+    BTreeMap::new()
+}
+
 /// FR126's sprite/footprint check needs a `render.tile_size_px` balance
 /// key -- 16, matching every fixture sprite's own 16x16 rect.
 fn tile_size_balance() -> &'static str {
@@ -111,6 +115,7 @@ fn only_the_used_subset_is_read_a_corrupt_unreferenced_sheet_never_breaks_the_bu
         &object_sheet_bytes,
         &BTreeMap::new(),
         &layer_codes(),
+        &unit_codes(),
         "",
         "v1",
     )
@@ -207,6 +212,7 @@ fn packing_three_groups_is_byte_identical_under_a_real_shuffle_of_file_order() {
             &object_sheet_bytes,
             &BTreeMap::new(),
             &layer_codes(),
+            &unit_codes(),
             "",
             "v1",
         )

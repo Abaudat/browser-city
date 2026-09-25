@@ -10,8 +10,8 @@ use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
     COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, INTERACT_AT_MAX_REACH_CELLS,
-    MAX_FOOTPRINT_CELLS, NeighbourTermDef, RawAdjacencyRelation, RawCoherenceMode, RawDirection,
-    RoleDef, RuleKindDef, SpriteRect,
+    MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, NeighbourTermDef, RawAdjacencyRelation,
+    RawCoherenceMode, RawDirection, RoleDef, RuleKindDef, SpriteRect,
 };
 
 // `RawLandUse::as_str` is used via the fully-qualified method call above,
@@ -73,6 +73,10 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
         "/// FR127's cap: a footprint's width and height are each held to this.\npub const MAX_FOOTPRINT_CELLS: i32 = {MAX_FOOTPRINT_CELLS};\n\n"
     ));
 
+    out.push_str(&format!(
+        "/// The longest an item may take to spoil, in minutes; 0 means never.\npub const MAX_SHELF_LIFE_MINUTES: u32 = {MAX_SHELF_LIFE_MINUTES};\n\n"
+    ));
+
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str("pub struct ColliderRect {\n    pub x0: i32,\n    pub y0: i32,\n    pub x1: i32,\n    pub y1: i32,\n}\n\n");
 
@@ -101,12 +105,12 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("];\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct ItemDef {\n    pub id: u32,\n    pub key: &'static str,\n}\n\n");
+    out.push_str("pub struct ItemDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub unit: u32,\n    pub shelf_life_minutes: u32,\n    pub width: u32,\n    pub height: u32,\n}\n\n");
     out.push_str("pub const ITEMS: &[ItemDef] = &[\n");
     for i in &defs.items {
         out.push_str(&format!(
-            "    ItemDef {{ id: {}, key: {:?} }},\n",
-            i.id, i.key
+            "    ItemDef {{ id: {}, key: {:?}, unit: {}, shelf_life_minutes: {}, width: {}, height: {} }},\n",
+            i.id, i.key, i.unit, i.shelf_life_minutes, i.width, i.height
         ));
     }
     out.push_str("];\n\n");
@@ -622,6 +626,9 @@ pub fn emit_json(
         "  \"max_footprint_cells\": {MAX_FOOTPRINT_CELLS},\n"
     ));
     out.push_str(&format!(
+        "  \"max_shelf_life_minutes\": {MAX_SHELF_LIFE_MINUTES},\n"
+    ));
+    out.push_str(&format!(
         "  \"atlas_max_pages_per_group\": {ATLAS_MAX_PAGES_PER_GROUP},\n"
     ));
     out.push_str(&format!(
@@ -669,9 +676,13 @@ pub fn emit_json(
     for (i, it) in defs.items.iter().enumerate() {
         let comma = if i + 1 < defs.items.len() { "," } else { "" };
         out.push_str(&format!(
-            "    {{ \"id\": {}, \"key\": {} }}{comma}\n",
+            "    {{ \"id\": {}, \"key\": {}, \"unit\": {}, \"shelf_life_minutes\": {}, \"width\": {}, \"height\": {} }}{comma}\n",
             it.id,
-            json_escape(&it.key)
+            json_escape(&it.key),
+            it.unit,
+            it.shelf_life_minutes,
+            it.width,
+            it.height
         ));
     }
     out.push_str("  ],\n");
@@ -1032,6 +1043,10 @@ mod tests {
             items: vec![ItemDef {
                 id: 1,
                 key: "bottle".into(),
+                unit: 0,
+                shelf_life_minutes: 0,
+                width: 1,
+                height: 1,
             }],
             recipes: vec![RecipeDef {
                 id: 1,
@@ -1273,7 +1288,8 @@ mod tests {
         assert!(lines[3].contains("\"collider_subcells_per_cell\": 16"));
         assert!(lines[4].contains("\"interact_at_max_reach_cells\": 2"));
         assert!(lines[5].contains("\"max_footprint_cells\": 8"));
-        assert!(lines[6].contains("\"atlas_max_pages_per_group\": 2"));
+        assert!(lines[6].contains("\"max_shelf_life_minutes\": 525600"));
+        assert!(lines[7].contains("\"atlas_max_pages_per_group\": 2"));
         assert!(!out.contains('\r'));
     }
 

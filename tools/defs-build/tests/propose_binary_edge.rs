@@ -135,5 +135,12 @@ fn a_stanza_with_the_five_missing_keys_filled_in_passes_validate() {
         [(LAMP_SHEET.to_string(), (16, 64))].into_iter().collect();
     let layer_codes: std::collections::BTreeMap<String, u32> =
         [("objects".to_string(), 3u32)].into_iter().collect();
-    defs_build::validate::validate(&raw, &sheet_dims, &layer_codes, "").unwrap();
+    defs_build::validate::validate(
+        &raw,
+        &sheet_dims,
+        &layer_codes,
+        &std::collections::BTreeMap::new(),
+        "",
+    )
+    .unwrap();
 }
