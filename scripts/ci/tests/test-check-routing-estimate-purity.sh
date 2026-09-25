@@ -26,6 +26,9 @@ check "a generation import" 1 bash "$CHECK" "$f"
 f="$(plant 'use crate::world::walkability::WalkabilityGrid;')"
 check "a walkability import" 1 bash "$CHECK" "$f"
 
+f="$(plant 'fn f(n: &crate::generation::streets::StreetNetwork) {}')"
+check "a fully qualified generation type" 1 bash "$CHECK" "$f"
+
 f="$(plant 'fn f(x: &Vec<i32>) {}')"
 check "a Vec" 1 bash "$CHECK" "$f"
 

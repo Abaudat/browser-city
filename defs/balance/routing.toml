@@ -1,4 +1,4 @@
-# In-city travel-time estimator (FR131, story 3.8). Transport modes are
+# In-city travel-time estimator (FR131, story 3.11). Transport modes are
 # multipliers on the one canonical walking speed,
 # `movement.walk_speed_millicells_per_s`, never absolute speeds -- walking
 # is pinned at exactly 100 so the ladder is always relative to it.

@@ -81,12 +81,12 @@ with no row here.
 | `inv_generation_streets_connected_and_not_stranded` | Pass 2's street graph is a single connected component, and every pass-1 region borders a street, for any seed (FR110) | covered | `inv_generation_streets_connected_and_not_stranded` | 3.2 |
 | `inv_generation_no_dead_ends_away_from_boundary` | Pass 2 never produces a degree-1 node away from the site boundary, for any seed (FR110, NFR8) | covered | `inv_generation_no_dead_ends_away_from_boundary` | 3.2 |
 | `inv_generation_detour_ratio_bounded` | Over the deterministic node-pair sample, additive excess never exceeds `max_detour_excess_cells`, and (for pairs at least `detour_long_pair_cells` apart) BFS network distance never exceeds `max_detour_percent` of Manhattan distance, for any seed -- the contract 3.11's pathfinding estimator relies on (FR110, story 3.18) | covered | `inv_generation_detour_ratio_bounded` | 3.2 |
-| `inv_estimate_is_a_metric` | The routing estimate is zero exactly when two cells coincide, symmetric, and obeys the triangle inequality, for any three cells on one floor and any mode (FR131) | covered | `inv_estimate_is_a_metric` | 3.8 |
-| `inv_estimate_is_origin_independent` | Translating both endpoints by the same offset never changes the estimate, and no i32 coordinate panics or wraps (FR131) | covered | `inv_estimate_is_origin_independent` | 3.8 |
-| `inv_faster_mode_never_costs_more` | A mode with a higher speed percent never returns a larger estimate, and a strictly smaller one over a long enough distance (FR131) | covered | `inv_faster_mode_never_costs_more` | 3.8 |
-| `inv_floor_penalty_is_additive_and_flat` | Changing floor adds exactly `floor_change_penalty_milliminutes` per floor crossed, whatever the mode or distance (FR131) | covered | `inv_floor_penalty_is_additive_and_flat` | 3.8 |
-| `inv_estimator_never_traverses` | The estimate takes no world argument: scoring n candidates is n calls and nothing else (FR131) | covered | `inv_estimator_never_traverses` | 3.8 |
-| `inv_generation_manhattan_beats_euclidean` | Over a generated city's sampled node pairs, Manhattan is a closer estimate of network distance than Euclidean, in total and on a clear majority of pairs (FR131) | covered | `inv_generation_manhattan_beats_euclidean` | 3.8 |
+| `inv_estimate_is_a_metric` | The routing estimate is zero exactly when two cells coincide, symmetric, and obeys the triangle inequality, for any three cells on one floor and any mode (FR131) | covered | `inv_estimate_is_a_metric` | 3.11 |
+| `inv_estimate_is_a_metric_across_floors` | The triangle inequality also holds across floors, for any correction factor (FR131) | covered | `inv_estimate_is_a_metric_across_floors` | 3.11 |
+| `inv_estimate_is_origin_independent` | Translating both endpoints by the same offset never changes the estimate, and no i32 coordinate panics or wraps (FR131) | covered | `inv_estimate_is_origin_independent` | 3.11 |
+| `inv_faster_mode_never_costs_more` | A mode with a higher speed percent never returns a larger estimate, and a strictly smaller one over a long enough distance (FR131) | covered | `inv_faster_mode_never_costs_more` | 3.11 |
+| `inv_floor_penalty_is_additive_and_flat` | Changing floor adds exactly `floor_change_penalty_milliminutes` per floor crossed, whatever the mode or distance (FR131) | covered | `inv_floor_penalty_is_additive_and_flat` | 3.11 |
+| `inv_generation_manhattan_beats_euclidean` | Over a generated city's sampled node pairs, Manhattan is a closer estimate of network distance than Euclidean, in total and on a clear majority of pairs (FR131) | covered | `inv_generation_manhattan_beats_euclidean` | 3.11 |
 | `inv_generation_not_a_perfect_grid` | Block width and height each take at least `min_distinct_block_sizes` distinct values, both junction kinds are present, and at least two street classes are present, for any seed (FR110, NFR8) | covered | `inv_generation_not_a_perfect_grid` | 3.2 |
 | `inv_generation_exact_tiling` | Every site cell is covered by exactly one block or by at least one street, and no two blocks overlap, for any seed (FR110) | covered | `inv_generation_exact_tiling` | 3.2 |
 | `inv_generation_industrial_never_touches_commercial` | No industrial coarse cell is ever adjacent to a commercial one, for any seed (FR110, Artie's direction) | covered | `inv_generation_industrial_never_touches_commercial` | 3.2 |
@@ -547,12 +547,12 @@ sections above).
 
 ## Routing
 
-Story 3.8: the travel-time estimator (FR131).
+Story 3.11: the travel-time estimator (FR131).
 
 | Requirement | Status | Guard |
 | --- | --- | --- |
-| Utility scoring uses Manhattan distance converted to minutes, computed fresh: no cached distance, no graph traversal, no float, one cost unit (`Milliminutes`), rates derived from `movement.walk_speed_millicells_per_s` and the `routing.speed_percent.*` ladder | covered | `server/sim/src/routing/estimate.rs` -- `worked_examples`, `committed_correction_default_is_neutral`, `a_non_neutral_correction_scales_the_result`; `scripts/ci/check-routing-estimate-purity.sh`; `scripts/ci/tests/test-check-routing-estimate-purity.sh` |
-| The estimator's invariants over thousands of cases | covered | `server/sim/tests/invariants.rs` -- `inv_estimate_is_a_metric`, `inv_estimate_is_origin_independent`, `inv_faster_mode_never_costs_more`, `inv_floor_penalty_is_additive_and_flat`, `inv_estimator_never_traverses` (own rows above) |
+| Utility scoring uses Manhattan distance converted to minutes, computed fresh: no cached distance, no graph traversal, no float, no world/grid/network argument (the signature plus the purity check are the no-traversal guard), one cost unit (`Milliminutes`), rates derived from `movement.walk_speed_millicells_per_s` and the `routing.speed_percent.*` ladder | covered | `server/sim/src/routing/estimate.rs` -- `worked_examples`, `correction_outside_its_range_is_refused`, `committed_correction_default_is_neutral`, `a_non_neutral_correction_scales_the_result`; `scripts/ci/check-routing-estimate-purity.sh`; `scripts/ci/tests/test-check-routing-estimate-purity.sh` |
+| The estimator's invariants over thousands of cases | covered | `server/sim/tests/invariants.rs` -- `inv_estimate_is_a_metric`, `inv_estimate_is_a_metric_across_floors`, `inv_estimate_is_origin_independent`, `inv_faster_mode_never_costs_more`, `inv_floor_penalty_is_additive_and_flat` (own rows above) |
 | Manhattan beats Euclidean over real generated geometry | covered | `server/sim/tests/invariants.rs` -- `inv_generation_manhattan_beats_euclidean` (own row above) |
 
 ## Boot budget

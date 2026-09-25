@@ -8,7 +8,7 @@ FILE="${1:-"$REPO_ROOT/server/sim/src/routing/estimate.rs"}"
 [ -f "$FILE" ] || { echo "check-routing-estimate-purity: $FILE not found" >&2; exit 1; }
 
 # Only the code above `#[cfg(test)]` is scanned; tests may use collections.
-MATCHES="$(sed '/^#\[cfg(test)\]/,$d' "$FILE" | grep -nE 'use crate::generation|use crate::world::walkability|use crate::world::collision|BTreeMap|BTreeSet|HashMap|HashSet|Vec<' || true)"
+MATCHES="$(sed '/^#\[cfg(test)\]/,$d' "$FILE" | grep -nE 'crate::generation|crate::world::(walkability|collision)|BTreeMap|BTreeSet|HashMap|HashSet|Vec<' || true)"
 if [ -n "$MATCHES" ]; then
   echo "check-routing-estimate-purity: FAIL -- the estimator must import no generation/walkability/collision and hold no collection (FR131):" >&2
   echo "$MATCHES" >&2

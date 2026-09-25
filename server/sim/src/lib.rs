@@ -19,5 +19,6 @@ pub mod generated;
 pub mod rng;
 pub mod routing;
 pub mod rules;
+pub mod time;
 pub mod validation;
 pub mod world;

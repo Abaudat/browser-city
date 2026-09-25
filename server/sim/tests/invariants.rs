@@ -11,8 +11,8 @@ use sim::appearance;
 use sim::generated::defs::{self, Family, Pool};
 use sim::generation::{GenerationConfig, GenerationContent, envelopes, land_use, plots, streets};
 use sim::rng::{Rng, seed_from_ids};
-use sim::routing::estimate::{Correction, Point, Rates, estimate};
-use sim::routing::{Milliminutes, TransportMode};
+use sim::routing::estimate::{Correction, Rates, estimate};
+use sim::routing::{Point, TransportMode};
 use sim::rules::testing::SiteBuilder;
 use sim::rules::{
     AdjacencyRelation, AreaId, Cell, CoherenceMode, Direction, NeighbourTerm, RuleDef, RuleKind,
@@ -72,10 +72,10 @@ pub const INV_GENERATION_STREETS_CONNECTED_AND_NOT_STRANDED: &str = "pass 2's st
 pub const INV_GENERATION_NO_DEAD_ENDS_AWAY_FROM_BOUNDARY: &str =
     "pass 2 never produces a degree-1 node away from the site boundary, for any seed (FR110, NFR8)";
 pub const INV_ESTIMATE_IS_A_METRIC: &str = "the routing estimate is zero exactly when two cells coincide, symmetric, and obeys the triangle inequality, for any three cells on one floor and any mode (FR131)";
+pub const INV_ESTIMATE_IS_A_METRIC_ACROSS_FLOORS: &str = "the routing estimate obeys the triangle inequality across floors too, for any correction factor (FR131)";
 pub const INV_ESTIMATE_IS_ORIGIN_INDEPENDENT: &str = "translating both endpoints by the same offset never changes the routing estimate, and no i32 coordinate panics or wraps (FR131)";
 pub const INV_FASTER_MODE_NEVER_COSTS_MORE: &str = "a mode with a higher speed percent never returns a larger estimate, and a strictly smaller one over a non-zero distance when the percents differ enough to matter (FR131)";
 pub const INV_FLOOR_PENALTY_IS_ADDITIVE_AND_FLAT: &str = "changing floor adds exactly floor_change_penalty_milliminutes per floor crossed, whatever the mode or the horizontal distance (FR131)";
-pub const INV_ESTIMATOR_NEVER_TRAVERSES: &str = "the routing estimate takes no world argument: the signature has no world argument, so scoring n candidates is n calls and the answer depends on nothing else (FR131)";
 pub const INV_GENERATION_MANHATTAN_BEATS_EUCLIDEAN: &str = "over a generated city's own sampled node pairs, Manhattan distance is a closer estimate of network distance than Euclidean, in total and on a clear majority of pairs (FR131)";
 pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, additive excess never exceeds max_detour_excess_cells, and (for pairs at least detour_long_pair_cells apart) BFS network distance never exceeds max_detour_percent of Manhattan distance, for any seed (FR110)";
 pub const INV_GENERATION_NOT_A_PERFECT_GRID: &str = "block width and height each take at least min_distinct_block_sizes distinct values, both junction kinds are present, and at least two street classes are present, for any seed (FR110, NFR8)";
@@ -1859,21 +1859,25 @@ proptest! {
         for s in &samples {
             let dx = (s.a.0 as i64 - s.b.0 as i64).abs();
             let dy = (s.a.1 as i64 - s.b.1 as i64).abs();
-            let euclid = (dx * dx + dy * dy).isqrt();
+            // Rounded to nearest: a floor would bias the comparison.
+            let euclid = ((4 * (dx * dx + dy * dy)).isqrt() + 1) / 2;
             let (m, e) = ((s.network - s.manhattan).abs(), (s.network - euclid).abs());
             man_err += m;
             euc_err += e;
             man_wins += usize::from(m < e);
             euc_wins += usize::from(e < m);
         }
+        prop_assert!(!samples.is_empty(), "seed {seed}: no sampled pairs");
         prop_assert!(
             man_err < euc_err,
-            "seed {seed}: summed |network - manhattan| {man_err} is not under summed              |network - euclidean| {euc_err} over {} pairs", samples.len()
+            "seed {seed}: summed |network - manhattan| {man_err} is not under summed \
+             |network - euclidean| {euc_err} over {} pairs", samples.len()
         );
         // Ties (axis-aligned pairs, where both agree) are neither side's win.
         prop_assert!(
             man_wins * 10 >= (man_wins + euc_wins) * 9,
-            "seed {seed}: Manhattan closer on {man_wins} pairs, Euclidean on {euc_wins} --              under the committed 90% of decided pairs"
+            "seed {seed}: Manhattan closer on {man_wins} pairs, Euclidean on {euc_wins} -- \
+             under the committed 90% of decided pairs"
         );
     }
 
@@ -4354,7 +4358,7 @@ fn peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor() {
     );
 }
 
-// Story 3.8: the travel-time estimator (FR131). A handful of integer ops
+// Story 3.11: the travel-time estimator (FR131). A handful of integer ops
 // per case, so 4,096 cases are pinned here rather than inherited.
 fn rates() -> Rates {
     Rates::from_balance(defs::BALANCE)
@@ -4372,8 +4376,17 @@ fn arb_point() -> impl Strategy<Value = Point> {
     (any::<i32>(), any::<i32>(), any::<i8>()).prop_map(|(x, y, floor)| Point { x, y, floor })
 }
 
+fn arb_correction() -> impl Strategy<Value = Correction> {
+    (Correction::MIN_PERCENT..=Correction::MAX_PERCENT)
+        .prop_map(|p| Correction::percent(p).unwrap())
+}
+
 fn est(a: Point, b: Point, m: TransportMode) -> i64 {
     estimate(&rates(), a, b, m, Correction::NONE).0
+}
+
+fn est_c(a: Point, b: Point, m: TransportMode, c: Correction) -> i64 {
+    estimate(&rates(), a, b, m, c).0
 }
 
 proptest! {
@@ -4382,38 +4395,51 @@ proptest! {
     /// `inv_estimate_is_a_metric`.
     #[test]
     fn inv_estimate_is_a_metric(
-        a in arb_point(), b in arb_point(), c in arb_point(), m in arb_mode(), floor in any::<i8>(),
+        a in arb_point(), b in arb_point(), c in arb_point(), m in arb_mode(),
+        floor in any::<i8>(), k in arb_correction(),
     ) {
         let (a, b, c) = (Point { floor, ..a }, Point { floor, ..b }, Point { floor, ..c });
-        prop_assert_eq!(est(a, b, m) == 0, a == b);
-        prop_assert_eq!(est(a, b, m), est(b, a, m));
-        prop_assert!(est(a, c, m) <= est(a, b, m) + est(b, c, m));
+        prop_assert_eq!(est_c(a, b, m, k) == 0, a == b);
+        prop_assert_eq!(est_c(a, b, m, k), est_c(b, a, m, k));
+        prop_assert!(est_c(a, c, m, k) <= est_c(a, b, m, k) + est_c(b, c, m, k));
+    }
+
+    /// The triangle inequality across floors too: the correction is applied
+    /// once, so the floor penalty rounds with the travel time.
+    #[test]
+    fn inv_estimate_is_a_metric_across_floors(
+        a in arb_point(), b in arb_point(), c in arb_point(), m in arb_mode(), k in arb_correction(),
+    ) {
+        prop_assert!(est_c(a, c, m, k) <= est_c(a, b, m, k) + est_c(b, c, m, k));
     }
 
     /// `inv_estimate_is_origin_independent`.
     #[test]
     fn inv_estimate_is_origin_independent(
         a in arb_point(), b in arb_point(), dx in any::<i32>(), dy in any::<i32>(), m in arb_mode(),
+        k in arb_correction(),
     ) {
         let shift = |p: Point| Point { x: p.x.wrapping_add(dx), y: p.y.wrapping_add(dy), ..p };
         // A wrapped shift is not a translation; only compare when neither moved out of i32.
         let ok = |p: Point| p.x.checked_add(dx).is_some() && p.y.checked_add(dy).is_some();
-        est(a, b, m); // total for any input
+        est_c(a, b, m, k); // total for any input
         if ok(a) && ok(b) {
-            prop_assert_eq!(est(a, b, m), est(shift(a), shift(b), m));
+            prop_assert_eq!(est_c(a, b, m, k), est_c(shift(a), shift(b), m, k));
         }
     }
 
     /// `inv_faster_mode_never_costs_more`.
     #[test]
-    fn inv_faster_mode_never_costs_more(a in arb_point(), b in arb_point(), m1 in arb_mode(), m2 in arb_mode()) {
+    fn inv_faster_mode_never_costs_more(
+        a in arb_point(), b in arb_point(), m1 in arb_mode(), m2 in arb_mode(), k in arb_correction(),
+    ) {
         let r = rates();
         let (fast, slow) = if r.percent(m1) >= r.percent(m2) { (m1, m2) } else { (m2, m1) };
-        let (ef, es) = (est(a, b, fast), est(a, b, slow));
+        let (ef, es) = (est_c(a, b, fast, k), est_c(a, b, slow, k));
         prop_assert!(ef <= es);
         let manhattan = (a.x as i64 - b.x as i64).abs() + (a.y as i64 - b.y as i64).abs();
-        // 1 milliminute of rounding hides a difference under ~1e3 cells.
-        if manhattan >= 1_000 && r.percent(fast) > r.percent(slow) {
+        // One cell already differs by tens of milliminutes between modes.
+        if manhattan >= 1 && r.percent(fast) > r.percent(slow) {
             prop_assert!(ef < es);
         }
     }
@@ -4428,19 +4454,5 @@ proptest! {
             est(a, other, m) - est(a, same, m),
             floors * rates().floor_change_penalty_milliminutes
         );
-    }
-
-    /// `inv_estimator_never_traverses`: the signature has no world
-    /// argument, so scoring `n` candidates is `n` calls and nothing else
-    /// and no city can change the answer.
-    #[test]
-    fn inv_estimator_never_traverses(origin in arb_point(), m in arb_mode()) {
-        let before: Vec<Milliminutes> = (0..8)
-            .map(|i| estimate(&rates(), origin, Point { x: i, y: i, ..origin }, m, Correction::NONE))
-            .collect();
-        let after: Vec<Milliminutes> = (0..8)
-            .map(|i| estimate(&rates(), origin, Point { x: i, y: i, ..origin }, m, Correction::NONE))
-            .collect();
-        prop_assert_eq!(before, after);
     }
 }

@@ -326,7 +326,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: bash ../scripts/ci/check-sim-purity.sh
-      - name: story 3.8 FR131, the travel-time estimator is graph-free and collection-free
+      - name: story 3.11 FR131, the travel-time estimator is graph-free and collection-free
         run: bash ../scripts/ci/check-routing-estimate-purity.sh
       - run: bash ../scripts/ci/check-golden-version-bump.sh
       - run: bash ../scripts/ci/check-codes-append-only.sh
