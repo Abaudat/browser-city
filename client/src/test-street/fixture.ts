@@ -263,7 +263,7 @@ export const PLATFORM_BUILDING_ID = 3n;
 export const STREET_FLOOR = 0;
 export const SUBWAY_FLOOR = -1;
 
-/** Both subway stairwells' own art (`Stairs_Complete_2`/`_4`, 48x64px):
+/** Both subway stairwells' own art (`Stairs_Complete_2`, 48x64px):
  * three cells wide, four tall -- the declared footprint is the whole
  * drawn rect. */
 export const STAIRWELL_FOOTPRINT = { width: 3, height: 4 } as const;
@@ -756,9 +756,8 @@ export const STREET_PROPS: readonly StreetProp[] = [
     solid: true,
     colliders: STAIRWELL_COLLIDERS,
   },
-  // The matching up-stairs on the platform (Artie's direction: a distinct
-  // sprite, never one sprite playing both roles), the same shape, its
-  // opening facing west.
+  // The same flight seen from the platform: unflipped, so the treads rise
+  // toward the up anchor at the east wall; its opening faces west.
   {
     id: 51n,
     assetKey: "subwayStairsUp",
@@ -771,6 +770,16 @@ export const STREET_PROPS: readonly StreetProp[] = [
     colliders: STAIRWELL_COLLIDERS,
   },
   ...platformWalls(),
+  // The way-out sign on the platform's north wall face, above the
+  // up-stairs' anchor column.
+  {
+    id: 52n,
+    assetKey: "subwayArrowUp",
+    x: PLATFORM_UP_ANCHOR_X,
+    y: PLATFORM_Y0,
+    floor: SUBWAY_FLOOR,
+    layer: "wall_decals",
+  },
   // At the platform's own west end, clear of the up-stairs sprite's own
   // overhang (Artie's cycle-2 direction: the stairs, anchored at
   // `PLATFORM_UP_ANCHOR_X`, were covering the bench almost completely

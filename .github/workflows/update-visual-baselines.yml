@@ -1,8 +1,9 @@
 name: update-visual-baselines
 
 # Regenerates the committed visual baselines (`client/tests/e2e/
-# test-street.spec.ts-snapshots/*.png` and, since story 1.12,
-# `debug-overlays.spec.ts-snapshots/*.png`) on the
+# test-street.spec.ts-snapshots/*.png`, since story 1.12
+# `debug-overlays.spec.ts-snapshots/*.png`, and since story 15.7
+# `enclosure.spec.ts-snapshots/*.png`) on the
 # CI image (story 1.13, Quentin's direction: baselines must be generated
 # on linux chromium, never on a contributor's own machine, whose font
 # hinting and GPU rasteriser render different pixels than CI's).
@@ -77,12 +78,12 @@ jobs:
       # `--update-snapshots` over the whole project would also rewrite
       # any baseline a spec added later without anybody deciding to.
       - working-directory: client
-        run: npx playwright test tests/e2e/test-street.spec.ts tests/e2e/debug-overlays.spec.ts --project=chromium --update-snapshots
+        run: npx playwright test tests/e2e/test-street.spec.ts tests/e2e/debug-overlays.spec.ts tests/e2e/enclosure.spec.ts --project=chromium --update-snapshots
       - name: commit any changed or new baselines
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add 'client/tests/e2e/test-street.spec.ts-snapshots/**' 'client/tests/e2e/debug-overlays.spec.ts-snapshots/**'
+          git add 'client/tests/e2e/test-street.spec.ts-snapshots/**' 'client/tests/e2e/debug-overlays.spec.ts-snapshots/**' 'client/tests/e2e/enclosure.spec.ts-snapshots/**'
           if git diff --cached --quiet; then
             echo "update-visual-baselines: no baseline changed" >&2
             exit 0

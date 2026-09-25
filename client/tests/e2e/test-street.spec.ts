@@ -91,6 +91,7 @@ import {
   streetWindowDefIds,
 } from "../unit/test-street/street-world";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
+import { SCREENSHOT_OPTIONS } from "./screenshot-support";
 
 // The whole walk is one test on purpose: it is one continuous journey,
 // and splitting it would re-boot and re-walk the scene per assertion.
@@ -123,16 +124,6 @@ test.use({ viewport: { width: 1920, height: 1080 } });
 // so what is left for either budget to absorb is rendering noise alone
 // (font hinting, compositor rounding), never position jitter. Below the
 // smallest object under test (the avatar, ~2,000px) on both.
-const SCREENSHOT_OPTIONS = {
-  animations: "disabled",
-  threshold: 0.2,
-  // Playwright's own "wait for a stable screenshot" pre-check needs more
-  // than its 5s default the first time it runs on a CI image: nothing
-  // here is still animating (the crowd is frozen), but a cold headless
-  // Chromium settling its own compositor/font state on an unfamiliar
-  // runner has taken longer than that in practice.
-  timeout: 30_000,
-} as const;
 
 // The interior checkpoint is the walk's own fixed starting position --
 // no movement at all before this shot, so nothing but rendering noise

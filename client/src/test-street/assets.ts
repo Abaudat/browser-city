@@ -63,9 +63,10 @@ export const ASSET_URLS: Readonly<Record<string, string>> = {
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Building_Singles_16x16/ME_Singles_Generic_Building_16x16_Shop_Tent_1.png",
     import.meta.url,
   ).href,
-  // The subway: a real descending stairwell with railings on the street,
-  // a visually distinct "going up" stairwell on the platform (Artie's
-  // direction: never one sprite playing both roles), and the subway
+  // The subway: a real descending stairwell with railings on the street
+  // and the same flight seen from the platform, drawn unflipped so its
+  // treads rise toward the up anchor (a flipped side-on flight reverses
+  // which end is high), the platform's own green way-out sign, and the subway
   // pack's own tiled wall, floor and hazard-striped platform edge --
   // never the shops' own interior art reused underground.
   subwayStairsDown: new URL(
@@ -73,7 +74,11 @@ export const ASSET_URLS: Readonly<Record<string, string>> = {
     import.meta.url,
   ).href,
   subwayStairsUp: new URL(
-    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_4.png",
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png",
+    import.meta.url,
+  ).href,
+  subwayArrowUp: new URL(
+    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Arrow_Up_Green_Sign.png",
     import.meta.url,
   ).href,
   subwayBench: new URL(

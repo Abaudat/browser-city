@@ -8,9 +8,10 @@
 // Nothing here re-proves a geometric or ordering fact: those are the
 // property tests in `tests/unit/render/**` and `tests/unit/world/**`.
 // This file only asserts what is true of *this* street's data.
-import { readFileSync } from "node:fs";
-import { relative, sep } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { LAYER_TABLE } from "../../../src/render/layer-table";
@@ -31,6 +32,8 @@ import {
   LAMPPOST_DEF_ID,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
+  PLATFORM_UP_ANCHOR_X,
+  PLATFORM_UP_ANCHOR_Y,
   PLAYER_START,
   STAIRS_ENTRY_DIRECTION,
   STAIRS_X,
@@ -1015,5 +1018,117 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
         true,
       );
     }
+  });
+});
+
+// Story 15.7: the platform's stairs must read as going UP. The picture's
+// one carrier of that meaning is which end of the treads is high, so this
+// measures it from the decoded pixels: on the street the treads sink
+// toward the anchor (down), on the platform they rise toward it (up).
+// A flip/mirror/negative scale of a side-on flight reverses exactly that,
+// so none may exist in the renderer or the fixture.
+describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () => {
+  const STREET_STAIRS = STREET_PROPS.find((p) => p.id === 50n);
+  const PLATFORM_STAIRS = STREET_PROPS.find((p) => p.id === 51n);
+
+  function decode(assetKey: string): PNG {
+    const href = ASSET_URLS[assetKey];
+    if (!href) throw new Error(`no ASSET_URLS entry for '${assetKey}'`);
+    return PNG.sync.read(readFileSync(fileURLToPath(href)));
+  }
+
+  /** Mean height (px from the top) of the orange/yellow tread tops over
+   * the sprite's west and east thirds; smaller = higher. */
+  function treadTopByThird(png: PNG): { west: number; east: number } {
+    const isTread = (x: number, y: number) => {
+      const i = (y * png.width + x) * 4;
+      const [r = 0, g = 0, b = 0, a = 0] = [
+        png.data[i],
+        png.data[i + 1],
+        png.data[i + 2],
+        png.data[i + 3],
+      ];
+      return a > 200 && r > 200 && g > 90 && b < 90;
+    };
+    const topOf = (x: number): number | undefined => {
+      for (let y = 0; y < png.height; y++) if (isTread(x, y)) return y;
+      return undefined;
+    };
+    const mean = (x0: number, x1: number) => {
+      const tops = [];
+      for (let x = x0; x < x1; x++) {
+        const t = topOf(x);
+        if (t !== undefined) tops.push(t);
+      }
+      if (tops.length === 0) throw new Error("no tread pixels found in the stairs art");
+      return tops.reduce((a, b) => a + b, 0) / tops.length;
+    };
+    const third = Math.floor(png.width / 3);
+    return { west: mean(0, third), east: mean(png.width - third, png.width) };
+  }
+
+  it("the platform's up-stairs rise toward their anchor; the street's down-stairs sink toward theirs", () => {
+    if (!STREET_STAIRS || !PLATFORM_STAIRS) throw new Error("stairs rows 50/51 missing");
+    if (isDefStreetProp(STREET_STAIRS) || isDefStreetProp(PLATFORM_STAIRS)) {
+      throw new Error("stairs rows are expected to be assetKey rows");
+    }
+    // Which end of each sprite holds the anchor, from the fixture's own cells.
+    const streetAnchorWest = STAIRS_X < STREET_STAIRS.x + 1;
+    const platformAnchorEast = PLATFORM_UP_ANCHOR_X >= PLATFORM_STAIRS.x + 2;
+    expect(streetAnchorWest).toBe(true);
+    expect(platformAnchorEast).toBe(true);
+    expect(PLATFORM_UP_ANCHOR_Y).toBeGreaterThan(PLATFORM_STAIRS.y - 4);
+
+    const down = treadTopByThird(decode(STREET_STAIRS.assetKey));
+    const up = treadTopByThird(decode(PLATFORM_STAIRS.assetKey));
+    // Street: anchor (west) end is lower on screen (larger y) than the opening.
+    expect(down.west).toBeGreaterThan(down.east);
+    // Platform: anchor (east) end is higher on screen (smaller y) than the landing.
+    expect(up.east).toBeLessThan(up.west);
+  });
+
+  it("no ModernTileset sheet is drawn flipped: no negative scale or flip in the fixture or renderer", () => {
+    const root = fileURLToPath(new URL("../../../src/", import.meta.url));
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (full.endsWith(".ts")) files.push(full);
+      }
+    };
+    walk(join(root, "test-street"));
+    walk(join(root, "render"));
+    const banned = [
+      /scale\.(x|y)\s*\*?=\s*-/,
+      /scale\.set\(\s*-/,
+      /anchor\.set\(\s*-/,
+      /\bflip[XY]\b/i,
+    ];
+    const hits: string[] = [];
+    for (const file of files) {
+      readFileSync(file, "utf-8")
+        .split(/\r?\n/)
+        .forEach((line, i) => {
+          const code = line
+            .replace(/\/\*.*?\*\//g, "")
+            .replace(/\/\/.*$/, "")
+            .replace(/^\s*\*.*$/, "");
+          for (const re of banned) {
+            if (re.test(code))
+              hits.push(`${relative(root, file)}:${i + 1}: ${line.trim()} (${re})`);
+          }
+        });
+    }
+    expect(hits).toEqual([]);
+  });
+
+  it("the platform's east wall carries the green up-arrow above the up-stairs' anchor column, on the wall_decals layer", () => {
+    const sign = STREET_PROPS.find((p) => !isDefStreetProp(p) && p.assetKey === "subwayArrowUp");
+    expect(sign).toBeDefined();
+    expect(sign?.floor).toBe(SUBWAY_FLOOR);
+    expect(sign?.layer).toBe("wall_decals");
+    expect(sign?.x).toBe(PLATFORM_UP_ANCHOR_X);
+    expect(sign?.y).toBeLessThan(PLATFORM_UP_ANCHOR_Y);
   });
 });

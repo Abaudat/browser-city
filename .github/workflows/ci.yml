@@ -501,6 +501,8 @@ jobs:
       # does not need (Tim's direction).
       - name: client-side trace-matrix symmetry (no cargo)
         run: bash ../scripts/ci/check-trace-matrix.sh --client-only
+      - name: story 15.7, every spec with a visual baseline is wired into update-visual-baselines.yml
+        run: bash ../scripts/ci/check-visual-baseline-specs.sh
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: client/.nvmrc

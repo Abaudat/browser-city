@@ -13,6 +13,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { DEBUG_OVERLAYS } from "../../src/debug/overlays";
 import type {} from "../../src/net/e2e-hooks";
+import { SCREENSHOT_OPTIONS } from "./screenshot-support";
 
 const OVERLAY_IDS = DEBUG_OVERLAYS.map((o) => o.id);
 
@@ -24,12 +25,7 @@ const OVERLAY_IDS = DEBUG_OVERLAYS.map((o) => o.id);
 // budget absorbs is rendering noise alone.
 test.use({ viewport: { width: 1920, height: 1080 } });
 
-const SCREENSHOT_OPTIONS = {
-  animations: "disabled",
-  threshold: 0.2,
-  maxDiffPixels: 150,
-  timeout: 30_000,
-} as const;
+const OVERLAY_SCREENSHOT_OPTIONS = { ...SCREENSHOT_OPTIONS, maxDiffPixels: 150 } as const;
 
 async function waitForSceneReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
@@ -187,6 +183,6 @@ test("the overlay is deliberately non-diegetic", async ({ page }) => {
   // deterministic, exactly as test-street.spec.ts's own snapshots are.
   await expect(page.locator("#test-street")).toHaveScreenshot(
     "collision-overlay.png",
-    SCREENSHOT_OPTIONS,
+    OVERLAY_SCREENSHOT_OPTIONS,
   );
 });
