@@ -52,8 +52,8 @@ fn sheet_bytes() -> BTreeMap<String, Vec<u8>> {
         .collect()
 }
 
-fn layer_codes() -> BTreeMap<String, u32> {
-    [("furniture".to_string(), 2u32)].into_iter().collect()
+fn code_tables() -> defs_build::codes::CodeTables {
+    defs_build::codes::CodeTables::from_entries(&[("layer", "furniture", 2)])
 }
 
 fn build_output() -> defs_build::BuildOutput {
@@ -64,7 +64,7 @@ fn build_output() -> defs_build::BuildOutput {
         &sheet_dims(),
         &sheet_bytes(),
         &BTreeMap::new(),
-        &layer_codes(),
+        &code_tables(),
         "",
         "fixture-version",
     )

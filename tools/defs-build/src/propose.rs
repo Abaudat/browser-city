@@ -924,9 +924,13 @@ mod tests {
                 [("fixtures/proposed.png".to_string(), (w, h))]
                     .into_iter()
                     .collect();
-            let layer_codes: std::collections::BTreeMap<String, u32> =
-                [("objects".to_string(), 3u32)].into_iter().collect();
-            let result = crate::validate::validate(&raw, &sheet_dims, &layer_codes, "");
+            let code_tables = crate::codes::CodeTables::from_entries(&[("layer", "objects", 3)]);
+            let result = crate::validate::validate(
+                &raw,
+                &sheet_dims,
+                &code_tables,
+                "",
+            );
             prop_assert!(
                 result.is_ok(),
                 "propose() output failed the real validator: {:?}",

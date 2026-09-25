@@ -15,7 +15,7 @@ mod support;
 use std::path::{Path, PathBuf};
 
 use support::{
-    appearance_sheet_bytes, build_err, build_err_enforcing_sheet_root, layer_codes, merged_tree,
+    appearance_sheet_bytes, build_err, build_err_enforcing_sheet_root, code_tables, merged_tree,
     object_sheet_bytes, read_tree, sheet_dims, valid_dir,
 };
 
@@ -31,7 +31,7 @@ fn unknown_key_is_named_with_its_own_line() {
     let err = build_err("unknown-key");
     assert_eq!(
         err.to_string(),
-        "defs/items/sanitation.toml:4:1: unknown field `bogus`, expected `id` or `key`"
+        "defs/items/sanitation.toml:7:1: unknown field `bogus`, expected one of `id`, `key`, `unit`, `shelf_life_minutes`, `bulk`"
     );
 }
 
@@ -58,7 +58,7 @@ fn duplicate_id_within_one_file_is_named() {
     let err = build_err("duplicate-id-in-file");
     assert_eq!(
         err.to_string(),
-        "defs/items/sanitation.toml:6:6: duplicate item id 1 -- first declared at defs/items/sanitation.toml:2:6"
+        "defs/items/sanitation.toml:9:6: duplicate item id 1 -- first declared at defs/items/sanitation.toml:2:6"
     );
 }
 
@@ -76,7 +76,7 @@ fn duplicate_key_within_one_file_is_named() {
     let err = build_err("duplicate-key-in-file");
     assert_eq!(
         err.to_string(),
-        "defs/items/sanitation.toml:7:7: duplicate item key 'bottle' -- first declared at defs/items/sanitation.toml:3:7"
+        "defs/items/sanitation.toml:10:7: duplicate item key 'bottle' -- first declared at defs/items/sanitation.toml:3:7"
     );
 }
 
@@ -506,7 +506,7 @@ fn a_real_body_sheet_too_small_for_its_own_declared_layout_grid_is_named() {
         &sheet_dims(),
         &object_sheet_bytes(),
         &bytes,
-        &layer_codes(),
+        &code_tables(),
         "",
         "test-version",
     );
@@ -757,6 +757,16 @@ fn every_known_category_has_a_fixture_directory() {
         "appearance-id-too-large",
         "appearance-family-mismatch",
         "appearance-dangling-uniform-profession",
+        "item-missing-unit",
+        "item-unknown-unit",
+        "item-unit-wrong-type",
+        "item-missing-shelf-life",
+        "item-missing-bulk",
+        "item-bulk-zero",
+        "item-bulk-footprint-cap-exceeded",
+        "item-shelf-life-out-of-range",
+        "item-shelf-life-wrong-type",
+        "item-bulk-height-cap-exceeded",
         "unknown-layer",
         "deprecated-layer",
         "sprite-sheet-missing",
@@ -858,7 +868,7 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
             &sheet_dims(),
             &object_sheet_bytes(),
             &appearance_sheet_bytes(),
-            &layer_codes(),
+            &code_tables(),
             "",
             "test-version",
         );
@@ -898,9 +908,144 @@ fn the_valid_base_tree_builds_cleanly() {
         &sheet_dims(),
         &object_sheet_bytes(),
         &appearance_sheet_bytes(),
-        &layer_codes(),
+        &code_tables(),
         "",
         "test-version",
     );
     assert!(result.is_ok(), "valid fixture failed: {:?}", result.err());
+}
+
+/// Story 6.1: an `[[item]]` carries `unit`, `shelf_life_minutes` and
+/// `bulk`, all required -- each absence or bad value is a build error
+/// naming the offending value's own line and column.
+fn assert_item_error(category: &str, expected: &str) {
+    assert_eq!(build_err(category).to_string(), expected, "{category}");
+}
+
+#[test]
+fn an_item_missing_its_unit_is_named() {
+    assert_item_error(
+        "item-missing-unit",
+        "defs/items/sanitation.toml:1:1: missing field `unit`",
+    );
+}
+
+#[test]
+fn an_item_missing_its_shelf_life_is_named() {
+    assert_item_error(
+        "item-missing-shelf-life",
+        "defs/items/sanitation.toml:1:1: missing field `shelf_life_minutes`",
+    );
+}
+
+#[test]
+fn an_item_missing_its_bulk_is_named() {
+    assert_item_error(
+        "item-missing-bulk",
+        "defs/items/sanitation.toml:1:1: missing field `bulk`",
+    );
+}
+
+#[test]
+fn an_item_with_an_unknown_unit_names_the_accepted_list() {
+    assert_item_error(
+        "item-unknown-unit",
+        "defs/items/sanitation.toml:4:8: item 'bottle' names unknown unit 'furlong' -- accepted: gram, millilitre, piece",
+    );
+}
+
+#[test]
+fn an_item_unit_of_the_wrong_type_is_refused() {
+    assert_item_error(
+        "item-unit-wrong-type",
+        "defs/items/sanitation.toml:4:8: invalid type: integer `3`, expected a string",
+    );
+}
+
+#[test]
+fn an_item_shelf_life_of_the_wrong_type_is_refused() {
+    assert_item_error(
+        "item-shelf-life-wrong-type",
+        "defs/items/sanitation.toml:5:22: invalid type: string \"long\", expected u32",
+    );
+}
+
+#[test]
+fn an_item_bulk_of_zero_is_refused_at_the_value() {
+    assert_item_error(
+        "item-bulk-zero",
+        "defs/items/sanitation.toml:6:18: item 'bottle' bulk width of 0 -- every item occupies at least one cell",
+    );
+}
+
+#[test]
+fn an_item_bulk_width_over_the_footprint_cap_is_refused_at_the_value() {
+    assert_item_error(
+        "item-bulk-footprint-cap-exceeded",
+        "defs/items/sanitation.toml:6:18: item 'bottle' bulk width 9 exceeds MAX_FOOTPRINT_CELLS (8)",
+    );
+}
+
+#[test]
+fn an_item_bulk_height_over_the_footprint_cap_is_refused_at_the_value() {
+    assert_item_error(
+        "item-bulk-height-cap-exceeded",
+        "defs/items/sanitation.toml:6:30: item 'bottle' bulk height 9 exceeds MAX_FOOTPRINT_CELLS (8)",
+    );
+}
+
+#[test]
+fn an_item_shelf_life_over_the_cap_is_refused_at_the_value() {
+    assert_item_error(
+        "item-shelf-life-out-of-range",
+        &format!(
+            "defs/items/sanitation.toml:5:22: item 'bottle' shelf_life_minutes 999999999 exceeds MAX_SHELF_LIFE_MINUTES ({})",
+            defs_build::model::MAX_SHELF_LIFE_MINUTES
+        ),
+    );
+    assert_eq!(defs_build::model::MAX_SHELF_LIFE_MINUTES, 525_600);
+}
+
+fn build_ok(files: &[(PathBuf, String)]) -> defs_build::BuildOutput {
+    defs_build::build(
+        files,
+        &sheet_dims(),
+        &object_sheet_bytes(),
+        &appearance_sheet_bytes(),
+        &code_tables(),
+        "",
+        "test-version",
+    )
+    .unwrap()
+}
+
+/// The boundaries themselves are accepted: the longest shelf life and the
+/// largest bulk build cleanly.
+#[test]
+fn an_item_at_the_shelf_life_and_bulk_caps_builds() {
+    let item = format!(
+        "[[item]]\nid = 1\nkey = \"bottle\"\nunit = \"piece\"\nshelf_life_minutes = {}\nbulk = {{ width = {m}, height = {m} }}\n\n[[item]]\nid = 2\nkey = \"recycled_glass\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = {{ width = 1, height = 1 }}\n",
+        defs_build::model::MAX_SHELF_LIFE_MINUTES,
+        m = defs_build::model::MAX_FOOTPRINT_CELLS
+    );
+    let mut files = read_tree(&valid_dir());
+    files.retain(|(p, _)| p != Path::new("defs/items/sanitation.toml"));
+    files.push((PathBuf::from("defs/items/sanitation.toml"), item));
+    let out = build_ok(&files);
+    assert!(out.rust.contains(
+        "ItemDef { id: 1, key: \"bottle\", unit: 0, shelf_life_minutes: 525600, width: 8, height: 8 }"
+    ));
+}
+
+/// AC2: a new item is a row, not code -- the valid tree's third item
+/// (`milk`, litre-kind unit, perishable, 1x2) reaches both artefacts.
+#[test]
+fn a_fully_authored_item_reaches_both_emitted_artefacts() {
+    let out = build_ok(&read_tree(&valid_dir()));
+    assert!(out.rust.contains(
+        "ItemDef { id: 3, key: \"milk\", unit: 2, shelf_life_minutes: 4320, width: 1, height: 2 }"
+    ));
+    assert!(out.json.contains(
+        "{ \"id\": 3, \"key\": \"milk\", \"unit\": 2, \"shelf_life_minutes\": 4320, \"width\": 1, \"height\": 2 }"
+    ));
 }

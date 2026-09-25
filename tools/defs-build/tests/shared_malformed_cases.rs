@@ -10,7 +10,9 @@
 //! *which* categories of bad input are covered, even though the physical
 //! input format (TOML files vs. one JSON payload) necessarily differs.
 //!
-//! Not every category this crate rejects is shareable: `sprite-sheet-
+//! Not every category this crate rejects is shareable: `item-unknown-unit`
+//! needs the codes golden's unit names, which the client never reads (its
+//! artefact carries the `u32` only); `sprite-sheet-
 //! missing` and `sprite-outside-sheet-bounds` need a real sheet's `IHDR`
 //! dimensions (`fsio::read_png_dims`), which the client never reads --
 //! its own artefact only ever carries an already-validated `sprite` rect.
@@ -65,6 +67,15 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "object-role-count-zero" => "object-role-count-zero",
         "object-role-count-two" => "object-role-count-two",
         "role-layer-not-allowed" => "role-layer-not-allowed",
+        "item-missing-unit" => "item-missing-unit",
+        "item-unit-wrong-type" => "item-unit-wrong-type",
+        "item-bulk-zero" => "item-bulk-zero",
+        "item-missing-shelf-life" => "item-missing-shelf-life",
+        "item-missing-bulk" => "item-missing-bulk",
+        "item-shelf-life-wrong-type" => "item-shelf-life-wrong-type",
+        "item-bulk-height-cap-exceeded" => "item-bulk-height-cap-exceeded",
+        "item-bulk-footprint-cap-exceeded" => "item-bulk-footprint-cap-exceeded",
+        "item-shelf-life-out-of-range" => "item-shelf-life-out-of-range",
         other => panic!(
             "shared case '{other}' has no mapped tests/fixtures/invalid/ directory -- add one to fixture_for()"
         ),

@@ -1,6 +1,6 @@
 //! Extensible-set code tables (NFR36): matter kinds, provisions, reason
-//! codes and node kinds are `u32` codes plus a name, each backed by a
-//! companion data table in `../../src/tables/codes.rs`, never a Rust enum
+//! codes, node kinds and item units are `u32` codes plus a name, each
+//! backed by a companion data table in `../../src/tables/codes.rs`, never a Rust enum
 //! -- a new variant is a row insert rather than a migration. The codes
 //! themselves are pure data, defined once here so they are unit-testable
 //! without `spacetimedb` (NFR28), and seeded into their companion tables
@@ -211,6 +211,29 @@ pub mod layer {
             .map(|c| c.rank)
             .ok_or(RankLookupError::Unknown(code))
     }
+}
+
+/// What an item is counted in (FR86): pieces for a discrete item, grams
+/// and millilitres for bulk stock. An item's `unit` names one of these in
+/// its `[[item]]` row; `tools/defs-build` resolves the name against the
+/// codes golden, so only the code reaches either runtime artefact.
+pub mod unit {
+    use super::Code;
+
+    pub const CODES: &[Code] = &[
+        Code {
+            code: 0,
+            name: "piece",
+        },
+        Code {
+            code: 1,
+            name: "gram",
+        },
+        Code {
+            code: 2,
+            name: "millilitre",
+        },
+    ];
 }
 
 /// A macro-graph node's kind (FR134): interiors collapse to an entrance

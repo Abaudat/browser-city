@@ -32,8 +32,8 @@ fn roles_toml() -> &'static str {
     "[[tag]]\nid = 1\nkey = \"fixture\"\nrole = { layers = [\"furniture\"] }\n"
 }
 
-fn layer_codes() -> BTreeMap<String, u32> {
-    [("furniture".to_string(), 2u32)].into_iter().collect()
+fn code_tables() -> defs_build::codes::CodeTables {
+    defs_build::codes::CodeTables::from_entries(&[("layer", "furniture", 2)])
 }
 
 /// FR126's sprite/footprint check needs a `render.tile_size_px` balance
@@ -110,7 +110,7 @@ fn only_the_used_subset_is_read_a_corrupt_unreferenced_sheet_never_breaks_the_bu
         &sheet_dims,
         &object_sheet_bytes,
         &BTreeMap::new(),
-        &layer_codes(),
+        &code_tables(),
         "",
         "v1",
     )
@@ -206,7 +206,7 @@ fn packing_three_groups_is_byte_identical_under_a_real_shuffle_of_file_order() {
             &sheet_dims,
             &object_sheet_bytes,
             &BTreeMap::new(),
-            &layer_codes(),
+            &code_tables(),
             "",
             "v1",
         )

@@ -68,7 +68,7 @@
 //! own target ids, which the gap-fill loop above would then read as an
 //! overshoot and abort on.
 //!
-//! `restore_module_owner` and the five code-table restore reducers
+//! `restore_module_owner` and the six code-table restore reducers
 //! delete their existing (`init`-seeded) rows first, then insert the
 //! exported ones -- restore *replaces* what `init` seeded, the same rule
 //! `scripts/ops/restore-world.sh` documented before this story moved the
@@ -80,7 +80,8 @@ use crate::{DemoPing, demo_ping};
 
 use super::citizen::{Citizen, CitizenState, citizen, citizen_state};
 use super::codes::{
-    MatterKind, NodeKind, Provision, ReasonCode, matter_kind, node_kind, provision, reason_code,
+    MatterKind, NodeKind, Provision, ReasonCode, Unit, matter_kind, node_kind, provision,
+    reason_code, unit,
 };
 use super::identity::{Character, CharacterIdentity, character, character_identity};
 use super::ops::{ModuleOwner, module_owner, require_owner};
@@ -105,7 +106,7 @@ fn require_restore_open(ctx: &ReducerContext) -> Result<(), String> {
     }
 }
 
-/// `init` seeds these (`module_owner`, the five code tables) -- restore
+/// `init` seeds these (`module_owner`, the six code tables) -- restore
 /// *replaces* their content rather than requiring them empty. The single
 /// source of truth for which tables that is: `bounds/tests/
 /// restore_coverage.rs`'s text scan reads this constant's own source
@@ -118,6 +119,7 @@ const INIT_SEEDED_TABLES: &[&str] = &[
     "provision",
     "reason_code",
     "node_kind",
+    "unit",
     "layer_code",
 ];
 
@@ -760,6 +762,20 @@ pub fn restore_node_kind(ctx: &ReducerContext, rows: Vec<NodeKind>) -> Result<()
     }
     for row in rows {
         ctx.db.node_kind().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_unit(ctx: &ReducerContext, rows: Vec<Unit>) -> Result<(), String> {
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    let existing: Vec<u32> = ctx.db.unit().iter().map(|r| r.code).collect();
+    for code in existing {
+        ctx.db.unit().code().delete(code);
+    }
+    for row in rows {
+        ctx.db.unit().insert(row);
     }
     Ok(())
 }

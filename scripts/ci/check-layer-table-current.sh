@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The client's one mirror of sim::codes::layer (client/src/render/
 # layer-table.ts, story 1.6 cycle 2) and tools/defs-build's own deprecated-
-# layer-name copy (layer_codes.rs's DEPRECATED_LAYER_NAMES, story 2.2
+# layer-name copy (codes.rs's DEPRECATED_LAYER_NAMES, story 2.2
 # cycle 1) must never drift from the server's golden-pinned mapping --
 # Quentin/Tim's direction: a hand-maintained copy with no guard is not
 # acceptable a second time. Parses server/sim/tests/goldens/codes_v1.golden's
@@ -12,8 +12,8 @@
 # names. No cargo, no node: every side is read as plain text, so this
 # runs in client-check (whose filter already includes server/**) at
 # effectively zero cost.
-# Usage: check-layer-table-current.sh [golden] [codes.rs] [layer-table.ts]
-#   [layer_codes.rs] -- every argument optional, defaulting to the real
+# Usage: check-layer-table-current.sh [golden] [sim codes.rs] [layer-table.ts] [defs-build codes.rs]
+#   [defs-build codes.rs] -- every argument optional, defaulting to the real
 #   repo paths; `scripts/ci/tests/test-check-layer-table-current.sh` is
 #   the only caller that ever overrides them, with throwaway fakes
 #   planting a drift.
@@ -23,7 +23,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 GOLDEN="${1:-$REPO_ROOT/server/sim/tests/goldens/codes_v1.golden}"
 CODES_RS="${2:-$REPO_ROOT/server/sim/src/codes.rs}"
 LAYER_TABLE_TS="${3:-$REPO_ROOT/client/src/render/layer-table.ts}"
-LAYER_CODES_RS="${4:-$REPO_ROOT/tools/defs-build/src/layer_codes.rs}"
+LAYER_CODES_RS="${4:-$REPO_ROOT/tools/defs-build/src/codes.rs}"
 
 for f in "$GOLDEN" "$CODES_RS" "$LAYER_TABLE_TS" "$LAYER_CODES_RS"; do
   [ -f "$f" ] || { echo "check-layer-table-current: $f not found" >&2; exit 1; }

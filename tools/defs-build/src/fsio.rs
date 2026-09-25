@@ -13,7 +13,7 @@ use std::process::Command;
 pub const CODES_GOLDEN_PATH: &str = "server/sim/tests/goldens/codes_v1.golden";
 
 /// Reads [`CODES_GOLDEN_PATH`]'s own text, relative to `repo_root` --
-/// [`crate::layer_codes::parse_layer_codes`] is the pure function that
+/// [`crate::codes::CodeTables::parse`] is the pure function that
 /// turns it into a `name -> code` map. A missing file is a hard error
 /// naming the path, exactly like [`read_text`].
 pub fn read_codes_golden(repo_root: &Path) -> io::Result<String> {

@@ -146,6 +146,10 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         path: path.clone(),
                         id: located(text, &i.id),
                         key: located(text, &i.key),
+                        unit: located(text, &i.unit),
+                        shelf_life_minutes: located(text, &i.shelf_life_minutes),
+                        bulk_width: located(text, &i.bulk.width),
+                        bulk_height: located(text, &i.bulk.height),
                     });
                 }
             }

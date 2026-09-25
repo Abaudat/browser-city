@@ -7,6 +7,9 @@ import type { Defs } from "../../../src/defs/types";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
+/** The item fields every `[[item]]` row carries besides `id`/`key`. */
+const ITEM_FIELDS = { unit: 0, shelf_life_minutes: 0, width: 1, height: 1 };
+
 function validPayload(): Record<string, unknown> {
   return {
     generated_by: "tools/defs-build -- do not edit by hand",
@@ -14,6 +17,7 @@ function validPayload(): Record<string, unknown> {
     collider_subcells_per_cell: 16,
     interact_at_max_reach_cells: 2,
     max_footprint_cells: 8,
+    max_shelf_life_minutes: 525_600,
     atlas_max_pages_per_group: 2,
     character_composite_pages: 2,
     atlas_pages: [{ file: "furniture-abc123.png", group: "furniture", width: 2048, height: 16 }],
@@ -33,8 +37,8 @@ function validPayload(): Record<string, unknown> {
       },
     ],
     items: [
-      { id: 1, key: "bottle" },
-      { id: 2, key: "recycled_glass" },
+      { ...ITEM_FIELDS, id: 1, key: "bottle" },
+      { ...ITEM_FIELDS, id: 2, key: "recycled_glass" },
     ],
     recipes: [{ id: 1, key: "bottle_recycling", inputs: ["bottle"], outputs: ["recycled_glass"] }],
     professions: [{ id: 1, key: "sanitation_worker" }],
@@ -89,37 +93,77 @@ describe("parseDefs", () => {
 
   it("rejects an unknown field on one entry", () => {
     const payload = validPayload();
-    (payload.items as Record<string, unknown>[])[0] = { id: 1, key: "bottle", bogus: 2 };
+    (payload.items as Record<string, unknown>[])[0] = {
+      ...ITEM_FIELDS,
+      id: 1,
+      key: "bottle",
+      bogus: 2,
+    };
     expect(() => parseDefs(payload)).toThrow(/unknown field 'bogus'/);
   });
 
   it("rejects a missing required field", () => {
     const payload = validPayload();
-    (payload.items as Record<string, unknown>[])[0] = { key: "bottle" };
+    (payload.items as Record<string, unknown>[])[0] = { ...ITEM_FIELDS, key: "bottle" };
     expect(() => parseDefs(payload)).toThrow(/expected a number/);
+  });
+
+  it("rejects an item missing unit, shelf_life_minutes or bulk", () => {
+    for (const field of ["unit", "shelf_life_minutes", "width", "height"]) {
+      const payload = validPayload();
+      const row: Record<string, unknown> = { ...ITEM_FIELDS, id: 1, key: "bottle" };
+      delete row[field];
+      (payload.items as Record<string, unknown>[])[0] = row;
+      expect(() => parseDefs(payload)).toThrow(/expected a number/);
+    }
+  });
+
+  it("rejects an item with a zero, over-cap or over-shelf-life field", () => {
+    const bad = (extra: Record<string, unknown>) => {
+      const payload = validPayload();
+      (payload.items as Record<string, unknown>[])[0] = {
+        ...ITEM_FIELDS,
+        id: 1,
+        key: "bottle",
+        ...extra,
+      };
+      return payload;
+    };
+    expect(() => parseDefs(bad({ height: 0 }))).toThrow(/bulk width or height of 0/);
+    expect(() => parseDefs(bad({ width: 9 }))).toThrow(
+      /bulk width 9 exceeds MAX_FOOTPRINT_CELLS \(8\)/,
+    );
+    expect(() => parseDefs(bad({ shelf_life_minutes: 525_601 }))).toThrow(
+      /exceeds MAX_SHELF_LIFE_MINUTES \(525600\)/,
+    );
+    expect(() => parseDefs(bad({ shelf_life_minutes: 525_600 }))).not.toThrow();
   });
 
   it("rejects a wrong value type", () => {
     const payload = validPayload();
-    (payload.items as Record<string, unknown>[])[0] = { id: "nope", key: "bottle" };
+    (payload.items as Record<string, unknown>[])[0] = { ...ITEM_FIELDS, id: "nope", key: "bottle" };
     expect(() => parseDefs(payload)).toThrow(/expected a number/);
   });
 
   it("rejects a non-integer id, never accepting what the module could not have produced", () => {
     const payload = validPayload();
-    (payload.items as Record<string, unknown>[])[0] = { id: 1.5, key: "bottle" };
+    (payload.items as Record<string, unknown>[])[0] = { ...ITEM_FIELDS, id: 1.5, key: "bottle" };
     expect(() => parseDefs(payload)).toThrow(/expected an integer in \[0, 2\^32\)/);
   });
 
   it("rejects a negative id", () => {
     const payload = validPayload();
-    (payload.items as Record<string, unknown>[])[0] = { id: -1, key: "bottle" };
+    (payload.items as Record<string, unknown>[])[0] = { ...ITEM_FIELDS, id: -1, key: "bottle" };
     expect(() => parseDefs(payload)).toThrow(/expected an integer in \[0, 2\^32\)/);
   });
 
   it("rejects an id at or above 2^32", () => {
     const payload = validPayload();
-    (payload.items as Record<string, unknown>[])[0] = { id: 2 ** 32, key: "bottle" };
+    (payload.items as Record<string, unknown>[])[0] = {
+      ...ITEM_FIELDS,
+      id: 2 ** 32,
+      key: "bottle",
+    };
     expect(() => parseDefs(payload)).toThrow(/expected an integer in \[0, 2\^32\)/);
   });
 
@@ -132,8 +176,8 @@ describe("parseDefs", () => {
   it("rejects a duplicate id within one kind", () => {
     const payload = validPayload();
     payload.items = [
-      { id: 1, key: "bottle" },
-      { id: 1, key: "recycled_glass" },
+      { ...ITEM_FIELDS, id: 1, key: "bottle" },
+      { ...ITEM_FIELDS, id: 1, key: "recycled_glass" },
     ];
     expect(() => parseDefs(payload)).toThrow(/duplicate item id 1/);
   });
@@ -141,8 +185,8 @@ describe("parseDefs", () => {
   it("rejects a duplicate key within one kind", () => {
     const payload = validPayload();
     payload.items = [
-      { id: 1, key: "bottle" },
-      { id: 2, key: "bottle" },
+      { ...ITEM_FIELDS, id: 1, key: "bottle" },
+      { ...ITEM_FIELDS, id: 2, key: "bottle" },
     ];
     expect(() => parseDefs(payload)).toThrow(/duplicate item key 'bottle'/);
   });
@@ -963,8 +1007,8 @@ describe("canonicalDump", () => {
         "balance citizen.bar_decay.rest value=10 min=0 max=100",
         "balance render.tile_size_px value=16 min=1 max=64",
         "chain plastic_bottle id=1 links=[sanitation_worker]",
-        "item bottle id=1",
-        "item recycled_glass id=2",
+        "item bottle id=1 unit=0 shelf_life_minutes=0 width=1 height=1",
+        "item recycled_glass id=2 unit=0 shelf_life_minutes=0 width=1 height=1",
         "object trash_bin id=1 name=Trash Bin layer=2 sprite=x.png:0,0,16,16 height=1 width=1 collider=4,4,12,12 interact_at=none window=false tags=[1]",
         "profession sanitation_worker id=1",
         "recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]",

@@ -1,7 +1,20 @@
 [[item]]
 id = 1
 key = "bottle"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
 
 [[item]]
 id = 2
 key = "recycled_glass"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 3
+key = "milk"
+unit = "millilitre"
+shelf_life_minutes = 4320
+bulk = { width = 1, height = 2 }

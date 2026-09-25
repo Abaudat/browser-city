@@ -131,15 +131,19 @@ pub fn appearance_sheet_dims() -> BTreeMap<String, (u32, u32)> {
     .collect()
 }
 
-/// The `name -> code` layer ladder the valid tree's own objects resolve
+/// The code sets (layer ladder, item units) the valid tree resolves
 /// against -- a small, fixed subset of the real codes golden (Quentin's
 /// direction: these integration tests exercise `validate`/`build`'s own
 /// logic through real fixture trees, never `fsio`'s filesystem reads).
-pub fn layer_codes() -> BTreeMap<String, u32> {
-    [("furniture", 2u32), ("objects", 3u32), ("walls", 4u32)]
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .collect()
+pub fn code_tables() -> defs_build::codes::CodeTables {
+    defs_build::codes::CodeTables::from_entries(&[
+        ("layer", "furniture", 2),
+        ("layer", "objects", 3),
+        ("layer", "walls", 4),
+        ("unit", "piece", 0),
+        ("unit", "gram", 1),
+        ("unit", "millilitre", 2),
+    ])
 }
 
 /// `""` (never `defs_build::model::SPRITE_SHEET_ALLOWED_ROOT`): every
@@ -160,7 +164,7 @@ pub fn build_err(category: &str) -> defs_build::DefsError {
         &sheet_dims(),
         &object_sheet_bytes(),
         &appearance_sheet_bytes(),
-        &layer_codes(),
+        &code_tables(),
         "",
         "test-version",
     )
@@ -186,7 +190,7 @@ pub fn build_err_enforcing_sheet_root(category: &str) -> defs_build::DefsError {
         &sheet_dims(),
         &object_sheet_bytes(),
         &appearance_sheet_bytes(),
-        &layer_codes(),
+        &code_tables(),
         defs_build::model::SPRITE_SHEET_ALLOWED_ROOT,
         "test-version",
     )

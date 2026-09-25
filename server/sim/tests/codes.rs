@@ -6,7 +6,7 @@
 //! something else. `tests/goldens/codes_v1.golden` pins the whole mapping;
 //! a diff there is exactly the moment a human must look.
 
-use sim::codes::{Code, layer, matter_kind, node_kind, provision, reason_code};
+use sim::codes::{Code, layer, matter_kind, node_kind, provision, reason_code, unit};
 use std::collections::BTreeSet;
 
 const GOLDEN: &str = include_str!("goldens/codes_v1.golden");
@@ -113,6 +113,15 @@ fn node_kind_matches_golden_and_is_unique() {
     let golden = parse_golden(GOLDEN);
     assert_matches_golden("node_kind", node_kind::CODES, &golden);
     assert_unique("node_kind", node_kind::CODES);
+}
+
+/// Story 6.1: an item's `unit` is an extensible set (AC3) -- a `u32` code
+/// plus a name, never an enum, so a new unit is a row insert.
+#[test]
+fn unit_matches_golden_and_is_unique() {
+    let golden = parse_golden(GOLDEN);
+    assert_matches_golden("unit", unit::CODES, &golden);
+    assert_unique("unit", unit::CODES);
 }
 
 /// `layer` carries its FR123 `rank` inline (`sim::codes::layer::LayerCode`,

@@ -26,8 +26,13 @@ fn ac1_no_cafe_above_floor_2_renders_the_exact_rule_kind_literal() {
         ),
     ];
     let raw = defs_build::parse::parse_all(&files).expect("this tree is valid by construction");
-    let defs = defs_build::validate::validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "")
-        .expect("this tree is valid by construction");
+    let defs = defs_build::validate::validate(
+        &raw,
+        &BTreeMap::new(),
+        &defs_build::codes::CodeTables::default(),
+        "",
+    )
+    .expect("this tree is valid by construction");
     let rust = defs_build::emit::emit_rust(&defs, "test");
 
     assert!(
@@ -57,8 +62,13 @@ fn emit_rust_for(rule_toml: &str) -> String {
         (PathBuf::from("defs/rules/city.toml"), rule_toml.to_string()),
     ];
     let raw = defs_build::parse::parse_all(&files).expect("this tree is valid by construction");
-    let defs = defs_build::validate::validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "")
-        .expect("this tree is valid by construction");
+    let defs = defs_build::validate::validate(
+        &raw,
+        &BTreeMap::new(),
+        &defs_build::codes::CodeTables::default(),
+        "",
+    )
+    .expect("this tree is valid by construction");
     defs_build::emit::emit_rust(&defs, "test")
 }
 

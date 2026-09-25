@@ -1,9 +1,10 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "9c51d0bb6d68a601",
+  "defs_version": "00a85cb4f1f0b3e5",
   "collider_subcells_per_cell": 16,
   "interact_at_max_reach_cells": 2,
   "max_footprint_cells": 8,
+  "max_shelf_life_minutes": 525600,
   "atlas_max_pages_per_group": 2,
   "character_composite_pages": 2,
   "atlas_pages": [
@@ -29,8 +30,8 @@
     { "atlas": { "h": 16, "page": 6, "w": 16, "x": 261, "y": 1 }, "collider": { "x0": 0, "y0": 0, "x1": 16, "y1": 16 }, "height": 1, "id": 6, "interact_at": null, "key": "wall_segment", "layer": 4, "name": "Wall Segment", "sprite": { "sheet": "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png", "x": 0, "y": 528, "w": 16, "h": 16 }, "tags": [6, 16], "width": 1, "window": false }
   ],
   "items": [
-    { "id": 1, "key": "bottle" },
-    { "id": 2, "key": "recycled_glass" }
+    { "id": 1, "key": "bottle", "unit": 0, "shelf_life_minutes": 0, "width": 1, "height": 1 },
+    { "id": 2, "key": "recycled_glass", "unit": 0, "shelf_life_minutes": 0, "width": 1, "height": 1 }
   ],
   "recipes": [
     { "id": 1, "inputs": ["bottle"], "key": "bottle_recycling", "outputs": ["recycled_glass"] }

@@ -612,6 +612,16 @@ boot-gate.ts`'s ordering. Same Guard-path discipline as the sections above.
 | A rejected subscription does not hang the boot gate forever -- it settles as unreachable, the same as a connect error | covered | `client/src/net/connection.ts` -- `onError`, `client/tests/unit/connection.test.ts` |
 | A `defs/**`-only change (not only `client/**`/`server/**`) re-runs the e2e job, since it changes handshake behaviour | covered | `.github/workflows/ci.yml` -- the `changes` job, `e2e` filter |
 
+## Items
+
+Story 6.1 (FR86, NFR30, NFR36): an item carries a unit, a shelf life and a bulk.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| Every item carries `unit`, `shelf_life_minutes` and `bulk`, and both parsers reject a row lacking one or holding a bad value (FR86) | covered | `tools/defs-build/tests/shared_malformed_cases.rs` -- `every_shared_case_maps_to_a_fixture_that_fails_the_build`; `client/tests/unit/defs/parse.test.ts` -- `rejects an item missing unit, shelf_life_minutes or bulk` |
+| An item's `unit` is a `u32` code pinned by the codes golden, never an enum (NFR36) | covered | `server/sim/tests/codes.rs` -- `unit_matches_golden_and_is_unique` |
+| Server and client agree on every item field (FR86, NFR30) | covered | `server/sim/tests/defs_dump.rs` -- `matches_the_shared_golden_both_parsers_are_checked_against`; `client/tests/unit/defs/dump-golden.test.ts` -- `matches the shared golden both parsers are checked against` |
+
 ## CI guards
 
 Story 3.17 (NFR47): the guard that guards this table's own rows. Same

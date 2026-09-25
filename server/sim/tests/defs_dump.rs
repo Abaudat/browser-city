@@ -68,7 +68,10 @@ fn canonical_dump() -> String {
         ));
     }
     for i in defs::ITEMS {
-        lines.push(format!("item {} id={}", i.key, i.id));
+        lines.push(format!(
+            "item {} id={} unit={} shelf_life_minutes={} width={} height={}",
+            i.key, i.id, i.unit, i.shelf_life_minutes, i.width, i.height
+        ));
     }
     for r in defs::RECIPES {
         let mut inputs: Vec<&str> = r.inputs.to_vec();

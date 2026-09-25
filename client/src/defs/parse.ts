@@ -263,10 +263,14 @@ function parseTag(value: unknown, path: string): TagDef {
 
 function parseItem(value: unknown, path: string): ItemDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key"], path);
+  checkKnownKeys(obj, ["id", "key", "unit", "shelf_life_minutes", "width", "height"], path);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
+    unit: expectU32(obj.unit, `${path}.unit`),
+    shelfLifeMinutes: expectU32(obj.shelf_life_minutes, `${path}.shelf_life_minutes`),
+    width: expectU32(obj.width, `${path}.width`),
+    height: expectU32(obj.height, `${path}.height`),
   };
 }
 
@@ -520,6 +524,7 @@ export function parseDefs(data: unknown): Defs {
       "collider_subcells_per_cell",
       "interact_at_max_reach_cells",
       "max_footprint_cells",
+      "max_shelf_life_minutes",
       "atlas_max_pages_per_group",
       "character_composite_pages",
       "atlas_pages",
@@ -551,6 +556,7 @@ export function parseDefs(data: unknown): Defs {
     "$.interact_at_max_reach_cells",
   );
   const maxFootprintCells = expectU32(root.max_footprint_cells, "$.max_footprint_cells");
+  const maxShelfLifeMinutes = expectU32(root.max_shelf_life_minutes, "$.max_shelf_life_minutes");
   const atlasMaxPagesPerGroup = expectU32(
     root.atlas_max_pages_per_group,
     "$.atlas_max_pages_per_group",
@@ -575,6 +581,9 @@ export function parseDefs(data: unknown): Defs {
     parseObject(v, `$.objects[${i}]`),
   );
   const items = expectArray(root.items, "$.items").map((v, i) => parseItem(v, `$.items[${i}]`));
+  for (const item of items) {
+    checkItemFields(item, maxFootprintCells, maxShelfLifeMinutes);
+  }
   const recipes = expectArray(root.recipes, "$.recipes").map((v, i) =>
     parseRecipe(v, `$.recipes[${i}]`),
   );
@@ -766,6 +775,7 @@ export function parseDefs(data: unknown): Defs {
     colliderSubcellsPerCell,
     interactAtMaxReachCells,
     maxFootprintCells,
+    maxShelfLifeMinutes,
     atlasMaxPagesPerGroup,
     characterCompositePages,
     atlasPages,
@@ -924,6 +934,34 @@ function checkObjectWalkabilityTag(object: ObjectDef, underfootTagId: number | u
   }
 }
 
+/** Mirrors `validate.rs`'s `check_item_fields`: an item's bulk is the world
+ * footprint reused unchanged (FR94), so it shares the object cap and
+ * refusal of 0; its shelf life is bounded by `MAX_SHELF_LIFE_MINUTES`. */
+function checkItemFields(
+  item: ItemDef,
+  maxFootprintCells: number,
+  maxShelfLifeMinutes: number,
+): void {
+  if (item.width === 0 || item.height === 0) {
+    fail(`item '${item.key}' bulk width or height of 0 -- every item occupies at least one cell`);
+  }
+  for (const [axis, v] of [
+    ["width", item.width],
+    ["height", item.height],
+  ] as const) {
+    if (v > maxFootprintCells) {
+      fail(
+        `item '${item.key}' bulk ${axis} ${v} exceeds MAX_FOOTPRINT_CELLS (${maxFootprintCells})`,
+      );
+    }
+  }
+  if (item.shelfLifeMinutes > maxShelfLifeMinutes) {
+    fail(
+      `item '${item.key}' shelf_life_minutes ${item.shelfLifeMinutes} exceeds MAX_SHELF_LIFE_MINUTES (${maxShelfLifeMinutes})`,
+    );
+  }
+}
+
 /** FR127's cap, checked on `width` and `height` independently, exactly
  * like `tools/defs-build`'s own `validate.rs` -- the error names the
  * object and its size, and directs the author to compose the structure
@@ -1071,7 +1109,9 @@ export function canonicalDump(defs: Defs): string {
     );
   }
   for (const i of defs.items) {
-    lines.push(`item ${i.key} id=${i.id}`);
+    lines.push(
+      `item ${i.key} id=${i.id} unit=${i.unit} shelf_life_minutes=${i.shelfLifeMinutes} width=${i.width} height=${i.height}`,
+    );
   }
   for (const r of defs.recipes) {
     const inputs = [...r.inputs].sort().join(",");

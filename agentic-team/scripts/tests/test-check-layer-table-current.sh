@@ -2,7 +2,7 @@
 # Fixture-driven coverage for scripts/ci/check-layer-table-current.sh.
 # Every fixture is a scratch directory with the four files the script
 # reads -- never the live repo's own golden, codes.rs, layer-table.ts or
-# layer_codes.rs. No git needed: unlike the append-only checks, this
+# defs-build codes.rs. No git needed: unlike the append-only checks, this
 # script never diffs against a base ref, it only compares the files as
 # they stand.
 set -u
@@ -13,9 +13,9 @@ CHECK="$TEST_DIR/../../../scripts/ci/check-layer-table-current.sh"
 GOLDEN_PATH="server/sim/tests/goldens/codes_v1.golden"
 CODES_RS_PATH="server/sim/src/codes.rs"
 LAYER_TABLE_PATH="client/src/render/layer-table.ts"
-LAYER_CODES_RS_PATH="tools/defs-build/src/layer_codes.rs"
+LAYER_CODES_RS_PATH="tools/defs-build/src/codes.rs"
 
-# The one content every case below uses for layer_codes.rs unless it is
+# The one content every case below uses for defs-build codes.rs unless it is
 # itself the thing under test (story 2.2 cycle 1: defs-build's own
 # DEPRECATED_LAYER_NAMES copy, checked against codes.rs's DEPRECATED_CODES
 # the same way layer-table.ts already is) -- matches CODES_RS_HAPPY's own
@@ -23,7 +23,7 @@ LAYER_CODES_RS_PATH="tools/defs-build/src/layer_codes.rs"
 LAYER_CODES_RS_HAPPY='pub const DEPRECATED_LAYER_NAMES: &[&str] = &["overhead"];
 '
 
-# write_case <dir> <golden-content> <codes.rs-content> <layer-table.ts-content> [layer_codes.rs-content]
+# write_case <dir> <golden-content> <codes.rs-content> <layer-table.ts-content> [defs-build codes.rs-content]
 write_case() {
   local d="$1"
   rm -rf "$d"

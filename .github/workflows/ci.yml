@@ -296,7 +296,7 @@ jobs:
         run: RULE_SOURCE_SKIP_TREE_CHECK=1 bash ../../scripts/ci/check-rule-source.sh
       # Quentin's direction, cycle 2: client-check's own filter (client/**,
       # server/**, scripts/**, .github/**, fixtures/**) never covers
-      # tools/defs-build/**, so a PR that only edits layer_codes.rs's own
+      # tools/defs-build/**, so a PR that only edits defs-build's codes.rs' own
       # DEPRECATED_LAYER_NAMES would skip client-check entirely and this
       # drift guard would never run. Runs here too -- plain text, no
       # toolchain, costs nothing -- so the defs filter (which does cover
