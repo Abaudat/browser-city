@@ -13,10 +13,8 @@ import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
 import {
   LAMPPOST_CELL,
-  PLATFORM_LANDING_X,
-  PLATFORM_LANDING_Y,
   type StreetWalkSegment,
-  streetWalkRoute,
+  streetSubwayApproachRoute,
 } from "../../src/test-street/fixture";
 import {
   committedDefs,
@@ -54,23 +52,6 @@ async function waitForSceneReady(page: Page): Promise<void> {
     timeout: 20_000,
   });
   await waitForPlayerControllable(page);
-}
-
-async function walkTo(
-  page: Page,
-  key: "ArrowDown" | "ArrowRight" | "ArrowUp" | "ArrowLeft",
-  target: { x: number; y: number },
-): Promise<void> {
-  await page.keyboard.down(key);
-  await page.waitForFunction(
-    ({ x, y }) => {
-      const pos = window.__bc?.playerPosition;
-      return !!pos && Math.abs(pos.x - x) < 0.01 && Math.abs(pos.y - y) < 0.01;
-    },
-    target,
-    { timeout: 15_000 },
-  );
-  await page.keyboard.up(key);
 }
 
 /** Holds a segment's own key through real, OS-level `page.keyboard` input
@@ -500,19 +481,11 @@ test.describe("camera/viewport (NFR48)", () => {
     await page.goto("/");
     await waitForSceneReady(page);
 
-    // Onto the pavement, all the way to the underpass checkpoint's own
-    // south rest, east of the stairwell -- `streetWalkRoute`'s own first
-    // nine segments (`walkRealSegment`'s own doc comment says why,
-    // `enclosure.spec.ts`'s own idiom: the stairwell's own one open side
-    // is its east face, `STAIRS_ENTRY_DIRECTION`'s own doc comment says
-    // why approaching from the lamppost's own row instead never arrives).
-    for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 9)) {
+    // From the shop down the subway stairs the demo's own way (issue #310:
+    // walking left); the key is released the frame the floor changes.
+    for (const segment of streetSubwayApproachRoute(streetWalkInputs())) {
       await walkRealSegment(page, segment);
     }
-    // The demo's own reported entry (issue #310): walking left (west)
-    // into the stairs, and the transition fires the instant the player's
-    // own cell matches it.
-    await walkTo(page, "ArrowLeft", { x: PLATFORM_LANDING_X + 0.5, y: PLATFORM_LANDING_Y + 0.5 });
     expect(await page.evaluate(() => window.__bc?.playerFloor)).toBe(-1);
 
     await assertPlayerCentred(page);

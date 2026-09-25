@@ -3,9 +3,14 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { CollisionGridQuery, GridEntry } from "../../../src/world/collision-grid";
-import { initialFloorWalkState, stepAndTransition } from "../../../src/world/floor-walk";
+import {
+  type FloorWalkResult,
+  initialFloorWalkState,
+  stepAndTransition,
+} from "../../../src/world/floor-walk";
 import type { MovementConfig } from "../../../src/world/movement";
 import {
+  blockedNeighborsOf,
   checkTransitionPairSymmetry,
   TransitionIndex,
   type TransitionSpec,
@@ -216,11 +221,35 @@ describe("TransitionIndex's own pair-symmetry rule (story 15.2, Quentin's findin
   });
 });
 
-const OPEN_GRID: CollisionGridQuery = {
-  entriesInCell(): readonly GridEntry[] {
-    return [];
-  },
-};
+const SUBCELLS_PER_CELL = 16;
+
+/** A grid built from the pair itself: every non-entry neighbour of each
+ * anchor (`blockedNeighborsOf`) is one whole solid cell on its own floor,
+ * everything else open -- the one-entrance shape a real stairwell has. */
+function gridForPair(
+  forward: TransitionSpec,
+  reverse: TransitionSpec,
+  d: { readonly x: number; readonly y: number },
+): CollisionGridQuery {
+  const blocked = new Set<string>();
+  for (const { x, y } of blockedNeighborsOf(forward, d)) blocked.add(`${forward.floor}|${x}|${y}`);
+  for (const { x, y } of blockedNeighborsOf(reverse, { x: -d.x, y: -d.y })) {
+    blocked.add(`${reverse.floor}|${x}|${y}`);
+  }
+  return {
+    entriesInCell(floor, cellX, cellY): readonly GridEntry[] {
+      if (!blocked.has(`${floor}|${cellX}|${cellY}`)) return [];
+      const x0 = cellX * SUBCELLS_PER_CELL;
+      const y0 = cellY * SUBCELLS_PER_CELL;
+      return [
+        {
+          objectId: 1n,
+          rect: { x0, y0, x1: x0 + SUBCELLS_PER_CELL, y1: y0 + SUBCELLS_PER_CELL },
+        },
+      ];
+    },
+  };
+}
 
 describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and any deltaMs in range, walking the entry direction then the reverse direction lands back on the original cell, with no bounce", () => {
   it("inv_transition_pairs_round_trip", () => {
@@ -244,16 +273,15 @@ describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and 
         // a step can tunnel clean over a one-cell-wide anchor without its
         // destination cell ever being the anchor -- a real limitation of
         // "check only the cell landed on", already true of the committed
-        // walking speed (0.0022 cells/ms * 100ms = 0.22 cells) and nothing
-        // this property is about, so it is a precondition here, not a
-        // finding.
+        // walking speed (0.0022 cells/ms * 100ms = 0.22 cells), so it is a
+        // precondition here, not a finding.
         fc.double({ min: 0.0001, max: 0.009, noNaN: true }),
         fc.array(fc.integer({ min: 1, max: 100 }), { minLength: 1, maxLength: 20 }),
         (d, ax, ay, lx, ly, walkSpeedCellsPerMs, deltaMsSequence) => {
           // A mirrored pair, built exactly the way `checkTransitionPairSymmetry`
           // requires: the reverse anchor is the landing's own neighbour
-          // along `d`, and the reverse landing is the forward anchor's own
-          // neighbour along `d` -- the same `d` in both.
+          // against `d`, and the reverse landing is the forward anchor's own
+          // neighbour against `d` -- the same `d` in both.
           const forward: TransitionSpec = {
             x: ax,
             y: ay,
@@ -272,6 +300,7 @@ describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and 
           };
           expect(checkTransitionPairSymmetry([forward, reverse], ALWAYS_STANDABLE)).toEqual([]);
 
+          const grid = gridForPair(forward, reverse, d);
           const transitions = new TransitionIndex([forward, reverse], {
             isStandable: ALWAYS_STANDABLE,
           });
@@ -279,51 +308,67 @@ describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and 
             walkSpeedCellsPerMs,
             bodyWidthSubcells: 8,
             bodyHeightSubcells: 4,
-            subcellsPerCell: 16,
+            subcellsPerCell: SUBCELLS_PER_CELL,
           };
-          const startX = ax - d.x + 0.5;
-          const startY = ay - d.y + 0.5;
+          const deltaAt = (step: number) => deltaMsSequence[step % deltaMsSequence.length] ?? 1;
+          const walkUntilTransition = (start: FloorWalkResult, dir: { x: number; y: number }) => {
+            let state: FloorWalkResult = { ...start, transitioned: false };
+            for (let step = 0; !state.transitioned && step < 10_000; step++) {
+              state = stepAndTransition(state, dir, deltaAt(step), grid, config, transitions);
+            }
+            return state;
+          };
 
-          let state = {
-            ...initialFloorWalkState(startX, startY, 0),
+          // (i) Down the entry direction, then straight back up.
+          const start: FloorWalkResult = {
+            ...initialFloorWalkState(ax - d.x + 0.5, ay - d.y + 0.5, 0),
             transitioned: false,
           };
-          let transitionCount = 0;
-          const maxSteps = 10_000;
-          let steps = 0;
-          // Walk the entry direction until it transitions down.
-          while (!state.transitioned && steps++ < maxSteps) {
-            const deltaMs = deltaMsSequence[steps % deltaMsSequence.length] ?? 1;
-            state = stepAndTransition(state, d, deltaMs, OPEN_GRID, config, transitions);
-          }
-          if (state.transitioned) transitionCount++;
-          expect(state.floor).toBe(-1);
-          expect(state.cellX).toBe(lx);
-          expect(state.cellY).toBe(ly);
+          const landed = walkUntilTransition(start, d);
+          expect(landed.transitioned).toBe(true);
+          expect(landed.floor).toBe(-1);
+          expect(landed.cellX).toBe(lx);
+          expect(landed.cellY).toBe(ly);
+          const back = walkUntilTransition(landed, { x: -d.x, y: -d.y });
+          expect(back.transitioned).toBe(true);
+          expect(back.floor).toBe(0);
+          expect(back.cellX).toBe(ax - d.x);
+          expect(back.cellY).toBe(ay - d.y);
 
-          // Walk the reverse direction until it transitions back up.
-          state = { ...state, transitioned: false };
-          steps = 0;
-          while (!state.transitioned && steps++ < maxSteps) {
-            const deltaMs = deltaMsSequence[steps % deltaMsSequence.length] ?? 1;
-            state = stepAndTransition(
-              state,
-              { x: -d.x, y: -d.y },
-              deltaMs,
-              OPEN_GRID,
-              config,
-              transitions,
-            );
+          // (ii) Holding the entry direction through the landing and onward
+          // never returns the walker to the floor it came from.
+          let onward: FloorWalkResult = { ...landed, transitioned: false };
+          for (let step = 0; step < 200; step++) {
+            onward = stepAndTransition(onward, d, deltaAt(step), grid, config, transitions);
+            expect(onward.transitioned).toBe(false);
+            expect(onward.floor).toBe(-1);
           }
-          if (state.transitioned) transitionCount++;
 
-          // Lands back on the exact cell the walk started from, and never
-          // bounced (transitioned exactly the two times a real down-then-
-          // up round trip requires, never more).
-          expect(state.floor).toBe(0);
-          expect(state.cellX).toBe(ax - d.x);
-          expect(state.cellY).toBe(ay - d.y);
-          expect(transitionCount).toBe(2);
+          // (iii) A walker approaching either anchor through any of its
+          // blocked neighbours never transitions. It starts on the far side
+          // of that neighbour, not inside it: the resolver lets a body that
+          // already overlaps a collider walk straight out of it.
+          for (const [anchor, entry] of [
+            [forward, d],
+            [reverse, { x: -d.x, y: -d.y }],
+          ] as const) {
+            for (const blocked of blockedNeighborsOf(anchor, entry)) {
+              const dir = { x: anchor.x - blocked.x, y: anchor.y - blocked.y };
+              let state: FloorWalkResult = {
+                ...initialFloorWalkState(
+                  blocked.x - dir.x + 0.5,
+                  blocked.y - dir.y + 0.5,
+                  anchor.floor,
+                ),
+                transitioned: false,
+              };
+              for (let step = 0; step < 200; step++) {
+                state = stepAndTransition(state, dir, deltaAt(step), grid, config, transitions);
+                expect(state.transitioned).toBe(false);
+                expect(state.floor).toBe(anchor.floor);
+              }
+            }
+          }
         },
       ),
     );

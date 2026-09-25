@@ -24,13 +24,12 @@
 import { expect, type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import {
-  PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
   PLAYER_START,
   STREET_EXIT_X,
   STREET_EXIT_Y,
   type StreetWalkSegment,
-  streetWalkRoute,
+  streetSubwayApproachRoute,
 } from "../../src/test-street/fixture";
 import {
   STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE,
@@ -223,29 +222,16 @@ test.describe("story 1.7: enclosure visibility", () => {
     await page.goto("/");
     await waitForSceneReady(page);
 
-    // Onto the pavement, all the way to the underpass checkpoint's own
-    // south rest -- `streetWalkRoute`'s own first nine segments, real
-    // OS-level keyboard input driving the exact same release conditions
-    // `street-conformance.test.ts` already proves collision-feasible
-    // under real release lag (`walkRealSegment`'s own doc comment says
-    // why this spec reuses them rather than a shorter, hand-rolled
-    // version). This lands east of the stairwell, on the subway's own
-    // one open side (`STAIRS_ENTRY_DIRECTION`'s own doc comment: "a
-    // stairwell has one top and one bottom" -- approaching from the west
-    // instead, straight down the lamppost's own row, walks into the
-    // stairwell's own real, blocked west face and never arrives at all).
-    for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 9)) {
+    // From the shop to the stairwell's own opening and down it the demo's
+    // own way (issue #310: walking left), through real OS-level keyboard
+    // input driving the release conditions `street-conformance.test.ts`
+    // proves under release lag. The transition fires the moment the
+    // player's own cell matches `(STAIRS_X, STAIRS_Y)`.
+    for (const segment of streetSubwayApproachRoute(streetWalkInputs())) {
       await walkRealSegment(page, segment);
     }
-
-    // The demo's own reported entry (issue #310): walking left (west)
-    // into the stairs. It has no collider (never a teleport tile): the
-    // transition fires the moment the player's own cell matches
-    // `(STAIRS_X, STAIRS_Y)`, landing at a real, predictable position.
-    await walkTo(page, "ArrowLeft", {
-      x: PLATFORM_LANDING_X + 0.5,
-      y: PLATFORM_LANDING_Y + 0.5,
-    });
+    const landed = await page.evaluate(() => window.__bc?.playerPosition);
+    expect(landed && Math.floor(landed.y)).toBe(PLATFORM_LANDING_Y);
     await page.waitForFunction(() => window.__bc?.visibility?.["60"] !== "hidden", undefined, {
       timeout: 15_000,
     });

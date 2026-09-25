@@ -13,14 +13,14 @@ import type { Defs } from "../../../src/defs/types";
 import {
   BOLLARD_COLLIDER,
   BRIDGE_DECK_Y,
-  BRIDGE_UNDER_CURB_COLLIDER,
-  BRIDGE_UNDER_EXIT_COLLIDER,
+  BRIDGE_UNDER_CURB_X,
   BRIDGE_UNDER_EXIT_Y,
   BRIDGE_UNDER_PILLAR_X,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
   PLAYER_START,
   SHOPFRONT_EXIT_Y,
+  STAIRS_Y,
   STREET_BUILDING_AREAS,
   STREET_ROOM_AREAS,
   STREET_TRANSITIONS,
@@ -39,7 +39,6 @@ import {
   stepAndTransition,
 } from "../../../src/world/floor-walk";
 import type { MovementConfig } from "../../../src/world/movement";
-import { step } from "../../../src/world/movement";
 import { loadMovementConfig } from "../../../src/world/movement-config";
 import type { ObjectSource } from "../../../src/world/object-defs";
 import { objectDefsById, windowDefIds } from "../../../src/world/object-defs";
@@ -188,63 +187,70 @@ export function bridgeUnderRestX(): number {
   return BRIDGE_UNDER_PILLAR_X + BOLLARD_COLLIDER.x0 / config.subcellsPerCell - halfWidth;
 }
 
-/** Where leaving the underpass comes to rest (story 1.13, cycle 3; story
- * 15.2, cycle 2, Quentin's finding 3): `STREET_BOUNDARY`'s own id 108 --
- * carrying `BRIDGE_UNDER_EXIT_COLLIDER`, the identical collider shape the
- * kerb prop itself used before finding 3 (`BRIDGE_UNDER_EXIT_Y`'s own doc
- * comment says why it moved) -- north face. Feet-first (moving south, the
- * body's own leading edge), so the rest is the collider's own near face
- * directly, no body-height addition needed -- still inside `BRIDGE_UNDER_
- * EXIT_Y` itself, real margin short of the pavement's own south edge one
- * row further, which would carry the walk straight past the up-
- * transition's own anchor row without ever crossing it (found the hard
- * way: the walk climbed onto the deck a whole segment late, at the wrong
- * column). */
-export function bridgeUnderExitClearY(): number {
+/** The first column whose body overlaps the underpass bollard's own
+ * collider (its west face, less the body's half-width, plus one
+ * sub-cell) -- a waypoint, leaving the whole overlap window for release
+ * lag, like `lamppostApproachX`. */
+export function underpassTurnX(): number {
   const config = streetMovementConfig();
-  return BRIDGE_UNDER_EXIT_Y + BRIDGE_UNDER_EXIT_COLLIDER.y0 / config.subcellsPerCell;
+  const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  return BRIDGE_UNDER_CURB_X + (BOLLARD_COLLIDER.x0 + 1) / config.subcellsPerCell - halfWidth;
 }
 
-/** Where a walk turning north onto the underpass row comes to rest
- * (story 1.13, cycle 3; story 15.2, cycle 2, Quentin's finding 3):
- * `STREET_BOUNDARY`'s own id 107 -- carrying `BRIDGE_UNDER_CURB_COLLIDER`,
- * the identical collider shape the curb prop itself used before finding 3
- * (`BRIDGE_UNDER_CURB_X`'s own doc comment says why it moved) -- south
- * face, plus the body's own height (feet-anchored, extends *upward* from
- * `pos.y`). Real margin, not a knife-edge: this clears both `STAIRS_
- * UPPER_ROW_COLLIDER`'s own thin band further east on this same row (the
- * subway stairwell's own one-entrance geometry, unrelated to this story)
- * and the stairwell's own base collider one row south, in one rest,
- * exactly as the old, undrawn collider this replaces always did. */
+/** The far edge of `underpassTurnX`'s own window. */
+export function underpassTurnMaxX(): number {
+  const config = streetMovementConfig();
+  const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  return BRIDGE_UNDER_CURB_X + BOLLARD_COLLIDER.x1 / config.subcellsPerCell + halfWidth;
+}
+
+/** Walking north onto the deck's row, the body's top rests on the
+ * underpass bollard's own south face (the bollard stands one row north). */
 export function onUnderpassRowY(): number {
   const config = streetMovementConfig();
-  const bodyHeight = config.bodyHeightSubcells / config.subcellsPerCell;
-  return BRIDGE_DECK_Y + BRIDGE_UNDER_CURB_COLLIDER.y1 / config.subcellsPerCell + bodyHeight;
+  return BRIDGE_DECK_Y - 1 + BOLLARD_COLLIDER.y1 / config.subcellsPerCell + bodyHeightCells();
+}
+
+/** The body's own height, in cells (feet-anchored: it extends upward
+ * from `pos.y`). */
+function bodyHeightCells(): number {
+  const config = streetMovementConfig();
+  return config.bodyHeightSubcells / config.subcellsPerCell;
+}
+
+/** The first `y` in `BRIDGE_UNDER_EXIT_Y` whose body clears the support
+ * pillar's own row. */
+export function bridgeUnderExitClearY(): number {
+  return BRIDGE_UNDER_EXIT_Y + bodyHeightCells();
+}
+
+/** The first `y` in the stairwell's tread row whose body clears the
+ * stairwell's upper railing. */
+export function subwayTreadRowY(): number {
+  return STAIRS_Y + bodyHeightCells();
 }
 
 /** Every real value [`streetWalkRoute`] needs, assembled once -- the one
- * call site every unit test and e2e spec goes through, so none of them
- * can drift from another about what a rest position actually is. Every
- * leg that used to rest against an undrawn collider now releases on real
- * geometry instead -- a clearance, a waypoint or a real collider face
- * (story 15.2, cycle 2, Quentin's finding 3). */
+ * call site every unit test and e2e spec goes through. */
 export function streetWalkInputs(): StreetWalkInputs {
   return {
     shopfrontExitRestY: shopfrontExitRestY(),
     lamppostApproachX: lamppostApproachX(),
     lamppostRestY: lamppostRestY(),
-    bridgeUnderRestX: bridgeUnderRestX(),
+    underpassTurnX: underpassTurnX(),
     onUnderpassRowY: onUnderpassRowY(),
+    bridgeUnderRestX: bridgeUnderRestX(),
     bridgeUnderExitClearY: bridgeUnderExitClearY(),
+    subwayTreadRowY: subwayTreadRowY(),
   };
 }
 
 /** Whether a whole cell can be stood on, on its own floor: the real
- * player body, centred in the cell the way a floor transition lands it
- * (`world/floor-walk.ts` puts the player at the cell's own centre), tested
- * against the real collision grid by taking a zero-length step and seeing
- * whether the resolver moved the body at all. Never a second, hand-written
- * overlap test. */
+ * player body, centred in the cell the way a floor transition lands it,
+ * overlaps no collider entry in the real grid (half-open, so touching a
+ * face is not overlapping). An overlap test, not a probe step: the
+ * resolver never blocks a body that already overlaps a collider, so a
+ * probe reads a cell inside a wall as standable. */
 export function isCellStandable(
   world: WorldIndex,
   config: MovementConfig,
@@ -252,21 +258,24 @@ export function isCellStandable(
   y: number,
   floor: number,
 ): boolean {
-  const centre = { x: x + 0.5, y: y + 0.5 };
-  // A tiny probe step in each axis direction: a body already inside a
-  // collider is pushed out (or refused) by the resolver, so a standable
-  // cell is one where a probe this small changes nothing measurable.
-  const probeMs = 1;
-  for (const dir of [
-    { x: 1, y: 0 },
-    { x: -1, y: 0 },
-    { x: 0, y: 1 },
-    { x: 0, y: -1 },
-  ]) {
-    const moved = step(centre, dir, probeMs, world, floor, config);
-    const expected = config.walkSpeedCellsPerMs * probeMs;
-    const actual = Math.hypot(moved.x - centre.x, moved.y - centre.y);
-    if (actual < expected - 1e-9) return false;
+  const s = config.subcellsPerCell;
+  const halfWidth = config.bodyWidthSubcells / 2;
+  const cx = (x + 0.5) * s;
+  const feet = (y + 0.5) * s;
+  const body = {
+    x0: cx - halfWidth,
+    x1: cx + halfWidth,
+    y0: feet - config.bodyHeightSubcells,
+    y1: feet,
+  };
+  for (let cy = Math.floor(body.y0 / s); cy <= Math.floor((body.y1 - 1) / s); cy++) {
+    for (let cellX = Math.floor(body.x0 / s); cellX <= Math.floor((body.x1 - 1) / s); cellX++) {
+      for (const { rect } of world.entriesInCell(floor, cellX, cy)) {
+        if (rect.x0 < body.x1 && body.x0 < rect.x1 && rect.y0 < body.y1 && body.y0 < rect.y1) {
+          return false;
+        }
+      }
+    }
   }
   return true;
 }

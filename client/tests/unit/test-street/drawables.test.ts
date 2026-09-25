@@ -141,9 +141,11 @@ describe("the story 1.6 street scene's committed ordering", () => {
 
   it("a table and the glass on it share an anchor; the rank tiebreak keeps the glass on top", () => {
     const props = buildStreetProps();
-    const table = props.find((p) => p.stableId === 9n);
     const glass = props.find((p) => p.stableId === 10n);
-    if (!table || !glass) throw new Error("unreachable");
+    if (!glass) throw new Error("unreachable");
+    // The table is decomposed per cell; the glass shares its south-west one.
+    const table = props.find((p) => p.stableId === 9n && p.x === glass.x && p.y === glass.y);
+    if (!table) throw new Error("no table cell at the glass's own anchor");
     expect(table.x).toBe(glass.x);
     expect(table.y).toBe(glass.y);
     expect(compareDrawables(table, glass)).toBeLessThan(0);

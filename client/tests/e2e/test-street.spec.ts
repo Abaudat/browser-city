@@ -877,7 +877,6 @@ test("one walk down the test street: collision, depth order, retraction, floors 
 
   // --- under the bridge ----------------------------------------------------
   await walkSegment(page, segment("past-the-lamppost"));
-  await walkSegment(page, segment("off-the-crossing-row"));
   await walkSegment(page, segment("east-along-the-crossing"));
   await walkSegment(page, segment("on-the-underpass-row"));
   await walkSegment(page, segment("under-the-bridge"));
