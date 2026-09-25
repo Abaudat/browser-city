@@ -31,7 +31,7 @@ export interface MovementConfig {
 /** A single scheduled-reducer-timing-style clamp (`docs/architecture.md`):
  * a backgrounded tab's huge next frame delta must never turn into a
  * teleport through a wall. */
-const MAX_DELTA_MS = 100;
+export const MAX_DELTA_MS = 100;
 
 /**
  * Resolves movement along one axis, holding the perpendicular axis fixed

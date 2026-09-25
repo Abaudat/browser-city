@@ -129,31 +129,39 @@ export function shopfrontExitRestY(): number {
 }
 
 /** Where the walk's own eastward approach to the lamppost turns south
- * (story 2.13; story 15.2, cycle 2, Quentin's finding 3): the real
- * centre of the lamppost's own base collider (`defs.json`'s own
- * `lamppost` entry), not a rest against anything -- the approach row
- * (the trash bin's own row) has nothing else real on it between the bin
- * and the lamppost's own column (the lamppost's approach bollard shares
- * the lamppost's own row instead, one cell west of it -- clear of this
- * approach entirely, `STREET_PROPS`'s own doc comment on that prop says
- * why), so nothing stops a walk here; it is a waypoint, the same "a
- * continuous walk only ever passes through" pattern `streetWalkRoute`'s
- * own `x-at-least`/`y-at-least` legs already use elsewhere. Centred (not
- * merely inside) the collider's own span so the very next, southward
- * segment engages the real collider for certain, regardless of exactly
- * how far release lag carries this one past it -- and regardless of how
- * far release lag carried the segment *before* it, too: this approach
- * never changes row, so nothing upstream can push it somewhere the
- * lamppost's own collider no longer reaches (`street-conformance.test.ts`'s
- * own release-lag regression pins are what found this the hard way). */
+ * (story 2.13; story 15.2, cycle 2, Quentin's finding 3): a waypoint,
+ * not a rest -- nothing real on the approach row stops a walk there, and
+ * no real prop's own collider face lands inside the window below at
+ * cell granularity. The next, southward segment only rests on the
+ * lamppost's own base collider if the body still overlaps that collider
+ * in x, so every position from here to `lamppostApproachMaxX` works and
+ * anything past it walks straight by. This is the *first* sub-cell column
+ * that overlaps (the collider's own west face, less the body's own
+ * half-width, plus one sub-cell), not the collider's centre, so all of
+ * the window's width is left for release lag to overshoot into. */
 export function lamppostApproachX(): number {
   const defs = committedDefs();
+  const config = streetMovementConfig();
   const lamppost = defs.objects.find((object) => object.id === LAMPPOST_DEF_ID);
   if (!lamppost?.collider) {
     throw new Error(`lamppostApproachX: def ${LAMPPOST_DEF_ID} has no collider in defs.json`);
   }
-  const centre = (lamppost.collider.x0 + lamppost.collider.x1) / 2;
-  return LAMPPOST_CELL.x + centre / defs.colliderSubcellsPerCell;
+  const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  return LAMPPOST_CELL.x + (lamppost.collider.x0 + 1) / defs.colliderSubcellsPerCell - halfWidth;
+}
+
+/** The far edge of `lamppostApproachX`'s own window: the last `x` whose
+ * body still overlaps the lamppost's own base collider (its east face
+ * plus the body's own half-width, exclusive). */
+export function lamppostApproachMaxX(): number {
+  const defs = committedDefs();
+  const config = streetMovementConfig();
+  const lamppost = defs.objects.find((object) => object.id === LAMPPOST_DEF_ID);
+  if (!lamppost?.collider) {
+    throw new Error(`lamppostApproachMaxX: def ${LAMPPOST_DEF_ID} has no collider in defs.json`);
+  }
+  const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  return LAMPPOST_CELL.x + lamppost.collider.x1 / defs.colliderSubcellsPerCell + halfWidth;
 }
 
 /** Where the player comes to rest walking into the lamppost:

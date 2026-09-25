@@ -1596,10 +1596,10 @@ export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSe
     },
     // East to the lamppost's own column (story 2.13; `LAMPPOST_CELL`'s own
     // doc comment says why it moved off the door's column): a waypoint
-    // centred on the lamppost's own real base collider, not a rest
-    // (`inputs.lamppostApproachX`'s own doc comment says why), so the
-    // southward segment just below always engages that real collider for
-    // certain.
+    // at the first column that overlaps the lamppost's own real base
+    // collider, not a rest (`inputs.lamppostApproachX`'s own doc comment
+    // says why), leaving the whole overlap window for release lag, so the
+    // southward segment just below still engages that real collider.
     {
       label: "east-to-the-lamppost",
       key: "ArrowRight",

@@ -84,31 +84,54 @@ async function walkTo(
  * a rest, so missing its real collider on a slow round trip is a real
  * risk a shorter walk does not have the extra segments to recover from). */
 async function walkRealSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
+  // Released inside the page on the frame the condition is first met, never
+  // after a Node round trip (`test-street.spec.ts`'s own `walkSegment` doc
+  // comment says why: a slow runner's round trip overshoots the lamppost's
+  // own approach waypoint).
   await page.keyboard.down(segment.key);
-  await page.waitForFunction(
-    (until) => {
-      const pos = window.__bc?.playerPosition;
-      const floor = window.__bc?.playerFloor;
-      if (!pos || floor === undefined) return false;
-      switch (until.kind) {
-        case "x-at-least":
-          return pos.x >= until.value;
-        case "x-at-most":
-          return pos.x <= until.value;
-        case "y-at-least":
-          return pos.y >= until.value;
-        case "y-at-most":
-          return pos.y <= until.value;
-        case "floor":
-          return floor === until.value;
-        case "cell":
-          return Math.floor(pos.x) === until.x && Math.floor(pos.y) === until.y;
-      }
-    },
-    segment.until,
-    { timeout: 15_000 },
-  );
-  await page.keyboard.up(segment.key);
+  try {
+    await page.evaluate(
+      ({ until, code, timeoutMs }) =>
+        new Promise<void>((resolve, reject) => {
+          const met = (u: StreetWalkSegment["until"]): boolean => {
+            const pos = window.__bc?.playerPosition;
+            const floor = window.__bc?.playerFloor;
+            if (!pos || floor === undefined) return false;
+            switch (u.kind) {
+              case "x-at-least":
+                return pos.x >= u.value;
+              case "x-at-most":
+                return pos.x <= u.value;
+              case "y-at-least":
+                return pos.y >= u.value;
+              case "y-at-most":
+                return pos.y <= u.value;
+              case "floor":
+                return floor === u.value;
+              case "cell":
+                return Math.floor(pos.x) === u.x && Math.floor(pos.y) === u.y;
+            }
+          };
+          const deadline = performance.now() + timeoutMs;
+          const tick = (): void => {
+            if (met(until)) {
+              window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
+              resolve();
+              return;
+            }
+            if (performance.now() >= deadline) {
+              reject(new Error(`walkRealSegment: ${JSON.stringify(until)} never met`));
+              return;
+            }
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        }),
+      { until: segment.until, code: segment.key, timeoutMs: 15_000 },
+    );
+  } finally {
+    await page.keyboard.up(segment.key);
+  }
 }
 
 /** One centre check against the player sprite's own real, live global
@@ -279,7 +302,7 @@ async function holdAndSampleFollow(
  * real, mounted scene through this exact same `walkToOpenSpot` (a real
  * `ArrowDown` rest against the trash bin lands at `(4.5, 7.25)` --
  * `shopfrontExitRestY()`'s own doc comment says why the lamppost no
- * longer sits on this column; from there, east to a waypoint centred on
+ * longer sits on this column; from there, east to a waypoint overlapping
  * the lamppost's own base collider, south into it, east past it and on
  * to `x >= 10`, then resting west
  * lands back around `(1.25, 8.625)`, ~9.3 cells; crossing `x >= 7.3` then
@@ -406,8 +429,8 @@ test.describe("camera/viewport (NFR48)", () => {
       // comment says why the lamppost moved there) walls off its own
       // column, so a plain east crossing on this row no longer reaches
       // `x >= 10` -- the same detour the scripted walk (`fixture.ts`'s
-      // `streetWalkRoute`) uses gets past it: east to a waypoint centred
-      // on the lamppost's own collider, south into it, then on east,
+      // `streetWalkRoute`) uses gets past it: east to a waypoint overlapping
+      // the lamppost's own collider, south into it, then on east,
       // clear of it.
       setup: [
         REST_DOWN_TO_PAVEMENT,

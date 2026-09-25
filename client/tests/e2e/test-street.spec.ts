@@ -474,32 +474,60 @@ async function waitForSceneReady(page: Page): Promise<void> {
 /** Holds one key until the page itself reports the segment's own release
  * condition -- never a fixed wait. The condition is the street module's
  * own data; only the switch over its shape lives here, because it has to
- * run inside the page. */
+ * run inside the page.
+ *
+ * The key goes down through real, OS-level `page.keyboard` input, but it
+ * is released *inside* the page, on the animation frame the condition is
+ * first seen true (a `keyup` with the same `code` -- `input/keyboard.ts`
+ * binds `.code` and never checks `isTrusted`). The real `page.keyboard.up`
+ * after it only resets Playwright's own key state. Releasing from Node
+ * instead costs a round trip, and a slow runner's round trip carries the
+ * walker past a waypoint the next segment depends on (story 15.2 cycle
+ * 2: `east-to-the-lamppost` overshot the lamppost's own collider on CI
+ * and the south leg walked straight by). An in-page release overshoots
+ * by at most one more tick, and `street-conformance.test.ts` pins that
+ * margin at the resolver's own delta clamp. */
 async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
   await page.keyboard.down(segment.key);
   try {
-    await page.waitForFunction(
-      (until: StreetWalkUntil) => {
-        const position = window.__bc?.playerPosition;
-        const floor = window.__bc?.playerFloor;
-        if (!position || floor === undefined) return false;
-        switch (until.kind) {
-          case "x-at-least":
-            return position.x >= until.value;
-          case "x-at-most":
-            return position.x <= until.value;
-          case "y-at-least":
-            return position.y >= until.value;
-          case "y-at-most":
-            return position.y <= until.value;
-          case "floor":
-            return floor === until.value;
-          case "cell":
-            return Math.floor(position.x) === until.x && Math.floor(position.y) === until.y;
-        }
-      },
-      segment.until,
-      { timeout: 30_000 },
+    await page.evaluate(
+      ({ until, code, timeoutMs }) =>
+        new Promise<void>((resolve, reject) => {
+          const met = (u: StreetWalkUntil): boolean => {
+            const position = window.__bc?.playerPosition;
+            const floor = window.__bc?.playerFloor;
+            if (!position || floor === undefined) return false;
+            switch (u.kind) {
+              case "x-at-least":
+                return position.x >= u.value;
+              case "x-at-most":
+                return position.x <= u.value;
+              case "y-at-least":
+                return position.y >= u.value;
+              case "y-at-most":
+                return position.y <= u.value;
+              case "floor":
+                return floor === u.value;
+              case "cell":
+                return Math.floor(position.x) === u.x && Math.floor(position.y) === u.y;
+            }
+          };
+          const deadline = performance.now() + timeoutMs;
+          const tick = (): void => {
+            if (met(until)) {
+              window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
+              resolve();
+              return;
+            }
+            if (performance.now() >= deadline) {
+              reject(new Error(`walkSegment: ${JSON.stringify(until)} never met`));
+              return;
+            }
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        }),
+      { until: segment.until, code: segment.key, timeoutMs: 30_000 },
     );
   } finally {
     await page.keyboard.up(segment.key);

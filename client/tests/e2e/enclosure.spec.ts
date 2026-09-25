@@ -99,31 +99,54 @@ async function walkTo(
  * trip -- `streetWalkRoute`'s own extra segments around it are exactly
  * what already survive that, proven at unit level). */
 async function walkRealSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
+  // Released inside the page on the frame the condition is first met, never
+  // after a Node round trip (`test-street.spec.ts`'s own `walkSegment` doc
+  // comment says why: a slow runner's round trip overshoots the lamppost's
+  // own approach waypoint).
   await page.keyboard.down(segment.key);
-  await page.waitForFunction(
-    (until) => {
-      const pos = window.__bc?.playerPosition;
-      const floor = window.__bc?.playerFloor;
-      if (!pos || floor === undefined) return false;
-      switch (until.kind) {
-        case "x-at-least":
-          return pos.x >= until.value;
-        case "x-at-most":
-          return pos.x <= until.value;
-        case "y-at-least":
-          return pos.y >= until.value;
-        case "y-at-most":
-          return pos.y <= until.value;
-        case "floor":
-          return floor === until.value;
-        case "cell":
-          return Math.floor(pos.x) === until.x && Math.floor(pos.y) === until.y;
-      }
-    },
-    segment.until,
-    { timeout: 15_000 },
-  );
-  await page.keyboard.up(segment.key);
+  try {
+    await page.evaluate(
+      ({ until, code, timeoutMs }) =>
+        new Promise<void>((resolve, reject) => {
+          const met = (u: StreetWalkSegment["until"]): boolean => {
+            const pos = window.__bc?.playerPosition;
+            const floor = window.__bc?.playerFloor;
+            if (!pos || floor === undefined) return false;
+            switch (u.kind) {
+              case "x-at-least":
+                return pos.x >= u.value;
+              case "x-at-most":
+                return pos.x <= u.value;
+              case "y-at-least":
+                return pos.y >= u.value;
+              case "y-at-most":
+                return pos.y <= u.value;
+              case "floor":
+                return floor === u.value;
+              case "cell":
+                return Math.floor(pos.x) === u.x && Math.floor(pos.y) === u.y;
+            }
+          };
+          const deadline = performance.now() + timeoutMs;
+          const tick = (): void => {
+            if (met(until)) {
+              window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
+              resolve();
+              return;
+            }
+            if (performance.now() >= deadline) {
+              reject(new Error(`walkRealSegment: ${JSON.stringify(until)} never met`));
+              return;
+            }
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        }),
+      { until: segment.until, code: segment.key, timeoutMs: 15_000 },
+    );
+  } finally {
+    await page.keyboard.up(segment.key);
+  }
 }
 
 test.describe("story 1.7: enclosure visibility", () => {

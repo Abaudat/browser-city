@@ -55,7 +55,7 @@ import {
   stepAndTransition,
 } from "../../../src/world/floor-walk";
 import { footprintCells, footprintOrigin } from "../../../src/world/footprint";
-import { step } from "../../../src/world/movement";
+import { MAX_DELTA_MS, step } from "../../../src/world/movement";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
 import {
   blockedNeighborsOf,
@@ -67,6 +67,7 @@ import { checkWorldSpec } from "../../../src/world/world-spec";
 import {
   committedDefs,
   isCellStandable,
+  lamppostApproachMaxX,
   lamppostRestY,
   simulateStreetWalk,
   streetMovementConfig,
@@ -318,6 +319,25 @@ describe("the scripted walk (AC3)", () => {
     expect(secondHome?.cellX).toBe(home.cellX);
     expect(secondHome?.cellY).toBe(home.cellY);
     expect(secondHome?.floor).toBe(home.floor);
+  });
+
+  it("the lamppost approach still engages the lamppost's own collider with one extra, fully clamped tick of release lag", () => {
+    // `east-to-the-lamppost` is a waypoint, not a rest (story 15.2, cycle
+    // 2): the south leg after it only rests on the lamppost's own collider
+    // while the body still overlaps it in x. The e2e walkers release in
+    // the page on the frame the condition is met, so a real overshoot is
+    // the tick that crossed the threshold plus at most one more; both at
+    // the resolver's own delta clamp is the worst case, and it must still
+    // land inside the window.
+    const out = simulateStreetWalk(streetWalkRoute(streetWalkInputs()).slice(0, 3), {
+      stepMs: MAX_DELTA_MS,
+      releaseLagSteps: 1,
+    });
+    const approach = out.find((c) => c.label === "east-to-the-lamppost")?.state;
+    const rest = out.find((c) => c.label === "part-way-through-the-lamppost")?.state;
+    if (!approach || !rest) throw new Error("the lamppost approach produced no checkpoints");
+    expect(approach.x).toBeLessThan(lamppostApproachMaxX());
+    expect(rest.y).toBeCloseTo(lamppostRestY(), 9);
   });
 
   it("survives a slow machine: every segment still completes with the key released late", () => {
