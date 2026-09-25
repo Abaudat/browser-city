@@ -35,6 +35,7 @@
 bash agentic-team/scripts/orchestrator.sh    # one tick of the team's wake
 bash agentic-team/scripts/tests/run-all.sh   # the orchestrator's test suite
 node scripts/team-usage.mjs                  # the team's token usage per role, model and issue, in the terminal
+node scripts/team-dashboard/server.mjs       # the team live in a browser: who is working, the task, the budget (:4747)
 cd server && spacetime publish --yes         # build and publish the module locally
 cd client && npm ci && npm run dev           # the browser client, against the local module
 ```
