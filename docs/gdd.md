@@ -148,7 +148,7 @@ P2 (indifference) and the player-experience goal of **being needed** pull in opp
 
 #### The clock
 
-**One in-city day = 60 real minutes. One in-city hour = 2.5 real minutes.** The clock is *detached* from real-world time and runs continuously whether or not anyone is connected, so every player rotates through all in-city hours across their real week rather than always logging in to the same time of day.
+**One in-city day = 60 real minutes. One in-city hour = 2.5 real minutes.** The clock is *detached* from real-world time and runs continuously whether or not anyone is connected, so in-city midnight is aligned to no real midnight. A day is exactly one real hour, so a player who logs in at the same real hh:mm always arrives at the same in-city hour; a fixed evening slot lands on whichever in-city hour its real minute falls on, and ordinary sessions at varying times, and every session's own length, rotate through all in-city hours rather than being stuck at one time of day. A day length that does not divide 24 real hours would rotate a fixed slot across the week, but FR1's exact figures anchor the minute economy, so that is a GDD change, not a clock change.
 
 #### The day's time budget — a starting player
 

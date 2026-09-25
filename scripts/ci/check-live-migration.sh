@@ -193,5 +193,19 @@ if ! grep -qF "$OWNER_REJECTION_PATTERN" "$DATA_DIR/reseed-non-owner.log"; then
 fi
 echo "check-live-migration: ok -- a non-owner call was rejected with the owner-check message" >&2
 
+echo "check-live-migration: a republish must not reset the city clock -- init never re-runs" >&2
+epoch_rows() { # <db-name> <tag> -- every world_clock data row, or a hard failure
+  local log="$DATA_DIR/epoch-$1-$2.log"
+  spacetime sql "$1" --server "$SERVER_URL" --no-config -y "SELECT epoch_at FROM world_clock" >"$log" 2>&1     || fail "could not query '$1' for world_clock" "$log"
+  awk '/^[- +]+$/ { seen=1; next } seen && NF' "$log"
+}
+EPOCH_VALUE_BEFORE="$(epoch_rows bc-live-migration-codes before)"
+[ "$(grep -c . <<<"$EPOCH_VALUE_BEFORE")" = "1" ] || fail "world_clock must hold exactly one row right after publish, got: '$EPOCH_VALUE_BEFORE' -- init did not write the epoch" "$DATA_DIR/epoch-bc-live-migration-codes-before.log"
+sleep 2
+publish "$REPO_ROOT/server" bc-live-migration-codes "$DATA_DIR/codes-v2.log"   || fail "could not republish the real module over the live database" "$DATA_DIR/codes-v2.log"
+EPOCH_VALUE_AFTER="$(epoch_rows bc-live-migration-codes after)"
+[ "$EPOCH_VALUE_AFTER" = "$EPOCH_VALUE_BEFORE" ]   || fail "world_clock's epoch changed across a republish ($EPOCH_VALUE_BEFORE -> $EPOCH_VALUE_AFTER) -- a deploy must never reset the city to dawn" "$DATA_DIR/codes-v2.log"
+echo "check-live-migration: ok -- the epoch row was untouched by a republish ($EPOCH_VALUE_AFTER)" >&2
+
 echo "check-live-migration: both halves of AC3 hold against a real SpacetimeDB instance" >&2
 exit 0

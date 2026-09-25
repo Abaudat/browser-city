@@ -27,6 +27,7 @@ import RestoreReasonCodeReducer from "../restore_reason_code_reducer";
 import RestoreRoomReducer from "../restore_room_reducer";
 import RestoreRoomAreaReducer from "../restore_room_area_reducer";
 import RestoreUnitReducer from "../restore_unit_reducer";
+import RestoreWorldClockReducer from "../restore_world_clock_reducer";
 import SendPingReducer from "../send_ping_reducer";
 
 export type BeginRestoreParams = __Infer<typeof BeginRestoreReducer>;
@@ -50,5 +51,6 @@ export type RestoreReasonCodeParams = __Infer<typeof RestoreReasonCodeReducer>;
 export type RestoreRoomParams = __Infer<typeof RestoreRoomReducer>;
 export type RestoreRoomAreaParams = __Infer<typeof RestoreRoomAreaReducer>;
 export type RestoreUnitParams = __Infer<typeof RestoreUnitReducer>;
+export type RestoreWorldClockParams = __Infer<typeof RestoreWorldClockReducer>;
 export type SendPingParams = __Infer<typeof SendPingReducer>;
 

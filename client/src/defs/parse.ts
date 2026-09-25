@@ -525,6 +525,7 @@ export function parseDefs(data: unknown): Defs {
       "interact_at_max_reach_cells",
       "max_footprint_cells",
       "max_shelf_life_minutes",
+      "real_ms_per_city_minute",
       "atlas_max_pages_per_group",
       "character_composite_pages",
       "atlas_pages",
@@ -557,6 +558,11 @@ export function parseDefs(data: unknown): Defs {
   );
   const maxFootprintCells = expectU32(root.max_footprint_cells, "$.max_footprint_cells");
   const maxShelfLifeMinutes = expectU32(root.max_shelf_life_minutes, "$.max_shelf_life_minutes");
+  const realMsPerCityMinute = expectU32(root.real_ms_per_city_minute, "$.real_ms_per_city_minute");
+  // FR1: a zero rate would divide by zero in every city-time derivation.
+  if (realMsPerCityMinute < 1) {
+    fail(`$.real_ms_per_city_minute: must be at least 1, got ${realMsPerCityMinute}`);
+  }
   const atlasMaxPagesPerGroup = expectU32(
     root.atlas_max_pages_per_group,
     "$.atlas_max_pages_per_group",
@@ -776,6 +782,7 @@ export function parseDefs(data: unknown): Defs {
     interactAtMaxReachCells,
     maxFootprintCells,
     maxShelfLifeMinutes,
+    realMsPerCityMinute,
     atlasMaxPagesPerGroup,
     characterCompositePages,
     atlasPages,

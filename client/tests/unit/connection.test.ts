@@ -28,9 +28,12 @@ interface FakeState {
   onSubscriptionErrorCb?: (ctx: { event?: unknown }) => void;
   onInsertCb?: (ctx: unknown, row: FakeRow) => void;
   onModuleVersionInsertCb?: (ctx: unknown, row: FakeModuleVersionRow) => void;
+  onWorldClockInsertCb?: (ctx: unknown, row: { epochAt: Timestamp }) => void;
+  onWorldClockUpdateCb?: (ctx: unknown, old: unknown, row: { epochAt: Timestamp }) => void;
+  syncCalls: number;
 }
 
-const state: FakeState = {};
+const state: FakeState = { syncCalls: 0 };
 
 const fakeSubscriptionBuilder = {
   onApplied: (cb: () => void) => {
@@ -49,7 +52,21 @@ const fakeSubscriptionBuilder = {
 
 const fakeConn = {
   subscriptionBuilder: () => fakeSubscriptionBuilder,
+  procedures: {
+    syncClock: async () => {
+      state.syncCalls += 1;
+      return Timestamp.fromDate(new Date(5_000));
+    },
+  },
   db: {
+    worldClock: {
+      onInsert: (cb: (ctx: unknown, row: { epochAt: Timestamp }) => void) => {
+        state.onWorldClockInsertCb = cb;
+      },
+      onUpdate: (cb: (ctx: unknown, old: unknown, row: { epochAt: Timestamp }) => void) => {
+        state.onWorldClockUpdateCb = cb;
+      },
+    },
     demoPing: {
       onInsert: (cb: (ctx: unknown, row: FakeRow) => void) => {
         state.onInsertCb = cb;
@@ -92,6 +109,8 @@ vi.mock("../../src/net/bindings", () => ({
 }));
 
 const { connect } = await import("../../src/net/connection");
+const { ServerClock } = await import("../../src/time/server-clock");
+const { CLOCK_SYNC_INTERVAL_MS } = await import("../../src/time/clock-sync");
 
 beforeEach(() => {
   state.uri = undefined;
@@ -104,6 +123,9 @@ beforeEach(() => {
   state.onSubscriptionErrorCb = undefined;
   state.onInsertCb = undefined;
   state.onModuleVersionInsertCb = undefined;
+  state.onWorldClockInsertCb = undefined;
+  state.onWorldClockUpdateCb = undefined;
+  state.syncCalls = 0;
 });
 
 describe("connect", () => {
@@ -115,7 +137,7 @@ describe("connect", () => {
     expect(conn).toBe(fakeConn);
   });
 
-  it("subscribes to demo_ping and module_version, in one call, once the connection is established (FR147: no extra round trip)", () => {
+  it("subscribes to demo_ping, module_version and world_clock, in one call, once the connection is established (FR147: no extra round trip)", () => {
     connect(() => {});
 
     state.onConnectCb?.(fakeConn);
@@ -123,7 +145,64 @@ describe("connect", () => {
     expect(state.subscribedSql).toEqual([
       "SELECT * FROM demo_ping",
       "SELECT * FROM module_version",
+      "SELECT * FROM world_clock",
     ]);
+  });
+
+  describe("in-city clock wiring (story 4.1)", () => {
+    const wiring = () => {
+      const epochs: Array<[bigint, string]> = [];
+      const serverClock = new ServerClock(() => 0);
+      return {
+        epochs,
+        serverClock,
+        clock: {
+          serverClock,
+          visibility: {
+            visibilityState: "visible",
+            addEventListener: () => {},
+            removeEventListener: () => {},
+          },
+          onEpoch: (micros: bigint, kind: "insert" | "update") => epochs.push([micros, kind]),
+        },
+      };
+    };
+
+    it("reports the epoch row on insert and on a later rewrite", () => {
+      const w = wiring();
+      connect(() => {}, undefined, undefined, w.clock);
+      const at = Timestamp.fromDate(new Date(1_000));
+      state.onWorldClockInsertCb?.({}, { epochAt: at });
+      state.onWorldClockUpdateCb?.({}, {}, { epochAt: at });
+      expect(w.epochs).toEqual([
+        [1_000_000n, "insert"],
+        [1_000_000n, "update"],
+      ]);
+    });
+
+    it("registers no world_clock callbacks and makes no sync call without wiring", () => {
+      connect(() => {});
+      state.onConnectCb?.(fakeConn);
+      expect(state.onWorldClockInsertCb).toBeUndefined();
+      expect(state.syncCalls).toBe(0);
+    });
+
+    it("starts a stamped sync on connect and stops it on disconnect", async () => {
+      vi.useFakeTimers();
+      try {
+        const w = wiring();
+        connect(() => {}, undefined, undefined, w.clock);
+        state.onConnectCb?.(fakeConn);
+        await vi.advanceTimersByTimeAsync(10);
+        expect(state.syncCalls).toBe(1);
+        expect(w.serverClock.nowMicros()).toBeDefined();
+        state.onDisconnectCb?.({}, undefined);
+        await vi.advanceTimersByTimeAsync(CLOCK_SYNC_INTERVAL_MS * 2);
+        expect(state.syncCalls).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it("turns an onInsert row into a PingObservation via observePingInsert", () => {

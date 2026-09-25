@@ -18,6 +18,7 @@ function validPayload(): Record<string, unknown> {
     interact_at_max_reach_cells: 2,
     max_footprint_cells: 8,
     max_shelf_life_minutes: 525_600,
+    real_ms_per_city_minute: 2500,
     atlas_max_pages_per_group: 2,
     character_composite_pages: 2,
     atlas_pages: [{ file: "furniture-abc123.png", group: "furniture", width: 2048, height: 16 }],
@@ -100,6 +101,18 @@ describe("parseDefs", () => {
       bogus: 2,
     };
     expect(() => parseDefs(payload)).toThrow(/unknown field 'bogus'/);
+  });
+
+  it("rejects a missing, zero or negative real_ms_per_city_minute (FR1)", () => {
+    const missing = validPayload();
+    delete missing.real_ms_per_city_minute;
+    expect(() => parseDefs(missing)).toThrow(/real_ms_per_city_minute: expected a number/);
+    expect(() => parseDefs({ ...validPayload(), real_ms_per_city_minute: 0 })).toThrow(
+      /real_ms_per_city_minute: must be at least 1/,
+    );
+    expect(() => parseDefs({ ...validPayload(), real_ms_per_city_minute: -2500 })).toThrow(
+      /real_ms_per_city_minute: expected an integer/,
+    );
   });
 
   it("rejects a missing required field", () => {

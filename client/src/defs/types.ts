@@ -267,6 +267,9 @@ export interface Defs {
   /** The longest an item may take to spoil, in minutes -- generated once
    * by `tools/defs-build`, never a client-side literal. */
   readonly maxShelfLifeMinutes: number;
+  /** FR1: real milliseconds per in-city minute -- generated once by
+   * `tools/defs-build`, never a client-side literal. */
+  readonly realMsPerCityMinute: number;
   /** NFR12's build-time cap, emitted alongside `maxFootprintCells` --
    * never a client-side literal. */
   readonly atlasMaxPagesPerGroup: number;

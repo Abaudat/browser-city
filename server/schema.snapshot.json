@@ -973,6 +973,33 @@
       ]
     },
     {
+      "accessor": "world_clock",
+      "struct_name": "WorldClock",
+      "public": true,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "id",
+          "ty": "u8",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "epoch_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "world_clock_schedule",
       "struct_name": "WorldClockSchedule",
       "public": false,

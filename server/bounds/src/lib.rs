@@ -12,6 +12,7 @@
 //! Story 4.12 hangs the metrics sampler off this same registry; nothing
 //! here needs to change for that.
 
+pub mod city_clock_fixture;
 pub mod generation_evidence;
 pub mod schema;
 pub mod world_fixture;
@@ -67,6 +68,13 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
     // the row count is the game rule.
     TableBound {
         accessor: "module_owner",
+        max_rows: 1,
+        kind: BoundKind::Mechanical,
+    },
+    // Story 4.1: the in-city clock's epoch -- a one-row table, the row
+    // count is the game rule.
+    TableBound {
+        accessor: "world_clock",
         max_rows: 1,
         kind: BoundKind::Mechanical,
     },

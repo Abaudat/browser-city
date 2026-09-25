@@ -4456,3 +4456,59 @@ proptest! {
         );
     }
 }
+
+// --- Story 4.1: the in-city clock (FR1-FR3) ---------------------------------
+
+pub const INV_CITY_TIME_DEPENDS_ONLY_ON_ELAPSED: &str = "the in-city delta between two instants is floor((t2-e)/k) - floor((t1-e)/k) whatever the epoch's own value, so in-city time advances exactly with elapsed real time at the fixed rate (FR1, FR3)";
+pub const INV_CITY_TIME_CONVERSION_EXACT: &str = "the day/hour/minute decomposition round-trips to the total minute count for every instant, including before the epoch and beyond i32/u32 milliseconds, with every field in range and no panic (FR1)";
+pub const INV_CITY_HOUR_DEPENDS_ONLY_ON_REAL_HOUR_PHASE: &str = "in-city time of day depends only on elapsed real milliseconds modulo one real hour, so the same real hh:mm on any two days gives the same in-city hour, while a session rotates through the day (FR1, FR2)";
+
+/// Microsecond instants kept where two of them and an epoch cannot overflow
+/// the plain `i64` reference arithmetic the oracle below uses.
+const CLOCK_RANGE: i64 = 1 << 60;
+
+proptest! {
+    /// `inv_city_time_depends_only_on_elapsed`.
+    #[test]
+    fn inv_city_time_depends_only_on_elapsed(
+        e in -CLOCK_RANGE..CLOCK_RANGE,
+        t1 in -CLOCK_RANGE..CLOCK_RANGE,
+        t2 in -CLOCK_RANGE..CLOCK_RANGE,
+    ) {
+        let k = sim::time::REAL_MS_PER_CITY_MINUTE;
+        let oracle = |t: i64| (t - e).div_euclid(1000).div_euclid(k);
+        let delta = sim::time::city_time(e, t2).total_minutes()
+            - sim::time::city_time(e, t1).total_minutes();
+        prop_assert_eq!(delta, oracle(t2) - oracle(t1));
+    }
+
+    /// `inv_city_time_conversion_exact`.
+    #[test]
+    fn inv_city_time_conversion_exact(e in any::<i64>(), t in any::<i64>()) {
+        let c = sim::time::city_time(e, t);
+        prop_assert!(c.hour < 24 && c.minute < 60 && c.weekday < 7);
+        prop_assert!((c.real_ms_into_minute as i64) < sim::time::REAL_MS_PER_CITY_MINUTE);
+        prop_assert_eq!(c.weekday as i64, c.day.rem_euclid(7));
+        let elapsed_ms = (t as i128 - e as i128).div_euclid(1000);
+        let rebuilt = c.total_minutes() as i128 * sim::time::REAL_MS_PER_CITY_MINUTE as i128
+            + c.real_ms_into_minute as i128;
+        prop_assert_eq!(rebuilt, elapsed_ms);
+    }
+
+    /// `inv_city_hour_depends_only_on_real_hour_phase`.
+    #[test]
+    fn inv_city_hour_depends_only_on_real_hour_phase(
+        e in -CLOCK_RANGE..CLOCK_RANGE,
+        t in 0i64..CLOCK_RANGE,
+        days in 0i64..10_000,
+    ) {
+        let real_day_us = 24 * 3_600_000i64 * 1000;
+        let a = sim::time::city_time(e, e + t);
+        let b = sim::time::city_time(e, e + t + days * real_day_us);
+        prop_assert_eq!((a.hour, a.minute, a.real_ms_into_minute), (b.hour, b.minute, b.real_ms_into_minute));
+        // A 30-minute session crosses half the in-city day.
+        let later = sim::time::city_time(e, e + t + 30 * 60 * 1_000_000);
+        let moved = (later.total_minutes() - a.total_minutes()) as i64;
+        prop_assert_eq!(moved, 720);
+    }
+}

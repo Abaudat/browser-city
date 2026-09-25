@@ -13,6 +13,7 @@ import { KeyboardState } from "./input/keyboard";
 import { connect } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
+  exposeCityTimeForE2e,
   exposePlayerScreenBoundsForE2e,
   exposeWorldTransformForE2e,
   recordAllBoundTextureSourcesForE2e,
@@ -29,6 +30,7 @@ import {
   recordRenderOrderForE2e,
   recordViewTransformForE2e,
   recordVisibilityForE2e,
+  recordWorldClockForE2e,
 } from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
 import { PROTOCOL_VERSION } from "./net/protocol-version";
@@ -39,6 +41,8 @@ import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings"
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
+import { CityClock } from "./time/city-clock";
+import { ServerClock } from "./time/server-clock";
 import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
@@ -90,6 +94,12 @@ async function main(): Promise<void> {
   // up to and including the first settlement.
   let postMountGuard: PostMountGuard | undefined;
   const latch = createHandshakeLatch();
+  // Story 4.1: in-city time is derived on demand from the epoch row and a
+  // server-reconciled clock (never `Date.now()`); the rate joins once the
+  // defs are verified.
+  const serverClock = new ServerClock(() => performance.now());
+  const cityClock = new CityClock(serverClock);
+  exposeCityTimeForE2e(() => cityClock.now());
   connect(
     onPing,
     (status) => {
@@ -100,6 +110,14 @@ async function main(): Promise<void> {
       latch.resolveHandshake(version);
       postMountGuard?.onHandshake(version);
     },
+    {
+      serverClock,
+      visibility: document,
+      onEpoch: (epochMicros, kind) => {
+        cityClock.setEpoch(epochMicros);
+        recordWorldClockForE2e(epochMicros, kind);
+      },
+    },
   );
 
   try {
@@ -109,6 +127,7 @@ async function main(): Promise<void> {
       (guard) => {
         postMountGuard = guard;
       },
+      (rate) => cityClock.setRate(rate),
     );
   } catch (error: unknown) {
     // NFR42: the street scene degrades to not-drawing, never takes the ping
@@ -158,6 +177,7 @@ async function startStreetScene(
   latch: HandshakeLatch,
   onDegrade: () => void,
   setPostMountGuard: (guard: PostMountGuard) => void,
+  setCityRate: (realMsPerCityMinute: number) => void,
 ): Promise<void> {
   const mount = document.getElementById("test-street");
   if (!mount) {
@@ -217,6 +237,7 @@ async function startStreetScene(
     return;
   }
   const defs: VerifiedDefs = sequenceResult.defs;
+  setCityRate(defs.realMsPerCityMinute);
 
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");

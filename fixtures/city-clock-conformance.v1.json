@@ -1,0 +1,149 @@
+{
+  "real_ms_per_city_minute": 2500,
+  "cases": [
+    {
+      "epoch_micros": "0",
+      "now_micros": "0",
+      "day": 0,
+      "hour": 0,
+      "minute": 0,
+      "weekday": 0,
+      "real_ms_into_minute": 0
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "2499000",
+      "day": 0,
+      "hour": 0,
+      "minute": 0,
+      "weekday": 0,
+      "real_ms_into_minute": 2499
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "2500000",
+      "day": 0,
+      "hour": 0,
+      "minute": 1,
+      "weekday": 0,
+      "real_ms_into_minute": 0
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "150000000",
+      "day": 0,
+      "hour": 1,
+      "minute": 0,
+      "weekday": 0,
+      "real_ms_into_minute": 0
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "3599999000",
+      "day": 0,
+      "hour": 23,
+      "minute": 59,
+      "weekday": 0,
+      "real_ms_into_minute": 2499
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "3600000000",
+      "day": 1,
+      "hour": 0,
+      "minute": 0,
+      "weekday": 1,
+      "real_ms_into_minute": 0
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "25200000000",
+      "day": 7,
+      "hour": 0,
+      "minute": 0,
+      "weekday": 0,
+      "real_ms_into_minute": 0
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "2147483648000",
+      "day": 596,
+      "hour": 12,
+      "minute": 33,
+      "weekday": 1,
+      "real_ms_into_minute": 1148
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "4294967296000",
+      "day": 1193,
+      "hour": 1,
+      "minute": 6,
+      "weekday": 3,
+      "real_ms_into_minute": 2296
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "1099511627776000",
+      "day": 305419,
+      "hour": 21,
+      "minute": 31,
+      "weekday": 2,
+      "real_ms_into_minute": 276
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "-1000",
+      "day": -1,
+      "hour": 23,
+      "minute": 59,
+      "weekday": 6,
+      "real_ms_into_minute": 2499
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "-2500000",
+      "day": -1,
+      "hour": 23,
+      "minute": 59,
+      "weekday": 6,
+      "real_ms_into_minute": 0
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "-3600000000",
+      "day": -1,
+      "hour": 0,
+      "minute": 0,
+      "weekday": 6,
+      "real_ms_into_minute": 0
+    },
+    {
+      "epoch_micros": "0",
+      "now_micros": "-3600001000",
+      "day": -2,
+      "hour": 23,
+      "minute": 59,
+      "weekday": 5,
+      "real_ms_into_minute": 2499
+    },
+    {
+      "epoch_micros": "1700000000123456",
+      "now_micros": "1700000150124455",
+      "day": 0,
+      "hour": 1,
+      "minute": 0,
+      "weekday": 0,
+      "real_ms_into_minute": 0
+    },
+    {
+      "epoch_micros": "1700000000123456",
+      "now_micros": "1700010952630456",
+      "day": 3,
+      "hour": 1,
+      "minute": 1,
+      "weekday": 3,
+      "real_ms_into_minute": 7
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   exposeAppearanceCompareForE2e,
+  exposeCityTimeForE2e,
   recordAppearanceTextureIdsForE2e,
   recordFrameWorkForE2e,
   recordMasksCheckedForE2e,
@@ -9,6 +10,7 @@ import {
   recordPlayerPositionForE2e,
   recordRenderOrderForE2e,
   recordVisibilityForE2e,
+  recordWorldClockForE2e,
 } from "../../src/net/e2e-hooks";
 
 afterEach(() => {
@@ -223,6 +225,28 @@ describe("exposeAppearanceCompareForE2e", () => {
 
     exposeAppearanceCompareForE2e(vi.fn());
 
+    expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("in-city clock hooks (story 4.1)", () => {
+  it("counts world_clock inserts and updates separately, keeping the latest epoch", () => {
+    recordWorldClockForE2e(5n, "insert");
+    recordWorldClockForE2e(6n, "update");
+    recordWorldClockForE2e(7n, "update");
+    expect(window.__bc?.worldClock).toEqual({ epochMicros: "7", inserts: 1, updates: 2 });
+  });
+
+  it("exposes the derived city time as a callable", () => {
+    const getter = vi.fn();
+    exposeCityTimeForE2e(getter);
+    expect(window.__bc?.cityTime).toBe(getter);
+  });
+
+  it("do nothing when DEV is false", () => {
+    vi.stubEnv("DEV", false);
+    recordWorldClockForE2e(5n, "insert");
+    exposeCityTimeForE2e(vi.fn());
     expect(window.__bc).toBeUndefined();
   });
 });

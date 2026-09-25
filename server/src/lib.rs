@@ -1,4 +1,4 @@
-use spacetimedb::{ReducerContext, Table, Timestamp};
+use spacetimedb::{ProcedureContext, ReducerContext, Table, Timestamp};
 
 mod generated;
 mod tables;
@@ -40,12 +40,22 @@ pub fn send_ping(ctx: &ReducerContext, message: String) -> Result<(), String> {
     Ok(())
 }
 
+/// The stamped round trip a client uses to estimate the server's clock: it
+/// returns `ctx.timestamp` and reads and writes nothing (the SDK surfaces a
+/// reducer's own timestamp only through a table callback, which a no-write
+/// reducer never fires). Open to any caller.
+#[spacetimedb::procedure]
+pub fn sync_clock(ctx: &mut ProcedureContext) -> Timestamp {
+    ctx.timestamp
+}
+
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) {
     // Called when the module is initially published. Nothing is scheduled
     // from here (story 1.2): an empty scheduled table costs nothing, and
     // the first row is a later story's problem.
     tables::ops::record_owner_from_init(ctx);
+    tables::clock::record_epoch_from_init(ctx);
     tables::codes::seed_all_codes(ctx);
 }
 
