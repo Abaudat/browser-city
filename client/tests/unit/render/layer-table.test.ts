@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEPRECATED_LAYER_CODES,
+  FIRST_POOL_RANK,
   LAYER_TABLE,
   layerCodeByName,
   passOfLayer,
@@ -53,5 +54,15 @@ describe("passOfLayer", () => {
   it("throws for a deprecated or unknown code", () => {
     expect(() => passOfLayer(1)).toThrow();
     expect(() => passOfLayer(999)).toThrow();
+  });
+});
+
+describe("passOfLayer is rank-driven", () => {
+  it("every live row resolves by its rank: 0 ground, below FIRST_POOL_RANK ground objects, else pool", () => {
+    for (const row of LAYER_TABLE.filter((r) => !r.deprecated)) {
+      const expected =
+        row.rank >= FIRST_POOL_RANK ? "pool" : row.rank === 0 ? "ground" : "groundObjects";
+      expect(passOfLayer(row.code), row.name).toBe(expected);
+    }
   });
 });

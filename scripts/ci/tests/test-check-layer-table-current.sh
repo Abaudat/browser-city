@@ -17,14 +17,17 @@ layer 1 overhead 1
 layer 2 furniture 10
 '
 CODES_RS_CONTENT='pub const DEPRECATED_CODES: &[u32] = &[1];
+pub const FIRST_POOL_RANK: u32 = 10;
 '
 LAYER_TABLE_TS_CONTENT='export const LAYER_TABLE = [
   { code: 0, name: "ground", rank: 0, deprecated: false },
   { code: 1, name: "overhead", rank: 1, deprecated: true },
   { code: 2, name: "furniture", rank: 10, deprecated: false },
 ];
+export const FIRST_POOL_RANK = 10;
 '
 LAYER_CODES_RS_CONTENT='pub const DEPRECATED_LAYER_NAMES: &[&str] = &["overhead"];
+pub const FIRST_POOL_RANK: u32 = 10;
 '
 
 # plant <golden> <codes.rs> <layer-table.ts> <defs_codes.rs> -- writes
@@ -82,6 +85,13 @@ check "defs-build's DEPRECATED_LAYER_NAMES naming an extra, non-deprecated layer
 d="$(plant "$GOLDEN_CONTENT" "$CODES_RS_CONTENT" "$LAYER_TABLE_TS_CONTENT" 'pub const NOTHING_HERE: u32 = 0;
 ')"
 check "a defs_codes.rs missing DEPRECATED_LAYER_NAMES entirely fails" 1 \
+  bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/defs_codes.rs"
+
+d="$(plant "$GOLDEN_CONTENT" "$CODES_RS_CONTENT" "$LAYER_TABLE_TS_CONTENT" \
+  'pub const DEPRECATED_LAYER_NAMES: &[&str] = &["overhead"];
+pub const FIRST_POOL_RANK: u32 = 20;
+')"
+check "a defs-build FIRST_POOL_RANK that differs from sim's fails" 1 \
   bash "$CHECK" "$d/codes_v1.golden" "$d/codes.rs" "$d/layer-table.ts" "$d/defs_codes.rs"
 
 summary

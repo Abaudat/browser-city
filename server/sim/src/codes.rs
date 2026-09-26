@@ -133,6 +133,11 @@ pub mod layer {
         pub rank: u32,
     }
 
+    /// Every live rank below this is a flat-pass layer; this and above is a
+    /// pool layer. The client's and `tools/defs-build`'s copies are held
+    /// equal by `scripts/ci/check-layer-table-current.sh`.
+    pub const FIRST_POOL_RANK: u32 = 10;
+
     pub const CODES: &[LayerCode] = &[
         LayerCode {
             code: 0,

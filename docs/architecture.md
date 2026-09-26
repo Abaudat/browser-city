@@ -607,7 +607,11 @@ is the ground pass's layer and `ground_objects` (code 7, rank 5) is the
 ground-objects pass's -- for anything lying flat, like a manhole cover or
 a doormat. A drawable's pass is its layer and nothing else
 (`layer-table.ts`'s `passOfLayer`); a flat-pass drawable is never
-y-sorted, and `applyDepthOrder` throws if handed one. `overhead` (code 1, rank 1) is deprecated: its row
+y-sorted, and `applyDepthOrder` throws if handed one. An upright object
+standing on or overhanging a flat object's cell hides it -- the flat thing
+is underneath, and that is the intended reading -- so content never places
+a flat object where an upright prop stands if the flat object needs to be
+seen. `overhead` (code 1, rank 1) is deprecated: its row
 stays seeded forever (deprecation is a usage ban, not a deletion), but
 nothing may place new content on it, and a rank lookup that resolves an
 unknown or deprecated code throws rather than sorting it silently. A

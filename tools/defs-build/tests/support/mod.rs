@@ -145,6 +145,12 @@ pub fn code_tables() -> defs_build::codes::CodeTables {
         ("unit", "gram", 1),
         ("unit", "millilitre", 2),
     ])
+    .with_layer_ranks(&[
+        ("furniture", 10),
+        ("objects", 20),
+        ("walls", 30),
+        ("ground_objects", 5),
+    ])
 }
 
 /// `""` (never `defs_build::model::SPRITE_SHEET_ALLOWED_ROOT`): every

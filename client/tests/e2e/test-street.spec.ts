@@ -778,11 +778,18 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // re-derives.
   expect(await currentOrder(page)).toEqual(expectedOrderFor(start.x, start.y, start.floor));
 
-  // Story 15.5: flat objects (the manhole covers 116/117/119, the doormat
-  // 120) are never pool members -- they draw in their floor's flat
+  // Story 15.5: flat objects (the manhole covers, the doormat) are never pool members -- they draw in their floor's flat
   // ground-object pass, so the per-frame re-sort can never put one over
   // the player. They are culled with that pass's own group key instead.
-  const flatIds = ["116", "117", "119", "120"];
+  const flatIds = buildPropDrawables({
+    rankOf,
+    ownership,
+    windowDefIds: streetWindowDefIds(),
+    objectDefs: streetObjectSources(),
+  })
+    .filter((d) => d.rank < FIRST_POOL_RANK)
+    .map((d) => d.stableId.toString());
+  expect(flatIds.length).toBeGreaterThan(0);
   const orderNow = await currentOrder(page);
   expect(flatIds.some((id) => orderNow.includes(id))).toBe(false);
   expect(Object.keys(insideVisibility)).toContain("ground_objects:0");

@@ -792,6 +792,8 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // `PLATFORM_UP_ANCHOR_X`, were covering the bench almost completely
   // when the two sat one cell apart).
   // --- The footbridge (story 1.13) -------------------------------------
+  // The deck stays on `objects`, not `ground_objects`: its def's own layer
+  // is `objects`, and changing a def's layer is out of scope for story 15.5.
   // The deck itself: story 2.13 (Tim's direction) -- `bridge_deck` is a
   // one-cell def (a real 16x16 pavement tile, the same city sidewalk tile
   // the street below it is paved with), not a four-cell def with a
@@ -853,10 +855,13 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // --- Street furniture ----------------------------------------------------
   // A doormat and manhole covers are underfoot decoration (no collider); a
   // bollard is a real post, collided by its own base (`BOLLARD_COLLIDER`).
+  // The doormat is at shop B's door because nothing upright stands on that
+  // cell: an upright prop on a flat object's cell hides it, so a flat object
+  // that needs to be seen is never placed under one.
   {
     id: 120n,
     assetKey: "doormat",
-    x: DOOR_X_A,
+    x: DOOR_X_B,
     y: SOUTH_WALL_Y + 1,
     floor: STREET_FLOOR,
     layer: "ground_objects",

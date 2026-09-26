@@ -197,7 +197,7 @@ fn layer_ranks_are_unique_and_pool_ranks_are_multiples_of_ten() {
         // `overhead` is deprecated legacy (its rank is frozen, never
         // moved into the tens ladder). Every other rank below 10 is a
         // flat-pass layer; every rank at or above 10 is a pool layer.
-        if layer::is_deprecated(entry.code) || entry.rank < 10 {
+        if layer::is_deprecated(entry.code) || entry.rank < layer::FIRST_POOL_RANK {
             continue;
         }
         assert_eq!(

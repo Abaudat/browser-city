@@ -110,11 +110,11 @@ const ZOOM = 3;
  * never a second, separately-typed `floor < 0` check. */
 const SUBWAY_BACKGROUND = 0x000000;
 
-/** The layer code every ground-tile-pass group's own synthetic
- * `VisibilityDrawable` carries -- never read by `computeVisibility`'s
- * wall-layer check (a ground pass is never `isNearSide`), so any live
- * code works; `"objects"` names one that exists without adding a
- * literal number. */
+/** The layer codes the flat passes' synthetic `VisibilityDrawable`s carry:
+ * the ground pass carries the `ground` layer's own code and the
+ * ground-objects pass the `ground_objects` layer's, so each group reads as
+ * what it is (a flat pass is never `isNearSide`, so only floor culling
+ * applies to it). */
 const GROUND_LAYER_CODE = layerCodeByName("ground");
 const GROUND_OBJECTS_LAYER_CODE = layerCodeByName("ground_objects");
 

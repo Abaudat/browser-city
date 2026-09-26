@@ -41,7 +41,9 @@ export const FIRST_POOL_RANK = 10;
 /** Which FR123 pass a layer draws in. */
 export type RenderPass = "ground" | "groundObjects" | "pool";
 
-/** The pass a live layer code draws in, read from the table alone.
+/** The pass a live layer code draws in, read from its rank alone (the
+ * server's rule): rank 0 is the ground pass, any other rank below
+ * `FIRST_POOL_RANK` the ground-objects pass, the rest the pool.
  * Throws for an unknown or deprecated code, same posture as
  * `layer-ranks.ts`'s `resolveRank`. */
 export function passOfLayer(code: number): RenderPass {
@@ -50,7 +52,7 @@ export function passOfLayer(code: number): RenderPass {
     throw new Error(`passOfLayer: layer code ${code} is unknown or deprecated`);
   }
   if (row.rank >= FIRST_POOL_RANK) return "pool";
-  return row.name === "ground" ? "ground" : "groundObjects";
+  return row.rank === 0 ? "ground" : "groundObjects";
 }
 
 /** Codes [`LAYER_TABLE`] marks deprecated -- the client-side mirror of

@@ -18,15 +18,17 @@ use std::collections::BTreeMap;
 /// render/layer-table.ts`'s copy honest.
 pub const DEPRECATED_LAYER_NAMES: &[&str] = &["overhead"];
 
-/// The layer names whose rank is below `sim::codes::layer`'s first pool
-/// rank (10) -- the flat-pass layers. An object on one lies flat on the
-/// ground (see `validate.rs`'s `check_object_flat_layers`).
-pub const FLAT_PASS_LAYER_NAMES: &[&str] = &["ground", "ground_objects"];
+/// Mirrors `sim::codes::layer::FIRST_POOL_RANK`: every layer whose golden
+/// rank is below it is a flat-pass layer. `check-layer-table-current.sh`
+/// fails the build if this, the sim constant and the client's disagree.
+pub const FIRST_POOL_RANK: u32 = 10;
 
-/// Every set in the codes golden, as `set -> (name -> code)`.
+/// Every set in the codes golden, as `set -> (name -> code)`, plus each
+/// layer's rank (the fourth column of a `layer` row).
 #[derive(Debug, Default, Clone)]
 pub struct CodeTables {
     sets: BTreeMap<String, BTreeMap<String, u32>>,
+    layer_ranks: BTreeMap<String, u32>,
 }
 
 impl CodeTables {
@@ -34,6 +36,7 @@ impl CodeTables {
     /// that does not have a numeric code and a name is ignored.
     pub fn parse(golden_text: &str) -> Self {
         let mut sets: BTreeMap<String, BTreeMap<String, u32>> = BTreeMap::new();
+        let mut layer_ranks = BTreeMap::new();
         for line in golden_text.lines() {
             let mut parts = line.split_whitespace();
             let Some(set) = parts.next() else { continue };
@@ -41,11 +44,33 @@ impl CodeTables {
                 continue;
             };
             let Some(name) = parts.next() else { continue };
+            if set == "layer"
+                && let Some(rank) = parts.next().and_then(|s| s.parse::<u32>().ok())
+            {
+                layer_ranks.insert(name.to_string(), rank);
+            }
             sets.entry(set.to_string())
                 .or_default()
                 .insert(name.to_string(), code);
         }
-        CodeTables { sets }
+        CodeTables { sets, layer_ranks }
+    }
+
+    /// Whether `layer` is a flat-pass layer: its golden rank is below
+    /// [`FIRST_POOL_RANK`]. A layer with no known rank is not flat.
+    pub fn is_flat_layer(&self, layer: &str) -> bool {
+        self.layer_ranks
+            .get(layer)
+            .is_some_and(|rank| *rank < FIRST_POOL_RANK)
+    }
+
+    /// Every layer name whose golden rank is below [`FIRST_POOL_RANK`].
+    pub fn flat_layer_names(&self) -> Vec<&str> {
+        self.layer_ranks
+            .iter()
+            .filter(|(_, rank)| **rank < FIRST_POOL_RANK)
+            .map(|(name, _)| name.as_str())
+            .collect()
     }
 
     /// One set's `name -> code` map; empty for a set the golden never
@@ -69,7 +94,19 @@ impl CodeTables {
                 .or_default()
                 .insert(name.to_string(), *code);
         }
-        CodeTables { sets }
+        CodeTables {
+            sets,
+            layer_ranks: BTreeMap::new(),
+        }
+    }
+
+    /// Adds each `(layer name, rank)` -- for tests that build a subset with
+    /// [`CodeTables::from_entries`].
+    pub fn with_layer_ranks(mut self, ranks: &[(&str, u32)]) -> Self {
+        for (name, rank) in ranks {
+            self.layer_ranks.insert(name.to_string(), *rank);
+        }
+        self
     }
 }
 
@@ -91,6 +128,31 @@ layer 2 furniture 10
         assert_eq!(tables.get("layer", "furniture"), Some(2));
         assert_eq!(tables.get("layer", "sanitation"), None);
         assert_eq!(tables.set("layer").len(), 3);
+    }
+
+    #[test]
+    fn flat_layers_are_derived_from_the_golden_ranks() {
+        let tables = CodeTables::parse(
+            "layer 0 ground 0
+layer 1 overhead 1
+layer 2 furniture 10
+layer 7 ground_objects 5
+",
+        );
+        assert!(tables.is_flat_layer("ground_objects"));
+        assert!(!tables.is_flat_layer("furniture"));
+        assert!(!tables.is_flat_layer("unknown"));
+    }
+
+    /// The real golden's flat set is exactly the layers ranked below the
+    /// first pool rank -- the check is derived, never a typed list.
+    #[test]
+    fn the_real_golden_flat_layers_are_the_ranks_below_the_first_pool_rank() {
+        let golden = include_str!("../../../server/sim/tests/goldens/codes_v1.golden");
+        let tables = CodeTables::parse(golden);
+        let mut flat = tables.flat_layer_names();
+        flat.sort();
+        assert_eq!(flat, ["ground", "ground_objects", "overhead"]);
     }
 
     #[test]

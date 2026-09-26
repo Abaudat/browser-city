@@ -1578,7 +1578,7 @@ fn check_object_walkability_tag(entries: &[LoweredObjectEntry]) -> Result<(), De
     Ok(())
 }
 
-/// An object on a flat-pass layer (`ground`, `ground_objects`) lies flat
+/// An object on a flat-pass layer (rank below `FIRST_POOL_RANK`) lies flat
 /// on the ground: it must be tagged [`UNDERFOOT_TAG_KEY`] (no vertical
 /// extent means nothing to collide with -- one direction only, an
 /// `underfoot` object on a pool layer is fine) and its sprite must not
@@ -1586,9 +1586,10 @@ fn check_object_walkability_tag(entries: &[LoweredObjectEntry]) -> Result<(), De
 fn check_object_flat_layers(
     entries: &[LoweredObjectEntry],
     tile_size_px: u32,
+    code_tables: &CodeTables,
 ) -> Result<(), DefsError> {
     for e in entries {
-        if !crate::codes::FLAT_PASS_LAYER_NAMES.contains(&e.layer.value.as_str()) {
+        if !code_tables.is_flat_layer(&e.layer.value) {
             continue;
         }
         if !e.tags.iter().any(|t| t == UNDERFOOT_TAG_KEY) {
@@ -2655,7 +2656,7 @@ pub fn validate(
             )
         })?;
         check_object_sprite_matches_footprint(&lowered_objects, tile_size_px)?;
-        check_object_flat_layers(&lowered_objects, tile_size_px)?;
+        check_object_flat_layers(&lowered_objects, tile_size_px, code_tables)?;
         Some(tile_size_px)
     } else {
         None
