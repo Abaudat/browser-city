@@ -40,7 +40,7 @@ import { visibleCellBounds } from "./render/screen-position";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
-import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
+import { mountStreetScene, type StreetSceneHandle, ZOOM } from "./test-street/scene";
 import { CityClock } from "./time/city-clock";
 import { ServerClock } from "./time/server-clock";
 import { mountConnectionNotice } from "./ui/connection-notice";
@@ -431,6 +431,7 @@ async function startStreetScene(
     const { mountDebugOverlays } = await import("./debug/overlays");
     const view: DebugWorldView = {
       tileSizePx,
+      zoom: ZOOM,
       storeyHeightPx,
       colliderSubcellsPerCell: movementConfig.subcellsPerCell,
       viewerFloor: () => handle.currentFloor(),

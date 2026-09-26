@@ -33,6 +33,7 @@ function viewOver(
 ): DebugWorldView {
   return {
     tileSizePx: TILE,
+    zoom: 1,
     storeyHeightPx: STOREY,
     colliderSubcellsPerCell: SUBCELLS,
     viewerFloor: () => bounds.floor,

@@ -11,6 +11,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
+import { CAMERA_SCROLL_TOLERANCE_PX } from "../../src/render/camera";
 import {
   LAMPPOST_CELL,
   type StreetWalkSegment,
@@ -141,6 +142,21 @@ async function assertPlayerCentred(page: Page): Promise<void> {
   expect(deviation.y, "player vertical centring").toBeLessThanOrEqual(1);
 }
 
+/** What one follow sample reports. `anchorDriftPx`: the most the player's
+ * drawn bottom-centre anchor strayed from its first sampled position;
+ * `reversals`: frames on which a world offset axis stepped against the
+ * walk; `maxIdealDeviationPx`: the most a world offset strayed from the
+ * continuous camera for that same frame's `playerPosition`. */
+interface FollowSample {
+  maxDeviationPx: number;
+  travelledCellsX: number;
+  travelledCellsY: number;
+  samples: number;
+  anchorDriftPx: number;
+  reversals: number;
+  maxIdealDeviationPx: number;
+}
+
 /**
  * Starts an in-page sampler (without blocking on it) that runs until the
  * player's own world position has moved more than half the viewport's
@@ -165,94 +181,112 @@ async function assertPlayerCentred(page: Page): Promise<void> {
 async function startFollowSample(
   page: Page,
   tileSizePx: number,
-): Promise<
-  () => Promise<{
-    maxDeviationPx: number;
-    travelledCellsX: number;
-    travelledCellsY: number;
-    samples: number;
-  }>
-> {
-  await page.evaluate((tileSizePx: number) => {
-    const canvas = document.querySelector("#test-street canvas");
-    if (!(canvas instanceof HTMLCanvasElement))
-      throw new Error("startFollowSample: no street canvas");
-    const startPos = window.__bc?.playerPosition;
-    const zoom = window.__bc?.viewTransform?.zoom;
-    if (!startPos || !zoom) throw new Error("startFollowSample: scene not ready");
-    const rect = canvas.getBoundingClientRect();
-    const halfViewportCellsX = rect.width / zoom / tileSizePx / 2;
-    const halfViewportCellsY = rect.height / zoom / tileSizePx / 2;
-    const startX = startPos.x;
-    const startY = startPos.y;
+  dir: { x: number; y: number },
+): Promise<() => Promise<FollowSample>> {
+  await page.evaluate(
+    ({ tileSizePx, dir }) => {
+      const canvas = document.querySelector("#test-street canvas");
+      if (!(canvas instanceof HTMLCanvasElement))
+        throw new Error("startFollowSample: no street canvas");
+      const startPos = window.__bc?.playerPosition;
+      const zoom = window.__bc?.viewTransform?.zoom;
+      if (!startPos || !zoom) throw new Error("startFollowSample: scene not ready");
+      const rect = canvas.getBoundingClientRect();
+      const halfViewportCellsX = rect.width / zoom / tileSizePx / 2;
+      const halfViewportCellsY = rect.height / zoom / tileSizePx / 2;
+      const startX = startPos.x;
+      const startY = startPos.y;
 
-    const sample = new Promise<{
-      maxDeviationPx: number;
-      travelledCellsX: number;
-      travelledCellsY: number;
-      samples: number;
-    }>((resolve) => {
-      let maxDeviationPx = 0;
-      let restFrames = 0;
-      let samples = 0;
-      let lastPos = { x: startX, y: startY };
-      // A hard safety cap (60s of frames): every real termination path is
-      // travel or a collider rest, this only guards against a genuine bug
-      // hanging the test instead of failing it.
-      const MAX_SAMPLES = 3_600;
+      const sample = new Promise<FollowSample>((resolve) => {
+        let maxDeviationPx = 0;
+        let anchorDriftPx = 0;
+        let reversals = 0;
+        let maxIdealDeviationPx = 0;
+        let firstAnchor: { x: number; y: number } | undefined;
+        let lastOffset: { x: number; y: number } | undefined;
+        let restFrames = 0;
+        let samples = 0;
+        let lastPos = { x: startX, y: startY };
+        // A hard safety cap (60s of frames): every real termination path is
+        // travel or a collider rest, this only guards against a genuine bug
+        // hanging the test instead of failing it.
+        const MAX_SAMPLES = 3_600;
 
-      function tick(): void {
-        const bounds = window.__bc?.playerScreenBounds?.();
-        const pos = window.__bc?.playerPosition;
-        if (bounds && pos) {
-          // The bottom-centre anchor (`test-street/scene.ts`'s own
-          // `anchor.set(0.5, 1)`), never the bounding box's own vertical
-          // centre -- see `assertPlayerCentred`'s own doc comment for why.
-          const centreX = bounds.x + bounds.width / 2;
-          const centreY = bounds.y + bounds.height;
-          maxDeviationPx = Math.max(
-            maxDeviationPx,
-            Math.abs(centreX - rect.width / 2),
-            Math.abs(centreY - rect.height / 2),
-          );
+        function tick(): void {
+          const bounds = window.__bc?.playerScreenBounds?.();
+          const pos = window.__bc?.playerPosition;
+          const world = window.__bc?.worldTransform?.();
+          if (bounds && pos && world) {
+            // The bottom-centre anchor (`test-street/scene.ts`'s own
+            // `anchor.set(0.5, 1)`), never the bounding box's own vertical
+            // centre -- see `assertPlayerCentred`'s own doc comment for why.
+            const centreX = bounds.x + bounds.width / 2;
+            const centreY = bounds.y + bounds.height;
+            maxDeviationPx = Math.max(
+              maxDeviationPx,
+              Math.abs(centreX - rect.width / 2),
+              Math.abs(centreY - rect.height / 2),
+            );
 
-          const moved = pos.x !== lastPos.x || pos.y !== lastPos.y;
-          restFrames = moved ? 0 : restFrames + 1;
-          lastPos = { x: pos.x, y: pos.y };
+            // One tuple per frame: the drawn anchor, the world offset and the
+            // position are all written in the same Pixi tick.
+            const anchor = { x: centreX, y: centreY };
+            firstAnchor ??= anchor;
+            anchorDriftPx = Math.max(
+              anchorDriftPx,
+              Math.abs(anchor.x - firstAnchor.x),
+              Math.abs(anchor.y - firstAnchor.y),
+            );
+            if (
+              lastOffset &&
+              ((world.x - lastOffset.x) * dir.x > 0 || (world.y - lastOffset.y) * dir.y > 0)
+            ) {
+              reversals += 1;
+            }
+            lastOffset = { x: world.x, y: world.y };
+            const idealX = rect.width / 2 - (pos.x + 0.5) * tileSizePx * world.scaleX;
+            const idealY = rect.height / 2 - (pos.y + 1) * tileSizePx * world.scaleY;
+            maxIdealDeviationPx = Math.max(
+              maxIdealDeviationPx,
+              Math.abs(world.x - idealX),
+              Math.abs(world.y - idealY),
+            );
 
-          const travelledCellsX = Math.abs(pos.x - startX);
-          const travelledCellsY = Math.abs(pos.y - startY);
-          const doneByTravel =
-            travelledCellsX > halfViewportCellsX || travelledCellsY > halfViewportCellsY;
-          const doneByRest = restFrames >= 6;
+            const moved = pos.x !== lastPos.x || pos.y !== lastPos.y;
+            restFrames = moved ? 0 : restFrames + 1;
+            lastPos = { x: pos.x, y: pos.y };
 
-          samples += 1;
-          if (doneByTravel || doneByRest || samples >= MAX_SAMPLES) {
-            resolve({ maxDeviationPx, travelledCellsX, travelledCellsY, samples });
-            return;
+            const travelledCellsX = Math.abs(pos.x - startX);
+            const travelledCellsY = Math.abs(pos.y - startY);
+            const doneByTravel =
+              travelledCellsX > halfViewportCellsX || travelledCellsY > halfViewportCellsY;
+            const doneByRest = restFrames >= 6;
+
+            samples += 1;
+            if (doneByTravel || doneByRest || samples >= MAX_SAMPLES) {
+              resolve({
+                maxDeviationPx,
+                travelledCellsX,
+                travelledCellsY,
+                samples,
+                anchorDriftPx,
+                reversals,
+                maxIdealDeviationPx,
+              });
+              return;
+            }
           }
+          requestAnimationFrame(tick);
         }
         requestAnimationFrame(tick);
-      }
-      requestAnimationFrame(tick);
-    });
-    (window as unknown as { __bcFollowSample: typeof sample }).__bcFollowSample = sample;
-  }, tileSizePx);
+      });
+      (window as unknown as { __bcFollowSample: typeof sample }).__bcFollowSample = sample;
+    },
+    { tileSizePx, dir },
+  );
 
   return () =>
-    page.evaluate(
-      () =>
-        (
-          window as unknown as {
-            __bcFollowSample: {
-              maxDeviationPx: number;
-              travelledCellsX: number;
-              travelledCellsY: number;
-              samples: number;
-            };
-          }
-        ).__bcFollowSample,
-    );
+    page.evaluate(() => (window as unknown as { __bcFollowSample: FollowSample }).__bcFollowSample);
 }
 
 /** Holds `codes` (one direction, or two for a diagonal) with real,
@@ -262,17 +296,30 @@ async function holdAndSampleFollow(
   page: Page,
   codes: readonly string[],
   tileSizePx: number,
-): Promise<{
-  maxDeviationPx: number;
-  travelledCellsX: number;
-  travelledCellsY: number;
-  samples: number;
-}> {
-  const awaitSample = await startFollowSample(page, tileSizePx);
+): Promise<FollowSample> {
+  const dir = {
+    x: (codes.includes("ArrowRight") ? 1 : 0) - (codes.includes("ArrowLeft") ? 1 : 0),
+    y: (codes.includes("ArrowDown") ? 1 : 0) - (codes.includes("ArrowUp") ? 1 : 0),
+  };
+  const awaitSample = await startFollowSample(page, tileSizePx, dir);
   for (const code of codes) await page.keyboard.down(code);
   const result = await awaitSample();
   for (const code of codes) await page.keyboard.up(code);
   return result;
+}
+
+/** The wiring half of `inv_camera_scroll_tracks_continuous_walk`: the
+ * drawn anchor never moves, the world never scrolls against the walk, and
+ * it stays within the exported bound of the continuous camera. */
+function expectSteadyScroll(result: FollowSample, label: string): void {
+  expect(result.anchorDriftPx, `${label}: the player's drawn anchor moved`).toBeLessThanOrEqual(
+    0.01,
+  );
+  expect(result.reversals, `${label}: the world scrolled against the walk`).toBe(0);
+  expect(
+    result.maxIdealDeviationPx,
+    `${label}: the world strayed from the continuous camera`,
+  ).toBeLessThanOrEqual(CAMERA_SCROLL_TOLERANCE_PX);
 }
 
 /** The minimum real travel a held direction must demonstrate for the
@@ -448,6 +495,29 @@ test.describe("camera/viewport (NFR48)", () => {
       codes: ["ArrowUp", "ArrowRight"] as const,
       setup: [REST_DOWN_TO_PAVEMENT] as const,
     },
+    // The three remaining diagonals walk from open spots the axis cases
+    // above already reach.
+    {
+      name: "north-west (diagonal)",
+      codes: ["ArrowUp", "ArrowLeft"] as const,
+      setup: [
+        REST_DOWN_TO_PAVEMENT,
+        { kind: "x-at-least", key: "ArrowRight", value: lamppostApproachX() },
+        { kind: "rest", key: "ArrowDown" },
+        { kind: "x-at-least", key: "ArrowRight", value: LAMPPOST_CELL.x + 1 },
+        { kind: "x-at-least", key: "ArrowRight", value: 10 },
+      ] as const,
+    },
+    {
+      name: "south-east (diagonal)",
+      codes: ["ArrowDown", "ArrowRight"] as const,
+      setup: [REST_DOWN_TO_PAVEMENT, { kind: "rest", key: "ArrowUp" }] as const,
+    },
+    {
+      name: "south-west (diagonal)",
+      codes: ["ArrowDown", "ArrowLeft"] as const,
+      setup: [REST_DOWN_TO_PAVEMENT, { kind: "rest", key: "ArrowUp" }] as const,
+    },
   ] satisfies { name: string; codes: readonly ArrowKey[]; setup: readonly SetupStep[] }[]) {
     test(`the camera stays centred while holding ${followCase.name}, and travels at least ${MIN_TRAVELLED_CELLS} cells`, async ({
       page,
@@ -474,6 +544,7 @@ test.describe("camera/viewport (NFR48)", () => {
         `camera must keep the player within 1px of centre while holding ${followCase.codes.join("+")} ` +
           `(travelled x: ${result.travelledCellsX.toFixed(2)}, y: ${result.travelledCellsY.toFixed(2)} cells)`,
       ).toBeLessThanOrEqual(1);
+      expectSteadyScroll(result, followCase.codes.join("+"));
     });
   }
 
@@ -745,5 +816,20 @@ test.describe("camera/viewport (NFR48): cold load at deviceScaleFactor 2", () =>
     await waitForSceneReady(page);
     await assertNoScrollChrome(page, { width: 1280, height: 720 });
     await assertPlayerCentred(page);
+  });
+
+  // The canvas is CSS-scaled at any non-1 DPR (`resolution` stays 1).
+  test("a diagonal follow at DPR 2 keeps the anchor still and the scroll steady", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await page.goto("/");
+    await waitForSceneReady(page);
+    await walkToOpenSpot(page, [{ kind: "rest", key: "ArrowDown" }]);
+    const result = await holdAndSampleFollow(page, ["ArrowUp", "ArrowRight"], TILE_SIZE_PX);
+    expect(Math.max(result.travelledCellsX, result.travelledCellsY)).toBeGreaterThanOrEqual(
+      MIN_TRAVELLED_CELLS,
+    );
+    expectSteadyScroll(result, "ArrowUp+ArrowRight at DPR 2");
   });
 });

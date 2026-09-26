@@ -23,6 +23,7 @@ function viewOver(
 ): DebugWorldView {
   return {
     tileSizePx: TILE,
+    zoom: 1,
     storeyHeightPx: STOREY,
     colliderSubcellsPerCell: 16,
     viewerFloor: () => bounds.floor,
@@ -62,7 +63,7 @@ describe("buildSortLabels", () => {
   it("puts the label at the drawable's own anchor, through the renderer's projection", () => {
     const d = drawable({ stableId: 4n, x: toSortUnits(2), y: toSortUnits(6) });
     const [label] = buildSortLabels(viewOver([d]));
-    const anchor = screenPositionPx(fromSortUnits(d.x), fromSortUnits(d.y), 0, TILE, STOREY);
+    const anchor = screenPositionPx(fromSortUnits(d.x), fromSortUnits(d.y), 0, TILE, STOREY, 1);
     expect(label?.x).toBe(anchor.x);
     // Lifted by whole lanes only: the horizontal position is always the
     // drawable's own anchor, so a label always belongs to the column it
@@ -118,7 +119,14 @@ describe("buildSortLabels", () => {
   it("staggers a negative tile column without ever landing outside its lanes", () => {
     const west = drawable({ stableId: 1n, x: toSortUnits(-1), y: toSortUnits(0) });
     const [label] = buildSortLabels(viewOver([west]));
-    const anchor = screenPositionPx(fromSortUnits(west.x), fromSortUnits(west.y), 0, TILE, STOREY);
+    const anchor = screenPositionPx(
+      fromSortUnits(west.x),
+      fromSortUnits(west.y),
+      0,
+      TILE,
+      STOREY,
+      1,
+    );
     const lift = anchor.y - (label?.y ?? 0);
     expect(lift).toBeGreaterThanOrEqual(0);
     expect(lift).toBeLessThanOrEqual(2 * DEBUG_STYLE.lineHeightPx * 2);
