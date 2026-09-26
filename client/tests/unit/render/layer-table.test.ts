@@ -66,3 +66,16 @@ describe("passOfLayer is rank-driven", () => {
     }
   });
 });
+
+describe("the flat layers", () => {
+  it("are exactly ground and ground_objects", () => {
+    // A new flat layer (e.g. a decal layer at rank 2-4) must first get its
+    // own FloorStack container and its own RenderPass in `passOfLayer`
+    // before this list may grow -- otherwise it would silently draw in the
+    // ground-objects container.
+    const flat = LAYER_TABLE.filter((r) => !r.deprecated && r.rank < FIRST_POOL_RANK).map(
+      (r) => r.name,
+    );
+    expect(flat).toEqual(["ground", "ground_objects"]);
+  });
+});
