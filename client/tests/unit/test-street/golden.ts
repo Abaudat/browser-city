@@ -17,7 +17,9 @@
 // pool per floor drawn in ascending floor order. Ids at `500000` and above
 // are the FR120 wall-stub companions (`test-street/drawables.ts`'s
 // `STUB_ID_OFFSET`); `ground:<floor>` keys are the flat ground passes
-// (FR122 culls those as completely as it culls pool sprites).
+// (FR122 culls those as completely as it culls pool sprites);
+// `ground_objects:<floor>` keys are the flat ground-object passes, whose
+// members are not in the order at all.
 
 export const STREET_GOLDEN_ORDER: readonly string[] = [
   "60",
@@ -125,12 +127,8 @@ export const STREET_GOLDEN_ORDER: readonly string[] = [
   "121",
   "11",
   "15",
-  "120",
-  "117",
   "118",
   "14",
-  "116",
-  "119",
   "80",
   "50",
   "50",
@@ -260,12 +258,8 @@ export const STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "121",
   "11",
   "15",
-  "120",
-  "117",
   "118",
   "14",
-  "116",
-  "119",
   "80",
   "1000",
   "50",
@@ -296,11 +290,7 @@ export const STREET_VISIBILITY_AT_REST_IN_SHOP_A: Readonly<Record<string, string
   "10": "normal",
   "1000": "normal",
   "11": "normal",
-  "116": "normal",
-  "117": "normal",
   "118": "normal",
-  "119": "normal",
-  "120": "normal",
   "121": "normal",
   "122": "normal",
   "14": "normal",
@@ -343,6 +333,7 @@ export const STREET_VISIBILITY_AT_REST_IN_SHOP_A: Readonly<Record<string, string
   "80": "normal",
   "81": "normal",
   "9": "normal",
+  "ground_objects:0": "normal",
   "ground:-1": "hidden",
   "ground:0": "normal",
 };
@@ -352,11 +343,7 @@ export const STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE: Readonly<Record<string, stri
   "10": "normal",
   "1000": "normal",
   "11": "normal",
-  "116": "normal",
-  "117": "normal",
   "118": "normal",
-  "119": "normal",
-  "120": "normal",
   "121": "normal",
   "122": "normal",
   "14": "normal",
@@ -399,6 +386,7 @@ export const STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE: Readonly<Record<string, stri
   "80": "normal",
   "81": "normal",
   "9": "normal",
+  "ground_objects:0": "normal",
   "ground:-1": "hidden",
   "ground:0": "normal",
 };
@@ -408,11 +396,7 @@ export const STREET_VISIBILITY_ON_SUBWAY_LANDING: Readonly<Record<string, string
   "10": "hidden",
   "1000": "normal",
   "11": "hidden",
-  "116": "hidden",
-  "117": "hidden",
   "118": "hidden",
-  "119": "hidden",
-  "120": "hidden",
   "121": "hidden",
   "122": "hidden",
   "14": "hidden",
@@ -455,6 +439,7 @@ export const STREET_VISIBILITY_ON_SUBWAY_LANDING: Readonly<Record<string, string
   "80": "hidden",
   "81": "hidden",
   "9": "hidden",
+  "ground_objects:0": "hidden",
   "ground:-1": "normal",
   "ground:0": "hidden",
 };

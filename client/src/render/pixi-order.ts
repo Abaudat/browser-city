@@ -7,6 +7,7 @@
 // same function.
 
 import type { Container } from "pixi.js";
+import { FIRST_POOL_RANK } from "./layer-table";
 import { type Drawable, sortByDrawable } from "./sort-key";
 
 /** One pool member: a `Drawable` (what the comparator reads) plus the
@@ -43,6 +44,13 @@ export function applyDepthOrder(
   members: OrderedMember[],
   outOrder: bigint[],
 ): void {
+  for (const member of members) {
+    if (member.drawable.rank < FIRST_POOL_RANK) {
+      throw new Error(
+        `applyDepthOrder: drawable ${member.drawable.stableId} (rank ${member.drawable.rank}) is on a flat-pass layer and must never be y-sorted`,
+      );
+    }
+  }
   sortByDrawable(members, memberDrawable);
 
   poolContainer.removeChildren();

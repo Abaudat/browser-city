@@ -36,6 +36,18 @@ describe("sortAcrossFloors", () => {
     expect(sortAcrossFloors([near, far], (d) => d)).toEqual([far, near]);
   });
 
+  it("draws a flat-layer drawable before every pool drawable on its floor, whatever its y or rank order", () => {
+    const flatSouth = drawable(1n, 900, 0, 5);
+    const flatNorth = drawable(2n, 100, 0, 5);
+    const poolNorth = drawable(3n, 10, 0, 20);
+    const poolSouth = drawable(4n, 50, 0, 50);
+    const upper = drawable(5n, 0, 1, 5);
+    // Flat ones keep insertion order (never y-sorted), then the sorted pool.
+    expect(sortAcrossFloors([poolSouth, flatSouth, poolNorth, flatNorth, upper], (d) => d)).toEqual(
+      [flatSouth, flatNorth, poolNorth, poolSouth, upper],
+    );
+  });
+
   it("drops and duplicates nothing, and leaves its input alone", () => {
     const input = [drawable(1n, 5, 1), drawable(2n, 5, 0), drawable(3n, 1, 1)];
     const snapshot = [...input];

@@ -1,0 +1,11 @@
+[[object]]
+id = 1
+key = "manhole"
+name = "Manhole Cover"
+layer = "ground_objects"
+sprite = { sheet = "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/trash-bin-test.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+# A flat-pass object has no vertical extent: its sprite may not overhang
+# upward past its footprint.
+tags = ["underfoot"]

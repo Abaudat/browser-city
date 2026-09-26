@@ -59,7 +59,7 @@ import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
 import { sortAcrossFloors } from "../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../src/render/layer-ranks";
-import { LAYER_TABLE } from "../../src/render/layer-table";
+import { FIRST_POOL_RANK, LAYER_TABLE } from "../../src/render/layer-table";
 import { screenPositionPx, visibleCellBounds } from "../../src/render/screen-position";
 import { buildCitizenFixtures } from "../../src/test-street/citizens";
 import { buildPlayerDrawable, buildPropDrawables } from "../../src/test-street/drawables";
@@ -367,7 +367,11 @@ function expectedOrderFor(x: number, y: number, floor: number): string[] {
     objectDefs: streetObjectSources(),
   });
   const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
-  return sortAcrossFloors([...props, player], (d) => d).map((d) => d.stableId.toString());
+  // The mounted `renderOrder` lists the pool only: flat-pass drawables
+  // are never y-sorted and are not in it.
+  return sortAcrossFloors([...props, player], (d) => d)
+    .filter((d) => d.rank >= FIRST_POOL_RANK)
+    .map((d) => d.stableId.toString());
 }
 
 interface PlayerState {
@@ -773,6 +777,23 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // the player's real position -- not a literal, and not a rule this spec
   // re-derives.
   expect(await currentOrder(page)).toEqual(expectedOrderFor(start.x, start.y, start.floor));
+
+  // Story 15.5: flat objects (the manhole covers, the doormat) are never pool members -- they draw in their floor's flat
+  // ground-object pass, so the per-frame re-sort can never put one over
+  // the player. They are culled with that pass's own group key instead.
+  const flatIds = buildPropDrawables({
+    rankOf,
+    ownership,
+    windowDefIds: streetWindowDefIds(),
+    objectDefs: streetObjectSources(),
+  })
+    .filter((d) => d.rank < FIRST_POOL_RANK)
+    .map((d) => d.stableId.toString());
+  expect(flatIds.length).toBeGreaterThan(0);
+  const orderNow = await currentOrder(page);
+  expect(flatIds.some((id) => orderNow.includes(id))).toBe(false);
+  expect(Object.keys(insideVisibility)).toContain("ground_objects:0");
+  expect(flatIds.some((id) => id in insideVisibility)).toBe(false);
 
   // The interior checkpoint (Quentin's direction, cycle 1): every id-based
   // check above passes, and this is what catches it if it still looks

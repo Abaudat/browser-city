@@ -1578,6 +1578,47 @@ fn check_object_walkability_tag(entries: &[LoweredObjectEntry]) -> Result<(), De
     Ok(())
 }
 
+/// An object on a flat-pass layer (rank below `FIRST_POOL_RANK`) lies flat
+/// on the ground: it must be tagged [`UNDERFOOT_TAG_KEY`] (no vertical
+/// extent means nothing to collide with -- one direction only, an
+/// `underfoot` object on a pool layer is fine) and its sprite must not
+/// overhang upward (`h == height * tile_size_px` exactly).
+fn check_object_flat_layers(
+    entries: &[LoweredObjectEntry],
+    tile_size_px: u32,
+    code_tables: &CodeTables,
+) -> Result<(), DefsError> {
+    for e in entries {
+        if !code_tables.is_flat_layer(&e.layer.value) {
+            continue;
+        }
+        if !e.tags.iter().any(|t| t == UNDERFOOT_TAG_KEY) {
+            return Err(DefsError::new(
+                &e.path,
+                e.layer.line,
+                e.layer.col,
+                format!(
+                    "object '{}' is on flat-pass layer '{}' but is not tagged '{UNDERFOOT_TAG_KEY}' -- an object lying flat on the ground has nothing to collide with",
+                    e.key.value, e.layer.value
+                ),
+            ));
+        }
+        let expected_h = e.height * tile_size_px;
+        if e.sprite.value.h != expected_h {
+            return Err(DefsError::new(
+                &e.path,
+                e.sprite.line,
+                e.sprite.col,
+                format!(
+                    "object '{}' is on flat-pass layer '{}' so its sprite height {} must equal its footprint height {} * tile_size_px {tile_size_px} ({expected_h}px) exactly -- a flat object never overhangs",
+                    e.key.value, e.layer.value, e.sprite.value.h, e.height
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Story 2.9 (AC1, FR119): a role tag's own `layers` list must name real,
 /// non-deprecated layers -- exactly the same two refusals an object's own
 /// `layer` field gets (`resolve_object_layer`), since a role that could
@@ -2615,6 +2656,7 @@ pub fn validate(
             )
         })?;
         check_object_sprite_matches_footprint(&lowered_objects, tile_size_px)?;
+        check_object_flat_layers(&lowered_objects, tile_size_px, code_tables)?;
         Some(tile_size_px)
     } else {
         None

@@ -42,7 +42,7 @@ import {
 } from "../render/atlas-pages";
 import { type Camera, computeCamera, worldPxFromClient } from "../render/camera";
 import { FloorStacks } from "../render/floor-stacks";
-import { layerCodeByName } from "../render/layer-table";
+import { layerCodeByName, passOfLayer } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
@@ -110,12 +110,13 @@ const ZOOM = 3;
  * never a second, separately-typed `floor < 0` check. */
 const SUBWAY_BACKGROUND = 0x000000;
 
-/** The layer code every ground-tile-pass group's own synthetic
- * `VisibilityDrawable` carries -- never read by `computeVisibility`'s
- * wall-layer check (a ground pass is never `isNearSide`), so any live
- * code works; `"objects"` names one that exists without adding a
- * literal number. */
-const GROUND_LAYER_CODE = layerCodeByName("objects");
+/** The layer codes the flat passes' synthetic `VisibilityDrawable`s carry:
+ * the ground pass carries the `ground` layer's own code and the
+ * ground-objects pass the `ground_objects` layer's, so each group reads as
+ * what it is (a flat pass is never `isNearSide`, so only floor culling
+ * applies to it). */
+const GROUND_LAYER_CODE = layerCodeByName("ground");
+const GROUND_OBJECTS_LAYER_CODE = layerCodeByName("ground_objects");
 
 export interface MountStreetSceneOptions {
   /** Story 1.10: the fetched, parsed defs document -- needed to build the
@@ -180,7 +181,8 @@ export interface MountStreetSceneOptions {
    * time). Covers every real pool member, including the FR120 wall-stub
    * companions -- their own ids (`STUB_ID_OFFSET` and above) are exactly
    * as real a fact about what the adapter wrote as any other member's --
-   * plus every ground-tile-pass group, keyed `ground:<floor>` (Tim's
+   * plus every ground-tile-pass group, keyed `ground:<floor>`, and every
+   * flat ground-object pass group, keyed `ground_objects:<floor>` (Tim's
    * direction, cycle 2: FR122's flat-pass culling needs a guard that can
    * see it too, not only the sorted pool). */
   readonly onVisibilityChange?: (
@@ -904,7 +906,26 @@ export async function mountStreetScene(
     view: playerSprite,
     label: "player",
   };
-  const members: PoolEntry[] = [...entries, playerEntry];
+  // A flat-layer entry (the manholes, the doormat) goes into its floor's
+  // `groundObjects` pass in insertion order and never into the pool, so
+  // nothing ever y-sorts it against an actor. Which pass an entry joins is
+  // read from its layer alone (`layer-table.ts`'s `passOfLayer`).
+  const groundObjectsContainersByFloor = new Map<number, Container>();
+  const poolEntries: PoolEntry[] = [];
+  for (const entry of entries) {
+    const pass = passOfLayer(entry.drawable.layerCode);
+    if (pass === "pool") {
+      poolEntries.push(entry);
+      continue;
+    }
+    if (pass === "ground") {
+      throw new Error(`scene: prop ${entry.label} is on the ground layer, which only tiles use`);
+    }
+    const container = stacks.stackFor(entry.drawable.floor).groundObjects;
+    container.addChild(entry.view);
+    groundObjectsContainersByFloor.set(entry.drawable.floor, container);
+  }
+  const members: PoolEntry[] = [...poolEntries, playerEntry];
 
   // One pool per floor (`FloorStacks`), so the comparator only ever
   // orders drawables that share a floor and the stacks themselves settle
@@ -966,7 +987,7 @@ export async function mountStreetScene(
   // its own row has zero overhang, and Artie's "factor of thirteen" wall
   // was measured the same way (624px of overhang against a 48px storey).
   assertNoOverhangBeyondStorey(
-    members.map((m) => ({
+    [...entries, playerEntry].map((m) => ({
       label: `${m.label}#${m.drawable.stableId}`,
       overhangPx: m.view.height - tileSizePx,
     })),
@@ -980,7 +1001,12 @@ export async function mountStreetScene(
   // default is `undefined`, never `null` (confirmed against a real
   // `Sprite`/`Container`) -- `== null` covers both, `=== null` alone
   // would fail every unmasked sprite in this scene.
-  const everyMaskableView = [...members.map((m) => m.view), ...groundContainersByFloor.values()];
+  const everyMaskableView = [
+    ...entries.map((m) => m.view),
+    playerEntry.view,
+    ...groundContainersByFloor.values(),
+    ...groundObjectsContainersByFloor.values(),
+  ];
   onMasksChecked?.(everyMaskableView.every((view) => view.mask == null));
 
   // The derived indexes: real `defs/objects` footprints, colliders and
@@ -1051,7 +1077,24 @@ export async function mountStreetScene(
       view: container,
     }),
   );
-  const allVisibilityMembers: VisibilityMember[] = [...members, ...groundMembers];
+  const groundObjectsMembers: VisibilityMember[] = [
+    ...groundObjectsContainersByFloor.entries(),
+  ].map(([floor, container]) => ({
+    drawable: {
+      floor,
+      layerCode: GROUND_OBJECTS_LAYER_CODE,
+      ownerBuildingId: NO_OWNER,
+      isWindow: false,
+      isNearSide: false,
+      isStub: false,
+    },
+    view: container,
+  }));
+  const allVisibilityMembers: VisibilityMember[] = [
+    ...members,
+    ...groundMembers,
+    ...groundObjectsMembers,
+  ];
 
   function applyVisibilityFor(cellX: number, cellY: number, floor: number, force: boolean): void {
     const viewer: VisibilityViewer = {
@@ -1083,7 +1126,7 @@ export async function mountStreetScene(
     if (applied && onVisibilityChange) {
       const reportedState: Record<string, string> = {};
       const reportedAlpha: Record<string, number> = {};
-      for (const entry of [...entries, playerEntry]) {
+      for (const entry of [...poolEntries, playerEntry]) {
         const id = entry.drawable.stableId.toString();
         reportedState[id] = stateFromWrite({
           visible: entry.view.visible,
@@ -1093,6 +1136,14 @@ export async function mountStreetScene(
       }
       for (const [floor, container] of groundContainersByFloor) {
         const id = `ground:${floor}`;
+        reportedState[id] = stateFromWrite({
+          visible: container.visible,
+          alpha: container.alpha,
+        });
+        reportedAlpha[id] = container.alpha;
+      }
+      for (const [floor, container] of groundObjectsContainersByFloor) {
+        const id = `ground_objects:${floor}`;
         reportedState[id] = stateFromWrite({
           visible: container.visible,
           alpha: container.alpha,
@@ -1114,7 +1165,9 @@ export async function mountStreetScene(
     const anyVisible = new Map<bigint, boolean>();
     for (const entry of entries) {
       const id = entry.drawable.stableId;
-      anyVisible.set(id, (anyVisible.get(id) ?? false) || entry.view.visible);
+      // A flat-pass sprite is culled with its floor's group container.
+      const shown = entry.view.visible && (entry.view.parent?.visible ?? true);
+      anyVisible.set(id, (anyVisible.get(id) ?? false) || shown);
     }
     hiddenObjectIds.clear();
     for (const [id, visible] of anyVisible) {

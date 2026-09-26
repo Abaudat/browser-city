@@ -64,6 +64,8 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "dangling-tag-reference" => "dangling-object-tag-reference",
         "no-collider-not-underfoot" => "prop-no-collider-not-underfoot",
         "underfoot-with-collider" => "underfoot-tag-with-collider",
+        "flat-layer-not-underfoot" => "flat-layer-not-underfoot",
+        "flat-layer-sprite-overhangs" => "flat-layer-sprite-overhangs",
         "object-role-count-zero" => "object-role-count-zero",
         "object-role-count-two" => "object-role-count-two",
         "role-layer-not-allowed" => "role-layer-not-allowed",

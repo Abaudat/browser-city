@@ -7,7 +7,7 @@
 // the client must never be quietly lenient about input the module
 // rejects at build time.
 
-import { LAYER_TABLE } from "../render/layer-table";
+import { LAYER_TABLE, passOfLayer } from "../render/layer-table";
 import { compositeStripSize } from "./composite-strip";
 import type {
   AccessoryDef,
@@ -764,6 +764,7 @@ export function parseDefs(data: unknown): Defs {
     checkSpriteNonZeroArea(object);
     if (tileSizePx !== undefined) {
       checkSpriteMatchesFootprint(object, tileSizePx);
+      checkFlatLayerSprite(object, tileSizePx);
     }
     checkColliderWithinFootprint(object, colliderSubcellsPerCell);
     checkInteractAtReach(object, colliderSubcellsPerCell, interactAtMaxReachCells);
@@ -773,6 +774,7 @@ export function parseDefs(data: unknown): Defs {
     // object-level rejection above gets its own chance to fire on a
     // payload built to exercise it before this one does.
     checkObjectWalkabilityTag(object, underfootTagId);
+    checkFlatLayerUnderfoot(object, underfootTagId);
     // Story 2.9: after the walkability catch-all, same reasoning.
     checkObjectRole(object, tagsById);
   }
@@ -882,6 +884,30 @@ function checkObjectLayer(object: ObjectDef): void {
   }
   if (row.deprecated) {
     fail(`object '${object.key}' names deprecated layer code ${object.layer} ('${row.name}')`);
+  }
+}
+
+/** An object on a flat-pass layer lies flat on the ground: its sprite
+ * height equals `height * tileSizePx` exactly (a pool layer allows
+ * `>=`). Mirrors `tools/defs-build`'s `check_object_flat_layers`. */
+function checkFlatLayerSprite(object: ObjectDef, tileSizePx: number): void {
+  if (passOfLayer(object.layer) === "pool") return;
+  const expectedH = object.height * tileSizePx;
+  if (object.sprite.h !== expectedH) {
+    fail(
+      `object '${object.key}' is on a flat-pass layer so its sprite height ${object.sprite.h} must equal its footprint height ${object.height} * tileSizePx ${tileSizePx} (${expectedH}px) exactly -- a flat object never overhangs`,
+    );
+  }
+}
+
+/** An object on a flat-pass layer must carry `underfoot` (one direction
+ * only: an `underfoot` object on a pool layer is fine). */
+function checkFlatLayerUnderfoot(object: ObjectDef, underfootTagId: number | undefined): void {
+  if (passOfLayer(object.layer) === "pool") return;
+  if (underfootTagId === undefined || !object.tags.includes(underfootTagId)) {
+    fail(
+      `object '${object.key}' is on a flat-pass layer but is not tagged '${UNDERFOOT_TAG_KEY}' -- an object lying flat on the ground has nothing to collide with`,
+    );
   }
 }
 

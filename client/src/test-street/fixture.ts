@@ -37,10 +37,17 @@ import type { ColliderSource } from "../world/collision-grid";
 import type { OwnershipArea } from "../world/ownership";
 import type { TransitionSpec } from "../world/transitions";
 
-/** The five pool layers (FR123), in ascending rank order -- the ladder
- * itself lives in `sim::codes::layer`/`render/layer-table.ts`; this is
- * just which one each street prop is on. */
-export type StreetLayer = "furniture" | "objects" | "walls" | "wall_decals" | "characters";
+/** The layers a street prop can be on (FR123): the five pool layers plus
+ * `ground_objects`, the flat pass for anything lying on the ground -- the
+ * ladder itself lives in `sim::codes::layer`/`render/layer-table.ts`;
+ * this is just which one each street prop is on. */
+export type StreetLayer =
+  | "ground_objects"
+  | "furniture"
+  | "objects"
+  | "walls"
+  | "wall_decals"
+  | "characters";
 
 /** A prop wide/tall enough to need FR125 decomposition. Orientation
  * (`PlacedObject.orientation`) is a later story's concern; this fixture
@@ -785,6 +792,8 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // `PLATFORM_UP_ANCHOR_X`, were covering the bench almost completely
   // when the two sat one cell apart).
   // --- The footbridge (story 1.13) -------------------------------------
+  // The deck stays on `objects`, not `ground_objects`: its def's own layer
+  // is `objects`, and changing a def's layer is out of scope for story 15.5.
   // The deck itself: story 2.13 (Tim's direction) -- `bridge_deck` is a
   // one-cell def (a real 16x16 pavement tile, the same city sidewalk tile
   // the street below it is paved with), not a four-cell def with a
@@ -846,13 +855,16 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // --- Street furniture ----------------------------------------------------
   // A doormat and manhole covers are underfoot decoration (no collider); a
   // bollard is a real post, collided by its own base (`BOLLARD_COLLIDER`).
+  // The doormat is at shop B's door because nothing upright stands on that
+  // cell: an upright prop on a flat object's cell hides it, so a flat object
+  // that needs to be seen is never placed under one.
   {
     id: 120n,
     assetKey: "doormat",
-    x: DOOR_X_A,
+    x: DOOR_X_B,
     y: SOUTH_WALL_Y + 1,
     floor: STREET_FLOOR,
-    layer: "objects",
+    layer: "ground_objects",
   },
   // A bollard on the pavement, west of the shopfront, off every scripted
   // walk's path.
@@ -873,7 +885,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     x: BRIDGE_UNDER_CURB_X,
     y: LAMPPOST_CELL.y,
     floor: STREET_FLOOR,
-    layer: "objects",
+    layer: "ground_objects",
   },
   // A bollard at the underpass column's north end, on the pavement's
   // north strip: the underpass checkpoint's row rest.
@@ -895,7 +907,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     x: BRIDGE_UNDER_CURB_X,
     y: BRIDGE_DECK_Y,
     floor: STREET_FLOOR,
-    layer: "objects",
+    layer: "ground_objects",
   },
   {
     id: 118n,
@@ -915,7 +927,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     x: BRIDGE_UNDER_PILLAR_X,
     y: BRIDGE_UNDER_EXIT_Y,
     floor: STREET_FLOOR,
-    layer: "objects",
+    layer: "ground_objects",
   },
 ] as const;
 

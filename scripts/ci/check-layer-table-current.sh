@@ -125,6 +125,20 @@ if [ "$DEPRECATED_NAMES" != "$DEFS_BUILD_DEPRECATED" ]; then
   FAILED=1
 fi
 
+# --- the one number the flat/pool pass rule hangs on ------------------------
+# sim::codes::layer::FIRST_POOL_RANK, defs-build's FIRST_POOL_RANK and the
+# client's FIRST_POOL_RANK must be equal.
+first_pool_rank() {
+  grep -oE 'FIRST_POOL_RANK: u32 = [0-9]+|FIRST_POOL_RANK = [0-9]+' "$1" | grep -oE '[0-9]+$' | head -1
+}
+SIM_FPR="$(first_pool_rank "$CODES_RS")"
+DEFS_FPR="$(first_pool_rank "$LAYER_CODES_RS")"
+CLIENT_FPR="$(first_pool_rank "$LAYER_TABLE_TS")"
+if [ -z "$SIM_FPR" ] || [ "$SIM_FPR" != "$DEFS_FPR" ] || [ "$SIM_FPR" != "$CLIENT_FPR" ]; then
+  echo "check-layer-table-current: FAIL -- FIRST_POOL_RANK disagrees: sim '$SIM_FPR', defs-build '$DEFS_FPR', client '$CLIENT_FPR'" >&2
+  FAILED=1
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi

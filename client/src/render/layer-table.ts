@@ -31,7 +31,29 @@ export const LAYER_TABLE: readonly LayerTableRow[] = [
   { code: 4, name: "walls", rank: 30, deprecated: false },
   { code: 5, name: "wall_decals", rank: 40, deprecated: false },
   { code: 6, name: "characters", rank: 50, deprecated: false },
+  { code: 7, name: "ground_objects", rank: 5, deprecated: false },
 ];
+
+/** Every live rank below this is a flat-pass layer; this and above is the
+ * y-sorted pool (`sim::codes::layer`'s rank ladder). */
+export const FIRST_POOL_RANK = 10;
+
+/** Which FR123 pass a layer draws in. */
+export type RenderPass = "ground" | "groundObjects" | "pool";
+
+/** The pass a live layer code draws in, read from its rank alone (the
+ * server's rule): rank 0 is the ground pass, any other rank below
+ * `FIRST_POOL_RANK` the ground-objects pass, the rest the pool.
+ * Throws for an unknown or deprecated code, same posture as
+ * `layer-ranks.ts`'s `resolveRank`. */
+export function passOfLayer(code: number): RenderPass {
+  const row = LAYER_TABLE.find((r) => r.code === code && !r.deprecated);
+  if (!row) {
+    throw new Error(`passOfLayer: layer code ${code} is unknown or deprecated`);
+  }
+  if (row.rank >= FIRST_POOL_RANK) return "pool";
+  return row.rank === 0 ? "ground" : "groundObjects";
+}
 
 /** Codes [`LAYER_TABLE`] marks deprecated -- the client-side mirror of
  * `sim::codes::layer::DEPRECATED_CODES`. */

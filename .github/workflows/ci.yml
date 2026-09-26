@@ -530,6 +530,8 @@ jobs:
       - run: bash ../scripts/ci/check-no-shared-code.sh
       - name: the one client-side layer-rank mirror never drifts from the server golden
         run: bash ../scripts/ci/check-layer-table-current.sh
+      - name: story 15.5 AC2, the renderer never names a defs/objects key
+        run: bash ../scripts/ci/check-render-no-content-keys.sh
       - name: story 1.7 FR121, no masking/filter/render-texture construct under client/src/
         run: bash ../scripts/ci/check-no-masks.sh
       - name: story 2.7, the Epic 1 raw character-part-sheet shortcut is gone, not bypassed

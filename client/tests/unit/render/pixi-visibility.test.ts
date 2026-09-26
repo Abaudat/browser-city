@@ -129,7 +129,7 @@ describe("VisibilityApplier", () => {
         fc.array(
           fc.record({
             y: fc.integer({ min: -20, max: 20 }),
-            rank: fc.integer({ min: 0, max: 5 }),
+            rank: fc.integer({ min: 10, max: 15 }),
             floor: fc.integer({ min: -2, max: 2 }),
             layerCode: fc.constantFrom(WALLS, FURNITURE),
             ownerBuildingId: fc.oneof(

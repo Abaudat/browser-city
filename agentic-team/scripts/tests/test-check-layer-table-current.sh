@@ -21,6 +21,7 @@ LAYER_CODES_RS_PATH="tools/defs-build/src/codes.rs"
 # the same way layer-table.ts already is) -- matches CODES_RS_HAPPY's own
 # `&[1]` (only "overhead").
 LAYER_CODES_RS_HAPPY='pub const DEPRECATED_LAYER_NAMES: &[&str] = &["overhead"];
+pub const FIRST_POOL_RANK: u32 = 10;
 '
 
 # write_case <dir> <golden-content> <codes.rs-content> <layer-table.ts-content> [defs-build codes.rs-content]
@@ -46,6 +47,7 @@ layer 2 furniture 10
 '
 
 CODES_RS_HAPPY='pub const DEPRECATED_CODES: &[u32] = &[1];
+pub const FIRST_POOL_RANK: u32 = 10;
 '
 
 LAYER_TABLE_HAPPY='export const LAYER_TABLE = [
@@ -53,6 +55,7 @@ LAYER_TABLE_HAPPY='export const LAYER_TABLE = [
   { code: 1, name: "overhead", rank: 1, deprecated: true },
   { code: 2, name: "furniture", rank: 10, deprecated: false },
 ];
+export const FIRST_POOL_RANK = 10;
 '
 
 echo "green: the happy path -- all three files agree"
