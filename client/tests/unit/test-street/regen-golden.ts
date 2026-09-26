@@ -13,7 +13,7 @@ import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sortAcrossFloors } from "../../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
-import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
+import { FIRST_POOL_RANK, LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import { buildPlayerDrawable, buildPropDrawables } from "../../../src/test-street/drawables";
 import {
@@ -54,7 +54,11 @@ const props = () =>
 
 function orderAt(x: number, y: number, floor: number): string[] {
   const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
-  return sortAcrossFloors([...props(), player], (d) => d).map((d) => d.stableId.toString());
+  // Flat-pass drawables are never pool members: `window.__bc.renderOrder`
+  // (and so this golden) lists the pool only.
+  return sortAcrossFloors([...props(), player], (d) => d)
+    .filter((d) => d.rank >= FIRST_POOL_RANK)
+    .map((d) => d.stableId.toString());
 }
 
 const GROUND_FLOORS = [...new Set(STREET_GROUND_TILES.map((tiles) => tiles.floor))].sort(
@@ -68,18 +72,28 @@ function visibilityAt(x: number, y: number, floor: number): Record<string, strin
     buildingId: ownership.ownershipAt(cellOf(x), cellOf(y), floor).buildingId,
   };
   const result: Record<string, string> = {};
+  const flatFloors = new Set<number>();
   for (const drawable of [...props(), player]) {
+    if (drawable.rank < FIRST_POOL_RANK) {
+      flatFloors.add(drawable.floor);
+      continue;
+    }
     result[drawable.stableId.toString()] = computeVisibility(viewer, drawable);
   }
-  for (const groundFloor of GROUND_FLOORS) {
-    result[`ground:${groundFloor}`] = computeVisibility(viewer, {
-      floor: groundFloor,
-      layerCode: layerCodeByName("objects"),
+  const group = (floor: number, layer: string) =>
+    computeVisibility(viewer, {
+      floor,
+      layerCode: layerCodeByName(layer),
       ownerBuildingId: NO_OWNER,
       isWindow: false,
       isNearSide: false,
       isStub: false,
     });
+  for (const groundFloor of GROUND_FLOORS) {
+    result[`ground:${groundFloor}`] = group(groundFloor, "ground");
+  }
+  for (const floor of flatFloors) {
+    result[`ground_objects:${floor}`] = group(floor, "ground_objects");
   }
   return result;
 }
@@ -117,7 +131,9 @@ const header = `// The street scene's committed depth order and visibility state
 // pool per floor drawn in ascending floor order. Ids at \`500000\` and above
 // are the FR120 wall-stub companions (\`test-street/drawables.ts\`'s
 // \`STUB_ID_OFFSET\`); \`ground:<floor>\` keys are the flat ground passes
-// (FR122 culls those as completely as it culls pool sprites).
+// (FR122 culls those as completely as it culls pool sprites);
+// \`ground_objects:<floor>\` keys are the flat ground-object passes, whose
+// members are not in the order at all.
 `;
 
 const out = [

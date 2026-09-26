@@ -66,7 +66,7 @@ pub fn merged_tree(category: &str) -> Vec<(PathBuf, String)> {
 pub fn object_sheet_dims() -> BTreeMap<String, (u32, u32)> {
     [(
         "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/trash-bin-test.png",
-        (16, 16),
+        (16, 32),
     )]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -140,6 +140,7 @@ pub fn code_tables() -> defs_build::codes::CodeTables {
         ("layer", "furniture", 2),
         ("layer", "objects", 3),
         ("layer", "walls", 4),
+        ("layer", "ground_objects", 7),
         ("unit", "piece", 0),
         ("unit", "gram", 1),
         ("unit", "millilitre", 2),

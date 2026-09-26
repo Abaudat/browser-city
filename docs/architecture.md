@@ -601,9 +601,13 @@ is positioned on screen. Occlusion between floors is entirely
 `sim::codes::layer`'s rank ladder (FR123) is minted in tens, leaving every
 in-between number free for a future layer to slot into without
 renumbering anything: `furniture` 10, `objects` 20, `walls` 30,
-`wall_decals` 40, `characters` 50. `ground` keeps rank 0 and is the flat
-ground pass's layer -- never a pool member, so its rank is never compared
-against a pool rank. `overhead` (code 1, rank 1) is deprecated: its row
+`wall_decals` 40, `characters` 50. Every rank below 10 is a flat-pass
+layer and every rank at or above 10 is a pool layer: `ground` (rank 0)
+is the ground pass's layer and `ground_objects` (code 7, rank 5) is the
+ground-objects pass's -- for anything lying flat, like a manhole cover or
+a doormat. A drawable's pass is its layer and nothing else
+(`layer-table.ts`'s `passOfLayer`); a flat-pass drawable is never
+y-sorted, and `applyDepthOrder` throws if handed one. `overhead` (code 1, rank 1) is deprecated: its row
 stays seeded forever (deprecation is a usage ban, not a deletion), but
 nothing may place new content on it, and a rank lookup that resolves an
 unknown or deprecated code throws rather than sorting it silently. A
@@ -953,7 +957,10 @@ like every other tag), and an object that carries `underfoot` must not
 declare a `collider` -- both directions are wrong metadata, rejected by
 object key, never a hard-coded allow-list of object keys in either
 parser. The tag key is a single named constant (`UNDERFOOT_TAG_KEY`) on
-each side, never a repeated string literal.
+each side, never a repeated string literal. An object on a flat-pass layer
+must also carry `underfoot` and its sprite must not overhang upward
+(`h` equals `height * tile_size_px` exactly); the reverse is free --
+`underfoot` alone never selects a pass.
 
 An `[[object]]` may name an `archetype` instead of declaring its own
 `height` and/or `collider` directly -- `defs/archetypes/*.toml`, key

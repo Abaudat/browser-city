@@ -107,9 +107,11 @@ pub mod reason_code {
 /// a code once and never updates an existing row, so there is no update
 /// path for a rank once seeded.
 ///
-/// `ground` (rank 0) is the flat-pass floor/road surface: never a pool
-/// member (see the client's own render-order comparator), so its rank is
-/// never compared against a pool rank. The five pool layers -- `furniture`,
+/// Every rank below 10 is a flat-pass layer, never a pool member (see the
+/// client's own render-order comparator), so its rank is never compared
+/// against a pool rank: `ground` (rank 0) is the floor/road surface and
+/// `ground_objects` (code 7, rank 5) is anything lying flat on it -- a
+/// manhole cover, a doormat. Ranks 2-4 stay free for a future decal pass. The five pool layers -- `furniture`,
 /// `objects`, `walls`, `wall_decals`, `characters` -- are minted a decade
 /// apart (story 1.6), leaving every in-between number free for a future
 /// layer to slot into without renumbering anything. Every live rank is
@@ -166,6 +168,11 @@ pub mod layer {
             code: 6,
             name: "characters",
             rank: 50,
+        },
+        LayerCode {
+            code: 7,
+            name: "ground_objects",
+            rank: 5,
         },
     ];
 

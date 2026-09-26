@@ -2,9 +2,14 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { sortAcrossFloors } from "../../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
-import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
+import {
+  FIRST_POOL_RANK,
+  LAYER_TABLE,
+  layerCodeByName,
+  passOfLayer,
+} from "../../../src/render/layer-table";
 import { compareDrawables } from "../../../src/render/sort-key";
-import { toSortUnits } from "../../../src/render/sort-units";
+import { SORT_SUBDIVISIONS, toSortUnits } from "../../../src/render/sort-units";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import {
   buildPlayerDrawable,
@@ -81,7 +86,9 @@ describe("the story 1.6 street scene's committed ordering", () => {
       PLAYER_START.y,
       PLAYER_START.floor,
     );
-    const pool = sortAcrossFloors([...props, player], (d) => d);
+    const pool = sortAcrossFloors([...props, player], (d) => d).filter(
+      (d) => d.rank >= FIRST_POOL_RANK,
+    );
 
     // Shared verbatim with `render-order.spec.ts` -- the comparator (run
     // here, directly, in node) and the real Pixi adapter (run there,
@@ -107,7 +114,9 @@ describe("the story 1.6 street scene's committed ordering", () => {
       lamppostRestY(),
       PLAYER_START.floor,
     );
-    const pool = sortAcrossFloors([...props, player], (d) => d);
+    const pool = sortAcrossFloors([...props, player], (d) => d).filter(
+      (d) => d.rank >= FIRST_POOL_RANK,
+    );
 
     expect(pool.map((d) => d.stableId.toString())).toEqual(STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH);
   });
@@ -204,18 +213,28 @@ describe("the street scene's committed visibility (story 1.7 cycle 2, Quentin's 
       buildingId: ownership.ownershipAt(cellOf(x), cellOf(y), floor).buildingId,
     };
     const result: Record<string, string> = {};
+    const flatFloors = new Set<number>();
     for (const drawable of [...props, player]) {
+      if (drawable.rank < FIRST_POOL_RANK) {
+        flatFloors.add(drawable.floor);
+        continue;
+      }
       result[drawable.stableId.toString()] = computeVisibility(viewer, drawable);
     }
-    for (const groundFloor of GROUND_FLOORS) {
-      result[`ground:${groundFloor}`] = computeVisibility(viewer, {
-        floor: groundFloor,
-        layerCode: layerCodeByName("objects"),
+    const group = (floor: number, layer: string) =>
+      computeVisibility(viewer, {
+        floor,
+        layerCode: layerCodeByName(layer),
         ownerBuildingId: NO_OWNER,
         isWindow: false,
         isNearSide: false,
         isStub: false,
       });
+    for (const groundFloor of GROUND_FLOORS) {
+      result[`ground:${groundFloor}`] = group(groundFloor, "ground");
+    }
+    for (const floor of flatFloors) {
+      result[`ground_objects:${floor}`] = group(floor, "ground_objects");
     }
     return result;
   }
@@ -420,5 +439,92 @@ describe("updatePlayerDrawable", () => {
     updatePlayerDrawable(player, PLAYER_START.x, PLAYER_START.y, -1);
 
     expect(player.floor).toBe(-1);
+  });
+});
+
+describe("story 15.5: flat objects stay under the player, upright props keep y-sorting", () => {
+  const isFlat = (d: { rank: number }) => d.rank < FIRST_POOL_RANK;
+  const flatProps = () => buildStreetProps().filter(isFlat);
+
+  /** Where `player` is drawn in the full drawn order, or -1. */
+  function indexIn(order: readonly { stableId: bigint }[], stableId: bigint): number {
+    return order.findIndex((d) => d.stableId === stableId);
+  }
+
+  it("the fixture has flat props at all (the sweep below is not vacuous)", () => {
+    expect(flatProps().length).toBeGreaterThan(0);
+  });
+
+  it("every flat prop is drawn before the player at every sub-cell step over the 3x3 cells around it", () => {
+    const props = buildStreetProps();
+    for (const flat of flatProps()) {
+      const cx = flat.x / SORT_SUBDIVISIONS;
+      const cy = flat.y / SORT_SUBDIVISIONS;
+      for (let ux = (cx - 1) * SORT_SUBDIVISIONS; ux <= (cx + 2) * SORT_SUBDIVISIONS; ux++) {
+        for (let uy = (cy - 1) * SORT_SUBDIVISIONS; uy <= (cy + 2) * SORT_SUBDIVISIONS; uy++) {
+          const player = buildPlayerDrawable(
+            rankOf("characters"),
+            ux / SORT_SUBDIVISIONS,
+            uy / SORT_SUBDIVISIONS,
+            flat.floor,
+          );
+          const order = sortAcrossFloors([...props, player], (d) => d);
+          expect(indexIn(order, flat.stableId)).toBeLessThan(indexIn(order, player.stableId));
+        }
+      }
+    }
+  });
+
+  it("a flat prop is drawn before a player one tile north of it, in drawn order", () => {
+    const props = buildStreetProps();
+    for (const flat of flatProps()) {
+      const cx = flat.x / SORT_SUBDIVISIONS;
+      const cy = flat.y / SORT_SUBDIVISIONS;
+      for (const [dx, dy] of [
+        [0, 0],
+        [0, -1],
+        [0, 1],
+        [1, 0],
+        [-1, 0],
+      ] as const) {
+        const player = buildPlayerDrawable(
+          rankOf("characters"),
+          cx + 0.5 + dx,
+          cy + 0.5 + dy,
+          flat.floor,
+        );
+        const order = sortAcrossFloors([...props, player], (d) => d);
+        expect(indexIn(order, flat.stableId)).toBeLessThan(indexIn(order, player.stableId));
+      }
+    }
+  });
+
+  it("the bin, lamppost and bollards still draw in front of a player north of them and behind one south of them", () => {
+    const props = buildStreetProps();
+    for (const id of [15n, 14n, 118n, 121n, 122n]) {
+      const upright = props.filter((p) => p.stableId === id);
+      expect(upright.length).toBeGreaterThan(0);
+      const cx = upright[0].x / SORT_SUBDIVISIONS;
+      const cy = upright[0].y / SORT_SUBDIVISIONS;
+      const north = buildPlayerDrawable(rankOf("characters"), cx + 0.5, cy - 1, upright[0].floor);
+      const south = buildPlayerDrawable(rankOf("characters"), cx + 0.5, cy + 1, upright[0].floor);
+      const northOrder = sortAcrossFloors([...props, north], (d) => d);
+      const southOrder = sortAcrossFloors([...props, south], (d) => d);
+      expect(indexIn(northOrder, north.stableId)).toBeLessThan(indexIn(northOrder, id));
+      expect(indexIn(southOrder, south.stableId)).toBeGreaterThan(indexIn(southOrder, id));
+    }
+  });
+
+  it("the manhole covers and the doormat are on the flat ground-objects pass; the stairs and bin are not", () => {
+    const props = buildStreetProps();
+    for (const id of [116n, 117n, 119n, 120n]) {
+      expect(props.find((p) => p.stableId === id)?.layerCode).toBe(
+        layerCodeByName("ground_objects"),
+      );
+    }
+    for (const id of [80n, 15n]) {
+      const p = props.find((q) => q.stableId === id);
+      expect(p && passOfLayer(p.layerCode)).toBe("pool");
+    }
   });
 });

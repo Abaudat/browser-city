@@ -774,6 +774,16 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // re-derives.
   expect(await currentOrder(page)).toEqual(expectedOrderFor(start.x, start.y, start.floor));
 
+  // Story 15.5: flat objects (the manhole covers 116/117/119, the doormat
+  // 120) are never pool members -- they draw in their floor's flat
+  // ground-object pass, so the per-frame re-sort can never put one over
+  // the player. They are culled with that pass's own group key instead.
+  const flatIds = ["116", "117", "119", "120"];
+  const orderNow = await currentOrder(page);
+  expect(flatIds.some((id) => orderNow.includes(id))).toBe(false);
+  expect(Object.keys(insideVisibility)).toContain("ground_objects:0");
+  expect(flatIds.some((id) => id in insideVisibility)).toBe(false);
+
   // The interior checkpoint (Quentin's direction, cycle 1): every id-based
   // check above passes, and this is what catches it if it still looks
   // wrong.

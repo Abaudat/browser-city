@@ -15,6 +15,7 @@
 // positioning rule of its own.
 
 import { Container } from "pixi.js";
+import { FIRST_POOL_RANK } from "./layer-table";
 import { type Drawable, sortByDrawable } from "./sort-key";
 
 /** One floor's own passes, in the fixed FR123 order: three flat passes,
@@ -95,7 +96,9 @@ export class FloorStacks {
 
 /**
  * The order every drawable in a multi-floor scene is drawn in: grouped by
- * floor ascending, each group ordered by the FR123 comparator alone. This
+ * floor ascending; within a floor, every flat-layer drawable (rank below
+ * `FIRST_POOL_RANK`) first in insertion order, then the pool ordered by the
+ * FR123 comparator alone -- a flat drawable is never y-sorted. This
  * is the same order a real mounted scene produces by construction -- one
  * pool per floor ([`FloorStacks`]), each ordered by
  * `render/pixi-order.ts`'s `applyDepthOrder`, drawn in ascending floor
@@ -117,8 +120,10 @@ export function sortAcrossFloors<T>(items: readonly T[], toDrawable: (item: T) =
   const ordered: T[] = [];
   for (const floor of [...byFloor.keys()].sort((a, b) => a - b)) {
     const bucket = byFloor.get(floor) ?? [];
-    sortByDrawable(bucket, toDrawable);
-    ordered.push(...bucket);
+    const flat = bucket.filter((item) => toDrawable(item).rank < FIRST_POOL_RANK);
+    const pool = bucket.filter((item) => toDrawable(item).rank >= FIRST_POOL_RANK);
+    sortByDrawable(pool, toDrawable);
+    ordered.push(...flat, ...pool);
   }
   return ordered;
 }

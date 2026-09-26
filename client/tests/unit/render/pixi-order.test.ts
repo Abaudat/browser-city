@@ -18,9 +18,9 @@ function member(stableId: bigint, y: number, rank: number, x = 0): OrderedMember
 describe("applyDepthOrder", () => {
   it("orders the container's real children by the comparator, regardless of the order they were given in", () => {
     const container = new Container();
-    const third = member(3n, 30, 0);
-    const first = member(1n, 10, 0);
-    const second = member(2n, 20, 0);
+    const third = member(3n, 30, 20);
+    const first = member(1n, 10, 20);
+    const second = member(2n, 20, 20);
     // `applyDepthOrder` sorts its `members` array argument in place, so
     // these views are captured before the call -- indexing back into
     // `members` afterwards would read post-sort positions.
@@ -39,13 +39,13 @@ describe("applyDepthOrder", () => {
   it("never sets sortableChildren -- the comparator is the sole ordering authority", () => {
     const container = new Container();
     expect(container.sortableChildren).toBe(false);
-    applyDepthOrder(container, [member(1n, 0, 0)], []);
+    applyDepthOrder(container, [member(1n, 0, 20)], []);
     expect(container.sortableChildren).toBe(false);
   });
 
   it("never duplicates or drops a child across repeated re-sorts", () => {
     const container = new Container();
-    const members = [member(1n, 10, 0), member(2n, 20, 0), member(3n, 5, 0)];
+    const members = [member(1n, 10, 20), member(2n, 20, 20), member(3n, 5, 20)];
     for (const m of members) container.addChild(m.view);
     const order: bigint[] = [];
 
@@ -66,7 +66,7 @@ describe("applyDepthOrder", () => {
 
   it("reuses the caller-owned output array rather than allocating a new one", () => {
     const container = new Container();
-    const members = [member(1n, 10, 0), member(2n, 20, 0)];
+    const members = [member(1n, 10, 20), member(2n, 20, 20)];
     for (const m of members) container.addChild(m.view);
     const order: bigint[] = [];
 
@@ -75,5 +75,11 @@ describe("applyDepthOrder", () => {
     applyDepthOrder(container, members, order);
 
     expect(order).toBe(sameArray);
+  });
+});
+
+describe("applyDepthOrder refuses flat-pass drawables", () => {
+  it("throws for a drawable whose rank is below the first pool rank", () => {
+    expect(() => applyDepthOrder(new Container(), [member(1n, 0, 5)], [])).toThrow(/flat-pass/);
   });
 });

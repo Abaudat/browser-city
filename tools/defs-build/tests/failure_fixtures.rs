@@ -665,6 +665,24 @@ fn a_manhole_absent_from_the_underfoot_tag_is_named() {
     );
 }
 
+/// An object on a flat-pass layer must be `underfoot`.
+#[test]
+fn a_flat_layer_object_not_tagged_underfoot_is_named() {
+    let err = build_err("flat-layer-not-underfoot");
+    assert!(
+        err.to_string().contains("flat-pass layer 'ground_objects'")
+            && err.to_string().contains("not tagged 'underfoot'"),
+        "{err}"
+    );
+}
+
+/// A flat-layer object's sprite may not overhang upward.
+#[test]
+fn a_flat_layer_object_whose_sprite_overhangs_is_named() {
+    let err = build_err("flat-layer-sprite-overhangs");
+    assert!(err.to_string().contains("never overhangs"), "{err}");
+}
+
 /// The other direction of the same invariant: an object cannot declare a
 /// `collider` (it blocks) and the `underfoot` tag (it is explicitly
 /// walkable) at once -- contradictory metadata, rejected by name.
@@ -793,6 +811,8 @@ fn every_known_category_has_a_fixture_directory() {
         "prop-no-collider-not-underfoot",
         "manhole-not-tagged-underfoot",
         "underfoot-tag-with-collider",
+        "flat-layer-not-underfoot",
+        "flat-layer-sprite-overhangs",
         "object-role-count-zero",
         "object-role-count-two",
         "role-layer-not-allowed",

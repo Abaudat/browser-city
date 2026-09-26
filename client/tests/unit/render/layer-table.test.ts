@@ -3,6 +3,7 @@ import {
   DEPRECATED_LAYER_CODES,
   LAYER_TABLE,
   layerCodeByName,
+  passOfLayer,
 } from "../../../src/render/layer-table";
 
 describe("LAYER_TABLE", () => {
@@ -15,6 +16,7 @@ describe("LAYER_TABLE", () => {
       "walls",
       "wall_decals",
       "characters",
+      "ground_objects",
     ]);
   });
 
@@ -36,5 +38,20 @@ describe("layerCodeByName", () => {
 
   it("throws for an unknown name", () => {
     expect(() => layerCodeByName("not-a-real-layer")).toThrow();
+  });
+});
+
+describe("passOfLayer", () => {
+  it("routes ground, ground_objects and every pool layer to their pass", () => {
+    expect(passOfLayer(layerCodeByName("ground"))).toBe("ground");
+    expect(passOfLayer(layerCodeByName("ground_objects"))).toBe("groundObjects");
+    for (const name of ["furniture", "objects", "walls", "wall_decals", "characters"]) {
+      expect(passOfLayer(layerCodeByName(name))).toBe("pool");
+    }
+  });
+
+  it("throws for a deprecated or unknown code", () => {
+    expect(() => passOfLayer(1)).toThrow();
+    expect(() => passOfLayer(999)).toThrow();
   });
 });

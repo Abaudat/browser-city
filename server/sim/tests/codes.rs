@@ -179,7 +179,8 @@ fn layer_matches_golden_and_is_unique() {
 
 /// FR123's tens ladder: every live rank is unique (a collision would make
 /// depth order between two layers coin-flip on row order), and every rank
-/// minted for a pool layer (i.e. every rank but `ground`'s 0) is a
+/// minted for a pool layer (every rank at or above 10; below 10 is a
+/// flat-pass layer) is a
 /// multiple of ten, leaving every in-between number free for a future
 /// layer to slot into without renumbering anything already seeded.
 #[test]
@@ -193,10 +194,10 @@ fn layer_ranks_are_unique_and_pool_ranks_are_multiples_of_ten() {
             entry.name,
             entry.rank
         );
-        // `ground` is the flat-pass rank (never a pool member) and
         // `overhead` is deprecated legacy (its rank is frozen, never
-        // moved into the tens ladder) -- neither is a pool layer.
-        if layer::is_deprecated(entry.code) || entry.name == "ground" {
+        // moved into the tens ladder). Every other rank below 10 is a
+        // flat-pass layer; every rank at or above 10 is a pool layer.
+        if layer::is_deprecated(entry.code) || entry.rank < 10 {
             continue;
         }
         assert_eq!(

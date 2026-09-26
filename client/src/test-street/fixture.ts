@@ -37,10 +37,17 @@ import type { ColliderSource } from "../world/collision-grid";
 import type { OwnershipArea } from "../world/ownership";
 import type { TransitionSpec } from "../world/transitions";
 
-/** The five pool layers (FR123), in ascending rank order -- the ladder
- * itself lives in `sim::codes::layer`/`render/layer-table.ts`; this is
- * just which one each street prop is on. */
-export type StreetLayer = "furniture" | "objects" | "walls" | "wall_decals" | "characters";
+/** The layers a street prop can be on (FR123): the five pool layers plus
+ * `ground_objects`, the flat pass for anything lying on the ground -- the
+ * ladder itself lives in `sim::codes::layer`/`render/layer-table.ts`;
+ * this is just which one each street prop is on. */
+export type StreetLayer =
+  | "ground_objects"
+  | "furniture"
+  | "objects"
+  | "walls"
+  | "wall_decals"
+  | "characters";
 
 /** A prop wide/tall enough to need FR125 decomposition. Orientation
  * (`PlacedObject.orientation`) is a later story's concern; this fixture
@@ -852,7 +859,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     x: DOOR_X_A,
     y: SOUTH_WALL_Y + 1,
     floor: STREET_FLOOR,
-    layer: "objects",
+    layer: "ground_objects",
   },
   // A bollard on the pavement, west of the shopfront, off every scripted
   // walk's path.
@@ -873,7 +880,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     x: BRIDGE_UNDER_CURB_X,
     y: LAMPPOST_CELL.y,
     floor: STREET_FLOOR,
-    layer: "objects",
+    layer: "ground_objects",
   },
   // A bollard at the underpass column's north end, on the pavement's
   // north strip: the underpass checkpoint's row rest.
@@ -895,7 +902,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     x: BRIDGE_UNDER_CURB_X,
     y: BRIDGE_DECK_Y,
     floor: STREET_FLOOR,
-    layer: "objects",
+    layer: "ground_objects",
   },
   {
     id: 118n,
@@ -915,7 +922,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     x: BRIDGE_UNDER_PILLAR_X,
     y: BRIDGE_UNDER_EXIT_Y,
     floor: STREET_FLOOR,
-    layer: "objects",
+    layer: "ground_objects",
   },
 ] as const;
 

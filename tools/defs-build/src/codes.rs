@@ -18,6 +18,11 @@ use std::collections::BTreeMap;
 /// render/layer-table.ts`'s copy honest.
 pub const DEPRECATED_LAYER_NAMES: &[&str] = &["overhead"];
 
+/// The layer names whose rank is below `sim::codes::layer`'s first pool
+/// rank (10) -- the flat-pass layers. An object on one lies flat on the
+/// ground (see `validate.rs`'s `check_object_flat_layers`).
+pub const FLAT_PASS_LAYER_NAMES: &[&str] = &["ground", "ground_objects"];
+
 /// Every set in the codes golden, as `set -> (name -> code)`.
 #[derive(Debug, Default, Clone)]
 pub struct CodeTables {

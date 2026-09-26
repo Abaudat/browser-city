@@ -32,6 +32,8 @@
   "dangling-tag-reference",
   "no-collider-not-underfoot",
   "underfoot-with-collider",
+  "flat-layer-not-underfoot",
+  "flat-layer-sprite-overhangs",
   "object-role-count-zero",
   "object-role-count-two",
   "role-layer-not-allowed",
