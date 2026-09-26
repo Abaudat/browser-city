@@ -24,6 +24,9 @@ export interface DebugWorldView extends CollisionGridQuery {
   /** `render.tile_size_px`, resolved from `defs/` by the caller -- never
    * a literal anywhere under `debug/`. */
   readonly tileSizePx: number;
+  /** The scene's world zoom -- the snap granularity of a drawable's
+   * screen position (`screenPositionPx`). */
+  readonly zoom: number;
   /** `render.storey_height_px`, same rule (FR124's floor offset). */
   readonly storeyHeightPx: number;
   /** `defs/`'s own generated `COLLIDER_SUBCELLS_PER_CELL`. */

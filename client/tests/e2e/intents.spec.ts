@@ -64,7 +64,7 @@ function interactAtOf(defId: number) {
  * bottom-centre anchored on its cell (`screenPositionPx`), so the anchor
  * is the bottom-centre of that rect and half a tile above it is inside. */
 function worldPixelOfCell(cellX: number, cellY: number, floor: number) {
-  const anchor = screenPositionPx(cellX, cellY, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX);
+  const anchor = screenPositionPx(cellX, cellY, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, 1);
   return { x: anchor.x, y: anchor.y - TILE_SIZE_PX / 2 };
 }
 

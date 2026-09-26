@@ -22,19 +22,21 @@ export function floorOffsetPx(floor: number, storeyHeightPx: number): number {
  * sort units -- `sort-units.ts`'s `fromSortUnits` is the caller's job)
  * and its floor. Bottom-centre anchored on its own cell (Artie's
  * direction): `worldY`/`floor` place the *bottom* of the cell the
- * drawable's anchor sits in. Every input is rounded to an integer
- * world pixel before the caller applies the zoom scale (Artie's pixel
- * discipline) -- this function never returns a fractional pixel. */
+ * drawable's anchor sits in. The result is snapped to a whole *screen*
+ * pixel (`Math.round(v * zoom) / zoom`, Artie's pixel discipline) -- the
+ * only rounding in the world-to-screen path, so the camera offset is a
+ * whole pixel and the world scrolls in whole screen pixels. */
 export function screenPositionPx(
   worldX: number,
   worldY: number,
   floor: number,
   tileSizePx: number,
   storeyHeightPx: number,
+  zoom: number,
 ): { readonly x: number; readonly y: number } {
   return {
-    x: Math.round((worldX + 0.5) * tileSizePx),
-    y: Math.round((worldY + 1) * tileSizePx + floorOffsetPx(floor, storeyHeightPx)),
+    x: Math.round((worldX + 0.5) * tileSizePx * zoom) / zoom,
+    y: Math.round(((worldY + 1) * tileSizePx + floorOffsetPx(floor, storeyHeightPx)) * zoom) / zoom,
   };
 }
 

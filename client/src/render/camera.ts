@@ -20,6 +20,12 @@ export interface Camera {
   readonly offsetY: number;
 }
 
+/** The most a camera offset may stray, per axis, from the continuous
+ * camera (viewport/2 minus the unrounded player position times zoom), in
+ * screen pixels: half a pixel for the anchor's snap plus half for an odd
+ * viewport (`inv_camera_scroll_tracks_continuous_walk`). */
+export const CAMERA_SCROLL_TOLERANCE_PX = 1 + 1e-9;
+
 /**
  * The camera that puts `(playerScreenX, playerScreenY)` -- a *pre-zoom*
  * world-pixel point, in the same space `screen-position.ts`'s

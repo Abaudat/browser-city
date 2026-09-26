@@ -100,7 +100,7 @@ const SCREEN_Y_NUDGE_PX: Readonly<Partial<Record<string, number>>> = {
   glass: -18,
 };
 
-const ZOOM = 3;
+export const ZOOM = 3;
 
 /** Colour the app background switches to while the viewer is on any
  * below-ground floor (Artie's direction: what surrounds the subway
@@ -475,7 +475,7 @@ function positionSprite(
   storeyHeightPx: number,
   nudgePx: number,
 ): void {
-  const pos = screenPositionPx(worldX, worldY, floor, tileSizePx, storeyHeightPx);
+  const pos = screenPositionPx(worldX, worldY, floor, tileSizePx, storeyHeightPx, ZOOM);
   sprite.x = pos.x;
   sprite.y = pos.y + nudgePx;
 }
@@ -750,7 +750,7 @@ export async function mountStreetScene(
   // player the day `autoDensity`/a non-1 `resolution` is ever turned on.
   let lastCamera: Camera | undefined;
   function applyCamera(): void {
-    const anchor = screenPositionPx(walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx);
+    const anchor = screenPositionPx(walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, ZOOM);
     const camera = applyCameraToWorld(
       world,
       anchor.x,

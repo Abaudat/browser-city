@@ -128,7 +128,7 @@ async function hoverAnInteractableProp(page: Page): Promise<void> {
   if (tileSizePx === undefined || storeyHeightPx === undefined) {
     throw new Error("missing render balance keys");
   }
-  const anchor = screenPositionPx(bin.x, bin.y, bin.floor, tileSizePx, storeyHeightPx);
+  const anchor = screenPositionPx(bin.x, bin.y, bin.floor, tileSizePx, storeyHeightPx, 1);
   const worldPx = { x: anchor.x, y: anchor.y - tileSizePx / 2 };
   const canvasOffset = await canvasOffsetForWorldPx(page, worldPx);
   const box = await page.locator("#test-street canvas").boundingBox();
