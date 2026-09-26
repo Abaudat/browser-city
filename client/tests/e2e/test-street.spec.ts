@@ -59,7 +59,7 @@ import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
 import { sortAcrossFloors } from "../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../src/render/layer-ranks";
-import { LAYER_TABLE } from "../../src/render/layer-table";
+import { FIRST_POOL_RANK, LAYER_TABLE } from "../../src/render/layer-table";
 import { screenPositionPx, visibleCellBounds } from "../../src/render/screen-position";
 import { buildCitizenFixtures } from "../../src/test-street/citizens";
 import { buildPlayerDrawable, buildPropDrawables } from "../../src/test-street/drawables";
@@ -367,7 +367,11 @@ function expectedOrderFor(x: number, y: number, floor: number): string[] {
     objectDefs: streetObjectSources(),
   });
   const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
-  return sortAcrossFloors([...props, player], (d) => d).map((d) => d.stableId.toString());
+  // The mounted `renderOrder` lists the pool only: flat-pass drawables
+  // are never y-sorted and are not in it.
+  return sortAcrossFloors([...props, player], (d) => d)
+    .filter((d) => d.rank >= FIRST_POOL_RANK)
+    .map((d) => d.stableId.toString());
 }
 
 interface PlayerState {
