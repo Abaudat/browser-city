@@ -80,8 +80,10 @@ const viewportArb = fc.integer({ min: 600, max: 2560 });
 const zoomArb = fc.constantFrom(2, 3, 4);
 const constantDeltas = Array.from({ length: FRAMES }, () => 1000 / 60);
 
-describe("inv_camera_scroll_tracks_continuous_walk", () => {
-  it("keeps the player's screen point constant, the scroll monotone and near the continuous camera", () => {
+describe("camera scroll during a continuous walk", () => {
+  it("inv_camera_scroll_tracks_continuous_walk", () => {
+    // The player's screen point is constant, the scroll monotone and near
+    // the continuous camera, under any frame-delta sequence.
     fc.assert(
       fc.property(
         dirArb,
@@ -120,9 +122,9 @@ describe("inv_camera_scroll_tracks_continuous_walk", () => {
       ),
       { numRuns: 200 },
     );
-  });
 
-  it("scrolls in steps that differ by at most one screen pixel per axis at a steady frame rate", () => {
+    // At a steady frame rate, consecutive scroll steps per axis differ by
+    // at most one screen pixel.
     fc.assert(
       fc.property(
         dirArb,
