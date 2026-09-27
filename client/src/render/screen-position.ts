@@ -18,14 +18,23 @@ export function floorOffsetPx(floor: number, storeyHeightPx: number): number {
   return -floor * storeyHeightPx + 0;
 }
 
+/** A world-pixel coordinate snapped to a whole *screen* pixel at an
+ * integer `zoom` (`Math.round(v * zoom) / zoom`, Artie's pixel
+ * discipline) -- the one rounding every drawable's position goes
+ * through. Throws on a non-integer or non-positive zoom: `(k / zoom) *
+ * zoom === k` only holds for an integer one. */
+export function snapToScreenPx(v: number, zoom: number): number {
+  if (!Number.isInteger(zoom) || zoom <= 0) {
+    throw new Error(`snapToScreenPx: zoom must be a positive integer, got ${zoom}`);
+  }
+  return Math.round(v * zoom) / zoom;
+}
+
 /** A drawable's screen position from its world position (in tiles, not
  * sort units -- `sort-units.ts`'s `fromSortUnits` is the caller's job)
  * and its floor. Bottom-centre anchored on its own cell (Artie's
  * direction): `worldY`/`floor` place the *bottom* of the cell the
- * drawable's anchor sits in. The result is snapped to a whole *screen*
- * pixel (`Math.round(v * zoom) / zoom`, Artie's pixel discipline) -- the
- * only rounding in the world-to-screen path, so the camera offset is a
- * whole pixel and the world scrolls in whole screen pixels. */
+ * drawable's anchor sits in. Snapped through [`snapToScreenPx`]. */
 export function screenPositionPx(
   worldX: number,
   worldY: number,
@@ -35,8 +44,8 @@ export function screenPositionPx(
   zoom: number,
 ): { readonly x: number; readonly y: number } {
   return {
-    x: Math.round((worldX + 0.5) * tileSizePx * zoom) / zoom,
-    y: Math.round(((worldY + 1) * tileSizePx + floorOffsetPx(floor, storeyHeightPx)) * zoom) / zoom,
+    x: snapToScreenPx((worldX + 0.5) * tileSizePx, zoom),
+    y: snapToScreenPx((worldY + 1) * tileSizePx + floorOffsetPx(floor, storeyHeightPx), zoom),
   };
 }
 

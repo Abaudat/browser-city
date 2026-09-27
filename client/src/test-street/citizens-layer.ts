@@ -22,10 +22,13 @@ import {
   type UniformOverride,
 } from "../render/appearance/composite";
 import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
+import { snapToScreenPx } from "../render/screen-position";
+import { cellOf } from "../world/ownership";
 import {
   buildCitizenFixtures,
   buildUniformedWalkerFixture,
   buildWalkerFixture,
+  citizenScreenPx,
   plazaBounds,
   UNIFORMED_WALKER_ID,
   WALKER_ID,
@@ -64,11 +67,17 @@ interface WalkerState {
   elapsedMS: number;
 }
 
-function advanceWalker(walker: WalkerState, deltaMS: number, tileSizePx: number): void {
+function advanceWalker(
+  walker: WalkerState,
+  deltaMS: number,
+  tileSizePx: number,
+  zoom: number,
+): void {
   walker.elapsedMS += deltaMS;
   const pose = walkerPoseAt(walker.startX, walker.startY, walker.elapsedMS);
-  walker.sprite.x = Math.round(pose.x * tileSizePx);
-  walker.sprite.y = Math.round(pose.y * tileSizePx);
+  const px = citizenScreenPx(pose.x, pose.y, tileSizePx, zoom);
+  walker.sprite.x = px.x;
+  walker.sprite.y = px.y;
   walker.sprite.zIndex = pose.y;
   walker.sprite.texture = walker.frames.frame("walk", pose.direction, pose.frameIndex);
 }
@@ -77,6 +86,7 @@ export async function mountCitizensLayer(
   world: Container,
   defs: Defs,
   tileSizePx: number,
+  zoom: number,
   cache: AppearanceTextureCache,
   sidewalkTexture: Texture,
   atlasBaseUrl: string,
@@ -88,11 +98,11 @@ export async function mountCitizensLayer(
   // never on bare ground or the void.
   const bounds = plazaBounds();
   const ground = new Container();
-  for (let y = Math.floor(bounds.y0); y < Math.ceil(bounds.y1); y++) {
-    for (let x = Math.floor(bounds.x0); x < Math.ceil(bounds.x1); x++) {
+  for (let y = cellOf(bounds.y0); y < Math.ceil(bounds.y1); y++) {
+    for (let x = cellOf(bounds.x0); x < Math.ceil(bounds.x1); x++) {
       const tile = new Sprite(sidewalkTexture);
-      tile.x = Math.round(x * tileSizePx);
-      tile.y = Math.round(y * tileSizePx);
+      tile.x = snapToScreenPx(x * tileSizePx, zoom);
+      tile.y = snapToScreenPx(y * tileSizePx, zoom);
       ground.addChild(tile);
     }
   }
@@ -138,8 +148,9 @@ export async function mountCitizensLayer(
 
       const sprite = new Sprite(frames.frame("idle", fixture.facing, 0));
       sprite.anchor.set(0.5, 1);
-      sprite.x = Math.round(fixture.gridX * tileSizePx);
-      sprite.y = Math.round(fixture.gridY * tileSizePx);
+      const px = citizenScreenPx(fixture.gridX, fixture.gridY, tileSizePx, zoom);
+      sprite.x = px.x;
+      sprite.y = px.y;
       sprite.zIndex = fixture.gridY;
       layer.addChild(sprite);
 
@@ -157,7 +168,7 @@ export async function mountCitizensLayer(
   );
 
   function update(deltaMS: number): void {
-    for (const walker of walkers.values()) advanceWalker(walker, deltaMS, tileSizePx);
+    for (const walker of walkers.values()) advanceWalker(walker, deltaMS, tileSizePx, zoom);
   }
 
   function compareForE2e(

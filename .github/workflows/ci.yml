@@ -534,6 +534,8 @@ jobs:
         run: bash ../scripts/ci/check-render-no-content-keys.sh
       - name: story 1.7 FR121, no masking/filter/render-texture construct under client/src/
         run: bash ../scripts/ci/check-no-masks.sh
+      - name: story 15.6 NFR48, no position rounding under client/src/test-street/ outside snapToScreenPx
+        run: bash ../scripts/ci/check-no-scene-rounding.sh
       - name: story 2.7, the Epic 1 raw character-part-sheet shortcut is gone, not bypassed
         run: bash ../scripts/ci/check-no-raw-part-sheets.sh
       - name: story 1.11 FR150/FR152/FR151, no canvas-text construct or native dialog under client/src/

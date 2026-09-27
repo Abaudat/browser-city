@@ -40,13 +40,13 @@ import {
   countAllBoundTextureSources,
   countBoundAtlasPages,
 } from "../render/atlas-pages";
-import { type Camera, computeCamera, worldPxFromClient } from "../render/camera";
+import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "../render/camera";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName, passOfLayer } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
-import { floorOffsetPx, screenPositionPx } from "../render/screen-position";
+import { floorOffsetPx, screenPositionPx, snapToScreenPx } from "../render/screen-position";
 import type { Drawable } from "../render/sort-key";
 import { fromSortUnits, toSortUnits } from "../render/sort-units";
 import type { VisibilityState, VisibilityViewer } from "../render/visibility";
@@ -99,8 +99,6 @@ const FLOOR_TILE_FRAME = new Rectangle(208, 560, 16, 16);
 const SCREEN_Y_NUDGE_PX: Readonly<Partial<Record<string, number>>> = {
   glass: -18,
 };
-
-export const ZOOM = 3;
 
 /** Colour the app background switches to while the viewer is on any
  * below-ground floor (Artie's direction: what surrounds the subway
@@ -810,8 +808,8 @@ export async function mountStreetScene(
         // anchor), unlike the bottom-centre pool sprites -- FR124's
         // floor offset still applies here too.
         const tile = new Sprite(groundTexture);
-        tile.x = Math.round(x * tileSizePx);
-        tile.y = Math.round(y * tileSizePx + offset);
+        tile.x = snapToScreenPx(x * tileSizePx, ZOOM);
+        tile.y = snapToScreenPx(y * tileSizePx + offset, ZOOM);
         container.addChild(tile);
         groundSprites.push(tile);
       }
@@ -1376,6 +1374,7 @@ export async function mountStreetScene(
     world,
     defs,
     tileSizePx,
+    ZOOM,
     appearanceCache,
     textureFor("sidewalk", textures),
     atlasBaseUrl,

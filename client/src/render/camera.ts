@@ -20,11 +20,15 @@ export interface Camera {
   readonly offsetY: number;
 }
 
+/** The world's integer zoom: every world pixel is drawn this many screen
+ * pixels across. */
+export const ZOOM = 3;
+
 /** The most a camera offset may stray, per axis, from the continuous
  * camera (viewport/2 minus the unrounded player position times zoom), in
  * screen pixels: half a pixel for the anchor's snap plus half for an odd
  * viewport (`inv_camera_scroll_tracks_continuous_walk`). */
-export const CAMERA_SCROLL_TOLERANCE_PX = 1 + 1e-9;
+export const CAMERA_SCROLL_TOLERANCE_PX = 1;
 
 /**
  * The camera that puts `(playerScreenX, playerScreenY)` -- a *pre-zoom*

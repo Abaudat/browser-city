@@ -27,7 +27,9 @@
 // needs to *not misrepresent* it, never to reproduce it bit for bit.
 
 import type { Defs, Family, HairstyleDef } from "../defs/types";
+import { loopFrameAt } from "../render/animation-frame";
 import type { AppearanceTuple } from "../render/appearance/composite";
+import { snapToScreenPx } from "../render/screen-position";
 
 export interface CitizenFixture {
   readonly id: string;
@@ -208,8 +210,8 @@ function pickHairstyleId(
     if (h.family !== family) continue;
     (h.rare ? rare : common).push(h);
   }
-  const roll = Math.floor(hashUnit(index, SALT_HAIR_RARE_ROLL) * 100);
-  const wantRare = roll < hairRareChancePercent;
+  // `floor(u * 100) < chance` is `u * 100 < chance` for an integer chance.
+  const wantRare = hashUnit(index, SALT_HAIR_RARE_ROLL) * 100 < hairRareChancePercent;
   const pool = wantRare && rare.length > 0 ? rare : common.length > 0 ? common : rare;
   return pickByHash(pool, index, SALT_HAIR_PICK)?.id ?? 0;
 }
@@ -224,8 +226,7 @@ function pickAccessoryId(
   accessoryNoneChancePercent: number,
 ): number {
   if (family === "kid") return 0;
-  const roll = Math.floor(hashUnit(index, SALT_ACCESSORY_NONE_ROLL) * 100);
-  if (roll < accessoryNoneChancePercent) return 0;
+  if (hashUnit(index, SALT_ACCESSORY_NONE_ROLL) * 100 < accessoryNoneChancePercent) return 0;
   return pickByHash(civilianOf(defs.accessories, family), index, SALT_ACCESSORY_PICK)?.id ?? 0;
 }
 
@@ -387,14 +388,26 @@ export function walkerPoseAt(startX: number, startY: number, elapsedMS: number):
   const leg = WALKER_LOOP[legIndex % WALKER_LOOP.length];
   const legMS = legDurationsMS[legIndex % WALKER_LOOP.length] ?? 0;
   const progress = legMS > 0 ? remainingMS / legMS : 0;
-  const frameIndex =
-    Math.floor((elapsedMS / 1000) * WALK_FRAMES_PER_SECOND) % WALK_FRAMES_PER_DIRECTION;
+  const frameIndex = loopFrameAt(elapsedMS, WALK_FRAMES_PER_SECOND, WALK_FRAMES_PER_DIRECTION);
   return {
     x: x + (leg?.dx ?? 0) * progress,
     y: y + (leg?.dy ?? 0) * progress,
     direction: walkDirectionOf(leg?.dx ?? 0, leg?.dy ?? 0),
     frameIndex,
   };
+}
+
+/** A citizen's sprite position (bottom-centre anchored at its own grid
+ * point, `x`/`y` in cells) in world pixels, snapped to a whole screen
+ * pixel at `zoom` -- the one placement every crowd sprite, walkers
+ * included, goes through. */
+export function citizenScreenPx(
+  x: number,
+  y: number,
+  tileSizePx: number,
+  zoom: number,
+): { readonly x: number; readonly y: number } {
+  return { x: snapToScreenPx(x * tileSizePx, zoom), y: snapToScreenPx(y * tileSizePx, zoom) };
 }
 
 export function buildWalkerFixture(defs: Defs): CitizenFixture {

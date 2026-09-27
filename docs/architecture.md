@@ -598,7 +598,12 @@ offset (`render/screen-position.ts`'s `floorOffsetPx`), when a drawable
 is positioned on screen. Occlusion between floors is entirely
 "Visibility" below's job, not the sort key's.
 
-Every drawable's position and the camera anchor are snapped to a whole screen pixel (`Math.round(v * zoom) / zoom` in `screenPositionPx`, the only rounding in the world-to-screen path), so the camera offset is a whole pixel and the world scrolls in whole screen pixels.
+Every drawable's position and the camera anchor snap to a whole screen
+pixel through `render/screen-position.ts`'s `snapToScreenPx` (an integer
+`ZOOM` only), so the camera offset is a whole pixel and the world scrolls
+in whole screen pixels. Nothing under `test-street/` rounds a position
+(`scripts/ci/check-no-scene-rounding.sh`), and `computeCamera`'s own
+round only absorbs an odd viewport's half pixel.
 
 `sim::codes::layer`'s rank ladder (FR123) is minted in tens, leaving every
 in-between number free for a future layer to slot into without

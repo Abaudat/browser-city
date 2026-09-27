@@ -34,13 +34,14 @@ import {
 } from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
 import { PROTOCOL_VERSION } from "./net/protocol-version";
+import { ZOOM } from "./render/camera";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
 import { visibleCellBounds } from "./render/screen-position";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
-import { mountStreetScene, type StreetSceneHandle, ZOOM } from "./test-street/scene";
+import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
 import { CityClock } from "./time/city-clock";
 import { ServerClock } from "./time/server-clock";
 import { mountConnectionNotice } from "./ui/connection-notice";

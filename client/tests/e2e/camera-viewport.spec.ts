@@ -308,6 +308,9 @@ async function holdAndSampleFollow(
   return result;
 }
 
+/** Float slack on a comparison against an exact screen-pixel bound. */
+const FLOAT_EPS_PX = 1e-6;
+
 /** The wiring half of `inv_camera_scroll_tracks_continuous_walk`: the
  * drawn anchor never moves, the world never scrolls against the walk, and
  * it stays within the exported bound of the continuous camera. */
@@ -319,7 +322,7 @@ function expectSteadyScroll(result: FollowSample, label: string): void {
   expect(
     result.maxIdealDeviationPx,
     `${label}: the world strayed from the continuous camera`,
-  ).toBeLessThanOrEqual(CAMERA_SCROLL_TOLERANCE_PX);
+  ).toBeLessThanOrEqual(CAMERA_SCROLL_TOLERANCE_PX + FLOAT_EPS_PX);
 }
 
 /** The minimum real travel a held direction must demonstrate for the
