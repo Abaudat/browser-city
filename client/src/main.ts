@@ -34,6 +34,7 @@ import {
 } from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
 import { PROTOCOL_VERSION } from "./net/protocol-version";
+import { ZOOM } from "./render/camera";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
 import { visibleCellBounds } from "./render/screen-position";
@@ -431,6 +432,7 @@ async function startStreetScene(
     const { mountDebugOverlays } = await import("./debug/overlays");
     const view: DebugWorldView = {
       tileSizePx,
+      zoom: ZOOM,
       storeyHeightPx,
       colliderSubcellsPerCell: movementConfig.subcellsPerCell,
       viewerFloor: () => handle.currentFloor(),

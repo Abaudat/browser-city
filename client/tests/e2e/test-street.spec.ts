@@ -57,6 +57,7 @@ import { expect, type Page, test } from "@playwright/test";
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
+import { ZOOM } from "../../src/render/camera";
 import { sortAcrossFloors } from "../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../src/render/layer-ranks";
 import { FIRST_POOL_RANK, LAYER_TABLE } from "../../src/render/layer-table";
@@ -191,7 +192,7 @@ const STOREY_HEIGHT_PX = balance("render.storey_height_px");
  * is the bottom-centre of that rect and half a tile above it is inside.
  * The same idiom `intents.spec.ts` uses for its own hover points. */
 function worldPixelOfCell(cellX: number, cellY: number, floor: number) {
-  const anchor = screenPositionPx(cellX, cellY, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX);
+  const anchor = screenPositionPx(cellX, cellY, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM);
   return { x: anchor.x, y: anchor.y - TILE_SIZE_PX / 2 };
 }
 
@@ -225,7 +226,7 @@ async function binDrawnRectPx(
 ): Promise<{ x0: number; y0: number; x1: number; y1: number }> {
   const bin = STREET_PROPS.find((p) => isDefStreetProp(p) && p.defId === TRASH_BIN_DEF_ID);
   if (!bin) throw new Error("the fixture no longer places a trash bin");
-  const anchor = screenPositionPx(bin.x, bin.y, bin.floor, TILE_SIZE_PX, STOREY_HEIGHT_PX);
+  const anchor = screenPositionPx(bin.x, bin.y, bin.floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM);
   const worldRect = {
     x0: anchor.x - TILE_SIZE_PX / 2,
     y0: anchor.y - TILE_SIZE_PX * 2,

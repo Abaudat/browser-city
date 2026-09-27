@@ -34,7 +34,7 @@
 import type { PlacedObject } from "../net/bindings/types";
 import { layerCodeByName } from "../render/layer-table";
 import type { ColliderSource } from "../world/collision-grid";
-import type { OwnershipArea } from "../world/ownership";
+import { cellOf, type OwnershipArea } from "../world/ownership";
 import type { TransitionSpec } from "../world/transitions";
 
 /** The layers a street prop can be on (FR123): the five pool layers plus
@@ -1325,7 +1325,7 @@ export function streetWalkUntilMet(
     case "floor":
       return floor === until.value;
     case "cell":
-      return Math.floor(x) === until.x && Math.floor(y) === until.y;
+      return cellOf(x) === until.x && cellOf(y) === until.y;
   }
 }
 

@@ -61,6 +61,7 @@ export function conformanceView(): DebugWorldView {
   const bounds = { floor: 0, cellX0: -4, cellY0: -4, cellX1: 8, cellY1: 8 };
   return {
     tileSizePx: TILE,
+    zoom: 1,
     storeyHeightPx: STOREY,
     colliderSubcellsPerCell: SUBCELLS,
     viewerFloor: () => 0,

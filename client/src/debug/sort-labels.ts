@@ -105,7 +105,14 @@ export function buildSortLabels(view: DebugWorldView): SortLabel[] {
     if (worldX < bounds.cellX0 || worldX > bounds.cellX1 + 1) continue;
     if (worldY < bounds.cellY0 || worldY > bounds.cellY1 + 1) continue;
     const order = view.orderOf(d.stableId);
-    const anchor = screenPositionPx(worldX, worldY, floor, view.tileSizePx, view.storeyHeightPx);
+    const anchor = screenPositionPx(
+      worldX,
+      worldY,
+      floor,
+      view.tileSizePx,
+      view.storeyHeightPx,
+      view.zoom,
+    );
     // Two adjacent props never share a baseline: without this, a row of
     // one-tile props prints every key over its neighbours'. Keyed on the
     // tile column (`worldX`, already computed above), never on `d.x` in

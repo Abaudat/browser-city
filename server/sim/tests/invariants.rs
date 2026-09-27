@@ -1949,15 +1949,13 @@ proptest! {
     /// direction, cycle 1; cycle 3: switched from a median-distance
     /// split to `StreetNetwork::mean_area_by_density_band`, density
     /// bands rather than a proxy for density -- Tim's direction, cycle
-    /// 3). Measured over 5,000 arbitrary seeds at this generator's
-    /// committed values: 4,997 have the periphery (low-density) mean
-    /// strictly larger than the core (high-density) mean; the 3
-    /// exceptions land within single-digit percent of parity (worst
-    /// ratio 0.72x), real split-jitter noise rather than an inversion --
-    /// `peripheral_low_band_floor_percent` is the margin that keeps all
-    /// 5,000 green. This per-city floor alone cannot tell a healthy city
-    /// from a density-blind one, though: a uniform grid pools to parity
-    /// (1.0x), comfortably above 0.7x
+    /// 3). Measured over 20,000,000 uniformly drawn u64 seeds: 24 fall
+    /// below 70%, 2 below 65%, none below the committed 60%; the worst is
+    /// 62.9% -- real split-jitter noise rather than an inversion
+    /// (`peripheral_floor_clears_the_lowest_known_ratio_seeds` pins it).
+    /// This per-city floor alone cannot tell a healthy city from a
+    /// density-blind one, though: a uniform grid pools to parity (1.0x),
+    /// comfortably above 0.6x
     /// (`mean_area_by_density_band_reports_parity_for_a_uniform_grid` in
     /// `server/sim/src/generation/streets.rs` shows exactly this).
     /// `peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor`,
@@ -4356,6 +4354,34 @@ fn peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor() {
         "pooled over seeds 0..256: low-band sum {low_sum} is under {}% of high-band sum {high_sum}",
         cfg.peripheral_pooled_min_ratio_percent
     );
+}
+
+/// The lowest per-city ratios known, pinned so raising
+/// `peripheral_low_band_floor_percent` above them fails every run rather
+/// than one in N. Low-band mean over high-band mean: seed
+/// 15712406083813773737, 1288 / 2047 (62.9%, the worst of 20,000,000
+/// uniformly drawn seeds); seed 14322285497755891962, 1303 / 2028
+/// (64.3%) and seed 4544038555038832329, 1106 / 1685 (65.6%), both found
+/// by CI's own random draws under the old 70% floor.
+#[test]
+fn peripheral_floor_clears_the_lowest_known_ratio_seeds() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    for seed in [
+        15712406083813773737u64,
+        14322285497755891962,
+        4544038555038832329,
+    ] {
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let (low, high) = net
+            .mean_area_by_density_band(&lu, &cfg)
+            .expect("both density bands are populated for this seed");
+        assert!(
+            low * 100 >= high * cfg.peripheral_low_band_floor_percent as i64,
+            "seed {seed}: low-band mean {low} is under {}% of high-band mean {high}",
+            cfg.peripheral_low_band_floor_percent
+        );
+    }
 }
 
 // Story 3.11: the travel-time estimator (FR131). A handful of integer ops

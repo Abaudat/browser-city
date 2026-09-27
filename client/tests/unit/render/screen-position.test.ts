@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   floorOffsetPx,
   screenPositionPx,
+  snapToScreenPx,
   subcellRectPx,
   visibleCellBounds,
   worldCellFromScreenPx,
@@ -53,13 +54,13 @@ describe("floorOffsetPx", () => {
 
 describe("screenPositionPx", () => {
   it("places floor 0 at the bottom edge of its own tile, centred horizontally", () => {
-    expect(screenPositionPx(0, 0, 0, 16, 48)).toEqual({ x: 8, y: 16 });
-    expect(screenPositionPx(5, 3, 0, 16, 48)).toEqual({ x: 88, y: 64 });
+    expect(screenPositionPx(0, 0, 0, 16, 48, 1)).toEqual({ x: 8, y: 16 });
+    expect(screenPositionPx(5, 3, 0, 16, 48, 1)).toEqual({ x: 88, y: 64 });
   });
 
   it("offsets a higher floor upward by exactly floorOffsetPx, nothing else changing", () => {
-    const ground = screenPositionPx(5, 3, 0, 16, 48);
-    const upstairs = screenPositionPx(5, 3, 1, 16, 48);
+    const ground = screenPositionPx(5, 3, 0, 16, 48, 1);
+    const upstairs = screenPositionPx(5, 3, 1, 16, 48, 1);
     expect(upstairs.x).toBe(ground.x);
     expect(upstairs.y).toBe(ground.y - 48);
   });
@@ -73,12 +74,43 @@ describe("screenPositionPx", () => {
         fc.integer({ min: 1, max: 64 }),
         fc.integer({ min: 1, max: 256 }),
         (x, y, floor, tileSizePx, storeyHeightPx) => {
-          const pos = screenPositionPx(x, y, floor, tileSizePx, storeyHeightPx);
+          const pos = screenPositionPx(x, y, floor, tileSizePx, storeyHeightPx, 1);
           expect(Number.isInteger(pos.x)).toBe(true);
           expect(Number.isInteger(pos.y)).toBe(true);
         },
       ),
     );
+  });
+});
+
+describe("snapToScreenPx", () => {
+  it("snaps to the nearest 1/zoom of a world pixel", () => {
+    expect(snapToScreenPx(10.2, 3)).toBeCloseTo(31 / 3, 12);
+    expect(snapToScreenPx(10.2, 1)).toBe(10);
+    expect(snapToScreenPx(-0.4, 2)).toBeCloseTo(-0.5, 12);
+  });
+
+  it("lands on a whole screen pixel, within half a screen pixel of the input", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -1e6, max: 1e6, noNaN: true }),
+        fc.integer({ min: 1, max: 8 }),
+        (v, zoom) => {
+          const snapped = snapToScreenPx(v, zoom) * zoom;
+          expect(Math.abs(snapped - Math.round(snapped))).toBeLessThan(1e-6);
+          expect(Math.abs(snapped - v * zoom)).toBeLessThanOrEqual(0.5 + 1e-6);
+        },
+      ),
+    );
+  });
+
+  // A non-integer zoom breaks `(k / zoom) * zoom === k`, which the camera's
+  // constant player point relies on.
+  it("refuses a non-integer or non-positive zoom", () => {
+    for (const zoom of [3.5, 0.25, 0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => snapToScreenPx(1, zoom)).toThrow(/zoom/);
+      expect(() => screenPositionPx(1, 1, 0, 16, 48, zoom)).toThrow(/zoom/);
+    }
   });
 });
 
@@ -119,7 +151,7 @@ describe("worldCellFromScreenPx", () => {
         fc.double({ min: 0, max: 0.999, noNaN: true }),
         fc.double({ min: 0, max: 0.999, noNaN: true }),
         (cellX, cellY, floor, tileSizePx, storeyHeightPx, alongX, alongY) => {
-          const anchor = screenPositionPx(cellX, cellY, floor, tileSizePx, storeyHeightPx);
+          const anchor = screenPositionPx(cellX, cellY, floor, tileSizePx, storeyHeightPx, 1);
           // Any pixel inside the cell's own drawn rect: its left edge is
           // half a tile left of the bottom-centre anchor, its top edge a
           // whole tile above that anchor's bottom edge.
@@ -136,7 +168,7 @@ describe("worldCellFromScreenPx", () => {
   it("reuses floorOffsetPx, so a below-ground floor picks its own cells", () => {
     const tileSizePx = 16;
     const storeyHeightPx = 48;
-    const anchor = screenPositionPx(3, 2, -1, tileSizePx, storeyHeightPx);
+    const anchor = screenPositionPx(3, 2, -1, tileSizePx, storeyHeightPx, 1);
     expect(worldCellFromScreenPx(anchor.x, anchor.y - 1, -1, tileSizePx, storeyHeightPx)).toEqual({
       cellX: 3,
       cellY: 2,

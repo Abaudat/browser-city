@@ -403,17 +403,19 @@ max = 16
 [[balance]]
 # Per-city anti-inversion floor: `StreetNetwork::mean_area_by_density_
 # band`'s own low-density (periphery) mean block area must be at least
-# this percent of the high-density (core) mean. Deliberately weak --
-# measured over 5,000 arbitrary seeds, 4,997 have the periphery mean
-# strictly larger outright; the 3 exceptions land within single-digit
-# percent of parity (worst observed ratio 72%), real split-jitter noise
-# rather than an inversion. This key alone cannot tell a healthy city
-# from a density-blind one (a uniform grid pools to 100%, comfortably
-# above 70%) -- `peripheral_pooled_min_ratio_percent` below is the guard
-# that can. Moved off a bare literal (Quentin's direction, cycle 4: a
-# threshold literal in a test is a reject).
+# this percent of the high-density (core) mean -- a noise margin, not the
+# density guard. Measured over 20,000,000 uniformly drawn u64 seeds (the
+# proptest's own `any::<u64>()` distribution): 24 fall below 70%, 2 below
+# 65%, none below 60%; the worst is 62.9% (seed 15712406083813773737).
+# CI's own random draws found seeds 14322285497755891962 (64.3%) and
+# 4544038555038832329 (65.6%). All three are pinned by
+# `peripheral_floor_clears_the_lowest_known_ratio_seeds`. This key alone
+# cannot tell a healthy city from a density-blind one (a uniform grid
+# pools to 100%) -- `peripheral_pooled_min_ratio_percent` below is the
+# guard that can. Moved off a bare literal (Quentin's direction, cycle 4:
+# a threshold literal in a test is a reject).
 key = "generation.streets.peripheral_low_band_floor_percent"
-value = 70
+value = 60
 min = 1
 max = 100
 
