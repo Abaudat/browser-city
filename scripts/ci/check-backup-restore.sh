@@ -249,7 +249,12 @@ ac3_commit() { # <dir> <message> -- commits every modified tracked file.
     || fail "could not commit '$2' in the disposable worktree '$1'"
 }
 
-PRE_FAKE_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+# The commit the fix must select once a fixture commit lands on top of it
+# -- the newest commit that actually touched server/schema.snapshot.json,
+# never merely HEAD's own sha: a real HEAD often has commits ahead of the
+# schema's own last change (exactly this cycle's own commit, for one).
+PRE_FAKE_SHA="$(git -C "$REPO_ROOT" log --first-parent --format=%H HEAD -- server/schema.snapshot.json | head -n1)"
+[ -n "$PRE_FAKE_SHA" ] || fail "could not resolve the commit that last touched server/schema.snapshot.json"
 
 echo
 echo "story 4.18 AC3 (positive): the incoming commit adds a whole table -- export still finds and selects the real, live schema"
