@@ -1,26 +1,31 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { CAMERA_SCROLL_TOLERANCE_PX, computeCamera } from "../../../src/render/camera";
+import { CAMERA_SCROLL_TOLERANCE_PX, computeCamera, ZOOM } from "../../../src/render/camera";
 import { screenPositionPx } from "../../../src/render/screen-position";
 import { CollisionGrid } from "../../../src/world/collision-grid";
 import { type MovementConfig, step } from "../../../src/world/movement";
+import { committedDefs, streetMovementConfig } from "../test-street/street-world";
 
 // `inv_camera_scroll_tracks_continuous_walk`: the real `step`,
 // `screenPositionPx` and `computeCamera`, composed per frame with no Pixi.
 // The player's screen point is constant, the world scrolls monotonically
 // in the walk's direction, never strays from the continuous camera by more
 // than `CAMERA_SCROLL_TOLERANCE_PX`, and (at a constant delta) consecutive
-// scroll steps per axis differ by at most one screen pixel.
+// scroll steps per axis differ by at most one screen pixel. Every property
+// holds at any constant velocity, so the walk speed is drawn across its
+// balance key's own range rather than pinned to today's value.
 
-const TILE = 16;
-const STOREY = 48;
-const CONFIG: MovementConfig = {
-  walkSpeedCellsPerMs: 2.2 / 1000,
-  bodyWidthSubcells: 8,
-  bodyHeightSubcells: 8,
-  subcellsPerCell: 16,
-};
-const GRID = new CollisionGrid(CONFIG.subcellsPerCell, new Map());
+const DEFS = committedDefs();
+const BASE_CONFIG = streetMovementConfig();
+function balance(key: string): { value: number; min: number; max: number } {
+  const entry = DEFS.balance.find((b) => b.key === key);
+  if (!entry) throw new Error(`no balance entry '${key}'`);
+  return entry;
+}
+const SPEED = balance("movement.walk_speed_millicells_per_s");
+const TILE = balance("render.tile_size_px").value;
+const STOREY = balance("render.storey_height_px").value;
+const GRID = new CollisionGrid(BASE_CONFIG.subcellsPerCell, new Map());
 const DIRS = [
   { x: 1, y: 0 },
   { x: -1, y: 0 },
@@ -43,32 +48,39 @@ interface Frame {
   readonly idealY: number;
 }
 
+interface Setup {
+  readonly config: MovementConfig;
+  readonly tile: number;
+  readonly zoom: number;
+}
+
 function walk(
+  setup: Setup,
   dir: { x: number; y: number },
   startX: number,
   startY: number,
   deltas: readonly number[],
   vw: number,
   vh: number,
-  zoom: number,
 ): Frame[] {
+  const { config, tile, zoom } = setup;
   const frames: Frame[] = [];
   let pos = { x: startX, y: startY };
   const record = () => {
-    const a = screenPositionPx(pos.x, pos.y, 0, TILE, STOREY, zoom);
+    const a = screenPositionPx(pos.x, pos.y, 0, tile, STOREY, zoom);
     const c = computeCamera(a.x, a.y, vw, vh, zoom);
     frames.push({
       anchorX: a.x,
       anchorY: a.y,
       offsetX: c.offsetX,
       offsetY: c.offsetY,
-      idealX: vw / 2 - (pos.x + 0.5) * TILE * zoom,
-      idealY: vh / 2 - (pos.y + 1) * TILE * zoom,
+      idealX: vw / 2 - (pos.x + 0.5) * tile * zoom,
+      idealY: vh / 2 - (pos.y + 1) * tile * zoom,
     });
   };
   record();
   for (const d of deltas) {
-    pos = step(pos, dir, d, GRID, 0, CONFIG);
+    pos = step(pos, dir, d, GRID, 0, config);
     record();
   }
   return frames;
@@ -77,8 +89,17 @@ function walk(
 const dirArb = fc.constantFrom(...DIRS);
 const startArb = fc.double({ min: 1000, max: 2000, noNaN: true });
 const viewportArb = fc.integer({ min: 600, max: 2560 });
-const zoomArb = fc.constantFrom(2, 3, 4);
-const constantDeltas = Array.from({ length: FRAMES }, () => 1000 / 60);
+const setupArb: fc.Arbitrary<Setup> = fc.record({
+  config: fc
+    .integer({ min: SPEED.min, max: SPEED.max })
+    .map((m) => ({ ...BASE_CONFIG, walkSpeedCellsPerMs: m / 1000 / 1000 })),
+  tile: fc.constantFrom(TILE, 8, 16, 32),
+  // The live zoom, plus other integer zooms.
+  zoom: fc.constantFrom(ZOOM, 1, 2, 4),
+});
+const constantDeltasArb = fc
+  .double({ min: 8, max: 34, noNaN: true })
+  .map((d) => Array.from({ length: FRAMES }, () => d));
 
 describe("camera scroll during a continuous walk", () => {
   it("inv_camera_scroll_tracks_continuous_walk", () => {
@@ -86,21 +107,22 @@ describe("camera scroll during a continuous walk", () => {
     // the continuous camera, under any frame-delta sequence.
     fc.assert(
       fc.property(
+        setupArb,
         dirArb,
         startArb,
         startArb,
         viewportArb,
         viewportArb,
-        zoomArb,
         fc.oneof(
-          fc.constant(constantDeltas),
+          constantDeltasArb,
           fc.array(fc.double({ min: 8, max: 34, noNaN: true }), {
             minLength: FRAMES,
             maxLength: FRAMES,
           }),
         ),
-        (dir, sx, sy, vw, vh, zoom, deltas) => {
-          const frames = walk(dir, sx, sy, deltas, vw, vh, zoom);
+        (setup, dir, sx, sy, vw, vh, deltas) => {
+          const { zoom } = setup;
+          const frames = walk(setup, dir, sx, sy, deltas, vw, vh);
           const first = frames[0];
           if (!first) throw new Error("no frames");
           const px = first.anchorX * zoom + first.offsetX;
@@ -108,8 +130,12 @@ describe("camera scroll during a continuous walk", () => {
           frames.forEach((f, i) => {
             expect(Math.abs(f.anchorX * zoom + f.offsetX - px)).toBeLessThan(EPS);
             expect(Math.abs(f.anchorY * zoom + f.offsetY - py)).toBeLessThan(EPS);
-            expect(Math.abs(f.offsetX - f.idealX)).toBeLessThanOrEqual(CAMERA_SCROLL_TOLERANCE_PX);
-            expect(Math.abs(f.offsetY - f.idealY)).toBeLessThanOrEqual(CAMERA_SCROLL_TOLERANCE_PX);
+            expect(Math.abs(f.offsetX - f.idealX)).toBeLessThanOrEqual(
+              CAMERA_SCROLL_TOLERANCE_PX + EPS,
+            );
+            expect(Math.abs(f.offsetY - f.idealY)).toBeLessThanOrEqual(
+              CAMERA_SCROLL_TOLERANCE_PX + EPS,
+            );
             const prev = frames[i - 1];
             if (!prev) return;
             // The camera moves against the walk: offset falls as the player goes +.
@@ -127,14 +153,15 @@ describe("camera scroll during a continuous walk", () => {
     // at most one screen pixel.
     fc.assert(
       fc.property(
+        setupArb,
         dirArb,
         startArb,
         startArb,
         viewportArb,
         viewportArb,
-        zoomArb,
-        (dir, sx, sy, vw, vh, zoom) => {
-          const frames = walk(dir, sx, sy, constantDeltas, vw, vh, zoom);
+        constantDeltasArb,
+        (setup, dir, sx, sy, vw, vh, deltas) => {
+          const frames = walk(setup, dir, sx, sy, deltas, vw, vh);
           for (const axis of ["offsetX", "offsetY"] as const) {
             const steps = frames.slice(1).map((f, i) => {
               const prev = frames[i];
@@ -156,7 +183,7 @@ describe("screenPositionPx at a zoom", () => {
         fc.double({ min: -5000, max: 5000, noNaN: true }),
         fc.double({ min: -5000, max: 5000, noNaN: true }),
         fc.integer({ min: -3, max: 3 }),
-        fc.integer({ min: 1, max: 6 }),
+        fc.oneof(fc.constant(ZOOM), fc.integer({ min: 1, max: 6 })),
         (x, y, floor, zoom) => {
           const p = screenPositionPx(x, y, floor, TILE, STOREY, zoom);
           expect(Math.abs(p.x * zoom - Math.round(p.x * zoom))).toBeLessThan(EPS);

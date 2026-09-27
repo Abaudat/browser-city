@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   floorOffsetPx,
   screenPositionPx,
+  snapToScreenPx,
   subcellRectPx,
   visibleCellBounds,
   worldCellFromScreenPx,
@@ -79,6 +80,37 @@ describe("screenPositionPx", () => {
         },
       ),
     );
+  });
+});
+
+describe("snapToScreenPx", () => {
+  it("snaps to the nearest 1/zoom of a world pixel", () => {
+    expect(snapToScreenPx(10.2, 3)).toBeCloseTo(31 / 3, 12);
+    expect(snapToScreenPx(10.2, 1)).toBe(10);
+    expect(snapToScreenPx(-0.4, 2)).toBeCloseTo(-0.5, 12);
+  });
+
+  it("lands on a whole screen pixel, within half a screen pixel of the input", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -1e6, max: 1e6, noNaN: true }),
+        fc.integer({ min: 1, max: 8 }),
+        (v, zoom) => {
+          const snapped = snapToScreenPx(v, zoom) * zoom;
+          expect(Math.abs(snapped - Math.round(snapped))).toBeLessThan(1e-6);
+          expect(Math.abs(snapped - v * zoom)).toBeLessThanOrEqual(0.5 + 1e-6);
+        },
+      ),
+    );
+  });
+
+  // A non-integer zoom breaks `(k / zoom) * zoom === k`, which the camera's
+  // constant player point relies on.
+  it("refuses a non-integer or non-positive zoom", () => {
+    for (const zoom of [3.5, 0.25, 0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => snapToScreenPx(1, zoom)).toThrow(/zoom/);
+      expect(() => screenPositionPx(1, 1, 0, 16, 48, zoom)).toThrow(/zoom/);
+    }
   });
 });
 
