@@ -1,9 +1,13 @@
 // Story 1.10 (AC5, FR61/FR62): the one adapter that turns `citizens.ts`'s
 // fixed fixtures into real, mounted sprites through the real appearance
 // pipeline -- proof this pipeline draws a real street crowd, not only
-// unit-tested pure logic. A second, additive layer under `world`, never
-// part of `scene.ts`'s own depth-sorted `characters` pool (see
-// `citizens.ts`'s own module doc for why). Takes its `AppearanceTextureCache`
+// unit-tested pure logic. Never part of `scene.ts`'s own depth-sorted
+// `characters` pool (see `citizens.ts`'s own module doc for why); instead
+// this module only ever populates the floor-0 container `scene.ts`
+// already created, registered as a visibility member and attached under
+// `render/floor-stacks.ts`'s own floor-0 stack before this function is
+// even called (story 15.8) -- it never creates or parents a container of
+// its own against `world`. Takes its `AppearanceTextureCache`
 // from the caller rather than building its own, so the player's own
 // sprite (`scene.ts`) and the crowd share one cache -- a player who
 // happens to match a crowd member's tuple reuses that texture too.
@@ -83,7 +87,7 @@ function advanceWalker(
 }
 
 export async function mountCitizensLayer(
-  world: Container,
+  parent: Container,
   defs: Defs,
   tileSizePx: number,
   zoom: number,
@@ -95,7 +99,12 @@ export async function mountCitizensLayer(
   // The crowd's own pavement, painted before the citizens so it sits
   // underneath them -- real `ModernTileset` sidewalk tiles, the same
   // asset the rest of the world uses: a citizen stands on pavement,
-  // never on bare ground or the void.
+  // never on bare ground or the void. `parent` is `scene.ts`'s own
+  // floor-0 crowd container (story 15.8) -- already attached under the
+  // floor-0 stack and registered as a visibility member before this
+  // function is ever called, so these two containers need no visibility
+  // opinion of their own; they simply draw inside whatever `parent`'s
+  // own `visible` says.
   const bounds = plazaBounds();
   const ground = new Container();
   for (let y = cellOf(bounds.y0); y < Math.ceil(bounds.y1); y++) {
@@ -106,11 +115,11 @@ export async function mountCitizensLayer(
       ground.addChild(tile);
     }
   }
-  world.addChild(ground);
+  parent.addChild(ground);
 
   const layer = new Container();
   layer.sortableChildren = true;
-  world.addChild(layer);
+  parent.addChild(layer);
 
   const fixtures = [
     ...buildCitizenFixtures(defs, identicalTuples),

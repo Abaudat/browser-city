@@ -15,6 +15,7 @@ import { sortAcrossFloors } from "../../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { FIRST_POOL_RANK, LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
+import { CROWD_FLOOR } from "../../../src/test-street/citizens";
 import { buildPlayerDrawable, buildPropDrawables } from "../../../src/test-street/drawables";
 import {
   LAMPPOST_CELL,
@@ -91,10 +92,22 @@ function visibilityAt(x: number, y: number, floor: number): Record<string, strin
     });
   for (const groundFloor of GROUND_FLOORS) {
     result[`ground:${groundFloor}`] = group(groundFloor, "ground");
+    // Story 15.8 (Quentin's cycle-1 finding): the ground-decals pass sits
+    // under every stack root exactly like the ground pass does, and must
+    // be culled the same way -- `defs/` has no dedicated layer code for
+    // it yet, so it carries the `ground` layer's own code, exactly like
+    // `scene.ts`'s `GROUND_DECALS_LAYER_CODE`.
+    result[`ground_decals:${groundFloor}`] = group(groundFloor, "ground");
   }
   for (const floor of flatFloors) {
     result[`ground_objects:${floor}`] = group(floor, "ground_objects");
   }
+  // Story 15.8: the street crowd's own container is a flat, floor-0
+  // visibility member exactly like the ground/ground-objects passes above
+  // -- `CROWD_FLOOR` (`citizens.ts`) and `layerCodeByName("characters")`
+  // are the same facts `scene.ts` registers it with, never a literal `0`
+  // restated here.
+  result[`crowd:${CROWD_FLOOR}`] = group(CROWD_FLOOR, "characters");
   return result;
 }
 

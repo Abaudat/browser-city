@@ -694,6 +694,15 @@ reorders a pool member.
   (`scripts/ci/check-no-masks.sh`).
 - Floors of opposite sign are never co-visible, compared by sign alone
   against the viewer's own floor, never against the literal `-1`.
+- Every container drawn on a floor is a child of that floor's own
+  `FloorStacks` stack, and every container beyond a stack's own four
+  structural passes (`ground`/`groundDecals`/`groundObjects`/`pool`) is
+  also a visibility member; nothing floor-bound is ever parented to
+  `world` directly. `client/src/render/floor-stacks.ts`'s
+  `FloorStacks.assertManaged` is the mount-time guard that holds both
+  halves: `world`'s own children are exactly its stack roots, and every
+  root's own children are either its four structural passes or a
+  registered visibility member.
 
 Retraction is keyed on `buildingId` alone, never `roomId`: a terrace shop
 is its own building, not a room of a shared one.

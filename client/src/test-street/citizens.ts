@@ -5,10 +5,13 @@
 // 1.6-1.9 fixture has room for, and reshaping that shared fixture risks
 // moving `render-order.spec.ts`/`movement.spec.ts`/`enclosure.spec.ts`/
 // `intents.spec.ts`'s own committed goldens for a purely decorative
-// change; this crowd is a second, additive layer in its own pavement
-// strip instead, never part of the depth-sorted pool those specs assert
-// against). Pure data plus one pure builder, zero PixiJS: `citizens-layer.
-// ts` is the only adapter that turns this into sprites.
+// change; this crowd is a second layer in its own pavement strip
+// instead, never part of the depth-sorted pool those specs assert
+// against). It is a flat, floor-0 visibility member like any other
+// (`CROWD_FLOOR` below, `scene.ts`'s own crowd container), never a
+// special case FR122 forgets to cull (story 15.8). Pure data plus one
+// pure builder, zero PixiJS: `citizens-layer.ts` is the only adapter that
+// turns this into sprites.
 //
 // Every tuple is derived here, in TypeScript, straight from the real
 // committed `Defs` document -- `body`/`eyes`/`outfit`/`accessory` only
@@ -63,6 +66,12 @@ const KID_COUNT = 6;
  * outside either. */
 export const PLAZA_X0 = 0;
 export const PLAZA_Y0 = 16;
+
+/** The floor every crowd fixture lives on -- read by `scene.ts` to
+ * register the crowd's own container as a floor-0 visibility member, and
+ * by `regen-golden.ts` to key its golden entry, so neither ever restates
+ * `0` as a literal (story 15.8, Quentin's direction). */
+export const CROWD_FLOOR = 0;
 
 /** The strip's own footprint, in local cells relative to `PLAZA_X0`/
  * `PLAZA_Y0` -- wide and deep enough that seeded rejection sampling

@@ -92,6 +92,59 @@ export class FloorStacks {
       return stack;
     });
   }
+
+  /**
+   * Story 15.8's mount-time guard (Tim's direction, cycle 1): this
+   * instance is the one code that ever attaches anything under `parent`,
+   * so it is the one place that can check the whole tree it owns, at two
+   * levels. Throws unless (a) `parent`'s own children are exactly this
+   * instance's own stack roots, and (b) every child of every root is
+   * either one of that stack's own four structural pass containers
+   * (`ground`/`groundDecals`/`groundObjects`/`pool`, which this module
+   * itself owns and are never themselves toggled) or a member of
+   * `managedViews` -- a caller's own real, mounted visibility members.
+   * `docs/architecture.md`'s Visibility section names this method as the
+   * thing that holds "every container drawn on a floor is a child of that
+   * floor's own stack and a visibility member": a container attached
+   * straight to a stack root without also being registered as a
+   * visibility member (this story's own crowd defect) is exactly what
+   * (b) throws on; a container attached straight to `parent`, bypassing
+   * every stack, is exactly what (a) throws on. Never called per frame --
+   * a caller runs this once, right after every visibility member it owns
+   * exists.
+   */
+  assertManaged(managedViews: ReadonlySet<unknown>): void {
+    const roots = new Set<Container>(this.stacks().map((stack) => stack.root));
+    const unmanagedTopLevel = this.parent.children.filter(
+      (child) => !roots.has(child as Container),
+    );
+    if (unmanagedTopLevel.length > 0) {
+      throw new Error(
+        `FloorStacks.assertManaged: ${unmanagedTopLevel.length} child(ren) of the parent container ` +
+          "are not a floor stack root -- every floor-bound container must be attached under a stack, " +
+          "never straight to the parent",
+      );
+    }
+    for (const stack of this.stacks()) {
+      const structural = new Set<Container>([
+        stack.ground,
+        stack.groundDecals,
+        stack.groundObjects,
+        stack.pool,
+      ]);
+      const unmanaged = stack.root.children.filter(
+        (child) => !structural.has(child as Container) && !managedViews.has(child),
+      );
+      if (unmanaged.length > 0) {
+        throw new Error(
+          `FloorStacks.assertManaged: floor ${stack.floor} has ${unmanaged.length} child(ren) under ` +
+            "its own root that are neither one of its four pass containers nor a registered " +
+            "visibility member -- every additional container a floor's stack owns must also be a " +
+            "`VisibilityMember`",
+        );
+      }
+    }
+  }
 }
 
 /**

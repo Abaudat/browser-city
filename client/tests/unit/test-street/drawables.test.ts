@@ -11,6 +11,7 @@ import {
 import { compareDrawables } from "../../../src/render/sort-key";
 import { SORT_SUBDIVISIONS, toSortUnits } from "../../../src/render/sort-units";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
+import { CROWD_FLOOR } from "../../../src/test-street/citizens";
 import {
   buildPlayerDrawable,
   buildPropDrawables,
@@ -232,10 +233,19 @@ describe("the street scene's committed visibility (story 1.7 cycle 2, Quentin's 
       });
     for (const groundFloor of GROUND_FLOORS) {
       result[`ground:${groundFloor}`] = group(groundFloor, "ground");
+      // Story 15.8: mirrors `regen-golden.ts`'s own `ground_decals:<floor>`
+      // key -- the ground-decals pass is culled the same way the ground
+      // pass is.
+      result[`ground_decals:${groundFloor}`] = group(groundFloor, "ground");
     }
     for (const floor of flatFloors) {
       result[`ground_objects:${floor}`] = group(floor, "ground_objects");
     }
+    // Story 15.8: the crowd's own flat, floor-0 visibility member --
+    // mirrors `regen-golden.ts`'s own `visibilityAt`, so the golden this
+    // asserts against and the golden actually committed are derived from
+    // exactly the same facts.
+    result[`crowd:${CROWD_FLOOR}`] = group(CROWD_FLOOR, "characters");
     return result;
   }
 

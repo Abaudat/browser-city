@@ -64,7 +64,7 @@ import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
 import { ASSET_URLS, type PixelRect, WALL_TILE_H_FRAME, WALL_TILE_V_FRAME } from "./assets";
-import { buildPlayerAppearanceTuple } from "./citizens";
+import { buildPlayerAppearanceTuple, CROWD_FLOOR } from "./citizens";
 import { type CitizensLayerHandle, mountCitizensLayer } from "./citizens-layer";
 import {
   buildPlayerDrawable,
@@ -115,6 +115,24 @@ const SUBWAY_BACKGROUND = 0x000000;
  * applies to it). */
 const GROUND_LAYER_CODE = layerCodeByName("ground");
 const GROUND_OBJECTS_LAYER_CODE = layerCodeByName("ground_objects");
+
+/** The street crowd's own synthetic `VisibilityDrawable` carries the
+ * `characters` layer's code (story 15.8) -- it is a flat pass exactly
+ * like the ground/ground-objects passes above, never `isNearSide`, so
+ * only floor culling ever applies to it; the layer code is purely
+ * descriptive of what it draws. */
+const CROWD_LAYER_CODE = layerCodeByName("characters");
+
+/** `render/floor-stacks.ts`'s `groundDecals` pass has no dedicated layer
+ * code in `defs/`'s own table yet (only `ground`/`ground_objects` do) --
+ * its own synthetic `VisibilityDrawable` carries the `ground` layer's
+ * code instead, which `computeVisibility` never reads beyond "not
+ * `walls`" for a flat, ownerless member like this one (story 15.8,
+ * Quentin's finding: this pass sits under every stack root and must be
+ * culled exactly like `ground:<floor>` is, even while nothing is ever
+ * drawn on it yet -- registered, never deleted, so a future decal lands
+ * inside FR122's culling for free). */
+const GROUND_DECALS_LAYER_CODE = GROUND_LAYER_CODE;
 
 export interface MountStreetSceneOptions {
   /** Story 1.10: the fetched, parsed defs document -- needed to build the
@@ -504,6 +522,17 @@ export function assertNoOverhangBeyondStorey(
       );
     }
   }
+}
+
+/** One visibility member `window.__bc.visibility` reports, named the way
+ * it is keyed there -- a pool member's own decimal `stableId`, a flat
+ * pass's `<layer>:<floor>`, or the crowd's `crowd:<floor>` (story 15.8).
+ * `scene.ts` builds exactly one list of these; `allVisibilityMembers` (what
+ * `VisibilityApplier` walks) and the `onVisibilityChange` report are both
+ * derived from it, never from two separately maintained lists. */
+interface NamedVisibilityMember {
+  readonly id: string;
+  readonly member: VisibilityMember;
 }
 
 interface PoolEntry extends OrderedMember<PropDrawable>, VisibilityMember<PropDrawable> {
@@ -992,6 +1021,34 @@ export async function mountStreetScene(
     storeyHeightPx,
   );
 
+  // Story 15.8: the street crowd's own container -- created here,
+  // synchronously, and attached under floor 0's own stack root (after its
+  // pool, so the crowd draws with floor 0 and under any higher floor,
+  // Tim's direction) well before the first `applyVisibilityFor` call
+  // below ever runs. `mountCitizensLayer` (called much later, after every
+  // network-bound texture load) only ever populates this container -- it
+  // is a floor-0 visibility member from the instant it exists, exactly
+  // like the ground/ground-objects passes below, so the crowd's own async
+  // sprites simply inherit whatever this container's `visible` already
+  // says; there is never a second, forced re-apply once they land.
+  const crowdContainer = new Container();
+  stacks.stackFor(CROWD_FLOOR).root.addChild(crowdContainer);
+
+  // Story 15.8 (Quentin's finding, cycle 1): the ground-decals pass is
+  // one of `FloorStacks`' own four structural containers, sitting under
+  // every root exactly like `ground`/`groundObjects` do, and it needs the
+  // same real culling they get -- read off the same floors `ground`
+  // already draws on, never a floor list of its own. Nothing is ever
+  // drawn into it yet (no producer routes content onto this pass today),
+  // but it is registered as a visibility member below regardless, so the
+  // first thing that ever is lands inside FR122's culling for free.
+  const groundDecalsContainersByFloor = new Map<number, Container>(
+    [...groundContainersByFloor.keys()].map((floor) => [
+      floor,
+      stacks.stackFor(floor).groundDecals,
+    ]),
+  );
+
   // FR121: no masking or aperture system anywhere in the real, mounted
   // display list -- checked directly against every sprite and every
   // ground-pass container this scene actually built, not only by the
@@ -1004,6 +1061,8 @@ export async function mountStreetScene(
     playerEntry.view,
     ...groundContainersByFloor.values(),
     ...groundObjectsContainersByFloor.values(),
+    ...groundDecalsContainersByFloor.values(),
+    crowdContainer,
   ];
   onMasksChecked?.(everyMaskableView.every((view) => view.mask == null));
 
@@ -1058,41 +1117,109 @@ export async function mountStreetScene(
   // Story 1.7: the visibility adapter, gated on the viewer's own
   // (floor, buildingId) tuple actually changing (Tim's direction) --
   // computed from the player's own *cell* (`cellOf`, `Math.floor`), never
-  // every frame. Applied to the pool and every ground-tile-pass group
-  // together, in one call, so nothing is ever culled halfway.
+  // every frame. Applied to the pool and every flat-pass group (ground,
+  // ground objects, the crowd) together, in one call, so nothing is ever
+  // culled halfway.
   const visibilityApplier = new VisibilityApplier();
   const originalBackground = app.renderer.background.color;
-  const groundMembers: VisibilityMember[] = [...groundContainersByFloor.entries()].map(
+
+  // Story 15.8 (Tim's direction): one named list, built once -- every
+  // pool member, flat pass and the crowd, each carrying the id
+  // `window.__bc.visibility` reports it under (a pool member's own
+  // decimal `stableId`, a flat pass's `<layer>:<floor>`, the crowd's own
+  // `crowd:<floor>`, the exact key `regen-golden.ts` derives for the
+  // golden). `allVisibilityMembers` (what `VisibilityApplier` walks) and
+  // the `onVisibilityChange` report below are both read straight off this
+  // one list -- collapsing what were three separately hand-maintained
+  // report loops, so a member that is visibility-managed can never
+  // silently miss the report a reader relies on.
+  const poolNamedMembers: NamedVisibilityMember[] = [...poolEntries, playerEntry].map((entry) => ({
+    id: entry.drawable.stableId.toString(),
+    member: { drawable: entry.drawable, view: entry.view },
+  }));
+  const groundNamedMembers: NamedVisibilityMember[] = [...groundContainersByFloor.entries()].map(
     ([floor, container]) => ({
+      id: `ground:${floor}`,
+      member: {
+        drawable: {
+          floor,
+          layerCode: GROUND_LAYER_CODE,
+          ownerBuildingId: NO_OWNER,
+          isWindow: false,
+          isNearSide: false,
+          isStub: false,
+        },
+        view: container,
+      },
+    }),
+  );
+  const groundObjectsNamedMembers: NamedVisibilityMember[] = [
+    ...groundObjectsContainersByFloor.entries(),
+  ].map(([floor, container]) => ({
+    id: `ground_objects:${floor}`,
+    member: {
       drawable: {
         floor,
-        layerCode: GROUND_LAYER_CODE,
+        layerCode: GROUND_OBJECTS_LAYER_CODE,
         ownerBuildingId: NO_OWNER,
         isWindow: false,
         isNearSide: false,
         isStub: false,
       },
       view: container,
-    }),
-  );
-  const groundObjectsMembers: VisibilityMember[] = [
-    ...groundObjectsContainersByFloor.entries(),
-  ].map(([floor, container]) => ({
-    drawable: {
-      floor,
-      layerCode: GROUND_OBJECTS_LAYER_CODE,
-      ownerBuildingId: NO_OWNER,
-      isWindow: false,
-      isNearSide: false,
-      isStub: false,
     },
-    view: container,
   }));
-  const allVisibilityMembers: VisibilityMember[] = [
-    ...members,
-    ...groundMembers,
-    ...groundObjectsMembers,
+  const groundDecalsNamedMembers: NamedVisibilityMember[] = [
+    ...groundDecalsContainersByFloor.entries(),
+  ].map(([floor, container]) => ({
+    id: `ground_decals:${floor}`,
+    member: {
+      drawable: {
+        floor,
+        layerCode: GROUND_DECALS_LAYER_CODE,
+        ownerBuildingId: NO_OWNER,
+        isWindow: false,
+        isNearSide: false,
+        isStub: false,
+      },
+      view: container,
+    },
+  }));
+  const crowdNamedMember: NamedVisibilityMember = {
+    id: `crowd:${CROWD_FLOOR}`,
+    member: {
+      drawable: {
+        floor: CROWD_FLOOR,
+        layerCode: CROWD_LAYER_CODE,
+        ownerBuildingId: NO_OWNER,
+        isWindow: false,
+        isNearSide: false,
+        isStub: false,
+      },
+      view: crowdContainer,
+    },
+  };
+  const namedVisibilityMembers: NamedVisibilityMember[] = [
+    ...poolNamedMembers,
+    ...groundNamedMembers,
+    ...groundObjectsNamedMembers,
+    ...groundDecalsNamedMembers,
+    crowdNamedMember,
   ];
+  const allVisibilityMembers: VisibilityMember[] = namedVisibilityMembers.map((n) => n.member);
+
+  // Story 15.8's mount-time guard (Tim's direction, cycle 1): `FloorStacks`
+  // is the one code that ever attaches anything under `world`, so it owns
+  // the check of its own whole tree -- every child of `world` is one of
+  // its own stack roots, and every child of every root is either one of
+  // that stack's own four structural pass containers or a registered
+  // visibility member (`namedVisibilityMembers`' own views, above). This
+  // is what catches a future additive layer (this story's own crowd
+  // defect) parented straight onto `world`, or straight onto a stack root
+  // without also being registered, before it can ever reach a baseline.
+  // Run once, here, now that every visibility member this scene will ever
+  // register already exists.
+  stacks.assertManaged(new Set(namedVisibilityMembers.map((n) => n.member.view)));
 
   function applyVisibilityFor(cellX: number, cellY: number, floor: number, force: boolean): void {
     const viewer: VisibilityViewer = {
@@ -1114,39 +1241,20 @@ export async function mountStreetScene(
       ? SUBWAY_BACKGROUND
       : originalBackground;
 
-    // Built straight from each pool member's own real, just-written
+    // Built straight from each member's own real, just-written
     // `view.visible`/`view.alpha` (Quentin/Tim's direction) -- never a
     // second, recomputed `VisibilityState` this could silently disagree
-    // with what `VisibilityApplier` actually wrote. Ground-tile-pass
-    // groups carry no `stableId` (Tim's direction, cycle 2: FR122's
-    // flat-pass culling fix needs a guard that can see them too), so each
-    // one is reported under its own `ground:<floor>` key instead.
+    // with what `VisibilityApplier` actually wrote. One loop over the one
+    // named list above, replacing what were three separate ones.
     if (applied && onVisibilityChange) {
       const reportedState: Record<string, string> = {};
       const reportedAlpha: Record<string, number> = {};
-      for (const entry of [...poolEntries, playerEntry]) {
-        const id = entry.drawable.stableId.toString();
+      for (const { id, member } of namedVisibilityMembers) {
         reportedState[id] = stateFromWrite({
-          visible: entry.view.visible,
-          alpha: entry.view.alpha,
+          visible: member.view.visible,
+          alpha: member.view.alpha,
         });
-        reportedAlpha[id] = entry.view.alpha;
-      }
-      for (const [floor, container] of groundContainersByFloor) {
-        const id = `ground:${floor}`;
-        reportedState[id] = stateFromWrite({
-          visible: container.visible,
-          alpha: container.alpha,
-        });
-        reportedAlpha[id] = container.alpha;
-      }
-      for (const [floor, container] of groundObjectsContainersByFloor) {
-        const id = `ground_objects:${floor}`;
-        reportedState[id] = stateFromWrite({
-          visible: container.visible,
-          alpha: container.alpha,
-        });
-        reportedAlpha[id] = container.alpha;
+        reportedAlpha[id] = member.view.alpha;
       }
       onVisibilityChange(reportedState, reportedAlpha);
     }
@@ -1353,11 +1461,15 @@ export async function mountStreetScene(
     applyCamera();
   }
 
-  // Story 1.10: the street crowd, a second, additive layer under `world`
-  // -- never part of `members`/`poolContainer` (see `citizens.ts`'s own
-  // module doc for why: it must never move this scene's own committed
-  // depth-order goldens). Mounted last, after every signal an existing
-  // e2e spec's own `ready()` gate depends on
+  // Story 1.10: the street crowd -- never part of `members`/`poolContainer`
+  // (see `citizens.ts`'s own module doc for why: it must never move this
+  // scene's own committed depth-order goldens). Its own container
+  // (`crowdContainer`, above) was created and registered as a floor-0
+  // visibility member long before this `await`; `mountCitizensLayer` here
+  // only populates it (story 15.8) -- it is mounted last only because its
+  // own sprites need the network-bound texture loads below, not because
+  // its visibility or its place in the draw order are decided here. Every
+  // signal an existing e2e spec's own `ready()` gate depends on
   // (`onOrderChange`/`onPlayerMove`/`onVisibilityChange`/
   // `onMasksChecked`, and the keyboard itself) has already fired -- those
   // all run synchronously, in this same function body, before this
@@ -1371,7 +1483,7 @@ export async function mountStreetScene(
   // the boot mark below instead of on its mere existence for exactly this
   // reason -- it is no longer a one-shot readiness signal.
   const citizensLayer = await mountCitizensLayer(
-    world,
+    crowdContainer,
     defs,
     tileSizePx,
     ZOOM,
