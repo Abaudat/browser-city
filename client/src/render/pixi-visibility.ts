@@ -36,6 +36,26 @@ function viewerEquals(a: VisibilityViewer | undefined, b: VisibilityViewer): boo
 }
 
 /**
+ * Every element of `children` that is not in `managedViews` -- the mount-
+ * time guard story 15.8 adds (Quentin's direction): "everything drawn on
+ * a floor is visibility-managed" is a fact a caller can now check
+ * directly against its own real display list, rather than trust because
+ * every container it can currently think of happens to be registered.
+ * Structural over `unknown` (never a `Container`), so a test can prove it
+ * with plain fake objects -- no real Pixi container required. Never
+ * called per frame: a caller runs this once, right after every container
+ * it manages exists, and throws if the result is non-empty (a container
+ * added straight to the parent, bypassing registration, is exactly the
+ * defect this exists to catch before it ever reaches a baseline).
+ */
+export function unmanagedChildren(
+  children: readonly unknown[],
+  managedViews: ReadonlySet<unknown>,
+): readonly unknown[] {
+  return children.filter((child) => !managedViews.has(child));
+}
+
+/**
  * Applies FR120/FR121/FR122's visibility to every member's sprite,
  * gated on the viewer's own enclosure/floor tuple actually changing since
  * the last call (or never having been applied at all). `windowAlpha` is

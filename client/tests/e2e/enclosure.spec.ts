@@ -187,6 +187,9 @@ test.describe("story 1.7: enclosure visibility", () => {
     const groundVisibility = await currentVisibility(page);
     expect(groundVisibility["ground:0"]).toBe("normal");
     expect(groundVisibility["ground:-1"]).toBe("hidden");
+    // Story 15.8: the street crowd is a floor-0 container like any other
+    // -- visible from the street, the same rule as `ground:0`.
+    expect(groundVisibility["crowd:0"]).toBe("normal");
 
     // The FR120 wall-stub companion's own inverse rule (Artie's cycle-2
     // finding): while shop A's own near-side wall/window/pier (2, 6, 40)
@@ -221,7 +224,11 @@ test.describe("story 1.7: enclosure visibility", () => {
       timeout: 15_000,
     });
 
-    expect(await currentVisibility(page)).toEqual(STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE);
+    const outsideVisibility = await currentVisibility(page);
+    // Story 15.8: the crowd is a floor-0 container -- visible on the
+    // street, same as every other floor-0 flat pass.
+    expect(outsideVisibility["crowd:0"]).toBe("normal");
+    expect(outsideVisibility).toEqual(STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE);
   });
 
   test("entering the subway culls the street and reveals the platform; leaving it reverses that", async ({
@@ -251,6 +258,10 @@ test.describe("story 1.7: enclosure visibility", () => {
     // the subway's own ground pass is now visible, the street's is not.
     expect(platformVisibility["ground:-1"]).toBe("normal");
     expect(platformVisibility["ground:0"]).toBe("hidden");
+    // Story 15.8: the street crowd and its pavement strip are a floor-0
+    // container -- culled with the rest of the street, the whole reason
+    // this story exists (nothing from the street draws on the platform).
+    expect(platformVisibility["crowd:0"]).toBe("hidden");
 
     // Story 15.7: the platform baseline -- the treads visibly step up from
     // the landing to the east wall, the green up-arrow on the wall above.
@@ -277,6 +288,10 @@ test.describe("story 1.7: enclosure visibility", () => {
     // plain pavement) -- `computeVisibility` only ever reads the viewer's
     // own `(floor, buildingId)`, never its exact position, so this is the
     // identical state the "walked out onto the pavement" golden above is.
-    expect(await currentVisibility(page)).toEqual(STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE);
+    const backOnStreetVisibility = await currentVisibility(page);
+    // Story 15.8 (Artie's direction): the crowd and its pavement
+    // reappear exactly as before -- same container, same rule, no re-seed.
+    expect(backOnStreetVisibility["crowd:0"]).toBe("normal");
+    expect(backOnStreetVisibility).toEqual(STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE);
   });
 });

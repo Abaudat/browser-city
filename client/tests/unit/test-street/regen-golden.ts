@@ -15,6 +15,7 @@ import { sortAcrossFloors } from "../../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { FIRST_POOL_RANK, LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
+import { CROWD_FLOOR } from "../../../src/test-street/citizens";
 import { buildPlayerDrawable, buildPropDrawables } from "../../../src/test-street/drawables";
 import {
   LAMPPOST_CELL,
@@ -95,6 +96,12 @@ function visibilityAt(x: number, y: number, floor: number): Record<string, strin
   for (const floor of flatFloors) {
     result[`ground_objects:${floor}`] = group(floor, "ground_objects");
   }
+  // Story 15.8: the street crowd's own container is a flat, floor-0
+  // visibility member exactly like the ground/ground-objects passes above
+  // -- `CROWD_FLOOR` (`citizens.ts`) and `layerCodeByName("characters")`
+  // are the same facts `scene.ts` registers it with, never a literal `0`
+  // restated here.
+  result[`crowd:${CROWD_FLOOR}`] = group(CROWD_FLOOR, "characters");
   return result;
 }
 

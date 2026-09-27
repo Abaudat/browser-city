@@ -694,6 +694,10 @@ reorders a pool member.
   (`scripts/ci/check-no-masks.sh`).
 - Floors of opposite sign are never co-visible, compared by sign alone
   against the viewer's own floor, never against the literal `-1`.
+- Every container drawn on a floor is a child of that floor's own
+  `FloorStacks` stack and a visibility member; nothing floor-bound is ever
+  parented to `world` directly (`client/src/render/pixi-visibility.ts`'s
+  `unmanagedChildren` is the mount-time guard that holds this).
 
 Retraction is keyed on `buildingId` alone, never `roomId`: a terrace shop
 is its own building, not a room of a shared one.

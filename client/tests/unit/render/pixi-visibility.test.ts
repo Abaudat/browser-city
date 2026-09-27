@@ -7,7 +7,11 @@ import { Container, Sprite, Texture } from "pixi.js";
 import { describe, expect, it } from "vitest";
 import { layerCodeByName } from "../../../src/render/layer-table";
 import { applyDepthOrder, type OrderedMember } from "../../../src/render/pixi-order";
-import { VisibilityApplier, type VisibilityMember } from "../../../src/render/pixi-visibility";
+import {
+  unmanagedChildren,
+  VisibilityApplier,
+  type VisibilityMember,
+} from "../../../src/render/pixi-visibility";
 import type { Drawable } from "../../../src/render/sort-key";
 import type { VisibilityDrawable } from "../../../src/render/visibility";
 import { NO_OWNER } from "../../../src/world/ownership";
@@ -185,5 +189,32 @@ describe("VisibilityApplier", () => {
         },
       ),
     );
+  });
+});
+
+describe("unmanagedChildren (story 15.8)", () => {
+  it("returns nothing when every child is registered", () => {
+    const a = {};
+    const b = {};
+    expect(unmanagedChildren([a, b], new Set([a, b]))).toEqual([]);
+  });
+
+  it("returns exactly the children that were never registered, in order -- the mount-time defect this story fixed (a crowd container added straight to `world`)", () => {
+    const managed = {};
+    const crowd = {};
+    const alsoUnmanaged = {};
+    expect(unmanagedChildren([managed, crowd, alsoUnmanaged], new Set([managed]))).toEqual([
+      crowd,
+      alsoUnmanaged,
+    ]);
+  });
+
+  it("an empty parent (no children yet) is trivially fully managed", () => {
+    expect(unmanagedChildren([], new Set())).toEqual([]);
+  });
+
+  it("a nested pool container counts as managed once it is itself in the set, regardless of its own children", () => {
+    const pool = { children: [{}, {}] };
+    expect(unmanagedChildren([pool], new Set([pool]))).toEqual([]);
   });
 });
