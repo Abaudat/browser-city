@@ -54,11 +54,10 @@ agentic-team/scripts/
   comment — since his reply is not the product.
 
   Scoping is NOT one of them. There is no sprint planning: whenever no story
-  is active, starting-dev-cycle first runs `bc-issue.sh adopt-alerts` — every
-  open issue a scheduled/deploy workflow's failure report labelled `alert`
-  and that is not yet a project item is added as Blocker/XS, so a report
-  is worked ahead of every other story without anyone having to triage it
-  (story 4.19) — then takes `bc-issue.sh next` — of every open
+  is active, starting-dev-cycle first runs `bc-issue.sh adopt-alerts`, which
+  puts every open `alert` issue not yet on the board into Backlog as
+  Blocker/XS, so a failure report is picked before any story (story 4.19) —
+  then takes `bc-issue.sh next` — of every open
   Backlog story on the board, any epic, the one no open issue blocks with the
   highest Priority, then the smallest Size, then the lowest number — and
   `bc-sprint.sh scope-in` puts it on the sprint in play as it starts. The

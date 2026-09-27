@@ -334,30 +334,44 @@ check "starting-dev-cycle: never sent to crew (crew is not nudged at To analyze)
 
 # =============================================================================
 echo
-echo "starting-dev-cycle: adopt-alerts runs before next's own pick reaches the board (story 4.19)"
+echo "starting-dev-cycle: adopt-alerts runs before next's own pick, which then starts the alert, not the other story (AC1 end-to-end, story 4.19)"
 # =============================================================================
 F_ADOPT_BEFORE_NEXT="$(fake_dir)"
 write_iterations "$F_ADOPT_BEFORE_NEXT"
-"$JQ" -n -c '[
-  {number:901,title:"Sub, on no sprint",state:"OPEN",status:"Backlog",priority:"Standard",size:"M",sprintId:null,sprintTitle:null,labels:["lead:tim"],isParent:false,parent:900,blockedBy:[]}
-]' > "$F_ADOPT_BEFORE_NEXT/project_items.json"
-# 950 is an off-board alert -- invisible to `next`, which still picks 901.
+# Two reads of the board, one per line, in the order the tick makes them:
+# `current` (no active sub-issue -- #950 isn't on it at all yet), then
+# adopt-alerts' own read, which -- as far as the tick can observe -- already
+# carries #950 the way adopt-alerts itself leaves it (Backlog/Blocker/XS);
+# the last line repeats, so `next`'s own read sees the same board and picks
+# #950 over #901, proving the pick end-to-end, not just the write ordering
+# (Quentin's direction, cycle 1).
+{
+  "$JQ" -n -c '[
+    {number:901,title:"Sub, on no sprint",state:"OPEN",status:"Backlog",priority:"Standard",size:"M",sprintId:null,sprintTitle:null,labels:["lead:tim"],isParent:false,parent:900,blockedBy:[]}
+  ]'
+  "$JQ" -n -c '[
+    {number:901,title:"Sub, on no sprint",state:"OPEN",status:"Backlog",priority:"Standard",size:"M",sprintId:null,sprintTitle:null,labels:["lead:tim"],isParent:false,parent:900,blockedBy:[]},
+    {number:950,title:"deploy failed",state:"OPEN",status:"Backlog",priority:"Blocker",size:"XS",sprintId:null,sprintTitle:null,labels:["alert","lead:tim"],isParent:false,parent:null,blockedBy:[]}
+  ]'
+} > "$F_ADOPT_BEFORE_NEXT/project_items.seq"
 echo '[{"number":950}]' > "$F_ADOPT_BEFORE_NEXT/gh_issue_list_label.json"
-echo '["lead:tim"]' > "$F_ADOPT_BEFORE_NEXT/gh_issue_labels.901.json"
-printf 'WT901' > "$F_ADOPT_BEFORE_NEXT/orca_worktree_path.issue:901.json"
+echo '["alert","lead:tim"]' > "$F_ADOPT_BEFORE_NEXT/gh_issue_labels.950.json"
+printf 'WT950' > "$F_ADOPT_BEFORE_NEXT/orca_worktree_path.issue:950.json"
 echo '{"result":{"wait":{"satisfied":true}}}' > "$F_ADOPT_BEFORE_NEXT/orca_terminal_wait_idle.json"
-"$JQ" -n -c --arg u1 "$(role8 quentin 901)" --arg u2 "$(role8 tim 901)" '
+"$JQ" -n -c --arg u1 "$(role8 quentin 950)" --arg u2 "$(role8 tim 950)" '
   [
-    {handle:"hq",title:("✳ bc-quentin #901 (" + $u1 + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0},
-    {handle:"ht",title:("✳ bc-tim #901 (" + $u2 + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0}
-  ]' > "$F_ADOPT_BEFORE_NEXT/orca_terminals.WT901.json"
-check_out "adopt-alerts+next: exit 0, dispatched both leads to the real pick" 0 \
-  "starting-dev-cycle started dev cycle, dispatched quentin,tim on #901" \
+    {handle:"hq",title:("✳ bc-quentin #950 (" + $u1 + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0},
+    {handle:"ht",title:("✳ bc-tim #950 (" + $u2 + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0}
+  ]' > "$F_ADOPT_BEFORE_NEXT/orca_terminals.WT950.json"
+check_out "adopt-alerts+next: exit 0, dispatched both leads to the alert, not #901" 0 \
+  "starting-dev-cycle started dev cycle, dispatched quentin,tim on #950" \
   run "$F_ADOPT_BEFORE_NEXT" "$NOW_MIDSPRINT"
-check "adopt-alerts: adopted the off-board alert (Backlog, Priority, Size)" 0 \
+check "adopt-alerts: reasserted the alert (Backlog, Priority, Size)" 0 \
   log_has "$F_ADOPT_BEFORE_NEXT/calls.log" '^project_set_single 950 Status Backlog$'
+check "next: never touched #901 -- the alert outranked it" 1 \
+  log_has "$F_ADOPT_BEFORE_NEXT/calls.log" '(^| )901( |$)'
 check "adopt-alerts: ran, and finished, before next's own pick reached the board" 0 \
-  line_before "$F_ADOPT_BEFORE_NEXT/calls.log" '^project_set_single 950 Size XS$' '^project_set_iteration 901 cd18e696$'
+  line_before "$F_ADOPT_BEFORE_NEXT/calls.log" '^project_set_single 950 Size XS$' '^project_set_iteration 950 cd18e696$'
 
 # =============================================================================
 echo
@@ -367,6 +381,7 @@ F_ADOPT_BROKEN="$(fake_dir)"
 write_iterations "$F_ADOPT_BROKEN"
 echo '[]' > "$F_ADOPT_BROKEN/project_items.json"
 echo '[{"number":960}]' > "$F_ADOPT_BROKEN/gh_issue_list_label.json"
+printf 'PVTI_960\n' > "$F_ADOPT_BROKEN/project_item.json"
 echo 2 > "$F_ADOPT_BROKEN/project_set_single.exit"
 check_out "adopt-alerts failing -> broken, exit 2, before next ever runs" 2 \
   "starting-dev-cycle broken could not adopt alerts onto the board" \

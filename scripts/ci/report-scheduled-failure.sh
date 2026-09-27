@@ -22,10 +22,17 @@
 #
 # Requires GH_TOKEN and GITHUB_REPOSITORY (both already exported by every
 # GitHub Actions job), and GITHUB_SERVER_URL/GITHUB_RUN_ID when the caller
-# wants the run URL folded into <body> itself (it usually should be). The
-# label requires `alert` to already exist in the repo -- run
-# agentic-team/scripts/setup-github.sh (idempotent) once, ahead of the
-# first run that could need it.
+# wants the run URL folded into <body> itself (it usually should be).
+#
+# Quentin's direction, cycle 1: the label the create path needs must never
+# depend on someone having run `setup-github.sh` by hand first -- that is a
+# code path nobody tests, and the first real failure after a fresh repo (or
+# a label deleted by hand) would otherwise abort on an unknown label and
+# file NOTHING, worse than no triage at all. So this script makes its own
+# labels exist first, `gh label create --force` (idempotent: a no-op colour/
+# description overwrite when the label is already there, same as
+# setup-github.sh's own `gh_label_create`), same colour/description as
+# setup-github.sh's own `LABEL_DEFS` entries.
 set -euo pipefail
 
 [ "$#" -eq 2 ] || { echo "report-scheduled-failure: usage: report-scheduled-failure.sh <title> <body>" >&2; exit 1; }
@@ -40,6 +47,12 @@ if [ -n "$EXISTING" ]; then
   gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body "$BODY"
   echo "report-scheduled-failure: commented on existing issue #$EXISTING" >&2
 else
+  gh label create alert --repo "$GITHUB_REPOSITORY" --color e11d21 \
+    --description "A CI-filed failure report; adopt-alerts puts it on the board as a Blocker" --force \
+    || { echo "report-scheduled-failure: could not create the 'alert' label" >&2; exit 1; }
+  gh label create lead:tim --repo "$GITHUB_REPOSITORY" --color 5319e7 \
+    --description "In scope for Tim (Tech Lead) review" --force \
+    || { echo "report-scheduled-failure: could not create the 'lead:tim' label" >&2; exit 1; }
   gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY" --label alert,lead:tim
   echo "report-scheduled-failure: filed a new tracking issue" >&2
 fi

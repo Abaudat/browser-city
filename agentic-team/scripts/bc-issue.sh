@@ -52,12 +52,15 @@
 # workflow's failure, labelled `alert`, and stops there -- CI's own token has
 # no `project` scope and none should ever be handed to it, so it can never
 # score or scope the issue itself. adopt-alerts is the other half: every
-# open `alert` issue not yet a project item is added, Backlog/Blocker/XS, in
-# that order, so `next` -- unchanged -- picks it ahead of every Critical
-# story the moment it lands. It touches nothing already on the board, so an
-# alert already triaged (In progress, or moved off Backlog by hand) is never
-# dragged back, which is what makes a re-run, or a tick that crashes
-# mid-loop, safe.
+# open `alert` issue is asserted Backlog/Blocker/XS, in that order, so `next`
+# -- unchanged -- picks it ahead of every Critical story the moment it
+# lands. The key is Status, never "already a project item": a tick that
+# crashes between adding the item and its first field write leaves an
+# alert on the board with no Status at all, and one crash later leaves it
+# Backlog with no Priority -- both invisible to `next` or ranked last, so
+# both are re-asserted (the writes are idempotent). Only an alert triaged
+# PAST Backlog (In progress, or moved off Backlog by hand) is left alone,
+# which is what makes a re-run, or a tick that crashes mid-loop, safe.
 #
 # `epic-context` and `amend-story` serve judging-task-request, where a lead
 # has asked mid-review for work its PR cannot carry. epic-context is the read
@@ -340,17 +343,32 @@ adopt-alerts)
   items="$(project_items)" || { echo "bc-issue adopt-alerts: could not read project items" >&2; exit 2; }
   numbers="$(printf '%s' "$alerts" | "$JQ" -c '[.[].number] | sort')" \
     || { echo "bc-issue adopt-alerts: malformed alert list" >&2; exit 2; }
-  onboard="$(printf '%s' "$items" | "$JQ" -c '[.[].number]')"
 
   count="$(printf '%s' "$numbers" | "$JQ" 'length')"
   i=0
   while [ "$i" -lt "$count" ]; do
     n="$(printf '%s' "$numbers" | "$JQ" -r --argjson i "$i" '.[$i]')"
     i=$((i + 1))
-    if printf '%s' "$onboard" | "$JQ" -e --argjson n "$n" 'index($n) != null' >/dev/null 2>&1; then
+    # Quentin's direction, cycle 1: "already a project item" is not
+    # "already triaged" -- a tick that crashes between project_item and the
+    # Status write leaves an alert on the board with no Status (or, one
+    # crash later, Backlog with no Priority) -- invisible to `next`
+    # (pool is status=="Backlog") or ranked last (a null Priority). Only an
+    # alert triaged PAST Backlog (In progress, Leads review, Reviewed,
+    # Done, or anything else) is left alone; off-board, or on-board with
+    # Status null/Backlog, is (re-)asserted -- the three writes are
+    # idempotent, so redoing them on an already-Backlog alert is cheap.
+    onboard="$(printf '%s' "$items" | "$JQ" -e --argjson n "$n" 'any(.[]; .number == $n)' 2>/dev/null)" || onboard=false
+    status="$(printf '%s' "$items" | "$JQ" -r --argjson n "$n" '(map(select(.number==$n)) | .[0].status) // "null"')"
+    if [ "$onboard" = "true" ] && [ "$status" != "null" ] && [ "$status" != "Backlog" ]; then
       continue
     fi
-    project_item "$n" >/dev/null
+    if [ "$onboard" != "true" ]; then
+      # Its own check and its own message: a failed item-add must never
+      # surface as a misleading "failed to set Status" (Quentin's direction).
+      project_item "$n" >/dev/null \
+        || { echo "bc-issue adopt-alerts: could not add #$n to the board" >&2; exit 2; }
+    fi
     project_set_single "$n" Status Backlog \
       || { echo "bc-issue adopt-alerts: failed to set Status for #$n" >&2; exit 2; }
     project_set_single "$n" Priority Blocker \

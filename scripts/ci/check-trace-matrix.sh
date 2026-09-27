@@ -616,6 +616,12 @@ cell_has_test_path() {
     case "$p" in
       *.test.ts | *.spec.ts) return 0 ;;
       scripts/*/tests/*.sh) return 0 ;;
+      # Story 4.19 (Quentin's direction, cycle 1): the agentic team's own
+      # process suite lives one level shallower than the game's own
+      # scripts/*/tests/ shape (agentic-team/scripts/tests/, not
+      # agentic-team/scripts/*/tests/) -- its own arm, not a rename of the
+      # one above, which real game guards still cite.
+      agentic-team/scripts/tests/*.sh) return 0 ;;
     esac
   done
   return 1
