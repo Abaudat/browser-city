@@ -173,7 +173,14 @@ else
   # --- story 4.18: the backup job's own checkout must fetch full history,
   # never the actions/checkout default (a shallow, depth-1 clone) --
   # export-world.sh cannot see which commit is actually live without it --
-  FETCH_DEPTH_LINE="$(printf '%s\n' "$BACKUP_BLOCK" | grep -E 'fetch-depth:' | head -n1 || true)"
+  # Anchored to a real YAML mapping line (only leading whitespace before
+  # the key) -- never a comment: deploy.yml's own checkout step has a
+  # comment right above it explaining *why* fetch-depth is 0, itself
+  # containing the literal text "fetch-depth: 0 (story 4.18), never 1:
+  # ...", and an unanchored grep matched that comment first (it comes
+  # first in the file), parsing the rest of that sentence as though it
+  # were the value.
+  FETCH_DEPTH_LINE="$(printf '%s\n' "$BACKUP_BLOCK" | grep -E '^[[:space:]]*fetch-depth:' | head -n1 || true)"
   FETCH_DEPTH_VALUE="$(printf '%s' "$FETCH_DEPTH_LINE" | sed -E 's/.*fetch-depth:[[:space:]]*//')"
   if [ -z "$FETCH_DEPTH_LINE" ] || [ "$FETCH_DEPTH_VALUE" != "0" ]; then
     echo "check-deploy-workflow: FAIL -- 'backup' job's checkout is shallow (fetch-depth: ${FETCH_DEPTH_VALUE:-1, the actions/checkout default}) -- scripts/ops/export-world.sh needs the schema snapshot's full git history to find which commit is actually live (story 4.18); use fetch-depth: 0" >&2

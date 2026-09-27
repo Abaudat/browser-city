@@ -221,6 +221,22 @@ check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'"
 
 check "the good workflow's own fetch-depth: 0 passes (not a false FAIL)" 0 bash "$CHECK" "$WF"
 
+D13="$(fake_dir)"; write_good_workflow "$D13/deploy.yml"
+# A comment mentioning fetch-depth in prose, right above the real key --
+# must never be what the check reads (regression: PR #345's own CI run
+# hit exactly this, a comment explaining *why* fetch-depth is 0
+# containing the literal text "fetch-depth: 1 (a shallow default)" ahead
+# of the real, correct "fetch-depth: 0" key).
+sed -i "/fetch-depth: 0/i\\      # fetch-depth: 1 (a shallow default) would be wrong here, see below" "$D13/deploy.yml"
+check "a comment mentioning a different fetch-depth in prose is ignored -- the real key still passes" 0 bash "$CHECK" "$D13/deploy.yml"
+
+D14="$(fake_dir)"; write_good_workflow "$D14/deploy.yml"
+sed -i 's/fetch-depth: 0/fetch-depth: 1/' "$D14/deploy.yml"
+sed -i "/fetch-depth: 1/i\\      # fetch-depth: 0 (a comment, not the real key)" "$D14/deploy.yml"
+OUT="$(bash "$CHECK" "$D14/deploy.yml" 2>&1)"; CODE=$?
+check "a comment mentioning fetch-depth: 0 in prose never masks a real, shallow fetch-depth: 1" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
 D8="$(fake_dir)"
 cat > "$D8/deploy.yml" <<'YAML'
 name: deploy
