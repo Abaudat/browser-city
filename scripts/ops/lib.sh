@@ -150,49 +150,82 @@ bc_table_names() {
 # bc_snapshot_candidates <out-dir> <repo-root> <worktree-snapshot-path> --
 # writes candidate schema snapshot files into <out-dir>/0, <out-dir>/1, ...
 # and a matching <out-dir>/labels.txt (one "<index>\t<label>" line per
-# candidate, in the same newest-to-oldest order printed to stdout).
-# Candidate 0 is always <worktree-snapshot-path>'s own current content
-# (label 'worktree') -- a human's own uncommitted change included, so a
-# local instance one edit ahead of its own last publish still resolves.
-# Candidates 1.. are every first-parent ancestor of <repo-root>'s HEAD that
-# changed server/schema.snapshot.json, newest first (label: that commit's
-# own sha) -- `check-schema-additive.sh`'s append-only rule is what makes
-# this walk meaningful at all: table names plus column names identify
-# exactly one point on that history (story 4.18, Tim's direction).
+# candidate, in the same newest-to-oldest order printed to stdout), plus
+# <out-dir>/shallow ('true'/'false'/'non-git').
+#
+# A worktree candidate (label 'worktree', <worktree-snapshot-path>'s own
+# current content) is emitted *only* when it actually differs from HEAD's
+# own committed content -- a human's own uncommitted edit against a local
+# instance. When the working tree is clean (every real caller in CI: the
+# checkout is never dirty), there is nothing distinct about it to name
+# `schema_commit` after, so it is never emitted at all (Quentin's
+# direction, cycle 1): naming it 'worktree' in the common case -- live
+# equals HEAD, every nightly export after a successful deploy, every
+# redeploy -- pointed the README's own recovery sentence at nothing.
+#
+# Every first-parent ancestor of <repo-root>'s HEAD that changed
+# server/schema.snapshot.json is a further candidate, newest first (label:
+# that commit's own sha) -- `check-schema-additive.sh`'s append-only rule
+# is what makes this walk meaningful at all: table names plus column names
+# identify exactly one point on that history (story 4.18, Tim's
+# direction). Never partial: a candidate whose `git show` fails (the path
+# did not exist yet at that commit) is skipped, not aborted on.
+#
+# <out-dir>/shallow: 'non-git' if <repo-root> is not a git checkout at
+# all (only the worktree candidate exists, unconditionally, dirty or not
+# -- there is no HEAD to compare it against or walk history from); 'true'
+# if it is a *shallow* git checkout (`git rev-parse --is-
+# shallow-repository`) -- git treats a shallow clone's own boundary commit
+# as introducing every file, so `git log --first-parent -- <path>` prints
+# exactly that one commit even when it never really touched the file
+# (confirmed empirically, Quentin's direction, cycle 1): a live database
+# that is perfectly healthy then gets a plain "does not match" instead of
+# "fetch full history", the one case this flag exists to name distinctly;
+# 'false' otherwise. The `rev-parse --is-inside-work-tree` probe below
+# never swallows stderr (Quentin's direction): a real git failure other
+# than "not a repository" (a container's "detected dubious ownership"
+# refusal, for one) must be visible in the caller's own log, not silently
+# misread as "non-git checkout".
 #
 # Story 4.18: export-world.sh matches the *live* database against this
 # list to find which commit's schema is actually live, never a record it
 # would then have to keep consistent -- see world_backup's `select-schema`.
 #
-# Never partial: a candidate whose `git show` fails (the path did not
-# exist yet at that commit) is skipped, not aborted on.
-#
-# BC_SNAPSHOT_CANDIDATES_DIR, if set, replaces this whole function with a
-# plain copy of that directory's own files (0, 1, ... and labels.txt) --
-# documented, test-only: scripts/ops/tests/test-export-world.sh's stub
-# suite has no real git history of its own to walk, and needs a fully
-# controlled candidate list to pin specific match/mismatch scenarios.
-# Production (export-world.sh run for real, .github/workflows/deploy.yml,
-# .github/workflows/backup.yml) and scripts/ci/check-backup-restore.sh's
-# AC3 proof never set it -- the git-backed path below is what they
-# exercise, and it has its own dedicated test
-# (scripts/ops/tests/test-bc-snapshot-candidates.sh), against a real,
-# throwaway git repo.
+# No test-only override (Tim's direction, cycle 1): the git-backed walk
+# below is the only path, exercised directly by its own dedicated test
+# (scripts/ops/tests/test-bc-snapshot-candidates.sh, against a real
+# throwaway git repo, including a real `--depth 1` shallow clone) and end
+# to end by scripts/ci/check-backup-restore.sh against a real instance.
 bc_snapshot_candidates() {
   local out_dir="$1" repo_root="$2" worktree_snapshot="$3"
   mkdir -p "$out_dir"
-  if [ -n "${BC_SNAPSHOT_CANDIDATES_DIR:-}" ]; then
-    cp "$BC_SNAPSHOT_CANDIDATES_DIR"/* "$out_dir"/
+  : > "$out_dir/labels.txt"
+
+  if ! git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null; then
+    printf 'non-git' > "$out_dir/shallow"
+    cp "$worktree_snapshot" "$out_dir/0"
+    printf '0\tworktree\n' >> "$out_dir/labels.txt"
     cat "$out_dir/labels.txt"
     return 0
   fi
-  cp "$worktree_snapshot" "$out_dir/0"
-  printf '0\tworktree\n' > "$out_dir/labels.txt"
-  if ! git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    cat "$out_dir/labels.txt"
-    return 0
+
+  if [ "$(git -C "$repo_root" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+    printf 'true' > "$out_dir/shallow"
+  else
+    printf 'false' > "$out_dir/shallow"
   fi
-  local i=1 sha
+
+  local i=0
+  local head_content worktree_content
+  head_content="$(git -C "$repo_root" show HEAD:server/schema.snapshot.json 2>/dev/null || true)"
+  worktree_content="$(cat "$worktree_snapshot" 2>/dev/null || true)"
+  if [ "$head_content" != "$worktree_content" ]; then
+    cp "$worktree_snapshot" "$out_dir/0"
+    printf '0\tworktree\n' >> "$out_dir/labels.txt"
+    i=1
+  fi
+
+  local sha
   while IFS= read -r sha; do
     [ -n "$sha" ] || continue
     if git -C "$repo_root" show "$sha:server/schema.snapshot.json" > "$out_dir/$i" 2>/dev/null; then

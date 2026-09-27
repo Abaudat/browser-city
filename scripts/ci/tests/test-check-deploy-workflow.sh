@@ -51,6 +51,30 @@ fresh_workflow() {
   printf '%s' "$d/deploy.yml"
 }
 
+write_good_backup_workflow() { # <path>
+  cat > "$1" <<'YAML'
+name: backup
+on:
+  workflow_dispatch:
+jobs:
+  export:
+    name: export
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: bash scripts/ops/export-world.sh "$DB" /tmp/export --server maincloud
+YAML
+}
+
+fresh_backup_workflow() {
+  local d
+  d="$(fake_dir)"
+  write_good_backup_workflow "$d/backup.yml"
+  printf '%s' "$d/backup.yml"
+}
+
 WF="$(fresh_workflow)"
 check "a well-formed deploy.yml passes" 0 bash "$CHECK" "$WF"
 
@@ -236,6 +260,52 @@ sed -i "/fetch-depth: 1/i\\      # fetch-depth: 0 (a comment, not the real key)"
 OUT="$(bash "$CHECK" "$D14/deploy.yml" 2>&1)"; CODE=$?
 check "a comment mentioning fetch-depth: 0 in prose never masks a real, shallow fetch-depth: 1" 1 bash -c "exit $CODE"
 check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
+echo
+echo "story 4.18 (Quentin's/Tim's cycle-1 direction): backup.yml's own export job checkout must not be shallow either -- the second real caller of export-world.sh, previously unguarded"
+BF="$(fresh_backup_workflow)"
+check "a well-formed backup.yml (fetch-depth: 0) passes, alongside the good deploy.yml" 0 bash "$CHECK" "$WF" "$BF"
+
+D15="$(fake_dir)"; write_good_backup_workflow "$D15/backup.yml"
+sed -i 's/fetch-depth: 0/fetch-depth: 1/' "$D15/backup.yml"
+OUT="$(bash "$CHECK" "$WF" "$D15/backup.yml" 2>&1)"; CODE=$?
+check "fetch-depth: 1 on backup.yml's export job fails" 1 bash -c "exit $CODE"
+check "names the reason, and the job/file" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"'export' job's checkout in $D15/backup.yml is shallow\"" _ "$OUT"
+
+D16="$(fake_dir)"
+cat > "$D16/backup.yml" <<'YAML'
+name: backup
+on:
+  workflow_dispatch:
+jobs:
+  export:
+    name: export
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/ops/export-world.sh "$DB" /tmp/export --server maincloud
+YAML
+OUT="$(bash "$CHECK" "$WF" "$D16/backup.yml" 2>&1)"; CODE=$?
+check "backup.yml's export job with no fetch-depth at all fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
+D17="$(fake_dir)"
+cat > "$D17/backup.yml" <<'YAML'
+name: backup
+on:
+  workflow_dispatch:
+jobs:
+  rehearsal:
+    name: rehearsal
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo no export job here
+YAML
+OUT="$(bash "$CHECK" "$WF" "$D17/backup.yml" 2>&1)"; CODE=$?
+check "a backup.yml with no 'export:' job at all fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"has no 'export:' job\"" _ "$OUT"
+
+check "a missing backup.yml path fails" 1 bash "$CHECK" "$WF" "$(fake_dir)/nope-backup.yml"
 
 D8="$(fake_dir)"
 cat > "$D8/deploy.yml" <<'YAML'

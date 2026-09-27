@@ -29,14 +29,18 @@
 # by the table's real primary key -- server/tools/world_backup) for every
 # table, plus manifest.json (CLI version, the *selected* schema snapshot's
 # own sha256 and the git commit it was selected from -- `schema_commit`,
-# `worktree` for the working-tree snapshot itself -- the database
-# identity, the exporting identity, per-table row counts and per-file
-# sha256, and every auto_inc table's own `sequence_floors` -- `st_sequence.
-# allocated` at export time, a safe upper bound restore-world.sh advances
-# each sequence past, so a restore never re-issues an id the source ever
-# handed out, not merely the highest one still present in the export).
-# Every value passes through world_backup, never `jq` -- see that crate's
-# module doc for why (u64/chunk_key precision).
+# a real commit sha in every normal case; `worktree` only when the
+# checkout's own working-tree copy of server/schema.snapshot.json is
+# itself the selected one *and* differs from HEAD's own committed
+# version (a human's own uncommitted edit against a local instance) --
+# the database identity, the exporting identity, per-table row counts and
+# per-file sha256, and every auto_inc table's own `sequence_floors` --
+# `st_sequence.allocated` at export time, a safe upper bound
+# restore-world.sh advances each sequence past, so a restore never
+# re-issues an id the source ever handed out, not merely the highest one
+# still present in the export). Every value passes through world_backup,
+# never `jq` -- see that crate's module doc for why (u64/chunk_key
+# precision).
 #
 # Atomic: builds in <out-dir>.partial, then rename-swaps into place. A
 # failed or half-written export never looks like one at the final path
@@ -108,20 +112,31 @@ while IFS=$'\t' read -r idx label; do
   CANDIDATE_SHAPE_FILES+=("$CANDIDATES_DIR/$idx.shape")
   CANDIDATE_COUNT=$((CANDIDATE_COUNT + 1))
 done <<< "$LABELS"
-[ "$CANDIDATE_COUNT" -ge 1 ] || bc_ops_die "$SCRIPT" "bc_snapshot_candidates produced no candidates at all -- $BC_SNAPSHOT should always be candidate 0"
+[ "$CANDIDATE_COUNT" -ge 1 ] || bc_ops_die "$SCRIPT" "bc_snapshot_candidates produced no candidates at all -- $BC_SNAPSHOT should always be reachable, at least as the worktree candidate"
+SHALLOW="$(cat "$CANDIDATES_DIR/shallow" 2>/dev/null || echo false)"
 
 SELECT_LOG="$TMP_DIR/.select.err"
 if ! WINNER="$(bc_wb select-schema "$LIVE_SHAPE_FILE" "${CANDIDATE_SHAPE_FILES[@]}" 2>"$SELECT_LOG")"; then
   REASON="$(cat "$SELECT_LOG")"
-  if [ "$CANDIDATE_COUNT" -eq 1 ]; then
-    # Distinct from a real mismatch (Tim's direction): a non-git checkout,
-    # or a shallow one where no first-parent ancestor of HEAD is even
-    # visible, must never read as "the live database is at the wrong
-    # schema" -- it may well be at the right one, several commits back,
-    # this checkout simply cannot see that far.
-    bc_ops_die "$SCRIPT" "only 1 snapshot in history ($BC_SNAPSHOT, worktree) -- a shallow checkout or a non-git one? fetch full history (fetch-depth: 0) to see the live schema. $REASON"
-  fi
-  bc_ops_die "$SCRIPT" "'$DB' $REASON (checked $CANDIDATE_COUNT candidate snapshot(s), newest: $BC_SNAPSHOT)"
+  # Distinct from a real mismatch (Tim's/Quentin's direction, cycle 1):
+  # keyed on the repo's own real shallow-ness (`git rev-parse --is-
+  # shallow-repository`), never on how many candidates came out -- a
+  # shallow clone whose HEAD happens to have touched the snapshot still
+  # yields more than one candidate (the boundary commit plus, sometimes,
+  # a dirty worktree), and a live database that is perfectly healthy must
+  # never read as "does not match" just because this checkout cannot see
+  # far enough back to prove it.
+  case "$SHALLOW" in
+    non-git)
+      bc_ops_die "$SCRIPT" "not a git checkout ($BC_REPO_ROOT) -- only the working-tree snapshot ($BC_SNAPSHOT) is a candidate, and it does not match the live database. $REASON"
+      ;;
+    true)
+      bc_ops_die "$SCRIPT" "shallow checkout ($CANDIDATE_COUNT commit(s) visible) -- fetch full history (fetch-depth: 0) to see the live schema. $REASON"
+      ;;
+    *)
+      bc_ops_die "$SCRIPT" "'$DB' $REASON (checked $CANDIDATE_COUNT candidate snapshot(s), newest: $BC_SNAPSHOT)"
+      ;;
+  esac
 fi
 
 SELECTED_SNAPSHOT="$CANDIDATES_DIR/${CANDIDATE_INDEXES[$WINNER]}"
@@ -129,11 +144,24 @@ SELECTED_LABEL="${CANDIDATE_LABELS[$WINNER]}"
 SNAPSHOT_TABLES="$LIVE_TABLES"
 
 # --- notice, right in this step's own log: which commit is live, and what
-# this deploy is about to add relative to it (Tim's direction: the deploy
-# log says what happened without anyone having to read the export) -------
+# this deploy is about to add relative to it -- every added table, and
+# every added column on a table both sides already have (Quentin's
+# direction, cycle 1: a column-only deploy is exactly the case an operator
+# reading only the table list would see nothing at all) -- so the deploy
+# log says what happened without anyone having to read the export -------
 INCOMING_TABLES="$(bc_table_names "$BC_SNAPSHOT" all | sort)"
 ADDED_TABLES="$(comm -23 <(printf '%s\n' "$INCOMING_TABLES") <(printf '%s\n' "$SNAPSHOT_TABLES"))"
-echo "::notice::export-world: live schema is $SELECTED_LABEL -- table(s) this deploy adds: [${ADDED_TABLES//$'\n'/, }]" >&2
+ADDED_COLUMNS=""
+while IFS= read -r table; do
+  [ -n "$table" ] || continue
+  INC_COLS="$(bc_wb snapshot-columns "$BC_SNAPSHOT" "$table" | sort)"
+  SEL_COLS="$(bc_wb snapshot-columns "$SELECTED_SNAPSHOT" "$table" | sort)"
+  TABLE_ADDED="$(comm -23 <(printf '%s\n' "$INC_COLS") <(printf '%s\n' "$SEL_COLS"))"
+  [ -n "$TABLE_ADDED" ] || continue
+  [ -n "$ADDED_COLUMNS" ] && ADDED_COLUMNS="$ADDED_COLUMNS; "
+  ADDED_COLUMNS="${ADDED_COLUMNS}${table}: [${TABLE_ADDED//$'\n'/, }]"
+done <<< "$(comm -12 <(printf '%s\n' "$INCOMING_TABLES") <(printf '%s\n' "$SNAPSHOT_TABLES"))"
+echo "::notice::export-world: live schema is $SELECTED_LABEL -- table(s) this deploy adds: [${ADDED_TABLES//$'\n'/, }] -- column(s) this deploy adds: $ADDED_COLUMNS" >&2
 
 declare -A ROW_COUNTS
 TABLES_JSON="$TMP_DIR/.tables.json"

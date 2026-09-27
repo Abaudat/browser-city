@@ -57,12 +57,15 @@
 #      with no restore open, and `restore_module_owner` given a row
 #      whose owner is not the caller.
 #
-# Story 4.18's own AC3, in this same instance: export-world.sh, run for
-# real from a disposable git worktree one commit ahead of the real one (an
+# Story 4.18's own AC3, in this same instance: the ordinary export against
+# '$SRC' above (this checkout, live == HEAD) already proves schema_commit
+# is a real commit sha, never 'worktree'; export-world.sh, run for real
+# from a disposable git worktree one commit ahead of the real one (an
 # invented table, then a column), still exports the live database
 # cleanly, selecting the real, unmodified schema -- and a checkout whose
-# only candidate is a superset, or a database at a completely foreign
-# schema, still refuses, naming what does not match.
+# only candidate is a superset, a database at a completely foreign schema,
+# or a real `--depth 1` shallow clone, all still refuse, each naming why
+# distinctly (missing/extra tables; a shallow checkout, named as such).
 set -uo pipefail
 SCRIPT="check-backup-restore"
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -201,6 +204,20 @@ ok "'floor_transition' seeded with real id gaps (one deleted row, one ~${GAP_N}-
 EXPORT_A="$WORK/export-a"
 bash "$OPS/export-world.sh" "$SRC" "$EXPORT_A" --server "$SERVER_URL" >"$DATA_DIR/export-a.log" 2>&1 || fail "export-world.sh failed on '$SRC'" "$DATA_DIR/export-a.log"
 
+# story 4.18 (Quentin's direction, cycle 1): '$SRC' is published from this
+# very checkout, so this export's own manifest.json is exactly
+# backup.yml's nightly case -- live equals HEAD -- and its schema_commit
+# must be the real commit that last touched server/schema.snapshot.json,
+# never 'worktree' (a clean checkout's working tree is byte-identical to
+# HEAD's own committed snapshot, so it is never emitted as a distinct
+# candidate at all -- see bc_snapshot_candidates). One grep on an export
+# this file already produces, no second export needed.
+PRE_FAKE_SHA="$(git -C "$REPO_ROOT" log --first-parent --format=%H HEAD -- server/schema.snapshot.json | head -n1)"
+[ -n "$PRE_FAKE_SHA" ] || fail "could not resolve the commit that last touched server/schema.snapshot.json"
+EXPORT_A_COMMIT="$(grep -oE '"schema_commit": *"[^"]*"' "$EXPORT_A/manifest.json" | sed -E 's/.*"([^"]*)"$/\1/')"
+[ "$EXPORT_A_COMMIT" = "$PRE_FAKE_SHA" ] || fail "expected export A's (this checkout, live == HEAD -- exactly backup.yml's nightly-after-a-successful-deploy case) manifest.json schema_commit to be $PRE_FAKE_SHA, got '$EXPORT_A_COMMIT' -- a clean checkout must never record 'worktree'"
+ok "export A's schema_commit ($EXPORT_A_COMMIT) is the real live commit, not 'worktree', even though live == HEAD"
+
 DST=bc-backup-dst
 publish "$DST" "$DATA_DIR/dst-publish.log" || fail "could not publish '$DST'" "$DATA_DIR/dst-publish.log"
 BC_RESTORE_BATCH_BYTES=4000 bash "$OPS/restore-world.sh" "$DST" "$EXPORT_A" --server "$SERVER_URL" >"$DATA_DIR/restore.log" 2>&1 \
@@ -249,19 +266,21 @@ ac3_worktree() { # <dir> -- a disposable, detached worktree of $REPO_ROOT
                  # scratch.
   git -C "$REPO_ROOT" worktree add -q --detach "$1" HEAD \
     || fail "could not add a disposable git worktree at '$1'"
-  ln -s "$REPO_ROOT/server/target" "$1/server/target" 2>/dev/null || true
+  # A silently-degraded symlink (`|| true`) would pay for a from-scratch
+  # world_backup build inside the worktree instead -- the exact time-
+  # budget failure this symlink exists to prevent (Tim's direction, cycle
+  # 1) -- so a checkout that cannot share the target dir (no symlink
+  # support) must say so loudly, not quietly eat the cost.
+  ln -s "$REPO_ROOT/server/target" "$1/server/target" \
+    || fail "could not symlink server/target into the disposable worktree '$1' -- world_backup would otherwise rebuild from scratch there"
 }
 ac3_commit() { # <dir> <message> -- commits every modified tracked file.
   git -C "$1" -c user.email="ci@example.com" -c user.name="ci" commit -q -am "$2" \
     || fail "could not commit '$2' in the disposable worktree '$1'"
 }
 
-# The commit the fix must select once a fixture commit lands on top of it
-# -- the newest commit that actually touched server/schema.snapshot.json,
-# never merely HEAD's own sha: a real HEAD often has commits ahead of the
-# schema's own last change (exactly this cycle's own commit, for one).
-PRE_FAKE_SHA="$(git -C "$REPO_ROOT" log --first-parent --format=%H HEAD -- server/schema.snapshot.json | head -n1)"
-[ -n "$PRE_FAKE_SHA" ] || fail "could not resolve the commit that last touched server/schema.snapshot.json"
+# PRE_FAKE_SHA (the commit the fix must select once a fixture commit lands
+# on top of it) was already resolved above, right after EXPORT_A.
 
 echo
 echo "story 4.18 AC3 (positive): the incoming commit adds a whole table AND a column -- export still finds and selects the real, live schema"
@@ -329,6 +348,29 @@ fi
 grep -qF "does not match" "$DATA_DIR/ac3-foreign.log" || fail "the foreign-schema refusal did not name the reason" "$DATA_DIR/ac3-foreign.log"
 grep -qF "fixture_row" "$DATA_DIR/ac3-foreign.log" || fail "the foreign-schema refusal did not name 'fixture_row' as extra" "$DATA_DIR/ac3-foreign.log"
 ok "a foreign schema (a different module's own database) still refuses, naming missing and extra tables"
+
+echo
+echo "story 4.18 AC3 (negative): a real --depth 1 shallow checkout names the reason distinctly, never a generic mismatch"
+# `git clone --depth 1 file://...`, never a bare local path -- a local-
+# path clone silently ignores --depth (confirmed empirically) and would
+# prove nothing here. Reuses '$FOREIGN' (already published, above): the
+# real shallow clone's own boundary commit (this repo's real, full
+# schema) still cannot match a database at a completely different
+# module's schema, so this is a real mismatch too -- the only thing under
+# test is which message export-world.sh gives for it.
+AC3_SHALLOW_CLONE="$WORK/ac3-shallow"
+git clone -q --depth 1 "file://$REPO_ROOT" "$AC3_SHALLOW_CLONE" >"$DATA_DIR/ac3-shallow-clone.log" 2>&1 \
+  || fail "could not create the --depth 1 fixture clone" "$DATA_DIR/ac3-shallow-clone.log"
+ln -s "$REPO_ROOT/server/target" "$AC3_SHALLOW_CLONE/server/target" \
+  || fail "could not symlink server/target into the shallow clone -- world_backup would otherwise rebuild from scratch there"
+AC3_SHALLOW_EXPORT="$WORK/ac3-shallow-export"
+if bash "$AC3_SHALLOW_CLONE/scripts/ops/export-world.sh" "$FOREIGN" "$AC3_SHALLOW_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/ac3-shallow.log" 2>&1; then
+  fail "export-world.sh succeeded against '$FOREIGN' from a --depth 1 shallow clone -- it must refuse (no real match exists)" "$DATA_DIR/ac3-shallow.log"
+fi
+grep -qF "shallow checkout" "$DATA_DIR/ac3-shallow.log" || fail "a real shallow checkout's own mismatch did not name itself distinctly ('shallow checkout') -- it read as a plain mismatch instead" "$DATA_DIR/ac3-shallow.log"
+grep -qF "fetch-depth: 0" "$DATA_DIR/ac3-shallow.log" || fail "the shallow-checkout refusal did not say how to fix it (fetch-depth: 0)" "$DATA_DIR/ac3-shallow.log"
+grep -qF "does not match" "$DATA_DIR/ac3-shallow.log" || fail "the shallow-checkout refusal still must name the underlying mismatch (missing/extra), not only the shallow diagnosis" "$DATA_DIR/ac3-shallow.log"
+ok "a real --depth 1 shallow checkout's own mismatch names itself distinctly ('shallow checkout', fetch-depth: 0), while still naming the underlying missing/extra tables"
 
 # --- 4: an overshoot rolls back the whole call, no partial row left ------
 FRESH_OVERSHOOT=bc-backup-overshoot

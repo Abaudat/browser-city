@@ -28,13 +28,7 @@ stub_bin() { # <mode>
   cat > "$d/spacetime" <<STUB
 #!/usr/bin/env bash
 MODE="$mode"
-# LIVE_SNAPSHOT (story 4.18): what the stub pretends is actually live --
-# defaults to the real committed snapshot (candidate 0 of the real git
-# walk always matches it immediately, so most modes below never need to
-# care), overridden by the new match/mismatch cases further down to a
-# fixture distinct from every candidate they inject via
-# BC_SNAPSHOT_CANDIDATES_DIR.
-SNAPSHOT="\${LIVE_SNAPSHOT:-$REPO_ROOT/server/schema.snapshot.json}"
+SNAPSHOT="$REPO_ROOT/server/schema.snapshot.json"
 if [ "\$1" = "--version" ]; then
   echo "spacetimedb tool version 2.9.0; spacetimedb-lib version 2.9.0;"
   exit 0
@@ -116,102 +110,6 @@ run_export() { # <mode> <out-dir> [env...]
   ( PATH="$bin:$PATH" env "$@" bash "$EXPORT" bc-test "$out" --server http://127.0.0.1:1 )
 }
 
-# --- story 4.18: a fully controlled candidate list, via
-# BC_SNAPSHOT_CANDIDATES_DIR (scripts/ops/lib.sh's own documented, test-
-# only override -- the real git-backed walk has its own dedicated test,
-# scripts/ops/tests/test-bc-snapshot-candidates.sh) ------------------------
-
-# widget_snapshot <extra-column> -- a minimal one-table snapshot, 'id'
-# always present, plus one more column when <extra-column> is non-empty.
-widget_snapshot() { # <extra-column>
-  local extra="$1" f
-  f="$(fake_dir)/widget.snapshot.json"
-  if [ -n "$extra" ]; then
-    cat > "$f" <<JSON
-{"tables":[{"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
-  {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false},
-  {"name":"$extra","ty":"i32","primary_key":false,"auto_inc":false,"unique":false,"has_default":true,"indexed":false}
-]}]}
-JSON
-  else
-    cat > "$f" <<JSON
-{"tables":[{"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
-  {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}
-]}]}
-JSON
-  fi
-  printf '%s' "$f"
-}
-
-# widget_plus_table_snapshot -- 'widget' (bare) plus a second table
-# 'gadget', for the "incoming commit adds a whole table" case.
-widget_plus_table_snapshot() {
-  local f
-  f="$(fake_dir)/widget-plus-gadget.snapshot.json"
-  cat > "$f" <<'JSON'
-{"tables":[
-  {"accessor":"gadget","struct_name":"Gadget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
-    {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}
-  ]},
-  {"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
-    {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}
-  ]}
-]}
-JSON
-  printf '%s' "$f"
-}
-
-# candidates_dir <newest-snapshot> <older-snapshot> -- an ordered override
-# directory: 0 (newest, labelled 'worktree') then 1 (older, labelled a
-# fake sha), exactly bc_snapshot_candidates' own contract.
-candidates_dir() { # <newest> <older>
-  local d
-  d="$(fake_dir)/candidates"
-  mkdir -p "$d"
-  cp "$1" "$d/0"
-  cp "$2" "$d/1"
-  printf '0\tworktree\n1\tfakeshaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n' > "$d/labels.txt"
-  printf '%s' "$d"
-}
-
-# zeta_snapshot -- a single table 'zeta', sharing no name with 'widget' or
-# 'gadget' -- for the "live matches no candidate at all" case.
-zeta_snapshot() {
-  local f
-  f="$(fake_dir)/zeta.snapshot.json"
-  cat > "$f" <<'JSON'
-{"tables":[{"accessor":"zeta","struct_name":"Zeta","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
-  {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}
-]}]}
-JSON
-  printf '%s' "$f"
-}
-
-# widget_plus_ghost_snapshot -- 'widget' plus 'ghost', a table no candidate
-# in these tests ever has -- for the "live has a table no candidate ever
-# had" case.
-widget_plus_ghost_snapshot() {
-  local f
-  f="$(fake_dir)/widget-plus-ghost.snapshot.json"
-  cat > "$f" <<'JSON'
-{"tables":[
-  {"accessor":"ghost","struct_name":"Ghost","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
-    {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}
-  ]},
-  {"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
-    {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}
-  ]}
-]}
-JSON
-  printf '%s' "$f"
-}
-
-# manifest_field <manifest.json> <field> -- the field's own string value,
-# grepped (never `jq` -- docs/architecture.md).
-manifest_field() {
-  grep -oE "\"$2\": *\"[^\"]*\"" "$1" | head -n1 | sed -E 's/.*"([^"]*)"$/\1/'
-}
-
 LOGDIR="$(fake_dir)"
 
 echo "green: a fully stubbed happy path writes a manifest and every table file"
@@ -274,60 +172,5 @@ bin="$(stub_bin ok)"
 CODE=$?
 check "typo'd flag -> exit non-zero" 1 bash -c "exit $CODE"
 check_contains "names the unrecognized argument" "unrecognized argument" "$(cat "$LOGDIR/out8.log")"
-
-echo
-echo "green: live equals an older candidate because the incoming commit adds a whole table"
-NEWEST_A="$(widget_plus_table_snapshot)"
-OLDER_A="$(widget_snapshot "")"
-CANDS_A="$(candidates_dir "$NEWEST_A" "$OLDER_A")"
-OUT="$(fake_dir)/export"
-run_export ok "$OUT" LIVE_SNAPSHOT="$OLDER_A" BC_SNAPSHOT_CANDIDATES_DIR="$CANDS_A" >"$LOGDIR/out9.log" 2>&1
-CODE=$?
-check "matches the older candidate -> exit 0" 0 bash -c "exit $CODE"
-GOT_COMMIT="$(manifest_field "$OUT/manifest.json" schema_commit)"
-check_contains "manifest.json's schema_commit is the older candidate's own label" "fakeshaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$GOT_COMMIT"
-GOT_SHA="$(manifest_field "$OUT/manifest.json" schema_sha256)"
-WANT_SHA="$(sha256sum "$OLDER_A" | awk '{print $1}' | sed 's/^\\//')"
-check_contains "manifest.json's schema_sha256 is the older candidate's own sha256, not the incoming commit's" "$WANT_SHA" "$GOT_SHA"
-
-echo
-echo "green: live equals an older candidate because the incoming commit adds a column"
-NEWEST_B="$(widget_snapshot "n")"
-OLDER_B="$(widget_snapshot "")"
-CANDS_B="$(candidates_dir "$NEWEST_B" "$OLDER_B")"
-OUT="$(fake_dir)/export"
-run_export ok "$OUT" LIVE_SNAPSHOT="$OLDER_B" BC_SNAPSHOT_CANDIDATES_DIR="$CANDS_B" >"$LOGDIR/out10.log" 2>&1
-CODE=$?
-check "matches the older candidate -> exit 0" 0 bash -c "exit $CODE"
-GOT_COMMIT_B="$(manifest_field "$OUT/manifest.json" schema_commit)"
-check_contains "manifest.json's schema_commit is the older candidate's own label" "fakeshaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$GOT_COMMIT_B"
-
-echo
-echo "red: live matches no candidate at all -- names missing and extra"
-NEWEST_C="$(widget_snapshot "")"
-OLDER_C="$(widget_plus_table_snapshot)"
-CANDS_C="$(candidates_dir "$NEWEST_C" "$OLDER_C")"
-LIVE_C="$(zeta_snapshot)"
-OUT="$(fake_dir)/export"
-run_export ok "$OUT" LIVE_SNAPSHOT="$LIVE_C" BC_SNAPSHOT_CANDIDATES_DIR="$CANDS_C" >"$LOGDIR/out11.log" 2>&1
-CODE=$?
-check "no candidate matches -> exit non-zero" 1 bash -c "exit $CODE"
-check_contains "names the mismatch" "does not match" "$(cat "$LOGDIR/out11.log")"
-check_contains "names 'widget' as missing (the newest candidate has it, live does not)" "widget" "$(cat "$LOGDIR/out11.log")"
-check_contains "names 'zeta' as extra (live has it, no candidate does)" "zeta" "$(cat "$LOGDIR/out11.log")"
-check "no file left at the final export path" 1 bash -c "[ -e '$OUT' ]"
-
-echo
-echo "red: live has a table no candidate ever had -- named as extra"
-NEWEST_D="$(widget_snapshot "")"
-OLDER_D="$(widget_snapshot "")"
-CANDS_D="$(candidates_dir "$NEWEST_D" "$OLDER_D")"
-LIVE_D="$(widget_plus_ghost_snapshot)"
-OUT="$(fake_dir)/export"
-run_export ok "$OUT" LIVE_SNAPSHOT="$LIVE_D" BC_SNAPSHOT_CANDIDATES_DIR="$CANDS_D" >"$LOGDIR/out12.log" 2>&1
-CODE=$?
-check "an extra live table disqualifies every candidate -> exit non-zero" 1 bash -c "exit $CODE"
-check_contains "names 'ghost' as extra" "ghost" "$(cat "$LOGDIR/out12.log")"
-check "no file left at the final export path" 1 bash -c "[ -e '$OUT' ]"
 
 summary

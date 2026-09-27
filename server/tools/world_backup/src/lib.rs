@@ -1271,10 +1271,11 @@ mod tests {
     fn select_schema_omits_a_column_diff_when_an_older_candidate_matches_that_tables_columns() {
         let live = shape_of(&[("widget", &["id", "weird"]), ("gadget", &["id"])]);
         // The newest candidate is missing 'gadget' entirely (so no overall
-        // match, and 'gadget' itself is reported as missing), and its own
-        // 'widget' columns differ from live's -- but an older candidate's
-        // 'widget' columns match live's exactly, so 'widget' must not be
-        // reported as a column diff (some candidate does accept it).
+        // match, and 'gadget' itself is reported as extra -- live has it,
+        // the newest candidate does not), and its own 'widget' columns
+        // differ from live's -- but an older candidate's 'widget' columns
+        // match live's exactly, so 'widget' must not be reported as a
+        // column diff (some candidate does accept it).
         let newest = shape_of(&[("widget", &["id"])]);
         let older = shape_of(&[("widget", &["id", "weird"])]);
         let candidates = vec![newest, older];
