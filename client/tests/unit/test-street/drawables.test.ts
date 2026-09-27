@@ -233,6 +233,10 @@ describe("the street scene's committed visibility (story 1.7 cycle 2, Quentin's 
       });
     for (const groundFloor of GROUND_FLOORS) {
       result[`ground:${groundFloor}`] = group(groundFloor, "ground");
+      // Story 15.8: mirrors `regen-golden.ts`'s own `ground_decals:<floor>`
+      // key -- the ground-decals pass is culled the same way the ground
+      // pass is.
+      result[`ground_decals:${groundFloor}`] = group(groundFloor, "ground");
     }
     for (const floor of flatFloors) {
       result[`ground_objects:${floor}`] = group(floor, "ground_objects");

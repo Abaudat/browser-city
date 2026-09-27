@@ -92,6 +92,12 @@ function visibilityAt(x: number, y: number, floor: number): Record<string, strin
     });
   for (const groundFloor of GROUND_FLOORS) {
     result[`ground:${groundFloor}`] = group(groundFloor, "ground");
+    // Story 15.8 (Quentin's cycle-1 finding): the ground-decals pass sits
+    // under every stack root exactly like the ground pass does, and must
+    // be culled the same way -- `defs/` has no dedicated layer code for
+    // it yet, so it carries the `ground` layer's own code, exactly like
+    // `scene.ts`'s `GROUND_DECALS_LAYER_CODE`.
+    result[`ground_decals:${groundFloor}`] = group(groundFloor, "ground");
   }
   for (const floor of flatFloors) {
     result[`ground_objects:${floor}`] = group(floor, "ground_objects");

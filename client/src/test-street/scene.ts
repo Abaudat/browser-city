@@ -45,11 +45,7 @@ import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName, passOfLayer } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
-import {
-  unmanagedChildren,
-  VisibilityApplier,
-  type VisibilityMember,
-} from "../render/pixi-visibility";
+import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
 import { floorOffsetPx, screenPositionPx, snapToScreenPx } from "../render/screen-position";
 import type { Drawable } from "../render/sort-key";
 import { fromSortUnits, toSortUnits } from "../render/sort-units";
@@ -126,6 +122,17 @@ const GROUND_OBJECTS_LAYER_CODE = layerCodeByName("ground_objects");
  * only floor culling ever applies to it; the layer code is purely
  * descriptive of what it draws. */
 const CROWD_LAYER_CODE = layerCodeByName("characters");
+
+/** `render/floor-stacks.ts`'s `groundDecals` pass has no dedicated layer
+ * code in `defs/`'s own table yet (only `ground`/`ground_objects` do) --
+ * its own synthetic `VisibilityDrawable` carries the `ground` layer's
+ * code instead, which `computeVisibility` never reads beyond "not
+ * `walls`" for a flat, ownerless member like this one (story 15.8,
+ * Quentin's finding: this pass sits under every stack root and must be
+ * culled exactly like `ground:<floor>` is, even while nothing is ever
+ * drawn on it yet -- registered, never deleted, so a future decal lands
+ * inside FR122's culling for free). */
+const GROUND_DECALS_LAYER_CODE = GROUND_LAYER_CODE;
 
 export interface MountStreetSceneOptions {
   /** Story 1.10: the fetched, parsed defs document -- needed to build the
@@ -1027,6 +1034,21 @@ export async function mountStreetScene(
   const crowdContainer = new Container();
   stacks.stackFor(CROWD_FLOOR).root.addChild(crowdContainer);
 
+  // Story 15.8 (Quentin's finding, cycle 1): the ground-decals pass is
+  // one of `FloorStacks`' own four structural containers, sitting under
+  // every root exactly like `ground`/`groundObjects` do, and it needs the
+  // same real culling they get -- read off the same floors `ground`
+  // already draws on, never a floor list of its own. Nothing is ever
+  // drawn into it yet (no producer routes content onto this pass today),
+  // but it is registered as a visibility member below regardless, so the
+  // first thing that ever is lands inside FR122's culling for free.
+  const groundDecalsContainersByFloor = new Map<number, Container>(
+    [...groundContainersByFloor.keys()].map((floor) => [
+      floor,
+      stacks.stackFor(floor).groundDecals,
+    ]),
+  );
+
   // FR121: no masking or aperture system anywhere in the real, mounted
   // display list -- checked directly against every sprite and every
   // ground-pass container this scene actually built, not only by the
@@ -1039,6 +1061,7 @@ export async function mountStreetScene(
     playerEntry.view,
     ...groundContainersByFloor.values(),
     ...groundObjectsContainersByFloor.values(),
+    ...groundDecalsContainersByFloor.values(),
     crowdContainer,
   ];
   onMasksChecked?.(everyMaskableView.every((view) => view.mask == null));
@@ -1146,6 +1169,22 @@ export async function mountStreetScene(
       view: container,
     },
   }));
+  const groundDecalsNamedMembers: NamedVisibilityMember[] = [
+    ...groundDecalsContainersByFloor.entries(),
+  ].map(([floor, container]) => ({
+    id: `ground_decals:${floor}`,
+    member: {
+      drawable: {
+        floor,
+        layerCode: GROUND_DECALS_LAYER_CODE,
+        ownerBuildingId: NO_OWNER,
+        isWindow: false,
+        isNearSide: false,
+        isStub: false,
+      },
+      view: container,
+    },
+  }));
   const crowdNamedMember: NamedVisibilityMember = {
     id: `crowd:${CROWD_FLOOR}`,
     member: {
@@ -1164,27 +1203,23 @@ export async function mountStreetScene(
     ...poolNamedMembers,
     ...groundNamedMembers,
     ...groundObjectsNamedMembers,
+    ...groundDecalsNamedMembers,
     crowdNamedMember,
   ];
   const allVisibilityMembers: VisibilityMember[] = namedVisibilityMembers.map((n) => n.member);
 
-  // Story 15.8 (Quentin's direction): every container `world` actually
-  // parents must be a floor stack's own root -- the mount-time guard that
-  // catches a future additive layer (this story's own crowd defect)
-  // parented straight onto `world`, bypassing every visibility member
-  // above, before it can ever reach a baseline. Run once, here, now that
-  // every floor stack this scene will ever create already exists (the
-  // ground/ground-object/pool loops and the crowd container above have
-  // all touched every floor they use).
-  const managedFloorRoots = new Set<Container>(stacks.stacks().map((stack) => stack.root));
-  const unmanagedWorldChildren = unmanagedChildren(world.children, managedFloorRoots);
-  if (unmanagedWorldChildren.length > 0) {
-    throw new Error(
-      `scene: ${unmanagedWorldChildren.length} child(ren) of \`world\` are not a floor stack root -- ` +
-        "every floor-bound container must be attached under `FloorStacks`, never added to " +
-        "`world` directly (story 15.8's guard)",
-    );
-  }
+  // Story 15.8's mount-time guard (Tim's direction, cycle 1): `FloorStacks`
+  // is the one code that ever attaches anything under `world`, so it owns
+  // the check of its own whole tree -- every child of `world` is one of
+  // its own stack roots, and every child of every root is either one of
+  // that stack's own four structural pass containers or a registered
+  // visibility member (`namedVisibilityMembers`' own views, above). This
+  // is what catches a future additive layer (this story's own crowd
+  // defect) parented straight onto `world`, or straight onto a stack root
+  // without also being registered, before it can ever reach a baseline.
+  // Run once, here, now that every visibility member this scene will ever
+  // register already exists.
+  stacks.assertManaged(new Set(namedVisibilityMembers.map((n) => n.member.view)));
 
   function applyVisibilityFor(cellX: number, cellY: number, floor: number, force: boolean): void {
     const viewer: VisibilityViewer = {

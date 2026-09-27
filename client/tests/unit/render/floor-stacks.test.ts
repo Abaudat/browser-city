@@ -120,3 +120,44 @@ describe("FloorStacks", () => {
     expect(drawn.indexOf(streetSprite)).toBeLessThan(drawn.indexOf(deckSprite));
   });
 });
+
+describe("FloorStacks.assertManaged (story 15.8, Tim's direction cycle 1)", () => {
+  it("passes when every extra container under a stack root is a registered visibility member", () => {
+    const world = new Container();
+    const stacks = new FloorStacks(world);
+    const stack = stacks.stackFor(0);
+    const crowd = new Container();
+    stack.root.addChild(crowd);
+
+    expect(() => stacks.assertManaged(new Set([crowd]))).not.toThrow();
+  });
+
+  it("passes with nothing registered at all when no stack owns anything beyond its own four passes", () => {
+    const world = new Container();
+    const stacks = new FloorStacks(world);
+    stacks.stackFor(0);
+    stacks.stackFor(-1);
+
+    expect(() => stacks.assertManaged(new Set())).not.toThrow();
+  });
+
+  it("throws when a container is attached under a stack root but never registered -- the crowd defect this story fixed", () => {
+    const world = new Container();
+    const stacks = new FloorStacks(world);
+    const stack = stacks.stackFor(0);
+    const orphan = new Container();
+    stack.root.addChild(orphan);
+
+    expect(() => stacks.assertManaged(new Set())).toThrow(/floor 0/);
+  });
+
+  it("throws when a container is attached straight to the parent, bypassing every stack", () => {
+    const world = new Container();
+    const stacks = new FloorStacks(world);
+    stacks.stackFor(0);
+    const orphan = new Container();
+    world.addChild(orphan);
+
+    expect(() => stacks.assertManaged(new Set([orphan]))).toThrow(/stack root/);
+  });
+});
