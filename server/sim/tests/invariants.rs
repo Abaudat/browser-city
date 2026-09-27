@@ -2776,22 +2776,42 @@ proptest! {
     /// own "the district holds every required kind" claim by itself, for
     /// any seed. The real multi-instance rows (ratio under the same
     /// `MULTI_INSTANCE_RATIO_CEILING` `the_quadrant_floor_is_not_
-    /// vacuous_for_every_multi_instance_row_over_seeds_0_to_256` uses)
-    /// also assert `target >= 1` unconditionally, for any seed: their
-    /// own ratio is tuned to keep it that way (the balance comment only
-    /// claims this over the fixed 0..256 range that row's own sibling
-    /// pools over; here it is asserted for real). The three high-ratio,
-    /// near-singleton rows are not: Derek's own direction tunes their
-    /// ratio so `target == 1` *across the measured seed range*, never a
-    /// guarantee for literally every possible seed -- a basis just under
-    /// the ratio (found by `proptest`, not sequential measurement) is a
-    /// real, rare `target == 0` for those three, by design, not a bug
-    /// this invariant should flag. Also AC2's own "shops and cafes"
-    /// half: at least one placed type carries the `shop` tag and at
-    /// least one carries `cafe`, read off `defs::TAGS` by key (a test
-    /// file, never scanned by `check-generator-no-content-keys.sh`), not
-    /// a `[[distribution]]` row -- neither is distributed, both are
-    /// ordinary weighted fill.
+    /// vacuous_for_every_multi_instance_row_over_seeds_0_to_256` uses --
+    /// `welfare_office_present`, `shelter_present` and, since story 15.9,
+    /// `cafe_present`) also assert `target >= 1` unconditionally, for any
+    /// seed: their own ratio is tuned to keep it that way (the balance
+    /// comment only claims this over the fixed 0..256 range that row's
+    /// own sibling pools over; here it is asserted for real). The three
+    /// high-ratio, near-singleton rows are not: Derek's own direction
+    /// tunes their ratio so `target == 1` *across the measured seed
+    /// range*, never a guarantee for literally every possible seed -- a
+    /// basis just under the ratio (found by `proptest`, not sequential
+    /// measurement) is a real, rare `target == 0` for those three, by
+    /// design, not a bug this invariant should flag.
+    ///
+    /// Story 15.9 (the missing-cafe flake, seed `5671826158575195197`,
+    /// once a real ~1-in-120k failure of the ordinary-fill "shops and
+    /// cafes" branch this doc comment used to describe): cafe moved onto
+    /// the distribution mechanism above (`cafe.weight = 0`,
+    /// `cafe_present` in `defs/rules/generation.toml`) and is now
+    /// covered by the generic loop, not a hand-named branch, so the
+    /// district holds at least one cafe by construction rather than by
+    /// the fill's own luck -- measured (`cargo run -p bounds --release
+    /// --bin measure-generation -- 1000000`), 0 misses in 1,000,000
+    /// genuinely random seeds (`seed_from_ids`, never a sequential
+    /// sweep), for both `cafe_present`'s own basis/target claim and the
+    /// stricter "at least one placed building carries the `cafe` tag" --
+    /// zero by construction (`ratio` under `MULTI_INSTANCE_RATIO_
+    /// CEILING`), not by luck. `seed_5671826158575195197_places_a_cafe`,
+    /// below, pins that exact seed as a plain, non-random regression.
+    /// AC2's remaining "shops" half stays ordinary weighted fill by
+    /// design (Derek's direction: variety across five shop-tagged types
+    /// is the fill's own job there) -- at least one placed type carries
+    /// the `shop` tag, read off `defs::TAGS` by key (a test file, never
+    /// scanned by `check-generator-no-content-keys.sh`); measured over
+    /// the same 1,000,000-seed sweep, 0 misses (shop-tagged types hold
+    /// roughly 85% of the commercial fill weight, so a zero-shop city at
+    /// 100+ commercial envelopes is not a reachable event in practice).
     #[test]
     fn inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero(seed in any::<u64>()) {
         const MULTI_INSTANCE_RATIO_CEILING: u32 = 250;
@@ -2838,17 +2858,16 @@ proptest! {
             );
         }
 
-        for &wanted in &["shop", "cafe"] {
-            let tag_id = defs::TAGS
-                .iter()
-                .find(|t| t.key == wanted)
-                .map(|t| t.id)
-                .unwrap_or_else(|| panic!("committed tags must carry a '{wanted}' entry"));
-            prop_assert!(
-                tag_counts.get(&tag_id).copied().unwrap_or(0) > 0,
-                "seed {seed}: no placed building carries the '{wanted}' tag",
-            );
-        }
+        let wanted = "shop";
+        let tag_id = defs::TAGS
+            .iter()
+            .find(|t| t.key == wanted)
+            .map(|t| t.id)
+            .unwrap_or_else(|| panic!("committed tags must carry a '{wanted}' entry"));
+        prop_assert!(
+            tag_counts.get(&tag_id).copied().unwrap_or(0) > 0,
+            "seed {seed}: no placed building carries the '{wanted}' tag",
+        );
     }
 
     /// `inv_generation_workplace_count_within_tolerance` (AC4, story 3.4):
@@ -4136,6 +4155,110 @@ fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_k
         }
         other => panic!("expected RuleViolations, got {other:?}"),
     }
+}
+
+/// Story 15.9: seed `5671826158575195197` -- 174 cafe-eligible envelopes,
+/// zero cafes drawn -- once failed
+/// `inv_generation_required_institutions_are_present_when_their_own_
+/// target_is_nonzero` on `master` (run 36108601641) and on the
+/// `issue-310`/`issue-335` branches, at about 1 in 120,000 uniformly
+/// drawn seeds (a ~3-4% chance per CI run at `PROPTEST_CASES=4096`). A
+/// plain, non-random pin, never folded into `invariants.proptest-
+/// regressions` (that file only replays for the property that recorded
+/// it): cafe moved onto the distribution mechanism (`cafe_present`,
+/// `defs/rules/generation.toml`) that guarantees this by construction,
+/// so this exact seed -- once a real failure -- now places a cafe and
+/// clears `check_rules` both, on every run.
+#[test]
+fn seed_5671826158575195197_places_a_cafe() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let seed = 5671826158575195197u64;
+    let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let cafe_tag = defs::TAGS
+        .iter()
+        .find(|t| t.key == "cafe")
+        .map(|t| t.id)
+        .expect("committed tags must carry a 'cafe' entry");
+    let has_cafe = d
+        .building_types
+        .assignments()
+        .iter()
+        .any(|a| by_id[&a.building_type].tags.contains(&cafe_tag));
+    assert!(
+        has_cafe,
+        "seed {seed}: still places no cafe-tagged building"
+    );
+    assert!(
+        d.check_rules(&content).is_ok(),
+        "seed {seed}: check_rules is no longer Ok: {:?}",
+        d.check_rules(&content).err()
+    );
+}
+
+/// Story 15.9: seed `18237087621053529407`, found by the very proptest
+/// sweep this story tightened (`cargo test -p sim --release --test
+/// invariants -- inv_generation_committed_rules_hold_for_any_seed`, a
+/// genuinely random case, not sequential) -- a second, distinct bug from
+/// the one this story set out to fix, in the *mechanism* the fix itself
+/// leans on. This city has 190 hard-eligible cafe candidates and a
+/// `cafe_present` site-wide target of 5, so presence was never in
+/// question, yet the old `building_types::run` placed exactly 0: the
+/// per-catchment floor phase demanded its own floors summed to the
+/// *entire* site target (`catchment_floors`'s own `floors_sum ==
+/// site_target`), leaving a computed site-wide `remainder` of 0 -- but
+/// one of those catchments held zero locally-eligible commercial land,
+/// so its own `place_row` call placed 0 against a floor of nonzero, and
+/// nothing downstream ever revisited that shortfall. `sim::rules::
+/// evaluate`'s own zero-subjects branch
+/// (`distribution_coverage_violations`) then reported one violation per
+/// `per`-tagged cell (597 dwellings -- the `RuleViolations { count: 597,
+/// .. }` this seed once produced), not a single one. Fixed in `run`
+/// itself: the per-catchment phase's own real placed count is tracked
+/// alongside its own floor target, and whatever the floor phase could
+/// not actually place is folded into the site-wide remainder afterward
+/// (`floor_shortfall`), so a catchment that cannot supply its own floor
+/// no longer strands it -- the site-wide pool, which this same seed
+/// proves has real eligible land elsewhere, gets the chance the
+/// catchment-only view never gave it. This pin is a plain, non-random
+/// `#[test]`, mirroring the seed above, because the property that found
+/// it is a `proptest!` case and `invariants.proptest-regressions` only
+/// replays for the exact property that recorded it.
+#[test]
+fn seed_18237087621053529407_places_its_full_cafe_target_despite_a_starved_catchment() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let seed = 18237087621053529407u64;
+    let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let mut tag_counts: std::collections::BTreeMap<TagId, u64> = std::collections::BTreeMap::new();
+    for a in d.building_types.assignments() {
+        for &t in by_id[&a.building_type].tags {
+            *tag_counts.entry(t).or_insert(0) += 1;
+        }
+    }
+    let cafe_row = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .find(|r| r.key == "cafe_present")
+        .expect("committed content carries a 'cafe_present' distribution row");
+    let basis = tag_counts.get(&cafe_row.per).copied().unwrap_or(0);
+    let target = basis / (cafe_row.ratio.max(1) as u64);
+    let actual = tag_counts.get(&cafe_row.subject).copied().unwrap_or(0);
+    assert_eq!(
+        actual, target,
+        "seed {seed}: cafe_present placed {actual} against its own target {target} -- the \
+         starved-catchment shortfall must be picked up by the site-wide remainder"
+    );
+    assert!(
+        d.check_rules(&content).is_ok(),
+        "seed {seed}: check_rules is no longer Ok: {:?}",
+        d.check_rules(&content).err()
+    );
 }
 
 /// Companion to the two tests above: a `condo_block` (`form_high`) and a

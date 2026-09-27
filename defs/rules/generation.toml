@@ -145,3 +145,69 @@ ratio = 100
 tolerance_percent = 70
 min_spacing = 20
 max_distance = 2000
+
+# Story 15.9: cafes are the barista's own workplace (FR14, a launch job)
+# -- a city with none reads as broken, not as a quirk of the site, so
+# "at least one cafe" is a real content requirement, expressed the way
+# every other required kind already is: `weight = 0`
+# (`defs/building-types/commercial.toml`) plus this row, never a count
+# field on the type itself. Placed after `welfare_office_present`/
+# `shelter_present` so it takes what those two leave rather than
+# competing with the two rows that already carry a measured land
+# shortfall -- cafes sit on ordinary commercial land, never scarce
+# institutional-or-commercial land.
+#
+# `ratio` started, by this branch's own first commit, at `round(dwelling
+# mean 585.24 / the then-fill's own cafe mean 11.77)` = 50 (`cargo run -p
+# bounds --release --bin measure-generation`, 5,000 genuinely random
+# seeds) -- keeping roughly the same cafe count the city already had, by
+# rule instead of by luck. That ratio, combined with a real
+# `building_types::run` bug this story found (see below), produced a
+# real per-seed tail down to 20% of a city's own expected cafe count and,
+# rarely, a total placement failure; the bug is fixed, and 100 is the
+# ratio the fix was verified against (100,000 further genuinely random
+# `PROPTEST_CASES`), matching `shelter_present`'s own ratio -- a real,
+# non-singleton spread, never a singleton. Well under
+# `MULTI_INSTANCE_RATIO_CEILING` (250, `inv_generation_required_
+# institutions_are_present_when_their_own_target_is_nonzero`), so `target
+# >= 1` is asserted unconditionally, for any seed -- even at the lowest
+# dwelling basis ever found (397, `depot_present`'s own comment above),
+# `floor(397 / 100)` = 3. Measured (`measure-generation`'s own missing-
+# tag sweep, `cargo run -p bounds --release --bin measure-generation --
+# 1000000`), 0 of 1,000,000 genuinely random seeds have a nonzero target
+# but 0 actually placed, for cafe or for any other committed row -- the
+# presence half holds unconditionally, not by luck.
+#
+# The bug, found by this row's own much larger per-catchment demand
+# exposing it for the first time: `building_types::run`'s per-catchment
+# floor phase could sum its own floors to the *entire* site-wide target
+# while one catchment's own local land could not actually supply its
+# share, leaving a computed site-wide remainder of 0 and stranding that
+# share even though another catchment held real, unused eligible land --
+# pinned, `seed_18237087621053529407_places_its_full_cafe_target_
+# despite_a_starved_catchment` (`server/sim/tests/invariants.rs`). Fixed
+# in `run` itself (not the engine, not this row): the floor phase's own
+# real placed count is tracked, and whatever it could not place is
+# folded into the site-wide remainder afterward. `tolerance_percent`
+# measured after the fix (`measure-generation`, 5,000 genuinely random
+# seeds): pooled actual/expected 100.0%, worst single seed 100.0% -- the
+# fix, not a wide tolerance, is what makes this row reliable; 20% is real
+# margin over that, confirmed clean over 100,000 further genuinely random
+# `PROPTEST_CASES` (`inv_generation_committed_rules_hold_for_any_seed`),
+# not floor slack. Re-measured after adding this row (same sweep):
+# `welfare_office_present` and `shelter_present` both also now measure
+# pooled/worst 100.0% -- the same fix helped them too (their own
+# committed tolerances, 35%/70%, were real margin against a shortfall
+# this bug was itself a real part of; both still hold, now with more
+# room than their own PR #317 cycle 4 figures recorded, and are left
+# as-is -- tightening them is separate balance-tuning work, not this
+# story's own scope).
+[[distribution]]
+id = 26
+key = "cafe_present"
+subject = "cafe"
+per = "dwelling"
+ratio = 100
+tolerance_percent = 20
+min_spacing = 12
+max_distance = 2000

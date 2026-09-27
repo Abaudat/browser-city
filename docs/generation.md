@@ -314,9 +314,10 @@ result still reads as a city.
   type for an envelope's own plot (land use, density band, minimum
   interior, every `requires_site` context it demands), then a
   distribution-row override for each named institution (depot, council,
-  hospital, welfare office, shelter), read generically off the committed
-  rule set (`sim::rules::RuleDef::as_distribution`) in ascending rule id
-  order -- never a hand-named placer. Sited, not sprinkled (Derek's
+  hospital, welfare office, shelter, and, since story 15.9, cafe), read
+  generically off the committed rule set
+  (`sim::rules::RuleDef::as_distribution`) in ascending rule id order --
+  never a hand-named placer. Sited, not sprinkled (Derek's
   direction): an override's own target splits into a per-catchment
   floor and a site-wide remainder, and within either pool candidates
   rank by how many of the subject type's own `prefers_site` contexts
@@ -334,6 +335,16 @@ result still reads as a city.
   understates the dense core's own need -- a `condo_block` owes what a
   `villa` owes -- and a dwellings-per-type count becomes unavoidable
   once citizens are seeded onto housing.
+- Accepted as built, story 15.9: cafe is a distributed type
+  (`cafe.weight = 0`, `cafe_present` in `defs/rules/generation.toml`),
+  not ordinary weighted fill. FR14 makes the barista a launch job, and
+  FR116 lists cafes among the placed institutions -- a city with zero
+  cafes was a real, if rare (~1 in 120,000 seeds), content defect
+  players would read as the game being broken, not a quirk of the site,
+  so "at least one cafe" is a real requirement, expressed the way every
+  other required kind already is rather than left to the fill's own
+  luck. Shops stay ordinary weighted fill: five shop-tagged types
+  sharing one tag is real variety, which is the fill's own job.
 - **Evidence:** [`docs/generation/building-types-seed-1.svg`](generation/building-types-seed-1.svg),
   [`-2`](generation/building-types-seed-2.svg), [`-3`](generation/building-types-seed-3.svg)
   -- envelopes tinted by a derived, structural class (no per-key branch
@@ -511,6 +522,7 @@ disagree.
 | hospital_present | committed | Building type | site | - | same shape, the hospital |
 | welfare_office_present | committed | Building type | site | - | welfare offices at a real ratio (never a singleton), spaced apart -- they sit where land is cheap, and the walk to them is content (Derek's direction), never guaranteed near |
 | shelter_present | committed | Building type | site | - | same shape, shelters |
+| cafe_present | committed | Building type | site | - | story 15.9: a cafe per roughly `ratio` dwellings, on ordinary commercial land -- "the district has a cafe" (AC2), guaranteed by construction rather than by the ordinary weighted fill's own luck, since a real launch job (barista, FR14) depends on it |
 
 ## coherence
 | key | status | pass | scope | reads | intent |
@@ -626,7 +638,9 @@ assumed:
   `hospital_present`, `welfare_office_present`, `shelter_present`) each
   set `max_distance` past the site's own diagonal, so the engine's own
   coverage half never fires at all (Derek's direction: no coverage
-  ceiling on a municipal row). "Evenly spread" is closed on the
+  ceiling on a municipal row); story 15.9 adds a sixth, `cafe_present`,
+  same shape, on ordinary commercial land rather than scarce
+  institutional-or-commercial land. "Evenly spread" is closed on the
   generator side instead: `sim::generation::building_types::run`
   splits each row's own whole-site target (the same figure the engine's
   own ratio check computes) into a floor per catchment -- a fixed-extent
@@ -636,7 +650,15 @@ assumed:
   whichever catchment held the most dwellings rather than its own
   preferred site), and `inv_generation_no_quadrant_lacks_its_required_
   services` checks every catchment clears its own floor, per seed, for
-  real. The gap this leaves is narrower
+  real. Story 15.9 fixed a real gap in that split, found by cafe's own
+  much larger per-city target exposing it for the first time: a
+  catchment's own floor could be owed on paper (the site-wide floors
+  summing to the whole target) while that one catchment's own local land
+  could not actually supply it, stranding the shortfall rather than
+  routing it to the site-wide remainder, which real land elsewhere could
+  have satisfied -- `building_types::run` now folds whatever the floor
+  phase could not actually place into the remainder afterward, for every
+  distribution row, not only cafe's own. The gap this leaves is narrower
   than "distribution is whole-site": a `[[distribution]]` row's own
   ratio/spacing/coverage fields still cannot themselves be scoped below
   the whole site -- only the generator's own constructive placement can

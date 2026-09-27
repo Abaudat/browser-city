@@ -681,3 +681,4 @@ rule 22 council_present
 rule 23 hospital_present
 rule 24 welfare_office_present
 rule 25 shelter_present
+rule 26 cafe_present

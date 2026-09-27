@@ -2,10 +2,16 @@
 # assumption B: a small set of generic types, never one type repeated;
 # Derek's cycle-1 direction: real variety, 2-4 posts per type, common
 # professions shared across types so they clear 5+ employers naturally).
-# `general_retail`/`cafe` cover the full density and site-context range
+# `general_retail` alone covers the full density and site-context range
 # as the safety net every other, narrower row can lean on --
 # `check_building_type_density_coverage` (`tools/defs-build`) holds this
-# for real rather than trusting it.
+# for real rather than trusting it. `cafe` no longer takes part in this
+# (story 15.9): its `weight = 0` below excludes it from that check, and
+# from the ordinary weighted fill altogether -- it is placed only by the
+# `cafe_present` distribution row (`defs/rules/generation.toml`), the
+# same mechanism `depot`/`council`/`hospital`/`welfare_office`/`shelter`
+# already use, so the district holds at least one cafe by construction
+# rather than by the fill's luck.
 
 [[building_type]]
 id = 5
@@ -28,7 +34,7 @@ density_min = 0
 density_max = 100
 min_interior_width_cells = 5
 min_interior_depth_cells = 5
-weight = 16
+weight = 0
 professions = ["barista", "server"]
 
 [[building_type]]

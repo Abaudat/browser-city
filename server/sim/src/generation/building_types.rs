@@ -45,14 +45,18 @@
 //! inflated by how many dwellings it happens to hold (Derek's direction,
 //! cycle 2: proportional remainder allocation dragged civic buildings
 //! toward the dwelling periphery, the opposite of "sited toward the
-//! peak"). The remainder -- the units the floors do not account for --
-//! is placed site-wide, by the same ranking. Both the per-catchment
-//! floor and the site-wide remainder call the one [`place_row`], which
-//! only ever removes a candidate for a real `min_spacing` violation --
-//! never a reason to strand a catchment's own guaranteed floor below
-//! what its own real, unused candidates could still satisfy, but also
-//! never a reason to inflate one catchment's own share at another's
-//! expense.
+//! peak"). The remainder -- the units the floors do not account for,
+//! plus, since story 15.9, whatever a catchment's own floor phase could
+//! not actually place against its own local land (`floor_shortfall`,
+//! never left stranded: a catchment can be owed a floor its own real
+//! geometry cannot supply, and the site-wide pool is where that owed
+//! unit still gets its chance) -- is placed site-wide, by the same
+//! ranking. Both the per-catchment floor and the site-wide remainder
+//! call the one [`place_row`], which only ever removes a candidate for a
+//! real `min_spacing` violation -- never a reason to strand a
+//! catchment's own guaranteed floor below what its own real, unused
+//! candidates could still satisfy, but also never a reason to inflate
+//! one catchment's own share at another's expense.
 //!
 //! Infallible, like passes 2-4: AC2/AC3's own presence/spread verdict is
 //! a property of the finished district (`District::check_rules`, via
@@ -703,21 +707,43 @@ pub fn run(
         let mut catchments: Vec<(i32, i32)> = per_by_catchment.keys().copied().collect();
         catchments.sort();
 
+        // A catchment's own floor is what it is *owed*, never a promise
+        // its own local land can actually deliver: a catchment whose
+        // eligible candidates are scarcer than its own floor (or whose
+        // ranked-and-spaced search falls short of the achievable max)
+        // still leaves real units unplaced. `floor_shortfall` is exactly
+        // that gap -- the floors summed on paper minus what this row
+        // actually placed while working through them -- folded into the
+        // site-wide remainder below so the row's own whole-site target
+        // is still pursued everywhere the floor phase could not reach
+        // it, rather than silently dropped (a catchment that could have
+        // supplied another catchment's shortfall is exactly what "site-
+        // wide remainder" already means; this only widens what counts as
+        // "the floors did not account for it" to include a floor the
+        // floor phase itself could not fill).
+        let mut floor_target_sum = 0u64;
+        let mut floor_placed_sum = 0u64;
+
         for &c in &catchments {
             let target = floors.get(&c).copied().unwrap_or(0);
             if target == 0 {
                 continue;
             }
+            floor_target_sum += target;
             let mut pool: Vec<usize> = (0..placed.len())
                 .filter(|&i| !overridden[i] && ctx[i].catchment == c && eligible_for_subject(i))
                 .collect();
             pool.sort_by_key(|&i| rank_key(i));
             let chosen = place_row(&pool, target, row.min_spacing, &ctx, &mut chosen_cells);
+            floor_placed_sum += chosen.len() as u64;
             for &i in &chosen {
                 final_type[i] = resolve(i);
                 overridden[i] = true;
             }
         }
+
+        let floor_shortfall = floor_target_sum.saturating_sub(floor_placed_sum);
+        let remainder = remainder + floor_shortfall;
 
         if remainder > 0 {
             let mut pool: Vec<usize> = (0..placed.len())
@@ -937,6 +963,188 @@ mod tests {
                 row.key
             );
         }
+    }
+
+    /// Story 15.9: a catchment can be owed a floor its own local land
+    /// cannot supply -- one catchment holds every dwelling and zero
+    /// eligible commercial land, a second holds zero dwellings (so the
+    /// per-catchment floor phase never even considers it) but plenty of
+    /// eligible commercial land. Before the fix, the first catchment's
+    /// own floor alone summed to the whole site target, leaving a
+    /// computed site-wide remainder of 0 even though the second
+    /// catchment's own real, unused candidates could have supplied it --
+    /// `run` placed 0 subjects against a target of 2. The fix folds
+    /// whatever the floor phase could not actually place into the
+    /// site-wide remainder afterward, so the second catchment's own real
+    /// candidates get their chance.
+    #[test]
+    fn a_catchments_own_unmet_floor_is_placed_from_the_site_wide_remainder() {
+        const DWELLING_TAG: TagId = 9301;
+        const SHOP_TAG: TagId = 9302;
+        let dwelling_type = defs::BuildingTypeDef {
+            id: 9401,
+            key: "test_dwelling",
+            tags: &[DWELLING_TAG],
+            land_uses: [true, false, false, false],
+            density_min: 0,
+            density_max: 100,
+            min_interior_width_cells: 4,
+            min_interior_depth_cells: 4,
+            weight: 1,
+            requires_site: [false, false, false, false],
+            prefers_site: [false, false, false, false],
+            density_affinity: 0,
+            professions: &[],
+        };
+        // `weight = 0`, exactly like the real `cafe` building type
+        // (story 15.9): only the distribution row below ever assigns
+        // this type, never the ordinary weighted fill.
+        let shop_type = defs::BuildingTypeDef {
+            id: 9402,
+            key: "test_shop",
+            tags: &[SHOP_TAG],
+            land_uses: [false, true, false, false],
+            density_min: 0,
+            density_max: 100,
+            min_interior_width_cells: 4,
+            min_interior_depth_cells: 4,
+            weight: 0,
+            requires_site: [false, false, false, false],
+            prefers_site: [false, false, false, false],
+            density_affinity: 0,
+            professions: &["test_clerk"],
+        };
+        // The ordinary fill's own baseline draw for every commercial
+        // envelope -- `shop_type`'s own `weight = 0` means this is the
+        // only real candidate the fill itself can ever pick, so every
+        // commercial envelope not overridden onto `shop_type` stays
+        // this type instead, the same as `general_retail` does for a
+        // real, un-overridden commercial plot.
+        let filler_type = defs::BuildingTypeDef {
+            id: 9403,
+            key: "test_filler",
+            tags: &[],
+            land_uses: [false, true, false, false],
+            density_min: 0,
+            density_max: 100,
+            min_interior_width_cells: 4,
+            min_interior_depth_cells: 4,
+            weight: 1,
+            requires_site: [false, false, false, false],
+            prefers_site: [false, false, false, false],
+            density_affinity: 0,
+            professions: &[],
+        };
+        let building_types = [dwelling_type, shop_type, filler_type];
+        let rules = [crate::rules::RuleDef {
+            id: 9501,
+            key: "test_shop_present",
+            kind: crate::rules::RuleKind::Distribution {
+                subject: SHOP_TAG,
+                per: DWELLING_TAG,
+                ratio: 2,
+                tolerance_percent: 20,
+                min_spacing: 1,
+                max_distance: 2000,
+            },
+        }];
+        let content = GenerationContent {
+            rules: crate::rules::RuleSet::for_test(&rules),
+            building_types: &building_types,
+        };
+
+        // Catchment (0, 0): 4 dwellings, no commercial land at all --
+        // its own floor (4 / 2 = 2) already equals the whole site
+        // target, but it cannot supply any of it itself.
+        let mut plots = Vec::new();
+        let mut outcomes = Vec::new();
+        for i in 0..4i32 {
+            let footprint = Rect {
+                x0: i * 10,
+                y0: 0,
+                x1: i * 10 + 6,
+                y1: 6,
+            };
+            plots.push(crate::generation::Plot {
+                bounds: footprint,
+                block: 0,
+                front: Some(Side::South),
+                land_use: crate::generation::LandUse::Residential,
+                density: 20,
+                open: false,
+            });
+            outcomes.push(envelopes::EnvelopeOutcome::Placed(Envelope {
+                plot: plots.len() as u32 - 1,
+                footprint,
+                front: Side::South,
+            }));
+        }
+        // Catchment (1, 0): no dwellings, 3 hard-eligible shop
+        // candidates, well spaced from each other.
+        for i in 0..3i32 {
+            let footprint = Rect {
+                x0: 300 + i * 20,
+                y0: 0,
+                x1: 300 + i * 20 + 6,
+                y1: 6,
+            };
+            plots.push(crate::generation::Plot {
+                bounds: footprint,
+                block: 1,
+                front: Some(Side::South),
+                land_use: crate::generation::LandUse::Commercial,
+                density: 20,
+                open: false,
+            });
+            outcomes.push(envelopes::EnvelopeOutcome::Placed(Envelope {
+                plot: plots.len() as u32 - 1,
+                footprint,
+                front: Side::South,
+            }));
+        }
+
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 512,
+            y1: 512,
+        };
+        let pm = PlotMap::test_fixture(site, plots);
+        let em = EnvelopeMap::test_fixture(outcomes);
+        let net = StreetNetwork::test_fixture(
+            site,
+            Vec::new(),
+            vec![
+                streets::Block {
+                    bounds: Rect {
+                        x0: 0,
+                        y0: 0,
+                        x1: 256,
+                        y1: 256,
+                    },
+                },
+                streets::Block {
+                    bounds: Rect {
+                        x0: 256,
+                        y0: 0,
+                        x1: 512,
+                        y1: 256,
+                    },
+                },
+            ],
+        );
+        let c = cfg();
+        let map = run(1, &em, &pm, &net, &c, &content);
+        let placed_shops = map
+            .assignments()
+            .iter()
+            .filter(|a| a.building_type == shop_type.id)
+            .count();
+        assert_eq!(
+            placed_shops, 2,
+            "the starved catchment's own unmet floor (2) must be placed from the site-wide \
+             remainder, using the second catchment's own real eligible land"
+        );
     }
 
     #[test]
