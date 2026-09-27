@@ -88,6 +88,16 @@ check "candidate 1 is v2's own commit" 0 bash -c "[ \"\$(cat '$OUT2/1')\" = 'v2'
 check "candidate 2 is v1's own commit" 0 bash -c "[ \"\$(cat '$OUT2/2')\" = 'v1' ]"
 
 echo
+echo "green: a worktree that only differs from HEAD by CRLF-vs-LF line endings still counts as clean (regression: a Windows core.autocrlf=true checkout normalises the working-tree copy to CRLF while the git blob itself stays LF, which a byte-for-byte compare misread as a real, uncommitted edit)"
+REPO3="$(fake_git_repo)"
+printf 'v2\r\n' > "$REPO3/server/schema.snapshot.json"
+OUT5="$(fake_dir)/out"
+bc_snapshot_candidates "$OUT5" "$REPO3" "$REPO3/server/schema.snapshot.json" >/dev/null
+check "still exactly 2 candidates -- no spurious 'worktree' slot for a CRLF-only difference" 0 \
+  bash -c "[ \"\$(candidate_count '$OUT5')\" -eq 2 ]"
+check "candidate 0 is not labelled 'worktree'" 0 bash -c "[ \"\$(label_for_index '$OUT5' 0)\" != 'worktree' ]"
+
+echo
 echo "red-ish: a non-git checkout yields only the worktree candidate, never an error"
 PLAIN="$(fake_dir)/plain"
 mkdir -p "$PLAIN/server"

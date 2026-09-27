@@ -217,8 +217,16 @@ bc_snapshot_candidates() {
 
   local i=0
   local head_content worktree_content
-  head_content="$(git -C "$repo_root" show HEAD:server/schema.snapshot.json 2>/dev/null || true)"
-  worktree_content="$(cat "$worktree_snapshot" 2>/dev/null || true)"
+  # `tr -d '\r'` on both sides: git always stores this file LF-only (`git
+  # show` reads the blob directly, untranslated), but a Windows checkout
+  # with `core.autocrlf=true` normalises the *working tree* copy to CRLF
+  # on the way out -- comparing the two raw would call every single such
+  # checkout "dirty" even with zero real edits (confirmed empirically).
+  # The file actually copied to candidate 0 below is still the worktree's
+  # own untouched bytes; only this dirty/clean decision ignores line
+  # endings.
+  head_content="$(git -C "$repo_root" show HEAD:server/schema.snapshot.json 2>/dev/null | tr -d '\r' || true)"
+  worktree_content="$(tr -d '\r' < "$worktree_snapshot" 2>/dev/null || true)"
   if [ "$head_content" != "$worktree_content" ]; then
     cp "$worktree_snapshot" "$out_dir/0"
     printf '0\tworktree\n' >> "$out_dir/labels.txt"
