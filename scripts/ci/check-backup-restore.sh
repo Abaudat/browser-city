@@ -56,6 +56,13 @@
 #      schema mismatch, a wrong restoring identity, a `restore_*` call
 #      with no restore open, and `restore_module_owner` given a row
 #      whose owner is not the caller.
+#
+# Story 4.18's own AC3, in this same instance: export-world.sh, run for
+# real from a disposable git worktree one commit ahead of the real one (an
+# invented table, then a column), still exports the live database
+# cleanly, selecting the real, unmodified schema -- and a checkout whose
+# only candidate is a superset, or a database at a completely foreign
+# schema, still refuses, naming what does not match.
 set -uo pipefail
 SCRIPT="check-backup-restore"
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -257,35 +264,28 @@ PRE_FAKE_SHA="$(git -C "$REPO_ROOT" log --first-parent --format=%H HEAD -- serve
 [ -n "$PRE_FAKE_SHA" ] || fail "could not resolve the commit that last touched server/schema.snapshot.json"
 
 echo
-echo "story 4.18 AC3 (positive): the incoming commit adds a whole table -- export still finds and selects the real, live schema"
-AC3_TABLE_WT="$WORK/ac3-table"
-ac3_worktree "$AC3_TABLE_WT"
-add_json_line "$AC3_TABLE_WT/server/schema.snapshot.json" '"tables":' \
+echo "story 4.18 AC3 (positive): the incoming commit adds a whole table AND a column -- export still finds and selects the real, live schema"
+# One worktree/commit/export for both additive shapes (never two -- each
+# export already pays for a full table-by-table live-shape build, ~2s x
+# ~26 tables x N passes, and this check has its own time budget), one
+# commit adding both a whole invented table and a column on an existing
+# one -- exactly "a deploy whose commit adds a table or a column" (the
+# issue's own wording), together.
+AC3_WT="$WORK/ac3-positive"
+ac3_worktree "$AC3_WT"
+add_json_line "$AC3_WT/server/schema.snapshot.json" '"tables":' \
   '    {"accessor":"story_4_18_invented_table","struct_name":"Story418InventedTable","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[{"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}]},'
-ac3_commit "$AC3_TABLE_WT" "story 4.18 AC3 fixture: an invented table, never merged"
-AC3_TABLE_EXPORT="$WORK/ac3-table-export"
-bash "$AC3_TABLE_WT/scripts/ops/export-world.sh" "$SRC" "$AC3_TABLE_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/ac3-table.log" 2>&1 \
-  || fail "export-world.sh failed on '$SRC', run from a checkout one commit ahead (an invented table) -- this is exactly the bug #331/#338 report" "$DATA_DIR/ac3-table.log"
-AC3_TABLE_COMMIT="$(grep -oE '"schema_commit": *"[^"]*"' "$AC3_TABLE_EXPORT/manifest.json" | sed -E 's/.*"([^"]*)"$/\1/')"
-[ "$AC3_TABLE_COMMIT" = "$PRE_FAKE_SHA" ] || fail "expected the export's manifest.json schema_commit to be $PRE_FAKE_SHA (the commit before the invented table), got '$AC3_TABLE_COMMIT'"
-[ ! -f "$AC3_TABLE_EXPORT/story_4_18_invented_table.jsonl" ] || fail "the export wrote a file for 'story_4_18_invented_table', which the live database never had -- it must have exported against the real, live schema, not the incoming one"
-git -C "$REPO_ROOT" worktree remove --force "$AC3_TABLE_WT" 2>/dev/null || true
-ok "'$SRC' exports cleanly from a checkout one commit ahead by a whole table -- manifest.json's schema_commit is $PRE_FAKE_SHA, the real live commit"
-
-echo
-echo "story 4.18 AC3 (positive): the incoming commit adds a column to an existing table -- same result"
-AC3_COL_WT="$WORK/ac3-column"
-ac3_worktree "$AC3_COL_WT"
-add_json_line "$AC3_COL_WT/server/schema.snapshot.json" '"columns":' \
+add_json_line "$AC3_WT/server/schema.snapshot.json" '"columns":' \
   '        {"name":"story_4_18_invented_column","ty":"i32","primary_key":false,"auto_inc":false,"unique":false,"has_default":true,"indexed":false},'
-ac3_commit "$AC3_COL_WT" "story 4.18 AC3 fixture: an invented column, never merged"
-AC3_COL_EXPORT="$WORK/ac3-column-export"
-bash "$AC3_COL_WT/scripts/ops/export-world.sh" "$SRC" "$AC3_COL_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/ac3-column.log" 2>&1 \
-  || fail "export-world.sh failed on '$SRC', run from a checkout one commit ahead (an invented column)" "$DATA_DIR/ac3-column.log"
-AC3_COL_COMMIT="$(grep -oE '"schema_commit": *"[^"]*"' "$AC3_COL_EXPORT/manifest.json" | sed -E 's/.*"([^"]*)"$/\1/')"
-[ "$AC3_COL_COMMIT" = "$PRE_FAKE_SHA" ] || fail "expected the export's manifest.json schema_commit to be $PRE_FAKE_SHA (the commit before the invented column), got '$AC3_COL_COMMIT'"
-git -C "$REPO_ROOT" worktree remove --force "$AC3_COL_WT" 2>/dev/null || true
-ok "'$SRC' exports cleanly from a checkout one commit ahead by a column too -- manifest.json's schema_commit is $PRE_FAKE_SHA"
+ac3_commit "$AC3_WT" "story 4.18 AC3 fixture: an invented table and an invented column, never merged"
+AC3_EXPORT="$WORK/ac3-positive-export"
+bash "$AC3_WT/scripts/ops/export-world.sh" "$SRC" "$AC3_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/ac3-positive.log" 2>&1 \
+  || fail "export-world.sh failed on '$SRC', run from a checkout one commit ahead (an invented table and column) -- this is exactly the bug #331/#338 report" "$DATA_DIR/ac3-positive.log"
+AC3_COMMIT="$(grep -oE '"schema_commit": *"[^"]*"' "$AC3_EXPORT/manifest.json" | sed -E 's/.*"([^"]*)"$/\1/')"
+[ "$AC3_COMMIT" = "$PRE_FAKE_SHA" ] || fail "expected the export's manifest.json schema_commit to be $PRE_FAKE_SHA (the commit before the invented table/column), got '$AC3_COMMIT'"
+[ ! -f "$AC3_EXPORT/story_4_18_invented_table.jsonl" ] || fail "the export wrote a file for 'story_4_18_invented_table', which the live database never had -- it must have exported against the real, live schema, not the incoming one"
+git -C "$REPO_ROOT" worktree remove --force "$AC3_WT" 2>/dev/null || true
+ok "'$SRC' exports cleanly from a checkout one commit ahead by a whole table and a column -- manifest.json's schema_commit is $PRE_FAKE_SHA, the real live commit"
 
 echo
 echo "story 4.18 AC3 (negative): a real mismatch still fails, naming the missing/extra tables"
@@ -294,8 +294,15 @@ ac3_worktree "$AC3_NEG_WT"
 # An orphan commit -- its own first-parent history is exactly this one
 # commit, never the real repo's, so the *only* candidate export-world.sh
 # can ever find here is the superset itself (Quentin's direction: "a
-# candidate list containing only the superset").
-git -C "$AC3_NEG_WT" checkout -q --orphan ac3-negative
+# candidate list containing only the superset"). A unique branch name
+# (this process's own pid): a fixed one would collide with a still-around
+# branch from a previous local run -- `git worktree remove` deletes the
+# worktree, never the branch it had checked out -- and `checkout --orphan`
+# on a name that already exists fails *without aborting this script*
+# (only `set -u`/`-o pipefail`, no `-e`), silently leaving the worktree on
+# its real, non-orphan history instead.
+git -C "$AC3_NEG_WT" checkout -q --orphan "ac3-negative-$$" \
+  || fail "could not create the orphan branch for the AC3 negative fixture"
 add_json_line "$AC3_NEG_WT/server/schema.snapshot.json" '"tables":' \
   '    {"accessor":"story_4_18_invented_table","struct_name":"Story418InventedTable","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[{"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}]},'
 ac3_commit "$AC3_NEG_WT" "story 4.18 AC3 fixture: superset only, orphan history"
@@ -306,6 +313,7 @@ fi
 grep -qF "does not match" "$DATA_DIR/ac3-negative.log" || fail "the mismatch refusal did not name the reason" "$DATA_DIR/ac3-negative.log"
 grep -qF "story_4_18_invented_table" "$DATA_DIR/ac3-negative.log" || fail "the mismatch refusal did not name 'story_4_18_invented_table' as missing" "$DATA_DIR/ac3-negative.log"
 git -C "$REPO_ROOT" worktree remove --force "$AC3_NEG_WT" 2>/dev/null || true
+git -C "$REPO_ROOT" branch -D "ac3-negative-$$" 2>/dev/null || true
 ok "a real mismatch (a candidate list with no snapshot that actually matches '$SRC') still refuses, naming the invented table"
 
 echo
