@@ -148,7 +148,10 @@ export async function mountCitizensLayer(
 
       const sprite = new Sprite(frames.frame("idle", fixture.facing, 0));
       sprite.anchor.set(0.5, 1);
-      const px = citizenScreenPx(fixture.gridX, fixture.gridY, tileSizePx, zoom);
+      // A standing citizen never moves, so it keeps its whole-world-pixel
+      // placement (zoom 1, itself a whole screen pixel): its scatter
+      // position is fractional, and a finer snap would only shift it.
+      const px = citizenScreenPx(fixture.gridX, fixture.gridY, tileSizePx, 1);
       sprite.x = px.x;
       sprite.y = px.y;
       sprite.zIndex = fixture.gridY;

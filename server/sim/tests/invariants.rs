@@ -4366,7 +4366,11 @@ fn peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor() {
 #[test]
 fn peripheral_floor_clears_the_lowest_known_ratio_seeds() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-    for seed in [15712406083813773737u64, 14322285497755891962, 4544038555038832329] {
+    for seed in [
+        15712406083813773737u64,
+        14322285497755891962,
+        4544038555038832329,
+    ] {
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let (low, high) = net
