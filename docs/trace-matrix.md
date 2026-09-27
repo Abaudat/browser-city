@@ -673,3 +673,22 @@ like any other.
 | --- | --- | --- |
 | A `covered`/`partial` Guard cell's paths all exist, and its backtick-quoted names each resolve under one of them -- a Rust `fn`, a client test/case title, a `.sh` case label, a `defs/rules/*.toml` key or an `inv_*` id -- scoped to that row's own paths, never repo-wide; a dangling name fails naming the row and the token; `deferred`/`planned` rows are exempt, any other status fails by name | covered | `scripts/ci/tests/test-check-trace-matrix.sh` -- `a Rust fn renamed fails`, `a spaced title left only in a # comment (.sh resolve_title arm) is dangling`, `a clean tree -- every resolver green, two exempt statuses, partial checked -- passes` |
 | Guard tables are discovered by their exact header line, never a hardcoded section-title list -- a new `## ` section is checked automatically, and the lookup runs in full (cargo) mode too, not only under `--client-only` | covered | `scripts/ci/tests/test-check-trace-matrix.sh` -- `a guard table under a never-registered heading is still checked (discovery, not a list)`; `scripts/ci/tests/test-check-trace-matrix-cargo.sh` -- `names the dangling token` |
+
+## Failure reports worked first
+
+Story 4.19: the agentic team's own process, not a game requirement -- a
+failure `scripts/ci/report-scheduled-failure.sh` reports about the
+pipeline itself must be worked ahead of every other story, without anyone
+triaging it by hand. Same Guard-path discipline as the sections above.
+
+Not part of the `check-trace-matrix.sh` Guard-cell name lookup above: its
+`.sh` case-title resolver only walks `scripts/*/tests/*.sh` (the game's
+own CI scripts), never `agentic-team/scripts/tests/`, so the rows below
+cite paths only, existence-checked like any other, not case titles.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| A report the script files is labelled `alert,lead:tim`; a repeat failure comments on the same open issue and sets no field at all, so an already-triaged report keeps its place | covered | `scripts/ci/report-scheduled-failure.sh`; `agentic-team/scripts/tests/test-report-scheduled-failure.sh` |
+| Every open `alert` issue not yet on the board is adopted as Backlog/Blocker/XS, in that order, and touches nothing already on the board (an alert already triaged is never dragged back) | covered | `agentic-team/scripts/bc-issue.sh`; `agentic-team/scripts/tests/test-bc-issue.sh` |
+| Once adopted, `bc-issue.sh next` -- unchanged -- picks the report ahead of every Critical story on the board, scoped to the lead the report names | covered | `agentic-team/scripts/tests/test-bc-issue.sh` |
+| The orchestrator adopts every open alert before its own pick, at starting-dev-cycle, and a failure to do so is broken, never silently swallowed | covered | `agentic-team/scripts/orchestrator.sh`; `agentic-team/scripts/tests/test-orchestrator.sh` |

@@ -31,6 +31,7 @@ LABEL_DEFS=(
   "$BC_LABEL_EPIC|1d76db|An epic. Its stories are its sub-issues."
   "$BC_LABEL_DEMO|0e8a16|Marks the weekly Friday demo issue"
   "$BC_LABEL_BREAKER|b60205|Circuit breaker: cycle limit reached, escalated to a human"
+  "$BC_LABEL_ALERT|e11d21|A CI-filed failure report; adopt-alerts puts it on the board as a Blocker"
 )
 
 CREATED=0

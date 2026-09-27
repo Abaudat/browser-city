@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Fixture-driven coverage for scripts/bc-issue.sh: next's whole-backlog pick
+# Fixture-driven coverage for scripts/bc-issue.sh: adopt-alerts' off-board/
+# already-adopted cases (story 4.19), next's whole-backlog pick
 # (no open blocker, then priority, size, number) and its Backlog/open gates,
 # write-story's and write-blockers' dependencies, current's 0/1/2-active cases, transition
 # (including the epic that closes with its last story),
@@ -44,6 +45,68 @@ write_iterations() { # <dir> -- Sprint 1 active on 2026-09-01..2026-09-04
 JSON
 }
 
+echo "adopt-alerts: an off-board alert is adopted (item-add, Backlog, Blocker, XS, in that order); an on-board story is untouched:"
+
+FAKE_AA1="$(fake_dir)"
+echo '[{"number":700}]' > "$FAKE_AA1/gh_issue_list_label.json"
+cat > "$FAKE_AA1/project_items.json" <<'JSON'
+[
+  {"number":701,"title":"Some critical work","state":"OPEN","status":"Backlog","priority":"Critical","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":null,"blockedBy":[]}
+]
+JSON
+check_out "adopt-alerts: prints the number it adopted" 0 700 run "$FAKE_AA1" "" adopt-alerts
+check_out "adopt-alerts: put the alert in Backlog, then Blocker, then XS, in order" 0 \
+  "project_set_single 700 Status Backlog
+project_set_single 700 Priority Blocker
+project_set_single 700 Size XS" \
+  cat "$FAKE_AA1/calls.log"
+check "adopt-alerts: never touched the on-board story" 1 log_has "$FAKE_AA1/calls.log" '(^| )701( |$)'
+
+echo
+echo "adopt-alerts: the alert is already a project item -- no-op, wrote nothing:"
+
+FAKE_AA2="$(fake_dir)"
+echo '[{"number":700}]' > "$FAKE_AA2/gh_issue_list_label.json"
+cat > "$FAKE_AA2/project_items.json" <<'JSON'
+[
+  {"number":700,"title":"deploy failed","state":"OPEN","status":"In progress","priority":"Blocker","size":"XS","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["alert","lead:tim"],"isParent":false,"parent":null,"blockedBy":[]}
+]
+JSON
+check_out "adopt-alerts: already on board -- prints nothing" 0 "" run "$FAKE_AA2" "" adopt-alerts
+check "adopt-alerts: already on board -- wrote nothing (never dragged back to Backlog)" 1 test -f "$FAKE_AA2/calls.log"
+
+echo
+echo "adopt-alerts: no open alert issue at all -- no-op, wrote nothing:"
+
+FAKE_AA3="$(fake_dir)"
+echo '[]' > "$FAKE_AA3/gh_issue_list_label.json"
+echo '[]' > "$FAKE_AA3/project_items.json"
+check_out "adopt-alerts: nothing to adopt -- prints nothing" 0 "" run "$FAKE_AA3" "" adopt-alerts
+check "adopt-alerts: nothing to adopt -- wrote nothing" 1 test -f "$FAKE_AA3/calls.log"
+
+echo
+echo "adopt-alerts: could not list open alert issues -- broken, exit 2:"
+
+FAKE_AA4="$(fake_dir)"
+echo '[]' > "$FAKE_AA4/project_items.json"
+check "adopt-alerts: no gh_issue_list_label fixture -> exit 2" 2 run "$FAKE_AA4" "" adopt-alerts
+
+echo
+echo "next: once adopted (Blocker, XS, null parent, labels alert,lead:tim), the alert beats a free Critical/XS story:"
+
+FAKE_AA5="$(fake_dir)"
+cat > "$FAKE_AA5/project_items.json" <<'JSON'
+[
+  {"number":700,"title":"deploy failed","state":"OPEN","status":"Backlog","priority":"Blocker","size":"XS","sprintId":null,"sprintTitle":null,"labels":["alert","lead:tim"],"isParent":false,"parent":null,"blockedBy":[]},
+  {"number":701,"title":"Some critical work","state":"OPEN","status":"Backlog","priority":"Critical","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":null,"blockedBy":[]}
+]
+JSON
+echo '["alert","lead:tim"]' > "$FAKE_AA5/gh_issue_labels.json"
+check_out "next: the adopted alert wins over a free Critical/XS story, scoped quentin,tim" 0 \
+  '{"number":700,"parent":null,"scope":"quentin,tim"}' \
+  run "$FAKE_AA5" "" next
+
+echo
 echo "next: the whole backlog's startable stories, by priority then size -- sprints and epics never enter into it:"
 
 FAKE_N1="$(fake_dir)"

@@ -269,6 +269,13 @@ if [ "$cur_rc" -eq 1 ]; then
   # made again next tick, and if the board moved on instead, closing-sprint
   # puts the stray back in the pool.
   # =========================================================================
+  # An alert scripts/ci/report-scheduled-failure.sh filed is invisible to
+  # `next` until it is a project item at all -- CI's own token cannot write
+  # to the board, so adopt-alerts is what does, immediately before the pick.
+  # A failure here is broken, the same as an unreadable backlog: an alert
+  # the loop cannot see is exactly the bug story 4.19 closes.
+  bc_issue adopt-alerts >/dev/null || finish 2 "starting-dev-cycle" "broken" "could not adopt alerts onto the board"
+
   pick="$(bc_issue next)"; rc=$?
   [ "$rc" -ne 2 ] || finish 2 "starting-dev-cycle" "broken" "could not read the backlog"
   # On exit 1 `next` says nothing for an empty backlog, and says so when there

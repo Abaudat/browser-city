@@ -46,6 +46,19 @@
 # story opened without them is one the picker may start before its
 # foundations exist.
 #
+# `adopt-alerts` runs immediately before `next` at starting-dev-cycle
+# (story 4.19: Failure Reports Are Worked First). `scripts/ci/
+# report-scheduled-failure.sh` files a tracking issue on a scheduled/deploy
+# workflow's failure, labelled `alert`, and stops there -- CI's own token has
+# no `project` scope and none should ever be handed to it, so it can never
+# score or scope the issue itself. adopt-alerts is the other half: every
+# open `alert` issue not yet a project item is added, Backlog/Blocker/XS, in
+# that order, so `next` -- unchanged -- picks it ahead of every Critical
+# story the moment it lands. It touches nothing already on the board, so an
+# alert already triaged (In progress, or moved off Backlog by hand) is never
+# dragged back, which is what makes a re-run, or a tick that crashes
+# mid-loop, safe.
+#
 # `epic-context` and `amend-story` serve judging-task-request, where a lead
 # has asked mid-review for work its PR cannot carry. epic-context is the read
 # that makes the ruling possible -- the epic and every sibling story, so
@@ -70,6 +83,7 @@ bc_init
 usage() {
   cat >&2 <<'EOF'
 usage: bc-issue.sh <command> [args]
+  adopt-alerts                -- put every open, off-board `alert` issue on the board (Backlog/Blocker/XS)
   next                        -- the startable story: no open blocker, by priority, then size
   current                     -- the single sub-issue in an active status
   transition <issue> <status> -- set Status (and close on Done)
@@ -319,6 +333,35 @@ cmd="${1:-}"
 shift || true
 
 case "$cmd" in
+
+adopt-alerts)
+  alerts="$(gh_issue_list_label "$BC_LABEL_ALERT")" \
+    || { echo "bc-issue adopt-alerts: could not list open $BC_LABEL_ALERT issues" >&2; exit 2; }
+  items="$(project_items)" || { echo "bc-issue adopt-alerts: could not read project items" >&2; exit 2; }
+  numbers="$(printf '%s' "$alerts" | "$JQ" -c '[.[].number] | sort')" \
+    || { echo "bc-issue adopt-alerts: malformed alert list" >&2; exit 2; }
+  onboard="$(printf '%s' "$items" | "$JQ" -c '[.[].number]')"
+
+  count="$(printf '%s' "$numbers" | "$JQ" 'length')"
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    n="$(printf '%s' "$numbers" | "$JQ" -r --argjson i "$i" '.[$i]')"
+    i=$((i + 1))
+    if printf '%s' "$onboard" | "$JQ" -e --argjson n "$n" 'index($n) != null' >/dev/null 2>&1; then
+      continue
+    fi
+    project_item "$n" >/dev/null
+    project_set_single "$n" Status Backlog \
+      || { echo "bc-issue adopt-alerts: failed to set Status for #$n" >&2; exit 2; }
+    project_set_single "$n" Priority Blocker \
+      || { echo "bc-issue adopt-alerts: failed to set Priority for #$n" >&2; exit 2; }
+    project_set_single "$n" Size XS \
+      || { echo "bc-issue adopt-alerts: failed to set Size for #$n" >&2; exit 2; }
+    echo "bc-issue adopt-alerts: adopted #$n" >&2
+    printf '%s\n' "$n"
+  done
+  exit 0
+  ;;
 
 next)
   items="$(project_items)" || { echo "bc-issue next: could not read project items" >&2; exit 2; }

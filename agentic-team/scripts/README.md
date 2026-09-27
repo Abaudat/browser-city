@@ -23,7 +23,7 @@ agentic-team/scripts/
     fake.sh                 BC_FAKE test double: replays JSON, logs writes
 
   bc-budget.sh    LEVEL 2 — the budget gate: available / spent / broken
-  bc-issue.sh     LEVEL 2 — issues: next/current/transition/scope/backlog/demo-*/epics+stories+blockers/amend
+  bc-issue.sh     LEVEL 2 — issues: adopt-alerts/next/current/transition/scope/backlog/demo-*/epics+stories+blockers/amend
   bc-comment.sh    LEVEL 2 — the structured-comment reads and writes
   bc-pr.sh          LEVEL 2 — PRs: open/attach/merge/for-issue/head
   bc-sprint.sh       LEVEL 2 — sprints: current/next/over/items/close/scope-in
@@ -54,7 +54,11 @@ agentic-team/scripts/
   comment — since his reply is not the product.
 
   Scoping is NOT one of them. There is no sprint planning: whenever no story
-  is active, starting-dev-cycle takes `bc-issue.sh next` — of every open
+  is active, starting-dev-cycle first runs `bc-issue.sh adopt-alerts` — every
+  open issue a scheduled/deploy workflow's failure report labelled `alert`
+  and that is not yet a project item is added as Blocker/XS, so a report
+  is worked ahead of every other story without anyone having to triage it
+  (story 4.19) — then takes `bc-issue.sh next` — of every open
   Backlog story on the board, any epic, the one no open issue blocks with the
   highest Priority, then the smallest Size, then the lowest number — and
   `bc-sprint.sh scope-in` puts it on the sprint in play as it starts. The
