@@ -94,7 +94,7 @@ while IFS= read -r table; do
   a="$(row_count_live "$SRC" "$table")"
   b="$(row_count_live "$DST" "$table")"
   [ "$a" = "$b" ] || bc_ops_die "$SCRIPT" "'$table': COUNT(*) differs between '$SRC' ($a) and '$DST' ($b), queried directly, not via any export file"
-done <<< "$(bc_table_names non-scheduled)"
+done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
 echo "$SCRIPT: ok -- COUNT(*) matches directly against both live databases for every non-scheduled table" >&2
 
 # --- the auto_inc sequence must strictly exceed both the restored

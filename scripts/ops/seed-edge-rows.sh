@@ -62,7 +62,7 @@ while IFS= read -r table; do
   fi
   SEEDED+=("$table")
   OFFSET=$((OFFSET + ROWS + 1))
-done <<< "$(bc_table_names non-scheduled)"
+done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
 
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" finish_restore '[]'
 

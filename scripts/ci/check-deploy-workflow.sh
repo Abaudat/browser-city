@@ -31,17 +31,33 @@
 #      the moment anyone widens its error handling, so it must go through
 #      `scripts/ops/check-database-exists.sh`, which positively
 #      recognises "not found" rather than treating any failure as one.
+#   4. Neither `deploy.yml`'s `backup` job nor `backup.yml`'s `export` job
+#      -- the two real callers of `scripts/ops/export-world.sh` -- may
+#      have a shallow checkout (story 4.18): export-world.sh walks the
+#      schema snapshot's own git history to find which committed snapshot
+#      is actually live, and a shallow clone (the default
+#      `actions/checkout` depth, 1) hides that history from it -- a
+#      future "speed up checkout" commit in *either* file would otherwise
+#      silently turn the next additive deploy's backup, or the next
+#      scheduled backup, into "does not match" (Quentin's/Tim's
+#      direction, cycle 1: `backup.yml`'s own `export` job has the
+#      identical bug, and had no guard at all). `fetch-depth: 0` is the
+#      only value this accepts, in either file.
 #
-# Usage: check-deploy-workflow.sh [deploy.yml path]
+# Usage: check-deploy-workflow.sh [deploy.yml path] [backup.yml path]
 #   [deploy.yml path]  defaults to .github/workflows/deploy.yml at the repo
 #                       root; overridden by scripts/ci/tests/
 #                       test-check-deploy-workflow.sh's own fixtures
+#   [backup.yml path]  defaults to .github/workflows/backup.yml the same
+#                       way -- only rule 4 above reads this second file
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKFLOW="${1:-$REPO_ROOT/.github/workflows/deploy.yml}"
+BACKUP_WORKFLOW="${2:-$REPO_ROOT/.github/workflows/backup.yml}"
 
 [ -f "$WORKFLOW" ] || { echo "check-deploy-workflow: $WORKFLOW not found" >&2; exit 1; }
+[ -f "$BACKUP_WORKFLOW" ] || { echo "check-deploy-workflow: $BACKUP_WORKFLOW not found" >&2; exit 1; }
 
 FAILED=0
 
@@ -64,14 +80,17 @@ fi
 
 # --- every job that runs `spacetime publish` must needs: the backup job,
 # and its own condition must never be able to run it after a failed one --
-job_block() { # <name> -- the job's full body, from its "  <name>:" line to
-              # (but not including) the next top-level "  <other>:" line.
-  local name="$1"
+job_block() { # <name> [file] -- the job's full body, from its "  <name>:"
+              # line to (but not including) the next top-level
+              # "  <other>:" line. [file] defaults to $WORKFLOW (deploy.
+              # yml) -- rule 4 below also calls this against $BACKUP_
+              # WORKFLOW (backup.yml).
+  local name="$1" file="${2:-$WORKFLOW}"
   awk -v name="$name" '
     $0 ~ "^  " name ":$" { inblock = 1; print; next }
     inblock && /^  [A-Za-z0-9_-]+:$/ { inblock = 0 }
     inblock { print }
-  ' "$WORKFLOW"
+  ' "$file"
 }
 
 job_header() { # <name> -- the job's own keys (needs:/if:/runs-on:/...) and
@@ -167,5 +186,40 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, and the backup job's first-deploy exception is the positive not-found script" >&2
+# --- story 4.18: neither export-world.sh caller's checkout may be
+# shallow -- the default actions/checkout depth (1) hides the schema
+# snapshot's own git history from it, and export-world.sh cannot find
+# which commit is actually live without it -----------------------------
+check_shallow_checkout() { # <job-name> <file>
+  local job="$1" file="$2" block
+  block="$(job_block "$job" "$file")"
+  if [ -z "$block" ]; then
+    echo "check-deploy-workflow: FAIL -- $file has no '$job:' job" >&2
+    FAILED=1
+    return
+  fi
+  # Anchored to a real YAML mapping line (only leading whitespace before
+  # the key) -- never a comment: a checkout step's own comment
+  # explaining *why* fetch-depth is 0 can itself contain the literal text
+  # "fetch-depth: 1 (a shallow default) ...", and an unanchored grep
+  # matched a comment like that ahead of the real key, parsing the rest
+  # of that sentence as though it were the value (this file's own
+  # regression, PR #345's first CI run against deploy.yml's checkout
+  # comment).
+  local line value
+  line="$(printf '%s\n' "$block" | grep -E '^[[:space:]]*fetch-depth:' | head -n1 || true)"
+  value="$(printf '%s' "$line" | sed -E 's/.*fetch-depth:[[:space:]]*//')"
+  if [ -z "$line" ] || [ "$value" != "0" ]; then
+    echo "check-deploy-workflow: FAIL -- '$job' job's checkout in $file is shallow (fetch-depth: ${value:-1, the actions/checkout default}) -- scripts/ops/export-world.sh needs the schema snapshot's full git history to find which commit is actually live (story 4.18); use fetch-depth: 0" >&2
+    FAILED=1
+  fi
+}
+check_shallow_checkout backup "$WORKFLOW"
+check_shallow_checkout export "$BACKUP_WORKFLOW"
+
+if [ "$FAILED" -ne 0 ]; then
+  exit 1
+fi
+
+echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, the backup job's first-deploy exception is the positive not-found script, and neither deploy.yml's backup job nor backup.yml's export job has a shallow checkout" >&2
 exit 0

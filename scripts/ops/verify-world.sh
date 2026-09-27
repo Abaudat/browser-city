@@ -41,7 +41,7 @@ while IFS= read -r table; do
     MISMATCHES=$((MISMATCHES + 1))
   fi
   CHECKED=$((CHECKED + 1))
-done <<< "$(bc_table_names non-scheduled)"
+done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
 
 if [ "$MISMATCHES" -gt 0 ]; then
   bc_ops_die "$SCRIPT" "$MISMATCHES of $CHECKED table(s) differ -- not a row-for-row match"

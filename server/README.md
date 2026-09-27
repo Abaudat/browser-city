@@ -152,7 +152,14 @@ is never a way to undo a published migration.
 
 A world restore is a separate, deliberate operation, never part of a deploy: `scripts/ops/
 restore-world.sh`, into a *fresh* database, from an export `backup.yml` produced -- see
-`docs/architecture.md`'s own Backup section.
+`docs/architecture.md`'s own Backup section. If `restore-world.sh` refuses because the target's
+schema does not match the export's own (`schema_sha256`), check out the export's `manifest.json`'s
+`schema_commit` (the exact commit that snapshot came from, or `worktree`) and retry from there.
+
+A `backup`/`export` job that refuses with "does not match" (`export-world.sh`) means the *live*
+database's own tables/columns matched no snapshot in `server/schema.snapshot.json`'s git history --
+a wrong database name, a foreign module, or a table that vanished, never merely "the deploy adds a
+table" (that case matches an older, still-live snapshot on its own).
 
 A `deploy.yml` failure on `master` opens or updates a tracking issue (`scripts/ci/
 report-scheduled-failure.sh`) rather than sitting unnoticed in the Actions tab; that issue links

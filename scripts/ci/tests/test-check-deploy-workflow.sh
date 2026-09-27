@@ -23,6 +23,9 @@ jobs:
     name: backup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
 
   publish-module:
@@ -46,6 +49,30 @@ fresh_workflow() {
   d="$(fake_dir)"
   write_good_workflow "$d/deploy.yml"
   printf '%s' "$d/deploy.yml"
+}
+
+write_good_backup_workflow() { # <path>
+  cat > "$1" <<'YAML'
+name: backup
+on:
+  workflow_dispatch:
+jobs:
+  export:
+    name: export
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: bash scripts/ops/export-world.sh "$DB" /tmp/export --server maincloud
+YAML
+}
+
+fresh_backup_workflow() {
+  local d
+  d="$(fake_dir)"
+  write_good_backup_workflow "$d/backup.yml"
+  printf '%s' "$d/backup.yml"
 }
 
 WF="$(fresh_workflow)"
@@ -129,6 +156,9 @@ jobs:
     name: backup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
 
   publish-module:
@@ -153,6 +183,9 @@ jobs:
     name: backup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
 
   publish-module:
@@ -177,6 +210,102 @@ sed -i 's#bash scripts/ops/check-database-exists.sh "\$DB" --server maincloud#ec
 OUT="$(bash "$CHECK" "$D10/deploy.yml" 2>&1)"; CODE=$?
 check "a backup job that never calls check-database-exists.sh fails" 1 bash -c "exit $CODE"
 check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'never calls scripts/ops/check-database-exists.sh'" _ "$OUT"
+
+echo
+echo "story 4.18: the backup job's own checkout must not be shallow"
+D11="$(fake_dir)"; write_good_workflow "$D11/deploy.yml"
+sed -i 's/fetch-depth: 0/fetch-depth: 1/' "$D11/deploy.yml"
+OUT="$(bash "$CHECK" "$D11/deploy.yml" 2>&1)"; CODE=$?
+check "fetch-depth: 1 on the backup job's checkout fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
+D12="$(fake_dir)"
+cat > "$D12/deploy.yml" <<'YAML'
+name: deploy
+on:
+  workflow_dispatch:
+jobs:
+  backup:
+    name: backup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
+
+  publish-module:
+    name: publish-module
+    needs: [backup]
+    runs-on: ubuntu-latest
+    steps:
+      - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
+YAML
+OUT="$(bash "$CHECK" "$D12/deploy.yml" 2>&1)"; CODE=$?
+check "a checkout with no fetch-depth at all (the actions/checkout default, 1) fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
+check "the good workflow's own fetch-depth: 0 passes (not a false FAIL)" 0 bash "$CHECK" "$WF"
+
+D13="$(fake_dir)"; write_good_workflow "$D13/deploy.yml"
+# A comment mentioning fetch-depth in prose, right above the real key --
+# must never be what the check reads (regression: PR #345's own CI run
+# hit exactly this, a comment explaining *why* fetch-depth is 0
+# containing the literal text "fetch-depth: 1 (a shallow default)" ahead
+# of the real, correct "fetch-depth: 0" key).
+sed -i "/fetch-depth: 0/i\\      # fetch-depth: 1 (a shallow default) would be wrong here, see below" "$D13/deploy.yml"
+check "a comment mentioning a different fetch-depth in prose is ignored -- the real key still passes" 0 bash "$CHECK" "$D13/deploy.yml"
+
+D14="$(fake_dir)"; write_good_workflow "$D14/deploy.yml"
+sed -i 's/fetch-depth: 0/fetch-depth: 1/' "$D14/deploy.yml"
+sed -i "/fetch-depth: 1/i\\      # fetch-depth: 0 (a comment, not the real key)" "$D14/deploy.yml"
+OUT="$(bash "$CHECK" "$D14/deploy.yml" 2>&1)"; CODE=$?
+check "a comment mentioning fetch-depth: 0 in prose never masks a real, shallow fetch-depth: 1" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
+echo
+echo "story 4.18 (Quentin's/Tim's cycle-1 direction): backup.yml's own export job checkout must not be shallow either -- the second real caller of export-world.sh, previously unguarded"
+BF="$(fresh_backup_workflow)"
+check "a well-formed backup.yml (fetch-depth: 0) passes, alongside the good deploy.yml" 0 bash "$CHECK" "$WF" "$BF"
+
+D15="$(fake_dir)"; write_good_backup_workflow "$D15/backup.yml"
+sed -i 's/fetch-depth: 0/fetch-depth: 1/' "$D15/backup.yml"
+OUT="$(bash "$CHECK" "$WF" "$D15/backup.yml" 2>&1)"; CODE=$?
+check "fetch-depth: 1 on backup.yml's export job fails" 1 bash -c "exit $CODE"
+check "names the reason, and the job/file" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"'export' job's checkout in $D15/backup.yml is shallow\"" _ "$OUT"
+
+D16="$(fake_dir)"
+cat > "$D16/backup.yml" <<'YAML'
+name: backup
+on:
+  workflow_dispatch:
+jobs:
+  export:
+    name: export
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/ops/export-world.sh "$DB" /tmp/export --server maincloud
+YAML
+OUT="$(bash "$CHECK" "$WF" "$D16/backup.yml" 2>&1)"; CODE=$?
+check "backup.yml's export job with no fetch-depth at all fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
+D17="$(fake_dir)"
+cat > "$D17/backup.yml" <<'YAML'
+name: backup
+on:
+  workflow_dispatch:
+jobs:
+  rehearsal:
+    name: rehearsal
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo no export job here
+YAML
+OUT="$(bash "$CHECK" "$WF" "$D17/backup.yml" 2>&1)"; CODE=$?
+check "a backup.yml with no 'export:' job at all fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"has no 'export:' job\"" _ "$OUT"
+
+check "a missing backup.yml path fails" 1 bash "$CHECK" "$WF" "$(fake_dir)/nope-backup.yml"
 
 D8="$(fake_dir)"
 cat > "$D8/deploy.yml" <<'YAML'
