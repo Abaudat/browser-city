@@ -219,10 +219,17 @@ jobs:
     timeout-minutes: 15
     environment: maincloud
     steps:
+      # fetch-depth: 0 (story 4.18), never 1: export-world.sh walks
+      # server/schema.snapshot.json's own git history to find which
+      # committed snapshot is actually live -- a shallow clone hides that
+      # history from it, and this job's own commit is, by definition, at
+      # or ahead of whatever the live database currently is.
+      # check-deploy-workflow.sh's own structural guard fails the moment
+      # this regresses.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.sha }}
-          fetch-depth: 1
+          fetch-depth: 0
       - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
       # export-world.sh builds server/tools/world_backup the first time it
       # needs it -- same toolchain backup.yml's own export job installs.

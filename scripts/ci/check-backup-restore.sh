@@ -80,6 +80,11 @@ cleanup() {
   fi
   [ -n "$START_PID" ] && kill "$START_PID" 2>/dev/null
   rm -rf "$DATA_DIR"
+  # story 4.18 AC3's own disposable worktrees: removed right after each is
+  # used, but a failure partway through (fail() exits immediately) can
+  # skip that -- `worktree prune` clears any registration whose directory
+  # is already gone, harmless if there is nothing to prune.
+  git -C "$REPO_ROOT" worktree prune 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -157,7 +162,7 @@ while IFS= read -r table; do
   [ "$table" = "module_owner" ] && continue
   n="$(row_count_live "$SRC" "$table")"
   [ "$n" -ge 1 ] || fail "'$table' has 0 rows before export -- seed-edge-rows.sh has a gap (every non-scheduled table but module_owner must be seeded)"
-done <<< "$(bc_table_names non-scheduled)"
+done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
 ok "every non-scheduled table but module_owner has at least one row before export (module_owner already has init's own)"
 
 # --- extra: a table with a row too big for one byte-budgeted batch -------
@@ -203,6 +208,114 @@ bash "$OPS/export-world.sh" "$DST" "$EXPORT_B" --server "$SERVER_URL" >"$DATA_DI
 
 bash "$OPS/verify-world.sh" "$EXPORT_A" "$EXPORT_B" >"$DATA_DIR/verify.log" 2>&1 || fail "verify-world.sh found a mismatch between '$SRC' and the restored '$DST' -- across a table with real id gaps, this is the gap-fill loop's own correctness proof" "$DATA_DIR/verify.log"
 ok "$(tail -n1 "$DATA_DIR/verify.log") (including 'floor_transition', seeded with real id gaps)"
+
+# --- story 4.18 AC3: the real export-world.sh, run from a disposable git
+# worktree of this very repo whose own HEAD is one commit *ahead* of the
+# real one (an invented table, then, separately, an invented column) --
+# exactly the shape of a deploy that adds a table/column -- proves the
+# fix directly: the pre-publish backup no longer refuses '$SRC' (published
+# from the real, unmodified module) just because the checkout it runs from
+# is ahead of it. No second local instance and no test-only branch in
+# export-world.sh: the checkout's own history is real, `bc_snapshot_
+# candidates`'s override is never used here. `server/target` is symlinked
+# from the real repo into each worktree (never `CARGO_TARGET_DIR`, which
+# would build to the right place but leave lib.sh's own `bc_wb()` -- a
+# fixed path relative to *its own* repo root, the worktree's -- looking in
+# the wrong one) so world_backup is never rebuilt from scratch for either
+# worktree (Tim's direction, keeps this inside its own time budget).
+#
+# add_json_line <file> <after-pattern> <line> -- inserts <line> right
+# after the first line matching <after-pattern> -- enough to add one table
+# or one column to server/schema.snapshot.json's own JSON without a JSON
+# library: this file is read by serde_json (world_backup), which does not
+# care about indentation or where in its own array a new element lands.
+add_json_line() { # <file> <after-pattern> <line>
+  awk -v pat="$2" -v line="$3" '
+    { print }
+    $0 ~ pat && !done { print line; done = 1 }
+  ' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
+}
+
+ac3_worktree() { # <dir> -- a disposable, detached worktree of $REPO_ROOT
+                 # at its own current HEAD, sharing the real repo's own
+                 # server/target so world_backup is never rebuilt from
+                 # scratch.
+  git -C "$REPO_ROOT" worktree add -q --detach "$1" HEAD \
+    || fail "could not add a disposable git worktree at '$1'"
+  ln -s "$REPO_ROOT/server/target" "$1/server/target" 2>/dev/null || true
+}
+ac3_commit() { # <dir> <message> -- commits every modified tracked file.
+  git -C "$1" -c user.email="ci@example.com" -c user.name="ci" commit -q -am "$2" \
+    || fail "could not commit '$2' in the disposable worktree '$1'"
+}
+
+PRE_FAKE_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+
+echo
+echo "story 4.18 AC3 (positive): the incoming commit adds a whole table -- export still finds and selects the real, live schema"
+AC3_TABLE_WT="$WORK/ac3-table"
+ac3_worktree "$AC3_TABLE_WT"
+add_json_line "$AC3_TABLE_WT/server/schema.snapshot.json" '"tables":' \
+  '    {"accessor":"story_4_18_invented_table","struct_name":"Story418InventedTable","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[{"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}]},'
+ac3_commit "$AC3_TABLE_WT" "story 4.18 AC3 fixture: an invented table, never merged"
+AC3_TABLE_EXPORT="$WORK/ac3-table-export"
+bash "$AC3_TABLE_WT/scripts/ops/export-world.sh" "$SRC" "$AC3_TABLE_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/ac3-table.log" 2>&1 \
+  || fail "export-world.sh failed on '$SRC', run from a checkout one commit ahead (an invented table) -- this is exactly the bug #331/#338 report" "$DATA_DIR/ac3-table.log"
+AC3_TABLE_COMMIT="$(grep -oE '"schema_commit": *"[^"]*"' "$AC3_TABLE_EXPORT/manifest.json" | sed -E 's/.*"([^"]*)"$/\1/')"
+[ "$AC3_TABLE_COMMIT" = "$PRE_FAKE_SHA" ] || fail "expected the export's manifest.json schema_commit to be $PRE_FAKE_SHA (the commit before the invented table), got '$AC3_TABLE_COMMIT'"
+[ ! -f "$AC3_TABLE_EXPORT/story_4_18_invented_table.jsonl" ] || fail "the export wrote a file for 'story_4_18_invented_table', which the live database never had -- it must have exported against the real, live schema, not the incoming one"
+git -C "$REPO_ROOT" worktree remove --force "$AC3_TABLE_WT" 2>/dev/null || true
+ok "'$SRC' exports cleanly from a checkout one commit ahead by a whole table -- manifest.json's schema_commit is $PRE_FAKE_SHA, the real live commit"
+
+echo
+echo "story 4.18 AC3 (positive): the incoming commit adds a column to an existing table -- same result"
+AC3_COL_WT="$WORK/ac3-column"
+ac3_worktree "$AC3_COL_WT"
+add_json_line "$AC3_COL_WT/server/schema.snapshot.json" '"columns":' \
+  '        {"name":"story_4_18_invented_column","ty":"i32","primary_key":false,"auto_inc":false,"unique":false,"has_default":true,"indexed":false},'
+ac3_commit "$AC3_COL_WT" "story 4.18 AC3 fixture: an invented column, never merged"
+AC3_COL_EXPORT="$WORK/ac3-column-export"
+bash "$AC3_COL_WT/scripts/ops/export-world.sh" "$SRC" "$AC3_COL_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/ac3-column.log" 2>&1 \
+  || fail "export-world.sh failed on '$SRC', run from a checkout one commit ahead (an invented column)" "$DATA_DIR/ac3-column.log"
+AC3_COL_COMMIT="$(grep -oE '"schema_commit": *"[^"]*"' "$AC3_COL_EXPORT/manifest.json" | sed -E 's/.*"([^"]*)"$/\1/')"
+[ "$AC3_COL_COMMIT" = "$PRE_FAKE_SHA" ] || fail "expected the export's manifest.json schema_commit to be $PRE_FAKE_SHA (the commit before the invented column), got '$AC3_COL_COMMIT'"
+git -C "$REPO_ROOT" worktree remove --force "$AC3_COL_WT" 2>/dev/null || true
+ok "'$SRC' exports cleanly from a checkout one commit ahead by a column too -- manifest.json's schema_commit is $PRE_FAKE_SHA"
+
+echo
+echo "story 4.18 AC3 (negative): a real mismatch still fails, naming the missing/extra tables"
+AC3_NEG_WT="$WORK/ac3-negative"
+ac3_worktree "$AC3_NEG_WT"
+# An orphan commit -- its own first-parent history is exactly this one
+# commit, never the real repo's, so the *only* candidate export-world.sh
+# can ever find here is the superset itself (Quentin's direction: "a
+# candidate list containing only the superset").
+git -C "$AC3_NEG_WT" checkout -q --orphan ac3-negative
+add_json_line "$AC3_NEG_WT/server/schema.snapshot.json" '"tables":' \
+  '    {"accessor":"story_4_18_invented_table","struct_name":"Story418InventedTable","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[{"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}]},'
+ac3_commit "$AC3_NEG_WT" "story 4.18 AC3 fixture: superset only, orphan history"
+AC3_NEG_EXPORT="$WORK/ac3-negative-export"
+if bash "$AC3_NEG_WT/scripts/ops/export-world.sh" "$SRC" "$AC3_NEG_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/ac3-negative.log" 2>&1; then
+  fail "export-world.sh succeeded against '$SRC' from a checkout whose only candidate snapshot is a superset with an invented table -- it must refuse (no real match exists)" "$DATA_DIR/ac3-negative.log"
+fi
+grep -qF "does not match" "$DATA_DIR/ac3-negative.log" || fail "the mismatch refusal did not name the reason" "$DATA_DIR/ac3-negative.log"
+grep -qF "story_4_18_invented_table" "$DATA_DIR/ac3-negative.log" || fail "the mismatch refusal did not name 'story_4_18_invented_table' as missing" "$DATA_DIR/ac3-negative.log"
+git -C "$REPO_ROOT" worktree remove --force "$AC3_NEG_WT" 2>/dev/null || true
+ok "a real mismatch (a candidate list with no snapshot that actually matches '$SRC') still refuses, naming the invented table"
+
+echo
+echo "story 4.18 AC3 (negative): a foreign schema (a different module entirely) still refuses, naming missing and extra"
+FOREIGN=bc-backup-foreign-schema
+if ! spacetime publish --server "$SERVER_URL" --no-config -y "$FOREIGN" --module-path "$REPO_ROOT/server/tests/fixtures/migration_v1" >"$DATA_DIR/foreign-publish.log" 2>&1; then
+  fail "could not publish the migration_v1 fixture as '$FOREIGN'" "$DATA_DIR/foreign-publish.log"
+fi
+AC3_FOREIGN_EXPORT="$WORK/ac3-foreign-export"
+if bash "$OPS/export-world.sh" "$FOREIGN" "$AC3_FOREIGN_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/ac3-foreign.log" 2>&1; then
+  fail "export-world.sh succeeded against '$FOREIGN', a completely different module (migration_v1's own fixture_row table, none of this module's real tables) -- it must refuse" "$DATA_DIR/ac3-foreign.log"
+fi
+grep -qF "does not match" "$DATA_DIR/ac3-foreign.log" || fail "the foreign-schema refusal did not name the reason" "$DATA_DIR/ac3-foreign.log"
+grep -qF "fixture_row" "$DATA_DIR/ac3-foreign.log" || fail "the foreign-schema refusal did not name 'fixture_row' as extra" "$DATA_DIR/ac3-foreign.log"
+ok "a foreign schema (a different module's own database) still refuses, naming missing and extra tables"
 
 # --- 4: an overshoot rolls back the whole call, no partial row left ------
 FRESH_OVERSHOOT=bc-backup-overshoot
@@ -339,7 +452,7 @@ while IFS= read -r table; do
   a="$(row_count_live "$REF" "$table")"
   b="$(row_count_live "$DST" "$table")"
   [ "$a" = "$b" ] || fail "scheduled table '$table': restored '$DST' has $b row(s), a freshly published reference has $a -- schedules are derived state and must never be restored"
-done <<< "$(bc_table_names scheduled)"
+done <<< "$(bc_table_names "$BC_SNAPSHOT" scheduled)"
 ok "every scheduled table in the restored database matches a freshly published reference (compared by row count -- schedules are derived state, never restored, so both are always empty today)"
 
 # --- 10a: world_clock's epoch survives by value ------------------------------

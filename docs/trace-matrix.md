@@ -560,6 +560,19 @@ sections above).
 | No reducer other than `restore_<table>` writes an auto_inc table while a restore is open -- a client-facing write racing the gap-fill loop could observe or create an id the exported data still needs | deferred | the first story whose reducer accepts a live client connection *and* writes an auto_inc table; today a restore always targets a database name no client connects to, by procedure (`scripts/ops/restore-world.sh`'s own doc comment), not by a lock the module enforces |
 | The spike report measured SpacetimeDB version never goes stale against the same three pins story 1.3 does | covered | `scripts/ci/check-spike-pin.sh` |
 
+Story 4.18: a deploy whose commit adds a table or a column no longer fails its own pre-publish
+backup (issue #331/#338) -- `export-world.sh` matches the live database against the schema
+snapshot's own git history instead of assuming the checkout's own working-tree snapshot is live.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| A deploy that adds a table or a column validates and exports the live database against the schema that is actually live (the newest committed snapshot whose whole shape matches), not the incoming commit's own snapshot, and the deploy proceeds | covered | `server/tools/world_backup/src/lib.rs` -- `select_schema` and its own unit tests (newest-wins-on-tie, a column-only difference disqualifying a candidate, an extra live table disqualifying every candidate); `scripts/ops/export-world.sh`; `scripts/ops/tests/test-export-world.sh` |
+| The backup still refuses a live database that does not match what we believe is live, naming the missing and extra tables | covered | `server/tools/world_backup/src/lib.rs` -- `select_schema`'s `SchemaMismatch`; `scripts/ops/tests/test-export-world.sh` |
+| Against a local instance, a deploy adding a table passes the backup step, and a real mismatch still fails it | covered | `scripts/ci/check-backup-restore.sh` |
+| Which committed snapshot is live is matched from `server/schema.snapshot.json`'s own git history, never a separately recorded pointer that could itself drift -- proven against a real, throwaway git repo, including a non-git/shallow checkout falling back to the working-tree snapshot alone | covered | `scripts/ops/lib.sh` (bc_snapshot_candidates); `scripts/ops/tests/test-bc-snapshot-candidates.sh` |
+| Both the `deploy.yml` `backup` job and the `backup.yml` `export` job fetch full history, never a shallow default that would hide the live commit from the walk above | covered | `.github/workflows/deploy.yml`, `.github/workflows/backup.yml`; `scripts/ci/check-deploy-workflow.sh`'s 4th structural rule, with its own red/green fixtures in `scripts/ci/tests/test-check-deploy-workflow.sh` |
+| The fix merges, `deploy.yml` runs green on master, and #331 is closed with a link to that run | deferred | post-merge evidence -- moves to `covered` once linked |
+
 ## Routing
 
 Story 3.11: the travel-time estimator (FR131).

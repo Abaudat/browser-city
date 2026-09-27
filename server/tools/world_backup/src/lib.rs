@@ -24,7 +24,7 @@
 //! already tests (`cargo test`, the `bounds` crate's own `ModuleSchema`/
 //! `TableDef` types), not a `jq`-version compatibility question.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bounds::schema::{ModuleSchema, TableDef};
 use serde::Deserialize;
@@ -100,6 +100,157 @@ pub fn normalize_name(name: &str) -> String {
         .filter(|c| *c != '_')
         .flat_map(|c| c.to_lowercase())
         .collect()
+}
+
+/// Story 4.18: which committed `server/schema.snapshot.json` is the one
+/// *actually live*, when the checkout's own working-tree copy already
+/// describes a schema one or more additive migrations ahead of it
+/// (`export-world.sh`'s pre-publish backup runs from the commit *about to
+/// publish* an additive change, never from the commit that already went
+/// live). A schema's whole shape -- every table's accessor mapped to its
+/// own sorted, normalised column names, `restore_state` never included
+/// (the restore mechanism's own gate, never a table export-world.sh
+/// matches against) -- is what a candidate snapshot and the live database
+/// are compared by: a table's `scheduled_reducer`/`public`/
+/// `wide_table_waiver` flags never appear in an exported row, so they are
+/// not part of this comparison.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Shape(pub BTreeMap<String, Vec<String>>);
+
+impl Shape {
+    pub fn from_snapshot(snapshot: &ModuleSchema) -> Shape {
+        let mut map = BTreeMap::new();
+        for t in &snapshot.tables {
+            if t.accessor == "restore_state" {
+                continue;
+            }
+            let mut cols: Vec<String> = t.columns.iter().map(|c| normalize_name(&c.name)).collect();
+            cols.sort();
+            map.insert(t.accessor.clone(), cols);
+        }
+        Shape(map)
+    }
+
+    /// One `table<TAB>col1,col2,...` line per table, sorted by table name
+    /// (a `BTreeMap`'s own iteration order) -- what `snapshot-shape`
+    /// prints for a candidate snapshot, and what `export-world.sh` hand-
+    /// builds the same way for the live database (`spacetime describe`'s
+    /// table list plus each table's own `columns-normalized`), so a
+    /// candidate is one process call, not one per table (Tim's
+    /// direction).
+    pub fn to_text(&self) -> String {
+        self.0
+            .iter()
+            .map(|(table, cols)| format!("{table}\t{}", cols.join(",")))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    pub fn parse(text: &str) -> Result<Shape> {
+        let mut map = BTreeMap::new();
+        for line in text.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            let (table, cols) = line
+                .split_once('\t')
+                .ok_or_else(|| err(format!("not a valid shape line (no tab): {line}")))?;
+            let cols: Vec<String> = if cols.is_empty() {
+                Vec::new()
+            } else {
+                cols.split(',').map(str::to_string).collect()
+            };
+            map.insert(table.to_string(), cols);
+        }
+        Ok(Shape(map))
+    }
+}
+
+/// Why no candidate's `Shape` equals the live database's -- named exactly
+/// the way `export-world.sh`'s refusal always has: missing/extra tables
+/// against `candidates[0]` (the newest candidate -- the incoming commit's
+/// own working-tree snapshot), plus, for any table present in both but
+/// whose columns differ, the exact diff -- but only when that table's live
+/// columns match *no* candidate at all (Quentin's direction: a column
+/// difference some older candidate would still accept is not itself why
+/// the whole match failed, so it is not reported as though it were).
+#[derive(Debug, PartialEq, Eq)]
+pub struct SchemaMismatch {
+    pub missing: Vec<String>,
+    pub extra: Vec<String>,
+    pub column_diffs: Vec<(String, Vec<String>, Vec<String>)>,
+}
+
+impl std::fmt::Display for SchemaMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "does not match -- missing: [{}] extra: [{}]",
+            self.missing.join(", "),
+            self.extra.join(", ")
+        )?;
+        for (table, live, incoming) in &self.column_diffs {
+            write!(
+                f,
+                "; '{table}' columns differ (live: [{}] snapshot: [{}])",
+                live.join(","),
+                incoming.join(",")
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for SchemaMismatch {}
+
+/// The first candidate (newest to oldest) whose whole [`Shape`] equals
+/// `live`'s -- the live database's real schema is, by construction, one of
+/// these (Tim's direction): `check-schema-additive.sh`'s append-only rule
+/// means table names plus column names identify exactly one point on the
+/// deploying commit's own first-parent history. `candidates` must be
+/// newest first; a tie (two candidates with an identical `Shape`, e.g. a
+/// story that touched no table) resolves to the newest, never the oldest.
+/// Returns that candidate's index into `candidates`, or the
+/// [`SchemaMismatch`] naming why none matched.
+pub fn select_schema(
+    live: &Shape,
+    candidates: &[Shape],
+) -> std::result::Result<usize, SchemaMismatch> {
+    for (i, candidate) in candidates.iter().enumerate() {
+        if candidate == live {
+            return Ok(i);
+        }
+    }
+    let newest = candidates.first().cloned().unwrap_or_default();
+    let live_tables: BTreeSet<&String> = live.0.keys().collect();
+    let newest_tables: BTreeSet<&String> = newest.0.keys().collect();
+    let missing: Vec<String> = newest_tables
+        .difference(&live_tables)
+        .map(|s| s.to_string())
+        .collect();
+    let extra: Vec<String> = live_tables
+        .difference(&newest_tables)
+        .map(|s| s.to_string())
+        .collect();
+    let mut column_diffs = Vec::new();
+    for table in live_tables.intersection(&newest_tables) {
+        let live_cols = &live.0[*table];
+        let newest_cols = &newest.0[*table];
+        if live_cols == newest_cols {
+            continue;
+        }
+        let matched_elsewhere = candidates
+            .iter()
+            .any(|c| c.0.get(*table).is_some_and(|cols| cols == live_cols));
+        if !matched_elsewhere {
+            column_diffs.push(((*table).clone(), live_cols.clone(), newest_cols.clone()));
+        }
+    }
+    Err(SchemaMismatch {
+        missing,
+        extra,
+        column_diffs,
+    })
 }
 
 /// A short tag for the column types this crate knows how to render as a
@@ -1008,6 +1159,129 @@ mod tests {
     fn normalize_name_strips_underscores_and_lowercases() {
         assert_eq!(normalize_name("x_0"), "x0");
         assert_eq!(normalize_name("x0"), "x0");
+    }
+
+    fn shape_of(tables: &[(&str, &[&str])]) -> Shape {
+        let mut map = BTreeMap::new();
+        for (table, cols) in tables {
+            let mut cols: Vec<String> = cols.iter().map(|c| c.to_string()).collect();
+            cols.sort();
+            map.insert(table.to_string(), cols);
+        }
+        Shape(map)
+    }
+
+    #[test]
+    fn shape_from_snapshot_excludes_restore_state_and_normalizes_columns() {
+        let snapshot = snap(
+            r#"{"tables":[
+                {"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                    {"name":"x_0","ty":"i32","primary_key":false,"auto_inc":false,"unique":false,"has_default":false,"indexed":false},
+                    {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}
+                ]},
+                {"accessor":"restore_state","struct_name":"RestoreState","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                    {"name":"id","ty":"u8","primary_key":true,"auto_inc":false,"unique":false,"has_default":false,"indexed":false}
+                ]}
+            ]}"#,
+        );
+        let shape = Shape::from_snapshot(&snapshot);
+        assert_eq!(shape, shape_of(&[("widget", &["x0", "id"])]));
+    }
+
+    #[test]
+    fn shape_text_round_trips_through_parse() {
+        let shape = shape_of(&[("widget", &["id", "n"]), ("gadget", &["id"])]);
+        let parsed = Shape::parse(&shape.to_text()).unwrap();
+        assert_eq!(parsed, shape);
+    }
+
+    #[test]
+    fn parse_empty_shape_text_is_the_empty_shape() {
+        assert_eq!(Shape::parse("").unwrap(), Shape::default());
+    }
+
+    #[test]
+    fn select_schema_picks_the_exact_match() {
+        let live = shape_of(&[("widget", &["id"])]);
+        let older = shape_of(&[("widget", &["id"])]);
+        let newer = shape_of(&[("widget", &["id"]), ("gadget", &["id"])]);
+        // newest first: `newer` (the incoming, additive commit) does not
+        // match live; `older` does.
+        let candidates = vec![newer, older.clone()];
+        assert_eq!(select_schema(&live, &candidates).unwrap(), 1);
+    }
+
+    #[test]
+    fn select_schema_prefers_the_newest_candidate_on_a_tie() {
+        let live = shape_of(&[("widget", &["id"])]);
+        let a = shape_of(&[("widget", &["id"])]);
+        let b = shape_of(&[("widget", &["id"])]);
+        let candidates = vec![a, b];
+        assert_eq!(select_schema(&live, &candidates).unwrap(), 0);
+    }
+
+    #[test]
+    fn select_schema_a_column_only_difference_disqualifies_a_candidate_but_not_an_older_exact_match()
+     {
+        let live = shape_of(&[("widget", &["id"])]);
+        // The newest candidate added a column to `widget` -- its table set
+        // matches live's, but its columns do not, so it must not be
+        // selected even though no table is missing or extra.
+        let newest_with_extra_column = shape_of(&[("widget", &["id", "n"])]);
+        let older_exact = shape_of(&[("widget", &["id"])]);
+        let candidates = vec![newest_with_extra_column, older_exact];
+        assert_eq!(select_schema(&live, &candidates).unwrap(), 1);
+    }
+
+    #[test]
+    fn select_schema_an_extra_live_table_disqualifies_every_candidate() {
+        let live = shape_of(&[("widget", &["id"]), ("ghost", &["id"])]);
+        let candidates = vec![shape_of(&[("widget", &["id"])])];
+        let err = select_schema(&live, &candidates).unwrap_err();
+        assert_eq!(err.missing, Vec::<String>::new());
+        assert_eq!(err.extra, vec!["ghost".to_string()]);
+        assert!(err.column_diffs.is_empty());
+    }
+
+    #[test]
+    fn select_schema_a_missing_live_table_is_named() {
+        let live = shape_of(&[]);
+        let candidates = vec![shape_of(&[("widget", &["id"])])];
+        let err = select_schema(&live, &candidates).unwrap_err();
+        assert_eq!(err.missing, vec!["widget".to_string()]);
+        assert!(err.extra.is_empty());
+    }
+
+    #[test]
+    fn select_schema_names_a_column_diff_only_when_no_candidate_at_all_matches_it() {
+        let live = shape_of(&[("widget", &["id", "weird"])]);
+        // Same table set as live in the newest candidate, but its columns
+        // for 'widget' differ, and no other candidate's 'widget' columns
+        // match live's either -- reported.
+        let newest = shape_of(&[("widget", &["id"])]);
+        let candidates = vec![newest];
+        let err = select_schema(&live, &candidates).unwrap_err();
+        assert_eq!(err.missing, Vec::<String>::new());
+        assert_eq!(err.extra, Vec::<String>::new());
+        assert_eq!(err.column_diffs.len(), 1);
+        assert_eq!(err.column_diffs[0].0, "widget");
+    }
+
+    #[test]
+    fn select_schema_omits_a_column_diff_when_an_older_candidate_matches_that_tables_columns() {
+        let live = shape_of(&[("widget", &["id", "weird"]), ("gadget", &["id"])]);
+        // The newest candidate is missing 'gadget' entirely (so no overall
+        // match, and 'gadget' itself is reported as missing), and its own
+        // 'widget' columns differ from live's -- but an older candidate's
+        // 'widget' columns match live's exactly, so 'widget' must not be
+        // reported as a column diff (some candidate does accept it).
+        let newest = shape_of(&[("widget", &["id"])]);
+        let older = shape_of(&[("widget", &["id", "weird"])]);
+        let candidates = vec![newest, older];
+        let err = select_schema(&live, &candidates).unwrap_err();
+        assert_eq!(err.missing, Vec::<String>::new());
+        assert_eq!(err.extra, vec!["gadget".to_string()]);
+        assert!(err.column_diffs.is_empty());
     }
 }
 

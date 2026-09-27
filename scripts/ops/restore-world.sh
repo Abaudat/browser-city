@@ -72,8 +72,13 @@ command -v spacetime >/dev/null 2>&1 || bc_ops_die "$SCRIPT" "'spacetime' is not
 MANIFEST_SCHEMA_SHA="$(grep -oE '"schema_sha256": *"[0-9a-f]+"' "$MANIFEST" | grep -oE '[0-9a-f]{16,}')"
 [ -n "$MANIFEST_SCHEMA_SHA" ] || bc_ops_die "$SCRIPT" "$MANIFEST has no schema_sha256"
 LOCAL_SCHEMA_SHA="$(bc_sha256 "$BC_SNAPSHOT")"
+# story 4.18: export-world.sh's own schema_sha256 is the schema it actually
+# matched against a live database, which is not always the working
+# tree's -- $MANIFEST's schema_commit (the commit that snapshot came from,
+# or 'worktree') is where a mismatch here is actually fixed from, never a
+# hand guess.
 [ "$MANIFEST_SCHEMA_SHA" = "$LOCAL_SCHEMA_SHA" ] || bc_ops_die "$SCRIPT" \
-  "the export's schema snapshot (sha256 $MANIFEST_SCHEMA_SHA) does not match $BC_SNAPSHOT ($LOCAL_SCHEMA_SHA) -- restore only into a database publishing the exact schema the export was taken from"
+  "the export's schema snapshot (sha256 $MANIFEST_SCHEMA_SHA) does not match $BC_SNAPSHOT ($LOCAL_SCHEMA_SHA) -- check out $MANIFEST's own schema_commit and retry (restore only into a database publishing the exact schema the export was taken from)"
 
 WORK="$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/bc-restore.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
@@ -84,7 +89,7 @@ if ! spacetime describe "$DB" "${SERVER_ARGS[@]}" --no-config -y --json >"$DESCR
 $(cat "$WORK/describe.err")"
 fi
 LIVE_TABLES="$(bc_wb describe-tables "$DESCRIBE_JSON" | grep -v '^restore_state$' | sort)"
-SNAPSHOT_TABLES="$(bc_table_names all | sort)"
+SNAPSHOT_TABLES="$(bc_table_names "$BC_SNAPSHOT" all | sort)"
 MISSING="$(comm -23 <(printf '%s\n' "$SNAPSHOT_TABLES") <(printf '%s\n' "$LIVE_TABLES"))"
 EXTRA="$(comm -13 <(printf '%s\n' "$SNAPSHOT_TABLES") <(printf '%s\n' "$LIVE_TABLES"))"
 if [ -n "$MISSING" ] || [ -n "$EXTRA" ]; then
@@ -157,7 +162,7 @@ while IFS= read -r table; do
   [ -n "$table" ] || continue
   echo "restore-world: skip '$table' -- scheduled table, derived state, never restored" >&2
   SKIPPED_SCHEDULED=$((SKIPPED_SCHEDULED + 1))
-done <<< "$(bc_table_names scheduled)"
+done <<< "$(bc_table_names "$BC_SNAPSHOT" scheduled)"
 
 while IFS= read -r table; do
   [ -n "$table" ] || continue
@@ -227,7 +232,7 @@ while IFS= read -r table; do
   done
   echo "restore-world: ok -- '$table' restored $n row(s) in $total batch(es), byte budget $BATCH_BYTES, sequence advanced to floor $FLOOR -- last batch (rows + floor-advance) took ${gap_fill_s}s" >&2
   RESTORED=$((RESTORED + 1))
-done <<< "$(bc_table_names non-scheduled)"
+done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
 
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" finish_restore '[]'
 

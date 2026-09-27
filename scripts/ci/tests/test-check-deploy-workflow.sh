@@ -23,6 +23,9 @@ jobs:
     name: backup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
 
   publish-module:
@@ -129,6 +132,9 @@ jobs:
     name: backup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
 
   publish-module:
@@ -153,6 +159,9 @@ jobs:
     name: backup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
 
   publish-module:
@@ -177,6 +186,40 @@ sed -i 's#bash scripts/ops/check-database-exists.sh "\$DB" --server maincloud#ec
 OUT="$(bash "$CHECK" "$D10/deploy.yml" 2>&1)"; CODE=$?
 check "a backup job that never calls check-database-exists.sh fails" 1 bash -c "exit $CODE"
 check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'never calls scripts/ops/check-database-exists.sh'" _ "$OUT"
+
+echo
+echo "story 4.18: the backup job's own checkout must not be shallow"
+D11="$(fake_dir)"; write_good_workflow "$D11/deploy.yml"
+sed -i 's/fetch-depth: 0/fetch-depth: 1/' "$D11/deploy.yml"
+OUT="$(bash "$CHECK" "$D11/deploy.yml" 2>&1)"; CODE=$?
+check "fetch-depth: 1 on the backup job's checkout fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
+D12="$(fake_dir)"
+cat > "$D12/deploy.yml" <<'YAML'
+name: deploy
+on:
+  workflow_dispatch:
+jobs:
+  backup:
+    name: backup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
+
+  publish-module:
+    name: publish-module
+    needs: [backup]
+    runs-on: ubuntu-latest
+    steps:
+      - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
+YAML
+OUT="$(bash "$CHECK" "$D12/deploy.yml" 2>&1)"; CODE=$?
+check "a checkout with no fetch-depth at all (the actions/checkout default, 1) fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
+check "the good workflow's own fetch-depth: 0 passes (not a false FAIL)" 0 bash "$CHECK" "$WF"
 
 D8="$(fake_dir)"
 cat > "$D8/deploy.yml" <<'YAML'

@@ -106,6 +106,31 @@ fn run(args: &[String]) -> Result<()> {
                 rows.iter().map(row_to_line).collect::<Vec<_>>().join(",")
             );
         }
+        "snapshot-shape" => {
+            let snapshot = read_snapshot(&args[2])?;
+            let text = Shape::from_snapshot(&snapshot).to_text();
+            if !text.is_empty() {
+                println!("{text}");
+            }
+        }
+        "select-schema" => {
+            // select-schema <live-shape-file> <candidate-shape-file>... --
+            // <candidate-shape-file>s ordered newest to oldest. Prints the
+            // winning candidate's 0-based index (its position among the
+            // candidate arguments) on success; on failure, the exact same
+            // message a caller would have died with today, just now
+            // checked against every candidate rather than only the
+            // incoming one (story 4.18).
+            let live = Shape::parse(&read_file(&args[2])?)?;
+            let mut candidates = Vec::new();
+            for path in &args[3..] {
+                candidates.push(Shape::parse(&read_file(path)?)?);
+            }
+            match select_schema(&live, &candidates) {
+                Ok(index) => println!("{index}"),
+                Err(mismatch) => return Err(WorldBackupError(mismatch.to_string())),
+            }
+        }
         "snapshot-columns" => {
             let snapshot = read_snapshot(&args[2])?;
             let accessor = &args[3];

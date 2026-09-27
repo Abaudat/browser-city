@@ -251,7 +251,11 @@ and just-in-time. So:
   halves of that last rule against a real local SpacetimeDB instance.
   A code's number in `sim::codes` is as permanent as a primary key;
   `scripts/ci/check-codes-append-only.sh` diffs
-  `sim/tests/goldens/codes_*.golden` the same way.
+  `sim/tests/goldens/codes_*.golden` the same way. `scripts/ops/
+  export-world.sh` exports against the newest first-parent snapshot in
+  this file's own git history that actually matches the live database,
+  never the checkout's own working-tree snapshot outright, recorded as
+  `schema_commit` in the export's manifest (story 4.18).
 
 ## World addressing
 

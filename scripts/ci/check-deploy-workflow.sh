@@ -31,6 +31,14 @@
 #      the moment anyone widens its error handling, so it must go through
 #      `scripts/ops/check-database-exists.sh`, which positively
 #      recognises "not found" rather than treating any failure as one.
+#   4. The `backup` job's own checkout must not be shallow (story 4.18):
+#      `scripts/ops/export-world.sh` walks the schema snapshot's own git
+#      history to find which committed snapshot is actually live, and a
+#      shallow clone (the default `actions/checkout` depth, 1) hides that
+#      history from it -- a future "speed up checkout" commit would
+#      otherwise silently turn every additive deploy's backup step into
+#      "no candidate matches" the moment the next one runs. `fetch-depth:
+#      0` is the only value this accepts.
 #
 # Usage: check-deploy-workflow.sh [deploy.yml path]
 #   [deploy.yml path]  defaults to .github/workflows/deploy.yml at the repo
@@ -159,6 +167,16 @@ else
   fi
   if ! printf '%s\n' "$BACKUP_BLOCK" | grep -qF 'check-database-exists.sh'; then
     echo "check-deploy-workflow: FAIL -- 'backup' never calls scripts/ops/check-database-exists.sh -- NFR39's first-deploy exception is unguarded" >&2
+    FAILED=1
+  fi
+
+  # --- story 4.18: the backup job's own checkout must fetch full history,
+  # never the actions/checkout default (a shallow, depth-1 clone) --
+  # export-world.sh cannot see which commit is actually live without it --
+  FETCH_DEPTH_LINE="$(printf '%s\n' "$BACKUP_BLOCK" | grep -E 'fetch-depth:' | head -n1 || true)"
+  FETCH_DEPTH_VALUE="$(printf '%s' "$FETCH_DEPTH_LINE" | sed -E 's/.*fetch-depth:[[:space:]]*//')"
+  if [ -z "$FETCH_DEPTH_LINE" ] || [ "$FETCH_DEPTH_VALUE" != "0" ]; then
+    echo "check-deploy-workflow: FAIL -- 'backup' job's checkout is shallow (fetch-depth: ${FETCH_DEPTH_VALUE:-1, the actions/checkout default}) -- scripts/ops/export-world.sh needs the schema snapshot's full git history to find which commit is actually live (story 4.18); use fetch-depth: 0" >&2
     FAILED=1
   fi
 fi

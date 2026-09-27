@@ -127,20 +127,80 @@ $(cat "$errlog")"
   rm -f "$errlog"
 }
 
-# bc_table_names <role> -- every accessor from schema.snapshot.json, one
-# per line, in snapshot order. <role> is 'all', 'scheduled' or
-# 'non-scheduled'. `restore_state` is never included: it is the restore
-# mechanism's own gate, not a table export-world.sh/restore-world.sh ever
-# touch.
+# bc_table_names <snapshot-path> <role> -- every accessor from
+# <snapshot-path>, one per line, in snapshot order. <role> is 'all',
+# 'scheduled' or 'non-scheduled'. `restore_state` is never included: it is
+# the restore mechanism's own gate, not a table export-world.sh/
+# restore-world.sh ever touch. <snapshot-path> is always explicit (Tim's
+# direction, story 4.18): export-world.sh reads the *selected* candidate
+# snapshot, which is not always $BC_SNAPSHOT, so this never reads that
+# global itself.
 bc_table_names() {
-  bc_wb snapshot-tables "$BC_SNAPSHOT" | while IFS=$'\t' read -r name scheduled; do
+  local snapshot="$1" role="$2"
+  bc_wb snapshot-tables "$snapshot" | while IFS=$'\t' read -r name scheduled; do
     [ "$name" = "restore_state" ] && continue
-    case "$1" in
+    case "$role" in
       all) printf '%s\n' "$name" ;;
       scheduled) [ "$scheduled" = "1" ] && printf '%s\n' "$name" ;;
       non-scheduled) [ "$scheduled" = "0" ] && printf '%s\n' "$name" ;;
     esac
   done
+}
+
+# bc_snapshot_candidates <out-dir> <repo-root> <worktree-snapshot-path> --
+# writes candidate schema snapshot files into <out-dir>/0, <out-dir>/1, ...
+# and a matching <out-dir>/labels.txt (one "<index>\t<label>" line per
+# candidate, in the same newest-to-oldest order printed to stdout).
+# Candidate 0 is always <worktree-snapshot-path>'s own current content
+# (label 'worktree') -- a human's own uncommitted change included, so a
+# local instance one edit ahead of its own last publish still resolves.
+# Candidates 1.. are every first-parent ancestor of <repo-root>'s HEAD that
+# changed server/schema.snapshot.json, newest first (label: that commit's
+# own sha) -- `check-schema-additive.sh`'s append-only rule is what makes
+# this walk meaningful at all: table names plus column names identify
+# exactly one point on that history (story 4.18, Tim's direction).
+#
+# Story 4.18: export-world.sh matches the *live* database against this
+# list to find which commit's schema is actually live, never a record it
+# would then have to keep consistent -- see world_backup's `select-schema`.
+#
+# Never partial: a candidate whose `git show` fails (the path did not
+# exist yet at that commit) is skipped, not aborted on.
+#
+# BC_SNAPSHOT_CANDIDATES_DIR, if set, replaces this whole function with a
+# plain copy of that directory's own files (0, 1, ... and labels.txt) --
+# documented, test-only: scripts/ops/tests/test-export-world.sh's stub
+# suite has no real git history of its own to walk, and needs a fully
+# controlled candidate list to pin specific match/mismatch scenarios.
+# Production (export-world.sh run for real, .github/workflows/deploy.yml,
+# .github/workflows/backup.yml) and scripts/ci/check-backup-restore.sh's
+# AC3 proof never set it -- the git-backed path below is what they
+# exercise, and it has its own dedicated test
+# (scripts/ops/tests/test-bc-snapshot-candidates.sh), against a real,
+# throwaway git repo.
+bc_snapshot_candidates() {
+  local out_dir="$1" repo_root="$2" worktree_snapshot="$3"
+  mkdir -p "$out_dir"
+  if [ -n "${BC_SNAPSHOT_CANDIDATES_DIR:-}" ]; then
+    cp "$BC_SNAPSHOT_CANDIDATES_DIR"/* "$out_dir"/
+    cat "$out_dir/labels.txt"
+    return 0
+  fi
+  cp "$worktree_snapshot" "$out_dir/0"
+  printf '0\tworktree\n' > "$out_dir/labels.txt"
+  if ! git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    cat "$out_dir/labels.txt"
+    return 0
+  fi
+  local i=1 sha
+  while IFS= read -r sha; do
+    [ -n "$sha" ] || continue
+    if git -C "$repo_root" show "$sha:server/schema.snapshot.json" > "$out_dir/$i" 2>/dev/null; then
+      printf '%s\t%s\n' "$i" "$sha" >> "$out_dir/labels.txt"
+      i=$((i + 1))
+    fi
+  done < <(git -C "$repo_root" log --first-parent --format=%H HEAD -- server/schema.snapshot.json 2>/dev/null)
+  cat "$out_dir/labels.txt"
 }
 
 bc_sha256() { # <file> -- `sha256sum` prepends a bare `\` to the digest
