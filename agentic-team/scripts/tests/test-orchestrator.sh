@@ -3,7 +3,9 @@
 # of agentic-team/high-level-agentic-flow.mmd (demo-active/demo-has-feedback/closing-sprint, sprint-over/creating-demo-issue, starting-dev-cycle,
 # leads-analysed/dispatching-implementation, pr-opened/opening-leads-review, breaker-tripped-tripping-breaker, task-requested/judging-task-request, ci-status/dispatching-ci-fix, crew-addressed/reopening-leads-review), plus the two crash-idempotency repairs and
 # the two hard-failure propagations (bc-issue current's exit 2, an empty
-# backlog). Runs orchestrator.sh as a real subprocess -- BC_FAKE drives the
+# backlog), and story 4.19's adopt-alerts call at starting-dev-cycle (runs
+# before next's own pick reaches the board, and its own failure is broken,
+# not swallowed). Runs orchestrator.sh as a real subprocess -- BC_FAKE drives the
 # level-1 primitives, the level-2 scripts run for real underneath it, and
 # BC_WAKE_REASON is pointed at a per-scenario file so the written reason
 # line can be checked alongside stdout and the exit code.
@@ -85,6 +87,7 @@ echo "budget-available: the gate is the first branch, and nothing runs behind it
 budget_board() { # <dir> -- a board with work the tick would otherwise do
   write_iterations "$1"
   echo '[]' > "$1/project_items.json"
+  echo '[]' > "$1/gh_issue_list_label.json"
 }
 
 F_BUDGET_SPENT="$(fake_dir)"
@@ -133,6 +136,7 @@ echo "sanity: the reason file carries exactly what stdout printed"
 F0="$(fake_dir)"
 write_iterations "$F0"
 echo '[]' > "$F0/project_items.json"
+echo '[]' > "$F0/gh_issue_list_label.json"
 OUT="$(run "$F0" "$NOW_MIDSPRINT")"
 check_out "sanity: backlog empty -> starting-dev-cycle sleep, exit 1" 1 "starting-dev-cycle sleep backlog empty" run "$F0" "$NOW_MIDSPRINT"
 check_out "sanity: BC_WAKE_REASON file matches stdout" 0 "$OUT" cat "$F0/reason.txt"
@@ -276,6 +280,7 @@ F_SPRINT_OVER_GUARDED="$(fake_dir)"
 write_iterations "$F_SPRINT_OVER_GUARDED"
 "$JQ" -n -c '[{number:43,title:"Sprint 1 Demo",state:"CLOSED",status:"Done",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null}]' \
   > "$F_SPRINT_OVER_GUARDED/project_items.json"
+echo '[]' > "$F_SPRINT_OVER_GUARDED/gh_issue_list_label.json"
 check_out "sprint-over guarded: falls through to starting-dev-cycle sleep (no active sub-issue, empty backlog)" 1 \
   "starting-dev-cycle sleep backlog empty" run "$F_SPRINT_OVER_GUARDED" "2026-09-04T10:01:00Z"
 check "sprint-over guarded: wrote nothing at all (falls through to an empty-backlog sleep)" 1 test -f "$F_SPRINT_OVER_GUARDED/calls.log"
@@ -291,6 +296,7 @@ write_iterations "$F_DEV_CYCLE"
   {number:899,title:"Blocker, but blocked by the open 901",state:"OPEN",status:"Backlog",priority:"Blocker",size:"XS",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:900,blockedBy:[901]},
   {number:901,title:"Sub, on no sprint",state:"OPEN",status:"Backlog",priority:"Standard",size:"M",sprintId:null,sprintTitle:null,labels:["lead:tim"],isParent:false,parent:900,blockedBy:[]}
 ]' > "$F_DEV_CYCLE/project_items.json"
+echo '[]' > "$F_DEV_CYCLE/gh_issue_list_label.json"
 echo '["lead:tim"]' > "$F_DEV_CYCLE/gh_issue_labels.901.json"
 printf 'WT901' > "$F_DEV_CYCLE/orca_worktree_path.issue:901.json"
 echo '{"result":{"wait":{"satisfied":true}}}' > "$F_DEV_CYCLE/orca_terminal_wait_idle.json"
@@ -325,6 +331,61 @@ check "starting-dev-cycle: sent to quentin's terminal" 0 log_has "$F_DEV_CYCLE/c
 check "starting-dev-cycle: sent to tim's terminal"     0 log_has "$F_DEV_CYCLE/calls.log" '^orca_terminal_send ht '
 check "starting-dev-cycle: never sent to crew (crew is not nudged at To analyze)" 1 \
   log_has "$F_DEV_CYCLE/calls.log" '^orca_terminal_send h[^qt]'
+
+# =============================================================================
+echo
+echo "starting-dev-cycle: adopt-alerts runs before next's own pick, which then starts the alert, not the other story (AC1 end-to-end, story 4.19)"
+# =============================================================================
+F_ADOPT_BEFORE_NEXT="$(fake_dir)"
+write_iterations "$F_ADOPT_BEFORE_NEXT"
+# Two reads of the board, one per line, in the order the tick makes them:
+# `current` (no active sub-issue -- #950 isn't on it at all yet), then
+# adopt-alerts' own read, which -- as far as the tick can observe -- already
+# carries #950 the way adopt-alerts itself leaves it (Backlog/Blocker/XS);
+# the last line repeats, so `next`'s own read sees the same board and picks
+# #950 over #901, proving the pick end-to-end, not just the write ordering
+# (Quentin's direction, cycle 1).
+{
+  "$JQ" -n -c '[
+    {number:901,title:"Sub, on no sprint",state:"OPEN",status:"Backlog",priority:"Standard",size:"M",sprintId:null,sprintTitle:null,labels:["lead:tim"],isParent:false,parent:900,blockedBy:[]}
+  ]'
+  "$JQ" -n -c '[
+    {number:901,title:"Sub, on no sprint",state:"OPEN",status:"Backlog",priority:"Standard",size:"M",sprintId:null,sprintTitle:null,labels:["lead:tim"],isParent:false,parent:900,blockedBy:[]},
+    {number:950,title:"deploy failed",state:"OPEN",status:"Backlog",priority:"Blocker",size:"XS",sprintId:null,sprintTitle:null,labels:["alert","lead:tim"],isParent:false,parent:null,blockedBy:[]}
+  ]'
+} > "$F_ADOPT_BEFORE_NEXT/project_items.seq"
+echo '[{"number":950}]' > "$F_ADOPT_BEFORE_NEXT/gh_issue_list_label.json"
+echo '["alert","lead:tim"]' > "$F_ADOPT_BEFORE_NEXT/gh_issue_labels.950.json"
+printf 'WT950' > "$F_ADOPT_BEFORE_NEXT/orca_worktree_path.issue:950.json"
+echo '{"result":{"wait":{"satisfied":true}}}' > "$F_ADOPT_BEFORE_NEXT/orca_terminal_wait_idle.json"
+"$JQ" -n -c --arg u1 "$(role8 quentin 950)" --arg u2 "$(role8 tim 950)" '
+  [
+    {handle:"hq",title:("✳ bc-quentin #950 (" + $u1 + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0},
+    {handle:"ht",title:("✳ bc-tim #950 (" + $u2 + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0}
+  ]' > "$F_ADOPT_BEFORE_NEXT/orca_terminals.WT950.json"
+check_out "adopt-alerts+next: exit 0, dispatched both leads to the alert, not #901" 0 \
+  "starting-dev-cycle started dev cycle, dispatched quentin,tim on #950" \
+  run "$F_ADOPT_BEFORE_NEXT" "$NOW_MIDSPRINT"
+check "adopt-alerts: reasserted the alert (Backlog, Priority, Size)" 0 \
+  log_has "$F_ADOPT_BEFORE_NEXT/calls.log" '^project_set_single 950 Status Backlog$'
+check "next: never touched #901 -- the alert outranked it" 1 \
+  log_has "$F_ADOPT_BEFORE_NEXT/calls.log" '(^| )901( |$)'
+check "adopt-alerts: ran, and finished, before next's own pick reached the board" 0 \
+  line_before "$F_ADOPT_BEFORE_NEXT/calls.log" '^project_set_single 950 Size XS$' '^project_set_iteration 950 cd18e696$'
+
+# =============================================================================
+echo
+echo "starting-dev-cycle: adopt-alerts failing is broken, not swallowed (story 4.19)"
+# =============================================================================
+F_ADOPT_BROKEN="$(fake_dir)"
+write_iterations "$F_ADOPT_BROKEN"
+echo '[]' > "$F_ADOPT_BROKEN/project_items.json"
+echo '[{"number":960}]' > "$F_ADOPT_BROKEN/gh_issue_list_label.json"
+printf 'PVTI_960\n' > "$F_ADOPT_BROKEN/project_item.json"
+echo 2 > "$F_ADOPT_BROKEN/project_set_single.exit"
+check_out "adopt-alerts failing -> broken, exit 2, before next ever runs" 2 \
+  "starting-dev-cycle broken could not adopt alerts onto the board" \
+  run "$F_ADOPT_BROKEN" "$NOW_MIDSPRINT"
 
 # =============================================================================
 echo
@@ -857,6 +918,7 @@ echo "backlog empty: no active sub-issue, nothing in Backlog -> sleep (already e
 F_EMPTY="$(fake_dir)"
 write_iterations "$F_EMPTY"
 echo '[]' > "$F_EMPTY/project_items.json"
+echo '[]' > "$F_EMPTY/gh_issue_list_label.json"
 check_out "starting-dev-cycle: empty backlog -> sleep, exit 1" 1 "starting-dev-cycle sleep backlog empty" run "$F_EMPTY" "$NOW_MIDSPRINT"
 check "starting-dev-cycle: empty backlog wrote nothing" 1 test -f "$F_EMPTY/calls.log"
 
@@ -868,6 +930,7 @@ write_iterations "$F_ALL_BLOCKED"
   {number:910,title:"Waits on 911",state:"OPEN",status:"Backlog",priority:"Critical",size:"S",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:null,blockedBy:[911]},
   {number:911,title:"Waits on 910",state:"OPEN",status:"Backlog",priority:"Critical",size:"S",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:null,blockedBy:[910]}
 ]' > "$F_ALL_BLOCKED/project_items.json"
+echo '[]' > "$F_ALL_BLOCKED/gh_issue_list_label.json"
 check_out "starting-dev-cycle: all blocked -> sleep, exit 1, named" 1 \
   "starting-dev-cycle sleep 2 Backlog stories, every one blocked by an open issue" run "$F_ALL_BLOCKED" "$NOW_MIDSPRINT"
 check "starting-dev-cycle: all blocked wrote nothing" 1 test -f "$F_ALL_BLOCKED/calls.log"
@@ -878,6 +941,7 @@ F_NO_SPRINT="$(fake_dir)"
 write_iterations "$F_NO_SPRINT"
 "$JQ" -n -c '[{number:920,title:"Ready",state:"OPEN",status:"Backlog",priority:"Standard",size:"S",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:null,blockedBy:[]}]' \
   > "$F_NO_SPRINT/project_items.json"
+echo '[]' > "$F_NO_SPRINT/gh_issue_list_label.json"
 echo '[]' > "$F_NO_SPRINT/gh_issue_labels.920.json"
 check_out "starting-dev-cycle: no iteration -> broken, exit 2" 2 \
   "starting-dev-cycle broken could not scope #920 into a sprint" run "$F_NO_SPRINT" "2026-12-25T08:00:00Z"

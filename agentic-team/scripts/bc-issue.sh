@@ -46,6 +46,22 @@
 # story opened without them is one the picker may start before its
 # foundations exist.
 #
+# `adopt-alerts` runs immediately before `next` at starting-dev-cycle
+# (story 4.19: Failure Reports Are Worked First). `scripts/ci/
+# report-scheduled-failure.sh` files a tracking issue on a scheduled/deploy
+# workflow's failure, labelled `alert`, and stops there -- CI's own token has
+# no `project` scope and none should ever be handed to it, so it can never
+# score or scope the issue itself. adopt-alerts is the other half: every
+# open `alert` issue is asserted Backlog/Blocker/XS, in that order, so `next`
+# -- unchanged -- picks it ahead of every Critical story the moment it
+# lands. The key is Status, never "already a project item": a tick that
+# crashes between adding the item and its first field write leaves an
+# alert on the board with no Status at all, and one crash later leaves it
+# Backlog with no Priority -- both invisible to `next` or ranked last, so
+# both are re-asserted (the writes are idempotent). Only an alert triaged
+# PAST Backlog (In progress, or moved off Backlog by hand) is left alone,
+# which is what makes a re-run, or a tick that crashes mid-loop, safe.
+#
 # `epic-context` and `amend-story` serve judging-task-request, where a lead
 # has asked mid-review for work its PR cannot carry. epic-context is the read
 # that makes the ruling possible -- the epic and every sibling story, so
@@ -70,6 +86,7 @@ bc_init
 usage() {
   cat >&2 <<'EOF'
 usage: bc-issue.sh <command> [args]
+  adopt-alerts                -- put every open, off-board `alert` issue on the board (Backlog/Blocker/XS)
   next                        -- the startable story: no open blocker, by priority, then size
   current                     -- the single sub-issue in an active status
   transition <issue> <status> -- set Status (and close on Done)
@@ -319,6 +336,50 @@ cmd="${1:-}"
 shift || true
 
 case "$cmd" in
+
+adopt-alerts)
+  alerts="$(gh_issue_list_label "$BC_LABEL_ALERT")" \
+    || { echo "bc-issue adopt-alerts: could not list open $BC_LABEL_ALERT issues" >&2; exit 2; }
+  items="$(project_items)" || { echo "bc-issue adopt-alerts: could not read project items" >&2; exit 2; }
+  numbers="$(printf '%s' "$alerts" | "$JQ" -c '[.[].number] | sort')" \
+    || { echo "bc-issue adopt-alerts: malformed alert list" >&2; exit 2; }
+
+  count="$(printf '%s' "$numbers" | "$JQ" 'length')"
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    n="$(printf '%s' "$numbers" | "$JQ" -r --argjson i "$i" '.[$i]')"
+    i=$((i + 1))
+    # Quentin's direction, cycle 1: "already a project item" is not
+    # "already triaged" -- a tick that crashes between project_item and the
+    # Status write leaves an alert on the board with no Status (or, one
+    # crash later, Backlog with no Priority) -- invisible to `next`
+    # (pool is status=="Backlog") or ranked last (a null Priority). Only an
+    # alert triaged PAST Backlog (In progress, Leads review, Reviewed,
+    # Done, or anything else) is left alone; off-board, or on-board with
+    # Status null/Backlog, is (re-)asserted -- the three writes are
+    # idempotent, so redoing them on an already-Backlog alert is cheap.
+    onboard="$(printf '%s' "$items" | "$JQ" -e --argjson n "$n" 'any(.[]; .number == $n)' 2>/dev/null)" || onboard=false
+    status="$(printf '%s' "$items" | "$JQ" -r --argjson n "$n" '(map(select(.number==$n)) | .[0].status) // "null"')"
+    if [ "$onboard" = "true" ] && [ "$status" != "null" ] && [ "$status" != "Backlog" ]; then
+      continue
+    fi
+    if [ "$onboard" != "true" ]; then
+      # Its own check and its own message: a failed item-add must never
+      # surface as a misleading "failed to set Status" (Quentin's direction).
+      project_item "$n" >/dev/null \
+        || { echo "bc-issue adopt-alerts: could not add #$n to the board" >&2; exit 2; }
+    fi
+    project_set_single "$n" Status Backlog \
+      || { echo "bc-issue adopt-alerts: failed to set Status for #$n" >&2; exit 2; }
+    project_set_single "$n" Priority Blocker \
+      || { echo "bc-issue adopt-alerts: failed to set Priority for #$n" >&2; exit 2; }
+    project_set_single "$n" Size XS \
+      || { echo "bc-issue adopt-alerts: failed to set Size for #$n" >&2; exit 2; }
+    echo "bc-issue adopt-alerts: adopted #$n" >&2
+    printf '%s\n' "$n"
+  done
+  exit 0
+  ;;
 
 next)
   items="$(project_items)" || { echo "bc-issue next: could not read project items" >&2; exit 2; }

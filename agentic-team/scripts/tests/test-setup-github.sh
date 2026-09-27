@@ -3,7 +3,9 @@
 # (Story 0.16): the already-required no-op, the create path, and the
 # API-failure path -- exercised because this PR added gh_branch_required_
 # checks/gh_branch_require_check and wired setup-github.sh to exit 2 on
-# failure, and the only verification it had before was a hand run.
+# failure, and the only verification it had before was a hand run. Also
+# covers the `alert` label (story 4.19) via the same LABEL_DEFS enumeration
+# every other label already goes through.
 set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$TEST_DIR/.."
@@ -20,10 +22,20 @@ run() { local fake="$1"; shift; BC_FAKE="$fake" bash "$SETUP" "$@"; }
 _seed_common() {
   local d="$1"
   printf 'repo project\n' > "$d/gh_auth_scopes.seq"
-  echo '["lead:derek","lead:tim","lead:artie","epic","demo","breaker"]' > "$d/gh_label_list.json"
+  echo '["lead:derek","lead:tim","lead:artie","epic","demo","breaker","alert"]' > "$d/gh_label_list.json"
   echo 'pr-assets' > "$d/gh_branch_exists.pr-assets.json"
 }
 
+echo "labels: alert missing from the repo -- created, exit 0:"
+
+FAKE_ALERT_MISSING="$(fake_dir)"
+_seed_common "$FAKE_ALERT_MISSING"
+echo '["lead:derek","lead:tim","lead:artie","epic","demo","breaker"]' > "$FAKE_ALERT_MISSING/gh_label_list.json"
+echo '["ci"]' > "$FAKE_ALERT_MISSING/gh_branch_required_checks.json"
+check "alert missing -> exit 0" 0 run "$FAKE_ALERT_MISSING"
+check "created the alert label" 0 log_has "$FAKE_ALERT_MISSING/calls.log" '^gh_label_create alert '
+
+echo
 echo "branch protection: already required -- no mutation, exit 0:"
 
 FAKE_OK="$(fake_dir)"

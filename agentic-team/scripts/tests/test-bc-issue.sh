@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Fixture-driven coverage for scripts/bc-issue.sh: next's whole-backlog pick
+# Fixture-driven coverage for scripts/bc-issue.sh: adopt-alerts' off-board/
+# already-adopted cases (story 4.19), next's whole-backlog pick
 # (no open blocker, then priority, size, number) and its Backlog/open gates,
 # write-story's and write-blockers' dependencies, current's 0/1/2-active cases, transition
 # (including the epic that closes with its last story),
@@ -14,6 +15,9 @@ TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$TEST_DIR/.."
 BC_ISSUE="$SCRIPTS_DIR/bc-issue.sh"
 . "$TEST_DIR/harness.sh"
+# shellcheck source=lib/config.sh
+. "$SCRIPTS_DIR/lib/config.sh"
+bc_init
 
 run() { # <fakedir> <now-or-empty> <args...>
   local fake="$1" now="$2"; shift 2
@@ -35,6 +39,15 @@ run_dl() {
 
 log_has() { grep -Eq -- "$2" "$1"; } # <file> <regex>
 
+# field_value <calls.log> <issue> <field> -> the value adopt-alerts (or
+# any project_set_single caller) actually wrote for that issue/field, read
+# back from the log rather than retyped -- so a fixture built from it
+# drifts with the real value instead of independently going stale
+# (Quentin's direction, cycle 1).
+field_value() {
+  grep -E "^project_set_single $2 $3 " "$1" | tail -1 | sed -E "s/^project_set_single $2 $3 //"
+}
+
 write_iterations() { # <dir> -- Sprint 1 active on 2026-09-01..2026-09-04
   cat > "$1/project_iterations.json" <<'JSON'
 [
@@ -44,6 +57,130 @@ write_iterations() { # <dir> -- Sprint 1 active on 2026-09-01..2026-09-04
 JSON
 }
 
+echo "adopt-alerts: an off-board alert is added to the board, then Backlog, Blocker, XS, in that order; an on-board story is untouched:"
+
+FAKE_AA1="$(fake_dir)"
+echo '[{"number":700}]' > "$FAKE_AA1/gh_issue_list_label.json"
+cat > "$FAKE_AA1/project_items.json" <<'JSON'
+[
+  {"number":701,"title":"Some critical work","state":"OPEN","status":"Backlog","priority":"Critical","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":null,"blockedBy":[]}
+]
+JSON
+printf 'PVTI_700\n' > "$FAKE_AA1/project_item.json"
+check_out "adopt-alerts: prints the number it adopted" 0 700 run "$FAKE_AA1" "" adopt-alerts
+check_out "adopt-alerts: put the alert in Backlog, then Blocker, then XS, in order" 0 \
+  "project_set_single 700 Status Backlog
+project_set_single 700 Priority Blocker
+project_set_single 700 Size XS" \
+  cat "$FAKE_AA1/calls.log"
+check "adopt-alerts: never touched the on-board story" 1 log_has "$FAKE_AA1/calls.log" '(^| )701( |$)'
+
+echo
+echo "adopt-alerts: already triaged past Backlog (In progress) -- left alone, wrote nothing:"
+
+FAKE_AA2="$(fake_dir)"
+echo '[{"number":700}]' > "$FAKE_AA2/gh_issue_list_label.json"
+cat > "$FAKE_AA2/project_items.json" <<'JSON'
+[
+  {"number":700,"title":"deploy failed","state":"OPEN","status":"In progress","priority":"Blocker","size":"XS","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["alert","lead:tim"],"isParent":false,"parent":null,"blockedBy":[]}
+]
+JSON
+check_out "adopt-alerts: already triaged -- prints nothing" 0 "" run "$FAKE_AA2" "" adopt-alerts
+check "adopt-alerts: already triaged -- wrote nothing (never dragged back to Backlog)" 1 test -f "$FAKE_AA2/calls.log"
+
+echo
+echo "adopt-alerts: on-board but stranded with no Status at all (a crash right after item-add) -- reasserted, no item-add:"
+
+# No project_item.json fixture here at all -- if adopt-alerts called
+# project_item for an alert that is already on the board, it would fail
+# (bc_fake_read finds no fixture) and the whole command would exit 2; it
+# exiting 0 with the three writes logged is what proves item-add was
+# never called (Quentin's direction, cycle 1: "already a project item" is
+# not "already triaged").
+FAKE_AA_NULL="$(fake_dir)"
+echo '[{"number":700}]' > "$FAKE_AA_NULL/gh_issue_list_label.json"
+cat > "$FAKE_AA_NULL/project_items.json" <<'JSON'
+[
+  {"number":700,"title":"deploy failed","state":"OPEN","status":null,"priority":null,"size":null,"sprintId":null,"sprintTitle":null,"labels":["alert","lead:tim"],"isParent":false,"parent":null,"blockedBy":[]}
+]
+JSON
+check_out "adopt-alerts: stranded with no Status -- prints the number, no item-add needed" 0 700 \
+  run "$FAKE_AA_NULL" "" adopt-alerts
+check_out "adopt-alerts: reasserted Backlog, Blocker, XS, in order" 0 \
+  "project_set_single 700 Status Backlog
+project_set_single 700 Priority Blocker
+project_set_single 700 Size XS" \
+  cat "$FAKE_AA_NULL/calls.log"
+
+echo
+echo "adopt-alerts: on-board, already Backlog but Priority/Size null (a crash one step later) -- reasserted, no item-add:"
+
+FAKE_AA_HALF="$(fake_dir)"
+echo '[{"number":700}]' > "$FAKE_AA_HALF/gh_issue_list_label.json"
+cat > "$FAKE_AA_HALF/project_items.json" <<'JSON'
+[
+  {"number":700,"title":"deploy failed","state":"OPEN","status":"Backlog","priority":null,"size":null,"sprintId":null,"sprintTitle":null,"labels":["alert","lead:tim"],"isParent":false,"parent":null,"blockedBy":[]}
+]
+JSON
+check_out "adopt-alerts: already Backlog, Priority/Size still null -- reasserted" 0 700 \
+  run "$FAKE_AA_HALF" "" adopt-alerts
+check "adopt-alerts: set Priority Blocker" 0 log_has "$FAKE_AA_HALF/calls.log" '^project_set_single 700 Priority Blocker$'
+check "adopt-alerts: set Size XS" 0 log_has "$FAKE_AA_HALF/calls.log" '^project_set_single 700 Size XS$'
+
+echo
+echo "adopt-alerts: item-add itself fails for an off-board alert -- its own message, distinct from a field-set failure, no field ever written:"
+
+FAKE_AA_ITEMFAIL="$(fake_dir)"
+echo '[{"number":700}]' > "$FAKE_AA_ITEMFAIL/gh_issue_list_label.json"
+echo '[]' > "$FAKE_AA_ITEMFAIL/project_items.json"
+# No project_item.json fixture -- bc_fake_read finds nothing, so the
+# (real-world) add-to-project call reads as failed.
+check "adopt-alerts: item-add failure -> exit 2" 2 run "$FAKE_AA_ITEMFAIL" "" adopt-alerts
+check_out "adopt-alerts: item-add failure is named, never a Status message" 0 yes \
+  bash -c "BC_FAKE='$FAKE_AA_ITEMFAIL' bash '$BC_ISSUE' adopt-alerts 2>&1 | grep -qF 'could not add #700 to the board' && echo yes"
+check "adopt-alerts: item-add failure wrote no field at all" 1 \
+  test -f "$FAKE_AA_ITEMFAIL/calls.log"
+
+echo
+echo "adopt-alerts: no open alert issue at all -- no-op, wrote nothing:"
+
+FAKE_AA3="$(fake_dir)"
+echo '[]' > "$FAKE_AA3/gh_issue_list_label.json"
+echo '[]' > "$FAKE_AA3/project_items.json"
+check_out "adopt-alerts: nothing to adopt -- prints nothing" 0 "" run "$FAKE_AA3" "" adopt-alerts
+check "adopt-alerts: nothing to adopt -- wrote nothing" 1 test -f "$FAKE_AA3/calls.log"
+
+echo
+echo "adopt-alerts: could not list open alert issues -- broken, exit 2:"
+
+FAKE_AA4="$(fake_dir)"
+echo '[]' > "$FAKE_AA4/project_items.json"
+check "adopt-alerts: no gh_issue_list_label fixture -> exit 2" 2 run "$FAKE_AA4" "" adopt-alerts
+
+echo
+echo "next: once adopted, the alert beats a free Critical/XS story -- built from adopt-alerts' own calls.log and config.sh's own label variables, never retyped:"
+
+# Quentin's direction, cycle 1: the row FAKE_AA1 (above) actually produced
+# and this test's labels are both DERIVED, not hand-typed -- a rename of
+# BC_LABEL_ALERT/BC_LEAD_LABEL_PREFIX or of adopt-alerts' own Priority/Size
+# choice fails here rather than reading green by coincidence.
+AA1_STATUS="$(field_value "$FAKE_AA1/calls.log" 700 Status)"
+AA1_PRIORITY="$(field_value "$FAKE_AA1/calls.log" 700 Priority)"
+AA1_SIZE="$(field_value "$FAKE_AA1/calls.log" 700 Size)"
+ALERT_LABELS="[\"$BC_LABEL_ALERT\",\"${BC_LEAD_LABEL_PREFIX}tim\"]"
+
+FAKE_AA5="$(fake_dir)"
+"$JQ" -n -c --arg status "$AA1_STATUS" --arg priority "$AA1_PRIORITY" --arg size "$AA1_SIZE" --argjson labels "$ALERT_LABELS" '
+[
+  {number:700,title:"deploy failed",state:"OPEN",status:$status,priority:$priority,size:$size,sprintId:null,sprintTitle:null,labels:$labels,isParent:false,parent:null,blockedBy:[]},
+  {number:701,title:"Some critical work",state:"OPEN",status:"Backlog",priority:"Critical",size:"XS",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:null,blockedBy:[]}
+]' > "$FAKE_AA5/project_items.json"
+printf '%s\n' "$ALERT_LABELS" > "$FAKE_AA5/gh_issue_labels.json"
+check_out "next: the adopted alert wins over a free Critical/XS story, scoped quentin,tim" 0 \
+  '{"number":700,"parent":null,"scope":"quentin,tim"}' \
+  run "$FAKE_AA5" "" next
+
+echo
 echo "next: the whole backlog's startable stories, by priority then size -- sprints and epics never enter into it:"
 
 FAKE_N1="$(fake_dir)"

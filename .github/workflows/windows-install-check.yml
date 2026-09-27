@@ -54,7 +54,9 @@ jobs:
       # update one tracking issue instead, so upstream drift in the
       # installer or a version pin doesn't sit undetected.
       # scripts/ci/report-scheduled-failure.sh: shared with
-      # .github/workflows/backup.yml, never a second copy of this logic.
+      # .github/workflows/deploy.yml's report-failure job, never a second
+      # copy of this logic. backup.yml does NOT call it -- it is
+      # workflow_dispatch-only, deliberately (see its own header).
       - name: file or update a tracking issue on scheduled failure
         if: failure() && github.event_name == 'schedule'
         shell: bash

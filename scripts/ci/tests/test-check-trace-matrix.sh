@@ -328,6 +328,31 @@ out="$(bash "$CHECK" --client-only "$d" 2>&1)"
 check "the same .sh case title, once its own case is renamed, fails" 1 bash "$CHECK" --client-only "$d"
 check_contains "the failure names the now-missing .sh case title" "a dangling name goes red" "$out"
 
+# --- agentic-team/scripts/tests/*.sh resolves too, its own arm alongside
+# scripts/*/tests/*.sh (story 4.19, Quentin's direction) --------------------
+d="$(fake_dir)"
+mkdir -p "$d/docs" "$d/server/sim/tests" "$d/client/tests/unit" "$d/agentic-team/scripts/tests"
+: > "$d/server/sim/tests/invariants.rs"
+cat > "$d/agentic-team/scripts/tests/test-y.sh" <<'EOF'
+#!/usr/bin/env bash
+check "an agentic case goes red" 0 true
+EOF
+cat > "$d/docs/trace-matrix.md" <<'EOF'
+# Trace matrix
+
+## Agentic titles
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| An agentic-team .sh case title resolves | covered | `agentic-team/scripts/tests/test-y.sh` -- `an agentic case goes red` |
+EOF
+git_track "$d"
+check "an agentic-team .sh case title resolves" 0 bash "$CHECK" --client-only "$d"
+sed -i 's/an agentic case goes red/an agentic case goes green instead/' "$d/agentic-team/scripts/tests/test-y.sh"
+out="$(bash "$CHECK" --client-only "$d" 2>&1)"
+check "the same agentic-team case title, once renamed, fails" 1 bash "$CHECK" --client-only "$d"
+check_contains "the failure names the now-missing agentic-team case title" "an agentic case goes red" "$out"
+
 # --- structural cases: their own small fixture ------------------------------
 
 # a guard table under a heading the script has never heard of, with a

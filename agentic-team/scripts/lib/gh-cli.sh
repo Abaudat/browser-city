@@ -280,3 +280,14 @@ gh_issue_add_blocker() { # <n> <blocker-database-id>
   [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_issue_add_blocker "$@"; return; }
   "$GH" api "repos/$BC_REPO/issues/$1/dependencies/blocked_by" -F issue_id="$2" >/dev/null 2>&1
 }
+
+# --- appended by the failure-reports-worked-first work (story 4.19) --------
+# adopt-alerts' one read: every open issue CI has labelled `alert` --
+# `report-scheduled-failure.sh` files one on a scheduled/deploy workflow's
+# failure -- so the orchestrator can find one nothing else on the board yet
+# points at (a fresh alert is invisible to project_items until it is a
+# project item at all).
+gh_issue_list_label() { # <label> -> JSON array of {number}, open issues only
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_issue_list_label "$1"; return; }
+  "$GH" issue list --repo "$BC_REPO" --label "$1" --state open --json number 2>/dev/null
+}
