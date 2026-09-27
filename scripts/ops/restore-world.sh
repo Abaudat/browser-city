@@ -71,7 +71,7 @@ command -v spacetime >/dev/null 2>&1 || bc_ops_die "$SCRIPT" "'spacetime' is not
 
 MANIFEST_SCHEMA_SHA="$(grep -oE '"schema_sha256": *"[0-9a-f]+"' "$MANIFEST" | grep -oE '[0-9a-f]{16,}')"
 [ -n "$MANIFEST_SCHEMA_SHA" ] || bc_ops_die "$SCRIPT" "$MANIFEST has no schema_sha256"
-LOCAL_SCHEMA_SHA="$(bc_sha256 "$BC_SNAPSHOT")"
+LOCAL_SCHEMA_SHA="$(bc_schema_sha256 "$BC_SNAPSHOT")"
 # story 4.18: export-world.sh's own schema_sha256 is the schema it actually
 # matched against a live database, which is not always the working
 # tree's -- $MANIFEST's schema_commit (the commit that snapshot came from,

@@ -215,7 +215,7 @@ FLOORS_JSON="$TMP_DIR/.sequence-floors.json"
 } > "$FLOORS_JSON"
 
 CLI_VERSION="$(spacetime --version 2>/dev/null | grep -oE 'spacetimedb tool version [0-9]+\.[0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo unknown)"
-SNAPSHOT_SHA="$(bc_sha256 "$SELECTED_SNAPSHOT")"
+SNAPSHOT_SHA="$(bc_schema_sha256 "$SELECTED_SNAPSHOT")"
 EXPORTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # database/exporting identity: best-effort, informational metadata only --

@@ -252,6 +252,21 @@ bc_sha256() { # <file> -- `sha256sum` prepends a bare `\` to the digest
   sha256sum "$1" | awk '{print $1}' | sed 's/^\\//'
 }
 
+# bc_schema_sha256 <file> -- like bc_sha256, but line-ending-insensitive
+# (`tr -d '\r'` first) -- schema.snapshot.json specifically, never a row
+# export file (byte-exact by design, verify-world.sh's own contract).
+# Story 4.18: a selected candidate is read via `git show`, always LF (a
+# git blob's own stored form); `$BC_SNAPSHOT` on disk is whatever the
+# local checkout's own `core.autocrlf` made it -- CRLF on a Windows box
+# with it set `true` (confirmed empirically). export-world.sh's own
+# schema_sha256 and restore-world.sh's comparison against $BC_SNAPSHOT
+# must agree regardless of which candidate was selected or which platform
+# either script runs on, so both hash through this, never bc_sha256
+# directly, for the schema snapshot.
+bc_schema_sha256() {
+  tr -d '\r' < "$1" | sha256sum | awk '{print $1}' | sed 's/^\\//'
+}
+
 # bc_reject_unknown_args <script> <usage> <recognized-flags-pattern> <args...>
 # -- a typo'd flag (`--sever` for `--server`) must never be silently
 # ignored and fall through to a default server (Quentin's direction).
