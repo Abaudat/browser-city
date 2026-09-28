@@ -245,6 +245,81 @@ exhaustive max itself past roughly 360, that PR owes the new worst
 seed's own picture and Artie's own judgement again on whether the
 result still reads as a city.
 
+### The detour-ratio ceiling is a corollary, not a second measurement (story 15.10)
+
+Seed `8872365549107643721` failed `inv_generation_detour_ratio_bounded` on
+CI run 36388555866 (PR #349, which touches none of passes 1-2, so it
+fails the same way on master): the pair `(152,0)`-`(393,18)`, Manhattan
+259, had a 204% ratio against the old `max_detour_percent` (200%). The
+finding (Tim's/Derek's direction, cycle 1): `max_detour_excess_cells`
+already bounds *every* pair's overshoot, so at any Manhattan distance
+`M >= detour_long_pair_cells` it already implies a ratio of `100 * (M +
+max_detour_excess_cells) / M`, which is `100 * (256 + 416) / 256` =
+262.5% right at the threshold. An independently-set `max_detour_percent`
+under that figure was never a tighter, meaningful ratio claim -- it was
+a second, unmeasured, additive bound on mid-range pairs wearing a
+ratio's clothes, with no margin rule and no seeds pinned against it. The
+259-Manhattan pair's own excess (269 cells) sat comfortably inside
+`max_detour_excess_cells`, 147 cells to spare; only the independent
+200% ceiling ever objected.
+
+**The choice.** No `streets.rs` change: a pass-2 change that makes such
+a pair impossible would constrain the same two mechanisms (one large
+peripheral block, running bond) `max_detour_excess_cells` already
+accepts at 416 cells, moving every golden and every evidence SVG to
+serve a test inconsistency, not a generator defect. Instead,
+`max_detour_percent` is derived, mechanically and by equality, from
+`max_detour_excess_cells` and `detour_long_pair_cells`:
+`GenerationConfig::detour_ratio_floor_percent` is the smallest multiple
+of 5 clearing `100 * (detour_long_pair_cells + max_detour_excess_cells)
+/ detour_long_pair_cells`, currently 265; `GenerationConfig::from_
+balance` refuses a `max_detour_percent` under that floor (its own cross-
+key check, alongside the existing `p99_detour_percent <=
+max_detour_percent` one), and `invariants.rs`'s own
+`max_detour_percent_matches_its_own_margin_rule` pins the committed
+value to it by equality, the same shape as `max_detour_excess_cells`'s
+own margin-rule test. With this in place, the ratio half of
+`inv_generation_detour_ratio_bounded` can no longer go red on any seed
+unless the excess half already did -- a proof, not a wider margin over
+the same flake class, so the failure rate this fix owes is exactly zero,
+not a rare-tail bound. Seed `8872365549107643721` is pinned as a
+deterministic regression (`seed_8872365549107643721_holds_the_detour_
+ceilings`, calling the same `detour_bounds_hold` predicate the proptest
+above does) rather than added to `streets::PINNED_DETOUR_SEEDS`: its own
+exhaustive excess (270 cells) does not belong among that array's worst
+entries (270 < 328), and it was never an excess flake in the first
+place.
+
+`server/bounds/src/bin/measure_generation.rs`'s own detour-bounds sweep
+(its own CLI-configurable seed count, run at 1,000,000 for this story)
+still measures all three ceilings' miss rates directly, both to disclose
+the residual tail the excess and p99 ceilings carry (unrelated to this
+story's mechanism, and unchanged by it) and to confirm the ratio
+ceiling's own miss count is zero. Run at 1,000,000 seeds, wall-clock
+4854.4s (4.854ms/seed, passes 1-2 only):
+
+```text
+detour-bounds sweep: 1000000 seeds, passes 1-2 only
+  max_detour_excess_cells (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+  max_detour_percent (14-node sample, long pairs): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+  p99_detour_percent (64-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+detour_ratio_pct_sampled_14node (long pairs) max: 205% at seed 13890124220626881247
+```
+
+All three committed ceilings held over every one of the million seeds --
+zero is a rate no test can distinguish from a bound this small (<=1.2213%
+per 4,096-case CI run, rule of three), which is why `max_detour_percent`'s
+own proof (above) is what actually closes this out, not the sweep alone.
+The 50,000-seed loop's own exhaustive figures (unchanged by this story,
+reprinted here for the same reason the pinned-seed section above cites
+them) put the ratio ceiling's real tail in view too: exhaustive worst
+long-pair ratio 219% (seed `10818714075226271966`), ten largest ascending
+198%, 198%, 198%, 198%, 199%, 200%, 200%, 206%, 213%, 219% -- every one
+under the derived 265% floor, with room to spare.
+
 ### Plot subdivision
 
 - **Receives:** a street-network block and the land-use field (each

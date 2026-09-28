@@ -354,6 +354,15 @@ pub struct GenerationConfig {
     /// direction, cycle 2: an additive bound is what the estimator
     /// actually pays for at short range, a ratio is not).
     pub detour_long_pair_cells: i32,
+    /// Derived, not independently measured (Tim's direction, story
+    /// 15.10): [`Self::max_detour_excess_cells`] already bounds *every*
+    /// pair's overshoot, so at the long-pair threshold it implies a ratio
+    /// of `100 * (detour_long_pair_cells + max_detour_excess_cells) /
+    /// detour_long_pair_cells` -- a `max_detour_percent` under that
+    /// figure is not a tighter site-scale-free claim, it is a second,
+    /// unmeasured, mid-range additive bound wearing a ratio's clothes
+    /// (see [`Self::detour_ratio_floor_percent`], `from_balance`'s own
+    /// refusal, and `docs/generation.md`'s street-network pass).
     pub max_detour_percent: i32,
     /// The absolute ceiling on `network - manhattan` (world cells),
     /// applied to every sampled pair regardless of distance -- the
@@ -816,6 +825,18 @@ impl GenerationConfig {
                 cfg.p99_detour_percent, cfg.max_detour_percent
             )));
         }
+        // Tim's direction, story 15.10: below its own floor,
+        // max_detour_percent stops being the site-scale-free ratio claim
+        // 3.11's estimator relies on and silently becomes a second,
+        // tighter, unmeasured additive bound on mid-range pairs -- the
+        // exact mechanism that flaked on seed 8872365549107643721.
+        let detour_ratio_floor_percent = cfg.detour_ratio_floor_percent();
+        if (cfg.max_detour_percent as i64) < detour_ratio_floor_percent {
+            return Err(GenerationError::InvalidConfig(format!(
+                "GenerationConfig: max_detour_percent ({}) is less than its own floor ({detour_ratio_floor_percent}) -- max_detour_excess_cells ({}) already bounds every pair's overshoot, so at detour_long_pair_cells ({}) it implies this ratio; a lower max_detour_percent would just be an unmeasured, tighter additive bound wearing a ratio's clothes (see GenerationConfig::detour_ratio_floor_percent and docs/generation.md's street-network pass)",
+                cfg.max_detour_percent, cfg.max_detour_excess_cells, cfg.detour_long_pair_cells
+            )));
+        }
         if cfg.peripheral_low_band_floor_percent as i64
             > cfg.peripheral_pooled_min_ratio_percent as i64
         {
@@ -1071,6 +1092,30 @@ impl GenerationConfig {
     pub fn detour_excess_loosening_guard(&self) -> i64 {
         DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT * self.block_size_max_cells as i64
             + 2 * self.arterial_width_cells as i64
+    }
+
+    /// The smallest `max_detour_percent` (rounded up to a multiple of 5)
+    /// that keeps the ratio ceiling from ever being tighter than
+    /// [`Self::max_detour_excess_cells`] at `detour_long_pair_cells`
+    /// (Tim's direction, story 15.10): at that threshold, the excess
+    /// bound alone already implies a network distance of at most
+    /// `detour_long_pair_cells + max_detour_excess_cells`, i.e. a ratio
+    /// of `100 * (detour_long_pair_cells + max_detour_excess_cells) /
+    /// detour_long_pair_cells`; a committed `max_detour_percent` under
+    /// that figure would silently be a second, tighter, additive bound
+    /// on mid-range pairs, with no margin rule and no measurement behind
+    /// it -- the exact mechanism that flaked on seed
+    /// `8872365549107643721`. Integer arithmetic throughout (NFR28): a
+    /// ceiling division, then rounded up to the next multiple of 5, never
+    /// a float. `from_balance`'s own refusal and every test that checks
+    /// this (`mod.rs`'s own refusal tests, `invariants.rs`'s own margin-
+    /// rule test) all call this one method, so the formula exists in
+    /// exactly one place.
+    pub fn detour_ratio_floor_percent(&self) -> i64 {
+        let threshold = self.detour_long_pair_cells as i64;
+        let excess = self.max_detour_excess_cells as i64;
+        let ceil_ratio = (100 * (threshold + excess) + threshold - 1) / threshold;
+        (ceil_ratio + 4) / 5 * 5
     }
 }
 
@@ -1464,6 +1509,27 @@ mod tests {
         assert!(err.to_string().contains("p99_detour_percent"));
     }
 
+    /// Tim's direction, story 15.10. Fixture: `detour_long_pair_cells`
+    /// =128, `max_detour_excess_cells`=80 -> floor = round_up_5(ceil(100*
+    /// 208/128)) = round_up_5(163) = 165. 160 is under the floor.
+    #[test]
+    fn from_balance_rejects_max_detour_percent_under_its_own_floor() {
+        let balance = with_override("generation.streets.max_detour_percent", 160);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.to_string().contains("max_detour_percent"));
+        assert!(err.to_string().contains("floor"));
+    }
+
+    #[test]
+    fn from_balance_accepts_max_detour_percent_at_its_own_floor() {
+        // Same fixture as above, right on the boundary: the floor itself
+        // (165) is admitted, only a value strictly under it is refused
+        // (AC4's mechanical both-sides-of-the-boundary check).
+        let balance = with_override("generation.streets.max_detour_percent", 165);
+        GenerationConfig::from_balance(&balance)
+            .expect("the floor itself must be accepted, not just values over it");
+    }
+
     #[test]
     fn from_balance_rejects_max_detour_excess_cells_over_the_loosening_guard() {
         // fixture: block_size_max_cells=96, arterial_width_cells=12 ->
@@ -1478,8 +1544,17 @@ mod tests {
     fn from_balance_accepts_max_detour_excess_cells_at_the_loosening_guard() {
         // Same fixture as above, right on the boundary: the guard itself
         // (408) is admitted, only a value strictly over it is refused
-        // (AC4's mechanical both-sides-of-the-boundary check).
-        let balance = with_override("generation.streets.max_detour_excess_cells", 408);
+        // (AC4's mechanical both-sides-of-the-boundary check). Story
+        // 15.10: 408 also raises max_detour_percent's own derived floor
+        // (100*(128+408)/128, rounded up to a multiple of 5, is 420), so
+        // max_detour_percent is raised to clear it too -- this test is
+        // about the excess-guard boundary alone, not the ratio floor.
+        let mut balance = with_override("generation.streets.max_detour_excess_cells", 408);
+        balance
+            .iter_mut()
+            .find(|b| b.key == "generation.streets.max_detour_percent")
+            .unwrap()
+            .value = 420;
         GenerationConfig::from_balance(&balance)
             .expect("the loosening guard itself must be accepted, not just values under it");
     }

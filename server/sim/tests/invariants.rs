@@ -1744,6 +1744,49 @@ proptest! {
 // unoptimised/256 cases (the `coverage` job's own level) ~5s total
 // (~0.8ms/case). Both still comfortably inside their own job's budget,
 // so no per-property case-count pin is needed here either.
+
+/// `inv_generation_detour_ratio_bounded`'s own predicate body, lifted out
+/// so the proptest below and the pinned regression test
+/// (`seed_8872365549107643721_holds_the_detour_ceilings`) call through
+/// exactly the same bound rather than risk two copies of it drifting
+/// apart (Quentin's direction, story 15.10). `Err` carries the same
+/// message the old inline `prop_assert!` used to fail with.
+fn detour_bounds_hold(seed: u64, cfg: &GenerationConfig) -> Result<(), String> {
+    let lu = land_use::run(seed, cfg.site(), cfg).unwrap();
+    let net = streets::run(seed, &lu, cfg);
+    let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+    for s in &samples {
+        if s.excess_cells() > cfg.max_detour_excess_cells as i64 {
+            return Err(format!(
+                "seed {seed}: {:?}-{:?} excess {} cells over the measured ceiling {} -- \
+                 max_detour_excess_cells is a measured value (see generation.toml's own \
+                 comment and docs/generation.md's street-network pass), not a bug in your \
+                 change unless it touches server/sim/src/generation/streets.rs or a \
+                 generation.streets.* key. To fix: add this seed to streets::PINNED_DETOUR_\
+                 SEEDS with its own exhaustive excess (`detour_samples(usize::MAX)`'s own \
+                 worst pair), then re-run `cargo run -p bounds --release --bin measure-\
+                 generation` and re-apply max_detour_excess_cells's own margin rule",
+                s.a,
+                s.b,
+                s.excess_cells(),
+                cfg.max_detour_excess_cells
+            ));
+        }
+        if s.manhattan >= cfg.detour_long_pair_cells as i64
+            && s.ratio_pct() > cfg.max_detour_percent as i64
+        {
+            return Err(format!(
+                "seed {seed}: {:?}-{:?} ratio {}% over {}%",
+                s.a,
+                s.b,
+                s.ratio_pct(),
+                cfg.max_detour_percent
+            ));
+        }
+    }
+    Ok(())
+}
+
 proptest! {
 
     /// `inv_generation_total_never_panics`.
@@ -1801,31 +1844,26 @@ proptest! {
     /// ratio is dominated by a single jitter-driven jog at short range;
     /// a ratio ceiling only over pairs at least `detour_long_pair_cells`
     /// apart, where a ratio is what the estimator actually relies on).
+    /// Story 15.10 (Tim's direction): `max_detour_percent` is now derived
+    /// from `max_detour_excess_cells` (`GenerationConfig::from_balance`'s
+    /// own cross-key refusal), so the ratio half of this assertion can no
+    /// longer go red on any seed unless the excess half already did --
+    /// see `detour_bounds_hold`, the one predicate this and the pinned
+    /// `seed_8872365549107643721_holds_the_detour_ceilings` test both
+    /// call through, and `max_detour_percent_matches_its_own_margin_rule`
+    /// for the mechanical proof. Measured directly too (`measure-
+    /// generation`'s own detour-bounds sweep, 1,000,000 seeds, passes 1-2
+    /// only, at this exact 14-node sample): 0 misses against both halves
+    /// -- zero over a million is a bound, not a zero rate (rule of
+    /// three): <= 0.000300% per seed, implying a 4,096-case CI run fails
+    /// at most 1.2213% of the time even without the proof above. See
+    /// `defs/balance/generation.toml`'s `max_detour_percent` comment and
+    /// `docs/generation.md`'s street-network pass for the full sweep.
     #[test]
     fn inv_generation_detour_ratio_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
-        let net = streets::run(seed, &lu, &cfg);
-        let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
-        for s in &samples {
-            prop_assert!(
-                s.excess_cells() <= cfg.max_detour_excess_cells as i64,
-                "seed {seed}: {:?}-{:?} excess {} cells over the measured ceiling {} -- \
-                 max_detour_excess_cells is a measured value (see generation.toml's own \
-                 comment and docs/generation.md's street-network pass), not a bug in your \
-                 change unless it touches server/sim/src/generation/streets.rs or a \
-                 generation.streets.* key. To fix: add this seed to streets::PINNED_DETOUR_\
-                 SEEDS with its own exhaustive excess (`detour_samples(usize::MAX)`'s own \
-                 worst pair), then re-run `cargo run -p bounds --release --bin measure-\
-                 generation` and re-apply max_detour_excess_cells's own margin rule",
-                s.a, s.b, s.excess_cells(), cfg.max_detour_excess_cells
-            );
-            if s.manhattan >= cfg.detour_long_pair_cells as i64 {
-                prop_assert!(
-                    s.ratio_pct() <= cfg.max_detour_percent as i64,
-                    "seed {seed}: {:?}-{:?} ratio {}% over {}%", s.a, s.b, s.ratio_pct(), cfg.max_detour_percent
-                );
-            }
+        if let Err(msg) = detour_bounds_hold(seed, &cfg) {
+            prop_assert!(false, "{msg}");
         }
     }
 
@@ -1833,7 +1871,10 @@ proptest! {
     /// 2): `max_detour_percent` alone only bounds one city's own single
     /// worst pair, which stays green even if the *typical* case
     /// regressed -- the 99th percentile of this same sample is pinned
-    /// separately.
+    /// separately. Measured directly (story 15.10, `measure-generation`'s
+    /// own detour-bounds sweep, 1,000,000 seeds, passes 1-2 only, at this
+    /// exact 64-node sample): 0 misses -- <= 0.000300% per seed (rule of
+    /// three), a 4,096-case CI run failing at most 1.2213% of the time.
     #[test]
     fn inv_generation_p99_detour_ratio_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -3649,6 +3690,63 @@ fn detour_excess_holds_at_pinned_boundary_exit_seeds() {
             worst.b
         );
     }
+}
+
+/// Story 15.10: seed `8872365549107643721` failed `inv_generation_
+/// detour_ratio_bounded` on CI run 36388555866 (PR #349, which touches
+/// none of passes 1-2, so it fails the same way on master) -- the pair
+/// `(152,0)-(393,18)`, Manhattan 259, 3 cells past `detour_long_pair_
+/// cells` (256), had a 204% ratio against the old, independently-set
+/// `max_detour_percent` (200%). Its own excess (269 cells) sits
+/// comfortably inside `max_detour_excess_cells` (416), with 147 cells to
+/// spare -- Tim's finding: the ratio ceiling was, at these values, a
+/// second and stricter additive bound on mid-range pairs with no margin
+/// rule and no measurement behind it. Fixed at the source
+/// (`GenerationConfig::from_balance`'s own cross-key refusal derives
+/// `max_detour_percent` from `max_detour_excess_cells`, never a re-scan
+/// of this one seed), so this pin calls exactly the same predicate the
+/// proptest above does (`detour_bounds_hold`, never a bespoke
+/// re-implementation) -- a later change to the bound is automatically
+/// what this test checks too, not a stale, seed-specific assertion.
+#[test]
+fn seed_8872365549107643721_holds_the_detour_ceilings() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    detour_bounds_hold(8872365549107643721, &cfg)
+        .unwrap_or_else(|e| panic!("pinned seed 8872365549107643721: {e}"));
+}
+
+/// Tim's direction, story 15.10: `max_detour_percent` is no longer an
+/// independently measured/margined value -- it is the smallest multiple
+/// of 5 that keeps the ratio ceiling from ever being tighter than
+/// `max_detour_excess_cells` at `detour_long_pair_cells`
+/// (`GenerationConfig::detour_ratio_floor_percent`, the same formula
+/// `from_balance`'s own refusal applies). Checked mechanically, the same
+/// shape as `max_detour_excess_cells_matches_its_own_margin_rule`
+/// (equality against the live rule) and
+/// `detour_excess_loosening_guard_coefficient_is_the_smallest_that_
+/// admits_the_committed_value` (one step below is inadmissible), so a
+/// retune that quietly stops following its own stated rule goes red here
+/// rather than only reading wrong on review.
+#[test]
+fn max_detour_percent_matches_its_own_margin_rule() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let floor = cfg.detour_ratio_floor_percent();
+    assert_eq!(
+        cfg.max_detour_percent as i64, floor,
+        "max_detour_percent ({}) no longer matches its own floor rule -- the smallest \
+         multiple of 5 that keeps 100 * (detour_long_pair_cells + max_detour_excess_cells) / \
+         detour_long_pair_cells from exceeding max_detour_percent is {floor}; re-derive by \
+         hand and update generation.toml's own key (or this test, if the rule itself \
+         changed)",
+        cfg.max_detour_percent
+    );
+    let one_step_lower = cfg.max_detour_percent as i64 - 5;
+    assert!(
+        one_step_lower < cfg.detour_ratio_floor_percent(),
+        "max_detour_percent ({}) is not the smallest multiple of 5 that clears its own floor \
+         ({floor}) -- {one_step_lower} would already clear it too",
+        cfg.max_detour_percent
+    );
 }
 
 /// Quentin's direction, story 3.18 cycle 1: `max_detour_excess_cells`'s
