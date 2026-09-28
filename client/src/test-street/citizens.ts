@@ -32,7 +32,6 @@
 import type { Defs, Family, HairstyleDef } from "../defs/types";
 import { loopFrameAt } from "../render/animation-frame";
 import type { AppearanceTuple } from "../render/appearance/composite";
-import { snapToScreenPx } from "../render/screen-position";
 
 export interface CitizenFixture {
   readonly id: string;
@@ -404,19 +403,6 @@ export function walkerPoseAt(startX: number, startY: number, elapsedMS: number):
     direction: walkDirectionOf(leg?.dx ?? 0, leg?.dy ?? 0),
     frameIndex,
   };
-}
-
-/** A citizen's sprite position (bottom-centre anchored at its own grid
- * point, `x`/`y` in cells) in world pixels, snapped to a whole screen
- * pixel at `zoom` -- the one placement every crowd sprite, walkers
- * included, goes through. */
-export function citizenScreenPx(
-  x: number,
-  y: number,
-  tileSizePx: number,
-  zoom: number,
-): { readonly x: number; readonly y: number } {
-  return { x: snapToScreenPx(x * tileSizePx, zoom), y: snapToScreenPx(y * tileSizePx, zoom) };
 }
 
 export function buildWalkerFixture(defs: Defs): CitizenFixture {

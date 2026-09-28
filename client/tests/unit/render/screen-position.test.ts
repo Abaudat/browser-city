@@ -1,14 +1,17 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  cellBottomCentre,
   floorOffsetPx,
-  screenPositionPx,
   snapToScreenPx,
   subcellRectPx,
   visibleCellBounds,
   worldCellFromScreenPx,
   worldPointFromScreenPx,
+  worldPointPx,
 } from "../../../src/render/screen-position";
+import type { MovementConfig } from "../../../src/world/movement";
+import { bodyRect } from "../../../src/world/movement";
 import { isEmptyCellBounds } from "../../../src/world/world-index";
 
 describe("floorOffsetPx", () => {
@@ -52,15 +55,26 @@ describe("floorOffsetPx", () => {
   });
 });
 
-describe("screenPositionPx", () => {
-  it("places floor 0 at the bottom edge of its own tile, centred horizontally", () => {
-    expect(screenPositionPx(0, 0, 0, 16, 48, 1)).toEqual({ x: 8, y: 16 });
-    expect(screenPositionPx(5, 3, 0, 16, 48, 1)).toEqual({ x: 88, y: 64 });
+// Story 15.4 (Tim/Quentin's direction): `worldPointPx` is the *only*
+// world-to-screen projection -- a plain scale-and-floor-offset, with no
+// anchor terms of its own. Passing a cell straight into it (rather than
+// through `cellBottomCentre` first) is exactly Adrian's Sprint 4 offset
+// (#333): a continuous feet point and a cell index are not the same
+// thing, and this function never tells them apart -- the caller must.
+describe("worldPointPx", () => {
+  it("is a plain scale-and-offset projection: no anchor terms of its own", () => {
+    expect(worldPointPx(0, 0, 0, 16, 48, 1)).toEqual({ x: 0, y: 0 });
+    expect(worldPointPx(5, 3, 0, 16, 48, 1)).toEqual({ x: 80, y: 48 });
+  });
+
+  it("draws a cell's own bottom-centre through cellBottomCentre, never a restated +0.5/+1", () => {
+    const centre = cellBottomCentre(5, 3);
+    expect(worldPointPx(centre.x, centre.y, 0, 16, 48, 1)).toEqual({ x: 88, y: 64 });
   });
 
   it("offsets a higher floor upward by exactly floorOffsetPx, nothing else changing", () => {
-    const ground = screenPositionPx(5, 3, 0, 16, 48, 1);
-    const upstairs = screenPositionPx(5, 3, 1, 16, 48, 1);
+    const ground = worldPointPx(5, 3, 0, 16, 48, 1);
+    const upstairs = worldPointPx(5, 3, 1, 16, 48, 1);
     expect(upstairs.x).toBe(ground.x);
     expect(upstairs.y).toBe(ground.y - 48);
   });
@@ -74,12 +88,51 @@ describe("screenPositionPx", () => {
         fc.integer({ min: 1, max: 64 }),
         fc.integer({ min: 1, max: 256 }),
         (x, y, floor, tileSizePx, storeyHeightPx) => {
-          const pos = screenPositionPx(x, y, floor, tileSizePx, storeyHeightPx, 1);
+          const pos = worldPointPx(x, y, floor, tileSizePx, storeyHeightPx, 1);
           expect(Number.isInteger(pos.x)).toBe(true);
           expect(Number.isInteger(pos.y)).toBe(true);
         },
       ),
     );
+  });
+
+  it("is worldPointFromScreenPx's exact algebraic inverse (no anchor term to undo either way)", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: -100_000, max: 100_000 }),
+        fc.integer({ min: -100_000, max: 100_000 }),
+        fc.integer({ min: -3, max: 3 }),
+        fc.integer({ min: 1, max: 64 }),
+        fc.integer({ min: 1, max: 256 }),
+        (screenX, screenY, floor, tileSizePx, storeyHeightPx) => {
+          // Starting from a whole screen pixel (zoom 1, so `worldPointPx`'s
+          // own snap is a no-op on the way back): the world point
+          // `worldPointFromScreenPx` reports projects straight back to the
+          // same pixel, with no anchor term on either leg of the round
+          // trip to reintroduce error.
+          const world = worldPointFromScreenPx(screenX, screenY, floor, tileSizePx, storeyHeightPx);
+          const screen = worldPointPx(world.x, world.y, floor, tileSizePx, storeyHeightPx, 1);
+          expect(screen).toEqual({ x: screenX, y: screenY });
+        },
+      ),
+    );
+  });
+});
+
+// Story 15.4 (Tim's direction): the one place a cell becomes the point a
+// bottom-centre-anchored sprite is drawn at -- a one-line pure function,
+// integer inputs only, so a continuous feet position can never be run
+// through it by mistake.
+describe("cellBottomCentre", () => {
+  it("is +0.5 cell in x and +1 cell in y", () => {
+    expect(cellBottomCentre(0, 0)).toEqual({ x: 0.5, y: 1 });
+    expect(cellBottomCentre(5, 3)).toEqual({ x: 5.5, y: 4 });
+    expect(cellBottomCentre(-2, -1)).toEqual({ x: -1.5, y: 0 });
+  });
+
+  it("refuses a non-integer cell, the way snapToScreenPx refuses a non-integer zoom", () => {
+    expect(() => cellBottomCentre(1.5, 0)).toThrow(/integer/);
+    expect(() => cellBottomCentre(0, 1.5)).toThrow(/integer/);
   });
 });
 
@@ -109,7 +162,7 @@ describe("snapToScreenPx", () => {
   it("refuses a non-integer or non-positive zoom", () => {
     for (const zoom of [3.5, 0.25, 0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(() => snapToScreenPx(1, zoom)).toThrow(/zoom/);
-      expect(() => screenPositionPx(1, 1, 0, 16, 48, zoom)).toThrow(/zoom/);
+      expect(() => worldPointPx(1, 1, 0, 16, 48, zoom)).toThrow(/zoom/);
     }
   });
 });
@@ -130,28 +183,30 @@ describe("worldPointFromScreenPx", () => {
 
 describe("worldCellFromScreenPx", () => {
   // Every drawable is bottom-centre anchored on its own cell
-  // (`screenPositionPx`), so the screen rect a cell actually occupies is
-  // one tile wide, centred on that anchor's x, and one tile tall, ending
-  // at that anchor's y. Picking must land on the same cell the renderer
-  // drew there, for every pixel of that rect.
+  // (`cellBottomCentre`, projected through `worldPointPx`), so the screen
+  // rect a cell actually occupies is one tile wide, centred on that
+  // anchor's x, and one tile tall, ending at that anchor's y. Picking
+  // must land on the same cell the renderer drew there, for every pixel
+  // of that rect.
   it("inv_pick_inverts_screen_position", () => {
     fc.assert(
       fc.property(
         fc.integer({ min: -40, max: 40 }),
         fc.integer({ min: -40, max: 40 }),
         fc.integer({ min: -3, max: 3 }),
-        // Even tile sizes only: `screenPositionPx` rounds its own
-        // half-tile anchor term to a whole pixel, so on an odd tile size
-        // the anchor is half a pixel off the cell's true centre and this
-        // test's reconstruction of the drawn rect from that anchor would
-        // be measuring the rounding, not the projection. Every real
+        // Even tile sizes only: `worldPointPx` rounds its own half-tile
+        // anchor term to a whole pixel, so on an odd tile size the anchor
+        // is half a pixel off the cell's true centre and this test's
+        // reconstruction of the drawn rect from that anchor would be
+        // measuring the rounding, not the projection. Every real
         // `render.tile_size_px` is a power of two.
         fc.integer({ min: 1, max: 32 }).map((n) => n * 2),
         fc.integer({ min: 1, max: 256 }),
         fc.double({ min: 0, max: 0.999, noNaN: true }),
         fc.double({ min: 0, max: 0.999, noNaN: true }),
         (cellX, cellY, floor, tileSizePx, storeyHeightPx, alongX, alongY) => {
-          const anchor = screenPositionPx(cellX, cellY, floor, tileSizePx, storeyHeightPx, 1);
+          const centre = cellBottomCentre(cellX, cellY);
+          const anchor = worldPointPx(centre.x, centre.y, floor, tileSizePx, storeyHeightPx, 1);
           // Any pixel inside the cell's own drawn rect: its left edge is
           // half a tile left of the bottom-centre anchor, its top edge a
           // whole tile above that anchor's bottom edge.
@@ -168,7 +223,8 @@ describe("worldCellFromScreenPx", () => {
   it("reuses floorOffsetPx, so a below-ground floor picks its own cells", () => {
     const tileSizePx = 16;
     const storeyHeightPx = 48;
-    const anchor = screenPositionPx(3, 2, -1, tileSizePx, storeyHeightPx, 1);
+    const centre = cellBottomCentre(3, 2);
+    const anchor = worldPointPx(centre.x, centre.y, -1, tileSizePx, storeyHeightPx, 1);
     expect(worldCellFromScreenPx(anchor.x, anchor.y - 1, -1, tileSizePx, storeyHeightPx)).toEqual({
       cellX: 3,
       cellY: 2,
@@ -186,8 +242,8 @@ describe("worldCellFromScreenPx", () => {
 
 // Story 1.12 (FR165): the sub-cell projection the debug overlays draw
 // through. It is the *plain* world-to-screen projection -- the same one
-// `worldPointFromScreenPx` inverts -- never the bottom-centre anchor
-// placement `screenPositionPx` applies to a sprite, which is where a
+// `worldPointFromScreenPx` inverts and `worldPointPx` is -- never
+// `cellBottomCentre`'s own bottom-centre anchor, which is where a
 // drawable sits within its cell, not where the cell is.
 describe("subcellRectPx", () => {
   it("turns a whole cell's worth of sub-cells into exactly one tile", () => {
@@ -258,6 +314,55 @@ describe("subcellRectPx", () => {
           ).toEqual({ cellX, cellY });
         },
       ),
+    );
+  });
+});
+
+// Story 15.4 (Quentin's direction, AC1/AC2): the whole story's own red
+// test. `worldPointPx(feetX, feetY, ...)` is what the scene draws the
+// player's sprite at (`test-street/scene.ts`'s `positionSprite`, through
+// the player's own continuous feet position, never a cell); the pixel it
+// lands on must be the bottom-centre of the exact body rect
+// `world/movement.ts`'s `step` resolves against (`bodyRect`), for any
+// feet position, floor, tile size, storey height and integer zoom --
+// within the snap's own half-screen-pixel slack, since `subcellRectPx`
+// (which the body goes through) is deliberately unrounded while
+// `worldPointPx` snaps. Before this story's fix, the player was drawn
+// through the cell-anchor placement instead, which fails this by exactly
+// `(tile/2, tile)` -- the offset Adrian's Sprint 4 demo (#333) found.
+describe("inv_player_sprite_feet_sit_on_body", () => {
+  it("inv_player_sprite_feet_sit_on_body", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -50, max: 50, noNaN: true }),
+        fc.double({ min: -50, max: 50, noNaN: true }),
+        fc.integer({ min: -3, max: 3 }),
+        fc.integer({ min: 1, max: 64 }),
+        fc.integer({ min: 1, max: 256 }),
+        fc.integer({ min: 1, max: 8 }),
+        fc.constantFrom(8, 16, 32),
+        (feetX, feetY, floor, tileSizePx, storeyHeightPx, zoom, subcellsPerCell) => {
+          const config: MovementConfig = {
+            walkSpeedCellsPerMs: 1,
+            bodyWidthSubcells: Math.max(1, Math.floor(subcellsPerCell / 2)),
+            bodyHeightSubcells: Math.max(1, Math.floor(subcellsPerCell / 4)),
+            subcellsPerCell,
+          };
+          const actor = worldPointPx(feetX, feetY, floor, tileSizePx, storeyHeightPx, zoom);
+          const body = subcellRectPx(
+            bodyRect({ x: feetX, y: feetY }, config),
+            floor,
+            subcellsPerCell,
+            tileSizePx,
+            storeyHeightPx,
+          );
+          const bodyBottomCentre = { x: body.x + body.width / 2, y: body.y + body.height };
+          const tolerance = 0.5 / zoom + 1e-9;
+          expect(Math.abs(actor.x - bodyBottomCentre.x)).toBeLessThanOrEqual(tolerance);
+          expect(Math.abs(actor.y - bodyBottomCentre.y)).toBeLessThanOrEqual(tolerance);
+        },
+      ),
+      { numRuns: 300 },
     );
   });
 });

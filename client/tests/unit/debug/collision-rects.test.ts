@@ -27,9 +27,20 @@ function row(overrides: Partial<PlacedObject> & { objectId: bigint }): PlacedObj
 
 /** A view over a real `WorldIndex` -- the same class the movement
  * resolver reads, never a stand-in for it. */
+/** Well clear of every object `DEFS` below ever places, so the player
+ * entry never perturbs any of this file's own object-collider
+ * assertions. */
+const DEFAULT_PLAYER_BODY = {
+  x0: 40 * SUBCELLS - 4,
+  y0: 40 * SUBCELLS - 4,
+  x1: 40 * SUBCELLS + 4,
+  y1: 40 * SUBCELLS,
+};
+
 function viewOver(
   world: WorldIndex,
   bounds: CellBounds = { floor: 0, cellX0: -8, cellY0: -8, cellX1: 8, cellY1: 8 },
+  playerBody = DEFAULT_PLAYER_BODY,
 ): DebugWorldView {
   return {
     tileSizePx: TILE,
@@ -42,6 +53,7 @@ function viewOver(
     objects: (b) => world.objects(b),
     pool: () => [],
     orderOf: () => undefined,
+    viewerBody: () => playerBody,
   };
 }
 
@@ -67,10 +79,20 @@ function worldWith(...rows: PlacedObject[]): WorldIndex {
   return world;
 }
 
+/** Every rect `buildCollisionRects` drew, minus the player's own body
+ * (story 15.4) -- the one entry that is never an object, and every test
+ * in this file except the player's own was already exercising the object
+ * states before that entry existed. `DEFAULT_PLAYER_BODY` sits well clear
+ * of everything `DEFS` places, so this filter is the only thing that
+ * needs to know about it. */
+function objectRects(view: DebugWorldView): ReturnType<typeof buildCollisionRects> {
+  return buildCollisionRects(view).filter((r) => r.kind !== "player");
+}
+
 describe("buildCollisionRects", () => {
   it("draws a real collider at its true sub-cell position on its own floor (AC2)", () => {
     const world = worldWith(row({ objectId: 1n, defId: 1, x: 3, y: 2 }));
-    const rects = buildCollisionRects(viewOver(world));
+    const rects = objectRects(viewOver(world));
     expect(rects).toHaveLength(1);
     const expected = subcellRectPx(
       { x0: 3 * SUBCELLS, y0: 2 * SUBCELLS, x1: 3 * SUBCELLS + 8, y1: 3 * SUBCELLS },
@@ -92,7 +114,7 @@ describe("buildCollisionRects", () => {
       row({ objectId: 2n, defId: 2, x: 2, y: 0 }),
       row({ objectId: 3n, defId: 3, x: 5, y: 0 }),
     );
-    const byId = new Map(buildCollisionRects(viewOver(world)).map((r) => [r.objectId, r]));
+    const byId = new Map(objectRects(viewOver(world)).map((r) => [r.objectId, r]));
     expect(byId.get(1n)?.kind).toBe("collider");
     expect(byId.get(2n)?.kind).toBe("none");
     expect(byId.get(3n)?.kind).toBe("empty");
@@ -104,7 +126,7 @@ describe("buildCollisionRects", () => {
 
   it("outlines the whole footprint for an object with no collider, not one cell of it", () => {
     const world = worldWith(row({ objectId: 2n, defId: 2, x: 4, y: 1 }));
-    const [rect] = buildCollisionRects(viewOver(world));
+    const [rect] = objectRects(viewOver(world));
     expect(rect).toMatchObject({
       kind: "none",
       x: 4 * TILE,
@@ -117,7 +139,7 @@ describe("buildCollisionRects", () => {
 
   it("keeps a zero-area collider zero-area, and marks it so it can still be drawn", () => {
     const world = worldWith(row({ objectId: 3n, defId: 3, x: 0, y: 0 }));
-    const [rect] = buildCollisionRects(viewOver(world));
+    const [rect] = objectRects(viewOver(world));
     expect(rect?.kind).toBe("empty");
     expect(rect?.width).toBe(0);
     expect(rect?.height).toBe(8);
@@ -140,7 +162,7 @@ describe("buildCollisionRects", () => {
         expect(world.entriesInCell(0, cx, cy)).toEqual([]);
       }
     }
-    const rects = buildCollisionRects(viewOver(world));
+    const rects = objectRects(viewOver(world));
     expect(rects).toHaveLength(1);
     expect(rects[0]).toMatchObject({
       objectId: 4n,
@@ -158,7 +180,7 @@ describe("buildCollisionRects", () => {
       row({ objectId: 3n, defId: 3, x: 0, y: 0 }),
       row({ objectId: 4n, defId: 4, x: 2, y: 0 }),
     );
-    const rects = buildCollisionRects(viewOver(world));
+    const rects = objectRects(viewOver(world));
     expect(rects.map((r) => r.objectId).sort()).toEqual([3n, 4n]);
     expect(rects.every((r) => r.kind === "empty")).toBe(true);
   });
@@ -206,13 +228,13 @@ describe("buildCollisionRects", () => {
     const bounds = { floor: 0, cellX0: 0, cellY0: 0, cellX1: 0, cellY1: 0 };
     expect([...world.objects(bounds)].map((o) => o.objectId)).toEqual([1n]);
     expect(world.entriesInCell(0, 0, 0)).toEqual([]);
-    expect(buildCollisionRects(viewOver(world, bounds))).toEqual([]);
+    expect(objectRects(viewOver(world, bounds))).toEqual([]);
   });
 
   it("offsets by floor through the renderer's own projection (FR124)", () => {
     const world = worldWith(row({ objectId: 1n, defId: 1, x: 0, y: 0, floor: 2 }));
     const bounds = { floor: 2, cellX0: -2, cellY0: -2, cellX1: 2, cellY1: 2 };
-    const [rect] = buildCollisionRects(viewOver(world, bounds));
+    const [rect] = objectRects(viewOver(world, bounds));
     expect(rect?.y).toBe(
       subcellRectPx({ x0: 0, y0: 0, x1: 1, y1: 1 }, 2, SUBCELLS, TILE, STOREY).y,
     );
@@ -223,7 +245,7 @@ describe("buildCollisionRects", () => {
       row({ objectId: 1n, defId: 1, x: 0, y: 0, floor: 0 }),
       row({ objectId: 2n, defId: 1, x: 0, y: 0, floor: 1 }),
     );
-    expect(buildCollisionRects(viewOver(world)).map((r) => r.objectId)).toEqual([1n]);
+    expect(objectRects(viewOver(world)).map((r) => r.objectId)).toEqual([1n]);
   });
 
   it("emits one rect per collider, however many cells that collider spans", () => {
@@ -232,7 +254,7 @@ describe("buildCollisionRects", () => {
     ]);
     const world = new WorldIndex(SUBCELLS, wide);
     world.insert(row({ objectId: 1n, defId: 1, x: 0, y: 0 }));
-    const rects = buildCollisionRects(viewOver(world));
+    const rects = objectRects(viewOver(world));
     expect(rects).toHaveLength(1);
     expect(rects[0]?.width).toBe(3 * TILE);
   });
@@ -248,7 +270,7 @@ describe("buildCollisionRects", () => {
     const world = new WorldIndex(SUBCELLS, tall);
     // Anchor at (2, 3): the footprint's north-west origin is (2, 2).
     world.insert(row({ objectId: 1n, defId: 1, x: 2, y: 3 }));
-    const rects = buildCollisionRects(viewOver(world));
+    const rects = objectRects(viewOver(world));
     expect(rects).toHaveLength(1);
     expect(rects[0]).toMatchObject({
       kind: "collider",
@@ -265,7 +287,7 @@ describe("buildCollisionRects", () => {
     const tall = new Map<number, ColliderSource>([[1, { width: 3, height: 2 }]]);
     const world = new WorldIndex(SUBCELLS, tall);
     world.insert(row({ objectId: 1n, defId: 1, x: 2, y: 3 }));
-    const [rect] = buildCollisionRects(viewOver(world));
+    const [rect] = objectRects(viewOver(world));
     expect(rect).toMatchObject({
       kind: "none",
       x: 2 * TILE,
@@ -273,6 +295,49 @@ describe("buildCollisionRects", () => {
       width: 3 * TILE,
       height: 2 * TILE,
     });
+  });
+
+  // Story 15.4 (AC3): the player's own body is a fourth, distinct-stroke
+  // entry alongside the three object collider states -- read from the
+  // scene's own `bodyRect` (`DebugWorldView.viewerBody`), projected
+  // through the exact same `subcellRectPx` an object collider is, so a
+  // future anchor drift is caught by the same yardstick.
+  it("draws the player's own body as one more, distinct-stroke entry (AC3)", () => {
+    const world = worldWith(row({ objectId: 1n, defId: 1, x: 0, y: 0 }));
+    const playerBody = {
+      x0: 20 * SUBCELLS - 4,
+      y0: 20 * SUBCELLS - 4,
+      x1: 20 * SUBCELLS + 4,
+      y1: 20 * SUBCELLS,
+    };
+    const rects = buildCollisionRects(viewOver(world, undefined, playerBody));
+    const player = rects.filter((r) => r.kind === "player");
+    expect(player).toHaveLength(1);
+    expect(player[0]).toMatchObject({
+      kind: "player",
+      ...subcellRectPx(playerBody, 0, SUBCELLS, TILE, STOREY),
+      stroke: DEBUG_STYLE.palette.playerBody,
+    });
+    // Distinct from every object collider colour.
+    expect(player[0]?.stroke).not.toBe(DEBUG_STYLE.palette.collider);
+    expect(player[0]?.stroke).not.toBe(DEBUG_STYLE.palette.emptyCollider);
+    expect(player[0]?.stroke).not.toBe(DEBUG_STYLE.palette.noCollider);
+  });
+
+  it("re-reads the player's own body every call, never caching a stale one", () => {
+    const world = worldWith();
+    const a = { x0: 0, y0: 0, x1: 8, y1: 4 };
+    const b = { x0: 16, y0: 16, x1: 24, y1: 20 };
+    let body = a;
+    const view = viewOver(world, undefined, undefined);
+    const withMovingBody: DebugWorldView = { ...view, viewerBody: () => body };
+    expect(buildCollisionRects(withMovingBody)[0]).toMatchObject(
+      subcellRectPx(a, 0, SUBCELLS, TILE, STOREY),
+    );
+    body = b;
+    expect(buildCollisionRects(withMovingBody)[0]).toMatchObject(
+      subcellRectPx(b, 0, SUBCELLS, TILE, STOREY),
+    );
   });
 
   it("only ever uses colours from the shared palette", () => {
@@ -294,7 +359,7 @@ describe("buildCollisionRects", () => {
     const world = worldWith(placed);
     expect(buildCollisionRects(viewOver(world))[0]?.kind).toBe("collider");
     world.delete(placed);
-    expect(buildCollisionRects(viewOver(world))).toEqual([]);
+    expect(objectRects(viewOver(world))).toEqual([]);
   });
 
   it("costs the viewport, not the world (Quentin's counting wrapper)", () => {
@@ -360,7 +425,17 @@ describe("buildCollisionRects", () => {
             live.set(next.objectId, next);
           }
           const bounds = { floor: viewerFloor, cellX0: -8, cellY0: -8, cellX1: 8, cellY1: 8 };
-          const rects = buildCollisionRects(viewOver(world, bounds));
+          const allRects = buildCollisionRects(viewOver(world, bounds));
+
+          // The player's own body (story 15.4) is always exactly one more
+          // entry, never mixed into the object states below.
+          const playerRects = allRects.filter((r) => r.kind === "player");
+          expect(playerRects).toHaveLength(1);
+          expect(playerRects[0]).toMatchObject({
+            ...subcellRectPx(DEFAULT_PLAYER_BODY, viewerFloor, SUBCELLS, TILE, STOREY),
+            stroke: DEBUG_STYLE.palette.playerBody,
+          });
+          const rects = allRects.filter((r) => r.kind !== "player");
 
           // Rebuild (a): what the live grid reports over the same window,
           // deduplicated by object, area-having entries only.

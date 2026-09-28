@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DEBUG_STYLE } from "../../../src/debug/debug-style";
 import { buildSortLabels, parseSortLabel } from "../../../src/debug/sort-labels";
 import type { DebugWorldView } from "../../../src/debug/world-view";
-import { screenPositionPx } from "../../../src/render/screen-position";
+import { worldPointPx } from "../../../src/render/screen-position";
 import type { Drawable } from "../../../src/render/sort-key";
 import { compareDrawables } from "../../../src/render/sort-key";
 import { fromSortUnits, SORT_SUBDIVISIONS, toSortUnits } from "../../../src/render/sort-units";
@@ -35,6 +35,7 @@ function viewOver(
       const index = order.indexOf(id);
       return index === -1 ? undefined : index;
     },
+    viewerBody: () => ({ x0: 0, y0: 0, x1: 0, y1: 0 }),
   };
 }
 
@@ -63,7 +64,7 @@ describe("buildSortLabels", () => {
   it("puts the label at the drawable's own anchor, through the renderer's projection", () => {
     const d = drawable({ stableId: 4n, x: toSortUnits(2), y: toSortUnits(6) });
     const [label] = buildSortLabels(viewOver([d]));
-    const anchor = screenPositionPx(fromSortUnits(d.x), fromSortUnits(d.y), 0, TILE, STOREY, 1);
+    const anchor = worldPointPx(fromSortUnits(d.x), fromSortUnits(d.y), 0, TILE, STOREY, 1);
     expect(label?.x).toBe(anchor.x);
     // Lifted by whole lanes only: the horizontal position is always the
     // drawable's own anchor, so a label always belongs to the column it
@@ -119,14 +120,7 @@ describe("buildSortLabels", () => {
   it("staggers a negative tile column without ever landing outside its lanes", () => {
     const west = drawable({ stableId: 1n, x: toSortUnits(-1), y: toSortUnits(0) });
     const [label] = buildSortLabels(viewOver([west]));
-    const anchor = screenPositionPx(
-      fromSortUnits(west.x),
-      fromSortUnits(west.y),
-      0,
-      TILE,
-      STOREY,
-      1,
-    );
+    const anchor = worldPointPx(fromSortUnits(west.x), fromSortUnits(west.y), 0, TILE, STOREY, 1);
     const lift = anchor.y - (label?.y ?? 0);
     expect(lift).toBeGreaterThanOrEqual(0);
     expect(lift).toBeLessThanOrEqual(2 * DEBUG_STYLE.lineHeightPx * 2);

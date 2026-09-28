@@ -46,18 +46,18 @@ import { layerCodeByName, passOfLayer } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
-import { floorOffsetPx, screenPositionPx, snapToScreenPx } from "../render/screen-position";
+import { floorOffsetPx, snapToScreenPx, worldPointPx } from "../render/screen-position";
 import type { Drawable } from "../render/sort-key";
 import { fromSortUnits, toSortUnits } from "../render/sort-units";
 import type { VisibilityState, VisibilityViewer } from "../render/visibility";
 import { isFloorCulled } from "../render/visibility";
-import type { GridEntry } from "../world/collision-grid";
+import type { ColliderRectSubcells, GridEntry } from "../world/collision-grid";
 import {
   type FloorWalkResult,
   initialFloorWalkState,
   stepAndTransition,
 } from "../world/floor-walk";
-import type { MovementConfig } from "../world/movement";
+import { bodyRect, type MovementConfig } from "../world/movement";
 import { buildObjectDefIndex, type ObjectSource, objectDefById } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { TransitionIndex } from "../world/transitions";
@@ -326,9 +326,9 @@ export interface StreetSceneHandle {
   resumePointer(): void;
 
   // Story 1.12 (FR165): the reads `main.ts` assembles a `DebugWorldView`
-  // out of. Deliberately four plain reads rather than a `DebugWorldView`
+  // out of. Deliberately five plain reads rather than a `DebugWorldView`
   // built here: `test-street/` never imports `debug/` (nothing but
-  // `main.ts` does), and Epic 3's real pool will expose the same four
+  // `main.ts` does), and Epic 3's real pool will expose the same five
   // facts from somewhere else entirely.
 
   /** The floor the player is standing on right now. */
@@ -348,6 +348,11 @@ export interface StreetSceneHandle {
   /** Every placed object reaching into `bounds`, once each -- including
    * the ones with no collider, which the grid above cannot report. */
   worldObjects(bounds: CellBounds): Iterable<PlacedObjectView>;
+  /** The player's own collision body right now, in absolute sub-cells,
+   * from the same `world/movement.ts` `bodyRect` the resolver itself
+   * builds its start box from (story 15.4) -- never a second computation
+   * from `MovementConfig` alone. */
+  playerBody(): ColliderRectSubcells;
 }
 
 function cropped(base: Texture, frame: Rectangle | PixelRect): Texture {
@@ -482,6 +487,12 @@ function debugLabel(drawable: PropDrawable): string {
   return isDefPropDrawable(drawable) ? `def:${drawable.defId}` : drawable.assetKey;
 }
 
+/** Positions `sprite` at `worldX`/`worldY`'s own screen pixel -- already
+ * the drawn bottom-centre point the caller means to draw at (story 15.4:
+ * a prop's own cell goes through `cellBottomCentre` before it ever
+ * reaches here, and the player's continuous feet position already is
+ * that point), through the one plain projection every actor and the
+ * camera anchor share. */
 function positionSprite(
   sprite: Sprite,
   worldX: number,
@@ -491,7 +502,7 @@ function positionSprite(
   storeyHeightPx: number,
   nudgePx: number,
 ): void {
-  const pos = screenPositionPx(worldX, worldY, floor, tileSizePx, storeyHeightPx, ZOOM);
+  const pos = worldPointPx(worldX, worldY, floor, tileSizePx, storeyHeightPx, ZOOM);
   sprite.x = pos.x;
   sprite.y = pos.y + nudgePx;
 }
@@ -777,7 +788,7 @@ export async function mountStreetScene(
   // player the day `autoDensity`/a non-1 `resolution` is ever turned on.
   let lastCamera: Camera | undefined;
   function applyCamera(): void {
-    const anchor = screenPositionPx(walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, ZOOM);
+    const anchor = worldPointPx(walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, ZOOM);
     const camera = applyCameraToWorld(
       world,
       anchor.x,
@@ -1486,6 +1497,7 @@ export async function mountStreetScene(
     crowdContainer,
     defs,
     tileSizePx,
+    storeyHeightPx,
     ZOOM,
     appearanceCache,
     textureFor("sidewalk", textures),
@@ -1581,6 +1593,7 @@ export async function mountStreetScene(
     },
     collidersInCell: (floor, cellX, cellY) => worldIndex.entriesInCell(floor, cellX, cellY),
     worldObjects: (bounds) => worldIndex.objects(bounds),
+    playerBody: () => bodyRect({ x: walk.x, y: walk.y }, movementConfig),
     suspendPointer: () => pointer.suspend(),
     resumePointer: () => pointer.resume(),
     destroy: () => {

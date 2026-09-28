@@ -15,10 +15,12 @@ import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
 import { LAYER_TABLE } from "../../../src/render/layer-table";
+import { subcellRectPx, worldPointPx } from "../../../src/render/screen-position";
 import { isNearSideWall } from "../../../src/render/visibility";
 import { ASSET_URLS, WALL_TILE_H_FRAME, WALL_TILE_V_FRAME } from "../../../src/test-street/assets";
 import { buildPropDrawables, isDefPropDrawable } from "../../../src/test-street/drawables";
 import {
+  BOLLARD_COLLIDER,
   BRIDGE_DECK_DEF_ID,
   BRIDGE_DECK_WIDTH,
   BRIDGE_DECK_Y,
@@ -63,7 +65,7 @@ import {
   stepAndTransition,
 } from "../../../src/world/floor-walk";
 import { footprintCells, footprintOrigin } from "../../../src/world/footprint";
-import { MAX_DELTA_MS, step } from "../../../src/world/movement";
+import { bodyRect, MAX_DELTA_MS, step } from "../../../src/world/movement";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
 import {
   blockedNeighborsOf,
@@ -808,6 +810,142 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     expect(up.floor).toBe(PLAYER_START.floor);
     expect(up.cellX).toBe(STREET_EXIT_X);
     expect(up.cellY).toBe(STREET_EXIT_Y);
+  });
+});
+
+// Story 15.4 (Quentin's direction, AC4): a regression walk over the
+// pavement bollard (`id: 121`) that sits west of the shopfront, off every
+// scripted walk's own path -- so this walk is the first thing that ever
+// collides with it. Unlike the 15.2 walks above (which compare `walk.y`
+// to a rest computed in sub-cells -- body against collider, the units the
+// scene's own render offset never touched), every assertion below runs
+// the rest through *drawn pixels*: the same `worldPointPx` `scene.ts`'s
+// `positionSprite` draws the player with, and the same `subcellRectPx`
+// the FR165 overlay draws a collider with. This module never mounts
+// `scene.ts` itself (`client/tests/unit/**`'s own coverage boundary), so
+// it cannot independently prove master's cell-anchored placement was
+// wrong the way `inv_player_sprite_feet_sit_on_body`
+// (`tests/unit/render/screen-position.test.ts`) and this story's e2e
+// case do -- what it pins, against the real committed street, is that
+// the resolver's own body and the drawn collider agree to the pixel from
+// four different approach columns, so a future drift in either can never
+// pass silently again.
+describe("the bollard west of the shopfront stops the player where it is drawn (AC1, AC4)", () => {
+  const config = streetMovementConfig();
+  const world = streetWorldIndex();
+  const floor = 0;
+  const tileSizePx = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value;
+  const storeyHeightPx = committedDefs().balance.find(
+    (b) => b.key === "render.storey_height_px",
+  )?.value;
+  if (tileSizePx === undefined || storeyHeightPx === undefined) {
+    throw new Error("missing render balance keys");
+  }
+
+  const bollardProp = STREET_PROPS.find((p) => p.id === 121n);
+  if (!bollardProp || isDefStreetProp(bollardProp) || !bollardProp.colliders) {
+    throw new Error("fixture no longer places the west-of-shopfront bollard (id 121)");
+  }
+  // Captured into its own, definitely-defined binding (never `bollardProp`
+  // itself) so every closure below -- `walkNorth`, each `it` -- reads a
+  // type TypeScript can prove non-optional, rather than re-narrowing a
+  // `const` across a function boundary it cannot see into.
+  const bollard = { x: bollardProp.x, y: bollardProp.y, floor: bollardProp.floor };
+  // A 1x1, undecomposed `assetKey` prop: its own anchor cell *is* its
+  // collider's north-west sub-cell origin, no `footprintOrigin` needed.
+  const colliderX0Cells = bollard.x + BOLLARD_COLLIDER.x0 / config.subcellsPerCell;
+  const colliderX1Cells = bollard.x + BOLLARD_COLLIDER.x1 / config.subcellsPerCell;
+  const colliderCentreCells = (colliderX0Cells + colliderX1Cells) / 2;
+  const halfWidthCells = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  const oneSubcellCells = 1 / config.subcellsPerCell;
+
+  // Four columns, walking straight north (never moving in x) at each:
+  // squarely overlapping the post's own west half, its east half, exactly
+  // touching its west face (half-open: clears it), and one sub-cell
+  // further east than that (now overlaps, blocked).
+  const touchingClears = colliderX0Cells - halfWidthCells;
+  const columns = {
+    westHalf: (colliderX0Cells + colliderCentreCells) / 2,
+    eastHalf: (colliderCentreCells + colliderX1Cells) / 2,
+    touchingClears,
+    oneSubcellBlocked: touchingClears + oneSubcellCells,
+  };
+
+  /** Starts south of the bollard's own row (clear of the world's south
+   * boundary ring further south, and of the next real collider further
+   * north -- probed against the real committed street) and walks north
+   * (`ArrowUp`) at fixed `x` for up to `maxSteps` of `MAX_DELTA_MS` each,
+   * the same release-lag-tolerant discipline the walks above use: a body
+   * already at rest keeps returning the same position, so a few extra
+   * steps past convergence can never move it further. */
+  function walkNorth(x: number): { x: number; y: number } {
+    const startY = bollard.y + 1.7;
+    let pos = { x, y: startY };
+    const maxSteps = 300;
+    for (let i = 0; i < maxSteps; i++) {
+      pos = step(pos, { x: 0, y: -1 }, MAX_DELTA_MS, world, floor, config);
+    }
+    return pos;
+  }
+
+  const colliderDrawn = subcellRectPx(
+    BOLLARD_COLLIDER,
+    floor,
+    config.subcellsPerCell,
+    tileSizePx,
+    storeyHeightPx,
+  );
+  // The bollard's own drawn rect is relative to its anchor cell's own
+  // screen origin -- translate `subcellRectPx`'s output by that cell's
+  // own top-left pixel, the same translation `collision-rects.ts` applies
+  // via the footprint origin.
+  const anchorPx = worldPointPx(bollard.x, bollard.y, floor, tileSizePx, storeyHeightPx, 1);
+  const colliderSouthFacePx = anchorPx.y + colliderDrawn.y + colliderDrawn.height;
+
+  for (const [label, x] of Object.entries({
+    westHalf: columns.westHalf,
+    eastHalf: columns.eastHalf,
+  }) as [string, number][]) {
+    it(`stops flush against the post's drawn base, off-centre from the ${label}`, () => {
+      const rest = walkNorth(x);
+      const restDrawn = worldPointPx(rest.x, rest.y, floor, tileSizePx, storeyHeightPx, 1);
+      // The drawn feet's bottom edge sits exactly `bodyHeightSubcells`
+      // south of the post's own drawn base (`world/movement.ts`'s own
+      // asymmetric north-approach extent, `onUnderpassRowY`'s established
+      // idiom) -- never the offset this story fixes, which was a whole
+      // extra tile.
+      const bodyHeightPx = (config.bodyHeightSubcells / config.subcellsPerCell) * tileSizePx;
+      expect(restDrawn.y).toBeCloseTo(colliderSouthFacePx + bodyHeightPx, 6);
+      // Never a blocked span over visibly empty ground: the drawn feet's
+      // own x sits inside the post's drawn base widened by half the
+      // body's own width on each side.
+      const bodyDrawn = subcellRectPx(
+        bodyRect({ x: rest.x, y: rest.y }, config),
+        floor,
+        config.subcellsPerCell,
+        tileSizePx,
+        storeyHeightPx,
+      );
+      expect(bodyDrawn.x).toBeGreaterThanOrEqual(anchorPx.x + colliderDrawn.x - tileSizePx / 2);
+      expect(bodyDrawn.x + bodyDrawn.width).toBeLessThanOrEqual(
+        anchorPx.x + colliderDrawn.x + colliderDrawn.width + tileSizePx / 2,
+      );
+    });
+  }
+
+  it("clears the post when the body's own east edge only just touches its west face (half-open)", () => {
+    const colliderY0Cells = bollard.y + BOLLARD_COLLIDER.y0 / config.subcellsPerCell;
+    const rest = walkNorth(columns.touchingClears);
+    // Unblocked by this post: ends up north of its own drawn base,
+    // whatever else it eventually rests against further along.
+    expect(rest.y).toBeLessThan(colliderY0Cells);
+  });
+
+  it("blocks one sub-cell further east than that -- the offset this story's AC4 exists to catch", () => {
+    const rest = walkNorth(columns.oneSubcellBlocked);
+    const restDrawn = worldPointPx(rest.x, rest.y, floor, tileSizePx, storeyHeightPx, 1);
+    const bodyHeightPx = (config.bodyHeightSubcells / config.subcellsPerCell) * tileSizePx;
+    expect(restDrawn.y).toBeCloseTo(colliderSouthFacePx + bodyHeightPx, 6);
   });
 });
 

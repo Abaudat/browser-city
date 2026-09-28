@@ -26,13 +26,13 @@ import {
   type UniformOverride,
 } from "../render/appearance/composite";
 import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
-import { snapToScreenPx } from "../render/screen-position";
+import { snapToScreenPx, worldPointPx } from "../render/screen-position";
 import { cellOf } from "../world/ownership";
 import {
   buildCitizenFixtures,
   buildUniformedWalkerFixture,
   buildWalkerFixture,
-  citizenScreenPx,
+  CROWD_FLOOR,
   plazaBounds,
   UNIFORMED_WALKER_ID,
   WALKER_ID,
@@ -75,11 +75,12 @@ function advanceWalker(
   walker: WalkerState,
   deltaMS: number,
   tileSizePx: number,
+  storeyHeightPx: number,
   zoom: number,
 ): void {
   walker.elapsedMS += deltaMS;
   const pose = walkerPoseAt(walker.startX, walker.startY, walker.elapsedMS);
-  const px = citizenScreenPx(pose.x, pose.y, tileSizePx, zoom);
+  const px = worldPointPx(pose.x, pose.y, CROWD_FLOOR, tileSizePx, storeyHeightPx, zoom);
   walker.sprite.x = px.x;
   walker.sprite.y = px.y;
   walker.sprite.zIndex = pose.y;
@@ -90,6 +91,7 @@ export async function mountCitizensLayer(
   parent: Container,
   defs: Defs,
   tileSizePx: number,
+  storeyHeightPx: number,
   zoom: number,
   cache: AppearanceTextureCache,
   sidewalkTexture: Texture,
@@ -160,7 +162,14 @@ export async function mountCitizensLayer(
       // A standing citizen never moves, so it keeps its whole-world-pixel
       // placement (zoom 1, itself a whole screen pixel): its scatter
       // position is fractional, and a finer snap would only shift it.
-      const px = citizenScreenPx(fixture.gridX, fixture.gridY, tileSizePx, 1);
+      const px = worldPointPx(
+        fixture.gridX,
+        fixture.gridY,
+        CROWD_FLOOR,
+        tileSizePx,
+        storeyHeightPx,
+        1,
+      );
       sprite.x = px.x;
       sprite.y = px.y;
       sprite.zIndex = fixture.gridY;
@@ -180,7 +189,9 @@ export async function mountCitizensLayer(
   );
 
   function update(deltaMS: number): void {
-    for (const walker of walkers.values()) advanceWalker(walker, deltaMS, tileSizePx, zoom);
+    for (const walker of walkers.values()) {
+      advanceWalker(walker, deltaMS, tileSizePx, storeyHeightPx, zoom);
+    }
   }
 
   function compareForE2e(

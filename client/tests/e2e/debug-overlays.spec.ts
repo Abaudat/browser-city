@@ -98,6 +98,60 @@ test("the collision overlay draws every collider state over the real street (AC2
   ).toBe("none");
 });
 
+// Story 15.4 (AC3): the player's own collision box sits exactly on their
+// drawn silhouette, not merely somewhere in the same collider list.
+// `data-bc-collider="player"` is the overlay's fourth entry (Quentin/
+// Tim's direction); its own drawn rect, mapped through the scene's real
+// `viewTransform` into canvas pixels, must have its bottom-centre within
+// 1px of `playerScreenBounds()` -- Pixi's own real, drawn sprite bounds.
+// Red before this story's fix by `(tile/2, tile)` at the scene's own
+// zoom, the same offset every other AC1/AC4 case in this PR names.
+test("the collision overlay's player body sits on the player's real drawn sprite (AC3)", async ({
+  page,
+}) => {
+  await page.goto("/?debug=collision&freezeCrowd");
+  await waitForSceneReady(page);
+
+  const player = page.locator('[data-bc-collider="player"]');
+  await expect(player).toHaveCount(1);
+
+  const overlayRect = await player.evaluate((el) => ({
+    x: Number(el.getAttribute("x")),
+    y: Number(el.getAttribute("y")),
+    width: Number(el.getAttribute("width")),
+    height: Number(el.getAttribute("height")),
+  }));
+  const viewTransform = await page.evaluate(() => window.__bc?.viewTransform);
+  const bounds = await page.evaluate(() => window.__bc?.playerScreenBounds?.());
+  if (!viewTransform || !bounds) throw new Error("no viewTransform/playerScreenBounds hook");
+
+  // The overlay rect is in the same pre-zoom world-pixel space
+  // `screen-position.ts` produces (`overlays.ts`'s own `viewGroup`
+  // transform); `playerScreenBounds()` is Pixi's own real, drawn bounds,
+  // already in canvas pixels. Both bottom-centres must agree.
+  const overlayCanvasX = overlayRect.x * viewTransform.zoom + viewTransform.offsetX;
+  const overlayCanvasY = overlayRect.y * viewTransform.zoom + viewTransform.offsetY;
+  const overlayWidthCanvas = overlayRect.width * viewTransform.zoom;
+  const overlayHeightCanvas = overlayRect.height * viewTransform.zoom;
+  const overlayBottomCentre = {
+    x: overlayCanvasX + overlayWidthCanvas / 2,
+    y: overlayCanvasY + overlayHeightCanvas,
+  };
+  const spriteBottomCentre = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height };
+
+  expect(Math.abs(overlayBottomCentre.x - spriteBottomCentre.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(overlayBottomCentre.y - spriteBottomCentre.y)).toBeLessThanOrEqual(1);
+
+  // Distinct from every object collider colour, so the two read apart at
+  // a glance (Artie's direction).
+  const stroke = await player.evaluate((el) => el.getAttribute("stroke"));
+  const objectStroke = await page
+    .locator('[data-bc-collider="collider"]')
+    .first()
+    .evaluate((el) => el.getAttribute("stroke"));
+  expect(stroke).not.toBe(objectStroke);
+});
+
 test("the sort overlay prints the key the renderer actually ordered by (AC3)", async ({ page }) => {
   await page.goto("/?debug=sort");
   await waitForSceneReady(page);

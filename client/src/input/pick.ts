@@ -42,7 +42,7 @@ export interface ReachRect {
   readonly y1: number;
 }
 
-/** A half-open rect in world pixels -- the space `screenPositionPx`
+/** A half-open rect in world pixels -- the space `worldPointPx`
  * produces, before the camera's own offset and zoom. */
 export interface PickRect {
   readonly x0: number;

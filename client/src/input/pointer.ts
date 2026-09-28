@@ -60,7 +60,7 @@ export interface PointerOptions {
    * -- `attachKeyboard`'s own idiom, injected for the same reason: a test
    * mounts on a bare element with no real global `window` focus to drive. */
   readonly target?: Window;
-  /** Client coordinates to the world-pixel space `screenPositionPx`
+  /** Client coordinates to the world-pixel space `worldPointPx`
    * produces, undoing whatever camera offset and zoom the scene applied.
    * Injected because the camera belongs to the scene, and this module
    * must not import PixiJS to ask it. */
