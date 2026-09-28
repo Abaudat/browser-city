@@ -29,8 +29,8 @@ change takes effect. On a real machine, open that new shell after the first line
 <!-- bc:windows-install:start -->
 ```powershell
 iwr https://windows.spacetimedb.com -useb | iex
-spacetime version install 99.99.99
-spacetime version use 99.99.99
+spacetime version install 2.9.0
+spacetime version use 2.9.0
 ```
 <!-- bc:windows-install:end -->
 
