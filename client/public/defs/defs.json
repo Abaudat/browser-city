@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "b17e4f5ce09c9a37",
+  "defs_version": "343cf03be1005f58",
   "collider_subcells_per_cell": 16,
   "interact_at_max_reach_cells": 2,
   "max_footprint_cells": 8,
@@ -195,7 +195,7 @@
     { "key": "generation.streets.max_block_depth_max_cells", "max": 1024, "min": 2, "value": 120 },
     { "key": "generation.streets.max_block_depth_min_cells", "max": 1024, "min": 2, "value": 40 },
     { "key": "generation.streets.max_detour_excess_cells", "max": 2048, "min": 1, "value": 416 },
-    { "key": "generation.streets.max_detour_percent", "max": 500, "min": 100, "value": 200 },
+    { "key": "generation.streets.max_detour_percent", "max": 500, "min": 101, "value": 200 },
     { "key": "generation.streets.max_lane_splits", "max": 16, "min": 0, "value": 4 },
     { "key": "generation.streets.max_recursion_depth", "max": 64, "min": 1, "value": 12 },
     { "key": "generation.streets.max_street_splits_per_superblock", "max": 16, "min": 0, "value": 1 },

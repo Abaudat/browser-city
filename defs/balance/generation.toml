@@ -352,10 +352,17 @@ max = 256
 # contract violation is always also an excess-alone violation, and that
 # ceiling's own miss count is already 0 (`inv_generation_detour_ratio_
 # bounded`'s own doc comment carries the proof; `docs/generation.md`'s
-# street-network pass carries the full sweep output).
+# street-network pass carries the full sweep output). `min` is 101, not
+# 100 (Tim's/Quentin's direction, story 15.10 cycle 2): at or under 100
+# the ratio term (`manhattan * max_detour_percent / 100`) is never
+# looser than the excess term, so `detour_ratio_takeover_distance_cells`'s
+# own division (`max_detour_excess_cells * 100 / (max_detour_percent -
+# 100)`) is either undefined (100) or negative (under 100) --
+# `from_balance` refuses it independently too, so this `min` and that
+# refusal must always agree.
 key = "generation.streets.max_detour_percent"
 value = 200
-min = 100
+min = 101
 max = 500
 
 [[balance]]

@@ -329,7 +329,9 @@ violation, and the excess ceiling's own miss count above (0 of
 contract's own miss count is 0 too (Derek's direction, cycle 2). A
 second, smaller run over the *current* code (the max()-contract and the
 takeover-distance stat did not exist at the million-seed run's own
-commit) confirms it at 5,000 seeds:
+commit) confirms it at 5,000 seeds. This block is a smoke confirmation
+only, not the story's own result -- the derivation above, resting on the
+million-seed excess-only run, is:
 
 ```text
 detour-bounds sweep: 5000 seeds, passes 1-2 only
