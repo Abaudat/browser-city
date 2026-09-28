@@ -65,7 +65,7 @@ cleanup() {
     echo "check-authoritative-loop: BC_KEEP_DATA_DIR set -- leaving $DATA_DIR and the instance on $SERVER_URL running" >&2
     return
   fi
-  [ -n "$START_PID" ] && kill "$START_PID" 2>/dev/null
+  bc_stop_spacetime "$START_PID"
   rm -rf "$DATA_DIR"
 }
 trap cleanup EXIT

@@ -50,5 +50,25 @@ plant "$d" "debug/panel.ts" 'conn.reducers.sendPing("hi");
 app.ticker.add(() => { doSomethingHarmless(); });'
 check "a reducer call outside any ticker.add callback, outside render/world/test-street, passes" 0 bash "$CHECK" "$d"
 
+d="$(fake_dir)"
+plant "$d" "debug/panel.ts" 'Ticker.shared.add((ticker) => {
+  conn.reducers.sendPing("hi");
+});'
+check "a reducer call inside a Ticker.shared.add callback is banned" 1 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+plant "$d" "debug/panel.ts" 'Ticker.shared.add(() => { doSomethingHarmless(); });'
+check "a Ticker.shared.add callback with no reducer call passes" 0 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+plant "$d" "debug/panel.ts" 'requestAnimationFrame(() => {
+  conn.reducers.sendPing("hi");
+});'
+check "a reducer call inside a requestAnimationFrame callback is banned" 1 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+plant "$d" "debug/panel.ts" 'requestAnimationFrame(() => { doSomethingHarmless(); });'
+check "a requestAnimationFrame callback with no reducer call passes" 0 bash "$CHECK" "$d"
+
 summary
 exit $?

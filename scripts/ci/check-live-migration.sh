@@ -27,13 +27,13 @@
 # an instance.
 set -uo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+. "$REPO_ROOT/scripts/ci/lib/spacetime-instance.sh"
 FIXTURES="$REPO_ROOT/server/tests/fixtures"
 DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bc-live-migration.XXXXXX")"
 PORT=3987
 SERVER_URL="http://127.0.0.1:$PORT"
 START_LOG="$DATA_DIR/start.log"
 HEALTH_DEADLINE_S=30
-POLL_INTERVAL_S=1
 # The exact substring SpacetimeDB 2.9 prints when a publish is rejected for
 # requiring a manual migration -- the one piece of evidence that
 # distinguishes "NFR33 held" from "something else went wrong".
@@ -42,7 +42,7 @@ REJECTION_PATTERN="Aborting because publishing would require manual migration"
 START_PID=""
 
 cleanup() {
-  [ -n "$START_PID" ] && kill "$START_PID" 2>/dev/null
+  bc_stop_spacetime "$START_PID"
   rm -rf "$DATA_DIR"
 }
 trap cleanup EXIT
@@ -87,19 +87,9 @@ assert_pure_addition() {
 assert_pure_addition "migration_v2_good" "$FIXTURES/migration_v1/src/lib.rs" "$FIXTURES/migration_v2_good/src/lib.rs"
 assert_pure_addition "migration_v2_bad" "$FIXTURES/migration_v1/src/lib.rs" "$FIXTURES/migration_v2_bad/src/lib.rs"
 
-spacetime start --data-dir "$DATA_DIR/data" --listen-addr "127.0.0.1:$PORT" >"$START_LOG" 2>&1 &
-START_PID=$!
-
-deadline=$((SECONDS + HEALTH_DEADLINE_S))
-healthy=0
-while [ "$SECONDS" -lt "$deadline" ]; do
-  if curl -sf -o /dev/null "$SERVER_URL/v1/ping"; then
-    healthy=1
-    break
-  fi
-  sleep "$POLL_INTERVAL_S"
-done
-[ "$healthy" -eq 1 ] || fail "SpacetimeDB did not become healthy within ${HEALTH_DEADLINE_S}s" "$START_LOG"
+START_PID="$(bc_start_spacetime "$DATA_DIR/data" "$PORT" "$START_LOG")"
+bc_wait_spacetime_healthy "$SERVER_URL" "$HEALTH_DEADLINE_S" \
+  || fail "SpacetimeDB did not become healthy within ${HEALTH_DEADLINE_S}s" "$START_LOG"
 
 publish() { # <module-dir> <db-name> <log-file>
   spacetime publish --server "$SERVER_URL" --no-config -y "$2" --module-path "$1" >"$3" 2>&1

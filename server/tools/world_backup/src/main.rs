@@ -250,6 +250,27 @@ fn run(args: &[String]) -> Result<()> {
             fs::write(out, format!("{text}\n"))
                 .map_err(|e| WorldBackupError(format!("could not write {out}: {e}")))?;
         }
+        "cadence-liveness-forward-diff" => {
+            // cadence-liveness-forward-diff <export-a.jsonl> <export-b.jsonl>
+            // -- prints one mismatch description per line to stdout, empty
+            // output means every row in A is either byte-identical in B or
+            // related to it by exactly one legitimate later fire.
+            let a_text = read_file(&args[2])?;
+            let b_text = read_file(&args[3])?;
+            let a_lines: Vec<String> = a_text
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(String::from)
+                .collect();
+            let b_lines: Vec<String> = b_text
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(String::from)
+                .collect();
+            for mismatch in cadence_liveness_forward_diff(&a_lines, &b_lines)? {
+                println!("{mismatch}");
+            }
+        }
         "stdin-to-line" => {
             // Reads a JSON value from stdin and prints it as one
             // canonical compact line -- used to fold a single ad hoc

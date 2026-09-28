@@ -9,7 +9,7 @@
 //! Story 4.2 arms the first one for real: `maintenance_schedule`, ten
 //! city minutes. Every cadence in this module shares the one repeat
 //! pattern below -- `sim::cadence::next_target`, `ScheduleAt::Time` only,
-//! never `ScheduleAt::Interval` (`scripts/ci/check-no-schedule-interval.sh`
+//! never `ScheduleAt::Interval` (`scripts/ci/check-server-src-bans.sh`
 //! bans it mechanically). The other six scheduled tables stay unarmed:
 //! an empty-bodied cadence still costs one dispatch's worth of scheduler
 //! bookkeeping per fire for nothing (Tim's direction) -- each is armed by
@@ -17,12 +17,16 @@
 //!
 //! `cadence_liveness` (below) is the durable proof a cadence is alive:
 //! one row per armed cadence, written only from inside that cadence's own
-//! fired reducer, never from an arm -- so it only ever exists once a
-//! cadence has actually fired at least once. What
-//! `scripts/ci/check-authoritative-loop.sh` reads with zero clients
-//! connected, what a future metrics sampler (story 4.12) will sample for
-//! lateness, and what a future dead-man's check in `backup.yml` can alarm
-//! on.
+//! fired reducer, never from an arm. What `scripts/ci/
+//! check-authoritative-loop.sh` reads with zero clients connected, what a
+//! future metrics sampler (story 4.12) will sample for lateness, and what
+//! a future dead-man's check in `backup.yml` can alarm on.
+//!
+//! `begin_restore`/`finish_restore` (`tables::restore`) bracket every
+//! restore with [`disarm_all_scheduled_tables`] and [`arm_every_cadence`]:
+//! a restore target's own cadence is live and armed the instant `init`
+//! publishes it, so nothing may be allowed to fire between opening a
+//! restore and re-arming from the epoch actually being restored.
 
 use spacetimedb::{ReducerContext, ScheduleAt, Table, Timestamp};
 
@@ -40,7 +44,7 @@ fn require_scheduler(ctx: &ReducerContext) -> Result<(), String> {
 
 /// A fired cadence row's own `scheduled_at` must always be
 /// `ScheduleAt::Time` -- this module never inserts `ScheduleAt::Interval`
-/// anywhere (`scripts/ci/check-no-schedule-interval.sh`). Written with a
+/// anywhere (`scripts/ci/check-server-src-bans.sh`). Written with a
 /// `let-else`, never a `match` naming `ScheduleAt::Interval` by pattern,
 /// so that ban has nothing to except itself against.
 fn schedule_at_micros(at: ScheduleAt) -> Result<i64, String> {
@@ -57,9 +61,9 @@ fn schedule_at_micros(at: ScheduleAt) -> Result<i64, String> {
 /// exactly one, at the next phase-preserving, catch-up-bounded target
 /// computed by `sim::cadence::next_target` from `origin_micros`/
 /// `period_ms`/`ctx.timestamp`. The one function every cadence's arm
-/// (`arm_every_cadence`, called from `init`/`rearm_schedules`) and every
-/// cadence's own fired reducer body (re-arming itself after doing its
-/// work) both call. `insert`/`delete`/`iter_ids` close over `ctx` and one
+/// (`arm_every_cadence_from`/`arm_every_cadence`) and every cadence's own
+/// fired reducer body (re-arming itself after doing its work) both call.
+/// `insert`/`delete`/`iter_ids` close over `ctx` and one
 /// cadence's own scheduled table -- the same shape
 /// `tables::restore::restore_autoinc_rows` uses, for the same reason: no
 /// shared trait across SpacetimeDB's per-table generated accessors to
@@ -204,10 +208,11 @@ pub struct MaintenanceSchedule {
 /// `sim::codes`' NFR36 extensible sets: there are exactly as many
 /// cadences as this file declares scheduled tables, never a
 /// content-extensible one). Public and ordinary (non-scheduled) durable
-/// state: restored like any other table (`restore_cadence_liveness`),
-/// never seeded by `init` -- a cadence's own row only ever exists once it
-/// has fired at least once, so `begin_restore` requires it empty like any
-/// other non-init-seeded table.
+/// state, restored like the code tables and `module_owner`:
+/// `restore_cadence_liveness` replaces whatever is there rather than
+/// requiring it empty, because a freshly-published target's own `init`
+/// arms its cadence immediately, and that cadence can fire for real (and
+/// write this table) any time before `begin_restore` ever runs.
 #[derive(Clone)]
 #[spacetimedb::table(accessor = cadence_liveness, public)]
 pub struct CadenceLiveness {
@@ -228,8 +233,9 @@ pub mod cadence_code {
 }
 
 /// Re-arms `maintenance_schedule` from `origin_micros`. Shared by
-/// `arm_every_cadence` (the initial arm, from `init`/`rearm_schedules`)
-/// and `run_maintenance` (the re-arm after firing).
+/// `arm_every_cadence_from` (the initial arm, from `init`/
+/// `finish_restore`), `arm_every_cadence` (from `rearm_schedules`), and
+/// `run_maintenance` (the re-arm after firing).
 fn arm_maintenance_schedule(ctx: &ReducerContext, origin_micros: i64) -> (i64, u64) {
     arm_cadence(
         ctx,
@@ -306,16 +312,23 @@ pub fn run_maintenance(ctx: &ReducerContext, row: MaintenanceSchedule) -> Result
 }
 
 /// Arms every cadence this file gives real work to (today: just
-/// `maintenance_schedule`), from `world_clock.epoch_at` -- the one
-/// durable row every cadence's phase is anchored to. `ok_or(Err)`, never
-/// `unwrap`/`expect` (NFR41): an absent epoch aborts the whole call and
-/// arms nothing, which is the correct outcome for an inconsistent world.
-/// Called from `init` (after `tables::clock::record_epoch_from_init`
-/// already wrote the epoch -- a `debug_assert!` there is this crate's own
-/// proof that branch is unreachable in practice) and from the owner-only
-/// `rearm_schedules` reducer (`../lib.rs`): schedules are derived state,
-/// rebuilt explicitly, never trusted to survive a deploy purely by
-/// surviving as pending rows (docs/architecture.md).
+/// `maintenance_schedule`) from an already-known epoch, in micros --
+/// infallible, since the caller already has the epoch in hand (`init`
+/// just wrote or found it; `finish_restore` just restored `world_clock`
+/// itself) and there is no lookup here that could fail. Schedules are
+/// derived state, rebuilt explicitly, never trusted to survive a deploy
+/// purely by surviving as pending rows (docs/architecture.md).
+pub fn arm_every_cadence_from(ctx: &ReducerContext, epoch_micros: i64) {
+    arm_maintenance_schedule(ctx, epoch_micros);
+}
+
+/// Looks up `world_clock.epoch_at` and arms every cadence from it.
+/// `ok_or(Err)`, never `unwrap`/`expect` (NFR41): an absent epoch aborts
+/// the whole call and arms nothing, which is the correct outcome for an
+/// inconsistent world. The owner-only `rearm_schedules` reducer
+/// (`../lib.rs`) is this function's only caller -- every other caller
+/// already has the epoch in hand and calls [`arm_every_cadence_from`]
+/// directly instead.
 pub fn arm_every_cadence(ctx: &ReducerContext) -> Result<(), String> {
     let epoch_micros = ctx
         .db
@@ -325,6 +338,84 @@ pub fn arm_every_cadence(ctx: &ReducerContext) -> Result<(), String> {
         .ok_or_else(|| "world_clock has no row -- init did not run".to_string())?
         .epoch_at
         .to_micros_since_unix_epoch();
-    arm_maintenance_schedule(ctx, epoch_micros);
+    arm_every_cadence_from(ctx, epoch_micros);
     Ok(())
+}
+
+/// Deletes every pending row of every scheduled table this module
+/// declares, armed or not. Called from `begin_restore` (`tables::
+/// restore`, story 4.2): a restore target's own cadence is live and armed
+/// from its own `init` the instant it is published, so without this a
+/// scheduled reducer can fire on the target at any point during the
+/// restore, using an epoch that belongs to the target's own pre-restore
+/// world, not the one being restored. Schedules are derived state
+/// (docs/architecture.md) -- disarming the target's own is exactly as
+/// disposable as never restoring the source's.
+pub fn disarm_all_scheduled_tables(ctx: &ReducerContext) {
+    for id in ctx
+        .db
+        .citizen_transition_schedule()
+        .iter()
+        .map(|r| r.scheduled_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db
+            .citizen_transition_schedule()
+            .scheduled_id()
+            .delete(id);
+    }
+    for id in ctx
+        .db
+        .metrics_sample_schedule()
+        .iter()
+        .map(|r| r.scheduled_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.metrics_sample_schedule().scheduled_id().delete(id);
+    }
+    for id in ctx
+        .db
+        .budget_review_schedule()
+        .iter()
+        .map(|r| r.scheduled_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.budget_review_schedule().scheduled_id().delete(id);
+    }
+    for id in ctx
+        .db
+        .world_clock_schedule()
+        .iter()
+        .map(|r| r.scheduled_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.world_clock_schedule().scheduled_id().delete(id);
+    }
+    for id in ctx
+        .db
+        .economy_schedule()
+        .iter()
+        .map(|r| r.scheduled_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.economy_schedule().scheduled_id().delete(id);
+    }
+    for id in ctx
+        .db
+        .growth_schedule()
+        .iter()
+        .map(|r| r.scheduled_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.growth_schedule().scheduled_id().delete(id);
+    }
+    for id in ctx
+        .db
+        .maintenance_schedule()
+        .iter()
+        .map(|r| r.scheduled_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.maintenance_schedule().scheduled_id().delete(id);
+    }
 }

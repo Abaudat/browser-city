@@ -101,9 +101,9 @@ module as its owner, and each reducer rejects any other caller, so run the `spac
 the same identity that ran `spacetime publish`.
 
 `rearm_schedules` re-derives every scheduled cadence's own pending row from `world_clock.epoch_at`
-(story 4.2, `docs/architecture.md`'s "Scheduled reducers" section) -- idempotent, and also called
-from `scripts/ops/restore-world.sh` after a restore, so a redeployed or restored world always resumes
-its loop without a human remembering.
+(`docs/architecture.md`'s "Scheduled reducers" section) -- idempotent. It has exactly two callers,
+`init` and `deploy.yml`'s `publish-module` job; a restore re-arms through `finish_restore` itself,
+inside the module's own transaction chain, never through this reducer.
 
 `spacetime dev` rebuilds, automigrates, republishes and regenerates `client/src/net/bindings` on
 every save; existing rows survive the migration. Run `scripts/dev/check-hot-reload.sh` to verify

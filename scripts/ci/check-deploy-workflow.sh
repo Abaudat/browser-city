@@ -49,6 +49,11 @@
 #      that only ever checks `failure()`/`contains(..., 'failure')` lets a
 #      hung `publish-module`/`smoke` run to its own budget and file
 #      nothing.
+#   6. `publish-module` calls `rearm_schedules` after `reseed_codes`
+#      (story 4.2): schedules are derived state, and a redeployed world
+#      must resume every armed cadence without a human remembering --
+#      today nothing but a code review stands between that sentence in
+#      docs/architecture.md and someone deleting the step.
 #
 # Usage: check-deploy-workflow.sh [deploy.yml path] [backup.yml path]
 #   [deploy.yml path]  defaults to .github/workflows/deploy.yml at the repo
@@ -249,5 +254,31 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, the backup job's first-deploy exception is the positive not-found script, neither deploy.yml's backup job nor backup.yml's export job has a shallow checkout, and report-failure accounts for a cancelled job too" >&2
+# --- story 4.2: publish-module calls rearm_schedules after reseed_codes ----
+PUBLISH_MODULE_BLOCK="$(job_block publish-module)"
+if [ -z "$PUBLISH_MODULE_BLOCK" ]; then
+  echo "check-deploy-workflow: FAIL -- $WORKFLOW has no 'publish-module:' job" >&2
+  FAILED=1
+else
+  RESEED_LINE="$(printf '%s\n' "$PUBLISH_MODULE_BLOCK" | grep -n 'reseed_codes' | head -n1 | cut -d: -f1 || true)"
+  REARM_LINE="$(printf '%s\n' "$PUBLISH_MODULE_BLOCK" | grep -n 'rearm_schedules' | head -n1 | cut -d: -f1 || true)"
+  if [ -z "$RESEED_LINE" ]; then
+    echo "check-deploy-workflow: FAIL -- 'publish-module' never calls reseed_codes" >&2
+    FAILED=1
+  fi
+  if [ -z "$REARM_LINE" ]; then
+    echo "check-deploy-workflow: FAIL -- 'publish-module' never calls rearm_schedules -- schedules are derived state, and a redeployed world must resume every armed cadence (docs/architecture.md)" >&2
+    FAILED=1
+  fi
+  if [ -n "$RESEED_LINE" ] && [ -n "$REARM_LINE" ] && [ "$REARM_LINE" -le "$RESEED_LINE" ]; then
+    echo "check-deploy-workflow: FAIL -- 'publish-module' calls rearm_schedules before (or in the same step as) reseed_codes -- it must come after" >&2
+    FAILED=1
+  fi
+fi
+
+if [ "$FAILED" -ne 0 ]; then
+  exit 1
+fi
+
+echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, the backup job's first-deploy exception is the positive not-found script, neither deploy.yml's backup job nor backup.yml's export job has a shallow checkout, report-failure accounts for a cancelled job too, and publish-module calls rearm_schedules after reseed_codes" >&2
 exit 0

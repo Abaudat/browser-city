@@ -7,12 +7,16 @@
 # script enforces nothing itself beyond wiring: `begin_restore`/
 # `restore_*`/`finish_restore` (all owner-only, all gated by the module's
 # own open-restore state) are the actual guards --
-#   - `begin_restore` refuses a target that is not freshly published
-#     (holds any row beyond what `init` seeds);
+#   - `begin_restore` disarms every scheduled table, then refuses a
+#     target that is not freshly published (holds any row beyond what
+#     `init` seeds);
 #   - never restores a scheduled table (schedules are derived state,
 #     docs/architecture.md) -- exported, never restored, never verified;
-#   - `restore_module_owner`/the code-table reducers replace what `init`
-#     seeded; every other table's `begin_restore` already required empty.
+#   - `restore_module_owner`/the code-table reducers/`restore_
+#     cadence_liveness` replace what is already there; every other
+#     table's `begin_restore` already required empty;
+#   - `finish_restore` re-arms every cadence from the epoch just
+#     restored, inside the same transaction chain.
 #
 # This script's own job is: refuse a restoring identity that does not
 # match the exported owner (checked here, before any reducer call,
@@ -234,13 +238,12 @@ while IFS= read -r table; do
   RESTORED=$((RESTORED + 1))
 done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
 
+# Story 4.2: begin_restore already disarmed every scheduled table before
+# its own preconditions ran, and finish_restore re-arms every cadence
+# from the epoch just restored -- both inside the module's own
+# transaction chain, so there is no window here for this script to fill
+# and no separate rearm_schedules call to make.
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" finish_restore '[]'
-
-# Story 4.2: schedules are derived state, never restored (SKIPPED_SCHEDULED
-# above) -- a restored world must resume its loop without a human
-# remembering, so this re-arms every cadence from the epoch just restored.
-bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" rearm_schedules '[]'
-echo "restore-world: ok -- every scheduled cadence re-armed from the restored world_clock epoch" >&2
 
 echo "restore-world: ok -- $DB restored from $EXPORT_DIR ($RESTORED table(s) restored, $SKIPPED_SCHEDULED scheduled table(s) skipped)" >&2
 exit 0

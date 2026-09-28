@@ -99,10 +99,13 @@ max_expected_id() {
 # and '$DST' with nothing wrong at all (confirmed: CI observed exactly
 # this, `cadence_liveness` 3 vs 4, both readings correct for their own
 # database's own real fire history since publish). The restore mechanism
-# itself is still proven correct for this table: the export-vs-export
-# byte-for-byte compare (verify-world.sh, called before this script) is
-# the right oracle for a live table's own restored *content* at one
-# moment; COUNT(*) against two independently-still-running clocks is not.
+# itself is still proven correct for this table: verify-world.sh (called
+# before this script) proves every row the export it restored from had is
+# still present, unchanged or advanced only by a legitimate later fire
+# (`world_backup cadence-liveness-forward-diff` -- it is not a byte
+# compare for this table, a live one has no fixed content to be byte
+# identical to); COUNT(*) against two independently-still-running clocks
+# is not the right oracle on top of that.
 LIVE_TABLES="cadence_liveness"
 is_live_table() { # <table>
   local t

@@ -32,22 +32,22 @@ SHA_B="$(grep -oE '"schema_sha256": *"[0-9a-f]+"' "$B/manifest.json" | grep -oE 
 # export call does -- `maintenance_schedule`'s own real fire, on its own
 # wall clock, can and does land between export A and export B taken
 # later of the *same* restored database (confirmed: CI observed export B
-# holding one row export A did not, for exactly this reason, the row's
-# own `fires`/`missed`/timestamps all consistent with one real fire in
-# the gap). A byte-identical `cmp` is the wrong assertion for it -- what
-# actually must hold is that every row export A already had is still
-# present, unchanged, in export B (B can only ever gain rows a real fire
-# added, never lose one or change one A already had, since a cadence's
-# own bookkeeping only ever moves forward in time).
+# holding one row export A did not, for exactly this reason). A
+# byte-identical `cmp` is the wrong assertion for it: `record_cadence_fire`
+# is an upsert, so a real fire in the gap *changes* the row A already had
+# (`fires`/`missed`/both timestamps), it does not merely add a new one.
+# `world_backup cadence-liveness-forward-diff` (never a bash line-diff
+# over structured JSON) is the oracle that is actually true for a live,
+# forward-only table: every row A has must be either byte-identical in B,
+# or related to it by exactly one legitimate later fire (`fires` strictly
+# greater, `missed` never smaller, `last_fired_at` strictly later); a row
+# in A missing from B, or related any other way, is a real mismatch.
 table_matches() { # <table> <file-a> <file-b>
   case "$1" in
     cadence_liveness)
-      local line
-      while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        grep -qxF "$line" "$3" || return 1
-      done <"$2"
-      return 0
+      local mismatches
+      mismatches="$(bc_wb cadence-liveness-forward-diff "$2" "$3")" || return 1
+      [ -z "$mismatches" ]
       ;;
     *)
       cmp -s "$2" "$3"
@@ -65,7 +65,11 @@ while IFS= read -r table; do
   [ -f "$FB" ] || bc_ops_die "$SCRIPT" "$FB not found"
   if ! table_matches "$table" "$FA" "$FB"; then
     echo "verify-world: MISMATCH -- '$table' differs between '$A' and '$B':" >&2
-    diff -u "$FA" "$FB" >&2 || true
+    if [ "$table" = "cadence_liveness" ]; then
+      bc_wb cadence-liveness-forward-diff "$FA" "$FB" >&2 || true
+    else
+      diff -u "$FA" "$FB" >&2 || true
+    fi
     MISMATCHES=$((MISMATCHES + 1))
   fi
   CHECKED=$((CHECKED + 1))

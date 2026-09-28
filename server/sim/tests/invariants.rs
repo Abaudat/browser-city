@@ -126,6 +126,7 @@ pub const INV_SCHEDULE_PHASE_PRESERVED: &str = "sim::cadence::next_target's retu
 pub const INV_SCHEDULE_NEVER_TARGETS_PAST: &str = "sim::cadence::next_target's returned target is always strictly after now, for any reasonable-range origin/period/now (story 4.2)";
 pub const INV_SCHEDULE_CATCH_UP_BOUNDED: &str = "sim::cadence::next_target, called with now a simulated week past the origin, returns instantly (no loop) with missed equal to the exact arithmetic gap in periods -- catch-up is bounded to one late fire, every skipped target is never separately dispatched (story 4.2)";
 pub const INV_SCHEDULE_ARITH_TOTAL: &str = "sim::cadence::next_target never panics and never wraps, for any i64 origin/now (including i64::MIN/i64::MAX) and any positive period_ms (story 4.2, NFR41)";
+pub const INV_SCHEDULE_NEVER_RETURNS_ITS_OWN_ORIGIN: &str = "sim::cadence::next_target's returned target is always strictly after origin, for any reasonable-range origin/period/now -- an early dispatch (now before origin) must never re-arm the already-due origin itself (story 4.2)";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -5007,6 +5008,22 @@ proptest! {
     ) {
         let (target, _missed) = cadence::next_target(origin, period_ms, now);
         prop_assert!(target > now);
+    }
+
+    /// `inv_schedule_never_returns_its_own_origin`: over the same
+    /// reasonable range, the returned target is always strictly after
+    /// `origin` too -- including when `now` lands before `origin` (an
+    /// early dispatch, which nothing forbids): the origin itself is
+    /// already due, so re-arming onto it would fire the same grid point
+    /// twice.
+    #[test]
+    fn inv_schedule_never_returns_its_own_origin(
+        origin in -1_000_000_000_000i64..=1_000_000_000_000,
+        period_ms in 1i64..=1_000_000_000,
+        now in -1_000_000_000_000i64..=1_000_000_000_000,
+    ) {
+        let (target, _missed) = cadence::next_target(origin, period_ms, now);
+        prop_assert!(target > origin);
     }
 
     /// `inv_schedule_catch_up_bounded`: seeded a simulated week behind (a

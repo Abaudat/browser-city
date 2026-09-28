@@ -332,7 +332,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: bash ../scripts/ci/check-sim-purity.sh
       - name: story 4.2, no ScheduleAt::Interval and no unwrap/expect/panic under server/src (NFR41)
-        run: bash ../scripts/ci/check-no-schedule-interval.sh
+        run: bash ../scripts/ci/check-server-src-bans.sh
       - name: story 3.11 FR131, the travel-time estimator is graph-free and collection-free
         run: bash ../scripts/ci/check-routing-estimate-purity.sh
       - run: bash ../scripts/ci/check-golden-version-bump.sh

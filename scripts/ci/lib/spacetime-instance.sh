@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
 # Shared local-SpacetimeDB-instance bring-up for scripts/ci/'s live-
-# instance checks (Tim's direction, story 4.2: factor this rather than
-# copy it a fourth time). Sourced, never executed directly.
-#
-# check-live-migration.sh/check-backup-restore.sh/check-view-live-
-# refresh.sh each keep their own already-working, already-tested copy of
-# this bring-up rather than being retrofitted onto this file in the same
-# PR that adds its first new user (check-authoritative-loop.sh) -- a
-# working bring-up left alone is not this story's regression to risk.
+# instance checks (Tim's direction, story 4.2: one factoring, not a
+# fourth copy) -- check-live-migration.sh, check-backup-restore.sh,
+# check-view-live-refresh.sh and check-authoritative-loop.sh all source
+# this rather than each starting/stopping their own instance by hand.
+# Sourced, never executed directly.
 
 # bc_start_spacetime <data-dir> <port> <log-file> -- starts a disposable
 # local instance in the background; echoes its PID on stdout.
@@ -27,4 +24,15 @@ bc_wait_spacetime_healthy() {
     sleep 1
   done
   return 1
+}
+
+# bc_stop_spacetime <pid> -- stops a disposable instance started by
+# bc_start_spacetime; a no-op if <pid> is empty (the instance was never
+# started, or was already stopped). Callers still own their own `trap
+# ... EXIT` cleanup and data-dir removal -- this only ever stops the
+# process.
+bc_stop_spacetime() {
+  local pid="$1"
+  [ -n "$pid" ] && kill "$pid" 2>/dev/null
+  return 0
 }

@@ -21,12 +21,12 @@
 set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # An optional first argument overrides the scanned directory --
-# scripts/ci/tests/test-check-no-schedule-interval.sh's own use, so it can
+# scripts/ci/tests/test-check-server-src-bans.sh's own use, so it can
 # plant each banned construct in a throwaway temp file rather than the
 # real server/src/. `check` itself always calls this with no argument.
 SRC_DIR="${1:-"$REPO_ROOT/server/src"}"
 
-[ -d "$SRC_DIR" ] || { echo "check-no-schedule-interval: $SRC_DIR not found" >&2; exit 1; }
+[ -d "$SRC_DIR" ] || { echo "check-server-src-bans: $SRC_DIR not found" >&2; exit 1; }
 
 FAILED=0
 
@@ -52,7 +52,7 @@ not_a_comment_line() {
 
 INTERVAL_MATCHES="$(grep -rnF 'ScheduleAt::Interval' "$SRC_DIR" --include='*.rs' --exclude-dir=generated 2>/dev/null | not_a_comment_line || true)"
 if [ -n "$INTERVAL_MATCHES" ]; then
-  echo "check-no-schedule-interval: FAIL -- ScheduleAt::Interval found under server/src/ -- it compounds its own dispatch lateness without bound (docs/spikes/1.3-scheduled-reducer-timing.md); use sim::cadence::next_target + ScheduleAt::Time instead:" >&2
+  echo "check-server-src-bans: FAIL -- ScheduleAt::Interval found under server/src/ -- it compounds its own dispatch lateness without bound (docs/spikes/1.3-scheduled-reducer-timing.md); use sim::cadence::next_target + ScheduleAt::Time instead:" >&2
   echo "$INTERVAL_MATCHES" >&2
   FAILED=1
 fi
@@ -60,7 +60,7 @@ fi
 PANIC_PATTERN='\.unwrap\(|\.expect\(|\bpanic!|\btodo!|\bunimplemented!|\bunreachable!'
 PANIC_MATCHES="$(grep -rnE "$PANIC_PATTERN" "$SRC_DIR" --include='*.rs' --exclude-dir=generated 2>/dev/null | not_a_comment_line || true)"
 if [ -n "$PANIC_MATCHES" ]; then
-  echo "check-no-schedule-interval: FAIL -- unwrap/expect/panic!/todo!/unimplemented!/unreachable! found under server/src/ (NFR41: every reducer fallible path returns Err, never panics -- debug_assert! stays allowed):" >&2
+  echo "check-server-src-bans: FAIL -- unwrap/expect/panic!/todo!/unimplemented!/unreachable! found under server/src/ (NFR41: every reducer fallible path returns Err, never panics -- debug_assert! stays allowed):" >&2
   echo "$PANIC_MATCHES" >&2
   FAILED=1
 fi
@@ -69,5 +69,5 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-no-schedule-interval: no ScheduleAt::Interval and no unwrap/expect/panic!/todo!/unimplemented!/unreachable! under server/src/ (story 4.2, NFR41)" >&2
+echo "check-server-src-bans: no ScheduleAt::Interval and no unwrap/expect/panic!/todo!/unimplemented!/unreachable! under server/src/ (story 4.2, NFR41)" >&2
 exit 0

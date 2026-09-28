@@ -53,19 +53,12 @@ pub fn sync_clock(ctx: &mut ProcedureContext) -> Timestamp {
 pub fn init(ctx: &ReducerContext) {
     // Called when the module is initially published.
     tables::ops::record_owner_from_init(ctx);
-    tables::clock::record_epoch_from_init(ctx);
+    let epoch_at = tables::clock::record_epoch_from_init(ctx);
     tables::codes::seed_all_codes(ctx);
     // Story 4.2: arms every cadence this module gives real work to, from
-    // the epoch `record_epoch_from_init` just wrote -- so the one
-    // precondition `arm_every_cadence` checks is already satisfied here,
-    // always. `debug_assert!` (a production abort, not a test-only aid --
-    // docs/architecture.md) is this crate's own proof of that, since
-    // `init` has no `Result` to propagate a failure through.
-    let armed = tables::schedules::arm_every_cadence(ctx);
-    debug_assert!(
-        armed.is_ok(),
-        "arm_every_cadence failed right after record_epoch_from_init: {armed:?}"
-    );
+    // the epoch `record_epoch_from_init` just returned -- infallible,
+    // since that epoch is already in hand.
+    tables::schedules::arm_every_cadence_from(ctx, epoch_at.to_micros_since_unix_epoch());
 }
 
 /// Rebuilds every armed cadence's own pending schedule row from
@@ -74,8 +67,10 @@ pub fn init(ctx: &ReducerContext) {
 /// pending rows). Idempotent: calling it again while nothing has changed
 /// leaves the same one pending row per cadence, at the same target.
 /// Operator-only, the same shape as `reseed_codes`: `server/README.md`
-/// names its three callers (`init`, `deploy.yml`'s `publish-module` job,
-/// `scripts/ops/restore-world.sh`).
+/// names its two callers (`init`, `deploy.yml`'s `publish-module` job).
+/// A restore re-arms through `finish_restore` itself
+/// (`tables::restore`), inside the module's own transaction chain, not
+/// through this reducer.
 #[spacetimedb::reducer]
 pub fn rearm_schedules(ctx: &ReducerContext) -> Result<(), String> {
     tables::ops::require_owner(ctx)?;

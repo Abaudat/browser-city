@@ -7,10 +7,13 @@
 #
 #   - No `.reducers.` call anywhere under `client/src/render/**`,
 #     `client/src/world/**` or `client/src/test-street/**`.
-#   - No `.reducers.` call inside a `ticker.add` callback, anywhere under
-#     client/src/ -- tracked by matching parens from each `ticker.add(`
-#     call site to its own closing paren (an awk state machine, since a
-#     plain grep line cannot see a multi-line callback body).
+#   - No `.reducers.` call inside a frame-loop callback, anywhere under
+#     client/src/ -- `ticker.add(`, `Ticker.shared.add(` (PixiJS's own
+#     shared ticker, the same frame loop under a different spelling) or a
+#     raw `requestAnimationFrame(` loop, all three tracked by matching
+#     parens from the opener to its own closing paren (an awk state
+#     machine, since a plain grep line cannot see a multi-line callback
+#     body).
 set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # An optional first argument overrides the scanned directory --
@@ -39,7 +42,11 @@ if [ -n "$FRAME_LOOP_DIRS" ]; then
   fi
 fi
 
-# --- no reducer call inside any ticker.add callback, anywhere ---------------
+# --- no reducer call inside any frame-loop callback, anywhere ---------------
+# One opener pattern, three spellings of the same frame loop: `.ticker.add(`
+# (a PixiJS `Ticker` instance), `Ticker.shared.add(` (PixiJS's own global
+# ticker) and `requestAnimationFrame(` (the raw browser API, no PixiJS
+# involved at all).
 TICKER_MATCHES="$(
   find "$SRC_DIR" -name '*.ts' -not -path '*/bindings/*' -print0 2>/dev/null \
     | xargs -0 -r awk '
@@ -47,7 +54,7 @@ TICKER_MATCHES="$(
       ENDFILE {
         for (i = 1; i <= n; i++) {
           line = lines[i]
-          if (match(line, /\.ticker\.add\(/)) {
+          if (match(line, /\.ticker\.add\(|Ticker\.shared\.add\(|requestAnimationFrame\(/)) {
             depth = 0
             started = 0
             end_line = n
@@ -64,7 +71,7 @@ TICKER_MATCHES="$(
             span = ""
             for (m = i; m <= end_line; m++) span = span lines[m] "\n"
             if (index(span, ".reducers.") > 0) {
-              print FILENAME ":" i ": .reducers. call found inside a ticker.add callback"
+              print FILENAME ":" i ": .reducers. call found inside a frame-loop callback"
             }
           }
         }
@@ -73,7 +80,7 @@ TICKER_MATCHES="$(
     ' 2>/dev/null || true
 )"
 if [ -n "$TICKER_MATCHES" ]; then
-  echo "check-no-frame-rate-reducers: FAIL -- a reducer call (.reducers.) was found inside a ticker.add callback -- the frame loop must never call a reducer directly:" >&2
+  echo "check-no-frame-rate-reducers: FAIL -- a reducer call (.reducers.) was found inside a frame-loop callback (ticker.add/Ticker.shared.add/requestAnimationFrame) -- the frame loop must never call a reducer directly:" >&2
   echo "$TICKER_MATCHES" >&2
   FAILED=1
 fi
@@ -82,5 +89,5 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-no-frame-rate-reducers: no reducer call under render/world/test-street, and none inside any ticker.add callback (story 4.2 AC2)" >&2
+echo "check-no-frame-rate-reducers: no reducer call under render/world/test-street, and none inside any ticker.add/Ticker.shared.add/requestAnimationFrame callback (story 4.2 AC2)" >&2
 exit 0

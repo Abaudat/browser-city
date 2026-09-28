@@ -72,7 +72,18 @@
 //! delete their existing (`init`-seeded) rows first, then insert the
 //! exported ones -- restore *replaces* what `init` seeded, the same rule
 //! `scripts/ops/restore-world.sh` documented before this story moved the
-//! write path into the module.
+//! write path into the module. `restore_cadence_liveness` (story 4.2)
+//! does the same, for the same reason under a different cause: `init`
+//! never seeds it directly, but the cadence it arms can fire and write it
+//! before `begin_restore` ever runs.
+//!
+//! `begin_restore` also disarms every scheduled table
+//! (`tables::schedules::disarm_all_scheduled_tables`) before its own
+//! emptiness checks, and `finish_restore` re-arms every cadence
+//! (`tables::schedules::arm_every_cadence`) after closing the restore --
+//! both inside this file, so no cadence can ever fire between the two
+//! using an epoch that does not belong to the world being restored
+//! (story 4.2). `scripts/ops/restore-world.sh` calls neither directly.
 
 use spacetimedb::{Identity, ReducerContext, Table, Timestamp};
 
@@ -108,12 +119,18 @@ fn require_restore_open(ctx: &ReducerContext) -> Result<(), String> {
     }
 }
 
-/// `init` seeds these (`module_owner`, the six code tables) -- restore
-/// *replaces* their content rather than requiring them empty. The single
-/// source of truth for which tables that is: `bounds/tests/
-/// restore_coverage.rs`'s text scan reads this constant's own source
-/// (never a second, hand-copied list) and fails CI if a non-scheduled
-/// table is in neither this list nor [`NON_INIT_SEEDED_TABLES`].
+/// A table restore *replaces* rather than requires empty: `init` seeds
+/// `module_owner` and the six code tables directly; `cadence_liveness`
+/// is different in cause but the same in consequence -- a freshly
+/// published target's own `init` arms its cadence immediately
+/// (`tables::schedules::arm_every_cadence_from`), and that cadence can
+/// fire for real, writing this table, at any point before `begin_restore`
+/// ever runs, so requiring it empty would refuse an otherwise-valid
+/// restore purely on timing. The single source of truth for which tables
+/// this is: `bounds/tests/restore_coverage.rs`'s text scan reads this
+/// constant's own source (never a second, hand-copied list) and fails CI
+/// if a non-scheduled table is in neither this list nor
+/// [`NON_INIT_SEEDED_TABLES`].
 #[allow(dead_code)] // read by `restore_coverage.rs` as source text, not Rust code
 const INIT_SEEDED_TABLES: &[&str] = &[
     "module_owner",
@@ -124,12 +141,14 @@ const INIT_SEEDED_TABLES: &[&str] = &[
     "node_kind",
     "unit",
     "layer_code",
+    "cadence_liveness",
 ];
 
-/// Every non-scheduled table `init` does *not* seed -- `begin_restore`
-/// refuses unless every one of these is empty. The single source of
-/// truth: `bounds/tests/restore_coverage.rs`'s text scan reads this
-/// constant's own source and fails CI if a table here has no matching
+/// Every non-scheduled table that is never pre-populated before
+/// `begin_restore` -- `begin_restore` refuses unless every one of these
+/// is empty. The single source of truth: `bounds/tests/
+/// restore_coverage.rs`'s text scan reads this constant's own source and
+/// fails CI if a table here has no matching
 /// `ctx.db.<accessor>().iter().next().is_some()` check in
 /// `begin_restore`'s body below, or if a non-scheduled table is in
 /// neither this list nor [`INIT_SEEDED_TABLES`] -- so a table added next
@@ -140,7 +159,6 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "demo_ping",
     "building",
     "building_area",
-    "cadence_liveness",
     "character",
     "character_identity",
     "citizen",
@@ -151,12 +169,17 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "room_area",
 ];
 
-/// Opens a restore. Refuses unless every table in
-/// [`NON_INIT_SEEDED_TABLES`] is empty -- the guard against restoring
-/// over a live world. Idempotent-refusing: calling it again while a
-/// restore is already open is an error, not a silent no-op, so a
-/// half-finished restore is never quietly resumed with a different
-/// export.
+/// Opens a restore. Disarms every scheduled table first
+/// (`tables::schedules::disarm_all_scheduled_tables`) -- a freshly
+/// published target's own `init` arms its cadence immediately, so without
+/// this a scheduled reducer could fire on the target at any point during
+/// the restore, using an epoch that belongs to the target's own
+/// pre-restore world, not the one being restored (story 4.2). Then
+/// refuses unless every table in [`NON_INIT_SEEDED_TABLES`] is empty --
+/// the guard against restoring over a live world. Idempotent-refusing:
+/// calling it again while a restore is already open is an error, not a
+/// silent no-op, so a half-finished restore is never quietly resumed
+/// with a different export.
 #[spacetimedb::reducer]
 pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     require_owner(ctx)?;
@@ -165,6 +188,7 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     {
         return Err("a restore is already open -- call finish_restore first".to_string());
     }
+    super::schedules::disarm_all_scheduled_tables(ctx);
     let mut nonempty: Vec<&str> = Vec::new();
     if ctx.db.demo_ping().iter().next().is_some() {
         nonempty.push("demo_ping");
@@ -174,9 +198,6 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.building_area().iter().next().is_some() {
         nonempty.push("building_area");
-    }
-    if ctx.db.cadence_liveness().iter().next().is_some() {
-        nonempty.push("cadence_liveness");
     }
     if ctx.db.character().iter().next().is_some() {
         nonempty.push("character");
@@ -227,7 +248,12 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
 
 /// Closes a restore permanently. Never reopened by calling this again --
 /// a second `begin_restore` after `finish_restore` opens a *new* restore
-/// (and re-checks every precondition), it does not resume this one.
+/// (and re-checks every precondition), it does not resume this one. Then
+/// re-arms every cadence from the epoch `restore_world_clock` just
+/// restored (`tables::schedules::arm_every_cadence`) -- inside this same
+/// transaction chain, so a restored world resumes its loop with no window
+/// in which any cadence is armed from anything but the epoch actually
+/// being restored (story 4.2).
 #[spacetimedb::reducer]
 pub fn finish_restore(ctx: &ReducerContext) -> Result<(), String> {
     require_owner(ctx)?;
@@ -236,7 +262,7 @@ pub fn finish_restore(ctx: &ReducerContext) -> Result<(), String> {
         .restore_state()
         .id()
         .update(RestoreState { id: 0, open: false });
-    Ok(())
+    super::schedules::arm_every_cadence(ctx)
 }
 
 /// An auto_inc table's row, reduced to what [`restore_autoinc_rows`]
@@ -681,21 +707,10 @@ pub fn restore_citizen_state(ctx: &ReducerContext, rows: Vec<CitizenState>) -> R
     Ok(())
 }
 
-#[spacetimedb::reducer]
-pub fn restore_cadence_liveness(
-    ctx: &ReducerContext,
-    rows: Vec<CadenceLiveness>,
-) -> Result<(), String> {
-    require_owner(ctx)?;
-    require_restore_open(ctx)?;
-    for row in rows {
-        ctx.db.cadence_liveness().insert(row);
-    }
-    Ok(())
-}
-
-// --- replace: init-seeded (module_owner, the code tables) -- restore
-// deletes what init seeded, then inserts the exported rows ------------
+// --- replace: init-seeded (module_owner, the code tables), plus
+// cadence_liveness (init-armed, not init-seeded, but the same reason:
+// a real fire can write it before begin_restore ever runs) -- restore
+// deletes what is already there, then inserts the exported rows -------
 #[spacetimedb::reducer]
 pub fn restore_module_owner(ctx: &ReducerContext, rows: Vec<ModuleOwner>) -> Result<(), String> {
     require_owner(ctx)?;
@@ -837,6 +852,28 @@ pub fn restore_layer_code(ctx: &ReducerContext, rows: Vec<LayerCode>) -> Result<
     }
     for row in rows {
         ctx.db.layer_code().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_cadence_liveness(
+    ctx: &ReducerContext,
+    rows: Vec<CadenceLiveness>,
+) -> Result<(), String> {
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    let existing: Vec<u32> = ctx
+        .db
+        .cadence_liveness()
+        .iter()
+        .map(|r| r.cadence)
+        .collect();
+    for cadence in existing {
+        ctx.db.cadence_liveness().cadence().delete(cadence);
+    }
+    for row in rows {
+        ctx.db.cadence_liveness().insert(row);
     }
     Ok(())
 }

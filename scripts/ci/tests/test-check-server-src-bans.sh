@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/ci/check-no-schedule-interval.sh's own fast, no-real-source-tree
+# scripts/ci/check-server-src-bans.sh's own fast, no-real-source-tree
 # coverage (story 4.2): plants each banned construct in a throwaway temp
 # directory and asserts exit 1, plus clean files (including doc comments
 # that merely name the ban) expecting exit 0.
@@ -7,7 +7,7 @@ set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 . "$TEST_DIR/harness.sh"
 REPO_ROOT="$(cd -- "$TEST_DIR/../../.." && pwd)"
-CHECK="$REPO_ROOT/scripts/ci/check-no-schedule-interval.sh"
+CHECK="$REPO_ROOT/scripts/ci/check-server-src-bans.sh"
 
 plant() { # <content> -- writes it to a fresh fake dir's only *.rs file
   local d
