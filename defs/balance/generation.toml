@@ -322,59 +322,39 @@ min = 1
 max = 256
 
 [[balance]]
-# Pairs at least this far apart (world cells, Manhattan) are where
-# `max_detour_percent`'s ratio applies -- closer pairs are bounded by
-# `max_detour_excess_cells` instead. 256 (half the site) so the pairs a
-# ratio actually says something about are site-crossing ones, not
-# adjacent-block hops a ratio exaggerates (Quentin's direction, cycle 3:
-# at the old 128, the ratio bound was redundant with the excess bound --
-# 320 cells / 128 alone already permits 350%). Re-measure by running
-# `cargo run -p bounds --release --bin measure-generation`'s own
-# detour-bounds sweep whenever the street algorithm changes -- never
-# "re-run the invariants at a high PROPTEST_CASES" (story 15.10): a
-# proptest run only ever samples the cheap 14-node width, and a moved
-# threshold also moves `max_detour_percent`'s own derived floor (see its
-# own comment below).
-key = "generation.streets.detour_long_pair_cells"
-value = 256
-min = 1
-max = 2048
-
-[[balance]]
-# The Manhattan-fitness ratio ceiling 3.11's pathfinding estimator relies
-# on, for pairs at least `detour_long_pair_cells` apart. Derived, not
-# independently measured (story 15.10, Tim's direction, replacing the
-# old "173% over 10,000 seeds" margin): `max_detour_excess_cells` already
-# bounds every pair's overshoot, so at `detour_long_pair_cells` it
-# implies a ratio of `100 * (detour_long_pair_cells +
-# max_detour_excess_cells) / detour_long_pair_cells` = 100*(256+416)/256
-# = 262.5%, rounded up to the nearest multiple of 5 -- 265
-# (`GenerationConfig::detour_ratio_floor_percent`, `from_balance`'s own
-# refusal below that figure, `invariants.rs`'s own
-# `max_detour_percent_matches_its_own_margin_rule`). A value under the
-# floor would silently become a second, tighter, unmeasured additive
-# bound on mid-range pairs -- the mechanism seed `8872365549107643721`
-# found (a 204% ratio at Manhattan 259, 3 cells past the old
-# `detour_long_pair_cells`, with the pair's own 269-cell excess
-# comfortably inside `max_detour_excess_cells`). With this in place the
-# ratio assertion (`inv_generation_detour_ratio_bounded`) cannot go red
-# on any seed unless the excess assertion already did -- see
-# `server/bounds/src/bin/measure_generation.rs`'s own detour-bounds
-# sweep (`cargo run -p bounds --release --bin measure-generation --
-# <missing_tag_seed_count> <detour_seed_count>`) for the measured miss
-# rate this story pinned down, never "re-run the invariants at a high
-# PROPTEST_CASES". Measured (story 15.10, 1,000,000 seeds, passes 1-2
-# only): 0 misses against this ceiling, same as the other two committed
-# detour ceilings -- zero observed over a million is a bound, not a
-# zero rate (rule of three): <= 0.000300% per seed, implying a 4,096-
-# case CI run fails at most 1.2213% of the time even without the proof
-# above; sampled (14-node) worst long-pair ratio 205% (seed
-# `13890124220626881247`), exhaustive worst (over the existing 50,000-
-# seed sweep) 219% (seed `10818714075226271966`) -- both comfortably
-# under this key's own 265 floor. See `docs/generation.md`'s street-
-# network pass for the full sweep output.
+# The site-scale-free long-range detour claim 3.11's pathfinding
+# estimator relies on (story 15.10, Derek's direction): `network <=
+# max(manhattan + max_detour_excess_cells, manhattan * max_detour_
+# percent / 100)`, for every sampled pair -- a short hop pays at most a
+# fixed cell budget (a single jitter-driven jog), a long crossing pays
+# at most a ratio, and there is no third, separately committed distance
+# threshold deciding which applies (`GenerationConfig::detour_ratio_
+# takeover_distance_cells` derives where the ratio term actually
+# overtakes the excess one: `max_detour_excess_cells * 100 /
+# (max_detour_percent - 100)`, 416 cells today). Story 3.18's own
+# `detour_long_pair_cells` is gone: no value of a separate threshold key
+# could make an AND-with-threshold contract both non-redundant (short of
+# the takeover distance, the ratio was already implied by the excess
+# bound) and coherent (a pair a few cells past the threshold was
+# suddenly allowed *less* excess than a pair a few cells short of it --
+# the seam seed `8872365549107643721` walked into, CI run 36388555866,
+# PR #349). Re-measured with real margin at the real (unmeasured, since
+# 3.11) long range: over the harness's own 50,000-seed exhaustive loop,
+# the worst ratio among pairs at or beyond the takeover distance was
+# 166% (seed `4798925340619191980`); 200 is that plus real margin --
+# re-measure by running `cargo run -p bounds --release --bin measure-
+# generation`'s own detour-bounds sweep whenever the street algorithm
+# changes, never "re-run the invariants at a high PROPTEST_CASES" (a
+# proptest run only ever samples the cheap 14-node width). Zero misses
+# against the max()-contract over
+# 1,000,000 seeds follows from `max_detour_excess_cells`'s own sweep
+# (below): exceeding the max() of two terms means exceeding both, so a
+# contract violation is always also an excess-alone violation, and that
+# ceiling's own miss count is already 0 (`inv_generation_detour_ratio_
+# bounded`'s own doc comment carries the proof; `docs/generation.md`'s
+# street-network pass carries the full sweep output).
 key = "generation.streets.max_detour_percent"
-value = 265
+value = 200
 min = 100
 max = 500
 

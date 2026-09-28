@@ -592,12 +592,13 @@ impl StreetNetwork {
     /// estimator's own contract is about getting across the city, not
     /// about hugging its outer edge between two unrelated exits. There is
     /// no short-pair exclusion any more (Quentin's direction, cycle 2):
-    /// the ratio ceiling ([`GenerationConfig::max_detour_percent`]) now
-    /// applies only to pairs past `generation.streets.
-    /// detour_long_pair_cells`, and every pair, short or long, is bounded
-    /// by the additive [`GenerationConfig::max_detour_excess_cells`]
-    /// instead -- a fixed cell budget is what a short hop actually pays
-    /// for, a ratio is not. [`Self::all_pair_samples`] is the unfiltered
+    /// every pair, short or long, is checked against
+    /// [`DetourSample::detour_allowed`] (story 15.10, Derek's
+    /// direction), `manhattan + max_detour_excess_cells` or `manhattan *
+    /// max_detour_percent / 100`, whichever is looser -- a fixed cell
+    /// budget is what a short hop actually pays for, a ratio is not, and
+    /// there is no third, separately committed distance threshold
+    /// deciding which applies. [`Self::all_pair_samples`] is the unfiltered
     /// version, so the boundary exclusion's own effect is itself
     /// measured, not assumed (Quentin's direction, cycle 1).
     pub fn detour_samples(&self, max_nodes: usize) -> Vec<DetourSample> {
@@ -779,6 +780,43 @@ impl DetourSample {
     pub fn excess_cells(&self) -> i64 {
         self.network - self.manhattan
     }
+
+    /// This pair's own allowed network distance under the committed
+    /// detour contract (Derek's direction, story 15.10): `manhattan +
+    /// max_detour_excess_cells`, or `manhattan * max_detour_percent /
+    /// 100`, whichever is looser -- a short hop pays at most a fixed
+    /// cell budget (a single jitter-driven jog), a long crossing pays at
+    /// most a ratio, and there is no third, separately committed
+    /// distance threshold deciding which applies (see
+    /// `GenerationConfig::detour_ratio_takeover_distance_cells` for
+    /// where the ratio term actually overtakes the excess one).
+    pub fn detour_allowed(&self, cfg: &GenerationConfig) -> i64 {
+        (self.manhattan + cfg.max_detour_excess_cells as i64)
+            .max(self.manhattan * cfg.max_detour_percent as i64 / 100)
+    }
+
+    /// Whether this pair's own BFS network distance clears
+    /// [`Self::detour_allowed`].
+    pub fn detour_bound_holds(&self, cfg: &GenerationConfig) -> bool {
+        self.network <= self.detour_allowed(cfg)
+    }
+}
+
+/// The first `samples` entry (in order) whose own network distance
+/// exceeds [`DetourSample::detour_allowed`], if any -- the one place the
+/// committed detour contract's own comparison lives. `inv_generation_
+/// detour_ratio_bounded`'s own predicate (`detour_bounds_hold` in
+/// `invariants.rs`, shared with the pinned regression test) and
+/// `measure_generation.rs`'s own detour-bounds sweep (miss counting and
+/// worst-sample reporting) both call through this, never a second,
+/// hand-written copy of the comparison (Quentin's direction, story
+/// 15.10) -- a change to the contract, or to what counts as a miss,
+/// moves every caller together.
+pub fn detour_bound_violation(
+    samples: &[DetourSample],
+    cfg: &GenerationConfig,
+) -> Option<DetourSample> {
+    samples.iter().copied().find(|s| !s.detour_bound_holds(cfg))
 }
 
 /// The 99th-percentile [`DetourSample::ratio_pct`] over `samples`,
@@ -2061,12 +2099,14 @@ mod tests {
         // `docs/generation.md`'s street-network pass) rather than the
         // tightest maze that would still fail today -- a smaller maze
         // keeps needing to grow every time that ceiling is re-measured
-        // upward. Must assert against every
-        // committed detour bound, not just the excess one (Quentin's
-        // direction, cycle 4): the 300-cell Manhattan distance is over
-        // `detour_long_pair_cells` (256), so the 300% ratio is also
-        // checked against both `max_detour_percent` and `p99_detour_
-        // percent`.
+        // upward. Must assert against every committed detour bound, not
+        // just the excess one (Quentin's direction, cycle 4): checked
+        // through `detour_bound_violation`'s own max()-contract check
+        // (story 15.10, Derek's direction; the one function `inv_
+        // generation_detour_ratio_bounded` and the sweep both call
+        // through -- the finding function itself proven to fire here,
+        // as every other checker in this file is) and separately
+        // against `p99_detour_percent`.
         let c = cfg();
         let site = SiteBounds {
             x0: 0,
@@ -2089,27 +2129,16 @@ mod tests {
         );
 
         let samples = net.detour_samples(DETOUR_SAMPLE_MAX_NODES);
-        let worst_excess = samples
-            .iter()
-            .map(DetourSample::excess_cells)
-            .max()
-            .expect("the U corridor's own pair must be sampled");
-        assert!(
-            worst_excess > c.max_detour_excess_cells as i64,
-            "expected the maze's own overshoot ({worst_excess} cells) to exceed the committed max_detour_excess_cells ({})",
-            c.max_detour_excess_cells
+        let violation = detour_bound_violation(&samples, &c).expect(
+            "expected the U corridor's own worst pair to violate the committed max() detour bound",
         );
-
-        let worst_long_ratio = samples
-            .iter()
-            .filter(|s| s.manhattan >= c.detour_long_pair_cells as i64)
-            .map(DetourSample::ratio_pct)
-            .max()
-            .expect("the U corridor's own pair is a long pair");
         assert!(
-            worst_long_ratio > c.max_detour_percent as i64,
-            "expected the maze's own long-pair ratio ({worst_long_ratio}%) to exceed the committed max_detour_percent ({}%)",
-            c.max_detour_percent
+            violation.network > violation.detour_allowed(&c),
+            "the reported violation ({:?}-{:?}, network {}) does not actually exceed its own allowed bound ({})",
+            violation.a,
+            violation.b,
+            violation.network,
+            violation.detour_allowed(&c)
         );
 
         let p99_samples = net.detour_samples(DETOUR_P99_SAMPLE_MAX_NODES);
@@ -2119,6 +2148,39 @@ mod tests {
             "expected the maze's own p99 ratio ({p99}%) to exceed the committed p99_detour_percent ({}%)",
             c.p99_detour_percent
         );
+    }
+
+    /// `detour_bound_violation`'s own quiet case (Quentin's direction,
+    /// story 15.10): a straight street has exactly one pair, whose
+    /// network distance equals its Manhattan distance (a perfect
+    /// route), well inside the committed bound either way -- the
+    /// finding function proven to stay silent, not just to fire, the
+    /// same "seen to both fire and stay quiet" standard every other
+    /// checker in this file is held to.
+    #[test]
+    fn detour_bound_violation_is_none_for_a_perfect_straight_route() {
+        let c = cfg();
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 100,
+            y1: 100,
+        };
+        // One endpoint (50,0) on the site boundary, the other (50,60)
+        // interior -- `detour_samples` only excludes a pair where *both*
+        // ends are on the boundary, so this single street still samples
+        // its own one pair.
+        let net = StreetNetwork::test_fixture(site, vec![vertical(50, 0, 60)], Vec::new());
+        let samples = net.detour_samples(DETOUR_SAMPLE_MAX_NODES);
+        assert!(
+            !samples.is_empty(),
+            "a single straight street must still sample at least one pair"
+        );
+        assert!(
+            samples.iter().all(|s| s.network == s.manhattan),
+            "a straight street's own pairs must be perfect Manhattan routes: {samples:?}"
+        );
+        assert!(detour_bound_violation(&samples, &c).is_none());
     }
 
     #[test]
