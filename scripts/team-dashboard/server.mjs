@@ -263,13 +263,38 @@ async function readBoard() {
   const doneWeek = doneIn(weekStart, new Date(8.64e15));
   const donePrev = doneIn(prevWeekStart, weekStart);
 
-  // Stories done per week, the last eight weeks, for the tile's trend.
+  // Stories opened, the counterpart of doneIn: created in [a, b).
+  const stories = items.filter(isStory);
+  const openedIn = (a, b) => stories.filter((i) => new Date(i.createdAt) >= a && new Date(i.createdAt) < b).length;
+
+  // Stories done and opened per week, the last eight weeks, for the tiles' trends.
   const weekly = [];
   for (let k = 7; k >= 0; k--) {
     const a = new Date(weekStart); a.setDate(a.getDate() - 7 * k);
     const b = new Date(a); b.setDate(b.getDate() + 7);
-    weekly.push({ start: a.getTime(), n: doneIn(a, b).length });
+    weekly.push({ start: a.getTime(), n: doneIn(a, b).length, opened: openedIn(a, b) });
   }
+
+  // The burn-up: at each day's end, every story that exists (opened, less the
+  // ones closed without shipping) against the ones shipped. The gap is what is
+  // still open. It starts at the eight weeks' start or the first story.
+  const life = stories.map((i) => ({
+    created: Date.parse(i.createdAt), closed: i.closedAt ? Date.parse(i.closedAt) : Infinity, shipped: i.status === 'Done' && !!i.closedAt,
+  }));
+  const at = (t) => {
+    let total = 0, shipped = 0;
+    for (const l of life) {
+      if (l.created > t) continue;
+      if (l.closed <= t) { if (l.shipped) { total++; shipped++; } } else total++;
+    }
+    return { t, total, shipped };
+  };
+  const first = Math.min(...life.map((l) => l.created), now.getTime());
+  const day = new Date(Math.max(first, weekly[0].start)); day.setHours(0, 0, 0, 0);
+  const burnup = [];
+  for (; day.getTime() < now.getTime(); day.setDate(day.getDate() + 1)) burnup.push(at(day.getTime()));
+  burnup.push(at(now.getTime()));
+  const atWeekStart = at(weekStart.getTime()), atNow = burnup.at(-1);
 
   // An iteration runs from its start date's local midnight for `duration` days.
   const sprintOf = (sp) => {
@@ -346,7 +371,10 @@ async function readBoard() {
     week: {
       start: weekStart.getTime(), done: doneWeek.map(pick), prevDone: donePrev.length, weekly,
       merged: merged.length, medianPrHours: median,
+      opened: openedIn(weekStart, new Date(8.64e15)), prevOpened: openedIn(prevWeekStart, weekStart),
+      openNow: atNow.total - atNow.shipped, openAtStart: atWeekStart.total - atWeekStart.shipped,
     },
+    burnup,
   };
 }
 

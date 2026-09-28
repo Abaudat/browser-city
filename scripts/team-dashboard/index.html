@@ -96,7 +96,7 @@ header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; pa
 
 /* ---- main grid ---- */
 .grid-a { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 20px; }
-.grid-b { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+.grid-b { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 20px; }
 .grid-c { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; }
 .grid-d { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
 
@@ -222,6 +222,7 @@ footer { color: var(--muted); font-size: 12px; text-align: center; font-family: 
 @media (max-width: 1180px) {
   .team { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .grid-b { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-b > :last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 @media (max-width: 900px) {
   .grid-a, .grid-c, .grid-d { grid-template-columns: minmax(0, 1fr); }
@@ -291,6 +292,11 @@ footer { color: var(--muted); font-size: 12px; text-align: center; font-family: 
   </div>
 
   <div class="grid-b" id="kpis"></div>
+
+  <section class="panel">
+    <h2 class="h">Tasks vs shipped <span class="aside" id="burnup-aside"></span></h2>
+    <div id="burnup-chart"></div>
+  </section>
 
   <div class="grid-c">
     <section class="panel">
@@ -550,11 +556,21 @@ function renderKpis() {
   const tiles = [];
   if (b) {
     const wk = b.week, n = wk.done.length, prev = wk.prevDone;
-    const max = Math.max(1, ...wk.weekly.map((x) => x.n));
+    const spark = (key, what) => {
+      const max = Math.max(1, ...wk.weekly.map((x) => x[key]));
+      return h('div', { class: 'spark', title: `${what} per week, last 8 weeks` }, wk.weekly.map((x, i) =>
+        h('i', { class: i === wk.weekly.length - 1 ? 'cur' : '', style: `height:${Math.max(6, (x[key] / max) * 100)}%`, title: `week of ${new Date(x.start).toLocaleDateString()}: ${x[key]}` })));
+    };
     tiles.push(tile('Stories shipped', n, 'this week',
-      [`last week ${prev}`, ' · since Fri 11:00'],
-      h('div', { class: 'spark', title: 'Stories shipped per week, last 8 weeks' }, wk.weekly.map((x, i) =>
-        h('i', { class: i === wk.weekly.length - 1 ? 'cur' : '', style: `height:${Math.max(6, (x.n / max) * 100)}%`, title: `week of ${new Date(x.start).toLocaleDateString()}: ${x.n}` })))));
+      [`last week ${prev}`, ' · since Fri 11:00'], spark('n', 'Stories shipped')));
+    // Opened against shipped: more in than out means the pile of open tasks grows.
+    const net = wk.opened - n;
+    tiles.push(tile('Tasks opened', wk.opened, 'this week',
+      [`last week ${wk.prevOpened} · `, h('span', { class: net > 0 ? 'down' : net < 0 ? 'up' : '' }, net > 0 ? `${net} more than shipped` : net < 0 ? `${-net} fewer than shipped` : 'as many as shipped')],
+      spark('opened', 'Tasks opened')));
+    const moved = wk.openNow - wk.openAtStart;
+    tiles.push(tile('Open tasks', wk.openNow, 'total',
+      [h('span', { class: moved > 0 ? 'down' : moved < 0 ? 'up' : '' }, `${moved > 0 ? '+' : moved < 0 ? '−' : '±'}${Math.abs(moved)}`), ` since Fri · ${b.backlog.total} in backlog, ${b.backlog.blocked} blocked`]));
     tiles.push(tile('PRs merged', wk.merged, 'this week',
       wk.medianPrHours !== null ? `median ${wk.medianPrHours < 1 ? Math.round(wk.medianPrHours * 60) + ' min' : wk.medianPrHours.toFixed(1) + ' h'} open → merged` : 'none yet'));
   }
@@ -566,10 +582,6 @@ function renderKpis() {
       `${compact(toks)} tokens · last week ${money(prev)}`,
       h('div', { class: 'minibar', title: 'Share by role' }, SERIES.filter((r) => sp.week[r]).map((r) =>
         h('i', { style: `flex:${sp.week[r]};background:${COLOR[r]}`, title: `${NAME[r]} ${moneyFull(sp.week[r])}` })))));
-  }
-  if (b) {
-    const startable = b.backlog.total - b.backlog.blocked;
-    tiles.push(tile('Backlog', b.backlog.total, 'stories', `${startable} startable · ${b.backlog.blocked} blocked`));
   }
   $('kpis').replaceChildren(...tiles);
 }
@@ -780,6 +792,72 @@ function renderUsage() {
   root.replaceChildren(legend, h('div', { class: 'chart' }, svg), h('div', { class: 'note' }, note), table);
 }
 
+// The burn-up: every task on the board against the ones shipped, day by day.
+// The band between the two lines is what is still open.
+function renderBurnup() {
+  const root = $('burnup-chart'), b = S.board;
+  if (!b?.burnup?.length) { root.replaceChildren(h('div', { class: 'note' }, S.errors?.board ? S.errors.board.message : 'Reading the board…')); return; }
+  const pts = b.burnup;
+  const W = Math.max(280, root.clientWidth || 900), H = W < 500 ? 200 : 220;
+  const M = { l: 38, r: 44, t: 10, b: 26 };
+  const from = pts[0].t, to = pts.at(-1).t;
+  const pw = W - M.l - M.r, ph = H - M.t - M.b;
+  // Four round steps: 250 tasks rules at 0/100/200/300, not at 62.5s.
+  const top = Math.max(...pts.map((p) => p.total), 1), step = Math.max(1, niceMax(top / 4)), max = step * Math.ceil(top / step);
+  const x = (t) => M.l + (to > from ? (t - from) / (to - from) : 1) * pw, y = (v) => M.t + ph - (v / max) * ph;
+  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Total tasks and stories shipped, day by day' });
+  const grid = s('g', { class: 'grid' }), axis = s('g', { class: 'axis' });
+  for (let v = 0; v <= max; v += step) {
+    grid.append(s('line', { x1: M.l, x2: W - M.r, y1: y(v), y2: y(v) }));
+    axis.append(s('text', { x: M.l - 6, y: y(v) + 4, 'text-anchor': 'end' }, v));
+  }
+  // A date every few days, spaced to at least ~70px; the week starts ruled.
+  const days = pts.slice(0, -1), every = Math.max(1, Math.ceil(70 / (pw / Math.max(1, days.length))));
+  days.forEach((p, i) => {
+    if (i % every) return;
+    const d = new Date(p.t);
+    axis.append(s('text', { x: x(p.t), y: H - 6, 'text-anchor': i ? 'middle' : 'start' }, `${d.toLocaleString('en-US', { month: 'short' })} ${d.getDate()}`));
+  });
+  const ws = b.week.start;
+  if (ws > from && ws < to) grid.append(s('line', { x1: x(ws), x2: x(ws), y1: M.t, y2: M.t + ph, stroke: 'var(--accent)', 'stroke-dasharray': '3 3', style: 'stroke-opacity:.7' }));
+  svg.append(grid, axis);
+  const CT = css.getPropertyValue('--info').trim(), CD = css.getPropertyValue('--accent').trim(), surf = css.getPropertyValue('--panel').trim();
+  const line = (k) => pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p[k]).toFixed(1)}`).join('');
+  const band = line('total') + [...pts].reverse().map((p) => `L${x(p.t).toFixed(1)},${y(p.shipped).toFixed(1)}`).join('') + 'Z';
+  svg.append(s('path', { d: band, fill: CT, 'fill-opacity': .12 }));
+  for (const [k, c] of [['total', CT], ['shipped', CD]])
+    svg.append(s('path', { d: line(k), fill: 'none', stroke: c, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+  const last = pts.at(-1);
+  const ends = [['total', CT, 'var(--ink-2)'], ['shipped', CD, 'var(--ink)']].map(([k, c, ink]) => ({ k, c, ink, ly: y(last[k]) + 4 })).sort((a, z) => a.ly - z.ly);
+  for (let i = 1; i < ends.length; i++) ends[i].ly = Math.max(ends[i].ly, ends[i - 1].ly + 13);
+  for (const e of ends) {
+    svg.append(s('circle', { cx: x(last.t), cy: y(last[e.k]), r: 4, fill: e.c, stroke: surf, 'stroke-width': 2 }));
+    svg.append(s('text', { x: x(last.t) + 8, y: e.ly, fill: e.ink, 'font-size': 12, 'font-family': 'var(--font)' }, last[e.k]));
+  }
+  // Crosshair: snaps to the nearest day.
+  const cross = s('line', { y1: M.t, y2: M.t + ph, stroke: 'var(--ink-2)', 'stroke-width': 1, visibility: 'hidden' });
+  const hit = s('rect', { x: M.l, y: M.t, width: pw, height: ph, fill: 'transparent' });
+  hit.addEventListener('pointermove', (ev) => {
+    const r = svg.getBoundingClientRect(), t = from + ((ev.clientX - r.left) * (W / r.width) - M.l) / pw * (to - from);
+    const p = pts.reduce((a, z) => Math.abs(z.t - t) < Math.abs(a.t - t) ? z : a);
+    cross.setAttribute('x1', x(p.t)); cross.setAttribute('x2', x(p.t)); cross.setAttribute('visibility', 'visible');
+    showTip(ev, p === last ? 'Now' : dayHm(p.t).slice(0, 3) + ' ' + new Date(p.t).toLocaleDateString(),
+      [[CT, p.total, 'tasks'], [CD, p.shipped, 'shipped'], ['transparent', p.total - p.shipped, 'open']]);
+  });
+  hit.addEventListener('pointerleave', () => { cross.setAttribute('visibility', 'hidden'); hideTip(); });
+  svg.append(cross, hit);
+  const legend = h('div', { class: 'legend' },
+    h('span', {}, h('i', { class: 'ln', style: `background:${CT}` }), `Tasks ${last.total}`),
+    h('span', {}, h('i', { class: 'ln', style: `background:${CD}` }), `Shipped ${last.shipped}`),
+    h('span', {}, h('i', { style: `background:${CT};opacity:.3` }), `Open ${last.total - last.shipped}`));
+  const table = h('details', { class: 'data' }, h('summary', {}, 'Table'),
+    h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, h('th', {}, 'Day'), h('th', {}, 'Tasks'), h('th', {}, 'Shipped'), h('th', {}, 'Open')),
+      [...pts].reverse().map((p) => h('tr', {}, h('td', {}, p === last ? 'now' : new Date(p.t).toLocaleDateString()), h('td', {}, p.total), h('td', {}, p.shipped), h('td', {}, p.total - p.shipped))))));
+  root.replaceChildren(legend, h('div', { class: 'chart' }, svg),
+    h('div', { class: 'note' }, 'Stories on the board, at each day’s start; tasks closed without shipping drop out. The dashed line is Fri 11:00.'), table);
+  $('burnup-aside').textContent = `since ${new Date(from).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+}
+
 // --- lists ----------------------------------------------------------------------------
 function renderShipped() {
   const b = S.board;
@@ -831,7 +909,7 @@ function renderErrors() {
 function renderAll() {
   if (!S) return;
   renderTeam(); renderTask(); renderBudget(); renderKpis(); renderShipped(); renderEvents(); renderChips(); renderErrors();
-  renderSpend(); renderUsage();
+  renderSpend(); renderUsage(); renderBurnup();
 }
 
 // --- polling ---------------------------------------------------------------------------
@@ -864,7 +942,7 @@ buildTeam();
 poll();
 setInterval(() => { frame++; drawSprites(); }, 125);
 let rw;
-window.addEventListener('resize', () => { clearTimeout(rw); rw = setTimeout(() => { if (S) { renderSpend(); renderUsage(); drawSprites(); } }, 150); });
+window.addEventListener('resize', () => { clearTimeout(rw); rw = setTimeout(() => { if (S) { renderSpend(); renderUsage(); renderBurnup(); drawSprites(); } }, 150); });
 </script>
 </body>
 </html>
