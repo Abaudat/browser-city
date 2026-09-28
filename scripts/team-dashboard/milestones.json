@@ -1,0 +1,15 @@
+[
+  {"name": "Multiplayer", "short": "Multiplayer", "detail": "two players boot into the same city and see each other", "gates": [100, 103]},
+  {"name": "Living city", "short": "Living city", "detail": "stand in the street and watch NPCs come and go", "gates": [93, 117]},
+  {"name": "NPC loop", "short": "NPC loop", "detail": "follow an NPC for a whole day loop", "gates": [125]},
+  {"name": "Player can get a job", "short": "Job", "detail": "work a shift at the till and get paid", "gates": [153]},
+  {"name": "Player can buy something in a shop", "short": "Shop", "detail": "buy food with the wage", "gates": [155]},
+  {"name": "Buy a bike", "short": "Bike", "detail": "save the surplus for the first thing worth having", "gates": [227]},
+  {"name": "Work a job by hand", "short": "By hand", "detail": "the shift done step by step with props, badly or well", "gates": [178]},
+  {"name": "Log off and the city keeps going", "short": "Log off", "detail": "an NPC covers your shift; come back to payslips and a record", "gates": [194]},
+  {"name": "Ride the bus", "short": "Bus", "detail": "timetables, fares, and someone real behind the wheel", "gates": [217]},
+  {"name": "MVP district", "short": "MVP", "detail": "the whole reference slice working together", "gates": [225]},
+  {"name": "Apply for a better job", "short": "Hired", "detail": "qualify, find a vacancy, get hired", "gates": [239]},
+  {"name": "Three different lives", "short": "Three lives", "detail": "cooking, collecting and a club each hold up", "gates": [235]},
+  {"name": "Watch a neighbourhood get built", "short": "Growth", "detail": "growth, construction and gentrification in view", "gates": [257]}
+]

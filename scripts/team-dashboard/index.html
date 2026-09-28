@@ -218,6 +218,47 @@ details.data .scroll { max-height: 260px; overflow: auto; }
 footer { color: var(--muted); font-size: 12px; text-align: center; font-family: var(--label); letter-spacing: 1.5px; text-transform: uppercase; }
 .stale { opacity: .6; transition: opacity .3s; }
 
+/* ---- tabs ---- */
+.tabs { display: flex; gap: 0; border-bottom: 2px solid var(--line); }
+.tabs a { font-family: var(--pixel); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); padding: 8px 14px; border: 2px solid transparent; border-bottom: 0; margin-bottom: -2px; }
+.tabs a:hover { text-decoration: none; color: var(--ink-2); }
+.tabs a[aria-selected="true"] { color: var(--accent); background: var(--panel); border-color: var(--line); }
+.view { display: grid; gap: 20px; min-width: 0; }
+.view[hidden] { display: none; }
+
+/* ---- task graph ---- */
+.dagbox { position: relative; overflow: auto; max-height: calc(100vh - 190px); min-height: 320px; background: var(--bg); border: 2px solid var(--line); overscroll-behavior: contain; }
+.dagbox svg { display: block; }
+.dag .edge { fill: none; stroke: #5b5380; stroke-width: 1.2; stroke-opacity: .55; }
+.dag .edge.hot { stroke: var(--accent); stroke-opacity: .85; stroke-width: 1.6; }
+.dag.focus .edge:not(.hot) { stroke-opacity: .12; }
+.dag.focus .node:not(.hot) { opacity: .3; }
+.dag .node { cursor: pointer; }
+.dag .node rect { stroke-width: 2; }
+.dag .node text { font-family: var(--label); font-size: 10px; pointer-events: none; }
+.dag .node:focus { outline: none; }
+.dag .node:focus-visible rect, .dag .node.sel rect { stroke: var(--ink); stroke-width: 3; }
+.dag .fence line { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 5; }
+.dag .fence text { paint-order: stroke; stroke: var(--bg); stroke-width: 5px; stroke-linejoin: round; fill: var(--accent); font-family: var(--pixel); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; }
+.dag .fence text.sub { fill: var(--ink-2); font-family: var(--font); font-size: 11px; letter-spacing: 0; text-transform: none; }
+.dag .band { fill: var(--accent); fill-opacity: .035; }
+.dag .band.hot { fill-opacity: .09; }
+.dag .flab { cursor: pointer; }
+.dag .flab:hover text:not(.sub), .dag .flab.on text:not(.sub) { text-decoration: underline; }
+.dag .flab:focus { outline: none; }
+.pop { position: absolute; z-index: 5; background: #120f1b; border: 2px solid var(--line); box-shadow: 0 4px 0 var(--shadow); padding: 10px 12px; font-size: 14px; width: 300px; max-width: calc(100vw - 48px); display: grid; gap: 6px; }
+.pop[hidden] { display: none; }
+.pop a.ttl { font-weight: 600; font-size: 15px; line-height: 1.25; color: var(--ink); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.pop a.ttl:hover { text-decoration-color: var(--accent); }
+.pop .sub { font-size: 12px; color: var(--muted); }
+.pop .x { position: absolute; top: 4px; right: 6px; background: none; border: 0; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px 4px; line-height: 1; }
+.pop .x:hover { color: var(--ink); }
+.legend.sizes { align-items: flex-end; gap: 6px; }
+.dag .prio { fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.legend .sz { display: inline-grid; place-items: center; border: 2px solid var(--line); border-radius: 3px; background: var(--panel-2); font-family: var(--label); font-size: 8px; color: var(--ink-2); }
+.legend .lk { order: -1; font-family: var(--label); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+.legend i.sq { width: 12px; height: 10px; border: 2px solid; border-radius: 3px; }
+
 /* ---- responsive ---- */
 @media (max-width: 1180px) {
   .team { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -226,10 +267,11 @@ footer { color: var(--muted); font-size: 12px; text-align: center; font-family: 
 }
 @media (max-width: 900px) {
   .grid-a, .grid-c, .grid-d { grid-template-columns: minmax(0, 1fr); }
-}
+  }
 @media (max-width: 600px) {
   :root { --gutter: 12px; }
-  .wrap { gap: 16px; }
+  .wrap, .view { gap: 16px; }
+    .dagbox { max-height: 70vh; }
   .team { gap: 10px; }
   .card .stage { height: 104px; }
   .sprite { --s: 3; }
@@ -274,7 +316,12 @@ footer { color: var(--muted); font-size: 12px; text-align: center; font-family: 
     </div>
   </header>
   <div class="errors" id="errors"></div>
+  <nav class="tabs" role="tablist">
+    <a href="#team" role="tab" id="tab-team" aria-controls="view-team" aria-selected="true">Team</a>
+    <a href="#tasks" role="tab" id="tab-tasks" aria-controls="view-tasks" aria-selected="false">Task graph</a>
+  </nav>
 
+  <div class="view" id="view-team" role="tabpanel" aria-labelledby="tab-team">
   <section>
     <h2 class="h">The team <span class="aside" id="team-aside"></span></h2>
     <div class="team" id="team"></div>
@@ -317,6 +364,16 @@ footer { color: var(--muted); font-size: 12px; text-align: center; font-family: 
     <section class="panel">
       <h2 class="h">Orchestrator <span class="aside" id="loop-aside"></span></h2>
       <div class="scrollbox"><div class="list" id="events"></div></div>
+    </section>
+  </div>
+  </div>
+
+  <div class="view" id="view-tasks" role="tabpanel" aria-labelledby="tab-tasks" hidden>
+    <section class="panel">
+      <h2 class="h">Task graph <span class="aside" id="graph-aside"></span></h2>
+      <div id="graph-legend"></div>
+      <div class="dagbox" id="dagbox"></div>
+      <div class="note">Each task is a box, each line runs down from a blocker to what it blocks. A fence closes everything its milestone needs: the gate stories and all they are blocked by. Done work no milestone needs sits at the top; open work none needs, below the last fence. Click a task for its name and link, a milestone's name to light up all it needs.</div>
     </section>
   </div>
 
@@ -910,7 +967,286 @@ function renderAll() {
   if (!S) return;
   renderTeam(); renderTask(); renderBudget(); renderKpis(); renderShipped(); renderEvents(); renderChips(); renderErrors();
   renderSpend(); renderUsage(); renderBurnup();
+  if (!$('view-tasks').hidden) loadGraph();
 }
+
+// --- the task graph --------------------------------------------------------------------
+// Every story on the board, top to bottom in dependency order, fenced into the
+// milestones' bands: a band holds what its milestone needs that no earlier one
+// did, so everything above a fence is what it takes to reach that milestone.
+let G = null, gLoading = false, gSel = null, gMile = null, gScrolled = false, gSelect = null;
+const IN_FLIGHT = ['To analyze', 'In progress', 'Leads review', 'Reviewed'];
+const KIND = {
+  done: { label: 'Done', fill: 'color-mix(in srgb, var(--good) 30%, var(--panel))', stroke: 'var(--good)', ink: 'var(--ink)' },
+  active: { label: 'In flight', fill: 'var(--accent)', stroke: 'var(--accent)', ink: 'var(--cream-ink)' },
+  ready: { label: 'Ready', fill: 'var(--panel-2)', stroke: 'var(--info)', ink: 'var(--ink)' },
+  blocked: { label: 'Blocked', fill: 'var(--panel)', stroke: 'var(--line)', ink: 'var(--muted)' },
+};
+// Closed is done, whatever the board's status says.
+const kindOf = (n) => n.state === 'CLOSED' ? 'done' : IN_FLIGHT.includes(n.status) ? 'active' : n.blocked ? 'blocked' : 'ready';
+// Size is the side of the square box. Priority is the icon before the number,
+// the issue-tracker chevrons: up for urgent, level for standard, down for low.
+const SIZE = { XS: [36, 36], S: [42, 42], M: [50, 50], L: [60, 60], XL: [72, 72] };
+const PRIORITY = {
+  Blocker: { label: 'Blocker', d: 'M0,4L3.5,0.5L7,4M0,7.5L3.5,4L7,7.5', color: 'var(--bad)' },
+  Critical: { label: 'Critical', d: 'M0,5.5L3.5,2L7,5.5', color: 'var(--warn)' },
+  Standard: { label: 'Standard', d: 'M0,2.5H7M0,5.5H7', color: 'var(--muted)' },
+  Low: { label: 'Low', d: 'M0,2L3.5,5.5L7,2', color: 'var(--info)' },
+};
+// The 7x8 icon at (x, y); on the in-flight yellow it takes the text's ink.
+const prioIcon = (priority, x, y, ink) => {
+  const p = PRIORITY[priority] ?? PRIORITY.Standard;
+  return s('path', { class: 'prio', d: p.d, transform: `translate(${x},${y})`, style: `stroke:${ink ?? p.color}` });
+};
+const shortId = (n) => /^Story (\d+\.\d+)/.exec(n.title)?.[1] ?? `#${n.number}`;
+
+function layoutGraph(g, perLayer) {
+  const nodes = new Map(g.nodes.map((n) => [n.number, { ...n, kind: kindOf(n), preds: [], succs: [] }]));
+  for (const n of nodes.values()) for (const b of n.blockers) {
+    const p = nodes.get(b);
+    if (p && p !== n && !n.preds.includes(p)) { n.preds.push(p); p.succs.push(n); }
+  }
+  // Topological order, depth first; an edge that would close a cycle is dropped.
+  const order = [], mark = new Map();
+  const visit = (n) => {
+    mark.set(n, 1);
+    n.preds = n.preds.filter((p) => {
+      if (mark.get(p) === 1) { p.succs = p.succs.filter((x) => x !== n); return false; }
+      if (!mark.has(p)) visit(p);
+      return true;
+    });
+    mark.set(n, 2);
+    order.push(n);
+  };
+  for (const n of [...nodes.values()].sort((a, b) => a.number - b.number)) if (!mark.has(n)) visit(n);
+
+  // What each milestone needs: its gates and all they are blocked by.
+  const miles = (g.milestones ?? []).map((m) => {
+    const need = new Set(), stack = m.gates.map((x) => nodes.get(x)).filter(Boolean);
+    while (stack.length) { const n = stack.pop(); if (!need.has(n)) { need.add(n); stack.push(...n.preds); } }
+    return { ...m, need, missing: m.gates.filter((x) => !nodes.has(x)) };
+  });
+  // Bands: 0 is done work no milestone needs, 1..n one per milestone -- the
+  // first that needs a task -- and n+1 the open work none of them needs.
+  const last = miles.length + 1;
+  for (const n of order) {
+    const k = miles.findIndex((m) => m.need.has(n));
+    n.rank = Math.max(k >= 0 ? k + 1 : n.state === 'CLOSED' ? 0 : last, ...n.preds.map((p) => p.rank));
+  }
+  // Within a band, a task stands one layer below its latest blocker there, then
+  // moves down up to the layer above the first task it blocks there, so work
+  // unblocked from an earlier band does not all pile into one layer.
+  const bands = Array.from({ length: last + 1 }, () => []);
+  for (const n of order) {
+    n.layer = Math.max(0, ...n.preds.filter((p) => p.rank === n.rank).map((p) => p.layer + 1));
+    bands[n.rank].push(n);
+  }
+  for (const n of [...order].reverse()) {
+    const next = n.succs.filter((x) => x.rank === n.rank).map((x) => x.layer);
+    if (next.length) n.layer = Math.max(n.layer, Math.min(...next) - 1);
+  }
+  const byEpic = (a, b) => (a.epic?.number ?? 1e9) - (b.epic?.number ?? 1e9) || a.number - b.number;
+  // Tasks with no dependencies either way fill a band's emptiest layers; the
+  // done band gets as many layers as it takes to hold `perLayer` to a layer.
+  const place = (band, width) => {
+    const count = Array(width).fill(0);
+    for (const n of band) if (!n.lone) count[n.layer]++;
+    for (const n of band.filter((x) => x.lone).sort(byEpic)) { const i = count.indexOf(Math.min(...count)); n.layer = i; count[i]++; }
+    return count;
+  };
+  const widths = bands.map((band, r) => {
+    for (const n of band) n.lone = !n.preds.length && !n.succs.length;
+    return band.length ? Math.max(1, ...band.filter((n) => !n.lone).map((n) => n.layer + 1)) : r === 0 || r === last ? 0 : 1;
+  });
+  for (let r = 1; r <= last; r++) place(bands[r], widths[r]);
+  widths[0] = Math.max(widths[0], Math.ceil(bands[0].filter((n) => n.lone).length / perLayer));
+  place(bands[0], widths[0]);
+  const cols = [], spans = [];
+  bands.forEach((band, r) => {
+    const x0 = cols.length;
+    for (let i = 0; i < widths[r]; i++) cols.push([]);
+    for (const n of band) { n.col = x0 + n.layer; cols[n.col].push(n); }
+    spans.push([x0, x0 + widths[r]]);
+  });
+  // Order each layer by its neighbours' average place, sweeping both ways a few
+  // times to untangle crossings. Unconnected tasks go to the end.
+  for (const c of cols) { c.sort(byEpic); c.forEach((n, i) => { n.row = i; }); }
+  for (let it = 0; it < 8; it++) {
+    const down = it % 2 === 0;
+    for (const c of down ? cols : [...cols].reverse()) {
+      for (const n of c) {
+        const nb = down ? n.preds : n.succs;
+        n.bary = n.lone ? 1e6 + n.row : nb.length ? nb.reduce((a, p) => a + p.row, 0) / nb.length : n.row;
+      }
+      c.sort((a, b) => a.bary - b.bary || a.row - b.row);
+      c.forEach((n, i) => { n.row = i; });
+    }
+  }
+  return { nodes: [...nodes.values()], cols, spans, miles };
+}
+
+async function loadGraph() {
+  if (gLoading || (G && S?.board && G.at >= S.board.at)) return;
+  gLoading = true;
+  try {
+    const r = await fetch('api/graph', { cache: 'no-store' });
+    const g = r.ok ? await r.json() : null;
+    if (g) { G = g; renderGraph(); } else if (!G) renderGraph();
+  } catch { /* the next poll tries again */ } finally { gLoading = false; }
+}
+
+function renderGraph() {
+  const box = $('dagbox');
+  if (!G) { box.replaceChildren(h('div', { class: 'empty', style: 'padding:18px' }, S?.errors?.board ? S.errors.board.message : 'Reading the board…')); return; }
+  // The left gutter holds the fence labels; tasks sit right of it.
+  const gutter = 150, gap = 8, vgap = 16, padT = 12;
+  const L = layoutGraph(G, Math.max(6, Math.floor(((box.clientWidth || 900) - gutter - 30) / 58)));
+  const byNum = new Map(L.nodes.map((n) => [n.number, n]));
+  for (const n of L.nodes) [n.w, n.h] = SIZE[n.size] ?? SIZE.M;
+  // Each layer is as tall as its biggest task; its tasks run left to right, centred on it.
+  const layerTop = [];
+  let y = padT, widest = 0;
+  for (const c of L.cols) {
+    const lh = Math.max(16, ...c.map((n) => n.h));
+    let x = gutter;
+    for (const n of c) { n.x = x; n.y = y + (lh - n.h) / 2; x += n.w + gap; }
+    layerTop.push(y);
+    widest = Math.max(widest, x - gutter);
+    y += lh + vgap;
+  }
+  layerTop.push(y);
+  const W = gutter + widest + 14, H = y - vgap + padT;
+  const nx = (n) => n.x, ny = (n) => n.y;
+  const edgeY = (i) => layerTop[i] - vgap / 2; // the line between layer i-1 and layer i
+
+  const svg = s('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, class: 'dag', role: 'img', 'aria-label': `Dependency graph of ${L.nodes.length} tasks, fenced by milestone` });
+  const bandG = s('g', {}), fenceG = s('g', { class: 'fence' }), edgeG = s('g', {}), nodeG = s('g', {});
+  L.spans.forEach(([a, b], k) => {
+    if (b > a && k % 2 === 1) bandG.append(s('rect', { class: 'band', x: 0, y: edgeY(a), width: W, height: edgeY(b) - edgeY(a) }));
+  });
+  if (L.spans[0][1] > 0) fenceG.append(s('text', { class: 'sub', x: 10, y: padT + 12 }, 'Done, needed', s('tspan', { x: 10, dy: 15 }, 'by no milestone')));
+  // A fence closes its milestone's band: a line under it, the name above the
+  // line in the gutter. Clicking the name lights up all the milestone needs.
+  const fences = L.miles.map((m, k) => {
+    const fy = edgeY(L.spans[k + 1][1]);
+    const done = [...m.need].filter((n) => n.kind === 'done').length;
+    const el = s('g', { class: 'flab', tabindex: 0, role: 'button' },
+      s('title', {}, `${m.name}${m.detail ? ` — ${m.detail}` : ''}\nGates: ${m.gates.map((x) => byNum.has(x) ? shortId(byNum.get(x)) : `#${x} (not on the board)`).join(', ')}`),
+      s('text', { x: 10, y: fy - 22 }, m.short ?? m.name),
+      s('text', { class: 'sub', x: 10, y: fy - 7 }, `${done} of ${m.need.size} done`));
+    const toggle = (ev) => { ev.stopPropagation(); gMile = gMile === k ? null : k; gSel = null; applyFocus(); };
+    el.addEventListener('click', toggle);
+    el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(ev); } });
+    fenceG.append(s('line', { x1: 0, x2: W, y1: fy, y2: fy }), el);
+    return { k, el };
+  });
+  const edges = [];
+  for (const n of L.nodes) for (const p of n.preds) {
+    const x1 = nx(p) + p.w / 2, y1 = ny(p) + p.h, x2 = nx(n) + n.w / 2, y2 = ny(n), c = Math.max(14, (y2 - y1) / 2);
+    const el = s('path', { class: 'edge', d: `M${x1},${y1}C${x1},${y1 + c} ${x2},${y2 - c} ${x2},${y2}` });
+    edges.push({ p, n, el });
+    edgeG.append(el);
+  }
+  const els = new Map();
+  for (const n of L.nodes) {
+    const k = KIND[n.kind];
+    const g = s('g', { class: 'node', transform: `translate(${nx(n)},${ny(n)})`, tabindex: 0, role: 'button',
+      'aria-label': `${shortId(n)} ${n.title}, ${[k.label, n.priority, n.size && `size ${n.size}`].filter(Boolean).join(', ')}` },
+      s('rect', { width: n.w, height: n.h, rx: 4, style: `fill:${k.fill};stroke:${k.stroke}` }),
+      prioIcon(n.priority, n.w / 2 - 3.5, n.h / 2 - 10, n.kind === 'active' ? k.ink : null), // the icon above the number
+      s('text', { x: n.w / 2, y: n.h / 2 + 9, 'text-anchor': 'middle', fill: k.ink }, shortId(n)));
+    g.addEventListener('click', (ev) => { ev.stopPropagation(); select(gSel === n.number ? null : n.number); });
+    g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); select(n.number); } });
+    els.set(n.number, g);
+    nodeG.append(g);
+  }
+  svg.append(bandG, fenceG, edgeG, nodeG);
+  const pop = h('div', { class: 'pop', hidden: true });
+  const inner = h('div', { style: `position:relative;width:${W}px;height:${H}px` }, svg, pop);
+
+  // Focus: a selected task lights up everything upstream and downstream of it;
+  // a selected milestone, everything it needs.
+  const reach = (n, key) => { const seen = new Set([n]), st = [n]; while (st.length) for (const y of st.pop()[key]) if (!seen.has(y)) { seen.add(y); st.push(y); } return seen; };
+  function applyFocus() {
+    const sel = gSel !== null ? byNum.get(gSel) : null;
+    const mile = gMile !== null ? L.miles[gMile] : null;
+    let hot = null, hotEdge = () => false;
+    if (sel) {
+      const up = reach(sel, 'preds'), dn = reach(sel, 'succs');
+      hot = new Set([...up, ...dn]);
+      hotEdge = (e) => (up.has(e.p) && up.has(e.n)) || (dn.has(e.p) && dn.has(e.n));
+    } else if (mile) {
+      hot = mile.need;
+      hotEdge = (e) => hot.has(e.p) && hot.has(e.n);
+    }
+    svg.classList.toggle('focus', !!hot);
+    for (const [num, g] of els) { g.classList.toggle('hot', !!hot && hot.has(byNum.get(num))); g.classList.toggle('sel', num === gSel); }
+    for (const e of edges) e.el.classList.toggle('hot', !!hot && hotEdge(e));
+    for (const e of edges) if (e.el.classList.contains('hot')) edgeG.append(e.el); // drawn over the rest
+    for (const f of fences) f.el.classList.toggle('on', f.k === gMile);
+    if (!sel) { pop.hidden = true; return; }
+    const needs = L.miles.filter((m) => m.need.has(sel)).map((m) => m.name);
+    const waiting = sel.preds.filter((p) => p.state === 'OPEN');
+    pop.replaceChildren(...[
+      h('button', { class: 'x', 'aria-label': 'Close', title: 'Close' }, '×'),
+      h('a', { class: 'ttl', href: sel.url, target: '_blank', rel: 'noopener' }, `#${sel.number} ${sel.title}`),
+      h('div', { class: 'sub' }, [KIND[sel.kind].label, sel.state === 'OPEN' ? sel.status : null, sel.priority, sel.size ? `Size ${sel.size}` : 'Unsized', sel.epic?.title].filter(Boolean).join(' · ')),
+      waiting.length ? h('div', { class: 'sub' }, `Waiting on ${waiting.map(shortId).join(', ')}`) : null,
+      needs.length ? h('div', { class: 'sub' }, `Needed for ${needs.join(', ')}`) : null].filter(Boolean));
+    pop.querySelector('.x').addEventListener('click', (ev) => { ev.stopPropagation(); select(null); });
+    pop.addEventListener('click', (ev) => ev.stopPropagation());
+    pop.hidden = false;
+    const pw = pop.offsetWidth, right = nx(sel) + sel.w + 10, left = nx(sel) - pw - 10;
+    pop.style.left = `${right + pw <= W || left < 0 ? Math.max(0, Math.min(right, W - pw)) : left}px`;
+    pop.style.top = `${Math.max(0, Math.min(ny(sel) - 8, H - pop.offsetHeight))}px`;
+  }
+  function select(num) { gSel = num; if (num !== null) gMile = null; applyFocus(); }
+  gSelect = select;
+
+  const counts = {};
+  for (const n of L.nodes) counts[n.kind] = (counts[n.kind] ?? 0) + 1;
+  $('graph-legend').replaceChildren(h('div', { class: 'legend' }, Object.entries(KIND).filter(([k]) => counts[k]).map(([k, v]) =>
+    h('span', {}, h('i', { class: 'sq', style: `background:${v.fill};border-color:${v.stroke}` }), `${v.label} ${counts[k]}`)),
+      h('span', { class: 'lk' }, 'status')),
+    h('div', { class: 'legend' },
+      Object.keys(PRIORITY).map((p) => h('span', {}, s('svg', { width: 11, height: 10, viewBox: '-2 -1 11 10', class: 'dag' }, prioIcon(p, 0, 0)),
+        `${p} ${L.nodes.filter((n) => (n.priority ?? 'Standard') === p).length}`)),
+      h('span', { class: 'lk' }, 'priority')),
+    h('div', { class: 'legend sizes' }, Object.entries(SIZE).map(([z, [w, hh]]) =>
+      h('span', { class: 'sz', style: `width:${w / 2}px;height:${hh / 2}px` }, z)), h('span', { class: 'lk' }, 'size')));
+  $('graph-aside').textContent = `${L.nodes.length} tasks · ${edges.length} dependencies`;
+
+  const keep = [box.scrollLeft, box.scrollTop];
+  box.replaceChildren(inner);
+  if (gSel !== null && !byNum.has(gSel)) gSel = null;
+  applyFocus();
+  if (!gScrolled) {
+    // Open on the first layer with work still to do.
+    const firstOpen = Math.min(...L.nodes.filter((n) => n.state === 'OPEN').map((n) => n.col));
+    if (Number.isFinite(firstOpen)) box.scrollTop = Math.max(0, layerTop[Math.max(0, firstOpen - 1)] - vgap);
+    gScrolled = true;
+  } else [box.scrollLeft, box.scrollTop] = keep;
+}
+// A click anywhere but on the popup or a task, or Escape, closes the popup.
+document.addEventListener('click', (ev) => {
+  if (gSel !== null && !ev.target.closest('.pop, .dag .node')) gSelect?.(null);
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && gSel !== null) gSelect?.(null);
+});
+
+// --- tabs ----------------------------------------------------------------------------------
+function showView() {
+  const tasks = location.hash === '#tasks';
+  $('view-team').hidden = tasks;
+  $('view-tasks').hidden = !tasks;
+  $('tab-team').setAttribute('aria-selected', String(!tasks));
+  $('tab-tasks').setAttribute('aria-selected', String(tasks));
+  hideTip();
+  if (tasks) { if (G) renderGraph(); loadGraph(); }
+  else if (S) { renderSpend(); renderUsage(); renderBurnup(); }
+}
+window.addEventListener('hashchange', showView);
 
 // --- polling ---------------------------------------------------------------------------
 let failures = 0, timer = null;
@@ -939,10 +1275,11 @@ async function poll() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 
 buildTeam();
+showView();
 poll();
 setInterval(() => { frame++; drawSprites(); }, 125);
 let rw;
-window.addEventListener('resize', () => { clearTimeout(rw); rw = setTimeout(() => { if (S) { renderSpend(); renderUsage(); renderBurnup(); drawSprites(); } }, 150); });
+window.addEventListener('resize', () => { clearTimeout(rw); rw = setTimeout(() => { if (S) { renderSpend(); renderUsage(); renderBurnup(); drawSprites(); } if (G && !$('view-tasks').hidden) renderGraph(); }, 150); });
 </script>
 </body>
 </html>
