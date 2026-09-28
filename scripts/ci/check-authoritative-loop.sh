@@ -31,11 +31,13 @@
 #       module's guard. The owner identity is not `ctx.database_identity()`
 #       either, so it reaches `require_scheduler` and is rejected by it --
 #       the first time that guard is exercised against a running module.
-#       Both tables must be byte-identical before and after.
+#       Both tables' own meaningful columns must be unchanged before and
+#       after (retried against the live cadence's own background fires,
+#       never a raw diff of the whole SQL response -- see below).
 #   (d) Rebuild is idempotent: republish the unchanged module, then call
 #       `rearm_schedules` twice as owner. After the republish and after
-#       each call: still exactly one pending row, and its target
-#       unchanged (the phase is preserved).
+#       each call: still exactly one pending row, and its target still
+#       phase-aligned to the original anchor (the phase is preserved).
 set -uo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$REPO_ROOT/scripts/ci/lib/spacetime-instance.sh"

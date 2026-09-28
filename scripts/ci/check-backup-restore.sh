@@ -229,20 +229,28 @@ ok "a row too big for one batch restores across multiple byte-budgeted batches"
 
 # --- story 4.2: restore-world.sh calls rearm_schedules after finish_restore
 # -- a restored world must resume its loop without a human remembering.
-# maintenance_schedule holds exactly one pending row, and cadence_liveness'
-# own freshly-armed target is phase-aligned to the restored epoch: the
-# gap between them is a whole number of city minutes (REAL_MS_PER_CITY_
-# MINUTE, 2500ms -- sim::cadence's own floor every cadence period clears,
-# never the maintenance-specific period alone, so this check stays valid
-# even if that period constant later changes) ------------------------------
+# maintenance_schedule holds exactly one pending row, and its own
+# freshly-armed target is phase-aligned to the restored epoch: the gap
+# between them is a whole number of city minutes (REAL_MS_PER_CITY_MINUTE,
+# 2500ms -- sim::cadence's own floor every cadence period clears, never
+# the maintenance-specific period alone, so this check stays valid even if
+# that period constant later changes). Read from maintenance_schedule
+# itself, never cadence_liveness: that table is only ever written from
+# inside a cadence's own fired reducer (never by the arm alone), so right
+# after a restore -- nothing has fired yet -- it still has no row at all. -
 grep -qF "every scheduled cadence re-armed" "$DATA_DIR/restore.log" \
   || fail "restore-world.sh's own log has no rearm_schedules confirmation line -- was it actually called after finish_restore?" "$DATA_DIR/restore.log"
 MAINT_PENDING="$(row_count_live "$DST" maintenance_schedule)"
 [ "$MAINT_PENDING" -eq 1 ] || fail "restored '$DST.maintenance_schedule' holds $MAINT_PENDING pending row(s) after rearm_schedules, expected exactly 1"
 RESTORED_EPOCH_MICROS="$(column_values_live "$DST" world_clock epoch_at | grep -oE '[0-9]+' | head -n1)"
-MAINT_TARGET_MICROS="$(column_values_live "$DST" cadence_liveness last_target_at | grep -oE '[0-9]+' | head -n1)"
+# scheduled_at is ScheduleAt (a sum type): SATS tags it as
+# `[variant_index, payload]` -- `[1,[micros]]` for `Time` -- so the
+# *last* digit run is the micros value, never the first (the variant
+# tag), confirmed empirically against a real instance (story 4.2's
+# check-authoritative-loop.sh carries the same fix, same reasoning).
+MAINT_TARGET_MICROS="$(column_values_live "$DST" maintenance_schedule scheduled_at | grep -oE '[0-9]+' | tail -n1)"
 [ -n "$RESTORED_EPOCH_MICROS" ] || fail "could not read '$DST.world_clock.epoch_at'"
-[ -n "$MAINT_TARGET_MICROS" ] || fail "could not read '$DST.cadence_liveness.last_target_at' -- rearm_schedules did not arm the maintenance cadence"
+[ -n "$MAINT_TARGET_MICROS" ] || fail "could not read '$DST.maintenance_schedule.scheduled_at' -- rearm_schedules did not arm the maintenance cadence"
 CITY_MINUTE_MICROS=2500000
 REMAINDER=$(( (MAINT_TARGET_MICROS - RESTORED_EPOCH_MICROS) % CITY_MINUTE_MICROS ))
 [ "$REMAINDER" -eq 0 ] || fail "the restored maintenance cadence's own target ($MAINT_TARGET_MICROS) is not phase-aligned to the restored epoch ($RESTORED_EPOCH_MICROS) at a ${CITY_MINUTE_MICROS}us city-minute grid -- remainder ${REMAINDER}us"
