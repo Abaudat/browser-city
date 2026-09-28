@@ -349,7 +349,15 @@ D18="$(fake_dir)"; write_good_workflow "$D18/deploy.yml"
 sed -i "s/if: always() && (contains(needs.\*.result, 'failure') || contains(needs.\*.result, 'cancelled'))/if: always() \&\& failure()/" "$D18/deploy.yml"
 OUT="$(bash "$CHECK" "$D18/deploy.yml" 2>&1)"; CODE=$?
 check "if: always() && failure() alone (no cancelled) fails" 1 bash -c "exit $CODE"
-check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'does not account for a cancelled'" _ "$OUT"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"does not contain a contains(needs.*.result, 'cancelled')\"" _ "$OUT"
+
+echo
+echo "a bare substring check for the word 'cancelled' is not enough -- !cancelled() contains it too and means the opposite (Tim's direction, cycle 1)"
+D18B="$(fake_dir)"; write_good_workflow "$D18B/deploy.yml"
+sed -i "s/if: always() && (contains(needs.\*.result, 'failure') || contains(needs.\*.result, 'cancelled'))/if: always() \&\& !cancelled()/" "$D18B/deploy.yml"
+OUT="$(bash "$CHECK" "$D18B/deploy.yml" 2>&1)"; CODE=$?
+check "if: always() && !cancelled() fails (it's the negation, not the check)" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"does not contain a contains(needs.*.result, 'cancelled')\"" _ "$OUT"
 
 D19="$(fake_dir)"; write_good_workflow "$D19/deploy.yml"
 sed -i '/^  report-failure:$/,$d' "$D19/deploy.yml"

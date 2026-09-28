@@ -56,7 +56,12 @@ jobs:
         shell: pwsh
         run: |
           $AssetName = "spacetimedb-update-x86_64-pc-windows-msvc.exe"
-          $InstallScript = (Invoke-WebRequest https://windows.spacetimedb.com -UseBasicParsing).Content
+          # -MaximumRetryCount/-RetryIntervalSec on both calls below (Tim's
+          # direction): install-spacetimedb-cli.sh carries the equivalent
+          # `--retry 5 --retry-all-errors` for the same CDN, which has
+          # answered with a transient error before -- without a retry here,
+          # that same blip files a false "upstream drift" alert.
+          $InstallScript = (Invoke-WebRequest https://windows.spacetimedb.com -UseBasicParsing -MaximumRetryCount 5 -RetryIntervalSec 3).Content
           $InstallScriptFile = Join-Path $env:RUNNER_TEMP "upstream-install.ps1"
           Set-Content -Path $InstallScriptFile -Value $InstallScript -NoNewline
 
@@ -67,7 +72,7 @@ jobs:
 
           $DownloadUrl = "https://github.com/clockworklabs/SpacetimeDB/releases/latest/download/$AssetName"
           $Executable = Join-Path $env:RUNNER_TEMP "spacetime-install.exe"
-          Invoke-WebRequest $DownloadUrl -OutFile $Executable -UseBasicParsing
+          Invoke-WebRequest $DownloadUrl -OutFile $Executable -UseBasicParsing -MaximumRetryCount 5 -RetryIntervalSec 3
 
           # The one substitution for the confirmation a human answers by
           # hand -- `spacetime-install.exe` (upstream `crates/update/src/
@@ -107,21 +112,25 @@ jobs:
       - name: spacetime --version
         id: verify
         timeout-minutes: 1
-        shell: pwsh
+        shell: bash
         run: |
-          # `spacetime --version` prints several lines -- $out is a
-          # PowerShell array, and `-match`/`-notmatch` on an array is
-          # elementwise, returning the (possibly non-empty, so truthy)
-          # array of elements that individually don't match, even when
-          # one element clearly does. -join into one string first (real
-          # CI evidence, story 4.20: this exact bug, never exercised
-          # while the step before it hung every run).
-          $out = (spacetime --version) -join "`n"
-          Write-Host $out
-          if ($out -notmatch "2\.9\.\d+") {
-            Write-Error "expected spacetime --version to report 2.9.x, got: $out"
+          # The expected version is derived from server/README.md's own
+          # `spacetime version use` line, never hard-coded here (Quentin's
+          # direction): the same single-source rule
+          # scripts/ci/install-spacetimedb-cli.sh follows for Linux, so a
+          # version bump stays a one-file edit instead of a two-file edit
+          # this step's own regex silently falls out of step with.
+          EXPECTED_VERSION="$(grep -oE 'spacetime version use [0-9]+\.[0-9]+' server/README.md | tail -n1 | awk '{print $4}')"
+          if [ -z "$EXPECTED_VERSION" ]; then
+            echo "::error::could not derive the expected version from server/README.md's 'spacetime version use' line" >&2
             exit 1
-          }
+          fi
+          OUT="$(spacetime --version)"
+          echo "$OUT"
+          if ! printf '%s\n' "$OUT" | grep -qE "version ${EXPECTED_VERSION//./\\.}\."; then
+            echo "::error::expected spacetime --version to report ${EXPECTED_VERSION}.x, got: $OUT" >&2
+            exit 1
+          fi
 
       # A weekly schedule reports to nobody by default -- the Actions tab
       # is not something anyone watches. On a scheduled or manually

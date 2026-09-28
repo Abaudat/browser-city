@@ -235,8 +235,12 @@ if [ -z "$REPORT_HEADER" ]; then
   FAILED=1
 else
   IF_LINES="$(printf '%s\n' "$REPORT_HEADER" | grep -E '^ *if:' || true)"
-  if [ -z "$IF_LINES" ] || ! printf '%s' "$IF_LINES" | grep -qi 'cancelled'; then
-    echo "check-deploy-workflow: FAIL -- 'report-failure' job's if: condition does not account for a cancelled() job -- a timeout-minutes expiry ends a job 'cancelled', not 'failure' (NFR49), and must be reported the same way" >&2
+  # A bare substring check for "cancelled" would pass `!cancelled()`, the
+  # one spelling that means the opposite (Tim's direction, cycle 1) --
+  # require the literal `contains(needs.*.result, 'cancelled')` predicate
+  # instead, the only form that actually reports one.
+  if [ -z "$IF_LINES" ] || ! printf '%s' "$IF_LINES" | grep -qE "contains\(needs\.\*\.result,[[:space:]]*'cancelled'\)"; then
+    echo "check-deploy-workflow: FAIL -- 'report-failure' job's if: condition does not contain a contains(needs.*.result, 'cancelled') check -- a timeout-minutes expiry ends a job 'cancelled', not 'failure' (NFR49), and must be reported the same way" >&2
     FAILED=1
   fi
 fi

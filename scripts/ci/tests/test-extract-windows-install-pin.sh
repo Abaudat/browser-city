@@ -5,7 +5,7 @@
 set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 . "$TEST_DIR/harness.sh"
-EXTRACT_PIN="$TEST_DIR/../../../scripts/ci/extract-windows-install-pin.sh"
+EXTRACT_PIN="$TEST_DIR/../extract-windows-install-pin.sh"
 DEFAULT_FIRST_LINE="iwr https://windows.spacetimedb.com -useb | iex"
 
 write_good_readme() {
@@ -29,17 +29,15 @@ MD
 echo "green: the first line matches, prints everything after it"
 GOOD="$(fake_dir)/README.md"
 write_good_readme "$GOOD"
-check_out "prints exactly the two pinned-version lines" 0 \
-  'spacetime version install 2.9.0
-spacetime version use 2.9.0' \
-  bash "$EXTRACT_PIN" "$GOOD"
+EXPECTED='spacetime version install 2.9.0
+spacetime version use 2.9.0'
+check "prints exactly the two pinned-version lines" 0 bash -c \
+  '[ "$(bash "$1" "$2")" = "$3" ]' _ "$EXTRACT_PIN" "$GOOD" "$EXPECTED"
 
 echo
 echo "green: an explicit expected-first-line argument is honoured"
-check_out "still just the remaining lines" 0 \
-  'spacetime version install 2.9.0
-spacetime version use 2.9.0' \
-  bash "$EXTRACT_PIN" "$GOOD" "$DEFAULT_FIRST_LINE"
+check "still just the remaining lines" 0 bash -c \
+  '[ "$(bash "$1" "$2" "$3")" = "$4" ]' _ "$EXTRACT_PIN" "$GOOD" "$DEFAULT_FIRST_LINE" "$EXPECTED"
 
 echo
 echo "red: the README's first line has drifted from what the workflow substitutes"
