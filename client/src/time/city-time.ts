@@ -1,6 +1,6 @@
 // The in-city clock's pure arithmetic (FR1-FR3): the client's own
 // implementation of `sim::time::city_time`, pinned to it by
-// `fixtures/city-clock-conformance.v1.json` (NFR30). BigInt throughout, so
+// `fixtures/city-clock-conformance.v2.json` (NFR30). BigInt throughout, so
 // no `|0`/`>>` truncation or float rounding can creep in; the rate always
 // comes from the generated defs, never a literal here.
 
@@ -30,14 +30,17 @@ function divMod(a: bigint, b: bigint): [bigint, bigint] {
 
 /** City time at `nowMicros` for a clock whose day 0, 00:00 is `epochMicros`
  * (both microseconds since the Unix epoch, as the SDK's `Timestamp` carries
- * them). Total: an instant before the epoch still decomposes correctly. */
+ * them), running at `speed` times the base rate (the `world_clock` row's
+ * `speed`, always a divisor of the minute's real microseconds). Total: an instant before the epoch still decomposes correctly. */
 export function cityTime(
   epochMicros: bigint,
   nowMicros: bigint,
   realMsPerCityMinute: number,
+  speed: number,
 ): CityTime {
-  const [elapsedMs] = divMod(nowMicros - epochMicros, 1000n);
-  const [totalMinutes, intoMinute] = divMod(elapsedMs, BigInt(realMsPerCityMinute));
+  const minuteMicros = (BigInt(realMsPerCityMinute) * 1000n) / BigInt(Math.max(1, speed));
+  const [totalMinutes, intoMicros] = divMod(nowMicros - epochMicros, minuteMicros);
+  const [intoMinute] = divMod(intoMicros, 1000n);
   const minutesPerDay = BigInt(MINUTES_PER_HOUR * HOURS_PER_DAY);
   const [day, minuteOfDay] = divMod(totalMinutes, minutesPerDay);
   const [, weekday] = divMod(day, DAYS_PER_WEEK);

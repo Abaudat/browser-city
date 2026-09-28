@@ -4,6 +4,7 @@
 //! `institutions`/`matters` are not yet files because nothing needs one
 //! yet, not because they were forgotten.
 
+pub mod cadences;
 pub mod citizen;
 pub mod clock;
 pub mod codes;
@@ -11,4 +12,6 @@ pub mod identity;
 pub mod ops;
 pub mod restore;
 pub mod schedules;
+#[cfg(feature = "time-control")]
+pub mod time_control;
 pub mod world;

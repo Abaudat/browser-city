@@ -1,4 +1,4 @@
-//! Regenerates `fixtures/city-clock-conformance.v1.json`. Run via
+//! Regenerates `fixtures/city-clock-conformance.v2.json`. Run via
 //! `cargo run -p bounds --bin regen-city-clock-fixture`;
 //! `bounds/tests/city_clock_fixture_current.rs` fails CI if the committed
 //! file goes stale.

@@ -8,6 +8,7 @@ export class CityClock {
   readonly #server: ServerClock;
   #realMsPerCityMinute: number | undefined;
   #epochMicros: bigint | undefined;
+  #speed = 1;
 
   constructor(server: ServerClock) {
     this.#server = server;
@@ -18,10 +19,11 @@ export class CityClock {
     this.#realMsPerCityMinute = realMsPerCityMinute;
   }
 
-  /** Called with the subscribed `world_clock` row's `epoch_at`, on insert
-   * and on any later rewrite. */
-  setEpoch(epochMicros: bigint): void {
+  /** Called with the subscribed `world_clock` row's `epoch_at` and
+   * `speed`, on insert and on any later rewrite. */
+  setClock(epochMicros: bigint, speed: number): void {
     this.#epochMicros = epochMicros;
+    this.#speed = speed;
   }
 
   /** `undefined` until the rate, the epoch and a server sample are known. */
@@ -31,6 +33,6 @@ export class CityClock {
     if (this.#epochMicros === undefined || serverNow === undefined || rate === undefined) {
       return undefined;
     }
-    return cityTime(this.#epochMicros, serverNow, rate);
+    return cityTime(this.#epochMicros, serverNow, rate, this.#speed);
   }
 }

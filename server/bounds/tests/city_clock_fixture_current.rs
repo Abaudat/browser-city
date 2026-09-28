@@ -1,4 +1,4 @@
-//! Keeps `fixtures/city-clock-conformance.v1.json` current, and proves
+//! Keeps `fixtures/city-clock-conformance.v2.json` current, and proves
 //! `sim::time` agrees with every hand-typed row in it.
 
 use bounds::city_clock_fixture::{build_fixture_document, fixture_path};
@@ -29,13 +29,15 @@ fn sim_time_matches_every_city_clock_case() {
         let t = sim::time::city_time(
             c.epoch_micros.parse().unwrap(),
             c.now_micros.parse().unwrap(),
+            c.speed,
         );
         assert_eq!(
             (t.day, t.hour, t.minute, t.weekday, t.real_ms_into_minute),
             (c.day, c.hour, c.minute, c.weekday, c.real_ms_into_minute),
-            "epoch {} now {}",
+            "epoch {} now {} speed {}",
             c.epoch_micros,
-            c.now_micros
+            c.now_micros,
+            c.speed
         );
     }
 }

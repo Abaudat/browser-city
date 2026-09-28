@@ -1,5 +1,5 @@
 //! The in-city clock's one durable row (FR1-FR3). In-city time is
-//! `sim::time::city_time(epoch_at, now)`, evaluated on demand by whoever
+//! `sim::time::city_time(epoch_at, now, speed)`, evaluated on demand by whoever
 //! needs it; nothing ticks and nothing is broadcast per minute.
 
 use spacetimedb::{ReducerContext, Table, Timestamp};
@@ -14,6 +14,21 @@ pub struct WorldClock {
     // `pub`: `tables::restore::restore_world_clock` constructs this row.
     pub id: u8,
     pub epoch_at: Timestamp,
+    /// The clock multiplier (FR163), 1 in production: the only writer is
+    /// the `time-control` feature's `set_clock_speed`.
+    #[default(1)]
+    pub speed: u32,
+}
+
+/// The clock row's epoch (micros) and speed -- `None` before `init`.
+pub fn read_clock(ctx: &ReducerContext) -> Option<(i64, u32)> {
+    let row = ctx.db.world_clock().id().find(0)?;
+    Some((row.epoch_at.to_micros_since_unix_epoch(), row.speed))
+}
+
+/// The current multiplier; 1 where no row exists yet.
+pub fn current_speed(ctx: &ReducerContext) -> u32 {
+    read_clock(ctx).map_or(1, |(_, speed)| speed)
 }
 
 /// Writes the epoch. Called from `init` only, and never overwrites: a
@@ -26,7 +41,11 @@ pub fn record_epoch_from_init(ctx: &ReducerContext) -> Timestamp {
         Some(row) => row.epoch_at,
         None => {
             let epoch_at = ctx.timestamp;
-            ctx.db.world_clock().insert(WorldClock { id: 0, epoch_at });
+            ctx.db.world_clock().insert(WorldClock {
+                id: 0,
+                epoch_at,
+                speed: 1,
+            });
             epoch_at
         }
     }

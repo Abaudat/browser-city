@@ -1050,6 +1050,15 @@
           "unique": false,
           "has_default": false,
           "indexed": false
+        },
+        {
+          "name": "speed",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
         }
       ]
     },

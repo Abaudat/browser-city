@@ -8,6 +8,7 @@ const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const RATE = 2500;
 
 interface ClockCase {
+  speed: number;
   epoch_micros: string;
   now_micros: string;
   day: number;
@@ -18,7 +19,7 @@ interface ClockCase {
 }
 
 const fixture = JSON.parse(
-  readFileSync(`${REPO_ROOT}fixtures/city-clock-conformance.v1.json`, "utf8"),
+  readFileSync(`${REPO_ROOT}fixtures/city-clock-conformance.v2.json`, "utf8"),
 ) as { real_ms_per_city_minute: number; cases: ClockCase[] };
 
 const defsJson = JSON.parse(readFileSync(`${REPO_ROOT}client/public/defs/defs.json`, "utf8")) as {
@@ -28,7 +29,7 @@ const defsJson = JSON.parse(readFileSync(`${REPO_ROOT}client/public/defs/defs.js
 describe("city constants", () => {
   it("the rate is exact: 24 hours of 60 minutes is one real hour (FR1)", () => {
     expect(24 * 60 * defsJson.real_ms_per_city_minute).toBe(3_600_000);
-    expect(cityTime(0n, 150_000_000n, defsJson.real_ms_per_city_minute).hour).toBe(1);
+    expect(cityTime(0n, 150_000_000n, defsJson.real_ms_per_city_minute, 1).hour).toBe(1);
   });
 
   it("the fixture and the generated defs agree on the rate", () => {
@@ -47,8 +48,8 @@ describe("cityTime conformance with sim::time", () => {
   });
 
   for (const [i, c] of fixture.cases.entries()) {
-    it(`case ${i}: epoch ${c.epoch_micros} now ${c.now_micros}`, () => {
-      const t = cityTime(BigInt(c.epoch_micros), BigInt(c.now_micros), RATE);
+    it(`case ${i}: epoch ${c.epoch_micros} now ${c.now_micros} speed ${c.speed}`, () => {
+      const t = cityTime(BigInt(c.epoch_micros), BigInt(c.now_micros), RATE, c.speed);
       expect(t).toEqual({
         day: c.day,
         hour: c.hour,
@@ -68,8 +69,8 @@ describe("cityTime properties", () => {
         fc.bigInt({ min: 0n, max: 2n ** 50n }),
         fc.integer({ min: 0, max: 10_000 }),
         (epoch, t, days) => {
-          const a = cityTime(epoch, epoch + t, RATE);
-          const b = cityTime(epoch, epoch + t + BigInt(days) * 86_400_000_000n, RATE);
+          const a = cityTime(epoch, epoch + t, RATE, 1);
+          const b = cityTime(epoch, epoch + t + BigInt(days) * 86_400_000_000n, RATE, 1);
           expect([a.hour, a.minute, a.realMsIntoMinute]).toEqual([
             b.hour,
             b.minute,
@@ -86,8 +87,8 @@ describe("cityTime properties", () => {
         fc.bigInt({ min: -(2n ** 60n), max: 2n ** 60n }),
         fc.bigInt({ min: -(2n ** 60n), max: 2n ** 60n }),
         (epoch, now) => {
-          const t = cityTime(epoch, now, RATE);
-          const u = cityTime(epoch, now + BigInt(RATE) * 1000n, RATE);
+          const t = cityTime(epoch, now, RATE, 1);
+          const u = cityTime(epoch, now + BigInt(RATE) * 1000n, RATE, 1);
           const total = (x: typeof t) => x.day * 1440 + x.hour * 60 + x.minute;
           expect(total(u) - total(t)).toBe(1);
           expect(t.hour).toBeGreaterThanOrEqual(0);

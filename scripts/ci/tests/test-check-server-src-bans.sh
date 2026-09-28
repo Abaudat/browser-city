@@ -51,5 +51,18 @@ mkdir -p "$d/generated"
 printf '%s\n' 'let x = row.unwrap();' > "$d/generated/skip.rs"
 check "generated/ is excluded" 0 bash "$CHECK" "$d"
 
+d="$(fake_dir)"
+printf '%s
+' 'let at = ctx.timestamp;' > "$d/cadences.rs"
+check "ctx.timestamp is banned in cadences.rs" 1 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s
+' '//! never reads ctx.timestamp' 'pub fn maintenance(_ctx: &ReducerContext, _m: i64) {}' > "$d/cadences.rs"
+check "ctx.timestamp named only in a cadences.rs comment passes" 0 bash "$CHECK" "$d"
+
+d="$(plant 'let at = ctx.timestamp;')"
+check "ctx.timestamp stays allowed outside cadences.rs" 0 bash "$CHECK" "$d"
+
 summary
 exit $?

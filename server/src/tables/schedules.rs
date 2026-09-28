@@ -30,7 +30,8 @@
 
 use spacetimedb::{ReducerContext, ScheduleAt, Table, Timestamp};
 
-use super::clock::world_clock;
+use super::cadences;
+use super::clock::{current_speed, read_clock};
 
 /// Only the module's own scheduler may invoke a scheduled reducer --
 /// otherwise any client could call it directly, which is a security hole,
@@ -83,6 +84,7 @@ fn arm_cadence(
     let (target_micros, missed) = sim::cadence::next_target(
         origin_micros,
         period_ms,
+        current_speed(ctx),
         ctx.timestamp.to_micros_since_unix_epoch(),
     );
     insert(ScheduleAt::Time(Timestamp::from_micros_since_unix_epoch(
@@ -268,7 +270,7 @@ fn arm_maintenance_schedule(ctx: &ReducerContext, origin_micros: i64) -> (i64, u
 /// `missed` (NFR41: the whole quantity below is `Copy`/plain arithmetic,
 /// nothing here can panic) both accumulated across the cadence's whole
 /// life -- an upsert, since the very first fire creates this row.
-fn record_cadence_fire(
+pub(super) fn record_cadence_fire(
     ctx: &ReducerContext,
     cadence: u32,
     origin_micros: i64,
@@ -301,11 +303,15 @@ fn record_cadence_fire(
 #[spacetimedb::reducer]
 pub fn run_maintenance(ctx: &ReducerContext, row: MaintenanceSchedule) -> Result<(), String> {
     require_scheduler(ctx)?;
-    // NFR18: this tick writes only its own bookkeeping --
-    // maintenance_schedule (re-armed below) and cadence_liveness. No
-    // ledger or world table; the next story that wants this tick to
-    // "just update" something has to delete this sentence to do it.
     let origin_micros = schedule_at_micros(row.scheduled_at)?;
+    // The work is a function of the city minute this fire is for, never
+    // of the real time it happened to run at.
+    let (epoch_micros, speed) =
+        read_clock(ctx).ok_or_else(|| "world_clock has no row -- init did not run".to_string())?;
+    cadences::maintenance(
+        ctx,
+        sim::cadence::city_minute_of(epoch_micros, speed, origin_micros),
+    );
     let (_next_target_micros, missed) = arm_maintenance_schedule(ctx, origin_micros);
     record_cadence_fire(ctx, cadence_code::MAINTENANCE, origin_micros, missed);
     Ok(())
@@ -330,14 +336,8 @@ pub fn arm_every_cadence_from(ctx: &ReducerContext, epoch_micros: i64) {
 /// already has the epoch in hand and calls [`arm_every_cadence_from`]
 /// directly instead.
 pub fn arm_every_cadence(ctx: &ReducerContext) -> Result<(), String> {
-    let epoch_micros = ctx
-        .db
-        .world_clock()
-        .id()
-        .find(0)
-        .ok_or_else(|| "world_clock has no row -- init did not run".to_string())?
-        .epoch_at
-        .to_micros_since_unix_epoch();
+    let (epoch_micros, _speed) =
+        read_clock(ctx).ok_or_else(|| "world_clock has no row -- init did not run".to_string())?;
     arm_every_cadence_from(ctx, epoch_micros);
     Ok(())
 }
@@ -380,4 +380,88 @@ pub fn disarm_all_scheduled_tables(ctx: &ReducerContext) {
     disarm!(economy_schedule);
     disarm!(growth_schedule);
     disarm!(maintenance_schedule);
+}
+
+/// Replays every fire a forward clock jump skips, through the same
+/// bodies the live loop calls, in ascending city minute (ties in walk
+/// order), recording each in `cadence_liveness` with its target
+/// expressed in the post-jump epoch `new_epoch_micros`. Refuses --
+/// before anything is written -- when the jump holds more than
+/// `sim::time::MAX_JUMP_TICKS` ticks, or when a scheduled table this
+/// walker does not own has a pending row. The caller (`time_control`)
+/// runs it inside the one reducer transaction, so any `Err` rolls the
+/// whole jump back.
+///
+/// One `walk!`/`refuse!` invocation per scheduled table:
+/// `bounds/tests/schedules_coverage.rs` requires every scheduled
+/// accessor to appear here exactly once, so a cadence added later cannot
+/// be silently skipped by a jump.
+#[cfg(feature = "time-control")]
+pub fn replay_skipped_cadences(
+    ctx: &ReducerContext,
+    epoch_micros: i64,
+    speed: u32,
+    jump_micros: i64,
+    new_epoch_micros: i64,
+) -> Result<(), String> {
+    type Body = fn(&ReducerContext, i64);
+    let mut walked: Vec<(u32, i64, Body)> = Vec::new();
+    macro_rules! walk {
+        ($accessor:ident, $code:expr, $period_ms:expr, $body:expr) => {
+            if ctx.db.$accessor().iter().count() > 1 {
+                return Err(format!(
+                    "{} has more than its one armed row",
+                    stringify!($accessor)
+                ));
+            }
+            walked.push(($code, $period_ms, $body));
+        };
+    }
+    macro_rules! refuse {
+        ($accessor:ident) => {
+            if ctx.db.$accessor().iter().next().is_some() {
+                return Err(format!(
+                    "{} has a pending row a clock jump cannot replay",
+                    stringify!($accessor)
+                ));
+            }
+        };
+    }
+    refuse!(citizen_transition_schedule);
+    refuse!(metrics_sample_schedule);
+    refuse!(budget_review_schedule);
+    refuse!(world_clock_schedule);
+    refuse!(economy_schedule);
+    refuse!(growth_schedule);
+    walk!(
+        maintenance_schedule,
+        cadence_code::MAINTENANCE,
+        sim::cadence::MAINTENANCE_PERIOD_MS,
+        cadences::maintenance
+    );
+
+    let periods: Vec<i64> = walked.iter().map(|w| w.1).collect();
+    let plan = sim::cadence::replay_plan(
+        epoch_micros,
+        &periods,
+        speed,
+        ctx.timestamp.to_micros_since_unix_epoch(),
+        jump_micros,
+        sim::time::MAX_JUMP_TICKS,
+    )
+    .map_err(|total| {
+        format!(
+            "this jump would replay {total} cadence ticks, over the {} allowed -- jump less",
+            sim::time::MAX_JUMP_TICKS
+        )
+    })?;
+    for replay in plan {
+        let Some(&(code, period_ms, body)) = walked.get(replay.cadence) else {
+            return Err("replay plan names a cadence that is not walked".to_string());
+        };
+        body(ctx, replay.city_minute);
+        let target = sim::cadence::grid_point(new_epoch_micros, period_ms, speed, replay.index);
+        record_cadence_fire(ctx, code, target, 0);
+    }
+    Ok(())
 }
