@@ -904,7 +904,9 @@ max = 1000
 # post office (already at warehouse/builders yard/food plant);
 # `mechanic` at transit office (already at vehicle repair garage).
 # Measured, `cargo run -p bounds --release --bin measure-generation`:
-# mean 61.3, stddev 3.3 over 5,000 seeds -- 11% short of 69, a real,
+# mean 61.2, stddev 3.4 over 5,000 seeds (re-measured story 15.9, after
+# cafes moved onto `cafe_present` and the two `building_types` placement
+# fixes) -- 11% short of 69, a real,
 # disclosed content-depth gap (institutional land is a small, fixed
 # share of the site, and several trades genuinely belong to only one or
 # two building types) that closes as job stories add building types,
@@ -931,11 +933,12 @@ max = 1000
 # count_mean_tolerance_percent` above lacks entirely -- the pooled mean
 # alone lets a single unlucky city sit far below it and nothing notices.
 # A weak any-seed floor, the same sigma-margin rule `generation.
-# envelopes.count_tolerance_percent` states. Re-measured after reverting
-# the dishonest trade-sharing (PR #317 cycle 4): mean 61.3, stddev 3.3
-# over 5,000 seeds; mean - 5.5*stddev = 43.15, and the real measured
-# min over that same run is 46 -- comfortably above it this time. 40
-# leaves real margin under both. Re-derive after every retune.
+# envelopes.count_tolerance_percent` states. Re-measured after
+# the cafe move and placement fixes (story 15.9, `measure-generation`,
+# 5,000 genuinely random seeds): mean 61.2, stddev 3.4; mean -
+# 5.5*stddev = 42.5, and the real measured min over that same run is
+# 44 -- above it. 40 leaves real margin under both. Re-derive after
+# every retune.
 key = "generation.building_types.profession_count_per_city_min"
 value = 40
 min = 1

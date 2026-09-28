@@ -41,6 +41,22 @@
 //! the player-felt figure (Artie's direction), since every worst pair
 //! measured so far has one foot on the boundary, where the city stops
 //! and almost nobody stands.
+//!
+//! Story 15.9 (the missing-cafe flake, Quentin's direction): a separate
+//! `missing_tag_seed_count` sweep, over its own seed range (an optional
+//! CLI argument, `cargo run -p bounds --release --bin measure-generation
+//! -- 1000000`; defaults to [`MISSING_TAG_SEED_COUNT_DEFAULT`] when not
+//! given), counts, for every committed `[[distribution]]` row this pass
+//! actually feeds and for every tag `inv_generation_required_
+//! institutions_are_present_when_their_own_target_is_nonzero`'s own
+//! hand-named list still names (`shop`, never distributed), the seeds
+//! where the basis/ratio target is at least 1 but nothing of that
+//! subject was actually placed -- printing the miss count and up to ten
+//! offending seeds per row/tag. Seeds are drawn the same way as every
+//! other sweep in this binary: `seed_from_ids` on the loop index, spread
+//! over the full `u64` space, never a sequential `0..N` scan -- the same
+//! distribution `any::<u64>()` draws from in the proptest invariant this
+//! sweep is standing in for at a much larger sample size.
 
 use std::collections::BTreeMap;
 
@@ -67,6 +83,18 @@ const MEASURE_SEED_SALT: u64 = 0xB0F0_5EED;
 /// rather than 5,000 further ones.
 const MEASURE_BUILDING_TYPE_SEED_SALT: u64 = 0xB0F0_5EE1;
 
+/// The missing-tag sweep's own default seed count when no CLI argument
+/// is given -- large enough to be a real check on every local run
+/// without this binary's own wall-clock growing noticeably; the
+/// 1,000,000-seed run a retune actually needs is a deliberate, explicit
+/// argument (module doc above), never this default.
+const MISSING_TAG_SEED_COUNT_DEFAULT: u64 = 5_000;
+/// A third, distinct salt for the missing-tag sweep -- its own index
+/// range overlaps the two loops above, so reusing either salt would
+/// measure the same cities again under a third name rather than fresh
+/// ones.
+const MEASURE_MISSING_TAG_SEED_SALT: u64 = 0xB0F0_5EE2;
+
 /// This loop index's own measured seed -- spread over the full `u64`
 /// space by `seed_from_ids` (see the module doc above), never the index
 /// itself.
@@ -76,6 +104,10 @@ fn mixed_seed(index: u64) -> u64 {
 
 fn mixed_building_type_seed(index: u64) -> u64 {
     seed_from_ids(MEASURE_BUILDING_TYPE_SEED_SALT, index)
+}
+
+fn mixed_missing_tag_seed(index: u64) -> u64 {
+    seed_from_ids(MEASURE_MISSING_TAG_SEED_SALT, index)
 }
 
 /// (excess cells, seed, node a, node b) -- one detour-excess extreme,
@@ -304,7 +336,36 @@ fn main() {
     // >=5 distinct workplaces -- pooled (meaned) over every seed below,
     // the same two-step AC4 shape as building/workplace count.
     let mut deep_profession_count = Vec::with_capacity(BUILDING_TYPE_SEED_COUNT as usize);
+    // Story 15.9: the per-city barista employer count (an FR14 launch job,
+    // posted only at cafes) -- its own minimum is what `cafe_present`'s
+    // comment and `inv_generation_barista_has_at_least_min_employers` hold.
+    let mut barista_employers = Vec::with_capacity(BUILDING_TYPE_SEED_COUNT as usize);
     let mut profession_sum: BTreeMap<&str, u64> = BTreeMap::new();
+
+    // Every committed distribution row's own actual/expected ratio
+    // (`sim::rules::evaluate`'s own tolerance-band check), pooled and
+    // per-seed-worst -- the same figures `welfare_office_present`'s and
+    // `shelter_present`'s own comments were measured with (Tim's
+    // direction, story 15.9), re-derivable for every row rather than
+    // hand-copied from a one-off scan. Only seeds with a nonzero
+    // expected count enter this (a row with `expected == 0` never has
+    // a tolerance band to be inside or outside of).
+    let mut dist_rows_for_ratio: Vec<sim::rules::DistributionRow> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .filter(|row| {
+            content
+                .building_types
+                .iter()
+                .any(|b| b.tags.contains(&row.per))
+        })
+        .collect();
+    dist_rows_for_ratio.sort_by_key(|d| d.id);
+    let mut ratio_actual_sum: BTreeMap<&str, u64> = BTreeMap::new();
+    let mut ratio_expected_sum: BTreeMap<&str, u64> = BTreeMap::new();
+    let mut ratio_min_percent: BTreeMap<&str, f64> = BTreeMap::new();
+    let mut ratio_min_percent_seed: BTreeMap<&str, u64> = BTreeMap::new();
 
     for i in 0..BUILDING_TYPE_SEED_COUNT {
         let seed = mixed_building_type_seed(i);
@@ -336,10 +397,27 @@ fn main() {
                 .and_modify(|m| *m = (*m).min(count))
                 .or_insert(count);
         }
+        barista_employers.push(employers_this_city.get("barista").copied().unwrap_or(0) as i64);
         deep_profession_count
             .push(employers_this_city.values().filter(|&&c| c >= 5).count() as i64);
         for (&p, &c) in &employers_this_city {
             *profession_sum.entry(p).or_insert(0) += c;
+        }
+        for row in &dist_rows_for_ratio {
+            let basis = tag_counts.get(&row.per).copied().unwrap_or(0).max(0) as u64;
+            let expected = basis / (row.ratio.max(1) as u64);
+            if expected == 0 {
+                continue;
+            }
+            let actual = tag_counts.get(&row.subject).copied().unwrap_or(0).max(0) as u64;
+            *ratio_actual_sum.entry(row.key).or_insert(0) += actual;
+            *ratio_expected_sum.entry(row.key).or_insert(0) += expected;
+            let percent = actual as f64 * 100.0 / expected as f64;
+            let slot = ratio_min_percent.entry(row.key).or_insert(f64::MAX);
+            if percent < *slot {
+                *slot = percent;
+                ratio_min_percent_seed.insert(row.key, seed);
+            }
         }
         if let Err(e) = d.check_rules(&content) {
             rule_violation_seeds += 1;
@@ -352,6 +430,26 @@ fn main() {
     println!(
         "seeds (0..{BUILDING_TYPE_SEED_COUNT}) with a real rule violation: {rule_violation_seeds}"
     );
+    println!(
+        "distribution row actual/expected ratio, pooled and per-seed worst, over seeds with a nonzero expected count (0..{BUILDING_TYPE_SEED_COUNT}):"
+    );
+    for row in &dist_rows_for_ratio {
+        let (Some(&actual_sum), Some(&expected_sum)) = (
+            ratio_actual_sum.get(row.key),
+            ratio_expected_sum.get(row.key),
+        ) else {
+            println!("  {}: expected is 0 for every seed in this range", row.key);
+            continue;
+        };
+        let pooled_percent = actual_sum as f64 * 100.0 / expected_sum as f64;
+        println!(
+            "  {}: pooled actual/expected {pooled_percent:.1}% (actual sum {actual_sum}, expected sum {expected_sum}), worst single seed {:.1}% at seed {} (committed tolerance_percent allows down to {}%)",
+            row.key,
+            ratio_min_percent[row.key],
+            ratio_min_percent_seed[row.key],
+            100u32.saturating_sub(row.tolerance_percent),
+        );
+    }
     println!("per-tag placed count, min and pooled mean over 0..{BUILDING_TYPE_SEED_COUNT}:");
     for (&tag, &min) in &per_tag_min {
         let mean = per_tag_sum[&tag] as f64 / BUILDING_TYPE_SEED_COUNT as f64;
@@ -368,6 +466,102 @@ fn main() {
             println!("  {p}: {mean:.2}");
         }
     }
+    Stats::new(barista_employers).print("barista_employers_per_city");
     Stats::new(deep_profession_count)
         .print("professions_employed_by_5_plus_workplaces_per_city (Scale Baseline target ~69)");
+
+    // -- story 15.9: the missing-cafe flake, generalised -----------------
+    let missing_tag_seed_count: u64 = std::env::args()
+        .nth(1)
+        .map(|s| {
+            s.parse()
+                .unwrap_or_else(|e| panic!("seed count argument {s:?} is not a u64: {e}"))
+        })
+        .unwrap_or(MISSING_TAG_SEED_COUNT_DEFAULT);
+    // Mirrors `inv_generation_required_institutions_are_present_when_
+    // their_own_target_is_nonzero`'s own generic distribution loop, plus
+    // its hand-named list of tags no `[[distribution]]` row covers --
+    // `cafe` left that list in story 15.9 (it is a distribution row now)
+    // so only `shop` remains.
+    const AD_HOC_PRESENCE_TAGS: &[&str] = &["shop"];
+    let dist_rows = &dist_rows_for_ratio[..];
+    let ad_hoc_tag_ids: Vec<(&str, u32)> = AD_HOC_PRESENCE_TAGS
+        .iter()
+        .map(|&key| {
+            let id = defs::TAGS
+                .iter()
+                .find(|t| t.key == key)
+                .unwrap_or_else(|| panic!("committed tags must carry a '{key}' entry"))
+                .id;
+            (key, id)
+        })
+        .collect();
+
+    println!(
+        "\nmissing-tag sweep: {missing_tag_seed_count} seeds (distinct from every sweep above -- \
+         `cargo run -p bounds --release --bin measure-generation -- <n>` to change the count)"
+    );
+    let mut dist_misses: BTreeMap<&str, (u64, Vec<u64>)> = dist_rows
+        .iter()
+        .map(|r| (r.key, (0u64, Vec::new())))
+        .collect();
+    let mut ad_hoc_misses: BTreeMap<&str, (u64, Vec<u64>)> = ad_hoc_tag_ids
+        .iter()
+        .map(|&(key, _)| (key, (0u64, Vec::new())))
+        .collect();
+
+    for i in 0..missing_tag_seed_count {
+        let seed = mixed_missing_tag_seed(i);
+        let d = sim::generation::plan(seed, &cfg, &content).expect("pass 1 is total");
+        let mut tag_counts: BTreeMap<u32, u64> = BTreeMap::new();
+        for a in d.building_types.assignments() {
+            for &t in by_id[&a.building_type].tags {
+                *tag_counts.entry(t).or_insert(0) += 1;
+            }
+        }
+        for row in dist_rows {
+            let basis = tag_counts.get(&row.per).copied().unwrap_or(0);
+            let target = basis / (row.ratio.max(1) as u64);
+            if target == 0 {
+                continue;
+            }
+            let actual = tag_counts.get(&row.subject).copied().unwrap_or(0);
+            if actual == 0 {
+                let entry = dist_misses.get_mut(row.key).unwrap();
+                entry.0 += 1;
+                if entry.1.len() < 10 {
+                    entry.1.push(seed);
+                }
+            }
+        }
+        for &(key, tag_id) in &ad_hoc_tag_ids {
+            if tag_counts.get(&tag_id).copied().unwrap_or(0) == 0 {
+                let entry = ad_hoc_misses.get_mut(key).unwrap();
+                entry.0 += 1;
+                if entry.1.len() < 10 {
+                    entry.1.push(seed);
+                }
+            }
+        }
+    }
+
+    println!("distribution rows -- seeds with target >= 1 but 0 actually placed:");
+    for row in dist_rows {
+        let (count, seeds) = &dist_misses[row.key];
+        println!(
+            "  {}: {count} of {missing_tag_seed_count} (rate {:.6}%), offending seeds: {:?}",
+            row.key,
+            *count as f64 * 100.0 / missing_tag_seed_count as f64,
+            seeds
+        );
+    }
+    println!("ad hoc presence tags (never distributed) -- seeds with 0 placed:");
+    for &(key, _) in &ad_hoc_tag_ids {
+        let (count, seeds) = &ad_hoc_misses[key];
+        println!(
+            "  {key}: {count} of {missing_tag_seed_count} (rate {:.6}%), offending seeds: {:?}",
+            *count as f64 * 100.0 / missing_tag_seed_count as f64,
+            seeds
+        );
+    }
 }
