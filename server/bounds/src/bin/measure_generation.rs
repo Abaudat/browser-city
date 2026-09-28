@@ -57,11 +57,47 @@
 //! over the full `u64` space, never a sequential `0..N` scan -- the same
 //! distribution `any::<u64>()` draws from in the proptest invariant this
 //! sweep is standing in for at a much larger sample size.
+//!
+//! Story 15.10 (the detour-ratio flake, Tim's/Quentin's/Derek's
+//! direction): a fourth sweep, `detour_seed_count` (a second optional
+//! CLI argument, `cargo run -p bounds --release --bin measure-
+//! generation -- <missing_tag_seed_count> <detour_seed_count>`;
+//! defaults to [`DETOUR_SEED_COUNT_DEFAULT`] when not given, run at
+//! 1,000,000 for this story), its own salt, running only passes 1-2
+//! (land use, the street network -- never the full five-pass `plan`, a
+//! million runs of which is hours this one pass-2 statistic does not
+//! need). Per seed it computes exactly what CI asserts and nothing
+//! looser, both through `streets::detour_bound_violation` (Derek's
+//! max()-contract -- the same function `inv_generation_detour_ratio_
+//! bounded` and its pinned regression call through, never a second,
+//! hand-written copy of the comparison) over `detour_samples(DETOUR_
+//! SAMPLE_MAX_NODES)`, and `p99_ratio_pct` over `detour_samples(DETOUR_
+//! P99_SAMPLE_MAX_NODES)` (`inv_generation_p99_detour_ratio_bounded`'s).
+//! For each of the two committed ceilings it prints the miss count,
+//! miss rate, up to ten offending seeds, and the failure probability a
+//! [`CI_PROPTEST_CASES`]-case CI run implies (`1 - (1 - p)^cases`); when
+//! the miss count is zero, the rule-of-three upper bound (`3 / N` per
+//! seed) instead, since zero observed misses over N seeds is a bound,
+//! not a zero rate. Also prints the sampled worst ratio's own max and
+//! ten largest per-seed values among pairs at or beyond `GenerationConfig
+//! ::detour_ratio_takeover_distance_cells` (Derek's direction: that is
+//! the only range where the ratio is the binding bound, so it is the
+//! only figure `max_detour_percent` owes margin over), so its tail is
+//! visible the way `detour_excess_cells_sampled_14node`'s already is.
+//! The *exhaustive* version of that same figure (every non-both-
+//! boundary pair, not the cheap 14-node sample) is measured in the
+//! existing 50,000-seed loop above instead, alongside the exhaustive
+//! excess figures it already prints -- an exhaustive pairing inside a
+//! million-seed loop is what would make this sweep slow, not what a
+//! ratio statistic needs. Prints this sweep's own wall-clock too.
 
 use std::collections::BTreeMap;
+use std::time::Instant;
 
 use sim::generated::defs;
-use sim::generation::{GenerationConfig, GenerationContent, building_types, envelopes, streets};
+use sim::generation::{
+    GenerationConfig, GenerationContent, building_types, envelopes, land_use, streets,
+};
 use sim::rng::seed_from_ids;
 
 const SEED_COUNT: u64 = 50_000;
@@ -95,6 +131,26 @@ const MISSING_TAG_SEED_COUNT_DEFAULT: u64 = 5_000;
 /// ones.
 const MEASURE_MISSING_TAG_SEED_SALT: u64 = 0xB0F0_5EE2;
 
+/// The detour-bounds sweep's own default seed count when no second CLI
+/// argument is given (story 15.10) -- the same small-default/explicit-
+/// million shape as [`MISSING_TAG_SEED_COUNT_DEFAULT`].
+const DETOUR_SEED_COUNT_DEFAULT: u64 = 5_000;
+/// A fourth, distinct salt for the detour-bounds sweep -- its own index
+/// range overlaps the three loops above, so reusing any of them would
+/// measure the same cities again under a fourth name rather than fresh
+/// ones.
+const MEASURE_DETOUR_SEED_SALT: u64 = 0xB0F0_5EE3;
+
+/// `.github/workflows/ci.yml`'s own top-level `PROPTEST_CASES` (Tim's
+/// direction, story 15.10): the printed "implied CI failure probability"
+/// is only ever meaningful as a statement about CI's own case count, so
+/// it is named once here, with this pointer, rather than left as a bare
+/// `4096` repeated at every call site and once more in the doc comment
+/// above -- there is no build-time way to read the workflow file itself,
+/// so a named mirror is the right level, not a literal. Update this
+/// alongside that key if it ever moves.
+const CI_PROPTEST_CASES: u32 = 4096;
+
 /// This loop index's own measured seed -- spread over the full `u64`
 /// space by `seed_from_ids` (see the module doc above), never the index
 /// itself.
@@ -108,6 +164,10 @@ fn mixed_building_type_seed(index: u64) -> u64 {
 
 fn mixed_missing_tag_seed(index: u64) -> u64 {
     seed_from_ids(MEASURE_MISSING_TAG_SEED_SALT, index)
+}
+
+fn mixed_detour_seed(index: u64) -> u64 {
+    seed_from_ids(MEASURE_DETOUR_SEED_SALT, index)
 }
 
 /// (excess cells, seed, node a, node b) -- one detour-excess extreme,
@@ -206,6 +266,17 @@ fn main() {
     // worst case so far has one foot on the site edge, where the city
     // stops and almost nobody stands.
     let mut detour_excess_both_interior_max: DetourWorst = (i64::MIN, 0, (0, 0), (0, 0));
+    // Story 15.10 (Derek's direction): the exhaustive-pair worst ratio
+    // among pairs at or beyond `GenerationConfig::detour_ratio_takeover_
+    // distance_cells` -- the only range where the ratio term is the
+    // binding half of the max()-contract, so the only figure `max_
+    // detour_percent` owes margin over. The exhaustive pairing this
+    // needs is too slow for the 1,000,000-seed detour-bounds sweep
+    // below, so it rides this existing 50,000-seed loop instead.
+    // `DetourWorst.0` holds `ratio_pct()`, not excess, here.
+    let mut detour_ratio_exhaustive_worst: DetourWorst = (i64::MIN, 0, (0, 0), (0, 0));
+    let mut detour_ratio_exhaustive_top10: Vec<DetourWorst> = Vec::new();
+    let detour_takeover_distance = cfg.detour_ratio_takeover_distance_cells();
 
     for i in 0..SEED_COUNT {
         let seed = mixed_seed(i);
@@ -244,6 +315,21 @@ fn main() {
             && w.0 > detour_excess_both_interior_max.0
         {
             detour_excess_both_interior_max = w;
+        }
+        let seed_ratio_worst = exhaustive
+            .iter()
+            .filter(|s| s.manhattan >= detour_takeover_distance)
+            .map(|s| (s.ratio_pct(), seed, s.a, s.b))
+            .max_by_key(|&(ratio, ..)| ratio);
+        if let Some(w) = seed_ratio_worst {
+            if w.0 > detour_ratio_exhaustive_worst.0 {
+                detour_ratio_exhaustive_worst = w;
+            }
+            detour_ratio_exhaustive_top10.push(w);
+            detour_ratio_exhaustive_top10.sort_unstable_by_key(|&(ratio, ..)| ratio);
+            if detour_ratio_exhaustive_top10.len() > 10 {
+                detour_ratio_exhaustive_top10.remove(0);
+            }
         }
 
         let placed = em.placed_count();
@@ -323,6 +409,19 @@ fn main() {
         detour_excess_both_interior_max.2,
         detour_excess_both_interior_max.3
     );
+    println!(
+        "detour_ratio_pct_exhaustive_at_or_beyond_takeover ({detour_takeover_distance} cells) max: {}% at seed {} ({:?}-{:?}) -- the only range where the ratio term is the binding half of the max()-contract, so the only figure max_detour_percent owes margin over (story 15.10, Derek's direction)",
+        detour_ratio_exhaustive_worst.0,
+        detour_ratio_exhaustive_worst.1,
+        detour_ratio_exhaustive_worst.2,
+        detour_ratio_exhaustive_worst.3
+    );
+    println!(
+        "detour_ratio_pct_exhaustive_at_or_beyond_takeover top 10 per-seed worsts (ascending):"
+    );
+    for (ratio, seed, a, b) in &detour_ratio_exhaustive_top10 {
+        println!("  {ratio}% at seed {seed} ({a:?}-{b:?})");
+    }
 
     // -- story 3.4: building types -------------------------------------
     let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
@@ -562,6 +661,155 @@ fn main() {
             "  {key}: {count} of {missing_tag_seed_count} (rate {:.6}%), offending seeds: {:?}",
             *count as f64 * 100.0 / missing_tag_seed_count as f64,
             seeds
+        );
+    }
+
+    // -- story 15.10: the detour-ratio flake, generalised -----------------
+    let detour_seed_count: u64 = std::env::args()
+        .nth(2)
+        .map(|s| {
+            s.parse()
+                .unwrap_or_else(|e| panic!("detour seed count argument {s:?} is not a u64: {e}"))
+        })
+        .unwrap_or(DETOUR_SEED_COUNT_DEFAULT);
+    println!(
+        "\ndetour-bounds sweep: {detour_seed_count} seeds, passes 1-2 only (distinct from every \
+         sweep above -- a second CLI argument, `cargo run -p bounds --release --bin measure-\
+         generation -- <missing_tag_seed_count> <n>`, changes the count)"
+    );
+
+    // One unified miss counter (Derek's direction, story 15.10): the
+    // max()-contract replaces the old separate excess/ratio-AND-
+    // threshold checks with one expression, so there is one ceiling to
+    // count misses against here, not two -- `streets::detour_bound_
+    // violation`, the same function `detour_bounds_hold` (invariants.rs)
+    // and its pinned regression call through.
+    let mut detour_bound_miss = DetourMiss::new();
+    let mut p99_miss = DetourMiss::new();
+    // The sampled (14-node) worst ratio's own tail among pairs at or
+    // beyond the takeover distance (Derek's direction: the only range
+    // where the ratio term binds), so it is visible the way `detour_
+    // excess_cells_sampled_14node`'s already is -- the exhaustive
+    // equivalent rides the 50,000-seed loop above instead (`detour_
+    // ratio_pct_exhaustive_at_or_beyond_takeover`), never inside this
+    // million-seed loop.
+    let mut sampled_ratio_max: (i64, u64) = (i64::MIN, 0);
+    let mut sampled_ratio_top10: Vec<(i64, u64)> = Vec::new();
+
+    let detour_sweep_start = Instant::now();
+    for i in 0..detour_seed_count {
+        let seed = mixed_detour_seed(i);
+        let lu = land_use::run(seed, cfg.site(), &cfg).expect("pass 1 is total");
+        let net = streets::run(seed, &lu, &cfg);
+        let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+
+        if streets::detour_bound_violation(&samples, &cfg).is_some() {
+            detour_bound_miss.record(seed);
+        }
+
+        let seed_worst_takeover_ratio = samples
+            .iter()
+            .filter(|s| s.manhattan >= detour_takeover_distance)
+            .map(streets::DetourSample::ratio_pct)
+            .max();
+        if let Some(ratio) = seed_worst_takeover_ratio {
+            if ratio > sampled_ratio_max.0 {
+                sampled_ratio_max = (ratio, seed);
+            }
+            sampled_ratio_top10.push((ratio, seed));
+            sampled_ratio_top10.sort_unstable();
+            if sampled_ratio_top10.len() > 10 {
+                sampled_ratio_top10.remove(0);
+            }
+        }
+
+        let p99_samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
+        let p99 = streets::p99_ratio_pct(&p99_samples);
+        if p99 > cfg.p99_detour_percent as i64 {
+            p99_miss.record(seed);
+        }
+    }
+    let detour_sweep_elapsed = detour_sweep_start.elapsed();
+
+    print_ceiling_report(
+        "detour max()-contract (14-node sample)",
+        &detour_bound_miss,
+        detour_seed_count,
+    );
+    print_ceiling_report(
+        "p99_detour_percent (64-node sample)",
+        &p99_miss,
+        detour_seed_count,
+    );
+    println!(
+        "detour_ratio_pct_sampled_at_or_beyond_takeover ({detour_takeover_distance} cells) max: \
+         {}% at seed {}",
+        sampled_ratio_max.0, sampled_ratio_max.1
+    );
+    println!("detour_ratio_pct_sampled_at_or_beyond_takeover top 10 per-seed worsts (ascending):");
+    for (ratio, seed) in &sampled_ratio_top10 {
+        println!("  {ratio}% at seed {seed}");
+    }
+    println!(
+        "detour-bounds sweep wall-clock: {:.1}s ({:.3}ms/seed)",
+        detour_sweep_elapsed.as_secs_f64(),
+        detour_sweep_elapsed.as_secs_f64() * 1000.0 / detour_seed_count.max(1) as f64
+    );
+}
+
+/// One committed ceiling's own miss tally over the detour-bounds sweep --
+/// count and up to ten offending seeds, never every offending seed (the
+/// same shape as the missing-tag sweep's own `dist_misses`/`ad_hoc_
+/// misses` above).
+struct DetourMiss {
+    count: u64,
+    seeds: Vec<u64>,
+}
+
+impl DetourMiss {
+    fn new() -> Self {
+        DetourMiss {
+            count: 0,
+            seeds: Vec::new(),
+        }
+    }
+
+    fn record(&mut self, seed: u64) {
+        self.count += 1;
+        if self.seeds.len() < 10 {
+            self.seeds.push(seed);
+        }
+    }
+}
+
+/// Prints one ceiling's own miss count, rate and the failure probability
+/// a [`CI_PROPTEST_CASES`]-case CI run implies (`1 - (1 - p)^cases`) --
+/// and, when the miss count is zero, the rule-of-three upper bound on
+/// the per-seed miss probability (`3 / n`) instead, since zero observed
+/// misses over `n` seeds is a bound, never a zero rate (Quentin's
+/// direction, story 15.10: the doc comment and toml comment that read
+/// this output must state the observed count, `n` and the bound, never
+/// the word "zero" alone).
+fn print_ceiling_report(name: &str, miss: &DetourMiss, n: u64) {
+    let rate = miss.count as f64 / n as f64;
+    let ci_fail_prob = 1.0 - (1.0 - rate).powi(CI_PROPTEST_CASES as i32);
+    println!(
+        "  {name}: {} of {n} misses (rate {:.6}%), implied {CI_PROPTEST_CASES}-case CI failure \
+         probability {:.6}%, offending seeds: {:?}",
+        miss.count,
+        rate * 100.0,
+        ci_fail_prob * 100.0,
+        miss.seeds
+    );
+    if miss.count == 0 {
+        let rule_of_three_bound = 3.0 / n as f64;
+        let bound_ci_fail_prob = 1.0 - (1.0 - rule_of_three_bound).powi(CI_PROPTEST_CASES as i32);
+        println!(
+            "    zero observed misses over {n} seeds is a bound, not a zero rate -- rule-of-\
+             three upper bound on the per-seed miss probability: {:.6}% (implied \
+             {CI_PROPTEST_CASES}-case CI failure probability <= {:.4}%)",
+            rule_of_three_bound * 100.0,
+            bound_ci_fail_prob * 100.0
         );
     }
 }

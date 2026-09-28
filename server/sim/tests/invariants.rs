@@ -77,7 +77,7 @@ pub const INV_ESTIMATE_IS_ORIGIN_INDEPENDENT: &str = "translating both endpoints
 pub const INV_FASTER_MODE_NEVER_COSTS_MORE: &str = "a mode with a higher speed percent never returns a larger estimate, and a strictly smaller one over a non-zero distance when the percents differ enough to matter (FR131)";
 pub const INV_FLOOR_PENALTY_IS_ADDITIVE_AND_FLAT: &str = "changing floor adds exactly floor_change_penalty_milliminutes per floor crossed, whatever the mode or the horizontal distance (FR131)";
 pub const INV_GENERATION_MANHATTAN_BEATS_EUCLIDEAN: &str = "over a generated city's own sampled node pairs, Manhattan distance is a closer estimate of network distance than Euclidean, in total and on a clear majority of pairs (FR131)";
-pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, additive excess never exceeds max_detour_excess_cells, and (for pairs at least detour_long_pair_cells apart) BFS network distance never exceeds max_detour_percent of Manhattan distance, for any seed (FR110)";
+pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, BFS network distance never exceeds max(manhattan + max_detour_excess_cells, manhattan * max_detour_percent / 100), for any pair and any seed (FR110, story 15.10)";
 pub const INV_GENERATION_NOT_A_PERFECT_GRID: &str = "block width and height each take at least min_distinct_block_sizes distinct values, both junction kinds are present, and at least two street classes are present, for any seed (FR110, NFR8)";
 pub const INV_GENERATION_EXACT_TILING: &str = "every site cell is covered by exactly one block or by at least one street, and no two blocks overlap, for any seed (FR110)";
 pub const INV_GENERATION_INSTITUTIONAL_POCKETS_ARE_SMALL: &str = "at least institutional_min_pockets mutually non-adjacent (edge or corner) institutional components per site, none over institutional_max_pocket_share_percent of the site's own coarse-cell count, for any seed (FR110, Artie's direction)";
@@ -1744,6 +1744,39 @@ proptest! {
 // unoptimised/256 cases (the `coverage` job's own level) ~5s total
 // (~0.8ms/case). Both still comfortably inside their own job's budget,
 // so no per-property case-count pin is needed here either.
+
+/// `inv_generation_detour_ratio_bounded`'s own predicate body, lifted out
+/// so the proptest below and the pinned regression test
+/// (`seed_8872365549107643721_holds_the_detour_ceilings`) call through
+/// exactly the same bound rather than risk two copies of it drifting
+/// apart (Quentin's direction, story 15.10). The comparison itself lives
+/// in `streets::detour_bound_violation` (Derek's max()-contract, the
+/// same function `measure_generation.rs`'s own detour-bounds sweep calls
+/// -- one place, never two hand-written copies).
+fn detour_bounds_hold(seed: u64, cfg: &GenerationConfig) -> Result<(), String> {
+    let lu = land_use::run(seed, cfg.site(), cfg).unwrap();
+    let net = streets::run(seed, &lu, cfg);
+    let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+    if let Some(v) = streets::detour_bound_violation(&samples, cfg) {
+        return Err(format!(
+            "seed {seed}: {:?}-{:?} network {} over its own allowed {} (manhattan {}) -- \
+             max_detour_excess_cells/max_detour_percent are measured values (see generation.\
+             toml's own comments and docs/generation.md's street-network pass), not a bug in \
+             your change unless it touches server/sim/src/generation/streets.rs or a \
+             generation.streets.* key. To fix: add this seed to streets::PINNED_DETOUR_SEEDS \
+             with its own exhaustive excess (`detour_samples(usize::MAX)`'s own worst pair), \
+             then re-run `cargo run -p bounds --release --bin measure-generation` and \
+             re-apply max_detour_excess_cells's own margin rule",
+            v.a,
+            v.b,
+            v.network,
+            v.detour_allowed(cfg),
+            v.manhattan
+        ));
+    }
+    Ok(())
+}
+
 proptest! {
 
     /// `inv_generation_total_never_panics`.
@@ -1795,37 +1828,32 @@ proptest! {
         prop_assert!(net.dead_end_nodes().is_empty());
     }
 
-    /// `inv_generation_detour_ratio_bounded` (Quentin's direction, cycle
-    /// 2: two separate bounds, not one flat ratio -- an additive ceiling
-    /// on every sampled pair's own overshoot, in world cells, since a
-    /// ratio is dominated by a single jitter-driven jog at short range;
-    /// a ratio ceiling only over pairs at least `detour_long_pair_cells`
-    /// apart, where a ratio is what the estimator actually relies on).
+    /// `inv_generation_detour_ratio_bounded` (story 15.10, Derek's
+    /// direction): one bound, not two, and no distance threshold of its
+    /// own -- `network <= max(manhattan + max_detour_excess_cells,
+    /// manhattan * max_detour_percent / 100)` for every sampled pair
+    /// (`streets::detour_bound_violation`, the one function this, the
+    /// pinned `seed_8872365549107643721_holds_the_detour_ceilings` test
+    /// and the sweep all call through). Story 3.18's `detour_long_pair_
+    /// cells` AND-with-threshold contract is gone: a value under the
+    /// takeover distance (`GenerationConfig::detour_ratio_takeover_
+    /// distance_cells`) was allowed *less* additive excess than a
+    /// shorter pair, the seam seed `8872365549107643721` walked into,
+    /// and no value of a separate threshold key could make it both
+    /// non-redundant and coherent. Since exceeding the max() of two
+    /// terms means exceeding both, a violation here is always also a
+    /// violation of the additive-excess-alone check every sampled pair
+    /// was already held to -- so the existing sweep's own 0 misses
+    /// against `max_detour_excess_cells` (unconditional, every pair,
+    /// 1,000,000 seeds, passes 1-2 only) already proves this contract's
+    /// own miss count is 0 too, without a second million-seed run. See
+    /// `defs/balance/generation.toml`'s `max_detour_percent` comment and
+    /// `docs/generation.md`'s street-network pass for the full sweep.
     #[test]
     fn inv_generation_detour_ratio_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
-        let net = streets::run(seed, &lu, &cfg);
-        let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
-        for s in &samples {
-            prop_assert!(
-                s.excess_cells() <= cfg.max_detour_excess_cells as i64,
-                "seed {seed}: {:?}-{:?} excess {} cells over the measured ceiling {} -- \
-                 max_detour_excess_cells is a measured value (see generation.toml's own \
-                 comment and docs/generation.md's street-network pass), not a bug in your \
-                 change unless it touches server/sim/src/generation/streets.rs or a \
-                 generation.streets.* key. To fix: add this seed to streets::PINNED_DETOUR_\
-                 SEEDS with its own exhaustive excess (`detour_samples(usize::MAX)`'s own \
-                 worst pair), then re-run `cargo run -p bounds --release --bin measure-\
-                 generation` and re-apply max_detour_excess_cells's own margin rule",
-                s.a, s.b, s.excess_cells(), cfg.max_detour_excess_cells
-            );
-            if s.manhattan >= cfg.detour_long_pair_cells as i64 {
-                prop_assert!(
-                    s.ratio_pct() <= cfg.max_detour_percent as i64,
-                    "seed {seed}: {:?}-{:?} ratio {}% over {}%", s.a, s.b, s.ratio_pct(), cfg.max_detour_percent
-                );
-            }
+        if let Err(msg) = detour_bounds_hold(seed, &cfg) {
+            prop_assert!(false, "{msg}");
         }
     }
 
@@ -1833,7 +1861,10 @@ proptest! {
     /// 2): `max_detour_percent` alone only bounds one city's own single
     /// worst pair, which stays green even if the *typical* case
     /// regressed -- the 99th percentile of this same sample is pinned
-    /// separately.
+    /// separately. Measured directly (story 15.10, `measure-generation`'s
+    /// own detour-bounds sweep, 1,000,000 seeds, passes 1-2 only, at this
+    /// exact 64-node sample): 0 misses -- <= 0.000300% per seed (rule of
+    /// three), a 4,096-case CI run failing at most 1.2213% of the time.
     #[test]
     fn inv_generation_p99_detour_ratio_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -3649,6 +3680,65 @@ fn detour_excess_holds_at_pinned_boundary_exit_seeds() {
             worst.b
         );
     }
+}
+
+/// Story 15.10: seed `8872365549107643721` failed `inv_generation_
+/// detour_ratio_bounded` on CI run 36388555866 (PR #349, which touches
+/// none of passes 1-2, so it fails the same way on master) -- the pair
+/// `(152,0)-(393,18)`, Manhattan 259, had a 204% ratio against the old,
+/// independently-set `max_detour_percent` (200%), while its own network
+/// distance (529 cells) sat comfortably under `manhattan + max_detour_
+/// excess_cells` (675) -- Derek's finding: the old AND-with-threshold
+/// contract could allow *less* additive excess to a pair a few cells
+/// past `detour_long_pair_cells` than to one a few cells short of it, a
+/// seam no value of a separate threshold key could close. Fixed at the
+/// source (`streets::detour_bound_violation`'s own max()-contract: a
+/// pair under the takeover distance is bound only by the additive term,
+/// which this one already cleared), never a re-scan of this one seed.
+/// Pinned by equality, not just `Ok` (Quentin's/Derek's direction): a
+/// pass-2 or streets-key change that moves this pair's own figures, or
+/// that makes it start failing the committed contract, goes red here.
+#[test]
+fn seed_8872365549107643721_holds_the_detour_ceilings() {
+    const SEED: u64 = 8872365549107643721;
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    detour_bounds_hold(SEED, &cfg).unwrap_or_else(|e| panic!("pinned seed {SEED}: {e}"));
+
+    let lu = land_use::run(SEED, cfg.site(), &cfg).unwrap();
+    let net = streets::run(SEED, &lu, &cfg);
+    let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+    let pair = samples
+        .iter()
+        .find(|s| s.a == (152, 0) && s.b == (393, 18))
+        .unwrap_or_else(|| {
+            panic!(
+                "pinned seed {SEED}: its own (152,0)-(393,18) pair is no longer in the \
+                 14-node sample -- pass 2 moved; re-measure and re-pin"
+            )
+        });
+    assert_eq!(
+        pair.manhattan, 259,
+        "pinned seed {SEED}: (152,0)-(393,18)'s own Manhattan distance moved -- pass 2 or a \
+         streets key changed; re-measure and re-pin"
+    );
+    assert_eq!(
+        pair.network, 529,
+        "pinned seed {SEED}: (152,0)-(393,18)'s own network distance moved -- pass 2 or a \
+         streets key changed; re-measure and re-pin"
+    );
+    assert!(
+        pair.ratio_pct() > 200,
+        "pinned seed {SEED}: (152,0)-(393,18)'s own ratio ({}%) no longer exceeds the old \
+         200% -- this test stops documenting the flake it was pinned for",
+        pair.ratio_pct()
+    );
+    assert!(
+        pair.network <= pair.detour_allowed(&cfg),
+        "pinned seed {SEED}: (152,0)-(393,18)'s own network ({}) no longer clears its own \
+         allowed bound ({}) under the committed max() contract",
+        pair.network,
+        pair.detour_allowed(&cfg)
+    );
 }
 
 /// Quentin's direction, story 3.18 cycle 1: `max_detour_excess_cells`'s

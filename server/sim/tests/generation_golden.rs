@@ -82,7 +82,6 @@ fn frozen_config() -> GenerationConfig {
         max_lane_splits: 4,
         max_street_splits_per_superblock: 1,
         junction_min_separation_cells: 28,
-        detour_long_pair_cells: 128,
         max_detour_percent: 200,
         max_detour_excess_cells: 80,
         p99_detour_percent: 160,

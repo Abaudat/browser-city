@@ -346,14 +346,22 @@ pub struct GenerationConfig {
     /// 4-way) or sit at least this many world cells apart -- never a
     /// near-miss crossroad a cell or two off (Tim's direction).
     pub junction_min_separation_cells: i32,
-    /// The ratio ceiling `max_detour_percent` applies to (BFS network
-    /// distance vs Manhattan distance) only over pairs at least this far
-    /// apart (Manhattan) -- a single jitter-driven jog dominates the
-    /// ratio at short range even in a real city. Short-range pairs are
-    /// instead bounded by [`Self::max_detour_excess_cells`] (Quentin's
-    /// direction, cycle 2: an additive bound is what the estimator
-    /// actually pays for at short range, a ratio is not).
-    pub detour_long_pair_cells: i32,
+    /// The site-scale-free long-range detour claim (Derek's direction,
+    /// story 15.10): `network <= max(manhattan + max_detour_excess_cells,
+    /// manhattan * max_detour_percent / 100)`, for every sampled pair,
+    /// no distance threshold of its own -- a short hop pays at most a
+    /// fixed cell budget (a single jitter-driven jog), a long crossing
+    /// pays at most a ratio, and the range where the ratio actually
+    /// binds is derived, never a third committed key
+    /// ([`Self::detour_ratio_takeover_distance_cells`]). Story 3.18's
+    /// `detour_long_pair_cells` is gone: no value of a separate distance
+    /// threshold could make an AND-with-threshold contract both non-
+    /// redundant (short of the takeover distance, the ratio was implied
+    /// by the excess bound) and coherent (a pair three cells past the
+    /// threshold was suddenly allowed *less* excess than a pair three
+    /// cells short of it, story 15.10's own flake) -- one function of
+    /// distance that never permits less at a longer range than at a
+    /// shorter one replaces both halves.
     pub max_detour_percent: i32,
     /// The absolute ceiling on `network - manhattan` (world cells),
     /// applied to every sampled pair regardless of distance -- the
@@ -630,8 +638,6 @@ impl GenerationConfig {
                 balance,
                 "generation.streets.junction_min_separation_cells",
             ) as i32,
-            detour_long_pair_cells: get(balance, "generation.streets.detour_long_pair_cells")
-                as i32,
             max_detour_percent: get(balance, "generation.streets.max_detour_percent") as i32,
             max_detour_excess_cells: get(balance, "generation.streets.max_detour_excess_cells")
                 as i32,
@@ -814,6 +820,19 @@ impl GenerationConfig {
             return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: p99_detour_percent ({}) is greater than max_detour_percent ({}) -- the typical case cannot be worse than the tail ceiling",
                 cfg.p99_detour_percent, cfg.max_detour_percent
+            )));
+        }
+        // Tim's/Quentin's direction, story 15.10 cycle 2:
+        // detour_ratio_takeover_distance_cells divides by (max_detour_
+        // percent - 100), and at 100 the ratio term (manhattan * 100 /
+        // 100) is never looser than the excess term either -- the ratio
+        // half of the contract would be permanently vacuous, not merely
+        // undefined. Refused here, never left for the divide to panic in
+        // whichever caller reaches it first.
+        if cfg.max_detour_percent <= 100 {
+            return Err(GenerationError::InvalidConfig(format!(
+                "GenerationConfig: max_detour_percent ({}) is not greater than 100 -- at or under 100 the max()-contract's ratio term is never looser than its excess term, so the ratio half is vacuous, and detour_ratio_takeover_distance_cells's own division is undefined",
+                cfg.max_detour_percent
             )));
         }
         if cfg.peripheral_low_band_floor_percent as i64
@@ -1072,6 +1091,32 @@ impl GenerationConfig {
         DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT * self.block_size_max_cells as i64
             + 2 * self.arterial_width_cells as i64
     }
+
+    /// The Manhattan distance past which [`Self::max_detour_percent`]'s
+    /// ratio, not [`Self::max_detour_excess_cells`]'s flat cell budget,
+    /// is the binding half of the [`Self::max_detour_percent`] contract
+    /// (Derek's direction, story 15.10): `network <= max(manhattan +
+    /// max_detour_excess_cells, manhattan * max_detour_percent / 100)`,
+    /// so the ratio term overtakes the excess term exactly where
+    /// `manhattan * max_detour_percent / 100 > manhattan +
+    /// max_detour_excess_cells`, i.e. `manhattan >
+    /// max_detour_excess_cells * 100 / (max_detour_percent - 100)` --
+    /// derived from the two committed keys, never a third one of its
+    /// own (story 3.18's `detour_long_pair_cells` no longer exists). A
+    /// descriptive figure only: nothing refuses a config over or under
+    /// it, since the max() contract needs no threshold to be correct at
+    /// every distance. Integer arithmetic throughout (NFR28), floor
+    /// division: the true takeover point (`max_detour_percent` other
+    /// than a multiple that divides evenly) sits at or just past this
+    /// figure, never before it, which is the direction that matters for
+    /// "the range where the ratio actually binds". The division is
+    /// total, never a panic: `from_balance` refuses `max_detour_percent
+    /// <= 100` (Tim's/Quentin's direction, story 15.10 cycle 2), so
+    /// `max_detour_percent - 100` is always a positive divisor for any
+    /// config this method is ever called on.
+    pub fn detour_ratio_takeover_distance_cells(&self) -> i64 {
+        self.max_detour_excess_cells as i64 * 100 / (self.max_detour_percent as i64 - 100)
+    }
 }
 
 /// [`GenerationConfig::detour_excess_loosening_guard`]'s own coefficient
@@ -1186,8 +1231,7 @@ mod tests {
                 1,
                 256,
             ),
-            seed("generation.streets.detour_long_pair_cells", 128, 1, 2048),
-            seed("generation.streets.max_detour_percent", 200, 100, 500),
+            seed("generation.streets.max_detour_percent", 200, 101, 500),
             seed("generation.streets.max_detour_excess_cells", 80, 1, 2048),
             seed("generation.streets.p99_detour_percent", 160, 100, 500),
             seed("generation.streets.min_distinct_block_sizes", 3, 1, 16),
@@ -1342,6 +1386,17 @@ mod tests {
         balance
     }
 
+    /// [`with_override`]'s own multi-key sibling -- a handful of tests
+    /// (story 15.10 cycle 2's `detour_ratio_takeover_distance_cells`
+    /// fixtures among them) need more than one key perturbed at once.
+    fn with_overrides(pairs: &[(&str, i64)]) -> Vec<defs::BalanceSeed> {
+        let mut balance = valid_balance();
+        for &(key, value) in pairs {
+            balance.iter_mut().find(|b| b.key == key).unwrap().value = value;
+        }
+        balance
+    }
+
     #[test]
     fn from_balance_reads_the_real_live_defs() {
         GenerationConfig::from_balance(defs::BALANCE).expect("live defs/ must be a valid config");
@@ -1464,6 +1519,40 @@ mod tests {
         assert!(err.to_string().contains("p99_detour_percent"));
     }
 
+    /// Tim's/Quentin's direction, story 15.10 cycle 2:
+    /// `detour_ratio_takeover_distance_cells` divides by
+    /// `max_detour_percent - 100`, so 100 itself (and anything under it)
+    /// must be refused, never left to panic the first caller that
+    /// reaches it.
+    #[test]
+    fn from_balance_rejects_max_detour_percent_at_100() {
+        // p99_detour_percent lowered alongside it so this fixture fails
+        // only the refusal under test, never the unrelated p99 <=
+        // max_detour_percent one (p99's own default, 160, would trip
+        // that one first and mask this test's own target).
+        let balance = with_overrides(&[
+            ("generation.streets.max_detour_percent", 100),
+            ("generation.streets.p99_detour_percent", 100),
+        ]);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.to_string().contains("max_detour_percent"));
+        assert!(err.to_string().contains("ratio term"));
+    }
+
+    #[test]
+    fn from_balance_accepts_max_detour_percent_at_101() {
+        // The boundary itself: 101 is admitted, only 100 or under is
+        // refused (AC4's mechanical both-sides-of-the-boundary check).
+        // p99_detour_percent lowered alongside it so this fixture does
+        // not also trip the unrelated p99 <= max_detour_percent refusal.
+        let balance = with_overrides(&[
+            ("generation.streets.max_detour_percent", 101),
+            ("generation.streets.p99_detour_percent", 100),
+        ]);
+        GenerationConfig::from_balance(&balance)
+            .expect("101 must be accepted, not just values further above 100");
+    }
+
     #[test]
     fn from_balance_rejects_max_detour_excess_cells_over_the_loosening_guard() {
         // fixture: block_size_max_cells=96, arterial_width_cells=12 ->
@@ -1482,6 +1571,47 @@ mod tests {
         let balance = with_override("generation.streets.max_detour_excess_cells", 408);
         GenerationConfig::from_balance(&balance)
             .expect("the loosening guard itself must be accepted, not just values under it");
+    }
+
+    /// Quentin's direction, story 15.10 cycle 2: pinned against the live
+    /// committed config, never a fixture -- `max_detour_excess_cells * 100
+    /// / (max_detour_percent - 100)` = `416 * 100 / 100` = 416.
+    #[test]
+    fn detour_ratio_takeover_distance_cells_matches_the_committed_values() {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 416);
+    }
+
+    /// Quentin's direction, story 15.10 cycle 2: an even division, at a
+    /// fixture distinct from the committed one, so this is a test of the
+    /// formula and not just a restatement of the committed figure.
+    /// `block_size_max_cells` is raised to 100 alongside the excess key
+    /// so the loosening guard (`4 * 100 + 2 * 12` = 424) still admits
+    /// 416.
+    #[test]
+    fn detour_ratio_takeover_distance_cells_at_150_percent() {
+        let balance = with_overrides(&[
+            ("generation.streets.block_size_max_cells", 100),
+            ("generation.streets.max_detour_excess_cells", 416),
+            ("generation.streets.max_detour_percent", 150),
+            ("generation.streets.p99_detour_percent", 100),
+        ]);
+        let cfg = GenerationConfig::from_balance(&balance).unwrap();
+        assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 832);
+    }
+
+    /// Quentin's direction, story 15.10 cycle 2: an uneven division --
+    /// `300 * 100 / 90` is `333.33...`, and the documented floor-
+    /// rounding direction (NFR28: integer division, never a float) means
+    /// this must be exactly 333, never rounded up to 334.
+    #[test]
+    fn detour_ratio_takeover_distance_cells_floors_an_uneven_division() {
+        let balance = with_overrides(&[
+            ("generation.streets.max_detour_excess_cells", 300),
+            ("generation.streets.max_detour_percent", 190),
+        ]);
+        let cfg = GenerationConfig::from_balance(&balance).unwrap();
+        assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 333);
     }
 
     /// Tim's direction, story 3.18 cycle 1: "coefficient the smallest
