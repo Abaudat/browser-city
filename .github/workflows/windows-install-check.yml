@@ -109,7 +109,14 @@ jobs:
         timeout-minutes: 1
         shell: pwsh
         run: |
-          $out = spacetime --version
+          # `spacetime --version` prints several lines -- $out is a
+          # PowerShell array, and `-match`/`-notmatch` on an array is
+          # elementwise, returning the (possibly non-empty, so truthy)
+          # array of elements that individually don't match, even when
+          # one element clearly does. -join into one string first (real
+          # CI evidence, story 4.20: this exact bug, never exercised
+          # while the step before it hung every run).
+          $out = (spacetime --version) -join "`n"
           Write-Host $out
           if ($out -notmatch "2\.9\.\d+") {
             Write-Error "expected spacetime --version to report 2.9.x, got: $out"
