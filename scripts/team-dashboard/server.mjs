@@ -4,7 +4,8 @@
 //   node scripts/team-dashboard/server.mjs            serves on 0.0.0.0:4747
 //   BC_DASHBOARD_PORT=8080 node scripts/team-dashboard/server.mjs
 //
-// One page (index.html beside this file) polling one endpoint (/api/state).
+// One page (index.html beside this file) polling one endpoint (/api/state),
+// and /api/graph for its task-graph tab.
 // Everything on it is read from what already exists on this machine -- the
 // same sources the orchestrator and team-usage.mjs read, never a store of its
 // own except one small history file:
@@ -102,6 +103,7 @@ const state = {
   budget: null,       // the last rate-monitor answer, normalised
   budgetHistory: [],  // [{t, s, w, f}]
   board: null,        // task, PR, KPIs from GitHub
+  graph: null,        // every story and its blockers, and the milestones
   loop: null,         // the orchestrator log, parsed
   spend: null,        // per-role spend from transcripts
   errors: {},         // source -> { message, at }
@@ -200,7 +202,7 @@ const ITEMS_Q = `query($owner:String!,$number:Int!,$cursor:String){ user(login:$
   items(first:100, after:$cursor){ pageInfo{ hasNextPage endCursor } nodes{
     content{ ... on Issue { number title url state createdAt closedAt
       labels(first:20){ nodes{ name } } parent{ number title url } subIssues(first:1){ totalCount }
-      blockedBy(first:20){ nodes{ state } } } }
+      blockedBy(first:40){ nodes{ number state } } } }
     status: fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue{ name } }
     priority: fieldValueByName(name:"Priority"){ ... on ProjectV2ItemFieldSingleSelectValue{ name } }
     size: fieldValueByName(name:"Size"){ ... on ProjectV2ItemFieldSingleSelectValue{ name } }
@@ -220,7 +222,7 @@ async function projectItems() {
       items.push({
         number: c.number, title: c.title, url: c.url, state: c.state, createdAt: c.createdAt, closedAt: c.closedAt,
         labels: c.labels.nodes.map((l) => l.name), parent: c.parent, isParent: c.subIssues.totalCount > 0,
-        blocked: c.blockedBy.nodes.some((b) => b.state === 'OPEN'),
+        blocked: c.blockedBy.nodes.some((b) => b.state === 'OPEN'), blockers: c.blockedBy.nodes.map((b) => b.number),
         status: n.status?.name ?? null, priority: n.priority?.name ?? null, size: n.size?.name ?? null, sprint: n.sprint ?? null,
       });
     }
@@ -362,6 +364,19 @@ async function readBoard() {
   const median = hours.length ? hours[Math.floor(hours.length / 2)] : null;
 
   const pick = (i) => ({ number: i.number, title: i.title, url: i.url, closedAt: i.closedAt, size: i.size, epic: i.parent?.title ?? null });
+  // The dependency graph: every story on the board, and what blocks it among
+  // them. Served on its own endpoint, the page asks for it only on its tab.
+  const onBoard = new Set(stories.map((i) => i.number));
+  state.graph = {
+    at: Date.now(),
+    nodes: stories.map((i) => ({
+      number: i.number, title: i.title, url: i.url, state: i.state, status: i.status, blocked: i.blocked,
+      priority: i.priority, size: i.size,
+      epic: i.parent ? { number: i.parent.number, title: i.parent.title } : null,
+      blockers: i.blockers.filter((n) => onBoard.has(n)),
+    })),
+    milestones: readMilestones(),
+  };
   state.board = {
     at: Date.now(),
     task, pr, sprint,
@@ -376,6 +391,14 @@ async function readBoard() {
     },
     burnup,
   };
+}
+
+// The milestones the graph fences off, in order: each is its gate stories and
+// everything they are transitively blocked by. milestones.json beside this file.
+const MILESTONES_FILE = path.join(HERE, 'milestones.json');
+function readMilestones() {
+  try { const m = JSON.parse(fs.readFileSync(MILESTONES_FILE, 'utf8')); delete state.errors.milestones; return m; }
+  catch (e) { state.errors.milestones = { message: `milestones.json: ${e.message}`, at: Date.now() }; return []; }
 }
 
 // --- source: the orchestrator log -> the loop's heartbeat and recent moves -----
@@ -590,6 +613,11 @@ function snapshot() {
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
+  if (url.pathname === '/api/graph') {
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+    res.end(JSON.stringify(state.graph));
+    return;
+  }
   if (url.pathname === '/api/state') {
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(JSON.stringify(snapshot()));
