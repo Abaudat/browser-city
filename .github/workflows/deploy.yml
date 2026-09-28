@@ -519,7 +519,11 @@ jobs:
   report-failure:
     name: report-failure
     needs: [resolve, changes, backup, publish-module, deploy-client, smoke]
-    if: always() && failure()
+    # A timeout-minutes expiry ends a job `cancelled`, not `failure`
+    # (docs/architecture.md, story 4.20) -- `failure()` alone would miss
+    # a `publish-module`/`smoke` that hangs to its own 15-minute budget
+    # and never file an alert, which is exactly what NFR49 forbids.
+    if: always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

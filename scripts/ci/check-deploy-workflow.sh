@@ -43,6 +43,12 @@
 #      direction, cycle 1: `backup.yml`'s own `export` job has the
 #      identical bug, and had no guard at all). `fetch-depth: 0` is the
 #      only value this accepts, in either file.
+#   5. The `report-failure` job's own `if:` must account for a `cancelled`
+#      job, not only a `failure`d one (story 4.20, NFR49): a
+#      `timeout-minutes` expiry ends a job `cancelled`, and a condition
+#      that only ever checks `failure()`/`contains(..., 'failure')` lets a
+#      hung `publish-module`/`smoke` run to its own budget and file
+#      nothing.
 #
 # Usage: check-deploy-workflow.sh [deploy.yml path] [backup.yml path]
 #   [deploy.yml path]  defaults to .github/workflows/deploy.yml at the repo
@@ -221,5 +227,23 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, the backup job's first-deploy exception is the positive not-found script, and neither deploy.yml's backup job nor backup.yml's export job has a shallow checkout" >&2
+# --- the report-failure job's own condition must account for a
+# cancelled job too, not only a failed one (story 4.20, NFR49) ----------
+REPORT_HEADER="$(job_header report-failure)"
+if [ -z "$REPORT_HEADER" ]; then
+  echo "check-deploy-workflow: FAIL -- $WORKFLOW has no 'report-failure' job" >&2
+  FAILED=1
+else
+  IF_LINES="$(printf '%s\n' "$REPORT_HEADER" | grep -E '^ *if:' || true)"
+  if [ -z "$IF_LINES" ] || ! printf '%s' "$IF_LINES" | grep -qi 'cancelled'; then
+    echo "check-deploy-workflow: FAIL -- 'report-failure' job's if: condition does not account for a cancelled() job -- a timeout-minutes expiry ends a job 'cancelled', not 'failure' (NFR49), and must be reported the same way" >&2
+    FAILED=1
+  fi
+fi
+
+if [ "$FAILED" -ne 0 ]; then
+  exit 1
+fi
+
+echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, the backup job's first-deploy exception is the positive not-found script, neither deploy.yml's backup job nor backup.yml's export job has a shallow checkout, and report-failure accounts for a cancelled job too" >&2
 exit 0

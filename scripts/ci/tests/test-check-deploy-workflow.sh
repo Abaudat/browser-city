@@ -41,6 +41,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo deploying client
+
+  report-failure:
+    name: report-failure
+    needs: [backup, publish-module, deploy-client]
+    if: always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo reporting
 YAML
 }
 
@@ -194,6 +202,14 @@ jobs:
     steps:
       - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
     needs: [backup]
+
+  report-failure:
+    name: report-failure
+    needs: [backup, publish-module]
+    if: always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo reporting
 YAML
 check "needs: [backup] written *after* steps: still passes (not a false FAIL)" 0 bash "$CHECK" "$D7C/deploy.yml"
 
@@ -324,6 +340,22 @@ check "no job runs spacetime publish at all fails" 1 bash -c "exit $CODE"
 check "names the missing publish job" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'no job in'" _ "$OUT"
 
 check "a missing workflow file fails" 1 bash "$CHECK" "$(fake_dir)/nope.yml"
+
+echo
+echo "story 4.20 (NFR49): report-failure must account for a cancelled job too, not only a failed one"
+check "the good workflow's own report-failure condition passes (not a false FAIL)" 0 bash "$CHECK" "$WF"
+
+D18="$(fake_dir)"; write_good_workflow "$D18/deploy.yml"
+sed -i "s/if: always() && (contains(needs.\*.result, 'failure') || contains(needs.\*.result, 'cancelled'))/if: always() \&\& failure()/" "$D18/deploy.yml"
+OUT="$(bash "$CHECK" "$D18/deploy.yml" 2>&1)"; CODE=$?
+check "if: always() && failure() alone (no cancelled) fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'does not account for a cancelled'" _ "$OUT"
+
+D19="$(fake_dir)"; write_good_workflow "$D19/deploy.yml"
+sed -i '/^  report-failure:$/,$d' "$D19/deploy.yml"
+OUT="$(bash "$CHECK" "$D19/deploy.yml" 2>&1)"; CODE=$?
+check "no report-failure job at all fails" 1 bash -c "exit $CODE"
+check "names the missing job" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"has no 'report-failure' job\"" _ "$OUT"
 
 summary
 exit $?

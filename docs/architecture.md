@@ -196,12 +196,15 @@ loud failure instead, never a silent no-op.
   would otherwise let any visitor forge another session, and would leak
   into an uploaded Playwright report on a public repo.
 - No automatic rollback: a published schema cannot be rolled back, only
-  rolled forward. A failure on master runs `scripts/ci/
-  report-scheduled-failure.sh`, so it becomes a tracking issue labelled
-  `alert` rather than sitting unnoticed in the Actions tab; the agentic
-  team's orchestrator adopts it onto the board ahead of every other story
-  before it ever picks new work; `server/README.md` names the manual
-  recovery path.
+  rolled forward. A failure *or a timeout* on master runs `scripts/ci/
+  report-scheduled-failure.sh` (`report-failure`'s own `if:` matches
+  `cancelled` as well as `failure` -- a `timeout-minutes` expiry ends a
+  job `cancelled`, never `failure`, so a condition that only checks the
+  latter never reports one, NFR49), so it becomes a tracking issue
+  labelled `alert` rather than sitting unnoticed in the Actions tab; the
+  agentic team's orchestrator adopts it onto the board ahead of every
+  other story before it ever picks new work; `server/README.md` names
+  the manual recovery path.
 
 ## Schema
 
