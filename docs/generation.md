@@ -658,7 +658,10 @@ assumed:
   routing it to the site-wide remainder, which real land elsewhere could
   have satisfied -- `building_types::run` now folds whatever the floor
   phase could not actually place into the remainder afterward, for every
-  distribution row, not only cafe's own. The gap this leaves is narrower
+  distribution row, not only cafe's own. The same story fixed
+  `place_row`'s bounded search, which pruned against `target` and so
+  returned first-fit's partial, not the largest feasible one, whenever
+  a catchment's floor was unreachable. The gap this leaves is narrower
   than "distribution is whole-site": a `[[distribution]]` row's own
   ratio/spacing/coverage fields still cannot themselves be scoped below
   the whole site -- only the generator's own constructive placement can

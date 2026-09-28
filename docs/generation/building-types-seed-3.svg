@@ -748,6 +748,8 @@
 <rect x="166" y="74" width="11" height="14" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="177" y="74" width="18" height="16" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="177" y="74" width="18" height="16" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<line x1="181" y1="74" x2="191" y2="74" stroke="#111" stroke-width="1.5"/>
+<line x1="186" y1="69" x2="186" y2="79" stroke="#111" stroke-width="1.5"/>
 <rect x="166" y="90" width="11" height="17" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="166" y="92" width="11" height="15" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="177" y="90" width="18" height="17" fill="none" stroke="#999" stroke-width="0.5"/>
@@ -884,6 +886,8 @@
 <rect x="246" y="131" width="10" height="13" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="258" y="131" width="12" height="13" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="260" y="131" width="10" height="13" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<line x1="265" y1="137" x2="275" y2="137" stroke="#111" stroke-width="1.5"/>
+<line x1="270" y1="132" x2="270" y2="142" stroke="#111" stroke-width="1.5"/>
 <rect x="246" y="144" width="11" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="246" y="146" width="11" height="10" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="257" y="144" width="13" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
@@ -1037,6 +1041,8 @@
 <rect x="102" y="164" width="10" height="12" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="112" y="164" width="10" height="14" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="112" y="164" width="10" height="14" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<line x1="112" y1="164" x2="122" y2="164" stroke="#111" stroke-width="1.5"/>
+<line x1="117" y1="159" x2="117" y2="169" stroke="#111" stroke-width="1.5"/>
 <rect x="122" y="164" width="11" height="14" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="122" y="164" width="11" height="12" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="133" y="164" width="10" height="14" fill="none" stroke="#999" stroke-width="0.5"/>
@@ -1089,6 +1095,8 @@
 <rect x="282" y="164" width="11" height="13" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="293" y="164" width="11" height="15" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="293" y="164" width="11" height="13" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<line x1="293" y1="164" x2="303" y2="164" stroke="#111" stroke-width="1.5"/>
+<line x1="298" y1="159" x2="298" y2="169" stroke="#111" stroke-width="1.5"/>
 <rect x="304" y="164" width="18" height="15" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="304" y="164" width="18" height="15" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="282" y="179" width="10" height="15" fill="none" stroke="#999" stroke-width="0.5"/>
@@ -1252,6 +1260,8 @@
 <rect x="143" y="200" width="13" height="11" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="102" y="213" width="10" height="14" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="102" y="215" width="10" height="12" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<line x1="102" y1="227" x2="112" y2="227" stroke="#111" stroke-width="1.5"/>
+<line x1="107" y1="222" x2="107" y2="232" stroke="#111" stroke-width="1.5"/>
 <rect x="112" y="213" width="11" height="14" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="112" y="215" width="11" height="12" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="123" y="213" width="11" height="14" fill="none" stroke="#999" stroke-width="0.5"/>
@@ -1458,6 +1468,8 @@
 <rect x="34" y="274" width="17" height="13" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="282" y="265" width="16" height="10" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="282" y="265" width="16" height="8" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<line x1="285" y1="265" x2="295" y2="265" stroke="#111" stroke-width="1.5"/>
+<line x1="290" y1="260" x2="290" y2="270" stroke="#111" stroke-width="1.5"/>
 <rect x="282" y="275" width="16" height="10" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="282" y="277" width="16" height="8" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <polygon points="290,280 295,285 290,290 285,285" fill="none" stroke="#111" stroke-width="1.5"/>
@@ -2283,8 +2295,8 @@
 <line x1="355" y1="575" x2="355" y2="585" stroke="#111" stroke-width="1.5"/>
 <text x="366" y="584" font-family="sans-serif" font-size="10" fill="#111">cafe_present</text>
 <text x="8" y="646" font-family="sans-serif" font-size="11" fill="#111">Catchments (per / owed / placed, * = physical-shortage exemption):</text>
-<text x="8" y="662" font-family="monospace" font-size="9" fill="#333">(0, 0): depot_present: 113/0/0   council_present: 113/0/1   hospital_present: 113/0/1   welfare_office_present: 113/0/0   shelter_present: 113/1/1   cafe_present: 113/1/2</text>
-<text x="8" y="676" font-family="monospace" font-size="9" fill="#333">(0, 1): depot_present: 97/0/0   council_present: 97/0/0   hospital_present: 97/0/0   welfare_office_present: 97/0/1   shelter_present: 97/0/2   cafe_present: 97/0/1</text>
-<text x="8" y="690" font-family="monospace" font-size="9" fill="#333">(1, 0): depot_present: 187/0/0   council_present: 187/0/0   hospital_present: 187/0/0   welfare_office_present: 187/1/1   shelter_present: 187/1/1   cafe_present: 187/1/1</text>
-<text x="8" y="704" font-family="monospace" font-size="9" fill="#333">(1, 1): depot_present: 181/0/1   council_present: 181/0/0   hospital_present: 181/0/0   welfare_office_present: 181/1/1   shelter_present: 181/1/1   cafe_present: 181/1/1</text>
+<text x="8" y="662" font-family="monospace" font-size="9" fill="#333">(0, 0): depot_present: 113/0/0   council_present: 113/0/1   hospital_present: 113/0/1   welfare_office_present: 113/0/0   shelter_present: 113/1/1   cafe_present: 113/2/5</text>
+<text x="8" y="676" font-family="monospace" font-size="9" fill="#333">(0, 1): depot_present: 97/0/0   council_present: 97/0/0   hospital_present: 97/0/0   welfare_office_present: 97/0/1   shelter_present: 97/0/2   cafe_present: 97/1/1</text>
+<text x="8" y="690" font-family="monospace" font-size="9" fill="#333">(1, 0): depot_present: 187/0/0   council_present: 187/0/0   hospital_present: 187/0/0   welfare_office_present: 187/1/1   shelter_present: 187/1/1   cafe_present: 187/3/3</text>
+<text x="8" y="704" font-family="monospace" font-size="9" fill="#333">(1, 1): depot_present: 181/0/1   council_present: 181/0/0   hospital_present: 181/0/0   welfare_office_present: 181/1/1   shelter_present: 181/1/1   cafe_present: 181/3/2</text>
 </svg>

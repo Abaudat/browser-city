@@ -456,7 +456,11 @@ fn backtrack_search(
     if chosen.len() == target {
         return true;
     }
-    if pool.len().saturating_sub(start) < target - chosen.len() {
+    // Prune only a branch that cannot beat `best` -- never merely one
+    // that cannot reach `target`: an unreachable `target` still owes the
+    // largest real partial (story 15.9, seed 5433998721198148372: pruning
+    // against `target` returned 2 of a feasible 3).
+    if chosen.len() + pool.len().saturating_sub(start) <= best.len() {
         return false;
     }
     for i in start..pool.len() {
@@ -1122,6 +1126,31 @@ mod tests {
             vec![0],
             "rank order's own top candidate is what first_fit -- the floor -- already picks"
         );
+    }
+
+    #[test]
+    fn place_row_finds_the_largest_partial_not_just_first_fits_when_the_target_is_unreachable() {
+        // Story 15.9, seed 5433998721198148372's own quadrant: five
+        // candidates 10-11 cells apart on one row, `min_spacing` 12,
+        // `target` 4 (unreachable). First-fit in this rank order takes
+        // x=270 and x=291 (2); the real maximum is {259, 280, 302} (3).
+        // The search used to prune any branch that could not reach
+        // `target`, so it never improved on first-fit's 2.
+        let cell = |x: i32| Context {
+            land_use_idx: 1,
+            density: 50,
+            interior_width: 8,
+            interior_depth: 8,
+            site_context: [false; 4],
+            x,
+            y: 256,
+            catchment: (1, 1),
+        };
+        let ctx = vec![cell(270), cell(291), cell(259), cell(280), cell(302)];
+        let pool: Vec<usize> = vec![0, 1, 2, 3, 4];
+        let mut chosen_cells = Vec::new();
+        let chosen = place_row(&pool, 4, 12, &ctx, &mut chosen_cells);
+        assert_eq!(chosen.len(), 3, "the feasible maximum is 3, got {chosen:?}");
     }
 
     #[test]

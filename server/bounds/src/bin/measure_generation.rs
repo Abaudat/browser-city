@@ -336,6 +336,10 @@ fn main() {
     // >=5 distinct workplaces -- pooled (meaned) over every seed below,
     // the same two-step AC4 shape as building/workplace count.
     let mut deep_profession_count = Vec::with_capacity(BUILDING_TYPE_SEED_COUNT as usize);
+    // Story 15.9: the per-city barista employer count (an FR14 launch job,
+    // posted only at cafes) -- its own minimum is what `cafe_present`'s
+    // comment and `inv_generation_barista_has_at_least_min_employers` hold.
+    let mut barista_employers = Vec::with_capacity(BUILDING_TYPE_SEED_COUNT as usize);
     let mut profession_sum: BTreeMap<&str, u64> = BTreeMap::new();
 
     // Every committed distribution row's own actual/expected ratio
@@ -393,6 +397,7 @@ fn main() {
                 .and_modify(|m| *m = (*m).min(count))
                 .or_insert(count);
         }
+        barista_employers.push(employers_this_city.get("barista").copied().unwrap_or(0) as i64);
         deep_profession_count
             .push(employers_this_city.values().filter(|&&c| c >= 5).count() as i64);
         for (&p, &c) in &employers_this_city {
@@ -461,6 +466,7 @@ fn main() {
             println!("  {p}: {mean:.2}");
         }
     }
+    Stats::new(barista_employers).print("barista_employers_per_city");
     Stats::new(deep_profession_count)
         .print("professions_employed_by_5_plus_workplaces_per_city (Scale Baseline target ~69)");
 
@@ -478,18 +484,7 @@ fn main() {
     // `cafe` left that list in story 15.9 (it is a distribution row now)
     // so only `shop` remains.
     const AD_HOC_PRESENCE_TAGS: &[&str] = &["shop"];
-    let mut dist_rows: Vec<sim::rules::DistributionRow> = content
-        .rules
-        .iter()
-        .filter_map(|r| r.as_distribution())
-        .filter(|row| {
-            content
-                .building_types
-                .iter()
-                .any(|b| b.tags.contains(&row.per))
-        })
-        .collect();
-    dist_rows.sort_by_key(|d| d.id);
+    let dist_rows = &dist_rows_for_ratio[..];
     let ad_hoc_tag_ids: Vec<(&str, u32)> = AD_HOC_PRESENCE_TAGS
         .iter()
         .map(|&key| {
@@ -524,7 +519,7 @@ fn main() {
                 *tag_counts.entry(t).or_insert(0) += 1;
             }
         }
-        for row in &dist_rows {
+        for row in dist_rows {
             let basis = tag_counts.get(&row.per).copied().unwrap_or(0);
             let target = basis / (row.ratio.max(1) as u64);
             if target == 0 {
@@ -551,7 +546,7 @@ fn main() {
     }
 
     println!("distribution rows -- seeds with target >= 1 but 0 actually placed:");
-    for row in &dist_rows {
+    for row in dist_rows {
         let (count, seeds) = &dist_misses[row.key];
         println!(
             "  {}: {count} of {missing_tag_seed_count} (rate {:.6}%), offending seeds: {:?}",

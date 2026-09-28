@@ -118,6 +118,7 @@ pub const INV_GENERATION_WORKPLACE_COUNT_WITHIN_TOLERANCE: &str = "at the commit
 pub const INV_GENERATION_WORKPLACE_COUNT_MEAN_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean workplace count sits within workplace_mean_count_tolerance_percent of the Scale Baseline target scaled to the site (story 3.4 AC4, NFR14)";
 pub const INV_GENERATION_PROFESSION_DEPTH_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean count of professions held by at least min_employers_per_profession distinct placed workplaces sits within the committed tolerance of target_profession_count (story 3.4, GDD Scale Baseline)";
 pub const INV_GENERATION_PROFESSION_DEPTH_NEVER_COLLAPSES_IN_ONE_CITY: &str = "for any seed, the count of professions held by at least min_employers_per_profession distinct placed workplaces in that one city never falls under the committed per-city floor (story 3.4 AC4)";
+pub const INV_GENERATION_BARISTA_HAS_AT_LEAST_MIN_EMPLOYERS: &str = "for any seed, the barista profession (an FR14 launch job, posted only at cafes) is held by at least min_employers_per_profession distinct placed workplaces in that one city (story 15.9)";
 pub const INV_GENERATION_BUILDING_TYPE_INDEPENDENT_OF_ENVELOPE_ORDER: &str = "shuffling pass 4's own placed-envelope order and re-running pass 5 over the shuffled list never changes any envelope's own assigned type, for any seed (story 3.4, NFR25)";
 pub const INV_GENERATION_NO_QUADRANT_LACKS_ITS_REQUIRED_SERVICES: &str = "for any seed, for every distribution row a building type actually feeds, and every site quadrant holding at least one hard-eligible, unclaimed, min-spacing-feasible candidate for its subject, the subjects actually placed in that quadrant clear its own catchment floor (per-tag count in that quadrant / ratio, never discounted by the row's own site-wide tolerance_percent) (story 3.4 AC3)";
 
@@ -2953,6 +2954,35 @@ proptest! {
         prop_assert!(
             depth >= floor,
             "seed {seed}: this city's own profession depth {depth} is under the committed per-city floor {floor}"
+        );
+    }
+
+    /// `inv_generation_barista_has_at_least_min_employers` (story 15.9,
+    /// Derek's/Quentin's direction): `barista` is an FR14 launch job and
+    /// is posted only at cafes, so moving cafes onto `cafe_present` must
+    /// never leave one city with a barista held by fewer than
+    /// `min_employers_per_profession` distinct workplaces -- asserted per
+    /// seed by name, never left to the pooled profession-depth check.
+    #[test]
+    fn inv_generation_barista_has_at_least_min_employers(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let content = GenerationContent::committed();
+        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+            content.building_types.iter().map(|b| (b.id, b)).collect();
+        let min_employers = sim::balance::value(
+            defs::BALANCE,
+            "generation.building_types.min_employers_per_profession",
+        ) as usize;
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let baristas = d
+            .building_types
+            .assignments()
+            .iter()
+            .filter(|a| by_id[&a.building_type].professions.contains(&"barista"))
+            .count();
+        prop_assert!(
+            baristas >= min_employers,
+            "seed {seed}: barista is held by {baristas} workplaces, under min_employers_per_profession {min_employers}"
         );
     }
 
