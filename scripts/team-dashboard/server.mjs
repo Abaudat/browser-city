@@ -15,7 +15,9 @@
 //                     bc-session.sh's _bc_glyph_word applies (✳ idle, else working)
 //   the budget        `claude-rate-monitor --json`, the call bc-budget.sh makes;
 //                     each answer is appended to $BC_STATE_DIR/usage-history.jsonl,
-//                     which is what the usage-over-time graph draws
+//                     which is what the usage-over-time graph draws. The Fable
+//                     weekly limit is not in the monitor's headers; it is read
+//                     from the account usage endpoint Claude Code's /usage reads
 //   the task, the PR  the Project v2 board and the PR's comments, through `gh`
 //                     -- the same fields and markers bc-issue.sh / bc-comment.sh read
 //   the loop          $BC_STATE_DIR/orchestrator.log, the file run-orchestrator.sh tees to
@@ -98,7 +100,7 @@ const state = {
   startedAt: Date.now(),
   sessions: null,     // { roles: {role: {...}}, loopTerminal: bool, at }
   budget: null,       // the last rate-monitor answer, normalised
-  budgetHistory: [],  // [{t, s, w}]
+  budgetHistory: [],  // [{t, s, w, f}]
   board: null,        // task, PR, KPIs from GitHub
   loop: null,         // the orchestrator log, parsed
   spend: null,        // per-role spend from transcripts
@@ -164,9 +166,29 @@ async function readBudget() {
     session: { util: s, reset: num(j.session?.reset) ? num(j.session.reset) * 1000 : null, status: j.session?.status ?? null, cap: SESSION_CAP },
     weekly: { util: w, reset: weeklyReset, status: j.weekly?.status ?? null, cap: endgame ? 1 : WEEKLY_CAP, baseCap: WEEKLY_CAP, endgame },
   };
-  const point = { t: Date.now(), s, w };
+  // The Fable limit is shown, not gated on: failing to read it is reported,
+  // but never costs the page the two numbers the gate does use.
+  state.budget.fable = await readFable().then((f) => { delete state.errors.fable; return f; },
+    (e) => { state.errors.fable = { message: e.message, at: Date.now() }; return null; });
+  const point = { t: Date.now(), s, w, ...(state.budget.fable ? { f: state.budget.fable.util } : {}) };
   state.budgetHistory.push(point);
   try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.appendFileSync(HISTORY_FILE, JSON.stringify(point) + '\n'); } catch { /* the graph only loses a point */ }
+}
+
+// The per-model weekly limits: `limits` on /api/oauth/usage, one
+// `weekly_scoped` entry per model family, `percent` out of 100.
+const CREDENTIALS = path.join(HOME, '.claude', '.credentials.json');
+async function readFable() {
+  const token = JSON.parse(fs.readFileSync(CREDENTIALS, 'utf8'))?.claudeAiOauth?.accessToken;
+  if (!token) throw new Error(`no OAuth token in ${CREDENTIALS}`);
+  const r = await fetch('https://api.anthropic.com/api/oauth/usage', {
+    headers: { authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20' },
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!r.ok) throw new Error(`usage endpoint answered ${r.status}`);
+  const l = ((await r.json()).limits ?? []).find((x) => x.kind === 'weekly_scoped' && /fable/i.test(x.scope?.model?.display_name ?? ''));
+  if (!l) return null;
+  return { util: l.percent / 100, reset: l.resets_at ? Date.parse(l.resets_at) : null };
 }
 
 // --- source: GitHub -> the task, its PR, the week's KPIs ------------------------
