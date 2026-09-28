@@ -758,7 +758,10 @@ printf '400\n' > "$FAKE_WE/gh_issue_create.json"
 check_out "write-epic prints the new issue number" 0 400 \
   run "$FAKE_WE" "" write-epic 3 "Epic 3 — Combat" "$WE_BODY" Critical
 check "write-epic created the issue with the epic label" 0 \
-  log_has "$FAKE_WE/calls.log" '^gh_issue_create Epic 3 .* epic$'
+  log_has "$FAKE_WE/calls.log" '^gh_issue_create .* epic$'
+# The caller already wrote "Epic 3 —": the script keeps one prefix, its own.
+check "write-epic titled it 'Epic <n>: <title>', never doubling the prefix" 0 \
+  log_has "$FAKE_WE/calls.log" '^gh_issue_create Epic 3: Combat '
 # project_item is a fake_read (it "returns" an id even though it's a
 # side-effecting add-if-missing in real life), so it never appears in
 # calls.log -- only the project_set_* writes below are observable here.
@@ -779,6 +782,19 @@ check "write-epic with a missing argument exits 2" 2 \
   run "$FAKE_WE2" "" write-epic 3 "Epic 3" "$FAKE_WE2/body.md"
 check "and none of those created anything" 1 test -f "$FAKE_WE2/calls.log"
 
+FAKE_WE3="$(fake_dir)"
+printf 'A preamble.\n' > "$FAKE_WE3/body.md"
+printf '402\n' > "$FAKE_WE3/gh_issue_create.json"
+check_out "write-epic with a bare title" 0 402 \
+  run "$FAKE_WE3" "" write-epic 16 "Weather" "$FAKE_WE3/body.md" Low
+check "gets the 'Epic <n>: ' prefix written for it" 0 \
+  log_has "$FAKE_WE3/calls.log" '^gh_issue_create Epic 16: Weather '
+FAKE_WE4="$(fake_dir)"
+printf 'A preamble.\n' > "$FAKE_WE4/body.md"
+check "write-epic whose title is only its prefix exits 2" 2 \
+  run "$FAKE_WE4" "" write-epic 16 "Epic 16:" "$FAKE_WE4/body.md" Low
+check "and created nothing" 1 test -f "$FAKE_WE4/calls.log"
+
 echo
 echo "write-story: opens it, labels its leads, links it under its epic, marks its blockers:"
 
@@ -793,7 +809,9 @@ printf 'I_kwDO132\n' > "$FAKE_WT/gh_issue_id.132.json"
 check_out "write-story prints the new issue number" 0 401 \
   run "$FAKE_WT" "" write-story 400 3.1 "Parry" "$WT_BODY" M Standard derek,tim 97,#132
 check "write-story labelled it story + one label per lead" 0 \
-  log_has "$FAKE_WT/calls.log" '^gh_issue_create Parry .* story,lead:derek,lead:tim$'
+  log_has "$FAKE_WT/calls.log" '^gh_issue_create .* story,lead:derek,lead:tim$'
+check "write-story titled it 'Story <id>: <title>'" 0 \
+  log_has "$FAKE_WT/calls.log" '^gh_issue_create Story 3\.1: Parry '
 check "write-story linked it under its epic by DATABASE id" 0 \
   log_has "$FAKE_WT/calls.log" '^gh_issue_add_subissue 400 I_kwDO401$'
 check "write-story marked it blocked by the first, by DATABASE id" 0 \
@@ -814,7 +832,22 @@ printf '402\n' > "$FAKE_WT_NL/gh_issue_create.json"
 check_out "write-story with '-' leads and '-' blockers takes the story label alone" 0 402 \
   run "$FAKE_WT_NL" "" write-story 400 3.2 "Riposte" "$FAKE_WT_NL/body.md" S Low - -
 check "and quentin was NOT written as a label (scope adds him on read)" 0 \
-  log_has "$FAKE_WT_NL/calls.log" '^gh_issue_create Riposte .* story$'
+  log_has "$FAKE_WT_NL/calls.log" '^gh_issue_create Story 3\.2: Riposte .* story$'
+
+FAKE_WT_PF="$(fake_dir)"
+printf 'A story.\n' > "$FAKE_WT_PF/body.md"
+printf '404\n' > "$FAKE_WT_PF/gh_issue_create.json"
+check_out "write-story whose title already carries its own prefix" 0 404 \
+  run "$FAKE_WT_PF" "" write-story 400 3.1 "Story 3.1: Parry" "$FAKE_WT_PF/body.md" S Low - -
+check "keeps one prefix, not two" 0 \
+  log_has "$FAKE_WT_PF/calls.log" '^gh_issue_create Story 3\.1: Parry '
+FAKE_WT_PF2="$(fake_dir)"
+printf 'A story.\n' > "$FAKE_WT_PF2/body.md"
+printf '405\n' > "$FAKE_WT_PF2/gh_issue_create.json"
+check_out "write-story 3.1 titled after story 3.12" 0 405 \
+  run "$FAKE_WT_PF2" "" write-story 400 3.1 "Story 3.12 follow-up" "$FAKE_WT_PF2/body.md" S Low - -
+check "is not mistaken for its own prefix" 0 \
+  log_has "$FAKE_WT_PF2/calls.log" '^gh_issue_create Story 3\.1: Story 3\.12 follow-up '
 check "and '-' wrote no blocker" 1 log_has "$FAKE_WT_NL/calls.log" '^gh_issue_add_blocker'
 
 # No gh_issue_id fixture for 98: the blocker does not resolve to an issue.

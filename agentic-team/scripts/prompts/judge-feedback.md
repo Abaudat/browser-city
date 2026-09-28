@@ -24,6 +24,7 @@ an outcome, not a bucket.
     bash {{scripts}}/bc-issue.sh write-epic <n> "<title>" <bodyfile> <priority>
 
 `<n>` is the next free epic number (the backlog list shows which are taken).
+`<title>` is the epic's name alone; the script titles it `Epic <n>: <title>`.
 `<bodyfile>` holds the epic's preamble — what outcome it delivers and why —
 and nothing else. `<priority>` is one of `Blocker`, `Critical`, `Standard`,
 `Low`. It prints the new issue number; you need that number for the stories.
@@ -36,6 +37,8 @@ Then open each story under its epic:
 - `<epic-issue>` is the epic's ISSUE number — the one write-epic printed, or
   the one the backlog list shows for an existing epic. Not the epic number.
 - `<id>` is the story's id within its epic, e.g. `3.4`.
+- `<title>` is the story's name alone; the script titles it
+  `Story <id>: <title>`, so do not write that prefix yourself.
 - `<bodyfile>` holds the story's prose: the story itself, then its acceptance
   criteria. If the work needs a requirement that `docs/requirements.md` does
   not yet carry, make writing that requirement one of the criteria — never

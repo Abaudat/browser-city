@@ -54,6 +54,8 @@ story — never more than one per request — as a sub-issue of **the epic story
   creates one.
 - `<id>` is the story's id within that epic, e.g. `3.7`; the sibling list
   shows which are taken.
+- `<title>` is the story's name alone; the script titles it
+  `Story <id>: <title>`, so do not write that prefix yourself.
 - `<bodyfile>` holds the story's prose then its acceptance criteria. If it
   needs a requirement `docs/requirements.md` does not yet carry, make writing
   that requirement one of the criteria — never edit the doc yourself.

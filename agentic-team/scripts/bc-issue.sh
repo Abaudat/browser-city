@@ -101,9 +101,9 @@ usage: bc-issue.sh <command> [args]
   write-feedback-reply <issue> <bodyfile>
                                  -- Scotty, integrating-feedback: reply to Adrian (idempotent upsert)
   write-epic <n> <title> <bodyfile> <priority>
-                                 -- Scotty, integrating-feedback: open an epic
+                                 -- Scotty, integrating-feedback: open an epic, titled "Epic <n>: <title>"
   write-story <epic> <id> <title> <bodyfile> <size> <priority> <leads-csv> <blocked-by-csv>
-                                 -- Scotty, integrating-feedback: open a story
+                                 -- Scotty, integrating-feedback: open a story, titled "Story <id>: <title>"
   write-blockers <issue> <blocker>...
                                  -- Scotty: mark an existing story blocked by others
   epic-context <issue>           -- judging-task-request: the story's epic and every sibling
@@ -140,6 +140,28 @@ _bc_issue_body() {
     return 2
   fi
   printf '%s' "$text"
+}
+
+# _bc_issue_title <Epic|Story> <id> <title> -> "<Kind> <id>: <title>".
+# The id in the title is the backlog's naming convention, and the commits and
+# PRs quote it, so the script writes it rather than trusting the caller to.
+# A title that already opens with this same "<Kind> <id>" (and any `:`, `-`
+# or `—` after it) has that prefix dropped first, so it is never doubled.
+_bc_issue_title() {
+  local kind="$1" id="$2" title="$3" prefix
+  prefix="$kind $id"
+  if [ "${title:0:${#prefix}}" = "$prefix" ]; then
+    local rest="${title:${#prefix}}"
+    # Only a real separator ends the prefix: "Story 3.1" must not eat "Story 3.12".
+    if [ -z "$rest" ] || [[ "$rest" =~ ^([[:space:]]|:|—|-) ]]; then
+      title="$(printf '%s' "$rest" | sed -E 's/^([[:space:]]|:|—|-)+//')"
+    fi
+  fi
+  if [ -z "$title" ]; then
+    echo "bc-issue: the title is empty once its '$prefix' prefix is dropped" >&2
+    return 2
+  fi
+  printf '%s: %s' "$prefix" "$title"
 }
 
 # write-demo's checklist lint (Story 4.17): mechanical rules only, never a
@@ -788,6 +810,7 @@ write-epic)
   [ -n "$n" ] && [ -n "$title" ] && [ -n "$bodyfile" ] && [ -n "$prio" ] || { usage; exit 2; }
   _bc_issue_check_option "$prio" "$_BC_PRIORITIES" priority write-epic || exit 2
   preamble="$(_bc_issue_body "$bodyfile" write-epic)" || exit 2
+  title="$(_bc_issue_title Epic "$n" "$title")" || exit 2
 
   out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-epic-out.XXXXXX")"
   render_epic_body "$n" "$preamble" > "$out"
@@ -841,6 +864,7 @@ write-story)
   fi
 
   story="$(_bc_issue_body "$bodyfile" write-story)" || exit 2
+  title="$(_bc_issue_title Story "$sid" "$title")" || exit 2
 
   out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-story-out.XXXXXX")"
   render_story_body "$sid" "$story" > "$out"
