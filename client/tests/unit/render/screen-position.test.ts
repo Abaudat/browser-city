@@ -318,17 +318,23 @@ describe("subcellRectPx", () => {
   });
 });
 
-// Story 15.4 (Quentin's direction, AC1/AC2): the whole story's own red
-// test. `worldPointPx(feetX, feetY, ...)` is what the scene draws the
-// player's sprite at (`test-street/scene.ts`'s `positionSprite`, through
-// the player's own continuous feet position, never a cell); the pixel it
-// lands on must be the bottom-centre of the exact body rect
-// `world/movement.ts`'s `step` resolves against (`bodyRect`), for any
-// feet position, floor, tile size, storey height and integer zoom --
-// within the snap's own half-screen-pixel slack, since `subcellRectPx`
-// (which the body goes through) is deliberately unrounded while
-// `worldPointPx` snaps. Before this story's fix, the player was drawn
-// through the cell-anchor placement instead, which fails this by exactly
+// Story 15.4 (Quentin's direction, AC1/AC2): pins that the projection
+// used for an actor (`worldPointPx`) and the projection used for the
+// FR165 overlay's player body (`bodyRect`, through `subcellRectPx`)
+// agree, for any feet position, floor, tile size, storey height and
+// integer zoom, within the snap's own half-screen-pixel slack (since
+// `subcellRectPx` is deliberately unrounded while `worldPointPx` snaps).
+// It does not, on its own, prove `test-street/scene.ts` actually draws
+// the player through `worldPointPx` -- both are pure functions, and a
+// scene that regressed to `positionSprite(playerSprite,
+// cellBottomCentre(...))` would leave this property green. That mounted
+// wiring is guarded by two e2e cases instead: `debug-overlays.spec.ts`'s
+// "the collision overlay's player body sits on the player's real drawn
+// sprite" and this story's own AC4 case in `test-street.spec.ts`, both
+// of which compare the real, drawn Pixi sprite to a collider with no
+// shared projection to cancel against. Had the player been drawn
+// through the old cell-anchor placement instead of `worldPointPx`, this
+// property's own two computations would have disagreed by exactly
 // `(tile/2, tile)` -- the offset Adrian's Sprint 4 demo (#333) found.
 describe("inv_player_sprite_feet_sit_on_body", () => {
   it("inv_player_sprite_feet_sit_on_body", () => {

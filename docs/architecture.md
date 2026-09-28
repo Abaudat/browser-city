@@ -407,19 +407,14 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   `client/src/world/movement-config.ts`. The body is a small rect at the
   feet, centred on the player's position with its bottom edge there --
   never the sprite rect. `world/movement.ts`'s `bodyRect` is the one
-  function that builds it; `step` resolves against it and the FR165
-  collision overlay draws it, so there is one body, not two (story 15.4).
-- A continuous world point (a character's feet, the camera anchor) is
-  projected to screen pixels only by `render/screen-position.ts`'s
-  `worldPointPx` -- a plain scale-and-floor-offset with no anchor term of
-  its own. A cell's own bottom-centre point (where a prop's sprite sits
-  within its cell) is `cellBottomCentre(cellX, cellY)`, a separate, pure
-  function; `Drawable.x`/`y` (FR123 sort units) are always the drawn
-  bottom-centre point, so a prop's own sort position already has
-  `cellBottomCentre` folded in before it reaches the comparator. Passing a
-  cell straight into `worldPointPx` without going through
-  `cellBottomCentre` first draws it away from where its collider is --
-  story 15.4's fix, after a defect that did exactly that to the player.
+  function that builds the body; `step` resolves against it and the
+  FR165 collision overlay draws it.
+- `render/screen-position.ts`'s `worldPointPx` is the only
+  world-to-screen projection: scale and floor offset, no anchor term. A
+  cell's drawn bottom-centre is `cellBottomCentre(cellX, cellY)`, integer
+  inputs only. `Drawable.x`/`y` are the drawn bottom-centre in sort
+  units, and every pool member is positioned from them through
+  `worldPointPx`.
 - The collision grid is derived, sparse by chunk and dense within one
   (`CHUNK_SIZE*CHUNK_SIZE`, indexed arithmetically), keyed by the
   client's own mirror of `chunk_key`. It is mutated only by
@@ -611,13 +606,9 @@ screen-space or floor-adjusted value -- a continuous, moving character
 needs sub-tile resolution to sort correctly against a static prop it is
 passing, and every caller that builds a drawable must convert a tile
 coordinate through `toSortUnits` or it silently mixes units. `x`/`y` are
-always the drawable's own *drawn* bottom-centre point (story 15.4): a
-prop's own cell goes through `cellBottomCentre` before `toSortUnits`, a
-character's already-continuous feet position needs no further anchor
-term, and the render path positions every pool member on screen from
-this same pair of sort-unit fields, through `worldPointPx` alone -- so
-the sort key and the drawn position can never quietly disagree about
-where something is. `rank`
+the drawable's drawn bottom-centre: a prop's cell through
+`cellBottomCentre` before `toSortUnits`, a character's feet as they are.
+`rank`
 comes from `sim::codes::layer` (below), never a literal; `stableId` is a
 `bigint` end to end (`object_id` for a placed drawable, a character's id
 for a character) and is never narrowed through `Number`. Floor is never a

@@ -822,14 +822,16 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
 // the rest through *drawn pixels*: the same `worldPointPx` `scene.ts`'s
 // `positionSprite` draws the player with, and the same `subcellRectPx`
 // the FR165 overlay draws a collider with. This module never mounts
-// `scene.ts` itself (`client/tests/unit/**`'s own coverage boundary), so
-// it cannot independently prove master's cell-anchored placement was
-// wrong the way `inv_player_sprite_feet_sit_on_body`
-// (`tests/unit/render/screen-position.test.ts`) and this story's e2e
-// case do -- what it pins, against the real committed street, is that
-// the resolver's own body and the drawn collider agree to the pixel from
-// four different approach columns, so a future drift in either can never
-// pass silently again.
+// `scene.ts` itself (`client/tests/unit/**`'s own coverage boundary), and
+// both sides of every assertion below go through the same two pure
+// projections, so it cannot independently prove master's cell-anchored
+// placement was wrong -- that is what the two e2e cases are for
+// (`debug-overlays.spec.ts`'s player-body-on-sprite check and this
+// story's own AC4 case in `test-street.spec.ts`, both of which compare
+// the real, mounted Pixi sprite to a collider). What this walk pins,
+// against the real committed street: the resolver's own body and the
+// drawn collider agree to the pixel from four different approach
+// columns, so a future drift in either can never pass silently again.
 describe("the bollard west of the shopfront stops the player where it is drawn (AC1, AC4)", () => {
   const config = streetMovementConfig();
   const world = streetWorldIndex();
@@ -888,19 +890,26 @@ describe("the bollard west of the shopfront stops the player where it is drawn (
     return pos;
   }
 
+  // The collider's own absolute sub-cell rect, built directly from its
+  // anchor cell the way `collision-rects.ts` and the e2e case do -- never
+  // by handing `worldPointPx` a cell and translating by the result. That
+  // would pass a cell straight into the one function this story's own
+  // doc comment says never takes one; `subcellRectPx` is the one place a
+  // sub-cell coordinate (never a cell) becomes a pixel.
+  const colliderSub = {
+    x0: bollard.x * config.subcellsPerCell + BOLLARD_COLLIDER.x0,
+    y0: bollard.y * config.subcellsPerCell + BOLLARD_COLLIDER.y0,
+    x1: bollard.x * config.subcellsPerCell + BOLLARD_COLLIDER.x1,
+    y1: bollard.y * config.subcellsPerCell + BOLLARD_COLLIDER.y1,
+  };
   const colliderDrawn = subcellRectPx(
-    BOLLARD_COLLIDER,
+    colliderSub,
     floor,
     config.subcellsPerCell,
     tileSizePx,
     storeyHeightPx,
   );
-  // The bollard's own drawn rect is relative to its anchor cell's own
-  // screen origin -- translate `subcellRectPx`'s output by that cell's
-  // own top-left pixel, the same translation `collision-rects.ts` applies
-  // via the footprint origin.
-  const anchorPx = worldPointPx(bollard.x, bollard.y, floor, tileSizePx, storeyHeightPx, 1);
-  const colliderSouthFacePx = anchorPx.y + colliderDrawn.y + colliderDrawn.height;
+  const colliderSouthFacePx = colliderDrawn.y + colliderDrawn.height;
 
   for (const [label, x] of Object.entries({
     westHalf: columns.westHalf,
@@ -926,9 +935,9 @@ describe("the bollard west of the shopfront stops the player where it is drawn (
         tileSizePx,
         storeyHeightPx,
       );
-      expect(bodyDrawn.x).toBeGreaterThanOrEqual(anchorPx.x + colliderDrawn.x - tileSizePx / 2);
+      expect(bodyDrawn.x).toBeGreaterThanOrEqual(colliderDrawn.x - tileSizePx / 2);
       expect(bodyDrawn.x + bodyDrawn.width).toBeLessThanOrEqual(
-        anchorPx.x + colliderDrawn.x + colliderDrawn.width + tileSizePx / 2,
+        colliderDrawn.x + colliderDrawn.width + tileSizePx / 2,
       );
     });
   }

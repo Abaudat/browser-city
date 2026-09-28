@@ -27,7 +27,11 @@ export const collisionOverlay: DebugOverlay = {
     for (const rect of buildCollisionRects(view)) {
       const common = {
         "data-bc-collider": rect.kind,
-        "data-bc-object": rect.objectId.toString(),
+        // Absent only for the player's own body (`kind: "player"`),
+        // which has no real object id -- `data-bc-collider` alone names
+        // what it is, never a sentinel id standing in for "not an
+        // object".
+        ...(rect.objectId !== undefined ? { "data-bc-object": rect.objectId.toString() } : {}),
         stroke: rect.stroke,
         "stroke-width": DEBUG_STYLE.strokeWidthPx,
         "vector-effect": "non-scaling-stroke",

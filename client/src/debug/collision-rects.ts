@@ -53,15 +53,12 @@ import type { DebugWorldView } from "./world-view";
  */
 export type CollisionRectKind = "collider" | "empty" | "none" | "player";
 
-/** The player has no real object id (`u64`, never negative) -- a negative
- * sentinel can never collide with one, and `data-bc-object` still names
- * something rather than nothing (Tim's direction: the FR165 overlay's own
- * fourth entry, drawn every frame the player moves). */
-const PLAYER_BODY_OBJECT_ID = -1n;
-
 /** One rect to draw, in world pixels on the viewer's own floor. */
 export interface CollisionRect {
-  readonly objectId: bigint;
+  /** Absent only for `kind: "player"`, which has no real object id --
+   * `kind` alone is the discriminator, never a sentinel value standing
+   * in for "not an object" (Tim's direction). */
+  readonly objectId?: bigint;
   readonly kind: CollisionRectKind;
   readonly x: number;
   readonly y: number;
@@ -192,7 +189,6 @@ export function buildCollisionRects(view: DebugWorldView): CollisionRect[] {
   // one more entry, re-read every frame the player moves, never a second
   // computation from `MovementConfig` here.
   rects.push({
-    objectId: PLAYER_BODY_OBJECT_ID,
     kind: "player",
     ...subcellRectPx(view.viewerBody(), floor, colliderSubcellsPerCell, tileSizePx, storeyHeightPx),
     stroke: STROKE_BY_KIND.player,

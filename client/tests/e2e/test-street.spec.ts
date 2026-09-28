@@ -1155,6 +1155,24 @@ test("the bollard west of the shopfront stops the player where it is drawn, from
       key: "ArrowUp",
       until: { kind: "y-at-most", value: restYCells },
     });
+    // Quentin's direction: the release above cannot by itself tell
+    // "blocked by the post" from "released near restYCells while
+    // walking straight through it" -- an unblocked walker covers up to
+    // one 16.7ms animation frame's worth of distance past the threshold
+    // before release, comfortably inside the drawn-pixel tolerance
+    // `assertRestsOnTheDrawnBollard` uses below. Held past convergence
+    // instead, the same discipline the unit walk's own 300 fixed steps
+    // rely on: hold the key for several whole `MAX_DELTA_MS` ticks after
+    // the release condition first held, and require the position to be
+    // exactly (not approximately) unchanged -- collider faces are exact
+    // integers in sub-cells, so a real rest never drifts under a held
+    // key, and a body that was never actually stopped keeps moving.
+    const restingAt = await playerState(page);
+    await page.keyboard.down("ArrowUp");
+    await page.waitForTimeout(400);
+    await page.keyboard.up("ArrowUp");
+    const heldAt = await playerState(page);
+    expect(heldAt).toEqual(restingAt);
   }
 
   async function assertRestsOnTheDrawnBollard(): Promise<void> {

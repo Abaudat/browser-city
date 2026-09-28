@@ -490,31 +490,33 @@ describe("buildCollisionRects", () => {
           );
 
           for (const rect of rects) {
+            // `rects` is already filtered to `kind !== "player"` above,
+            // the only kind with no `objectId` -- every rect reaching
+            // here has one.
+            if (rect.objectId === undefined) throw new Error(`non-player rect with no objectId`);
+            const objectId = rect.objectId;
             const actual = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
             const expectedFrom = (r: { x0: number; y0: number; x1: number; y1: number }) =>
               subcellRectPx(r, viewerFloor, SUBCELLS, TILE, STOREY);
             if (rect.kind === "collider") {
-              const gridRect = fromGrid.get(rect.objectId);
+              const gridRect = fromGrid.get(objectId);
               expect(
                 gridRect,
-                `${rect.objectId} drawn as a collider the grid does not hold`,
+                `${objectId} drawn as a collider the grid does not hold`,
               ).toBeDefined();
               if (gridRect) expect(actual).toEqual(expectedFrom(gridRect));
             } else if (rect.kind === "empty") {
-              const declared = declaredEmpty.get(rect.objectId);
-              expect(
-                declared,
-                `${rect.objectId} drawn as empty without declaring one`,
-              ).toBeDefined();
+              const declared = declaredEmpty.get(objectId);
+              expect(declared, `${objectId} drawn as empty without declaring one`).toBeDefined();
               if (declared) expect(actual).toEqual(expectedFrom(declared));
               // A zero-area collider stays zero-area: it must never be
               // widened into something that reads as blocking.
               expect(rect.width === 0 || rect.height === 0).toBe(true);
             } else {
-              const declared = declaredNone.get(rect.objectId);
+              const declared = declaredNone.get(objectId);
               expect(
                 declared,
-                `${rect.objectId} drawn as having no collider while declaring one`,
+                `${objectId} drawn as having no collider while declaring one`,
               ).toBeDefined();
               if (declared) expect(actual).toEqual(expectedFrom(declared));
             }

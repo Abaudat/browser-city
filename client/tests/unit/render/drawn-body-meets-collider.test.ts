@@ -1,12 +1,17 @@
-// Story 15.4 (Tim's direction, AC4): the resolver's own body meets the
-// world's own collider in *drawn pixels*, not merely in sub-cells --
-// 15.2's own scripted walks compared `walk.y` to a rest computed in
-// sub-cells and stayed green while the sprite was drawn half a tile east
-// and a whole tile south of that same body (Adrian's Sprint 4 demo,
-// #333). This property runs the real `step`/`bodyRect` and the real
-// `subcellRectPx`/`worldPointPx` projection together, so a regression in
-// either the resolver or the projection shows up here as a gap or an
-// overlap on screen, never only as a sub-cell coordinate matching.
+// Story 15.4 (Tim's direction, AC4): the resolver's own rest is the
+// collider's own drawn face, given one projection. Both the resolved
+// body and the collider go through the same `subcellRectPx`, so a
+// projection error cancels between them and cannot fail this property --
+// this is not the test that catches the sprite/collider offset (that is
+// `debug-overlays.spec.ts`'s player-body-on-sprite case and this story's
+// AC4 e2e, which compare the *real, drawn Pixi sprite* to the collider,
+// with no shared projection to cancel against). What this property does
+// pin: `step`'s own resolved position, run through the one real
+// projection, touches the collider's own drawn face with zero gap and
+// zero overlap on the approach axis whenever the lateral spans overlap,
+// and clears it cleanly when they do not -- true of the resolver alone,
+// for any collider, approach direction and lateral offset, including the
+// half-open touching edge.
 
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";

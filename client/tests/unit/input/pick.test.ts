@@ -71,7 +71,7 @@ function atCell(cellX: number, cellY: number): PickPoint {
 
 /** The rect a bottom-centre-anchored sprite of `heightPx` covers, for an
  * object anchored on `(cellX, cellY)` and `widthCells` wide -- the same
- * geometry `screenPositionPx` places the sprite with. */
+ * geometry `cellBottomCentre` places the sprite at, through `worldPointPx`. */
 function spriteRect(cellX: number, cellY: number, widthCells: number, heightPx: number): PickRect {
   const bottom = (cellY + 1) * TILE;
   return {
