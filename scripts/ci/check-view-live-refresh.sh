@@ -23,13 +23,13 @@
 # pass/fail count.
 set -uo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+. "$REPO_ROOT/scripts/ci/lib/spacetime-instance.sh"
 FIXTURES="$REPO_ROOT/server/tests/fixtures"
 DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bc-view-live-refresh.XXXXXX")"
 PORT=3989
 SERVER_URL="http://127.0.0.1:$PORT"
 START_LOG="$DATA_DIR/start.log"
 HEALTH_DEADLINE_S=30
-POLL_INTERVAL_S=1
 LOG_DEADLINE_S=20
 DB_NAME=bc-view-live-refresh
 # Comfortably longer than LOG_DEADLINE_S: the held subscription must
@@ -43,7 +43,7 @@ HELD_PID=""
 
 cleanup() {
   [ -n "$HELD_PID" ] && kill "$HELD_PID" 2>/dev/null
-  [ -n "$START_PID" ] && kill "$START_PID" 2>/dev/null
+  bc_stop_spacetime "$START_PID"
   rm -rf "$DATA_DIR"
 }
 trap cleanup EXIT
@@ -67,19 +67,9 @@ wait_for_line() {
   return 1
 }
 
-spacetime start --data-dir "$DATA_DIR/data" --listen-addr "127.0.0.1:$PORT" >"$START_LOG" 2>&1 &
-START_PID=$!
-
-deadline=$((SECONDS + HEALTH_DEADLINE_S))
-healthy=0
-while [ "$SECONDS" -lt "$deadline" ]; do
-  if curl -sf -o /dev/null "$SERVER_URL/v1/ping"; then
-    healthy=1
-    break
-  fi
-  sleep "$POLL_INTERVAL_S"
-done
-[ "$healthy" -eq 1 ] || fail "SpacetimeDB did not become healthy within ${HEALTH_DEADLINE_S}s" "$START_LOG"
+START_PID="$(bc_start_spacetime "$DATA_DIR/data" "$PORT" "$START_LOG")"
+bc_wait_spacetime_healthy "$SERVER_URL" "$HEALTH_DEADLINE_S" \
+  || fail "SpacetimeDB did not become healthy within ${HEALTH_DEADLINE_S}s" "$START_LOG"
 
 publish() { # <module-dir> <log-file>
   spacetime publish --server "$SERVER_URL" --no-config -y "$DB_NAME" --module-path "$1" >"$2" 2>&1

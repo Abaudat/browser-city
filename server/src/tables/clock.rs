@@ -17,12 +17,17 @@ pub struct WorldClock {
 }
 
 /// Writes the epoch. Called from `init` only, and never overwrites: a
-/// republish must not reset the city to dawn.
-pub fn record_epoch_from_init(ctx: &ReducerContext) {
-    if ctx.db.world_clock().id().find(0).is_none() {
-        ctx.db.world_clock().insert(WorldClock {
-            id: 0,
-            epoch_at: ctx.timestamp,
-        });
+/// republish must not reset the city to dawn. Returns the epoch that is
+/// now on record either way (freshly written, or already there from an
+/// earlier publish) -- `init`'s own caller needs it to arm every cadence
+/// from, without a second lookup.
+pub fn record_epoch_from_init(ctx: &ReducerContext) -> Timestamp {
+    match ctx.db.world_clock().id().find(0) {
+        Some(row) => row.epoch_at,
+        None => {
+            let epoch_at = ctx.timestamp;
+            ctx.db.world_clock().insert(WorldClock { id: 0, epoch_at });
+            epoch_at
+        }
     }
 }

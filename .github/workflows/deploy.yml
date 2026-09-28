@@ -370,6 +370,11 @@ jobs:
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
         run: spacetime call --server maincloud --no-config -y "$BACKUP_DATABASE" reseed_codes
 
+      - name: re-arm every scheduled cadence (story 4.2) -- schedules are derived state, never trusted to survive a deploy purely by surviving as pending rows
+        env:
+          BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
+        run: spacetime call --server maincloud --no-config -y "$BACKUP_DATABASE" rearm_schedules
+
   # Builds the production client and deploys it to GitHub Pages. Skips on
   # a module-only change (`needs.changes.outputs.client == 'false'`); the
   # `smoke` job below still runs in that case, against the client that is

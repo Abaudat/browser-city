@@ -713,6 +713,111 @@ pub fn batch_by_bytes<'a>(lines: impl Iterator<Item = &'a str>, max_bytes: usize
     batches
 }
 
+// --- cadence_liveness: the one non-scheduled table a live scheduled
+// reducer writes to on its own, independent of anything an export/verify
+// script does (story 4.2) -- an ordinary byte-for-byte line compare is
+// the wrong oracle for it, so this gives verify-world.sh a purpose-built
+// one instead of a bash line-diff over structured JSON. ------------------
+
+/// One `cadence_liveness` row's own fields, extracted positionally from
+/// its exported line -- `[cadence, last_target_at, last_fired_at, fires,
+/// missed]`, the same field order the table's own struct declares
+/// (`server/src/tables/schedules.rs`).
+struct CadenceLivenessRow {
+    cadence: u64,
+    last_target_at_micros: i64,
+    last_fired_at_micros: i64,
+    fires: u64,
+    missed: u64,
+}
+
+fn parse_cadence_liveness_line(line: &str) -> Result<CadenceLivenessRow> {
+    let v: Value =
+        serde_json::from_str(line).map_err(|e| err(format!("not valid JSON: {e}: {line}")))?;
+    let arr = v
+        .as_array()
+        .ok_or_else(|| err(format!("not a JSON array: {line}")))?;
+    if arr.len() != 5 {
+        return Err(err(format!(
+            "expected 5 fields (cadence, last_target_at, last_fired_at, fires, missed), got {}: {line}",
+            arr.len()
+        )));
+    }
+    let as_u64 = |i: usize| -> Result<u64> {
+        arr[i]
+            .as_u64()
+            .ok_or_else(|| err(format!("field {i} is not a u64: {line}")))
+    };
+    let as_timestamp_micros = |i: usize| -> Result<i64> {
+        arr[i]
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| err(format!("field {i} is not a [micros] Timestamp: {line}")))
+    };
+    Ok(CadenceLivenessRow {
+        cadence: as_u64(0)?,
+        last_target_at_micros: as_timestamp_micros(1)?,
+        last_fired_at_micros: as_timestamp_micros(2)?,
+        fires: as_u64(3)?,
+        missed: as_u64(4)?,
+    })
+}
+
+/// `a` is the earlier export, `b` the later one (of the same, restored
+/// database). Every row `a` has must have a counterpart in `b` with the
+/// same `cadence`, either byte-identical or related the only way a real
+/// fire landing between the two exports can relate them: `fires` strictly
+/// greater, `missed` never smaller, `last_fired_at` strictly later --
+/// never fewer fires, never a smaller `missed`, never an earlier or equal
+/// `last_fired_at` (Quentin's direction). `b` may hold a `cadence` `a`
+/// lacks entirely (a fire on a cadence with no prior row) with no
+/// restriction; a `cadence` `a` has that `b` lacks is always a mismatch
+/// -- that is data the restore lost. Returns one description per
+/// mismatch found, empty if none.
+pub fn cadence_liveness_forward_diff(
+    a_lines: &[String],
+    b_lines: &[String],
+) -> Result<Vec<String>> {
+    let mut b_by_cadence: BTreeMap<u64, CadenceLivenessRow> = BTreeMap::new();
+    for line in b_lines {
+        let row = parse_cadence_liveness_line(line)?;
+        b_by_cadence.insert(row.cadence, row);
+    }
+    let mut mismatches = Vec::new();
+    for line in a_lines {
+        let a = parse_cadence_liveness_line(line)?;
+        match b_by_cadence.get(&a.cadence) {
+            None => mismatches.push(format!(
+                "cadence {}: present in the earlier export, missing from the later one",
+                a.cadence
+            )),
+            Some(b) => {
+                let identical = a.last_target_at_micros == b.last_target_at_micros
+                    && a.last_fired_at_micros == b.last_fired_at_micros
+                    && a.fires == b.fires
+                    && a.missed == b.missed;
+                let forward = b.fires > a.fires
+                    && b.missed >= a.missed
+                    && b.last_fired_at_micros > a.last_fired_at_micros;
+                if !identical && !forward {
+                    mismatches.push(format!(
+                        "cadence {}: neither identical nor a legitimate later fire (fires {} -> {}, missed {} -> {}, last_fired_at {} -> {})",
+                        a.cadence,
+                        a.fires,
+                        b.fires,
+                        a.missed,
+                        b.missed,
+                        a.last_fired_at_micros,
+                        b.last_fired_at_micros
+                    ));
+                }
+            }
+        }
+    }
+    Ok(mismatches)
+}
+
 // --- schema-driven edge-value seeding (mirrors export/restore's own
 // value shapes exactly -- an Identity is `["0x...64 hex digits..."]`, a
 // Timestamp is `[micros]`, everything else a plain JSON scalar) ---------
@@ -1283,6 +1388,74 @@ mod tests {
         assert_eq!(err.missing, Vec::<String>::new());
         assert_eq!(err.extra, vec!["gadget".to_string()]);
         assert!(err.column_diffs.is_empty());
+    }
+
+    fn cl_line(cadence: u64, target: i64, fired: i64, fires: u64, missed: u64) -> String {
+        format!("[{cadence},[{target}],[{fired}],{fires},{missed}]")
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_accepts_byte_identical_rows() {
+        let a = vec![cl_line(1, 100, 200, 3, 0)];
+        let b = a.clone();
+        assert_eq!(
+            cadence_liveness_forward_diff(&a, &b).unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_accepts_a_legitimate_later_fire() {
+        let a = vec![cl_line(1, 100, 200, 3, 0)];
+        let b = vec![cl_line(1, 2600, 2650, 4, 0)];
+        assert_eq!(
+            cadence_liveness_forward_diff(&a, &b).unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_accepts_b_holding_an_extra_cadence() {
+        let a = vec![cl_line(1, 100, 200, 3, 0)];
+        let b = vec![cl_line(1, 100, 200, 3, 0), cl_line(2, 50, 60, 1, 0)];
+        assert_eq!(
+            cadence_liveness_forward_diff(&a, &b).unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_rejects_a_cadence_missing_from_b() {
+        let a = vec![cl_line(1, 100, 200, 3, 0)];
+        let b: Vec<String> = vec![];
+        let diff = cadence_liveness_forward_diff(&a, &b).unwrap();
+        assert_eq!(diff.len(), 1);
+        assert!(diff[0].contains("missing from the later one"));
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_rejects_fires_not_strictly_greater() {
+        let a = vec![cl_line(1, 100, 200, 3, 0)];
+        // same fires, later timestamp -- not a legitimate fire, and not identical either.
+        let b = vec![cl_line(1, 2600, 2650, 3, 0)];
+        let diff = cadence_liveness_forward_diff(&a, &b).unwrap();
+        assert_eq!(diff.len(), 1);
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_rejects_a_smaller_missed() {
+        let a = vec![cl_line(1, 100, 200, 3, 2)];
+        let b = vec![cl_line(1, 2600, 2650, 4, 1)];
+        let diff = cadence_liveness_forward_diff(&a, &b).unwrap();
+        assert_eq!(diff.len(), 1);
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_rejects_an_earlier_or_equal_last_fired_at() {
+        let a = vec![cl_line(1, 100, 200, 3, 0)];
+        let b = vec![cl_line(1, 2600, 200, 4, 0)];
+        let diff = cadence_liveness_forward_diff(&a, &b).unwrap();
+        assert_eq!(diff.len(), 1);
     }
 }
 

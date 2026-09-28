@@ -5,6 +5,7 @@
 
 pub mod appearance;
 pub mod balance;
+pub mod cadence;
 pub mod codes;
 pub mod demo_ping;
 pub mod generation;

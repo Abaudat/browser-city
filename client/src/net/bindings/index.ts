@@ -36,9 +36,11 @@ import {
 // Import all reducer arg schemas
 import BeginRestoreReducer from "./begin_restore_reducer";
 import FinishRestoreReducer from "./finish_restore_reducer";
+import RearmSchedulesReducer from "./rearm_schedules_reducer";
 import ReseedCodesReducer from "./reseed_codes_reducer";
 import RestoreBuildingReducer from "./restore_building_reducer";
 import RestoreBuildingAreaReducer from "./restore_building_area_reducer";
+import RestoreCadenceLivenessReducer from "./restore_cadence_liveness_reducer";
 import RestoreCharacterReducer from "./restore_character_reducer";
 import RestoreCharacterIdentityReducer from "./restore_character_identity_reducer";
 import RestoreCitizenReducer from "./restore_citizen_reducer";
@@ -62,6 +64,7 @@ import SendPingReducer from "./send_ping_reducer";
 import * as SyncClockProcedure from "./sync_clock_procedure";
 
 // Import all table schema definitions
+import CadenceLivenessRow from "./cadence_liveness_table";
 import DemoPingRow from "./demo_ping_table";
 import ModuleVersionRow from "./module_version_table";
 import WorldClockRow from "./world_clock_table";
@@ -70,6 +73,17 @@ import WorldClockRow from "./world_clock_table";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  cadenceLiveness: __table({
+    name: 'cadence_liveness',
+    indexes: [
+      { accessor: 'cadence', name: 'cadence_liveness_cadence_idx_btree', algorithm: 'btree', columns: [
+        'cadence',
+      ] },
+    ],
+    constraints: [
+      { name: 'cadence_liveness_cadence_key', constraint: 'unique', columns: ['cadence'] },
+    ],
+  }, CadenceLivenessRow),
   demoPing: __table({
     name: 'demo_ping',
     indexes: [
@@ -105,9 +119,11 @@ const tablesSchema = __schema({
 const reducersSchema = __reducers(
   __reducerSchema("begin_restore", BeginRestoreReducer),
   __reducerSchema("finish_restore", FinishRestoreReducer),
+  __reducerSchema("rearm_schedules", RearmSchedulesReducer),
   __reducerSchema("reseed_codes", ReseedCodesReducer),
   __reducerSchema("restore_building", RestoreBuildingReducer),
   __reducerSchema("restore_building_area", RestoreBuildingAreaReducer),
+  __reducerSchema("restore_cadence_liveness", RestoreCadenceLivenessReducer),
   __reducerSchema("restore_character", RestoreCharacterReducer),
   __reducerSchema("restore_character_identity", RestoreCharacterIdentityReducer),
   __reducerSchema("restore_citizen", RestoreCitizenReducer),
@@ -135,6 +151,8 @@ const proceduresSchema = __procedures(
 
 type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "tables"> & {
   tables: typeof tablesSchema.schemaType.tables & {
+    /** @deprecated Use `cadenceLiveness` instead. This alias will be removed in the next major version. */
+    readonly "cadence_liveness": Omit<typeof tablesSchema.schemaType.tables["cadenceLiveness"], "accessorName"> & { readonly accessorName: "cadence_liveness" };
     /** @deprecated Use `demoPing` instead. This alias will be removed in the next major version. */
     readonly "demo_ping": Omit<typeof tablesSchema.schemaType.tables["demoPing"], "accessorName"> & { readonly accessorName: "demo_ping" };
     /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */
@@ -159,6 +177,7 @@ const REMOTE_MODULE = {
 >;
 
 const tableAccessorAliases = {
+  "cadence_liveness": "cadenceLiveness",
   "demo_ping": "demoPing",
   "world_clock": "worldClock",
   "module_version": "moduleVersion",
@@ -182,6 +201,8 @@ function __withTableAccessorAliases<T extends object>(target: T, freeze = false)
 
 type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>["db"];
 export type DbView = __DbViewBase & {
+  /** @deprecated Use `cadenceLiveness` instead. This alias will be removed in the next major version. */
+  readonly "cadence_liveness": __DbViewBase["cadenceLiveness"];
   /** @deprecated Use `demoPing` instead. This alias will be removed in the next major version. */
   readonly "demo_ping": __DbViewBase["demoPing"];
   /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */
@@ -192,6 +213,8 @@ export type DbView = __DbViewBase & {
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
 export type Tables = __TablesBase & {
+  /** @deprecated Use `cadenceLiveness` instead. This alias will be removed in the next major version. */
+  readonly "cadence_liveness": __TablesBase["cadenceLiveness"];
   /** @deprecated Use `demoPing` instead. This alias will be removed in the next major version. */
   readonly "demo_ping": __TablesBase["demoPing"];
   /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */

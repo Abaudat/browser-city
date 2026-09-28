@@ -71,6 +71,7 @@ SCRIPT="check-backup-restore"
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 OPS="$REPO_ROOT/scripts/ops"
 . "$OPS/lib.sh"
+. "$REPO_ROOT/scripts/ci/lib/spacetime-instance.sh"
 
 DATA_DIR="$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/bc-backup-restore.XXXXXX")"
 WORK="$DATA_DIR/work"
@@ -80,7 +81,6 @@ SERVER_URL="http://127.0.0.1:$PORT"
 SERVER_ARGS=(--server "$SERVER_URL")
 START_LOG="$DATA_DIR/start.log"
 HEALTH_DEADLINE_S=30
-POLL_INTERVAL_S=1
 START_PID=""
 
 cleanup() {
@@ -88,7 +88,7 @@ cleanup() {
     echo "$SCRIPT: BC_KEEP_DATA_DIR set -- leaving $DATA_DIR and the instance on $SERVER_URL running" >&2
     return
   fi
-  [ -n "$START_PID" ] && kill "$START_PID" 2>/dev/null
+  bc_stop_spacetime "$START_PID"
   rm -rf "$DATA_DIR"
   # story 4.18 AC3's own disposable worktrees: removed right after each is
   # used, but a failure partway through (fail() exits immediately) can
@@ -105,15 +105,9 @@ fail() { # <message> [log-file]
 }
 ok() { echo "$SCRIPT: ok -- $1" >&2; }
 
-spacetime start --data-dir "$DATA_DIR/data" --listen-addr "127.0.0.1:$PORT" >"$START_LOG" 2>&1 &
-START_PID=$!
-deadline=$((SECONDS + HEALTH_DEADLINE_S))
-healthy=0
-while [ "$SECONDS" -lt "$deadline" ]; do
-  curl -sf -o /dev/null "$SERVER_URL/v1/ping" && { healthy=1; break; }
-  sleep "$POLL_INTERVAL_S"
-done
-[ "$healthy" -eq 1 ] || fail "SpacetimeDB did not become healthy within ${HEALTH_DEADLINE_S}s" "$START_LOG"
+START_PID="$(bc_start_spacetime "$DATA_DIR/data" "$PORT" "$START_LOG")"
+bc_wait_spacetime_healthy "$SERVER_URL" "$HEALTH_DEADLINE_S" \
+  || fail "SpacetimeDB did not become healthy within ${HEALTH_DEADLINE_S}s" "$START_LOG"
 
 publish() { # <db> <log-file>
   spacetime publish --server "$SERVER_URL" --no-config -y "$1" --module-path "$REPO_ROOT/server" >"$2" 2>&1
@@ -226,6 +220,53 @@ cat "$DATA_DIR/restore.log" >&2
 grep -qE "'demo_ping' restored [0-9]+ row\(s\) in [2-9][0-9]* batch\(es\)" "$DATA_DIR/restore.log" \
   || fail "'demo_ping' (which includes a 20KB message) did not restore across multiple batches at a 4000-byte budget -- byte-budget batching is not exercised" "$DATA_DIR/restore.log"
 ok "a row too big for one batch restores across multiple byte-budgeted batches"
+
+# --- story 4.2: begin_restore disarms every scheduled table before its
+# own preconditions run -- a freshly published target's own init armed
+# maintenance_schedule immediately, so without this a real fire could
+# land on the target mid-restore, using an epoch that belongs to the
+# target's own pre-restore world. Checked directly, on its own throwaway
+# target: begin_restore, then every scheduled table's row count, before
+# any restore_* call has run at all ----------------------------------
+DISARM_TARGET=bc-backup-disarm
+publish "$DISARM_TARGET" "$DATA_DIR/disarm-publish.log" || fail "could not publish '$DISARM_TARGET'" "$DATA_DIR/disarm-publish.log"
+DISARM_BEFORE="$(row_count_live "$DISARM_TARGET" maintenance_schedule)"
+[ "$DISARM_BEFORE" -eq 1 ] || fail "freshly published '$DISARM_TARGET.maintenance_schedule' holds $DISARM_BEFORE pending row(s), expected exactly 1 (init's own arm) -- nothing to disarm, this leg would prove nothing" "$DATA_DIR/disarm-publish.log"
+spacetime call "$DISARM_TARGET" "${SERVER_ARGS[@]}" --no-config -y begin_restore '[]' >"$DATA_DIR/disarm-begin.log" 2>&1 \
+  || fail "begin_restore failed against '$DISARM_TARGET'" "$DATA_DIR/disarm-begin.log"
+while IFS= read -r table; do
+  [ -n "$table" ] || continue
+  n="$(row_count_live "$DISARM_TARGET" "$table")"
+  [ "$n" -eq 0 ] || fail "scheduled table '$table' on '$DISARM_TARGET' holds $n pending row(s) immediately after begin_restore, expected exactly 0 -- begin_restore must disarm every scheduled table before any cadence can fire mid-restore" "$DATA_DIR/disarm-begin.log"
+done <<< "$(bc_table_names "$BC_SNAPSHOT" scheduled)"
+ok "begin_restore disarms every scheduled table -- zero pending rows on '$DISARM_TARGET' immediately after, before any restore_* call"
+
+# --- restore-world.sh's finish_restore re-arms every cadence from the
+# epoch just restored, inside the module's own transaction chain.
+# maintenance_schedule holds exactly one pending row, and its own
+# freshly-armed target is phase-aligned to the restored epoch: the gap
+# between them is a whole number of city minutes (REAL_MS_PER_CITY_MINUTE,
+# 2500ms -- sim::cadence's own floor every cadence period clears, never
+# the maintenance-specific period alone, so this check stays valid even if
+# that period constant later changes). Read from maintenance_schedule
+# itself, never cadence_liveness: that table is only ever written from
+# inside a cadence's own fired reducer (never by the arm alone), so right
+# after a restore -- nothing has fired yet -- it still has no row at all. -
+MAINT_PENDING="$(row_count_live "$DST" maintenance_schedule)"
+[ "$MAINT_PENDING" -eq 1 ] || fail "restored '$DST.maintenance_schedule' holds $MAINT_PENDING pending row(s) after rearm_schedules, expected exactly 1"
+RESTORED_EPOCH_MICROS="$(column_values_live "$DST" world_clock epoch_at | grep -oE '[0-9]+' | head -n1)"
+# scheduled_at is ScheduleAt (a sum type): SATS tags it as
+# `[variant_index, payload]` -- `[1,[micros]]` for `Time` -- so the
+# *last* digit run is the micros value, never the first (the variant
+# tag), confirmed empirically against a real instance (story 4.2's
+# check-authoritative-loop.sh carries the same fix, same reasoning).
+MAINT_TARGET_MICROS="$(column_values_live "$DST" maintenance_schedule scheduled_at | grep -oE '[0-9]+' | tail -n1)"
+[ -n "$RESTORED_EPOCH_MICROS" ] || fail "could not read '$DST.world_clock.epoch_at'"
+[ -n "$MAINT_TARGET_MICROS" ] || fail "could not read '$DST.maintenance_schedule.scheduled_at' -- rearm_schedules did not arm the maintenance cadence"
+CITY_MINUTE_MICROS=2500000
+REMAINDER=$(( (MAINT_TARGET_MICROS - RESTORED_EPOCH_MICROS) % CITY_MINUTE_MICROS ))
+[ "$REMAINDER" -eq 0 ] || fail "the restored maintenance cadence's own target ($MAINT_TARGET_MICROS) is not phase-aligned to the restored epoch ($RESTORED_EPOCH_MICROS) at a ${CITY_MINUTE_MICROS}us city-minute grid -- remainder ${REMAINDER}us"
+ok "restored 'maintenance_schedule' resumes with exactly one pending row, phase-aligned to the restored epoch"
 
 EXPORT_B="$WORK/export-b"
 bash "$OPS/export-world.sh" "$DST" "$EXPORT_B" --server "$SERVER_URL" >"$DATA_DIR/export-b.log" 2>&1 || fail "export-world.sh failed on '$DST'" "$DATA_DIR/export-b.log"

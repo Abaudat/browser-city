@@ -8,6 +8,7 @@
 
 use proptest::prelude::*;
 use sim::appearance;
+use sim::cadence;
 use sim::generated::defs::{self, Family, Pool};
 use sim::generation::{GenerationConfig, GenerationContent, envelopes, land_use, plots, streets};
 use sim::rng::{Rng, seed_from_ids};
@@ -121,6 +122,11 @@ pub const INV_GENERATION_PROFESSION_DEPTH_NEVER_COLLAPSES_IN_ONE_CITY: &str = "f
 pub const INV_GENERATION_BARISTA_HAS_AT_LEAST_MIN_EMPLOYERS: &str = "for any seed, the barista profession (an FR14 launch job, posted only at cafes) is held by at least min_employers_per_profession distinct placed workplaces in that one city (story 15.9)";
 pub const INV_GENERATION_BUILDING_TYPE_INDEPENDENT_OF_ENVELOPE_ORDER: &str = "shuffling pass 4's own placed-envelope order and re-running pass 5 over the shuffled list never changes any envelope's own assigned type, for any seed (story 3.4, NFR25)";
 pub const INV_GENERATION_NO_QUADRANT_LACKS_ITS_REQUIRED_SERVICES: &str = "for any seed, for every distribution row a building type actually feeds, and every site quadrant holding at least one hard-eligible, unclaimed, min-spacing-feasible candidate for its subject, the subjects actually placed in that quadrant clear its own catchment floor (per-tag count in that quadrant / ratio, never discounted by the row's own site-wide tolerance_percent) (story 3.4 AC3)";
+pub const INV_SCHEDULE_PHASE_PRESERVED: &str = "sim::cadence::next_target's returned target is always congruent to the origin passed in, modulo the period, for any origin/period/now (story 4.2)";
+pub const INV_SCHEDULE_NEVER_TARGETS_PAST: &str = "sim::cadence::next_target's returned target is always strictly after now, for any reasonable-range origin/period/now (story 4.2)";
+pub const INV_SCHEDULE_CATCH_UP_BOUNDED: &str = "sim::cadence::next_target, called with now a simulated week past the origin, returns instantly (no loop) with missed equal to the exact arithmetic gap in periods -- catch-up is bounded to one late fire, every skipped target is never separately dispatched (story 4.2)";
+pub const INV_SCHEDULE_ARITH_TOTAL: &str = "sim::cadence::next_target never panics and never wraps, for any i64 origin/now (including i64::MIN/i64::MAX) and any positive period_ms (story 4.2, NFR41)";
+pub const INV_SCHEDULE_NEVER_RETURNS_ITS_OWN_ORIGIN: &str = "sim::cadence::next_target's returned target is always strictly after origin, for any reasonable-range origin/period/now -- an early dispatch (now before origin) must never re-arm the already-due origin itself (story 4.2)";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -4966,4 +4972,108 @@ fn a_catchments_own_unmet_floor_is_placed_from_the_site_wide_remainder() {
         "the starved catchment's own unmet floor (2) must be placed from the site-wide \
          remainder, using the second catchment's own real eligible land"
     );
+}
+
+// --- story 4.2: the one scheduled-reducer repeat pattern (sim::cadence) --
+
+proptest! {
+    /// `inv_schedule_phase_preserved`: whatever `origin`/`period_ms`/`now`
+    /// are, the returned target is always exactly `origin + k * period_ms`
+    /// microseconds for some integer `k` -- congruent to `origin` modulo
+    /// the period, so chaining calls (each one's own `origin` is the
+    /// previous call's `target`) can never drift off the grid the very
+    /// first call established.
+    #[test]
+    fn inv_schedule_phase_preserved(
+        origin in any::<i64>(),
+        period_ms in 1i64..=1_000_000_000,
+        now in any::<i64>(),
+    ) {
+        let (target, _missed) = cadence::next_target(origin, period_ms, now);
+        let period_micros = period_ms as i128 * 1000;
+        let delta = target as i128 - origin as i128;
+        prop_assert_eq!(delta.rem_euclid(period_micros), 0);
+    }
+
+    /// `inv_schedule_never_targets_past`: over a reasonable range (not the
+    /// extremes `inv_schedule_arith_total` covers, where saturating
+    /// arithmetic can no longer promise it), the returned target is
+    /// always strictly after `now` -- a target already in the past can
+    /// never be reinserted, so no back-to-back burst is possible.
+    #[test]
+    fn inv_schedule_never_targets_past(
+        origin in -1_000_000_000_000i64..=1_000_000_000_000,
+        period_ms in 1i64..=1_000_000_000,
+        now in -1_000_000_000_000i64..=1_000_000_000_000,
+    ) {
+        let (target, _missed) = cadence::next_target(origin, period_ms, now);
+        prop_assert!(target > now);
+    }
+
+    /// `inv_schedule_never_returns_its_own_origin`: over the same
+    /// reasonable range, the returned target is always strictly after
+    /// `origin` too -- including when `now` lands before `origin` (an
+    /// early dispatch, which nothing forbids): the origin itself is
+    /// already due, so re-arming onto it would fire the same grid point
+    /// twice.
+    #[test]
+    fn inv_schedule_never_returns_its_own_origin(
+        origin in -1_000_000_000_000i64..=1_000_000_000_000,
+        period_ms in 1i64..=1_000_000_000,
+        now in -1_000_000_000_000i64..=1_000_000_000_000,
+    ) {
+        let (target, _missed) = cadence::next_target(origin, period_ms, now);
+        prop_assert!(target > origin);
+    }
+
+    /// `inv_schedule_catch_up_bounded`: seeded a simulated week behind (a
+    /// pause far longer than any real cadence period), the call still
+    /// returns in O(1) -- no loop for a proptest time budget to catch,
+    /// exactly Quentin's own point -- with `missed` equal to the exact
+    /// arithmetic gap in whole periods, and the returned target itself is
+    /// still the very next grid point after `now`, never a burst of
+    /// intermediate ones.
+    #[test]
+    fn inv_schedule_catch_up_bounded(
+        origin in -1_000_000_000_000i64..=1_000_000_000_000,
+        period_ms in 1i64..=100_000,
+    ) {
+        const ONE_WEEK_MICROS: i64 = 7 * 24 * 60 * 60 * 1_000_000;
+        let now = origin + ONE_WEEK_MICROS;
+        let (target, missed) = cadence::next_target(origin, period_ms, now);
+        let period_micros = period_ms as i128 * 1000;
+        let expected_missed = (ONE_WEEK_MICROS as i128).div_euclid(period_micros);
+        prop_assert_eq!(missed as i128, expected_missed);
+        prop_assert!(target > now);
+        prop_assert!((target as i128 - now as i128) <= period_micros);
+    }
+
+    /// `inv_schedule_arith_total` (NFR41): never panics, never wraps, for
+    /// any `i64` origin/now -- including `i64::MIN`/`i64::MAX` -- and any
+    /// positive `period_ms`. The published profile runs with
+    /// `overflow-checks` on, so a wrapping bug here would abort the
+    /// module's own heartbeat every period, forever.
+    #[test]
+    fn inv_schedule_arith_total(
+        origin in any::<i64>(),
+        period_ms in 1i64..=i64::MAX,
+        now in any::<i64>(),
+    ) {
+        let _ = cadence::next_target(origin, period_ms, now);
+    }
+}
+
+/// A deterministic supplement to `inv_schedule_arith_total`'s randomised
+/// coverage: the exact extreme combinations (not merely "probably hit
+/// eventually" by `any::<i64>()`), pinned so they are never dropped by a
+/// future change to proptest's own case count.
+#[test]
+fn schedule_next_target_at_the_extremes_never_panics() {
+    for &origin in &[i64::MIN, i64::MAX, 0] {
+        for &now in &[i64::MIN, i64::MAX, 0] {
+            for &period_ms in &[1i64, cadence::MIN_PERIOD_MS, i64::MAX] {
+                let _ = cadence::next_target(origin, period_ms, now);
+            }
+        }
+    }
 }
