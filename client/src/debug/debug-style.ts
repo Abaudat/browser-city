@@ -40,6 +40,10 @@ export const DEBUG_STYLE = {
     emptyCollider: "#ffff00",
     /** No collider declared at all: FR128's walkability. */
     noCollider: "#00ffff",
+    /** The player's own collision body (story 15.4) -- distinct from
+     * every object collider colour, so the two can be told apart at a
+     * glance in the overlay. */
+    playerBody: "#ff8800",
     /** The FR123 sort key readout. */
     sortLabel: "#00ffff",
     /** The halo every label is painted under, so a readout stays legible

@@ -6,6 +6,7 @@
 
 import { decomposeFootprint } from "../render/decompose";
 import { layerCodeByName } from "../render/layer-table";
+import { cellBottomCentre } from "../render/screen-position";
 import { type Drawable, setDrawableFloor, setDrawablePosition } from "../render/sort-key";
 import { toSortUnits } from "../render/sort-units";
 import { isNearSideWall, type VisibilityDrawable } from "../render/visibility";
@@ -145,9 +146,17 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
       const isNearSide =
         layerCode === WALLS_LAYER_CODE &&
         isNearSideWall(ownership, cell.x, cell.y, prop.floor, ownerBuildingId);
+      // `Drawable.x`/`y` are the drawn bottom-centre point, in sort units
+      // (story 15.4, Tim's direction) -- never the bare cell index. A
+      // prop's own sprite is drawn at `cellBottomCentre(cell.x, cell.y)`
+      // (`scene.ts`'s `positionSprite`, through the plain `worldPointPx`
+      // projection); the sort key has to agree, or the player's own
+      // feet-anchored key (already the drawn point) compares against a
+      // point that is not where anything was drawn.
+      const anchor = cellBottomCentre(cell.x, cell.y);
       const common = {
-        x: toSortUnits(cell.x),
-        y: toSortUnits(cell.y),
+        x: toSortUnits(anchor.x),
+        y: toSortUnits(anchor.y),
         rank,
         stableId: prop.id,
         floor: prop.floor,
@@ -175,8 +184,8 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
       // a real wall follows.
       if (isNearSide) {
         drawables.push({
-          x: toSortUnits(cell.x),
-          y: toSortUnits(cell.y),
+          x: toSortUnits(anchor.x),
+          y: toSortUnits(anchor.y),
           rank: rankOf("furniture"),
           stableId: prop.id + STUB_ID_OFFSET,
           floor: prop.floor,
@@ -199,8 +208,13 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
 }
 
 /** The player's own drawable, from its continuous feet position -- never
- * snapped to a cell (Artie's direction). The player is never itself
- * retracted or window-translucent, and its own `ownerBuildingId` is never
+ * snapped to a cell (Artie's direction). `feetX`/`feetY` already *are*
+ * the drawn bottom-centre point (`world/movement.ts`'s `step` anchors the
+ * body's bottom edge on them, and `scene.ts` draws the sprite there
+ * through the plain `worldPointPx` projection, story 15.4) -- unlike a
+ * prop's cell, there is no anchor arithmetic left to apply here.
+ *
+ * The player is never itself retracted or window-translucent, and its own `ownerBuildingId` is never
  * read by anything (the viewer's building identity is a separate concept,
  * `render/visibility.ts`'s `VisibilityViewer.buildingId`, tracked by
  * `scene.ts`) -- `NO_OWNER` here is a fixed, inert value, not something

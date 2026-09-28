@@ -15,17 +15,17 @@
 // that is not there.
 
 import type { Drawable } from "../render/sort-key";
-import type { CollisionGridQuery } from "../world/collision-grid";
+import type { ColliderRectSubcells, CollisionGridQuery } from "../world/collision-grid";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 
-export type { CellBounds, PlacedObjectView };
+export type { CellBounds, ColliderRectSubcells, PlacedObjectView };
 
 export interface DebugWorldView extends CollisionGridQuery {
   /** `render.tile_size_px`, resolved from `defs/` by the caller -- never
    * a literal anywhere under `debug/`. */
   readonly tileSizePx: number;
   /** The scene's world zoom -- the snap granularity of a drawable's
-   * screen position (`screenPositionPx`). */
+   * screen position (`worldPointPx`). */
   readonly zoom: number;
   /** `render.storey_height_px`, same rule (FR124's floor offset). */
   readonly storeyHeightPx: number;
@@ -42,6 +42,13 @@ export interface DebugWorldView extends CollisionGridQuery {
    * the ones the collision grid has nothing to say about
    * (`world/world-index.ts`'s own `objects`). */
   objects(bounds: CellBounds): Iterable<PlacedObjectView>;
+  /** The player's own collision body right now, in absolute sub-cells --
+   * `world/movement.ts`'s own `bodyRect`, read from the scene, never a
+   * second computation from a `MovementConfig` here (story 15.4,
+   * Tim/Quentin's direction). What the FR165 collision overlay draws as
+   * the fourth, distinct-stroke entry alongside the three collider
+   * states. */
+  viewerBody(): ColliderRectSubcells;
   /** The y-sorted pool's own members, as the comparator sees them -- the
    * `Drawable`s themselves, nothing richer, so an overlay can read a sort
    * key but never a sprite. */

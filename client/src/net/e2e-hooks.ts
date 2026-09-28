@@ -215,9 +215,10 @@ export function recordIgnoredIntentForE2e(objectId: bigint): void {
 
 /** Story 1.9: the street scene's own camera transform, recorded once at
  * mount. `intents.spec.ts` needs it to turn a world pixel -- computed
- * from the real `screenPositionPx` and the real fixture cell -- into the
- * canvas offset to click at, rather than hard-coding a pixel that would
- * silently stop meaning anything the moment the camera moves. */
+ * from the real `worldPointPx`/`cellBottomCentre` and the real fixture
+ * cell -- into the canvas offset to click at, rather than hard-coding a
+ * pixel that would silently stop meaning anything the moment the camera
+ * moves. */
 export function recordViewTransformForE2e(zoom: number, offsetX: number, offsetY: number): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };

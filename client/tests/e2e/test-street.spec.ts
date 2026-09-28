@@ -61,10 +61,16 @@ import { ZOOM } from "../../src/render/camera";
 import { sortAcrossFloors } from "../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../src/render/layer-ranks";
 import { FIRST_POOL_RANK, LAYER_TABLE } from "../../src/render/layer-table";
-import { screenPositionPx, visibleCellBounds } from "../../src/render/screen-position";
+import {
+  cellBottomCentre,
+  subcellRectPx,
+  visibleCellBounds,
+  worldPointPx,
+} from "../../src/render/screen-position";
 import { buildCitizenFixtures } from "../../src/test-street/citizens";
 import { buildPlayerDrawable, buildPropDrawables } from "../../src/test-street/drawables";
 import {
+  BOLLARD_COLLIDER,
   BRIDGE_DECK_Y,
   BRIDGE_FLOOR,
   BRIDGE_X0,
@@ -86,6 +92,7 @@ import {
 } from "../../src/test-street/fixture";
 import {
   committedDefs,
+  streetMovementConfig,
   streetObjectSources,
   streetOwnershipIndex,
   streetWalkInputs,
@@ -188,11 +195,13 @@ const TILE_SIZE_PX = balance("render.tile_size_px");
 const STOREY_HEIGHT_PX = balance("render.storey_height_px");
 
 /** A world pixel inside a cell's own drawn rect -- every drawable is
- * bottom-centre anchored on its cell (`screenPositionPx`), so the anchor
- * is the bottom-centre of that rect and half a tile above it is inside.
- * The same idiom `intents.spec.ts` uses for its own hover points. */
+ * bottom-centre anchored on its cell (`cellBottomCentre`, projected
+ * through `worldPointPx`), so the anchor is the bottom-centre of that
+ * rect and half a tile above it is inside. The same idiom `intents.spec.
+ * ts` uses for its own hover points. */
 function worldPixelOfCell(cellX: number, cellY: number, floor: number) {
-  const anchor = screenPositionPx(cellX, cellY, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM);
+  const centre = cellBottomCentre(cellX, cellY);
+  const anchor = worldPointPx(centre.x, centre.y, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM);
   return { x: anchor.x, y: anchor.y - TILE_SIZE_PX / 2 };
 }
 
@@ -226,7 +235,15 @@ async function binDrawnRectPx(
 ): Promise<{ x0: number; y0: number; x1: number; y1: number }> {
   const bin = STREET_PROPS.find((p) => isDefStreetProp(p) && p.defId === TRASH_BIN_DEF_ID);
   if (!bin) throw new Error("the fixture no longer places a trash bin");
-  const anchor = screenPositionPx(bin.x, bin.y, bin.floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM);
+  const binCentre = cellBottomCentre(bin.x, bin.y);
+  const anchor = worldPointPx(
+    binCentre.x,
+    binCentre.y,
+    bin.floor,
+    TILE_SIZE_PX,
+    STOREY_HEIGHT_PX,
+    ZOOM,
+  );
   const worldRect = {
     x0: anchor.x - TILE_SIZE_PX / 2,
     y0: anchor.y - TILE_SIZE_PX * 2,
@@ -873,18 +890,22 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // prop's own sort line.
   const orderAtLamppost = await currentOrder(page);
   expect(orderAtLamppost).toEqual(expectedOrderFor(atLamppost.x, atLamppost.y, atLamppost.floor));
-  // The avatar's feet are south of the prop's own sort line here (it came
-  // to rest part-way into the prop's cell), so the comparator draws it in
-  // *front* of the prop, and the mounted list agrees -- it is the
-  // comparator's own output. The mirror case (north of the line, drawn
-  // behind) is a pure fact about the comparator, proven exhaustively by
-  // `inv_depth_order_total_and_stable`; walking it again here would only
-  // re-prove it slower.
+  // Story 15.4 (Tim's direction): a prop's own sort line is now its drawn
+  // bottom-centre (`cellBottomCentre`'s `+1` in y), the same point its
+  // sprite is drawn at -- physical, where it used to be the cell's own
+  // top edge. The avatar's feet, resting on the lamppost's own collider
+  // top face, are north of that line (smaller y), so the comparator now
+  // draws it *behind* the lamppost -- the geometrically correct order for
+  // a player standing just north of a tall prop's own base, and the
+  // opposite of what the pre-fix, cell-top sort line gave. The mirror
+  // case (south of the line, drawn in front) is a pure fact about the
+  // comparator, proven exhaustively by `inv_depth_order_total_and_stable`;
+  // walking it again here would only re-prove it slower.
   const lamppostProp = STREET_PROPS.find(
     (prop) => isDefStreetProp(prop) && prop.defId === LAMPPOST_DEF_ID,
   );
   if (!lamppostProp) throw new Error("no lamppost in the street");
-  expect(orderAtLamppost.indexOf(PLAYER_STABLE_ID.toString())).toBeGreaterThan(
+  expect(orderAtLamppost.indexOf(PLAYER_STABLE_ID.toString())).toBeLessThan(
     orderAtLamppost.indexOf(lamppostProp.id.toString()),
   );
 
@@ -1030,6 +1051,178 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   await page.reload();
   await waitForSceneReady(page);
   expect(await page.evaluate(() => window.__bc?.playerAppearance)).toEqual(appearanceAtStart);
+});
+
+// Story 15.4 (AC4, Tim's direction): the one case that runs against the
+// real, mounted scene wiring -- `street-conformance.test.ts`'s own walk
+// (over this exact bollard, `id: 121`) is the one Crew runs in a second,
+// against `world/movement.ts` alone. This one proves the *drawn* sprite,
+// through real `page.keyboard` input, lines up with the *drawn* collider
+// the same way, from both sides of the post. Red before this story's fix
+// by `(tile/2, tile)` at the scene's own zoom.
+test("the bollard west of the shopfront stops the player where it is drawn, from both sides (AC1, AC4)", async ({
+  page,
+}) => {
+  // Two full approaches, each its own page load and five released
+  // segments -- comfortably past the default 30s (`playwright.config.ts`'s
+  // own idiom, `FR173's affordance mark` test just below).
+  test.setTimeout(90_000);
+  const bollardProp = STREET_PROPS.find((p) => p.id === 121n);
+  if (!bollardProp || isDefStreetProp(bollardProp) || !bollardProp.colliders) {
+    throw new Error("fixture no longer places the west-of-shopfront bollard (id 121)");
+  }
+  // Captured into its own, definitely-defined binding -- every closure
+  // below reads a type TypeScript can prove non-optional.
+  const bollard = { x: bollardProp.x, y: bollardProp.y, floor: bollardProp.floor };
+  const config = streetMovementConfig();
+  const tileSizePx = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value;
+  const storeyHeightPx = committedDefs().balance.find(
+    (b) => b.key === "render.storey_height_px",
+  )?.value;
+  if (tileSizePx === undefined || storeyHeightPx === undefined) {
+    throw new Error("missing render balance keys");
+  }
+  const colliderSub = {
+    x0: bollard.x * config.subcellsPerCell + BOLLARD_COLLIDER.x0,
+    y0: bollard.y * config.subcellsPerCell + BOLLARD_COLLIDER.y0,
+    x1: bollard.x * config.subcellsPerCell + BOLLARD_COLLIDER.x1,
+    y1: bollard.y * config.subcellsPerCell + BOLLARD_COLLIDER.y1,
+  };
+  const colliderX0Cells = colliderSub.x0 / config.subcellsPerCell;
+  const colliderX1Cells = colliderSub.x1 / config.subcellsPerCell;
+  // The asymmetric north-approach extent (`world/movement.ts`'s own
+  // `bodyRect`, `onUnderpassRowY`'s established idiom): the drawn feet's
+  // bottom edge rests this far south of the post's own drawn base, never
+  // flush with it -- a small, real, pre-existing gap this story's own
+  // forbidden list keeps out of scope (Quentin's direction).
+  const restYCells =
+    bollard.y +
+    BOLLARD_COLLIDER.y1 / config.subcellsPerCell +
+    config.bodyHeightSubcells / config.subcellsPerCell;
+  // The collider's own drawn rect, in world pixels (pre-zoom) -- the same
+  // `subcellRectPx` the FR165 overlay draws it with.
+  const drawnCollider = subcellRectPx(
+    colliderSub,
+    bollard.floor,
+    config.subcellsPerCell,
+    tileSizePx,
+    storeyHeightPx,
+  );
+  const bodyHeightWorldPx = (config.bodyHeightSubcells / config.subcellsPerCell) * tileSizePx;
+
+  async function approachFrom(side: "west" | "east"): Promise<void> {
+    await page.goto("/");
+    await waitForSceneReady(page);
+    const inputs = streetWalkInputs();
+    // Out of the shop, onto the pavement -- resting on the trash bin's own
+    // north face (`shopfrontExitRestY`), still east of the bollard's row.
+    await walkSegment(page, {
+      label: "outside-the-shopfront",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.shopfrontExitRestY },
+    });
+    // West, but only as far as the bollard's own east side: going further
+    // at this same row would walk straight into the post (it sits on the
+    // exit's own row, row `bollard.y`), which is a different object's
+    // collider than the one this walk means to approach.
+    await walkSegment(page, {
+      label: "west-of-the-bin",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: bollard.x + 1 },
+    });
+    // South, clear of the bollard's own row, onto open pavement.
+    await walkSegment(page, {
+      label: "south-of-the-bollard",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: bollard.y + 1.7 },
+    });
+    // Off-centre onto the post, approached so any release-timing overshoot
+    // lands *deeper into* the collider rather than out past its far face
+    // (the CI failure this replaced: a west-quarter target only ~1.5
+    // sub-cells from the west face left no room for a slower frame's own
+    // overshoot, same as walking a real animation-frame's worth of
+    // distance past a release condition ever does -- `walkSegment`'s own
+    // doc comment). One sub-cell in from a face, approached from beyond
+    // that same face, leaves the whole rest of the post's own width (5
+    // sub-cells) as overshoot room -- comfortably past even a single
+    // `MAX_DELTA_MS`-clamped step's own worst case (~3.5 sub-cells).
+    const oneSubcellCell = 1 / config.subcellsPerCell;
+    if (side === "west") {
+      // Clear of the post entirely, west of its own west face, before
+      // turning back east into it.
+      await walkSegment(page, {
+        label: "west-of-the-post",
+        key: "ArrowLeft",
+        until: { kind: "x-at-most", value: colliderX0Cells - 0.5 },
+      });
+      await walkSegment(page, {
+        label: "onto-the-post-west-side",
+        key: "ArrowRight",
+        until: { kind: "x-at-least", value: colliderX0Cells + oneSubcellCell },
+      });
+    } else {
+      await walkSegment(page, {
+        label: "onto-the-post-east-side",
+        key: "ArrowLeft",
+        until: { kind: "x-at-most", value: colliderX1Cells - oneSubcellCell },
+      });
+    }
+    // North, straight into the post.
+    await walkSegment(page, {
+      label: "into-the-bollard",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: restYCells },
+    });
+    // Quentin's direction: the release above cannot by itself tell
+    // "blocked by the post" from "released near restYCells while
+    // walking straight through it" -- an unblocked walker covers up to
+    // one 16.7ms animation frame's worth of distance past the threshold
+    // before release, comfortably inside the drawn-pixel tolerance
+    // `assertRestsOnTheDrawnBollard` uses below. Held past convergence
+    // instead, the same discipline the unit walk's own 300 fixed steps
+    // rely on: hold the key for several whole `MAX_DELTA_MS` ticks after
+    // the release condition first held, and require the position to be
+    // exactly (not approximately) unchanged -- collider faces are exact
+    // integers in sub-cells, so a real rest never drifts under a held
+    // key, and a body that was never actually stopped keeps moving.
+    const restingAt = await playerState(page);
+    await page.keyboard.down("ArrowUp");
+    await page.waitForTimeout(400);
+    await page.keyboard.up("ArrowUp");
+    const heldAt = await playerState(page);
+    expect(heldAt).toEqual(restingAt);
+  }
+
+  async function assertRestsOnTheDrawnBollard(): Promise<void> {
+    const bounds = await page.evaluate(() => window.__bc?.playerScreenBounds?.());
+    if (!bounds) throw new Error("no playerScreenBounds hook");
+
+    const southFaceCanvas = await canvasOffsetForWorldPx(page, {
+      x: drawnCollider.x + drawnCollider.width / 2,
+      y: drawnCollider.y + drawnCollider.height,
+    });
+    const westFaceCanvas = await canvasOffsetForWorldPx(page, {
+      x: drawnCollider.x,
+      y: drawnCollider.y,
+    });
+    const eastFaceCanvas = await canvasOffsetForWorldPx(page, {
+      x: drawnCollider.x + drawnCollider.width,
+      y: drawnCollider.y,
+    });
+    const originCanvas = await canvasOffsetForWorldPx(page, { x: 0, y: 0 });
+    const bodyHeightCanvas = await canvasOffsetForWorldPx(page, { x: 0, y: bodyHeightWorldPx });
+    const expectedBottomCanvasY = southFaceCanvas.y + (bodyHeightCanvas.y - originCanvas.y);
+
+    const spriteBottomCentre = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height };
+    expect(Math.abs(spriteBottomCentre.y - expectedBottomCanvasY)).toBeLessThanOrEqual(1);
+    expect(spriteBottomCentre.x).toBeGreaterThanOrEqual(westFaceCanvas.x - 1);
+    expect(spriteBottomCentre.x).toBeLessThanOrEqual(eastFaceCanvas.x + 1);
+  }
+
+  await approachFrom("west");
+  await assertRestsOnTheDrawnBollard();
+  await approachFrom("east");
+  await assertRestsOnTheDrawnBollard();
 });
 
 test("FR173's affordance mark is a real pixel change, confined to the hovered object's own drawn rect (Quentin's direction)", async ({

@@ -313,7 +313,7 @@ describe("the player can never walk off the drawn world", () => {
     // them -- corner checking cannot pass a body that has left the
     // ground. A raw world-space corner is compared against the ground
     // rects in the same plain `tile * tileSizePx` pixel space they were
-    // built in above -- never through `screenPositionPx`, which adds a
+    // built in above -- never through `cellBottomCentre`, which adds a
     // bottom-centre *sprite anchor* offset (`+0.5` tile in x, `+1` tile
     // in y) that has nothing to do with where a collision corner actually
     // sits. That mismatch went unnoticed while every walk this property

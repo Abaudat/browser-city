@@ -33,14 +33,14 @@ export const CAMERA_SCROLL_TOLERANCE_PX = 1;
 /**
  * The camera that puts `(playerScreenX, playerScreenY)` -- a *pre-zoom*
  * world-pixel point, in the same space `screen-position.ts`'s
- * `screenPositionPx` returns -- at the centre of a `viewportWidth x
+ * `worldPointPx` returns -- at the centre of a `viewportWidth x
  * viewportHeight` viewport, at `zoom`.
  *
  * Whole-pixel snapped (`Math.round`): the only rounding this module
  * allows, and the only source of the ≤0.5px slack
  * `inv_camera_centres_player` budgets for -- a fractional camera offset
  * would draw every sprite in the scene half a pixel soft, which
- * `screenPositionPx`'s own whole-pixel discipline for a drawable's
+ * `worldPointPx`'s own whole-pixel discipline for a drawable's
  * *position* already refuses to do.
  */
 export function computeCamera(

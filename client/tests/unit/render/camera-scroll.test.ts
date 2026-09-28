@@ -1,13 +1,13 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { CAMERA_SCROLL_TOLERANCE_PX, computeCamera, ZOOM } from "../../../src/render/camera";
-import { screenPositionPx } from "../../../src/render/screen-position";
+import { worldPointPx } from "../../../src/render/screen-position";
 import { CollisionGrid } from "../../../src/world/collision-grid";
 import { type MovementConfig, step } from "../../../src/world/movement";
 import { committedDefs, streetMovementConfig } from "../test-street/street-world";
 
 // `inv_camera_scroll_tracks_continuous_walk`: the real `step`,
-// `screenPositionPx` and `computeCamera`, composed per frame with no Pixi.
+// `worldPointPx` and `computeCamera`, composed per frame with no Pixi.
 // The player's screen point is constant, the world scrolls monotonically
 // in the walk's direction, never strays from the continuous camera by more
 // than `CAMERA_SCROLL_TOLERANCE_PX`, and (at a constant delta) consecutive
@@ -67,15 +67,18 @@ function walk(
   const frames: Frame[] = [];
   let pos = { x: startX, y: startY };
   const record = () => {
-    const a = screenPositionPx(pos.x, pos.y, 0, tile, STOREY, zoom);
+    // The player's own continuous feet position, through the plain
+    // `worldPointPx` projection with no anchor term of its own (story
+    // 15.4) -- the exact call `scene.ts`'s `applyCamera` makes.
+    const a = worldPointPx(pos.x, pos.y, 0, tile, STOREY, zoom);
     const c = computeCamera(a.x, a.y, vw, vh, zoom);
     frames.push({
       anchorX: a.x,
       anchorY: a.y,
       offsetX: c.offsetX,
       offsetY: c.offsetY,
-      idealX: vw / 2 - (pos.x + 0.5) * tile * zoom,
-      idealY: vh / 2 - (pos.y + 1) * tile * zoom,
+      idealX: vw / 2 - pos.x * tile * zoom,
+      idealY: vh / 2 - pos.y * tile * zoom,
     });
   };
   record();
@@ -176,7 +179,7 @@ describe("camera scroll during a continuous walk", () => {
   });
 });
 
-describe("screenPositionPx at a zoom", () => {
+describe("worldPointPx at a zoom", () => {
   it("lands on a whole screen pixel for any input", () => {
     fc.assert(
       fc.property(
@@ -185,7 +188,7 @@ describe("screenPositionPx at a zoom", () => {
         fc.integer({ min: -3, max: 3 }),
         fc.oneof(fc.constant(ZOOM), fc.integer({ min: 1, max: 6 })),
         (x, y, floor, zoom) => {
-          const p = screenPositionPx(x, y, floor, TILE, STOREY, zoom);
+          const p = worldPointPx(x, y, floor, TILE, STOREY, zoom);
           expect(Math.abs(p.x * zoom - Math.round(p.x * zoom))).toBeLessThan(EPS);
           expect(Math.abs(p.y * zoom - Math.round(p.y * zoom))).toBeLessThan(EPS);
         },

@@ -4,7 +4,7 @@
 // `client/biome.json`'s `src/world/**` override bans those imports and
 // the `window`/`document` globals outright, so it stays that way.
 
-import type { CollisionGridQuery } from "./collision-grid";
+import type { ColliderRectSubcells, CollisionGridQuery } from "./collision-grid";
 import { cellsForRange } from "./subcells";
 
 export interface Vec2 {
@@ -121,6 +121,29 @@ function resolveAxis(
 }
 
 /**
+ * The player's own collision body (FR137), as a half-open rect in
+ * absolute sub-cells: a small rect at the feet, horizontally centred on
+ * `position`, bottom edge at `position.y` (`defs/balance/movement.toml`'s
+ * own doc comment) -- the exact rect [`step`] resolves against, and the
+ * one the FR165 debug overlay draws (story 15.4, Tim/Quentin's
+ * direction). There is exactly one function that turns a position into a
+ * body; a debug overlay computing its own from `MovementConfig` directly
+ * is a second body that can silently drift from this one.
+ */
+export function bodyRect(position: Vec2, config: MovementConfig): ColliderRectSubcells {
+  const { subcellsPerCell, bodyWidthSubcells, bodyHeightSubcells } = config;
+  const halfWidth = bodyWidthSubcells / 2;
+  const xSub = position.x * subcellsPerCell;
+  const ySub = position.y * subcellsPerCell; // the body's bottom edge
+  return {
+    x0: xSub - halfWidth,
+    y0: ySub - bodyHeightSubcells,
+    x1: xSub + halfWidth,
+    y1: ySub,
+  };
+}
+
+/**
  * One movement step (FR137): `inputDir` need not be unit length (a
  * diagonal is normalised here, so diagonal speed never exceeds axis
  * speed); `position` and the return value are continuous world-cell
@@ -128,7 +151,9 @@ function resolveAxis(
  * Resolution happens internally in sub-cell space, where every collider
  * face is an exactly representable integer (Tim's direction) -- the
  * cell<->sub-cell conversion (`* subcellsPerCell`/`/ subcellsPerCell`) is
- * always exact because `subcellsPerCell` is a power of two.
+ * always exact because `subcellsPerCell` is a power of two. The starting
+ * body is built from [`bodyRect`] (story 15.4) -- there is one body, not
+ * two.
  */
 export function step(
   position: Vec2,
@@ -152,9 +177,21 @@ export function step(
   const startXSub = position.x * subcellsPerCell;
   const startYSub = position.y * subcellsPerCell; // the body's bottom edge
 
+  // The body [`step`] resolves against, built from [`bodyRect`] itself
+  // (story 15.4) rather than re-deriving `halfWidth`/`bodyHeightSubcells`
+  // from its own bounds by subtraction: `box.x1 - box.x0` is
+  // mathematically `2 * halfWidth`, but not always bit-identical to it
+  // once `position` is large enough for the subtraction to round --
+  // `inv_transition_pairs_round_trip`'s own sub-millicell tolerance is
+  // exactly what caught that. Reading the scalar balance values directly
+  // keeps every bit `resolveAxis` already relied on; `box` itself is
+  // still the one shape both this function and the FR165 overlay agree
+  // on (`bodyRect`'s own doc comment).
+  const box = bodyRect(position, config);
+
   // X pass: the body's Y range stays at its start position throughout.
-  const yMin = startYSub - bodyHeightSubcells;
-  const yMax = startYSub;
+  const yMin = box.y0;
+  const yMax = box.y1;
   const desiredXSub = desiredXCells * subcellsPerCell;
   const resolvedXSub = resolveAxis(
     startXSub,

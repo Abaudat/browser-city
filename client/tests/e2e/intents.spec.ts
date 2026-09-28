@@ -4,17 +4,17 @@
 // event on a real canvas, against the real fixture, reaching the real
 // pick and coming back out as an intent.
 //
-// Click points are computed from the real `screenPositionPx` and the real
-// fixture cells, turned into canvas offsets by the scene's own recorded
-// camera transform. No literal pixel appears anywhere below: a scene that
-// moved its camera would otherwise start clicking empty pavement while
-// still passing.
+// Click points are computed from the real `worldPointPx`/`cellBottomCentre`
+// and the real fixture cells, turned into canvas offsets by the scene's own
+// recorded camera transform. No literal pixel appears anywhere below: a
+// scene that moved its camera would otherwise start clicking empty
+// pavement while still passing.
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import { KEYBINDINGS_STORAGE_KEY } from "../../src/input/keybindings-storage";
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
-import { screenPositionPx } from "../../src/render/screen-position";
+import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position";
 import {
   isDefStreetProp,
   PLAYER_START,
@@ -62,10 +62,12 @@ function interactAtOf(defId: number) {
 }
 
 /** A world pixel inside a cell's own drawn rect: every drawable is
- * bottom-centre anchored on its cell (`screenPositionPx`), so the anchor
- * is the bottom-centre of that rect and half a tile above it is inside. */
+ * bottom-centre anchored on its cell (`cellBottomCentre`, projected
+ * through `worldPointPx`), so the anchor is the bottom-centre of that
+ * rect and half a tile above it is inside. */
 function worldPixelOfCell(cellX: number, cellY: number, floor: number) {
-  const anchor = screenPositionPx(cellX, cellY, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM);
+  const centre = cellBottomCentre(cellX, cellY);
+  const anchor = worldPointPx(centre.x, centre.y, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM);
   return { x: anchor.x, y: anchor.y - TILE_SIZE_PX / 2 };
 }
 

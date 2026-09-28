@@ -406,7 +406,15 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   (`defs/balance/movement.toml`), read once into a `MovementConfig` by
   `client/src/world/movement-config.ts`. The body is a small rect at the
   feet, centred on the player's position with its bottom edge there --
-  never the sprite rect.
+  never the sprite rect. `world/movement.ts`'s `bodyRect` is the one
+  function that builds the body; `step` resolves against it and the
+  FR165 collision overlay draws it.
+- `render/screen-position.ts`'s `worldPointPx` is the only
+  world-to-screen projection: scale and floor offset, no anchor term. A
+  cell's drawn bottom-centre is `cellBottomCentre(cellX, cellY)`, integer
+  inputs only. `Drawable.x`/`y` are the drawn bottom-centre in sort
+  units, and every pool member is positioned from them through
+  `worldPointPx`.
 - The collision grid is derived, sparse by chunk and dense within one
   (`CHUNK_SIZE*CHUNK_SIZE`, indexed arithmetically), keyed by the
   client's own mirror of `chunk_key`. It is mutated only by
@@ -597,7 +605,10 @@ everywhere one exists. Every component is an integer: `y`/`x` are world
 screen-space or floor-adjusted value -- a continuous, moving character
 needs sub-tile resolution to sort correctly against a static prop it is
 passing, and every caller that builds a drawable must convert a tile
-coordinate through `toSortUnits` or it silently mixes units. `rank`
+coordinate through `toSortUnits` or it silently mixes units. `x`/`y` are
+the drawable's drawn bottom-centre: a prop's cell through
+`cellBottomCentre` before `toSortUnits`, a character's feet as they are.
+`rank`
 comes from `sim::codes::layer` (below), never a literal; `stableId` is a
 `bigint` end to end (`object_id` for a placed drawable, a character's id
 for a character) and is never narrowed through `Number`. Floor is never a

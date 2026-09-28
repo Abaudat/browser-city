@@ -4,12 +4,13 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { ZOOM } from "../../../src/render/camera";
+import { worldPointPx } from "../../../src/render/screen-position";
 import {
   buildCitizenFixtures,
   buildPlayerAppearanceTuple,
   buildUniformedWalkerFixture,
   buildWalkerFixture,
-  citizenScreenPx,
+  CROWD_FLOOR,
   UNIFORMED_WALKER_ID,
   WALK_CELLS_PER_SECOND,
   WALK_FRAMES_PER_DIRECTION,
@@ -244,8 +245,17 @@ describe("walkerPoseAt", () => {
   });
 });
 
-describe("citizenScreenPx", () => {
+// `citizens.ts` no longer has its own screen-space placement function
+// (story 15.4, Tim's direction): the crowd is placed through the one
+// shared `worldPointPx` projection, at `CROWD_FLOOR` (always 0, so
+// `storeyHeightPx` never matters here) -- the same call
+// `citizens-layer.ts` makes.
+describe("crowd placement through worldPointPx", () => {
   const tile = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value ?? 0;
+  const storey =
+    committedDefs().balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
+  const crowdScreenPx = (x: number, y: number, tileSizePx: number, zoom: number) =>
+    worldPointPx(x, y, CROWD_FLOOR, tileSizePx, storey, zoom);
 
   // The walker's own drawn position, frame by frame at a constant delta:
   // whole screen pixels, monotone along each straight leg, and even steps
@@ -263,7 +273,7 @@ describe("citizenScreenPx", () => {
         (startX, startY, startMS, deltaMS, zoom, tileSizePx) => {
           const frames = Array.from({ length: 600 }, (_, k) => {
             const pose = walkerPoseAt(startX, startY, startMS + k * deltaMS);
-            return { pose, px: citizenScreenPx(pose.x, pose.y, tileSizePx, zoom) };
+            return { pose, px: crowdScreenPx(pose.x, pose.y, tileSizePx, zoom) };
           });
           for (const { px } of frames) {
             expect(Math.abs(px.x * zoom - Math.round(px.x * zoom))).toBeLessThan(1e-6);
@@ -302,7 +312,7 @@ describe("citizenScreenPx", () => {
   });
 
   it("refuses a non-integer zoom", () => {
-    expect(() => citizenScreenPx(1, 1, 16, 2.5)).toThrow(/zoom/);
+    expect(() => crowdScreenPx(1, 1, 16, 2.5)).toThrow(/zoom/);
   });
 });
 

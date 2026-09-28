@@ -121,8 +121,8 @@ async function walkRealSegment(page: Page, segment: StreetWalkSegment): Promise<
  * implementation under test (Quentin's direction). The sprite is
  * bottom-centre anchored (`test-street/scene.ts`'s own `anchor.set(0.5,
  * 1)`), and that anchor -- not the bounding box's own vertical centre --
- * is the point the camera actually centres (`screenPositionPx`'s own
- * `screenPositionPx`); a tall sprite's real drawn top sits well above the
+ * is the point the camera actually centres (`screen-position.ts`'s own
+ * `worldPointPx`); a tall sprite's real drawn top sits well above the
  * viewport's own centre by design (FR124/Artie's bottom-centre
  * anchoring), so this reads the anchor (`bounds.x + width/2`,
  * `bounds.y + height`), never the box's geometric middle. */
@@ -244,8 +244,12 @@ async function startFollowSample(
               reversals += 1;
             }
             lastOffset = { x: world.x, y: world.y };
-            const idealX = rect.width / 2 - (pos.x + 0.5) * tileSizePx * world.scaleX;
-            const idealY = rect.height / 2 - (pos.y + 1) * tileSizePx * world.scaleY;
+            // Story 15.4: the player's own continuous feet position goes
+            // through the plain `worldPointPx` projection, with no
+            // anchor term of its own -- never the `+0.5`/`+1` cell-anchor
+            // terms `cellBottomCentre` applies to a prop's own cell.
+            const idealX = rect.width / 2 - pos.x * tileSizePx * world.scaleX;
+            const idealY = rect.height / 2 - pos.y * tileSizePx * world.scaleY;
             maxIdealDeviationPx = Math.max(
               maxIdealDeviationPx,
               Math.abs(world.x - idealX),
