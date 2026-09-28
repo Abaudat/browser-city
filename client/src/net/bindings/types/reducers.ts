@@ -8,9 +8,11 @@ import { type Infer as __Infer } from "spacetimedb";
 // Import all reducer arg schemas
 import BeginRestoreReducer from "../begin_restore_reducer";
 import FinishRestoreReducer from "../finish_restore_reducer";
+import RearmSchedulesReducer from "../rearm_schedules_reducer";
 import ReseedCodesReducer from "../reseed_codes_reducer";
 import RestoreBuildingReducer from "../restore_building_reducer";
 import RestoreBuildingAreaReducer from "../restore_building_area_reducer";
+import RestoreCadenceLivenessReducer from "../restore_cadence_liveness_reducer";
 import RestoreCharacterReducer from "../restore_character_reducer";
 import RestoreCharacterIdentityReducer from "../restore_character_identity_reducer";
 import RestoreCitizenReducer from "../restore_citizen_reducer";
@@ -32,9 +34,11 @@ import SendPingReducer from "../send_ping_reducer";
 
 export type BeginRestoreParams = __Infer<typeof BeginRestoreReducer>;
 export type FinishRestoreParams = __Infer<typeof FinishRestoreReducer>;
+export type RearmSchedulesParams = __Infer<typeof RearmSchedulesReducer>;
 export type ReseedCodesParams = __Infer<typeof ReseedCodesReducer>;
 export type RestoreBuildingParams = __Infer<typeof RestoreBuildingReducer>;
 export type RestoreBuildingAreaParams = __Infer<typeof RestoreBuildingAreaReducer>;
+export type RestoreCadenceLivenessParams = __Infer<typeof RestoreCadenceLivenessReducer>;
 export type RestoreCharacterParams = __Infer<typeof RestoreCharacterReducer>;
 export type RestoreCharacterIdentityParams = __Infer<typeof RestoreCharacterIdentityReducer>;
 export type RestoreCitizenParams = __Infer<typeof RestoreCitizenReducer>;

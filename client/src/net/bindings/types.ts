@@ -34,6 +34,15 @@ export const BuildingArea = __t.object("BuildingArea", {
 });
 export type BuildingArea = __Infer<typeof BuildingArea>;
 
+export const CadenceLiveness = __t.object("CadenceLiveness", {
+  cadence: __t.u32(),
+  lastTargetAt: __t.timestamp(),
+  lastFiredAt: __t.timestamp(),
+  fires: __t.u64(),
+  missed: __t.u64(),
+});
+export type CadenceLiveness = __Infer<typeof CadenceLiveness>;
+
 export const Character = __t.object("Character", {
   characterId: __t.u64(),
   createdAt: __t.timestamp(),
