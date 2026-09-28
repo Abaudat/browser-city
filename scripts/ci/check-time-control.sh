@@ -78,7 +78,7 @@ fires() {
   sql_json "SELECT * FROM cadence_liveness WHERE cadence = $MAINTENANCE_CADENCE" >"$resp"
   column_field "$resp" fires
 }
-clock() { "$REPO_ROOT/scripts/dev/clock.sh" "$DB_NAME" "$@" "${SERVER_ARGS[@]}" --no-config -y; }
+clock() { bash "$REPO_ROOT/scripts/dev/clock.sh" "$DB_NAME" "$@" "${SERVER_ARGS[@]}" --no-config -y; }
 
 echo "check-time-control: publishing the time-control flavour" >&2
 bash "$REPO_ROOT/scripts/dev/publish-dev.sh" "$DB_NAME" "${SERVER_ARGS[@]}" --no-config >"$DATA_DIR/publish.log" 2>&1 \
