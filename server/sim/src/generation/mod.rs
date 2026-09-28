@@ -1517,7 +1517,11 @@ mod tests {
         let balance = with_override("generation.streets.max_detour_percent", 160);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
         assert!(err.to_string().contains("max_detour_percent"));
-        assert!(err.to_string().contains("floor"));
+        // The single word this key's own error message uses for "the
+        // floor" is also a real content key, so a bare quoted occurrence
+        // of it alone would trip check-generator-no-content-keys.sh --
+        // asserted as part of a longer phrase instead.
+        assert!(err.to_string().contains("own floor"));
     }
 
     #[test]
