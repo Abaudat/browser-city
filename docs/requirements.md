@@ -289,3 +289,7 @@ Every functional and non-functional requirement for BrowserCity, one line each. 
 - **NFR45** — Balance parameters live in tables and are runtime-tunable; constants are compiled; definitions are baked under `defs_version`
 - **NFR46** — Live parameters and seed values are visibly marked, because tuning a seed value on a running world has no effect
 - **NFR47** — A `covered` or `partial` row in the trace matrix names a guard that exists: every path and every test it cites is checked mechanically in CI, and a dangling one fails the build
+
+### Delivery and CI
+
+- **NFR49** — Every CI check that runs on master reaches a pass or a fail verdict within its own time budget; a check that cannot is fixed or removed, never left permanently red or cancelled

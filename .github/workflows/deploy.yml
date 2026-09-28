@@ -519,7 +519,11 @@ jobs:
   report-failure:
     name: report-failure
     needs: [resolve, changes, backup, publish-module, deploy-client, smoke]
-    if: always() && failure()
+    # A timeout-minutes expiry ends a job `cancelled`, not `failure`
+    # (docs/architecture.md, story 4.20) -- `failure()` alone would miss
+    # a `publish-module`/`smoke` that hangs to its own 15-minute budget
+    # and never file an alert, which is exactly what NFR49 forbids.
+    if: always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -529,12 +533,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+      # Names which job ended with what (Tim's direction, story 4.20): the
+      # whole reason the condition above was widened to `cancelled` is
+      # that a hung publish-module/smoke must not read as indistinguishable
+      # from a real publish failure to whoever picks the filed issue up.
       - env:
           GH_TOKEN: ${{ github.token }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          JOB_RESULTS="$(printf '%s' "$NEEDS_JSON" | jq -r '
+            to_entries[]
+            | select(.value.result != "success" and .value.result != "skipped")
+            | "\(.key): \(.value.result)"
+          ')"
           bash scripts/ci/report-scheduled-failure.sh \
             "deploy failed" \
             "deploy.yml failed: $RUN_URL
+
+          $JOB_RESULTS
 
           No automatic rollback exists (server/README.md's own manual recovery path): a published schema cannot be rolled back, only rolled forward -- fix and merge, then redeploy (workflow_dispatch) once the cause is fixed. Redeploying an older SHA re-ships the client only, and only while its schema is still compatible with the live one; it never un-publishes a module. Restore only through scripts/ops/restore-world.sh, into a fresh database. Close this once resolved."

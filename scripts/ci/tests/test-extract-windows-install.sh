@@ -4,7 +4,7 @@
 set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 . "$TEST_DIR/harness.sh"
-EXTRACT="$TEST_DIR/../../../scripts/ci/extract-windows-install.sh"
+EXTRACT="$TEST_DIR/../extract-windows-install.sh"
 
 write_good_readme() {
   cat > "$1" <<'MD'
@@ -27,11 +27,11 @@ MD
 echo "green: extracts the fenced block's contents, nothing else"
 GOOD="$(fake_dir)/README.md"
 write_good_readme "$GOOD"
-check_out "extracts exactly the three commands" 0 \
-  'iwr https://windows.spacetimedb.com -useb | iex
+EXPECTED='iwr https://windows.spacetimedb.com -useb | iex
 spacetime version install 2.9.0
-spacetime version use 2.9.0' \
-  bash "$EXTRACT" "$GOOD"
+spacetime version use 2.9.0'
+check "extracts exactly the three commands" 0 bash -c \
+  '[ "$(bash "$1" "$2")" = "$3" ]' _ "$EXTRACT" "$GOOD" "$EXPECTED"
 
 echo
 echo "red: no start marker"
@@ -73,3 +73,4 @@ check "exits non-zero" 1 bash -c "exit $CODE"
 check "names the missing file" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'not found'" _ "$OUT"
 
 summary
+exit $?

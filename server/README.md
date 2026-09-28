@@ -19,10 +19,12 @@ warning on every build is expected and correct.
 ### Installing the CLI on Windows
 
 The documented installer (`curl ... | sh`) is a Unix shell script and does not run in PowerShell.
-The block below is the working Windows method, extracted verbatim and run on a clean
-`windows-latest` runner by `.github/workflows/windows-install-check.yml`
-(`scripts/ci/extract-windows-install.sh`) on every change to this file and weekly, so drift in the
-upstream installer or in our version pin shows up on its own rather than at the next new machine.
+The block below is the working Windows method. `.github/workflows/windows-install-check.yml` runs it
+on a clean `windows-latest` runner on every change to this file and weekly, so drift in the upstream
+installer or in our version pin shows up on its own rather than at the next new machine -- but not
+verbatim: it substitutes the two things a person does by hand -- answers the installer's confirmation
+prompt, and opens a new shell before the two `spacetime version` lines below so the installer's PATH
+change takes effect. On a real machine, open that new shell after the first line before continuing.
 
 <!-- bc:windows-install:start -->
 ```powershell
