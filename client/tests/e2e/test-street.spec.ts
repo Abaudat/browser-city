@@ -1090,7 +1090,6 @@ test("the bollard west of the shopfront stops the player where it is drawn, from
   };
   const colliderX0Cells = colliderSub.x0 / config.subcellsPerCell;
   const colliderX1Cells = colliderSub.x1 / config.subcellsPerCell;
-  const colliderCentreCells = (colliderX0Cells + colliderX1Cells) / 2;
   // The asymmetric north-approach extent (`world/movement.ts`'s own
   // `bodyRect`, `onUnderpassRowY`'s established idiom): the drawn feet's
   // bottom edge rests this far south of the post's own drawn base, never
@@ -1137,18 +1136,37 @@ test("the bollard west of the shopfront stops the player where it is drawn, from
       key: "ArrowDown",
       until: { kind: "y-at-least", value: bollard.y + 1.7 },
     });
-    // West again, on this clear row, stopping off-centre on the post's
-    // own west or east quarter -- both west of where the last segment
-    // left off, so this is always a westward walk regardless of side.
-    const targetX =
-      side === "west"
-        ? colliderX0Cells + (colliderCentreCells - colliderX0Cells) / 2
-        : colliderCentreCells + (colliderX1Cells - colliderCentreCells) / 2;
-    await walkSegment(page, {
-      label: `onto-the-post-${side}-half`,
-      key: "ArrowLeft",
-      until: { kind: "x-at-most", value: targetX },
-    });
+    // Off-centre onto the post, approached so any release-timing overshoot
+    // lands *deeper into* the collider rather than out past its far face
+    // (the CI failure this replaced: a west-quarter target only ~1.5
+    // sub-cells from the west face left no room for a slower frame's own
+    // overshoot, same as walking a real animation-frame's worth of
+    // distance past a release condition ever does -- `walkSegment`'s own
+    // doc comment). One sub-cell in from a face, approached from beyond
+    // that same face, leaves the whole rest of the post's own width (5
+    // sub-cells) as overshoot room -- comfortably past even a single
+    // `MAX_DELTA_MS`-clamped step's own worst case (~3.5 sub-cells).
+    const oneSubcellCell = 1 / config.subcellsPerCell;
+    if (side === "west") {
+      // Clear of the post entirely, west of its own west face, before
+      // turning back east into it.
+      await walkSegment(page, {
+        label: "west-of-the-post",
+        key: "ArrowLeft",
+        until: { kind: "x-at-most", value: colliderX0Cells - 0.5 },
+      });
+      await walkSegment(page, {
+        label: "onto-the-post-west-side",
+        key: "ArrowRight",
+        until: { kind: "x-at-least", value: colliderX0Cells + oneSubcellCell },
+      });
+    } else {
+      await walkSegment(page, {
+        label: "onto-the-post-east-side",
+        key: "ArrowLeft",
+        until: { kind: "x-at-most", value: colliderX1Cells - oneSubcellCell },
+      });
+    }
     // North, straight into the post.
     await walkSegment(page, {
       label: "into-the-bollard",
