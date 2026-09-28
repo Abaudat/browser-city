@@ -50,6 +50,11 @@ jobs:
       # `cancelled` job the way the job-level timeout used to be, which is
       # what lets `failure()` below actually fire and the report step
       # actually run (story 4.20's real fix for "silently cancelled").
+      # Observed, not assumed (Quentin's direction, cycle 1): a throwaway
+      # `Start-Sleep -Seconds 120` with this step's own timeout-minutes
+      # dropped to 1 confirmed the step completes at exactly its budget
+      # with conclusion `failure` --
+      # https://github.com/Abaudat/browser-city/actions/runs/36406318924.
       - name: installer
         id: install
         timeout-minutes: 5
