@@ -351,71 +351,33 @@ pub fn arm_every_cadence(ctx: &ReducerContext) -> Result<(), String> {
 /// world, not the one being restored. Schedules are derived state
 /// (docs/architecture.md) -- disarming the target's own is exactly as
 /// disposable as never restoring the source's.
+///
+/// One `disarm!(accessor)` invocation per scheduled table, never a
+/// hand-copied loop body per table (seven identical bodies is the shape
+/// that gets one of them wrong) -- the same `macro_rules!`-per-table
+/// precedent `tables::restore::impl_autoinc_row!` sets.
+/// `bounds/tests/schedules_coverage.rs` keeps this list itself honest:
+/// every scheduled accessor the schema declares must appear as a
+/// `disarm!(...)` call here, and nothing else may.
 pub fn disarm_all_scheduled_tables(ctx: &ReducerContext) {
-    for id in ctx
-        .db
-        .citizen_transition_schedule()
-        .iter()
-        .map(|r| r.scheduled_id)
-        .collect::<Vec<_>>()
-    {
-        ctx.db
-            .citizen_transition_schedule()
-            .scheduled_id()
-            .delete(id);
+    macro_rules! disarm {
+        ($accessor:ident) => {
+            for id in ctx
+                .db
+                .$accessor()
+                .iter()
+                .map(|r| r.scheduled_id)
+                .collect::<Vec<_>>()
+            {
+                ctx.db.$accessor().scheduled_id().delete(id);
+            }
+        };
     }
-    for id in ctx
-        .db
-        .metrics_sample_schedule()
-        .iter()
-        .map(|r| r.scheduled_id)
-        .collect::<Vec<_>>()
-    {
-        ctx.db.metrics_sample_schedule().scheduled_id().delete(id);
-    }
-    for id in ctx
-        .db
-        .budget_review_schedule()
-        .iter()
-        .map(|r| r.scheduled_id)
-        .collect::<Vec<_>>()
-    {
-        ctx.db.budget_review_schedule().scheduled_id().delete(id);
-    }
-    for id in ctx
-        .db
-        .world_clock_schedule()
-        .iter()
-        .map(|r| r.scheduled_id)
-        .collect::<Vec<_>>()
-    {
-        ctx.db.world_clock_schedule().scheduled_id().delete(id);
-    }
-    for id in ctx
-        .db
-        .economy_schedule()
-        .iter()
-        .map(|r| r.scheduled_id)
-        .collect::<Vec<_>>()
-    {
-        ctx.db.economy_schedule().scheduled_id().delete(id);
-    }
-    for id in ctx
-        .db
-        .growth_schedule()
-        .iter()
-        .map(|r| r.scheduled_id)
-        .collect::<Vec<_>>()
-    {
-        ctx.db.growth_schedule().scheduled_id().delete(id);
-    }
-    for id in ctx
-        .db
-        .maintenance_schedule()
-        .iter()
-        .map(|r| r.scheduled_id)
-        .collect::<Vec<_>>()
-    {
-        ctx.db.maintenance_schedule().scheduled_id().delete(id);
-    }
+    disarm!(citizen_transition_schedule);
+    disarm!(metrics_sample_schedule);
+    disarm!(budget_review_schedule);
+    disarm!(world_clock_schedule);
+    disarm!(economy_schedule);
+    disarm!(growth_schedule);
+    disarm!(maintenance_schedule);
 }

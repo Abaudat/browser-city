@@ -695,6 +695,7 @@ in `ci.yml`'s `migrate` job.
 | A direct call to a scheduled reducer is rejected by `require_scheduler`, and neither its own bookkeeping (`cadence_liveness`) nor its schedule table changes across the rejection (AC3) | covered | `scripts/ci/check-authoritative-loop.sh` |
 | The `rearm_schedules` rebuild is idempotent across a republish and repeated calls: still exactly one pending row, phase-aligned to the original anchor (schedules are derived state, `docs/architecture.md`) | covered | `scripts/ci/check-authoritative-loop.sh` |
 | Every scheduled table is disarmed before `begin_restore`'s own preconditions run: on the target, every scheduled table holds zero pending rows immediately after `begin_restore` returns, before any `restore_*` call | covered | `scripts/ci/check-backup-restore.sh` |
+| `disarm_all_scheduled_tables`'s own `disarm!(...)` calls name every scheduled table the schema declares, and nothing else, so a scheduled table added without one is a build failure, not a silent hole in the restore race the disarm closes | covered | `server/bounds/tests/schedules_coverage.rs` |
 | A restored world resumes its cadence, phase-aligned to the restored epoch, via `finish_restore`'s own re-arm | covered | `scripts/ci/check-backup-restore.sh` |
 
 ## CI guards
