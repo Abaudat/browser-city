@@ -136,6 +136,10 @@ with no row here.
 | `inv_generation_barista_has_at_least_min_employers` | For any seed, the barista profession (an FR14 launch job, posted only at cafes) is held by at least `min_employers_per_profession` distinct placed workplaces in that one city (story 15.9) | covered | `inv_generation_barista_has_at_least_min_employers` | 15.9 |
 | `inv_generation_building_type_independent_of_envelope_order` | Shuffling pass 4's own placed-envelope order and re-running pass 5 over the shuffled list never changes any envelope's own assigned type, for any seed (story 3.4, NFR25) | covered | `inv_generation_building_type_independent_of_envelope_order` | 3.4 |
 | `inv_generation_no_quadrant_lacks_its_required_services` | For any seed, for every distribution row a building type actually feeds, and every site quadrant holding at least one hard-eligible, unclaimed, min-spacing-feasible candidate for its subject, the subjects actually placed in that quadrant clear its own catchment floor (per-tag count in that quadrant / ratio, never discounted by the row's own site-wide tolerance_percent) (story 3.4 AC3) | covered | `inv_generation_no_quadrant_lacks_its_required_services` | 3.4 |
+| `inv_schedule_phase_preserved` | `sim::cadence::next_target`'s returned target is always congruent to the origin passed in, modulo the period, for any origin/period/now (story 4.2) | covered | `inv_schedule_phase_preserved` | 4.2 |
+| `inv_schedule_never_targets_past` | `sim::cadence::next_target`'s returned target is always strictly after now, for any reasonable-range origin/period/now (story 4.2) | covered | `inv_schedule_never_targets_past` | 4.2 |
+| `inv_schedule_catch_up_bounded` | `sim::cadence::next_target`, called with now a simulated week past the origin, returns instantly (no loop) with missed equal to the exact arithmetic gap in periods -- catch-up is bounded to one late fire, every skipped target is never separately dispatched (story 4.2) | covered | `inv_schedule_catch_up_bounded` | 4.2 |
+| `inv_schedule_arith_total` | `sim::cadence::next_target` never panics and never wraps, for any i64 origin/now (including i64::MIN/i64::MAX) and any positive period_ms (story 4.2, NFR41) | covered | `inv_schedule_arith_total` | 4.2 |
 
 ## Coverage scale (NFR29)
 
@@ -668,6 +672,28 @@ Story 4.1 (FR1-FR3, NFR3): the clock is one durable epoch row and a pure functio
 | A client with a wrong wall clock derives the server's city time, and the clock table is inserted once and never updated (no per-tick broadcast) | covered | `client/tests/e2e/city-clock.spec.ts` -- `a client with a wrong wall clock derives the server's in-city time`, `the clock table is inserted once and never updated as in-city time passes` |
 | A republish never resets the epoch (a deploy never resets the city to dawn) | covered | `scripts/ci/check-live-migration.sh` -- `a republish must not reset the city clock` |
 | A restore carries the epoch through by value | covered | `scripts/ci/check-backup-restore.sh` -- `10a: world_clock's epoch survives by value` |
+
+## Scheduled reducers
+
+Story 4.2 (FR3, NFR3, NFR34, NFR41): the one repeat pattern every
+scheduled cadence in the module uses, and `maintenance`, its first real
+occupant. The `inv_schedule_*` rows above (`server/sim/tests/
+invariants.rs`) cover `sim::cadence::next_target`'s own arithmetic; the
+rows below cover the reducer side, proven against a real, disposable
+local SpacetimeDB instance -- `scripts/ci/check-authoritative-loop.sh`,
+in `ci.yml`'s `migrate` job.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| A cadence period below one whole city minute is refused at compile time (AC2, server half) | covered | `server/sim/src/cadence.rs` -- `period_ms_converts_whole_city_minutes` |
+| The next target is always the next still-future grid point, and a pause is reported as `missed`, never replayed as a burst (AC5) | covered | `server/sim/src/cadence.rs` -- `on_time_call_has_zero_missed_and_targets_one_period_out`, `a_pause_skips_straight_to_the_next_future_target_and_counts_what_it_skipped` |
+| No `ScheduleAt::Interval` appears under `server/src/`, and no reducer body panics/unwraps/expects (AC2 server half, NFR41) | covered | `scripts/ci/check-no-schedule-interval.sh` |
+| No client reducer call is wired to the frame loop, under `render/`, `world/`, `test-street/`, or inside any `ticker.add` callback anywhere (AC2, client half) | covered | `scripts/ci/check-no-frame-rate-reducers.sh` |
+| With zero clients connected, `maintenance` fires within its own window/period tolerance, `cadence_liveness.missed` is 0 idle, and `maintenance_schedule` holds exactly one pending row -- never zero (a dead world) or two (a double-armed one) (AC1, FR3, NFR3) | covered | `scripts/ci/check-authoritative-loop.sh` |
+| Every observed fire's own dispatch drift clears the 2.5s per-fire budget, and the run does not compound (the last observed fire's drift against the first is bounded by twice the worst single-fire drift observed) (AC5) | covered | `scripts/ci/check-authoritative-loop.sh` |
+| A direct call to a scheduled reducer is rejected by `require_scheduler`, and neither its own bookkeeping (`cadence_liveness`) nor its schedule table changes across the rejection (AC3) | covered | `scripts/ci/check-authoritative-loop.sh` |
+| The `rearm_schedules` rebuild is idempotent across a republish and repeated calls: still exactly one pending row, target unchanged (schedules are derived state, `docs/architecture.md`) | covered | `scripts/ci/check-authoritative-loop.sh` |
+| A restored world resumes its cadence, phase-aligned to the restored epoch | covered | `scripts/ci/check-backup-restore.sh` |
 
 ## CI guards
 

@@ -236,5 +236,11 @@ done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
 
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" finish_restore '[]'
 
+# Story 4.2: schedules are derived state, never restored (SKIPPED_SCHEDULED
+# above) -- a restored world must resume its loop without a human
+# remembering, so this re-arms every cadence from the epoch just restored.
+bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" rearm_schedules '[]'
+echo "restore-world: ok -- every scheduled cadence re-armed from the restored world_clock epoch" >&2
+
 echo "restore-world: ok -- $DB restored from $EXPORT_DIR ($RESTORED table(s) restored, $SKIPPED_SCHEDULED scheduled table(s) skipped)" >&2
 exit 0

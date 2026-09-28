@@ -223,4 +223,12 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         max_rows: 16,
         kind: BoundKind::Engineering,
     },
+    // Story 4.2: one row per armed cadence -- at most one per scheduled
+    // table this file ever declares (7 today), an engineering ceiling
+    // generous enough that it can never bind.
+    TableBound {
+        accessor: "cadence_liveness",
+        max_rows: 16,
+        kind: BoundKind::Engineering,
+    },
 ];

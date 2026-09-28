@@ -51,12 +51,35 @@ pub fn sync_clock(ctx: &mut ProcedureContext) -> Timestamp {
 
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) {
-    // Called when the module is initially published. Nothing is scheduled
-    // from here (story 1.2): an empty scheduled table costs nothing, and
-    // the first row is a later story's problem.
+    // Called when the module is initially published.
     tables::ops::record_owner_from_init(ctx);
     tables::clock::record_epoch_from_init(ctx);
     tables::codes::seed_all_codes(ctx);
+    // Story 4.2: arms every cadence this module gives real work to, from
+    // the epoch `record_epoch_from_init` just wrote -- so the one
+    // precondition `arm_every_cadence` checks is already satisfied here,
+    // always. `debug_assert!` (a production abort, not a test-only aid --
+    // docs/architecture.md) is this crate's own proof of that, since
+    // `init` has no `Result` to propagate a failure through.
+    let armed = tables::schedules::arm_every_cadence(ctx);
+    debug_assert!(
+        armed.is_ok(),
+        "arm_every_cadence failed right after record_epoch_from_init: {armed:?}"
+    );
+}
+
+/// Rebuilds every armed cadence's own pending schedule row from
+/// `world_clock.epoch_at` (docs/architecture.md: schedules are derived
+/// state, never trusted to survive a deploy purely by surviving as
+/// pending rows). Idempotent: calling it again while nothing has changed
+/// leaves the same one pending row per cadence, at the same target.
+/// Operator-only, the same shape as `reseed_codes`: `server/README.md`
+/// names its three callers (`init`, `deploy.yml`'s `publish-module` job,
+/// `scripts/ops/restore-world.sh`).
+#[spacetimedb::reducer]
+pub fn rearm_schedules(ctx: &ReducerContext) -> Result<(), String> {
+    tables::ops::require_owner(ctx)?;
+    tables::schedules::arm_every_cadence(ctx)
 }
 
 /// Re-runs the extensible-set seed (NFR38): `init` only ever runs on the

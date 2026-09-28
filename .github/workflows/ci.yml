@@ -331,6 +331,8 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: bash ../scripts/ci/check-sim-purity.sh
+      - name: story 4.2, no ScheduleAt::Interval and no unwrap/expect/panic under server/src (NFR41)
+        run: bash ../scripts/ci/check-no-schedule-interval.sh
       - name: story 3.11 FR131, the travel-time estimator is graph-free and collection-free
         run: bash ../scripts/ci/check-routing-estimate-purity.sh
       - run: bash ../scripts/ci/check-golden-version-bump.sh
@@ -447,6 +449,12 @@ jobs:
       # is here for), not because an instance is shared between the steps.
       - name: story 2.8 FR147, a view over a compiled-in constant re-evaluates on a live republish
         run: bash scripts/ci/check-view-live-refresh.sh
+      # Story 4.2: its own disposable local instance and port (3991),
+      # never 3987/3988/3989 (the three steps above's own) or 3990 (the
+      # 1.3 timing spike's) -- same job, same reasoning as the two steps
+      # above.
+      - name: story 4.2, the authoritative loop fires with zero clients connected and survives a rebuild
+        run: bash scripts/ci/check-authoritative-loop.sh
 
   coverage:
     name: coverage (sim)
@@ -546,6 +554,8 @@ jobs:
         run: bash ../scripts/ci/check-debug-boundary.sh
       - name: story 1.14, docs/spikes/1.14-boot-budget.md is exactly the generator's own output
         run: bash ../scripts/ci/check-boot-budget-report-current.sh
+      - name: story 4.2 AC2, no reducer call under render/, world/ or test-street/, or inside any ticker.add callback
+        run: bash ../scripts/ci/check-no-frame-rate-reducers.sh
 
   client-build:
     name: client-build

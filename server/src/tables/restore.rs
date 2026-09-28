@@ -86,6 +86,7 @@ use super::codes::{
 };
 use super::identity::{Character, CharacterIdentity, character, character_identity};
 use super::ops::{ModuleOwner, module_owner, require_owner};
+use super::schedules::{CadenceLiveness, cadence_liveness};
 use super::world::{
     Building, BuildingArea, FloorTransition, LayerCode, PlacedObject, Room, RoomArea, building,
     building_area, floor_transition, layer_code, placed_object, room, room_area,
@@ -139,6 +140,7 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "demo_ping",
     "building",
     "building_area",
+    "cadence_liveness",
     "character",
     "character_identity",
     "citizen",
@@ -172,6 +174,9 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.building_area().iter().next().is_some() {
         nonempty.push("building_area");
+    }
+    if ctx.db.cadence_liveness().iter().next().is_some() {
+        nonempty.push("cadence_liveness");
     }
     if ctx.db.character().iter().next().is_some() {
         nonempty.push("character");
@@ -672,6 +677,19 @@ pub fn restore_citizen_state(ctx: &ReducerContext, rows: Vec<CitizenState>) -> R
     require_restore_open(ctx)?;
     for row in rows {
         ctx.db.citizen_state().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_cadence_liveness(
+    ctx: &ReducerContext,
+    rows: Vec<CadenceLiveness>,
+) -> Result<(), String> {
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    for row in rows {
+        ctx.db.cadence_liveness().insert(row);
     }
     Ok(())
 }

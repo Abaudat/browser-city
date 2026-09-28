@@ -90,6 +90,24 @@ Schedules are derived state: rebuilt from durable tables, never trusted
 to outlive a deploy purely by surviving as pending rows. See
 docs/spikes/1.3-scheduled-reducer-timing.md.
 
+**The one permitted idiom (story 4.2).** Every cadence's origin is
+`world_clock.epoch_at` and its period is a whole number of city minutes
+(refused below that floor at compile time); `sim::cadence::next_target`
+is the only function that computes a reschedule target, and a cadence's
+own scheduled table is armed with `ScheduleAt::Time` alone --
+`ScheduleAt::Interval` is never used anywhere in the module
+(`scripts/ci/check-no-schedule-interval.sh` bans it mechanically, along
+with `unwrap`/`expect`/`panic!`/`todo!`/`unimplemented!`/`unreachable!`
+across `server/src/`, NFR41 made mechanical). `rearm_schedules`
+(owner-only) is the rebuild every derived schedule goes through: called
+from `init`, from `deploy.yml`'s `publish-module` job (beside
+`reseed_codes`), and from `scripts/ops/restore-world.sh` after
+`finish_restore`, so a redeployed or restored world always resumes every
+armed cadence without a human remembering. `cadence_liveness` is the
+durable proof a cadence is alive -- one row per armed cadence, written
+only from inside that cadence's own fired reducer -- read by
+`scripts/ci/check-authoritative-loop.sh` with zero clients connected.
+
 ## Time
 
 - In-city time is a pure function of one durable row and the server's `now`: `sim::time::city_time(epoch_at, now)` returns `CityTime { day, hour, minute, weekday, real_ms_into_minute }`, integer arithmetic only, `weekday` being `day` mod 7. The smallest unit of city time is the minute; `real_ms_into_minute` exists for rendering interpolation only, and no reducer, rule or gameplay decision may read it.

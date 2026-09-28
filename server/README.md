@@ -87,16 +87,23 @@ master well before provisioning is finished, with zero effect until it is.
 spacetime start --data-dir .spacetime/data --listen-addr 127.0.0.1:3000   # the local instance
 spacetime publish --yes                                                   # build + publish to it
 spacetime call browser-city reseed_codes                                  # land sim::codes' rows
+spacetime call browser-city rearm_schedules                               # re-derive every scheduled cadence
 spacetime dev --client-lang typescript \
   --module-bindings-path ../client/src/net/bindings --yes                 # hot-reload on file change
 ```
 
 `reseed_codes` inserts any `sim::codes` row not already present (NFR36/NFR38) and is idempotent, so
 calling it again is always safe. `init` already calls it on a fresh database's first publish; call
-it by hand (as above) after any later publish that adds a code -- the deploy work is what should
-eventually automate this call. It is operator-only: `init` records whoever published the module as
-its owner, and the reducer rejects any other caller, so run the `spacetime call` above as the same
-identity that ran `spacetime publish`.
+it by hand (as above) after any later publish that adds a code. `deploy.yml`'s `publish-module` job
+calls both `reseed_codes` and `rearm_schedules` automatically after every Maincloud publish, so this
+manual step is only ever needed locally. Both are operator-only: `init` records whoever published the
+module as its owner, and each reducer rejects any other caller, so run the `spacetime call` above as
+the same identity that ran `spacetime publish`.
+
+`rearm_schedules` re-derives every scheduled cadence's own pending row from `world_clock.epoch_at`
+(story 4.2, `docs/architecture.md`'s "Scheduled reducers" section) -- idempotent, and also called
+from `scripts/ops/restore-world.sh` after a restore, so a redeployed or restored world always resumes
+its loop without a human remembering.
 
 `spacetime dev` rebuilds, automigrates, republishes and regenerates `client/src/net/bindings` on
 every save; existing rows survive the migration. Run `scripts/dev/check-hot-reload.sh` to verify

@@ -227,6 +227,27 @@ grep -qE "'demo_ping' restored [0-9]+ row\(s\) in [2-9][0-9]* batch\(es\)" "$DAT
   || fail "'demo_ping' (which includes a 20KB message) did not restore across multiple batches at a 4000-byte budget -- byte-budget batching is not exercised" "$DATA_DIR/restore.log"
 ok "a row too big for one batch restores across multiple byte-budgeted batches"
 
+# --- story 4.2: restore-world.sh calls rearm_schedules after finish_restore
+# -- a restored world must resume its loop without a human remembering.
+# maintenance_schedule holds exactly one pending row, and cadence_liveness'
+# own freshly-armed target is phase-aligned to the restored epoch: the
+# gap between them is a whole number of city minutes (REAL_MS_PER_CITY_
+# MINUTE, 2500ms -- sim::cadence's own floor every cadence period clears,
+# never the maintenance-specific period alone, so this check stays valid
+# even if that period constant later changes) ------------------------------
+grep -qF "every scheduled cadence re-armed" "$DATA_DIR/restore.log" \
+  || fail "restore-world.sh's own log has no rearm_schedules confirmation line -- was it actually called after finish_restore?" "$DATA_DIR/restore.log"
+MAINT_PENDING="$(row_count_live "$DST" maintenance_schedule)"
+[ "$MAINT_PENDING" -eq 1 ] || fail "restored '$DST.maintenance_schedule' holds $MAINT_PENDING pending row(s) after rearm_schedules, expected exactly 1"
+RESTORED_EPOCH_MICROS="$(column_values_live "$DST" world_clock epoch_at | grep -oE '[0-9]+' | head -n1)"
+MAINT_TARGET_MICROS="$(column_values_live "$DST" cadence_liveness last_target_at | grep -oE '[0-9]+' | head -n1)"
+[ -n "$RESTORED_EPOCH_MICROS" ] || fail "could not read '$DST.world_clock.epoch_at'"
+[ -n "$MAINT_TARGET_MICROS" ] || fail "could not read '$DST.cadence_liveness.last_target_at' -- rearm_schedules did not arm the maintenance cadence"
+CITY_MINUTE_MICROS=2500000
+REMAINDER=$(( (MAINT_TARGET_MICROS - RESTORED_EPOCH_MICROS) % CITY_MINUTE_MICROS ))
+[ "$REMAINDER" -eq 0 ] || fail "the restored maintenance cadence's own target ($MAINT_TARGET_MICROS) is not phase-aligned to the restored epoch ($RESTORED_EPOCH_MICROS) at a ${CITY_MINUTE_MICROS}us city-minute grid -- remainder ${REMAINDER}us"
+ok "restored 'maintenance_schedule' resumes with exactly one pending row, phase-aligned to the restored epoch"
+
 EXPORT_B="$WORK/export-b"
 bash "$OPS/export-world.sh" "$DST" "$EXPORT_B" --server "$SERVER_URL" >"$DATA_DIR/export-b.log" 2>&1 || fail "export-world.sh failed on '$DST'" "$DATA_DIR/export-b.log"
 
