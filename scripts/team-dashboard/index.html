@@ -11,7 +11,7 @@
 <title>Team HQ · Browser City</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg: #221f33;
@@ -32,14 +32,16 @@
   --warn: #f2a33a;
   --bad: #ef6a5a;
   --info: #7fb4e0;
+  --fable: #d98be0;
   --scotty: #f2c14e; --crew: #c0563f; --tim: #3f9aa0; --derek: #8a6bb8; --quentin: #6aa84f; --artie: #e07a9b; --human: #8d86a3;
-  --font: "Pixelify Sans", ui-rounded, system-ui, sans-serif;
-  --label: "Silkscreen", "Pixelify Sans", ui-monospace, monospace;
+  --font: "Space Grotesk", system-ui, sans-serif;
+  --label: "Space Mono", ui-monospace, monospace;
+  --pixel: "Silkscreen", "Space Mono", ui-monospace, monospace;
   --gutter: 16px;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.35; -webkit-text-size-adjust: 100%; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-variant-numeric: tabular-nums; font-size: 16px; line-height: 1.35; -webkit-text-size-adjust: 100%; }
 body { padding: max(12px, env(safe-area-inset-top)) var(--gutter) 40px; overflow-x: hidden; }
 a { color: inherit; text-decoration: none; }
 a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
@@ -48,7 +50,7 @@ a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-under
 /* ---- header ---- */
 header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 6px 0 2px; }
 .brand { display: flex; align-items: center; gap: 12px; margin-right: auto; }
-.brand h1 { margin: 0; font-family: var(--label); font-weight: 700; font-size: 18px; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
+.brand h1 { margin: 0; font-family: var(--pixel); font-weight: 700; font-size: 18px; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
 .brand h1::before { content: ""; width: 12px; height: 12px; background: var(--accent); }
 .brand .sub { font-family: var(--label); font-size: 11px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -62,9 +64,9 @@ header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; pa
 .errors.show { display: block; }
 
 /* ---- section heading, as in the README ---- */
-.h { font-family: var(--label); font-weight: 700; font-size: 13px; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
+.h { font-family: var(--pixel); font-weight: 700; font-size: 13px; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
 .h::before { content: ""; width: 9px; height: 9px; background: var(--accent); flex: none; }
-.h .aside { margin-left: auto; font-size: 10px; letter-spacing: 1.5px; color: var(--muted); font-weight: 400; }
+.h .aside { margin-left: auto; font-family: var(--label); font-size: 10px; letter-spacing: 1.5px; color: var(--muted); font-weight: 400; }
 .panel { background: var(--panel); border: 2px solid var(--line); box-shadow: 0 5px 0 var(--shadow); padding: 16px; min-width: 0; }
 
 /* ---- the team ---- */
@@ -531,6 +533,9 @@ function renderBudget() {
   root.replaceChildren(
     meter('5-hour window', s, s.cap, [h('span', {}, `cap ${pct(s.cap)}%`), h('span', {}, `resets ${hm(s.reset)} · in ${until(s.reset)}`)]),
     meter('This week', w, w.baseCap, [h('span', {}, w.endgame ? `cap ${pct(w.baseCap)}% · lifted` : `cap ${pct(w.baseCap)}%`), h('span', {}, `resets ${dayHm(w.reset)} · in ${until(w.reset)}`)]),
+    // Fable's own weekly limit: the leads and Scotty stop at 100% of it even
+    // with the overall week to spare. Shown; bc-budget.sh does not gate on it.
+    b.fable ? meter('Fable this week', b.fable, 1, [h('span', {}, 'limit 100% · not gated'), b.fable.reset ? h('span', {}, `resets ${dayHm(b.fable.reset)} · in ${until(b.fable.reset)}`) : null]) : null,
     h('div', { class: 'gate' }, h('span', { class: 'icon', style: `background-position:${emotePos(icon, 2)}` }), h('span', {}, gate)));
   $('budget-aside').textContent = `checked ${ago(b.at)}`;
 }
@@ -696,55 +701,82 @@ function renderUsage() {
   }
   svg.append(grid, axis);
   const caps = S.caps ?? { session: .85, weekly: .8 };
-  const CW = css.getPropertyValue('--accent').trim(), CS = css.getPropertyValue('--info').trim();
+  const CW = css.getPropertyValue('--accent').trim(), CS = css.getPropertyValue('--info').trim(), CF = css.getPropertyValue('--fable').trim();
   for (const [v, c, l] of [[caps.weekly, CW, 'week cap'], [caps.session, CS, '5h cap']]) {
     svg.append(s('line', { x1: M.l, x2: W - M.r, y1: y(v), y2: y(v), stroke: c, 'stroke-opacity': .6, 'stroke-width': 1, 'stroke-dasharray': '4 4' }));
   }
-  // Break the line where samples are more than 20 minutes apart (the server was off).
-  const path = (key) => {
-    let d = '', prev = null;
-    for (const p of pts) {
-      if (p.t < from) continue;
-      d += `${!prev || p.t - prev.t > 20 * 6e4 ? 'M' : 'L'}${x(p.t).toFixed(1)},${y(p[key]).toFixed(1)}`;
-      prev = p;
-    }
-    return d;
+  const SER = [{ k: 'w', c: CW, name: 'week', ink: 'var(--ink)' }, { k: 's', c: CS, name: '5-hour window', ink: 'var(--ink-2)' }, { k: 'f', c: CF, name: 'Fable week', ink: 'var(--ink-2)' }];
+  // Each series' samples, plus the last one before the window so the line
+  // runs in from the left edge. Older samples predate the Fable series.
+  const GAP = 20 * 6e4;
+  const seriesPts = (k) => {
+    const ok = pts.filter((p) => typeof p[k] === 'number');
+    const i = ok.findIndex((p) => p.t >= from);
+    return i < 0 ? [] : ok.slice(Math.max(0, i - 1));
   };
+  // Where samples are more than 20 minutes apart (the server was off) the
+  // line is interpolated straight across, drawn dashed so it reads as a guess.
+  const paths = (ps) => {
+    let solid = '', gap = '';
+    ps.forEach((p, i) => {
+      const xy = `${x(Math.max(p.t, from)).toFixed(1)},${y(p.v).toFixed(1)}`;
+      const prev = ps[i - 1];
+      if (prev && p.t - prev.t > GAP) gap += `M${x(Math.max(prev.t, from)).toFixed(1)},${y(prev.v).toFixed(1)}L${xy}`;
+      solid += `${!prev || p.t - prev.t > GAP ? 'M' : 'L'}${xy}`;
+    });
+    return [solid, gap];
+  };
+  const valueAt = (ps, t) => {
+    if (!ps.length || t < ps[0].t || t > ps.at(-1).t) return null;
+    const j = ps.findIndex((p) => p.t >= t), b = ps[j], a = ps[Math.max(0, j - 1)];
+    if (b.t === a.t) return { v: b.v, est: false };
+    return { v: a.v + (b.v - a.v) * (t - a.t) / (b.t - a.t), est: b.t - a.t > GAP };
+  };
+  const data = SER.map((se) => ({ ...se, ps: seriesPts(se.k).map((p) => ({ t: p.t, v: p[se.k] })) })).filter((se) => se.ps.length);
+  // Before the window, the line enters at its interpolated value.
+  for (const se of data) if (se.ps[0].t < from) se.ps[0] = { t: from, v: valueAt(se.ps, from).v };
   const shown = pts.filter((p) => p.t >= from);
   if (shown.length) {
-    svg.append(s('path', { d: path('w'), fill: 'none', stroke: CW, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
-    svg.append(s('path', { d: path('s'), fill: 'none', stroke: CS, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
-    const last = shown.at(-1);
+    for (const se of data) {
+      const [solid, gap] = paths(se.ps);
+      svg.append(s('path', { d: gap, fill: 'none', stroke: se.c, 'stroke-opacity': .55, 'stroke-width': 2, 'stroke-dasharray': '2 4', 'stroke-linecap': 'round' }));
+      svg.append(s('path', { d: solid, fill: 'none', stroke: se.c, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    }
     const surf = css.getPropertyValue('--panel').trim();
-    for (const [k, c] of [['w', CW], ['s', CS]]) svg.append(s('circle', { cx: x(last.t), cy: y(last[k]), r: 4, fill: c, stroke: surf, 'stroke-width': 2 }));
-    // End labels, pushed apart only when they would overlap.
-    let yw = y(last.w) + 4, ys = y(last.s) + 4;
-    if (Math.abs(yw - ys) < 13) { if (yw < ys) { ys = yw + 13; } else { yw = ys + 13; } }
-    svg.append(s('text', { x: x(last.t) + 8, y: yw, fill: 'var(--ink)', 'font-size': 12, 'font-family': 'var(--font)' }, `${pct(last.w)}%`));
-    svg.append(s('text', { x: x(last.t) + 8, y: ys, fill: 'var(--ink-2)', 'font-size': 12, 'font-family': 'var(--font)' }, `${pct(last.s)}%`));
-    // Crosshair.
+    // End dots and labels, labels pushed apart only when they would overlap.
+    const ends = data.map((se) => ({ se, p: se.ps.at(-1), ly: y(se.ps.at(-1).v) + 4 })).sort((a, b) => a.ly - b.ly);
+    for (let i = 1; i < ends.length; i++) ends[i].ly = Math.max(ends[i].ly, ends[i - 1].ly + 13);
+    for (const e of ends) {
+      svg.append(s('circle', { cx: x(e.p.t), cy: y(e.p.v), r: 4, fill: e.se.c, stroke: surf, 'stroke-width': 2 }));
+      svg.append(s('text', { x: x(e.p.t) + 8, y: e.ly, fill: e.se.ink, 'font-size': 12, 'font-family': 'var(--font)' }, `${pct(e.p.v)}%`));
+    }
+    // Crosshair: follows the pointer, reading each line at that time.
     const cross = s('line', { y1: M.t, y2: M.t + ph, stroke: 'var(--ink-2)', 'stroke-width': 1, visibility: 'hidden' });
     const hit = s('rect', { x: M.l, y: M.t, width: pw, height: ph, fill: 'transparent' });
     hit.addEventListener('pointermove', (ev) => {
       const r = svg.getBoundingClientRect(), t = from + ((ev.clientX - r.left) * (W / r.width) - M.l) / pw * (now - from);
-      let best = shown[0];
-      for (const p of shown) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
-      cross.setAttribute('x1', x(best.t)); cross.setAttribute('x2', x(best.t)); cross.setAttribute('visibility', 'visible');
-      showTip(ev, dayHm(best.t), [[CW, `${pct(best.w)}%`, 'week'], [CS, `${pct(best.s)}%`, '5-hour window']]);
+      const rows = data.map((se) => [se, valueAt(se.ps, t)]).filter(([, v]) => v);
+      if (!rows.length) { cross.setAttribute('visibility', 'hidden'); hideTip(); return; }
+      cross.setAttribute('x1', x(t)); cross.setAttribute('x2', x(t)); cross.setAttribute('visibility', 'visible');
+      const est = rows.some(([, v]) => v.est);
+      showTip(ev, `${dayHm(t)}${est ? ' · interpolated' : ''}`, rows.map(([se, v]) => [se.c, `${v.est ? '~' : ''}${pct(v.v)}%`, se.name, v.est]));
     });
     hit.addEventListener('pointerleave', () => { cross.setAttribute('visibility', 'hidden'); hideTip(); });
     svg.append(cross, hit);
   }
   const first = shown[0];
   const note = !shown.length ? 'No samples yet — one every 3 minutes while this dashboard runs.'
-    : first.t - from > 864e5 ? `Sampled every 3 minutes since ${dayHm(first.t)}, while this dashboard runs.` : 'Sampled every 3 minutes while this dashboard runs.';
+    : (first.t - from > 864e5 ? `Sampled every 3 minutes since ${dayHm(first.t)}, while this dashboard runs.` : 'Sampled every 3 minutes while this dashboard runs.')
+      + ' Dotted stretches are interpolated across gaps.';
   const legend = h('div', { class: 'legend' },
     h('span', {}, h('i', { class: 'ln', style: `background:${CW}` }), 'This week'),
     h('span', {}, h('i', { class: 'ln', style: `background:${CS}` }), '5-hour window'),
+    data.some((se) => se.k === 'f') ? h('span', {}, h('i', { class: 'ln', style: `background:${CF}` }), 'Fable week') : null,
     h('span', {}, h('i', { class: 'ds' }), 'Caps'));
+  const fmt = (v) => typeof v === 'number' ? `${pct(v)}%` : '—';
   const table = h('details', { class: 'data' }, h('summary', {}, 'Table'),
-    h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, h('th', {}, 'Time'), h('th', {}, 'Week'), h('th', {}, '5-hour')),
-      shown.slice(-200).reverse().map((p) => h('tr', {}, h('td', {}, dayHm(p.t)), h('td', {}, `${pct(p.w)}%`), h('td', {}, `${pct(p.s)}%`))))));
+    h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, h('th', {}, 'Time'), h('th', {}, 'Week'), h('th', {}, '5-hour'), h('th', {}, 'Fable')),
+      shown.slice(-200).reverse().map((p) => h('tr', {}, h('td', {}, dayHm(p.t)), h('td', {}, fmt(p.w)), h('td', {}, fmt(p.s)), h('td', {}, fmt(p.f)))))));
   root.replaceChildren(legend, h('div', { class: 'chart' }, svg), h('div', { class: 'note' }, note), table);
 }
 
