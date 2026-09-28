@@ -52,9 +52,10 @@ jobs:
       # actually run (story 4.20's real fix for "silently cancelled").
       - name: installer
         id: install
-        timeout-minutes: 5
+        timeout-minutes: 1
         shell: pwsh
         run: |
+          Start-Sleep -Seconds 120
           $AssetName = "spacetimedb-update-x86_64-pc-windows-msvc.exe"
           # -MaximumRetryCount/-RetryIntervalSec on both calls below (Tim's
           # direction): install-spacetimedb-cli.sh carries the equivalent
