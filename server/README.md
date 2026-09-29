@@ -105,6 +105,11 @@ the same identity that ran `spacetime publish`.
 `init` and `deploy.yml`'s `publish-module` job; a restore re-arms through `finish_restore` itself,
 inside the module's own transaction chain, never through this reducer.
 
+`scripts/dev/publish-dev.sh <db> --server local` builds and publishes the module with the
+`time-control` Cargo feature (the dev-only `jump_clock`/`set_clock_speed` reducers, FR163) -- the
+only way that flavour is published, never to Maincloud; `scripts/dev/clock.sh <db> jump <city-minutes>`
+and `clock.sh <db> speed <n>` drive it.
+
 `spacetime dev` rebuilds, automigrates, republishes and regenerates `client/src/net/bindings` on
 every save; existing rows survive the migration. Run `scripts/dev/check-hot-reload.sh` to verify
 the hot-reload loop mechanically rather than by eye.

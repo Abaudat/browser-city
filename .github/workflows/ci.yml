@@ -392,6 +392,24 @@ jobs:
       - run: rustup toolchain install
       - name: the module actually has to compile for the thing it runs on
         run: cargo build --target wasm32-unknown-unknown --release -p browser_city
+      # FR163 (story 4.3): the dev-only clock reducers exist only behind
+      # the `time-control` feature. The production build must not carry
+      # them; the feature build must -- a sentinel nobody has proven present
+      # guards nothing.
+      - name: the time-control reducers are absent from the production module
+        run: |
+          wasm=target/wasm32-unknown-unknown/release/browser_city.wasm
+          for s in jump_clock set_clock_speed; do
+            if grep -aq "$s" "$wasm"; then echo "production module contains $s"; exit 1; fi
+          done
+      - name: the time-control flavour compiles and carries the reducers
+        run: |
+          cargo clippy --target wasm32-unknown-unknown -p browser_city --features time-control -- -D warnings
+          cargo build --features time-control --target wasm32-unknown-unknown --release -p browser_city
+          wasm=target/wasm32-unknown-unknown/release/browser_city.wasm
+          for s in jump_clock set_clock_speed; do
+            grep -aq "$s" "$wasm" || { echo "time-control module lacks $s"; exit 1; }
+          done
       # A pin check that orders a re-run at the next version bump guards
       # nothing if the harness it points at has silently stopped
       # compiling since (Tim's direction) -- this is excluded from the
@@ -455,6 +473,10 @@ jobs:
       # above.
       - name: story 4.2, the authoritative loop fires with zero clients connected and survives a rebuild
         run: bash scripts/ci/check-authoritative-loop.sh
+      # Story 4.3: its own disposable local instance and port (3992),
+      # never 3987-3991 -- same job, same reasoning as the steps above.
+      - name: story 4.3, the dev-only clock jumps, replays every skipped fire and runs the loop faster
+        run: bash scripts/ci/check-time-control.sh
 
   coverage:
     name: coverage (sim)

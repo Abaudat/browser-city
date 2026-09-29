@@ -24,7 +24,7 @@ function setup(latencyMs = 40) {
   const serverClock = new ServerClock(() => performance.now());
   const city = new CityClock(serverClock);
   city.setRate(RATE);
-  city.setEpoch(EPOCH);
+  city.setClock(EPOCH, 1);
   const calls = { n: 0 };
   const fetchServerMicros = async () => {
     calls.n += 1;
@@ -43,7 +43,7 @@ function setup(latencyMs = 40) {
 }
 
 function expectWithinOneCityMinute(city: CityClock) {
-  const truth = cityTime(EPOCH, serverNow(), RATE);
+  const truth = cityTime(EPOCH, serverNow(), RATE, 1);
   const got = city.now();
   expect(got).toBeDefined();
   const total = (t: { day: number; hour: number; minute: number }) =>
@@ -127,7 +127,7 @@ describe("CityClock", () => {
     const city = new CityClock(serverClock);
     city.setRate(RATE);
     expect(city.now()).toBeUndefined();
-    city.setEpoch(EPOCH);
+    city.setClock(EPOCH, 1);
     expect(city.now()).toBeUndefined();
     serverClock.observe(0, 0, EPOCH + 150_000_000n);
     expect(city.now()?.hour).toBe(1);
@@ -137,7 +137,7 @@ describe("CityClock", () => {
     const serverClock = new ServerClock(() => 0);
     serverClock.observe(0, 0, EPOCH);
     const city = new CityClock(serverClock);
-    city.setEpoch(EPOCH);
+    city.setClock(EPOCH, 1);
     expect(city.now()).toBeUndefined();
   });
 
@@ -146,9 +146,20 @@ describe("CityClock", () => {
     serverClock.observe(0, 0, EPOCH);
     const city = new CityClock(serverClock);
     city.setRate(RATE);
-    city.setEpoch(EPOCH);
+    city.setClock(EPOCH, 1);
     expect(city.now()?.day).toBe(0);
-    city.setEpoch(EPOCH - 3_600_000_000n);
+    city.setClock(EPOCH - 3_600_000_000n, 1);
     expect(city.now()?.day).toBe(1);
+  });
+
+  it("follows a speed change through the same setter", () => {
+    const serverClock = new ServerClock(() => 0);
+    serverClock.observe(0, 0, EPOCH + 2_500_000n);
+    const city = new CityClock(serverClock);
+    city.setRate(RATE);
+    city.setClock(EPOCH, 1);
+    expect(city.now()?.minute).toBe(1);
+    city.setClock(EPOCH, 10);
+    expect(city.now()?.minute).toBe(10);
   });
 });

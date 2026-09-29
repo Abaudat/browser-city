@@ -14,6 +14,12 @@ edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+# The dev-only clock control (FR163/FR168): `jump_clock`/`set_clock_speed`
+# exist only when built with this. Never a default, never on the deploy
+# build; `scripts/dev/publish-dev.sh` is its one publisher.
+time-control = []
+
 [lib]
 # SpacetimeDB's reducer/table macros reference host FFI symbols the wasm
 # runtime supplies, so this crate cannot be linked natively -- "cdylib" is

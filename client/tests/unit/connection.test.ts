@@ -28,8 +28,12 @@ interface FakeState {
   onSubscriptionErrorCb?: (ctx: { event?: unknown }) => void;
   onInsertCb?: (ctx: unknown, row: FakeRow) => void;
   onModuleVersionInsertCb?: (ctx: unknown, row: FakeModuleVersionRow) => void;
-  onWorldClockInsertCb?: (ctx: unknown, row: { epochAt: Timestamp }) => void;
-  onWorldClockUpdateCb?: (ctx: unknown, old: unknown, row: { epochAt: Timestamp }) => void;
+  onWorldClockInsertCb?: (ctx: unknown, row: { epochAt: Timestamp; speed: number }) => void;
+  onWorldClockUpdateCb?: (
+    ctx: unknown,
+    old: unknown,
+    row: { epochAt: Timestamp; speed: number },
+  ) => void;
   syncCalls: number;
 }
 
@@ -60,7 +64,7 @@ const fakeConn = {
   },
   db: {
     worldClock: {
-      onInsert: (cb: (ctx: unknown, row: { epochAt: Timestamp }) => void) => {
+      onInsert: (cb: (ctx: unknown, row: { epochAt: Timestamp; speed: number }) => void) => {
         state.onWorldClockInsertCb = cb;
       },
       onUpdate: (cb: (ctx: unknown, old: unknown, row: { epochAt: Timestamp }) => void) => {
@@ -151,7 +155,7 @@ describe("connect", () => {
 
   describe("in-city clock wiring (story 4.1)", () => {
     const wiring = () => {
-      const epochs: Array<[bigint, string]> = [];
+      const epochs: Array<[bigint, number, string]> = [];
       const serverClock = new ServerClock(() => 0);
       return {
         epochs,
@@ -163,7 +167,8 @@ describe("connect", () => {
             addEventListener: () => {},
             removeEventListener: () => {},
           },
-          onEpoch: (micros: bigint, kind: "insert" | "update") => epochs.push([micros, kind]),
+          onClock: (clock: { epochMicros: bigint; speed: number }, kind: "insert" | "update") =>
+            epochs.push([clock.epochMicros, clock.speed, kind]),
         },
       };
     };
@@ -172,11 +177,11 @@ describe("connect", () => {
       const w = wiring();
       connect(() => {}, undefined, undefined, w.clock);
       const at = Timestamp.fromDate(new Date(1_000));
-      state.onWorldClockInsertCb?.({}, { epochAt: at });
-      state.onWorldClockUpdateCb?.({}, {}, { epochAt: at });
+      state.onWorldClockInsertCb?.({}, { epochAt: at, speed: 1 });
+      state.onWorldClockUpdateCb?.({}, {}, { epochAt: at, speed: 10 });
       expect(w.epochs).toEqual([
-        [1_000_000n, "insert"],
-        [1_000_000n, "update"],
+        [1_000_000n, 1, "insert"],
+        [1_000_000n, 10, "update"],
       ]);
     });
 

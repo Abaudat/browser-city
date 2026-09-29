@@ -38,6 +38,9 @@
 #       `rearm_schedules` twice as owner. After the republish and after
 #       each call: still exactly one pending row, and its target still
 #       phase-aligned to the original anchor (the phase is preserved).
+#   (e) Story 4.3 (FR163): the production flavour has no time control --
+#       `describe --json` lists no `jump_clock`/`set_clock_speed`, and a call
+#       to either is refused as a nonexistent reducer.
 set -uo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$REPO_ROOT/scripts/ci/lib/spacetime-instance.sh"
@@ -306,5 +309,25 @@ spacetime call "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y rearm_schedules >"$
   || fail "rearm_schedules (call 2) failed as owner" "$REARM_LOG_2"
 assert_still_one_pending_phase_aligned "after rearm_schedules call 2"
 
-echo "check-authoritative-loop: the authoritative loop fires with zero clients, holds its per-fire and non-compounding drift budget, rejects a direct call cleanly, and rebuilds idempotently" >&2
+# --- (e) the production flavour has no time control (story 4.3, FR163) -------
+# This module is built exactly the way deploy.yml builds it (no cargo
+# features): the dev-only clock reducers must not exist in it at all, and
+# calling one anyway is refused by the platform's routing layer.
+echo "check-authoritative-loop: (e) the production build must carry no time-control reducer" >&2
+DESCRIBE_JSON="$DATA_DIR/describe.json"
+spacetime describe --json "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y >"$DESCRIBE_JSON" 2>&1   || fail "spacetime describe --json failed" "$DESCRIBE_JSON"
+grep -q "run_maintenance" "$DESCRIBE_JSON"   || fail "spacetime describe --json does not list the module's reducers -- this leg would pass vacuously" "$DESCRIBE_JSON"
+for reducer in jump_clock set_clock_speed; do
+  if grep -q "$reducer" "$DESCRIBE_JSON"; then
+    fail "the production build exposes the dev-only reducer $reducer (FR163: it must not exist)" "$DESCRIBE_JSON"
+  fi
+  TC_LOG="$DATA_DIR/time-control-$reducer.log"
+  if spacetime call "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y "$reducer" 1 >"$TC_LOG" 2>&1; then
+    fail "the production build accepted a call to $reducer" "$TC_LOG"
+  fi
+  grep -qF "No such reducer" "$TC_LOG"     || fail "calling $reducer on the production build was refused, but not as a nonexistent reducer" "$TC_LOG"
+done
+ok "the production build carries no jump_clock/set_clock_speed, and a call to either is refused as a nonexistent reducer"
+
+echo "check-authoritative-loop: the authoritative loop fires with zero clients, holds its per-fire and non-compounding drift budget, rejects a direct call cleanly, rebuilds idempotently, and carries no time control" >&2
 exit 0

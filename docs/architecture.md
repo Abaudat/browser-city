@@ -96,16 +96,19 @@ docs/spikes/1.3-scheduled-reducer-timing.md.
 - `rearm_schedules` (owner-only) rebuilds every schedule from the epoch. Its callers are `init` and `deploy.yml`'s `publish-module` job, beside `reseed_codes`.
 - `begin_restore` disarms every scheduled table before its own preconditions run; `finish_restore` re-arms every cadence after closing the restore, both inside the same transaction chain, so no cadence is ever armed from an epoch outside the world actually open for restore.
 - `cadence_liveness` holds one row per armed cadence, written only by that cadence's own fired reducer.
+- `next_target` takes the clock `speed` and derives its period from the effective minute. A cadence's work is a function of the city minute it fires for: bodies live in `tables/cadences.rs` as `fn(ctx, city_minute)`, and `ctx.timestamp`, `world_clock` and `read_clock` are banned there. A jump's replay starts at each cadence's own pending row (which may already be due); a cadence with no pending row replays nothing. A `time-control` jump replays every skipped grid point through those same bodies in one transaction, in city-minute order, or refuses; `replay_skipped_cadences` names every scheduled table once, as walked or refuse-if-pending.
 
 ## Time
 
-- In-city time is a pure function of one durable row and the server's `now`: `sim::time::city_time(epoch_at, now)` returns `CityTime { day, hour, minute, weekday, real_ms_into_minute }`, integer arithmetic only, `weekday` being `day` mod 7. The smallest unit of city time is the minute; `real_ms_into_minute` exists for rendering interpolation only, and no reducer, rule or gameplay decision may read it.
+- In-city time is a pure function of one durable row and the server's `now`: `sim::time::city_time(epoch_at, now, speed)` returns `CityTime { day, hour, minute, weekday, real_ms_into_minute }`, integer arithmetic only, `weekday` being `day` mod 7. The smallest unit of city time is the minute; `real_ms_into_minute` exists for rendering interpolation only, and no reducer, rule or gameplay decision may read it.
 - `REAL_MS_PER_CITY_MINUTE` (FR1, 2500) is a fixed constant in `tools/defs-build/src/model.rs`, emitted into `sim/src/generated/defs.rs` and `client/public/defs/defs.json` (`real_ms_per_city_minute`, refused by `client/src/defs/parse.ts` when missing or below 1). `sim::time` derives its constants as expressions over it and refuses a value above `u16::MAX` at compile time.
-- `world_clock` is a public one-row table (`id` 0, `epoch_at`): the real instant of day 0, 00:00, written from `init` only and never rewritten by a republish. It is restored by `restore_world_clock`.
+- `world_clock` is a public one-row table (`id` 0, `epoch_at`, `speed`): the real instant of day 0, 00:00, and the clock multiplier (default 1). `init` writes it once and a republish never rewrites it. It is restored by `restore_world_clock`.
 - The server holds the epoch; clients derive time arithmetically and are never told it. Nothing ticks the clock: `world_clock_schedule` carries no row and no per-minute broadcast exists.
 - The client subscribes to `world_clock` and estimates the server's clock from the `sync_clock` procedure (returns `ctx.timestamp`, reads and writes nothing): on connect, every 5 real minutes and when the tab becomes visible. The estimate advances on `performance.now()`; nothing under `client/src/time/` reads `Date.now()`, and it imports no `net/`, `pixi.js` or DOM global.
-- `fixtures/city-clock-conformance.v1.json` pins `sim::time` and `client/src/time/city-time.ts` to each other.
-- A later dev-build clock jump rewrites `epoch_at`; a multiplier is additive when FR163 comes.
+- `fixtures/city-clock-conformance.v2.json` (cases carry `speed`) pins `sim::time` and `client/src/time/city-time.ts` to each other.
+- The effective real microseconds per city minute are `REAL_MS_PER_CITY_MINUTE * 1000 / speed`. `sim::time::validate_speed` accepts only `1..=MAX_CLOCK_SPEED` (100) values that divide that exactly, so every grid point is an exact integer instant; `sim::time::reanchor` and `jumped_epoch` are the only clock arithmetic. Anything that interpolates on `real_ms_into_minute` divides by the effective minute, never the constant. The multiplier is for watching, not correctness: at high speed the catch-up rule skips ticks it cannot deliver, and `cadence_liveness.missed` is the meter.
+- FR163's `jump_clock(city_minutes)` and `set_clock_speed(speed)` exist only behind the `time-control` Cargo feature (never a default), open to any caller: that flavour is only ever published by `scripts/dev/publish-dev.sh` to a local instance, driven by `scripts/dev/clock.sh`; `deploy.yml` publishes `--module-path server` and never sees the feature. Every table and column is unconditional, so both flavours share one schema. A speed change re-anchors the epoch so the city minute never moves; a jump is forward only, at most `MAX_JUMP_CITY_MINUTES` (8 city days) and `MAX_JUMP_TICKS` replayed ticks, in one transaction, so any refusal changes nothing.
+- The client's `CityClock.setClock(epoch, speed)` takes both from `world_clock`'s `onInsert`/`onUpdate`; a jump or speed change reaches a running client without a reload.
 
 ## Backup
 
@@ -825,6 +828,7 @@ behind a flag not exposed in production (FR168).
   sentinels; `client/tests/e2e/deploy-smoke.spec.ts` drives every
   registered overlay's activation against a real production build and
   asserts nothing appears.
+- The server half of the same gate: the dev-only clock reducers exist only in the `time-control` build. `ci.yml`'s `build` job greps the production wasm for `jump_clock`/`set_clock_speed` (must be absent) and the feature build's (must be present), and `check-authoritative-loop.sh` asserts against a live production-flavour instance that `describe --json` lists neither and a call is refused as a nonexistent reducer.
 - `main.ts` is the only importer. `client/biome.json` bans `../debug/**`
   everywhere else, and `scripts/ci/check-debug-boundary.sh` (run by
   `client-check`, tested by `scripts/ci/tests/`) re-checks that, that the

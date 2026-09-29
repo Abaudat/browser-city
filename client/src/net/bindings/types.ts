@@ -211,6 +211,7 @@ export type Unit = __Infer<typeof Unit>;
 export const WorldClock = __t.object("WorldClock", {
   id: __t.u8(),
   epochAt: __t.timestamp(),
+  speed: __t.u32(),
 });
 export type WorldClock = __Infer<typeof WorldClock>;
 

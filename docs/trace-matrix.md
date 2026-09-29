@@ -141,6 +141,9 @@ with no row here.
 | `inv_schedule_catch_up_bounded` | `sim::cadence::next_target`, called with now a simulated week past the origin, returns instantly (no loop) with missed equal to the exact arithmetic gap in periods -- catch-up is bounded to one late fire, every skipped target is never separately dispatched (story 4.2) | covered | `inv_schedule_catch_up_bounded` | 4.2 |
 | `inv_schedule_arith_total` | `sim::cadence::next_target` never panics and never wraps, for any i64 origin/now (including i64::MIN/i64::MAX) and any positive period_ms (story 4.2, NFR41) | covered | `inv_schedule_arith_total` | 4.2 |
 | `inv_schedule_never_returns_its_own_origin` | `sim::cadence::next_target`'s returned target is always strictly after origin, for any reasonable-range origin/period/now -- an early dispatch (now before origin) must never re-arm the already-due origin itself (story 4.2) | covered | `inv_schedule_never_returns_its_own_origin` | 4.2 |
+| `inv_jump_preserves_city_time_arithmetic` | For any epoch, any positive jump and any now, `city_time(jumped_epoch, now)` equals `city_time(epoch, now + delta)` field for field, at every valid speed, without panicking or wrapping (FR163, NFR41) | covered | `inv_jump_preserves_city_time_arithmetic` | 4.3 |
+| `inv_jump_never_drops_a_fire` | For any cadence origin, period, speed and jumped interval, the skipped grid points `sim::cadence::replay_plan` returns equal a brute-force enumeration of them, in ascending city-minute order, and a target the cadence had already passed is never counted (FR163) | covered | `inv_jump_never_drops_a_fire` | 4.3 |
+| `inv_multiplier_switch_is_continuous` | At the instant a multiplier changes the whole city minute is unchanged, and thereafter exactly k city minutes elapse per k new-speed minutes: switching speeds back and forth never moves the clock backward or skips a minute (FR163) | covered | `inv_multiplier_switch_is_continuous` | 4.3 |
 
 ## Coverage scale (NFR29)
 
@@ -673,6 +676,25 @@ Story 4.1 (FR1-FR3, NFR3): the clock is one durable epoch row and a pure functio
 | A client with a wrong wall clock derives the server's city time, and the clock table is inserted once and never updated (no per-tick broadcast) | covered | `client/tests/e2e/city-clock.spec.ts` -- `a client with a wrong wall clock derives the server's in-city time`, `the clock table is inserted once and never updated as in-city time passes` |
 | A republish never resets the epoch (a deploy never resets the city to dawn) | covered | `scripts/ci/check-live-migration.sh` -- `a republish must not reset the city clock` |
 | A restore carries the epoch through by value | covered | `scripts/ci/check-backup-restore.sh` -- `10a: world_clock's epoch survives by value` |
+
+## Time control
+
+Story 4.3 (FR163, FR168): the dev-only clock jump and multiplier. The
+`inv_jump_*` and `inv_multiplier_*` rows above cover the arithmetic; the
+rows below cover the mechanism and the production gate.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| FR163: the jump cap covers a rent week, is exact at the boundary, and a multiplier must divide the city minute exactly | covered | `server/sim/src/time.rs` -- `the_jump_cap_covers_a_rent_week`, `speed_validation` |
+| FR163: server and client derive identical city time at every multiplier (NFR30) | covered | `server/bounds/tests/city_clock_fixture_current.rs` -- `sim_time_matches_every_city_clock_case`; `client/tests/unit/time/clock-sync.test.ts` -- `follows a speed change through the same setter` |
+| FR163: a jump moves `epoch_at` by exactly the skipped interval, replays every skipped cadence fire through the live bodies (1008 ten-minute fires in a city week), and re-arms one pending row phase-aligned to the new epoch | covered | `scripts/ci/check-time-control.sh` -- `epoch_at moved back by exactly one city week`, `the city minute went from`, `the city minute did not move across the speed change`, `maintenance fired`, `maintenance_schedule holds exactly one pending row` |
+| FR163: an over-cap jump, a zero jump and an invalid multiplier fail and change nothing | covered | `scripts/ci/check-time-control.sh` -- `an over-cap jump, a zero jump and an invalid speed were refused` |
+| FR163: the multiplier runs the authoritative loop faster, not only the displayed clock | covered | `scripts/ci/check-time-control.sh` -- `maintenance fired` |
+| FR163: a pending target already due (undispatched) is replayed, a cadence with no pending row replays nothing, and a replayed tick is handed the same city minute a live tick is | covered | `server/sim/src/cadence.rs` -- `a_pending_target_already_due_is_replayed`, `a_cadence_with_no_pending_row_replays_nothing`; `server/sim/tests/invariants.rs` -- `replayed_and_live_ticks_get_the_same_city_minute` |
+| FR163: every scheduled table is walked or refused by a jump, exactly once | covered | `server/bounds/tests/schedules_coverage.rs` -- `replay_skipped_cadences_accounts_for_every_scheduled_table_exactly_once` |
+| FR163: a cadence body cannot read real time, so a replayed tick and a live tick are one code path | covered | `scripts/ci/check-server-src-bans.sh`, `scripts/ci/tests/test-check-server-src-bans.sh` -- `ctx.timestamp is banned in cadences.rs`, `world_clock is banned in cadences.rs`, `read_clock is banned in cadences.rs` |
+| FR168: the production module has no time-control reducer at all, and a call to one is refused as a nonexistent reducer | covered | `scripts/ci/check-authoritative-loop.sh` -- `the production build carries no jump_clock/set_clock_speed`, `.github/workflows/ci.yml` -- the `build` job's sentinel greps on the production and `time-control` wasm |
+| The developer CLI refuses a non-numeric, zero or backward argument before any call is made | covered | `scripts/ci/tests/test-clock-sh.sh` -- `a non-numeric argument fails`, `a backward jump fails`, `no bad invocation reached spacetime` |
 
 ## Scheduled reducers
 

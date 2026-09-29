@@ -28,15 +28,18 @@ export type StatusListener = (status: ConnectionStatus) => void;
 export type HandshakeListener = (version: HandshakeVersion) => void;
 
 /** Story 4.1 (FR1-FR3): what the in-city clock needs from the connection --
- * the shared skew estimate the sync round trips feed, and the epoch row's
- * `epoch_at` (microseconds since the Unix epoch) on insert and on any later
- * rewrite. */
+ * the shared skew estimate the sync round trips feed, and the clock row's
+ * `epoch_at` (microseconds since the Unix epoch) and `speed` multiplier on
+ * insert and on any later rewrite. */
 export interface ClockWiring {
   readonly serverClock: ServerClock;
   /** The page's `document`, passed in by `main.ts` (DOM globals stay out
    * of `net/`). */
   readonly visibility: VisibilitySource;
-  readonly onEpoch: (epochMicros: bigint, kind: "insert" | "update") => void;
+  readonly onClock: (
+    clock: { epochMicros: bigint; speed: number },
+    kind: "insert" | "update",
+  ) => void;
 }
 
 /**
@@ -129,10 +132,10 @@ export function connect(
     // `world_clock` is subscribed (not merely read once) so an FR163 epoch
     // rewrite reaches a running client without a reload.
     conn.db.worldClock.onInsert((_ctx, row) => {
-      clock.onEpoch(row.epochAt.microsSinceUnixEpoch, "insert");
+      clock.onClock({ epochMicros: row.epochAt.microsSinceUnixEpoch, speed: row.speed }, "insert");
     });
     conn.db.worldClock.onUpdate((_ctx, _old, row) => {
-      clock.onEpoch(row.epochAt.microsSinceUnixEpoch, "update");
+      clock.onClock({ epochMicros: row.epochAt.microsSinceUnixEpoch, speed: row.speed }, "update");
     });
   }
 

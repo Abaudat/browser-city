@@ -22,13 +22,20 @@ fn schedules_rs_text() -> String {
 /// file (there is none today, but nothing enforces that) is never
 /// mistaken for one inside this function.
 fn disarm_all_scheduled_tables_body(text: &str) -> &str {
+    fn_body(text, "disarm_all_scheduled_tables")
+}
+
+/// The body text of `pub fn <name>`, brace-matched from the first `{`
+/// after its parameter list's closing `)`.
+fn fn_body<'a>(text: &'a str, name: &str) -> &'a str {
     let fn_at = text
-        .find("pub fn disarm_all_scheduled_tables")
-        .expect("schedules.rs: no `pub fn disarm_all_scheduled_tables` found");
-    let open = text[fn_at..]
+        .find(&format!("pub fn {name}("))
+        .unwrap_or_else(|| panic!("schedules.rs: no `pub fn {name}` found"));
+    let params_end = text[fn_at..].find(')').expect("no parameter list") + fn_at;
+    let open = text[params_end..]
         .find('{')
-        .expect("disarm_all_scheduled_tables has no body")
-        + fn_at;
+        .unwrap_or_else(|| panic!("{name} has no body"))
+        + params_end;
     let mut depth: i32 = 0;
     for (i, b) in text.as_bytes()[open..].iter().enumerate() {
         match b {
@@ -50,12 +57,17 @@ fn disarm_all_scheduled_tables_body(text: &str) -> &str {
 /// (harmless at runtime, a sign of a copy-paste mistake all the same) is
 /// still visible to a caller that wants it.
 fn disarm_calls(body: &str) -> Vec<String> {
+    macro_calls(body, "disarm!(")
+}
+
+/// Every `<macro_open>...)` call's first argument in `body`, in order.
+fn macro_calls(body: &str, macro_open: &str) -> Vec<String> {
     let mut calls = Vec::new();
     let mut rest = body;
-    while let Some(at) = rest.find("disarm!(") {
-        let after = &rest[at + "disarm!(".len()..];
+    while let Some(at) = rest.find(macro_open) {
+        let after = &rest[at + macro_open.len()..];
         let close = after
-            .find(')')
+            .find([')', ','])
             .expect("schedules.rs: a disarm!( call has no closing )");
         calls.push(after[..close].trim().to_string());
         rest = &after[close..];
@@ -105,6 +117,32 @@ fn disarm_all_scheduled_tables_covers_every_scheduled_table_and_nothing_else() {
          scheduled tables ({}) are not the same count -- a duplicate call, most likely",
         calls.len(),
         scheduled.len()
+    );
+}
+
+/// A clock jump's replay (`replay_skipped_cadences`) must account for
+/// every scheduled table exactly once -- walked (`walk!`) or refused if
+/// pending (`refuse!`) -- so a cadence added later cannot be silently
+/// skipped by a jump.
+#[test]
+fn replay_skipped_cadences_accounts_for_every_scheduled_table_exactly_once() {
+    let schema = parse_module_schema(&module_src_dir());
+    let text = schedules_rs_text();
+    let body = fn_body(&text, "replay_skipped_cadences");
+    let mut calls = macro_calls(body, "walk!(");
+    calls.extend(macro_calls(body, "refuse!("));
+    let mut scheduled: Vec<&str> = schema
+        .tables
+        .iter()
+        .filter(|t| t.scheduled_reducer.is_some())
+        .map(|t| t.accessor.as_str())
+        .collect();
+    assert!(!scheduled.is_empty());
+    scheduled.sort_unstable();
+    calls.sort_unstable();
+    assert_eq!(
+        calls, scheduled,
+        "replay_skipped_cadences's walk!/refuse! calls must name every scheduled table exactly once"
     );
 }
 

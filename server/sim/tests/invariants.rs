@@ -4752,15 +4752,15 @@ proptest! {
     ) {
         let k = sim::time::REAL_MS_PER_CITY_MINUTE;
         let oracle = |t: i64| (t - e).div_euclid(1000).div_euclid(k);
-        let delta = sim::time::city_time(e, t2).total_minutes()
-            - sim::time::city_time(e, t1).total_minutes();
+        let delta = sim::time::city_time(e, t2, 1).total_minutes()
+            - sim::time::city_time(e, t1, 1).total_minutes();
         prop_assert_eq!(delta, oracle(t2) - oracle(t1));
     }
 
     /// `inv_city_time_conversion_exact`.
     #[test]
     fn inv_city_time_conversion_exact(e in any::<i64>(), t in any::<i64>()) {
-        let c = sim::time::city_time(e, t);
+        let c = sim::time::city_time(e, t, 1);
         prop_assert!(c.hour < 24 && c.minute < 60 && c.weekday < 7);
         prop_assert!((c.real_ms_into_minute as i64) < sim::time::REAL_MS_PER_CITY_MINUTE);
         prop_assert_eq!(c.weekday as i64, c.day.rem_euclid(7));
@@ -4778,11 +4778,11 @@ proptest! {
         days in 0i64..10_000,
     ) {
         let real_day_us = 24 * 3_600_000i64 * 1000;
-        let a = sim::time::city_time(e, e + t);
-        let b = sim::time::city_time(e, e + t + days * real_day_us);
+        let a = sim::time::city_time(e, e + t, 1);
+        let b = sim::time::city_time(e, e + t + days * real_day_us, 1);
         prop_assert_eq!((a.hour, a.minute, a.real_ms_into_minute), (b.hour, b.minute, b.real_ms_into_minute));
         // A 30-minute session crosses half the in-city day.
-        let later = sim::time::city_time(e, e + t + 30 * 60 * 1_000_000);
+        let later = sim::time::city_time(e, e + t + 30 * 60 * 1_000_000, 1);
         let moved = (later.total_minutes() - a.total_minutes()) as i64;
         prop_assert_eq!(moved, 720);
     }
@@ -4989,7 +4989,7 @@ proptest! {
         period_ms in 1i64..=1_000_000_000,
         now in any::<i64>(),
     ) {
-        let (target, _missed) = cadence::next_target(origin, period_ms, now);
+        let (target, _missed) = cadence::next_target(origin, period_ms, 1, now);
         let period_micros = period_ms as i128 * 1000;
         let delta = target as i128 - origin as i128;
         prop_assert_eq!(delta.rem_euclid(period_micros), 0);
@@ -5006,7 +5006,7 @@ proptest! {
         period_ms in 1i64..=1_000_000_000,
         now in -1_000_000_000_000i64..=1_000_000_000_000,
     ) {
-        let (target, _missed) = cadence::next_target(origin, period_ms, now);
+        let (target, _missed) = cadence::next_target(origin, period_ms, 1, now);
         prop_assert!(target > now);
     }
 
@@ -5022,7 +5022,7 @@ proptest! {
         period_ms in 1i64..=1_000_000_000,
         now in -1_000_000_000_000i64..=1_000_000_000_000,
     ) {
-        let (target, _missed) = cadence::next_target(origin, period_ms, now);
+        let (target, _missed) = cadence::next_target(origin, period_ms, 1, now);
         prop_assert!(target > origin);
     }
 
@@ -5040,7 +5040,7 @@ proptest! {
     ) {
         const ONE_WEEK_MICROS: i64 = 7 * 24 * 60 * 60 * 1_000_000;
         let now = origin + ONE_WEEK_MICROS;
-        let (target, missed) = cadence::next_target(origin, period_ms, now);
+        let (target, missed) = cadence::next_target(origin, period_ms, 1, now);
         let period_micros = period_ms as i128 * 1000;
         let expected_missed = (ONE_WEEK_MICROS as i128).div_euclid(period_micros);
         prop_assert_eq!(missed as i128, expected_missed);
@@ -5059,7 +5059,7 @@ proptest! {
         period_ms in 1i64..=i64::MAX,
         now in any::<i64>(),
     ) {
-        let _ = cadence::next_target(origin, period_ms, now);
+        let _ = cadence::next_target(origin, period_ms, 1, now);
     }
 }
 
@@ -5072,8 +5072,153 @@ fn schedule_next_target_at_the_extremes_never_panics() {
     for &origin in &[i64::MIN, i64::MAX, 0] {
         for &now in &[i64::MIN, i64::MAX, 0] {
             for &period_ms in &[1i64, cadence::MIN_PERIOD_MS, i64::MAX] {
-                let _ = cadence::next_target(origin, period_ms, now);
+                let _ = cadence::next_target(origin, period_ms, 1, now);
             }
         }
+    }
+}
+
+// --- Story 4.3: time control (FR163) -----------------------------------------
+
+pub const INV_JUMP_PRESERVES_CITY_TIME_ARITHMETIC: &str = "for any epoch, any positive jump and any now, city_time(jumped_epoch, now) equals city_time(epoch, now + delta) field for field, never panicking or wrapping, over the whole i64 range (FR163, NFR41)";
+pub const INV_JUMP_NEVER_DROPS_A_FIRE: &str = "for any cadence origin, period and jumped interval, the skipped grid points sim::cadence counts equal a brute-force enumeration of them, in ascending city-minute order, and a target the cadence had already passed is never counted (FR163)";
+pub const INV_MULTIPLIER_SWITCH_IS_CONTINUOUS: &str = "at the instant a multiplier changes the whole city minute is unchanged, and thereafter exactly k city minutes elapse per k new-speed minutes, so switching speeds back and forth never moves the clock backward or skips a minute (FR163)";
+
+/// Every valid clock multiplier (`sim::time::validate_speed`).
+fn valid_speeds() -> Vec<u32> {
+    (1..=sim::time::MAX_CLOCK_SPEED)
+        .filter(|&s| sim::time::validate_speed(s).is_ok())
+        .collect()
+}
+
+proptest! {
+    /// `inv_jump_preserves_city_time_arithmetic`.
+    #[test]
+    fn inv_jump_preserves_city_time_arithmetic(
+        epoch in any::<i64>(),
+        now in any::<i64>(),
+        minutes in 1u32..=sim::time::MAX_JUMP_CITY_MINUTES,
+        speed_at in 0usize..11,
+    ) {
+        let speeds = valid_speeds();
+        let speed = speeds[speed_at % speeds.len()];
+        let jumped = sim::time::jumped_epoch(epoch, minutes, speed);
+        let delta = minutes as i128 * sim::time::micros_per_city_minute(speed) as i128;
+        // Only where nothing saturates: the reference arithmetic is exact.
+        prop_assume!(epoch as i128 - delta >= i64::MIN as i128);
+        prop_assume!(now as i128 + delta <= i64::MAX as i128);
+        prop_assert_eq!(
+            sim::time::city_time(jumped, now, speed),
+            sim::time::city_time(epoch, (now as i128 + delta) as i64, speed)
+        );
+    }
+
+    /// `inv_jump_preserves_city_time_arithmetic`: totality at the extremes.
+    #[test]
+    fn jump_arithmetic_is_total(epoch in any::<i64>(), now in any::<i64>(), minutes in any::<u32>(), speed in any::<u32>()) {
+        let jumped = sim::time::jumped_epoch(epoch, minutes, speed);
+        let _ = sim::time::city_time(jumped, now, speed);
+        let _ = sim::time::reanchor(epoch, now, speed, minutes);
+    }
+
+    /// `inv_jump_never_drops_a_fire`. The pending target is drawn from
+    /// the whole range a live row can hold: long past `now` (already due,
+    /// undispatched) through well ahead of it.
+    #[test]
+    fn inv_jump_never_drops_a_fire(
+        origin in -1_000_000_000i64..1_000_000_000,
+        period_minutes in 1i64..=60,
+        speed_at in 0usize..11,
+        now_offset in -10_000_000i64..200_000_000,
+        pending in 1i64..=400,
+        jump_minutes in 1i64..=2_000,
+    ) {
+        let speeds = valid_speeds();
+        let speed = speeds[speed_at % speeds.len()];
+        let period_ms = cadence::period_ms(period_minutes);
+        let now = origin + now_offset;
+        let jump_micros = jump_minutes * sim::time::micros_per_city_minute(speed);
+        let plan = cadence::replay_plan(
+            origin, &[(period_ms, pending as i128)], speed, now, jump_micros, u64::MAX,
+        )
+        .expect("no cap");
+        // Brute force: every grid point from the pending one, up to the
+        // jumped-to instant.
+        let mut expected = Vec::new();
+        let mut index = pending;
+        while cadence::grid_point(origin, period_ms, speed, index) <= now + jump_micros {
+            expected.push(index);
+            index += 1;
+        }
+        let got: Vec<i64> = plan.iter().map(|r| r.index).collect();
+        prop_assert_eq!(&got, &expected);
+        prop_assert!(plan.windows(2).all(|w| w[0].city_minute < w[1].city_minute));
+    }
+
+    /// The minute a replayed tick is handed is the minute the live tick for
+    /// the same grid point is handed.
+    #[test]
+    fn replayed_and_live_ticks_get_the_same_city_minute(
+        origin in -1_000_000_000_000i64..1_000_000_000_000,
+        period_minutes in 1i64..=60,
+        speed_at in 0usize..11,
+        index in 1i64..=5_000,
+    ) {
+        let speeds = valid_speeds();
+        let speed = speeds[speed_at % speeds.len()];
+        let period_ms = cadence::period_ms(period_minutes);
+        let at = cadence::grid_point(origin, period_ms, speed, index);
+        let live = cadence::city_minute_of(origin, speed, at);
+        let plan = cadence::replay_plan(
+            origin, &[(period_ms, index as i128)], speed, at, 0, u64::MAX,
+        )
+        .expect("no cap");
+        prop_assert_eq!(plan.len(), 1);
+        prop_assert_eq!(plan[0].city_minute, live);
+        prop_assert_eq!(live, index * period_minutes);
+    }
+
+    /// The merged plan across cadences is ordered and its size is the sum
+    /// of the parts.
+    #[test]
+    fn jump_plan_is_ordered_across_cadences(
+        a in 1i64..=30, b in 1i64..=30, jump_minutes in 1i64..=1_000,
+    ) {
+        let (pa, pb) = (cadence::period_ms(a), cadence::period_ms(b));
+        let jump = jump_minutes * sim::time::REAL_MS_PER_CITY_MINUTE * 1000;
+        let both = cadence::replay_plan(0, &[(pa, 1), (pb, 1)], 1, 0, jump, u64::MAX).expect("no cap");
+        let one = cadence::replay_plan(0, &[(pa, 1)], 1, 0, jump, u64::MAX).expect("no cap");
+        let two = cadence::replay_plan(0, &[(pb, 1)], 1, 0, jump, u64::MAX).expect("no cap");
+        prop_assert_eq!(both.len(), one.len() + two.len());
+        prop_assert!(both.windows(2).all(|w| (w[0].city_minute, w[0].cadence) <= (w[1].city_minute, w[1].cadence)));
+    }
+
+    /// `inv_multiplier_switch_is_continuous`.
+    #[test]
+    fn inv_multiplier_switch_is_continuous(
+        epoch in -CLOCK_RANGE..CLOCK_RANGE,
+        // Small enough that a 100x -> 1x switch's epoch does not saturate i64.
+        now_offset in 0i64..(1 << 50),
+        from_at in 0usize..11,
+        to_at in 0usize..11,
+        k in 1i64..=500,
+    ) {
+        let speeds = valid_speeds();
+        let (from, to) = (speeds[from_at % speeds.len()], speeds[to_at % speeds.len()]);
+        let now = epoch + now_offset;
+        let reanchored = sim::time::reanchor(epoch, now, from, to);
+        let before = sim::time::city_time(epoch, now, from);
+        let at = sim::time::city_time(reanchored, now, to);
+        prop_assert_eq!((before.day, before.hour, before.minute), (at.day, at.hour, at.minute));
+        // Thereafter exactly k minutes per k new-speed minutes.
+        let step = sim::time::micros_per_city_minute(to);
+        let later = sim::time::city_time(reanchored, now + k * step, to);
+        prop_assert_eq!(later.total_minutes(), at.total_minutes() + k);
+        // Never backward, and never more than one minute in one microsecond.
+        let next = sim::time::city_time(reanchored, now + 1, to);
+        prop_assert!(next.total_minutes() - at.total_minutes() <= 1 && next.total_minutes() >= at.total_minutes());
+        // And back again is continuous too.
+        let back = sim::time::reanchor(reanchored, now, to, from);
+        prop_assert_eq!(sim::time::city_time(back, now, from).total_minutes(), before.total_minutes());
     }
 }

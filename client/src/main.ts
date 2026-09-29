@@ -114,8 +114,8 @@ async function main(): Promise<void> {
     {
       serverClock,
       visibility: document,
-      onEpoch: (epochMicros, kind) => {
-        cityClock.setEpoch(epochMicros);
+      onClock: ({ epochMicros, speed }, kind) => {
+        cityClock.setClock(epochMicros, speed);
         recordWorldClockForE2e(epochMicros, kind);
       },
     },

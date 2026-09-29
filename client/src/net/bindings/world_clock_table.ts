@@ -13,4 +13,5 @@ import {
 export default __t.row({
   id: __t.u8().primaryKey(),
   epochAt: __t.timestamp().name("epoch_at"),
+  speed: __t.u32(),
 });
