@@ -1973,8 +1973,7 @@ mod tests {
                 .expect("the evidence seeds always populate both density bands");
             assert!(
                 low_mean >= high_mean * ARTIE_PERIPHERAL_MIN_RATIO,
-                "seed {seed}: peripheral mean block area {low_mean} is not at least {ARTIE_PERIPHERAL_MIN_RATIO}x central {high_mean} ({:.2}x)",
-                low_mean as f64 / high_mean as f64
+                "seed {seed}: peripheral mean block area {low_mean} is not at least {ARTIE_PERIPHERAL_MIN_RATIO}x central {high_mean}"
             );
         }
     }
@@ -2051,7 +2050,7 @@ mod tests {
     fn low_band_chopped_blocks_counts_only_low_band_blocks_at_or_under_half_target() {
         let (small_cfg, lu) = two_band_land_use(20, 90);
         let site = small_cfg.site();
-        let half = (target_block_size(20, &small_cfg) / 2) as i32;
+        let half = target_block_size(20, &small_cfg) / 2;
         assert!(half < 190, "fixture centres must stay in the low row");
         let block = |x1: i32, y0: i32, y1: i32| Block {
             bounds: Rect { x0: 0, y0, x1, y1 },
