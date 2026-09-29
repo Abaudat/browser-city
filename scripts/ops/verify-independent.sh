@@ -106,7 +106,11 @@ max_expected_id() {
 # compare for this table, a live one has no fixed content to be byte
 # identical to); COUNT(*) against two independently-still-running clocks
 # is not the right oracle on top of that.
-LIVE_TABLES="cadence_liveness"
+# Story 4.13: `reducer_class_counter` is the same kind of table -- every
+# reducer call on either database counts, and `count_call` creates a
+# missing class row -- so its COUNT(*) drifts between two live databases
+# too; verify-world.sh proves it forward-only (`counter-forward-diff`).
+LIVE_TABLES="cadence_liveness reducer_class_counter"
 is_live_table() { # <table>
   local t
   for t in $LIVE_TABLES; do
