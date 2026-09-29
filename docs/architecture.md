@@ -1332,8 +1332,9 @@ Land use and the street network are independently generated fields (no
 land-use-boundary snapping) -- a block's own land use is decided once,
 after subdivision, by majority coarse-cell area (`generation::
 block_land_use`), so a change of use only ever reads at a real block
-edge. `subdivide` still forces a split whenever the current rect spans
-more than one land-use region, which is what keeps every region
+edge. `subdivide` still forces a split whenever the current rect
+encloses a region (no cell of it reaches a street-abutting side of the
+rect) or swallows one's land use, which is what keeps every region
 touching a street (AC2) without that snapping.
 
 Which of a block's own four sides abut a real street is

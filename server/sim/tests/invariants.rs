@@ -100,7 +100,8 @@ pub const INV_GENERATION_NO_STAGGERED_JUNCTIONS: &str = "no two junctions on the
 pub const INV_GENERATION_MIN_BLOCK_DEPTH_IS_RESPECTED: &str =
     "every block is at least min_block_depth_cells on both axes, for any seed (FR110)";
 pub const INV_GENERATION_ARTERIALS_ARE_CONTIGUOUS: &str = "every arterial line starts at its own near site edge with no gap, and at most one arterial line per city stops short of the far site edge (the T-termination), for any seed (FR110, Artie's direction)";
-pub const INV_GENERATION_PERIPHERAL_BLOCKS_ARE_NOT_DEGENERATE: &str = "mean block area in the bottom third of the density range is at least 0.7x the top third's, for any seed (NFR8, Tim's/Artie's direction)";
+pub const INV_GENERATION_AN_INSTITUTIONAL_REGION_IS_CARRIED_BY_A_BLOCK: &str = "for any seed, at least one pass-1 institutional region has a block whose own land use (majority area) is institutional -- the swallow rule keeps small regions from vanishing into a neighbour's block (story 4.22)";
+pub const INV_GENERATION_PERIPHERAL_BLOCKS_ARE_NOT_DEGENERATE: &str = "mean block area in the bottom third of the density range is at least `peripheral_low_band_floor_percent` of the top third's, for any seed (NFR8, Tim's/Artie's direction)";
 pub const INV_GENERATION_EVERY_PLOT_FRONTS_A_STREET: &str = "every non-open plot shares at least frontage_min_cells of edge length with a street-abutting side of its own block, for any seed (story 3.3 AC1, FR110)";
 pub const INV_GENERATION_PLOTS_TILE_THEIR_BLOCK: &str = "every plot is inside its own block, no two plots overlap, and a block's own area minus its plots' summed area (the explicit remainder) is never negative, for any seed (story 3.3 AC1, FR110)";
 pub const INV_GENERATION_ENVELOPE_SIZE_WITHIN_ITS_CLASS_BAND: &str = "every placed envelope's footprint is within its own land use's [min, max] band on both axes (the minimum interior plus the wall ring; the shared outer ceiling), for any seed (story 3.3 AC2/AC3, FR110, FR115)";
@@ -1997,9 +1998,9 @@ proptest! {
     /// direction, cycle 1; cycle 3: switched from a median-distance
     /// split to `StreetNetwork::mean_area_by_density_band`, density
     /// bands rather than a proxy for density -- Tim's direction, cycle
-    /// 3). Measured over 20,000,000 uniformly drawn u64 seeds: 24 fall
-    /// below 70%, 2 below 65%, none below the committed 60%; the worst is
-    /// 62.9% -- real split-jitter noise rather than an inversion
+    /// 3). Measured at `GENERATION_VERSION` 9 over 1,000,000 uniformly
+    /// drawn seeds: none below the committed 60%; the worst is 80.4% --
+    /// real split-jitter noise rather than an inversion
     /// (`peripheral_floor_clears_the_lowest_known_ratio_seeds` pins it).
     /// This per-city floor alone cannot tell a healthy city from a
     /// density-blind one, though: a uniform grid pools to parity (1.0x),
@@ -2008,13 +2009,41 @@ proptest! {
     /// `server/sim/src/generation/streets.rs` shows exactly this).
     /// `peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor`,
     /// below, is the guard that actually fails on that defect (Quentin's
-    /// direction, cycle 4). Artie's own harder, cycle-2 bar (2x) is
-    /// judged on the committed evidence seeds specifically
-    /// (`peripheral_blocks_are_at_least_1_6x_central_ones_on_the_
-    /// evidence_seeds` in `server/sim/src/generation/streets.rs`), kept
-    /// on `mean_area_split_by_peak_distance` (Tim's direction, cycle 3:
-    /// "keep it as is" -- the evidence-seed test is Artie's own bar, not
-    /// this proptest's).
+    /// direction, cycle 4). Artie's own harder bar (2x) is judged on the
+    /// committed evidence seeds specifically
+    /// (`peripheral_blocks_are_at_least_2x_central_ones_on_the_evidence_
+    /// seeds` in `server/sim/src/generation/streets.rs`), on this same
+    /// density-band metric.
+    /// The property `streets::SWALLOW_MIN_REGION_SHARE_DENOM` exists for:
+    /// a city with institutional land has at least one block that is
+    /// institutional, or pass 5 can never place a council or hospital.
+    /// Stronger claims do not hold -- about 2% of seeds lose *some* region
+    /// of some use to a neighbour's majority, and that is the design (a
+    /// block's use is decided by majority area). Without the rule 0.57% of
+    /// seeds break this; with it 0 of 1,000,000 do. Pinned seeds:
+    /// `institutional_regions_survive_on_seeds_that_lose_them_without_the_
+    /// swallow_rule` in `server/sim/src/generation/streets.rs`.
+    #[test]
+    fn inv_generation_an_institutional_region_is_carried_by_a_block(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let institutional = lu
+            .regions()
+            .iter()
+            .filter(|r| r.use_ == sim::generation::LandUse::Institutional)
+            .count();
+        let lost = net
+            .regions_carried_by_no_block(&lu)
+            .iter()
+            .filter(|r| r.use_ == sim::generation::LandUse::Institutional)
+            .count();
+        prop_assert!(
+            institutional == 0 || lost < institutional,
+            "seed {seed}: all {institutional} institutional regions are carried by no block"
+        );
+    }
+
     #[test]
     fn inv_generation_peripheral_blocks_are_not_degenerate(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -3646,16 +3675,16 @@ fn block_edge_touches_street(block: Rect, street: Rect, side: sim::generation::S
 }
 
 /// The argmin and argmax seeds of the building-count distribution at
-/// `GENERATION_VERSION` 8: the 50,000-seed scan's (min 788 / max 1,043) and
-/// the 1,000,000-seed band sweep's (`measure-generation -- bands
-/// 1000000`: min 774 / max 1,068), copied from the harness's output, never
-/// hunted for, and re-taken whenever the generator moves. A generator
-/// change that shifts the distribution fails deterministically, every run.
+/// `GENERATION_VERSION` 9: the band sweep's (`measure-generation`, 50,000
+/// seeds: min 768 / max 1,002) and the plot/envelope scan's (min 778 / max
+/// 990), copied from the harness's output, never hunted for, and
+/// re-taken whenever the generator moves. A generator change that shifts
+/// the distribution fails deterministically, every run.
 const PINNED_BUILDING_COUNT_SEEDS: [u64; 4] = [
-    12_223_261_918_320_165_154,
-    7_898_196_911_489_858_340,
-    5_679_918_593_741_389_805,
-    1_635_434_127_239_465_190,
+    18_227_589_722_137_138_881,
+    6_786_936_242_335_454_667,
+    11_805_315_485_014_167_829,
+    11_123_925_265_906_853_341,
 ];
 
 /// A handful of individually-measured seeds, pinned as fixed-seed tests
@@ -4606,7 +4635,8 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
 /// (deterministic -- never flaky, unlike a fresh `any::<u64>()` draw each
 /// CI run), summed low-band mean area over summed high-band mean area
 /// must clear `peripheral_pooled_min_ratio_percent` -- a density-blind
-/// generator pools to ~100%, this one to ~241% (Quentin's direction,
+/// generator pools to ~100%, this one to ~289% at `GENERATION_VERSION` 9
+/// (Quentin's direction,
 /// cycle 4: "the only test that goes red if `subdivide` stops reading
 /// density is a three-seed test tuned to one seed").
 #[test]
@@ -4628,20 +4658,20 @@ fn peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor() {
     );
 }
 
-/// The lowest per-city ratios known, pinned so raising
-/// `peripheral_low_band_floor_percent` above them fails every run rather
-/// than one in N. Low-band mean over high-band mean: seed
-/// 15712406083813773737, 1288 / 2047 (62.9%, the worst of 20,000,000
-/// uniformly drawn seeds); seed 14322285497755891962, 1303 / 2028
-/// (64.3%) and seed 4544038555038832329, 1106 / 1685 (65.6%), both found
-/// by CI's own random draws under the old 70% floor.
+/// The lowest per-city ratios known at `GENERATION_VERSION` 9, pinned so
+/// raising `peripheral_low_band_floor_percent` above them fails every run
+/// rather than one in N. Low-band mean over high-band mean, the three
+/// lowest of 1,000,000 seeds drawn through `seed_from_ids(0x5ca9, i)`
+/// (per-city p1 167%, p5 195%, median 276%): seed 5955473505560313928,
+/// 3086 / 3840 (80.4%); seed 12341508193973285094, 2347 / 2477 (94.7%);
+/// seed 16477458686111781630, 2163 / 2272 (95.2%).
 #[test]
 fn peripheral_floor_clears_the_lowest_known_ratio_seeds() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     for seed in [
-        15712406083813773737u64,
-        14322285497755891962,
-        4544038555038832329,
+        5955473505560313928u64,
+        12341508193973285094,
+        16477458686111781630,
     ] {
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
@@ -4654,6 +4684,37 @@ fn peripheral_floor_clears_the_lowest_known_ratio_seeds() {
             cfg.peripheral_low_band_floor_percent
         );
     }
+}
+
+/// What binds peripheral block size is density, not the pass-1 leaf
+/// layout: pooled over the fixed seed range `0..256`, at most
+/// `MAX_POOLED_CHOPPED_PERCENT` of the blocks in the bottom density third
+/// may have an area at or under a quarter of their own local
+/// `target_block_size` squared. A ratio cannot tell "periphery is small"
+/// from "periphery is chopped"; this can. Measured with this same
+/// counting rule pooled over 0..256: `GENERATION_VERSION` 8 (master at
+/// `f6ad0570`, region-spanning rule) 7,458 of 9,761 blocks, 76%;
+/// `GENERATION_VERSION` 9 1,886 of 5,600, 33%. 55 is midway between the
+/// two, so the bound separates the generators rather than fitting the
+/// newer one. Pooled rather than per city because the per-city share is
+/// too wide to separate them (1,000,000 seeds at 9: median 33%, p99 67%,
+/// max 88%). Not a balance key: only this test reads it.
+#[test]
+fn peripheral_blocks_pooled_chopped_share_stays_bounded() {
+    const MAX_POOLED_CHOPPED_PERCENT: usize = 55;
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let (mut chopped_sum, mut total_sum) = (0usize, 0usize);
+    for seed in 0u64..256 {
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let (chopped, total) = net.low_band_chopped_blocks(&lu, &cfg);
+        chopped_sum += chopped;
+        total_sum += total;
+    }
+    assert!(
+        chopped_sum * 100 <= total_sum * MAX_POOLED_CHOPPED_PERCENT,
+        "pooled over seeds 0..256: {chopped_sum} of {total_sum} low-density blocks are at or under a quarter of their own target's area, over {MAX_POOLED_CHOPPED_PERCENT}%"
+    );
 }
 
 // Story 3.11: the travel-time estimator (FR131). A handful of integer ops

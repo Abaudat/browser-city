@@ -60,9 +60,9 @@ pub fn rect_seed_key(r: SiteBounds) -> u64 {
 
 /// Bumped whenever any implemented pass's algorithm or seeding changes in
 /// a way that could move its output for a fixed seed -- `tests/goldens/
-/// generation_v8.golden` is keyed to this, exactly like `sim::rng::
+/// generation_v9.golden` is keyed to this, exactly like `sim::rng::
 /// RNG_VERSION`/`sim::appearance::APPEARANCE_VERSION`.
-pub const GENERATION_VERSION: u32 = 8;
+pub const GENERATION_VERSION: u32 = 9;
 
 /// Every way generation itself can fail, across every implemented pass --
 /// one type, never a `Result<_, String>` per pass.
@@ -393,8 +393,12 @@ pub struct GenerationConfig {
     /// over a fixed seed range (`0..256`), summed low-band mean area over
     /// summed high-band mean area must be at least this percent -- a
     /// density-blind network pools to ~100 (parity), this generator to
-    /// ~241 (Quentin's direction, cycle 4).
+    /// ~289 at `GENERATION_VERSION` 9 (Quentin's direction, cycle 4).
     pub peripheral_pooled_min_ratio_percent: i32,
+    /// A thin strip (short side under half the local target) may run to
+    /// this percent of the target along its long side before it is cut
+    /// (`split_tier_needed`); at least 100.
+    pub thin_strip_long_side_percent: i32,
     /// The hard floor on institutional pocket count `land_use::assign_
     /// institutional`'s own relaxed fallback pass guarantees whenever any
     /// eligible leaf remains (Artie's direction, cycle 3; moved off a
@@ -654,6 +658,10 @@ impl GenerationConfig {
                 balance,
                 "generation.streets.peripheral_pooled_min_ratio_percent",
             ) as i32,
+            thin_strip_long_side_percent: get(
+                balance,
+                "generation.streets.thin_strip_long_side_percent",
+            ) as i32,
             institutional_min_pockets: get(
                 balance,
                 "generation.land_use.institutional_min_pockets",
@@ -844,6 +852,12 @@ impl GenerationConfig {
             return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: peripheral_low_band_floor_percent ({}) is greater than peripheral_pooled_min_ratio_percent ({}) -- the per-city anti-inversion floor cannot ask for more than the pooled, density-blind-failing guard does",
                 cfg.peripheral_low_band_floor_percent, cfg.peripheral_pooled_min_ratio_percent
+            )));
+        }
+        if cfg.thin_strip_long_side_percent < 100 {
+            return Err(GenerationError::InvalidConfig(format!(
+                "GenerationConfig: thin_strip_long_side_percent ({}) is under 100 -- a thin strip cannot be held to less than the plain target",
+                cfg.thin_strip_long_side_percent
             )));
         }
         if cfg.arterial_count_ns_min > cfg.arterial_count_ns_max {
@@ -1251,6 +1265,12 @@ mod tests {
                 100,
                 1000,
             ),
+            seed(
+                "generation.streets.thin_strip_long_side_percent",
+                150,
+                1,
+                400,
+            ),
             seed("generation.land_use.institutional_min_pockets", 3, 1, 16),
             seed(
                 "generation.land_use.institutional_max_pocket_share_percent",
@@ -1577,13 +1597,20 @@ mod tests {
             .expect("the loosening guard itself must be accepted, not just values under it");
     }
 
+    #[test]
+    fn from_balance_rejects_a_thin_strip_limit_under_the_plain_target() {
+        let balance = with_override("generation.streets.thin_strip_long_side_percent", 99);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.to_string().contains("thin_strip_long_side_percent"));
+    }
+
     /// Quentin's direction, story 15.10 cycle 2: pinned against the live
     /// committed config, never a fixture -- `max_detour_excess_cells * 100
-    /// / (max_detour_percent - 100)` = `416 * 100 / 100` = 416.
+    /// / (max_detour_percent - 100)` = `400 * 100 / 100` = 400.
     #[test]
     fn detour_ratio_takeover_distance_cells_matches_the_committed_values() {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 416);
+        assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 400);
     }
 
     /// Quentin's direction, story 15.10 cycle 2: an even division, at a

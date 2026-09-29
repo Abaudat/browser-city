@@ -155,7 +155,7 @@ balance generation.plots.institutional_width_max_cells value=14 min=2 max=64
 balance generation.plots.institutional_width_min_cells value=12 min=2 max=64
 balance generation.plots.max_core_depth_cells value=8 min=2 max=64
 balance generation.plots.max_core_depth_periphery_cells value=64 min=2 max=128
-balance generation.plots.max_open_percent_by_area value=40 min=0 max=100
+balance generation.plots.max_open_percent_by_area value=46 min=0 max=100
 balance generation.plots.max_open_percent_by_count value=5 min=0 max=100
 balance generation.plots.max_unplotted_percent value=2 min=0 max=100
 balance generation.plots.open_min_side_cells value=8 min=1 max=64
@@ -170,13 +170,13 @@ balance generation.streets.arterial_count_ns_max value=3 min=0 max=4
 balance generation.streets.arterial_count_ns_min value=2 min=0 max=4
 balance generation.streets.arterial_jitter_pct value=60 min=0 max=90
 balance generation.streets.arterial_width_cells value=12 min=2 max=64
-balance generation.streets.block_size_max_cells value=128 min=4 max=512
+balance generation.streets.block_size_max_cells value=120 min=4 max=512
 balance generation.streets.block_size_min_cells value=40 min=4 max=512
 balance generation.streets.junction_min_separation_cells value=28 min=1 max=256
 balance generation.streets.lane_width_cells value=4 min=2 max=64
-balance generation.streets.max_block_depth_max_cells value=120 min=2 max=1024
+balance generation.streets.max_block_depth_max_cells value=104 min=2 max=1024
 balance generation.streets.max_block_depth_min_cells value=40 min=2 max=1024
-balance generation.streets.max_detour_excess_cells value=416 min=1 max=2048
+balance generation.streets.max_detour_excess_cells value=400 min=1 max=2048
 balance generation.streets.max_detour_percent value=200 min=101 max=500
 balance generation.streets.max_lane_splits value=4 min=0 max=16
 balance generation.streets.max_recursion_depth value=12 min=1 max=64
@@ -188,6 +188,7 @@ balance generation.streets.peripheral_low_band_floor_percent value=60 min=1 max=
 balance generation.streets.peripheral_pooled_min_ratio_percent value=150 min=100 max=1000
 balance generation.streets.split_jitter_pct value=25 min=0 max=45
 balance generation.streets.street_width_cells value=8 min=2 max=64
+balance generation.streets.thin_strip_long_side_percent value=150 min=100 max=400
 balance movement.player_body_height_subcells value=4 min=1 max=16
 balance movement.player_body_width_subcells value=8 min=1 max=16
 balance movement.walk_speed_millicells_per_s value=2200 min=100 max=20000

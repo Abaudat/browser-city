@@ -183,9 +183,9 @@ document's own opening paragraph forbids.
   is judgeable directly from the image; same regen-and-diff guard as the
   row above. Plus one worst-case-seed picture per entry in `streets::
   PINNED_DETOUR_SEEDS` -- [`docs/generation/detour-worst-seed-
-  11179447352395363997.svg`](generation/detour-worst-seed-11179447352395363997.svg),
-  [`-1060828608797003656`](generation/detour-worst-seed-1060828608797003656.svg),
-  [`-11859616019877610932`](generation/detour-worst-seed-11859616019877610932.svg)
+  610140160610395379.svg`](generation/detour-worst-seed-610140160610395379.svg),
+  [`-4595557621078204092`](generation/detour-worst-seed-4595557621078204092.svg),
+  [`-6482608135473407511`](generation/detour-worst-seed-6482608135473407511.svg)
   -- the same street-network render (same tints, same tier styling, same
   legend, same two viewport outlines) with an overlay: that seed's own
   worst *exhaustive* pair (`detour_samples(usize::MAX)`'s own argmax,
@@ -201,6 +201,39 @@ document's own opening paragraph forbids.
   case, not the exception. Same regen-and-diff guard, a separate file
   set from the twelve above (never a byte of those twelve moves when
   only these three are added or a pinned seed changes).
+
+### What binds block size (story 4.22)
+
+A block's size is bound by `target_block_size`/`target_block_depth`
+(density) and by one region rule: `subdivide` splits a rect for a
+region's sake only when the rect *encloses* one (some region under it has
+no coarse cell reaching a street-abutting side, `generation::block_sides`
+-- a side on the site boundary has no street) or *swallows* one (at least
+a quarter of a region's cells lie under the rect and its land use is not the
+rect's majority land use, so the block holding most of the region would
+not carry it). A land-use boundary through a block's interior is neither,
+and the rect is left to density. A thin strip (short side under half the
+target) may run to `thin_strip_long_side_percent` of the target (150) before it is cut, so a boundary strip
+splits into halves near the target, never into pieces shorter than it.
+The earlier rule split on any rect
+covering two regions; pass-1 leaves are 3-6 coarse cells, so peripheral
+blocks were chopped to region size whatever the density said.
+`StreetNetwork::low_band_chopped_blocks` counts low-band blocks at or
+under a quarter of their local target's area (76% pooled over seeds
+0..256 at `GENERATION_VERSION` 8, 33% at 9) and
+`peripheral_blocks_pooled_chopped_share_stays_bounded` bounds it, so a
+ratio that looks fine cannot hide a chopped periphery.
+`block_size_max_cells`/`max_block_depth_max_cells` are tuned with it to
+the Scale Baseline building count.
+
+The 2x bar -- peripheral mean block area at least twice the central --
+is Artie's, judged by `mean_area_by_density_band` on the three committed
+evidence seeds (1, 2, 3), which do not change to fit a measurement. It
+is 2x because a 1.5x area is a 1.22x side, invisible on a 40x22-cell
+viewport, while 2x is a 1.41x side: the floor at which a player walking
+outward sees one fewer street crossing per screen, so leaving the core
+reads by looking, not by a HUD. Measured at `GENERATION_VERSION` 9: 2.65x,
+2.24x, 2.56x.
 
 ### The detour-excess bound (story 3.18)
 
@@ -241,26 +274,26 @@ claim.
 
 **What actually protects master.** `inv_generation_detour_ratio_bounded`
 runs on arbitrary seeds, in every CI run, but only ever samples the
-cheap 14-node width -- its own worst reading at `GENERATION_VERSION` 8
-was 254 (seed `1877797689287769286`), 76 cells under the 330-cell
+cheap 14-node width -- its own worst reading at `GENERATION_VERSION` 9
+was 312 (seed `4595557621078204092`), 8 cells under the 320-cell
 exhaustive figure the key is set from. That gap is not the margin; the
 margin is the stated 1.25 factor, nothing else, over a tail that is
 still growing: this run's own ten largest per-seed worsts, ascending,
-were 280, 286, 286, 286, 288, 292, 296, 298, 302, 330. A future
-50,000-seed run finding a new worst above 416 remains possible -- that
+were 294, 296, 298, 300, 300, 302, 306, 310, 316, 320. A future
+50,000-seed run finding a new worst above 400 remains possible -- that
 is what re-measuring on a retune, and pinning what a random sweep finds,
 both exist for.
 
-For scale: the worst pinned seed today (`11859616019877610932`, 330
+For scale: the worst pinned seed today (`610140160610395379`, 320
 cells exhaustive) is about eight viewport-widths of extra walking for the
 worst pair of the worst city found in 50,000 genuinely random draws --
 accepted as a rare tail. That figure still has one foot on the site
 boundary, though, where the city stops and almost nobody stands; the
 same run's own worst pair with *both* endpoints off the boundary --
-the player-felt figure -- was 264 cells (seed `5586276716281493290`,
-pair `(473, 470)`-`(479, 252)`), well under 330. The maze fixture
+the player-felt figure -- was 312 cells (seed `4595557621078204092`,
+pair `(108, 40)`-`(418, 38)`), 8 under 320. The maze fixture
 `a_maze_fails_dead_ends_and_detour` (a U-shaped corridor, no real route
-through) overshoots by 600 cells, real margin over the 416-cell
+through) overshoots by 600 cells, real margin over the 400-cell
 committed value and a stated distance from "our worst real city" to "a
 maze", not just a pass/fail. If a future re-measurement moves the
 exhaustive max itself past roughly 360, that PR owes the new worst
@@ -302,7 +335,7 @@ deleted from `defs/balance/generation.toml`, `GenerationConfig`, this
 document's own balance table and the trace matrix. The range where the
 ratio term actually binds is now derived, never a third committed key:
 `GenerationConfig::detour_ratio_takeover_distance_cells` is
-`max_detour_excess_cells * 100 / (max_detour_percent - 100)`, 416 cells
+`max_detour_excess_cells * 100 / (max_detour_percent - 100)`, 400 cells
 today -- coincidentally the same figure as `max_detour_excess_cells`
 itself, since `max_detour_percent` (200) makes the ratio term exactly
 `manhattan * 2`. `max_detour_percent` returns to its pre-story value,
@@ -447,8 +480,10 @@ tail, not a re-expression of the excess budget at an arbitrary distance.
   -- every plot's own yard (a lighter tint, `open` ones hatched, rejected
   ones hatched distinctly) and every placed envelope (a darker, opaque
   fill, a door tick on its own front edge), plus two residential insets
-  at viewport scale (the block nearest the density peak and the farthest
-  one, so plot packing alone is what differs) since a 12x11 envelope is
+  at viewport scale (the residential block nearest the density peak and the
+  farthest one, each panel anchored on the block's street-facing side so
+  it shows the street with the block's front row and yard behind it, so
+  plot packing alone is what differs) since a 12x11 envelope is
   unreadable at 512-cell scale; same regen-and-diff guard.
 
 ### Building type
@@ -599,13 +634,14 @@ disagree.
 | generation.streets.junction_min_separation_cells | committed | Street network | the minimum net gap, carriageway edge to carriageway edge, between two junctions on the same street line -- a split that cannot land clean against this is refused outright, never merely snapped clear |
 | generation.streets.split_jitter_pct | committed | Street network | how far a block split position may jitter from the rect's own midpoint |
 | generation.streets.max_recursion_depth | committed | Street network | a safety cap on recursive block-subdivision depth |
-| generation.streets.max_lane_splits | committed | Street network | a safety cap on the extra lane-tier splits one over-deep block may take (bypassed when the block still spans more than one land-use region -- AC2's "never stranded" is a hard bound) |
+| generation.streets.max_lane_splits | committed | Street network | a safety cap on the extra lane-tier splits one over-deep block may take (bypassed while the block still encloses a region or swallows one's land use -- AC2's "never stranded" is a hard bound) |
 | generation.streets.min_distinct_block_sizes | committed | Street network | the minimum number of distinct block widths, and separately heights, a city must show ("not a perfect grid") |
 | generation.streets.max_detour_percent | committed | Street network | the site-scale-free long-range detour claim 3.11's pathfinding estimator relies on: `network <= max(manhattan + max_detour_excess_cells, manhattan * max_detour_percent / 100)`, for every sampled pair, no distance threshold of its own |
 | generation.streets.max_detour_excess_cells | committed | Street network | the additive Manhattan-fitness ceiling (world cells), applied to every sampled pair regardless of distance |
 | generation.streets.p99_detour_percent | committed | Street network | the 99th-percentile detour ratio, over one city's own sampled pairs, must not exceed this -- `max_detour_percent` alone only bounds the single worst pair |
 | generation.streets.peripheral_low_band_floor_percent | committed | Street network | per-city anti-inversion floor: the low-density (periphery) mean block area must be at least this percent of the high-density (core) mean |
 | generation.streets.peripheral_pooled_min_ratio_percent | committed | Street network | pooled over a fixed seed range, summed low-band mean area over summed high-band mean area must be at least this percent -- the guard that actually fails a density-blind generator |
+| generation.streets.thin_strip_long_side_percent | committed | Street network | how far a thin strip (short side under half the local target block size) may run along its long side before it is cut, as a percent of that target -- a boundary strip splits into halves near the target, never into pieces shorter than it |
 | generation.plots.frontage_min_cells | committed | Plot subdivision | AC1: a plot fronts a street iff it shares at least this many world cells of edge length with a street-abutting side of its own block; corner-point contact is landlocked |
 | generation.plots.high_density_threshold | committed | Plot subdivision | the density at or above which a block's own build line sits flush on the pavement (setback 0, party walls); shared with the building-envelope pass's own side-gap step |
 | generation.plots.setback_periphery_cells | committed | Plot subdivision | the one shared build-line setback every plot on a below-threshold block sits behind |
