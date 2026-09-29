@@ -224,6 +224,8 @@ export const StorageSample = __t.object("StorageSample", {
   totalBytesEst: __t.u64(),
   overReview: __t.bool(),
   overWall: __t.bool(),
+  reviewBytes: __t.u64(),
+  wallBytes: __t.u64(),
 });
 export type StorageSample = __Infer<typeof StorageSample>;
 
