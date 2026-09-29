@@ -4,7 +4,7 @@
 
 use spacetimedb::ReducerContext;
 
-use super::{clock, codes, ops, schedules};
+use super::{clock, codes, metrics, ops, schedules};
 
 /// Ensures the clock row, seeds every extensible set and arms every cadence
 /// from the epoch and speed on record. Errs -- rolling the whole
@@ -13,6 +13,7 @@ use super::{clock, codes, ops, schedules};
 pub fn establish_world(ctx: &ReducerContext) -> Result<(), String> {
     let (epoch_micros, speed) = clock::ensure_epoch(ctx);
     codes::seed_all_codes(ctx);
+    metrics::establish_counters(ctx);
     schedules::arm_every_cadence_from(ctx, epoch_micros, speed);
     if clock::read_clock(ctx).is_none() {
         return Err("world_clock is still empty after finish_publish".to_string());

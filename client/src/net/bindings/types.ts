@@ -177,6 +177,22 @@ export const ReasonCode = __t.object("ReasonCode", {
 });
 export type ReasonCode = __Infer<typeof ReasonCode>;
 
+export const ReducerClassCounter = __t.object("ReducerClassCounter", {
+  class: __t.string(),
+  calls: __t.u64(),
+  sampledCalls: __t.u64(),
+});
+export type ReducerClassCounter = __Infer<typeof ReducerClassCounter>;
+
+export const ReducerClassSample = __t.object("ReducerClassSample", {
+  sampleId: __t.u64(),
+  sampledAt: __t.timestamp(),
+  class: __t.string(),
+  callsTotal: __t.u64(),
+  callsDelta: __t.u64(),
+});
+export type ReducerClassSample = __Infer<typeof ReducerClassSample>;
+
 export const RestoreState = __t.object("RestoreState", {
   id: __t.u8(),
   open: __t.bool(),

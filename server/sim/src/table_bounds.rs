@@ -299,6 +299,23 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 3_000,
         kind: BoundKind::Engineering,
     },
+    // Story 4.13: calls per reducer class (NFR17). The counter is one row
+    // per class -- the row count is the rule; the sample keeps one row per
+    // class per fire for the retention window.
+    TableBound {
+        accessor: "reducer_class_counter",
+        max_rows: crate::reducer_classes::CLASS_COUNT,
+        expected_rows: crate::reducer_classes::CLASS_COUNT,
+        alert_rows: crate::reducer_classes::CLASS_COUNT,
+        kind: BoundKind::Mechanical,
+    },
+    TableBound {
+        accessor: "reducer_class_sample",
+        max_rows: 20_000,
+        expected_rows: 8_640,
+        alert_rows: 15_000,
+        kind: BoundKind::Engineering,
+    },
 ];
 
 /// The declared `max_rows` for `accessor`, if registered.

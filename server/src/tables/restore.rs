@@ -96,13 +96,17 @@ use super::codes::{
     reason_code, unit,
 };
 use super::identity::{Character, CharacterIdentity, character, character_identity};
-use super::metrics::{StorageSample, TableSample, storage_sample, table_sample};
+use super::metrics::{
+    ReducerClassCounter, ReducerClassSample, StorageSample, TableSample, count_call,
+    reducer_class_counter, reducer_class_sample, storage_sample, table_sample,
+};
 use super::ops::{ModuleOwner, module_owner, require_owner};
 use super::schedules::{CadenceLiveness, cadence_liveness};
 use super::world::{
     Building, BuildingArea, FloorTransition, LayerCode, PlacedObject, Room, RoomArea, building,
     building_area, floor_transition, layer_code, placed_object, room, room_area,
 };
+use sim::reducer_classes::ReducerClass;
 
 /// Whether a restore is currently open -- a private, one-row gate no
 /// reducer other than the three in this file ever reads or writes.
@@ -145,6 +149,8 @@ const INIT_SEEDED_TABLES: &[&str] = &[
     "cadence_liveness",
     "storage_sample",
     "table_sample",
+    "reducer_class_counter",
+    "reducer_class_sample",
 ];
 
 /// Every non-scheduled table that is never pre-populated before
@@ -185,6 +191,7 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
 /// with a different export.
 #[spacetimedb::reducer]
 pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     if let Some(row) = ctx.db.restore_state().id().find(0)
         && row.open
@@ -215,6 +222,15 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
         .collect::<Vec<_>>()
     {
         ctx.db.storage_sample().sample_id().delete(id);
+    }
+    for id in ctx
+        .db
+        .reducer_class_sample()
+        .iter()
+        .map(|r| r.sample_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.reducer_class_sample().sample_id().delete(id);
     }
     let mut nonempty: Vec<&str> = Vec::new();
     if ctx.db.demo_ping().iter().next().is_some() {
@@ -283,6 +299,7 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
 /// being restored (story 4.2).
 #[spacetimedb::reducer]
 pub fn finish_restore(ctx: &ReducerContext) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     ctx.db
@@ -506,6 +523,17 @@ impl_autoinc_row!(
     }
 );
 impl_autoinc_row!(
+    ReducerClassSample,
+    sample_id,
+    ReducerClassSample {
+        sample_id: 0,
+        sampled_at: Timestamp::UNIX_EPOCH,
+        class: String::new(),
+        calls_total: 0,
+        calls_delta: 0,
+    }
+);
+impl_autoinc_row!(
     FloorTransition,
     transition_id,
     FloorTransition {
@@ -563,6 +591,7 @@ pub fn restore_demo_ping(
     rows: Vec<DemoPing>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -582,6 +611,7 @@ pub fn restore_building(
     rows: Vec<Building>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -601,6 +631,7 @@ pub fn restore_building_area(
     rows: Vec<BuildingArea>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -620,6 +651,7 @@ pub fn restore_character(
     rows: Vec<Character>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -639,6 +671,7 @@ pub fn restore_character_identity(
     rows: Vec<CharacterIdentity>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -658,6 +691,7 @@ pub fn restore_citizen(
     rows: Vec<Citizen>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -677,6 +711,7 @@ pub fn restore_table_sample(
     rows: Vec<TableSample>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -696,6 +731,7 @@ pub fn restore_storage_sample(
     rows: Vec<StorageSample>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -710,11 +746,55 @@ pub fn restore_storage_sample(
 }
 
 #[spacetimedb::reducer]
+pub fn restore_reducer_class_sample(
+    ctx: &ReducerContext,
+    rows: Vec<ReducerClassSample>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.reducer_class_sample().insert(r),
+        |id| {
+            ctx.db.reducer_class_sample().sample_id().delete(id);
+        },
+        "reducer_class_sample",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_reducer_class_counter(
+    ctx: &ReducerContext,
+    rows: Vec<ReducerClassCounter>,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    let existing: Vec<String> = ctx
+        .db
+        .reducer_class_counter()
+        .iter()
+        .map(|r| r.class)
+        .collect();
+    for class in existing {
+        ctx.db.reducer_class_counter().class().delete(class);
+    }
+    for row in rows {
+        ctx.db.reducer_class_counter().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
 pub fn restore_floor_transition(
     ctx: &ReducerContext,
     rows: Vec<FloorTransition>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -734,6 +814,7 @@ pub fn restore_placed_object(
     rows: Vec<PlacedObject>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -753,6 +834,7 @@ pub fn restore_room(
     rows: Vec<Room>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -772,6 +854,7 @@ pub fn restore_room_area(
     rows: Vec<RoomArea>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -789,6 +872,7 @@ pub fn restore_room_area(
 // already guaranteed the table is empty -------------------------------
 #[spacetimedb::reducer]
 pub fn restore_citizen_state(ctx: &ReducerContext, rows: Vec<CitizenState>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     for row in rows {
@@ -803,6 +887,7 @@ pub fn restore_citizen_state(ctx: &ReducerContext, rows: Vec<CitizenState>) -> R
 // deletes what is already there, then inserts the exported rows -------
 #[spacetimedb::reducer]
 pub fn restore_module_owner(ctx: &ReducerContext, rows: Vec<ModuleOwner>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     // The module's own guard against locking the operator out, not only
@@ -837,6 +922,7 @@ pub fn restore_module_owner(ctx: &ReducerContext, rows: Vec<ModuleOwner>) -> Res
 
 #[spacetimedb::reducer]
 pub fn restore_world_clock(ctx: &ReducerContext, rows: Vec<WorldClock>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     // Exactly one row, keyed 0: an empty export must never delete the only epoch.
@@ -864,6 +950,7 @@ pub fn restore_world_clock(ctx: &ReducerContext, rows: Vec<WorldClock>) -> Resul
 
 #[spacetimedb::reducer]
 pub fn restore_matter_kind(ctx: &ReducerContext, rows: Vec<MatterKind>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     let existing: Vec<u32> = ctx.db.matter_kind().iter().map(|r| r.code).collect();
@@ -878,6 +965,7 @@ pub fn restore_matter_kind(ctx: &ReducerContext, rows: Vec<MatterKind>) -> Resul
 
 #[spacetimedb::reducer]
 pub fn restore_provision(ctx: &ReducerContext, rows: Vec<Provision>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     let existing: Vec<u32> = ctx.db.provision().iter().map(|r| r.code).collect();
@@ -892,6 +980,7 @@ pub fn restore_provision(ctx: &ReducerContext, rows: Vec<Provision>) -> Result<(
 
 #[spacetimedb::reducer]
 pub fn restore_reason_code(ctx: &ReducerContext, rows: Vec<ReasonCode>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     let existing: Vec<u32> = ctx.db.reason_code().iter().map(|r| r.code).collect();
@@ -906,6 +995,7 @@ pub fn restore_reason_code(ctx: &ReducerContext, rows: Vec<ReasonCode>) -> Resul
 
 #[spacetimedb::reducer]
 pub fn restore_node_kind(ctx: &ReducerContext, rows: Vec<NodeKind>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     let existing: Vec<u32> = ctx.db.node_kind().iter().map(|r| r.code).collect();
@@ -920,6 +1010,7 @@ pub fn restore_node_kind(ctx: &ReducerContext, rows: Vec<NodeKind>) -> Result<()
 
 #[spacetimedb::reducer]
 pub fn restore_unit(ctx: &ReducerContext, rows: Vec<Unit>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     let existing: Vec<u32> = ctx.db.unit().iter().map(|r| r.code).collect();
@@ -934,6 +1025,7 @@ pub fn restore_unit(ctx: &ReducerContext, rows: Vec<Unit>) -> Result<(), String>
 
 #[spacetimedb::reducer]
 pub fn restore_layer_code(ctx: &ReducerContext, rows: Vec<LayerCode>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     let existing: Vec<u32> = ctx.db.layer_code().iter().map(|r| r.code).collect();
@@ -951,6 +1043,7 @@ pub fn restore_cadence_liveness(
     ctx: &ReducerContext,
     rows: Vec<CadenceLiveness>,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     let existing: Vec<u32> = ctx

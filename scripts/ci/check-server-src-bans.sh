@@ -21,6 +21,10 @@
 #     `debug_assert!` stays allowed: the architecture's own deliberate
 #     abort on a violated invariant (NFR41), not an escape hatch for
 #     these.
+#   - the watcher, GitHub or `gh` -- banned in code across server/src/
+#     (story 4.13, FR170): the watcher is an external process and the
+#     city must keep ticking without it, so nothing in the module may know
+#     it exists.
 set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # An optional first argument overrides the scanned directory --
@@ -65,6 +69,14 @@ PANIC_MATCHES="$(grep -rnE "$PANIC_PATTERN" "$SRC_DIR" --include='*.rs' --exclud
 if [ -n "$PANIC_MATCHES" ]; then
   echo "check-server-src-bans: FAIL -- unwrap/expect/panic!/todo!/unimplemented!/unreachable! found under server/src/ (NFR41: every reducer fallible path returns Err, never panics -- debug_assert! stays allowed):" >&2
   echo "$PANIC_MATCHES" >&2
+  FAILED=1
+fi
+
+WATCHER_PATTERN='github|storage-report|watcher|gh'
+WATCHER_MATCHES="$(grep -rniE "$WATCHER_PATTERN" "$SRC_DIR" --include='*.rs' --exclude-dir=generated 2>/dev/null | not_a_comment_line || true)"
+if [ -n "$WATCHER_MATCHES" ]; then
+  echo "check-server-src-bans: FAIL -- a reference to the watcher, GitHub or gh in server/src/ (FR170: alerting is an external process; the module never depends on it):" >&2
+  echo "$WATCHER_MATCHES" >&2
   FAILED=1
 fi
 

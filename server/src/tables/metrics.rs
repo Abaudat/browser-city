@@ -18,7 +18,14 @@
 //! `METRICS_RETENTION_DAYS`, then the oldest rows past the bound, through
 //! the `sampled_at` index. `sample_all_tables` names every table exactly
 //! once; `bounds/tests/metrics_coverage.rs` enforces it.
+//!
+//! Calls per reducer class (NFR17, story 4.13): every reducer's first
+//! statement is `count_call`, one row update in `reducer_class_counter`;
+//! each fire writes one `reducer_class_sample` row per class with the
+//! running total and the delta since the previous fire. No threshold: the
+//! first months of samples are the baseline.
 
+use sim::reducer_classes::{ALL_CLASSES, ReducerClass};
 use spacetimedb::sats::bsatn;
 use spacetimedb::{ReducerContext, Table, Timestamp};
 
@@ -70,6 +77,82 @@ pub struct StorageSample {
     pub total_bytes_est: u64,
     pub over_review: bool,
     pub over_wall: bool,
+}
+
+/// Calls made to one reducer class since the module was published (or the
+/// counter last restored). One row per class, established by
+/// `finish_publish`. `sampled_calls` is `calls` at the previous sampler
+/// fire, so the next fire's delta needs no scan of the sample table.
+#[derive(Clone)]
+#[spacetimedb::table(accessor = reducer_class_counter)]
+pub struct ReducerClassCounter {
+    #[primary_key]
+    // `pub`: `tables::restore` constructs this row.
+    pub class: String,
+    pub calls: u64,
+    pub sampled_calls: u64,
+}
+
+/// One class's calls at one fire.
+#[derive(Clone)]
+#[spacetimedb::table(accessor = reducer_class_sample)]
+pub struct ReducerClassSample {
+    #[primary_key]
+    #[auto_inc]
+    pub sample_id: u64,
+    #[index(btree)]
+    pub sampled_at: Timestamp,
+    pub class: String,
+    pub calls_total: u64,
+    pub calls_delta: u64,
+}
+
+/// Counts one call to `class`. The first statement of every reducer body
+/// (`scripts/ci/check-reducer-counted.sh`), never fails: a missing counter
+/// row is created.
+pub fn count_call(ctx: &ReducerContext, class: ReducerClass) {
+    let name = class.name();
+    match ctx
+        .db
+        .reducer_class_counter()
+        .class()
+        .find(name.to_string())
+    {
+        Some(row) => {
+            let calls = sim::reducer_classes::next_calls(row.calls);
+            ctx.db
+                .reducer_class_counter()
+                .class()
+                .update(ReducerClassCounter { calls, ..row });
+        }
+        None => {
+            ctx.db.reducer_class_counter().insert(ReducerClassCounter {
+                class: name.to_string(),
+                calls: 1,
+                sampled_calls: 0,
+            });
+        }
+    }
+}
+
+/// Seeds the counter with one zeroed row per class that has none. Called
+/// by `tables::publish::establish_world`.
+pub fn establish_counters(ctx: &ReducerContext) {
+    for class in ALL_CLASSES {
+        if ctx
+            .db
+            .reducer_class_counter()
+            .class()
+            .find(class.name().to_string())
+            .is_none()
+        {
+            ctx.db.reducer_class_counter().insert(ReducerClassCounter {
+                class: class.name().to_string(),
+                calls: 0,
+                sampled_calls: 0,
+            });
+        }
+    }
 }
 
 /// Estimated bytes of `table`: encode the first
@@ -159,6 +242,8 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(cadence_liveness);
     sample!(table_sample);
     sample!(storage_sample);
+    sample!(reducer_class_counter);
+    sample!(reducer_class_sample);
 
     let total: u64 = taken
         .iter()
@@ -178,9 +263,13 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     if class != sim::storage::StorageClass::Ok {
         log::warn!("metrics: estimated storage {total} bytes is {class:?}");
     }
-    prune(ctx, now, taken.len() as u64, 1);
+    let class_samples = take_class_samples(ctx, now);
+    prune(ctx, now, taken.len() as u64, 1, class_samples.len() as u64);
     for s in taken {
         ctx.db.table_sample().insert(s);
+    }
+    for s in class_samples {
+        ctx.db.reducer_class_sample().insert(s);
     }
     ctx.db.storage_sample().insert(StorageSample {
         sample_id: 0,
@@ -191,17 +280,49 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     });
 }
 
+/// One `ReducerClassSample` per counter row, and advances each row's
+/// `sampled_calls` so the next fire's delta starts here.
+fn take_class_samples(ctx: &ReducerContext, now: Timestamp) -> Vec<ReducerClassSample> {
+    let counters: Vec<ReducerClassCounter> = ctx.db.reducer_class_counter().iter().collect();
+    let mut out = Vec::with_capacity(counters.len());
+    for row in counters {
+        out.push(ReducerClassSample {
+            sample_id: 0,
+            sampled_at: now,
+            class: row.class.clone(),
+            calls_total: row.calls,
+            calls_delta: sim::reducer_classes::calls_delta(row.calls, row.sampled_calls),
+        });
+        let calls = row.calls;
+        ctx.db
+            .reducer_class_counter()
+            .class()
+            .update(ReducerClassCounter {
+                sampled_calls: calls,
+                ..row
+            });
+    }
+    out
+}
+
 /// Bounds the sample tables before this fire's rows go in: deletes rows
 /// older than the retention window in one ranged call per table, then the
 /// oldest rows past the table's own declared `max_rows` (retention is real
 /// time and the cadence is city time, so a fast clock outruns the age
 /// window). Both go through the `sampled_at` index -- never a full scan.
-fn prune(ctx: &ReducerContext, now: Timestamp, incoming_tables: u64, incoming_totals: u64) {
+fn prune(
+    ctx: &ReducerContext,
+    now: Timestamp,
+    incoming_tables: u64,
+    incoming_totals: u64,
+    incoming_classes: u64,
+) {
     let cutoff = Timestamp::from_micros_since_unix_epoch(sim::storage::retention_cutoff_micros(
         now.to_micros_since_unix_epoch(),
     ));
     ctx.db.table_sample().sampled_at().delete(..cutoff);
     ctx.db.storage_sample().sampled_at().delete(..cutoff);
+    ctx.db.reducer_class_sample().sampled_at().delete(..cutoff);
 
     let drop = sim::storage::rows_to_drop(
         ctx.db.table_sample().count(),
@@ -234,6 +355,22 @@ fn prune(ctx: &ReducerContext, now: Timestamp, incoming_tables: u64, incoming_to
         .collect();
     for id in oldest {
         ctx.db.storage_sample().sample_id().delete(id);
+    }
+    let drop = sim::storage::rows_to_drop(
+        ctx.db.reducer_class_sample().count(),
+        incoming_classes,
+        sim::table_bounds::max_rows_of("reducer_class_sample").unwrap_or(0),
+    );
+    let oldest: Vec<u64> = ctx
+        .db
+        .reducer_class_sample()
+        .sampled_at()
+        .filter(Timestamp::from_micros_since_unix_epoch(i64::MIN)..)
+        .take(drop as usize)
+        .map(|r| r.sample_id)
+        .collect();
+    for id in oldest {
+        ctx.db.reducer_class_sample().sample_id().delete(id);
     }
 }
 

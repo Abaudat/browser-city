@@ -190,7 +190,7 @@ name (NFR47).
 | Browser-exclusive, no install/plugin/download gate (NFR5) | covered | `client/tests/e2e/round-trip.spec.ts` -- runs the client in stock headless Chromium with no flag, plugin or install step |
 | No code shared between `server/` and `client/` (NFR30) | covered | `scripts/ci/check-no-shared-code.sh` |
 | Sim purity, reducers as the only table-touching layer (NFR28) | covered | `scripts/ci/check-sim-purity.sh` (unchanged by this story) |
-| TeV per reducer class instrumented from day one (NFR17) | deferred | first real reducer class -- nothing to measure yet (story 1.1) |
+| Cost per reducer class instrumented from day one (NFR17): every reducer and procedure belongs to one class, opens with `count_call`, and the sampler writes one `reducer_class_sample` row per class per fire; the unit is calls (the module SDK exposes no energy figure) | covered | `server/bounds/tests/reducer_classes_coverage.rs` -- `every_exported_reducer_and_procedure_has_a_class`, `nothing_unexported_is_registered`, `every_export_is_classed_exactly_once`, `scripts/ci/tests/test-check-reducer-counted.sh` -- `an uncounted reducer fails`, `count_call not first fails`, `an uncounted procedure fails`, `scripts/ci/check-metrics-sampler.sh` -- `one reducer_class_sample row per class per fire, and the scheduled class's delta is >= 1`, `server/sim/src/reducer_classes.rs` -- `calls_saturate_and_deltas_never_wrap` |
 
 ## Schema permanence
 
@@ -747,6 +747,29 @@ metrics sampler (`tables::metrics`) turns it into durable `table_sample`
 | FR169: `storage-report.sh` exits 1 when the newest sample is older than three sampler periods, and 0 at exactly three | covered | `scripts/ops/tests/test-storage-report.sh` -- `exactly three periods old -> exit 0`, `one microsecond past three periods -> exit 1` |
 | FR169: `backup.yml`'s storage report never runs before the artifact upload | covered | `scripts/ci/tests/test-check-deploy-workflow.sh` -- `a storage report before the upload fails`, `a storage report after the upload passes` |
 | FR169: `storage-report.sh` reads the newest fire only, and exits 1 exactly when a breach flag is set | covered | `scripts/ops/tests/test-storage-report.sh` -- `over_review -> exit 1`, `over_wall -> exit 1`, `a table over_alert -> exit 1`, `an older breach is history -> exit 0` |
+
+## The watcher
+
+Story 4.13 (FR170, FR171, NFR13, NFR15, NFR17): `.github/workflows/watch.yml`
+polls the sampler's durable columns as the database owner through
+`scripts/ops/storage-report.sh` and files an alert per finding through
+`scripts/ci/report-scheduled-failure.sh`. Same Guard-path discipline as the
+sections above.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| FR170/AC1: alerting lives in an external process reading the metrics tables, never in a reducer -- a scheduled, dispatchable, `maincloud`-environment workflow gated on `DEPLOY_ENABLED`, every secret through `env:` | covered | `scripts/ci/tests/test-check-watch-workflow.sh` -- `the passing fixture passes`, `the real watch.yml passes`, `no schedule trigger fails`, `no DEPLOY_ENABLED gate fails`, `a secret interpolated into run: fails` |
+| FR170/AC1: the watcher's queries work against the real tables, not only a stub | covered | `scripts/ci/check-metrics-sampler.sh` -- `the watcher's reader exits 0 with no breach against the live instance and prints the per-class calls` |
+| FR170/AC2: an alert names the table and the figure, and the storage total against the review trigger or the wall | covered | `scripts/ops/tests/test-storage-report.sh` -- `names the table and the figure on stderr`, `review line names the total against the review trigger`, `wall line names the wall` |
+| FR170/AC2: a finding's issue title is stable across runs (table or class only, never the figure), so a repeat run comments instead of opening a new issue | covered | `scripts/ops/tests/test-storage-report.sh` -- `95 rows and 99 rows file under the same title`, `two tables over alert are two findings`, `the finding's title is the table only` |
+| FR170/AC2: a breach in an older fire with a clean newest fire is history, and a stopped sampler is a breach at exactly three periods and one microsecond | covered | `scripts/ops/tests/test-storage-report.sh` -- `an older breach is history -> exit 0`, `exactly three periods old -> exit 0`, `one microsecond past three periods -> exit 1` |
+| FR170: a network or auth failure is exit 2 ("could not read") and never a storage breach (exit 1), and the workflow files the two under different titles | covered | `scripts/ops/tests/test-storage-report.sh` -- `a network failure -> exit 2`, `an auth failure -> exit 2`, `over_review -> exit 1`, `scripts/ci/tests/test-check-watch-workflow.sh` -- `no report-scheduled-failure.sh call fails` |
+| FR170: the report step fires on a cancelled job too (a `timeout-minutes` expiry, NFR49) and never files an issue inline | covered | `scripts/ci/tests/test-check-watch-workflow.sh` -- `a report step on failure() only fails`, `a report step on cancelled() only fails`, `an inline gh issue create fails` |
+| FR170: the stub the fast suite reads is the real schema -- a renamed column fails here, not on Maincloud | covered | `scripts/ops/tests/test-storage-report.sh` -- `storage_sample columns`, `table_sample columns`, `reducer_class_sample columns` |
+| FR170/AC3: the watcher may die and the city keeps ticking -- the sampler fires with no watcher present and nothing in `server/src` references the watcher, GitHub or `gh`. Nothing notices the watcher itself stopping (GitHub disables a cron after 60 idle days) | partial | `scripts/ci/check-metrics-sampler.sh` -- `the sampler fired with no watcher present`, `scripts/ci/tests/test-check-server-src-bans.sh` -- `a watcher reference is banned`, `a GitHub reference is banned` |
+| FR171/AC4: one pipeline -- table growth and calls per reducer class are rows of the same sampler, and the sampler's coverage and bound tests force any new table into it | covered | `server/bounds/tests/metrics_coverage.rs` -- `every_declared_table_is_sampled`, `server/bounds/tests/storage_budget.rs` -- `reducer_class_sample_alert_covers_the_retention_window`, `scripts/ops/tests/test-storage-report.sh` -- `prints the scheduled class's total and delta` |
+| FR171/FR172: the five gameplay metrics as rows in this pipeline shape, and the outstanding benchmarks' alarm path | deferred | story 4.14 (The Gameplay Metric Definitions) |
+| The world backup and restore carry the two new tables: the counter is restored by its own reducer and verified forward-only, the sample table is cleared by `begin_restore` and restored like the other samples | covered | `server/bounds/tests/restore_coverage.rs` -- `every_non_scheduled_table_has_a_restore_reducer`, `the_two_named_table_lists_exactly_partition_every_non_scheduled_table`, `server/tools/world_backup/src/lib.rs` -- `counter_forward_diff_accepts_identical_and_grown_rows`, `counter_forward_diff_rejects_a_smaller_figure_or_a_missing_class`, `seed_rows_gives_a_string_pk_a_distinct_string_per_row` |
 
 ## CI guards
 

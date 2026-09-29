@@ -53,6 +53,8 @@ import RestoreNodeKindReducer from "./restore_node_kind_reducer";
 import RestorePlacedObjectReducer from "./restore_placed_object_reducer";
 import RestoreProvisionReducer from "./restore_provision_reducer";
 import RestoreReasonCodeReducer from "./restore_reason_code_reducer";
+import RestoreReducerClassCounterReducer from "./restore_reducer_class_counter_reducer";
+import RestoreReducerClassSampleReducer from "./restore_reducer_class_sample_reducer";
 import RestoreRoomReducer from "./restore_room_reducer";
 import RestoreRoomAreaReducer from "./restore_room_area_reducer";
 import RestoreStorageSampleReducer from "./restore_storage_sample_reducer";
@@ -137,6 +139,8 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_placed_object", RestorePlacedObjectReducer),
   __reducerSchema("restore_provision", RestoreProvisionReducer),
   __reducerSchema("restore_reason_code", RestoreReasonCodeReducer),
+  __reducerSchema("restore_reducer_class_counter", RestoreReducerClassCounterReducer),
+  __reducerSchema("restore_reducer_class_sample", RestoreReducerClassSampleReducer),
   __reducerSchema("restore_room", RestoreRoomReducer),
   __reducerSchema("restore_room_area", RestoreRoomAreaReducer),
   __reducerSchema("restore_storage_sample", RestoreStorageSampleReducer),

@@ -1,0 +1,159 @@
+name: watch
+
+# Story 4.13 (FR170, NFR15): the watcher. Reads the metrics sampler's
+# durable columns (`table_sample`, `storage_sample`, `reducer_class_sample`)
+# from the live database as its owner, and files an alert when a table is
+# past its declared alert, the estimated total is past the review trigger
+# or the wall, or the sampler has stopped. It is an external process: the
+# module never knows it exists, so this workflow dying costs alerting and
+# nothing else -- the city keeps ticking. GitHub disables a `schedule` on a
+# repository with no activity for 60 days; nothing notices that, by design.
+#
+# A poll every six hours sees every row a live subscription would: the
+# sampler writes once per real hour.
+#
+# `vars.DEPLOY_ENABLED` is the gate, exactly as deploy.yml's `resolve`
+# job: until it is `true` nothing is provisioned, so a run emits a notice
+# and succeeds -- a red run that means nothing trains everyone to ignore
+# the one that does. Same credential, database and owner identity as
+# backup.yml/deploy.yml (`maincloud` environment); no new secret or
+# variable. Every secret is read through `env:`, never interpolated into a
+# `run:` body.
+#
+# Alarms go through scripts/ci/report-scheduled-failure.sh -- the one alarm
+# path (`alert` label, adopted onto the board by `adopt-alerts`) -- one
+# issue per distinct finding, keyed by a stable title:
+#   watcher: table <accessor> over alert | watcher: storage over review |
+#   watcher: storage over wall | watcher: sampler stale
+# and, when the watcher could not read (exit 2 of storage-report.sh, a
+# missing credential, a timeout): `watcher: could not read the metrics`,
+# never a storage title. A repeat run comments on the open issue.
+#
+# scripts/ci/check-watch-workflow.sh pins this file's shape.
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: watch
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: maincloud
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: is the deploy provisioned yet? (until it is, this run does nothing)
+        id: gate
+        env:
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+        run: |
+          if [ "$DEPLOY_ENABLED" != "true" ]; then
+            echo "::notice::vars.DEPLOY_ENABLED is not 'true' yet -- nothing is provisioned, so the watcher does nothing (not a failure)"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - if: steps.gate.outputs.enabled == 'true'
+        run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
+      # storage-report.sh builds server/tools/world_backup (its JSON reader)
+      # the first time it needs it.
+      - if: steps.gate.outputs.enabled == 'true'
+        run: cd server && rustup toolchain install
+      - if: steps.gate.outputs.enabled == 'true'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+
+      - name: check required secrets/variables are present (a missing one is a failure, never a skip)
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          SPACETIME_MAINCLOUD_TOKEN: ${{ secrets.SPACETIME_MAINCLOUD_TOKEN }}
+          BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
+          MAINCLOUD_OWNER_IDENTITY: ${{ vars.MAINCLOUD_OWNER_IDENTITY }}
+        run: |
+          missing=""
+          [ -n "$SPACETIME_MAINCLOUD_TOKEN" ] || missing="$missing SPACETIME_MAINCLOUD_TOKEN"
+          [ -n "$BACKUP_DATABASE" ] || missing="$missing vars.BACKUP_DATABASE"
+          [ -n "$MAINCLOUD_OWNER_IDENTITY" ] || missing="$missing vars.MAINCLOUD_OWNER_IDENTITY"
+          if [ -n "$missing" ]; then
+            echo "::error::watch.yml: missing required secret(s)/variable(s):$missing -- see server/README.md's Maincloud provisioning section"
+            exit 1
+          fi
+
+      - name: log into Maincloud with the service identity
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          SPACETIME_MAINCLOUD_TOKEN: ${{ secrets.SPACETIME_MAINCLOUD_TOKEN }}
+        run: spacetime login --token "$SPACETIME_MAINCLOUD_TOKEN" --no-browser
+
+      - name: prove the credential carried through -- the logged-in identity must be the owner
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          MAINCLOUD_OWNER_IDENTITY: ${{ vars.MAINCLOUD_OWNER_IDENTITY }}
+        run: |
+          ACTUAL="$(spacetime login show | sed -n 's/^You are logged in as //p')"
+          if [ "$ACTUAL" != "$MAINCLOUD_OWNER_IDENTITY" ]; then
+            echo "::error::logged in as '$ACTUAL', expected the owner identity '$MAINCLOUD_OWNER_IDENTITY' (vars.MAINCLOUD_OWNER_IDENTITY) -- refusing to continue under the wrong identity"
+            exit 1
+          fi
+
+      # Exit 0 healthy, 1 a breach (findings in the file), 2 unreadable.
+      # The exit code is kept in a file so the report step, which also runs
+      # after a cancel, can tell a breach from "could not read".
+      - name: read the metrics and check them against their declared bounds
+        id: read
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
+        run: |
+          rm -f "$RUNNER_TEMP/watch.code"
+          set +e
+          bash scripts/ops/storage-report.sh "$BACKUP_DATABASE" --server maincloud --findings "$RUNNER_TEMP/findings.tsv"
+          code=$?
+          set -e
+          echo "$code" > "$RUNNER_TEMP/watch.code"
+          exit "$code"
+
+      # `failure() || cancelled()`: a `timeout-minutes` expiry ends the job
+      # `cancelled`, not `failure` (NFR49) -- `failure()` alone would let a
+      # hung watcher file nothing.
+      - name: file the alarm(s)
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          CODE="$(cat "$RUNNER_TEMP/watch.code" 2>/dev/null || echo none)"
+          if [ "$CODE" = "1" ] && [ -s "$RUNNER_TEMP/findings.tsv" ]; then
+            while IFS="$(printf '\t')" read -r title detail; do
+              bash scripts/ci/report-scheduled-failure.sh \
+                "$title" \
+                "$detail
+
+          Run: $RUN_URL
+
+          A repeat run comments here. Close this once the cause is fixed."
+            done < "$RUNNER_TEMP/findings.tsv"
+          else
+            bash scripts/ci/report-scheduled-failure.sh \
+              "watcher: could not read the metrics" \
+              "watch.yml could not read the metrics (storage-report.sh exit: $CODE, job status: $JOB_STATUS): $RUN_URL
+
+          This is not a storage breach: a credential, network, timeout or parse failure. Nothing was checked against the declared bounds this run. Close this once the watcher reads again."
+          fi

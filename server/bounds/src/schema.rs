@@ -416,6 +416,34 @@ pub fn parse_module_schema(src_dir: &Path) -> ModuleSchema {
     ModuleSchema { tables }
 }
 
+/// Every `#[spacetimedb::procedure...] pub fn <name>` in `text` -- the
+/// same guard-rail scan as [`reducer_names_in`].
+pub fn procedure_names_in(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut rest = text;
+    while let Some(at) = rest.find("#[spacetimedb::procedure") {
+        let after = &rest[at..];
+        if let Some(fn_at) = after.find("fn ") {
+            let after_fn = &after[fn_at + "fn ".len()..];
+            let name_end = after_fn.find('(').unwrap_or(after_fn.len());
+            names.push(after_fn[..name_end].trim().to_string());
+            rest = &after[fn_at + 3..];
+        } else {
+            rest = &after[1..];
+        }
+    }
+    names
+}
+
+/// Every procedure named anywhere under `src_dir`.
+pub fn procedure_names_in_dir(src_dir: &Path) -> Vec<String> {
+    let mut names = Vec::new();
+    for (_path, text) in read_rust_files(src_dir) {
+        names.extend(procedure_names_in(&text));
+    }
+    names
+}
+
 /// Every reducer named anywhere under `src_dir`.
 pub fn reducer_names_in_dir(src_dir: &Path) -> Vec<String> {
     let mut names = Vec::new();

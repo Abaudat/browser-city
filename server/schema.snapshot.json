@@ -856,6 +856,96 @@
       ]
     },
     {
+      "accessor": "reducer_class_counter",
+      "struct_name": "ReducerClassCounter",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "class",
+          "ty": "String",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "calls",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "sampled_calls",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "reducer_class_sample",
+      "struct_name": "ReducerClassSample",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "sample_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "sampled_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "class",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "calls_total",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "calls_delta",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "restore_state",
       "struct_name": "RestoreState",
       "public": false,

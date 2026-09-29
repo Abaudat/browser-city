@@ -1,3 +1,4 @@
+use sim::reducer_classes::ReducerClass;
 use spacetimedb::{ProcedureContext, ReducerContext, Table, Timestamp};
 
 mod generated;
@@ -31,6 +32,7 @@ pub struct DemoPing {
 /// this reducer only reads the clock and writes the table.
 #[spacetimedb::reducer]
 pub fn send_ping(ctx: &ReducerContext, message: String) -> Result<(), String> {
+    tables::metrics::count_call(ctx, ReducerClass::Player);
     sim::demo_ping::validate_ping_message(&message)?;
     ctx.db.demo_ping().insert(DemoPing {
         id: 0,
@@ -41,11 +43,11 @@ pub fn send_ping(ctx: &ReducerContext, message: String) -> Result<(), String> {
 }
 
 /// The stamped round trip a client uses to estimate the server's clock: it
-/// returns `ctx.timestamp` and reads and writes nothing (the SDK surfaces a
-/// reducer's own timestamp only through a table callback, which a no-write
-/// reducer never fires). Open to any caller.
+/// returns `ctx.timestamp`. Its one write is the class call counter (NFR17).
+/// Open to any caller.
 #[spacetimedb::procedure]
 pub fn sync_clock(ctx: &mut ProcedureContext) -> Timestamp {
+    ctx.with_tx(|tx| tables::metrics::count_call(tx, ReducerClass::Player));
     ctx.timestamp
 }
 
@@ -67,6 +69,7 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
 /// `finish_restore` (`tables::restore`), not through this reducer.
 #[spacetimedb::reducer]
 pub fn finish_publish(ctx: &ReducerContext) -> Result<(), String> {
+    tables::metrics::count_call(ctx, ReducerClass::Operator);
     tables::ops::require_owner(ctx)?;
     tables::publish::establish_world(ctx)
 }
