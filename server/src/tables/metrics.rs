@@ -77,6 +77,12 @@ pub struct StorageSample {
     pub total_bytes_est: u64,
     pub over_review: bool,
     pub over_wall: bool,
+    /// The thresholds `over_review`/`over_wall` were classified against
+    /// (`sim::storage`), so a reader alerts against the bound it reads.
+    #[default(0u64)]
+    pub review_bytes: u64,
+    #[default(0u64)]
+    pub wall_bytes: u64,
 }
 
 /// Calls made to one reducer class since the module was published (or the
@@ -277,6 +283,8 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
         total_bytes_est: total,
         over_review: class >= sim::storage::StorageClass::Review,
         over_wall: class == sim::storage::StorageClass::Wall,
+        review_bytes: sim::storage::STORAGE_REVIEW_BYTES,
+        wall_bytes: sim::storage::STORAGE_WALL_BYTES,
     });
 }
 
@@ -324,53 +332,77 @@ fn prune(
     ctx.db.storage_sample().sampled_at().delete(..cutoff);
     ctx.db.reducer_class_sample().sampled_at().delete(..cutoff);
 
-    let drop = sim::storage::rows_to_drop(
+    drop_oldest(
         ctx.db.table_sample().count(),
         incoming_tables,
-        sim::table_bounds::max_rows_of("table_sample").unwrap_or(0),
+        "table_sample",
+        |n| {
+            ctx.db
+                .table_sample()
+                .sampled_at()
+                .filter(Timestamp::from_micros_since_unix_epoch(i64::MIN)..)
+                .take(n)
+                .map(|r| r.sample_id)
+                .collect()
+        },
+        |id| {
+            ctx.db.table_sample().sample_id().delete(id);
+        },
     );
-    let oldest: Vec<u64> = ctx
-        .db
-        .table_sample()
-        .sampled_at()
-        .filter(Timestamp::from_micros_since_unix_epoch(i64::MIN)..)
-        .take(drop as usize)
-        .map(|r| r.sample_id)
-        .collect();
-    for id in oldest {
-        ctx.db.table_sample().sample_id().delete(id);
-    }
-    let drop = sim::storage::rows_to_drop(
+    drop_oldest(
         ctx.db.storage_sample().count(),
         incoming_totals,
-        sim::table_bounds::max_rows_of("storage_sample").unwrap_or(0),
+        "storage_sample",
+        |n| {
+            ctx.db
+                .storage_sample()
+                .sampled_at()
+                .filter(Timestamp::from_micros_since_unix_epoch(i64::MIN)..)
+                .take(n)
+                .map(|r| r.sample_id)
+                .collect()
+        },
+        |id| {
+            ctx.db.storage_sample().sample_id().delete(id);
+        },
     );
-    let oldest: Vec<u64> = ctx
-        .db
-        .storage_sample()
-        .sampled_at()
-        .filter(Timestamp::from_micros_since_unix_epoch(i64::MIN)..)
-        .take(drop as usize)
-        .map(|r| r.sample_id)
-        .collect();
-    for id in oldest {
-        ctx.db.storage_sample().sample_id().delete(id);
-    }
-    let drop = sim::storage::rows_to_drop(
+    drop_oldest(
         ctx.db.reducer_class_sample().count(),
         incoming_classes,
-        sim::table_bounds::max_rows_of("reducer_class_sample").unwrap_or(0),
+        "reducer_class_sample",
+        |n| {
+            ctx.db
+                .reducer_class_sample()
+                .sampled_at()
+                .filter(Timestamp::from_micros_since_unix_epoch(i64::MIN)..)
+                .take(n)
+                .map(|r| r.sample_id)
+                .collect()
+        },
+        |id| {
+            ctx.db.reducer_class_sample().sample_id().delete(id);
+        },
     );
-    let oldest: Vec<u64> = ctx
-        .db
-        .reducer_class_sample()
-        .sampled_at()
-        .filter(Timestamp::from_micros_since_unix_epoch(i64::MIN)..)
-        .take(drop as usize)
-        .map(|r| r.sample_id)
-        .collect();
-    for id in oldest {
-        ctx.db.reducer_class_sample().sample_id().delete(id);
+}
+
+/// Deletes the oldest rows of one `*_sample` table past its declared
+/// `max_rows`: `oldest_ids(n)` lists the `n` oldest ids through the
+/// `sampled_at` index, `delete` removes one. A new sample table adds one
+/// call in `prune`.
+fn drop_oldest(
+    count: u64,
+    incoming: u64,
+    accessor: &str,
+    oldest_ids: impl FnOnce(usize) -> Vec<u64>,
+    mut delete: impl FnMut(u64),
+) {
+    let drop = sim::storage::rows_to_drop(
+        count,
+        incoming,
+        sim::table_bounds::max_rows_of(accessor).unwrap_or(0),
+    );
+    for id in oldest_ids(drop as usize) {
+        delete(id);
     }
 }
 

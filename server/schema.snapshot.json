@@ -1140,6 +1140,24 @@
           "unique": false,
           "has_default": false,
           "indexed": false
+        },
+        {
+          "name": "review_bytes",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "wall_bytes",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
         }
       ]
     },

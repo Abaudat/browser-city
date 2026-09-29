@@ -162,6 +162,24 @@ grep -qF "this reducer may only be invoked by the scheduler" "$DIRECT_LOG" \
   || fail "a rejected direct call to sample_metrics changed table_sample/storage_sample"
 ok "a direct call to sample_metrics was rejected by require_scheduler, and neither sample table changed"
 
+# A rejected call rolls its own count_call back: the counter is committed
+# calls only (NFR17's stated limitation). `finish_publish` as a non-owner
+# is rejected by require_owner, and nothing else drives the operator class
+# at rest, so its counter must not move.
+operator_calls() {
+  local resp="$DATA_DIR/operator-calls-$RANDOM.json"
+  sql_json "SELECT * FROM reducer_class_counter WHERE class = 'operator'" >"$resp"
+  bc_wb column-values "$resp" calls
+}
+OPERATOR_BEFORE="$(operator_calls)"
+REJECT_LOG="$DATA_DIR/rejected-finish-publish.log"
+if spacetime call "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y --anonymous finish_publish >"$REJECT_LOG" 2>&1; then
+  fail "an anonymous finish_publish was accepted; it must be rejected (require_owner)" "$REJECT_LOG"
+fi
+grep -qF "may only be invoked by the module owner" "$REJECT_LOG" \n  || fail "the anonymous finish_publish was rejected, but not by require_owner" "$REJECT_LOG"
+[ "$(operator_calls)" = "$OPERATOR_BEFORE" ] \n  || fail "a rejected finish_publish moved reducer_class_counter.operator.calls ($OPERATOR_BEFORE -> $(operator_calls)); a rolled-back call must not count"
+ok "a rejected call is not counted (the limitation, pinned)"
+
 # --- (c) the watcher's own reader, against this same instance ---------------
 # The one live proof that the real query shape works (story 4.13): the
 # stub-based fast suite proves the decisions, this proves the queries.

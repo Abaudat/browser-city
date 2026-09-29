@@ -67,3 +67,58 @@ fn the_counter_table_holds_one_row_per_class() {
         .expect("reducer_class_counter has no bound");
     assert_eq!(bound.max_rows, ALL_CLASSES.len() as u64);
 }
+
+/// The first `count_call(.., ReducerClass::X)` after `fn <name>(`, before
+/// the next attribute -- the literal the reducer actually counts under.
+fn counted_class_of(code: &str, name: &str) -> Option<String> {
+    let at = code.find(&format!("fn {name}("))?;
+    let rest = &code[at..];
+    let end = rest.find("#[spacetimedb").unwrap_or(rest.len());
+    let body = &rest[..end];
+    let call = body.find("count_call(")?;
+    let after = &body[call..];
+    let lit = after.find("ReducerClass::")? + "ReducerClass::".len();
+    Some(
+        after[lit..]
+            .chars()
+            .take_while(|c| c.is_alphanumeric())
+            .collect(),
+    )
+}
+
+/// The registry and the literal each body counts under are two sources of
+/// truth; this ties them: swapping a literal fails the build.
+#[test]
+fn every_reducer_counts_under_its_registered_class() {
+    let mut checked = 0;
+    for (_path, text) in read_rust_files(&module_src_dir()) {
+        let code: String = text
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join(
+                "
+",
+            );
+        let mut names = reducer_names_in(&code);
+        names.extend(procedure_names_in(&code));
+        for name in names {
+            if name == "init" {
+                continue; // the one uncounted export
+            }
+            let expected = format!(
+                "{:?}",
+                sim::reducer_classes::class_of(&name)
+                    .unwrap_or_else(|| panic!("`{name}` is unregistered"))
+            );
+            let literal = counted_class_of(&code, &name)
+                .unwrap_or_else(|| panic!("`{name}` has no count_call(.., ReducerClass::X)"));
+            assert_eq!(
+                literal, expected,
+                "`{name}` counts under ReducerClass::{literal} but is registered {expected}"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 30, "the scan checked only {checked} reducers");
+}

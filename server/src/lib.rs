@@ -75,11 +75,13 @@ pub fn finish_publish(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 #[spacetimedb::reducer(client_connected)]
-pub fn identity_connected(_ctx: &ReducerContext) {
+pub fn identity_connected(ctx: &ReducerContext) {
     // Called everytime a new client connects
+    tables::metrics::count_call(ctx, ReducerClass::Lifecycle);
 }
 
 #[spacetimedb::reducer(client_disconnected)]
-pub fn identity_disconnected(_ctx: &ReducerContext) {
+pub fn identity_disconnected(ctx: &ReducerContext) {
     // Called everytime a client disconnects
+    tables::metrics::count_call(ctx, ReducerClass::Lifecycle);
 }

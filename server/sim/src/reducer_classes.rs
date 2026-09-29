@@ -16,8 +16,8 @@ pub enum ReducerClass {
     Player,
     /// Owner-only and dev-only: publish, restore, time control.
     Operator,
-    /// `init` and the connect/disconnect hooks (never counted: they run
-    /// before the counter is seeded, or once per connection).
+    /// `init` (never counted: it runs before the counter is seeded) and
+    /// the connect/disconnect hooks, whose rate scales with players.
     Lifecycle,
 }
 

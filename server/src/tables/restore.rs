@@ -520,6 +520,8 @@ impl_autoinc_row!(
         total_bytes_est: 0,
         over_review: false,
         over_wall: false,
+        review_bytes: 0,
+        wall_bytes: 0,
     }
 );
 impl_autoinc_row!(

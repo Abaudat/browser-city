@@ -33,7 +33,7 @@ schema_of() {
 
 # The column order the canned rows below are written in.
 echo "the canned rows' columns are the schema snapshot's"
-check_contains "storage_sample columns" "sample_id,sampled_at,total_bytes_est,over_review,over_wall" "$(columns_of storage_sample)"
+check_contains "storage_sample columns" "sample_id,sampled_at,total_bytes_est,over_review,over_wall,review_bytes,wall_bytes" "$(columns_of storage_sample)"
 check_contains "table_sample columns" "sample_id,sampled_at,table_accessor,rows,bytes_est,alert_rows,max_rows,over_alert" "$(columns_of table_sample)"
 check_contains "reducer_class_sample columns" "sample_id,sampled_at,class,calls_total,calls_delta" "$(columns_of reducer_class_sample)"
 
@@ -79,7 +79,7 @@ TAB="$(printf '\t')"
 
 echo
 echo "a healthy newest fire"
-OUT="$(run_report '[[1,100,5000,false,false]]' '[[1,100,"citizen",10,80,90,100,false]]' 2>&1)"; CODE=$?
+OUT="$(run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[[1,100,"citizen",10,80,90,100,false]]' 2>&1)"; CODE=$?
 check "no flag -> exit 0" 0 bash -c "exit $CODE"
 check_contains "prints the estimated total" "estimated total 5000 bytes" "$OUT"
 check_contains "prints the table line" "citizen rows=10 alert=90 max=100 over_alert=false" "$OUT"
@@ -93,18 +93,18 @@ check_contains "says so" "no storage samples yet" "$OUT"
 
 echo
 echo "breach flags exit 1 and are written as findings"
-OUT="$(run_report '[[1,100,5000,true,false]]' '[]' 2>&1)"; CODE=$?
+OUT="$(run_report '[[1,100,5000,true,false,10737418240,42949672960]]' '[]' 2>&1)"; CODE=$?
 check "over_review -> exit 1" 1 bash -c "exit $CODE"
 FINDING="$(cat "$FINDINGS")"
 check_contains "review finding has its stable title" "watcher: storage over review$TAB" "$FINDING"
 check_contains "review line names the total against the review trigger" "estimated storage total 5000 bytes is past the review trigger of 10737418240 bytes" "$FINDING"
-OUT="$(run_report '[[1,100,5000,true,true]]' '[]' 2>&1)"; CODE=$?
+OUT="$(run_report '[[1,100,5000,true,true,10737418240,42949672960]]' '[]' 2>&1)"; CODE=$?
 check "over_wall -> exit 1" 1 bash -c "exit $CODE"
 FINDING="$(cat "$FINDINGS")"
 check_contains "wall finding has its stable title" "watcher: storage over wall$TAB" "$FINDING"
 check_contains "wall line names the wall" "past the wall of 42949672960 bytes" "$FINDING"
 check "wall and review are one finding, not two" 0 line_count_is "$FINDINGS" 1
-OUT="$(run_report '[[1,100,5000,false,false]]' '[[1,100,"citizen",95,80,90,100,true]]' 2>&1)"; CODE=$?
+OUT="$(run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[[1,100,"citizen",95,80,90,100,true]]' 2>&1)"; CODE=$?
 check "a table over_alert -> exit 1" 1 bash -c "exit $CODE"
 check_contains "names the table and the figure on stderr" "table citizen has 95 rows, past its alert of 90" "$OUT"
 FINDING="$(cat "$FINDINGS")"
@@ -112,18 +112,25 @@ check_contains "the finding's title is the table only" "watcher: table citizen o
 check_contains "the finding's body carries the exact line" "table citizen has 95 rows, past its alert of 90" "$FINDING"
 
 echo
+echo "the alerted-against thresholds are the ones the row carries, never the script's own"
+OUT="$(run_report '[[1,100,5000,true,false,7000,9000]]' '[]' 2>&1)"; CODE=$?
+check_contains "the review line reads review_bytes from the row" "past the review trigger of 7000 bytes" "$OUT"
+OUT="$(run_report '[[1,100,5000,true,true,7000,9000]]' '[]' 2>&1)"; CODE=$?
+check_contains "the wall line reads wall_bytes from the row" "past the wall of 9000 bytes" "$OUT"
+
+echo
 echo "the title for one finding is stable across figures (dedupe key)"
-run_report '[[1,100,5000,false,false]]' '[[1,100,"citizen",95,80,90,100,true]]' >/dev/null 2>&1
+run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[[1,100,"citizen",95,80,90,100,true]]' >/dev/null 2>&1
 T1="$(cut -f1 "$FINDINGS")"
-run_report '[[1,100,5000,false,false]]' '[[1,100,"citizen",99,80,90,100,true]]' >/dev/null 2>&1
+run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[[1,100,"citizen",99,80,90,100,true]]' >/dev/null 2>&1
 T2="$(cut -f1 "$FINDINGS")"
 check "95 rows and 99 rows file under the same title" 0 same_nonempty "$T1" "$T2"
-run_report '[[1,100,5000,false,false]]' '[[1,100,"citizen",95,80,90,100,true],[1,100,"building",95,80,90,100,true]]' >/dev/null 2>&1
+run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[[1,100,"citizen",95,80,90,100,true],[1,100,"building",95,80,90,100,true]]' >/dev/null 2>&1
 check "two tables over alert are two findings" 0 distinct_titles_are "$FINDINGS" 2
 
 echo
 echo "only the newest fire counts"
-OUT="$(run_report '[[1,100,5000,true,false],[2,200,6000,false,false]]' '[[1,100,"citizen",95,80,90,100,true],[2,200,"citizen",10,80,90,100,false]]' 2>&1)"; CODE=$?
+OUT="$(run_report '[[1,100,5000,true,false,10737418240,42949672960],[2,200,6000,false,false,10737418240,42949672960]]' '[[1,100,"citizen",95,80,90,100,true],[2,200,"citizen",10,80,90,100,false]]' 2>&1)"; CODE=$?
 check "an older breach is history -> exit 0" 0 bash -c "exit $CODE"
 check_contains "reports the newest total" "estimated total 6000 bytes" "$OUT"
 check "history writes no finding" 0 is_empty "$FINDINGS"
@@ -131,9 +138,9 @@ check "history writes no finding" 0 is_empty "$FINDINGS"
 echo
 echo "a sampler that has stopped is a breach: the newest sample older than three periods"
 STALE=$((3 * 3600 * 1000000))
-OUT="$(NOW=$((100 + STALE)) run_report '[[1,100,5000,false,false]]' '[]' 2>&1)"; CODE=$?
+OUT="$(NOW=$((100 + STALE)) run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' 2>&1)"; CODE=$?
 check "exactly three periods old -> exit 0" 0 bash -c "exit $CODE"
-OUT="$(NOW=$((100 + STALE + 1)) run_report '[[1,100,5000,false,false]]' '[]' 2>&1)"; CODE=$?
+OUT="$(NOW=$((100 + STALE + 1)) run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' 2>&1)"; CODE=$?
 check "one microsecond past three periods -> exit 1" 1 bash -c "exit $CODE"
 check_contains "says the sampler stopped" "the sampler has stopped" "$OUT"
 check_contains "stale finding has its stable title" "watcher: sampler stale$TAB" "$(cat "$FINDINGS")"
@@ -141,7 +148,7 @@ check_contains "stale finding has its stable title" "watcher: sampler stale$TAB"
 echo
 echo "cost per reducer class is printed for the newest fire, never alerted on"
 CLASSES='[[1,100,"scheduled",5,5],[2,100,"player",1,1],[3,50,"scheduled",2,2]]'
-OUT="$(run_report '[[1,100,5000,false,false]]' '[]' "$CLASSES" 2>&1)"; CODE=$?
+OUT="$(run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' "$CLASSES" 2>&1)"; CODE=$?
 check "class rows never breach -> exit 0" 0 bash -c "exit $CODE"
 check_contains "prints the scheduled class's total and delta" "class scheduled calls_total=5 calls_delta=5" "$OUT"
 check_contains "prints the player class" "class player calls_total=1 calls_delta=1" "$OUT"
@@ -149,10 +156,10 @@ check "an older fire's class row is not printed" 0 lacks "$OUT" "calls_total=2 "
 
 echo
 echo "unreadable is exit 2, never a breach"
-OUT="$(run_report '[[1,100,5000,false,false]]' '[]' '[]' network 2>&1)"; CODE=$?
+OUT="$(run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' '[]' network 2>&1)"; CODE=$?
 check "a network failure -> exit 2" 2 bash -c "exit $CODE"
 check "and writes no finding" 0 is_empty "$FINDINGS"
-OUT="$(run_report '[[1,100,5000,false,false]]' '[]' '[]' auth 2>&1)"; CODE=$?
+OUT="$(run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' '[]' auth 2>&1)"; CODE=$?
 check "an auth failure -> exit 2" 2 bash -c "exit $CODE"
 check_contains "says it could not read" "could not read" "$OUT"
 

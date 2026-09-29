@@ -42,7 +42,11 @@ BODY="$2"
 [ -n "${GH_TOKEN:-}" ] || { echo "report-scheduled-failure: GH_TOKEN is not set" >&2; exit 1; }
 [ -n "${GITHUB_REPOSITORY:-}" ] || { echo "report-scheduled-failure: GITHUB_REPOSITORY is not set" >&2; exit 1; }
 
-EXISTING="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number' || true)"
+# GitHub's `in:title` search is a fuzzy phrase match (`watcher: table
+# citizen over alert` also finds `... citizen_state over alert`), so the
+# candidates are post-filtered on exact title equality.
+CANDIDATES="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --search "in:title \"$TITLE\"" --json number,title || true)"
+EXISTING="$(printf '%s' "$CANDIDATES" | jq -r --arg title "$TITLE" '[.[]? | select(.title == $title)][0].number // empty' | tr -d "\r" || true)"
 if [ -n "$EXISTING" ]; then
   gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body "$BODY"
   echo "report-scheduled-failure: commented on existing issue #$EXISTING" >&2

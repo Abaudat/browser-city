@@ -2,9 +2,8 @@
 # Story 4.13 (NFR17): every `#[spacetimedb::reducer]` and
 # `#[spacetimedb::procedure]` under server/src/ must open with
 # `count_call` (`tables::metrics::count_call`) as its first statement, so
-# each call is attributed to its cost class. The lifecycle reducers
-# (`init`, `client_connected`, `client_disconnected`) are the only
-# exemptions. A reducer's class is registered separately
+# each call is attributed to its cost class. `init` (which runs before the
+# counter is seeded) is the only exemption. A reducer's class is registered separately
 # (`sim::reducer_classes`, checked by `bounds/tests/reducer_classes_
 # coverage.rs`); this guard only pins the counting.
 #
@@ -25,7 +24,7 @@ RESULT="$(awk '
   function report(msg) { print FILENAME ":" NR ": " msg; bad = 1 }
   /^[ \t]*\/\// { if (state == 3) next }
   /^[ \t]*#\[spacetimedb::(reducer|procedure)/ {
-    if ($0 ~ /\((init|client_connected|client_disconnected)\)/) { state = 0; next }
+    if ($0 ~ /\(init\)/) { state = 0; next }
     state = 1; seen++; next
   }
   state == 1 && /fn / {

@@ -33,7 +33,7 @@ pub fn a(ctx: &ReducerContext) -> Result<(), String> {
 }')"
 check "an uncounted reducer fails" 1 bash "$CHECK" "$d"
 OUT="$(bash "$CHECK" "$d" 2>&1)"
-check_contains "names the reducer" "`a` does not start with count_call" "$OUT"
+check_contains "names the reducer" '`a` does not start with count_call' "$OUT"
 
 d="$(plant '#[spacetimedb::reducer]
 pub fn a(ctx: &ReducerContext) -> Result<(), String> {
@@ -69,14 +69,21 @@ check "a procedure counting through with_tx passes" 0 bash "$CHECK" "$d"
 
 d="$(plant "$COUNTED"'
 #[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) -> Result<(), String> { Ok(()) }
+pub fn init(ctx: &ReducerContext) -> Result<(), String> { Ok(()) }')"
+check "init is the one exemption" 0 bash "$CHECK" "$d"
+
+d="$(plant "$COUNTED"'
 #[spacetimedb::reducer(client_connected)]
 pub fn c(_ctx: &ReducerContext) {
-}
-#[spacetimedb::reducer(client_disconnected)]
-pub fn d(_ctx: &ReducerContext) {
 }')"
-check "lifecycle reducers are exempt" 0 bash "$CHECK" "$d"
+check "an uncounted client_connected fails" 1 bash "$CHECK" "$d"
+
+d="$(plant "$COUNTED"'
+#[spacetimedb::reducer(client_disconnected)]
+pub fn d(ctx: &ReducerContext) {
+    count_call(ctx, ReducerClass::Lifecycle);
+}')"
+check "a counted client_disconnected passes" 0 bash "$CHECK" "$d"
 
 d="$(plant "$COUNTED"'
 /// mentions #[spacetimedb::reducer] in prose

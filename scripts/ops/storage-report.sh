@@ -31,9 +31,6 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # Three sampler periods, in micros: sim::cadence::METRICS_PERIOD_MS is one
 # real hour at speed 1 (the production speed).
 STALE_MICROS=$((3 * 3600 * 1000000))
-# NFR15 (sim::storage::STORAGE_REVIEW_BYTES / STORAGE_WALL_BYTES).
-REVIEW_BYTES=$((10 * 1024 * 1024 * 1024))
-WALL_BYTES=$((40 * 1024 * 1024 * 1024))
 
 unreadable() { # <message>
   echo "storage-report: could not read the metrics -- $1" >&2
@@ -92,9 +89,9 @@ paste -d'|' \
   <(column "$TMP/storage.json" sampled_at) \
   <(column "$TMP/storage.json" total_bytes_est) \
   <(column "$TMP/storage.json" over_review) \
-  <(column "$TMP/storage.json" over_wall) >"$TMP/storage.rows"
+  <(column "$TMP/storage.json" over_wall)   <(column "$TMP/storage.json" review_bytes)   <(column "$TMP/storage.json" wall_bytes) >"$TMP/storage.rows"
 NEWEST="$(sort -t'|' -k1,1n "$TMP/storage.rows" | tail -n1)"
-IFS='|' read -r _ SAMPLED_AT TOTAL OVER_REVIEW OVER_WALL <<<"$NEWEST"
+IFS='|' read -r _ SAMPLED_AT TOTAL OVER_REVIEW OVER_WALL REVIEW_BYTES WALL_BYTES <<<"$NEWEST"
 
 echo "storage-report: newest sample $SAMPLED_AT -- estimated total $TOTAL bytes (over_review=$OVER_REVIEW over_wall=$OVER_WALL)"
 

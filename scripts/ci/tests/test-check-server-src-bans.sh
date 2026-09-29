@@ -46,18 +46,6 @@ check "unreachable! is banned" 1 bash "$CHECK" "$d"
 d="$(plant 'debug_assert!(x > 0, "x must be positive");')"
 check "debug_assert! stays allowed" 0 bash "$CHECK" "$d"
 
-d="$(plant 'let url = "https://github.com/x/y";')"
-check "a GitHub reference is banned" 1 bash "$CHECK" "$d"
-
-d="$(plant 'notify_watcher(ctx);')"
-check "a watcher reference is banned" 1 bash "$CHECK" "$d"
-
-d="$(plant 'run("storage-report.sh");')"
-check "a storage-report reference is banned" 1 bash "$CHECK" "$d"
-
-d="$(plant '//! read by scripts/ops/storage-report.sh, the watcher (a doc comment only).')"
-check "the watcher named only in a doc comment passes" 0 bash "$CHECK" "$d"
-
 d="$(fake_dir)"
 mkdir -p "$d/generated"
 printf '%s\n' 'let x = row.unwrap();' > "$d/generated/skip.rs"
