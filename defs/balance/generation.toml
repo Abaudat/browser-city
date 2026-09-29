@@ -269,14 +269,13 @@ max = 512
 [[balance]]
 # Target block side length at the field's own minimum density (the
 # periphery). Tuned with max_block_depth_max_cells onto the Scale
-# Baseline building count at `GENERATION_VERSION` 9 (story 4.22: with
-# the enclosure rule freeing peripheral blocks to reach their target,
-# 128/120 undershot -- pooled mean count 843 against 893): 112/104 gives
-# 896 over seeds 0..256 and a peripheral-to-central mean block area of
-# 2.6-3.7x on the evidence seeds; a larger periphery would only cost the
-# building count its margin.
+# Baseline building count at `GENERATION_VERSION` 9 (story 4.22): with
+# the enclosure rule, 128/120 gave a pooled mean count of 843 against the
+# 893 target. The count target won and the periphery target moved --
+# 120/104 gives 889 over seeds 0..256 and a peripheral-to-central mean
+# block area of 2.2-2.7x on the evidence seeds (Artie's bar is 2x).
 key = "generation.streets.block_size_max_cells"
-value = 112
+value = 120
 min = 4
 max = 512
 
@@ -384,7 +383,7 @@ max = 256
 # PR #349). Re-measured with real margin at the real (unmeasured, since
 # 3.11) long range: over the harness's own 50,000-seed exhaustive loop,
 # the worst ratio among pairs at or beyond the takeover distance was
-# 171% at `GENERATION_VERSION` 9 (seed `5594189165840902708`); 200 is
+# 176% at `GENERATION_VERSION` 9 (seed `4595557621078204092`); 200 is
 # that plus real margin --
 # re-measure by running `cargo run -p bounds --release --bin measure-
 # generation`'s own detour-bounds sweep whenever the street algorithm
@@ -422,14 +421,14 @@ max = 500
 # boundary node pair, not the cheap `DETOUR_SAMPLE_MAX_NODES` sample
 # the required property above checks) over the harness's own 50,000
 # mixed seeds, times 1.25, rounded up to a multiple of 8. Measured at
-# `GENERATION_VERSION` 9 (story 4.22): exhaustive max 330, at seed
-# `16957036110437448498` -- 330 * 1.25 = 413, rounded up to 416.
+# `GENERATION_VERSION` 9 (story 4.22): exhaustive max 320, at seed
+# `610140160610395379` -- 320 * 1.25 = 400 (already a multiple of 8).
 # `from_balance` separately refuses a value
-# over `4 * block_size_max_cells + 2 * arterial_width_cells` (472 at
+# over `4 * block_size_max_cells + 2 * arterial_width_cells` (504 at
 # this generator's other committed values) -- a loosening guard, never
 # a worst-case claim (`GenerationConfig::from_balance`'s own comment).
-# `16957036110437448498`, `5594189165840902708` and
-# `2461121815226407269` are pinned, each against its own exhaustive
+# `610140160610395379`, `4595557621078204092` and
+# `6482608135473407511` are pinned, each against its own exhaustive
 # excess, in `streets::PINNED_DETOUR_SEEDS` (`invariants.rs`'s own
 # `detour_excess_holds_at_pinned_boundary_exit_seeds`). Miss rate
 # measured directly (story 15.10, `measure-generation`'s own detour-
@@ -437,7 +436,7 @@ max = 500
 # this ceiling at the cheap 14-node sample -- see `max_detour_percent`'s
 # own comment for the rule-of-three bound that figure implies.
 key = "generation.streets.max_detour_excess_cells"
-value = 416
+value = 400
 min = 1
 max = 2048
 
@@ -476,8 +475,8 @@ max = 16
 # this percent of the high-density (core) mean -- a noise margin, not the
 # density guard. Measured at `GENERATION_VERSION` 9 over 1,000,000
 # uniformly drawn seeds (passes 1-2, `seed_from_ids(0x5ca9, i)`): none
-# below 60%; the worst is 91.9% (seed 12950313357280025263), per-city
-# p1 166%, p5 194%, median 279%. The three lowest are pinned by
+# below 60%; the worst is 80.4% (seed 5955473505560313928), per-city
+# p1 167%, p5 195%, median 276%. The three lowest are pinned by
 # `peripheral_floor_clears_the_lowest_known_ratio_seeds`. This key alone
 # cannot tell a healthy city from a density-blind one (a uniform grid
 # pools to 100%) -- `peripheral_pooled_min_ratio_percent` below is the
@@ -493,7 +492,7 @@ max = 100
 # pooled over a fixed seed range (`0..256`), summed low-density
 # (periphery) mean block area over summed high-density (core) mean must
 # be at least this percent. Measured at `GENERATION_VERSION` 9: pooled
-# ratio 289% (per-city p5 194%, median 279%); a density-blind generator
+# ratio 289% (per-city p5 195%, median 276%); a density-blind generator
 # pools to ~100%. 150 has real margin under the measured 289% while comfortably
 # failing a generator that stopped reading density at all (Quentin's
 # direction, cycle 4).
@@ -661,13 +660,13 @@ max = 100
 
 [[balance]]
 # The same ceiling's own area half (the cores of the genuinely oversized
-# periphery blocks). Same scan at `GENERATION_VERSION` 9: mean 14.4%,
-# standard deviation 4.9, p99 26%, max 39%. Set by the same rule as
+# periphery blocks). Same scan at `GENERATION_VERSION` 9: mean 17.4%,
+# standard deviation 4.9, p99 29%, max 38%. Set by the same rule as
 # `envelopes.count_tolerance_percent`: at least 5.5 standard deviations
-# from the harness's own mean (14.4 + 5.5 * 4.9 = 41.4), so 42 -- never
+# from the harness's own mean (17.4 + 5.5 * 4.9 = 44.4), so 46 -- never
 # "measured max plus margin".
 key = "generation.plots.max_open_percent_by_area"
-value = 42
+value = 46
 min = 0
 max = 100
 
@@ -843,9 +842,9 @@ max = 1000000
 # (two-sided) rather than a number tuned to the observed sample's own
 # min/max. Measured over 50,000 seeds (`cargo run -p bounds --release
 # --bin measure-generation`, at `GENERATION_VERSION` 9, story 4.22):
-# mean 897.1, standard deviation 24.6, min 785, max 998. 5.5 * 24.6 /
-# 893 = 15.2%; 21 clears it, and covers the measured min (893-785=108,
-# 12.1%) and max (998-893=105, 11.8%). Re-derived from the harness's
+# mean 889.1, standard deviation 25.5, min 768, max 1,002. 5.5 * 25.5 /
+# 893 = 15.7%; 21 clears it, and covers the measured min (893-768=125,
+# 14.0%) and max (1002-893=109, 12.2%). Re-derived from the harness's
 # own sigma after every retune.
 key = "generation.envelopes.count_tolerance_percent"
 value = 21
@@ -898,9 +897,9 @@ max = 1000000
 # quantity (every placed type whose own `professions` list is non-empty),
 # not a placement pass 4 tunes directly. Measured over 50,000 seeds
 # (`cargo run -p bounds --release --bin measure-generation`, at
-# `GENERATION_VERSION` 9, story 4.22): mean 344.9, stddev 23.6, min 247,
-# max 442. 5.5 * 23.6 / 343 = 37.9%; 40% covers the measured min
-# (343-247=96, 28.0%) and max (442-343=99, 28.9%), the same sigma rule
+# `GENERATION_VERSION` 9, story 4.22): mean 344.5, stddev 24.2, min 230,
+# max 446. 5.5 * 24.2 / 343 = 38.9%; 40% covers the measured min
+# (343-230=113, 32.9%) and max (446-343=103, 30.0%), the same sigma rule
 # `generation.envelopes.count_tolerance_percent` states. Re-derive after
 # every retune; an outlier is diagnosed to its pass and pinned, never
 # absorbed by re-measuring this value.

@@ -404,9 +404,10 @@ impl StreetNetwork {
     /// What actually binds peripheral block size: over the blocks sampled
     /// in the bottom third of `density_min..density_max` (the same band
     /// [`Self::mean_area_by_density_band`] calls the periphery), how many
-    /// have a long side at or under half their own local
-    /// [`target_block_size`] (`chopped`), and how many the band holds
-    /// (`total`). A ratio test cannot tell "periphery is small" from
+    /// have an area at or under a quarter of their own local
+    /// [`target_block_size`] squared (`chopped`), and how many the band
+    /// holds (`total`). Area, not a side: a 65x35 block is as chopped as a
+    /// 45x45 one. A ratio test cannot tell "periphery is small" from
     /// "periphery is chopped"; this can.
     pub fn low_band_chopped_blocks(
         &self,
@@ -429,11 +430,41 @@ impl StreetNetwork {
             }
             total += 1;
             let target = target_block_size(density, cfg) as i64;
-            if b.bounds.width().max(b.bounds.height()) * 2 <= target {
+            if b.bounds.width() * b.bounds.height() * 4 <= target * target {
                 chopped += 1;
             }
         }
         (chopped, total)
+    }
+
+    /// Every region whose own land use no block carries: no block whose
+    /// bounds intersect the region takes that use by
+    /// [`super::block_land_use`]. What [`SWALLOW_MIN_REGION_SHARE_DENOM`]
+    /// exists to keep small -- a lost institutional region is a civic
+    /// building the city can never place.
+    pub fn regions_carried_by_no_block(&self, land_use: &LandUseMap) -> Vec<Region> {
+        let cell = land_use.cell_size();
+        let site = land_use.site();
+        land_use
+            .regions()
+            .into_iter()
+            .filter(|r| {
+                let world = Rect {
+                    x0: site.x0 + r.bounds.x0 * cell,
+                    y0: site.y0 + r.bounds.y0 * cell,
+                    x1: site.x0 + r.bounds.x1 * cell,
+                    y1: site.y0 + r.bounds.y1 * cell,
+                };
+                !self.blocks.iter().any(|b| {
+                    let bb = b.bounds;
+                    bb.x0 < world.x1
+                        && bb.x1 > world.x0
+                        && bb.y0 < world.y1
+                        && bb.y1 > world.y0
+                        && super::block_land_use(land_use, bb) == r.use_
+                })
+            })
+            .collect()
     }
 
     /// Every pair of same-street crossings whose *net* gap (the distance
@@ -740,9 +771,9 @@ pub const DETOUR_P99_SAMPLE_MAX_NODES: usize = 64;
 /// nothing outside `invariants.rs`/`bounds` reads this today.
 #[cfg(any(test, feature = "test-fixtures"))]
 pub const PINNED_DETOUR_SEEDS: [(u64, i64); 3] = [
-    (16_957_036_110_437_448_498, 330),
-    (5_594_189_165_840_902_708, 298),
-    (2_461_121_815_226_407_269, 298),
+    (610_140_160_610_395_379, 320),
+    (4_595_557_621_078_204_092, 316),
+    (6_482_608_135_473_407_511, 310),
 ];
 
 /// One [`StreetNetwork::detour_samples`] entry.
@@ -1264,14 +1295,26 @@ fn split_tier_needed(
     encloses_a_region: bool,
     cfg: &GenerationConfig,
 ) -> Option<StreetClass> {
-    let over_target = phys.width() > target || phys.height() > target || encloses_a_region;
+    let (long_side, short_side) = (
+        phys.width().max(phys.height()),
+        phys.width().min(phys.height()),
+    );
+    // A thin strip (short side under half the target) may run to one and a
+    // half times the target before it is cut: it splits into halves near
+    // the target, never into pieces shorter than it (a 260x30 boundary
+    // strip becomes two 130s, not four 65s).
+    let long_limit = if short_side * 2 < target {
+        target * 3 / 2
+    } else {
+        target
+    };
+    let over_target = short_side > target || long_side > long_limit || encloses_a_region;
     if over_target {
         if is_commercial || street_depth < cfg.max_street_splits_per_superblock {
             return Some(StreetClass::Street);
         }
         return Some(StreetClass::Lane);
     }
-    let short_side = phys.width().min(phys.height());
     if short_side > max_depth {
         return Some(StreetClass::Lane);
     }
@@ -1290,15 +1333,9 @@ struct Regions {
 impl Regions {
     fn of(land_use: &LandUseMap) -> Self {
         let (regions, labels) = land_use.labeled_regions();
-        let mut sizes = vec![0usize; regions.len()];
-        for &l in &labels {
-            if l >= 0 {
-                sizes[l as usize] += 1;
-            }
-        }
         Regions {
             labels,
-            sizes,
+            sizes: regions.iter().map(|r| r.cell_count as usize).collect(),
             uses: regions.iter().map(|r| r.use_).collect(),
         }
     }
@@ -1309,7 +1346,9 @@ impl Regions {
 /// regions fragmented across several blocks with none holding their use
 /// (0.004% of cities lost every institutional region, and with it the
 /// council); a quarter confines the extra splits to blocks over small
-/// regions.
+/// regions. Without the rule 0.57% of 3,000,000 seeds lose every
+/// institutional region; `institutional_regions_survive_on_seeds_that_lose_them_without_the_swallow_rule`
+/// pins three of them.
 const SWALLOW_MIN_REGION_SHARE_DENOM: usize = 4;
 
 /// Whether `phys` (world-cell rect) must be split for a region's sake
@@ -1340,6 +1379,10 @@ fn encloses_a_region(land_use: &LandUseMap, regions: &Regions, phys: Rect) -> bo
     // (label, reaches a street-abutting side, cells seen); a handful of
     // labels at most.
     let mut seen: Vec<(i32, bool, usize)> = Vec::new();
+    // Overlap area per land use, tallied the way `block_land_use` does, so
+    // the majority decided here is the one the block will end up with.
+    let mut area: std::collections::BTreeMap<super::LandUse, i64> =
+        std::collections::BTreeMap::new();
     for cy in cy0..cy1 {
         for cx in cx0..cx1 {
             let label = regions.labels[(cy * land_use.cols() + cx) as usize];
@@ -1348,6 +1391,9 @@ fn encloses_a_region(land_use: &LandUseMap, regions: &Regions, phys: Rect) -> bo
             }
             let (wx0, wy0) = (site.x0 + cx * cell, site.y0 + cy * cell);
             let (wx1, wy1) = (wx0 + cell, wy0 + cell);
+            let ox = (wx1.min(phys.x1) - wx0.max(phys.x0)).max(0) as i64;
+            let oy = (wy1.min(phys.y1) - wy0.max(phys.y0)).max(0) as i64;
+            *area.entry(regions.uses[label as usize]).or_insert(0) += ox * oy;
             let reaches = (sides.west && wx0 <= phys.x0)
                 || (sides.east && wx1 >= phys.x1)
                 || (sides.north && wy0 <= phys.y0)
@@ -1367,10 +1413,16 @@ fn encloses_a_region(land_use: &LandUseMap, regions: &Regions, phys: Rect) -> bo
     if seen.len() < 2 {
         return false;
     }
-    let winner = super::block_land_use(land_use, phys);
+    let mut winner: Option<(super::LandUse, i64)> = None;
+    for (u, a) in area {
+        if winner.is_none_or(|(_, best)| a > best) {
+            winner = Some((u, a));
+        }
+    }
+    let winner = winner.map(|(u, _)| u);
     seen.iter().any(|&(label, _, count)| {
         count * SWALLOW_MIN_REGION_SHARE_DENOM >= regions.sizes[label as usize]
-            && regions.uses[label as usize] != winner
+            && Some(regions.uses[label as usize]) != winner
     })
 }
 
@@ -1971,8 +2023,8 @@ mod tests {
     /// `bounds`; if `bounds`'s own list changes, this one is updated by
     /// hand). Judged on the images Artie reviews, not asserted over
     /// arbitrary seeds. Measured at `GENERATION_VERSION` 9 (density-band
-    /// split, `mean_area_by_density_band`): 3.66x, 2.68x and 2.64x, at least
-    /// 0.64x over the 2x bar.
+    /// split, `mean_area_by_density_band`): 2.65x, 2.24x and 2.56x, at least
+    /// 0.24x over the 2x bar.
     #[test]
     fn peripheral_blocks_are_at_least_2x_central_ones_on_the_evidence_seeds() {
         let c = cfg();
@@ -2048,28 +2100,64 @@ mod tests {
         ));
     }
 
-    /// The probe's counting contract, on a hand-built fixture: one block
-    /// at half its target in the low band is counted, a full-target one
-    /// is not, a high-density one is outside the band.
+    /// The probe's counting contract, on a hand-built fixture: low-band
+    /// blocks at or under a quarter of the target's area are counted, in
+    /// any shape; a slightly larger one is not; a high-density one is
+    /// outside the band.
     #[test]
-    fn low_band_chopped_blocks_counts_only_low_band_blocks_at_or_under_half_target() {
+    fn low_band_chopped_blocks_counts_only_low_band_blocks_at_or_under_a_quarter_target_area() {
         let (small_cfg, lu) = two_band_land_use(20, 90);
         let site = small_cfg.site();
         let half = target_block_size(20, &small_cfg) / 2;
-        assert!(half < 190, "fixture centres must stay in the low row");
-        let block = |x1: i32, y0: i32, y1: i32| Block {
+        assert!(half < 90, "fixture centres must stay in the low row");
+        let block = |x1: i32, y1: i32, y0: i32| Block {
             bounds: Rect { x0: 0, y0, x1, y1 },
         };
         let blocks = vec![
-            // Long side exactly half the target: chopped.
-            block(half, 0, 10),
-            // One cell over half: not chopped.
-            block(half + 1, 0, 10),
+            // A square of half the target's side: exactly a quarter of the
+            // target's area, chopped.
+            block(half, half, 0),
+            // One cell wider: not chopped.
+            block(half + 1, half, 0),
+            // A long thin block of the same area as the first: chopped.
+            block(half * 2, half / 2, 0),
             // High-density row: outside the band, however small.
-            block(4, 60, 64),
+            block(4, 64, 60),
         ];
         let net = StreetNetwork::test_fixture(site, Vec::new(), blocks);
-        assert_eq!(net.low_band_chopped_blocks(&lu, &small_cfg), (1, 2));
+        assert_eq!(net.low_band_chopped_blocks(&lu, &small_cfg), (2, 3));
+    }
+
+    /// Seeds that lose every institutional region under the bare enclosure
+    /// rule (`SWALLOW_MIN_REGION_SHARE_DENOM` 0: 0.57% of 3,000,000 seeds
+    /// drawn through `seed_from_ids(0x5ca9, i)`, and with them the council
+    /// and hospital). With the swallow rule at least one institutional
+    /// region is carried by a block on each; removing the rule turns this
+    /// red.
+    #[test]
+    fn institutional_regions_survive_on_seeds_that_lose_them_without_the_swallow_rule() {
+        let c = cfg();
+        for seed in [
+            7_485_815_739_059_907_248u64,
+            8_426_428_422_144_854_001,
+            11_748_920_383_663_730_585,
+        ] {
+            let (lu, net) = network(seed, &c);
+            let institutional = lu
+                .regions()
+                .iter()
+                .filter(|r| r.use_ == land_use::LandUse::Institutional)
+                .count();
+            let lost = net
+                .regions_carried_by_no_block(&lu)
+                .iter()
+                .filter(|r| r.use_ == land_use::LandUse::Institutional)
+                .count();
+            assert!(
+                institutional > 0 && lost < institutional,
+                "seed {seed}: {lost} of {institutional} institutional regions are carried by no block"
+            );
+        }
     }
 
     fn sample(manhattan: i64, network: i64) -> DetourSample {

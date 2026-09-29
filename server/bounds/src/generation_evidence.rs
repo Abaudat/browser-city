@@ -629,13 +629,53 @@ fn residential_core_and_periphery_points(
     let dist = |c: (i32, i32)| (c.0 - peak_point.0).abs().max((c.1 - peak_point.1).abs());
     let core = residential
         .iter()
-        .map(|b| centre(b))
-        .min_by_key(|&c| dist(c))?;
+        .copied()
+        .min_by_key(|b| dist(centre(b)))?;
     let periphery = residential
         .iter()
-        .map(|b| centre(b))
-        .max_by_key(|&c| dist(c))?;
-    Some((core, periphery))
+        .copied()
+        .max_by_key(|b| dist(centre(b)))?;
+    let site = net.site();
+    Some((
+        street_anchored_point(core, peak_point, site),
+        street_anchored_point(periphery, peak_point, site),
+    ))
+}
+
+/// A viewport centre that puts one of `block`'s street-abutting sides
+/// (the one facing `toward`) on the panel's edge: the panel shows that
+/// street with the block's front row and yard behind it, never the open
+/// core of a large block. A block abutting no street falls back to its
+/// centre.
+fn street_anchored_point(
+    block: &Block,
+    toward: (i32, i32),
+    site: sim::generation::SiteBounds,
+) -> (i32, i32) {
+    let b = block.bounds;
+    let sides = sim::generation::block_sides(b, site);
+    let (cx, cy) = ((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
+    // Half a viewport axis minus a street's width or so: the street sits
+    // just inside the panel edge.
+    let (inset_x, inset_y) = (VIEWPORT_W / 2 - 6, VIEWPORT_H / 2 - 4);
+    let mut candidates: Vec<((i32, i32), i32)> = Vec::new();
+    let mut push = |on: bool, point: (i32, i32), side_mid: (i32, i32)| {
+        if on {
+            let d = (side_mid.0 - toward.0)
+                .abs()
+                .max((side_mid.1 - toward.1).abs());
+            candidates.push((point, d));
+        }
+    };
+    push(sides.north, (cx, b.y0 + inset_y), (cx, b.y0));
+    push(sides.south, (cx, b.y1 - inset_y), (cx, b.y1));
+    push(sides.west, (b.x0 + inset_x, cy), (b.x0, cy));
+    push(sides.east, (b.x1 - inset_x, cy), (b.x1, cy));
+    candidates
+        .into_iter()
+        .min_by_key(|&(_, d)| d)
+        .map(|(p, _)| p)
+        .unwrap_or((cx, cy))
 }
 
 /// The one evidence document for both plot subdivision (pass 3) and the

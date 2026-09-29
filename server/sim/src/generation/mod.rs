@@ -393,7 +393,7 @@ pub struct GenerationConfig {
     /// over a fixed seed range (`0..256`), summed low-band mean area over
     /// summed high-band mean area must be at least this percent -- a
     /// density-blind network pools to ~100 (parity), this generator to
-    /// ~300 (Quentin's direction, cycle 4).
+    /// ~289 at `GENERATION_VERSION` 9 (Quentin's direction, cycle 4).
     pub peripheral_pooled_min_ratio_percent: i32,
     /// The hard floor on institutional pocket count `land_use::assign_
     /// institutional`'s own relaxed fallback pass guarantees whenever any
@@ -1579,11 +1579,11 @@ mod tests {
 
     /// Quentin's direction, story 15.10 cycle 2: pinned against the live
     /// committed config, never a fixture -- `max_detour_excess_cells * 100
-    /// / (max_detour_percent - 100)` = `416 * 100 / 100` = 416.
+    /// / (max_detour_percent - 100)` = `400 * 100 / 100` = 400.
     #[test]
     fn detour_ratio_takeover_distance_cells_matches_the_committed_values() {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 416);
+        assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 400);
     }
 
     /// Quentin's direction, story 15.10 cycle 2: an even division, at a
