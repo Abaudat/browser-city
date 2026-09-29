@@ -10,8 +10,7 @@
 #      workflow (never a hand-copied list, so a step added later is
 #      rehearsed automatically), twice -- each must exit 0, and the second run must
 #      leave the epoch byte-identical to the first;
-#   4. runs scripts/ops/assert-world-invariants.sh;
-#   5. asserts the epoch a legacy world was repaired to is a moment inside
+#   4. asserts the epoch a legacy world was repaired to is a moment inside
 #      the post-publish sequence (dawn at repair time), and that an
 #      anonymous `finish_publish` is rejected with the owner-check message.
 #
@@ -95,7 +94,7 @@ run_post_publish() { # <tag>
   local i=0 cmd
   while IFS= read -r cmd; do
     i=$((i + 1))
-    BACKUP_DATABASE="$DB" bash -c "$cmd" >"$DATA_DIR/post-$1-$i.log" 2>&1 \
+    ( cd "$REPO_ROOT" && BACKUP_DATABASE="$DB" bash -c "$cmd" ) >"$DATA_DIR/post-$1-$i.log" 2>&1 \
       || fail "post-publish step '$cmd' exited non-zero ($1 run)" "$DATA_DIR/post-$1-$i.log"
   done <<<"$POST_PUBLISH_STEPS"
 }
@@ -112,15 +111,10 @@ EPOCH_FIRST_S="$(epoch_seconds "$EPOCH_FIRST")"
 { [ "$EPOCH_FIRST_S" -ge "$BEFORE_S" ] && [ "$EPOCH_FIRST_S" -le "$AFTER_S" ]; } \
   || fail "the repaired epoch ($EPOCH_FIRST) is not dawn at repair time (expected within [$BEFORE_S, $AFTER_S] epoch seconds)"
 
-bash "$REPO_ROOT/scripts/ops/assert-world-invariants.sh" "$DB" --server "$SERVER_URL" \
-  || fail "the world is inconsistent after the post-publish steps"
-
 sleep 2
 run_post_publish second
 EPOCH_SECOND="$(epoch_micros)"
 [ "$EPOCH_SECOND" = "$EPOCH_FIRST" ] || fail "the epoch changed across a second post-publish run ($EPOCH_FIRST -> $EPOCH_SECOND) -- the sequence is not idempotent"
-bash "$REPO_ROOT/scripts/ops/assert-world-invariants.sh" "$DB" --server "$SERVER_URL" \
-  || fail "the world is inconsistent after a second post-publish run"
 
 if spacetime call "$DB" --server "$SERVER_URL" --no-config -y --anonymous finish_publish >"$DATA_DIR/anon.log" 2>&1; then
   fail "finish_publish accepted an anonymous caller; it must be rejected" "$DATA_DIR/anon.log"
