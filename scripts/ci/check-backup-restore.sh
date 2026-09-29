@@ -48,7 +48,7 @@
 #      schedules are derived state and this restore never writes one;
 #  10. module_owner has exactly one row after restore and it is the
 #      exported owner; require_owner accepts that owner and rejects an
-#      anonymous caller (reseed_codes, as check-live-migration.sh proves
+#      anonymous caller (finish_publish, as check-live-migration.sh proves
 #      for AC3 -- proven again here because restore is what could have
 #      broken it, by leaving two owner rows or the wrong one);
 #  10a. world_clock's whole row (id, epoch_at) is equal by value in the restored database;
@@ -253,7 +253,7 @@ ok "begin_restore disarms every scheduled table -- zero pending rows on '$DISARM
 # inside a cadence's own fired reducer (never by the arm alone), so right
 # after a restore -- nothing has fired yet -- it still has no row at all. -
 MAINT_PENDING="$(row_count_live "$DST" maintenance_schedule)"
-[ "$MAINT_PENDING" -eq 1 ] || fail "restored '$DST.maintenance_schedule' holds $MAINT_PENDING pending row(s) after rearm_schedules, expected exactly 1"
+[ "$MAINT_PENDING" -eq 1 ] || fail "restored '$DST.maintenance_schedule' holds $MAINT_PENDING pending row(s) after finish_restore, expected exactly 1"
 RESTORED_EPOCH_MICROS="$(column_values_live "$DST" world_clock epoch_at | grep -oE '[0-9]+' | head -n1)"
 # scheduled_at is ScheduleAt (a sum type): SATS tags it as
 # `[variant_index, payload]` -- `[1,[micros]]` for `Time` -- so the
@@ -262,7 +262,7 @@ RESTORED_EPOCH_MICROS="$(column_values_live "$DST" world_clock epoch_at | grep -
 # check-authoritative-loop.sh carries the same fix, same reasoning).
 MAINT_TARGET_MICROS="$(column_values_live "$DST" maintenance_schedule scheduled_at | grep -oE '[0-9]+' | tail -n1)"
 [ -n "$RESTORED_EPOCH_MICROS" ] || fail "could not read '$DST.world_clock.epoch_at'"
-[ -n "$MAINT_TARGET_MICROS" ] || fail "could not read '$DST.maintenance_schedule.scheduled_at' -- rearm_schedules did not arm the maintenance cadence"
+[ -n "$MAINT_TARGET_MICROS" ] || fail "could not read '$DST.maintenance_schedule.scheduled_at' -- finish_restore did not arm the maintenance cadence"
 CITY_MINUTE_MICROS=2500000
 REMAINDER=$(( (MAINT_TARGET_MICROS - RESTORED_EPOCH_MICROS) % CITY_MINUTE_MICROS ))
 [ "$REMAINDER" -eq 0 ] || fail "the restored maintenance cadence's own target ($MAINT_TARGET_MICROS) is not phase-aligned to the restored epoch ($RESTORED_EPOCH_MICROS) at a ${CITY_MINUTE_MICROS}us city-minute grid -- remainder ${REMAINDER}us"
@@ -565,13 +565,13 @@ OWNER_COUNT="$(row_count_live "$DST" module_owner)"
 [ "$OWNER_COUNT" -eq 1 ] || fail "restored 'module_owner' has $OWNER_COUNT row(s), expected exactly 1"
 ok "restored 'module_owner' has exactly one row"
 
-spacetime call "$DST" --server "$SERVER_URL" --no-config -y reseed_codes >"$DATA_DIR/reseed.log" 2>&1 \
-  || fail "reseed_codes failed against the restored database, called as its owner" "$DATA_DIR/reseed.log"
+spacetime call "$DST" --server "$SERVER_URL" --no-config -y finish_publish >"$DATA_DIR/reseed.log" 2>&1 \
+  || fail "finish_publish failed against the restored database, called as its owner" "$DATA_DIR/reseed.log"
 OWNER_REJECTION_PATTERN="this reducer may only be invoked by the module owner"
-if spacetime call "$DST" --server "$SERVER_URL" --no-config -y --anonymous reseed_codes >"$DATA_DIR/reseed-anon.log" 2>&1; then
-  fail "reseed_codes accepted an anonymous caller against the restored database; it must be rejected" "$DATA_DIR/reseed-anon.log"
+if spacetime call "$DST" --server "$SERVER_URL" --no-config -y --anonymous finish_publish >"$DATA_DIR/reseed-anon.log" 2>&1; then
+  fail "finish_publish accepted an anonymous caller against the restored database; it must be rejected" "$DATA_DIR/reseed-anon.log"
 fi
-grep -qF "$OWNER_REJECTION_PATTERN" "$DATA_DIR/reseed-anon.log" || fail "reseed_codes rejected the anonymous call, but not with require_owner's own message" "$DATA_DIR/reseed-anon.log"
+grep -qF "$OWNER_REJECTION_PATTERN" "$DATA_DIR/reseed-anon.log" || fail "finish_publish rejected the anonymous call, but not with require_owner's own message" "$DATA_DIR/reseed-anon.log"
 ok "require_owner accepts the restored owner and rejects an anonymous caller, against the restored database"
 
 # --- 11a: refuses a non-fresh target ---------------------------------------

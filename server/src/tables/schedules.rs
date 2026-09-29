@@ -238,7 +238,7 @@ pub mod cadence_code {
 /// Generates `$name(ctx, origin_micros, speed) -> (target, missed)`, which
 /// re-arms one cadence's scheduled table from `origin_micros`. Shared by
 /// `arm_every_cadence_from` (the initial arm, from `init`/
-/// `finish_restore`), `arm_every_cadence` (from `rearm_schedules`), and
+/// `finish_restore`), `arm_every_cadence` (from `finish_restore`), and
 /// the cadence's own fired reducer (the re-arm after firing). One
 /// invocation per armed cadence, never a hand-copied closure triple.
 macro_rules! arm_schedule {
@@ -361,8 +361,8 @@ pub fn arm_every_cadence_from(ctx: &ReducerContext, epoch_micros: i64, speed: u3
 /// Looks up `world_clock.epoch_at` and arms every cadence from it.
 /// `ok_or(Err)`, never `unwrap`/`expect` (NFR41): an absent epoch aborts
 /// the whole call and arms nothing, which is the correct outcome for an
-/// inconsistent world. The owner-only `rearm_schedules` reducer
-/// (`../lib.rs`) is this function's only caller -- every other caller
+/// inconsistent world. `finish_restore`
+/// (`restore.rs`) is this function's only caller -- every other caller
 /// already has the epoch in hand and calls [`arm_every_cadence_from`]
 /// directly instead.
 pub fn arm_every_cadence(ctx: &ReducerContext) -> Result<(), String> {

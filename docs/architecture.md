@@ -102,7 +102,7 @@ docs/spikes/1.3-scheduled-reducer-timing.md.
 - A cadence's origin is `world_clock.epoch_at`, and its period is a whole number of city minutes.
 - `sim::cadence::next_target` is the only function that computes a reschedule target.
 - A cadence's own scheduled table is armed with `ScheduleAt::Time` alone, never `ScheduleAt::Interval`.
-- `rearm_schedules` (owner-only) rebuilds every schedule from the epoch. Its callers are `init` and `deploy.yml`'s `publish-module` job, beside `reseed_codes`.
+- `finish_publish` (owner-only, idempotent, one transaction) rebuilds every schedule from the epoch, beside establishing every one-row table and seeding every extensible set (see Data model).
 - `begin_restore` disarms every scheduled table before its own preconditions run; `finish_restore` re-arms every cadence after closing the restore, both inside the same transaction chain, so no cadence is ever armed from an epoch outside the world actually open for restore.
 - `cadence_liveness` holds one row per armed cadence, written only by that cadence's own fired reducer.
 - `next_target` takes the clock `speed` and derives its period from the effective minute. A cadence's work is a function of the city minute it fires for: bodies live in `tables/cadences.rs` as `fn(ctx, city_minute)`, and `ctx.timestamp`, `world_clock` and `read_clock` are banned there. A jump's replay starts at each cadence's own pending row (which may already be due); a cadence with no pending row replays nothing. A `time-control` jump replays every skipped grid point through those same bodies in one transaction, in city-minute order, or refuses; `replay_skipped_cadences` names every scheduled table once, as walked, refuse-if-pending, or skipped (an armed cadence a jump leaves alone).
@@ -192,8 +192,11 @@ loud failure instead, never a silent no-op.
   specific wording, pinned to the version `scripts/ci/
   install-spacetimedb-cli.sh` installs) rather than `|| true` on the
   export -- any other failure is a hard failure of the job.
-- `publish-module` calls `reseed_codes` after publishing (NFR36/NFR38,
-  above). NFR33 (an additive-only schema, enforced at PR time) is what
+- `publish-module` calls `finish_publish` after publishing (NFR36/NFR38,
+  above) and ends with `scripts/ops/assert-world-invariants.sh` against
+  Maincloud, so a deploy is red the instant the live world is inconsistent
+  (`scripts/ci/check-deploy-rehearsal.sh` rehearses the same sequence over a
+  world born at the live database's first deploy). NFR33 (an additive-only schema, enforced at PR time) is what
   makes this publish forward-only: there is no schema rollback, only fix
   and republish -- `server/README.md`'s own recovery section.
 - `deploy-client` builds the client with `vite build --base=/browser-city/`
@@ -256,11 +259,16 @@ and just-in-time. So:
   in the same PR (`check-bindings-current.sh`).
 - An extensible set (NFR36) is a `u32` code plus a companion data table,
   never a Rust enum, so a new variant is a row insert rather than a
-  migration. Seeding is idempotent and lives in an explicit `reseed_codes`
-  reducer (called from `init`, and re-callable by hand) rather than on a
+  migration. Seeding is idempotent and lives in `finish_publish` rather than on a
   hot lifecycle path — publishing a module that adds a code is followed by
-  calling `reseed_codes`, automated by `deploy.yml`'s `publish-module` job.
-- An operator-facing reducer (`reseed_codes` is the first) is never left
+  calling it, automated by `deploy.yml`'s `publish-module` job.
+- `init` records the owner, then runs `finish_publish`'s body. `finish_publish`
+  (owner-only, idempotent, one transaction) establishes every one-row table,
+  seeds every extensible set and re-arms every cadence, and errs if a one-row
+  table is still absent; its callers are `init` and `deploy.yml`'s
+  `publish-module` job. A table is never populated by `init` alone: `init`
+  never re-runs on a republish.
+- An operator-facing reducer (`finish_publish` is the first) is never left
   open to any caller: `init` records the publishing identity in the
   one-row `module_owner` table, and the reducer rejects any other caller
   via `tables::ops::require_owner`. The next operator reducer (a balance

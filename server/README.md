@@ -86,24 +86,20 @@ master well before provisioning is finished, with zero effect until it is.
 ```bash
 spacetime start --data-dir .spacetime/data --listen-addr 127.0.0.1:3000   # the local instance
 spacetime publish --yes                                                   # build + publish to it
-spacetime call browser-city reseed_codes                                  # land sim::codes' rows
-spacetime call browser-city rearm_schedules                               # re-derive every scheduled cadence
+spacetime call browser-city finish_publish                                # establish one-row tables, land sim::codes' rows, arm every cadence
 spacetime dev --client-lang typescript \
   --module-bindings-path ../client/src/net/bindings --yes                 # hot-reload on file change
 ```
 
-`reseed_codes` inserts any `sim::codes` row not already present (NFR36/NFR38) and is idempotent, so
-calling it again is always safe. `init` already calls it on a fresh database's first publish; call
-it by hand (as above) after any later publish that adds a code. `deploy.yml`'s `publish-module` job
-calls both `reseed_codes` and `rearm_schedules` automatically after every Maincloud publish, so this
-manual step is only ever needed locally. Both are operator-only: `init` records whoever published the
-module as its owner, and each reducer rejects any other caller, so run the `spacetime call` above as
-the same identity that ran `spacetime publish`.
-
-`rearm_schedules` re-derives every scheduled cadence's own pending row from `world_clock.epoch_at`
-(`docs/architecture.md`'s "Scheduled reducers" section) -- idempotent. It has exactly two callers,
-`init` and `deploy.yml`'s `publish-module` job; a restore re-arms through `finish_restore` itself,
-inside the module's own transaction chain, never through this reducer.
+`finish_publish` ensures the one-row tables (`module_owner`, `world_clock`), inserts any `sim::codes` row
+not already present (NFR36/NFR38) and re-derives every scheduled cadence's pending row from
+`world_clock.epoch_at` (`docs/architecture.md`'s "Scheduled reducers" section); it is idempotent, so
+calling it again is always safe. `init` runs its body on a fresh database's first publish; call it by
+hand after any later publish. `deploy.yml`'s `publish-module` job calls it automatically after every
+Maincloud publish, so the manual step is only ever needed locally. It is operator-only: `init` records
+whoever published the module as its owner, and the reducer rejects any other caller, so run the
+`spacetime call` above as the same identity that ran `spacetime publish`. A restore re-arms through
+`finish_restore` itself, never through this reducer.
 
 `scripts/dev/publish-dev.sh <db> --server local` builds and publishes the module with the
 `time-control` Cargo feature (the dev-only `jump_clock`/`set_clock_speed` reducers, FR163) -- the

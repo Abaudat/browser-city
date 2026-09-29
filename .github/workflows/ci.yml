@@ -432,9 +432,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Full history: check-deploy-rehearsal.sh archives an older commit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 1
+          fetch-depth: 0
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -453,6 +454,9 @@ jobs:
         run: bash scripts/ops/tests/run-all.sh
       - name: story 1.2 AC3, proven against a real SpacetimeDB instance
         run: bash scripts/ci/check-live-migration.sh
+      # Its own disposable local instance and port (3994), never 3987-3993.
+      - name: a deploy onto a world whose init predates today's tables, rehearsed with deploy.yml's own post-publish steps
+        run: bash scripts/ci/check-deploy-rehearsal.sh
       # Story 1.4: its own disposable local instance and port (3988),
       # never 3987 (check-live-migration.sh's) -- run in the same job
       # rather than a second one only because a module build is already

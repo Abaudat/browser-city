@@ -1,5 +1,5 @@
 //! Operator-facing state: today, just who is allowed to call an
-//! operator-only reducer. `reseed_codes` is the module's first one, and
+//! operator-only reducer. `finish_publish` is the module's first one, and
 //! the next will be a balance reload or a world fixup where "whoever felt
 //! like it" is not survivable -- so the check is built once, here, rather
 //! than copied ad hoc per reducer.
@@ -35,7 +35,7 @@ pub fn record_owner_from_init(ctx: &ReducerContext) {
 }
 
 /// Rejects any caller that is not the recorded module owner. An
-/// operator-only reducer (`reseed_codes` today) calls this first, the same
+/// operator-only reducer (`finish_publish` today) calls this first, the same
 /// way a scheduled reducer calls `require_scheduler` -- a caller check
 /// enforced by the type system's absence is a caller check nobody wrote.
 pub fn require_owner(ctx: &ReducerContext) -> Result<(), String> {
@@ -44,4 +44,9 @@ pub fn require_owner(ctx: &ReducerContext) -> Result<(), String> {
         Some(_) => Err("this reducer may only be invoked by the module owner".to_string()),
         None => Err("module owner is not set -- init did not run".to_string()),
     }
+}
+
+/// Whether the `module_owner` row exists.
+pub fn owner_recorded(ctx: &ReducerContext) -> bool {
+    ctx.db.module_owner().id().find(0).is_some()
 }

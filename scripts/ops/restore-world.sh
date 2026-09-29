@@ -242,7 +242,7 @@ done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
 # its own preconditions ran, and finish_restore re-arms every cadence
 # from the epoch just restored -- both inside the module's own
 # transaction chain, so there is no window here for this script to fill
-# and no separate rearm_schedules call to make.
+# and no separate post-publish call to make.
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" finish_restore '[]'
 
 echo "restore-world: ok -- $DB restored from $EXPORT_DIR ($RESTORED table(s) restored, $SKIPPED_SCHEDULED scheduled table(s) skipped)" >&2

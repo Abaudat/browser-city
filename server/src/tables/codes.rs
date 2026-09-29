@@ -45,9 +45,9 @@ pub struct Unit {
 
 /// Inserts every code in `sim::codes` not already present in its companion
 /// table, keyed by `code`. Idempotent, so it is safe to call from `init`
-/// and again from the `reseed_codes` reducer (`../lib.rs`) any time after
+/// and again from the `finish_publish` reducer (`../lib.rs`) any time after
 /// -- `init` only ever runs on the module's first publish, so
-/// `reseed_codes` is the explicit, re-callable path that lands a code
+/// `finish_publish` is the explicit, re-callable path that lands a code
 /// added in month six (NFR38's read-through backfill posture) without
 /// waiting for a data-wiping republish.
 pub fn seed_all_codes(ctx: &ReducerContext) {
