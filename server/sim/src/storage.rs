@@ -1,8 +1,9 @@
-//! Storage figures and the metrics sampler's pure decisions (FR169,
-//! NFR15). SpacetimeDB's module SDK exposes row counts but no byte figure,
-//! so every byte here is an estimate: this module never claims host
-//! storage. The sampler body (`tables::metrics`) is a loop of `count()`
-//! calls feeding these functions and nothing else.
+//! NFR15's storage constants and the metrics sampler's pure decisions
+//! (FR169): total classification, per-table alert, byte scaling and the
+//! retention arithmetic. SpacetimeDB's module SDK exposes row counts but no
+//! byte figure, so every byte here is an estimate: this module never claims
+//! host storage. The sampler body (`tables::metrics`) is a loop of
+//! `count()` calls feeding these functions.
 
 /// NFR15: the storage wall -- the hosting tier's ceiling.
 pub const STORAGE_WALL_BYTES: u64 = 40 * 1024 * 1024 * 1024;
@@ -15,9 +16,6 @@ pub const STORAGE_LAUNCH_ESTIMATE_BYTES: u64 = 200 * 1024 * 1024;
 pub const METRICS_BYTES_SAMPLE_ROWS: u64 = 64;
 /// Real days a sample row is kept.
 pub const METRICS_RETENTION_DAYS: u64 = 90;
-/// Assumed mean encoded size of a variable-length column (`String`,
-/// `Vec<_>`, anything unrecognised), length prefix included.
-pub const VARIABLE_COLUMN_MEAN_BYTES: u64 = 32;
 
 const MICROS_PER_DAY: i64 = 24 * 60 * 60 * 1_000_000;
 
@@ -45,35 +43,6 @@ pub fn over_alert(rows: u64, alert_rows: u64) -> bool {
     rows > alert_rows
 }
 
-/// Estimated encoded bytes of one column of Rust type `ty` (as the schema
-/// snapshot spells it).
-pub fn column_bytes_est(ty: &str) -> u64 {
-    match ty.trim() {
-        "bool" | "u8" | "i8" => 1,
-        "u16" | "i16" => 2,
-        "u32" | "i32" | "f32" => 4,
-        "u64" | "i64" | "f64" | "Timestamp" => 8,
-        "u128" | "i128" => 16,
-        "Identity" => 32,
-        "ScheduleAt" => 9,
-        other => match other
-            .strip_prefix("Option<")
-            .and_then(|s| s.strip_suffix('>'))
-        {
-            Some(inner) => 1 + column_bytes_est(inner),
-            None => VARIABLE_COLUMN_MEAN_BYTES,
-        },
-    }
-}
-
-/// Estimated encoded bytes of one row with the given column types.
-pub fn row_bytes_est<S: AsRef<str>>(column_types: &[S]) -> u64 {
-    column_types
-        .iter()
-        .map(|t| column_bytes_est(t.as_ref()))
-        .sum()
-}
-
 /// Scales `sampled_bytes` (over `sampled_rows` serialised rows) to a table
 /// of `count` rows. Zero rows or zero sampled rows is zero bytes, never a
 /// division; the result saturates rather than wraps.
@@ -83,6 +52,12 @@ pub fn scale_bytes_est(sampled_bytes: u64, sampled_rows: u64, count: u64) -> u64
     }
     let scaled = sampled_bytes as u128 * count as u128 / sampled_rows as u128;
     u64::try_from(scaled).unwrap_or(u64::MAX)
+}
+
+/// How many of the oldest rows must go so that a table holding `count`
+/// rows still fits `max_rows` after `incoming` more are inserted.
+pub fn rows_to_drop(count: u64, incoming: u64, max_rows: u64) -> u64 {
+    count.saturating_add(incoming).saturating_sub(max_rows)
 }
 
 /// Rows stamped before this instant are pruned (real microseconds).
@@ -120,22 +95,17 @@ mod tests {
     }
 
     #[test]
-    fn a_fixed_width_row_is_exact() {
-        // u64 + Timestamp + u32 + bool
-        assert_eq!(row_bytes_est(&["u64", "Timestamp", "u32", "bool"]), 21);
-    }
-
-    #[test]
-    fn a_string_column_uses_the_assumed_mean() {
+    fn rows_to_drop_is_exact_at_the_boundary() {
+        assert_eq!(rows_to_drop(0, 30, 100), 0, "an empty table drops nothing");
+        assert_eq!(rows_to_drop(70, 30, 100), 0, "exactly full drops nothing");
+        assert_eq!(rows_to_drop(71, 30, 100), 1, "one over drops one");
+        assert_eq!(rows_to_drop(100, 30, 100), 30);
         assert_eq!(
-            row_bytes_est(&["u64", "String"]),
-            8 + VARIABLE_COLUMN_MEAN_BYTES
+            rows_to_drop(0, 150, 100),
+            50,
+            "incoming larger than the bound"
         );
-        assert_eq!(
-            column_bytes_est("Vec<(u32, u32)>"),
-            VARIABLE_COLUMN_MEAN_BYTES
-        );
-        assert_eq!(column_bytes_est("Option<u32>"), 5);
+        assert_eq!(rows_to_drop(u64::MAX, u64::MAX, 1), u64::MAX - 1);
     }
 
     #[test]

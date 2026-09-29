@@ -48,6 +48,38 @@ pub struct TableDef {
     pub columns: Vec<ColumnDef>,
 }
 
+/// Assumed mean encoded size of a variable-length column (`String`,
+/// `Vec<_>`, anything unrecognised), length prefix included.
+pub const VARIABLE_COLUMN_MEAN_BYTES: u64 = 32;
+
+/// Estimated encoded bytes of one column of Rust type `ty` (as the schema
+/// snapshot spells it): a static pricing, never a measurement.
+pub fn column_bytes_est(ty: &str) -> u64 {
+    match ty.trim() {
+        "bool" | "u8" | "i8" => 1,
+        "u16" | "i16" => 2,
+        "u32" | "i32" | "f32" => 4,
+        "u64" | "i64" | "f64" | "Timestamp" => 8,
+        "u128" | "i128" => 16,
+        "Identity" => 32,
+        "ScheduleAt" => 9,
+        other => match other
+            .strip_prefix("Option<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
+            Some(inner) => 1 + column_bytes_est(inner),
+            None => VARIABLE_COLUMN_MEAN_BYTES,
+        },
+    }
+}
+
+impl TableDef {
+    /// Estimated encoded bytes of one row of this table.
+    pub fn row_bytes_est(&self) -> u64 {
+        self.columns.iter().map(|c| column_bytes_est(&c.ty)).sum()
+    }
+}
+
 /// The whole module's table shape, sorted by accessor so the committed
 /// snapshot's diff is never just filesystem walk order changing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -396,6 +428,50 @@ pub fn reducer_names_in_dir(src_dir: &Path) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn table_of(types: &[&str]) -> TableDef {
+        TableDef {
+            accessor: "t".into(),
+            struct_name: "T".into(),
+            public: false,
+            scheduled_reducer: None,
+            wide_table_waiver: None,
+            columns: types
+                .iter()
+                .map(|ty| ColumnDef {
+                    name: "c".into(),
+                    ty: (*ty).into(),
+                    primary_key: false,
+                    auto_inc: false,
+                    unique: false,
+                    has_default: false,
+                    indexed: false,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_fixed_width_row_is_exact() {
+        // u64 + Timestamp + u32 + bool
+        assert_eq!(
+            table_of(&["u64", "Timestamp", "u32", "bool"]).row_bytes_est(),
+            21
+        );
+    }
+
+    #[test]
+    fn a_string_column_uses_the_assumed_mean() {
+        assert_eq!(
+            table_of(&["u64", "String"]).row_bytes_est(),
+            8 + VARIABLE_COLUMN_MEAN_BYTES
+        );
+        assert_eq!(
+            column_bytes_est("Vec<(u32, u32)>"),
+            VARIABLE_COLUMN_MEAN_BYTES
+        );
+        assert_eq!(column_bytes_est("Option<u32>"), 5);
+    }
 
     #[test]
     fn parses_one_simple_table() {

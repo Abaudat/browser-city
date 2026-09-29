@@ -33,7 +33,7 @@ STUB
 run_report() { # <storage-rows> <table-rows>
   local bin
   bin="$(stub_bin "$1" "$2")"
-  ( PATH="$bin:$PATH" bash "$REPORT" my-db --server http://127.0.0.1:1 )
+  ( PATH="$bin:$PATH" bash "$REPORT" my-db --server http://127.0.0.1:1 --now "${NOW:-150}" )
 }
 
 echo "a healthy newest fire"
@@ -63,6 +63,15 @@ echo "only the newest fire counts"
 OUT="$(run_report '[[1,100,5000,true,false],[2,200,6000,false,false]]' '[[1,100,"citizen",95,80,90,100,true],[2,200,"citizen",10,80,90,100,false]]' 2>&1)"; CODE=$?
 check "an older breach is history -> exit 0" 0 bash -c "exit $CODE"
 check_contains "reports the newest total" "estimated total 6000 bytes" "$OUT"
+
+echo
+echo "a sampler that has stopped is a breach: the newest sample older than three periods"
+STALE=$((3 * 3600 * 1000000))
+OUT="$(NOW=$((100 + STALE)) run_report '[[1,100,5000,false,false]]' '[]' 2>&1)"; CODE=$?
+check "exactly three periods old -> exit 0" 0 bash -c "exit $CODE"
+OUT="$(NOW=$((100 + STALE + 1)) run_report '[[1,100,5000,false,false]]' '[]' 2>&1)"; CODE=$?
+check "one microsecond past three periods -> exit 1" 1 bash -c "exit $CODE"
+check_contains "says the sampler stopped" "the sampler has stopped" "$OUT"
 
 echo
 echo "usage errors"

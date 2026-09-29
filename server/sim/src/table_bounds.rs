@@ -300,3 +300,11 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         kind: BoundKind::Engineering,
     },
 ];
+
+/// The declared `max_rows` for `accessor`, if registered.
+pub fn max_rows_of(accessor: &str) -> Option<u64> {
+    TABLE_BOUNDS
+        .iter()
+        .find(|b| b.accessor == accessor)
+        .map(|b| b.max_rows)
+}

@@ -103,14 +103,6 @@ jobs:
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
         run: bash scripts/ops/export-world.sh "$BACKUP_DATABASE" "$RUNNER_TEMP/export" --server maincloud
 
-      # Exits 1 when the metrics sampler's newest samples carry a breach
-      # flag (an over-alert table, or the estimated total past the review
-      # trigger or the wall).
-      - name: report storage (the sampler's newest breach flags)
-        env:
-          BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
-        run: bash scripts/ops/storage-report.sh "$BACKUP_DATABASE" --server maincloud
-
       - name: encrypt the export before it ever touches an artifact
         env:
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
@@ -127,6 +119,17 @@ jobs:
           name: world-export-${{ github.run_id }}
           path: ${{ runner.temp }}/export.tar.gz.gpg
           retention-days: 90
+
+      # Exits 1 when the metrics sampler's newest samples carry a breach
+      # flag (an over-alert table, or the estimated total past the review
+      # trigger or the wall), or the sampler has gone stale. Last, and
+      # `always()`: an alarm never stands between the export and its
+      # artifact (check-deploy-workflow.sh pins the order).
+      - name: report storage (the sampler's newest breach flags)
+        if: always()
+        env:
+          BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
+        run: bash scripts/ops/storage-report.sh "$BACKUP_DATABASE" --server maincloud
 
   rehearsal:
     name: rehearsal

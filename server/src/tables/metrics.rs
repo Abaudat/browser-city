@@ -13,10 +13,11 @@
 //! a roughly constant factor; the review trigger is set low enough for
 //! that. The work per fire never grows with table size.
 //!
-//! The sampler's own tables are bounded by retention: each fire deletes
-//! rows older than `METRICS_RETENTION_DAYS` through the `sampled_at`
-//! index. `sample_all_tables` names every table exactly once;
-//! `bounds/tests/metrics_coverage.rs` enforces it.
+//! The sampler's own tables are bounded by retention and by their own
+//! declared `max_rows`: each fire deletes rows older than
+//! `METRICS_RETENTION_DAYS`, then the oldest rows past the bound, through
+//! the `sampled_at` index. `sample_all_tables` names every table exactly
+//! once; `bounds/tests/metrics_coverage.rs` enforces it.
 
 use spacetimedb::sats::bsatn;
 use spacetimedb::{ReducerContext, Table, Timestamp};
@@ -72,8 +73,10 @@ pub struct StorageSample {
 }
 
 /// Estimated bytes of `table`: encode the first
-/// `METRICS_BYTES_SAMPLE_ROWS` rows and scale to the row count.
-fn table_bytes_est<T: Table>(table: &T, count: u64) -> Result<u64, String>
+/// `METRICS_BYTES_SAMPLE_ROWS` rows and scale to the row count. A row that
+/// cannot be encoded is logged and contributes nothing -- the sampler never
+/// fails.
+fn table_bytes_est<T: Table>(table: &T, count: u64) -> u64
 where
     T::Row: spacetimedb::sats::ser::Serialize,
 {
@@ -83,41 +86,46 @@ where
         .iter()
         .take(sim::storage::METRICS_BYTES_SAMPLE_ROWS as usize)
     {
-        let encoded = bsatn::to_vec(&row).map_err(|e| format!("cannot encode a row: {e}"))?;
         sampled_rows += 1;
-        sampled_bytes += encoded.len() as u64;
+        match bsatn::to_vec(&row) {
+            Ok(encoded) => sampled_bytes += encoded.len() as u64,
+            Err(e) => log::error!("metrics: cannot encode a row: {e}"),
+        }
     }
-    Ok(sim::storage::scale_bytes_est(
-        sampled_bytes,
-        sampled_rows,
-        count,
-    ))
+    sim::storage::scale_bytes_est(sampled_bytes, sampled_rows, count)
 }
 
-/// Samples every table this module declares. One `sample!(accessor)` per
-/// table; figures are gathered before anything is inserted so a fire never
-/// counts its own rows.
-fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) -> Result<(), String> {
+/// Samples every table this module declares, then bounds the sample tables
+/// and inserts. One `sample!(accessor)` per table; figures are gathered
+/// before anything is inserted so a fire never counts its own rows. Never
+/// fails: a table missing from the registry is written as a breach.
+fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     let mut taken: Vec<TableSample> = Vec::new();
     macro_rules! sample {
         ($accessor:ident) => {{
             let name = stringify!($accessor);
             let bound = sim::table_bounds::TABLE_BOUNDS
                 .iter()
-                .find(|b| b.accessor == name)
-                .ok_or_else(|| format!("table `{name}` has no bound in TABLE_BOUNDS"))?;
+                .find(|b| b.accessor == name);
+            let (alert_rows, max_rows) = match bound {
+                Some(b) => (b.alert_rows, b.max_rows),
+                None => {
+                    log::error!("metrics: table `{name}` has no bound in TABLE_BOUNDS");
+                    (0, 0)
+                }
+            };
             let table = ctx.db.$accessor();
             let rows = table.count();
-            let bytes_est = table_bytes_est(table, rows)?;
             taken.push(TableSample {
                 sample_id: 0,
                 sampled_at: now,
                 table_accessor: name.to_string(),
                 rows,
-                bytes_est,
-                alert_rows: bound.alert_rows,
-                max_rows: bound.max_rows,
-                over_alert: sim::storage::over_alert(rows, bound.alert_rows),
+                bytes_est: table_bytes_est(table, rows),
+                alert_rows,
+                max_rows,
+                // No bound at all is itself a breach.
+                over_alert: bound.is_none() || sim::storage::over_alert(rows, alert_rows),
             });
         }};
     }
@@ -170,6 +178,7 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) -> Result<(), String>
     if class != sim::storage::StorageClass::Ok {
         log::warn!("metrics: estimated storage {total} bytes is {class:?}");
     }
+    prune(ctx, now, taken.len() as u64, 1);
     for s in taken {
         ctx.db.table_sample().insert(s);
     }
@@ -180,41 +189,57 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) -> Result<(), String>
         over_review: class >= sim::storage::StorageClass::Review,
         over_wall: class == sim::storage::StorageClass::Wall,
     });
-    Ok(())
 }
 
-/// Deletes sample rows older than the retention window, through the
-/// `sampled_at` index -- never a full scan.
-fn prune(ctx: &ReducerContext, now: Timestamp) {
+/// Bounds the sample tables before this fire's rows go in: deletes rows
+/// older than the retention window in one ranged call per table, then the
+/// oldest rows past the table's own declared `max_rows` (retention is real
+/// time and the cadence is city time, so a fast clock outruns the age
+/// window). Both go through the `sampled_at` index -- never a full scan.
+fn prune(ctx: &ReducerContext, now: Timestamp, incoming_tables: u64, incoming_totals: u64) {
     let cutoff = Timestamp::from_micros_since_unix_epoch(sim::storage::retention_cutoff_micros(
         now.to_micros_since_unix_epoch(),
     ));
-    let old: Vec<u64> = ctx
+    ctx.db.table_sample().sampled_at().delete(..cutoff);
+    ctx.db.storage_sample().sampled_at().delete(..cutoff);
+
+    let drop = sim::storage::rows_to_drop(
+        ctx.db.table_sample().count(),
+        incoming_tables,
+        sim::table_bounds::max_rows_of("table_sample").unwrap_or(0),
+    );
+    let oldest: Vec<u64> = ctx
         .db
         .table_sample()
         .sampled_at()
-        .filter(..cutoff)
+        .filter(Timestamp::from_micros_since_unix_epoch(i64::MIN)..)
+        .take(drop as usize)
         .map(|r| r.sample_id)
         .collect();
-    for id in old {
+    for id in oldest {
         ctx.db.table_sample().sample_id().delete(id);
     }
-    let old: Vec<u64> = ctx
+    let drop = sim::storage::rows_to_drop(
+        ctx.db.storage_sample().count(),
+        incoming_totals,
+        sim::table_bounds::max_rows_of("storage_sample").unwrap_or(0),
+    );
+    let oldest: Vec<u64> = ctx
         .db
         .storage_sample()
         .sampled_at()
-        .filter(..cutoff)
+        .filter(Timestamp::from_micros_since_unix_epoch(i64::MIN)..)
+        .take(drop as usize)
         .map(|r| r.sample_id)
         .collect();
-    for id in old {
+    for id in oldest {
         ctx.db.storage_sample().sample_id().delete(id);
     }
 }
 
-/// One sampler fire: prune, then sample. A breached bound is never a
-/// reason to fail -- the caller still re-arms.
-pub fn run_sampler(ctx: &ReducerContext) -> Result<(), String> {
-    let now = ctx.timestamp;
-    prune(ctx, now);
-    sample_all_tables(ctx, now)
+/// One sampler fire. Infallible: a breached bound or an unencodable row is
+/// recorded and logged, never a reason to abort -- an `Err` would roll back
+/// the caller's re-arm and stop the cadence.
+pub fn run_sampler(ctx: &ReducerContext) {
+    sample_all_tables(ctx, ctx.timestamp);
 }

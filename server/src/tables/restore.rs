@@ -143,6 +143,8 @@ const INIT_SEEDED_TABLES: &[&str] = &[
     "unit",
     "layer_code",
     "cadence_liveness",
+    "storage_sample",
+    "table_sample",
 ];
 
 /// Every non-scheduled table that is never pre-populated before
@@ -168,8 +170,6 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "placed_object",
     "room",
     "room_area",
-    "storage_sample",
-    "table_sample",
 ];
 
 /// Opens a restore. Disarms every scheduled table first
@@ -192,6 +192,30 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
         return Err("a restore is already open -- call finish_restore first".to_string());
     }
     super::schedules::disarm_all_scheduled_tables(ctx);
+    // The metrics samples are ops data measured from the target's own
+    // pre-restore state, worthless by definition, and the sampler may have
+    // fired on a target published more than an hour ago: cleared here
+    // (after the disarm, so no fire lands in between) rather than required
+    // empty, the same stance `restore_cadence_liveness` takes. The
+    // `restore_*` reducers then restore into the empty tables.
+    for id in ctx
+        .db
+        .table_sample()
+        .iter()
+        .map(|r| r.sample_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.table_sample().sample_id().delete(id);
+    }
+    for id in ctx
+        .db
+        .storage_sample()
+        .iter()
+        .map(|r| r.sample_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.storage_sample().sample_id().delete(id);
+    }
     let mut nonempty: Vec<&str> = Vec::new();
     if ctx.db.demo_ping().iter().next().is_some() {
         nonempty.push("demo_ping");
@@ -225,12 +249,6 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.room_area().iter().next().is_some() {
         nonempty.push("room_area");
-    }
-    if ctx.db.storage_sample().iter().next().is_some() {
-        nonempty.push("storage_sample");
-    }
-    if ctx.db.table_sample().iter().next().is_some() {
-        nonempty.push("table_sample");
     }
     if !nonempty.is_empty() {
         return Err(format!(

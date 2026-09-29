@@ -9,31 +9,28 @@
 use bounds::TABLE_BOUNDS;
 use bounds::schema::{module_src_dir, parse_module_schema};
 use sim::storage::{
-    METRICS_RETENTION_DAYS, STORAGE_LAUNCH_ESTIMATE_BYTES, STORAGE_REVIEW_BYTES,
-    STORAGE_WALL_BYTES, row_bytes_est,
+    METRICS_RETENTION_DAYS, STORAGE_LAUNCH_ESTIMATE_BYTES, STORAGE_REVIEW_BYTES, STORAGE_WALL_BYTES,
 };
 
-fn row_bytes(accessor: &str) -> u64 {
+/// Each registered table's estimated row size, from one parse of `../src`.
+fn priced(f: impl Fn(&bounds::TableBound) -> u64) -> u128 {
     let schema = parse_module_schema(&module_src_dir());
-    let table = schema
-        .tables
-        .iter()
-        .find(|t| t.accessor == accessor)
-        .unwrap_or_else(|| panic!("no table `{accessor}`"));
-    let types: Vec<&str> = table.columns.iter().map(|c| c.ty.as_str()).collect();
-    row_bytes_est(&types)
-}
-
-fn sum(f: impl Fn(&bounds::TableBound) -> u64) -> u128 {
     TABLE_BOUNDS
         .iter()
-        .map(|b| f(b) as u128 * row_bytes(b.accessor) as u128)
+        .map(|b| {
+            let table = schema
+                .tables
+                .iter()
+                .find(|t| t.accessor == b.accessor)
+                .unwrap_or_else(|| panic!("no table `{}`", b.accessor));
+            f(b) as u128 * table.row_bytes_est() as u128
+        })
         .sum()
 }
 
 #[test]
 fn nfr15_expected_rows_priced_stay_under_the_review_trigger() {
-    let total = sum(|b| b.expected_rows);
+    let total = priced(|b| b.expected_rows);
     assert!(
         total < STORAGE_REVIEW_BYTES as u128,
         "sum of expected_rows * row_bytes is {total}, past the review trigger {STORAGE_REVIEW_BYTES}"
@@ -42,7 +39,7 @@ fn nfr15_expected_rows_priced_stay_under_the_review_trigger() {
 
 #[test]
 fn nfr15_max_rows_priced_stay_under_the_wall() {
-    let total = sum(|b| b.max_rows);
+    let total = priced(|b| b.max_rows);
     assert!(
         total < STORAGE_WALL_BYTES as u128,
         "sum of max_rows * row_bytes is {total}, past the wall {STORAGE_WALL_BYTES}"
@@ -81,4 +78,15 @@ fn storage_sample_alert_covers_the_retention_window() {
         "retention keeps {needed} storage_sample rows, past its alert_rows {}",
         bound("storage_sample").alert_rows
     );
+}
+
+#[test]
+fn the_count_cap_the_sampler_enforces_is_the_registrys_own_max_rows() {
+    for accessor in ["table_sample", "storage_sample"] {
+        assert_eq!(
+            sim::table_bounds::max_rows_of(accessor),
+            Some(bound(accessor).max_rows),
+            "`{accessor}`: the sampler's count cap must be its registered max_rows"
+        );
+    }
 }

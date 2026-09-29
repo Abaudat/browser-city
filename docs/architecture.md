@@ -113,8 +113,8 @@ docs/spikes/1.3-scheduled-reducer-timing.md.
 - Each fire writes one `table_sample` row per table (`rows` from `count()`, `bytes_est`, the declared `alert_rows`/`max_rows`, `over_alert = rows > alert_rows`) and one `storage_sample` row (`total_bytes_est`, `over_review`, `over_wall`, classified by `sim::storage::classify_total`). Both tables are private; breaches are columns, and a `log::warn!` accompanies them.
 - `bytes_est` is an estimate: the BSATN size of the first `METRICS_BYTES_SAMPLE_ROWS` (64) rows scaled to `rows`. It excludes indexes and the commit log. No per-fire cost grows with table size.
 - `sample_all_tables` names every table exactly once (`bounds/tests/metrics_coverage.rs`).
-- Each fire deletes samples older than `METRICS_RETENTION_DAYS` (90) through the `sampled_at` index.
-- `scripts/ops/storage-report.sh <database> [--server]` prints the newest samples and exits 1 on any breach flag; `backup.yml` runs it after the export.
+- The sample tables are bounded by retention and by their own declared `max_rows`: each fire deletes samples older than `METRICS_RETENTION_DAYS` (90), then the oldest past the bound, through the `sampled_at` index. `run_sampler` is infallible, so a failure never stops the re-arm. `begin_restore` clears both tables.
+- `scripts/ops/storage-report.sh <database> [--server]` prints the newest samples and exits 1 on any breach flag or a newest sample older than three sampler periods; `backup.yml` runs it last, after the artifact upload (`check-deploy-workflow.sh` pins the order).
 
 ## Time
 

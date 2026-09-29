@@ -338,8 +338,9 @@ pub fn sample_metrics(ctx: &ReducerContext, row: MetricsSampleSchedule) -> Resul
     let origin_micros = schedule_at_micros(row.scheduled_at)?;
     let (epoch_micros, speed) =
         read_clock(ctx).ok_or_else(|| "world_clock has no row -- init did not run".to_string())?;
-    // A breached bound is recorded, never a reason to skip the re-arm.
-    metrics::run_sampler(ctx)?;
+    // Infallible by construction: nothing between the clock read and the
+    // re-arm may abort, or the cadence would stop.
+    metrics::run_sampler(ctx);
     let (_next_target_micros, missed) = arm_metrics_schedule(ctx, epoch_micros, speed);
     record_cadence_fire(ctx, cadence_code::METRICS, origin_micros, missed);
     Ok(())
