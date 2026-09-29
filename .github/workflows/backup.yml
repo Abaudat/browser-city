@@ -103,6 +103,14 @@ jobs:
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
         run: bash scripts/ops/export-world.sh "$BACKUP_DATABASE" "$RUNNER_TEMP/export" --server maincloud
 
+      # Exits 1 when the metrics sampler's newest samples carry a breach
+      # flag (an over-alert table, or the estimated total past the review
+      # trigger or the wall).
+      - name: report storage (the sampler's newest breach flags)
+        env:
+          BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
+        run: bash scripts/ops/storage-report.sh "$BACKUP_DATABASE" --server maincloud
+
       - name: encrypt the export before it ever touches an artifact
         env:
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}

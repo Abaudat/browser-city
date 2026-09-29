@@ -56,6 +56,8 @@ import RestoreProvisionReducer from "./restore_provision_reducer";
 import RestoreReasonCodeReducer from "./restore_reason_code_reducer";
 import RestoreRoomReducer from "./restore_room_reducer";
 import RestoreRoomAreaReducer from "./restore_room_area_reducer";
+import RestoreStorageSampleReducer from "./restore_storage_sample_reducer";
+import RestoreTableSampleReducer from "./restore_table_sample_reducer";
 import RestoreUnitReducer from "./restore_unit_reducer";
 import RestoreWorldClockReducer from "./restore_world_clock_reducer";
 import SendPingReducer from "./send_ping_reducer";
@@ -139,6 +141,8 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_reason_code", RestoreReasonCodeReducer),
   __reducerSchema("restore_room", RestoreRoomReducer),
   __reducerSchema("restore_room_area", RestoreRoomAreaReducer),
+  __reducerSchema("restore_storage_sample", RestoreStorageSampleReducer),
+  __reducerSchema("restore_table_sample", RestoreTableSampleReducer),
   __reducerSchema("restore_unit", RestoreUnitReducer),
   __reducerSchema("restore_world_clock", RestoreWorldClockReducer),
   __reducerSchema("send_ping", SendPingReducer),

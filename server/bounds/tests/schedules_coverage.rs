@@ -121,8 +121,8 @@ fn disarm_all_scheduled_tables_covers_every_scheduled_table_and_nothing_else() {
 }
 
 /// A clock jump's replay (`replay_skipped_cadences`) must account for
-/// every scheduled table exactly once -- walked (`walk!`) or refused if
-/// pending (`refuse!`) -- so a cadence added later cannot be silently
+/// every scheduled table exactly once -- walked (`walk!`), refused if
+/// pending (`refuse!`) or left alone (`skip!`) -- so a cadence added later cannot be silently
 /// skipped by a jump.
 #[test]
 fn replay_skipped_cadences_accounts_for_every_scheduled_table_exactly_once() {
@@ -131,6 +131,7 @@ fn replay_skipped_cadences_accounts_for_every_scheduled_table_exactly_once() {
     let body = fn_body(&text, "replay_skipped_cadences");
     let mut calls = macro_calls(body, "walk!(");
     calls.extend(macro_calls(body, "refuse!("));
+    calls.extend(macro_calls(body, "skip!("));
     let mut scheduled: Vec<&str> = schema
         .tables
         .iter()
@@ -142,7 +143,7 @@ fn replay_skipped_cadences_accounts_for_every_scheduled_table_exactly_once() {
     calls.sort_unstable();
     assert_eq!(
         calls, scheduled,
-        "replay_skipped_cadences's walk!/refuse! calls must name every scheduled table exactly once"
+        "replay_skipped_cadences's walk!/refuse!/skip! calls must name every scheduled table exactly once"
     );
 }
 

@@ -202,6 +202,27 @@ export const RoomArea = __t.object("RoomArea", {
 });
 export type RoomArea = __Infer<typeof RoomArea>;
 
+export const StorageSample = __t.object("StorageSample", {
+  sampleId: __t.u64(),
+  sampledAt: __t.timestamp(),
+  totalBytesEst: __t.u64(),
+  overReview: __t.bool(),
+  overWall: __t.bool(),
+});
+export type StorageSample = __Infer<typeof StorageSample>;
+
+export const TableSample = __t.object("TableSample", {
+  sampleId: __t.u64(),
+  sampledAt: __t.timestamp(),
+  tableAccessor: __t.string(),
+  rows: __t.u64(),
+  bytesEst: __t.u64(),
+  alertRows: __t.u64(),
+  maxRows: __t.u64(),
+  overAlert: __t.bool(),
+});
+export type TableSample = __Infer<typeof TableSample>;
+
 export const Unit = __t.object("Unit", {
   code: __t.u32(),
   name: __t.string(),

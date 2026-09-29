@@ -691,7 +691,7 @@ rows below cover the mechanism and the production gate.
 | FR163: an over-cap jump, a zero jump and an invalid multiplier fail and change nothing | covered | `scripts/ci/check-time-control.sh` -- `an over-cap jump, a zero jump and an invalid speed were refused` |
 | FR163: the multiplier runs the authoritative loop faster, not only the displayed clock | covered | `scripts/ci/check-time-control.sh` -- `maintenance fired` |
 | FR163: a pending target already due (undispatched) is replayed, a cadence with no pending row replays nothing, and a replayed tick is handed the same city minute a live tick is | covered | `server/sim/src/cadence.rs` -- `a_pending_target_already_due_is_replayed`, `a_cadence_with_no_pending_row_replays_nothing`; `server/sim/tests/invariants.rs` -- `replayed_and_live_ticks_get_the_same_city_minute` |
-| FR163: every scheduled table is walked or refused by a jump, exactly once | covered | `server/bounds/tests/schedules_coverage.rs` -- `replay_skipped_cadences_accounts_for_every_scheduled_table_exactly_once` |
+| FR163: every scheduled table is walked, refused or skipped by a jump, exactly once | covered | `server/bounds/tests/schedules_coverage.rs` -- `replay_skipped_cadences_accounts_for_every_scheduled_table_exactly_once` |
 | FR163: a cadence body cannot read real time, so a replayed tick and a live tick are one code path | covered | `scripts/ci/check-server-src-bans.sh`, `scripts/ci/tests/test-check-server-src-bans.sh` -- `ctx.timestamp is banned in cadences.rs`, `world_clock is banned in cadences.rs`, `read_clock is banned in cadences.rs` |
 | FR168: the production module has no time-control reducer at all, and a call to one is refused as a nonexistent reducer | covered | `scripts/ci/check-authoritative-loop.sh` -- `the production build carries no jump_clock/set_clock_speed`, `.github/workflows/ci.yml` -- the `build` job's sentinel greps on the production and `time-control` wasm |
 | The developer CLI refuses a non-numeric, zero or backward argument before any call is made | covered | `scripts/ci/tests/test-clock-sh.sh` -- `a non-numeric argument fails`, `a backward jump fails`, `no bad invocation reached spacetime` |
@@ -719,6 +719,28 @@ in `ci.yml`'s `migrate` job.
 | Every scheduled table is disarmed before `begin_restore`'s own preconditions run: on the target, every scheduled table holds zero pending rows immediately after `begin_restore` returns, before any `restore_*` call | covered | `scripts/ci/check-backup-restore.sh` |
 | `disarm_all_scheduled_tables`'s own `disarm!(...)` calls name every scheduled table the schema declares, and nothing else, so a scheduled table added without one is a build failure, not a silent hole in the restore race the disarm closes | covered | `server/bounds/tests/schedules_coverage.rs` |
 | A restored world resumes its cadence, phase-aligned to the restored epoch, via `finish_restore`'s own re-arm | covered | `scripts/ci/check-backup-restore.sh` |
+
+## Table bounds and the metrics sampler
+
+Story 4.12 (FR169, NFR15, NFR37): every table declares a bound triple
+(`max_rows`, `expected_rows`, `alert_rows`, `sim::table_bounds`), and the
+metrics sampler (`tables::metrics`) turns it into durable `table_sample`
+/`storage_sample` rows. Bytes are an estimate, never host storage.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| NFR37: every table has a bound, every bound names a real table, and no accessor is registered twice | covered | `server/bounds/tests/registry_matches_tables.rs` -- `every_table_has_a_declared_bound`, `every_registered_bound_has_a_matching_table`, `no_accessor_is_registered_twice` |
+| NFR37: every bound is a well-shaped triple (`0 < expected_rows <= alert_rows <= max_rows`), and an Engineering alert fires strictly before its ceiling | covered | `server/bounds/tests/registry_matches_tables.rs` -- `every_bound_is_a_well_shaped_triple`, `an_engineering_alert_fires_strictly_before_its_ceiling` |
+| FR169: `sample_all_tables` names every table the schema declares (the sampler's own tables and every scheduled table included) exactly once, and nothing else | covered | `server/bounds/tests/metrics_coverage.rs` -- `every_declared_table_is_sampled`, `nothing_undeclared_is_sampled`, `every_table_is_sampled_exactly_once` |
+| FR169: the sample tables' bounds cover their retention window for every registered table, so registering a table or lengthening retention without raising the ceiling fails the build | covered | `server/bounds/tests/storage_budget.rs` -- `table_sample_alert_covers_the_retention_window_of_every_registered_table`, `storage_sample_alert_covers_the_retention_window` |
+| NFR15: the registry's expected rows, priced by the row-size estimator, stay under the review trigger, and its ceilings under the wall | covered | `server/bounds/tests/storage_budget.rs` -- `nfr15_expected_rows_priced_stay_under_the_review_trigger`, `nfr15_max_rows_priced_stay_under_the_wall`, `nfr15_launch_estimate_is_under_the_review_trigger` |
+| NFR15: the three figures are named constants; the row-size estimator is exact for fixed-width columns and applies the assumed mean for variable-length ones; byte scaling never divides by zero | covered | `server/sim/src/storage.rs` -- `nfr15_figures`, `a_fixed_width_row_is_exact`, `a_string_column_uses_the_assumed_mean`, `scaling_handles_zero_and_never_divides_by_zero` |
+| FR169: storage classification is monotonic and exact at its boundaries; a table's `over_alert` is strictly past `alert_rows`; retention prunes ninety days back | covered | `server/sim/src/storage.rs` -- `classification_boundaries_are_exact`, `classification_is_monotonic`, `over_alert_is_strictly_past_the_threshold`, `over_alert_is_monotonic_in_rows_and_antitone_in_threshold`, `retention_cutoff_is_ninety_days_back`, `scaled_bytes_grow_with_count` |
+| FR169: the sampler runs hourly at speed 1 (one city day) | covered | `server/sim/src/cadence.rs` -- `the_metrics_period_is_one_real_hour_at_speed_one` |
+| FR169: a fire writes exactly one `table_sample` row per table (the table list read from the schema snapshot) plus one `storage_sample` row, and each static table's sampled `rows` equals its own row count | covered | `scripts/ci/check-metrics-sampler.sh` -- `exactly one table_sample row per table`, `each static table's sampled row_count equals its own row count` |
+| FR169: samples carry the declared alert/max, and no breach flag is set on a fresh world | covered | `scripts/ci/check-metrics-sampler.sh` -- `the declared alert/max are carried, and no breach flag is set on a fresh world` |
+| FR169: a direct call to `sample_metrics` is rejected by `require_scheduler` and the sample tables are unchanged | covered | `scripts/ci/check-metrics-sampler.sh` -- `a direct call to sample_metrics was rejected by require_scheduler` |
+| FR169: `storage-report.sh` reads the newest fire only, and exits 1 exactly when a breach flag is set | covered | `scripts/ops/tests/test-storage-report.sh` -- `over_review -> exit 1`, `over_wall -> exit 1`, `a table over_alert -> exit 1`, `an older breach is history -> exit 0` |
 
 ## CI guards
 

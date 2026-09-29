@@ -41,6 +41,11 @@ pub const fn period_ms(city_minutes: i64) -> i64 {
 pub const MAINTENANCE_PERIOD_CITY_MINUTES: i64 = 10;
 pub const MAINTENANCE_PERIOD_MS: i64 = period_ms(MAINTENANCE_PERIOD_CITY_MINUTES);
 
+/// The metrics sampler's period: one city day, which is exactly one real
+/// hour at speed 1.
+pub const METRICS_PERIOD_CITY_MINUTES: i64 = 1440;
+pub const METRICS_PERIOD_MS: i64 = period_ms(METRICS_PERIOD_CITY_MINUTES);
+
 /// A cadence period in real microseconds at clock `speed`: `period_ms` is
 /// the period at speed 1. Floored to 1 so it is never a divisor of zero.
 fn period_micros(period_ms: i64, speed: u32) -> i128 {
@@ -190,6 +195,11 @@ pub fn next_target(origin_micros: i64, period_ms: i64, speed: u32, now_micros: i
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_metrics_period_is_one_real_hour_at_speed_one() {
+        assert_eq!(METRICS_PERIOD_MS, 3_600_000);
+    }
 
     #[test]
     fn period_ms_converts_whole_city_minutes() {

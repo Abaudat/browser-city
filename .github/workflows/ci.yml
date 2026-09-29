@@ -477,6 +477,10 @@ jobs:
       # never 3987-3991 -- same job, same reasoning as the steps above.
       - name: story 4.3, the dev-only clock jumps, replays every skipped fire and runs the loop faster
         run: bash scripts/ci/check-time-control.sh
+      # Story 4.12: its own disposable local instance and port (3993),
+      # never 3987-3992 -- same job, same reasoning as the steps above.
+      - name: story 4.12, the metrics sampler samples every table once per fire, and only the scheduler can call it
+        run: bash scripts/ci/check-metrics-sampler.sh
 
   coverage:
     name: coverage (sim)

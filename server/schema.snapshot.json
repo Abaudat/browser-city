@@ -1000,6 +1000,141 @@
       ]
     },
     {
+      "accessor": "storage_sample",
+      "struct_name": "StorageSample",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "sample_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "sampled_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "total_bytes_est",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "over_review",
+          "ty": "bool",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "over_wall",
+          "ty": "bool",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "table_sample",
+      "struct_name": "TableSample",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "sample_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "sampled_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "table_accessor",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "rows",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "bytes_est",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "alert_rows",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "max_rows",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "over_alert",
+          "ty": "bool",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "unit",
       "struct_name": "Unit",
       "public": false,

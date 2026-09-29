@@ -96,6 +96,7 @@ use super::codes::{
     reason_code, unit,
 };
 use super::identity::{Character, CharacterIdentity, character, character_identity};
+use super::metrics::{StorageSample, TableSample, storage_sample, table_sample};
 use super::ops::{ModuleOwner, module_owner, require_owner};
 use super::schedules::{CadenceLiveness, cadence_liveness};
 use super::world::{
@@ -167,6 +168,8 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "placed_object",
     "room",
     "room_area",
+    "storage_sample",
+    "table_sample",
 ];
 
 /// Opens a restore. Disarms every scheduled table first
@@ -222,6 +225,12 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.room_area().iter().next().is_some() {
         nonempty.push("room_area");
+    }
+    if ctx.db.storage_sample().iter().next().is_some() {
+        nonempty.push("storage_sample");
+    }
+    if ctx.db.table_sample().iter().next().is_some() {
+        nonempty.push("table_sample");
     }
     if !nonempty.is_empty() {
         return Err(format!(
@@ -454,6 +463,31 @@ impl_autoinc_row!(
     }
 );
 impl_autoinc_row!(
+    TableSample,
+    sample_id,
+    TableSample {
+        sample_id: 0,
+        sampled_at: Timestamp::UNIX_EPOCH,
+        table_accessor: String::new(),
+        rows: 0,
+        bytes_est: 0,
+        alert_rows: 0,
+        max_rows: 0,
+        over_alert: false,
+    }
+);
+impl_autoinc_row!(
+    StorageSample,
+    sample_id,
+    StorageSample {
+        sample_id: 0,
+        sampled_at: Timestamp::UNIX_EPOCH,
+        total_bytes_est: 0,
+        over_review: false,
+        over_wall: false,
+    }
+);
+impl_autoinc_row!(
     FloorTransition,
     transition_id,
     FloorTransition {
@@ -615,6 +649,44 @@ pub fn restore_citizen(
             ctx.db.citizen().citizen_id().delete(id);
         },
         "citizen",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_table_sample(
+    ctx: &ReducerContext,
+    rows: Vec<TableSample>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.table_sample().insert(r),
+        |id| {
+            ctx.db.table_sample().sample_id().delete(id);
+        },
+        "table_sample",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_storage_sample(
+    ctx: &ReducerContext,
+    rows: Vec<StorageSample>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.storage_sample().insert(r),
+        |id| {
+            ctx.db.storage_sample().sample_id().delete(id);
+        },
+        "storage_sample",
         sequence_floor,
     )
 }
