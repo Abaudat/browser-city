@@ -31,7 +31,7 @@
 use spacetimedb::{ReducerContext, ScheduleAt, Table, Timestamp};
 
 use super::cadences;
-use super::clock::{current_speed, read_clock};
+use super::clock::read_clock;
 
 /// Only the module's own scheduler may invoke a scheduled reducer --
 /// otherwise any client could call it directly, which is a security hole,
@@ -74,6 +74,7 @@ fn arm_cadence(
     ctx: &ReducerContext,
     origin_micros: i64,
     period_ms: i64,
+    speed: u32,
     mut iter_ids: impl FnMut() -> Vec<u64>,
     mut delete: impl FnMut(u64),
     mut insert: impl FnMut(ScheduleAt),
@@ -84,7 +85,7 @@ fn arm_cadence(
     let (target_micros, missed) = sim::cadence::next_target(
         origin_micros,
         period_ms,
-        current_speed(ctx),
+        speed,
         ctx.timestamp.to_micros_since_unix_epoch(),
     );
     insert(ScheduleAt::Time(Timestamp::from_micros_since_unix_epoch(
@@ -238,11 +239,12 @@ pub mod cadence_code {
 /// `arm_every_cadence_from` (the initial arm, from `init`/
 /// `finish_restore`), `arm_every_cadence` (from `rearm_schedules`), and
 /// `run_maintenance` (the re-arm after firing).
-fn arm_maintenance_schedule(ctx: &ReducerContext, origin_micros: i64) -> (i64, u64) {
+fn arm_maintenance_schedule(ctx: &ReducerContext, origin_micros: i64, speed: u32) -> (i64, u64) {
     arm_cadence(
         ctx,
         origin_micros,
         sim::cadence::MAINTENANCE_PERIOD_MS,
+        speed,
         || {
             ctx.db
                 .maintenance_schedule()
@@ -312,20 +314,20 @@ pub fn run_maintenance(ctx: &ReducerContext, row: MaintenanceSchedule) -> Result
         ctx,
         sim::cadence::city_minute_of(epoch_micros, speed, origin_micros),
     );
-    let (_next_target_micros, missed) = arm_maintenance_schedule(ctx, origin_micros);
+    let (_next_target_micros, missed) = arm_maintenance_schedule(ctx, origin_micros, speed);
     record_cadence_fire(ctx, cadence_code::MAINTENANCE, origin_micros, missed);
     Ok(())
 }
 
 /// Arms every cadence this file gives real work to (today: just
-/// `maintenance_schedule`) from an already-known epoch, in micros --
-/// infallible, since the caller already has the epoch in hand (`init`
-/// just wrote or found it; `finish_restore` just restored `world_clock`
+/// `maintenance_schedule`) from an already-known epoch (micros) and clock
+/// `speed` -- infallible, since the caller already has both in hand
+/// (`init` just wrote them; `finish_restore` just restored `world_clock`
 /// itself) and there is no lookup here that could fail. Schedules are
 /// derived state, rebuilt explicitly, never trusted to survive a deploy
 /// purely by surviving as pending rows (docs/architecture.md).
-pub fn arm_every_cadence_from(ctx: &ReducerContext, epoch_micros: i64) {
-    arm_maintenance_schedule(ctx, epoch_micros);
+pub fn arm_every_cadence_from(ctx: &ReducerContext, epoch_micros: i64, speed: u32) {
+    arm_maintenance_schedule(ctx, epoch_micros, speed);
 }
 
 /// Looks up `world_clock.epoch_at` and arms every cadence from it.
@@ -336,9 +338,9 @@ pub fn arm_every_cadence_from(ctx: &ReducerContext, epoch_micros: i64) {
 /// already has the epoch in hand and calls [`arm_every_cadence_from`]
 /// directly instead.
 pub fn arm_every_cadence(ctx: &ReducerContext) -> Result<(), String> {
-    let (epoch_micros, _speed) =
+    let (epoch_micros, speed) =
         read_clock(ctx).ok_or_else(|| "world_clock has no row -- init did not run".to_string())?;
-    arm_every_cadence_from(ctx, epoch_micros);
+    arm_every_cadence_from(ctx, epoch_micros, speed);
     Ok(())
 }
 
@@ -405,16 +407,24 @@ pub fn replay_skipped_cadences(
     new_epoch_micros: i64,
 ) -> Result<(), String> {
     type Body = fn(&ReducerContext, i64);
-    let mut walked: Vec<(u32, i64, Body)> = Vec::new();
+    // (cadence code, period, body, first index): a cadence's first
+    // replayed fire is its own pending row's, which may already be due.
+    let mut walked: Vec<(u32, i64, Body, i128)> = Vec::new();
     macro_rules! walk {
         ($accessor:ident, $code:expr, $period_ms:expr, $body:expr) => {
-            if ctx.db.$accessor().iter().count() > 1 {
+            let rows: Vec<_> = ctx.db.$accessor().iter().collect();
+            if rows.len() > 1 {
                 return Err(format!(
                     "{} has more than its one armed row",
                     stringify!($accessor)
                 ));
             }
-            walked.push(($code, $period_ms, $body));
+            // No pending row: nothing of this cadence to replay.
+            if let Some(row) = rows.first() {
+                let target = schedule_at_micros(row.scheduled_at)?;
+                let first = sim::cadence::pending_index(epoch_micros, $period_ms, speed, target);
+                walked.push(($code, $period_ms, $body, first));
+            }
         };
     }
     macro_rules! refuse {
@@ -440,10 +450,10 @@ pub fn replay_skipped_cadences(
         cadences::maintenance
     );
 
-    let periods: Vec<i64> = walked.iter().map(|w| w.1).collect();
+    let cadences: Vec<(i64, i128)> = walked.iter().map(|w| (w.1, w.3)).collect();
     let plan = sim::cadence::replay_plan(
         epoch_micros,
-        &periods,
+        &cadences,
         speed,
         ctx.timestamp.to_micros_since_unix_epoch(),
         jump_micros,
@@ -456,7 +466,7 @@ pub fn replay_skipped_cadences(
         )
     })?;
     for replay in plan {
-        let Some(&(code, period_ms, body)) = walked.get(replay.cadence) else {
+        let Some(&(code, period_ms, body, _)) = walked.get(replay.cadence) else {
             return Err("replay plan names a cadence that is not walked".to_string());
         };
         body(ctx, replay.city_minute);

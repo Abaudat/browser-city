@@ -96,7 +96,7 @@ docs/spikes/1.3-scheduled-reducer-timing.md.
 - `rearm_schedules` (owner-only) rebuilds every schedule from the epoch. Its callers are `init` and `deploy.yml`'s `publish-module` job, beside `reseed_codes`.
 - `begin_restore` disarms every scheduled table before its own preconditions run; `finish_restore` re-arms every cadence after closing the restore, both inside the same transaction chain, so no cadence is ever armed from an epoch outside the world actually open for restore.
 - `cadence_liveness` holds one row per armed cadence, written only by that cadence's own fired reducer.
-- `next_target` takes the clock `speed` and derives its period from the effective minute. A cadence's work is a function of the city minute it fires for: bodies live in `tables/cadences.rs` as `fn(ctx, city_minute)`, and `ctx.timestamp` is banned there. A `time-control` jump replays every skipped grid point through those same bodies in one transaction, in city-minute order, or refuses; `replay_skipped_cadences` names every scheduled table once, as walked or refuse-if-pending.
+- `next_target` takes the clock `speed` and derives its period from the effective minute. A cadence's work is a function of the city minute it fires for: bodies live in `tables/cadences.rs` as `fn(ctx, city_minute)`, and `ctx.timestamp`, `world_clock` and `read_clock` are banned there. A jump's replay starts at each cadence's own pending row (which may already be due); a cadence with no pending row replays nothing. A `time-control` jump replays every skipped grid point through those same bodies in one transaction, in city-minute order, or refuses; `replay_skipped_cadences` names every scheduled table once, as walked or refuse-if-pending.
 
 ## Time
 

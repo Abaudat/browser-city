@@ -5121,13 +5121,16 @@ proptest! {
         let _ = sim::time::reanchor(epoch, now, speed, minutes);
     }
 
-    /// `inv_jump_never_drops_a_fire`.
+    /// `inv_jump_never_drops_a_fire`. The pending target is drawn from
+    /// the whole range a live row can hold: long past `now` (already due,
+    /// undispatched) through well ahead of it.
     #[test]
     fn inv_jump_never_drops_a_fire(
         origin in -1_000_000_000i64..1_000_000_000,
         period_minutes in 1i64..=60,
         speed_at in 0usize..11,
         now_offset in -10_000_000i64..200_000_000,
+        pending in 1i64..=400,
         jump_minutes in 1i64..=2_000,
     ) {
         let speeds = valid_speeds();
@@ -5135,17 +5138,16 @@ proptest! {
         let period_ms = cadence::period_ms(period_minutes);
         let now = origin + now_offset;
         let jump_micros = jump_minutes * sim::time::micros_per_city_minute(speed);
-        let plan = cadence::replay_plan(origin, &[period_ms], speed, now, jump_micros, u64::MAX)
-            .expect("no cap");
-        // Brute force: every grid point after the pending target's own
-        // predecessor, up to the jumped-to instant.
-        let (pending, _) = cadence::next_target(origin, period_ms, speed, now);
+        let plan = cadence::replay_plan(
+            origin, &[(period_ms, pending as i128)], speed, now, jump_micros, u64::MAX,
+        )
+        .expect("no cap");
+        // Brute force: every grid point from the pending one, up to the
+        // jumped-to instant.
         let mut expected = Vec::new();
-        let mut index = 1i64;
-        loop {
-            let at = cadence::grid_point(origin, period_ms, speed, index);
-            if at > now + jump_micros { break; }
-            if at >= pending { expected.push(index); }
+        let mut index = pending;
+        while cadence::grid_point(origin, period_ms, speed, index) <= now + jump_micros {
+            expected.push(index);
             index += 1;
         }
         let got: Vec<i64> = plan.iter().map(|r| r.index).collect();
@@ -5153,17 +5155,40 @@ proptest! {
         prop_assert!(plan.windows(2).all(|w| w[0].city_minute < w[1].city_minute));
     }
 
-    /// `inv_jump_never_drops_a_fire`: the merged plan across cadences is
-    /// ordered and its size is the sum of the parts.
+    /// The minute a replayed tick is handed is the minute the live tick for
+    /// the same grid point is handed.
+    #[test]
+    fn replayed_and_live_ticks_get_the_same_city_minute(
+        origin in -1_000_000_000_000i64..1_000_000_000_000,
+        period_minutes in 1i64..=60,
+        speed_at in 0usize..11,
+        index in 1i64..=5_000,
+    ) {
+        let speeds = valid_speeds();
+        let speed = speeds[speed_at % speeds.len()];
+        let period_ms = cadence::period_ms(period_minutes);
+        let at = cadence::grid_point(origin, period_ms, speed, index);
+        let live = cadence::city_minute_of(origin, speed, at);
+        let plan = cadence::replay_plan(
+            origin, &[(period_ms, index as i128)], speed, at, 0, u64::MAX,
+        )
+        .expect("no cap");
+        prop_assert_eq!(plan.len(), 1);
+        prop_assert_eq!(plan[0].city_minute, live);
+        prop_assert_eq!(live, index * period_minutes);
+    }
+
+    /// The merged plan across cadences is ordered and its size is the sum
+    /// of the parts.
     #[test]
     fn jump_plan_is_ordered_across_cadences(
-        a in 1i64..=30, b in 1i64..=30, now in 0i64..100_000_000, jump_minutes in 1i64..=1_000,
+        a in 1i64..=30, b in 1i64..=30, jump_minutes in 1i64..=1_000,
     ) {
         let (pa, pb) = (cadence::period_ms(a), cadence::period_ms(b));
         let jump = jump_minutes * sim::time::REAL_MS_PER_CITY_MINUTE * 1000;
-        let both = cadence::replay_plan(0, &[pa, pb], 1, now, jump, u64::MAX).expect("no cap");
-        let one = cadence::replay_plan(0, &[pa], 1, now, jump, u64::MAX).expect("no cap");
-        let two = cadence::replay_plan(0, &[pb], 1, now, jump, u64::MAX).expect("no cap");
+        let both = cadence::replay_plan(0, &[(pa, 1), (pb, 1)], 1, 0, jump, u64::MAX).expect("no cap");
+        let one = cadence::replay_plan(0, &[(pa, 1)], 1, 0, jump, u64::MAX).expect("no cap");
+        let two = cadence::replay_plan(0, &[(pb, 1)], 1, 0, jump, u64::MAX).expect("no cap");
         prop_assert_eq!(both.len(), one.len() + two.len());
         prop_assert!(both.windows(2).all(|w| (w[0].city_minute, w[0].cadence) <= (w[1].city_minute, w[1].cadence)));
     }

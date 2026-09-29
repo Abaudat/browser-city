@@ -58,7 +58,7 @@ pub fn init(ctx: &ReducerContext) {
     // Story 4.2: arms every cadence this module gives real work to, from
     // the epoch `record_epoch_from_init` just returned -- infallible,
     // since that epoch is already in hand.
-    tables::schedules::arm_every_cadence_from(ctx, epoch_at.to_micros_since_unix_epoch());
+    tables::schedules::arm_every_cadence_from(ctx, epoch_at.to_micros_since_unix_epoch(), 1);
 }
 
 /// Rebuilds every armed cadence's own pending schedule row from

@@ -12,8 +12,9 @@
 #     under server/src/. sim::cadence::next_target + ScheduleAt::Time is
 #     the one permitted idiom (docs/architecture.md's "Scheduled
 #     reducers" section).
-#   - `ctx.timestamp` -- banned in tables/cadences.rs (a cadence body
-#     knows its city minute, never real time).
+#   - `ctx.timestamp`, `world_clock`, `read_clock` -- banned in
+#     tables/cadences.rs (a cadence body knows its city minute, never
+#     real time).
 #   - `unwrap(`, `expect(`, `panic!`, `todo!`, `unimplemented!`,
 #     `unreachable!` -- banned across server/src/**, excluding
 #     `generated/` (defs-build's own emitted code, never hand-written).
@@ -69,13 +70,14 @@ fi
 
 # A cadence body (tables/cadences.rs) is a function of the city minute it
 # fires for, never of real time -- a live tick and a jump's replayed tick
-# must be the same code path, so `ctx.timestamp` is banned there.
+# must be the same code path, so `ctx.timestamp`, `world_clock` and
+# `read_clock` are banned there (the epoch is real time by subtraction).
 CADENCE_FILES="$(find "$SRC_DIR" -name cadences.rs -not -path '*/generated/*' 2>/dev/null || true)"
 if [ -n "$CADENCE_FILES" ]; then
   # shellcheck disable=SC2086
-  TIMESTAMP_MATCHES="$(grep -nHF 'ctx.timestamp' $CADENCE_FILES 2>/dev/null | not_a_comment_line || true)"
+  TIMESTAMP_MATCHES="$(grep -nHE 'ctx\.timestamp|world_clock|read_clock' $CADENCE_FILES 2>/dev/null | not_a_comment_line || true)"
   if [ -n "$TIMESTAMP_MATCHES" ]; then
-    echo "check-server-src-bans: FAIL -- ctx.timestamp read in a cadence body (cadences.rs): a body is a function of its city minute alone, so a replayed tick and a live tick are the same code path (FR163):" >&2
+    echo "check-server-src-bans: FAIL -- real time (ctx.timestamp, world_clock, read_clock) read in a cadence body (cadences.rs): a body is a function of its city minute alone (the epoch is real time by subtraction, and a replayed body sees the pre-jump row), so a replayed tick and a live tick are the same code path (FR163):" >&2
     echo "$TIMESTAMP_MATCHES" >&2
     FAILED=1
   fi

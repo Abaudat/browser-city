@@ -38,7 +38,7 @@ export function cityTime(
   realMsPerCityMinute: number,
   speed: number,
 ): CityTime {
-  const minuteMicros = (BigInt(realMsPerCityMinute) * 1000n) / BigInt(Math.max(1, speed));
+  const minuteMicros = (BigInt(realMsPerCityMinute) * 1000n) / BigInt(speed);
   const [totalMinutes, intoMicros] = divMod(nowMicros - epochMicros, minuteMicros);
   const [intoMinute] = divMod(intoMicros, 1000n);
   const minutesPerDay = BigInt(MINUTES_PER_HOUR * HOURS_PER_DAY);

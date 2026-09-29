@@ -64,24 +64,23 @@ pub fn grid_point(origin_micros: i64, period_ms: i64, speed: u32, index: i64) ->
         .clamp(i64::MIN as i128, i64::MAX as i128) as i64
 }
 
-/// The grid indices a forward jump of `jump_micros` real microseconds
-/// (city minutes times the effective minute) skips for one cadence: every
-/// index from the pending target's own (`first`) through the last one at
-/// or before the jumped-to instant (`last`), inclusive. `first > last`
-/// when the jump contains none. A target the cadence had already passed
-/// (a `missed` one) is below `first` and never counted.
-pub fn skipped_indices(
+/// The grid index of a pending target: `target_micros` is a grid point of
+/// the cadence anchored at `origin_micros`, so this is exact for one.
+pub fn pending_index(origin_micros: i64, period_ms: i64, speed: u32, target_micros: i64) -> i128 {
+    (target_micros as i128 - origin_micros as i128).div_euclid(period_micros(period_ms, speed))
+}
+
+/// The last grid index at or before the instant `now + jump_micros` (a
+/// forward jump of that many real microseconds) for one cadence.
+pub fn last_index(
     origin_micros: i64,
     period_ms: i64,
     speed: u32,
     now_micros: i64,
     jump_micros: i64,
-) -> (i128, i128) {
-    let period = period_micros(period_ms, speed);
+) -> i128 {
     let elapsed = now_micros as i128 - origin_micros as i128;
-    let first = (elapsed.div_euclid(period) + 1).max(1);
-    let last = (elapsed + jump_micros.max(0) as i128).div_euclid(period);
-    (first, last)
+    (elapsed + jump_micros.max(0) as i128).div_euclid(period_micros(period_ms, speed))
 }
 
 /// One replayed cadence fire.
@@ -94,37 +93,45 @@ pub struct Replay {
     pub index: i64,
 }
 
-/// Every fire a jump replays, across `periods_ms` (one entry per armed
-/// cadence), in ascending city minute, ties in list order. `Err(total)`
-/// when there would be more than `max_ticks`, before anything is built.
+/// Every fire a jump replays, in ascending city minute, ties in list
+/// order. Each entry of `cadences` is one armed cadence's `(period_ms,
+/// first_index)`: `first_index` is its pending row's own grid index (the
+/// fire the scheduler has not yet dispatched, which may already be due),
+/// and the plan runs through the last index at or before `now + jump`. A
+/// cadence with no pending row is simply not listed. `city_minute` is
+/// derived exactly as a live tick derives it (`city_minute_of` over the
+/// grid point). `Err(total)` when there would be more than `max_ticks`,
+/// before anything is built.
 pub fn replay_plan(
     origin_micros: i64,
-    periods_ms: &[i64],
+    cadences: &[(i64, i128)],
     speed: u32,
     now_micros: i64,
     jump_micros: i64,
     max_ticks: u64,
 ) -> Result<Vec<Replay>, u64> {
-    let ranges: Vec<(i128, i128)> = periods_ms
+    let lasts: Vec<i128> = cadences
         .iter()
-        .map(|&p| skipped_indices(origin_micros, p, speed, now_micros, jump_micros))
+        .map(|&(p, _)| last_index(origin_micros, p, speed, now_micros, jump_micros))
         .collect();
-    let total: u128 = ranges
+    let total: u128 = cadences
         .iter()
-        .map(|&(f, l)| (l - f + 1).max(0) as u128)
+        .zip(&lasts)
+        .map(|(&(_, first), &last)| (last - first + 1).max(0) as u128)
         .sum();
     if total > max_ticks as u128 {
         return Err(total.min(u64::MAX as u128) as u64);
     }
     let mut plan = Vec::with_capacity(total as usize);
-    for (cadence, (&(first, last), &p)) in ranges.iter().zip(periods_ms).enumerate() {
-        let minutes = (p.max(1) / REAL_MS_PER_CITY_MINUTE).max(1) as i128;
+    for (cadence, (&(p, first), &last)) in cadences.iter().zip(&lasts).enumerate() {
         let mut index = first;
         while index <= last {
+            let index64 = index.clamp(i64::MIN as i128, i64::MAX as i128) as i64;
+            let at = grid_point(origin_micros, p, speed, index64);
             plan.push(Replay {
-                city_minute: (index * minutes).clamp(i64::MIN as i128, i64::MAX as i128) as i64,
+                city_minute: city_minute_of(origin_micros, speed, at),
                 cadence,
-                index: index as i64,
+                index: index64,
             });
             index += 1;
         }
@@ -241,13 +248,27 @@ mod jump_tests {
     #[test]
     fn a_ten_minute_cadence_fires_1008_times_in_a_week() {
         let week = 7 * 1440 * REAL_MS_PER_CITY_MINUTE * 1000;
-        let (f, l) = skipped_indices(0, MAINTENANCE_PERIOD_MS, 1, 0, week);
-        assert_eq!(l - f + 1, 1008);
+        let first = pending_index(
+            0,
+            MAINTENANCE_PERIOD_MS,
+            1,
+            next_target(0, MAINTENANCE_PERIOD_MS, 1, 0).0,
+        );
+        let last = last_index(0, MAINTENANCE_PERIOD_MS, 1, 0, week);
+        assert_eq!(last - first + 1, 1008);
     }
 
     #[test]
     fn the_plan_is_ordered_and_capped() {
-        let p = replay_plan(0, &[period_ms(10), period_ms(5)], 1, 0, 30 * 2_500_000, 100).unwrap();
+        let p = replay_plan(
+            0,
+            &[(period_ms(10), 1), (period_ms(5), 1)],
+            1,
+            0,
+            30 * 2_500_000,
+            100,
+        )
+        .unwrap();
         let minutes: Vec<_> = p.iter().map(|r| (r.city_minute, r.cadence)).collect();
         assert_eq!(
             minutes,
@@ -264,8 +285,22 @@ mod jump_tests {
             ]
         );
         assert_eq!(
-            replay_plan(0, &[period_ms(1)], 1, 0, 100 * 2_500_000, 10),
+            replay_plan(0, &[(period_ms(1), 1)], 1, 0, 100 * 2_500_000, 10),
             Err(100)
         );
+    }
+
+    #[test]
+    fn a_pending_target_already_due_is_replayed() {
+        // Index 3 is one microsecond before `now`: due, not yet dispatched.
+        let p = 2_500i64;
+        let now = 3 * p * 1000 + 1;
+        let plan = replay_plan(0, &[(p, 3)], 1, now, 2_500_000, 100).unwrap();
+        assert_eq!(plan.first().map(|r| r.index), Some(3));
+    }
+
+    #[test]
+    fn a_cadence_with_no_pending_row_replays_nothing() {
+        assert_eq!(replay_plan(0, &[], 1, 0, 2_500_000 * 100, 10), Ok(vec![]));
     }
 }

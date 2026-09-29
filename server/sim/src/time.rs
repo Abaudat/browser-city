@@ -62,7 +62,10 @@ const REAL_MICROS_PER_CITY_MINUTE: i64 = REAL_MS_PER_CITY_MINUTE * 1000;
 /// plus slack; call it twice for longer).
 pub const MAX_JUMP_CITY_MINUTES: u32 = 8 * CITY_MINUTES_PER_DAY as u32;
 
-/// The most cadence ticks one jump may replay in total.
+/// The most cadence ticks one jump may replay in total. Sized for one
+/// ten-minute cadence (1008 a week). A future one-minute cadence makes a
+/// week's jump 10080 ticks and `check-time-control.sh`'s week jump will
+/// refuse: that is deliberate -- raise this cap, do not shrink the test.
 pub const MAX_JUMP_TICKS: u64 = 5_000;
 
 /// A multiplier is valid when it is in `1..=MAX_CLOCK_SPEED` and divides
@@ -86,12 +89,6 @@ pub fn validate_speed(speed: u32) -> Result<(), String> {
 /// as 1, so this is total).
 pub fn micros_per_city_minute(speed: u32) -> i64 {
     (REAL_MICROS_PER_CITY_MINUTE / speed.max(1) as i64).max(1)
-}
-
-/// Real milliseconds per city minute at `speed`, fractional part dropped:
-/// what an interpolating renderer divides `real_ms_into_minute` by.
-pub fn ms_per_city_minute(speed: u32) -> i64 {
-    micros_per_city_minute(speed) / 1000
 }
 
 fn clamp_i64(v: i128) -> i64 {
@@ -196,7 +193,7 @@ mod tests {
         // 10x: one city minute per 250ms.
         let t = city_time(0, 250_000, 10);
         assert_eq!((t.hour, t.minute, t.real_ms_into_minute), (0, 1, 0));
-        assert_eq!(ms_per_city_minute(10), 250);
+        assert_eq!(micros_per_city_minute(10), 250_000);
     }
 
     #[test]

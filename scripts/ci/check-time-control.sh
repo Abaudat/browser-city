@@ -72,6 +72,10 @@ clock_field() { # <column> -- world_clock's own value
   sql_json "SELECT * FROM world_clock" >"$resp"
   column_field "$resp" "$1"
 }
+now_us() { echo $(( $(date +%s%N) / 1000 )); } # the host's own clock, same host as the instance
+minute_at() { # <epoch_us> <at_us> <micros-per-city-minute>
+  echo $(( ($2 - $1) / $3 ))
+}
 epoch_us() { micros_of "$(clock_field epoch_at)"; }
 fires() {
   local resp="$DATA_DIR/fires-$RANDOM.json"
@@ -86,17 +90,28 @@ bash "$REPO_ROOT/scripts/dev/publish-dev.sh" "$DB_NAME" "${SERVER_ARGS[@]}" --no
 
 # --- (a) a one-week jump ------------------------------------------------------
 EPOCH_BEFORE="$(epoch_us)"
+T_BEFORE_JUMP="$(now_us)"
 FIRES_BEFORE="$(fires)"
 [ -n "$EPOCH_BEFORE" ] || fail "world_clock has no epoch_at after publish"
 FIRES_BEFORE="${FIRES_BEFORE:-0}"
 
 clock jump "$WEEK_CITY_MINUTES" >"$DATA_DIR/jump.log" 2>&1 || fail "jump_clock of one city week failed" "$DATA_DIR/jump.log"
 
+T_AFTER_JUMP="$(now_us)"
 EPOCH_AFTER="$(epoch_us)"
 DELTA_US=$((WEEK_CITY_MINUTES * REAL_MICROS_PER_CITY_MINUTE))
 [ $((EPOCH_BEFORE - EPOCH_AFTER)) -eq "$DELTA_US" ] \
   || fail "epoch_at moved by $((EPOCH_BEFORE - EPOCH_AFTER))us, expected exactly ${DELTA_US}us (one city week)"
 ok "epoch_at moved back by exactly one city week (${DELTA_US}us)"
+
+# The clock really jumped forward: the city minute under the new epoch is the
+# pre-jump minute plus the jumped minutes, plus whatever real time elapsed
+# between the two host-clock captures (within one minute either side).
+MIN_PRE="$(minute_at "$EPOCH_BEFORE" "$T_BEFORE_JUMP" "$REAL_MICROS_PER_CITY_MINUTE")"
+MIN_POST="$(minute_at "$EPOCH_AFTER" "$T_AFTER_JUMP" "$REAL_MICROS_PER_CITY_MINUTE")"
+ELAPSED_MIN=$(( (T_AFTER_JUMP - T_BEFORE_JUMP) / REAL_MICROS_PER_CITY_MINUTE ))
+{ [ "$MIN_POST" -ge $((MIN_PRE + WEEK_CITY_MINUTES - 1)) ] && [ "$MIN_POST" -le $((MIN_PRE + WEEK_CITY_MINUTES + ELAPSED_MIN + 1)) ]; }   || fail "after the jump the city minute is $MIN_POST, expected $MIN_PRE + $WEEK_CITY_MINUTES (+ at most $ELAPSED_MIN elapsed, within one)"
+ok "the city minute went from $MIN_PRE to $MIN_POST: forward by the jumped week"
 
 EXPECTED_FIRES=$((WEEK_CITY_MINUTES / PERIOD_CITY_MINUTES))
 FIRES_AFTER="$(fires)"
@@ -117,28 +132,57 @@ PERIOD_US=$((PERIOD_CITY_MINUTES * REAL_MICROS_PER_CITY_MINUTE))
 ok "maintenance_schedule holds exactly one pending row, phase-aligned to the new epoch"
 
 # --- (b) refusals change nothing ---------------------------------------------
-EPOCH_B="$(epoch_us)"
-for bad in "$((MAX_JUMP_CITY_MINUTES + 1))"; do
-  if clock jump "$bad" >"$DATA_DIR/over-cap.log" 2>&1; then
-    fail "a jump of $bad city minutes (over the cap) was accepted" "$DATA_DIR/over-cap.log"
+# world_clock, cadence_liveness (fires, missed, last_target_at) and the
+# maintenance_schedule row must all be untouched. Retried when a legitimate
+# live fire lands between the two snapshots (the loop keeps firing every
+# 25s), the same way check-authoritative-loop.sh's leg (c) does.
+snapshot() { # -> "epoch|speed|fires|missed|last_target|scheduled_at"
+  local live="$DATA_DIR/snap-live-$RANDOM.json" sched="$DATA_DIR/snap-sched-$RANDOM.json"
+  sql_json "SELECT * FROM cadence_liveness WHERE cadence = $MAINTENANCE_CADENCE" >"$live"
+  sql_json "SELECT * FROM maintenance_schedule" >"$sched"
+  printf '%s|%s|%s|%s|%s|%s' "$(clock_field epoch_at)" "$(clock_field speed)"     "$(column_field "$live" fires)" "$(column_field "$live" missed)"     "$(column_field "$live" last_target_at)" "$(column_field "$sched" scheduled_at)"
+}
+refused() { # <label> <reducer> <arg>
+  if spacetime call "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y "$2" "$3" >"$DATA_DIR/refused.log" 2>&1; then
+    fail "$1 was accepted" "$DATA_DIR/refused.log"
   fi
+}
+CLEAN=0
+for attempt in 1 2 3 4 5; do
+  SNAP_BEFORE="$(snapshot)"
+  refused "a jump of $((MAX_JUMP_CITY_MINUTES + 1)) city minutes (over the cap)" jump_clock "$((MAX_JUMP_CITY_MINUTES + 1))"
+  refused "a zero-minute jump" jump_clock 0
+  refused "a clock speed of 3 (does not divide the city minute)" set_clock_speed 3
+  SNAP_AFTER="$(snapshot)"
+  if [ "$(echo "$SNAP_BEFORE" | cut -d'|' -f3)" != "$(echo "$SNAP_AFTER" | cut -d'|' -f3)" ]; then
+    echo "check-time-control: (b) attempt $attempt: a live fire landed between the snapshots -- retrying" >&2
+    continue
+  fi
+  [ "$SNAP_BEFORE" = "$SNAP_AFTER" ]     || fail "a refused call changed state: [$SNAP_BEFORE] -> [$SNAP_AFTER]"
+  CLEAN=1
+  break
 done
-if spacetime call "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y jump_clock 0 >"$DATA_DIR/zero.log" 2>&1; then
-  fail "a zero-minute jump was accepted" "$DATA_DIR/zero.log"
-fi
-if spacetime call "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y set_clock_speed 3 >"$DATA_DIR/speed3.log" 2>&1; then
-  fail "a clock speed of 3 (does not divide the city minute) was accepted" "$DATA_DIR/speed3.log"
-fi
-[ "$(epoch_us)" = "$EPOCH_B" ] || fail "world_clock.epoch_at changed across refused calls"
-[ "$(clock_field speed)" = "1" ] || fail "world_clock.speed changed across refused calls"
-ok "an over-cap jump, a zero jump and an invalid speed were refused and changed nothing"
+[ "$CLEAN" = 1 ] || fail "could not observe a clean (no live fire interleaved) refusal in 5 tries"
+ok "an over-cap jump, a zero jump and an invalid speed were refused and changed nothing (world_clock, cadence_liveness, maintenance_schedule)"
 
 # --- (c) the multiplier runs the loop faster ---------------------------------
 SPEED=10
 WINDOW_S=30
 PERIOD_S=25 # at speed 1
+EPOCH_C0="$(epoch_us)"
+T_C0="$(now_us)"
 clock speed "$SPEED" >"$DATA_DIR/speed.log" 2>&1 || fail "set_clock_speed $SPEED failed" "$DATA_DIR/speed.log"
+T_C1="$(now_us)"
+EPOCH_C1="$(epoch_us)"
 [ "$(clock_field speed)" = "$SPEED" ] || fail "world_clock.speed is not $SPEED after set_clock_speed"
+# The epoch is re-anchored: the city minute does not leap. Minute before the
+# call at 1x, minute after it at the new speed; the only legitimate gap is
+# the real time between the two captures, at the new speed.
+MINUTE_C_PRE="$(minute_at "$EPOCH_C0" "$T_C0" "$REAL_MICROS_PER_CITY_MINUTE")"
+MINUTE_C_POST="$(minute_at "$EPOCH_C1" "$T_C1" $((REAL_MICROS_PER_CITY_MINUTE / SPEED)))"
+MAX_GAP=$(( (T_C1 - T_C0) / (REAL_MICROS_PER_CITY_MINUTE / SPEED) + 1 ))
+{ [ "$MINUTE_C_POST" -ge $((MINUTE_C_PRE - 1)) ] && [ "$MINUTE_C_POST" -le $((MINUTE_C_PRE + MAX_GAP)) ]; }   || fail "the city minute leapt across the speed change: $MINUTE_C_PRE -> $MINUTE_C_POST (allowed gap $MAX_GAP) -- the epoch was not re-anchored"
+ok "the city minute did not move across the speed change ($MINUTE_C_PRE -> $MINUTE_C_POST)"
 F0="$(fires)"
 echo "check-time-control: (c) waiting ${WINDOW_S}s at ${SPEED}x" >&2
 sleep "$WINDOW_S"

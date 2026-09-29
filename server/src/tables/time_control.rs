@@ -31,7 +31,7 @@ pub fn jump_clock(ctx: &ReducerContext, city_minutes: u32) -> Result<(), String>
     schedules::replay_skipped_cadences(ctx, epoch, speed, jump_micros, new_epoch)?;
     write_clock(ctx, new_epoch, speed);
     schedules::disarm_all_scheduled_tables(ctx);
-    schedules::arm_every_cadence_from(ctx, new_epoch);
+    schedules::arm_every_cadence_from(ctx, new_epoch, speed);
     Ok(())
 }
 
@@ -50,6 +50,6 @@ pub fn set_clock_speed(ctx: &ReducerContext, speed: u32) -> Result<(), String> {
     );
     write_clock(ctx, new_epoch, speed);
     schedules::disarm_all_scheduled_tables(ctx);
-    schedules::arm_every_cadence_from(ctx, new_epoch);
+    schedules::arm_every_cadence_from(ctx, new_epoch, speed);
     Ok(())
 }

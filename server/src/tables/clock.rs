@@ -26,11 +26,6 @@ pub fn read_clock(ctx: &ReducerContext) -> Option<(i64, u32)> {
     Some((row.epoch_at.to_micros_since_unix_epoch(), row.speed))
 }
 
-/// The current multiplier; 1 where no row exists yet.
-pub fn current_speed(ctx: &ReducerContext) -> u32 {
-    read_clock(ctx).map_or(1, |(_, speed)| speed)
-}
-
 /// Writes the epoch. Called from `init` only, and never overwrites: a
 /// republish must not reset the city to dawn. Returns the epoch that is
 /// now on record either way (freshly written, or already there from an
