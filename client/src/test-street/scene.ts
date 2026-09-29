@@ -1557,9 +1557,10 @@ export async function mountStreetScene(
   // asserting the player's position actually changes.
   app.ticker.addOnce(
     () => {
-      markBoot(BOOT_MARK.FIRST_FRAME_RENDERED);
-      markBoot(BOOT_MARK.INTERACTIVE_PROMPT);
-      markBoot(BOOT_MARK.PLAYER_CONTROLLABLE);
+      const at = performance.now();
+      markBoot(BOOT_MARK.FIRST_FRAME_RENDERED, at);
+      markBoot(BOOT_MARK.INTERACTIVE_PROMPT, at);
+      markBoot(BOOT_MARK.PLAYER_CONTROLLABLE, at);
     },
     undefined,
     UPDATE_PRIORITY.UTILITY,

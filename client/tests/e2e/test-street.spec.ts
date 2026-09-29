@@ -92,6 +92,7 @@ import {
   SHOP_A_BUILDING_ID,
   SHOP_B_BUILDING_ID,
   STREET_PROPS,
+  type StreetWalkKey,
   type StreetWalkSegment,
   type StreetWalkUntil,
   streetWalkRoute,
@@ -609,6 +610,9 @@ async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void
     },
   );
   if (!armed) {
+    // A floor or cell target can already hold (the stairs already fired):
+    // nothing to walk. An axis threshold already met is a route bug.
+    if (segment.until.kind === "floor" || segment.until.kind === "cell") return;
     throw new Error(
       `walkSegment: '${segment.label}' already met ${JSON.stringify(segment.until)} before the key went down -- a route bug`,
     );
@@ -1264,7 +1268,7 @@ test("the bollard west of the shopfront stops the player where it is drawn, from
   await page.goto("/");
   await waitForSceneReady(page);
   const inputs = streetWalkInputs();
-  const walk = (label: string, key: string, until: StreetWalkUntil) =>
+  const walk = (label: string, key: StreetWalkKey, until: StreetWalkUntil) =>
     walkSegment(page, { label, key, until });
 
   // Out of the shop, onto the pavement, west to the bollard's east side,
