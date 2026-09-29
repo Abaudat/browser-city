@@ -183,9 +183,9 @@ document's own opening paragraph forbids.
   is judgeable directly from the image; same regen-and-diff guard as the
   row above. Plus one worst-case-seed picture per entry in `streets::
   PINNED_DETOUR_SEEDS` -- [`docs/generation/detour-worst-seed-
-  104660235253934613.svg`](generation/detour-worst-seed-104660235253934613.svg),
-  [`-1810496278774313140`](generation/detour-worst-seed-1810496278774313140.svg),
-  [`-284676981805995091`](generation/detour-worst-seed-284676981805995091.svg)
+  16957036110437448498.svg`](generation/detour-worst-seed-16957036110437448498.svg),
+  [`-5594189165840902708`](generation/detour-worst-seed-5594189165840902708.svg),
+  [`-2461121815226407269`](generation/detour-worst-seed-2461121815226407269.svg)
   -- the same street-network render (same tints, same tier styling, same
   legend, same two viewport outlines) with an overlay: that seed's own
   worst *exhaustive* pair (`detour_samples(usize::MAX)`'s own argmax,
@@ -209,7 +209,7 @@ A block's size is bound by `target_block_size`/`target_block_depth`
 region's sake only when the rect *encloses* one (some region under it has
 no coarse cell reaching a street-abutting side, `generation::block_sides`
 -- a side on the site boundary has no street) or *swallows* one (at least
-half a region's cells lie under the rect and its land use is not the
+a quarter of a region's cells lie under the rect and its land use is not the
 rect's majority land use, so the block holding most of the region would
 not carry it). A land-use boundary through a block's interior is neither,
 and the rect is left to density. The earlier rule split on any rect
@@ -217,8 +217,8 @@ covering two regions; pass-1 leaves are 3-6 coarse cells, so peripheral
 blocks were chopped to region size whatever the density said (56-67% of
 low-band blocks at or under half their own target on the evidence seeds).
 `StreetNetwork::low_band_chopped_blocks` counts exactly that and
-`inv_generation_peripheral_blocks_are_not_chopped_below_their_target`
-bounds it, so a ratio that looks fine cannot hide a chopped periphery.
+`peripheral_blocks_pooled_chopped_share_stays_bounded` bounds it, so a
+ratio that looks fine cannot hide a chopped periphery.
 `block_size_max_cells`/`max_block_depth_max_cells` are tuned with it to
 the Scale Baseline building count.
 
@@ -228,8 +228,8 @@ evidence seeds (1, 2, 3), which do not change to fit a measurement. It
 is 2x because a 1.5x area is a 1.22x side, invisible on a 40x22-cell
 viewport, while 2x is a 1.41x side: the floor at which a player walking
 outward sees one fewer street crossing per screen, so leaving the core
-reads by looking, not by a HUD. Measured at `GENERATION_VERSION` 9: 4.18x,
-3.14x, 2.83x.
+reads by looking, not by a HUD. Measured at `GENERATION_VERSION` 9: 3.66x,
+2.68x, 2.64x.
 
 ### The detour-excess bound (story 3.18)
 
@@ -271,28 +271,28 @@ claim.
 **What actually protects master.** `inv_generation_detour_ratio_bounded`
 runs on arbitrary seeds, in every CI run, but only ever samples the
 cheap 14-node width -- its own worst reading at `GENERATION_VERSION` 9
-was 290 (seed `1810496278774313140`), 2 cells under the 292-cell
+was 284 (seed `18409618900562704607`), 46 cells under the 330-cell
 exhaustive figure the key is set from. That gap is not the margin; the
 margin is the stated 1.25 factor, nothing else, over a tail that is
 still growing: this run's own ten largest per-seed worsts, ascending,
-were 272, 274, 278, 278, 280, 280, 286, 288, 290, 292. A future
-50,000-seed run finding a new worst above 368 remains possible -- that
+were 276, 278, 280, 282, 284, 288, 296, 298, 298, 330. A future
+50,000-seed run finding a new worst above 416 remains possible -- that
 is what re-measuring on a retune, and pinning what a random sweep finds,
 both exist for.
 
-For scale: the worst pinned seed today (`104660235253934613`, 292
+For scale: the worst pinned seed today (`16957036110437448498`, 330
 cells exhaustive) is about eight viewport-widths of extra walking for the
 worst pair of the worst city found in 50,000 genuinely random draws --
 accepted as a rare tail. That figure still has one foot on the site
 boundary, though, where the city stops and almost nobody stands; the
 same run's own worst pair with *both* endpoints off the boundary --
-the player-felt figure -- was 252 cells (seed `8964778332667682731`,
-pair `(474, 80)`-`(485, 300)`), well under 292. The maze fixture
+the player-felt figure -- was 292 cells (seed `11300075522312672175`,
+pair `(39, 473)`-`(474, 475)`), well under 330. The maze fixture
 `a_maze_fails_dead_ends_and_detour` (a U-shaped corridor, no real route
-through) overshoots by 600 cells, real margin over the 368-cell
+through) overshoots by 600 cells, real margin over the 416-cell
 committed value and a stated distance from "our worst real city" to "a
 maze", not just a pass/fail. If a future re-measurement moves the
-exhaustive max itself past roughly 320, that PR owes the new worst
+exhaustive max itself past roughly 360, that PR owes the new worst
 seed's own picture and Artie's own judgement again on whether the
 result still reads as a city.
 

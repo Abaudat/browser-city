@@ -740,9 +740,9 @@ pub const DETOUR_P99_SAMPLE_MAX_NODES: usize = 64;
 /// nothing outside `invariants.rs`/`bounds` reads this today.
 #[cfg(any(test, feature = "test-fixtures"))]
 pub const PINNED_DETOUR_SEEDS: [(u64, i64); 3] = [
-    (104_660_235_253_934_613, 292),
-    (1_810_496_278_774_313_140, 290),
-    (284_676_981_805_995_091, 288),
+    (16_957_036_110_437_448_498, 330),
+    (5_594_189_165_840_902_708, 298),
+    (2_461_121_815_226_407_269, 298),
 ];
 
 /// One [`StreetNetwork::detour_samples`] entry.
@@ -1304,6 +1304,14 @@ impl Regions {
     }
 }
 
+/// A rect swallows a region once it holds at least `1 / this` of the
+/// region's coarse cells while taking another land use. Half left small
+/// regions fragmented across several blocks with none holding their use
+/// (0.004% of cities lost every institutional region, and with it the
+/// council); a quarter confines the extra splits to blocks over small
+/// regions.
+const SWALLOW_MIN_REGION_SHARE_DENOM: usize = 4;
+
 /// Whether `phys` (world-cell rect) must be split for a region's sake
 /// (AC2, "no region stranded", and a region's own land use surviving the
 /// majority-area rule of [`super::block_land_use`]). Two cases, both about
@@ -1313,9 +1321,10 @@ impl Regions {
 ///   them reaches a side of `phys` that abuts a street ([`block_sides`] --
 ///   a side on the site boundary has no perimeter street), so it would
 ///   touch no street.
-/// - *Swallowed*: at least half of some region's coarse cells lie under
-///   `phys` and its land use is not the one `phys` would take by majority
-///   area, so the block holding most of the region would not carry it.
+/// - *Swallowed*: at least a quarter ([`SWALLOW_MIN_REGION_SHARE_DENOM`])
+///   of some region's coarse cells lie under `phys` and its land use is
+///   not the one `phys` would take by majority area, so the region would
+///   be carried by no block.
 ///
 /// A land-use boundary through a block's interior is neither: every
 /// region under it either reaches a street-abutting side or continues
@@ -1360,7 +1369,8 @@ fn encloses_a_region(land_use: &LandUseMap, regions: &Regions, phys: Rect) -> bo
     }
     let winner = super::block_land_use(land_use, phys);
     seen.iter().any(|&(label, _, count)| {
-        count * 2 >= regions.sizes[label as usize] && regions.uses[label as usize] != winner
+        count * SWALLOW_MIN_REGION_SHARE_DENOM >= regions.sizes[label as usize]
+            && regions.uses[label as usize] != winner
     })
 }
 
@@ -1961,8 +1971,8 @@ mod tests {
     /// `bounds`; if `bounds`'s own list changes, this one is updated by
     /// hand). Judged on the images Artie reviews, not asserted over
     /// arbitrary seeds. Measured at `GENERATION_VERSION` 9 (density-band
-    /// split, `mean_area_by_density_band`): 4.18x, 3.14x and 2.83x, at least
-    /// 0.83x over the 2x bar.
+    /// split, `mean_area_by_density_band`): 3.66x, 2.68x and 2.64x, at least
+    /// 0.64x over the 2x bar.
     #[test]
     fn peripheral_blocks_are_at_least_2x_central_ones_on_the_evidence_seeds() {
         let c = cfg();
@@ -2002,8 +2012,8 @@ mod tests {
     }
 
     /// A region touching no street-abutting side is enclosed; so is a
-    /// region wholly under the rect whose use loses the majority (it would
-    /// never be any block's land use). A rect spanning two regions that
+    /// region with a quarter of its cells under the rect whose use loses
+    /// the majority (it would never be any block's land use). A rect spanning two regions that
     /// each reach a street side or continue past the rect is neither.
     #[test]
     fn encloses_a_region_only_for_enclosed_or_swallowed_regions() {
@@ -2026,20 +2036,15 @@ mod tests {
             &regs,
             rect(x0 + 10, y0 + 50, x0 + 140, y0 + 100)
         ));
-        // Same rows, but the industrial cell holds the majority: no loss.
-        assert!(!encloses_a_region(
-            &lu,
-            &regs,
-            rect(x0 + 55, y0 + 45, x0 + 95, y0 + 105)
-        ));
-        // Two regions, each continuing into the next row: a boundary
-        // through the interior of one block is fine.
-        let (site, lu) = fixture_map(4, 2, &[R, R, I, I, R, R, I, I]);
+        // Two large regions, each continuing well past the rect: a
+        // boundary through the interior of one block is fine.
+        let row: Vec<_> = (0..16).map(|i| if i % 8 < 4 { R } else { I }).collect();
+        let (site, lu) = fixture_map(8, 2, &row);
         let regs = Regions::of(&lu);
         assert!(!encloses_a_region(
             &lu,
             &regs,
-            rect(site.x0 + 10, site.y0 + 10, site.x0 + 140, site.y0 + 40)
+            rect(site.x0 + 160, site.y0 + 10, site.x0 + 240, site.y0 + 40)
         ));
     }
 

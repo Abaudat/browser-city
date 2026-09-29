@@ -1579,11 +1579,11 @@ mod tests {
 
     /// Quentin's direction, story 15.10 cycle 2: pinned against the live
     /// committed config, never a fixture -- `max_detour_excess_cells * 100
-    /// / (max_detour_percent - 100)` = `368 * 100 / 100` = 368.
+    /// / (max_detour_percent - 100)` = `416 * 100 / 100` = 416.
     #[test]
     fn detour_ratio_takeover_distance_cells_matches_the_committed_values() {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 368);
+        assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 416);
     }
 
     /// Quentin's direction, story 15.10 cycle 2: an even division, at a
