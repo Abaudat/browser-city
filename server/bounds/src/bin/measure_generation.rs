@@ -268,6 +268,9 @@ band sweep: {n} seeds, all five passes (salt {MEASURE_BAND_SEED_SALT:#x})"
     let mut workplace_count = Vec::new();
     let (mut share_miss, mut building_miss, mut workplace_miss) =
         (BandMiss::new(), BandMiss::new(), BandMiss::new());
+    let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let (mut min_count, mut max_count) = ((i64::MAX, 0u64), (i64::MIN, 0u64));
     let start = Instant::now();
     for i in 0..n {
         let seed = mixed_band_seed(i);
@@ -279,12 +282,17 @@ band sweep: {n} seeds, all five passes (salt {MEASURE_BAND_SEED_SALT:#x})"
         if d.land_use.share_band_violation(cfg).is_some() {
             share_miss.record(seed);
         }
-        building_count.push(d.envelopes.placed_count());
+        let placed = d.envelopes.placed_count();
+        if placed < min_count.0 {
+            min_count = (placed, seed);
+        }
+        if placed > max_count.0 {
+            max_count = (placed, seed);
+        }
+        building_count.push(placed);
         if d.check_building_count(cfg).is_err() {
             building_miss.record(seed);
         }
-        let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
-            content.building_types.iter().map(|b| (b.id, b)).collect();
         workplace_count.push(
             d.building_types
                 .assignments()
@@ -313,6 +321,10 @@ band sweep: {n} seeds, all five passes (salt {MEASURE_BAND_SEED_SALT:#x})"
     println!(
         "  5.5-sigma building tolerance implied: {:.1}% of the {target_b} target",
         5.5 * st.stddev() * 100.0 / target_b as f64
+    );
+    println!(
+        "building_count extremes over the band sweep: min {} at seed {}, max {} at seed {} (pin both in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)",
+        min_count.0, min_count.1, max_count.0, max_count.1
     );
     print_ceiling_report(
         "building-count band (count_tolerance_percent)",

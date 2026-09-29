@@ -1947,6 +1947,35 @@ mod tests {
         }
     }
 
+    fn sample(manhattan: i64, network: i64) -> DetourSample {
+        DetourSample {
+            a: (0, 0),
+            b: (manhattan as i32, 0),
+            network,
+            manhattan,
+        }
+    }
+
+    /// The max()-contract's seam (story 15.10), held at the function: a
+    /// pair whose ratio exceeds `max_detour_percent` but whose network
+    /// distance clears `manhattan + max_detour_excess_cells` is fine below
+    /// the takeover distance, and one cell past it, where the ratio term
+    /// is the looser half, the bound is exactly `manhattan * percent / 100`.
+    #[test]
+    fn detour_bound_violation_has_no_seam_at_the_takeover_distance() {
+        let c = cfg();
+        let takeover = c.detour_ratio_takeover_distance_cells();
+        let excess = c.max_detour_excess_cells as i64;
+        let pct = c.max_detour_percent as i64;
+        let short = sample(259, 259 + excess - 16);
+        assert!(short.ratio_pct() > pct);
+        assert!(detour_bound_violation(&[short], &c).is_none());
+        let m = takeover + 1;
+        let allowed = (m + excess).max(m * pct / 100);
+        assert!(detour_bound_violation(&[sample(m, allowed)], &c).is_none());
+        assert!(detour_bound_violation(&[sample(m, allowed + 1)], &c).is_some());
+    }
+
     #[test]
     fn run_is_deterministic_for_the_same_seed() {
         let c = cfg();

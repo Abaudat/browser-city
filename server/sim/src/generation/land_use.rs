@@ -1384,6 +1384,79 @@ mod tests {
         assert_eq!(target_cells(1024, &c)[1], 184);
     }
 
+    /// A 10x10 fixture (each cell is 10 permille of the site) with the
+    /// given commercial cell count, industrial and institutional exactly
+    /// on their keys (14 / 7 cells at the committed 14% / 7%).
+    fn share_fixture(commercial_cells: usize, c: &GenerationConfig) -> LandUseMap {
+        let mut uses = vec![LandUse::Commercial; commercial_cells];
+        uses.extend(vec![LandUse::Industrial; 14]);
+        uses.extend(vec![LandUse::Institutional; 7]);
+        uses.resize(100, LandUse::Residential);
+        let cells = uses
+            .into_iter()
+            .map(|use_| LandUseCell { use_, density: 50 })
+            .collect();
+        LandUseMap::test_fixture(c.site(), c.coarse_cell_size_cells, 10, 10, 5, 5, cells)
+    }
+
+    #[test]
+    fn share_band_is_exact_at_the_tolerance_boundary() {
+        let c = cfg();
+        assert_eq!(c.share_commercial_pct, 18);
+        assert_eq!(c.share_tolerance_pct, 7);
+        // 25 cells = 250 permille = exactly 18% + 7 points: inside.
+        assert_eq!(share_fixture(25, &c).share_band_violation(&c), None);
+        // 26 cells = one cell (10 permille) further: outside, naming the use.
+        assert_eq!(
+            share_fixture(26, &c).share_band_violation(&c),
+            Some((LandUse::Commercial, 260))
+        );
+        // 11 cells = 18% - 7 points: inside; 10 cells: outside.
+        assert_eq!(share_fixture(11, &c).share_band_violation(&c), None);
+        assert_eq!(
+            share_fixture(10, &c).share_band_violation(&c),
+            Some((LandUse::Commercial, 100))
+        );
+    }
+
+    #[test]
+    fn share_band_flags_a_third_of_the_site_as_commercial() {
+        let c = cfg();
+        let map = share_fixture(33, &c);
+        assert_eq!(map.area_cells(LandUse::Commercial), 33);
+        assert_eq!(
+            map.share_band_violation(&c),
+            Some((LandUse::Commercial, 330))
+        );
+    }
+
+    #[test]
+    fn share_band_accepts_a_map_on_its_keys() {
+        let c = cfg();
+        let map = share_fixture(18, &c);
+        assert_eq!(map.share_band_violation(&c), None);
+        assert_eq!(map.area_cells(LandUse::Industrial), 14);
+        assert_eq!(map.area_cells(LandUse::Institutional), 7);
+        assert_eq!(map.area_cells(LandUse::Residential), 61);
+    }
+
+    /// The overshoot side of the band is bounded by construction
+    /// ([`takes_leaf`]: at most half a leaf), so the committed tolerance
+    /// must cover half a maximum-size leaf of the committed grid.
+    #[test]
+    fn share_tolerance_covers_the_half_leaf_overshoot_bound() {
+        let c = cfg();
+        let total_cells = (c.site().width() / c.coarse_cell_size_cells as i64)
+            * (c.site().height() / c.coarse_cell_size_cells as i64);
+        let half_max_leaf = (c.land_use_max_leaf_cells as i64).pow(2) / 2;
+        let overshoot_permille = half_max_leaf * 1000 / total_cells;
+        assert!(
+            c.share_tolerance_pct as i64 * 10 >= overshoot_permille,
+            "share_tolerance_pct {} is under the {overshoot_permille} permille half-leaf overshoot bound",
+            c.share_tolerance_pct
+        );
+    }
+
     #[test]
     fn takes_leaf_overshoots_by_at_most_half_a_leaf() {
         assert!(takes_leaf(0, 36, 1));

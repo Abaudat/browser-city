@@ -99,10 +99,16 @@ if ! grep -qE '^  PROPTEST_RNG_SEED: [0-9]+$' "$WORKFLOW"; then
   echo "check-ci-gate: FAIL -- $WORKFLOW has no workflow-level fixed 'PROPTEST_RNG_SEED: <u64>' (NFR50)" >&2
   FAILED=1
 fi
-if ! grep -qE 'echo .*PROPTEST_CASES.*PROPTEST_RNG_SEED|echo .*PROPTEST_RNG_SEED.*PROPTEST_CASES' "$WORKFLOW"; then
-  echo "check-ci-gate: FAIL -- no step echoes PROPTEST_CASES and PROPTEST_RNG_SEED to the log (NFR50)" >&2
-  FAILED=1
-fi
+# Every job that runs `cargo test` echoes both to its own log.
+while IFS= read -r job; do
+  [ -n "$job" ] || continue
+  BLOCK="$(job_block "$job")"
+  if printf '%s\n' "$BLOCK" | grep -qE '^ +(- )?run: cargo test|^ +run: \|?.*cargo test' \
+    && ! printf '%s\n' "$BLOCK" | grep -qE 'echo .*PROPTEST_CASES.*PROPTEST_RNG_SEED|echo .*PROPTEST_RNG_SEED.*PROPTEST_CASES'; then
+    echo "check-ci-gate: FAIL -- job '$job' runs cargo test but never echoes PROPTEST_CASES and PROPTEST_RNG_SEED to its log (NFR50)" >&2
+    FAILED=1
+  fi
+done <<< "$ALL_JOB_NAMES"
 
 if [ "$FAILED" -ne 0 ]; then
   exit 1

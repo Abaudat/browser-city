@@ -2189,7 +2189,8 @@ proptest! {
     /// at the pass that owns it rather than two passes downstream in the
     /// building and workplace counts. Measured miss rate (`measure-generation -- bands 1000000`, 1,000,000
     /// seeds, 2026-09-29): 0 misses; rule-of-three bound 0.000300% per seed,
-    /// implied 4096-case CI failure probability <= 1.2213% per run.
+    /// implied failure probability per fresh-seed 4,096-case run
+    /// (`explore.yml`; `ci.yml`'s fixed seed cannot flake) <= 1.2213%.
     #[test]
     fn inv_generation_land_use_area_share_within_tolerance(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -2724,7 +2725,8 @@ proptest! {
     /// negligible (`count_tolerance_percent`'s own key comment states the
     /// sigma-based rule), not merely hoped for. Measured miss rate (`measure-generation -- bands 1000000`, 1,000,000
     /// seeds, 2026-09-29): 0 misses; rule-of-three bound 0.000300% per seed,
-    /// implied 4096-case CI failure probability <= 1.2213% per run.
+    /// implied failure probability per fresh-seed 4,096-case run
+    /// (`explore.yml`; `ci.yml`'s fixed seed cannot flake) <= 1.2213%.
     #[test]
     fn inv_generation_building_count_within_tolerance(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -2947,7 +2949,8 @@ proptest! {
     /// -- `generate`'s own `check_workplace_count` clears the per-seed
     /// band, for any seed. Measured miss rate (`measure-generation -- bands 1000000`, 1,000,000
     /// seeds, 2026-09-29): 0 misses; rule-of-three bound 0.000300% per seed,
-    /// implied 4096-case CI failure probability <= 1.2213% per run.
+    /// implied failure probability per fresh-seed 4,096-case run
+    /// (`explore.yml`; `ci.yml`'s fixed seed cannot flake) <= 1.2213%.
     #[test]
     fn inv_generation_workplace_count_within_tolerance(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -3642,27 +3645,17 @@ fn block_edge_touches_street(block: Rect, street: Rect, side: sim::generation::S
     }
 }
 
-/// The argmin and argmax seeds of the building-count distribution over
-/// the committed harness's own 50,000-seed scan (`cargo run -p bounds
-/// --release --bin measure-generation` prints both) -- copied from its
-/// output, never hunted for, and re-taken whenever the harness is re-run
-/// after a retune. Pinned so a generator change that shifts the
-/// distribution fails deterministically, every run. The first pair
-/// (`18_959`/`33_799`) is PR #317 cycle 5's own sequential-scan
-/// argmin/argmax (777/1,048); the second (story 3.18's own mixed-seed
-/// scan, min 786/max 1,025) is a *different* pair, not a replacement --
-/// the harness stopped scanning `0..50_000` sequentially, so the two
-/// pairs are two independent findings, both still valid regression
-/// cases, kept side by side (Tim's direction, story 3.18 cycle 1). The
-/// third pair is story 4.21's, taken at `GENERATION_VERSION` 8 from the
-/// 50,000-seed scan's own output (min 794 / max 1,039).
-const PINNED_BUILDING_COUNT_SEEDS: [u64; 6] = [
-    18_959,
-    33_799,
-    1_722_240_287_980_749_281,
-    8_629_247_394_359_087_537,
+/// The argmin and argmax seeds of the building-count distribution at
+/// `GENERATION_VERSION` 8: the 50,000-seed scan's (min 794 / max 1,039) and
+/// the 1,000,000-seed band sweep's (`measure-generation -- bands
+/// 1000000`: min 775 / max 1,055), copied from the harness's output, never
+/// hunted for, and re-taken whenever the generator moves. A generator
+/// change that shifts the distribution fails deterministically, every run.
+const PINNED_BUILDING_COUNT_SEEDS: [u64; 4] = [
     13_784_860_200_871_715_311,
     10_076_616_786_129_036_423,
+    8_607_795_880_712_789_331,
+    14_371_221_843_182_043_223,
 ];
 
 /// A handful of individually-measured seeds, pinned as fixed-seed tests
@@ -3739,8 +3732,9 @@ fn detour_excess_holds_at_pinned_boundary_exit_seeds() {
 /// own max()-contract), never a re-scan of this one seed. Story 4.21's
 /// area-share land use moved every pass-2 network, so that pair no longer
 /// exists on this seed; the pin now asserts the seed still clears the
-/// committed contract, and the seam itself is held by the max() contract's
-/// own definition.
+/// committed contract. It is an ordinary regression pin, not the seam's
+/// guard: the seam is held at the function by `streets::tests::detour_bound_
+/// violation_has_no_seam_at_the_takeover_distance`.
 #[test]
 fn seed_8872365549107643721_holds_the_detour_ceilings() {
     const SEED: u64 = 8872365549107643721;

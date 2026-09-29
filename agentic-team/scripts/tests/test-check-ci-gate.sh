@@ -34,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "PROPTEST_CASES=$PROPTEST_CASES PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED"
+      - run: cargo test
 
   client-check:
     name: client-check

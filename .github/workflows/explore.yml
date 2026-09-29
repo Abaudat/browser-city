@@ -38,7 +38,7 @@ jobs:
       - name: seed
         run: echo "PROPTEST_CASES=$PROPTEST_CASES PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED"
       - name: property suite
-        run: cargo test -p sim --release --test invariants
+        run: cargo test -p sim --release
       - if: failure() || cancelled()
         working-directory: .
         env:
@@ -49,4 +49,4 @@ jobs:
             "explore: generation property failed" \
             "explore.yml failed with PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED PROPTEST_CASES=$PROPTEST_CASES: $RUN_URL
 
-          Reproduce: PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED PROPTEST_CASES=$PROPTEST_CASES cargo test -p sim --release --test invariants. Pin the failing world seed as a plain #[test] and fix the cause; never retry. A repeat run comments here."
+          Reproduce: PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED PROPTEST_CASES=$PROPTEST_CASES cargo test -p sim --release. Pin the failing world seed as a plain #[test] and fix the cause; never retry. A repeat run comments here."

@@ -102,12 +102,8 @@ max = 50
 
 [[balance]]
 # The four `share_*_pct` keys are shares of the site's coarse-cell *area*
-# (`land_use::target_cells`), not of the district count. Residential and
-# institutional were retuned (58/10 -> 61/7) with the move to area shares:
-# institutional grows from the smallest leaves, so its realised area is
-# below its key (mean -0.15 points at 7), and at 10 the extra
-# fully-workplace land put the pooled workplace mean at 365 against the
-# 344 target; at 61/7 the 1,000,000-seed mean is 350.1 (+1.8%).
+# (`land_use::target_cells`), not of the district count. Retuned with the
+# move to area shares -- see `share_institutional_pct`.
 key = "generation.land_use.share_residential_pct"
 value = 61
 min = 0
@@ -127,7 +123,12 @@ max = 100
 
 [[balance]]
 # The four `share_*_pct` keys sum to 100 -- checked by
-# `GenerationConfig::from_balance`, not trusted from authoring.
+# `GenerationConfig::from_balance`, not trusted from authoring. Story
+# 4.21 retuned residential/institutional 58/10 -> 61/7 with the move to
+# area shares: institutional grows from the smallest leaves, so its
+# realised area is below its key (mean -0.15 points at 7), and at 10 the
+# extra fully-workplace land put the pooled workplace mean at 365 against
+# the 344 target; at 61/7 the 1,000,000-seed mean is 350.1 (+1.8%).
 key = "generation.land_use.share_institutional_pct"
 value = 7
 min = 0
@@ -136,16 +137,20 @@ max = 100
 [[balance]]
 # Absolute percentage points a non-residential use's realised area share
 # may sit from its own `share_*_pct` key -- the pass-1 wild-deviation
-# guard, set by the same stated rule as `envelopes.count_tolerance_
-# percent`: at least 5.5 standard deviations, and covering the measured
-# extremes with margin. Measured over 1,000,000 seeds (`cargo run -p
-# bounds --release --bin measure-generation -- bands 1000000`, 2026-09-29):
-# stddev 6.5 / 6.0 / 7.1 permille for commercial / industrial /
-# institutional (5.5 sigma = 3.6 / 3.3 / 3.9 points); extremes -5.5 and
-# +5.7 points (commercial and industrial, one leaf of overshoot or a
-# blocked frontier). 7 clears both with margin (7 / 5.7 = 1.23). The
-# seed that motivated it (16021368561388801292) had commercial at 33.3%
-# against 18, 15 points out.
+# guard. The overshoot side is bounded by construction (`land_use::
+# takes_leaf` overshoots by at most half a leaf: half of `max_leaf_cells`
+# squared over the coarse total, 1.8 points at the committed values --
+# `share_tolerance_covers_the_half_leaf_overshoot_bound` fails if a
+# retune outgrows the key). The shortfall side (a blocked frontier) has
+# no structural bound and is measured: over 1,000,000 seeds (`cargo run
+# -p bounds --release --bin measure-generation -- bands 1000000`,
+# 2026-09-29) extremes were -5.5 points (industrial) and +5.7 points
+# (commercial), the shares' stddev 0.65 / 0.60 / 0.71 points. 7 covers
+# both measured extremes with margin (7 / 5.7 = 1.23); this band is set
+# from the measured extremes, not from a sigma rule (5.5 sigma would be
+# 3.6 points, which the tails exceed). The seed that motivated it
+# (16021368561388801292) had commercial at 33.3% against 18, 15 points
+# out.
 key = "generation.land_use.share_tolerance_pct"
 value = 7
 min = 0
