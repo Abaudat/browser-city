@@ -61,10 +61,14 @@ min = 0
 max = 45
 
 [[balance]]
-# A safety cap on recursive subdivision depth -- generation is total, so
-# a pathological config still terminates rather than looping.
+# A termination cap on recursive subdivision depth -- generation is
+# total, so a pathological config still terminates rather than looping.
+# It must never be what sizes a leaf: at the committed 32x32 coarse grid
+# a 32-cell axis needs about four levels per axis, and a cap of 8 bound
+# and left leaves over `max_leaf_cells` (`subdivide_never_produces_a_leaf_
+# over_the_maximum_on_either_axis` guards it).
 key = "generation.land_use.max_recursion_depth"
-value = 8
+value = 20
 min = 1
 max = 20
 
@@ -101,8 +105,11 @@ min = 0
 max = 50
 
 [[balance]]
+# The four `share_*_pct` keys are shares of the site's coarse-cell *area*
+# (`land_use::target_cells`), not of the district count. Retuned with the
+# move to area shares -- see `share_institutional_pct`.
 key = "generation.land_use.share_residential_pct"
-value = 58
+value = 61
 min = 0
 max = 100
 
@@ -120,9 +127,36 @@ max = 100
 
 [[balance]]
 # The four `share_*_pct` keys sum to 100 -- checked by
-# `GenerationConfig::from_balance`, not trusted from authoring.
+# `GenerationConfig::from_balance`, not trusted from authoring. Story
+# 4.21 retuned residential/institutional 58/10 -> 61/7 with the move to
+# area shares: institutional grows from the smallest leaves, so its
+# realised area is below its key (mean -0.12 points at 7), and at 10 the
+# extra fully-workplace land put the pooled workplace mean at 365 against
+# the 344 target; at 61/7 the 1,000,000-seed mean is 350.3 (+2.1%).
 key = "generation.land_use.share_institutional_pct"
-value = 10
+value = 7
+min = 0
+max = 100
+
+[[balance]]
+# Absolute percentage points a non-residential use's realised area share
+# may sit from its own `share_*_pct` key -- the pass-1 wild-deviation
+# guard. The overshoot side is bounded by construction (`land_use::
+# takes_leaf` overshoots by at most half a leaf: half of `max_leaf_cells`
+# squared over the coarse total, 1.8 points at the committed values --
+# `share_tolerance_covers_the_half_leaf_overshoot_bound` fails if a
+# retune outgrows the key), and measured commercial and industrial land
+# exactly inside it (+-1.7 points). The binding side is institutional's
+# shortfall (it grows from the smallest non-adjacent leaves and can run
+# out of them; no structural bound): over 1,000,000 seeds (`cargo run -p
+# bounds --release --bin measure-generation -- bands 1000000`,
+# 2026-09-29, `max_recursion_depth` 20) its extreme is -4.4 points,
+# stddev 0.65 points (5.5 sigma = 3.6). 6 covers the measured extreme
+# with margin (6 / 4.4 = 1.36) and the half-leaf bound. The seed that
+# motivated it (16021368561388801292) had commercial at 33.3% against
+# 18, 15 points out.
+key = "generation.land_use.share_tolerance_pct"
+value = 6
 min = 0
 max = 100
 
@@ -341,7 +375,7 @@ max = 256
 # PR #349). Re-measured with real margin at the real (unmeasured, since
 # 3.11) long range: over the harness's own 50,000-seed exhaustive loop,
 # the worst ratio among pairs at or beyond the takeover distance was
-# 166% (seed `4798925340619191980`); 200 is that plus real margin --
+# 171% (seed `1060828608797003656`); 200 is that plus real margin --
 # re-measure by running `cargo run -p bounds --release --bin measure-
 # generation`'s own detour-bounds sweep whenever the street algorithm
 # changes, never "re-run the invariants at a high PROPTEST_CASES" (a
@@ -377,14 +411,14 @@ max = 500
 # generation`. Margin rule: the exhaustive-pair max (every non-both-
 # boundary node pair, not the cheap `DETOUR_SAMPLE_MAX_NODES` sample
 # the required property above checks) over the harness's own 50,000
-# mixed seeds, times 1.25, rounded up to a multiple of 8. Measured:
-# exhaustive max 328, at seed `10818714075226271966` -- 328 * 1.25 =
-# 410, rounded up to 416. `from_balance` separately refuses a value
+# mixed seeds, times 1.25, rounded up to a multiple of 8. Measured at
+# `GENERATION_VERSION` 8 (story 4.21): exhaustive max 330, at seed
+# `11859616019877610932` -- 330 * 1.25 = 413, rounded up to 416. `from_balance` separately refuses a value
 # over `4 * block_size_max_cells + 2 * arterial_width_cells` (536 at
 # this generator's other committed values) -- a loosening guard, never
 # a worst-case claim (`GenerationConfig::from_balance`'s own comment).
-# `10778299729582344780`, `12073828753114949265` and
-# `10818714075226271966` are pinned, each against its own exhaustive
+# `11179447352395363997`, `1060828608797003656` and
+# `11859616019877610932` are pinned, each against its own exhaustive
 # excess, in `streets::PINNED_DETOUR_SEEDS` (`invariants.rs`'s own
 # `detour_excess_holds_at_pinned_boundary_exit_seeds`). Miss rate
 # measured directly (story 15.10, `measure-generation`'s own detour-
@@ -796,11 +830,13 @@ max = 1000000
 # narrative: at least 5.5 standard deviations from the target, so an
 # arbitrary-seed failure is a roughly four-in-a-hundred-million event
 # (two-sided) rather than a number tuned to the observed sample's own
-# min/max. Measured over 50,000 seeds (`cargo run -p bounds --release
-# --bin measure-generation`): mean 910, standard deviation 29.9, min 786,
-# max 1,025. 5.5 * 29.9 / 894 = 18.4%; 21 clears it with real margin, and
-# covers the measured min (894-786=108, 12.1%) and max (1025-894=131,
-# 14.7%). Re-derived from the harness's own sigma after every retune.
+# min/max. Measured over 1,000,000 seeds (`cargo run -p bounds --release
+# --bin measure-generation -- bands 1000000`, 2026-09-29, after story
+# 4.21 moved pass 1 to area shares, `max_recursion_depth` 20): mean
+# 912.3, standard deviation 29.9, min 774, max 1,068. 5.5 * 29.9 / 893 =
+# 18.4%; 21 clears it, and covers the measured min (893-774=119, 13.3%)
+# and max (1068-893=175, 19.6%, margin 1.07). Re-derived from the harness's own sigma after
+# every retune.
 key = "generation.envelopes.count_tolerance_percent"
 value = 21
 min = 1
@@ -850,18 +886,18 @@ max = 1000000
 # `generation.envelopes.count_tolerance_percent`. Wider than the
 # building-count guard's own 21%: workplace count is a *derived*
 # quantity (every placed type whose own `professions` list is non-empty),
-# not a placement pass 4 tunes directly. Measured over 5,000 seeds
-# (`cargo run -p bounds --release --bin measure-generation`, after
-# adding `vacant_unit`/`storage_yard` -- no-post filler types, PR #317
-# cycle 2, Derek's direction: "a shuttered shopfront is content, not a
-# gap" -- to tune the pooled mean onto the target instead of widening the
-# band around it): mean 346.0, stddev 29.9, min 260, max 473. 5.5 * 29.9
-# / 344 = 47.8%; 50% covers the measured min (344-260=84, 24.4%) and max
-# (473-344=129, 37.5%) with real margin, the same sigma rule
+# not a placement pass 4 tunes directly. Measured over 1,000,000 seeds
+# (`cargo run -p bounds --release --bin measure-generation -- bands
+# 1000000`, 2026-09-29, after story 4.21 moved pass 1 to area shares --
+# the old 5,000-seed figure, sigma 29.9, was mostly pass-1 area
+# variance): mean 350.3, stddev 21.3, min 248, max 463. 5.5 * 21.3 / 343
+# = 34.1%; 40% covers the measured min (343-248=95, 27.7%) and max
+# (463-343=120, 35.0%) with real margin, the same sigma rule
 # `generation.envelopes.count_tolerance_percent` states. Re-derive after
-# every retune.
+# every retune; an outlier is diagnosed to its pass and pinned, never
+# absorbed by re-measuring this value.
 key = "generation.building_types.workplace_count_tolerance_percent"
-value = 50
+value = 40
 min = 1
 max = 100
 

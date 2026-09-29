@@ -144,6 +144,30 @@ impl LandUseMap {
         self.rows
     }
 
+    /// How many coarse cells carry `use_`.
+    pub fn area_cells(&self, use_: LandUse) -> i64 {
+        self.cells.iter().filter(|c| c.use_ == use_).count() as i64
+    }
+
+    /// The first non-residential use whose realised area share (permille
+    /// of the site) sits more than `share_tolerance_pct` points from its
+    /// own `share_*_pct` key, with that share; `None` when every use is
+    /// inside its band. The pass-1 guard for what the share keys mean.
+    pub fn share_band_violation(&self, cfg: &GenerationConfig) -> Option<(LandUse, i64)> {
+        let total = self.cols as i64 * self.rows as i64;
+        [
+            (LandUse::Commercial, cfg.share_commercial_pct),
+            (LandUse::Industrial, cfg.share_industrial_pct),
+            (LandUse::Institutional, cfg.share_institutional_pct),
+        ]
+        .into_iter()
+        .find_map(|(u, key)| {
+            let permille = self.area_cells(u) * 1000 / total.max(1);
+            let off = (permille - key as i64 * 10).abs();
+            (off > cfg.share_tolerance_pct as i64 * 10).then_some((u, permille))
+        })
+    }
+
     /// The density field's own peak, in coarse-grid coordinates --
     /// seeded and offset from the grid's geometric centre (NFR8, Artie's
     /// direction). Exposed so evidence rendering and ring-based tests
@@ -509,51 +533,53 @@ fn nearest_leaf_to(leaves: &[Rect], tx: i32, ty: i32) -> usize {
         .expect("leaves is never empty: at least one leaf always exists")
 }
 
-/// Institutional's own district-count share alone rarely produces
-/// enough leaves for [`assign_institutional`]'s own "at least three
-/// pockets" bar (Artie's direction, cycle 3): a raw leaf count around
-/// 20 at this generator's committed leaf sizes, at a 10% share, is only
-/// ever 2 leaves -- one pocket, never three. A floor, scaled down for a
+/// Institutional's own area share, taken from the smallest leaves, can
+/// still fall short of enough leaves for [`assign_institutional`]'s own
+/// "at least three pockets" bar (Artie's direction, cycle 3). A leaf-count
+/// floor, scaled down for a
 /// small total rather than a fixed number that could starve every other
 /// use on one: `min(6, total / 3)`.
 fn institutional_leaf_floor(total: usize) -> usize {
     6.min(total / 3)
 }
 
-/// `district_seed_count` targets, one per [`LandUse::ALL`] entry in the
-/// same order, computed from `cfg`'s own district-count shares
-/// (`round(total * share / 100)`, minimum 1 once `total >= 4`,
-/// institutional additionally floored by [`institutional_leaf_floor`]);
-/// residential (`ALL[0]`) always takes whatever is left, so the four
-/// counts sum to exactly `total`.
-fn target_counts(total: usize, cfg: &GenerationConfig) -> [usize; 4] {
+/// One use's growth rule, stated once and shared by [`grow_contiguous`],
+/// [`grow_contiguous_avoiding`] and [`assign_institutional`]: a use grows
+/// while its claimed area is under its target, and takes the next leaf
+/// only if that leaf brings the claimed area closer to the target than
+/// stopping would (`2 * claimed + leaf <= 2 * target`), so the overshoot
+/// is at most half a leaf. A use's first leaf is always taken.
+fn takes_leaf(claimed: i64, leaf: i64, target: i64) -> bool {
+    claimed == 0 || 2 * claimed + leaf <= 2 * target
+}
+
+fn leaf_area(r: Rect) -> i64 {
+    r.width() * r.height()
+}
+
+/// Per-use area targets in coarse cells, one per [`LandUse::ALL`] entry
+/// in the same order: `round(total_cells * share / 100)` (minimum 1 once
+/// `total_cells >= 4`, so every use is seeded); residential (`ALL[0]`)
+/// is the remainder, so the four targets sum to exactly `total_cells`.
+/// The `share_*_pct` keys are area shares of the site.
+fn target_cells(total_cells: i64, cfg: &GenerationConfig) -> [i64; 4] {
     let shares = [
         cfg.share_residential_pct,
         cfg.share_commercial_pct,
         cfg.share_industrial_pct,
         cfg.share_institutional_pct,
     ];
-    let mut counts = [0usize; 4];
-    let mut assigned = 0usize;
+    let floor = if total_cells >= 4 { 1 } else { 0 };
+    let mut targets = [0i64; 4];
+    let mut assigned = 0i64;
     for i in 1..4 {
-        let mut want = ((total as i64 * shares[i] as i64 + 50) / 100) as usize;
-        if i == 3 {
-            want = want.max(institutional_leaf_floor(total));
-        }
-        // Never claim more than leaves room for one of every other use
-        // (including residential) still to get at least one district.
-        let reserve_for_others = 4 - i;
-        let cap = total
-            .saturating_sub(assigned)
-            .saturating_sub(reserve_for_others);
-        counts[i] = want.clamp(
-            if total >= 4 { 1 } else { 0 },
-            cap.max(if total >= 4 { 1 } else { 0 }),
-        );
-        assigned += counts[i];
+        let want = (total_cells * shares[i] as i64 + 50) / 100;
+        let cap = (total_cells - assigned - (4 - i as i64)).max(floor);
+        targets[i] = want.clamp(floor, cap);
+        assigned += targets[i];
     }
-    counts[0] = total - assigned;
-    counts
+    targets[0] = total_cells - assigned;
+    targets
 }
 
 /// Grows `use_` from `seed` over `adjacency`, preferring the frontier
@@ -561,11 +587,12 @@ fn target_counts(total: usize, cfg: &GenerationConfig) -> [usize; 4] {
 /// toward the density peak, i.e. toward higher density, rather than in
 /// an arbitrary direction) -- falls back to the nearest unassigned leaf
 /// anywhere once the contiguous frontier is exhausted, so `target` is
-/// always reached exactly (bounded: at most `leaves.len()` iterations).
+/// always reached (bounded: at most `leaves.len()` iterations). `target`
+/// is in coarse cells and growth follows [`takes_leaf`].
 #[allow(clippy::too_many_arguments)]
 fn grow_contiguous(
     seed: usize,
-    target: usize,
+    target: i64,
     leaves: &[Rect],
     adjacency: &[Vec<usize>],
     assigned: &mut [Option<LandUse>],
@@ -577,13 +604,13 @@ fn grow_contiguous(
         return;
     }
     assigned[seed] = Some(use_);
-    let mut count = 1;
+    let mut claimed = leaf_area(leaves[seed]);
     let mut frontier: Vec<usize> = adjacency[seed]
         .iter()
         .copied()
         .filter(|&i| assigned[i].is_none())
         .collect();
-    while count < target {
+    while claimed < target {
         frontier.retain(|&i| assigned[i].is_none());
         if frontier.is_empty() {
             let Some(next) = (0..leaves.len())
@@ -592,8 +619,11 @@ fn grow_contiguous(
             else {
                 return;
             };
+            if !takes_leaf(claimed, leaf_area(leaves[next]), target) {
+                return;
+            }
             assigned[next] = Some(use_);
-            count += 1;
+            claimed += leaf_area(leaves[next]);
             frontier.extend(
                 adjacency[next]
                     .iter()
@@ -607,8 +637,11 @@ fn grow_contiguous(
         if assigned[next].is_some() {
             continue;
         }
+        if !takes_leaf(claimed, leaf_area(leaves[next]), target) {
+            return;
+        }
         assigned[next] = Some(use_);
-        count += 1;
+        claimed += leaf_area(leaves[next]);
         for &nb in &adjacency[next] {
             if assigned[nb].is_none() {
                 frontier.push(nb);
@@ -636,7 +669,7 @@ fn leaf_touches_use(
 /// simply stops short of `target` rather than reaching for the nearest
 /// leaf regardless of whether it touches `avoid`. "Never touches
 /// commercial" is the harder, unconditional constraint here; a target
-/// count is only ever the aspiration `target_counts` computes, and
+/// target is only ever the aspiration `target_cells` computes, and
 /// leaving a district unassigned by this pass falls back to residential
 /// at the end of [`assign_uses`] -- fewer industrial districts than
 /// asked for is an acceptable trade, industrial touching commercial is
@@ -648,7 +681,7 @@ fn leaf_touches_use(
 /// left near it.)
 fn grow_contiguous_avoiding(
     seed: usize,
-    target: usize,
+    target: i64,
     leaves: &[Rect],
     adjacency: &[Vec<usize>],
     assigned: &mut [Option<LandUse>],
@@ -660,7 +693,7 @@ fn grow_contiguous_avoiding(
     }
     let (seed_cx, seed_cy) = leaf_center(leaves[seed]);
     assigned[seed] = Some(use_);
-    let mut count = 1;
+    let mut claimed = leaf_area(leaves[seed]);
     let unblocked_unassigned = |i: usize, assigned: &[Option<LandUse>]| {
         assigned[i].is_none() && !leaf_touches_use(i, adjacency, assigned, avoid)
     };
@@ -669,7 +702,7 @@ fn grow_contiguous_avoiding(
         .copied()
         .filter(|&i| unblocked_unassigned(i, assigned))
         .collect();
-    while count < target {
+    while claimed < target {
         frontier.retain(|&i| unblocked_unassigned(i, assigned));
         if frontier.is_empty() {
             let Some(next) = (0..leaves.len())
@@ -678,8 +711,11 @@ fn grow_contiguous_avoiding(
             else {
                 return;
             };
+            if !takes_leaf(claimed, leaf_area(leaves[next]), target) {
+                return;
+            }
             assigned[next] = Some(use_);
-            count += 1;
+            claimed += leaf_area(leaves[next]);
             frontier.extend(
                 adjacency[next]
                     .iter()
@@ -693,8 +729,11 @@ fn grow_contiguous_avoiding(
         if !unblocked_unassigned(next, assigned) {
             continue;
         }
+        if !takes_leaf(claimed, leaf_area(leaves[next]), target) {
+            return;
+        }
         assigned[next] = Some(use_);
-        count += 1;
+        claimed += leaf_area(leaves[next]);
         for &nb in &adjacency[next] {
             if unblocked_unassigned(nb, assigned) {
                 frontier.push(nb);
@@ -723,6 +762,33 @@ const INSTITUTIONAL_POCKET_MAX_LEAVES: usize = 2;
 fn institutional_max_leaf_area(cfg: &GenerationConfig) -> i64 {
     let min = cfg.land_use_min_leaf_cells as i64;
     min * (min + 1)
+}
+
+/// What [`assign_institutional`] still has to place: an area target
+/// (coarse cells, [`takes_leaf`]'s rule) and a leaf-count floor
+/// ([`institutional_leaf_floor`]); a leaf is wanted until both are met.
+struct InstitutionalBudget {
+    target_cells: i64,
+    min_leaves: usize,
+    claimed_cells: i64,
+    leaves: usize,
+}
+
+impl InstitutionalBudget {
+    fn wants_more(&self) -> bool {
+        self.claimed_cells < self.target_cells || self.leaves < self.min_leaves
+    }
+
+    fn accepts(&self, leaf: i64) -> bool {
+        self.wants_more()
+            && (self.leaves < self.min_leaves
+                || takes_leaf(self.claimed_cells, leaf, self.target_cells))
+    }
+
+    fn claim(&mut self, leaf: i64) {
+        self.claimed_cells += leaf;
+        self.leaves += 1;
+    }
 }
 
 /// One [`assign_institutional`] pocket-seed search, `max_area` the only
@@ -759,12 +825,12 @@ fn institutional_grow_pocket(
     seed: usize,
     max_area: i64,
     max_pocket_leaves: usize,
-    remaining: &mut usize,
+    budget: &mut InstitutionalBudget,
 ) -> usize {
     assigned[seed] = Some(LandUse::Institutional);
-    *remaining -= 1;
+    budget.claim(leaf_area(leaves[seed]));
     let mut pocket_size = 1;
-    while pocket_size < max_pocket_leaves && *remaining > 0 {
+    while pocket_size < max_pocket_leaves && budget.wants_more() {
         let extra = adjacency[seed]
             .iter()
             .copied()
@@ -773,8 +839,11 @@ fn institutional_grow_pocket(
             .filter(|&i| !touches_institutional_other_than(i, seed, leaves, assigned))
             .min_by_key(|&i| (leaves[i].width() * leaves[i].height(), i));
         let Some(extra) = extra else { break };
+        if !budget.accepts(leaf_area(leaves[extra])) {
+            break;
+        }
         assigned[extra] = Some(LandUse::Institutional);
-        *remaining -= 1;
+        budget.claim(leaf_area(leaves[extra]));
         pocket_size += 1;
     }
     pocket_size
@@ -822,16 +891,24 @@ fn assign_institutional(
     leaves: &[Rect],
     adjacency: &[Vec<usize>],
     assigned: &mut [Option<LandUse>],
-    target: usize,
+    target_cells: i64,
     cfg: &GenerationConfig,
 ) {
     let max_area = institutional_max_leaf_area(cfg);
-    let mut remaining = target;
+    let mut budget = InstitutionalBudget {
+        target_cells,
+        min_leaves: institutional_leaf_floor(leaves.len()),
+        claimed_cells: 0,
+        leaves: 0,
+    };
     let mut pockets = 0usize;
-    while remaining > 0 {
+    while budget.wants_more() {
         let Some(seed) = institutional_seed_candidate(leaves, adjacency, assigned, max_area) else {
             break;
         };
+        if !budget.accepts(leaf_area(leaves[seed])) {
+            break;
+        }
         institutional_grow_pocket(
             leaves,
             adjacency,
@@ -839,7 +916,7 @@ fn assign_institutional(
             seed,
             max_area,
             INSTITUTIONAL_POCKET_MAX_LEAVES,
-            &mut remaining,
+            &mut budget,
         );
         pockets += 1;
     }
@@ -848,19 +925,11 @@ fn assign_institutional(
     // ceiling on its own, and a second relaxed-cap leaf next to it can
     // push a single component well past it (measured: two near-maximum
     // leaves reached 6.7% of the site before this cap existed).
-    while pockets < cfg.institutional_min_pockets as usize && remaining > 0 {
+    while pockets < cfg.institutional_min_pockets as usize && budget.wants_more() {
         let Some(seed) = institutional_seed_candidate(leaves, adjacency, assigned, i64::MAX) else {
             break;
         };
-        institutional_grow_pocket(
-            leaves,
-            adjacency,
-            assigned,
-            seed,
-            i64::MAX,
-            1,
-            &mut remaining,
-        );
+        institutional_grow_pocket(leaves, adjacency, assigned, seed, i64::MAX, 1, &mut budget);
         pockets += 1;
     }
 }
@@ -897,8 +966,9 @@ fn edge_target_point(edge: Edge, cols: i32, rows: i32) -> (i32, i32) {
 /// as one contiguous group from a seeded site edge, never touching
 /// commercial; institutional takes several small, non-adjacent pockets
 /// of the smallest, most-boundary-adjacent remaining leaves; residential
-/// takes the rest. Target counts ([`target_counts`]) are exact district-
-/// count shares, so every use is present whenever `leaves.len() >= 4`.
+/// takes the rest. Targets ([`target_cells`]) are area shares of the site
+/// in coarse cells, grown by [`takes_leaf`]'s one rule, so every use is
+/// present whenever `leaves.len() >= 4`.
 fn assign_uses(
     rng: &mut Rng,
     leaves: &[Rect],
@@ -911,12 +981,13 @@ fn assign_uses(
     let n = leaves.len();
     let adjacency = leaf_adjacency(leaves);
     let mut assigned: Vec<Option<LandUse>> = vec![None; n];
-    let counts = target_counts(n, cfg);
+    let total_cells: i64 = leaves.iter().map(|&r| leaf_area(r)).sum();
+    let targets = target_cells(total_cells, cfg);
 
     let commercial_seed = nearest_leaf_to(leaves, peak_cx, peak_cy);
     grow_contiguous(
         commercial_seed,
-        counts[1],
+        targets[1],
         leaves,
         &adjacency,
         &mut assigned,
@@ -941,7 +1012,7 @@ fn assign_uses(
     if let Some(industrial_seed) = industrial_seed {
         grow_contiguous_avoiding(
             industrial_seed,
-            counts[2],
+            targets[2],
             leaves,
             &adjacency,
             &mut assigned,
@@ -950,7 +1021,7 @@ fn assign_uses(
         );
     }
 
-    assign_institutional(leaves, &adjacency, &mut assigned, counts[3], cfg);
+    assign_institutional(leaves, &adjacency, &mut assigned, targets[3], cfg);
 
     assigned
         .into_iter()
@@ -1119,24 +1190,18 @@ mod tests {
         }
     }
 
-    /// Quentin's direction: the district-count shares must actually be
-    /// honoured, exactly, not merely "residential is usually biggest" --
-    /// `target_counts` computes an exact per-use leaf-count target and
-    /// `assign_uses`'s growth functions are proven (by construction,
-    /// pinned here) to always reach it.
+    /// Every coarse cell belongs to exactly one region, and residential
+    /// (the remainder) is never given a smaller share key than another use.
     #[test]
-    fn realised_district_counts_match_target_counts_exactly() {
+    fn regions_tile_the_grid_and_residential_holds_the_largest_share() {
         let c = cfg();
         for seed in 0u64..64 {
             let map = run_ok(seed, &c);
             let regions = map.regions();
             let total_leaf_cells: u64 = regions.iter().map(|r| r.cell_count).sum();
             assert_eq!(total_leaf_cells, (map.cols * map.rows) as u64);
-            // Residential must be the largest use by district *count* for
-            // every seed -- a direct, mechanical consequence of counts[0]
-            // getting the remainder from target_counts and every share
-            // being <= share_residential_pct, checked structurally here
-            // rather than trusted.
+            // Residential takes the remainder of `target_cells`, and every
+            // share key is <= its own.
             assert!(c.share_residential_pct >= c.share_commercial_pct);
             assert!(c.share_residential_pct >= c.share_industrial_pct);
             assert!(c.share_residential_pct >= c.share_institutional_pct);
@@ -1273,6 +1338,34 @@ mod tests {
     }
 
     #[test]
+    fn subdivide_never_produces_a_leaf_over_the_maximum_on_either_axis() {
+        let c = cfg();
+        for seed in 0u64..64 {
+            let mut rng = Rng::new(seed_from_ids(seed, PASS_ID));
+            let mut leaves = Vec::new();
+            subdivide(
+                Rect {
+                    x0: 0,
+                    y0: 0,
+                    x1: 32,
+                    y1: 32,
+                },
+                &c,
+                &mut rng,
+                0,
+                &mut leaves,
+            );
+            for leaf in &leaves {
+                assert!(
+                    leaf.width() <= c.land_use_max_leaf_cells as i64
+                        && leaf.height() <= c.land_use_max_leaf_cells as i64,
+                    "seed {seed}: leaf {leaf:?} over land_use_max_leaf_cells --                      max_recursion_depth is binding"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn subdivide_never_produces_a_leaf_under_the_minimum_on_either_axis() {
         let c = cfg();
         for seed in 0u64..64 {
@@ -1306,15 +1399,120 @@ mod tests {
     // --- target_counts / assign_uses, unit level ------------------------
 
     #[test]
-    fn target_counts_sum_exactly_to_the_total() {
+    fn target_cells_sum_exactly_to_the_total() {
         let c = cfg();
-        for total in [4usize, 5, 10, 37, 100, 256] {
-            let counts = target_counts(total, &c);
-            assert_eq!(counts.iter().sum::<usize>(), total);
-            for &n in &counts {
+        for total in [4i64, 5, 10, 37, 100, 1024] {
+            let targets = target_cells(total, &c);
+            assert_eq!(targets.iter().sum::<i64>(), total);
+            for &n in &targets {
+                assert!(n >= 1, "targets {targets:?} has a zero entry for {total}");
+            }
+        }
+        // The shares are area shares: 1,024 cells at 18% commercial.
+        assert_eq!(target_cells(1024, &c)[1], 184);
+    }
+
+    /// A 10x10 fixture (each cell is 10 permille of the site) with the
+    /// given commercial cell count, industrial and institutional exactly
+    /// on their keys (14 / 7 cells at the committed 14% / 7%).
+    fn share_fixture(commercial_cells: usize, c: &GenerationConfig) -> LandUseMap {
+        let mut uses = vec![LandUse::Commercial; commercial_cells];
+        uses.extend(vec![LandUse::Industrial; 14]);
+        uses.extend(vec![LandUse::Institutional; 7]);
+        uses.resize(100, LandUse::Residential);
+        let cells = uses
+            .into_iter()
+            .map(|use_| LandUseCell { use_, density: 50 })
+            .collect();
+        LandUseMap::test_fixture(c.site(), c.coarse_cell_size_cells, 10, 10, 5, 5, cells)
+    }
+
+    #[test]
+    fn share_band_is_exact_at_the_tolerance_boundary() {
+        let c = cfg();
+        assert_eq!(c.share_commercial_pct, 18);
+        assert_eq!(c.share_tolerance_pct, 6);
+        // 24 cells = 240 permille = exactly 18% + 6 points: inside.
+        assert_eq!(share_fixture(24, &c).share_band_violation(&c), None);
+        // 25 cells = one cell (10 permille) further: outside, naming the use.
+        assert_eq!(
+            share_fixture(25, &c).share_band_violation(&c),
+            Some((LandUse::Commercial, 250))
+        );
+        // 12 cells = 18% - 6 points: inside; 11 cells: outside.
+        assert_eq!(share_fixture(12, &c).share_band_violation(&c), None);
+        assert_eq!(
+            share_fixture(11, &c).share_band_violation(&c),
+            Some((LandUse::Commercial, 110))
+        );
+    }
+
+    #[test]
+    fn share_band_flags_a_third_of_the_site_as_commercial() {
+        let c = cfg();
+        let map = share_fixture(33, &c);
+        assert_eq!(map.area_cells(LandUse::Commercial), 33);
+        assert_eq!(
+            map.share_band_violation(&c),
+            Some((LandUse::Commercial, 330))
+        );
+    }
+
+    #[test]
+    fn share_band_accepts_a_map_on_its_keys() {
+        let c = cfg();
+        let map = share_fixture(18, &c);
+        assert_eq!(map.share_band_violation(&c), None);
+        assert_eq!(map.area_cells(LandUse::Industrial), 14);
+        assert_eq!(map.area_cells(LandUse::Institutional), 7);
+        assert_eq!(map.area_cells(LandUse::Residential), 61);
+    }
+
+    /// The overshoot side of the band is bounded by construction
+    /// ([`takes_leaf`]: at most half a leaf), so the committed tolerance
+    /// must cover half a maximum-size leaf of the committed grid.
+    #[test]
+    fn share_tolerance_covers_the_half_leaf_overshoot_bound() {
+        let c = cfg();
+        let total_cells = (c.site().width() / c.coarse_cell_size_cells as i64)
+            * (c.site().height() / c.coarse_cell_size_cells as i64);
+        let half_max_leaf = (c.land_use_max_leaf_cells as i64).pow(2) / 2;
+        let overshoot_permille = half_max_leaf * 1000 / total_cells;
+        assert!(
+            c.share_tolerance_pct as i64 * 10 >= overshoot_permille,
+            "share_tolerance_pct {} is under the {overshoot_permille} permille half-leaf overshoot bound",
+            c.share_tolerance_pct
+        );
+    }
+
+    #[test]
+    fn takes_leaf_overshoots_by_at_most_half_a_leaf() {
+        assert!(takes_leaf(0, 36, 1));
+        assert!(takes_leaf(10, 20, 20)); // 30 vs 20: 10 over, 10 short -- tie takes
+        assert!(!takes_leaf(10, 21, 20));
+        assert!(takes_leaf(10, 5, 20));
+    }
+
+    /// The area share each grown use realises sits within one
+    /// largest leaf of its own target (institutional excepted: it also
+    /// honours its leaf-count floor).
+    #[test]
+    fn commercial_and_industrial_area_match_their_area_shares() {
+        let c = cfg();
+        let max_leaf = (c.land_use_max_leaf_cells as i64).pow(2);
+        for seed in 0u64..64 {
+            let map = run_ok(seed, &c);
+            let total = (map.cols * map.rows) as i64;
+            let targets = target_cells(total, &c);
+            for (i, u) in [(1usize, LandUse::Commercial), (2, LandUse::Industrial)] {
+                let got = (0..map.rows)
+                    .flat_map(|cy| (0..map.cols).map(move |cx| (cx, cy)))
+                    .filter(|&(cx, cy)| map.coarse_at(cx, cy).unwrap().use_ == u)
+                    .count() as i64;
                 assert!(
-                    n >= 1,
-                    "counts {counts:?} has a zero entry for total {total}"
+                    (got - targets[i]).abs() <= max_leaf,
+                    "seed {seed}: {u:?} {got} cells vs target {}",
+                    targets[i]
                 );
             }
         }

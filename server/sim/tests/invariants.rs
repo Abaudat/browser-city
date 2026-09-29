@@ -5,6 +5,15 @@
 //! name exists) or `deferred` (the subsystem it protects does not exist yet).
 //! `scripts/ci/check-trace-matrix.sh` fails the build if the two ever
 //! disagree, so this file and the matrix cannot drift silently.
+//!
+//! Reproducing a CI failure (NFR50): `ci.yml` runs every property from one
+//! fixed `PROPTEST_RNG_SEED` and prints it with `PROPTEST_CASES`; locally,
+//! `PROPTEST_RNG_SEED=<from the log> PROPTEST_CASES=<from the log> cargo
+//! test -p sim --release --test invariants -- <property>` replays the same
+//! cases. With a fixed RNG seed every property draws the same
+//! `any::<u64>()` world seeds. An outlier found by `explore.yml` (fresh
+//! seeds) is diagnosed to the pass that owns it and pinned as a plain
+//! `#[test]`, never absorbed by widening a tolerance.
 
 use proptest::prelude::*;
 use sim::appearance;
@@ -85,6 +94,7 @@ pub const INV_GENERATION_INSTITUTIONAL_POCKETS_ARE_SMALL: &str = "at least insti
 pub const INV_GENERATION_INDUSTRIAL_NEVER_TOUCHES_COMMERCIAL: &str =
     "no industrial coarse cell is ever adjacent to a commercial one, for any seed (FR110)";
 pub const INV_GENERATION_RESIDENTIAL_IS_THE_LARGEST_LAND_USE_BY_AREA: &str = "residential has more coarse cells than any other single land use, for any seed -- field-driven assignment (commercial at the peak, industrial one contiguous group, institutional the smallest leaves) structurally favours it over a blind weighted draw, but that only holds if something keeps checking it (FR110, Quentin's direction)";
+pub const INV_GENERATION_LAND_USE_AREA_SHARE_WITHIN_TOLERANCE: &str = "each non-residential land use's area share of the site sits within share_tolerance_pct percentage points of its own share_*_pct key, for any seed -- the pass-1 guard for what the share keys mean (story 4.21, FR110)";
 pub const INV_GENERATION_P99_DETOUR_RATIO_BOUNDED: &str = "the 99th-percentile BFS-network-vs-Manhattan detour ratio, over one city's own sampled pairs, never exceeds p99_detour_percent, for any seed (FR110, Tim's direction)";
 pub const INV_GENERATION_NO_STAGGERED_JUNCTIONS: &str = "no two junctions on the same street sit under junction_min_separation_cells apart unless they coincide, for any seed -- asserted at zero, a refused split rather than a measured ceiling (FR110, Tim's direction)";
 pub const INV_GENERATION_MIN_BLOCK_DEPTH_IS_RESPECTED: &str =
@@ -2173,6 +2183,29 @@ proptest! {
         }
     }
 
+    /// `inv_generation_land_use_area_share_within_tolerance` (story 4.21):
+    /// each non-residential use's area share sits within
+    /// `share_tolerance_pct` points of its own `share_*_pct` key, checked
+    /// at the pass that owns it rather than two passes downstream in the
+    /// building and workplace counts. Measured miss rate (`measure-generation -- bands 1000000`, 1,000,000
+    /// seeds, 2026-09-29): 0 misses; rule-of-three bound 0.000300% per seed,
+    /// implied failure probability per fresh-seed 4,096-case run
+    /// (`explore.yml`; `ci.yml`'s fixed seed cannot flake) <= 1.2213%.
+    #[test]
+    fn inv_generation_land_use_area_share_within_tolerance(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        prop_assert!(
+            lu.share_band_violation(&cfg).is_none(),
+            "seed {seed}: land-use share outside share_tolerance_pct: {:?} (commercial {}, industrial {}, institutional {} of {} coarse cells)",
+            lu.share_band_violation(&cfg),
+            lu.area_cells(land_use::LandUse::Commercial),
+            lu.area_cells(land_use::LandUse::Industrial),
+            lu.area_cells(land_use::LandUse::Institutional),
+            lu.cols() * lu.rows()
+        );
+    }
+
     /// `inv_generation_residential_is_the_largest_land_use_by_area`
     /// (Quentin's direction, cycle 1): the balance keys are named
     /// "shares", and `target_counts` only ever claims a *district count*
@@ -2690,7 +2723,10 @@ proptest! {
     /// AC4's own tolerance guard is a world that fails to create, so the
     /// acceptable failure rate over arbitrary seeds is engineered to be
     /// negligible (`count_tolerance_percent`'s own key comment states the
-    /// sigma-based rule), not merely hoped for.
+    /// sigma-based rule), not merely hoped for. Measured miss rate (`measure-generation -- bands 1000000`, 1,000,000
+    /// seeds, 2026-09-29): 0 misses; rule-of-three bound 0.000300% per seed,
+    /// implied failure probability per fresh-seed 4,096-case run
+    /// (`explore.yml`; `ci.yml`'s fixed seed cannot flake) <= 1.2213%.
     #[test]
     fn inv_generation_building_count_within_tolerance(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -2911,7 +2947,10 @@ proptest! {
     /// `inv_generation_workplace_count_within_tolerance` (AC4, story 3.4):
     /// the same shape as `inv_generation_building_count_within_tolerance`
     /// -- `generate`'s own `check_workplace_count` clears the per-seed
-    /// band, for any seed.
+    /// band, for any seed. Measured miss rate (`measure-generation -- bands 1000000`, 1,000,000
+    /// seeds, 2026-09-29): 0 misses; rule-of-three bound 0.000300% per seed,
+    /// implied failure probability per fresh-seed 4,096-case run
+    /// (`explore.yml`; `ci.yml`'s fixed seed cannot flake) <= 1.2213%.
     #[test]
     fn inv_generation_workplace_count_within_tolerance(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -3606,23 +3645,17 @@ fn block_edge_touches_street(block: Rect, street: Rect, side: sim::generation::S
     }
 }
 
-/// The argmin and argmax seeds of the building-count distribution over
-/// the committed harness's own 50,000-seed scan (`cargo run -p bounds
-/// --release --bin measure-generation` prints both) -- copied from its
-/// output, never hunted for, and re-taken whenever the harness is re-run
-/// after a retune. Pinned so a generator change that shifts the
-/// distribution fails deterministically, every run. The first pair
-/// (`18_959`/`33_799`) is PR #317 cycle 5's own sequential-scan
-/// argmin/argmax (777/1,048); the second (story 3.18's own mixed-seed
-/// scan, min 786/max 1,025) is a *different* pair, not a replacement --
-/// the harness stopped scanning `0..50_000` sequentially, so the two
-/// pairs are two independent findings, both still valid regression
-/// cases, kept side by side (Tim's direction, story 3.18 cycle 1).
+/// The argmin and argmax seeds of the building-count distribution at
+/// `GENERATION_VERSION` 8: the 50,000-seed scan's (min 788 / max 1,043) and
+/// the 1,000,000-seed band sweep's (`measure-generation -- bands
+/// 1000000`: min 774 / max 1,068), copied from the harness's output, never
+/// hunted for, and re-taken whenever the generator moves. A generator
+/// change that shifts the distribution fails deterministically, every run.
 const PINNED_BUILDING_COUNT_SEEDS: [u64; 4] = [
-    18_959,
-    33_799,
-    1_722_240_287_980_749_281,
-    8_629_247_394_359_087_537,
+    12_223_261_918_320_165_154,
+    7_898_196_911_489_858_340,
+    5_679_918_593_741_389_805,
+    1_635_434_127_239_465_190,
 ];
 
 /// A handful of individually-measured seeds, pinned as fixed-seed tests
@@ -3689,62 +3722,24 @@ fn detour_excess_holds_at_pinned_boundary_exit_seeds() {
 }
 
 /// Story 15.10: seed `8872365549107643721` failed `inv_generation_
-/// detour_ratio_bounded` on CI run 36388555866 (PR #349, which touches
-/// none of passes 1-2, so it fails the same way on master) -- the pair
+/// detour_ratio_bounded` on CI run 36388555866 (PR #349) -- the pair
 /// `(152,0)-(393,18)`, Manhattan 259, had a 204% ratio against the old,
-/// independently-set `max_detour_percent` (200%), while its own network
-/// distance (529 cells) sat comfortably under `manhattan + max_detour_
-/// excess_cells` (675) -- Derek's finding: the old AND-with-threshold
-/// contract could allow *less* additive excess to a pair a few cells
-/// past `detour_long_pair_cells` than to one a few cells short of it, a
-/// seam no value of a separate threshold key could close. Fixed at the
-/// source (`streets::detour_bound_violation`'s own max()-contract: a
-/// pair under the takeover distance is bound only by the additive term,
-/// which this one already cleared), never a re-scan of this one seed.
-/// Pinned by equality, not just `Ok` (Quentin's/Derek's direction): a
-/// pass-2 or streets-key change that moves this pair's own figures, or
-/// that makes it start failing the committed contract, goes red here.
+/// independently-set `max_detour_percent` (200%) while its network
+/// distance sat well under `manhattan + max_detour_excess_cells`: the
+/// old AND-with-threshold contract could allow *less* additive excess to a
+/// pair a few cells past `detour_long_pair_cells` than to one a few cells
+/// short of it. Fixed at the source (`streets::detour_bound_violation`'s
+/// own max()-contract), never a re-scan of this one seed. Story 4.21's
+/// area-share land use moved every pass-2 network, so that pair no longer
+/// exists on this seed; the pin now asserts the seed still clears the
+/// committed contract. It is an ordinary regression pin, not the seam's
+/// guard: the seam is held at the function by `streets::tests::detour_bound_
+/// violation_has_no_seam_at_the_takeover_distance`.
 #[test]
 fn seed_8872365549107643721_holds_the_detour_ceilings() {
     const SEED: u64 = 8872365549107643721;
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     detour_bounds_hold(SEED, &cfg).unwrap_or_else(|e| panic!("pinned seed {SEED}: {e}"));
-
-    let lu = land_use::run(SEED, cfg.site(), &cfg).unwrap();
-    let net = streets::run(SEED, &lu, &cfg);
-    let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
-    let pair = samples
-        .iter()
-        .find(|s| s.a == (152, 0) && s.b == (393, 18))
-        .unwrap_or_else(|| {
-            panic!(
-                "pinned seed {SEED}: its own (152,0)-(393,18) pair is no longer in the \
-                 14-node sample -- pass 2 moved; re-measure and re-pin"
-            )
-        });
-    assert_eq!(
-        pair.manhattan, 259,
-        "pinned seed {SEED}: (152,0)-(393,18)'s own Manhattan distance moved -- pass 2 or a \
-         streets key changed; re-measure and re-pin"
-    );
-    assert_eq!(
-        pair.network, 529,
-        "pinned seed {SEED}: (152,0)-(393,18)'s own network distance moved -- pass 2 or a \
-         streets key changed; re-measure and re-pin"
-    );
-    assert!(
-        pair.ratio_pct() > 200,
-        "pinned seed {SEED}: (152,0)-(393,18)'s own ratio ({}%) no longer exceeds the old \
-         200% -- this test stops documenting the flake it was pinned for",
-        pair.ratio_pct()
-    );
-    assert!(
-        pair.network <= pair.detour_allowed(&cfg),
-        "pinned seed {SEED}: (152,0)-(393,18)'s own network ({}) no longer clears its own \
-         allowed bound ({}) under the committed max() contract",
-        pair.network,
-        pair.detour_allowed(&cfg)
-    );
 }
 
 /// Quentin's direction, story 3.18 cycle 1: `max_detour_excess_cells`'s
@@ -4283,6 +4278,34 @@ fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_k
     }
 }
 
+/// Story 4.21: seed `16021368561388801292` once failed
+/// `inv_generation_workplace_count_within_tolerance` on CI: 539 workplaces
+/// against a 171-514 band (about 6.5 sigma). Pass 5 was behaving as on any
+/// seed; pass 1 had given commercial 33.3% of the site's coarse cells
+/// against `share_commercial_pct = 18`, because the share keys were applied
+/// to the count of BSP leaves rather than to their area. A plain,
+/// non-random pin: it must hold under every property, and a `cc` entry in
+/// `invariants.proptest-regressions` would pin the generator's RNG state,
+/// not this world seed, so a strategy change would silently re-map it.
+#[test]
+fn seed_16021368561388801292_holds_its_commercial_share_and_workplace_band() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let seed = 16021368561388801292u64;
+    let d = sim::generation::generate(seed, &cfg, &content)
+        .unwrap_or_else(|e| panic!("seed {seed}: generate is no longer Ok: {e:?}"));
+    d.check_workplace_count(&cfg, &content)
+        .unwrap_or_else(|e| panic!("seed {seed}: workplace count outside its band: {e:?}"));
+    let lu = &d.land_use;
+    assert_eq!(
+        lu.share_band_violation(&cfg),
+        None,
+        "seed {seed}: a land-use share is outside share_tolerance_pct (commercial {} of {} cells)",
+        lu.area_cells(land_use::LandUse::Commercial),
+        lu.cols() * lu.rows()
+    );
+}
+
 /// Story 15.9: seed `5671826158575195197` -- 174 cafe-eligible envelopes,
 /// zero cafes drawn -- once failed
 /// `inv_generation_required_institutions_are_present_when_their_own_
@@ -4290,8 +4313,8 @@ fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_k
 /// `issue-310`/`issue-335` branches, at about 1 in 120,000 uniformly
 /// drawn seeds (a ~3-4% chance per CI run at `PROPTEST_CASES=4096`). A
 /// plain, non-random pin, never folded into `invariants.proptest-
-/// regressions` (that file only replays for the property that recorded
-/// it): cafe moved onto the distribution mechanism (`cafe_present`,
+/// regressions` (a `cc` entry pins the generator's RNG state, not the
+/// world seed, so a strategy change would silently re-map it): cafe moved onto the distribution mechanism (`cafe_present`,
 /// `defs/rules/generation.toml`) that guarantees this by construction,
 /// so this exact seed -- once a real failure -- now places a cafe and
 /// clears `check_rules` both, on every run.
@@ -4349,9 +4372,9 @@ fn seed_5671826158575195197_places_a_cafe() {
 /// no longer strands it -- the site-wide pool, which this same seed
 /// proves has real eligible land elsewhere, gets the chance the
 /// catchment-only view never gave it. This pin is a plain, non-random
-/// `#[test]`, mirroring the seed above, because the property that found
-/// it is a `proptest!` case and `invariants.proptest-regressions` only
-/// replays for the exact property that recorded it.
+/// `#[test]`, mirroring the seed above: a `cc` entry in
+/// `invariants.proptest-regressions` pins the generator's RNG state, not
+/// the world seed, so a strategy change would silently re-map it.
 #[test]
 fn seed_18237087621053529407_places_its_full_cafe_target_despite_a_starved_catchment() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();

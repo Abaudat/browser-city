@@ -60,9 +60,9 @@ pub fn rect_seed_key(r: SiteBounds) -> u64 {
 
 /// Bumped whenever any implemented pass's algorithm or seeding changes in
 /// a way that could move its output for a fixed seed -- `tests/goldens/
-/// generation_v7.golden` is keyed to this, exactly like `sim::rng::
+/// generation_v8.golden` is keyed to this, exactly like `sim::rng::
 /// RNG_VERSION`/`sim::appearance::APPEARANCE_VERSION`.
-pub const GENERATION_VERSION: u32 = 7;
+pub const GENERATION_VERSION: u32 = 8;
 
 /// Every way generation itself can fail, across every implemented pass --
 /// one type, never a `Result<_, String>` per pass.
@@ -302,15 +302,17 @@ pub struct GenerationConfig {
     /// 256)").
     pub density_peak_offset_min_pct: i32,
     pub density_peak_offset_max_pct: i32,
-    /// District-count shares (not area shares -- `docs/generation.md`
-    /// says so): the target number of districts (recursive-subdivision
-    /// leaves) each use gets is `round(total_leaves * share_pct / 100)`,
-    /// residential taking the remainder. Realised counts are asserted
-    /// against these targets exactly (`land_use::tests`).
+    /// Area shares of the site's coarse cells: each use's target is
+    /// `round(total_cells * share_pct / 100)` cells, grown leaf by leaf
+    /// (`land_use::takes_leaf`), residential taking the remainder.
     pub share_residential_pct: i32,
     pub share_commercial_pct: i32,
     pub share_industrial_pct: i32,
     pub share_institutional_pct: i32,
+    /// Absolute percentage points a non-residential use's realised area
+    /// share may sit from its own `share_*_pct` key
+    /// (`LandUseMap::share_band_violation`).
+    pub share_tolerance_pct: i32,
 
     /// A city's own north-south (respectively east-west) arterial count
     /// is seeded uniformly in `[..._min, ..._max]` -- Artie's direction,
@@ -611,6 +613,7 @@ impl GenerationConfig {
             share_industrial_pct: get(balance, "generation.land_use.share_industrial_pct") as i32,
             share_institutional_pct: get(balance, "generation.land_use.share_institutional_pct")
                 as i32,
+            share_tolerance_pct: get(balance, "generation.land_use.share_tolerance_pct") as i32,
 
             arterial_count_ns_min: get(balance, "generation.streets.arterial_count_ns_min") as u32,
             arterial_count_ns_max: get(balance, "generation.streets.arterial_count_ns_max") as u32,
@@ -1203,6 +1206,7 @@ mod tests {
             seed("generation.land_use.share_commercial_pct", 18, 0, 100),
             seed("generation.land_use.share_industrial_pct", 14, 0, 100),
             seed("generation.land_use.share_institutional_pct", 10, 0, 100),
+            seed("generation.land_use.share_tolerance_pct", 10, 0, 100),
             seed("generation.streets.arterial_count_ns_min", 2, 0, 4),
             seed("generation.streets.arterial_count_ns_max", 3, 0, 4),
             seed("generation.streets.arterial_count_ew_min", 1, 0, 4),

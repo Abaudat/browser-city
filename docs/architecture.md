@@ -11,7 +11,7 @@ cited here by identifier.
 | Server module                 | Rust, edition 2024, `crate-type = ["cdylib"]`, target `wasm32-unknown-unknown`                           |
 | Server, database, replication | SpacetimeDB 2.9.x — the `spacetimedb` crate                                                              |
 | Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the native schema-test and fixture-tooling crate; the table-bounds registry is `sim::table_bounds`), and the `browser_city` module crate, which depends on `sim` |
-| Property testing (server)     | `proptest`, dev-dependency of `sim` and `tools/defs-build` only; case count from `PROPTEST_CASES`       |
+| Property testing (server)     | `proptest` `=1.11.0`, dev-dependency of `sim` and `tools/defs-build` only; case count from `PROPTEST_CASES`, RNG seed from `PROPTEST_RNG_SEED` — fixed in `ci.yml`, `github.run_id` in `explore.yml`; a failure reproduces with `PROPTEST_RNG_SEED=<log> PROPTEST_CASES=<log> cargo test -p sim --release --test invariants -- <property>` (NFR50) |
 | Property testing (client)     | `fast-check` 4.10.0, pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
 | E2E pixel compare             | `pixelmatch` 7.2.0 + `pngjs` 7.0.0 (`@types/pngjs` 6.0.5), pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
 | Boot-budget HTTPS preview     | `@vitejs/plugin-basic-ssl` 2.3.0, pinned, `devDependency` of `client` only; enabled only when `BC_BOOT_HTTPS=1` (the boot-budget harness), never for `npm run dev`/`preview` defaults, never in the built bundle |

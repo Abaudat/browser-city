@@ -91,12 +91,26 @@
 //! million-seed loop is what would make this sweep slow, not what a
 //! ratio statistic needs. Prints this sweep's own wall-clock too.
 
+//! Story 4.21 (the workplace-band flake): a band sweep over its own seed
+//! range and salt (`cargo run -p bounds --release --bin measure-generation
+//! -- bands <n>` runs only it; the full run does it first, at
+//! [`BAND_SEED_COUNT_DEFAULT`]). Per seed it runs the full five-pass
+//! `plan` and prints, for the three per-seed bands CI gates on -- land-use
+//! area share (`land_use.share_tolerance_pct`), building count
+//! (`envelopes.count_tolerance_percent`) and workplace count
+//! (`building_types.workplace_count_tolerance_percent`) -- the statistic's
+//! min/p1/p50/p99/max/mean/stddev, the 5.5-sigma tolerance those imply,
+//! the band's miss count and the failure probability a
+//! [`CI_PROPTEST_CASES`]-case run implies (the rule-of-three bound when
+//! there are no misses). Those figures, with the seed count and date, are
+//! what the three invariants' doc comments and the keys' comments quote.
+
 use std::collections::BTreeMap;
 use std::time::Instant;
 
 use sim::generated::defs;
 use sim::generation::{
-    GenerationConfig, GenerationContent, building_types, envelopes, land_use, streets,
+    GenerationConfig, GenerationContent, LandUse, building_types, envelopes, land_use, streets,
 };
 use sim::rng::seed_from_ids;
 
@@ -151,6 +165,13 @@ const MEASURE_DETOUR_SEED_SALT: u64 = 0xB0F0_5EE3;
 /// alongside that key if it ever moves.
 const CI_PROPTEST_CASES: u32 = 4096;
 
+/// The band sweep's own default seed count when no `bands <n>` argument is
+/// given.
+const BAND_SEED_COUNT_DEFAULT: u64 = 50_000;
+/// A fifth, distinct salt for the band sweep -- see
+/// [`MEASURE_DETOUR_SEED_SALT`].
+const MEASURE_BAND_SEED_SALT: u64 = 0xB0F0_5EE4;
+
 /// This loop index's own measured seed -- spread over the full `u64`
 /// space by `seed_from_ids` (see the module doc above), never the index
 /// itself.
@@ -164,6 +185,10 @@ fn mixed_building_type_seed(index: u64) -> u64 {
 
 fn mixed_missing_tag_seed(index: u64) -> u64 {
     seed_from_ids(MEASURE_MISSING_TAG_SEED_SALT, index)
+}
+
+fn mixed_band_seed(index: u64) -> u64 {
+    seed_from_ids(MEASURE_BAND_SEED_SALT, index)
 }
 
 fn mixed_detour_seed(index: u64) -> u64 {
@@ -223,10 +248,125 @@ impl Stats {
     }
 }
 
+/// The band sweep (module doc, story 4.21).
+fn band_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
+    println!(
+        "
+band sweep: {n} seeds, all five passes (salt {MEASURE_BAND_SEED_SALT:#x})"
+    );
+    let uses = [
+        (LandUse::Commercial, cfg.share_commercial_pct, "commercial"),
+        (LandUse::Industrial, cfg.share_industrial_pct, "industrial"),
+        (
+            LandUse::Institutional,
+            cfg.share_institutional_pct,
+            "institutional",
+        ),
+    ];
+    let mut share_dev: Vec<Vec<i64>> = vec![Vec::new(); uses.len()];
+    let mut building_count = Vec::new();
+    let mut workplace_count = Vec::new();
+    let (mut share_miss, mut building_miss, mut workplace_miss) =
+        (BandMiss::new(), BandMiss::new(), BandMiss::new());
+    let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let (mut min_count, mut max_count) = ((i64::MAX, 0u64), (i64::MIN, 0u64));
+    let start = Instant::now();
+    for i in 0..n {
+        let seed = mixed_band_seed(i);
+        let d = sim::generation::plan(seed, cfg, content).expect("pass 1 is total");
+        let total = d.land_use.cols() as i64 * d.land_use.rows() as i64;
+        for (k, (u, key, _)) in uses.iter().enumerate() {
+            share_dev[k].push(d.land_use.area_cells(*u) * 1000 / total - *key as i64 * 10);
+        }
+        if d.land_use.share_band_violation(cfg).is_some() {
+            share_miss.record(seed);
+        }
+        let placed = d.envelopes.placed_count();
+        if placed < min_count.0 {
+            min_count = (placed, seed);
+        }
+        if placed > max_count.0 {
+            max_count = (placed, seed);
+        }
+        building_count.push(placed);
+        if d.check_building_count(cfg).is_err() {
+            building_miss.record(seed);
+        }
+        workplace_count.push(
+            d.building_types
+                .assignments()
+                .iter()
+                .filter(|a| building_types::is_workplace(by_id[&a.building_type]))
+                .count() as i64,
+        );
+        if d.check_workplace_count(cfg, content).is_err() {
+            workplace_miss.record(seed);
+        }
+    }
+    for (k, (_, key, name)) in uses.iter().enumerate() {
+        let st = Stats::new(share_dev[k].clone());
+        st.print(&format!(
+            "land_use_share_{name} deviation from its key ({key}%), permille of the site"
+        ));
+        println!(
+            "  5.5-sigma share tolerance implied: {:.2} percentage points",
+            5.5 * st.stddev() / 10.0
+        );
+    }
+    print_ceiling_report("land-use share band (share_tolerance_pct)", &share_miss, n);
+    let target_b = cfg.building_count_target(cfg.site().width() * cfg.site().height());
+    let st = Stats::new(building_count);
+    st.print("building_count");
+    println!(
+        "  5.5-sigma building tolerance implied: {:.1}% of the {target_b} target",
+        5.5 * st.stddev() * 100.0 / target_b as f64
+    );
+    println!(
+        "building_count extremes over the band sweep: min {} at seed {}, max {} at seed {} (pin both in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)",
+        min_count.0, min_count.1, max_count.0, max_count.1
+    );
+    print_ceiling_report(
+        "building-count band (count_tolerance_percent)",
+        &building_miss,
+        n,
+    );
+    let target_w = cfg.workplace_count_target(cfg.site().width() * cfg.site().height());
+    let st = Stats::new(workplace_count);
+    st.print("workplace_count");
+    println!(
+        "  5.5-sigma workplace tolerance implied: {:.1}% of the {target_w} target",
+        5.5 * st.stddev() * 100.0 / target_w as f64
+    );
+    print_ceiling_report(
+        "workplace-count band (workplace_count_tolerance_percent)",
+        &workplace_miss,
+        n,
+    );
+    println!(
+        "band sweep wall-clock: {:.1}s ({:.3}ms/seed)",
+        start.elapsed().as_secs_f64(),
+        start.elapsed().as_secs_f64() * 1000.0 / n.max(1) as f64
+    );
+}
+
 fn main() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).expect("committed balance is valid");
     let content = GenerationContent::committed();
     let site = cfg.site();
+
+    if std::env::args().nth(1).as_deref() == Some("bands") {
+        let n = std::env::args()
+            .nth(2)
+            .map(|s| {
+                s.parse()
+                    .unwrap_or_else(|e| panic!("bands count {s:?}: {e}"))
+            })
+            .unwrap_or(BAND_SEED_COUNT_DEFAULT);
+        band_sweep(&cfg, &content, n);
+        return;
+    }
+    band_sweep(&cfg, &content, BAND_SEED_COUNT_DEFAULT);
     println!(
         "measure-generation: {SEED_COUNT} seeds at {}x{} cells",
         site.width(),
@@ -684,8 +824,8 @@ fn main() {
     // count misses against here, not two -- `streets::detour_bound_
     // violation`, the same function `detour_bounds_hold` (invariants.rs)
     // and its pinned regression call through.
-    let mut detour_bound_miss = DetourMiss::new();
-    let mut p99_miss = DetourMiss::new();
+    let mut detour_bound_miss = BandMiss::new();
+    let mut p99_miss = BandMiss::new();
     // The sampled (14-node) worst ratio's own tail among pairs at or
     // beyond the takeover distance (Derek's direction: the only range
     // where the ratio term binds), so it is visible the way `detour_
@@ -761,14 +901,14 @@ fn main() {
 /// count and up to ten offending seeds, never every offending seed (the
 /// same shape as the missing-tag sweep's own `dist_misses`/`ad_hoc_
 /// misses` above).
-struct DetourMiss {
+struct BandMiss {
     count: u64,
     seeds: Vec<u64>,
 }
 
-impl DetourMiss {
+impl BandMiss {
     fn new() -> Self {
-        DetourMiss {
+        BandMiss {
             count: 0,
             seeds: Vec::new(),
         }
@@ -790,7 +930,7 @@ impl DetourMiss {
 /// direction, story 15.10: the doc comment and toml comment that read
 /// this output must state the observed count, `n` and the bound, never
 /// the word "zero" alone).
-fn print_ceiling_report(name: &str, miss: &DetourMiss, n: u64) {
+fn print_ceiling_report(name: &str, miss: &BandMiss, n: u64) {
     let rate = miss.count as f64 / n as f64;
     let ci_fail_prob = 1.0 - (1.0 - rate).powi(CI_PROPTEST_CASES as i32);
     println!(

@@ -740,22 +740,22 @@ pub const DETOUR_P99_SAMPLE_MAX_NODES: usize = 64;
 /// actually keyed against, never the cheap `DETOUR_SAMPLE_MAX_NODES`
 /// sample -- asserted by equality, not just an upper bound, so a moved
 /// figure (pass 2 or a streets key changed) is a red test, not a stale
-/// comment (Quentin's direction, story 3.18 cycle 1). `10_778_299_
-/// 729_582_344_780` (PR #317 cycle 5) was found by a genuinely random
-/// `proptest` run; `12_073_828_753_114_949_265` is this story's own
-/// seed, reported on PR #315; `10_818_714_075_226_271_966` is this
-/// story's own `measure-generation` re-measurement's exhaustive-pair
-/// argmax -- the mixed-seed harness's own deterministic search, not
-/// luck. Every one of these still ends its own worst *sampled*
-/// (`DETOUR_SAMPLE_MAX_NODES`) pair on a boundary exit (degree 1, on
+/// comment (Quentin's direction, story 3.18 cycle 1). Re-taken at
+/// `GENERATION_VERSION` 8 (story 4.21: pass 1's area shares moved every
+/// pass-2 network, so the earlier three seeds -- `10_778_299_729_582_344_
+/// 780`, `12_073_828_753_114_949_265`, `10_818_714_075_226_271_966` --
+/// stopped being worst cases): the ten largest per-seed exhaustive worsts
+/// of `measure-generation`'s 50,000 mixed seeds, the top three taken, the
+/// mixed-seed harness's own deterministic search, not luck. Every one of
+/// these still ends its own worst pair on a boundary exit (degree 1, on
 /// the site boundary) -- see `detour_excess_holds_at_pinned_boundary_
 /// exit_seeds`. Test-only, the same gate `test_fixture` above uses:
 /// nothing outside `invariants.rs`/`bounds` reads this today.
 #[cfg(any(test, feature = "test-fixtures"))]
 pub const PINNED_DETOUR_SEEDS: [(u64, i64); 3] = [
-    (10_778_299_729_582_344_780, 292),
-    (12_073_828_753_114_949_265, 284),
-    (10_818_714_075_226_271_966, 328),
+    (11_179_447_352_395_363_997, 298),
+    (1_060_828_608_797_003_656, 302),
+    (11_859_616_019_877_610_932, 330),
 ];
 
 /// One [`StreetNetwork::detour_samples`] entry.
@@ -1925,19 +1925,12 @@ mod tests {
     /// peripheral_blocks_are_not_degenerate` in `server/sim/tests/
     /// invariants.rs` is that weaker, always-true claim).
     ///
-    /// Disclosed, not silently missed: two of the three (seeds 1 and 3)
-    /// clear Artie's own full 2x bar (2.6x each, measured); seed 2 does
-    /// not (1.67x, measured) -- raising `block_size_max_cells`/`max_
-    /// block_depth_max_cells` far enough to move seed 2 past 2x barely
-    /// moved it at all (1.80x at block_size_max_cells=176, double this
-    /// generator's own committed 128) while visibly hurting core/
-    /// periphery street-cover differentiation for every other seed, so
-    /// that trade was not taken. The median-Chebyshev-distance split
-    /// itself is peak-position-sensitive: seed 2's own density peak
-    /// happens to sit where the split does not cleanly separate a
-    /// "core" half from a "periphery" half the way seeds 1 and 3's own
-    /// peaks do. 1.6 is the real measured floor across the three (seed
-    /// 2's own 1.67x), not a number chosen to make this pass.
+    /// Disclosed, not silently missed: measured at `GENERATION_VERSION`
+    /// 8 the three seeds give 1.68x, 1.93x and 1.83x -- none reaches
+    /// Artie's own full 2x bar, all clear 1.6x (the floor this test has
+    /// always held). The median-Chebyshev-distance split is peak-
+    /// position-sensitive. 1.6 is the real measured floor, not a number
+    /// chosen to make this pass.
     #[test]
     fn peripheral_blocks_are_at_least_1_6x_central_ones_on_the_evidence_seeds() {
         let c = cfg();
@@ -1951,6 +1944,35 @@ mod tests {
                 "seed {seed}: peripheral mean block area {far_mean} is not at least 1.6x central {near_mean}"
             );
         }
+    }
+
+    fn sample(manhattan: i64, network: i64) -> DetourSample {
+        DetourSample {
+            a: (0, 0),
+            b: (manhattan as i32, 0),
+            network,
+            manhattan,
+        }
+    }
+
+    /// The max()-contract's seam (story 15.10), held at the function: a
+    /// pair whose ratio exceeds `max_detour_percent` but whose network
+    /// distance clears `manhattan + max_detour_excess_cells` is fine below
+    /// the takeover distance, and one cell past it, where the ratio term
+    /// is the looser half, the bound is exactly `manhattan * percent / 100`.
+    #[test]
+    fn detour_bound_violation_has_no_seam_at_the_takeover_distance() {
+        let c = cfg();
+        let takeover = c.detour_ratio_takeover_distance_cells();
+        let excess = c.max_detour_excess_cells as i64;
+        let pct = c.max_detour_percent as i64;
+        let short = sample(259, 259 + excess - 16);
+        assert!(short.ratio_pct() > pct);
+        assert!(detour_bound_violation(&[short], &c).is_none());
+        let m = takeover + 1;
+        let allowed = (m + excess).max(m * pct / 100);
+        assert!(detour_bound_violation(&[sample(m, allowed)], &c).is_none());
+        assert!(detour_bound_violation(&[sample(m, allowed + 1)], &c).is_some());
     }
 
     #[test]

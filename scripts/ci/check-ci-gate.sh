@@ -87,6 +87,30 @@ while IFS= read -r job; do
   fi
 done <<< "$ALL_JOB_NAMES"
 
+# --- NFR50: the property gate's inputs are pinned and logged. The workflow
+# carries a workflow-level `PROPTEST_CASES` and a fixed numeric
+# `PROPTEST_RNG_SEED`, and a step echoes both to the log so a failure can be
+# reproduced from the log alone. -----------------------------------------
+if ! grep -qE '^  PROPTEST_CASES: [0-9]+$' "$WORKFLOW"; then
+  echo "check-ci-gate: FAIL -- $WORKFLOW has no workflow-level 'PROPTEST_CASES: <n>'" >&2
+  FAILED=1
+fi
+if ! grep -qE '^  PROPTEST_RNG_SEED: [0-9]+$' "$WORKFLOW"; then
+  echo "check-ci-gate: FAIL -- $WORKFLOW has no workflow-level fixed 'PROPTEST_RNG_SEED: <u64>' (NFR50)" >&2
+  FAILED=1
+fi
+# Every job that runs `cargo test` echoes both to its own log.
+while IFS= read -r job; do
+  [ -n "$job" ] || continue
+  BLOCK="$(job_block "$job")"
+  if printf '%s
+' "$BLOCK" | grep -vE '^[[:space:]]*#' | grep -qE 'cargo test' \
+    && ! printf '%s\n' "$BLOCK" | grep -qE 'echo .*PROPTEST_CASES.*PROPTEST_RNG_SEED|echo .*PROPTEST_RNG_SEED.*PROPTEST_CASES'; then
+    echo "check-ci-gate: FAIL -- job '$job' runs cargo test but never echoes PROPTEST_CASES and PROPTEST_RNG_SEED to its log (NFR50)" >&2
+    FAILED=1
+  fi
+done <<< "$ALL_JOB_NAMES"
+
 if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
