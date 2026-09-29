@@ -35,9 +35,8 @@ import {
 
 // Import all reducer arg schemas
 import BeginRestoreReducer from "./begin_restore_reducer";
+import FinishPublishReducer from "./finish_publish_reducer";
 import FinishRestoreReducer from "./finish_restore_reducer";
-import RearmSchedulesReducer from "./rearm_schedules_reducer";
-import ReseedCodesReducer from "./reseed_codes_reducer";
 import RestoreBuildingReducer from "./restore_building_reducer";
 import RestoreBuildingAreaReducer from "./restore_building_area_reducer";
 import RestoreCadenceLivenessReducer from "./restore_cadence_liveness_reducer";
@@ -120,9 +119,8 @@ const tablesSchema = __schema({
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("begin_restore", BeginRestoreReducer),
+  __reducerSchema("finish_publish", FinishPublishReducer),
   __reducerSchema("finish_restore", FinishRestoreReducer),
-  __reducerSchema("rearm_schedules", RearmSchedulesReducer),
-  __reducerSchema("reseed_codes", ReseedCodesReducer),
   __reducerSchema("restore_building", RestoreBuildingReducer),
   __reducerSchema("restore_building_area", RestoreBuildingAreaReducer),
   __reducerSchema("restore_cadence_liveness", RestoreCadenceLivenessReducer),

@@ -306,7 +306,7 @@ jobs:
           retention-days: 90
 
   # Publishes the module to Maincloud and lands any newly-added
-  # sim::codes rows -- server/README.md names this job as `reseed_codes`'s
+  # sim::codes rows -- server/README.md names this job as `finish_publish`'s
   # automated caller. NFR33 (an additive-only schema, enforced at PR time
   # by check-schema-additive.sh) is what makes forward-only the only
   # publish this job ever has to make -- see server/README.md's Maincloud
@@ -365,15 +365,15 @@ jobs:
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
         run: spacetime publish --server maincloud --no-config -y "$BACKUP_DATABASE" --module-path server
 
-      - name: land any newly-added sim::codes rows (NFR36/NFR38) -- server/README.md's own manual step, now automated here
+      - name: finish the publish (issue 363) -- establishes every one-row table, lands new sim::codes rows (NFR36/NFR38) and re-arms every cadence; idempotent, the one post-publish path
         env:
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
-        run: spacetime call --server maincloud --no-config -y "$BACKUP_DATABASE" reseed_codes
+        run: spacetime call --server maincloud --no-config -y "$BACKUP_DATABASE" finish_publish
 
-      - name: re-arm every scheduled cadence (story 4.2) -- schedules are derived state, never trusted to survive a deploy purely by surviving as pending rows
+      - name: assert the live world is consistent -- a deploy is red the instant it is not
         env:
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
-        run: spacetime call --server maincloud --no-config -y "$BACKUP_DATABASE" rearm_schedules
+        run: bash scripts/ops/assert-world-invariants.sh "$BACKUP_DATABASE" --server maincloud
 
   # Builds the production client and deploys it to GitHub Pages. Skips on
   # a module-only change (`needs.changes.outputs.client == 'false'`); the

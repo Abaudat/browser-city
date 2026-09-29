@@ -34,8 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
-      - run: spacetime call --server maincloud --no-config -y "$DB" reseed_codes
-      - run: spacetime call --server maincloud --no-config -y "$DB" rearm_schedules
+      - run: spacetime call --server maincloud --no-config -y "$DB" finish_publish
+      - run: bash scripts/ops/assert-world-invariants.sh "$DB" --server maincloud
 
   deploy-client:
     name: deploy-client
@@ -203,8 +203,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
-      - run: spacetime call --server maincloud --no-config -y "$DB" reseed_codes
-      - run: spacetime call --server maincloud --no-config -y "$DB" rearm_schedules
+      - run: spacetime call --server maincloud --no-config -y "$DB" finish_publish
+      - run: bash scripts/ops/assert-world-invariants.sh "$DB" --server maincloud
     needs: [backup]
 
   report-failure:
@@ -370,31 +370,27 @@ check "no report-failure job at all fails" 1 bash -c "exit $CODE"
 check "names the missing job" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"has no 'report-failure' job\"" _ "$OUT"
 
 echo
-echo "story 4.2: publish-module must call rearm_schedules after reseed_codes"
+echo "publish-module must call finish_publish, and end with the world-invariants assert"
 D20="$(fake_dir)"; write_good_workflow "$D20/deploy.yml"
-sed -i '/spacetime call --server maincloud --no-config -y "\$DB" rearm_schedules/d' "$D20/deploy.yml"
+sed -i '/ finish_publish$/d' "$D20/deploy.yml"
 OUT="$(bash "$CHECK" "$D20/deploy.yml" 2>&1)"; CODE=$?
-check "publish-module with no rearm_schedules call fails" 1 bash -c "exit $CODE"
-check "names the missing call" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'never calls rearm_schedules'" _ "$OUT"
+check "publish-module with no finish_publish call fails" 1 bash -c "exit $CODE"
+check "names the missing call" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'never calls finish_publish'" _ "$OUT"
 
 D21="$(fake_dir)"; write_good_workflow "$D21/deploy.yml"
-sed -i '/spacetime call --server maincloud --no-config -y "\$DB" reseed_codes/d' "$D21/deploy.yml"
+sed -i '/assert-world-invariants.sh/d' "$D21/deploy.yml"
 OUT="$(bash "$CHECK" "$D21/deploy.yml" 2>&1)"; CODE=$?
-check "publish-module with no reseed_codes call fails" 1 bash -c "exit $CODE"
-check "names the missing call" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'never calls reseed_codes'" _ "$OUT"
+check "a publishing job with no assert step fails" 1 bash -c "exit $CODE"
+check "names the missing assert" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'assert-world-invariants.sh'" _ "$OUT"
 
 D22="$(fake_dir)"; write_good_workflow "$D22/deploy.yml"
-sed -i \
-  -e '/spacetime call --server maincloud --no-config -y "\$DB" reseed_codes/d' \
-  "$D22/deploy.yml"
-sed -i "/spacetime call --server maincloud --no-config -y \"\$DB\" rearm_schedules/a\\      - run: spacetime call --server maincloud --no-config -y \"\$DB\" reseed_codes" "$D22/deploy.yml"
+sed -i '/assert-world-invariants.sh/d' "$D22/deploy.yml"
+sed -i '/ finish_publish$/i      - run: bash scripts/ops/assert-world-invariants.sh "$DB" --server maincloud' "$D22/deploy.yml"
 OUT="$(bash "$CHECK" "$D22/deploy.yml" 2>&1)"; CODE=$?
-check "rearm_schedules called before reseed_codes fails" 1 bash -c "exit $CODE"
-check "names the ordering reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'before (or in the same step as) reseed_codes'" _ "$OUT"
+check "an assert step that is not the job's last step fails" 1 bash -c "exit $CODE"
 
-check "the good workflow's own reseed_codes-then-rearm_schedules ordering passes (not a false FAIL)" 0 bash "$CHECK" "$WF"
+check "the good workflow's finish_publish-then-assert ending passes (not a false FAIL)" 0 bash "$CHECK" "$WF"
 
-echo
 echo "story 4.12: backup.yml's storage report never runs before the artifact upload"
 write_report_workflow() { # <path> <report-first|report-last>
   {

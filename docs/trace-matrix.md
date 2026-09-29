@@ -207,8 +207,11 @@ in a second commit. Same Guard-path discipline as the section above --
 | Appending a column with a default publishes against a live world; appending one without a default is rejected, not silently accepted, and the rejection is the automigration one -- not a build or connection failure passing for it (NFR33) | covered | `scripts/ci/check-live-migration.sh` |
 | The character&lt;-&gt;identity mapping is one-character-to-N-identities, `identity` unique and `character_id` a plain index (FR142, D5) | covered | `server/schema.snapshot.json` (`character_identity`'s row: `identity`'s `unique` and `character_id`'s `indexed` fields, pinned and diffed by the two guards above) |
 | A committed `sim::codes` line (a code number or a name) never changes or disappears once merged; only new lines may be appended (NFR36) | covered | `scripts/ci/check-codes-append-only.sh` |
-| Re-seeding the extensible-set companion tables is idempotent (`reseed_codes`) (NFR36, NFR38) | covered | `scripts/ci/check-live-migration.sh` |
-| An operator-only reducer rejects any caller that is not the module owner (`reseed_codes`, `tables::ops::require_owner`) | covered | `scripts/ci/check-live-migration.sh` |
+| Re-seeding the extensible-set companion tables is idempotent (`finish_publish`) (NFR36, NFR38) | covered | `scripts/ci/check-live-migration.sh` |
+| An operator-only reducer rejects any caller that is not the module owner (`finish_publish`, `tables::ops::require_owner`) | covered | `scripts/ci/check-live-migration.sh` |
+| A deploy onto a world whose `init` predates today's tables (the live database's shape) leaves every one-row table, armed cadence and code table established; the post-publish steps parsed from `deploy.yml` are idempotent (epoch byte-identical on a second run) and owner-only (NFR33, NFR38) | covered | `scripts/ci/check-deploy-rehearsal.sh` |
+| A world is consistent: every one-row table has one row, every armed cadence one pending row, every code table at least one row, every `cadence_liveness` row `fires >= 1`; a violation fails the deploy | covered | `scripts/ops/tests/test-assert-world-invariants.sh` (failure paths), `scripts/ci/check-deploy-rehearsal.sh` |
+| Every job that runs `spacetime publish` ends with the world-invariants assert, and `publish-module` calls `finish_publish` | covered | `scripts/ci/tests/test-check-deploy-workflow.sh` |
 
 ## Definitions
 
@@ -715,7 +718,7 @@ in `ci.yml`'s `migrate` job.
 | With zero clients connected, `maintenance` fires within its own window/period tolerance, `cadence_liveness.missed` is 0 idle, and `maintenance_schedule` holds exactly one pending row -- never zero (a dead world) or two (a double-armed one) (AC1, FR3, NFR3) | covered | `scripts/ci/check-authoritative-loop.sh` |
 | Every observed fire's own dispatch drift clears the 2.5s per-fire budget, and the run does not compound (the last observed fire's drift against the first is bounded by twice the worst single-fire drift observed) (AC5) | covered | `scripts/ci/check-authoritative-loop.sh` |
 | A direct call to a scheduled reducer is rejected by `require_scheduler`, and neither its own bookkeeping (`cadence_liveness`) nor its schedule table changes across the rejection (AC3) | covered | `scripts/ci/check-authoritative-loop.sh` |
-| The `rearm_schedules` rebuild is idempotent across a republish and repeated calls: still exactly one pending row, phase-aligned to the original anchor (schedules are derived state, `docs/architecture.md`) | covered | `scripts/ci/check-authoritative-loop.sh` |
+| The `finish_publish` rebuild is idempotent across a republish and repeated calls: still exactly one pending row, phase-aligned to the original anchor (schedules are derived state, `docs/architecture.md`) | covered | `scripts/ci/check-authoritative-loop.sh` |
 | Every scheduled table is disarmed before `begin_restore`'s own preconditions run: on the target, every scheduled table holds zero pending rows immediately after `begin_restore` returns, before any `restore_*` call | covered | `scripts/ci/check-backup-restore.sh` |
 | `disarm_all_scheduled_tables`'s own `disarm!(...)` calls name every scheduled table the schema declares, and nothing else, so a scheduled table added without one is a build failure, not a silent hole in the restore race the disarm closes | covered | `server/bounds/tests/schedules_coverage.rs` |
 | A restored world resumes its cadence, phase-aligned to the restored epoch, via `finish_restore`'s own re-arm | covered | `scripts/ci/check-backup-restore.sh` |

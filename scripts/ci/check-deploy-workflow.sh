@@ -49,11 +49,13 @@
 #      that only ever checks `failure()`/`contains(..., 'failure')` lets a
 #      hung `publish-module`/`smoke` run to its own budget and file
 #      nothing.
-#   6. `publish-module` calls `rearm_schedules` after `reseed_codes`
-#      (story 4.2): schedules are derived state, and a redeployed world
-#      must resume every armed cadence without a human remembering --
-#      today nothing but a code review stands between that sentence in
-#      docs/architecture.md and someone deleting the step.
+#   6. `publish-module` calls `finish_publish` (story 4.2, 363): the one
+#      post-publish path -- one-row tables, code seeds and every armed
+#      cadence -- and nothing but this rule stands between docs/
+#      architecture.md and someone deleting the step.
+#   6b. Every job that runs `spacetime publish` ends with a step running
+#      `scripts/ops/assert-world-invariants.sh` (issue 363): a deploy is
+#      red the instant the live world is inconsistent.
 #   7. In `backup.yml`'s `export` job, a step that runs `storage-report.sh`
 #      (an alarm that exits 1 on a breach) must come after the
 #      `upload-artifact` step (story 4.12): the day storage is in trouble
@@ -271,31 +273,29 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-# --- story 4.2: publish-module calls rearm_schedules after reseed_codes ----
+# --- publish-module calls finish_publish; every publishing job ends with
+# the world-invariants assert -------------------------------------------
 PUBLISH_MODULE_BLOCK="$(job_block publish-module)"
 if [ -z "$PUBLISH_MODULE_BLOCK" ]; then
   echo "check-deploy-workflow: FAIL -- $WORKFLOW has no 'publish-module:' job" >&2
   FAILED=1
-else
-  RESEED_LINE="$(printf '%s\n' "$PUBLISH_MODULE_BLOCK" | grep -n 'reseed_codes' | head -n1 | cut -d: -f1 || true)"
-  REARM_LINE="$(printf '%s\n' "$PUBLISH_MODULE_BLOCK" | grep -n 'rearm_schedules' | head -n1 | cut -d: -f1 || true)"
-  if [ -z "$RESEED_LINE" ]; then
-    echo "check-deploy-workflow: FAIL -- 'publish-module' never calls reseed_codes" >&2
-    FAILED=1
-  fi
-  if [ -z "$REARM_LINE" ]; then
-    echo "check-deploy-workflow: FAIL -- 'publish-module' never calls rearm_schedules -- schedules are derived state, and a redeployed world must resume every armed cadence (docs/architecture.md)" >&2
-    FAILED=1
-  fi
-  if [ -n "$RESEED_LINE" ] && [ -n "$REARM_LINE" ] && [ "$REARM_LINE" -le "$RESEED_LINE" ]; then
-    echo "check-deploy-workflow: FAIL -- 'publish-module' calls rearm_schedules before (or in the same step as) reseed_codes -- it must come after" >&2
-    FAILED=1
-  fi
+elif ! printf '%s
+' "$PUBLISH_MODULE_BLOCK" | grep -qE 'spacetime call .* finish_publish'; then
+  echo "check-deploy-workflow: FAIL -- 'publish-module' never calls finish_publish -- a redeployed world must have every one-row table, code and armed cadence re-established (docs/architecture.md)" >&2
+  FAILED=1
 fi
+while IFS= read -r job; do
+  [ -n "$job" ] || continue
+  LAST_STEP="$(job_block "$job" | awk '/^      - / { step = "" } { step = step $0 "\n" } END { printf "%s", step }')"
+  if ! printf '%s' "$LAST_STEP" | grep -qF 'scripts/ops/assert-world-invariants.sh'; then
+    echo "check-deploy-workflow: FAIL -- '$job' (which runs 'spacetime publish') does not end with a scripts/ops/assert-world-invariants.sh step -- a deploy must be red the instant the live world is inconsistent" >&2
+    FAILED=1
+  fi
+done <<< "$PUBLISH_JOBS"
 
 if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, the backup job's first-deploy exception is the positive not-found script, neither deploy.yml's backup job nor backup.yml's export job has a shallow checkout, report-failure accounts for a cancelled job too, and publish-module calls rearm_schedules after reseed_codes, and backup.yml's storage report never runs before the artifact upload" >&2
+echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, the backup job's first-deploy exception is the positive not-found script, neither deploy.yml's backup job nor backup.yml's export job has a shallow checkout, report-failure accounts for a cancelled job too, publish-module calls finish_publish, every publishing job ends with the world-invariants assert, and backup.yml's storage report never runs before the artifact upload" >&2
 exit 0

@@ -35,7 +35,7 @@
 #       after (retried against the live cadence's own background fires,
 #       never a raw diff of the whole SQL response -- see below).
 #   (d) Rebuild is idempotent: republish the unchanged module, then call
-#       `rearm_schedules` twice as owner. After the republish and after
+#       `finish_publish` twice as owner. After the republish and after
 #       each call: still exactly one pending row, and its target still
 #       phase-aligned to the original anchor (the phase is preserved).
 #   (e) Story 4.3 (FR163): the production flavour has no time control --
@@ -267,7 +267,7 @@ done
 ok "a direct call to run_maintenance was rejected by require_scheduler, and neither table changed (attempt $CLEAN_ATTEMPT)"
 
 # --- (d) rebuild is idempotent ------------------------------------------------
-echo "check-authoritative-loop: (d) republishing the unchanged module, then rearm_schedules twice" >&2
+echo "check-authoritative-loop: (d) republishing the unchanged module, then finish_publish twice" >&2
 # Phase-aligned, never byte-identical (Quentin's own wording: "the next
 # target is still congruent to the original anchor"): the live cadence
 # keeps firing every ${PERIOD_S}s throughout this whole script, so a
@@ -300,14 +300,14 @@ assert_still_one_pending_phase_aligned() { # <label>
 assert_still_one_pending_phase_aligned "after republish"
 
 REARM_LOG_1="$DATA_DIR/rearm-1.log"
-spacetime call "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y rearm_schedules >"$REARM_LOG_1" 2>&1 \
-  || fail "rearm_schedules (call 1) failed as owner" "$REARM_LOG_1"
-assert_still_one_pending_phase_aligned "after rearm_schedules call 1"
+spacetime call "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y finish_publish >"$REARM_LOG_1" 2>&1 \
+  || fail "finish_publish (call 1) failed as owner" "$REARM_LOG_1"
+assert_still_one_pending_phase_aligned "after finish_publish call 1"
 
 REARM_LOG_2="$DATA_DIR/rearm-2.log"
-spacetime call "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y rearm_schedules >"$REARM_LOG_2" 2>&1 \
-  || fail "rearm_schedules (call 2) failed as owner" "$REARM_LOG_2"
-assert_still_one_pending_phase_aligned "after rearm_schedules call 2"
+spacetime call "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y finish_publish >"$REARM_LOG_2" 2>&1 \
+  || fail "finish_publish (call 2) failed as owner" "$REARM_LOG_2"
+assert_still_one_pending_phase_aligned "after finish_publish call 2"
 
 # --- (e) the production flavour has no time control (story 4.3, FR163) -------
 # This module is built exactly the way deploy.yml builds it (no cargo

@@ -50,52 +50,25 @@ pub fn sync_clock(ctx: &mut ProcedureContext) -> Timestamp {
 }
 
 #[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    // Called when the module is initially published.
+pub fn init(ctx: &ReducerContext) -> Result<(), String> {
+    // Called when the module is initially published. The owner is the one
+    // write that cannot be re-established later, so it stays init-only;
+    // everything else is `finish_publish`'s body.
     tables::ops::record_owner_from_init(ctx);
-    let epoch_at = tables::clock::record_epoch_from_init(ctx);
-    tables::codes::seed_all_codes(ctx);
-    // Story 4.2: arms every cadence this module gives real work to, from
-    // the epoch `record_epoch_from_init` just returned -- infallible,
-    // since that epoch is already in hand.
-    tables::schedules::arm_every_cadence_from(ctx, epoch_at.to_micros_since_unix_epoch(), 1);
+    tables::publish::establish_world(ctx)
 }
 
-/// Rebuilds every armed cadence's own pending schedule row from
-/// `world_clock.epoch_at` (docs/architecture.md: schedules are derived
-/// state, never trusted to survive a deploy purely by surviving as
-/// pending rows). Idempotent: calling it again while nothing has changed
-/// leaves the same one pending row per cadence, at the same target.
-/// Operator-only, the same shape as `reseed_codes`: `server/README.md`
-/// names its two callers (`init`, `deploy.yml`'s `publish-module` job).
-/// A restore re-arms through `finish_restore` itself
-/// (`tables::restore`), inside the module's own transaction chain, not
-/// through this reducer.
+/// The one post-publish path (owner-only, idempotent, one transaction):
+/// establishes every one-row table, seeds every extensible set and re-arms
+/// every cadence. Its callers are `init` (same body, via
+/// `establish_world`) and `deploy.yml`'s `publish-module` job. A table is
+/// never populated by `init` alone: a world published before the table
+/// existed never ran `init` for it. A restore re-arms through
+/// `finish_restore` (`tables::restore`), not through this reducer.
 #[spacetimedb::reducer]
-pub fn rearm_schedules(ctx: &ReducerContext) -> Result<(), String> {
+pub fn finish_publish(ctx: &ReducerContext) -> Result<(), String> {
     tables::ops::require_owner(ctx)?;
-    tables::schedules::arm_every_cadence(ctx)
-}
-
-/// Re-runs the extensible-set seed (NFR38): `init` only ever runs on the
-/// module's first publish, so a code added in month six needs an explicit,
-/// re-callable path to land, not a write on the hottest lifecycle reducer
-/// we have (`client_connected` fires on the city with zero clients
-/// connected too, per NFR3 -- there is no "someone happens to log in" to
-/// lean on). Idempotent: safe to call after every publish that adds a
-/// code, and a no-op otherwise. `server/README.md` names the deploy step
-/// that calls it.
-///
-/// Operator-only (this module's first one): any connected client could
-/// otherwise call it, at any rate, forever -- a caller check other
-/// operator reducers this project adds later will copy, so it is built
-/// once, correctly, here rather than left open because today's blast
-/// radius happens to be small.
-#[spacetimedb::reducer]
-pub fn reseed_codes(ctx: &ReducerContext) -> Result<(), String> {
-    tables::ops::require_owner(ctx)?;
-    tables::codes::seed_all_codes(ctx);
-    Ok(())
+    tables::publish::establish_world(ctx)
 }
 
 #[spacetimedb::reducer(client_connected)]

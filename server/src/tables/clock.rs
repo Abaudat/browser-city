@@ -26,14 +26,13 @@ pub fn read_clock(ctx: &ReducerContext) -> Option<(i64, u32)> {
     Some((row.epoch_at.to_micros_since_unix_epoch(), row.speed))
 }
 
-/// Writes the epoch. Called from `init` only, and never overwrites: a
-/// republish must not reset the city to dawn. Returns the epoch that is
-/// now on record either way (freshly written, or already there from an
-/// earlier publish) -- `init`'s own caller needs it to arm every cadence
-/// from, without a second lookup.
-pub fn record_epoch_from_init(ctx: &ReducerContext) -> Timestamp {
+/// Ensures the clock row and never overwrites: a republish must not reset
+/// the city to dawn. A world missing the row starts at dawn now
+/// (`ctx.timestamp`). Returns the epoch (micros) and speed now on record --
+/// the caller arms every cadence from them, without a second lookup.
+pub fn ensure_epoch(ctx: &ReducerContext) -> (i64, u32) {
     match ctx.db.world_clock().id().find(0) {
-        Some(row) => row.epoch_at,
+        Some(row) => (row.epoch_at.to_micros_since_unix_epoch(), row.speed),
         None => {
             let epoch_at = ctx.timestamp;
             ctx.db.world_clock().insert(WorldClock {
@@ -41,7 +40,7 @@ pub fn record_epoch_from_init(ctx: &ReducerContext) -> Timestamp {
                 epoch_at,
                 speed: 1,
             });
-            epoch_at
+            (epoch_at.to_micros_since_unix_epoch(), 1)
         }
     }
 }
