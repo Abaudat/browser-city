@@ -136,6 +136,27 @@ document's own opening paragraph forbids.
   same field, adjacent to the one already there.
 - **Reads:** nothing -- it is the first pass, and the pass that
   authors the field every later pass reads.
+- **Accepted as built (story 4.21):** the `share_*_pct` keys are shares of
+  the site's coarse-cell *area*. They were applied to the BSP leaf count,
+  and leaves are 9 to 36 cells, so a seed whose leaves near the density
+  peak were all large got nearly twice its commercial land: seed
+  `16021368561388801292` had commercial at 33.3% of the site against
+  `share_commercial_pct = 18`, with pass 5's per-use workplace ratios
+  unchanged, and 539 workplaces against a 171-514 band (about 6.5 sigma).
+  Pass 1 now targets `round(coarse_cells * share / 100)` cells per use
+  and takes a leaf only if it brings the claimed area closer to the target
+  than stopping would (overshoot at most half a leaf); every growth
+  constraint is unchanged. Widening the workplace band to cover the seed
+  was refused: it would accept a city with double the designed commercial
+  land, against the Scale Baseline and the share keys both. Area shares
+  moved the pooled means, so residential/institutional are 61/7 (were
+  58/10), and the guard now lives at the pass that owns it
+  (`land_use.share_tolerance_pct`, 7 points). `workplace_count_tolerance_
+  percent` is re-derived 50 -> 40 from the post-fix sigma (29.9 -> 21.5)
+  by the same 5.5-sigma rule; `count_tolerance_percent` stays 21. An
+  outlier CI finds is diagnosed to the pass that owns it and pinned as a
+  plain `#[test]`, never absorbed by re-measuring a tolerance to cover the
+  sample's new max.
 - **Evidence:** [`docs/generation/land-use-seed-1.svg`](generation/land-use-seed-1.svg),
   [`-seed-2`](generation/land-use-seed-2.svg), [`-seed-3`](generation/land-use-seed-3.svg)
   -- flat colour per coarse cell (land use), density carried as opacity,
@@ -160,9 +181,9 @@ document's own opening paragraph forbids.
   is judgeable directly from the image; same regen-and-diff guard as the
   row above. Plus one worst-case-seed picture per entry in `streets::
   PINNED_DETOUR_SEEDS` -- [`docs/generation/detour-worst-seed-
-  10778299729582344780.svg`](generation/detour-worst-seed-10778299729582344780.svg),
-  [`-12073828753114949265`](generation/detour-worst-seed-12073828753114949265.svg),
-  [`-10818714075226271966`](generation/detour-worst-seed-10818714075226271966.svg)
+  1060828608797003656.svg`](generation/detour-worst-seed-1060828608797003656.svg),
+  [`-6764763946750131915`](generation/detour-worst-seed-6764763946750131915.svg),
+  [`-11859616019877610932`](generation/detour-worst-seed-11859616019877610932.svg)
   -- the same street-network render (same tints, same tier styling, same
   legend, same two viewport outlines) with an overlay: that seed's own
   worst *exhaustive* pair (`detour_samples(usize::MAX)`'s own argmax,
@@ -197,14 +218,13 @@ Generation section: a block side abuts a street iff it does not
 coincide with the site's own boundary), so every street simply ends at
 the boundary, reached one way, never a special spur case.
 
-The three pinned seeds' own worst-case pictures (linked above) show two
-different mechanisms, not one, both ending on a boundary exit:
-`10818714075226271966` and `10778299729582344780` each go around one
-large peripheral block with a couple of minor jogs; `12073828753114949265`
-is the running-bond mechanism directly, a staircase of many short jogs
-threading the industrial band's own interior. A picture that instead
-showed a block with no way through, reading as a wall, would be a pass-2
-finding, not evidence for this key -- none of the three does.
+The three pinned seeds' own worst-case pictures (linked above) each end
+on a boundary exit (`detour_excess_holds_at_pinned_boundary_exit_seeds`
+pins that). The mechanism analysis -- one large peripheral block with a
+couple of minor jogs, or running bond, a staircase of many short jogs --
+was made on the pre-story-4.21 seeds and not repeated for these. A
+picture that instead showed a block with no way through, reading as a
+wall, would be a pass-2 finding, not evidence for this key.
 
 `max_detour_excess_cells` is a *measured* value, re-derived by `cargo
 run -p bounds --release --bin measure-generation`: the exhaustive-pair
@@ -219,24 +239,24 @@ claim.
 
 **What actually protects master.** `inv_generation_detour_ratio_bounded`
 runs on arbitrary seeds, in every CI run, but only ever samples the
-cheap 14-node width -- its own worst reading from this same run was 322
-(seed `10818714075226271966` again), 6 cells under the 328-cell
-exhaustive figure the key is set from. That 6-cell gap is not the
-margin; the margin is the stated 1.25 factor, nothing else, over a tail
-that is still growing: this run's own ten largest per-seed worsts,
-ascending, were 272, 274, 274, 276, 278, 284, 284, 286, 306, 328. A
-future 50,000-seed run finding a new worst above 416 remains possible --
-that is what re-measuring on a retune, and pinning what a random sweep
-finds, both exist for.
+cheap 14-node width -- its own worst reading at `GENERATION_VERSION` 8
+was 248 (seed `16034628784504721183`), 82 cells under the 330-cell
+exhaustive figure the key is set from. That gap is not the margin; the
+margin is the stated 1.25 factor, nothing else, over a tail that is
+still growing: this run's own ten largest per-seed worsts, ascending,
+were 282, 284, 286, 286, 286, 288, 298, 302, 318, 330. A future
+50,000-seed run finding a new worst above 416 remains possible -- that
+is what re-measuring on a retune, and pinning what a random sweep finds,
+both exist for.
 
-For scale: the worst pinned seed today (`10818714075226271966`, 328
+For scale: the worst pinned seed today (`11859616019877610932`, 330
 cells exhaustive) is about eight viewport-widths of extra walking for the
 worst pair of the worst city found in 50,000 genuinely random draws --
 accepted as a rare tail. That figure still has one foot on the site
 boundary, though, where the city stops and almost nobody stands; the
 same run's own worst pair with *both* endpoints off the boundary --
-the player-felt figure -- was 252 cells (seed `15392363585947492682`,
-pair `(358, 23)`-`(479, 27)`), well under 328. The maze fixture
+the player-felt figure -- was 270 cells (seed `16341567907283055570`,
+pair `(59, 479)`-`(452, 485)`), well under 330. The maze fixture
 `a_maze_fails_dead_ends_and_detour` (a U-shaped corridor, no real route
 through) overshoots by 600 cells, real margin over the 416-cell
 committed value and a stated distance from "our worst real city" to "a
@@ -294,14 +314,11 @@ max() contract for every pair, at every distance, not a floor derived
 from one committed key and refused by another.
 
 Seed `8872365549107643721` is pinned as a deterministic regression
-(`seed_8872365549107643721_holds_the_detour_ceilings`), by equality: its
-own `(152,0)`-`(393,18)` pair's Manhattan (259) and network (529)
-figures, and that its ratio (204%) still exceeds the old 200% it once
-failed -- documenting the flake -- while its network still clears its
-own `detour_allowed` bound under the committed max()-contract. Not added
-to `streets::PINNED_DETOUR_SEEDS`: its own exhaustive excess (270 cells)
-does not belong among that array's worst entries (270 < 328), and it was
-never an excess flake in the first place.
+(`seed_8872365549107643721_holds_the_detour_ceilings`): it must clear the
+committed max()-contract. Its original `(152,0)`-`(393,18)` pair no longer
+exists -- story 4.21's area-share land use moved every pass-2 network --
+so the pin no longer asserts that pair's figures; the seam itself is held
+by the max() contract's own definition.
 
 `server/bounds/src/bin/measure_generation.rs`'s own detour-bounds sweep
 (its own CLI-configurable seed count) measures the max()-contract's own
@@ -556,10 +573,11 @@ disagree.
 | generation.land_use.density_max | committed | Land use | density at the field's own peak |
 | generation.land_use.density_peak_offset_min_pct | committed | Land use | the density peak's own minimum offset from the site's geometric centre, as a percent of half the site extent (NFR8: never a perfectly concentric field) |
 | generation.land_use.density_peak_offset_max_pct | committed | Land use | the density peak's own maximum offset from the site's geometric centre, same unit |
-| generation.land_use.share_residential_pct | committed | Land use | the residential share of the land-use mix |
-| generation.land_use.share_commercial_pct | committed | Land use | the commercial share of the land-use mix |
-| generation.land_use.share_industrial_pct | committed | Land use | the industrial share of the land-use mix |
-| generation.land_use.share_institutional_pct | committed | Land use | the institutional share of the land-use mix; the four shares sum to a whole |
+| generation.land_use.share_residential_pct | committed | Land use | the residential share of the land-use mix, by area |
+| generation.land_use.share_commercial_pct | committed | Land use | the commercial share of the land-use mix, by area |
+| generation.land_use.share_industrial_pct | committed | Land use | the industrial share of the land-use mix, by area |
+| generation.land_use.share_institutional_pct | committed | Land use | the institutional share of the land-use mix, by area; the four shares sum to a whole |
+| generation.land_use.share_tolerance_pct | committed | Land use | the percentage points a non-residential use's realised area share may sit from its own `share_*_pct` key, for any seed |
 | generation.land_use.institutional_min_pockets | committed | Land use | the minimum number of mutually non-adjacent institutional components a site must show -- "a school, a clinic and a town hall do not share a campus" |
 | generation.land_use.institutional_max_pocket_share_percent | committed | Land use | no single institutional component may exceed this percent of the site's own coarse-cell count |
 | generation.streets.arterial_count_ns_min | committed | Street network | the minimum north-south arterial count -- seeded uniformly in `[..._min, ..._max]`, never a fixed count |

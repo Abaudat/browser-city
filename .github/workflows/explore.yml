@@ -1,0 +1,52 @@
+name: explore
+
+# Story 4.21: the property suite with a fresh seed each run, off the deploy
+# path. ci.yml fixes PROPTEST_RNG_SEED so its verdict never varies; this
+# workflow is where new world seeds get drawn. Never a required check and
+# never triggered by push or pull_request, so it cannot redden master. A
+# failure files an issue (the seed is in its body); the fix is to pin that
+# seed as a plain #[test] and change code or tables, never to retry.
+
+on:
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  explore:
+    name: explore (generation properties)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PROPTEST_CASES: 4096
+      PROPTEST_RNG_SEED: ${{ github.run_id }}
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+      - run: rustup toolchain install
+      - name: seed
+        run: echo "PROPTEST_CASES=$PROPTEST_CASES PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED"
+      - name: property suite
+        run: cargo test -p sim --release --test invariants
+      - if: failure() || cancelled()
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          bash scripts/ci/report-scheduled-failure.sh \
+            "explore: generation property failed" \
+            "explore.yml failed with PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED PROPTEST_CASES=$PROPTEST_CASES: $RUN_URL
+
+          Reproduce: PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED PROPTEST_CASES=$PROPTEST_CASES cargo test -p sim --release --test invariants. Pin the failing world seed as a plain #[test] and fix the cause; never retry. A repeat run comments here."

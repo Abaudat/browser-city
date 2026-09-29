@@ -293,3 +293,4 @@ Every functional and non-functional requirement for BrowserCity, one line each. 
 ### Delivery and CI
 
 - **NFR49** — Every CI check that runs on master reaches a pass or a fail verdict within its own time budget; a check that cannot is fixed or removed, never left permanently red or cancelled
+- **NFR50** — A property test that gates master reports the seed it ran with, and every failure can be reproduced locally from that seed alone; the seed is fixed in the workflow, never drawn fresh per run, so a retry cannot change the verdict

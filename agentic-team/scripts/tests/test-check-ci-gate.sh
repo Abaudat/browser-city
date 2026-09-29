@@ -17,6 +17,9 @@ write_good_workflow() {
 name: CI
 on:
   pull_request:
+env:
+  PROPTEST_CASES: 4096
+  PROPTEST_RNG_SEED: 1
 jobs:
   changes:
     name: changes
@@ -30,7 +33,7 @@ jobs:
     if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     steps:
-      - run: echo noop
+      - run: echo "PROPTEST_CASES=$PROPTEST_CASES PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED"
 
   client-check:
     name: client-check
@@ -288,5 +291,18 @@ echo "red: the workflow file does not exist"
 OUT="$(bash "$CHECK" "$ALL_SUCCESS" "$ALL_CHANGED" "$(fake_dir)/nope.yml" 2>&1)"; CODE=$?
 check "exits non-zero" 1 bash -c "exit $CODE"
 check "names the missing file" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'not found'" _ "$OUT"
+
+echo
+echo "red: NFR50 -- the property gate's seed is pinned and logged"
+for pair in "PROPTEST_RNG_SEED: 1|PROPTEST_RNG_SEED: \${{ github.sha }}|fixed 'PROPTEST_RNG_SEED"             "PROPTEST_RNG_SEED: 1|OTHER: 1|fixed 'PROPTEST_RNG_SEED"             "PROPTEST_CASES: 4096|OTHER: 4096|PROPTEST_CASES: <n>"             "echo \"PROPTEST_CASES=|true \"PROPTEST_CASES=|echo" ; do
+  FROM="${pair%%|*}"; REST="${pair#*|}"; TO="${REST%%|*}"; WANT="${REST#*|}"
+  D5="$(fake_dir)"; rm -rf "$D5"; mkdir -p "$D5"
+  write_good_workflow "$D5/ci.yml"
+  T="$(cat "$D5/ci.yml")"; printf '%s
+' "${T/"$FROM"/"$TO"}" > "$D5/ci.yml"
+  OUT="$(run_check "$ALL_SUCCESS" "$ALL_CHANGED" "$D5/ci.yml" 2>&1)"; CODE=$?
+  check "exits non-zero without '$FROM'" 1 bash -c "exit $CODE"
+  check "names the missing piece" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"$WANT\"" _ "$OUT"
+done
 
 summary

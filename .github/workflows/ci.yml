@@ -14,6 +14,14 @@ concurrency:
 
 env:
   PROPTEST_CASES: 4096
+  # NFR50: every property test in this workflow draws its inputs from this
+  # one fixed seed (proptest's `PROPTEST_RNG_SEED`), so a run's verdict is
+  # the same on every retry and on master's merge commit as on the PR. With
+  # a fixed RNG seed every property in a file draws the same 4,096
+  # `any::<u64>()` world seeds. A failure reproduces locally with the line
+  # the `test` job prints; `.github/workflows/explore.yml` draws fresh seeds
+  # off the deploy path.
+  PROPTEST_RNG_SEED: 20260929
 
 jobs:
   changes:
@@ -206,6 +214,8 @@ jobs:
       # Story 4.13: watch.yml's own shape (scheduled, gated, secrets only
       # through env:, reports on failure() || cancelled()).
       - run: bash scripts/ci/check-watch-workflow.sh
+      # Story 4.21: explore.yml never runs on push or pull_request.
+      - run: bash scripts/ci/check-explore-workflow.sh
       # The deploy story: deploy.yml's own client-changed decision reads
       # scripts/ci/lib/deploy-client-paths.txt -- this job's own `client:`
       # filter (below) must stay a superset of it, or the two silently
@@ -369,10 +379,17 @@ jobs:
       # covers everything this mode cannot see (the Rust suite itself,
       # the INV_ constant<->matrix symmetry).
       - run: bash ../scripts/ci/check-trace-matrix.sh --client-only
+      # NFR50: the committed `*.proptest-regressions` files are tracked and
+      # not ignored, so proptest replays them on every run.
+      - run: bash ../scripts/ci/check-proptest-regressions.sh
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: server
       - run: rustup toolchain install
+      - name: property-test seed (reproduce a failure locally with this line)
+        run: |
+          echo "PROPTEST_CASES=$PROPTEST_CASES PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED"
+          echo "reproduce: PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED PROPTEST_CASES=$PROPTEST_CASES cargo test -p sim --release --test invariants -- <property>" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: native tests, including the property suite, in release
         run: cargo test --workspace --exclude browser_city --exclude sched_timing_spike --exclude boot_budget_spike --release
       - run: bash ../scripts/ci/check-trace-matrix.sh
