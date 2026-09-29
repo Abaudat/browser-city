@@ -18,6 +18,14 @@
 // `waitForFunction` on real page state; there is no `waitForTimeout` on
 // the walk, and `retries` stays 0.
 //
+// Reproducing a timing flake (NFR50): `BC_CPU_THROTTLE=<rate>` slows the
+// page's CPU through CDP (`Emulation.setCPUThrottlingRate`, 4 to 6 is a
+// loaded shared runner), e.g.
+//   BC_CPU_THROTTLE=6 npx playwright test --project=chromium \
+//     tests/e2e/test-street.spec.ts -g bollard --repeat-each 10
+// `walkSegment` names the segment, the threshold and the overshoot when
+// a release lands more than one clamped tick past its threshold.
+//
 // It replaces `movement.spec.ts` and `render-order.spec.ts`: both walked
 // the same page to prove a subset of what the walk below proves, and a
 // third boot of the same scene costs the slowest job in the repo real
@@ -90,6 +98,7 @@ import {
   TRASH_BIN_DEF_ID,
   WINDOW_DEF_ID,
 } from "../../src/test-street/fixture";
+import { MAX_DELTA_MS } from "../../src/world/movement";
 import {
   committedDefs,
   streetMovementConfig,
@@ -104,6 +113,14 @@ import { SCREENSHOT_OPTIONS } from "./screenshot-support";
 // The whole walk is one test on purpose: it is one continuous journey,
 // and splitting it would re-boot and re-walk the scene per assertion.
 test.describe.configure({ mode: "serial" });
+
+test.beforeEach(async ({ page }) => {
+  const rate = Number(process.env.BC_CPU_THROTTLE ?? 1);
+  if (rate > 1) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate });
+  }
+});
 
 // The fixed viewport `interior.png`/`underpass.png` need -- applies to
 // the whole test except the crowd-street checkpoint's own brief resize
@@ -501,47 +518,111 @@ async function waitForSceneReady(page: Page): Promise<void> {
  * by at most one more tick, and `street-conformance.test.ts` pins that
  * margin at the resolver's own delta clamp. */
 async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
-  await page.keyboard.down(segment.key);
-  try {
-    await page.evaluate(
-      ({ until, code, timeoutMs }) =>
-        new Promise<void>((resolve, reject) => {
-          const met = (u: StreetWalkUntil): boolean => {
-            const position = window.__bc?.playerPosition;
-            const floor = window.__bc?.playerFloor;
-            if (!position || floor === undefined) return false;
-            switch (u.kind) {
-              case "x-at-least":
-                return position.x >= u.value;
-              case "x-at-most":
-                return position.x <= u.value;
-              case "y-at-least":
-                return position.y >= u.value;
-              case "y-at-most":
-                return position.y <= u.value;
-              case "floor":
-                return floor === u.value;
-              case "cell":
-                return Math.floor(position.x) === u.x && Math.floor(position.y) === u.y;
-            }
-          };
+  // One clamped tick, derived from the resolver's own constants.
+  const maxStepCells = streetMovementConfig().walkSpeedCellsPerMs * MAX_DELTA_MS;
+  // The watcher is armed *before* the key goes down: every frame between
+  // the real keydown landing and the first condition check would
+  // otherwise move the walker with nothing watching. A condition that
+  // already holds at arming is a route bug, not a pass.
+  const armed = await page.evaluate(
+    ({ until, code, timeoutMs, maxStep, subcells }) => {
+      type Result = { ok: boolean; error?: string };
+      const met = (u: StreetWalkUntil): boolean => {
+        const position = window.__bc?.playerPosition;
+        const floor = window.__bc?.playerFloor;
+        if (!position || floor === undefined) return false;
+        switch (u.kind) {
+          case "x-at-least":
+            return position.x >= u.value;
+          case "x-at-most":
+            return position.x <= u.value;
+          case "y-at-least":
+            return position.y >= u.value;
+          case "y-at-most":
+            return position.y <= u.value;
+          case "floor":
+            return floor === u.value;
+          case "cell":
+            return Math.floor(position.x) === u.x && Math.floor(position.y) === u.y;
+        }
+      };
+      if (met(until)) return false;
+      // Distance travelled past the threshold, in cells (positive = past).
+      const pastBy = (u: StreetWalkUntil): number | null => {
+        const position = window.__bc?.playerPosition;
+        if (!position) return null;
+        switch (u.kind) {
+          case "x-at-least":
+            return position.x - u.value;
+          case "x-at-most":
+            return u.value - position.x;
+          case "y-at-least":
+            return position.y - u.value;
+          case "y-at-most":
+            return u.value - position.y;
+          default:
+            return null;
+        }
+      };
+      (window as unknown as { __bcWalk: Promise<Result> }).__bcWalk = new Promise<Result>(
+        (resolve) => {
           const deadline = performance.now() + timeoutMs;
           const tick = (): void => {
             if (met(until)) {
               window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
-              resolve();
+              // Let the release take effect, then read how far past the
+              // threshold the walker really came to rest.
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                  const past = pastBy(until);
+                  const sub = 1 / subcells;
+                  if (past !== null && past > maxStep + 1e-9) {
+                    resolve({
+                      ok: false,
+                      error: `overshot by ${(past / sub).toFixed(2)} sub-cells; one clamped tick is ${(maxStep / sub).toFixed(2)}, position ${JSON.stringify(window.__bc?.playerPosition)}`,
+                    });
+                    return;
+                  }
+                  resolve({ ok: true });
+                }),
+              );
               return;
             }
             if (performance.now() >= deadline) {
-              reject(new Error(`walkSegment: ${JSON.stringify(until)} never met`));
+              window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
+              resolve({ ok: false, error: "never met" });
               return;
             }
             requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
-        }),
-      { until: segment.until, code: segment.key, timeoutMs: 30_000 },
+        },
+      );
+      return true;
+    },
+    {
+      until: segment.until,
+      code: segment.key,
+      timeoutMs: 30_000,
+      maxStep: maxStepCells,
+      subcells: streetMovementConfig().subcellsPerCell,
+    },
+  );
+  if (!armed) {
+    throw new Error(
+      `walkSegment: '${segment.label}' already met ${JSON.stringify(segment.until)} before the key went down -- a route bug`,
     );
+  }
+  await page.keyboard.down(segment.key);
+  try {
+    const result = await page.evaluate(
+      () => (window as unknown as { __bcWalk: Promise<{ ok: boolean; error?: string }> }).__bcWalk,
+    );
+    if (!result.ok) {
+      throw new Error(
+        `walkSegment: '${segment.label}' ${JSON.stringify(segment.until)}: ${result.error}`,
+      );
+    }
   } finally {
     await page.keyboard.up(segment.key);
   }
@@ -1088,141 +1169,141 @@ test("the bollard west of the shopfront stops the player where it is drawn, from
     x1: bollard.x * config.subcellsPerCell + BOLLARD_COLLIDER.x1,
     y1: bollard.y * config.subcellsPerCell + BOLLARD_COLLIDER.y1,
   };
-  const colliderX0Cells = colliderSub.x0 / config.subcellsPerCell;
-  const colliderX1Cells = colliderSub.x1 / config.subcellsPerCell;
-  // The asymmetric north-approach extent (`world/movement.ts`'s own
-  // `bodyRect`, `onUnderpassRowY`'s established idiom): the drawn feet's
-  // bottom edge rests this far south of the post's own drawn base, never
-  // flush with it -- a small, real, pre-existing gap this story's own
-  // forbidden list keeps out of scope (Quentin's direction).
-  const restYCells =
-    bollard.y +
-    BOLLARD_COLLIDER.y1 / config.subcellsPerCell +
-    config.bodyHeightSubcells / config.subcellsPerCell;
+  const sub = config.subcellsPerCell;
+  const halfBodySub = config.bodyWidthSubcells / 2;
+  const colliderX0Cells = colliderSub.x0 / sub;
+  const colliderX1Cells = colliderSub.x1 / sub;
+  // Every rest below is a collider rest, fixed by a face in exact
+  // sub-cells (`resolveAxis` returns `faceMin - extentAfter` or
+  // `faceMax + extentBefore`): south face + body height, west face - half
+  // the body width, east face + half the body width.
+  const restYCells = (colliderSub.y1 + config.bodyHeightSubcells) / sub;
+  const restWestXCells = (colliderSub.x0 - halfBodySub) / sub;
+  const restEastXCells = (colliderSub.x1 + halfBodySub) / sub;
+  // A row inside the post's own y range, for the two side rests.
+  const midRowCells = bollard.y + 0.5;
   // The collider's own drawn rect, in world pixels (pre-zoom) -- the same
   // `subcellRectPx` the FR165 overlay draws it with.
-  const drawnCollider = subcellRectPx(
-    colliderSub,
-    bollard.floor,
-    config.subcellsPerCell,
-    tileSizePx,
-    storeyHeightPx,
-  );
-  const bodyHeightWorldPx = (config.bodyHeightSubcells / config.subcellsPerCell) * tileSizePx;
+  const drawnCollider = subcellRectPx(colliderSub, bollard.floor, sub, tileSizePx, storeyHeightPx);
+  const bodyHeightWorldPx = (config.bodyHeightSubcells / sub) * tileSizePx;
+  const halfBodyWorldPx = (halfBodySub / sub) * tileSizePx;
 
-  async function approachFrom(side: "west" | "east"): Promise<void> {
-    await page.goto("/");
-    await waitForSceneReady(page);
-    const inputs = streetWalkInputs();
-    // Out of the shop, onto the pavement -- resting on the trash bin's own
-    // north face (`shopfrontExitRestY`), still east of the bollard's row.
-    await walkSegment(page, {
-      label: "outside-the-shopfront",
-      key: "ArrowDown",
-      until: { kind: "y-at-least", value: inputs.shopfrontExitRestY },
-    });
-    // West, but only as far as the bollard's own east side: going further
-    // at this same row would walk straight into the post (it sits on the
-    // exit's own row, row `bollard.y`), which is a different object's
-    // collider than the one this walk means to approach.
-    await walkSegment(page, {
-      label: "west-of-the-bin",
-      key: "ArrowLeft",
-      until: { kind: "x-at-most", value: bollard.x + 1 },
-    });
-    // South, clear of the bollard's own row, onto open pavement.
-    await walkSegment(page, {
-      label: "south-of-the-bollard",
-      key: "ArrowDown",
-      until: { kind: "y-at-least", value: bollard.y + 1.7 },
-    });
-    // Off-centre onto the post, approached so any release-timing overshoot
-    // lands *deeper into* the collider rather than out past its far face
-    // (the CI failure this replaced: a west-quarter target only ~1.5
-    // sub-cells from the west face left no room for a slower frame's own
-    // overshoot, same as walking a real animation-frame's worth of
-    // distance past a release condition ever does -- `walkSegment`'s own
-    // doc comment). One sub-cell in from a face, approached from beyond
-    // that same face, leaves the whole rest of the post's own width (5
-    // sub-cells) as overshoot room -- comfortably past even a single
-    // `MAX_DELTA_MS`-clamped step's own worst case (~3.5 sub-cells).
-    const oneSubcellCell = 1 / config.subcellsPerCell;
-    if (side === "west") {
-      // Clear of the post entirely, west of its own west face, before
-      // turning back east into it.
-      await walkSegment(page, {
-        label: "west-of-the-post",
-        key: "ArrowLeft",
-        until: { kind: "x-at-most", value: colliderX0Cells - 0.5 },
-      });
-      await walkSegment(page, {
-        label: "onto-the-post-west-side",
-        key: "ArrowRight",
-        until: { kind: "x-at-least", value: colliderX0Cells + oneSubcellCell },
-      });
-    } else {
-      await walkSegment(page, {
-        label: "onto-the-post-east-side",
-        key: "ArrowLeft",
-        until: { kind: "x-at-most", value: colliderX1Cells - oneSubcellCell },
-      });
-    }
-    // North, straight into the post.
-    await walkSegment(page, {
-      label: "into-the-bollard",
-      key: "ArrowUp",
-      until: { kind: "y-at-most", value: restYCells },
-    });
-    // Quentin's direction: the release above cannot by itself tell
-    // "blocked by the post" from "released near restYCells while
-    // walking straight through it" -- an unblocked walker covers up to
-    // one 16.7ms animation frame's worth of distance past the threshold
-    // before release, comfortably inside the drawn-pixel tolerance
-    // `assertRestsOnTheDrawnBollard` uses below. Held past convergence
-    // instead, the same discipline the unit walk's own 300 fixed steps
-    // rely on: hold the key for several whole `MAX_DELTA_MS` ticks after
-    // the release condition first held, and require the position to be
-    // exactly (not approximately) unchanged -- collider faces are exact
-    // integers in sub-cells, so a real rest never drifts under a held
-    // key, and a body that was never actually stopped keeps moving.
+  type Face = "south" | "west" | "east";
+
+  /** Holds the pushing key past convergence: several whole
+   * `MAX_DELTA_MS` ticks with the key down must leave the position
+   * exactly unchanged, or the release was not a rest against the post. */
+  async function holdAgainstThePost(key: string): Promise<void> {
     const restingAt = await playerState(page);
-    await page.keyboard.down("ArrowUp");
+    await page.keyboard.down(key);
     await page.waitForTimeout(400);
-    await page.keyboard.up("ArrowUp");
-    const heldAt = await playerState(page);
-    expect(heldAt).toEqual(restingAt);
+    await page.keyboard.up(key);
+    expect(await playerState(page)).toEqual(restingAt);
   }
 
-  async function assertRestsOnTheDrawnBollard(): Promise<void> {
-    const bounds = await page.evaluate(() => window.__bc?.playerScreenBounds?.());
-    if (!bounds) throw new Error("no playerScreenBounds hook");
+  async function assertRestsOnTheDrawnBollard(face: Face): Promise<void> {
+    const state = await playerState(page);
+    // The game's own state first: exact, no tolerance.
+    if (face === "south") {
+      expect(state.y * sub, `rested at ${JSON.stringify(state)}`).toBe(
+        colliderSub.y1 + config.bodyHeightSubcells,
+      );
+    } else if (face === "west") {
+      expect(state.x * sub, `rested at ${JSON.stringify(state)}`).toBe(
+        colliderSub.x0 - halfBodySub,
+      );
+    } else {
+      expect(state.x * sub, `rested at ${JSON.stringify(state)}`).toBe(
+        colliderSub.x1 + halfBodySub,
+      );
+    }
 
-    const southFaceCanvas = await canvasOffsetForWorldPx(page, {
-      x: drawnCollider.x + drawnCollider.width / 2,
-      y: drawnCollider.y + drawnCollider.height,
-    });
-    const westFaceCanvas = await canvasOffsetForWorldPx(page, {
-      x: drawnCollider.x,
-      y: drawnCollider.y,
-    });
-    const eastFaceCanvas = await canvasOffsetForWorldPx(page, {
-      x: drawnCollider.x + drawnCollider.width,
-      y: drawnCollider.y,
-    });
-    const originCanvas = await canvasOffsetForWorldPx(page, { x: 0, y: 0 });
-    const bodyHeightCanvas = await canvasOffsetForWorldPx(page, { x: 0, y: bodyHeightWorldPx });
-    const expectedBottomCanvasY = southFaceCanvas.y + (bodyHeightCanvas.y - originCanvas.y);
-
+    // Then the drawn sprite against the drawn face, one frame's reads.
+    const read = await page.evaluate(() => ({
+      bounds: window.__bc?.playerScreenBounds?.(),
+      position: window.__bc?.playerPosition,
+    }));
+    if (!read.bounds) throw new Error("no playerScreenBounds hook");
+    const bounds = read.bounds;
+    const origin = await canvasOffsetForWorldPx(page, { x: 0, y: 0 });
     const spriteBottomCentre = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height };
-    expect(Math.abs(spriteBottomCentre.y - expectedBottomCanvasY)).toBeLessThanOrEqual(1);
-    expect(spriteBottomCentre.x).toBeGreaterThanOrEqual(westFaceCanvas.x - 1);
-    expect(spriteBottomCentre.x).toBeLessThanOrEqual(eastFaceCanvas.x + 1);
+    const detail = `walker ${JSON.stringify(read.position)}, sprite bottom-centre ${JSON.stringify(spriteBottomCentre)}, canvas origin of world ${JSON.stringify(origin)}`;
+    if (face === "south") {
+      const southFaceCanvas = await canvasOffsetForWorldPx(page, {
+        x: drawnCollider.x + drawnCollider.width / 2,
+        y: drawnCollider.y + drawnCollider.height,
+      });
+      const bodyHeightCanvas = await canvasOffsetForWorldPx(page, { x: 0, y: bodyHeightWorldPx });
+      const expected = southFaceCanvas.y + (bodyHeightCanvas.y - origin.y);
+      expect(Math.abs(spriteBottomCentre.y - expected), detail).toBeLessThanOrEqual(1);
+    } else {
+      const halfBodyCanvas =
+        (await canvasOffsetForWorldPx(page, { x: halfBodyWorldPx, y: 0 })).x - origin.x;
+      if (face === "west") {
+        const westFaceCanvas = await canvasOffsetForWorldPx(page, {
+          x: drawnCollider.x,
+          y: drawnCollider.y,
+        });
+        expect(
+          Math.abs(spriteBottomCentre.x + halfBodyCanvas - westFaceCanvas.x),
+          detail,
+        ).toBeLessThanOrEqual(1);
+      } else {
+        const eastFaceCanvas = await canvasOffsetForWorldPx(page, {
+          x: drawnCollider.x + drawnCollider.width,
+          y: drawnCollider.y,
+        });
+        expect(
+          Math.abs(spriteBottomCentre.x - halfBodyCanvas - eastFaceCanvas.x),
+          detail,
+        ).toBeLessThanOrEqual(1);
+      }
+    }
   }
 
-  await approachFrom("west");
-  await assertRestsOnTheDrawnBollard();
-  await approachFrom("east");
-  await assertRestsOnTheDrawnBollard();
+  await page.goto("/");
+  await waitForSceneReady(page);
+  const inputs = streetWalkInputs();
+  const walk = (label: string, key: string, until: StreetWalkUntil) =>
+    walkSegment(page, { label, key, until });
+
+  // Out of the shop, onto the pavement, west to the bollard's east side,
+  // then south onto open pavement below the post's own row.
+  await walk("outside-the-shopfront", "ArrowDown", {
+    kind: "y-at-least",
+    value: inputs.shopfrontExitRestY,
+  });
+  await walk("west-of-the-bin", "ArrowLeft", { kind: "x-at-most", value: bollard.x + 1 });
+  await walk("south-of-the-bollard", "ArrowDown", { kind: "y-at-least", value: bollard.y + 1.7 });
+
+  // South face: under the post's own middle, north into it.
+  await walk("under-the-post", "ArrowLeft", { kind: "x-at-most", value: bollard.x + 0.5 });
+  await walk("into-the-south-face", "ArrowUp", { kind: "y-at-most", value: restYCells });
+  await holdAgainstThePost("ArrowUp");
+  await assertRestsOnTheDrawnBollard("south");
+
+  // West face: clear of the post to its west, up to the post's own row,
+  // east into it.
+  await walk("west-of-the-post", "ArrowLeft", { kind: "x-at-most", value: colliderX0Cells - 0.5 });
+  await walk("beside-the-post-west", "ArrowUp", { kind: "y-at-most", value: midRowCells });
+  await walk("into-the-west-face", "ArrowRight", { kind: "x-at-least", value: restWestXCells });
+  await holdAgainstThePost("ArrowRight");
+  await assertRestsOnTheDrawnBollard("west");
+
+  // East face: back south of the post, clear of it to its east, up to the
+  // post's own row, west into it.
+  await walk("south-of-the-post-again", "ArrowDown", {
+    kind: "y-at-least",
+    value: bollard.y + 1.7,
+  });
+  await walk("east-of-the-post", "ArrowRight", {
+    kind: "x-at-least",
+    value: colliderX1Cells + 0.5,
+  });
+  await walk("beside-the-post-east", "ArrowUp", { kind: "y-at-most", value: midRowCells });
+  await walk("into-the-east-face", "ArrowLeft", { kind: "x-at-most", value: restEastXCells });
+  await holdAgainstThePost("ArrowLeft");
+  await assertRestsOnTheDrawnBollard("east");
 });
 
 test("FR173's affordance mark is a real pixel change, confined to the hovered object's own drawn rect (Quentin's direction)", async ({

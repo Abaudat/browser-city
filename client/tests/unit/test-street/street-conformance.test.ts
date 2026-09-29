@@ -942,6 +942,28 @@ describe("the bollard west of the shopfront stops the player where it is drawn (
     });
   }
 
+  /** Walks along the post's own mid row, `dir` = -1 (west) or +1 (east),
+   * from `startX`, for up to 300 clamped steps. */
+  function walkAlongRow(startX: number, dir: -1 | 1): { x: number; y: number } {
+    let pos = { x: startX, y: bollard.y + 0.5 };
+    for (let i = 0; i < 300; i++) {
+      pos = step(pos, { x: dir, y: 0 }, MAX_DELTA_MS, world, floor, config);
+    }
+    return pos;
+  }
+
+  it("rests on the post's own west face, exactly, walking east into it from open pavement", () => {
+    const rest = walkAlongRow(colliderX0Cells - 0.5, 1);
+    expect(rest.x * config.subcellsPerCell).toBe(colliderSub.x0 - config.bodyWidthSubcells / 2);
+    expect(rest.y).toBe(bollard.y + 0.5);
+  });
+
+  it("rests on the post's own east face, exactly, walking west into it from open pavement", () => {
+    const rest = walkAlongRow(colliderX1Cells + 0.5, -1);
+    expect(rest.x * config.subcellsPerCell).toBe(colliderSub.x1 + config.bodyWidthSubcells / 2);
+    expect(rest.y).toBe(bollard.y + 0.5);
+  });
+
   it("clears the post when the body's own east edge only just touches its west face (half-open)", () => {
     const colliderY0Cells = bollard.y + BOLLARD_COLLIDER.y0 / config.subcellsPerCell;
     const rest = walkNorth(columns.touchingClears);

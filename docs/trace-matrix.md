@@ -824,3 +824,14 @@ logged, and the flaking outlier is fixed at the pass that owns it.
 | `explore.yml` draws fresh seeds weekly or on demand, never on `push` or `pull_request`, and reports a failure through `report-scheduled-failure.sh` | covered | `scripts/ci/check-explore-workflow.sh`, `scripts/ci/tests/test-check-explore-workflow.sh` |
 | The `share_*_pct` keys are area shares: each non-residential use's realised area share sits within `share_tolerance_pct` of its key, for any seed, and the flaking seed `16021368561388801292` is pinned | covered | `server/sim/tests/invariants.rs` -- `inv_generation_land_use_area_share_within_tolerance`, `seed_16021368561388801292_holds_its_commercial_share_and_workplace_band`; `server/sim/src/generation/land_use.rs` -- `share_band_is_exact_at_the_tolerance_boundary`, `share_band_flags_a_third_of_the_site_as_commercial`, `share_band_accepts_a_map_on_its_keys`, `share_tolerance_covers_the_half_leaf_overshoot_bound`, `commercial_and_industrial_area_match_their_area_shares`, `takes_leaf_overshoots_by_at_most_half_a_leaf`, `target_cells_sum_exactly_to_the_total` |
 | `measure-generation` sweeps the land-use share, building-count and workplace-count bands over its own seeds and prints each band's miss rate and CI failure probability | covered | `server/bounds/src/bin/measure_generation.rs` -- `band_sweep` |
+
+## The bollard test fails only for a reason
+
+Story 4.23 (NFR50): the bollard browser test asserts collider rests fixed
+by exact faces, and its walk names any release that overshoots.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| The player rests exactly on the bollard's west and east faces, walking into each from open pavement | covered | `client/tests/unit/test-street/street-conformance.test.ts` -- `rests on the post's own west face, exactly, walking east into it from open pavement`, `rests on the post's own east face, exactly, walking west into it from open pavement` |
+| The browser test asserts the game's own rest state exactly on all three faces, then the drawn sprite against the drawn face within one pixel | covered | `client/tests/e2e/test-street.spec.ts` -- `the bollard west of the shopfront stops the player where it is drawn, from both sides (AC1, AC4)` |
+| `walkSegment` arms its release watcher before the key goes down and fails, naming the segment and the overshoot, when a release lands more than one clamped tick past its threshold | covered | `client/tests/e2e/test-street.spec.ts` -- `the bollard west of the shopfront stops the player where it is drawn, from both sides (AC1, AC4)` |
