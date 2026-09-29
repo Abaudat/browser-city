@@ -8,7 +8,9 @@
 use spacetimedb::{ReducerContext, Timestamp};
 
 use super::clock::{WorldClock, read_clock, world_clock};
+use super::metrics::count_call;
 use super::schedules;
+use sim::reducer_classes::ReducerClass;
 
 fn write_clock(ctx: &ReducerContext, epoch_micros: i64, speed: u32) {
     ctx.db.world_clock().id().update(WorldClock {
@@ -23,6 +25,7 @@ fn write_clock(ctx: &ReducerContext, epoch_micros: i64, speed: u32) {
 /// from the rewritten epoch.
 #[spacetimedb::reducer]
 pub fn jump_clock(ctx: &ReducerContext, city_minutes: u32) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     sim::time::validate_jump(city_minutes)?;
     let (epoch, speed) =
         read_clock(ctx).ok_or_else(|| "world_clock has no row -- init did not run".to_string())?;
@@ -39,6 +42,7 @@ pub fn jump_clock(ctx: &ReducerContext, city_minutes: u32) -> Result<(), String>
 /// re-anchored so the city minute at this instant is unchanged.
 #[spacetimedb::reducer]
 pub fn set_clock_speed(ctx: &ReducerContext, speed: u32) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     sim::time::validate_speed(speed)?;
     let (epoch, old_speed) =
         read_clock(ctx).ok_or_else(|| "world_clock has no row -- init did not run".to_string())?;

@@ -203,6 +203,9 @@ jobs:
       # after) its backup job (NFR39). Same reasoning as the checks above
       # -- a workflow-structure guard, not a server-workspace one.
       - run: bash scripts/ci/check-deploy-workflow.sh
+      # Story 4.13: watch.yml's own shape (scheduled, gated, secrets only
+      # through env:, reports on failure() || cancelled()).
+      - run: bash scripts/ci/check-watch-workflow.sh
       # The deploy story: deploy.yml's own client-changed decision reads
       # scripts/ci/lib/deploy-client-paths.txt -- this job's own `client:`
       # filter (below) must stay a superset of it, or the two silently
@@ -333,6 +336,8 @@ jobs:
       - run: bash ../scripts/ci/check-sim-purity.sh
       - name: story 4.2, no ScheduleAt::Interval and no unwrap/expect/panic under server/src (NFR41)
         run: bash ../scripts/ci/check-server-src-bans.sh
+      - name: story 4.13 NFR17, every reducer and procedure opens with count_call
+        run: bash ../scripts/ci/check-reducer-counted.sh
       - name: story 3.11 FR131, the travel-time estimator is graph-free and collection-free
         run: bash ../scripts/ci/check-routing-estimate-purity.sh
       - run: bash ../scripts/ci/check-golden-version-bump.sh

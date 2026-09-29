@@ -42,8 +42,18 @@ SHA_B="$(grep -oE '"schema_sha256": *"[0-9a-f]+"' "$B/manifest.json" | grep -oE 
 # or related to it by exactly one legitimate later fire (`fires` strictly
 # greater, `missed` never smaller, `last_fired_at` strictly later); a row
 # in A missing from B, or related any other way, is a real mismatch.
+#
+# Story 4.13: `reducer_class_counter` is the same kind of table -- every
+# restore call after `restore_reducer_class_counter` (`finish_restore`,
+# at least) counts, so export B's totals are legitimately larger.
+# `world_backup counter-forward-diff`: no class lost, no figure smaller.
 table_matches() { # <table> <file-a> <file-b>
   case "$1" in
+    reducer_class_counter)
+      local counter_mismatches
+      counter_mismatches="$(bc_wb counter-forward-diff "$2" "$3")" || return 1
+      [ -z "$counter_mismatches" ]
+      ;;
     cadence_liveness)
       local mismatches
       mismatches="$(bc_wb cadence-liveness-forward-diff "$2" "$3")" || return 1
@@ -67,6 +77,8 @@ while IFS= read -r table; do
     echo "verify-world: MISMATCH -- '$table' differs between '$A' and '$B':" >&2
     if [ "$table" = "cadence_liveness" ]; then
       bc_wb cadence-liveness-forward-diff "$FA" "$FB" >&2 || true
+    elif [ "$table" = "reducer_class_counter" ]; then
+      bc_wb counter-forward-diff "$FA" "$FB" >&2 || true
     else
       diff -u "$FA" "$FB" >&2 || true
     fi

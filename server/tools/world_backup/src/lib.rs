@@ -818,6 +818,58 @@ pub fn cadence_liveness_forward_diff(
     Ok(mismatches)
 }
 
+/// `a` is the earlier export, `b` the later one (of the same, restored
+/// database): `reducer_class_counter` rows are `[class, calls,
+/// sampled_calls]` and only ever grow -- every restore call after the
+/// counter is restored, and every live call, counts. Every class `a` has
+/// must be in `b` with neither figure smaller. Returns one description per
+/// mismatch, empty if none.
+pub fn reducer_class_counter_forward_diff(
+    a_lines: &[String],
+    b_lines: &[String],
+) -> Result<Vec<String>> {
+    fn parse(line: &str) -> Result<(String, u64, u64)> {
+        let v: Value =
+            serde_json::from_str(line).map_err(|e| err(format!("not valid JSON: {e}: {line}")))?;
+        let arr = v
+            .as_array()
+            .filter(|a| a.len() == 3)
+            .ok_or_else(|| err(format!("expected [class, calls, sampled_calls]: {line}")))?;
+        let class = arr[0]
+            .as_str()
+            .ok_or_else(|| err(format!("class is not a string: {line}")))?
+            .to_string();
+        let n = |i: usize| -> Result<u64> {
+            arr[i]
+                .as_u64()
+                .ok_or_else(|| err(format!("field {i} is not a u64: {line}")))
+        };
+        Ok((class, n(1)?, n(2)?))
+    }
+    let mut b_by_class: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+    for line in b_lines {
+        let (class, calls, sampled) = parse(line)?;
+        b_by_class.insert(class, (calls, sampled));
+    }
+    let mut mismatches = Vec::new();
+    for line in a_lines {
+        let (class, calls, sampled) = parse(line)?;
+        match b_by_class.get(&class) {
+            None => mismatches.push(format!(
+                "class {class}: present in the earlier export, missing from the later one"
+            )),
+            Some(&(b_calls, b_sampled)) => {
+                if b_calls < calls || b_sampled < sampled {
+                    mismatches.push(format!(
+                        "class {class}: counters went backwards (calls {calls} -> {b_calls}, sampled_calls {sampled} -> {b_sampled})"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(mismatches)
+}
+
 // --- schema-driven edge-value seeding (mirrors export/restore's own
 // value shapes exactly -- an Identity is `["0x...64 hex digits..."]`, a
 // Timestamp is `[micros]`, everything else a plain JSON scalar) ---------
@@ -924,6 +976,9 @@ pub fn seed_rows(
                 // offset, which would both overflow `u8` and break the
                 // `id == 0` invariant `require_owner` depends on.
                 Value::Number(0u8.into())
+            } else if (col.primary_key || col.unique) && col.ty == "String" {
+                // A string key (`reducer_class_counter.class`): unique per row.
+                Value::String(format!("edge-{}", base_offset + i))
             } else if col.primary_key || col.unique {
                 // Bounded by the column's own type width -- `base_offset`
                 // is chosen for `u32`/`u64` headroom and would overflow a
@@ -1238,6 +1293,21 @@ mod tests {
     }
 
     #[test]
+    fn seed_rows_gives_a_string_pk_a_distinct_string_per_row() {
+        let snapshot = snap(
+            r#"{"tables":[
+                {"accessor":"tally","struct_name":"Tally","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                    {"name":"class","ty":"String","primary_key":true,"auto_inc":false,"unique":false,"has_default":false,"indexed":false},
+                    {"name":"calls","ty":"u64","primary_key":false,"auto_inc":false,"unique":false,"has_default":false,"indexed":false}
+                ]}
+            ]}"#,
+        );
+        let rows = seed_rows(&snapshot, "tally", 3, 900).unwrap();
+        let keys: Vec<&str> = rows.iter().map(|r| r[0].as_str().unwrap()).collect();
+        assert_eq!(keys, vec!["edge-900", "edge-901", "edge-902"]);
+    }
+
+    #[test]
     fn seed_rows_gives_auto_inc_pk_sequential_gap_free_ids() {
         let snapshot = snap(
             r#"{"tables":[{"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
@@ -1392,6 +1462,42 @@ mod tests {
 
     fn cl_line(cadence: u64, target: i64, fired: i64, fires: u64, missed: u64) -> String {
         format!("[{cadence},[{target}],[{fired}],{fires},{missed}]")
+    }
+
+    fn rcc_line(class: &str, calls: u64, sampled: u64) -> String {
+        format!("[\"{class}\",{calls},{sampled}]")
+    }
+
+    #[test]
+    fn counter_forward_diff_accepts_identical_and_grown_rows() {
+        let a = vec![rcc_line("scheduled", 5, 4), rcc_line("player", 1, 0)];
+        let b = vec![rcc_line("scheduled", 9, 4), rcc_line("player", 1, 0)];
+        assert!(
+            reducer_class_counter_forward_diff(&a, &b)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            reducer_class_counter_forward_diff(&a, &a)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn counter_forward_diff_rejects_a_smaller_figure_or_a_missing_class() {
+        let a = vec![rcc_line("scheduled", 5, 4), rcc_line("player", 1, 0)];
+        let b = vec![rcc_line("scheduled", 4, 4)];
+        let diff = reducer_class_counter_forward_diff(&a, &b).unwrap();
+        assert_eq!(diff.len(), 2);
+        assert!(diff[0].contains("went backwards"));
+        assert!(diff[1].contains("missing from the later one"));
+    }
+
+    #[test]
+    fn counter_forward_diff_rejects_a_malformed_row() {
+        let a = vec!["[1,2]".to_string()];
+        assert!(reducer_class_counter_forward_diff(&a, &a).is_err());
     }
 
     #[test]

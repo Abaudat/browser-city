@@ -11,4 +11,4 @@
  * mismatch means the bindings compiled into this bundle disagree with
  * what the module actually publishes.
  */
-export const PROTOCOL_VERSION = "5af6297a64ca7930";
+export const PROTOCOL_VERSION = "beeaade4cca6e985";

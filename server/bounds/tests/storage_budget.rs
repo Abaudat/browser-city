@@ -90,3 +90,17 @@ fn the_count_cap_the_sampler_enforces_is_the_registrys_own_max_rows() {
         );
     }
 }
+
+#[test]
+fn reducer_class_sample_alert_covers_the_retention_window() {
+    let needed = sim::reducer_classes::CLASS_COUNT * 24 * METRICS_RETENTION_DAYS;
+    assert!(
+        needed <= bound("reducer_class_sample").alert_rows,
+        "retention keeps {needed} reducer_class_sample rows, past its alert_rows {}",
+        bound("reducer_class_sample").alert_rows
+    );
+    assert_eq!(
+        sim::table_bounds::max_rows_of("reducer_class_sample"),
+        Some(bound("reducer_class_sample").max_rows)
+    );
+}

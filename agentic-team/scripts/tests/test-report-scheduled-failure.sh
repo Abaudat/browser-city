@@ -40,7 +40,12 @@ stub_gh() {
 #!/usr/bin/env bash
 echo "\$*" >> "$d/calls.log"
 if [ "\$1" = "issue" ] && [ "\$2" = "list" ]; then
-  echo '$existing'
+  # --json number,title: the script matches the title exactly itself.
+  if [ -n '$existing' ]; then
+    printf '[{"number":%s,"title":"%s"}]' '$existing' "\$STUB_TITLE"
+  else
+    echo '[]'
+  fi
   exit 0
 fi
 if [ "\$1" = "label" ] && [ "\$2" = "create" ] && [ "$fail_label" = "yes" ]; then
@@ -53,7 +58,7 @@ STUB
 }
 
 run() { # <bin-dir> <title> <body>
-  ( PATH="$1:$PATH" GH_TOKEN=x GITHUB_REPOSITORY=Abaudat/BrowserCity bash "$REPORT" "$2" "$3" )
+  ( PATH="$1:$PATH" STUB_TITLE="$2" GH_TOKEN=x GITHUB_REPOSITORY=Abaudat/BrowserCity bash "$REPORT" "$2" "$3" )
 }
 
 echo "green: no existing open issue -> makes its own labels exist, then files a new one"

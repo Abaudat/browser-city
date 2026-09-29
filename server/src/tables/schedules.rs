@@ -32,7 +32,8 @@ use spacetimedb::{ReducerContext, ScheduleAt, Table, Timestamp};
 
 use super::cadences;
 use super::clock::read_clock;
-use super::metrics;
+use super::metrics::{self, count_call};
+use sim::reducer_classes::ReducerClass;
 
 /// Only the module's own scheduler may invoke a scheduled reducer --
 /// otherwise any client could call it directly, which is a security hole,
@@ -110,6 +111,7 @@ pub fn advance_citizen_transitions(
     ctx: &ReducerContext,
     _row: CitizenTransitionSchedule,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
     require_scheduler(ctx)
 }
 
@@ -138,6 +140,7 @@ pub struct BudgetReviewSchedule {
 
 #[spacetimedb::reducer]
 pub fn run_budget_review(ctx: &ReducerContext, _row: BudgetReviewSchedule) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
     require_scheduler(ctx)
 }
 
@@ -155,6 +158,7 @@ pub struct WorldClockSchedule {
 
 #[spacetimedb::reducer]
 pub fn advance_world_clock(ctx: &ReducerContext, _row: WorldClockSchedule) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
     require_scheduler(ctx)
 }
 
@@ -170,6 +174,7 @@ pub struct EconomySchedule {
 
 #[spacetimedb::reducer]
 pub fn run_economy_tick(ctx: &ReducerContext, _row: EconomySchedule) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
     require_scheduler(ctx)
 }
 
@@ -185,6 +190,7 @@ pub struct GrowthSchedule {
 
 #[spacetimedb::reducer]
 pub fn run_growth_tick(ctx: &ReducerContext, _row: GrowthSchedule) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
     require_scheduler(ctx)
 }
 
@@ -317,6 +323,7 @@ pub(super) fn record_cadence_fire(
 
 #[spacetimedb::reducer]
 pub fn run_maintenance(ctx: &ReducerContext, row: MaintenanceSchedule) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
     require_scheduler(ctx)?;
     let origin_micros = schedule_at_micros(row.scheduled_at)?;
     // The work is a function of the city minute this fire is for, never
@@ -334,6 +341,7 @@ pub fn run_maintenance(ctx: &ReducerContext, row: MaintenanceSchedule) -> Result
 
 #[spacetimedb::reducer]
 pub fn sample_metrics(ctx: &ReducerContext, row: MetricsSampleSchedule) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
     require_scheduler(ctx)?;
     let origin_micros = schedule_at_micros(row.scheduled_at)?;
     let (epoch_micros, speed) =

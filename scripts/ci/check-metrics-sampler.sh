@@ -15,6 +15,10 @@
 #       storage_sample per fire; every static table's sampled `rows` equals
 #       the row count read from the table itself; the declared alert/max
 #       columns are carried; no breach flag is set.
+#   (a2) Story 4.13 (NFR17): one reducer_class_sample row per class per fire
+#       -- the class list is read from reducer_class_counter -- and the
+#       scheduled class's calls_delta is at least 1 after a fire (the fire
+#       itself is a scheduled call).
 #   (b) A direct call to sample_metrics as owner is rejected by
 #       require_scheduler and neither sample table changes.
 set -uo pipefail
@@ -84,7 +88,8 @@ until [ "$(rows_of storage_sample)" -ge 1 ]; do
 done
 clock speed 1 >"$DATA_DIR/speed-down.log" 2>&1 || fail "set_clock_speed 1 failed" "$DATA_DIR/speed-down.log"
 FIRES="$(rows_of storage_sample)"
-ok "the sampler fired ($FIRES storage sample row(s)); the clock is back at 1x, so nothing fires while reading"
+ok "the sampler fired with no watcher present"
+echo "check-metrics-sampler: $FIRES storage sample row(s); the clock is back at 1x, so nothing fires while reading" >&2
 
 SAMPLES="$(rows_of table_sample)"
 [ "$SAMPLES" -eq $((FIRES * TABLE_COUNT)) ] \
@@ -121,6 +126,25 @@ sql_json "SELECT * FROM storage_sample" >"$resp"
   && fail "a storage_sample row has over_review/over_wall set on a fresh world" "$resp"
 ok "the declared alert/max are carried, and no breach flag is set on a fresh world"
 
+# --- (a2) one reducer_class_sample per class per fire -------------------------
+resp="$DATA_DIR/counter.json"
+sql_json "SELECT * FROM reducer_class_counter" >"$resp"
+CLASSES="$(bc_wb column-values "$resp" class | tr -d '"' | sort -u)"
+CLASS_COUNT="$(printf '%s
+' "$CLASSES" | grep -c .)"
+[ "$CLASS_COUNT" -gt 0 ] || fail "reducer_class_counter holds no class row" "$resp"
+[ "$(rows_of reducer_class_sample)" -eq $((FIRES * CLASS_COUNT)) ]   || fail "reducer_class_sample holds $(rows_of reducer_class_sample) rows, expected $FIRES fire(s) x $CLASS_COUNT classes"
+for c in $CLASSES; do
+  resp="$DATA_DIR/class-$c.json"
+  sql_json "SELECT * FROM reducer_class_sample WHERE class = '$c'" >"$resp"
+  [ "$(bc_wb row-count "$resp")" -eq "$FIRES" ]     || fail "class '$c' has $(bc_wb row-count "$resp") sample row(s), expected exactly $FIRES (one per fire)" "$resp"
+done
+resp="$DATA_DIR/class-scheduled.json"
+sql_json "SELECT * FROM reducer_class_sample WHERE class = 'scheduled'" >"$resp"
+FIRST_DELTA="$(bc_wb column-values "$resp" calls_delta | sort -n | tail -n1)"
+[ "${FIRST_DELTA:-0}" -ge 1 ] || fail "the scheduled class's calls_delta is ${FIRST_DELTA:-none} after a fire, expected >= 1" "$resp"
+ok "one reducer_class_sample row per class per fire, and the scheduled class's delta is >= 1"
+
 # --- (b) a direct call is rejected and changes nothing -----------------------
 # The clock is back at 1x: the next fire is an hour away, so no legitimate
 # fire can land between the two reads.
@@ -137,6 +161,38 @@ grep -qF "this reducer may only be invoked by the scheduler" "$DIRECT_LOG" \
 [ "$(rows_of table_sample)" = "$BEFORE_T" ] && [ "$(rows_of storage_sample)" = "$BEFORE_S" ] \
   || fail "a rejected direct call to sample_metrics changed table_sample/storage_sample"
 ok "a direct call to sample_metrics was rejected by require_scheduler, and neither sample table changed"
+
+# A rejected call rolls its own count_call back: the counter is committed
+# calls only (NFR17's stated limitation). `finish_publish` as a non-owner
+# is rejected by require_owner, and nothing else drives the operator class
+# at rest, so its counter must not move.
+operator_calls() {
+  local resp="$DATA_DIR/operator-calls-$RANDOM.json"
+  sql_json "SELECT * FROM reducer_class_counter WHERE class = 'operator'" >"$resp"
+  bc_wb column-values "$resp" calls
+}
+OPERATOR_BEFORE="$(operator_calls)"
+REJECT_LOG="$DATA_DIR/rejected-finish-publish.log"
+if spacetime call "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y --anonymous finish_publish >"$REJECT_LOG" 2>&1; then
+  fail "an anonymous finish_publish was accepted; it must be rejected (require_owner)" "$REJECT_LOG"
+fi
+grep -qF "may only be invoked by the module owner" "$REJECT_LOG" \
+  || fail "the anonymous finish_publish was rejected, but not by require_owner" "$REJECT_LOG"
+OPERATOR_AFTER="$(operator_calls)"
+[ "$OPERATOR_AFTER" = "$OPERATOR_BEFORE" ] \
+  || fail "a rejected finish_publish moved reducer_class_counter.operator.calls ([$OPERATOR_BEFORE] -> [$OPERATOR_AFTER]); a rolled-back call must not count"
+ok "a rejected call is not counted (the limitation, pinned)"
+
+# --- (c) the watcher's own reader, against this same instance ---------------
+# The one live proof that the real query shape works (story 4.13): the
+# stub-based fast suite proves the decisions, this proves the queries.
+WATCH_LOG="$DATA_DIR/watch.log"
+bash "$REPO_ROOT/scripts/ops/storage-report.sh" "$DB_NAME" "${SERVER_ARGS[@]}" >"$WATCH_LOG" 2>&1
+WATCH_CODE=$?
+[ "$WATCH_CODE" -eq 0 ] || fail "storage-report.sh exited $WATCH_CODE against a healthy fresh world, expected 0" "$WATCH_LOG"
+grep -qF "estimated total" "$WATCH_LOG" && grep -qF "class scheduled calls_total=" "$WATCH_LOG"   || fail "storage-report.sh did not print the storage total and the scheduled class's figures" "$WATCH_LOG"
+grep -q "BREACH" "$WATCH_LOG" && fail "storage-report.sh reported a breach on a fresh world" "$WATCH_LOG"
+ok "the watcher's reader exits 0 with no breach against the live instance and prints the per-class calls"
 
 echo "check-metrics-sampler: the sampler fires, samples every table exactly once per fire, and cannot be called directly" >&2
 exit 0

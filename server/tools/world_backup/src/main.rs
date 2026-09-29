@@ -271,6 +271,22 @@ fn run(args: &[String]) -> Result<()> {
                 println!("{mismatch}");
             }
         }
+        "counter-forward-diff" => {
+            // counter-forward-diff <export-a.jsonl> <export-b.jsonl> -- the
+            // reducer_class_counter analogue of cadence-liveness-forward-diff.
+            let lines = |path: &str| -> Result<Vec<String>> {
+                Ok(read_file(path)?
+                    .lines()
+                    .filter(|l| !l.is_empty())
+                    .map(String::from)
+                    .collect())
+            };
+            let a_lines = lines(&args[2])?;
+            let b_lines = lines(&args[3])?;
+            for mismatch in reducer_class_counter_forward_diff(&a_lines, &b_lines)? {
+                println!("{mismatch}");
+            }
+        }
         "stdin-to-line" => {
             // Reads a JSON value from stdin and prints it as one
             // canonical compact line -- used to fold a single ad hoc
