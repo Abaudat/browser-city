@@ -437,33 +437,38 @@ impl StreetNetwork {
         (chopped, total)
     }
 
-    /// Every region whose own land use no block carries: no block whose
-    /// bounds intersect the region takes that use by
+    /// Every region whose own land use no block carries: no block overlaps
+    /// one of the region's own coarse cells (by the label grid, never the
+    /// region's bounding box) while taking that use by
     /// [`super::block_land_use`]. What [`SWALLOW_MIN_REGION_SHARE_DENOM`]
     /// exists to keep small -- a lost institutional region is a civic
     /// building the city can never place.
     pub fn regions_carried_by_no_block(&self, land_use: &LandUseMap) -> Vec<Region> {
-        let cell = land_use.cell_size();
+        let (regions, labels) = land_use.labeled_regions();
+        let cell = land_use.cell_size().max(1);
         let site = land_use.site();
-        land_use
-            .regions()
+        let mut carried = vec![false; regions.len()];
+        for b in &self.blocks {
+            let bb = b.bounds;
+            let use_ = super::block_land_use(land_use, bb);
+            let cx0 = ((bb.x0 - site.x0).div_euclid(cell)).max(0);
+            let cx1 = (((bb.x1 - site.x0 - 1).div_euclid(cell)) + 1).min(land_use.cols());
+            let cy0 = ((bb.y0 - site.y0).div_euclid(cell)).max(0);
+            let cy1 = (((bb.y1 - site.y0 - 1).div_euclid(cell)) + 1).min(land_use.rows());
+            for cy in cy0..cy1 {
+                for cx in cx0..cx1 {
+                    let label = labels[(cy * land_use.cols() + cx) as usize];
+                    if label >= 0 && regions[label as usize].use_ == use_ {
+                        carried[label as usize] = true;
+                    }
+                }
+            }
+        }
+        regions
             .into_iter()
-            .filter(|r| {
-                let world = Rect {
-                    x0: site.x0 + r.bounds.x0 * cell,
-                    y0: site.y0 + r.bounds.y0 * cell,
-                    x1: site.x0 + r.bounds.x1 * cell,
-                    y1: site.y0 + r.bounds.y1 * cell,
-                };
-                !self.blocks.iter().any(|b| {
-                    let bb = b.bounds;
-                    bb.x0 < world.x1
-                        && bb.x1 > world.x0
-                        && bb.y0 < world.y1
-                        && bb.y1 > world.y0
-                        && super::block_land_use(land_use, bb) == r.use_
-                })
-            })
+            .zip(carried)
+            .filter(|&(_, c)| !c)
+            .map(|(r, _)| r)
             .collect()
     }
 
@@ -1299,12 +1304,13 @@ fn split_tier_needed(
         phys.width().max(phys.height()),
         phys.width().min(phys.height()),
     );
-    // A thin strip (short side under half the target) may run to one and a
-    // half times the target before it is cut: it splits into halves near
-    // the target, never into pieces shorter than it (a 260x30 boundary
-    // strip becomes two 130s, not four 65s).
+    // A thin strip (short side under half the target) may run to
+    // `thin_strip_long_side_percent` of the target before it is cut: it
+    // splits into halves near the target, never into pieces shorter than
+    // it (a 260x30 boundary strip at target 128 becomes two 130s, not four
+    // 65s).
     let long_limit = if short_side * 2 < target {
-        target * 3 / 2
+        target * cfg.thin_strip_long_side_percent as i64 / 100
     } else {
         target
     };
@@ -2158,6 +2164,117 @@ mod tests {
                 "seed {seed}: {lost} of {institutional} institutional regions are carried by no block"
             );
         }
+    }
+
+    /// The checker must be seen to fire: a 3x3 map, residential ring
+    /// around one institutional centre cell. One block over the whole site
+    /// is residential by majority, so the centre region comes back; a
+    /// second block laid on the centre cell alone carries it.
+    #[test]
+    fn regions_carried_by_no_block_reports_a_swallowed_region_and_not_a_carried_one() {
+        use land_use::LandUse::{Institutional as I, Residential as R};
+        let (site, lu) = fixture_map(3, 3, &[R, R, R, R, I, R, R, R, R]);
+        let x0 = site.x0;
+        let y0 = site.y0;
+        let whole = Block {
+            bounds: rect(x0, y0, x0 + 150, y0 + 150),
+        };
+        let net = StreetNetwork::test_fixture(site, Vec::new(), vec![whole]);
+        let lost = net.regions_carried_by_no_block(&lu);
+        assert_eq!(lost.len(), 1, "the swallowed centre region is reported");
+        assert_eq!(lost[0].use_, I);
+
+        let centre = Block {
+            bounds: rect(x0 + 50, y0 + 50, x0 + 100, y0 + 100),
+        };
+        let ring = Block {
+            bounds: rect(x0, y0, x0 + 150, y0 + 50),
+        };
+        let net = StreetNetwork::test_fixture(site, Vec::new(), vec![ring, centre]);
+        assert!(
+            net.regions_carried_by_no_block(&lu).is_empty(),
+            "a block laid on the centre cell carries it"
+        );
+    }
+
+    /// A same-use block that overlaps a region's bounding box but none of
+    /// its own cells does not carry it: an L-shaped institutional region
+    /// (cells 0, 1, 3 of a 2x2 map) with a block on the remaining
+    /// residential cell only.
+    #[test]
+    fn regions_carried_by_no_block_uses_the_regions_cells_not_its_bounding_box() {
+        use land_use::LandUse::{Institutional as I, Residential as R};
+        let (site, lu) = fixture_map(2, 2, &[I, I, I, R]);
+        // Every block is residential-majority and sits on the one
+        // residential cell (1,1), inside the L's bounding box.
+        let block = Block {
+            bounds: rect(site.x0 + 50, site.y0 + 50, site.x0 + 100, site.y0 + 100),
+        };
+        let net = StreetNetwork::test_fixture(site, Vec::new(), vec![block]);
+        let lost = net.regions_carried_by_no_block(&lu);
+        assert_eq!(lost.len(), 1);
+        assert_eq!(lost[0].use_, I, "the L-shaped region is not carried");
+    }
+
+    fn tier(w: i64, h: i64, target: i64, street_depth: u32, enclosed: bool) -> Option<StreetClass> {
+        let c = cfg();
+        let phys = Rect {
+            x0: 0,
+            y0: 0,
+            x1: w as i32,
+            y1: h as i32,
+        };
+        // A generous max_depth so only the target rules decide.
+        split_tier_needed(phys, target, 10_000, street_depth, false, enclosed, &c)
+    }
+
+    /// `split_tier_needed`'s thresholds at their boundaries, at target 128
+    /// and `thin_strip_long_side_percent` 150 (limit 192).
+    #[test]
+    fn split_tier_needed_holds_its_thin_strip_and_target_boundaries() {
+        assert_eq!(cfg().thin_strip_long_side_percent, 150);
+        let street = Some(StreetClass::Street);
+        // A 260x30 strip (short 30 < 64) is over 192: splits.
+        assert_eq!(tier(260, 30, 128, 0, false), street);
+        // A 190x30 strip is under 192: left alone.
+        assert_eq!(tier(190, 30, 128, 0, false), None);
+        // Exactly the limit is not over it.
+        assert_eq!(tier(192, 30, 128, 0, false), None);
+        assert_eq!(tier(193, 30, 128, 0, false), street);
+        // 130x70: short side 70 is at least half the target, so the plain
+        // target applies and 130 is over it.
+        assert_eq!(tier(130, 70, 128, 0, false), street);
+        // Short side exactly half the target is not thin either.
+        assert_eq!(tier(130, 64, 128, 0, false), street);
+        assert_eq!(tier(128, 64, 128, 0, false), None);
+        // A short side over the target splits whatever the long side.
+        assert_eq!(tier(129, 129, 128, 0, false), street);
+        // An enclosed region forces a split on a rect under every limit.
+        assert_eq!(tier(60, 30, 128, 0, true), street);
+        assert_eq!(tier(60, 30, 128, 0, false), None);
+    }
+
+    /// The tier: street while the superblock's street budget lasts, lane
+    /// past it; commercial is always street.
+    #[test]
+    fn split_tier_needed_returns_street_under_the_budget_and_lane_past_it() {
+        let c = cfg();
+        let budget = c.max_street_splits_per_superblock;
+        assert_eq!(
+            tier(260, 30, 128, budget - 1, false),
+            Some(StreetClass::Street)
+        );
+        assert_eq!(tier(260, 30, 128, budget, false), Some(StreetClass::Lane));
+        let phys = Rect {
+            x0: 0,
+            y0: 0,
+            x1: 260,
+            y1: 30,
+        };
+        assert_eq!(
+            split_tier_needed(phys, 128, 10_000, budget + 5, true, false, &c),
+            Some(StreetClass::Street)
+        );
     }
 
     fn sample(manhattan: i64, network: i64) -> DetourSample {

@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "c713f7e3d2b8f6f0",
+  "defs_version": "ea6b1bd5837b6b52",
   "collider_subcells_per_cell": 16,
   "interact_at_max_reach_cells": 2,
   "max_footprint_cells": 8,
@@ -207,6 +207,7 @@
     { "key": "generation.streets.peripheral_pooled_min_ratio_percent", "max": 1000, "min": 100, "value": 150 },
     { "key": "generation.streets.split_jitter_pct", "max": 45, "min": 0, "value": 25 },
     { "key": "generation.streets.street_width_cells", "max": 64, "min": 2, "value": 8 },
+    { "key": "generation.streets.thin_strip_long_side_percent", "max": 400, "min": 100, "value": 150 },
     { "key": "movement.player_body_height_subcells", "max": 16, "min": 1, "value": 4 },
     { "key": "movement.player_body_width_subcells", "max": 16, "min": 1, "value": 8 },
     { "key": "movement.walk_speed_millicells_per_s", "max": 20000, "min": 100, "value": 2200 },

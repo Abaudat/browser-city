@@ -213,7 +213,7 @@ a quarter of a region's cells lie under the rect and its land use is not the
 rect's majority land use, so the block holding most of the region would
 not carry it). A land-use boundary through a block's interior is neither,
 and the rect is left to density. A thin strip (short side under half the
-target) may run to one and a half times the target before it is cut, so a boundary strip
+target) may run to `thin_strip_long_side_percent` of the target (150) before it is cut, so a boundary strip
 splits into halves near the target, never into pieces shorter than it.
 The earlier rule split on any rect
 covering two regions; pass-1 leaves are 3-6 coarse cells, so peripheral
@@ -641,6 +641,7 @@ disagree.
 | generation.streets.p99_detour_percent | committed | Street network | the 99th-percentile detour ratio, over one city's own sampled pairs, must not exceed this -- `max_detour_percent` alone only bounds the single worst pair |
 | generation.streets.peripheral_low_band_floor_percent | committed | Street network | per-city anti-inversion floor: the low-density (periphery) mean block area must be at least this percent of the high-density (core) mean |
 | generation.streets.peripheral_pooled_min_ratio_percent | committed | Street network | pooled over a fixed seed range, summed low-band mean area over summed high-band mean area must be at least this percent -- the guard that actually fails a density-blind generator |
+| generation.streets.thin_strip_long_side_percent | committed | Street network | how far a thin strip (short side under half the local target block size) may run along its long side before it is cut, as a percent of that target -- a boundary strip splits into halves near the target, never into pieces shorter than it |
 | generation.plots.frontage_min_cells | committed | Plot subdivision | AC1: a plot fronts a street iff it shares at least this many world cells of edge length with a street-abutting side of its own block; corner-point contact is landlocked |
 | generation.plots.high_density_threshold | committed | Plot subdivision | the density at or above which a block's own build line sits flush on the pavement (setback 0, party walls); shared with the building-envelope pass's own side-gap step |
 | generation.plots.setback_periphery_cells | committed | Plot subdivision | the one shared build-line setback every plot on a below-threshold block sits behind |

@@ -501,6 +501,21 @@ value = 150
 min = 100
 max = 1000
 
+[[balance]]
+# How far a thin strip -- a rect whose short side is under half its local
+# target block size -- may run along its long side before it is cut, as a
+# percent of that target: a strip splits into halves near the target,
+# never into pieces shorter than it (a 260x30 boundary strip at target 128
+# becomes two 130s, not four 65s). 100 would be the plain target (no
+# special case). Tried at 200 (and with "thin" widened to a short side
+# under the target): the exhaustive detour worst case rose from 330 to
+# 412 cells and the evidence-seed ratios fell under 2x; 150 gives 320
+# cells and 2.2-2.7x (`GENERATION_VERSION` 9, story 4.22).
+key = "generation.streets.thin_strip_long_side_percent"
+value = 150
+min = 100
+max = 400
+
 # --- plot subdivision (pass 3) -----------------------------------------
 
 [[balance]]

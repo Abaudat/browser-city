@@ -89,6 +89,7 @@ fn frozen_config() -> GenerationConfig {
         min_distinct_block_sizes: 3,
         peripheral_low_band_floor_percent: 70,
         peripheral_pooled_min_ratio_percent: 150,
+        thin_strip_long_side_percent: 150,
         institutional_min_pockets: 3,
         institutional_max_pocket_share_percent: 6,
         plot_frontage_min_cells: 3,
