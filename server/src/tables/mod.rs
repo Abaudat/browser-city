@@ -9,6 +9,7 @@ pub mod citizen;
 pub mod clock;
 pub mod codes;
 pub mod identity;
+pub mod metrics;
 pub mod ops;
 pub mod restore;
 pub mod schedules;

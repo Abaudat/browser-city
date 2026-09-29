@@ -54,6 +54,10 @@
 #      must resume every armed cadence without a human remembering --
 #      today nothing but a code review stands between that sentence in
 #      docs/architecture.md and someone deleting the step.
+#   7. In `backup.yml`'s `export` job, a step that runs `storage-report.sh`
+#      (an alarm that exits 1 on a breach) must come after the
+#      `upload-artifact` step (story 4.12): the day storage is in trouble
+#      must still be a day the backup is encrypted and uploaded.
 #
 # Usage: check-deploy-workflow.sh [deploy.yml path] [backup.yml path]
 #   [deploy.yml path]  defaults to .github/workflows/deploy.yml at the repo
@@ -228,6 +232,19 @@ check_shallow_checkout() { # <job-name> <file>
 check_shallow_checkout backup "$WORKFLOW"
 check_shallow_checkout export "$BACKUP_WORKFLOW"
 
+# --- rule 7: the storage alarm never precedes the backup's upload -----------
+EXPORT_BLOCK="$(job_block export "$BACKUP_WORKFLOW")"
+REPORT_LINE="$(printf '%s
+' "$EXPORT_BLOCK" | grep -vE '^[[:space:]]*#' | grep -nF 'storage-report.sh' | head -n1 | cut -d: -f1 || true)"
+if [ -n "$REPORT_LINE" ]; then
+  UPLOAD_LINE="$(printf '%s
+' "$EXPORT_BLOCK" | grep -vE '^[[:space:]]*#' | grep -nF 'upload-artifact' | head -n1 | cut -d: -f1 || true)"
+  if [ -z "$UPLOAD_LINE" ] || [ "$REPORT_LINE" -le "$UPLOAD_LINE" ]; then
+    echo "check-deploy-workflow: FAIL -- $BACKUP_WORKFLOW's 'export' job runs storage-report.sh before (or without) its upload-artifact step -- the alarm exits 1 on a breach, so the backup would not be uploaded on exactly the day storage is in trouble (story 4.12)" >&2
+    FAILED=1
+  fi
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
@@ -280,5 +297,5 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, the backup job's first-deploy exception is the positive not-found script, neither deploy.yml's backup job nor backup.yml's export job has a shallow checkout, report-failure accounts for a cancelled job too, and publish-module calls rearm_schedules after reseed_codes" >&2
+echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, the backup job's first-deploy exception is the positive not-found script, neither deploy.yml's backup job nor backup.yml's export job has a shallow checkout, report-failure accounts for a cancelled job too, and publish-module calls rearm_schedules after reseed_codes, and backup.yml's storage report never runs before the artifact upload" >&2
 exit 0

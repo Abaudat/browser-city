@@ -96,6 +96,7 @@ use super::codes::{
     reason_code, unit,
 };
 use super::identity::{Character, CharacterIdentity, character, character_identity};
+use super::metrics::{StorageSample, TableSample, storage_sample, table_sample};
 use super::ops::{ModuleOwner, module_owner, require_owner};
 use super::schedules::{CadenceLiveness, cadence_liveness};
 use super::world::{
@@ -142,6 +143,8 @@ const INIT_SEEDED_TABLES: &[&str] = &[
     "unit",
     "layer_code",
     "cadence_liveness",
+    "storage_sample",
+    "table_sample",
 ];
 
 /// Every non-scheduled table that is never pre-populated before
@@ -189,6 +192,30 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
         return Err("a restore is already open -- call finish_restore first".to_string());
     }
     super::schedules::disarm_all_scheduled_tables(ctx);
+    // The metrics samples are ops data measured from the target's own
+    // pre-restore state, worthless by definition, and the sampler may have
+    // fired on a target published more than an hour ago: cleared here
+    // (after the disarm, so no fire lands in between) rather than required
+    // empty, the same stance `restore_cadence_liveness` takes. The
+    // `restore_*` reducers then restore into the empty tables.
+    for id in ctx
+        .db
+        .table_sample()
+        .iter()
+        .map(|r| r.sample_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.table_sample().sample_id().delete(id);
+    }
+    for id in ctx
+        .db
+        .storage_sample()
+        .iter()
+        .map(|r| r.sample_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.storage_sample().sample_id().delete(id);
+    }
     let mut nonempty: Vec<&str> = Vec::new();
     if ctx.db.demo_ping().iter().next().is_some() {
         nonempty.push("demo_ping");
@@ -454,6 +481,31 @@ impl_autoinc_row!(
     }
 );
 impl_autoinc_row!(
+    TableSample,
+    sample_id,
+    TableSample {
+        sample_id: 0,
+        sampled_at: Timestamp::UNIX_EPOCH,
+        table_accessor: String::new(),
+        rows: 0,
+        bytes_est: 0,
+        alert_rows: 0,
+        max_rows: 0,
+        over_alert: false,
+    }
+);
+impl_autoinc_row!(
+    StorageSample,
+    sample_id,
+    StorageSample {
+        sample_id: 0,
+        sampled_at: Timestamp::UNIX_EPOCH,
+        total_bytes_est: 0,
+        over_review: false,
+        over_wall: false,
+    }
+);
+impl_autoinc_row!(
     FloorTransition,
     transition_id,
     FloorTransition {
@@ -615,6 +667,44 @@ pub fn restore_citizen(
             ctx.db.citizen().citizen_id().delete(id);
         },
         "citizen",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_table_sample(
+    ctx: &ReducerContext,
+    rows: Vec<TableSample>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.table_sample().insert(r),
+        |id| {
+            ctx.db.table_sample().sample_id().delete(id);
+        },
+        "table_sample",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_storage_sample(
+    ctx: &ReducerContext,
+    rows: Vec<StorageSample>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.storage_sample().insert(r),
+        |id| {
+            ctx.db.storage_sample().sample_id().delete(id);
+        },
+        "storage_sample",
         sequence_floor,
     )
 }

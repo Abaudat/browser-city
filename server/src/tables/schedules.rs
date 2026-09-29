@@ -32,6 +32,7 @@ use spacetimedb::{ReducerContext, ScheduleAt, Table, Timestamp};
 
 use super::cadences;
 use super::clock::read_clock;
+use super::metrics;
 
 /// Only the module's own scheduler may invoke a scheduled reducer --
 /// otherwise any client could call it directly, which is a security hole,
@@ -112,19 +113,17 @@ pub fn advance_citizen_transitions(
     require_scheduler(ctx)
 }
 
-/// The metrics sampler (FR169): samples per-table row counts and bytes on a
-/// slow cadence.
+/// The metrics sampler (FR169): samples per-table row counts and estimated
+/// bytes on a slow cadence (`sim::cadence::METRICS_PERIOD_MS`, one real
+/// hour at speed 1). Its work is a function of the present, not of a city
+/// minute, so its body is `tables::metrics::run_sampler` and a clock jump
+/// leaves it alone.
 #[spacetimedb::table(accessor = metrics_sample_schedule, scheduled(sample_metrics))]
 pub struct MetricsSampleSchedule {
     #[primary_key]
     #[auto_inc]
     pub scheduled_id: u64,
     pub scheduled_at: ScheduleAt,
-}
-
-#[spacetimedb::reducer]
-pub fn sample_metrics(ctx: &ReducerContext, _row: MetricsSampleSchedule) -> Result<(), String> {
-    require_scheduler(ctx)
 }
 
 /// The institutional calendar's budget review (FR78): drains the demand
@@ -233,36 +232,50 @@ pub struct CadenceLiveness {
 /// file arms for real, added the story that arms it.
 pub mod cadence_code {
     pub const MAINTENANCE: u32 = 1;
+    pub const METRICS: u32 = 2;
 }
 
-/// Re-arms `maintenance_schedule` from `origin_micros`. Shared by
+/// Generates `$name(ctx, origin_micros, speed) -> (target, missed)`, which
+/// re-arms one cadence's scheduled table from `origin_micros`. Shared by
 /// `arm_every_cadence_from` (the initial arm, from `init`/
 /// `finish_restore`), `arm_every_cadence` (from `rearm_schedules`), and
-/// `run_maintenance` (the re-arm after firing).
-fn arm_maintenance_schedule(ctx: &ReducerContext, origin_micros: i64, speed: u32) -> (i64, u64) {
-    arm_cadence(
-        ctx,
-        origin_micros,
-        sim::cadence::MAINTENANCE_PERIOD_MS,
-        speed,
-        || {
-            ctx.db
-                .maintenance_schedule()
-                .iter()
-                .map(|r| r.scheduled_id)
-                .collect()
-        },
-        |id| {
-            ctx.db.maintenance_schedule().scheduled_id().delete(id);
-        },
-        |at| {
-            ctx.db.maintenance_schedule().insert(MaintenanceSchedule {
-                scheduled_id: 0,
-                scheduled_at: at,
-            });
-        },
-    )
+/// the cadence's own fired reducer (the re-arm after firing). One
+/// invocation per armed cadence, never a hand-copied closure triple.
+macro_rules! arm_schedule {
+    ($name:ident, $accessor:ident, $Row:ident, $period_ms:expr) => {
+        fn $name(ctx: &ReducerContext, origin_micros: i64, speed: u32) -> (i64, u64) {
+            arm_cadence(
+                ctx,
+                origin_micros,
+                $period_ms,
+                speed,
+                || ctx.db.$accessor().iter().map(|r| r.scheduled_id).collect(),
+                |id| {
+                    ctx.db.$accessor().scheduled_id().delete(id);
+                },
+                |at| {
+                    ctx.db.$accessor().insert($Row {
+                        scheduled_id: 0,
+                        scheduled_at: at,
+                    });
+                },
+            )
+        }
+    };
 }
+
+arm_schedule!(
+    arm_maintenance_schedule,
+    maintenance_schedule,
+    MaintenanceSchedule,
+    sim::cadence::MAINTENANCE_PERIOD_MS
+);
+arm_schedule!(
+    arm_metrics_schedule,
+    metrics_sample_schedule,
+    MetricsSampleSchedule,
+    sim::cadence::METRICS_PERIOD_MS
+);
 
 /// Records that `cadence` fired: `origin_micros` is the target *this*
 /// fire satisfies (the row's own `scheduled_at` before re-arming -- never
@@ -319,8 +332,22 @@ pub fn run_maintenance(ctx: &ReducerContext, row: MaintenanceSchedule) -> Result
     Ok(())
 }
 
-/// Arms every cadence this file gives real work to (today: just
-/// `maintenance_schedule`) from an already-known epoch (micros) and clock
+#[spacetimedb::reducer]
+pub fn sample_metrics(ctx: &ReducerContext, row: MetricsSampleSchedule) -> Result<(), String> {
+    require_scheduler(ctx)?;
+    let origin_micros = schedule_at_micros(row.scheduled_at)?;
+    let (epoch_micros, speed) =
+        read_clock(ctx).ok_or_else(|| "world_clock has no row -- init did not run".to_string())?;
+    // Infallible by construction: nothing between the clock read and the
+    // re-arm may abort, or the cadence would stop.
+    metrics::run_sampler(ctx);
+    let (_next_target_micros, missed) = arm_metrics_schedule(ctx, epoch_micros, speed);
+    record_cadence_fire(ctx, cadence_code::METRICS, origin_micros, missed);
+    Ok(())
+}
+
+/// Arms every cadence this file gives real work to (`maintenance_schedule`,
+/// `metrics_sample_schedule`) from an already-known epoch (micros) and clock
 /// `speed` -- infallible, since the caller already has both in hand
 /// (`init` just wrote them; `finish_restore` just restored `world_clock`
 /// itself) and there is no lookup here that could fail. Schedules are
@@ -328,6 +355,7 @@ pub fn run_maintenance(ctx: &ReducerContext, row: MaintenanceSchedule) -> Result
 /// purely by surviving as pending rows (docs/architecture.md).
 pub fn arm_every_cadence_from(ctx: &ReducerContext, epoch_micros: i64, speed: u32) {
     arm_maintenance_schedule(ctx, epoch_micros, speed);
+    arm_metrics_schedule(ctx, epoch_micros, speed);
 }
 
 /// Looks up `world_clock.epoch_at` and arms every cadence from it.
@@ -394,7 +422,7 @@ pub fn disarm_all_scheduled_tables(ctx: &ReducerContext) {
 /// runs it inside the one reducer transaction, so any `Err` rolls the
 /// whole jump back.
 ///
-/// One `walk!`/`refuse!` invocation per scheduled table:
+/// One `walk!`/`refuse!`/`skip!` invocation per scheduled table:
 /// `bounds/tests/schedules_coverage.rs` requires every scheduled
 /// accessor to appear here exactly once, so a cadence added later cannot
 /// be silently skipped by a jump.
@@ -427,6 +455,13 @@ pub fn replay_skipped_cadences(
             }
         };
     }
+    macro_rules! skip {
+        ($accessor:ident) => {
+            // Deliberately nothing: the armed row survives the jump (the
+            // caller re-arms it from the new epoch).
+            let _ = stringify!($accessor);
+        };
+    }
     macro_rules! refuse {
         ($accessor:ident) => {
             if ctx.db.$accessor().iter().next().is_some() {
@@ -437,8 +472,9 @@ pub fn replay_skipped_cadences(
             }
         };
     }
+    // Always armed and a function of the present: a jump leaves it alone.
+    skip!(metrics_sample_schedule);
     refuse!(citizen_transition_schedule);
-    refuse!(metrics_sample_schedule);
     refuse!(budget_review_schedule);
     refuse!(world_clock_schedule);
     refuse!(economy_schedule);

@@ -32,9 +32,7 @@ crate-type = ["cdylib"]
 spacetimedb = { version = "2.9.*" }
 log = "0.4"
 sim = { path = "sim" }
-# bounds is deliberately NOT a dependency here: nothing in this crate uses
-# its registry yet (there are no tables), and an edge that exists only to
-# be unused is worse than adding it back the day the first reducer needs it.
+# bounds is deliberately NOT a dependency: it turns on a sim fixture feature that feature unification would pull into the published module.
 
 [profile.release]
 # This is not a test-only setting: `build` (the wasm target `spacetime

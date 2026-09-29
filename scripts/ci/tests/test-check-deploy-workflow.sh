@@ -394,5 +394,43 @@ check "names the ordering reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'bef
 
 check "the good workflow's own reseed_codes-then-rearm_schedules ordering passes (not a false FAIL)" 0 bash "$CHECK" "$WF"
 
+echo
+echo "story 4.12: backup.yml's storage report never runs before the artifact upload"
+write_report_workflow() { # <path> <report-first|report-last>
+  {
+    printf 'name: backup
+on:
+  workflow_dispatch:
+jobs:
+  export:
+    name: export
+    runs-on: ubuntu-latest
+    steps:
+'
+    printf '      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+'
+    printf '      - run: bash scripts/ops/export-world.sh "$DB" /tmp/export --server maincloud
+'
+    if [ "$2" = report-first ]; then printf '      - run: bash scripts/ops/storage-report.sh "$DB" --server maincloud
+'; fi
+    printf '      - uses: actions/upload-artifact@v7
+        with:
+          name: x
+'
+    if [ "$2" = report-last ]; then printf '      - if: always()
+        run: bash scripts/ops/storage-report.sh "$DB" --server maincloud
+'; fi
+  } > "$1"
+}
+D13="$(fake_dir)"; write_good_workflow "$D13/deploy.yml"
+write_report_workflow "$D13/backup-first.yml" report-first
+OUT="$(bash "$CHECK" "$D13/deploy.yml" "$D13/backup-first.yml" 2>&1)"; CODE=$?
+check "a storage report before the upload fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'storage-report.sh before'" _ "$OUT"
+write_report_workflow "$D13/backup-last.yml" report-last
+check "a storage report after the upload passes" 0 bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml"
+
 summary
 exit $?

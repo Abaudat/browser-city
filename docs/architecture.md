@@ -10,7 +10,7 @@ cited here by identifier.
 | ----------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Server module                 | Rust, edition 2024, `crate-type = ["cdylib"]`, target `wasm32-unknown-unknown`                           |
 | Server, database, replication | SpacetimeDB 2.9.x — the `spacetimedb` crate                                                              |
-| Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the table-bounds registry), and the `browser_city` module crate, which depends on both |
+| Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the native schema-test and fixture-tooling crate; the table-bounds registry is `sim::table_bounds`), and the `browser_city` module crate, which depends on `sim` |
 | Property testing (server)     | `proptest`, dev-dependency of `sim` and `tools/defs-build` only; case count from `PROPTEST_CASES`       |
 | Property testing (client)     | `fast-check` 4.10.0, pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
 | E2E pixel compare             | `pixelmatch` 7.2.0 + `pngjs` 7.0.0 (`@types/pngjs` 6.0.5), pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
@@ -57,8 +57,17 @@ determinism is pinned by a committed golden vector, keyed by
 `browser_city` cannot be linked natively, so anything requiring a native
 test lives in `sim` or `bounds`.
 
-Every table declares a bound in the `bounds` crate's `TABLE_BOUNDS`
-registry, mechanical or engineering (NFR37).
+Every table declares a bound in `sim::table_bounds::TABLE_BOUNDS`,
+mechanical or engineering (NFR37): `max_rows` (the ceiling),
+`expected_rows` (launch-scale magnitude) and `alert_rows` (where the
+metrics sampler raises), with `0 < expected_rows <= alert_rows <=
+max_rows`, and `alert_rows < max_rows` for engineering bounds. The
+`sim::storage` constants `STORAGE_WALL_BYTES` (40 GiB), `STORAGE_REVIEW_BYTES`
+(10 GiB) and `STORAGE_LAUNCH_ESTIMATE_BYTES` (200 MiB) carry NFR15; a
+native test prices `expected_rows` and `max_rows` with a row-size
+estimator over the schema snapshot's column types (assumed mean for
+variable-length columns) and requires the sums to stay under the review
+trigger and the wall respectively.
 
 The published module runs with `overflow-checks` and `debug-assertions` on
 (`server/Cargo.toml`'s `[profile.release]`, the profile `spacetime build`
@@ -96,7 +105,16 @@ docs/spikes/1.3-scheduled-reducer-timing.md.
 - `rearm_schedules` (owner-only) rebuilds every schedule from the epoch. Its callers are `init` and `deploy.yml`'s `publish-module` job, beside `reseed_codes`.
 - `begin_restore` disarms every scheduled table before its own preconditions run; `finish_restore` re-arms every cadence after closing the restore, both inside the same transaction chain, so no cadence is ever armed from an epoch outside the world actually open for restore.
 - `cadence_liveness` holds one row per armed cadence, written only by that cadence's own fired reducer.
-- `next_target` takes the clock `speed` and derives its period from the effective minute. A cadence's work is a function of the city minute it fires for: bodies live in `tables/cadences.rs` as `fn(ctx, city_minute)`, and `ctx.timestamp`, `world_clock` and `read_clock` are banned there. A jump's replay starts at each cadence's own pending row (which may already be due); a cadence with no pending row replays nothing. A `time-control` jump replays every skipped grid point through those same bodies in one transaction, in city-minute order, or refuses; `replay_skipped_cadences` names every scheduled table once, as walked or refuse-if-pending.
+- `next_target` takes the clock `speed` and derives its period from the effective minute. A cadence's work is a function of the city minute it fires for: bodies live in `tables/cadences.rs` as `fn(ctx, city_minute)`, and `ctx.timestamp`, `world_clock` and `read_clock` are banned there. A jump's replay starts at each cadence's own pending row (which may already be due); a cadence with no pending row replays nothing. A `time-control` jump replays every skipped grid point through those same bodies in one transaction, in city-minute order, or refuses; `replay_skipped_cadences` names every scheduled table once, as walked, refuse-if-pending, or skipped (an armed cadence a jump leaves alone).
+
+### Metrics
+
+- `metrics_sample_schedule` fires every `METRICS_PERIOD_CITY_MINUTES` (1440: one real hour at speed 1). Its body, `tables::metrics::run_sampler`, is a function of the present, not a city minute, so it lives outside `tables/cadences.rs` and a clock jump skips it.
+- Each fire writes one `table_sample` row per table (`rows` from `count()`, `bytes_est`, the declared `alert_rows`/`max_rows`, `over_alert = rows > alert_rows`) and one `storage_sample` row (`total_bytes_est`, `over_review`, `over_wall`, classified by `sim::storage::classify_total`). Both tables are private; breaches are columns, and a `log::warn!` accompanies them.
+- `bytes_est` is an estimate: the BSATN size of the first `METRICS_BYTES_SAMPLE_ROWS` (64) rows scaled to `rows`. It excludes indexes and the commit log. No per-fire cost grows with table size.
+- `sample_all_tables` names every table exactly once (`bounds/tests/metrics_coverage.rs`).
+- The sample tables are bounded by retention and by their own declared `max_rows`: each fire deletes samples older than `METRICS_RETENTION_DAYS` (90), then the oldest past the bound, through the `sampled_at` index. `run_sampler` is infallible, so a failure never stops the re-arm. `begin_restore` clears both tables.
+- `scripts/ops/storage-report.sh <database> [--server]` prints the newest samples and exits 1 on any breach flag or a newest sample older than three sampler periods; `backup.yml` runs it last, after the artifact upload (`check-deploy-workflow.sh` pins the order).
 
 ## Time
 

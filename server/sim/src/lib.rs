@@ -20,6 +20,8 @@ pub mod generated;
 pub mod rng;
 pub mod routing;
 pub mod rules;
+pub mod storage;
+pub mod table_bounds;
 pub mod time;
 pub mod validation;
 pub mod world;
