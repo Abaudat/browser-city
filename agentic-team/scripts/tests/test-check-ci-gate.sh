@@ -306,4 +306,18 @@ for pair in "PROPTEST_RNG_SEED: 1|PROPTEST_RNG_SEED: \${{ github.sha }}|fixed 'P
   check "names the missing piece" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"$WANT\"" _ "$OUT"
 done
 
+echo
+echo "red: a multi-line run: block with cargo test on its second line still needs the echo"
+D6="$(fake_dir)"; rm -rf "$D6"; mkdir -p "$D6"
+write_good_workflow "$D6/ci.yml"
+T="$(cat "$D6/ci.yml")"
+T="${T/'      - run: cargo test'/'      - run: |
+          echo hi
+          cargo test'}"
+T="${T/'      - run: echo "PROPTEST_CASES=$PROPTEST_CASES PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED"'/'      - run: echo noop'}"
+printf '%s\n' "$T" > "$D6/ci.yml"
+OUT="$(run_check "$ALL_SUCCESS" "$ALL_CHANGED" "$D6/ci.yml" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the job" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"job 'check' runs cargo test\"" _ "$OUT"
+
 summary

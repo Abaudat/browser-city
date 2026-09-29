@@ -103,7 +103,8 @@ fi
 while IFS= read -r job; do
   [ -n "$job" ] || continue
   BLOCK="$(job_block "$job")"
-  if printf '%s\n' "$BLOCK" | grep -qE '^ +(- )?run: cargo test|^ +run: \|?.*cargo test' \
+  if printf '%s
+' "$BLOCK" | grep -vE '^[[:space:]]*#' | grep -qE 'cargo test' \
     && ! printf '%s\n' "$BLOCK" | grep -qE 'echo .*PROPTEST_CASES.*PROPTEST_RNG_SEED|echo .*PROPTEST_RNG_SEED.*PROPTEST_CASES'; then
     echo "check-ci-gate: FAIL -- job '$job' runs cargo test but never echoes PROPTEST_CASES and PROPTEST_RNG_SEED to its log (NFR50)" >&2
     FAILED=1

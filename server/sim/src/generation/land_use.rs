@@ -1338,6 +1338,34 @@ mod tests {
     }
 
     #[test]
+    fn subdivide_never_produces_a_leaf_over_the_maximum_on_either_axis() {
+        let c = cfg();
+        for seed in 0u64..64 {
+            let mut rng = Rng::new(seed_from_ids(seed, PASS_ID));
+            let mut leaves = Vec::new();
+            subdivide(
+                Rect {
+                    x0: 0,
+                    y0: 0,
+                    x1: 32,
+                    y1: 32,
+                },
+                &c,
+                &mut rng,
+                0,
+                &mut leaves,
+            );
+            for leaf in &leaves {
+                assert!(
+                    leaf.width() <= c.land_use_max_leaf_cells as i64
+                        && leaf.height() <= c.land_use_max_leaf_cells as i64,
+                    "seed {seed}: leaf {leaf:?} over land_use_max_leaf_cells --                      max_recursion_depth is binding"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn subdivide_never_produces_a_leaf_under_the_minimum_on_either_axis() {
         let c = cfg();
         for seed in 0u64..64 {
@@ -1403,19 +1431,19 @@ mod tests {
     fn share_band_is_exact_at_the_tolerance_boundary() {
         let c = cfg();
         assert_eq!(c.share_commercial_pct, 18);
-        assert_eq!(c.share_tolerance_pct, 7);
-        // 25 cells = 250 permille = exactly 18% + 7 points: inside.
-        assert_eq!(share_fixture(25, &c).share_band_violation(&c), None);
-        // 26 cells = one cell (10 permille) further: outside, naming the use.
+        assert_eq!(c.share_tolerance_pct, 6);
+        // 24 cells = 240 permille = exactly 18% + 6 points: inside.
+        assert_eq!(share_fixture(24, &c).share_band_violation(&c), None);
+        // 25 cells = one cell (10 permille) further: outside, naming the use.
         assert_eq!(
-            share_fixture(26, &c).share_band_violation(&c),
-            Some((LandUse::Commercial, 260))
+            share_fixture(25, &c).share_band_violation(&c),
+            Some((LandUse::Commercial, 250))
         );
-        // 11 cells = 18% - 7 points: inside; 10 cells: outside.
-        assert_eq!(share_fixture(11, &c).share_band_violation(&c), None);
+        // 12 cells = 18% - 6 points: inside; 11 cells: outside.
+        assert_eq!(share_fixture(12, &c).share_band_violation(&c), None);
         assert_eq!(
-            share_fixture(10, &c).share_band_violation(&c),
-            Some((LandUse::Commercial, 100))
+            share_fixture(11, &c).share_band_violation(&c),
+            Some((LandUse::Commercial, 110))
         );
     }
 

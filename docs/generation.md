@@ -146,13 +146,15 @@ document's own opening paragraph forbids.
   Pass 1 now targets `round(coarse_cells * share / 100)` cells per use
   and takes a leaf only if it brings the claimed area closer to the target
   than stopping would (overshoot at most half a leaf); every growth
-  constraint is unchanged. Widening the workplace band to cover the seed
+  constraint is unchanged. `land_use.max_recursion_depth` had been binding
+  at 8 (leaves up to 8x11 cells) and is now a termination cap of 20, so
+  leaves are 3 to 6 cells per axis as `max_leaf_cells` says. Widening the workplace band to cover the seed
   was refused: it would accept a city with double the designed commercial
   land, against the Scale Baseline and the share keys both. Area shares
   moved the pooled means, so residential/institutional are 61/7 (were
   58/10), and the guard now lives at the pass that owns it
-  (`land_use.share_tolerance_pct`, 7 points). `workplace_count_tolerance_
-  percent` is re-derived 50 -> 40 from the post-fix sigma (29.9 -> 21.5)
+  (`land_use.share_tolerance_pct`, 6 points). `workplace_count_tolerance_
+  percent` is re-derived 50 -> 40 from the post-fix sigma (29.9 -> 21.3)
   by the same 5.5-sigma rule; `count_tolerance_percent` stays 21. An
   outlier CI finds is diagnosed to the pass that owns it and pinned as a
   plain `#[test]`, never absorbed by re-measuring a tolerance to cover the
@@ -181,8 +183,8 @@ document's own opening paragraph forbids.
   is judgeable directly from the image; same regen-and-diff guard as the
   row above. Plus one worst-case-seed picture per entry in `streets::
   PINNED_DETOUR_SEEDS` -- [`docs/generation/detour-worst-seed-
-  1060828608797003656.svg`](generation/detour-worst-seed-1060828608797003656.svg),
-  [`-6764763946750131915`](generation/detour-worst-seed-6764763946750131915.svg),
+  11179447352395363997.svg`](generation/detour-worst-seed-11179447352395363997.svg),
+  [`-1060828608797003656`](generation/detour-worst-seed-1060828608797003656.svg),
   [`-11859616019877610932`](generation/detour-worst-seed-11859616019877610932.svg)
   -- the same street-network render (same tints, same tier styling, same
   legend, same two viewport outlines) with an overlay: that seed's own
@@ -240,11 +242,11 @@ claim.
 **What actually protects master.** `inv_generation_detour_ratio_bounded`
 runs on arbitrary seeds, in every CI run, but only ever samples the
 cheap 14-node width -- its own worst reading at `GENERATION_VERSION` 8
-was 248 (seed `16034628784504721183`), 82 cells under the 330-cell
+was 254 (seed `1877797689287769286`), 76 cells under the 330-cell
 exhaustive figure the key is set from. That gap is not the margin; the
 margin is the stated 1.25 factor, nothing else, over a tail that is
 still growing: this run's own ten largest per-seed worsts, ascending,
-were 282, 284, 286, 286, 286, 288, 298, 302, 318, 330. A future
+were 280, 286, 286, 286, 288, 292, 296, 298, 302, 330. A future
 50,000-seed run finding a new worst above 416 remains possible -- that
 is what re-measuring on a retune, and pinning what a random sweep finds,
 both exist for.
@@ -255,8 +257,8 @@ worst pair of the worst city found in 50,000 genuinely random draws --
 accepted as a rare tail. That figure still has one foot on the site
 boundary, though, where the city stops and almost nobody stands; the
 same run's own worst pair with *both* endpoints off the boundary --
-the player-felt figure -- was 270 cells (seed `16341567907283055570`,
-pair `(59, 479)`-`(452, 485)`), well under 330. The maze fixture
+the player-felt figure -- was 264 cells (seed `5586276716281493290`,
+pair `(473, 470)`-`(479, 252)`), well under 330. The maze fixture
 `a_maze_fails_dead_ends_and_detour` (a U-shaped corridor, no real route
 through) overshoots by 600 cells, real margin over the 416-cell
 committed value and a stated distance from "our worst real city" to "a

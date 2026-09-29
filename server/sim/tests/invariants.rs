@@ -2010,7 +2010,7 @@ proptest! {
     /// below, is the guard that actually fails on that defect (Quentin's
     /// direction, cycle 4). Artie's own harder, cycle-2 bar (2x) is
     /// judged on the committed evidence seeds specifically
-    /// (`peripheral_blocks_are_at_least_1_5x_central_ones_on_the_
+    /// (`peripheral_blocks_are_at_least_1_6x_central_ones_on_the_
     /// evidence_seeds` in `server/sim/src/generation/streets.rs`), kept
     /// on `mean_area_split_by_peak_distance` (Tim's direction, cycle 3:
     /// "keep it as is" -- the evidence-seed test is Artie's own bar, not
@@ -3646,16 +3646,16 @@ fn block_edge_touches_street(block: Rect, street: Rect, side: sim::generation::S
 }
 
 /// The argmin and argmax seeds of the building-count distribution at
-/// `GENERATION_VERSION` 8: the 50,000-seed scan's (min 794 / max 1,039) and
+/// `GENERATION_VERSION` 8: the 50,000-seed scan's (min 788 / max 1,043) and
 /// the 1,000,000-seed band sweep's (`measure-generation -- bands
-/// 1000000`: min 775 / max 1,055), copied from the harness's output, never
+/// 1000000`: min 774 / max 1,068), copied from the harness's output, never
 /// hunted for, and re-taken whenever the generator moves. A generator
 /// change that shifts the distribution fails deterministically, every run.
 const PINNED_BUILDING_COUNT_SEEDS: [u64; 4] = [
-    13_784_860_200_871_715_311,
-    10_076_616_786_129_036_423,
-    8_607_795_880_712_789_331,
-    14_371_221_843_182_043_223,
+    12_223_261_918_320_165_154,
+    7_898_196_911_489_858_340,
+    5_679_918_593_741_389_805,
+    1_635_434_127_239_465_190,
 ];
 
 /// A handful of individually-measured seeds, pinned as fixed-seed tests
