@@ -116,6 +116,9 @@ async function main(): Promise<void> {
       visibility: document,
       onClock: ({ epochMicros, speed }, kind) => {
         cityClock.setClock(epochMicros, speed);
+        if (performance.getEntriesByName(BOOT_MARK.CITY_CLOCK_KNOWN).length === 0) {
+          markBoot(BOOT_MARK.CITY_CLOCK_KNOWN);
+        }
         recordWorldClockForE2e(epochMicros, kind);
       },
     },

@@ -48,6 +48,9 @@ count() { # <table>
 ONE_ROW_TABLES="$(jq -r '.tables[] | select(any(.columns[]; .name == "id" and .ty == "u8" and .primary_key)) | .accessor' "$SNAPSHOT" | grep -vx restore_state)"
 [ -n "$ONE_ROW_TABLES" ] || { echo "assert-world-invariants: FAIL -- found no one-row table in $SNAPSHOT" >&2; exit 1; }
 ARMED_TABLES="$(sed -n '/^arm_schedule!(/{n;n;s/^[[:space:]]*\([a-z_]*\),.*/\1/p}' "$SCHEDULES_RS")"
+ARM_INVOCATIONS="$(grep -c '^arm_schedule!(' "$SCHEDULES_RS")"
+ARMED_PARSED="$(printf '%s\n' "$ARMED_TABLES" | grep -c . || true)"
+[ "$ARM_INVOCATIONS" -eq "$ARMED_PARSED" ] || { echo "assert-world-invariants: FAIL -- parsed $ARMED_PARSED armed table(s) but $SCHEDULES_RS has $ARM_INVOCATIONS arm_schedule! invocation(s) -- the parse no longer matches the source's layout" >&2; exit 1; }
 [ -n "$ARMED_TABLES" ] || { echo "assert-world-invariants: FAIL -- found no arm_schedule! invocation in $SCHEDULES_RS" >&2; exit 1; }
 
 for t in $ONE_ROW_TABLES; do

@@ -40,6 +40,11 @@ OUT="$(run "$D")"; CODE=$?
 check "an empty world_clock fails" 1 bash -c "exit $CODE"
 check_contains "names world_clock" "world_clock" "$OUT"
 
+D="$(make_stub)"; printf ' 1 \n 1 \n' > "$D/rows/world_clock"
+OUT="$(run "$D")"; CODE=$?
+check "a one-row table with two rows fails" 1 bash -c "exit $CODE"
+check_contains "names world_clock" "world_clock" "$OUT"
+
 D="$(make_stub)"; : > "$D/rows/metrics_sample_schedule"
 OUT="$(run "$D")"; CODE=$?
 check "an unarmed cadence fails" 1 bash -c "exit $CODE"

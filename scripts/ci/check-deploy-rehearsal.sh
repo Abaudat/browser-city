@@ -5,10 +5,10 @@
 #   1. publishes the module from LIVE_DATABASE_BORN_AT (its `server/`,
 #      extracted with `git archive`) onto a disposable local instance;
 #   2. publishes HEAD's `server/` over it;
-#   3. runs every post-publish `spacetime call` step of `deploy.yml`'s
-#      `publish-module` job, parsed out of the workflow (never a
-#      hand-copied list, so a step added later is rehearsed
-#      automatically), twice -- each must exit 0, and the second run must
+#   3. runs every post-publish `run:` step of `deploy.yml`'s
+#      `publish-module` job (the assert step included), parsed out of the
+#      workflow (never a hand-copied list, so a step added later is
+#      rehearsed automatically), twice -- each must exit 0, and the second run must
 #      leave the epoch byte-identical to the first;
 #   4. runs scripts/ops/assert-world-invariants.sh;
 #   5. asserts the epoch a legacy world was repaired to is a moment inside
@@ -50,14 +50,19 @@ fail() { # <message> [log-file]
   exit 1
 }
 
-# The post-publish `spacetime call` commands of publish-module, in order,
-# retargeted at the local instance.
-POST_PUBLISH_CALLS="$(awk '
+# Every `run:` step of publish-module after its `spacetime publish` step, in
+# order, verbatim, retargeted at the local instance. A multi-line `run: |`
+# step there cannot be replayed faithfully, so it is a hard failure.
+POST_PUBLISH_STEPS="$(awk '
   /^  publish-module:$/ { inblock = 1; next }
   inblock && /^  [A-Za-z0-9_-]+:$/ { inblock = 0 }
-  inblock && /^ +run: spacetime call / { sub(/^ +run: /, ""); print }
+  inblock && /^ +(- )?run: spacetime publish / { after = 1; next }
+  inblock && after && /^ +(- )?run: [|>]/ { print "MULTILINE"; next }
+  inblock && after && /^ +(- )?run: / { sub(/^ +(- )?run: /, ""); print }
 ' "$WORKFLOW" | sed "s#--server maincloud#--server $SERVER_URL#")"
-[ -n "$POST_PUBLISH_CALLS" ] || fail "found no 'spacetime call' step in $WORKFLOW's publish-module job"
+[ -n "$POST_PUBLISH_STEPS" ] || fail "found no post-publish 'run:' step in $WORKFLOW's publish-module job"
+grep -qx MULTILINE <<<"$POST_PUBLISH_STEPS" && fail "publish-module has a multi-line 'run: |' step after the publish -- write it as a script, so the rehearsal can run it verbatim"
+grep -qF 'finish_publish' <<<"$POST_PUBLISH_STEPS" || fail "publish-module's post-publish steps do not call finish_publish"
 
 git -C "$REPO_ROOT" cat-file -e "$LIVE_DATABASE_BORN_AT^{commit}" 2>/dev/null \
   || fail "commit $LIVE_DATABASE_BORN_AT is not in this clone -- the checkout must have full history (fetch-depth: 0)"
@@ -92,7 +97,7 @@ run_post_publish() { # <tag>
     i=$((i + 1))
     BACKUP_DATABASE="$DB" bash -c "$cmd" >"$DATA_DIR/post-$1-$i.log" 2>&1 \
       || fail "post-publish step '$cmd' exited non-zero ($1 run)" "$DATA_DIR/post-$1-$i.log"
-  done <<<"$POST_PUBLISH_CALLS"
+  done <<<"$POST_PUBLISH_STEPS"
 }
 
 # Wall-clock bounds for the repaired epoch, in seconds (this machine's

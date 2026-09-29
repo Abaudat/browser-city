@@ -33,6 +33,12 @@ test("every boot mark fires during a normal load, in a sane order", async ({ pag
     undefined,
     { timeout: 30_000 },
   );
+  // The world_clock row can land just after the player is controllable.
+  await page.waitForFunction(
+    (name) => performance.getEntriesByName(name).length > 0,
+    BOOT_MARK.CITY_CLOCK_KNOWN,
+    { timeout: 10_000 },
+  );
 
   const marks = await page.evaluate(() =>
     performance

@@ -25,6 +25,10 @@ export const BOOT_MARK = {
   /** The first subscription's `onApplied` -- the subscription-decode
    * term's end. */
   SUBSCRIPTION_APPLIED: "bc-boot:subscription-applied",
+  /** The first `world_clock` row to reach `CityClock.setClock` -- the
+   * player-facing symptom of a world with no epoch. Set once; `deploy-
+   * smoke.spec.ts` asserts it. */
+  CITY_CLOCK_KNOWN: "bc-boot:city-clock-known",
   /** Every texture the street scene loads before its first frame has
    * resolved -- the atlas term's end (there is no real atlas yet; see
    * `docs/spikes/1.14-boot-budget.md` for the per-request breakdown this
