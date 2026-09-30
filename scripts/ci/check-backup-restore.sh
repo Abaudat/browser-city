@@ -499,8 +499,9 @@ ok "tail-deletion (all rows gone): 'room_area' restores to exactly 0 rows and it
 # restored database, each selected by its own stock_id, so neither the export
 # nor the source is the oracle for them.
 stock_rows_live() { # <db> [where-clause]
-  local resp="$WORK/stockrows-$1-${2//[^a-z0-9]/_}.json"
-  bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM stock ${2:-}" >"$resp"
+  local where="${2:-}" resp
+  resp="$WORK/stockrows-$1-${where//[^a-z0-9]/_}.json"
+  bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM stock $where" >"$resp"
   bc_wb rows-canonical "$BC_SNAPSHOT" stock "$resp"
 }
 SRC_STOCK="$(stock_rows_live "$SRC")"
