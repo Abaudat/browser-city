@@ -1488,6 +1488,82 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
 }
 
 /**
+ * The bollard west of the shopfront (`id: 121`), approached to rest on its
+ * south, west and east faces in turn. Every `into-the-*` segment ends
+ * against the post's own collider, so the asserted coordinate is fixed by
+ * a face; every other segment only positions the body, with the post's
+ * columns or rows left overlapped after a fully clamped tick of overshoot.
+ */
+export function streetBollardRoute(
+  inputs: StreetWalkInputs,
+  body: {
+    readonly subcellsPerCell: number;
+    readonly bodyWidthSubcells: number;
+    readonly bodyHeightSubcells: number;
+  },
+): readonly StreetWalkSegment[] {
+  const post = STREET_PROPS.find((p) => p.id === 121n);
+  if (!post) throw new Error("fixture no longer places the west-of-shopfront bollard (id 121)");
+  const sub = body.subcellsPerCell;
+  const x0 = (post.x * sub + BOLLARD_COLLIDER.x0) / sub;
+  const x1 = (post.x * sub + BOLLARD_COLLIDER.x1) / sub;
+  const y1 = (post.y * sub + BOLLARD_COLLIDER.y1) / sub;
+  const halfBody = body.bodyWidthSubcells / 2 / sub;
+  const midRow = post.y + 0.5;
+  const belowRow = post.y + 1.7;
+  return [
+    // Out of the shop, west to the post's east side, south below its row.
+    {
+      label: "outside-the-shopfront",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.shopfrontExitRestY },
+    },
+    { label: "west-of-the-bin", key: "ArrowLeft", until: { kind: "x-at-most", value: post.x + 1 } },
+    {
+      label: "south-of-the-bollard",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: belowRow },
+    },
+    // South face: under the post's middle, north into it.
+    {
+      label: "under-the-post",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: post.x + 0.5 },
+    },
+    {
+      label: "into-the-south-face",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: y1 + body.bodyHeightSubcells / sub },
+    },
+    // West face: clear of the post to its west, up to its row, east into it.
+    { label: "west-of-the-post", key: "ArrowLeft", until: { kind: "x-at-most", value: x0 - 0.5 } },
+    { label: "beside-the-post-west", key: "ArrowUp", until: { kind: "y-at-most", value: midRow } },
+    {
+      label: "into-the-west-face",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: x0 - halfBody },
+    },
+    // East face: back below the post, east of it, up to its row, west into it.
+    {
+      label: "south-of-the-post-again",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: belowRow },
+    },
+    {
+      label: "east-of-the-post",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: x1 + 0.5 },
+    },
+    { label: "beside-the-post-east", key: "ArrowUp", until: { kind: "y-at-most", value: midRow } },
+    {
+      label: "into-the-east-face",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: x1 + halfBody },
+    },
+  ];
+}
+
+/**
  * The lap the NFR2 perf harness walks, over and over: north of the
  * bridge, west along the terrace, back east, up onto the deck and down
  * again. It starts and ends at exactly the position

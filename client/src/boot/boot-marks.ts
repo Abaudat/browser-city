@@ -55,7 +55,9 @@ export type BootMarkName = (typeof BOOT_MARK)[keyof typeof BOOT_MARK];
 /** Records `name` at the current time, relative to navigation start, the
  * same reference `first-contentful-paint` and every `PerformanceResourceTiming`
  * entry already use -- so a milestone and a resource fetch are always
- * directly comparable with no unit conversion. */
-export function markBoot(name: BootMarkName): void {
-  performance.mark(name);
+ * directly comparable with no unit conversion. `at` pins the timestamp, so
+ * marks that stand for one instant share it exactly. */
+export function markBoot(name: BootMarkName, at?: number): void {
+  if (at === undefined) performance.mark(name);
+  else performance.mark(name, { startTime: at });
 }
