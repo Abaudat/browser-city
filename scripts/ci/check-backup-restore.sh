@@ -491,6 +491,24 @@ ROOM_AREA_NEW_ID="$(max_id_live "$TAIL_DST" room_area)"
 [ "$ROOM_AREA_NEW_ID" -gt "$ROOM_AREA_FLOOR" ] || fail "expected the post-restore probe on '$TAIL_DST.room_area' (restored via the None/placeholder branch -- every row was deleted before export) to land past the manifest's own sequence floor ($ROOM_AREA_FLOOR); got $ROOM_AREA_NEW_ID" "$DATA_DIR/tail-room-area-probe.log"
 ok "tail-deletion (all rows gone): 'room_area' restores to exactly 0 rows and its sequence still advances past the manifest's own recorded floor ($ROOM_AREA_FLOOR), via restore_autoinc_rows's None/placeholder() branch (probe landed on $ROOM_AREA_NEW_ID)"
 
+# --- stock: every row survives with its id and holder pair intact --------
+# Read in the same row order on both sides, so a column-by-column equality is
+# a row-by-row one: a restore that merged two rows or moved a quantity to
+# another holder fails here. Before verify-independent.sh, whose probe inserts a
+# row into the restored database.
+for column in stock_id holder_kind holder_id item_id quantity; do
+  SRC_STOCK="$(column_values_live "$SRC" stock "$column")"
+  DST_STOCK="$(column_values_live "$DST" stock "$column")"
+  [ -n "$SRC_STOCK" ] || fail "'$SRC.stock' has no '$column' values -- nothing to compare"
+  [ "$SRC_STOCK" = "$DST_STOCK" ] || fail "restored 'stock.$column' differs from '$SRC's own -- expected:
+$SRC_STOCK
+got:
+$DST_STOCK"
+done
+[ "$(row_count_live "$SRC" business)" = "$(row_count_live "$DST" business)" ] \
+  || fail "restored 'business' has a different row count from '$SRC'"
+ok "every stock row (id, holder kind, holder id, item, quantity) reads back identically, row for row, from the restored database"
+
 # --- 5/7: COUNT(*) on both live databases and the auto_inc sequence
 # strictly advancing -- scripts/ops/verify-independent.sh, shared with
 # .github/workflows/backup.yml's rehearsal job (Tim's direction: the
@@ -538,23 +556,6 @@ $SRC_IDENTITY_VALUES
 got:
 $DST_IDENTITY_VALUES"
 ok "sentinel values (u64::MAX, i32::MIN, i8 floor, the full adversarial string, a Timestamp at 0 and i64::MAX micros, and every Identity, exact and sorted) read back exactly, by column, from the restored database"
-
-# --- stock: every row survives with its id and holder pair intact --------
-# Read in the same row order on both sides, so a column-by-column equality is
-# a row-by-row one: a restore that merged two rows or moved a quantity to
-# another holder fails here.
-for column in stock_id holder_kind holder_id item_id quantity; do
-  SRC_STOCK="$(column_values_live "$SRC" stock "$column")"
-  DST_STOCK="$(column_values_live "$DST" stock "$column")"
-  [ -n "$SRC_STOCK" ] || fail "'$SRC.stock' has no '$column' values -- nothing to compare"
-  [ "$SRC_STOCK" = "$DST_STOCK" ] || fail "restored 'stock.$column' differs from '$SRC's own -- expected:
-$SRC_STOCK
-got:
-$DST_STOCK"
-done
-[ "$(row_count_live "$SRC" business)" = "$(row_count_live "$DST" business)" ] \
-  || fail "restored 'business' has a different row count from '$SRC'"
-ok "every stock row (id, holder kind, holder id, item, quantity) reads back identically, row for row, from the restored database"
 
 # --- 9: scheduled tables restore to nothing -- compared against a
 # freshly published reference database, byte for byte ---------------------
