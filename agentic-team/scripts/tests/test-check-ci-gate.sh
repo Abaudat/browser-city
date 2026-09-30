@@ -20,6 +20,7 @@ on:
 env:
   PROPTEST_CASES: 4096
   PROPTEST_RNG_SEED: 1
+  FAST_CHECK_SEED: 1
 jobs:
   changes:
     name: changes
