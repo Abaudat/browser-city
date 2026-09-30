@@ -764,16 +764,68 @@ fn parse_cadence_liveness_line(line: &str) -> Result<CadenceLivenessRow> {
     })
 }
 
-/// `a` is the earlier export, `b` the later one (of the same, restored
-/// database), of a table only a wall-clock sampler ever appends to: every
-/// line of `a` must still be present, unchanged, in `b`, which may hold
-/// more. Returns one description per line of `a` that is not.
-pub fn append_only_diff(a_lines: &[String], b_lines: &[String]) -> Vec<String> {
-    a_lines
+/// The column position of `sampled_at` in `accessor`'s canonical rows,
+/// read from the snapshot, never assumed.
+pub fn sampled_at_column(snapshot: &ModuleSchema, accessor: &str) -> Result<usize> {
+    table_def(snapshot, accessor)?
+        .columns
         .iter()
-        .filter(|l| !b_lines.contains(l))
-        .map(|l| format!("row lost or changed: {l}"))
-        .collect()
+        .position(|c| c.name == "sampled_at")
+        .ok_or_else(|| err(format!("table `{accessor}` has no `sampled_at` column")))
+}
+
+/// `a` is the earlier export, `b` the later one (of the same, restored
+/// database), of a table only the metrics sampler writes
+/// (`table_sample`, `storage_sample`, `reducer_class_sample`). A fire
+/// between the two exports appends rows and prunes the oldest first
+/// (retention, then the row bound), so:
+/// - if `b` holds no row `a` lacks, no fire happened and `b` must equal `a`;
+/// - otherwise a row of `a` may be missing from `b` only if its `sampled_at`
+///   is no newer than every row of `a` that survived.
+///
+/// Any other missing or changed row is a mismatch. `sampled_at_col` is the
+/// column's position ([`sampled_at_column`]). One description per mismatch.
+pub fn sample_forward_diff(
+    sampled_at_col: usize,
+    a_lines: &[String],
+    b_lines: &[String],
+) -> Result<Vec<String>> {
+    fn sampled_at(line: &str, col: usize) -> Result<i64> {
+        let v: Value =
+            serde_json::from_str(line).map_err(|e| err(format!("not valid JSON: {e}: {line}")))?;
+        let cell = v
+            .as_array()
+            .and_then(|r| r.get(col))
+            .ok_or_else(|| err(format!("row has no column {col}: {line}")))?;
+        // A Timestamp reads `[micros]`.
+        cell.as_array()
+            .and_then(|c| c.first())
+            .unwrap_or(cell)
+            .as_i64()
+            .ok_or_else(|| err(format!("sampled_at is not an integer: {line}")))
+    }
+    let a_set: BTreeSet<&str> = a_lines.iter().map(String::as_str).collect();
+    let b_set: BTreeSet<&str> = b_lines.iter().map(String::as_str).collect();
+    let gained = b_set.iter().any(|l| !a_set.contains(l));
+    let mut oldest_survivor: Option<i64> = None;
+    for line in a_lines.iter().filter(|l| b_set.contains(l.as_str())) {
+        let at = sampled_at(line, sampled_at_col)?;
+        oldest_survivor = Some(oldest_survivor.map_or(at, |o| o.min(at)));
+    }
+    let mut mismatches = Vec::new();
+    for line in a_lines.iter().filter(|l| !b_set.contains(l.as_str())) {
+        let ok = gained
+            && match oldest_survivor {
+                Some(oldest) => sampled_at(line, sampled_at_col)? <= oldest,
+                None => true,
+            };
+        if !ok {
+            mismatches.push(format!(
+                "row lost or changed without a legitimate prune: {line}"
+            ));
+        }
+    }
+    Ok(mismatches)
 }
 
 /// `a` is the earlier export, `b` the later one (of the same, restored
@@ -1476,23 +1528,57 @@ mod tests {
         format!("[{cadence},[{target}],[{fired}],{fires},{missed}]")
     }
 
-    #[test]
-    fn append_only_diff_accepts_identical_and_grown_tables() {
-        let a = vec!["[1,\"x\"]".to_string(), "[2,\"y\"]".to_string()];
-        let mut b = a.clone();
-        b.push("[3,\"z\"]".to_string());
-        assert!(append_only_diff(&a, &a).is_empty());
-        assert!(append_only_diff(&a, &b).is_empty());
-        assert!(append_only_diff(&[], &b).is_empty());
+    fn sample_line(id: u64, sampled_at: i64) -> String {
+        format!("[{id},[{sampled_at}],\"t\"]")
+    }
+
+    fn sfd(a: &[String], b: &[String]) -> Vec<String> {
+        sample_forward_diff(1, a, b).unwrap()
     }
 
     #[test]
-    fn append_only_diff_names_a_lost_or_changed_row() {
-        let a = vec!["[1,\"x\"]".to_string(), "[2,\"y\"]".to_string()];
-        let lost = vec!["[1,\"x\"]".to_string()];
-        assert_eq!(append_only_diff(&a, &lost).len(), 1);
-        let changed = vec!["[1,\"x\"]".to_string(), "[2,\"Y\"]".to_string()];
-        assert_eq!(append_only_diff(&a, &changed).len(), 1);
+    fn sample_forward_diff_accepts_identical_and_grown_tables() {
+        let a = vec![sample_line(1, 10), sample_line(2, 20)];
+        let mut b = a.clone();
+        b.push(sample_line(3, 30));
+        assert!(sfd(&a, &a).is_empty());
+        assert!(sfd(&a, &b).is_empty());
+        assert!(sfd(&[], &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_accepts_the_oldest_rows_pruned_by_a_fire() {
+        // The seeded shape: 0, a 2023 timestamp, i64::MAX -- a fire prunes
+        // the two old ones and appends its own.
+        let a = vec![
+            sample_line(1, 0),
+            sample_line(2, 1_700_000_000_123_456),
+            sample_line(3, i64::MAX),
+        ];
+        let b = vec![sample_line(3, i64::MAX), sample_line(4, i64::MAX)];
+        assert!(sfd(&a, &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_a_lost_row_with_nothing_gained() {
+        let a = vec![sample_line(1, 10), sample_line(2, 20)];
+        assert_eq!(sfd(&a, &[sample_line(2, 20)]).len(), 1);
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_a_lost_row_that_is_not_among_the_oldest() {
+        let a = vec![sample_line(1, 10), sample_line(2, 20), sample_line(3, 30)];
+        let b = vec![sample_line(1, 10), sample_line(3, 30), sample_line(4, 40)];
+        assert_eq!(sfd(&a, &b).len(), 1);
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_a_changed_row() {
+        let a = vec![sample_line(1, 10), sample_line(2, 20)];
+        let b = vec![sample_line(1, 10), sample_line(2, 25)];
+        assert_eq!(sfd(&a, &b).len(), 1);
+        let grown_and_changed = vec![sample_line(1, 10), sample_line(2, 25), sample_line(3, 30)];
+        assert_eq!(sfd(&a, &grown_and_changed).len(), 1);
     }
 
     fn rcc_line(class: &str, calls: u64, sampled: u64) -> String {

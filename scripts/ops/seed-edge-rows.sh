@@ -67,10 +67,8 @@ done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
 # Real-shaped stock beside the adversarial rows: two businesses holding item 1
 # at different quantities, and a citizen holding item 2. Ids
 # continue the seeded sequence (the generic rows above took 1..ROWS).
-if [[ " ${SEEDED[*]:-} " == *" stock "* ]]; then
-  A=$((ROWS + 1)); B=$((ROWS + 2)); C=$((ROWS + 3))
-  bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_stock "[[$A,0,1,1,500],[$B,0,2,1,20],[$C,1,1,2,3]]" 0
-fi
+A=$((ROWS + 1)); B=$((ROWS + 2)); C=$((ROWS + 3))
+bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_stock "[[$A,0,1,1,500],[$B,0,2,1,20],[$C,1,1,2,3]]" 0
 
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" finish_restore '[]'
 

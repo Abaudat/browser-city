@@ -287,9 +287,12 @@ fn run(args: &[String]) -> Result<()> {
                 println!("{mismatch}");
             }
         }
-        "append-only-diff" => {
-            // append-only-diff <export-a.jsonl> <export-b.jsonl> -- one
-            // description per row of A that B lacks, empty if none.
+        "sample-forward-diff" => {
+            // sample-forward-diff <snapshot.json> <table> <export-a.jsonl>
+            // <export-b.jsonl> -- one description per mismatch, empty if B
+            // is A or A plus a sampler fire (rows appended, oldest pruned).
+            let snapshot = read_snapshot(&args[2])?;
+            let col = sampled_at_column(&snapshot, &args[3])?;
             let lines = |path: &str| -> Result<Vec<String>> {
                 Ok(read_file(path)?
                     .lines()
@@ -297,7 +300,7 @@ fn run(args: &[String]) -> Result<()> {
                     .map(String::from)
                     .collect())
             };
-            for mismatch in append_only_diff(&lines(&args[2])?, &lines(&args[3])?) {
+            for mismatch in sample_forward_diff(col, &lines(&args[4])?, &lines(&args[5])?)? {
                 println!("{mismatch}");
             }
         }

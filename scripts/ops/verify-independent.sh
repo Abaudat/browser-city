@@ -113,8 +113,8 @@ max_expected_id() {
 # The metrics sampler's own tables (`table_sample`, `storage_sample`,
 # `reducer_class_sample`) are live too: a sampler fire, on the cadence grid
 # from `world_clock.epoch_at`, landing on either database after the export
-# adds rows to it alone. verify-world.sh proves them append-only (every row
-# of export A is in export B).
+# appends rows to it alone and prunes its oldest. verify-world.sh proves them
+# forward-only (`sample-forward-diff`).
 LIVE_TABLES="cadence_liveness reducer_class_counter table_sample storage_sample reducer_class_sample"
 is_live_table() { # <table>
   local t
