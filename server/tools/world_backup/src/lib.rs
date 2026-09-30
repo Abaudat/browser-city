@@ -765,6 +765,18 @@ fn parse_cadence_liveness_line(line: &str) -> Result<CadenceLivenessRow> {
 }
 
 /// `a` is the earlier export, `b` the later one (of the same, restored
+/// database), of a table only a wall-clock sampler ever appends to: every
+/// line of `a` must still be present, unchanged, in `b`, which may hold
+/// more. Returns one description per line of `a` that is not.
+pub fn append_only_diff(a_lines: &[String], b_lines: &[String]) -> Vec<String> {
+    a_lines
+        .iter()
+        .filter(|l| !b_lines.contains(l))
+        .map(|l| format!("row lost or changed: {l}"))
+        .collect()
+}
+
+/// `a` is the earlier export, `b` the later one (of the same, restored
 /// database). Every row `a` has must have a counterpart in `b` with the
 /// same `cadence`, either byte-identical or related the only way a real
 /// fire landing between the two exports can relate them: `fires` strictly
@@ -1462,6 +1474,25 @@ mod tests {
 
     fn cl_line(cadence: u64, target: i64, fired: i64, fires: u64, missed: u64) -> String {
         format!("[{cadence},[{target}],[{fired}],{fires},{missed}]")
+    }
+
+    #[test]
+    fn append_only_diff_accepts_identical_and_grown_tables() {
+        let a = vec!["[1,\"x\"]".to_string(), "[2,\"y\"]".to_string()];
+        let mut b = a.clone();
+        b.push("[3,\"z\"]".to_string());
+        assert!(append_only_diff(&a, &a).is_empty());
+        assert!(append_only_diff(&a, &b).is_empty());
+        assert!(append_only_diff(&[], &b).is_empty());
+    }
+
+    #[test]
+    fn append_only_diff_names_a_lost_or_changed_row() {
+        let a = vec!["[1,\"x\"]".to_string(), "[2,\"y\"]".to_string()];
+        let lost = vec!["[1,\"x\"]".to_string()];
+        assert_eq!(append_only_diff(&a, &lost).len(), 1);
+        let changed = vec!["[1,\"x\"]".to_string(), "[2,\"Y\"]".to_string()];
+        assert_eq!(append_only_diff(&a, &changed).len(), 1);
     }
 
     fn rcc_line(class: &str, calls: u64, sampled: u64) -> String {

@@ -56,7 +56,6 @@ const BEANS: u32 = 1;
 fn two_cafes_of_one_chain_hold_independent_stock() {
     // Both cafes carry the same brand value; the brand is not part of the
     // holder reference, so the two are told apart by id alone.
-    let _brand = 42u64;
     let cafe_a = holder(holder_kind::BUSINESS, 1);
     let cafe_b = holder(holder_kind::BUSINESS, 2);
     assert_ne!(cafe_a, cafe_b);
@@ -77,10 +76,34 @@ fn two_cafes_of_one_chain_hold_independent_stock() {
 
 #[test]
 fn the_same_id_under_two_kinds_is_two_holders() {
-    assert_ne!(
-        holder(holder_kind::CITIZEN, 7),
-        holder(holder_kind::BUSINESS, 7)
-    );
+    let citizen = holder(holder_kind::CITIZEN, 7);
+    let business = holder(holder_kind::BUSINESS, 7);
+    assert_ne!(citizen, business);
+
+    let mut ledger = Vec::new();
+    let mut next = 0;
+    for (h, amount) in [(citizen, 4), (business, 9)] {
+        let plan = plan_deposit(&ledger, h, BEANS, amount).unwrap();
+        apply(&mut ledger, &mut next, h, BEANS, plan);
+    }
+    assert_eq!(ledger.len(), 2, "one row per holder, not one per id");
+
+    let w = plan_withdraw(&ledger, citizen, BEANS, 4);
+    assert_eq!((w.taken, w.remaining), (4, 0));
+    apply(&mut ledger, &mut next, citizen, BEANS, w.plan);
+    assert_eq!(quantity_of(&ledger, citizen, BEANS), 0);
+    assert_eq!(quantity_of(&ledger, business, BEANS), 9);
+}
+
+#[test]
+fn withdrawing_zero_from_a_held_line_writes_nothing() {
+    let h = holder(holder_kind::BUSINESS, 1);
+    let mut ledger = Vec::new();
+    let mut next = 0;
+    let plan = plan_deposit(&ledger, h, BEANS, 3).unwrap();
+    apply(&mut ledger, &mut next, h, BEANS, plan);
+    let w = plan_withdraw(&ledger, h, BEANS, 0);
+    assert_eq!((w.taken, w.remaining, w.plan), (0, 3, Plan::Nothing));
 }
 
 #[test]

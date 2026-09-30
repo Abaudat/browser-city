@@ -287,6 +287,20 @@ fn run(args: &[String]) -> Result<()> {
                 println!("{mismatch}");
             }
         }
+        "append-only-diff" => {
+            // append-only-diff <export-a.jsonl> <export-b.jsonl> -- one
+            // description per row of A that B lacks, empty if none.
+            let lines = |path: &str| -> Result<Vec<String>> {
+                Ok(read_file(path)?
+                    .lines()
+                    .filter(|l| !l.is_empty())
+                    .map(String::from)
+                    .collect())
+            };
+            for mismatch in append_only_diff(&lines(&args[2])?, &lines(&args[3])?) {
+                println!("{mismatch}");
+            }
+        }
         "stdin-to-line" => {
             // Reads a JSON value from stdin and prints it as one
             // canonical compact line -- used to fold a single ad hoc

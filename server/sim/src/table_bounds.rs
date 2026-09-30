@@ -160,8 +160,9 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 48,
         kind: BoundKind::Mechanical,
     },
-    // The Scale Baseline's ~344 workplaces at 512x512, times four for the
-    // 1024x1024 growth target. A closed business keeps its row.
+    // One row per workplace (`bounds/tests/stock_bounds.rs` holds the
+    // generator's workplace band under it at both scales). A closed
+    // business keeps its row.
     TableBound {
         accessor: "business",
         max_rows: 10_000,

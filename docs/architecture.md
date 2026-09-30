@@ -307,8 +307,7 @@ and just-in-time. So:
 - `business` is the business instance: one row per shop.
 - `stock` has a surrogate `stock_id`, `holder_kind`, `holder_id`, `item_id` and `quantity` (`u64`, in the item's own unit). It is never addressed by room, brand or position. One index, `by_holder_item` on (`holder_kind`, `holder_id`, `item_id`).
 - At most one `stock` row per (holder, item); an absent row is zero and no row stores zero. `sim::stock::plan_deposit` and `plan_withdraw` decide the one row a write lands on; a holder holds at most `sim::stock::MAX_LINES_PER_HOLDER` items.
-- `stock`'s `max_rows` is `MAX_LINES_PER_HOLDER` times the `max_rows` of every holder table.
-- No reducer writes a stock quantity until the procedure path for stock changes exists.
+- `stock`'s `max_rows` is `MAX_LINES_PER_HOLDER` times the sum of the holder tables' `max_rows`.
 
 ## World addressing
 

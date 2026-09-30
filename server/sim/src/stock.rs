@@ -31,7 +31,7 @@ pub enum HolderError {
 }
 
 /// The one way to name a holder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct HolderRef {
     kind: u32,
     id: u64,

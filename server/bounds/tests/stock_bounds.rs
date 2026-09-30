@@ -134,3 +134,27 @@ fn every_holder_kind_names_its_table_or_has_none_yet() {
         }
     }
 }
+
+/// Workplaces are `business` rows before they are `stock` rows: the
+/// growth-site band's upper edge, from the same source of truth, must fit
+/// under `business`'s alert, and the launch-site one under its expectation
+/// scaled to the growth target.
+#[test]
+fn business_across_the_settled_district_fits_its_declared_bound() {
+    let bound = TABLE_BOUNDS
+        .iter()
+        .find(|b| b.accessor == "business")
+        .expect("business has a declared bound");
+    let growth = workplace_ceiling(GROWTH_SITE);
+    assert!(
+        growth <= bound.alert_rows,
+        "growth-target workplaces {growth} are past business.alert_rows {}",
+        bound.alert_rows
+    );
+    let launch = workplace_ceiling(LAUNCH_SITE);
+    assert!(
+        launch <= bound.expected_rows,
+        "launch-scale workplaces {launch} are past business.expected_rows {}",
+        bound.expected_rows
+    );
+}

@@ -70,8 +70,7 @@ rows_of() { # <table> -- row count of the whole table
 }
 clock() { bash "$REPO_ROOT/scripts/dev/clock.sh" "$DB_NAME" "$@" "${SERVER_ARGS[@]}" --no-config -y; }
 
-# Table accessors only (six-space indent), never a table-level index's own.
-TABLES="$(grep -oE '^      "accessor": "[a-z_]+"' "$SNAPSHOT" | sed -E 's/.*: "([a-z_]+)"/\1/' | sort -u)"
+TABLES="$(jq -r '.tables[].accessor' "$SNAPSHOT" | tr -d '\r' | sort -u)"
 TABLE_COUNT="$(printf '%s\n' "$TABLES" | grep -c .)"
 [ "$TABLE_COUNT" -gt 0 ] || fail "no table found in $SNAPSHOT"
 
