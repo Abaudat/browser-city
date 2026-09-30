@@ -528,9 +528,9 @@ ok "every stock row reads back identically from the restored database, and the t
 # back as literals: instance 4 placed at a cell with a sub-cell offset (no
 # holder), instance 5 held in object 1's grid at a slot (no position).
 item_rows_live() { # <db> <table> [where-clause]
-  local resp
-  resp="$WORK/itemrows-$1-$2-${3//[^a-z0-9]/_}.json"
-  bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM $2 ${3:-}" >"$resp"
+  local where="${3:-}" resp
+  resp="$WORK/itemrows-$1-$2-${where//[^a-z0-9]/_}.json"
+  bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM $2 $where" >"$resp"
   bc_wb rows-canonical "$BC_SNAPSHOT" "$2" "$resp"
 }
 for t in item_instance item_placed item_held; do
