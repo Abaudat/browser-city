@@ -110,78 +110,82 @@ const constantDeltasArb = fc
 const PROPERTY_TIMEOUT_MS = 60_000;
 
 describe("camera scroll during a continuous walk", () => {
-  it("inv_camera_scroll_tracks_continuous_walk", () => {
-    // The player's screen point is constant, the scroll monotone and near
-    // the continuous camera, under any frame-delta sequence.
-    fc.assert(
-      fc.property(
-        setupArb,
-        dirArb,
-        startArb,
-        startArb,
-        viewportArb,
-        viewportArb,
-        fc.oneof(
-          constantDeltasArb,
-          fc.array(fc.double({ min: 8, max: 34, noNaN: true }), {
-            minLength: FRAMES,
-            maxLength: FRAMES,
-          }),
-        ),
-        (setup, dir, sx, sy, vw, vh, deltas) => {
-          const { zoom } = setup;
-          const frames = walk(setup, dir, sx, sy, deltas, vw, vh);
-          const first = frames[0];
-          if (!first) throw new Error("no frames");
-          const px = first.anchorX * zoom + first.offsetX;
-          const py = first.anchorY * zoom + first.offsetY;
-          frames.forEach((f, i) => {
-            expect(Math.abs(f.anchorX * zoom + f.offsetX - px)).toBeLessThan(EPS);
-            expect(Math.abs(f.anchorY * zoom + f.offsetY - py)).toBeLessThan(EPS);
-            expect(Math.abs(f.offsetX - f.idealX)).toBeLessThanOrEqual(
-              CAMERA_SCROLL_TOLERANCE_PX + EPS,
-            );
-            expect(Math.abs(f.offsetY - f.idealY)).toBeLessThanOrEqual(
-              CAMERA_SCROLL_TOLERANCE_PX + EPS,
-            );
-            const prev = frames[i - 1];
-            if (!prev) return;
-            // The camera moves against the walk: offset falls as the player goes +.
-            expect((f.offsetX - prev.offsetX) * dir.x).toBeLessThanOrEqual(0);
-            expect((f.offsetY - prev.offsetY) * dir.y).toBeLessThanOrEqual(0);
-            if (dir.x === 0) expect(f.offsetX).toBe(prev.offsetX);
-            if (dir.y === 0) expect(f.offsetY).toBe(prev.offsetY);
-          });
-        },
-      ),
-      { numRuns: 200 },
-    );
-
-    // At a steady frame rate, consecutive scroll steps per axis differ by
-    // at most one screen pixel.
-    fc.assert(
-      fc.property(
-        setupArb,
-        dirArb,
-        startArb,
-        startArb,
-        viewportArb,
-        viewportArb,
-        constantDeltasArb,
-        (setup, dir, sx, sy, vw, vh, deltas) => {
-          const frames = walk(setup, dir, sx, sy, deltas, vw, vh);
-          for (const axis of ["offsetX", "offsetY"] as const) {
-            const steps = frames.slice(1).map((f, i) => {
-              const prev = frames[i];
-              return Math.abs(f[axis] - (prev ? prev[axis] : 0));
+  it(
+    "inv_camera_scroll_tracks_continuous_walk",
+    () => {
+      // The player's screen point is constant, the scroll monotone and near
+      // the continuous camera, under any frame-delta sequence.
+      fc.assert(
+        fc.property(
+          setupArb,
+          dirArb,
+          startArb,
+          startArb,
+          viewportArb,
+          viewportArb,
+          fc.oneof(
+            constantDeltasArb,
+            fc.array(fc.double({ min: 8, max: 34, noNaN: true }), {
+              minLength: FRAMES,
+              maxLength: FRAMES,
+            }),
+          ),
+          (setup, dir, sx, sy, vw, vh, deltas) => {
+            const { zoom } = setup;
+            const frames = walk(setup, dir, sx, sy, deltas, vw, vh);
+            const first = frames[0];
+            if (!first) throw new Error("no frames");
+            const px = first.anchorX * zoom + first.offsetX;
+            const py = first.anchorY * zoom + first.offsetY;
+            frames.forEach((f, i) => {
+              expect(Math.abs(f.anchorX * zoom + f.offsetX - px)).toBeLessThan(EPS);
+              expect(Math.abs(f.anchorY * zoom + f.offsetY - py)).toBeLessThan(EPS);
+              expect(Math.abs(f.offsetX - f.idealX)).toBeLessThanOrEqual(
+                CAMERA_SCROLL_TOLERANCE_PX + EPS,
+              );
+              expect(Math.abs(f.offsetY - f.idealY)).toBeLessThanOrEqual(
+                CAMERA_SCROLL_TOLERANCE_PX + EPS,
+              );
+              const prev = frames[i - 1];
+              if (!prev) return;
+              // The camera moves against the walk: offset falls as the player goes +.
+              expect((f.offsetX - prev.offsetX) * dir.x).toBeLessThanOrEqual(0);
+              expect((f.offsetY - prev.offsetY) * dir.y).toBeLessThanOrEqual(0);
+              if (dir.x === 0) expect(f.offsetX).toBe(prev.offsetX);
+              if (dir.y === 0) expect(f.offsetY).toBe(prev.offsetY);
             });
-            expect(Math.max(...steps) - Math.min(...steps)).toBeLessThanOrEqual(1);
-          }
-        },
-      ),
-      { numRuns: 200 },
-    );
-  }, PROPERTY_TIMEOUT_MS);
+          },
+        ),
+        { numRuns: 200 },
+      );
+
+      // At a steady frame rate, consecutive scroll steps per axis differ by
+      // at most one screen pixel.
+      fc.assert(
+        fc.property(
+          setupArb,
+          dirArb,
+          startArb,
+          startArb,
+          viewportArb,
+          viewportArb,
+          constantDeltasArb,
+          (setup, dir, sx, sy, vw, vh, deltas) => {
+            const frames = walk(setup, dir, sx, sy, deltas, vw, vh);
+            for (const axis of ["offsetX", "offsetY"] as const) {
+              const steps = frames.slice(1).map((f, i) => {
+                const prev = frames[i];
+                return Math.abs(f[axis] - (prev ? prev[axis] : 0));
+              });
+              expect(Math.max(...steps) - Math.min(...steps)).toBeLessThanOrEqual(1);
+            }
+          },
+        ),
+        { numRuns: 200 },
+      );
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
 });
 
 describe("worldPointPx at a zoom", () => {
