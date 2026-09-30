@@ -20,8 +20,10 @@ env:
   # a fixed RNG seed every property in a file draws the same 4,096
   # `any::<u64>()` world seeds. A failure reproduces locally with the line
   # the `test` job prints; `.github/workflows/explore.yml` draws fresh seeds
-  # off the deploy path.
+  # off the deploy path. `FAST_CHECK_SEED` does the same for the client's
+  # fast-check properties, through the one vitest setup file.
   PROPTEST_RNG_SEED: 20260929
+  FAST_CHECK_SEED: 20260929
 
 jobs:
   changes:
@@ -570,6 +572,8 @@ jobs:
       # does not need (Tim's direction).
       - name: client-side trace-matrix symmetry (no cargo)
         run: bash ../scripts/ci/check-trace-matrix.sh --client-only
+      - name: story 6.17 NFR50, no client property bypasses the one seed
+        run: bash ../scripts/ci/check-client-property-seed.sh
       - name: story 15.7, every spec with a visual baseline is wired into update-visual-baselines.yml
         run: bash ../scripts/ci/check-visual-baseline-specs.sh
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -581,6 +585,10 @@ jobs:
       - run: npm run typecheck
       - run: npm run typecheck:tests
       - run: npm run lint
+      - name: property-test seed (reproduce a failure locally with this line)
+        run: |
+          echo "FAST_CHECK_SEED=$FAST_CHECK_SEED"
+          echo "reproduce: FAST_CHECK_SEED=$FAST_CHECK_SEED npx vitest run <test file> -t \"<test name>\"" | tee -a "$GITHUB_STEP_SUMMARY"
       - run: npm run test:unit:coverage
       - run: rustup toolchain install
       # $GITHUB_PATH only takes effect from the *next* step onward, never

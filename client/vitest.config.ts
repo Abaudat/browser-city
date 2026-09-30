@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     include: ["tests/unit/**/*.test.ts"],
     environment: "node",
+    setupFiles: ["tests/unit/setup/property-seed.ts"],
     coverage: {
       provider: "v8",
       include: [

@@ -111,6 +111,23 @@ while IFS= read -r job; do
   fi
 done <<< "$ALL_JOB_NAMES"
 
+# --- NFR50, client half: a workflow-level literal `FAST_CHECK_SEED: <digits>`
+# (an expression such as github.run_id would put a fresh seed on the gate),
+# and every job that runs the client unit tests echoes it to its log. ------
+if ! grep -qE '^  FAST_CHECK_SEED: [0-9]+$' "$WORKFLOW"; then
+  echo "check-ci-gate: FAIL -- $WORKFLOW has no workflow-level literal 'FAST_CHECK_SEED: <digits>' (NFR50)" >&2
+  FAILED=1
+fi
+while IFS= read -r job; do
+  [ -n "$job" ] || continue
+  BLOCK="$(job_block "$job")"
+  if printf '%s\n' "$BLOCK" | grep -vE '^[[:space:]]*#' | grep -qE 'npm run test:unit' \
+    && ! printf '%s\n' "$BLOCK" | grep -qE 'echo .*FAST_CHECK_SEED'; then
+    echo "check-ci-gate: FAIL -- job '$job' runs the client unit tests but never echoes FAST_CHECK_SEED to its log (NFR50)" >&2
+    FAILED=1
+  fi
+done <<< "$ALL_JOB_NAMES"
+
 if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
