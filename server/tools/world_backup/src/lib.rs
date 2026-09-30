@@ -1682,6 +1682,24 @@ mod tests {
         assert!(sfd(&a, &b).is_empty());
     }
 
+    #[test]
+    fn sample_forward_diff_rejects_a_one_row_table_altered_in_place() {
+        // The row carries the maximum key of A: `>` (not `>=`) is what stops
+        // it being taken for a fire's gain.
+        let a = vec![sample_line(1, 10)];
+        let b = vec![sample_line(1, 99)];
+        assert!(!sfd(&a, &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_accepts_a_pruned_row_tying_the_oldest_survivor() {
+        // A fire writes many rows with one `sampled_at`; the row-bound prune
+        // can take part of a group: `<=` (not `<`) against the survivors.
+        let a = vec![sample_line(1, 10), sample_line(2, 10), sample_line(3, 20)];
+        let b = vec![sample_line(2, 10), sample_line(3, 20), sample_line(4, 30)];
+        assert!(sfd(&a, &b).is_empty());
+    }
+
     fn rcc_line(class: &str, calls: u64, sampled: u64) -> String {
         format!("[\"{class}\",{calls},{sampled}]")
     }
