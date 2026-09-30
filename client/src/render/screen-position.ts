@@ -27,7 +27,9 @@ export function snapToScreenPx(v: number, zoom: number): number {
   if (!Number.isInteger(zoom) || zoom <= 0) {
     throw new Error(`snapToScreenPx: zoom must be a positive integer, got ${zoom}`);
   }
-  return Math.round(v * zoom) / zoom;
+  // `+ 0` normalises a `-0` (`Math.round(-0.3)`) to `+0`, so a snapped
+  // coordinate never carries a sign on zero.
+  return Math.round(v * zoom) / zoom + 0;
 }
 
 /**

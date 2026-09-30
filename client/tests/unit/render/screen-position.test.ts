@@ -137,6 +137,11 @@ describe("cellBottomCentre", () => {
 });
 
 describe("snapToScreenPx", () => {
+  it("never returns a negative zero (Math.round(-0.3) is -0)", () => {
+    expect(Object.is(snapToScreenPx(-0.3, 1), 0)).toBe(true);
+    expect(Object.is(snapToScreenPx(-0.1, 4), 0)).toBe(true);
+  });
+
   it("snaps to the nearest 1/zoom of a world pixel", () => {
     expect(snapToScreenPx(10.2, 3)).toBeCloseTo(31 / 3, 12);
     expect(snapToScreenPx(10.2, 1)).toBe(10);
