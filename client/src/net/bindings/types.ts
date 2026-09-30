@@ -34,6 +34,12 @@ export const BuildingArea = __t.object("BuildingArea", {
 });
 export type BuildingArea = __Infer<typeof BuildingArea>;
 
+export const Business = __t.object("Business", {
+  businessId: __t.u64(),
+  createdAt: __t.timestamp(),
+});
+export type Business = __Infer<typeof Business>;
+
 export const CadenceLiveness = __t.object("CadenceLiveness", {
   cadence: __t.u32(),
   lastTargetAt: __t.timestamp(),
@@ -109,6 +115,12 @@ export const GrowthSchedule = __t.object("GrowthSchedule", {
   scheduledAt: __t.scheduleAt(),
 });
 export type GrowthSchedule = __Infer<typeof GrowthSchedule>;
+
+export const HolderKind = __t.object("HolderKind", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type HolderKind = __Infer<typeof HolderKind>;
 
 export const LayerCode = __t.object("LayerCode", {
   code: __t.u32(),
@@ -217,6 +229,15 @@ export const RoomArea = __t.object("RoomArea", {
   chunkKey: __t.u64(),
 });
 export type RoomArea = __Infer<typeof RoomArea>;
+
+export const Stock = __t.object("Stock", {
+  stockId: __t.u64(),
+  holderKind: __t.u32(),
+  holderId: __t.u64(),
+  itemId: __t.u32(),
+  quantity: __t.u64(),
+});
+export type Stock = __Infer<typeof Stock>;
 
 export const StorageSample = __t.object("StorageSample", {
   sampleId: __t.u64(),
