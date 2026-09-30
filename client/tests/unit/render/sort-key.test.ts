@@ -211,15 +211,16 @@ describe("compareDrawables", () => {
     sortDrawablesInPlace(first);
     const expectedIds = first.map((d) => d.stableId);
 
-    for (let shuffle = 0; shuffle < 20; shuffle++) {
-      const shuffled = fc.sample(
+    fc.assert(
+      fc.property(
         fc.shuffledSubarray(pool, { minLength: pool.length, maxLength: pool.length }),
-        1,
-      )[0];
-      if (!shuffled) throw new Error("unreachable");
-      sortDrawablesInPlace(shuffled);
-      expect(shuffled.map((d) => d.stableId)).toEqual(expectedIds);
-    }
+        (shuffled) => {
+          sortDrawablesInPlace(shuffled);
+          expect(shuffled.map((d) => d.stableId)).toEqual(expectedIds);
+        },
+      ),
+      { numRuns: 20 },
+    );
   });
 
   // Performance discipline: the comparator allocates nothing (no closures,
