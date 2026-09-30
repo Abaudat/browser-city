@@ -136,6 +136,33 @@
       ]
     },
     {
+      "accessor": "business",
+      "struct_name": "Business",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "business_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "created_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "cadence_liveness",
       "struct_name": "CadenceLiveness",
       "public": true,
@@ -541,6 +568,33 @@
         {
           "name": "scheduled_at",
           "ty": "ScheduleAt",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "holder_kind",
+      "struct_name": "HolderKind",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "code",
+          "ty": "u32",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "name",
+          "ty": "String",
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
@@ -1086,6 +1140,70 @@
           "unique": false,
           "has_default": false,
           "indexed": true
+        }
+      ]
+    },
+    {
+      "accessor": "stock",
+      "struct_name": "Stock",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "stock_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "holder_kind",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "holder_id",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "item_id",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "quantity",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ],
+      "indexes": [
+        {
+          "accessor": "by_holder_item",
+          "columns": [
+            "holder_kind",
+            "holder_id",
+            "item_id"
+          ]
         }
       ]
     },

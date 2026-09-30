@@ -33,7 +33,7 @@ use crate::demo_ping;
 
 use super::citizen::{citizen, citizen_state};
 use super::clock::world_clock;
-use super::codes::{matter_kind, node_kind, provision, reason_code, unit};
+use super::codes::{holder_kind, matter_kind, node_kind, provision, reason_code, unit};
 use super::identity::{character, character_identity};
 use super::ops::module_owner;
 use super::restore::restore_state;
@@ -41,6 +41,7 @@ use super::schedules::{
     budget_review_schedule, cadence_liveness, citizen_transition_schedule, economy_schedule,
     growth_schedule, maintenance_schedule, metrics_sample_schedule, world_clock_schedule,
 };
+use super::stock::{business, stock};
 use super::world::{
     building, building_area, floor_transition, layer_code, placed_object, room, room_area,
 };
@@ -232,6 +233,9 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(node_kind);
     sample!(unit);
     sample!(layer_code);
+    sample!(holder_kind);
+    sample!(business);
+    sample!(stock);
     sample!(placed_object);
     sample!(floor_transition);
     sample!(building);

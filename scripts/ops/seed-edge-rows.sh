@@ -64,6 +64,14 @@ while IFS= read -r table; do
   OFFSET=$((OFFSET + ROWS + 1))
 done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
 
+# Real-shaped stock beside the adversarial rows: two businesses holding the
+# same item at different quantities, and a citizen holding another. Ids
+# continue the seeded sequence (the generic rows above took 1..ROWS).
+if [[ " ${SEEDED[*]:-} " == *" stock "* ]]; then
+  A=$((ROWS + 1)); B=$((ROWS + 2)); C=$((ROWS + 3))
+  bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_stock "[[$A,0,1,7,500],[$B,0,2,7,20],[$C,1,1,7,3]]" 0
+fi
+
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" finish_restore '[]'
 
 echo "seed-edge-rows: ok -- seeded ${#SEEDED[@]} table(s): ${SEEDED[*]:-}" >&2

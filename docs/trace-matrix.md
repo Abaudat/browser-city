@@ -16,6 +16,7 @@ with no row here.
 | `inv_inventory_superset_after_absence` | Inventory is a superset after any absence | deferred | | inventory system |
 | `inv_no_owned_item_degrades_during_absence` | No owned item degrades during absence | deferred | | inventory/decay system |
 | `inv_budget_never_negative` | Budget never goes negative | deferred | | economy system |
+| `inv_stock_is_independent_per_holder` | Any interleaving of stock operations leaves each holder exactly as replaying its own operations alone (FR87) | covered | `inv_stock_is_independent_per_holder` | 6.2 |
 | `inv_collider_within_footprint` | `collider` is contained within `footprint` (FR128); the failure message reports both rectangles, collider and footprint, in sub-cells | covered | `inv_collider_within_footprint` | — |
 | `inv_collision_only_within_floor` | No cell on any other floor ever contributes to an entity's collision result (FR117) | covered | `inv_collision_only_within_floor` | — |
 | `inv_floor_transition_lands_standable` | No transition cell ever targets a floor or cell where the entity would be inside geometry or out of bounds (FR117) | covered | `inv_floor_transition_lands_standable` | — |
@@ -837,3 +838,18 @@ by exact faces, and its walk names any release that overshoots.
 | `walkSegment` arms its release watcher before the key goes down and fails, naming the segment and the overshoot, when a release lands more than one clamped tick past its threshold | covered | `client/tests/e2e/test-street.spec.ts` -- `the bollard west of the shopfront stops the player where it is drawn, from both sides (AC1, AC4)` |
 | `streetBollardRoute` rests on the post's exact south, west and east faces and keeps the body over the post before each push, with no and with one fully clamped tick of release lag | covered | `client/tests/unit/test-street/street-conformance.test.ts` -- `the bollard approach route (NFR50)` |
 | No segment of `streetBollardRoute` already holds its release condition at the previous segment's lagged rest | covered | `client/tests/unit/test-street/street-conformance.test.ts` -- `never starts a segment whose axis condition already holds, with a fully clamped tick of release lag` |
+
+## Stock and holders
+
+Story 6.2 (FR87): stock is held by a holder -- a (kind, id) pair -- never by
+a room or a brand.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| FR87: a holder is one of five kinds and no others, and neither a room nor a brand is one | covered | `server/sim/tests/codes.rs` -- `holder_kind_matches_golden_and_is_unique`, `neither_a_room_nor_a_brand_is_a_holder_kind` |
+| FR87: two instances of one brand are independent holders | covered | `server/sim/tests/stock.rs` -- `two_cafes_of_one_chain_hold_independent_stock`; `server/sim/tests/invariants.rs` -- `inv_stock_is_independent_per_holder` |
+| FR87: holder identity is the (kind, id) pair; stock is keyed by holder and item alone, one row per pair | covered | `server/sim/tests/stock.rs` -- `the_same_id_under_two_kinds_is_two_holders`, `one_holder_and_item_resolve_to_exactly_one_row_however_often_written`; `server/bounds/tests/stock_bounds.rs` -- `stock_is_keyed_by_holder_and_item_alone` |
+| FR87: the declared bound holds at launch scale and at the growth target | covered | `server/bounds/tests/stock_bounds.rs` -- `stock_across_the_settled_district_fits_its_declared_bound`, `stock_max_rows_is_the_line_ceiling_times_every_holder_table` |
+| FR87: every holder kind is accounted for in the bound | covered | `server/bounds/tests/stock_bounds.rs` -- `every_holder_kind_names_its_table_or_has_none_yet` |
+| A stock row survives backup and restore by value, holder pair intact | covered | `scripts/ci/check-backup-restore.sh` |
+| A stock row whose holder no longer exists (there are no foreign keys) | deferred | the first story that deletes a holder |

@@ -25,3 +25,8 @@ layer 7 ground_objects 5
 unit 0 piece
 unit 1 gram
 unit 2 millilitre
+holder_kind 0 business
+holder_kind 1 citizen
+holder_kind 2 vehicle
+holder_kind 3 building
+holder_kind 4 municipal_facility

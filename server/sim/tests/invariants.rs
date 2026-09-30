@@ -42,6 +42,7 @@ pub const INV_NO_MATTER_STARVES: &str = "no matter starves indefinitely";
 pub const INV_INVENTORY_SUPERSET_AFTER_ABSENCE: &str = "inventory is a superset after any absence";
 pub const INV_NO_OWNED_ITEM_DEGRADES_DURING_ABSENCE: &str = "no owned item degrades during absence";
 pub const INV_BUDGET_NEVER_NEGATIVE: &str = "budget never goes negative";
+pub const INV_STOCK_IS_INDEPENDENT_PER_HOLDER: &str = "stock is independent per holder: any interleaving of stock operations leaves each holder exactly as replaying its own operations alone";
 pub const INV_COLLIDER_WITHIN_FOOTPRINT: &str = "collider is contained within footprint";
 pub const INV_IDENTICAL_SEEDS_DERIVE_IDENTICALLY: &str =
     "two derivations from identical seeded inputs match";
@@ -5304,5 +5305,98 @@ proptest! {
         // And back again is continuous too.
         let back = sim::time::reanchor(reanchored, now, to, from);
         prop_assert_eq!(sim::time::city_time(back, now, from).total_minutes(), before.total_minutes());
+    }
+}
+
+/// Story 6.2 (FR87): holders across all five kinds, including two business
+/// instances (sharing one brand and one building, neither of which is part
+/// of a holder) and one numeric id under every kind.
+fn stock_holders() -> Vec<sim::stock::HolderRef> {
+    use sim::codes::holder_kind as k;
+    let pairs = [
+        (k::BUSINESS, 1),
+        (k::BUSINESS, 2),
+        (k::BUSINESS, 7),
+        (k::CITIZEN, 1),
+        (k::CITIZEN, 7),
+        (k::VEHICLE, 7),
+        (k::BUILDING, 7),
+        (k::MUNICIPAL_FACILITY, 7),
+    ];
+    pairs
+        .into_iter()
+        .map(|(kind, id)| sim::stock::HolderRef::new(kind, id).unwrap())
+        .collect()
+}
+
+proptest! {
+    /// `inv_stock_is_independent_per_holder`: the oracle is an independent
+    /// per-holder map replayed alone, never the ledger checked against
+    /// itself; the ledger keeps one row per (holder, item) and none at zero.
+    #[test]
+    fn inv_stock_is_independent_per_holder(
+        ops in proptest::collection::vec(
+            (
+                0usize..8,
+                0u32..5,
+                any::<bool>(),
+                prop_oneof![0u64..20, Just(u64::MAX), (u64::MAX - 10)..=u64::MAX],
+            ),
+            0..80,
+        )
+    ) {
+        use std::collections::BTreeMap;
+        use sim::stock::{Plan, StockLine, plan_deposit, plan_withdraw};
+
+        let holders = stock_holders();
+        let mut ledger: Vec<StockLine> = Vec::new();
+        let mut next_row = 0u64;
+        for &(h, item, deposit, amount) in &ops {
+            let holder = holders[h];
+            let plan = if deposit {
+                // An overflow is refused whole: nothing is written.
+                plan_deposit(&ledger, holder, item, amount).unwrap_or(Plan::Nothing)
+            } else {
+                plan_withdraw(&ledger, holder, item, amount).plan
+            };
+            match plan {
+                Plan::Insert { quantity } => {
+                    next_row += 1;
+                    ledger.push(StockLine { row_id: next_row, holder, item_id: item, quantity });
+                }
+                Plan::Update { row_id, quantity } => {
+                    ledger.iter_mut().find(|l| l.row_id == row_id).unwrap().quantity = quantity;
+                }
+                Plan::Delete { row_id } => ledger.retain(|l| l.row_id != row_id),
+                Plan::Nothing => {}
+            }
+        }
+
+        for (i, &holder) in holders.iter().enumerate() {
+            // Five items are ever used, well under the line ceiling.
+            let mut model: BTreeMap<u32, u64> = BTreeMap::new();
+            for &(_, item, deposit, amount) in ops.iter().filter(|o| o.0 == i) {
+                let held = model.get(&item).copied().unwrap_or(0);
+                let next = if deposit {
+                    held.checked_add(amount).unwrap_or(held)
+                } else {
+                    held.saturating_sub(amount)
+                };
+                if next == 0 {
+                    model.remove(&item);
+                } else {
+                    model.insert(item, next);
+                }
+            }
+            let mut actual: BTreeMap<u32, u64> = BTreeMap::new();
+            for line in ledger.iter().filter(|l| l.holder == holder) {
+                prop_assert!(line.quantity > 0, "a stored line is never zero");
+                prop_assert!(
+                    actual.insert(line.item_id, line.quantity).is_none(),
+                    "two rows for one (holder, item)"
+                );
+            }
+            prop_assert_eq!(actual, model);
+        }
     }
 }

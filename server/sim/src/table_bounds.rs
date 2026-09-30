@@ -152,6 +152,35 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 48,
         kind: BoundKind::Mechanical,
     },
+    // Story 6.2: holders and stock (FR87).
+    TableBound {
+        accessor: "holder_kind",
+        max_rows: 64,
+        expected_rows: 16,
+        alert_rows: 48,
+        kind: BoundKind::Mechanical,
+    },
+    // The Scale Baseline's ~344 workplaces at 512x512, times four for the
+    // 1024x1024 growth target. A closed business keeps its row.
+    TableBound {
+        accessor: "business",
+        max_rows: 10_000,
+        expected_rows: 1_400,
+        alert_rows: 7_500,
+        kind: BoundKind::Engineering,
+    },
+    // `sim::stock::MAX_LINES_PER_HOLDER` (64) x the ceilings of every
+    // holder table (`sim::stock::HOLDER_TABLES`): 64 x (business 10,000 +
+    // citizen 20,000 + building 50,000). `bounds/tests/stock_bounds.rs`
+    // recomputes it. Vehicles and municipal facilities have no table yet
+    // and count for nothing until they do.
+    TableBound {
+        accessor: "stock",
+        max_rows: 5_120_000,
+        expected_rows: 200_000,
+        alert_rows: 3_840_000,
+        kind: BoundKind::Engineering,
+    },
     // Story 1.5: world addressing (FR117-FR119). Cell facts are always
     // derived (never a dense per-cell table); these bound the placed
     // content a generator writes.
@@ -283,7 +312,7 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
     },
     // Story 4.12: the metrics sampler's own tables, bounded by retention
     // (`storage::METRICS_RETENTION_DAYS`): one row per table per fire.
-    // `bounds/tests/table_bounds_gate.rs` keeps the ceilings above
+    // `bounds/tests/storage_budget.rs` keeps the ceilings above
     // `TABLE_BOUNDS.len() * 24 * METRICS_RETENTION_DAYS`.
     TableBound {
         accessor: "table_sample",
