@@ -26,11 +26,11 @@ jobs:
         run: bash scripts/ci/report-scheduled-failure.sh "t" "b"
   explore-client:
     runs-on: ubuntu-latest
+    env:
+      FAST_CHECK_SEED: ${{ github.run_id }}
     steps:
-      - run: |
-          export FAST_CHECK_SEED=$(( ${{ github.run_id }} + 1 ))
-          echo "FAST_CHECK_SEED=$FAST_CHECK_SEED"
-          npm run test:unit
+      - run: echo "FAST_CHECK_SEED=$FAST_CHECK_SEED"
+      - run: npm run test:unit
       - if: failure() || cancelled()
         run: bash scripts/ci/report-scheduled-failure.sh "c" "d"
 YAML
@@ -55,8 +55,8 @@ check "no seed fails" 1 bash "$CHECK" "$(variant 's/PROPTEST_RNG_SEED: /OTHER: /
 check "a seed never echoed fails" 1 bash "$CHECK" "$(variant 's/echo "PROPTEST_RNG_SEED=.*/echo hi/')"
 check "no report call fails" 1 bash "$CHECK" "$(variant 's/report-scheduled-failure\.sh/other.sh/')"
 check "an environment fails" 1 bash "$CHECK" "$(variant 's/^    runs-on: ubuntu-latest/    environment: maincloud/')"
-check "a literal client seed fails" 1 bash "$CHECK" "$(variant 's/FAST_CHECK_SEED=\$\(\(.*/FAST_CHECK_SEED=20260929/')"
-check "no client seed fails" 1 bash "$CHECK" "$(variant 's/export FAST_CHECK_SEED=/export OTHER=/')"
+check "a literal client seed fails" 1 bash "$CHECK" "$(variant 's/^      FAST_CHECK_SEED: .*/      FAST_CHECK_SEED: 20260929/')"
+check "no client seed fails" 1 bash "$CHECK" "$(variant 's/^      FAST_CHECK_SEED: /      OTHER: /')"
 check "a client seed never echoed fails" 1 bash "$CHECK" "$(variant 's/echo "FAST_CHECK_SEED=.*/echo hi/')"
 check "no explore-client job fails" 1 bash "$CHECK" "$(variant 's/^  explore-client:/  other-job:/')"
 check "the client job not reporting fails" 1 bash "$CHECK" "$(variant 's/report-scheduled-failure\.sh "c" "d"/other.sh/')"

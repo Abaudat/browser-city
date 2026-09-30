@@ -35,7 +35,7 @@ describe("the setup file is wired", () => {
 });
 
 describe("the reporter", () => {
-  it("names the seed, the file and the test in a reproduce line", () => {
+  it("names the folded seed and the file in a reproduce line", () => {
     let message = "";
     try {
       fc.assert(
@@ -46,12 +46,11 @@ describe("the reporter", () => {
       message = (e as Error).message;
     }
     expect(message).toMatch(/Property failed after/);
-    const m = /reproduce: FAST_CHECK_SEED=(\d+) npx vitest run (\S+) -t "(.+)"/.exec(message);
+    const m = /reproduce: FAST_CHECK_SEED=(\d+) npx vitest run (\S+)$/m.exec(message);
     expect(m).not.toBeNull();
     const seed = process.env.FAST_CHECK_SEED;
-    if (seed !== undefined) expect(Number(m?.[1])).toBe(Number(seed));
+    if (seed !== undefined) expect(Number(m?.[1])).toBe(Number(seed) >>> 0);
     expect(m?.[2]).toBe("tests/unit/setup/property-seed.test.ts");
-    expect(m?.[3]).toContain("names the seed, the file and the test in a reproduce line");
   });
 
   it("goes through the same path for an async property", async () => {
@@ -68,8 +67,8 @@ describe("the reporter", () => {
   });
 
   it("formats an unsigned 32-bit seed, so a negative fresh seed still parses back", () => {
-    expect(reproduceLine(-5, "a.test.ts", "t")).toBe(
-      `reproduce: FAST_CHECK_SEED=4294967291 npx vitest run a.test.ts -t "t"`,
+    expect(reproduceLine(-5, "a.test.ts")).toBe(
+      "reproduce: FAST_CHECK_SEED=4294967291 npx vitest run a.test.ts",
     );
   });
 });

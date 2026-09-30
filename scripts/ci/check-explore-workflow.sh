@@ -10,7 +10,7 @@
 #   2. `PROPTEST_RNG_SEED` is set, and echoed to the log.
 #   3. A failure files its issue through `report-scheduled-failure.sh`
 #      (`if: failure() || cancelled()`), never inline `gh issue create`.
-#   4. The client job (story 6.17): `FAST_CHECK_SEED` is derived from
+#   4. The client job (story 6.17): `FAST_CHECK_SEED` is set at job level from
 #      `github.run_id`, never a literal, echoed, and reported through
 #      `report-scheduled-failure.sh` under `failure() || cancelled()` by a job
 #      of its own, so neither half hides the other.
@@ -35,7 +35,7 @@ has 'PROPTEST_RNG_SEED:' || fail "does not set PROPTEST_RNG_SEED"
 has 'echo .*PROPTEST_RNG_SEED' || fail "does not echo PROPTEST_RNG_SEED to the log"
 has 'report-scheduled-failure\.sh' || fail "never calls scripts/ci/report-scheduled-failure.sh"
 has 'failure\(\)' || fail "the report step is not gated on failure()"
-has 'FAST_CHECK_SEED=.*\$\{\{ github\.run_id \}\}' || fail "FAST_CHECK_SEED is not set from github.run_id (a literal would never explore)"
+has '^      FAST_CHECK_SEED: \$\{\{ github\.run_id \}\}' || fail "FAST_CHECK_SEED is not set from github.run_id (a literal would never explore)"
 has 'echo .*FAST_CHECK_SEED' || fail "does not echo FAST_CHECK_SEED to the log"
 has '^  explore-client:' || fail "no explore-client job of its own"
 CLIENT_JOB="$(printf '%s\n' "$CODE" | awk '/^  explore-client:/ { on = 1; print; next } on && /^  [A-Za-z0-9_-]+:/ { on = 0 } on { print }')"

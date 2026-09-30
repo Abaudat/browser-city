@@ -588,7 +588,7 @@ jobs:
       - name: property-test seed (reproduce a failure locally with this line)
         run: |
           echo "FAST_CHECK_SEED=$FAST_CHECK_SEED"
-          echo "reproduce: FAST_CHECK_SEED=$FAST_CHECK_SEED npx vitest run <test file> -t \"<test name>\"" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "reproduce: FAST_CHECK_SEED=$FAST_CHECK_SEED npx vitest run <test file>" | tee -a "$GITHUB_STEP_SUMMARY"
       - run: npm run test:unit:coverage
       - run: rustup toolchain install
       # $GITHUB_PATH only takes effect from the *next* step onward, never

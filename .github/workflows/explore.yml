@@ -57,6 +57,8 @@ jobs:
     name: explore (client properties)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      FAST_CHECK_SEED: ${{ github.run_id }}
     defaults:
       run:
         working-directory: client
@@ -70,26 +72,16 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
       - run: npm ci
-      # ci.yml fixes one seed, so it explores nothing new: this loops over 20
-      # seeds derived from the run id and stops at the first red one.
-      - name: property suite, 20 seeds
-        run: |
-          FILES="$(grep -rl --include='*.test.ts' 'fast-check' tests/unit | grep -v '^tests/unit/setup/' | sort)"
-          for i in $(seq 0 19); do
-            export FAST_CHECK_SEED=$(( ${{ github.run_id }} + i ))
-            echo "FAST_CHECK_SEED=$FAST_CHECK_SEED"
-            if ! npx vitest run $FILES; then
-              echo "$FAST_CHECK_SEED" > "$RUNNER_TEMP/failed-seed"
-              exit 1
-            fi
-          done
+      - name: seed
+        run: echo "FAST_CHECK_SEED=$FAST_CHECK_SEED"
+      - name: property suite
+        run: npm run test:unit
       - if: failure() || cancelled()
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          SEED="$(cat "$RUNNER_TEMP/failed-seed" 2>/dev/null || echo "$GITHUB_RUN_ID")"
-          bash scripts/ci/report-scheduled-failure.sh             "explore: client property failed"             "explore.yml failed with FAST_CHECK_SEED=$SEED: $RUN_URL
+          bash scripts/ci/report-scheduled-failure.sh             "explore: client property failed"             "explore.yml failed with FAST_CHECK_SEED=$FAST_CHECK_SEED: $RUN_URL
 
-          Reproduce: cd client && FAST_CHECK_SEED=$SEED npx vitest run <test file> (the log names the file and test). Pin the counterexample as a plain example test and fix the cause; never retry. A repeat run comments here."
+          Reproduce: cd client && FAST_CHECK_SEED=$FAST_CHECK_SEED npm run test:unit (the log names the failing file). Pin the counterexample as a plain example test and fix the cause; never retry. A repeat run comments here."

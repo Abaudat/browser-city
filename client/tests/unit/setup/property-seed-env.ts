@@ -15,14 +15,14 @@ export function parseFastCheckSeed(env: Record<string, string | undefined>): num
   return Number(raw);
 }
 
-export function reproduceLine(seed: number, file: string, name: string): string {
-  return `reproduce: FAST_CHECK_SEED=${seed >>> 0} npx vitest run ${file} -t "${name}"`;
+export function reproduceLine(seed: number, file: string): string {
+  return `reproduce: FAST_CHECK_SEED=${seed >>> 0} npx vitest run ${file}`;
 }
 
 /** Throws the default report plus the reproduce line; silent on a green run. */
 export function reportFailure(
   out: fc.RunDetails<unknown>,
-  state: { testPath?: string; currentTestName?: string },
+  state: { testPath?: string },
   cwd: string,
 ): void {
   if (!out.failed) return;
@@ -30,8 +30,7 @@ export function reportFailure(
   const prefix = `${norm(cwd)}/`;
   const path = norm(state.testPath ?? "<test file>");
   const file = path.startsWith(prefix) ? path.slice(prefix.length) : path;
-  const name = (state.currentTestName ?? "<test name>").replace(/"/g, '\\"');
-  throw new Error(`${fc.defaultReportMessage(out)}\n\n${reproduceLine(out.seed, file, name)}`, {
+  throw new Error(`${fc.defaultReportMessage(out)}\n\n${reproduceLine(out.seed, file)}`, {
     cause: out.errorInstance,
   });
 }

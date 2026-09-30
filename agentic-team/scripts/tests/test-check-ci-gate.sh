@@ -321,4 +321,23 @@ OUT="$(run_check "$ALL_SUCCESS" "$ALL_CHANGED" "$D6/ci.yml" 2>&1)"; CODE=$?
 check "exits non-zero" 1 bash -c "exit $CODE"
 check "names the job" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"job 'check' runs cargo test\"" _ "$OUT"
 
+echo
+echo "red: NFR50 -- the client property seed is a fixed literal, echoed by the job that runs the unit tests"
+for pair in "FAST_CHECK_SEED: 1|OTHER: 1|FAST_CHECK_SEED: <digits>" "FAST_CHECK_SEED: 1|FAST_CHECK_SEED: \${{ github.run_id }}|FAST_CHECK_SEED: <digits>" "FAST_CHECK_SEED: 1|FAST_CHECK_SEED: fixed|FAST_CHECK_SEED: <digits>"; do
+  FROM="${pair%%|*}"; REST="${pair#*|}"; TO="${REST%%|*}"; WANT="${REST#*|}"
+  D7="$(fake_dir)"; rm -rf "$D7"; mkdir -p "$D7"
+  write_good_workflow "$D7/ci.yml"
+  T="$(cat "$D7/ci.yml")"; printf '%s
+' "${T/"$FROM"/"$TO"}" > "$D7/ci.yml"
+  OUT="$(run_check "$ALL_SUCCESS" "$ALL_CHANGED" "$D7/ci.yml" 2>&1)"; CODE=$?
+  check "exits non-zero with '$TO'" 1 bash -c "exit $CODE"
+  check "names the missing piece" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"$WANT\"" _ "$OUT"
+done
+D8="$(fake_dir)"; rm -rf "$D8"; mkdir -p "$D8"
+write_good_workflow "$D8/ci.yml"
+sed -i '/^  client-check:/,/^  client-build:/ s/run: echo noop/run: npm run test:unit/' "$D8/ci.yml"
+OUT="$(run_check "$ALL_SUCCESS" "$ALL_CHANGED" "$D8/ci.yml" 2>&1)"; CODE=$?
+check "a unit-test job that never echoes the seed exits non-zero" 1 bash -c "exit $CODE"
+check "names the job" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"job 'client-check' runs the client unit tests\"" _ "$OUT"
+
 summary
