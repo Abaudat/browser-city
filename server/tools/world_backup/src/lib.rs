@@ -764,65 +764,112 @@ fn parse_cadence_liveness_line(line: &str) -> Result<CadenceLivenessRow> {
     })
 }
 
-/// The column position of `sampled_at` in `accessor`'s canonical rows,
-/// read from the snapshot, never assumed.
-pub fn sampled_at_column(snapshot: &ModuleSchema, accessor: &str) -> Result<usize> {
+/// The column position of `column` in `accessor`'s canonical rows, read
+/// from the snapshot, never assumed.
+fn column_position(snapshot: &ModuleSchema, accessor: &str, column: &str) -> Result<usize> {
     table_def(snapshot, accessor)?
         .columns
         .iter()
-        .position(|c| c.name == "sampled_at")
-        .ok_or_else(|| err(format!("table `{accessor}` has no `sampled_at` column")))
+        .position(|c| c.name == column)
+        .ok_or_else(|| err(format!("table `{accessor}` has no `{column}` column")))
+}
+
+/// Where a sampler table's `sampled_at` and primary key sit in its rows.
+#[derive(Debug, Clone, Copy)]
+pub struct SampleColumns {
+    pub sampled_at: usize,
+    pub primary_key: usize,
+}
+
+/// [`SampleColumns`] for `accessor`, from the snapshot.
+pub fn sample_columns(snapshot: &ModuleSchema, accessor: &str) -> Result<SampleColumns> {
+    let table = table_def(snapshot, accessor)?;
+    let pk = table
+        .columns
+        .iter()
+        .find(|c| c.primary_key)
+        .ok_or_else(|| err(format!("table `{accessor}` has no primary key")))?;
+    Ok(SampleColumns {
+        sampled_at: column_position(snapshot, accessor, "sampled_at")?,
+        primary_key: column_position(snapshot, accessor, &pk.name)?,
+    })
 }
 
 /// `a` is the earlier export, `b` the later one (of the same, restored
 /// database), of a table only the metrics sampler writes
 /// (`table_sample`, `storage_sample`, `reducer_class_sample`). A fire
-/// between the two exports appends rows and prunes the oldest first
-/// (retention, then the row bound), so:
-/// - if `b` holds no row `a` lacks, no fire happened and `b` must equal `a`;
-/// - otherwise a row of `a` may be missing from `b` only if its `sampled_at`
-///   is no newer than every row of `a` that survived.
+/// between the two exports inserts through `auto_inc` and a restore leaves
+/// the sequence past every restored id, so a row a fire wrote has a primary
+/// key greater than every key in `a`; it also prunes the oldest rows first
+/// (retention, then the row bound). So:
+/// - a row of `b` that `a` lacks is a legitimate gain only if its primary
+///   key is greater than every key in `a`; any other is a mismatch (a row
+///   changed in place keeps its id);
+/// - a fire happened only if there is at least one legitimate gain; only
+///   then may a row of `a` be missing from `b`, and only if its
+///   `sampled_at` is no newer than every row of `a` that survived (with no
+///   survivor, only if every row of `b` is a legitimate gain).
 ///
-/// Any other missing or changed row is a mismatch. `sampled_at_col` is the
-/// column's position ([`sampled_at_column`]). One description per mismatch.
+/// One description per mismatch, empty if none. O(n log n).
 pub fn sample_forward_diff(
-    sampled_at_col: usize,
+    cols: SampleColumns,
     a_lines: &[String],
     b_lines: &[String],
 ) -> Result<Vec<String>> {
-    fn sampled_at(line: &str, col: usize) -> Result<i64> {
+    fn cell(line: &str, col: usize) -> Result<Value> {
         let v: Value =
             serde_json::from_str(line).map_err(|e| err(format!("not valid JSON: {e}: {line}")))?;
-        let cell = v
-            .as_array()
+        v.as_array()
             .and_then(|r| r.get(col))
-            .ok_or_else(|| err(format!("row has no column {col}: {line}")))?;
+            .cloned()
+            .ok_or_else(|| err(format!("row has no column {col}: {line}")))
+    }
+    fn sampled_at(line: &str, col: usize) -> Result<i64> {
+        let cell = cell(line, col)?;
         // A Timestamp reads `[micros]`.
         cell.as_array()
             .and_then(|c| c.first())
-            .unwrap_or(cell)
+            .unwrap_or(&cell)
             .as_i64()
             .ok_or_else(|| err(format!("sampled_at is not an integer: {line}")))
     }
+    fn key(line: &str, col: usize) -> Result<u64> {
+        cell(line, col)?
+            .as_u64()
+            .ok_or_else(|| err(format!("primary key is not an unsigned integer: {line}")))
+    }
     let a_set: BTreeSet<&str> = a_lines.iter().map(String::as_str).collect();
     let b_set: BTreeSet<&str> = b_lines.iter().map(String::as_str).collect();
-    let gained = b_set.iter().any(|l| !a_set.contains(l));
-    let mut oldest_survivor: Option<i64> = None;
-    for line in a_lines.iter().filter(|l| b_set.contains(l.as_str())) {
-        let at = sampled_at(line, sampled_at_col)?;
-        oldest_survivor = Some(oldest_survivor.map_or(at, |o| o.min(at)));
+    let mut max_a_key: Option<u64> = None;
+    for line in a_lines {
+        let k = key(line, cols.primary_key)?;
+        max_a_key = Some(max_a_key.map_or(k, |m| m.max(k)));
     }
     let mut mismatches = Vec::new();
+    let mut legitimate_gain = false;
+    for line in b_lines.iter().filter(|l| !a_set.contains(l.as_str())) {
+        let k = key(line, cols.primary_key)?;
+        if max_a_key.is_none_or(|m| k > m) {
+            legitimate_gain = true;
+        } else {
+            mismatches.push(format!(
+                "row changed in place or fabricated (its key is not past every earlier key): {line}"
+            ));
+        }
+    }
+    let mut oldest_survivor: Option<i64> = None;
+    for line in a_lines.iter().filter(|l| b_set.contains(l.as_str())) {
+        let at = sampled_at(line, cols.sampled_at)?;
+        oldest_survivor = Some(oldest_survivor.map_or(at, |o| o.min(at)));
+    }
     for line in a_lines.iter().filter(|l| !b_set.contains(l.as_str())) {
-        let ok = gained
+        let ok = legitimate_gain
             && match oldest_survivor {
-                Some(oldest) => sampled_at(line, sampled_at_col)? <= oldest,
+                Some(oldest) => sampled_at(line, cols.sampled_at)? <= oldest,
                 None => true,
             };
         if !ok {
-            mismatches.push(format!(
-                "row lost or changed without a legitimate prune: {line}"
-            ));
+            mismatches.push(format!("row lost without a legitimate prune: {line}"));
         }
     }
     Ok(mismatches)
@@ -1533,7 +1580,11 @@ mod tests {
     }
 
     fn sfd(a: &[String], b: &[String]) -> Vec<String> {
-        sample_forward_diff(1, a, b).unwrap()
+        let cols = SampleColumns {
+            sampled_at: 1,
+            primary_key: 0,
+        };
+        sample_forward_diff(cols, a, b).unwrap()
     }
 
     #[test]
@@ -1576,9 +1627,59 @@ mod tests {
     fn sample_forward_diff_rejects_a_changed_row() {
         let a = vec![sample_line(1, 10), sample_line(2, 20)];
         let b = vec![sample_line(1, 10), sample_line(2, 25)];
-        assert_eq!(sfd(&a, &b).len(), 1);
+        assert!(!sfd(&a, &b).is_empty());
         let grown_and_changed = vec![sample_line(1, 10), sample_line(2, 25), sample_line(3, 30)];
-        assert_eq!(sfd(&a, &grown_and_changed).len(), 1);
+        assert!(!sfd(&a, &grown_and_changed).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_every_row_changed_in_place() {
+        let a = vec![
+            sample_line(1, 0),
+            sample_line(2, 1_700_000_000_123_456),
+            sample_line(3, i64::MAX),
+        ];
+        let b = vec![sample_line(1, 5), sample_line(2, 6), sample_line(3, 7)];
+        assert!(!sfd(&a, &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_the_table_replaced_by_one_old_id_row() {
+        let a = vec![
+            sample_line(1, 0),
+            sample_line(2, 1_700_000_000_123_456),
+            sample_line(3, i64::MAX),
+        ];
+        assert!(!sfd(&a, &[sample_line(2, 99)]).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_the_oldest_row_changed_with_nothing_appended() {
+        let a = vec![
+            sample_line(1, 0),
+            sample_line(2, 1_700_000_000_123_456),
+            sample_line(3, i64::MAX),
+        ];
+        let b = vec![sample_line(1, 1), a[1].clone(), a[2].clone()];
+        assert!(!sfd(&a, &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_rows_dropped_and_an_old_id_reused() {
+        let a = vec![
+            sample_line(1, 0),
+            sample_line(2, 1_700_000_000_123_456),
+            sample_line(3, i64::MAX),
+        ];
+        let b = vec![sample_line(3, i64::MAX), sample_line(1, 42)];
+        assert!(!sfd(&a, &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_accepts_every_row_pruned_when_b_holds_only_new_ids() {
+        let a = vec![sample_line(1, 0), sample_line(2, 10)];
+        let b = vec![sample_line(3, 100), sample_line(4, 110)];
+        assert!(sfd(&a, &b).is_empty());
     }
 
     fn rcc_line(class: &str, calls: u64, sampled: u64) -> String {

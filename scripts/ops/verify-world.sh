@@ -50,8 +50,10 @@ SHA_B="$(grep -oE '"schema_sha256": *"[0-9a-f]+"' "$B/manifest.json" | grep -oE 
 # The metrics sampler's own tables (`table_sample`, `storage_sample`,
 # `reducer_class_sample`) are written only by the sampler: a fire landing
 # between export A and export B appends rows and prunes the oldest first.
-# `world_backup sample-forward-diff`: B is A, or A plus a fire (a row of A
-# may be missing only if no newer than every surviving row of A).
+# `world_backup sample-forward-diff`: a row B gains is a fire's only if its
+# primary key is past every key in A (a row changed in place keeps its id);
+# only after such a gain may a row of A be missing, and only if it is no
+# newer than every surviving row of A.
 table_matches() { # <table> <file-a> <file-b>
   case "$1" in
     reducer_class_counter)
