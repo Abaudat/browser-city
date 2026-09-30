@@ -95,7 +95,7 @@ pub struct Withdrawal {
     pub plan: Plan,
 }
 
-fn line_of<'a>(existing: &'a [StockLine], holder: HolderRef, item: u32) -> Option<&'a StockLine> {
+fn line_of(existing: &[StockLine], holder: HolderRef, item: u32) -> Option<&StockLine> {
     existing
         .iter()
         .find(|l| l.holder == holder && l.item_id == item)
