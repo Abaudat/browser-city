@@ -6,7 +6,9 @@
 //! something else. `tests/goldens/codes_v1.golden` pins the whole mapping;
 //! a diff there is exactly the moment a human must look.
 
-use sim::codes::{Code, holder_kind, layer, matter_kind, node_kind, provision, reason_code, unit};
+use sim::codes::{
+    Code, container_kind, holder_kind, layer, matter_kind, node_kind, provision, reason_code, unit,
+};
 use std::collections::BTreeSet;
 
 const GOLDEN: &str = include_str!("goldens/codes_v1.golden");
@@ -271,6 +273,26 @@ fn neither_a_room_nor_a_brand_is_a_holder_kind() {
         assert!(
             c.name != "room" && c.name != "brand",
             "FR87: stock is held by neither a room nor a brand, so `{}` is not a holder kind",
+            c.name
+        );
+    }
+}
+
+/// Story 6.11 (FR95): a container is a thing with a grid -- a code set of
+/// its own, never the stock holders'.
+#[test]
+fn container_kind_matches_golden_and_is_unique() {
+    let golden = parse_golden(GOLDEN);
+    assert_matches_golden("container_kind", container_kind::CODES, &golden);
+    assert_unique("container_kind", container_kind::CODES);
+}
+
+#[test]
+fn a_container_kind_is_never_a_holder_kind() {
+    for c in container_kind::CODES {
+        assert!(
+            holder_kind::CODES.iter().all(|h| h.name != c.name),
+            "FR95: `{}` is a container kind, so it is not also a stock holder",
             c.name
         );
     }

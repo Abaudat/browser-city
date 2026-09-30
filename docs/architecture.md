@@ -309,6 +309,17 @@ and just-in-time. So:
 - At most one `stock` row per (holder, item); an absent row is zero and no row stores zero. `sim::stock::plan_deposit` and `plan_withdraw` decide the one row a write lands on; a holder holds at most `sim::stock::MAX_LINES_PER_HOLDER` items.
 - `stock`'s `max_rows` is `MAX_LINES_PER_HOLDER` times the sum of the holder tables' `max_rows`.
 
+## Item instances
+
+- An item instance is one row in `item_instance` (identity: `instance_id` auto_inc, `def_id`, `created_at`) and exactly one row in one of two form tables. A move never touches `item_instance`; anything keyed by `instance_id` travels with it.
+- `item_placed` is the world form: `instance_id` (primary key, not auto_inc), `x`, `y`, `floor`, `offset_x`, `offset_y`, `orientation`, `chunk_key` (btree index, as on `placed_object`). It references nothing.
+- `item_held` is the container form: `instance_id` (primary key, not auto_inc), `container_kind`, `container_id`, `slot_x`, `slot_y`, `orientation`; one index `by_container` on (`container_kind`, `container_id`).
+- A container is `(container_kind, container_id)`: a `sim::codes::container_kind` code (`object`, whose id is a `placed_object.object_id`) plus the id in that kind's own table. It is not `holder_kind`: a holder owns stock, a container has a grid. A further kind is a code append.
+- No foreign key and no cascade, and no `parent`/`supported_by` column on any item table: a `container_id` whose object is gone is a dangling reference.
+- Mutable per-instance state is its own table keyed by `instance_id`, never columns on a form.
+- `sim::item_instance` holds the types (`Placed`, `Held`, `Placement`, `ContainerRef`) and `plan_move`: across forms one delete and one insert, within a form an update. Out-of-range values are errors, never clamped. The sub-cell offset is `0..COLLIDER_SUBCELLS_PER_CELL`; a slot is `0..MAX_GRID_EXTENT`; `MAX_GRID_EXTENT` and `MAX_ITEMS_PER_CONTAINER` are declared only there.
+- `item_held`'s `max_rows` is `placed_object`'s times `MAX_ITEMS_PER_CONTAINER`; `item_placed`'s is `placed_object`'s; `item_instance`'s is their sum.
+
 ## World addressing
 
 A cell address is `(x: i32, y: i32, floor: i8, layer: u32)` (FR117). `x`/`y`
@@ -948,7 +959,8 @@ never spoils, capped at `MAX_SHELF_LIFE_MINUTES`. `bulk = { width, height
 }` is the item's world footprint in whole cells (FR94), 1 to
 `MAX_FOOTPRINT_CELLS` per axis. The item id's companion data is the
 generated `ITEMS` / `defs.json` pair; there is no item database table
-until a server reader needs one.
+until a server reader needs one. An item instance's storage is under
+"Item instances".
 
 ### The FR147 handshake
 

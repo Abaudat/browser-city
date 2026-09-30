@@ -17,6 +17,7 @@ pub mod generation;
 // --check`.
 #[rustfmt::skip]
 pub mod generated;
+pub mod item_instance;
 pub mod reducer_classes;
 pub mod rng;
 pub mod routing;

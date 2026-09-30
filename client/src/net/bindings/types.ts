@@ -85,6 +85,12 @@ export const CitizenTransitionSchedule = __t.object("CitizenTransitionSchedule",
 });
 export type CitizenTransitionSchedule = __Infer<typeof CitizenTransitionSchedule>;
 
+export const ContainerKind = __t.object("ContainerKind", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type ContainerKind = __Infer<typeof ContainerKind>;
+
 export const DemoPing = __t.object("DemoPing", {
   id: __t.u64(),
   message: __t.string(),
@@ -121,6 +127,35 @@ export const HolderKind = __t.object("HolderKind", {
   name: __t.string(),
 });
 export type HolderKind = __Infer<typeof HolderKind>;
+
+export const ItemHeld = __t.object("ItemHeld", {
+  instanceId: __t.u64(),
+  containerKind: __t.u32(),
+  containerId: __t.u64(),
+  slotX: __t.u8(),
+  slotY: __t.u8(),
+  orientation: __t.u8(),
+});
+export type ItemHeld = __Infer<typeof ItemHeld>;
+
+export const ItemInstance = __t.object("ItemInstance", {
+  instanceId: __t.u64(),
+  defId: __t.u32(),
+  createdAt: __t.timestamp(),
+});
+export type ItemInstance = __Infer<typeof ItemInstance>;
+
+export const ItemPlaced = __t.object("ItemPlaced", {
+  instanceId: __t.u64(),
+  x: __t.i32(),
+  y: __t.i32(),
+  floor: __t.i8(),
+  offsetX: __t.u8(),
+  offsetY: __t.u8(),
+  orientation: __t.u8(),
+  chunkKey: __t.u64(),
+});
+export type ItemPlaced = __Infer<typeof ItemPlaced>;
 
 export const LayerCode = __t.object("LayerCode", {
   code: __t.u32(),

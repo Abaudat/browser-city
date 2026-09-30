@@ -14,7 +14,7 @@ set -uo pipefail
 
 # Every table `seed_all_codes` seeds; scripts/ci/check-live-migration.sh
 # keeps this list honest against the source.
-CODE_TABLES="matter_kind provision reason_code node_kind unit layer_code holder_kind"
+CODE_TABLES="matter_kind provision reason_code node_kind unit layer_code holder_kind container_kind"
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SNAPSHOT="$REPO_ROOT/server/schema.snapshot.json"

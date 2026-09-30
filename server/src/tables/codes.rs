@@ -50,6 +50,13 @@ pub struct HolderKind {
     pub name: String,
 }
 
+#[spacetimedb::table(accessor = container_kind)]
+pub struct ContainerKind {
+    #[primary_key]
+    pub code: u32,
+    pub name: String,
+}
+
 /// Inserts every code in `sim::codes` not already present in its companion
 /// table, keyed by `code`. Idempotent, so it is safe to call from `init`
 /// and again from the `finish_publish` reducer (`../lib.rs`) any time after
@@ -101,6 +108,14 @@ pub fn seed_all_codes(ctx: &ReducerContext) {
     for c in sim::codes::holder_kind::CODES {
         if ctx.db.holder_kind().code().find(c.code).is_none() {
             ctx.db.holder_kind().insert(HolderKind {
+                code: c.code,
+                name: c.name.to_string(),
+            });
+        }
+    }
+    for c in sim::codes::container_kind::CODES {
+        if ctx.db.container_kind().code().find(c.code).is_none() {
+            ctx.db.container_kind().insert(ContainerKind {
                 code: c.code,
                 name: c.name.to_string(),
             });

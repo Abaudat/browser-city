@@ -310,3 +310,20 @@ pub mod holder_kind {
         },
     ];
 }
+
+/// What can hold an item in a grid (FR94, FR95): a thing with a grid, never
+/// a stock holder (`holder_kind`). A container is referenced by this code
+/// plus the id of the row in that kind's own table
+/// (`crate::item_instance::ContainerRef`). An item that is itself a
+/// container is a code appended by the story that needs it.
+pub mod container_kind {
+    use super::Code;
+
+    /// The id is a `placed_object.object_id`.
+    pub const OBJECT: u32 = 0;
+
+    pub const CODES: &[Code] = &[Code {
+        code: OBJECT,
+        name: "object",
+    }];
+}
