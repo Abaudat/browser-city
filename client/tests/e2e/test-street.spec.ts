@@ -95,6 +95,7 @@ import {
   type StreetWalkKey,
   type StreetWalkSegment,
   type StreetWalkUntil,
+  streetBollardRoute,
   streetWalkRoute,
   TRASH_BIN_DEF_ID,
   WINDOW_DEF_ID,
@@ -1175,17 +1176,10 @@ test("the bollard west of the shopfront stops the player where it is drawn, from
   };
   const sub = config.subcellsPerCell;
   const halfBodySub = config.bodyWidthSubcells / 2;
-  const colliderX0Cells = colliderSub.x0 / sub;
-  const colliderX1Cells = colliderSub.x1 / sub;
   // Every rest below is a collider rest, fixed by a face in exact
   // sub-cells (`resolveAxis` returns `faceMin - extentAfter` or
   // `faceMax + extentBefore`): south face + body height, west face - half
   // the body width, east face + half the body width.
-  const restYCells = (colliderSub.y1 + config.bodyHeightSubcells) / sub;
-  const restWestXCells = (colliderSub.x0 - halfBodySub) / sub;
-  const restEastXCells = (colliderSub.x1 + halfBodySub) / sub;
-  // A row inside the post's own y range, for the two side rests.
-  const midRowCells = bollard.y + 0.5;
   // The collider's own drawn rect, in world pixels (pre-zoom) -- the same
   // `subcellRectPx` the FR165 overlay draws it with.
   const drawnCollider = subcellRectPx(colliderSub, bollard.floor, sub, tileSizePx, storeyHeightPx);
@@ -1267,47 +1261,21 @@ test("the bollard west of the shopfront stops the player where it is drawn, from
 
   await page.goto("/");
   await waitForSceneReady(page);
-  const inputs = streetWalkInputs();
-  const walk = (label: string, key: StreetWalkKey, until: StreetWalkUntil) =>
-    walkSegment(page, { label, key, until });
-
-  // Out of the shop, onto the pavement, west to the bollard's east side,
-  // then south onto open pavement below the post's own row.
-  await walk("outside-the-shopfront", "ArrowDown", {
-    kind: "y-at-least",
-    value: inputs.shopfrontExitRestY,
-  });
-  await walk("west-of-the-bin", "ArrowLeft", { kind: "x-at-most", value: bollard.x + 1 });
-  await walk("south-of-the-bollard", "ArrowDown", { kind: "y-at-least", value: bollard.y + 1.7 });
-
-  // South face: under the post's own middle, north into it.
-  await walk("under-the-post", "ArrowLeft", { kind: "x-at-most", value: bollard.x + 0.5 });
-  await walk("into-the-south-face", "ArrowUp", { kind: "y-at-most", value: restYCells });
-  await holdAgainstThePost("ArrowUp");
-  await assertRestsOnTheDrawnBollard("south");
-
-  // West face: clear of the post to its west, up to the post's own row,
-  // east into it.
-  await walk("west-of-the-post", "ArrowLeft", { kind: "x-at-most", value: colliderX0Cells - 0.5 });
-  await walk("beside-the-post-west", "ArrowUp", { kind: "y-at-most", value: midRowCells });
-  await walk("into-the-west-face", "ArrowRight", { kind: "x-at-least", value: restWestXCells });
-  await holdAgainstThePost("ArrowRight");
-  await assertRestsOnTheDrawnBollard("west");
-
-  // East face: back south of the post, clear of it to its east, up to the
-  // post's own row, west into it.
-  await walk("south-of-the-post-again", "ArrowDown", {
-    kind: "y-at-least",
-    value: bollard.y + 1.7,
-  });
-  await walk("east-of-the-post", "ArrowRight", {
-    kind: "x-at-least",
-    value: colliderX1Cells + 0.5,
-  });
-  await walk("beside-the-post-east", "ArrowUp", { kind: "y-at-most", value: midRowCells });
-  await walk("into-the-east-face", "ArrowLeft", { kind: "x-at-most", value: restEastXCells });
-  await holdAgainstThePost("ArrowLeft");
-  await assertRestsOnTheDrawnBollard("east");
+  // The route lives in the street module, where `street-conformance.test.ts`
+  // proves it under release lag; each `into-the-*` segment is a rest.
+  const pushes: Record<string, { face: Face; key: StreetWalkKey }> = {
+    "into-the-south-face": { face: "south", key: "ArrowUp" },
+    "into-the-west-face": { face: "west", key: "ArrowRight" },
+    "into-the-east-face": { face: "east", key: "ArrowLeft" },
+  };
+  for (const segment of streetBollardRoute(streetWalkInputs(), config)) {
+    await walkSegment(page, segment);
+    const push = pushes[segment.label];
+    if (push) {
+      await holdAgainstThePost(push.key);
+      await assertRestsOnTheDrawnBollard(push.face);
+    }
+  }
 });
 
 test("FR173's affordance mark is a real pixel change, confined to the hovered object's own drawn rect (Quentin's direction)", async ({

@@ -50,12 +50,14 @@ import {
   STREET_TRANSITIONS,
   SUBWAY_ENTRANCE_X0,
   SUBWAY_FLOOR,
+  streetBollardRoute,
   streetBridgeLapRoute,
   streetColliderOwnerId,
   streetDefId,
   streetPlacedRows,
   streetSubwayApproachRoute,
   streetWalkRoute,
+  streetWalkUntilMet,
   TRASH_BIN_DEF_ID,
   WINDOW_DEF_ID,
 } from "../../../src/test-street/fixture";
@@ -1299,5 +1301,65 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
     expect(sign?.layer).toBe("wall_decals");
     expect(sign?.x).toBe(PLATFORM_UP_ANCHOR_X);
     expect(sign?.y).toBeLessThan(PLATFORM_UP_ANCHOR_Y);
+  });
+});
+
+describe("the bollard approach route (NFR50)", () => {
+  const config = streetMovementConfig();
+  const sub = config.subcellsPerCell;
+  const inputs = streetWalkInputs();
+  const route = streetBollardRoute(inputs, config);
+  const bollard = STREET_PROPS.find((p) => p.id === 121n);
+  if (!bollard) throw new Error("fixture no longer places the west-of-shopfront bollard (id 121)");
+  const face = {
+    x0: bollard.x * sub + BOLLARD_COLLIDER.x0,
+    y1: bollard.y * sub + BOLLARD_COLLIDER.y1,
+    x1: bollard.x * sub + BOLLARD_COLLIDER.x1,
+  };
+
+  for (const lag of [0, 1] as const) {
+    it(`rests the bollard route on the exact south, west and east faces, with release lag ${lag}`, () => {
+      const out = simulateStreetWalk(route, { ...RELEASE_LAG, releaseLagSteps: lag });
+      const at = (label: string) => {
+        const found = out.find((c) => c.label === label);
+        if (!found) throw new Error(`no checkpoint '${label}'`);
+        return found.state;
+      };
+      expect(at("into-the-south-face").y * sub).toBe(face.y1 + config.bodyHeightSubcells);
+      expect(at("into-the-west-face").x * sub).toBe(face.x0 - config.bodyWidthSubcells / 2);
+      expect(at("into-the-east-face").x * sub).toBe(face.x1 + config.bodyWidthSubcells / 2);
+    });
+
+    it(`keeps the body over the post's own columns and rows before each push, with release lag ${lag}`, () => {
+      const out = simulateStreetWalk(route, { ...RELEASE_LAG, releaseLagSteps: lag });
+      const overlapsColumns = (x: number) =>
+        x * sub + config.bodyWidthSubcells / 2 > face.x0 &&
+        x * sub - config.bodyWidthSubcells / 2 < face.x1;
+      const inRows = (y: number) =>
+        y * sub > bollard.y * sub + BOLLARD_COLLIDER.y0 &&
+        y * sub - config.bodyHeightSubcells < face.y1;
+      const restBefore = (label: string) => {
+        const i = out.findIndex((c) => c.label === label);
+        return out[i - 1]?.state;
+      };
+      const south = restBefore("into-the-south-face");
+      const west = restBefore("into-the-west-face");
+      const east = restBefore("into-the-east-face");
+      if (!south || !west || !east) throw new Error("missing checkpoint before a push");
+      expect(overlapsColumns(south.x)).toBe(true);
+      expect(inRows(west.y)).toBe(true);
+      expect(inRows(east.y)).toBe(true);
+    });
+  }
+
+  it("never starts a segment whose axis condition already holds, with a fully clamped tick of release lag", () => {
+    const out = simulateStreetWalk(route, RELEASE_LAG);
+    route.forEach((segment, i) => {
+      const from = out[i - 1]?.state ?? PLAYER_START;
+      expect(
+        streetWalkUntilMet(segment.until, from.x, from.y, from.floor),
+        `'${segment.label}' already holds at the previous lagged rest`,
+      ).toBe(false);
+    });
   });
 });
