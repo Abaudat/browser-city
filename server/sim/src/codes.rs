@@ -272,3 +272,41 @@ pub mod node_kind {
         },
     ];
 }
+
+/// What can hold stock (FR87): a business instance, a citizen, a vehicle,
+/// a building or a municipal facility -- never a room and never a brand.
+/// A holder is referenced by this code plus the id of the row in that
+/// kind's own table (`crate::stock::HolderRef`), so a reducer names a kind
+/// by these constants, never by a literal.
+pub mod holder_kind {
+    use super::Code;
+
+    pub const BUSINESS: u32 = 0;
+    pub const CITIZEN: u32 = 1;
+    pub const VEHICLE: u32 = 2;
+    pub const BUILDING: u32 = 3;
+    pub const MUNICIPAL_FACILITY: u32 = 4;
+
+    pub const CODES: &[Code] = &[
+        Code {
+            code: BUSINESS,
+            name: "business",
+        },
+        Code {
+            code: CITIZEN,
+            name: "citizen",
+        },
+        Code {
+            code: VEHICLE,
+            name: "vehicle",
+        },
+        Code {
+            code: BUILDING,
+            name: "building",
+        },
+        Code {
+            code: MUNICIPAL_FACILITY,
+            name: "municipal_facility",
+        },
+    ];
+}

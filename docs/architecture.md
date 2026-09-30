@@ -301,6 +301,14 @@ and just-in-time. So:
   never the checkout's own working-tree snapshot outright, recorded as
   `schema_commit` in the export's manifest (story 4.18).
 
+## Stock
+
+- A holder is `(holder_kind: u32, holder_id: u64)`: a `sim::codes::holder_kind` code plus the id in that kind's own table. Five codes: `business`, `citizen`, `vehicle`, `building`, `municipal_facility`. There is no holder table, and neither a room nor a brand is a holder. `sim::stock::HolderRef` is the one definition; `sim::stock::HOLDER_TABLES` names each kind's table, or none yet (vehicle, municipal facility).
+- `business` is the business instance: one row per shop.
+- `stock` has a surrogate `stock_id`, `holder_kind`, `holder_id`, `item_id` and `quantity` (`u64`, in the item's own unit). It is never addressed by room, brand or position. One index, `by_holder_item` on (`holder_kind`, `holder_id`, `item_id`).
+- At most one `stock` row per (holder, item); an absent row is zero and no row stores zero. `sim::stock::plan_deposit` and `plan_withdraw` decide the one row a write lands on; a holder holds at most `sim::stock::MAX_LINES_PER_HOLDER` items.
+- `stock`'s `max_rows` is `MAX_LINES_PER_HOLDER` times the sum of the holder tables' `max_rows`.
+
 ## World addressing
 
 A cell address is `(x: i32, y: i32, floor: i8, layer: u32)` (FR117). `x`/`y`

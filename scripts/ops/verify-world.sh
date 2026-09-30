@@ -47,12 +47,24 @@ SHA_B="$(grep -oE '"schema_sha256": *"[0-9a-f]+"' "$B/manifest.json" | grep -oE 
 # restore call after `restore_reducer_class_counter` (`finish_restore`,
 # at least) counts, so export B's totals are legitimately larger.
 # `world_backup counter-forward-diff`: no class lost, no figure smaller.
+# The metrics sampler's own tables (`table_sample`, `storage_sample`,
+# `reducer_class_sample`) are written only by the sampler: a fire landing
+# between export A and export B appends rows and prunes the oldest first.
+# `world_backup sample-forward-diff`: a row B gains is a fire's only if its
+# primary key is past every key in A (a row changed in place keeps its id);
+# only after such a gain may a row of A be missing, and only if it is no
+# newer than every surviving row of A.
 table_matches() { # <table> <file-a> <file-b>
   case "$1" in
     reducer_class_counter)
       local counter_mismatches
       counter_mismatches="$(bc_wb counter-forward-diff "$2" "$3")" || return 1
       [ -z "$counter_mismatches" ]
+      ;;
+    table_sample | storage_sample | reducer_class_sample)
+      local lost
+      lost="$(bc_wb sample-forward-diff "$BC_SNAPSHOT" "$1" "$2" "$3")" || return 1
+      [ -z "$lost" ]
       ;;
     cadence_liveness)
       local mismatches
@@ -79,6 +91,8 @@ while IFS= read -r table; do
       bc_wb cadence-liveness-forward-diff "$FA" "$FB" >&2 || true
     elif [ "$table" = "reducer_class_counter" ]; then
       bc_wb counter-forward-diff "$FA" "$FB" >&2 || true
+    elif [ "$table" = table_sample ] || [ "$table" = storage_sample ] || [ "$table" = reducer_class_sample ]; then
+      bc_wb sample-forward-diff "$BC_SNAPSHOT" "$table" "$FA" "$FB" >&2 || true
     else
       diff -u "$FA" "$FB" >&2 || true
     fi

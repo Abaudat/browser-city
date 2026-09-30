@@ -68,7 +68,7 @@
 //! own target ids, which the gap-fill loop above would then read as an
 //! overshoot and abort on.
 //!
-//! `restore_module_owner` and the six code-table restore reducers
+//! `restore_module_owner` and the seven code-table restore reducers
 //! delete their existing (`init`-seeded) rows first, then insert the
 //! exported ones -- restore *replaces* what `init` seeded, the same rule
 //! `scripts/ops/restore-world.sh` documented before this story moved the
@@ -92,8 +92,8 @@ use crate::{DemoPing, demo_ping};
 use super::citizen::{Citizen, CitizenState, citizen, citizen_state};
 use super::clock::{WorldClock, world_clock};
 use super::codes::{
-    MatterKind, NodeKind, Provision, ReasonCode, Unit, matter_kind, node_kind, provision,
-    reason_code, unit,
+    HolderKind, MatterKind, NodeKind, Provision, ReasonCode, Unit, holder_kind, matter_kind,
+    node_kind, provision, reason_code, unit,
 };
 use super::identity::{Character, CharacterIdentity, character, character_identity};
 use super::metrics::{
@@ -102,6 +102,7 @@ use super::metrics::{
 };
 use super::ops::{ModuleOwner, module_owner, require_owner};
 use super::schedules::{CadenceLiveness, cadence_liveness};
+use super::stock::{Business, Stock, business, stock};
 use super::world::{
     Building, BuildingArea, FloorTransition, LayerCode, PlacedObject, Room, RoomArea, building,
     building_area, floor_transition, layer_code, placed_object, room, room_area,
@@ -145,6 +146,7 @@ const INIT_SEEDED_TABLES: &[&str] = &[
     "reason_code",
     "node_kind",
     "unit",
+    "holder_kind",
     "layer_code",
     "cadence_liveness",
     "storage_sample",
@@ -165,6 +167,8 @@ const INIT_SEEDED_TABLES: &[&str] = &[
 /// "never restore over a live world".
 #[allow(dead_code)] // read by `restore_coverage.rs` as source text, not Rust code
 const NON_INIT_SEEDED_TABLES: &[&str] = &[
+    "business",
+    "stock",
     "demo_ping",
     "building",
     "building_area",
@@ -235,6 +239,12 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     let mut nonempty: Vec<&str> = Vec::new();
     if ctx.db.demo_ping().iter().next().is_some() {
         nonempty.push("demo_ping");
+    }
+    if ctx.db.business().iter().next().is_some() {
+        nonempty.push("business");
+    }
+    if ctx.db.stock().iter().next().is_some() {
+        nonempty.push("stock");
     }
     if ctx.db.building().iter().next().is_some() {
         nonempty.push("building");
@@ -498,6 +508,25 @@ impl_autoinc_row!(
     }
 );
 impl_autoinc_row!(
+    Business,
+    business_id,
+    Business {
+        business_id: 0,
+        created_at: Timestamp::UNIX_EPOCH,
+    }
+);
+impl_autoinc_row!(
+    Stock,
+    stock_id,
+    Stock {
+        stock_id: 0,
+        holder_kind: 0,
+        holder_id: 0,
+        item_id: 0,
+        quantity: 0,
+    }
+);
+impl_autoinc_row!(
     TableSample,
     sample_id,
     TableSample {
@@ -703,6 +732,46 @@ pub fn restore_citizen(
             ctx.db.citizen().citizen_id().delete(id);
         },
         "citizen",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_business(
+    ctx: &ReducerContext,
+    rows: Vec<Business>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.business().insert(r),
+        |id| {
+            ctx.db.business().business_id().delete(id);
+        },
+        "business",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_stock(
+    ctx: &ReducerContext,
+    rows: Vec<Stock>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.stock().insert(r),
+        |id| {
+            ctx.db.stock().stock_id().delete(id);
+        },
+        "stock",
         sequence_floor,
     )
 }
@@ -1021,6 +1090,21 @@ pub fn restore_unit(ctx: &ReducerContext, rows: Vec<Unit>) -> Result<(), String>
     }
     for row in rows {
         ctx.db.unit().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_holder_kind(ctx: &ReducerContext, rows: Vec<HolderKind>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    let existing: Vec<u32> = ctx.db.holder_kind().iter().map(|r| r.code).collect();
+    for code in existing {
+        ctx.db.holder_kind().code().delete(code);
+    }
+    for row in rows {
+        ctx.db.holder_kind().insert(row);
     }
     Ok(())
 }

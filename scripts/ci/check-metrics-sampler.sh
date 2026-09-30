@@ -38,7 +38,7 @@ MAX_SPEED=100             # sim::time::MAX_CLOCK_SPEED
 SNAPSHOT="$REPO_ROOT/server/schema.snapshot.json"
 # Tables whose row count is fixed for the whole run: the one-row config
 # tables and the code tables (each seeded by `init`, never written again).
-STATIC_TABLES="module_owner world_clock matter_kind provision reason_code node_kind unit layer_code"
+STATIC_TABLES="module_owner world_clock matter_kind provision reason_code node_kind unit layer_code holder_kind"
 
 START_PID=""
 cleanup() {
@@ -70,7 +70,7 @@ rows_of() { # <table> -- row count of the whole table
 }
 clock() { bash "$REPO_ROOT/scripts/dev/clock.sh" "$DB_NAME" "$@" "${SERVER_ARGS[@]}" --no-config -y; }
 
-TABLES="$(grep -oE '"accessor": "[a-z_]+"' "$SNAPSHOT" | sed -E 's/.*: "([a-z_]+)"/\1/' | sort -u)"
+TABLES="$(jq -r '.tables[].accessor' "$SNAPSHOT" | tr -d '\r' | sort -u)"
 TABLE_COUNT="$(printf '%s\n' "$TABLES" | grep -c .)"
 [ "$TABLE_COUNT" -gt 0 ] || fail "no table found in $SNAPSHOT"
 

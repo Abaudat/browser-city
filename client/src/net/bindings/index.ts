@@ -39,6 +39,7 @@ import FinishPublishReducer from "./finish_publish_reducer";
 import FinishRestoreReducer from "./finish_restore_reducer";
 import RestoreBuildingReducer from "./restore_building_reducer";
 import RestoreBuildingAreaReducer from "./restore_building_area_reducer";
+import RestoreBusinessReducer from "./restore_business_reducer";
 import RestoreCadenceLivenessReducer from "./restore_cadence_liveness_reducer";
 import RestoreCharacterReducer from "./restore_character_reducer";
 import RestoreCharacterIdentityReducer from "./restore_character_identity_reducer";
@@ -46,6 +47,7 @@ import RestoreCitizenReducer from "./restore_citizen_reducer";
 import RestoreCitizenStateReducer from "./restore_citizen_state_reducer";
 import RestoreDemoPingReducer from "./restore_demo_ping_reducer";
 import RestoreFloorTransitionReducer from "./restore_floor_transition_reducer";
+import RestoreHolderKindReducer from "./restore_holder_kind_reducer";
 import RestoreLayerCodeReducer from "./restore_layer_code_reducer";
 import RestoreMatterKindReducer from "./restore_matter_kind_reducer";
 import RestoreModuleOwnerReducer from "./restore_module_owner_reducer";
@@ -57,6 +59,7 @@ import RestoreReducerClassCounterReducer from "./restore_reducer_class_counter_r
 import RestoreReducerClassSampleReducer from "./restore_reducer_class_sample_reducer";
 import RestoreRoomReducer from "./restore_room_reducer";
 import RestoreRoomAreaReducer from "./restore_room_area_reducer";
+import RestoreStockReducer from "./restore_stock_reducer";
 import RestoreStorageSampleReducer from "./restore_storage_sample_reducer";
 import RestoreTableSampleReducer from "./restore_table_sample_reducer";
 import RestoreUnitReducer from "./restore_unit_reducer";
@@ -125,6 +128,7 @@ const reducersSchema = __reducers(
   __reducerSchema("finish_restore", FinishRestoreReducer),
   __reducerSchema("restore_building", RestoreBuildingReducer),
   __reducerSchema("restore_building_area", RestoreBuildingAreaReducer),
+  __reducerSchema("restore_business", RestoreBusinessReducer),
   __reducerSchema("restore_cadence_liveness", RestoreCadenceLivenessReducer),
   __reducerSchema("restore_character", RestoreCharacterReducer),
   __reducerSchema("restore_character_identity", RestoreCharacterIdentityReducer),
@@ -132,6 +136,7 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_citizen_state", RestoreCitizenStateReducer),
   __reducerSchema("restore_demo_ping", RestoreDemoPingReducer),
   __reducerSchema("restore_floor_transition", RestoreFloorTransitionReducer),
+  __reducerSchema("restore_holder_kind", RestoreHolderKindReducer),
   __reducerSchema("restore_layer_code", RestoreLayerCodeReducer),
   __reducerSchema("restore_matter_kind", RestoreMatterKindReducer),
   __reducerSchema("restore_module_owner", RestoreModuleOwnerReducer),
@@ -143,6 +148,7 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_reducer_class_sample", RestoreReducerClassSampleReducer),
   __reducerSchema("restore_room", RestoreRoomReducer),
   __reducerSchema("restore_room_area", RestoreRoomAreaReducer),
+  __reducerSchema("restore_stock", RestoreStockReducer),
   __reducerSchema("restore_storage_sample", RestoreStorageSampleReducer),
   __reducerSchema("restore_table_sample", RestoreTableSampleReducer),
   __reducerSchema("restore_unit", RestoreUnitReducer),

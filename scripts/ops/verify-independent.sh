@@ -110,7 +110,12 @@ max_expected_id() {
 # reducer call on either database counts, and `count_call` creates a
 # missing class row -- so its COUNT(*) drifts between two live databases
 # too; verify-world.sh proves it forward-only (`counter-forward-diff`).
-LIVE_TABLES="cadence_liveness reducer_class_counter"
+# The metrics sampler's own tables (`table_sample`, `storage_sample`,
+# `reducer_class_sample`) are live too: a sampler fire, on the cadence grid
+# from `world_clock.epoch_at`, landing on either database after the export
+# appends rows to it alone and prunes its oldest. verify-world.sh proves them
+# forward-only (`sample-forward-diff`).
+LIVE_TABLES="cadence_liveness reducer_class_counter table_sample storage_sample reducer_class_sample"
 is_live_table() { # <table>
   local t
   for t in $LIVE_TABLES; do

@@ -491,6 +491,37 @@ ROOM_AREA_NEW_ID="$(max_id_live "$TAIL_DST" room_area)"
 [ "$ROOM_AREA_NEW_ID" -gt "$ROOM_AREA_FLOOR" ] || fail "expected the post-restore probe on '$TAIL_DST.room_area' (restored via the None/placeholder branch -- every row was deleted before export) to land past the manifest's own sequence floor ($ROOM_AREA_FLOOR); got $ROOM_AREA_NEW_ID" "$DATA_DIR/tail-room-area-probe.log"
 ok "tail-deletion (all rows gone): 'room_area' restores to exactly 0 rows and its sequence still advances past the manifest's own recorded floor ($ROOM_AREA_FLOOR), via restore_autoinc_rows's None/placeholder() branch (probe landed on $ROOM_AREA_NEW_ID)"
 
+# --- stock: every row survives with its id and holder pair intact --------
+# Before verify-independent.sh, whose probe inserts a row into the restored
+# database. Two oracles: the restored table's whole rows, primary-key sorted
+# (`rows-canonical`, never the scan order), equal the source's; and the three
+# real-shaped rows `seed-edge-rows.sh` wrote are asserted as literals on the
+# restored database, each selected by its own stock_id, so neither the export
+# nor the source is the oracle for them.
+stock_rows_live() { # <db> [where-clause]
+  local where="${2:-}" resp
+  resp="$WORK/stockrows-$1-${where//[^a-z0-9]/_}.json"
+  bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM stock $where" >"$resp"
+  bc_wb rows-canonical "$BC_SNAPSHOT" stock "$resp"
+}
+SRC_STOCK="$(stock_rows_live "$SRC")"
+DST_STOCK="$(stock_rows_live "$DST")"
+[ -n "$SRC_STOCK" ] || fail "'$SRC.stock' has no rows -- nothing to compare"
+[ "$SRC_STOCK" = "$DST_STOCK" ] || fail "restored 'stock' rows differ from '$SRC's own -- expected:
+$SRC_STOCK
+got:
+$DST_STOCK"
+# [stock_id, holder_kind, holder_id, item_id, quantity]: business 1 holds 500
+# of item 1, business 2 holds 20 of item 1, citizen 1 holds 3 of item 2.
+for expected in '[4,0,1,1,500]' '[5,0,2,1,20]' '[6,1,1,2,3]'; do
+  id="${expected#[}"; id="${id%%,*}"
+  got="$(stock_rows_live "$DST" "WHERE stock_id = $id")"
+  [ "$got" = "$expected" ] || fail "restored 'stock' row $id is '$got', expected the seeded '$expected' (holder kind, holder id, item, quantity intact)"
+done
+[ "$(row_count_live "$SRC" business)" = "$(row_count_live "$DST" business)" ] \
+  || fail "restored 'business' has a different row count from '$SRC'"
+ok "every stock row reads back identically from the restored database, and the three seeded business/citizen rows hold their exact holder pair, item and quantity"
+
 # --- 5/7: COUNT(*) on both live databases and the auto_inc sequence
 # strictly advancing -- scripts/ops/verify-independent.sh, shared with
 # .github/workflows/backup.yml's rehearsal job (Tim's direction: the

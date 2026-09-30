@@ -6,7 +6,7 @@
 //! something else. `tests/goldens/codes_v1.golden` pins the whole mapping;
 //! a diff there is exactly the moment a human must look.
 
-use sim::codes::{Code, layer, matter_kind, node_kind, provision, reason_code, unit};
+use sim::codes::{Code, holder_kind, layer, matter_kind, node_kind, provision, reason_code, unit};
 use std::collections::BTreeSet;
 
 const GOLDEN: &str = include_str!("goldens/codes_v1.golden");
@@ -242,4 +242,36 @@ fn deprecated_layer_codes_stay_seeded_but_refuse_live_rank() {
         Ok(10),
         "live_rank must return the real rank for a live, known code"
     );
+}
+
+/// Story 6.2 (FR87): a holder is one of exactly five kinds -- an
+/// extensible set, so a sixth is a row insert.
+#[test]
+fn holder_kind_matches_golden_and_is_unique() {
+    let golden = parse_golden(GOLDEN);
+    assert_matches_golden("holder_kind", holder_kind::CODES, &golden);
+    assert_unique("holder_kind", holder_kind::CODES);
+    let names: BTreeSet<&str> = holder_kind::CODES.iter().map(|c| c.name).collect();
+    let expected: BTreeSet<&str> = [
+        "business",
+        "citizen",
+        "vehicle",
+        "building",
+        "municipal_facility",
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(names, expected, "FR87 names exactly these five holders");
+}
+
+/// FR87's second half: stock is not the room's and not the brand's.
+#[test]
+fn neither_a_room_nor_a_brand_is_a_holder_kind() {
+    for c in holder_kind::CODES {
+        assert!(
+            c.name != "room" && c.name != "brand",
+            "FR87: stock is held by neither a room nor a brand, so `{}` is not a holder kind",
+            c.name
+        );
+    }
 }

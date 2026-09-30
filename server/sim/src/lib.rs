@@ -21,6 +21,7 @@ pub mod reducer_classes;
 pub mod rng;
 pub mod routing;
 pub mod rules;
+pub mod stock;
 pub mod storage;
 pub mod table_bounds;
 pub mod time;

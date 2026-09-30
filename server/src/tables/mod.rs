@@ -14,6 +14,7 @@ pub mod ops;
 pub mod publish;
 pub mod restore;
 pub mod schedules;
+pub mod stock;
 #[cfg(feature = "time-control")]
 pub mod time_control;
 pub mod world;
