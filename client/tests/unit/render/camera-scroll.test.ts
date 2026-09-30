@@ -104,6 +104,11 @@ const constantDeltasArb = fc
   .double({ min: 8, max: 34, noNaN: true })
   .map((d) => Array.from({ length: FRAMES }, () => d));
 
+// Two 200-case properties with thousands of expects each: about 1s on a
+// laptop, but a coverage-instrumented CI runner has taken over 5s, vitest's
+// default. The case count is the test's budget, so the timeout gives way.
+const PROPERTY_TIMEOUT_MS = 60_000;
+
 describe("camera scroll during a continuous walk", () => {
   it("inv_camera_scroll_tracks_continuous_walk", () => {
     // The player's screen point is constant, the scroll monotone and near
@@ -176,7 +181,7 @@ describe("camera scroll during a continuous walk", () => {
       ),
       { numRuns: 200 },
     );
-  });
+  }, PROPERTY_TIMEOUT_MS);
 });
 
 describe("worldPointPx at a zoom", () => {
