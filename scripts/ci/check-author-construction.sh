@@ -32,7 +32,7 @@ BAD=""
 while IFS= read -r f; do
   rel="${f#"$ROOT"/}"
   [ "$rel" = "server/sim/src/author.rs" ] && continue
-  body="$({ grep -v '^[[:space:]]*//' "$f" || true; } | tr -d '' | awk '
+  body="$({ grep -v '^[[:space:]]*//' "$f" || true; } | tr -d '\r' | awk '
     /#\[cfg\(test\)\]/ { pend = 1; next }
     pend && /^[ 	]*#\[/ { next }
     pend {
