@@ -33,8 +33,11 @@ use crate::demo_ping;
 
 use super::citizen::{citizen, citizen_state};
 use super::clock::world_clock;
-use super::codes::{holder_kind, matter_kind, node_kind, provision, reason_code, unit};
+use super::codes::{
+    container_kind, holder_kind, matter_kind, node_kind, provision, reason_code, unit,
+};
 use super::identity::{character, character_identity};
+use super::item_instance::{item_held, item_instance, item_placed};
 use super::ops::module_owner;
 use super::restore::restore_state;
 use super::schedules::{
@@ -236,6 +239,10 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(holder_kind);
     sample!(business);
     sample!(stock);
+    sample!(container_kind);
+    sample!(item_instance);
+    sample!(item_placed);
+    sample!(item_held);
     sample!(placed_object);
     sample!(floor_transition);
     sample!(building);

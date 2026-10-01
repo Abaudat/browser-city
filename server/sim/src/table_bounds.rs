@@ -182,6 +182,42 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 3_840_000,
         kind: BoundKind::Engineering,
     },
+    // Story 6.11: item instances (FR95).
+    TableBound {
+        accessor: "container_kind",
+        max_rows: 64,
+        expected_rows: 16,
+        alert_rows: 48,
+        kind: BoundKind::Mechanical,
+    },
+    // Sum of `item_placed` 3,000,000 and `item_held` 192,000,000 (an
+    // instance is in exactly one form): 195,000,000.
+    // `bounds/tests/item_instance_bounds.rs` recomputes it.
+    TableBound {
+        accessor: "item_instance",
+        max_rows: 195_000_000,
+        expected_rows: 500_000,
+        alert_rows: 146_250_000,
+        kind: BoundKind::Engineering,
+    },
+    // The same density argument as `placed_object` (one per 4 cells over
+    // the 1024x1024 district's 8 floors): 3,000,000.
+    TableBound {
+        accessor: "item_placed",
+        max_rows: 3_000_000,
+        expected_rows: 200_000,
+        alert_rows: 2_250_000,
+        kind: BoundKind::Engineering,
+    },
+    // `placed_object`'s `max_rows` x
+    // `sim::item_instance::MAX_ITEMS_PER_CONTAINER` (64): 192,000,000.
+    TableBound {
+        accessor: "item_held",
+        max_rows: 192_000_000,
+        expected_rows: 300_000,
+        alert_rows: 144_000_000,
+        kind: BoundKind::Engineering,
+    },
     // Story 1.5: world addressing (FR117-FR119). Cell facts are always
     // derived (never a dense per-cell table); these bound the placed
     // content a generator writes.

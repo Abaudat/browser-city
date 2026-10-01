@@ -92,10 +92,13 @@ use crate::{DemoPing, demo_ping};
 use super::citizen::{Citizen, CitizenState, citizen, citizen_state};
 use super::clock::{WorldClock, world_clock};
 use super::codes::{
-    HolderKind, MatterKind, NodeKind, Provision, ReasonCode, Unit, holder_kind, matter_kind,
-    node_kind, provision, reason_code, unit,
+    ContainerKind, HolderKind, MatterKind, NodeKind, Provision, ReasonCode, Unit, container_kind,
+    holder_kind, matter_kind, node_kind, provision, reason_code, unit,
 };
 use super::identity::{Character, CharacterIdentity, character, character_identity};
+use super::item_instance::{
+    ItemHeld, ItemInstance, ItemPlaced, item_held, item_instance, item_placed,
+};
 use super::metrics::{
     ReducerClassCounter, ReducerClassSample, StorageSample, TableSample, count_call,
     reducer_class_counter, reducer_class_sample, storage_sample, table_sample,
@@ -147,6 +150,7 @@ const INIT_SEEDED_TABLES: &[&str] = &[
     "node_kind",
     "unit",
     "holder_kind",
+    "container_kind",
     "layer_code",
     "cadence_liveness",
     "storage_sample",
@@ -167,6 +171,9 @@ const INIT_SEEDED_TABLES: &[&str] = &[
 /// "never restore over a live world".
 #[allow(dead_code)] // read by `restore_coverage.rs` as source text, not Rust code
 const NON_INIT_SEEDED_TABLES: &[&str] = &[
+    "item_instance",
+    "item_placed",
+    "item_held",
     "business",
     "stock",
     "demo_ping",
@@ -242,6 +249,15 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.business().iter().next().is_some() {
         nonempty.push("business");
+    }
+    if ctx.db.item_instance().iter().next().is_some() {
+        nonempty.push("item_instance");
+    }
+    if ctx.db.item_placed().iter().next().is_some() {
+        nonempty.push("item_placed");
+    }
+    if ctx.db.item_held().iter().next().is_some() {
+        nonempty.push("item_held");
     }
     if ctx.db.stock().iter().next().is_some() {
         nonempty.push("stock");
@@ -516,6 +532,15 @@ impl_autoinc_row!(
     }
 );
 impl_autoinc_row!(
+    ItemInstance,
+    instance_id,
+    ItemInstance {
+        instance_id: 0,
+        def_id: 0,
+        created_at: Timestamp::UNIX_EPOCH,
+    }
+);
+impl_autoinc_row!(
     Stock,
     stock_id,
     Stock {
@@ -754,6 +779,66 @@ pub fn restore_business(
         "business",
         sequence_floor,
     )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_item_instance(
+    ctx: &ReducerContext,
+    rows: Vec<ItemInstance>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.item_instance().insert(r),
+        |id| {
+            ctx.db.item_instance().instance_id().delete(id);
+        },
+        "item_instance",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_item_placed(ctx: &ReducerContext, rows: Vec<ItemPlaced>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    for row in rows {
+        ctx.db.item_placed().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_item_held(ctx: &ReducerContext, rows: Vec<ItemHeld>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    for row in rows {
+        ctx.db.item_held().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_container_kind(
+    ctx: &ReducerContext,
+    rows: Vec<ContainerKind>,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    let existing: Vec<u32> = ctx.db.container_kind().iter().map(|r| r.code).collect();
+    for code in existing {
+        ctx.db.container_kind().code().delete(code);
+    }
+    for row in rows {
+        ctx.db.container_kind().insert(row);
+    }
+    Ok(())
 }
 
 #[spacetimedb::reducer]

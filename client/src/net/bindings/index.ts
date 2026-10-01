@@ -45,9 +45,13 @@ import RestoreCharacterReducer from "./restore_character_reducer";
 import RestoreCharacterIdentityReducer from "./restore_character_identity_reducer";
 import RestoreCitizenReducer from "./restore_citizen_reducer";
 import RestoreCitizenStateReducer from "./restore_citizen_state_reducer";
+import RestoreContainerKindReducer from "./restore_container_kind_reducer";
 import RestoreDemoPingReducer from "./restore_demo_ping_reducer";
 import RestoreFloorTransitionReducer from "./restore_floor_transition_reducer";
 import RestoreHolderKindReducer from "./restore_holder_kind_reducer";
+import RestoreItemHeldReducer from "./restore_item_held_reducer";
+import RestoreItemInstanceReducer from "./restore_item_instance_reducer";
+import RestoreItemPlacedReducer from "./restore_item_placed_reducer";
 import RestoreLayerCodeReducer from "./restore_layer_code_reducer";
 import RestoreMatterKindReducer from "./restore_matter_kind_reducer";
 import RestoreModuleOwnerReducer from "./restore_module_owner_reducer";
@@ -134,9 +138,13 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_character_identity", RestoreCharacterIdentityReducer),
   __reducerSchema("restore_citizen", RestoreCitizenReducer),
   __reducerSchema("restore_citizen_state", RestoreCitizenStateReducer),
+  __reducerSchema("restore_container_kind", RestoreContainerKindReducer),
   __reducerSchema("restore_demo_ping", RestoreDemoPingReducer),
   __reducerSchema("restore_floor_transition", RestoreFloorTransitionReducer),
   __reducerSchema("restore_holder_kind", RestoreHolderKindReducer),
+  __reducerSchema("restore_item_held", RestoreItemHeldReducer),
+  __reducerSchema("restore_item_instance", RestoreItemInstanceReducer),
+  __reducerSchema("restore_item_placed", RestoreItemPlacedReducer),
   __reducerSchema("restore_layer_code", RestoreLayerCodeReducer),
   __reducerSchema("restore_matter_kind", RestoreMatterKindReducer),
   __reducerSchema("restore_module_owner", RestoreModuleOwnerReducer),

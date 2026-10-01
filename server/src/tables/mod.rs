@@ -9,6 +9,7 @@ pub mod citizen;
 pub mod clock;
 pub mod codes;
 pub mod identity;
+pub mod item_instance;
 pub mod metrics;
 pub mod ops;
 pub mod publish;

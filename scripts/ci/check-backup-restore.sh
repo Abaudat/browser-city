@@ -522,6 +522,32 @@ done
   || fail "restored 'business' has a different row count from '$SRC'"
 ok "every stock row reads back identically from the restored database, and the three seeded business/citizen rows hold their exact holder pair, item and quantity"
 
+# --- item instances: both forms survive by value -------------------------
+# Whole rows, primary-key sorted, equal the source's for the identity and each
+# form; and the two real-shaped instances `seed-edge-rows.sh` wrote are read
+# back as literals: instance 4 placed at a cell with a sub-cell offset (no
+# holder), instance 5 held in object 1's grid at a slot (no position).
+item_rows_live() { # <db> <table> [where-clause]
+  local where="${3:-}" resp
+  resp="$WORK/itemrows-$1-$2-${where//[^a-z0-9]/_}.json"
+  bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM $2 $where" >"$resp"
+  bc_wb rows-canonical "$BC_SNAPSHOT" "$2" "$resp"
+}
+for t in item_instance item_placed item_held; do
+  SRC_ROWS="$(item_rows_live "$SRC" "$t")"
+  DST_ROWS="$(item_rows_live "$DST" "$t")"
+  [ -n "$SRC_ROWS" ] || fail "'$SRC.$t' has no rows -- nothing to compare"
+  [ "$SRC_ROWS" = "$DST_ROWS" ] || fail "restored '$t' rows differ from '$SRC's own -- expected:
+$SRC_ROWS
+got:
+$DST_ROWS"
+done
+got="$(item_rows_live "$DST" item_placed "WHERE instance_id = 4")"
+[ "$got" = '[4,12,-7,0,3,15,0,77]' ] || fail "restored 'item_placed' row 4 is '$got', expected the seeded '[4,12,-7,0,3,15,0,77]' (cell, floor, sub-cell offset intact)"
+got="$(item_rows_live "$DST" item_held "WHERE instance_id = 5")"
+[ "$got" = '[5,0,1,5,2,0]' ] || fail "restored 'item_held' row 5 is '$got', expected the seeded '[5,0,1,5,2,0]' (container pair and slot intact)"
+ok "every item instance, placed and held row reads back identically from the restored database, and the two seeded instances hold their exact cell/offset and container/slot"
+
 # --- 5/7: COUNT(*) on both live databases and the auto_inc sequence
 # strictly advancing -- scripts/ops/verify-independent.sh, shared with
 # .github/workflows/backup.yml's rehearsal job (Tim's direction: the

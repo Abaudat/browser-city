@@ -43,6 +43,7 @@ pub const INV_INVENTORY_SUPERSET_AFTER_ABSENCE: &str = "inventory is a superset 
 pub const INV_NO_OWNED_ITEM_DEGRADES_DURING_ABSENCE: &str = "no owned item degrades during absence";
 pub const INV_BUDGET_NEVER_NEGATIVE: &str = "budget never goes negative";
 pub const INV_STOCK_IS_INDEPENDENT_PER_HOLDER: &str = "stock is independent per holder: any interleaving of stock operations leaves each holder exactly as replaying its own operations alone";
+pub const INV_ITEM_INSTANCE_IN_EXACTLY_ONE_STATE: &str = "an item instance is in exactly one of its two states: any interleaving of place and hold moves leaves each instance in one form, never both, never neither";
 pub const INV_COLLIDER_WITHIN_FOOTPRINT: &str = "collider is contained within footprint";
 pub const INV_IDENTICAL_SEEDS_DERIVE_IDENTICALLY: &str =
     "two derivations from identical seeded inputs match";
@@ -5397,6 +5398,66 @@ proptest! {
                 );
             }
             prop_assert_eq!(actual, model);
+        }
+    }
+}
+
+proptest! {
+    /// `inv_item_instance_in_exactly_one_state` (FR95): the driver applies
+    /// each `plan_move` as the plan says -- one delete and one insert across
+    /// forms -- to two separate form maps; the oracle is the last target
+    /// requested per instance.
+    #[test]
+    fn inv_item_instance_in_exactly_one_state(
+        ops in proptest::collection::vec(
+            (0u64..4, any::<bool>(), 0i32..6, 0..sim::item_instance::OFFSET_SUBCELLS, 0..sim::item_instance::MAX_GRID_EXTENT),
+            0..80,
+        )
+    ) {
+        use std::collections::BTreeMap;
+        use sim::codes::container_kind;
+        use sim::item_instance::{ContainerRef, Form, Held, MovePlan, Placed, Placement, plan_move};
+
+        let mut placed: BTreeMap<u64, Placement> = BTreeMap::new();
+        let mut held: BTreeMap<u64, Placement> = BTreeMap::new();
+        let mut last: BTreeMap<u64, Placement> = BTreeMap::new();
+        for &(id, to_world, x, off, slot) in &ops {
+            let target = if to_world {
+                Placement::Placed(Placed::new(x, 0, 0, (off, off), 0).unwrap())
+            } else {
+                let c = ContainerRef::new(container_kind::OBJECT, 1 + x as u64).unwrap();
+                Placement::Held(Held::new(c, (slot, slot), 0).unwrap())
+            };
+            match last.get(&id).copied() {
+                None => {
+                    match target.form() {
+                        Form::Placed => placed.insert(id, target),
+                        Form::Held => held.insert(id, target),
+                    };
+                }
+                Some(current) => match plan_move(current, target) {
+                    MovePlan::Cross { delete, insert } => {
+                        let (from, into) = match delete {
+                            Form::Placed => (&mut placed, &mut held),
+                            Form::Held => (&mut held, &mut placed),
+                        };
+                        prop_assert!(from.remove(&id).is_some(), "FR95: the delete hits the form being left");
+                        prop_assert!(into.insert(id, insert).is_none(), "FR95: the insert lands in the form being entered");
+                    }
+                    MovePlan::Within(p) => {
+                        let map = match p.form() { Form::Placed => &mut placed, Form::Held => &mut held };
+                        prop_assert!(map.insert(id, p).is_some(), "FR95: an in-place update replaces a row");
+                    }
+                    MovePlan::Nothing => {}
+                },
+            }
+            last.insert(id, target);
+            for (&i, &want) in &last {
+                let in_placed = placed.get(&i);
+                let in_held = held.get(&i);
+                prop_assert!(in_placed.is_some() != in_held.is_some(), "FR95: instance {} is in exactly one form", i);
+                prop_assert_eq!(in_placed.or(in_held).copied(), Some(want));
+            }
         }
     }
 }

@@ -15,6 +15,9 @@ pub const CHUNK_SIZE: i32 = 32;
 /// this can never silently drift once `MAX_FOOTPRINT_CELLS` changes.
 const _: () = assert!(crate::generated::defs::MAX_FOOTPRINT_CELLS <= CHUNK_SIZE);
 
+/// Facings a placed thing may take: `orientation` is `0..ORIENTATIONS`.
+pub const ORIENTATIONS: u8 = 4;
+
 /// Bit widths of `chunk_key`'s three packed fields. 24+24+8 = 56 of 64
 /// bits; the remaining 8 are reserved and always zero.
 const CHUNK_X_BITS: u32 = 24;

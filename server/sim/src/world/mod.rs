@@ -27,7 +27,8 @@ pub mod fixture;
 pub mod walkability;
 
 pub use chunk::{
-    CHUNK_SIZE, chunk_key, clip_rect_to_chunks, rect_is_within_one_chunk, unpack_chunk_key,
+    CHUNK_SIZE, ORIENTATIONS, chunk_key, clip_rect_to_chunks, rect_is_within_one_chunk,
+    unpack_chunk_key,
 };
 pub use collision::{
     AreaSpec, FloorCollision, FloorSpec, MAX_CELLS_PER_FLOOR, NO_OWNER, Ownership, Rect,

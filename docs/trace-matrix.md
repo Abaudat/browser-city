@@ -17,6 +17,7 @@ with no row here.
 | `inv_no_owned_item_degrades_during_absence` | No owned item degrades during absence | deferred | | inventory/decay system |
 | `inv_budget_never_negative` | Budget never goes negative | deferred | | economy system |
 | `inv_stock_is_independent_per_holder` | Any interleaving of stock operations leaves each holder exactly as replaying its own operations alone (FR87) | covered | `inv_stock_is_independent_per_holder` | 6.2 |
+| `inv_item_instance_in_exactly_one_state` | Any interleaving of place and hold moves leaves each item instance in exactly one of its two forms (FR95) | covered | `inv_item_instance_in_exactly_one_state` | 6.11 |
 | `inv_collider_within_footprint` | `collider` is contained within `footprint` (FR128); the failure message reports both rectangles, collider and footprint, in sub-cells | covered | `inv_collider_within_footprint` | — |
 | `inv_collision_only_within_floor` | No cell on any other floor ever contributes to an entity's collision result (FR117) | covered | `inv_collision_only_within_floor` | — |
 | `inv_floor_transition_lands_standable` | No transition cell ever targets a floor or cell where the entity would be inside geometry or out of bounds (FR117) | covered | `inv_floor_transition_lands_standable` | — |
@@ -870,3 +871,23 @@ and a failure prints the line that reproduces it.
 | `explore.yml` runs the client properties in a job of its own, seeded from `github.run_id`, reporting through `report-scheduled-failure.sh` | covered | `scripts/ci/tests/test-check-explore-workflow.sh` -- `a literal client seed fails`, `no explore-client job fails`, `the client report not gated on cancelled() fails` |
 | No client test bypasses the seed: no `seed`/`path` key, no `configureGlobal`, no `fc.sample`, no time limit, no `fast-check` in e2e | covered | `scripts/ci/tests/test-check-client-property-seed.sh` -- `a seed key in a multi-line params object fails`, `configureGlobal in a test fails`, `fc.sample fails`, `a fast-check import under e2e fails` |
 
+## Item states
+
+Story 6.11 (FR95): an item instance is placed in the world or held in a
+container, and nothing else.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| FR95: a placed item has a cell, sub-tile offset and floor and no holder column; a held item has a container and grid slot and no position column | covered | `server/bounds/tests/item_instance_bounds.rs` -- `the_placed_form_has_a_cell_an_offset_and_a_floor_and_no_holder`, `the_held_form_has_a_container_and_a_slot_and_no_world_position` |
+| FR95: no parent relationship exists on any item table | covered | `server/bounds/tests/item_instance_bounds.rs` -- `no_item_table_has_a_parent_or_references_a_placed_object` |
+| FR95: an item is in exactly one of its two states | covered | `server/sim/tests/invariants.rs` -- `inv_item_instance_in_exactly_one_state`; `server/sim/tests/item_state.rs` -- `moving_between_forms_is_one_delete_and_one_insert`, `moving_within_a_form_updates_in_place` |
+| FR95: a placed item over a prop is accepted, not corrected, when the prop goes (structural half: no item table references an object but through `container_id`, and `sim` has no object-to-items lookup) | covered | `server/bounds/tests/item_instance_bounds.rs` -- `no_item_table_has_a_parent_or_references_a_placed_object`; `server/sim/tests/item_state.rs` -- `no_public_item_instance_fn_takes_an_object_id_or_prop` |
+| FR95: the identity row carries no placement column, and a move plan's forms are the two placement tables | covered | `server/sim/tests/item_state.rs` -- `a_move_plan_names_only_the_two_placement_forms`, `an_identity_move_plans_nothing`; `server/bounds/tests/item_instance_bounds.rs` -- `the_identity_row_carries_no_placement` |
+| FR95: an offset or slot out of range is a typed error, never clamped | covered | `server/sim/tests/item_state.rs` -- `an_offset_past_the_sub_cell_range_is_a_typed_error_never_clamped_or_wrapped`, `a_slot_past_the_grid_extent_is_a_typed_error_never_clamped_or_wrapped` |
+| FR95: the declared bounds are formulas over `placed_object`'s | covered | `server/bounds/tests/item_instance_bounds.rs` -- `item_held_max_rows_is_the_placed_objects_times_the_per_container_ceiling`, `item_placed_max_rows_follows_placed_objects_density`, `item_instance_max_rows_is_the_sum_of_the_two_forms` |
+| FR95: a container kind is its own code set, not `holder_kind` | covered | `server/sim/tests/codes.rs` -- `container_kind_matches_golden_and_is_unique`, `a_container_kind_is_never_a_holder_kind` |
+| An instance in each form survives backup and restore by value | covered | `scripts/ci/check-backup-restore.sh` -- `every item instance, placed and held row reads back identically from the restored database, and the two seeded instances hold their exact cell/offset and container/slot` |
+| FR95: a prop with mutable state keeps its state row byte-identical across a cross-form move | deferred | the first story that gives an item instance mutable state |
+| Every `item_placed.chunk_key` equals `chunk_key(x, y, floor)` (`Placed::chunk_key` derives it; the seeded backup row's key is deliberately arbitrary) | deferred | the story that first writes an `item_placed` row through a reducer |
+| FR95: the placed item survives the live deletion of the placed object beneath it | deferred | the first story that deletes a placed object |
+| FR95: a held item's grid position is validated against its container's real grid | deferred | FR94's container grid story |
