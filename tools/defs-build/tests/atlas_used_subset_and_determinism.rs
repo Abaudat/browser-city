@@ -33,7 +33,7 @@ fn roles_toml() -> &'static str {
 }
 
 fn code_tables() -> defs_build::codes::CodeTables {
-    defs_build::codes::CodeTables::from_entries(&[("layer", "furniture", 2)])
+    defs_build::codes::CodeTables::from_entries(&[("layer", "furniture", 2), ("unit", "piece", 0)])
 }
 
 /// FR126's sprite/footprint check needs a `render.tile_size_px` balance

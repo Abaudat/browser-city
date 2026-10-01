@@ -5,25 +5,49 @@
   "interact_at_max_reach_cells": 2,
   "max_footprint_cells": 8,
   "max_shelf_life_minutes": 525600,
+  "max_face_value": 1000,
+  "max_denominations": 16,
+  "denomination_unit": 0,
   "objects": [
     {
       "id": 1,
       "key": "trash_bin",
       "name": "Trash Bin",
       "layer": 2,
-      "sprite": { "sheet": "fixtures/objects/test.png", "x": 0, "y": 0, "w": 16, "h": 16 },
+      "sprite": {
+        "sheet": "fixtures/objects/test.png",
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
       "width": 1,
       "height": 1,
       "window": false,
-      "tags": [1],
-      "collider": { "x0": 4, "y0": 4, "x1": 12, "y1": 12 }
+      "tags": [
+        1
+      ],
+      "collider": {
+        "x0": 4,
+        "y0": 4,
+        "x1": 12,
+        "y1": 12
+      }
     }
   ],
   "items": [],
+  "denominations": [],
   "recipes": [],
   "professions": [],
   "chains": [],
-  "balance": [{ "key": "render.tile_size_px", "value": 16, "min": 1, "max": 64 }],
+  "balance": [
+    {
+      "key": "render.tile_size_px",
+      "value": 16,
+      "min": 1,
+      "max": 64
+    }
+  ],
   "bodies": [],
   "eyes": [],
   "hairstyles": [],
@@ -31,5 +55,10 @@
   "accessories": [],
   "appearance_layouts": [],
   "uniforms": [],
-  "tags": [{ "id": 1, "key": "underfoot" }]
+  "tags": [
+    {
+      "id": 1,
+      "key": "underfoot"
+    }
+  ]
 }

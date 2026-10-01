@@ -133,6 +133,9 @@ fn a_stanza_with_the_five_missing_keys_filled_in_passes_validate() {
     let raw = defs_build::parse::parse_all(&files).unwrap();
     let sheet_dims: std::collections::BTreeMap<String, (u32, u32)> =
         [(LAMP_SHEET.to_string(), (16, 64))].into_iter().collect();
-    let code_tables = defs_build::codes::CodeTables::from_entries(&[("layer", "objects", 3)]);
+    let code_tables = defs_build::codes::CodeTables::from_entries(&[
+        ("layer", "objects", 3),
+        ("unit", "piece", 0),
+    ]);
     defs_build::validate::validate(&raw, &sheet_dims, &code_tables, "").unwrap();
 }

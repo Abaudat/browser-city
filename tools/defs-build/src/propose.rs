@@ -924,7 +924,7 @@ mod tests {
                 [("fixtures/proposed.png".to_string(), (w, h))]
                     .into_iter()
                     .collect();
-            let code_tables = crate::codes::CodeTables::from_entries(&[("layer", "objects", 3)]);
+            let code_tables = crate::codes::CodeTables::from_entries(&[("layer", "objects", 3), ("unit", "piece", 0)]);
             let result = crate::validate::validate(
                 &raw,
                 &sheet_dims,

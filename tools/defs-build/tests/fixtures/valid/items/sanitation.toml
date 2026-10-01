@@ -18,3 +18,24 @@ key = "milk"
 unit = "millilitre"
 shelf_life_minutes = 4320
 bulk = { width = 1, height = 2 }
+
+[[item]]
+id = 4
+key = "coin_1"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 5
+key = "note_20"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 6
+key = "coin_5"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }

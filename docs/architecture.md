@@ -307,12 +307,20 @@ and just-in-time. So:
 - `business` is the business instance: one row per shop.
 - `stock` has a surrogate `stock_id`, `holder_kind`, `holder_id`, `item_id` and `quantity` (`u64`, in the item's own unit). It is never addressed by room, brand or position. One index, `by_holder_item` on (`holder_kind`, `holder_id`, `item_id`).
 - At most one `stock` row per (holder, item); an absent row is zero and no row stores zero. `sim::stock::plan_make`, `plan_consume` and the transfers decide the one row a write lands on; a holder holds at most `sim::stock::MAX_LINES_PER_HOLDER` items.
-- `sim::author::Author` is a `citizen_id` and a `Cause` (`ProcedureStep` or `Consumption`, a closed enum; item instances and cash take the same type). `sim::stock::plan_make` (goods come into existence: procedure step only), `plan_consume` (goods leave existence: what a consumption eats, or inputs a step uses up -- never the first half of a move) and `plan_transfer` / `plan_transfer_exact` (goods that already exist move: procedure step only, both sides or neither) take one and return a `Write`; nothing else constructs a `Write`. A cause that may not do a verb is an `Err`.
+- `sim::author::Author` is a `citizen_id` and a `Cause` (`ProcedureStep` or `Consumption`, a closed enum; item instances and cash take the same type). `sim::stock::plan_make` (goods come into existence: procedure step only), `plan_consume` (goods leave existence: what a consumption eats, or inputs a step uses up -- never the first half of a move) and `plan_transfer` / `plan_transfer_exact` (goods that already exist move: procedure step only, both sides or neither) take one and return a `Write`; `plan_transfer_all` moves every line of a lot (item to quantity) in full or not at all, counting the receiver's new lines together against the ceiling, and returns a `Lot` whose `writes` are empty when a line was `short` or the receiver had `no_room`; nothing else constructs a `Write`. A cause that may not do a verb is an `Err`.
 - Nothing builds an `Author` or names a `Cause` outside `sim/src/author.rs` and the match in `sim/src/stock.rs`; `scripts/ci/check-author-construction.sh` fails any other non-test code under `server/src/` or `server/sim/src/`.
 - A write to `stock` applies a `Write` and nothing else. `restore_stock` is the one exception: it reproduces a past world by value. `scripts/ci/check-stock-write-path.sh` holds that nothing else under `server/src/` names the `stock` accessor (`restore.rs` only inside `begin_restore` and `restore_stock`; `metrics.rs` imports it for row-count sampling and never calls it).
 - A shortfall is a `Withdrawal` or `Transfer` with `taken` below the ask, and a receiver with no room for a new line is a `NoRoom` outcome (`taken` 0, nothing written), the same for a make and a move: never an `Err`, never a log line. `StockError` is only `QuantityOverflow` and `CauseNotPermitted`.
 - There is no stock movement table.
 - `stock`'s `max_rows` is `MAX_LINES_PER_HOLDER` times the sum of the holder tables' `max_rows`.
+
+## Cash
+
+- An amount of money is a `u64` count of the smallest currency unit.
+- A denomination is a `[[denomination]]` row (in `defs/denominations/`) naming an item and its `face_value` (1 to `MAX_FACE_VALUE`); the item is counted in `piece`, never perishable, named once, face values unique, at most `MAX_DENOMINATIONS`. Both parsers refuse a row that breaks any of these. Cash is `stock` rows of those items; `sim::stock` does not know it.
+- There is no till holder: a shop's till is its `business` holder's denomination lines. No total is stored anywhere; a value is summed when a step needs it.
+- `sim::cash` takes the denomination table (`generated::defs::DENOMINATIONS`, largest face value first) as a parameter. `choose_change` is exact over the pieces it is given and deterministic (fewest pieces, ties to the larger denomination), costs the square of the amount, and takes an amount under `MAX_FACE_VALUE` (1,000), which is what bounds it: a larger one is `CashError::AmountOutOfRange`. `plan_payment` returns every write of a payment or none, with the customer's `Author` on what leaves the customer and the cashier's on what leaves the till. Change is chosen from the till with the tender in it, and what each side hands over is netted per denomination, so a row moves one way or not at all. The change is exact while the change due is under `MAX_FACE_VALUE`; at or above it whole tendered pieces go back first, largest first, never more than the due covers, and what remains is exact (`Payment::TenderTooLarge` when it cannot be made). A payment that cannot be made is a `Payment` variant (a holder paying itself included), never an `Err`; `CashError` is only a stock error, a non-denomination item, a value overflow or an amount out of range.
+- `sim::cash` never makes or destroys a piece and offers no top-up: a short till is restocked by an authored transfer.
 
 ## Item instances
 
@@ -940,7 +948,7 @@ behind a flag not exposed in production (FR168).
 ## Definitions (`defs/`)
 
 `defs/` is the single source of truth for game content data (NFR31),
-subdivided into `objects/`, `items/`, `recipes/`, `professions/`,
+subdivided into `objects/`, `items/`, `denominations/`, `recipes/`, `professions/`,
 `chains/`, `appearance/`, `balance/`, `tags/`, `rules/` and
 `archetypes/`, each a directory of TOML files
 (the naming table's `city-props.toml`). Neither build target writes here
@@ -968,6 +976,12 @@ never spoils, capped at `MAX_SHELF_LIFE_MINUTES`. `bulk = { width, height
 generated `ITEMS` / `defs.json` pair; there is no item database table
 until a server reader needs one. An item instance's storage is under
 "Item instances".
+
+A `[[denomination]]` (FR92) is `item` (an item key) and `face_value`, with no
+id of its own. Both artefacts carry a `denominations` table, largest face
+value first, with `MAX_FACE_VALUE`, `MAX_DENOMINATIONS` and the denomination
+unit code (`piece`; a missing code fails the build). The rules it keeps, and
+what is built on it, are under "Cash".
 
 ### The FR147 handshake
 
@@ -1006,7 +1020,9 @@ never one derived from file order, position or a hash. An id or a key,
 once merged, is never
 renumbered, reused or retired: `tools/defs-build/goldens/defs-manifest.
 golden` pins the append-only `kind id key` list, guarded by
-`scripts/ci/check-defs-ids-append-only.sh`. `defs/balance/` entries seed
+`scripts/ci/check-defs-ids-append-only.sh`. A denomination's item and face
+value are pinned by the same golden (`denomination <face_value> <item key>`).
+`defs/balance/` entries seed
 data (NFR45), keyed by a dotted `snake_case` balance key, not an id.
 
 A single `defs_version` -- a SHA-256 over every git-tracked file under

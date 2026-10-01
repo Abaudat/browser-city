@@ -53,7 +53,7 @@ fn sheet_bytes() -> BTreeMap<String, Vec<u8>> {
 }
 
 fn code_tables() -> defs_build::codes::CodeTables {
-    defs_build::codes::CodeTables::from_entries(&[("layer", "furniture", 2)])
+    defs_build::codes::CodeTables::from_entries(&[("layer", "furniture", 2), ("unit", "piece", 0)])
 }
 
 fn build_output() -> defs_build::BuildOutput {

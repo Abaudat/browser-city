@@ -1,0 +1,7 @@
+[[denomination]]
+item = "coin_1"
+face_value = 1
+
+[[denomination]]
+item = "coin_1"
+face_value = 2

@@ -78,6 +78,15 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "item-bulk-height-cap-exceeded" => "item-bulk-height-cap-exceeded",
         "item-bulk-footprint-cap-exceeded" => "item-bulk-footprint-cap-exceeded",
         "item-shelf-life-out-of-range" => "item-shelf-life-out-of-range",
+        "denomination-face-value-zero" => "denomination-face-value-zero",
+        "denomination-face-value-over-cap" => "denomination-face-value-over-cap",
+        "denomination-face-value-wrong-type" => "denomination-face-value-wrong-type",
+        "denomination-unknown-item" => "denomination-unknown-item",
+        "denomination-item-twice" => "denomination-item-twice",
+        "denomination-not-piece" => "denomination-not-piece",
+        "denomination-perishable" => "denomination-perishable",
+        "denomination-face-value-duplicate" => "denomination-face-value-duplicate",
+        "denominations-over-cap" => "denominations-over-cap",
         other => panic!(
             "shared case '{other}' has no mapped tests/fixtures/invalid/ directory -- add one to fixture_for()"
         ),

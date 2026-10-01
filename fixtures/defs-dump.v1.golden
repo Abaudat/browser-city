@@ -214,6 +214,12 @@ body kid_body_2_kid id=11 family=kid pool=civilian sheet=ModernTileset/modernint
 body kid_body_3_kid id=12 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_3_kid.png
 body kid_body_4_kid id=13 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_4_kid.png
 chain plastic_bottle id=1 links=[sanitation_worker]
+denomination coin_1 face_value=1
+denomination coin_2 face_value=2
+denomination coin_5 face_value=5
+denomination note_10 face_value=10
+denomination note_20 face_value=20
+denomination note_50 face_value=50
 eyes eyes_01 id=1 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_01.png
 eyes eyes_02 id=2 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_02.png
 eyes eyes_03 id=3 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_03.png
@@ -458,6 +464,12 @@ hairstyle kid_hairstyle_kid_6_3 id=228 family=kid sheet=ModernTileset/moderninte
 hairstyle kid_hairstyle_kid_6_4 id=229 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_4.png style=6 color=4 rare=false
 hairstyle kid_hairstyle_kid_6_5 id=230 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_5.png style=6 color=5 rare=true
 item bottle id=1 unit=0 shelf_life_minutes=0 width=1 height=1
+item coin_1 id=3 unit=0 shelf_life_minutes=0 width=1 height=1
+item coin_2 id=4 unit=0 shelf_life_minutes=0 width=1 height=1
+item coin_5 id=5 unit=0 shelf_life_minutes=0 width=1 height=1
+item note_10 id=6 unit=0 shelf_life_minutes=0 width=1 height=1
+item note_20 id=7 unit=0 shelf_life_minutes=0 width=1 height=1
+item note_50 id=8 unit=0 shelf_life_minutes=0 width=1 height=1
 item recycled_glass id=2 unit=0 shelf_life_minutes=0 width=1 height=1
 object bridge_deck id=7 name=Bridge Deck layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[7,9,15]
 object foot_stairs id=8 name=Foot Stairs layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Small_2.png:0,0,16,48 height=1 width=1 collider=none interact_at=none window=false tags=[8,9,15]

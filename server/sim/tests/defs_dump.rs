@@ -73,6 +73,10 @@ fn canonical_dump() -> String {
             i.key, i.id, i.unit, i.shelf_life_minutes, i.width, i.height
         ));
     }
+    for d in defs::DENOMINATIONS {
+        let key = defs::ITEMS.iter().find(|i| i.id == d.item_id).unwrap().key;
+        lines.push(format!("denomination {key} face_value={}", d.face_value));
+    }
     for r in defs::RECIPES {
         let mut inputs: Vec<&str> = r.inputs.to_vec();
         inputs.sort_unstable();

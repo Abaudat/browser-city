@@ -111,6 +111,13 @@ export interface TagDef {
   readonly role?: RoleDef;
 }
 
+export interface DenominationDef {
+  /** The id of the `ItemDef` that plays the role of money. */
+  readonly itemId: number;
+  /** Whole units of the one currency. */
+  readonly faceValue: number;
+}
+
 export interface ItemDef {
   readonly id: number;
   readonly key: string;
@@ -267,6 +274,14 @@ export interface Defs {
   /** The longest an item may take to spoil, in minutes -- generated once
    * by `tools/defs-build`, never a client-side literal. */
   readonly maxShelfLifeMinutes: number;
+  /** The largest face value one denomination may carry. */
+  readonly maxFaceValue: number;
+  /** The most denominations the defs may declare. */
+  readonly maxDenominations: number;
+  /** The `sim::codes::unit` code every denomination is counted in. */
+  readonly denominationUnit: number;
+  /** Every item that is money (FR92), largest face value first. */
+  readonly denominations: readonly DenominationDef[];
   /** FR1: real milliseconds per in-city minute -- generated once by
    * `tools/defs-build`, never a client-side literal. */
   readonly realMsPerCityMinute: number;

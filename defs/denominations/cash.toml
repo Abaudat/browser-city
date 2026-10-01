@@ -1,0 +1,23 @@
+[[denomination]]
+item = "coin_1"
+face_value = 1
+
+[[denomination]]
+item = "coin_2"
+face_value = 2
+
+[[denomination]]
+item = "coin_5"
+face_value = 5
+
+[[denomination]]
+item = "note_10"
+face_value = 10
+
+[[denomination]]
+item = "note_20"
+face_value = 20
+
+[[denomination]]
+item = "note_50"
+face_value = 50

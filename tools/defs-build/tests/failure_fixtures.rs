@@ -781,6 +781,15 @@ fn every_known_category_has_a_fixture_directory() {
         "item-missing-shelf-life",
         "item-missing-bulk",
         "item-bulk-zero",
+        "denomination-face-value-duplicate",
+        "denomination-face-value-over-cap",
+        "denomination-face-value-wrong-type",
+        "denomination-face-value-zero",
+        "denomination-item-twice",
+        "denomination-not-piece",
+        "denomination-perishable",
+        "denomination-unknown-item",
+        "denominations-over-cap",
         "item-bulk-footprint-cap-exceeded",
         "item-shelf-life-out-of-range",
         "item-shelf-life-wrong-type",
@@ -1050,6 +1059,7 @@ fn an_item_at_the_shelf_life_and_bulk_caps_builds() {
     );
     let mut files = read_tree(&valid_dir());
     files.retain(|(p, _)| p != Path::new("defs/items/sanitation.toml"));
+    files.retain(|(p, _)| p != Path::new("defs/denominations/cash.toml"));
     files.push((PathBuf::from("defs/items/sanitation.toml"), item));
     let out = build_ok(&files);
     assert!(out.rust.contains(

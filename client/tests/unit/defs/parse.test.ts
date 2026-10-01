@@ -18,6 +18,9 @@ function validPayload(): Record<string, unknown> {
     interact_at_max_reach_cells: 2,
     max_footprint_cells: 8,
     max_shelf_life_minutes: 525_600,
+    max_face_value: 1_000,
+    max_denominations: 16,
+    denomination_unit: 0,
     real_ms_per_city_minute: 2500,
     atlas_max_pages_per_group: 2,
     character_composite_pages: 2,
@@ -41,6 +44,7 @@ function validPayload(): Record<string, unknown> {
       { ...ITEM_FIELDS, id: 1, key: "bottle" },
       { ...ITEM_FIELDS, id: 2, key: "recycled_glass" },
     ],
+    denominations: [],
     recipes: [{ id: 1, key: "bottle_recycling", inputs: ["bottle"], outputs: ["recycled_glass"] }],
     professions: [{ id: 1, key: "sanitation_worker" }],
     chains: [{ id: 1, key: "plastic_bottle", links: ["sanitation_worker"] }],
@@ -153,6 +157,83 @@ describe("parseDefs", () => {
       /exceeds MAX_SHELF_LIFE_MINUTES \(525600\)/,
     );
     expect(() => parseDefs(bad({ shelf_life_minutes: 525_600 }))).not.toThrow();
+  });
+
+  describe("denominations (FR92)", () => {
+    const withDenominations = (rows: Record<string, unknown>[]) => {
+      const payload = validPayload();
+      payload.items = [
+        ...(payload.items as Record<string, unknown>[]),
+        { ...ITEM_FIELDS, id: 3, key: "coin" },
+        { ...ITEM_FIELDS, id: 4, key: "grain", unit: 1 },
+        { ...ITEM_FIELDS, id: 5, key: "stale", shelf_life_minutes: 60 },
+        { ...ITEM_FIELDS, id: 6, key: "note" },
+      ];
+      payload.denominations = rows;
+      return payload;
+    };
+    const den = (item_id: number, face_value: unknown) => ({ item_id, face_value });
+
+    it("accepts money at the cap and carries it through", () => {
+      const defs = parseDefs(withDenominations([den(3, 1_000), den(6, 5)]));
+      expect(defs.denominations).toEqual([
+        { itemId: 3, faceValue: 1_000 },
+        { itemId: 6, faceValue: 5 },
+      ]);
+      expect([defs.maxFaceValue, defs.maxDenominations, defs.denominationUnit]).toEqual([
+        1_000, 16, 0,
+      ]);
+    });
+
+    it("refuses a face value of 0 or over the cap", () => {
+      expect(() => parseDefs(withDenominations([den(3, 0)]))).toThrow(/face_value of 0/);
+      expect(() => parseDefs(withDenominations([den(3, 1_001)]))).toThrow(
+        /face_value 1001 exceeds MAX_FACE_VALUE \(1000\)/,
+      );
+    });
+
+    it("refuses a denomination naming no item, or one item twice", () => {
+      expect(() => parseDefs(withDenominations([den(99, 5)]))).toThrow(/unknown item 99/);
+      expect(() => parseDefs(withDenominations([den(3, 5), den(3, 6)]))).toThrow(
+        /item 'coin' is already a denomination/,
+      );
+    });
+
+    it("refuses a denomination that is not in pieces or that spoils", () => {
+      expect(() => parseDefs(withDenominations([den(4, 5)]))).toThrow(
+        /must be counted in the denomination unit/,
+      );
+      expect(() => parseDefs(withDenominations([den(5, 5)]))).toThrow(/must never spoil/);
+    });
+
+    it("refuses two denominations with one face value", () => {
+      expect(() => parseDefs(withDenominations([den(3, 5), den(6, 5)]))).toThrow(
+        /face_value 5 is already item 'coin'/,
+      );
+    });
+
+    it("refuses more denominations than MAX_DENOMINATIONS", () => {
+      const payload = validPayload();
+      payload.items = Array.from({ length: 17 }, (_, i) => ({
+        ...ITEM_FIELDS,
+        id: 10 + i,
+        key: `tok_${i}`,
+      }));
+      payload.recipes = [];
+      const rows = payload.items as { id: number }[];
+      payload.denominations = rows.map((it, i) => den(it.id, i + 1));
+      expect(() => parseDefs(payload)).toThrow(/over MAX_DENOMINATIONS \(16\)/);
+      payload.denominations = (payload.denominations as unknown[]).slice(0, 16);
+      expect(() => parseDefs(payload)).not.toThrow();
+    });
+
+    it("refuses a missing table, a wrong-typed face value and an unknown key", () => {
+      const missing = validPayload();
+      delete missing.denominations;
+      expect(() => parseDefs(missing)).toThrow(/expected an array/);
+      expect(() => parseDefs(withDenominations([den(3, "five")]))).toThrow(/expected a number/);
+      expect(() => parseDefs(withDenominations([{ ...den(3, 5), extra: 1 }]))).toThrow();
+    });
   });
 
   it("rejects a wrong value type", () => {

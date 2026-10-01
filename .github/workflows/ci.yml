@@ -366,6 +366,8 @@ jobs:
       - run: bash ../scripts/ci/check-schema-additive.sh
       - name: story 2.10 AC3, the rule engine never hardcodes a content key
         run: bash ../scripts/ci/check-rule-engine-no-content-keys.sh
+      - name: story 6.8, the cash module never hardcodes a denomination key
+        run: bash ../scripts/ci/check-rule-engine-no-content-keys.sh "$GITHUB_WORKSPACE/tools/defs-build/goldens/defs-manifest.golden" "$GITHUB_WORKSPACE/server/sim/src/cash.rs"
       - name: story 3.4, the generator never hardcodes a content key
         run: bash ../scripts/ci/check-generator-no-content-keys.sh
       - name: story 2.11 AC1/AC4, the generator and the harness read one rule source

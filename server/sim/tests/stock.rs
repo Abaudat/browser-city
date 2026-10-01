@@ -3,11 +3,14 @@
 //! without an author. The pure decisions live in `sim::stock`; the
 //! module's `stock` table is a thin shell over them.
 
+use std::collections::BTreeMap;
+
 use sim::author::{Author, AuthorError, Cause};
 use sim::codes::holder_kind;
 use sim::stock::{
-    HOLDER_TABLES, HolderError, HolderRef, MAX_LINES_PER_HOLDER, Made, NoRoom, Plan, StockError,
-    StockLine, Withdrawal, Write, plan_consume, plan_make, plan_transfer, plan_transfer_exact,
+    HOLDER_TABLES, HolderError, HolderRef, Lot, MAX_LINES_PER_HOLDER, Made, NoRoom, Plan,
+    StockError, StockLine, Withdrawal, Write, plan_consume, plan_make, plan_transfer,
+    plan_transfer_all, plan_transfer_exact,
 };
 
 mod support;
@@ -272,7 +275,7 @@ fn an_author_needs_a_citizen() {
 /// "adjust") is a deliberate edit here; each takes an `Author`; and none
 /// takes a `Plan`, a `Write` or a row id to set.
 #[test]
-fn the_public_write_verbs_are_exactly_make_consume_and_the_two_transfers() {
+fn the_public_write_verbs_are_exactly_make_consume_and_the_three_transfers() {
     let source = include_str!("../src/stock.rs");
     let mut verbs: Vec<String> = Vec::new();
     let mut rest = source;
@@ -285,7 +288,7 @@ fn the_public_write_verbs_are_exactly_make_consume_and_the_two_transfers() {
             continue; // a getter on a finished `Write`
         }
         let (params, ret) = sig.split_once(") ->").unwrap_or((sig, ""));
-        if ["Plan", "Write", "Withdrawal", "Transfer", "Made"]
+        if ["Plan", "Write", "Withdrawal", "Transfer", "Made", "Lot"]
             .iter()
             .any(|t| sig.contains(t))
         {
@@ -311,6 +314,7 @@ fn the_public_write_verbs_are_exactly_make_consume_and_the_two_transfers() {
             "plan_consume",
             "plan_make",
             "plan_transfer",
+            "plan_transfer_all",
             "plan_transfer_exact"
         ]
     );
@@ -342,6 +346,7 @@ fn the_public_functions_of_stock_are_exactly_these() {
         "plan_consume",
         "plan_make",
         "plan_transfer",
+        "plan_transfer_all",
         "plan_transfer_exact",
         // `Write`'s getters.
         "author",
@@ -528,5 +533,128 @@ fn neither_a_shortfall_nor_a_full_receiver_is_an_error_variant() {
         "ceiling",
     ] {
         assert!(!body.contains(banned), "not an error variant: {banned}");
+    }
+}
+
+fn lot(pairs: &[(u32, u64)]) -> BTreeMap<u32, u64> {
+    pairs.iter().copied().collect()
+}
+
+/// Several items move together, all or none, by one author (story 6.8).
+#[test]
+fn a_lot_moves_every_line_in_full_or_writes_nothing() {
+    let (a, b) = (
+        holder(holder_kind::BUSINESS, 1),
+        holder(holder_kind::CITIZEN, 1),
+    );
+    let mut ledger = Ledger::default();
+    put(&mut ledger, a, 1, 5);
+    put(&mut ledger, a, 2, 2);
+    put(&mut ledger, b, 2, 1);
+
+    let moved: Lot =
+        plan_transfer_all(ledger.lines(), maker(), a, b, &lot(&[(1, 5), (2, 1)])).unwrap();
+    assert!(moved.short.is_none() && moved.no_room.is_none());
+    for w in &moved.writes {
+        ledger.apply(w);
+    }
+    assert_eq!(
+        [(a, 1), (a, 2), (b, 1), (b, 2)].map(|(h, i)| ledger.quantity(h, i)),
+        [0, 1, 5, 2]
+    );
+}
+
+#[test]
+fn a_lot_with_a_line_the_giver_cannot_cover_moves_nothing_and_names_the_line() {
+    let (a, b) = (
+        holder(holder_kind::BUSINESS, 1),
+        holder(holder_kind::CITIZEN, 1),
+    );
+    let mut ledger = Ledger::default();
+    put(&mut ledger, a, 1, 5);
+    put(&mut ledger, a, 2, 2);
+    let t = plan_transfer_all(ledger.lines(), maker(), a, b, &lot(&[(1, 5), (2, 3)])).unwrap();
+    assert_eq!(t.short, Some(2));
+    assert!(t.writes.is_empty() && t.no_room.is_none());
+}
+
+/// Two new lines at 63 held must not both pass: the receiver's room is
+/// counted over the whole lot.
+#[test]
+fn the_new_lines_of_a_lot_are_counted_together_against_the_ceiling() {
+    let (a, b) = (
+        holder(holder_kind::BUSINESS, 1),
+        holder(holder_kind::CITIZEN, 1),
+    );
+    let mut ledger = Ledger::default();
+    put(&mut ledger, a, 1000, 1);
+    put(&mut ledger, a, 1001, 1);
+    for item in 0..(MAX_LINES_PER_HOLDER as u32 - 1) {
+        put(&mut ledger, b, item, 1);
+    }
+    let two =
+        plan_transfer_all(ledger.lines(), maker(), a, b, &lot(&[(1000, 1), (1001, 1)])).unwrap();
+    assert_eq!(two.no_room, Some(NoRoom));
+    assert!(two.writes.is_empty());
+    let one = plan_transfer_all(ledger.lines(), maker(), a, b, &lot(&[(1000, 1)])).unwrap();
+    assert!(one.no_room.is_none() && one.writes.len() == 2);
+}
+
+#[test]
+fn a_lot_skips_zero_lines_and_a_move_to_oneself_writes_nothing() {
+    let (a, b) = (
+        holder(holder_kind::BUSINESS, 1),
+        holder(holder_kind::CITIZEN, 1),
+    );
+    let mut ledger = Ledger::default();
+    put(&mut ledger, a, 1, 2);
+    let t = plan_transfer_all(ledger.lines(), maker(), a, b, &lot(&[(1, 2), (9, 0)])).unwrap();
+    assert!(t.short.is_none());
+    assert_eq!(t.writes.len(), 2, "one giving and one receiving write");
+    let same = plan_transfer_all(ledger.lines(), maker(), a, a, &lot(&[(1, 2)])).unwrap();
+    assert!(same.writes.is_empty());
+}
+
+#[test]
+fn a_lot_is_a_procedure_step_and_overflow_is_an_error() {
+    let (a, b) = (
+        holder(holder_kind::BUSINESS, 1),
+        holder(holder_kind::CITIZEN, 1),
+    );
+    let mut ledger = Ledger::default();
+    put(&mut ledger, a, 1, 2);
+    put(&mut ledger, b, 1, u64::MAX);
+    assert_eq!(
+        plan_transfer_all(ledger.lines(), eater(), a, b, &lot(&[(1, 1)])).unwrap_err(),
+        StockError::CauseNotPermitted
+    );
+    assert_eq!(
+        plan_transfer_all(ledger.lines(), maker(), a, b, &lot(&[(1, 1)])).unwrap_err(),
+        StockError::QuantityOverflow
+    );
+}
+
+#[test]
+fn every_write_of_a_lot_carries_the_exact_author_it_was_asked_with() {
+    let (a, b) = (
+        holder(holder_kind::BUSINESS, 1),
+        holder(holder_kind::CITIZEN, 1),
+    );
+    let mut ledger = Ledger::default();
+    put(&mut ledger, a, 1, 2);
+    put(&mut ledger, a, 2, 2);
+    let by = Author::new(77, Cause::ProcedureStep).unwrap();
+    let t = plan_transfer_all(ledger.lines(), by, a, b, &lot(&[(1, 2), (2, 1)])).unwrap();
+    assert_eq!(t.writes.len(), 4);
+    assert!(t.writes.iter().all(|w| w.author() == by));
+}
+
+/// Stock never learns about money: no branch on an item, and no mention
+/// of the cash module or the generated content (story 6.8).
+#[test]
+fn stock_does_not_know_about_money_or_content() {
+    let source = include_str!("../src/stock.rs").to_lowercase();
+    for banned in ["cash", "face_value", "denomination", "generated"] {
+        assert!(!source.contains(banned), "stock.rs mentions {banned}");
     }
 }

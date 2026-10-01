@@ -10,6 +10,10 @@
 # source, never the machine-generated `server/sim/src/generated/defs.rs`
 # a real key legitimately reaches as data.
 #
+# A second run guards the cash module the same way (story 6.8): pass the
+# manifest and `server/sim/src/cash.rs` as the two arguments; the second
+# may be a file as well as a directory.
+#
 # Matches a key only when it is quoted (`"cafe"` or `'cafe'`) -- the
 # shape an actual hardcoded branch (`if key == "cafe"`) would take, never
 # a bare identifier (a test fixture constant named `WASTE` is not a
@@ -29,7 +33,7 @@ ENGINE_DIR="${2:-"$REPO_ROOT/server/sim/src/rules"}"
   exit 1
 }
 
-if [ ! -d "$ENGINE_DIR" ]; then
+if [ ! -e "$ENGINE_DIR" ]; then
   echo "check-rule-engine-no-content-keys: FAIL -- $ENGINE_DIR not found" >&2
   exit 1
 fi
