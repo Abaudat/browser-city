@@ -534,3 +534,27 @@ fn the_committed_denominations_are_largest_first_with_unique_face_values() {
         DENOMINATIONS.len()
     );
 }
+
+/// A holder paying itself moves nothing, so it is never a completed sale.
+#[test]
+fn a_holder_paying_itself_is_not_a_paid_sale() {
+    let ledger = ledger_of(&[(till(), NOTE_20, 1), (till(), COIN_5, 3)]);
+    let outcome = plan_payment(
+        ledger.lines(),
+        step(),
+        till(),
+        till(),
+        &lot(&[(NOTE_20, 1)]),
+        5,
+        &denoms(),
+    )
+    .unwrap();
+    assert!(!matches!(outcome, Payment::Paid { .. }), "{outcome:?}");
+}
+
+/// The change search answers any amount without panicking.
+#[test]
+fn choose_change_never_panics_on_the_largest_amount() {
+    let ledger = ledger_of(&[(till(), COIN_5, 3)]);
+    let _ = choose_change(ledger.lines(), till(), u64::MAX, &denoms());
+}
