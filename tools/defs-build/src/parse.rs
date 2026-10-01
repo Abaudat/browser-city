@@ -47,6 +47,7 @@ fn check_filename(path: &Path) -> Result<(), DefsError> {
 enum Kind {
     Objects,
     Items,
+    Denominations,
     Recipes,
     Professions,
     Chains,
@@ -75,6 +76,7 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
     match kind_str {
         "objects" => Ok(Kind::Objects),
         "items" => Ok(Kind::Items),
+        "denominations" => Ok(Kind::Denominations),
         "recipes" => Ok(Kind::Recipes),
         "professions" => Ok(Kind::Professions),
         "chains" => Ok(Kind::Chains),
@@ -90,7 +92,7 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
             1,
             1,
             format!(
-                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/recipes/professions/chains/building-types/balance/atlas/appearance/tags/rules/archetypes"
+                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/denominations/recipes/professions/chains/building-types/balance/atlas/appearance/tags/rules/archetypes"
             ),
         )),
     }
@@ -148,9 +150,18 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         key: located(text, &i.key),
                         unit: located(text, &i.unit),
                         shelf_life_minutes: located(text, &i.shelf_life_minutes),
-                        face_value: i.face_value.as_ref().map(|v| located(text, v)),
                         bulk_width: located(text, &i.bulk.width),
                         bulk_height: located(text, &i.bulk.height),
+                    });
+                }
+            }
+            Kind::Denominations => {
+                let file: DenominationFile = parse_toml(path, text)?;
+                for d in file.denomination {
+                    raw.denominations.push(DenominationEntry {
+                        path: path.clone(),
+                        item: located(text, &d.item),
+                        face_value: located(text, &d.face_value),
                     });
                 }
             }

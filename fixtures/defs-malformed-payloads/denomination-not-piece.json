@@ -1,0 +1,47 @@
+{
+  "generated_by": "tools/defs-build -- do not edit by hand",
+  "defs_version": "test",
+  "collider_subcells_per_cell": 16,
+  "interact_at_max_reach_cells": 2,
+  "max_footprint_cells": 8,
+  "max_shelf_life_minutes": 525600,
+  "max_face_value": 1000,
+  "max_denominations": 16,
+  "denomination_unit": 0,
+  "objects": [],
+  "items": [
+    {
+      "id": 1,
+      "key": "grain",
+      "unit": 1,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "denominations": [
+    {
+      "item_id": 1,
+      "face_value": 5
+    }
+  ],
+  "recipes": [],
+  "professions": [],
+  "chains": [],
+  "balance": [
+    {
+      "key": "render.tile_size_px",
+      "value": 16,
+      "min": 1,
+      "max": 64
+    }
+  ],
+  "bodies": [],
+  "eyes": [],
+  "hairstyles": [],
+  "outfits": [],
+  "accessories": [],
+  "appearance_layouts": [],
+  "uniforms": [],
+  "tags": []
+}

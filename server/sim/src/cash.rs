@@ -1,5 +1,5 @@
-//! Cash is stock (FR92). A denomination is an item that carries a face
-//! value; a citizen's cash is that citizen's stock lines and a till is the
+//! Cash is stock (FR92). A denomination is an item that plays the role of
+//! money; a citizen's cash is that citizen's stock lines and a till is the
 //! business holder's lines of the same items. This module values a handful
 //! of pieces, chooses change and plans a payment as ordinary authored
 //! transfers. It takes the denomination table as a parameter, names no
@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 
 use crate::author::Author;
-use crate::generated::defs::Denomination;
+use crate::generated::defs::{Denomination, MAX_FACE_VALUE};
 use crate::stock::{HolderRef, StockError, StockLine, Write, plan_transfer_all};
 
 /// A real error: the caller asked for something that cannot be.
@@ -25,6 +25,9 @@ pub enum CashError {
     NotADenomination(u32),
     /// A value passes `u64::MAX`.
     ValueOverflow,
+    /// A change amount the search will not take: it is at or above
+    /// `MAX_FACE_VALUE`.
+    AmountOutOfRange,
 }
 
 /// Which side of the counter could not take what the payment gives it.
@@ -39,19 +42,21 @@ pub enum Side {
 /// the counter could watch: nothing moved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Payment {
-    /// Tender went to the till and `change` (possibly empty) came back.
+    /// The customer's pieces went to the till and the change came back,
+    /// netted per denomination: a piece handed over and handed straight
+    /// back does not move. `change` is the whole change, possibly empty.
     Paid {
         change: BTreeMap<u32, u64>,
         writes: Vec<Write>,
     },
+    /// A holder cannot pay itself: nothing would move.
+    SameHolder,
     /// The tender is worth less than the price.
     TenderBelowPrice,
     /// The customer does not hold this much of the item.
     TenderNotHeld { item_id: u32 },
-    /// The tender holds a piece the price does not need: the change due
-    /// reaches its face value.
-    SuperfluousPiece { item_id: u32 },
-    /// No combination of what the till holds makes the change due.
+    /// No combination of what the till holds, and what was just tendered,
+    /// makes the change due.
     NoChange,
     /// This side would pass the line ceiling.
     NoRoom(Side),
@@ -86,31 +91,37 @@ pub fn value_of(lot: &BTreeMap<u32, u64>, denoms: &[Denomination]) -> Result<u64
     Ok(total)
 }
 
-/// The pieces `holder` holds that sum to exactly `amount`: `None` only when
-/// no combination of what it holds does. Fewest pieces; ties to more of the
-/// larger denomination, whatever order the table is in. Iterative; cost is
-/// a function of `amount` and the table, never of the quantities held.
-/// `amount` is expected to be small (a change due is below a face value).
+/// The pieces `holder` holds that sum to exactly `amount`: `Ok(None)` only
+/// when no combination of what it holds does. Fewest pieces; ties to more
+/// of the larger denomination, whatever order the table is in. An `amount`
+/// at or above `MAX_FACE_VALUE` is `Err(AmountOutOfRange)` before anything
+/// is allocated. The search is iterative and grows with the square of the
+/// amount (a table of `amount` cells per denomination, each taking up to
+/// `amount` / face value steps), never with the quantities held;
+/// `MAX_FACE_VALUE` is what bounds it, so it may not be raised without
+/// changing this search.
 pub fn choose_change(
     existing: &[StockLine],
     holder: HolderRef,
     amount: u64,
     denoms: &[Denomination],
-) -> Option<BTreeMap<u32, u64>> {
+) -> Result<Option<BTreeMap<u32, u64>>, CashError> {
+    if amount >= u64::from(MAX_FACE_VALUE) {
+        return Err(CashError::AmountOutOfRange);
+    }
+    let target = amount as usize;
     let mut table: Vec<Denomination> = denoms
         .iter()
         .copied()
         .filter(|d| d.face_value > 0)
         .collect();
     table.sort_by_key(|d| std::cmp::Reverse(d.face_value));
-    let target = usize::try_from(amount).ok()?;
     // Pieces of each kind that could ever matter.
     let usable: Vec<usize> = table
         .iter()
         .map(|d| {
             let held = quantity_of(existing, holder, d.item_id);
-            let fits = amount / u64::from(d.face_value);
-            usize::try_from(held.min(fits)).unwrap_or(usize::MAX)
+            held.min(amount / u64::from(d.face_value)) as usize
         })
         .collect();
     let face = |k: usize| table[k].face_value as usize;
@@ -130,7 +141,9 @@ pub fn choose_change(
             fewest[k][a] = best;
         }
     }
-    let total = fewest[0][target]?;
+    let Some(total) = fewest[0][target] else {
+        return Ok(None);
+    };
 
     // Walk the table largest first, taking as many of each kind as still
     // reaches the fewest total.
@@ -150,67 +163,108 @@ pub fn choose_change(
             }
         }
     }
-    Some(change)
+    Ok(Some(change))
 }
 
-/// Plans a cash payment as one unit: the tender moves customer to till and
-/// the change moves till to customer, every write under `by`, or none. The
-/// change due is below the smallest tendered piece, so the two lots share
-/// no item, no row is planned twice and the till's change is the same
-/// whether or not the tender has landed. A line one direction empties is
-/// room for the other.
+/// Plans a cash payment as one unit, every write or none. The change is
+/// chosen from the till as it stands with the tender in it, and what each
+/// side hands over is netted per denomination, so every row moves one way
+/// or not at all. What moves customer to till is authored by
+/// `customer_by`, what moves till to customer by `cashier_by`. A line one
+/// direction empties is room for the other. A change due at or above
+/// `MAX_FACE_VALUE` is met by handing whole tendered pieces back, largest
+/// first, until it is under: they never leave the customer.
+#[allow(clippy::too_many_arguments)]
 pub fn plan_payment(
     existing: &[StockLine],
-    by: Author,
+    customer_by: Author,
+    cashier_by: Author,
     customer: HolderRef,
     till: HolderRef,
     tender: &BTreeMap<u32, u64>,
     price: u64,
     denoms: &[Denomination],
 ) -> Result<Payment, CashError> {
+    if customer == till {
+        return Ok(Payment::SameHolder);
+    }
     let value = value_of(tender, denoms)?;
-    let pieces: Vec<(u32, u64)> = tender
+    let mut tendered: BTreeMap<u32, u64> = tender
         .iter()
         .filter(|&(_, &q)| q > 0)
         .map(|(&i, &q)| (i, q))
         .collect();
-    if let Some(&(item_id, _)) = pieces
+    if let Some((&item_id, _)) = tendered
         .iter()
-        .find(|&&(i, q)| quantity_of(existing, customer, i) < q)
+        .find(|&(&i, &q)| quantity_of(existing, customer, i) < q)
     {
         return Ok(Payment::TenderNotHeld { item_id });
     }
-    let Some(due) = value.checked_sub(price) else {
+    let Some(mut due) = value.checked_sub(price) else {
         return Ok(Payment::TenderBelowPrice);
     };
-    let smallest = pieces
-        .iter()
-        .filter_map(|&(i, _)| face_of(denoms, i).map(|f| (f, i)))
-        .min();
-    if let Some((face, item_id)) = smallest
-        && due >= u64::from(face)
-    {
-        return Ok(Payment::SuperfluousPiece { item_id });
+
+    let ceiling = u64::from(MAX_FACE_VALUE);
+    let mut largest_first: Vec<Denomination> = denoms.to_vec();
+    largest_first.sort_by_key(|d| std::cmp::Reverse(d.face_value));
+    for d in largest_first.iter().filter(|d| d.face_value > 0) {
+        if due < ceiling {
+            break;
+        }
+        let face = u64::from(d.face_value);
+        let held = tendered.get(&d.item_id).copied().unwrap_or(0);
+        let back = (due - (ceiling - 1)).div_ceil(face).min(held);
+        if back > 0 {
+            tendered.insert(d.item_id, held - back);
+            due -= back * face;
+        }
     }
-    let Some(change) = choose_change(existing, till, due, denoms) else {
+
+    // The till as it stands with the tender in it.
+    let mut pool: Vec<StockLine> = Vec::new();
+    for d in denoms {
+        let in_till = quantity_of(existing, till, d.item_id);
+        let total = in_till
+            .checked_add(tendered.get(&d.item_id).copied().unwrap_or(0))
+            .ok_or(CashError::ValueOverflow)?;
+        if total > 0 {
+            pool.push(StockLine {
+                row_id: 0,
+                holder: till,
+                item_id: d.item_id,
+                quantity: total,
+            });
+        }
+    }
+    let Some(change) = choose_change(&pool, till, due, denoms)? else {
         return Ok(Payment::NoChange);
     };
 
-    // Each direction is planned against the lines as the other leaves them:
-    // a line a lot empties no longer counts against its holder's ceiling.
-    let tender_view = without_emptied(existing, till, &change);
-    let change_view = without_emptied(existing, customer, tender);
+    // Net per denomination: what is handed over minus what comes back.
+    let mut to_till = BTreeMap::new();
+    let mut to_customer = BTreeMap::new();
+    for item in tendered.keys().chain(change.keys()) {
+        let over = tendered.get(item).copied().unwrap_or(0);
+        let back = change.get(item).copied().unwrap_or(0);
+        if over > back {
+            to_till.insert(*item, over - back);
+        } else if back > over {
+            to_customer.insert(*item, back - over);
+        }
+    }
 
-    let paid =
-        plan_transfer_all(&tender_view, by, customer, till, tender).map_err(CashError::Stock)?;
+    let tender_view = without_emptied(existing, till, &to_customer);
+    let change_view = without_emptied(existing, customer, &to_till);
+    let paid = plan_transfer_all(&tender_view, customer_by, customer, till, &to_till)
+        .map_err(CashError::Stock)?;
     if let Some(item_id) = paid.short {
         return Ok(Payment::TenderNotHeld { item_id });
     }
     if paid.no_room.is_some() {
         return Ok(Payment::NoRoom(Side::Till));
     }
-    let back =
-        plan_transfer_all(&change_view, by, till, customer, &change).map_err(CashError::Stock)?;
+    let back = plan_transfer_all(&change_view, cashier_by, till, customer, &to_customer)
+        .map_err(CashError::Stock)?;
     if back.short.is_some() {
         return Ok(Payment::NoChange);
     }

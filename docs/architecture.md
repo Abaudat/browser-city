@@ -317,9 +317,9 @@ and just-in-time. So:
 ## Cash
 
 - An amount of money is a `u64` count of the smallest currency unit.
-- A denomination is an `[[item]]` with a `face_value` (1 to `MAX_FACE_VALUE`), unit `piece`, never perishable, face values unique, at most `MAX_DENOMINATIONS`. Cash is `stock` rows of those items; `sim::stock` does not know it.
+- A denomination is a `[[denomination]]` row (in `defs/denominations/`) naming an item and its `face_value` (1 to `MAX_FACE_VALUE`); the item is counted in `piece`, never perishable, named once, face values unique, at most `MAX_DENOMINATIONS`. Cash is `stock` rows of those items; `sim::stock` does not know it.
 - There is no till holder: a shop's till is its `business` holder's denomination lines. No total is stored anywhere; a value is summed when a step needs it.
-- `sim::cash` takes the denomination table (`generated::defs::DENOMINATIONS`, largest face value first) as a parameter. `choose_change` is exact, bounded and deterministic: fewest pieces, ties to the larger denomination. `plan_payment` returns every write of a payment or none, all under one `Author`. A payment that cannot be made is a `Payment` variant, never an `Err`; `CashError` is only a stock error, a non-denomination item or a value overflow.
+- `sim::cash` takes the denomination table (`generated::defs::DENOMINATIONS`, largest face value first) as a parameter. `choose_change` is exact and deterministic (fewest pieces, ties to the larger denomination), costs the square of the amount, and takes an amount under `MAX_FACE_VALUE` (1,000), which is what bounds it: a larger one is `CashError::AmountOutOfRange`. `plan_payment` returns every write of a payment or none, with the customer's `Author` on what leaves the customer and the cashier's on what leaves the till. Change is chosen from the till with the tender in it, and what each side hands over is netted per denomination, so a row moves one way or not at all. A payment that cannot be made is a `Payment` variant (a holder paying itself included), never an `Err`; `CashError` is only a stock error, a non-denomination item, a value overflow or an amount out of range.
 - `sim::cash` never makes or destroys a piece and offers no top-up: a short till is restocked by an authored transfer.
 
 ## Item instances
@@ -948,7 +948,7 @@ behind a flag not exposed in production (FR168).
 ## Definitions (`defs/`)
 
 `defs/` is the single source of truth for game content data (NFR31),
-subdivided into `objects/`, `items/`, `recipes/`, `professions/`,
+subdivided into `objects/`, `items/`, `denominations/`, `recipes/`, `professions/`,
 `chains/`, `appearance/`, `balance/`, `tags/`, `rules/` and
 `archetypes/`, each a directory of TOML files
 (the naming table's `city-props.toml`). Neither build target writes here
@@ -966,17 +966,20 @@ handshake's own `defs_version` (below). Both begin with a generated-file
 marker and are never hand-edited.
 
 An `[[item]]` (FR86) is `id`, `key`, `unit`, `shelf_life_minutes` and
-`bulk`, all required, and an optional `face_value` (FR92) that makes it a
-denomination (see "Cash"); both artefacts carry `face_value` on every item,
-`0` meaning not money, plus `MAX_FACE_VALUE`, `MAX_DENOMINATIONS` and the
-denomination unit, and `defs.rs` a `DENOMINATIONS` table sorted by face value
-descending. `unit` is a name resolved at build time against
+`bulk`, all required. `unit` is a name resolved at build time against
 `sim::codes::unit`'s golden, the way an object's `layer` is: it is a
 `u32` code with a companion `unit` table, never an enum, and only the code
 reaches either artefact. `shelf_life_minutes` is a `u32`, `0` meaning it
 never spoils, capped at `MAX_SHELF_LIFE_MINUTES`. `bulk = { width, height
 }` is the item's world footprint in whole cells (FR94), 1 to
-`MAX_FOOTPRINT_CELLS` per axis. The item id's companion data is the
+`MAX_FOOTPRINT_CELLS` per axis. A `[[denomination]]` (FR92) is an item
+playing the role of money: `item` (an item key) and `face_value`. Both
+artefacts carry a `denominations` table, largest face value first, plus
+`MAX_FACE_VALUE`, `MAX_DENOMINATIONS` and the denomination unit (the `piece`
+code, a missing one failing the build); both parsers refuse a face value
+outside 1 to `MAX_FACE_VALUE`, an unknown or twice-named item, a unit other
+than `piece`, a perishable item, a repeated face value and more than
+`MAX_DENOMINATIONS` rows. The item id's companion data is the
 generated `ITEMS` / `defs.json` pair; there is no item database table
 until a server reader needs one. An item instance's storage is under
 "Item instances".

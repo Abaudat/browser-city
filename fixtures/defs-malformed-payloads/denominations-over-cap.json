@@ -1,0 +1,239 @@
+{
+  "generated_by": "tools/defs-build -- do not edit by hand",
+  "defs_version": "test",
+  "collider_subcells_per_cell": 16,
+  "interact_at_max_reach_cells": 2,
+  "max_footprint_cells": 8,
+  "max_shelf_life_minutes": 525600,
+  "max_face_value": 1000,
+  "max_denominations": 16,
+  "denomination_unit": 0,
+  "objects": [],
+  "items": [
+    {
+      "id": 1,
+      "key": "tok_1",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 2,
+      "key": "tok_2",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 3,
+      "key": "tok_3",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 4,
+      "key": "tok_4",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 5,
+      "key": "tok_5",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 6,
+      "key": "tok_6",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 7,
+      "key": "tok_7",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 8,
+      "key": "tok_8",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 9,
+      "key": "tok_9",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 10,
+      "key": "tok_10",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 11,
+      "key": "tok_11",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 12,
+      "key": "tok_12",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 13,
+      "key": "tok_13",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 14,
+      "key": "tok_14",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 15,
+      "key": "tok_15",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 16,
+      "key": "tok_16",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 17,
+      "key": "tok_17",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "denominations": [
+    {
+      "item_id": 1,
+      "face_value": 1
+    },
+    {
+      "item_id": 2,
+      "face_value": 2
+    },
+    {
+      "item_id": 3,
+      "face_value": 3
+    },
+    {
+      "item_id": 4,
+      "face_value": 4
+    },
+    {
+      "item_id": 5,
+      "face_value": 5
+    },
+    {
+      "item_id": 6,
+      "face_value": 6
+    },
+    {
+      "item_id": 7,
+      "face_value": 7
+    },
+    {
+      "item_id": 8,
+      "face_value": 8
+    },
+    {
+      "item_id": 9,
+      "face_value": 9
+    },
+    {
+      "item_id": 10,
+      "face_value": 10
+    },
+    {
+      "item_id": 11,
+      "face_value": 11
+    },
+    {
+      "item_id": 12,
+      "face_value": 12
+    },
+    {
+      "item_id": 13,
+      "face_value": 13
+    },
+    {
+      "item_id": 14,
+      "face_value": 14
+    },
+    {
+      "item_id": 15,
+      "face_value": 15
+    },
+    {
+      "item_id": 16,
+      "face_value": 16
+    },
+    {
+      "item_id": 17,
+      "face_value": 17
+    }
+  ],
+  "recipes": [],
+  "professions": [],
+  "chains": [],
+  "balance": [
+    {
+      "key": "render.tile_size_px",
+      "value": 16,
+      "min": 1,
+      "max": 64
+    }
+  ],
+  "bodies": [],
+  "eyes": [],
+  "hairstyles": [],
+  "outfits": [],
+  "accessories": [],
+  "appearance_layouts": [],
+  "uniforms": [],
+  "tags": []
+}

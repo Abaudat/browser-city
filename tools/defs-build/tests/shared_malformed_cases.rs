@@ -16,7 +16,7 @@
 //! missing` and `sprite-outside-sheet-bounds` need a real sheet's `IHDR`
 //! dimensions (`fsio::read_png_dims`), which the client never reads --
 //! its own artefact only ever carries an already-validated `sprite` rect.
-//! These exist as `tests/fixtures/invalid/` categories and
+//! Those two exist as `tests/fixtures/invalid/` categories and
 //! `failure_fixtures.rs` tests only, deliberately absent from
 //! `fixtures/defs-malformed-cases.v1.json` (JSON has no comment syntax to
 //! say so inline). Every other rejection category both sides can check
@@ -78,12 +78,15 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "item-bulk-height-cap-exceeded" => "item-bulk-height-cap-exceeded",
         "item-bulk-footprint-cap-exceeded" => "item-bulk-footprint-cap-exceeded",
         "item-shelf-life-out-of-range" => "item-shelf-life-out-of-range",
-        "item-face-value-over-cap" => "item-face-value-over-cap",
-        "item-face-value-wrong-type" => "item-face-value-wrong-type",
-        "item-denomination-not-piece" => "item-denomination-not-piece",
-        "item-denomination-perishable" => "item-denomination-perishable",
-        "item-face-value-duplicate" => "item-face-value-duplicate",
-        "item-denominations-over-cap" => "item-denominations-over-cap",
+        "denomination-face-value-zero" => "denomination-face-value-zero",
+        "denomination-face-value-over-cap" => "denomination-face-value-over-cap",
+        "denomination-face-value-wrong-type" => "denomination-face-value-wrong-type",
+        "denomination-unknown-item" => "denomination-unknown-item",
+        "denomination-item-twice" => "denomination-item-twice",
+        "denomination-not-piece" => "denomination-not-piece",
+        "denomination-perishable" => "denomination-perishable",
+        "denomination-face-value-duplicate" => "denomination-face-value-duplicate",
+        "denominations-over-cap" => "denominations-over-cap",
         other => panic!(
             "shared case '{other}' has no mapped tests/fixtures/invalid/ directory -- add one to fixture_for()"
         ),

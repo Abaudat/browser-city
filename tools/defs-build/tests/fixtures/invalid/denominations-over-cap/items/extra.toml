@@ -1,0 +1,118 @@
+[[item]]
+id = 101
+key = "tok_1"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 102
+key = "tok_2"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 103
+key = "tok_3"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 104
+key = "tok_4"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 105
+key = "tok_5"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 106
+key = "tok_6"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 107
+key = "tok_7"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 108
+key = "tok_8"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 109
+key = "tok_9"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 110
+key = "tok_10"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 111
+key = "tok_11"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 112
+key = "tok_12"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 113
+key = "tok_13"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 114
+key = "tok_14"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 115
+key = "tok_15"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 116
+key = "tok_16"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 117
+key = "tok_17"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }

@@ -115,8 +115,49 @@ fn every_scheduled_table_has_the_required_columns_and_names_a_real_reducer() {
 // Every table has a `TABLE_BOUNDS` row (NFR37): `registry_matches_tables.rs`
 // owns that assertion; it is not duplicated here.
 
-/// Story 6.8 (FR92): a till's cash is `stock` rows and nothing else, so no
-/// table, struct or column is named for cash, a till or a denomination.
+/// The words a table or column may not be named for: a till's cash is
+/// `stock` rows and nothing else (story 6.8, FR92).
+const CASH_WORDS: [&str; 3] = ["cash", "till", "denomination"];
+
+/// The banned word a name is made of, matched on `_`-separated segments,
+/// singular or plural -- never as a substring, so `open_until` and
+/// `cashier_id` are not caught.
+fn cash_word_in(name: &str) -> Option<&'static str> {
+    name.to_lowercase().split('_').find_map(|segment| {
+        CASH_WORDS.into_iter().find(|word| {
+            segment == *word
+                || segment.strip_suffix('s') == Some(word)
+                || segment.strip_suffix("es") == Some(word)
+        })
+    })
+}
+
+#[test]
+fn the_cash_name_check_matches_whole_words_only() {
+    for flagged in [
+        "till_id",
+        "tills",
+        "cash_total",
+        "denomination",
+        "cashes",
+        "open_till",
+    ] {
+        assert!(
+            cash_word_in(flagged).is_some(),
+            "{flagged} should be flagged"
+        );
+    }
+    for fine in [
+        "open_until",
+        "valid_until",
+        "cashier_id",
+        "tillage",
+        "stock_id",
+    ] {
+        assert!(cash_word_in(fine).is_none(), "{fine} should not be flagged");
+    }
+}
+
 #[test]
 fn no_table_or_column_is_named_for_cash_a_till_or_a_denomination() {
     for table in &schema().tables {
@@ -124,14 +165,11 @@ fn no_table_or_column_is_named_for_cash_a_till_or_a_denomination() {
             .chain(std::iter::once(&table.struct_name))
             .chain(table.columns.iter().map(|c| &c.name));
         for name in names {
-            let lower = name.to_lowercase();
-            for banned in ["cash", "till", "denomination"] {
-                assert!(
-                    !lower.contains(banned),
-                    "`{name}` in table `{}` names {banned} -- cash is `stock` rows (FR92)",
-                    table.accessor
-                );
-            }
+            assert!(
+                cash_word_in(name).is_none(),
+                "`{name}` in table `{}` is named for cash, a till or a denomination -- cash is `stock` rows (FR92)",
+                table.accessor
+            );
         }
     }
 }

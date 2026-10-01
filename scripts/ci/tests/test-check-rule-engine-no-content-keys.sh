@@ -57,7 +57,6 @@ check "a missing engine directory fails closed, never a silent pass" 1 \
 check "a missing manifest fails loudly" 1 \
   bash "$CHECK" "$REPO_ROOT/does/not/exist.golden" "$REPO_ROOT/server/sim/src/rules"
 
-summary
 # Story 6.8: the same guard run against one source file (the cash module).
 d="$(plant_manifest 'item 3 coin_1')"
 cat > "$d/cash.rs" <<'EOT'
@@ -79,3 +78,4 @@ check "the real cash module names no manifest key" 0 \
   bash "$CHECK" "$REPO_ROOT/tools/defs-build/goldens/defs-manifest.golden" "$REPO_ROOT/server/sim/src/cash.rs"
 
 summary
+exit $?

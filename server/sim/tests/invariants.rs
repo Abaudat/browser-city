@@ -46,7 +46,7 @@ pub const INV_STOCK_IS_INDEPENDENT_PER_HOLDER: &str = "stock is independent per 
 pub const INV_STOCK_MOVES_ONLY_BY_HAND: &str = "stock moves only by hand: across any interleaving of authored makes, consumptions and moves, every quantity change is a returned write naming a citizen and one of two causes, and each item's total changes only by what was made and consumed";
 pub const INV_STOCK_MOVE_CONSERVES_QUANTITY: &str = "a stock move conserves quantity: the per-item sum across holders is unchanged by any sequence of moves, and a move the receiver refuses takes nothing from the giver";
 pub const INV_CASH_PAYMENT_CONSERVES_EVERY_DENOMINATION: &str = "a cash payment conserves every denomination: after any payment outcome the count of each denomination across all holders is unchanged, a completed payment moves exactly the price of value from customer to till, and every other outcome moves nothing";
-pub const INV_CHANGE_IS_REFUSED_ONLY_WHEN_THE_TILL_CANNOT_MAKE_IT: &str = "change is refused only when the till cannot make it: a payment reports no change if and only if no combination of the pieces the till holds sums to the change due, and the change chosen is the fewest pieces with ties to the larger denomination";
+pub const INV_CHANGE_IS_REFUSED_ONLY_WHEN_THE_TILL_CANNOT_MAKE_IT: &str = "change is refused only when the till cannot make it: a payment reports no change if and only if no combination of the pieces the till holds and what was just tendered sums to the change due, and the change chosen is the fewest pieces with ties to the larger denomination";
 pub const INV_ITEM_INSTANCE_IN_EXACTLY_ONE_STATE: &str = "an item instance is in exactly one of its two states: any interleaving of place and hold moves leaves each instance in one form, never both, never neither";
 pub const INV_COLLIDER_WITHIN_FOOTPRINT: &str = "collider is contained within footprint";
 pub const INV_IDENTICAL_SEEDS_DERIVE_IDENTICALLY: &str =
@@ -5406,31 +5406,50 @@ proptest! {
 /// make and a move, and a procedure step into a take.
 #[derive(Debug, Clone, Copy)]
 struct StockOp {
-    /// 0 make, 1 consume, 2 up-to transfer, 3 exact transfer.
+    /// 0 make, 1 consume, 2 up-to transfer, 3 exact transfer, 4 a lot of
+    /// two lines moved in full or not at all.
     verb: u8,
     consumption: bool,
     from: usize,
     to: usize,
     item: u32,
     amount: u64,
+    /// The second line of a lot.
+    item2: u32,
+    amount2: u64,
     citizen: u64,
 }
 
+impl StockOp {
+    /// The lot a verb-4 operation moves: its two lines, the second
+    /// overriding the first when they name one item, zero lines left out.
+    fn lot(&self) -> std::collections::BTreeMap<u32, u64> {
+        let mut lot = std::collections::BTreeMap::new();
+        lot.insert(self.item, self.amount);
+        lot.insert(self.item2, self.amount2);
+        lot.retain(|_, q| *q > 0);
+        lot
+    }
+}
+
 fn stock_op() -> impl Strategy<Value = StockOp> {
+    let amount = || prop_oneof![0u64..20, Just(u64::MAX), (u64::MAX - 10)..=u64::MAX];
     (
-        (0u8..4, any::<bool>(), 0usize..8, 0usize..8),
-        0u32..6,
-        prop_oneof![0u64..20, Just(u64::MAX), (u64::MAX - 10)..=u64::MAX],
+        (0u8..5, any::<bool>(), 0usize..8, 0usize..8),
+        (0u32..6, amount()),
+        (0u32..6, amount()),
         1u64..5,
     )
         .prop_map(
-            |((verb, consumption, from, to), item, amount, citizen)| StockOp {
+            |((verb, consumption, from, to), (item, amount), (item2, amount2), citizen)| StockOp {
                 verb,
                 consumption,
                 from,
                 to,
                 item,
                 amount,
+                item2,
+                amount2,
                 citizen,
             },
         )
@@ -5557,6 +5576,33 @@ fn stock_expect(
             }
         }
         _ if op.consumption => none(Some(StockError::CauseNotPermitted)),
+        4 => {
+            let lot = op.lot();
+            if from == to || lot.is_empty() {
+                return none(None);
+            }
+            if lot.iter().any(|(&i, &want)| q(from, i) < want) {
+                return none(None);
+            }
+            let new_lines = lot.keys().filter(|&&i| q(to, i) == 0).count();
+            if lines(to) + new_lines > MAX_LINES_PER_HOLDER {
+                return StockExpect {
+                    no_room: true,
+                    ..none(None)
+                };
+            }
+            if lot
+                .iter()
+                .any(|(&i, &want)| q(to, i).checked_add(want).is_none())
+            {
+                return none(Some(StockError::QuantityOverflow));
+            }
+            StockExpect {
+                taken: lot.values().fold(0u64, |a, &b| a.wrapping_add(b)),
+                changed: 2 * lot.len(),
+                ..none(None)
+            }
+        }
         verb => {
             let held = q(from, op.item);
             let give = if verb == 3 {
@@ -5596,7 +5642,9 @@ fn stock_run(
     op: &StockOp,
     holders: &[sim::stock::HolderRef],
 ) -> Result<StockRun, sim::stock::StockError> {
-    use sim::stock::{Made, plan_consume, plan_make, plan_transfer, plan_transfer_exact};
+    use sim::stock::{
+        Made, plan_consume, plan_make, plan_transfer, plan_transfer_all, plan_transfer_exact,
+    };
     let (from, to) = (holders[op.from], holders[op.to]);
     let by = stock_op_author(op);
     match op.verb {
@@ -5624,6 +5672,19 @@ fn stock_run(
             remaining: Some(w.remaining),
             writes: vec![w.write],
         }),
+        4 => {
+            let lot = op.lot();
+            plan_transfer_all(lines, by, from, to, &lot).map(|t| StockRun {
+                taken: if t.writes.is_empty() {
+                    0
+                } else {
+                    lot.values().fold(0u64, |a, &b| a.wrapping_add(b))
+                },
+                no_room: t.no_room.is_some(),
+                remaining: None,
+                writes: t.writes,
+            })
+        }
         verb => {
             let t = if verb == 2 {
                 plan_transfer(lines, by, from, to, op.item, op.amount)
@@ -5763,6 +5824,39 @@ proptest! {
                 .map(|l| ((l.holder, l.item_id), l.quantity))
                 .collect();
             let want = stock_expect(&model, op, &holders);
+            if op.verb == 4 {
+                match stock_run(ledger.lines(), op, &holders) {
+                    Err(e) => prop_assert_eq!(Some(e), want.err),
+                    Ok(run) => {
+                        prop_assert_eq!(want.err, None);
+                        prop_assert_eq!(run.taken, want.taken);
+                        prop_assert_eq!(run.no_room, want.no_room);
+                        let lot = op.lot();
+                        let before_lot: Vec<(u64, u64)> = lot
+                            .keys()
+                            .map(|&i| (ledger.quantity(from, i), ledger.quantity(to, i)))
+                            .collect();
+                        for w in &run.writes {
+                            ledger.apply(w);
+                        }
+                        if run.writes.is_empty() {
+                            // A refused or empty lot takes nothing from anyone.
+                            let after: Vec<(u64, u64)> = lot
+                                .keys()
+                                .map(|&i| (ledger.quantity(from, i), ledger.quantity(to, i)))
+                                .collect();
+                            prop_assert_eq!(after, before_lot);
+                        } else {
+                            for (&i, &(giver, receiver)) in lot.keys().zip(before_lot.iter()) {
+                                prop_assert_eq!(ledger.quantity(from, i), giver - lot[&i]);
+                                prop_assert_eq!(ledger.quantity(to, i), receiver + lot[&i]);
+                            }
+                        }
+                    }
+                }
+                prop_assert_eq!(sum(&ledger), before.clone());
+                continue;
+            }
             let (giver, receiver) = (ledger.quantity(from, op.item), ledger.quantity(to, op.item));
             let run = match stock_run(ledger.lines(), op, &holders) {
                 Err(e) => {
@@ -5854,9 +5948,12 @@ proptest! {
 }
 
 /// Story 6.8 (FR92): a generated denomination set (never the committed
-/// one), three holders -- a till, a customer and a bystander -- and a
-/// payment drawn from the customer's own wallet so that completed,
-/// short-of-change, short-of-tender and exact cases all occur unfiltered.
+/// one), three holders -- a till, a customer and a bystander, or in a share
+/// of cases one holder on both sides of the counter -- and a payment drawn
+/// from the customer's own wallet. Some payments are built so that their
+/// change is a sub-multiset of the till and the tender, and some holders
+/// are filled with other lines to the ceiling or one or two short of it, so completed, short-of-change, short-of-tender,
+/// exact and no-room cases all occur unfiltered.
 #[derive(Debug, Clone)]
 struct CashCase {
     /// Face values, largest first, unique.
@@ -5866,10 +5963,15 @@ struct CashCase {
     bystander: Vec<u64>,
     /// Per denomination, how much of the wallet is tendered.
     pick: Vec<u64>,
+    /// Per denomination, how much of till-and-tender the change is built from.
+    sub_pick: Vec<u64>,
     /// Asks for one piece more than held, of the first kind.
     overdraw: bool,
     price_kind: u8,
     price_pick: u64,
+    till_junk: usize,
+    customer_junk: usize,
+    same_holder: bool,
 }
 
 fn cash_case() -> impl Strategy<Value = CashCase> {
@@ -5878,34 +5980,52 @@ fn cash_case() -> impl Strategy<Value = CashCase> {
         faces.sort_unstable_by(|a, b| b.cmp(a));
         let n = faces.len();
         let quantities = move || proptest::collection::vec(0u64..=6, n);
+        let sparse = move || {
+            proptest::collection::vec(prop_oneof![1 => Just(0u64), 1 => 1u64..=6], n)
+        };
+        let junk = || prop_oneof![2 => Just(0usize), 6 => Just(1usize), 1 => 2usize..=3];
         (
-            Just(faces),
-            quantities(),
-            quantities(),
-            quantities(),
-            proptest::collection::vec(any::<u64>(), n),
-            prop_oneof![9 => Just(false), 1 => Just(true)],
-            0u8..4,
-            any::<u64>(),
+            (
+                Just(faces),
+                quantities(),
+                sparse(),
+                quantities(),
+                proptest::collection::vec(any::<u64>(), n),
+                proptest::collection::vec(any::<u64>(), n),
+            ),
+            (
+                prop_oneof![9 => Just(false), 1 => Just(true)],
+                prop_oneof![1 => Just(0u8), 1 => Just(1u8), 3 => Just(2u8), 1 => Just(3u8), 5 => Just(4u8)],
+                any::<u64>(),
+                junk(),
+                junk(),
+                prop_oneof![24 => Just(false), 1 => Just(true)],
+            ),
         )
             .prop_map(
-                |(faces, till, customer, bystander, pick, overdraw, price_kind, price_pick)| {
-                    CashCase {
-                        faces,
-                        till,
-                        customer,
-                        bystander,
-                        pick,
-                        overdraw,
-                        price_kind,
-                        price_pick,
-                    }
+                |(
+                    (faces, till, customer, bystander, pick, sub_pick),
+                    (overdraw, price_kind, price_pick, till_junk, customer_junk, same_holder),
+                )| CashCase {
+                    faces,
+                    till,
+                    customer,
+                    bystander,
+                    pick,
+                    sub_pick,
+                    overdraw,
+                    price_kind,
+                    price_pick,
+                    till_junk,
+                    customer_junk,
+                    same_holder,
                 },
             )
     })
 }
 
 const CASH_ITEM_BASE: u32 = 200;
+const CASH_JUNK_BASE: u32 = 1000;
 
 fn cash_denoms(faces: &[u32]) -> Vec<sim::generated::defs::Denomination> {
     faces
@@ -5929,11 +6049,19 @@ fn cash_lot(quantities: &[u64]) -> CashLot {
         .collect()
 }
 
-fn cash_holders() -> [sim::stock::HolderRef; 3] {
+/// `(till, customer, bystander)`; the customer is the till when the case
+/// has one holder on both sides.
+fn cash_holders(case: &CashCase) -> [sim::stock::HolderRef; 3] {
     use sim::codes::holder_kind as k;
+    let till = sim::stock::HolderRef::new(k::BUSINESS, 1).unwrap();
+    let customer = if case.same_holder {
+        till
+    } else {
+        sim::stock::HolderRef::new(k::CITIZEN, 1).unwrap()
+    };
     [
-        sim::stock::HolderRef::new(k::BUSINESS, 1).unwrap(),
-        sim::stock::HolderRef::new(k::CITIZEN, 1).unwrap(),
+        till,
+        customer,
         sim::stock::HolderRef::new(k::BUSINESS, 2).unwrap(),
     ]
 }
@@ -5942,9 +6070,14 @@ fn cash_ledger(case: &CashCase) -> support::stock_ledger::Ledger {
     use sim::author::{Author, Cause};
     use sim::stock::{Made, plan_make};
     let by = Author::new(1, Cause::ProcedureStep).unwrap();
+    let [till, customer, bystander] = cash_holders(case);
     let mut ledger = support::stock_ledger::Ledger::default();
-    let wallets = [&case.till, &case.customer, &case.bystander];
-    for (holder, quantities) in cash_holders().into_iter().zip(wallets) {
+    let wallets = [
+        (till, &case.till),
+        (customer, &case.customer),
+        (bystander, &case.bystander),
+    ];
+    for (holder, quantities) in wallets {
         for (item, quantity) in cash_lot(quantities) {
             let Made::Done(w) = plan_make(ledger.lines(), by, holder, item, quantity).unwrap()
             else {
@@ -5953,31 +6086,127 @@ fn cash_ledger(case: &CashCase) -> support::stock_ledger::Ledger {
             ledger.apply(&w);
         }
     }
+    for (holder, fill) in [(till, case.till_junk), (customer, case.customer_junk)] {
+        // 0 leaves the holder alone; 1 to 3 fill it to the ceiling, or one or
+        // two lines short of it.
+        let used = ledger.lines().iter().filter(|l| l.holder == holder).count();
+        let junk = if fill == 0 {
+            0
+        } else {
+            sim::stock::MAX_LINES_PER_HOLDER.saturating_sub(used + fill - 1)
+        };
+        for i in 0..junk as u32 {
+            // A holder that is full stops there: that is the point.
+            if let Made::Done(w) =
+                plan_make(ledger.lines(), by, holder, CASH_JUNK_BASE + i, 1).unwrap()
+            {
+                ledger.apply(&w);
+            }
+        }
+    }
     ledger
 }
 
+fn cash_junk_at(ledger: &support::stock_ledger::Ledger, h: sim::stock::HolderRef) -> usize {
+    ledger
+        .lines()
+        .iter()
+        .filter(|l| l.holder == h && l.item_id >= CASH_JUNK_BASE)
+        .count()
+}
+
 /// The tender and the price this case asks for, from the customer's wallet.
-fn cash_ask(case: &CashCase) -> (CashLot, u64) {
+fn cash_ask(case: &CashCase, ledger: &support::stock_ledger::Ledger) -> (CashLot, u64) {
+    let [till, customer, _] = cash_holders(case);
     let mut tender = CashLot::new();
-    for (i, &held) in case.customer.iter().enumerate() {
+    for i in 0..case.faces.len() {
+        let item = CASH_ITEM_BASE + i as u32;
+        let held = ledger.quantity(customer, item);
         let mut count = case.pick[i] % (held + 1);
         if case.overdraw && i == 0 {
             count = held + 1;
         }
         if count > 0 {
-            tender.insert(CASH_ITEM_BASE + i as u32, count);
+            tender.insert(item, count);
         }
     }
     let face = |item: u32| u64::from(case.faces[(item - CASH_ITEM_BASE) as usize]);
     let value: u64 = tender.iter().map(|(&item, &q)| q * face(item)).sum();
     let smallest = tender.keys().map(|&item| face(item)).min().unwrap_or(1);
+    let built_change: u64 = (0..case.faces.len())
+        .map(|i| {
+            let item = CASH_ITEM_BASE + i as u32;
+            let pool = ledger.quantity(till, item) + tender.get(&item).copied().unwrap_or(0);
+            (case.sub_pick[i] % (pool + 1)) * face(item)
+        })
+        .sum();
     let price = match case.price_kind {
         0 => value,
         1 => value.saturating_sub(case.price_pick % smallest),
         2 => value.saturating_sub(case.price_pick % 50),
-        _ => value + 1 + case.price_pick % 5,
+        3 => value + 1 + case.price_pick % 5,
+        _ => value - built_change.min(value),
     };
     (tender, price)
+}
+
+fn cash_authors() -> (sim::author::Author, sim::author::Author) {
+    use sim::author::{Author, Cause};
+    (
+        Author::new(9, Cause::ProcedureStep).unwrap(),
+        Author::new(10, Cause::ProcedureStep).unwrap(),
+    )
+}
+
+/// What the model alone says a case must come to: the brute-force oracle
+/// over the till and what was just tendered, then the final line counts.
+fn cash_expected(
+    case: &CashCase,
+    ledger: &support::stock_ledger::Ledger,
+    tender: &CashLot,
+    price: u64,
+) -> sim::cash::Payment {
+    use sim::cash::{Payment, Side};
+    let [till, customer, _] = cash_holders(case);
+    if case.same_holder {
+        return Payment::SameHolder;
+    }
+    let face = |item: u32| u64::from(case.faces[(item - CASH_ITEM_BASE) as usize]);
+    let value: u64 = tender.iter().map(|(&i, &q)| q * face(i)).sum();
+    if let Some((&item_id, _)) = tender
+        .iter()
+        .find(|&(&i, &q)| q > ledger.quantity(customer, i))
+    {
+        return Payment::TenderNotHeld { item_id };
+    }
+    if value < price {
+        return Payment::TenderBelowPrice;
+    }
+    let due = value - price;
+    let n = case.faces.len();
+    let item = |i: usize| CASH_ITEM_BASE + i as u32;
+    let tendered = |i: usize| tender.get(&item(i)).copied().unwrap_or(0);
+    let pool: Vec<u64> = (0..n)
+        .map(|i| ledger.quantity(till, item(i)) + tendered(i))
+        .collect();
+    let Some(change) = cash_oracle(&case.faces, &pool, due) else {
+        return Payment::NoChange;
+    };
+    let till_lines = cash_junk_at(ledger, till) + (0..n).filter(|&i| pool[i] > change[i]).count();
+    if till_lines > sim::stock::MAX_LINES_PER_HOLDER {
+        return Payment::NoRoom(Side::Till);
+    }
+    let customer_lines = cash_junk_at(ledger, customer)
+        + (0..n)
+            .filter(|&i| ledger.quantity(customer, item(i)) + change[i] > tendered(i))
+            .count();
+    if customer_lines > sim::stock::MAX_LINES_PER_HOLDER {
+        return Payment::NoRoom(Side::Customer);
+    }
+    Payment::Paid {
+        change: cash_lot(&change),
+        writes: Vec::new(),
+    }
 }
 
 proptest! {
@@ -5986,26 +6215,28 @@ proptest! {
     /// is unchanged (counts, not value: value alone lets a note turn into
     /// coins); the bystander is untouched; a completed payment moves
     /// exactly the price from customer to till; any other outcome leaves
-    /// the ledger as it was; every write names the exact author and a
-    /// procedure step; one row per (holder, item), none at zero, none past
-    /// the ceiling. Mutations that turn it red: drop the change transfer;
-    /// move the tender before knowing change can be made; plan two writes
-    /// for one row from one snapshot.
+    /// the ledger as it was; what leaves the customer is authored by the
+    /// customer and what leaves the till by the cashier, both procedure
+    /// steps; one row per (holder, item), none at zero, none past the
+    /// ceiling -- with holders that hold up to 63 other lines in a share of
+    /// cases, so the ceiling is met. Mutations that turn it red: drop the
+    /// change transfer; swap the two authors; count any touched line as
+    /// freed in `without_emptied`; delete the room check in
+    /// `plan_transfer_all`.
     #[test]
     fn inv_cash_payment_conserves_every_denomination(case in cash_case()) {
-        use sim::author::{Author, Cause};
         use sim::cash::{Payment, plan_payment, value_of};
         use sim::stock::MAX_LINES_PER_HOLDER;
 
         let denoms = cash_denoms(&case.faces);
-        let [till, customer, bystander] = cash_holders();
+        let [till, customer, bystander] = cash_holders(&case);
         let mut ledger = cash_ledger(&case);
         let start: Vec<_> = ledger.lines().to_vec();
-        let (tender, price) = cash_ask(&case);
-        let by = Author::new(9, Cause::ProcedureStep).unwrap();
+        let (tender, price) = cash_ask(&case, &ledger);
+        let (by_customer, by_cashier) = cash_authors();
 
         let value_at = |ledger: &support::stock_ledger::Ledger, h| {
-            let lot: CashLot = ledger.lines().iter().filter(|l| l.holder == h)
+            let lot: CashLot = ledger.lines().iter().filter(|l| l.holder == h && l.item_id < CASH_JUNK_BASE)
                 .map(|l| (l.item_id, l.quantity)).collect();
             value_of(&lot, &denoms).unwrap()
         };
@@ -6017,13 +6248,21 @@ proptest! {
         };
         let counts_before = counts(&ledger);
 
-        let outcome = plan_payment(&start, by, customer, till, &tender, price, &denoms).unwrap();
+        let outcome = plan_payment(&start, by_customer, by_cashier, customer, till, &tender, price, &denoms).unwrap();
         match &outcome {
             Payment::Paid { writes, .. } => {
                 for w in writes {
-                    prop_assert_eq!(w.author(), by);
-                    prop_assert_eq!(w.author().cause(), Cause::ProcedureStep);
                     prop_assert!(w.holder() != bystander, "the bystander is never written");
+                    prop_assert_eq!(w.author().cause(), sim::author::Cause::ProcedureStep);
+                    // Direction: the item's net movement at the till.
+                    let item = w.item_id();
+                    let at_till = |l: &support::stock_ledger::Ledger| l.quantity(till, item);
+                    let before = start.iter().find(|l| l.holder == till && l.item_id == item).map_or(0, |l| l.quantity);
+                    let mut probe = support::stock_ledger::Ledger::from_lines(start.clone());
+                    for x in writes { probe.apply(x); }
+                    let after = at_till(&probe);
+                    let want = if after > before { by_customer } else { by_cashier };
+                    prop_assert_eq!(w.author(), want, "item {}", item);
                     ledger.apply(w);
                 }
                 prop_assert_eq!(value_at(&ledger, till), till_before + price);
@@ -6095,58 +6334,119 @@ fn cash_oracle(faces: &[u32], held: &[u64], amount: u64) -> Option<Vec<u64>> {
     best
 }
 
+/// Runs a case: the outcome, and what the model says it must be.
+fn cash_run(case: &CashCase) -> (sim::cash::Payment, sim::cash::Payment) {
+    let denoms = cash_denoms(&case.faces);
+    let [till, customer, _] = cash_holders(case);
+    let ledger = cash_ledger(case);
+    let (tender, price) = cash_ask(case, &ledger);
+    let (by_customer, by_cashier) = cash_authors();
+    let outcome = sim::cash::plan_payment(
+        ledger.lines(),
+        by_customer,
+        by_cashier,
+        customer,
+        till,
+        &tender,
+        price,
+        &denoms,
+    )
+    .unwrap();
+    (outcome, cash_expected(case, &ledger, &tender, price))
+}
+
 proptest! {
     /// `inv_change_is_refused_only_when_the_till_cannot_make_it`: against a
-    /// brute-force oracle over every sub-multiset of the till, the payment
-    /// reports "no change" if and only if no sub-multiset of what the till
-    /// held *before the tender* sums to the change due. The just-tendered
-    /// cash never counts, and cannot: the change due is always below the
-    /// smallest tendered face value, so a tendered piece is never usable as
-    /// change. The change chosen is the oracle's: fewest pieces, ties to
-    /// more of the larger denomination. Mutation that turns it red: swap in
-    /// largest-first greedy.
+    /// brute-force oracle over every sub-multiset of what the till holds
+    /// *and what was just tendered* (tendered cash counts as available for
+    /// change), the payment reports "no change" if and only if no
+    /// sub-multiset sums to the change due. The change chosen is the
+    /// oracle's: fewest pieces, ties to the larger denomination; every lot
+    /// `choose_change` returns moves through `plan_transfer_all` with no
+    /// shortfall. The room outcomes are checked against the final line
+    /// counts. Mutation that turns it red: swap in largest-first greedy.
     #[test]
     fn inv_change_is_refused_only_when_the_till_cannot_make_it(
         case in cash_case(),
         amount in 0u64..=60,
     ) {
-        use sim::cash::{Payment, choose_change, plan_payment};
+        use sim::cash::{Payment, choose_change};
 
         let denoms = cash_denoms(&case.faces);
-        let [till, customer, _] = cash_holders();
+        let [till, customer, _] = cash_holders(&case);
         let ledger = cash_ledger(&case);
 
-        let want = cash_oracle(&case.faces, &case.till, amount);
-        let got = choose_change(ledger.lines(), till, amount, &denoms).map(|lot| {
+        let held: Vec<u64> = (0..case.faces.len() as u32).map(|i| ledger.quantity(till, CASH_ITEM_BASE + i)).collect();
+        let want = cash_oracle(&case.faces, &held, amount);
+        let chosen = choose_change(ledger.lines(), till, amount, &denoms).unwrap();
+        let got = chosen.as_ref().map(|lot| {
             (0..case.faces.len() as u32)
                 .map(|i| lot.get(&(CASH_ITEM_BASE + i)).copied().unwrap_or(0))
                 .collect::<Vec<u64>>()
         });
         prop_assert_eq!(got, want);
+        if let Some(lot) = chosen {
+            let by = cash_authors().0;
+            if till != customer {
+                let moved = sim::stock::plan_transfer_all(ledger.lines(), by, till, customer, &lot).unwrap();
+                prop_assert!(moved.short.is_none(), "a chosen change is held");
+            }
+        }
 
         // The payment-level classification, from the model alone.
-        let (tender, price) = cash_ask(&case);
-        let by = sim::author::Author::new(9, sim::author::Cause::ProcedureStep).unwrap();
-        let outcome = plan_payment(ledger.lines(), by, customer, till, &tender, price, &denoms).unwrap();
-        let face = |item: u32| u64::from(case.faces[(item - CASH_ITEM_BASE) as usize]);
-        let value: u64 = tender.iter().map(|(&i, &q)| q * face(i)).sum();
-        let not_held = tender
-            .iter()
-            .find(|&(&i, &q)| q > case.customer[(i - CASH_ITEM_BASE) as usize])
-            .map(|(&i, _)| i);
-        let expected_refusal = if not_held.is_some() || value < price {
-            false
-        } else {
-            let due = value - price;
-            let smallest = tender.keys().map(|&i| face(i)).min();
-            let superfluous = smallest.is_some_and(|s| due >= s);
-            !superfluous && cash_oracle(&case.faces, &case.till, due).is_none()
-        };
-        prop_assert_eq!(outcome == Payment::NoChange, expected_refusal);
-        if let Some(item_id) = not_held {
-            prop_assert_eq!(outcome, Payment::TenderNotHeld { item_id });
-        } else if value < price {
-            prop_assert_eq!(outcome, Payment::TenderBelowPrice);
+        let (outcome, expected) = cash_run(&case);
+        match (&outcome, &expected) {
+            (Payment::Paid { change: a, .. }, Payment::Paid { change: b, .. }) => prop_assert_eq!(a, b),
+            _ => prop_assert_eq!(outcome, expected),
         }
     }
+}
+
+/// A deterministic walk over the generator (fixed RNG, no proptest seed):
+/// a property over a generator that silently stops reaching a branch is
+/// decoration, so every branch has a minimum share.
+#[test]
+fn the_cash_generator_reaches_every_branch() {
+    use proptest::strategy::{Strategy, ValueTree};
+    use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
+    use sim::cash::{Payment, Side};
+
+    const CASES: usize = 4096;
+    let mut runner = TestRunner::new_with_rng(
+        Config::default(),
+        TestRng::from_seed(RngAlgorithm::ChaCha, &[7u8; 32]),
+    );
+    let strategy = cash_case();
+    let (mut paid_with_change, mut multi_kind, mut no_change) = (0usize, 0usize, 0usize);
+    let (mut room_till, mut room_customer, mut same_holder) = (0usize, 0usize, 0usize);
+    for _ in 0..CASES {
+        let case = strategy.new_tree(&mut runner).unwrap().current();
+        match cash_run(&case).0 {
+            Payment::Paid { change, .. } => {
+                paid_with_change += usize::from(!change.is_empty());
+                multi_kind += usize::from(change.len() > 1);
+            }
+            Payment::NoChange => no_change += 1,
+            Payment::NoRoom(Side::Till) => room_till += 1,
+            Payment::NoRoom(Side::Customer) => room_customer += 1,
+            Payment::SameHolder => same_holder += 1,
+            Payment::TenderBelowPrice | Payment::TenderNotHeld { .. } => {}
+        }
+    }
+    // Whole-number percentages: sim is integer-only.
+    let percent = |n: usize| n * 100 / CASES;
+    for (name, n, at_least) in [
+        ("paid with change", paid_with_change, 20),
+        ("multi-kind change", multi_kind, 5),
+        ("no change", no_change, 10),
+        ("no room at the till", room_till, 2),
+        ("no room at the customer", room_customer, 2),
+    ] {
+        assert!(
+            percent(n) >= at_least,
+            "{name}: {}% under {at_least}%",
+            percent(n)
+        );
+    }
+    assert!(same_holder > 0, "a holder paying itself never occurs");
 }

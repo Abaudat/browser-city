@@ -20,6 +20,7 @@ import type {
   ChainDef,
   ColliderRect,
   Defs,
+  DenominationDef,
   EyesDef,
   Family,
   HairstyleDef,
@@ -263,19 +264,23 @@ function parseTag(value: unknown, path: string): TagDef {
 
 function parseItem(value: unknown, path: string): ItemDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(
-    obj,
-    ["id", "key", "unit", "shelf_life_minutes", "face_value", "width", "height"],
-    path,
-  );
+  checkKnownKeys(obj, ["id", "key", "unit", "shelf_life_minutes", "width", "height"], path);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     unit: expectU32(obj.unit, `${path}.unit`),
     shelfLifeMinutes: expectU32(obj.shelf_life_minutes, `${path}.shelf_life_minutes`),
-    faceValue: expectU32(obj.face_value, `${path}.face_value`),
     width: expectU32(obj.width, `${path}.width`),
     height: expectU32(obj.height, `${path}.height`),
+  };
+}
+
+function parseDenomination(value: unknown, path: string): DenominationDef {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["item_id", "face_value"], path);
+  return {
+    itemId: expectU32(obj.item_id, `${path}.item_id`),
+    faceValue: expectU32(obj.face_value, `${path}.face_value`),
   };
 }
 
@@ -539,6 +544,7 @@ export function parseDefs(data: unknown): Defs {
       "atlas_pages",
       "objects",
       "items",
+      "denominations",
       "recipes",
       "professions",
       "chains",
@@ -602,7 +608,10 @@ export function parseDefs(data: unknown): Defs {
   for (const item of items) {
     checkItemFields(item, maxFootprintCells, maxShelfLifeMinutes);
   }
-  checkDenominations(items, { maxFaceValue, maxDenominations, denominationUnit });
+  const denominations = expectArray(root.denominations, "$.denominations").map((v, i) =>
+    parseDenomination(v, `$.denominations[${i}]`),
+  );
+  checkDenominations(items, denominations, { maxFaceValue, maxDenominations, denominationUnit });
   const recipes = expectArray(root.recipes, "$.recipes").map((v, i) =>
     parseRecipe(v, `$.recipes[${i}]`),
   );
@@ -800,6 +809,7 @@ export function parseDefs(data: unknown): Defs {
     maxFaceValue,
     maxDenominations,
     denominationUnit,
+    denominations,
     realMsPerCityMinute,
     atlasMaxPagesPerGroup,
     characterCompositePages,
@@ -1011,40 +1021,54 @@ function checkItemFields(
   }
 }
 
-/** Mirrors `validate.rs`'s `check_denomination` (FR92). An item with a face
- * value is money: counted in the denomination unit, never perishable, with a
- * face value no other denomination shares, and at most `maxDenominations` of
- * them. A face value of 0 is not money; the build refuses an explicit 0, so
- * the artefact never carries one meaning anything else. */
+/** Mirrors `validate.rs`'s `check_denominations` (FR92): a denomination is
+ * worth 1 to `maxFaceValue`, names a real item counted in the denomination
+ * unit that never spoils, names it once, shares its face value with no other,
+ * and there are at most `maxDenominations` of them. */
 function checkDenominations(
   items: readonly ItemDef[],
+  denominations: readonly DenominationDef[],
   limits: { maxFaceValue: number; maxDenominations: number; denominationUnit: number },
 ): void {
-  const seen = new Map<number, string>();
-  for (const item of items) {
-    if (item.faceValue === 0) continue;
-    if (item.faceValue > limits.maxFaceValue) {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const named = new Set<number>();
+  const faces = new Map<number, string>();
+  denominations.forEach((d, n) => {
+    if (d.faceValue === 0) {
       fail(
-        `item '${item.key}' face_value ${item.faceValue} exceeds MAX_FACE_VALUE (${limits.maxFaceValue})`,
+        `denomination for item ${d.itemId} face_value of 0 -- a denomination is worth at least 1`,
       );
     }
+    if (d.faceValue > limits.maxFaceValue) {
+      fail(
+        `denomination for item ${d.itemId} face_value ${d.faceValue} exceeds MAX_FACE_VALUE (${limits.maxFaceValue})`,
+      );
+    }
+    const item = byId.get(d.itemId);
+    if (!item) {
+      fail(`denomination names unknown item ${d.itemId}`);
+    }
+    if (named.has(d.itemId)) {
+      fail(`item '${item.key}' is already a denomination`);
+    }
+    named.add(d.itemId);
     if (item.unit !== limits.denominationUnit) {
-      fail(`item '${item.key}' has a face_value, so its unit must be the denomination unit`);
+      fail(`denomination '${item.key}' must be counted in the denomination unit`);
     }
     if (item.shelfLifeMinutes !== 0) {
-      fail(`item '${item.key}' has a face_value, so its shelf_life_minutes must be 0`);
+      fail(`denomination '${item.key}' must never spoil: its shelf_life_minutes is not 0`);
     }
-    const first = seen.get(item.faceValue);
+    const first = faces.get(d.faceValue);
     if (first !== undefined) {
-      fail(`item '${item.key}' face_value ${item.faceValue} is already item '${first}'`);
+      fail(`denomination '${item.key}' face_value ${d.faceValue} is already item '${first}'s`);
     }
-    seen.set(item.faceValue, item.key);
-    if (seen.size > limits.maxDenominations) {
+    faces.set(d.faceValue, item.key);
+    if (n + 1 > limits.maxDenominations) {
       fail(
-        `item '${item.key}' is denomination ${seen.size}, over MAX_DENOMINATIONS (${limits.maxDenominations})`,
+        `denomination '${item.key}' is number ${n + 1}, over MAX_DENOMINATIONS (${limits.maxDenominations})`,
       );
     }
-  }
+  });
 }
 
 /** FR127's cap, checked on `width` and `height` independently, exactly
@@ -1195,8 +1219,12 @@ export function canonicalDump(defs: Defs): string {
   }
   for (const i of defs.items) {
     lines.push(
-      `item ${i.key} id=${i.id} unit=${i.unit} shelf_life_minutes=${i.shelfLifeMinutes} face_value=${i.faceValue} width=${i.width} height=${i.height}`,
+      `item ${i.key} id=${i.id} unit=${i.unit} shelf_life_minutes=${i.shelfLifeMinutes} width=${i.width} height=${i.height}`,
     );
+  }
+  for (const d of defs.denominations) {
+    const key = defs.items.find((i) => i.id === d.itemId)?.key ?? "?";
+    lines.push(`denomination ${key} face_value=${d.faceValue}`);
   }
   for (const r of defs.recipes) {
     const inputs = [...r.inputs].sort().join(",");

@@ -83,8 +83,10 @@ pub const MAX_FOOTPRINT_CELLS: i64 = 8;
 pub const MAX_SHELF_LIFE_MINUTES: u32 = 525_600;
 
 /// The largest face value one denomination may carry, in the currency's
-/// smallest unit. Bounds the change search.
-pub const MAX_FACE_VALUE: u32 = 10_000;
+/// smallest unit. `sim::cash::choose_change` searches a table whose size
+/// grows with the square of the change due, and a change due is always
+/// below this: raise it only together with that search.
+pub const MAX_FACE_VALUE: u32 = 1_000;
 
 /// The most denominations the defs may declare.
 pub const MAX_DENOMINATIONS: usize = 16;
@@ -361,10 +363,24 @@ pub struct RawItem {
     pub unit: Spanned<String>,
     /// Minutes until an instance spoils; `0` means it never does.
     pub shelf_life_minutes: Spanned<u32>,
-    /// Face value in the currency's smallest unit; absent means not money.
-    pub face_value: Option<Spanned<u32>>,
     /// The item's world footprint, in whole cells.
     pub bulk: RawBulk,
+}
+
+/// `defs/denominations/*.toml`: an item that plays the role of money.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DenominationFile {
+    pub denomination: Vec<RawDenomination>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawDenomination {
+    /// The key of an `[[item]]`.
+    pub item: Spanned<String>,
+    /// Whole units of the one currency.
+    pub face_value: Spanned<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1013,13 +1029,19 @@ pub struct ObjectEntry {
 }
 
 #[derive(Debug)]
+pub struct DenominationEntry {
+    pub path: PathBuf,
+    pub item: Located<String>,
+    pub face_value: Located<u32>,
+}
+
+#[derive(Debug)]
 pub struct ItemEntry {
     pub path: PathBuf,
     pub id: Located<u32>,
     pub key: Located<String>,
     pub unit: Located<String>,
     pub shelf_life_minutes: Located<u32>,
-    pub face_value: Option<Located<u32>>,
     pub bulk_width: Located<u32>,
     pub bulk_height: Located<u32>,
 }
@@ -1274,6 +1296,7 @@ impl_id_key_entry!(RequirementEntry);
 pub struct RawDefs {
     pub objects: Vec<ObjectEntry>,
     pub items: Vec<ItemEntry>,
+    pub denominations: Vec<DenominationEntry>,
     pub recipes: Vec<RecipeEntry>,
     pub professions: Vec<ProfessionEntry>,
     pub chains: Vec<ChainEntry>,
@@ -1342,10 +1365,15 @@ pub struct ItemDef {
     /// A `sim::codes::unit` code, never a name.
     pub unit: u32,
     pub shelf_life_minutes: u32,
-    /// `0` means not money.
-    pub face_value: u32,
     pub width: u32,
     pub height: u32,
+}
+
+/// An item that is money: its id and face value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DenominationDef {
+    pub item_id: u32,
+    pub face_value: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1566,10 +1594,12 @@ pub struct RuleDef {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Defs {
-    pub objects: Vec<ObjectDef>,
-    pub items: Vec<ItemDef>,
     /// The `sim::codes::unit` code every denomination is counted in.
     pub denomination_unit: u32,
+    pub objects: Vec<ObjectDef>,
+    pub items: Vec<ItemDef>,
+    /// Largest face value first.
+    pub denominations: Vec<DenominationDef>,
     pub recipes: Vec<RecipeDef>,
     pub professions: Vec<ProfessionDef>,
     pub chains: Vec<ChainDef>,

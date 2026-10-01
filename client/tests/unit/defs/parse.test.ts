@@ -8,7 +8,7 @@ import type { Defs } from "../../../src/defs/types";
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /** The item fields every `[[item]]` row carries besides `id`/`key`. */
-const ITEM_FIELDS = { unit: 0, shelf_life_minutes: 0, face_value: 0, width: 1, height: 1 };
+const ITEM_FIELDS = { unit: 0, shelf_life_minutes: 0, width: 1, height: 1 };
 
 function validPayload(): Record<string, unknown> {
   return {
@@ -18,7 +18,7 @@ function validPayload(): Record<string, unknown> {
     interact_at_max_reach_cells: 2,
     max_footprint_cells: 8,
     max_shelf_life_minutes: 525_600,
-    max_face_value: 10_000,
+    max_face_value: 1_000,
     max_denominations: 16,
     denomination_unit: 0,
     real_ms_per_city_minute: 2500,
@@ -44,6 +44,7 @@ function validPayload(): Record<string, unknown> {
       { ...ITEM_FIELDS, id: 1, key: "bottle" },
       { ...ITEM_FIELDS, id: 2, key: "recycled_glass" },
     ],
+    denominations: [],
     recipes: [{ id: 1, key: "bottle_recycling", inputs: ["bottle"], outputs: ["recycled_glass"] }],
     professions: [{ id: 1, key: "sanitation_worker" }],
     chains: [{ id: 1, key: "plastic_bottle", links: ["sanitation_worker"] }],
@@ -159,65 +160,82 @@ describe("parseDefs", () => {
   });
 
   describe("denominations (FR92)", () => {
-    const withItems = (rows: Record<string, unknown>[]) => {
+    const withDenominations = (rows: Record<string, unknown>[]) => {
       const payload = validPayload();
-      payload.items = [...(payload.items as Record<string, unknown>[]), ...rows];
+      payload.items = [
+        ...(payload.items as Record<string, unknown>[]),
+        { ...ITEM_FIELDS, id: 3, key: "coin" },
+        { ...ITEM_FIELDS, id: 4, key: "grain", unit: 1 },
+        { ...ITEM_FIELDS, id: 5, key: "stale", shelf_life_minutes: 60 },
+        { ...ITEM_FIELDS, id: 6, key: "note" },
+      ];
+      payload.denominations = rows;
       return payload;
     };
-    const coin = (id: number, face: number, extra: Record<string, unknown> = {}) => ({
-      ...ITEM_FIELDS,
-      id: 100 + id,
-      key: `coin_${id}`,
-      face_value: face,
-      ...extra,
+    const den = (item_id: number, face_value: unknown) => ({ item_id, face_value });
+
+    it("accepts money at the cap and carries it through", () => {
+      const defs = parseDefs(withDenominations([den(3, 1_000), den(6, 5)]));
+      expect(defs.denominations).toEqual([
+        { itemId: 3, faceValue: 1_000 },
+        { itemId: 6, faceValue: 5 },
+      ]);
+      expect([defs.maxFaceValue, defs.maxDenominations, defs.denominationUnit]).toEqual([
+        1_000, 16, 0,
+      ]);
     });
 
-    it("accepts money and refuses a face value over the cap", () => {
-      expect(() => parseDefs(withItems([coin(1, 5)]))).not.toThrow();
-      expect(() => parseDefs(withItems([coin(1, 10_000)]))).not.toThrow();
-      expect(() => parseDefs(withItems([coin(1, 10_001)]))).toThrow(
-        /face_value 10001 exceeds MAX_FACE_VALUE \(10000\)/,
+    it("refuses a face value of 0 or over the cap", () => {
+      expect(() => parseDefs(withDenominations([den(3, 0)]))).toThrow(/face_value of 0/);
+      expect(() => parseDefs(withDenominations([den(3, 1_001)]))).toThrow(
+        /face_value 1001 exceeds MAX_FACE_VALUE \(1000\)/,
+      );
+    });
+
+    it("refuses a denomination naming no item, or one item twice", () => {
+      expect(() => parseDefs(withDenominations([den(99, 5)]))).toThrow(/unknown item 99/);
+      expect(() => parseDefs(withDenominations([den(3, 5), den(3, 6)]))).toThrow(
+        /item 'coin' is already a denomination/,
       );
     });
 
     it("refuses a denomination that is not in pieces or that spoils", () => {
-      expect(() => parseDefs(withItems([coin(1, 5, { unit: 1 })]))).toThrow(
-        /face_value, so its unit must be the denomination unit/,
+      expect(() => parseDefs(withDenominations([den(4, 5)]))).toThrow(
+        /must be counted in the denomination unit/,
       );
-      expect(() => parseDefs(withItems([coin(1, 5, { shelf_life_minutes: 60 })]))).toThrow(
-        /face_value, so its shelf_life_minutes must be 0/,
-      );
+      expect(() => parseDefs(withDenominations([den(5, 5)]))).toThrow(/must never spoil/);
     });
 
     it("refuses two denominations with one face value", () => {
-      expect(() => parseDefs(withItems([coin(1, 5), coin(2, 5)]))).toThrow(
-        /face_value 5 is already item 'coin_1'/,
+      expect(() => parseDefs(withDenominations([den(3, 5), den(6, 5)]))).toThrow(
+        /face_value 5 is already item 'coin'/,
       );
     });
 
     it("refuses more denominations than MAX_DENOMINATIONS", () => {
-      const rows = Array.from({ length: 17 }, (_, i) => coin(i + 1, i + 1));
-      expect(() => parseDefs(withItems(rows))).toThrow(/over MAX_DENOMINATIONS \(16\)/);
-      expect(() => parseDefs(withItems(rows.slice(0, 16)))).not.toThrow();
+      const payload = validPayload();
+      payload.items = Array.from({ length: 17 }, (_, i) => ({
+        ...ITEM_FIELDS,
+        id: 10 + i,
+        key: `tok_${i}`,
+      }));
+      payload.recipes = [];
+      const rows = payload.items as { id: number }[];
+      payload.denominations = rows.map((it, i) => den(it.id, i + 1));
+      expect(() => parseDefs(payload)).toThrow(/over MAX_DENOMINATIONS \(16\)/);
+      payload.denominations = (payload.denominations as unknown[]).slice(0, 16);
+      expect(() => parseDefs(payload)).not.toThrow();
     });
 
-    it("refuses an item row without face_value, and a face_value of the wrong type", () => {
-      const row: Record<string, unknown> = { ...ITEM_FIELDS, id: 1, key: "bottle" };
-      delete row.face_value;
-      expect(() => parseDefs(withItems([row]))).toThrow(/expected a number/);
-      expect(() => parseDefs(withItems([coin(1, 5, { face_value: "five" })]))).toThrow(
-        /expected a number/,
-      );
-    });
-
-    it("carries the face value and the three constants through", () => {
-      const defs = parseDefs(withItems([coin(1, 5)]));
-      expect(defs.items.at(-1)?.faceValue).toBe(5);
-      expect([defs.maxFaceValue, defs.maxDenominations, defs.denominationUnit]).toEqual([
-        10_000, 16, 0,
-      ]);
+    it("refuses a missing table, a wrong-typed face value and an unknown key", () => {
+      const missing = validPayload();
+      delete missing.denominations;
+      expect(() => parseDefs(missing)).toThrow(/expected an array/);
+      expect(() => parseDefs(withDenominations([den(3, "five")]))).toThrow(/expected a number/);
+      expect(() => parseDefs(withDenominations([{ ...den(3, 5), extra: 1 }]))).toThrow();
     });
   });
+
   it("rejects a wrong value type", () => {
     const payload = validPayload();
     (payload.items as Record<string, unknown>[])[0] = { ...ITEM_FIELDS, id: "nope", key: "bottle" };
@@ -1086,8 +1104,8 @@ describe("canonicalDump", () => {
         "balance citizen.bar_decay.rest value=10 min=0 max=100",
         "balance render.tile_size_px value=16 min=1 max=64",
         "chain plastic_bottle id=1 links=[sanitation_worker]",
-        "item bottle id=1 unit=0 shelf_life_minutes=0 face_value=0 width=1 height=1",
-        "item recycled_glass id=2 unit=0 shelf_life_minutes=0 face_value=0 width=1 height=1",
+        "item bottle id=1 unit=0 shelf_life_minutes=0 width=1 height=1",
+        "item recycled_glass id=2 unit=0 shelf_life_minutes=0 width=1 height=1",
         "object trash_bin id=1 name=Trash Bin layer=2 sprite=x.png:0,0,16,16 height=1 width=1 collider=4,4,12,12 interact_at=none window=false tags=[1]",
         "profession sanitation_worker id=1",
         "recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]",

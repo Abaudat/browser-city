@@ -1,6 +1,6 @@
-//! Story 6.8 (FR92, NFR43): cash is stock. A denomination is an item with
-//! a face value, a till is a business holder's lines of those items, and a
-//! payment is ordinary authored transfers planned by `sim::cash`. Every
+//! Story 6.8 (FR92, NFR43): cash is stock. A denomination is an item that
+//! plays the role of money, a till is a business holder's lines of those
+//! items, and a payment is authored transfers planned by `sim::cash`. Every
 //! test runs on generated denomination sets, never the committed one.
 
 use std::collections::BTreeMap;
@@ -8,16 +8,19 @@ use std::collections::BTreeMap;
 use sim::author::{Author, Cause};
 use sim::cash::{CashError, Payment, Side, choose_change, plan_payment, value_of};
 use sim::codes::holder_kind;
-use sim::generated::defs::Denomination;
+use sim::generated::defs::{Denomination, MAX_DENOMINATIONS, MAX_FACE_VALUE};
 use sim::stock::{
-    HolderRef, MAX_LINES_PER_HOLDER, Made, Plan, StockError, plan_make, plan_transfer_exact,
+    HolderRef, MAX_LINES_PER_HOLDER, Made, Plan, StockError, plan_make, plan_transfer_all,
+    plan_transfer_exact,
 };
 
 mod support;
 use support::stock_ledger::Ledger;
 
+const COIN_1: u32 = 101;
 const COIN_2: u32 = 102;
 const COIN_5: u32 = 105;
+const NOTE_10: u32 = 110;
 const NOTE_20: u32 = 120;
 const BOTTLE: u32 = 1;
 
@@ -82,17 +85,22 @@ fn held(ledger: &Ledger, h: HolderRef) -> BTreeMap<u32, u64> {
         .collect()
 }
 
-fn pay(ledger: &Ledger, tender: &[(u32, u64)], price: u64) -> Payment {
+fn pay_with(ledger: &Ledger, table: &[Denomination], tender: &[(u32, u64)], price: u64) -> Payment {
     plan_payment(
         ledger.lines(),
+        step(),
         step(),
         customer(),
         till(),
         &lot(tender),
         price,
-        &denoms(),
+        table,
     )
     .unwrap()
+}
+
+fn pay(ledger: &Ledger, tender: &[(u32, u64)], price: u64) -> Payment {
+    pay_with(ledger, &denoms(), tender, price)
 }
 
 fn apply_paid(ledger: &mut Ledger, payment: &Payment) {
@@ -106,6 +114,15 @@ fn apply_paid(ledger: &mut Ledger, payment: &Payment) {
 
 fn value_in(ledger: &Ledger, h: HolderRef) -> u64 {
     value_of(&held(ledger, h), &denoms()).unwrap()
+}
+
+fn change_of(
+    ledger: &Ledger,
+    holder: HolderRef,
+    amount: u64,
+    table: &[Denomination],
+) -> Option<BTreeMap<u32, u64>> {
+    choose_change(ledger.lines(), holder, amount, table).unwrap()
 }
 
 /// AC1: a till is quantities per denomination, never a sum. Both tills
@@ -123,6 +140,7 @@ fn two_tills_worth_the_same_hold_different_change() {
     let at = |t| {
         plan_payment(
             ledger.lines(),
+            step(),
             step(),
             customer(),
             t,
@@ -201,8 +219,66 @@ fn a_tender_of_pieces_the_customer_does_not_hold_is_an_outcome() {
     );
 }
 
-/// What a payment reports for change is the shortfall a bottle transfer
-/// reports: no parallel type.
+/// A customer who owes 6 hands over a 10 and a 1 because the till has one
+/// 5: the sale the note alone could not make completes with the odd coin.
+#[test]
+fn an_odd_coin_completes_a_sale_the_note_alone_could_not() {
+    let table = denoms_of(&[(NOTE_10, 10), (COIN_5, 5), (COIN_1, 1)]);
+    let mut ledger = ledger_of(&[
+        (till(), COIN_5, 1),
+        (customer(), NOTE_10, 1),
+        (customer(), COIN_1, 1),
+    ]);
+    assert_eq!(
+        pay_with(&ledger, &table, &[(NOTE_10, 1)], 6),
+        Payment::NoChange
+    );
+    let outcome = pay_with(&ledger, &table, &[(NOTE_10, 1), (COIN_1, 1)], 6);
+    let Payment::Paid { change, .. } = &outcome else {
+        panic!("{outcome:?}")
+    };
+    assert_eq!(change, &lot(&[(COIN_5, 1)]));
+    apply_paid(&mut ledger, &outcome);
+    assert_eq!(held(&ledger, customer()), lot(&[(COIN_5, 1)]));
+    assert_eq!(held(&ledger, till()), lot(&[(NOTE_10, 1), (COIN_1, 1)]));
+}
+
+/// Over-tendering is not a refusal: three 5s for a price of 10 completes
+/// and one 5 comes back, so the 5s move one way, by the net.
+#[test]
+fn a_denomination_both_tendered_and_returned_lands_on_one_row() {
+    let mut ledger = ledger_of(&[(customer(), COIN_5, 3), (till(), COIN_5, 9)]);
+    let outcome = pay(&ledger, &[(COIN_5, 3)], 10);
+    let Payment::Paid { change, writes } = &outcome else {
+        panic!("{outcome:?}")
+    };
+    assert_eq!(change, &lot(&[(COIN_5, 1)]));
+    assert_eq!(writes.len(), 2, "one giving and one receiving write");
+    apply_paid(&mut ledger, &outcome);
+    assert_eq!(ledger.quantity(till(), COIN_5), 11);
+    assert_eq!(ledger.quantity(customer(), COIN_5), 1);
+}
+
+/// A holder paying itself moves nothing, so it is never a completed sale.
+#[test]
+fn a_holder_paying_itself_is_an_outcome_that_moves_nothing() {
+    let ledger = ledger_of(&[(till(), NOTE_20, 1), (till(), COIN_5, 3)]);
+    let outcome = plan_payment(
+        ledger.lines(),
+        step(),
+        step(),
+        till(),
+        till(),
+        &lot(&[(NOTE_20, 1)]),
+        5,
+        &denoms(),
+    )
+    .unwrap();
+    assert_eq!(outcome, Payment::SameHolder);
+}
+
+/// When a payment is `NoChange`, the handful it would need is not in the
+/// till: moving it reports the same `short` a lot of bottles gets.
 #[test]
 fn a_till_short_of_change_and_a_shop_out_of_bottles_are_the_same_shortfall() {
     let ledger = ledger_of(&[
@@ -210,40 +286,51 @@ fn a_till_short_of_change_and_a_shop_out_of_bottles_are_the_same_shortfall() {
         (till(), BOTTLE, 1),
         (customer(), NOTE_20, 1),
     ]);
-    let bottles =
-        plan_transfer_exact(ledger.lines(), step(), till(), customer(), BOTTLE, 2).unwrap();
-    let coins = plan_transfer_exact(ledger.lines(), step(), till(), customer(), COIN_2, 3).unwrap();
-    assert_eq!(
-        (bottles.taken, bottles.no_room, bottles.writes),
-        (coins.taken, coins.no_room, coins.writes)
-    );
     assert_eq!(pay(&ledger, &[(NOTE_20, 1)], 5), Payment::NoChange);
-}
-
-/// Exhaustive: adding a "short of change" or "refused" variant to the error
-/// type stops this compiling.
-#[test]
-fn no_payment_outcome_a_person_could_shrug_at_is_an_error_variant() {
-    fn only_what_cannot_be(e: CashError) {
-        match e {
-            CashError::Stock(StockError::QuantityOverflow | StockError::CauseNotPermitted) => {}
-            CashError::NotADenomination(_) | CashError::ValueOverflow => {}
-        }
-    }
-    only_what_cannot_be(CashError::ValueOverflow);
-    let ledger = ledger_of(&[(customer(), NOTE_20, 1)]);
-    for (tender, price) in [(1, 50), (2, 5)] {
-        let outcome = plan_payment(
+    let move_lot = |item, n| {
+        plan_transfer_all(
             ledger.lines(),
             step(),
-            customer(),
             till(),
-            &lot(&[(NOTE_20, tender)]),
-            price,
-            &denoms(),
-        );
-        assert!(outcome.is_ok(), "{outcome:?}");
+            customer(),
+            &lot(&[(item, n)]),
+        )
+        .unwrap()
+    };
+    let coins = move_lot(COIN_5, 3);
+    let bottles = move_lot(BOTTLE, 2);
+    assert_eq!(coins.short, Some(COIN_5));
+    assert_eq!(bottles.short, Some(BOTTLE));
+    assert_eq!(
+        (coins.no_room, coins.writes),
+        (bottles.no_room, bottles.writes)
+    );
+}
+
+/// Exhaustive: adding a variant to either enum stops this compiling, so a
+/// new outcome or error is a deliberate edit here.
+#[test]
+fn every_outcome_and_every_error_is_pinned() {
+    fn outcome(p: Payment) -> u8 {
+        match p {
+            Payment::Paid { .. } => 0,
+            Payment::SameHolder => 1,
+            Payment::TenderBelowPrice => 2,
+            Payment::TenderNotHeld { .. } => 3,
+            Payment::NoChange => 4,
+            Payment::NoRoom(Side::Till | Side::Customer) => 5,
+        }
     }
+    fn error(e: CashError) -> u8 {
+        match e {
+            CashError::Stock(StockError::QuantityOverflow | StockError::CauseNotPermitted) => 0,
+            CashError::NotADenomination(_) => 1,
+            CashError::ValueOverflow => 2,
+            CashError::AmountOutOfRange => 3,
+        }
+    }
+    assert_eq!(outcome(Payment::NoChange), 4);
+    assert_eq!(error(CashError::AmountOutOfRange), 3);
 }
 
 #[test]
@@ -256,6 +343,7 @@ fn the_errors_are_a_cause_not_permitted_a_non_denomination_and_an_overflow() {
     let ask = |by, tender: &[(u32, u64)]| {
         plan_payment(
             ledger.lines(),
+            by,
             by,
             customer(),
             till(),
@@ -324,33 +412,12 @@ fn a_till_with_no_room_for_the_tender_gets_no_sale_unless_the_change_empties_a_l
     ));
 }
 
-/// Change is always smaller than the smallest tendered piece, so the
-/// tender and the change never name one item and no row is planned twice.
-#[test]
-fn a_superfluous_piece_is_an_outcome_so_no_row_is_planned_twice() {
-    let ledger = ledger_of(&[
-        (customer(), NOTE_20, 1),
-        (customer(), COIN_5, 1),
-        (till(), COIN_5, 9),
-    ]);
-    // 20 + 5 for a price of 10: the 5 is superfluous.
-    assert_eq!(
-        pay(&ledger, &[(NOTE_20, 1), (COIN_5, 1)], 10),
-        Payment::SuperfluousPiece { item_id: COIN_5 }
-    );
-    // Tendering a kind the till could give back is the same outcome.
-    let both = ledger_of(&[(customer(), COIN_5, 3), (till(), COIN_5, 9)]);
-    assert_eq!(
-        pay(&both, &[(COIN_5, 3)], 10),
-        Payment::SuperfluousPiece { item_id: COIN_5 }
-    );
-}
-
 #[test]
 fn value_times_quantity_past_the_type_range_is_a_typed_error() {
     let ledger = ledger_of(&[(customer(), NOTE_20, u64::MAX)]);
     let outcome = plan_payment(
         ledger.lines(),
+        step(),
         step(),
         customer(),
         till(),
@@ -385,13 +452,19 @@ fn a_short_till_is_remedied_by_a_transfer_from_another_holder() {
     assert_eq!(ledger.quantity(customer(), COIN_5), 3);
 }
 
+/// A payment has two authors: what leaves the customer's holder carries the
+/// customer's, what leaves the till the cashier's.
 #[test]
-fn every_write_of_a_payment_carries_the_exact_author_it_was_asked_with() {
+fn every_write_of_a_payment_carries_the_author_of_the_side_it_leaves() {
     let ledger = ledger_of(&[(customer(), NOTE_20, 1), (till(), COIN_5, 3)]);
-    let by = Author::new(42, Cause::ProcedureStep).unwrap();
+    let (by_customer, by_cashier) = (
+        Author::new(42, Cause::ProcedureStep).unwrap(),
+        Author::new(43, Cause::ProcedureStep).unwrap(),
+    );
     let outcome = plan_payment(
         ledger.lines(),
-        by,
+        by_customer,
+        by_cashier,
         customer(),
         till(),
         &lot(&[(NOTE_20, 1)]),
@@ -403,7 +476,14 @@ fn every_write_of_a_payment_carries_the_exact_author_it_was_asked_with() {
         panic!("{outcome:?}")
     };
     assert_eq!(writes.len(), 4);
-    assert!(writes.iter().all(|w| w.author() == by));
+    for w in &writes {
+        let want = if w.item_id() == NOTE_20 {
+            by_customer
+        } else {
+            by_cashier
+        };
+        assert_eq!(w.author(), want, "item {}", w.item_id());
+    }
     assert!(
         writes.iter().all(|w| !matches!(w.plan(), Plan::Nothing)),
         "no empty write is planned"
@@ -416,14 +496,11 @@ fn every_write_of_a_payment_carries_the_exact_author_it_was_asked_with() {
 fn the_till_makes_change_a_greedy_cashier_would_refuse() {
     let ledger = ledger_of(&[(till(), COIN_5, 1), (till(), COIN_2, 3)]);
     assert_eq!(
-        choose_change(ledger.lines(), till(), 6, &denoms()),
+        change_of(&ledger, till(), 6, &denoms()),
         Some(lot(&[(COIN_2, 3)]))
     );
-    assert_eq!(choose_change(ledger.lines(), till(), 1, &denoms()), None);
-    assert_eq!(
-        choose_change(ledger.lines(), till(), 0, &denoms()),
-        Some(lot(&[]))
-    );
+    assert_eq!(change_of(&ledger, till(), 1, &denoms()), None);
+    assert_eq!(change_of(&ledger, till(), 0, &denoms()), Some(lot(&[])));
 }
 
 /// Fewest pieces; ties to more of the larger denomination; whatever order
@@ -433,11 +510,11 @@ fn the_choice_of_change_is_a_total_order() {
     // 10 is two 5s (2 pieces), not five 2s; 12 is 5+5+2.
     let ledger = ledger_of(&[(till(), COIN_5, 4), (till(), COIN_2, 10)]);
     assert_eq!(
-        choose_change(ledger.lines(), till(), 10, &denoms()),
+        change_of(&ledger, till(), 10, &denoms()),
         Some(lot(&[(COIN_5, 2)]))
     );
     assert_eq!(
-        choose_change(ledger.lines(), till(), 12, &denoms()),
+        change_of(&ledger, till(), 12, &denoms()),
         Some(lot(&[(COIN_5, 2), (COIN_2, 1)]))
     );
     // 10 is 6+4 or 5+5: two pieces either way, so the larger face wins.
@@ -447,7 +524,7 @@ fn the_choice_of_change_is_a_total_order() {
     let reversed = denoms_of(&[(four, 4), (five, 5), (six, 6)]);
     for t in [&table, &reversed] {
         assert_eq!(
-            choose_change(wallet.lines(), till(), 10, t),
+            change_of(&wallet, till(), 10, t),
             Some(lot(&[(six, 1), (four, 1)]))
         );
     }
@@ -465,13 +542,77 @@ fn a_till_of_a_trillion_coins_answers_at_once() {
     ]);
     // 999 = 199 fives and two 2s.
     assert_eq!(
-        choose_change(ledger.lines(), till(), 999, &denoms()),
+        change_of(&ledger, till(), 999, &denoms()),
         Some(lot(&[(COIN_5, 199), (COIN_2, 2)]))
     );
     assert!(matches!(
         pay(&ledger, &[(NOTE_20, 1)], 3),
         Payment::Paid { .. }
     ));
+}
+
+/// The worst case the bound admits: a full table including face 1, every
+/// line held in the trillions, the largest amount the search takes. No
+/// wall-clock: a search that is not bounded simply never finishes.
+#[test]
+fn the_worst_case_the_bound_admits_returns() {
+    const TRILLION: u64 = 1_000_000_000_000;
+    let faces: Vec<(u32, u32)> = (1..=MAX_DENOMINATIONS as u32)
+        .map(|f| (300 + f, f))
+        .collect();
+    let table = denoms_of(&faces);
+    let holdings: Vec<(HolderRef, u32, u64)> = faces
+        .iter()
+        .map(|&(item, _)| (till(), item, TRILLION))
+        .collect();
+    let ledger = ledger_of(&holdings);
+    let amount = u64::from(MAX_FACE_VALUE) - 1;
+    // 62 sixteens and a seven: 63 pieces, the fewest there can be.
+    assert_eq!(
+        change_of(&ledger, till(), amount, &table),
+        Some(lot(&[(316, 62), (307, 1)]))
+    );
+}
+
+/// An amount at or above the bound is a typed error before anything is
+/// allocated -- never a panic, never `None`, never a huge allocation.
+#[test]
+fn an_amount_at_or_past_the_bound_is_a_typed_error() {
+    let ledger = ledger_of(&[(till(), COIN_5, 3)]);
+    for amount in [
+        u64::from(MAX_FACE_VALUE),
+        1_000_000_000_000,
+        u64::MAX - 1,
+        u64::MAX,
+    ] {
+        assert_eq!(
+            choose_change(ledger.lines(), till(), amount, &denoms()),
+            Err(CashError::AmountOutOfRange),
+            "{amount}"
+        );
+    }
+    assert_eq!(
+        choose_change(
+            ledger.lines(),
+            till(),
+            u64::from(MAX_FACE_VALUE) - 1,
+            &denoms()
+        ),
+        Ok(None)
+    );
+}
+
+/// A change due past the bound is met by handing whole tendered pieces
+/// back, never by a refusal: the notes stay with the customer.
+#[test]
+fn a_change_due_past_the_bound_hands_tendered_pieces_back() {
+    let table = denoms_of(&[(NOTE_20, 20), (COIN_5, 5)]);
+    let mut ledger = ledger_of(&[(customer(), NOTE_20, 100), (till(), COIN_5, 10)]);
+    // 100 notes = 2000 against a price of 20: due 1980, far past the bound.
+    let outcome = pay_with(&ledger, &table, &[(NOTE_20, 100)], 20);
+    apply_paid(&mut ledger, &outcome);
+    assert_eq!(ledger.quantity(till(), NOTE_20), 1);
+    assert_eq!(ledger.quantity(customer(), NOTE_20), 99);
 }
 
 /// Only what `sim::cash` plans lands as stock: the module offers a value, a
@@ -516,45 +657,14 @@ fn the_public_functions_of_cash_are_exactly_these() {
 /// every entry an item of the generated defs.
 #[test]
 fn the_committed_denominations_are_largest_first_with_unique_face_values() {
-    use sim::generated::defs::{DENOMINATIONS, ITEMS, MAX_DENOMINATIONS, MAX_FACE_VALUE};
+    use sim::generated::defs::{DENOMINATIONS, ITEMS};
     assert!(!DENOMINATIONS.is_empty() && DENOMINATIONS.len() <= MAX_DENOMINATIONS);
     for pair in DENOMINATIONS.windows(2) {
         assert!(pair[0].face_value > pair[1].face_value);
     }
     for d in DENOMINATIONS {
         let item = ITEMS.iter().find(|i| i.id == d.item_id).expect("an item");
-        assert_eq!(
-            (item.face_value, item.shelf_life_minutes),
-            (d.face_value, 0)
-        );
-        assert!(d.face_value <= MAX_FACE_VALUE);
+        assert_eq!(item.shelf_life_minutes, 0);
+        assert!((1..=MAX_FACE_VALUE).contains(&d.face_value));
     }
-    assert_eq!(
-        ITEMS.iter().filter(|i| i.face_value > 0).count(),
-        DENOMINATIONS.len()
-    );
-}
-
-/// A holder paying itself moves nothing, so it is never a completed sale.
-#[test]
-fn a_holder_paying_itself_is_not_a_paid_sale() {
-    let ledger = ledger_of(&[(till(), NOTE_20, 1), (till(), COIN_5, 3)]);
-    let outcome = plan_payment(
-        ledger.lines(),
-        step(),
-        till(),
-        till(),
-        &lot(&[(NOTE_20, 1)]),
-        5,
-        &denoms(),
-    )
-    .unwrap();
-    assert!(!matches!(outcome, Payment::Paid { .. }), "{outcome:?}");
-}
-
-/// The change search answers any amount without panicking.
-#[test]
-fn choose_change_never_panics_on_the_largest_amount() {
-    let ledger = ledger_of(&[(till(), COIN_5, 3)]);
-    let _ = choose_change(ledger.lines(), till(), u64::MAX, &denoms());
 }

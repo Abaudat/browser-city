@@ -111,6 +111,13 @@ export interface TagDef {
   readonly role?: RoleDef;
 }
 
+export interface DenominationDef {
+  /** The id of the `ItemDef` that plays the role of money. */
+  readonly itemId: number;
+  /** Whole units of the one currency. */
+  readonly faceValue: number;
+}
+
 export interface ItemDef {
   readonly id: number;
   readonly key: string;
@@ -118,8 +125,6 @@ export interface ItemDef {
   readonly unit: number;
   /** Minutes until an instance spoils; 0 means it never does. */
   readonly shelfLifeMinutes: number;
-  /** Face value in the currency's smallest unit; 0 means not money (FR92). */
-  readonly faceValue: number;
   /** The item's world footprint, in whole cells (FR94). */
   readonly width: number;
   readonly height: number;
@@ -275,6 +280,8 @@ export interface Defs {
   readonly maxDenominations: number;
   /** The `sim::codes::unit` code every denomination is counted in. */
   readonly denominationUnit: number;
+  /** Every item that is money (FR92), largest face value first. */
+  readonly denominations: readonly DenominationDef[];
   /** FR1: real milliseconds per in-city minute -- generated once by
    * `tools/defs-build`, never a client-side literal. */
   readonly realMsPerCityMinute: number;

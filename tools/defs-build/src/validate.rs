@@ -2020,7 +2020,6 @@ fn check_object_sprite_matches_footprint(
 /// the world's own footprint, unchanged), and its shelf life is bounded.
 /// Each refusal points at the offending value.
 fn check_item_fields(items: &[ItemEntry], code_tables: &CodeTables) -> Result<(), DefsError> {
-    let mut face_values: BTreeMap<u32, &str> = BTreeMap::new();
     for i in items {
         let at =
             |line: usize, col: usize, message: String| DefsError::new(&i.path, line, col, message);
@@ -2069,81 +2068,95 @@ fn check_item_fields(items: &[ItemEntry], code_tables: &CodeTables) -> Result<()
                 ),
             ));
         }
-        if let Some(face) = &i.face_value {
-            check_denomination(i, face, &mut face_values)?;
-        }
     }
     Ok(())
 }
 
-/// A `face_value` makes an item a denomination (FR92): money is counted in
-/// pieces, never spoils, has a unique face value, and there are few kinds.
-fn check_denomination<'a>(
-    i: &'a ItemEntry,
-    face: &Located<u32>,
-    seen: &mut BTreeMap<u32, &'a str>,
-) -> Result<(), DefsError> {
-    let at = |line, col, msg: String| DefsError::new(&i.path, line, col, msg);
-    if face.value == 0 {
-        return Err(at(
-            face.line,
-            face.col,
-            format!(
-                "item '{}' face_value of 0 -- a denomination is worth at least 1",
-                i.key.value
-            ),
-        ));
-    }
-    if face.value > MAX_FACE_VALUE {
-        return Err(at(
-            face.line,
-            face.col,
-            format!(
-                "item '{}' face_value {} exceeds MAX_FACE_VALUE ({MAX_FACE_VALUE})",
-                i.key.value, face.value
-            ),
-        ));
-    }
-    if i.unit.value != DENOMINATION_UNIT {
-        return Err(at(
-            i.unit.line,
-            i.unit.col,
-            format!(
-                "item '{}' has a face_value, so its unit must be '{DENOMINATION_UNIT}', not '{}'",
-                i.key.value, i.unit.value
-            ),
-        ));
-    }
-    if i.shelf_life_minutes.value != 0 {
-        return Err(at(
-            i.shelf_life_minutes.line,
-            i.shelf_life_minutes.col,
-            format!(
-                "item '{}' has a face_value, so its shelf_life_minutes must be 0",
-                i.key.value
-            ),
-        ));
-    }
-    if let Some(first) = seen.insert(face.value, i.key.value.as_str()) {
-        return Err(at(
-            face.line,
-            face.col,
-            format!(
-                "item '{}' face_value {} is already item '{first}''s",
-                i.key.value, face.value
-            ),
-        ));
-    }
-    if seen.len() > MAX_DENOMINATIONS {
-        return Err(at(
-            face.line,
-            face.col,
-            format!(
-                "item '{}' is denomination {}, over MAX_DENOMINATIONS ({MAX_DENOMINATIONS})",
-                i.key.value,
-                seen.len()
-            ),
-        ));
+/// A `[[denomination]]` makes an item money (FR92): it names a real item
+/// counted in pieces that never spoils, with a face value of 1 to
+/// `MAX_FACE_VALUE` that no other denomination shares; an item is named
+/// once and there are at most `MAX_DENOMINATIONS` rows.
+fn check_denominations(raw: &RawDefs) -> Result<(), DefsError> {
+    let items: HashMap<&str, &ItemEntry> = raw
+        .items
+        .iter()
+        .map(|i| (i.key.value.as_str(), i))
+        .collect();
+    let mut named: HashMap<&str, ()> = HashMap::new();
+    let mut faces: HashMap<u32, &str> = HashMap::new();
+    for (n, d) in raw.denominations.iter().enumerate() {
+        let at = |line, col, msg: String| DefsError::new(&d.path, line, col, msg);
+        let key = d.item.value.as_str();
+        if d.face_value.value == 0 {
+            return Err(at(
+                d.face_value.line,
+                d.face_value.col,
+                format!(
+                    "denomination '{key}' face_value of 0 -- a denomination is worth at least 1"
+                ),
+            ));
+        }
+        if d.face_value.value > MAX_FACE_VALUE {
+            return Err(at(
+                d.face_value.line,
+                d.face_value.col,
+                format!(
+                    "denomination '{key}' face_value {} exceeds MAX_FACE_VALUE ({MAX_FACE_VALUE})",
+                    d.face_value.value
+                ),
+            ));
+        }
+        let Some(item) = items.get(key) else {
+            return Err(at(
+                d.item.line,
+                d.item.col,
+                format!("denomination names unknown item '{key}'"),
+            ));
+        };
+        if named.insert(key, ()).is_some() {
+            return Err(at(
+                d.item.line,
+                d.item.col,
+                format!("item '{key}' is already a denomination"),
+            ));
+        }
+        if item.unit.value != DENOMINATION_UNIT {
+            return Err(at(
+                d.item.line,
+                d.item.col,
+                format!(
+                    "denomination '{key}' must be counted in '{DENOMINATION_UNIT}', not '{}'",
+                    item.unit.value
+                ),
+            ));
+        }
+        if item.shelf_life_minutes.value != 0 {
+            return Err(at(
+                d.item.line,
+                d.item.col,
+                format!("denomination '{key}' must never spoil: its shelf_life_minutes is not 0"),
+            ));
+        }
+        if let Some(first) = faces.insert(d.face_value.value, key) {
+            return Err(at(
+                d.face_value.line,
+                d.face_value.col,
+                format!(
+                    "denomination '{key}' face_value {} is already item '{first}''s",
+                    d.face_value.value
+                ),
+            ));
+        }
+        if n + 1 > MAX_DENOMINATIONS {
+            return Err(at(
+                d.item.line,
+                d.item.col,
+                format!(
+                    "denomination '{key}' is number {}, over MAX_DENOMINATIONS ({MAX_DENOMINATIONS})",
+                    n + 1
+                ),
+            ));
+        }
     }
     Ok(())
 }
@@ -2619,6 +2632,7 @@ pub fn validate(
     check_id_key_dupes(&raw.objects, "object")?;
     check_id_key_dupes(&raw.items, "item")?;
     check_item_fields(&raw.items, code_tables)?;
+    check_denominations(raw)?;
     check_id_key_dupes(&raw.recipes, "recipe")?;
     check_id_key_dupes(&raw.professions, "profession")?;
     check_id_key_dupes(&raw.chains, "chain")?;
@@ -2901,12 +2915,26 @@ pub fn validate(
                 .get("unit", &i.unit.value)
                 .expect("unit already validated by check_item_fields"),
             shelf_life_minutes: i.shelf_life_minutes.value,
-            face_value: i.face_value.as_ref().map_or(0, |f| f.value),
             width: i.bulk_width.value,
             height: i.bulk_height.value,
         })
         .collect();
     items.sort_by(|a, b| a.key.cmp(&b.key));
+
+    let item_ids: HashMap<&str, u32> = raw
+        .items
+        .iter()
+        .map(|i| (i.key.value.as_str(), i.id.value))
+        .collect();
+    let mut denominations: Vec<DenominationDef> = raw
+        .denominations
+        .iter()
+        .map(|d| DenominationDef {
+            item_id: item_ids[d.item.value.as_str()],
+            face_value: d.face_value.value,
+        })
+        .collect();
+    denominations.sort_by_key(|d| std::cmp::Reverse(d.face_value));
 
     let mut recipes: Vec<RecipeDef> = raw
         .recipes
@@ -3119,12 +3147,20 @@ pub fn validate(
         .collect();
     tags.sort_by(|a, b| a.key.cmp(&b.key));
 
+    let denomination_unit = code_tables.get("unit", DENOMINATION_UNIT).ok_or_else(|| {
+        DefsError::new(
+            std::path::Path::new("defs/denominations"),
+            1,
+            1,
+            format!("the unit codes carry no '{DENOMINATION_UNIT}'"),
+        )
+    })?;
+
     Ok(Defs {
+        denomination_unit,
         objects,
         items,
-        denomination_unit: code_tables
-            .get("unit", DENOMINATION_UNIT)
-            .unwrap_or_default(),
+        denominations,
         recipes,
         professions,
         chains,
@@ -3185,6 +3221,9 @@ mod tests {
         [("fixtures/objects/test.png".to_string(), (16u32, 16u32))]
             .into_iter()
             .collect()
+    }
+    fn piece_codes() -> CodeTables {
+        CodeTables::from_entries(&[("unit", "piece", 0)])
     }
 
     fn object_code_tables() -> CodeTables {
@@ -3381,7 +3420,7 @@ mod tests {
             "[[item]]\nid = 1\nkey = \"trash-bin\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("invalid item key 'trash-bin'"));
     }
 
@@ -3392,7 +3431,7 @@ mod tests {
             "[[balance]]\nkey = \"citizen.bar-decay.rest\"\nvalue = 1\nmin = 0\nmax = 10\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(
             err.message
                 .contains("invalid balance key 'citizen.bar-decay.rest'")
@@ -3406,7 +3445,7 @@ mod tests {
             "[[item]]\nid = 1\nkey = \"a\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n\n[[item]]\nid = 1\nkey = \"b\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("duplicate item id 1"));
     }
 
@@ -3423,7 +3462,7 @@ mod tests {
             ),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.path.ends_with("b.toml"));
         assert!(err.message.contains("duplicate item id 1"));
         assert!(err.message.contains("a.toml"));
@@ -3436,7 +3475,7 @@ mod tests {
             "[[item]]\nid = 1\nkey = \"a\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n\n[[item]]\nid = 2\nkey = \"a\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("duplicate item key 'a'"));
     }
 
@@ -3447,7 +3486,7 @@ mod tests {
             "[[balance]]\nkey = \"a\"\nvalue = 1\nmin = 0\nmax = 10\n\n[[balance]]\nkey = \"a\"\nvalue = 2\nmin = 0\nmax = 10\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("duplicate balance key 'a'"));
     }
 
@@ -3458,7 +3497,7 @@ mod tests {
             "[[recipe]]\nid = 1\nkey = \"r\"\ninputs = [\"nope\"]\noutputs = []\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("unknown item 'nope'"));
     }
 
@@ -3469,7 +3508,7 @@ mod tests {
             "[[chain]]\nid = 1\nkey = \"c\"\nlinks = [\"nope\"]\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("unknown profession 'nope'"));
     }
 
@@ -3480,7 +3519,7 @@ mod tests {
             "[[balance]]\nkey = \"a\"\nvalue = 999\nmin = 0\nmax = 10\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("out of its own declared range"));
     }
 
@@ -3793,6 +3832,7 @@ mod tests {
         ]);
         let raw = parse_all(&f).unwrap();
         let codes = CodeTables::from_entries(&[
+            ("unit", "piece", 0),
             ("layer", "furniture", 2),
             ("layer", "objects", 3),
             ("layer", "walls", 4),
@@ -3988,7 +4028,7 @@ mod tests {
             "[[balance]]\nkey = \"a\"\nvalue = 10\nmin = 0\nmax = 10\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        assert!(validate(&raw, &BTreeMap::new(), &CodeTables::default(), "").is_ok());
+        assert!(validate(&raw, &BTreeMap::new(), &piece_codes(), "").is_ok());
     }
 
     // --- Story 1.10: appearance --------------------------------------------
@@ -4011,7 +4051,7 @@ mod tests {
             ),
         ]);
         let raw = parse_all(&f).unwrap();
-        let defs = validate(&raw, &appearance_sheet_dims(), &CodeTables::default(), "").unwrap();
+        let defs = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap();
         assert_eq!(defs.bodies[0].key, "body_01");
     }
 
@@ -4027,7 +4067,7 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let mut small_dims = BTreeMap::new();
         small_dims.insert("sheets/body.png".to_string(), (32, 32));
-        let err = validate(&raw, &small_dims, &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &small_dims, &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("only accepts"));
     }
 
@@ -4046,7 +4086,7 @@ mod tests {
         // declared accepted_sizes -- must still be rejected by name, not
         // waved through for being "big enough".
         bigger_dims.insert("sheets/body.png".to_string(), (960, 700));
-        let err = validate(&raw, &bigger_dims, &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &bigger_dims, &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("only accepts"));
         assert!(err.message.contains("960x700"));
     }
@@ -4058,7 +4098,7 @@ mod tests {
             "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("no [[appearance_layout]] entry"));
     }
 
@@ -4069,7 +4109,7 @@ mod tests {
             "[[body]]\nid = 65536\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("does not fit in a u16"));
     }
 
@@ -4083,7 +4123,7 @@ mod tests {
             ),
         ]);
         let raw = parse_all(&f).unwrap();
-        let defs = validate(&raw, &appearance_sheet_dims(), &CodeTables::default(), "").unwrap();
+        let defs = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap();
         assert_eq!(defs.bodies[0].id, 65535);
     }
 
@@ -4094,7 +4134,7 @@ mod tests {
             "[[body]]\nid = 0\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("declares id 0"));
     }
 
@@ -4105,7 +4145,7 @@ mod tests {
             "[[appearance_layout]]\nid = 1\nkey = \"a\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 16, height = 32 }]\n\n[[appearance_layout]]\nid = 2\nkey = \"b\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 16, height = 32 }]\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("exactly one layout per family"));
     }
 
@@ -4119,7 +4159,7 @@ mod tests {
             "[[appearance_layout]]\nid = 1\nkey = \"adult\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 16, height = 32 }]\n\n[[appearance_layout]]\nid = 2\nkey = \"kid\"\nfamily = \"kid\"\ncell_width = 12\ncell_height = 24\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 12, height = 24 }]\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("kid"), "{}", err.message);
         assert!(err.message.contains("16x32"), "{}", err.message);
         assert!(err.message.contains("12x24"), "{}", err.message);
@@ -4146,7 +4186,7 @@ mod tests {
             "[[uniform]]\nid = 1\nkey = \"sanitation_worker_uniform\"\nprofession = \"sanitation_worker\"\naccessory = \"jacket\"\n",
         );
         let raw = parse_all(&f).unwrap();
-        assert!(validate(&raw, &appearance_sheet_dims(), &CodeTables::default(), "").is_ok());
+        assert!(validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").is_ok());
     }
 
     #[test]
@@ -4155,7 +4195,7 @@ mod tests {
             "[[uniform]]\nid = 1\nkey = \"ghost\"\nprofession = \"no_such_profession\"\naccessory = \"jacket\"\n",
         );
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("names unknown profession"));
     }
 
@@ -4165,7 +4205,7 @@ mod tests {
             "[[uniform]]\nid = 1\nkey = \"ghost\"\nprofession = \"sanitation_worker\"\naccessory = \"no_such_accessory\"\n",
         );
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("names unknown accessory"));
     }
 
@@ -4187,7 +4227,7 @@ mod tests {
             ),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("not an adult role_only accessory"));
     }
 
@@ -4197,7 +4237,7 @@ mod tests {
             "[[uniform]]\nid = 1\nkey = \"ghost\"\nprofession = \"sanitation_worker\"\n",
         );
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("overrides neither"));
     }
 
@@ -4219,7 +4259,7 @@ mod tests {
             ),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &CodeTables::default(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("exactly one uniform per profession"));
     }
 

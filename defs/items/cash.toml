@@ -3,7 +3,6 @@ id = 3
 key = "coin_1"
 unit = "piece"
 shelf_life_minutes = 0
-face_value = 1
 bulk = { width = 1, height = 1 }
 
 [[item]]
@@ -11,7 +10,6 @@ id = 4
 key = "coin_2"
 unit = "piece"
 shelf_life_minutes = 0
-face_value = 2
 bulk = { width = 1, height = 1 }
 
 [[item]]
@@ -19,7 +17,6 @@ id = 5
 key = "coin_5"
 unit = "piece"
 shelf_life_minutes = 0
-face_value = 5
 bulk = { width = 1, height = 1 }
 
 [[item]]
@@ -27,7 +24,6 @@ id = 6
 key = "note_10"
 unit = "piece"
 shelf_life_minutes = 0
-face_value = 10
 bulk = { width = 1, height = 1 }
 
 [[item]]
@@ -35,7 +31,6 @@ id = 7
 key = "note_20"
 unit = "piece"
 shelf_life_minutes = 0
-face_value = 20
 bulk = { width = 1, height = 1 }
 
 [[item]]
@@ -43,5 +38,4 @@ id = 8
 key = "note_50"
 unit = "piece"
 shelf_life_minutes = 0
-face_value = 50
 bulk = { width = 1, height = 1 }

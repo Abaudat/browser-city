@@ -40,11 +40,17 @@ row: permanent `id`/`key`; `unit` (a name from `sim::codes::unit`'s golden
 (whole minutes until an instance spoils, `0` = never, at most
 `MAX_SHELF_LIFE_MINUTES`); `bulk = { width = <n>, height = <n> }` (world
 footprint in cells, each 1 to `MAX_FOOTPRINT_CELLS`). All five are
-required; there are no defaults. An optional `face_value`
-(story 6.8, FR92) makes the item a denomination: whole units of the one
-currency, 1 to `MAX_FACE_VALUE`, `unit = "piece"`, `shelf_life_minutes = 0`,
-unique across items, at most `MAX_DENOMINATIONS` of them. `defs/items/cash.toml`
-holds the money; a new denomination is a row, never code.
+required; there are no defaults.
+
+## Denominations
+
+`defs/denominations/*.toml` (story 6.8, FR92): being money is a role an item
+plays, never a field of the item. A `[[denomination]]` row is `item` (the key
+of an `[[item]]`, whose coins and notes live in `defs/items/cash.toml`) and
+`face_value` (whole units of the one currency, 1 to `MAX_FACE_VALUE`). The item
+must be counted in `piece`, never spoil, appear once, and have a face value no
+other denomination shares; there are at most `MAX_DENOMINATIONS`. A new
+denomination is two rows, never code.
 
 ## The example corpus
 

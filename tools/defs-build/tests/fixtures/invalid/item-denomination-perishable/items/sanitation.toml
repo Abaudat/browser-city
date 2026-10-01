@@ -1,7 +1,0 @@
-[[item]]
-id = 1
-key = "coin"
-unit = "piece"
-shelf_life_minutes = 60
-face_value = 5
-bulk = { width = 1, height = 1 }
