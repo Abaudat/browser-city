@@ -457,33 +457,6 @@ mod tests {
     proptest! {
         #![proptest_config(cases())]
 
-        /// Oracle: one solid block `[a, b) x [r0, r1)` in a 3x1 footprint.
-        /// The expected verdict is computed here from the block's own
-        /// numbers, never from the implementation.
-        #[test]
-        fn the_verdict_matches_an_independent_oracle(
-            a in 0u32..40, w in 1u32..8, r0 in 0u32..12, h in 1u32..4,
-            x0 in 0i32..48, dx in 1i32..48, y0 in 0i32..16, dy in 1i32..16,
-        ) {
-            let (b, r1) = ((a + w).min(48), (r0 + h).min(16));
-            prop_assume!(a < b && r0 < r1);
-            let (x1, y1) = ((x0 + dx).min(48), (y0 + dy).min(16));
-            prop_assume!(x0 < x1 && y0 < y1);
-            let art = sheet(48, 16, |x, y| if in_block(x, y, (a, b), (r0, r1)) { SOLID } else { 0 });
-            let got = check_collider_against_art(&art, 48, &sprite(0, 0, 48, 16), 1, 16, rect(x0, y0, x1, y1));
-            let (a, b, r0, r1) = (a as i32, b as i32, r0 as i32, r1 as i32);
-            let want = if x0 < a || x1 > b {
-                Err(Disagreement::ColliderColumnsOutsideArt { collider: (x0, x1), art: (a as i64, b as i64) })
-            } else if x0 > a || x1 < b {
-                Err(Disagreement::BottomRowOutsideCollider { collider: (x0, x1), art: (a as i64, b as i64) })
-            } else if y0 < r0 || y1 > r1 {
-                Err(Disagreement::ColliderRowsOutsideArt { collider: (y0, y1), art: (r0 as i64, r1 as i64) })
-            } else {
-                Ok(())
-            };
-            prop_assert_eq!(got, want);
-        }
-
         /// Alpha above the band never changes the verdict.
         #[test]
         fn art_above_the_band_never_changes_the_verdict(
@@ -572,40 +545,145 @@ mod tests {
         }
     }
 
-    proptest! {
-        #![proptest_config(cases())]
+    /// Which clause refused (or none): the four verdicts the oracle must
+    /// both predict and draw.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    enum Kind {
+        Columns,
+        BottomRow,
+        Rows,
+        Pass,
+    }
 
-        /// Oracle over two blocks: an upper block `[a, b) x [r0, r1)` over a
-        /// base `[c, d) x [r1, r2)` with `a <= c < d <= b`. Each clause is
-        /// predicted from its own span: columns from the upper block, the
-        /// bottom row from the base, rows from both.
-        #[test]
-        fn the_verdict_matches_an_independent_two_block_oracle(
-            a in 0u32..20, lead in 0u32..6, cw in 1u32..8, tail in 0u32..6,
-            r0 in 0u32..6, h0 in 1u32..4, h1 in 1u32..4,
-            x0 in 0i32..48, dx in 1i32..48, y0 in 0i32..16, dy in 1i32..16,
-        ) {
-            let (c, d) = (a + lead, a + lead + cw);
-            let b = d + tail;
-            let (r1, r2) = (r0 + h0, r0 + h0 + h1);
-            prop_assume!(b <= 48 && r2 <= 16);
-            let (x1, y1) = ((x0 + dx).min(48), (y0 + dy).min(16));
-            prop_assume!(x0 < x1 && y0 < y1);
-            let art = sheet(48, 16, |x, y| {
-                if in_block(x, y, (a, b), (r0, r1)) || in_block(x, y, (c, d), (r1, r2)) { SOLID } else { 0 }
-            });
-            let got = check_collider_against_art(&art, 48, &sprite(0, 0, 48, 16), 1, 16, rect(x0, y0, x1, y1));
-            let (a, b, c, d, r0, r2) = (a as i32, b as i32, c as i32, d as i32, r0 as i32, r2 as i32);
-            let want = if x0 < a || x1 > b {
-                Err(Disagreement::ColliderColumnsOutsideArt { collider: (x0, x1), art: (a as i64, b as i64) })
-            } else if x0 > c || x1 < d {
-                Err(Disagreement::BottomRowOutsideCollider { collider: (x0, x1), art: (c as i64, d as i64) })
-            } else if y0 < r0 || y1 > r2 {
-                Err(Disagreement::ColliderRowsOutsideArt { collider: (y0, y1), art: (r0 as i64, r2 as i64) })
+    type OracleParams = (
+        (u32, u32, u32, u32, u32, u32, u32),
+        (i32, i32, i32, i32),
+        (bool, bool, bool),
+        (i32, i32, i32, i32),
+    );
+
+    fn oracle_strategy() -> impl Strategy<Value = OracleParams> {
+        (
+            (
+                0u32..20,
+                0u32..6,
+                1u32..8,
+                0u32..6,
+                0u32..6,
+                1u32..4,
+                1u32..4,
+            ),
+            (0i32..48, 1i32..48, 0i32..16, 1i32..16),
+            (any::<bool>(), any::<bool>(), any::<bool>()),
+            (-2i32..=2, -2i32..=2, -2i32..=2, -2i32..=2),
+        )
+    }
+
+    /// Runs one oracle case; `None` when the drawn collider is not a valid
+    /// in-footprint rect. Art: an upper block `[a, b) x [r0, r1)` over a
+    /// base `[c, d) x [r1, r2)` with `a <= c < d <= b` (`lead = tail = 0` is
+    /// one block). The collider is either anywhere in the footprint or each
+    /// edge is a matching art edge plus a small offset, so every clause is
+    /// reached by design. The expected kind is predicted from the numbers
+    /// alone, each clause from its own span.
+    fn oracle_case(p: OracleParams) -> Option<(Kind, Result<(), Disagreement>)> {
+        let (
+            (a, lead, cw, tail, r0, h0, h1),
+            (fx0, fdx, fy0, fdy),
+            (near, s0, s1),
+            (o0, o1, o2, o3),
+        ) = p;
+        let (c, d) = (a + lead, a + lead + cw);
+        let b = d + tail;
+        let (r1, r2) = (r0 + h0, r0 + h0 + h1);
+        if b > 48 || r2 > 16 {
+            return None;
+        }
+        let (ai, bi, ci, di, r0i, r2i) =
+            (a as i32, b as i32, c as i32, d as i32, r0 as i32, r2 as i32);
+        let (x0, x1, y0, y1) = if near {
+            (
+                (if s0 { ai } else { ci } + o0).clamp(0, 47),
+                (if s1 { bi } else { di } + o1).clamp(1, 48),
+                (r0i + o2).clamp(0, 15),
+                (r2i + o3).clamp(1, 16),
+            )
+        } else {
+            (fx0, (fx0 + fdx).min(48), fy0, (fy0 + fdy).min(16))
+        };
+        if x0 >= x1 || y0 >= y1 {
+            return None;
+        }
+        let art = sheet(48, 16, |x, y| {
+            if in_block(x, y, (a, b), (r0, r1)) || in_block(x, y, (c, d), (r1, r2)) {
+                SOLID
             } else {
+                0
+            }
+        });
+        let got = check_collider_against_art(
+            &art,
+            48,
+            &sprite(0, 0, 48, 16),
+            1,
+            16,
+            rect(x0, y0, x1, y1),
+        );
+        let (kind, want) = if x0 < ai || x1 > bi {
+            (
+                Kind::Columns,
+                Err(Disagreement::ColliderColumnsOutsideArt {
+                    collider: (x0, x1),
+                    art: (ai as i64, bi as i64),
+                }),
+            )
+        } else if x0 > ci || x1 < di {
+            (
+                Kind::BottomRow,
+                Err(Disagreement::BottomRowOutsideCollider {
+                    collider: (x0, x1),
+                    art: (ci as i64, di as i64),
+                }),
+            )
+        } else if y0 < r0i || y1 > r2i {
+            (
+                Kind::Rows,
+                Err(Disagreement::ColliderRowsOutsideArt {
+                    collider: (y0, y1),
+                    art: (r0i as i64, r2i as i64),
+                }),
+            )
+        } else {
+            (Kind::Pass, Ok(()))
+        };
+        assert_eq!(got, want, "params {p:?}");
+        Some((kind, want))
+    }
+
+    /// The oracle predicts every verdict, and the generator is proven to
+    /// draw all four of them (never left to the seed): each kind must occur
+    /// at least a hundred times in the run.
+    #[test]
+    fn the_oracle_draws_all_four_verdicts_and_predicts_each() {
+        use proptest::test_runner::{Config, TestRunner};
+        let cases = cases().cases.max(4096);
+        let mut runner = TestRunner::new(Config {
+            cases,
+            ..Config::default()
+        });
+        let tally = std::cell::RefCell::new(std::collections::BTreeMap::new());
+        runner
+            .run(&oracle_strategy(), |p| {
+                if let Some((kind, _)) = oracle_case(p) {
+                    *tally.borrow_mut().entry(kind).or_insert(0u32) += 1;
+                }
                 Ok(())
-            };
-            prop_assert_eq!(got, want);
+            })
+            .unwrap();
+        let tally = tally.into_inner();
+        for kind in [Kind::Columns, Kind::BottomRow, Kind::Rows, Kind::Pass] {
+            let n = tally.get(&kind).copied().unwrap_or(0);
+            assert!(n >= 100, "{kind:?} drawn only {n} times: {tally:?}");
         }
     }
 }

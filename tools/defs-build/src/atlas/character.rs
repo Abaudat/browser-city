@@ -494,25 +494,54 @@ mod tests {
     }
 
     /// One definition of transparent: alpha one below the threshold is
-    /// transparent for the strip and for a body cell, the threshold is not.
+    /// transparent for the strip, the threshold is not.
     #[test]
-    fn the_threshold_boundary_holds_for_the_strip_and_for_a_body_cell() {
+    fn the_threshold_boundary_holds_for_the_strip() {
         use crate::alpha::ALPHA_OPAQUE_THRESHOLD as T;
         let l = one_direction_one_frame_layout(Family::Adult);
-        let build = |kind: PartKind, alpha: u8| {
+        let build = |alpha: u8| {
             let mut bytes = BTreeMap::new();
             bytes.insert(
                 "sheet.png".to_string(),
                 solid_sheet(16, 32, [9, 9, 9, alpha]),
             );
-            let p = part(kind, "k", Family::Adult, "sheet.png");
+            let p = part(PartKind::Outfit, "k", Family::Adult, "sheet.png");
             build_character_pack_items(&[p], &bytes, std::slice::from_ref(&l))
         };
-        for kind in [PartKind::Outfit, PartKind::Body] {
-            let err = build(kind, T - 1).unwrap_err();
-            assert!(err.contains("fully transparent"), "{err}");
-            assert!(build(kind, T).is_ok(), "{kind:?} at the threshold");
-        }
+        let err = build(T - 1).unwrap_err();
+        assert!(err.contains("packed strip is fully transparent"), "{err}");
+        assert!(build(T).is_ok());
+    }
+
+    /// The body-cell boundary, reached past the strip-level check: a
+    /// two-cell body whose first cell is solid and whose second is at
+    /// `T - 1` is refused by the per-cell message; at `T` it packs.
+    #[test]
+    fn the_threshold_boundary_holds_for_a_body_cell() {
+        use crate::alpha::ALPHA_OPAQUE_THRESHOLD as T;
+        let l = layout(Family::Adult, 16, 32, &["down", "up"], &[("idle", 0, 1)]);
+        let build = |second_cell_alpha: u8| {
+            let mut rgba = vec![0u8; 32 * 32 * 4];
+            for y in 0..32 {
+                for x in 0..32 {
+                    let alpha = if x < 16 { 255 } else { second_cell_alpha };
+                    rgba[(y * 32 + x) * 4..(y * 32 + x) * 4 + 4].copy_from_slice(&[9, 9, 9, alpha]);
+                }
+            }
+            let mut bytes = BTreeMap::new();
+            bytes.insert(
+                "sheet.png".to_string(),
+                encode_rgba8(32, 32, &rgba).unwrap(),
+            );
+            let p = part(PartKind::Body, "body_01", Family::Adult, "sheet.png");
+            build_character_pack_items(&[p], &bytes, std::slice::from_ref(&l))
+        };
+        let err = build(T - 1).unwrap_err();
+        assert!(
+            err.contains("cell (row 0, direction 1, frame 0) is fully transparent"),
+            "{err}"
+        );
+        assert!(build(T).is_ok());
     }
 
     #[test]
