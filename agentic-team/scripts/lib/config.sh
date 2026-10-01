@@ -27,12 +27,12 @@ _BC_CONFIG_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 : "${BC_IDLE_MS:=300000}"
 : "${BC_CYCLE_LIMIT:=8}"
 # The budget gate's two caps, as fractions of Anthropic's own unified rate
-# limit windows. 85% of the 5-hour window and 80% of the week leave Adrian a
+# limit windows. 85% of the 5-hour window and 90% of the week leave Adrian a
 # margin he never has to ask the team for -- and because the headers are
 # account-wide, his own sessions spend the same budget, so the team's share
 # shrinks on its own when he has been working. At or above a cap is a skip.
 : "${BC_SESSION_CAP:=0.85}"
-: "${BC_WEEKLY_CAP:=0.80}"
+: "${BC_WEEKLY_CAP:=0.90}"
 # ...except at the end of the week. The weekly margin exists so Adrian is
 # never left asking the team for quota he needs today -- but quota unspent
 # when the window rolls over is quota nobody ever gets, and the last hours of

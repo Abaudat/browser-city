@@ -135,7 +135,7 @@ further, e.g. from cron, a scheduled task, or a human.
 **The budget gate runs first.** Before the board is read at all, the tick
 asks `bc-budget.sh check` whether there is budget: it dispatches only while
 Anthropic's `overallStatus` is not a rejection, the 5-hour window is below
-85% and the week is below 80%. `allowed_warning` is not a rejection: the
+85% and the week is below 90%. `allowed_warning` is not a rejection: the
 account reads that from the moment the week crosses Anthropic's own 75%
 threshold, which is most of a working week, and it means approaching, not
 stopped. How close to the limit the team runs is the caps' job. Those
@@ -150,7 +150,7 @@ seven-day claim. A gate that cannot answer is exit **2**, not 1, because a
 broken gate that skipped like a spent one would make a team stopped for a
 week look exactly like a team behaving correctly.
 
-**The weekly cap lifts at the end of the week.** The 80% margin exists so
+**The weekly cap lifts at the end of the week.** The 90% cap exists so
 Adrian never has to ask the team for quota he needs today — but quota still
 unspent when the seven-day window rolls over is quota nobody ever gets.
 Inside `BC_WEEKLY_ENDGAME_HOURS` (12) of the weekly reset the weekly cap
@@ -279,7 +279,7 @@ stderr; stdout carries only that one reason line.
 | `BC_STOP_TIMEOUT_S=<s>` | How long `bc-session stop-all` keeps closing and re-listing before it reports panes still open as exit 2. Orca refuses to close some busy panes with `terminal_handle_stale` (reliably the oldest Claude pane in a worktree) for up to a minute, then accepts the same call, so stop-all trusts the listing, not the close's answer. | 120 |
 | `BC_SCOTTY_WORKTREE=<path>` | The checkout Scotty's sprint session runs in. He writes only to GitHub, so it is not a worktree of his own — it only has to hold `.claude/agents/scotty.md` and be one Orca knows. | `$BC_MAIN_CHECKOUT` |
 | `BC_SCOTTY_TIMEOUT_S=<s>` / `BC_SCOTTY_POLL_S=<s>` / `BC_SCOTTY_GRACE_S=<s>` | How long `bc-session scotty` waits for his session to finish a job (and, before sending, to finish whatever it was already doing) before giving up as exit 2; how often it looks; and how long an idle title right after a send may pass for "done" without his having been seen working. | 3600 / 5 / 60 |
-| `BC_SESSION_CAP=<0..1>` / `BC_WEEKLY_CAP=<0..1>` | The budget gate's two caps. At or above one is a skip. | `0.85` / `0.80` |
+| `BC_SESSION_CAP=<0..1>` / `BC_WEEKLY_CAP=<0..1>` | The budget gate's two caps. At or above one is a skip. | `0.85` / `0.90` |
 | `BC_WEEKLY_ENDGAME_HOURS=<h>` / `BC_WEEKLY_ENDGAME_CAP=<0..1>` | How close to the weekly reset the weekly cap lifts, and what it lifts to. Inside the window the team may spend the rest of the week rather than leave it to expire; the reason line says `endgame=<reset>`. `0` hours turns the lift off. | `12` / `1.00` |
 | `BC_RATE_MONITOR=<path>` | The `claude-rate-monitor` binary, when it is somewhere `resolve_rate_monitor` does not look. | derived (`%APPDATA%/npm`, then PATH) |
 | `BC_SESSION_MODE=main` | `bc-session.sh worktree` returns `$BC_MAIN_CHECKOUT` instead of creating/looking up an Orca worktree-per-issue — the spike's documented fallback if Orca worktrees are ever unavailable. | unset (worktree-per-issue) |
