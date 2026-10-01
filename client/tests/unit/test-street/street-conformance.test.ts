@@ -114,8 +114,9 @@ function objectDef(defId: number) {
 // carries the `stairs` tag and touches the row under the anchor, edge to
 // edge. No def id, row count or floor is named here.
 const objectSources = streetObjectSources();
-const STAIRS_TAG_ID = defs.tags.find((t) => t.key === "stairs")?.id;
-if (STAIRS_TAG_ID === undefined) throw new Error("defs/ declares no `stairs` tag");
+const stairsTag = defs.tags.find((t) => t.key === "stairs");
+if (!stairsTag) throw new Error("defs/ declares no `stairs` tag");
+const STAIRS_TAG_ID: number = stairsTag.id;
 
 type DefProp = Extract<(typeof STREET_PROPS)[number], { defId: number }>;
 type Cell = { readonly x: number; readonly y: number };
