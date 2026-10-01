@@ -28,14 +28,14 @@ describe("every defId-placed prop draws from a real defs/objects entry", () => {
 
   it("has exactly the committed number of defId-placed rows, one per def-owned cell", () => {
     // Every `defId` row in this fixture, individually: the two shopfront
-    // windows, the counter, the bin, the lamppost, the four parapet cells
-    // and the four deck cells (story 2.13: one-cell defs, placed once per
-    // cell -- `bridge_deck`'s and `wall_segment`'s own doc comments say
-    // why), and the two flights of stairs. A human counting *distinct
-    // props* on the street would say nine (the parapet and the deck each
-    // read as one run); this array counts *placed rows*, which is more
-    // once a multi-cell run is decomposed into one row per cell.
-    expect(defRows.length).toBe(15);
+    // windows, the counter, the bin, the lamppost, the four parapet cells,
+    // the four deck cells, the two foot stairs, the two stairwells' six
+    // rows (top railing, treads, bottom railing each) and the shops'
+    // wall runs -- 14 `wall_face` cells (north and south runs) and 12
+    // `wall_segment` cells (west, east and party runs). One-cell defs are
+    // placed once per cell (`sprite` never repeats), so this counts
+    // *placed rows*, not distinct props.
+    expect(defRows.length).toBe(47);
   });
 
   it("names only real, currently-declared defs/objects keys", () => {
@@ -54,7 +54,11 @@ describe("every defId-placed prop draws from a real defs/objects entry", () => {
       "lamppost",
       "shop_counter",
       "shop_window",
+      "stairwell_bottom_railing",
+      "stairwell_top_railing",
+      "stairwell_treads",
       "trash_bin",
+      "wall_face",
       "wall_segment",
     ]);
   });

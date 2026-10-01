@@ -135,18 +135,17 @@ export function shopfrontExitRestY(): number {
  * lamppost's own base collider if the body still overlaps that collider
  * in x, so every position from here to `lamppostApproachMaxX` works and
  * anything past it walks straight by. This is the *first* sub-cell column
- * that overlaps (the collider's own west face, less the body's own
- * half-width, plus one sub-cell), not the collider's centre, so all of
- * the window's width is left for release lag to overshoot into. */
+ * whose feet position is inside the collider (its own west face plus one
+ * sub-cell), not the collider's centre, so all of the window's width is
+ * left for release lag to overshoot into -- and the feet are in the
+ * lamppost's own cell, never the neighbour's. */
 export function lamppostApproachX(): number {
   const defs = committedDefs();
-  const config = streetMovementConfig();
   const lamppost = defs.objects.find((object) => object.id === LAMPPOST_DEF_ID);
   if (!lamppost?.collider) {
     throw new Error(`lamppostApproachX: def ${LAMPPOST_DEF_ID} has no collider in defs.json`);
   }
-  const halfWidth = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
-  return LAMPPOST_CELL.x + (lamppost.collider.x0 + 1) / defs.colliderSubcellsPerCell - halfWidth;
+  return LAMPPOST_CELL.x + (lamppost.collider.x0 + 1) / defs.colliderSubcellsPerCell;
 }
 
 /** The far edge of `lamppostApproachX`'s own window: the last `x` whose

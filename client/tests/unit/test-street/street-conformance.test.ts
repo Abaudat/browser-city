@@ -17,7 +17,7 @@ import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-rank
 import { LAYER_TABLE } from "../../../src/render/layer-table";
 import { subcellRectPx, worldPointPx } from "../../../src/render/screen-position";
 import { isNearSideWall } from "../../../src/render/visibility";
-import { ASSET_URLS, WALL_TILE_H_FRAME, WALL_TILE_V_FRAME } from "../../../src/test-street/assets";
+import { ASSET_URLS } from "../../../src/test-street/assets";
 import { buildPropDrawables, isDefPropDrawable } from "../../../src/test-street/drawables";
 import {
   BOLLARD_COLLIDER,
@@ -40,6 +40,9 @@ import {
   STAIRS_ENTRY_DIRECTION,
   STAIRS_X,
   STAIRS_Y,
+  STAIRWELL_BOTTOM_RAILING_DEF_ID,
+  STAIRWELL_TOP_RAILING_DEF_ID,
+  STAIRWELL_TREADS_DEF_ID,
   STREET_BOUNDARY,
   STREET_BUILDING_AREAS,
   STREET_EXIT_X,
@@ -52,7 +55,6 @@ import {
   SUBWAY_FLOOR,
   streetBollardRoute,
   streetBridgeLapRoute,
-  streetColliderOwnerId,
   streetDefId,
   streetPlacedRows,
   streetSubwayApproachRoute,
@@ -447,8 +449,7 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
         for (let x = x0; x <= x1; x++) {
           for (const entry of world.entriesInCell(floor, x, y)) {
             if (boundaryIds.has(entry.objectId)) continue;
-            const ownerId = streetColliderOwnerId(entry.objectId);
-            const prop = STREET_PROPS.find((p) => p.id === ownerId);
+            const prop = STREET_PROPS.find((p) => p.id === entry.objectId);
             if (!prop) {
               failures.push(
                 `collider at (${x}, ${y}, floor ${floor}) names no real prop or boundary id ${entry.objectId}`,
@@ -521,9 +522,7 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
       }
       const cells = footprintCells(prop.x, prop.y, source);
       const collidedCells = cells.filter((cell) =>
-        world
-          .entriesInCell(prop.floor, cell.x, cell.y)
-          .some((entry) => streetColliderOwnerId(entry.objectId) === prop.id),
+        world.entriesInCell(prop.floor, cell.x, cell.y).some((entry) => entry.objectId === prop.id),
       );
       if (collidedCells.length === 0) {
         failures.push(
@@ -531,9 +530,9 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
         );
         continue;
       }
-      // A row declaring its own collider shape (a bollard's post, a
-      // stairwell's railings) is held to that shape by the tests below.
-      const hasCustomShape = !isDefStreetProp(prop) && prop.colliders !== undefined;
+      // A row declaring its own collider shape (a bollard's post) is
+      // held to that shape by the tests below.
+      const hasCustomShape = !isDefStreetProp(prop) && prop.collider !== undefined;
       if (!hasCustomShape && collidedCells.length !== cells.length) {
         failures.push(
           `prop ${prop.id} (layer '${prop.layer}'${prop.solid ? ", solid" : ""}) draws over ${cells.length} cell(s) at floor ${prop.floor} but only ${collidedCells.length} collide, with no collider shape declared`,
@@ -644,7 +643,11 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     const rect = propColliderRect(bin);
     const fromWest = walkToRest({ x: bin.x - 1, y: bin.y + 0.5 }, { x: 1, y: 0 }, bin.floor);
     expect(fromWest.x).toBeCloseTo(rect.x0 - halfWidthCells, 9);
-    const fromSouth = walkToRest({ x: bin.x + 0.5, y: bin.y + 1 }, { x: 0, y: -1 }, bin.floor);
+    const fromSouth = walkToRest(
+      { x: bin.x + 0.5, y: rect.y1 + bodyHeightCells + 0.5 },
+      { x: 0, y: -1 },
+      bin.floor,
+    );
     expect(fromSouth.y).toBeCloseTo(rect.y1 + bodyHeightCells, 9);
   });
 
@@ -744,23 +747,39 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
 
   it("5b. each subway stairwell's own drawn footprint is solid everywhere but its tread path: every cell off it refuses a standing body, every tread from the opening to the anchor accepts one (Quentin's finding 2)", () => {
     const failures: string[] = [];
+    const stairwellDefIds = new Set([
+      STAIRWELL_TOP_RAILING_DEF_ID,
+      STAIRWELL_TREADS_DEF_ID,
+      STAIRWELL_BOTTOM_RAILING_DEF_ID,
+    ]);
     for (const { anchor, open } of subwayAnchors()) {
-      const stairwell = STREET_PROPS.find(
+      // The stairwell is the three def rows sharing the tread row's column
+      // and floor: the footprint is the union of theirs.
+      const treads = STREET_PROPS.find(
         (p) =>
-          !isDefStreetProp(p) &&
+          isDefStreetProp(p) &&
+          p.defId === STAIRWELL_TREADS_DEF_ID &&
           p.floor === anchor.floor &&
-          footprintCells(p.x, p.y, p.footprint ?? { width: 1, height: 1 }).some(
+          footprintCells(p.x, p.y, sources.get(p.defId) ?? { width: 1, height: 1 }).some(
             (c) => c.x === anchor.x && c.y === anchor.y,
           ),
       );
-      if (!stairwell || isDefStreetProp(stairwell)) {
-        failures.push(`no drawn stairwell prop covers the anchor ${JSON.stringify(anchor)}`);
+      if (!treads || !isDefStreetProp(treads)) {
+        failures.push(`no stairwell treads row covers the anchor ${JSON.stringify(anchor)}`);
         continue;
       }
-      const cells = footprintCells(
-        stairwell.x,
-        stairwell.y,
-        stairwell.footprint ?? { width: 1, height: 1 },
+      const rows = STREET_PROPS.filter(
+        (p) =>
+          isDefStreetProp(p) &&
+          stairwellDefIds.has(p.defId) &&
+          p.floor === treads.floor &&
+          p.x === treads.x,
+      );
+      expect(rows.length).toBe(3);
+      const cells = rows.flatMap((p) =>
+        isDefStreetProp(p)
+          ? footprintCells(p.x, p.y, sources.get(p.defId) ?? { width: 1, height: 1 })
+          : [],
       );
       const inFootprint = (c: { x: number; y: number }) =>
         cells.some((cell) => cell.x === c.x && cell.y === c.y);
@@ -780,12 +799,29 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
         const standable = isCellStandable(world, config, cell.x, cell.y, anchor.floor);
         if (standable !== onPath) {
           failures.push(
-            `prop ${stairwell.id}'s own cell (${cell.x}, ${cell.y}, floor ${anchor.floor}) is ${standable ? "standable" : "not standable"} but ${onPath ? "is" : "is not"} on the tread path`,
+            `the stairwell's own cell (${cell.x}, ${cell.y}, floor ${anchor.floor}) is ${standable ? "standable" : "not standable"} but ${onPath ? "is" : "is not"} on the tread path`,
           );
         }
       }
     }
     expect(failures).toEqual([]);
+  });
+
+  it("5c. the finial row north of each stairwell's top railing is open floor: its three cells are standable", () => {
+    for (const floor of [PLAYER_START.floor, SUBWAY_FLOOR]) {
+      const top = STREET_PROPS.find(
+        (p) => isDefStreetProp(p) && p.defId === STAIRWELL_TOP_RAILING_DEF_ID && p.floor === floor,
+      );
+      if (!top) throw new Error(`no stairwell top railing on floor ${floor}`);
+      const width = sources.get(STAIRWELL_TOP_RAILING_DEF_ID)?.width ?? 0;
+      expect(width).toBe(3);
+      for (let dx = 0; dx < width; dx++) {
+        expect(
+          isCellStandable(world, config, top.x + dx, top.y - 1, floor),
+          `the finial cell (${top.x + dx}, ${top.y - 1}, floor ${floor}) is not standable`,
+        ).toBe(true);
+      }
+    }
   });
 
   it("6. the subway transition pair is a real mirror: down the demo's own way (left), then the reverse input (right), lands back on the street treads -- never a detour through an unrelated direction", () => {
@@ -847,7 +883,7 @@ describe("the bollard west of the shopfront stops the player where it is drawn (
   }
 
   const bollardProp = STREET_PROPS.find((p) => p.id === 121n);
-  if (!bollardProp || isDefStreetProp(bollardProp) || !bollardProp.colliders) {
+  if (!bollardProp || isDefStreetProp(bollardProp) || !bollardProp.collider) {
     throw new Error("fixture no longer places the west-of-shopfront bollard (id 121)");
   }
   // Captured into its own, definitely-defined binding (never `bollardProp`
@@ -982,45 +1018,49 @@ describe("the bollard west of the shopfront stops the player where it is drawn (
   });
 });
 
-// Story 15.2 (Quentin's finding 2): the fixture-level half of "a drawn
-// silhouette and its collider agree" for the `assetKey` rows that bypass
-// `tools/defs-build` entirely, read from the same `ASSET_URLS` table and
-// wall frames `scene.ts` draws from.
+// Story 15.3 (Quentin's finding 2, narrowed): `tools/defs-build` checks
+// every `defId` row's art against its collider and footprint. This is the
+// fixture-level half for the `assetKey` rows that still bypass it, held to
+// a named list that can shrink and never grow.
 describe("silhouette agreement: a solid or walls-layer assetKey row's own declared footprint matches its real art dimensions in tiles (FR126, Quentin's finding 2)", () => {
   const TILE_SIZE_PX = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value;
   if (TILE_SIZE_PX === undefined) {
     throw new Error("render.tile_size_px missing from the committed defs.json");
   }
 
-  /** The asset keys `scene.ts` draws by repeating one whole tile per cell
-   * (`wallAssetOf`): only these may be a single tile of art under a wider
-   * or taller footprint. */
-  const REPEATING_TILE_KEYS = new Set(["wallTile", "wallStub", "subwayWall"]);
+  /** Every `solid` or `walls`-layer `assetKey` row's key that still draws
+   * from a raw `ModernTileset/` sheet instead of `defs/objects`. Migrating
+   * one deletes it here; adding one is a build bypass this test refuses. */
+  const BYPASSING_ASSET_KEYS = ["bollard", "shelf", "subwayBench", "subwayWall", "table"];
+
+  /** The asset keys `scene.ts` draws by repeating one whole tile per cell:
+   * only these may be a single tile of art under a wider or taller
+   * footprint. */
+  const REPEATING_TILE_KEYS = new Set(["subwayWall"]);
 
   function pngSizePx(href: string): { readonly width: number; readonly height: number } {
     const buf = readFileSync(fileURLToPath(href));
     return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
   }
 
+  const inScope = STREET_PROPS.flatMap((prop) =>
+    !isDefStreetProp(prop) && (prop.layer === "walls" || prop.solid === true) ? [prop] : [],
+  );
+
+  it("the set of solid or walls-layer assetKey rows is exactly the named list, and is not empty", () => {
+    expect(inScope.length).toBeGreaterThan(0);
+    expect([...new Set(inScope.map((prop) => prop.assetKey))].sort()).toEqual([
+      ...BYPASSING_ASSET_KEYS,
+    ]);
+  });
+
   it("art is exactly the declared footprint in tiles (overhanging only upward on a one-row footprint), or a single tile the renderer repeats", () => {
     const failures: string[] = [];
-
-    for (const prop of STREET_PROPS) {
-      // A `defId` row's own sprite/footprint agreement is `tools/defs-
-      // build`'s job (FR126); this guard is only for the rows that bypass it.
-      if (isDefStreetProp(prop)) continue;
-      if (prop.layer !== "walls" && prop.solid !== true) continue;
-
+    for (const prop of inScope) {
       const footprint = prop.footprint ?? { width: 1, height: 1 };
-      let art: { readonly width: number; readonly height: number };
-      if (prop.assetKey === "wallTile" || prop.assetKey === "wallStub") {
-        const frame = prop.wallOrientation === "vertical" ? WALL_TILE_V_FRAME : WALL_TILE_H_FRAME;
-        art = { width: frame.width, height: frame.height };
-      } else {
-        const href = ASSET_URLS[prop.assetKey];
-        if (!href) throw new Error(`no ASSET_URLS entry for '${prop.assetKey}'`);
-        art = pngSizePx(href);
-      }
+      const href = ASSET_URLS[prop.assetKey];
+      if (!href) throw new Error(`no ASSET_URLS entry for '${prop.assetKey}'`);
+      const art = pngSizePx(href);
 
       const repeats = REPEATING_TILE_KEYS.has(prop.assetKey);
       const widthOk =
@@ -1120,22 +1160,14 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
     ).map((prop) => prop.assetKey),
   );
 
-  // Story 2.13, Tim's direction (cycle 2): the only two `ASSET_URLS` keys
-  // this guard accepts sharing a sheet with a real `defs/objects` sprite
-  // today -- both crop-base/ground-pass keys no real `StreetProp` row's
-  // own `assetKey` ever literally names (`wallTile`, not `wallSheet`,
-  // is what a wall row carries), so the old "not referenced by a real
-  // row" check exempted them structurally, by construction, even though
-  // `wall_segment`'s def now names the exact file `wallSheet` crops
-  // (`Room_Builder_Walls_16x16.png`) and `bridge_deck`'s def now names
-  // the exact file `sidewalk` paints (`Sidewalk_1_1.png`) -- both real,
-  // accepted collisions (a wall pass still crops `wallSheet` for its own
-  // non-`defId` cells; the ground pass still paints `sidewalk` outside
-  // any def's own footprint), never a shortcut regrowing. Never grows
-  // silently: a key lands here only by a human adding it, and this test
-  // fails the day one of these two stops actually colliding, so the list
-  // can only shrink.
-  const ACCEPTED_SHEET_COLLISIONS = new Set(["wallSheet", "sidewalk"]);
+  // The only `ASSET_URLS` key this guard accepts sharing a sheet with a
+  // real `defs/objects` sprite today: a ground-pass key no real
+  // `StreetProp` row's own `assetKey` names, though `bridge_deck`'s def
+  // names the exact file `sidewalk` paints (`Sidewalk_1_1.png`) -- the
+  // ground pass still paints it outside any def's own footprint. Never
+  // grows silently: a key lands here only by a human adding it, and this
+  // test fails the day it stops colliding, so the list can only shrink.
+  const ACCEPTED_SHEET_COLLISIONS = new Set(["sidewalk"]);
 
   it("no ModernTileset/ import a real StreetProp row still uses names a sheet a real defs/objects entry's own sprite already names", () => {
     const sheets = sheetByAssetKey();
@@ -1153,7 +1185,7 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
       }
       if (!propAssetKeys.has(key)) {
         // A ground-pass-only or crop-base key with no accepted reason to
-        // collide (not `wallSheet`/`sidewalk`) must still never collide.
+        // collide (not `sidewalk`) must still never collide.
         expect(
           collides,
           `'${key}' (not used by a real StreetProp row) newly collides with a real def's sprite '${sheet}' -- either route it through the atlas or add it to ACCEPTED_SHEET_COLLISIONS with a reason`,
@@ -1199,13 +1231,42 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
 // A flip/mirror/negative scale of a side-on flight reverses exactly that,
 // so none may exist in the renderer or the fixture.
 describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () => {
-  const STREET_STAIRS = STREET_PROPS.find((p) => p.id === 50n);
-  const PLATFORM_STAIRS = STREET_PROPS.find((p) => p.id === 51n);
+  const stairsAt = (floor: number) => {
+    const rows = STREET_PROPS.filter(
+      (p) =>
+        isDefStreetProp(p) &&
+        p.floor === floor &&
+        (p.defId === STAIRWELL_TOP_RAILING_DEF_ID ||
+          p.defId === STAIRWELL_TREADS_DEF_ID ||
+          p.defId === STAIRWELL_BOTTOM_RAILING_DEF_ID),
+    );
+    const treads = rows.find((p) => isDefStreetProp(p) && p.defId === STAIRWELL_TREADS_DEF_ID);
+    if (rows.length !== 3 || !treads) throw new Error(`no three-row stairwell on floor ${floor}`);
+    return { rows, treads };
+  };
+  const STREET_STAIRS = stairsAt(PLAYER_START.floor);
+  const PLATFORM_STAIRS = stairsAt(SUBWAY_FLOOR);
 
-  function decode(assetKey: string): PNG {
-    const href = ASSET_URLS[assetKey];
-    if (!href) throw new Error(`no ASSET_URLS entry for '${assetKey}'`);
-    return PNG.sync.read(readFileSync(fileURLToPath(href)));
+  /** The stairwell's art, decoded from its defs' own sprite sheet and
+   * rects: the bounding box of the three rows' sprites. */
+  function decode(rows: readonly (typeof STREET_PROPS)[number][]): PNG {
+    const sprites = rows.map((p) => {
+      if (!isDefStreetProp(p)) throw new Error("stairwell rows are def rows");
+      return objectDef(p.defId).sprite;
+    });
+    const sheet = sprites[0]?.sheet;
+    if (!sheet || sprites.some((s) => s.sheet !== sheet)) {
+      throw new Error("the stairwell's three defs must be cut from one sheet");
+    }
+    const x0 = Math.min(...sprites.map((s) => s.x));
+    const y0 = Math.min(...sprites.map((s) => s.y));
+    const x1 = Math.max(...sprites.map((s) => s.x + s.w));
+    const y1 = Math.max(...sprites.map((s) => s.y + s.h));
+    const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+    const sheetPng = PNG.sync.read(readFileSync(join(repoRoot, sheet)));
+    const out = new PNG({ width: x1 - x0, height: y1 - y0 });
+    PNG.bitblt(sheetPng, out, x0, y0, x1 - x0, y1 - y0, 0, 0);
+    return out;
   }
 
   /** Mean height (px from the top) of the orange/yellow tread tops over
@@ -1239,19 +1300,15 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
   }
 
   it("the platform's up-stairs rise toward their anchor; the street's down-stairs sink toward theirs", () => {
-    if (!STREET_STAIRS || !PLATFORM_STAIRS) throw new Error("stairs rows 50/51 missing");
-    if (isDefStreetProp(STREET_STAIRS) || isDefStreetProp(PLATFORM_STAIRS)) {
-      throw new Error("stairs rows are expected to be assetKey rows");
-    }
-    // Which end of each sprite holds the anchor, from the fixture's own cells.
-    const streetAnchorWest = STAIRS_X < STREET_STAIRS.x + 1;
-    const platformAnchorEast = PLATFORM_UP_ANCHOR_X >= PLATFORM_STAIRS.x + 2;
+    // Which end of each stairwell holds the anchor, from the fixture's own cells.
+    const streetAnchorWest = STAIRS_X < STREET_STAIRS.treads.x + 1;
+    const platformAnchorEast = PLATFORM_UP_ANCHOR_X >= PLATFORM_STAIRS.treads.x + 2;
     expect(streetAnchorWest).toBe(true);
     expect(platformAnchorEast).toBe(true);
-    expect(PLATFORM_UP_ANCHOR_Y).toBeGreaterThan(PLATFORM_STAIRS.y - 4);
+    expect(PLATFORM_UP_ANCHOR_Y).toBe(PLATFORM_STAIRS.treads.y);
 
-    const down = treadTopByThird(decode(STREET_STAIRS.assetKey));
-    const up = treadTopByThird(decode(PLATFORM_STAIRS.assetKey));
+    const down = treadTopByThird(decode(STREET_STAIRS.rows));
+    const up = treadTopByThird(decode(PLATFORM_STAIRS.rows));
     // Street: anchor (west) end is lower on screen (larger y) than the opening.
     expect(down.west).toBeGreaterThan(down.east);
     // Platform: anchor (east) end is higher on screen (smaller y) than the landing.

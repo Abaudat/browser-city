@@ -38,8 +38,7 @@ done
 # Asset keys the renderer legitimately names, each with its reason:
 #   floor     -- the key of the cropped interior-floor texture scene.ts builds
 #   sidewalk  -- the raw sheet name the ground pass's textureFor reads
-#   wallTile  -- the wall-run swatch picker, keyed on the run, not on a def
-ASSET_ALLOW=" floor sidewalk wallTile "
+ASSET_ALLOW=" floor sidewalk "
 
 FAILED=0
 scan() { # <label> <key>

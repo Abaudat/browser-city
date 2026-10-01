@@ -63,7 +63,7 @@ import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
-import { ASSET_URLS, type PixelRect, WALL_TILE_H_FRAME, WALL_TILE_V_FRAME } from "./assets";
+import { ASSET_URLS, type PixelRect } from "./assets";
 import { buildPlayerAppearanceTuple, CROWD_FLOOR } from "./citizens";
 import { type CitizensLayerHandle, mountCitizensLayer } from "./citizens-layer";
 import {
@@ -556,32 +556,6 @@ interface PoolEntry extends OrderedMember<PropDrawable>, VisibilityMember<PropDr
   readonly view: Sprite;
 }
 
-/** Picks a wall drawable's real texture from its own declared
- * `wallOrientation` (`test-street/fixture.ts`'s `StreetProp.wallOrientation`,
- * carried onto `PropDrawable`) -- never from a decomposed cell's own
- * footprint aspect ratio (Artie's cycle-2 finding: a one-cell-wide
- * *front* wall pier and a one-cell side wall are both `1x1` after
- * decomposition, so the aspect ratio alone cannot tell them apart; a
- * front wall must always be the tall swatch, whatever width it happens to
- * be cut into). Exported for its own unit test. */
-export const wallAssetOf = (
-  assetKey: string,
-  wallOrientation: "horizontal" | "vertical",
-): string => {
-  if (assetKey === "wallTile") {
-    return wallOrientation === "vertical" ? "wallTileV" : "wallTileH";
-  }
-  // The FR120 stub (Artie's direction): the same flush, short swatch a
-  // side wall already uses -- no new art, and deliberately the same
-  // swatch regardless of its own parent's orientation (a stub is meant to
-  // read as a short baseboard remnant, never a second tall wall).
-  if (assetKey === "wallStub") return "wallTileV";
-  // The platform's own tiled wall is already a flush single-tile subway
-  // swatch (never a 3-tall interior module), so every orientation just
-  // repeats it whole -- no H/V distinction needed.
-  return assetKey;
-};
-
 /** The two sprite properties `VisibilityApplier` ever writes -- read back
  * from a real member's own `view` after `apply`/`applyForce` returns,
  * never a second, recomputed `VisibilityState`. */
@@ -738,10 +712,7 @@ export async function mountStreetScene(
     }),
   );
 
-  const wallSheet = textureFor("wallSheet", rawTextures);
   const textures = new Map(rawTextures);
-  textures.set("wallTileH", cropped(wallSheet, WALL_TILE_H_FRAME));
-  textures.set("wallTileV", cropped(wallSheet, WALL_TILE_V_FRAME));
   textures.set("floor", cropped(textureFor("floorSheet", rawTextures), FLOOR_TILE_FRAME));
 
   // Story 2.6/2.13: every `defId`-placed prop draws through
@@ -859,20 +830,12 @@ export async function mountStreetScene(
   const ownership = new OwnershipIndex(STREET_BUILDING_AREAS, STREET_ROOM_AREAS);
   const transitions = new TransitionIndex(STREET_TRANSITIONS);
 
-  // `wallAssetOf`'s swatch picker only ever applies to a hand-picked
-  // `assetKey` drawable (a wall run with no real `defs/objects` id behind
-  // it) -- a `defId` wall (the window, the bridge's own parapet cells) is
-  // one def, one sprite, chosen once in `defs/objects/city-props.toml`,
-  // never swapped per placement on the client (Tim's direction, story
-  // 2.13).
   const propDrawables: readonly PropDrawable[] = buildPropDrawables({
     rankOf: (layer) => rankOf(layerCodeByName(layer)),
     ownership,
     windowDefIds,
     objectDefs,
-  }).map((d) =>
-    isDefPropDrawable(d) ? d : { ...d, assetKey: wallAssetOf(d.assetKey, d.wallOrientation) },
-  );
+  });
 
   const entries: PoolEntry[] = await Promise.all(
     propDrawables.map(async (drawable) => {

@@ -23,6 +23,9 @@ plant() {
   printf '{ "defs_version": "abc123" }\n' > "$d/client/public/defs/defs.json"
   printf 'pub mod propose;\npub mod validate;\n' > "$d/tools/defs-build/src/lib.rs"
   printf 'pub fn propose() {}\n' > "$d/tools/defs-build/src/propose.rs"
+  # Story 15.3: the one declaration of the threshold and of `is_opaque`.
+  printf 'pub const ALPHA_OPAQUE_THRESHOLD: u8 = 200;\npub fn is_opaque() {}\n' \
+    > "$d/tools/defs-build/src/alpha.rs"
   printf 'pub fn validate() {}\n' > "$d/tools/defs-build/src/validate.rs"
   # The proposer's own bin legitimately references `propose::` -- must
   # never itself be flagged.
@@ -94,6 +97,67 @@ printf 'const { data } = ctx.getImageData(0, 0, 1, 1);\n' \
   > "$d/client/src/test-street/compare.ts"
 check "'getImageData' under client/src/test-street/ is never a false positive" 0 \
   bash "$CHECK" "$d"
+
+# --- story 15.3: pixels may refuse a build, never shape an artefact --------
+d="$(plant)"
+printf 'pub const ALPHA_OPAQUE_THRESHOLD: u8 = 1;\n' >> "$d/tools/defs-build/src/propose.rs"
+check "a second ALPHA_OPAQUE_THRESHOLD declaration fails" 1 \
+  bash "$CHECK" "$d"
+
+d="$(plant)"
+rm "$d/tools/defs-build/src/alpha.rs"
+check "no ALPHA_OPAQUE_THRESHOLD declaration at all fails" 1 \
+  bash "$CHECK" "$d"
+
+d="$(plant)"
+printf 'fn is_opaque(a: u8) -> bool { a > 0 }\n' >> "$d/tools/defs-build/src/propose.rs"
+check "a second is_opaque function fails" 1 \
+  bash "$CHECK" "$d"
+
+d="$(plant)"
+mkdir -p "$d/tools/defs-build/src/atlas"
+printf 'use crate::alpha::ALPHA_OPAQUE_THRESHOLD;\n' > "$d/tools/defs-build/src/propose.rs"
+printf 'use crate::alpha::is_opaque;\n' > "$d/tools/defs-build/src/silhouette.rs"
+printf 'use crate::alpha::ALPHA_OPAQUE_THRESHOLD;\n' > "$d/tools/defs-build/src/atlas/character.rs"
+check "alpha:: referenced from propose.rs, silhouette.rs and atlas/character.rs passes" 0 \
+  bash "$CHECK" "$d"
+
+for f in emit.rs validate.rs contact_sheet.rs lib.rs; do
+  d="$(plant)"
+  printf 'use crate::alpha::is_opaque;\n' >> "$d/tools/defs-build/src/$f"
+  check "alpha:: referenced from $f fails" 1 \
+    bash "$CHECK" "$d"
+done
+
+# --- story 15.3 review: no second definition of transparent, and the check's
+# Err never reaches an artefact -------------------------------------------
+d="$(plant)"
+printf 'fn f(px: [u8; 4]) -> bool { px[3] != 0 }\n' >> "$d/tools/defs-build/src/propose.rs"
+check "an alpha-channel comparison outside alpha.rs fails" 1 \
+  bash "$CHECK" "$d"
+
+d="$(plant)"
+printf 'fn f(px: [u8; 4]) -> bool { px[3] >= 5 }\n' >> "$d/tools/defs-build/src/validate.rs"
+check "a >= on the alpha channel in another file fails" 1 \
+  bash "$CHECK" "$d"
+
+d="$(plant)"
+printf 'fn f(px: [u8; 4]) -> u8 { px[3] }\nfn g(a: [u32; 4]) -> bool { a[1] > 0 }\n' >> "$d/tools/defs-build/src/propose.rs"
+check "reading the alpha byte without comparing it, and other indices, never false-positive" 0 \
+  bash "$CHECK" "$d"
+
+d="$(plant)"
+printf 'use crate::silhouette::check;\n' > "$d/tools/defs-build/src/lib.rs"
+printf 'use crate::silhouette::check_collider_against_art;\n' > "$d/tools/defs-build/src/propose.rs"
+check "silhouette:: referenced from lib.rs and propose.rs passes" 0 \
+  bash "$CHECK" "$d"
+
+for f in emit.rs validate.rs contact_sheet.rs; do
+  d="$(plant)"
+  printf 'use crate::silhouette::check_collider_against_art;\n' >> "$d/tools/defs-build/src/$f"
+  check "silhouette:: referenced from $f fails" 1 \
+    bash "$CHECK" "$d"
+done
 
 summary
 exit $?

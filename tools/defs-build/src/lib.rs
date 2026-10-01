@@ -7,6 +7,7 @@
 //! direction: nothing about defs validity belongs anywhere but this
 //! crate's own tests).
 
+pub mod alpha;
 pub mod atlas;
 pub mod codes;
 pub mod contact_sheet;
@@ -18,6 +19,7 @@ pub mod naming;
 pub mod parse;
 pub mod propose;
 pub mod sha256;
+pub mod silhouette;
 pub mod spans;
 pub mod validate;
 pub mod version;
@@ -64,6 +66,36 @@ pub fn build(
     let raw = parse::parse_all(files)?;
     let defs = validate::validate(&raw, sheet_dims, code_tables, sprite_sheet_allowed_root)?;
     let page_groups = validate::validate_page_groups(&raw)?;
+    // Every object sheet is decoded exactly once; the check and the
+    // packer share the result.
+    let mut object_sheets: std::collections::BTreeMap<String, atlas::image::DecodedSheet> =
+        std::collections::BTreeMap::new();
+    for o in &defs.objects {
+        if object_sheets.contains_key(&o.sprite.sheet) {
+            continue;
+        }
+        let bytes = object_sheet_bytes.get(&o.sprite.sheet).ok_or_else(|| {
+            DefsError::new(
+                "tools/defs-build/atlas",
+                0,
+                0,
+                format!(
+                    "sheet '{}' was referenced by an object but never read -- fsio must read every referenced sheet before build runs",
+                    o.sprite.sheet
+                ),
+            )
+        })?;
+        let decoded = atlas::image::decode_rgba8(bytes).map_err(|e| {
+            DefsError::new(
+                "tools/defs-build/atlas",
+                0,
+                0,
+                format!("sheet '{}': {e}", o.sprite.sheet),
+            )
+        })?;
+        object_sheets.insert(o.sprite.sheet.clone(), decoded);
+    }
+    silhouette::check(&raw, &defs, &object_sheets)?;
     let character_parts = atlas::character::collect_character_parts(
         &defs.bodies,
         &defs.eyes,
@@ -73,7 +105,7 @@ pub fn build(
     );
     let atlas = atlas::build::build_atlas(
         &defs.objects,
-        object_sheet_bytes,
+        &object_sheets,
         &page_groups,
         &character_parts,
         appearance_sheet_bytes,
@@ -176,12 +208,22 @@ pub fn build_from_repo_root(
 ) -> Result<BuildOutput, Box<dyn std::error::Error>> {
     let mut text_files = fsio::read_text(root, &fsio::list_defs_sources(root)?)?;
     text_files.sort_by(|a, b| a.0.cmp(&b.0));
+    build_from_text_files(root, &text_files, defs_version)
+}
 
+/// [`build_from_repo_root`] over an already-read `defs/` text list: reads
+/// every sheet the tree names from `root` and runs [`build`]. Lets a test
+/// build the real tree with one line of TOML altered.
+pub fn build_from_text_files(
+    root: &std::path::Path,
+    text_files: &[(std::path::PathBuf, String)],
+    defs_version: &str,
+) -> Result<BuildOutput, Box<dyn std::error::Error>> {
     // Story 1.10/2.2: which sheets does the tree reference, so their real
     // `IHDR` dimensions can be read before `validate` checks the layout/
     // sprite invariants against them -- the one impure step `build` itself
     // never performs (Quentin's direction: parse/validate/emit stay pure).
-    let raw = parse::parse_all(&text_files)?;
+    let raw = parse::parse_all(text_files)?;
     let mut sheet_paths = appearance_sheet_paths(&raw);
     sheet_paths.extend(object_sprite_sheet_paths(&raw));
     sheet_paths.sort();
@@ -228,7 +270,7 @@ pub fn build_from_repo_root(
     let code_tables = codes::CodeTables::parse(&codes_golden);
 
     let output = build(
-        &text_files,
+        text_files,
         &sheet_dims,
         &object_sheet_bytes,
         &appearance_sheet_bytes,

@@ -40,11 +40,37 @@ fn sheet_dims() -> BTreeMap<String, (u32, u32)> {
     .collect()
 }
 
+/// Solid pixels exactly under each object's own collider (pixel columns/
+/// rows `cols`/`rows` of the sheet) -- the build's silhouette check
+/// refuses any other art. A solid colour inside that block is enough,
+/// this test exercises the sheet's own markup, never pixel content.
+/// Half-open pixel `(columns, rows)` of the solid block in a sheet.
+type ArtRect = ((u32, u32), (u32, u32));
+
+fn art_rects() -> BTreeMap<&'static str, ArtRect> {
+    [
+        ("bench.png", ((16, 32), (4, 12))),
+        ("lamppost.png", ((4, 12), (48, 64))),
+        ("sign.png", ((4, 12), (0, 16))),
+        ("planter.png", ((0, 16), (0, 16))),
+    ]
+    .into_iter()
+    .collect()
+}
+
 fn sheet_bytes() -> BTreeMap<String, Vec<u8>> {
     sheet_dims()
         .into_iter()
         .map(|(path, (w, h))| {
-            let rgba = vec![180u8; (w * h * 4) as usize];
+            let file = path.rsplit('/').next().unwrap();
+            let ((x0, x1), (y0, y1)) = art_rects()[file];
+            let mut rgba = vec![0u8; (w * h * 4) as usize];
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    let i = ((y * w + x) * 4) as usize;
+                    rgba[i..i + 4].copy_from_slice(&[180, 180, 180, 255]);
+                }
+            }
             let bytes = defs_build::atlas::image::encode_rgba8(w, h, &rgba)
                 .expect("fixture PNG encode must succeed");
             (path, bytes)

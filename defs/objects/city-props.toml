@@ -9,14 +9,14 @@ layer = "furniture"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Small_Closed_Trash_Can.png", x = 0, y = 0, w = 16, h = 32 }
 width = 1
 height = 1
-# A sub-tile collider (FR128): the bin's own body, not its whole cell --
-# half a cell wide and tall, centred in the cell. Sub-cells relative to
+# A sub-tile collider (FR128): the bin's lower body where it meets the
+# ground, one sub-cell inside the art on each side. Sub-cells relative to
 # the footprint's own north-west sub-cell origin (its top-left, matching
 # the sprite's own pixel space -- not the same corner as the placed
 # anchor cell, which is the footprint's south-west corner; the two
 # coincide here because this object is one cell tall),
 # COLLIDER_SUBCELLS_PER_CELL (16) per cell.
-collider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }
+collider = { x0 = 2, y0 = 7, x1 = 14, y1 = 15 }
 # FR148: where a player must stand to interact with the bin -- the whole
 # cell plus a quarter-cell skirt on every side, so you can use it from any
 # direction without standing exactly on its own collider.
@@ -34,9 +34,10 @@ layer = "furniture"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png", x = 0, y = 0, w = 32, h = 16 }
 width = 2
 height = 1
-# Story 2.4 (FR128): a bench blocks -- the whole two-cell seat/back
-# depth, leaving the front lip free to approach from.
-collider = { x0 = 0, y0 = 0, x1 = 32, y1 = 12 }
+# Story 2.4 (FR128): a bench blocks -- the seat and back where they are
+# drawn (the art starts five rows down), leaving the front lip free to
+# approach from.
+collider = { x0 = 0, y0 = 5, x1 = 32, y1 = 12 }
 tags = ["seating", "fixture"]
 
 [[object]]
@@ -46,11 +47,11 @@ name = "Shop Counter"
 layer = "furniture"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png", x = 0, y = 0, w = 48, h = 64 }
 width = 3
-# Story 2.3 (AC3): the counter's whole footprint blocks, whatever its own
-# width -- `full_cell_blocker`'s own worked case. FR148's reach is the
-# customer side of it: the full-width row immediately south, outside the
-# footprint entirely.
-archetype = "full_cell_blocker"
+# The bamboo body: column 0 is empty, the last two columns and the last
+# row are drop shadow. FR148's reach is the customer side of it: the
+# full-width row immediately south, outside the footprint entirely.
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 46, y1 = 15 }
 interact_at = { x0 = 0, y0 = 16, x1 = 48, y1 = 32 }
 tags = ["counter", "fixture"]
 
@@ -118,7 +119,7 @@ tags = ["wall", "wall_run"]
 id = 7
 key = "bridge_deck"
 name = "Bridge Deck"
-layer = "objects"
+layer = "ground_objects"
 # Story 2.13 (Tim's direction): no `repeat` axis on `sprite` -- a surface
 # wider than its art is a one-cell object placed once per cell, the same
 # way `wall_segment`'s own parapet run already is. The deck is one real
@@ -153,3 +154,52 @@ width = 1
 # archetype).
 archetype = "underfoot_flat"
 tags = ["stairs", "underfoot", "fixture"]
+
+# One staircase seen as three objects cut from the same 48x64 sheet, so
+# the player walks between the railings: behind the near one, in front of
+# the far one. The ball finial is the 16 px overhang of the top railing.
+[[object]]
+id = 12
+key = "stairwell_top_railing"
+name = "Stairwell Top Railing"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 0, w = 48, h = 32 }
+width = 3
+archetype = "full_cell_blocker"
+tags = ["stairs", "fixture"]
+
+[[object]]
+id = 13
+key = "stairwell_treads"
+name = "Stairwell Treads"
+layer = "ground_objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 32, w = 48, h = 16 }
+width = 3
+# Flat on the ground, so it is drawn on the flat pass and the player stands
+# visibly on it. Which floors the treads join is a `floor_transition` row
+# anchored on a tread cell, never a field here.
+archetype = "underfoot_flat"
+tags = ["stairs", "underfoot", "fixture"]
+
+[[object]]
+id = 14
+key = "stairwell_bottom_railing"
+name = "Stairwell Bottom Railing"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 48, w = 48, h = 16 }
+width = 3
+archetype = "full_cell_blocker"
+tags = ["stairs", "fixture"]
+
+# The tall interior wall face of a north or south run, one cell wide. A
+# run N cells long is N placed rows. West and east runs and the retraction
+# stub are `wall_segment`'s flush swatch.
+[[object]]
+id = 15
+key = "wall_face"
+name = "Wall Face"
+layer = "walls"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png", x = 0, y = 528, w = 16, h = 48 }
+width = 1
+archetype = "full_cell_blocker"
+tags = ["wall", "wall_run"]

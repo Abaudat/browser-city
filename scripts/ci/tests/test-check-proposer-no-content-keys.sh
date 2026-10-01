@@ -66,5 +66,26 @@ check "a missing proposer directory fails closed, never a silent pass" 1 \
 check "a missing manifest fails loudly" 1 \
   bash "$CHECK" "$REPO_ROOT/does/not/exist.golden" "$REPO_ROOT/tools/defs-build/src" "$REPO_ROOT/defs"
 
+# --- story 15.3: the pixel check and the shared alpha module are scanned too
+CLEAN_PROPOSER='// clean
+pub fn propose() {}
+'
+for f in silhouette.rs alpha.rs; do
+  d="$(plant 'object 1 trash_bin' "$VALID_OBJECT" "$CLEAN_PROPOSER")"
+  printf 'fn skip(key: &str) -> bool { key == "trash_bin" }\n' > "$d/src/$f"
+  check "an object key literal in $f fails" 1 \
+    bash "$CHECK" "$d/manifest.golden" "$d/src" "$d/defs"
+
+  d="$(plant 'object 1 trash_bin' "$VALID_OBJECT" "$CLEAN_PROPOSER")"
+  printf 'fn skip(sheet: &str) -> bool { sheet == "lamp.png" }\n' > "$d/src/$f"
+  check "a sheet filename literal in $f fails" 1 \
+    bash "$CHECK" "$d/manifest.golden" "$d/src" "$d/defs"
+
+  d="$(plant 'object 1 trash_bin' "$VALID_OBJECT" "$CLEAN_PROPOSER")"
+  printf '// clean: geometry only\npub fn check() {}\n' > "$d/src/$f"
+  check "a clean $f passes" 0 \
+    bash "$CHECK" "$d/manifest.golden" "$d/src" "$d/defs"
+done
+
 summary
 exit $?
