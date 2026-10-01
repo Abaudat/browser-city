@@ -5,12 +5,12 @@
 //!
 //! An absent line is zero and no line stores zero. SpacetimeDB has no
 //! composite unique constraint, so that rule lives here: every write goes
-//! through [`plan_deposit`], [`plan_withdraw`] or [`plan_transfer`], each
-//! of which takes an [`Author`] (FR89) and returns a [`Write`], the only
-//! thing a stock write can be. They read the holder's existing lines and
+//! through [`plan_make`], [`plan_consume`] or [`plan_transfer`], each of
+//! which takes an [`Author`] (FR89) and returns a [`Write`], the only thing
+//! a stock write can be. They read the holder's existing lines and
 //! say which one row the write lands on.
 
-pub use crate::author::{Author, AuthorError, Cause};
+use crate::author::{Author, Cause};
 use crate::codes::holder_kind;
 
 /// The most distinct items one holder may hold. The `stock` table's row
@@ -71,7 +71,7 @@ pub struct StockLine {
     pub quantity: u64,
 }
 
-/// The single write a deposit or withdrawal comes to.
+/// The single write a make, a consumption or a move comes to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Plan {
     Insert { quantity: u64 },
@@ -109,17 +109,28 @@ impl Write {
     }
 }
 
+/// A real error: the caller asked for something that cannot be.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StockError {
     /// The result would pass `u64::MAX`.
     QuantityOverflow,
-    /// The holder already holds [`MAX_LINES_PER_HOLDER`] other items.
-    TooManyLines,
-    /// Goods enter a holder only under a procedure step.
-    ConsumptionCannotMake,
+    /// The author's cause may not do this verb.
+    CauseNotPermitted,
 }
 
-/// What a withdrawal actually took, what is left, and the write for it. A
+/// The receiving holder has no room for a new line. World content (NFR43),
+/// not an error: nothing moved and nothing was destroyed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoRoom;
+
+/// What a make came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Made {
+    Done(Write),
+    NoRoom(NoRoom),
+}
+
+/// What a consumption actually took, what is left, and the write for it. A
 /// shortfall is content (NFR43), not an error: `taken` is then less than
 /// asked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,17 +140,35 @@ pub struct Withdrawal {
     pub write: Write,
 }
 
-/// What a transfer did. `writes` is empty or the giving and the receiving
-/// write, which land in one transaction or not at all. A shortfall leaves
-/// `taken` below the ask; a receiver that cannot take the goods leaves
-/// `taken` 0 with the reason in `refused` and nothing written.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What a transfer did. `writes` is the giving then the receiving write,
+/// which land in one transaction or not at all; `None` when nothing moved.
+/// A shortfall leaves `taken` below the ask. `no_room` is set when the
+/// receiver cannot take the goods: `taken` is then 0 and nothing is
+/// written. It never carries a cause error: that is an `Err`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Transfer {
     pub taken: u64,
     /// What the giving holder still holds.
     pub remaining: u64,
-    pub refused: Option<StockError>,
-    pub writes: Vec<Write>,
+    pub no_room: Option<NoRoom>,
+    pub writes: Option<[Write; 2]>,
+}
+
+#[derive(Clone, Copy)]
+enum Verb {
+    Make,
+    Take,
+    Move,
+}
+
+/// The one decision on which cause may do which verb. Exhaustive: a third
+/// cause does not compile until it is decided here.
+fn permit(by: Author, verb: Verb) -> Result<(), StockError> {
+    match (by.cause(), verb) {
+        (Cause::ProcedureStep, Verb::Make | Verb::Take | Verb::Move) => Ok(()),
+        (Cause::Consumption, Verb::Take) => Ok(()),
+        (Cause::Consumption, Verb::Make | Verb::Move) => Err(StockError::CauseNotPermitted),
+    }
 }
 
 fn line_of(existing: &[StockLine], holder: HolderRef, item: u32) -> Option<&StockLine> {
@@ -148,14 +177,15 @@ fn line_of(existing: &[StockLine], holder: HolderRef, item: u32) -> Option<&Stoc
         .find(|l| l.holder == holder && l.item_id == item)
 }
 
+/// `Ok(None)` when the holder has no room for a new line.
 fn deposit_plan(
     existing: &[StockLine],
     holder: HolderRef,
     item: u32,
     amount: u64,
-) -> Result<Plan, StockError> {
+) -> Result<Option<Plan>, StockError> {
     if amount == 0 {
-        return Ok(Plan::Nothing);
+        return Ok(Some(Plan::Nothing));
     }
     match line_of(existing, holder, item) {
         Some(line) => {
@@ -163,43 +193,59 @@ fn deposit_plan(
                 .quantity
                 .checked_add(amount)
                 .ok_or(StockError::QuantityOverflow)?;
-            Ok(Plan::Update {
+            Ok(Some(Plan::Update {
                 row_id: line.row_id,
                 quantity,
-            })
+            }))
         }
         None => {
             let lines = existing.iter().filter(|l| l.holder == holder).count();
             if lines >= MAX_LINES_PER_HOLDER {
-                return Err(StockError::TooManyLines);
+                return Ok(None);
             }
-            Ok(Plan::Insert { quantity: amount })
+            Ok(Some(Plan::Insert { quantity: amount }))
         }
     }
 }
 
-/// Makes `amount` of `item` appear in `holder`: a procedure step only.
-/// `existing` may hold any lines; only `holder`'s are read.
-pub fn plan_deposit(
+/// Makes `amount` of `item` come into existence in `holder`: a procedure
+/// step only. Goods that already exist somewhere are moved with
+/// [`plan_transfer`], never made again. `existing` may hold any lines; only
+/// the holder's own are read.
+pub fn plan_make(
     existing: &[StockLine],
     by: Author,
     holder: HolderRef,
     item: u32,
     amount: u64,
-) -> Result<Write, StockError> {
-    match by.cause() {
-        Cause::Consumption => Err(StockError::ConsumptionCannotMake),
-        Cause::ProcedureStep => Ok(Write {
+) -> Result<Made, StockError> {
+    permit(by, Verb::Make)?;
+    Ok(match deposit_plan(existing, holder, item, amount)? {
+        Some(plan) => Made::Done(Write {
             author: by,
             holder,
             item_id: item,
-            plan: deposit_plan(existing, holder, item, amount)?,
+            plan,
         }),
-    }
+        None => Made::NoRoom(NoRoom),
+    })
 }
 
-/// Takes up to `amount` of `item` out of `holder`, under either cause.
-pub fn plan_withdraw(
+/// Takes up to `amount` of `item` out of existence in `holder`: inputs a
+/// step uses up, or what a consumption eats. Never the first half of a
+/// move: goods that go somewhere else use [`plan_transfer`].
+pub fn plan_consume(
+    existing: &[StockLine],
+    by: Author,
+    holder: HolderRef,
+    item: u32,
+    amount: u64,
+) -> Result<Withdrawal, StockError> {
+    permit(by, Verb::Take)?;
+    Ok(withdraw(existing, by, holder, item, amount))
+}
+
+fn withdraw(
     existing: &[StockLine],
     by: Author,
     holder: HolderRef,
@@ -247,7 +293,7 @@ pub fn plan_transfer(
     to: HolderRef,
     item: u32,
     amount: u64,
-) -> Transfer {
+) -> Result<Transfer, StockError> {
     transfer(existing, by, from, to, item, amount, false)
 }
 
@@ -259,7 +305,7 @@ pub fn plan_transfer_exact(
     to: HolderRef,
     item: u32,
     amount: u64,
-) -> Transfer {
+) -> Result<Transfer, StockError> {
     transfer(existing, by, from, to, item, amount, true)
 }
 
@@ -271,31 +317,29 @@ fn transfer(
     item: u32,
     amount: u64,
     exact: bool,
-) -> Transfer {
+) -> Result<Transfer, StockError> {
+    permit(by, Verb::Move)?;
     let at_giver = line_of(existing, from, item).map_or(0, |l| l.quantity);
-    let nothing = |refused| Transfer {
+    let nothing = |no_room| Transfer {
         taken: 0,
         remaining: at_giver,
-        refused,
-        writes: Vec::new(),
+        no_room,
+        writes: None,
     };
-    if by.cause() == Cause::Consumption {
-        return nothing(Some(StockError::ConsumptionCannotMake));
-    }
     if from == to || (exact && at_giver < amount) {
-        return nothing(None);
+        return Ok(nothing(None));
     }
-    let give = plan_withdraw(existing, by, from, item, amount);
+    let give = withdraw(existing, by, from, item, amount);
     if give.taken == 0 {
-        return nothing(None);
+        return Ok(nothing(None));
     }
-    match deposit_plan(existing, to, item, give.taken) {
-        Err(e) => nothing(Some(e)),
-        Ok(plan) => Transfer {
+    Ok(match deposit_plan(existing, to, item, give.taken)? {
+        None => nothing(Some(NoRoom)),
+        Some(plan) => Transfer {
             taken: give.taken,
             remaining: give.remaining,
-            refused: None,
-            writes: vec![
+            no_room: None,
+            writes: Some([
                 give.write,
                 Write {
                     author: by,
@@ -303,7 +347,7 @@ fn transfer(
                     item_id: item,
                     plan,
                 },
-            ],
+            ]),
         },
-    }
+    })
 }

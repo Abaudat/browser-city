@@ -5,7 +5,7 @@ use sim::stock::{HolderRef, Plan, StockLine, Write};
 
 #[derive(Default)]
 pub struct Ledger {
-    pub lines: Vec<StockLine>,
+    lines: Vec<StockLine>,
     next_row: u64,
 }
 
@@ -13,6 +13,10 @@ impl Ledger {
     pub fn from_lines(lines: Vec<StockLine>) -> Self {
         let next_row = lines.iter().map(|l| l.row_id).max().unwrap_or(0);
         Self { lines, next_row }
+    }
+
+    pub fn lines(&self) -> &[StockLine] {
+        &self.lines
     }
 
     pub fn apply(&mut self, write: &Write) {

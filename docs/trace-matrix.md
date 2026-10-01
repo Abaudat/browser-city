@@ -865,13 +865,21 @@ Story 6.3 (FR89, NFR18, NFR43): a stock write cannot be planned without a citize
 | Requirement | Status | Guard |
 | --- | --- | --- |
 | FR89: the cause of a stock write is a procedure step or a consumption event and nothing else | covered | `server/sim/tests/stock.rs` -- `the_cause_of_a_stock_write_is_a_step_or_a_consumption_and_nothing_else` |
-| FR89: no write without a named citizen | covered | `server/sim/tests/stock.rs` -- `an_author_needs_a_citizen`, `a_write_carries_its_author_holder_and_item` |
-| FR89: no public `sim::stock` function yields a write without an author | covered | `server/sim/tests/stock.rs` -- `no_public_stock_fn_yields_a_write_without_an_author` |
+| FR89: no write without a named citizen, and every write names the exact author it was asked with | covered | `server/sim/tests/stock.rs` -- `an_author_needs_a_citizen`, `a_write_carries_its_author_holder_and_item`, `every_write_carries_the_exact_author_it_was_asked_with`; `server/sim/tests/invariants.rs` -- `inv_stock_moves_only_by_hand` |
+| FR89: the public write verbs are exactly make, consume and the two transfers, each takes an author, none takes a plan or a quantity to set, and nothing else constructs a `Write` | covered | `server/sim/tests/stock.rs` -- `the_public_write_verbs_are_exactly_make_consume_and_the_two_transfers` |
+| FR89: a consumption may take but never make or move; the refusal is an `Err` | covered | `server/sim/tests/stock.rs` -- `a_consumption_may_take_but_never_make_or_move`; `server/sim/tests/invariants.rs` -- `inv_stock_moves_only_by_hand` |
 | FR89: every quantity change is an authored write; totals change only by what was made and consumed | covered | `server/sim/tests/invariants.rs` -- `inv_stock_moves_only_by_hand` |
-| FR89: a move conserves quantity and is atomic | covered | `server/sim/tests/invariants.rs` -- `inv_stock_move_conserves_quantity`; `server/sim/tests/stock.rs` -- `a_transfer_the_receiver_cannot_take_moves_nothing` |
+| FR89: a move conserves quantity, reports what it moved, and is atomic | covered | `server/sim/tests/invariants.rs` -- `inv_stock_move_conserves_quantity`; `server/sim/tests/stock.rs` -- `a_receiver_without_room_is_an_outcome_and_an_overflow_is_an_error` |
 | FR89, NFR18: no reducer under `server/src/` writes the `stock` table except restore | covered | `scripts/ci/check-stock-write-path.sh`, tested by `scripts/ci/tests/test-check-stock-write-path.sh` |
-| NFR43: a shortfall is a returned value, never an error | covered | `server/sim/tests/stock.rs` -- `a_shortfall_is_never_an_error_variant`, `a_withdrawal_reports_a_shortfall_and_never_underflows`, `an_up_to_transfer_takes_what_is_there_and_an_exact_one_all_or_nothing` |
-| Every real procedure step and consumption event reaches stock through the authored write | deferred | the first story that lands a step or a consumption event (6.4 or the first Epic 8 procedure); it adds the shell and widens `check-stock-write-path.sh` |
+| FR89: nothing mints an author -- no non-test code outside `sim::author` builds an `Author` or names a `Cause` variant, so no tick can pick a citizen and write | covered | `scripts/ci/check-author-construction.sh`, tested by `scripts/ci/tests/test-check-author-construction.sh` |
+| NFR43: a shortfall and a receiver with no room are returned values, never errors | covered | `server/sim/tests/stock.rs` -- `neither_a_shortfall_nor_a_full_receiver_is_an_error_variant`, `a_withdrawal_reports_a_shortfall_and_never_underflows`, `an_up_to_transfer_takes_what_is_there_and_an_exact_one_all_or_nothing` |
+| Every real procedure step and consumption event reaches stock through the authored write | deferred | the first story that lands a step or a consumption event (6.4 or the first Epic 8 procedure); it adds the shell and widens both guards |
+| On the real table: one row per (holder, item) under repeated writes, withdrawing to zero deletes the row, the same id under two holder kinds is two rows | deferred | the first story whose procedure step or consumption event writes stock |
+| On the real table: both writes of a transfer land in one transaction or neither | deferred | the first story whose procedure step moves stock |
+| The shell reads a holder's lines through `by_holder_item`, and `check-stock-write-path.sh` fails on `stock().iter()` in it | deferred | the first story that adds the shell |
+| A shortfall call succeeds, leaves the row correct and adds no error or warn line to the module log | deferred | the first story that adds the shell (live instance) |
+| A write naming a citizen id with no `citizen` row is refused and writes nothing | deferred | the first story that adds the shell (live instance) |
+| The procedure-step cause carries the identity of the step that performed it, not only the citizen | deferred | 8.1 |
 | A business that runs out branches its procedure | deferred | the story that builds the procedure branch |
 
 ## Client property tests fail only for a reason

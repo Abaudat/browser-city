@@ -343,6 +343,11 @@ jobs:
           # check-golden-version-bump.sh diffs against a base commit, so
           # this job alone needs history; test/build only need HEAD.
           fetch-depth: 0
+      # Toolchain-free guards first, so a fiat stock write is red in seconds.
+      - name: story 6.3 FR89, nothing but restore and metrics names the stock accessor
+        run: bash ../scripts/ci/check-stock-write-path.sh
+      - name: story 6.3 FR89, nothing outside sim::author builds an Author
+        run: bash ../scripts/ci/check-author-construction.sh
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: server
@@ -352,8 +357,6 @@ jobs:
       - run: bash ../scripts/ci/check-sim-purity.sh
       - name: story 4.2, no ScheduleAt::Interval and no unwrap/expect/panic under server/src (NFR41)
         run: bash ../scripts/ci/check-server-src-bans.sh
-      - name: story 6.3 FR89, nothing but restore and metrics names the stock accessor
-        run: bash ../scripts/ci/check-stock-write-path.sh
       - name: story 4.13 NFR17, every reducer and procedure opens with count_call
         run: bash ../scripts/ci/check-reducer-counted.sh
       - name: story 3.11 FR131, the travel-time estimator is graph-free and collection-free

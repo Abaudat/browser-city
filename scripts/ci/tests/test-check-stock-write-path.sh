@@ -14,7 +14,13 @@ tree() { # -- a clean tree: the declaration, restore and metrics
   printf '%s\n' '#[spacetimedb::table(accessor = stock)]
 pub struct Stock { pub quantity: u64 }' > "$d/tables/stock.rs"
   printf '%s\n' 'use super::stock::{Business, Stock, business, stock};
-fn r(ctx: &ReducerContext) { ctx.db.stock().insert(s); }' > "$d/tables/restore.rs"
+pub fn begin_restore(ctx: &ReducerContext) { if ctx.db.stock().iter().next().is_some() {} }
+pub fn restore_stock(ctx: &ReducerContext) {
+    ctx
+        .db
+        .stock()
+        .insert(s);
+}' > "$d/tables/restore.rs"
   printf '%s\n' 'use super::stock::{business, stock};' > "$d/tables/metrics.rs"
   printf '%s' "$d"
 }
@@ -89,6 +95,58 @@ check "generated/ is excluded" 0 bash "$CHECK" "$d"
 d="$(fake_dir)"
 printf '%s\n' 'pub fn nothing() {}' > "$d/lib.rs"
 check "a tree with no stock declaration fails (the scan found nothing)" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::stock::{Stock, stock as s};
+fn f(ctx: &ReducerContext) { s::stock(&ctx.db).insert(Stock { quantity: 9 }); }')"
+check "an aliased accessor fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::stock as st;
+use st::stock as tr;
+fn f(ctx: &ReducerContext) { tr::stock(&ctx.db).insert(x); }')"
+check "a renamed module path fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::stock::{stock as _, Stock};')"
+check "an accessor imported as _ fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::stock::{stock};')"
+check "a sole-brace import fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::stock::{stock, Stock};')"
+check "the accessor first in a brace list fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::stock;')"
+check "importing the stock module itself fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::{business::x, stock};')"
+check "the module inside a nested group fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::stock::{stock, Stock};
+macro_rules! sample { ($t:ident) => { ctx.db.$t().iter() }; }
+fn f() { sample!(stock); }')"
+check "a macro with the accessor first in the brace list fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::stock::{Business, Stock, business};
+use sim::stock::{plan_make, StockLine};
+use sim::stock;')"
+check "the capitalised types, business and sim::stock pass" 0 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s
+' '#[spacetimedb::reducer]
+pub fn seed_opening_stock(ctx: &ReducerContext) { ctx.db.stock().insert(x); }' >> "$d/tables/restore.rs"
+check "a new reducer appended to restore.rs fails" 1 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s
+' 'fn sneaky(ctx: &ReducerContext) { ctx.db.stock().insert(x); }' >> "$d/tables/metrics.rs"
+check "a .stock() call in metrics.rs fails" 1 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s
+' 'use spacetimedb::reducer;
+#[reducer]
+pub fn r(ctx: &ReducerContext) {}' >> "$d/tables/stock.rs"
+check "a bare #[reducer] inside stock.rs fails" 1 bash "$CHECK" "$d"
 
 check "the real server/src passes" 0 bash "$CHECK"
 
