@@ -154,3 +154,51 @@ width = 1
 # archetype).
 archetype = "underfoot_flat"
 tags = ["stairs", "underfoot", "fixture"]
+
+# One staircase seen as three objects cut from the same 48x64 sheet, so
+# the player walks between the railings: behind the near one, in front of
+# the far one. The ball finial is the 16 px overhang of the top railing.
+[[object]]
+id = 12
+key = "stairwell_top_railing"
+name = "Stairwell Top Railing"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 0, w = 48, h = 32 }
+width = 3
+archetype = "full_cell_blocker"
+tags = ["stairs", "fixture"]
+
+[[object]]
+id = 13
+key = "stairwell_treads"
+name = "Stairwell Treads"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 32, w = 48, h = 16 }
+width = 3
+# Walkable: which floors the treads join is a `floor_transition` row
+# anchored on a tread cell, never a field here.
+archetype = "underfoot_flat"
+tags = ["stairs", "underfoot", "fixture"]
+
+[[object]]
+id = 14
+key = "stairwell_bottom_railing"
+name = "Stairwell Bottom Railing"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 48, w = 48, h = 16 }
+width = 3
+archetype = "full_cell_blocker"
+tags = ["stairs", "fixture"]
+
+# The tall interior wall face of a north or south run, one cell wide. A
+# run N cells long is N placed rows. West and east runs and the retraction
+# stub are `wall_segment`'s flush swatch.
+[[object]]
+id = 15
+key = "wall_face"
+name = "Wall Face"
+layer = "walls"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png", x = 0, y = 528, w = 16, h = 48 }
+width = 1
+archetype = "full_cell_blocker"
+tags = ["wall", "wall_run"]

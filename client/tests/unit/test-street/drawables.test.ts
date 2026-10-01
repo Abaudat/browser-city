@@ -28,6 +28,7 @@ import {
   PLAYER_START,
   SIDEWALK_TILES,
   SUBWAY_FLOOR,
+  wallRunCellId,
 } from "../../../src/test-street/fixture";
 import type { Vec2 } from "../../../src/world/movement";
 import { step } from "../../../src/world/movement";
@@ -137,9 +138,10 @@ describe("the story 1.6 street scene's committed ordering", () => {
       PLAYER_START.floor,
     );
 
+    const westWallIds = new Set([0, 1, 2, 3].map((index) => wallRunCellId(4n, index)));
     const westWallCells = props
-      .filter((p) => p.stableId === 4n)
-      .sort((a, b) => a.sourceRow - b.sourceRow);
+      .filter((p) => westWallIds.has(p.stableId))
+      .sort((a, b) => a.y - b.y);
     expect(westWallCells).toHaveLength(4);
     const farCell = westWallCells[0];
     const nearCell = westWallCells[westWallCells.length - 1];

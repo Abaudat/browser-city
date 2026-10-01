@@ -29,15 +29,6 @@ interface PropDrawableBase extends Drawable, VisibilityDrawable {
   readonly sourceRow: number;
   readonly footprintWidth: number;
   readonly footprintHeight: number;
-  /** Which run a `wallTile`/`wallStub` drawable belongs to (Artie's
-   * cycle-2 direction) -- `scene.ts`'s own swatch picker reads this, never
-   * a decomposed cell's own footprint aspect ratio (which cannot tell a
-   * one-cell-wide front wall pier from a one-cell side wall). Copied
-   * straight from `StreetProp.wallOrientation`, defaulting to `"horizontal"`
-   * for every prop that does not declare one -- meaningless for anything
-   * that is not a wall, but always present so no caller needs an
-   * `undefined` branch. */
-  readonly wallOrientation: "horizontal" | "vertical";
 }
 
 /** A drawable for a prop placed by a real `defs/objects` id (story 2.13):
@@ -169,7 +160,6 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
         isWindow,
         isNearSide,
         isStub: false as const,
-        wallOrientation: prop.wallOrientation ?? ("horizontal" as const),
       };
       drawables.push(
         isDef ? { ...common, defId: prop.defId } : { ...common, assetKey: prop.assetKey },
@@ -189,7 +179,7 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
           rank: rankOf("furniture"),
           stableId: prop.id + STUB_ID_OFFSET,
           floor: prop.floor,
-          assetKey: "wallStub",
+          assetKey: "wallTileV",
           sourceCol: 0,
           sourceRow: 0,
           footprintWidth: 1,
@@ -199,7 +189,6 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
           isWindow: false,
           isNearSide: true,
           isStub: true,
-          wallOrientation: prop.wallOrientation ?? "horizontal",
         });
       }
     }
@@ -243,7 +232,6 @@ export function buildPlayerDrawable(
     isWindow: false,
     isNearSide: false,
     isStub: false,
-    wallOrientation: "horizontal",
   };
 }
 

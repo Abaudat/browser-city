@@ -1154,7 +1154,7 @@ test("the bollard west of the shopfront stops the player where it is drawn, from
   // own idiom, `FR173's affordance mark` test just below).
   test.setTimeout(90_000);
   const bollardProp = STREET_PROPS.find((p) => p.id === 121n);
-  if (!bollardProp || isDefStreetProp(bollardProp) || !bollardProp.colliders) {
+  if (!bollardProp || isDefStreetProp(bollardProp) || !bollardProp.collider) {
     throw new Error("fixture no longer places the west-of-shopfront bollard (id 121)");
   }
   // Captured into its own, definitely-defined binding -- every closure

@@ -72,17 +72,6 @@ interface StreetPropBase {
   readonly floor: number;
   readonly layer: StreetLayer;
   readonly solid?: true;
-  /** For a `wallTile`/`wallStub` prop only: which run this wall segment
-   * belongs to -- a north/south (front/back) run is `"horizontal"`, an
-   * east/west (side/party) run is `"vertical"`. A real generator always
-   * knows this when it places a wall segment (the same fact
-   * `PlacedObject.orientation` would carry); it is never re-derived from
-   * a decomposed cell's own footprint aspect ratio, which cannot tell a
-   * one-cell-wide *front* wall pier from a one-cell side wall (Artie's
-   * cycle-2 finding: that is exactly the bug that dropped shop B's front
-   * wall to a flush side-wall tile). Unused, and meaningless, for every
-   * other layer. */
-  readonly wallOrientation?: "horizontal" | "vertical";
 }
 
 /** A prop placed by a real `defs/objects` id (story 2.13): its texture
@@ -109,13 +98,11 @@ export interface StreetPropByDef extends StreetPropBase {
 export interface StreetPropByAsset extends StreetPropBase {
   readonly assetKey: string;
   readonly footprint?: StreetFootprint;
-  /** Sub-cell collider rects for a `solid` asset-placed prop, shaped to
-   * its art (`COLLIDER_SUBCELLS_PER_CELL` per cell, relative to the
+  /** The sub-cell collider of a `solid` asset-placed prop, shaped to its
+   * art (`COLLIDER_SUBCELLS_PER_CELL` per cell, relative to the
    * footprint's own north-west sub-cell origin). Absent means the whole
-   * footprint blocks. The first rect is the prop's own grid entry; each
-   * further rect is fed as a collider part (`streetColliderPartId`) with
-   * the same anchor and footprint. */
-  readonly colliders?: readonly StreetColliderRect[];
+   * footprint blocks. */
+  readonly collider?: StreetColliderRect;
 }
 
 /** A half-open sub-cell rect, the same shape as a `defs/objects`
@@ -168,6 +155,15 @@ export const BRIDGE_DECK_DEF_ID = 7;
  * walkable flight of steps. Which floors it joins is a `floor_transition`
  * row anchored on its cell, never a field on the prop. */
 export const FOOT_STAIRS_DEF_ID = 8;
+/** The subway stairwell's three `defs/objects` rows, cut from one sheet
+ * (`stairwell_top_railing`, `stairwell_treads`, `stairwell_bottom_railing`):
+ * the player walks between the railings. */
+export const STAIRWELL_TOP_RAILING_DEF_ID = 12;
+export const STAIRWELL_TREADS_DEF_ID = 13;
+export const STAIRWELL_BOTTOM_RAILING_DEF_ID = 14;
+/** `wall_face`: the tall interior face of a north or south wall run, one
+ * cell wide. West and east runs are `wall_segment` rows. */
+export const WALL_FACE_DEF_ID = 15;
 
 /** Synthetic def ids for street-only geometry (walls, world boundary),
  * offset far past any real `defs/objects` id so the two never collide in
@@ -176,22 +172,6 @@ const STREET_DEF_ID_BASE = 10_000;
 
 export function streetDefId(id: bigint): number {
   return STREET_DEF_ID_BASE + Number(id);
-}
-
-const STREET_COLLIDER_PART_ID_BASE = 10_000n;
-const STREET_COLLIDER_PARTS_PER_PROP = 16n;
-
-/** The object id of an asset prop's `index`-th collider rect (index >= 1;
- * rect 0 is the prop's own row). */
-export function streetColliderPartId(propId: bigint, index: number): bigint {
-  return STREET_COLLIDER_PART_ID_BASE + propId * STREET_COLLIDER_PARTS_PER_PROP + BigInt(index);
-}
-
-/** The `STREET_PROPS` id whose collider an object id belongs to: the id
- * itself for a prop's own row, the owning prop for a collider part. */
-export function streetColliderOwnerId(objectId: bigint): bigint {
-  if (objectId < STREET_COLLIDER_PART_ID_BASE) return objectId;
-  return (objectId - STREET_COLLIDER_PART_ID_BASE) / STREET_COLLIDER_PARTS_PER_PROP;
 }
 
 // Shared storey shape for both ground-floor shops: north (back) wall,
@@ -270,22 +250,24 @@ export const PLATFORM_BUILDING_ID = 3n;
 export const STREET_FLOOR = 0;
 export const SUBWAY_FLOOR = -1;
 
-/** Both subway stairwells' own art (`Stairs_Complete_2`, 48x64px):
- * three cells wide, four tall -- the declared footprint is the whole
- * drawn rect. */
-export const STAIRWELL_FOOTPRINT = { width: 3, height: 4 } as const;
+/** Both subway stairwells' own art (`Stairs_Complete_2`, 48x64px) is
+ * three objects on one 3x3 ground footprint: the top railing (its drawn
+ * finial overhangs one row north of the footprint), the treads, the
+ * bottom railing. */
+export const STAIRWELL_FOOTPRINT = { width: 3, height: 3 } as const;
 
-/** The footprint row (from its north edge) the art draws the treads on;
- * the rows above are the stairwell's back and top railing, the row below
- * its bottom railing. */
+/** The art row (from its north edge) the treads are drawn on: the rows
+ * above are the finial and the top railing, the row below the bottom
+ * railing. */
 const STAIRWELL_TREAD_ROW = 2;
 
-/** Every drawn railing row of a stairwell is solid; the tread row is the
- * only walkable one. */
-export const STAIRWELL_COLLIDERS: readonly StreetColliderRect[] = [
-  { x0: 0, y0: 0, x1: 48, y1: 32 },
-  { x0: 0, y0: 48, x1: 48, y1: 64 },
-];
+/** The three rows one stairwell is placed as: anchor row offset from the
+ * art's north edge, and the def. */
+const STAIRWELL_ROWS = [
+  { row: 1, defId: STAIRWELL_TOP_RAILING_DEF_ID },
+  { row: STAIRWELL_TREAD_ROW, defId: STAIRWELL_TREADS_DEF_ID },
+  { row: 3, defId: STAIRWELL_BOTTOM_RAILING_DEF_ID },
+] as const;
 
 /** The demo's own reported entry: walking left (west) into the stairs
  * (issue #310). `world/transitions.ts`'s `checkTransitionPairSymmetry`
@@ -293,9 +275,9 @@ export const STAIRWELL_COLLIDERS: readonly StreetColliderRect[] = [
 export const STAIRS_ENTRY_DIRECTION = { x: -1, y: 0 } as const;
 
 /** The street stairwell sits in the pavement's own south edge, east of
- * shop B: footprint columns `STAIRWELL_X0..+2`, rows
- * `PAVEMENT_Y1 + 1..+4`. Its opening is the tread row's east end; the
- * down anchor is the deepest tread, at the west end. */
+ * shop B: art columns `STAIRWELL_X0..+2`, rows `PAVEMENT_Y1 + 1..+4` (the
+ * first is only the finial's overhang). Its opening is the tread row's
+ * east end; the down anchor is the deepest tread, at the west end. */
 const PAVEMENT_Y1 = LAMPPOST_CELL.y;
 export const STAIRWELL_X0 = EAST_WALL_X_B + 1;
 const STAIRWELL_Y0 = PAVEMENT_Y1 + 1;
@@ -440,6 +422,57 @@ export const STREET_BUILDING_AREAS: readonly OwnershipArea[] = [
 
 export const STREET_ROOM_AREAS: readonly OwnershipArea[] = [];
 
+/** One stairwell as its three `defs/objects` rows, anchored under its art
+ * (`x` the west column, `artY` the art's north row). `ids` are the rows'
+ * stable ids, top railing first. */
+function stairwellRows(
+  ids: readonly [bigint, bigint, bigint],
+  x: number,
+  artY: number,
+  floor: number,
+): readonly StreetProp[] {
+  return STAIRWELL_ROWS.map(({ row, defId }, index) => ({
+    id: ids[index] as bigint,
+    x,
+    y: artY + row,
+    floor,
+    layer: "objects" as const,
+    defId,
+  }));
+}
+
+/** The id space `wallRun` hands to every cell after a run's first, kept
+ * clear of every hand-numbered row. */
+const WALL_RUN_CELL_ID_BASE = 1000n;
+
+/** The stable id of a wall run's `index`-th cell: the run's own `id` for
+ * the first, a derived one for each further cell. */
+export function wallRunCellId(id: bigint, index: number): bigint {
+  return index === 0 ? id : WALL_RUN_CELL_ID_BASE + id * 100n + BigInt(index);
+}
+
+/** A wall run as one placed def row per cell (`sprite` never repeats): a
+ * north or south run is `wall_face`, a west or east run `wall_segment`.
+ * `x`/`y` is the run's west end (horizontal) or south end (vertical); the
+ * run's first cell keeps `id`. */
+function wallRun(
+  id: bigint,
+  axis: "horizontal" | "vertical",
+  x: number,
+  y: number,
+  length: number,
+  floor: number,
+): readonly StreetProp[] {
+  return Array.from({ length }, (_, index) => ({
+    id: wallRunCellId(id, index),
+    x: axis === "horizontal" ? x + index : x,
+    y: axis === "horizontal" ? y : y - length + 1 + index,
+    floor,
+    layer: "walls" as const,
+    defId: axis === "horizontal" ? WALL_FACE_DEF_ID : WALL_SEGMENT_DEF_ID,
+  }));
+}
+
 /** The platform's own boundary wall ring -- a real, solid, drawn wall
  * built from the subway pack's own tiled wall art (Artie's direction),
  * near-side exactly where `render/visibility.ts`'s `isNearSideWall`
@@ -455,7 +488,6 @@ function platformWalls(): readonly StreetProp[] {
       layer: "walls",
       footprint: { width: PLATFORM_X1 - PLATFORM_X0 + 1, height: 1 },
       solid: true,
-      wallOrientation: "horizontal",
     },
     {
       id: 61n,
@@ -466,7 +498,6 @@ function platformWalls(): readonly StreetProp[] {
       layer: "walls",
       footprint: { width: PLATFORM_X1 - PLATFORM_X0 + 1, height: 1 },
       solid: true,
-      wallOrientation: "horizontal",
     },
     {
       id: 62n,
@@ -477,7 +508,6 @@ function platformWalls(): readonly StreetProp[] {
       layer: "walls",
       footprint: { width: 1, height: PLATFORM_INTERIOR_Y1 - PLATFORM_INTERIOR_Y0 + 1 },
       solid: true,
-      wallOrientation: "vertical",
     },
     {
       id: 63n,
@@ -488,7 +518,6 @@ function platformWalls(): readonly StreetProp[] {
       layer: "walls",
       footprint: { width: 1, height: PLATFORM_INTERIOR_Y1 - PLATFORM_INTERIOR_Y0 + 1 },
       solid: true,
-      wallOrientation: "vertical",
     },
   ];
   return walls;
@@ -501,32 +530,12 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // --- Shop A ----------------------------------------------------------
   // North (back) wall: full width, never near-side (nothing owned by
   // shop A sits south of it -- it is the interior itself).
-  {
-    id: 1n,
-    assetKey: "wallTile",
-    x: WEST_WALL_X,
-    y: NORTH_WALL_Y,
-    floor: 0,
-    layer: "walls",
-    footprint: { width: PARTY_WALL_X - WEST_WALL_X + 1, height: 1 },
-    solid: true,
-    wallOrientation: "horizontal",
-  },
+  ...wallRun(1n, "horizontal", WEST_WALL_X, NORTH_WALL_Y, PARTY_WALL_X - WEST_WALL_X + 1, 0),
   // South (front) wall, west of the door -- also the SW corner pier where
   // the west wall (id 4) meets the front run: full-height wall now
   // (Artie's direction -- retraction exists, so the front facade is a
   // full wall from outside, not a permanently short stub).
-  {
-    id: 2n,
-    assetKey: "wallTile",
-    x: WEST_WALL_X,
-    y: SOUTH_WALL_Y,
-    floor: 0,
-    layer: "walls",
-    footprint: { width: DOOR_X_A - WEST_WALL_X, height: 1 },
-    solid: true,
-    wallOrientation: "horizontal",
-  },
+  ...wallRun(2n, "horizontal", WEST_WALL_X, SOUTH_WALL_Y, DOOR_X_A - WEST_WALL_X, 0),
   // The shop window (FR121): a real `defs/objects` wall tile, `window =
   // true`, three cells wide starting right after the door -- its own def
   // art (story 2.13: `ME_Singles_Office_16x16_Window_1_
@@ -549,31 +558,11 @@ export const STREET_PROPS: readonly StreetProp[] = [
   },
   // West wall: the near/far occlusion worked example -- decomposed
   // toward the camera (width 1, height 4).
-  {
-    id: 4n,
-    assetKey: "wallTile",
-    x: WEST_WALL_X,
-    y: INTERIOR_Y1,
-    floor: 0,
-    layer: "walls",
-    footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
-    solid: true,
-    wallOrientation: "vertical",
-  },
+  ...wallRun(4n, "vertical", WEST_WALL_X, INTERIOR_Y1, INTERIOR_Y1 - INTERIOR_Y0 + 1, 0),
   // The party wall shop A and shop B share, one cell thick (Artie's
   // direction: no gap, no doubled wall) -- a side wall, so it is never
   // near-side and never retracts for either shop.
-  {
-    id: 5n,
-    assetKey: "wallTile",
-    x: PARTY_WALL_X,
-    y: INTERIOR_Y1,
-    floor: 0,
-    layer: "walls",
-    footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
-    solid: true,
-    wallOrientation: "vertical",
-  },
+  ...wallRun(5n, "vertical", PARTY_WALL_X, INTERIOR_Y1, INTERIOR_Y1 - INTERIOR_Y0 + 1, 0),
   // Shop A's own front-wall pier at the party-wall corner: the window
   // (id 6) stops one cell short of it, so a full-height wall pier always
   // separates the two shopfronts' glass, never a continuous glazed strip
@@ -581,17 +570,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // rect includes this column), so it retracts with the rest of shop A's
   // front while the player is inside -- the same corner id 4/id 2 already
   // form on the west side, just party-wall side.
-  {
-    id: 40n,
-    assetKey: "wallTile",
-    x: PARTY_WALL_X,
-    y: SOUTH_WALL_Y,
-    floor: 0,
-    layer: "walls",
-    footprint: { width: 1, height: 1 },
-    solid: true,
-    wallOrientation: "horizontal",
-  },
+  ...wallRun(40n, "horizontal", PARTY_WALL_X, SOUTH_WALL_Y, 1, 0),
 
   // A poster mounted flat on the north wall face (wall_decals, FR123's
   // tens rank above `walls`).
@@ -632,7 +611,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     layer: "furniture",
     footprint: { width: 2, height: 2 },
     solid: true,
-    colliders: [{ x0: 0, y0: 0, x1: 32, y1: 31 }],
+    collider: { x0: 0, y0: 0, x1: 32, y1: 31 },
   },
   { id: 10n, assetKey: "glass", x: WINDOW_X_A, y: INTERIOR_Y1, floor: 0, layer: "objects" },
 
@@ -683,17 +662,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // east of that pier, so there is nothing left for a separate "west
   // segment" prop to cover (cycle-2: `DOOR_X_B` moved from one cell east
   // of `INTERIOR_X0_B` to the party-wall pier's own neighbour). ---
-  {
-    id: 30n,
-    assetKey: "wallTile",
-    x: INTERIOR_X0_B,
-    y: NORTH_WALL_Y,
-    floor: 0,
-    layer: "walls",
-    footprint: { width: EAST_WALL_X_B - INTERIOR_X0_B + 1, height: 1 },
-    solid: true,
-    wallOrientation: "horizontal",
-  },
+  ...wallRun(30n, "horizontal", INTERIOR_X0_B, NORTH_WALL_Y, EAST_WALL_X_B - INTERIOR_X0_B + 1, 0),
   // The window stops one cell short of the east wall -- id 41 below is
   // that last cell, the same full-height corner pier shop A's own party
   // wall side gets (id 40).
@@ -705,30 +674,10 @@ export const STREET_PROPS: readonly StreetProp[] = [
     layer: "walls",
     defId: WINDOW_DEF_ID,
   },
-  {
-    id: 34n,
-    assetKey: "wallTile",
-    x: EAST_WALL_X_B,
-    y: INTERIOR_Y1,
-    floor: 0,
-    layer: "walls",
-    footprint: { width: 1, height: INTERIOR_Y1 - INTERIOR_Y0 + 1 },
-    solid: true,
-    wallOrientation: "vertical",
-  },
+  ...wallRun(34n, "vertical", EAST_WALL_X_B, INTERIOR_Y1, INTERIOR_Y1 - INTERIOR_Y0 + 1, 0),
   // Shop B's own front-wall pier at its east corner, the mirror of shop
   // A's own id 40 (Artie's cycle-2 direction).
-  {
-    id: 41n,
-    assetKey: "wallTile",
-    x: EAST_WALL_X_B,
-    y: SOUTH_WALL_Y,
-    floor: 0,
-    layer: "walls",
-    footprint: { width: 1, height: 1 },
-    solid: true,
-    wallOrientation: "horizontal",
-  },
+  ...wallRun(41n, "horizontal", EAST_WALL_X_B, SOUTH_WALL_Y, 1, 0),
   // Shop B's own shelving (a grocery-store display, not a bar counter)
   // and a produce basket -- different interior furniture from shop A's,
   // right behind its own window. The shelf stands against the north wall;
@@ -743,39 +692,19 @@ export const STREET_PROPS: readonly StreetProp[] = [
     layer: "furniture",
     footprint: { width: 2, height: 1 },
     solid: true,
-    colliders: [{ x0: 6, y0: 0, x1: 26, y1: 16 }],
+    collider: { x0: 6, y0: 0, x1: 26, y1: 16 },
   },
   { id: 36n, assetKey: "basket", x: WINDOW_X_B, y: INTERIOR_Y1, floor: 0, layer: "furniture" },
 
   // --- The subway ---------------------------------------------------------
   // The street stairwell (a real descending stairwell with railings,
-  // Artie's direction): its whole drawn 3x4 rect is its footprint, every
-  // railing row is solid (`STAIRWELL_COLLIDERS`), and the tread row is
-  // walkable from its east opening down to the down anchor.
-  {
-    id: 50n,
-    assetKey: "subwayStairsDown",
-    x: STAIRWELL_X0,
-    y: STAIRWELL_Y0 + STAIRWELL_FOOTPRINT.height - 1,
-    floor: STREET_FLOOR,
-    layer: "objects",
-    footprint: STAIRWELL_FOOTPRINT,
-    solid: true,
-    colliders: STAIRWELL_COLLIDERS,
-  },
-  // The same flight seen from the platform: unflipped, so the treads rise
-  // toward the up anchor at the east wall; its opening faces west.
-  {
-    id: 51n,
-    assetKey: "subwayStairsUp",
-    x: PLATFORM_STAIRWELL_X0,
-    y: PLATFORM_INTERIOR_Y0 + STAIRWELL_FOOTPRINT.height - 1,
-    floor: SUBWAY_FLOOR,
-    layer: "objects",
-    footprint: STAIRWELL_FOOTPRINT,
-    solid: true,
-    colliders: STAIRWELL_COLLIDERS,
-  },
+  // Artie's direction): three def rows -- the railings block their own
+  // row, the tread row is walkable from its east opening down to the down
+  // anchor.
+  ...stairwellRows([50n, 53n, 54n], STAIRWELL_X0, STAIRWELL_Y0, STREET_FLOOR),
+  // The same flight seen from the platform: its opening faces west and
+  // its treads rise toward the up anchor at the east wall.
+  ...stairwellRows([51n, 55n, 56n], PLATFORM_STAIRWELL_X0, PLATFORM_INTERIOR_Y0, SUBWAY_FLOOR),
   ...platformWalls(),
   // The way-out sign on the platform's north wall face, above the
   // up-stairs' anchor column.
@@ -820,7 +749,6 @@ export const STREET_PROPS: readonly StreetProp[] = [
     floor: BRIDGE_FLOOR,
     layer: "walls" as const,
     defId: WALL_SEGMENT_DEF_ID,
-    wallOrientation: "vertical" as const,
   })),
   // The stairs at each end: walkable props (no collider in `defs/`),
   // each the physical thing a `floor_transition` row is anchored on.
@@ -876,7 +804,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     floor: STREET_FLOOR,
     layer: "objects",
     solid: true,
-    colliders: [BOLLARD_COLLIDER],
+    collider: BOLLARD_COLLIDER,
   },
   // A manhole cover on the pavement crossing -- decoration only.
   {
@@ -897,7 +825,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     floor: STREET_FLOOR,
     layer: "objects",
     solid: true,
-    colliders: [BOLLARD_COLLIDER],
+    collider: BOLLARD_COLLIDER,
   },
   // A manhole cover on the underpass row (decoration), and the support
   // pillar under the deck, a real bollard: the checkpoint's column rest.
@@ -917,7 +845,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     floor: STREET_FLOOR,
     layer: "objects",
     solid: true,
-    colliders: [BOLLARD_COLLIDER],
+    collider: BOLLARD_COLLIDER,
   },
   // A second manhole cover, one row south, for leaving the underpass
   // again -- decoration only.
@@ -1119,26 +1047,8 @@ export const STREET_GROUND_TILES: readonly StreetGroundTiles[] = [
   PLATFORM_EDGE_TILES,
 ];
 
-/** Every collider rect a solid asset prop contributes, paired with the
- * object id it is fed under: rect 0 under the prop's own id, each further
- * rect under its own `streetColliderPartId`. */
-function streetAssetColliders(
-  prop: StreetPropByAsset,
-  subcellsPerCell: number,
-): readonly { readonly objectId: bigint; readonly rect: StreetColliderRect }[] {
-  const { width, height } = prop.footprint ?? { width: 1, height: 1 };
-  const rects = prop.colliders ?? [
-    { x0: 0, y0: 0, x1: width * subcellsPerCell, y1: height * subcellsPerCell },
-  ];
-  return rects.map((rect, index) => ({
-    objectId: index === 0 ? prop.id : streetColliderPartId(prop.id, index),
-    rect,
-  }));
-}
-
 /** The street's own collider sources, keyed by the synthetic def id
- * `streetDefId` mints: every solid asset prop's collider rects (one
- * source per rect, all with the prop's own footprint) and the world
+ * `streetDefId` mints: every solid asset prop's collider and the world
  * boundary. Anything placed by `defId` is read from `defs/` instead.
  * `subcellsPerCell` comes from the scene, which reads it from `defs/`. */
 export function streetColliderSources(
@@ -1148,9 +1058,16 @@ export function streetColliderSources(
   for (const prop of STREET_PROPS) {
     if (isDefStreetProp(prop) || !prop.solid) continue;
     const { width, height } = prop.footprint ?? { width: 1, height: 1 };
-    for (const { objectId, rect } of streetAssetColliders(prop, subcellsPerCell)) {
-      sources.set(streetDefId(objectId), { width, height, collider: rect });
-    }
+    sources.set(streetDefId(prop.id), {
+      width,
+      height,
+      collider: prop.collider ?? {
+        x0: 0,
+        y0: 0,
+        x1: width * subcellsPerCell,
+        y1: height * subcellsPerCell,
+      },
+    });
   }
   for (const rect of STREET_BOUNDARY) {
     sources.set(streetDefId(rect.id), {
@@ -1169,9 +1086,7 @@ export function streetColliderSources(
 
 /** Every collider-bearing placement the street feeds the grid, shaped like
  * the generated `PlacedObject` binding: the props that declare `defId` or
- * `solid` (plus one row per further collider part, at the prop's own
- * anchor, on layer 0 so a pick never prefers it over the prop itself),
- * and the undrawn boundary ring. */
+ * `solid`, and the undrawn boundary ring. */
 export function streetPlacedRows(): readonly PlacedObject[] {
   const rows: PlacedObject[] = [];
   const row = (
@@ -1192,11 +1107,7 @@ export function streetPlacedRows(): readonly PlacedObject[] {
       continue;
     }
     if (!prop.solid) continue;
-    // Parts only need their own ids; the rect lives in their source.
-    for (const { objectId } of streetAssetColliders(prop, 1)) {
-      const partLayer = objectId === prop.id ? layer : 0;
-      row(objectId, streetDefId(objectId), prop.x, prop.y, prop.floor, partLayer);
-    }
+    row(prop.id, streetDefId(prop.id), prop.x, prop.y, prop.floor, layer);
   }
   for (const rect of STREET_BOUNDARY) {
     row(rect.id, streetDefId(rect.id), rect.x, rect.y, rect.floor ?? STREET_FLOOR, 0);

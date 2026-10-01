@@ -9,6 +9,10 @@ object 8 foot_stairs
 object 9 grass_ground
 object 10 sidewalk_pavement
 object 11 road_asphalt
+object 12 stairwell_top_railing
+object 13 stairwell_treads
+object 14 stairwell_bottom_railing
+object 15 wall_face
 item 1 bottle
 item 2 recycled_glass
 item 3 coin_1

@@ -63,20 +63,10 @@ export const ASSET_URLS: Readonly<Record<string, string>> = {
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Building_Singles_16x16/ME_Singles_Generic_Building_16x16_Shop_Tent_1.png",
     import.meta.url,
   ).href,
-  // The subway: a real descending stairwell with railings on the street
-  // and the same flight seen from the platform, drawn unflipped so its
-  // treads rise toward the up anchor (a flipped side-on flight reverses
-  // which end is high), the platform's own green way-out sign, and the subway
-  // pack's own tiled wall, floor and hazard-striped platform edge --
-  // never the shops' own interior art reused underground.
-  subwayStairsDown: new URL(
-    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png",
-    import.meta.url,
-  ).href,
-  subwayStairsUp: new URL(
-    "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png",
-    import.meta.url,
-  ).href,
+  // The subway: the platform's own green way-out sign, and the subway
+  // pack's own tiled wall, floor and hazard-striped platform edge -- never
+  // the shops' own interior art reused underground. The stairwell is three
+  // `defs/objects` rows and draws through the atlas.
   subwayArrowUp: new URL(
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Arrow_Up_Green_Sign.png",
     import.meta.url,
@@ -115,15 +105,9 @@ export const ASSET_URLS: Readonly<Record<string, string>> = {
   ).href,
 };
 
-/** `wallTileH`/`wallTileV` are two real, whole-tile sub-rects of the same
- * `wallSheet` source file (never a new PNG): a 1x3-tile swatch for the
- * horizontal (north/south) walls, whose un-decomposed axis (height) is
- * free to overhang above each cell, and a flush 1x1-tile swatch for the
- * vertical (west/east) walls, whose width must never overhang
- * horizontally (Artie's rule). Both are reused whole, per cell -- see
- * `sliceTexture`'s "repeat" case. `wallTileV`'s own flush swatch doubles
- * as the FR120 retraction stub (Artie's direction: "the short wall caps
- * already in Room_Builder_Walls_16x16.png", no new art) -- see
- * `wallStub` below. */
-export const WALL_TILE_H_FRAME: PixelRect = { x: 0, y: 528, width: 16, height: 48 };
+/** `wallTileV` is a real, whole-tile sub-rect of the `wallSheet` source
+ * file (never a new PNG): the flush 16x16 swatch `wall_segment` also is.
+ * It is the FR120 retraction stub's art (Artie's direction: "the short wall
+ * caps already in Room_Builder_Walls_16x16.png", no new art) -- see
+ * the stub companion in `drawables.ts`. */
 export const WALL_TILE_V_FRAME: PixelRect = { x: 0, y: 528, width: 16, height: 16 };

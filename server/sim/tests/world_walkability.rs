@@ -136,17 +136,16 @@ fn a_closed_ring_reports_the_interior_as_enclosed() {
 /// against the real, committed geometry, never by calling the code under
 /// test.
 ///
-/// The lamppost's own collider band (`y0=10, y1=14`, real def) leaves six
-/// sub-cells clear on either side of it within the door cell (`x=64..80`)
-/// -- less than the player body's own width (8) -- so an 8x4 body window
-/// has no valid position for any origin `y` in `7..13` (its own window
-/// always touches the lamppost band there), which severs the door.
-/// Reachable-from-the-interior-side origins resume at `y=14` (bridging
-/// the last two door-height rows, `x` still confined to the 8-wide door
-/// span `64..72`) and widen into the fully open interior from `y=16`
-/// onward (`x` the interior's own valid span `16..104`), down to the
-/// interior's own southern limit at `y=76`: `9 + 9 + 61*89 = 5447`
-/// sub-cells, bounds `(16, 14)-(105, 77)`.
+/// The lamppost's own collider (`x 2..14, y 7..16` in its cell, real def:
+/// the drawn plinth) spans the door cell's `x=66..78`, leaving two
+/// sub-cells clear on either side within the door cell (`x=64..80`) --
+/// less than the player body's own width (8) -- so an 8x4 body window
+/// has no valid position for any origin `y` in `4..15` (its own window
+/// always touches the plinth there; the plinth reaches the cell's south
+/// edge, `y=16`), which severs the door. Reachable origins resume only at
+/// `y=16`, already inside the fully open interior (`x` the interior's own
+/// valid span `16..104`), down to the interior's own southern limit at
+/// `y=76`: `61*89 = 5429` sub-cells, bounds `(16, 16)-(105, 77)`.
 #[test]
 fn a_lamppost_narrowing_the_door_below_body_width_cuts_off_the_interior() {
     let grid = build_grid(&ring_placements(true, true));
@@ -162,11 +161,11 @@ fn a_lamppost_narrowing_the_door_below_body_width_cuts_off_the_interior() {
         vec![Finding {
             bounds: Rect {
                 x0: 16,
-                y0: 14,
+                y0: 16,
                 x1: 105,
                 y1: 77,
             },
-            cell_count: 9 + 9 + 61 * 89,
+            cell_count: 61 * 89,
         }]
     );
 }
@@ -179,15 +178,15 @@ fn erosion_over_the_real_ring_matches_the_narrow_passage_verdict() {
     let grid = build_grid(&ring_placements(true, true));
     let (body_w, body_h) = player_body_subcells(defs::BALANCE);
     let eroded = erode(&grid, body_w, body_h);
-    // The lamppost's own collider band (`y0=10, y1=14`, the real,
+    // The lamppost's own collider band (`y0=7, y1=16`, the real,
     // committed def): every crossing origin must pass through this exact
     // band (4-connected movement changes y one sub-cell at a time), and
-    // within it the door cell offers only six clear sub-cells on either
+    // within it the door cell offers only two clear sub-cells on either
     // side of the lamppost -- less than the body's own width -- so no x
     // in the door cell is body-passable at any y in this band.
     let door_x0 = DOOR_X * COLLIDER_SUBCELLS_PER_CELL;
     let door_x1 = door_x0 + COLLIDER_SUBCELLS_PER_CELL;
-    for y in 10..14 {
+    for y in 7..16 {
         for x in door_x0..door_x1 {
             assert!(
                 !eroded.is_passable(x, y),
