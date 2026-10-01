@@ -43,6 +43,8 @@ pub const INV_INVENTORY_SUPERSET_AFTER_ABSENCE: &str = "inventory is a superset 
 pub const INV_NO_OWNED_ITEM_DEGRADES_DURING_ABSENCE: &str = "no owned item degrades during absence";
 pub const INV_BUDGET_NEVER_NEGATIVE: &str = "budget never goes negative";
 pub const INV_STOCK_IS_INDEPENDENT_PER_HOLDER: &str = "stock is independent per holder: any interleaving of stock operations leaves each holder exactly as replaying its own operations alone";
+pub const INV_STOCK_MOVES_ONLY_BY_HAND: &str = "stock moves only by hand: across any interleaving of authored makes, consumptions and moves, every quantity change is a returned write naming a citizen and one of two causes, and each item's total changes only by what was made and consumed";
+pub const INV_STOCK_MOVE_CONSERVES_QUANTITY: &str = "a stock move conserves quantity: the per-item sum across holders is unchanged by any sequence of moves, and a move the receiver refuses takes nothing from the giver";
 pub const INV_ITEM_INSTANCE_IN_EXACTLY_ONE_STATE: &str = "an item instance is in exactly one of its two states: any interleaving of place and hold moves leaves each instance in one form, never both, never neither";
 pub const INV_COLLIDER_WITHIN_FOOTPRINT: &str = "collider is contained within footprint";
 pub const INV_IDENTICAL_SEEDS_DERIVE_IDENTICALLY: &str =
@@ -5347,29 +5349,23 @@ proptest! {
         )
     ) {
         use std::collections::BTreeMap;
-        use sim::stock::{Plan, StockLine, plan_deposit, plan_withdraw};
+        use sim::stock::{Author, Cause, plan_deposit, plan_withdraw};
+        use support::stock_ledger::Ledger;
 
+        let make = Author::new(1, Cause::ProcedureStep).unwrap();
+        let eat = Author::new(2, Cause::Consumption).unwrap();
         let holders = stock_holders();
-        let mut ledger: Vec<StockLine> = Vec::new();
-        let mut next_row = 0u64;
+        let mut ledger = Ledger::default();
         for &(h, item, deposit, amount) in &ops {
             let holder = holders[h];
-            let plan = if deposit {
+            if deposit {
                 // An overflow is refused whole: nothing is written.
-                plan_deposit(&ledger, holder, item, amount).unwrap_or(Plan::Nothing)
+                if let Ok(w) = plan_deposit(&ledger.lines, make, holder, item, amount) {
+                    ledger.apply(&w);
+                }
             } else {
-                plan_withdraw(&ledger, holder, item, amount).plan
-            };
-            match plan {
-                Plan::Insert { quantity } => {
-                    next_row += 1;
-                    ledger.push(StockLine { row_id: next_row, holder, item_id: item, quantity });
-                }
-                Plan::Update { row_id, quantity } => {
-                    ledger.iter_mut().find(|l| l.row_id == row_id).unwrap().quantity = quantity;
-                }
-                Plan::Delete { row_id } => ledger.retain(|l| l.row_id != row_id),
-                Plan::Nothing => {}
+                let w = plan_withdraw(&ledger.lines, eat, holder, item, amount);
+                ledger.apply(&w.write);
             }
         }
 
@@ -5390,7 +5386,7 @@ proptest! {
                 }
             }
             let mut actual: BTreeMap<u32, u64> = BTreeMap::new();
-            for line in ledger.iter().filter(|l| l.holder == holder) {
+            for line in ledger.lines.iter().filter(|l| l.holder == holder) {
                 prop_assert!(line.quantity > 0, "a stored line is never zero");
                 prop_assert!(
                     actual.insert(line.item_id, line.quantity).is_none(),
@@ -5398,6 +5394,218 @@ proptest! {
                 );
             }
             prop_assert_eq!(actual, model);
+        }
+    }
+}
+
+/// One authored stock operation of a generated sequence.
+#[derive(Debug, Clone, Copy)]
+struct StockOp {
+    verb: u8,
+    from: usize,
+    to: usize,
+    item: u32,
+    amount: u64,
+    citizen: u64,
+}
+
+fn stock_op() -> impl Strategy<Value = StockOp> {
+    (
+        0u8..4,
+        0usize..8,
+        0usize..8,
+        0u32..6,
+        prop_oneof![0u64..20, Just(u64::MAX), (u64::MAX - 10)..=u64::MAX],
+        1u64..5,
+    )
+        .prop_map(|(verb, from, to, item, amount, citizen)| StockOp {
+            verb,
+            from,
+            to,
+            item,
+            amount,
+            citizen,
+        })
+}
+
+/// A non-empty starting ledger: (holder, item, quantity) triples, one per
+/// (holder, item).
+fn stock_start() -> impl Strategy<Value = Vec<(usize, u32, u64)>> {
+    proptest::collection::vec(
+        (
+            0usize..8,
+            0u32..6,
+            prop_oneof![1u64..50, Just(u64::MAX), (u64::MAX - 10)..=u64::MAX],
+        ),
+        1..12,
+    )
+}
+
+fn stock_start_ledger(start: &[(usize, u32, u64)]) -> support::stock_ledger::Ledger {
+    use sim::stock::StockLine;
+    let holders = stock_holders();
+    let mut lines: Vec<StockLine> = Vec::new();
+    for &(h, item, quantity) in start {
+        if lines
+            .iter()
+            .any(|l| l.holder == holders[h] && l.item_id == item)
+        {
+            continue;
+        }
+        lines.push(StockLine {
+            row_id: lines.len() as u64 + 1,
+            holder: holders[h],
+            item_id: item,
+            quantity,
+        });
+    }
+    support::stock_ledger::Ledger::from_lines(lines)
+}
+
+proptest! {
+    /// `inv_stock_moves_only_by_hand` (FR89): a long interleaving of
+    /// authored makes, consumptions and moves. The oracle is a map built
+    /// only by replaying the returned writes onto the starting ledger, plus
+    /// a per-item total moved only by what was made and consumed -- it
+    /// never reads the ledger to check the ledger. Checked after every
+    /// operation.
+    #[test]
+    fn inv_stock_moves_only_by_hand(
+        start in stock_start(),
+        ops in proptest::collection::vec(stock_op(), 0..120),
+    ) {
+        use std::collections::BTreeMap;
+        use sim::stock::{
+            Author, Cause, Plan, Write, plan_deposit, plan_transfer, plan_transfer_exact,
+            plan_withdraw,
+        };
+
+        let holders = stock_holders();
+        let mut ledger = stock_start_ledger(&start);
+        let mut model: BTreeMap<(sim::stock::HolderRef, u32), u64> = ledger
+            .lines
+            .iter()
+            .map(|l| ((l.holder, l.item_id), l.quantity))
+            .collect();
+        let mut totals: BTreeMap<u32, u128> = BTreeMap::new();
+        for (&(_, item), &q) in &model {
+            *totals.entry(item).or_default() += q as u128;
+        }
+
+        for op in &ops {
+            let (from, to) = (holders[op.from], holders[op.to]);
+            let step = Author::new(op.citizen, Cause::ProcedureStep).unwrap();
+            let eat = Author::new(op.citizen, Cause::Consumption).unwrap();
+            let lines = ledger.lines.clone();
+            let mut records: Vec<Write> = Vec::new();
+            let mut made = 0u128;
+            let mut consumed = 0u128;
+            match op.verb {
+                0 => {
+                    if let Ok(w) = plan_deposit(&lines, step, from, op.item, op.amount) {
+                        if w.plan() != Plan::Nothing {
+                            made = op.amount as u128;
+                        }
+                        records.push(w);
+                    }
+                }
+                1 => {
+                    let w = plan_withdraw(&lines, eat, from, op.item, op.amount);
+                    consumed = w.taken as u128;
+                    records.push(w.write);
+                }
+                2 => records.extend(plan_transfer(&lines, step, from, to, op.item, op.amount).writes),
+                _ => records.extend(plan_transfer_exact(&lines, step, from, to, op.item, op.amount).writes),
+            }
+
+            let mut changed = 0;
+            for w in &records {
+                prop_assert_ne!(w.author().citizen_id(), 0);
+                prop_assert_eq!(w.author().citizen_id(), op.citizen);
+                match w.author().cause() {
+                    Cause::ProcedureStep | Cause::Consumption => {}
+                }
+                let key = (w.holder(), w.item_id());
+                match w.plan() {
+                    Plan::Insert { quantity } | Plan::Update { quantity, .. } => {
+                        model.insert(key, quantity);
+                        changed += 1;
+                    }
+                    Plan::Delete { .. } => {
+                        model.remove(&key);
+                        changed += 1;
+                    }
+                    Plan::Nothing => {}
+                }
+                ledger.apply(w);
+            }
+            let total = totals.entry(op.item).or_default();
+            *total = *total + made - consumed;
+
+            // A two-sided move leaves two changes or none.
+            if op.verb >= 2 {
+                prop_assert!(changed == 0 || changed == 2, "a move is both sides or neither");
+            }
+            let mut actual: BTreeMap<(sim::stock::HolderRef, u32), u64> = BTreeMap::new();
+            for l in &ledger.lines {
+                prop_assert!(l.quantity > 0, "a stored line is never zero");
+                prop_assert!(
+                    actual.insert((l.holder, l.item_id), l.quantity).is_none(),
+                    "two rows for one (holder, item)"
+                );
+            }
+            prop_assert_eq!(&actual, &model);
+            let mut sums: BTreeMap<u32, u128> = BTreeMap::new();
+            for (&(_, item), &q) in &actual {
+                *sums.entry(item).or_default() += q as u128;
+            }
+            sums.retain(|_, v| *v != 0);
+            let mut expected = totals.clone();
+            expected.retain(|_, v| *v != 0);
+            prop_assert_eq!(sums, expected);
+        }
+    }
+
+    /// `inv_stock_move_conserves_quantity`: any sequence of moves leaves the
+    /// per-item sum across holders unchanged, and a move the receiver
+    /// refuses takes nothing from the giver.
+    #[test]
+    fn inv_stock_move_conserves_quantity(
+        start in stock_start(),
+        ops in proptest::collection::vec(stock_op(), 0..120),
+    ) {
+        use std::collections::BTreeMap;
+        use sim::stock::{Author, Cause, plan_transfer, plan_transfer_exact};
+
+        let holders = stock_holders();
+        let mut ledger = stock_start_ledger(&start);
+        let sum = |l: &support::stock_ledger::Ledger| {
+            let mut m: BTreeMap<u32, u128> = BTreeMap::new();
+            for line in &l.lines {
+                *m.entry(line.item_id).or_default() += line.quantity as u128;
+            }
+            m
+        };
+        let before = sum(&ledger);
+        for op in &ops {
+            let by = Author::new(op.citizen, Cause::ProcedureStep).unwrap();
+            let (from, to) = (holders[op.from], holders[op.to]);
+            let giver_before = ledger.quantity(from, op.item);
+            let t = if op.verb % 2 == 0 {
+                plan_transfer(&ledger.lines, by, from, to, op.item, op.amount)
+            } else {
+                plan_transfer_exact(&ledger.lines, by, from, to, op.item, op.amount)
+            };
+            if t.refused.is_some() {
+                prop_assert!(t.writes.is_empty() && t.taken == 0);
+            }
+            for w in &t.writes {
+                ledger.apply(w);
+            }
+            if t.writes.is_empty() {
+                prop_assert_eq!(ledger.quantity(from, op.item), giver_before);
+            }
+            prop_assert_eq!(sum(&ledger), before.clone());
         }
     }
 }

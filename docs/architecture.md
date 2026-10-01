@@ -307,6 +307,10 @@ and just-in-time. So:
 - `business` is the business instance: one row per shop.
 - `stock` has a surrogate `stock_id`, `holder_kind`, `holder_id`, `item_id` and `quantity` (`u64`, in the item's own unit). It is never addressed by room, brand or position. One index, `by_holder_item` on (`holder_kind`, `holder_id`, `item_id`).
 - At most one `stock` row per (holder, item); an absent row is zero and no row stores zero. `sim::stock::plan_deposit` and `plan_withdraw` decide the one row a write lands on; a holder holds at most `sim::stock::MAX_LINES_PER_HOLDER` items.
+- `sim::stock::Author` is a `citizen_id` and a `Cause` (`ProcedureStep` or `Consumption`, a closed enum in `sim::author`; item instances and cash take the same type). `plan_deposit` (a make: procedure step only), `plan_withdraw` (a consumption or a step's take) and `plan_transfer` / `plan_transfer_exact` (a move: both sides or neither) take one and return a `Write`; nothing else constructs a `Write`.
+- A write to `stock` applies a `Write` and nothing else. `restore_stock` is the one exception: it reproduces a past world by value. `scripts/ci/check-stock-write-path.sh` holds that nothing else under `server/src/` names the `stock` accessor (row-count sampling in `metrics.rs` aside).
+- A shortfall is a `Withdrawal` or `Transfer` with `taken` below the ask: never an `Err`, never a log line. A receiver that cannot take a transfer leaves `taken` 0 and the reason in `refused`.
+- There is no stock movement table.
 - `stock`'s `max_rows` is `MAX_LINES_PER_HOLDER` times the sum of the holder tables' `max_rows`.
 
 ## Item instances

@@ -5,9 +5,12 @@
 //!
 //! An absent line is zero and no line stores zero. SpacetimeDB has no
 //! composite unique constraint, so that rule lives here: every write goes
-//! through [`plan_deposit`] or [`plan_withdraw`], which read the holder's
-//! existing lines and say which one row the write lands on.
+//! through [`plan_deposit`], [`plan_withdraw`] or [`plan_transfer`], each
+//! of which takes an [`Author`] (FR89) and returns a [`Write`], the only
+//! thing a stock write can be. They read the holder's existing lines and
+//! say which one row the write lands on.
 
+pub use crate::author::{Author, AuthorError, Cause};
 use crate::codes::holder_kind;
 
 /// The most distinct items one holder may hold. The `stock` table's row
@@ -77,12 +80,43 @@ pub enum Plan {
     Nothing,
 }
 
+/// One authored write: who and why, where, and the one row it lands on.
+/// Private fields and no public constructor: only this module's plan
+/// functions return one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Write {
+    author: Author,
+    holder: HolderRef,
+    item_id: u32,
+    plan: Plan,
+}
+
+impl Write {
+    pub fn author(&self) -> Author {
+        self.author
+    }
+
+    pub fn holder(&self) -> HolderRef {
+        self.holder
+    }
+
+    pub fn item_id(&self) -> u32 {
+        self.item_id
+    }
+
+    pub fn plan(&self) -> Plan {
+        self.plan
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StockError {
     /// The result would pass `u64::MAX`.
     QuantityOverflow,
     /// The holder already holds [`MAX_LINES_PER_HOLDER`] other items.
     TooManyLines,
+    /// Goods enter a holder only under a procedure step.
+    ConsumptionCannotMake,
 }
 
 /// What a withdrawal actually took, what is left, and the write for it. A
@@ -92,7 +126,20 @@ pub enum StockError {
 pub struct Withdrawal {
     pub taken: u64,
     pub remaining: u64,
-    pub plan: Plan,
+    pub write: Write,
+}
+
+/// What a transfer did. `writes` is empty or the giving and the receiving
+/// write, which land in one transaction or not at all. A shortfall leaves
+/// `taken` below the ask; a receiver that cannot take the goods leaves
+/// `taken` 0 with the reason in `refused` and nothing written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Transfer {
+    pub taken: u64,
+    /// What the giving holder still holds.
+    pub remaining: u64,
+    pub refused: Option<StockError>,
+    pub writes: Vec<Write>,
 }
 
 fn line_of(existing: &[StockLine], holder: HolderRef, item: u32) -> Option<&StockLine> {
@@ -101,9 +148,7 @@ fn line_of(existing: &[StockLine], holder: HolderRef, item: u32) -> Option<&Stoc
         .find(|l| l.holder == holder && l.item_id == item)
 }
 
-/// Adds `amount` of `item` to `holder`. `existing` may hold any lines;
-/// only `holder`'s are read.
-pub fn plan_deposit(
+fn deposit_plan(
     existing: &[StockLine],
     holder: HolderRef,
     item: u32,
@@ -124,8 +169,8 @@ pub fn plan_deposit(
             })
         }
         None => {
-            let held = existing.iter().filter(|l| l.holder == holder).count();
-            if held >= MAX_LINES_PER_HOLDER {
+            let lines = existing.iter().filter(|l| l.holder == holder).count();
+            if lines >= MAX_LINES_PER_HOLDER {
                 return Err(StockError::TooManyLines);
             }
             Ok(Plan::Insert { quantity: amount })
@@ -133,37 +178,132 @@ pub fn plan_deposit(
     }
 }
 
-/// Takes up to `amount` of `item` from `holder`.
+/// Makes `amount` of `item` appear in `holder`: a procedure step only.
+/// `existing` may hold any lines; only `holder`'s are read.
+pub fn plan_deposit(
+    existing: &[StockLine],
+    by: Author,
+    holder: HolderRef,
+    item: u32,
+    amount: u64,
+) -> Result<Write, StockError> {
+    match by.cause() {
+        Cause::Consumption => Err(StockError::ConsumptionCannotMake),
+        Cause::ProcedureStep => Ok(Write {
+            author: by,
+            holder,
+            item_id: item,
+            plan: deposit_plan(existing, holder, item, amount)?,
+        }),
+    }
+}
+
+/// Takes up to `amount` of `item` out of `holder`, under either cause.
 pub fn plan_withdraw(
     existing: &[StockLine],
+    by: Author,
     holder: HolderRef,
     item: u32,
     amount: u64,
 ) -> Withdrawal {
-    let Some(line) = line_of(existing, holder, item) else {
-        return Withdrawal {
-            taken: 0,
-            remaining: 0,
-            plan: Plan::Nothing,
+    let mut taken = 0;
+    let mut remaining = 0;
+    let mut plan = Plan::Nothing;
+    if let Some(line) = line_of(existing, holder, item) {
+        taken = amount.min(line.quantity);
+        remaining = line.quantity - taken;
+        plan = if taken == 0 {
+            Plan::Nothing
+        } else if remaining == 0 {
+            Plan::Delete {
+                row_id: line.row_id,
+            }
+        } else {
+            Plan::Update {
+                row_id: line.row_id,
+                quantity: remaining,
+            }
         };
-    };
-    let taken = amount.min(line.quantity);
-    let remaining = line.quantity - taken;
-    let plan = if taken == 0 {
-        Plan::Nothing
-    } else if remaining == 0 {
-        Plan::Delete {
-            row_id: line.row_id,
-        }
-    } else {
-        Plan::Update {
-            row_id: line.row_id,
-            quantity: remaining,
-        }
-    };
+    }
     Withdrawal {
         taken,
         remaining,
-        plan,
+        write: Write {
+            author: by,
+            holder,
+            item_id: item,
+            plan,
+        },
+    }
+}
+
+/// Moves up to `amount` of `item` from one holder to another: exactly
+/// what is taken lands on the receiver, or nothing moves. A procedure step
+/// only.
+pub fn plan_transfer(
+    existing: &[StockLine],
+    by: Author,
+    from: HolderRef,
+    to: HolderRef,
+    item: u32,
+    amount: u64,
+) -> Transfer {
+    transfer(existing, by, from, to, item, amount, false)
+}
+
+/// As [`plan_transfer`], but all of `amount` or none of it.
+pub fn plan_transfer_exact(
+    existing: &[StockLine],
+    by: Author,
+    from: HolderRef,
+    to: HolderRef,
+    item: u32,
+    amount: u64,
+) -> Transfer {
+    transfer(existing, by, from, to, item, amount, true)
+}
+
+fn transfer(
+    existing: &[StockLine],
+    by: Author,
+    from: HolderRef,
+    to: HolderRef,
+    item: u32,
+    amount: u64,
+    exact: bool,
+) -> Transfer {
+    let at_giver = line_of(existing, from, item).map_or(0, |l| l.quantity);
+    let nothing = |refused| Transfer {
+        taken: 0,
+        remaining: at_giver,
+        refused,
+        writes: Vec::new(),
+    };
+    if by.cause() == Cause::Consumption {
+        return nothing(Some(StockError::ConsumptionCannotMake));
+    }
+    if from == to || (exact && at_giver < amount) {
+        return nothing(None);
+    }
+    let give = plan_withdraw(existing, by, from, item, amount);
+    if give.taken == 0 {
+        return nothing(None);
+    }
+    match deposit_plan(existing, to, item, give.taken) {
+        Err(e) => nothing(Some(e)),
+        Ok(plan) => Transfer {
+            taken: give.taken,
+            remaining: give.remaining,
+            refused: None,
+            writes: vec![
+                give.write,
+                Write {
+                    author: by,
+                    holder: to,
+                    item_id: item,
+                    plan,
+                },
+            ],
+        },
     }
 }

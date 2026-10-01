@@ -17,6 +17,8 @@ with no row here.
 | `inv_no_owned_item_degrades_during_absence` | No owned item degrades during absence | deferred | | inventory/decay system |
 | `inv_budget_never_negative` | Budget never goes negative | deferred | | economy system |
 | `inv_stock_is_independent_per_holder` | Any interleaving of stock operations leaves each holder exactly as replaying its own operations alone (FR87) | covered | `inv_stock_is_independent_per_holder` | 6.2 |
+| `inv_stock_moves_only_by_hand` | Across any interleaving of authored makes, consumptions and moves, every quantity change is a returned write naming a citizen and one of two causes, and each item's total changes only by what was made and consumed (FR89) | covered | `inv_stock_moves_only_by_hand` | 6.3 |
+| `inv_stock_move_conserves_quantity` | The per-item sum across holders is unchanged by any sequence of moves, and a move the receiver refuses takes nothing from the giver (FR89) | covered | `inv_stock_move_conserves_quantity` | 6.3 |
 | `inv_item_instance_in_exactly_one_state` | Any interleaving of place and hold moves leaves each item instance in exactly one of its two forms (FR95) | covered | `inv_item_instance_in_exactly_one_state` | 6.11 |
 | `inv_collider_within_footprint` | `collider` is contained within `footprint` (FR128); the failure message reports both rectangles, collider and footprint, in sub-cells | covered | `inv_collider_within_footprint` | — |
 | `inv_collision_only_within_floor` | No cell on any other floor ever contributes to an entity's collision result (FR117) | covered | `inv_collision_only_within_floor` | — |
@@ -854,7 +856,23 @@ a room or a brand.
 | FR87: every holder kind is accounted for in the bound | covered | `server/bounds/tests/stock_bounds.rs` -- `every_holder_kind_names_its_table_or_has_none_yet` |
 | A stock row survives backup and restore by value, holder pair intact | covered | `scripts/ci/check-backup-restore.sh` -- `every stock row reads back identically from the restored database, and the three seeded business/citizen rows hold their exact holder pair, item and quantity` |
 | A stock row whose holder no longer exists (there are no foreign keys) | deferred | the first story that deletes a holder |
-| The one-row-per-(holder, item) rule holds on the real `stock` table: today it is proven only against `sim::stock` plans applied by a test-side driver, since no shell applies a `Plan` to the table yet | deferred | the story that builds the stock write path (6.3) |
+| The one-row-per-(holder, item) rule holds on the real `stock` table: today it is proven only against `sim::stock` plans applied by a test-side driver, since no shell applies a `Plan` to the table yet | deferred | the first story whose procedure step or consumption event writes stock |
+
+## Stock moves only by hand
+
+Story 6.3 (FR89, NFR18, NFR43): a stock write cannot be planned without a citizen and a cause.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| FR89: the cause of a stock write is a procedure step or a consumption event and nothing else | covered | `server/sim/tests/stock.rs` -- `the_cause_of_a_stock_write_is_a_step_or_a_consumption_and_nothing_else` |
+| FR89: no write without a named citizen | covered | `server/sim/tests/stock.rs` -- `an_author_needs_a_citizen`, `a_write_carries_its_author_holder_and_item` |
+| FR89: no public `sim::stock` function yields a write without an author | covered | `server/sim/tests/stock.rs` -- `no_public_stock_fn_yields_a_write_without_an_author` |
+| FR89: every quantity change is an authored write; totals change only by what was made and consumed | covered | `server/sim/tests/invariants.rs` -- `inv_stock_moves_only_by_hand` |
+| FR89: a move conserves quantity and is atomic | covered | `server/sim/tests/invariants.rs` -- `inv_stock_move_conserves_quantity`; `server/sim/tests/stock.rs` -- `a_transfer_the_receiver_cannot_take_moves_nothing` |
+| FR89, NFR18: no reducer under `server/src/` writes the `stock` table except restore | covered | `scripts/ci/check-stock-write-path.sh`, tested by `scripts/ci/tests/test-check-stock-write-path.sh` |
+| NFR43: a shortfall is a returned value, never an error | covered | `server/sim/tests/stock.rs` -- `a_shortfall_is_never_an_error_variant`, `a_withdrawal_reports_a_shortfall_and_never_underflows`, `an_up_to_transfer_takes_what_is_there_and_an_exact_one_all_or_nothing` |
+| Every real procedure step and consumption event reaches stock through the authored write | deferred | the first story that lands a step or a consumption event (6.4 or the first Epic 8 procedure); it adds the shell and widens `check-stock-write-path.sh` |
+| A business that runs out branches its procedure | deferred | the story that builds the procedure branch |
 
 ## Client property tests fail only for a reason
 

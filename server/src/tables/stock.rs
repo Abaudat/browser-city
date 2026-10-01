@@ -5,9 +5,10 @@
 //!
 //! At most one `stock` row per (`holder_kind`, `holder_id`, `item_id`); an
 //! absent row is zero and no row stores zero. SpacetimeDB has no composite
-//! unique constraint, so `sim::stock`'s plans uphold that. No reducer
-//! writes a quantity until the procedure path that owns stock changes
-//! exists.
+//! unique constraint, so `sim::stock`'s plans uphold that. Only an authored
+//! `sim::stock::Write` may change a quantity (FR89); `scripts/ci/check-stock-
+//! write-path.sh` fails any other file under `server/src/` that names the
+//! `stock` accessor, and this file carries no reducer.
 
 use spacetimedb::Timestamp;
 
