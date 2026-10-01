@@ -13,6 +13,8 @@ object 12 stairwell_top_railing
 object 13 stairwell_treads
 object 14 stairwell_bottom_railing
 object 15 wall_face
+object 16 platform_stair_flight
+object 17 platform_stair_railing
 item 1 bottle
 item 2 recycled_glass
 item 3 coin_1
