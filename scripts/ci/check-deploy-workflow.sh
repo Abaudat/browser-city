@@ -297,7 +297,7 @@ done <<< "$PUBLISH_JOBS"
 # --- 8. nothing under .github/workflows or scripts/ops names create_district:
 # the live world gets no generated district until the story that picks its
 # seed flips this assertion.
-CD_HITS="$(grep -rnF create_district "$SCAN_ROOT/.github/workflows" "$SCAN_ROOT/scripts/ops" 2>/dev/null | tr -d '' || true)"
+CD_HITS="$(grep -rnF create_district "$SCAN_ROOT/.github/workflows" "$SCAN_ROOT/scripts/ops" 2>/dev/null | tr -d '\r' || true)"
 if [ -n "$CD_HITS" ]; then
   echo "check-deploy-workflow: FAIL -- create_district is named under .github/workflows or scripts/ops; the live world gets no generated district yet:" >&2
   printf '%s
