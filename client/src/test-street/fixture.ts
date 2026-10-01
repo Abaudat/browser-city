@@ -262,11 +262,12 @@ export const STAIRWELL_FOOTPRINT = { width: 3, height: 3 } as const;
 const STAIRWELL_TREAD_ROW = 2;
 
 /** The three rows one stairwell is placed as: anchor row offset from the
- * art's north edge, and the def. */
+ * art's north edge, the def and its layer (the treads lie flat on the
+ * ground, so they are on the flat pass and never sort over the player). */
 const STAIRWELL_ROWS = [
-  { row: 1, defId: STAIRWELL_TOP_RAILING_DEF_ID },
-  { row: STAIRWELL_TREAD_ROW, defId: STAIRWELL_TREADS_DEF_ID },
-  { row: 3, defId: STAIRWELL_BOTTOM_RAILING_DEF_ID },
+  { row: 1, defId: STAIRWELL_TOP_RAILING_DEF_ID, layer: "objects" },
+  { row: STAIRWELL_TREAD_ROW, defId: STAIRWELL_TREADS_DEF_ID, layer: "ground_objects" },
+  { row: 3, defId: STAIRWELL_BOTTOM_RAILING_DEF_ID, layer: "objects" },
 ] as const;
 
 /** The demo's own reported entry: walking left (west) into the stairs
@@ -431,12 +432,12 @@ function stairwellRows(
   artY: number,
   floor: number,
 ): readonly StreetProp[] {
-  return STAIRWELL_ROWS.map(({ row, defId }, index) => ({
+  return STAIRWELL_ROWS.map(({ row, defId, layer }, index) => ({
     id: ids[index] as bigint,
     x,
     y: artY + row,
     floor,
-    layer: "objects" as const,
+    layer,
     defId,
   }));
 }
@@ -721,8 +722,8 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // `PLATFORM_UP_ANCHOR_X`, were covering the bench almost completely
   // when the two sat one cell apart).
   // --- The footbridge (story 1.13) -------------------------------------
-  // The deck stays on `objects`, not `ground_objects`: its def's own layer
-  // is `objects`, and changing a def's layer is out of scope for story 15.5.
+  // The deck is flat on the ground, so it is on the flat pass like its def:
+  // on the y-sorted pool it would draw over the player standing on it.
   // The deck itself: story 2.13 (Tim's direction) -- `bridge_deck` is a
   // one-cell def (a real 16x16 pavement tile, the same city sidewalk tile
   // the street below it is paved with), not a four-cell def with a
@@ -735,7 +736,7 @@ export const STREET_PROPS: readonly StreetProp[] = [
     x: BRIDGE_X0 + index,
     y: BRIDGE_DECK_Y,
     floor: BRIDGE_FLOOR,
-    layer: "objects" as const,
+    layer: "ground_objects" as const,
     defId: BRIDGE_DECK_DEF_ID,
   })),
   // The parapet along the deck's own north edge: real `wall_segment`

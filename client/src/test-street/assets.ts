@@ -28,10 +28,6 @@ export const ASSET_URLS: Readonly<Record<string, string>> = {
     "../../../ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Floors_16x16.png",
     import.meta.url,
   ).href,
-  wallSheet: new URL(
-    "../../../ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png",
-    import.meta.url,
-  ).href,
   poster: new URL(
     "../../../ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Poster_1.png",
     import.meta.url,
@@ -104,10 +100,3 @@ export const ASSET_URLS: Readonly<Record<string, string>> = {
     import.meta.url,
   ).href,
 };
-
-/** `wallTileV` is a real, whole-tile sub-rect of the `wallSheet` source
- * file (never a new PNG): the flush 16x16 swatch `wall_segment` also is.
- * It is the FR120 retraction stub's art (Artie's direction: "the short wall
- * caps already in Room_Builder_Walls_16x16.png", no new art) -- see
- * the stub companion in `drawables.ts`. */
-export const WALL_TILE_V_FRAME: PixelRect = { x: 0, y: 528, width: 16, height: 16 };

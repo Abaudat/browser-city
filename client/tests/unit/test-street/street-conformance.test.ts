@@ -807,6 +807,23 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     expect(failures).toEqual([]);
   });
 
+  it("5c. the finial row north of each stairwell's top railing is open floor: its three cells are standable", () => {
+    for (const floor of [PLAYER_START.floor, SUBWAY_FLOOR]) {
+      const top = STREET_PROPS.find(
+        (p) => isDefStreetProp(p) && p.defId === STAIRWELL_TOP_RAILING_DEF_ID && p.floor === floor,
+      );
+      if (!top) throw new Error(`no stairwell top railing on floor ${floor}`);
+      const width = sources.get(STAIRWELL_TOP_RAILING_DEF_ID)?.width ?? 0;
+      expect(width).toBe(3);
+      for (let dx = 0; dx < width; dx++) {
+        expect(
+          isCellStandable(world, config, top.x + dx, top.y - 1, floor),
+          `the finial cell (${top.x + dx}, ${top.y - 1}, floor ${floor}) is not standable`,
+        ).toBe(true);
+      }
+    }
+  });
+
   it("6. the subway transition pair is a real mirror: down the demo's own way (left), then the reverse input (right), lands back on the street treads -- never a detour through an unrelated direction", () => {
     const transitions = streetTransitionIndex();
     // The issue's own literal report: "descended by walking left" -- from
@@ -1143,22 +1160,14 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
     ).map((prop) => prop.assetKey),
   );
 
-  // Story 2.13, Tim's direction (cycle 2): the only two `ASSET_URLS` keys
-  // this guard accepts sharing a sheet with a real `defs/objects` sprite
-  // today -- both crop-base/ground-pass keys no real `StreetProp` row's
-  // own `assetKey` ever literally names (`wallTile`, not `wallSheet`,
-  // is what a wall row carries), so the old "not referenced by a real
-  // row" check exempted them structurally, by construction, even though
-  // `wall_segment`'s def now names the exact file `wallSheet` crops
-  // (`Room_Builder_Walls_16x16.png`) and `bridge_deck`'s def now names
-  // the exact file `sidewalk` paints (`Sidewalk_1_1.png`) -- both real,
-  // accepted collisions (a wall pass still crops `wallSheet` for its own
-  // non-`defId` cells; the ground pass still paints `sidewalk` outside
-  // any def's own footprint), never a shortcut regrowing. Never grows
-  // silently: a key lands here only by a human adding it, and this test
-  // fails the day one of these two stops actually colliding, so the list
-  // can only shrink.
-  const ACCEPTED_SHEET_COLLISIONS = new Set(["wallSheet", "sidewalk"]);
+  // The only `ASSET_URLS` key this guard accepts sharing a sheet with a
+  // real `defs/objects` sprite today: a ground-pass key no real
+  // `StreetProp` row's own `assetKey` names, though `bridge_deck`'s def
+  // names the exact file `sidewalk` paints (`Sidewalk_1_1.png`) -- the
+  // ground pass still paints it outside any def's own footprint. Never
+  // grows silently: a key lands here only by a human adding it, and this
+  // test fails the day it stops colliding, so the list can only shrink.
+  const ACCEPTED_SHEET_COLLISIONS = new Set(["sidewalk"]);
 
   it("no ModernTileset/ import a real StreetProp row still uses names a sheet a real defs/objects entry's own sprite already names", () => {
     const sheets = sheetByAssetKey();
@@ -1176,7 +1185,7 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
       }
       if (!propAssetKeys.has(key)) {
         // A ground-pass-only or crop-base key with no accepted reason to
-        // collide (not `wallSheet`/`sidewalk`) must still never collide.
+        // collide (not `sidewalk`) must still never collide.
         expect(
           collides,
           `'${key}' (not used by a real StreetProp row) newly collides with a real def's sprite '${sheet}' -- either route it through the atlas or add it to ACCEPTED_SHEET_COLLISIONS with a reason`,

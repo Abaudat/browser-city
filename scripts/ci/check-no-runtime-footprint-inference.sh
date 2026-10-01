@@ -25,7 +25,11 @@
 #      exactly one `const ALPHA_OPAQUE_THRESHOLD` and one `fn is_opaque`
 #      under `tools/defs-build/src/`, and `alpha::` referenced only from
 #      `propose.rs`, `silhouette.rs` and `atlas/character.rs`, never from
-#      `emit.rs`, `validate.rs`, `contact_sheet.rs` or `lib.rs`.
+#      `emit.rs`, `validate.rs`, `contact_sheet.rs` or `lib.rs`; no
+#      comparison on an alpha channel (`[3]` then a comparison operator)
+#      outside `alpha.rs`; and `silhouette::` referenced only from `lib.rs`
+#      and `propose.rs` (its `Err` carries measured spans -- no artefact may
+#      read one).
 #
 # Usage: check-no-runtime-footprint-inference.sh [repo-root]
 set -euo pipefail
@@ -125,6 +129,23 @@ if [ -d "$DEFS_BUILD_SRC" ]; then
   MATCHES="$(grep -rlE 'alpha::|crate::alpha' "$DEFS_BUILD_SRC" --include='*.rs'     | grep -vE '(^|/)alpha\.rs$|(^|/)propose\.rs$|(^|/)silhouette\.rs$|(^|/)atlas/character\.rs$' || true)"
   if [ -n "$MATCHES" ]; then
     echo "check-no-runtime-footprint-inference: FAIL -- 'alpha::' referenced outside propose.rs, silhouette.rs and atlas/character.rs -- pixels may refuse a build, never shape an artefact:" >&2
+    echo "$MATCHES" >&2
+    FAILED=1
+  fi
+fi
+
+if [ -d "$DEFS_BUILD_SRC" ]; then
+  MATCHES="$(grep -rnE '\[3\] *(>=|<=|>|<|==|!=)' "$DEFS_BUILD_SRC" --include='*.rs' \
+    | grep -vE '(^|/)alpha\.rs:' || true)"
+  if [ -n "$MATCHES" ]; then
+    echo "check-no-runtime-footprint-inference: FAIL -- an alpha-channel comparison outside alpha.rs -- go through alpha::is_opaque, never a second definition of transparent:" >&2
+    echo "$MATCHES" >&2
+    FAILED=1
+  fi
+  MATCHES="$(grep -rlE 'silhouette::|crate::silhouette' "$DEFS_BUILD_SRC" --include='*.rs' \
+    | grep -vE '(^|/)silhouette\.rs$|(^|/)lib\.rs$|(^|/)propose\.rs$' || true)"
+  if [ -n "$MATCHES" ]; then
+    echo "check-no-runtime-footprint-inference: FAIL -- 'silhouette::' referenced outside lib.rs and propose.rs -- the check's Err carries measured art spans, which must never shape an artefact:" >&2
     echo "$MATCHES" >&2
     FAILED=1
   fi

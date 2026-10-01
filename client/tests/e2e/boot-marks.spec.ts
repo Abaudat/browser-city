@@ -134,10 +134,10 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
 // a manhole cover -- replacing the six undrawn "rest collider" boundary
 // rects the scripted walk used to lean on): 29 requests, 1,451,572 bytes
 // -- ATLAS_BYTES_BUDGET is that byte figure times 1.05, rounded up to the
-// next 16 KiB. Story 15.3: 28 requests -- the stairwell is three
-// `defs/objects` rows now, so its raw `Stairs_Complete_2` sheet is no
-// longer fetched (the byte budget stays, an upper bound).
-const ATLAS_REQUEST_COUNT = 28;
+// next 16 KiB. Story 15.3: 27 requests -- the stairwell is three
+// `defs/objects` rows and the retraction stub is `wall_segment`, so the raw
+// `Stairs_Complete_2` and wall sheets are no longer fetched (the byte budget stays, an upper bound).
+const ATLAS_REQUEST_COUNT = 27;
 const ATLAS_BYTES_BUDGET = Math.ceil((1_451_572 * 1.05) / (16 * 1024)) * (16 * 1024);
 
 test("the atlas request count and byte total the mount actually fetches, once settled, stay inside budget (NFR1)", async ({

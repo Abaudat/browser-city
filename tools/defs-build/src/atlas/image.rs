@@ -6,6 +6,9 @@
 
 use crate::model::ATLAS_GUTTER_PX;
 
+/// A decoded sheet: `(width, height, rgba8)`.
+pub type DecodedSheet = (u32, u32, Vec<u8>);
+
 /// Decodes `bytes` (a whole PNG file) to `(width, height, rgba8)`,
 /// `rgba8.len() == width * height * 4`. Every source is normalised to
 /// straight (non-premultiplied), 8-bit-per-channel RGBA regardless of its
@@ -13,7 +16,7 @@ use crate::model::ATLAS_GUTTER_PX;
 /// premultiplied-alpha damage) -- `EXPAND`+`STRIP_16` get every input to
 /// 8-bit grayscale/RGB/indexed-expanded-to-RGB(A) first; whatever channel
 /// count remains is widened to RGBA here.
-pub fn decode_rgba8(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), String> {
+pub fn decode_rgba8(bytes: &[u8]) -> Result<DecodedSheet, String> {
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut reader = decoder

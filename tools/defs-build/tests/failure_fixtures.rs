@@ -785,19 +785,62 @@ fn an_archetype_derived_collider_that_disagrees_is_reported_at_the_archetype_lin
     );
 }
 
+/// `build` decodes every object sheet itself (once, shared with the pixel
+/// check and the packer): a sheet whose bytes were never read, or do not
+/// decode, fails the build naming the sheet path.
+#[test]
+fn a_referenced_sheet_that_was_never_read_or_does_not_decode_names_its_path() {
+    let files = read_tree(&valid_dir());
+    let (path, _) = object_sheet_bytes().into_iter().next().unwrap();
+    let run = |bytes: std::collections::BTreeMap<String, Vec<u8>>| {
+        defs_build::build(
+            &files,
+            &sheet_dims(),
+            &bytes,
+            &appearance_sheet_bytes(),
+            &code_tables(),
+            "",
+            "test-version",
+        )
+        .expect_err("the build must refuse")
+    };
+    let missing = run(std::collections::BTreeMap::new());
+    assert!(missing.message.contains(&path), "{missing}");
+    assert!(missing.message.contains("never read"), "{missing}");
+    let corrupt = run([(path.clone(), b"not a png".to_vec())]
+        .into_iter()
+        .collect());
+    assert!(corrupt.message.contains(&path), "{corrupt}");
+}
+
+/// Every message the pixel rule can print. Each of the four variants of
+/// `silhouette::Disagreement` carries one of these two phrases.
+fn is_pixel_rule_message(message: &str) -> bool {
+    message.contains("footprint band") || message.contains("bottom solid row")
+}
+
+const PIXEL_CATEGORIES: [&str; 5] = [
+    "collider-outside-art-span",
+    "art-base-outside-collider",
+    "collider-outside-art-rows",
+    "collider-over-transparent-band",
+    "archetype-collider-disagrees-with-art",
+];
+
 /// Every pre-existing invalid category fails for its own reason: the pixel
 /// rule runs last among the object checks, so it must never be the error
 /// an older category reports (`shared_malformed_cases.rs` only asserts
-/// "fails").
+/// "fails"). The marker is held honest by asserting every pixel fixture
+/// matches it, so a reworded message cannot silently blind this guard.
 #[test]
 fn no_pre_existing_invalid_category_fails_on_the_pixel_rule() {
-    const PIXEL_CATEGORIES: [&str; 5] = [
-        "collider-outside-art-span",
-        "art-base-outside-collider",
-        "collider-outside-art-rows",
-        "collider-over-transparent-band",
-        "archetype-collider-disagrees-with-art",
-    ];
+    for category in PIXEL_CATEGORIES {
+        let err = build_err(category);
+        assert!(
+            is_pixel_rule_message(&err.message),
+            "pixel fixture '{category}' no longer matches the pixel-rule marker: {err}"
+        );
+    }
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut checked = 0;
     let mut total = 0;
@@ -815,7 +858,7 @@ fn no_pre_existing_invalid_category_fails_on_the_pixel_rule() {
             build_err(&category)
         };
         assert!(
-            !err.message.contains("footprint band"),
+            !is_pixel_rule_message(&err.message),
             "'{category}' fails on the pixel rule: {err}"
         );
         checked += 1;

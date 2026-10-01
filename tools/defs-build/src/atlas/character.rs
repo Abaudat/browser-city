@@ -23,7 +23,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::atlas::image::decode_rgba8;
+use crate::atlas::image::{DecodedSheet, decode_rgba8};
 use crate::atlas::pack::{PackItem, SourceKey};
 use crate::model::{
     AccessoryDef, AppearanceLayoutDef, BodyDef, CHARACTER_GROUP_PREFIX, EyesDef, Family,
@@ -191,7 +191,7 @@ fn build_strip(
     decoded_w: u32,
     decoded_h: u32,
     decoded_rgba: &[u8],
-) -> Result<(u32, u32, Vec<u8>), String> {
+) -> Result<DecodedSheet, String> {
     let (strip_w, strip_h) = strip_size(layout);
     let mut strip = vec![0u8; strip_w as usize * strip_h as usize * 4];
 
@@ -219,14 +219,11 @@ fn build_strip(
         }
     }
 
-    let any_opaque = strip
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .any(|px| px[3] >= crate::alpha::ALPHA_OPAQUE_THRESHOLD);
+    let any_opaque =
+        (0..strip_h).any(|y| (0..strip_w).any(|x| crate::alpha::is_opaque(&strip, strip_w, x, y)));
     if !any_opaque {
         return Err(format!(
-            "{} '{}' sheet '{}': packed strip is fully transparent -- every declared cell decoded to alpha 0",
+            "{} '{}' sheet '{}': packed strip is fully transparent -- no pixel is opaque (alpha at or above the opaque threshold)",
             part.kind, part.key, part.sheet
         ));
     }
@@ -238,15 +235,10 @@ fn build_strip(
                     let column = dir_index as u32 * row.frames_per_direction + frame;
                     let cx = column * layout.cell_width;
                     let cy = row_index as u32 * layout.cell_height;
-                    let mut has_opaque = false;
-                    'cell: for y in 0..layout.cell_height {
-                        for x in 0..layout.cell_width {
-                            if get_px(&strip, strip_w, cx + x, cy + y)[3] != 0 {
-                                has_opaque = true;
-                                break 'cell;
-                            }
-                        }
-                    }
+                    let has_opaque = (0..layout.cell_height).any(|y| {
+                        (0..layout.cell_width)
+                            .any(|x| crate::alpha::is_opaque(&strip, strip_w, cx + x, cy + y))
+                    });
                     if !has_opaque {
                         return Err(format!(
                             "body '{}' sheet '{}': cell (row {row_index}, direction {dir_index}, frame {frame}) is fully transparent -- a body must be visible in every frame",
@@ -279,7 +271,7 @@ pub fn virtual_sheet_key(kind: PartKind, key: &str) -> String {
 #[derive(Debug)]
 pub struct CharacterPackItems {
     pub items: Vec<PackItem>,
-    pub extra_decoded: BTreeMap<String, (u32, u32, Vec<u8>)>,
+    pub extra_decoded: BTreeMap<String, DecodedSheet>,
 }
 
 /// Builds every character part's own compact strip -- see
@@ -302,7 +294,7 @@ pub fn build_character_pack_items(
     // Decode each real sheet at most once, even though no two parts ever
     // share one today -- mirrors `atlas::build::build_atlas`'s own
     // single-decode-per-sheet discipline.
-    let mut decoded: BTreeMap<&str, (u32, u32, Vec<u8>)> = BTreeMap::new();
+    let mut decoded: BTreeMap<&str, DecodedSheet> = BTreeMap::new();
 
     for part in parts {
         let layout = layout_for_family(layouts, part.family).ok_or_else(|| {
@@ -499,6 +491,28 @@ mod tests {
         assert!(err.contains("outfit"), "{err}");
         assert!(err.contains("outfit_01"), "{err}");
         assert!(err.contains("fully transparent"), "{err}");
+    }
+
+    /// One definition of transparent: alpha one below the threshold is
+    /// transparent for the strip and for a body cell, the threshold is not.
+    #[test]
+    fn the_threshold_boundary_holds_for_the_strip_and_for_a_body_cell() {
+        use crate::alpha::ALPHA_OPAQUE_THRESHOLD as T;
+        let l = one_direction_one_frame_layout(Family::Adult);
+        let build = |kind: PartKind, alpha: u8| {
+            let mut bytes = BTreeMap::new();
+            bytes.insert(
+                "sheet.png".to_string(),
+                solid_sheet(16, 32, [9, 9, 9, alpha]),
+            );
+            let p = part(kind, "k", Family::Adult, "sheet.png");
+            build_character_pack_items(&[p], &bytes, std::slice::from_ref(&l))
+        };
+        for kind in [PartKind::Outfit, PartKind::Body] {
+            let err = build(kind, T - 1).unwrap_err();
+            assert!(err.contains("fully transparent"), "{err}");
+            assert!(build(kind, T).is_ok(), "{kind:?} at the threshold");
+        }
     }
 
     #[test]

@@ -18,6 +18,7 @@ import {
   type StreetFootprint,
   type StreetLayer,
   type StreetPropByDef,
+  WALL_SEGMENT_DEF_ID,
 } from "./fixture";
 
 /** Every field a `Drawable` carries regardless of where its art comes
@@ -179,7 +180,7 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
           rank: rankOf("furniture"),
           stableId: prop.id + STUB_ID_OFFSET,
           floor: prop.floor,
-          assetKey: "wallTileV",
+          defId: WALL_SEGMENT_DEF_ID,
           sourceCol: 0,
           sourceRow: 0,
           footprintWidth: 1,

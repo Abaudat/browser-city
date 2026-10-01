@@ -22,11 +22,17 @@ import {
   BRIDGE_X1,
   INTERIOR_FLOOR_TILES,
   INTERIOR_FLOOR_TILES_B,
+  isDefStreetProp,
   LAMPPOST_CELL,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
   PLAYER_START,
   SIDEWALK_TILES,
+  STAIRWELL_BOTTOM_RAILING_DEF_ID,
+  STAIRWELL_TOP_RAILING_DEF_ID,
+  STAIRWELL_TREADS_DEF_ID,
+  STREET_FLOOR,
+  STREET_PROPS,
   SUBWAY_FLOOR,
   wallRunCellId,
 } from "../../../src/test-street/fixture";
@@ -150,6 +156,39 @@ describe("the story 1.6 street scene's committed ordering", () => {
     expect(compareDrawables(farCell, player)).toBeLessThan(0); // far end: behind the player
     expect(compareDrawables(nearCell, player)).toBeGreaterThan(0); // near end: in front of the player
   });
+
+  // Story 15.3 (Artie): the stairwell is three objects so the player walks
+  // between the railings -- behind the near (bottom) one, in front of the far
+  // (top) one -- wherever they stand on the treads, on either floor.
+  for (const floor of [STREET_FLOOR, SUBWAY_FLOOR]) {
+    it(`floor ${floor}: a player on any tread cell draws after the top railing and before the bottom railing`, () => {
+      const props = buildStreetProps();
+      const treads = STREET_PROPS.find(
+        (p) => isDefStreetProp(p) && p.defId === STAIRWELL_TREADS_DEF_ID && p.floor === floor,
+      );
+      if (!treads) throw new Error(`no stairwell treads on floor ${floor}`);
+      const railings = (defId: number) =>
+        props.filter((d) => "defId" in d && d.defId === defId && d.floor === floor);
+      const top = railings(STAIRWELL_TOP_RAILING_DEF_ID);
+      const bottom = railings(STAIRWELL_BOTTOM_RAILING_DEF_ID);
+      expect(top).toHaveLength(3);
+      expect(bottom).toHaveLength(3);
+      for (let dx = 0; dx < 3; dx++) {
+        // The middle of the tread row and its south edge, the feet a hair
+        // above the cell boundary.
+        for (const feetY of [treads.y + 0.5, treads.y + 0.99]) {
+          const player = buildPlayerDrawable(
+            rankOf("characters"),
+            treads.x + dx + 0.5,
+            feetY,
+            floor,
+          );
+          for (const rail of top) expect(compareDrawables(rail, player)).toBeLessThan(0);
+          for (const rail of bottom) expect(compareDrawables(rail, player)).toBeGreaterThan(0);
+        }
+      }
+    });
+  }
 
   it("a table and the glass on it share an anchor; the rank tiebreak keeps the glass on top", () => {
     const props = buildStreetProps();

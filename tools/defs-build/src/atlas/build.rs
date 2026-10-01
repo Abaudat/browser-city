@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use crate::atlas::character::{CharacterPartSource, PartKind, build_character_pack_items};
-use crate::atlas::image::{SourceCrop, composite_with_extrusion, encode_rgba8};
+use crate::atlas::image::{DecodedSheet, SourceCrop, composite_with_extrusion, encode_rgba8};
 use crate::atlas::pack::{PackItem, PageMeta, SourceKey, pack_all};
 use crate::atlas::theme::{check_shadow_variants, resolve_page_group, theme_group};
 use crate::model::{AppearanceLayoutDef, AtlasPageDef, AtlasRect, ObjectDef};
@@ -108,7 +108,7 @@ fn sprite_key(o: &ObjectDef) -> SourceKey {
 /// (the two `sheet_bytes` maps address disjoint sets of paths).
 pub fn build_atlas(
     objects: &[ObjectDef],
-    object_sheets: &BTreeMap<String, (u32, u32, Vec<u8>)>,
+    object_sheets: &BTreeMap<String, DecodedSheet>,
     page_groups: &BTreeMap<String, String>,
     character_parts: &[CharacterPartSource],
     appearance_sheet_bytes: &BTreeMap<String, Vec<u8>>,
@@ -158,7 +158,7 @@ pub fn build_atlas(
     // too -- `build` decodes each exactly once and shares the result
     // with the silhouette check.
     let character_decoded = character_pack.extra_decoded;
-    let mut decoded: BTreeMap<&str, &(u32, u32, Vec<u8>)> = character_decoded
+    let mut decoded: BTreeMap<&str, &DecodedSheet> = character_decoded
         .iter()
         .map(|(k, v)| (k.as_str(), v))
         .collect();
@@ -274,7 +274,7 @@ mod tests {
     use crate::atlas::image::decode_rgba8;
     use crate::model::SpriteRect;
 
-    fn decoded(bytes: &BTreeMap<String, Vec<u8>>) -> BTreeMap<String, (u32, u32, Vec<u8>)> {
+    fn decoded(bytes: &BTreeMap<String, Vec<u8>>) -> BTreeMap<String, DecodedSheet> {
         bytes
             .iter()
             .map(|(k, v)| (k.clone(), decode_rgba8(v).unwrap()))

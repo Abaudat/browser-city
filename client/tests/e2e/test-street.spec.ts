@@ -866,10 +866,10 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // every rest is now a real, drawn prop instead (`fixture.ts`'s own doc
   // comment says why).
   //
-  // Story 15.3: -1, the stairwell's raw sheet (both flights) now draws
-  // through the atlas as three `defs/objects` rows.
+  // Story 15.3: -2, the stairwell's raw sheet (both flights) and the raw
+  // wall sheet (the retraction stub) now draw through the atlas.
   const allBoundTextureSources = await page.evaluate(() => window.__bc?.allBoundTextureSources);
-  expect(allBoundTextureSources).toBe(19);
+  expect(allBoundTextureSources).toBe(18);
 
   // FR120, from inside: this building's own near-side walls are gone, and
   // the neighbour's are not -- keyed on the enclosure id, never proximity.

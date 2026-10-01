@@ -63,7 +63,7 @@ import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
-import { ASSET_URLS, type PixelRect, WALL_TILE_V_FRAME } from "./assets";
+import { ASSET_URLS, type PixelRect } from "./assets";
 import { buildPlayerAppearanceTuple, CROWD_FLOOR } from "./citizens";
 import { type CitizensLayerHandle, mountCitizensLayer } from "./citizens-layer";
 import {
@@ -712,9 +712,7 @@ export async function mountStreetScene(
     }),
   );
 
-  const wallSheet = textureFor("wallSheet", rawTextures);
   const textures = new Map(rawTextures);
-  textures.set("wallTileV", cropped(wallSheet, WALL_TILE_V_FRAME));
   textures.set("floor", cropped(textureFor("floorSheet", rawTextures), FLOOR_TILE_FRAME));
 
   // Story 2.6/2.13: every `defId`-placed prop draws through

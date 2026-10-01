@@ -129,5 +129,35 @@ for f in emit.rs validate.rs contact_sheet.rs lib.rs; do
     bash "$CHECK" "$d"
 done
 
+# --- story 15.3 review: no second definition of transparent, and the check's
+# Err never reaches an artefact -------------------------------------------
+d="$(plant)"
+printf 'fn f(px: [u8; 4]) -> bool { px[3] != 0 }\n' >> "$d/tools/defs-build/src/propose.rs"
+check "an alpha-channel comparison outside alpha.rs fails" 1 \
+  bash "$CHECK" "$d"
+
+d="$(plant)"
+printf 'fn f(px: [u8; 4]) -> bool { px[3] >= 5 }\n' >> "$d/tools/defs-build/src/validate.rs"
+check "a >= on the alpha channel in another file fails" 1 \
+  bash "$CHECK" "$d"
+
+d="$(plant)"
+printf 'fn f(px: [u8; 4]) -> u8 { px[3] }\nfn g(a: [u32; 4]) -> bool { a[1] > 0 }\n' >> "$d/tools/defs-build/src/propose.rs"
+check "reading the alpha byte without comparing it, and other indices, never false-positive" 0 \
+  bash "$CHECK" "$d"
+
+d="$(plant)"
+printf 'use crate::silhouette::check;\n' > "$d/tools/defs-build/src/lib.rs"
+printf 'use crate::silhouette::check_collider_against_art;\n' > "$d/tools/defs-build/src/propose.rs"
+check "silhouette:: referenced from lib.rs and propose.rs passes" 0 \
+  bash "$CHECK" "$d"
+
+for f in emit.rs validate.rs contact_sheet.rs; do
+  d="$(plant)"
+  printf 'use crate::silhouette::check_collider_against_art;\n' >> "$d/tools/defs-build/src/$f"
+  check "silhouette:: referenced from $f fails" 1 \
+    bash "$CHECK" "$d"
+done
+
 summary
 exit $?

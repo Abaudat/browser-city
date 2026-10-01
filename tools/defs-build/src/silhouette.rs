@@ -16,11 +16,9 @@
 use std::collections::BTreeMap;
 
 use crate::alpha::{PxRect, bottom_opaque_row, opaque_column_span, opaque_row_span};
+use crate::atlas::image::DecodedSheet;
 use crate::error::DefsError;
 use crate::model::{COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, RawDefs, SpriteRect};
-
-/// A decoded sheet: `(width, height, rgba8)`.
-pub type DecodedSheet = (u32, u32, Vec<u8>);
 
 /// Every way a collider can disagree with its art. Spans are half-open
 /// sub-cell ranges; a pixel edge that falls between two sub-cells is
@@ -521,6 +519,93 @@ mod tests {
             let b = sheet(32, 32, |x, y| if transparent { 0 } else { alpha[(y * 32 + x) as usize] });
             let c = rect(x0, y0, (x0 + dx).min(32), (y0 + dy).min(32));
             let _ = check_collider_against_art(&b, 32, &sprite(0, 0, 32, 32), 2, 16, c);
+        }
+    }
+
+    /// 16x16 sprite, a wide upper block (columns 2..14, rows 4..8) over a
+    /// narrow base (columns 6..10, rows 8..12): the band's column span and
+    /// its bottom solid row's span are different numbers, so swapping the
+    /// two clauses is caught here.
+    fn wide_over_narrow() -> Vec<u8> {
+        sheet(16, 16, |x, y| {
+            if in_block(x, y, (2, 14), (4, 8)) || in_block(x, y, (6, 10), (8, 12)) {
+                SOLID
+            } else {
+                0
+            }
+        })
+    }
+
+    fn run_wide(c: ColliderRect) -> Result<(), Disagreement> {
+        check_collider_against_art(&wide_over_narrow(), 16, &sprite(0, 0, 16, 16), 1, 16, c)
+    }
+
+    #[test]
+    fn a_band_wide_above_and_narrow_at_the_base_tells_clause_one_from_clause_two() {
+        // On the base, and spanning the wide part: both pass.
+        assert_eq!(run_wide(rect(6, 8, 10, 12)), Ok(()));
+        assert_eq!(run_wide(rect(2, 4, 14, 12)), Ok(()));
+        // One sub-cell inside the base fails clause 2, naming the base.
+        assert_eq!(
+            run_wide(rect(7, 4, 10, 12)),
+            Err(Disagreement::BottomRowOutsideCollider {
+                collider: (7, 10),
+                art: (6, 10)
+            })
+        );
+        assert_eq!(
+            run_wide(rect(6, 4, 9, 12)),
+            Err(Disagreement::BottomRowOutsideCollider {
+                collider: (6, 9),
+                art: (6, 10)
+            })
+        );
+        // One sub-cell outside the wide part fails clause 1, naming it.
+        for c in [rect(1, 4, 14, 12), rect(2, 4, 15, 12)] {
+            assert_eq!(
+                run_wide(c),
+                Err(Disagreement::ColliderColumnsOutsideArt {
+                    collider: (c.x0, c.x1),
+                    art: (2, 14)
+                })
+            );
+        }
+    }
+
+    proptest! {
+        #![proptest_config(cases())]
+
+        /// Oracle over two blocks: an upper block `[a, b) x [r0, r1)` over a
+        /// base `[c, d) x [r1, r2)` with `a <= c < d <= b`. Each clause is
+        /// predicted from its own span: columns from the upper block, the
+        /// bottom row from the base, rows from both.
+        #[test]
+        fn the_verdict_matches_an_independent_two_block_oracle(
+            a in 0u32..20, lead in 0u32..6, cw in 1u32..8, tail in 0u32..6,
+            r0 in 0u32..6, h0 in 1u32..4, h1 in 1u32..4,
+            x0 in 0i32..48, dx in 1i32..48, y0 in 0i32..16, dy in 1i32..16,
+        ) {
+            let (c, d) = (a + lead, a + lead + cw);
+            let b = d + tail;
+            let (r1, r2) = (r0 + h0, r0 + h0 + h1);
+            prop_assume!(b <= 48 && r2 <= 16);
+            let (x1, y1) = ((x0 + dx).min(48), (y0 + dy).min(16));
+            prop_assume!(x0 < x1 && y0 < y1);
+            let art = sheet(48, 16, |x, y| {
+                if in_block(x, y, (a, b), (r0, r1)) || in_block(x, y, (c, d), (r1, r2)) { SOLID } else { 0 }
+            });
+            let got = check_collider_against_art(&art, 48, &sprite(0, 0, 48, 16), 1, 16, rect(x0, y0, x1, y1));
+            let (a, b, c, d, r0, r2) = (a as i32, b as i32, c as i32, d as i32, r0 as i32, r2 as i32);
+            let want = if x0 < a || x1 > b {
+                Err(Disagreement::ColliderColumnsOutsideArt { collider: (x0, x1), art: (a as i64, b as i64) })
+            } else if x0 > c || x1 < d {
+                Err(Disagreement::BottomRowOutsideCollider { collider: (x0, x1), art: (c as i64, d as i64) })
+            } else if y0 < r0 || y1 > r2 {
+                Err(Disagreement::ColliderRowsOutsideArt { collider: (y0, y1), art: (r0 as i64, r2 as i64) })
+            } else {
+                Ok(())
+            };
+            prop_assert_eq!(got, want);
         }
     }
 }

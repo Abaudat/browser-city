@@ -68,7 +68,7 @@ pub fn build(
     let page_groups = validate::validate_page_groups(&raw)?;
     // Every object sheet is decoded exactly once; the check and the
     // packer share the result.
-    let mut object_sheets: std::collections::BTreeMap<String, silhouette::DecodedSheet> =
+    let mut object_sheets: std::collections::BTreeMap<String, atlas::image::DecodedSheet> =
         std::collections::BTreeMap::new();
     for o in &defs.objects {
         if object_sheets.contains_key(&o.sprite.sheet) {

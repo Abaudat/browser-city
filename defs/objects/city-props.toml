@@ -119,7 +119,7 @@ tags = ["wall", "wall_run"]
 id = 7
 key = "bridge_deck"
 name = "Bridge Deck"
-layer = "objects"
+layer = "ground_objects"
 # Story 2.13 (Tim's direction): no `repeat` axis on `sprite` -- a surface
 # wider than its art is a one-cell object placed once per cell, the same
 # way `wall_segment`'s own parapet run already is. The deck is one real
@@ -172,10 +172,11 @@ tags = ["stairs", "fixture"]
 id = 13
 key = "stairwell_treads"
 name = "Stairwell Treads"
-layer = "objects"
+layer = "ground_objects"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 32, w = 48, h = 16 }
 width = 3
-# Walkable: which floors the treads join is a `floor_transition` row
+# Flat on the ground, so it is drawn on the flat pass and the player stands
+# visibly on it. Which floors the treads join is a `floor_transition` row
 # anchored on a tread cell, never a field here.
 archetype = "underfoot_flat"
 tags = ["stairs", "underfoot", "fixture"]
