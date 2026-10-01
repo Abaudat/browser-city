@@ -668,3 +668,36 @@ fn the_committed_denominations_are_largest_first_with_unique_face_values() {
         assert!((1..=MAX_FACE_VALUE).contains(&d.face_value));
     }
 }
+
+/// Past the bound the answer must not flip on an engine constant: this
+/// customer's pile of notes is payable (the 50 goes over, one 20 comes
+/// back), so the till is not "short of change".
+#[test]
+fn a_big_pile_of_notes_is_not_reported_as_a_till_short_of_change() {
+    let note_50 = 150;
+    let table = denoms_of(&[(note_50, 50), (NOTE_20, 20)]);
+    let ledger = ledger_of(&[
+        (customer(), note_50, 1),
+        (customer(), NOTE_20, 50),
+        (till(), NOTE_20, 1),
+    ]);
+    let outcome = pay_with(&ledger, &table, &[(note_50, 1), (NOTE_20, 50)], 30);
+    assert_ne!(outcome, Payment::NoChange);
+}
+
+/// A table with a face above the cap is a typed answer, never a panic.
+#[test]
+fn a_face_above_the_cap_never_panics_the_payment() {
+    let table = denoms_of(&[(500, 5000), (COIN_1, 1)]);
+    let ledger = ledger_of(&[(customer(), 500, 1), (till(), COIN_1, 5000)]);
+    let _ = plan_payment(
+        ledger.lines(),
+        step(),
+        step(),
+        customer(),
+        till(),
+        &lot(&[(500, 1)]),
+        3800,
+        &table,
+    );
+}
