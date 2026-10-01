@@ -16,12 +16,15 @@ import {
   BRIDGE_UNDER_CURB_X,
   BRIDGE_UNDER_EXIT_Y,
   BRIDGE_UNDER_PILLAR_X,
+  isDefStreetProp,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
   PLAYER_START,
   SHOPFRONT_EXIT_Y,
+  STAIRS_X,
   STAIRS_Y,
   STREET_BUILDING_AREAS,
+  STREET_PROPS,
   STREET_ROOM_AREAS,
   STREET_TRANSITIONS,
   STREET_WALK_DIRECTIONS,
@@ -38,12 +41,18 @@ import {
   initialFloorWalkState,
   stepAndTransition,
 } from "../../../src/world/floor-walk";
+import { footprintCells } from "../../../src/world/footprint";
 import type { MovementConfig } from "../../../src/world/movement";
 import { loadMovementConfig } from "../../../src/world/movement-config";
 import type { ObjectSource } from "../../../src/world/object-defs";
 import { objectDefsById, windowDefIds } from "../../../src/world/object-defs";
 import { OwnershipIndex } from "../../../src/world/ownership";
-import { TransitionIndex } from "../../../src/world/transitions";
+import {
+  forwardOpenNeighbor,
+  pairTransitions,
+  reverseOpenNeighbor,
+  TransitionIndex,
+} from "../../../src/world/transitions";
 import { WorldIndex } from "../../../src/world/world-index";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -333,4 +342,81 @@ export function simulateStreetWalk(
     checkpoints.push({ label: segment.label, state });
   }
   return checkpoints;
+}
+
+// --- stairwells, read from the committed defs (story 15.11) ---------------
+// A floor's stairwell is every placed def row on that floor whose def
+// carries the `stairs` tag and touches the row under the anchor, edge to
+// edge. No def id, row count or floor is named here.
+const objectSources = streetObjectSources();
+const stairsTag = committedDefs().tags.find((t) => t.key === "stairs");
+if (!stairsTag) throw new Error("defs/ declares no `stairs` tag");
+const STAIRS_TAG_ID: number = stairsTag.id;
+const committed = committedDefs();
+
+export type DefProp = Extract<(typeof STREET_PROPS)[number], { defId: number }>;
+export type Cell = { readonly x: number; readonly y: number };
+
+export function propCells(prop: (typeof STREET_PROPS)[number]): Cell[] {
+  const extent = isDefStreetProp(prop)
+    ? (objectSources.get(prop.defId) ?? { width: 1, height: 1 })
+    : (prop.footprint ?? { width: 1, height: 1 });
+  return footprintCells(prop.x, prop.y, extent);
+}
+
+export function coversCell(prop: (typeof STREET_PROPS)[number], cell: Cell): boolean {
+  return propCells(prop).some((c) => c.x === cell.x && c.y === cell.y);
+}
+
+export function stairwellRowsAt(anchor: Cell & { readonly floor: number }): DefProp[] {
+  const tagged = STREET_PROPS.filter(
+    (p): p is DefProp =>
+      isDefStreetProp(p) &&
+      p.floor === anchor.floor &&
+      (committed.objects.find((o) => o.id === p.defId)?.tags ?? []).includes(STAIRS_TAG_ID),
+  );
+  const group = tagged.filter((p) => coversCell(p, anchor));
+  for (let grew = true; grew; ) {
+    grew = false;
+    const cells = group.flatMap(propCells);
+    for (const p of tagged) {
+      if (group.includes(p)) continue;
+      const touches = propCells(p).some((c) =>
+        cells.some((g) => Math.abs(g.x - c.x) + Math.abs(g.y - c.y) <= 1),
+      );
+      if (touches) {
+        group.push(p);
+        grew = true;
+      }
+    }
+  }
+  return group;
+}
+
+/** The tread path: from the anchor back toward the opening while still
+ * inside the union footprint, then the entry cell just past it. */
+export function treadPath(rows: readonly DefProp[], anchor: Cell, direction: Cell) {
+  const cells = rows.flatMap(propCells);
+  const inFootprint = (c: Cell) => cells.some((cell) => cell.x === c.x && cell.y === c.y);
+  const path: Cell[] = [];
+  let c: Cell = { x: anchor.x, y: anchor.y };
+  for (; inFootprint(c); c = { x: c.x - direction.x, y: c.y - direction.y }) path.push(c);
+  return { cells, path, entry: c };
+}
+
+/** Each subway anchor with its own open neighbour, from the pairing's
+ * own `d` (never re-derived here). */
+export function subwayAnchors() {
+  const { pairings } = pairTransitions(STREET_TRANSITIONS);
+  const subway = pairings.find(
+    (p) =>
+      p.forward.x === STAIRS_X &&
+      p.forward.y === STAIRS_Y &&
+      p.forward.floor === PLAYER_START.floor,
+  );
+  if (!subway) throw new Error("no mirrored pairing found for the subway's own down transition");
+  return [
+    { anchor: subway.forward, open: forwardOpenNeighbor(subway) },
+    { anchor: subway.reverse, open: reverseOpenNeighbor(subway) },
+  ];
 }

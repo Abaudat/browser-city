@@ -148,7 +148,7 @@ fn shrinking_the_lamppost_collider_to_its_old_box_names_the_columns() {
     );
 }
 
-/// Story 15.6: the platform flight's railing is a real collider row, so the
+/// Story 15.11: the platform flight's railing is a real collider row, so the
 /// check reads it. Its solid columns are 0..47 (the last pixel column is
 /// shadow); shifted one sub-cell east, the build names the key and columns.
 #[test]

@@ -74,20 +74,20 @@ import {
 import { footprintCells, footprintOrigin } from "../../../src/world/footprint";
 import { bodyRect, MAX_DELTA_MS, step } from "../../../src/world/movement";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
-import {
-  blockedNeighborsOf,
-  forwardOpenNeighbor,
-  pairTransitions,
-  reverseOpenNeighbor,
-} from "../../../src/world/transitions";
+import { blockedNeighborsOf } from "../../../src/world/transitions";
 import { checkWorldSpec } from "../../../src/world/world-spec";
 import {
+  type Cell,
   committedDefs,
+  coversCell,
+  type DefProp,
   isCellStandable,
   lamppostApproachMaxX,
   lamppostRestY,
   onUnderpassRowY,
+  propCells,
   simulateStreetWalk,
+  stairwellRowsAt,
   streetMovementConfig,
   streetObjectSources,
   streetOwnershipIndex,
@@ -95,10 +95,13 @@ import {
   streetWalkInputs,
   streetWindowDefIds,
   streetWorldIndex,
+  subwayAnchors,
+  treadPath,
   underpassTurnMaxX,
 } from "./street-world";
 
 const defs = committedDefs();
+const objectSources = streetObjectSources();
 const config = streetMovementConfig();
 const world = streetWorldIndex();
 const ownership = streetOwnershipIndex();
@@ -107,82 +110,6 @@ function objectDef(defId: number) {
   const def = defs.objects.find((object) => object.id === defId);
   if (!def) throw new Error(`no defs/objects entry with id ${defId}`);
   return def;
-}
-
-// --- stairwells, read from the committed defs (story 15.6) ---------------
-// A floor's stairwell is every placed def row on that floor whose def
-// carries the `stairs` tag and touches the row under the anchor, edge to
-// edge. No def id, row count or floor is named here.
-const objectSources = streetObjectSources();
-const stairsTag = defs.tags.find((t) => t.key === "stairs");
-if (!stairsTag) throw new Error("defs/ declares no `stairs` tag");
-const STAIRS_TAG_ID: number = stairsTag.id;
-
-type DefProp = Extract<(typeof STREET_PROPS)[number], { defId: number }>;
-type Cell = { readonly x: number; readonly y: number };
-
-function propCells(prop: (typeof STREET_PROPS)[number]): Cell[] {
-  const extent = isDefStreetProp(prop)
-    ? (objectSources.get(prop.defId) ?? { width: 1, height: 1 })
-    : (prop.footprint ?? { width: 1, height: 1 });
-  return footprintCells(prop.x, prop.y, extent);
-}
-
-function coversCell(prop: (typeof STREET_PROPS)[number], cell: Cell): boolean {
-  return propCells(prop).some((c) => c.x === cell.x && c.y === cell.y);
-}
-
-function stairwellRowsAt(anchor: Cell & { readonly floor: number }): DefProp[] {
-  const tagged = STREET_PROPS.filter(
-    (p): p is DefProp =>
-      isDefStreetProp(p) &&
-      p.floor === anchor.floor &&
-      objectDef(p.defId).tags.includes(STAIRS_TAG_ID),
-  );
-  const group = tagged.filter((p) => coversCell(p, anchor));
-  for (let grew = true; grew; ) {
-    grew = false;
-    const cells = group.flatMap(propCells);
-    for (const p of tagged) {
-      if (group.includes(p)) continue;
-      const touches = propCells(p).some((c) =>
-        cells.some((g) => Math.abs(g.x - c.x) + Math.abs(g.y - c.y) <= 1),
-      );
-      if (touches) {
-        group.push(p);
-        grew = true;
-      }
-    }
-  }
-  return group;
-}
-
-/** The tread path: from the anchor back toward the opening while still
- * inside the union footprint, then the entry cell just past it. */
-function treadPath(rows: readonly DefProp[], anchor: Cell, direction: Cell) {
-  const cells = rows.flatMap(propCells);
-  const inFootprint = (c: Cell) => cells.some((cell) => cell.x === c.x && cell.y === c.y);
-  const path: Cell[] = [];
-  let c: Cell = { x: anchor.x, y: anchor.y };
-  for (; inFootprint(c); c = { x: c.x - direction.x, y: c.y - direction.y }) path.push(c);
-  return { cells, path, entry: c };
-}
-
-/** Each subway anchor with its own open neighbour, from the pairing's
- * own `d` (never re-derived here). */
-function subwayAnchors() {
-  const { pairings } = pairTransitions(STREET_TRANSITIONS);
-  const subway = pairings.find(
-    (p) =>
-      p.forward.x === STAIRS_X &&
-      p.forward.y === STAIRS_Y &&
-      p.forward.floor === PLAYER_START.floor,
-  );
-  if (!subway) throw new Error("no mirrored pairing found for the subway's own down transition");
-  return [
-    { anchor: subway.forward, open: forwardOpenNeighbor(subway) },
-    { anchor: subway.reverse, open: reverseOpenNeighbor(subway) },
-  ];
 }
 
 describe("the hand-laid test street (AC1, AC2)", () => {
@@ -872,11 +799,14 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     const { anchor, open } = platformAnchor();
     for (const blocked of blockedNeighborsOf(anchor, open.direction)) {
       const closers = STREET_PROPS.filter(
-        (p) => p.floor === SUBWAY_FLOOR && coversCell(p, blocked),
+        (p) =>
+          p.floor === SUBWAY_FLOOR &&
+          coversCell(p, blocked) &&
+          objectSources.get(isDefStreetProp(p) ? p.defId : streetDefId(p.id))?.collider,
       );
       expect(
         closers.length,
-        `(${blocked.x}, ${blocked.y}) is closed by no placed prop`,
+        `(${blocked.x}, ${blocked.y}) is closed by no placed prop with a collider`,
       ).toBeGreaterThan(0);
     }
     expect(STREET_BOUNDARY.some((r) => (r.floor ?? PLAYER_START.floor) === SUBWAY_FLOOR)).toBe(
@@ -1371,6 +1301,19 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
     return out;
   }
 
+  /** `png` flipped left to right, in memory. */
+  function mirrorOf(png: PNG): PNG {
+    const out = new PNG({ width: png.width, height: png.height });
+    for (let y = 0; y < png.height; y++) {
+      for (let x = 0; x < png.width; x++) {
+        const from = (y * png.width + x) * 4;
+        const to = (y * png.width + (png.width - 1 - x)) * 4;
+        for (let c = 0; c < 4; c++) out.data[to + c] = png.data[from + c] ?? 0;
+      }
+    }
+    return out;
+  }
+
   /** Mean height (px from the top) of the orange/yellow tread tops over
    * the sprite's west and east thirds; smaller = higher. */
   function treadTopByThird(png: PNG): { west: number; east: number } {
@@ -1420,7 +1363,6 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
   it("the platform's up-stairs rise toward their anchor; the street's down-stairs sink toward theirs", () => {
     // Street half: the anchor (west) end is lower on screen than the opening.
     const streetRows = stairwellRowsAt(streetAnchor().anchor);
-    expect(streetRows.length).toBe(3);
     const streetAnchorWest = STAIRS_X < Math.min(...flightOf(streetRows).map((p) => p.x)) + 1;
     expect(streetAnchorWest).toBe(true);
     const down = treadTopByThird(decode(streetRows));
@@ -1438,42 +1380,93 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
     const up = treadTopByThird(decode(flight));
     const [ahead, behind] = climb.x > 0 ? [up.east, up.west] : [up.west, up.east];
     expect(ahead).toBeLessThan(behind);
+
+    // Positive control: the same art mirrored in memory reads as sinking
+    // along the climb, so the classifier can tell the two apart.
+    const mirroredUp = treadTopByThird(mirrorOf(decode(flight)));
+    const [mAhead, mBehind] =
+      climb.x > 0 ? [mirroredUp.east, mirroredUp.west] : [mirroredUp.west, mirroredUp.east];
+    expect(mAhead).toBeGreaterThanOrEqual(mBehind);
   });
 
-  it("the platform flight is not the street stairwell's descent art: no shared sheet, no pixel-identical or mirrored window", () => {
-    const streetRows = stairwellRowsAt(streetAnchor().anchor);
-    const { flight } = platformFlight();
-    const streetSheets = new Set(streetRows.map((p) => objectDef(p.defId).sprite.sheet));
-    for (const p of flight) {
-      expect(streetSheets.has(objectDef(p.defId).sprite.sheet)).toBe(false);
-    }
-    // The street art, and every flight sprite sliding over it unflipped and
-    // mirrored.
-    const street = decode(streetRows);
-    const pixel = (png: PNG, x: number, y: number) =>
-      png.data.subarray((y * png.width + x) * 4, (y * png.width + x) * 4 + 4).join(",");
-    for (const p of flight) {
-      const s = objectDef(p.defId).sprite;
-      const art = new PNG({ width: s.w, height: s.h });
-      PNG.bitblt(sheetOf(s.sheet), art, s.x, s.y, s.w, s.h, 0, 0);
-      for (let oy = 0; oy + s.h <= street.height; oy++) {
-        for (let ox = 0; ox + s.w <= street.width; ox++) {
-          for (const mirrored of [false, true]) {
-            let same = true;
-            for (let y = 0; y < s.h && same; y++) {
-              for (let x = 0; x < s.w && same; x++) {
-                const ax = mirrored ? s.w - 1 - x : x;
-                same = pixel(art, ax, y) === pixel(street, ox + x, oy + y);
-              }
-            }
-            expect(
-              same,
-              `${objectDef(p.defId).key} equals the street stairwell art at (${ox}, ${oy})${mirrored ? " mirrored" : ""}`,
-            ).toBe(false);
-          }
+  /** The share of identical RGBA pixels between `art` and the same-size
+   * window of `street` at `(ox, oy)`, `art` optionally mirrored. */
+  function matchFraction(art: PNG, street: PNG, ox: number, oy: number, mirrored: boolean) {
+    let same = 0;
+    for (let y = 0; y < art.height; y++) {
+      for (let x = 0; x < art.width; x++) {
+        const ai = (y * art.width + (mirrored ? art.width - 1 - x : x)) * 4;
+        const si = ((oy + y) * street.width + ox + x) * 4;
+        if (
+          art.data[ai] === street.data[si] &&
+          art.data[ai + 1] === street.data[si + 1] &&
+          art.data[ai + 2] === street.data[si + 2] &&
+          art.data[ai + 3] === street.data[si + 3]
+        ) {
+          same++;
         }
       }
     }
+    return same / (art.width * art.height);
+  }
+
+  /** The best match of `art` anywhere over `street`, both orientations. */
+  function bestMatch(art: PNG, street: PNG) {
+    let best = { fraction: 0, mirrored: false };
+    for (let oy = 0; oy + art.height <= street.height; oy++) {
+      for (let ox = 0; ox + art.width <= street.width; ox++) {
+        for (const mirrored of [false, true]) {
+          const fraction = matchFraction(art, street, ox, oy, mirrored);
+          if (fraction > best.fraction) best = { fraction, mirrored };
+        }
+      }
+    }
+    return best;
+  }
+
+  const spriteArt = (sprite: { sheet: string; x: number; y: number; w: number; h: number }) => {
+    const art = new PNG({ width: sprite.w, height: sprite.h });
+    PNG.bitblt(sheetOf(sprite.sheet), art, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0);
+    return art;
+  };
+
+  /** At or above this share of identical pixels a sprite is the street's
+   * descent art, however it is cut or flipped. */
+  const RETREAT_MATCH_FRACTION = 0.75;
+
+  it("the platform stairwell is not the street stairwell's descent art: no shared sheet, and no row matches it at 0.75 or more, unflipped or mirrored", () => {
+    const streetRows = stairwellRowsAt(streetAnchor().anchor);
+    const platformRows = stairwellRowsAt(platformFlight().anchor);
+    expect(platformRows.length).toBeGreaterThan(0);
+    const streetSheets = new Set(streetRows.map((p) => objectDef(p.defId).sprite.sheet));
+    const street = decode(streetRows);
+    for (const p of platformRows) {
+      const { key, sprite } = objectDef(p.defId);
+      expect(streetSheets.has(sprite.sheet), `${key} shares a sheet with the street`).toBe(false);
+      const best = bestMatch(spriteArt(sprite), street);
+      expect(
+        best.fraction,
+        `${key} matches the street stairwell art at ${best.fraction}${best.mirrored ? " mirrored" : ""}`,
+      ).toBeLessThan(RETREAT_MATCH_FRACTION);
+    }
+  });
+
+  it("the retreat matcher fires: the street's own tread sprite matches unflipped, and Stairs_Complete_4's tread row matches mirrored", () => {
+    const streetRows = stairwellRowsAt(streetAnchor().anchor);
+    const street = decode(streetRows);
+    const treads = streetRows.find((p) => objectDef(p.defId).key === "stairwell_treads");
+    if (!treads) throw new Error("the street stairwell has no treads row");
+    const own = bestMatch(spriteArt(objectDef(treads.defId).sprite), street);
+    expect(own.fraction).toBeGreaterThanOrEqual(RETREAT_MATCH_FRACTION);
+    expect(own.mirrored).toBe(false);
+
+    const sheet = objectDef(treads.defId).sprite.sheet.replace(
+      "Stairs_Complete_2",
+      "Stairs_Complete_4",
+    );
+    const other = bestMatch(spriteArt({ sheet, x: 0, y: 32, w: 48, h: 16 }), street);
+    expect(other.fraction).toBeGreaterThanOrEqual(RETREAT_MATCH_FRACTION);
+    expect(other.mirrored).toBe(true);
   });
 
   it("no ModernTileset sheet is drawn flipped: no negative scale or flip in the fixture or renderer", () => {

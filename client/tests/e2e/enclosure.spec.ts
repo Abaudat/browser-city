@@ -263,7 +263,7 @@ test.describe("story 1.7: enclosure visibility", () => {
     // this story exists (nothing from the street draws on the platform).
     expect(platformVisibility["crowd:0"]).toBe("hidden");
 
-    // Story 15.6: the platform baseline -- the player rests on the landing,
+    // Story 15.11: the platform baseline -- the player rests on the landing,
     // on the flight that steps up to the east wall under the green
     // up-arrow, its railing south of it and the entry cell open.
     await expect(canvasOf(page)).toHaveScreenshot("platform.png", {

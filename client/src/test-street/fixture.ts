@@ -165,7 +165,7 @@ export const STAIRWELL_BOTTOM_RAILING_DEF_ID = 14;
  * cell wide. West and east runs are `wall_segment` rows. */
 export const WALL_FACE_DEF_ID = 15;
 /** The platform's way up: a flat flight and the railing along its south
- * side (story 15.6). */
+ * side (story 15.11). */
 export const PLATFORM_STAIR_FLIGHT_DEF_ID = 16;
 export const PLATFORM_STAIR_RAILING_DEF_ID = 17;
 

@@ -204,7 +204,7 @@ width = 1
 archetype = "full_cell_blocker"
 tags = ["wall", "wall_run"]
 
-# The platform's way up (story 15.6): the flight the street stairwell is
+# The platform's way up (story 15.11): the flight the street stairwell is
 # seen from below. `Stairs_3` rises east natively; the band from sheet row
 # 13 keeps all four tread nosings and is one cell tall. Flat, so it is drawn
 # on the flat pass and never over a player standing on it.
