@@ -37,6 +37,14 @@ pub enum Side {
     Customer,
 }
 
+/// One side of the counter: a holder and the citizen who authors whatever
+/// leaves it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Party {
+    pub holder: HolderRef,
+    pub by: Author,
+}
+
 /// What a payment came to. Only `Paid` carries writes, which land in one
 /// transaction or not at all. Every other variant is something a person at
 /// the counter could watch: nothing moved.
@@ -44,7 +52,8 @@ pub enum Side {
 pub enum Payment {
     /// The customer's pieces went to the till and the change came back,
     /// netted per denomination: a piece handed over and handed straight
-    /// back does not move. `change` is the whole change, possibly empty.
+    /// back does not move. `change` is the change chosen from the till and
+    /// the tender, possibly empty.
     Paid {
         change: BTreeMap<u32, u64>,
         writes: Vec<Write>,
@@ -55,9 +64,14 @@ pub enum Payment {
     TenderBelowPrice,
     /// The customer does not hold this much of the item.
     TenderNotHeld { item_id: u32 },
-    /// No combination of what the till holds, and what was just tendered,
-    /// makes the change due.
+    /// The change due is under `MAX_FACE_VALUE` and no combination of what
+    /// the till holds, and what was just tendered, makes it. The till is
+    /// short.
     NoChange,
+    /// The change due reached `MAX_FACE_VALUE`, so whole tendered pieces
+    /// went back, largest first, and what remains cannot be made. Not a
+    /// short till: the tender is too big for the search to settle.
+    TenderTooLarge,
     /// This side would pass the line ceiling.
     NoRoom(Side),
 }
@@ -76,6 +90,17 @@ fn quantity_of(existing: &[StockLine], holder: HolderRef, item: u32) -> u64 {
         .map_or(0, |l| l.quantity)
 }
 
+/// The denominations worth anything, largest face value first.
+fn largest_first(denoms: &[Denomination]) -> Vec<Denomination> {
+    let mut table: Vec<Denomination> = denoms
+        .iter()
+        .copied()
+        .filter(|d| d.face_value > 0)
+        .collect();
+    table.sort_by_key(|d| std::cmp::Reverse(d.face_value));
+    table
+}
+
 /// The face value of a handful: a checked sum, thrown away after use. A
 /// zero quantity counts for nothing; an item that is not a denomination is
 /// an error.
@@ -91,18 +116,17 @@ pub fn value_of(lot: &BTreeMap<u32, u64>, denoms: &[Denomination]) -> Result<u64
     Ok(total)
 }
 
-/// The pieces `holder` holds that sum to exactly `amount`: `Ok(None)` only
-/// when no combination of what it holds does. Fewest pieces; ties to more
-/// of the larger denomination, whatever order the table is in. An `amount`
-/// at or above `MAX_FACE_VALUE` is `Err(AmountOutOfRange)` before anything
-/// is allocated. The search is iterative and grows with the square of the
-/// amount (a table of `amount` cells per denomination, each taking up to
-/// `amount` / face value steps), never with the quantities held;
-/// `MAX_FACE_VALUE` is what bounds it, so it may not be raised without
-/// changing this search.
+/// The pieces out of `available` (item to quantity) that sum to exactly
+/// `amount`: `Ok(None)` only when no combination of them does. Fewest
+/// pieces; ties to more of the larger denomination, whatever order the
+/// table is in. An `amount` at or above `MAX_FACE_VALUE` is
+/// `Err(AmountOutOfRange)` before anything is allocated. The search is
+/// iterative and grows with the square of the amount (a table of `amount`
+/// cells per denomination, each taking up to `amount` / face value steps),
+/// never with the quantities held; `MAX_FACE_VALUE` is what bounds it, so
+/// it may not be raised without changing this search.
 pub fn choose_change(
-    existing: &[StockLine],
-    holder: HolderRef,
+    available: &BTreeMap<u32, u64>,
     amount: u64,
     denoms: &[Denomination],
 ) -> Result<Option<BTreeMap<u32, u64>>, CashError> {
@@ -110,17 +134,12 @@ pub fn choose_change(
         return Err(CashError::AmountOutOfRange);
     }
     let target = amount as usize;
-    let mut table: Vec<Denomination> = denoms
-        .iter()
-        .copied()
-        .filter(|d| d.face_value > 0)
-        .collect();
-    table.sort_by_key(|d| std::cmp::Reverse(d.face_value));
+    let table = largest_first(denoms);
     // Pieces of each kind that could ever matter.
     let usable: Vec<usize> = table
         .iter()
         .map(|d| {
-            let held = quantity_of(existing, holder, d.item_id);
+            let held = available.get(&d.item_id).copied().unwrap_or(0);
             held.min(amount / u64::from(d.face_value)) as usize
         })
         .collect();
@@ -169,23 +188,24 @@ pub fn choose_change(
 /// Plans a cash payment as one unit, every write or none. The change is
 /// chosen from the till as it stands with the tender in it, and what each
 /// side hands over is netted per denomination, so every row moves one way
-/// or not at all. What moves customer to till is authored by
-/// `customer_by`, what moves till to customer by `cashier_by`. A line one
-/// direction empties is room for the other. A change due at or above
-/// `MAX_FACE_VALUE` is met by handing whole tendered pieces back, largest
-/// first, until it is under: they never leave the customer.
-#[allow(clippy::too_many_arguments)]
+/// or not at all. What moves customer to till is authored by the
+/// customer's `by`, what moves till to customer by the till's. A line one
+/// direction empties is room for the other.
+///
+/// The change is exact while the change due is under `MAX_FACE_VALUE`. At
+/// or above it whole tendered pieces go back first, largest first, never
+/// more than the due covers, until it is under (they never leave the
+/// customer); the change is then exact for what remains, and a remainder
+/// that cannot be made is `TenderTooLarge`.
 pub fn plan_payment(
     existing: &[StockLine],
-    customer_by: Author,
-    cashier_by: Author,
-    customer: HolderRef,
-    till: HolderRef,
+    customer: Party,
+    till: Party,
     tender: &BTreeMap<u32, u64>,
     price: u64,
     denoms: &[Denomination],
 ) -> Result<Payment, CashError> {
-    if customer == till {
+    if customer.holder == till.holder {
         return Ok(Payment::SameHolder);
     }
     let value = value_of(tender, denoms)?;
@@ -196,7 +216,7 @@ pub fn plan_payment(
         .collect();
     if let Some((&item_id, _)) = tendered
         .iter()
-        .find(|&(&i, &q)| quantity_of(existing, customer, i) < q)
+        .find(|&(&i, &q)| quantity_of(existing, customer.holder, i) < q)
     {
         return Ok(Payment::TenderNotHeld { item_id });
     }
@@ -205,39 +225,40 @@ pub fn plan_payment(
     };
 
     let ceiling = u64::from(MAX_FACE_VALUE);
-    let mut largest_first: Vec<Denomination> = denoms.to_vec();
-    largest_first.sort_by_key(|d| std::cmp::Reverse(d.face_value));
-    for d in largest_first.iter().filter(|d| d.face_value > 0) {
+    let mut handed_back = false;
+    for d in largest_first(denoms) {
         if due < ceiling {
             break;
         }
         let face = u64::from(d.face_value);
         let held = tendered.get(&d.item_id).copied().unwrap_or(0);
-        let back = (due - (ceiling - 1)).div_ceil(face).min(held);
+        let back = (due - (ceiling - 1))
+            .div_ceil(face)
+            .min(held)
+            .min(due / face);
         if back > 0 {
             tendered.insert(d.item_id, held - back);
             due -= back * face;
+            handed_back = true;
         }
     }
 
     // The till as it stands with the tender in it.
-    let mut pool: Vec<StockLine> = Vec::new();
+    let mut pool: BTreeMap<u32, u64> = BTreeMap::new();
     for d in denoms {
-        let in_till = quantity_of(existing, till, d.item_id);
-        let total = in_till
+        let total = quantity_of(existing, till.holder, d.item_id)
             .checked_add(tendered.get(&d.item_id).copied().unwrap_or(0))
             .ok_or(CashError::ValueOverflow)?;
         if total > 0 {
-            pool.push(StockLine {
-                row_id: 0,
-                holder: till,
-                item_id: d.item_id,
-                quantity: total,
-            });
+            pool.insert(d.item_id, total);
         }
     }
-    let Some(change) = choose_change(&pool, till, due, denoms)? else {
-        return Ok(Payment::NoChange);
+    let Some(change) = choose_change(&pool, due, denoms)? else {
+        return Ok(if handed_back {
+            Payment::TenderTooLarge
+        } else {
+            Payment::NoChange
+        });
     };
 
     // Net per denomination: what is handed over minus what comes back.
@@ -253,18 +274,30 @@ pub fn plan_payment(
         }
     }
 
-    let tender_view = without_emptied(existing, till, &to_customer);
-    let change_view = without_emptied(existing, customer, &to_till);
-    let paid = plan_transfer_all(&tender_view, customer_by, customer, till, &to_till)
-        .map_err(CashError::Stock)?;
+    let tender_view = without_emptied(existing, till.holder, &to_customer);
+    let change_view = without_emptied(existing, customer.holder, &to_till);
+    let paid = plan_transfer_all(
+        &tender_view,
+        customer.by,
+        customer.holder,
+        till.holder,
+        &to_till,
+    )
+    .map_err(CashError::Stock)?;
     if let Some(item_id) = paid.short {
         return Ok(Payment::TenderNotHeld { item_id });
     }
     if paid.no_room.is_some() {
         return Ok(Payment::NoRoom(Side::Till));
     }
-    let back = plan_transfer_all(&change_view, cashier_by, till, customer, &to_customer)
-        .map_err(CashError::Stock)?;
+    let back = plan_transfer_all(
+        &change_view,
+        till.by,
+        till.holder,
+        customer.holder,
+        &to_customer,
+    )
+    .map_err(CashError::Stock)?;
     if back.short.is_some() {
         return Ok(Payment::NoChange);
     }

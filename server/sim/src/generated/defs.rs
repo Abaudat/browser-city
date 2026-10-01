@@ -80,6 +80,17 @@ pub struct ItemDef {
     pub height: u32,
 }
 
+pub const ITEMS: &[ItemDef] = &[
+    ItemDef { id: 1, key: "bottle", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
+    ItemDef { id: 3, key: "coin_1", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
+    ItemDef { id: 4, key: "coin_2", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
+    ItemDef { id: 5, key: "coin_5", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
+    ItemDef { id: 6, key: "note_10", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
+    ItemDef { id: 7, key: "note_20", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
+    ItemDef { id: 8, key: "note_50", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
+    ItemDef { id: 2, key: "recycled_glass", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
+];
+
 /// An item that is money (FR92).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Denomination {
@@ -95,17 +106,6 @@ pub const DENOMINATIONS: &[Denomination] = &[
     Denomination { item_id: 5, face_value: 5 },
     Denomination { item_id: 4, face_value: 2 },
     Denomination { item_id: 3, face_value: 1 },
-];
-
-pub const ITEMS: &[ItemDef] = &[
-    ItemDef { id: 1, key: "bottle", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
-    ItemDef { id: 3, key: "coin_1", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
-    ItemDef { id: 4, key: "coin_2", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
-    ItemDef { id: 5, key: "coin_5", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
-    ItemDef { id: 6, key: "note_10", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
-    ItemDef { id: 7, key: "note_20", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
-    ItemDef { id: 8, key: "note_50", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
-    ItemDef { id: 2, key: "recycled_glass", unit: 0, shelf_life_minutes: 0, width: 1, height: 1 },
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

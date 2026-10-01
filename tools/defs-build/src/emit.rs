@@ -119,6 +119,15 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str("pub struct ItemDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub unit: u32,\n    pub shelf_life_minutes: u32,\n    pub width: u32,\n    pub height: u32,\n}\n\n");
+    out.push_str("pub const ITEMS: &[ItemDef] = &[\n");
+    for i in &defs.items {
+        out.push_str(&format!(
+            "    ItemDef {{ id: {}, key: {:?}, unit: {}, shelf_life_minutes: {}, width: {}, height: {} }},\n",
+            i.id, i.key, i.unit, i.shelf_life_minutes, i.width, i.height
+        ));
+    }
+    out.push_str("];\n\n");
+
     out.push_str(
         "/// An item that is money (FR92).\n#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n",
     );
@@ -131,15 +140,6 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
         out.push_str(&format!(
             "    Denomination {{ item_id: {}, face_value: {} }},\n",
             d.item_id, d.face_value
-        ));
-    }
-    out.push_str("];\n\n");
-
-    out.push_str("pub const ITEMS: &[ItemDef] = &[\n");
-    for i in &defs.items {
-        out.push_str(&format!(
-            "    ItemDef {{ id: {}, key: {:?}, unit: {}, shelf_life_minutes: {}, width: {}, height: {} }},\n",
-            i.id, i.key, i.unit, i.shelf_life_minutes, i.width, i.height
         ));
     }
     out.push_str("];\n\n");
@@ -983,6 +983,18 @@ pub fn emit_id_manifest(defs: &Defs) -> String {
     items.sort_by_key(|i| i.id);
     for i in &items {
         lines.push(format!("item {} {}", i.id, i.key));
+    }
+    // A denomination has no id of its own: its face value is unique, so it is
+    // the row's id, and the manifest pins both it and the item it is worth.
+    let mut denominations = defs.denominations.clone();
+    denominations.sort_by_key(|d| d.face_value);
+    for d in &denominations {
+        let key = &items
+            .iter()
+            .find(|i| i.id == d.item_id)
+            .expect("a denomination names an item that exists")
+            .key;
+        lines.push(format!("denomination {} {}", d.face_value, key));
     }
     let mut recipes = defs.recipes.clone();
     recipes.sort_by_key(|r| r.id);

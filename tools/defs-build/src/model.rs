@@ -84,8 +84,8 @@ pub const MAX_SHELF_LIFE_MINUTES: u32 = 525_600;
 
 /// The largest face value one denomination may carry, in the currency's
 /// smallest unit. `sim::cash::choose_change` searches a table whose size
-/// grows with the square of the change due, and a change due is always
-/// below this: raise it only together with that search.
+/// grows with the square of the change due and takes only a change due
+/// under this: raise it only together with that search.
 pub const MAX_FACE_VALUE: u32 = 1_000;
 
 /// The most denominations the defs may declare.

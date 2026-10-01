@@ -190,3 +190,20 @@ fn a_unit_table_without_piece_fails_the_build() {
     );
     assert!(err.is_err());
 }
+
+/// A denomination row has no id, but its item and its value are pinned: the
+/// manifest carries `denomination <face_value> <item key>`, so deleting a
+/// row or revaluing a coin moves a line `check-defs-ids-append-only.sh`
+/// holds.
+#[test]
+fn the_manifest_pins_each_denominations_item_and_face_value() {
+    let out = build_ok(&read_tree(&valid_dir()));
+    let lines: Vec<&str> = out.id_manifest.lines().collect();
+    for want in [
+        "denomination 1 coin_1",
+        "denomination 5 coin_5",
+        "denomination 20 note_20",
+    ] {
+        assert!(lines.contains(&want), "{want} missing from {lines:?}");
+    }
+}

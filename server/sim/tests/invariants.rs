@@ -46,7 +46,8 @@ pub const INV_STOCK_IS_INDEPENDENT_PER_HOLDER: &str = "stock is independent per 
 pub const INV_STOCK_MOVES_ONLY_BY_HAND: &str = "stock moves only by hand: across any interleaving of authored makes, consumptions and moves, every quantity change is a returned write naming a citizen and one of two causes, and each item's total changes only by what was made and consumed";
 pub const INV_STOCK_MOVE_CONSERVES_QUANTITY: &str = "a stock move conserves quantity: the per-item sum across holders is unchanged by any sequence of moves, and a move the receiver refuses takes nothing from the giver";
 pub const INV_CASH_PAYMENT_CONSERVES_EVERY_DENOMINATION: &str = "a cash payment conserves every denomination: after any payment outcome the count of each denomination across all holders is unchanged, a completed payment moves exactly the price of value from customer to till, and every other outcome moves nothing";
-pub const INV_CHANGE_IS_REFUSED_ONLY_WHEN_THE_TILL_CANNOT_MAKE_IT: &str = "change is refused only when the till cannot make it: a payment reports no change if and only if no combination of the pieces the till holds and what was just tendered sums to the change due, and the change chosen is the fewest pieces with ties to the larger denomination";
+pub const INV_CHANGE_IS_REFUSED_ONLY_WHEN_THE_TILL_CANNOT_MAKE_IT: &str = "change is refused only when the till cannot make it: while the change due is under the bound a payment reports no change if and only if no combination of the pieces the till holds and what was just tendered sums to the change due, and the change chosen is the fewest pieces with ties to the larger denomination";
+pub const INV_CASH_PLANNING_NEVER_PANICS: &str = "cash planning never panics: value_of, choose_change and plan_payment return Ok or a typed Err for any table, any lines, any tender and any price";
 pub const INV_ITEM_INSTANCE_IN_EXACTLY_ONE_STATE: &str = "an item instance is in exactly one of its two states: any interleaving of place and hold moves leaves each instance in one form, never both, never neither";
 pub const INV_COLLIDER_WITHIN_FOOTPRINT: &str = "collider is contained within footprint";
 pub const INV_IDENTICAL_SEEDS_DERIVE_IDENTICALLY: &str =
@@ -5975,7 +5976,11 @@ struct CashCase {
 }
 
 fn cash_case() -> impl Strategy<Value = CashCase> {
-    proptest::collection::hash_set(1u32..=30, 2..=4).prop_flat_map(|set| {
+    let faces = prop_oneof![
+        5 => proptest::collection::hash_set(1u32..=30, 2..=4),
+        3 => proptest::collection::hash_set(300u32..=sim::generated::defs::MAX_FACE_VALUE, 2..=4),
+    ];
+    faces.prop_flat_map(|set| {
         let mut faces: Vec<u32> = set.into_iter().collect();
         faces.sort_unstable_by(|a, b| b.cmp(a));
         let n = faces.len();
@@ -5995,7 +6000,7 @@ fn cash_case() -> impl Strategy<Value = CashCase> {
             ),
             (
                 prop_oneof![9 => Just(false), 1 => Just(true)],
-                prop_oneof![1 => Just(0u8), 1 => Just(1u8), 3 => Just(2u8), 1 => Just(3u8), 5 => Just(4u8)],
+                prop_oneof![1 => Just(0u8), 1 => Just(1u8), 4 => Just(2u8), 1 => Just(3u8), 5 => Just(4u8), 4 => Just(5u8)],
                 any::<u64>(),
                 junk(),
                 junk(),
@@ -6145,6 +6150,9 @@ fn cash_ask(case: &CashCase, ledger: &support::stock_ledger::Ledger) -> (CashLot
         1 => value.saturating_sub(case.price_pick % smallest),
         2 => value.saturating_sub(case.price_pick % 50),
         3 => value + 1 + case.price_pick % 5,
+        5 => value.saturating_sub(
+            u64::from(sim::generated::defs::MAX_FACE_VALUE) + case.price_pick % 100,
+        ),
         _ => value - built_change.min(value),
     };
     (tender, price)
@@ -6156,6 +6164,28 @@ fn cash_authors() -> (sim::author::Author, sim::author::Author) {
         Author::new(9, Cause::ProcedureStep).unwrap(),
         Author::new(10, Cause::ProcedureStep).unwrap(),
     )
+}
+
+/// Past the bound the hand-back is the engine's, so the oracle stays the
+/// plain one: whether any sub-multiset of the till and the whole tender
+/// sums to the whole due. A completed payment implies one exists (the
+/// pieces handed back plus the change are such a sub-multiset).
+fn cash_past_the_bound_feasible(
+    case: &CashCase,
+    ledger: &support::stock_ledger::Ledger,
+    tender: &CashLot,
+    price: u64,
+) -> bool {
+    let [till, _, _] = cash_holders(case);
+    let face = |item: u32| u64::from(case.faces[(item - CASH_ITEM_BASE) as usize]);
+    let due = tender.iter().map(|(&i, &q)| q * face(i)).sum::<u64>() - price;
+    let pool: Vec<u64> = (0..case.faces.len())
+        .map(|i| {
+            let item = CASH_ITEM_BASE + i as u32;
+            ledger.quantity(till, item) + tender.get(&item).copied().unwrap_or(0)
+        })
+        .collect();
+    cash_oracle(&case.faces, &pool, due).is_some()
 }
 
 /// What the model alone says a case must come to: the brute-force oracle
@@ -6183,6 +6213,10 @@ fn cash_expected(
         return Payment::TenderBelowPrice;
     }
     let due = value - price;
+    if due >= u64::from(sim::generated::defs::MAX_FACE_VALUE) {
+        // Past the bound the outcome is checked by `cash_past_the_bound`.
+        return Payment::TenderTooLarge;
+    }
     let n = case.faces.len();
     let item = |i: usize| CASH_ITEM_BASE + i as u32;
     let tendered = |i: usize| tender.get(&item(i)).copied().unwrap_or(0);
@@ -6248,7 +6282,15 @@ proptest! {
         };
         let counts_before = counts(&ledger);
 
-        let outcome = plan_payment(&start, by_customer, by_cashier, customer, till, &tender, price, &denoms).unwrap();
+        let outcome = plan_payment(
+            &start,
+            sim::cash::Party { holder: customer, by: by_customer },
+            sim::cash::Party { holder: till, by: by_cashier },
+            &tender,
+            price,
+            &denoms,
+        )
+        .unwrap();
         match &outcome {
             Payment::Paid { writes, .. } => {
                 for w in writes {
@@ -6343,10 +6385,14 @@ fn cash_run(case: &CashCase) -> (sim::cash::Payment, sim::cash::Payment) {
     let (by_customer, by_cashier) = cash_authors();
     let outcome = sim::cash::plan_payment(
         ledger.lines(),
-        by_customer,
-        by_cashier,
-        customer,
-        till,
+        sim::cash::Party {
+            holder: customer,
+            by: by_customer,
+        },
+        sim::cash::Party {
+            holder: till,
+            by: by_cashier,
+        },
         &tender,
         price,
         &denoms,
@@ -6360,7 +6406,11 @@ proptest! {
     /// brute-force oracle over every sub-multiset of what the till holds
     /// *and what was just tendered* (tendered cash counts as available for
     /// change), the payment reports "no change" if and only if no
-    /// sub-multiset sums to the change due. The change chosen is the
+    /// sub-multiset sums to the change due, while the change due is under
+    /// `MAX_FACE_VALUE`. Past it the outcome is never `NoChange` (that says the
+    /// till is short): it is `TenderTooLarge` or a completed payment, and a
+    /// completed payment implies the plain oracle finds an answer for the whole
+    /// due -- the oracle is not taught the hand-back. The change chosen is the
     /// oracle's: fewest pieces, ties to the larger denomination; every lot
     /// `choose_change` returns moves through `plan_transfer_all` with no
     /// shortfall. The room outcomes are checked against the final line
@@ -6378,7 +6428,13 @@ proptest! {
 
         let held: Vec<u64> = (0..case.faces.len() as u32).map(|i| ledger.quantity(till, CASH_ITEM_BASE + i)).collect();
         let want = cash_oracle(&case.faces, &held, amount);
-        let chosen = choose_change(ledger.lines(), till, amount, &denoms).unwrap();
+        let money: CashLot = ledger
+            .lines()
+            .iter()
+            .filter(|l| l.holder == till && l.item_id < CASH_JUNK_BASE)
+            .map(|l| (l.item_id, l.quantity))
+            .collect();
+        let chosen = choose_change(&money, amount, &denoms).unwrap();
         let got = chosen.as_ref().map(|lot| {
             (0..case.faces.len() as u32)
                 .map(|i| lot.get(&(CASH_ITEM_BASE + i)).copied().unwrap_or(0))
@@ -6397,6 +6453,16 @@ proptest! {
         let (outcome, expected) = cash_run(&case);
         match (&outcome, &expected) {
             (Payment::Paid { change: a, .. }, Payment::Paid { change: b, .. }) => prop_assert_eq!(a, b),
+            // Past the bound: never "the till is short"; a completed payment
+            // implies the plain oracle finds an answer for the whole due.
+            (_, Payment::TenderTooLarge) => {
+                prop_assert!(outcome != Payment::NoChange);
+                if matches!(outcome, Payment::Paid { .. }) {
+                    let ledger = cash_ledger(&case);
+                    let (tender, price) = cash_ask(&case, &ledger);
+                    prop_assert!(cash_past_the_bound_feasible(&case, &ledger, &tender, price));
+                }
+            }
             _ => prop_assert_eq!(outcome, expected),
         }
     }
@@ -6419,14 +6485,20 @@ fn the_cash_generator_reaches_every_branch() {
     let strategy = cash_case();
     let (mut paid_with_change, mut multi_kind, mut no_change) = (0usize, 0usize, 0usize);
     let (mut room_till, mut room_customer, mut same_holder) = (0usize, 0usize, 0usize);
+    let (mut too_large, mut paid_past_bound) = (0usize, 0usize);
     for _ in 0..CASES {
         let case = strategy.new_tree(&mut runner).unwrap().current();
-        match cash_run(&case).0 {
+        let (outcome, expected) = cash_run(&case);
+        paid_past_bound += usize::from(
+            expected == Payment::TenderTooLarge && matches!(outcome, Payment::Paid { .. }),
+        );
+        match outcome {
             Payment::Paid { change, .. } => {
                 paid_with_change += usize::from(!change.is_empty());
                 multi_kind += usize::from(change.len() > 1);
             }
             Payment::NoChange => no_change += 1,
+            Payment::TenderTooLarge => too_large += 1,
             Payment::NoRoom(Side::Till) => room_till += 1,
             Payment::NoRoom(Side::Customer) => room_customer += 1,
             Payment::SameHolder => same_holder += 1,
@@ -6434,6 +6506,9 @@ fn the_cash_generator_reaches_every_branch() {
         }
     }
     // Whole-number percentages: sim is integer-only.
+    eprintln!(
+        "counts: change {paid_with_change} multi {multi_kind} none {no_change} till {room_till} cust {room_customer} large {too_large} paidpast {paid_past_bound}"
+    );
     let percent = |n: usize| n * 100 / CASES;
     for (name, n, at_least) in [
         ("paid with change", paid_with_change, 20),
@@ -6441,6 +6516,8 @@ fn the_cash_generator_reaches_every_branch() {
         ("no change", no_change, 10),
         ("no room at the till", room_till, 2),
         ("no room at the customer", room_customer, 2),
+        ("past the bound, refused", too_large, 2),
+        ("past the bound, paid", paid_past_bound, 2),
     ] {
         assert!(
             percent(n) >= at_least,
@@ -6449,4 +6526,83 @@ fn the_cash_generator_reaches_every_branch() {
         );
     }
     assert!(same_holder > 0, "a holder paying itself never occurs");
+}
+
+/// Any table, lines, tender and price: the three public functions of
+/// `sim::cash` return `Ok` or a typed `Err`, never panic. Faces cover the
+/// whole `u32` range, including 0, duplicates and values far over the cap;
+/// quantities reach `u64::MAX`.
+/// A table of `(item, face)`, lines of `(holder, item, quantity)`, a tender, a
+/// change amount, a price and whether one holder is on both sides.
+type TotalityCase = (
+    Vec<(u32, u32)>,
+    Vec<(u8, u32, u64)>,
+    Vec<(u32, u64)>,
+    u64,
+    u64,
+    bool,
+);
+
+fn totality_case() -> impl Strategy<Value = TotalityCase> {
+    let qty = || {
+        prop_oneof![
+            0u64..20,
+            Just(u64::MAX),
+            (u64::MAX - 10)..=u64::MAX,
+            any::<u64>()
+        ]
+    };
+    let face = || prop_oneof![0u32..40, 900u32..1100, Just(u32::MAX), any::<u32>()];
+    (
+        proptest::collection::vec((0u32..6, face()), 0..7),
+        proptest::collection::vec((0u8..3, 0u32..7, qty()), 0..14),
+        proptest::collection::vec((0u32..7, qty()), 0..6),
+        prop_oneof![0u64..2000, Just(u64::MAX), any::<u64>()],
+        prop_oneof![0u64..3000, any::<u64>()],
+        any::<bool>(),
+    )
+}
+
+proptest! {
+    /// `inv_cash_planning_never_panics`: `value_of`, `choose_change` and
+    /// `plan_payment` are total over every argument their signatures take.
+    #[test]
+    fn inv_cash_planning_never_panics(
+        (table, lines, tender, amount, price, same_holder) in totality_case(),
+    ) {
+        use sim::author::{Author, Cause};
+        use sim::cash::{Party, choose_change, plan_payment, value_of};
+        use sim::codes::holder_kind as k;
+        use sim::generated::defs::Denomination;
+        use sim::stock::{HolderRef, StockLine};
+
+        let denoms: Vec<Denomination> = table
+            .iter()
+            .map(|&(item, face_value)| Denomination { item_id: item, face_value })
+            .collect();
+        let till = HolderRef::new(k::BUSINESS, 1).unwrap();
+        let customer = if same_holder { till } else { HolderRef::new(k::CITIZEN, 1).unwrap() };
+        let holders = [till, customer, HolderRef::new(k::BUSINESS, 2).unwrap()];
+        let mut stock: Vec<StockLine> = Vec::new();
+        for &(h, item, quantity) in &lines {
+            let holder = holders[h as usize];
+            if !stock.iter().any(|l| l.holder == holder && l.item_id == item) {
+                stock.push(StockLine { row_id: stock.len() as u64 + 1, holder, item_id: item, quantity });
+            }
+        }
+        let lot: CashLot = tender.iter().copied().collect();
+        let held: CashLot = stock.iter().filter(|l| l.holder == till).map(|l| (l.item_id, l.quantity)).collect();
+        let by = Author::new(1, Cause::ProcedureStep).unwrap();
+
+        let _ = value_of(&lot, &denoms);
+        let _ = choose_change(&held, amount, &denoms);
+        let _ = plan_payment(
+            &stock,
+            Party { holder: customer, by },
+            Party { holder: till, by },
+            &lot,
+            price,
+            &denoms,
+        );
+    }
 }

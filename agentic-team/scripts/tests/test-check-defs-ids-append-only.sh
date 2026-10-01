@@ -68,6 +68,27 @@ check "exits non-zero" 1 bash -c "exit $CODE"
 check "names the missing line" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF 'item 1 bottle'" _ "$OUT"
 
+
+echo
+echo "red: a denomination's face value changes"
+D="$(fresh_repo "item 5 coin_5
+denomination 5 coin_5")"
+printf 'item 5 coin_5\ndenomination 3 coin_5\n' > "$D/$GOLDEN_PATH"
+commit_changes "$D"
+OUT="$(run_check "$D" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the moved denomination" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF 'denomination 5 coin_5'" _ "$OUT"
+
+echo
+echo "red: a denomination row is deleted"
+D="$(fresh_repo "item 5 coin_5
+denomination 5 coin_5")"
+printf 'item 5 coin_5\n' > "$D/$GOLDEN_PATH"
+commit_changes "$D"
+OUT="$(run_check "$D" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+
 echo
 echo "green: no golden at the merge base -- this PR introduces it"
 D="$(fake_dir)"

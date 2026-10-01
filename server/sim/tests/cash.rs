@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use sim::author::{Author, Cause};
-use sim::cash::{CashError, Payment, Side, choose_change, plan_payment, value_of};
+use sim::cash::{CashError, Party, Payment, Side, choose_change, plan_payment, value_of};
 use sim::codes::holder_kind;
 use sim::generated::defs::{Denomination, MAX_DENOMINATIONS, MAX_FACE_VALUE};
 use sim::stock::{
@@ -51,6 +51,17 @@ fn third() -> HolderRef {
     HolderRef::new(holder_kind::CITIZEN, 2).unwrap()
 }
 
+fn cust(by: Author) -> Party {
+    Party {
+        holder: customer(),
+        by,
+    }
+}
+
+fn shop(by: Author) -> Party {
+    Party { holder: till(), by }
+}
+
 fn step() -> Author {
     Author::new(1, Cause::ProcedureStep).unwrap()
 }
@@ -88,10 +99,8 @@ fn held(ledger: &Ledger, h: HolderRef) -> BTreeMap<u32, u64> {
 fn pay_with(ledger: &Ledger, table: &[Denomination], tender: &[(u32, u64)], price: u64) -> Payment {
     plan_payment(
         ledger.lines(),
-        step(),
-        step(),
-        customer(),
-        till(),
+        cust(step()),
+        shop(step()),
         &lot(tender),
         price,
         table,
@@ -122,7 +131,7 @@ fn change_of(
     amount: u64,
     table: &[Denomination],
 ) -> Option<BTreeMap<u32, u64>> {
-    choose_change(ledger.lines(), holder, amount, table).unwrap()
+    choose_change(&held(ledger, holder), amount, table).unwrap()
 }
 
 /// AC1: a till is quantities per denomination, never a sum. Both tills
@@ -140,10 +149,11 @@ fn two_tills_worth_the_same_hold_different_change() {
     let at = |t| {
         plan_payment(
             ledger.lines(),
-            step(),
-            step(),
-            customer(),
-            t,
+            cust(step()),
+            Party {
+                holder: t,
+                by: step(),
+            },
             &lot(&[(NOTE_20, 1)]),
             15,
             &denoms(),
@@ -265,10 +275,8 @@ fn a_holder_paying_itself_is_an_outcome_that_moves_nothing() {
     let ledger = ledger_of(&[(till(), NOTE_20, 1), (till(), COIN_5, 3)]);
     let outcome = plan_payment(
         ledger.lines(),
-        step(),
-        step(),
-        till(),
-        till(),
+        shop(step()),
+        shop(step()),
         &lot(&[(NOTE_20, 1)]),
         5,
         &denoms(),
@@ -318,6 +326,7 @@ fn every_outcome_and_every_error_is_pinned() {
             Payment::TenderBelowPrice => 2,
             Payment::TenderNotHeld { .. } => 3,
             Payment::NoChange => 4,
+            Payment::TenderTooLarge => 6,
             Payment::NoRoom(Side::Till | Side::Customer) => 5,
         }
     }
@@ -343,10 +352,8 @@ fn the_errors_are_a_cause_not_permitted_a_non_denomination_and_an_overflow() {
     let ask = |by, tender: &[(u32, u64)]| {
         plan_payment(
             ledger.lines(),
-            by,
-            by,
-            customer(),
-            till(),
+            cust(by),
+            shop(by),
             &lot(tender),
             5,
             &denoms(),
@@ -417,10 +424,8 @@ fn value_times_quantity_past_the_type_range_is_a_typed_error() {
     let ledger = ledger_of(&[(customer(), NOTE_20, u64::MAX)]);
     let outcome = plan_payment(
         ledger.lines(),
-        step(),
-        step(),
-        customer(),
-        till(),
+        cust(step()),
+        shop(step()),
         &lot(&[(NOTE_20, u64::MAX)]),
         5,
         &denoms(),
@@ -463,10 +468,8 @@ fn every_write_of_a_payment_carries_the_author_of_the_side_it_leaves() {
     );
     let outcome = plan_payment(
         ledger.lines(),
-        by_customer,
-        by_cashier,
-        customer(),
-        till(),
+        cust(by_customer),
+        shop(by_cashier),
         &lot(&[(NOTE_20, 1)]),
         5,
         &denoms(),
@@ -586,15 +589,14 @@ fn an_amount_at_or_past_the_bound_is_a_typed_error() {
         u64::MAX,
     ] {
         assert_eq!(
-            choose_change(ledger.lines(), till(), amount, &denoms()),
+            choose_change(&held(&ledger, till()), amount, &denoms()),
             Err(CashError::AmountOutOfRange),
             "{amount}"
         );
     }
     assert_eq!(
         choose_change(
-            ledger.lines(),
-            till(),
+            &held(&ledger, till()),
             u64::from(MAX_FACE_VALUE) - 1,
             &denoms()
         ),
@@ -669,11 +671,12 @@ fn the_committed_denominations_are_largest_first_with_unique_face_values() {
     }
 }
 
-/// Past the bound the answer must not flip on an engine constant: this
-/// customer's pile of notes is payable (the 50 goes over, one 20 comes
-/// back), so the till is not "short of change".
+/// Past the bound the answer is its own outcome, never "the till is short
+/// of change": this customer's pile of notes is payable (the 50 goes over,
+/// one 20 comes back), but the hand-back takes the 50 first and the 970
+/// that remains cannot be made from 20s.
 #[test]
-fn a_big_pile_of_notes_is_not_reported_as_a_till_short_of_change() {
+fn a_big_pile_of_notes_is_too_large_not_a_till_short_of_change() {
     let note_50 = 150;
     let table = denoms_of(&[(note_50, 50), (NOTE_20, 20)]);
     let ledger = ledger_of(&[
@@ -681,23 +684,67 @@ fn a_big_pile_of_notes_is_not_reported_as_a_till_short_of_change() {
         (customer(), NOTE_20, 50),
         (till(), NOTE_20, 1),
     ]);
-    let outcome = pay_with(&ledger, &table, &[(note_50, 1), (NOTE_20, 50)], 30);
-    assert_ne!(outcome, Payment::NoChange);
+    // Under the bound the same wallet is paid.
+    assert!(matches!(
+        pay_with(&ledger, &table, &[(note_50, 1), (NOTE_20, 47)], 30),
+        Payment::Paid { .. }
+    ));
+    assert_eq!(
+        pay_with(&ledger, &table, &[(note_50, 1), (NOTE_20, 50)], 30),
+        Payment::TenderTooLarge
+    );
+}
+
+/// With faces 700, 600 and 400 the right change for two 600s against a price
+/// of 100 is 700 + 400, but one 600 goes back first and 500 cannot be made:
+/// the limit is a pinned behaviour, not a surprise.
+#[test]
+fn the_search_is_exact_only_under_the_bound() {
+    let table = denoms_of(&[(701, 700), (601, 600), (401, 400)]);
+    let ledger = ledger_of(&[(customer(), 601, 2), (till(), 701, 1), (till(), 401, 1)]);
+    assert_eq!(
+        pay_with(&ledger, &table, &[(601, 2)], 100),
+        Payment::TenderTooLarge
+    );
 }
 
 /// A table with a face above the cap is a typed answer, never a panic.
 #[test]
-fn a_face_above_the_cap_never_panics_the_payment() {
+fn a_face_above_the_cap_is_a_typed_error_not_a_panic() {
     let table = denoms_of(&[(500, 5000), (COIN_1, 1)]);
     let ledger = ledger_of(&[(customer(), 500, 1), (till(), COIN_1, 5000)]);
-    let _ = plan_payment(
+    let outcome = plan_payment(
         ledger.lines(),
-        step(),
-        step(),
-        customer(),
-        till(),
+        cust(step()),
+        shop(step()),
         &lot(&[(500, 1)]),
         3800,
         &table,
     );
+    assert_eq!(outcome, Err(CashError::AmountOutOfRange));
+}
+
+/// Past the bound with two tendered kinds: the hand-back takes the largest
+/// first and no more than needed, so the rows and the reported change tell
+/// the rules apart. 25 fifties and 10 twenties are tendered against 500
+/// (1,200 due); five fifties go back, and 950 comes back as nineteen fifties.
+#[test]
+fn past_the_bound_the_largest_pieces_go_back_first_and_no_more_than_needed() {
+    let (note_50, table) = (150, denoms_of(&[(150, 50), (NOTE_20, 20), (COIN_5, 5)]));
+    let mut ledger = ledger_of(&[
+        (customer(), note_50, 30),
+        (customer(), NOTE_20, 10),
+        (till(), COIN_5, 200),
+    ]);
+    let outcome = pay_with(&ledger, &table, &[(note_50, 30), (NOTE_20, 10)], 500);
+    let Payment::Paid { change, .. } = &outcome else {
+        panic!("{outcome:?}")
+    };
+    assert_eq!(change, &lot(&[(note_50, 19)]));
+    apply_paid(&mut ledger, &outcome);
+    assert_eq!(
+        held(&ledger, till()),
+        lot(&[(note_50, 6), (NOTE_20, 10), (COIN_5, 200)])
+    );
+    assert_eq!(held(&ledger, customer()), lot(&[(note_50, 24)]));
 }
