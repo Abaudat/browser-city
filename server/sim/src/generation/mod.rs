@@ -34,6 +34,7 @@ pub mod building_types;
 pub mod envelopes;
 pub mod land_use;
 pub mod plots;
+pub mod record;
 pub mod site;
 pub mod streets;
 
@@ -41,6 +42,7 @@ pub use building_types::{BuildingTypeMap, TypeAssignment};
 pub use envelopes::{Envelope, EnvelopeMap, EnvelopeOutcome, RejectReason};
 pub use land_use::{LandUse, LandUseCell, LandUseMap, Region};
 pub use plots::{Plot, PlotMap};
+pub use record::{DistrictRecord, RuleSetVersion, create};
 pub use site::DistrictSite;
 pub use streets::{Block, Side, Sides, StreetClass, StreetEdge, StreetNetwork, block_sides};
 
@@ -91,6 +93,9 @@ pub enum GenerationError {
     /// max]` -- the same shape as [`GenerationError::
     /// BuildingCountOutOfTolerance`].
     WorkplaceCountOutOfTolerance { got: i64, min: i64, max: i64 },
+    /// [`create`]: `site` overlaps a district already recorded -- a
+    /// generated site is never generated again, under any rules.
+    SiteAlreadyGenerated { site: SiteBounds },
 }
 
 impl std::fmt::Display for GenerationError {
@@ -116,6 +121,10 @@ impl std::fmt::Display for GenerationError {
             GenerationError::WorkplaceCountOutOfTolerance { got, min, max } => write!(
                 f,
                 "generation::building_types: workplace count {got} is outside tolerance [{min}, {max}]"
+            ),
+            GenerationError::SiteAlreadyGenerated { site } => write!(
+                f,
+                "generation::create: site {site:?} overlaps an already generated district"
             ),
         }
     }

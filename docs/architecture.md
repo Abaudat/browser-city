@@ -54,6 +54,13 @@ and seeds its own PRNG (`sim::rng`, xoshiro256++ via splitmix64 — never
 determinism is pinned by a committed golden vector, keyed by
 `sim::rng::RNG_VERSION`; the golden and the version move together.
 
+`sim`'s `Cargo.toml` denies `clippy::disallowed_types`,
+`disallowed_methods` and `float_arithmetic`; `clippy.toml` also bans
+`sort_unstable_by`, `sort_unstable_by_key` and `select_nth_unstable_by*`
+(plain `sort_unstable()` over a total key stays legal). A `#[cfg(test)]`
+canary in `sim/src/lib.rs` expects each lint to fire, so a lint that stops
+applying fails clippy.
+
 `browser_city` cannot be linked natively, so anything requiring a native
 test lives in `sim` or `bounds`.
 
@@ -1237,9 +1244,10 @@ also reach `client/public/defs/defs.json` as a required field (an
 object's `tags` field, validated against the tag table on both sides
 identically), rule rows never do -- the client never evaluates a rule.
 
-There is no separate rule-set version: `defs_version` already hashes
-every tracked file under `defs/`, including `defs/rules/` and
-`defs/tags/`, and is the rule-set version FR108/FR109 refer to.
+The rule-set version is the triple `sim::generation::RuleSetVersion
+{ generation, rng, defs }` (`GENERATION_VERSION`, `RNG_VERSION`,
+`DEFS_VERSION`): three typed fields, never one string or hash.
+`RuleSetVersion::current()` is its only non-test constructor.
 
 `sim::rules::RuleSet` is the only thing `evaluate` accepts, and
 `RuleSet::committed` (wrapping `generated::defs::RULES`) is its only
@@ -1521,18 +1529,28 @@ map, one line per catchment). `cargo run -p bounds --bin dump-generation`
 regenerates them; `bounds/tests/generation_evidence_current.rs` fails
 the build if the committed files and a fresh render ever disagree.
 
-`GENERATION_VERSION` is bumped whenever any implemented pass's algorithm
-or seeding (never a `defs/balance/generation.toml` or
-`defs/building-types/`/`defs/rules/` retune) moves a fixed seed's
-output; `server/sim/tests/generation_golden.rs` runs against a config
-and a small `GenerationContent` both frozen in the test itself, under
-deliberately unrelated ids/keys, not live `defs::BALANCE`/
-`defs::BUILDING_TYPES`, so a balance or content retune alone never
-forces a version bump, and the same shape of output against a wholly
-different content table is itself proof the generator never branches on
-a content key. `server/sim/tests/goldens/generation_v5.golden` is keyed
-to it, guarded by `check-golden-version-bump.sh`'s `generation_*` arm the
-same way `RNG_VERSION`/`APPEARANCE_VERSION` are.
+- `GENERATION_VERSION` moves whenever a pass's algorithm or seeding moves a
+  fixed seed's output, never for a `defs/` retune. `RNG_VERSION`,
+  `APPEARANCE_VERSION` and `GENERATION_VERSION` only ever increase.
+- `server/sim/tests/generation_golden.rs` runs on a config and a
+  `GenerationContent` frozen in the test; its golden under
+  `server/sim/tests/goldens/` is keyed to `GENERATION_VERSION`, guarded by
+  `check-golden-version-bump.sh`.
+- Every draw under `generation/` goes through `Rng::below`, reduced in
+  `u64` before any narrowing.
+- `sim::generation::create(existing, seed, cfg, content)` is the one gate
+  to the generator: it refuses with `SiteAlreadyGenerated` when
+  `cfg.site()` overlaps any recorded site, whatever versions the record
+  carries; otherwise it runs `generate` and stamps
+  `RuleSetVersion::current()`.
+- The `district` table (private) has one row per generated district: seed,
+  world-absolute site, the three versions, `generated_at`. Rows are
+  inserted once, read back as stored and never rewritten; restore writes
+  them by value.
+- The `create_district` reducer (operator class) is the only caller of
+  `generation::`; `check-district-write-path.sh` enforces it.
+- No workflow and no `scripts/ops` file calls `create_district`;
+  `init` and `finish_publish` never generate.
 
 ## Routing
 

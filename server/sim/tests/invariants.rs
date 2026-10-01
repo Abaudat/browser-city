@@ -19,7 +19,10 @@ use proptest::prelude::*;
 use sim::appearance;
 use sim::cadence;
 use sim::generated::defs::{self, Family, Pool};
-use sim::generation::{GenerationConfig, GenerationContent, envelopes, land_use, plots, streets};
+use sim::generation::{
+    DistrictRecord, GenerationConfig, GenerationContent, GenerationError, create, envelopes,
+    land_use, plots, streets,
+};
 use sim::rng::{Rng, seed_from_ids};
 use sim::routing::estimate::{Correction, Rates, estimate};
 use sim::routing::{Point, TransportMode};
@@ -83,6 +86,7 @@ pub const INV_SEALED_RING_YIELDS_EXACTLY_ONE_ENCLOSED_REGION: &str =
     "a ring with no gap at all always yields exactly one enclosed region (FR128)";
 pub const INV_REMOVING_A_DOOR_NEVER_REDUCES_ENCLOSED_REGIONS: &str = "narrowing a ring's own doorway gap (down to and including closing it entirely) never reduces the number of reported enclosed regions (FR128)";
 pub const INV_RING_OPEN_TO_ANY_WINDOW_EDGE_IS_NEVER_REPORTED: &str = "a ring's own interior, pushed flush against any one of the window's own four edges with no wall and no margin between them, is never reported by enclosed_regions or by narrow_passages, for a door narrower than the real player body (FR128)";
+pub const INV_EXISTING_CITY_NEVER_REGENERATES: &str = "an existing city is never regenerated: for any recorded district over the site, with any seed and any recorded versions -- equal to or different from this build's -- the generate-once gate refuses and runs no generation; generation is reachable only from no record";
 pub const INV_GENERATION_TOTAL_NEVER_PANICS: &str = "generation is total: for any seed, both passes return a valid plan or a typed error, never a panic (FR110)";
 pub const INV_GENERATION_ALL_FOUR_LAND_USES_PRESENT: &str = "pass 1's coarse grid is fully assigned (no unassigned cell) and every one of the four land uses appears at least once, for any seed (FR110)";
 pub const INV_GENERATION_STREETS_CONNECTED_AND_NOT_STRANDED: &str = "pass 2's street graph is a single connected component, and every pass-1 region borders a street, for any seed (FR110)";
@@ -2489,6 +2493,33 @@ proptest! {
                 );
             }
         }
+    }
+
+    /// `inv_existing_city_never_regenerates`: whatever a recorded district
+    /// says about its seed and versions, `create` over its site refuses.
+    #[test]
+    fn inv_existing_city_never_regenerates(
+        recorded_seed in any::<u64>(),
+        new_seed in any::<u64>(),
+        generation_version in any::<u32>(),
+        rng_version in any::<u32>(),
+        defs_version in "[a-z0-9]{0,12}",
+        same_defs in any::<bool>(),
+    ) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let existing = [DistrictRecord {
+            seed: recorded_seed,
+            site: cfg.site(),
+            generation_version,
+            rng_version,
+            defs_version: if same_defs { defs::DEFS_VERSION.to_string() } else { defs_version },
+        }];
+        let r = create(&existing, new_seed, &cfg, &GenerationContent::committed());
+        prop_assert!(
+            matches!(r, Err(GenerationError::SiteAlreadyGenerated { .. })),
+            "a recorded site must refuse, got {:?}",
+            r.map(|(rec, _)| rec)
+        );
     }
 
     /// `inv_generation_block_plots_independent_of_other_blocks`: cutting
@@ -5982,7 +6013,8 @@ fn cash_case() -> impl Strategy<Value = CashCase> {
     ];
     faces.prop_flat_map(|set| {
         let mut faces: Vec<u32> = set.into_iter().collect();
-        faces.sort_unstable_by(|a, b| b.cmp(a));
+        faces.sort_unstable();
+        faces.reverse();
         let n = faces.len();
         let quantities = move || proptest::collection::vec(0u64..=6, n);
         let sparse = move || {

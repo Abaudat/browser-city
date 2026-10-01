@@ -48,6 +48,24 @@ git rev-parse --verify "$BASE" >/dev/null 2>&1 || _fail_or_skip "base ref '$BASE
 
 MERGE_BASE="$(git merge-base "$BASE" HEAD)"
 
+# These numbers are stored in every generated district: a reused or lowered
+# one makes two different generators indistinguishable. Whenever one
+# changes it must be strictly greater than its base value, golden or not.
+const_value() { # <rev> <file> <NAME> -- the u32 literal, empty if absent
+  git show "$1:$2" 2>/dev/null | tr -d '\r' \
+    | sed -nE "s/^pub const $3: u32 = ([0-9]+);.*/\1/p" | head -1
+}
+for spec in "server/sim/src/rng.rs:RNG_VERSION" "server/sim/src/appearance.rs:APPEARANCE_VERSION" "server/sim/src/generation/mod.rs:GENERATION_VERSION"; do
+  vfile="${spec%%:*}"
+  vname="${spec##*:}"
+  was="$(const_value "$MERGE_BASE" "$vfile" "$vname")"
+  now="$(const_value HEAD "$vfile" "$vname")"
+  if [ -n "$was" ] && [ -n "$now" ] && [ "$was" != "$now" ] && [ "$now" -le "$was" ]; then
+    echo "check-golden-version-bump: FAIL -- $vname went from $was to $now; a stored version only ever increases" >&2
+    exit 1
+  fi
+done
+
 CHANGED_GOLDENS="$(git diff --name-only "$MERGE_BASE" HEAD -- 'server/sim/tests/goldens/*.golden')"
 if [ -z "$CHANGED_GOLDENS" ]; then
   echo "check-golden-version-bump: no golden changed -- nothing to guard" >&2

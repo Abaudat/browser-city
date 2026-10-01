@@ -44,6 +44,7 @@ use super::schedules::{
     budget_review_schedule, cadence_liveness, citizen_transition_schedule, economy_schedule,
     growth_schedule, maintenance_schedule, metrics_sample_schedule, world_clock_schedule,
 };
+use super::district::district;
 use super::stock::{business, stock};
 use super::world::{
     building, building_area, floor_transition, layer_code, placed_object, room, room_area,
@@ -248,6 +249,7 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(building);
     sample!(room);
     sample!(building_area);
+    sample!(district);
     sample!(room_area);
     sample!(citizen_transition_schedule);
     sample!(metrics_sample_schedule);

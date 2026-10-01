@@ -346,6 +346,8 @@ jobs:
       # Toolchain-free guards first, so a fiat stock write is red in seconds.
       - name: story 6.3 FR89, nothing but restore and metrics names the stock accessor
         run: bash ../scripts/ci/check-stock-write-path.sh
+      - name: story 3.5 FR108/FR109, one writer for the district record
+        run: bash ../scripts/ci/check-district-write-path.sh
       - name: story 6.3 FR89, nothing outside sim::author builds an Author
         run: bash ../scripts/ci/check-author-construction.sh
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

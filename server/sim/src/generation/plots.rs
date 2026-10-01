@@ -358,12 +358,12 @@ fn rhythm_plots(
         return Vec::new();
     }
     let k = RHYTHM_MODULE_MIN
-        + (rng.next_u64() % (RHYTHM_MODULE_MAX - RHYTHM_MODULE_MIN + 1) as u64) as u32;
+        + rng.below((RHYTHM_MODULE_MAX - RHYTHM_MODULE_MIN + 1) as u64) as u32;
     let span = (width_max - width_min).max(0) as u64;
     let widths: Vec<i64> = (0..k)
         .map(|_| {
             let jitter = if span > 0 {
-                (rng.next_u64() % (span + 1)) as i64
+                rng.below(span + 1) as i64
             } else {
                 0
             };

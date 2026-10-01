@@ -343,7 +343,7 @@ fn weighted_fill(
             );
         }
         let mut rng = Rng::new(seed_from_ids(pass_seed, rect_seed_key(e.footprint)));
-        let mut roll = rng.next_u64() % total_weight;
+        let mut roll = rng.below(total_weight);
         let mut pick = eligible[0];
         for b in &eligible {
             if roll < b.weight as u64 {

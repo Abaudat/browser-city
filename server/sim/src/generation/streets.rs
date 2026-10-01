@@ -1040,7 +1040,7 @@ fn band_positions(
         let nominal = site_from + band * i;
         let jitter_span = (band * jitter_pct / 100).max(0);
         let jitter = if jitter_span > 0 {
-            (rng.next_u64() % (2 * jitter_span as u64 + 1)) as i32 - jitter_span
+            rng.below(2 * jitter_span as u64 + 1) as i32 - jitter_span
         } else {
             0
         };
@@ -1174,7 +1174,7 @@ fn try_split(
     let mid = from + len / 2;
     let jitter_span = (len as i64 * cfg.split_jitter_pct as i64 / 100) as i32;
     let jitter = if jitter_span > 0 {
-        (rng.next_u64() % (2 * jitter_span as u64 + 1)) as i32 - jitter_span
+        rng.below(2 * jitter_span as u64 + 1) as i32 - jitter_span
     } else {
         0
     };
@@ -1679,7 +1679,7 @@ fn arterial_count(rng: &mut Rng, min: u32, max: u32) -> u32 {
     if max <= min {
         return min;
     }
-    min + (rng.next_u64() % (max - min + 1) as u64) as u32
+    min + rng.below((max - min + 1) as u64) as u32
 }
 
 /// Truncates at most one arterial per axis pair to a T against a
@@ -1696,15 +1696,15 @@ fn truncate_one_arterial(rng: &mut Rng, xs_len: usize, ys_len: usize) -> Truncat
     if xs_len == 0 || ys_len == 0 {
         return Truncation::None;
     }
-    if rng.next_u64().is_multiple_of(2) {
+    if rng.below(2) == 0 {
         Truncation::Vertical {
-            index: (rng.next_u64() % xs_len as u64) as usize,
-            t_index: (rng.next_u64() % ys_len as u64) as usize,
+            index: rng.below(xs_len as u64) as usize,
+            t_index: rng.below(ys_len as u64) as usize,
         }
     } else {
         Truncation::Horizontal {
-            index: (rng.next_u64() % ys_len as u64) as usize,
-            t_index: (rng.next_u64() % xs_len as u64) as usize,
+            index: rng.below(ys_len as u64) as usize,
+            t_index: rng.below(xs_len as u64) as usize,
         }
     }
 }

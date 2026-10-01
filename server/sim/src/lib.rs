@@ -30,3 +30,31 @@ pub mod table_bounds;
 pub mod time;
 pub mod validation;
 pub mod world;
+
+/// Proves the determinism lints are live: each deliberate violation is
+/// expected, so if `clippy.toml` or the `[lints.clippy]` table stops
+/// applying, the unfulfilled expectation turns clippy red.
+#[cfg(test)]
+#[allow(dead_code)]
+mod lint_canary {
+    #[expect(clippy::disallowed_types)]
+    fn float_type(x: f64) -> usize {
+        x as usize
+    }
+
+    #[expect(clippy::disallowed_types)]
+    fn hash_map() -> usize {
+        std::collections::HashMap::<u8, u8>::new().len()
+    }
+
+    #[expect(clippy::float_arithmetic)]
+    #[allow(clippy::disallowed_types)]
+    fn float_math(a: f64, b: f64) -> f64 {
+        a * b
+    }
+
+    #[expect(clippy::disallowed_methods)]
+    fn unstable_sort_by_key(v: &mut [u8]) {
+        v.sort_unstable_by_key(|x| *x);
+    }
+}

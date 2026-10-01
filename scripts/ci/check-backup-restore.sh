@@ -594,6 +594,16 @@ DST_IDENTITY_VALUES="$(column_values_live "$DST" character_identity identity | s
 $SRC_IDENTITY_VALUES
 got:
 $DST_IDENTITY_VALUES"
+# The generate-once record is restored by value, never re-stamped with the
+# restoring build's own versions or clock: the seeded rows carry versions
+# and generated_at no real build ever has.
+GEN_VERSIONS="$(column_values_live "$DST" district generation_version)"
+values_contain '4294967295' "$GEN_VERSIONS" || fail "u32::MAX not found exactly in restored 'district.generation_version' -- a restore must not re-stamp the record"
+DEFS_VALUES="$(column_values_live "$DST" district defs_version)"
+values_contain "$EXPECT_STRING_JSON" "$DEFS_VALUES" || fail "the adversarial string was not found byte-exact in restored 'district.defs_version'"
+GENERATED_AT="$(column_values_live "$DST" district generated_at)"
+values_contain '[0]' "$GENERATED_AT" || fail "Timestamp 0 not found exactly in restored 'district.generated_at'"
+values_contain '[9223372036854775807]' "$GENERATED_AT" || fail "Timestamp i64::MAX not found exactly in restored 'district.generated_at'"
 ok "sentinel values (u64::MAX, i32::MIN, i8 floor, the full adversarial string, a Timestamp at 0 and i64::MAX micros, and every Identity, exact and sorted) read back exactly, by column, from the restored database"
 
 # --- 9: scheduled tables restore to nothing -- compared against a
