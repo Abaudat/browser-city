@@ -582,12 +582,12 @@ describe("story 15.5: flat objects stay under the player, upright props keep y-s
     // shared with the conformance tests).
     const platform = subwayAnchors().find(({ anchor }) => anchor.floor === SUBWAY_FLOOR);
     if (!platform) throw new Error("no platform anchor");
-    const { path: treads, entry } = treadPath(
+    const stairPath = treadPath(
       stairwellRowsAt(platform.anchor),
       platform.anchor,
       platform.open.direction,
     );
-    const cells = [...treads, entry];
+    const cells = [stairPath.entry, ...stairPath.path];
     expect(cells.length).toBeGreaterThanOrEqual(3); // entry, landing, anchor
 
     const props = buildStreetProps();
