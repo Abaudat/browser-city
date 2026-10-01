@@ -4,6 +4,7 @@
 //! is passed in by its caller in `../src` (the reducer crate).
 
 pub mod appearance;
+pub mod author;
 pub mod balance;
 pub mod cadence;
 pub mod codes;
