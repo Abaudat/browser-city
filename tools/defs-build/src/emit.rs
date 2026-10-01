@@ -137,7 +137,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("/// Every denomination, largest face value first.\n");
     out.push_str("pub const DENOMINATIONS: &[Denomination] = &[\n");
     let mut denominations: Vec<&ItemDef> = defs.items.iter().filter(|i| i.face_value > 0).collect();
-    denominations.sort_by(|a, b| b.face_value.cmp(&a.face_value));
+    denominations.sort_by_key(|d| std::cmp::Reverse(d.face_value));
     for d in denominations {
         out.push_str(&format!(
             "    Denomination {{ item_id: {}, face_value: {} }},\n",
