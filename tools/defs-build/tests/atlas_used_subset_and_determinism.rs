@@ -13,12 +13,14 @@ use std::path::PathBuf;
 
 use defs_build::{atlas, fsio, object_sprite_sheet_paths, parse};
 
+mod support;
+
 const SHEET_DIR: &str = "ModernTileset/x/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16";
 const CAMPING_DIR: &str = "ModernTileset/x/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16";
 const SCHOOL_DIR: &str = "ModernTileset/x/ME_Theme_Sorter_16x16/13_School_Singles_16x16";
 
 fn good_png() -> Vec<u8> {
-    atlas::image::encode_rgba8(16, 16, &vec![7u8; 16 * 16 * 4]).unwrap()
+    atlas::image::encode_rgba8(16, 16, &support::agreeing_art_rgba(16, 16)).unwrap()
 }
 
 fn object_toml(id: u32, key: &str, sheet_dir: &str, sheet_file: &str) -> String {

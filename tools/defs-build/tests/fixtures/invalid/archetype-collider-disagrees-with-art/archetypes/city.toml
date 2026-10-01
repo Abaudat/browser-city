@@ -1,0 +1,4 @@
+[[archetype]]
+key = "wide_base"
+height = 1
+collider_inset = { left = 3, top = 4, right = 4, bottom = 4 }

@@ -16,7 +16,14 @@
 //! missing` and `sprite-outside-sheet-bounds` need a real sheet's `IHDR`
 //! dimensions (`fsio::read_png_dims`), which the client never reads --
 //! its own artefact only ever carries an already-validated `sprite` rect.
-//! Those two exist as `tests/fixtures/invalid/` categories and
+//! The pixel rule (story 15.3: a collider agrees with the art under it)
+//! is the same kind: `defs.json` carries no pixels and the client never
+//! reads alpha -- `collider-outside-art-span`, `art-base-outside-collider`,
+//! `collider-outside-art-rows`, `collider-over-transparent-band` and
+//! `archetype-collider-disagrees-with-art` are build-only. Its second
+//! implementation is the proposer, held to it by
+//! `propose::tests::a_produced_proposal_always_fits_the_real_validator`.
+//! These exist as `tests/fixtures/invalid/` categories and
 //! `failure_fixtures.rs` tests only, deliberately absent from
 //! `fixtures/defs-malformed-cases.v1.json` (JSON has no comment syntax to
 //! say so inline). Every other rejection category both sides can check

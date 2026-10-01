@@ -740,6 +740,90 @@ fn a_density_covered_only_by_a_site_restricted_building_type_is_named() {
     );
 }
 
+// --- story 15.3: a collider must agree with the art under it --------------
+//
+// The valid base sheet holds one solid block at columns 4..12, rows 4..12
+// of its top 16 rows and nothing below.
+
+#[test]
+fn a_collider_wider_than_the_art_is_named_with_both_spans() {
+    assert_eq!(
+        build_err("collider-outside-art-span").to_string(),
+        "defs/objects/city-props.toml:9:12: object 'trash_bin' collider (3, 4)-(12, 12): collider columns 3..12 reach outside the solid columns 4..12 of the sprite's footprint band (sub-cells)"
+    );
+}
+
+#[test]
+fn a_collider_narrower_than_the_bottom_row_is_named_with_both_spans() {
+    assert_eq!(
+        build_err("art-base-outside-collider").to_string(),
+        "defs/objects/city-props.toml:9:12: object 'trash_bin' collider (5, 4)-(12, 12): collider columns 5..12 do not cover the bottom solid row's columns 4..12 (sub-cells)"
+    );
+}
+
+#[test]
+fn a_collider_taller_than_the_art_is_named_with_both_spans() {
+    assert_eq!(
+        build_err("collider-outside-art-rows").to_string(),
+        "defs/objects/city-props.toml:9:12: object 'trash_bin' collider (4, 3)-(12, 12): collider rows 3..12 reach outside the solid rows 4..12 of the sprite's footprint band (sub-cells)"
+    );
+}
+
+#[test]
+fn a_collider_over_a_transparent_band_is_named() {
+    assert_eq!(
+        build_err("collider-over-transparent-band").to_string(),
+        "defs/objects/city-props.toml:9:12: object 'trash_bin' collider (4, 4)-(12, 12): the sprite's footprint band has no solid pixel under its collider"
+    );
+}
+
+#[test]
+fn an_archetype_derived_collider_that_disagrees_is_reported_at_the_archetype_line_naming_both() {
+    assert_eq!(
+        build_err("archetype-collider-disagrees-with-art").to_string(),
+        "defs/objects/city-props.toml:8:13: object 'trash_bin' collider (3, 4)-(12, 12) from archetype 'wide_base': collider columns 3..12 reach outside the solid columns 4..12 of the sprite's footprint band (sub-cells)"
+    );
+}
+
+/// Every pre-existing invalid category fails for its own reason: the pixel
+/// rule runs last among the object checks, so it must never be the error
+/// an older category reports (`shared_malformed_cases.rs` only asserts
+/// "fails").
+#[test]
+fn no_pre_existing_invalid_category_fails_on_the_pixel_rule() {
+    const PIXEL_CATEGORIES: [&str; 5] = [
+        "collider-outside-art-span",
+        "art-base-outside-collider",
+        "collider-outside-art-rows",
+        "collider-over-transparent-band",
+        "archetype-collider-disagrees-with-art",
+    ];
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
+    let mut checked = 0;
+    let mut total = 0;
+    for entry in std::fs::read_dir(&base).unwrap() {
+        let category = entry.unwrap().file_name().to_string_lossy().to_string();
+        total += 1;
+        if PIXEL_CATEGORIES.contains(&category.as_str()) {
+            continue;
+        }
+        let enforcing = category.starts_with("sprite-sheet-outside")
+            || category == "sprite-sheet-path-escape";
+        let err = if enforcing {
+            build_err_enforcing_sheet_root(&category)
+        } else {
+            build_err(&category)
+        };
+        assert!(
+            !err.message.contains("footprint band"),
+            "'{category}' fails on the pixel rule: {err}"
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no pre-existing category was examined");
+    assert_eq!(checked, total - PIXEL_CATEGORIES.len());
+}
+
 /// Every category this module lists above has its own fixture directory
 /// under `tests/fixtures/invalid/` -- so a category added to one and not
 /// the other is a hard failure here, not a silent gap. `non-integer-id`
@@ -846,6 +930,11 @@ fn every_known_category_has_a_fixture_directory() {
         "building-type-density-gap",
         "building-type-interior-too-large",
         "building-type-site-restricted",
+        "collider-outside-art-span",
+        "art-base-outside-collider",
+        "collider-outside-art-rows",
+        "collider-over-transparent-band",
+        "archetype-collider-disagrees-with-art",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

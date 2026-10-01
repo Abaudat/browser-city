@@ -1,9 +1,8 @@
-//! Story 2.3 (AC1/AC3), Quentin's direction: `defs-build`'s normal build
-//! path must never read alpha to decide a footprint. Builds the same
-//! defs tree twice, swapping only the object's own sprite sheet bytes
-//! for a different-alpha PNG of the identical size, and asserts both
-//! generated artefacts come out byte-identical -- proof by construction,
-//! not by code inspection.
+//! Pixels may refuse a build, never shape an artefact (story 15.3,
+//! restating story 2.3 AC4): two sheets that both satisfy the silhouette
+//! rule but differ in alpha where the rule does not look -- the transparent
+//! margin and a shadow below the threshold -- produce identical footprint
+//! and collider data in both generated artefacts.
 
 mod support;
 
@@ -14,7 +13,7 @@ use support::{
 };
 
 #[test]
-fn swapping_an_object_sheets_alpha_never_changes_either_generated_artefact() {
+fn alpha_the_rule_does_not_look_at_never_changes_either_generated_artefact() {
     let files = read_tree(&valid_dir());
     let code_tables = code_tables();
     let sheet_dims = sheet_dims();
@@ -24,12 +23,21 @@ fn swapping_an_object_sheets_alpha_never_changes_either_generated_artefact() {
         .next()
         .expect("at least one object sheet must exist in the shared valid fixture tree");
 
-    // Two sheets, identical size, deliberately different alpha content --
-    // one fully opaque, one with a checkerboard hole punched through it.
-    let opaque_rgba = vec![255u8; (w * h * 4) as usize];
+    // Both sheets hold the agreeing block (columns 4..12, rows 4..12 of
+    // the band). They differ outside it: the second adds sub-threshold
+    // shadow pixels (alpha 100) in the margin and under the block, and
+    // keeps a different block colour.
+    let opaque_rgba = support::agreeing_art_rgba(w, h);
     let mut punched_rgba = opaque_rgba.clone();
-    for i in (0..punched_rgba.len()).step_by(8) {
-        punched_rgba[i + 3] = 0;
+    for y in 0..16u32 {
+        for x in 0..16u32 {
+            let i = ((y * w + x) * 4) as usize;
+            if punched_rgba[i + 3] == 0 {
+                punched_rgba[i + 3] = defs_build::alpha::ALPHA_OPAQUE_THRESHOLD / 2;
+            } else {
+                punched_rgba[i] = 9;
+            }
+        }
     }
 
     let opaque_bytes = defs_build::atlas::image::encode_rgba8(w, h, &opaque_rgba).unwrap();

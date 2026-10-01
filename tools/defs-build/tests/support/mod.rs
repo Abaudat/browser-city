@@ -82,19 +82,33 @@ pub fn sheet_dims() -> BTreeMap<String, (u32, u32)> {
     all
 }
 
+/// RGBA for a `w`x`h` fixture sheet whose only solid pixels are one 8x8
+/// block at columns 4..12, rows 4..12 -- the art every valid fixture
+/// collider `(4, 4)-(12, 12)` agrees with, and deliberately not full
+/// width, so a check that ignores pixels cannot pass. Built in code, so
+/// the art is hand-checkable here; no committed binary.
+#[allow(dead_code)]
+pub fn agreeing_art_rgba(w: u32, h: u32) -> Vec<u8> {
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    for y in 4..12.min(h) {
+        for x in 4..12.min(w) {
+            let i = ((y * w + x) * 4) as usize;
+            rgba[i..i + 4].copy_from_slice(&[200, 200, 200, 255]);
+        }
+    }
+    rgba
+}
+
 /// Real PNG bytes for every path [`object_sheet_dims`] declares -- story
-/// 2.6's atlas packer decodes real pixels, so `build()` needs more than a
-/// declared `(width, height)` for an object's own sheet (appearance
-/// sheets are never packed by this story; only `object_sheet_dims`'s
-/// paths need bytes). A solid colour is enough: these tests exercise
-/// `parse`/`validate`/the packer's own grouping and pass-through, never
-/// pixel content.
+/// 2.6's atlas packer decodes real pixels, and the build's silhouette
+/// check reads them: the sheet holds [`agreeing_art_rgba`]'s block in its
+/// top 16 rows and nothing below, so a sprite rect pointed at the lower
+/// half has a fully transparent band.
 pub fn object_sheet_bytes() -> BTreeMap<String, Vec<u8>> {
     object_sheet_dims()
         .into_iter()
         .map(|(path, (w, h))| {
-            let rgba = vec![200u8; (w * h * 4) as usize];
-            let bytes = defs_build::atlas::image::encode_rgba8(w, h, &rgba)
+            let bytes = defs_build::atlas::image::encode_rgba8(w, h, &agreeing_art_rgba(w, h))
                 .expect("fixture PNG encode must succeed");
             (path, bytes)
         })

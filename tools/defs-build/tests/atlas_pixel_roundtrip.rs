@@ -93,7 +93,10 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
 
     let out = atlas::build::build_atlas(
         &defs.objects,
-        &object_sheet_bytes,
+        &object_sheet_bytes
+            .iter()
+            .map(|(k, v)| (k.clone(), atlas::image::decode_rgba8(v).unwrap()))
+            .collect(),
         &page_groups,
         &character_parts,
         &appearance_sheet_bytes,

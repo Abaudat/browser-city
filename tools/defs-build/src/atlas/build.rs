@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use crate::atlas::character::{CharacterPartSource, PartKind, build_character_pack_items};
-use crate::atlas::image::{SourceCrop, composite_with_extrusion, decode_rgba8, encode_rgba8};
+use crate::atlas::image::{SourceCrop, composite_with_extrusion, encode_rgba8};
 use crate::atlas::pack::{PackItem, PageMeta, SourceKey, pack_all};
 use crate::atlas::theme::{check_shadow_variants, resolve_page_group, theme_group};
 use crate::model::{AppearanceLayoutDef, AtlasPageDef, AtlasRect, ObjectDef};
@@ -108,7 +108,7 @@ fn sprite_key(o: &ObjectDef) -> SourceKey {
 /// (the two `sheet_bytes` maps address disjoint sets of paths).
 pub fn build_atlas(
     objects: &[ObjectDef],
-    sheet_bytes: &BTreeMap<String, Vec<u8>>,
+    object_sheets: &BTreeMap<String, (u32, u32, Vec<u8>)>,
     page_groups: &BTreeMap<String, String>,
     character_parts: &[CharacterPartSource],
     appearance_sheet_bytes: &BTreeMap<String, Vec<u8>>,
@@ -154,23 +154,25 @@ pub fn build_atlas(
     check_max_bound_pages(&result.pages)?;
 
     // Every character strip is already decoded (Tim's direction, cycle
-    // 1: no PNG encode/decode round trip) -- folded straight in, keyed
-    // by its own virtual sheet key. Every real (object or, in principle,
-    // any other) sheet is decoded here, at most once.
-    let mut decoded: BTreeMap<String, (u32, u32, Vec<u8>)> = character_pack.extra_decoded;
+    // 1: no PNG encode/decode round trip); object sheets arrive decoded
+    // too -- `build` decodes each exactly once and shares the result
+    // with the silhouette check.
+    let character_decoded = character_pack.extra_decoded;
+    let mut decoded: BTreeMap<&str, &(u32, u32, Vec<u8>)> = character_decoded
+        .iter()
+        .map(|(k, v)| (k.as_str(), v))
+        .collect();
     for source in result.placements.keys() {
         if decoded.contains_key(source.sheet.as_str()) {
             continue;
         }
-        let bytes = sheet_bytes.get(&source.sheet).ok_or_else(|| {
+        let sheet = object_sheets.get(&source.sheet).ok_or_else(|| {
             format!(
                 "sheet '{}' was referenced by an object but never read -- fsio must read every referenced sheet before build_atlas runs",
                 source.sheet
             )
         })?;
-        let (w, h, rgba) =
-            decode_rgba8(bytes).map_err(|e| format!("sheet '{}': {e}", source.sheet))?;
-        decoded.insert(source.sheet.clone(), (w, h, rgba));
+        decoded.insert(source.sheet.as_str(), sheet);
     }
 
     let mut page_buffers: Vec<Vec<u8>> = result
@@ -269,7 +271,15 @@ pub fn build_atlas(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::atlas::image::decode_rgba8;
     use crate::model::SpriteRect;
+
+    fn decoded(bytes: &BTreeMap<String, Vec<u8>>) -> BTreeMap<String, (u32, u32, Vec<u8>)> {
+        bytes
+            .iter()
+            .map(|(k, v)| (k.clone(), decode_rgba8(v).unwrap()))
+            .collect()
+    }
 
     fn tiny_png(width: u32, height: u32, px: [u8; 4]) -> Vec<u8> {
         let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
@@ -344,7 +354,7 @@ mod tests {
 
         let out = build_atlas(
             &objects,
-            &bytes,
+            &decoded(&bytes),
             &identity_page_groups(),
             &[],
             &BTreeMap::new(),
@@ -366,7 +376,7 @@ mod tests {
         bytes.insert(CITY_PROPS.to_string(), tiny_png(16, 16, [1, 2, 3, 255]));
         let err = build_atlas(
             &objects,
-            &bytes,
+            &decoded(&bytes),
             &BTreeMap::new(),
             &[],
             &BTreeMap::new(),
@@ -541,7 +551,7 @@ mod tests {
         .into_iter()
         .collect();
 
-        let out = build_atlas(&objects, &bytes, &street, &[], &BTreeMap::new(), &[]).unwrap();
+        let out = build_atlas(&objects, &decoded(&bytes), &street, &[], &BTreeMap::new(), &[]).unwrap();
         assert_eq!(out.pages.len(), 1, "merged themes share one page group");
         assert_eq!(out.pages[0].group, "street");
         let r1 = out.atlas_by_object_id[&1];
@@ -557,7 +567,7 @@ mod tests {
 
         let out_a = build_atlas(
             &objects,
-            &bytes,
+            &decoded(&bytes),
             &identity_page_groups(),
             &[],
             &BTreeMap::new(),
@@ -566,7 +576,7 @@ mod tests {
         .unwrap();
         let out_b = build_atlas(
             &objects,
-            &bytes,
+            &decoded(&bytes),
             &identity_page_groups(),
             &[],
             &BTreeMap::new(),
@@ -588,7 +598,7 @@ mod tests {
         bytes_a.insert(CAMPING.to_string(), tiny_png(16, 16, [2, 2, 2, 255]));
         let out_a = build_atlas(
             &objects,
-            &bytes_a,
+            &decoded(&bytes_a),
             &identity_page_groups(),
             &[],
             &BTreeMap::new(),
@@ -600,7 +610,7 @@ mod tests {
         bytes_b.insert(CITY_PROPS.to_string(), tiny_png(16, 16, [99, 99, 99, 255]));
         let out_b = build_atlas(
             &objects,
-            &bytes_b,
+            &decoded(&bytes_b),
             &identity_page_groups(),
             &[],
             &BTreeMap::new(),
@@ -677,7 +687,7 @@ mod tests {
 
         let out = build_atlas(
             &objects,
-            &bytes,
+            &decoded(&bytes),
             &identity_page_groups(),
             &[],
             &BTreeMap::new(),
