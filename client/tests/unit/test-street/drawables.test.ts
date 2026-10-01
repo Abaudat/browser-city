@@ -26,6 +26,7 @@ import {
   LAMPPOST_CELL,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
+  PLATFORM_STAIRWELL_ROWS,
   PLAYER_START,
   SIDEWALK_TILES,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
@@ -34,6 +35,7 @@ import {
   STREET_FLOOR,
   STREET_PROPS,
   SUBWAY_FLOOR,
+  streetDefId,
   wallRunCellId,
 } from "../../../src/test-street/fixture";
 import type { Vec2 } from "../../../src/world/movement";
@@ -49,11 +51,14 @@ import {
 import {
   lamppostRestY,
   shopfrontExitRestY,
+  stairwellRowsAt,
   streetMovementConfig,
   streetObjectSources,
   streetOwnershipIndex,
   streetWindowDefIds,
   streetWorldIndex,
+  subwayAnchors,
+  treadPath,
 } from "./street-world";
 
 // Mirrors `render.tile_size_px` / `render.storey_height_px`
@@ -157,38 +162,33 @@ describe("the story 1.6 street scene's committed ordering", () => {
     expect(compareDrawables(nearCell, player)).toBeGreaterThan(0); // near end: in front of the player
   });
 
-  // Story 15.3 (Artie): the stairwell is three objects so the player walks
-  // between the railings -- behind the near (bottom) one, in front of the far
-  // (top) one -- wherever they stand on the treads, on either floor.
-  for (const floor of [STREET_FLOOR, SUBWAY_FLOOR]) {
-    it(`floor ${floor}: a player on any tread cell draws after the top railing and before the bottom railing`, () => {
-      const props = buildStreetProps();
-      const treads = STREET_PROPS.find(
-        (p) => isDefStreetProp(p) && p.defId === STAIRWELL_TREADS_DEF_ID && p.floor === floor,
-      );
-      if (!treads) throw new Error(`no stairwell treads on floor ${floor}`);
-      const railings = (defId: number) =>
-        props.filter((d) => "defId" in d && d.defId === defId && d.floor === floor);
-      const top = railings(STAIRWELL_TOP_RAILING_DEF_ID);
-      const bottom = railings(STAIRWELL_BOTTOM_RAILING_DEF_ID);
-      expect(top).toHaveLength(3);
-      expect(bottom).toHaveLength(3);
-      for (let dx = 0; dx < 3; dx++) {
-        // The middle of the tread row and its south edge, the feet a hair
-        // above the cell boundary.
-        for (const feetY of [treads.y + 0.5, treads.y + 0.99]) {
-          const player = buildPlayerDrawable(
-            rankOf("characters"),
-            treads.x + dx + 0.5,
-            feetY,
-            floor,
-          );
-          for (const rail of top) expect(compareDrawables(rail, player)).toBeLessThan(0);
-          for (const rail of bottom) expect(compareDrawables(rail, player)).toBeGreaterThan(0);
-        }
+  // Story 15.3 (Artie): the street stairwell is three objects so the player
+  // walks between the railings -- behind the near (bottom) one, in front of
+  // the far (top) one -- wherever they stand on the treads. (The platform's
+  // flight is one flat row with a railing beside it: story 15.11, below.)
+  it("floor 0: a player on any tread cell draws after the top railing and before the bottom railing", () => {
+    const floor = STREET_FLOOR;
+    const props = buildStreetProps();
+    const treads = STREET_PROPS.find(
+      (p) => isDefStreetProp(p) && p.defId === STAIRWELL_TREADS_DEF_ID && p.floor === floor,
+    );
+    if (!treads) throw new Error(`no stairwell treads on floor ${floor}`);
+    const railings = (defId: number) =>
+      props.filter((d) => "defId" in d && d.defId === defId && d.floor === floor);
+    const top = railings(STAIRWELL_TOP_RAILING_DEF_ID);
+    const bottom = railings(STAIRWELL_BOTTOM_RAILING_DEF_ID);
+    expect(top).toHaveLength(3);
+    expect(bottom).toHaveLength(3);
+    for (let dx = 0; dx < 3; dx++) {
+      // The middle of the tread row and its south edge, the feet a hair
+      // above the cell boundary.
+      for (const feetY of [treads.y + 0.5, treads.y + 0.99]) {
+        const player = buildPlayerDrawable(rankOf("characters"), treads.x + dx + 0.5, feetY, floor);
+        for (const rail of top) expect(compareDrawables(rail, player)).toBeLessThan(0);
+        for (const rail of bottom) expect(compareDrawables(rail, player)).toBeGreaterThan(0);
       }
-    });
-  }
+    }
+  });
 
   it("a table and the glass on it share an anchor; the rank tiebreak keeps the glass on top", () => {
     const props = buildStreetProps();
@@ -563,6 +563,84 @@ describe("story 15.5: flat objects stay under the player, upright props keep y-s
       const southOrder = sortAcrossFloors([...props, south], (d) => d);
       expect(indexIn(northOrder, north.stableId)).toBeLessThan(indexIn(northOrder, id));
       expect(indexIn(southOrder, south.stableId)).toBeGreaterThan(indexIn(southOrder, id));
+    }
+  });
+
+  // Story 15.11 (AC1 sort): the platform flight is walked on, so a player on
+  // the entry cell or any tread is drawn over the flight, over everything
+  // north of that row and under every collider row south of it.
+  it("the platform flight is in the flat sweep's population, and the player sorts correctly at every sub-cell step over its entry cell and tread path", () => {
+    const sources = streetObjectSources();
+    const flightRows = PLATFORM_STAIRWELL_ROWS.filter(
+      (p) => isDefStreetProp(p) && passOfLayer(layerCodeByName(p.layer)) === "groundObjects",
+    );
+    expect(flightRows.length).toBeGreaterThan(0);
+    const flatIds = new Set(flatProps().map((d) => d.stableId));
+    for (const row of flightRows) expect(flatIds.has(row.id)).toBe(true);
+
+    // The tread path and the entry cell, from the pairing (one definition,
+    // shared with the conformance tests).
+    const platform = subwayAnchors().find(({ anchor }) => anchor.floor === SUBWAY_FLOOR);
+    if (!platform) throw new Error("no platform anchor");
+    const stairPath = treadPath(
+      stairwellRowsAt(platform.anchor),
+      platform.anchor,
+      platform.open.direction,
+    );
+    const cells = [stairPath.entry, ...stairPath.path];
+    expect(cells.length).toBeGreaterThanOrEqual(3); // entry, landing, anchor
+
+    const props = buildStreetProps();
+    const colliderRowIds = (north: boolean, row: number) =>
+      new Set(
+        STREET_PROPS.filter((p) => {
+          if (p.floor !== SUBWAY_FLOOR) return false;
+          const defId = isDefStreetProp(p) ? p.defId : streetDefId(p.id);
+          if (!sources.get(defId)?.collider) return false;
+          if (passOfLayer(layerCodeByName(p.layer)) !== "pool") return false;
+          // One-row props only: a tall run's cells straddle the path row.
+          const rows = isDefStreetProp(p)
+            ? sources.get(p.defId)?.height
+            : (p.footprint?.height ?? 1);
+          if (rows !== 1) return false;
+          return north ? p.y < row : p.y > row;
+        }).map((p) => p.id),
+      );
+    const flightIds = new Set(flightRows.map((r) => r.id));
+    const SUB = 16;
+    for (const cell of cells) {
+      const northIds = colliderRowIds(true, cell.y);
+      const southIds = colliderRowIds(false, cell.y);
+      // Every y-sorted row of the platform stairwell (the railing) is
+      // compared with the player, never silently dropped from the sets.
+      for (const row of PLATFORM_STAIRWELL_ROWS) {
+        if (passOfLayer(layerCodeByName(row.layer)) !== "pool") continue;
+        expect(
+          northIds.has(row.id) || southIds.has(row.id),
+          `row ${row.id} is in neither the north nor the south collider set at (${cell.x}, ${cell.y})`,
+        ).toBe(true);
+      }
+      for (let i = 0; i < SUB; i++) {
+        for (let j = 0; j < SUB; j++) {
+          const player = buildPlayerDrawable(
+            rankOf("characters"),
+            cell.x + i / SUB,
+            cell.y + j / SUB,
+            SUBWAY_FLOOR,
+          );
+          const order = sortAcrossFloors([...props, player], (d) => d);
+          const at = indexIn(order, player.stableId);
+          for (const [index, d] of order.entries()) {
+            if (d.floor !== SUBWAY_FLOOR) continue;
+            const where = `player at (${cell.x + i / SUB}, ${cell.y + j / SUB})`;
+            if (flightIds.has(d.stableId) || northIds.has(d.stableId)) {
+              expect(index, `${where}: ${d.stableId} must be drawn before`).toBeLessThan(at);
+            } else if (southIds.has(d.stableId)) {
+              expect(index, `${where}: ${d.stableId} must be drawn after`).toBeGreaterThan(at);
+            }
+          }
+        }
+      }
     }
   });
 

@@ -153,7 +153,7 @@ async function walkRealSegment(page: Page, segment: StreetWalkSegment): Promise<
 // Pinned like every other baseline spec, so the picture is the same size everywhere.
 test.use({ viewport: { width: 1920, height: 1080 } });
 
-// Well under the stairwell's own area (~49k device pixels at zoom).
+// Well under the platform flight and its railing's own area (~20k device pixels at zoom).
 const PLATFORM_MAX_DIFF_PIXELS = 200;
 
 test.describe("story 1.7: enclosure visibility", () => {
@@ -263,8 +263,9 @@ test.describe("story 1.7: enclosure visibility", () => {
     // this story exists (nothing from the street draws on the platform).
     expect(platformVisibility["crowd:0"]).toBe("hidden");
 
-    // Story 15.7: the platform baseline -- the treads visibly step up from
-    // the landing to the east wall, the green up-arrow on the wall above.
+    // Story 15.11: the platform baseline -- the player rests on the landing,
+    // on the flight that steps up to the east wall under the green
+    // up-arrow, its railing south of it and the entry cell open.
     await expect(canvasOf(page)).toHaveScreenshot("platform.png", {
       ...SCREENSHOT_OPTIONS,
       maxDiffPixels: PLATFORM_MAX_DIFF_PIXELS,

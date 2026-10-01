@@ -57,7 +57,7 @@ fn every_committed_collider_agrees_with_its_art() {
             examined += 1;
         }
     }
-    assert!(examined >= 5, "examined only {examined} colliders");
+    assert!(examined >= 6, "examined only {examined} colliders");
 }
 
 /// The real tree built with one line of `defs/objects/city-props.toml`
@@ -146,4 +146,29 @@ fn shrinking_the_lamppost_collider_to_its_old_box_names_the_columns() {
             art: (2, 14)
         })
     );
+}
+
+/// Story 15.11: the platform flight's railing is a real collider row, so the
+/// check reads it. Its solid columns are 0..47 (the last pixel column is
+/// shadow); shifted one sub-cell east, the build names the key and columns.
+#[test]
+fn shifting_the_platform_stair_railing_collider_names_the_key_and_the_columns() {
+    let msg = build_error_with(
+        "collider = { x0 = 0, y0 = 0, x1 = 47, y1 = 16 }",
+        "collider = { x0 = 1, y0 = 0, x1 = 48, y1 = 16 }",
+    );
+    assert!(
+        msg.contains("object 'platform_stair_railing' collider (1, 0)-(48, 16)")
+            && msg.contains("collider columns 1..48 reach outside the solid columns 0..47"),
+        "{msg}"
+    );
+}
+
+/// The railing carries a collider at all: a colliderless row is exactly how
+/// the old newel post escaped the check.
+#[test]
+fn the_platform_stair_railing_has_a_collider() {
+    let defs = real_defs();
+    assert!(object(&defs, "platform_stair_railing").collider.is_some());
+    assert!(object(&defs, "platform_stair_flight").collider.is_none());
 }

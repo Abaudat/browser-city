@@ -203,3 +203,30 @@ sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Bui
 width = 1
 archetype = "full_cell_blocker"
 tags = ["wall", "wall_run"]
+
+# The platform's way up (story 15.11): the flight the street stairwell is
+# seen from below. `Stairs_3` rises east natively; the band from sheet row
+# 13 keeps all four tread nosings and is one cell tall. Flat, so it is drawn
+# on the flat pass and never over a player standing on it.
+[[object]]
+id = 16
+key = "platform_stair_flight"
+name = "Platform Stair Flight"
+layer = "ground_objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_3.png", x = 0, y = 13, w = 32, h = 16 }
+width = 2
+archetype = "underfoot_flat"
+tags = ["stairs", "underfoot", "fixture"]
+
+# The flight's south handrail: upright, so its own `objects` row with a
+# collider that matches the art (the last pixel column is shadow).
+[[object]]
+id = 17
+key = "platform_stair_railing"
+name = "Platform Stair Railing"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Railing.png", x = 0, y = 0, w = 48, h = 16 }
+width = 3
+height = 1
+collider = { x0 = 0, y0 = 0, x1 = 47, y1 = 16 }
+tags = ["stairs", "fixture"]

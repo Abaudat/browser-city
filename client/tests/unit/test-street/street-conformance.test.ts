@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
-import { LAYER_TABLE } from "../../../src/render/layer-table";
+import { LAYER_TABLE, layerCodeByName, passOfLayer } from "../../../src/render/layer-table";
 import { subcellRectPx, worldPointPx } from "../../../src/render/screen-position";
 import { isNearSideWall } from "../../../src/render/visibility";
 import { ASSET_URLS } from "../../../src/test-street/assets";
@@ -32,17 +32,19 @@ import {
   isDefStreetProp,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
+  PLATFORM_INTERIOR_X0,
+  PLATFORM_INTERIOR_X1,
+  PLATFORM_INTERIOR_Y0,
+  PLATFORM_INTERIOR_Y1,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
+  PLATFORM_STAIRWELL_ROWS,
   PLATFORM_UP_ANCHOR_X,
   PLATFORM_UP_ANCHOR_Y,
   PLAYER_START,
   STAIRS_ENTRY_DIRECTION,
   STAIRS_X,
   STAIRS_Y,
-  STAIRWELL_BOTTOM_RAILING_DEF_ID,
-  STAIRWELL_TOP_RAILING_DEF_ID,
-  STAIRWELL_TREADS_DEF_ID,
   STREET_BOUNDARY,
   STREET_BUILDING_AREAS,
   STREET_EXIT_X,
@@ -50,6 +52,7 @@ import {
   STREET_GROUND_TILES,
   STREET_PROPS,
   STREET_ROOM_AREAS,
+  STREET_STAIRWELL_ROWS,
   STREET_TRANSITIONS,
   SUBWAY_ENTRANCE_X0,
   SUBWAY_FLOOR,
@@ -71,20 +74,20 @@ import {
 import { footprintCells, footprintOrigin } from "../../../src/world/footprint";
 import { bodyRect, MAX_DELTA_MS, step } from "../../../src/world/movement";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
-import {
-  blockedNeighborsOf,
-  forwardOpenNeighbor,
-  pairTransitions,
-  reverseOpenNeighbor,
-} from "../../../src/world/transitions";
+import { blockedNeighborsOf } from "../../../src/world/transitions";
 import { checkWorldSpec } from "../../../src/world/world-spec";
 import {
+  type Cell,
   committedDefs,
+  coversCell,
+  type DefProp,
   isCellStandable,
   lamppostApproachMaxX,
   lamppostRestY,
   onUnderpassRowY,
+  propCells,
   simulateStreetWalk,
+  stairwellRowsAt,
   streetMovementConfig,
   streetObjectSources,
   streetOwnershipIndex,
@@ -92,10 +95,13 @@ import {
   streetWalkInputs,
   streetWindowDefIds,
   streetWorldIndex,
+  subwayAnchors,
+  treadPath,
   underpassTurnMaxX,
 } from "./street-world";
 
 const defs = committedDefs();
+const objectSources = streetObjectSources();
 const config = streetMovementConfig();
 const world = streetWorldIndex();
 const ownership = streetOwnershipIndex();
@@ -688,23 +694,6 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     expect(rect.x1 - rect.x0).toBeCloseTo(1, 9); // the whole cell, not half of it
   });
 
-  /** Each subway anchor with its own open neighbour, from the pairing's
-   * own `d` (never re-derived here). */
-  function subwayAnchors() {
-    const { pairings } = pairTransitions(STREET_TRANSITIONS);
-    const subway = pairings.find(
-      (p) =>
-        p.forward.x === STAIRS_X &&
-        p.forward.y === STAIRS_Y &&
-        p.forward.floor === PLAYER_START.floor,
-    );
-    if (!subway) throw new Error("no mirrored pairing found for the subway's own down transition");
-    return [
-      { anchor: subway.forward, open: forwardOpenNeighbor(subway) },
-      { anchor: subway.reverse, open: reverseOpenNeighbor(subway) },
-    ];
-  }
-
   it("5. the subway stairwell's own opening is enterable from exactly one side: a step from each of its three other neighbours is refused by the grid, and the entry side is not (Quentin's finding 1)", () => {
     for (const { anchor, open } of subwayAnchors()) {
       const { floor } = anchor;
@@ -747,53 +736,15 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
 
   it("5b. each subway stairwell's own drawn footprint is solid everywhere but its tread path: every cell off it refuses a standing body, every tread from the opening to the anchor accepts one (Quentin's finding 2)", () => {
     const failures: string[] = [];
-    const stairwellDefIds = new Set([
-      STAIRWELL_TOP_RAILING_DEF_ID,
-      STAIRWELL_TREADS_DEF_ID,
-      STAIRWELL_BOTTOM_RAILING_DEF_ID,
-    ]);
     for (const { anchor, open } of subwayAnchors()) {
-      // The stairwell is the three def rows sharing the tread row's column
-      // and floor: the footprint is the union of theirs.
-      const treads = STREET_PROPS.find(
-        (p) =>
-          isDefStreetProp(p) &&
-          p.defId === STAIRWELL_TREADS_DEF_ID &&
-          p.floor === anchor.floor &&
-          footprintCells(p.x, p.y, sources.get(p.defId) ?? { width: 1, height: 1 }).some(
-            (c) => c.x === anchor.x && c.y === anchor.y,
-          ),
-      );
-      if (!treads || !isDefStreetProp(treads)) {
-        failures.push(`no stairwell treads row covers the anchor ${JSON.stringify(anchor)}`);
+      const rows = stairwellRowsAt(anchor);
+      if (rows.length === 0) {
+        failures.push(`no stairs-tagged row covers the anchor ${JSON.stringify(anchor)}`);
         continue;
       }
-      const rows = STREET_PROPS.filter(
-        (p) =>
-          isDefStreetProp(p) &&
-          stairwellDefIds.has(p.defId) &&
-          p.floor === treads.floor &&
-          p.x === treads.x,
-      );
-      expect(rows.length).toBe(3);
-      const cells = rows.flatMap((p) =>
-        isDefStreetProp(p)
-          ? footprintCells(p.x, p.y, sources.get(p.defId) ?? { width: 1, height: 1 })
-          : [],
-      );
-      const inFootprint = (c: { x: number; y: number }) =>
-        cells.some((cell) => cell.x === c.x && cell.y === c.y);
-      // The tread path: from the anchor back toward the opening, while
-      // still inside the drawn footprint.
-      const path: { x: number; y: number }[] = [];
-      for (
-        let c = { x: anchor.x, y: anchor.y };
-        inFootprint(c);
-        c = { x: c.x - open.direction.x, y: c.y - open.direction.y }
-      ) {
-        path.push(c);
-      }
-      expect(path.length).toBeGreaterThan(0);
+      const { cells, path } = treadPath(rows, anchor, open.direction);
+      expect(path.length).toBeGreaterThanOrEqual(2); // the anchor and a landing
+      expect(cells.length).toBeGreaterThan(path.length); // at least one off-path cell
       for (const cell of cells) {
         const onPath = path.some((c) => c.x === cell.x && c.y === cell.y);
         const standable = isCellStandable(world, config, cell.x, cell.y, anchor.floor);
@@ -807,21 +758,118 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     expect(failures).toEqual([]);
   });
 
-  it("5c. the finial row north of each stairwell's top railing is open floor: its three cells are standable", () => {
-    for (const floor of [PLAYER_START.floor, SUBWAY_FLOOR]) {
-      const top = STREET_PROPS.find(
-        (p) => isDefStreetProp(p) && p.defId === STAIRWELL_TOP_RAILING_DEF_ID && p.floor === floor,
+  it("5b'. the fixture's exported stairwell groups are exactly the stairs-tagged rows read from the defs", () => {
+    const ids = (rows: readonly { readonly id: bigint }[]) => rows.map((r) => r.id).sort();
+    const found = subwayAnchors().map(({ anchor }) => ({
+      floor: anchor.floor,
+      ids: ids(stairwellRowsAt(anchor)),
+    }));
+    expect(found.find((f) => f.floor === SUBWAY_FLOOR)?.ids).toEqual(ids(PLATFORM_STAIRWELL_ROWS));
+    expect(found.find((f) => f.floor === PLAYER_START.floor)?.ids).toEqual(
+      ids(STREET_STAIRWELL_ROWS),
+    );
+  });
+
+  it("5c. the finial row north of the street stairwell's top railing is open floor: its three cells are standable", () => {
+    const top = STREET_STAIRWELL_ROWS.find(
+      (p) => objectDef(p.defId).key === "stairwell_top_railing",
+    );
+    if (!top) throw new Error("the street stairwell has no top railing row");
+    const width = sources.get(top.defId)?.width ?? 0;
+    expect(width).toBe(3);
+    for (let dx = 0; dx < width; dx++) {
+      expect(
+        isCellStandable(world, config, top.x + dx, top.y - 1, top.floor),
+        `the finial cell (${top.x + dx}, ${top.y - 1}, floor ${top.floor}) is not standable`,
+      ).toBe(true);
+    }
+    // The platform flight has no finial row.
+    expect(
+      PLATFORM_STAIRWELL_ROWS.some((p) => objectDef(p.defId).key === "stairwell_top_railing"),
+    ).toBe(false);
+  });
+
+  const platformAnchor = () => {
+    const found = subwayAnchors().find(({ anchor }) => anchor.floor === SUBWAY_FLOOR);
+    if (!found) throw new Error("no platform anchor");
+    return found;
+  };
+
+  it("5d. the platform anchor's refused neighbours are each closed by a drawn prop, never an invisible blocker", () => {
+    const { anchor, open } = platformAnchor();
+    for (const blocked of blockedNeighborsOf(anchor, open.direction)) {
+      const closers = STREET_PROPS.filter(
+        (p) =>
+          p.floor === SUBWAY_FLOOR &&
+          coversCell(p, blocked) &&
+          objectSources.get(isDefStreetProp(p) ? p.defId : streetDefId(p.id))?.collider,
       );
-      if (!top) throw new Error(`no stairwell top railing on floor ${floor}`);
-      const width = sources.get(STAIRWELL_TOP_RAILING_DEF_ID)?.width ?? 0;
-      expect(width).toBe(3);
-      for (let dx = 0; dx < width; dx++) {
-        expect(
-          isCellStandable(world, config, top.x + dx, top.y - 1, floor),
-          `the finial cell (${top.x + dx}, ${top.y - 1}, floor ${floor}) is not standable`,
-        ).toBe(true);
+      expect(
+        closers.length,
+        `(${blocked.x}, ${blocked.y}) is closed by no placed prop with a collider`,
+      ).toBeGreaterThan(0);
+    }
+    expect(STREET_BOUNDARY.some((r) => (r.floor ?? PLAYER_START.floor) === SUBWAY_FLOOR)).toBe(
+      false,
+    );
+  });
+
+  it("5e. the platform's entry cell, one past the flight along the climb, is open floor: standable and covered by no placed prop", () => {
+    const { anchor, open } = platformAnchor();
+    const { entry } = treadPath(stairwellRowsAt(anchor), anchor, open.direction);
+    expect(isCellStandable(world, config, entry.x, entry.y, SUBWAY_FLOOR)).toBe(true);
+    expect(
+      STREET_PROPS.filter((p) => p.floor === SUBWAY_FLOOR && coversCell(p, entry)).map((p) => p.id),
+    ).toEqual([]);
+  });
+
+  it("5f. the re-laid platform has no sealed pocket and no invisible dead cell: every standable interior cell is reachable from the landing, every other is under a drawn prop", () => {
+    const interior: Cell[] = [];
+    for (let y = PLATFORM_INTERIOR_Y0; y <= PLATFORM_INTERIOR_Y1; y++) {
+      for (let x = PLATFORM_INTERIOR_X0; x <= PLATFORM_INTERIOR_X1; x++) interior.push({ x, y });
+    }
+    const standable = (c: Cell) => isCellStandable(world, config, c.x, c.y, SUBWAY_FLOOR);
+    const key = (c: Cell) => `${c.x},${c.y}`;
+    const reached = new Set<string>();
+    const queue: Cell[] = [{ x: PLATFORM_LANDING_X, y: PLATFORM_LANDING_Y }];
+    while (queue.length > 0) {
+      const c = queue.pop() as Cell;
+      if (reached.has(key(c)) || !interior.some((i) => key(i) === key(c)) || !standable(c))
+        continue;
+      reached.add(key(c));
+      queue.push(
+        { x: c.x + 1, y: c.y },
+        { x: c.x - 1, y: c.y },
+        { x: c.x, y: c.y + 1 },
+        { x: c.x, y: c.y - 1 },
+      );
+    }
+    const failures: string[] = [];
+    for (const c of interior) {
+      if (standable(c)) {
+        if (!reached.has(key(c))) failures.push(`(${c.x}, ${c.y}) is standable but sealed off`);
+      } else if (!STREET_PROPS.some((p) => p.floor === SUBWAY_FLOOR && coversCell(p, c))) {
+        failures.push(`(${c.x}, ${c.y}) is not standable but no placed prop covers it`);
       }
     }
+    expect(failures).toEqual([]);
+  });
+
+  it("5g. nothing y-sorted is drawn on either stairwell's tread path or entry cell -- the player never walks through something drawn over them", () => {
+    const failures: string[] = [];
+    for (const { anchor, open } of subwayAnchors()) {
+      const { path, entry } = treadPath(stairwellRowsAt(anchor), anchor, open.direction);
+      for (const p of STREET_PROPS) {
+        if (p.floor !== anchor.floor) continue;
+        if (passOfLayer(layerCodeByName(p.layer)) !== "pool") continue;
+        for (const c of [...path, entry]) {
+          if (coversCell(p, c)) {
+            failures.push(`pool-layer prop ${p.id} covers (${c.x}, ${c.y}, floor ${anchor.floor})`);
+          }
+        }
+      }
+    }
+    expect(failures).toEqual([]);
   });
 
   it("6. the subway transition pair is a real mirror: down the demo's own way (left), then the reverse input (right), lands back on the street treads -- never a detour through an unrelated direction", () => {
@@ -1231,41 +1279,38 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
 // A flip/mirror/negative scale of a side-on flight reverses exactly that,
 // so none may exist in the renderer or the fixture.
 describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () => {
-  const stairsAt = (floor: number) => {
-    const rows = STREET_PROPS.filter(
-      (p) =>
-        isDefStreetProp(p) &&
-        p.floor === floor &&
-        (p.defId === STAIRWELL_TOP_RAILING_DEF_ID ||
-          p.defId === STAIRWELL_TREADS_DEF_ID ||
-          p.defId === STAIRWELL_BOTTOM_RAILING_DEF_ID),
-    );
-    const treads = rows.find((p) => isDefStreetProp(p) && p.defId === STAIRWELL_TREADS_DEF_ID);
-    if (rows.length !== 3 || !treads) throw new Error(`no three-row stairwell on floor ${floor}`);
-    return { rows, treads };
-  };
-  const STREET_STAIRS = stairsAt(PLAYER_START.floor);
-  const PLATFORM_STAIRS = stairsAt(SUBWAY_FLOOR);
+  const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 
-  /** The stairwell's art, decoded from its defs' own sprite sheet and
-   * rects: the bounding box of the three rows' sprites. */
-  function decode(rows: readonly (typeof STREET_PROPS)[number][]): PNG {
-    const sprites = rows.map((p) => {
-      if (!isDefStreetProp(p)) throw new Error("stairwell rows are def rows");
-      return objectDef(p.defId).sprite;
-    });
+  /** The sheet of one def row, decoded. */
+  const sheetOf = (sheet: string): PNG => PNG.sync.read(readFileSync(join(repoRoot, sheet)));
+
+  /** The art of `rows`: the bounding box of their sprites, which must be
+   * cut from one sheet. */
+  function decode(rows: readonly { readonly defId: number }[]): PNG {
+    const sprites = rows.map((p) => objectDef(p.defId).sprite);
     const sheet = sprites[0]?.sheet;
     if (!sheet || sprites.some((s) => s.sheet !== sheet)) {
-      throw new Error("the stairwell's three defs must be cut from one sheet");
+      throw new Error("the rows must be cut from one sheet");
     }
     const x0 = Math.min(...sprites.map((s) => s.x));
     const y0 = Math.min(...sprites.map((s) => s.y));
     const x1 = Math.max(...sprites.map((s) => s.x + s.w));
     const y1 = Math.max(...sprites.map((s) => s.y + s.h));
-    const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-    const sheetPng = PNG.sync.read(readFileSync(join(repoRoot, sheet)));
     const out = new PNG({ width: x1 - x0, height: y1 - y0 });
-    PNG.bitblt(sheetPng, out, x0, y0, x1 - x0, y1 - y0, 0, 0);
+    PNG.bitblt(sheetOf(sheet), out, x0, y0, x1 - x0, y1 - y0, 0, 0);
+    return out;
+  }
+
+  /** `png` flipped left to right, in memory. */
+  function mirrorOf(png: PNG): PNG {
+    const out = new PNG({ width: png.width, height: png.height });
+    for (let y = 0; y < png.height; y++) {
+      for (let x = 0; x < png.width; x++) {
+        const from = (y * png.width + x) * 4;
+        const to = (y * png.width + (png.width - 1 - x)) * 4;
+        for (let c = 0; c < 4; c++) out.data[to + c] = png.data[from + c] ?? 0;
+      }
+    }
     return out;
   }
 
@@ -1299,20 +1344,129 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
     return { west: mean(0, third), east: mean(png.width - third, png.width) };
   }
 
-  it("the platform's up-stairs rise toward their anchor; the street's down-stairs sink toward theirs", () => {
-    // Which end of each stairwell holds the anchor, from the fixture's own cells.
-    const streetAnchorWest = STAIRS_X < STREET_STAIRS.treads.x + 1;
-    const platformAnchorEast = PLATFORM_UP_ANCHOR_X >= PLATFORM_STAIRS.treads.x + 2;
-    expect(streetAnchorWest).toBe(true);
-    expect(platformAnchorEast).toBe(true);
-    expect(PLATFORM_UP_ANCHOR_Y).toBe(PLATFORM_STAIRS.treads.y);
+  /** The walkable flight of a stairwell group: its flat-pass rows. */
+  const flightOf = (rows: readonly DefProp[]) =>
+    rows.filter((p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects");
 
-    const down = treadTopByThird(decode(STREET_STAIRS.rows));
-    const up = treadTopByThird(decode(PLATFORM_STAIRS.rows));
-    // Street: anchor (west) end is lower on screen (larger y) than the opening.
+  const streetAnchor = () => {
+    const found = subwayAnchors().find((a) => a.anchor.floor === PLAYER_START.floor);
+    if (!found) throw new Error("no street anchor");
+    return found;
+  };
+
+  const platformFlight = () => {
+    const { anchor, open } = subwayAnchors().find((a) => a.anchor.floor === SUBWAY_FLOOR) ?? {};
+    if (!anchor || !open) throw new Error("no platform anchor");
+    return { anchor, climb: open.direction, flight: flightOf(stairwellRowsAt(anchor)) };
+  };
+
+  it("the platform's up-stairs rise toward their anchor; the street's down-stairs sink toward theirs", () => {
+    // Street half: the anchor (west) end is lower on screen than the opening.
+    const streetRows = stairwellRowsAt(streetAnchor().anchor);
+    const streetAnchorWest = STAIRS_X < Math.min(...flightOf(streetRows).map((p) => p.x)) + 1;
+    expect(streetAnchorWest).toBe(true);
+    const down = treadTopByThird(decode(streetRows));
     expect(down.west).toBeGreaterThan(down.east);
-    // Platform: anchor (east) end is higher on screen (smaller y) than the landing.
-    expect(up.east).toBeLessThan(up.west);
+
+    // Platform half: the flight is found by the tag rule, decoded from its
+    // own sprite, and measured along the climb axis from the pairing's own
+    // open direction -- the end the player climbs toward must be higher.
+    const { anchor, climb, flight } = platformFlight();
+    expect(flight.length).toBeGreaterThan(0);
+    expect(climb.y === 0, "the side-on rise can only be read along an east-west climb").toBe(true);
+    const cells = flight.flatMap(propCells);
+    const aheadMost = Math.max(...cells.map((c) => c.x * climb.x));
+    expect(anchor.x * climb.x, "the anchor is the climb's far end").toBe(aheadMost);
+    const up = treadTopByThird(decode(flight));
+    const [ahead, behind] = climb.x > 0 ? [up.east, up.west] : [up.west, up.east];
+    expect(ahead).toBeLessThan(behind);
+
+    // Positive control: the same art mirrored in memory reads as sinking
+    // along the climb, so the classifier can tell the two apart.
+    const mirroredUp = treadTopByThird(mirrorOf(decode(flight)));
+    const [mAhead, mBehind] =
+      climb.x > 0 ? [mirroredUp.east, mirroredUp.west] : [mirroredUp.west, mirroredUp.east];
+    expect(mAhead).toBeGreaterThanOrEqual(mBehind);
+  });
+
+  /** The share of identical RGBA pixels between `art` and the same-size
+   * window of `street` at `(ox, oy)`, `art` optionally mirrored. */
+  function matchFraction(art: PNG, street: PNG, ox: number, oy: number, mirrored: boolean) {
+    let same = 0;
+    for (let y = 0; y < art.height; y++) {
+      for (let x = 0; x < art.width; x++) {
+        const ai = (y * art.width + (mirrored ? art.width - 1 - x : x)) * 4;
+        const si = ((oy + y) * street.width + ox + x) * 4;
+        if (
+          art.data[ai] === street.data[si] &&
+          art.data[ai + 1] === street.data[si + 1] &&
+          art.data[ai + 2] === street.data[si + 2] &&
+          art.data[ai + 3] === street.data[si + 3]
+        ) {
+          same++;
+        }
+      }
+    }
+    return same / (art.width * art.height);
+  }
+
+  /** The best match of `art` anywhere over `street`, both orientations. */
+  function bestMatch(art: PNG, street: PNG) {
+    let best = { fraction: 0, mirrored: false };
+    for (let oy = 0; oy + art.height <= street.height; oy++) {
+      for (let ox = 0; ox + art.width <= street.width; ox++) {
+        for (const mirrored of [false, true]) {
+          const fraction = matchFraction(art, street, ox, oy, mirrored);
+          if (fraction > best.fraction) best = { fraction, mirrored };
+        }
+      }
+    }
+    return best;
+  }
+
+  const spriteArt = (sprite: { sheet: string; x: number; y: number; w: number; h: number }) => {
+    const art = new PNG({ width: sprite.w, height: sprite.h });
+    PNG.bitblt(sheetOf(sprite.sheet), art, sprite.x, sprite.y, sprite.w, sprite.h, 0, 0);
+    return art;
+  };
+
+  /** At or above this share of identical pixels a sprite is the street's
+   * descent art, however it is cut or flipped. */
+  const RETREAT_MATCH_FRACTION = 0.75;
+
+  it("the platform stairwell is not the street stairwell's descent art: no shared sheet, and no row matches it at 0.75 or more, unflipped or mirrored", () => {
+    const streetRows = stairwellRowsAt(streetAnchor().anchor);
+    const platformRows = stairwellRowsAt(platformFlight().anchor);
+    expect(platformRows.length).toBeGreaterThan(0);
+    const streetSheets = new Set(streetRows.map((p) => objectDef(p.defId).sprite.sheet));
+    const street = decode(streetRows);
+    for (const p of platformRows) {
+      const { key, sprite } = objectDef(p.defId);
+      expect(streetSheets.has(sprite.sheet), `${key} shares a sheet with the street`).toBe(false);
+      const best = bestMatch(spriteArt(sprite), street);
+      expect(
+        best.fraction,
+        `${key} matches the street stairwell art at ${best.fraction}${best.mirrored ? " mirrored" : ""}`,
+      ).toBeLessThan(RETREAT_MATCH_FRACTION);
+    }
+  });
+
+  it("the retreat matcher fires: the street's own tread sprite matches unflipped, and Stairs_Complete_4's tread row matches mirrored", () => {
+    const streetRows = stairwellRowsAt(streetAnchor().anchor);
+    const street = decode(streetRows);
+    const treads = streetRows.find((p) => objectDef(p.defId).key === "stairwell_treads");
+    if (!treads) throw new Error("the street stairwell has no treads row");
+    const own = bestMatch(spriteArt(objectDef(treads.defId).sprite), street);
+    expect(own.fraction).toBeGreaterThanOrEqual(RETREAT_MATCH_FRACTION);
+    expect(own.mirrored).toBe(false);
+
+    const sheet = objectDef(treads.defId).sprite.sheet.replace(
+      "Stairs_Complete_2",
+      "Stairs_Complete_4",
+    );
+    const other = bestMatch(spriteArt({ sheet, x: 0, y: 32, w: 48, h: 16 }), street);
+    expect(other.fraction).toBeGreaterThanOrEqual(RETREAT_MATCH_FRACTION);
+    expect(other.mirrored).toBe(true);
   });
 
   it("no ModernTileset sheet is drawn flipped: no negative scale or flip in the fixture or renderer", () => {
