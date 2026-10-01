@@ -44,7 +44,10 @@ fn sheet_dims() -> BTreeMap<String, (u32, u32)> {
 /// rows `cols`/`rows` of the sheet) -- the build's silhouette check
 /// refuses any other art. A solid colour inside that block is enough,
 /// this test exercises the sheet's own markup, never pixel content.
-fn art_rects() -> BTreeMap<&'static str, ((u32, u32), (u32, u32))> {
+/// Half-open pixel `(columns, rows)` of the solid block in a sheet.
+type ArtRect = ((u32, u32), (u32, u32));
+
+fn art_rects() -> BTreeMap<&'static str, ArtRect> {
     [
         ("bench.png", ((16, 32), (4, 12))),
         ("lamppost.png", ((4, 12), (48, 64))),

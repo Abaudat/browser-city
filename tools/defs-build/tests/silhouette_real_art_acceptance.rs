@@ -75,8 +75,7 @@ fn build_error_with(old: &str, new: &str) -> String {
     }
     assert_eq!(replaced, 1, "'{old}' must appear once in the real tree");
     defs_build::build_from_text_files(&root, &files, "test")
-        .err()
-        .expect("the altered tree must fail the build")
+        .expect_err("the altered tree must fail the build")
         .to_string()
 }
 
