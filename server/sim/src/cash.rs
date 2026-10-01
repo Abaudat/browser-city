@@ -102,7 +102,7 @@ pub fn choose_change(
         .copied()
         .filter(|d| d.face_value > 0)
         .collect();
-    table.sort_by(|a, b| b.face_value.cmp(&a.face_value));
+    table.sort_by_key(|d| std::cmp::Reverse(d.face_value));
     let target = usize::try_from(amount).ok()?;
     // Pieces of each kind that could ever matter.
     let usable: Vec<usize> = table
@@ -187,10 +187,10 @@ pub fn plan_payment(
         .iter()
         .filter_map(|&(i, _)| face_of(denoms, i).map(|f| (f, i)))
         .min();
-    if let Some((face, item_id)) = smallest {
-        if due >= u64::from(face) {
-            return Ok(Payment::SuperfluousPiece { item_id });
-        }
+    if let Some((face, item_id)) = smallest
+        && due >= u64::from(face)
+    {
+        return Ok(Payment::SuperfluousPiece { item_id });
     }
     let Some(change) = choose_change(existing, till, due, denoms) else {
         return Ok(Payment::NoChange);
