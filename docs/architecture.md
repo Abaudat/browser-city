@@ -634,10 +634,8 @@ are, though it is still exercised by real tests
 The street contributes no collider that is not drawn on the same floor
 (story 15.2): every `STREET_PROPS` row that carries a `solid` flag or a
 `defId` also carries a real sprite at that same footprint, and its
-collider lies inside that footprint. An asset-placed solid prop may
-declare several collider rects shaped to its art (`colliders`): the
-first is fed under the prop's own id, each further one as a collider part
-(`streetColliderPartId`) with the prop's own anchor and footprint.
+collider lies inside that footprint. An asset-placed solid prop declares
+one `collider`.
 `STREET_BOUNDARY` is exactly one thing: the undrawn ring that closes the
 edge of the drawn world, in whole cells, every one outside every drawn
 ground pass on its floor. The one exemption is the footbridge's south rail
@@ -1064,13 +1062,19 @@ footprint's own north-west cell (matching the sprite's own pixel space).
 `client/src/world/footprint.ts`'s `footprintOrigin` is the one place that
 converts an anchor cell to its footprint's north-west cell; every client
 module that needs to place a footprint-relative rect or cell calls it,
-never re-deriving the offset itself. Three build-time checks apply only
-to `layer` and `sprite`: `layer` resolves against the codes golden (an
-unknown or deprecated name is refused, naming the accepted set); `sprite`
-fits entirely inside its own sheet's real `IHDR` bounds; and `sprite`
-agrees with the footprint exactly (`w == width * tile_size_px`, `h` a
-whole multiple of `tile_size_px` and `h >= height * tile_size_px` -- a
-tall prop may overhang upward, never sideways or downward). `sprite` never
+never re-deriving the offset itself. Four build-time checks apply only
+to `layer`, `sprite` and the art under `collider`: `layer` resolves
+against the codes golden (an unknown or deprecated name is refused,
+naming the accepted set); `sprite` fits entirely inside its own sheet's
+real `IHDR` bounds; `sprite` agrees with the footprint exactly (`w ==
+width * tile_size_px`, `h` a whole multiple of `tile_size_px` and `h >=
+height * tile_size_px` -- a tall prop may overhang upward, never sideways
+or downward); and a `collider`'s columns and rows lie inside the opaque
+column and row spans of the sprite's footprint band (its bottom `height *
+tile_size_px` rows), and the band's lowest opaque row lies inside the
+collider's columns. Opaque is alpha at or above `ALPHA_OPAQUE_THRESHOLD`,
+declared once in `tools/defs-build/src/alpha.rs`. This check is
+build-only; the client never reads a pixel. `sprite` never
 repeats: a surface wider than its own art is a one-cell object placed
 once per cell. Every field is validated identically on both sides.
 
@@ -1095,7 +1099,8 @@ parse and validation. `archetype` is authoring-time only: it is never
 emitted into either generated artefact and never reaches a runtime. A
 companion offline binary, `defs-propose`, prints `[[object]]` stanzas to
 stdout only, and is never an input to `tools/defs-build`'s own `build`
-path.
+path. `build` reads pixels only to refuse; no generated artefact depends
+on alpha.
 
 ### Atlases
 

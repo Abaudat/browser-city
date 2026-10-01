@@ -21,6 +21,12 @@
 #      a renderer of declared geometry, never a second, self-agreeing
 #      measurement of the same thing (Quentin's direction).
 #
+#   4. story 15.3: pixels may refuse a build, never shape an artefact --
+#      exactly one `const ALPHA_OPAQUE_THRESHOLD` and one `fn is_opaque`
+#      under `tools/defs-build/src/`, and `alpha::` referenced only from
+#      `propose.rs`, `silhouette.rs` and `atlas/character.rs`, never from
+#      `emit.rs`, `validate.rs`, `contact_sheet.rs` or `lib.rs`.
+#
 # Usage: check-no-runtime-footprint-inference.sh [repo-root]
 set -euo pipefail
 REPO_ROOT="${1:-"$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"}"
@@ -104,9 +110,29 @@ if [ -f "$CONTACT_SHEET_SRC" ] && grep -qE 'atlas::image|decode_rgba8|encode_rgb
   FAILED=1
 fi
 
+# --- 4. story 15.3: the alpha threshold and `is_opaque` are declared
+# once, and only the proposer, the silhouette check and the character
+# strip's emptiness test may read them. -----------------------------------
+if [ -d "$DEFS_BUILD_SRC" ]; then
+  for decl in 'const ALPHA_OPAQUE_THRESHOLD' 'fn is_opaque[(]'; do
+    COUNT="$(grep -rEh "$decl" "$DEFS_BUILD_SRC" --include='*.rs' | grep -cE "^\s*(pub )?(const|fn) " || true)"
+    if [ "$COUNT" -ne 1 ]; then
+      echo "check-no-runtime-footprint-inference: FAIL -- '$decl' is declared $COUNT times under $DEFS_BUILD_SRC (exactly one, in alpha.rs):" >&2
+      grep -rnE "$decl" "$DEFS_BUILD_SRC" --include='*.rs' >&2 || true
+      FAILED=1
+    fi
+  done
+  MATCHES="$(grep -rlE 'alpha::|crate::alpha' "$DEFS_BUILD_SRC" --include='*.rs'     | grep -vE '(^|/)alpha\.rs$|(^|/)propose\.rs$|(^|/)silhouette\.rs$|(^|/)atlas/character\.rs$' || true)"
+  if [ -n "$MATCHES" ]; then
+    echo "check-no-runtime-footprint-inference: FAIL -- 'alpha::' referenced outside propose.rs, silhouette.rs and atlas/character.rs -- pixels may refuse a build, never shape an artefact:" >&2
+    echo "$MATCHES" >&2
+    FAILED=1
+  fi
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-no-runtime-footprint-inference: 'archetype' and the proposer never reach a runtime artefact or a runtime's own source, and the contact sheet never reads a pixel (AC3/AC4, story 2.5)" >&2
+echo "check-no-runtime-footprint-inference: 'archetype' and the proposer never reach a runtime artefact or a runtime's own source, the contact sheet never reads a pixel, and alpha is declared once and read only by the proposer and the silhouette check (AC3/AC4, story 2.5, story 15.3)" >&2
 exit 0

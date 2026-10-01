@@ -219,7 +219,11 @@ fn build_strip(
         }
     }
 
-    let any_opaque = strip.as_chunks::<4>().0.iter().any(|px| px[3] != 0);
+    let any_opaque = strip
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|px| px[3] >= crate::alpha::ALPHA_OPAQUE_THRESHOLD);
     if !any_opaque {
         return Err(format!(
             "{} '{}' sheet '{}': packed strip is fully transparent -- every declared cell decoded to alpha 0",
