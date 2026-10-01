@@ -153,7 +153,7 @@ async function walkRealSegment(page: Page, segment: StreetWalkSegment): Promise<
 // Pinned like every other baseline spec, so the picture is the same size everywhere.
 test.use({ viewport: { width: 1920, height: 1080 } });
 
-// Well under the stairwell's own area (~49k device pixels at zoom).
+// Well under the platform flight and its railing's own area (~20k device pixels at zoom).
 const PLATFORM_MAX_DIFF_PIXELS = 200;
 
 test.describe("story 1.7: enclosure visibility", () => {

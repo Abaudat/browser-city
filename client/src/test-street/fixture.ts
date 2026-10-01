@@ -155,7 +155,7 @@ export const BRIDGE_DECK_DEF_ID = 7;
  * walkable flight of steps. Which floors it joins is a `floor_transition`
  * row anchored on its cell, never a field on the prop. */
 export const FOOT_STAIRS_DEF_ID = 8;
-/** The subway stairwell's three `defs/objects` rows, cut from one sheet
+/** The street stairwell's three `defs/objects` rows, cut from one sheet
  * (`stairwell_top_railing`, `stairwell_treads`, `stairwell_bottom_railing`):
  * the player walks between the railings. */
 export const STAIRWELL_TOP_RAILING_DEF_ID = 12;
@@ -164,6 +164,10 @@ export const STAIRWELL_BOTTOM_RAILING_DEF_ID = 14;
 /** `wall_face`: the tall interior face of a north or south wall run, one
  * cell wide. West and east runs are `wall_segment` rows. */
 export const WALL_FACE_DEF_ID = 15;
+/** The platform's way up: a flat flight and the railing along its south
+ * side (story 15.6). */
+export const PLATFORM_STAIR_FLIGHT_DEF_ID = 16;
+export const PLATFORM_STAIR_RAILING_DEF_ID = 17;
 
 /** Synthetic def ids for street-only geometry (walls, world boundary),
  * offset far past any real `defs/objects` id so the two never collide in
@@ -250,7 +254,7 @@ export const PLATFORM_BUILDING_ID = 3n;
 export const STREET_FLOOR = 0;
 export const SUBWAY_FLOOR = -1;
 
-/** Both subway stairwells' own art (`Stairs_Complete_2`, 48x64px) is
+/** The street stairwell's own art (`Stairs_Complete_2`, 48x64px) is
  * three objects on one 3x3 ground footprint: the top railing (its drawn
  * finial overhangs one row north of the footprint), the treads, the
  * bottom railing. */
@@ -261,7 +265,7 @@ export const STAIRWELL_FOOTPRINT = { width: 3, height: 3 } as const;
  * railing. */
 const STAIRWELL_TREAD_ROW = 2;
 
-/** The three rows one stairwell is placed as: anchor row offset from the
+/** The three rows the street stairwell is placed as: anchor row offset from the
  * art's north edge, the def and its layer (the treads lie flat on the
  * ground, so they are on the flat pass and never sort over the player). */
 const STAIRWELL_ROWS = [
@@ -298,17 +302,23 @@ const PLATFORM_X0 = 13;
 const PLATFORM_X1 = 20;
 const PLATFORM_Y0 = 1;
 const PLATFORM_Y1 = 6;
-const PLATFORM_INTERIOR_X0 = PLATFORM_X0 + 1;
-const PLATFORM_INTERIOR_X1 = PLATFORM_X1 - 1;
-const PLATFORM_INTERIOR_Y0 = PLATFORM_Y0 + 1;
-const PLATFORM_INTERIOR_Y1 = PLATFORM_Y1 - 1;
+export const PLATFORM_INTERIOR_X0 = PLATFORM_X0 + 1;
+export const PLATFORM_INTERIOR_X1 = PLATFORM_X1 - 1;
+export const PLATFORM_INTERIOR_Y0 = PLATFORM_Y0 + 1;
+export const PLATFORM_INTERIOR_Y1 = PLATFORM_Y1 - 1;
 
-/** The platform's up-stairs fill the interior's east end, against the
- * east wall: its opening is the tread row's west end, and the up anchor
- * is the tread against the wall. */
-const PLATFORM_STAIRWELL_X0 = PLATFORM_INTERIOR_X1 - STAIRWELL_FOOTPRINT.width + 1;
+/** The platform's up-stairs: a one-cell-deep flight against the north
+ * wall, climbing east, its up anchor the east-most tread against the east
+ * wall. The flight is `PLATFORM_FLIGHT_WIDTH` cells ending at the anchor;
+ * the entry cell is the one just west of it. */
 export const PLATFORM_UP_ANCHOR_X = PLATFORM_INTERIOR_X1;
-export const PLATFORM_UP_ANCHOR_Y = PLATFORM_INTERIOR_Y0 + STAIRWELL_TREAD_ROW;
+export const PLATFORM_UP_ANCHOR_Y = PLATFORM_INTERIOR_Y0;
+const PLATFORM_FLIGHT_WIDTH = 2;
+const PLATFORM_FLIGHT_X0 = PLATFORM_UP_ANCHOR_X - PLATFORM_FLIGHT_WIDTH + 1;
+/** The railing closing the flight's south side, one cell wider than the
+ * flight: its extra cell runs along the entry cell. */
+const PLATFORM_RAILING_WIDTH = PLATFORM_FLIGHT_WIDTH + 1;
+const PLATFORM_RAILING_X0 = PLATFORM_UP_ANCHOR_X - PLATFORM_RAILING_WIDTH + 1;
 
 /** Where walking down lands: the up anchor's own neighbour one step
  * further along `STAIRS_ENTRY_DIRECTION` (the pairing's mirror rule). */
@@ -423,24 +433,52 @@ export const STREET_BUILDING_AREAS: readonly OwnershipArea[] = [
 
 export const STREET_ROOM_AREAS: readonly OwnershipArea[] = [];
 
-/** One stairwell as its three `defs/objects` rows, anchored under its art
- * (`x` the west column, `artY` the art's north row). `ids` are the rows'
- * stable ids, top railing first. */
-function stairwellRows(
+/** The street stairwell as its three `defs/objects` rows, anchored under
+ * its art (`x` the west column, `artY` the art's north row), top railing
+ * first. */
+function streetStairwellRows(
   ids: readonly [bigint, bigint, bigint],
   x: number,
   artY: number,
-  floor: number,
-): readonly StreetProp[] {
+): readonly StreetPropByDef[] {
   return STAIRWELL_ROWS.map(({ row, defId, layer }, index) => ({
     id: ids[index] as bigint,
     x,
     y: artY + row,
-    floor,
+    floor: STREET_FLOOR,
     layer,
     defId,
   }));
 }
+
+/** The street stairwell's placed rows. */
+export const STREET_STAIRWELL_ROWS: readonly StreetPropByDef[] = streetStairwellRows(
+  [50n, 53n, 54n],
+  STAIRWELL_X0,
+  STAIRWELL_Y0,
+);
+
+/** The platform stairwell's placed rows: the flat flight (the player's own
+ * footing, never drawn over them) and the upright railing along its south
+ * side, which carries its own collider. */
+export const PLATFORM_STAIRWELL_ROWS: readonly StreetPropByDef[] = [
+  {
+    id: 51n,
+    x: PLATFORM_FLIGHT_X0,
+    y: PLATFORM_UP_ANCHOR_Y,
+    floor: SUBWAY_FLOOR,
+    layer: "ground_objects",
+    defId: PLATFORM_STAIR_FLIGHT_DEF_ID,
+  },
+  {
+    id: 55n,
+    x: PLATFORM_RAILING_X0,
+    y: PLATFORM_UP_ANCHOR_Y + 1,
+    floor: SUBWAY_FLOOR,
+    layer: "objects",
+    defId: PLATFORM_STAIR_RAILING_DEF_ID,
+  },
+];
 
 /** The id space `wallRun` hands to every cell after a run's first, kept
  * clear of every hand-numbered row. */
@@ -702,10 +740,10 @@ export const STREET_PROPS: readonly StreetProp[] = [
   // Artie's direction): three def rows -- the railings block their own
   // row, the tread row is walkable from its east opening down to the down
   // anchor.
-  ...stairwellRows([50n, 53n, 54n], STAIRWELL_X0, STAIRWELL_Y0, STREET_FLOOR),
+  ...STREET_STAIRWELL_ROWS,
   // The same flight seen from the platform: its opening faces west and
   // its treads rise toward the up anchor at the east wall.
-  ...stairwellRows([51n, 55n, 56n], PLATFORM_STAIRWELL_X0, PLATFORM_INTERIOR_Y0, SUBWAY_FLOOR),
+  ...PLATFORM_STAIRWELL_ROWS,
   ...platformWalls(),
   // The way-out sign on the platform's north wall face, above the
   // up-stairs' anchor column.

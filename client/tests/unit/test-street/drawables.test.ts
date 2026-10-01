@@ -26,6 +26,9 @@ import {
   LAMPPOST_CELL,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
+  PLATFORM_STAIRWELL_ROWS,
+  PLATFORM_UP_ANCHOR_X,
+  PLATFORM_UP_ANCHOR_Y,
   PLAYER_START,
   SIDEWALK_TILES,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
@@ -34,6 +37,7 @@ import {
   STREET_FLOOR,
   STREET_PROPS,
   SUBWAY_FLOOR,
+  streetDefId,
   wallRunCellId,
 } from "../../../src/test-street/fixture";
 import type { Vec2 } from "../../../src/world/movement";
@@ -157,10 +161,11 @@ describe("the story 1.6 street scene's committed ordering", () => {
     expect(compareDrawables(nearCell, player)).toBeGreaterThan(0); // near end: in front of the player
   });
 
-  // Story 15.3 (Artie): the stairwell is three objects so the player walks
-  // between the railings -- behind the near (bottom) one, in front of the far
-  // (top) one -- wherever they stand on the treads, on either floor.
-  for (const floor of [STREET_FLOOR, SUBWAY_FLOOR]) {
+  // Story 15.3 (Artie): the street stairwell is three objects so the player
+  // walks between the railings -- behind the near (bottom) one, in front of
+  // the far (top) one -- wherever they stand on the treads. (The platform's
+  // flight is one flat row with a railing beside it: story 15.6, below.)
+  for (const floor of [STREET_FLOOR]) {
     it(`floor ${floor}: a player on any tread cell draws after the top railing and before the bottom railing`, () => {
       const props = buildStreetProps();
       const treads = STREET_PROPS.find(
@@ -563,6 +568,78 @@ describe("story 15.5: flat objects stay under the player, upright props keep y-s
       const southOrder = sortAcrossFloors([...props, south], (d) => d);
       expect(indexIn(northOrder, north.stableId)).toBeLessThan(indexIn(northOrder, id));
       expect(indexIn(southOrder, south.stableId)).toBeGreaterThan(indexIn(southOrder, id));
+    }
+  });
+
+  // Story 15.6 (AC1 sort): the platform flight is walked on, so a player on
+  // the entry cell or any tread is drawn over the flight, over everything
+  // north of that row and under every collider row south of it.
+  it("the platform flight is in the flat sweep's population, and the player sorts correctly at every sub-cell step over its entry cell and tread path", () => {
+    const sources = streetObjectSources();
+    const flightRows = PLATFORM_STAIRWELL_ROWS.filter(
+      (p) => isDefStreetProp(p) && passOfLayer(layerCodeByName(p.layer)) === "groundObjects",
+    );
+    expect(flightRows.length).toBeGreaterThan(0);
+    const flatIds = new Set(flatProps().map((d) => d.stableId));
+    for (const row of flightRows) expect(flatIds.has(row.id)).toBe(true);
+
+    // The tread path and the entry cell: the flight's own cells from the
+    // anchor back along the climb, plus the cell just past them.
+    const flightCells = flightRows.flatMap((row) => {
+      if (!isDefStreetProp(row)) return [];
+      const { width } = sources.get(row.defId) ?? { width: 1 };
+      return Array.from({ length: width }, (_, i) => ({ x: row.x + i, y: row.y }));
+    });
+    const west = Math.min(...flightCells.map((c) => c.x));
+    const cells = [...flightCells, { x: west - 1, y: PLATFORM_UP_ANCHOR_Y }];
+    expect(cells.length).toBeGreaterThanOrEqual(3); // entry, landing, anchor
+    expect(cells.some((c) => c.x === PLATFORM_UP_ANCHOR_X && c.y === PLATFORM_UP_ANCHOR_Y)).toBe(
+      true,
+    );
+
+    const props = buildStreetProps();
+    const colliderRowIds = (north: boolean, row: number) =>
+      new Set(
+        STREET_PROPS.filter((p) => {
+          if (p.floor !== SUBWAY_FLOOR) return false;
+          const defId = isDefStreetProp(p) ? p.defId : streetDefId(p.id);
+          if (!sources.get(defId)?.collider) return false;
+          if (passOfLayer(layerCodeByName(p.layer)) !== "pool") return false;
+          // One-row props only: a tall run's cells straddle the path row.
+          const rows = isDefStreetProp(p)
+            ? sources.get(p.defId)?.height
+            : (p.footprint?.height ?? 1);
+          if (rows !== 1) return false;
+          return north ? p.y < row : p.y > row;
+        }).map((p) => p.id),
+      );
+    const flightIds = new Set(flightRows.map((r) => r.id));
+    const SUB = 16;
+    for (const cell of cells) {
+      const northIds = colliderRowIds(true, cell.y);
+      const southIds = colliderRowIds(false, cell.y);
+      expect(southIds.size, "a collider row south of the path (the railing)").toBeGreaterThan(0);
+      for (let i = 0; i < SUB; i++) {
+        for (let j = 0; j < SUB; j++) {
+          const player = buildPlayerDrawable(
+            rankOf("characters"),
+            cell.x + i / SUB,
+            cell.y + j / SUB,
+            SUBWAY_FLOOR,
+          );
+          const order = sortAcrossFloors([...props, player], (d) => d);
+          const at = indexIn(order, player.stableId);
+          for (const [index, d] of order.entries()) {
+            if (d.floor !== SUBWAY_FLOOR) continue;
+            const where = `player at (${cell.x + i / SUB}, ${cell.y + j / SUB})`;
+            if (flightIds.has(d.stableId) || northIds.has(d.stableId)) {
+              expect(index, `${where}: ${d.stableId} must be drawn before`).toBeLessThan(at);
+            } else if (southIds.has(d.stableId)) {
+              expect(index, `${where}: ${d.stableId} must be drawn after`).toBeGreaterThan(at);
+            }
+          }
+        }
+      }
     }
   });
 
