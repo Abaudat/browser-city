@@ -316,6 +316,47 @@ fn the_public_write_verbs_are_exactly_make_consume_and_the_two_transfers() {
     );
 }
 
+/// The complete public surface of `sim::stock`'s functions is one literal
+/// list, so any new public function (a "set", an "adjust", a method that
+/// rewrites a plan) is a deliberate edit here.
+#[test]
+fn the_public_functions_of_stock_are_exactly_these() {
+    let source = include_str!("../src/stock.rs");
+    assert!(
+        !source.contains("pub("),
+        "no restricted-visibility escape hatch"
+    );
+    let mut names: Vec<&str> = source
+        .match_indices("pub fn ")
+        .map(|(at, _)| {
+            source[at + "pub fn ".len()..]
+                .split(['(', '<'])
+                .next()
+                .unwrap()
+                .trim()
+        })
+        .collect();
+    names.sort();
+    let mut want = vec![
+        // The four verbs.
+        "plan_consume",
+        "plan_make",
+        "plan_transfer",
+        "plan_transfer_exact",
+        // `Write`'s getters.
+        "author",
+        "holder",
+        "item_id",
+        "plan",
+        // `HolderRef`.
+        "id",
+        "kind",
+        "new",
+    ];
+    want.sort();
+    assert_eq!(names, want);
+}
+
 #[test]
 fn a_write_carries_its_author_holder_and_item() {
     let h = holder(holder_kind::CITIZEN, 3);

@@ -16,8 +16,8 @@
 # Any other file fails when it calls the accessor (`.stock()`, `::stock(`,
 # `stock::stock`), globs the module (`stock::*`), or has a `use` that
 # reaches the `stock` module other than to name its capitalised types and
-# the `business` accessor: the module itself (bare or `as`), `stock` in a
-# brace list, `stock as _` are all failures. `sim::stock` is a different
+# the `business` accessor: the module itself (bare or `as`), `self`, `as`,
+# `stock` in a brace list, `stock as _` are all failures. `sim::stock` is a different
 # module and is not touched. Comment lines are skipped.
 #
 # Usage: check-stock-write-path.sh [src-dir]   (default: server/src)
@@ -36,6 +36,7 @@ code() { grep -v '^[[:space:]]*//' "$1" | tr -d '\r'; }
 flat() { code "$1" | tr '\n' ' '; }
 
 CALLS='\.[[:space:]]*stock[[:space:]]*\(\)|::[[:space:]]*stock[[:space:]]*\(|stock[[:space:]]*::[[:space:]]*(stock([^_[:alnum:]]|$)|\*)'
+PATHCALLS='::[[:space:]]*stock[[:space:]]*\(|stock[[:space:]]*::[[:space:]]*(stock([^_[:alnum:]]|$)|\*)'
 WORD='(^|[^_[:alnum:]])stock([^_[:alnum:]]|$)'
 
 # reaches_module <file> -- a `use` statement that leaves a bare `stock`
@@ -44,6 +45,12 @@ reaches_module() {
   flat "$1" | grep -oE 'use [^;]*;' \
     | sed -E 's/sim[[:space:]]*::[[:space:]]*stock/ /g; s/stock[[:space:]]*::/ /g' \
     | grep -Eq "$WORD"
+}
+
+# renames_module <file> -- a `use` reaching the module (not `sim::stock`)
+# with `self` or `as` in it: `{self as st}` or `{self, Stock}`.
+renames_module() {
+  flat "$1" | grep -oE 'use [^;]*;'     | sed -E 's/sim[[:space:]]*::[[:space:]]*stock/ /g'     | grep -E 'stock[[:space:]]*::'     | grep -Eq '(^|[^_[:alnum:]])(self|as)([^_[:alnum:]]|$)'
 }
 
 BAD=""
@@ -62,13 +69,14 @@ while IFS= read -r f; do
         /\.[ \t]*stock[ \t]*\(\)/ {
           if (cur != "begin_restore" && cur != "restore_stock") print cur
         }')"
+      if flat "$f" | grep -Eq "$PATHCALLS"; then note "$rel: calls the accessor by path"; fi
       [ -z "$OUT" ] || note "$rel: names the accessor outside begin_restore and restore_stock (in: $(echo "$OUT" | tr '\n' ' '))"
       continue ;;
     tables/metrics.rs)
       if flat "$f" | grep -Eq "$CALLS"; then note "$rel: calls the accessor (it only samples row counts)"; fi
       continue ;;
   esac
-  if flat "$f" | grep -Eq "$CALLS" || reaches_module "$f"; then
+  if flat "$f" | grep -Eq "$CALLS" || reaches_module "$f" || renames_module "$f"; then
     note "$rel: names the stock accessor"
   fi
 done < <(find "$SRC_DIR" -name '*.rs' -not -path '*/generated/*' | sort)

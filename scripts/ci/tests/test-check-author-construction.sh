@@ -48,6 +48,45 @@ d="$(tree)"
 printf '%s\n' 'fn sneak() { let _ = Author::new(1, k); }' >> "$d/server/sim/src/stock.rs"
 check "stock.rs may match on Cause but never build an Author" 1 bash "$CHECK" "$d"
 
+d="$(plant server/src/tables/economy.rs 'use sim::author::{Author as A, Cause as C};
+fn run_economy_tick() { let by = A::new(1, C::ProcedureStep); }')"
+check "an aliased import fails" 1 bash "$CHECK" "$d"
+
+d="$(plant server/src/tables/economy.rs 'type Who = sim::author::Author;
+type Why = Cause;
+fn run_economy_tick() { let by = Who::new(1, Why::ProcedureStep); }')"
+check "a type alias fails" 1 bash "$CHECK" "$d"
+
+d="$(plant server/src/tables/economy.rs 'use sim::author::Cause as C;
+fn run_economy_tick() { let by = <Author>::new(1, C::Consumption); }')"
+check "the qualified-path form fails" 1 bash "$CHECK" "$d"
+
+d="$(plant server/src/tables/economy.rs '#[cfg(test)]
+use std::collections::BTreeMap;
+fn run_economy_tick() { let by = Author::new(1, Cause::ProcedureStep); }')"
+check "a cfg(test) import above production code does not hide it" 1 bash "$CHECK" "$d"
+
+d="$(plant server/src/tables/economy.rs 'fn a() {}
+#[cfg(test)]
+mod tests;
+fn run_economy_tick() { let by = Author::new(1, Cause::ProcedureStep); }')"
+check "an out-of-line test module does not hide what follows" 1 bash "$CHECK" "$d"
+
+d="$(plant server/src/tables/economy.rs '#[cfg(test)]
+fn helper() {}
+fn run_economy_tick() { let by = Author::new(1, Cause::ProcedureStep); }')"
+check "a cfg(test) fn above production code does not hide it" 1 bash "$CHECK" "$d"
+
+d="$(plant server/src/tables/economy.rs '#[cfg(test)]
+mod tests {
+    fn t() { let a = Author::new(1, Cause::Consumption); }
+}
+fn run_economy_tick() { let by = Author::new(1, Cause::ProcedureStep); }')"
+check "production code after an inline test module is scanned" 1 bash "$CHECK" "$d"
+
+d="$(plant server/src/tables/economy.rs 'fn apply(by: Author) -> u64 { by.citizen_id() }')"
+check "passing an Author along passes" 0 bash "$CHECK" "$d"
+
 d="$(plant server/sim/src/other.rs 'pub fn f() {}
 #[cfg(test)]
 mod tests { fn t() { let a = Author::new(1, Cause::Consumption); } }')"

@@ -148,6 +148,22 @@ printf '%s
 pub fn r(ctx: &ReducerContext) {}' >> "$d/tables/stock.rs"
 check "a bare #[reducer] inside stock.rs fails" 1 bash "$CHECK" "$d"
 
+d="$(plant tables/other.rs 'use super::stock::{self as st};
+use st::*;
+macro_rules! w { ($t:ident) => { ctx.db.$t().insert(row) }; }
+fn f(ctx: &ReducerContext) { w!(stock); }')"
+check "a self-as import fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::stock::{self, Stock};')"
+check "a self import fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use sim::stock::{self, plan_make};')"
+check "sim::stock with self passes" 0 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s\n' 'pub fn seed_opening_stock(ctx: &ReducerContext) { stock::stock(&ctx.db).insert(x); }' >> "$d/tables/restore.rs"
+check "a path call appended to restore.rs fails" 1 bash "$CHECK" "$d"
+
 check "the real server/src passes" 0 bash "$CHECK"
 
 summary
