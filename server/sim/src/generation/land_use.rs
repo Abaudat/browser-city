@@ -434,11 +434,7 @@ fn peak_offset(rng: &mut Rng, half: i32, cfg: &GenerationConfig) -> i32 {
     let span = (cfg.density_peak_offset_max_pct - cfg.density_peak_offset_min_pct).max(0);
     let pct = cfg.density_peak_offset_min_pct + rng.below(span as u64 + 1) as i32;
     let magnitude = (half * pct) / 100;
-    let sign = if rng.below(2) == 0 {
-        1
-    } else {
-        -1
-    };
+    let sign = if rng.below(2) == 0 { 1 } else { -1 };
     sign * magnitude
 }
 

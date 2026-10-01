@@ -357,8 +357,8 @@ fn rhythm_plots(
     if row_len <= 0 || width_min <= 0 {
         return Vec::new();
     }
-    let k = RHYTHM_MODULE_MIN
-        + rng.below((RHYTHM_MODULE_MAX - RHYTHM_MODULE_MIN + 1) as u64) as u32;
+    let k =
+        RHYTHM_MODULE_MIN + rng.below((RHYTHM_MODULE_MAX - RHYTHM_MODULE_MIN + 1) as u64) as u32;
     let span = (width_max - width_min).max(0) as u64;
     let widths: Vec<i64> = (0..k)
         .map(|_| {

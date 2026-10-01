@@ -10,9 +10,7 @@
 //! `district` accessor outside the places listed there.
 
 use sim::generated::defs;
-use sim::generation::{
-    DistrictRecord, GenerationConfig, GenerationContent, SiteBounds, create,
-};
+use sim::generation::{DistrictRecord, GenerationConfig, GenerationContent, SiteBounds, create};
 use sim::reducer_classes::ReducerClass;
 use spacetimedb::{ReducerContext, Table, Timestamp};
 

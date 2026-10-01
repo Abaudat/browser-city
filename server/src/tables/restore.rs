@@ -95,6 +95,7 @@ use super::codes::{
     ContainerKind, HolderKind, MatterKind, NodeKind, Provision, ReasonCode, Unit, container_kind,
     holder_kind, matter_kind, node_kind, provision, reason_code, unit,
 };
+use super::district::{District, district};
 use super::identity::{Character, CharacterIdentity, character, character_identity};
 use super::item_instance::{
     ItemHeld, ItemInstance, ItemPlaced, item_held, item_instance, item_placed,
@@ -105,7 +106,6 @@ use super::metrics::{
 };
 use super::ops::{ModuleOwner, module_owner, require_owner};
 use super::schedules::{CadenceLiveness, cadence_liveness};
-use super::district::{District, district};
 use super::stock::{Business, Stock, business, stock};
 use super::world::{
     Building, BuildingArea, FloorTransition, LayerCode, PlacedObject, Room, RoomArea, building,

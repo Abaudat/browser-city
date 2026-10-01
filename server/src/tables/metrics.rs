@@ -36,6 +36,7 @@ use super::clock::world_clock;
 use super::codes::{
     container_kind, holder_kind, matter_kind, node_kind, provision, reason_code, unit,
 };
+use super::district::district;
 use super::identity::{character, character_identity};
 use super::item_instance::{item_held, item_instance, item_placed};
 use super::ops::module_owner;
@@ -44,7 +45,6 @@ use super::schedules::{
     budget_review_schedule, cadence_liveness, citizen_transition_schedule, economy_schedule,
     growth_schedule, maintenance_schedule, metrics_sample_schedule, world_clock_schedule,
 };
-use super::district::district;
 use super::stock::{business, stock};
 use super::world::{
     building, building_area, floor_transition, layer_code, placed_object, room, room_area,
