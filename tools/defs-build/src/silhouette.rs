@@ -30,11 +30,20 @@ pub enum Disagreement {
     /// The footprint band holds no solid pixel at all.
     NoSolidPixel,
     /// Clause 1.
-    ColliderColumnsOutsideArt { collider: (i32, i32), art: (i64, i64) },
+    ColliderColumnsOutsideArt {
+        collider: (i32, i32),
+        art: (i64, i64),
+    },
     /// Clause 2.
-    BottomRowOutsideCollider { collider: (i32, i32), art: (i64, i64) },
+    BottomRowOutsideCollider {
+        collider: (i32, i32),
+        art: (i64, i64),
+    },
     /// Clause 3.
-    ColliderRowsOutsideArt { collider: (i32, i32), art: (i64, i64) },
+    ColliderRowsOutsideArt {
+        collider: (i32, i32),
+        art: (i64, i64),
+    },
 }
 
 impl std::fmt::Display for Disagreement {
@@ -67,10 +76,7 @@ impl std::fmt::Display for Disagreement {
 fn span_in_subcells(span: (u32, u32), tile_size_px: u32) -> (i64, i64) {
     let sub = COLLIDER_SUBCELLS_PER_CELL;
     let t = tile_size_px as i64;
-    (
-        span.0 as i64 * sub / t,
-        (span.1 as i64 * sub + t - 1) / t,
-    )
+    (span.0 as i64 * sub / t, (span.1 as i64 * sub + t - 1) / t)
 }
 
 /// Whether the half-open sub-cell range `inner` lies inside the pixel
@@ -330,14 +336,8 @@ mod tests {
                 0
             }
         });
-        let ok = check_collider_against_art(
-            &b,
-            32,
-            &sprite(16, 48, 16, 16),
-            1,
-            16,
-            rect(4, 4, 12, 12),
-        );
+        let ok =
+            check_collider_against_art(&b, 32, &sprite(16, 48, 16, 16), 1, 16, rect(4, 4, 12, 12));
         assert_eq!(ok, Ok(()));
     }
 
@@ -368,9 +368,19 @@ mod tests {
             })
         };
         let at = |a: u8| {
-            check_collider_against_art(&thin(a), 16, &sprite(0, 0, 16, 16), 1, 16, rect(4, 4, 12, 12))
+            check_collider_against_art(
+                &thin(a),
+                16,
+                &sprite(0, 0, 16, 16),
+                1,
+                16,
+                rect(4, 4, 12, 12),
+            )
         };
-        assert_eq!(at(ALPHA_OPAQUE_THRESHOLD - 1), Err(Disagreement::NoSolidPixel));
+        assert_eq!(
+            at(ALPHA_OPAQUE_THRESHOLD - 1),
+            Err(Disagreement::NoSolidPixel)
+        );
         assert_eq!(at(ALPHA_OPAQUE_THRESHOLD), Ok(()));
     }
 

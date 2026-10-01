@@ -551,7 +551,15 @@ mod tests {
         .into_iter()
         .collect();
 
-        let out = build_atlas(&objects, &decoded(&bytes), &street, &[], &BTreeMap::new(), &[]).unwrap();
+        let out = build_atlas(
+            &objects,
+            &decoded(&bytes),
+            &street,
+            &[],
+            &BTreeMap::new(),
+            &[],
+        )
+        .unwrap();
         assert_eq!(out.pages.len(), 1, "merged themes share one page group");
         assert_eq!(out.pages[0].group, "street");
         let r1 = out.atlas_by_object_id[&1];

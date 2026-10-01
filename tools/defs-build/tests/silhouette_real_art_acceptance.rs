@@ -25,8 +25,10 @@ fn real_defs() -> Defs {
     sheets.extend(defs_build::object_sprite_sheet_paths(&raw));
     sheets.sort();
     sheets.dedup();
-    let dims: BTreeMap<String, (u32, u32)> =
-        fsio::read_png_dims(&root, &sheets).unwrap().into_iter().collect();
+    let dims: BTreeMap<String, (u32, u32)> = fsio::read_png_dims(&root, &sheets)
+        .unwrap()
+        .into_iter()
+        .collect();
     let tables = codes::CodeTables::parse(&fsio::read_codes_golden(&root).unwrap());
     validate::validate(&raw, &dims, &tables, SPRITE_SHEET_ALLOWED_ROOT).unwrap()
 }
@@ -89,7 +91,9 @@ fn shifting_the_trash_can_collider_names_the_key_and_the_columns() {
     );
     assert!(
         msg.contains("object 'trash_bin' collider (6, 7)-(14, 15)")
-            && msg.contains("collider columns 6..14 do not cover the bottom solid row's columns 5..11"),
+            && msg.contains(
+                "collider columns 6..14 do not cover the bottom solid row's columns 5..11"
+            ),
         "{msg}"
     );
 }

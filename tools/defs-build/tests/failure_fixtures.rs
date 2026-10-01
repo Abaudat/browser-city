@@ -807,8 +807,8 @@ fn no_pre_existing_invalid_category_fails_on_the_pixel_rule() {
         if PIXEL_CATEGORIES.contains(&category.as_str()) {
             continue;
         }
-        let enforcing = category.starts_with("sprite-sheet-outside")
-            || category == "sprite-sheet-path-escape";
+        let enforcing =
+            category.starts_with("sprite-sheet-outside") || category == "sprite-sheet-path-escape";
         let err = if enforcing {
             build_err_enforcing_sheet_root(&category)
         } else {
