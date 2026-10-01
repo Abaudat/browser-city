@@ -131,19 +131,16 @@ use sim::stock;')"
 check "the capitalised types, business and sim::stock pass" 0 bash "$CHECK" "$d"
 
 d="$(tree)"
-printf '%s
-' '#[spacetimedb::reducer]
+printf '%s\n' '#[spacetimedb::reducer]
 pub fn seed_opening_stock(ctx: &ReducerContext) { ctx.db.stock().insert(x); }' >> "$d/tables/restore.rs"
 check "a new reducer appended to restore.rs fails" 1 bash "$CHECK" "$d"
 
 d="$(tree)"
-printf '%s
-' 'fn sneaky(ctx: &ReducerContext) { ctx.db.stock().insert(x); }' >> "$d/tables/metrics.rs"
+printf '%s\n' 'fn sneaky(ctx: &ReducerContext) { ctx.db.stock().insert(x); }' >> "$d/tables/metrics.rs"
 check "a .stock() call in metrics.rs fails" 1 bash "$CHECK" "$d"
 
 d="$(tree)"
-printf '%s
-' 'use spacetimedb::reducer;
+printf '%s\n' 'use spacetimedb::reducer;
 #[reducer]
 pub fn r(ctx: &ReducerContext) {}' >> "$d/tables/stock.rs"
 check "a bare #[reducer] inside stock.rs fails" 1 bash "$CHECK" "$d"

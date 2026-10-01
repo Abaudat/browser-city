@@ -50,7 +50,10 @@ reaches_module() {
 # renames_module <file> -- a `use` reaching the module (not `sim::stock`)
 # with `self` or `as` in it: `{self as st}` or `{self, Stock}`.
 renames_module() {
-  flat "$1" | grep -oE 'use [^;]*;'     | sed -E 's/sim[[:space:]]*::[[:space:]]*stock/ /g'     | grep -E 'stock[[:space:]]*::'     | grep -Eq '(^|[^_[:alnum:]])(self|as)([^_[:alnum:]]|$)'
+  flat "$1" | grep -oE 'use [^;]*;' \
+    | sed -E 's/sim[[:space:]]*::[[:space:]]*stock/ /g' \
+    | grep -E 'stock[[:space:]]*::' \
+    | grep -Eq '(^|[^_[:alnum:]])(self|as)([^_[:alnum:]]|$)'
 }
 
 BAD=""

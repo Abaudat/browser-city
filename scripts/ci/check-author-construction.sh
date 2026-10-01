@@ -28,34 +28,45 @@ done
 [ "${#DIRS[@]}" -gt 0 ] || { echo "check-author-construction: no source directory under $ROOT" >&2; exit 1; }
 [ -f "$ROOT/server/sim/src/author.rs" ] || { echo "check-author-construction: FAIL -- server/sim/src/author.rs not found (the scan matched nothing)" >&2; exit 1; }
 
+# production <file> -- the file as one line: comment lines and test modules
+# dropped. An inline `mod x { ... }` opened on one line and closed on a later
+# column-0 `}` is skipped whole; one opened and closed on the same line, and
+# `mod x;`, are skipped alone.
+production() {
+  { grep -v '^[[:space:]]*//' "$1" || true; } | tr -d '\r' | awk '
+    /#\[cfg\(test\)\]/ { pend = 1; next }
+    pend && /^[ \t]*#\[/ { next }
+    pend {
+      pend = 0
+      if ($0 ~ /^[ \t]*(pub[ \t]+)?mod[ \t]+[A-Za-z_0-9]+[ \t]*;/) next
+      if ($0 ~ /^[ \t]*(pub[ \t]+)?mod[ \t]+[A-Za-z_0-9]+[ \t]*\{/) {
+        if ($0 !~ /\}[ \t]*$/) inmod = 1
+        next
+      }
+    }
+    inmod { if ($0 ~ /^\}/) inmod = 0; next }
+    { printf "%s ", $0 }'
+}
+
 BAD=""
+note() { BAD="$BAD$1"$'\n'; }
+
 while IFS= read -r f; do
   rel="${f#"$ROOT"/}"
   [ "$rel" = "server/sim/src/author.rs" ] && continue
-  body="$({ grep -v '^[[:space:]]*//' "$f" || true; } | tr -d '\r' | awk '
-    /#\[cfg\(test\)\]/ { pend = 1; next }
-    pend && /^[ 	]*#\[/ { next }
-    pend {
-      pend = 0
-      if ($0 ~ /^[ 	]*(pub[ 	]+)?mod[ 	]+[A-Za-z_0-9]+[ 	]*;/) next
-      if ($0 ~ /^[ 	]*(pub[ 	]+)?mod[ 	]+[A-Za-z_0-9]+[ 	]*\{/) { inmod = 1; next }
-    }
-    inmod { if ($0 ~ /^\}/) inmod = 0; next }
-    { printf "%s ", $0 }')"
-  if printf '%s
-' "$body" | grep -Eq 'Author[[:space:]]*::[[:space:]]*new|<[[:space:]]*Author[[:space:]]*>'; then
-    BAD="$BAD$rel: constructs an Author"$'
-'
+  body="$(production "$f")"
+  if printf '%s\n' "$body" \
+    | grep -Eq 'Author[[:space:]]*::[[:space:]]*new|<[[:space:]]*Author[[:space:]]*>'; then
+    note "$rel: constructs an Author"
   fi
-  if printf '%s
-' "$body" | grep -Eq '(Author|Cause)[[:space:]]+as[[:space:]]|type[[:space:]]+[A-Za-z_0-9]+[[:space:]]*=[^;]*(Author|Cause)'; then
-    BAD="$BAD$rel: renames Author or Cause"$'
-'
+  if printf '%s\n' "$body" \
+    | grep -Eq '(Author|Cause)[[:space:]]+as[[:space:]]|type[[:space:]]+[A-Za-z_0-9]+[[:space:]]*=[^;]*(Author|Cause)'; then
+    note "$rel: renames Author or Cause"
   fi
-  if [ "$rel" != "server/sim/src/stock.rs" ]     && printf '%s
-' "$body" | grep -Eq '(^|[^_[:alnum:]])Cause([^_[:alnum:]]|$)'; then
-    BAD="$BAD$rel: names Cause"$'
-'
+  if [ "$rel" != "server/sim/src/stock.rs" ] \
+    && printf '%s\n' "$body" \
+      | grep -Eq '(^|[^_[:alnum:]])Cause([^_[:alnum:]]|$)'; then
+    note "$rel: names Cause"
   fi
 done < <(find "${DIRS[@]}" -name '*.rs' -not -path '*/generated/*' | sort)
 

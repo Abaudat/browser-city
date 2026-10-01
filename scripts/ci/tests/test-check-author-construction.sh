@@ -84,6 +84,11 @@ mod tests {
 fn run_economy_tick() { let by = Author::new(1, Cause::ProcedureStep); }')"
 check "production code after an inline test module is scanned" 1 bash "$CHECK" "$d"
 
+d="$(plant server/src/tables/economy.rs '#[cfg(test)]
+mod tests {}
+fn run_economy_tick() { let by = Author::new(1, Cause::ProcedureStep); }')"
+check "a one-line empty test module does not hide what follows" 1 bash "$CHECK" "$d"
+
 d="$(plant server/src/tables/economy.rs 'fn apply(by: Author) -> u64 { by.citizen_id() }')"
 check "passing an Author along passes" 0 bash "$CHECK" "$d"
 
