@@ -31,7 +31,7 @@ fn unknown_key_is_named_with_its_own_line() {
     let err = build_err("unknown-key");
     assert_eq!(
         err.to_string(),
-        "defs/items/sanitation.toml:7:1: unknown field `bogus`, expected one of `id`, `key`, `unit`, `shelf_life_minutes`, `bulk`"
+        "defs/items/sanitation.toml:7:1: unknown field `bogus`, expected one of `id`, `key`, `unit`, `shelf_life_minutes`, `face_value`, `bulk`"
     );
 }
 
@@ -781,6 +781,13 @@ fn every_known_category_has_a_fixture_directory() {
         "item-missing-shelf-life",
         "item-missing-bulk",
         "item-bulk-zero",
+        "item-denomination-not-piece",
+        "item-denomination-perishable",
+        "item-denominations-over-cap",
+        "item-face-value-duplicate",
+        "item-face-value-over-cap",
+        "item-face-value-wrong-type",
+        "item-face-value-zero",
         "item-bulk-footprint-cap-exceeded",
         "item-shelf-life-out-of-range",
         "item-shelf-life-wrong-type",
@@ -1053,7 +1060,7 @@ fn an_item_at_the_shelf_life_and_bulk_caps_builds() {
     files.push((PathBuf::from("defs/items/sanitation.toml"), item));
     let out = build_ok(&files);
     assert!(out.rust.contains(
-        "ItemDef { id: 1, key: \"bottle\", unit: 0, shelf_life_minutes: 525600, width: 8, height: 8 }"
+        "ItemDef { id: 1, key: \"bottle\", unit: 0, shelf_life_minutes: 525600, face_value: 0, width: 8, height: 8 }"
     ));
 }
 
@@ -1063,9 +1070,139 @@ fn an_item_at_the_shelf_life_and_bulk_caps_builds() {
 fn a_fully_authored_item_reaches_both_emitted_artefacts() {
     let out = build_ok(&read_tree(&valid_dir()));
     assert!(out.rust.contains(
-        "ItemDef { id: 3, key: \"milk\", unit: 2, shelf_life_minutes: 4320, width: 1, height: 2 }"
+        "ItemDef { id: 3, key: \"milk\", unit: 2, shelf_life_minutes: 4320, face_value: 0, width: 1, height: 2 }"
     ));
     assert!(out.json.contains(
-        "{ \"id\": 3, \"key\": \"milk\", \"unit\": 2, \"shelf_life_minutes\": 4320, \"width\": 1, \"height\": 2 }"
+        "{ \"id\": 3, \"key\": \"milk\", \"unit\": 2, \"shelf_life_minutes\": 4320, \"face_value\": 0, \"width\": 1, \"height\": 2 }"
     ));
+}
+
+/// Story 6.8 (FR92): a denomination is an `[[item]]` row with a
+/// `face_value`; the build refuses every value that is not money.
+#[test]
+fn an_item_face_value_of_zero_is_refused_at_the_value() {
+    assert_item_error(
+        "item-face-value-zero",
+        "defs/items/sanitation.toml:6:14: item 'coin' face_value of 0 -- a denomination is worth at least 1",
+    );
+}
+
+#[test]
+fn an_item_face_value_over_the_cap_is_refused_at_the_value() {
+    assert_item_error(
+        "item-face-value-over-cap",
+        &format!(
+            "defs/items/sanitation.toml:6:14: item 'coin' face_value 10001 exceeds MAX_FACE_VALUE ({})",
+            defs_build::model::MAX_FACE_VALUE
+        ),
+    );
+    assert_eq!(defs_build::model::MAX_FACE_VALUE, 10_000);
+}
+
+#[test]
+fn an_item_face_value_of_the_wrong_type_is_refused() {
+    assert_item_error(
+        "item-face-value-wrong-type",
+        "defs/items/sanitation.toml:6:14: invalid type: string \"five\", expected u32",
+    );
+}
+
+#[test]
+fn a_denomination_that_is_not_counted_in_pieces_is_refused() {
+    assert_item_error(
+        "item-denomination-not-piece",
+        "defs/items/sanitation.toml:4:8: item 'coin' has a face_value, so its unit must be 'piece', not 'gram'",
+    );
+}
+
+#[test]
+fn a_denomination_that_spoils_is_refused() {
+    assert_item_error(
+        "item-denomination-perishable",
+        "defs/items/sanitation.toml:5:22: item 'coin' has a face_value, so its shelf_life_minutes must be 0",
+    );
+}
+
+#[test]
+fn two_denominations_with_one_face_value_are_refused_at_the_second() {
+    assert_item_error(
+        "item-face-value-duplicate",
+        "defs/items/sanitation.toml:14:14: item 'token' face_value 5 is already item 'coin''s",
+    );
+}
+
+#[test]
+fn more_denominations_than_the_cap_are_refused_at_the_first_excess() {
+    assert_item_error(
+        "item-denominations-over-cap",
+        &format!(
+            "defs/items/sanitation.toml:{}:14: item 'coin_17' is denomination 17, over MAX_DENOMINATIONS ({})",
+            16 * 8 + 6,
+            defs_build::model::MAX_DENOMINATIONS
+        ),
+    );
+    assert_eq!(defs_build::model::MAX_DENOMINATIONS, 16);
+}
+
+/// A denomination at the cap and at the largest face value builds.
+#[test]
+fn denominations_at_both_caps_build() {
+    let plain = |n: u32, key: &str| {
+        format!(
+            "[[item]]\nid = {n}\nkey = \"{key}\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = {{ width = 1, height = 1 }}\n\n"
+        )
+    };
+    let mut text = plain(1, "bottle") + &plain(2, "recycled_glass");
+    for k in 0..defs_build::model::MAX_DENOMINATIONS as u32 {
+        let (n, face) = (
+            3 + k,
+            if k == 0 {
+                defs_build::model::MAX_FACE_VALUE
+            } else {
+                k
+            },
+        );
+        text.push_str(&format!(
+            "[[item]]\nid = {n}\nkey = \"coin_{n}\"\nunit = \"piece\"\nshelf_life_minutes = 0\nface_value = {face}\nbulk = {{ width = 1, height = 1 }}\n\n"
+        ));
+    }
+    let mut files = read_tree(&valid_dir());
+    files.retain(|(p, _)| p != Path::new("defs/items/sanitation.toml"));
+    files.push((PathBuf::from("defs/items/sanitation.toml"), text));
+    let out = build_ok(&files);
+    assert!(out.rust.contains("pub const DENOMINATIONS"));
+}
+
+/// A denomination is a row, not code: the valid tree's three money rows
+/// reach both artefacts, and `DENOMINATIONS` lists them largest face
+/// value first so `sim` never sorts at runtime.
+#[test]
+fn denominations_reach_both_artefacts_sorted_by_face_value_descending() {
+    let out = build_ok(&read_tree(&valid_dir()));
+    assert!(out.rust.contains(
+        "ItemDef { id: 4, key: \"coin_1\", unit: 0, shelf_life_minutes: 0, face_value: 1, width: 1, height: 1 }"
+    ));
+    assert!(out.json.contains(
+        "{ \"id\": 5, \"key\": \"note_20\", \"unit\": 0, \"shelf_life_minutes\": 0, \"face_value\": 20, \"width\": 1, \"height\": 1 }"
+    ));
+    assert!(out.rust.contains(
+        "pub const DENOMINATIONS: &[Denomination] = &[\n    Denomination { item_id: 5, face_value: 20 },\n    Denomination { item_id: 6, face_value: 5 },\n    Denomination { item_id: 4, face_value: 1 },\n];"
+    ));
+    assert!(out.rust.contains("pub const MAX_FACE_VALUE: u32 = 10000;"));
+    assert!(
+        out.rust
+            .contains("pub const MAX_DENOMINATIONS: usize = 16;")
+    );
+    assert!(out.json.contains("\"max_face_value\": 10000,"));
+    assert!(out.json.contains("\"max_denominations\": 16,"));
+    assert!(out.json.contains("\"denomination_unit\": 0,"));
+}
+
+/// An item without a `face_value` is not money: it is absent from
+/// `DENOMINATIONS` and carries `0` in both artefacts.
+#[test]
+fn an_item_without_a_face_value_is_not_a_denomination() {
+    let out = build_ok(&read_tree(&valid_dir()));
+    assert!(!out.rust.contains("Denomination { item_id: 1,"));
+    assert!(!out.rust.contains("Denomination { item_id: 3,"));
 }

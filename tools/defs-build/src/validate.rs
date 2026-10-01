@@ -2020,6 +2020,7 @@ fn check_object_sprite_matches_footprint(
 /// the world's own footprint, unchanged), and its shelf life is bounded.
 /// Each refusal points at the offending value.
 fn check_item_fields(items: &[ItemEntry], code_tables: &CodeTables) -> Result<(), DefsError> {
+    let mut face_values: BTreeMap<u32, &str> = BTreeMap::new();
     for i in items {
         let at =
             |line: usize, col: usize, message: String| DefsError::new(&i.path, line, col, message);
@@ -2068,6 +2069,81 @@ fn check_item_fields(items: &[ItemEntry], code_tables: &CodeTables) -> Result<()
                 ),
             ));
         }
+        if let Some(face) = &i.face_value {
+            check_denomination(i, face, &mut face_values)?;
+        }
+    }
+    Ok(())
+}
+
+/// A `face_value` makes an item a denomination (FR92): money is counted in
+/// pieces, never spoils, has a unique face value, and there are few kinds.
+fn check_denomination<'a>(
+    i: &'a ItemEntry,
+    face: &Located<u32>,
+    seen: &mut BTreeMap<u32, &'a str>,
+) -> Result<(), DefsError> {
+    let at = |line, col, msg: String| DefsError::new(&i.path, line, col, msg);
+    if face.value == 0 {
+        return Err(at(
+            face.line,
+            face.col,
+            format!(
+                "item '{}' face_value of 0 -- a denomination is worth at least 1",
+                i.key.value
+            ),
+        ));
+    }
+    if face.value > MAX_FACE_VALUE {
+        return Err(at(
+            face.line,
+            face.col,
+            format!(
+                "item '{}' face_value {} exceeds MAX_FACE_VALUE ({MAX_FACE_VALUE})",
+                i.key.value, face.value
+            ),
+        ));
+    }
+    if i.unit.value != DENOMINATION_UNIT {
+        return Err(at(
+            i.unit.line,
+            i.unit.col,
+            format!(
+                "item '{}' has a face_value, so its unit must be '{DENOMINATION_UNIT}', not '{}'",
+                i.key.value, i.unit.value
+            ),
+        ));
+    }
+    if i.shelf_life_minutes.value != 0 {
+        return Err(at(
+            i.shelf_life_minutes.line,
+            i.shelf_life_minutes.col,
+            format!(
+                "item '{}' has a face_value, so its shelf_life_minutes must be 0",
+                i.key.value
+            ),
+        ));
+    }
+    if let Some(first) = seen.insert(face.value, i.key.value.as_str()) {
+        return Err(at(
+            face.line,
+            face.col,
+            format!(
+                "item '{}' face_value {} is already item '{first}''s",
+                i.key.value, face.value
+            ),
+        ));
+    }
+    if seen.len() > MAX_DENOMINATIONS {
+        return Err(at(
+            face.line,
+            face.col,
+            format!(
+                "item '{}' is denomination {}, over MAX_DENOMINATIONS ({MAX_DENOMINATIONS})",
+                i.key.value,
+                seen.len()
+            ),
+        ));
     }
     Ok(())
 }
@@ -2825,6 +2901,7 @@ pub fn validate(
                 .get("unit", &i.unit.value)
                 .expect("unit already validated by check_item_fields"),
             shelf_life_minutes: i.shelf_life_minutes.value,
+            face_value: i.face_value.as_ref().map_or(0, |f| f.value),
             width: i.bulk_width.value,
             height: i.bulk_height.value,
         })
@@ -3045,6 +3122,9 @@ pub fn validate(
     Ok(Defs {
         objects,
         items,
+        denomination_unit: code_tables
+            .get("unit", DENOMINATION_UNIT)
+            .unwrap_or_default(),
         recipes,
         professions,
         chains,

@@ -58,4 +58,24 @@ check "a missing manifest fails loudly" 1 \
   bash "$CHECK" "$REPO_ROOT/does/not/exist.golden" "$REPO_ROOT/server/sim/src/rules"
 
 summary
-exit $?
+# Story 6.8: the same guard run against one source file (the cash module).
+d="$(plant_manifest 'item 3 coin_1')"
+cat > "$d/cash.rs" <<'EOT'
+fn is_penny(key: &str) -> bool {
+    key == "coin_1"
+}
+EOT
+check "a quoted denomination key in a single source file fails" 1 \
+  bash "$CHECK" "$d/manifest.golden" "$d/cash.rs"
+
+cat > "$d/cash.rs" <<'EOT'
+// A table passed in by the caller: no key is named here.
+pub fn value_of() {}
+EOT
+check "a clean single source file passes" 0 \
+  bash "$CHECK" "$d/manifest.golden" "$d/cash.rs"
+
+check "the real cash module names no manifest key" 0 \
+  bash "$CHECK" "$REPO_ROOT/tools/defs-build/goldens/defs-manifest.golden" "$REPO_ROOT/server/sim/src/cash.rs"
+
+summary

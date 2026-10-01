@@ -82,6 +82,16 @@ pub const MAX_FOOTPRINT_CELLS: i64 = 8;
 /// means it never spoils; anything above this is a typo, not a shelf life.
 pub const MAX_SHELF_LIFE_MINUTES: u32 = 525_600;
 
+/// The largest face value one denomination may carry, in the currency's
+/// smallest unit. Bounds the change search.
+pub const MAX_FACE_VALUE: u32 = 10_000;
+
+/// The most denominations the defs may declare.
+pub const MAX_DENOMINATIONS: usize = 16;
+
+/// The unit every denomination is counted in.
+pub const DENOMINATION_UNIT: &str = "piece";
+
 /// The one root a `sprite.sheet` or an appearance part's `sheet` may ever
 /// name (Quentin's direction, cycle 2): enforced in `validate.rs`
 /// (`check_object_sprite_sheet_root`/`check_appearance_sheet_root`) after
@@ -351,6 +361,8 @@ pub struct RawItem {
     pub unit: Spanned<String>,
     /// Minutes until an instance spoils; `0` means it never does.
     pub shelf_life_minutes: Spanned<u32>,
+    /// Face value in the currency's smallest unit; absent means not money.
+    pub face_value: Option<Spanned<u32>>,
     /// The item's world footprint, in whole cells.
     pub bulk: RawBulk,
 }
@@ -1007,6 +1019,7 @@ pub struct ItemEntry {
     pub key: Located<String>,
     pub unit: Located<String>,
     pub shelf_life_minutes: Located<u32>,
+    pub face_value: Option<Located<u32>>,
     pub bulk_width: Located<u32>,
     pub bulk_height: Located<u32>,
 }
@@ -1329,6 +1342,8 @@ pub struct ItemDef {
     /// A `sim::codes::unit` code, never a name.
     pub unit: u32,
     pub shelf_life_minutes: u32,
+    /// `0` means not money.
+    pub face_value: u32,
     pub width: u32,
     pub height: u32,
 }
@@ -1553,6 +1568,8 @@ pub struct RuleDef {
 pub struct Defs {
     pub objects: Vec<ObjectDef>,
     pub items: Vec<ItemDef>,
+    /// The `sim::codes::unit` code every denomination is counted in.
+    pub denomination_unit: u32,
     pub recipes: Vec<RecipeDef>,
     pub professions: Vec<ProfessionDef>,
     pub chains: Vec<ChainDef>,

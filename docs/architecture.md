@@ -307,12 +307,20 @@ and just-in-time. So:
 - `business` is the business instance: one row per shop.
 - `stock` has a surrogate `stock_id`, `holder_kind`, `holder_id`, `item_id` and `quantity` (`u64`, in the item's own unit). It is never addressed by room, brand or position. One index, `by_holder_item` on (`holder_kind`, `holder_id`, `item_id`).
 - At most one `stock` row per (holder, item); an absent row is zero and no row stores zero. `sim::stock::plan_make`, `plan_consume` and the transfers decide the one row a write lands on; a holder holds at most `sim::stock::MAX_LINES_PER_HOLDER` items.
-- `sim::author::Author` is a `citizen_id` and a `Cause` (`ProcedureStep` or `Consumption`, a closed enum; item instances and cash take the same type). `sim::stock::plan_make` (goods come into existence: procedure step only), `plan_consume` (goods leave existence: what a consumption eats, or inputs a step uses up -- never the first half of a move) and `plan_transfer` / `plan_transfer_exact` (goods that already exist move: procedure step only, both sides or neither) take one and return a `Write`; nothing else constructs a `Write`. A cause that may not do a verb is an `Err`.
+- `sim::author::Author` is a `citizen_id` and a `Cause` (`ProcedureStep` or `Consumption`, a closed enum; item instances and cash take the same type). `sim::stock::plan_make` (goods come into existence: procedure step only), `plan_consume` (goods leave existence: what a consumption eats, or inputs a step uses up -- never the first half of a move) and `plan_transfer` / `plan_transfer_exact` (goods that already exist move: procedure step only, both sides or neither) take one and return a `Write`; `plan_transfer_all` moves every line of a lot (item to quantity) in full or not at all, counting the receiver's new lines together against the ceiling, and returns a `Lot` whose `writes` are empty when a line was `short` or the receiver had `no_room`; nothing else constructs a `Write`. A cause that may not do a verb is an `Err`.
 - Nothing builds an `Author` or names a `Cause` outside `sim/src/author.rs` and the match in `sim/src/stock.rs`; `scripts/ci/check-author-construction.sh` fails any other non-test code under `server/src/` or `server/sim/src/`.
 - A write to `stock` applies a `Write` and nothing else. `restore_stock` is the one exception: it reproduces a past world by value. `scripts/ci/check-stock-write-path.sh` holds that nothing else under `server/src/` names the `stock` accessor (`restore.rs` only inside `begin_restore` and `restore_stock`; `metrics.rs` imports it for row-count sampling and never calls it).
 - A shortfall is a `Withdrawal` or `Transfer` with `taken` below the ask, and a receiver with no room for a new line is a `NoRoom` outcome (`taken` 0, nothing written), the same for a make and a move: never an `Err`, never a log line. `StockError` is only `QuantityOverflow` and `CauseNotPermitted`.
 - There is no stock movement table.
 - `stock`'s `max_rows` is `MAX_LINES_PER_HOLDER` times the sum of the holder tables' `max_rows`.
+
+## Cash
+
+- An amount of money is a `u64` count of the smallest currency unit.
+- A denomination is an `[[item]]` with a `face_value` (1 to `MAX_FACE_VALUE`), unit `piece`, never perishable, face values unique, at most `MAX_DENOMINATIONS`. Cash is `stock` rows of those items; `sim::stock` does not know it.
+- There is no till holder: a shop's till is its `business` holder's denomination lines. No total is stored anywhere; a value is summed when a step needs it.
+- `sim::cash` takes the denomination table (`generated::defs::DENOMINATIONS`, largest face value first) as a parameter. `choose_change` is exact, bounded and deterministic: fewest pieces, ties to the larger denomination. `plan_payment` returns every write of a payment or none, all under one `Author`. A payment that cannot be made is a `Payment` variant, never an `Err`; `CashError` is only a stock error, a non-denomination item or a value overflow.
+- `sim::cash` never makes or destroys a piece and offers no top-up: a short till is restocked by an authored transfer.
 
 ## Item instances
 
@@ -958,7 +966,11 @@ handshake's own `defs_version` (below). Both begin with a generated-file
 marker and are never hand-edited.
 
 An `[[item]]` (FR86) is `id`, `key`, `unit`, `shelf_life_minutes` and
-`bulk`, all required. `unit` is a name resolved at build time against
+`bulk`, all required, and an optional `face_value` (FR92) that makes it a
+denomination (see "Cash"); both artefacts carry `face_value` on every item,
+`0` meaning not money, plus `MAX_FACE_VALUE`, `MAX_DENOMINATIONS` and the
+denomination unit, and `defs.rs` a `DENOMINATIONS` table sorted by face value
+descending. `unit` is a name resolved at build time against
 `sim::codes::unit`'s golden, the way an object's `layer` is: it is a
 `u32` code with a companion `unit` table, never an enum, and only the code
 reaches either artefact. `shelf_life_minutes` is a `u32`, `0` meaning it

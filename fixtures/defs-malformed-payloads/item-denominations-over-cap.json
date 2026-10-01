@@ -1,0 +1,186 @@
+{
+  "generated_by": "tools/defs-build -- do not edit by hand",
+  "defs_version": "test",
+  "collider_subcells_per_cell": 16,
+  "interact_at_max_reach_cells": 2,
+  "max_footprint_cells": 8,
+  "max_shelf_life_minutes": 525600,
+  "max_face_value": 10000,
+  "max_denominations": 16,
+  "denomination_unit": 0,
+  "objects": [],
+  "items": [
+    {
+      "id": 1,
+      "key": "coin_1",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 1,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 2,
+      "key": "coin_2",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 2,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 3,
+      "key": "coin_3",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 3,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 4,
+      "key": "coin_4",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 4,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 5,
+      "key": "coin_5",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 5,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 6,
+      "key": "coin_6",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 6,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 7,
+      "key": "coin_7",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 7,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 8,
+      "key": "coin_8",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 8,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 9,
+      "key": "coin_9",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 9,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 10,
+      "key": "coin_10",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 10,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 11,
+      "key": "coin_11",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 11,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 12,
+      "key": "coin_12",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 12,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 13,
+      "key": "coin_13",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 13,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 14,
+      "key": "coin_14",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 14,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 15,
+      "key": "coin_15",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 15,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 16,
+      "key": "coin_16",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 16,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": 17,
+      "key": "coin_17",
+      "unit": 0,
+      "shelf_life_minutes": 0,
+      "face_value": 17,
+      "width": 1,
+      "height": 1
+    }
+  ],
+  "recipes": [],
+  "professions": [],
+  "chains": [],
+  "balance": [
+    {
+      "key": "render.tile_size_px",
+      "value": 16,
+      "min": 1,
+      "max": 64
+    }
+  ],
+  "bodies": [],
+  "eyes": [],
+  "hairstyles": [],
+  "outfits": [],
+  "accessories": [],
+  "appearance_layouts": [],
+  "uniforms": [],
+  "tags": []
+}

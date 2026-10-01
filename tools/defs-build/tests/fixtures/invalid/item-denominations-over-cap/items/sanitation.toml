@@ -1,0 +1,135 @@
+[[item]]
+id = 1
+key = "coin_1"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 1
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 2
+key = "coin_2"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 2
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 3
+key = "coin_3"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 3
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 4
+key = "coin_4"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 4
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 5
+key = "coin_5"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 5
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 6
+key = "coin_6"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 6
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 7
+key = "coin_7"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 7
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 8
+key = "coin_8"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 8
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 9
+key = "coin_9"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 9
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 10
+key = "coin_10"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 10
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 11
+key = "coin_11"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 11
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 12
+key = "coin_12"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 12
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 13
+key = "coin_13"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 13
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 14
+key = "coin_14"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 14
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 15
+key = "coin_15"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 15
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 16
+key = "coin_16"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 16
+bulk = { width = 1, height = 1 }
+
+[[item]]
+id = 17
+key = "coin_17"
+unit = "piece"
+shelf_life_minutes = 0
+face_value = 17
+bulk = { width = 1, height = 1 }

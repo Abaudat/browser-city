@@ -9,9 +9,10 @@ use std::collections::BTreeMap;
 use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
-    COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, INTERACT_AT_MAX_REACH_CELLS,
-    MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, NeighbourTermDef, REAL_MS_PER_CITY_MINUTE,
-    RawAdjacencyRelation, RawCoherenceMode, RawDirection, RoleDef, RuleKindDef, SpriteRect,
+    COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, INTERACT_AT_MAX_REACH_CELLS, ItemDef,
+    MAX_DENOMINATIONS, MAX_FACE_VALUE, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES,
+    NeighbourTermDef, REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode,
+    RawDirection, RoleDef, RuleKindDef, SpriteRect,
 };
 
 // `RawLandUse::as_str` is used via the fully-qualified method call above,
@@ -78,6 +79,14 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     ));
 
     out.push_str(&format!(
+        "/// The largest face value one denomination may carry, in the currency's smallest unit.\npub const MAX_FACE_VALUE: u32 = {MAX_FACE_VALUE};\n\n"
+    ));
+
+    out.push_str(&format!(
+        "/// The most denominations the defs may declare.\npub const MAX_DENOMINATIONS: usize = {MAX_DENOMINATIONS};\n\n"
+    ));
+
+    out.push_str(&format!(
         "/// FR1: real milliseconds per in-city minute.\npub const REAL_MS_PER_CITY_MINUTE: i64 = {REAL_MS_PER_CITY_MINUTE};\n\n"
     ));
 
@@ -109,12 +118,30 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("];\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct ItemDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub unit: u32,\n    pub shelf_life_minutes: u32,\n    pub width: u32,\n    pub height: u32,\n}\n\n");
+    out.push_str("pub struct ItemDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub unit: u32,\n    pub shelf_life_minutes: u32,\n    /// 0 means not money.\n    pub face_value: u32,\n    pub width: u32,\n    pub height: u32,\n}\n\n");
     out.push_str("pub const ITEMS: &[ItemDef] = &[\n");
     for i in &defs.items {
         out.push_str(&format!(
-            "    ItemDef {{ id: {}, key: {:?}, unit: {}, shelf_life_minutes: {}, width: {}, height: {} }},\n",
-            i.id, i.key, i.unit, i.shelf_life_minutes, i.width, i.height
+            "    ItemDef {{ id: {}, key: {:?}, unit: {}, shelf_life_minutes: {}, face_value: {}, width: {}, height: {} }},\n",
+            i.id, i.key, i.unit, i.shelf_life_minutes, i.face_value, i.width, i.height
+        ));
+    }
+    out.push_str("];\n\n");
+
+    out.push_str(
+        "/// An item that is money (FR92).\n#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n",
+    );
+    out.push_str(
+        "pub struct Denomination {\n    pub item_id: u32,\n    pub face_value: u32,\n}\n\n",
+    );
+    out.push_str("/// Every denomination, largest face value first.\n");
+    out.push_str("pub const DENOMINATIONS: &[Denomination] = &[\n");
+    let mut denominations: Vec<&ItemDef> = defs.items.iter().filter(|i| i.face_value > 0).collect();
+    denominations.sort_by(|a, b| b.face_value.cmp(&a.face_value));
+    for d in denominations {
+        out.push_str(&format!(
+            "    Denomination {{ item_id: {}, face_value: {} }},\n",
+            d.id, d.face_value
         ));
     }
     out.push_str("];\n\n");
@@ -632,6 +659,12 @@ pub fn emit_json(
     out.push_str(&format!(
         "  \"max_shelf_life_minutes\": {MAX_SHELF_LIFE_MINUTES},\n"
     ));
+    out.push_str(&format!("  \"max_face_value\": {MAX_FACE_VALUE},\n"));
+    out.push_str(&format!("  \"max_denominations\": {MAX_DENOMINATIONS},\n"));
+    out.push_str(&format!(
+        "  \"denomination_unit\": {},\n",
+        defs.denomination_unit
+    ));
     out.push_str(&format!(
         "  \"real_ms_per_city_minute\": {REAL_MS_PER_CITY_MINUTE},\n"
     ));
@@ -683,11 +716,12 @@ pub fn emit_json(
     for (i, it) in defs.items.iter().enumerate() {
         let comma = if i + 1 < defs.items.len() { "," } else { "" };
         out.push_str(&format!(
-            "    {{ \"id\": {}, \"key\": {}, \"unit\": {}, \"shelf_life_minutes\": {}, \"width\": {}, \"height\": {} }}{comma}\n",
+            "    {{ \"id\": {}, \"key\": {}, \"unit\": {}, \"shelf_life_minutes\": {}, \"face_value\": {}, \"width\": {}, \"height\": {} }}{comma}\n",
             it.id,
             json_escape(&it.key),
             it.unit,
             it.shelf_life_minutes,
+            it.face_value,
             it.width,
             it.height
         ));
@@ -1018,6 +1052,7 @@ mod tests {
 
     fn sample() -> Defs {
         Defs {
+            denomination_unit: 0,
             objects: vec![ObjectDef {
                 id: 1,
                 key: "trash_bin".into(),
@@ -1052,6 +1087,7 @@ mod tests {
                 key: "bottle".into(),
                 unit: 0,
                 shelf_life_minutes: 0,
+                face_value: 0,
                 width: 1,
                 height: 1,
             }],
@@ -1297,8 +1333,11 @@ mod tests {
         assert!(lines[4].contains("\"interact_at_max_reach_cells\": 2"));
         assert!(lines[5].contains("\"max_footprint_cells\": 8"));
         assert!(lines[6].contains("\"max_shelf_life_minutes\": 525600"));
-        assert!(lines[7].contains("\"real_ms_per_city_minute\": 2500"));
-        assert!(lines[8].contains("\"atlas_max_pages_per_group\": 2"));
+        assert!(lines[7].contains("\"max_face_value\": 10000"));
+        assert!(lines[8].contains("\"max_denominations\": 16"));
+        assert!(lines[9].contains("\"denomination_unit\": 0"));
+        assert!(lines[10].contains("\"real_ms_per_city_minute\": 2500"));
+        assert!(lines[11].contains("\"atlas_max_pages_per_group\": 2"));
         assert!(!out.contains('\r'));
     }
 

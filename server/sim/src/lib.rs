@@ -7,6 +7,7 @@ pub mod appearance;
 pub mod author;
 pub mod balance;
 pub mod cadence;
+pub mod cash;
 pub mod codes;
 pub mod demo_ping;
 pub mod generation;

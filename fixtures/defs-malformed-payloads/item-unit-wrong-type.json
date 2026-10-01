@@ -5,6 +5,9 @@
   "interact_at_max_reach_cells": 2,
   "max_footprint_cells": 8,
   "max_shelf_life_minutes": 525600,
+  "max_face_value": 10000,
+  "max_denominations": 16,
+  "denomination_unit": 0,
   "objects": [],
   "items": [
     {
@@ -12,6 +15,7 @@
       "key": "bottle",
       "unit": "piece",
       "shelf_life_minutes": 0,
+      "face_value": 0,
       "width": 1,
       "height": 1
     }

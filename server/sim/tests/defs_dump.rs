@@ -69,8 +69,8 @@ fn canonical_dump() -> String {
     }
     for i in defs::ITEMS {
         lines.push(format!(
-            "item {} id={} unit={} shelf_life_minutes={} width={} height={}",
-            i.key, i.id, i.unit, i.shelf_life_minutes, i.width, i.height
+            "item {} id={} unit={} shelf_life_minutes={} face_value={} width={} height={}",
+            i.key, i.id, i.unit, i.shelf_life_minutes, i.face_value, i.width, i.height
         ));
     }
     for r in defs::RECIPES {

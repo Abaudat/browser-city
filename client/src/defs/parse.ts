@@ -263,12 +263,17 @@ function parseTag(value: unknown, path: string): TagDef {
 
 function parseItem(value: unknown, path: string): ItemDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "unit", "shelf_life_minutes", "width", "height"], path);
+  checkKnownKeys(
+    obj,
+    ["id", "key", "unit", "shelf_life_minutes", "face_value", "width", "height"],
+    path,
+  );
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     unit: expectU32(obj.unit, `${path}.unit`),
     shelfLifeMinutes: expectU32(obj.shelf_life_minutes, `${path}.shelf_life_minutes`),
+    faceValue: expectU32(obj.face_value, `${path}.face_value`),
     width: expectU32(obj.width, `${path}.width`),
     height: expectU32(obj.height, `${path}.height`),
   };
@@ -525,6 +530,9 @@ export function parseDefs(data: unknown): Defs {
       "interact_at_max_reach_cells",
       "max_footprint_cells",
       "max_shelf_life_minutes",
+      "max_face_value",
+      "max_denominations",
+      "denomination_unit",
       "real_ms_per_city_minute",
       "atlas_max_pages_per_group",
       "character_composite_pages",
@@ -558,6 +566,9 @@ export function parseDefs(data: unknown): Defs {
   );
   const maxFootprintCells = expectU32(root.max_footprint_cells, "$.max_footprint_cells");
   const maxShelfLifeMinutes = expectU32(root.max_shelf_life_minutes, "$.max_shelf_life_minutes");
+  const maxFaceValue = expectU32(root.max_face_value, "$.max_face_value");
+  const maxDenominations = expectU32(root.max_denominations, "$.max_denominations");
+  const denominationUnit = expectU32(root.denomination_unit, "$.denomination_unit");
   const realMsPerCityMinute = expectU32(root.real_ms_per_city_minute, "$.real_ms_per_city_minute");
   // FR1: a zero rate would divide by zero in every city-time derivation.
   // and `sim::time` carries the sub-minute remainder in a u16.
@@ -591,6 +602,7 @@ export function parseDefs(data: unknown): Defs {
   for (const item of items) {
     checkItemFields(item, maxFootprintCells, maxShelfLifeMinutes);
   }
+  checkDenominations(items, { maxFaceValue, maxDenominations, denominationUnit });
   const recipes = expectArray(root.recipes, "$.recipes").map((v, i) =>
     parseRecipe(v, `$.recipes[${i}]`),
   );
@@ -785,6 +797,9 @@ export function parseDefs(data: unknown): Defs {
     interactAtMaxReachCells,
     maxFootprintCells,
     maxShelfLifeMinutes,
+    maxFaceValue,
+    maxDenominations,
+    denominationUnit,
     realMsPerCityMinute,
     atlasMaxPagesPerGroup,
     characterCompositePages,
@@ -996,6 +1011,42 @@ function checkItemFields(
   }
 }
 
+/** Mirrors `validate.rs`'s `check_denomination` (FR92). An item with a face
+ * value is money: counted in the denomination unit, never perishable, with a
+ * face value no other denomination shares, and at most `maxDenominations` of
+ * them. A face value of 0 is not money; the build refuses an explicit 0, so
+ * the artefact never carries one meaning anything else. */
+function checkDenominations(
+  items: readonly ItemDef[],
+  limits: { maxFaceValue: number; maxDenominations: number; denominationUnit: number },
+): void {
+  const seen = new Map<number, string>();
+  for (const item of items) {
+    if (item.faceValue === 0) continue;
+    if (item.faceValue > limits.maxFaceValue) {
+      fail(
+        `item '${item.key}' face_value ${item.faceValue} exceeds MAX_FACE_VALUE (${limits.maxFaceValue})`,
+      );
+    }
+    if (item.unit !== limits.denominationUnit) {
+      fail(`item '${item.key}' has a face_value, so its unit must be the denomination unit`);
+    }
+    if (item.shelfLifeMinutes !== 0) {
+      fail(`item '${item.key}' has a face_value, so its shelf_life_minutes must be 0`);
+    }
+    const first = seen.get(item.faceValue);
+    if (first !== undefined) {
+      fail(`item '${item.key}' face_value ${item.faceValue} is already item '${first}'`);
+    }
+    seen.set(item.faceValue, item.key);
+    if (seen.size > limits.maxDenominations) {
+      fail(
+        `item '${item.key}' is denomination ${seen.size}, over MAX_DENOMINATIONS (${limits.maxDenominations})`,
+      );
+    }
+  }
+}
+
 /** FR127's cap, checked on `width` and `height` independently, exactly
  * like `tools/defs-build`'s own `validate.rs` -- the error names the
  * object and its size, and directs the author to compose the structure
@@ -1144,7 +1195,7 @@ export function canonicalDump(defs: Defs): string {
   }
   for (const i of defs.items) {
     lines.push(
-      `item ${i.key} id=${i.id} unit=${i.unit} shelf_life_minutes=${i.shelfLifeMinutes} width=${i.width} height=${i.height}`,
+      `item ${i.key} id=${i.id} unit=${i.unit} shelf_life_minutes=${i.shelfLifeMinutes} face_value=${i.faceValue} width=${i.width} height=${i.height}`,
     );
   }
   for (const r of defs.recipes) {

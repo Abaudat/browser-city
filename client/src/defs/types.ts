@@ -118,6 +118,8 @@ export interface ItemDef {
   readonly unit: number;
   /** Minutes until an instance spoils; 0 means it never does. */
   readonly shelfLifeMinutes: number;
+  /** Face value in the currency's smallest unit; 0 means not money (FR92). */
+  readonly faceValue: number;
   /** The item's world footprint, in whole cells (FR94). */
   readonly width: number;
   readonly height: number;
@@ -267,6 +269,12 @@ export interface Defs {
   /** The longest an item may take to spoil, in minutes -- generated once
    * by `tools/defs-build`, never a client-side literal. */
   readonly maxShelfLifeMinutes: number;
+  /** The largest face value one denomination may carry. */
+  readonly maxFaceValue: number;
+  /** The most denominations the defs may declare. */
+  readonly maxDenominations: number;
+  /** The `sim::codes::unit` code every denomination is counted in. */
+  readonly denominationUnit: number;
   /** FR1: real milliseconds per in-city minute -- generated once by
    * `tools/defs-build`, never a client-side literal. */
   readonly realMsPerCityMinute: number;

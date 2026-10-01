@@ -45,5 +45,11 @@
   "item-missing-shelf-life",
   "item-missing-bulk",
   "item-shelf-life-wrong-type",
-  "item-bulk-height-cap-exceeded"
+  "item-bulk-height-cap-exceeded",
+  "item-face-value-over-cap",
+  "item-face-value-wrong-type",
+  "item-denomination-not-piece",
+  "item-denomination-perishable",
+  "item-face-value-duplicate",
+  "item-denominations-over-cap"
 ]

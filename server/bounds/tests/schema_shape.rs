@@ -114,3 +114,24 @@ fn every_scheduled_table_has_the_required_columns_and_names_a_real_reducer() {
 
 // Every table has a `TABLE_BOUNDS` row (NFR37): `registry_matches_tables.rs`
 // owns that assertion; it is not duplicated here.
+
+/// Story 6.8 (FR92): a till's cash is `stock` rows and nothing else, so no
+/// table, struct or column is named for cash, a till or a denomination.
+#[test]
+fn no_table_or_column_is_named_for_cash_a_till_or_a_denomination() {
+    for table in &schema().tables {
+        let names = std::iter::once(&table.accessor)
+            .chain(std::iter::once(&table.struct_name))
+            .chain(table.columns.iter().map(|c| &c.name));
+        for name in names {
+            let lower = name.to_lowercase();
+            for banned in ["cash", "till", "denomination"] {
+                assert!(
+                    !lower.contains(banned),
+                    "`{name}` in table `{}` names {banned} -- cash is `stock` rows (FR92)",
+                    table.accessor
+                );
+            }
+        }
+    }
+}

@@ -10,6 +10,8 @@
 //! a stock write can be. They read the holder's existing lines and
 //! say which one row the write lands on.
 
+use std::collections::BTreeMap;
+
 use crate::author::{Author, Cause};
 use crate::codes::holder_kind;
 
@@ -349,5 +351,75 @@ fn transfer(
                 },
             ]),
         },
+    })
+}
+
+/// What a multi-line move came to. `writes` is, line by line in item order,
+/// the giving then the receiving write; they land in one transaction or
+/// not at all. `writes` is empty when nothing moved, and then `short` names
+/// the lowest item the giver cannot cover in full, or `no_room` is set when
+/// the receiver cannot take the new lines. Neither is an error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lot {
+    pub short: Option<u32>,
+    pub no_room: Option<NoRoom>,
+    pub writes: Vec<Write>,
+}
+
+/// Moves every line of `lot` (item -> quantity) from one holder to another
+/// in full, or writes nothing: a procedure step only. The receiver's new
+/// lines are counted together against [`MAX_LINES_PER_HOLDER`]. Zero
+/// quantities are skipped and a move to oneself writes nothing.
+pub fn plan_transfer_all(
+    existing: &[StockLine],
+    by: Author,
+    from: HolderRef,
+    to: HolderRef,
+    lot: &BTreeMap<u32, u64>,
+) -> Result<Lot, StockError> {
+    permit(by, Verb::Move)?;
+    let nothing = |short, no_room| Lot {
+        short,
+        no_room,
+        writes: Vec::new(),
+    };
+    let lines: Vec<(u32, u64)> = lot
+        .iter()
+        .filter(|&(_, &q)| q > 0)
+        .map(|(&i, &q)| (i, q))
+        .collect();
+    if from == to || lines.is_empty() {
+        return Ok(nothing(None, None));
+    }
+    if let Some(&(item, _)) = lines
+        .iter()
+        .find(|&&(i, q)| line_of(existing, from, i).map_or(0, |l| l.quantity) < q)
+    {
+        return Ok(nothing(Some(item), None));
+    }
+    let new_lines = lines
+        .iter()
+        .filter(|&&(i, _)| line_of(existing, to, i).is_none())
+        .count();
+    let held = existing.iter().filter(|l| l.holder == to).count();
+    if held + new_lines > MAX_LINES_PER_HOLDER {
+        return Ok(nothing(None, Some(NoRoom)));
+    }
+    let mut writes = Vec::with_capacity(lines.len() * 2);
+    for (item, amount) in lines {
+        let give = withdraw(existing, by, from, item, amount);
+        let plan = deposit_plan(existing, to, item, amount)?.expect("room was counted above");
+        writes.push(give.write);
+        writes.push(Write {
+            author: by,
+            holder: to,
+            item_id: item,
+            plan,
+        });
+    }
+    Ok(Lot {
+        short: None,
+        no_room: None,
+        writes,
     })
 }
