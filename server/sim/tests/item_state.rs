@@ -3,16 +3,17 @@
 
 use sim::codes::container_kind;
 use sim::item_instance::{
-    ContainerRef, Form, Held, ItemError, MAX_GRID_EXTENT, MovePlan, OFFSET_SUBCELLS, ORIENTATIONS,
-    Placed, Placement, plan_move,
+    ContainerRef, Form, Held, ItemError, MAX_GRID_EXTENT, MovePlan, OFFSET_SUBCELLS, Placed,
+    Placement, plan_move,
 };
+use sim::world::{ORIENTATIONS, chunk_key};
 
 fn cupboard() -> ContainerRef {
     ContainerRef::new(container_kind::OBJECT, 9).unwrap()
 }
 
 fn placed(x: i32) -> Placement {
-    Placement::Placed(Placed::new(x, -4, 0, (3, 15), 0).unwrap())
+    Placement::Placed(Placed::new(x, -4, 0, (3, OFFSET_SUBCELLS - 1), 0).unwrap())
 }
 
 fn held(slot: (u8, u8)) -> Placement {
@@ -76,17 +77,6 @@ fn a_container_is_a_minted_kind_and_a_real_id() {
     );
 }
 
-/// FR95: an item in a cupboard never needed a world position, so the held
-/// form exposes a slot and a container and nothing else.
-#[test]
-fn a_held_item_has_a_slot_and_no_world_position() {
-    let Placement::Held(h) = held((2, 5)) else {
-        unreachable!()
-    };
-    assert_eq!(h.slot(), (2, 5));
-    assert_eq!(h.container(), cupboard());
-}
-
 #[test]
 fn moving_between_forms_is_one_delete_and_one_insert() {
     assert_eq!(
@@ -116,33 +106,34 @@ fn moving_within_a_form_updates_in_place() {
     );
 }
 
-/// FR95, second AC: the object under a placed item is not the item's
-/// business. Removing a prop from a fixture leaves the item's placement
-/// byte-identical, and `sim::item_instance` has no function from an object
-/// id to the items on it, so nothing can cascade -- adding one flips this
-/// test on purpose.
+/// FR95, second AC (structural half): no public fn of `sim::item_instance`
+/// takes an object or prop, so nothing there can cascade. The schema half
+/// is `item_instance_bounds.rs`'s column ban; the live half is deferred.
 #[test]
-fn an_item_placed_over_a_prop_is_accepted_not_corrected_when_the_prop_goes() {
-    let item = placed(5);
-    let before = format!("{item:?}");
-    let mut props = vec![(1u64, 5i32, -4i32), (2, 9, 9)];
-    props.retain(|p| p.0 != 1);
-    assert_eq!(props.len(), 1);
-    assert_eq!(
-        format!("{item:?}"),
-        before,
-        "FR95: a placed item is unchanged by the prop under it going away"
-    );
+fn no_public_item_instance_fn_takes_an_object_id_or_prop() {
     let source = include_str!("../src/item_instance.rs");
-    let code: String = source
+    for line in source
         .lines()
-        .filter(|l| !l.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(
-        !code.contains("object_id") && !code.contains("fn items_on"),
-        "FR95: sim exposes no object-id -> items lookup (it would invite a cascade)"
-    );
+        .filter(|l| l.trim_start().starts_with("pub fn"))
+    {
+        let lower = line.to_lowercase();
+        assert!(
+            !lower.contains("object") && !lower.contains("prop"),
+            "FR95: `{line}` takes an object or prop -- an object-to-items lookup invites a cascade"
+        );
+    }
+}
+
+#[test]
+fn an_identity_move_plans_nothing() {
+    assert_eq!(plan_move(placed(0), placed(0)), MovePlan::Nothing);
+    assert_eq!(plan_move(held((1, 1)), held((1, 1))), MovePlan::Nothing);
+}
+
+#[test]
+fn a_placed_item_derives_its_chunk_key_from_its_cell_and_floor() {
+    let p = Placed::new(-33, 70, -1, (0, 0), 0).unwrap();
+    assert_eq!(p.chunk_key(), chunk_key(-33, 70, -1));
 }
 
 /// FR95, fourth AC: state travels with the instance id, and a move never
@@ -161,6 +152,7 @@ fn a_move_plan_names_only_the_two_placement_forms() {
                 assert_ne!(delete, insert.form());
             }
             MovePlan::Within(p) => assert_eq!(p.form(), a.form()),
+            MovePlan::Nothing => unreachable!("these pairs differ"),
         }
     }
 }

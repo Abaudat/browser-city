@@ -5410,7 +5410,7 @@ proptest! {
     #[test]
     fn inv_item_instance_in_exactly_one_state(
         ops in proptest::collection::vec(
-            (0u64..4, any::<bool>(), 0i32..6, 0u8..16, 0u8..64),
+            (0u64..4, any::<bool>(), 0i32..6, 0..sim::item_instance::OFFSET_SUBCELLS, 0..sim::item_instance::MAX_GRID_EXTENT),
             0..80,
         )
     ) {
@@ -5448,6 +5448,7 @@ proptest! {
                         let map = match p.form() { Form::Placed => &mut placed, Form::Held => &mut held };
                         prop_assert!(map.insert(id, p).is_some(), "FR95: an in-place update replaces a row");
                     }
+                    MovePlan::Nothing => {}
                 },
             }
             last.insert(id, target);

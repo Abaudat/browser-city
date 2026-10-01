@@ -70,7 +70,8 @@ done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
 A=$((ROWS + 1)); B=$((ROWS + 2)); C=$((ROWS + 3))
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_stock "[[$A,0,1,1,500],[$B,0,2,1,20],[$C,1,1,2,3]]" 0
 
-# Real-shaped item instances, one in each form: instance A is placed at a cell
+# Item instances, one in each form (chunk_key 77 is deliberately not
+# `chunk_key(12, -7, 0)`: nothing checks it against the cell yet): instance A is placed at a cell
 # with a sub-cell offset, B is held in object 1's grid at a slot. Instance ids
 # continue the seeded sequence; `item_placed`/`item_held` are keyed by them.
 # item_instance: [id, def_id, created_at]; item_placed: [id, x, y, floor,

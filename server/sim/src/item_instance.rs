@@ -12,6 +12,7 @@
 
 use crate::codes::container_kind;
 use crate::generated::defs::COLLIDER_SUBCELLS_PER_CELL;
+use crate::world::{ORIENTATIONS, chunk_key};
 
 /// Sub-cell resolution of a placed item's offset: the collider's own.
 pub const OFFSET_SUBCELLS: u8 = COLLIDER_SUBCELLS_PER_CELL as u8;
@@ -23,9 +24,6 @@ pub const MAX_GRID_EXTENT: u8 = 64;
 /// The most items one container holds. `item_held`'s row bound is this
 /// times `placed_object`'s.
 pub const MAX_ITEMS_PER_CONTAINER: u64 = 64;
-
-/// Orientations are the four facings: `0..ORIENTATIONS`.
-pub const ORIENTATIONS: u8 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemError {
@@ -104,6 +102,11 @@ impl Placed {
             offset,
             orientation: orientation_ok(orientation)?,
         })
+    }
+
+    /// The `item_placed.chunk_key` column: derived here and nowhere else.
+    pub fn chunk_key(&self) -> u64 {
+        chunk_key(self.x, self.y, self.floor)
     }
 
     pub fn cell(&self) -> (i32, i32) {
@@ -194,11 +197,15 @@ pub enum MovePlan {
     Cross { delete: Form, insert: Placement },
     /// The form does not change: the row is updated in place.
     Within(Placement),
+    /// Nothing changes: no write.
+    Nothing,
 }
 
 /// What moving an item from `current` to `target` writes.
 pub fn plan_move(current: Placement, target: Placement) -> MovePlan {
-    if current.form() == target.form() {
+    if current == target {
+        MovePlan::Nothing
+    } else if current.form() == target.form() {
         MovePlan::Within(target)
     } else {
         MovePlan::Cross {

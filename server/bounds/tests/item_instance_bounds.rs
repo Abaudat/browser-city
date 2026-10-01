@@ -94,7 +94,10 @@ fn no_item_table_has_a_parent_or_references_a_placed_object() {
         "parent",
         "parent_id",
         "parent_kind",
-        "container_id_fk",
+        "container_object_id",
+        "holder_id",
+        "placed_object_id",
+        "parent_instance_id",
         "object_id",
         "supported_by",
     ];
@@ -107,7 +110,7 @@ fn no_item_table_has_a_parent_or_references_a_placed_object() {
     assert_eq!(
         items.len(),
         3,
-        "FR95: the schema footprint is three item tables -- identity and two forms"
+        "FR95: three item tables today; a fourth is the state table and must be added to this list on purpose"
     );
     for t in items {
         for c in &t.columns {
@@ -162,12 +165,11 @@ fn item_placed_max_rows_follows_placed_objects_density() {
 }
 
 #[test]
-fn item_instance_max_rows_covers_both_forms() {
-    let both = bound("item_placed").max_rows + bound("item_held").max_rows;
-    assert!(
-        bound("item_instance").max_rows >= both
-            && bound("item_instance").max_rows <= both + both / 100,
-        "FR95: item_instance.max_rows is the sum of the two forms' (up to 1% headroom)"
+fn item_instance_max_rows_is_the_sum_of_the_two_forms() {
+    assert_eq!(
+        bound("item_instance").max_rows,
+        bound("item_placed").max_rows + bound("item_held").max_rows,
+        "FR95: item_instance.max_rows is item_placed + item_held"
     );
 }
 

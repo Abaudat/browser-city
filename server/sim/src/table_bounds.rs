@@ -190,7 +190,8 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 48,
         kind: BoundKind::Mechanical,
     },
-    // `item_placed` + `item_held` (an instance is in exactly one).
+    // Sum of `item_placed` 3,000,000 and `item_held` 192,000,000 (an
+    // instance is in exactly one form): 195,000,000.
     // `bounds/tests/item_instance_bounds.rs` recomputes it.
     TableBound {
         accessor: "item_instance",

@@ -317,10 +317,12 @@ and just-in-time. So:
 - A container is `(container_kind, container_id)`: a `sim::codes::container_kind` code (`object`, whose id is a `placed_object.object_id`) plus the id in that kind's own table. It is not `holder_kind`: a holder owns stock, a container has a grid. A further kind is a code append.
 - No foreign key and no cascade, and no `parent`/`supported_by` column on any item table: a `container_id` whose object is gone is a dangling reference.
 - Mutable per-instance state is its own table keyed by `instance_id`, never columns on a form.
-- `sim::item_instance` holds the types (`Placed`, `Held`, `Placement`, `ContainerRef`) and `plan_move`: across forms one delete and one insert, within a form an update. Out-of-range values are errors, never clamped. The sub-cell offset is `0..COLLIDER_SUBCELLS_PER_CELL`; a slot is `0..MAX_GRID_EXTENT`; `MAX_GRID_EXTENT` and `MAX_ITEMS_PER_CONTAINER` are declared only there.
+- `sim::item_instance` holds the types (`Placed`, `Held`, `Placement`, `ContainerRef`) and `plan_move`: across forms one delete and one insert, within a form an update. Out-of-range values are errors, never clamped. The sub-cell offset is `0..COLLIDER_SUBCELLS_PER_CELL`; a slot is `0..MAX_GRID_EXTENT`; `MAX_GRID_EXTENT` and `MAX_ITEMS_PER_CONTAINER` are declared only there. `Placed::chunk_key` is the one place `item_placed.chunk_key` is derived.
 - `item_held`'s `max_rows` is `placed_object`'s times `MAX_ITEMS_PER_CONTAINER`; `item_placed`'s is `placed_object`'s; `item_instance`'s is their sum.
 
 ## World addressing
+
+`sim::world::ORIENTATIONS` (4) is the range of every `orientation` column: `0..ORIENTATIONS`.
 
 A cell address is `(x: i32, y: i32, floor: i8, layer: u32)` (FR117). `x`/`y`
 are absolute world tile coordinates, always signed, never chunk-relative in
