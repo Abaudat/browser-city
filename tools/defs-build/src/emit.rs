@@ -1373,12 +1373,14 @@ mod tests {
         assert!(lines[3].contains("\"collider_subcells_per_cell\": 16"));
         assert!(lines[4].contains("\"interact_at_max_reach_cells\": 2"));
         assert!(lines[5].contains("\"max_footprint_cells\": 8"));
-        assert!(lines[6].contains("\"max_shelf_life_minutes\": 525600"));
-        assert!(lines[7].contains("\"max_face_value\": 1000"));
-        assert!(lines[8].contains("\"max_denominations\": 16"));
-        assert!(lines[9].contains("\"denomination_unit\": 0"));
-        assert!(lines[10].contains("\"real_ms_per_city_minute\": 2500"));
-        assert!(lines[11].contains("\"atlas_max_pages_per_group\": 2"));
+        assert!(lines[6].contains("\"min_floor\": -1"));
+        assert!(lines[7].contains("\"max_floor\": 7"));
+        assert!(lines[8].contains("\"max_shelf_life_minutes\": 525600"));
+        assert!(lines[9].contains("\"max_face_value\": 1000"));
+        assert!(lines[10].contains("\"max_denominations\": 16"));
+        assert!(lines[11].contains("\"denomination_unit\": 0"));
+        assert!(lines[12].contains("\"real_ms_per_city_minute\": 2500"));
+        assert!(lines[13].contains("\"atlas_max_pages_per_group\": 2"));
         assert!(!out.contains('\r'));
     }
 
