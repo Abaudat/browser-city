@@ -60,7 +60,8 @@ function applyPlan(held: Map<string, HandleKey>, p: { x: number; y: number; floo
 }
 
 describe("planRegion", () => {
-  it("inv_interest_region_is_bounded: any position requests at most the declared bound", () => {
+  // any position requests at most the declared bound
+  it("inv_interest_region_is_bounded", () => {
     fc.assert(
       fc.property(pos(), (p) => {
         const plan = planRegion([], p, FLOORS);
@@ -71,7 +72,8 @@ describe("planRegion", () => {
     );
   });
 
-  it("inv_interest_held_set_is_between_enter_and_keep: enter(pos) <= held <= keep(pos) over any walk", () => {
+  // enter(pos) <= held <= keep(pos) over any walk
+  it("inv_interest_held_set_is_between_enter_and_keep", () => {
     expect(REGION_LEAVE_RADIUS_CHUNKS).toBeGreaterThan(REGION_RADIUS_CHUNKS);
     const step = fc.oneof(
       pos(), // a teleport
@@ -112,7 +114,8 @@ describe("planRegion", () => {
     );
   });
 
-  it("inv_interest_hysteresis_never_thrashes: oscillating across a boundary changes the held set at most once", () => {
+  // oscillating across a boundary changes the held set at most once
+  it("inv_interest_hysteresis_never_thrashes", () => {
     fc.assert(
       fc.property(
         fc.integer({ min: -(2 ** 20), max: 2 ** 20 }),
@@ -180,7 +183,8 @@ describe("bands", () => {
 });
 
 describe("handle keys", () => {
-  it("inv_interest_chunk_keys_survive_the_query_string: every chunk key is exact as a bigint", () => {
+  // every chunk key is exact as a bigint
+  it("a handle's chunk keys are the exact bigint for every floor of its band", () => {
     const chunkCoord = fc.oneof(
       fc.integer({ min: -(2 ** 23), max: 2 ** 23 - 1 }),
       fc.constantFrom(-(2 ** 23), 2 ** 23 - 1, -1, 0, 1),
@@ -210,7 +214,8 @@ describe("the region covers what is on screen", () => {
     expect(reach).toBeGreaterThanOrEqual(halfH + base + southShift);
   });
 
-  it("inv_interest_region_covers_viewport_with_margin: every visible cell plus the margin lies in the held set", () => {
+  // every visible cell plus the margin lies in the held set
+  it("inv_interest_region_covers_viewport_with_margin", () => {
     fc.assert(
       fc.property(
         fc.integer({ min: -100000, max: 100000 }),

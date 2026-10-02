@@ -167,7 +167,8 @@ describe("RegionSubscriptions", () => {
     expect(applied).toEqual([handleId({ cx: 0, cy: 0, band: 0 })]);
   });
 
-  it("inv_interest_handles_never_leak: any schedule of crossings and deliveries ends with live handles == held set <= bound", () => {
+  // any schedule of crossings and deliveries ends with live handles == held set <= bound
+  it("inv_interest_handles_never_leak", () => {
     const pos = fc.record({
       x: fc.integer({ min: -400, max: 400 }),
       y: fc.integer({ min: -400, max: 400 }),

@@ -8,7 +8,8 @@ const FLOORS = { minFloor: -1, maxFloor: 7 };
 const SHAPE = /^SELECT \* FROM "([a-z_]+)" WHERE "\1"\."chunk_key" = (\d+)$/;
 
 describe("regionQueries", () => {
-  it("inv_interest_chunk_keys_survive_the_query_string: the emitted literal parses back to the exact bigint key", () => {
+  // the emitted literal parses back to the exact bigint key
+  it("inv_interest_chunk_keys_survive_the_query_string", () => {
     const coord = fc.oneof(
       fc.integer({ min: -(2 ** 23), max: 2 ** 23 - 1 }),
       fc.constantFrom(-(2 ** 23), 2 ** 23 - 1, -1, 0, 1),

@@ -221,3 +221,27 @@ test("the atlas request count and byte total the mount actually fetches, once se
     `atlas bytes grew to ${(bytes / 1024 / 1024).toFixed(2)} MiB, over the ${(ATLAS_BYTES_BUDGET / 1024 / 1024).toFixed(2)} MiB budget -- re-measure this spike (this file's own comment) if this is deliberate. Fetched:\n${urls.join("\n")}`,
   ).toBeLessThanOrEqual(ATLAS_BYTES_BUDGET);
 });
+
+// Story 4.3: `REGION_APPLIED` is the initial interest region landing, and
+// what lands is bounded by the region, never by the world. The ceiling is
+// the smallest row count the 1.14 spike measured a decode at (7,000 rows,
+// `docs/spikes/1.14-boot-budget.md`): the e2e world holds far more than
+// that in total, so a client that subscribed it whole would blow through.
+const BOOT_ROWS_CEILING = 7_000;
+
+test("the rows delivered by the time the initial region has applied stay under the 1.14 spike's smallest measured decode", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.waitForFunction(
+    () => performance.getEntriesByName("bc-boot:region-applied").length > 0,
+    undefined,
+    { timeout: 30_000 },
+  );
+  const rows = await page.evaluate(() => {
+    const inserts = window.__bc?.region?.inserts ?? {};
+    return Object.values(inserts).reduce((sum, n) => sum + n, 0);
+  });
+  expect(rows).toBeGreaterThan(0);
+  expect(rows).toBeLessThan(BOOT_ROWS_CEILING);
+});

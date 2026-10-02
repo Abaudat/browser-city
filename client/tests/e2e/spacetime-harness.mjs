@@ -119,6 +119,7 @@ export async function startSpacetime() {
   }
 
   const handle = { pid: child.pid, port, serverUrl, dbName, dataDir };
+  seedWorld(handle);
   writeFileSync(STATE_FILE, JSON.stringify(handle), "utf-8");
   return handle;
 }
@@ -152,4 +153,45 @@ export function callReducer(handle, reducer, ...args) {
   if (result.status !== 0) {
     throw new Error(`spacetime call ${reducer} failed:\n${result.stdout}\n${result.stderr}`);
   }
+}
+
+/** The seeded e2e world (story 4.3): one `placed_object` and one
+ * `actor_location` in every chunk of a `(2 * E2E_WORLD_SPAN + 1)` square
+ * block of ground-floor chunks, centred on the chunk the test street's
+ * spawn is in -- far larger than any one interest region, so a client
+ * that over-subscribes holds more than it should. Written through the
+ * module's own owner-only restore path (never a test-only reducer) before
+ * any client connects, so every spec sees the same world. Ids are
+ * `E2E_WORLD.idOf(cx, cy)`. */
+export const E2E_WORLD = {
+  span: 4,
+  idOf(cx, cy) {
+    const side = 2 * E2E_WORLD.span + 1;
+    return (cx + E2E_WORLD.span) * side + (cy + E2E_WORLD.span) + 1;
+  },
+};
+
+/** `sim::world::chunk_key`'s layout, restated for the harness: `[55:32]
+ * chunk_x | [31:8] chunk_y | [7:0] floor`, each two's complement. */
+function chunkKeyOf(cx, cy, floor) {
+  const m24 = (1n << 24n) - 1n;
+  return ((BigInt(cx) & m24) << 32n) | ((BigInt(cy) & m24) << 8n) | (BigInt(floor) & 0xffn);
+}
+
+function seedWorld(handle) {
+  const placed = [];
+  const actors = [];
+  for (let cx = -E2E_WORLD.span; cx <= E2E_WORLD.span; cx++) {
+    for (let cy = -E2E_WORLD.span; cy <= E2E_WORLD.span; cy++) {
+      const id = E2E_WORLD.idOf(cx, cy);
+      const key = chunkKeyOf(cx, cy, 0);
+      placed.push(`[${id},1,${cx * 32 + 5},${cy * 32 + 5},0,3,0,${key}]`);
+      actors.push(`[${id},0,${id},${key},0]`);
+    }
+  }
+  const count = placed.length;
+  callReducer(handle, "begin_restore");
+  callReducer(handle, "restore_placed_object", `[${placed.join(",")}]`, String(count));
+  callReducer(handle, "restore_actor_location", `[${actors.join(",")}]`, String(count));
+  callReducer(handle, "finish_restore");
 }
