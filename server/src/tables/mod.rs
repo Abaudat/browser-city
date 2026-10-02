@@ -4,6 +4,7 @@
 //! `institutions`/`matters` are not yet files because nothing needs one
 //! yet, not because they were forgotten.
 
+pub mod actor;
 pub mod cadences;
 pub mod citizen;
 pub mod clock;

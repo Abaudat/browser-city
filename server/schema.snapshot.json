@@ -1,6 +1,87 @@
 {
   "tables": [
     {
+      "accessor": "actor_kind",
+      "struct_name": "ActorKind",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "code",
+          "ty": "u32",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "name",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "actor_location",
+      "struct_name": "ActorLocation",
+      "public": true,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "location_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "actor_kind",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "actor_id",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "chunk_key",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "floor",
+          "ty": "i8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "budget_review_schedule",
       "struct_name": "BudgetReviewSchedule",
       "public": false,
@@ -57,7 +138,7 @@
     {
       "accessor": "building_area",
       "struct_name": "BuildingArea",
-      "public": false,
+      "public": true,
       "scheduled_reducer": null,
       "wide_table_waiver": null,
       "columns": [
@@ -498,7 +579,7 @@
     {
       "accessor": "floor_transition",
       "struct_name": "FloorTransition",
-      "public": false,
+      "public": true,
       "scheduled_reducer": null,
       "wide_table_waiver": null,
       "columns": [
@@ -993,7 +1074,7 @@
     {
       "accessor": "placed_object",
       "struct_name": "PlacedObject",
-      "public": false,
+      "public": true,
       "scheduled_reducer": null,
       "wide_table_waiver": null,
       "columns": [
@@ -1281,7 +1362,7 @@
     {
       "accessor": "room_area",
       "struct_name": "RoomArea",
-      "public": false,
+      "public": true,
       "scheduled_reducer": null,
       "wide_table_waiver": null,
       "columns": [
