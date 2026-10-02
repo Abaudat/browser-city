@@ -677,6 +677,21 @@ jobs:
             echo "::error::debug overlay code (client/src/debug/**) leaked into the production bundle -- the import.meta.env.DEV dynamic-import gate stopped working (FR168)" >&2
             exit 1
           fi
+      # Story 4.5 (Tim's direction): the OIDC client is a lazily imported
+      # chunk, loaded only when a link starts or the page boots back from the
+      # provider -- the anonymous boot path pays zero bytes and zero requests
+      # for it, so the entry chunk and index.html must not contain it.
+      - name: story 4.5 FR143, the OIDC client stays out of the entry chunk and the boot path
+        run: |
+          if grep -lq 'signinRedirect' dist/assets/index-*.js; then
+            echo "::error::oidc-client-ts reached the entry chunk -- client/src/identity/link-flow.ts must stay behind a dynamic import" >&2
+            exit 1
+          fi
+          if grep -q 'link-flow' dist/index.html; then
+            echo "::error::the link-flow chunk is preloaded by index.html -- it must load only when a link starts" >&2
+            exit 1
+          fi
+          grep -lq 'signinRedirect' dist/assets/link-flow-*.js || { echo "::error::the link-flow chunk is missing or no longer carries the OIDC client" >&2; exit 1; }
       # Story 1.14 (Tim's direction): the decode-only harness and its
       # generated bindings live under tests/e2e/boot-budget/ precisely so
       # they are structurally unreachable from index.html's own module

@@ -20,6 +20,7 @@ cited here by identifier.
 | CI / deploy                   | GitHub Actions is the only path to Maincloud; never a local `spacetime publish` |
 | Client                        | TypeScript + PixiJS v8, bundled by Vite                                                                  |
 | Client SDK                    | the `spacetimedb` npm package                                                                            |
+| Client OIDC                   | `oidc-client-ts` 3.5.0, pinned, a runtime dependency that exists only in the lazily imported `client/src/identity/link-flow.ts` chunk |
 | Client bindings               | `spacetime generate --lang typescript --out-dir client/src/net/bindings` — generated, never hand-written |
 | Client lint/format            | Biome                                                                                                    |
 | Client hosting                | GitHub Pages, deployed by CI on push to master                                                          |
@@ -226,8 +227,10 @@ loud failure instead, never a silent no-op.
   production-base build under `/browser-city/`, backed by a disposable
   local SpacetimeDB, so a broken spec is caught before merge. Every run
   connects as a fresh, anonymous identity, like a real player -- there is
-  no fixed smoke identity today, because `identity_connected` writes
-  nothing yet; a fixed identity threaded through a URL query parameter
+  no fixed smoke identity, because `identity_connected` writes nothing
+  and only `create_character` writes a character (a smoke run leaves
+  `character` and `character_identity` as it found them, which
+  `serve-for-deploy-smoke.mjs` asserts); a fixed identity threaded through a URL query parameter
   would otherwise let any visitor forge another session, and would leak
   into an uploaded Playwright report on a public repo.
 - No automatic rollback: a published schema cannot be rolled back, only
@@ -300,6 +303,58 @@ and just-in-time. So:
   this file's own git history that actually matches the live database,
   never the checkout's own working-tree snapshot outright, recorded as
   `schema_commit` in the export's manifest (story 4.18).
+
+## Identity
+
+The device's server-issued anonymous token is the everyday credential; an
+OIDC identity is a recovery key used once per device. Linking, and recovery
+on a fresh browser, are one operation: put this device's anonymous identity
+and an OIDC identity on the same character.
+
+- **Token.** `client/src/identity/identity-storage.ts`, key `bc.identity.v1`,
+  written only into an empty key, never cleared, never overwritten, read
+  back after a write. `connect()` takes one options object; the stored
+  token goes to `withToken`. A refused token shows the connection notice
+  and is kept. A tab that connected without a token and finds one stored
+  when it goes to write discards its own connection and reconnects with
+  the stored one. A first visit is the WebSocket alone; a return visit
+  adds the SDK's own `POST /v1/identity/websocket-token`.
+  `scripts/ci/check-identity-token-confined.sh` keeps the key, `withToken`,
+  and any `console.` in the token module where they belong.
+- **Server.** `tables/identity.rs` holds `character`,
+  `character_identity` (`issuer_id`: 0 anonymous, else an `oidc_issuer`
+  row), `oidc_issuer` and `link_request`, all private, and every read of
+  `character_identity` (`check-character-identity-path.sh`). `identity_connected`
+  writes nothing. `create_character()` is a no-op when the caller already
+  has a character. `begin_link(code)` stores a 256-bit code for ten
+  minutes (replacing the caller's last, pruning expired ones);
+  `complete_link(code)` consumes it as the OIDC identity and maps whichever
+  of the two identities has no character onto the other's; two characters
+  or none is an `Err` that changes nothing. `accept_oidc_issuer` is
+  owner-only and idempotent; zero rows means linking is off. A token whose
+  issuer is registered must carry that row's `client_id` in `aud`
+  (`sim::identity::credential`), at connect and in every reducer. The plans
+  (`plan_create`, `plan_link`, `check_claim`, `credential`) are pure, in
+  `sim::identity`.
+- **Reads.** The client learns its own state from the per-sender view
+  `my_character` (`character_id`, `created_at`, `linked`). No table other
+  than `character_identity`, `module_owner` and `link_request` holds an
+  `Identity` column; player data keys on `character_id`.
+- **OIDC client.** Authorization code with PKCE through full-page redirect,
+  no popup, iframe, renew or kept user; the link code travels in the
+  library's local state. On return the page boots on the anonymous token,
+  strips the callback parameters, and `net/link.ts` opens a short-lived
+  connection with the ID token to call `complete_link`. The provider is
+  `VITE_OIDC_AUTHORITY`/`VITE_OIDC_CLIENT_ID` for the client and
+  `accept_oidc_issuer` for the module, both from the repository variables
+  `OIDC_AUTHORITY`/`OIDC_CLIENT_ID` (`check-deploy-workflow.sh`); unset means
+  the link is never offered.
+- **Offer.** Due (`client/src/identity/link-prompt.ts`) when the character
+  exists, is unlinked, its token is persisted, a provider is configured,
+  and the character's age and the time since the last offer are past
+  `identity.link_prompt_min_character_age_days` and
+  `identity.link_prompt_cooloff_days`; evaluated once per session at scene
+  mount. The offer has no DOM and no canvas text: it is an in-world object.
 
 ## Stock
 
