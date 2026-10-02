@@ -151,16 +151,20 @@ ROWS_FIRST="$(district_rows)"
 [ "$(wc -l <<<"$ROWS_FIRST")" -eq 1 ] && [ -n "$ROWS_FIRST" ] || fail "create_district should write exactly one district row, got: $ROWS_FIRST"
 district_cols() { # seed|generation_version|rng_version|defs_version, one line per row
   local log="$DATA_DIR/district-cols.log"
-  spacetime sql "$DB" --server "$SERVER_URL" --no-config -y     "SELECT seed, generation_version, rng_version, defs_version FROM district" >"$log" 2>&1     || fail "could not query district columns" "$log"
-  awk '/^[- +|]+$/ { seen=1; next } seen && NF' "$log" | tr -d ' ' | sed 's/|/|/g'
+  spacetime sql "$DB" --server "$SERVER_URL" --no-config -y \
+    "SELECT seed, generation_version, rng_version, defs_version FROM district" >"$log" 2>&1 \
+    || fail "could not query district columns" "$log"
+  awk '/^[- +|]+$/ { seen=1; next } seen && NF' "$log" | tr -d ' '
 }
 WANT_COLS="7|$HEAD_GENERATION|$HEAD_RNG|\"$HEAD_DEFS\""
-[ "$(district_cols)" = "$WANT_COLS" ]   || fail "the district row's seed and versions are '$(district_cols)', expected exactly '$WANT_COLS'"
+[ "$(district_cols)" = "$WANT_COLS" ] \
+  || fail "the district row's seed and versions are '$(district_cols)', expected exactly '$WANT_COLS'"
 
 if spacetime call "$DB" --server "$SERVER_URL" --no-config -y create_district 8 >"$DATA_DIR/create-2.log" 2>&1; then
   fail "a second create_district over the same site was accepted" "$DATA_DIR/create-2.log"
 fi
-grep -qF "overlaps an already generated district" "$DATA_DIR/create-2.log"   || fail "the second create_district was refused, but not for overlapping an already generated district" "$DATA_DIR/create-2.log"
+grep -qF "overlaps an already generated district" "$DATA_DIR/create-2.log" \
+  || fail "the second create_district was refused, but not for overlapping an already generated district" "$DATA_DIR/create-2.log"
 [ "$(district_rows)" = "$ROWS_FIRST" ] || fail "a refused create_district changed the district rows"
 
 if spacetime call "$DB" --server "$SERVER_URL" --no-config -y --anonymous create_district 9 >"$DATA_DIR/create-anon.log" 2>&1; then
@@ -174,9 +178,13 @@ publish "$REPO_ROOT/server" "$DATA_DIR/head-again.log" || fail "could not republ
 run_post_publish third
 [ "$(district_rows)" = "$ROWS_FIRST" ] || fail "a republish plus finish_publish changed the district row"
 
-bc_stop_spacetime "$START_PID"
+OLD_PID="$START_PID"
+bc_stop_spacetime_confirmed "$OLD_PID" "$SERVER_URL" 30 \
+  || fail "the instance was still answering 30s after it was stopped -- there would be no restart to prove" "$START_LOG"
 START_PID="$(bc_start_spacetime "$DATA_DIR/data" "$PORT" "$START_LOG")"
 bc_wait_spacetime_healthy "$SERVER_URL" 30 || fail "SpacetimeDB did not come back healthy after a restart" "$START_LOG"
+bc_spacetime_alive "$START_PID" || fail "the restarted instance's process is not running -- the health ping was answered by something else" "$START_LOG"
 [ "$(district_rows)" = "$ROWS_FIRST" ] || fail "a restart on the same data directory changed the district row"
+bc_spacetime_alive "$START_PID" || fail "the restarted instance died while its district row was being read" "$START_LOG"
 
-echo "check-deploy-rehearsal: ok -- a world born at $LIVE_DATABASE_BORN_AT survives a HEAD deploy: repaired epoch $EPOCH_FIRST, idempotent, owner-only; one generate-once district row survives a republish" >&2
+echo "check-deploy-rehearsal: ok -- a world born at $LIVE_DATABASE_BORN_AT survives a HEAD deploy: repaired epoch $EPOCH_FIRST, idempotent, owner-only; one generate-once district row survives a republish and a restart" >&2

@@ -32,8 +32,7 @@ OFFENDERS="$(
 RAW_DRAWS="$(git ls-files 'server/sim/src/generation/*.rs' -z | xargs -0 -r grep -n 'next_u64' || true)"
 if [ -n "$RAW_DRAWS" ]; then
   echo "check-generation-entry-point: FAIL -- generation/ names next_u64; draw with Rng::below instead:" >&2
-  printf '%s
-' "$RAW_DRAWS" >&2
+  printf '%s\n' "$RAW_DRAWS" >&2
   exit 1
 fi
 

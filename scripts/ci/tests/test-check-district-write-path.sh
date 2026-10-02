@@ -112,25 +112,6 @@ printf '%s\n' 'pub fn nothing() {}' > "$d/lib.rs"
 check "a tree with no district declaration fails" 1 bash "$CHECK" "$d"
 
 d="$(tree)"
-printf '%s\n' 'pub fn sneaky(ctx: &ReducerContext) { let d = sim::generation::generate(1); }' >> "$d/tables/district.rs"
-check "generate called by path inside district.rs fails" 1 bash "$CHECK" "$d"
-
-d="$(tree)"
-sed -i 's/use sim::generation::create;/use sim::generation::{create, plan};/' "$d/tables/district.rs"
-check "plan imported inside district.rs fails" 1 bash "$CHECK" "$d"
-
-d="$(tree)"
-sed -i 's/use sim::generation::create;/use sim::generation as g;/' "$d/tables/district.rs"
-check "an aliased generation module in district.rs fails" 1 bash "$CHECK" "$d"
-
-d="$(plant lib.rs 'use sim::generation as g;
-fn f() { g::generate(1); }')"
-check "an aliased generation module elsewhere fails" 1 bash "$CHECK" "$d"
-
-d="$(plant lib.rs 'use sim::{generation as g, rng};')"
-check "an aliased generation module in a brace list fails" 1 bash "$CHECK" "$d"
-
-d="$(tree)"
 printf '%s\n' 'pub(in crate::tables) fn wipe(ctx: &ReducerContext) { ctx.db.district().district_id().delete(1); }' >> "$d/tables/restore.rs"
 check "a qualified-visibility fn deleting in restore.rs fails" 1 bash "$CHECK" "$d"
 
@@ -138,6 +119,17 @@ d="$(tree)"
 printf '%s\n' 'const X: () = { ctx.db.district().iter(); };' >> "$d/tables/restore.rs"
 sed -i '1i const Y: () = { ctx.db.district().iter(); };' "$d/tables/restore.rs"
 check "a call whose enclosing fn cannot be determined fails" 1 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s
+' 'pub fn hand_chain() { let lu = land_use::run(1); }' >> "$d/tables/district.rs"
+check "a pass module's run named in district.rs fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use sim::generation::streets::run;')"
+check "a pass module's run named elsewhere fails" 1 bash "$CHECK" "$d"
+
+d="$(plant lib.rs 'use sim::generation as g;')"
+check "naming the generation module outside district.rs fails" 1 bash "$CHECK" "$d"
 
 check "the real server/src passes" 0 bash "$CHECK"
 

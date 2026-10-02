@@ -15,6 +15,7 @@ cited here by identifier.
 | Property testing (client)     | `fast-check` 4.10.0, pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle; RNG seed from `FAST_CHECK_SEED` through the one vitest setup file (`tests/unit/setup/property-seed.ts`) — fixed in `ci.yml`, derived from `github.run_id` in `explore.yml`, fresh when unset locally, an error when unset under `CI`; no per-test `seed`/`path`, no `configureGlobal` outside the setup file, no `fc.sample`/`fc.check`; a failure prints `FAST_CHECK_SEED=<seed> npx vitest run <file>` (NFR50) |
 | E2E pixel compare             | `pixelmatch` 7.2.0 + `pngjs` 7.0.0 (`@types/pngjs` 6.0.5), pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
 | Boot-budget HTTPS preview     | `@vitejs/plugin-basic-ssl` 2.3.0, pinned, `devDependency` of `client` only; enabled only when `BC_BOOT_HTTPS=1` (the boot-budget harness), never for `npm run dev`/`preview` defaults, never in the built bundle |
+| `proc-macro2`                 | `=1.0.107`, dev-dependency of `bounds` only (the token-level float scan over `sim`'s sources); native test tooling, never a dependency of `sim` or `browser_city` |
 | `serde`/`serde_json`          | Native-only tooling (`bounds`'s schema-snapshot serialization, the spike-report binaries under `server/spikes/*_report`, `server/tools/*` e.g. `world_backup`) — never a dependency of a published module crate |
 | Hosting                       | SpacetimeDB Maincloud                                                                                    |
 | CI / deploy                   | GitHub Actions is the only path to Maincloud; never a local `spacetime publish` |
@@ -61,6 +62,8 @@ std's `DefaultHasher`/`RandomState` (plain `sort_unstable()` over a total
 key stays legal). A `#[cfg(test)]` canary in `sim/src/lib.rs` expects every
 ban to fire, and `unfulfilled_lint_expectations` is denied, so a ban that
 stops applying fails clippy.
+
+A `bounds` test tokenises every file under `sim/src/` (`generated/` included, the lint canary excepted by path) and fails on any float literal or `f32`/`f64` identifier, naming file and line; the clippy lints are the second layer.
 
 `browser_city` cannot be linked natively, so anything requiring a native
 test lives in `sim` or `bounds`.
@@ -1334,8 +1337,10 @@ verdict; `District::check_rules(&content)` holds FR112's verdict over the
 finished district's own `DistrictSite` (`sim::rules::evaluate` must find
 no violation); `District::check_workplace_count(&cfg, &content)` holds
 AC4's workplace-count verdict, the same two-band shape as building count.
-`generation::generate` is `plan` plus all three, in that order, and is
-what production calls. `scripts/ci/check-generation-entry-point.sh` fails
+`generation::generate` is `plan` plus all three, in that order; production
+calls `generation::create`, which wraps it. `generate` and `plan` are
+reachable outside `sim` only with the `test-fixtures` feature, which
+`browser_city` never enables. `scripts/ci/check-generation-entry-point.sh` fails
 the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`
 call under `server/sim/tests/` or `server/bounds/` not marked `//
 generation-entry-point: allow` -- the marker is reserved for the

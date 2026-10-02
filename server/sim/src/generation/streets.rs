@@ -3135,4 +3135,57 @@ mod tests {
             assert!(!sides.get(side));
         }
     }
+
+    /// The search's heap holds full `(distance, node)` keys, so the order
+    /// candidates are inserted in (edge and adjacency order) never decides
+    /// a route: the same graph from reversed edges gives identical
+    /// distances and identical shortest paths for every pair -- on a grid
+    /// built to be full of equal-length ties, and on a generated city.
+    #[test]
+    fn search_result_is_independent_of_candidate_insertion_order() {
+        let mut grid = Vec::new();
+        for k in 0..4 {
+            grid.push(StreetEdge {
+                axis: Axis::Horizontal,
+                coord: k * 10,
+                from: 0,
+                to: 30,
+                class: StreetClass::Street,
+                width_cells: 1,
+            });
+            grid.push(StreetEdge {
+                axis: Axis::Vertical,
+                coord: k * 10,
+                from: 0,
+                to: 30,
+                class: StreetClass::Street,
+                width_cells: 1,
+            });
+        }
+        let c = cfg();
+        let (_, city) = network(3, &c);
+        for edges in [grid, city.edges().to_vec()] {
+            let site = SiteBounds {
+                x0: 0,
+                y0: 0,
+                x1: 64,
+                y1: 64,
+            };
+            let forward = StreetNetwork::test_fixture(site, edges.clone(), Vec::new());
+            let mut reversed_edges = edges;
+            reversed_edges.reverse();
+            let reversed = StreetNetwork::test_fixture(site, reversed_edges, Vec::new());
+            let nodes: Vec<(i32, i32)> = forward.nodes().iter().copied().step_by(3).collect();
+            for &a in &nodes {
+                assert_eq!(forward.dijkstra_from(a), reversed.dijkstra_from(a));
+                for &b in &nodes {
+                    assert_eq!(
+                        forward.shortest_path(a, b),
+                        reversed.shortest_path(a, b),
+                        "route {a:?} -> {b:?}"
+                    );
+                }
+            }
+        }
+    }
 }

@@ -9,6 +9,8 @@
 //! `spacetimedb` dependency, gate it with plain `cargo test`.
 
 pub mod city_clock_fixture;
+#[cfg(test)]
+mod float_scan;
 pub mod generation_evidence;
 pub mod schema;
 pub mod world_fixture;
