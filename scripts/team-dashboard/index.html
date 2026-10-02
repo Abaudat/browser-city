@@ -101,6 +101,9 @@ header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; pa
 .grid-d { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
 
 /* ---- task ---- */
+.lane + .lane { border-top: 2px dashed var(--line); margin-top: 18px; padding-top: 18px; }
+.item .tx .main.lanes { display: grid; gap: 2px; white-space: normal; }
+.item .tx .main.lanes > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pipeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: 4px 0 16px; }
 .step { display: grid; justify-items: center; gap: 6px; position: relative; text-align: center; }
 .step:not(:last-child)::after { content: ""; position: absolute; top: 25px; left: calc(50% + 30px); right: calc(-50% + 30px); border-top: 4px dashed var(--line); }
@@ -329,7 +332,7 @@ footer { color: var(--muted); font-size: 12px; text-align: center; font-family: 
 
   <div class="grid-a">
     <section class="panel">
-      <h2 class="h">Current task <span class="aside" id="task-aside"></span></h2>
+      <h2 class="h">In flight <span class="aside" id="task-aside"></span></h2>
       <div id="task"></div>
     </section>
     <section class="panel">
@@ -480,7 +483,8 @@ function renderTeam() {
     const s = roles[r.id] ?? { state: 'off' };
     c.state = s.state;
     c.card.className = `card ${s.state}`;
-    const issue = s.issue ? (/^\d+$/.test(s.issue) ? `#${s.issue}` : s.issue.replace('sprint-', 'Sprint ')) : '';
+    const label = (i) => /^\d+$/.test(i) ? `#${i}` : i.replace('sprint-', 'Sprint ');
+    const issue = (s.issues?.length ? s.issues : s.issue ? [s.issue] : []).map(label).join(', ');
     c.text.replaceChildren(
       s.state === 'working' ? h('b', {}, 'Working') : s.state === 'idle' ? h('b', {}, 'Idle') : 'No session',
       issue ? ` · ${issue}` : '');
@@ -515,8 +519,8 @@ function face(role) {
 function renderTask() {
   const b = S.board, root = $('task');
   if (!b) { root.replaceChildren(h('div', { class: 'empty' }, 'Reading the board…')); return; }
-  const t = b.task;
-  if (!t) {
+  const tasks = b.tasks ?? [];
+  if (!tasks.length) {
     const icon = h('span', { class: 'icon', style: `background-position:${emotePos('zzz', 3)}` });
     root.replaceChildren(h('div', { class: 'empty' }, icon,
       h('div', {}, h('div', { style: 'color:var(--ink);font-size:17px' }, 'No story in flight'),
@@ -525,6 +529,11 @@ function renderTask() {
     $('task-aside').textContent = '';
     return;
   }
+  root.replaceChildren(...tasks.map(taskBlock));
+  $('task-aside').textContent = `${tasks.length} ${tasks.length === 1 ? 'story' : 'stories'}`;
+}
+// One story in flight: where it is in the flow, its PR, and its leads.
+function taskBlock(t) {
   const idx = STEPS.findIndex((s) => s.statuses.includes(t.status));
   const pipe = h('div', { class: 'pipeline' }, STEPS.map((s, i) => {
     const icon = h('span', { class: 'icon', 'data-key': s.key });
@@ -536,13 +545,15 @@ function renderTask() {
     t.epic ? h('a', { class: 'pill', href: t.epic.url, target: '_blank', title: t.epic.title }, t.epic.title) : null,
     t.priority ? h('span', { class: `pill ${t.priority === 'Blocker' ? 'hi' : ''}` }, t.priority) : null,
     t.size ? h('span', { class: 'pill' }, `Size ${t.size}`) : null,
-    h('span', { class: 'pill' }, t.status));
+    h('span', { class: 'pill' }, t.status),
+    t.createdAt ? h('span', { class: 'pill' }, `opened ${ago(Date.parse(t.createdAt))}`) : null);
   const kids = [pipe,
     h('h3', { class: 'task-title' }, h('a', { href: t.url, target: '_blank' }, h('span', { class: 'num' }, `#${t.number} `), t.title)),
     meta];
+  if (t.error) kids.push(h('div', { class: 'pr' }, h('div', { class: 'pr-stats' }, `Could not read this story: ${t.error}`)));
   const leadsBox = (entries) => h('div', { class: 'leads' }, entries.map(([role, v, tip]) =>
     h('span', { class: 'lead', title: tip || '' }, face(role), h('span', {}, h('div', { class: 'who' }, NAME[role] ?? role), h('div', { class: `v ${v}` }, v)))));
-  const p = b.pr;
+  const p = t.pr;
   if (p) {
     const ci = p.ci === 'SUCCESS' ? ['good', 'CI green'] : p.ci === 'FAILURE' || p.ci === 'ERROR' ? ['bad', 'CI red'] : p.ci ? ['warn run', 'CI running'] : ['', 'No CI yet'];
     const state = p.state === 'MERGED' ? h('span', { class: 'badge good' }, 'Merged') : p.draft ? h('span', { class: 'badge' }, 'Draft') : null;
@@ -553,11 +564,13 @@ function renderTask() {
       h('div', { class: 'pr-top' },
         h('a', { class: 'prn', href: p.url, target: '_blank' }, `PR #${p.number}`),
         h('span', { class: `badge ${ci[0]}` }, ci[1]), state,
+        p.mergeable === 'CONFLICTING' && p.state === 'OPEN' ? h('span', { class: 'badge bad' }, 'Conflicts') : null,
         h('span', { class: 'prt' }, p.title)),
       h('div', { class: 'pr-stats' },
         h('span', { class: 'cycle' }, 'Review cycle ', h('b', {}, `${cyc}/${p.cycleLimit}`), pips),
         h('span', {}, h('b', { class: 'add' }, `+${p.additions.toLocaleString()}`), ' ', h('b', { class: 'del' }, `−${p.deletions.toLocaleString()}`), ` · ${p.files} files`),
         p.ciFails ? h('span', {}, 'CI fixes ', h('b', {}, p.ciFails)) : null,
+        p.conflicts ? h('span', {}, 'Conflict fixes ', h('b', {}, p.conflicts)) : null,
         h('span', {}, 'head ', h('b', {}, p.head)),
         h('span', {}, `opened ${ago(Date.parse(p.createdAt))}`)),
       scope.length ? leadsBox(scope.map((r) => {
@@ -569,8 +582,7 @@ function renderTask() {
     kids.push(h('div', { class: 'pr' }, h('div', { class: 'pr-stats' }, 'Directions from the leads in scope'),
       leadsBox(t.scope.map((r) => [r, t.directions[r] ?? 'PENDING']))));
   }
-  root.replaceChildren(...kids);
-  $('task-aside').textContent = t.createdAt ? `opened ${ago(Date.parse(t.createdAt))}` : '';
+  return h('div', { class: 'lane' }, ...kids);
 }
 
 // --- budget ------------------------------------------------------------------------
@@ -930,10 +942,15 @@ function renderEvents() {
   const l = S.loop;
   if (!l) return;
   $('events').replaceChildren(...l.events.slice(0, 30).map((e) => {
-    const [node, ...rest] = e.reason.split(' ');
-    return h('div', { class: `item ev e${Math.min(e.exit, 2)}`, title: e.reason },
+    // A tick that ran several lanes reports "<lane> | <lane> | ..." -- one
+    // line each here, the nodes they reached underneath.
+    const parts = e.reason.split(' | ').map((r) => { const [node, ...rest] = r.split(' '); return { node, text: rest.join(' ') || node }; });
+    const count = e.count > 1 ? h('span', { class: 'count' }, `×${e.count}`) : null;
+    const main = parts.length === 1 ? h('span', { class: 'main' }, parts[0].text, count)
+      : h('span', { class: 'main lanes' }, parts.map((x, i) => h('span', {}, x.text, i === parts.length - 1 ? count : null)));
+    return h('div', { class: `item ev e${Math.min(e.exit, 2)}`, title: e.reason.split(' | ').join('\n') },
       h('span', { class: 'dot' }),
-      h('span', { class: 'tx' }, h('span', { class: 'main' }, rest.join(' ') || node, e.count > 1 ? h('span', { class: 'count' }, `×${e.count}`) : null), h('span', { class: 'sub' }, node)),
+      h('span', { class: 'tx' }, main, h('span', { class: 'sub' }, [...new Set(parts.map((x) => x.node))].join(' · '))),
       h('span', { class: 'when' }, e.count > 1 ? `${dayHm(e.first)}–${hm(e.t)}` : dayHm(e.t)));
   }));
   $('loop-aside').textContent = `${l.actedToday} moves today`;
