@@ -15,6 +15,8 @@ declare global {
       pings: PingObservation[];
       /** Story 4.5: who this device is. Never the token. */
       identity?: { identityHex: string; persisted: boolean };
+      createCharacter?: () => Promise<void>;
+      startLink?: () => Promise<void>;
       /** Story 4.5: the character this identity reaches, once the
        * `my_character` view delivers it. */
       character?: { characterId: string; createdAtMicros: string; linked: boolean };
@@ -369,6 +371,20 @@ export function recordCharacterForE2e(character: {
     createdAtMicros: character.createdAtMicros.toString(),
     linked: character.linked,
   };
+  window.__bc = bucket;
+}
+
+/** Story 4.5: the acts a player will have in-world (naming a character in
+ * 4.6, the link offer's carrier), callable by a spec until they do. No
+ * argument accepts a token. */
+export function exposeIdentityActionsForE2e(actions: {
+  createCharacter: () => Promise<void>;
+  startLink: () => Promise<void>;
+}): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.createCharacter = actions.createCharacter;
+  bucket.startLink = actions.startLink;
   window.__bc = bucket;
 }
 

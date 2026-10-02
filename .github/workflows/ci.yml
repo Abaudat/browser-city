@@ -583,6 +583,8 @@ jobs:
       # zero cost -- needs neither cargo nor node, so it runs first,
       # before setup-node/npm ci pay for the toolchain a dangling name
       # does not need (Tim's direction).
+      - name: story 4.5 FR141, the identity token stays in identity-storage.ts and net/
+        run: bash ../scripts/ci/check-identity-token-confined.sh
       - name: client-side trace-matrix symmetry (no cargo)
         run: bash ../scripts/ci/check-trace-matrix.sh --client-only
       - name: story 6.17 NFR50, no client property bypasses the one seed

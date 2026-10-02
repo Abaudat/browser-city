@@ -8,12 +8,15 @@ import { readReloadedFor, writeReloadedFor } from "./boot/reloaded-for-storage";
 import type { DebugWorldView } from "./debug/world-view";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
+import { offerLink, resumeLinkIfPending } from "./identity/link-session";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
+import { OIDC_CONFIG } from "./net/config";
 import { connect } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
+  exposeIdentityActionsForE2e,
   exposePlayerScreenBoundsForE2e,
   exposeWorldTransformForE2e,
   recordAllBoundTextureSourcesForE2e,
@@ -34,6 +37,7 @@ import {
   recordVisibilityForE2e,
   recordWorldClockForE2e,
 } from "./net/e2e-hooks";
+import { beginLink, completeLinkWithIdToken, newLinkCode } from "./net/link";
 import type { PingObservation } from "./net/observe-ping";
 import { PROTOCOL_VERSION } from "./net/protocol-version";
 import { ZOOM } from "./render/camera";
@@ -103,7 +107,7 @@ async function main(): Promise<void> {
   const serverClock = new ServerClock(() => performance.now());
   const cityClock = new CityClock(serverClock);
   exposeCityTimeForE2e(() => cityClock.now());
-  connect({
+  const conn = connect({
     onPing,
     onStatus: (status) => {
       notice.setStatus(status);
@@ -127,6 +131,32 @@ async function main(): Promise<void> {
     storage: resolveSessionStorage(() => window.localStorage),
     onIdentity: recordIdentityForE2e,
     onCharacter: recordCharacterForE2e,
+  });
+
+  // Story 4.5 (FR143): linking. The OIDC library is a dynamic import,
+  // reached only when a link starts or the page boots back from the
+  // provider; a boot with nothing pending loads none of it.
+  const redirectUri = `${window.location.origin}${window.location.pathname}`;
+  const loadLinkFlow = () => import("./identity/link-flow");
+  void resumeLinkIfPending({
+    config: OIDC_CONFIG,
+    search: window.location.search,
+    href: window.location.href,
+    redirectUri,
+    loadFlow: loadLinkFlow,
+    completeLink: completeLinkWithIdToken,
+    replaceUrl: (url) => window.history.replaceState(null, "", url),
+  });
+  exposeIdentityActionsForE2e({
+    createCharacter: () => conn.reducers.createCharacter({}),
+    startLink: () =>
+      offerLink({
+        config: OIDC_CONFIG,
+        redirectUri,
+        loadFlow: loadLinkFlow,
+        newCode: newLinkCode,
+        beginLink: (code) => beginLink(conn, code),
+      }),
   });
 
   try {
