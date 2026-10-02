@@ -18,9 +18,11 @@ import {
   exposeWorldTransformForE2e,
   recordAllBoundTextureSourcesForE2e,
   recordAppearanceTextureIdsForE2e,
+  recordCharacterForE2e,
   recordDistinctBoundAtlasPagesForE2e,
   recordFrameWorkForE2e,
   recordHighlightForE2e,
+  recordIdentityForE2e,
   recordIgnoredIntentForE2e,
   recordIntentForE2e,
   recordMasksCheckedForE2e,
@@ -101,17 +103,17 @@ async function main(): Promise<void> {
   const serverClock = new ServerClock(() => performance.now());
   const cityClock = new CityClock(serverClock);
   exposeCityTimeForE2e(() => cityClock.now());
-  connect(
+  connect({
     onPing,
-    (status) => {
+    onStatus: (status) => {
       notice.setStatus(status);
       if (status === "disconnected") latch.resolveUnreachable();
     },
-    (version) => {
+    onHandshake: (version) => {
       latch.resolveHandshake(version);
       postMountGuard?.onHandshake(version);
     },
-    {
+    clock: {
       serverClock,
       visibility: document,
       onClock: ({ epochMicros, speed }, kind) => {
@@ -122,7 +124,10 @@ async function main(): Promise<void> {
         recordWorldClockForE2e(epochMicros, kind);
       },
     },
-  );
+    storage: resolveSessionStorage(() => window.localStorage),
+    onIdentity: recordIdentityForE2e,
+    onCharacter: recordCharacterForE2e,
+  });
 
   try {
     await startStreetScene(

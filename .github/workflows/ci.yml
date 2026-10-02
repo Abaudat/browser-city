@@ -348,6 +348,8 @@ jobs:
         run: bash ../scripts/ci/check-stock-write-path.sh
       - name: story 6.3 FR89, nothing outside sim::author builds an Author
         run: bash ../scripts/ci/check-author-construction.sh
+      - name: story 4.5 FR142, only tables/identity.rs reaches a character from a caller
+        run: bash ../scripts/ci/check-character-identity-path.sh
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: server
@@ -520,6 +522,10 @@ jobs:
       # never 3987-3992 -- same job, same reasoning as the steps above.
       - name: story 4.12, the metrics sampler samples every table once per fire, and only the scheduler can call it
         run: bash scripts/ci/check-metrics-sampler.sh
+      # Story 4.5: its own disposable local instance and port (3996),
+      # never 3987-3995 -- same job, same reasoning as the steps above.
+      - name: story 4.5, identity create and link proven with real distinct identities
+        run: bash scripts/ci/check-identity-link.sh
 
   coverage:
     name: coverage (sim)
