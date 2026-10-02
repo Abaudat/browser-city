@@ -81,6 +81,16 @@ master still trigger `deploy.yml`, but its `resolve` job only emits a `::notice:
 else (no failed presence check, no tracking issue) -- so this workflow can be merged and live on
 master well before provisioning is finished, with zero effect until it is.
 
+**The OIDC provider (account linking, optional).** Linking a character to an account (story 4.5)
+is offered only once both the `OIDC_AUTHORITY` and `OIDC_CLIENT_ID` repository variables exist; unset,
+the offer is never made and nothing else changes. `deploy.yml` hands the pair to the client build
+(`VITE_OIDC_AUTHORITY`/`VITE_OIDC_CLIENT_ID`) and registers it in the module after `finish_publish`
+(`accept_oidc_issuer`, idempotent). SpacetimeAuth is the intended first provider: create a project
+and a client for the Pages URL (redirect URI = the deployed game URL, authorization code with PKCE,
+`openid` scope), then set `OIDC_AUTHORITY` to its issuer URL and `OIDC_CLIENT_ID` to the client id.
+SpacetimeAuth is in beta with no published price: confirm its terms before setting the variables.
+A second provider is a second `accept_oidc_issuer` call, not a migration.
+
 ## Running locally
 
 ```bash

@@ -36,14 +36,21 @@ function run(command, env) {
 function countRows(handle, table) {
   const result = spawnSync(
     "spacetime",
-    ["sql", "--server", handle.serverUrl, "--no-config", "-y", handle.dbName, `SELECT * FROM ${table}`],
+    [
+      "sql",
+      "--server",
+      handle.serverUrl,
+      "--no-config",
+      "-y",
+      handle.dbName,
+      `SELECT * FROM ${table}`,
+    ],
     { encoding: "utf8" },
   );
   if (result.status !== 0) {
     throw new Error(`could not count '${table}': ${result.stderr}`);
   }
-  return result.stdout.split("
-").filter((line) => /^\s*\d+\s/.test(line)).length;
+  return result.stdout.split(/\r?\n/).filter((line) => /^\s*\d+\s/.test(line)).length;
 }
 
 // The smoke run connects as a fresh anonymous identity on every deploy; it

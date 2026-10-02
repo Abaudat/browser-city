@@ -128,3 +128,95 @@ test("a stored token the server refuses is kept, with the connection notice show
   expect(await page.evaluate((k) => window.localStorage.getItem(k), IDENTITY_KEY)).toBe(bogus);
   await context.close();
 });
+
+// ---------------------------------------------------------------------------
+// Linking (FR143), against the harness's disposable local OIDC issuer.
+// ---------------------------------------------------------------------------
+
+async function setIssuedAudience(audience: string | null): Promise<void> {
+  const issuer = readSpacetimeHandle().oidcIssuer as string;
+  const query = audience === null ? "" : `?aud=${encodeURIComponent(audience)}`;
+  const response = await fetch(`${issuer}/admin/audience${query}`, { method: "POST" });
+  expect(response.ok).toBe(true);
+}
+
+/** Does the real link: the page leaves for the provider (which consents at
+ * once) and boots back with the callback parameters stripped. The detour is
+ * too quick to observe, so the marker on the old page is what proves a
+ * full-page navigation happened. */
+async function linkThroughProvider(page: Page): Promise<void> {
+  await page.waitForFunction(() => window.__bc?.startLink !== undefined);
+  await page.evaluate(() => {
+    (window as unknown as { __preLink?: boolean }).__preLink = true;
+    void window.__bc?.startLink?.();
+  });
+  await page.waitForFunction(
+    () =>
+      (window as unknown as { __preLink?: boolean }).__preLink === undefined &&
+      !window.location.search.includes("code=") &&
+      window.__bc?.identity !== undefined,
+    undefined,
+    { timeout: 15_000 },
+  );
+}
+
+test("a character linked on one device is reached from a fresh browser, and from the first again", async ({
+  browser,
+}) => {
+  await setIssuedAudience(null);
+  const a = await freshContextPage(browser);
+  await a.goto("/");
+  await identityOf(a);
+  await a.waitForFunction(() => window.__bc?.createCharacter !== undefined);
+  await a.evaluate(() => window.__bc?.createCharacter?.());
+  const created = await characterOf(a);
+  expect(await a.evaluate(() => window.__bc?.character?.linked)).toBe(false);
+
+  await linkThroughProvider(a);
+  await a.waitForFunction(() => window.__bc?.character?.linked === true, undefined, {
+    timeout: 10_000,
+  });
+  expect((await characterOf(a)).characterId).toBe(created.characterId);
+
+  // A brand-new context with empty storage signs in and reaches the same
+  // character.
+  const b = await freshContextPage(browser);
+  await b.goto("/");
+  const bIdentity = await identityOf(b);
+  expect(await b.evaluate(() => window.__bc?.character)).toBeUndefined();
+  await linkThroughProvider(b);
+  await b.waitForFunction(() => window.__bc?.character?.linked === true, undefined, {
+    timeout: 10_000,
+  });
+  expect(await characterOf(b)).toEqual(created);
+  // Linking never changed who the device is.
+  expect(await identityOf(b)).toBe(bIdentity);
+
+  // And the first device, reloaded, still does.
+  await a.reload();
+  expect(await characterOf(a)).toEqual(created);
+  await a.context().close();
+  await b.context().close();
+});
+
+test("a token minted for another application cannot link a character", async ({ browser }) => {
+  await setIssuedAudience("some-other-app");
+  try {
+    const page = await freshContextPage(browser);
+    const failed = page.waitForEvent("console", {
+      predicate: (m) => m.text().includes("[identity] link was not completed"),
+      timeout: 15_000,
+    });
+    await page.goto("/");
+    await identityOf(page);
+    await page.waitForFunction(() => window.__bc?.createCharacter !== undefined);
+    await page.evaluate(() => window.__bc?.createCharacter?.());
+    await characterOf(page);
+    await linkThroughProvider(page);
+    await failed;
+    expect(await page.evaluate(() => window.__bc?.character?.linked)).toBe(false);
+    await page.context().close();
+  } finally {
+    await setIssuedAudience(null);
+  }
+});

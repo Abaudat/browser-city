@@ -49,6 +49,12 @@ export function completeLinkWithIdToken(idToken: string, code: string): Promise<
           },
         );
       })
+      .onDisconnect((_ctx, error) => {
+        // The server may refuse the token in `identity_connected`, which
+        // closes the socket after the upgrade: that is a failure, not a
+        // silence. A no-op once the promise has settled.
+        reject(error instanceof Error ? error : new Error("link connection closed"));
+      })
       .onConnectError((_ctx, error) => {
         console.error("[net] link connection failed", error);
         reject(error instanceof Error ? error : new Error(String(error)));

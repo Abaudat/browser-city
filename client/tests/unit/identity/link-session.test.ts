@@ -77,6 +77,7 @@ describe("resumeLinkIfPending", () => {
   });
 
   it("reports failed, never throwing, when the provider answer is refused", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const f = flow({ finish: async () => null });
     const completeLink = vi.fn();
     const out = await resumeLinkIfPending({
@@ -89,6 +90,7 @@ describe("resumeLinkIfPending", () => {
       replaceUrl: vi.fn(),
     });
     expect(out).toBe("failed");
+    expect(errorSpy).toHaveBeenCalled();
     expect(completeLink).not.toHaveBeenCalled();
   });
 

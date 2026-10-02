@@ -34,7 +34,10 @@ export async function resumeLinkIfPending(deps: ResumeDeps): Promise<ResumeOutco
     const flow = await deps.loadFlow();
     const finished = await flow.finishLink(deps.config, deps.href, deps.redirectUri);
     deps.replaceUrl(flow.stripLinkCallback(deps.href));
-    if (!finished) return "failed";
+    if (!finished) {
+      console.error("[identity] link was not completed: the provider's answer was refused");
+      return "failed";
+    }
     await deps.completeLink(finished.idToken, finished.code);
     return "linked";
   } catch (error: unknown) {

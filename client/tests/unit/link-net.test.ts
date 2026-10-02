@@ -7,6 +7,7 @@ interface S {
   uri?: string;
   onConnectCb?: (c: unknown) => void;
   onConnectErrorCb?: (ctx: unknown, e: unknown) => void;
+  onDisconnectCb?: (ctx: unknown, e?: unknown) => void;
   calls: string[];
   completeResult: "ok" | "err";
 }
@@ -45,7 +46,10 @@ const builder = {
     state.onConnectErrorCb = cb;
     return builder;
   },
-  onDisconnect: () => builder,
+  onDisconnect: (cb: (ctx: unknown, e?: unknown) => void) => {
+    state.onDisconnectCb = cb;
+    return builder;
+  },
   build: () => fakeConn,
 };
 vi.mock("../../src/net/bindings", () => ({ DbConnection: { builder: () => builder } }));
@@ -56,6 +60,7 @@ beforeEach(() => {
   state.token = undefined;
   state.onConnectCb = undefined;
   state.onConnectErrorCb = undefined;
+  state.onDisconnectCb = undefined;
   state.calls = [];
   state.completeResult = "ok";
 });
@@ -97,6 +102,13 @@ describe("completeLinkWithIdToken", () => {
     state.onConnectCb?.(fakeConn);
     await expect(done).rejects.toThrow(/character/);
     expect(state.calls).toEqual(["completeLink:c0de", "disconnect"]);
+  });
+
+  it("rejects when the server drops the connection at once (a token refused at connect)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const done = completeLinkWithIdToken("id-token", "c0de");
+    state.onDisconnectCb?.({}, new Error("token was issued for another application"));
+    await expect(done).rejects.toThrow(/another application/);
   });
 
   it("rejects when the connection fails", async () => {

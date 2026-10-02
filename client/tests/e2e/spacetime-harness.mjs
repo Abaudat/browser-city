@@ -123,6 +123,13 @@ export async function startSpacetime() {
   return handle;
 }
 
+/** Adds fields to the persisted handle (story 4.5: the local OIDC issuer's
+ * admin URL), for the specs that read it back. */
+export function recordHandleExtra(handle, extra) {
+  Object.assign(handle, extra);
+  writeFileSync(STATE_FILE, JSON.stringify(handle), "utf-8");
+}
+
 export function readSpacetimeHandle() {
   if (!existsSync(STATE_FILE)) {
     throw new Error(
