@@ -355,8 +355,9 @@ create-breaker)
     sscope="$(marker_get "$sbody" scope 2>/dev/null || true)"
     scycle="$(marker_get "$sbody" cycle 2>/dev/null || true)"
     sfails="$(marker_get "$sbody" ci_fails 2>/dev/null || true)"
-    printf 'PR #%s status: issue #%s, scope: %s, review cycle: %s, consecutive red-build dispatches: %s\n\n' \
-      "$pr" "$sissue" "$sscope" "$scycle" "${sfails:-0}" >> "$input"
+    sconflicts="$(marker_get "$sbody" conflicts 2>/dev/null || true)"
+    printf 'PR #%s status: issue #%s, scope: %s, review cycle: %s, consecutive red-build dispatches: %s, merge-conflict dispatches: %s\n\n' \
+      "$pr" "$sissue" "$sscope" "$scycle" "${sfails:-0}" "${sconflicts:-0}" >> "$input"
   fi
   count="$(printf '%s' "$comments" | "$JQ" 'length')"
   i=0

@@ -25,6 +25,7 @@ usage: bc-pr.sh <command> [args]
   head <pr>                         -- the PR's current head sha
   ci-status <pr>                    -- "success" | "failure" | "pending" for $BC_REQUIRED_CHECK on its head
   ci-run-url <pr>                    -- the $BC_REQUIRED_CHECK run's html_url, empty if none
+  conflicts <pr>                     -- yes/exit 0 when the PR conflicts with its base, exit 1 otherwise
 EOF
 }
 
@@ -197,6 +198,22 @@ ci-run-url)
   runs="$(gh_pr_check_runs "$sha")" || exit 1
   printf '%s' "$runs" | "$JQ" -r --arg name "$BC_REQUIRED_CHECK" \
     '[.[]? | select(.name == $name)][0].html_url // empty' 2>/dev/null
+  exit 0
+  ;;
+
+conflicts)
+  # With several stories in flight, every merge moves the base under the
+  # PRs still open, and one that now touches the same lines can no longer
+  # merge -- nor will CI run on it, since GitHub builds no merge commit for a
+  # conflicting PR. Only GitHub's own CONFLICTING counts: UNKNOWN is what it
+  # answers while it is still recomputing after a push to the base, and an
+  # unreadable answer is not evidence of a conflict either -- both read as
+  # "no", and a merge that then fails says so itself.
+  pr="${1:-}"
+  [ -n "$pr" ] || { usage; exit 2; }
+  state="$(gh_pr_mergeable "$pr" 2>/dev/null)" || exit 1
+  [ "$state" = "CONFLICTING" ] || exit 1
+  echo "yes"
   exit 0
   ;;
 

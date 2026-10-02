@@ -2,7 +2,7 @@
 # Fixture-driven coverage for scripts/bc-issue.sh: adopt-alerts' off-board/
 # already-adopted cases (story 4.19), next's whole-backlog pick
 # (no open blocker, then priority, size, number) and its Backlog/open gates,
-# write-story's and write-blockers' dependencies, current's 0/1/2-active cases, transition
+# write-story's and write-blockers' dependencies, active's 0/1/many-active cases, transition
 # (including the epic that closes with its last story),
 # scope's lead-label handling, backlog's unscoped read, create-demo's call
 # sequence, write-demo's checklist lint, the demo-current/demo-commented/
@@ -248,7 +248,7 @@ JSON
 echo '[]' > "$FAKE_N3/gh_issue_labels.json"
 check_out "next: an epic-less story is startable, with a null parent" 0   '{"number":500,"parent":null,"scope":"quentin"}'   run "$FAKE_N3" "" next
 
-# Statuses past Backlog belong to `current`, not `next`, and an unset Status
+# Statuses past Backlog belong to `active`, not `next`, and an unset Status
 # is not Backlog either.
 FAKE_N4="$(fake_dir)"
 cat > "$FAKE_N4/project_items.json" <<'JSON'
@@ -277,16 +277,17 @@ check_out "next: an empty board -> exit 1, silent" 1 '' run "$FAKE_N0" "" next
 check "next: an unreadable board -> exit 2" 2 run "$(fake_dir)" "" next
 
 echo
-echo "current: 0 / 1 / 2 active sub-issues (and the demo issue is never 'current'):"
+echo "active: 0 / 1 / many active sub-issues (and the demo issue is never one of them):"
 
 FAKE_CUR0="$(fake_dir)"
 cat > "$FAKE_CUR0/project_items.json" <<'JSON'
 [
   {"number":1,"title":"A parent, not eligible","state":"OPEN","status":"In progress","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
-  {"number":2,"title":"Backlog sub, not active","state":"OPEN","status":"Backlog","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1}
+  {"number":2,"title":"Backlog sub, not active","state":"OPEN","status":"Backlog","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1},
+  {"number":3,"title":"Done sub, not active","state":"CLOSED","status":"Done","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1}
 ]
 JSON
-check "current: zero active -> exit 1" 1 run "$FAKE_CUR0" "" current
+check_out "active: zero active -> [], exit 0" 0 '[]' run "$FAKE_CUR0" "" active
 
 FAKE_CUR1="$(fake_dir)"
 cat > "$FAKE_CUR1/project_items.json" <<'JSON'
@@ -295,17 +296,25 @@ cat > "$FAKE_CUR1/project_items.json" <<'JSON'
   {"number":6,"title":"Sprint 1 Demo, also In progress but excluded","state":"OPEN","status":"In progress","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null}
 ]
 JSON
-check_out "current: exactly one active (demo excluded) -> its number/status" 0 \
-  '{"number":5,"status":"Leads review"}' run "$FAKE_CUR1" "" current
+check_out "active: exactly one active (demo excluded) -> its number/status" 0   '[{"number":5,"status":"Leads review"}]' run "$FAKE_CUR1" "" active
 
+# Several in flight at once is the normal case, not an error: every active
+# status, any mix, listed in ascending number whatever order the board
+# returns them in.
 FAKE_CUR2="$(fake_dir)"
 cat > "$FAKE_CUR2/project_items.json" <<'JSON'
 [
+  {"number":9,"title":"Active three","state":"OPEN","status":"Leads review","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1},
   {"number":7,"title":"Active one","state":"OPEN","status":"To analyze","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1},
-  {"number":8,"title":"Active two","state":"OPEN","status":"Reviewed","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1}
+  {"number":10,"title":"Active four","state":"OPEN","status":"In progress","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1},
+  {"number":8,"title":"Active two","state":"OPEN","status":"Reviewed","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1},
+  {"number":11,"title":"Backlog, not active","state":"OPEN","status":"Backlog","priority":null,"sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":1}
 ]
 JSON
-check "current: two active -> exit 2" 2 run "$FAKE_CUR2" "" current
+check_out "active: four active -> all four, by number, exit 0" 0   '[{"number":7,"status":"To analyze"},{"number":8,"status":"Reviewed"},{"number":9,"status":"Leads review"},{"number":10,"status":"In progress"}]'   run "$FAKE_CUR2" "" active
+run_only() { local only="$1"; shift; BC_ONLY_ISSUE="$only" run "$@"; } # <issue> <run args...>
+check_out "active: BC_ONLY_ISSUE fences it to that one story (the e2e run)" 0   '[{"number":9,"status":"Leads review"}]' run_only 9 "$FAKE_CUR2" "" active
+check "active: an unreadable board -> exit 2" 2 run "$(fake_dir)" "" active
 
 echo
 echo "transition: writes Status, Done also closes the issue, invalid status is rejected:"

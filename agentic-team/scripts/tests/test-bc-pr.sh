@@ -52,6 +52,19 @@ check_out "found -> {number,head}" 0 '{"number":42,"head":"deadbeef"}' run "$FAK
 check "not found -> exit 1" 1 run "$FAKE_FI" for-issue 999
 
 echo
+echo "conflicts: only GitHub's own CONFLICTING is a conflict:"
+
+FAKE_CF="$(fake_dir)"
+echo "CONFLICTING" > "$FAKE_CF/gh_pr_mergeable.42.json"
+echo "MERGEABLE" > "$FAKE_CF/gh_pr_mergeable.43.json"
+echo "UNKNOWN" > "$FAKE_CF/gh_pr_mergeable.44.json"
+check_out "CONFLICTING -> yes, exit 0" 0 yes run "$FAKE_CF" conflicts 42
+check "MERGEABLE -> exit 1" 1 run "$FAKE_CF" conflicts 43
+check "UNKNOWN (GitHub still recomputing) -> exit 1, not a conflict" 1 run "$FAKE_CF" conflicts 44
+check "unreadable -> exit 1, not a conflict" 1 run "$FAKE_CF" conflicts 999
+check "no pr -> usage, exit 2" 2 run "$FAKE_CF" conflicts
+
+echo
 echo "head: found (bare sha) and not-found:"
 
 FAKE_HD="$(fake_dir)"
