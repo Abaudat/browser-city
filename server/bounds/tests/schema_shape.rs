@@ -199,15 +199,27 @@ fn only_the_listed_tables_hold_an_identity_column() {
 #[test]
 fn the_character_table_carries_no_identity_column() {
     let s = schema();
-    let t = s.tables.iter().find(|t| t.accessor == "character").expect("character table");
+    let t = s
+        .tables
+        .iter()
+        .find(|t| t.accessor == "character")
+        .expect("character table");
     assert!(t.columns.iter().all(|c| !c.ty.contains("Identity")));
 }
 
 #[test]
 fn identity_tables_are_private() {
     let s = schema();
-    for name in ["character", "character_identity", "link_request", "oidc_issuer"] {
+    for name in [
+        "character",
+        "character_identity",
+        "link_request",
+        "oidc_issuer",
+    ] {
         let t = s.tables.iter().find(|t| t.accessor == name).expect("table");
-        assert!(!t.public, "`{name}` must stay private -- clients read `my_character` instead");
+        assert!(
+            !t.public,
+            "`{name}` must stay private -- clients read `my_character` instead"
+        );
     }
 }

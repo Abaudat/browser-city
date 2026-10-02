@@ -119,10 +119,12 @@ pub fn credential(
     accepted: &[IssuerRow],
 ) -> Result<Credential, CredentialError> {
     match accepted.iter().find(|r| r.issuer == issuer) {
-        None => Ok(Credential { issuer_id: ANONYMOUS_ISSUER }),
-        Some(r) if audience.contains(&r.client_id.as_str()) => {
-            Ok(Credential { issuer_id: r.issuer_id })
-        }
+        None => Ok(Credential {
+            issuer_id: ANONYMOUS_ISSUER,
+        }),
+        Some(r) if audience.contains(&r.client_id.as_str()) => Ok(Credential {
+            issuer_id: r.issuer_id,
+        }),
         Some(_) => Err(CredentialError::WrongAudience),
     }
 }

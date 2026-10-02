@@ -55,7 +55,9 @@ describe("identity storage (story 4.5, FR141)", () => {
     expect(readStoredToken(throwing)).toBeNull();
   });
 
-  it("inv_identity_token_read_is_total: any string never throws, never writes, never touches another key", () => {
+  // Reading any string at all from the key never throws, never writes and never
+  // touches another key.
+  it("inv_identity_token_read_is_total", () => {
     fc.assert(
       fc.property(fc.string(), (raw) => {
         const f = fakeStorage({ [IDENTITY_STORAGE_KEY]: raw });

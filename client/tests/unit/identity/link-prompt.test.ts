@@ -54,7 +54,8 @@ describe("isLinkPromptDue (story 4.5, FR143)", () => {
     expect(isLinkPromptDue({ ...due, today: 3, lastShownDay: 14 }, RULES)).toBe(false);
   });
 
-  it("inv_link_prompt_respects_cooloff_and_link: once shown it is not due again before its cool-off, and once linked it is never due", () => {
+  // Once shown it is not due again before its cool-off, and once linked it is never due.
+  it("inv_link_prompt_respects_cooloff_and_link", () => {
     fc.assert(
       fc.property(
         fc.record({
