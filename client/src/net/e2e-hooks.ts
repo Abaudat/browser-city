@@ -33,6 +33,22 @@ declare global {
        * it stays 0 for the whole stale-defs window before the scene
        * mounts at all. */
       frameCount?: number;
+      /** Story 4.3 (FR136): the interest region as the client holds it. */
+      region?: {
+        /** Ids (`cx,cy,band`) of the handles currently wanted. */
+        held: () => string[];
+        liveHandles: () => number;
+        /** Ids of the handles whose initial apply has landed. */
+        applied: () => string[];
+        /** `chunkKey` of every row of `table` in the SDK client cache. */
+        cachedChunkKeys: (table: string) => string[];
+        /** Drives the region as the scene's own position does. */
+        moveTo: (x: number, y: number, floor: number) => void;
+        /** Insert/delete callbacks seen per `<table>:<primary key>`. */
+        inserts: Record<string, number>;
+        deletes: Record<string, number>;
+        updates: Record<string, number>;
+      };
       visibility?: Record<string, string>;
       visibilityAlpha?: Record<string, number>;
       masksAllNull?: boolean;
@@ -347,5 +363,50 @@ export function exposeCityTimeForE2e(getter: () => CityTime | undefined): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.cityTime = getter;
+  window.__bc = bucket;
+}
+
+/** Story 4.3: exposes the interest region (see `Window.__bc.region`). */
+export function exposeRegionForE2e(
+  region: Omit<
+    NonNullable<NonNullable<Window["__bc"]>["region"]>,
+    "inserts" | "deletes" | "updates"
+  >,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  const prev = bucket.region;
+  bucket.region = {
+    ...region,
+    inserts: prev?.inserts ?? {},
+    deletes: prev?.deletes ?? {},
+    updates: prev?.updates ?? {},
+  };
+  window.__bc = bucket;
+}
+
+/** Story 4.3: counts every streamed row callback by table and primary key
+ * (the first column of every region table). Safe to call before
+ * [`exposeRegionForE2e`]: the counters are carried over. */
+export function recordRegionRowForE2e(
+  kind: "inserts" | "deletes" | "updates",
+  table: string,
+  row: object,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  const region = bucket.region ?? {
+    held: () => [],
+    liveHandles: () => 0,
+    applied: () => [],
+    cachedChunkKeys: () => [],
+    moveTo: () => {},
+    inserts: {},
+    deletes: {},
+    updates: {},
+  };
+  bucket.region = region;
+  const id = `${table}:${String(Object.values(row)[0])}`;
+  region[kind][id] = (region[kind][id] ?? 0) + 1;
   window.__bc = bucket;
 }

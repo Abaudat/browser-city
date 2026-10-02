@@ -25,6 +25,11 @@ export const BOOT_MARK = {
   /** The first subscription's `onApplied` -- the subscription-decode
    * term's end. */
   SUBSCRIPTION_APPLIED: "bc-boot:subscription-applied",
+  /** Every handle of the initial interest region has applied (story 4.3):
+   * the world around the player is in the client cache. Separate from
+   * `SUBSCRIPTION_APPLIED`, which stays the first subscription's own
+   * decode term. */
+  REGION_APPLIED: "bc-boot:region-applied",
   /** The first `world_clock` row to reach `CityClock.setClock` -- the
    * player-facing symptom of a world with no epoch. Set once; `deploy-
    * smoke.spec.ts` asserts it. */

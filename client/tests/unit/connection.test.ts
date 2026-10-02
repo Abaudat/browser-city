@@ -23,7 +23,14 @@ interface FakeState {
   onConnectCb?: (connection: unknown) => void;
   onConnectErrorCb?: (ctx: unknown, error: unknown) => void;
   onDisconnectCb?: (ctx: unknown, error?: unknown) => void;
-  subscribedSql?: string | string[];
+  subscribedSql?: unknown;
+  /** Every `subscribe` call, in order: the global one first, then one per region handle. */
+  subs: Array<{
+    queries: unknown;
+    onApplied?: () => void;
+    onError?: (ctx: { event?: unknown }) => void;
+    unsubscribed: boolean;
+  }>;
   onAppliedCb?: () => void;
   onSubscriptionErrorCb?: (ctx: { event?: unknown }) => void;
   onInsertCb?: (ctx: unknown, row: FakeRow) => void;
@@ -37,25 +44,39 @@ interface FakeState {
   syncCalls: number;
 }
 
-const state: FakeState = { syncCalls: 0 };
+const state: FakeState = { syncCalls: 0, subs: [] };
 
-const fakeSubscriptionBuilder = {
-  onApplied: (cb: () => void) => {
-    state.onAppliedCb = cb;
-    return fakeSubscriptionBuilder;
-  },
-  onError: (cb: (ctx: { event?: unknown }) => void) => {
-    state.onSubscriptionErrorCb = cb;
-    return fakeSubscriptionBuilder;
-  },
-  subscribe: (sql: string | string[]) => {
-    state.subscribedSql = sql;
-    return { unsubscribe: () => {} };
-  },
-};
+function makeSubscriptionBuilder() {
+  const sub: FakeState["subs"][number] = { queries: undefined, unsubscribed: false };
+  const b = {
+    onApplied: (cb: () => void) => {
+      sub.onApplied = cb;
+      if (state.subs.length === 0) state.onAppliedCb = cb;
+      return b;
+    },
+    onError: (cb: (ctx: { event?: unknown }) => void) => {
+      sub.onError = cb;
+      if (state.subs.length === 0) state.onSubscriptionErrorCb = cb;
+      return b;
+    },
+    subscribe: (queries: unknown) => {
+      sub.queries = queries;
+      if (state.subs.length === 0) state.subscribedSql = queries;
+      state.subs.push(sub);
+      return {
+        unsubscribe: () => {},
+        unsubscribeThen: (cb: () => void) => {
+          sub.unsubscribed = true;
+          cb();
+        },
+      };
+    },
+  };
+  return b;
+}
 
 const fakeConn = {
-  subscriptionBuilder: () => fakeSubscriptionBuilder,
+  subscriptionBuilder: () => makeSubscriptionBuilder(),
   procedures: {
     syncClock: async () => {
       state.syncCalls += 1;
@@ -108,11 +129,31 @@ const builder = {
   build: () => fakeConn,
 };
 
+/** A table whose typed query is a marker naming it, so a test can tell
+ * which tables a subscription named without any SQL string existing. */
+function fakeTable(name: string) {
+  return {
+    build: () => `query:${name}`,
+    where: () => ({ build: () => `query:${name}:where` }),
+  };
+}
+
 vi.mock("../../src/net/bindings", () => ({
   DbConnection: { builder: () => builder },
+  tables: {
+    demoPing: fakeTable("demo_ping"),
+    moduleVersion: fakeTable("module_version"),
+    worldClock: fakeTable("world_clock"),
+    placedObject: fakeTable("placed_object"),
+    floorTransition: fakeTable("floor_transition"),
+    buildingArea: fakeTable("building_area"),
+    roomArea: fakeTable("room_area"),
+    actorLocation: fakeTable("actor_location"),
+  },
 }));
 
 const { connect } = await import("../../src/net/connection");
+const regionModule = await import("../../src/net/region-subscription");
 const { ServerClock } = await import("../../src/time/server-clock");
 const { CLOCK_SYNC_INTERVAL_MS } = await import("../../src/time/clock-sync");
 
@@ -130,6 +171,7 @@ beforeEach(() => {
   state.onWorldClockInsertCb = undefined;
   state.onWorldClockUpdateCb = undefined;
   state.syncCalls = 0;
+  state.subs = [];
 });
 
 describe("connect", () => {
@@ -146,11 +188,119 @@ describe("connect", () => {
 
     state.onConnectCb?.(fakeConn);
 
+    // Typed queries, never SQL strings: the whole-table set is exactly
+    // the three global singletons.
     expect(state.subscribedSql).toEqual([
-      "SELECT * FROM demo_ping",
-      "SELECT * FROM module_version",
-      "SELECT * FROM world_clock",
+      "query:demo_ping",
+      "query:module_version",
+      "query:world_clock",
     ]);
+  });
+
+  describe("interest region (story 4.3)", () => {
+    const { RegionController } = regionModule;
+    const FLOORS = { minFloor: -1, maxFloor: 7 };
+
+    function wired() {
+      const controller = new RegionController();
+      controller.configure(FLOORS);
+      controller.moveTo(0, 0, 0);
+      const statuses: string[] = [];
+      const rows: string[] = [];
+      connect(
+        () => {},
+        (status) => statuses.push(status),
+        undefined,
+        undefined,
+        { controller },
+      );
+      return { controller, statuses, rows };
+    }
+
+    it("subscribes the region on connect, one handle per column, never a whole table", () => {
+      wired();
+      state.onConnectCb?.(fakeConn);
+      // The global subscription plus one handle per column of the 5x5 region.
+      expect(state.subs).toHaveLength(1 + 25);
+      for (const sub of state.subs.slice(1)) {
+        expect(sub.queries).toEqual(
+          expect.arrayContaining(["query:placed_object:where", "query:actor_location:where"]),
+        );
+        expect(sub.queries).not.toContain("query:placed_object");
+      }
+    });
+
+    it("marks the region applied once, when every initial handle has applied", () => {
+      const markSpy = vi.spyOn(performance, "mark");
+      wired();
+      state.onConnectCb?.(fakeConn);
+      const handles = state.subs.slice(1);
+      for (const sub of handles.slice(0, -1)) sub.onApplied?.();
+      expect(markSpy).not.toHaveBeenCalledWith("bc-boot:region-applied");
+      handles.at(-1)?.onApplied?.();
+      expect(markSpy).toHaveBeenCalledWith("bc-boot:region-applied");
+      markSpy.mockRestore();
+    });
+
+    it("a rejected region subscription goes through the status path", () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { statuses } = wired();
+      state.onConnectCb?.(fakeConn);
+      state.subs[3]?.onError?.({ event: new Error("rejected") });
+      expect(statuses).toEqual(["connecting", "connected", "disconnected"]);
+      errorSpy.mockRestore();
+    });
+
+    it("a reconnect is a new connect() and re-subscribes around the current position", () => {
+      const { controller } = wired();
+      state.onConnectCb?.(fakeConn);
+      controller.moveTo(40 * 32, 0, 0);
+      state.subs = [];
+      connect(() => {}, undefined, undefined, undefined, { controller });
+      state.onConnectCb?.(fakeConn);
+      expect(state.subs).toHaveLength(1 + 25);
+    });
+
+    it("registers each region table's row callbacks once and forwards plain data", () => {
+      const inserted: string[] = [];
+      const registered: string[] = [];
+      const db = fakeConn.db as Record<string, unknown>;
+      for (const t of [
+        "placedObject",
+        "floorTransition",
+        "buildingArea",
+        "roomArea",
+        "actorLocation",
+      ]) {
+        db[t] = {
+          onInsert: (cb: (ctx: unknown, row: { chunkKey: bigint }) => void) => {
+            registered.push(t);
+            cb({}, { chunkKey: 7n });
+          },
+          onUpdate: () => {},
+          onDelete: () => {},
+        };
+      }
+      const controller = new RegionController();
+      connect(() => {}, undefined, undefined, undefined, {
+        controller,
+        rows: {
+          onInsert: (table, row) =>
+            inserted.push(`${table}:${(row as { chunkKey: bigint }).chunkKey}`),
+          onUpdate: () => {},
+          onDelete: () => {},
+        },
+      });
+      expect(registered.sort()).toEqual([
+        "actorLocation",
+        "buildingArea",
+        "floorTransition",
+        "placedObject",
+        "roomArea",
+      ]);
+      expect(inserted).toHaveLength(5);
+      for (const t of registered) delete db[t];
+    });
   });
 
   describe("in-city clock wiring (story 4.1)", () => {

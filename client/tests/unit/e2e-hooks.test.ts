@@ -3,11 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
+  exposeRegionForE2e,
   recordAppearanceTextureIdsForE2e,
   recordFrameWorkForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerPositionForE2e,
+  recordRegionRowForE2e,
   recordRenderOrderForE2e,
   recordVisibilityForE2e,
   recordWorldClockForE2e,
@@ -247,6 +249,37 @@ describe("in-city clock hooks (story 4.1)", () => {
     vi.stubEnv("DEV", false);
     recordWorldClockForE2e(5n, "insert");
     exposeCityTimeForE2e(vi.fn());
+    expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("region hooks (story 4.3)", () => {
+  it("counts streamed row callbacks by table and primary key, and keeps them across exposeRegionForE2e", () => {
+    recordRegionRowForE2e("inserts", "placedObject", { objectId: 5n, x: 1 });
+    recordRegionRowForE2e("inserts", "placedObject", { objectId: 5n, x: 1 });
+    recordRegionRowForE2e("deletes", "roomArea", { areaId: 2n });
+    exposeRegionForE2e({
+      held: () => ["0,0,0"],
+      liveHandles: () => 1,
+      applied: () => [],
+      cachedChunkKeys: () => ["7"],
+      moveTo: () => {},
+    });
+    expect(window.__bc?.region?.inserts).toEqual({ "placedObject:5": 2 });
+    expect(window.__bc?.region?.deletes).toEqual({ "roomArea:2": 1 });
+    expect(window.__bc?.region?.held()).toEqual(["0,0,0"]);
+  });
+
+  it("does nothing when DEV is false", () => {
+    vi.stubEnv("DEV", false);
+    recordRegionRowForE2e("inserts", "placedObject", { objectId: 5n });
+    exposeRegionForE2e({
+      held: () => [],
+      liveHandles: () => 0,
+      applied: () => [],
+      cachedChunkKeys: () => [],
+      moveTo: () => {},
+    });
     expect(window.__bc).toBeUndefined();
   });
 });
