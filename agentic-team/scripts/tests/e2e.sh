@@ -10,7 +10,7 @@
 # checkout's HEAD) and points BC_BASE_BRANCH at it via the env file every
 # bc-* process sources, creates
 # a throwaway parent+sub issue on the board, ticks `orchestrator.sh` in a
-# loop (printing exit/reason/current every tick, recording every Status
+# loop (printing exit/reason/active every tick, recording every Status
 # transition with a timestamp) until the sub-issue reaches Done or 60
 # minutes pass, drills a simulated Orca restart once along the way (closes
 # every role terminal, then verifies the next tick brings each uuid back as
@@ -298,8 +298,8 @@ while :; do
   tick=$((tick + 1))
   reason="$(bash "$ORCHESTRATOR" 2>>"$TMP/e2e-orchestrator-stderr.log")"
   ec=$?
-  cur_out="$(bci current 2>/dev/null || true)"
-  echo "tick $tick: exit=$ec reason=$reason current=$cur_out"
+  cur_out="$(bci active 2>/dev/null || true)"
+  echo "tick $tick: exit=$ec reason=$reason active=$cur_out"
 
   # If the drill's stop-all ran last iteration, this tick is the "reboot"
   # tick -- verify (b) uuids are back, (c) exactly one terminal each, (d)
@@ -325,7 +325,7 @@ while :; do
   fi
 
   # figure out the sub-issue's actual status (works even once it's closed,
-  # unlike `bci current` which only sees active statuses).
+  # unlike `bci active` which only sees active statuses).
   sub_status="$(project_field_get "$SUB_NUM" Status 2>/dev/null || true)"
   sub_state="$("$GH" api "repos/$BC_REPO/issues/$SUB_NUM" --jq .state 2>/dev/null || true)"
 
