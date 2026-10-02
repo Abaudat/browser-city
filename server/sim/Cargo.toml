@@ -33,6 +33,9 @@ proptest = "=1.11.0"
 sim = { path = ".", features = ["test-fixtures"] }
 
 # The determinism bans (NFR25) deny here, not only under CI's `-D warnings`.
+[lints.rust]
+unfulfilled_lint_expectations = "deny"
+
 [lints.clippy]
 disallowed_types = "deny"
 disallowed_methods = "deny"

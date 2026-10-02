@@ -56,10 +56,11 @@ determinism is pinned by a committed golden vector, keyed by
 
 `sim`'s `Cargo.toml` denies `clippy::disallowed_types`,
 `disallowed_methods` and `float_arithmetic`; `clippy.toml` also bans
-`sort_unstable_by`, `sort_unstable_by_key` and `select_nth_unstable_by*`
-(plain `sort_unstable()` over a total key stays legal). A `#[cfg(test)]`
-canary in `sim/src/lib.rs` expects each lint to fire, so a lint that stops
-applying fails clippy.
+`sort_unstable_by`, `sort_unstable_by_key`, `select_nth_unstable_by*` and
+std's `DefaultHasher`/`RandomState` (plain `sort_unstable()` over a total
+key stays legal). A `#[cfg(test)]` canary in `sim/src/lib.rs` expects every
+ban to fire, and `unfulfilled_lint_expectations` is denied, so a ban that
+stops applying fails clippy.
 
 `browser_city` cannot be linked natively, so anything requiring a native
 test lives in `sim` or `bounds`.

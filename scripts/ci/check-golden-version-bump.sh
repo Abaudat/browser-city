@@ -60,7 +60,11 @@ for spec in "server/sim/src/rng.rs:RNG_VERSION" "server/sim/src/appearance.rs:AP
   vname="${spec##*:}"
   was="$(const_value "$MERGE_BASE" "$vfile" "$vname")"
   now="$(const_value HEAD "$vfile" "$vname")"
-  if [ -n "$was" ] && [ -n "$now" ] && [ "$was" != "$now" ] && [ "$now" -le "$was" ]; then
+  if [ -n "$was" ] && [ -z "$now" ]; then
+    echo "check-golden-version-bump: FAIL -- $vname is $was at the base but cannot be read at HEAD (renamed, retyped or moved) -- a guard that cannot resolve is not 'nothing to guard'" >&2
+    exit 1
+  fi
+  if [ -n "$was" ] && [ "$was" != "$now" ] && [ "$now" -le "$was" ]; then
     echo "check-golden-version-bump: FAIL -- $vname went from $was to $now; a stored version only ever increases" >&2
     exit 1
   fi

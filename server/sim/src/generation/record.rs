@@ -17,7 +17,7 @@ use crate::rng::RNG_VERSION;
 pub struct RuleSetVersion {
     pub generation: u32,
     pub rng: u32,
-    pub defs: &'static str,
+    pub defs: String,
 }
 
 impl RuleSetVersion {
@@ -26,7 +26,7 @@ impl RuleSetVersion {
         RuleSetVersion {
             generation: GENERATION_VERSION,
             rng: RNG_VERSION,
-            defs: DEFS_VERSION,
+            defs: DEFS_VERSION.to_string(),
         }
     }
 }
@@ -38,16 +38,7 @@ impl RuleSetVersion {
 pub struct DistrictRecord {
     pub seed: u64,
     pub site: SiteBounds,
-    pub generation_version: u32,
-    pub rng_version: u32,
-    pub defs_version: String,
-}
-
-fn overlaps(a: SiteBounds, b: SiteBounds) -> bool {
-    (a.x0 as i64) < b.x1 as i64
-        && (b.x0 as i64) < a.x1 as i64
-        && (a.y0 as i64) < b.y1 as i64
-        && (b.y0 as i64) < a.y1 as i64
+    pub version: RuleSetVersion,
 }
 
 /// The one gate to the generator: refuses with
@@ -62,17 +53,14 @@ pub fn create(
     content: &GenerationContent,
 ) -> Result<(DistrictRecord, District), GenerationError> {
     let site = cfg.site();
-    if existing.iter().any(|r| overlaps(r.site, site)) {
+    if existing.iter().any(|r| r.site.overlaps(&site)) {
         return Err(GenerationError::SiteAlreadyGenerated { site });
     }
     let district = generate(seed, cfg, content)?;
-    let v = RuleSetVersion::current();
     let record = DistrictRecord {
         seed,
         site,
-        generation_version: v.generation,
-        rng_version: v.rng,
-        defs_version: v.defs.to_string(),
+        version: RuleSetVersion::current(),
     };
     Ok((record, district))
 }
@@ -84,6 +72,31 @@ mod tests {
 
     fn cfg() -> GenerationConfig {
         GenerationConfig::from_balance(defs::BALANCE).unwrap()
+    }
+
+    fn record(site: SiteBounds) -> DistrictRecord {
+        DistrictRecord {
+            seed: 1,
+            site,
+            version: RuleSetVersion {
+                generation: 0,
+                rng: 0,
+                defs: "older".into(),
+            },
+        }
+    }
+
+    fn shifted(s: SiteBounds, dx: i32, dy: i32) -> SiteBounds {
+        SiteBounds {
+            x0: s.x0 + dx,
+            y0: s.y0 + dy,
+            x1: s.x1 + dx,
+            y1: s.y1 + dy,
+        }
+    }
+
+    fn allowed(existing: &[DistrictRecord], cfg: &GenerationConfig) -> bool {
+        create(existing, 2, cfg, &GenerationContent::committed()).is_ok()
     }
 
     #[test]
@@ -100,25 +113,40 @@ mod tests {
         let (rec, _) = create(&[], 7, &cfg, &GenerationContent::committed()).unwrap();
         assert_eq!(rec.seed, 7);
         assert_eq!(rec.site, cfg.site());
-        assert_eq!(rec.generation_version, GENERATION_VERSION);
-        assert_eq!(rec.rng_version, RNG_VERSION);
-        assert_eq!(rec.defs_version, DEFS_VERSION);
+        assert_eq!(rec.version, RuleSetVersion::current());
     }
 
     #[test]
-    fn create_refuses_over_a_recorded_site_whatever_its_versions() {
+    fn the_returned_district_is_the_generated_one_for_the_recorded_seed() {
         let cfg = cfg();
-        for (g, r, d) in [
-            (GENERATION_VERSION, RNG_VERSION, DEFS_VERSION),
-            (GENERATION_VERSION + 1, RNG_VERSION, DEFS_VERSION),
-            (0, 0, "older"),
+        let content = GenerationContent::committed();
+        let (rec, district) = create(&[], 7, &cfg, &content).unwrap();
+        let direct = generate(7, &cfg, &content).unwrap();
+        assert_eq!(rec.seed, 7);
+        assert_eq!(district.plots.plots(), direct.plots.plots());
+        assert_eq!(district.envelopes.outcomes(), direct.envelopes.outcomes());
+        assert_eq!(district.streets.blocks(), direct.streets.blocks());
+    }
+
+    #[test]
+    fn a_record_over_the_site_refuses_whatever_its_versions() {
+        let cfg = cfg();
+        for version in [
+            RuleSetVersion::current(),
+            RuleSetVersion {
+                generation: GENERATION_VERSION + 1,
+                ..RuleSetVersion::current()
+            },
+            RuleSetVersion {
+                generation: 0,
+                rng: 0,
+                defs: "older".into(),
+            },
         ] {
             let existing = [DistrictRecord {
                 seed: 1,
                 site: cfg.site(),
-                generation_version: g,
-                rng_version: r,
-                defs_version: d.to_string(),
+                version,
             }];
             assert_eq!(
                 create(&existing, 2, &cfg, &GenerationContent::committed()).unwrap_err(),
@@ -128,22 +156,70 @@ mod tests {
     }
 
     #[test]
-    fn a_disjoint_recorded_site_does_not_block() {
+    fn edge_and_corner_adjacent_sites_do_not_block() {
         let cfg = cfg();
         let s = cfg.site();
-        let far = SiteBounds {
-            x0: s.x1,
-            y0: s.y0,
-            x1: s.x1 + 10,
-            y1: s.y1,
+        let (w, h) = (s.x1 - s.x0, s.y1 - s.y0);
+        for (dx, dy) in [
+            (w, 0),
+            (-w, 0),
+            (0, h),
+            (0, -h),
+            (w, h),
+            (w, -h),
+            (-w, h),
+            (-w, -h),
+        ] {
+            assert!(
+                allowed(&[record(shifted(s, dx, dy))], &cfg),
+                "shift ({dx}, {dy}) only touches the site and must not block"
+            );
+        }
+    }
+
+    #[test]
+    fn a_one_cell_overlap_at_each_corner_and_containment_block() {
+        let cfg = cfg();
+        let s = cfg.site();
+        let (w, h) = (s.x1 - s.x0, s.y1 - s.y0);
+        for (dx, dy) in [
+            (w - 1, h - 1),
+            (1 - w, h - 1),
+            (w - 1, 1 - h),
+            (1 - w, 1 - h),
+            (1, 0),
+            (0, 1),
+            (-1, 0),
+            (0, -1),
+        ] {
+            assert!(
+                !allowed(&[record(shifted(s, dx, dy))], &cfg),
+                "shift ({dx}, {dy}) shares a cell with the site and must block"
+            );
+        }
+        let inside = SiteBounds {
+            x0: s.x0 + 1,
+            y0: s.y0 + 1,
+            x1: s.x0 + 2,
+            y1: s.y0 + 2,
         };
-        let existing = [DistrictRecord {
-            seed: 1,
-            site: far,
-            generation_version: 1,
-            rng_version: 1,
-            defs_version: "x".into(),
-        }];
-        assert!(create(&existing, 2, &cfg, &GenerationContent::committed()).is_ok());
+        let around = SiteBounds {
+            x0: s.x0 - 5,
+            y0: s.y0 - 5,
+            x1: s.x1 + 5,
+            y1: s.y1 + 5,
+        };
+        assert!(!allowed(&[record(inside)], &cfg), "contained blocks");
+        assert!(!allowed(&[record(around)], &cfg), "containing blocks");
+    }
+
+    #[test]
+    fn a_blocking_record_anywhere_in_the_list_blocks() {
+        let cfg = cfg();
+        let s = cfg.site();
+        let far = record(shifted(s, s.x1 - s.x0, 0));
+        assert!(!allowed(&[far.clone(), record(s)], &cfg));
+        assert!(!allowed(&[record(s), far.clone()], &cfg));
+        assert!(allowed(&[far], &cfg));
     }
 }

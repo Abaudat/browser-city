@@ -346,7 +346,9 @@ jobs:
       # Toolchain-free guards first, so a fiat stock write is red in seconds.
       - name: story 6.3 FR89, nothing but restore and metrics names the stock accessor
         run: bash ../scripts/ci/check-stock-write-path.sh
-      - name: story 3.5 FR108/FR109, one writer for the district record
+      - name: story 3.13 FR110, every generation draw goes through Rng::below and every harness through plan/generate
+        run: bash ../scripts/ci/check-generation-entry-point.sh
+      - name: story 3.13 FR108/FR109, one writer for the district record
         run: bash ../scripts/ci/check-district-write-path.sh
       - name: story 6.3 FR89, nothing outside sim::author builds an Author
         run: bash ../scripts/ci/check-author-construction.sh
@@ -408,7 +410,6 @@ jobs:
       - name: native tests, including the property suite, in release
         run: cargo test --workspace --exclude browser_city --exclude sched_timing_spike --exclude boot_budget_spike --release
       - run: bash ../scripts/ci/check-trace-matrix.sh
-      - run: bash ../scripts/ci/check-generation-entry-point.sh
 
   build:
     name: build

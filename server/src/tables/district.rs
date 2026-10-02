@@ -10,7 +10,9 @@
 //! `district` accessor outside the places listed there.
 
 use sim::generated::defs;
-use sim::generation::{DistrictRecord, GenerationConfig, GenerationContent, SiteBounds, create};
+use sim::generation::{
+    DistrictRecord, GenerationConfig, GenerationContent, RuleSetVersion, SiteBounds, create,
+};
 use sim::reducer_classes::ReducerClass;
 use spacetimedb::{ReducerContext, Table, Timestamp};
 
@@ -54,9 +56,11 @@ pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
                 x1: r.x1,
                 y1: r.y1,
             },
-            generation_version: r.generation_version,
-            rng_version: r.rng_version,
-            defs_version: r.defs_version,
+            version: RuleSetVersion {
+                generation: r.generation_version,
+                rng: r.rng_version,
+                defs: r.defs_version,
+            },
         })
         .collect();
     let cfg = GenerationConfig::from_balance(defs::BALANCE).map_err(|e| e.to_string())?;
@@ -69,9 +73,9 @@ pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
         y0: record.site.y0,
         x1: record.site.x1,
         y1: record.site.y1,
-        generation_version: record.generation_version,
-        rng_version: record.rng_version,
-        defs_version: record.defs_version,
+        generation_version: record.version.generation,
+        rng_version: record.version.rng,
+        defs_version: record.version.defs,
         generated_at: ctx.timestamp,
     });
     Ok(())

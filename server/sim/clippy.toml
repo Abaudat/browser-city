@@ -7,6 +7,8 @@ disallowed-types = [
     { path = "std::collections::HashSet", reason = "ordered collections only -- use BTreeSet (NFR25)" },
     { path = "std::time::SystemTime", reason = "sim never reads the wall clock -- time is an injected parameter" },
     { path = "std::time::Instant", reason = "sim never reads the wall clock -- time is an injected parameter" },
+    { path = "std::hash::random::DefaultHasher", reason = "std documents its algorithm as unspecified across releases -- use sim::rng" },
+    { path = "std::hash::random::RandomState", reason = "std documents its algorithm as unspecified across releases -- use sim::rng" },
 ]
 
 # Tie order of an unstable sort / selection is not guaranteed across std

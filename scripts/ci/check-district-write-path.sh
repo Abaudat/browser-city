@@ -25,7 +25,10 @@ flat() { code "$1" | tr '\n' ' '; }
 
 CALLS='\.[[:space:]]*district[[:space:]]*\(\)|::[[:space:]]*district[[:space:]]*\(|district[[:space:]]*::[[:space:]]*(district([^_[:alnum:]]|$)|\*)'
 METHOD='\.[[:space:]]*district[[:space:]]*\(\)|::[[:space:]]*district[[:space:]]*\('
-GEN='generation[[:space:]]*::'
+GEN='(^|[^_[:alnum:]])generation([^_[:alnum:]]|$)'
+# Only `create` may be called out of sim::generation: `generate` and `plan`
+# are never named under server/src/, district.rs included.
+BYPASS='(^|[^_[:alnum:]])generation[[:space:]]*::[[:space:]]*(generate|plan)([^_[:alnum:]]|$)'
 
 # A `use` that leaves a bare `district` after the `district::` segments are
 # taken out: `use super::district::{District, district};` reaches the
@@ -36,16 +39,25 @@ reaches_accessor() {
     | grep -Eq '(^|[^_[:alnum:]])district([^_[:alnum:]]|$)'
 }
 
+# A `use` statement naming `generation` and `generate`/`plan` together,
+# such as `use sim::generation::{create, generate};`.
+bypasses_in_use() {
+  flat "$1" | grep -oE 'use [^;]*;'     | grep -E '(^|[^_[:alnum:]])generation([^_[:alnum:]]|$)'     | grep -Eq '(^|[^_[:alnum:]])(generate|plan)([^_[:alnum:]]|$)'
+}
+
 # calls_outside <file> <fn>... -- the enclosing fn of every `.district()`
 # call that is not one of the named functions.
 calls_outside() {
   local f="$1"; shift
   local allowed=" $* "
   code "$f" | awk -v allowed="$allowed" '
-    /^[ \t]*(pub(\([a-z]+\))?[ \t]+)?fn[ \t]+[A-Za-z_0-9]+/ {
-      cur = $0; sub(/^.*fn[ \t]+/, "", cur); sub(/[^A-Za-z_0-9].*$/, "", cur)
+    /(^|[^_A-Za-z0-9])fn[ \t]+[A-Za-z_0-9]+/ {
+      cur = $0; sub(/^.*(^|[^_A-Za-z0-9])fn[ \t]+/, "", cur); sub(/[^A-Za-z_0-9].*$/, "", cur)
     }
-    /\.[ \t]*district[ \t]*\(\)/ { if (index(allowed, " " cur " ") == 0) print cur }'
+    /\.[ \t]*district[ \t]*\(\)/ {
+      name = (cur == "") ? "<unknown>" : cur
+      if (index(allowed, " " name " ") == 0) print name
+    }'
 }
 
 BAD=""
@@ -53,6 +65,8 @@ note() { BAD="$BAD$1"$'\n'; }
 
 while IFS= read -r f; do
   rel="${f#"$SRC_DIR"/}"
+  if flat "$f" | grep -Eq "$BYPASS" || bypasses_in_use "$f"; then note "$rel: names generate or plan (only sim::generation::create may be called)"; fi
+  if flat "$f" | grep -Eq 'generation[[:space:]]+as[[:space:]]'; then note "$rel: aliases sim::generation"; fi
   case "$rel" in
     tables/district.rs)
       OUT="$(calls_outside "$f" create_district)"
