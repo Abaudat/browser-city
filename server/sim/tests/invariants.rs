@@ -46,6 +46,7 @@ pub const INV_STOCK_IS_INDEPENDENT_PER_HOLDER: &str = "stock is independent per 
 pub const INV_STOCK_MOVES_ONLY_BY_HAND: &str = "stock moves only by hand: across any interleaving of authored makes, consumptions and moves, every quantity change is a returned write naming a citizen and one of two causes, and each item's total changes only by what was made and consumed";
 pub const INV_STOCK_MOVE_CONSERVES_QUANTITY: &str = "a stock move conserves quantity: the per-item sum across holders is unchanged by any sequence of moves, and a move the receiver refuses takes nothing from the giver";
 pub const INV_CASH_PAYMENT_CONSERVES_EVERY_DENOMINATION: &str = "a cash payment conserves every denomination: after any payment outcome the count of each denomination across all holders is unchanged, a completed payment moves exactly the price of value from customer to till, and every other outcome moves nothing";
+pub const INV_ACTOR_LOCATION_WRITTEN_ONLY_ON_CHUNK_CHANGE: &str = "actor_location is written only on a chunk or floor change: the planner returns no write for any move that keeps chunk and floor, and exactly one write, naming the chunk sim::world::chunk_key derives, for any move that changes either";
 pub const INV_CHANGE_IS_REFUSED_ONLY_WHEN_THE_TILL_CANNOT_MAKE_IT: &str = "change is refused only when the till cannot make it: while the change due is under the bound a payment reports no change if and only if no combination of the pieces the till holds and what was just tendered sums to the change due, and the change chosen is the fewest pieces with ties to the larger denomination";
 pub const INV_CASH_PLANNING_NEVER_PANICS: &str = "cash planning never panics: value_of, choose_change and plan_payment return Ok or a typed Err for any table, any lines, any tender and any price";
 pub const INV_ITEM_INSTANCE_IN_EXACTLY_ONE_STATE: &str = "an item instance is in exactly one of its two states: any interleaving of place and hold moves leaves each instance in one form, never both, never neither";
@@ -6604,5 +6605,51 @@ proptest! {
             price,
             &denoms,
         );
+    }
+}
+
+proptest! {
+    /// `inv_actor_location_written_only_on_chunk_change` (FR136): the pure
+    /// planner is the only thing deciding whether `actor_location` is
+    /// rewritten, and it derives the chunk itself -- from the position,
+    /// never from a key the caller supplies.
+    #[test]
+    fn inv_actor_location_written_only_on_chunk_change(
+        (x0, y0, f0, x1, y1, f1) in (
+            prop_oneof![any::<i32>(), -70i32..70, Just(i32::MIN), Just(i32::MAX)],
+            prop_oneof![any::<i32>(), -70i32..70, Just(i32::MIN), Just(i32::MAX)],
+            -1i8..=7,
+            prop_oneof![any::<i32>(), -70i32..70, Just(i32::MIN), Just(i32::MAX)],
+            prop_oneof![any::<i32>(), -70i32..70, Just(i32::MIN), Just(i32::MAX)],
+            -1i8..=7,
+        ),
+        near in any::<bool>(),
+    ) {
+        use sim::actor_location::{Placement, plan_move};
+        use sim::world::{CHUNK_SIZE, chunk_key};
+
+        // Half the cases stay in the same chunk by construction.
+        let (x1, y1) = if near {
+            let cx = x0.div_euclid(CHUNK_SIZE) as i64 * CHUNK_SIZE as i64;
+            let cy = y0.div_euclid(CHUNK_SIZE) as i64 * CHUNK_SIZE as i64;
+            (
+                (cx + (x1 as i64).rem_euclid(CHUNK_SIZE as i64)) as i32,
+                (cy + (y1 as i64).rem_euclid(CHUNK_SIZE as i64)) as i32,
+            )
+        } else {
+            (x1, y1)
+        };
+        let here = Placement { chunk_key: chunk_key(x0, y0, f0), floor: f0 };
+        let there = Placement { chunk_key: chunk_key(x1, y1, f1), floor: f1 };
+
+        // An actor with no row yet always gets exactly one write.
+        prop_assert_eq!(plan_move(None, x0, y0, f0), Some(here));
+        match plan_move(Some(here), x1, y1, f1) {
+            None => prop_assert_eq!(here, there, "a move that changed chunk or floor wrote nothing"),
+            Some(w) => {
+                prop_assert_ne!(here, there, "a move inside one chunk and floor wrote a row");
+                prop_assert_eq!(w, there);
+            }
+        }
     }
 }

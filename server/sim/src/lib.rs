@@ -3,6 +3,7 @@
 //! table and touches no clock, filesystem, or network; every input it needs
 //! is passed in by its caller in `../src` (the reducer crate).
 
+pub mod actor_location;
 pub mod appearance;
 pub mod author;
 pub mod balance;

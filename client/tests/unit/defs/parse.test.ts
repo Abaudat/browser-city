@@ -17,6 +17,8 @@ function validPayload(): Record<string, unknown> {
     collider_subcells_per_cell: 16,
     interact_at_max_reach_cells: 2,
     max_footprint_cells: 8,
+    min_floor: -1,
+    max_floor: 7,
     max_shelf_life_minutes: 525_600,
     max_face_value: 1_000,
     max_denominations: 16,

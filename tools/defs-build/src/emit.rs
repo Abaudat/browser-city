@@ -10,7 +10,7 @@ use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
     COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, INTERACT_AT_MAX_REACH_CELLS, MAX_DENOMINATIONS,
-    MAX_FACE_VALUE, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, NeighbourTermDef,
+    MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, MIN_FLOOR, NeighbourTermDef,
     REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode, RawDirection, RoleDef,
     RuleKindDef, SpriteRect,
 };
@@ -72,6 +72,14 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 
     out.push_str(&format!(
         "/// FR127's cap: a footprint's width and height are each held to this.\npub const MAX_FOOTPRINT_CELLS: i32 = {MAX_FOOTPRINT_CELLS};\n\n"
+    ));
+
+    out.push_str(&format!(
+        "/// The world's declared floor range: no row may sit outside it.
+pub const MIN_FLOOR: i32 = {MIN_FLOOR};
+pub const MAX_FLOOR: i32 = {MAX_FLOOR};
+
+"
     ));
 
     out.push_str(&format!(
@@ -654,6 +662,10 @@ pub fn emit_json(
     out.push_str(&format!(
         "  \"max_footprint_cells\": {MAX_FOOTPRINT_CELLS},\n"
     ));
+    out.push_str(&format!("  \"min_floor\": {MIN_FLOOR},
+"));
+    out.push_str(&format!("  \"max_floor\": {MAX_FLOOR},
+"));
     out.push_str(&format!(
         "  \"max_shelf_life_minutes\": {MAX_SHELF_LIFE_MINUTES},\n"
     ));
@@ -1297,6 +1309,8 @@ mod tests {
         assert!(out.contains("pub const COLLIDER_SUBCELLS_PER_CELL: i32 = 16;"));
         assert!(out.contains("pub const INTERACT_AT_MAX_REACH_CELLS: i32 = 2;"));
         assert!(out.contains("pub const MAX_FOOTPRINT_CELLS: i32 = 8;"));
+        assert!(out.contains("pub const MIN_FLOOR: i32 = -1;"));
+        assert!(out.contains("pub const MAX_FLOOR: i32 = 7;"));
         assert!(out.contains("pub const REAL_MS_PER_CITY_MINUTE: i64 = 2500;"));
         assert!(!out.contains('\r'));
     }
