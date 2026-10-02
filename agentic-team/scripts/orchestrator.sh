@@ -157,7 +157,7 @@ _nudge_all() {
 # budget-available -- the first branch of the flow, and the cheapest. Nothing
 # below this line runs without budget for it: not a dispatch, not a merge,
 # not the `gh` calls that read the board. The caps are 85% of the 5-hour
-# window and 80% of the week, so there is always a margin left for Adrian to
+# window and 90% of the week, so there is always a margin left for Adrian to
 # use Claude himself -- and since the rate-limit headers are account-wide,
 # his own sessions spend the same budget and the team's share shrinks on its
 # own, with nobody coordinating.
