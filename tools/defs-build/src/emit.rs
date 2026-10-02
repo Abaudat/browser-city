@@ -10,9 +10,9 @@ use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
     COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, INTERACT_AT_MAX_REACH_CELLS, MAX_DENOMINATIONS,
-    MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, MIN_FLOOR, NeighbourTermDef,
-    REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode, RawDirection, RoleDef,
-    RuleKindDef, SpriteRect,
+    MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, MIN_FLOOR,
+    NeighbourTermDef, REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode,
+    RawDirection, RoleDef, RuleKindDef, SpriteRect,
 };
 
 // `RawLandUse::as_str` is used via the fully-qualified method call above,
@@ -662,10 +662,14 @@ pub fn emit_json(
     out.push_str(&format!(
         "  \"max_footprint_cells\": {MAX_FOOTPRINT_CELLS},\n"
     ));
-    out.push_str(&format!("  \"min_floor\": {MIN_FLOOR},
-"));
-    out.push_str(&format!("  \"max_floor\": {MAX_FLOOR},
-"));
+    out.push_str(&format!(
+        "  \"min_floor\": {MIN_FLOOR},
+"
+    ));
+    out.push_str(&format!(
+        "  \"max_floor\": {MAX_FLOOR},
+"
+    ));
     out.push_str(&format!(
         "  \"max_shelf_life_minutes\": {MAX_SHELF_LIFE_MINUTES},\n"
     ));
