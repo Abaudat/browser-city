@@ -95,7 +95,10 @@ use super::codes::{
     ContainerKind, HolderKind, MatterKind, NodeKind, Provision, ReasonCode, Unit, container_kind,
     holder_kind, matter_kind, node_kind, provision, reason_code, unit,
 };
-use super::identity::{Character, CharacterIdentity, character, character_identity};
+use super::identity::{
+    Character, CharacterIdentity, LinkRequest, OidcIssuer, character, character_identity,
+    link_request, oidc_issuer,
+};
 use super::item_instance::{
     ItemHeld, ItemInstance, ItemPlaced, item_held, item_instance, item_placed,
 };
@@ -181,6 +184,8 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "building_area",
     "character",
     "character_identity",
+    "oidc_issuer",
+    "link_request",
     "citizen",
     "citizen_state",
     "floor_transition",
@@ -273,6 +278,12 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.character_identity().iter().next().is_some() {
         nonempty.push("character_identity");
+    }
+    if ctx.db.oidc_issuer().iter().next().is_some() {
+        nonempty.push("oidc_issuer");
+    }
+    if ctx.db.link_request().iter().next().is_some() {
+        nonempty.push("link_request");
     }
     if ctx.db.citizen().iter().next().is_some() {
         nonempty.push("citizen");
@@ -508,6 +519,27 @@ impl_autoinc_row!(
         mapping_id: 0,
         identity: Identity::default(),
         character_id: 0,
+        issuer_id: 0,
+    }
+);
+impl_autoinc_row!(
+    OidcIssuer,
+    issuer_id,
+    OidcIssuer {
+        issuer_id: 0,
+        issuer: String::new(),
+        client_id: String::new(),
+    }
+);
+impl_autoinc_row!(
+    LinkRequest,
+    request_id,
+    LinkRequest {
+        request_id: 0,
+        identity: Identity::default(),
+        issuer_id: 0,
+        code: String::new(),
+        expires_at: 0,
     }
 );
 impl_autoinc_row!(
@@ -737,6 +769,46 @@ pub fn restore_character_identity(
             ctx.db.character_identity().mapping_id().delete(id);
         },
         "character_identity",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_oidc_issuer(
+    ctx: &ReducerContext,
+    rows: Vec<OidcIssuer>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.oidc_issuer().insert(r),
+        |id| {
+            ctx.db.oidc_issuer().issuer_id().delete(id);
+        },
+        "oidc_issuer",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_link_request(
+    ctx: &ReducerContext,
+    rows: Vec<LinkRequest>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.link_request().insert(r),
+        |id| {
+            ctx.db.link_request().request_id().delete(id);
+        },
+        "link_request",
         sequence_floor,
     )
 }

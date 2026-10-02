@@ -59,6 +59,7 @@ export const CharacterIdentity = __t.object("CharacterIdentity", {
   mappingId: __t.u64(),
   identity: __t.identity(),
   characterId: __t.u64(),
+  issuerId: __t.u64(),
 });
 export type CharacterIdentity = __Infer<typeof CharacterIdentity>;
 
@@ -164,6 +165,15 @@ export const LayerCode = __t.object("LayerCode", {
 });
 export type LayerCode = __Infer<typeof LayerCode>;
 
+export const LinkRequest = __t.object("LinkRequest", {
+  requestId: __t.u64(),
+  identity: __t.identity(),
+  issuerId: __t.u64(),
+  code: __t.string(),
+  expiresAt: __t.i64(),
+});
+export type LinkRequest = __Infer<typeof LinkRequest>;
+
 export const MaintenanceSchedule = __t.object("MaintenanceSchedule", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),
@@ -194,11 +204,25 @@ export const ModuleVersion = __t.object("ModuleVersion", {
 });
 export type ModuleVersion = __Infer<typeof ModuleVersion>;
 
+export const MyCharacter = __t.object("MyCharacter", {
+  characterId: __t.u64(),
+  createdAt: __t.timestamp(),
+  linked: __t.bool(),
+});
+export type MyCharacter = __Infer<typeof MyCharacter>;
+
 export const NodeKind = __t.object("NodeKind", {
   code: __t.u32(),
   name: __t.string(),
 });
 export type NodeKind = __Infer<typeof NodeKind>;
+
+export const OidcIssuer = __t.object("OidcIssuer", {
+  issuerId: __t.u64(),
+  issuer: __t.string(),
+  clientId: __t.string(),
+});
+export type OidcIssuer = __Infer<typeof OidcIssuer>;
 
 export const PlacedObject = __t.object("PlacedObject", {
   objectId: __t.u64(),

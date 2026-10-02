@@ -36,7 +36,7 @@ use super::clock::world_clock;
 use super::codes::{
     container_kind, holder_kind, matter_kind, node_kind, provision, reason_code, unit,
 };
-use super::identity::{character, character_identity};
+use super::identity::{character, character_identity, link_request, oidc_issuer};
 use super::item_instance::{item_held, item_instance, item_placed};
 use super::ops::module_owner;
 use super::restore::restore_state;
@@ -225,6 +225,8 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(demo_ping);
     sample!(character);
     sample!(character_identity);
+    sample!(oidc_issuer);
+    sample!(link_request);
     sample!(module_owner);
     sample!(world_clock);
     sample!(restore_state);
