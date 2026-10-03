@@ -35,6 +35,7 @@ jobs:
     steps:
       - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
       - run: spacetime call --server maincloud --no-config -y "$DB" finish_publish
+      - run: spacetime call --server maincloud --no-config -y "$DB" accept_oidc_issuer "${{ vars.OIDC_AUTHORITY }}" "${{ vars.OIDC_CLIENT_ID }}"
       - run: bash scripts/ops/assert-world-invariants.sh "$DB" --server maincloud
 
   deploy-client:
@@ -43,6 +44,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo deploying client
+        env:
+          VITE_OIDC_AUTHORITY: ${{ vars.OIDC_AUTHORITY }}
+          VITE_OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}
 
   report-failure:
     name: report-failure
@@ -204,8 +208,18 @@ jobs:
     steps:
       - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
       - run: spacetime call --server maincloud --no-config -y "$DB" finish_publish
+      - run: spacetime call --server maincloud --no-config -y "$DB" accept_oidc_issuer "${{ vars.OIDC_AUTHORITY }}" "${{ vars.OIDC_CLIENT_ID }}"
       - run: bash scripts/ops/assert-world-invariants.sh "$DB" --server maincloud
     needs: [backup]
+
+  deploy-client:
+    name: deploy-client
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo deploying client
+        env:
+          VITE_OIDC_AUTHORITY: ${{ vars.OIDC_AUTHORITY }}
+          VITE_OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}
 
   report-failure:
     name: report-failure
@@ -427,6 +441,19 @@ check "a storage report before the upload fails" 1 bash -c "exit $CODE"
 check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'storage-report.sh before'" _ "$OUT"
 write_report_workflow "$D13/backup-last.yml" report-last
 check "a storage report after the upload passes" 0 bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml"
+
+echo
+echo "story 4.5: the OIDC provider comes from the repository variables on both halves"
+D30="$(fake_dir)"; write_good_workflow "$D30/deploy.yml"
+sed -i '/accept_oidc_issuer/d' "$D30/deploy.yml"
+OUT="$(bash "$CHECK" "$D30/deploy.yml" 2>&1)"; CODE=$?
+check "publish-module that never registers the issuer fails" 1 bash -c "exit $CODE"
+check "names the missing call" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"does not use 'accept_oidc_issuer'\"" _ "$OUT"
+
+D31="$(fake_dir)"; write_good_workflow "$D31/deploy.yml"
+sed -i '/VITE_OIDC_CLIENT_ID/d' "$D31/deploy.yml"
+OUT="$(bash "$CHECK" "$D31/deploy.yml" 2>&1)"; CODE=$?
+check "a client build that is not handed the client id fails" 1 bash -c "exit $CODE"
 
 # No workflow and no ops script may call create_district: the live world
 # gets no generated district until the story that picks its seed says so.

@@ -173,3 +173,53 @@ fn no_table_or_column_is_named_for_cash_a_till_or_a_denomination() {
         }
     }
 }
+
+/// Story 4.5 (FR142): a player's data keys on `character_id`; an identity
+/// column anywhere else would silently split a player in two the moment a
+/// second identity is linked.
+const IDENTITY_COLUMN_ALLOWED: &[&str] = &["character_identity", "module_owner", "link_request"];
+
+#[test]
+fn only_the_listed_tables_hold_an_identity_column() {
+    for table in &schema().tables {
+        if IDENTITY_COLUMN_ALLOWED.contains(&table.accessor.as_str()) {
+            continue;
+        }
+        for col in &table.columns {
+            assert!(
+                !col.ty.contains("Identity"),
+                "table `{}` column `{}` is an Identity -- key player data on `character_id` (FR142), or add the table to IDENTITY_COLUMN_ALLOWED with a reason",
+                table.accessor,
+                col.name
+            );
+        }
+    }
+}
+
+#[test]
+fn the_character_table_carries_no_identity_column() {
+    let s = schema();
+    let t = s
+        .tables
+        .iter()
+        .find(|t| t.accessor == "character")
+        .expect("character table");
+    assert!(t.columns.iter().all(|c| !c.ty.contains("Identity")));
+}
+
+#[test]
+fn identity_tables_are_private() {
+    let s = schema();
+    for name in [
+        "character",
+        "character_identity",
+        "link_request",
+        "oidc_issuer",
+    ] {
+        let t = s.tables.iter().find(|t| t.accessor == name).expect("table");
+        assert!(
+            !t.public,
+            "`{name}` must stay private -- clients read `my_character` instead"
+        );
+    }
+}

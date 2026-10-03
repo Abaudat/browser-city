@@ -12,6 +12,7 @@ export class ServerClock {
   #hasSample = false;
   #anchorServerMicros = 0n;
   #anchorPerfMs = 0;
+  #sampleWaiters: Array<() => void> = [];
 
   constructor(perfNow: () => number) {
     this.#perfNow = perfNow;
@@ -26,7 +27,17 @@ export class ServerClock {
     this.#anchorPerfMs = (tSendMs + tRecvMs) / 2;
     this.#anchorServerMicros = serverMicros;
     this.#hasSample = true;
+    for (const resolve of this.#sampleWaiters) resolve();
+    this.#sampleWaiters = [];
     return true;
+  }
+
+  /** Resolves on the first accepted sample, at once if there already is one. */
+  whenSampled(): Promise<void> {
+    if (this.#hasSample) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.#sampleWaiters.push(resolve);
+    });
   }
 
   /** The server's clock in microseconds since the Unix epoch, or

@@ -22,3 +22,23 @@ describe("NET_CONFIG", () => {
     expect(NET_CONFIG.databaseName).toBe("browser-city-prod");
   });
 });
+
+describe("OIDC_CONFIG (story 4.5)", () => {
+  it("is null when no provider is configured, so the link offer is never made", async () => {
+    const { OIDC_CONFIG } = await import("../../src/net/config");
+    expect(OIDC_CONFIG).toBeNull();
+  });
+
+  it("is null when only one of the two variables is set", async () => {
+    vi.stubEnv("VITE_OIDC_AUTHORITY", "https://idp.example");
+    const { OIDC_CONFIG } = await import("../../src/net/config");
+    expect(OIDC_CONFIG).toBeNull();
+  });
+
+  it("reads the authority and client id from build-time variables", async () => {
+    vi.stubEnv("VITE_OIDC_AUTHORITY", "https://idp.example");
+    vi.stubEnv("VITE_OIDC_CLIENT_ID", "bc");
+    const { OIDC_CONFIG } = await import("../../src/net/config");
+    expect(OIDC_CONFIG).toEqual({ authority: "https://idp.example", clientId: "bc" });
+  });
+});

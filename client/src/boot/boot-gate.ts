@@ -38,7 +38,7 @@ import type { HandshakeLatch, HandshakeSettlement } from "./handshake-latch";
  * last-resort fallback for a genuinely stuck connection, not the common
  * path -- and short enough that a player is never left looking at a
  * blank canvas indefinitely. */
-const DEFAULT_HANDSHAKE_TIMEOUT_MS = 8_000;
+export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 8_000;
 
 /** A client `defsVersion` that can never equal a real one (always 16 hex
  * characters) -- the first `fetchDefs` failing means "unknown", not

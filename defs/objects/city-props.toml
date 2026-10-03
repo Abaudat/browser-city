@@ -239,12 +239,28 @@ height = 1
 collider = { x0 = 0, y0 = 0, x1 = 47, y1 = 16 }
 tags = ["stairs", "fixture"]
 
+[[object]]
+id = 18
+key = "registry_post"
+name = "Registry Post"
+layer = "objects"
+# Story 4.5 (FR143): the carrier of the offer to link an account -- a
+# council mailbox where papers are filed. Same footprint, collider and reach
+# as the street's bin: a 16x32 single, a small base collider, and the whole
+# cell plus a quarter-cell skirt to use it from.
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/22_Post_Office_Singles_16x16/22_Post_Office_16x16_Black_Mailbox_1_Front.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 4, y0 = 7, x1 = 14, y1 = 15 }
+interact_at = { x0 = -4, y0 = -4, x1 = 20, y1 = 20 }
+tags = ["registry_post", "fixture"]
+
 # The well under the street stairwell's near railing: the east post's foot and
 # the dark floor seen between the balusters. Flat, anchored on the railing's
 # row; the railing stands on it. With the treads, the two railings and this,
 # the stairwell's rows add up to the whole `Stairs_Complete_2` sheet.
 [[object]]
-id = 18
+id = 19
 key = "stairwell_well"
 name = "Stairwell Well"
 layer = "ground_objects"

@@ -5,6 +5,15 @@
 // socket is client/tests/e2e/round-trip.spec.ts's job, not this file's.
 import { Timestamp } from "spacetimedb";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IDENTITY_STORAGE_KEY } from "../../src/identity/identity-storage";
+import type {
+  ClockWiring,
+  ConnectionStatus,
+  ConnectOptions,
+  HandshakeVersion,
+} from "../../src/net/connection";
+import type { PingObservation } from "../../src/net/observe-ping";
+import type { SettingsStorage } from "../../src/settings/settings-storage";
 
 interface FakeRow {
   id: bigint;
@@ -20,7 +29,7 @@ interface FakeModuleVersionRow {
 interface FakeState {
   uri?: string;
   databaseName?: string;
-  onConnectCb?: (connection: unknown) => void;
+  onConnectCb?: (connection: unknown, identity?: unknown, token?: string) => void;
   onConnectErrorCb?: (ctx: unknown, error: unknown) => void;
   onDisconnectCb?: (ctx: unknown, error?: unknown) => void;
   subscribedSql?: unknown;
@@ -42,9 +51,28 @@ interface FakeState {
     row: { epochAt: Timestamp; speed: number },
   ) => void;
   syncCalls: number;
+  token?: string;
+  withTokenCalls: number;
+  subscribeCalls: number;
+  disconnectCalls: number;
+  builds: number;
+  onMyCharacterInsertCb?: (ctx: unknown, row: FakeMyCharacterRow) => void;
 }
 
-const state: FakeState = { syncCalls: 0, subs: [] };
+interface FakeMyCharacterRow {
+  characterId: bigint;
+  createdAt: Timestamp;
+  linked: boolean;
+}
+
+const state: FakeState = {
+  syncCalls: 0,
+  subs: [],
+  withTokenCalls: 0,
+  subscribeCalls: 0,
+  disconnectCalls: 0,
+  builds: 0,
+};
 
 function makeSubscriptionBuilder() {
   const sub: FakeState["subs"][number] = { queries: undefined, unsubscribed: false };
@@ -61,6 +89,7 @@ function makeSubscriptionBuilder() {
     },
     subscribe: (queries: unknown) => {
       sub.queries = queries;
+      if (state.subs.length === 0) state.subscribeCalls += 1;
       if (state.subs.length === 0) state.subscribedSql = queries;
       state.subs.push(sub);
       return {
@@ -76,6 +105,12 @@ function makeSubscriptionBuilder() {
 }
 
 const fakeConn = {
+  // The SDK fires `onDisconnect` for a client-initiated close too; a fake
+  // that stayed silent would hide any status a deliberate close reports.
+  disconnect: () => {
+    state.disconnectCalls += 1;
+    state.onDisconnectCb?.({}, undefined);
+  },
   subscriptionBuilder: () => makeSubscriptionBuilder(),
   procedures: {
     syncClock: async () => {
@@ -97,6 +132,11 @@ const fakeConn = {
         state.onInsertCb = cb;
       },
     },
+    myCharacter: {
+      onInsert: (cb: (ctx: unknown, row: FakeMyCharacterRow) => void) => {
+        state.onMyCharacterInsertCb = cb;
+      },
+    },
     moduleVersion: {
       onInsert: (cb: (ctx: unknown, row: FakeModuleVersionRow) => void) => {
         state.onModuleVersionInsertCb = cb;
@@ -114,7 +154,12 @@ const builder = {
     state.databaseName = name;
     return builder;
   },
-  onConnect: (cb: (connection: unknown) => void) => {
+  withToken: (token: string) => {
+    state.token = token;
+    state.withTokenCalls += 1;
+    return builder;
+  },
+  onConnect: (cb: (connection: unknown, identity?: unknown, token?: string) => void) => {
     state.onConnectCb = cb;
     return builder;
   },
@@ -126,7 +171,10 @@ const builder = {
     state.onDisconnectCb = cb;
     return builder;
   },
-  build: () => fakeConn,
+  build: () => {
+    state.builds += 1;
+    return fakeConn;
+  },
 };
 
 /** A table whose typed query is a marker naming it, so a test can tell
@@ -144,6 +192,7 @@ vi.mock("../../src/net/bindings", () => ({
     demoPing: fakeTable("demo_ping"),
     moduleVersion: fakeTable("module_version"),
     worldClock: fakeTable("world_clock"),
+    myCharacter: fakeTable("my_character"),
     placedObject: fakeTable("placed_object"),
     floorTransition: fakeTable("floor_transition"),
     buildingArea: fakeTable("building_area"),
@@ -152,8 +201,20 @@ vi.mock("../../src/net/bindings", () => ({
   },
 }));
 
-const { connect } = await import("../../src/net/connection");
+const { connect: connectWith } = await import("../../src/net/connection");
 const regionModule = await import("../../src/net/region-subscription");
+
+/** The pre-4.5 positional shape these tests were written in, over the
+ * options object `connect` takes now. */
+function connect(
+  onPing: (o: PingObservation) => void,
+  onStatus?: (s: ConnectionStatus) => void,
+  onHandshake?: (v: HandshakeVersion) => void,
+  clock?: ClockWiring,
+  extra: Partial<ConnectOptions> = {},
+) {
+  return connectWith({ onPing, onStatus, onHandshake, clock, ...extra });
+}
 const { ServerClock } = await import("../../src/time/server-clock");
 const { CLOCK_SYNC_INTERVAL_MS } = await import("../../src/time/clock-sync");
 
@@ -171,7 +232,13 @@ beforeEach(() => {
   state.onWorldClockInsertCb = undefined;
   state.onWorldClockUpdateCb = undefined;
   state.syncCalls = 0;
+  state.token = undefined;
+  state.withTokenCalls = 0;
+  state.subscribeCalls = 0;
   state.subs = [];
+  state.disconnectCalls = 0;
+  state.builds = 0;
+  state.onMyCharacterInsertCb = undefined;
 });
 
 describe("connect", () => {
@@ -194,6 +261,7 @@ describe("connect", () => {
       "query:demo_ping",
       "query:module_version",
       "query:world_clock",
+      "query:my_character",
     ]);
   });
 
@@ -212,7 +280,7 @@ describe("connect", () => {
         (status) => statuses.push(status),
         undefined,
         undefined,
-        { controller },
+        { region: { controller } },
       );
       return { controller, statuses, rows };
     }
@@ -256,7 +324,7 @@ describe("connect", () => {
       state.onConnectCb?.(fakeConn);
       controller.moveTo(40 * 32, 0, 0);
       state.subs = [];
-      connect(() => {}, undefined, undefined, undefined, { controller });
+      connect(() => {}, undefined, undefined, undefined, { region: { controller } });
       state.onConnectCb?.(fakeConn);
       expect(state.subs).toHaveLength(1 + 25);
     });
@@ -283,12 +351,14 @@ describe("connect", () => {
       }
       const controller = new RegionController();
       connect(() => {}, undefined, undefined, undefined, {
-        controller,
-        rows: {
-          onInsert: (table, row) =>
-            inserted.push(`${table}:${(row as { chunkKey: bigint }).chunkKey}`),
-          onUpdate: () => {},
-          onDelete: () => {},
+        region: {
+          controller,
+          rows: {
+            onInsert: (table, row) =>
+              inserted.push(`${table}:${(row as { chunkKey: bigint }).chunkKey}`),
+            onUpdate: () => {},
+            onDelete: () => {},
+          },
         },
       });
       expect(registered.sort()).toEqual([
@@ -501,5 +571,179 @@ describe("connect", () => {
         state.onModuleVersionInsertCb?.({}, { defsVersion: "d1", protocolVersion: "p1" });
       }).not.toThrow();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 4.5 (FR141): the identity token's whole lifecycle.
+// ---------------------------------------------------------------------------
+
+function fakeStorage(initial: Record<string, string> = {}, failWrites = false) {
+  const data = new Map(Object.entries(initial));
+  const writes: [string, string][] = [];
+  const storage: SettingsStorage = {
+    getItem: (k) => data.get(k) ?? null,
+    setItem: (k, v) => {
+      if (failWrites) throw new Error("QuotaExceededError");
+      writes.push([k, v]);
+      data.set(k, v);
+    },
+    removeItem: (k) => {
+      data.delete(k);
+    },
+  };
+  return { storage, data, writes };
+}
+
+const blob = (token: string) => JSON.stringify({ version: 1, token });
+const identity = { toHexString: () => "c200abcd" };
+
+describe("identity token (story 4.5, FR141)", () => {
+  it("connects with withToken when a token is stored, and without when none is", () => {
+    const withStored = fakeStorage({ [IDENTITY_STORAGE_KEY]: blob("stored-tok") });
+    connect(() => {}, undefined, undefined, undefined, { storage: withStored.storage });
+    expect(state.withTokenCalls).toBe(1);
+    expect(state.token).toBe("stored-tok");
+
+    state.withTokenCalls = 0;
+    connect(() => {}, undefined, undefined, undefined, { storage: fakeStorage().storage });
+    expect(state.withTokenCalls).toBe(0);
+  });
+
+  it("still subscribes exactly once, with or without a token", () => {
+    const f = fakeStorage({ [IDENTITY_STORAGE_KEY]: blob("t") });
+    connect(() => {}, undefined, undefined, undefined, { storage: f.storage });
+    state.onConnectCb?.(fakeConn, identity, "t");
+    expect(state.subscribeCalls).toBe(1);
+  });
+
+  it("stores the token a first visit is handed, once, and reports the identity persisted", () => {
+    const f = fakeStorage();
+    const seen: unknown[] = [];
+    connect(() => {}, undefined, undefined, undefined, {
+      storage: f.storage,
+      onIdentity: (i) => seen.push(i),
+    });
+    state.onConnectCb?.(fakeConn, identity, "fresh-tok");
+    expect(f.writes).toEqual([[IDENTITY_STORAGE_KEY, blob("fresh-tok")]]);
+    expect(seen).toEqual([{ identityHex: "c200abcd", persisted: true }]);
+  });
+
+  it("writes nothing on a returning visit (the stored token is presented back)", () => {
+    const f = fakeStorage({ [IDENTITY_STORAGE_KEY]: blob("t") });
+    connect(() => {}, undefined, undefined, undefined, { storage: f.storage });
+    state.onConnectCb?.(fakeConn, identity, "t");
+    expect(f.writes).toEqual([]);
+  });
+
+  it("a storage write that throws does not break the session", () => {
+    const f = fakeStorage({}, true);
+    const statuses: string[] = [];
+    const seen: unknown[] = [];
+    connect(
+      () => {},
+      (s) => statuses.push(s),
+      undefined,
+      undefined,
+      { storage: f.storage, onIdentity: (i) => seen.push(i) },
+    );
+    expect(() => state.onConnectCb?.(fakeConn, identity, "t")).not.toThrow();
+    expect(statuses).toEqual(["connecting", "connected"]);
+    expect(state.subscribeCalls).toBe(1);
+    expect(seen).toEqual([{ identityHex: "c200abcd", persisted: false }]);
+  });
+
+  it("a second tab that stored a token first wins: this tab keeps its connection as a session-only identity", () => {
+    const f = fakeStorage();
+    const statuses: string[] = [];
+    const seen: unknown[] = [];
+    connect(
+      () => {},
+      (s) => statuses.push(s),
+      undefined,
+      undefined,
+      { storage: f.storage, onIdentity: (i) => seen.push(i) },
+    );
+    // The other tab writes between this connect starting and its handshake.
+    f.data.set(IDENTITY_STORAGE_KEY, blob("other-tab"));
+    state.onConnectCb?.(fakeConn, identity, "mine");
+    expect(f.writes).toEqual([]);
+    expect(f.data.get(IDENTITY_STORAGE_KEY)).toBe(blob("other-tab"));
+    expect(state.builds).toBe(1);
+    expect(state.disconnectCalls).toBe(0);
+    expect(statuses).toEqual(["connecting", "connected"]);
+    expect(state.subscribeCalls).toBe(1);
+    expect(seen).toEqual([{ identityHex: "c200abcd", persisted: false }]);
+  });
+
+  describe("the stored token is never replaced or removed by a failure", () => {
+    const stored = { [IDENTITY_STORAGE_KEY]: blob("precious") };
+
+    it("a connect error", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const f = fakeStorage(stored);
+      connect(() => {}, undefined, undefined, undefined, { storage: f.storage });
+      state.onConnectErrorCb?.({}, new Error("boom"));
+      expect(f.writes).toEqual([]);
+      expect(f.data.get(IDENTITY_STORAGE_KEY)).toBe(blob("precious"));
+    });
+
+    it("a rejected token keeps the token and reports disconnected, never an anonymous fallback", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const f = fakeStorage(stored);
+      const statuses: string[] = [];
+      connect(
+        () => {},
+        (s) => statuses.push(s),
+        undefined,
+        undefined,
+        { storage: f.storage },
+      );
+      state.onConnectErrorCb?.({}, new Error("401 token rejected"));
+      expect(statuses).toEqual(["connecting", "disconnected"]);
+      expect(state.builds).toBe(1);
+      expect(f.data.get(IDENTITY_STORAGE_KEY)).toBe(blob("precious"));
+    });
+
+    it("a dropped connection", () => {
+      const f = fakeStorage(stored);
+      connect(() => {}, undefined, undefined, undefined, { storage: f.storage });
+      state.onConnectCb?.(fakeConn, identity, "precious");
+      state.onDisconnectCb?.({}, new Error("closed"));
+      expect(f.writes).toEqual([]);
+      expect(f.data.get(IDENTITY_STORAGE_KEY)).toBe(blob("precious"));
+    });
+
+    it("a rejected subscription", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const f = fakeStorage(stored);
+      connect(() => {}, undefined, undefined, undefined, { storage: f.storage });
+      state.onConnectCb?.(fakeConn, identity, "precious");
+      state.onSubscriptionErrorCb?.({ event: new Error("rejected") });
+      expect(f.writes).toEqual([]);
+      expect(f.data.get(IDENTITY_STORAGE_KEY)).toBe(blob("precious"));
+    });
+
+    it("a corrupt stored value survives a successful anonymous connect byte for byte", () => {
+      const f = fakeStorage({ [IDENTITY_STORAGE_KEY]: "{corrupt" });
+      connect(() => {}, undefined, undefined, undefined, { storage: f.storage });
+      expect(state.withTokenCalls).toBe(0);
+      state.onConnectCb?.(fakeConn, identity, "new-anon");
+      expect(f.writes).toEqual([]);
+      expect(f.data.get(IDENTITY_STORAGE_KEY)).toBe("{corrupt");
+    });
+  });
+
+  it("reports the player's own character from the my_character view", () => {
+    const seen: unknown[] = [];
+    connect(() => {}, undefined, undefined, undefined, {
+      storage: fakeStorage().storage,
+      onCharacter: (c) => seen.push(c),
+    });
+    state.onMyCharacterInsertCb?.(
+      {},
+      { characterId: 7n, createdAt: Timestamp.fromDate(new Date(2_000)), linked: true },
+    );
+    expect(seen).toEqual([{ characterId: 7n, createdAtMicros: 2_000_000n, linked: true }]);
   });
 });

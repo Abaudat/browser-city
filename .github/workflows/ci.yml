@@ -352,6 +352,8 @@ jobs:
         run: bash ../scripts/ci/check-district-write-path.sh
       - name: story 6.3 FR89, nothing outside sim::author builds an Author
         run: bash ../scripts/ci/check-author-construction.sh
+      - name: story 4.5 FR142, only tables/identity.rs reaches a character from a caller
+        run: bash ../scripts/ci/check-character-identity-path.sh
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: server
@@ -527,6 +529,10 @@ jobs:
       # never 3987-3995 -- same job, same reasoning as the steps above.
       - name: story 4.3 FR136, a chunk-equality subscription returns exactly its chunk, anonymously
         run: bash scripts/ci/check-interest-region.sh
+      # Story 4.5: its own disposable local instance and port (3997),
+      # never 3987-3996 -- same job, same reasoning as the steps above.
+      - name: story 4.5, identity create and link proven with real distinct identities
+        run: bash scripts/ci/check-identity-link.sh
 
   coverage:
     name: coverage (sim)
@@ -584,6 +590,8 @@ jobs:
       # zero cost -- needs neither cargo nor node, so it runs first,
       # before setup-node/npm ci pay for the toolchain a dangling name
       # does not need (Tim's direction).
+      - name: story 4.5 FR141, the identity token stays in identity-storage.ts and net/
+        run: bash ../scripts/ci/check-identity-token-confined.sh
       - name: client-side trace-matrix symmetry (no cargo)
         run: bash ../scripts/ci/check-trace-matrix.sh --client-only
       - name: story 6.17 NFR50, no client property bypasses the one seed
@@ -678,6 +686,21 @@ jobs:
             echo "::error::debug overlay code (client/src/debug/**) leaked into the production bundle -- the import.meta.env.DEV dynamic-import gate stopped working (FR168)" >&2
             exit 1
           fi
+      # Story 4.5 (Tim's direction): the OIDC client is a lazily imported
+      # chunk, loaded only when a link starts or the page boots back from the
+      # provider -- the anonymous boot path pays zero bytes and zero requests
+      # for it, so the entry chunk and index.html must not contain it.
+      - name: story 4.5 FR143, the OIDC client stays out of the entry chunk and the boot path
+        run: |
+          if grep -lq 'signinRedirect' dist/assets/index-*.js; then
+            echo "::error::oidc-client-ts reached the entry chunk -- client/src/identity/link-flow.ts must stay behind a dynamic import" >&2
+            exit 1
+          fi
+          if grep -q 'link-flow' dist/index.html; then
+            echo "::error::the link-flow chunk is preloaded by index.html -- it must load only when a link starts" >&2
+            exit 1
+          fi
+          grep -lq 'signinRedirect' dist/assets/link-flow-*.js || { echo "::error::the link-flow chunk is missing or no longer carries the OIDC client" >&2; exit 1; }
       # Story 1.14 (Tim's direction): the decode-only harness and its
       # generated bindings live under tests/e2e/boot-budget/ precisely so
       # they are structurally unreachable from index.html's own module

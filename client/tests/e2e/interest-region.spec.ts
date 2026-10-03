@@ -90,13 +90,15 @@ test("every spatial subscription on the wire carries a chunk predicate, and the 
   const spatial = sentQueries.filter((q) => SPATIAL.some((t) => q.includes(`FROM "${t}"`)));
   expect(spatial.length).toBe(INITIAL_HANDLES * SPATIAL.length * 8); // 8 floors in the ground band
   for (const q of spatial) expect(q).toMatch(/WHERE "[a-z_]+"\."chunk_key" = \d+$/);
-  // The whole-table queries are the three global singletons, nothing else.
+  // The whole-table queries are the three global singletons and the caller's
+  // own character view (one row, never spatial), nothing else.
   const whole = sentQueries.filter((q) => !q.includes("WHERE"));
   expect(new Set(whole)).toEqual(
     new Set([
       'SELECT * FROM "demo_ping"',
       'SELECT * FROM "module_version"',
       'SELECT * FROM "world_clock"',
+      'SELECT * FROM "my_character"',
     ]),
   );
 
