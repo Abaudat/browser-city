@@ -155,9 +155,13 @@ width = 1
 archetype = "underfoot_flat"
 tags = ["stairs", "underfoot", "fixture"]
 
-# One staircase seen as three objects cut from the same 48x64 sheet, so
-# the player walks between the railings: behind the near one, in front of
-# the far one. The ball finial is the 16 px overhang of the top railing.
+# One staircase seen as several objects, so the player walks between the
+# railings: behind the near one, in front of the far one. Both railings
+# overhang their own row by 16 px (the ball finial and the handrail's top).
+# An upright prop owns every pixel it draws, so the near railing is cut from
+# the railing-only sheet (the same stairwell with the treads removed): its
+# overhang row would otherwise fall into the flat-pass treads sprite and be
+# drawn under the player.
 # An `upright` seen face-on: it collides at its foot (the base rail) only.
 [[object]]
 id = 12
@@ -189,7 +193,7 @@ id = 14
 key = "stairwell_bottom_railing"
 name = "Stairwell Bottom Railing"
 layer = "objects"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 48, w = 48, h = 16 }
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Railing_1.png", x = 0, y = 32, w = 48, h = 32 }
 width = 3
 archetype = "full_cell_blocker"
 tags = ["stairs", "fixture"]
@@ -252,3 +256,17 @@ height = 1
 collider = { x0 = 4, y0 = 7, x1 = 14, y1 = 15 }
 interact_at = { x0 = -4, y0 = -4, x1 = 20, y1 = 20 }
 tags = ["registry_post", "fixture"]
+
+# The well under the street stairwell's near railing: the east post's foot and
+# the dark floor seen between the balusters. Flat, anchored on the railing's
+# row; the railing stands on it. With the treads, the two railings and this,
+# the stairwell's rows add up to the whole `Stairs_Complete_2` sheet.
+[[object]]
+id = 19
+key = "stairwell_well"
+name = "Stairwell Well"
+layer = "ground_objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 48, w = 48, h = 16 }
+width = 3
+archetype = "underfoot_flat"
+tags = ["stairs", "underfoot", "fixture"]

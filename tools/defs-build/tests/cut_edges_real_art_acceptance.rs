@@ -42,7 +42,15 @@ fn defs_from(files: &[(PathBuf, String)]) -> Defs {
 }
 
 /// `(examined objects, continued edges, repeat edges)`, or the failure messages.
-fn audit(defs: &Defs) -> Result<(usize, usize, usize), Vec<String>> {
+/// Edges where the sheet stacks a *different*, unused piece against the
+/// object's rect, so art touches the rect with no sibling to continue it:
+/// `Stairs_Railing_1` carries two railings, one above the other, and the
+/// street's near railing is the lower one (its post's top touches the
+/// upper railing's base). Pinned exactly: each must be hit, and nothing
+/// else may be listed.
+const SEAMS: &[(&str, Edge, (u32, u32))] = &[("stairwell_bottom_railing", Edge::North, (0, 7))];
+
+fn audit(defs: &Defs) -> Result<(usize, usize, usize, usize), Vec<String>> {
     audit_with(defs, &[])
 }
 
@@ -51,7 +59,7 @@ fn audit(defs: &Defs) -> Result<(usize, usize, usize), Vec<String>> {
 fn audit_with(
     defs: &Defs,
     overrides: &[(&str, Rect)],
-) -> Result<(usize, usize, usize), Vec<String>> {
+) -> Result<(usize, usize, usize, usize), Vec<String>> {
     let t = tables();
     let tile_layers = [
         t.get("layer", "ground").unwrap(),
@@ -66,7 +74,7 @@ fn audit_with(
         examined += 1;
         by_sheet.entry(o.sprite.sheet.as_str()).or_default().push(i);
     }
-    let (mut continued, mut repeated, mut failures) = (0, 0, Vec::new());
+    let (mut continued, mut repeated, mut seams, mut failures) = (0, 0, 0, Vec::new());
     for (sheet, idxs) in by_sheet {
         let bytes = fsio::read_bytes(&repo_root(), &[PathBuf::from(sheet)])
             .unwrap()
@@ -95,6 +103,8 @@ fn audit_with(
                 continued += 1;
             } else if e.repeats {
                 repeated += 1;
+            } else if SEAMS.contains(&(key.as_str(), e.edge, e.span)) {
+                seams += 1;
             } else {
                 failures.push(format!(
                     "{key}: sprite rect is cut on its {:?} edge: {} opaque pixel(s) continue outside it, sheet span {}..{}",
@@ -104,7 +114,7 @@ fn audit_with(
         }
     }
     if failures.is_empty() {
-        Ok((examined, continued, repeated))
+        Ok((examined, continued, repeated, seams))
     } else {
         Err(failures)
     }
@@ -126,13 +136,18 @@ fn with_replaced(old: &str, new: &str) -> Vec<(PathBuf, String)> {
 
 #[test]
 fn no_object_rect_slices_through_its_art() {
-    let (examined, continued, repeated) =
+    let (examined, continued, repeated, seams) =
         audit(&defs_from(&files())).unwrap_or_else(|f| panic!("{}", f.join("\n")));
     assert!(examined >= 11, "examined only {examined} objects");
     assert!(continued >= 4, "only {continued} sibling-continued edges");
     assert_eq!(
         repeated, 1,
         "the flight's rows 45-47 are the one allowed repeat"
+    );
+    assert_eq!(
+        seams,
+        SEAMS.len(),
+        "every listed seam is hit, and only those"
     );
 }
 

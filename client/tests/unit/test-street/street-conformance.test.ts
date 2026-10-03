@@ -45,6 +45,9 @@ import {
   STAIRS_ENTRY_DIRECTION,
   STAIRS_X,
   STAIRS_Y,
+  STAIRWELL_BOTTOM_RAILING_DEF_ID,
+  STAIRWELL_TOP_RAILING_DEF_ID,
+  STAIRWELL_X0,
   STREET_BOUNDARY,
   STREET_BUILDING_AREAS,
   STREET_EXIT_X,
@@ -59,6 +62,7 @@ import {
   streetBollardRoute,
   streetBridgeLapRoute,
   streetDefId,
+  streetNearRailingPressRoute,
   streetPlacedRows,
   streetSubwayApproachRoute,
   streetWalkRoute,
@@ -984,7 +988,7 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     expect(failures).toEqual([]);
   });
 
-  it("5g. nothing y-sorted is drawn on either stairwell's tread path or entry cell -- the player never walks through something drawn over them", () => {
+  it("5g. no y-sorted prop's footprint covers either stairwell's tread path or entry cell -- the player never walks through one (the near railing's drawn overhang does reach the tread row, on purpose: it is what draws over the player)", () => {
     const failures: string[] = [];
     for (const { anchor, open } of subwayAnchors()) {
       const { path, entry } = treadPath(stairwellRowsAt(anchor), anchor, open.direction);
@@ -1430,6 +1434,43 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
     return out;
   }
 
+  /** The picture a stairwell's placed rows draw when nobody is on it: flat
+   * rows first, then the pool rows by anchor row, each sprite bottom-anchored
+   * on its row's cell and opaque pixels painted over (the art has no
+   * partial alpha, asserted). The canvas is the bounding box of the sprites. */
+  function composite(rows: readonly DefProp[]): PNG {
+    const tile = (p: DefProp) => objectDef(p.defId).sprite.w / (objectDef(p.defId).width ?? 1);
+    const boxes = rows.map((p) => {
+      const { sprite } = objectDef(p.defId);
+      const left = (p.x * tile(p)) | 0;
+      const bottom = (p.y + 1) * tile(p);
+      return { p, sprite, left, top: bottom - sprite.h };
+    });
+    const x0 = Math.min(...boxes.map((b) => b.left));
+    const y0 = Math.min(...boxes.map((b) => b.top));
+    const x1 = Math.max(...boxes.map((b) => b.left + b.sprite.w));
+    const y1 = Math.max(...boxes.map((b) => b.top + b.sprite.h));
+    const out = new PNG({ width: x1 - x0, height: y1 - y0 });
+    const flat = (p: DefProp) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects";
+    const order = [...boxes].sort(
+      (a, b) => Number(flat(b.p)) - Number(flat(a.p)) || (flat(a.p) ? 0 : a.p.y - b.p.y),
+    );
+    for (const { sprite, left, top } of order) {
+      const art = sheetOf(sprite.sheet);
+      for (let y = 0; y < sprite.h; y++) {
+        for (let x = 0; x < sprite.w; x++) {
+          const from = ((sprite.y + y) * art.width + sprite.x + x) * 4;
+          const alpha = art.data[from + 3] ?? 0;
+          expect(alpha === 0 || alpha === 255, "stairwell art has no partial alpha").toBe(true);
+          if (alpha === 0) continue;
+          const to = ((top - y0 + y) * out.width + (left - x0 + x)) * 4;
+          for (let c = 0; c < 4; c++) out.data[to + c] = art.data[from + c] ?? 0;
+        }
+      }
+    }
+    return out;
+  }
+
   /** `png` flipped left to right, in memory. */
   function mirrorOf(png: PNG): PNG {
     const out = new PNG({ width: png.width, height: png.height });
@@ -1494,7 +1535,7 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
     const streetRows = stairwellRowsAt(streetAnchor().anchor);
     const streetAnchorWest = STAIRS_X < Math.min(...flightOf(streetRows).map((p) => p.x)) + 1;
     expect(streetAnchorWest).toBe(true);
-    const down = treadTopByThird(decode(streetRows));
+    const down = treadTopByThird(composite(streetRows));
     expect(down.west).toBeGreaterThan(down.east);
 
     // Platform half: the flight is found by the tag rule, decoded from its
@@ -1568,7 +1609,7 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
     const platformRows = stairwellRowsAt(platformFlight().anchor);
     expect(platformRows.length).toBeGreaterThan(0);
     const streetSheets = new Set(streetRows.map((p) => objectDef(p.defId).sprite.sheet));
-    const street = decode(streetRows);
+    const street = composite(streetRows);
     for (const p of platformRows) {
       const { key, sprite } = objectDef(p.defId);
       expect(streetSheets.has(sprite.sheet), `${key} shares a sheet with the street`).toBe(false);
@@ -1580,9 +1621,97 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
     }
   });
 
+  // Story 15.13 (FR123): the stairwell's rows add up to the whole staircase,
+  // and an upright prop owns every pixel it draws.
+  const complete2 = () => {
+    const treads = stairwellRowsAt(streetAnchor().anchor).find(
+      (p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects",
+    );
+    if (!treads) throw new Error("no flat stairwell row");
+    return sheetOf(objectDef(treads.defId).sprite.sheet);
+  };
+
+  it("the street stairwell's rows composite to Stairs_Complete_2 pixel for pixel", () => {
+    const art = complete2();
+    const drawn = composite(stairwellRowsAt(streetAnchor().anchor));
+    expect([drawn.width, drawn.height]).toEqual([art.width, art.height]);
+    const wrong: string[] = [];
+    for (let y = 0; y < art.height; y++) {
+      for (let x = 0; x < art.width; x++) {
+        const i = (y * art.width + x) * 4;
+        // A transparent pixel is equal whatever colour hides under it.
+        const same =
+          drawn.data[i + 3] === art.data[i + 3] &&
+          (art.data[i + 3] === 0 || [0, 1, 2].every((c) => drawn.data[i + c] === art.data[i + c]));
+        if (!same) wrong.push(`(${x},${y})`);
+      }
+    }
+    expect(wrong, `${wrong.length} pixels differ: ${wrong.slice(0, 12)}`).toEqual([]);
+  });
+
+  it("no y-sorted stairwell sprite contains a pixel the flat row owns, and the railing sheet is not the flat row's", () => {
+    const rows = stairwellRowsAt(streetAnchor().anchor);
+    const isFlat = (p: DefProp) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects";
+    const isTread = (r: number, g: number, b: number, a: number) =>
+      a > 200 && r > 200 && g > 90 && b < 90;
+    const tread = (sprite: { sheet: string; x: number; y: number; w: number; h: number }) => {
+      const art = sheetOf(sprite.sheet);
+      let n = 0;
+      for (let y = sprite.y; y < sprite.y + sprite.h; y++) {
+        for (let x = sprite.x; x < sprite.x + sprite.w; x++) {
+          const i = (y * art.width + x) * 4;
+          if (
+            isTread(
+              art.data[i] ?? 0,
+              art.data[i + 1] ?? 0,
+              art.data[i + 2] ?? 0,
+              art.data[i + 3] ?? 0,
+            )
+          )
+            n++;
+        }
+      }
+      return n;
+    };
+    const flatRows = rows.filter(isFlat);
+    expect(flatRows.length).toBeGreaterThan(0);
+    // Positive control: the classifier finds the treads in the flat rows.
+    expect(flatRows.reduce((n, p) => n + tread(objectDef(p.defId).sprite), 0)).toBeGreaterThan(0);
+    for (const p of rows.filter((r) => !isFlat(r))) {
+      const def = objectDef(p.defId);
+      expect(tread(def.sprite), `${def.key} draws tread pixels over a player`).toBe(0);
+    }
+  });
+
+  it("every opaque pixel of the near railing's own sheet lies inside the near or the far railing's sprite rect", () => {
+    const flat = stairwellRowsAt(streetAnchor().anchor).find(
+      (p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects",
+    );
+    if (!flat) throw new Error("no flat stairwell row");
+    const flatSheet = objectDef(flat.defId).sprite.sheet;
+    const near = objectDef(STAIRWELL_BOTTOM_RAILING_DEF_ID).sprite;
+    const far = objectDef(STAIRWELL_TOP_RAILING_DEF_ID).sprite;
+    expect(near.sheet, "the near railing is cut from a sheet without the treads").not.toBe(
+      flatSheet,
+    );
+    const art = sheetOf(near.sheet);
+    const inside = (r: typeof near, x: number, y: number) =>
+      x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+    const outside: string[] = [];
+    for (let y = 0; y < art.height; y++) {
+      for (let x = 0; x < art.width; x++) {
+        if ((art.data[(y * art.width + x) * 4 + 3] ?? 0) === 0) continue;
+        if (!inside(near, x, y) && !inside(far, x, y)) outside.push(`(${x},${y})`);
+      }
+    }
+    expect(outside, `opaque railing pixels owned by no railing: ${outside.slice(0, 12)}`).toEqual(
+      [],
+    );
+  });
+
   it("the retreat matcher fires: the street's own tread sprite matches unflipped, and Stairs_Complete_4's tread row matches mirrored", () => {
     const streetRows = stairwellRowsAt(streetAnchor().anchor);
-    const street = decode(streetRows);
+    const street = composite(streetRows);
     const treads = streetRows.find((p) => objectDef(p.defId).key === "stairwell_treads");
     if (!treads) throw new Error("the street stairwell has no treads row");
     const own = bestMatch(spriteArt(objectDef(treads.defId).sprite), street);
@@ -1642,6 +1771,41 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
     expect(sign?.x).toBe(PLATFORM_UP_ANCHOR_X);
     expect(sign?.y).toBeLessThan(PLATFORM_UP_ANCHOR_Y);
   });
+});
+
+describe("the near-railing press route (story 15.13)", () => {
+  const inputs = streetWalkInputs();
+  const route = streetNearRailingPressRoute(inputs);
+  const west = route.findIndex((s) => s.label === "west-along-the-near-railing");
+
+  it("completes on the street floor, resting on the near railing's collider face", () => {
+    const out = simulateStreetWalk(route, RELEASE_LAG);
+    expect(out).toHaveLength(route.length);
+    for (const { state } of out) expect(state.floor).toBe(PLAYER_START.floor);
+    expect(out[west]?.state.y).toBeCloseTo(inputs.nearRailingRestY, 9);
+  });
+
+  // Where the west walk ends is decided by release lag, which on a loaded
+  // runner is large. However far it overshoots -- all the way to the west
+  // boundary -- the body stays on the street floor (it is on the row south
+  // of the anchor's) and on the railing's face.
+  for (const lag of [0, 1, 8, 400]) {
+    it(`survives a west walk that overshoots by ${lag} steps`, () => {
+      const before = simulateStreetWalk(route.slice(0, west), RELEASE_LAG);
+      const start = before[before.length - 1]?.state;
+      const segment = route[west];
+      if (!start || !segment) throw new Error("no start state");
+      const end = simulateStreetWalk([segment], {
+        ...RELEASE_LAG,
+        releaseLagSteps: lag,
+        start,
+      })[0]?.state;
+      if (!end) throw new Error("no west state");
+      expect(end.floor).toBe(PLAYER_START.floor);
+      expect(end.y).toBeCloseTo(inputs.nearRailingRestY, 9);
+      if (lag === 400) expect(end.x).toBeLessThan(STAIRWELL_X0 + 0.5); // against the west wall
+    });
+  }
 });
 
 describe("the bollard approach route (NFR50)", () => {

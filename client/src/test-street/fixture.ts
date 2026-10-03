@@ -155,12 +155,13 @@ export const BRIDGE_DECK_DEF_ID = 7;
  * walkable flight of steps. Which floors it joins is a `floor_transition`
  * row anchored on its cell, never a field on the prop. */
 export const FOOT_STAIRS_DEF_ID = 8;
-/** The street stairwell's three `defs/objects` rows, cut from one sheet
- * (`stairwell_top_railing`, `stairwell_treads`, `stairwell_bottom_railing`):
- * the player walks between the railings. */
+/** The street stairwell's four `defs/objects` rows (`stairwell_top_railing`,
+ * `stairwell_treads`, `stairwell_well`, `stairwell_bottom_railing`): the
+ * player walks between the railings. */
 export const STAIRWELL_TOP_RAILING_DEF_ID = 12;
 export const STAIRWELL_TREADS_DEF_ID = 13;
 export const STAIRWELL_BOTTOM_RAILING_DEF_ID = 14;
+export const STAIRWELL_WELL_DEF_ID = 19;
 /** `wall_face`: the tall interior face of a north or south wall run, one
  * cell wide. West and east runs are `wall_segment` rows. */
 export const WALL_FACE_DEF_ID = 15;
@@ -254,10 +255,10 @@ export const PLATFORM_BUILDING_ID = 3n;
 export const STREET_FLOOR = 0;
 export const SUBWAY_FLOOR = -1;
 
-/** The street stairwell's own art (`Stairs_Complete_2`, 48x64px) is
- * three objects on one 3x3 ground footprint: the top railing (its drawn
- * finial overhangs one row north of the footprint), the treads, the
- * bottom railing. */
+/** The street stairwell's own art is four objects on one 3x3 ground
+ * footprint: the top railing and the bottom railing (each drawn one row
+ * taller than its footprint row, overhanging north), and the two flat rows
+ * under them, the treads and the well. */
 export const STAIRWELL_FOOTPRINT = { width: 3, height: 3 } as const;
 
 /** The art row (from its north edge) the treads are drawn on: the rows
@@ -265,12 +266,13 @@ export const STAIRWELL_FOOTPRINT = { width: 3, height: 3 } as const;
  * railing. */
 const STAIRWELL_TREAD_ROW = 2;
 
-/** The three rows the street stairwell is placed as: anchor row offset from the
+/** The rows the street stairwell is placed as: anchor row offset from the
  * art's north edge, the def and its layer (the treads lie flat on the
  * ground, so they are on the flat pass and never sort over the player). */
 const STAIRWELL_ROWS = [
   { row: 1, defId: STAIRWELL_TOP_RAILING_DEF_ID, layer: "objects" },
   { row: STAIRWELL_TREAD_ROW, defId: STAIRWELL_TREADS_DEF_ID, layer: "ground_objects" },
+  { row: 3, defId: STAIRWELL_WELL_DEF_ID, layer: "ground_objects" },
   { row: 3, defId: STAIRWELL_BOTTOM_RAILING_DEF_ID, layer: "objects" },
 ] as const;
 
@@ -285,7 +287,7 @@ export const STAIRS_ENTRY_DIRECTION = { x: -1, y: 0 } as const;
  * east end; the down anchor is the deepest tread, at the west end. */
 const PAVEMENT_Y1 = LAMPPOST_CELL.y;
 export const STAIRWELL_X0 = EAST_WALL_X_B + 1;
-const STAIRWELL_Y0 = PAVEMENT_Y1 + 1;
+export const STAIRWELL_Y0 = PAVEMENT_Y1 + 1;
 export const STAIRS_X = STAIRWELL_X0;
 export const STAIRS_Y = STAIRWELL_Y0 + STAIRWELL_TREAD_ROW;
 
@@ -436,11 +438,11 @@ export const STREET_BUILDING_AREAS: readonly OwnershipArea[] = [
 
 export const STREET_ROOM_AREAS: readonly OwnershipArea[] = [];
 
-/** The street stairwell as its three `defs/objects` rows, anchored under
+/** The street stairwell as its four `defs/objects` rows, anchored under
  * its art (`x` the west column, `artY` the art's north row), top railing
  * first. */
 function streetStairwellRows(
-  ids: readonly [bigint, bigint, bigint],
+  ids: readonly [bigint, bigint, bigint, bigint],
   x: number,
   artY: number,
 ): readonly StreetPropByDef[] {
@@ -456,7 +458,7 @@ function streetStairwellRows(
 
 /** The street stairwell's placed rows. */
 export const STREET_STAIRWELL_ROWS: readonly StreetPropByDef[] = streetStairwellRows(
-  [50n, 53n, 54n],
+  [50n, 53n, 56n, 54n],
   STAIRWELL_X0,
   STAIRWELL_Y0,
 );
@@ -741,7 +743,7 @@ const STREET_PROP_LIST: StreetProp[] = [
 
   // --- The subway ---------------------------------------------------------
   // The street stairwell (a real descending stairwell with railings,
-  // Artie's direction): three def rows -- the railings block their own
+  // Artie's direction): four def rows -- the railings block their own
   // row, the tread row is walkable from its east opening down to the down
   // anchor.
   ...STREET_STAIRWELL_ROWS,
@@ -1330,6 +1332,9 @@ export interface StreetWalkInputs {
    * upper railing -- the row a walker can walk west along into the
    * stairs. */
   readonly subwayTreadRowY: number;
+  /** The top face of the stairwell's near railing's own collider: where a
+   * body pressed south on the tread row comes to rest. */
+  readonly nearRailingRestY: number;
 }
 
 /** Out of shop A's door, onto the pavement and past the lamppost: the
@@ -1449,6 +1454,34 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
       label: "down-the-subway-stairs",
       key: "ArrowLeft",
       until: { kind: "floor", value: SUBWAY_FLOOR },
+    },
+  ];
+}
+
+/** From the subway entrance onto the tread row, then the stairwell's draw
+ * order is seen from the demo's posture, FR123's worst case. South first,
+ * in the entrance: the body rests on the boundary below the entrance cells,
+ * level with the near railing's top face (`press-south`). West along that
+ * face to the east tread (`west-along-the-near-railing`): the feet are off
+ * the anchor's row there, so however far the release overshoots the body
+ * ends against the west boundary and no transition can fire. Where that
+ * walk really ends is decided by release lag; the rest in `y` is not. */
+export function streetNearRailingPressRoute(
+  inputs: StreetWalkInputs,
+): readonly StreetWalkSegment[] {
+  const approach = streetSubwayApproachRoute(inputs);
+  const onTreads = approach.findIndex((s) => s.label === "onto-the-subway-treads-row");
+  return [
+    ...approach.slice(0, onTreads + 1),
+    {
+      label: "press-south",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.nearRailingRestY },
+    },
+    {
+      label: "west-along-the-near-railing",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width - 0.5 },
     },
   ];
 }
