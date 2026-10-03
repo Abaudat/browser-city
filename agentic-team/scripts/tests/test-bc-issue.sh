@@ -490,18 +490,24 @@ QUOTE_OWNLINE='{"id":10,"body":"### Analysis — tim\n\n<!-- bc:live none -->\n\
 QUOTE_BARE='{"id":10,"body":"Quoting it: <!-- bc:live none --> in prose."}'
 REAL_DECL='{"id":11,"body":"### Live\n\nWalk to the cafe.\n\n<!-- bc:live visible -->"}'
 VIS_CAFE='{"live":"visible","where":"Walk to the cafe."}'
-quote_cases() { # <variant> <quoting-comment-json>
-  local v="$1" Q="$2"
-  check_out "live: visible when the $v quoting comment comes before the real one" 0 "$VIS_CAFE" \
-    run "$(live_fake "[$Q,$REAL_DECL]")" "" live 7
-  check_out "live: visible when the $v quoting comment comes after the real one" 0 "$VIS_CAFE" \
-    run "$(live_fake "[$REAL_DECL,$Q]")" "" live 7
-  check_out "live: a $v quoting comment alone reads undeclared" 0 '{"live":"undeclared"}' \
-    run "$(live_fake "[$Q]")" "" live 7
+quote_cases() { # <quoting-comment-json> <label-before> <label-after> <label-alone>
+  local Q="$1"
+  check_out "$2" 0 "$VIS_CAFE" run "$(live_fake "[$Q,$REAL_DECL]")" "" live 7
+  check_out "$3" 0 "$VIS_CAFE" run "$(live_fake "[$REAL_DECL,$Q]")" "" live 7
+  check_out "$4" 0 '{"live":"undeclared"}' run "$(live_fake "[$Q]")" "" live 7
 }
-quote_cases "inline" "$QUOTE_INLINE"
-quote_cases "own-line-beside-other-markers" "$QUOTE_OWNLINE"
-quote_cases "bare" "$QUOTE_BARE"
+quote_cases "$QUOTE_INLINE" \
+  "live: visible when the inline quoting comment comes before the real one" \
+  "live: visible when the inline quoting comment comes after the real one" \
+  "live: an inline quoting comment alone reads undeclared"
+quote_cases "$QUOTE_OWNLINE" \
+  "live: visible when the own-line-beside-other-markers quoting comment comes before the real one" \
+  "live: visible when the own-line-beside-other-markers quoting comment comes after the real one" \
+  "live: an own-line-beside-other-markers quoting comment alone reads undeclared"
+quote_cases "$QUOTE_BARE" \
+  "live: visible when the bare quoting comment comes before the real one" \
+  "live: visible when the bare quoting comment comes after the real one" \
+  "live: a bare quoting comment alone reads undeclared"
 FAKE_QD="$(live_fake "[$QUOTE_INLINE,$REAL_DECL]")"
 printf 'Walk to the cafe.\n' > "$FAKE_QD/where.txt"
 check "declare-live past a quoting comment exits 0" 0 run "$FAKE_QD" "" declare-live 7 visible "$FAKE_QD/where.txt"
