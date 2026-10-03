@@ -39,6 +39,7 @@ import RestoreModuleOwnerReducer from "../restore_module_owner_reducer";
 import RestoreNodeKindReducer from "../restore_node_kind_reducer";
 import RestoreOidcIssuerReducer from "../restore_oidc_issuer_reducer";
 import RestorePlacedObjectReducer from "../restore_placed_object_reducer";
+import RestorePlayerPositionReducer from "../restore_player_position_reducer";
 import RestoreProvisionReducer from "../restore_provision_reducer";
 import RestoreReasonCodeReducer from "../restore_reason_code_reducer";
 import RestoreReducerClassCounterReducer from "../restore_reducer_class_counter_reducer";
@@ -51,6 +52,7 @@ import RestoreTableSampleReducer from "../restore_table_sample_reducer";
 import RestoreUnitReducer from "../restore_unit_reducer";
 import RestoreWorldClockReducer from "../restore_world_clock_reducer";
 import SendPingReducer from "../send_ping_reducer";
+import SetPlayerPositionReducer from "../set_player_position_reducer";
 
 export type AcceptOidcIssuerParams = __Infer<typeof AcceptOidcIssuerReducer>;
 export type BeginLinkParams = __Infer<typeof BeginLinkReducer>;
@@ -85,6 +87,7 @@ export type RestoreModuleOwnerParams = __Infer<typeof RestoreModuleOwnerReducer>
 export type RestoreNodeKindParams = __Infer<typeof RestoreNodeKindReducer>;
 export type RestoreOidcIssuerParams = __Infer<typeof RestoreOidcIssuerReducer>;
 export type RestorePlacedObjectParams = __Infer<typeof RestorePlacedObjectReducer>;
+export type RestorePlayerPositionParams = __Infer<typeof RestorePlayerPositionReducer>;
 export type RestoreProvisionParams = __Infer<typeof RestoreProvisionReducer>;
 export type RestoreReasonCodeParams = __Infer<typeof RestoreReasonCodeReducer>;
 export type RestoreReducerClassCounterParams = __Infer<typeof RestoreReducerClassCounterReducer>;
@@ -97,4 +100,5 @@ export type RestoreTableSampleParams = __Infer<typeof RestoreTableSampleReducer>
 export type RestoreUnitParams = __Infer<typeof RestoreUnitReducer>;
 export type RestoreWorldClockParams = __Infer<typeof RestoreWorldClockReducer>;
 export type SendPingParams = __Infer<typeof SendPingReducer>;
+export type SetPlayerPositionParams = __Infer<typeof SetPlayerPositionReducer>;
 

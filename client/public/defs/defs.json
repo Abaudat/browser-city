@@ -1,7 +1,8 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "c5463e5399ce3e8f",
+  "defs_version": "6e80ac85b50e447f",
   "collider_subcells_per_cell": 16,
+  "position_units_per_cell": 256,
   "interact_at_max_reach_cells": 2,
   "max_footprint_cells": 8,
   "min_floor": -1,
@@ -240,6 +241,8 @@
     { "key": "movement.player_body_height_subcells", "max": 16, "min": 1, "value": 4 },
     { "key": "movement.player_body_width_subcells", "max": 16, "min": 1, "value": 8 },
     { "key": "movement.walk_speed_millicells_per_s", "max": 20000, "min": 100, "value": 2200 },
+    { "key": "net.player_interpolation_delay_ms", "max": 1000, "min": 100, "value": 250 },
+    { "key": "net.player_position_hz", "max": 20, "min": 1, "value": 10 },
     { "key": "render.highlight_alpha", "max": 100, "min": 1, "value": 50 },
     { "key": "render.storey_height_px", "max": 256, "min": 1, "value": 48 },
     { "key": "render.tile_size_px", "max": 64, "min": 1, "value": 16 },

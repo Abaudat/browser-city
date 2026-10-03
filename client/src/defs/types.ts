@@ -263,6 +263,9 @@ export interface Defs {
    * declared in (story 1.8) -- generated once by `tools/defs-build` into
    * both artefacts, never a client-side literal. */
   readonly colliderSubcellsPerCell: number;
+  /** Units per cell of a position on the wire (story 4.4) -- generated
+   * once by `tools/defs-build`, never a client-side literal. */
+  readonly positionUnitsPerCell: number;
   /** How far beyond its own footprint an `interactAt` rect may reach, in
    * whole cells (story 1.9) -- generated once by `tools/defs-build` into
    * both artefacts, never a client-side literal. */

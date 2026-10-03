@@ -41,6 +41,14 @@ impl<T> Located<T> {
 /// literal 16 anywhere else in this crate or a caller is a defect.
 pub const COLLIDER_SUBCELLS_PER_CELL: i64 = 16;
 
+/// Units per cell of a position on the wire (`player_position`'s
+/// `frac_x`/`frac_y`, a `u8`): a position is its cell plus a fraction of
+/// the cell in 1/256. A multiple of [`COLLIDER_SUBCELLS_PER_CELL`], so
+/// every collider face is exact. Declared once, here, and emitted into both
+/// generated artefacts by `emit.rs`.
+pub const POSITION_UNITS_PER_CELL: i64 = 256;
+const _: () = assert!(POSITION_UNITS_PER_CELL % COLLIDER_SUBCELLS_PER_CELL == 0);
+
 /// FR1: real milliseconds per in-city minute (60 real minutes = one day).
 /// The only hand-typed copy; emitted into both generated artefacts, read by
 /// `sim::time` and the client's `time/city-time.ts`.

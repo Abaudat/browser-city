@@ -10,7 +10,7 @@ use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
     COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, INTERACT_AT_MAX_REACH_CELLS, MAX_DENOMINATIONS,
-    MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, MIN_FLOOR,
+    MAX_FACE_VALUE, MAX_FLOOR, POSITION_UNITS_PER_CELL, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, MIN_FLOOR,
     NeighbourTermDef, REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode,
     RawDirection, RoleDef, RuleKindDef, SpriteRect,
 };
@@ -64,6 +64,13 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 
     out.push_str(&format!(
         "/// Sub-cells per cell, the fixed unit a `collider` rect is declared in.\npub const COLLIDER_SUBCELLS_PER_CELL: i32 = {COLLIDER_SUBCELLS_PER_CELL};\n\n"
+    ));
+
+    out.push_str(&format!(
+        "/// Units per cell of a position on the wire (`player_position`'s fraction columns).
+pub const POSITION_UNITS_PER_CELL: i32 = {POSITION_UNITS_PER_CELL};
+
+"
     ));
 
     out.push_str(&format!(
@@ -651,6 +658,10 @@ pub fn emit_json(
     ));
     out.push_str(&format!(
         "  \"collider_subcells_per_cell\": {COLLIDER_SUBCELLS_PER_CELL},\n"
+    ));
+    out.push_str(&format!(
+        "  \"position_units_per_cell\": {POSITION_UNITS_PER_CELL},
+"
     ));
     out.push_str(&format!(
         "  \"interact_at_max_reach_cells\": {INTERACT_AT_MAX_REACH_CELLS},\n"

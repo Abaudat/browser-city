@@ -200,14 +200,23 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 3_840_000,
         kind: BoundKind::Engineering,
     },
-    // Story 4.3: `character` 100,000 + `citizen` 20,000 (one location row
-    // per actor); `bounds/tests/actor_location_shape.rs` holds it to that
-    // sum. Rewritten only on a chunk or floor change, never per step.
+    // Story 4.3: the citizens' (one location row per citizen; a character
+    // carries its own chunk on `player_position`); `bounds/tests/
+    // actor_location_shape.rs` holds it to the sum of the actor tables. Rewritten only on a chunk or floor change, never per step.
     TableBound {
         accessor: "actor_location",
-        max_rows: 120_000,
+        max_rows: 20_000,
         expected_rows: 5_000,
-        alert_rows: 90_000,
+        alert_rows: 15_000,
+        kind: BoundKind::Engineering,
+    },
+    // Story 4.4: one row per character (`character`'s ceiling);
+    // `bounds/tests/player_position_shape.rs` holds it equal.
+    TableBound {
+        accessor: "player_position",
+        max_rows: 100_000,
+        expected_rows: 5_000,
+        alert_rows: 75_000,
         kind: BoundKind::Engineering,
     },
     TableBound {

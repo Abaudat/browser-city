@@ -22,6 +22,7 @@ pub mod identity;
 #[rustfmt::skip]
 pub mod generated;
 pub mod item_instance;
+pub mod player_position;
 pub mod reducer_classes;
 pub mod rng;
 pub mod routing;

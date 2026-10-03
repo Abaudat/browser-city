@@ -12,8 +12,11 @@
 pub enum ReducerClass {
     /// Every cadence fire.
     Scheduled,
-    /// Anything a client identity may call.
+    /// Anything else a client identity may call.
     Player,
+    /// A client's position write: the one term that scales with
+    /// concurrency.
+    Position,
     /// Owner-only and dev-only: publish, restore, time control.
     Operator,
     /// `init` (never counted: it runs before the counter is seeded) and
@@ -22,9 +25,10 @@ pub enum ReducerClass {
 }
 
 /// Every class, in the order the sampler writes them.
-pub const ALL_CLASSES: [ReducerClass; 4] = [
+pub const ALL_CLASSES: [ReducerClass; 5] = [
     ReducerClass::Scheduled,
     ReducerClass::Player,
+    ReducerClass::Position,
     ReducerClass::Operator,
     ReducerClass::Lifecycle,
 ];
@@ -38,6 +42,7 @@ impl ReducerClass {
         match self {
             ReducerClass::Scheduled => "scheduled",
             ReducerClass::Player => "player",
+            ReducerClass::Position => "position",
             ReducerClass::Operator => "operator",
             ReducerClass::Lifecycle => "lifecycle",
         }
@@ -59,6 +64,7 @@ pub const REDUCER_CLASSES: &[(&str, ReducerClass)] = &[
     ("create_character", ReducerClass::Player),
     ("begin_link", ReducerClass::Player),
     ("complete_link", ReducerClass::Player),
+    ("set_player_position", ReducerClass::Position),
     ("accept_oidc_issuer", ReducerClass::Operator),
     ("finish_publish", ReducerClass::Operator),
     ("begin_restore", ReducerClass::Operator),
@@ -93,6 +99,7 @@ pub const REDUCER_CLASSES: &[(&str, ReducerClass)] = &[
     ("restore_holder_kind", ReducerClass::Operator),
     ("restore_actor_kind", ReducerClass::Operator),
     ("restore_actor_location", ReducerClass::Operator),
+    ("restore_player_position", ReducerClass::Operator),
     ("restore_business", ReducerClass::Operator),
     ("restore_stock", ReducerClass::Operator),
     ("restore_item_instance", ReducerClass::Operator),
@@ -136,7 +143,7 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), ALL_CLASSES.len());
-        assert_eq!(CLASS_COUNT, 4);
+        assert_eq!(CLASS_COUNT, 5);
     }
 
     #[test]
@@ -154,6 +161,10 @@ mod tests {
         assert_eq!(class_of("sample_metrics"), Some(ReducerClass::Scheduled));
         assert_eq!(class_of("send_ping"), Some(ReducerClass::Player));
         assert_eq!(class_of("sync_clock"), Some(ReducerClass::Player));
+        assert_eq!(
+            class_of("set_player_position"),
+            Some(ReducerClass::Position)
+        );
         assert_eq!(class_of("finish_publish"), Some(ReducerClass::Operator));
         assert_eq!(class_of("restore_citizen"), Some(ReducerClass::Operator));
         assert_eq!(class_of("init"), Some(ReducerClass::Lifecycle));

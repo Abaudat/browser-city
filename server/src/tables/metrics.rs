@@ -41,6 +41,7 @@ use super::district::district;
 use super::identity::{character, character_identity, link_request, oidc_issuer};
 use super::item_instance::{item_held, item_instance, item_placed};
 use super::ops::module_owner;
+use super::player_position::player_position;
 use super::restore::restore_state;
 use super::schedules::{
     budget_review_schedule, cadence_liveness, citizen_transition_schedule, economy_schedule,
@@ -243,6 +244,7 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(holder_kind);
     sample!(actor_kind);
     sample!(actor_location);
+    sample!(player_position);
     sample!(business);
     sample!(stock);
     sample!(container_kind);
