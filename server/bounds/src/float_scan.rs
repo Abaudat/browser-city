@@ -73,16 +73,15 @@ fn walk(stream: TokenStream, found: &mut Vec<(usize, String)>) {
                     found.push((l.span().start().line, text));
                 }
             }
-            TokenTree::Punct(p) => {
-                if p.as_char() == '#' {
-                    if let Some(TokenTree::Group(g)) = trees.get(n + 1) {
-                        let first = g.stream().into_iter().next();
-                        if matches!(first, Some(TokenTree::Ident(i)) if i == "path") {
-                            found.push((p.span().start().line, "#[path]".to_string()));
-                        }
+            TokenTree::Punct(p) if p.as_char() == '#' => {
+                if let Some(TokenTree::Group(g)) = trees.get(n + 1) {
+                    let first = g.stream().into_iter().next();
+                    if matches!(first, Some(TokenTree::Ident(i)) if i == "path") {
+                        found.push((p.span().start().line, "#[path]".to_string()));
                     }
                 }
             }
+            TokenTree::Punct(_) => {}
         }
     }
 }
