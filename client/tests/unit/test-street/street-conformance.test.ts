@@ -45,6 +45,8 @@ import {
   STAIRS_ENTRY_DIRECTION,
   STAIRS_X,
   STAIRS_Y,
+  STAIRWELL_BOTTOM_RAILING_DEF_ID,
+  STAIRWELL_TOP_RAILING_DEF_ID,
   STREET_BOUNDARY,
   STREET_BUILDING_AREAS,
   STREET_EXIT_X,
@@ -1450,6 +1452,32 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
         `${key} matches the street stairwell art at ${best.fraction}${best.mirrored ? " mirrored" : ""}`,
       ).toBeLessThan(RETREAT_MATCH_FRACTION);
     }
+  });
+
+  // Story 15.13 (FR123): an upright prop owns every pixel it draws. The
+  // railing sheet is the stairwell with the treads removed; each of its
+  // opaque pixels must lie inside the sprite rect of the railing that
+  // stands on that row (rows < 32 top, rows >= 32 bottom), so none falls
+  // into a flat-pass sprite, which never draws over a player.
+  it("every opaque pixel of the railing art lies inside the sprite rect of the railing that owns its row", () => {
+    const top = objectDef(STAIRWELL_TOP_RAILING_DEF_ID).sprite;
+    const bottom = objectDef(STAIRWELL_BOTTOM_RAILING_DEF_ID).sprite;
+    const railingSheet = top.sheet.replace("Stairs_Complete_2", "Stairs_Railing_1");
+    const art = sheetOf(railingSheet);
+    const inside = (r: typeof top, x: number, y: number) =>
+      x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+    const outside: string[] = [];
+    for (let y = 0; y < art.height; y++) {
+      for (let x = 0; x < art.width; x++) {
+        if ((art.data[(y * art.width + x) * 4 + 3] ?? 0) === 0) continue;
+        const owner = y >= 32 ? bottom : top;
+        if (!inside(owner, x, y)) outside.push(`(${x},${y})`);
+      }
+    }
+    expect(
+      outside,
+      `opaque railing pixels outside their owner's rect: ${outside.slice(0, 12)}`,
+    ).toEqual([]);
   });
 
   it("the retreat matcher fires: the street's own tread sprite matches unflipped, and Stairs_Complete_4's tread row matches mirrored", () => {
