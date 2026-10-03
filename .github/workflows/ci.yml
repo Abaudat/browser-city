@@ -600,6 +600,8 @@ jobs:
         run: bash ../scripts/ci/check-visual-baseline-specs.sh
       - name: story 4.3 FR136, subscriptions are typed, per-chunk, and only issued from net/
         run: bash ../scripts/ci/check-subscription-shape.sh
+      - name: scripted e2e walks go through one helper, with one release-lag bound
+        run: bash ../scripts/ci/check-one-walk-helper.sh
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: client/.nvmrc
@@ -866,6 +868,18 @@ jobs:
           path: client/test-results/story-1.13-perf
           if-no-files-found: warn
           retention-days: 7
+      # Every walk's record, from the functional and perf runs alike. Written
+      # outside `test-results`, which each `playwright test` clears.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: walk-records-${{ github.run_attempt }}
+          path: client/walk-records
+          if-no-files-found: error
+          retention-days: 7
+      - name: worst overshoot per helper and segment
+        if: always()
+        run: node scripts/ci/walk-records-summary.mjs client/walk-records/walks.jsonl >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:

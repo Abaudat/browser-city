@@ -21,6 +21,7 @@ client/dist-deploy-smoke/
 client/.vite/
 client/playwright-report/
 client/test-results/
+client/walk-records/
 client/coverage/
 
 # Screenshots taken for a PR description (bc-pr.sh attach) -- belong in

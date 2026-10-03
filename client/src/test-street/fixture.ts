@@ -34,6 +34,7 @@
 import type { PlacedObject } from "../net/bindings/types";
 import { layerCodeByName } from "../render/layer-table";
 import type { ColliderSource } from "../world/collision-grid";
+import { MAX_DELTA_MS } from "../world/movement";
 import { cellOf, type OwnershipArea } from "../world/ownership";
 import type { TransitionSpec } from "../world/transitions";
 
@@ -1272,6 +1273,15 @@ export interface StreetWalkSegment {
   readonly until: StreetWalkUntil;
 }
 
+/** The most a scripted walk may rest past its release condition: the tick
+ * that crossed it plus `releaseLagSteps` more, each at the resolver's own
+ * delta clamp. The e2e walk helper fails any axis-threshold segment that
+ * rests further past its threshold, and the unit feasibility tests
+ * simulate every walked route at this lag. Measured on the runner (run
+ * 37139923845, attempts 1 to 3, 424 walks): the worst rest past a threshold
+ * was 0.881 clamped steps, and no frame moved after a release. */
+export const RELEASE_LAG = { stepMs: MAX_DELTA_MS, releaseLagSteps: 1 } as const;
+
 /** Whether a held key's own release condition is met, for a walker at
  * `(x, y)` on `floor`. The one rule both the simulated and the real walk
  * use. */
@@ -1379,7 +1389,7 @@ function shopToPastTheLamppost(inputs: StreetWalkInputs): readonly StreetWalkSeg
  *
  * Every release is a collider rest, a cell arrival, a floor, or a
  * threshold whose next segment tolerates the crossing tick plus one more
- * at the resolver's own delta clamp (the e2e walkers release in the page).
+ * at the resolver's own delta clamp.
  */
 export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
   return [
@@ -1465,7 +1475,7 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
  * face to the east tread (`west-along-the-near-railing`): the feet are off
  * the anchor's row there, so however far the release overshoots the body
  * ends against the west boundary and no transition can fire. Where that
- * walk really ends is decided by release lag; the rest in `y` is not. */
+ * walk ends in `x` depends on the overshoot; the rest in `y` does not. */
 export function streetNearRailingPressRoute(
   inputs: StreetWalkInputs,
 ): readonly StreetWalkSegment[] {
@@ -1569,13 +1579,9 @@ export function streetBollardRoute(
  * [`streetWalkRoute`]'s own last segment leaves the walker in, so laps
  * chain with nothing to reset between them.
  *
- * A held key is released over a round trip to the page, so how far past
- * its own threshold a walker travels is a property of the machine, not
- * of the route -- every segment ends either against a real collider or
- * a floor transition, immune to that (walking further into a wall
- * changes nothing, and a transition fires on entering a whole cell), so
- * a lap that only uses those is the same lap on a fast machine and a
- * slow one.
+ * Every segment ends either against a real collider or a floor
+ * transition, immune to overshoot (walking further into a wall changes
+ * nothing, and a transition fires on entering a whole cell).
  */
 export function streetBridgeLapRoute(): readonly StreetWalkSegment[] {
   return [

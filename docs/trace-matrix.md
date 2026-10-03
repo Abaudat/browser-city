@@ -892,9 +892,22 @@ by exact faces, and its walk names any release that overshoots.
 | --- | --- | --- |
 | The player rests exactly on the bollard's west and east faces, walking into each from open pavement | covered | `client/tests/unit/test-street/street-conformance.test.ts` -- `rests on the post's own west face, exactly, walking east into it from open pavement`, `rests on the post's own east face, exactly, walking west into it from open pavement` |
 | The browser test asserts the game's own rest state exactly on all three faces, then the drawn sprite against the drawn face within one pixel | covered | `client/tests/e2e/test-street.spec.ts` -- `the bollard west of the shopfront stops the player where it is drawn, from both sides (AC1, AC4)` |
-| `walkSegment` arms its release watcher before the key goes down and fails, naming the segment and the overshoot, when a release lands more than one clamped tick past its threshold | covered | `client/tests/e2e/test-street.spec.ts` -- `the bollard west of the shopfront stops the player where it is drawn, from both sides (AC1, AC4)` |
+| The walk helper arms its release watcher before the key goes down and fails, naming the segment and the overshoot, when a walk rests further past its threshold than `RELEASE_LAG` allows | covered | `client/tests/e2e/walk-lag.spec.ts` -- `every 0.2-cell hop rests inside the release bound`; `client/tests/e2e/test-street.spec.ts` -- `the bollard west of the shopfront stops the player where it is drawn, from both sides (AC1, AC4)` |
 | `streetBollardRoute` rests on the post's exact south, west and east faces and keeps the body over the post before each push, with no and with one fully clamped tick of release lag | covered | `client/tests/unit/test-street/street-conformance.test.ts` -- `the bollard approach route (NFR50)` |
 | No segment of `streetBollardRoute` already holds its release condition at the previous segment's lagged rest | covered | `client/tests/unit/test-street/street-conformance.test.ts` -- `never starts a segment whose axis condition already holds, with a fully clamped tick of release lag` |
+
+## The scripted walk has one helper
+
+The e2e walks arm one in-page watcher before the key goes down, release in
+the page, and check the overshoot against one bound.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| The in-page watcher stops inside the release model for either order of scene and watcher frame and for the key landing 0 to N frames after arming, records a key seen after the release, and refuses a threshold that already holds | covered | `client/tests/unit/e2e-support/walk-watcher.test.ts` -- `the in-page walk watcher`, `a key seen after the release is recorded`, `an axis threshold already met at arming is refused`, `a condition never met releases the key and reports`, `a cell condition releases on arrival`, `a blur after the release is recorded`, `stamps where the awaiting call landed, relative to the keydown` |
+| The helper names the segment, threshold and distance of a walk that rests past `RELEASE_LAG` | covered | `client/tests/unit/e2e-support/walk-watcher.test.ts` -- `overshootViolation names the segment, the threshold and the distance` |
+| The helper fails a walk whose body moves on a frame after its own release or steps more than one clamp in a frame (floor-change frames excepted) | covered | `client/tests/unit/e2e-support/walk-watcher.test.ts` -- `a release one frame late is reported as a move after the keyup`, `two scene steps inside one watcher frame is a violation`, `a frame on which the floor changed is not counted as a step`, `the same jump with no floor change is counted` |
+| Every route a spec walks completes with no lag and at `RELEASE_LAG`, and no segment starts with its axis condition already holding | covered | `client/tests/unit/test-street/walked-routes.test.ts` -- `every walked route`, `the bin-reach route` |
+| A `keyup` is dispatched in the page only in `walk-watcher.ts` (and `boot-marks.spec.ts`), a walk call takes no inline segment literal, and `releaseLagSteps` is given a non-zero literal only in `fixture.ts` | covered | `scripts/ci/tests/test-check-one-walk-helper.sh` -- `a keyup dispatched in another spec`, `a keyup on the line after the constructor in another spec`, `a walk call with an inline segment literal`, `a literal lag in a unit test` |
 
 ## Chunks and interest management
 

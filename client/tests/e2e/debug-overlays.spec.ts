@@ -13,10 +13,10 @@
 import { expect, type Page, test } from "@playwright/test";
 import { DEBUG_OVERLAYS } from "../../src/debug/overlays";
 import type {} from "../../src/net/e2e-hooks";
-import { STAIRWELL_X0, streetSubwayApproachRoute } from "../../src/test-street/fixture";
+import { STAIRWELL_X0 } from "../../src/test-street/fixture";
 import {
+  railingFootRoute,
   streetMovementConfig,
-  streetWalkInputs,
   topRailingFoot,
 } from "../unit/test-street/street-world";
 import { canvasOf } from "./camera-test-support";
@@ -258,20 +258,7 @@ test("the player walking south rests on the top railing's foot (story 15.12)", a
   await waitForSceneReady(page);
 
   const foot = topRailingFoot();
-  const route = streetSubwayApproachRoute(streetWalkInputs());
-  const toEntrance = route.findIndex((segment) => segment.label === "east-to-the-subway-entrance");
-  for (const segment of route.slice(0, toEntrance + 1)) await walkRealSegment(page, segment);
-  // West along the pavement row to the railing's middle column, then south.
-  await walkRealSegment(page, {
-    label: "west-to-the-railing-middle",
-    key: "ArrowLeft",
-    until: { kind: "x-at-most", value: foot.rect.x0 + 1.5 },
-  });
-  await walkRealSegment(page, {
-    label: "south-onto-the-railing-foot",
-    key: "ArrowDown",
-    until: { kind: "y-at-least", value: foot.rect.y0 - 0.001 },
-  });
+  for (const segment of railingFootRoute()) await walkRealSegment(page, segment);
   // Slide west along the foot to the strip's end, where the body rests
   // against the ring: a position fixed by geometry, never by key timing,
   // so the picture is the same on every run.

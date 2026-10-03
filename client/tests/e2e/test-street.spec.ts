@@ -23,8 +23,8 @@
 // loaded shared runner), e.g.
 //   BC_CPU_THROTTLE=6 npx playwright test --project=chromium \
 //     tests/e2e/test-street.spec.ts -g bollard --repeat-each 10
-// `walkSegment` names the segment, the threshold and the overshoot when
-// a release lands more than one clamped tick past its threshold.
+// `walk-support.ts` fails a walk that rests further past its threshold
+// than `RELEASE_LAG` allows, naming the segment and the distance.
 //
 // It replaces `movement.spec.ts` and `render-order.spec.ts`: both walked
 // the same page to prove a subset of what the walk below proves, and a
@@ -94,14 +94,13 @@ import {
   STREET_PROPS,
   type StreetWalkKey,
   type StreetWalkSegment,
-  type StreetWalkUntil,
   streetBollardRoute,
   streetWalkRoute,
   TRASH_BIN_DEF_ID,
   WINDOW_DEF_ID,
 } from "../../src/test-street/fixture";
-import { MAX_DELTA_MS } from "../../src/world/movement";
 import {
+  binReachRoute,
   committedDefs,
   streetMovementConfig,
   streetObjectSources,
@@ -111,6 +110,7 @@ import {
 } from "../unit/test-street/street-world";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
 import { SCREENSHOT_OPTIONS } from "./screenshot-support";
+import { walkRealSegment, walkSyntheticSegment } from "./walk-support";
 
 // The whole walk is one test on purpose: it is one continuous journey,
 // and splitting it would re-boot and re-walk the scene per assertion.
@@ -324,68 +324,6 @@ function pixelDiffCoords(a: Buffer, b: Buffer): readonly { x: number; y: number 
   return coords;
 }
 
-/** Holds `segment.key` down, waits for its own release condition, and
- * releases it again -- entirely inside the page, the same synthetic-
- * `KeyboardEvent`/`requestAnimationFrame` idiom `street-perf.spec.ts`'s
- * own `walkSegment` uses (see that file's own doc comment for why: real
- * OS-level `page.keyboard.down`/`waitForFunction`/`page.keyboard.up` is
- * the more faithful choice for a functional spec, but this spec's own
- * mouse hovers immediately before each walked segment have shown the
- * same round-trip-latency unreliability that spec already worked around
- * -- an occasional real keydown arriving late enough to stall a
- * `waitForFunction` for the whole 30s budget). This spec's own real-input
- * proof already lives in "one walk down the test street" above; what FR173
- * needs here is a reliable way to get the player into and out of one
- * object's `interact_at`, not a second proof that OS-level input works. */
-async function walkSegmentSynthetic(page: Page, segment: StreetWalkSegment): Promise<void> {
-  const result = await page.evaluate(
-    ({ code, until, timeoutMs }) => {
-      return new Promise<{ met: boolean }>((resolve) => {
-        const met = (u: StreetWalkUntil): boolean => {
-          const position = window.__bc?.playerPosition;
-          if (!position) return false;
-          switch (u.kind) {
-            case "x-at-least":
-              return position.x >= u.value;
-            case "x-at-most":
-              return position.x <= u.value;
-            case "y-at-least":
-              return position.y >= u.value;
-            case "y-at-most":
-              return position.y <= u.value;
-            case "floor":
-              return window.__bc?.playerFloor === u.value;
-            case "cell":
-              return Math.floor(position.x) === u.x && Math.floor(position.y) === u.y;
-          }
-        };
-        const release = (ok: boolean) => {
-          window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
-          resolve({ met: ok });
-        };
-        const deadline = performance.now() + timeoutMs;
-        const tick = () => {
-          if (met(until)) {
-            release(true);
-            return;
-          }
-          if (performance.now() >= deadline) {
-            release(false);
-            return;
-          }
-          requestAnimationFrame(tick);
-        };
-        window.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true }));
-        requestAnimationFrame(tick);
-      });
-    },
-    { code: segment.key, until: segment.until, timeoutMs: 30_000 },
-  );
-  if (!result.met) {
-    throw new Error(`walkSegmentSynthetic: '${segment.label}' never met its release condition`);
-  }
-}
-
 function rankOf(layer: string): number {
   const code = CODE_BY_NAME[layer];
   if (code === undefined) throw new Error(`unknown street layer ${layer}`);
@@ -503,140 +441,10 @@ async function waitForSceneReady(page: Page): Promise<void> {
   });
 }
 
-/** Holds one key until the page itself reports the segment's own release
- * condition -- never a fixed wait. The condition is the street module's
- * own data; only the switch over its shape lives here, because it has to
- * run inside the page.
- *
- * The key goes down through real, OS-level `page.keyboard` input, but it
- * is released *inside* the page, on the animation frame the condition is
- * first seen true (a `keyup` with the same `code` -- `input/keyboard.ts`
- * binds `.code` and never checks `isTrusted`). The real `page.keyboard.up`
- * after it only resets Playwright's own key state. Releasing from Node
- * instead costs a round trip, and a slow runner's round trip carries the
- * walker past a waypoint the next segment depends on (story 15.2 cycle
- * 2: `east-to-the-lamppost` overshot the lamppost's own collider on CI
- * and the south leg walked straight by). An in-page release overshoots
- * by at most one more tick, and `street-conformance.test.ts` pins that
- * margin at the resolver's own delta clamp. */
-async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
-  // One clamped tick, derived from the resolver's own constants.
-  const maxStepCells = streetMovementConfig().walkSpeedCellsPerMs * MAX_DELTA_MS;
-  // The watcher is armed *before* the key goes down: every frame between
-  // the real keydown landing and the first condition check would
-  // otherwise move the walker with nothing watching. A condition that
-  // already holds at arming is a route bug, not a pass.
-  const armed = await page.evaluate(
-    ({ until, code, timeoutMs, maxStep, subcells }) => {
-      type Result = { ok: boolean; error?: string };
-      const met = (u: StreetWalkUntil): boolean => {
-        const position = window.__bc?.playerPosition;
-        const floor = window.__bc?.playerFloor;
-        if (!position || floor === undefined) return false;
-        switch (u.kind) {
-          case "x-at-least":
-            return position.x >= u.value;
-          case "x-at-most":
-            return position.x <= u.value;
-          case "y-at-least":
-            return position.y >= u.value;
-          case "y-at-most":
-            return position.y <= u.value;
-          case "floor":
-            return floor === u.value;
-          case "cell":
-            return Math.floor(position.x) === u.x && Math.floor(position.y) === u.y;
-        }
-      };
-      if (met(until)) return false;
-      // Distance travelled past the threshold, in cells (positive = past).
-      const pastBy = (u: StreetWalkUntil): number | null => {
-        const position = window.__bc?.playerPosition;
-        if (!position) return null;
-        switch (u.kind) {
-          case "x-at-least":
-            return position.x - u.value;
-          case "x-at-most":
-            return u.value - position.x;
-          case "y-at-least":
-            return position.y - u.value;
-          case "y-at-most":
-            return u.value - position.y;
-          default:
-            return null;
-        }
-      };
-      (window as unknown as { __bcWalk: Promise<Result> }).__bcWalk = new Promise<Result>(
-        (resolve) => {
-          const deadline = performance.now() + timeoutMs;
-          const tick = (): void => {
-            if (met(until)) {
-              window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
-              // Let the release take effect, then read how far past the
-              // threshold the walker really came to rest.
-              requestAnimationFrame(() =>
-                requestAnimationFrame(() => {
-                  const past = pastBy(until);
-                  const sub = 1 / subcells;
-                  if (past !== null && past > maxStep + 1e-9) {
-                    resolve({
-                      ok: false,
-                      error: `overshot by ${(past / sub).toFixed(2)} sub-cells; one clamped tick is ${(maxStep / sub).toFixed(2)}, position ${JSON.stringify(window.__bc?.playerPosition)}`,
-                    });
-                    return;
-                  }
-                  resolve({ ok: true });
-                }),
-              );
-              return;
-            }
-            if (performance.now() >= deadline) {
-              window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
-              resolve({ ok: false, error: "never met" });
-              return;
-            }
-            requestAnimationFrame(tick);
-          };
-          requestAnimationFrame(tick);
-        },
-      );
-      return true;
-    },
-    {
-      until: segment.until,
-      code: segment.key,
-      timeoutMs: 30_000,
-      maxStep: maxStepCells,
-      subcells: streetMovementConfig().subcellsPerCell,
-    },
-  );
-  if (!armed) {
-    // A floor or cell target can already hold (the stairs already fired):
-    // nothing to walk. An axis threshold already met is a route bug.
-    if (segment.until.kind === "floor" || segment.until.kind === "cell") return;
-    throw new Error(
-      `walkSegment: '${segment.label}' already met ${JSON.stringify(segment.until)} before the key went down -- a route bug`,
-    );
-  }
-  await page.keyboard.down(segment.key);
-  try {
-    const result = await page.evaluate(
-      () => (window as unknown as { __bcWalk: Promise<{ ok: boolean; error?: string }> }).__bcWalk,
-    );
-    if (!result.ok) {
-      throw new Error(
-        `walkSegment: '${segment.label}' ${JSON.stringify(segment.until)}: ${result.error}`,
-      );
-    }
-  } finally {
-    await page.keyboard.up(segment.key);
-  }
-}
-
 /** FR137's latency guard, ported from the deleted `movement.spec.ts` onto
  * the walk's own first segment rather than run a second time (Quentin's
  * direction, cycle 1: it costs nothing extra -- the key is being pressed
- * either way). Holds `segment.key` exactly like [`walkSegment`], but
+ * either way). Holds `segment.key` exactly like [`walkRealSegment`], but
  * first installs an in-page `requestAnimationFrame` probe that counts
  * real animation frames from the browser's own `keydown` event (anchored
  * inside the page, on the event itself -- never on the `page.evaluate`
@@ -666,7 +474,7 @@ async function walkSegmentMeasuringLatency(
     requestAnimationFrame(tick);
   }, startY);
 
-  await walkSegment(page, segment);
+  await walkRealSegment(page, segment);
 
   return page.evaluate(
     () =>
@@ -959,10 +767,10 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // --- east to the lamppost's own column ----------------------------------
   // Story 2.13: the lamppost moved off the door's own column
   // (`LAMPPOST_CELL`'s own doc comment says why), so this leg is new.
-  await walkSegment(page, segment("east-to-the-lamppost"));
+  await walkRealSegment(page, segment("east-to-the-lamppost"));
 
   // --- part-way through the lamppost -------------------------------------
-  await walkSegment(page, segment("part-way-through-the-lamppost"));
+  await walkRealSegment(page, segment("part-way-through-the-lamppost"));
   const atLamppost = await playerState(page);
   // Collision and depth together: the avatar's feet are inside the prop's
   // own footprint cell, and outside its collider (the collider is smaller
@@ -999,10 +807,10 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   );
 
   // --- under the bridge ----------------------------------------------------
-  await walkSegment(page, segment("past-the-lamppost"));
-  await walkSegment(page, segment("east-along-the-crossing"));
-  await walkSegment(page, segment("on-the-underpass-row"));
-  await walkSegment(page, segment("under-the-bridge"));
+  await walkRealSegment(page, segment("past-the-lamppost"));
+  await walkRealSegment(page, segment("east-along-the-crossing"));
+  await walkRealSegment(page, segment("on-the-underpass-row"));
+  await walkRealSegment(page, segment("under-the-bridge"));
   const underTheBridge = await playerState(page);
   expect(underTheBridge.floor).toBe(PLAYER_START.floor);
   expect(Math.floor(underTheBridge.y)).toBe(BRIDGE_DECK_Y);
@@ -1099,10 +907,10 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // against spans the row's own full height, so an eastward step stays
   // swept against it until the walker clears the row (story 1.13, cycle
   // 3).
-  await walkSegment(page, segment("leaving-the-underpass"));
+  await walkRealSegment(page, segment("leaving-the-underpass"));
   // Past the deck's own east end, to the stairs that climb onto it.
-  await walkSegment(page, segment("east-of-the-bridge"));
-  await walkSegment(page, segment("on-the-bridge-deck"));
+  await walkRealSegment(page, segment("east-of-the-bridge"));
+  await walkRealSegment(page, segment("on-the-bridge-deck"));
   const onDeck = await playerState(page);
   expect(onDeck.floor).toBe(BRIDGE_FLOOR);
   expect(Math.floor(onDeck.x)).toBeGreaterThanOrEqual(BRIDGE_X0);
@@ -1117,7 +925,7 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   expect([...streetIds].some((id) => deckVisibility[id] !== "hidden")).toBe(true);
 
   // --- back down to the street -------------------------------------------
-  await walkSegment(page, segment("back-on-the-street"));
+  await walkRealSegment(page, segment("back-on-the-street"));
   const backOnTheStreet = await playerState(page);
   expect(backOnTheStreet.floor).toBe(PLAYER_START.floor);
   expect(await currentOrder(page)).toEqual(
@@ -1272,7 +1080,7 @@ test("the bollard west of the shopfront stops the player where it is drawn, from
     "into-the-east-face": { face: "east", key: "ArrowLeft" },
   };
   for (const segment of streetBollardRoute(streetWalkInputs(), config)) {
-    await walkSegment(page, segment);
+    await walkRealSegment(page, segment);
     const push = pushes[segment.label];
     if (push) {
       await holdAgainstThePost(push.key);
@@ -1315,31 +1123,10 @@ test("FR173's affordance mark is a real pixel change, confined to the hovered ob
   expect(pixelDiffCoords(baselineOutOfReach, hoveredOutOfReach)).toEqual([]);
 
   // --- walk into the bin's own `interact_at` skirt -------------------------
-  // Real keyboard input (`walkSegmentSynthetic`'s own doc comment says why
-  // synthetic, not `page.keyboard`, in this one spec). The first segment is
-  // `streetWalkRoute`'s own proven, committed one (out of the shopfront
-  // door, releasing on the real cell-arrival at `SHOPFRONT_EXIT_Y`) --
-  // reused rather than re-derived, since it is already proven
-  // collision-safe. Story 2.13:
-  // the bin now sits between the door and the lamppost's own new column
-  // (`LAMPPOST_CELL`'s own doc comment says why it moved), so the rest of
-  // the route's own lamppost/underpass detour is no longer on the way --
-  // this walk diverges straight from there: east under the bin's own
-  // column, then north back up into its `interact_at` skirt.
-  await hoverCell(page, away.x, away.y, away.floor); // mouse out of the way while walking
-  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 1)) {
-    await walkSegmentSynthetic(page, segment);
-  }
-  await walkSegmentSynthetic(page, {
-    label: "under-the-bin",
-    key: "ArrowRight",
-    until: { kind: "x-at-least", value: bin.x },
-  });
-  await walkSegmentSynthetic(page, {
-    label: "up-into-the-bins-reach",
-    key: "ArrowUp",
-    until: { kind: "y-at-most", value: bin.y + 1 },
-  });
+  // Out of the shopfront door through `binReachRoute`: it ends inside the
+  // bin's reach. The key is pressed synthetically in the page, so this
+  // spec's own mouse moves cannot delay it.
+  for (const segment of binReachRoute()) await walkSyntheticSegment(page, segment);
 
   // --- pair B: after the walk, the bin is in reach -------------------------
   // The camera/viewport story: the camera follows the player, so the
