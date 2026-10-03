@@ -63,3 +63,7 @@ group = "street"
 [[page_group]]
 theme = "room_builder"
 group = "street"
+
+[[page_group]]
+theme = "post_office"
+group = "street"

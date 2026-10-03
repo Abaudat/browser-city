@@ -7,8 +7,10 @@
 #   2. No `SELECT` literal under client/src outside the generated bindings
 #      (comment lines excepted): queries are built with the typed builder.
 #   3. The whole-table set is exactly the three global singletons --
-#      `tables.demoPing`, `tables.moduleVersion` and `tables.worldClock`,
-#      each `.build()` with no predicate. Any other table subscribed whole
+#      `tables.demoPing`, `tables.moduleVersion` and `tables.worldClock` --
+#      and the per-sender view `tables.myCharacter` (story 4.5: one row, the
+#      caller's own character, never spatial), each `.build()` with no
+#      predicate. Any other table subscribed whole
 #      fails; adding one to the allowlist below is a reviewed decision.
 #      Every other use of `tables` must be `tables.<name>.where(` on one
 #      line, so splitting, aliasing or destructuring a table is no way round.
@@ -20,7 +22,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SRC_DIR="${1:-"$REPO_ROOT/client/src"}"
 [ -d "$SRC_DIR" ] || { echo "check-subscription-shape: $SRC_DIR not found" >&2; exit 1; }
 
-ALLOWED_WHOLE_TABLES="demoPing moduleVersion worldClock"
+ALLOWED_WHOLE_TABLES="demoPing moduleVersion worldClock myCharacter"
 FAILED=0
 fail() { echo "check-subscription-shape: FAIL -- $1" >&2; FAILED=1; }
 
@@ -51,7 +53,7 @@ $BAD"
 #    (`const t = tables.placedObject`) or destructured never names a
 #    predicate on the same line, so it fails here.
 STRIPPED="$(printf '%s\n' "$LINES" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*import\b' | sed -E \
-  -e 's/tables\.(demoPing|moduleVersion|worldClock)\.build\(\)//g' \
+  -e 's/tables\.(demoPing|moduleVersion|worldClock|myCharacter)\.build\(\)//g' \
   -e 's/tables\.[A-Za-z0-9_]+\.where\(//g')"
 BAD="$(printf '%s\n' "$STRIPPED" | grep -E '\btables\b' || true)"
 [ -z "$BAD" ] || fail "the generated 'tables' object is used other than as tables.<singleton>.build() or tables.<name>.where( on one line (a whole-table subscription, or a way round the guard):
@@ -63,8 +65,12 @@ for t in $USED; do
     *) fail "table '$t' is subscribed whole (no predicate); only $ALLOWED_WHOLE_TABLES may be" ;;
   esac
 done
+# A here-string, never `printf | grep -q`: under pipefail a `grep -q` that quits
+# at its first match can SIGPIPE the still-writing `printf` and report a
+# false "no match" on a large enough input.
+CONNECTION_LINES="$(printf '%s\n' "$LINES" | grep -E "^net/connection\.ts:" || true)"
 for t in $ALLOWED_WHOLE_TABLES; do
-  printf '%s\n' "$LINES" | grep -E "^net/connection\.ts:" | grep -qF "tables.$t.build()" \
+  grep -qF "tables.$t.build()" <<<"$CONNECTION_LINES" \
     || fail "net/connection.ts no longer subscribes the global singleton '$t'"
 done
 

@@ -74,3 +74,9 @@ key = "entrance"
 [[tag]]
 id = 34
 key = "upright"
+
+# Story 4.5 (FR143): marks the in-world object whose use starts the offer to
+# link an account -- found by this tag, never by key.
+[[tag]]
+id = 35
+key = "registry_post"

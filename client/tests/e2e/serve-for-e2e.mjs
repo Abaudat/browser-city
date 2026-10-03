@@ -6,9 +6,25 @@
 // vars never reach this command's child process.
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { REPO_ROOT, startSpacetime, stopSpacetime } from "./spacetime-harness.mjs";
+import { startLocalOidcIssuer } from "./local-oidc-issuer.mjs";
+import {
+  callReducer,
+  findFreePort,
+  REPO_ROOT,
+  recordHandleExtra,
+  startSpacetime,
+  stopSpacetime,
+} from "./spacetime-harness.mjs";
 
-const handle = await startSpacetime();
+const OIDC_CLIENT_ID = "bc-e2e";
+
+const handle = await startSpacetime({ timeControl: true });
+
+// Story 4.5: a disposable local OIDC issuer, registered with the module the
+// way `deploy.yml` registers the real one, and handed to the client build.
+const oidc = await startLocalOidcIssuer({ port: await findFreePort(), clientId: OIDC_CLIENT_ID });
+callReducer(handle, "accept_oidc_issuer", oidc.issuer, OIDC_CLIENT_ID);
+recordHandleExtra(handle, { oidcIssuer: oidc.issuer, oidcClientId: OIDC_CLIENT_ID });
 
 const viteBin = path.join(REPO_ROOT, "client", "node_modules", ".bin", "vite");
 // A single command string, not an args array, so `shell: true` (needed on
@@ -22,6 +38,8 @@ const vite = spawn(`"${viteBin}" --port 5173 --strictPort`, {
     ...process.env,
     VITE_SPACETIME_URI: handle.serverUrl.replace(/^http/, "ws"),
     VITE_SPACETIME_DB: handle.dbName,
+    VITE_OIDC_AUTHORITY: oidc.issuer,
+    VITE_OIDC_CLIENT_ID: OIDC_CLIENT_ID,
   },
 });
 
@@ -30,6 +48,7 @@ function teardown() {
   if (tornDown) return;
   tornDown = true;
   stopSpacetime(handle);
+  oidc.close();
   vite.kill();
 }
 

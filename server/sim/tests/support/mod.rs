@@ -128,3 +128,7 @@ pub fn rule(key: &str) -> RuleDef {
         .find(|r| r.key == key)
         .unwrap_or_else(|| panic!("defs/rules/*.toml must still declare rule '{key}'"))
 }
+
+// Story 4.5: the identity tables' model, used by `invariants.rs`.
+#[allow(dead_code)]
+pub mod identity_model;

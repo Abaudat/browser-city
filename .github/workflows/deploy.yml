@@ -370,6 +370,13 @@ jobs:
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
         run: spacetime call --server maincloud --no-config -y "$BACKUP_DATABASE" finish_publish
 
+      - name: accept the OIDC provider (story 4.5) -- idempotent; unset repository variables mean linking stays off
+        env:
+          BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
+          OIDC_AUTHORITY: ${{ vars.OIDC_AUTHORITY }}
+          OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}
+        run: if [ -n "$OIDC_AUTHORITY" ] && [ -n "$OIDC_CLIENT_ID" ]; then spacetime call --server maincloud --no-config -y "$BACKUP_DATABASE" accept_oidc_issuer "$OIDC_AUTHORITY" "$OIDC_CLIENT_ID"; fi
+
       - name: assert the live world is consistent -- a deploy is red the instant it is not
         env:
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
@@ -414,6 +421,8 @@ jobs:
         env:
           VITE_SPACETIME_URI: ${{ env.MAINCLOUD_WS_URI }}
           VITE_SPACETIME_DB: ${{ vars.BACKUP_DATABASE }}
+          VITE_OIDC_AUTHORITY: ${{ vars.OIDC_AUTHORITY }}
+          VITE_OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}
         run: npx vite build --base="$BASE_PATH"
 
       - name: stamp the build with the exact commit deployed -- the smoke job's own propagation check

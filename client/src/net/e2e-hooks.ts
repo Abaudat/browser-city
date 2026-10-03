@@ -14,6 +14,16 @@ declare global {
   interface Window {
     __bc?: {
       pings: PingObservation[];
+      /** Story 4.5: who this device is. Never the token. */
+      identity?: { identityHex: string; persisted: boolean };
+      /** Story 4.5: whether the link offer's carrier was placed this
+       * session, set once the scene is about to mount. */
+      linkOffer?: { placed: boolean };
+      createCharacter?: () => Promise<void>;
+      startLink?: () => Promise<void>;
+      /** Story 4.5: the character this identity reaches, once the
+       * `my_character` view delivers it. */
+      character?: { characterId: string; createdAtMicros: string; linked: boolean };
       renderOrder?: string[];
       playerPosition?: { x: number; y: number };
       /** Story 1.13: the floor the player is standing on right now --
@@ -356,6 +366,52 @@ export function recordWorldClockForE2e(epochMicros: bigint, kind: "insert" | "up
     inserts: prev.inserts + (kind === "insert" ? 1 : 0),
     updates: prev.updates + (kind === "update" ? 1 : 0),
   };
+  window.__bc = bucket;
+}
+
+/** Story 4.5: this device's identity (public) and the character it
+ * reaches, never the token -- the repository is public and Playwright
+ * reports are uploaded (`scripts/ci/check-identity-token-confined.sh`). */
+export function recordIdentityForE2e(identity: { identityHex: string; persisted: boolean }): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.identity = { identityHex: identity.identityHex, persisted: identity.persisted };
+  window.__bc = bucket;
+}
+
+export function recordCharacterForE2e(character: {
+  characterId: bigint;
+  createdAtMicros: bigint;
+  linked: boolean;
+}): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.character = {
+    characterId: character.characterId.toString(),
+    createdAtMicros: character.createdAtMicros.toString(),
+    linked: character.linked,
+  };
+  window.__bc = bucket;
+}
+
+export function recordLinkOfferForE2e(placed: boolean): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.linkOffer = { placed };
+  window.__bc = bucket;
+}
+
+/** Story 4.5: the acts a player will have in-world (naming a character in
+ * 4.6, the link offer's carrier), callable by a spec until they do. No
+ * argument accepts a token. */
+export function exposeIdentityActionsForE2e(actions: {
+  createCharacter: () => Promise<void>;
+  startLink: () => Promise<void>;
+}): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.createCharacter = actions.createCharacter;
+  bucket.startLink = actions.startLink;
   window.__bc = bucket;
 }
 

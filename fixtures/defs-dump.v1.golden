@@ -189,6 +189,8 @@ balance generation.streets.peripheral_pooled_min_ratio_percent value=150 min=100
 balance generation.streets.split_jitter_pct value=25 min=0 max=45
 balance generation.streets.street_width_cells value=8 min=2 max=64
 balance generation.streets.thin_strip_long_side_percent value=150 min=100 max=400
+balance identity.link_prompt_cooloff_days value=7 min=1 max=365
+balance identity.link_prompt_min_character_age_days value=1 min=0 max=365
 balance movement.player_body_height_subcells value=4 min=1 max=16
 balance movement.player_body_width_subcells value=8 min=1 max=16
 balance movement.walk_speed_millicells_per_s value=2200 min=100 max=20000
@@ -478,6 +480,7 @@ object lamppost id=4 name=Street Lamp layer=3 sprite=ModernTileset/modernexterio
 object park_bench id=2 name=Park Bench layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png:0,0,32,16 height=1 width=2 collider=0,5,32,12 interact_at=none window=false tags=[2,15]
 object platform_stair_flight id=16 name=Platform Stair Flight layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_3.png:0,13,32,32 height=2 width=2 collider=none interact_at=none window=false tags=[8,9,15]
 object platform_stair_railing id=17 name=Platform Stair Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Railing.png:0,0,48,16 height=1 width=3 collider=0,0,47,16 interact_at=none window=false tags=[8,15]
+object registry_post id=18 name=Registry Post layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/22_Post_Office_Singles_16x16/22_Post_Office_16x16_Black_Mailbox_1_Front.png:0,0,16,32 height=1 width=1 collider=4,7,14,15 interact_at=-4,-4,20,20 window=false tags=[15,35]
 object road_asphalt id=11 name=Road layer=0 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Asphalt_1_Variation_26.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[9,12]
 object shop_counter id=3 name=Shop Counter layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png:0,0,48,64 height=1 width=3 collider=1,0,46,15 interact_at=0,16,48,32 window=false tags=[3,15]
 object shop_window id=5 name=Shop Window layer=4 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Window_1_Middle_Modular.png:0,0,48,32 height=1 width=3 collider=0,0,48,16 interact_at=none window=true tags=[5,6,16]
@@ -724,6 +727,7 @@ tag market id=30 role=none
 tag municipal_service id=19 role=none
 tag office id=27 role=none
 tag pavement id=11 role=[0]
+tag registry_post id=35 role=none
 tag road id=12 role=[0]
 tag seating id=2 role=none
 tag shelter id=24 role=none

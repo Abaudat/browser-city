@@ -21,6 +21,7 @@ cited here by identifier.
 | CI / deploy                   | GitHub Actions is the only path to Maincloud; never a local `spacetime publish` |
 | Client                        | TypeScript + PixiJS v8, bundled by Vite                                                                  |
 | Client SDK                    | the `spacetimedb` npm package                                                                            |
+| Client OIDC                   | `oidc-client-ts` 3.5.0, pinned, a runtime dependency that exists only in the lazily imported `client/src/identity/link-flow.ts` chunk |
 | Client bindings               | `spacetime generate --lang typescript --out-dir client/src/net/bindings` — generated, never hand-written |
 | Client lint/format            | Biome                                                                                                    |
 | Client hosting                | GitHub Pages, deployed by CI on push to master                                                          |
@@ -140,7 +141,7 @@ docs/spikes/1.3-scheduled-reducer-timing.md.
 - The client subscribes to `world_clock` and estimates the server's clock from the `sync_clock` procedure (returns `ctx.timestamp`; its one write is the class call counter): on connect, every 5 real minutes and when the tab becomes visible. The estimate advances on `performance.now()`; nothing under `client/src/time/` reads `Date.now()`, and it imports no `net/`, `pixi.js` or DOM global.
 - `fixtures/city-clock-conformance.v2.json` (cases carry `speed`) pins `sim::time` and `client/src/time/city-time.ts` to each other.
 - The effective real microseconds per city minute are `REAL_MS_PER_CITY_MINUTE * 1000 / speed`. `sim::time::validate_speed` accepts only `1..=MAX_CLOCK_SPEED` (100) values that divide that exactly, so every grid point is an exact integer instant; `sim::time::reanchor` and `jumped_epoch` are the only clock arithmetic. Anything that interpolates on `real_ms_into_minute` divides by the effective minute, never the constant. The multiplier is for watching, not correctness: at high speed the catch-up rule skips ticks it cannot deliver, and `cadence_liveness.missed` is the meter.
-- FR163's `jump_clock(city_minutes)` and `set_clock_speed(speed)` exist only behind the `time-control` Cargo feature (never a default), open to any caller: that flavour is only ever published by `scripts/dev/publish-dev.sh` to a local instance, driven by `scripts/dev/clock.sh`; `deploy.yml` publishes `--module-path server` and never sees the feature. Every table and column is unconditional, so both flavours share one schema. A speed change re-anchors the epoch so the city minute never moves; a jump is forward only, at most `MAX_JUMP_CITY_MINUTES` (8 city days) and `MAX_JUMP_TICKS` replayed ticks, in one transaction, so any refusal changes nothing.
+- FR163's `jump_clock(city_minutes)` and `set_clock_speed(speed)` exist only behind the `time-control` Cargo feature (never a default), open to any caller: that flavour is only ever published by `scripts/dev/publish-dev.sh` to a local instance (by hand, and by the functional e2e server `serve-for-e2e.mjs`, the one other caller; the deploy-smoke rehearsal stays on the production flavour), driven by `scripts/dev/clock.sh`; `deploy.yml` publishes `--module-path server` and never sees the feature. Every table and column is unconditional, so both flavours share one schema. A speed change re-anchors the epoch so the city minute never moves; a jump is forward only, at most `MAX_JUMP_CITY_MINUTES` (8 city days) and `MAX_JUMP_TICKS` replayed ticks, in one transaction, so any refusal changes nothing.
 - The client's `CityClock.setClock(epoch, speed)` takes both from `world_clock`'s `onInsert`/`onUpdate`; a jump or speed change reaches a running client without a reload.
 
 ## Backup
@@ -237,8 +238,10 @@ loud failure instead, never a silent no-op.
   production-base build under `/browser-city/`, backed by a disposable
   local SpacetimeDB, so a broken spec is caught before merge. Every run
   connects as a fresh, anonymous identity, like a real player -- there is
-  no fixed smoke identity today, because `identity_connected` writes
-  nothing yet; a fixed identity threaded through a URL query parameter
+  no fixed smoke identity, because `identity_connected` writes nothing
+  and only `create_character` writes a character (a smoke run leaves
+  `character` and `character_identity` as it found them, which
+  `serve-for-deploy-smoke.mjs` asserts); a fixed identity threaded through a URL query parameter
   would otherwise let any visitor forge another session, and would leak
   into an uploaded Playwright report on a public repo.
 - No automatic rollback: a published schema cannot be rolled back, only
@@ -311,6 +314,67 @@ and just-in-time. So:
   this file's own git history that actually matches the live database,
   never the checkout's own working-tree snapshot outright, recorded as
   `schema_commit` in the export's manifest (story 4.18).
+
+## Identity
+
+The device's server-issued anonymous token is the everyday credential; an
+OIDC identity is a recovery key used once per device. Linking, and recovery
+on a fresh browser, are one operation: put this device's anonymous identity
+and an OIDC identity on the same character.
+
+- **Token.** `client/src/identity/identity-storage.ts`, key `bc.identity.v1`,
+  written only into an empty key, never cleared, never overwritten, read
+  back after a write. `connect()` takes one options object; the stored
+  token goes to `withToken`. A refused token shows the connection notice
+  and is kept. A tab that connected without a token and finds one stored
+  when it goes to write keeps its connection as a session-only identity
+  (`persisted: false`); nothing creates a character for it
+  (`identity/create-guard.ts`) and its next load uses the stored token. A first visit is the WebSocket alone; a return visit
+  adds the SDK's own `POST /v1/identity/websocket-token`.
+  `scripts/ci/check-identity-token-confined.sh` keeps the key, `withToken`,
+  and any `console.` in the token module where they belong.
+- **Server.** `tables/identity.rs` holds `character`,
+  `character_identity` (`issuer_id`: 0 anonymous, else an `oidc_issuer`
+  row), `oidc_issuer` and `link_request`, all private, and every read of
+  `character_identity` (`check-character-identity-path.sh`). `identity_connected`
+  writes nothing. `create_character()` is a no-op when the caller already
+  has a character. `begin_link(code)` stores a 256-bit code, with the
+  requester's own issuer, for ten minutes (replacing the caller's last,
+  pruning expired ones, refusing at `link_request`'s ceiling);
+  `complete_link(code)` consumes it as an OIDC identity of any registered
+  issuer and maps whichever of the two identities has no character onto the
+  other's, under its own issuer; two characters
+  or none is an `Err` that changes nothing. `accept_oidc_issuer` is
+  owner-only and idempotent; zero rows means linking is off. A token whose
+  issuer is registered must carry that row's `client_id` in `aud`
+  (`sim::identity::credential`), at connect and in every reducer. The plans
+  (`plan_create`, `plan_link`, `check_claim`, `credential`) are pure, in
+  `sim::identity`.
+- **Reads.** The client learns its own state from the per-sender view
+  `my_character` (`character_id`, `created_at`, `linked`). No table other
+  than `character_identity`, `module_owner` and `link_request` holds an
+  `Identity` column; player data keys on `character_id`.
+- **OIDC client.** Authorization code with PKCE through full-page redirect,
+  no popup, iframe, renew or kept user; the sign-in state lives in
+  `sessionStorage` and the link code travels in the library's own state. On return the page boots on the anonymous token,
+  strips the callback parameters, and `net/link.ts` opens a short-lived
+  connection with the ID token to call `complete_link`. The provider is
+  `VITE_OIDC_AUTHORITY`/`VITE_OIDC_CLIENT_ID` for the client and
+  `accept_oidc_issuer` for the module, both from the repository variables
+  `OIDC_AUTHORITY`/`OIDC_CLIENT_ID` (`check-deploy-workflow.sh`); unset means
+  the link is never offered.
+- **Offer.** Due (`client/src/identity/link-prompt.ts`) when the character
+  exists, is unlinked, its token is persisted, a provider is configured,
+  and the character's age and the time since the last offer are past
+  `identity.link_prompt_min_character_age_days` and
+  `identity.link_prompt_cooloff_days`; evaluated once per session as the scene
+  mounts (`identity/link-offer.ts`), recording the city day when shown. The
+  offer has no DOM and no canvas text: it is the `[[object]]` carrying the
+  `registry_post` tag, placed in the test street (`test-street/link-carrier.ts`,
+  throwaway) when due, and an in-reach intent on it starts `offerLink`. A
+  character's age is its real creation instant read on the city clock, so
+  the e2e harness (which publishes the `time-control` flavour) ages it with
+  `set_clock_speed`, never `jump_clock`.
 
 ## Stock
 
@@ -478,7 +542,7 @@ fixture is checked from the client side too
 
 The client holds only the world around the player. Subscriptions are client-issued queries over public, chunk-keyed tables.
 
-- A query is one pure equality, `WHERE chunk_key = <key>`, built with the typed query builder. The engine parameterises, prunes and shares only that shape; a range, an `OR` or an extra `AND` is re-evaluated on every write to its table. Never a SQL string, never a whole table beyond the three singletons (`demo_ping`, `module_version`, `world_clock`).
+- A query is one pure equality, `WHERE chunk_key = <key>`, built with the typed query builder. The engine parameterises, prunes and shares only that shape; a range, an `OR` or an extra `AND` is re-evaluated on every write to its table. Never a SQL string, never a whole table beyond the three singletons (`demo_ping`, `module_version`, `world_clock`) and the per-sender `my_character` view.
 - One handle per (chunk column, floor band), holding the equality for every floor of the band on every table in `REGION_QUERIES` (`net/region-subscription.ts`, the one place a region table is declared): `placed_object`, `floor_transition`, `building_area`, `room_area`, `actor_location`. Columns are disjoint, so a shifting region re-sends nothing.
 - `world/region.ts` declares the constants once and plans the region as a pure function of the player's cell and floor: wanted within `REGION_RADIUS_CHUNKS` (2) Chebyshev distance of the player's column, released only beyond `REGION_RADIUS_CHUNKS + REGION_HYSTERESIS_CHUNKS` (1). No timer. `REGION_MAX_HANDLES` bounds what is held. The radius covers a maximum half-viewport, `REGION_BODY_MARGIN_CELLS`, `MAX_FOOTPRINT_CELLS` and, to the south, `MAX_FLOOR * storey_height_px / tile_size_px`; a unit test holds it to that.
 - A band is the floors co-visible with the player's: `0..=MAX_FLOOR` or `MIN_FLOOR..=-1`. A band change adds the new band's handles; the old band's leave by the distance rule.

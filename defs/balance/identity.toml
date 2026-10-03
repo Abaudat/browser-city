@@ -1,0 +1,18 @@
+# Story 4.5 (FR143): when the in-world prompt to link an account is due.
+# Both are in city days; neither withholds anything (declining is simply
+# not taking the offer, and it is offered again only after the cool-off).
+
+[[balance]]
+# The character must have been alive this many city days: the offer
+# arrives at a natural moment, never in the first minutes of play.
+key = "identity.link_prompt_min_character_age_days"
+value = 1
+min = 0
+max = 365
+
+[[balance]]
+# After the offer was shown, it is not shown again for this many city days.
+key = "identity.link_prompt_cooloff_days"
+value = 7
+min = 1
+max = 365

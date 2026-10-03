@@ -6,6 +6,8 @@
 
 import { BOOT_MARK, markBoot } from "../boot/boot-marks";
 import type { HandshakeVersion } from "../boot/handshake";
+import { readStoredToken, rememberFirstToken } from "../identity/identity-storage";
+import type { SettingsStorage } from "../settings/settings-storage";
 import type { ClockSync } from "../time/clock-sync";
 import type { ServerClock } from "../time/server-clock";
 import { DbConnection, tables } from "./bindings";
@@ -56,6 +58,23 @@ export interface ClockWiring {
   ) => void;
 }
 
+/** Story 4.5 (FR141): who this device is, reported once per connection --
+ * `persisted` is whether the token is in storage (a character must never
+ * be created for an identity that could not be kept). */
+export interface IdentityReport {
+  readonly identityHex: string;
+  readonly persisted: boolean;
+}
+
+/** Story 4.5: the caller's own character, from the per-sender
+ * `my_character` view -- `linked` once any of its identities came through
+ * an OIDC issuer. */
+export interface CharacterReport {
+  readonly characterId: bigint;
+  readonly createdAtMicros: bigint;
+  readonly linked: boolean;
+}
+
 export type RegionRow = PlacedObject | FloorTransition | BuildingArea | RoomArea | ActorLocation;
 
 /** Streamed rows as plain data, registered once per table. The SDK client
@@ -74,6 +93,19 @@ export interface RegionWiring {
   readonly rows?: RegionRowListener;
 }
 
+export interface ConnectOptions {
+  readonly onPing: PingListener;
+  readonly onStatus?: StatusListener;
+  readonly onHandshake?: HandshakeListener;
+  readonly clock?: ClockWiring;
+  /** Where the identity token lives; none means a session-only identity. */
+  readonly storage?: SettingsStorage | null;
+  readonly onIdentity?: (identity: IdentityReport) => void;
+  readonly onCharacter?: (character: CharacterReport) => void;
+  /** Story 4.3: the interest region. */
+  readonly region?: RegionWiring;
+}
+
 /**
  * Opens the connection, subscribes to `demo_ping`, and calls `onPing` for
  * every row observed through the SDK's `onInsert` callback -- including
@@ -88,24 +120,38 @@ export interface RegionWiring {
  * successful connect are otherwise indistinguishable from this module's
  * only two ways of reaching "not connected").
  */
-export function connect(
-  onPing: PingListener,
-  onStatus?: StatusListener,
-  onHandshake?: HandshakeListener,
-  clock?: ClockWiring,
-  region?: RegionWiring,
-): DbConnection {
-  onStatus?.("connecting");
+
+/**
+ * Story 4.5 (FR141): the stored token, if any, is presented with
+ * `withToken`; a first visit takes the one the server issues in the
+ * handshake and stores it. The stored token is never replaced or removed by
+ * a failure of any kind: a refused token shows the connection notice and
+ * keeps the token, it never falls back to a fresh anonymous identity. A
+ * tab that finds another tab's token already stored keeps its own
+ * connection as a session-only identity (`persisted: false`).
+ */
+export function connect(options: ConnectOptions): DbConnection {
+  options.onStatus?.("connecting");
+  const { onPing, onStatus, onHandshake, clock, region, storage, onIdentity, onCharacter } =
+    options;
   let clockSync: ClockSync | undefined;
   // The whole-table subscription is three singletons; the world arrives
   // through the region. `SUBSCRIPTION_APPLIED` keeps meaning the first
   // subscription's own decode term; `REGION_APPLIED` is the initial
   // region's.
 
-  const conn = DbConnection.builder()
+  const stored = readStoredToken(storage);
+  const base = DbConnection.builder()
     .withUri(NET_CONFIG.uri)
-    .withDatabaseName(NET_CONFIG.databaseName)
-    .onConnect((connection) => {
+    .withDatabaseName(NET_CONFIG.databaseName);
+  const conn = (stored === null ? base : base.withToken(stored))
+    .onConnect((connection, identity, token) => {
+      if (stored === null) {
+        const outcome = rememberFirstToken(storage, token);
+        onIdentity?.({ identityHex: identity.toHexString(), persisted: outcome.kind === "stored" });
+      } else {
+        onIdentity?.({ identityHex: identity.toHexString(), persisted: true });
+      }
       // Story 1.14 (NFR1): the handshake term ends here, and the
       // subscription-decode term ends at this subscription's own
       // `onApplied` -- the two are never conflated under one mark.
@@ -131,6 +177,7 @@ export function connect(
           tables.demoPing.build(),
           tables.moduleVersion.build(),
           tables.worldClock.build(),
+          tables.myCharacter.build(),
         ]);
       // Story 4.3: a new connection is a new region manager, built around
       // the player's current position.
@@ -169,6 +216,16 @@ export function connect(
   // later republish.
   conn.db.moduleVersion.onInsert((_ctx, row) => {
     onHandshake?.({ defsVersion: row.defsVersion, protocolVersion: row.protocolVersion });
+  });
+
+  // `my_character` is a per-sender view without a primary key: a change
+  // arrives as a delete-then-insert pair, so `onInsert` alone covers it.
+  conn.db.myCharacter.onInsert((_ctx, row) => {
+    onCharacter?.({
+      characterId: row.characterId,
+      createdAtMicros: row.createdAt.microsSinceUnixEpoch,
+      linked: row.linked,
+    });
   });
 
   const rows = region?.rows;
