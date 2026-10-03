@@ -8,6 +8,7 @@ import type { AppearanceTuple, UniformOverride } from "../render/appearance/comp
 import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
 import type { CityTime } from "../time/city-time";
 import type { PingObservation } from "./observe-ping";
+import type { RegionTableName } from "./region-subscription";
 
 declare global {
   interface Window {
@@ -41,7 +42,7 @@ declare global {
         /** Ids of the handles whose initial apply has landed. */
         applied: () => string[];
         /** `chunkKey` of every row of `table` in the SDK client cache. */
-        cachedChunkKeys: (table: string) => string[];
+        cachedChunkKeys: (table: RegionTableName) => string[];
         /** Drives the region as the scene's own position does. */
         moveTo: (x: number, y: number, floor: number) => void;
         /** Insert/delete callbacks seen per `<table>:<primary key>`. */
@@ -366,6 +367,22 @@ export function exposeCityTimeForE2e(getter: () => CityTime | undefined): void {
   window.__bc = bucket;
 }
 
+/** Set once a spec drives the region itself through the hook's `moveTo`:
+ * from then on the scene's own position no longer feeds it. */
+let regionDrivenByE2e = false;
+
+/** Story 4.3: wraps the function the scene reports its position through,
+ * so a spec that drives the region is not fought by the scene's own
+ * per-frame reports. Always forwards in a production build, where the
+ * hook below is never exposed. */
+export function sceneRegionFeed(
+  feed: (x: number, y: number, floor: number) => void,
+): (x: number, y: number, floor: number) => void {
+  return (x, y, floor) => {
+    if (!regionDrivenByE2e) feed(x, y, floor);
+  };
+}
+
 /** Story 4.3: exposes the interest region (see `Window.__bc.region`). */
 export function exposeRegionForE2e(
   region: Omit<
@@ -378,6 +395,10 @@ export function exposeRegionForE2e(
   const prev = bucket.region;
   bucket.region = {
     ...region,
+    moveTo: (x, y, floor) => {
+      regionDrivenByE2e = true;
+      region.moveTo(x, y, floor);
+    },
     inserts: prev?.inserts ?? {},
     deletes: prev?.deletes ?? {},
     updates: prev?.updates ?? {},

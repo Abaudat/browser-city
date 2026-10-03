@@ -11,7 +11,10 @@
 // tested in `tests/unit/` and `scripts/ci/check-interest-region.sh`; this
 // file holds only what needs a browser. No `waitForTimeout`: every wait is
 // on an observable condition.
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { parseDefs } from "../../src/defs/parse";
 import type {} from "../../src/net/e2e-hooks";
 import { computeCamera, ZOOM } from "../../src/render/camera";
 import { visibleCellBounds, worldPointPx } from "../../src/render/screen-position";
@@ -19,8 +22,20 @@ import { CHUNK_SIZE, chunkKey } from "../../src/world/chunk";
 import { columnOf, REGION_LEAVE_RADIUS_CHUNKS, REGION_RADIUS_CHUNKS } from "../../src/world/region";
 import { E2E_WORLD, readSpacetimeHandle } from "./spacetime-harness.mjs";
 
-const TILE = 16;
-const STOREY = 48;
+const DEFS = parseDefs(
+  JSON.parse(
+    readFileSync(fileURLToPath(new URL("../../public/defs/defs.json", import.meta.url)), "utf-8"),
+  ),
+);
+const balance = (key: string): number => {
+  const entry = DEFS.balance.find((b) => b.key === key);
+  if (!entry) throw new Error(`no balance entry ${key}`);
+  return entry.value;
+};
+const TILE = balance("render.tile_size_px");
+const STOREY = balance("render.storey_height_px");
+/** The canonical walk speed, in cells per second -- the scripted walk is never slower than the real player. */
+const WALK_SPEED_CELLS_PER_S = balance("movement.walk_speed_millicells_per_s") / 1000;
 const INITIAL_HANDLES = (2 * REGION_RADIUS_CHUNKS + 1) ** 2;
 const SPATIAL = [
   "placed_object",
@@ -131,7 +146,6 @@ test("walking across a chunk boundary: every chunk the viewport shows is applied
   }
 
   // Walk at the canonical speed, one sample per animation frame.
-  const walkSpeedCellsPerS = 2.2;
   const missing = await page.evaluate(
     ({ path, y, speed }) =>
       new Promise<string[]>((resolve) => {
@@ -152,7 +166,7 @@ test("walking across a chunk boundary: every chunk the viewport shows is applied
         };
         requestAnimationFrame(tick);
       }),
-    { path, y, speed: walkSpeedCellsPerS },
+    { path, y, speed: WALK_SPEED_CELLS_PER_S },
   );
   expect(missing).toEqual([]);
 

@@ -227,6 +227,46 @@ describe("RegionSubscriptions", () => {
       }),
     );
   });
+
+  it("fires onInitialApplied exactly once even when first-region handles are released while pending", () => {
+    const backend = new FakeBackend();
+    let initial = 0;
+    const m = new RegionSubscriptions(backend, FLOORS, {
+      onError: noop,
+      onInitialApplied: () => initial++,
+    });
+    m.moveTo(0, 0, 0);
+    // Past the leave radius before anything applied: every first handle is
+    // unwanted while still pending.
+    m.moveTo(50 * CHUNK_SIZE, 0, 0);
+    backend.flush();
+    expect(initial).toBe(1);
+    expect(m.liveHandleCount()).toBe(backend.live());
+  });
+
+  it("keeps a handle a backend applies synchronously, inside subscribe()", () => {
+    class SyncBackend extends FakeBackend {
+      override subscribe(key: HandleKey, _range: FloorRange, cb: HandleCallbacks): RegionHandle {
+        const h = new FakeHandle(key, cb);
+        this.handles.push(h);
+        h.deliverApplied();
+        return h;
+      }
+    }
+    const backend = new SyncBackend();
+    let initial = 0;
+    const m = new RegionSubscriptions(backend, FLOORS, {
+      onError: noop,
+      onInitialApplied: () => initial++,
+    });
+    m.moveTo(0, 0, 0);
+    expect(m.appliedKeys()).toHaveLength((2 * REGION_RADIUS_CHUNKS + 1) ** 2);
+    expect(initial).toBe(1);
+    // Releasing them later reaches real handles.
+    m.moveTo(50 * CHUNK_SIZE, 0, 0);
+    backend.flush();
+    expect(m.liveHandleCount()).toBe(backend.live());
+  });
 });
 
 describe("RegionController", () => {

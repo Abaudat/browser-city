@@ -53,7 +53,7 @@ const cheb = (a: HandleKey, cx: number, cy: number) =>
   Math.max(Math.abs(a.cx - cx), Math.abs(a.cy - cy));
 
 function applyPlan(held: Map<string, HandleKey>, p: { x: number; y: number; floor: number }) {
-  const plan = planRegion([...held.values()], p, FLOORS);
+  const plan = planRegion([...held.values()], p);
   for (const k of plan.release) held.delete(handleId(k));
   for (const k of plan.subscribe) held.set(handleId(k), k);
   return plan;
@@ -64,7 +64,7 @@ describe("planRegion", () => {
   it("inv_interest_region_is_bounded", () => {
     fc.assert(
       fc.property(pos(), (p) => {
-        const plan = planRegion([], p, FLOORS);
+        const plan = planRegion([], p);
         expect(plan.subscribe.length).toBeLessThanOrEqual(REGION_MAX_HANDLES);
         expect(plan.subscribe.length).toBe((2 * REGION_RADIUS_CHUNKS + 1) ** 2);
         expect(plan.release).toEqual([]);
@@ -154,7 +154,7 @@ describe("planRegion", () => {
   });
 
   it("subscribes the nearest column first", () => {
-    const plan = planRegion([], { x: 0, y: 0, floor: 0 }, FLOORS);
+    const plan = planRegion([], { x: 0, y: 0, floor: 0 });
     const dist = plan.subscribe.map((k) => Math.max(Math.abs(k.cx), Math.abs(k.cy)));
     expect(dist).toEqual([...dist].sort((a, b) => a - b));
     expect(plan.subscribe[0]).toEqual({ cx: 0, cy: 0, band: 0 });

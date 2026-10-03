@@ -19,6 +19,8 @@
 import { expect, test } from "@playwright/test";
 import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
+import { REGION_RADIUS_CHUNKS } from "../../src/world/region";
+import { E2E_WORLD } from "./spacetime-harness.mjs";
 
 declare global {
   interface Window {
@@ -223,15 +225,22 @@ test("the atlas request count and byte total the mount actually fetches, once se
 });
 
 // Story 4.3: `REGION_APPLIED` is the initial interest region landing, and
-// what lands is bounded by the region, never by the world. The ceiling is
-// the smallest row count the 1.14 spike measured a decode at (7,000 rows,
-// `docs/spikes/1.14-boot-budget.md`): the e2e world holds far more than
-// that in total, so a client that subscribed it whole would blow through.
-const BOOT_ROWS_CEILING = 7_000;
-
-test("the rows delivered by the time the initial region has applied stay under the 1.14 spike's smallest measured decode", async ({
+// what lands is exactly the region's rows -- never the world's. The seeded
+// e2e world (`spacetime-harness.mjs`) holds one `placed_object` and one
+// `actor_location` in every chunk of a (2 * span + 1)-square block; the
+// region is the (2 * radius + 1)-square around spawn. A client that
+// subscribed any region table whole would deliver the whole block and fail
+// the exact count.
+test("the rows delivered by the time the initial region has applied are exactly the region's, not the world's", async ({
   page,
 }) => {
+  const regionChunks = (2 * REGION_RADIUS_CHUNKS + 1) ** 2;
+  const worldChunks = (2 * E2E_WORLD.span + 1) ** 2;
+  // The precondition that lets the assertion fail: the world is bigger
+  // than the region, and the region lies wholly inside it.
+  expect(REGION_RADIUS_CHUNKS).toBeLessThanOrEqual(E2E_WORLD.span);
+  expect(worldChunks).toBeGreaterThan(regionChunks);
+
   await page.goto("/");
   await page.waitForFunction(
     () => performance.getEntriesByName("bc-boot:region-applied").length > 0,
@@ -242,6 +251,6 @@ test("the rows delivered by the time the initial region has applied stay under t
     const inserts = window.__bc?.region?.inserts ?? {};
     return Object.values(inserts).reduce((sum, n) => sum + n, 0);
   });
-  expect(rows).toBeGreaterThan(0);
-  expect(rows).toBeLessThan(BOOT_ROWS_CEILING);
+  // One placed_object and one actor_location per region chunk.
+  expect(rows).toBe(regionChunks * 2);
 });

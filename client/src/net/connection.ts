@@ -20,10 +20,16 @@ import { startNetClockSync, type VisibilitySource } from "./clock-sync";
 import { NET_CONFIG } from "./config";
 import type { ConnectionStatus } from "./connection-status";
 import { observePingInsert, type PingObservation } from "./observe-ping";
-import { type RegionController, sdkRegionBackend } from "./region-subscription";
+import {
+  REGION_TABLE_NAMES,
+  type RegionController,
+  type RegionTableName,
+  sdkRegionBackend,
+} from "./region-subscription";
 
 export type { HandshakeVersion } from "../boot/handshake";
 export type { ConnectionStatus } from "./connection-status";
+export type { RegionTableName } from "./region-subscription";
 
 export type PingListener = (observation: PingObservation) => void;
 
@@ -50,14 +56,6 @@ export interface ClockWiring {
   ) => void;
 }
 
-/** The tables the interest region streams, by their accessor name. */
-export type RegionTableName =
-  | "placedObject"
-  | "floorTransition"
-  | "buildingArea"
-  | "roomArea"
-  | "actorLocation";
-
 export type RegionRow = PlacedObject | FloorTransition | BuildingArea | RoomArea | ActorLocation;
 
 /** Streamed rows as plain data, registered once per table. The SDK client
@@ -75,14 +73,6 @@ export interface RegionWiring {
   readonly controller: RegionController;
   readonly rows?: RegionRowListener;
 }
-
-const REGION_TABLE_NAMES: readonly RegionTableName[] = [
-  "placedObject",
-  "floorTransition",
-  "buildingArea",
-  "roomArea",
-  "actorLocation",
-];
 
 /**
  * Opens the connection, subscribes to `demo_ping`, and calls `onPing` for

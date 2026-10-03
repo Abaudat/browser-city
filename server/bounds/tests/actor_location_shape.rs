@@ -82,9 +82,9 @@ fn actor_location_max_rows_is_the_sum_of_every_actor_table() {
         .iter()
         .find(|b| b.accessor == "actor_location")
         .expect("actor_location has a declared bound");
-    assert!(
-        bound.max_rows >= actors,
-        "actor_location.max_rows {} must cover every actor table ({actors})",
+    assert_eq!(
+        bound.max_rows, actors,
+        "actor_location.max_rows {} must equal the sum of every actor table's max_rows ({actors})",
         bound.max_rows
     );
 }

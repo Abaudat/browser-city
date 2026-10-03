@@ -59,7 +59,9 @@ type HandleState = "requested" | "applied";
 
 interface Entry {
   readonly key: HandleKey;
-  readonly handle: RegionHandle;
+  /** Assigned once `backend.subscribe` returns; a backend may apply
+   * synchronously, before that. */
+  handle?: RegionHandle;
   state: HandleState;
   /** No longer wanted while still requested: released on `onApplied`. */
   releaseWhenApplied: boolean;
@@ -89,7 +91,7 @@ export class RegionSubscriptions {
     if (last && last.cx === cx && last.cy === cy && last.band === band) return;
     this.lastColumn = { cx, cy, band };
 
-    const plan = planRegion(this.wanted(), { x, y, floor }, this.range);
+    const plan = planRegion(this.wanted(), { x, y, floor });
     for (const key of plan.release) this.release(key);
     const first = this.initial === undefined;
     if (first) this.initial = new Set(plan.subscribe.map(handleId));
@@ -129,21 +131,15 @@ export class RegionSubscriptions {
       existing.releaseWhenApplied = false;
       return;
     }
-    const entry: Entry = {
-      key,
-      handle: undefined as unknown as RegionHandle,
-      state: "requested",
-      releaseWhenApplied: false,
-    };
-    const handle = this.backend.subscribe(key, this.range, {
+    const entry: Entry = { key, state: "requested", releaseWhenApplied: false };
+    this.entries.set(id, entry);
+    entry.handle = this.backend.subscribe(key, this.range, {
       onApplied: () => this.applied(id, entry),
       onEnded: () => {
-        this.ending = Math.max(0, this.ending - 1);
+        this.ending--;
       },
       onError: (message) => this.errored(id, entry, message),
     });
-    (entry as { handle: RegionHandle }).handle = handle;
-    this.entries.set(id, entry);
   }
 
   private release(key: HandleKey): void {
@@ -160,15 +156,14 @@ export class RegionSubscriptions {
   private applied(id: string, entry: Entry): void {
     if (this.entries.get(id) !== entry) return;
     entry.state = "applied";
-    if (entry.releaseWhenApplied) {
-      this.unsubscribe(id, entry);
-      return;
-    }
-    this.listener.onApplied?.(entry.key);
+    if (entry.releaseWhenApplied) this.unsubscribe(id, entry);
+    else this.listener.onApplied?.(entry.key);
+    // A first-region handle settles when it applies, wanted or not.
     if (this.initial?.delete(id) && this.initial.size === 0) this.listener.onInitialApplied?.();
   }
 
   private unsubscribe(id: string, entry: Entry): void {
+    if (!entry.handle) throw new Error(`region handle ${id} applied before it was returned`);
     this.entries.delete(id);
     this.ending++;
     entry.handle.unsubscribe();
@@ -220,29 +215,30 @@ export class RegionController {
   }
 }
 
-type ChunkQuery = ReturnType<typeof tables.placedObject.build>;
+/** The tables the region streams, by accessor name. */
+export type RegionTableName =
+  | "placedObject"
+  | "floorTransition"
+  | "buildingArea"
+  | "roomArea"
+  | "actorLocation";
 
-/** A table with an indexed `chunk_key`, seen through the one method the
- * region uses. The tables' own types differ only in their row, so the
- * union is narrowed to this shape once, here. */
-interface ChunkTable {
-  where(predicate: (row: { chunkKey: { eq(v: bigint): never } }) => never): {
-    build(): ChunkQuery;
-  };
-}
+export const REGION_TABLE_NAMES: readonly RegionTableName[] = [
+  "placedObject",
+  "floorTransition",
+  "buildingArea",
+  "roomArea",
+  "actorLocation",
+];
 
-/** The one query shape the region ever issues: `chunk_key = <chunk>`. */
-function inChunk(table: ChunkTable, k: bigint): ChunkQuery {
-  return table.where((r) => r.chunkKey.eq(k)).build();
-}
-
-/** Every table the region streams, each with an indexed `chunk_key`. */
-export const REGION_TABLES = [
-  tables.placedObject,
-  tables.floorTransition,
-  tables.buildingArea,
-  tables.roomArea,
-  tables.actorLocation,
+/** One query per region table, each the one shape the region ever issues:
+ * `chunk_key = <chunk>`, built with the typed builder. */
+export const REGION_QUERIES = [
+  (k: bigint) => tables.placedObject.where((r) => r.chunkKey.eq(k)).build(),
+  (k: bigint) => tables.floorTransition.where((r) => r.chunkKey.eq(k)).build(),
+  (k: bigint) => tables.buildingArea.where((r) => r.chunkKey.eq(k)).build(),
+  (k: bigint) => tables.roomArea.where((r) => r.chunkKey.eq(k)).build(),
+  (k: bigint) => tables.actorLocation.where((r) => r.chunkKey.eq(k)).build(),
 ] as const;
 
 /** The queries one handle holds: for every table and every floor of its
@@ -250,9 +246,7 @@ export const REGION_TABLES = [
  * else, so the engine can parameterise and share it. */
 export function regionQueries(key: HandleKey, range: FloorRange) {
   const chunkKeys = chunkKeysOfHandle(key, range);
-  return REGION_TABLES.flatMap((table) =>
-    chunkKeys.map((k) => inChunk(table as unknown as ChunkTable, k)),
-  );
+  return REGION_QUERIES.flatMap((query) => chunkKeys.map((k) => query(k)));
 }
 
 /** The SDK backend: one `subscribe` per handle with its typed queries. */
@@ -277,9 +271,6 @@ export function sdkRegionBackend(conn: DbConnection): RegionBackend {
 /** `chunk_key` of every row of `table` in the SDK client cache -- the
  * cache is the only store of streamed rows, so this is what "the client
  * holds" means. */
-export function cachedChunkKeys(conn: DbConnection, table: string): string[] {
-  const t = (conn.db as unknown as Record<string, { iter(): Iterable<{ chunkKey: bigint }> }>)[
-    table
-  ];
-  return t ? [...t.iter()].map((row) => String(row.chunkKey)) : [];
+export function cachedChunkKeys(conn: DbConnection, table: RegionTableName): string[] {
+  return [...conn.db[table].iter()].map((row) => String(row.chunkKey));
 }

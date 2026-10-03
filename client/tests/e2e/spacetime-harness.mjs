@@ -21,6 +21,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// The one client mirror of the chunk packing (Node strips the types).
+import { CHUNK_SIZE, chunkKey } from "../../src/world/chunk.ts";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(__dirname, "../../..");
 // Keyed to REPO_ROOT (not a bare fixed name) so two different worktrees
@@ -171,20 +174,13 @@ export const E2E_WORLD = {
   },
 };
 
-/** `sim::world::chunk_key`'s layout, restated for the harness: `[55:32]
- * chunk_x | [31:8] chunk_y | [7:0] floor`, each two's complement. */
-function chunkKeyOf(cx, cy, floor) {
-  const m24 = (1n << 24n) - 1n;
-  return ((BigInt(cx) & m24) << 32n) | ((BigInt(cy) & m24) << 8n) | (BigInt(floor) & 0xffn);
-}
-
 function seedWorld(handle) {
   const placed = [];
   const actors = [];
   for (let cx = -E2E_WORLD.span; cx <= E2E_WORLD.span; cx++) {
     for (let cy = -E2E_WORLD.span; cy <= E2E_WORLD.span; cy++) {
       const id = E2E_WORLD.idOf(cx, cy);
-      const key = chunkKeyOf(cx, cy, 0);
+      const key = chunkKey(cx * CHUNK_SIZE, cy * CHUNK_SIZE, 0);
       placed.push(`[${id},1,${cx * 32 + 5},${cy * 32 + 5},0,3,0,${key}]`);
       actors.push(`[${id},0,${id},${key},0]`);
     }

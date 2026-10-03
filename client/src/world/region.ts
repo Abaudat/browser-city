@@ -103,11 +103,7 @@ function distance(k: HandleKey, cx: number, cy: number): number {
  * the plan is applied: every column within the radius in the player's band
  * is held, and nothing within the leave radius is dropped.
  */
-export function planRegion(
-  held: Iterable<HandleKey>,
-  centre: RegionCentre,
-  _range: FloorRange,
-): RegionPlan {
+export function planRegion(held: Iterable<HandleKey>, centre: RegionCentre): RegionPlan {
   const { cx, cy } = columnOf(centre.x, centre.y);
   const band = bandOf(centre.floor);
   const have = new Set<string>();

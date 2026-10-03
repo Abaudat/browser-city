@@ -68,5 +68,23 @@ d="$(clean_tree)"
 plant "$d" "net/connection.ts" '.subscribe([tables.demoPing.build(), tables.worldClock.build()]);'
 check "the global set missing one of the three singletons is banned" 1 bash "$CHECK" "$d"
 
+d="$(clean_tree)"
+plant "$d" "net/region-subscription.ts" 'const q = tables.placedObject
+  .build();'
+check "a table split from its .build() across lines is banned" 1 bash "$CHECK" "$d"
+
+d="$(clean_tree)"
+plant "$d" "net/region-subscription.ts" 'const t = tables.placedObject; const q = t.build();'
+check "an aliased table is banned" 1 bash "$CHECK" "$d"
+
+d="$(clean_tree)"
+plant "$d" "net/region-subscription.ts" 'const { placedObject } = tables;'
+check "a destructured table is banned" 1 bash "$CHECK" "$d"
+
+d="$(clean_tree)"
+plant "$d" "net/region-subscription.ts" 'import { tables } from "./bindings";
+const q = tables.placedObject.where((r) => r.chunkKey.eq(k)).build();'
+check "the import of tables and a one-line predicated query pass" 0 bash "$CHECK" "$d"
+
 summary
 exit $?

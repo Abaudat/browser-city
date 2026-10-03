@@ -33,6 +33,7 @@ import {
   recordViewTransformForE2e,
   recordVisibilityForE2e,
   recordWorldClockForE2e,
+  sceneRegionFeed,
 } from "./net/e2e-hooks";
 import type { PingObservation } from "./net/observe-ping";
 import { PROTOCOL_VERSION } from "./net/protocol-version";
@@ -109,10 +110,7 @@ async function main(): Promise<void> {
   // Story 4.3: the interest region. It holds nothing until the defs give
   // it a floor range and the scene gives it a position.
   const region = new RegionController();
-  // Set only by the e2e hook below (a production build never exposes it):
-  // once a spec drives the region itself, the scene's own position stops
-  // feeding it.
-  let regionDrivenByE2e = false;
+  const moveRegion = (x: number, y: number, floor: number): void => region.moveTo(x, y, floor);
   const conn = connect(
     onPing,
     (status) => {
@@ -148,10 +146,7 @@ async function main(): Promise<void> {
     liveHandles: () => region.subscriptions()?.liveHandleCount() ?? 0,
     applied: () => region.subscriptions()?.appliedKeys().map(handleId) ?? [],
     cachedChunkKeys: (table) => cachedChunkKeys(conn, table),
-    moveTo: (x, y, floor) => {
-      regionDrivenByE2e = true;
-      region.moveTo(x, y, floor);
-    },
+    moveTo: moveRegion,
   });
 
   try {
@@ -163,9 +158,7 @@ async function main(): Promise<void> {
       },
       (rate) => cityClock.setRate(rate),
       region,
-      (x, y, floor) => {
-        if (!regionDrivenByE2e) region.moveTo(x, y, floor);
-      },
+      sceneRegionFeed(moveRegion),
     );
   } catch (error: unknown) {
     // NFR42: the street scene degrades to not-drawing, never takes the ping
@@ -282,7 +275,7 @@ async function startStreetScene(
   // the initial region is requested around; from here on the scene's own
   // position drives it (`onPlayerMove`), edge-triggered.
   region.configure({ minFloor: defs.minFloor, maxFloor: defs.maxFloor });
-  region.moveTo(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor);
+  followScene(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor);
 
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");

@@ -10,6 +10,8 @@
 #      `tables.demoPing`, `tables.moduleVersion` and `tables.worldClock`,
 #      each `.build()` with no predicate. Any other table subscribed whole
 #      fails; adding one to the allowlist below is a reviewed decision.
+#      Every other use of `tables` must be `tables.<name>.where(` on one
+#      line, so splitting, aliasing or destructuring a table is no way round.
 #
 # An optional first argument overrides the scanned directory, for
 # scripts/ci/tests/test-check-subscription-shape.sh.
@@ -42,7 +44,18 @@ BAD="$(printf '%s\n' "$LINES" | grep -E '\bSELECT\b' || true)"
 [ -z "$BAD" ] || fail "a SELECT literal under client/src (use the typed query builder):
 $BAD"
 
-# 3. The whole-table set.
+# 3. The whole-table set, and no way round it. Every use of the generated
+#    `tables` object outside the imports must be exactly one of
+#    `tables.<singleton>.build()` or `tables.<name>.where(` on one line: a
+#    table split from its `.build()` across lines, aliased
+#    (`const t = tables.placedObject`) or destructured never names a
+#    predicate on the same line, so it fails here.
+STRIPPED="$(printf '%s\n' "$LINES" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(import|export)\b' | sed -E \
+  -e 's/tables\.(demoPing|moduleVersion|worldClock)\.build\(\)//g' \
+  -e 's/tables\.[A-Za-z0-9_]+\.where\(//g')"
+BAD="$(printf '%s\n' "$STRIPPED" | grep -E '\btables\b' || true)"
+[ -z "$BAD" ] || fail "the generated 'tables' object is used other than as tables.<singleton>.build() or tables.<name>.where( on one line (a whole-table subscription, or a way round the guard):
+$BAD"
 USED="$(printf '%s\n' "$LINES" | grep -oE 'tables\.[A-Za-z0-9_]+\.build\(\)' | sed -E 's/tables\.([A-Za-z0-9_]+)\.build\(\)/\1/' | sort -u || true)"
 for t in $USED; do
   case " $ALLOWED_WHOLE_TABLES " in

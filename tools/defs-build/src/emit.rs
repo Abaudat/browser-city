@@ -75,11 +75,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     ));
 
     out.push_str(&format!(
-        "/// The world's declared floor range: no row may sit outside it.
-pub const MIN_FLOOR: i32 = {MIN_FLOOR};
-pub const MAX_FLOOR: i32 = {MAX_FLOOR};
-
-"
+        "/// The world's declared floor range: no row may sit outside it.\npub const MIN_FLOOR: i32 = {MIN_FLOOR};\npub const MAX_FLOOR: i32 = {MAX_FLOOR};\n\n"
     ));
 
     out.push_str(&format!(
@@ -662,14 +658,8 @@ pub fn emit_json(
     out.push_str(&format!(
         "  \"max_footprint_cells\": {MAX_FOOTPRINT_CELLS},\n"
     ));
-    out.push_str(&format!(
-        "  \"min_floor\": {MIN_FLOOR},
-"
-    ));
-    out.push_str(&format!(
-        "  \"max_floor\": {MAX_FLOOR},
-"
-    ));
+    out.push_str(&format!("  \"min_floor\": {MIN_FLOOR},\n"));
+    out.push_str(&format!("  \"max_floor\": {MAX_FLOOR},\n"));
     out.push_str(&format!(
         "  \"max_shelf_life_minutes\": {MAX_SHELF_LIFE_MINUTES},\n"
     ));

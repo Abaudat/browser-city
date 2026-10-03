@@ -39,11 +39,23 @@ fail() { # <message> [log-file]
 }
 ok() { echo "check-interest-region: ok -- $1" >&2; }
 
-# chunk_key <cx> <cy> <floor>: `sim::world::chunk_key`'s own layout --
-# [55:32] chunk_x | [31:8] chunk_y | [7:0] floor, each two's complement.
-chunk_key() {
-  echo $(( (($1 & 0xFFFFFF) << 32) | (($2 & 0xFFFFFF) << 8) | ($3 & 0xFF) ))
-}
+# Every chunk key this check uses comes from `sim::world::chunk_key` itself
+# (the `bounds` crate's `chunk-key` binary) -- no copy of the bit layout
+# lives here. One cargo run for the whole list.
+declare -A KEYS
+KEY_COORDS=()
+for cx in $(seq -"$SPAN" "$SPAN"); do
+  for cy in $(seq -"$SPAN" "$SPAN"); do KEY_COORDS+=("$cx $cy 0"); done
+done
+KEY_COORDS+=("100 100 0" "0 0 -1")
+mapfile -t KEY_VALUES < <(printf '%s\n' "${KEY_COORDS[@]}" | (cd "$REPO_ROOT/server" && cargo run -q -p bounds --bin chunk-key)) \
+  || fail "could not compute the chunk keys"
+[ "${#KEY_VALUES[@]}" -eq "${#KEY_COORDS[@]}" ] || fail "chunk-key returned ${#KEY_VALUES[@]} keys for ${#KEY_COORDS[@]} chunks"
+for i in "${!KEY_COORDS[@]}"; do
+  read -r kx ky kf <<<"${KEY_COORDS[$i]}"
+  KEYS["$kx,$ky,$kf"]="${KEY_VALUES[$i]}"
+done
+chunk_key() { echo "${KEYS[$1,$2,$3]}"; } # <cx> <cy> <floor>
 
 START_PID="$(bc_start_spacetime "$DATA_DIR/data" "$PORT" "$START_LOG")"
 bc_wait_spacetime_healthy "$SERVER_URL" "$HEALTH_DEADLINE_S" \

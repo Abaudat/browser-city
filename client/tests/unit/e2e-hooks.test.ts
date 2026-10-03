@@ -13,6 +13,7 @@ import {
   recordRenderOrderForE2e,
   recordVisibilityForE2e,
   recordWorldClockForE2e,
+  sceneRegionFeed,
 } from "../../src/net/e2e-hooks";
 
 afterEach(() => {
@@ -281,5 +282,26 @@ describe("region hooks (story 4.3)", () => {
       moveTo: () => {},
     });
     expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("sceneRegionFeed (story 4.3)", () => {
+  it("forwards the scene's position until a spec drives the region, then stops", () => {
+    const seen: number[] = [];
+    const moved: number[] = [];
+    const feed = sceneRegionFeed((x) => seen.push(x));
+    feed(1, 0, 0);
+    exposeRegionForE2e({
+      held: () => [],
+      liveHandles: () => 0,
+      applied: () => [],
+      cachedChunkKeys: () => [],
+      moveTo: (x) => moved.push(x),
+    });
+    feed(2, 0, 0);
+    window.__bc?.region?.moveTo(9, 0, 0);
+    feed(3, 0, 0);
+    expect(seen).toEqual([1, 2]);
+    expect(moved).toEqual([9]);
   });
 });
