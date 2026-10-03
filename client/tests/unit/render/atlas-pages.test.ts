@@ -209,13 +209,18 @@ describe("AtlasPageLoader.objectCellTexture", () => {
     expect(first).not.toBe(second);
   });
 
-  it("rejects naming the object when it is more than one cell tall, rather than silently cropping only its top row", async () => {
+  it("cuts a def several rows tall one row per call, north row first, and rejects a row it does not have", async () => {
     loadMock.mockResolvedValue(fakeSourceTexture());
     const loader = new AtlasPageLoader("/atlas/");
     const defs = defsWith([PAGE]);
     const tall = { ...OBJECT, id: 9, key: "tall_thing", height: 2 };
 
-    await expect(loader.objectCellTexture(defs, tall, 0, TILE_SIZE_PX)).rejects.toThrow(
+    const rows = await Promise.all(
+      [0, 1].map((row) => loader.objectCellTexture(defs, tall, 0, TILE_SIZE_PX, row)),
+    );
+    expect(rows[1].frame.y - rows[0].frame.y).toBe(TILE_SIZE_PX);
+    expect(rows.map((t) => t.frame.height)).toEqual([TILE_SIZE_PX, TILE_SIZE_PX]);
+    await expect(loader.objectCellTexture(defs, tall, 0, TILE_SIZE_PX, 2)).rejects.toThrow(
       /tall_thing/,
     );
   });

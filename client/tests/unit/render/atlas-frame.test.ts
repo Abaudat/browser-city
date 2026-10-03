@@ -55,3 +55,14 @@ describe("defCellFrameRect", () => {
     expect(a).toEqual(b);
   });
 });
+
+describe("defCellFrameRect, several rows", () => {
+  const TILE_SIZE_PX = 16;
+  it("cuts one tile-high row at sourceRow from the sprite's own origin", () => {
+    const whole = { x: 32, y: 48, width: 32, height: 32 };
+    expect([0, 1].map((row) => defCellFrameRect(whole, 1, TILE_SIZE_PX, row, 2))).toEqual([
+      { x: 32 + TILE_SIZE_PX, y: 48, width: TILE_SIZE_PX, height: TILE_SIZE_PX },
+      { x: 32 + TILE_SIZE_PX, y: 48 + TILE_SIZE_PX, width: TILE_SIZE_PX, height: TILE_SIZE_PX },
+    ]);
+  });
+});

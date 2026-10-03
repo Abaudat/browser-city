@@ -455,7 +455,13 @@ function resolvePropTexture(
 ): Promise<Texture> {
   if (isDefPropDrawable(drawable)) {
     const object = objectDefById(objectDefIndex, drawable.defId);
-    return atlasPageLoader.objectCellTexture(defs, object, drawable.sourceCol, tileSizePx);
+    return atlasPageLoader.objectCellTexture(
+      defs,
+      object,
+      drawable.sourceCol,
+      tileSizePx,
+      drawable.sourceRow,
+    );
   }
   const base = textureFor(drawable.assetKey, textures);
   return Promise.resolve(sliceTexture(base, drawable, tileSizePx));

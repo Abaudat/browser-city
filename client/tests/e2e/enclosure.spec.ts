@@ -39,6 +39,7 @@ import {
   STREET_VISIBILITY_ON_SUBWAY_LANDING,
 } from "../unit/test-street/golden";
 import {
+  committedDefs,
   propCells,
   shopfrontExitRestY,
   stairwellRowsAt,
@@ -240,25 +241,33 @@ test.describe("story 1.7: enclosure visibility", () => {
     await page.keyboard.down("ArrowLeft");
     await page.waitForFunction(
       (x) => (window.__bc?.playerPosition?.x ?? Infinity) <= x,
-      box.x0 - 1,
+      // Centre half a cell west of the group: the drawn one-cell body is clear of it.
+      box.x0 - 0.5,
       { timeout: 15_000 },
     );
     await page.keyboard.up("ArrowLeft");
+    // The platform is a storey down: its screen rows sit one storey lower.
+    const storeyPx = committedDefs().balance.find(
+      (b) => b.key === "render.storey_height_px",
+    )?.value;
+    if (storeyPx === undefined) throw new Error("no render.storey_height_px balance");
+    const floorShift = -SUBWAY_FLOOR * storeyPx;
     const stairsClip = await page.evaluate(
-      ({ x0, y0, x1, y1 }) => {
+      ({ x0, y0, x1, y1, floorShift }) => {
         const view = window.__bc?.viewTransform;
         const canvas = document.querySelector("#test-street canvas");
         if (!view || !canvas) throw new Error("no view transform or canvas");
         const rect = canvas.getBoundingClientRect();
-        const px = (cell: number, offset: number) => cell * 16 * view.zoom + offset;
+        const px = (cell: number, offset: number, shift = 0) =>
+          (cell * 16 + shift) * view.zoom + offset;
         return {
           x: rect.x + px(x0, view.offsetX),
-          y: rect.y + px(y0, view.offsetY),
+          y: rect.y + px(y0, view.offsetY, floorShift),
           width: px(x1, view.offsetX) - px(x0, view.offsetX),
           height: px(y1, view.offsetY) - px(y0, view.offsetY),
         };
       },
-      { x0: box.x0 - 1, y0: box.y0 - 1, x1: box.x1 + 1, y1: box.y1 + 1 },
+      { x0: box.x0 - 1, y0: box.y0 - 1, x1: box.x1 + 1, y1: box.y1 + 1, floorShift },
     );
     await expect(page).toHaveScreenshot("platform-stairs.png", {
       ...SCREENSHOT_OPTIONS,
