@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 
 use defs_build::atlas::image::decode_rgba8;
 use defs_build::codes::CodeTables;
-use defs_build::cut_edges::{CutEdge, Edge, Rect, cut_edges};
+#[path = "support/cut_edges.rs"]
+mod cut_edges;
+use cut_edges::{CutEdge, Edge, Rect, cut_edges};
 use defs_build::model::{Defs, SPRITE_SHEET_ALLOWED_ROOT};
 use defs_build::{fsio, parse, validate};
 

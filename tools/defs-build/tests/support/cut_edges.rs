@@ -6,7 +6,7 @@
 //! RGBA8 sheet; "opaque" is [`crate::alpha::is_opaque`], never a second
 //! threshold.
 
-use crate::alpha::is_opaque;
+use defs_build::alpha::is_opaque;
 
 /// A rect on a sheet, in sheet pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
