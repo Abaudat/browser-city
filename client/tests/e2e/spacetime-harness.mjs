@@ -81,7 +81,7 @@ function uniqueDbName() {
   return `bc-e2e-${Date.now()}-${process.pid}`;
 }
 
-export async function startSpacetime() {
+export async function startSpacetime({ timeControl = false } = {}) {
   // A prior crashed run's state file must never look valid to this one:
   // remove it before anything else, so a failure below (which skips the
   // overwrite at the end) can't leave a stale-but-plausible handle behind.
@@ -112,43 +112,37 @@ export async function startSpacetime() {
     );
   }
 
-  // The module is built with the dev-only `time-control` feature
-  // (`jump_clock`/`set_clock_speed`, FR163), the same flavour
-  // `scripts/dev/publish-dev.sh` publishes, so a spec can age a character
-  // by city days without waiting; this instance is disposable and local,
-  // and the production build never carries the feature.
-  const build = spawnSync(
-    "cargo",
-    [
-      "build",
-      "--features",
-      "time-control",
-      "--target",
-      "wasm32-unknown-unknown",
-      "--release",
-      "-p",
-      "browser_city",
-    ],
-    { cwd: path.join(REPO_ROOT, "server"), encoding: "utf-8" },
-  );
-  if (build.status !== 0) {
-    throw new Error(`cargo build (time-control) failed:
-${build.stdout}
-${build.stderr}`);
-  }
-  const wasm = path.join(
-    REPO_ROOT,
-    "server",
-    "target",
-    "wasm32-unknown-unknown",
-    "release",
-    "browser_city.wasm",
-  );
-  const publish = spawnSync(
-    "spacetime",
-    ["publish", "--no-config", "--server", serverUrl, "--bin-path", wasm, "--yes", dbName],
-    { cwd: REPO_ROOT, encoding: "utf-8" },
-  );
+  // `timeControl` publishes the dev-only flavour (`jump_clock`/
+  // `set_clock_speed`, FR163) through `scripts/dev/publish-dev.sh`, the one
+  // build path for it, so a spec can age a character by city days. Only the
+  // functional e2e server asks; every other caller (the deploy-smoke
+  // rehearsal included) publishes the production module as deployed.
+  const publish = timeControl
+    ? spawnSync(
+        "bash",
+        [
+          path.join(REPO_ROOT, "scripts", "dev", "publish-dev.sh"),
+          dbName,
+          "--server",
+          serverUrl,
+          "--no-config",
+        ],
+        { cwd: REPO_ROOT, encoding: "utf-8" },
+      )
+    : spawnSync(
+        "spacetime",
+        [
+          "publish",
+          "--no-config",
+          "--server",
+          serverUrl,
+          "--module-path",
+          "server",
+          "--yes",
+          dbName,
+        ],
+        { cwd: REPO_ROOT, encoding: "utf-8" },
+      );
   if (publish.status !== 0) {
     throw new Error(`spacetime publish failed:\n${publish.stdout}\n${publish.stderr}`);
   }

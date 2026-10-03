@@ -18,7 +18,7 @@ import {
 
 const OIDC_CLIENT_ID = "bc-e2e";
 
-const handle = await startSpacetime();
+const handle = await startSpacetime({ timeControl: true });
 
 // Story 4.5: a disposable local OIDC issuer, registered with the module the
 // way `deploy.yml` registers the real one, and handed to the client build.

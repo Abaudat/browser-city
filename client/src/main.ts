@@ -1,4 +1,5 @@
 import { Application } from "pixi.js";
+import { DEFAULT_HANDSHAKE_TIMEOUT_MS } from "./boot/boot-gate";
 import { BOOT_MARK, markBoot } from "./boot/boot-marks";
 import { runBootSequence } from "./boot/boot-sequence";
 import type { VerifiedDefs } from "./boot/handshake";
@@ -8,7 +9,9 @@ import { readReloadedFor, writeReloadedFor } from "./boot/reloaded-for-storage";
 import type { DebugWorldView } from "./debug/world-view";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
+import { guardedCreateCharacter } from "./identity/create-guard";
 import { carrierDefId, offerDue, readOfferRules } from "./identity/link-offer";
+import { decideOffer } from "./identity/link-offer-gate";
 import { loadLastShownDay, saveLastShownDay } from "./identity/link-prompt";
 import { offerLink, resumeLinkIfPending } from "./identity/link-session";
 import type { Intent } from "./input/intent";
@@ -124,16 +127,11 @@ async function main(): Promise<void> {
   const serverClock = new ServerClock(() => performance.now());
   const cityClock = new CityClock(serverClock);
   // Story 4.5 (FR143): what the link offer is decided from, kept as the
-  // connection reports it. `applied` settles on the first subscription apply
-  // (every initial row, the player's own character included) or on the first
-  // failure to connect, so the decision never waits on a socket that is down.
+  // connection reports it.
   let latestIdentity: IdentityReport | null = null;
   let latestCharacter: CharacterReport | null = null;
   let latestClock: { epochMicros: bigint; speed: number } | null = null;
-  let resolveApplied: () => void = () => {};
-  const applied = new Promise<void>((resolve) => {
-    resolveApplied = resolve;
-  });
+  const identityStorage = resolveSessionStorage(() => window.localStorage);
   exposeCityTimeForE2e(() => cityClock.now());
   // Story 4.3: the interest region. It holds nothing until the defs give
   // it a floor range and the scene gives it a position.
@@ -143,10 +141,7 @@ async function main(): Promise<void> {
     onPing,
     onStatus: (status) => {
       notice.setStatus(status);
-      if (status === "disconnected") {
-        latch.resolveUnreachable();
-        resolveApplied();
-      }
+      if (status === "disconnected") latch.resolveUnreachable();
     },
     onHandshake: (version) => {
       latch.resolveHandshake(version);
@@ -164,7 +159,7 @@ async function main(): Promise<void> {
         recordWorldClockForE2e(epochMicros, kind);
       },
     },
-    storage: resolveSessionStorage(() => window.localStorage),
+    storage: identityStorage,
     onIdentity: (identity) => {
       latestIdentity = identity;
       recordIdentityForE2e(identity);
@@ -173,7 +168,6 @@ async function main(): Promise<void> {
       latestCharacter = character;
       recordCharacterForE2e(character);
     },
-    onApplied: resolveApplied,
     region: {
       controller: region,
       rows: {
@@ -206,7 +200,12 @@ async function main(): Promise<void> {
     replaceUrl: (url) => window.history.replaceState(null, "", url),
   });
   exposeIdentityActionsForE2e({
-    createCharacter: () => conn.reducers.createCharacter({}),
+    // The guard sits on the create path itself: nothing creates a character
+    // for an identity whose token could not be kept.
+    createCharacter: guardedCreateCharacter(
+      () => latestIdentity?.persisted === true,
+      () => conn.reducers.createCharacter({}),
+    ),
     startLink: () =>
       offerLink({
         config: OIDC_CONFIG,
@@ -225,7 +224,6 @@ async function main(): Promise<void> {
       newCode: newLinkCode,
       beginLink: (code) => beginLink(conn, code),
     });
-  const identityStorage = resolveSessionStorage(() => window.localStorage);
   let carrierDef: number | undefined;
   // Evaluated once per session, as the scene is about to mount, never
   // mid-session. Showing the offer records the city day, so declining is
@@ -237,26 +235,31 @@ async function main(): Promise<void> {
         recordLinkOfferForE2e(false);
         return;
       }
-      await applied;
-      let today = cityClock.now()?.day;
-      for (let i = 0; today === undefined && i < 40; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        today = cityClock.now()?.day;
-      }
-      const due = offerDue({
-        character: latestCharacter,
-        identity: latestIdentity,
+      let shownOn: number | undefined;
+      const due = await decideOffer({
+        hasCarrier: true,
         configured: true,
-        clock: latestClock,
-        realMsPerCityMinute: defs.realMsPerCityMinute,
-        today,
-        lastShownDay: loadLastShownDay(identityStorage),
-        rules: readOfferRules(defs),
+        today: () => cityClock.now()?.day,
+        firstClockSample: serverClock.whenSampled(),
+        timeout: () => new Promise((resolve) => setTimeout(resolve, DEFAULT_HANDSHAKE_TIMEOUT_MS)),
+        due: (today) => {
+          shownOn = today;
+          return offerDue({
+            character: latestCharacter,
+            identity: latestIdentity,
+            configured: true,
+            clock: latestClock,
+            realMsPerCityMinute: defs.realMsPerCityMinute,
+            today,
+            lastShownDay: loadLastShownDay(identityStorage),
+            rules: readOfferRules(defs),
+          });
+        },
       });
-      if (due && today !== undefined) {
+      if (due && shownOn !== undefined) {
         placeLinkCarrier(carrier);
         carrierDef = carrier;
-        saveLastShownDay(identityStorage, today);
+        saveLastShownDay(identityStorage, shownOn);
       }
       recordLinkOfferForE2e(due);
     },

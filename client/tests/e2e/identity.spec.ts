@@ -263,6 +263,10 @@ test("a token minted for another application cannot link a character", async ({ 
 // module carries: a character's age is its real creation instant read on the
 // city clock, so a jump (which moves the epoch under it) cannot age it, and
 // only a faster clock can. The spec polls the offer, never sleeps.
+// `set_clock_speed` is instance-wide: on CI `workers: 1` serialises every spec
+// file, so no other spec can observe the fast clock, but locally the default
+// worker count can run `city-clock.spec.ts` beside this one -- a local-only
+// flake there is this, not a reason to widen a timeout.
 // ---------------------------------------------------------------------------
 
 const CARRIER_DEF_ID = committedDefs().objects.find((o) => o.key === "registry_post")?.id ?? -1;
@@ -318,6 +322,35 @@ async function newPlayerWithCharacter(browser: Browser): Promise<Page> {
   await characterOf(page);
   return page;
 }
+
+test("a tab whose token cannot be stored is a session-only identity and cannot create a character", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    Storage.prototype.setItem = () => {
+      throw new Error("QuotaExceededError");
+    };
+  });
+  await page.goto("/");
+  await page.waitForFunction(() => window.__bc?.identity !== undefined, undefined, {
+    timeout: 10_000,
+  });
+  expect(await page.evaluate(() => window.__bc?.identity?.persisted)).toBe(false);
+  await page.waitForFunction(() => window.__bc?.createCharacter !== undefined);
+  const refused = await page.evaluate(async () => {
+    try {
+      await window.__bc?.createCharacter?.();
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  expect(refused).toBe(true);
+  expect(await page.evaluate(() => window.__bc?.character)).toBeUndefined();
+  await context.close();
+});
 
 /** Reloads until the offer is placed: the character became a city day old. */
 async function reloadUntilOffered(page: Page): Promise<void> {

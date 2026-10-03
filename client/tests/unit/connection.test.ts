@@ -734,20 +734,6 @@ describe("identity token (story 4.5, FR141)", () => {
     });
   });
 
-  it("reports once the subscription has applied, so the first state is complete", () => {
-    let applied = 0;
-    connect(() => {}, undefined, undefined, undefined, {
-      storage: fakeStorage().storage,
-      onApplied: () => {
-        applied += 1;
-      },
-    });
-    state.onConnectCb?.(fakeConn, identity, "t");
-    expect(applied).toBe(0);
-    state.onAppliedCb?.();
-    expect(applied).toBe(1);
-  });
-
   it("reports the player's own character from the my_character view", () => {
     const seen: unknown[] = [];
     connect(() => {}, undefined, undefined, undefined, {

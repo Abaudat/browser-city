@@ -102,9 +102,6 @@ export interface ConnectOptions {
   readonly storage?: SettingsStorage | null;
   readonly onIdentity?: (identity: IdentityReport) => void;
   readonly onCharacter?: (character: CharacterReport) => void;
-  /** The first subscription apply: every table's initial rows, the player's
-   * own character included, have been delivered. */
-  readonly onApplied?: () => void;
   /** Story 4.3: the interest region. */
   readonly region?: RegionWiring;
 }
@@ -135,17 +132,8 @@ export interface ConnectOptions {
  */
 export function connect(options: ConnectOptions): DbConnection {
   options.onStatus?.("connecting");
-  const {
-    onPing,
-    onStatus,
-    onHandshake,
-    clock,
-    region,
-    storage,
-    onIdentity,
-    onCharacter,
-    onApplied,
-  } = options;
+  const { onPing, onStatus, onHandshake, clock, region, storage, onIdentity, onCharacter } =
+    options;
   let clockSync: ClockSync | undefined;
   // The whole-table subscription is three singletons; the world arrives
   // through the region. `SUBSCRIPTION_APPLIED` keeps meaning the first
@@ -174,10 +162,7 @@ export function connect(options: ConnectOptions): DbConnection {
       // extra round trip on the common (matched-version) path.
       connection
         .subscriptionBuilder()
-        .onApplied(() => {
-          markBoot(BOOT_MARK.SUBSCRIPTION_APPLIED);
-          onApplied?.();
-        })
+        .onApplied(() => markBoot(BOOT_MARK.SUBSCRIPTION_APPLIED))
         .onError((ctx) => {
           // Cycle 1 review (Tim's finding 6): with no `onError`, a
           // rejected subscribe left the boot gate's own handshake latch

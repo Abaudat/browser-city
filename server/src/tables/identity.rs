@@ -6,7 +6,7 @@
 
 use sim::identity::{
     ANONYMOUS_ISSUER, ClaimError, CreatePlan, IssuerRow, LinkPlan, check_capacity, check_claim,
-    credential, is_claim_stale, plan_create, plan_link,
+    credential, plan_create, plan_link,
 };
 use sim::reducer_classes::ReducerClass;
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, Timestamp, ViewContext, view};
@@ -203,7 +203,6 @@ pub fn begin_link(ctx: &ReducerContext, code: String) -> Result<(), String> {
         .link_request()
         .expires_at()
         .filter(..=now)
-        .filter(|r| is_claim_stale(r.expires_at, now))
         .map(|r| r.request_id)
         .collect();
     for id in expired {
