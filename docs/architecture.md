@@ -59,11 +59,11 @@ determinism is pinned by a committed golden vector, keyed by
 `disallowed_methods` and `float_arithmetic`; `clippy.toml` also bans
 `sort_unstable_by`, `sort_unstable_by_key`, `select_nth_unstable_by*` and
 std's `DefaultHasher`/`RandomState` (plain `sort_unstable()` over a total
-key stays legal). A `#[cfg(test)]` canary in `sim/src/lib.rs` expects every
+key stays legal). A `#[cfg(test)]` canary in `sim/src/lint_canary.rs` expects every
 ban to fire, and `unfulfilled_lint_expectations` is denied, so a ban that
 stops applying fails clippy.
 
-A `bounds` test tokenises every file under `sim/src/` (`generated/` included, the lint canary excepted by path) and fails on any float literal or `f32`/`f64` identifier, naming file and line; the clippy lints are the second layer.
+A `bounds` test tokenises every file under `sim/src/` (`generated/` included; `sim/src/lint_canary.rs` is the one exempt path) and fails on any float literal or `f32`/`f64` identifier, naming file and line; the clippy lints are the second layer.
 
 `browser_city` cannot be linked natively, so anything requiring a native
 test lives in `sim` or `bounds`.

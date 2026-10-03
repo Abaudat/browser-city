@@ -120,14 +120,6 @@ printf '%s\n' 'const X: () = { ctx.db.district().iter(); };' >> "$d/tables/resto
 sed -i '1i const Y: () = { ctx.db.district().iter(); };' "$d/tables/restore.rs"
 check "a call whose enclosing fn cannot be determined fails" 1 bash "$CHECK" "$d"
 
-d="$(tree)"
-printf '%s
-' 'pub fn hand_chain() { let lu = land_use::run(1); }' >> "$d/tables/district.rs"
-check "a pass module's run named in district.rs fails" 1 bash "$CHECK" "$d"
-
-d="$(plant tables/other.rs 'use sim::generation::streets::run;')"
-check "a pass module's run named elsewhere fails" 1 bash "$CHECK" "$d"
-
 d="$(plant lib.rs 'use sim::generation as g;')"
 check "naming the generation module outside district.rs fails" 1 bash "$CHECK" "$d"
 

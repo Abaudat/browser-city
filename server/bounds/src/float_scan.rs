@@ -12,7 +12,8 @@
 use proc_macro2::{TokenStream, TokenTree};
 use std::path::{Path, PathBuf};
 
-/// The one file under `sim/src/` exempt from the scan, by path.
+/// The one file exempt from the scan, by its path relative to the scanned
+/// root (`sim/src/`): a same-named file anywhere else is scanned.
 pub const EXEMPT: &str = "lint_canary.rs";
 
 const INT_SUFFIXES: [&str; 12] = [
@@ -91,7 +92,10 @@ pub fn scan_tree(dir: &Path) -> Vec<String> {
     rust_files(dir, &mut files);
     let mut hits = Vec::new();
     for file in files {
-        if file.file_name().is_some_and(|n| n == EXEMPT) {
+        if file
+            .strip_prefix(dir)
+            .is_ok_and(|rel| rel == Path::new(EXEMPT))
+        {
             continue;
         }
         let src = std::fs::read_to_string(&file)
@@ -181,6 +185,28 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(out.len(), 1, "{out:?}");
         assert!(out[0].contains("a.rs:2: 1.5"), "{out:?}");
+    }
+
+    #[test]
+    fn a_same_named_file_below_the_root_is_still_scanned() {
+        let dir = std::env::temp_dir().join(format!("bc-float-scan-sub-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("generation")).unwrap();
+        std::fs::write(
+            dir.join(EXEMPT),
+            "fn h(x: f64) {}
+",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("generation").join(EXEMPT),
+            "fn h(x: f64) {}
+",
+        )
+        .unwrap();
+        let out = scan_tree(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert!(out[0].contains("generation"), "{out:?}");
     }
 
     /// NFR25: no float token anywhere in `sim`'s sources, `generated/`

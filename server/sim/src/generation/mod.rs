@@ -23,21 +23,43 @@
 //! position), so adding or moving one block or plot never reshuffles
 //! another's draws.
 //!
-//! [`plan`] chains every implemented pass in order with no verdict;
-//! [`generate`] is `plan` plus [`District::check_building_count`], what
-//! production calls. Every cross-pass harness calls one of the two rather
-//! than hand-chaining the four `run` functions; each pass's own `run`
-//! stays public for its own unit tests and for the two properties that
-//! deliberately feed one pass a perturbed predecessor.
+//! `entry.rs`'s `plan` chains every implemented pass in order with no
+//! verdict; `generate` is `plan` plus the three district verdicts
+//! ([`District::check_building_count`] and its siblings). Both are harness
+//! entry points, re-exported only under `test-fixtures`; production calls
+//! [`create`], which wraps `generate`. Every cross-pass harness calls one
+//! of the two rather than hand-chaining the passes; the pass modules are
+//! public only under `test-fixtures` too, for their own unit tests and for
+//! the two properties that deliberately feed one pass a perturbed
+//! predecessor.
 
+#[cfg(feature = "test-fixtures")]
 pub mod building_types;
+#[cfg(not(feature = "test-fixtures"))]
+mod building_types;
 mod entry;
+#[cfg(feature = "test-fixtures")]
 pub mod envelopes;
+#[cfg(not(feature = "test-fixtures"))]
+mod envelopes;
+#[cfg(feature = "test-fixtures")]
 pub mod land_use;
+// Their harness-only helpers are public API under `test-fixtures`.
+#[cfg(not(feature = "test-fixtures"))]
+#[allow(dead_code)]
+mod land_use;
+#[cfg(feature = "test-fixtures")]
 pub mod plots;
+#[cfg(not(feature = "test-fixtures"))]
+mod plots;
 pub mod record;
 pub mod site;
+#[cfg(feature = "test-fixtures")]
 pub mod streets;
+// Their harness-only helpers are public API under `test-fixtures`.
+#[cfg(not(feature = "test-fixtures"))]
+#[allow(dead_code)]
+mod streets;
 
 pub use building_types::{BuildingTypeMap, TypeAssignment};
 pub use envelopes::{Envelope, EnvelopeMap, EnvelopeOutcome, RejectReason};
@@ -141,7 +163,7 @@ impl std::fmt::Display for GenerationError {
 
 impl std::error::Error for GenerationError {}
 
-/// Every content table [`plan`]/[`generate`] read, loaded once and
+/// Every content table `plan`/`generate` read, loaded once and
 /// passed down as a struct -- Tim's direction: content is an input, one
 /// signature, no `plan_with` twin, and the golden (which freezes a small,
 /// deliberately-unrelated content table alongside its frozen config)

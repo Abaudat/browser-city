@@ -26,10 +26,6 @@ flat() { code "$1" | tr '\n' ' '; }
 CALLS='\.[[:space:]]*district[[:space:]]*\(\)|::[[:space:]]*district[[:space:]]*\(|district[[:space:]]*::[[:space:]]*(district([^_[:alnum:]]|$)|\*)'
 METHOD='\.[[:space:]]*district[[:space:]]*\(\)|::[[:space:]]*district[[:space:]]*\('
 GEN='(^|[^_[:alnum:]])generation([^_[:alnum:]]|$)'
-# A pass module's `run`: hand-chaining the passes is the only route left
-# around `create` (`sim::generation::generate`/`plan` are not reachable
-# without `test-fixtures`, which the module never enables).
-PASS_RUN='(land_use|streets|plots|envelopes|building_types)[[:space:]]*::[[:space:]]*(run|\{)'
 
 # A `use` that leaves a bare `district` after the `district::` segments are
 # taken out: `use super::district::{District, district};` reaches the
@@ -60,7 +56,6 @@ note() { BAD="$BAD$1"$'\n'; }
 
 while IFS= read -r f; do
   rel="${f#"$SRC_DIR"/}"
-  if flat "$f" | grep -Eq "$PASS_RUN"; then note "$rel: names a pass module's run (hand-chaining the passes; call create)"; fi
   case "$rel" in
     tables/district.rs)
       OUT="$(calls_outside "$f" create_district)"
