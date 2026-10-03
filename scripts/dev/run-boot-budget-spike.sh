@@ -173,7 +173,10 @@ MAIN_DB="bc-boot-budget-main-$$"
 spacetime publish --server "$SERVER_URL" --no-config -y "$MAIN_DB" --module-path "$REPO_ROOT/server" >"$DATA_DIR/publish-main.log" 2>&1 \
   || fail "could not publish server/ (browser_city)" "$DATA_DIR/publish-main.log"
 
-( cd "$CLIENT_DIR" && VITE_SPACETIME_URI="ws://127.0.0.1:$SPACETIME_PORT" VITE_SPACETIME_DB="$MAIN_DB" npm run build ) >"$DATA_DIR/build-main.log" 2>&1 \
+# Story 4.5: production is built with an OIDC provider configured, so the link
+# offer's decision is on the mount path and NFR1 is measured with it there (any
+# value: the OIDC chunk never loads on a boot with nothing pending).
+( cd "$CLIENT_DIR" && VITE_SPACETIME_URI="ws://127.0.0.1:$SPACETIME_PORT" VITE_SPACETIME_DB="$MAIN_DB" VITE_OIDC_AUTHORITY="https://oidc.invalid" VITE_OIDC_CLIENT_ID="boot-budget" npm run build ) >"$DATA_DIR/build-main.log" 2>&1 \
   || fail "'npm run build' (production client) failed" "$DATA_DIR/build-main.log"
 
 # Quentin's cycle-3 direction: `vite preview` serves HTTP/1.1 by default,

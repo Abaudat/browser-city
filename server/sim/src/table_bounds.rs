@@ -64,6 +64,24 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 375_000,
         kind: BoundKind::Engineering,
     },
+    // Story 4.5: accepted OIDC providers -- a handful, ever.
+    TableBound {
+        accessor: "oidc_issuer",
+        max_rows: 8,
+        expected_rows: 1,
+        alert_rows: 6,
+        kind: BoundKind::Mechanical,
+    },
+    // Story 4.5: one-time link codes, one per requesting identity, pruned
+    // on every `begin_link` once past their ten minutes. Anyone may mint
+    // one, so this is the ceiling that stops a flood.
+    TableBound {
+        accessor: "link_request",
+        max_rows: crate::identity::LINK_REQUEST_MAX_ROWS,
+        expected_rows: 10,
+        alert_rows: 7_500,
+        kind: BoundKind::Engineering,
+    },
     // A one-row config table (the module owner, recorded from `init`) --
     // the row count is the game rule.
     TableBound {

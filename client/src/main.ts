@@ -1,4 +1,5 @@
 import { Application } from "pixi.js";
+import { DEFAULT_HANDSHAKE_TIMEOUT_MS } from "./boot/boot-gate";
 import { BOOT_MARK, markBoot } from "./boot/boot-marks";
 import { runBootSequence } from "./boot/boot-sequence";
 import type { VerifiedDefs } from "./boot/handshake";
@@ -8,22 +9,33 @@ import { readReloadedFor, writeReloadedFor } from "./boot/reloaded-for-storage";
 import type { DebugWorldView } from "./debug/world-view";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
+import { guardedCreateCharacter } from "./identity/create-guard";
+import { carrierDefId, offerDue, readOfferRules } from "./identity/link-offer";
+import { decideOffer } from "./identity/link-offer-gate";
+import { loadLastShownDay, saveLastShownDay } from "./identity/link-prompt";
+import { offerLink, resumeLinkIfPending } from "./identity/link-session";
+import type { Intent } from "./input/intent";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
-import { connect } from "./net/connection";
+import { OIDC_CONFIG } from "./net/config";
+import { type CharacterReport, connect, type IdentityReport } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
+  exposeIdentityActionsForE2e,
   exposePlayerScreenBoundsForE2e,
   exposeRegionForE2e,
   exposeWorldTransformForE2e,
   recordAllBoundTextureSourcesForE2e,
   recordAppearanceTextureIdsForE2e,
+  recordCharacterForE2e,
   recordDistinctBoundAtlasPagesForE2e,
   recordFrameWorkForE2e,
   recordHighlightForE2e,
+  recordIdentityForE2e,
   recordIgnoredIntentForE2e,
   recordIntentForE2e,
+  recordLinkOfferForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerAppearanceForE2e,
@@ -35,6 +47,7 @@ import {
   recordWorldClockForE2e,
   sceneRegionFeed,
 } from "./net/e2e-hooks";
+import { beginLink, completeLinkWithIdToken, newLinkCode } from "./net/link";
 import type { PingObservation } from "./net/observe-ping";
 import { PROTOCOL_VERSION } from "./net/protocol-version";
 import { cachedChunkKeys, RegionController } from "./net/region-subscription";
@@ -46,6 +59,7 @@ import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings"
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
 import { PLAYER_START } from "./test-street/fixture";
+import { placeLinkCarrier } from "./test-street/link-carrier";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
 import { CityClock } from "./time/city-clock";
 import { ServerClock } from "./time/server-clock";
@@ -61,6 +75,12 @@ import { handleId } from "./world/region";
  * overlay drawn against a made-up camera would be drawn in the wrong
  * place, which is worse than not yet drawn. */
 const NO_CAMERA_YET = { zoom: 0, offsetX: 0, offsetY: 0 } as const;
+
+/** Story 4.5: the link offer's two touch points with the street scene. */
+interface OfferWiring {
+  readonly beforeMount: (defs: VerifiedDefs, handshakeSettled: boolean) => Promise<void>;
+  readonly onIntent: (intent: Intent) => void;
+}
 
 async function main(): Promise<void> {
   // Story 1.14 (NFR1): the bundle term's own end -- module top-level
@@ -106,33 +126,49 @@ async function main(): Promise<void> {
   // defs are verified.
   const serverClock = new ServerClock(() => performance.now());
   const cityClock = new CityClock(serverClock);
+  // Story 4.5 (FR143): what the link offer is decided from, kept as the
+  // connection reports it.
+  let latestIdentity: IdentityReport | null = null;
+  let latestCharacter: CharacterReport | null = null;
+  let latestClock: { epochMicros: bigint; speed: number } | null = null;
+  const identityStorage = resolveSessionStorage(() => window.localStorage);
   exposeCityTimeForE2e(() => cityClock.now());
   // Story 4.3: the interest region. It holds nothing until the defs give
   // it a floor range and the scene gives it a position.
   const region = new RegionController();
   const moveRegion = (x: number, y: number, floor: number): void => region.moveTo(x, y, floor);
-  const conn = connect(
+  const conn = connect({
     onPing,
-    (status) => {
+    onStatus: (status) => {
       notice.setStatus(status);
       if (status === "disconnected") latch.resolveUnreachable();
     },
-    (version) => {
+    onHandshake: (version) => {
       latch.resolveHandshake(version);
       postMountGuard?.onHandshake(version);
     },
-    {
+    clock: {
       serverClock,
       visibility: document,
       onClock: ({ epochMicros, speed }, kind) => {
         cityClock.setClock(epochMicros, speed);
+        latestClock = { epochMicros, speed };
         if (performance.getEntriesByName(BOOT_MARK.CITY_CLOCK_KNOWN).length === 0) {
           markBoot(BOOT_MARK.CITY_CLOCK_KNOWN);
         }
         recordWorldClockForE2e(epochMicros, kind);
       },
     },
-    {
+    storage: identityStorage,
+    onIdentity: (identity) => {
+      latestIdentity = identity;
+      recordIdentityForE2e(identity);
+    },
+    onCharacter: (character) => {
+      latestCharacter = character;
+      recordCharacterForE2e(character);
+    },
+    region: {
       controller: region,
       rows: {
         onInsert: (table, row) => recordRegionRowForE2e("inserts", table, row),
@@ -140,7 +176,7 @@ async function main(): Promise<void> {
         onDelete: (table, row) => recordRegionRowForE2e("deletes", table, row),
       },
     },
-  );
+  });
   exposeRegionForE2e({
     held: () => region.subscriptions()?.heldKeys().map(handleId) ?? [],
     liveHandles: () => region.subscriptions()?.liveHandleCount() ?? 0,
@@ -148,6 +184,93 @@ async function main(): Promise<void> {
     cachedChunkKeys: (table) => cachedChunkKeys(conn, table),
     moveTo: moveRegion,
   });
+
+  // Story 4.5 (FR143): linking. The OIDC library is a dynamic import,
+  // reached only when a link starts or the page boots back from the
+  // provider; a boot with nothing pending loads none of it.
+  const redirectUri = `${window.location.origin}${window.location.pathname}`;
+  const loadLinkFlow = () => import("./identity/link-flow");
+  void resumeLinkIfPending({
+    config: OIDC_CONFIG,
+    search: window.location.search,
+    href: window.location.href,
+    redirectUri,
+    loadFlow: loadLinkFlow,
+    completeLink: completeLinkWithIdToken,
+    replaceUrl: (url) => window.history.replaceState(null, "", url),
+  });
+  exposeIdentityActionsForE2e({
+    // The guard sits on the create path itself: nothing creates a character
+    // for an identity whose token could not be kept.
+    createCharacter: guardedCreateCharacter(
+      () => latestIdentity?.persisted === true,
+      () => conn.reducers.createCharacter({}),
+    ),
+    startLink: () =>
+      offerLink({
+        config: OIDC_CONFIG,
+        redirectUri,
+        loadFlow: loadLinkFlow,
+        newCode: newLinkCode,
+        beginLink: (code) => beginLink(conn, code),
+      }),
+  });
+
+  const startOffer = () =>
+    offerLink({
+      config: OIDC_CONFIG,
+      redirectUri,
+      loadFlow: loadLinkFlow,
+      newCode: newLinkCode,
+      beginLink: (code) => beginLink(conn, code),
+    });
+  let carrierDef: number | undefined;
+  // Evaluated once per session, as the scene is about to mount, never
+  // mid-session. Showing the offer records the city day, so declining is
+  // simply not taking it.
+  const offer: OfferWiring = {
+    beforeMount: async (defs, handshakeSettled) => {
+      const carrier = carrierDefId(defs);
+      if (carrier === undefined || OIDC_CONFIG === null) {
+        recordLinkOfferForE2e(false);
+        return;
+      }
+      let shownOn: number | undefined;
+      const due = await decideOffer({
+        hasCarrier: true,
+        configured: true,
+        handshakeSettled,
+        today: () => cityClock.now()?.day,
+        firstClockSample: serverClock.whenSampled(),
+        timeout: () => new Promise((resolve) => setTimeout(resolve, DEFAULT_HANDSHAKE_TIMEOUT_MS)),
+        due: (today) => {
+          shownOn = today;
+          return offerDue({
+            character: latestCharacter,
+            identity: latestIdentity,
+            configured: true,
+            clock: latestClock,
+            realMsPerCityMinute: defs.realMsPerCityMinute,
+            today,
+            lastShownDay: loadLastShownDay(identityStorage),
+            rules: readOfferRules(defs),
+          });
+        },
+      });
+      if (due && shownOn !== undefined) {
+        placeLinkCarrier(carrier);
+        carrierDef = carrier;
+        saveLastShownDay(identityStorage, shownOn);
+      }
+      recordLinkOfferForE2e(due);
+    },
+    onIntent: (intent) => {
+      if (carrierDef === undefined || intent.defId !== carrierDef) return;
+      startOffer().catch((error: unknown) => {
+        console.error("[identity] the link offer could not start", error);
+      });
+    },
+  };
 
   try {
     await startStreetScene(
@@ -157,6 +280,7 @@ async function main(): Promise<void> {
         postMountGuard = guard;
       },
       (rate) => cityClock.setRate(rate),
+      offer,
       region,
       sceneRegionFeed(moveRegion),
     );
@@ -209,6 +333,7 @@ async function startStreetScene(
   onDegrade: () => void,
   setPostMountGuard: (guard: PostMountGuard) => void,
   setCityRate: (realMsPerCityMinute: number) => void,
+  offer: OfferWiring,
   region: RegionController,
   followScene: (x: number, y: number, floor: number) => void,
 ): Promise<void> {
@@ -271,6 +396,10 @@ async function startStreetScene(
   }
   const defs: VerifiedDefs = sequenceResult.defs;
   setCityRate(defs.realMsPerCityMinute);
+  // Story 4.5 (FR143): decided once, as the scene is about to mount.
+  // The gate's own outcome: a handshake arrived, or the server was unreachable
+  // and the fetched defs are mounted as they are.
+  await offer.beforeMount(defs, latch.latest() !== undefined);
   // Story 4.3: the floor range is the defs', and the scene's spawn is where
   // the initial region is requested around; from here on the scene's own
   // position drives it (`onPlayerMove`), edge-triggered.
@@ -424,7 +553,10 @@ async function startStreetScene(
     // procedure interaction model is Epic 8's, deliberately unresolved --
     // so the only consumer today is the e2e observation hook. Swapping
     // this function is the whole of what Epic 8 has to do here.
-    onIntent: recordIntentForE2e,
+    onIntent: (intent) => {
+      recordIntentForE2e(intent);
+      offer.onIntent(intent);
+    },
     onIgnored: recordIgnoredIntentForE2e,
     onViewTransform: (zoom, offsetX, offsetY) => {
       recordViewTransformForE2e(zoom, offsetX, offsetY);

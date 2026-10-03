@@ -53,6 +53,9 @@ pub const INV_ACTOR_LOCATION_WRITTEN_ONLY_ON_CHUNK_CHANGE: &str = "actor_locatio
 pub const INV_CHANGE_IS_REFUSED_ONLY_WHEN_THE_TILL_CANNOT_MAKE_IT: &str = "change is refused only when the till cannot make it: while the change due is under the bound a payment reports no change if and only if no combination of the pieces the till holds and what was just tendered sums to the change due, and the change chosen is the fewest pieces with ties to the larger denomination";
 pub const INV_CASH_PLANNING_NEVER_PANICS: &str = "cash planning never panics: value_of, choose_change and plan_payment return Ok or a typed Err for any table, any lines, any tender and any price";
 pub const INV_ITEM_INSTANCE_IN_EXACTLY_ONE_STATE: &str = "an item instance is in exactly one of its two states: any interleaving of place and hold moves leaves each instance in one form, never both, never neither";
+pub const INV_IDENTITY_REACHES_AT_MOST_ONE_CHARACTER: &str = "an identity reaches at most one character: over any interleaving of create, link, repeated link, link-to-self and link-by-a-stranger, no identity maps to two characters and no plan remaps a mapped identity";
+pub const INV_LINKING_NEVER_CHANGES_OR_ORPHANS_A_CHARACTER: &str = "linking never changes or orphans a character: a character's identity set only grows and never empties, and the character row is identical before and after any link, successful or refused";
+pub const INV_IDENTITY_PLANNING_NEVER_PANICS: &str = "identity planning never panics: plan_create, plan_link, check_claim and credential return Ok or a typed Err for any input, a spent or expired claim and an issuer with no audience included";
 pub const INV_COLLIDER_WITHIN_FOOTPRINT: &str = "collider is contained within footprint";
 pub const INV_IDENTICAL_SEEDS_DERIVE_IDENTICALLY: &str =
     "two derivations from identical seeded inputs match";
@@ -6658,6 +6661,85 @@ proptest! {
             price,
             &denoms,
         );
+    }
+}
+
+// Story 4.5 (FR141-FR143): which character an identity reaches. The plans are
+// `sim::identity`'s; the model applies them the way the reducers do.
+
+proptest! {
+    /// `inv_identity_reaches_at_most_one_character`
+    #[test]
+    fn inv_identity_reaches_at_most_one_character(ops in prop::collection::vec(support::identity_model::op(), 0..60)) {
+        use sim::identity::{LinkError, LinkPlan, plan_link};
+        use support::identity_model::Model;
+        let mut m = Model::default();
+        for o in &ops {
+            let _ = m.apply(o);
+            for (&i, &c) in &m.mapping {
+                prop_assert!(
+                    m.characters.contains_key(&c),
+                    "identity {i} maps to a missing character"
+                );
+            }
+        }
+        for (a, b) in (0u8..6).flat_map(|a| (0u8..6).map(move |b| (a, b))) {
+            if let (Some(x), Some(y)) = (m.mapping.get(&a), m.mapping.get(&b)) {
+                let p = plan_link(Some(*x), Some(*y));
+                prop_assert!(
+                    p == Ok(LinkPlan::AlreadyLinked) || p == Err(LinkError::DifferentCharacters)
+                );
+            }
+        }
+    }
+
+    /// `inv_linking_never_changes_or_orphans_a_character`
+    #[test]
+    fn inv_linking_never_changes_or_orphans_a_character(
+        ops in prop::collection::vec(support::identity_model::op(), 0..60)
+    ) {
+        use support::identity_model::{Model, Op};
+        let mut m = Model::default();
+        for o in &ops {
+            let before_chars = m.characters.clone();
+            let before_sets = m.identity_sets();
+            let _ = m.apply(o);
+            if matches!(o, Op::Link(..)) {
+                prop_assert_eq!(&m.characters, &before_chars);
+            }
+            let after_sets = m.identity_sets();
+            for (c, set) in &before_sets {
+                let now = after_sets.get(c);
+                prop_assert!(now.is_some_and(|n| n.is_superset(set) && !n.is_empty()));
+            }
+        }
+    }
+
+    /// `inv_identity_planning_never_panics`
+    #[test]
+    fn inv_identity_planning_never_panics(
+        a in prop::option::of(any::<u64>()),
+        b in prop::option::of(any::<u64>()),
+        now in any::<i64>(),
+        exp in prop::option::of(any::<i64>()),
+        issuer in ".{0,12}",
+        aud in prop::collection::vec(".{0,8}", 0..4),
+        rows in prop::collection::vec((any::<u64>(), ".{0,12}", ".{0,8}"), 0..4),
+    ) {
+        use sim::identity::{IssuerRow, check_claim, credential, plan_create, plan_link};
+        let _ = plan_create(a);
+        let _ = plan_link(a, b);
+        let _ = check_claim(exp, now);
+        let accepted: Vec<IssuerRow> = rows
+            .iter()
+            .map(|(id, i, c)| IssuerRow {
+                issuer_id: *id,
+                issuer: i.clone(),
+                client_id: c.clone(),
+            })
+            .collect();
+        let aud: Vec<&str> = aud.iter().map(String::as_str).collect();
+        let _ = credential(&issuer, &aud, &accepted);
     }
 }
 

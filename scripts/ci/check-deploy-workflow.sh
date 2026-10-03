@@ -285,6 +285,25 @@ elif ! printf '%s
   echo "check-deploy-workflow: FAIL -- 'publish-module' never calls finish_publish -- a redeployed world must have every one-row table, code and armed cadence re-established (docs/architecture.md)" >&2
   FAILED=1
 fi
+# --- story 4.5: the OIDC provider is configuration, never code. Both
+# halves read the same two repository variables: publish-module registers
+# the issuer after finish_publish, and the client build is handed the same
+# pair. Unset means linking is off.
+if [ -n "$PUBLISH_MODULE_BLOCK" ]; then
+  for needle in 'accept_oidc_issuer' 'vars.OIDC_AUTHORITY' 'vars.OIDC_CLIENT_ID'; do
+    if ! printf '%s
+' "$PUBLISH_MODULE_BLOCK" | grep -qF "$needle"; then
+      echo "check-deploy-workflow: FAIL -- 'publish-module' does not use '$needle' -- the OIDC provider must be registered from the repository variables after finish_publish (story 4.5)" >&2
+      FAILED=1
+    fi
+  done
+  for needle in 'VITE_OIDC_AUTHORITY: ${{ vars.OIDC_AUTHORITY }}' 'VITE_OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}'; do
+    if ! grep -qF "$needle" "$WORKFLOW"; then
+      echo "check-deploy-workflow: FAIL -- the client build does not set '$needle' -- the client and the module must read the same provider (story 4.5)" >&2
+      FAILED=1
+    fi
+  done
+fi
 while IFS= read -r job; do
   [ -n "$job" ] || continue
   LAST_STEP="$(job_block "$job" | awk '/^      - / { step = "" } { step = step $0 "\n" } END { printf "%s", step }')"
@@ -309,5 +328,5 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, the backup job's first-deploy exception is the positive not-found script, neither deploy.yml's backup job nor backup.yml's export job has a shallow checkout, report-failure accounts for a cancelled job too, publish-module calls finish_publish, every publishing job ends with the world-invariants assert, and backup.yml's storage report never runs before the artifact upload" >&2
+echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, the backup job's first-deploy exception is the positive not-found script, neither deploy.yml's backup job nor backup.yml's export job has a shallow checkout, report-failure accounts for a cancelled job too, publish-module calls finish_publish and registers the OIDC provider from the repository variables the client build also reads, every publishing job ends with the world-invariants assert, and backup.yml's storage report never runs before the artifact upload" >&2
 exit 0

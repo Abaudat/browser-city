@@ -34,7 +34,11 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AcceptOidcIssuerReducer from "./accept_oidc_issuer_reducer";
+import BeginLinkReducer from "./begin_link_reducer";
 import BeginRestoreReducer from "./begin_restore_reducer";
+import CompleteLinkReducer from "./complete_link_reducer";
+import CreateCharacterReducer from "./create_character_reducer";
 import CreateDistrictReducer from "./create_district_reducer";
 import FinishPublishReducer from "./finish_publish_reducer";
 import FinishRestoreReducer from "./finish_restore_reducer";
@@ -57,9 +61,11 @@ import RestoreItemHeldReducer from "./restore_item_held_reducer";
 import RestoreItemInstanceReducer from "./restore_item_instance_reducer";
 import RestoreItemPlacedReducer from "./restore_item_placed_reducer";
 import RestoreLayerCodeReducer from "./restore_layer_code_reducer";
+import RestoreLinkRequestReducer from "./restore_link_request_reducer";
 import RestoreMatterKindReducer from "./restore_matter_kind_reducer";
 import RestoreModuleOwnerReducer from "./restore_module_owner_reducer";
 import RestoreNodeKindReducer from "./restore_node_kind_reducer";
+import RestoreOidcIssuerReducer from "./restore_oidc_issuer_reducer";
 import RestorePlacedObjectReducer from "./restore_placed_object_reducer";
 import RestoreProvisionReducer from "./restore_provision_reducer";
 import RestoreReasonCodeReducer from "./restore_reason_code_reducer";
@@ -84,6 +90,7 @@ import CadenceLivenessRow from "./cadence_liveness_table";
 import DemoPingRow from "./demo_ping_table";
 import FloorTransitionRow from "./floor_transition_table";
 import ModuleVersionRow from "./module_version_table";
+import MyCharacterRow from "./my_character_table";
 import PlacedObjectRow from "./placed_object_table";
 import RoomAreaRow from "./room_area_table";
 import WorldClockRow from "./world_clock_table";
@@ -211,11 +218,22 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, ModuleVersionRow),
+  myCharacter: __table({
+    name: 'my_character',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyCharacterRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("accept_oidc_issuer", AcceptOidcIssuerReducer),
+  __reducerSchema("begin_link", BeginLinkReducer),
   __reducerSchema("begin_restore", BeginRestoreReducer),
+  __reducerSchema("complete_link", CompleteLinkReducer),
+  __reducerSchema("create_character", CreateCharacterReducer),
   __reducerSchema("create_district", CreateDistrictReducer),
   __reducerSchema("finish_publish", FinishPublishReducer),
   __reducerSchema("finish_restore", FinishRestoreReducer),
@@ -238,9 +256,11 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_item_instance", RestoreItemInstanceReducer),
   __reducerSchema("restore_item_placed", RestoreItemPlacedReducer),
   __reducerSchema("restore_layer_code", RestoreLayerCodeReducer),
+  __reducerSchema("restore_link_request", RestoreLinkRequestReducer),
   __reducerSchema("restore_matter_kind", RestoreMatterKindReducer),
   __reducerSchema("restore_module_owner", RestoreModuleOwnerReducer),
   __reducerSchema("restore_node_kind", RestoreNodeKindReducer),
+  __reducerSchema("restore_oidc_issuer", RestoreOidcIssuerReducer),
   __reducerSchema("restore_placed_object", RestorePlacedObjectReducer),
   __reducerSchema("restore_provision", RestoreProvisionReducer),
   __reducerSchema("restore_reason_code", RestoreReasonCodeReducer),
@@ -281,6 +301,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "world_clock": Omit<typeof tablesSchema.schemaType.tables["worldClock"], "accessorName"> & { readonly accessorName: "world_clock" };
     /** @deprecated Use `moduleVersion` instead. This alias will be removed in the next major version. */
     readonly "module_version": Omit<typeof tablesSchema.schemaType.tables["moduleVersion"], "accessorName"> & { readonly accessorName: "module_version" };
+    /** @deprecated Use `myCharacter` instead. This alias will be removed in the next major version. */
+    readonly "my_character": Omit<typeof tablesSchema.schemaType.tables["myCharacter"], "accessorName"> & { readonly accessorName: "my_character" };
   };
 };
 
@@ -308,6 +330,7 @@ const tableAccessorAliases = {
   "room_area": "roomArea",
   "world_clock": "worldClock",
   "module_version": "moduleVersion",
+  "my_character": "myCharacter",
 } as const;
 
 function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
@@ -346,6 +369,8 @@ export type DbView = __DbViewBase & {
   readonly "world_clock": __DbViewBase["worldClock"];
   /** @deprecated Use `moduleVersion` instead. This alias will be removed in the next major version. */
   readonly "module_version": __DbViewBase["moduleVersion"];
+  /** @deprecated Use `myCharacter` instead. This alias will be removed in the next major version. */
+  readonly "my_character": __DbViewBase["myCharacter"];
 };
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
@@ -368,6 +393,8 @@ export type Tables = __TablesBase & {
   readonly "world_clock": __TablesBase["worldClock"];
   /** @deprecated Use `moduleVersion` instead. This alias will be removed in the next major version. */
   readonly "module_version": __TablesBase["moduleVersion"];
+  /** @deprecated Use `myCharacter` instead. This alias will be removed in the next major version. */
+  readonly "my_character": __TablesBase["myCharacter"];
 };
 
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */

@@ -18,6 +18,7 @@ import type { HandshakeVersion } from "../../../src/boot/handshake";
 import { createHandshakeLatch, type HandshakeLatch } from "../../../src/boot/handshake-latch";
 import { DefsVersionMismatchError } from "../../../src/defs/load";
 import type { Defs } from "../../../src/defs/types";
+import { decideOffer } from "../../../src/identity/link-offer-gate";
 
 function defs(defsVersion: string): Defs {
   return { defsVersion } as unknown as Defs;
@@ -234,6 +235,36 @@ describe("runBootGate", () => {
 
         const result = await promise;
         expect(result?.defs.defsVersion).toBe("d1");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("the link offer (story 4.5) adds no wait on the unreachable path: once the gate has timed out, its decision settles with no timer pending", async () => {
+      vi.useFakeTimers();
+      try {
+        const latch = createHandshakeLatch();
+        const deps = baseDeps({
+          fetchDefs: vi.fn(async () => defs("d1")),
+          handshake: latch,
+          handshakeTimeoutMs: 5_000,
+        });
+        const promise = runBootGate(deps);
+        await vi.advanceTimersByTimeAsync(5_000);
+        await promise;
+
+        const timersBefore = vi.getTimerCount();
+        const due = await decideOffer({
+          hasCarrier: true,
+          configured: true,
+          handshakeSettled: latch.latest() !== undefined,
+          today: () => undefined,
+          firstClockSample: new Promise<void>(() => {}),
+          timeout: () => new Promise<void>((r) => setTimeout(r, 8_000)),
+          due: () => true,
+        });
+        expect(due).toBe(false);
+        expect(vi.getTimerCount()).toBe(timersBefore);
       } finally {
         vi.useRealTimers();
       }

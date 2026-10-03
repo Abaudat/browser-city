@@ -8,6 +8,26 @@ function clockAt(perf: { t: number }): ServerClock {
   return new ServerClock(() => perf.t);
 }
 
+describe("ServerClock.whenSampled", () => {
+  it("resolves on the first accepted sample, and at once afterwards", async () => {
+    const perf = { t: 0 };
+    const c = clockAt(perf);
+    let resolved = false;
+    const p = c.whenSampled().then(() => {
+      resolved = true;
+    });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    c.observe(0, MAX_ROUND_TRIP_MS + 1, 5n); // refused: too slow
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    c.observe(0, 100, 5n);
+    await p;
+    expect(resolved).toBe(true);
+    await c.whenSampled();
+  });
+});
+
 describe("ServerClock", () => {
   it("has no estimate before the first sample", () => {
     expect(clockAt({ t: 0 }).nowMicros()).toBeUndefined();

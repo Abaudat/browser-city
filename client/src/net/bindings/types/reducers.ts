@@ -6,7 +6,11 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AcceptOidcIssuerReducer from "../accept_oidc_issuer_reducer";
+import BeginLinkReducer from "../begin_link_reducer";
 import BeginRestoreReducer from "../begin_restore_reducer";
+import CompleteLinkReducer from "../complete_link_reducer";
+import CreateCharacterReducer from "../create_character_reducer";
 import CreateDistrictReducer from "../create_district_reducer";
 import FinishPublishReducer from "../finish_publish_reducer";
 import FinishRestoreReducer from "../finish_restore_reducer";
@@ -29,9 +33,11 @@ import RestoreItemHeldReducer from "../restore_item_held_reducer";
 import RestoreItemInstanceReducer from "../restore_item_instance_reducer";
 import RestoreItemPlacedReducer from "../restore_item_placed_reducer";
 import RestoreLayerCodeReducer from "../restore_layer_code_reducer";
+import RestoreLinkRequestReducer from "../restore_link_request_reducer";
 import RestoreMatterKindReducer from "../restore_matter_kind_reducer";
 import RestoreModuleOwnerReducer from "../restore_module_owner_reducer";
 import RestoreNodeKindReducer from "../restore_node_kind_reducer";
+import RestoreOidcIssuerReducer from "../restore_oidc_issuer_reducer";
 import RestorePlacedObjectReducer from "../restore_placed_object_reducer";
 import RestoreProvisionReducer from "../restore_provision_reducer";
 import RestoreReasonCodeReducer from "../restore_reason_code_reducer";
@@ -46,7 +52,11 @@ import RestoreUnitReducer from "../restore_unit_reducer";
 import RestoreWorldClockReducer from "../restore_world_clock_reducer";
 import SendPingReducer from "../send_ping_reducer";
 
+export type AcceptOidcIssuerParams = __Infer<typeof AcceptOidcIssuerReducer>;
+export type BeginLinkParams = __Infer<typeof BeginLinkReducer>;
 export type BeginRestoreParams = __Infer<typeof BeginRestoreReducer>;
+export type CompleteLinkParams = __Infer<typeof CompleteLinkReducer>;
+export type CreateCharacterParams = __Infer<typeof CreateCharacterReducer>;
 export type CreateDistrictParams = __Infer<typeof CreateDistrictReducer>;
 export type FinishPublishParams = __Infer<typeof FinishPublishReducer>;
 export type FinishRestoreParams = __Infer<typeof FinishRestoreReducer>;
@@ -69,9 +79,11 @@ export type RestoreItemHeldParams = __Infer<typeof RestoreItemHeldReducer>;
 export type RestoreItemInstanceParams = __Infer<typeof RestoreItemInstanceReducer>;
 export type RestoreItemPlacedParams = __Infer<typeof RestoreItemPlacedReducer>;
 export type RestoreLayerCodeParams = __Infer<typeof RestoreLayerCodeReducer>;
+export type RestoreLinkRequestParams = __Infer<typeof RestoreLinkRequestReducer>;
 export type RestoreMatterKindParams = __Infer<typeof RestoreMatterKindReducer>;
 export type RestoreModuleOwnerParams = __Infer<typeof RestoreModuleOwnerReducer>;
 export type RestoreNodeKindParams = __Infer<typeof RestoreNodeKindReducer>;
+export type RestoreOidcIssuerParams = __Infer<typeof RestoreOidcIssuerReducer>;
 export type RestorePlacedObjectParams = __Infer<typeof RestorePlacedObjectReducer>;
 export type RestoreProvisionParams = __Infer<typeof RestoreProvisionReducer>;
 export type RestoreReasonCodeParams = __Infer<typeof RestoreReasonCodeReducer>;

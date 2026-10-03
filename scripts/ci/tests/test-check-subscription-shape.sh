@@ -13,7 +13,7 @@ plant() { # <dir> <subpath> <content>
   printf '%s\n' "$3" > "$1/$2"
 }
 
-GLOBALS='.subscribe([tables.demoPing.build(), tables.moduleVersion.build(), tables.worldClock.build()]);'
+GLOBALS='.subscribe([tables.demoPing.build(), tables.moduleVersion.build(), tables.worldClock.build(), tables.myCharacter.build()]);'
 REGION='conn.subscriptionBuilder().subscribe(queries);'
 
 clean_tree() {
@@ -53,7 +53,7 @@ plant "$d" "net/region-subscription.ts" "$REGION
 check "SELECT in a comment passes" 0 bash "$CHECK" "$d"
 
 d="$(clean_tree)"
-plant "$d" "net/connection.ts" '.subscribe([tables.demoPing.build(), tables.moduleVersion.build(), tables.worldClock.build(), tables.placedObject.build()]);'
+plant "$d" "net/connection.ts" '.subscribe([tables.demoPing.build(), tables.moduleVersion.build(), tables.worldClock.build(), tables.myCharacter.build(), tables.placedObject.build()]);'
 check "a whole-table subscription to a fourth table is banned" 1 bash "$CHECK" "$d"
 
 d="$(clean_tree)"

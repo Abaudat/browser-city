@@ -75,9 +75,12 @@ pub fn finish_publish(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 #[spacetimedb::reducer(client_connected)]
-pub fn identity_connected(ctx: &ReducerContext) {
-    // Called everytime a new client connects
+pub fn identity_connected(ctx: &ReducerContext) -> Result<(), String> {
+    // Called everytime a new client connects. Writes no character and no
+    // mapping: a character is an explicit act (`create_character`). A token
+    // from a registered issuer minted for another application is refused.
     tables::metrics::count_call(ctx, ReducerClass::Lifecycle);
+    tables::identity::check_connecting(ctx)
 }
 
 #[spacetimedb::reducer(client_disconnected)]
