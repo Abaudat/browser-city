@@ -65,8 +65,12 @@ for t in $USED; do
     *) fail "table '$t' is subscribed whole (no predicate); only $ALLOWED_WHOLE_TABLES may be" ;;
   esac
 done
+# A here-string, never `printf | grep -q`: under pipefail a `grep -q` that quits
+# at its first match can SIGPIPE the still-writing `printf` and report a
+# false "no match" on a large enough input.
+CONNECTION_LINES="$(printf '%s\n' "$LINES" | grep -E "^net/connection\.ts:" || true)"
 for t in $ALLOWED_WHOLE_TABLES; do
-  printf '%s\n' "$LINES" | grep -E "^net/connection\.ts:" | grep -qF "tables.$t.build()" \
+  grep -qF "tables.$t.build()" <<<"$CONNECTION_LINES" \
     || fail "net/connection.ts no longer subscribes the global singleton '$t'"
 done
 
