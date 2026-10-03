@@ -481,6 +481,33 @@ check "unreadable comments: exit 2" 2 run "$FAKE_DLV_UNREAD" "" declare-live 7 v
 check "unreadable comments: wrote nothing" 1 test -f "$FAKE_DLV_UNREAD/calls.log"
 
 
+
+echo
+echo "live: a comment merely quoting the marker is not the declaration -- never read, never edited:"
+
+QUOTE_INLINE='{"id":10,"body":"### Analysis — tim\n\nToday it says `<!-- bc:live none -->` here.\n\n<!-- bc:lead:tim -->\n<!-- bc:direction READY -->"}'
+QUOTE_OWNLINE='{"id":10,"body":"### Analysis — tim\n\n<!-- bc:live none -->\n\n<!-- bc:lead:tim -->\n<!-- bc:direction READY -->"}'
+QUOTE_BARE='{"id":10,"body":"Quoting it: <!-- bc:live none --> in prose."}'
+REAL_DECL='{"id":11,"body":"### Live\n\nWalk to the cafe.\n\n<!-- bc:live visible -->"}'
+VIS_CAFE='{"live":"visible","where":"Walk to the cafe."}'
+for Q in "$QUOTE_INLINE" "$QUOTE_OWNLINE" "$QUOTE_BARE"; do
+  check_out "live: visible when the quoting comment comes before the real one" 0 "$VIS_CAFE" \
+    run "$(live_fake "[$Q,$REAL_DECL]")" "" live 7
+  check_out "live: visible when the quoting comment comes after the real one" 0 "$VIS_CAFE" \
+    run "$(live_fake "[$REAL_DECL,$Q]")" "" live 7
+  check_out "live: a quoting comment alone reads undeclared" 0 '{"live":"undeclared"}' \
+    run "$(live_fake "[$Q]")" "" live 7
+done
+FAKE_QD="$(live_fake "[$QUOTE_INLINE,$REAL_DECL]")"
+printf 'Walk to the cafe.\n' > "$FAKE_QD/where.txt"
+check "declare-live past a quoting comment exits 0" 0 run "$FAKE_QD" "" declare-live 7 visible "$FAKE_QD/where.txt"
+check "declare-live edits the real declaration, id 11" 0 log_has "$FAKE_QD/calls.log" '^gh_comment_edit 11 '
+check "declare-live never edits the quoting comment, id 10" 1 log_has "$FAKE_QD/calls.log" '^gh_comment_edit 10 '
+FAKE_QO="$(live_fake "[$QUOTE_OWNLINE]")"
+printf 'Walk to the cafe.\n' > "$FAKE_QO/where.txt"
+check "declare-live with only a quoting comment exits 0" 0 run "$FAKE_QO" "" declare-live 7 visible "$FAKE_QO/where.txt"
+check "declare-live with only a quoting comment creates a new comment" 0 log_has "$FAKE_QO/calls.log" '^gh_comment_create 7 '
+check "declare-live with only a quoting comment edits nothing" 1 log_has "$FAKE_QO/calls.log" '^gh_comment_edit'
 echo
 echo "live: a bc:live comment is not feedback for demo-commented:"
 

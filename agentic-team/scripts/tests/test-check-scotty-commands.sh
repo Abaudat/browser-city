@@ -51,6 +51,11 @@ Open the issue:
 
     bash {{scripts}}/bc-issue.sh write-demo {{sprint}} {{bodyfile}}
 MD
+  cat > "$d/agentic-team/scripts/prompts/dispatch-address.md" <<'MD'
+After a rejected declaration:
+
+    bash {{scripts}}/bc-issue.sh declare-live {{issue}} none
+MD
   cat > "$d/agentic-team/scripts/prompts/dispatch-crew.md" <<'MD'
 Before opening the PR:
 
@@ -179,6 +184,15 @@ OUT="$(run_check "$D10" 2>&1)"; CODE=$?
 check "declare-live named in scotty.md: exits non-zero" 1 bash -c "exit $CODE"
 check "declare-live named in scotty.md: names the exact offending message" 0 bash -c \
   "printf '%s' \"\$1\" | grep -qF \"'declare-live' is Crew's command and must not be named in \$2/.claude/agents/scotty.md\"" _ "$OUT" "$D10"
+
+echo
+echo "red: dispatch-address.md never mentions declare-live"
+D11="$(fresh_fixture)"
+sed -i '/declare-live/d' "$D11/agentic-team/scripts/prompts/dispatch-address.md"
+OUT="$(run_check "$D11" 2>&1)"; CODE=$?
+check "declare-live missing from dispatch-address.md: exits non-zero" 1 bash -c "exit $CODE"
+check "declare-live missing from dispatch-address.md: names the exact offending message" 0 bash -c \
+  "printf '%s' \"\$1\" | grep -qF \"'declare-live' is not named in \$2/agentic-team/scripts/prompts/dispatch-address.md\"" _ "$OUT" "$D11"
 echo
 echo "red: bc-issue.sh missing entirely"
 D5="$(fake_dir)"
