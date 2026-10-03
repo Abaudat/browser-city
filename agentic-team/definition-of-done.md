@@ -18,6 +18,8 @@ leads' call at review.
 | `docs/trace-matrix.md` and `server/sim/tests/invariants.rs`'s `INV_*` constants name each other 1:1, and every `covered`/`deferred` row matches whether its test actually exists | Machine — `check-trace-matrix.sh` |
 | `agentic-team/scripts/tests/run-all.sh` passes | Machine — `ci` / `scripts-tests` job |
 | Agent tooling (`.mcp.json`, `.claude/settings.json`) and its record in `docs/architecture.md` agree, every version is pinned and cross-checked against its source, and every entry is on the first-party allowlist | Machine — `check-agent-tooling.sh` |
+| A PR cannot be opened without the story's live declaration | Machine — `bc-pr.sh open` |
+| The live declaration is true of the deployed client, without debug tooling | Human — the leads in scope, at review |
 | Acceptance criteria demonstrated | Human — the leads in scope, at review |
 | Tests were written before the implementation they cover | Human — the leads in scope, at review |
 | The consistency gate passed | Human/Machine — `agentic-team/scripts/` consistency gate, once it exists (Story 0.9) |

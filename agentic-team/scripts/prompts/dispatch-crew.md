@@ -10,6 +10,21 @@ Implement the story exactly as those directions say. Work through TDD —
 tests first, always. Commit your work on the current branch as you go. Never
 ask questions; decide and note assumptions in your PR description.
 
+Before opening the PR, record whether a player can see this story in the live
+game. Visible means: a player on the deployed client, with no debug overlay,
+console or dev tool, can see or do it. Put one line — where to go and what to
+do — in a file and run:
+
+    bash {{scripts}}/bc-issue.sh declare-live {{issue}} visible <wherefile>
+
+or, for work no such player can see (server, tooling, process, anything behind
+a debug tool):
+
+    bash {{scripts}}/bc-issue.sh declare-live {{issue}} none
+
+`open` refuses without one. Be honest: the leads check it against the deployed
+client, and a story declared `none` gets no demo checklist line.
+
 When the work is done and your tests pass, open the PR:
 
     bash {{scripts}}/bc-pr.sh open {{issue}} "<title>" <bodyfile>

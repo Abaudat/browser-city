@@ -389,6 +389,143 @@ echo '["lead:bob","lead:artie"]' > "$FAKE_SC3/gh_issue_labels.9.json"
 check_out "scope: unknown lead:bob ignored, known lead kept" 0 "quentin,artie" run "$FAKE_SC3" "" scope 9
 
 echo
+echo "live: the reader prints one JSON line, undeclared unless a readable comment says otherwise:"
+
+live_fake() { # <comments-json> -> a fake dir whose issue 7 carries those comments
+  local d
+  d="$(fake_dir)"
+  printf '%s' "$1" > "$d/gh_issue_comments.7.json"
+  printf '%s' "$d"
+}
+FAKE_LV="$(live_fake '[{"id":1,"body":"hi"},{"id":2,"body":"### Live\n\nOpen the city and walk to the cafe.\n\n<!-- bc:live visible -->"}]')"
+check_out "live: visible, with its where-line" 0 \
+  '{"live":"visible","where":"Open the city and walk to the cafe."}' run "$FAKE_LV" "" live 7
+check_out "live: none" 0 '{"live":"none"}' \
+  run "$(live_fake '[{"id":2,"body":"x\n<!-- bc:live none -->"}]')" "" live 7
+check_out "live: no comments at all is undeclared" 0 '{"live":"undeclared"}' \
+  run "$(live_fake '[]')" "" live 7
+check_out "live: comments with no live marker are undeclared" 0 '{"live":"undeclared"}' \
+  run "$(live_fake '[{"id":1,"body":"looks good"}]')" "" live 7
+check_out "live: a CRLF body reads the same" 0 \
+  '{"live":"visible","where":"Walk to the cafe."}' \
+  run "$(live_fake '[{"id":2,"body":"### Live\r\n\r\nWalk to the cafe.\r\n\r\n<!-- bc:live visible -->\r\n"}]')" "" live 7
+check_out "live: an unknown marker value is undeclared" 0 '{"live":"undeclared"}' \
+  run "$(live_fake '[{"id":2,"body":"x\n<!-- bc:live maybe -->"}]')" "" live 7
+check_out "live: visible with an empty where-line is undeclared" 0 '{"live":"undeclared"}' \
+  run "$(live_fake '[{"id":2,"body":"### Live\n\n<!-- bc:live visible -->"}]')" "" live 7
+check_out "live: a where-line with a quote is valid JSON" 0 \
+  '{"live":"visible","where":"Press \"E\" at the door."}' \
+  run "$(live_fake '[{"id":2,"body":"Press \"E\" at the door.\n<!-- bc:live visible -->"}]')" "" live 7
+check "live: unreadable comments are exit 2, not undeclared" 2 run "$(fake_dir)" "" live 7
+check "live: no issue is usage, exit 2" 2 run "$(fake_dir)" "" live
+
+echo
+echo "declare-live: one upsert -- the first call creates the comment, every later one edits it:"
+
+FAKE_DLV="$(fake_dir)"
+echo '[]' > "$FAKE_DLV/gh_issue_comments.7.json"
+printf 'Open the city and walk to the cafe door.\n' > "$FAKE_DLV/where.txt"
+check "declare-live visible exits 0" 0 run "$FAKE_DLV" "" declare-live 7 visible "$FAKE_DLV/where.txt"
+check "first call creates exactly one comment" 0 \
+  test "$(grep -c '^gh_comment_create 7 ' "$FAKE_DLV/calls.log")" = 1
+check "first call edits nothing" 1 log_has "$FAKE_DLV/calls.log" '^gh_comment_edit'
+LIVE_BODY="$(sed -n '1p' "$FAKE_DLV/calls.log" | awk '{print $NF}')"
+check_out "the comment parses back to the declaration" 0 \
+  "$(printf 'visible\nOpen the city and walk to the cafe door.')" \
+  bash -c '. "$1/lib/markers.sh"; parse_live "$(cat "$2")"' _ "$SCRIPTS_DIR" "$LIVE_BODY"
+
+# The second call: the comment now exists.
+printf '%s' '[{"id":41,"body":"human"},{"id":42,"body":"### Live\n\nold\n\n<!-- bc:live visible -->"}]' \
+  > "$FAKE_DLV/gh_issue_comments.7.json"
+rm -f "$FAKE_DLV/calls.log"
+check "declare-live none over an existing visible exits 0" 0 run "$FAKE_DLV" "" declare-live 7 none
+check "it edits that comment" 0 log_has "$FAKE_DLV/calls.log" '^gh_comment_edit 42 '
+check "it creates none" 1 log_has "$FAKE_DLV/calls.log" '^gh_comment_create'
+check_out "the edit says none" 0 none \
+  bash -c '. "$1/lib/markers.sh"; parse_live "$(cat "$2")"' _ "$SCRIPTS_DIR" \
+  "$(sed -n '1p' "$FAKE_DLV/calls.log" | awk '{print $NF}')"
+printf '%s' '[{"id":42,"body":"### Live\n\nNot visible in the live game.\n\n<!-- bc:live none -->"}]' \
+  > "$FAKE_DLV/gh_issue_comments.7.json"
+rm -f "$FAKE_DLV/calls.log"
+check "none back to visible exits 0" 0 run "$FAKE_DLV" "" declare-live 7 visible "$FAKE_DLV/where.txt"
+check "it replaces in place" 0 log_has "$FAKE_DLV/calls.log" '^gh_comment_edit 42 '
+check "and creates none" 1 log_has "$FAKE_DLV/calls.log" '^gh_comment_create'
+
+echo
+echo "declare-live: bad input is exit 2 with nothing written:"
+
+dlv_bad() { # <name> <args...>
+  local name="$1"; shift
+  local d
+  d="$(fake_dir)"
+  echo '[]' > "$d/gh_issue_comments.7.json"
+  printf '' > "$d/empty.txt"
+  printf 'one\ntwo\n' > "$d/multi.txt"
+  printf 'go <!-- bc:live none --> now\n' > "$d/marker.txt"
+  printf 'Walk to the cafe.\n' > "$d/ok.txt"
+  local args=() a
+  for a in "$@"; do args+=("${a//@D@/$d}"); done
+  check "$name: exit 2" 2 run "$d" "" declare-live 7 "${args[@]}"
+  check "$name: wrote nothing" 1 test -f "$d/calls.log"
+}
+dlv_bad "an empty where-file" visible @D@/empty.txt
+dlv_bad "a multi-line where-file" visible @D@/multi.txt
+dlv_bad "a where-file carrying a comment opener" visible @D@/marker.txt
+dlv_bad "a missing where-file" visible @D@/nope.txt
+dlv_bad "visible with no where-file" visible
+dlv_bad "an unknown state" maybe @D@/ok.txt
+dlv_bad "no state" 
+FAKE_DLV_UNREAD="$(fake_dir)"
+printf 'Walk to the cafe.\n' > "$FAKE_DLV_UNREAD/ok.txt"
+check "unreadable comments: exit 2" 2 run "$FAKE_DLV_UNREAD" "" declare-live 7 visible "$FAKE_DLV_UNREAD/ok.txt"
+check "unreadable comments: wrote nothing" 1 test -f "$FAKE_DLV_UNREAD/calls.log"
+
+
+
+echo
+echo "live: a comment merely quoting the marker is not the declaration -- never read, never edited:"
+
+QUOTE_INLINE='{"id":10,"body":"### Analysis — tim\n\nToday it says `<!-- bc:live none -->` here.\n\n<!-- bc:lead:tim -->\n<!-- bc:direction READY -->"}'
+QUOTE_OWNLINE='{"id":10,"body":"### Analysis — tim\n\n<!-- bc:live none -->\n\n<!-- bc:lead:tim -->\n<!-- bc:direction READY -->"}'
+QUOTE_BARE='{"id":10,"body":"Quoting it: <!-- bc:live none --> in prose."}'
+REAL_DECL='{"id":11,"body":"### Live\n\nWalk to the cafe.\n\n<!-- bc:live visible -->"}'
+VIS_CAFE='{"live":"visible","where":"Walk to the cafe."}'
+quote_cases() { # <quoting-comment-json> <label-before> <label-after> <label-alone>
+  local Q="$1"
+  check_out "$2" 0 "$VIS_CAFE" run "$(live_fake "[$Q,$REAL_DECL]")" "" live 7
+  check_out "$3" 0 "$VIS_CAFE" run "$(live_fake "[$REAL_DECL,$Q]")" "" live 7
+  check_out "$4" 0 '{"live":"undeclared"}' run "$(live_fake "[$Q]")" "" live 7
+}
+quote_cases "$QUOTE_INLINE" \
+  "live: visible when the inline quoting comment comes before the real one" \
+  "live: visible when the inline quoting comment comes after the real one" \
+  "live: an inline quoting comment alone reads undeclared"
+quote_cases "$QUOTE_OWNLINE" \
+  "live: visible when the own-line-beside-other-markers quoting comment comes before the real one" \
+  "live: visible when the own-line-beside-other-markers quoting comment comes after the real one" \
+  "live: an own-line-beside-other-markers quoting comment alone reads undeclared"
+quote_cases "$QUOTE_BARE" \
+  "live: visible when the bare quoting comment comes before the real one" \
+  "live: visible when the bare quoting comment comes after the real one" \
+  "live: a bare quoting comment alone reads undeclared"
+FAKE_QD="$(live_fake "[$QUOTE_INLINE,$REAL_DECL]")"
+printf 'Walk to the cafe.\n' > "$FAKE_QD/where.txt"
+check "declare-live past a quoting comment exits 0" 0 run "$FAKE_QD" "" declare-live 7 visible "$FAKE_QD/where.txt"
+check "declare-live edits the real declaration, id 11" 0 log_has "$FAKE_QD/calls.log" '^gh_comment_edit 11 '
+check "declare-live never edits the quoting comment, id 10" 1 log_has "$FAKE_QD/calls.log" '^gh_comment_edit 10 '
+FAKE_QO="$(live_fake "[$QUOTE_OWNLINE]")"
+printf 'Walk to the cafe.\n' > "$FAKE_QO/where.txt"
+check "declare-live with only a quoting comment exits 0" 0 run "$FAKE_QO" "" declare-live 7 visible "$FAKE_QO/where.txt"
+check "declare-live with only a quoting comment creates a new comment" 0 log_has "$FAKE_QO/calls.log" '^gh_comment_create 7 '
+check "declare-live with only a quoting comment edits nothing" 1 log_has "$FAKE_QO/calls.log" '^gh_comment_edit'
+echo
+echo "live: a bc:live comment is not feedback for demo-commented:"
+
+FAKE_LVR="$(fake_dir)"
+printf '%s' '[{"id":2,"body":"### Live\n\nWalk to the cafe.\n\n<!-- bc:live visible -->"}]' > "$FAKE_LVR/gh_issue_comments.5.json"
+check_out "demo-commented: the live comment is not feedback" 1 no run "$FAKE_LVR" "" demo-commented 5
+
+echo
 echo "create-demo: the call sequence (Scotty summary -> new issue -> project add/scope):"
 
 FAKE_DM="$(fake_dir)"
@@ -401,11 +538,17 @@ cat > "$FAKE_DM/project_items.json" <<'JSON'
 [
   {"number":501,"title":"Fix inventory bug","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null},
   {"number":502,"title":"Add forest level","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null},
-  {"number":503,"title":"Still in progress, excluded","state":"OPEN","status":"In progress","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null}
+  {"number":503,"title":"Still in progress, excluded","state":"OPEN","status":"In progress","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null},
+  {"number":504,"title":"Rotate the logs","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null}
 ]
 JSON
 printf 'Fixed the crash on load.\nMore details follow.\n' > "$FAKE_DM/gh_issue_body.501.json"
 printf '\n\nAdded the forest level.\n' > "$FAKE_DM/gh_issue_body.502.json"
+printf 'Rotated the logs.\n' > "$FAKE_DM/gh_issue_body.504.json"
+# One story of each declared state: visible, none, undeclared.
+printf '%s' '[{"id":1,"body":"### Live\n\nOpen the inventory and drop an item.\n\n<!-- bc:live visible -->"}]' > "$FAKE_DM/gh_issue_comments.501.json"
+printf '%s' '[{"id":1,"body":"### Live\n\nNot visible in the live game.\n\n<!-- bc:live none -->"}]' > "$FAKE_DM/gh_issue_comments.502.json"
+echo '[]' > "$FAKE_DM/gh_issue_comments.504.json"
 # The overlay stands in for Scotty: present means his own `write-demo` call
 # ran, and the board read back afterwards carries the Demo issue it opened.
 mkdir -p "$FAKE_DM/bc_scotty.judge-demo-summary.md.d"
@@ -425,6 +568,24 @@ check "create-demo never touched the still-in-progress story" 1 \
   log_has "$FAKE_DM/calls.log" '(^| )503( |$)'
 check "create-demo handed Scotty only what was finished" 0 \
   grep -q '#502 Add forest level' "$FAKE_DM/bc_scotty.judge-demo-summary.md.input"
+printf '%s\n' '- #501 Fix inventory bug' '  Fixed the crash on load.' '  Live: visible - Open the inventory and drop an item.' \
+  '- #502 Add forest level' '  Added the forest level.' '  Live: not visible' \
+  '- #504 Rotate the logs' '  Rotated the logs.' '  Live: not declared (treat as not visible)' > "$FAKE_DM/expected-input.txt"
+check "create-demo hands Scotty the whole input, byte for byte: number, title, first line, live line" 0 \
+  cmp "$FAKE_DM/expected-input.txt" "$FAKE_DM/bc_scotty.judge-demo-summary.md.input"
+
+FAKE_DM_UNREAD="$(fake_dir)"
+cp "$FAKE_DM/project_iterations.json" "$FAKE_DM/gh_issue_body.501.json" "$FAKE_DM/gh_issue_body.502.json" "$FAKE_DM_UNREAD/"
+cat > "$FAKE_DM_UNREAD/project_items.json" <<'JSON'
+[
+  {"number":501,"title":"Fix inventory bug","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null},
+  {"number":502,"title":"Add forest level","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null}
+]
+JSON
+cp "$FAKE_DM/gh_issue_comments.501.json" "$FAKE_DM_UNREAD/"
+# 502's comments are unreadable (no fixture).
+check "create-demo with unreadable comments exits 2" 2 run "$FAKE_DM_UNREAD" "" create-demo 3
+check "and no Scotty call was spent" 1 test -f "$FAKE_DM_UNREAD/calls.log"
 
 FAKE_DM_EMPTY="$(fake_dir)"
 cat > "$FAKE_DM_EMPTY/project_iterations.json" <<'JSON'
@@ -448,14 +609,35 @@ check "and wrote nothing" 1 test -f "$FAKE_DM_NOSPRINT/calls.log"
 echo
 echo "write-demo: Scotty's own call -- opens the issue, labels it, scopes it into the sprint:"
 
-FAKE_WD="$(fake_dir)"
-cat > "$FAKE_WD/project_iterations.json" <<'JSON'
+FAKE_LINT_ITER='[{"id":"sp3id","title":"Sprint 3","startDate":"2026-09-12","duration":7}]'
+# demo_world <dir> -- Sprint 3 with Done stories 11 (declared visible), 12
+# (declared none) and 13 (undeclared), a Done story 14 of Sprint 2 (visible)
+# and an unfinished story 15 (visible). Every lint case below cites #11, so
+# each fails or passes on exactly the one rule it is about.
+demo_world() {
+  local d="$1" s i
+  printf '%s' "$FAKE_LINT_ITER" > "$d/project_iterations.json"
+  s='"state":"CLOSED","status":"Done","priority":"Standard","labels":[],"isParent":false,"parent":null'
+  cat > "$d/project_items.json" <<JSON
 [
-  {"id":"sp3id","title":"Sprint 3","startDate":"2026-09-12","duration":7}
+  {"number":11,"title":"Walk","sprintId":"sp3id","sprintTitle":"Sprint 3",$s},
+  {"number":12,"title":"Clock","sprintId":"sp3id","sprintTitle":"Sprint 3",$s},
+  {"number":13,"title":"Blocks","sprintId":"sp3id","sprintTitle":"Sprint 3",$s},
+  {"number":14,"title":"Old","sprintId":"sp2id","sprintTitle":"Sprint 2",$s},
+  {"number":15,"title":"Unfinished","sprintId":"sp3id","sprintTitle":"Sprint 3","state":"OPEN","status":"In progress","priority":"Standard","labels":[],"isParent":false,"parent":null}
 ]
 JSON
+  for i in 11 14 15; do
+    printf '%s' '[{"id":1,"body":"### Live\n\nWalk through the city.\n\n<!-- bc:live visible -->"}]' > "$d/gh_issue_comments.$i.json"
+  done
+  printf '%s' '[{"id":1,"body":"### Live\n\nNot visible in the live game.\n\n<!-- bc:live none -->"}]' > "$d/gh_issue_comments.12.json"
+  echo '[]' > "$d/gh_issue_comments.13.json"
+}
+
+FAKE_WD="$(fake_dir)"
+demo_world "$FAKE_WD"
 WD_BODY="$FAKE_WD/scotty-body.md"
-printf 'The team shipped a crash fix and a new level.\n\n- [ ] Show the crash fix\n- [ ] Show the forest level\n' \
+printf 'The team shipped a crash fix and a new level.\n\n- [ ] Show the crash fix (#11)\n- [ ] Show the forest level (#11)\n' \
   > "$WD_BODY"
 
 check "write-demo exits 0" 0 run "$FAKE_WD" "" write-demo 3 "$WD_BODY"
@@ -485,30 +667,35 @@ check "write-demo with a missing body file exits 2" 2 \
 echo
 echo "write-demo: checklist lines are linted for player-facing language before anything is created:"
 
-FAKE_LINT_ITER='[{"id":"sp3id","title":"Sprint 3","startDate":"2026-09-12","duration":7}]'
+
+# err_has <stderr-text> <substring>
+err_has() { printf '%s' "$1" | grep -qF -- "$2"; }
 
 # lint_body <dir> <checklist-line> -> path to a body file carrying it, plus a
-# harmless summary paragraph -- the lint never touches the summary.
+# harmless summary paragraph -- the lint never touches the summary. The line
+# cites story 11, a visible Done story.
 lint_body() {
   local dir="$1" line="$2" f
   f="$dir/lint-body.md"
-  printf 'A short summary for Adrian.\n\n%s\n' "$line" > "$f"
+  printf 'A short summary for Adrian.\n\n%s (#11)\n' "$line" > "$f"
   printf '%s' "$f"
 }
 
-lint_bad() { # <name> <checklist-line> [denylist-override]
-  local name="$1" line="$2" dl="${3:-}" d body
+lint_bad() { # <name> <checklist-line> <reason-substring> [denylist-override]
+  local name="$1" line="$2" reason="$3" dl="${4:-}" d body err
   d="$(fake_dir)"
-  printf '%s' "$FAKE_LINT_ITER" > "$d/project_iterations.json"
+  demo_world "$d"
   body="$(lint_body "$d" "$line")"
   check "$name: rejected, exit 3" 3 run_dl "$dl" "$d" "" write-demo 3 "$body"
+  err="$(run_dl "$dl" "$d" "" write-demo 3 "$body" 2>&1 1>/dev/null)"
+  check "$name: names its own reason" 0 err_has "$err" "$reason"
   check "$name: created nothing"  1 test -f "$d/calls.log"
 }
 
 lint_good() { # <name> <checklist-line> [denylist-override]
   local name="$1" line="$2" dl="${3:-}" d body
   d="$(fake_dir)"
-  printf '%s' "$FAKE_LINT_ITER" > "$d/project_iterations.json"
+  demo_world "$d"
   printf '999\n' > "$d/gh_issue_create.json"
   body="$(lint_body "$d" "$line")"
   check "$name: passes, exit 0" 0 run_dl "$dl" "$d" "" write-demo 3 "$body"
@@ -519,7 +706,7 @@ lint_good() { # <name> <checklist-line> [denylist-override]
 shape_bad() {
   local name="$1" line="$2" d body err
   d="$(fake_dir)"
-  printf '%s' "$FAKE_LINT_ITER" > "$d/project_iterations.json"
+  demo_world "$d"
   body="$(lint_body "$d" "$line")"
   check "$name: rejected, exit 3" 3 run "$d" "" write-demo 3 "$body"
   err="$(run "$d" "" write-demo 3 "$body" 2>&1 1>/dev/null)"
@@ -531,7 +718,7 @@ shape_bad() {
 # Adrian's own complaint, verbatim -- the acceptance criterion this lint exists for.
 ADRIAN_LINE='- [ ] Walk through a defs/ object definition and its packed atlas entry'
 FAKE_LINT_ADRIAN="$(fake_dir)"
-printf '%s' "$FAKE_LINT_ITER" > "$FAKE_LINT_ADRIAN/project_iterations.json"
+demo_world "$FAKE_LINT_ADRIAN"
 ADRIAN_BODY="$(lint_body "$FAKE_LINT_ADRIAN" "$ADRIAN_LINE")"
 check "Adrian's literal complaint line is rejected, exit 3" 3 \
   run "$FAKE_LINT_ADRIAN" "" write-demo 3 "$ADRIAN_BODY"
@@ -542,22 +729,22 @@ check "and no gh_issue_create appears in the call log" 1 \
   test -f "$FAKE_LINT_ADRIAN/calls.log"
 
 # Rule: a backtick anywhere in the line.
-lint_bad  "backtick"    "- [ ] Watch the team land a \`parry()\` combo"
+lint_bad  "backtick"    "- [ ] Watch the team land a \`parry()\` combo" "contains a backtick"
 lint_good "no backtick" "- [ ] Watch the team land a parry combo"
 
 # Rule: a path-like token -- a slash between word characters, or a token
 # ending in a source/doc extension.
-lint_bad  "path-like token (slash)"     "- [ ] Confirm the client/server handshake on login"
-lint_bad  "path-like token (extension)" "- [ ] Check the new config.yml loads correctly"
+lint_bad  "path-like token (slash)"     "- [ ] Confirm the client/server handshake on login" "looks like a file path"
+lint_bad  "path-like token (extension)" "- [ ] Check the new config.yml loads correctly" "looks like a file path"
 lint_good "no path"                     "- [ ] Confirm the login screen appears"
 
 # Rule: a snake_case or camelCase token of the kind that only appears in code.
-lint_bad  "snake_case token" "- [ ] Watch the walk_speed increase in the new zone"
-lint_bad  "camelCase token"  "- [ ] Watch the questLog fill up with new markers"
+lint_bad  "snake_case token" "- [ ] Watch the walk_speed increase in the new zone" "snake_case identifier"
+lint_bad  "camelCase token"  "- [ ] Watch the questLog fill up with new markers" "camelCase identifier"
 lint_good "plain English"    "- [ ] Watch the player walk through the new zone"
 
 # Rule: the denylist, seeded from Adrian's actual complaint and its siblings.
-lint_bad  "denylist word (reducer)" "- [ ] Confirm the reducer runs without errors"
+lint_bad  "denylist word (reducer)" "- [ ] Confirm the reducer runs without errors" "uses the engineering term"
 lint_good "denylist word absent"    "- [ ] Confirm building placement works smoothly"
 
 # Ambiguous English words never belong on the denylist -- a lint that rejects
@@ -569,11 +756,11 @@ lint_good "ambiguous word: test (verb)" "- [ ] Test the new elevator by riding i
 echo
 echo "write-demo: the denylist catches inflected forms (plural/participle), never via an open-ended prefix that would eat plain English:"
 
-lint_bad  "inflected: schemas"    "- [ ] Show the new database schemas"
-lint_bad  "inflected: reducers"   "- [ ] Walk through the reducers that place buildings"
-lint_bad  "inflected: refactored" "- [ ] Show the refactored street generator"
-lint_bad  "inflected: unit tests" "- [ ] Show the unit tests passing"
-lint_bad  "inflected: endpoints"  "- [ ] Show the new API endpoints"
+lint_bad  "inflected: schemas"    "- [ ] Show the new database schemas" "uses the engineering term"
+lint_bad  "inflected: reducers"   "- [ ] Walk through the reducers that place buildings" "uses the engineering term"
+lint_bad  "inflected: refactored" "- [ ] Show the refactored street generator" "uses the engineering term"
+lint_bad  "inflected: unit tests" "- [ ] Show the unit tests passing" "uses the engineering term"
+lint_bad  "inflected: endpoints"  "- [ ] Show the new API endpoints" "uses the engineering term"
 
 lint_good "CI never eats 'city'"  "- [ ] Walk around the city"
 lint_good "PR never eats 'press'" "- [ ] Press the button"
@@ -584,12 +771,12 @@ echo "write-demo: a denylist entry with regex metacharacters is matched literall
 
 REGEX_DENYLIST="$(fake_dir)/denylist-regex.txt"
 printf 'node.js\n' > "$REGEX_DENYLIST"
-lint_bad  "literal entry with a dot matches itself"  "- [ ] Read about node.js on the client" "$REGEX_DENYLIST"
+lint_bad  "literal entry with a dot matches itself"  "- [ ] Read about node.js on the client" "uses the engineering term" "$REGEX_DENYLIST"
 lint_good "the dot is literal, not 'any character'"  "- [ ] Read about nodexjs on the client" "$REGEX_DENYLIST"
 
 CPP_DENYLIST="$(fake_dir)/denylist-cpp.txt"
 printf 'c++\n' > "$CPP_DENYLIST"
-lint_bad  "literal entry with a plus matches itself"        "- [ ] Show off the c++ prototype" "$CPP_DENYLIST"
+lint_bad  "literal entry with a plus matches itself"        "- [ ] Show off the c++ prototype" "uses the engineering term" "$CPP_DENYLIST"
 lint_good "a plus-bearing entry never crashes the lint"      "- [ ] Show off the new district"  "$CPP_DENYLIST"
 
 echo
@@ -597,13 +784,13 @@ echo "write-demo: the denylist survives a CRLF checkout -- a Windows autocrlf tr
 
 CRLF_DENYLIST="$(fake_dir)/denylist-crlf.txt"
 printf 'reducer\r\natlas\r\n' > "$CRLF_DENYLIST"
-lint_bad "a CRLF denylist entry still matches" "- [ ] Confirm the reducer runs without errors" "$CRLF_DENYLIST"
+lint_bad "a CRLF denylist entry still matches" "- [ ] Confirm the reducer runs without errors" "uses the engineering term" "$CRLF_DENYLIST"
 
 echo
 echo "write-demo: a missing or empty denylist file is an infra failure, not a silent skip -- exit 2, never 3, and nothing is created even for an otherwise-clean checklist:"
 
 FAKE_DL_MISSING="$(fake_dir)"
-printf '%s' "$FAKE_LINT_ITER" > "$FAKE_DL_MISSING/project_iterations.json"
+demo_world "$FAKE_DL_MISSING"
 MISSING_DL="$FAKE_DL_MISSING/nonexistent-denylist.txt"
 MISSING_BODY="$(lint_body "$FAKE_DL_MISSING" "- [ ] Watch the player walk through the new zone")"
 check "missing denylist file: exit 2, not 3" 2 \
@@ -614,7 +801,7 @@ check "missing denylist file: names it on stderr" 0 \
 check "missing denylist file: created nothing" 1 test -f "$FAKE_DL_MISSING/calls.log"
 
 FAKE_DL_EMPTY="$(fake_dir)"
-printf '%s' "$FAKE_LINT_ITER" > "$FAKE_DL_EMPTY/project_iterations.json"
+demo_world "$FAKE_DL_EMPTY"
 EMPTY_DL="$FAKE_DL_EMPTY/empty-denylist.txt"
 printf '\n\n   \n' > "$EMPTY_DL"
 EMPTY_DL_BODY="$(lint_body "$FAKE_DL_EMPTY" "- [ ] Watch the player walk through the new zone")"
@@ -634,20 +821,24 @@ shape_bad "plain bullet, no checkbox" "- Show the new zone"
 
 # One bad line among good ones rejects the whole body.
 FAKE_LINT_MIX="$(fake_dir)"
-printf '%s' "$FAKE_LINT_ITER" > "$FAKE_LINT_MIX/project_iterations.json"
+demo_world "$FAKE_LINT_MIX"
 MIX_BODY="$FAKE_LINT_MIX/mix.md"
-printf 'A short summary for Adrian.\n\n- [ ] Watch the player walk through the new zone\n- [ ] Confirm the reducer runs without errors\n- [ ] Watch the team land a parry combo\n' \
+printf 'A short summary for Adrian.\n\n- [ ] Watch the player walk through the new zone (#11)\n- [ ] Confirm the reducer runs without errors (#11)\n- [ ] Watch the team land a parry combo (#11)\n' \
   > "$MIX_BODY"
 check "one bad line among good ones rejects the whole body, exit 3" 3 \
   run "$FAKE_LINT_MIX" "" write-demo 3 "$MIX_BODY"
+MIX_ERR="$(run "$FAKE_LINT_MIX" "" write-demo 3 "$MIX_BODY" 2>&1 1>/dev/null)"
+check "the mixed body names the bad line with its own reason" 0 \
+  err_has "$MIX_ERR" "(uses the engineering term 'reducer'): - [ ] Confirm the reducer runs without errors (#11)"
+check "the mixed body does not name a good line" 1 err_has "$MIX_ERR" "parry combo"
 check "and nothing was created" 1 test -f "$FAKE_LINT_MIX/calls.log"
 
 # The summary paragraph is never linted -- only checkbox lines are.
 FAKE_LINT_SUMMARY="$(fake_dir)"
-printf '%s' "$FAKE_LINT_ITER" > "$FAKE_LINT_SUMMARY/project_iterations.json"
+demo_world "$FAKE_LINT_SUMMARY"
 printf '999\n' > "$FAKE_LINT_SUMMARY/gh_issue_create.json"
 SUMMARY_BODY="$FAKE_LINT_SUMMARY/summary.md"
-printf 'The team refactored the defs/ pipeline and shipped a new endpoint.\n\n- [ ] Watch the player walk through the new zone\n' \
+printf 'The team refactored the defs/ pipeline and shipped a new endpoint.\n\n- [ ] Watch the player walk through the new zone (#11)\n' \
   > "$SUMMARY_BODY"
 check "jargon in the summary paragraph is not linted" 0 \
   run "$FAKE_LINT_SUMMARY" "" write-demo 3 "$SUMMARY_BODY"
@@ -655,12 +846,133 @@ check "jargon in the summary paragraph is not linted" 0 \
 # A checklist is not required at all -- a sprint of pure process work has
 # nothing player-visible to show, and an empty checklist must not be forced.
 FAKE_LINT_EMPTY="$(fake_dir)"
-printf '%s' "$FAKE_LINT_ITER" > "$FAKE_LINT_EMPTY/project_iterations.json"
+demo_world "$FAKE_LINT_EMPTY"
 printf '999\n' > "$FAKE_LINT_EMPTY/gh_issue_create.json"
 EMPTY_CL_BODY="$FAKE_LINT_EMPTY/no-checklist.md"
 printf 'The team spent the sprint on internal process work only.\n' > "$EMPTY_CL_BODY"
 check "an empty checklist still passes" 0 \
   run "$FAKE_LINT_EMPTY" "" write-demo 3 "$EMPTY_CL_BODY"
+
+echo
+echo "write-demo: every checklist line names a Done story of the sprint that is declared visible:"
+
+# live_bad <name> <checklist-line> <reason-substring>
+live_bad() {
+  local name="$1" line="$2" reason="$3" d f err
+  d="$(fake_dir)"
+  demo_world "$d"
+  f="$d/live-body.md"
+  printf 'A short summary for Adrian.\n\n%s\n' "$line" > "$f"
+  check "$name: rejected, exit 3" 3 run "$d" "" write-demo 3 "$f"
+  err="$(run "$d" "" write-demo 3 "$f" 2>&1 1>/dev/null)"
+  check "$name: names the line" 0 err_has "$err" "$line"
+  check "$name: names its own reason" 0 err_has "$err" "$reason"
+  check "$name: created nothing" 1 test -f "$d/calls.log"
+}
+live_bad "a line with no story reference" "- [ ] Walk around the city" "no story reference"
+live_bad "a reference that is not at the end of the line" "- [ ] Walk (#11) around the city" "no story reference"
+live_bad "a line citing two stories" "- [ ] Walk around the city (#11) (#11)" "more than one story reference"
+live_bad "a story that is not a Done item of this sprint (another sprint)" "- [ ] Walk around the city (#14)" "is not a Done item of Sprint 3"
+live_bad "a story that is not Done yet" "- [ ] Walk around the city (#15)" "is not a Done item of Sprint 3"
+live_bad "a story that is not on the board at all" "- [ ] Walk around the city (#99)" "is not a Done item of Sprint 3"
+live_bad "a story declared none" "- [ ] Check the clock (#12)" "declared not visible"
+live_bad "a story with no declaration" "- [ ] Look at the blocks (#13)" "no live declaration"
+
+FAKE_LV_OK="$(fake_dir)"
+demo_world "$FAKE_LV_OK"
+echo 999 > "$FAKE_LV_OK/gh_issue_create.json"
+printf 'A summary.\n\n- [ ] Walk around the city (#11)\n' > "$FAKE_LV_OK/ok.md"
+check "a line citing a visible Done story of the sprint passes" 0 run "$FAKE_LV_OK" "" write-demo 3 "$FAKE_LV_OK/ok.md"
+check "and the demo issue was created" 0 log_has "$FAKE_LV_OK/calls.log" '^gh_issue_create Sprint 3 Demo'
+
+FAKE_LV_MIX="$(fake_dir)"
+demo_world "$FAKE_LV_MIX"
+printf 'A summary.\n\n- [ ] Walk around the city (#11)\n- [ ] Look around\n- [ ] Check the clock (#12)\n- [ ] Look at the blocks (#13)\n- [ ] Show the schemas (#11)\n- [ ] Walk a long way (#14)\n' > "$FAKE_LV_MIX/mix.md"
+check "a mixed body is rejected, exit 3" 3 run "$FAKE_LV_MIX" "" write-demo 3 "$FAKE_LV_MIX/mix.md"
+MIX_ERR="$(run "$FAKE_LV_MIX" "" write-demo 3 "$FAKE_LV_MIX/mix.md" 2>&1 1>/dev/null)"
+check "one run names the line with no reference" 0 err_has "$MIX_ERR" "- [ ] Look around"
+check "one run names the none line" 0 err_has "$MIX_ERR" "- [ ] Check the clock (#12)"
+check "one run names the undeclared line" 0 err_has "$MIX_ERR" "- [ ] Look at the blocks (#13)"
+check "one run names the jargon line" 0 err_has "$MIX_ERR" "- [ ] Show the schemas (#11)"
+check "one run names the line of another sprint" 0 err_has "$MIX_ERR" "- [ ] Walk a long way (#14)"
+check "one run does not name the good line" 1 err_has "$MIX_ERR" "- [ ] Walk around the city (#11)"
+check "the mixed body created nothing" 1 test -f "$FAKE_LV_MIX/calls.log"
+
+FAKE_LV_UNREAD="$(fake_dir)"
+demo_world "$FAKE_LV_UNREAD"
+rm -f "$FAKE_LV_UNREAD/gh_issue_comments.11.json"
+printf 'A summary.\n\n- [ ] Walk around the city (#11)\n' > "$FAKE_LV_UNREAD/u.md"
+check "an unreadable comment read is exit 2, not 3" 2 run "$FAKE_LV_UNREAD" "" write-demo 3 "$FAKE_LV_UNREAD/u.md"
+check "and created nothing" 1 test -f "$FAKE_LV_UNREAD/calls.log"
+
+FAKE_LV_NOBOARD="$(fake_dir)"
+demo_world "$FAKE_LV_NOBOARD"
+rm -f "$FAKE_LV_NOBOARD/project_items.json"
+printf 'A summary.\n\n- [ ] Walk around the city (#11)\n' > "$FAKE_LV_NOBOARD/b.md"
+check "an unreadable board is exit 2, not 3" 2 run "$FAKE_LV_NOBOARD" "" write-demo 3 "$FAKE_LV_NOBOARD/b.md"
+check "an unreadable board created nothing" 1 test -f "$FAKE_LV_NOBOARD/calls.log"
+FAKE_LV_BADBOARD="$(fake_dir)"
+demo_world "$FAKE_LV_BADBOARD"
+printf 'not json' > "$FAKE_LV_BADBOARD/project_items.json"
+cp "$FAKE_LV_NOBOARD/b.md" "$FAKE_LV_BADBOARD/b.md"
+check "an unparseable board is exit 2, not 3" 2 run "$FAKE_LV_BADBOARD" "" write-demo 3 "$FAKE_LV_BADBOARD/b.md"
+BADBOARD_ERR="$(run "$FAKE_LV_BADBOARD" "" write-demo 3 "$FAKE_LV_BADBOARD/b.md" 2>&1 1>/dev/null)"
+check "an unparseable board says it could not read project items" 0 err_has "$BADBOARD_ERR" "could not read project items"
+check "an unparseable board created nothing" 1 test -f "$FAKE_LV_BADBOARD/calls.log"
+
+echo
+echo "write-demo: Sprint 5's own checklist is the acceptance -- the four lines Adrian could not do are each named, the five he could are not, and nothing is created:"
+
+FAKE_S5="$(fake_dir)"
+cat > "$FAKE_S5/project_iterations.json" <<'JSON'
+[{"id":"sp5id","title":"Sprint 5","startDate":"2026-09-26","duration":7}]
+JSON
+S5S='"state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp5id","sprintTitle":"Sprint 5","labels":[],"isParent":false,"parent":null'
+cat > "$FAKE_S5/project_items.json" <<JSON
+[
+  {"number":721,"title":"Clock",$S5S},
+  {"number":722,"title":"Camera steady on diagonals",$S5S},
+  {"number":723,"title":"Collisions match the art",$S5S},
+  {"number":724,"title":"Flat objects stay underfoot",$S5S},
+  {"number":725,"title":"Subway stairs",$S5S},
+  {"number":726,"title":"Hidden street",$S5S},
+  {"number":727,"title":"District blocks",$S5S},
+  {"number":728,"title":"Cafe",$S5S},
+  {"number":729,"title":"Stock and cash",$S5S}
+]
+JSON
+for i in 722 723 724 725 726; do
+  printf '%s' '[{"id":1,"body":"Walk the street.\n\n<!-- bc:live visible -->"}]' > "$FAKE_S5/gh_issue_comments.$i.json"
+done
+for i in 721 727 728 729; do
+  printf '%s' '[{"id":1,"body":"Not visible.\n\n<!-- bc:live none -->"}]' > "$FAKE_S5/gh_issue_comments.$i.json"
+done
+# The nine lines of the Sprint 5 Demo issue (#387), verbatim, each with its story.
+# The demo issue's own checkbox state is not part of the sentence.
+GOOD5='- [ ] Walk diagonally across the street and check that the camera stays steady with no shake (#722)
+- [ ] Walk into walls, bollards and shopfronts and check that you stop exactly where the art says you should (#723)
+- [ ] Step over a manhole, rug or other flat object and check that it stays under your character (#724)
+- [ ] Go down into the subway and climb back up, checking that the stairs read as going up and you never walk through a railing or post (#725)
+- [ ] From the platform, check that the street above stays hidden until you climb back up (#726)'
+BAD5='- [ ] Watch the in-game clock advance, then reload the page and see that the city kept time while you were away (#721)
+- [ ] Walk from the centre of the district to its edge and notice that the blocks get visibly bigger (#727)
+- [ ] Find a cafe in the district (#728)
+- [ ] Pick up stock or cash and carry it, and see that it only moves when someone carries it (#729)'
+printf 'The team shipped the clock and the first pieces of the economy.\n\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+  "$(sed -n 1p <<< "$BAD5")" "$(sed -n 1p <<< "$GOOD5")" "$(sed -n 2p <<< "$GOOD5")" "$(sed -n 3p <<< "$GOOD5")" \
+  "$(sed -n 4p <<< "$GOOD5")" "$(sed -n 5p <<< "$GOOD5")" "$(sed -n 2p <<< "$BAD5")" "$(sed -n 3p <<< "$BAD5")" "$(sed -n 4p <<< "$BAD5")" > "$FAKE_S5/all.md"
+printf 'The team shipped the clock and the first pieces of the economy.\n\n%s\n' "$GOOD5" > "$FAKE_S5/good.md"
+check "Sprint 5's nine lines are rejected, exit 3" 3 run "$FAKE_S5" "" write-demo 5 "$FAKE_S5/all.md"
+S5_ERR="$(run "$FAKE_S5" "" write-demo 5 "$FAKE_S5/all.md" 2>&1 1>/dev/null)"
+while IFS= read -r l; do
+  check "Sprint 5: names '$l'" 0 err_has "$S5_ERR" "$l"
+done <<< "$BAD5"
+while IFS= read -r l; do
+  check "Sprint 5: does not name '$l'" 1 err_has "$S5_ERR" "$l"
+done <<< "$GOOD5"
+check "Sprint 5: created nothing" 1 test -f "$FAKE_S5/calls.log"
+echo 999 > "$FAKE_S5/gh_issue_create.json"
+check "Sprint 5 without the four lines Adrian could not do passes" 0 run "$FAKE_S5" "" write-demo 5 "$FAKE_S5/good.md"
 
 echo
 echo "demo-current: marker in the body wins over sprintTitle, and the 'none open' case:"

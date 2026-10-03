@@ -235,6 +235,21 @@ echo "all-leads-commented: --issue and --pr phases:"
 check_out "--issue: some pending -> no" 1 no run "$FAKE_PEND" all-leads-commented --issue 5
 check_out "--issue: all ready -> yes" 0 yes run "$FAKE_PEND_ALL" all-leads-commented --issue 5
 
+echo
+echo "a bc:live comment on the issue changes nothing for pending-leads or all-leads-commented --issue:"
+
+LIVE_C='[{"id":9,"body":"### Live\n\nWalk to the cafe.\n\n<!-- bc:live visible -->"}]'
+FAKE_PEND_LIVE="$(fake_dir)"
+cp "$FAKE_PEND/gh_issue_labels.5.json" "$FAKE_PEND_LIVE/"
+"$JQ" -c --argjson l "$LIVE_C" '. + $l' "$FAKE_PEND/gh_issue_comments.5.json" > "$FAKE_PEND_LIVE/gh_issue_comments.5.json"
+check_out "pending-leads: the live comment is no lead's stub, same answer" 0 "derek,tim" run "$FAKE_PEND_LIVE" pending-leads 5
+FAKE_PEND_ALL_LIVE="$(fake_dir)"
+cp "$FAKE_PEND_ALL/gh_issue_labels.5.json" "$FAKE_PEND_ALL_LIVE/"
+"$JQ" -c --argjson l "$LIVE_C" '. + $l' "$FAKE_PEND_ALL/gh_issue_comments.5.json" > "$FAKE_PEND_ALL_LIVE/gh_issue_comments.5.json"
+check "pending-leads: all ready stays all ready with a live comment" 1 run "$FAKE_PEND_ALL_LIVE" pending-leads 5
+check_out "all-leads-commented --issue: some pending stays no with a live comment" 1 no run "$FAKE_PEND_LIVE" all-leads-commented --issue 5
+check_out "all-leads-commented --issue: all ready stays yes with a live comment" 0 yes run "$FAKE_PEND_ALL_LIVE" all-leads-commented --issue 5
+
 FAKE_ALC_PR="$(fake_dir)"
 {
   render_status 5 "quentin,tim" 1 | _comment 1

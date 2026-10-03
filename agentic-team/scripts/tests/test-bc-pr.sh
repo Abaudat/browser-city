@@ -121,10 +121,46 @@ check "open from master exits 2" 2 in_repo env BC_FAKE="$FAKE_MASTER" BC_SKIP_PU
 check "open from master wrote nothing" 1 test -f "$FAKE_MASTER/calls.log"
 
 echo
+echo "open: refuses an issue with no live declaration, before the push, with nothing created:"
+
+( cd "$REPO" && git checkout -q issue-8 )
+REAL_SCRIPTS="$(cd "$SCRIPTS_DIR" && pwd)"
+FAKE_UNDECL="$(fake_dir)"
+echo '[]' > "$FAKE_UNDECL/gh_issue_comments.8.json"
+printf 'Implements the thing.\n' > "$FAKE_UNDECL/body.txt"
+check "open for an undeclared issue exits 2" 2 \
+  in_repo env BC_FAKE="$FAKE_UNDECL" BC_SKIP_PUSH=1 bash "$BC_PR" open 8 "T" "$FAKE_UNDECL/body.txt"
+check "and created no PR" 1 test -f "$FAKE_UNDECL/calls.log"
+UNDECL_ERR="$(in_repo env BC_FAKE="$FAKE_UNDECL" BC_SKIP_PUSH=1 bash "$BC_PR" open 8 "T" "$FAKE_UNDECL/body.txt" 2>&1 1>/dev/null)"
+check "and the message carries the exact declare-live command" 0 \
+  bash -c 'printf "%s" "$1" | grep -qF -- "$2"' _ "$UNDECL_ERR" "bash $REAL_SCRIPTS/bc-issue.sh declare-live 8 visible <wherefile>"
+check "and the declare-live none alternative" 0 \
+  bash -c 'printf "%s" "$1" | grep -qF -- "$2"' _ "$UNDECL_ERR" "bash $REAL_SCRIPTS/bc-issue.sh declare-live 8 none"
+FAKE_UNREAD="$(fake_dir)"
+check "open with unreadable comments exits 2" 2 \
+  in_repo env BC_FAKE="$FAKE_UNREAD" BC_SKIP_PUSH=1 bash "$BC_PR" open 8 "T" "$FAKE_UNDECL/body.txt"
+check "and created no PR for them either" 1 test -f "$FAKE_UNREAD/calls.log"
+
+echo
+echo "open: a declared issue opens, whichever the declaration:"
+
+FAKE_DECL_VIS="$(fake_dir)"
+printf '%s' '[{"id":1,"body":"### Live\n\nWalk to the cafe.\n\n<!-- bc:live visible -->"}]' > "$FAKE_DECL_VIS/gh_issue_comments.8.json"
+check "open for an issue declared visible exits 0" 0 \
+  in_repo env BC_FAKE="$FAKE_DECL_VIS" BC_SKIP_PUSH=1 bash "$BC_PR" open 8 "T" "$FAKE_UNDECL/body.txt"
+check "and created the PR" 0 log_has "$FAKE_DECL_VIS/calls.log" '^gh_pr_create master issue-8 '
+FAKE_DECL_NONE="$(fake_dir)"
+printf '%s' '[{"id":1,"body":"### Live\n\nNot visible in the live game.\n\n<!-- bc:live none -->"}]' > "$FAKE_DECL_NONE/gh_issue_comments.8.json"
+check "open for an issue declared none exits 0" 0 \
+  in_repo env BC_FAKE="$FAKE_DECL_NONE" BC_SKIP_PUSH=1 bash "$BC_PR" open 8 "T" "$FAKE_UNDECL/body.txt"
+check "and created the PR for it too" 0 log_has "$FAKE_DECL_NONE/calls.log" '^gh_pr_create master issue-8 '
+
+echo
 echo "open: creates the PR from the branch, pushes first, body = content blank-line Closes #n:"
 
 ( cd "$REPO" && git checkout -q issue-8 )
 FAKE_OPEN="$(fake_dir)"
+printf '%s' '[{"id":1,"body":"Walk.\n\n<!-- bc:live visible -->"}]' > "$FAKE_OPEN/gh_issue_comments.8.json"
 BODYFILE2="$FAKE_OPEN/body.txt"
 printf 'Implements the thing.\nSecond line.\n' > "$BODYFILE2"
 # A single-word title keeps calls.log's fields positional (title with spaces

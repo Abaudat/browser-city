@@ -1,6 +1,6 @@
 ---
 name: bc-sdlc
-description: 'The Browser City SDLC scripts — how Crew, the leads (tim, derek, quentin, artie) and Scotty write their work onto a task issue, a PR or the board. Use when you are Crew opening a PR or addressing review comments, a lead writing an analysis direction or a review verdict or asking for a task to be created, or Scotty opening the Sprint Demo issue, posting a breaker note, ruling on a lead''s task request, or opening epics and stories (with their blockers) from demo feedback.'
+description: 'The Browser City SDLC scripts — how Crew, the leads (tim, derek, quentin, artie) and Scotty write their work onto a task issue, a PR or the board. Use when you are Crew opening a PR, declaring whether a story is visible in the live game, or addressing review comments, a lead writing an analysis direction or a review verdict or asking for a task to be created, or Scotty opening the Sprint Demo issue, posting a breaker note, ruling on a lead''s task request, or opening epics and stories (with their blockers) from demo feedback.'
 ---
 
 # bc-sdlc — the scripted SDLC surface
@@ -27,6 +27,7 @@ Reading is plain `gh`: `gh issue view <issue> --comments`,
 | Command | What it does |
 |---|---|
 | `bash <scripts>/bc-pr.sh open <issue> "<title>" <bodyfile>` | Pushes the current branch and opens the PR, labelled `story`, with `Closes #<issue>` appended to `<bodyfile>`'s prose. Prints the PR number. Idempotent — if a PR already closes that issue it prints its number and creates nothing. The script picks the base branch; never retarget the PR or open one another way. |
+| `bash <scripts>/bc-issue.sh declare-live <issue> visible <wherefile>` / `declare-live <issue> none` | Records whether the story is visible in the live game — a player on the deployed client, with no debug overlay, console or dev tool, can see or do it. `visible` takes a file holding exactly one line: where to go and what to do. Idempotent upsert of the story's one live comment. **`open` refuses a story with no declaration.** `none` is for work no such player can reach; it keeps the story off the demo checklist. |
 | `bash <scripts>/bc-pr.sh attach <image>...` | Uploads each png/jpg/gif/webp to the `pr-assets` branch under `<branch>/<HEAD sha7>/<name>` and prints one `![name](url)` line per image, for you to paste into a `<bodyfile>`. File names are letters, digits, `.`, `_` and `-` only. Re-attaching the same name at the same commit replaces it. Prefer still images; use a GIF only when motion is what is under review. |
 | `bash <scripts>/bc-comment.sh mark-addressed <pr> [bodyfile]` | Rewrites your `### Crew` comment on the PR and stamps it at the PR's **current head**. `[bodyfile]` is optional prose on what you changed; omitted, it writes "Addressed." Push your fixes *first* — the stamp is taken from the head at the moment you run it. |
 
@@ -44,6 +45,7 @@ cycle is addressed, then `mark-addressed`.
 | `bash <scripts>/bc-comment.sh approve <pr> <role> [bodyfile]` | Stamps `APPROVED` on your review comment at the PR's current head. |
 | `bash <scripts>/bc-comment.sh reject <pr> <role> [bodyfile]` | Stamps `CHANGES` on your review comment at the PR's current head. |
 | `bash <scripts>/bc-comment.sh request-task <pr> <role> <bodyfile>` | Asks Scotty for work this PR cannot carry. Opens (or re-opens, keeping his earlier rulings above it) your own `### Task request — <role>` comment on the PR and wakes him. `<bodyfile>` is **required**: what the work is, why the PR cannot carry it, which requirement it serves. Exits 1 and writes nothing if your previous request is still awaiting a ruling. |
+| `bash <scripts>/bc-issue.sh live <issue>` | Prints the story's live declaration as one JSON line: `{"live":"visible","where":"…"}`, `{"live":"none"}` or `{"live":"undeclared"}`. Reject a declaration that is false of the PR. |
 
 `<role>` is your own name and nothing else.
 
@@ -77,7 +79,7 @@ carries it in one call, so the two are never out of step.
 
 | Command | What it does |
 |---|---|
-| `bash <scripts>/bc-issue.sh write-demo <sprint> <bodyfile>` | Opens the `Sprint <n> Demo` issue with `<bodyfile>` as its body, labels it `demo`, adds it to the board and scopes it into Sprint `<n>`. Prints the new issue number. Every `- [ ] ` checklist line is linted for player-facing language; a jargon line exits 3 and creates nothing, naming each offending line on stderr — rewrite it and call again. |
+| `bash <scripts>/bc-issue.sh write-demo <sprint> <bodyfile>` | Opens the `Sprint <n> Demo` issue with `<bodyfile>` as its body, labels it `demo`, adds it to the board and scopes it into Sprint `<n>`. Prints the new issue number. Every `- [ ] ` checklist line is linted for player-facing language and must end in exactly one `(#<n>)`, a Done story of this sprint declared visible; a rejected line exits 3 and creates nothing, naming each on stderr — fix jargon by rewriting, fix a story rejection by removing the line and saying "not yet visible" in the summary. |
 | `bash <scripts>/bc-comment.sh write-breaker <pr> <bodyfile>` | Posts the breaker comment on the PR with `<bodyfile>` as the note, adds the `breaker` label and assigns Adrian. Prints the new comment id. Exits 1 and writes nothing if a breaker comment already exists. |
 | `bash <scripts>/bc-issue.sh write-feedback-reply <demo-issue> <bodyfile>` | Posts (or edits, if you already replied) your reply to Adrian's demo feedback on Sprint Demo issue `<demo-issue>`, marked so it is never read back as feedback itself on a retry. Required even when you opened nothing. Prints the comment id. |
 | `bash <scripts>/bc-issue.sh write-epic <n> "<title>" <bodyfile> <priority>` | Opens epic `<n>`, titled `Epic <n>: <title>`, with `<bodyfile>` as its preamble, labels it `epic`, puts it on the board in `Backlog` on no sprint, and sets Priority. Prints the new issue number. |
@@ -134,6 +136,6 @@ body file, a body file carrying a `<!-- bc: -->` marker of its own
 (`write-feedback-reply`), or the comment this command must edit does not
 exist (the orchestrator creates every stub — if yours is missing, stop and
 say so rather than creating one) · `3` (`write-demo` only) one or more
-checklist lines read as engineering jargon rather than something Adrian can
-see or do — named on stderr; nothing was created, rewrite those lines and
+checklist lines were rejected (engineering jargon, or a missing or not-visible story reference) rather than something Adrian can
+see or do — named on stderr; nothing was created, fix those lines and
 call again.

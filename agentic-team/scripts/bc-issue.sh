@@ -92,6 +92,9 @@ usage: bc-issue.sh <command> [args]
   transition <issue> <status> -- set Status (and close on Done)
   scope <issue>                -- comma-joined leads in scope, quentin always
   backlog                      -- open work on the board, on no sprint yet
+  live <issue>                 -- the story's live declaration, one JSON line: visible (with where), none or undeclared
+  declare-live <issue> visible <wherefile> | declare-live <issue> none
+                                 -- Crew: record whether the story is visible in the live game (idempotent upsert)
   create-demo <n>              -- open the Sprint n Demo issue (hands it to Scotty)
   write-demo <n> <bodyfile>     -- Scotty, creating-demo-issue: open it + scope it
   demo-current                 -- the open Sprint Demo issue, if any
@@ -277,6 +280,84 @@ _bc_demo_lint() {
   done < "$f"
   [ "$bad" -eq 0 ] || return 1
   return 0
+}
+
+# _bc_issue_live_find <issue> -> on stdout, the id of the issue's live declaration
+# (see is_live_declaration), a newline, then parse_live's output (its state, and
+# for visible a newline and the where-line); nothing if there is none. Exit 2 if
+# the comments cannot be read -- never confused with "no declaration".
+_bc_issue_live_find() {
+  local issue="$1" comments count i body id
+  comments="$(gh_issue_comments "$issue" 2>/dev/null)" || return 2
+  count="$(printf '%s' "$comments" | "$JQ" 'length' 2>/dev/null)" || return 2
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    body="$(printf '%s' "$comments" | "$JQ" -r --argjson i "$i" '.[$i].body // ""' | tr -d '\r')"
+    if is_live_declaration "$body"; then
+      id="$(printf '%s' "$comments" | "$JQ" -r --argjson i "$i" '.[$i].id')"
+      printf '%s\n' "$id"
+      parse_live "$body"
+      return 0
+    fi
+    i=$((i + 1))
+  done
+  return 0
+}
+
+# _bc_issue_live <issue> -> the one JSON line `live` prints; exit 2 if unreadable.
+_bc_issue_live() {
+  local found state where
+  found="$(_bc_issue_live_find "$1")" || return 2
+  state="$(printf '%s\n' "$found" | sed -n '2p')"
+  where="$(printf '%s\n' "$found" | sed -n '3p')"
+  case "$state" in
+    visible) "$JQ" -cn --arg w "$where" '{live:"visible",where:$w}' ;;
+    none) printf '{"live":"none"}\n' ;;
+    *) printf '{"live":"undeclared"}\n' ;;
+  esac
+}
+
+# _bc_demo_lint_live <bodyfile> <sprint-number> <sprint-id> -- the second
+# mechanical rule on the checklist (Story 4.24): every `- [ ] ` line ends in
+# exactly one `(#<n>)`, and <n> is a Done item of this sprint declared
+# `visible`. All rejections go to stderr, each naming its line and its own
+# reason. 0 clean ; 1 at least one rejected ; 2 a read failed.
+_bc_demo_lint_live() {
+  local f="$1" n="$2" sprintid="$3" line items done_nums refs ref state bad=0 reason
+  items="$(project_items 2>/dev/null)" || {
+    echo "bc-issue write-demo: could not read project items" >&2; return 2; }
+  done_nums="$(printf '%s' "$items" | "$JQ" -r --arg s "$sprintid" \
+    '.[] | select(.sprintId==$s and .status=="Done") | .number' 2>/dev/null)" || {
+    echo "bc-issue write-demo: could not read project items" >&2; return 2; }
+  done_nums="$(printf '%s' "$done_nums" | tr -d '\r')"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '- [ ] '*) ;; *) continue ;; esac
+    reason=""
+    refs="$(printf '%s' "$line" | grep -Eo '\(#[0-9]+\)' || true)"
+    if [ -z "$refs" ] || ! printf '%s' "$line" | grep -Eq '\(#[0-9]+\)[[:space:]]*$'; then
+      reason="no story reference (end the line with (#<story number>))"
+    elif [ "$(printf '%s\n' "$refs" | wc -l)" -gt 1 ]; then
+      reason="more than one story reference (cite exactly one story)"
+    else
+      ref="$(printf '%s' "$refs" | tr -dc '0-9')"
+      if ! printf '%s\n' "$done_nums" | grep -qx "$ref"; then
+        reason="story #$ref is not a Done item of Sprint $n"
+      else
+        state="$(_bc_issue_live "$ref")" || {
+          echo "bc-issue write-demo: could not read the comments of #$ref" >&2; return 2; }
+        case "$(printf '%s' "$state" | "$JQ" -r '.live')" in
+          visible) ;;
+          none) reason="story #$ref is declared not visible in the live game" ;;
+          *) reason="story #$ref has no live declaration (not visible)" ;;
+        esac
+      fi
+    fi
+    if [ -n "$reason" ]; then
+      echo "bc-issue write-demo: rejected checklist line ($reason): $line" >&2
+      bad=1
+    fi
+  done < "$f"
+  return "$bad"
 }
 
 # An epic exists only to group its stories, so it is never transitioned on its
@@ -533,7 +614,19 @@ create-demo)
     title="$(printf '%s' "$done_items" | "$JQ" -r --argjson i "$i" '.[$i].title')"
     body="$(gh_issue_body "$num" 2>/dev/null || true)"
     firstline="$(printf '%s\n' "$body" | grep -m1 -v '^[[:space:]]*$' || true)"
-    printf -- '- #%s %s\n  %s\n' "$num" "$title" "$firstline" >> "$input"
+    # A failed comment read stops here, before the Scotty call is spent --
+    # never a silent downgrade to "not declared".
+    live="$(_bc_issue_live "$num")" || {
+      echo "bc-issue create-demo: could not read the comments of #$num" >&2
+      rm -f "$input"
+      exit 2
+    }
+    case "$(printf '%s' "$live" | "$JQ" -r '.live')" in
+      visible) liveline="Live: visible - $(printf '%s' "$live" | "$JQ" -r '.where')" ;;
+      none) liveline="Live: not visible" ;;
+      *) liveline="Live: not declared (treat as not visible)" ;;
+    esac
+    printf -- '- #%s %s\n  %s\n  %s\n' "$num" "$title" "$firstline" "$liveline" >> "$input"
     i=$((i + 1))
   done
 
@@ -577,18 +670,19 @@ write-demo)
   # judge-demo-summary.md rewrites the named lines and calls back rather
   # than treating this as broken. A broken denylist is exit 2, an infra
   # failure like the ones around it, not a lint verdict.
-  _bc_demo_lint "$bodyfile"; rc=$?
-  case "$rc" in
-    0) : ;;
-    1) exit 3 ;;
-    *) exit 2 ;;
-  esac
+  # The live rule (Story 4.24) runs in the same pass, so Scotty fixes every
+  # rejected line in one retry; an infra failure of either is exit 2.
   sprint="$(project_iterations | "$JQ" -c --arg t "Sprint $n" 'map(select(.title==$t)) | .[0] // empty')"
   if [ -z "$sprint" ]; then
     echo "bc-issue write-demo: no iteration titled 'Sprint $n'" >&2
     exit 2
   fi
   sprintid="$(printf '%s' "$sprint" | "$JQ" -r '.id')"
+  _bc_demo_lint "$bodyfile"; lint_rc=$?
+  [ "$lint_rc" -le 1 ] || exit 2
+  _bc_demo_lint_live "$bodyfile" "$n" "$sprintid"; live_rc=$?
+  [ "$live_rc" -le 1 ] || exit 2
+  [ "$lint_rc" -eq 0 ] && [ "$live_rc" -eq 0 ] || exit 3
 
   out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-demo-out.XXXXXX")"
   render_demo_body "$n" "$summary" > "$out"
@@ -610,6 +704,47 @@ write-demo)
   project_set_single "$new" Status "In progress"
 
   printf '%s\n' "$new"
+  exit 0
+  ;;
+
+live)
+  issue="${1:-}"
+  [ -n "$issue" ] || { usage; exit 2; }
+  _bc_issue_live "$issue" || { echo "bc-issue live: could not read the comments of #$issue" >&2; exit 2; }
+  exit 0
+  ;;
+
+declare-live)
+  issue="${1:-}" state="${2:-}" wherefile="${3:-}"
+  [ -n "$issue" ] && [ -n "$state" ] || { usage; exit 2; }
+  where=""
+  case "$state" in
+    none) ;;
+    visible)
+      [ -f "$wherefile" ] || { echo "bc-issue declare-live: visible needs a where-file naming where to go and what to do" >&2; exit 2; }
+      where="$(tr -d '\r' < "$wherefile" | sed -e 's/[[:space:]]*$//')"
+      if [ -z "$(printf '%s' "$where" | tr -d '[:space:]')" ]; then
+        echo "bc-issue declare-live: the where-file is empty" >&2; exit 2
+      fi
+      if [ "$(printf '%s\n' "$where" | grep -c .)" -ne 1 ] || [[ "$where" == *$'\n'* ]]; then
+        echo "bc-issue declare-live: the where-file must be exactly one line" >&2; exit 2
+      fi
+      if [[ "$where" == *'<!--'* ]]; then
+        echo "bc-issue declare-live: the where-line must not contain '<!--'" >&2; exit 2
+      fi
+      ;;
+    *) echo "bc-issue declare-live: unknown state '$state' (want visible or none)" >&2; exit 2 ;;
+  esac
+  found="$(_bc_issue_live_find "$issue")" || { echo "bc-issue declare-live: could not read the comments of #$issue" >&2; exit 2; }
+  out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-live.XXXXXX")"
+  render_live "$state" "$where" > "$out"
+  id="$(printf '%s\n' "$found" | sed -n '1p')"
+  # One comment per story: edit the one that exists, create only the first.
+  if [ -n "$id" ]; then
+    gh_comment_edit "$id" "$out" || { echo "bc-issue declare-live: could not edit the live comment" >&2; exit 2; }
+  else
+    gh_comment_create "$issue" "$out" >/dev/null || { echo "bc-issue declare-live: could not create the live comment" >&2; exit 2; }
+  fi
   exit 0
   ;;
 
