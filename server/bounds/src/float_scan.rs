@@ -184,16 +184,48 @@ mod tests {
 
     #[test]
     fn red_the_ticket_shapes_verbatim() {
-        assert_eq!(
-            hits("fn f(x: u64) { let _ = Duration::from_millis(x).as_secs_f64().sqrt() as u64; }")
-                [0]
-            .1,
-            "as_secs_f64"
-        );
-        assert_eq!(
-            hits("fn f(x: i32) { let _ = 0.5_f64.max(x.into()); }")[0].1,
-            "0.5_f64"
-        );
+        let shapes: [(&str, &str); 5] = [
+            ("fn f(x: i32) { let _ = 1.07_f64.powi(x) as i32; }", "1.07_f64"),
+            (
+                "fn f(x: u64) { let _ = Duration::from_millis(x).as_secs_f64().sqrt() as u64; }",
+                "as_secs_f64",
+            ),
+            ("fn f(x: i32) { let _ = 0.5_f64.max(x.into()); }", "0.5_f64"),
+            ("fn f() { let _ = 1.5f32 > 1.0; }", "1.5f32"),
+            ("fn f() { let y = 1.5; if y > 1.0 {} }", "1.5"),
+        ];
+        for (src, token) in shapes {
+            assert_eq!(hits(src)[0].1, token, "{src}");
+        }
+    }
+
+    #[test]
+    fn red_f16_and_f128_as_types_and_name_fragments() {
+        assert_eq!(hits("fn f(x: f128) {}")[0].1, "f128");
+        assert_eq!(hits("fn f(x: u8) { let _ = x as f16; }")[0].1, "f16");
+        assert_eq!(hits("fn f(y: Y) { let _ = y.to_f128(); }")[0].1, "to_f128");
+        assert_eq!(hits("fn f() { let buf16 = 0; }")[0].1, "buf16");
+    }
+
+    #[test]
+    fn red_a_literal_suffixed_f32_without_a_dot() {
+        assert_eq!(hits("fn f() { let _ = 3f32; }")[0].1, "3f32");
+    }
+
+    #[test]
+    fn red_include_and_path_attributes_hide_sources_from_the_scan() {
+        assert_eq!(hits("include!(concat!(env!(\"OUT_DIR\"), \"/a.rs\"));")[0].1, "include!");
+        assert_eq!(hits("#[path = \"elsewhere.rs\"]
+mod m;")[0].1, "#[path]");
+    }
+
+    #[test]
+    fn green_include_str_include_bytes_and_a_local_named_path() {
+        assert!(hits("const A: &str = include_str!(\"a.txt\");").is_empty());
+        assert!(hits("const A: &[u8] = include_bytes!(\"a.bin\");").is_empty());
+        assert!(hits("fn f(path: u8) { let include = path; let _ = include; }").is_empty());
+        assert!(hits("#[derive(Debug)]
+struct S;").is_empty());
     }
 
     #[test]
