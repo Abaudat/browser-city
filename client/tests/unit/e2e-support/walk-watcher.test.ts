@@ -105,6 +105,21 @@ function installPage(order: Order, frameMs: number) {
     win,
     ticks: () => sceneTicks,
     position: () => ({ x: state.x, y: state.y }),
+    /** Two scene steps before the watcher's next frame. */
+    doubleFrame: () => {
+      now += frameMs;
+      const watchers = queue;
+      queue = [];
+      scene();
+      scene();
+      for (const fn of watchers) fn();
+    },
+    /** Moves the body `dx` cells at once, onto `floor`. */
+    jump: (dx: number, floor: number) => {
+      state = { ...state, x: state.x + dx, floor };
+      bc.playerPosition = { x: state.x, y: state.y };
+      bc.playerFloor = state.floor;
+    },
     press: (code: string) =>
       win.dispatchEvent(new FakeKeyboardEvent("keydown", { code }) as unknown as FakeKeyEvent),
     frame: () => {
@@ -176,6 +191,54 @@ describe("the in-page walk watcher", () => {
     const record = await page.win.__bcWalk;
     expect(record?.movedAfterKeyupFrames).toBeGreaterThan(0);
     expect(record && overshootViolation(record, segment, releaseBoundCells())).toContain("hop");
+  });
+
+  const farHop = (): StreetWalkSegment => ({
+    label: "far",
+    key: "ArrowRight",
+    until: { kind: "x-at-least", value: PLAYER_START.x + 3 },
+  });
+
+  it("two scene steps inside one watcher frame is a violation", async () => {
+    const page = installPage("scene-first", RELEASE_LAG.stepMs);
+    const segment = farHop();
+    armWalkWatcher(argsFor(segment, "real"));
+    page.press(segment.key);
+    for (let i = 0; i < 4; i++) page.doubleFrame();
+    for (let i = 0; i < 60; i++) page.frame();
+    const record = await page.win.__bcWalk;
+    expect(record?.maxFrameStepSteps).toBeGreaterThan(1);
+    expect(record && overshootViolation(record, segment, releaseBoundCells())).toContain(
+      "clamped steps in one frame",
+    );
+  });
+
+  it("a frame on which the floor changed is not counted as a step", async () => {
+    const page = installPage("scene-first", RELEASE_LAG.stepMs);
+    const segment = farHop();
+    armWalkWatcher(argsFor(segment, "real"));
+    page.press(segment.key);
+    page.frame();
+    page.frame();
+    page.jump(0.5, PLAYER_START.floor + 1);
+    page.frame();
+    for (let i = 0; i < 60; i++) page.frame();
+    const record = await page.win.__bcWalk;
+    expect(record?.maxFrameStepSteps).toBeLessThanOrEqual(1);
+  });
+
+  it("the same jump with no floor change is counted", async () => {
+    const page = installPage("scene-first", RELEASE_LAG.stepMs);
+    const segment = farHop();
+    armWalkWatcher(argsFor(segment, "real"));
+    page.press(segment.key);
+    page.frame();
+    page.frame();
+    page.jump(0.5, PLAYER_START.floor);
+    page.frame();
+    for (let i = 0; i < 60; i++) page.frame();
+    const record = await page.win.__bcWalk;
+    expect(record?.maxFrameStepSteps).toBeGreaterThan(1);
   });
 
   it("a condition never met releases the key and reports", async () => {

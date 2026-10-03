@@ -548,6 +548,15 @@ export function railingFootRoute(): readonly StreetWalkSegment[] {
   ];
 }
 
+/** Out of the shop and past the lamppost (`streetWalkRoute`'s first four
+ * segments), then east to open pavement. */
+export function westOpenSpotRoute(): readonly StreetWalkSegment[] {
+  return [
+    ...streetWalkRoute(streetWalkInputs()).slice(0, 4),
+    { label: "east-to-open-pavement", key: "ArrowRight", until: { kind: "x-at-least", value: 10 } },
+  ];
+}
+
 export interface WalkedRoute {
   readonly name: string;
   readonly segments: readonly StreetWalkSegment[];
@@ -574,6 +583,7 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     },
     { name: "bridge-lap", segments: streetBridgeLapRoute(), start: afterStreetWalk },
     { name: "bin-reach", segments: binReachRoute(), start: fresh },
+    { name: "west-open-spot", segments: westOpenSpotRoute(), start: fresh },
     { name: "railing-foot", segments: railingFootRoute(), start: fresh },
   ];
 }

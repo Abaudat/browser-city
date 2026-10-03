@@ -44,9 +44,15 @@ function writeRecord(segment: StreetWalkSegment, mode: WalkMode, record: WalkRec
  * true, and the walk is recorded to `walk-records/` and checked: it fails
  * naming the segment when the body rests past its threshold by more than
  * `RELEASE_LAG` allows, moves on a frame after its own release, or steps
- * more than one clamp in a frame. The record also holds how long the
- * body would have been unwatched had the watcher been armed only after the
- * key (`gap*`); what that cost on the runner is not established. */
+ * more than one clamp in a frame.
+ *
+ * Why the watcher is armed first: the release is exact (run 37139923845,
+ * attempts 1 to 3, 424 walks: never a frame of movement after it, never a
+ * key event after it). A watcher armed only after the key would leave the
+ * body unwatched for the Node round trip, measured as 3 frames in 412 of
+ * those walks and never more: 0.66 cell at most at fully clamped frames
+ * (`gap*` in each record). The 1.7-cell overshoot seen once before was not
+ * reproduced. */
 async function walkSegment(
   page: Page,
   segment: StreetWalkSegment,
@@ -82,7 +88,9 @@ async function walkSegment(
   if (violation) throw new Error(violation);
 }
 
-/** Real, OS-level keyboard input. */
+/** Walks one segment with real, OS-level keyboard input: the watcher is
+ * armed before `keyboard.down`, so no frame of the walk goes unwatched
+ * (see `walkSegment` for what was measured). */
 export function walkRealSegment(
   page: Page,
   segment: StreetWalkSegment,

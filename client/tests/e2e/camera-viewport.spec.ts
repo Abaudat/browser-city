@@ -12,11 +12,11 @@ import { expect, type Page, test } from "@playwright/test";
 import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
 import { CAMERA_SCROLL_TOLERANCE_PX } from "../../src/render/camera";
-import { LAMPPOST_CELL, streetSubwayApproachRoute } from "../../src/test-street/fixture";
+import { type StreetWalkSegment, streetSubwayApproachRoute } from "../../src/test-street/fixture";
 import {
   committedDefs,
-  lamppostApproachX,
   streetWalkInputs,
+  westOpenSpotRoute,
 } from "../unit/test-street/street-world";
 import { waitForPlayerControllable } from "./boot-test-support";
 import { walkRealSegment } from "./walk-support";
@@ -302,13 +302,8 @@ type SetupStep =
    * already resting (a bad setup sequence) times out loudly instead of
    * returning immediately having moved nowhere. */
   | { readonly kind: "rest"; readonly key: ArrowKey }
-  /** Holds `key` until the player's own real `x` crosses `value`, then
-   * releases immediately -- for a mid-corridor point a continuous walk
-   * only ever passes through (`kind: "rest"` cannot land there -- there
-   * is nothing to rest against). Waits on the real game state, never a
-   * calculated real-time duration (see `MIN_TRAVELLED_CELLS`'s own doc
-   * comment for why that failed on CI). */
-  | { readonly kind: "x-at-least"; readonly key: ArrowKey; readonly value: number };
+  /** Walks a registered route through the shared helper. */
+  | { readonly kind: "route"; readonly segments: readonly StreetWalkSegment[] };
 
 /** Real, held keyboard input, one `SetupStep` at a time -- the setup leg
  * for each follow case below, never measured itself. */
@@ -317,7 +312,7 @@ async function walkToOpenSpot(page: Page, steps: readonly SetupStep[]): Promise<
     if (step.kind === "rest") {
       await walkUntilRest(page, step.key);
     } else {
-      await walkUntilXAtLeast(page, step.key, step.value);
+      for (const segment of step.segments) await walkRealSegment(page, segment);
     }
   }
 }
@@ -362,16 +357,6 @@ async function walkUntilRest(page: Page, key: ArrowKey): Promise<void> {
   await page.keyboard.up(key);
 }
 
-async function walkUntilXAtLeast(page: Page, key: ArrowKey, value: number): Promise<void> {
-  await page.keyboard.down(key);
-  await page.waitForFunction(
-    (value: number) => (window.__bc?.playerPosition?.x ?? Number.NEGATIVE_INFINITY) >= value,
-    value,
-    { timeout: 15_000 },
-  );
-  await page.keyboard.up(key);
-}
-
 test.describe("camera/viewport (NFR48)", () => {
   test.use({ viewport: { width: 1280, height: 720 } });
 
@@ -387,6 +372,9 @@ test.describe("camera/viewport (NFR48)", () => {
   // (`shopfrontExitRestY`'s own doc comment says why), so
   // `REST_DOWN_TO_PAVEMENT` stays a plain `"rest"` step.
   const REST_DOWN_TO_PAVEMENT: SetupStep = { kind: "rest", key: "ArrowDown" };
+  // Out of the shop and past the lamppost to the open pavement, walked as
+  // `streetWalkRoute`'s own first four segments plus one more east.
+  const WEST_OPEN_SPOT: SetupStep = { kind: "route", segments: westOpenSpotRoute() };
   for (const followCase of [
     {
       name: "east",
@@ -403,13 +391,7 @@ test.describe("camera/viewport (NFR48)", () => {
       // `streetWalkRoute`) uses gets past it: east to a waypoint overlapping
       // the lamppost's own collider, south into it, then on east,
       // clear of it.
-      setup: [
-        REST_DOWN_TO_PAVEMENT,
-        { kind: "x-at-least", key: "ArrowRight", value: lamppostApproachX() },
-        { kind: "rest", key: "ArrowDown" },
-        { kind: "x-at-least", key: "ArrowRight", value: LAMPPOST_CELL.x + 1 },
-        { kind: "x-at-least", key: "ArrowRight", value: 10 },
-      ] as const,
+      setup: [WEST_OPEN_SPOT] as const,
     },
     {
       name: "north",
@@ -443,13 +425,7 @@ test.describe("camera/viewport (NFR48)", () => {
     {
       name: "north-west (diagonal)",
       codes: ["ArrowUp", "ArrowLeft"] as const,
-      setup: [
-        REST_DOWN_TO_PAVEMENT,
-        { kind: "x-at-least", key: "ArrowRight", value: lamppostApproachX() },
-        { kind: "rest", key: "ArrowDown" },
-        { kind: "x-at-least", key: "ArrowRight", value: LAMPPOST_CELL.x + 1 },
-        { kind: "x-at-least", key: "ArrowRight", value: 10 },
-      ] as const,
+      setup: [WEST_OPEN_SPOT] as const,
     },
     {
       name: "south-east (diagonal)",
