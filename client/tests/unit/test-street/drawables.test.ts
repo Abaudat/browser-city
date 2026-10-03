@@ -29,14 +29,15 @@ import {
   PLATFORM_STAIRWELL_ROWS,
   PLAYER_START,
   SIDEWALK_TILES,
+  STAIRS_ENTRY_DIRECTION,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STAIRWELL_TOP_RAILING_DEF_ID,
-  STAIRWELL_TREADS_DEF_ID,
   STAIRWELL_X0,
   STREET_FLOOR,
   STREET_PROPS,
   SUBWAY_FLOOR,
   streetDefId,
+  streetNearRailingPressRoute,
   wallRunCellId,
 } from "../../../src/test-street/fixture";
 import type { Vec2 } from "../../../src/world/movement";
@@ -51,11 +52,14 @@ import {
 } from "./golden";
 import {
   lamppostRestY,
+  nearRailingRestY,
   shopfrontExitRestY,
+  simulateStreetWalk,
   stairwellRowsAt,
   streetMovementConfig,
   streetObjectSources,
   streetOwnershipIndex,
+  streetWalkInputs,
   streetWindowDefIds,
   streetWorldIndex,
   subwayAnchors,
@@ -164,49 +168,100 @@ describe("the story 1.6 street scene's committed ordering", () => {
     expect(compareDrawables(nearCell, player)).toBeGreaterThan(0); // near end: in front of the player
   });
 
-  // Story 15.3 (Artie): the street stairwell is three objects so the player
-  // walks between the railings -- behind the near (bottom) one, in front of
-  // the far (top) one -- wherever they stand on the treads. (The platform's
-  // flight is one flat row with a railing beside it: story 15.11, below.)
-  it("floor 0: a player on any tread cell, and approaching the top railing from the north, draws after the top railing and before the bottom railing", () => {
+  // Stories 15.3 / 15.13 (FR123): the street stairwell is objects so
+  // the player walks between the railings -- behind the near (bottom) one,
+  // in front of the far (top) one -- wherever the body can rest on the
+  // treads. The sweep covers every position the real resolver allows on the
+  // entry cell and the tread path, at sub-cell step. (The platform's flight
+  // is one flat row with a railing beside it: story 15.11, below.)
+  describe("street stairwell sort oracle", () => {
     const floor = STREET_FLOOR;
-    const props = buildStreetProps();
-    const treads = STREET_PROPS.find(
-      (p) => isDefStreetProp(p) && p.defId === STAIRWELL_TREADS_DEF_ID && p.floor === floor,
+    const pooled = buildStreetProps().filter(
+      (d) =>
+        "defId" in d &&
+        d.floor === floor &&
+        (d.defId === STAIRWELL_TOP_RAILING_DEF_ID || d.defId === STAIRWELL_BOTTOM_RAILING_DEF_ID),
     );
-    if (!treads) throw new Error(`no stairwell treads on floor ${floor}`);
-    const railings = (defId: number) =>
-      props.filter((d) => "defId" in d && d.defId === defId && d.floor === floor);
-    const top = railings(STAIRWELL_TOP_RAILING_DEF_ID);
-    const bottom = railings(STAIRWELL_BOTTOM_RAILING_DEF_ID);
-    expect(top).toHaveLength(3);
-    expect(bottom).toHaveLength(3);
-    for (let dx = 0; dx < 3; dx++) {
-      // The middle of the tread row and its south edge, the feet a hair
-      // above the cell boundary.
-      for (const feetY of [treads.y + 0.5, treads.y + 0.99]) {
-        const player = buildPlayerDrawable(rankOf("characters"), treads.x + dx + 0.5, feetY, floor);
-        for (const rail of top) expect(compareDrawables(rail, player)).toBeLessThan(0);
-        for (const rail of bottom) expect(compareDrawables(rail, player)).toBeGreaterThan(0);
-      }
-    }
-    // Story 15.12: north of the top railing the player is behind it, at every
-    // sub-cell step from the finial row to the rest position (the foot's
-    // north face), on each of its three columns.
-    const sub = streetMovementConfig().subcellsPerCell;
-    const foot = topRailingFoot();
-    const rest = foot.rect.y0;
-    for (let dx = 0; dx < 3; dx++) {
-      for (let feetY = foot.prop.y - 1 + 1 / sub; feetY <= rest + 1e-9; feetY += 1 / sub) {
-        const player = buildPlayerDrawable(rankOf("characters"), treads.x + dx + 0.5, feetY, floor);
-        for (const rail of top) {
-          expect(
-            compareDrawables(rail, player),
-            `the player at feet y ${feetY}, column ${dx}, is not behind the top railing`,
-          ).toBeGreaterThan(0);
+
+    /** The oracle, as a function of the feet position: every stairwell pool row whose ground row
+     * is south of the feet sorts after the player, every one north before. */
+    function expectStairwellSortAt(x: number, y: number) {
+      const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
+      for (const row of pooled) {
+        const where = `player (${x}, ${y}) vs def ${"defId" in row ? row.defId : "?"} row ${row.y / SORT_SUBDIVISIONS}`;
+        if (row.y / SORT_SUBDIVISIONS > y) {
+          expect(compareDrawables(row, player), where).toBeGreaterThan(0);
+        } else {
+          expect(compareDrawables(row, player), where).toBeLessThan(0);
         }
       }
     }
+
+    it("floor 0: the player sorts correctly against both railings at every sub-cell step over the entry cell and tread path", () => {
+      const anchor = subwayAnchors().find((a) => a.anchor.floor === floor)?.anchor;
+      if (!anchor) throw new Error("no street anchor");
+      const path = treadPath(stairwellRowsAt(anchor), anchor, STAIRS_ENTRY_DIRECTION);
+      const cells = [path.entry, ...path.path];
+      expect(cells.length).toBeGreaterThanOrEqual(3);
+      const pool = pooled;
+      expect(
+        pool.filter((d) => "defId" in d && d.defId === STAIRWELL_TOP_RAILING_DEF_ID),
+      ).toHaveLength(3);
+      expect(
+        pool.filter((d) => "defId" in d && d.defId === STAIRWELL_BOTTOM_RAILING_DEF_ID),
+      ).toHaveLength(3);
+      const SUB = 16;
+      for (const cell of cells) {
+        for (let i = 0; i < SUB; i++) {
+          for (let j = 0; j < SUB; j++) expectStairwellSortAt(cell.x + i / SUB, cell.y + j / SUB);
+        }
+      }
+    });
+
+    it("the body pressed south along the near railing's face rests where the helper says and sorts under the railing", () => {
+      const out = simulateStreetWalk(streetNearRailingPressRoute(streetWalkInputs()));
+      const rest = out.find((c) => c.label === "west-along-the-near-railing")?.state;
+      if (!rest) throw new Error("no rest checkpoint");
+      expect(rest.y).toBeCloseTo(nearRailingRestY(), 9);
+      expect(rest.floor).toBe(floor);
+      expectStairwellSortAt(rest.x, rest.y);
+    });
+
+    it("negative control: a player south of the stairwell draws over the bottom railing, and one north of it under the top railing", () => {
+      expect(pooled.length).toBe(6);
+      const bottom = pooled.filter(
+        (d) => "defId" in d && d.defId === STAIRWELL_BOTTOM_RAILING_DEF_ID,
+      );
+      const top = pooled.filter((d) => "defId" in d && d.defId === STAIRWELL_TOP_RAILING_DEF_ID);
+      const south = buildPlayerDrawable(
+        rankOf("characters"),
+        (bottom[0]?.x ?? Number.NaN) / SORT_SUBDIVISIONS,
+        (bottom[0]?.y ?? Number.NaN) / SORT_SUBDIVISIONS + 1.5,
+        floor,
+      );
+      const north = buildPlayerDrawable(
+        rankOf("characters"),
+        (top[0]?.x ?? Number.NaN) / SORT_SUBDIVISIONS,
+        (top[0]?.y ?? Number.NaN) / SORT_SUBDIVISIONS - 0.5,
+        floor,
+      );
+      for (const rail of bottom) expect(compareDrawables(rail, south)).toBeLessThan(0);
+      for (const rail of top) expect(compareDrawables(rail, north)).toBeGreaterThan(0);
+    });
+
+    it("north of the top railing the player is behind it, at every sub-cell step from the finial row to the foot's rest, on each column (story 15.12)", () => {
+      const sub = streetMovementConfig().subcellsPerCell;
+      const foot = topRailingFoot();
+      const rest = foot.rect.y0;
+      let steps = 0;
+      for (let dx = 0; dx < foot.width; dx++) {
+        for (let feetY = foot.prop.y - 1 + 1 / sub; feetY <= rest + 1e-9; feetY += 1 / sub) {
+          expectStairwellSortAt(foot.prop.x + dx + 0.5, feetY);
+          steps++;
+        }
+      }
+      expect(steps).toBeGreaterThan(0);
+    });
   });
 
   it("a table and the glass on it share an anchor; the rank tiebreak keeps the glass on top", () => {
