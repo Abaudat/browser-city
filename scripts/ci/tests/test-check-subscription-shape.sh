@@ -86,5 +86,10 @@ plant "$d" "net/region-subscription.ts" 'import { tables } from "./bindings";
 const q = tables.placedObject.where((r) => r.chunkKey.eq(k)).build();'
 check "the import of tables and a one-line predicated query pass" 0 bash "$CHECK" "$d"
 
+d="$(clean_tree)"
+plant "$d" "net/region-subscription.ts" 'export const t = tables.placedObject;
+const q = t.build();'
+check "an exported alias of a table is banned (only imports are exempt)" 1 bash "$CHECK" "$d"
+
 summary
 exit $?

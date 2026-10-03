@@ -50,7 +50,7 @@ $BAD"
 #    table split from its `.build()` across lines, aliased
 #    (`const t = tables.placedObject`) or destructured never names a
 #    predicate on the same line, so it fails here.
-STRIPPED="$(printf '%s\n' "$LINES" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(import|export)\b' | sed -E \
+STRIPPED="$(printf '%s\n' "$LINES" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*import\b' | sed -E \
   -e 's/tables\.(demoPing|moduleVersion|worldClock)\.build\(\)//g' \
   -e 's/tables\.[A-Za-z0-9_]+\.where\(//g')"
 BAD="$(printf '%s\n' "$STRIPPED" | grep -E '\btables\b' || true)"

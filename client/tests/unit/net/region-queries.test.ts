@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { toSql } from "spacetimedb";
 import { describe, expect, it } from "vitest";
-import { REGION_QUERIES, regionQueries } from "../../../src/net/region-subscription";
+import { REGION_TABLE_NAMES, regionQueries } from "../../../src/net/region-subscription";
 import { chunkKeysOfHandle } from "../../../src/world/region";
 
 const FLOORS = { minFloor: -1, maxFloor: 7 };
@@ -19,7 +19,7 @@ describe("regionQueries", () => {
         const key = { cx, cy, band };
         const keys = chunkKeysOfHandle(key, FLOORS);
         const sql = regionQueries(key, FLOORS).map((q) => toSql(q));
-        expect(sql.length).toBe(REGION_QUERIES.length * keys.length);
+        expect(sql.length).toBe(REGION_TABLE_NAMES.length * keys.length);
         sql.forEach((s, i) => {
           const m = SHAPE.exec(s);
           expect(m, s).not.toBeNull();

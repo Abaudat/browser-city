@@ -215,38 +215,28 @@ export class RegionController {
   }
 }
 
+/** The one declaration of what the region streams: a table is added here
+ * and nowhere else. Each entry is the one query shape the region ever
+ * issues, `chunk_key = <chunk>`, built with the typed builder. */
+export const REGION_QUERIES = {
+  placedObject: (k: bigint) => tables.placedObject.where((r) => r.chunkKey.eq(k)).build(),
+  floorTransition: (k: bigint) => tables.floorTransition.where((r) => r.chunkKey.eq(k)).build(),
+  buildingArea: (k: bigint) => tables.buildingArea.where((r) => r.chunkKey.eq(k)).build(),
+  roomArea: (k: bigint) => tables.roomArea.where((r) => r.chunkKey.eq(k)).build(),
+  actorLocation: (k: bigint) => tables.actorLocation.where((r) => r.chunkKey.eq(k)).build(),
+} as const;
+
 /** The tables the region streams, by accessor name. */
-export type RegionTableName =
-  | "placedObject"
-  | "floorTransition"
-  | "buildingArea"
-  | "roomArea"
-  | "actorLocation";
+export type RegionTableName = keyof typeof REGION_QUERIES;
 
-export const REGION_TABLE_NAMES: readonly RegionTableName[] = [
-  "placedObject",
-  "floorTransition",
-  "buildingArea",
-  "roomArea",
-  "actorLocation",
-];
-
-/** One query per region table, each the one shape the region ever issues:
- * `chunk_key = <chunk>`, built with the typed builder. */
-export const REGION_QUERIES = [
-  (k: bigint) => tables.placedObject.where((r) => r.chunkKey.eq(k)).build(),
-  (k: bigint) => tables.floorTransition.where((r) => r.chunkKey.eq(k)).build(),
-  (k: bigint) => tables.buildingArea.where((r) => r.chunkKey.eq(k)).build(),
-  (k: bigint) => tables.roomArea.where((r) => r.chunkKey.eq(k)).build(),
-  (k: bigint) => tables.actorLocation.where((r) => r.chunkKey.eq(k)).build(),
-] as const;
+export const REGION_TABLE_NAMES = Object.keys(REGION_QUERIES) as RegionTableName[];
 
 /** The queries one handle holds: for every table and every floor of its
  * band, `chunk_key = <that chunk>` -- one pure equality, never anything
  * else, so the engine can parameterise and share it. */
 export function regionQueries(key: HandleKey, range: FloorRange) {
   const chunkKeys = chunkKeysOfHandle(key, range);
-  return REGION_QUERIES.flatMap((query) => chunkKeys.map((k) => query(k)));
+  return Object.values(REGION_QUERIES).flatMap((query) => chunkKeys.map((k) => query(k)));
 }
 
 /** The SDK backend: one `subscribe` per handle with its typed queries. */
