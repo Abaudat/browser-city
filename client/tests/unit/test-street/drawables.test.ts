@@ -168,7 +168,7 @@ describe("the story 1.6 street scene's committed ordering", () => {
   // walks between the railings -- behind the near (bottom) one, in front of
   // the far (top) one -- wherever they stand on the treads. (The platform's
   // flight is one flat row with a railing beside it: story 15.11, below.)
-  it("floor 0: a player on any tread cell draws after the top railing and before the bottom railing", () => {
+  it("floor 0: a player on any tread cell, and approaching the top railing from the north, draws after the top railing and before the bottom railing", () => {
     const floor = STREET_FLOOR;
     const props = buildStreetProps();
     const treads = STREET_PROPS.find(
@@ -446,21 +446,36 @@ describe("the player can never walk off the drawn world", () => {
     const outsideTheWorld = (pos: Vec2) =>
       pos.x - half < STAIRWELL_X0 - 1e-9 && pos.y > foot.prop.y;
     const start = (x: number): Vec2 => ({ x, y: foot.rect.y0 });
-    for (const [x, direction] of [
-      [foot.rect.x0 + 1.5, { x: -1, y: 0 }],
-      [foot.rect.x0 + 1.5, { x: 1, y: 0 }],
-    ] as const) {
-      let pos = start(x);
-      for (let i = 0; i < 400; i++) {
-        pos = step(pos, direction, 16, grid, PLAYER_START.floor, config);
+    /** Runs the inputs from the strip. The step-wise invariant: no single
+     * step takes a body over the well from at-or-north of the foot face to
+     * south of it (a body may legitimately leave east, go down the entrance
+     * and come back west onto the treads -- that is the opening). */
+    const run = (
+      from: Vec2,
+      inputs: readonly { dx: number; dy: number; deltaMs: number }[],
+    ): void => {
+      let pos = from;
+      for (const { dx, dy, deltaMs } of inputs) {
+        const before = pos;
+        pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config);
         expect(outsideTheWorld(pos), `slid out of the world at (${pos.x}, ${pos.y})`).toBe(false);
-        if (overWell(pos)) {
-          expect(pos.y, `fell into the treads at (${pos.x}, ${pos.y})`).toBeLessThanOrEqual(
-            foot.rect.y0 + 1e-9,
-          );
+        if (overWell(before) && before.y <= foot.rect.y0 + 1e-9) {
+          expect(
+            pos.y,
+            `stepped through the foot at (${before.x}, ${before.y})`,
+          ).toBeLessThanOrEqual(foot.rect.y0 + 1e-9);
         }
       }
+    };
+    const repeat = (dx: number, dy: number, n: number) =>
+      Array.from({ length: n }, () => ({ dx, dy, deltaMs: 100 }));
+    for (const direction of [-1, 1]) {
+      run(start(foot.rect.x0 + 1.5), repeat(direction, 0, 400));
     }
+    // East out of the strip, south down the entrance column, west through
+    // the opening onto the treads: legitimate, and the invariant tolerates it.
+    const around = [...repeat(1, 0, 20), ...repeat(0, 1, 8), ...repeat(-1, 0, 12)];
+    run(start(foot.rect.x0 + half), around);
     fc.assert(
       fc.property(
         fc.array(
@@ -472,16 +487,8 @@ describe("the player can never walk off the drawn world", () => {
           { minLength: 1, maxLength: 400 },
         ),
         fc.integer({ min: 0, max: 8 }),
-        (inputs, offset) => {
-          let pos = start(foot.rect.x0 + half + offset / config.subcellsPerCell);
-          for (const { dx, dy, deltaMs } of inputs) {
-            pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config);
-            expect(outsideTheWorld(pos), `slid out of the world at (${pos.x}, ${pos.y})`).toBe(
-              false,
-            );
-            if (overWell(pos)) expect(pos.y).toBeLessThanOrEqual(foot.rect.y0 + 1e-9);
-          }
-        },
+        (inputs, offset) =>
+          run(start(foot.rect.x0 + half + offset / config.subcellsPerCell), inputs),
       ),
       { numRuns: 60 },
     );

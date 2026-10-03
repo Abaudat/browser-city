@@ -893,15 +893,22 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
   it("5c''. walking south at every sub-cell x across the top railing and half a body past each end never puts the body in the tread row", () => {
     const { prop, rect } = topRailingFoot();
     const s = config.subcellsPerCell;
+    const startFeet = (prop.y - 0.5) * s;
+    // Strictly inside the touching positions on the east: a body that only
+    // touches the east end stands in the open entrance column, which is the
+    // opening. The west bound is the first position whose start is clear:
+    // the ring's cell west of the well reaches into the finial row, and a
+    // walk never starts inside a collider (the resolver lets such a body
+    // walk straight out).
+    let sx = rect.x0 * s - halfWidthCells * s + 1;
+    while (!isBodyClear(world, config, prop.floor, sx, startFeet)) sx++;
     const failures: string[] = [];
-    // Strictly inside the touching positions: a body that only touches an
-    // end stands in the open column beside the well, which is the opening.
-    for (
-      let sx = rect.x0 * s - halfWidthCells * s + 1;
-      sx < rect.x1 * s + halfWidthCells * s;
-      sx++
-    ) {
-      const rest = walkToRest({ x: sx / s, y: prop.y - 0.5 }, { x: 0, y: 1 }, prop.floor);
+    for (; sx < rect.x1 * s + halfWidthCells * s; sx++) {
+      expect(
+        isBodyClear(world, config, prop.floor, sx, startFeet),
+        `the start at sub-cell x ${sx} is inside a collider`,
+      ).toBe(true);
+      const rest = walkToRest({ x: sx / s, y: startFeet / s }, { x: 0, y: 1 }, prop.floor);
       if (rest.y > rect.y0 + 1e-9 || cellOf(rest.y - 1e-9) >= STAIRS_Y) {
         failures.push(`x ${sx / s}: rested at y ${rest.y}`);
       }

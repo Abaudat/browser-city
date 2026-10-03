@@ -13,11 +13,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { DEBUG_OVERLAYS } from "../../src/debug/overlays";
 import type {} from "../../src/net/e2e-hooks";
-import {
-  STAIRWELL_X0,
-  type StreetWalkSegment,
-  streetSubwayApproachRoute,
-} from "../../src/test-street/fixture";
+import { STAIRWELL_X0, streetSubwayApproachRoute } from "../../src/test-street/fixture";
 import {
   streetMovementConfig,
   streetWalkInputs,
@@ -25,6 +21,7 @@ import {
 } from "../unit/test-street/street-world";
 import { canvasOf } from "./camera-test-support";
 import { SCREENSHOT_OPTIONS } from "./screenshot-support";
+import { walkRealSegment } from "./walk-support";
 
 const OVERLAY_IDS = DEBUG_OVERLAYS.map((o) => o.id);
 
@@ -252,45 +249,6 @@ test("the overlay is deliberately non-diegetic", async ({ page }) => {
   );
 });
 
-/** Holds `segment.key` through real keyboard input and releases it inside
- * the page on the frame its `until` is first met. */
-async function holdUntil(page: Page, segment: StreetWalkSegment): Promise<void> {
-  await page.keyboard.down(segment.key);
-  try {
-    await page.evaluate(
-      ({ until, code }) =>
-        new Promise<void>((resolve, reject) => {
-          const deadline = performance.now() + 30_000;
-          const tick = (): void => {
-            const pos = window.__bc?.playerPosition;
-            const met =
-              pos !== undefined &&
-              (until.kind === "x-at-least"
-                ? pos.x >= until.value
-                : until.kind === "x-at-most"
-                  ? pos.x <= until.value
-                  : until.kind === "y-at-least"
-                    ? pos.y >= until.value
-                    : until.kind === "y-at-most"
-                      ? pos.y <= until.value
-                      : false);
-            if (met || performance.now() >= deadline) {
-              window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
-              if (met) resolve();
-              else reject(new Error(`never met ${JSON.stringify(until)}`));
-              return;
-            }
-            requestAnimationFrame(tick);
-          };
-          requestAnimationFrame(tick);
-        }),
-      { until: segment.until, code: segment.key },
-    );
-  } finally {
-    await page.keyboard.up(segment.key);
-  }
-}
-
 // Story 15.12 (Artie, Quentin): the top railing collides at its foot, so a
 // player walking south from the finial row rests with their feet on the
 // base rail. The DOM facts are the proof -- the player's body sits exactly
@@ -302,14 +260,14 @@ test("the player walking south rests on the top railing's foot (story 15.12)", a
   const foot = topRailingFoot();
   const route = streetSubwayApproachRoute(streetWalkInputs());
   const toEntrance = route.findIndex((segment) => segment.label === "east-to-the-subway-entrance");
-  for (const segment of route.slice(0, toEntrance + 1)) await holdUntil(page, segment);
+  for (const segment of route.slice(0, toEntrance + 1)) await walkRealSegment(page, segment);
   // West along the pavement row to the railing's middle column, then south.
-  await holdUntil(page, {
+  await walkRealSegment(page, {
     label: "west-to-the-railing-middle",
     key: "ArrowLeft",
     until: { kind: "x-at-most", value: foot.rect.x0 + 1.5 },
   });
-  await holdUntil(page, {
+  await walkRealSegment(page, {
     label: "south-onto-the-railing-foot",
     key: "ArrowDown",
     until: { kind: "y-at-least", value: foot.rect.y0 - 0.001 },
@@ -326,23 +284,29 @@ test("the player walking south rests on the top railing's foot (story 15.12)", a
     { timeout: 30_000 },
   );
   await page.keyboard.up("ArrowLeft");
-  await page.waitForTimeout(300);
 
   const position = await page.evaluate(() => window.__bc?.playerPosition);
   expect(position?.y).toBeCloseTo(foot.rect.y0, 4);
 
-  const edges = await page.evaluate((objectId) => {
-    const player = document.querySelector('[data-bc-collider="player"]');
-    const rail = document.querySelector(
-      `[data-bc-collider="collider"][data-bc-object="${objectId}"]`,
-    );
-    if (!player || !rail) throw new Error("no player or railing collider rect in the overlay");
-    return {
-      playerBottom: Number(player.getAttribute("y")) + Number(player.getAttribute("height")),
-      railTop: Number(rail.getAttribute("y")),
-    };
-  }, foot.prop.id.toString());
-  expect(edges.playerBottom).toBeCloseTo(edges.railTop, 4);
+  // The overlay redraws a frame after the body stops: poll the condition.
+  await expect
+    .poll(
+      () =>
+        page.evaluate((objectId) => {
+          const player = document.querySelector('[data-bc-collider="player"]');
+          const rail = document.querySelector(
+            `[data-bc-collider="collider"][data-bc-object="${objectId}"]`,
+          );
+          if (!player || !rail) return Number.NaN;
+          return (
+            Number(player.getAttribute("y")) +
+            Number(player.getAttribute("height")) -
+            Number(rail.getAttribute("y"))
+          );
+        }, foot.prop.id.toString()),
+      { message: "the player's bottom edge sits on the railing collider's top edge" },
+    )
+    .toBeCloseTo(0, 4);
 
   // The stairwell plus one cell each side, from the real view transform.
   const clip = await page.evaluate(

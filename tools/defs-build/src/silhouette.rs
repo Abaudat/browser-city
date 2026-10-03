@@ -231,6 +231,17 @@ pub fn check(
             .get(entry.key.value.as_str())
             .expect("every validated object came from a raw entry of the same key");
         let Some(collider) = obj.collider else {
+            if entry.tags.iter().any(|t| t == UPRIGHT_TAG_KEY) {
+                return Err(DefsError::new(
+                    &entry.path,
+                    entry.key.line,
+                    entry.key.col,
+                    format!(
+                        "object '{}' is tagged '{UPRIGHT_TAG_KEY}' but has no collider -- an upright collides at its foot",
+                        obj.key
+                    ),
+                ));
+            }
             continue;
         };
         let (w, _h, rgba) = sheets
@@ -859,5 +870,65 @@ mod tests {
             let n = tally.get(&kind).copied().unwrap_or(0);
             assert!(n >= 100, "{kind:?} drawn only {n} times: {tally:?}");
         }
+    }
+
+    fn archetype(key: &str, foot: bool, top: i32, bottom: i32) -> crate::model::ArchetypeEntry {
+        use crate::model::{Located, RawColliderInset};
+        crate::model::ArchetypeEntry {
+            path: "a.toml".into(),
+            key: Located::at(key.to_string(), 1, 1),
+            height: None,
+            collider_inset: Some(Located::at(
+                RawColliderInset {
+                    left: 0,
+                    top,
+                    right: 0,
+                    bottom,
+                },
+                1,
+                1,
+            )),
+            foot,
+        }
+    }
+
+    fn raw_with(archetypes: Vec<crate::model::ArchetypeEntry>) -> RawDefs {
+        RawDefs {
+            archetypes,
+            ..RawDefs::default()
+        }
+    }
+
+    #[test]
+    fn the_foot_is_the_named_archetypes_else_the_shallowest_declared() {
+        let raw = raw_with(vec![
+            archetype("deep", true, 6, 0),
+            archetype("shallow", true, 11, 0),
+            archetype("plain", false, 0, 0),
+        ]);
+        // A named foot wins over a shallower one.
+        assert_eq!(foot_of(&raw, Some("deep"), 1), Ok((6, 16)));
+        // A non-foot, an unknown or an absent archetype gets the shallowest.
+        for named in [Some("plain"), Some("nope"), None] {
+            assert_eq!(foot_of(&raw, named, 1), Ok((11, 16)));
+        }
+        // Two feet at the same depth: still that depth.
+        let tie = raw_with(vec![
+            archetype("a", true, 11, 0),
+            archetype("b", true, 11, 0),
+        ]);
+        assert_eq!(foot_of(&tie, None, 1), Ok((11, 16)));
+    }
+
+    #[test]
+    fn a_multi_cell_foot_spans_height_times_sixteen_minus_bottom() {
+        let raw = raw_with(vec![archetype("f", true, 27, 2)]);
+        assert_eq!(foot_of(&raw, Some("f"), 2), Ok((27, 30)));
+    }
+
+    #[test]
+    fn no_foot_archetype_at_all_is_an_error() {
+        let raw = raw_with(vec![archetype("plain", false, 0, 0)]);
+        assert!(foot_of(&raw, None, 1).is_err());
     }
 }

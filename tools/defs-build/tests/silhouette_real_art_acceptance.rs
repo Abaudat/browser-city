@@ -204,3 +204,23 @@ collider = { x0 = 0, y0 = 10, x1 = 48, y1 = 16 }\ntags = [\"stairs\", \"fixture\
         "{msg}"
     );
 }
+
+/// The build layer alone must refuse the original defect: the top railing is
+/// an `upright` whose collider is the `railing_foot` rows. Putting back master's
+/// `full_cell_blocker` without the tag would otherwise build green.
+#[test]
+fn the_top_railing_is_an_upright_on_its_foot() {
+    let defs = real_defs();
+    let o = object(&defs, "stairwell_top_railing");
+    let upright = defs
+        .tags
+        .iter()
+        .find(|t| t.key == defs_build::model::UPRIGHT_TAG_KEY)
+        .expect("the upright tag is declared");
+    assert!(
+        o.tags.contains(&upright.id),
+        "stairwell_top_railing must carry `upright`"
+    );
+    let c = o.collider.expect("the top railing has a collider");
+    assert_eq!((c.x0, c.y0, c.x1, c.y1), (0, 11, 48, 16));
+}
