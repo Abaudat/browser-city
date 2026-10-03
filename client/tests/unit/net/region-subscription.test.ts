@@ -30,7 +30,8 @@ class FakeHandle implements RegionHandle {
   state: State = "pending";
   constructor(
     readonly key: HandleKey,
-    private readonly cb: HandleCallbacks,
+    readonly cb: HandleCallbacks,
+    private readonly swallowErrorWhenEnding = false,
   ) {}
   unsubscribe(): void {
     if (this.state !== "applied") {
@@ -50,15 +51,20 @@ class FakeHandle implements RegionHandle {
   }
   deliverError(): void {
     if (this.state === "ended") return;
+    const swallow = this.swallowErrorWhenEnding && this.state === "unsubscribing";
     this.state = "ended";
+    if (swallow) return;
     this.cb.onError("rejected");
   }
 }
 
 class FakeBackend implements RegionBackend {
   readonly handles: FakeHandle[] = [];
+  /** Negative control: an ending handle that takes an error without telling
+   * the manager, which is a manager that keeps the handle. */
+  constructor(private readonly swallowErrorWhenEnding = false) {}
   subscribe(key: HandleKey, _range: FloorRange, cb: HandleCallbacks): RegionHandle {
-    const h = new FakeHandle(key, cb);
+    const h = new FakeHandle(key, cb, this.swallowErrorWhenEnding);
     this.handles.push(h);
     return h;
   }
@@ -80,6 +86,65 @@ const noop = (): void => {};
 
 function manager(backend: FakeBackend, onError: (m: string) => void = noop): RegionSubscriptions {
   return new RegionSubscriptions(backend, FLOORS, { onError });
+}
+
+type Command =
+  | { t: "move"; p: { x: number; y: number; floor: number } }
+  | { t: "applied" | "ended" | "error"; i: number };
+
+/** What a delivery hit: the command and the handle's state beforehand. */
+interface Delivery {
+  t: "applied" | "ended" | "error";
+  before: State;
+}
+
+/** Runs a schedule against a fresh manager, asserting after every step and
+ * at the end; returns the deliveries so a caller can check its premise. */
+function runSchedule(commands: Command[], backend: FakeBackend = new FakeBackend()): Delivery[] {
+  const trace: Delivery[] = [];
+  let failed = false;
+  const m = manager(backend, () => {
+    failed = true;
+  });
+  let last: { x: number; y: number; floor: number } | undefined;
+  for (const c of commands) {
+    if (c.t === "move") {
+      m.moveTo(c.p.x, c.p.y, c.p.floor);
+      last = c.p;
+    } else {
+      const pool = backend.handles.filter((h) =>
+        c.t === "applied"
+          ? h.state === "pending"
+          : c.t === "ended"
+            ? h.state === "unsubscribing"
+            : h.state !== "ended",
+      );
+      const h = pool[c.i % Math.max(pool.length, 1)];
+      if (h) {
+        trace.push({ t: c.t, before: h.state });
+        if (c.t === "applied") h.deliverApplied();
+        else if (c.t === "ended") h.deliverEnded();
+        else h.deliverError();
+      }
+    }
+    // The manager's own count never drifts from the truth.
+    expect(m.liveHandleCount()).toBe(backend.live());
+  }
+  backend.flush();
+  expect(m.liveHandleCount()).toBe(backend.live());
+  expect(backend.live()).toBeLessThanOrEqual(REGION_MAX_HANDLES);
+  if (!failed && last) {
+    expect(backend.live()).toBe(m.heldKeys().length);
+    const { cx, cy } = columnOf(last.x, last.y);
+    const band = bandOf(last.floor);
+    const held = new Set(m.heldKeys().map(handleId));
+    for (let dx = -REGION_RADIUS_CHUNKS; dx <= REGION_RADIUS_CHUNKS; dx++) {
+      for (let dy = -REGION_RADIUS_CHUNKS; dy <= REGION_RADIUS_CHUNKS; dy++) {
+        expect(held.has(handleId({ cx: cx + dx, cy: cy + dy, band }))).toBe(true);
+      }
+    }
+  }
+  return trace;
 }
 
 describe("RegionSubscriptions", () => {
@@ -155,6 +220,58 @@ describe("RegionSubscriptions", () => {
     expect(m.liveHandleCount()).toBe(backend.live());
   });
 
+  it("an error on a handle that is already unsubscribing ends it, with liveHandleCount() equal to backend.live()", () => {
+    const backend = new FakeBackend();
+    const errors: string[] = [];
+    const m = manager(backend, (e) => errors.push(e));
+    m.moveTo(0, 0, 0);
+    backend.flush();
+    m.moveTo(0, -97, 0);
+    const ending = backend.handles.find((h) => h.state === "unsubscribing");
+    expect(ending).toBeDefined();
+    ending?.deliverError();
+    expect(errors).toEqual(["rejected"]);
+    expect(m.liveHandleCount()).toBe(backend.live());
+  });
+
+  it("an error on an old ending handle leaves the new handle for the same column held and counted", () => {
+    const backend = new FakeBackend();
+    const m = manager(backend);
+    m.moveTo(0, 0, 0);
+    backend.flush();
+    m.moveTo(0, -97, 0); // the near columns leave: unsubscribing
+    m.moveTo(0, 0, 0); // and are requested again while the old ones still end
+    const id = handleId({ cx: 0, cy: 0, band: 0 });
+    const old = backend.handles.find((h) => handleId(h.key) === id && h.state === "unsubscribing");
+    const fresh = backend.handles.find((h) => handleId(h.key) === id && h.state === "pending");
+    expect(old).toBeDefined();
+    expect(fresh).toBeDefined();
+    old?.deliverError();
+    expect(m.liveHandleCount()).toBe(backend.live());
+    expect(m.heldKeys().map(handleId)).toContain(id);
+  });
+
+  it("a handle leaves the live count exactly once, whichever of onError and onEnded comes second", () => {
+    for (const errorFirst of [true, false]) {
+      const backend = new FakeBackend();
+      const m = manager(backend);
+      m.moveTo(0, 0, 0);
+      backend.flush();
+      m.moveTo(0, -97, 0);
+      const ending = backend.handles.find((h) => h.state === "unsubscribing");
+      if (!ending) throw new Error("no ending handle");
+      if (errorFirst) {
+        ending.deliverError();
+        ending.cb.onEnded();
+      } else {
+        ending.deliverEnded();
+        ending.cb.onError("late");
+      }
+      expect(m.liveHandleCount()).toBe(backend.live());
+      expect(m.liveHandleCount()).toBeGreaterThanOrEqual(0);
+    }
+  });
+
   it("calls onApplied for every handle that applies, with its key", () => {
     const backend = new FakeBackend();
     const applied: string[] = [];
@@ -174,7 +291,7 @@ describe("RegionSubscriptions", () => {
       y: fc.integer({ min: -400, max: 400 }),
       floor: fc.integer({ min: FLOORS.minFloor, max: FLOORS.maxFloor }),
     });
-    const command = fc.oneof(
+    const command: fc.Arbitrary<Command> = fc.oneof(
       { weight: 4, arbitrary: pos.map((p) => ({ t: "move" as const, p })) },
       { weight: 3, arbitrary: fc.nat().map((i) => ({ t: "applied" as const, i })) },
       { weight: 3, arbitrary: fc.nat().map((i) => ({ t: "ended" as const, i })) },
@@ -182,50 +299,51 @@ describe("RegionSubscriptions", () => {
     );
     fc.assert(
       fc.property(fc.array(command, { maxLength: 120 }), (commands) => {
-        const backend = new FakeBackend();
-        let failed = false;
-        const m = manager(backend, () => {
-          failed = true;
-        });
-        let last: { x: number; y: number; floor: number } | undefined;
-        for (const c of commands) {
-          if (c.t === "move") {
-            m.moveTo(c.p.x, c.p.y, c.p.floor);
-            last = c.p;
-          } else {
-            const pool = backend.handles.filter((h) =>
-              c.t === "applied"
-                ? h.state === "pending"
-                : c.t === "ended"
-                  ? h.state === "unsubscribing"
-                  : h.state !== "ended",
-            );
-            const h = pool[c.i % Math.max(pool.length, 1)];
-            if (h) {
-              if (c.t === "applied") h.deliverApplied();
-              else if (c.t === "ended") h.deliverEnded();
-              else h.deliverError();
-            }
-          }
-          // The manager's own count never drifts from the truth.
-          expect(m.liveHandleCount()).toBe(backend.live());
-        }
-        backend.flush();
-        expect(m.liveHandleCount()).toBe(backend.live());
-        expect(backend.live()).toBeLessThanOrEqual(REGION_MAX_HANDLES);
-        if (!failed && last) {
-          expect(backend.live()).toBe(m.heldKeys().length);
-          const { cx, cy } = columnOf(last.x, last.y);
-          const band = bandOf(last.floor);
-          const held = new Set(m.heldKeys().map(handleId));
-          for (let dx = -REGION_RADIUS_CHUNKS; dx <= REGION_RADIUS_CHUNKS; dx++) {
-            for (let dy = -REGION_RADIUS_CHUNKS; dy <= REGION_RADIUS_CHUNKS; dy++) {
-              expect(held.has(handleId({ cx: cx + dx, cy: cy + dy, band }))).toBe(true);
-            }
-          }
-        }
+        runSchedule(commands);
       }),
     );
+  });
+
+  // Shrunk counterexamples of the property, pinned as plain schedules.
+  const move = (x: number, y: number): Command => ({ t: "move", p: { x, y, floor: 0 } });
+  const PINNED: [string, Command[]][] = [
+    [
+      "seed 2: move, move, applied, error on the ending handle",
+      [move(0, 0), move(0, 160), { t: "applied", i: 1064248856 }, { t: "error", i: 6 }],
+    ],
+    [
+      "seed 11: move, applied, move four chunks away, error on the ending handle",
+      [move(0, 0), { t: "applied", i: 0 }, move(0, -97), { t: "error", i: 0 }],
+    ],
+    [
+      "seed 27: move, move, move, applied, error on the ending handle",
+      [
+        move(0, 320),
+        move(0, 0),
+        move(32, 352),
+        { t: "applied", i: 636130896 },
+        { t: "error", i: 831279709 },
+      ],
+    ],
+    [
+      "seed 28: move, move, applied, error on the ending handle",
+      [move(0, 0), move(0, -129), { t: "applied", i: 1531636474 }, { t: "error", i: 1274411124 }],
+    ],
+    [
+      "seed 38: move, applied, move, error on the ending handle",
+      [move(0, 0), { t: "applied", i: 77 }, move(0, 128), { t: "error", i: 1062737552 }],
+    ],
+  ];
+
+  it.each(PINNED)("%s", (_name, commands) => {
+    const trace = runSchedule(commands);
+    expect(trace.at(-1)).toMatchObject({ t: "error", before: "unsubscribing" });
+  });
+
+  it("negative control: a manager that keeps an errored ending handle fails every pinned schedule", () => {
+    for (const [, commands] of PINNED) {
+      expect(() => runSchedule(commands, new FakeBackend(true))).toThrow();
+    }
   });
 
   it("fires onInitialApplied exactly once even when first-region handles are released while pending", () => {
