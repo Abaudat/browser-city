@@ -31,3 +31,5 @@ holder_kind 2 vehicle
 holder_kind 3 building
 holder_kind 4 municipal_facility
 container_kind 0 object
+actor_kind 0 character
+actor_kind 1 citizen

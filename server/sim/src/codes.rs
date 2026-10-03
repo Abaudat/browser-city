@@ -327,3 +327,24 @@ pub mod container_kind {
         name: "object",
     }];
 }
+
+/// What can stand somewhere in the world (FR136): a player's character or
+/// a citizen. An actor is referenced by this code plus the id of the row
+/// in that kind's own table (`crate::actor_location::ACTOR_TABLES`).
+pub mod actor_kind {
+    use super::Code;
+
+    pub const CHARACTER: u32 = 0;
+    pub const CITIZEN: u32 = 1;
+
+    pub const CODES: &[Code] = &[
+        Code {
+            code: CHARACTER,
+            name: "character",
+        },
+        Code {
+            code: CITIZEN,
+            name: "citizen",
+        },
+    ];
+}

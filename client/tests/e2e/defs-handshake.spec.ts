@@ -44,7 +44,7 @@ function notice(page: Page) {
   return page.locator("[data-bc-notice]");
 }
 
-test("the matched-version path costs no additional round trip: exactly one client-to-server frame before the scene renders (FR147)", async ({
+test("the matched-version path costs no additional round trip: exactly one non-region client-to-server frame before the scene renders (FR147)", async ({
   page,
 }) => {
   const handle = readSpacetimeHandle();
@@ -53,7 +53,12 @@ test("the matched-version path costs no additional round trip: exactly one clien
   let sentCount = 0;
   page.on("websocket", (ws) => {
     if (!ws.url().startsWith(dbWsPrefix)) return; // never Vite's own HMR socket
-    ws.on("framesent", () => {
+    ws.on("framesent", ({ payload }) => {
+      // Story 4.3: the interest region's own per-chunk subscriptions are
+      // the world arriving, not the handshake costing a round trip -- they
+      // are counted by `interest-region.spec.ts`, never here.
+      const text = typeof payload === "string" ? payload : payload.toString("latin1");
+      if (text.includes('"chunk_key"')) return;
       sentCount++;
     });
   });

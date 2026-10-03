@@ -85,6 +85,8 @@ pub const REDUCER_CLASSES: &[(&str, ReducerClass)] = &[
     ("restore_table_sample", ReducerClass::Operator),
     ("restore_unit", ReducerClass::Operator),
     ("restore_holder_kind", ReducerClass::Operator),
+    ("restore_actor_kind", ReducerClass::Operator),
+    ("restore_actor_location", ReducerClass::Operator),
     ("restore_business", ReducerClass::Operator),
     ("restore_stock", ReducerClass::Operator),
     ("restore_item_instance", ReducerClass::Operator),

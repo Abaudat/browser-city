@@ -44,6 +44,9 @@ export interface WorldSpecCheck {
    * (`world/collision-grid.ts` plus the player body from
    * `defs/balance/movement.toml`), never this module's own rule. */
   readonly isStandable: (x: number, y: number, floor: number) => boolean;
+  /** The world's declared floor range (`defs.minFloor`/`defs.maxFloor`):
+   * `WorldSpec::build`'s `check_floor_in_range`, mirrored. */
+  readonly floorRange: { readonly minFloor: number; readonly maxFloor: number };
   /** Which chunk a caller's own row declares an area filed under.
    * Defaults to the real key (the rect's own anchor corner), so most
    * callers never supply this; it exists only so a caller carrying real
@@ -116,13 +119,28 @@ function checkAreas(
  * - two areas of the same kind, in the same chunk, whose rects overlap --
  *   which one a query answers with would otherwise depend on row order;
  * - a transition whose anchor or target cell is not standable on its own
- *   declared floor.
+ *   declared floor;
+ * - an area or transition on a floor outside the declared range.
  */
 export function checkWorldSpec(check: WorldSpecCheck): string[] {
-  const { buildingAreas, roomAreas, transitions, isStandable } = check;
+  const { buildingAreas, roomAreas, transitions, isStandable, floorRange } = check;
   const chunkKeyOf =
     check.chunkKeyOf ?? ((area) => chunkKey(area.rect.x0, area.rect.y0, area.floor));
   const problems: string[] = [];
+
+  const inRange = (floor: number): boolean =>
+    floor >= floorRange.minFloor && floor <= floorRange.maxFloor;
+  const outOfRange = (what: string, floor: number): void => {
+    problems.push(
+      `${what} floor ${floor} is outside the declared range ${floorRange.minFloor}..=${floorRange.maxFloor}`,
+    );
+  };
+  for (const a of buildingAreas) if (!inRange(a.floor)) outOfRange("building_area", a.floor);
+  for (const a of roomAreas) if (!inRange(a.floor)) outOfRange("room_area", a.floor);
+  for (const t of transitions) {
+    if (!inRange(t.floor)) outOfRange("transition anchor", t.floor);
+    if (!inRange(t.targetFloor)) outOfRange("transition target", t.targetFloor);
+  }
 
   checkAreas(buildingAreas, "building_area", chunkKeyOf, problems);
   checkAreas(roomAreas, "room_area", chunkKeyOf, problems);

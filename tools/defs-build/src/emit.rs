@@ -10,9 +10,9 @@ use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
     COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, INTERACT_AT_MAX_REACH_CELLS, MAX_DENOMINATIONS,
-    MAX_FACE_VALUE, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, NeighbourTermDef,
-    REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode, RawDirection, RoleDef,
-    RuleKindDef, SpriteRect,
+    MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, MIN_FLOOR,
+    NeighbourTermDef, REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode,
+    RawDirection, RoleDef, RuleKindDef, SpriteRect,
 };
 
 // `RawLandUse::as_str` is used via the fully-qualified method call above,
@@ -72,6 +72,10 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 
     out.push_str(&format!(
         "/// FR127's cap: a footprint's width and height are each held to this.\npub const MAX_FOOTPRINT_CELLS: i32 = {MAX_FOOTPRINT_CELLS};\n\n"
+    ));
+
+    out.push_str(&format!(
+        "/// The world's declared floor range: no row may sit outside it.\npub const MIN_FLOOR: i32 = {MIN_FLOOR};\npub const MAX_FLOOR: i32 = {MAX_FLOOR};\n\n"
     ));
 
     out.push_str(&format!(
@@ -654,6 +658,8 @@ pub fn emit_json(
     out.push_str(&format!(
         "  \"max_footprint_cells\": {MAX_FOOTPRINT_CELLS},\n"
     ));
+    out.push_str(&format!("  \"min_floor\": {MIN_FLOOR},\n"));
+    out.push_str(&format!("  \"max_floor\": {MAX_FLOOR},\n"));
     out.push_str(&format!(
         "  \"max_shelf_life_minutes\": {MAX_SHELF_LIFE_MINUTES},\n"
     ));
@@ -1297,6 +1303,8 @@ mod tests {
         assert!(out.contains("pub const COLLIDER_SUBCELLS_PER_CELL: i32 = 16;"));
         assert!(out.contains("pub const INTERACT_AT_MAX_REACH_CELLS: i32 = 2;"));
         assert!(out.contains("pub const MAX_FOOTPRINT_CELLS: i32 = 8;"));
+        assert!(out.contains("pub const MIN_FLOOR: i32 = -1;"));
+        assert!(out.contains("pub const MAX_FLOOR: i32 = 7;"));
         assert!(out.contains("pub const REAL_MS_PER_CITY_MINUTE: i64 = 2500;"));
         assert!(!out.contains('\r'));
     }
@@ -1355,12 +1363,14 @@ mod tests {
         assert!(lines[3].contains("\"collider_subcells_per_cell\": 16"));
         assert!(lines[4].contains("\"interact_at_max_reach_cells\": 2"));
         assert!(lines[5].contains("\"max_footprint_cells\": 8"));
-        assert!(lines[6].contains("\"max_shelf_life_minutes\": 525600"));
-        assert!(lines[7].contains("\"max_face_value\": 1000"));
-        assert!(lines[8].contains("\"max_denominations\": 16"));
-        assert!(lines[9].contains("\"denomination_unit\": 0"));
-        assert!(lines[10].contains("\"real_ms_per_city_minute\": 2500"));
-        assert!(lines[11].contains("\"atlas_max_pages_per_group\": 2"));
+        assert!(lines[6].contains("\"min_floor\": -1"));
+        assert!(lines[7].contains("\"max_floor\": 7"));
+        assert!(lines[8].contains("\"max_shelf_life_minutes\": 525600"));
+        assert!(lines[9].contains("\"max_face_value\": 1000"));
+        assert!(lines[10].contains("\"max_denominations\": 16"));
+        assert!(lines[11].contains("\"denomination_unit\": 0"));
+        assert!(lines[12].contains("\"real_ms_per_city_minute\": 2500"));
+        assert!(lines[13].contains("\"atlas_max_pages_per_group\": 2"));
         assert!(!out.contains('\r'));
     }
 

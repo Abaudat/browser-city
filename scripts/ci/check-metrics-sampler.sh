@@ -38,7 +38,7 @@ MAX_SPEED=100             # sim::time::MAX_CLOCK_SPEED
 SNAPSHOT="$REPO_ROOT/server/schema.snapshot.json"
 # Tables whose row count is fixed for the whole run: the one-row config
 # tables and the code tables (each seeded by `init`, never written again).
-STATIC_TABLES="module_owner world_clock matter_kind provision reason_code node_kind unit layer_code holder_kind container_kind"
+STATIC_TABLES="module_owner world_clock matter_kind provision reason_code node_kind unit layer_code holder_kind actor_kind container_kind"
 
 START_PID=""
 cleanup() {

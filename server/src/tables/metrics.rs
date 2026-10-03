@@ -31,6 +31,7 @@ use spacetimedb::{ReducerContext, Table, Timestamp};
 
 use crate::demo_ping;
 
+use super::actor::{actor_kind, actor_location};
 use super::citizen::{citizen, citizen_state};
 use super::clock::world_clock;
 use super::codes::{
@@ -238,6 +239,8 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(unit);
     sample!(layer_code);
     sample!(holder_kind);
+    sample!(actor_kind);
+    sample!(actor_location);
     sample!(business);
     sample!(stock);
     sample!(container_kind);

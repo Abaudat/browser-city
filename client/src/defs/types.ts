@@ -271,6 +271,10 @@ export interface Defs {
    * this -- generated once by `tools/defs-build` into both artefacts,
    * never a client-side literal. */
   readonly maxFootprintCells: number;
+  /** The world's declared floor range (story 4.3) -- generated once by
+   * `tools/defs-build`, never a client-side literal. */
+  readonly minFloor: number;
+  readonly maxFloor: number;
   /** The longest an item may take to spoil, in minutes -- generated once
    * by `tools/defs-build`, never a client-side literal. */
   readonly maxShelfLifeMinutes: number;

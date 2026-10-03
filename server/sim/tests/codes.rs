@@ -7,7 +7,8 @@
 //! a diff there is exactly the moment a human must look.
 
 use sim::codes::{
-    Code, container_kind, holder_kind, layer, matter_kind, node_kind, provision, reason_code, unit,
+    Code, actor_kind, container_kind, holder_kind, layer, matter_kind, node_kind, provision,
+    reason_code, unit,
 };
 use std::collections::BTreeSet;
 
@@ -296,4 +297,16 @@ fn a_container_kind_is_never_a_holder_kind() {
             c.name
         );
     }
+}
+
+/// Story 4.3 (FR136): an actor is a character or a citizen -- an
+/// extensible set, so a third kind is a row insert.
+#[test]
+fn actor_kind_matches_golden_and_is_unique() {
+    let golden = parse_golden(GOLDEN);
+    assert_matches_golden("actor_kind", actor_kind::CODES, &golden);
+    assert_unique("actor_kind", actor_kind::CODES);
+    let names: BTreeSet<&str> = actor_kind::CODES.iter().map(|c| c.name).collect();
+    let expected: BTreeSet<&str> = ["character", "citizen"].into_iter().collect();
+    assert_eq!(names, expected, "FR136 names a player and a citizen actor");
 }

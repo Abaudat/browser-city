@@ -8,6 +8,8 @@ function defsWith(balance: readonly { key: string; value: number }[]): Defs {
     colliderSubcellsPerCell: 16,
     interactAtMaxReachCells: 2,
     maxFootprintCells: 8,
+    minFloor: -1,
+    maxFloor: 7,
     maxShelfLifeMinutes: 525_600,
     maxFaceValue: 1_000,
     maxDenominations: 16,

@@ -89,6 +89,7 @@ use spacetimedb::{Identity, ReducerContext, Table, Timestamp};
 
 use crate::{DemoPing, demo_ping};
 
+use super::actor::{ActorKind, ActorLocation, actor_kind, actor_location};
 use super::citizen::{Citizen, CitizenState, citizen, citizen_state};
 use super::clock::{WorldClock, world_clock};
 use super::codes::{
@@ -151,6 +152,7 @@ const INIT_SEEDED_TABLES: &[&str] = &[
     "node_kind",
     "unit",
     "holder_kind",
+    "actor_kind",
     "container_kind",
     "layer_code",
     "cadence_liveness",
@@ -177,6 +179,7 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "item_held",
     "business",
     "stock",
+    "actor_location",
     "demo_ping",
     "building",
     "building_area",
@@ -263,6 +266,9 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.stock().iter().next().is_some() {
         nonempty.push("stock");
+    }
+    if ctx.db.actor_location().iter().next().is_some() {
+        nonempty.push("actor_location");
     }
     if ctx.db.building().iter().next().is_some() {
         nonempty.push("building");
@@ -559,6 +565,17 @@ impl_autoinc_row!(
         instance_id: 0,
         def_id: 0,
         created_at: Timestamp::UNIX_EPOCH,
+    }
+);
+impl_autoinc_row!(
+    ActorLocation,
+    location_id,
+    ActorLocation {
+        location_id: 0,
+        actor_kind: 0,
+        actor_id: 0,
+        chunk_key: 0,
+        floor: 0,
     }
 );
 impl_autoinc_row!(
@@ -880,6 +897,26 @@ pub fn restore_container_kind(
         ctx.db.container_kind().insert(row);
     }
     Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_actor_location(
+    ctx: &ReducerContext,
+    rows: Vec<ActorLocation>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.actor_location().insert(r),
+        |id| {
+            ctx.db.actor_location().location_id().delete(id);
+        },
+        "actor_location",
+        sequence_floor,
+    )
 }
 
 #[spacetimedb::reducer]
@@ -1231,6 +1268,21 @@ pub fn restore_holder_kind(ctx: &ReducerContext, rows: Vec<HolderKind>) -> Resul
     }
     for row in rows {
         ctx.db.holder_kind().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_actor_kind(ctx: &ReducerContext, rows: Vec<ActorKind>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    let existing: Vec<u32> = ctx.db.actor_kind().iter().map(|r| r.code).collect();
+    for code in existing {
+        ctx.db.actor_kind().code().delete(code);
+    }
+    for row in rows {
+        ctx.db.actor_kind().insert(row);
     }
     Ok(())
 }

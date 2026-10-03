@@ -232,6 +232,7 @@ describe("the street as world data (Tim's WorldSpec::build mirror)", () => {
         roomAreas: STREET_ROOM_AREAS,
         transitions: STREET_TRANSITIONS,
         isStandable: (x, y, floor) => isCellStandable(world, config, x, y, floor),
+        floorRange: { minFloor: defs.minFloor, maxFloor: defs.maxFloor },
       }),
     ).toEqual([]);
   });

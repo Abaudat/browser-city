@@ -21,6 +21,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// The one client mirror of the chunk packing (Node strips the types).
+import { CHUNK_SIZE, chunkKey } from "../../src/world/chunk.ts";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(__dirname, "../../..");
 // Keyed to REPO_ROOT (not a bare fixed name) so two different worktrees
@@ -119,6 +122,7 @@ export async function startSpacetime() {
   }
 
   const handle = { pid: child.pid, port, serverUrl, dbName, dataDir };
+  seedWorld(handle);
   writeFileSync(STATE_FILE, JSON.stringify(handle), "utf-8");
   return handle;
 }
@@ -152,4 +156,38 @@ export function callReducer(handle, reducer, ...args) {
   if (result.status !== 0) {
     throw new Error(`spacetime call ${reducer} failed:\n${result.stdout}\n${result.stderr}`);
   }
+}
+
+/** The seeded e2e world (story 4.3): one `placed_object` and one
+ * `actor_location` in every chunk of a `(2 * E2E_WORLD_SPAN + 1)` square
+ * block of ground-floor chunks, centred on the chunk the test street's
+ * spawn is in -- far larger than any one interest region, so a client
+ * that over-subscribes holds more than it should. Written through the
+ * module's own owner-only restore path (never a test-only reducer) before
+ * any client connects, so every spec sees the same world. Ids are
+ * `E2E_WORLD.idOf(cx, cy)`. */
+export const E2E_WORLD = {
+  span: 4,
+  idOf(cx, cy) {
+    const side = 2 * E2E_WORLD.span + 1;
+    return (cx + E2E_WORLD.span) * side + (cy + E2E_WORLD.span) + 1;
+  },
+};
+
+function seedWorld(handle) {
+  const placed = [];
+  const actors = [];
+  for (let cx = -E2E_WORLD.span; cx <= E2E_WORLD.span; cx++) {
+    for (let cy = -E2E_WORLD.span; cy <= E2E_WORLD.span; cy++) {
+      const id = E2E_WORLD.idOf(cx, cy);
+      const key = chunkKey(cx * CHUNK_SIZE, cy * CHUNK_SIZE, 0);
+      placed.push(`[${id},1,${cx * 32 + 5},${cy * 32 + 5},0,3,0,${key}]`);
+      actors.push(`[${id},0,${id},${key},0]`);
+    }
+  }
+  const count = placed.length;
+  callReducer(handle, "begin_restore");
+  callReducer(handle, "restore_placed_object", `[${placed.join(",")}]`, String(count));
+  callReducer(handle, "restore_actor_location", `[${actors.join(",")}]`, String(count));
+  callReducer(handle, "finish_restore");
 }
