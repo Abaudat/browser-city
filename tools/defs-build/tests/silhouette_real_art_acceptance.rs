@@ -176,8 +176,7 @@ fn the_platform_stair_railing_has_a_collider() {
 /// Story 15.12: the top railing is an upright seen face-on, so its collider
 /// is its foot, never its face. The bar-and-baluster face is opaque top to
 /// bottom, which is why clauses 1-3 alone could not see the full cell.
-const TOP_RAILING_TAIL: &str =
-    "archetype = \"full_cell_blocker\"\ntags = [\"stairs\", \"fixture\"]\n\n[[object]]\nid = 13";
+const TOP_RAILING_TAIL: &str = "archetype = \"railing_foot\"\ntags = [\"stairs\", \"fixture\", \"upright\"]\n\n[[object]]\nid = 13";
 
 #[test]
 fn putting_the_full_cell_collider_back_on_the_top_railing_names_the_key_and_the_rows() {
@@ -196,7 +195,8 @@ fn putting_the_full_cell_collider_back_on_the_top_railing_names_the_key_and_the_
 fn moving_the_top_railing_collider_one_subcell_north_names_the_key_and_the_rows() {
     let msg = build_error_with(
         TOP_RAILING_TAIL,
-        "collider = { x0 = 0, y0 = 10, x1 = 48, y1 = 16 }\ntags = [\"stairs\", \"fixture\", \"upright\"]\n\n[[object]]\nid = 13",
+        "height = 1
+collider = { x0 = 0, y0 = 10, x1 = 48, y1 = 16 }\ntags = [\"stairs\", \"fixture\", \"upright\"]\n\n[[object]]\nid = 13",
     );
     assert!(
         msg.contains("object 'stairwell_top_railing' collider (0, 10)-(48, 16)")
