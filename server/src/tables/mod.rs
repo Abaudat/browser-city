@@ -9,6 +9,7 @@ pub mod cadences;
 pub mod citizen;
 pub mod clock;
 pub mod codes;
+pub mod district;
 pub mod identity;
 pub mod item_instance;
 pub mod metrics;

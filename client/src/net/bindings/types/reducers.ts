@@ -7,6 +7,7 @@ import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
 import BeginRestoreReducer from "../begin_restore_reducer";
+import CreateDistrictReducer from "../create_district_reducer";
 import FinishPublishReducer from "../finish_publish_reducer";
 import FinishRestoreReducer from "../finish_restore_reducer";
 import RestoreActorKindReducer from "../restore_actor_kind_reducer";
@@ -21,6 +22,7 @@ import RestoreCitizenReducer from "../restore_citizen_reducer";
 import RestoreCitizenStateReducer from "../restore_citizen_state_reducer";
 import RestoreContainerKindReducer from "../restore_container_kind_reducer";
 import RestoreDemoPingReducer from "../restore_demo_ping_reducer";
+import RestoreDistrictReducer from "../restore_district_reducer";
 import RestoreFloorTransitionReducer from "../restore_floor_transition_reducer";
 import RestoreHolderKindReducer from "../restore_holder_kind_reducer";
 import RestoreItemHeldReducer from "../restore_item_held_reducer";
@@ -45,6 +47,7 @@ import RestoreWorldClockReducer from "../restore_world_clock_reducer";
 import SendPingReducer from "../send_ping_reducer";
 
 export type BeginRestoreParams = __Infer<typeof BeginRestoreReducer>;
+export type CreateDistrictParams = __Infer<typeof CreateDistrictReducer>;
 export type FinishPublishParams = __Infer<typeof FinishPublishReducer>;
 export type FinishRestoreParams = __Infer<typeof FinishRestoreReducer>;
 export type RestoreActorKindParams = __Infer<typeof RestoreActorKindReducer>;
@@ -59,6 +62,7 @@ export type RestoreCitizenParams = __Infer<typeof RestoreCitizenReducer>;
 export type RestoreCitizenStateParams = __Infer<typeof RestoreCitizenStateReducer>;
 export type RestoreContainerKindParams = __Infer<typeof RestoreContainerKindReducer>;
 export type RestoreDemoPingParams = __Infer<typeof RestoreDemoPingReducer>;
+export type RestoreDistrictParams = __Infer<typeof RestoreDistrictReducer>;
 export type RestoreFloorTransitionParams = __Infer<typeof RestoreFloorTransitionReducer>;
 export type RestoreHolderKindParams = __Infer<typeof RestoreHolderKindReducer>;
 export type RestoreItemHeldParams = __Infer<typeof RestoreItemHeldReducer>;

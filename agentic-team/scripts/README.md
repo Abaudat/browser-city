@@ -2,8 +2,8 @@
 
 This is `agentic-team/high-level-agentic-flow.mmd` made executable. State
 lives entirely in GitHub (a Project v2 board, issues, PRs, comments) — these
-scripts read it, decide the single next move, and act. There is no other
-state store.
+scripts read it, decide the next move for every story in flight, and act.
+There is no other state store.
 
 ## Architecture — three levels
 
@@ -23,9 +23,9 @@ agentic-team/scripts/
     fake.sh                 BC_FAKE test double: replays JSON, logs writes
 
   bc-budget.sh    LEVEL 2 — the budget gate: available / spent / broken
-  bc-issue.sh     LEVEL 2 — issues: adopt-alerts/next/current/transition/scope/backlog/demo-*/epics+stories+blockers/amend
+  bc-issue.sh     LEVEL 2 — issues: adopt-alerts/next/active/transition/scope/backlog/demo-*/epics+stories+blockers/amend
   bc-comment.sh    LEVEL 2 — the structured-comment reads and writes
-  bc-pr.sh          LEVEL 2 — PRs: open/attach/merge/for-issue/head
+  bc-pr.sh          LEVEL 2 — PRs: open/attach/merge/for-issue/head/ci-status/conflicts
   bc-sprint.sh       LEVEL 2 — sprints: current/next/over/items/close/scope-in
   bc-session.sh       LEVEL 2 — Orca/Claude session lifecycle, and Scotty's sprint session
 
@@ -53,8 +53,8 @@ agentic-team/scripts/
   PR back once he is done — the Demo issue on that sprint, the breaker
   comment — since his reply is not the product.
 
-  Scoping is NOT one of them. There is no sprint planning: whenever no story
-  is active, starting-dev-cycle first runs `bc-issue.sh adopt-alerts`, which
+  Scoping is NOT one of them. There is no sprint planning: whenever fewer
+  than `BC_MAX_ACTIVE` stories are active, starting-dev-cycle first runs `bc-issue.sh adopt-alerts`, which
   puts every open `alert` issue not yet on the board into Backlog as
   Blocker/XS, so a failure report is picked before any story (story 4.19) —
   then takes `bc-issue.sh next` — of every open
@@ -82,7 +82,7 @@ agentic-team/scripts/
   because unlike an empty demo it is a node that would wake to the same work
   every tick forever.
 
-  orchestrator.sh LEVEL 3 — the wake: one entry point, one decision, one action
+  orchestrator.sh LEVEL 3 — the wake: one entry point, one decision and one action per lane
 
   run-orchestrator.sh OFF THE WAKE — the loop: orchestrator.sh, forever, ten minutes apart
   keepalive.sh    OFF THE WAKE — the scheduled supervisor: pull, Orca up, loop restarted
@@ -126,11 +126,36 @@ those facts select, then does the one thing at the end of it.
 bash agentic-team/scripts/orchestrator.sh
 ```
 
-No arguments. Each run is one wake: it reads state, picks exactly one branch
-of `agentic-team/high-level-agentic-flow.mmd`, takes the one action that
-branch calls for (or nothing, if the gate says no), and exits. It does not
+No arguments. Each run is one wake: it reads state, walks
+`agentic-team/high-level-agentic-flow.mmd`, takes the action each branch it
+lands on calls for (or nothing, if the gate says no), and exits. It does not
 loop and does not remember anything between runs — run it again to advance
 further, e.g. from cron, a scheduled task, or a human.
+
+**Any number of stories run at once.** Past the Sprint Demo branches, every
+sub-issue in an active status (To analyze, In progress, Leads review,
+Reviewed — `bc-issue.sh active`) is a *lane*, and every tick advances every
+lane by the one branch of the flowchart its own status selects, in issue
+order. Lanes share nothing: each has its own Orca worktree, its own role
+sessions (uuids derived from role + issue, so Crew on #12 and Crew on #13
+are two sessions), its own PR and its own counters on that PR — so one
+lane's sleep, or even its breakage, never holds up another's. After the
+lanes, while fewer than `BC_MAX_ACTIVE` (3; `0` = no cap) are open, the tick
+also runs starting-dev-cycle and opens one more — one per tick, so a free
+board fills over a few ticks rather than in one burst the budget gate only
+saw the near side of. `BC_SESSION_MODE=main` caps it at one whatever it
+says, since every lane would share one checkout. The Sprint Demo still
+outranks every lane: while it waits on Adrian, nothing else moves.
+
+Parallel stories make one new failure possible: a merge moves the base
+under the PRs still open, and one that touches the same lines no longer
+merges — nor does GitHub run CI on it. So at Leads review, ahead of CI,
+`pr-conflicting` reads GitHub's own `mergeable` (`bc-pr.sh conflicts`; only
+`CONFLICTING` counts, never `UNKNOWN`) and dispatches Crew to merge the base
+in (`prompts/dispatch-conflict.md`), bounded by its own `conflicts` counter
+and breaker like a red build. A merge refused because a lane earlier in the
+same tick just made it conflict is a sleep, not broken: the next tick picks
+it up there.
 
 **The budget gate runs first.** Before the board is read at all, the tick
 asks `bc-budget.sh check` whether there is budget: it dispatches only while
@@ -252,9 +277,13 @@ Four deliberate choices are worth knowing before changing any of it:
 
 ## The exit contract
 
-Every tick ends by writing **one line** — `<node> <verb> <details>`, using
-the node names from `agentic-team/high-level-agentic-flow.mmd` verbatim — to
-both stdout and `$BC_WAKE_REASON`, then exits with:
+Every tick ends by writing **one line** to both stdout and `$BC_WAKE_REASON`.
+Each lane reports `<node> <verb> <details>`, using the node names from
+`agentic-team/high-level-agentic-flow.mmd` verbatim; a tick that ran several
+lanes joins their reports with ` | `, in lane order (starting-dev-cycle
+last) — `pr-opened nudged crew on #12 | merging-pr merged PR #15 for #13 |
+starting-dev-cycle sleep backlog empty`. The exit code is the most severe of
+the lanes': 2 if any broke, else 0 if any acted, else 1.
 
 | Code | Meaning | Examples |
 |---|---|---|
@@ -273,7 +302,8 @@ stderr; stdout carries only that one reason line.
 | `BC_NOW=<epoch or ISO timestamp>` | Pins "now" for every sprint/demo-hour/clock decision (`bc-sprint over`, `demo-current`, etc). | unset (real clock) |
 | `BC_WAKE_REASON=<file>` | Where the one-line reason gets written. | `$(bc_state_dir)/wake-reason.txt` — see `lib/paths.sh`; falls back to `${TMPDIR:-$TEMP}/bc-wake-reason.txt` if that can't be resolved. |
 | `BC_ENV_FILE=<file>` | A file of `BC_*=value` lines sourced by every bc-* process — including the ones the role sessions run in their own Orca terminals, which inherit nothing from the orchestrator's environment. The e2e run uses it to point `BC_BASE_BRANCH` at a throwaway base. | `~/.browsercity/env.sh` (absent = defaults) |
-| `BC_ONLY_ISSUE=<issue>` | Narrows `bc-issue.sh next` to that one story. The pick is board-wide, so the e2e run sets it (through `BC_ENV_FILE`) to its throwaway story; without it a run would start whatever real work outranks that story. | unset (whole backlog) |
+| `BC_MAX_ACTIVE=<n>` | How many stories the team works at once: a new dev cycle starts only while fewer than this many sub-issues are active. `0` = no cap. Forced to 1 under `BC_SESSION_MODE=main`. | 3 |
+| `BC_ONLY_ISSUE=<issue>` | Narrows `bc-issue.sh next` and `bc-issue.sh active` to that one story — the e2e run's ticks then neither start nor advance any other. The pick is board-wide, so the e2e run sets it (through `BC_ENV_FILE`) to its throwaway story; without it a run would start whatever real work outranks that story. | unset (whole backlog) |
 | `BC_READY_TIMEOUT_S=<s>` | How long `bc-session spawn`/`start` wait for the new terminal to show Claude's idle prompt (✳ title + `agentIdentity: claude`) before giving up with a warning. | 90 |
 | `BC_CLOSE_RETRIES=<n>` | How many rounds `orca terminal close` gets per pane, two seconds apart, each round trying a plain close and then `--tab`. | 3 |
 | `BC_STOP_TIMEOUT_S=<s>` | How long `bc-session stop-all` keeps closing and re-listing before it reports panes still open as exit 2. Orca refuses to close some busy panes with `terminal_handle_stale` (reliably the oldest Claude pane in a worktree) for up to a minute, then accepts the same call, so stop-all trusts the listing, not the close's answer. | 120 |

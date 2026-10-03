@@ -113,6 +113,20 @@ export const DemoPing = __t.object("DemoPing", {
 });
 export type DemoPing = __Infer<typeof DemoPing>;
 
+export const District = __t.object("District", {
+  districtId: __t.u64(),
+  seed: __t.u64(),
+  x0: __t.i32(),
+  y0: __t.i32(),
+  x1: __t.i32(),
+  y1: __t.i32(),
+  generationVersion: __t.u32(),
+  rngVersion: __t.u32(),
+  defsVersion: __t.string(),
+  generatedAt: __t.timestamp(),
+});
+export type District = __Infer<typeof District>;
+
 export const EconomySchedule = __t.object("EconomySchedule", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),

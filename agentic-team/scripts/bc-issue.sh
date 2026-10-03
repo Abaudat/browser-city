@@ -88,7 +88,7 @@ usage() {
 usage: bc-issue.sh <command> [args]
   adopt-alerts                -- put every open, off-board `alert` issue on the board (Backlog/Blocker/XS)
   next                        -- the startable story: no open blocker, by priority, then size
-  current                     -- the single sub-issue in an active status
+  active                      -- every sub-issue in an active status, [{number,status}] by number
   transition <issue> <status> -- set Status (and close on Done)
   scope <issue>                -- comma-joined leads in scope, quentin always
   backlog                      -- open work on the board, on no sprint yet
@@ -449,22 +449,27 @@ next)
   printf '{"number":%s,"parent":%s,"scope":"%s"}\n' "$n" "$p" "$scope"
   ;;
 
-current)
-  items="$(project_items)" || { echo "bc-issue current: could not read project items" >&2; exit 2; }
-  matches="$(printf '%s' "$items" | "$JQ" -c '
+active)
+  # Every sub-issue in an active status -- the lanes the orchestrator
+  # advances, one step each, every tick. Any number may be in flight at once:
+  # each has its own worktree, its own derived session ids and its own PR, so
+  # nothing about one lane reads or writes another's. Ascending by number,
+  # so the order the lanes run in (and so the order of the reason line's
+  # parts) is the same from one tick to the next. None active is `[]`, exit
+  # 0 -- an empty list is an answer, not a failure.
+  #
+  # BC_ONLY_ISSUE fences this in as it does `next`: the e2e run's ticks drive
+  # the real board, and with lanes they would otherwise advance every real
+  # story in flight beside its throwaway one.
+  items="$(project_items)" || { echo "bc-issue active: could not read project items" >&2; exit 2; }
+  printf '%s' "$items" | "$JQ" -c --arg only "${BC_ONLY_ISSUE:-}" '
     [.[] | select(.isParent!=true
         and (.status=="To analyze" or .status=="In progress" or .status=="Leads review" or .status=="Reviewed")
-        and ((.labels|index("demo"))|not))]
-  ')"
-  count="$(printf '%s' "$matches" | "$JQ" 'length')"
-  if [ "$count" -eq 0 ]; then
-    exit 1
-  fi
-  if [ "$count" -gt 1 ]; then
-    echo "bc-issue current: more than one active sub-issue: $(printf '%s' "$matches" | "$JQ" -r '[.[].number] | join(", ")')" >&2
-    exit 2
-  fi
-  printf '%s' "$matches" | "$JQ" -c '.[0] | {number, status}'
+        and ((.labels|index("demo"))|not)
+        and ($only == "" or (.number|tostring) == $only))
+      | {number, status}]
+    | sort_by(.number)
+  '
   ;;
 
 transition)

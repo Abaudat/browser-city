@@ -1040,7 +1040,7 @@ fn band_positions(
         let nominal = site_from + band * i;
         let jitter_span = (band * jitter_pct / 100).max(0);
         let jitter = if jitter_span > 0 {
-            (rng.next_u64() % (2 * jitter_span as u64 + 1)) as i32 - jitter_span
+            rng.below(2 * jitter_span as u64 + 1) as i32 - jitter_span
         } else {
             0
         };
@@ -1174,7 +1174,7 @@ fn try_split(
     let mid = from + len / 2;
     let jitter_span = (len as i64 * cfg.split_jitter_pct as i64 / 100) as i32;
     let jitter = if jitter_span > 0 {
-        (rng.next_u64() % (2 * jitter_span as u64 + 1)) as i32 - jitter_span
+        rng.below(2 * jitter_span as u64 + 1) as i32 - jitter_span
     } else {
         0
     };
@@ -1679,7 +1679,7 @@ fn arterial_count(rng: &mut Rng, min: u32, max: u32) -> u32 {
     if max <= min {
         return min;
     }
-    min + (rng.next_u64() % (max - min + 1) as u64) as u32
+    min + rng.below((max - min + 1) as u64) as u32
 }
 
 /// Truncates at most one arterial per axis pair to a T against a
@@ -1696,15 +1696,15 @@ fn truncate_one_arterial(rng: &mut Rng, xs_len: usize, ys_len: usize) -> Truncat
     if xs_len == 0 || ys_len == 0 {
         return Truncation::None;
     }
-    if rng.next_u64().is_multiple_of(2) {
+    if rng.below(2) == 0 {
         Truncation::Vertical {
-            index: (rng.next_u64() % xs_len as u64) as usize,
-            t_index: (rng.next_u64() % ys_len as u64) as usize,
+            index: rng.below(xs_len as u64) as usize,
+            t_index: rng.below(ys_len as u64) as usize,
         }
     } else {
         Truncation::Horizontal {
-            index: (rng.next_u64() % ys_len as u64) as usize,
-            t_index: (rng.next_u64() % xs_len as u64) as usize,
+            index: rng.below(ys_len as u64) as usize,
+            t_index: rng.below(xs_len as u64) as usize,
         }
     }
 }
@@ -3133,6 +3133,59 @@ mod tests {
         assert!(!sides.any());
         for side in Side::ALL {
             assert!(!sides.get(side));
+        }
+    }
+
+    /// The search's heap holds full `(distance, node)` keys, so the order
+    /// candidates are inserted in (edge and adjacency order) never decides
+    /// a route: the same graph from reversed edges gives identical
+    /// distances and identical shortest paths for every pair -- on a grid
+    /// built to be full of equal-length ties, and on a generated city.
+    #[test]
+    fn search_result_is_independent_of_candidate_insertion_order() {
+        let mut grid = Vec::new();
+        for k in 0..4 {
+            grid.push(StreetEdge {
+                axis: Axis::Horizontal,
+                coord: k * 10,
+                from: 0,
+                to: 30,
+                class: StreetClass::Street,
+                width_cells: 1,
+            });
+            grid.push(StreetEdge {
+                axis: Axis::Vertical,
+                coord: k * 10,
+                from: 0,
+                to: 30,
+                class: StreetClass::Street,
+                width_cells: 1,
+            });
+        }
+        let c = cfg();
+        let (_, city) = network(3, &c);
+        for edges in [grid, city.edges().to_vec()] {
+            let site = SiteBounds {
+                x0: 0,
+                y0: 0,
+                x1: 64,
+                y1: 64,
+            };
+            let forward = StreetNetwork::test_fixture(site, edges.clone(), Vec::new());
+            let mut reversed_edges = edges;
+            reversed_edges.reverse();
+            let reversed = StreetNetwork::test_fixture(site, reversed_edges, Vec::new());
+            let nodes: Vec<(i32, i32)> = forward.nodes().iter().copied().step_by(3).collect();
+            for &a in &nodes {
+                assert_eq!(forward.dijkstra_from(a), reversed.dijkstra_from(a));
+                for &b in &nodes {
+                    assert_eq!(
+                        forward.shortest_path(a, b),
+                        reversed.shortest_path(a, b),
+                        "route {a:?} -> {b:?}"
+                    );
+                }
+            }
         }
     }
 }

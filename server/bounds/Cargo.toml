@@ -39,3 +39,8 @@ path = "src/bin/measure_generation.rs"
 [[bin]]
 name = "chunk-key"
 path = "src/bin/chunk_key.rs"
+
+[dev-dependencies]
+# Token-level float scan over `sim`'s sources (`src/float_scan.rs`), native
+# test tooling only: never a dependency of `sim` or `browser_city`.
+proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }

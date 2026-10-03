@@ -294,6 +294,15 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 112_500,
         kind: BoundKind::Engineering,
     },
+    // One row per district ever generated: a world has one for a long
+    // while and Epic 14 adds a handful more.
+    TableBound {
+        accessor: "district",
+        max_rows: 64,
+        expected_rows: 1,
+        alert_rows: 48,
+        kind: BoundKind::Engineering,
+    },
     // Same reasoning as `building_area`, over `room`'s ceiling.
     TableBound {
         accessor: "room_area",

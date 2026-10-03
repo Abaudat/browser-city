@@ -40,7 +40,7 @@ impl Rect {
         self.y1 as i64 - self.y0 as i64
     }
 
-    fn overlaps(&self, other: &Rect) -> bool {
+    pub fn overlaps(&self, other: &Rect) -> bool {
         self.x0 < other.x1 && other.x0 < self.x1 && self.y0 < other.y1 && other.y0 < self.y1
     }
 }

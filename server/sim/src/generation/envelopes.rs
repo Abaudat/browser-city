@@ -427,7 +427,7 @@ pub fn place_one(
     let depth_filled = avail_depth.min(limits.max_depth_cells as i64);
     let trim_max = cfg.envelope_size_trim_max_cells as i64;
     let trim = if trim_max > 0 {
-        (rng.next_u64() % (trim_max + 1) as u64) as i64
+        rng.below((trim_max + 1) as u64) as i64
     } else {
         0
     };
