@@ -239,11 +239,19 @@ test.describe("story 1.7: enclosure visibility", () => {
     // plus one each side, from the real view transform.
     const box = platformStairwellBox();
     await page.keyboard.down("ArrowLeft");
+    // Held until the body rests against whatever stops it (the same pixel every
+    // run, never wherever a key release happened to land), clear of the group:
+    // its centre at most half a cell west of the group's west edge.
     await page.waitForFunction(
-      (x) => (window.__bc?.playerPosition?.x ?? Infinity) <= x,
-      // Centre half a cell west of the group: the drawn one-cell body is clear of it.
+      (clearX) => {
+        const w = window as unknown as { __bcLastX?: number };
+        const x = window.__bc?.playerPosition?.x ?? Infinity;
+        const rested = w.__bcLastX === x;
+        w.__bcLastX = x;
+        return rested && x <= clearX;
+      },
       box.x0 - 0.5,
-      { timeout: 15_000 },
+      { timeout: 15_000, polling: "raf" },
     );
     await page.keyboard.up("ArrowLeft");
     // The platform is a storey down: its screen rows sit one storey lower.
