@@ -41,15 +41,20 @@ fn defs_from(files: &[(PathBuf, String)]) -> Defs {
     validate::validate(&raw, &dims, &tables(), SPRITE_SHEET_ALLOWED_ROOT).unwrap()
 }
 
-/// `(examined objects, continued edges, repeat edges)`, or the failure messages.
-/// Edges where the sheet stacks a *different*, unused piece against the
-/// object's rect, so art touches the rect with no sibling to continue it:
-/// `Stairs_Railing_1` carries two railings, one above the other, and the
-/// street's near railing is the lower one (its post's top touches the
-/// upper railing's base). Pinned exactly: each must be hit, and nothing
-/// else may be listed.
-const SEAMS: &[(&str, Edge, (u32, u32))] = &[("stairwell_bottom_railing", Edge::North, (0, 7))];
+/// Edges continued by a *twin sheet*: the street's near railing is cut from
+/// `Stairs_Railing_1` rows 32..63, and its west post runs on above row 32 on
+/// that sheet. The same pixels are drawn directly above it by
+/// `stairwell_top_railing`, cut from `Stairs_Complete_2` rows 0..31 (the two
+/// sheets agree on the post). So the cut is invisible on screen, but only
+/// while the two pieces stay abutting: `street-conformance.test.ts`
+/// "(a') a piece whose edge is continued by a twin sheet's piece..." checks
+/// that. Pinned exactly: each entry must be hit, and nothing else may be
+/// listed.
+const TWIN_CONTINUED: &[(&str, Edge, (u32, u32))] =
+    &[("stairwell_bottom_railing", Edge::North, (0, 7))];
 
+/// `(examined objects, continued edges, repeat edges, twin-continued edges)`,
+/// or the failure messages.
 fn audit(defs: &Defs) -> Result<(usize, usize, usize, usize), Vec<String>> {
     audit_with(defs, &[])
 }
@@ -74,7 +79,7 @@ fn audit_with(
         examined += 1;
         by_sheet.entry(o.sprite.sheet.as_str()).or_default().push(i);
     }
-    let (mut continued, mut repeated, mut seams, mut failures) = (0, 0, 0, Vec::new());
+    let (mut continued, mut repeated, mut twin_continued, mut failures) = (0, 0, 0, Vec::new());
     for (sheet, idxs) in by_sheet {
         let bytes = fsio::read_bytes(&repo_root(), &[PathBuf::from(sheet)])
             .unwrap()
@@ -103,8 +108,8 @@ fn audit_with(
                 continued += 1;
             } else if e.repeats {
                 repeated += 1;
-            } else if SEAMS.contains(&(key.as_str(), e.edge, e.span)) {
-                seams += 1;
+            } else if TWIN_CONTINUED.contains(&(key.as_str(), e.edge, e.span)) {
+                twin_continued += 1;
             } else {
                 failures.push(format!(
                     "{key}: sprite rect is cut on its {:?} edge: {} opaque pixel(s) continue outside it, sheet span {}..{}",
@@ -114,7 +119,7 @@ fn audit_with(
         }
     }
     if failures.is_empty() {
-        Ok((examined, continued, repeated, seams))
+        Ok((examined, continued, repeated, twin_continued))
     } else {
         Err(failures)
     }
@@ -136,7 +141,7 @@ fn with_replaced(old: &str, new: &str) -> Vec<(PathBuf, String)> {
 
 #[test]
 fn no_object_rect_slices_through_its_art() {
-    let (examined, continued, repeated, seams) =
+    let (examined, continued, repeated, twin_continued) =
         audit(&defs_from(&files())).unwrap_or_else(|f| panic!("{}", f.join("\n")));
     assert!(examined >= 11, "examined only {examined} objects");
     assert!(continued >= 4, "only {continued} sibling-continued edges");
@@ -145,9 +150,9 @@ fn no_object_rect_slices_through_its_art() {
         "the flight's rows 45-47 are the one allowed repeat"
     );
     assert_eq!(
-        seams,
-        SEAMS.len(),
-        "every listed seam is hit, and only those"
+        twin_continued,
+        TWIN_CONTINUED.len(),
+        "every twin-continued edge listed is hit, and only those"
     );
 }
 
@@ -158,9 +163,9 @@ fn the_old_one_cell_cut_flight_fails_naming_the_key() {
         "y = 13, w = 32, h = 16 }\nwidth = 2\nheight = 1",
     );
     let msg = audit(&defs_from(&files)).unwrap_err().join("\n");
-    assert!(
-        msg.contains("platform_stair_flight") && msg.contains("South"),
-        "{msg}"
+    assert_eq!(
+        msg,
+        "platform_stair_flight: sprite rect is cut on its South edge: 31 opaque pixel(s) continue outside it, sheet span 1..32"
     );
 }
 

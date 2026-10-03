@@ -1914,6 +1914,69 @@ describe("a stairwell is drawn whole (story 15.14, FR126)", () => {
     expect(pairs, "the street stairwell's own pieces are examined").toBeGreaterThanOrEqual(4);
   });
 
+  it("(a') a piece whose edge is continued by a twin sheet's piece is placed abutting it at the sheet offset", () => {
+    const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+    const sheets = new Map<string, PNG>();
+    const pixel = (sheet: string, x: number, y: number) => {
+      let png = sheets.get(sheet);
+      if (!png) {
+        png = PNG.sync.read(readFileSync(join(repoRoot, sheet)));
+        sheets.set(sheet, png);
+      }
+      const i = (y * png.width + x) * 4;
+      return [...png.data.subarray(i, i + 4)];
+    };
+    const opaque = (px: number[]) => px[3] >= 200;
+    let twins = 0;
+    for (const { rows } of groups()) {
+      for (const a of rows) {
+        for (const b of rows) {
+          const sa = sheetRect(a);
+          const sb = sheetRect(b);
+          if (a === b || sa.sheet === sb.sheet || sb.y === 0) continue;
+          // b's north edge: its own top row and the row above it on its sheet
+          // are both art, and a's last row is that same art, column for column.
+          let touching = 0;
+          let same = true;
+          for (let u = sb.x; u < sb.x + sb.w; u++) {
+            if (!opaque(pixel(sb.sheet, u, sb.y)) || !opaque(pixel(sb.sheet, u, sb.y - 1)))
+              continue;
+            touching++;
+            const last = pixel(sa.sheet, u, sa.y + sa.h - 1);
+            if (
+              u < sa.x ||
+              u >= sa.x + sa.w ||
+              last.join() !== pixel(sb.sheet, u, sb.y - 1).join()
+            ) {
+              same = false;
+            }
+          }
+          if (touching === 0 || !same) continue;
+          twins++;
+          const da = drawnRect(a);
+          const db = drawnRect(b);
+          const label = `${objectDef(a.defId).key} -> ${objectDef(b.defId).key}`;
+          expect(da.y + da.h, `${label}: drawn abutting`).toBe(db.y);
+          expect(db.x - da.x, `${label}: at the sheet offset`).toBe(sb.x - sa.x);
+        }
+      }
+    }
+    expect(
+      twins,
+      "the street's top and bottom railings are a twin-sheet pair",
+    ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("every committed object meets the atlas loader's row precondition: one row, or a sprite exactly its footprint tall", () => {
+    const tile = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value;
+    if (tile === undefined) throw new Error("no render.tile_size_px balance");
+    const several = committedDefs().objects.filter((o) => o.height > 1);
+    expect(several.length, "the platform flight is a several-row def").toBeGreaterThan(0);
+    for (const o of several) {
+      expect(o.atlas.h, `${o.key} is ${o.height} rows tall`).toBe(o.height * tile);
+    }
+  });
+
   it("(b) the platform stairwell's flat rows are drawn inside the platform's interior", () => {
     const { anchor } = subwayAnchors().find((a) => a.anchor.floor === SUBWAY_FLOOR) ?? {};
     if (!anchor) throw new Error("no platform anchor");

@@ -161,7 +161,7 @@ export class AtlasPageLoader {
     object: ObjectDef,
     sourceCol: number,
     tileSizePx: number,
-    sourceRow = 0,
+    sourceRow: number,
   ): Promise<Texture> {
     if (object.height > 1 && object.atlas.h !== object.height * tileSizePx) {
       return Promise.reject(
