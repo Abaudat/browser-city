@@ -81,7 +81,9 @@ import {
   committedDefs,
   coversCell,
   type DefProp,
+  isBodyClear,
   isCellStandable,
+  isCellStandableAgainst,
   lamppostApproachMaxX,
   lamppostRestY,
   onUnderpassRowY,
@@ -96,6 +98,7 @@ import {
   streetWindowDefIds,
   streetWorldIndex,
   subwayAnchors,
+  topRailingFoot,
   treadPath,
   underpassTurnMaxX,
 } from "./street-world";
@@ -710,9 +713,11 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
       ).toBe(true);
 
       for (const blocked of blockedNeighborsOf(anchor, open.direction)) {
-        // The neighbour itself cannot be stood in...
+        // The neighbour cannot be stood in on its edge facing the anchor
+        // (a railing standing at its foot leaves the cell's far part open,
+        // so only that edge is the opening)...
         expect(
-          isCellStandable(world, config, blocked.x, blocked.y, floor),
+          isCellStandableAgainst(world, config, blocked, anchor, floor),
           `${JSON.stringify(anchor)}'s own non-entry neighbour ${JSON.stringify(blocked)} is standable`,
         ).toBe(false);
         // ...and a walk toward the anchor through it, from the nearest
@@ -734,26 +739,109 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     }
   });
 
-  it("5b. each subway stairwell's own drawn footprint is solid everywhere but its tread path: every cell off it refuses a standing body, every tread from the opening to the anchor accepts one (Quentin's finding 2)", () => {
+  it("5b. each subway stairwell's own drawn footprint is solid everywhere but its tread path: every cell off it that is fully solid refuses a standing body, every tread from the opening to the anchor accepts one, and no body in an off-path cell's open part reaches a tread except through the opening (Quentin's finding 2)", () => {
     const failures: string[] = [];
+    const s = config.subcellsPerCell;
+    const half = config.bodyWidthSubcells / 2;
+    const bodyH = config.bodyHeightSubcells;
+    /** A body wholly inside `cell` and clear of every collider exists. */
+    const hasOpenPart = (cell: Cell, floor: number) => {
+      for (let cx = cell.x * s + half; cx <= (cell.x + 1) * s - half; cx++) {
+        for (let feet = cell.y * s + bodyH; feet <= (cell.y + 1) * s; feet++) {
+          if (isBodyClear(world, config, floor, cx, feet)) return true;
+        }
+      }
+      return false;
+    };
     for (const { anchor, open } of subwayAnchors()) {
       const rows = stairwellRowsAt(anchor);
       if (rows.length === 0) {
         failures.push(`no stairs-tagged row covers the anchor ${JSON.stringify(anchor)}`);
         continue;
       }
-      const { cells, path } = treadPath(rows, anchor, open.direction);
+      const { cells, path, entry } = treadPath(rows, anchor, open.direction);
       expect(path.length).toBeGreaterThanOrEqual(2); // the anchor and a landing
       expect(cells.length).toBeGreaterThan(path.length); // at least one off-path cell
+      const inPath = (c: Cell) => path.some((p) => p.x === c.x && p.y === c.y);
+      const partial: Cell[] = [];
       for (const cell of cells) {
-        const onPath = path.some((c) => c.x === cell.x && c.y === cell.y);
+        const onPath = inPath(cell);
         const standable = isCellStandable(world, config, cell.x, cell.y, anchor.floor);
-        if (standable !== onPath) {
+        if (!onPath && hasOpenPart(cell, anchor.floor)) {
+          partial.push(cell);
+        } else if (standable !== onPath) {
           failures.push(
             `the stairwell's own cell (${cell.x}, ${cell.y}, floor ${anchor.floor}) is ${standable ? "standable" : "not standable"} but ${onPath ? "is" : "is not"} on the tread path`,
           );
         }
       }
+      if (partial.length === 0) continue;
+      // Partly open cells: flood the body's position (sub-cell lattice) from
+      // every standable cell around the footprint, the opening shut, and
+      // require that no tread is ever reached.
+      const xs = cells.map((c) => c.x);
+      const ys = cells.map((c) => c.y);
+      const pad = 3;
+      const win = {
+        x0: (Math.min(...xs) - pad) * s,
+        x1: (Math.max(...xs) + 1 + pad) * s,
+        y0: (Math.min(...ys) - pad) * s,
+        y1: (Math.max(...ys) + 1 + pad) * s,
+      };
+      const overlapsEntry = (cx: number, feet: number) =>
+        cx + half > entry.x * s &&
+        cx - half < (entry.x + 1) * s &&
+        feet > entry.y * s &&
+        feet - bodyH < (entry.y + 1) * s;
+      const free = (cx: number, feet: number) =>
+        cx - half >= win.x0 &&
+        cx + half <= win.x1 &&
+        feet - bodyH >= win.y0 &&
+        feet <= win.y1 &&
+        !overlapsEntry(cx, feet) &&
+        isBodyClear(world, config, anchor.floor, cx, feet);
+      const onTread = (cx: number, feet: number) =>
+        inPath({ x: Math.floor(cx / s), y: Math.floor((feet - bodyH / 2) / s) });
+      const key = (cx: number, feet: number) => `${cx},${feet}`;
+      const seen = new Set<string>();
+      const queue: [number, number][] = [];
+      const boxXs = [Math.min(...xs) - 1, Math.max(...xs) + 1];
+      const boxYs = [Math.min(...ys) - 1, Math.max(...ys) + 1];
+      for (let cy = boxYs[0] as number; cy <= (boxYs[1] as number); cy++) {
+        for (let cx = boxXs[0] as number; cx <= (boxXs[1] as number); cx++) {
+          if (cells.some((c) => c.x === cx && c.y === cy)) continue;
+          if (
+            isCellStandable(world, config, cx, cy, anchor.floor) &&
+            free((cx + 0.5) * s, (cy + 0.5) * s)
+          ) {
+            queue.push([(cx + 0.5) * s, (cy + 0.5) * s]);
+            seen.add(key((cx + 0.5) * s, (cy + 0.5) * s));
+          }
+        }
+      }
+      expect(queue.length).toBeGreaterThan(0);
+      let leak: string | undefined;
+      while (queue.length > 0 && !leak) {
+        const [cx, feet] = queue.pop() as [number, number];
+        if (onTread(cx, feet)) {
+          leak = `a body reaches the tread (${cx / s}, ${feet / s}) without the opening`;
+          break;
+        }
+        for (const [dx, dy] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as const) {
+          const next: [number, number] = [cx + dx, feet + dy];
+          const k = key(...next);
+          if (!seen.has(k) && free(...next)) {
+            seen.add(k);
+            queue.push(next);
+          }
+        }
+      }
+      if (leak) failures.push(`stairwell at floor ${anchor.floor}: ${leak}`);
     }
     expect(failures).toEqual([]);
   });
@@ -787,6 +875,38 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     expect(
       PLATFORM_STAIRWELL_ROWS.some((p) => objectDef(p.defId).key === "stairwell_top_railing"),
     ).toBe(false);
+  });
+
+  it("5c'. walking south from each finial cell rests the body's bottom edge exactly on the top railing's collider north face -- strictly south of the cell's north edge, never the full cell", () => {
+    const { prop, rect, width } = topRailingFoot();
+    for (let dx = 0; dx < width; dx++) {
+      const rest = walkToRest(
+        { x: prop.x + dx + 0.5, y: prop.y - 0.5 },
+        { x: 0, y: 1 },
+        prop.floor,
+      );
+      expect(rest.y).toBeCloseTo(rect.y0, 9);
+      expect(rest.y).toBeGreaterThan(prop.y + 1e-9);
+    }
+  });
+
+  it("5c''. walking south at every sub-cell x across the top railing and half a body past each end never puts the body in the tread row", () => {
+    const { prop, rect } = topRailingFoot();
+    const s = config.subcellsPerCell;
+    const failures: string[] = [];
+    // Strictly inside the touching positions: a body that only touches an
+    // end stands in the open column beside the well, which is the opening.
+    for (
+      let sx = rect.x0 * s - halfWidthCells * s + 1;
+      sx < rect.x1 * s + halfWidthCells * s;
+      sx++
+    ) {
+      const rest = walkToRest({ x: sx / s, y: prop.y - 0.5 }, { x: 0, y: 1 }, prop.floor);
+      if (rest.y > rect.y0 + 1e-9 || cellOf(rest.y - 1e-9) >= STAIRS_Y) {
+        failures.push(`x ${sx / s}: rested at y ${rest.y}`);
+      }
+    }
+    expect(failures).toEqual([]);
   });
 
   const platformAnchor = () => {

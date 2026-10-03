@@ -32,6 +32,7 @@ import {
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STAIRWELL_TOP_RAILING_DEF_ID,
   STAIRWELL_TREADS_DEF_ID,
+  STAIRWELL_X0,
   STREET_FLOOR,
   STREET_PROPS,
   SUBWAY_FLOOR,
@@ -58,6 +59,7 @@ import {
   streetWindowDefIds,
   streetWorldIndex,
   subwayAnchors,
+  topRailingFoot,
   treadPath,
 } from "./street-world";
 
@@ -186,6 +188,23 @@ describe("the story 1.6 street scene's committed ordering", () => {
         const player = buildPlayerDrawable(rankOf("characters"), treads.x + dx + 0.5, feetY, floor);
         for (const rail of top) expect(compareDrawables(rail, player)).toBeLessThan(0);
         for (const rail of bottom) expect(compareDrawables(rail, player)).toBeGreaterThan(0);
+      }
+    }
+    // Story 15.12: north of the top railing the player is behind it, at every
+    // sub-cell step from the finial row to the rest position (the foot's
+    // north face), on each of its three columns.
+    const sub = streetMovementConfig().subcellsPerCell;
+    const foot = topRailingFoot();
+    const rest = foot.rect.y0;
+    for (let dx = 0; dx < 3; dx++) {
+      for (let feetY = foot.prop.y - 1 + 1 / sub; feetY <= rest + 1e-9; feetY += 1 / sub) {
+        const player = buildPlayerDrawable(rankOf("characters"), treads.x + dx + 0.5, feetY, floor);
+        for (const rail of top) {
+          expect(
+            compareDrawables(rail, player),
+            `the player at feet y ${feetY}, column ${dx}, is not behind the top railing`,
+          ).toBeGreaterThan(0);
+        }
       }
     }
   });
@@ -415,6 +434,57 @@ describe("the player can never walk off the drawn world", () => {
       expect(isOnDrawnGround(pos), `left the drawn world at (${pos.x}, ${pos.y})`).toBe(true);
     }
     expect(pos.y).toBeCloseTo(shopfrontExitRestY(), 9);
+  });
+
+  // Story 15.12: the top railing collides at its foot, so a body can stand
+  // wholly inside the open strip of its row. That strip must not lead out of
+  // the world past the well's west end, nor down into the treads.
+  it("a body inside the top railing's open strip cannot slide out west past the well, nor down into the treads, for any input sequence", () => {
+    const foot = topRailingFoot();
+    const half = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+    const overWell = (pos: Vec2) => pos.x + half > foot.rect.x0 && pos.x - half < foot.rect.x1;
+    const outsideTheWorld = (pos: Vec2) =>
+      pos.x - half < STAIRWELL_X0 - 1e-9 && pos.y > foot.prop.y;
+    const start = (x: number): Vec2 => ({ x, y: foot.rect.y0 });
+    for (const [x, direction] of [
+      [foot.rect.x0 + 1.5, { x: -1, y: 0 }],
+      [foot.rect.x0 + 1.5, { x: 1, y: 0 }],
+    ] as const) {
+      let pos = start(x);
+      for (let i = 0; i < 400; i++) {
+        pos = step(pos, direction, 16, grid, PLAYER_START.floor, config);
+        expect(outsideTheWorld(pos), `slid out of the world at (${pos.x}, ${pos.y})`).toBe(false);
+        if (overWell(pos)) {
+          expect(pos.y, `fell into the treads at (${pos.x}, ${pos.y})`).toBeLessThanOrEqual(
+            foot.rect.y0 + 1e-9,
+          );
+        }
+      }
+    }
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            dx: fc.integer({ min: -1, max: 1 }),
+            dy: fc.integer({ min: -1, max: 1 }),
+            deltaMs: fc.integer({ min: 1, max: 5_000 }),
+          }),
+          { minLength: 1, maxLength: 400 },
+        ),
+        fc.integer({ min: 0, max: 8 }),
+        (inputs, offset) => {
+          let pos = start(foot.rect.x0 + half + offset / config.subcellsPerCell);
+          for (const { dx, dy, deltaMs } of inputs) {
+            pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config);
+            expect(outsideTheWorld(pos), `slid out of the world at (${pos.x}, ${pos.y})`).toBe(
+              false,
+            );
+            if (overWell(pos)) expect(pos.y).toBeLessThanOrEqual(foot.rect.y0 + 1e-9);
+          }
+        },
+      ),
+      { numRuns: 60 },
+    );
   });
 
   // Story 1.13, cycle 2 (Quentin's direction): the bridge's own east end

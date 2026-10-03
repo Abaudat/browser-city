@@ -26,6 +26,7 @@ import {
   STREET_BUILDING_AREAS,
   STREET_PROPS,
   STREET_ROOM_AREAS,
+  STREET_STAIRWELL_ROWS,
   STREET_TRANSITIONS,
   STREET_WALK_DIRECTIONS,
   type StreetWalkInputs,
@@ -41,7 +42,7 @@ import {
   initialFloorWalkState,
   stepAndTransition,
 } from "../../../src/world/floor-walk";
-import { footprintCells } from "../../../src/world/footprint";
+import { footprintCells, footprintOrigin } from "../../../src/world/footprint";
 import type { MovementConfig } from "../../../src/world/movement";
 import { loadMovementConfig } from "../../../src/world/movement-config";
 import type { ObjectSource } from "../../../src/world/object-defs";
@@ -253,23 +254,21 @@ export function streetWalkInputs(): StreetWalkInputs {
   };
 }
 
-/** Whether a whole cell can be stood on, on its own floor: the real
- * player body, centred in the cell the way a floor transition lands it,
- * overlaps no collider entry in the real grid (half-open, so touching a
- * face is not overlapping). An overlap test, not a probe step: the
- * resolver never blocks a body that already overlaps a collider, so a
- * probe reads a cell inside a wall as standable. */
-export function isCellStandable(
+/** Whether the real player body, with its horizontal centre at `cx` and its
+ * feet at `feet` (sub-cell units), overlaps no collider entry in the real
+ * grid (half-open, so touching a face is not overlapping). An overlap
+ * test, not a probe step: the resolver never blocks a body that already
+ * overlaps a collider, so a probe reads a cell inside a wall as
+ * standable. */
+export function isBodyClear(
   world: WorldIndex,
   config: MovementConfig,
-  x: number,
-  y: number,
   floor: number,
+  cx: number,
+  feet: number,
 ): boolean {
   const s = config.subcellsPerCell;
   const halfWidth = config.bodyWidthSubcells / 2;
-  const cx = (x + 0.5) * s;
-  const feet = (y + 0.5) * s;
   const body = {
     x0: cx - halfWidth,
     x1: cx + halfWidth,
@@ -286,6 +285,46 @@ export function isCellStandable(
     }
   }
   return true;
+}
+
+/** Whether a whole cell can be stood on, on its own floor: the real
+ * player body, centred in the cell the way a floor transition lands it,
+ * overlaps no collider entry in the real grid. */
+export function isCellStandable(
+  world: WorldIndex,
+  config: MovementConfig,
+  x: number,
+  y: number,
+  floor: number,
+): boolean {
+  const s = config.subcellsPerCell;
+  return isBodyClear(world, config, floor, (x + 0.5) * s, (y + 0.5) * s);
+}
+
+/** Whether a body can stand in `cell` pressed flush against its edge shared
+ * with `toward` (an orthogonal neighbour), centred along that edge: the
+ * position from which the next step enters `toward`. A cell whose open part
+ * is away from that edge is not standable here, however open the rest is. */
+export function isCellStandableAgainst(
+  world: WorldIndex,
+  config: MovementConfig,
+  cell: { readonly x: number; readonly y: number },
+  toward: { readonly x: number; readonly y: number },
+  floor: number,
+): boolean {
+  const s = config.subcellsPerCell;
+  const dx = toward.x - cell.x;
+  const dy = toward.y - cell.y;
+  const halfWidth = config.bodyWidthSubcells / 2;
+  const cx =
+    dx === 0 ? (cell.x + 0.5) * s : dx > 0 ? (cell.x + 1) * s - halfWidth : cell.x * s + halfWidth;
+  const feet =
+    dy === 0
+      ? (cell.y + 0.5) * s
+      : dy > 0
+        ? (cell.y + 1) * s
+        : cell.y * s + config.bodyHeightSubcells;
+  return isBodyClear(world, config, floor, cx, feet);
 }
 
 /** The scripted walk (`fixture.ts`'s `streetWalkRoute`), simulated against
@@ -419,4 +458,28 @@ export function subwayAnchors() {
     { anchor: subway.forward, open: forwardOpenNeighbor(subway) },
     { anchor: subway.reverse, open: reverseOpenNeighbor(subway) },
   ];
+}
+
+/** The street stairwell's top railing: its placed row and the absolute
+ * rect (whole-cell units) its own def's collider covers -- the foot, read
+ * from the def and `footprintOrigin`, never a literal. */
+export function topRailingFoot() {
+  const prop = STREET_STAIRWELL_ROWS.find(
+    (p) => committedDefs().objects.find((o) => o.id === p.defId)?.key === "stairwell_top_railing",
+  );
+  const source = prop ? objectSources.get(prop.defId) : undefined;
+  if (!prop || !source?.collider)
+    throw new Error("the street stairwell has no top railing collider");
+  const origin = footprintOrigin(prop.x, prop.y, source);
+  const sub = streetMovementConfig().subcellsPerCell;
+  return {
+    prop,
+    width: source.width,
+    rect: {
+      x0: origin.x + source.collider.x0 / sub,
+      y0: origin.y + source.collider.y0 / sub,
+      x1: origin.x + source.collider.x1 / sub,
+      y1: origin.y + source.collider.y1 / sub,
+    },
+  };
 }

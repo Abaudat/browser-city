@@ -483,7 +483,7 @@ object shop_counter id=3 name=Shop Counter layer=2 sprite=ModernTileset/modernex
 object shop_window id=5 name=Shop Window layer=4 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Window_1_Middle_Modular.png:0,0,48,32 height=1 width=3 collider=0,0,48,16 interact_at=none window=true tags=[5,6,16]
 object sidewalk_pavement id=10 name=Sidewalk layer=0 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_26.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[9,11]
 object stairwell_bottom_railing id=14 name=Stairwell Bottom Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,48,48,16 height=1 width=3 collider=0,0,48,16 interact_at=none window=false tags=[8,15]
-object stairwell_top_railing id=12 name=Stairwell Top Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,0,48,32 height=1 width=3 collider=0,0,48,16 interact_at=none window=false tags=[8,15]
+object stairwell_top_railing id=12 name=Stairwell Top Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,0,48,32 height=1 width=3 collider=0,11,48,16 interact_at=none window=false tags=[8,15,34]
 object stairwell_treads id=13 name=Stairwell Treads layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,32,48,16 height=1 width=3 collider=none interact_at=none window=false tags=[8,9,15]
 object trash_bin id=1 name=Trash Bin layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Small_Closed_Trash_Can.png:0,0,16,32 height=1 width=1 collider=2,7,14,15 interact_at=-4,-4,20,20 window=false tags=[1,15]
 object wall_face id=15 name=Wall Face layer=4 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png:0,528,16,48 height=1 width=1 collider=0,0,16,16 interact_at=none window=false tags=[6,16]
@@ -732,6 +732,7 @@ tag shopfront id=5 role=none
 tag stairs id=8 role=none
 tag threshold id=14 role=[4]
 tag underfoot id=9 role=none
+tag upright id=34 role=none
 tag wall id=6 role=[4]
 tag wall_run id=16 role=none
 tag warehouse id=29 role=none
