@@ -1451,6 +1451,10 @@ export const STAIRWELL_POSTURE_X = [
   STAIRWELL_X0 + 1.4,
 ] as const;
 
+/** How far south of the upper railing's face the body settles before a
+ * posture's walk west. */
+const STAIRWELL_SETTLE_CELLS = 0.25;
+
 /** From the subway entrance onto the tread row, then at each of
  * [`STAIRWELL_POSTURE_X`]: west to the column, pressed south against the
  * near railing's collider (the demo's posture, FR123's worst case), then
@@ -1464,6 +1468,13 @@ export function streetNearRailingPressRoute(
   return [
     ...approach.slice(0, onTreads + 1),
     ...STAIRWELL_POSTURE_X.flatMap((x, i): StreetWalkSegment[] => [
+      // Off the upper railing's face before sliding west along the row: a
+      // body flush against a face is one float away from overlapping it.
+      {
+        label: `settle-on-treads-${i}`,
+        key: "ArrowDown",
+        until: { kind: "y-at-least", value: inputs.subwayTreadRowY + STAIRWELL_SETTLE_CELLS },
+      },
       { label: `west-to-tread-${i}`, key: "ArrowLeft", until: { kind: "x-at-most", value: x } },
       {
         label: `press-south-${i}`,
