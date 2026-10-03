@@ -90,6 +90,10 @@ function manager(backend: FakeBackend, onError: (m: string) => void = noop): Reg
 
 type Command =
   | { t: "move"; p: { x: number; y: number; floor: number } }
+  /** One chunk from the last position, on the same floor. */
+  | { t: "step"; dx: number; dy: number }
+  /** Applies every pending handle. */
+  | { t: "applyAll" }
   | { t: DeliveryKind; i: number };
 
 /** Each delivery draws from its own pool of handles. `error` draws from
@@ -110,19 +114,52 @@ interface Delivery {
   before: State;
 }
 
+/** What a schedule did, so a caller can check its premise and the depth
+ * of the generator that drew it. */
+interface Report {
+  trace: Delivery[];
+  /** Moves that requested at least one new handle. */
+  subscribingMoves: number;
+  /** An error reached the manager. */
+  failed: boolean;
+  /** An old handle was still ending when a fresh one for its column was requested. */
+  oldPlusFresh: boolean;
+}
+
 /** Runs a schedule against a fresh manager, asserting after every step and
- * at the end; returns the deliveries so a caller can check its premise. */
-function runSchedule(commands: Command[], backend: FakeBackend = new FakeBackend()): Delivery[] {
+ * at the end. */
+function runSchedule(commands: Command[], backend: FakeBackend = new FakeBackend()): Report {
   const trace: Delivery[] = [];
+  let subscribingMoves = 0;
+  let oldPlusFresh = false;
   let failed = false;
   const m = manager(backend, () => {
     failed = true;
   });
   let last: { x: number; y: number; floor: number } | undefined;
   for (const c of commands) {
-    if (c.t === "move") {
-      m.moveTo(c.p.x, c.p.y, c.p.floor);
-      last = c.p;
+    if (c.t === "move" || c.t === "step") {
+      const p =
+        c.t === "move"
+          ? c.p
+          : {
+              x: (last?.x ?? 0) + c.dx * CHUNK_SIZE,
+              y: (last?.y ?? 0) + c.dy * CHUNK_SIZE,
+              floor: last?.floor ?? 0,
+            };
+      const before = backend.handles.length;
+      m.moveTo(p.x, p.y, p.floor);
+      last = p;
+      const fresh = backend.handles.slice(before);
+      if (fresh.length > 0) subscribingMoves++;
+      for (const h of fresh) {
+        const id = handleId(h.key);
+        if (backend.handles.some((o) => o.state === "unsubscribing" && handleId(o.key) === id)) {
+          oldPlusFresh = true;
+        }
+      }
+    } else if (c.t === "applyAll") {
+      for (const h of [...backend.handles]) h.deliverApplied();
     } else {
       const states: readonly State[] = POOLS[c.t];
       const pool = backend.handles.filter((h) => states.includes(h.state));
@@ -151,7 +188,7 @@ function runSchedule(commands: Command[], backend: FakeBackend = new FakeBackend
       }
     }
   }
-  return trace;
+  return { trace, subscribingMoves, failed, oldPlusFresh };
 }
 
 describe("RegionSubscriptions", () => {
@@ -298,19 +335,79 @@ describe("RegionSubscriptions", () => {
       y: fc.integer({ min: -400, max: 400 }),
       floor: fc.integer({ min: FLOORS.minFloor, max: FLOORS.maxFloor }),
     });
-    const command: fc.Arbitrary<Command> = fc.oneof(
-      { weight: 4, arbitrary: pos.map((p) => ({ t: "move" as const, p })) },
-      { weight: 3, arbitrary: fc.nat().map((i) => ({ t: "applied" as const, i })) },
-      { weight: 3, arbitrary: fc.nat().map((i) => ({ t: "ended" as const, i })) },
-      { weight: 1, arbitrary: fc.nat().map((i) => ({ t: "errorPending" as const, i })) },
-      { weight: 1, arbitrary: fc.nat().map((i) => ({ t: "errorApplied" as const, i })) },
-      { weight: 3, arbitrary: fc.nat().map((i) => ({ t: "errorEnding" as const, i })) },
+    const nat = fc.nat();
+    const unit = fc.integer({ min: -1, max: 1 });
+    const walkStep: fc.Arbitrary<Command> = fc.oneof(
+      { weight: 1, arbitrary: pos.map((p) => ({ t: "move" as const, p })) },
+      { weight: 4, arbitrary: fc.record({ t: fc.constant("step" as const), dx: unit, dy: unit }) },
+      { weight: 3, arbitrary: nat.map((i) => ({ t: "applied" as const, i })) },
+      { weight: 2, arbitrary: fc.constant({ t: "applyAll" as const }) },
+      { weight: 3, arbitrary: nat.map((i) => ({ t: "ended" as const, i })) },
     );
+    // The error may follow a move at once, while the handles it requested
+    // or released are still pending or ending.
+    const firstError: fc.Arbitrary<Command[] | null> = fc
+      .option(
+        fc.tuple(
+          fc.option(
+            fc.oneof(
+              { weight: 3, arbitrary: pos.map((p) => ({ t: "move" as const, p })) },
+              {
+                weight: 1,
+                arbitrary: fc.record({ t: fc.constant("step" as const), dx: unit, dy: unit }),
+              },
+            ),
+            { freq: 3, nil: null },
+          ),
+          fc.option(fc.constant({ t: "applyAll" as const }), { freq: 2, nil: null }),
+          fc.oneof(
+            { weight: 10, arbitrary: nat.map((i) => ({ t: "errorPending" as const, i })) },
+            { weight: 3, arbitrary: nat.map((i) => ({ t: "errorApplied" as const, i })) },
+            { weight: 3, arbitrary: nat.map((i) => ({ t: "errorEnding" as const, i })) },
+          ),
+        ),
+        { freq: 3, nil: null },
+      )
+      .map((e) => (e ? [e[0], e[1], e[2]].filter((c): c is Command => c !== null) : null));
+    const tailStep: fc.Arbitrary<Command> = fc.oneof(
+      walkStep,
+      nat.map((i) => ({ t: "errorPending" as const, i })),
+      nat.map((i) => ({ t: "errorApplied" as const, i })),
+      nat.map((i) => ({ t: "errorEnding" as const, i })),
+    );
+    // An error-free walk, then at most one error, then a tail of deliveries.
+    // Sizes are explicit: `maxLength` alone is only a cap on fast-check's
+    // default size, which stops arrays at 10.
+    const schedule = fc
+      .tuple(
+        fc.array(walkStep, { maxLength: 120, size: "max" }),
+        firstError,
+        fc.array(tailStep, { maxLength: 30, size: "max" }),
+      )
+      .map(([walk, error, tail]) =>
+        error
+          ? [...walk, ...error, ...tail]
+          : [...walk, ...tail.filter((c) => !c.t.startsWith("error"))],
+      );
+
+    const reports: Report[] = [];
     fc.assert(
-      fc.property(fc.array(command, { maxLength: 120 }), (commands) => {
-        runSchedule(commands);
+      fc.property(schedule, (commands) => {
+        reports.push(runSchedule(commands));
       }),
     );
+
+    // The generator's depth is a tested fact: the run holds at least one
+    // schedule of each kind (each is drawn in about 20% of schedules, so a
+    // fresh seed misses one with negligible probability).
+    const firstErrorState = (r: Report): State | undefined =>
+      r.trace.find((d) => d.t.startsWith("error"))?.before;
+    const count = (pred: (r: Report) => boolean): number => reports.filter(pred).length;
+    expect(count((r) => r.subscribingMoves >= 10 && !r.failed)).toBeGreaterThan(0);
+    expect(count((r) => firstErrorState(r) === "pending")).toBeGreaterThan(0);
+    expect(count((r) => firstErrorState(r) === "applied")).toBeGreaterThan(0);
+    expect(count((r) => firstErrorState(r) === "unsubscribing")).toBeGreaterThan(0);
+    expect(count((r) => r.oldPlusFresh)).toBeGreaterThan(0);
   });
 
   // Shrunk counterexamples of the property, pinned as plain schedules.
@@ -345,13 +442,13 @@ describe("RegionSubscriptions", () => {
   ];
 
   it.each(PINNED)("%s", (_name, commands) => {
-    const trace = runSchedule(commands);
+    const { trace } = runSchedule(commands);
     expect(trace.at(-1)).toMatchObject({ t: "error", before: "unsubscribing" });
   });
 
   it("negative control: a manager that keeps an errored ending handle fails every pinned schedule", () => {
     for (const [, commands] of PINNED) {
-      expect(() => runSchedule(commands, new FakeBackend(true))).toThrow();
+      expect(() => runSchedule(commands, new FakeBackend(true))).toThrow(/expected \d+ to be \d+/);
     }
   });
 
