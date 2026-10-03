@@ -41,8 +41,8 @@ export function defCellFrameRect(
   whole: FrameRect,
   sourceCol: number,
   tileSizePx: number,
-  sourceRow = 0,
-  rows = 1,
+  sourceRow: number,
+  rows: number,
 ): FrameRect {
   if (rows > 1) {
     return {

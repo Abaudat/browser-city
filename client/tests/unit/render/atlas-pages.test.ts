@@ -213,7 +213,13 @@ describe("AtlasPageLoader.objectCellTexture", () => {
     loadMock.mockResolvedValue(fakeSourceTexture());
     const loader = new AtlasPageLoader("/atlas/");
     const defs = defsWith([PAGE]);
-    const tall = { ...OBJECT, id: 9, key: "tall_thing", height: 2 };
+    const tall = {
+      ...OBJECT,
+      id: 9,
+      key: "tall_thing",
+      height: 2,
+      atlas: { page: 0, x: 1, y: 1, w: 48, h: 2 * TILE_SIZE_PX },
+    };
 
     const rows = await Promise.all(
       [0, 1].map((row) => loader.objectCellTexture(defs, tall, 0, TILE_SIZE_PX, row)),
@@ -223,6 +229,25 @@ describe("AtlasPageLoader.objectCellTexture", () => {
     await expect(loader.objectCellTexture(defs, tall, 0, TILE_SIZE_PX, 2)).rejects.toThrow(
       /tall_thing/,
     );
+  });
+
+  it("rejects naming the object when a several-row sprite is not exactly its footprint tall, rather than cropping an overhang", async () => {
+    loadMock.mockResolvedValue(fakeSourceTexture());
+    const loader = new AtlasPageLoader("/atlas/");
+    const defs = defsWith([PAGE]);
+    const roofed = {
+      ...OBJECT,
+      id: 10,
+      key: "roofed_kiosk",
+      height: 2,
+      atlas: { page: 0, x: 1, y: 1, w: 48, h: 3 * TILE_SIZE_PX },
+    };
+
+    for (const row of [0, 1]) {
+      await expect(loader.objectCellTexture(defs, roofed, 0, TILE_SIZE_PX, row)).rejects.toThrow(
+        /roofed_kiosk/,
+      );
+    }
   });
 
   it("evicts a rejected per-cell load so the next demand retries instead of replaying the rejection forever", async () => {

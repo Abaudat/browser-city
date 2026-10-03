@@ -40,9 +40,11 @@ import {
 } from "../unit/test-street/golden";
 import {
   committedDefs,
+  platformWestRestX,
   propCells,
   shopfrontExitRestY,
   stairwellRowsAt,
+  streetMovementConfig,
   streetWalkInputs,
 } from "../unit/test-street/street-world";
 import { canvasOf } from "./camera-test-support";
@@ -236,22 +238,21 @@ test.describe("story 1.7: enclosure visibility", () => {
 
     // Story 15.14: the whole stairwell group, flight and railing, with the
     // player walked west until clear of it. The clip is the group's cells
-    // plus one each side, from the real view transform.
+    // plus one row north and one cell south and east (never the player), from
+    // the real view transform.
     const box = platformStairwellBox();
+    // Held, the body rests clear of the group: its east edge is west of the group's box.
+    const config = streetMovementConfig();
+    const bodyHalf = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+    expect(platformWestRestX() + bodyHalf).toBeLessThanOrEqual(box.x0);
     await page.keyboard.down("ArrowLeft");
-    // Held until the body rests against whatever stops it (the same pixel every
-    // run, never wherever a key release happened to land), clear of the group:
-    // its centre at most half a cell west of the group's west edge.
+    // Held until the body is at the rest the movement code computes from the
+    // fixture (the blocker's face plus half the body): the same pixel every run.
+    const restX = platformWestRestX();
     await page.waitForFunction(
-      (clearX) => {
-        const w = window as unknown as { __bcLastX?: number };
-        const x = window.__bc?.playerPosition?.x ?? Infinity;
-        const rested = w.__bcLastX === x;
-        w.__bcLastX = x;
-        return rested && x <= clearX;
-      },
-      box.x0 - 0.5,
-      { timeout: 15_000, polling: "raf" },
+      (x) => Math.abs((window.__bc?.playerPosition?.x ?? Infinity) - x) < 1e-6,
+      restX,
+      { timeout: 15_000 },
     );
     await page.keyboard.up("ArrowLeft");
     // The platform is a storey down: its screen rows sit one storey lower.
@@ -275,7 +276,7 @@ test.describe("story 1.7: enclosure visibility", () => {
           height: px(y1, view.offsetY) - px(y0, view.offsetY),
         };
       },
-      { x0: box.x0 - 1, y0: box.y0 - 1, x1: box.x1 + 1, y1: box.y1 + 1, floorShift },
+      { x0: box.x0, y0: box.y0 - 1, x1: box.x1 + 1, y1: box.y1 + 1, floorShift },
     );
     await expect(page).toHaveScreenshot("platform-stairs.png", {
       ...SCREENSHOT_OPTIONS,

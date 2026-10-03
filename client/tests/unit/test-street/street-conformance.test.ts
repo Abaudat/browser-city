@@ -87,6 +87,7 @@ import {
   lamppostApproachMaxX,
   lamppostRestY,
   onUnderpassRowY,
+  platformWestRestX,
   propCells,
   simulateStreetWalk,
   stairwellRowsAt,
@@ -1772,20 +1773,58 @@ describe("a stairwell is drawn whole (story 15.14, FR126)", () => {
     }
   });
 
-  it("(c) nothing outside a stairwell's own group is drawn over its flight", () => {
+  /** A placed row's drawn rect, def-placed or `assetKey`: an asset's rect is
+   * its real art size, a one-tile art repeated across its footprint. */
+  const anyDrawnRect = (p: (typeof STREET_PROPS)[number]) => {
+    if (isDefStreetProp(p)) return drawnRect(p);
+    const href = ASSET_URLS[p.assetKey];
+    if (!href) throw new Error(`no ASSET_URLS entry for '${p.assetKey}'`);
+    const buf = readFileSync(fileURLToPath(href));
+    const art = { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+    const footprint = p.footprint ?? { width: 1, height: 1 };
+    const w = art.w === 16 ? footprint.width * 16 : art.w;
+    const h = art.h === 16 ? footprint.height * 16 : art.h;
+    return { x: p.x * 16, y: (p.y + 1) * 16 - h, w, h };
+  };
+  const labelOf = (p: (typeof STREET_PROPS)[number]) =>
+    isDefStreetProp(p) ? objectDef(p.defId).key : p.assetKey;
+
+  it("(c) nothing outside a stairwell's own group, def-placed or asset, is drawn over its flight", () => {
     for (const { anchor, rows } of groups()) {
       const flight = rows.filter((p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects");
       expect(flight.length).toBeGreaterThan(0);
-      for (const other of STREET_PROPS) {
-        if (!isDefStreetProp(other) || other.floor !== anchor.floor || rows.includes(other))
-          continue;
+      const outside = STREET_PROPS.filter(
+        (o) => o.floor === anchor.floor && !rows.includes(o as DefProp),
+      );
+      expect(outside.length, `floor ${anchor.floor}: outside rows examined`).toBeGreaterThan(0);
+      for (const other of outside) {
         for (const f of flight) {
           expect(
-            overlap(drawnRect(other), drawnRect(f)),
-            `${objectDef(other.defId).key} at (${other.x}, ${other.y}) is drawn over ${objectDef(f.defId).key}`,
+            overlap(anyDrawnRect(other), drawnRect(f)),
+            `${labelOf(other)} at (${other.x}, ${other.y}) is drawn over ${objectDef(f.defId).key}`,
           ).toBe(false);
         }
       }
     }
+  });
+
+  it("(c) controls: a wall face drawn over the platform flight is found", () => {
+    const { anchor, rows } = groups().find((g) => g.anchor.floor === SUBWAY_FLOOR) ?? {};
+    if (!anchor || !rows) throw new Error("no platform stairwell");
+    const flight = rows.filter((p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects");
+    const wall = STREET_PROPS.find(
+      (o) => o.floor === SUBWAY_FLOOR && !isDefStreetProp(o) && o.layer === "walls",
+    );
+    if (!wall) throw new Error("no asset wall on the platform");
+    const moved = { ...wall, x: flight[0].x, y: flight[0].y };
+    expect(overlap(anyDrawnRect(moved), drawnRect(flight[0]))).toBe(true);
+  });
+
+  it("the platform's west rest, walking from the landing, leaves the body clear of the stairwell group", () => {
+    const { anchor, rows } = groups().find((g) => g.anchor.floor === SUBWAY_FLOOR) ?? {};
+    if (!anchor || !rows) throw new Error("no platform stairwell");
+    const westEdge = Math.min(...rows.flatMap(propCells).map((c) => c.x));
+    const half = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+    expect(platformWestRestX() + half).toBeLessThanOrEqual(westEdge);
   });
 });

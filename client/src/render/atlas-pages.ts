@@ -152,7 +152,9 @@ export class AtlasPageLoader {
    * session.
    *
    * A def several rows tall is cut one row per call (`sourceRow`, north
-   * row first), cached per `(object id, column, row)`.
+   * row first), cached per `(object id, column, row)`; its sprite must be
+   * exactly `height * tileSizePx` tall, else this rejects naming the object
+   * (never a silent crop of an overhanging several-row sprite).
    */
   objectCellTexture(
     defs: Defs,
@@ -161,6 +163,13 @@ export class AtlasPageLoader {
     tileSizePx: number,
     sourceRow = 0,
   ): Promise<Texture> {
+    if (object.height > 1 && object.atlas.h !== object.height * tileSizePx) {
+      return Promise.reject(
+        new Error(
+          `atlas-pages: object '${object.key}' is ${object.height} cells tall but its sprite is ${object.atlas.h}px, not ${object.height * tileSizePx}px -- only art exactly its footprint tall is cut row by row`,
+        ),
+      );
+    }
     if (sourceRow < 0 || sourceRow >= object.height) {
       return Promise.reject(
         new Error(

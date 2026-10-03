@@ -33,7 +33,7 @@ describe("defCellFrameRect", () => {
   const WHOLE = { x: 87, y: 1, width: 48, height: 32 };
 
   it("a one-cell def's single cell crops to the whole sprite's own placement, unmoved", () => {
-    expect(defCellFrameRect(WHOLE, 0, TILE_SIZE_PX)).toEqual({
+    expect(defCellFrameRect(WHOLE, 0, TILE_SIZE_PX, 0, 1)).toEqual({
       x: 87,
       y: 1,
       width: TILE_SIZE_PX,
@@ -42,7 +42,7 @@ describe("defCellFrameRect", () => {
   });
 
   it("a wide def's own cells slice across the whole sprite, each offset by its own placement", () => {
-    expect([0, 1, 2].map((col) => defCellFrameRect(WHOLE, col, TILE_SIZE_PX))).toEqual([
+    expect([0, 1, 2].map((col) => defCellFrameRect(WHOLE, col, TILE_SIZE_PX, 0, 1))).toEqual([
       { x: 87, y: 1, width: TILE_SIZE_PX, height: 32 },
       { x: 103, y: 1, width: TILE_SIZE_PX, height: 32 },
       { x: 119, y: 1, width: TILE_SIZE_PX, height: 32 },
@@ -50,8 +50,8 @@ describe("defCellFrameRect", () => {
   });
 
   it("is a pure mapping -- same input, same output", () => {
-    const a = defCellFrameRect(WHOLE, 1, TILE_SIZE_PX);
-    const b = defCellFrameRect(WHOLE, 1, TILE_SIZE_PX);
+    const a = defCellFrameRect(WHOLE, 1, TILE_SIZE_PX, 0, 1);
+    const b = defCellFrameRect(WHOLE, 1, TILE_SIZE_PX, 0, 1);
     expect(a).toEqual(b);
   });
 });

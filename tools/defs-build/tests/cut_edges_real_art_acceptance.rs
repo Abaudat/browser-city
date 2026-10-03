@@ -8,7 +8,7 @@ use defs_build::atlas::image::decode_rgba8;
 use defs_build::codes::CodeTables;
 #[path = "support/cut_edges.rs"]
 mod cut_edges;
-use cut_edges::{CutEdge, Edge, Rect, cut_edges};
+use cut_edges::{Edge, Rect, cut_edges};
 use defs_build::model::{Defs, SPRITE_SHEET_ALLOWED_ROOT};
 use defs_build::{fsio, parse, validate};
 
@@ -43,6 +43,15 @@ fn defs_from(files: &[(PathBuf, String)]) -> Defs {
 
 /// `(examined objects, continued edges, repeat edges)`, or the failure messages.
 fn audit(defs: &Defs) -> Result<(usize, usize, usize), Vec<String>> {
+    audit_with(defs, &[])
+}
+
+/// [`audit`] with some objects' sprite rects replaced in memory (`key`, new
+/// rect): the control for a rect the validator would refuse to build.
+fn audit_with(
+    defs: &Defs,
+    overrides: &[(&str, Rect)],
+) -> Result<(usize, usize, usize), Vec<String>> {
     let t = tables();
     let tile_layers = [
         t.get("layer", "ground").unwrap(),
@@ -67,7 +76,11 @@ fn audit(defs: &Defs) -> Result<(usize, usize, usize), Vec<String>> {
         let rects: Vec<Rect> = idxs
             .iter()
             .map(|&i| {
-                let s = &defs.objects[i].sprite;
+                let o = &defs.objects[i];
+                if let Some((_, r)) = overrides.iter().find(|(k, _)| *k == o.key) {
+                    return *r;
+                }
+                let s = &o.sprite;
                 Rect {
                     x: s.x,
                     y: s.y,
@@ -139,52 +152,44 @@ fn the_old_one_cell_cut_flight_fails_naming_the_key() {
 #[test]
 fn a_shortened_street_bottom_railing_fails_naming_the_uncovered_row() {
     let defs = defs_from(&files());
-    let o = defs
+    let s = &defs
         .objects
         .iter()
         .find(|o| o.key == "stairwell_bottom_railing")
-        .unwrap();
-    let s = &o.sprite;
-    let bytes = fsio::read_bytes(&repo_root(), &[PathBuf::from(&s.sheet)])
         .unwrap()
-        .remove(0)
-        .1;
-    let (w, h, rgba) = decode_rgba8(&bytes).unwrap();
-    let mut rects: Vec<Rect> = defs
-        .objects
-        .iter()
-        .filter(|p| p.sprite.sheet == s.sheet)
-        .map(|p| Rect {
-            x: p.sprite.x,
-            y: p.sprite.y,
-            w: p.sprite.w,
-            h: p.sprite.h,
-        })
-        .collect();
-    let i = rects
-        .iter()
-        .position(|r| (r.x, r.y, r.w, r.h) == (s.x, s.y, s.w, s.h))
-        .unwrap();
-    rects[i].h -= 1;
-    let cut: Vec<CutEdge> = cut_edges(&rgba, w, h, &rects)
-        .into_iter()
-        .filter(|e| e.rect == i && !e.allowed())
-        .collect();
-    assert!(
-        cut.iter().any(|e| e.edge == Edge::South),
-        "shortening the railing by one row must cut its south edge: {cut:?}"
+        .sprite;
+    let short = Rect {
+        x: s.x,
+        y: s.y,
+        w: s.w,
+        h: s.h - 1,
+    };
+    let msg = audit_with(&defs, &[("stairwell_bottom_railing", short)])
+        .unwrap_err()
+        .join(
+            "
+",
+        );
+    assert_eq!(msg.lines().count(), 1, "{msg}");
+    assert_eq!(
+        msg,
+        "stairwell_bottom_railing: sprite rect is cut on its South edge: 48 opaque pixel(s) continue outside it, sheet span 0..48"
     );
 }
 
 const SHEET_W: u32 = 4;
 
+/// `#` opaque colour A, `@` opaque colour B, `.` transparent.
 fn buf(rows: &[&str]) -> (Vec<u8>, u32) {
     let h = rows.len() as u32;
     let mut v = vec![0u8; (SHEET_W * h * 4) as usize];
     for (y, r) in rows.iter().enumerate() {
         for (x, c) in r.chars().enumerate() {
-            if c == '#' {
-                v[(y * SHEET_W as usize + x) * 4 + 3] = 255;
+            let i = (y * SHEET_W as usize + x) * 4;
+            match c {
+                '#' => v[i..i + 4].copy_from_slice(&[10, 10, 10, 255]),
+                '@' => v[i..i + 4].copy_from_slice(&[200, 0, 0, 255]),
+                _ => {}
             }
         }
     }
@@ -258,4 +263,17 @@ fn synthetic_cut_no_cut_and_sibling_cases() {
     let (b, h) = buf(&["....", ".##.", ".##.", ".##.", "...."]);
     let e = cut_edges(&b, SHEET_W, h, &[rect]);
     assert!(e.len() == 1 && e[0].repeats && e[0].allowed());
+
+    // A period-2 repeat (the flight's real case) loses nothing.
+    let (b, h) = buf(&["....", ".#@.", ".@#.", ".#@.", ".@#.", "...."]);
+    let e = cut_edges(&b, SHEET_W, h, &[rect]);
+    assert!(e.len() == 1 && e[0].repeats && e[0].allowed(), "{e:?}");
+    // The first outside line repeats, the second is an end cap: not a repeat.
+    let (b, h) = buf(&["....", ".#@.", ".@#.", ".#@.", ".##.", "...."]);
+    let e = cut_edges(&b, SHEET_W, h, &[rect]);
+    assert!(e.len() == 1 && !e[0].repeats && !e[0].allowed(), "{e:?}");
+    // Equal in alpha, different in colour: not a repeat.
+    let (b, h) = buf(&["....", ".##.", ".##.", ".@@.", "...."]);
+    let e = cut_edges(&b, SHEET_W, h, &[rect]);
+    assert!(e.len() == 1 && !e[0].repeats, "{e:?}");
 }
