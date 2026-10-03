@@ -35,8 +35,13 @@ import {
   type StreetWalkInputs,
   type StreetWalkSegment,
   SUBWAY_FLOOR,
+  streetBollardRoute,
+  streetBridgeLapRoute,
   streetColliderSources,
+  streetNearRailingPressRoute,
   streetPlacedRows,
+  streetSubwayApproachRoute,
+  streetWalkRoute,
   streetWalkUntilMet,
   TRASH_BIN_DEF_ID,
 } from "../../../src/test-street/fixture";
@@ -352,12 +357,9 @@ export function simulateStreetWalk(
     readonly stepMs?: number;
     readonly maxStepsPerSegment?: number;
     /** How many extra steps the walker keeps taking *after* its release
-     * condition is already met -- the release lag a real walk always has,
-     * because the condition is observed outside the page and the key is
-     * released over a round trip while the scene keeps ticking. Zero is
-     * the unreachable ideal; a real machine is somewhere above it, and a
-     * slow CI runner is further above it than a developer's laptop. A
-     * route that only survives zero is a route that fails on CI. */
+     * condition is already met -- the modelled release lag
+     * (`RELEASE_LAG` in `test-street/fixture.ts`). Zero is the ideal; a
+     * route that only survives zero is not feasible. */
     readonly releaseLagSteps?: number;
     readonly start?: FloorWalkResult;
   } = {},
@@ -515,4 +517,63 @@ export function platformWestRestX(): number {
     state = next;
   }
   throw new Error("platformWestRestX: the body never came to rest");
+}
+
+// --- the routes the e2e specs walk ----------------------------------------
+
+/** Out of the shopfront door: the walk ends in the trash bin's column and
+ * inside its reach, so nothing further is walked. */
+export function binReachRoute(): readonly StreetWalkSegment[] {
+  return streetWalkRoute(streetWalkInputs()).slice(0, 1);
+}
+
+/** The subway approach to the entrance, then west along the pavement to the
+ * top railing's middle column and south onto its foot. */
+export function railingFootRoute(): readonly StreetWalkSegment[] {
+  const foot = topRailingFoot();
+  const approach = streetSubwayApproachRoute(streetWalkInputs());
+  const toEntrance = approach.findIndex((s) => s.label === "east-to-the-subway-entrance");
+  return [
+    ...approach.slice(0, toEntrance + 1),
+    {
+      label: "west-to-the-railing-middle",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: foot.rect.x0 + 1.5 },
+    },
+    {
+      label: "south-onto-the-railing-foot",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: foot.rect.y0 - 0.001 },
+    },
+  ];
+}
+
+export interface WalkedRoute {
+  readonly name: string;
+  readonly segments: readonly StreetWalkSegment[];
+  /** Where it starts when not at `PLAYER_START`. */
+  readonly start: () => FloorWalkResult | undefined;
+}
+
+/** Every route an e2e spec walks. */
+export function walkedRoutes(): readonly WalkedRoute[] {
+  const inputs = streetWalkInputs();
+  const fresh = (): undefined => undefined;
+  const afterStreetWalk = (): FloorWalkResult | undefined => {
+    const out = simulateStreetWalk(streetWalkRoute(inputs));
+    return out[out.length - 1]?.state;
+  };
+  return [
+    { name: "street-walk", segments: streetWalkRoute(inputs), start: fresh },
+    { name: "subway-approach", segments: streetSubwayApproachRoute(inputs), start: fresh },
+    { name: "near-railing-press", segments: streetNearRailingPressRoute(inputs), start: fresh },
+    {
+      name: "bollard",
+      segments: streetBollardRoute(inputs, streetMovementConfig()),
+      start: fresh,
+    },
+    { name: "bridge-lap", segments: streetBridgeLapRoute(), start: afterStreetWalk },
+    { name: "bin-reach", segments: binReachRoute(), start: fresh },
+    { name: "railing-foot", segments: railingFootRoute(), start: fresh },
+  ];
 }

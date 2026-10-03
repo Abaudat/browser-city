@@ -41,13 +41,13 @@ import {
   isDefStreetProp,
   STREET_PROPS,
   type StreetWalkSegment,
-  type StreetWalkUntil,
   streetBridgeLapRoute,
   streetWalkRoute,
   TRASH_BIN_DEF_ID,
 } from "../../src/test-street/fixture";
-import { committedDefs, streetWalkInputs } from "../unit/test-street/street-world";
+import { binReachRoute, committedDefs, streetWalkInputs } from "../unit/test-street/street-world";
 import { canvasOffsetForWorldPx } from "./camera-test-support";
+import { walkSyntheticSegment } from "./walk-support";
 
 /** The frame budget the scene's own work must fit inside. A 60 FPS frame
  * is 16.7 ms end to end; the app's own work getting half of that leaves
@@ -145,80 +145,10 @@ async function hoverAnInteractableProp(page: Page): Promise<void> {
   await page.mouse.move(box.x + canvasOffset.x, box.y + canvasOffset.y);
 }
 
-/** Holds `segment.key` down, waits for its own release condition, and
- * releases it again -- entirely inside the page, in one `page.evaluate`
- * call, unlike `test-street.spec.ts`'s own `page.keyboard.down`/
- * `waitForFunction`/`page.keyboard.up` sequence. That sequence is real,
- * OS-level input, the more faithful choice for a functional spec, but
- * each of its three steps is its own Node<->page round trip, and this
- * spec's own crowd keeps animating (unlike `test-street.spec.ts`'s
- * frozen one) -- a cold, busy CI runner has shown enough round-trip
- * latency between "the release condition became true" and "the key
- * actually lifts" for the walker to keep travelling for several tenths
- * of a cell past it, occasionally far enough to land somewhere this
- * route never checked (observed: released from a floor transition,
- * carried into the underpass checkpoint's own support pillar, stuck for
- * good on the very next segment). Dispatching a synthetic `KeyboardEvent`
- * (`input/keyboard.ts` binds `.code`, the same field either kind of event
- * carries, and does not check `isTrusted`) and polling with the page's
- * own `requestAnimationFrame` keeps the whole hold-and-release inside a
- * single frame's own callback, with no round trip in between. */
+/** Scripted walks go through the shared helper: the key is pressed in the
+ * page, so a hover or a CDP round trip cannot delay it. */
 async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
-  const result = await page.evaluate(
-    ({ code, until, timeoutMs }) => {
-      return new Promise<{ met: boolean; position: unknown; floor: unknown }>((resolve) => {
-        const met = (u: StreetWalkUntil): boolean => {
-          const position = window.__bc?.playerPosition;
-          const floor = window.__bc?.playerFloor;
-          if (!position || floor === undefined) return false;
-          switch (u.kind) {
-            case "x-at-least":
-              return position.x >= u.value;
-            case "x-at-most":
-              return position.x <= u.value;
-            case "y-at-least":
-              return position.y >= u.value;
-            case "y-at-most":
-              return position.y <= u.value;
-            case "floor":
-              return floor === u.value;
-            case "cell":
-              return Math.floor(position.x) === u.x && Math.floor(position.y) === u.y;
-          }
-        };
-        const release = (ok: boolean) => {
-          window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
-          resolve({
-            met: ok,
-            position: window.__bc?.playerPosition,
-            floor: window.__bc?.playerFloor,
-          });
-        };
-        const deadline = performance.now() + timeoutMs;
-        const tick = () => {
-          if (met(until)) {
-            release(true);
-            return;
-          }
-          if (performance.now() >= deadline) {
-            release(false);
-            return;
-          }
-          requestAnimationFrame(tick);
-        };
-        window.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true }));
-        requestAnimationFrame(tick);
-      });
-    },
-    { code: segment.key, until: segment.until, timeoutMs: SEGMENT_TIMEOUT_MS },
-  );
-  if (!result.met) {
-    throw new Error(
-      `walkSegment: '${segment.label}' never met its release condition ` +
-        `(${JSON.stringify(segment.until)}) within ${SEGMENT_TIMEOUT_MS}ms; ` +
-        `stuck at ${JSON.stringify(result.position)}, floor ${JSON.stringify(result.floor)}`,
-    );
-  }
+  await walkSyntheticSegment(page, segment, SEGMENT_TIMEOUT_MS);
 }
 
 async function walkRoute(page: Page, route: readonly StreetWalkSegment[]): Promise<void> {
@@ -379,19 +309,7 @@ test("the frame path stays inside its work budget for a whole walked session (NF
   // column (`LAMPPOST_CELL`'s own doc comment says why it moved), so only
   // the door-exit segment is needed before turning toward it -- the rest
   // of the route's own lamppost/underpass detour is no longer on the way.
-  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 1)) {
-    await walkSegment(page, segment);
-  }
-  await walkSegment(page, {
-    label: "under-the-bin",
-    key: "ArrowRight",
-    until: { kind: "x-at-least", value: bin.x },
-  });
-  await walkSegment(page, {
-    label: "up-into-the-bins-reach",
-    key: "ArrowUp",
-    until: { kind: "y-at-most", value: bin.y + 1 },
-  });
+  for (const segment of binReachRoute()) await walkSegment(page, segment);
 
   await hoverAnInteractableProp(page);
   await expect

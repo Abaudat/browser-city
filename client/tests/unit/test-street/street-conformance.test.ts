@@ -42,6 +42,7 @@ import {
   PLATFORM_UP_ANCHOR_X,
   PLATFORM_UP_ANCHOR_Y,
   PLAYER_START,
+  RELEASE_LAG,
   STAIRS_ENTRY_DIRECTION,
   STAIRS_X,
   STAIRS_Y,
@@ -253,11 +254,6 @@ describe("the street as world data (Tim's WorldSpec::build mirror)", () => {
   });
 });
 
-/** The release lag every scripted walk must survive: the tick that
- * crossed the release condition plus one more, both at the resolver's own
- * delta clamp. */
-const RELEASE_LAG = { stepMs: MAX_DELTA_MS, releaseLagSteps: 1 } as const;
-
 describe("the scripted walk (AC3)", () => {
   const checkpoints = simulateStreetWalk(streetWalkRoute(streetWalkInputs()));
   const at = (label: string) => {
@@ -355,11 +351,9 @@ describe("the scripted walk (AC3)", () => {
   it("the lamppost approach still engages the lamppost's own collider with one extra, fully clamped tick of release lag", () => {
     // `east-to-the-lamppost` is a waypoint, not a rest (story 15.2, cycle
     // 2): the south leg after it only rests on the lamppost's own collider
-    // while the body still overlaps it in x. The e2e walkers release in
-    // the page on the frame the condition is met, so a real overshoot is
-    // the tick that crossed the threshold plus at most one more; both at
-    // the resolver's own delta clamp is the worst case, and it must still
-    // land inside the window.
+    // while the body still overlaps it in x. `RELEASE_LAG` is the
+    // modelled overshoot: the crossing tick plus its extra ticks, each at
+    // the resolver's own delta clamp. It must still land inside the window.
     const out = simulateStreetWalk(streetWalkRoute(streetWalkInputs()).slice(0, 3), RELEASE_LAG);
     const approach = out.find((c) => c.label === "east-to-the-lamppost")?.state;
     const rest = out.find((c) => c.label === "part-way-through-the-lamppost")?.state;
@@ -381,10 +375,8 @@ describe("the scripted walk (AC3)", () => {
   });
 
   it("survives a slow machine: every segment still completes with every key released one fully clamped tick late", () => {
-    // The e2e and perf walkers release a key inside the page on the frame
-    // its condition is first met, so a real overshoot is the crossing
-    // tick plus at most one more; both at the resolver's own delta clamp
-    // (`MAX_DELTA_MS`) is the worst case, and every route must survive it.
+    // `RELEASE_LAG` is the modelled overshoot (the crossing tick plus its
+    // extra ticks, each at `MAX_DELTA_MS`); every route must survive it.
     const inputs = streetWalkInputs();
 
     const out = simulateStreetWalk(streetWalkRoute(inputs), RELEASE_LAG);
@@ -1785,8 +1777,7 @@ describe("the near-railing press route (story 15.13)", () => {
     expect(out[west]?.state.y).toBeCloseTo(inputs.nearRailingRestY, 9);
   });
 
-  // Where the west walk ends is decided by release lag, which on a loaded
-  // runner is large. However far it overshoots -- all the way to the west
+  // However far the west walk overshoots -- all the way to the west
   // boundary -- the body stays on the street floor (it is on the row south
   // of the anchor's) and on the railing's face.
   for (const lag of [0, 1, 8, 400]) {

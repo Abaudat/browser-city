@@ -603,6 +603,12 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   or `document`; DOM input lives in `client/src/input/`.
 - The server's `FloorCollision` stays tile-granular and never consumes a
   `collider`.
+- Scripted e2e walks go through `client/tests/e2e/walk-support.ts`: the
+  watcher is armed before the key goes down and releases it in the page.
+  Overshoot is bounded by `RELEASE_LAG` (`test-street/fixture.ts`),
+  asserted by the helper on every walk and by the unit feasibility tests
+  over every walked route (`walkedRoutes`, `tests/unit/test-street/`);
+  `scripts/ci/check-one-walk-helper.sh` enforces it.
 
 ## Input (client)
 
