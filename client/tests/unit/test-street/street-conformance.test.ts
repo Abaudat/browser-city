@@ -861,7 +861,7 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     expect(failures).toEqual([]);
   });
 
-  it("5g. nothing y-sorted is drawn on either stairwell's tread path or entry cell -- the player never walks through something drawn over them", () => {
+  it("5g. no y-sorted prop's footprint covers either stairwell's tread path or entry cell -- the player never walks through one (the near railing's drawn overhang does reach the tread row, on purpose: it is what draws over the player)", () => {
     const failures: string[] = [];
     for (const { anchor, open } of subwayAnchors()) {
       const { path, entry } = treadPath(stairwellRowsAt(anchor), anchor, open.direction);
