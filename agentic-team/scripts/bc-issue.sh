@@ -327,7 +327,8 @@ _bc_demo_lint_live() {
   items="$(project_items 2>/dev/null)" || {
     echo "bc-issue write-demo: could not read project items" >&2; return 2; }
   done_nums="$(printf '%s' "$items" | "$JQ" -r --arg s "$sprintid" \
-    '.[] | select(.sprintId==$s and .status=="Done") | .number' 2>/dev/null)" || return 2
+    '.[] | select(.sprintId==$s and .status=="Done") | .number' 2>/dev/null)" || {
+    echo "bc-issue write-demo: could not read project items" >&2; return 2; }
   done_nums="$(printf '%s' "$done_nums" | tr -d '\r')"
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in '- [ ] '*) ;; *) continue ;; esac
