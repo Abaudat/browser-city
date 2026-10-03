@@ -21,13 +21,24 @@
 // way. No hook here ever sets the player's floor directly (Quentin's
 // direction) -- the walk always goes through the real keyboard and the
 // real `world/transitions.ts` port.
-import { expect, type Page, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { expect, type Page, type TestInfo, test } from "@playwright/test";
+import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
 import {
+  isDefStreetProp,
   PLATFORM_LANDING_Y,
+  PLAYER_STABLE_ID,
   PLAYER_START,
+  STAIRS_Y,
+  STAIRWELL_BOTTOM_RAILING_DEF_ID,
+  STAIRWELL_TOP_RAILING_DEF_ID,
+  STAIRWELL_X0,
   STREET_EXIT_X,
   STREET_EXIT_Y,
+  STREET_PROPS,
   type StreetWalkSegment,
   streetSubwayApproachRoute,
 } from "../../src/test-street/fixture";
@@ -39,6 +50,70 @@ import {
 import { shopfrontExitRestY, streetWalkInputs } from "../unit/test-street/street-world";
 import { canvasOf } from "./camera-test-support";
 import { SCREENSHOT_OPTIONS } from "./screenshot-support";
+
+/** Story 15.13 (FR123): the pixels of the street stairwell's near railing
+ * that fall inside the player's own screen bounds must be the railing's
+ * art, not the player's -- whatever the player's exact x. Placed through
+ * the live view transform and the built def's own sprite rect: each railing
+ * column is a 16 px-wide slice anchored on the bottom-centre of its cell.
+ * Returns how many pixels were probed and which differed. */
+async function probeNearRailingOverPlayer(page: Page, testInfo: TestInfo) {
+  const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+  const defs = JSON.parse(
+    readFileSync(join(repoRoot, "client/public/defs/defs.json"), "utf-8"),
+  ) as {
+    objects: {
+      id: number;
+      sprite: { sheet: string; x: number; y: number; w: number; h: number };
+    }[];
+  };
+  const def = defs.objects.find((o) => o.id === STAIRWELL_BOTTOM_RAILING_DEF_ID);
+  if (!def) throw new Error("no bottom railing def");
+  const art = PNG.sync.read(readFileSync(join(repoRoot, def.sprite.sheet)));
+  const view = await page.evaluate(() => window.__bc?.viewTransform);
+  const bounds = await page.evaluate(() => window.__bc?.playerScreenBounds?.());
+  if (!view || !bounds) throw new Error("no view transform / player bounds hook");
+  const canvas = canvasOf(page);
+  const shot = await canvas.screenshot();
+  await testInfo.attach("stairwell-near-railing.png", { body: shot, contentType: "image/png" });
+  const seen = PNG.sync.read(shot);
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("no canvas box");
+  const scale = seen.width / box.width;
+  const tile = 16;
+  const rowAnchorY = STAIRS_Y + 1; // the bottom railing's own row
+  const bad: string[] = [];
+  let probed = 0;
+  for (let col = 0; col < 3; col++) {
+    for (let ay = 0; ay < def.sprite.h; ay++) {
+      for (let ax = 0; ax < tile; ax++) {
+        const a = ((def.sprite.y + ay) * art.width + def.sprite.x + col * tile + ax) * 4;
+        if ((art.data[a + 3] ?? 0) < 255) continue;
+        // World px of this art pixel: slice bottom-centre on its cell's
+        // bottom edge, so its rows run up from `(rowAnchorY + 1) * tile`.
+        const wx = (STAIRWELL_X0 + col) * tile + ax;
+        const wy = (rowAnchorY + 1) * tile - def.sprite.h + ay;
+        const sx = wx * view.zoom + view.offsetX;
+        const sy = wy * view.zoom + view.offsetY;
+        // The centre of the zoomed art pixel, inside the player's bounds.
+        const cx = sx + view.zoom / 2;
+        const cy = sy + view.zoom / 2;
+        if (cx < bounds.x || cx >= bounds.x + bounds.width) continue;
+        if (cy < bounds.y || cy >= bounds.y + bounds.height) continue;
+        const px = Math.floor(cx * scale);
+        const py = Math.floor(cy * scale);
+        const c = (py * seen.width + px) * 4;
+        probed++;
+        const diff = [0, 1, 2].reduce(
+          (m, k) => Math.max(m, Math.abs((seen.data[c + k] ?? 0) - (art.data[a + k] ?? 0))),
+          0,
+        );
+        if (diff > 8) bad.push(`(${wx},${wy}) art vs canvas differ by ${diff}`);
+      }
+    }
+  }
+  return { probed, bad };
+}
 
 async function waitForSceneReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
@@ -233,7 +308,7 @@ test.describe("story 1.7: enclosure visibility", () => {
 
   test("entering the subway culls the street and reveals the platform; leaving it reverses that", async ({
     page,
-  }) => {
+  }, testInfo) => {
     // `freezeCrowd` so no citizen's walk frame can leak into the platform picture.
     await page.goto("/?freezeCrowd=1");
     await waitForSceneReady(page);
@@ -244,6 +319,40 @@ test.describe("story 1.7: enclosure visibility", () => {
     // proves under release lag. The transition fires the moment the
     // player's own cell matches `(STAIRS_X, STAIRS_Y)`.
     for (const segment of streetSubwayApproachRoute(streetWalkInputs())) {
+      if (segment.label === "down-the-subway-stairs") {
+        // Story 15.13: on the tread row, pressed south against the near
+        // railing's collider -- the demo's posture and the worst case.
+        await walkRealSegment(page, {
+          label: "to-the-east-tread",
+          key: "ArrowLeft",
+          until: { kind: "x-at-most", value: STAIRWELL_X0 + 2.5 },
+        });
+        await page.keyboard.down("ArrowDown");
+        await page.waitForTimeout(600);
+        await page.keyboard.up("ArrowDown");
+        await page.waitForTimeout(100);
+        const order = await page.evaluate(() => window.__bc?.renderOrder ?? []);
+        const at = order.indexOf(PLAYER_STABLE_ID.toString());
+        expect(at).toBeGreaterThanOrEqual(0);
+        const idsOf = (defId: number) =>
+          STREET_PROPS.filter((p) => isDefStreetProp(p) && p.defId === defId).map((p) =>
+            order.indexOf(p.id.toString()),
+          );
+        for (const i of idsOf(STAIRWELL_BOTTOM_RAILING_DEF_ID)) expect(i).toBeGreaterThan(at);
+        for (const i of idsOf(STAIRWELL_TOP_RAILING_DEF_ID)) {
+          expect(i).toBeGreaterThanOrEqual(0);
+          expect(i).toBeLessThan(at);
+        }
+        const { probed, bad } = await probeNearRailingOverPlayer(page, testInfo);
+        expect(probed, "the player overlaps the near railing's art").toBeGreaterThan(0);
+        expect(bad).toEqual([]);
+        // Back off the collider before the walk down the flight.
+        await walkRealSegment(page, {
+          label: "off-the-railing",
+          key: "ArrowUp",
+          until: { kind: "y-at-most", value: STAIRS_Y + 0.6 },
+        });
+      }
       await walkRealSegment(page, segment);
     }
     const landed = await page.evaluate(() => window.__bc?.playerPosition);

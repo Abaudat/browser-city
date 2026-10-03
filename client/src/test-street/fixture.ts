@@ -155,9 +155,9 @@ export const BRIDGE_DECK_DEF_ID = 7;
  * walkable flight of steps. Which floors it joins is a `floor_transition`
  * row anchored on its cell, never a field on the prop. */
 export const FOOT_STAIRS_DEF_ID = 8;
-/** The street stairwell's three `defs/objects` rows, cut from one sheet
- * (`stairwell_top_railing`, `stairwell_treads`, `stairwell_bottom_railing`):
- * the player walks between the railings. */
+/** The street stairwell's three `defs/objects` rows (`stairwell_top_railing`,
+ * `stairwell_treads`, `stairwell_bottom_railing`): the player walks between
+ * the railings. */
 export const STAIRWELL_TOP_RAILING_DEF_ID = 12;
 export const STAIRWELL_TREADS_DEF_ID = 13;
 export const STAIRWELL_BOTTOM_RAILING_DEF_ID = 14;
@@ -254,10 +254,9 @@ export const PLATFORM_BUILDING_ID = 3n;
 export const STREET_FLOOR = 0;
 export const SUBWAY_FLOOR = -1;
 
-/** The street stairwell's own art (`Stairs_Complete_2`, 48x64px) is
- * three objects on one 3x3 ground footprint: the top railing (its drawn
- * finial overhangs one row north of the footprint), the treads, the
- * bottom railing. */
+/** The street stairwell's own art is three objects on one 3x3 ground
+ * footprint: the top railing and the bottom railing (each drawn one row
+ * taller than its footprint row, overhanging north), and the treads. */
 export const STAIRWELL_FOOTPRINT = { width: 3, height: 3 } as const;
 
 /** The art row (from its north edge) the treads are drawn on: the rows

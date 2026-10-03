@@ -32,7 +32,6 @@ import {
   STAIRS_ENTRY_DIRECTION,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STAIRWELL_TOP_RAILING_DEF_ID,
-  STAIRWELL_TREADS_DEF_ID,
   STREET_FLOOR,
   STREET_PROPS,
   SUBWAY_FLOOR,
@@ -171,13 +170,13 @@ describe("the story 1.6 street scene's committed ordering", () => {
   // is one flat row with a railing beside it: story 15.11, below.)
   describe("street stairwell sort oracle", () => {
     const floor = STREET_FLOOR;
-    const stairwellPool = () =>
-      buildStreetProps().filter(
-        (d) =>
-          "defId" in d &&
-          d.floor === floor &&
-          (d.defId === STAIRWELL_TOP_RAILING_DEF_ID || d.defId === STAIRWELL_BOTTOM_RAILING_DEF_ID),
-      );
+    const pooled = buildStreetProps().filter(
+      (d) =>
+        "defId" in d &&
+        d.floor === floor &&
+        (d.defId === STAIRWELL_TOP_RAILING_DEF_ID || d.defId === STAIRWELL_BOTTOM_RAILING_DEF_ID),
+    );
+    const stairwellPool = () => pooled;
 
     /** The oracle, as a function of the feet position only (#391 reuses it
      * with a moving floor height): every stairwell pool row whose ground row

@@ -1290,11 +1290,13 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
   /** The art of `rows`: the bounding box of their sprites, which must be
    * cut from one sheet. */
   function decode(rows: readonly { readonly defId: number }[]): PNG {
-    const sprites = rows.map((p) => objectDef(p.defId).sprite);
-    const sheet = sprites[0]?.sheet;
-    if (!sheet || sprites.some((s) => s.sheet !== sheet)) {
-      throw new Error("the rows must be cut from one sheet");
-    }
+    // The flight's own sheet: the walked-on (flat-pass) row's. A railing
+    // cut from a railing-only sheet is not part of the flight's art.
+    const all = rows.map((p) => objectDef(p.defId));
+    const flat = rows.findIndex((p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects");
+    const sheet = (all[flat] ?? all[0])?.sprite.sheet;
+    const sprites = all.map((d) => d.sprite).filter((s) => s.sheet === sheet);
+    if (!sheet || sprites.length === 0) throw new Error("the rows must be cut from one sheet");
     const x0 = Math.min(...sprites.map((s) => s.x));
     const y0 = Math.min(...sprites.map((s) => s.y));
     const x1 = Math.max(...sprites.map((s) => s.x + s.w));
