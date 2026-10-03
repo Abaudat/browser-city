@@ -361,7 +361,7 @@ fn subdivide(
     let mid = from + len / 2;
     let jitter_span = (len as i64 * cfg.land_use_split_jitter_pct as i64 / 100) as i32;
     let jitter = if jitter_span > 0 {
-        (rng.next_u64() % (2 * jitter_span as u64 + 1)) as i32 - jitter_span
+        rng.below(2 * jitter_span as u64 + 1) as i32 - jitter_span
     } else {
         0
     };
@@ -432,13 +432,9 @@ fn farthest_corner_distance(peak_cx: i32, peak_cy: i32, cols: i32, rows: i32) ->
 /// asymmetric on every seed, not just most of them.
 fn peak_offset(rng: &mut Rng, half: i32, cfg: &GenerationConfig) -> i32 {
     let span = (cfg.density_peak_offset_max_pct - cfg.density_peak_offset_min_pct).max(0);
-    let pct = cfg.density_peak_offset_min_pct + (rng.next_u64() % (span as u64 + 1)) as i32;
+    let pct = cfg.density_peak_offset_min_pct + rng.below(span as u64 + 1) as i32;
     let magnitude = (half * pct) / 100;
-    let sign = if rng.next_u64().is_multiple_of(2) {
-        1
-    } else {
-        -1
-    };
+    let sign = if rng.below(2) == 0 { 1 } else { -1 };
     sign * magnitude
 }
 
@@ -943,7 +939,7 @@ enum Edge {
 }
 
 fn pick_edge(rng: &mut Rng) -> Edge {
-    match rng.next_u64() % 4 {
+    match rng.below(4) {
         0 => Edge::North,
         1 => Edge::South,
         2 => Edge::East,

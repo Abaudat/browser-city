@@ -72,6 +72,7 @@ set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKFLOW="${1:-$REPO_ROOT/.github/workflows/deploy.yml}"
 BACKUP_WORKFLOW="${2:-$REPO_ROOT/.github/workflows/backup.yml}"
+SCAN_ROOT="${3:-$REPO_ROOT}"
 
 [ -f "$WORKFLOW" ] || { echo "check-deploy-workflow: $WORKFLOW not found" >&2; exit 1; }
 [ -f "$BACKUP_WORKFLOW" ] || { echo "check-deploy-workflow: $BACKUP_WORKFLOW not found" >&2; exit 1; }
@@ -292,6 +293,17 @@ while IFS= read -r job; do
     FAILED=1
   fi
 done <<< "$PUBLISH_JOBS"
+
+# --- 8. nothing under .github/workflows or scripts/ops names create_district:
+# the live world gets no generated district until the story that picks its
+# seed flips this assertion.
+CD_HITS="$(grep -rnF create_district "$SCAN_ROOT/.github/workflows" "$SCAN_ROOT/scripts/ops" 2>/dev/null | tr -d '\r' || true)"
+if [ -n "$CD_HITS" ]; then
+  echo "check-deploy-workflow: FAIL -- create_district is named under .github/workflows or scripts/ops; the live world gets no generated district yet:" >&2
+  printf '%s
+' "$CD_HITS" >&2
+  FAILED=1
+fi
 
 if [ "$FAILED" -ne 0 ]; then
   exit 1

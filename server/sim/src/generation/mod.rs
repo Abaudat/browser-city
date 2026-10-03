@@ -23,24 +23,57 @@
 //! position), so adding or moving one block or plot never reshuffles
 //! another's draws.
 //!
-//! [`plan`] chains every implemented pass in order with no verdict;
-//! [`generate`] is `plan` plus [`District::check_building_count`], what
-//! production calls. Every cross-pass harness calls one of the two rather
-//! than hand-chaining the four `run` functions; each pass's own `run`
-//! stays public for its own unit tests and for the two properties that
-//! deliberately feed one pass a perturbed predecessor.
+//! `entry.rs`'s `plan` chains every implemented pass in order with no
+//! verdict; `generate` is `plan` plus the three district verdicts
+//! ([`District::check_building_count`] and its siblings). Both are harness
+//! entry points, re-exported only under `test-fixtures`; production calls
+//! [`create`], which wraps `generate`. Every cross-pass harness calls one
+//! of the two rather than hand-chaining the passes; the pass modules are
+//! public only under `test-fixtures` too, for their own unit tests and for
+//! the two properties that deliberately feed one pass a perturbed
+//! predecessor.
 
+#[cfg(feature = "test-fixtures")]
 pub mod building_types;
+#[cfg(not(feature = "test-fixtures"))]
+mod building_types;
+mod entry;
+#[cfg(feature = "test-fixtures")]
 pub mod envelopes;
+#[cfg(not(feature = "test-fixtures"))]
+mod envelopes;
+#[cfg(feature = "test-fixtures")]
 pub mod land_use;
+// Their harness-only helpers are public API under `test-fixtures`.
+#[cfg(not(feature = "test-fixtures"))]
+#[allow(dead_code)]
+mod land_use;
+#[cfg(feature = "test-fixtures")]
 pub mod plots;
+#[cfg(not(feature = "test-fixtures"))]
+mod plots;
+pub mod record;
 pub mod site;
+#[cfg(feature = "test-fixtures")]
 pub mod streets;
+// Their harness-only helpers are public API under `test-fixtures`.
+#[cfg(not(feature = "test-fixtures"))]
+#[allow(dead_code)]
+mod streets;
 
 pub use building_types::{BuildingTypeMap, TypeAssignment};
 pub use envelopes::{Envelope, EnvelopeMap, EnvelopeOutcome, RejectReason};
 pub use land_use::{LandUse, LandUseCell, LandUseMap, Region};
 pub use plots::{Plot, PlotMap};
+pub use record::{DistrictRecord, RuleSetVersion, create};
+
+// `plan` and `generate` are reachable outside this crate only with
+// `test-fixtures`: production (`browser_city`) never enables it, so a reducer
+// naming either is a compile error and `create` is its only way in.
+#[cfg(not(feature = "test-fixtures"))]
+pub(crate) use entry::generate;
+#[cfg(feature = "test-fixtures")]
+pub use entry::{generate, plan};
 pub use site::DistrictSite;
 pub use streets::{Block, Side, Sides, StreetClass, StreetEdge, StreetNetwork, block_sides};
 
@@ -91,6 +124,9 @@ pub enum GenerationError {
     /// max]` -- the same shape as [`GenerationError::
     /// BuildingCountOutOfTolerance`].
     WorkplaceCountOutOfTolerance { got: i64, min: i64, max: i64 },
+    /// [`create`]: `site` overlaps a district already recorded -- a
+    /// generated site is never generated again, under any rules.
+    SiteAlreadyGenerated { site: SiteBounds },
 }
 
 impl std::fmt::Display for GenerationError {
@@ -117,13 +153,17 @@ impl std::fmt::Display for GenerationError {
                 f,
                 "generation::building_types: workplace count {got} is outside tolerance [{min}, {max}]"
             ),
+            GenerationError::SiteAlreadyGenerated { site } => write!(
+                f,
+                "generation::create: site {site:?} overlaps an already generated district"
+            ),
         }
     }
 }
 
 impl std::error::Error for GenerationError {}
 
-/// Every content table [`plan`]/[`generate`] read, loaded once and
+/// Every content table `plan`/`generate` read, loaded once and
 /// passed down as a struct -- Tim's direction: content is an input, one
 /// signature, no `plan_with` twin, and the golden (which freezes a small,
 /// deliberately-unrelated content table alongside its frozen config)
@@ -224,44 +264,6 @@ impl District {
         }
         Ok(())
     }
-}
-
-/// Chains every implemented pass, in FR110's own order, with no verdict
-/// on the result -- only pass 1's own site check can fail. What a
-/// harness that must inspect every pass of an outlier city calls.
-pub fn plan(
-    city_seed: u64,
-    cfg: &GenerationConfig,
-    content: &GenerationContent,
-) -> Result<District, GenerationError> {
-    let land_use = land_use::run(city_seed, cfg.site(), cfg)?;
-    let streets = streets::run(city_seed, &land_use, cfg);
-    let plots = plots::run(city_seed, &land_use, &streets, cfg);
-    let envelopes = envelopes::run(city_seed, &plots, cfg);
-    let building_types = building_types::run(city_seed, &envelopes, &plots, &streets, cfg, content);
-    Ok(District {
-        land_use,
-        streets,
-        plots,
-        envelopes,
-        building_types,
-    })
-}
-
-/// The one entry point production calls: [`plan`], then
-/// [`District::check_building_count`], [`District::check_rules`] and
-/// [`District::check_workplace_count`] -- a seed whose district fails any
-/// of the three is a world that fails to create.
-pub fn generate(
-    city_seed: u64,
-    cfg: &GenerationConfig,
-    content: &GenerationContent,
-) -> Result<District, GenerationError> {
-    let district = plan(city_seed, cfg, content)?;
-    district.check_building_count(cfg)?;
-    district.check_rules(content)?;
-    district.check_workplace_count(cfg, content)?;
-    Ok(district)
 }
 
 /// FR110's seven passes, coarse to fine -- append-only, never renumbered.

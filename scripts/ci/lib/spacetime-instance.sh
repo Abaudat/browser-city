@@ -36,3 +36,26 @@ bc_stop_spacetime() {
   [ -n "$pid" ] && kill "$pid" 2>/dev/null
   return 0
 }
+
+# bc_stop_spacetime_confirmed <pid> <url> <deadline-s> -- stops the instance
+# and returns 0 only once <pid> is gone AND <url>/v1/ping no longer answers,
+# 1 if the deadline passes first. What a restart proof must use: a plain
+# stop returns at once, and a health poll could then be answered by the old
+# process, so "restarted" would be claimed without a restart.
+bc_stop_spacetime_confirmed() {
+  local pid="$1" url="$2" deadline_s="$3"
+  local deadline=$((SECONDS + deadline_s))
+  bc_stop_spacetime "$pid"
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if ! kill -0 "$pid" 2>/dev/null && ! curl -sf -o /dev/null "$url/v1/ping"; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  return 1
+}
+
+# bc_spacetime_alive <pid> -- 0 if <pid> is a running process.
+bc_spacetime_alive() {
+  kill -0 "$1" 2>/dev/null
+}

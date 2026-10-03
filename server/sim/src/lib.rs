@@ -30,3 +30,6 @@ pub mod table_bounds;
 pub mod time;
 pub mod validation;
 pub mod world;
+
+#[cfg(test)]
+mod lint_canary;
