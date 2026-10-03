@@ -1,15 +1,19 @@
 // Story 4.5 (FR143): the offer is decided as the scene is about to mount, and
 // the mount never waits on anything the boot gate does not already wait on.
-// By the time this runs the gate has verified the defs, so the handshake --
-// and with it the subscription apply that carries the player's own character
-// -- has arrived; an unreachable or timed-out gate never reaches here at all.
-// The one thing that may still be missing is the first server-clock sample
-// (today's city day), which is waited for once, bounded, never polled; a day
-// that is still unknown is "not due".
+// The gate mounts the fetched defs even when the server was unreachable, so
+// this does run on that path: with no handshake there is no subscription
+// apply and no clock sample can ever land, so the decision is "not due" at
+// once, with no wait. Only a settled handshake -- whose subscription apply
+// carries the player's own character -- may wait for the first server-clock
+// sample (today's city day), once, bounded, never polled; a day still unknown
+// is "not due".
 
 export interface OfferGateDeps {
   readonly hasCarrier: boolean;
   readonly configured: boolean;
+  /** The boot gate's own outcome: a handshake arrived (false: the server was
+   * unreachable or the gate timed out). */
+  readonly handshakeSettled: boolean;
   /** The current city day, `undefined` until the clock has a sample. */
   readonly today: () => number | undefined;
   readonly firstClockSample: Promise<void>;
@@ -20,7 +24,7 @@ export interface OfferGateDeps {
 }
 
 export async function decideOffer(deps: OfferGateDeps): Promise<boolean> {
-  if (!deps.hasCarrier || !deps.configured) return false;
+  if (!deps.hasCarrier || !deps.configured || !deps.handshakeSettled) return false;
   if (deps.today() === undefined) {
     await Promise.race([deps.firstClockSample, deps.timeout()]);
   }

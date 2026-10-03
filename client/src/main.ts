@@ -78,7 +78,7 @@ const NO_CAMERA_YET = { zoom: 0, offsetX: 0, offsetY: 0 } as const;
 
 /** Story 4.5: the link offer's two touch points with the street scene. */
 interface OfferWiring {
-  readonly beforeMount: (defs: VerifiedDefs) => Promise<void>;
+  readonly beforeMount: (defs: VerifiedDefs, handshakeSettled: boolean) => Promise<void>;
   readonly onIntent: (intent: Intent) => void;
 }
 
@@ -229,7 +229,7 @@ async function main(): Promise<void> {
   // mid-session. Showing the offer records the city day, so declining is
   // simply not taking it.
   const offer: OfferWiring = {
-    beforeMount: async (defs) => {
+    beforeMount: async (defs, handshakeSettled) => {
       const carrier = carrierDefId(defs);
       if (carrier === undefined || OIDC_CONFIG === null) {
         recordLinkOfferForE2e(false);
@@ -239,6 +239,7 @@ async function main(): Promise<void> {
       const due = await decideOffer({
         hasCarrier: true,
         configured: true,
+        handshakeSettled,
         today: () => cityClock.now()?.day,
         firstClockSample: serverClock.whenSampled(),
         timeout: () => new Promise((resolve) => setTimeout(resolve, DEFAULT_HANDSHAKE_TIMEOUT_MS)),
@@ -396,7 +397,9 @@ async function startStreetScene(
   const defs: VerifiedDefs = sequenceResult.defs;
   setCityRate(defs.realMsPerCityMinute);
   // Story 4.5 (FR143): decided once, as the scene is about to mount.
-  await offer.beforeMount(defs);
+  // The gate's own outcome: a handshake arrived, or the server was unreachable
+  // and the fetched defs are mounted as they are.
+  await offer.beforeMount(defs, latch.latest() !== undefined);
   // Story 4.3: the floor range is the defs', and the scene's spawn is where
   // the initial region is requested around; from here on the scene's own
   // position drives it (`onPlayerMove`), edge-triggered.

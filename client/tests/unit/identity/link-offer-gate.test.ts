@@ -3,6 +3,7 @@ import { decideOffer, type OfferGateDeps } from "../../../src/identity/link-offe
 
 const base = (over: Partial<OfferGateDeps> = {}): OfferGateDeps => ({
   hasCarrier: true,
+  handshakeSettled: true,
   configured: true,
   today: () => 6,
   firstClockSample: Promise.resolve(),
@@ -16,6 +17,24 @@ describe("decideOffer (story 4.5, FR143)", () => {
     const due = vi.fn(() => true);
     expect(await decideOffer(base({ hasCarrier: false, due }))).toBe(false);
     expect(await decideOffer(base({ configured: false, due }))).toBe(false);
+    expect(due).not.toHaveBeenCalled();
+  });
+
+  it("an unreachable gate (no handshake ever) is not due at once: no wait, no timer, even though the clock can never sample", async () => {
+    const timeout = vi.fn(() => new Promise<void>(() => {}));
+    const due = vi.fn(() => true);
+    const p = decideOffer(
+      base({
+        handshakeSettled: false,
+        today: () => undefined,
+        firstClockSample: new Promise<void>(() => {}),
+        timeout,
+        due,
+      }),
+    );
+    // Settles without any timer firing or any sample landing.
+    expect(await p).toBe(false);
+    expect(timeout).not.toHaveBeenCalled();
     expect(due).not.toHaveBeenCalled();
   });
 
