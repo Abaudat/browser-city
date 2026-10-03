@@ -1289,7 +1289,7 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
 
   /** The art of `rows`: the bounding box of their sprites, which must be
    * cut from one sheet. */
-  function decode(rows: readonly { readonly defId: number }[]): PNG {
+  function decode(rows: readonly { readonly defId: number; readonly layer: string }[]): PNG {
     // The flight's own sheet: the walked-on (flat-pass) row's. A railing
     // cut from a railing-only sheet is not part of the flight's art.
     const all = rows.map((p) => objectDef(p.defId));
