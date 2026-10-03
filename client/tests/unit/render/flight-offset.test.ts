@@ -172,6 +172,121 @@ describe("flight offset (FR182)", () => {
   });
 });
 
+describe("a flight on any axis (FR182)", () => {
+  const AXES = [
+    { name: "west", d: { x: -1, y: 0 } },
+    { name: "east", d: { x: 1, y: 0 } },
+    { name: "south", d: { x: 0, y: 1 } },
+    { name: "north", d: { x: 0, y: -1 } },
+  ];
+
+  // A street flight of three cells ending at the anchor and a platform
+  // flight of two ending at the reverse anchor, along `d` and `-d`.
+  function pair(d: { x: number; y: number }) {
+    const A = { x: 10, y: 10 };
+    const L = { x: 30, y: 30 };
+    const R = { x: L.x - d.x, y: L.y - d.y };
+    const transitions: TransitionSpec[] = [
+      { x: A.x, y: A.y, floor: 0, targetX: L.x, targetY: L.y, targetFloor: -1 },
+      { x: R.x, y: R.y, floor: -1, targetX: A.x - d.x, targetY: A.y - d.y, targetFloor: 0 },
+    ];
+    const row = (far: { x: number; y: number }, toward: { x: number; y: number }, n: number) => {
+      const cells = Array.from({ length: n }, (_, k) => ({
+        x: far.x + toward.x * k,
+        y: far.y + toward.y * k,
+      }));
+      const xs = cells.map((c) => c.x);
+      const ys = cells.map((c) => c.y);
+      return {
+        x: Math.min(...xs),
+        y: Math.max(...ys),
+        width: Math.max(...xs) - Math.min(...xs) + 1,
+        height: Math.max(...ys) - Math.min(...ys) + 1,
+      };
+    };
+    const street = row(A, { x: -d.x, y: -d.y }, 3);
+    const platform = row(R, d, 2);
+    const placed = [
+      { defId: 1, x: street.x, y: street.y, floor: 0 },
+      { defId: 2, x: platform.x, y: platform.y, floor: -1 },
+    ];
+    const sources = new Map([
+      [1, { width: street.width, height: street.height, flightDropPx: 8 }],
+      [2, { width: platform.width, height: platform.height, flightDropPx: 4 }],
+    ]);
+    return { A, R, transitions, placed, sources };
+  }
+
+  for (const { name, d } of AXES) {
+    it(`walking ${name}: zero at the open edge, the signed drop at the anchor cell's near edge, flat beyond`, () => {
+      const { A, R, transitions, placed, sources } = pair(d);
+      const index = new FlightIndex(buildFlights(transitions, placed, sources, STOREY), config);
+      // Feet `u` cells from the anchor cell's centre toward the open side.
+      const at = (
+        anchor: { x: number; y: number },
+        toward: { x: number; y: number },
+        u: number,
+      ) => ({
+        x: anchor.x + 0.5 + toward.x * u,
+        y: anchor.y + 0.5 + toward.y * u,
+      });
+      const away = { x: -d.x, y: -d.y };
+      const street = (u: number) => {
+        const p = at(A, away, u);
+        return index.offsetPx(p.x, p.y, 0);
+      };
+      // The street flight is 3 cells: open edge 2.5 out, near edge 0.5 out.
+      expect(street(2.5)).toBe(0);
+      expect(street(0.5)).toBe(8);
+      expect(street(0)).toBe(8);
+      expect(street(1.5)).toBeCloseTo(4, 9);
+      const platform = (u: number) => {
+        const p = at(R, d, u);
+        return index.offsetPx(p.x, p.y, -1);
+      };
+      // The platform flight is 2 cells: open edge 1.5 out, near edge 0.5 out.
+      expect(platform(1.5)).toBe(0);
+      expect(platform(0.5)).toBe(-4);
+      expect(platform(0)).toBe(-4);
+    });
+  }
+});
+
+describe("flight construction (FR182)", () => {
+  it("refuses a flight shorter than two cells along its axis", () => {
+    expect(() =>
+      buildFlights(
+        TRANSITIONS,
+        [{ defId: 1, x: 10, y: 5, floor: 0 }],
+        new Map([[1, { width: 1, height: 1, flightDropPx: 8 }]]),
+        STOREY,
+      ),
+    ).toThrow(/shorter than two cells/);
+  });
+
+  it("refuses two flights that share a cell, and an index with none is always zero", () => {
+    const [flight] = buildFlights(TRANSITIONS, [STREET_ROW], SOURCES, STOREY);
+    if (!flight) throw new Error("no flight");
+    expect(() => new FlightIndex([flight, flight], config)).toThrow(/share cell/);
+    expect(new FlightIndex([], config).offsetPx(11, 5.9, 0)).toBe(0);
+  });
+
+  it("ignores a placed row whose def declares no drop, or has no def", () => {
+    const rows = [PROP_ROW, { defId: 99, x: 10, y: 5, floor: 0 }];
+    expect(buildFlights(TRANSITIONS, rows, SOURCES, STOREY)).toEqual([]);
+  });
+
+  it("gives a transition that changes no floor offset a zero drop", () => {
+    const flat: TransitionSpec[] = [
+      { x: 10, y: 5, floor: 0, targetX: 19, targetY: 2, targetFloor: 0 },
+      { x: 20, y: 2, floor: 0, targetX: 11, targetY: 5, targetFloor: 0 },
+    ];
+    const flights = buildFlights(flat, [STREET_ROW], SOURCES, STOREY);
+    expect(flights.map((f) => f.dropPx)).toEqual([0]);
+    expect(Object.is(flights[0]?.dropPx, 0)).toBe(true);
+  });
+});
+
 describe("the street's own flights (conformance)", () => {
   const defs = committedDefs();
   const storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
