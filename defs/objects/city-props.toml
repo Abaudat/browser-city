@@ -158,6 +158,7 @@ tags = ["stairs", "underfoot", "fixture"]
 # One staircase seen as three objects cut from the same 48x64 sheet, so
 # the player walks between the railings: behind the near one, in front of
 # the far one. The ball finial is the 16 px overhang of the top railing.
+# An `upright` seen face-on: it collides at its foot (the base rail) only.
 [[object]]
 id = 12
 key = "stairwell_top_railing"
@@ -165,8 +166,8 @@ name = "Stairwell Top Railing"
 layer = "objects"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 0, w = 48, h = 32 }
 width = 3
-archetype = "full_cell_blocker"
-tags = ["stairs", "fixture"]
+archetype = "railing_foot"
+tags = ["stairs", "fixture", "upright"]
 
 [[object]]
 id = 13
@@ -181,6 +182,8 @@ width = 3
 archetype = "underfoot_flat"
 tags = ["stairs", "underfoot", "fixture"]
 
+# Not `upright`: seen from the side, its foot is already its cell's south
+# edge. Its north side is the treads (#389, #391).
 [[object]]
 id = 14
 key = "stairwell_bottom_railing"
@@ -219,7 +222,8 @@ archetype = "underfoot_flat"
 tags = ["stairs", "underfoot", "fixture"]
 
 # The flight's south handrail: upright, so its own `objects` row with a
-# collider that matches the art (the last pixel column is shadow).
+# collider that matches the art (the last pixel column is shadow). Not
+# `upright`: its north side is treads (#389, #391).
 [[object]]
 id = 17
 key = "platform_stair_railing"

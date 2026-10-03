@@ -68,8 +68,15 @@ key = "wall_run"
 id = 17
 key = "entrance"
 
+# Story 15.12: an upright seen face-on (a railing, a fence). Its collider
+# is its foot -- `tools/defs-build` refuses one that rises above the foot
+# of a `foot = true` archetype (`defs/archetypes/`).
+[[tag]]
+id = 34
+key = "upright"
+
 # Story 4.5 (FR143): marks the in-world object whose use starts the offer to
 # link an account -- found by this tag, never by key.
 [[tag]]
-id = 34
+id = 35
 key = "registry_post"

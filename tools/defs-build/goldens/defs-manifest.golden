@@ -679,7 +679,8 @@ tag 30 market
 tag 31 form_low
 tag 32 form_mid
 tag 33 form_high
-tag 34 registry_post
+tag 34 upright
+tag 35 registry_post
 rule 1 lighting_ground_floor_only
 rule 2 waste_per_three_seating
 rule 3 no_counter_in_a_stairwell

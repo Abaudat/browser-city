@@ -26,3 +26,15 @@ collider_inset = { left = 0, top = 0, right = 0, bottom = 0 }
 [[archetype]]
 key = "underfoot_flat"
 height = 1
+
+# An upright seen face-on (a railing, a fence) collides at its foot only:
+# the drawn face above the foot is height, the ground behind it is
+# walkable, and a walker there is drawn behind the upright. The foot is
+# the bottom 5 sub-cells of the footprint, full width. Objects carrying
+# the `upright` tag are refused at build time if their collider rises
+# above the foot of a `foot = true` archetype.
+[[archetype]]
+key = "railing_foot"
+height = 1
+foot = true
+collider_inset = { left = 0, top = 11, right = 0, bottom = 0 }

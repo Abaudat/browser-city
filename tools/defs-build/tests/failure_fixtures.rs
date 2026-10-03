@@ -973,6 +973,9 @@ fn every_known_category_has_a_fixture_directory() {
         "building-type-density-gap",
         "building-type-interior-too-large",
         "building-type-site-restricted",
+        "foot-archetype-without-inset",
+        "upright-without-foot-archetype",
+        "upright-without-collider",
         "collider-outside-art-span",
         "art-base-outside-collider",
         "collider-outside-art-rows",
@@ -1210,4 +1213,30 @@ fn a_fully_authored_item_reaches_both_emitted_artefacts() {
     assert!(out.json.contains(
         "{ \"id\": 3, \"key\": \"milk\", \"unit\": 2, \"shelf_life_minutes\": 4320, \"width\": 1, \"height\": 2 }"
     ));
+}
+
+// --- story 15.12: an upright collides at its foot --------------------------
+
+#[test]
+fn a_foot_archetype_with_no_collider_inset_is_named() {
+    assert_eq!(
+        build_err("foot-archetype-without-inset").to_string(),
+        "defs/archetypes/city.toml:2:7: archetype 'railing_foot' is a foot but supplies no collider_inset -- the foot is that collider"
+    );
+}
+
+#[test]
+fn an_upright_when_no_archetype_is_a_foot_is_named_at_the_object() {
+    assert_eq!(
+        build_err("upright-without-foot-archetype").to_string(),
+        "defs/objects/city-props.toml:3:7: object 'trash_bin' is tagged 'upright' but no archetype is a `foot`"
+    );
+}
+
+#[test]
+fn an_upright_with_no_collider_is_named_at_the_object() {
+    assert_eq!(
+        build_err("upright-without-collider").to_string(),
+        "defs/objects/city-props.toml:3:7: object 'trash_bin' is tagged 'upright' but has no collider -- an upright collides at its foot"
+    );
 }

@@ -1164,8 +1164,14 @@ or downward); and a `collider`'s columns and rows lie inside the opaque
 column and row spans of the sprite's footprint band (its bottom `height *
 tile_size_px` rows), and the band's lowest opaque row lies inside the
 collider's columns. Opaque is alpha at or above `ALPHA_OPAQUE_THRESHOLD`,
-declared once in `tools/defs-build/src/alpha.rs`. This check is
-build-only; the client never reads a pixel. `sprite` never
+declared once in `tools/defs-build/src/alpha.rs`. A fourth clause applies
+to objects tagged `upright` (`defs/tags/city.toml`): the collider's rows
+lie inside the foot of an archetype declared `foot = true`. An upright
+seen face-on collides at its foot; the drawn face above the foot is
+height, the ground behind it is walkable, and a walker there is drawn
+behind the upright. The foot is the object's own archetype's, otherwise
+the shallowest declared. This check is build-only; the client never reads
+a pixel. `sprite` never
 repeats: a surface wider than its own art is a one-cell object placed
 once per cell. Every field is validated identically on both sides.
 

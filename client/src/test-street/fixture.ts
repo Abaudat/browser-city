@@ -947,8 +947,10 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
   // West and east of the pavement (anchored at the span's south end).
   { id: 101n, x: 0, y: PAVEMENT_Y1 + 1, width: 1, height: 4 },
   { id: 102n, x: 21, y: PAVEMENT_Y1 + 1, width: 1, height: 4 },
-  // South of the pavement, west of the stairwell.
-  { id: 103n, x: 0, y: STAIRWELL_Y0, width: STAIRWELL_X0, height: 1 },
+  // South of the pavement, west of the stairwell: the finial row and the
+  // top railing's own row (the railing collides at its foot only, so a
+  // body can walk along its open strip and out past the well's west end).
+  { id: 103n, x: 0, y: STAIRWELL_Y0 + 1, width: STAIRWELL_X0, height: 2 },
   // North of the pavement, either side of the terrace.
   { id: 104n, x: 1, y: SOUTH_WALL_Y - 1, width: WEST_WALL_X - 1, height: 1 },
   {

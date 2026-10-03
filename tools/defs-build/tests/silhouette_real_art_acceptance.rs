@@ -172,3 +172,55 @@ fn the_platform_stair_railing_has_a_collider() {
     assert!(object(&defs, "platform_stair_railing").collider.is_some());
     assert!(object(&defs, "platform_stair_flight").collider.is_none());
 }
+
+/// Story 15.12: the top railing is an upright seen face-on, so its collider
+/// is its foot, never its face. The bar-and-baluster face is opaque top to
+/// bottom, which is why clauses 1-3 alone could not see the full cell.
+const TOP_RAILING_TAIL: &str = "archetype = \"railing_foot\"\ntags = [\"stairs\", \"fixture\", \"upright\"]\n\n[[object]]\nid = 13";
+
+#[test]
+fn putting_the_full_cell_collider_back_on_the_top_railing_names_the_key_and_the_rows() {
+    let msg = build_error_with(
+        TOP_RAILING_TAIL,
+        "archetype = \"full_cell_blocker\"\ntags = [\"stairs\", \"fixture\", \"upright\"]\n\n[[object]]\nid = 13",
+    );
+    assert!(
+        msg.contains("object 'stairwell_top_railing' collider (0, 0)-(48, 16)")
+            && msg.contains("collider rows 0..16 reach outside the foot rows 11..16"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn moving_the_top_railing_collider_one_subcell_north_names_the_key_and_the_rows() {
+    let msg = build_error_with(
+        TOP_RAILING_TAIL,
+        "height = 1
+collider = { x0 = 0, y0 = 10, x1 = 48, y1 = 16 }\ntags = [\"stairs\", \"fixture\", \"upright\"]\n\n[[object]]\nid = 13",
+    );
+    assert!(
+        msg.contains("object 'stairwell_top_railing' collider (0, 10)-(48, 16)")
+            && msg.contains("collider rows 10..16 reach outside the foot rows 11..16"),
+        "{msg}"
+    );
+}
+
+/// The build layer alone must refuse the original defect: the top railing is
+/// an `upright` whose collider is the `railing_foot` rows. Putting back master's
+/// `full_cell_blocker` without the tag would otherwise build green.
+#[test]
+fn the_top_railing_is_an_upright_on_its_foot() {
+    let defs = real_defs();
+    let o = object(&defs, "stairwell_top_railing");
+    let upright = defs
+        .tags
+        .iter()
+        .find(|t| t.key == defs_build::model::UPRIGHT_TAG_KEY)
+        .expect("the upright tag is declared");
+    assert!(
+        o.tags.contains(&upright.id),
+        "stairwell_top_railing must carry `upright`"
+    );
+    let c = o.collider.expect("the top railing has a collider");
+    assert_eq!((c.x0, c.y0, c.x1, c.y1), (0, 11, 48, 16));
+}
