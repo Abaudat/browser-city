@@ -200,6 +200,23 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 3_840_000,
         kind: BoundKind::Engineering,
     },
+    // Story 4.3: `character` 100,000 + `citizen` 20,000 (one location row
+    // per actor); `bounds/tests/actor_location_shape.rs` holds it to that
+    // sum. Rewritten only on a chunk or floor change, never per step.
+    TableBound {
+        accessor: "actor_location",
+        max_rows: 120_000,
+        expected_rows: 5_000,
+        alert_rows: 90_000,
+        kind: BoundKind::Engineering,
+    },
+    TableBound {
+        accessor: "actor_kind",
+        max_rows: 64,
+        expected_rows: 16,
+        alert_rows: 48,
+        kind: BoundKind::Mechanical,
+    },
     // Story 6.11: item instances (FR95).
     TableBound {
         accessor: "container_kind",

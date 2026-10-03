@@ -23,7 +23,7 @@ use spacetimedb::Timestamp;
 /// own table keyed to `object_id`, never added as a column here (NFR35):
 /// this row is static placement, not hot state.
 #[derive(Clone)]
-#[spacetimedb::table(accessor = placed_object)]
+#[spacetimedb::table(accessor = placed_object, public)]
 pub struct PlacedObject {
     #[primary_key]
     #[auto_inc]
@@ -52,7 +52,7 @@ pub struct PlacedObject {
 /// point is that a door is an ordinary walkable `placed_object`-free cell,
 /// with no transition, no portal and no load.
 #[derive(Clone)]
-#[spacetimedb::table(accessor = floor_transition)]
+#[spacetimedb::table(accessor = floor_transition, public)]
 pub struct FloorTransition {
     #[primary_key]
     #[auto_inc]
@@ -107,7 +107,7 @@ pub struct Room {
 /// that violates it (or overlaps another `building_area` row on the same
 /// floor).
 #[derive(Clone)]
-#[spacetimedb::table(accessor = building_area)]
+#[spacetimedb::table(accessor = building_area, public)]
 pub struct BuildingArea {
     #[primary_key]
     #[auto_inc]
@@ -128,7 +128,7 @@ pub struct BuildingArea {
 /// any of its rooms (a corridor) has a `building_id` but
 /// `sim::world::NO_OWNER` for its room.
 #[derive(Clone)]
-#[spacetimedb::table(accessor = room_area)]
+#[spacetimedb::table(accessor = room_area, public)]
 pub struct RoomArea {
     #[primary_key]
     #[auto_inc]

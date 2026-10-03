@@ -534,6 +534,8 @@ export function parseDefs(data: unknown): Defs {
       "collider_subcells_per_cell",
       "interact_at_max_reach_cells",
       "max_footprint_cells",
+      "min_floor",
+      "max_floor",
       "max_shelf_life_minutes",
       "max_face_value",
       "max_denominations",
@@ -571,6 +573,8 @@ export function parseDefs(data: unknown): Defs {
     "$.interact_at_max_reach_cells",
   );
   const maxFootprintCells = expectU32(root.max_footprint_cells, "$.max_footprint_cells");
+  const minFloor = expectI32(root.min_floor, "$.min_floor");
+  const maxFloor = expectU32(root.max_floor, "$.max_floor");
   const maxShelfLifeMinutes = expectU32(root.max_shelf_life_minutes, "$.max_shelf_life_minutes");
   const maxFaceValue = expectU32(root.max_face_value, "$.max_face_value");
   const maxDenominations = expectU32(root.max_denominations, "$.max_denominations");
@@ -805,6 +809,8 @@ export function parseDefs(data: unknown): Defs {
     colliderSubcellsPerCell,
     interactAtMaxReachCells,
     maxFootprintCells,
+    minFloor,
+    maxFloor,
     maxShelfLifeMinutes,
     maxFaceValue,
     maxDenominations,

@@ -525,8 +525,12 @@ jobs:
       # never 3987-3992 -- same job, same reasoning as the steps above.
       - name: story 4.12, the metrics sampler samples every table once per fire, and only the scheduler can call it
         run: bash scripts/ci/check-metrics-sampler.sh
-      # Story 4.5: its own disposable local instance and port (3996),
+      # Story 4.3: its own disposable local instance and port (3996),
       # never 3987-3995 -- same job, same reasoning as the steps above.
+      - name: story 4.3 FR136, a chunk-equality subscription returns exactly its chunk, anonymously
+        run: bash scripts/ci/check-interest-region.sh
+      # Story 4.5: its own disposable local instance and port (3997),
+      # never 3987-3996 -- same job, same reasoning as the steps above.
       - name: story 4.5, identity create and link proven with real distinct identities
         run: bash scripts/ci/check-identity-link.sh
 
@@ -594,6 +598,8 @@ jobs:
         run: bash ../scripts/ci/check-client-property-seed.sh
       - name: story 15.7, every spec with a visual baseline is wired into update-visual-baselines.yml
         run: bash ../scripts/ci/check-visual-baseline-specs.sh
+      - name: story 4.3 FR136, subscriptions are typed, per-chunk, and only issued from net/
+        run: bash ../scripts/ci/check-subscription-shape.sh
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: client/.nvmrc

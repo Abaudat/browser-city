@@ -17,12 +17,13 @@ import { callReducer, readSpacetimeHandle } from "./spacetime-harness.mjs";
 
 const IDENTITY_KEY = "bc.identity.v1";
 
-/** Client-sent WebSocket frames up to the point the world clock row arrives:
- * the one `subscribe` message and nothing else (no reducer, procedure or
- * extra request of ours establishes identity). Measured on this harness
- * (repeat runs, Chromium, the story 4.5 head) -- a boot-time call added to
- * either path moves it and fails this spec. */
-const FIRST_VISIT_FRAMES = 1;
+/** Client-sent WebSocket frames up to the point the initial region has applied:
+ * the global `subscribe` and the initial interest region's `subscribe`, and
+ * nothing else (no reducer, procedure or extra request of ours establishes
+ * identity). Measured on this harness (repeat runs, Chromium, the story 4.5
+ * head merged with the story 4.3 region) -- a boot-time call added to either
+ * path moves it and fails this spec. */
+const FIRST_VISIT_FRAMES = 2;
 
 /** Every HTTP request this page makes to the SpacetimeDB host. */
 function watchHostRequests(page: Page): string[] {
@@ -109,14 +110,22 @@ test("a returning visit sends exactly as many frames as a first visit", async ({
   const frames = countFramesSent(page);
   await page.goto("/");
   await identityOf(page);
-  await page.waitForFunction(() => window.__bc?.worldClock !== undefined);
+  await page.waitForFunction(
+    () =>
+      performance.getEntriesByName("bc-boot:region-applied").length > 0 &&
+      window.__bc?.worldClock !== undefined,
+  );
   const first = frames.count();
   expect(first).toBe(FIRST_VISIT_FRAMES);
 
   const before = frames.count();
   await page.reload();
   await identityOf(page);
-  await page.waitForFunction(() => window.__bc?.worldClock !== undefined);
+  await page.waitForFunction(
+    () =>
+      performance.getEntriesByName("bc-boot:region-applied").length > 0 &&
+      window.__bc?.worldClock !== undefined,
+  );
   expect(frames.count() - before).toBe(first);
   await page.context().close();
 });

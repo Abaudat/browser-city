@@ -10,14 +10,28 @@ import { readStoredToken, rememberFirstToken } from "../identity/identity-storag
 import type { SettingsStorage } from "../settings/settings-storage";
 import type { ClockSync } from "../time/clock-sync";
 import type { ServerClock } from "../time/server-clock";
-import { DbConnection } from "./bindings";
+import { DbConnection, tables } from "./bindings";
+import type {
+  ActorLocation,
+  BuildingArea,
+  FloorTransition,
+  PlacedObject,
+  RoomArea,
+} from "./bindings/types";
 import { startNetClockSync, type VisibilitySource } from "./clock-sync";
 import { NET_CONFIG } from "./config";
 import type { ConnectionStatus } from "./connection-status";
 import { observePingInsert, type PingObservation } from "./observe-ping";
+import {
+  REGION_TABLE_NAMES,
+  type RegionController,
+  type RegionTableName,
+  sdkRegionBackend,
+} from "./region-subscription";
 
 export type { HandshakeVersion } from "../boot/handshake";
 export type { ConnectionStatus } from "./connection-status";
+export type { RegionTableName } from "./region-subscription";
 
 export type PingListener = (observation: PingObservation) => void;
 
@@ -61,6 +75,24 @@ export interface CharacterReport {
   readonly linked: boolean;
 }
 
+export type RegionRow = PlacedObject | FloorTransition | BuildingArea | RoomArea | ActorLocation;
+
+/** Streamed rows as plain data, registered once per table. The SDK client
+ * cache stays the only store of them: nothing here keeps a second copy. */
+export interface RegionRowListener {
+  onInsert(table: RegionTableName, row: RegionRow): void;
+  onUpdate(table: RegionTableName, oldRow: RegionRow, row: RegionRow): void;
+  onDelete(table: RegionTableName, row: RegionRow): void;
+}
+
+/** Story 4.3: the interest region. `controller` owns the player's
+ * position and the floor range; every connection attaches a fresh backend
+ * to it. */
+export interface RegionWiring {
+  readonly controller: RegionController;
+  readonly rows?: RegionRowListener;
+}
+
 export interface ConnectOptions {
   readonly onPing: PingListener;
   readonly onStatus?: StatusListener;
@@ -73,6 +105,8 @@ export interface ConnectOptions {
   /** The first subscription apply: every table's initial rows, the player's
    * own character included, have been delivered. */
   readonly onApplied?: () => void;
+  /** Story 4.3: the interest region. */
+  readonly region?: RegionWiring;
 }
 
 /**
@@ -101,9 +135,22 @@ export interface ConnectOptions {
  */
 export function connect(options: ConnectOptions): DbConnection {
   options.onStatus?.("connecting");
-  const { onPing, onStatus, onHandshake, clock, storage, onIdentity, onCharacter, onApplied } =
-    options;
+  const {
+    onPing,
+    onStatus,
+    onHandshake,
+    clock,
+    region,
+    storage,
+    onIdentity,
+    onCharacter,
+    onApplied,
+  } = options;
   let clockSync: ClockSync | undefined;
+  // The whole-table subscription is three singletons; the world arrives
+  // through the region. `SUBSCRIPTION_APPLIED` keeps meaning the first
+  // subscription's own decode term; `REGION_APPLIED` is the initial
+  // region's.
 
   const stored = readStoredToken(storage);
   const base = DbConnection.builder()
@@ -142,11 +189,17 @@ export function connect(options: ConnectOptions): DbConnection {
           onStatus?.("disconnected");
         })
         .subscribe([
-          "SELECT * FROM demo_ping",
-          "SELECT * FROM module_version",
-          "SELECT * FROM world_clock",
-          "SELECT * FROM my_character",
+          tables.demoPing.build(),
+          tables.moduleVersion.build(),
+          tables.worldClock.build(),
+          tables.myCharacter.build(),
         ]);
+      // Story 4.3: a new connection is a new region manager, built around
+      // the player's current position.
+      region?.controller.attach(sdkRegionBackend(connection), {
+        onError: () => onStatus?.("disconnected"),
+        onInitialApplied: () => markBoot(BOOT_MARK.REGION_APPLIED),
+      });
       // Story 4.1: the first stamped round trip rides the same connect
       // moment; a reconnect is a new `connect()` and so a new sync.
       if (clock) clockSync = startNetClockSync(connection, clock.serverClock, clock.visibility);
@@ -189,6 +242,16 @@ export function connect(options: ConnectOptions): DbConnection {
       linked: row.linked,
     });
   });
+
+  const rows = region?.rows;
+  if (rows) {
+    for (const name of REGION_TABLE_NAMES) {
+      const table = conn.db[name];
+      table.onInsert((_ctx, row) => rows.onInsert(name, row));
+      table.onUpdate((_ctx, oldRow, row) => rows.onUpdate(name, oldRow, row));
+      table.onDelete((_ctx, row) => rows.onDelete(name, row));
+    }
+  }
 
   if (clock) {
     // `world_clock` is subscribed (not merely read once) so an FR163 epoch

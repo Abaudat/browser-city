@@ -12,6 +12,10 @@ pub const INTERACT_AT_MAX_REACH_CELLS: i32 = 2;
 /// FR127's cap: a footprint's width and height are each held to this.
 pub const MAX_FOOTPRINT_CELLS: i32 = 8;
 
+/// The world's declared floor range: no row may sit outside it.
+pub const MIN_FLOOR: i32 = -1;
+pub const MAX_FLOOR: i32 = 7;
+
 /// The longest an item may take to spoil, in minutes; 0 means never.
 pub const MAX_SHELF_LIFE_MINUTES: u32 = 525600;
 

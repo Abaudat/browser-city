@@ -19,6 +19,8 @@
 import { expect, test } from "@playwright/test";
 import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
+import { REGION_RADIUS_CHUNKS } from "../../src/world/region";
+import { E2E_WORLD } from "./spacetime-harness.mjs";
 
 declare global {
   interface Window {
@@ -220,4 +222,35 @@ test("the atlas request count and byte total the mount actually fetches, once se
     bytes,
     `atlas bytes grew to ${(bytes / 1024 / 1024).toFixed(2)} MiB, over the ${(ATLAS_BYTES_BUDGET / 1024 / 1024).toFixed(2)} MiB budget -- re-measure this spike (this file's own comment) if this is deliberate. Fetched:\n${urls.join("\n")}`,
   ).toBeLessThanOrEqual(ATLAS_BYTES_BUDGET);
+});
+
+// Story 4.3: `REGION_APPLIED` is the initial interest region landing, and
+// what lands is exactly the region's rows -- never the world's. The seeded
+// e2e world (`spacetime-harness.mjs`) holds one `placed_object` and one
+// `actor_location` in every chunk of a (2 * span + 1)-square block; the
+// region is the (2 * radius + 1)-square around spawn. A client that
+// subscribed any region table whole would deliver the whole block and fail
+// the exact count.
+test("the rows delivered by the time the initial region has applied are exactly the region's, not the world's", async ({
+  page,
+}) => {
+  const regionChunks = (2 * REGION_RADIUS_CHUNKS + 1) ** 2;
+  const worldChunks = (2 * E2E_WORLD.span + 1) ** 2;
+  // The precondition that lets the assertion fail: the world is bigger
+  // than the region, and the region lies wholly inside it.
+  expect(REGION_RADIUS_CHUNKS).toBeLessThanOrEqual(E2E_WORLD.span);
+  expect(worldChunks).toBeGreaterThan(regionChunks);
+
+  await page.goto("/");
+  await page.waitForFunction(
+    () => performance.getEntriesByName("bc-boot:region-applied").length > 0,
+    undefined,
+    { timeout: 30_000 },
+  );
+  const rows = await page.evaluate(() => {
+    const inserts = window.__bc?.region?.inserts ?? {};
+    return Object.values(inserts).reduce((sum, n) => sum + n, 0);
+  });
+  // One placed_object and one actor_location per region chunk.
+  expect(rows).toBe(regionChunks * 2);
 });

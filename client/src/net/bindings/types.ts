@@ -10,6 +10,21 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const ActorKind = __t.object("ActorKind", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type ActorKind = __Infer<typeof ActorKind>;
+
+export const ActorLocation = __t.object("ActorLocation", {
+  locationId: __t.u64(),
+  actorKind: __t.u32(),
+  actorId: __t.u64(),
+  chunkKey: __t.u64(),
+  floor: __t.i8(),
+});
+export type ActorLocation = __Infer<typeof ActorLocation>;
+
 export const BudgetReviewSchedule = __t.object("BudgetReviewSchedule", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),

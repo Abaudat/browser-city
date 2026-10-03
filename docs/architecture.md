@@ -538,6 +538,22 @@ fixture` by `bounds`'s `regen-world-fixture` binary; every case in that
 fixture is checked from the client side too
 (`client/tests/unit/world/conformance.test.ts`).
 
+## Interest management
+
+The client holds only the world around the player. Subscriptions are client-issued queries over public, chunk-keyed tables.
+
+- A query is one pure equality, `WHERE chunk_key = <key>`, built with the typed query builder. The engine parameterises, prunes and shares only that shape; a range, an `OR` or an extra `AND` is re-evaluated on every write to its table. Never a SQL string, never a whole table beyond the three singletons (`demo_ping`, `module_version`, `world_clock`).
+- One handle per (chunk column, floor band), holding the equality for every floor of the band on every table in `REGION_QUERIES` (`net/region-subscription.ts`, the one place a region table is declared): `placed_object`, `floor_transition`, `building_area`, `room_area`, `actor_location`. Columns are disjoint, so a shifting region re-sends nothing.
+- `world/region.ts` declares the constants once and plans the region as a pure function of the player's cell and floor: wanted within `REGION_RADIUS_CHUNKS` (2) Chebyshev distance of the player's column, released only beyond `REGION_RADIUS_CHUNKS + REGION_HYSTERESIS_CHUNKS` (1). No timer. `REGION_MAX_HANDLES` bounds what is held. The radius covers a maximum half-viewport, `REGION_BODY_MARGIN_CELLS`, `MAX_FOOTPRINT_CELLS` and, to the south, `MAX_FLOOR * storey_height_px / tile_size_px`; a unit test holds it to that.
+- A band is the floors co-visible with the player's: `0..=MAX_FLOOR` or `MIN_FLOOR..=-1`. A band change adds the new band's handles; the old band's leave by the distance rule.
+- The region is recomputed only when the player's chunk column or band changes, never per frame. A handle is released only once applied (`unsubscribe()` throws on a pending or ended handle); a handle no longer wanted while pending is released on its `onApplied`. A region `onError` goes through `onStatus("disconnected")`. A reconnect is a new `connect()` and a new manager, built around the current position.
+- The SDK client cache is the only store of streamed rows; `net/` hands them on as plain-data insert/update/delete callbacks. `net/` is the only importer of binding values.
+- The floor range `MIN_FLOOR = -1`, `MAX_FLOOR = 7` is declared once in `tools/defs-build/src/model.rs` and generated into `sim::generated::defs` and `defs.json`; `WorldSpec::build` and `client/src/world/world-spec.ts` refuse a floor outside it.
+- `actor_location` (`actor_kind`, `actor_id`, `chunk_key`, `floor`) says which chunk an actor is in, and exists solely so a chunk filter is expressible as a subscription; no `x` or `y` is ever added. `actor_kind` is a code set (`character`, `citizen`) in `sim::codes`, each naming the table its id lives in (`sim::actor_location::ACTOR_TABLES`). The row is rewritten only when the actor's chunk or floor changes, decided by `sim::actor_location::plan_move`, which derives the chunk through `sim::world::chunk_key`.
+- A table is split by how often it is written, not by the entity it describes: anything rewritten more often than a chunk change is its own table, joined through `actor_id`.
+- `placed_object`, `floor_transition`, `building_area` and `room_area` are public; `item_placed`, `building` and `room` stay private until a client reader exists.
+- `scripts/ci/check-subscription-shape.sh` holds the query shape (`.subscribe(` only in `net/connection.ts` and `net/region-subscription.ts`, no `SELECT` literal under `client/src`, the whole-table set exactly the three singletons); `scripts/ci/check-interest-region.sh` proves it against a real instance.
+
 ## Movement and collision (client)
 
 Player movement and collision are client-authoritative (FR137), permanent

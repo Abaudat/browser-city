@@ -21,6 +21,7 @@ import {
   exposeCityTimeForE2e,
   exposeIdentityActionsForE2e,
   exposePlayerScreenBoundsForE2e,
+  exposeRegionForE2e,
   exposeWorldTransformForE2e,
   recordAllBoundTextureSourcesForE2e,
   recordAppearanceTextureIdsForE2e,
@@ -36,14 +37,17 @@ import {
   recordPingForE2e,
   recordPlayerAppearanceForE2e,
   recordPlayerPositionForE2e,
+  recordRegionRowForE2e,
   recordRenderOrderForE2e,
   recordViewTransformForE2e,
   recordVisibilityForE2e,
   recordWorldClockForE2e,
+  sceneRegionFeed,
 } from "./net/e2e-hooks";
 import { beginLink, completeLinkWithIdToken, newLinkCode } from "./net/link";
 import type { PingObservation } from "./net/observe-ping";
 import { PROTOCOL_VERSION } from "./net/protocol-version";
+import { cachedChunkKeys, RegionController } from "./net/region-subscription";
 import { ZOOM } from "./render/camera";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
@@ -51,6 +55,7 @@ import { visibleCellBounds } from "./render/screen-position";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
+import { PLAYER_START } from "./test-street/fixture";
 import { placeLinkCarrier } from "./test-street/link-carrier";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
 import { CityClock } from "./time/city-clock";
@@ -59,6 +64,7 @@ import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, windowDefIds } from "./world/object-defs";
+import { handleId } from "./world/region";
 
 /** Story 1.12: the camera a debug overlay sees before the scene has
  * reported its own. It describes no rectangle, so
@@ -129,6 +135,10 @@ async function main(): Promise<void> {
     resolveApplied = resolve;
   });
   exposeCityTimeForE2e(() => cityClock.now());
+  // Story 4.3: the interest region. It holds nothing until the defs give
+  // it a floor range and the scene gives it a position.
+  const region = new RegionController();
+  const moveRegion = (x: number, y: number, floor: number): void => region.moveTo(x, y, floor);
   const conn = connect({
     onPing,
     onStatus: (status) => {
@@ -164,6 +174,21 @@ async function main(): Promise<void> {
       recordCharacterForE2e(character);
     },
     onApplied: resolveApplied,
+    region: {
+      controller: region,
+      rows: {
+        onInsert: (table, row) => recordRegionRowForE2e("inserts", table, row),
+        onUpdate: (table, _old, row) => recordRegionRowForE2e("updates", table, row),
+        onDelete: (table, row) => recordRegionRowForE2e("deletes", table, row),
+      },
+    },
+  });
+  exposeRegionForE2e({
+    held: () => region.subscriptions()?.heldKeys().map(handleId) ?? [],
+    liveHandles: () => region.subscriptions()?.liveHandleCount() ?? 0,
+    applied: () => region.subscriptions()?.appliedKeys().map(handleId) ?? [],
+    cachedChunkKeys: (table) => cachedChunkKeys(conn, table),
+    moveTo: moveRegion,
   });
 
   // Story 4.5 (FR143): linking. The OIDC library is a dynamic import,
@@ -252,6 +277,8 @@ async function main(): Promise<void> {
       },
       (rate) => cityClock.setRate(rate),
       offer,
+      region,
+      sceneRegionFeed(moveRegion),
     );
   } catch (error: unknown) {
     // NFR42: the street scene degrades to not-drawing, never takes the ping
@@ -303,6 +330,8 @@ async function startStreetScene(
   setPostMountGuard: (guard: PostMountGuard) => void,
   setCityRate: (realMsPerCityMinute: number) => void,
   offer: OfferWiring,
+  region: RegionController,
+  followScene: (x: number, y: number, floor: number) => void,
 ): Promise<void> {
   const mount = document.getElementById("test-street");
   if (!mount) {
@@ -365,6 +394,11 @@ async function startStreetScene(
   setCityRate(defs.realMsPerCityMinute);
   // Story 4.5 (FR143): decided once, as the scene is about to mount.
   await offer.beforeMount(defs);
+  // Story 4.3: the floor range is the defs', and the scene's spawn is where
+  // the initial region is requested around; from here on the scene's own
+  // position drives it (`onPlayerMove`), edge-triggered.
+  region.configure({ minFloor: defs.minFloor, maxFloor: defs.maxFloor });
+  followScene(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor);
 
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");
@@ -492,6 +526,7 @@ async function startStreetScene(
     },
     onPlayerMove: (x, y, floor) => {
       recordPlayerPositionForE2e(x, y, floor);
+      followScene(x, y, floor);
       // Story 1.12: `onPlayerMove` is the one callback here that really
       // does fire every frame, so the overlays are redrawn on the *cell*
       // or floor actually changing -- what moves the viewport or the

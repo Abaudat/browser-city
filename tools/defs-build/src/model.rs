@@ -78,6 +78,13 @@ pub const INTERACT_AT_MAX_REACH_CELLS: i64 = 2;
 /// reaches `sim::generated::defs` (see `emit.rs`).
 pub const MAX_FOOTPRINT_CELLS: i64 = 8;
 
+/// The world's declared floor range (story 4.3): the subway is `-1`, and
+/// the eight floors `placed_object`'s bound assumes run `0..=7`. A region
+/// subscription is bounded only because floors are. Declared once, here,
+/// and emitted into both generated artefacts by `emit.rs`.
+pub const MIN_FLOOR: i64 = -1;
+pub const MAX_FLOOR: i64 = 7;
+
 /// The longest an item may take to spoil: one year of game minutes. `0`
 /// means it never spoils; anything above this is a typo, not a shelf life.
 pub const MAX_SHELF_LIFE_MINUTES: u32 = 525_600;

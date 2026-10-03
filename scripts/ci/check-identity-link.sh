@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Story 4.5 (FR141-FR143): the identity reducers proven against a real
 # disposable SpacetimeDB instance with real, distinct identities (minted by
-# POST /v1/identity, each a bearer token). Own instance and port (3996),
-# never 3987-3995. Same fail-loud shape as its siblings: every failure
+# POST /v1/identity, each a bearer token). Own instance and port (3997),
+# never 3987-3996. Same fail-loud shape as its siblings: every failure
 # aborts at once and names what went wrong.
 #
 # What is proven here: connecting alone writes nothing; create_character
@@ -17,7 +17,7 @@ set -uo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$REPO_ROOT/scripts/ci/lib/spacetime-instance.sh"
 DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bc-identity.XXXXXX")"
-PORT="${BC_IDENTITY_PORT:-3996}"
+PORT="${BC_IDENTITY_PORT:-3997}"
 SERVER_URL="http://127.0.0.1:$PORT"
 START_LOG="$DATA_DIR/start.log"
 DB=bc-identity
