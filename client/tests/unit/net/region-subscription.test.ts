@@ -348,8 +348,8 @@ describe("RegionSubscriptions", () => {
     // or released are still pending or ending.
     const firstError: fc.Arbitrary<Command[] | null> = fc
       .option(
-        fc.tuple(
-          fc.option(
+        fc.tuple<[Command | null, Command | null, Command]>(
+          fc.option<Command | null>(
             fc.oneof(
               { weight: 3, arbitrary: pos.map((p) => ({ t: "move" as const, p })) },
               {
@@ -359,7 +359,10 @@ describe("RegionSubscriptions", () => {
             ),
             { freq: 3, nil: null },
           ),
-          fc.option(fc.constant({ t: "applyAll" as const }), { freq: 2, nil: null }),
+          fc.option<Command | null>(fc.constant({ t: "applyAll" as const }), {
+            freq: 2,
+            nil: null,
+          }),
           fc.oneof(
             { weight: 10, arbitrary: nat.map((i) => ({ t: "errorPending" as const, i })) },
             { weight: 3, arbitrary: nat.map((i) => ({ t: "errorApplied" as const, i })) },
