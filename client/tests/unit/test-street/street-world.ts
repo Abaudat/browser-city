@@ -23,6 +23,7 @@ import {
   SHOPFRONT_EXIT_Y,
   STAIRS_X,
   STAIRS_Y,
+  STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STREET_BUILDING_AREAS,
   STREET_PROPS,
   STREET_ROOM_AREAS,
@@ -238,6 +239,15 @@ export function subwayTreadRowY(): number {
   return STAIRS_Y + bodyHeightCells();
 }
 
+/** Where a body pressed south on the tread row rests: the top face of the
+ * near railing's own collider, read from `defs/`. */
+export function nearRailingRestY(): number {
+  const defs = committedDefs();
+  const rail = defs.objects.find((o) => o.id === STAIRWELL_BOTTOM_RAILING_DEF_ID);
+  if (!rail?.collider) throw new Error("nearRailingRestY: no collider on the near railing");
+  return STAIRS_Y + 1 + rail.collider.y0 / defs.colliderSubcellsPerCell;
+}
+
 /** Every real value [`streetWalkRoute`] needs, assembled once -- the one
  * call site every unit test and e2e spec goes through. */
 export function streetWalkInputs(): StreetWalkInputs {
@@ -250,6 +260,7 @@ export function streetWalkInputs(): StreetWalkInputs {
     bridgeUnderRestX: bridgeUnderRestX(),
     bridgeUnderExitClearY: bridgeUnderExitClearY(),
     subwayTreadRowY: subwayTreadRowY(),
+    nearRailingRestY: nearRailingRestY(),
   };
 }
 

@@ -31,11 +31,13 @@ import {
   SIDEWALK_TILES,
   STAIRS_ENTRY_DIRECTION,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
+  STAIRWELL_POSTURE_X,
   STAIRWELL_TOP_RAILING_DEF_ID,
   STREET_FLOOR,
   STREET_PROPS,
   SUBWAY_FLOOR,
   streetDefId,
+  streetNearRailingPressRoute,
   wallRunCellId,
 } from "../../../src/test-street/fixture";
 import type { Vec2 } from "../../../src/world/movement";
@@ -50,11 +52,14 @@ import {
 } from "./golden";
 import {
   lamppostRestY,
+  nearRailingRestY,
   shopfrontExitRestY,
+  simulateStreetWalk,
   stairwellRowsAt,
   streetMovementConfig,
   streetObjectSources,
   streetOwnershipIndex,
+  streetWalkInputs,
   streetWindowDefIds,
   streetWorldIndex,
   subwayAnchors,
@@ -185,7 +190,7 @@ describe("the story 1.6 street scene's committed ordering", () => {
       const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
       for (const row of stairwellPool()) {
         const where = `player (${x}, ${y}) vs def ${"defId" in row ? row.defId : "?"} row ${row.y / SORT_SUBDIVISIONS}`;
-        if (row.y / SORT_SUBDIVISIONS > Math.floor(y)) {
+        if (row.y / SORT_SUBDIVISIONS > y) {
           expect(compareDrawables(row, player), where).toBeGreaterThan(0);
         } else {
           expect(compareDrawables(row, player), where).toBeLessThan(0);
@@ -214,7 +219,26 @@ describe("the story 1.6 street scene's committed ordering", () => {
       }
     });
 
+    it("every resting posture of the press route (collider rest south, upper rail north) sorts correctly, and is where the helpers say", () => {
+      const inputs = streetWalkInputs();
+      const route = streetNearRailingPressRoute(inputs);
+      const out = simulateStreetWalk(route);
+      let seen = 0;
+      for (const { label, state } of out) {
+        if (label.startsWith("press-south-")) {
+          expect(state.y).toBeCloseTo(nearRailingRestY(), 9);
+        } else if (label.startsWith("press-north-")) {
+          expect(state.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
+        } else continue;
+        expect(state.floor).toBe(floor);
+        expectStairwellSortAt(state.x, state.y);
+        seen++;
+      }
+      expect(seen).toBe(STAIRWELL_POSTURE_X.length * 2);
+    });
+
     it("negative control: a player south of the stairwell draws over the bottom railing, and one north of it under the top railing", () => {
+      expect(stairwellPool().length).toBe(6);
       const bottom = stairwellPool().filter(
         (d) => "defId" in d && d.defId === STAIRWELL_BOTTOM_RAILING_DEF_ID,
       );
@@ -223,14 +247,14 @@ describe("the story 1.6 street scene's committed ordering", () => {
       );
       const south = buildPlayerDrawable(
         rankOf("characters"),
-        (bottom[0]?.x ?? 0) / SORT_SUBDIVISIONS,
-        (bottom[0]?.y ?? 0) / SORT_SUBDIVISIONS + 1.5,
+        (bottom[0]?.x ?? Number.NaN) / SORT_SUBDIVISIONS,
+        (bottom[0]?.y ?? Number.NaN) / SORT_SUBDIVISIONS + 1.5,
         floor,
       );
       const north = buildPlayerDrawable(
         rankOf("characters"),
-        (top[0]?.x ?? 0) / SORT_SUBDIVISIONS,
-        (top[0]?.y ?? 0) / SORT_SUBDIVISIONS - 0.5,
+        (top[0]?.x ?? Number.NaN) / SORT_SUBDIVISIONS,
+        (top[0]?.y ?? Number.NaN) / SORT_SUBDIVISIONS - 0.5,
         floor,
       );
       for (const rail of bottom) expect(compareDrawables(rail, south)).toBeLessThan(0);

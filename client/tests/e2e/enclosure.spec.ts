@@ -21,12 +21,13 @@
 // way. No hook here ever sets the player's floor directly (Quentin's
 // direction) -- the walk always goes through the real keyboard and the
 // real `world/transitions.ts` port.
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Page, type TestInfo, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
+import { worldPointPx } from "../../src/render/screen-position";
 import {
   isDefStreetProp,
   PLATFORM_LANDING_Y,
@@ -34,12 +35,16 @@ import {
   PLAYER_START,
   STAIRS_Y,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
+  STAIRWELL_FOOTPRINT,
   STAIRWELL_TOP_RAILING_DEF_ID,
+  STAIRWELL_TREADS_DEF_ID,
   STAIRWELL_X0,
+  STAIRWELL_Y0,
   STREET_EXIT_X,
   STREET_EXIT_Y,
   STREET_PROPS,
   type StreetWalkSegment,
+  streetNearRailingPressRoute,
   streetSubwayApproachRoute,
 } from "../../src/test-street/fixture";
 import {
@@ -47,73 +52,14 @@ import {
   STREET_VISIBILITY_AT_REST_IN_SHOP_A,
   STREET_VISIBILITY_ON_SUBWAY_LANDING,
 } from "../unit/test-street/golden";
-import { shopfrontExitRestY, streetWalkInputs } from "../unit/test-street/street-world";
+import {
+  committedDefs,
+  shopfrontExitRestY,
+  streetMovementConfig,
+  streetWalkInputs,
+} from "../unit/test-street/street-world";
 import { canvasOf } from "./camera-test-support";
 import { SCREENSHOT_OPTIONS } from "./screenshot-support";
-
-/** Story 15.13 (FR123): the pixels of the street stairwell's near railing
- * that fall inside the player's own screen bounds must be the railing's
- * art, not the player's -- whatever the player's exact x. Placed through
- * the live view transform and the built def's own sprite rect: each railing
- * column is a 16 px-wide slice anchored on the bottom-centre of its cell.
- * Returns how many pixels were probed and which differed. */
-async function probeNearRailingOverPlayer(page: Page, testInfo: TestInfo) {
-  const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
-  const defs = JSON.parse(
-    readFileSync(join(repoRoot, "client/public/defs/defs.json"), "utf-8"),
-  ) as {
-    objects: {
-      id: number;
-      sprite: { sheet: string; x: number; y: number; w: number; h: number };
-    }[];
-  };
-  const def = defs.objects.find((o) => o.id === STAIRWELL_BOTTOM_RAILING_DEF_ID);
-  if (!def) throw new Error("no bottom railing def");
-  const art = PNG.sync.read(readFileSync(join(repoRoot, def.sprite.sheet)));
-  const view = await page.evaluate(() => window.__bc?.viewTransform);
-  const bounds = await page.evaluate(() => window.__bc?.playerScreenBounds?.());
-  if (!view || !bounds) throw new Error("no view transform / player bounds hook");
-  const canvas = canvasOf(page);
-  const shot = await canvas.screenshot();
-  await testInfo.attach("stairwell-near-railing.png", { body: shot, contentType: "image/png" });
-  const seen = PNG.sync.read(shot);
-  const box = await canvas.boundingBox();
-  if (!box) throw new Error("no canvas box");
-  const scale = seen.width / box.width;
-  const tile = 16;
-  const rowAnchorY = STAIRS_Y + 1; // the bottom railing's own row
-  const bad: string[] = [];
-  let probed = 0;
-  for (let col = 0; col < 3; col++) {
-    for (let ay = 0; ay < def.sprite.h; ay++) {
-      for (let ax = 0; ax < tile; ax++) {
-        const a = ((def.sprite.y + ay) * art.width + def.sprite.x + col * tile + ax) * 4;
-        if ((art.data[a + 3] ?? 0) < 255) continue;
-        // World px of this art pixel: slice bottom-centre on its cell's
-        // bottom edge, so its rows run up from `(rowAnchorY + 1) * tile`.
-        const wx = (STAIRWELL_X0 + col) * tile + ax;
-        const wy = (rowAnchorY + 1) * tile - def.sprite.h + ay;
-        const sx = wx * view.zoom + view.offsetX;
-        const sy = wy * view.zoom + view.offsetY;
-        // The centre of the zoomed art pixel, inside the player's bounds.
-        const cx = sx + view.zoom / 2;
-        const cy = sy + view.zoom / 2;
-        if (cx < bounds.x || cx >= bounds.x + bounds.width) continue;
-        if (cy < bounds.y || cy >= bounds.y + bounds.height) continue;
-        const px = Math.floor(cx * scale);
-        const py = Math.floor(cy * scale);
-        const c = (py * seen.width + px) * 4;
-        probed++;
-        const diff = [0, 1, 2].reduce(
-          (m, k) => Math.max(m, Math.abs((seen.data[c + k] ?? 0) - (art.data[a + k] ?? 0))),
-          0,
-        );
-        if (diff > 8) bad.push(`(${wx},${wy}) art vs canvas differ by ${diff}`);
-      }
-    }
-  }
-  return { probed, bad };
-}
 
 async function waitForSceneReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
@@ -308,7 +254,7 @@ test.describe("story 1.7: enclosure visibility", () => {
 
   test("entering the subway culls the street and reveals the platform; leaving it reverses that", async ({
     page,
-  }, testInfo) => {
+  }) => {
     // `freezeCrowd` so no citizen's walk frame can leak into the platform picture.
     await page.goto("/?freezeCrowd=1");
     await waitForSceneReady(page);
@@ -319,40 +265,6 @@ test.describe("story 1.7: enclosure visibility", () => {
     // proves under release lag. The transition fires the moment the
     // player's own cell matches `(STAIRS_X, STAIRS_Y)`.
     for (const segment of streetSubwayApproachRoute(streetWalkInputs())) {
-      if (segment.label === "down-the-subway-stairs") {
-        // Story 15.13: on the tread row, pressed south against the near
-        // railing's collider -- the demo's posture and the worst case.
-        await walkRealSegment(page, {
-          label: "to-the-east-tread",
-          key: "ArrowLeft",
-          until: { kind: "x-at-most", value: STAIRWELL_X0 + 2.5 },
-        });
-        await page.keyboard.down("ArrowDown");
-        await page.waitForTimeout(600);
-        await page.keyboard.up("ArrowDown");
-        await page.waitForTimeout(100);
-        const order = await page.evaluate(() => window.__bc?.renderOrder ?? []);
-        const at = order.indexOf(PLAYER_STABLE_ID.toString());
-        expect(at).toBeGreaterThanOrEqual(0);
-        const idsOf = (defId: number) =>
-          STREET_PROPS.filter((p) => isDefStreetProp(p) && p.defId === defId).map((p) =>
-            order.indexOf(p.id.toString()),
-          );
-        for (const i of idsOf(STAIRWELL_BOTTOM_RAILING_DEF_ID)) expect(i).toBeGreaterThan(at);
-        for (const i of idsOf(STAIRWELL_TOP_RAILING_DEF_ID)) {
-          expect(i).toBeGreaterThanOrEqual(0);
-          expect(i).toBeLessThan(at);
-        }
-        const { probed, bad } = await probeNearRailingOverPlayer(page, testInfo);
-        expect(probed, "the player overlaps the near railing's art").toBeGreaterThan(0);
-        expect(bad).toEqual([]);
-        // Back off the collider before the walk down the flight.
-        await walkRealSegment(page, {
-          label: "off-the-railing",
-          key: "ArrowUp",
-          until: { kind: "y-at-most", value: STAIRS_Y + 0.6 },
-        });
-      }
       await walkRealSegment(page, segment);
     }
     const landed = await page.evaluate(() => window.__bc?.playerPosition);
@@ -403,5 +315,138 @@ test.describe("story 1.7: enclosure visibility", () => {
     // reappear exactly as before -- same container, same rule, no re-seed.
     expect(backOnStreetVisibility["crowd:0"]).toBe("normal");
     expect(backOnStreetVisibility).toEqual(STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE);
+  });
+});
+
+// Story 15.13 (FR123): the street stairwell's near railing draws over a
+// player standing on the treads, along the whole tread row, on every pixel
+// it owns. Probed analytically: the railing-only art (the stairwell with
+// the treads removed) is placed from the stairwell's own art origin through
+// the live view transform; every opaque pixel of it from the tread row down
+// that falls under the player's body must be the canvas's colour, never the
+// player's. Clips of the stairwell at each posture go to a directory CI
+// uploads on every run, for review.
+const STAIRWELL_SHOT_DIR = "test-results/stairwell-shots";
+
+function balanceValue(key: string): number {
+  const entry = committedDefs().balance.find((b) => b.key === key);
+  if (!entry) throw new Error(`no balance key '${key}'`);
+  return entry.value;
+}
+
+test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
+  test("pressed against either railing, along the tread row, the player is under the near railing's pixels and over the far one's", async ({
+    page,
+  }) => {
+    const defs = committedDefs();
+    const tile = balanceValue("render.tile_size_px");
+    const storey = balanceValue("render.storey_height_px");
+    const config = streetMovementConfig();
+    const inputs = streetWalkInputs();
+    const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+    const treads = defs.objects.find((o) => o.id === STAIRWELL_TREADS_DEF_ID);
+    if (!treads) throw new Error("no treads def");
+    // The railing-only art, beside the treads' own sheet.
+    const railing = PNG.sync.read(
+      readFileSync(
+        join(
+          repoRoot,
+          dirname(treads.sprite.sheet),
+          "ME_Singles_Subway_and_Train_Station_16x16_Stairs_Railing_1.png",
+        ),
+      ),
+    );
+    const treadTopArtY = (STAIRS_Y - STAIRWELL_Y0) * tile;
+
+    await page.goto("/?freezeCrowd=1");
+    await waitForSceneReady(page);
+    mkdirSync(STAIRWELL_SHOT_DIR, { recursive: true });
+
+    for (const segment of streetNearRailingPressRoute(inputs)) {
+      await walkRealSegment(page, segment);
+      if (!segment.label.startsWith("press-")) continue;
+      const south = segment.label.startsWith("press-south-");
+      // At rest, exactly where the resolver puts it -- never a timed wait.
+      await page.waitForFunction(
+        (y) => Math.abs((window.__bc?.playerPosition?.y ?? Number.NaN) - y) < 1e-6,
+        south ? inputs.nearRailingRestY : inputs.subwayTreadRowY,
+        { timeout: 5_000 },
+      );
+      const feet = await page.evaluate(() => window.__bc?.playerPosition);
+      const view = await page.evaluate(() => window.__bc?.viewTransform);
+      const bounds = await page.evaluate(() => window.__bc?.playerScreenBounds?.());
+      const order = await page.evaluate(() => window.__bc?.renderOrder ?? []);
+      if (!feet || !view || !bounds) throw new Error("no feet / view / bounds hook");
+
+      // Render order: the near railing after the player, the far one before.
+      const at = order.indexOf(PLAYER_STABLE_ID.toString());
+      expect(at).toBeGreaterThanOrEqual(0);
+      const indexOfDef = (defId: number) =>
+        STREET_PROPS.filter((p) => isDefStreetProp(p) && p.defId === defId).map((p) =>
+          order.indexOf(p.id.toString()),
+        );
+      for (const i of indexOfDef(STAIRWELL_BOTTOM_RAILING_DEF_ID)) expect(i).toBeGreaterThan(at);
+      for (const i of indexOfDef(STAIRWELL_TOP_RAILING_DEF_ID)) {
+        expect(i).toBeGreaterThanOrEqual(0);
+        expect(i).toBeLessThan(at);
+      }
+
+      // The clip: the stairwell and its entrance, cropped, at the game's zoom.
+      const canvasBox = await canvasOf(page).boundingBox();
+      if (!canvasBox) throw new Error("no canvas box");
+      const nw = worldPointPx(STAIRWELL_X0, STAIRWELL_Y0, 0, tile, storey, view.zoom);
+      const shot = await page.screenshot({
+        clip: {
+          x: canvasBox.x + nw.x * view.zoom + view.offsetX - tile * view.zoom,
+          y: canvasBox.y + nw.y * view.zoom + view.offsetY,
+          width: (STAIRWELL_FOOTPRINT.width + 2) * tile * view.zoom,
+          height: (STAIRWELL_FOOTPRINT.height + 1) * tile * view.zoom,
+        },
+      });
+      writeFileSync(join(STAIRWELL_SHOT_DIR, `${segment.label}.png`), shot);
+      if (!south) continue;
+
+      // The pixels: the whole canvas, probed only where the art is.
+      const seen = PNG.sync.read(await canvasOf(page).screenshot());
+      const scale = seen.width / canvasBox.width;
+      const halfBodyPx = (config.bodyWidthSubcells / 2 / config.subcellsPerCell) * tile;
+      const bodyHeightPx = (config.bodyHeightSubcells / config.subcellsPerCell) * tile;
+      let probed = 0;
+      let expected = 0;
+      const wrong: string[] = [];
+      for (let ay = treadTopArtY; ay < railing.height; ay++) {
+        for (let ax = 0; ax < railing.width; ax++) {
+          const a = (ay * railing.width + ax) * 4;
+          if ((railing.data[a + 3] ?? 0) < 255) continue;
+          const wx = STAIRWELL_X0 * tile + ax;
+          const wy = STAIRWELL_Y0 * tile + ay;
+          // Under the player's body: its width at the feet, and its height.
+          if (
+            Math.abs(wx + 0.5 - feet.x * tile) <= halfBodyPx &&
+            wy >= feet.y * tile - bodyHeightPx &&
+            wy < feet.y * tile
+          ) {
+            expected++;
+          }
+          const p = worldPointPx(wx / tile, wy / tile, 0, tile, storey, view.zoom);
+          const cx = p.x * view.zoom + view.offsetX + view.zoom / 2;
+          const cy = p.y * view.zoom + view.offsetY + view.zoom / 2;
+          if (cx < bounds.x || cx >= bounds.x + bounds.width) continue;
+          if (cy < bounds.y || cy >= bounds.y + bounds.height) continue;
+          const c = (Math.floor(cy * scale) * seen.width + Math.floor(cx * scale)) * 4;
+          probed++;
+          const diff = [0, 1, 2].reduce(
+            (m, k) => Math.max(m, Math.abs((seen.data[c + k] ?? 0) - (railing.data[a + k] ?? 0))),
+            0,
+          );
+          if (diff > 8) wrong.push(`(${ax},${ay}) differs by ${diff}`);
+        }
+      }
+      expect(expected, "the body overlaps railing art").toBeGreaterThan(0);
+      expect(probed, "every railing pixel under the body was probed").toBeGreaterThanOrEqual(
+        expected,
+      );
+      expect(wrong, `railing pixels the player is drawn over at ${segment.label}`).toEqual([]);
+    }
   });
 });

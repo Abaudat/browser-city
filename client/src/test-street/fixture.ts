@@ -161,6 +161,7 @@ export const FOOT_STAIRS_DEF_ID = 8;
 export const STAIRWELL_TOP_RAILING_DEF_ID = 12;
 export const STAIRWELL_TREADS_DEF_ID = 13;
 export const STAIRWELL_BOTTOM_RAILING_DEF_ID = 14;
+export const STAIRWELL_WELL_DEF_ID = 18;
 /** `wall_face`: the tall interior face of a north or south wall run, one
  * cell wide. West and east runs are `wall_segment` rows. */
 export const WALL_FACE_DEF_ID = 15;
@@ -264,12 +265,13 @@ export const STAIRWELL_FOOTPRINT = { width: 3, height: 3 } as const;
  * railing. */
 const STAIRWELL_TREAD_ROW = 2;
 
-/** The three rows the street stairwell is placed as: anchor row offset from the
+/** The rows the street stairwell is placed as: anchor row offset from the
  * art's north edge, the def and its layer (the treads lie flat on the
  * ground, so they are on the flat pass and never sort over the player). */
 const STAIRWELL_ROWS = [
   { row: 1, defId: STAIRWELL_TOP_RAILING_DEF_ID, layer: "objects" },
   { row: STAIRWELL_TREAD_ROW, defId: STAIRWELL_TREADS_DEF_ID, layer: "ground_objects" },
+  { row: 3, defId: STAIRWELL_WELL_DEF_ID, layer: "ground_objects" },
   { row: 3, defId: STAIRWELL_BOTTOM_RAILING_DEF_ID, layer: "objects" },
 ] as const;
 
@@ -284,7 +286,7 @@ export const STAIRS_ENTRY_DIRECTION = { x: -1, y: 0 } as const;
  * east end; the down anchor is the deepest tread, at the west end. */
 const PAVEMENT_Y1 = LAMPPOST_CELL.y;
 export const STAIRWELL_X0 = EAST_WALL_X_B + 1;
-const STAIRWELL_Y0 = PAVEMENT_Y1 + 1;
+export const STAIRWELL_Y0 = PAVEMENT_Y1 + 1;
 export const STAIRS_X = STAIRWELL_X0;
 export const STAIRS_Y = STAIRWELL_Y0 + STAIRWELL_TREAD_ROW;
 
@@ -436,7 +438,7 @@ export const STREET_ROOM_AREAS: readonly OwnershipArea[] = [];
  * its art (`x` the west column, `artY` the art's north row), top railing
  * first. */
 function streetStairwellRows(
-  ids: readonly [bigint, bigint, bigint],
+  ids: readonly [bigint, bigint, bigint, bigint],
   x: number,
   artY: number,
 ): readonly StreetPropByDef[] {
@@ -452,7 +454,7 @@ function streetStairwellRows(
 
 /** The street stairwell's placed rows. */
 export const STREET_STAIRWELL_ROWS: readonly StreetPropByDef[] = streetStairwellRows(
-  [50n, 53n, 54n],
+  [50n, 53n, 56n, 54n],
   STAIRWELL_X0,
   STAIRWELL_Y0,
 );
@@ -1313,6 +1315,9 @@ export interface StreetWalkInputs {
    * upper railing -- the row a walker can walk west along into the
    * stairs. */
   readonly subwayTreadRowY: number;
+  /** The top face of the stairwell's near railing's own collider: where a
+   * body pressed south on the tread row comes to rest. */
+  readonly nearRailingRestY: number;
 }
 
 /** Out of shop A's door, onto the pavement and past the lamppost: the
@@ -1433,6 +1438,42 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
       key: "ArrowLeft",
       until: { kind: "floor", value: SUBWAY_FLOOR },
     },
+  ];
+}
+
+/** The tread columns the stairwell's draw order is seen from: the east
+ * tread, mid-flight, and the last position before the transition fires. */
+export const STAIRWELL_POSTURE_X = [
+  STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width - 0.5,
+  STAIRWELL_X0 + 2,
+  STAIRWELL_X0 + 1.4,
+] as const;
+
+/** From the subway entrance onto the tread row, then at each of
+ * [`STAIRWELL_POSTURE_X`]: west to the column, pressed south against the
+ * near railing's collider (the demo's posture, FR123's worst case), then
+ * north to the upper railing's. The `press-south` and `press-north`
+ * segments' rests are where the body is seen. */
+export function streetNearRailingPressRoute(
+  inputs: StreetWalkInputs,
+): readonly StreetWalkSegment[] {
+  const approach = streetSubwayApproachRoute(inputs);
+  const onTreads = approach.findIndex((s) => s.label === "onto-the-subway-treads-row");
+  return [
+    ...approach.slice(0, onTreads + 1),
+    ...STAIRWELL_POSTURE_X.flatMap((x, i): StreetWalkSegment[] => [
+      { label: `west-to-tread-${i}`, key: "ArrowLeft", until: { kind: "x-at-most", value: x } },
+      {
+        label: `press-south-${i}`,
+        key: "ArrowDown",
+        until: { kind: "y-at-least", value: inputs.nearRailingRestY },
+      },
+      {
+        label: `press-north-${i}`,
+        key: "ArrowUp",
+        until: { kind: "y-at-most", value: inputs.subwayTreadRowY },
+      },
+    ]),
   ];
 }
 
