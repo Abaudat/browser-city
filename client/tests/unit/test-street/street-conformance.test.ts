@@ -1702,3 +1702,90 @@ describe("the bollard approach route (NFR50)", () => {
     });
   });
 });
+
+describe("a stairwell is drawn whole (story 15.14, FR126)", () => {
+  const sheetRect = (p: DefProp) => objectDef(p.defId).sprite;
+  /** The sprite's drawn rect in world px: bottom-left on the anchor cell. */
+  const drawnRect = (p: DefProp) => {
+    const { w, h } = sheetRect(p);
+    return { x: p.x * 16, y: (p.y + 1) * 16 - h, w, h };
+  };
+  const overlap = (
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number },
+  ) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  /** Whether two sheet rects touch along an edge with overlapping extent. */
+  const abut = (
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number },
+  ) => {
+    const cols = a.x < b.x + b.w && b.x < a.x + a.w;
+    const rows = a.y < b.y + b.h && b.y < a.y + a.h;
+    return (
+      (cols && (a.y + a.h === b.y || b.y + b.h === a.y)) ||
+      (rows && (a.x + a.w === b.x || b.x + b.w === a.x))
+    );
+  };
+  const groups = () =>
+    subwayAnchors().map(({ anchor }) => ({ anchor, rows: stairwellRowsAt(anchor) }));
+
+  it("(a) pieces cut from one sheet that touch on the sheet touch on the floor, at the offset the sheet implies", () => {
+    let pairs = 0;
+    for (const { rows } of groups()) {
+      for (const a of rows) {
+        for (const b of rows) {
+          if (a === b || sheetRect(a).sheet !== sheetRect(b).sheet) continue;
+          if (!abut(sheetRect(a), sheetRect(b))) continue;
+          pairs++;
+          const da = drawnRect(a);
+          const db = drawnRect(b);
+          expect(
+            { dx: db.x - da.x, dy: db.y - da.y },
+            `${objectDef(a.defId).key} -> ${objectDef(b.defId).key}`,
+          ).toEqual({ dx: sheetRect(b).x - sheetRect(a).x, dy: sheetRect(b).y - sheetRect(a).y });
+        }
+      }
+    }
+    expect(pairs, "the street stairwell's own pieces are examined").toBeGreaterThanOrEqual(4);
+  });
+
+  it("(b) the platform stairwell's flat rows are drawn inside the platform's interior", () => {
+    const { anchor } = subwayAnchors().find((a) => a.anchor.floor === SUBWAY_FLOOR) ?? {};
+    if (!anchor) throw new Error("no platform anchor");
+    const flat = stairwellRowsAt(anchor).filter(
+      (p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects",
+    );
+    expect(flat.length).toBeGreaterThan(0);
+    const interior = {
+      x: PLATFORM_INTERIOR_X0 * 16,
+      y: PLATFORM_INTERIOR_Y0 * 16,
+      w: (PLATFORM_INTERIOR_X1 - PLATFORM_INTERIOR_X0 + 1) * 16,
+      h: (PLATFORM_INTERIOR_Y1 - PLATFORM_INTERIOR_Y0 + 1) * 16,
+    };
+    for (const p of flat) {
+      const r = drawnRect(p);
+      const key = objectDef(p.defId).key;
+      expect(r.x, `${key} west`).toBeGreaterThanOrEqual(interior.x);
+      expect(r.y, `${key} north`).toBeGreaterThanOrEqual(interior.y);
+      expect(r.x + r.w, `${key} east`).toBeLessThanOrEqual(interior.x + interior.w);
+      expect(r.y + r.h, `${key} south`).toBeLessThanOrEqual(interior.y + interior.h);
+    }
+  });
+
+  it("(c) nothing outside a stairwell's own group is drawn over its flight", () => {
+    for (const { anchor, rows } of groups()) {
+      const flight = rows.filter((p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects");
+      expect(flight.length).toBeGreaterThan(0);
+      for (const other of STREET_PROPS) {
+        if (!isDefStreetProp(other) || other.floor !== anchor.floor || rows.includes(other))
+          continue;
+        for (const f of flight) {
+          expect(
+            overlap(drawnRect(other), drawnRect(f)),
+            `${objectDef(other.defId).key} at (${other.x}, ${other.y}) is drawn over ${objectDef(f.defId).key}`,
+          ).toBe(false);
+        }
+      }
+    }
+  });
+});

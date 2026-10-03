@@ -11,6 +11,7 @@ pub mod alpha;
 pub mod atlas;
 pub mod codes;
 pub mod contact_sheet;
+pub mod cut_edges;
 pub mod emit;
 pub mod error;
 pub mod fsio;
