@@ -70,7 +70,7 @@ function walk(
     // The player's own continuous feet position, through the plain
     // `worldPointPx` projection with no anchor term of its own (story
     // 15.4) -- the exact call `scene.ts`'s `applyCamera` makes.
-    const a = worldPointPx(pos.x, pos.y, 0, tile, STOREY, zoom);
+    const a = worldPointPx(pos.x, pos.y, 0, tile, STOREY, zoom, 0);
     const c = computeCamera(a.x, a.y, vw, vh, zoom);
     frames.push({
       anchorX: a.x,
@@ -193,7 +193,7 @@ describe("worldPointPx at a zoom", () => {
         fc.integer({ min: -3, max: 3 }),
         fc.oneof(fc.constant(ZOOM), fc.integer({ min: 1, max: 6 })),
         (x, y, floor, zoom) => {
-          const p = worldPointPx(x, y, floor, TILE, STOREY, zoom);
+          const p = worldPointPx(x, y, floor, TILE, STOREY, zoom, 0);
           expect(Math.abs(p.x * zoom - Math.round(p.x * zoom))).toBeLessThan(EPS);
           expect(Math.abs(p.y * zoom - Math.round(p.y * zoom))).toBeLessThan(EPS);
         },

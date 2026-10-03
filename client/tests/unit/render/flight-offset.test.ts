@@ -160,12 +160,7 @@ describe("flight offset (FR182)", () => {
 
   it("refuses two flights on one anchor and a flight whose anchor is not its far end", () => {
     expect(() =>
-      buildFlights(
-        TRANSITIONS,
-        [STREET_ROW, { ...STREET_ROW }, PLATFORM_ROW],
-        SOURCES,
-        STOREY,
-      ),
+      buildFlights(TRANSITIONS, [STREET_ROW, { ...STREET_ROW }, PLATFORM_ROW], SOURCES, STOREY),
     ).toThrow(/two flights/);
     expect(() =>
       buildFlights(TRANSITIONS, [{ ...STREET_ROW, x: 9 }, PLATFORM_ROW], SOURCES, STOREY),

@@ -16,6 +16,8 @@ import type { ColliderRectSubcells, ColliderSource } from "./collision-grid";
  * from different data. */
 export interface ObjectSource extends ColliderSource {
   readonly interactAt?: ColliderRectSubcells;
+  /** FR182: the drawn drop of a flight, native pixels. */
+  readonly flightDropPx?: number;
 }
 
 /** Keyed by `ObjectDef.id`, which is what a `placed_object` row's `defId`
@@ -33,6 +35,7 @@ export function objectDefsById(defs: Defs): ReadonlyMap<number, ObjectSource> {
         height: object.height,
         ...(object.collider ? { collider: object.collider } : {}),
         ...(object.interactAt ? { interactAt: object.interactAt } : {}),
+        ...(object.flightDropPx !== undefined ? { flightDropPx: object.flightDropPx } : {}),
       },
     ]),
   );

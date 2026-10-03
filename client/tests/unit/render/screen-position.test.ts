@@ -63,18 +63,18 @@ describe("floorOffsetPx", () => {
 // thing, and this function never tells them apart -- the caller must.
 describe("worldPointPx", () => {
   it("is a plain scale-and-offset projection: no anchor terms of its own", () => {
-    expect(worldPointPx(0, 0, 0, 16, 48, 1)).toEqual({ x: 0, y: 0 });
-    expect(worldPointPx(5, 3, 0, 16, 48, 1)).toEqual({ x: 80, y: 48 });
+    expect(worldPointPx(0, 0, 0, 16, 48, 1, 0)).toEqual({ x: 0, y: 0 });
+    expect(worldPointPx(5, 3, 0, 16, 48, 1, 0)).toEqual({ x: 80, y: 48 });
   });
 
   it("draws a cell's own bottom-centre through cellBottomCentre, never a restated +0.5/+1", () => {
     const centre = cellBottomCentre(5, 3);
-    expect(worldPointPx(centre.x, centre.y, 0, 16, 48, 1)).toEqual({ x: 88, y: 64 });
+    expect(worldPointPx(centre.x, centre.y, 0, 16, 48, 1, 0)).toEqual({ x: 88, y: 64 });
   });
 
   it("offsets a higher floor upward by exactly floorOffsetPx, nothing else changing", () => {
-    const ground = worldPointPx(5, 3, 0, 16, 48, 1);
-    const upstairs = worldPointPx(5, 3, 1, 16, 48, 1);
+    const ground = worldPointPx(5, 3, 0, 16, 48, 1, 0);
+    const upstairs = worldPointPx(5, 3, 1, 16, 48, 1, 0);
     expect(upstairs.x).toBe(ground.x);
     expect(upstairs.y).toBe(ground.y - 48);
   });
@@ -88,7 +88,7 @@ describe("worldPointPx", () => {
         fc.integer({ min: 1, max: 64 }),
         fc.integer({ min: 1, max: 256 }),
         (x, y, floor, tileSizePx, storeyHeightPx) => {
-          const pos = worldPointPx(x, y, floor, tileSizePx, storeyHeightPx, 1);
+          const pos = worldPointPx(x, y, floor, tileSizePx, storeyHeightPx, 1, 0);
           expect(Number.isInteger(pos.x)).toBe(true);
           expect(Number.isInteger(pos.y)).toBe(true);
         },
@@ -111,7 +111,7 @@ describe("worldPointPx", () => {
           // same pixel, with no anchor term on either leg of the round
           // trip to reintroduce error.
           const world = worldPointFromScreenPx(screenX, screenY, floor, tileSizePx, storeyHeightPx);
-          const screen = worldPointPx(world.x, world.y, floor, tileSizePx, storeyHeightPx, 1);
+          const screen = worldPointPx(world.x, world.y, floor, tileSizePx, storeyHeightPx, 1, 0);
           expect(screen).toEqual({ x: screenX, y: screenY });
         },
       ),
@@ -167,7 +167,7 @@ describe("snapToScreenPx", () => {
   it("refuses a non-integer or non-positive zoom", () => {
     for (const zoom of [3.5, 0.25, 0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(() => snapToScreenPx(1, zoom)).toThrow(/zoom/);
-      expect(() => worldPointPx(1, 1, 0, 16, 48, zoom)).toThrow(/zoom/);
+      expect(() => worldPointPx(1, 1, 0, 16, 48, zoom, 0)).toThrow(/zoom/);
     }
   });
 });
@@ -211,7 +211,7 @@ describe("worldCellFromScreenPx", () => {
         fc.double({ min: 0, max: 0.999, noNaN: true }),
         (cellX, cellY, floor, tileSizePx, storeyHeightPx, alongX, alongY) => {
           const centre = cellBottomCentre(cellX, cellY);
-          const anchor = worldPointPx(centre.x, centre.y, floor, tileSizePx, storeyHeightPx, 1);
+          const anchor = worldPointPx(centre.x, centre.y, floor, tileSizePx, storeyHeightPx, 1, 0);
           // Any pixel inside the cell's own drawn rect: its left edge is
           // half a tile left of the bottom-centre anchor, its top edge a
           // whole tile above that anchor's bottom edge.
@@ -229,7 +229,7 @@ describe("worldCellFromScreenPx", () => {
     const tileSizePx = 16;
     const storeyHeightPx = 48;
     const centre = cellBottomCentre(3, 2);
-    const anchor = worldPointPx(centre.x, centre.y, -1, tileSizePx, storeyHeightPx, 1);
+    const anchor = worldPointPx(centre.x, centre.y, -1, tileSizePx, storeyHeightPx, 1, 0);
     expect(worldCellFromScreenPx(anchor.x, anchor.y - 1, -1, tileSizePx, storeyHeightPx)).toEqual({
       cellX: 3,
       cellY: 2,
@@ -359,7 +359,7 @@ describe("inv_player_sprite_feet_sit_on_body", () => {
             bodyHeightSubcells: Math.max(1, Math.floor(subcellsPerCell / 4)),
             subcellsPerCell,
           };
-          const actor = worldPointPx(feetX, feetY, floor, tileSizePx, storeyHeightPx, zoom);
+          const actor = worldPointPx(feetX, feetY, floor, tileSizePx, storeyHeightPx, zoom, 0);
           const body = subcellRectPx(
             bodyRect({ x: feetX, y: feetY }, config),
             floor,

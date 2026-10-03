@@ -295,6 +295,7 @@ function worldPixelOfCell(cellX: number, cellY: number, floor: number) {
     tile,
     storey,
     ZOOM,
+    0,
   );
   return { x: anchor.x, y: anchor.y - tile / 2 };
 }

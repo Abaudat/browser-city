@@ -114,6 +114,7 @@ export function buildSortLabels(view: DebugWorldView): SortLabel[] {
       view.tileSizePx,
       view.storeyHeightPx,
       view.zoom,
+      0,
     );
     // Two adjacent props never share a baseline: without this, a row of
     // one-tile props prints every key over its neighbours'. Keyed on the

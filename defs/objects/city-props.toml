@@ -184,6 +184,10 @@ width = 3
 # visibly on it. Which floors the treads join is a `floor_transition` row
 # anchored on a tread cell, never a field here.
 archetype = "underfoot_flat"
+# The treads' nosings sit 2 native px lower per tread over five treads
+# (story 15.15); an actor on the flight is drawn that far down at the
+# anchor edge.
+flight_drop_px = 8
 tags = ["stairs", "underfoot", "fixture"]
 
 # Not `upright`: seen from the side, its foot is already its cell's south
@@ -225,6 +229,8 @@ layer = "ground_objects"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_3.png", x = 0, y = 13, w = 32, h = 32 }
 width = 2
 height = 2
+# Four nosings, 1 native px apart (story 15.15).
+flight_drop_px = 4
 tags = ["stairs", "underfoot", "fixture"]
 
 # The flight's south handrail: upright, so its own `objects` row with a

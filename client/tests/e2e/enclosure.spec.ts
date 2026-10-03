@@ -27,6 +27,7 @@ import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
+import { buildFlights, FlightIndex } from "../../src/render/flight-offset";
 import { worldPointPx } from "../../src/render/screen-position";
 import {
   isDefStreetProp,
@@ -35,6 +36,7 @@ import {
   PLATFORM_UP_ANCHOR_Y,
   PLAYER_STABLE_ID,
   PLAYER_START,
+  RELEASE_LAG,
   STAIRS_Y,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STAIRWELL_FOOTPRINT,
@@ -44,8 +46,10 @@ import {
   STREET_EXIT_X,
   STREET_EXIT_Y,
   STREET_PROPS,
+  STREET_TRANSITIONS,
   SUBWAY_FLOOR,
   streetNearRailingPressRoute,
+  streetPlacedRows,
   streetSubwayApproachRoute,
 } from "../../src/test-street/fixture";
 import {
@@ -60,6 +64,7 @@ import {
   shopfrontExitRestY,
   stairwellRowsAt,
   streetMovementConfig,
+  streetObjectSources,
   streetWalkInputs,
 } from "../unit/test-street/street-world";
 import { canvasOf } from "./camera-test-support";
@@ -404,7 +409,7 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
       // The clip: the stairwell and its entrance, cropped, at the game's zoom.
       const canvasBox = await canvasOf(page).boundingBox();
       if (!canvasBox) throw new Error("no canvas box");
-      const nw = worldPointPx(STAIRWELL_X0, STAIRWELL_Y0, 0, tile, storey, view.zoom);
+      const nw = worldPointPx(STAIRWELL_X0, STAIRWELL_Y0, 0, tile, storey, view.zoom, 0);
       const shot = await page.screenshot({
         clip: {
           x: canvasBox.x + nw.x * view.zoom + view.offsetX - tile * view.zoom,
@@ -437,7 +442,7 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
           ) {
             expected++;
           }
-          const p = worldPointPx(wx / tile, wy / tile, 0, tile, storey, view.zoom);
+          const p = worldPointPx(wx / tile, wy / tile, 0, tile, storey, view.zoom, 0);
           const cx = p.x * view.zoom + view.offsetX + view.zoom / 2;
           const cy = p.y * view.zoom + view.offsetY + view.zoom / 2;
           if (cx < bounds.x || cx >= bounds.x + bounds.width) continue;
@@ -456,6 +461,164 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
         expected,
       );
       expect(wrong, `railing pixels the player is drawn over at ${rest}`).toEqual([]);
+    }
+  });
+});
+
+// Story 15.15 (FR182): the flight offset, mounted. The maths is proved in
+// `tests/unit/render/flight-offset*.test.ts`; this proves the wiring -- the
+// mounted sprite sits at the pure function's own value on every frame of a
+// real walk down and back up the subway stairs. The video and the stills go
+// to a directory CI uploads straight after the e2e step, for review.
+const FLIGHT_SHOT_DIR = "test-results/story-15.15-shots";
+
+interface FlightSample {
+  x: number;
+  y: number;
+  floor: number;
+  bounds: { x: number; y: number; width: number; height: number };
+  view: { zoom: number; offsetX: number; offsetY: number };
+  streetCulled: boolean;
+}
+
+test.describe("story 15.15: the flight offset, mounted", () => {
+  test("down and back up the subway stairs, the sprite sits at the pure offset on every frame", async ({
+    browser,
+    baseURL,
+  }) => {
+    test.setTimeout(90_000);
+    mkdirSync(FLIGHT_SHOT_DIR, { recursive: true });
+    // Video is recorded for this one test only (a describe cannot switch it
+    // on: it costs every other spec), by its own context.
+    const context = await browser.newContext({
+      baseURL,
+      viewport: { width: 1920, height: 1080 },
+      recordVideo: { dir: FLIGHT_SHOT_DIR, size: { width: 960, height: 540 } },
+    });
+    const page = await context.newPage();
+    const tile = balanceValue("render.tile_size_px");
+    const storey = balanceValue("render.storey_height_px");
+    const config = streetMovementConfig();
+    const flights = buildFlights(
+      STREET_TRANSITIONS,
+      streetPlacedRows(),
+      streetObjectSources(),
+      storey,
+    );
+    const index = new FlightIndex(flights, config);
+
+    await page.goto("/?freezeCrowd=1");
+    await waitForSceneReady(page);
+    await page.evaluate(() => {
+      const w = window as unknown as { __flightSamples: unknown[]; __flightStop: boolean };
+      w.__flightSamples = [];
+      w.__flightStop = false;
+      const sample = () => {
+        const bc = window.__bc;
+        const pos = bc?.playerPosition;
+        const bounds = bc?.playerScreenBounds?.();
+        const view = bc?.viewTransform;
+        if (pos && bounds && view) {
+          w.__flightSamples.push({
+            x: pos.x,
+            y: pos.y,
+            floor: bc?.playerFloor ?? 0,
+            bounds,
+            view,
+            streetCulled: bc?.visibility?.["ground:0"] === "hidden",
+          });
+        }
+        if (!w.__flightStop) requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    const still = async (name: string) => {
+      await canvasOf(page).screenshot({ path: join(FLIGHT_SHOT_DIR, `${name}.png`) });
+    };
+
+    await still("01-pavement-start");
+    for (const segment of streetSubwayApproachRoute(streetWalkInputs())) {
+      await walkRealSegment(page, segment);
+    }
+    await still("02-platform-landing-after-descent");
+    const restX = platformWestRestX();
+    await page.keyboard.down("ArrowLeft");
+    await page.waitForFunction(
+      (x) => Math.abs((window.__bc?.playerPosition?.x ?? Infinity) - x) < 1e-6,
+      restX,
+      { timeout: 15_000 },
+    );
+    await page.keyboard.up("ArrowLeft");
+    await still("03-platform-floor-at-rest");
+    await walkTo(page, "ArrowRight", { x: STREET_EXIT_X + 0.5, y: STREET_EXIT_Y + 0.5 });
+    // A rest on a tread holds its height: let several frames pass.
+    await page.waitForTimeout(250);
+    await still("04-street-tread-after-ascent");
+    await page.evaluate(() => {
+      (window as unknown as { __flightStop: boolean }).__flightStop = true;
+    });
+    const samples = await page.evaluate(
+      () => (window as unknown as { __flightSamples: FlightSample[] }).__flightSamples,
+    );
+    const video = page.video();
+    await context.close();
+    await video?.saveAs(join(FLIGHT_SHOT_DIR, "walk-down-and-up.webm"));
+    await video?.delete();
+    expect(samples.length).toBeGreaterThan(30);
+
+    const drawnOffsetPx = (s: FlightSample): number => {
+      const feetWorldY = (s.bounds.y + s.bounds.height - s.view.offsetY) / s.view.zoom;
+      const logicalWorldY = s.y * tile - s.floor * storey;
+      return feetWorldY - logicalWorldY;
+    };
+    // The steepest the offset may move in one frame: the clamp's own step
+    // along the steepest flight, plus the whole-screen-pixel snap.
+    const slopePxPerCell = Math.max(
+      ...flights.map((f) => Math.abs(f.dropPx) / (f.fullS - f.startS)),
+    );
+    const maxStepPx =
+      slopePxPerCell * config.walkSpeedCellsPerMs * RELEASE_LAG.stepMs +
+      1 / (samples.at(0)?.view.zoom ?? 1);
+
+    let sawOffset = false;
+    samples.forEach((s, i) => {
+      // (1) The wiring: the mounted sprite's feet are the pure function's value.
+      const expected = index.offsetPx(s.x, s.y, s.floor);
+      expect(Math.abs(drawnOffsetPx(s) - expected), `frame ${i}`).toBeLessThanOrEqual(
+        1 / s.view.zoom + 1e-6,
+      );
+      if (expected !== 0) sawOffset = true;
+      // (4) The floor and the street's culling flip on the same frame.
+      expect(s.streetCulled, `frame ${i}`).toBe(s.floor === SUBWAY_FLOOR);
+      // (2) No pop between frames on one floor; the floor change is the cut.
+      const prev = samples[i - 1];
+      if (prev && prev.floor === s.floor) {
+        expect(Math.abs(drawnOffsetPx(s) - drawnOffsetPx(prev)), `frame ${i}`).toBeLessThanOrEqual(
+          maxStepPx,
+        );
+      }
+    });
+    expect(sawOffset, "the walk crossed both flights").toBe(true);
+
+    // (3) Zero at rest on the pavement and on the platform floor.
+    const first = samples.at(0);
+    const last = samples.at(-1);
+    if (!first || !last) throw new Error("no samples");
+    expect(index.offsetPx(first.x, first.y, first.floor)).toBe(0);
+    expect(Math.abs(drawnOffsetPx(first))).toBeLessThanOrEqual(1 / first.view.zoom + 1e-6);
+    const onPlatform = samples.filter(
+      (s) => s.floor === SUBWAY_FLOOR && Math.abs(s.x - restX) < 1e-6,
+    );
+    expect(onPlatform.length).toBeGreaterThan(0);
+    for (const s of onPlatform) {
+      expect(index.offsetPx(s.x, s.y, s.floor)).toBe(0);
+      expect(Math.abs(drawnOffsetPx(s))).toBeLessThanOrEqual(1 / s.view.zoom + 1e-6);
+    }
+    // Resting on a tread holds the height across the settle frames.
+    expect(index.offsetPx(last.x, last.y, last.floor)).not.toBe(0);
+    const settled = samples.slice(-5);
+    for (const s of settled) {
+      expect(drawnOffsetPx(s)).toBeCloseTo(drawnOffsetPx(last), 6);
     }
   });
 });

@@ -80,6 +80,10 @@ export interface ObjectDef {
    * Absent means this object declares no interaction at all -- there is
    * no separate `interactable` flag anywhere. */
   readonly interactAt?: ColliderRect;
+  /** Story 15.15 (FR182): how far this flight's drawn treads descend, in
+   * native pixels -- the one place that fact lives. Absent means the object
+   * is not a flight. Client-only: the server never learns it. */
+  readonly flightDropPx?: number;
   /** Story 1.7 (FR121): a window wall tile draws semi-transparently
    * (`render.window_alpha`) and retracts like any other front wall. */
   readonly window: boolean;
