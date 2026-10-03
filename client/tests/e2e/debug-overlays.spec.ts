@@ -18,7 +18,11 @@ import {
   type StreetWalkSegment,
   streetSubwayApproachRoute,
 } from "../../src/test-street/fixture";
-import { streetWalkInputs, topRailingFoot } from "../unit/test-street/street-world";
+import {
+  streetMovementConfig,
+  streetWalkInputs,
+  topRailingFoot,
+} from "../unit/test-street/street-world";
 import { canvasOf } from "./camera-test-support";
 import { SCREENSHOT_OPTIONS } from "./screenshot-support";
 
@@ -310,6 +314,18 @@ test("the player walking south rests on the top railing's foot (story 15.12)", a
     key: "ArrowDown",
     until: { kind: "y-at-least", value: foot.rect.y0 - 0.001 },
   });
+  // Slide west along the foot to the strip's end, where the body rests
+  // against the ring: a position fixed by geometry, never by key timing,
+  // so the picture is the same on every run.
+  const config = streetMovementConfig();
+  const westRestX = STAIRWELL_X0 + config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  await page.keyboard.down("ArrowLeft");
+  await page.waitForFunction(
+    (x) => Math.abs((window.__bc?.playerPosition?.x ?? 0) - x) < 1e-6,
+    westRestX,
+    { timeout: 30_000 },
+  );
+  await page.keyboard.up("ArrowLeft");
   await page.waitForTimeout(300);
 
   const position = await page.evaluate(() => window.__bc?.playerPosition);
