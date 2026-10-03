@@ -1821,6 +1821,29 @@ describe("the near-railing press route (story 15.13)", () => {
       expect(rest[1]?.state.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
     });
   }
+
+  // The same for the east walk: its overshoot must leave the body under the
+  // upper railing's foot, or pressing north would not rest on its face.
+  for (const lag of [0, 1, 4]) {
+    it(`rests on the upper railing's face after an east walk that overshoots by ${lag} steps`, () => {
+      const before = simulateStreetWalk(route.slice(0, label("east-of-the-anchor")), RELEASE_LAG);
+      const start = before[before.length - 1]?.state;
+      if (!start) throw new Error("no start state");
+      const east = simulateStreetWalk([route[label("east-of-the-anchor")] as StreetWalkSegment], {
+        ...RELEASE_LAG,
+        releaseLagSteps: lag,
+        start,
+      });
+      const mid = east[0]?.state;
+      if (!mid) throw new Error("no east state");
+      const north = simulateStreetWalk([route[label("press-north")] as StreetWalkSegment], {
+        ...RELEASE_LAG,
+        start: mid,
+      });
+      expect(north[0]?.state.floor).toBe(PLAYER_START.floor);
+      expect(north[0]?.state.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
+    });
+  }
 });
 
 describe("the bollard approach route (NFR50)", () => {

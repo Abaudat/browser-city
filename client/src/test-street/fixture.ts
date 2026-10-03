@@ -1454,6 +1454,13 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
   ];
 }
 
+/** The first column centre east of the anchor cell (one cell wide at the
+ * stairwell's west end): the least the body can be east by for pressing
+ * north to cross the anchor's row clear of it. Eastward, the railing's foot
+ * still stops the body for any overshoot up to the stairwell's width and a
+ * half-body beyond. */
+const STAIRWELL_ANCHOR_CLEARANCE = 1.05;
+
 /** From the subway entrance onto the tread row, then the stairwell's draw
  * order is seen from the demo's posture, FR123's worst case. South first,
  * in the entrance: the body rests on the boundary below the entrance cells,
@@ -1484,7 +1491,7 @@ export function streetNearRailingPressRoute(
     {
       label: "east-of-the-anchor",
       key: "ArrowRight",
-      until: { kind: "x-at-least", value: STAIRWELL_X0 + 1.5 },
+      until: { kind: "x-at-least", value: STAIRWELL_X0 + STAIRWELL_ANCHOR_CLEARANCE },
     },
     {
       label: "press-north",
