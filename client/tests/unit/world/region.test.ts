@@ -22,6 +22,7 @@ import {
   REGION_MIN_VIEWPORT_PX,
   REGION_RADIUS_CHUNKS,
 } from "../../../src/world/region";
+import { sizeProbe } from "../setup/size-probe";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const defs = parseDefs(
@@ -83,35 +84,41 @@ describe("planRegion", () => {
         df: fc.constantFrom(-1, 0, 1),
       }),
     );
+    const probe = sizeProbe();
     fc.assert(
-      fc.property(pos(), fc.array(step, { maxLength: 40 }), (start, steps) => {
-        const held = new Map<string, HandleKey>();
-        let cur = start;
-        applyPlan(held, cur);
-        for (const s of steps) {
-          cur =
-            "dx" in s
-              ? {
-                  x: clampI32(cur.x + s.dx),
-                  y: clampI32(cur.y + s.dy),
-                  floor: Math.max(defs.minFloor, Math.min(defs.maxFloor, cur.floor + s.df)),
-                }
-              : s;
+      fc.property(
+        pos(),
+        probe.over(fc.array(step, { maxLength: 40 }), (a) => a.length),
+        (start, steps) => {
+          const held = new Map<string, HandleKey>();
+          let cur = start;
           applyPlan(held, cur);
-          const { cx, cy } = columnOf(cur.x, cur.y);
-          const band = bandOf(cur.floor);
-          for (let dx = -REGION_RADIUS_CHUNKS; dx <= REGION_RADIUS_CHUNKS; dx++) {
-            for (let dy = -REGION_RADIUS_CHUNKS; dy <= REGION_RADIUS_CHUNKS; dy++) {
-              expect(held.has(handleId({ cx: cx + dx, cy: cy + dy, band }))).toBe(true);
+          for (const s of steps) {
+            cur =
+              "dx" in s
+                ? {
+                    x: clampI32(cur.x + s.dx),
+                    y: clampI32(cur.y + s.dy),
+                    floor: Math.max(defs.minFloor, Math.min(defs.maxFloor, cur.floor + s.df)),
+                  }
+                : s;
+            applyPlan(held, cur);
+            const { cx, cy } = columnOf(cur.x, cur.y);
+            const band = bandOf(cur.floor);
+            for (let dx = -REGION_RADIUS_CHUNKS; dx <= REGION_RADIUS_CHUNKS; dx++) {
+              for (let dy = -REGION_RADIUS_CHUNKS; dy <= REGION_RADIUS_CHUNKS; dy++) {
+                expect(held.has(handleId({ cx: cx + dx, cy: cy + dy, band }))).toBe(true);
+              }
             }
+            for (const k of held.values()) {
+              expect(cheb(k, cx, cy)).toBeLessThanOrEqual(REGION_LEAVE_RADIUS_CHUNKS);
+            }
+            expect(held.size).toBeLessThanOrEqual(REGION_MAX_HANDLES);
           }
-          for (const k of held.values()) {
-            expect(cheb(k, cx, cy)).toBeLessThanOrEqual(REGION_LEAVE_RADIUS_CHUNKS);
-          }
-          expect(held.size).toBeLessThanOrEqual(REGION_MAX_HANDLES);
-        }
-      }),
+        },
+      ),
     );
+    probe.expectReached(30);
   });
 
   // oscillating across a boundary changes the held set at most once

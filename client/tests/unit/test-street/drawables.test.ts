@@ -33,16 +33,21 @@ import {
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STAIRWELL_TOP_RAILING_DEF_ID,
   STAIRWELL_X0,
+  STREET_BOUNDARY,
   STREET_FLOOR,
   STREET_PROPS,
+  SUBWAY_ENTRANCE_TILES,
   SUBWAY_FLOOR,
   streetDefId,
   streetNearRailingPressRoute,
+  streetPlacedRows,
   wallRunCellId,
 } from "../../../src/test-street/fixture";
 import type { Vec2 } from "../../../src/world/movement";
 import { step } from "../../../src/world/movement";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
+import { WorldIndex } from "../../../src/world/world-index";
+import { sizeProbe } from "../setup/size-probe";
 import {
   STREET_GOLDEN_ORDER,
   STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH,
@@ -401,14 +406,17 @@ describe("the player can never walk off the drawn world", () => {
   /** The drawn ground: interior floor and pavement, in screen pixels.
    * `x1`/`y1` are exclusive tile indices, so the drawn extent's own far
    * edge is at `x1 * tileSizePx`. */
-  const groundScreenRects = [INTERIOR_FLOOR_TILES, INTERIOR_FLOOR_TILES_B, SIDEWALK_TILES].map(
-    (tiles) => ({
-      left: tiles.x0 * TILE_SIZE_PX,
-      right: tiles.x1 * TILE_SIZE_PX,
-      top: tiles.y0 * TILE_SIZE_PX,
-      bottom: tiles.y1 * TILE_SIZE_PX,
-    }),
-  );
+  const groundScreenRects = [
+    INTERIOR_FLOOR_TILES,
+    INTERIOR_FLOOR_TILES_B,
+    SIDEWALK_TILES,
+    SUBWAY_ENTRANCE_TILES,
+  ].map((tiles) => ({
+    left: tiles.x0 * TILE_SIZE_PX,
+    right: tiles.x1 * TILE_SIZE_PX,
+    top: tiles.y0 * TILE_SIZE_PX,
+    bottom: tiles.y1 * TILE_SIZE_PX,
+  }));
 
   /** The four corners of the player's collision body, in world cells. */
   function bodyCorners(pos: Vec2): readonly Vec2[] {
@@ -451,15 +459,19 @@ describe("the player can never walk off the drawn world", () => {
   }
 
   it("stays on the interior floor or the pavement for any input sequence, every step", () => {
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
-        fc.array(
-          fc.record({
-            dx: fc.integer({ min: -1, max: 1 }),
-            dy: fc.integer({ min: -1, max: 1 }),
-            deltaMs: fc.integer({ min: 1, max: 5_000 }),
-          }),
-          { minLength: 1, maxLength: 400 },
+        probe.over(
+          fc.array(
+            fc.record({
+              dx: fc.integer({ min: -1, max: 1 }),
+              dy: fc.integer({ min: -1, max: 1 }),
+              deltaMs: fc.integer({ min: 1, max: 5_000 }),
+            }),
+            { minLength: 1, maxLength: 400 },
+          ),
+          (a) => a.length,
         ),
         (inputs) => {
           let pos: Vec2 = { x: PLAYER_START.x, y: PLAYER_START.y };
@@ -472,6 +484,7 @@ describe("the player can never walk off the drawn world", () => {
       ),
       { numRuns: 60 },
     );
+    probe.expectReached(300);
   });
 
   it("walking straight south rests against the real trash bin directly south of the door (story 2.13; story 15.2, cycle 2, Quentin's finding 3)", () => {
@@ -535,15 +548,19 @@ describe("the player can never walk off the drawn world", () => {
     run(start(foot.rect.x0 + half), around);
     // A diagonal off the strip's east end, in one step.
     run(start(foot.rect.x0 + half), repeat(1, 1, 40));
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
-        fc.array(
-          fc.record({
-            dx: fc.integer({ min: -1, max: 1 }),
-            dy: fc.integer({ min: -1, max: 1 }),
-            deltaMs: fc.integer({ min: 1, max: 5_000 }),
-          }),
-          { minLength: 1, maxLength: 400 },
+        probe.over(
+          fc.array(
+            fc.record({
+              dx: fc.integer({ min: -1, max: 1 }),
+              dy: fc.integer({ min: -1, max: 1 }),
+              deltaMs: fc.integer({ min: 1, max: 5_000 }),
+            }),
+            { minLength: 1, maxLength: 400 },
+          ),
+          (a) => a.length,
         ),
         fc.integer({ min: 0, max: 8 }),
         (inputs, offset) =>
@@ -551,6 +568,7 @@ describe("the player can never walk off the drawn world", () => {
       ),
       { numRuns: 60 },
     );
+    probe.expectReached(300);
   });
 
   // Story 1.13, cycle 2 (Quentin's direction): the bridge's own east end
@@ -558,15 +576,19 @@ describe("the player can never walk off the drawn world", () => {
   // the boundary ring there must fail here, at unit speed, rather than
   // only ever showing up as a wrong-looking screenshot.
   it("stays on the pavement for any input sequence starting under the bridge's own east end", () => {
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
-        fc.array(
-          fc.record({
-            dx: fc.integer({ min: -1, max: 1 }),
-            dy: fc.integer({ min: -1, max: 1 }),
-            deltaMs: fc.integer({ min: 1, max: 5_000 }),
-          }),
-          { minLength: 1, maxLength: 400 },
+        probe.over(
+          fc.array(
+            fc.record({
+              dx: fc.integer({ min: -1, max: 1 }),
+              dy: fc.integer({ min: -1, max: 1 }),
+              deltaMs: fc.integer({ min: 1, max: 5_000 }),
+            }),
+            { minLength: 1, maxLength: 400 },
+          ),
+          (a) => a.length,
         ),
         (inputs) => {
           let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_DECK_Y + 0.5 };
@@ -579,6 +601,56 @@ describe("the player can never walk off the drawn world", () => {
       ),
       { numRuns: 60 },
     );
+    probe.expectReached(300);
+  });
+
+  // Found by the deeper run (story 15.18): the shrunk walk from under the
+  // bridge's east end goes down into the subway entrance's top strip, which is
+  // drawn ground (SUBWAY_ENTRANCE_TILES) the model had left out.
+  const BRIDGE_EAST_END_WALK: readonly [number, number, number][] = [
+    [0, 1, 69],
+    [0, 1, 72],
+    [-1, 0, 37],
+    [0, 1, 100],
+    [-1, 0, 100],
+    [-1, 0, 100],
+    [-1, 0, 100],
+    [-1, 0, 11],
+    [-1, 0, 9],
+    [0, 1, 100],
+    [-1, 0, 100],
+    [-1, 0, 100],
+    [-1, 0, 100],
+    [-1, 1, 96],
+    [-1, 1, 100],
+    [0, 1, 91],
+    [0, 1, 100],
+    [0, 1, 12],
+  ];
+  const walkFromBridgeEnd = (
+    inputs: readonly (readonly [number, number, number])[],
+    world = grid,
+  ): Vec2 => {
+    let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_DECK_Y + 0.5 };
+    for (const [dx, dy, deltaMs] of inputs) {
+      pos = step(pos, { x: dx, y: dy }, deltaMs, world, PLAYER_START.floor, config);
+    }
+    return pos;
+  };
+
+  it("the walk from under the bridge's east end that enters the subway entrance's top strip stays on drawn ground", () => {
+    expect(isOnDrawnGround(walkFromBridgeEnd(BRIDGE_EAST_END_WALK))).toBe(true);
+  });
+
+  it("negative control: with the boundary ring removed, walking south from under the bridge leaves the drawn ground", () => {
+    const boundaryIds = new Set(STREET_BOUNDARY.map((rect) => streetDefId(rect.id)));
+    const open = new WorldIndex(config.subcellsPerCell, streetObjectSources());
+    for (const row of streetPlacedRows()) {
+      if (!boundaryIds.has(row.defId)) open.insert(row);
+    }
+    const south = Array.from({ length: 400 }, (): [number, number, number] => [0, 1, 100]);
+    expect(isOnDrawnGround(walkFromBridgeEnd(south))).toBe(true);
+    expect(isOnDrawnGround(walkFromBridgeEnd(south, open))).toBe(false);
   });
 
   it("walking straight east from under the bridge stops at the world's own edge, still on the pavement", () => {

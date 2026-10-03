@@ -7,6 +7,7 @@ import type { PlacedObject } from "../../../src/net/bindings/types";
 import { subcellRectPx } from "../../../src/render/screen-position";
 import type { ColliderSource } from "../../../src/world/collision-grid";
 import { type CellBounds, emptyCellBounds, WorldIndex } from "../../../src/world/world-index";
+import { sizeProbe } from "../setup/size-probe";
 
 const SUBCELLS = 16;
 const TILE = 16;
@@ -401,6 +402,7 @@ describe("buildCollisionRects", () => {
   // A dropped translation, a doubled anchor, a state read from the wrong
   // source or an object drawn twice all fail here.
   it("inv_collision_overlay_shows_exactly_the_colliders", () => {
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
         fc.array(
@@ -424,6 +426,7 @@ describe("buildCollisionRects", () => {
             else world.insert(next);
             live.set(next.objectId, next);
           }
+          probe.record(live.size);
           const bounds = { floor: viewerFloor, cellX0: -8, cellY0: -8, cellX1: 8, cellY1: 8 };
           const allRects = buildCollisionRects(viewOver(world, bounds));
 
@@ -525,5 +528,6 @@ describe("buildCollisionRects", () => {
       ),
       { numRuns: 60 },
     );
+    probe.expectReached(14);
   });
 });

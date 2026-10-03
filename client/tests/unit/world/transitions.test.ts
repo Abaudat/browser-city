@@ -15,6 +15,7 @@ import {
   TransitionIndex,
   type TransitionSpec,
 } from "../../../src/world/transitions";
+import { sizeProbe } from "../setup/size-probe";
 
 describe("TransitionIndex", () => {
   // skipPairSymmetry: these specs are deliberately one-way test data
@@ -253,6 +254,7 @@ function gridForPair(
 
 describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and any deltaMs in range, walking the entry direction then the reverse direction lands back on the original cell, with no bounce", () => {
   it("inv_transition_pairs_round_trip", () => {
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
         fc.constantFrom(
@@ -276,7 +278,10 @@ describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and 
         // walking speed (0.0022 cells/ms * 100ms = 0.22 cells), so it is a
         // precondition here, not a finding.
         fc.double({ min: 0.0001, max: 0.009, noNaN: true }),
-        fc.array(fc.integer({ min: 1, max: 100 }), { minLength: 1, maxLength: 20 }),
+        probe.over(
+          fc.array(fc.integer({ min: 1, max: 100 }), { minLength: 1, maxLength: 20 }),
+          (a) => a.length,
+        ),
         (d, ax, ay, lx, ly, walkSpeedCellsPerMs, deltaMsSequence) => {
           // A mirrored pair, built exactly the way `checkTransitionPairSymmetry`
           // requires: the reverse anchor is the landing's own neighbour
@@ -372,5 +377,6 @@ describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and 
         },
       ),
     );
+    probe.expectReached(16);
   });
 });

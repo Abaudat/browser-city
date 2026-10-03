@@ -11,6 +11,7 @@ import {
   RESERVED_CODES,
   rebind,
 } from "../../../src/input/keybindings";
+import { sizeProbe } from "../setup/size-probe";
 
 function codesOf(bindings: Bindings): string[] {
   return BINDABLE_ACTIONS.flatMap((action) => [...bindings[action]]);
@@ -189,6 +190,7 @@ describe("rebind", () => {
     // Whatever any sequence of rebinds produces, loading it back yields
     // exactly the same map -- no binding the player set can disappear on
     // the next boot.
+    const codeProbe = sizeProbe();
     const codeArb = fc.oneof(
       fc.constantFrom(
         "KeyW",
@@ -204,17 +206,21 @@ describe("rebind", () => {
         "Unidentified",
         "",
       ),
-      fc.string(),
+      codeProbe.over(fc.string({ maxLength: 20 }), (code) => code.length),
     );
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
-        fc.array(
-          fc.record({
-            action: fc.constantFrom(...BINDABLE_ACTIONS),
-            slot: fc.integer({ min: 0, max: 2 }),
-            code: codeArb,
-          }),
-          { maxLength: 20 },
+        probe.over(
+          fc.array(
+            fc.record({
+              action: fc.constantFrom(...BINDABLE_ACTIONS),
+              slot: fc.integer({ min: 0, max: 2 }),
+              code: codeArb,
+            }),
+            { maxLength: 20 },
+          ),
+          (a) => a.length,
         ),
         (steps) => {
           let bindings = DEFAULT_BINDINGS;
@@ -223,6 +229,8 @@ describe("rebind", () => {
         },
       ),
     );
+    probe.expectReached(16);
+    codeProbe.expectReached(16);
   });
 
   it("rebinding a slot to the code it already holds changes nothing", () => {
@@ -252,15 +260,19 @@ describe("rebind", () => {
       "Escape",
       "Space",
     );
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
-        fc.array(
-          fc.record({
-            action: fc.constantFrom(...BINDABLE_ACTIONS),
-            slot: fc.integer({ min: 0, max: 2 }),
-            code: codeArb,
-          }),
-          { maxLength: 25 },
+        probe.over(
+          fc.array(
+            fc.record({
+              action: fc.constantFrom(...BINDABLE_ACTIONS),
+              slot: fc.integer({ min: 0, max: 2 }),
+              code: codeArb,
+            }),
+            { maxLength: 25 },
+          ),
+          (a) => a.length,
         ),
         (steps) => {
           let bindings = DEFAULT_BINDINGS;
@@ -271,6 +283,7 @@ describe("rebind", () => {
         },
       ),
     );
+    probe.expectReached(20);
   });
 });
 
@@ -335,12 +348,17 @@ describe("normaliseBindings", () => {
   it("inv_keybindings_parse_is_total", () => {
     // Any JSON value at all -- however hostile -- yields a complete,
     // valid map and never throws.
+    const probe = sizeProbe();
     fc.assert(
-      fc.property(fc.anything(), (value) => {
-        const bindings = normaliseBindings(value);
-        expect(Object.keys(bindings).sort()).toEqual([...BINDABLE_ACTIONS].sort());
-        expectValid(bindings);
-      }),
+      fc.property(
+        probe.over(fc.anything({ maxDepth: 4, maxKeys: 8 }), (v) => JSON.stringify(v)?.length ?? 0),
+        (value) => {
+          const bindings = normaliseBindings(value);
+          expect(Object.keys(bindings).sort()).toEqual([...BINDABLE_ACTIONS].sort());
+          expectValid(bindings);
+        },
+      ),
     );
+    probe.expectReached(250);
   });
 });

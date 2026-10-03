@@ -379,13 +379,11 @@ describe("RegionSubscriptions", () => {
       nat.map((i) => ({ t: "errorEnding" as const, i })),
     );
     // An error-free walk, then at most one error, then a tail of deliveries.
-    // Sizes are explicit: `maxLength` alone is only a cap on fast-check's
-    // default size, which stops arrays at 10.
     const schedule = fc
       .tuple(
-        fc.array(walkStep, { maxLength: 120, size: "max" }),
+        fc.array(walkStep, { maxLength: 120 }),
         firstError,
-        fc.array(tailStep, { maxLength: 30, size: "max" }),
+        fc.array(tailStep, { maxLength: 30 }),
       )
       .map(([walk, error, tail]) =>
         error
