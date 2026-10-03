@@ -903,10 +903,11 @@ the page, and check the overshoot against one bound.
 
 | Requirement | Status | Guard |
 | --- | --- | --- |
-| The in-page watcher stops inside the release model for either order of scene and watcher frame and for the key landing 0 to N frames after arming, records a key seen after the release, and refuses a threshold that already holds | covered | `client/tests/unit/e2e-support/walk-watcher.test.ts` -- `the in-page walk watcher`, `a key seen after the release is recorded`, `an axis threshold already met at arming is refused` |
+| The in-page watcher stops inside the release model for either order of scene and watcher frame and for the key landing 0 to N frames after arming, records a key seen after the release, and refuses a threshold that already holds | covered | `client/tests/unit/e2e-support/walk-watcher.test.ts` -- `the in-page walk watcher`, `a key seen after the release is recorded`, `an axis threshold already met at arming is refused`, `a condition never met releases the key and reports`, `a cell condition releases on arrival`, `a blur after the release is recorded`, `stamps where the awaiting call landed, relative to the keydown` |
 | The helper names the segment, threshold and distance of a walk that rests past `RELEASE_LAG` | covered | `client/tests/unit/e2e-support/walk-watcher.test.ts` -- `overshootViolation names the segment, the threshold and the distance` |
-| Every route a spec walks completes with no lag and at `RELEASE_LAG`, and no segment starts with its axis condition already holding | covered | `client/tests/unit/test-street/walked-routes.test.ts` -- `every walked route` |
-| A `keyup` is dispatched in the page only in `walk-support.ts` (and `boot-marks.spec.ts`), and `releaseLagSteps` is given a non-zero literal only in `fixture.ts` | covered | `scripts/ci/tests/test-check-one-walk-helper.sh` -- `a keyup dispatched in another spec`, `a literal lag in a unit test` |
+| The helper fails a walk whose body moves on a frame after its own release or steps more than one clamp in a frame (floor-change frames excepted) | covered | `client/tests/unit/e2e-support/walk-watcher.test.ts` -- `a release one frame late is reported as a move after the keyup` |
+| Every route a spec walks completes with no lag and at `RELEASE_LAG`, and no segment starts with its axis condition already holding | covered | `client/tests/unit/test-street/walked-routes.test.ts` -- `every walked route`, `the bin-reach route` |
+| A `keyup` is dispatched in the page only in `walk-watcher.ts` (and `boot-marks.spec.ts`), a walk call takes no inline segment literal, and `releaseLagSteps` is given a non-zero literal only in `fixture.ts` | covered | `scripts/ci/tests/test-check-one-walk-helper.sh` -- `a keyup dispatched in another spec`, `a keyup on the line after the constructor in another spec`, `a walk call with an inline segment literal`, `a literal lag in a unit test` |
 
 ## Chunks and interest management
 

@@ -2,9 +2,22 @@
 // completes at no release lag and at `RELEASE_LAG`, and no segment starts
 // with its own axis threshold already holding.
 import { describe, expect, it } from "vitest";
-import { PLAYER_START, RELEASE_LAG, streetWalkUntilMet } from "../../../src/test-street/fixture";
+import { isWithinReach } from "../../../src/input/pick";
+import {
+  isDefStreetProp,
+  PLAYER_START,
+  RELEASE_LAG,
+  STREET_PROPS,
+  streetWalkUntilMet,
+  TRASH_BIN_DEF_ID,
+} from "../../../src/test-street/fixture";
 import { initialFloorWalkState } from "../../../src/world/floor-walk";
-import { simulateStreetWalk, walkedRoutes } from "./street-world";
+import {
+  committedDefs,
+  simulateStreetWalk,
+  streetMovementConfig,
+  walkedRoutes,
+} from "./street-world";
 
 describe("every walked route", () => {
   const routes = walkedRoutes();
@@ -50,4 +63,27 @@ describe("every walked route", () => {
       });
     }
   }
+});
+
+describe("the bin-reach route", () => {
+  it("ends with the player inside the trash bin's reach, at no lag and at RELEASE_LAG", () => {
+    const bin = STREET_PROPS.find((p) => isDefStreetProp(p) && p.defId === TRASH_BIN_DEF_ID);
+    const def = committedDefs().objects.find((o) => o.id === TRASH_BIN_DEF_ID);
+    const route = walkedRoutes().find((r) => r.name === "bin-reach");
+    if (!bin || !def || !route) throw new Error("no bin, def or route");
+    for (const lag of [{ releaseLagSteps: 0 }, RELEASE_LAG]) {
+      const out = simulateStreetWalk(route.segments, lag);
+      const end = out[out.length - 1]?.state;
+      if (!end) throw new Error("the route produced no checkpoint");
+      expect(
+        isWithinReach(
+          { anchorX: bin.x, anchorY: bin.y },
+          def,
+          { x: end.x, y: end.y, floor: end.floor },
+          bin.floor,
+          streetMovementConfig().subcellsPerCell,
+        ),
+      ).toBe(true);
+    }
+  });
 });

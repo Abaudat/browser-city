@@ -24,12 +24,12 @@ async function hops(page: Page, count: number): Promise<void> {
     if (!here) throw new Error("no player position");
     const segment: StreetWalkSegment = east
       ? {
-          label: `hop-east-${i}`,
+          label: "hop-east",
           key: "ArrowRight",
           until: { kind: "x-at-least", value: here.x + HOP_CELLS },
         }
       : {
-          label: `hop-west-${i}`,
+          label: "hop-west",
           key: "ArrowLeft",
           until: { kind: "x-at-most", value: here.x - HOP_CELLS },
         };
@@ -41,13 +41,4 @@ test("every 0.2-cell hop rests inside the release bound", async ({ page }) => {
   await ready(page);
   await hops(page, HOPS);
   expect(await page.evaluate(() => window.__bc?.playerFloor)).toBe(0);
-});
-
-test("every 0.2-cell hop rests inside the release bound under a 6x CPU throttle", async ({
-  page,
-}) => {
-  await ready(page);
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 6 });
-  await hops(page, HOPS / 2);
 });

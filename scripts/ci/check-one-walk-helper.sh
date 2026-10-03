@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Scripted e2e walks go through one helper: under client/tests/e2e/ a
-# `keyup` KeyboardEvent is constructed only in walk-support.ts (and
-# boot-marks.spec.ts, which measures input latency, not a walk), and the
-# release lag is given a literal value only in client/src/test-street/
+# Scripted e2e walks go through one helper: under client/tests/e2e/ the
+# string `keyup` appears only in walk-watcher.ts (and boot-marks.spec.ts,
+# which measures input latency, not a walk); a walk call never takes an
+# inline segment literal (the route lives in `walkedRoutes()`); and the
+# release lag is given a non-zero literal only in client/src/test-street/
 # fixture.ts. A mechanical grep, run by `client-check`.
 set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -15,11 +16,17 @@ E2E_DIR="$CLIENT_DIR/tests/e2e"
 
 FAIL=0
 
-KEYUP="$(grep -rnE "KeyboardEvent[[:space:]]*\([[:space:]]*[\"'\`]keyup" "$E2E_DIR" --include='*.ts' \
-  | grep -vE '/(walk-support\.ts|boot-marks\.spec\.ts):' || true)"
+KEYUP="$(grep -rnE "[\"'\`]keyup[\"'\`]" "$E2E_DIR" --include='*.ts'   | grep -vE '/(walk-watcher\.ts|boot-marks\.spec\.ts):' || true)"
 if [ -n "$KEYUP" ]; then
-  echo "check-one-walk-helper: FAIL -- a keyup is dispatched in the page outside walk-support.ts; walk through its helper instead:" >&2
+  echo "check-one-walk-helper: FAIL -- a keyup is named under tests/e2e/ outside walk-watcher.ts; walk through the helper instead:" >&2
   echo "$KEYUP" >&2
+  FAIL=1
+fi
+
+INLINE="$(grep -rnE 'walk(Real|Synthetic)Segment\([^)]*,[[:space:]]*\{' "$E2E_DIR" --include='*.ts'   | grep -vE '/walk-lag\.spec\.ts:' || true)"
+if [ -n "$INLINE" ]; then
+  echo "check-one-walk-helper: FAIL -- a walk call takes an inline segment literal; export the route from street-world.ts and register it in walkedRoutes():" >&2
+  echo "$INLINE" >&2
   FAIL=1
 fi
 

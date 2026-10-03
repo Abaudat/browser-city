@@ -145,14 +145,8 @@ async function hoverAnInteractableProp(page: Page): Promise<void> {
   await page.mouse.move(box.x + canvasOffset.x, box.y + canvasOffset.y);
 }
 
-/** Scripted walks go through the shared helper: the key is pressed in the
- * page, so a hover or a CDP round trip cannot delay it. */
-async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
-  await walkSyntheticSegment(page, segment, SEGMENT_TIMEOUT_MS);
-}
-
 async function walkRoute(page: Page, route: readonly StreetWalkSegment[]): Promise<void> {
-  for (const segment of route) await walkSegment(page, segment);
+  for (const segment of route) await walkSyntheticSegment(page, segment, SEGMENT_TIMEOUT_MS);
 }
 
 test("the frame path stays inside its work budget for a whole walked session (NFR2, partial)", async ({
@@ -309,7 +303,8 @@ test("the frame path stays inside its work budget for a whole walked session (NF
   // column (`LAMPPOST_CELL`'s own doc comment says why it moved), so only
   // the door-exit segment is needed before turning toward it -- the rest
   // of the route's own lamppost/underpass detour is no longer on the way.
-  for (const segment of binReachRoute()) await walkSegment(page, segment);
+  for (const segment of binReachRoute())
+    await walkSyntheticSegment(page, segment, SEGMENT_TIMEOUT_MS);
 
   await hoverAnInteractableProp(page);
   await expect

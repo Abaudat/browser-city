@@ -875,7 +875,7 @@ jobs:
         with:
           name: walk-records
           path: client/walk-records
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
       - name: worst overshoot per helper and segment
         if: always()

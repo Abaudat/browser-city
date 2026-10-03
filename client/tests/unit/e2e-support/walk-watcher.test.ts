@@ -12,18 +12,18 @@ import {
 import { initialFloorWalkState, stepAndTransition } from "../../../src/world/floor-walk";
 import {
   armWalkWatcher,
+  awaitWalk,
   overshootViolation,
   releaseBoundCells,
   type WalkRecord,
   type WatcherArgs,
-} from "../../e2e/walk-support";
+} from "../../e2e/walk-watcher";
 import {
   streetMovementConfig,
   streetTransitionIndex,
   streetWorldIndex,
 } from "../test-street/street-world";
 
-const FRAME_MS = 16;
 type Order = "scene-first" | "watcher-first";
 
 interface FakeKeyEvent {
@@ -35,7 +35,7 @@ interface FakeKeyEvent {
 
 /** Installs a fake page (window, rAF, performance, KeyboardEvent) whose
  * scene steps the real resolver while a key is held. */
-function installPage(order: Order) {
+function installPage(order: Order, frameMs: number) {
   const world = streetWorldIndex();
   const config = streetMovementConfig();
   const transitions = streetTransitionIndex();
@@ -94,7 +94,7 @@ function installPage(order: Order) {
   const scene = () => {
     if (held) {
       const dir = STREET_WALK_DIRECTIONS[held as keyof typeof STREET_WALK_DIRECTIONS];
-      state = stepAndTransition(state, dir, FRAME_MS, world, config, transitions);
+      state = stepAndTransition(state, dir, frameMs, world, config, transitions);
       bc.playerPosition = { x: state.x, y: state.y };
       bc.playerFloor = state.floor;
     }
@@ -108,7 +108,7 @@ function installPage(order: Order) {
     press: (code: string) =>
       win.dispatchEvent(new FakeKeyboardEvent("keydown", { code }) as unknown as FakeKeyEvent),
     frame: () => {
-      now += FRAME_MS;
+      now += frameMs;
       const watchers = queue;
       queue = [];
       if (order === "scene-first") scene();
@@ -138,29 +138,119 @@ const argsFor = (segment: StreetWalkSegment, mode: WatcherArgs["mode"]): Watcher
 });
 
 describe("the in-page walk watcher", () => {
-  for (const order of ["scene-first", "watcher-first"] as const) {
-    for (const keyLandsAfter of [0, 1, 2, 5]) {
-      it(`real mode, ${order}, key lands ${keyLandsAfter} frames after arming: stops inside the model`, async () => {
-        const page = installPage(order);
-        const segment = hop();
-        expect(armWalkWatcher(argsFor(segment, "real"))).toBe(true);
-        for (let i = 0; i < keyLandsAfter; i++) page.frame();
-        page.press(segment.key);
-        for (let i = 0; i < 60; i++) page.frame();
-        const record = await page.win.__bcWalk;
-        expect(record?.ok).toBe(true);
-        const past = page.position().x - (PLAYER_START.x + HOP);
-        const bound = releaseBoundCells();
-        expect(past).toBeGreaterThanOrEqual(0);
-        expect(past).toBeLessThanOrEqual(bound);
-        expect(record?.pastAtRestCells).toBeCloseTo(past, 9);
-        expect(record && overshootViolation(record, segment, bound)).toBeNull();
-      });
+  for (const frameMs of [16, RELEASE_LAG.stepMs]) {
+    for (const order of ["scene-first", "watcher-first"] as const) {
+      for (const keyLandsAfter of [0, 1, 2, 5]) {
+        it(`real mode, ${frameMs} ms frames, ${order}, key lands ${keyLandsAfter} frames after arming: no step after the crossing step`, async () => {
+          const page = installPage(order, frameMs);
+          const segment = hop();
+          expect(armWalkWatcher(argsFor(segment, "real"))).toBe(true);
+          for (let i = 0; i < keyLandsAfter; i++) page.frame();
+          page.press(segment.key);
+          for (let i = 0; i < 60; i++) page.frame();
+          const record = await page.win.__bcWalk;
+          expect(record?.ok).toBe(true);
+          // Zero scene steps after the release: rest equals the position
+          // at the frame the condition was first seen.
+          expect(record?.movedAfterKeyupFrames).toBe(0);
+          expect(record?.restFrame).toBe((record?.keyupFrame ?? 0) + 1);
+          expect(page.position()).toEqual(record?.atMet);
+          const past = page.position().x - (PLAYER_START.x + HOP);
+          expect(past).toBeGreaterThanOrEqual(0);
+          expect(past).toBeLessThanOrEqual(releaseBoundCells());
+          expect(record?.pastAtRestCells).toBeCloseTo(past, 9);
+          expect(record && overshootViolation(record, segment, releaseBoundCells())).toBeNull();
+        });
+      }
     }
   }
 
+  it("a release one frame late is reported as a move after the keyup", async () => {
+    const page = installPage("scene-first", 16);
+    const segment = hop();
+    armWalkWatcher(argsFor(segment, "real"));
+    page.press(segment.key);
+    // A key the watcher's release does not lift: the held key stays down.
+    page.win.addEventListener("keyup", () => page.press(segment.key));
+    for (let i = 0; i < 400; i++) page.frame();
+    const record = await page.win.__bcWalk;
+    expect(record?.movedAfterKeyupFrames).toBeGreaterThan(0);
+    expect(record && overshootViolation(record, segment, releaseBoundCells())).toContain("hop");
+  });
+
+  it("a condition never met releases the key and reports", async () => {
+    const page = installPage("scene-first", 16);
+    const segment: StreetWalkSegment = {
+      label: "never",
+      key: "ArrowRight",
+      until: { kind: "floor", value: 99 },
+    };
+    expect(armWalkWatcher({ ...argsFor(segment, "real"), timeoutMs: 100 })).toBe(true);
+    page.press(segment.key);
+    for (let i = 0; i < 30; i++) page.frame();
+    const record = await page.win.__bcWalk;
+    expect(record?.ok).toBe(false);
+    expect(record?.error).toContain("never met");
+    expect(record?.keyupFrame).not.toBeNull();
+  });
+
+  it("a cell condition releases on arrival", async () => {
+    const page = installPage("scene-first", 16);
+    const segment: StreetWalkSegment = {
+      label: "cell",
+      key: "ArrowRight",
+      until: { kind: "cell", x: Math.floor(PLAYER_START.x) + 1, y: Math.floor(PLAYER_START.y) },
+    };
+    expect(armWalkWatcher(argsFor(segment, "real"))).toBe(true);
+    page.press(segment.key);
+    for (let i = 0; i < 80; i++) page.frame();
+    const record = await page.win.__bcWalk;
+    expect(record?.ok).toBe(true);
+    expect(Math.floor(page.position().x)).toBe(Math.floor(PLAYER_START.x) + 1);
+  });
+
+  it("a floor condition that already holds is refused", () => {
+    installPage("scene-first", 16);
+    const segment: StreetWalkSegment = {
+      label: "floor",
+      key: "ArrowRight",
+      until: { kind: "floor", value: PLAYER_START.floor },
+    };
+    expect(armWalkWatcher(argsFor(segment, "real"))).toBe(false);
+  });
+
+  it("a blur after the release is recorded", async () => {
+    const page = installPage("scene-first", 16);
+    const segment = hop();
+    let released = false;
+    page.win.addEventListener("keyup", () => {
+      released = true;
+    });
+    armWalkWatcher(argsFor(segment, "real"));
+    page.press(segment.key);
+    for (let i = 0; i < 60 && !released; i++) page.frame();
+    page.win.dispatchEvent({ type: "blur" } as never);
+    for (let i = 0; i < 60; i++) page.frame();
+    const record = await page.win.__bcWalk;
+    expect(record?.lateEvents.some((e) => e.type === "blur")).toBe(true);
+  });
+
+  it("stamps where the awaiting call landed, relative to the keydown", async () => {
+    const page = installPage("scene-first", 16);
+    const segment = hop();
+    armWalkWatcher(argsFor(segment, "real"));
+    page.press(segment.key);
+    page.frame();
+    page.frame();
+    awaitWalk();
+    for (let i = 0; i < 60; i++) page.frame();
+    const record = await page.win.__bcWalk;
+    expect(record?.gapFrames).toBe(2);
+    expect(record?.gapCells).toBeGreaterThan(0);
+  });
+
   it("synthetic mode presses the key itself and records the same fields", async () => {
-    const page = installPage("scene-first");
+    const page = installPage("scene-first", 16);
     expect(armWalkWatcher(argsFor(hop(), "synthetic"))).toBe(true);
     for (let i = 0; i < 60; i++) page.frame();
     const record = await page.win.__bcWalk;
@@ -170,7 +260,7 @@ describe("the in-page walk watcher", () => {
   });
 
   it("an axis threshold already met at arming is refused", () => {
-    installPage("scene-first");
+    installPage("scene-first", 16);
     const segment: StreetWalkSegment = {
       label: "already",
       key: "ArrowRight",
@@ -180,7 +270,7 @@ describe("the in-page walk watcher", () => {
   });
 
   it("a key seen after the release is recorded", async () => {
-    const page = installPage("scene-first");
+    const page = installPage("scene-first", 16);
     const segment = hop();
     let released = false;
     page.win.addEventListener("keyup", () => {

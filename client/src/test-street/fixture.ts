@@ -1277,8 +1277,10 @@ export interface StreetWalkSegment {
  * that crossed it plus `releaseLagSteps` more, each at the resolver's own
  * delta clamp. The e2e walk helper fails any axis-threshold segment that
  * rests further past its threshold, and the unit feasibility tests
- * simulate every walked route at this lag. Not yet measured on the
- * runner. */
+ * simulate every walked route at this lag. Measured on the runner (run
+ * 37137927414, 143 walks): the worst rest past a threshold was 0.88
+ * clamped steps, and the body was at rest one frame after the release in
+ * every walk. */
 export const RELEASE_LAG = { stepMs: MAX_DELTA_MS, releaseLagSteps: 1 } as const;
 
 /** Whether a held key's own release condition is met, for a walker at

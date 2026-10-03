@@ -298,14 +298,6 @@ test.describe("story 1.7: enclosure visibility", () => {
       maxDiffPixels: PLATFORM_STAIRS_MAX_DIFF_PIXELS,
       clip: stairsClip,
     });
-    // Back to the landing for the walk east below.
-    await page.keyboard.down("ArrowRight");
-    await page.waitForFunction(
-      (x) => (window.__bc?.playerPosition?.x ?? 0) >= x,
-      PLATFORM_UP_ANCHOR_X - 1 + 0.5,
-      { timeout: 15_000 },
-    );
-    await page.keyboard.up("ArrowRight");
 
     // Story 15.2: the reverse input (`ArrowRight`, the mirror of the
     // `ArrowLeft` that walked down) climbs straight back up -- no detour
