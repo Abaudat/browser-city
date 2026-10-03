@@ -241,3 +241,14 @@ parse_live() {
   esac
   printf 'undeclared'
 }
+
+# is_live_declaration <body> -- true only for the shape render_live writes: the
+# bc:live marker alone on its own line and no other bc: marker in the comment.
+# A comment that merely quotes the marker (a lead's direction, say) is not one.
+is_live_declaration() {
+  local body markers
+  body="$(printf '%s' "$1" | tr -d '\r')"
+  markers="$(printf '%s\n' "$body" | grep -F -- '<!-- bc:' || true)"
+  [ "$(printf '%s\n' "$markers" | grep -c .)" -eq 1 ] || return 1
+  printf '%s\n' "$markers" | grep -Eq -- '^<!-- bc:live [^>]* -->$'
+}

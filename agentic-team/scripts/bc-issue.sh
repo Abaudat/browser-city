@@ -282,9 +282,10 @@ _bc_demo_lint() {
   return 0
 }
 
-# _bc_issue_live_find <issue> -> "<comment-id>\t<parse_live output>" of the
-# on stdout (nothing if the issue has none); exit 2 if the
-# comments cannot be read -- never confused with "no declaration".
+# _bc_issue_live_find <issue> -> on stdout, the id of the issue's live declaration
+# (see is_live_declaration), a newline, then parse_live's output (its state, and
+# for visible a newline and the where-line); nothing if there is none. Exit 2 if
+# the comments cannot be read -- never confused with "no declaration".
 _bc_issue_live_find() {
   local issue="$1" comments count i body id
   comments="$(gh_issue_comments "$issue" 2>/dev/null)" || return 2
@@ -292,7 +293,7 @@ _bc_issue_live_find() {
   i=0
   while [ "$i" -lt "$count" ]; do
     body="$(printf '%s' "$comments" | "$JQ" -r --argjson i "$i" '.[$i].body // ""' | tr -d '\r')"
-    if has_marker "$body" live; then
+    if is_live_declaration "$body"; then
       id="$(printf '%s' "$comments" | "$JQ" -r --argjson i "$i" '.[$i].id')"
       printf '%s\n' "$id"
       parse_live "$body"
@@ -326,7 +327,8 @@ _bc_demo_lint_live() {
   items="$(project_items 2>/dev/null)" || {
     echo "bc-issue write-demo: could not read project items" >&2; return 2; }
   done_nums="$(printf '%s' "$items" | "$JQ" -r --arg s "$sprintid" \
-    '.[] | select(.sprintId==$s and .status=="Done") | .number' 2>/dev/null | tr -d '\r')" || return 2
+    '.[] | select(.sprintId==$s and .status=="Done") | .number' 2>/dev/null)" || return 2
+  done_nums="$(printf '%s' "$done_nums" | tr -d '\r')"
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in '- [ ] '*) ;; *) continue ;; esac
     reason=""

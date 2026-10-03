@@ -31,12 +31,12 @@ declare -A REQUIRED_PROMPT=(
   [write-feedback-reply]="judge-feedback.md"
 )
 
-# Crew's commands: <subcommand> -> the one prompt that owns the call. They
+# Crew's commands: <subcommand> -> the prompts (space-separated) that own the call. They
 # are required there and in the skill table, and must NOT be named in
 # scotty.md -- Scotty never calls them, so it is a separate map rather than
 # a bend in the one above.
 declare -A CREW_PROMPT=(
-  [declare-live]="dispatch-crew.md"
+  [declare-live]="dispatch-crew.md dispatch-address.md"
 )
 
 FAILED=0
@@ -106,10 +106,12 @@ for cmd in "${!REQUIRED_PROMPT[@]}"; do
 done
 
 for cmd in "${!CREW_PROMPT[@]}"; do
-  prompt_file="$PROMPTS_DIR/${CREW_PROMPT[$cmd]}"
-  if [ ! -f "$prompt_file" ] || ! grep -qF "bc-issue.sh $cmd" "$prompt_file"; then
-    fail "'$cmd' is not named in $prompt_file"
-  fi
+  for p in ${CREW_PROMPT[$cmd]}; do
+    prompt_file="$PROMPTS_DIR/$p"
+    if [ ! -f "$prompt_file" ] || ! grep -qF "bc-issue.sh $cmd" "$prompt_file"; then
+      fail "'$cmd' is not named in $prompt_file"
+    fi
+  done
   if ! grep -qF "bc-issue.sh $cmd" "$SKILL"; then
     fail "'$cmd' is not named in $SKILL"
   fi

@@ -817,6 +817,10 @@ printf 'A short summary for Adrian.\n\n- [ ] Watch the player walk through the n
   > "$MIX_BODY"
 check "one bad line among good ones rejects the whole body, exit 3" 3 \
   run "$FAKE_LINT_MIX" "" write-demo 3 "$MIX_BODY"
+MIX_ERR="$(run "$FAKE_LINT_MIX" "" write-demo 3 "$MIX_BODY" 2>&1 1>/dev/null)"
+check "the mixed body names the bad line with its own reason" 0 \
+  err_has "$MIX_ERR" "(uses the engineering term 'reducer'): - [ ] Confirm the reducer runs without errors (#11)"
+check "the mixed body does not name a good line" 1 err_has "$MIX_ERR" "parry combo"
 check "and nothing was created" 1 test -f "$FAKE_LINT_MIX/calls.log"
 
 # The summary paragraph is never linted -- only checkbox lines are.
@@ -901,34 +905,38 @@ JSON
 S5S='"state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp5id","sprintTitle":"Sprint 5","labels":[],"isParent":false,"parent":null'
 cat > "$FAKE_S5/project_items.json" <<JSON
 [
-  {"number":701,"title":"Walk",$S5S},
-  {"number":702,"title":"Camera follows",$S5S},
-  {"number":703,"title":"Camera zoom",$S5S},
-  {"number":704,"title":"Turn to face",$S5S},
-  {"number":705,"title":"Walk into walls",$S5S},
-  {"number":711,"title":"Clock",$S5S},
-  {"number":712,"title":"District blocks",$S5S},
-  {"number":713,"title":"Cafe",$S5S},
-  {"number":714,"title":"Stock and cash",$S5S}
+  {"number":721,"title":"Clock",$S5S},
+  {"number":722,"title":"Camera steady on diagonals",$S5S},
+  {"number":723,"title":"Collisions match the art",$S5S},
+  {"number":724,"title":"Flat objects stay underfoot",$S5S},
+  {"number":725,"title":"Subway stairs",$S5S},
+  {"number":726,"title":"Hidden street",$S5S},
+  {"number":727,"title":"District blocks",$S5S},
+  {"number":728,"title":"Cafe",$S5S},
+  {"number":729,"title":"Stock and cash",$S5S}
 ]
 JSON
-for i in 701 702 703 704 705; do
-  printf '%s' '[{"id":1,"body":"Walk.\n\n<!-- bc:live visible -->"}]' > "$FAKE_S5/gh_issue_comments.$i.json"
+for i in 722 723 724 725 726; do
+  printf '%s' '[{"id":1,"body":"Walk the street.\n\n<!-- bc:live visible -->"}]' > "$FAKE_S5/gh_issue_comments.$i.json"
 done
-for i in 711 712 713 714; do
+for i in 721 727 728 729; do
   printf '%s' '[{"id":1,"body":"Not visible.\n\n<!-- bc:live none -->"}]' > "$FAKE_S5/gh_issue_comments.$i.json"
 done
-GOOD5='- [ ] Walk the character across the plaza (#701)
-- [ ] Watch the camera follow the character (#702)
-- [ ] Zoom the camera in and out (#703)
-- [ ] Turn the character to face a new direction (#704)
-- [ ] Walk into a wall and stop (#705)'
-BAD5='- [ ] Watch the in-game clock tick through a day (#711)
-- [ ] See the district blocks laid out around the plaza (#712)
-- [ ] Order a drink at the cafe (#713)
-- [ ] Check the cafe stock and the till cash (#714)'
-printf 'The team shipped walking and the camera.\n\n%s\n%s\n' "$GOOD5" "$BAD5" > "$FAKE_S5/all.md"
-printf 'The team shipped walking and the camera.\n\n%s\n' "$GOOD5" > "$FAKE_S5/good.md"
+# The nine lines of the Sprint 5 Demo issue (#387), verbatim, each with its story.
+# The demo issue's own checkbox state is not part of the sentence.
+GOOD5='- [ ] Walk diagonally across the street and check that the camera stays steady with no shake (#722)
+- [ ] Walk into walls, bollards and shopfronts and check that you stop exactly where the art says you should (#723)
+- [ ] Step over a manhole, rug or other flat object and check that it stays under your character (#724)
+- [ ] Go down into the subway and climb back up, checking that the stairs read as going up and you never walk through a railing or post (#725)
+- [ ] From the platform, check that the street above stays hidden until you climb back up (#726)'
+BAD5='- [ ] Watch the in-game clock advance, then reload the page and see that the city kept time while you were away (#721)
+- [ ] Walk from the centre of the district to its edge and notice that the blocks get visibly bigger (#727)
+- [ ] Find a cafe in the district (#728)
+- [ ] Pick up stock or cash and carry it, and see that it only moves when someone carries it (#729)'
+printf 'The team shipped the clock and the first pieces of the economy.\n\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+  "$(sed -n 1p <<< "$BAD5")" "$(sed -n 1p <<< "$GOOD5")" "$(sed -n 2p <<< "$GOOD5")" "$(sed -n 3p <<< "$GOOD5")" \
+  "$(sed -n 4p <<< "$GOOD5")" "$(sed -n 5p <<< "$GOOD5")" "$(sed -n 2p <<< "$BAD5")" "$(sed -n 3p <<< "$BAD5")" "$(sed -n 4p <<< "$BAD5")" > "$FAKE_S5/all.md"
+printf 'The team shipped the clock and the first pieces of the economy.\n\n%s\n' "$GOOD5" > "$FAKE_S5/good.md"
 check "Sprint 5's nine lines are rejected, exit 3" 3 run "$FAKE_S5" "" write-demo 5 "$FAKE_S5/all.md"
 S5_ERR="$(run "$FAKE_S5" "" write-demo 5 "$FAKE_S5/all.md" 2>&1 1>/dev/null)"
 while IFS= read -r l; do
