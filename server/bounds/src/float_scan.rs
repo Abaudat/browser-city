@@ -2,9 +2,16 @@
 //! and fixed-point only; clippy's `disallowed_types` and `float_arithmetic`
 //! miss an untyped literal that is only compared, and a float reached
 //! through a method call, so this walks every token -- macro bodies and
-//! groups included -- and reports any float literal or `f32`/`f64`
-//! identifier. Comments and string literals are not tokens of that kind,
-//! which is why this is a tokeniser and not a text search.
+//! groups included -- and reports any float literal, any identifier
+//! containing `f16`/`f32`/`f64`/`f128`, and `c_float`/`c_double`. That is
+//! complete because `sim` has no dependencies
+//! (`scripts/ci/check-sim-purity.sh`), so every float source is a literal,
+//! a primitive type name, a `c_*` alias, or a std method whose name carries
+//! a float type name; adding a dependency to `sim` reopens this guard.
+//! `include!` and `#[path]` are reported too, so "every file under
+//! `sim/src/`" stays "every source compiled into `sim`". Comments and
+//! string literals are not tokens of that kind, which is why this is a
+//! tokeniser and not a text search.
 //!
 //! Native test tooling only: `proc-macro2` is a dev-dependency of `bounds`,
 //! never of `sim` or `browser_city`.
@@ -15,6 +22,8 @@ use std::path::{Path, PathBuf};
 /// The one file exempt from the scan, by its path relative to the scanned
 /// root (`sim/src/`): a same-named file anywhere else is scanned.
 pub const EXEMPT: &str = "lint_canary.rs";
+
+const FLOAT_NAMES: [&str; 4] = ["f16", "f32", "f64", "f128"];
 
 const INT_SUFFIXES: [&str; 12] = [
     "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize",
@@ -27,10 +36,7 @@ fn is_float_literal(text: &str) -> bool {
     if text.starts_with("0x") || text.starts_with("0o") || text.starts_with("0b") {
         return false;
     }
-    if ["f16", "f32", "f64", "f128"]
-        .iter()
-        .any(|s| text.ends_with(s))
-    {
+    if FLOAT_NAMES.iter().any(|s| text.ends_with(s)) {
         return true;
     }
     let mut body = text;
@@ -44,17 +50,21 @@ fn is_float_literal(text: &str) -> bool {
 }
 
 fn walk(stream: TokenStream, found: &mut Vec<(usize, String)>) {
-    for tree in stream {
+    let trees: Vec<TokenTree> = stream.into_iter().collect();
+    for (n, tree) in trees.iter().enumerate() {
         match tree {
             TokenTree::Group(g) => walk(g.stream(), found),
             TokenTree::Ident(i) => {
                 let name = i.to_string();
-                if name.contains("f32")
-                    || name.contains("f64")
+                let next_is_bang =
+                    matches!(trees.get(n + 1), Some(TokenTree::Punct(p)) if p.as_char() == '!');
+                if FLOAT_NAMES.iter().any(|s| name.contains(s))
                     || name == "c_float"
                     || name == "c_double"
                 {
                     found.push((i.span().start().line, name));
+                } else if name == "include" && next_is_bang {
+                    found.push((i.span().start().line, "include!".to_string()));
                 }
             }
             TokenTree::Literal(l) => {
@@ -63,7 +73,16 @@ fn walk(stream: TokenStream, found: &mut Vec<(usize, String)>) {
                     found.push((l.span().start().line, text));
                 }
             }
-            TokenTree::Punct(_) => {}
+            TokenTree::Punct(p) => {
+                if p.as_char() == '#' {
+                    if let Some(TokenTree::Group(g)) = trees.get(n + 1) {
+                        let first = g.stream().into_iter().next();
+                        if matches!(first, Some(TokenTree::Ident(i)) if i == "path") {
+                            found.push((p.span().start().line, "#[path]".to_string()));
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -185,7 +204,10 @@ mod tests {
     #[test]
     fn red_the_ticket_shapes_verbatim() {
         let shapes: [(&str, &str); 5] = [
-            ("fn f(x: i32) { let _ = 1.07_f64.powi(x) as i32; }", "1.07_f64"),
+            (
+                "fn f(x: i32) { let _ = 1.07_f64.powi(x) as i32; }",
+                "1.07_f64",
+            ),
             (
                 "fn f(x: u64) { let _ = Duration::from_millis(x).as_secs_f64().sqrt() as u64; }",
                 "as_secs_f64",
@@ -214,9 +236,18 @@ mod tests {
 
     #[test]
     fn red_include_and_path_attributes_hide_sources_from_the_scan() {
-        assert_eq!(hits("include!(concat!(env!(\"OUT_DIR\"), \"/a.rs\"));")[0].1, "include!");
-        assert_eq!(hits("#[path = \"elsewhere.rs\"]
-mod m;")[0].1, "#[path]");
+        assert_eq!(
+            hits("include!(concat!(env!(\"OUT_DIR\"), \"/a.rs\"));")[0].1,
+            "include!"
+        );
+        assert_eq!(
+            hits(
+                "#[path = \"elsewhere.rs\"]
+mod m;"
+            )[0]
+            .1,
+            "#[path]"
+        );
     }
 
     #[test]
@@ -224,8 +255,13 @@ mod m;")[0].1, "#[path]");
         assert!(hits("const A: &str = include_str!(\"a.txt\");").is_empty());
         assert!(hits("const A: &[u8] = include_bytes!(\"a.bin\");").is_empty());
         assert!(hits("fn f(path: u8) { let include = path; let _ = include; }").is_empty());
-        assert!(hits("#[derive(Debug)]
-struct S;").is_empty());
+        assert!(
+            hits(
+                "#[derive(Debug)]
+struct S;"
+            )
+            .is_empty()
+        );
     }
 
     #[test]
