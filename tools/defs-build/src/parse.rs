@@ -137,6 +137,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         interact_at: o.interact_at.as_ref().map(|c| located(text, c)),
                         window: o.window,
                         tags: o.tags,
+                        flight_drop_px: o.flight_drop_px.as_ref().map(|d| located(text, d)),
                         archetype: o.archetype.as_ref().map(|a| located(text, a)),
                     });
                 }

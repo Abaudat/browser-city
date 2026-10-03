@@ -52,6 +52,10 @@ must be counted in `piece`, never spoil, appear once, and have a face value no
 other denomination shares; there are at most `MAX_DENOMINATIONS`. A new
 denomination is two rows, never code.
 
+## Objects
+
+`defs/objects/*.toml`: an object that is a flight of stairs may declare `flight_drop_px` (integer, `1..=render.storey_height_px`, refused on an object with a `collider`) -- how many native pixels its drawn treads descend. It goes into `defs.json` only. Which floors the flight joins is a `floor_transition` row anchored on one of its cells, never a field here.
+
 ## The example corpus
 
 Every committed rule key must be named by at least one passing example

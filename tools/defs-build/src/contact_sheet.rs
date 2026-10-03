@@ -719,6 +719,7 @@ mod tests {
             interact_at: None,
             window: false,
             tags: vec![],
+            flight_drop_px: None,
         }
     }
 

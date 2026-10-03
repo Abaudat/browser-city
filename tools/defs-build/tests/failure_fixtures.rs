@@ -441,6 +441,28 @@ fn an_interact_at_inside_its_own_collider_is_named() {
     assert!(err.message.contains("could never be reached"));
 }
 
+/// Story 15.15: `flight_drop_px` is `1..=render.storey_height_px` and is
+/// refused on an object that declares a `collider`.
+#[test]
+fn a_zero_flight_drop_is_named() {
+    let err = build_err("flight-drop-zero");
+    assert!(err.message.contains("flight_drop_px"), "{err}");
+    assert!(err.message.contains("render.storey_height_px"), "{err}");
+}
+
+#[test]
+fn a_flight_drop_above_the_storey_height_is_named() {
+    let err = build_err("flight-drop-above-storey");
+    assert!(err.message.contains("flight_drop_px 49"), "{err}");
+}
+
+#[test]
+fn a_flight_drop_on_an_object_with_a_collider_is_named() {
+    let err = build_err("flight-drop-with-collider");
+    assert!(err.message.contains("flight_drop_px"), "{err}");
+    assert!(err.message.contains("collider"), "{err}");
+}
+
 #[test]
 fn a_non_boolean_window_is_named() {
     let err = build_err("non-boolean-window");
@@ -981,6 +1003,9 @@ fn every_known_category_has_a_fixture_directory() {
         "collider-outside-art-rows",
         "collider-over-transparent-band",
         "archetype-collider-disagrees-with-art",
+        "flight-drop-zero",
+        "flight-drop-above-storey",
+        "flight-drop-with-collider",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

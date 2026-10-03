@@ -41,6 +41,7 @@ import {
   countBoundAtlasPages,
 } from "../render/atlas-pages";
 import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "../render/camera";
+import { buildFlights, FlightIndex } from "../render/flight-offset";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName, passOfLayer } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -507,8 +508,9 @@ function positionSprite(
   tileSizePx: number,
   storeyHeightPx: number,
   nudgePx: number,
+  flightOffsetPx: number,
 ): void {
-  const pos = worldPointPx(worldX, worldY, floor, tileSizePx, storeyHeightPx, ZOOM);
+  const pos = worldPointPx(worldX, worldY, floor, tileSizePx, storeyHeightPx, ZOOM, flightOffsetPx);
   sprite.x = pos.x;
   sprite.y = pos.y + nudgePx;
 }
@@ -764,8 +766,20 @@ export async function mountStreetScene(
   // `resolution` is 1; reading them here would silently de-centre the
   // player the day `autoDensity`/a non-1 `resolution` is ever turned on.
   let lastCamera: Camera | undefined;
+  // FR182: the player's flight offset, computed once per move in `tick` and
+  // read by both the sprite and the camera anchor, so the player stays on
+  // the camera centre on the stairs too.
+  let playerFlightOffsetPx = 0;
   function applyCamera(): void {
-    const anchor = worldPointPx(walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, ZOOM);
+    const anchor = worldPointPx(
+      walk.x,
+      walk.y,
+      walk.floor,
+      tileSizePx,
+      storeyHeightPx,
+      ZOOM,
+      playerFlightOffsetPx,
+    );
     const camera = applyCameraToWorld(
       world,
       anchor.x,
@@ -862,6 +876,7 @@ export async function mountStreetScene(
         tileSizePx,
         storeyHeightPx,
         assetNudgePx(drawable),
+        0,
       );
       return { drawable, view: sprite, label: debugLabel(drawable) };
     }),
@@ -907,7 +922,7 @@ export async function mountStreetScene(
   const playerFrames = await appearanceCache.acquire(playerTuple);
   const playerSprite = new Sprite(playerFrames.frame("idle", "down", 0));
   playerSprite.anchor.set(0.5, 1);
-  positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, 0);
+  positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, 0, 0);
   const playerEntry: PoolEntry = {
     drawable: playerDrawable,
     view: playerSprite,
@@ -1093,6 +1108,12 @@ export async function mountStreetScene(
   for (const placed of placedRows) {
     worldIndex.insert(placed);
   }
+  // FR182: the flights, built once from the transitions, the placed rows and
+  // the defs' declared `flight_drop_px`.
+  const flights = new FlightIndex(
+    buildFlights(STREET_TRANSITIONS, placedRows, objectSources, storeyHeightPx),
+    movementConfig,
+  );
 
   // Story 1.7: the visibility adapter, gated on the viewer's own
   // (floor, buildingId) tuple actually changing (Tim's direction) --
@@ -1384,7 +1405,17 @@ export async function mountStreetScene(
     onPlayerMove?.(walk.x, walk.y, walk.floor);
 
     updatePlayerDrawable(playerDrawable, walk.x, walk.y, walk.floor);
-    positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, 0);
+    playerFlightOffsetPx = flights.offsetPx(walk.x, walk.y, walk.floor);
+    positionSprite(
+      playerSprite,
+      walk.x,
+      walk.y,
+      walk.floor,
+      tileSizePx,
+      storeyHeightPx,
+      0,
+      playerFlightOffsetPx,
+    );
 
     // Only re-sort when the player's own sort key actually moved to a
     // new sub-tile unit (Tim's direction): a street of static props

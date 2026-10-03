@@ -135,7 +135,7 @@ test("walking across a chunk boundary: every chunk the viewport shows is applied
   const y = 4;
   const path: { x: number; required: string[] }[] = [];
   for (let x = startX; x <= endX; x += 0.25) {
-    const p = worldPointPx(x, y, 0, TILE, STOREY, ZOOM);
+    const p = worldPointPx(x, y, 0, TILE, STOREY, ZOOM, 0);
     const camera = computeCamera(p.x, p.y, size.w, size.h, ZOOM);
     const b = visibleCellBounds(size.w, size.h, camera, 0, TILE, STOREY);
     const lo = columnOf(b.cellX0, b.cellY0);

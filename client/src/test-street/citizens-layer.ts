@@ -80,7 +80,7 @@ function advanceWalker(
 ): void {
   walker.elapsedMS += deltaMS;
   const pose = walkerPoseAt(walker.startX, walker.startY, walker.elapsedMS);
-  const px = worldPointPx(pose.x, pose.y, CROWD_FLOOR, tileSizePx, storeyHeightPx, zoom);
+  const px = worldPointPx(pose.x, pose.y, CROWD_FLOOR, tileSizePx, storeyHeightPx, zoom, 0);
   walker.sprite.x = px.x;
   walker.sprite.y = px.y;
   walker.sprite.zIndex = pose.y;
@@ -169,6 +169,7 @@ export async function mountCitizensLayer(
         tileSizePx,
         storeyHeightPx,
         1,
+        0,
       );
       sprite.x = px.x;
       sprite.y = px.y;
