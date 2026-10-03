@@ -8,6 +8,7 @@ import type { Drawable } from "../../../src/render/sort-key";
 import { compareDrawables } from "../../../src/render/sort-key";
 import { fromSortUnits, SORT_SUBDIVISIONS, toSortUnits } from "../../../src/render/sort-units";
 import { emptyCellBounds } from "../../../src/world/world-index";
+import { sizeProbe } from "../setup/size-probe";
 
 const TILE = 16;
 const STOREY = 48;
@@ -189,6 +190,7 @@ describe("buildSortLabels", () => {
   // the key, this fails -- without this module ever owning a second
   // comparator.
   it("inv_sort_overlay_labels_are_the_sort_key", () => {
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
         fc.array(
@@ -208,6 +210,7 @@ describe("buildSortLabels", () => {
             seen.add(spec.stableId);
             pool.push(drawable(spec));
           }
+          probe.record(pool.length);
           const labels = buildSortLabels(
             viewOver(pool, [], {
               floor: 0,
@@ -231,5 +234,6 @@ describe("buildSortLabels", () => {
       ),
       { numRuns: 60 },
     );
+    probe.expectReached(14);
   });
 });

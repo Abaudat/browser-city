@@ -6,6 +6,7 @@ import {
   type ConnectionStatus,
   mountConnectionNotice,
 } from "../../../src/ui/connection-notice";
+import { sizeProbe } from "../setup/size-probe";
 
 function mount(overrides: Partial<Parameters<typeof mountConnectionNotice>[0]> = {}) {
   return mountConnectionNotice({
@@ -228,12 +229,16 @@ describe("mountConnectionNotice", () => {
     // fade are all 0 here so "settled" needs no fake-timer bookkeeping
     // inside the property itself: every timer this module schedules
     // fires on the very next tick it is given.
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
-        fc.array(fc.constantFrom<ConnectionStatus>("connecting", "connected", "disconnected"), {
-          minLength: 0,
-          maxLength: 30,
-        }),
+        probe.over(
+          fc.array(fc.constantFrom<ConnectionStatus>("connecting", "connected", "disconnected"), {
+            minLength: 0,
+            maxLength: 30,
+          }),
+          (a) => a.length,
+        ),
         (sequence) => {
           document.body.innerHTML = "";
           const notice = mount({ debounceMs: 0, recoveredHoldMs: 0, fadeMs: 0 });
@@ -251,6 +256,7 @@ describe("mountConnectionNotice", () => {
         },
       ),
     );
+    probe.expectReached(24);
   });
 });
 

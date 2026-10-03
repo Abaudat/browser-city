@@ -9,6 +9,7 @@ import {
   resolveStorage,
   saveBindings,
 } from "../../../src/input/keybindings-storage";
+import { sizeProbe } from "../setup/size-probe";
 
 /** A `Storage`-shaped fake that records every call, so a read that
  * secretly writes -- or a write that touches a second key -- is visible. */
@@ -134,17 +135,22 @@ describe("loadBindings", () => {
   it("inv_keybindings_read_is_total", () => {
     // Any string at all in the slot -- and any throw from storage -- is a
     // playable game on defaults, never an exception.
+    const probe = sizeProbe();
     fc.assert(
-      fc.property(fc.string(), (stored) => {
-        const fake = fakeStorage({ [KEYBINDINGS_STORAGE_KEY]: stored });
-        expect(() => loadBindings(fake.storage)).not.toThrow();
-        const loaded = loadBindings(fake.storage);
-        expect(Object.keys(loaded).sort()).toEqual(
-          ["move_down", "move_left", "move_right", "move_up"].sort(),
-        );
-        expect(fake.writes).toEqual([]);
-      }),
+      fc.property(
+        probe.over(fc.string({ maxLength: 200 }), (s) => s.length),
+        (stored) => {
+          const fake = fakeStorage({ [KEYBINDINGS_STORAGE_KEY]: stored });
+          expect(() => loadBindings(fake.storage)).not.toThrow();
+          const loaded = loadBindings(fake.storage);
+          expect(Object.keys(loaded).sort()).toEqual(
+            ["move_down", "move_left", "move_right", "move_up"].sort(),
+          );
+          expect(fake.writes).toEqual([]);
+        },
+      ),
     );
+    probe.expectReached(150);
   });
 });
 

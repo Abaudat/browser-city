@@ -8,6 +8,7 @@ import {
   type SettingsStorage,
   saveVersioned,
 } from "../../../src/settings/settings-storage";
+import { sizeProbe } from "../setup/size-probe";
 
 const KEY = "bc.test-group.v1";
 const VERSION = 1;
@@ -153,15 +154,20 @@ describe("loadVersioned / saveVersioned", () => {
   it("inv_settings_read_is_total", () => {
     // Any string at all in the slot -- and any throw from storage -- is
     // usable defaults, never an exception.
+    const probe = sizeProbe();
     fc.assert(
-      fc.property(fc.string(), (stored) => {
-        const fake = fakeStorage({ [KEY]: stored });
-        expect(() =>
-          loadVersioned(fake.storage, KEY, VERSION, "value", DEFAULT, normalise),
-        ).not.toThrow();
-        expect(fake.writes).toEqual([]);
-      }),
+      fc.property(
+        probe.over(fc.string({ maxLength: 200 }), (s) => s.length),
+        (stored) => {
+          const fake = fakeStorage({ [KEY]: stored });
+          expect(() =>
+            loadVersioned(fake.storage, KEY, VERSION, "value", DEFAULT, normalise),
+          ).not.toThrow();
+          expect(fake.writes).toEqual([]);
+        },
+      ),
     );
+    probe.expectReached(150);
   });
 });
 

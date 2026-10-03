@@ -12,6 +12,7 @@ import {
 } from "../../../src/world/floor-walk";
 import type { MovementConfig } from "../../../src/world/movement";
 import { TransitionIndex } from "../../../src/world/transitions";
+import { sizeProbe } from "../setup/size-probe";
 
 /** Open space, no colliders -- this module's own logic is what is under
  * test, not `movement.ts`'s collision resolution (already covered by
@@ -117,10 +118,14 @@ describe("stepAndTransition", () => {
       { skipPairSymmetry: true },
     );
 
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
         fc.constantFrom({ x: 1, y: 0 } as const, { x: -1, y: 0 } as const),
-        fc.array(fc.integer({ min: 1, max: BIG_DELTA_MS }), { minLength: 1, maxLength: 30 }),
+        probe.over(
+          fc.array(fc.integer({ min: 1, max: BIG_DELTA_MS }), { minLength: 1, maxLength: 30 }),
+          (a) => a.length,
+        ),
         (direction, deltas) => {
           let state: FloorWalkState = { x: 4.5, y: 0.5, floor: 0, cellX: 4, cellY: 0 };
           let transitionCount = 0;
@@ -142,6 +147,7 @@ describe("stepAndTransition", () => {
         },
       ),
     );
+    probe.expectReached(24);
   });
 
   it("the mutually-targeting pair never fires on two consecutive steps, for any sequence of direction changes (Quentin's cycle-2 direction: a stronger property than holding one direction the whole way)", () => {
@@ -170,14 +176,18 @@ describe("stepAndTransition", () => {
       { x: 0, y: 0 },
     ] as const;
 
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
-        fc.array(
-          fc.record({
-            direction: fc.constantFrom(...directions),
-            deltaMs: fc.integer({ min: 1, max: BIG_DELTA_MS }),
-          }),
-          { minLength: 1, maxLength: 40 },
+        probe.over(
+          fc.array(
+            fc.record({
+              direction: fc.constantFrom(...directions),
+              deltaMs: fc.integer({ min: 1, max: BIG_DELTA_MS }),
+            }),
+            { minLength: 1, maxLength: 40 },
+          ),
+          (a) => a.length,
         ),
         (steps) => {
           let state: FloorWalkState = { x: 4.5, y: 0.5, floor: 0, cellX: 4, cellY: 0 };
@@ -200,5 +210,6 @@ describe("stepAndTransition", () => {
         },
       ),
     );
+    probe.expectReached(30);
   });
 });

@@ -2,6 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { ColliderSource } from "../../../src/world/collision-grid";
 import { CollisionGrid } from "../../../src/world/collision-grid";
+import { sizeProbe } from "../setup/size-probe";
 
 const SUBCELLS_PER_CELL = 16;
 
@@ -265,18 +266,22 @@ describe("inv_collision_grid_matches_rebuild", () => {
   // fresh build of the survivors -- including which chunks are allocated,
   // so a grid that never frees an emptied chunk fails here.
   it("inv_collision_grid_matches_rebuild", () => {
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
-        fc.array(
-          fc.oneof(
-            fc.record({ kind: fc.constant("insert" as const), row: rowArb }),
-            fc.record({
-              kind: fc.constant("delete" as const),
-              objectId: fc.integer({ min: 1, max: 6 }).map(BigInt),
-            }),
-            fc.record({ kind: fc.constant("update" as const), row: rowArb }),
+        probe.over(
+          fc.array(
+            fc.oneof(
+              fc.record({ kind: fc.constant("insert" as const), row: rowArb }),
+              fc.record({
+                kind: fc.constant("delete" as const),
+                objectId: fc.integer({ min: 1, max: 6 }).map(BigInt),
+              }),
+              fc.record({ kind: fc.constant("update" as const), row: rowArb }),
+            ),
+            { maxLength: 40 },
           ),
-          { maxLength: 40 },
+          (a) => a.length,
         ),
         (ops) => {
           const grid = gridWith(objectDefs);
@@ -315,6 +320,7 @@ describe("inv_collision_grid_matches_rebuild", () => {
       ),
       { numRuns: 60 },
     );
+    probe.expectReached(28);
   });
 
   it("frees a chunk as soon as its last entry goes, and the floor with its last chunk", () => {

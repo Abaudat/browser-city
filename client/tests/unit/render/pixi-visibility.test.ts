@@ -11,6 +11,7 @@ import { VisibilityApplier, type VisibilityMember } from "../../../src/render/pi
 import type { Drawable } from "../../../src/render/sort-key";
 import type { VisibilityDrawable } from "../../../src/render/visibility";
 import { NO_OWNER } from "../../../src/world/ownership";
+import { sizeProbe } from "../setup/size-probe";
 
 const FURNITURE = layerCodeByName("furniture");
 
@@ -123,6 +124,7 @@ describe("VisibilityApplier", () => {
     // touches, which cannot fail this invariant by construction). Hidden
     // members get `visible = false` but stay in the container, at their
     // sorted position, exactly like every other member.
+    const probe = sizeProbe();
     fc.assert(
       fc.property(
         fc.uniqueArray(fc.integer({ min: 1, max: 50 }), { minLength: 1, maxLength: 20 }),
@@ -147,6 +149,7 @@ describe("VisibilityApplier", () => {
         }),
         (ids, specs, viewer) => {
           const n = Math.min(ids.length, specs.length);
+          probe.record(n);
           const members: (OrderedMember & VisibilityMember<Drawable & VisibilityDrawable>)[] = [];
           for (let i = 0; i < n; i++) {
             const id = ids[i];
@@ -185,5 +188,6 @@ describe("VisibilityApplier", () => {
         },
       ),
     );
+    probe.expectReached(12);
   });
 });
