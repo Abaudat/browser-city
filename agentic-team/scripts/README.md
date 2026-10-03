@@ -23,9 +23,9 @@ agentic-team/scripts/
     fake.sh                 BC_FAKE test double: replays JSON, logs writes
 
   bc-budget.sh    LEVEL 2 — the budget gate: available / spent / broken
-  bc-issue.sh     LEVEL 2 — issues: adopt-alerts/next/active/transition/scope/backlog/demo-*/epics+stories+blockers/amend
+  bc-issue.sh     LEVEL 2 — issues: adopt-alerts/next/active/transition/scope/backlog/demo-*/live+declare-live/epics+stories+blockers/amend
   bc-comment.sh    LEVEL 2 — the structured-comment reads and writes
-  bc-pr.sh          LEVEL 2 — PRs: open/attach/merge/for-issue/head/ci-status/conflicts
+  bc-pr.sh          LEVEL 2 — PRs: open (refuses an issue with no live declaration)/attach/merge/for-issue/head/ci-status/conflicts
   bc-sprint.sh       LEVEL 2 — sprints: current/next/over/items/close/scope-in
   bc-session.sh       LEVEL 2 — Orca/Claude session lifecycle, and Scotty's sprint session
 
@@ -100,6 +100,20 @@ text/JSON logic.
 The three off-the-wake scripts source level 1 directly, as `setup-github.sh`
 always has: they are not part of the flowchart, so the level-3 rule that
 keeps the orchestrator's decisions honest does not apply to them.
+
+The live declaration (story 4.24). Whether a finished story is visible in the
+live game — a player on the deployed client, with no debug overlay, console or
+dev tool, can see or do it — is recorded once, by Crew, as ONE comment on the
+story issue: `bc-issue.sh declare-live <issue> visible <wherefile>` (the
+where-line, one line, is the comment's prose) or `declare-live <issue> none`,
+an idempotent upsert marked `<!-- bc:live visible|none -->`. `bc-issue.sh live
+<issue>` is the one reader, one JSON line: `{"live":"visible","where":"…"}`,
+`{"live":"none"}` or `{"live":"undeclared"}`; undeclared is treated as not
+visible everywhere, and an unreadable comment list is exit 2, never
+"undeclared". `bc-pr.sh open` refuses an issue with no declaration.
+`create-demo` hands Scotty each story's `Live:` line, and `write-demo` rejects
+(exit 3) any checklist line that does not end in one `(#<n>)` naming a Done
+story of the sprint declared `visible`.
 
 Level 2 scripts source level 1 directly. Each is `bc-x.sh <command> [args]`:
 prints JSON or a bare value on stdout, follows the exit contract below. Four

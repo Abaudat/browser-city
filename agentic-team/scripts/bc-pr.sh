@@ -56,6 +56,20 @@ open)
     exit 2
   fi
 
+  # Story 4.24: no PR without the story's live declaration. Undeclared and
+  # unreadable both refuse -- before the push, nothing created. There is no
+  # environment hook around this gate.
+  live="$(bash "$_BC_PR_DIR/bc-issue.sh" live "$issue" 2>/dev/null)" || live=""
+  case "$(printf '%s' "$live" | "$JQ" -r '.live // empty' 2>/dev/null)" in
+    visible | none) ;;
+    *)
+      echo "bc-pr open: issue #$issue has no readable live declaration. Say whether a player on the deployed client, with no debug overlay, console or dev tool, can see or do this story:" >&2
+      echo "  bash $_BC_PR_DIR/bc-issue.sh declare-live $issue visible <wherefile>   (one line: where to go and what to do)" >&2
+      echo "  bash $_BC_PR_DIR/bc-issue.sh declare-live $issue none" >&2
+      exit 2
+      ;;
+  esac
+
   # BC_SKIP_PUSH=1 is a test hook -- tests run against a scratch repo with no
   # real remote to push to.
   if [ "${BC_SKIP_PUSH:-}" != "1" ]; then

@@ -37,7 +37,9 @@ Read these.
 
 Then, write a short description of what the team is demoing this Sprint (only the highlights, not longer than 3 sentences) and a checklist of what to show, one `- [ ] ` line per item. Every line is phrased for what Adrian, watching as a player/producer, can directly see or do — never an implementation term: "Walk through a defs/ object definition and its packed atlas entry" is exactly what not to write, "Place a building and watch it appear in the district" is. A sprint with nothing player-visible (pure process or tooling work) gets no checklist line at all rather than an invented one — leave it empty and say so in the summary.
 
-Then create the Sprint demo issue (using command `bash <scripts>/bc-issue.sh write-demo <n> <bodyfile>`). It lints every checklist line and exits 3, naming each offending line, if one reads as engineering jargon — nothing is created yet, so rewrite exactly those lines and call it again.
+Each story arrives with a `Live:` line saying whether a player can see it in the live game. A checklist line is only ever about a story that is `Live: visible`, and ends with that story as `(#<n>)` — exactly one reference, at the end of the line. A story that is `Live: not visible` or `Live: not declared` gets no checklist line, and the summary says plainly that it is not yet visible.
+
+Then create the Sprint demo issue (using command `bash <scripts>/bc-issue.sh write-demo <n> <bodyfile>`). It lints every checklist line and exits 3, naming each offending line and why, if one reads as engineering jargon, has no story reference, cites a story that is not a Done item of this Sprint, or cites one that is not declared visible — nothing is created yet. Fix jargon by rewriting the line; fix a live rejection by removing the line and saying "not yet visible" in the summary, never by rephrasing it, then call it again.
 
 ## 4. When you are dispatched to escalate a circuit breaker
 
