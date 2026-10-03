@@ -225,6 +225,11 @@ pub struct AtlasPageDef {
 /// literal past either.
 pub const UNDERFOOT_TAG_KEY: &str = "underfoot";
 
+/// Story 15.12: the tag of an upright seen face-on (a railing, a fence).
+/// Its collider is its foot: `silhouette.rs` refuses one that rises above
+/// the foot an archetype declares with `foot = true`.
+pub const UPRIGHT_TAG_KEY: &str = "upright";
+
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RawColliderRect {
@@ -266,6 +271,10 @@ pub struct RawArchetype {
     pub height: Option<Spanned<u32>>,
     #[serde(default)]
     pub collider_inset: Option<Spanned<RawColliderInset>>,
+    /// Story 15.12: this archetype's collider is the foot of an upright
+    /// (rows `top..` of the footprint); needs a `collider_inset`.
+    #[serde(default)]
+    pub foot: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -837,6 +846,7 @@ pub struct ArchetypeEntry {
     pub key: Located<String>,
     pub height: Option<Located<u32>>,
     pub collider_inset: Option<Located<RawColliderInset>>,
+    pub foot: bool,
 }
 
 // --- tags (story 2.10, FR111): the rule engine's only vocabulary -----------

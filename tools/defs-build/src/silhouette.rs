@@ -4,21 +4,28 @@
 //! can reach `Defs`, `emit` or the contact sheet.
 //!
 //! The band is the bottom `height * tile_size_px` rows of the object's
-//! own sprite rect. Opaque is [`crate::alpha::is_opaque`]. Three clauses,
+//! own sprite rect. Opaque is [`crate::alpha::is_opaque`]. Four clauses,
 //! in this order, each compared in sub-cells with integer cross
 //! multiplication (pixel edge `p * SUBCELLS` against collider edge
 //! `x * tile_size_px`), never rounding:
 //!
 //! 1. the collider's columns lie inside the band's solid column span;
 //! 2. the band's lowest solid row's columns lie inside the collider's;
-//! 3. the collider's rows lie inside the band's solid row span.
+//! 3. the collider's rows lie inside the band's solid row span;
+//! 4. only for an upright (tag `upright`): the collider's rows lie inside
+//!    the foot -- the rows an archetype declares with `foot = true`. An
+//!    upright seen face-on is opaque top to bottom, so no pixel can say
+//!    which rows touch the ground; the authored foot does, and the
+//!    collider may not climb its face.
 
 use std::collections::BTreeMap;
 
 use crate::alpha::{PxRect, bottom_opaque_row, opaque_column_span, opaque_row_span};
 use crate::atlas::image::DecodedSheet;
 use crate::error::DefsError;
-use crate::model::{COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, RawDefs, SpriteRect};
+use crate::model::{
+    COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, RawDefs, SpriteRect, UPRIGHT_TAG_KEY,
+};
 
 /// Every way a collider can disagree with its art. Spans are half-open
 /// sub-cell ranges; a pixel edge that falls between two sub-cells is
@@ -41,6 +48,11 @@ pub enum Disagreement {
     ColliderRowsOutsideArt {
         collider: (i32, i32),
         art: (i64, i64),
+    },
+    /// Clause 4: an upright's collider reaches outside its foot.
+    ColliderOutsideFoot {
+        collider: (i32, i32),
+        foot: (i32, i32),
     },
 }
 
@@ -65,6 +77,11 @@ impl std::fmt::Display for Disagreement {
                 f,
                 "collider rows {}..{} reach outside the solid rows {}..{} of the sprite's footprint band (sub-cells)",
                 collider.0, collider.1, art.0, art.1
+            ),
+            Disagreement::ColliderOutsideFoot { collider, foot } => write!(
+                f,
+                "collider rows {}..{} reach outside the foot rows {}..{} of an upright (sub-cells)",
+                collider.0, collider.1, foot.0, foot.1
             ),
         }
     }
@@ -102,6 +119,28 @@ pub fn check_collider_against_art(
     tile_size_px: u32,
     collider: ColliderRect,
 ) -> Result<(), Disagreement> {
+    check_collider_against_art_with_foot(
+        rgba,
+        sheet_w,
+        sprite,
+        height,
+        tile_size_px,
+        collider,
+        None,
+    )
+}
+
+/// [`check_collider_against_art`] plus clause 4 when `foot` (half-open
+/// sub-cell rows) is given.
+pub fn check_collider_against_art_with_foot(
+    rgba: &[u8],
+    sheet_w: u32,
+    sprite: &SpriteRect,
+    height: u32,
+    tile_size_px: u32,
+    collider: ColliderRect,
+    foot: Option<(i32, i32)>,
+) -> Result<(), Disagreement> {
     let band_h = (height * tile_size_px).min(sprite.h);
     let band = PxRect {
         sheet_w,
@@ -137,7 +176,40 @@ pub fn check_collider_against_art(
             art: span_in_subcells(row_span, tile_size_px),
         });
     }
+    if let Some(foot) = foot
+        && (rows.0 < foot.0 || rows.1 > foot.1)
+    {
+        return Err(Disagreement::ColliderOutsideFoot {
+            collider: rows,
+            foot,
+        });
+    }
     Ok(())
+}
+
+/// The foot (half-open sub-cell rows) an upright's collider must stay in:
+/// its own archetype's when that is a foot, otherwise the shallowest foot
+/// any archetype declares. `Err` when it is tagged upright and no
+/// archetype is a foot at all.
+fn foot_of(
+    raw: &RawDefs,
+    archetype: Option<&str>,
+    height_cells: u32,
+) -> Result<(i32, i32), &'static str> {
+    let rows = |a: &crate::model::ArchetypeEntry| {
+        a.collider_inset.as_ref().map(|i| {
+            (
+                i.value.top,
+                (height_cells as i64 * COLLIDER_SUBCELLS_PER_CELL) as i32 - i.value.bottom,
+            )
+        })
+    };
+    let feet = || raw.archetypes.iter().filter(|a| a.foot);
+    archetype
+        .and_then(|k| feet().find(|a| a.key.value == k))
+        .or_else(|| feet().max_by_key(|a| a.collider_inset.as_ref().map_or(0, |i| i.value.top)))
+        .and_then(rows)
+        .ok_or("no archetype is a `foot`")
 }
 
 /// Every collider in `defs` against its sprite's pixels, first failure
@@ -159,14 +231,50 @@ pub fn check(
             .get(entry.key.value.as_str())
             .expect("every validated object came from a raw entry of the same key");
         let Some(collider) = obj.collider else {
+            if entry.tags.iter().any(|t| t == UPRIGHT_TAG_KEY) {
+                return Err(DefsError::new(
+                    &entry.path,
+                    entry.key.line,
+                    entry.key.col,
+                    format!(
+                        "object '{}' is tagged '{UPRIGHT_TAG_KEY}' but has no collider -- an upright collides at its foot",
+                        obj.key
+                    ),
+                ));
+            }
             continue;
         };
         let (w, _h, rgba) = sheets
             .get(&obj.sprite.sheet)
             .expect("every object sheet was decoded before the silhouette check");
-        let Err(problem) =
-            check_collider_against_art(rgba, *w, &obj.sprite, obj.height, tile_size_px, collider)
-        else {
+        let foot = if entry.tags.iter().any(|t| t == UPRIGHT_TAG_KEY) {
+            let named = entry.archetype.as_ref().map(|a| a.value.as_str());
+            match foot_of(raw, named, obj.height) {
+                Ok(f) => Some(f),
+                Err(why) => {
+                    return Err(DefsError::new(
+                        &entry.path,
+                        entry.key.line,
+                        entry.key.col,
+                        format!(
+                            "object '{}' is tagged '{UPRIGHT_TAG_KEY}' but {why}",
+                            obj.key
+                        ),
+                    ));
+                }
+            }
+        } else {
+            None
+        };
+        let Err(problem) = check_collider_against_art_with_foot(
+            rgba,
+            *w,
+            &obj.sprite,
+            obj.height,
+            tile_size_px,
+            collider,
+            foot,
+        ) else {
             continue;
         };
         let (line, col, from) = match (&entry.collider, &entry.archetype) {
@@ -282,6 +390,56 @@ mod tests {
         }
     }
 
+    fn run_foot(c: ColliderRect, foot: (i32, i32)) -> Result<(), Disagreement> {
+        check_collider_against_art_with_foot(
+            &block_sheet(),
+            16,
+            &sprite(0, 0, 16, 16),
+            1,
+            16,
+            c,
+            Some(foot),
+        )
+    }
+
+    #[test]
+    fn a_collider_one_subcell_outside_the_foot_on_either_side_fails_naming_both() {
+        // Art rows 4..16, so clause 3 never refuses these.
+        let tall = sheet(16, 16, |x, y| {
+            if in_block(x, y, (4, 12), (4, 16)) {
+                SOLID
+            } else {
+                0
+            }
+        });
+        let run_tall = |c| {
+            check_collider_against_art_with_foot(
+                &tall,
+                16,
+                &sprite(0, 0, 16, 16),
+                1,
+                16,
+                c,
+                Some((8, 12)),
+            )
+        };
+        assert_eq!(run_tall(rect(4, 8, 12, 12)), Ok(()));
+        for c in [rect(4, 7, 12, 12), rect(4, 8, 12, 13)] {
+            assert_eq!(
+                run_tall(c),
+                Err(Disagreement::ColliderOutsideFoot {
+                    collider: (c.y0, c.y1),
+                    foot: (8, 12)
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn no_foot_means_no_fourth_clause() {
+        assert_eq!(run(rect(4, 4, 12, 12)), Ok(()));
+    }
+
     #[test]
     fn a_collider_shorter_than_the_art_passes_since_only_the_outside_is_refused() {
         assert_eq!(run(rect(4, 6, 12, 10)), Ok(()));
@@ -303,6 +461,11 @@ mod tests {
         assert_eq!(
             e.to_string(),
             "collider rows 3..12 reach outside the solid rows 4..12 of the sprite's footprint band (sub-cells)"
+        );
+        let e = run_foot(rect(4, 6, 12, 12), (8, 12)).unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            "collider rows 6..12 reach outside the foot rows 8..12 of an upright (sub-cells)"
         );
     }
 
@@ -545,13 +708,14 @@ mod tests {
         }
     }
 
-    /// Which clause refused (or none): the four verdicts the oracle must
+    /// Which clause refused (or none): the five verdicts the oracle must
     /// both predict and draw.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     enum Kind {
         Columns,
         BottomRow,
         Rows,
+        Foot,
         Pass,
     }
 
@@ -560,6 +724,7 @@ mod tests {
         (i32, i32, i32, i32),
         (bool, bool, bool),
         (i32, i32, i32, i32),
+        (bool, i32, i32),
     );
 
     fn oracle_strategy() -> impl Strategy<Value = OracleParams> {
@@ -574,8 +739,9 @@ mod tests {
                 1u32..4,
             ),
             (0i32..48, 1i32..48, 0i32..16, 1i32..16),
-            (any::<bool>(), any::<bool>(), any::<bool>()),
+            (prop::bool::weighted(0.85), any::<bool>(), any::<bool>()),
             (-2i32..=2, -2i32..=2, -2i32..=2, -2i32..=2),
+            (any::<bool>(), -3i32..=3, -3i32..=3),
         )
     }
 
@@ -592,6 +758,7 @@ mod tests {
             (fx0, fdx, fy0, fdy),
             (near, s0, s1),
             (o0, o1, o2, o3),
+            (has_foot, f0, f1),
         ) = p;
         let (c, d) = (a + lead, a + lead + cw);
         let b = d + tail;
@@ -621,13 +788,17 @@ mod tests {
                 0
             }
         });
-        let got = check_collider_against_art(
+        // The foot is the art's rows plus a small offset, so the collider
+        // cuts it on either side as often as it does not.
+        let foot = (r0i + f0, r2i + f1);
+        let got = check_collider_against_art_with_foot(
             &art,
             48,
             &sprite(0, 0, 48, 16),
             1,
             16,
             rect(x0, y0, x1, y1),
+            has_foot.then_some(foot),
         );
         let (kind, want) = if x0 < ai || x1 > bi {
             (
@@ -653,6 +824,14 @@ mod tests {
                     art: (r0i as i64, r2i as i64),
                 }),
             )
+        } else if has_foot && (y0 < foot.0 || y1 > foot.1) {
+            (
+                Kind::Foot,
+                Err(Disagreement::ColliderOutsideFoot {
+                    collider: (y0, y1),
+                    foot,
+                }),
+            )
         } else {
             (Kind::Pass, Ok(()))
         };
@@ -661,12 +840,12 @@ mod tests {
     }
 
     /// The oracle predicts every verdict, and the generator is proven to
-    /// draw all four of them (never left to the seed): each kind must occur
+    /// draw all five of them (never left to the seed): each kind must occur
     /// at least a hundred times in the run.
     #[test]
-    fn the_oracle_draws_all_four_verdicts_and_predicts_each() {
+    fn the_oracle_draws_all_five_verdicts_and_predicts_each() {
         use proptest::test_runner::{Config, TestRunner};
-        let cases = cases().cases.max(4096);
+        let cases = cases().cases.max(16384);
         let mut runner = TestRunner::new(Config {
             cases,
             ..Config::default()
@@ -681,9 +860,75 @@ mod tests {
             })
             .unwrap();
         let tally = tally.into_inner();
-        for kind in [Kind::Columns, Kind::BottomRow, Kind::Rows, Kind::Pass] {
+        for kind in [
+            Kind::Columns,
+            Kind::BottomRow,
+            Kind::Rows,
+            Kind::Foot,
+            Kind::Pass,
+        ] {
             let n = tally.get(&kind).copied().unwrap_or(0);
             assert!(n >= 100, "{kind:?} drawn only {n} times: {tally:?}");
         }
+    }
+
+    fn archetype(key: &str, foot: bool, top: i32, bottom: i32) -> crate::model::ArchetypeEntry {
+        use crate::model::{Located, RawColliderInset};
+        crate::model::ArchetypeEntry {
+            path: "a.toml".into(),
+            key: Located::at(key.to_string(), 1, 1),
+            height: None,
+            collider_inset: Some(Located::at(
+                RawColliderInset {
+                    left: 0,
+                    top,
+                    right: 0,
+                    bottom,
+                },
+                1,
+                1,
+            )),
+            foot,
+        }
+    }
+
+    fn raw_with(archetypes: Vec<crate::model::ArchetypeEntry>) -> RawDefs {
+        RawDefs {
+            archetypes,
+            ..RawDefs::default()
+        }
+    }
+
+    #[test]
+    fn the_foot_is_the_named_archetypes_else_the_shallowest_declared() {
+        let raw = raw_with(vec![
+            archetype("deep", true, 6, 0),
+            archetype("shallow", true, 11, 0),
+            archetype("plain", false, 0, 0),
+        ]);
+        // A named foot wins over a shallower one.
+        assert_eq!(foot_of(&raw, Some("deep"), 1), Ok((6, 16)));
+        // A non-foot, an unknown or an absent archetype gets the shallowest.
+        for named in [Some("plain"), Some("nope"), None] {
+            assert_eq!(foot_of(&raw, named, 1), Ok((11, 16)));
+        }
+        // Two feet at the same depth: still that depth.
+        let tie = raw_with(vec![
+            archetype("a", true, 11, 0),
+            archetype("b", true, 11, 0),
+        ]);
+        assert_eq!(foot_of(&tie, None, 1), Ok((11, 16)));
+    }
+
+    #[test]
+    fn a_multi_cell_foot_spans_height_times_sixteen_minus_bottom() {
+        let raw = raw_with(vec![archetype("f", true, 27, 2)]);
+        assert_eq!(foot_of(&raw, Some("f"), 2), Ok((27, 30)));
+    }
+
+    #[test]
+    fn no_foot_archetype_at_all_is_an_error() {
+        let raw = raw_with(vec![archetype("plain", false, 0, 0)]);
+        assert!(foot_of(&raw, None, 1).is_err());
     }
 }
