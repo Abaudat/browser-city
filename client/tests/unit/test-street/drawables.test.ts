@@ -446,10 +446,12 @@ describe("the player can never walk off the drawn world", () => {
     const outsideTheWorld = (pos: Vec2) =>
       pos.x - half < STAIRWELL_X0 - 1e-9 && pos.y > foot.prop.y;
     const start = (x: number): Vec2 => ({ x, y: foot.rect.y0 });
-    /** Runs the inputs from the strip. The step-wise invariant: no single
-     * step takes a body over the well from at-or-north of the foot face to
-     * south of it (a body may legitimately leave east, go down the entrance
-     * and come back west onto the treads -- that is the opening). */
+    /** Runs the inputs from the strip. The invariant: a body over the well
+     * at-or-north of the foot face that is still over the well after a step
+     * is stopped by the foot. A body that has left the well (a diagonal step
+     * clears its last column in the X pass, then the Y pass carries it south
+     * down the entrance column) is no longer the foot's business, and may
+     * come back west onto the treads through the opening. */
     const run = (
       from: Vec2,
       inputs: readonly { dx: number; dy: number; deltaMs: number }[],
@@ -459,7 +461,7 @@ describe("the player can never walk off the drawn world", () => {
         const before = pos;
         pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config);
         expect(outsideTheWorld(pos), `slid out of the world at (${pos.x}, ${pos.y})`).toBe(false);
-        if (overWell(before) && before.y <= foot.rect.y0 + 1e-9) {
+        if (overWell(before) && before.y <= foot.rect.y0 + 1e-9 && overWell(pos)) {
           expect(
             pos.y,
             `stepped through the foot at (${before.x}, ${before.y})`,
@@ -476,6 +478,8 @@ describe("the player can never walk off the drawn world", () => {
     // the opening onto the treads: legitimate, and the invariant tolerates it.
     const around = [...repeat(1, 0, 20), ...repeat(0, 1, 8), ...repeat(-1, 0, 12)];
     run(start(foot.rect.x0 + half), around);
+    // A diagonal off the strip's east end, in one step.
+    run(start(foot.rect.x0 + half), repeat(1, 1, 40));
     fc.assert(
       fc.property(
         fc.array(
