@@ -1327,6 +1327,7 @@ struct LoweredObjectEntry {
     interact_at: Option<Located<RawColliderRect>>,
     window: bool,
     tags: Vec<String>,
+    flight_drop_px: Option<Located<u32>>,
 }
 
 /// Turns an archetype's own `collider_inset` into a concrete
@@ -1493,6 +1494,7 @@ fn lower_object(
         interact_at: e.interact_at.clone(),
         window: e.window,
         tags: e.tags.clone(),
+        flight_drop_px: e.flight_drop_px.clone(),
     })
 }
 
@@ -2211,6 +2213,44 @@ fn check_object_footprint_cap(entries: &[LoweredObjectEntry]) -> Result<(), Defs
     Ok(())
 }
 
+/// Story 15.15: a declared `flight_drop_px` is `1..=render.storey_height_px`
+/// and is refused on an object that declares a `collider` (a flight is
+/// walked over, never blocking).
+fn check_object_flight_drop(
+    entries: &[LoweredObjectEntry],
+    balance: &[BalanceEntry],
+) -> Result<(), DefsError> {
+    let storey = balance
+        .iter()
+        .find(|b| b.key.value == "render.storey_height_px")
+        .map(|b| b.value.value as u32);
+    for e in entries {
+        let Some(drop) = &e.flight_drop_px else {
+            continue;
+        };
+        let at = |message: String| DefsError::new(&e.path, drop.line, drop.col, message);
+        let Some(storey) = storey else {
+            return Err(at(format!(
+                "object '{}' declares flight_drop_px but no 'render.storey_height_px' balance key exists to bound it",
+                e.key.value
+            )));
+        };
+        if drop.value == 0 || drop.value > storey {
+            return Err(at(format!(
+                "object '{}' flight_drop_px {} is outside 1..=render.storey_height_px ({storey})",
+                e.key.value, drop.value
+            )));
+        }
+        if e.collider.is_some() {
+            return Err(at(format!(
+                "object '{}' declares both flight_drop_px and a collider -- a flight is walked over, never blocking",
+                e.key.value
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// `render.tile_size_px` is a balance key like any other (`defs/balance/
 /// render.toml`), read from the already-parsed tree -- never a literal
 /// here. `None` when the tree declares no such key; `validate` turns that
@@ -2766,6 +2806,7 @@ pub fn validate(
     // rejection above (name, layer, footprint cap, collider/interact_at
     // geometry, sprite) gets its own chance to fire on a fixture built to
     // exercise it before this generic catch-all ever runs.
+    check_object_flight_drop(&lowered_objects, &raw.balance)?;
     check_object_walkability_tag(&lowered_objects)?;
     // Story 2.9: after every other object-level rejection, same
     // reasoning as `check_object_walkability_tag`'s own placement.
@@ -2911,6 +2952,7 @@ pub fn validate(
                 window: o.window,
                 tags: resolve_object_tags(&o.path, &o.key, &o.tags, &tag_ids)
                     .expect("tags already validated"),
+                flight_drop_px: o.flight_drop_px.as_ref().map(|d| d.value),
             }
         })
         .collect();

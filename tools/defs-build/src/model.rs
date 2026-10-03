@@ -342,6 +342,10 @@ pub struct RawObject {
     /// archetype at all.
     #[serde(default)]
     pub archetype: Option<Spanned<String>>,
+    /// Story 15.15: how far this flight's drawn treads descend (native
+    /// pixels). Client-only; refused on an object with a `collider`.
+    #[serde(default)]
+    pub flight_drop_px: Option<Spanned<u32>>,
     /// Story 1.9 (FR148): where a player must stand to interact with this
     /// object -- a half-open integer rect in sub-cells relative to the
     /// same north-west sub-cell origin a `collider` uses. Unlike a
@@ -1039,6 +1043,8 @@ pub struct ObjectEntry {
     pub interact_at: Option<Located<RawColliderRect>>,
     pub window: bool,
     pub tags: Vec<String>,
+    /// Story 15.15: see [`RawObject::flight_drop_px`].
+    pub flight_drop_px: Option<Located<u32>>,
     /// Story 2.3 (AC3): the archetype key this object names, if any --
     /// resolved and consumed by `validate.rs`'s lowering step, never read
     /// past it.
@@ -1373,6 +1379,10 @@ pub struct ObjectDef {
     /// Resolved tag ids (story 2.10, FR111), sorted and deduplicated --
     /// the engine's only vocabulary, never a literal key past this point.
     pub tags: Vec<u32>,
+    /// Story 15.15: how far this flight's drawn treads descend, in native
+    /// pixels (`1..=render.storey_height_px`). Client-only: emitted into
+    /// `defs.json`, never into `sim::generated::defs`.
+    pub flight_drop_px: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
