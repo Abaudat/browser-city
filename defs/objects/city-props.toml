@@ -155,9 +155,13 @@ width = 1
 archetype = "underfoot_flat"
 tags = ["stairs", "underfoot", "fixture"]
 
-# One staircase seen as three objects cut from the same 48x64 sheet, so
-# the player walks between the railings: behind the near one, in front of
-# the far one. The ball finial is the 16 px overhang of the top railing.
+# One staircase seen as three objects, so the player walks between the
+# railings: behind the near one, in front of the far one. Both railings
+# overhang their own row by 16 px (the ball finial and the handrail's top).
+# An upright prop owns every pixel it draws, so the near railing is cut from
+# the railing-only sheet (the same stairwell with the treads removed): its
+# overhang row would otherwise fall into the flat-pass treads sprite and be
+# drawn under the player.
 [[object]]
 id = 12
 key = "stairwell_top_railing"
@@ -186,7 +190,7 @@ id = 14
 key = "stairwell_bottom_railing"
 name = "Stairwell Bottom Railing"
 layer = "objects"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 48, w = 48, h = 16 }
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Railing_1.png", x = 0, y = 32, w = 48, h = 32 }
 width = 3
 archetype = "full_cell_blocker"
 tags = ["stairs", "fixture"]
