@@ -19,6 +19,8 @@ import {
   isDefStreetProp,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
+  PLATFORM_LANDING_X,
+  PLATFORM_LANDING_Y,
   PLAYER_START,
   SHOPFRONT_EXIT_Y,
   STAIRS_X,
@@ -32,6 +34,7 @@ import {
   STREET_WALK_DIRECTIONS,
   type StreetWalkInputs,
   type StreetWalkSegment,
+  SUBWAY_FLOOR,
   streetColliderSources,
   streetPlacedRows,
   streetWalkUntilMet,
@@ -493,4 +496,23 @@ export function topRailingFoot() {
       y1: origin.y + source.collider.y1 / sub,
     },
   };
+}
+
+/** Where a body walking west from the platform landing comes to rest: the
+ * same resolver and collision grid the browser runs, stepped until the
+ * blocker holds it. The body's centre x. */
+export function platformWestRestX(): number {
+  const config = streetMovementConfig();
+  const world = streetWorldIndex();
+  const transitions = streetTransitionIndex();
+  let state: FloorWalkResult = {
+    ...initialFloorWalkState(PLATFORM_LANDING_X + 0.5, PLATFORM_LANDING_Y + 0.5, SUBWAY_FLOOR),
+    transitioned: false,
+  };
+  for (let i = 0; i < 4000; i++) {
+    const next = stepAndTransition(state, { x: -1, y: 0 }, 16, world, config, transitions);
+    if (next.x === state.x) return state.x;
+    state = next;
+  }
+  throw new Error("platformWestRestX: the body never came to rest");
 }

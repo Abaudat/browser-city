@@ -309,13 +309,16 @@ export const PLATFORM_INTERIOR_X1 = PLATFORM_X1 - 1;
 export const PLATFORM_INTERIOR_Y0 = PLATFORM_Y0 + 1;
 export const PLATFORM_INTERIOR_Y1 = PLATFORM_Y1 - 1;
 
-/** The platform's up-stairs: a one-cell-deep flight against the north
- * wall, climbing east, its up anchor the east-most tread against the east
- * wall. The flight is `PLATFORM_FLIGHT_WIDTH` cells ending at the anchor;
+/** The platform's up-stairs: a flight against the north wall (the walked
+ * row on top, the rest under the railing), climbing east, its up anchor the
+ * east-most tread against the east wall. The flight is `PLATFORM_FLIGHT_WIDTH` cells ending at the anchor;
  * the entry cell is the one just west of it. */
 export const PLATFORM_UP_ANCHOR_X = PLATFORM_INTERIOR_X1;
 export const PLATFORM_UP_ANCHOR_Y = PLATFORM_INTERIOR_Y0;
 const PLATFORM_FLIGHT_WIDTH = 2;
+/** The flight runs under the railing to its foot: the walked row and the
+ * railing's own row. */
+const PLATFORM_FLIGHT_DEPTH = 2;
 const PLATFORM_FLIGHT_X0 = PLATFORM_UP_ANCHOR_X - PLATFORM_FLIGHT_WIDTH + 1;
 /** The railing closing the flight's south side, one cell wider than the
  * flight: its extra cell runs along the entry cell. */
@@ -467,7 +470,8 @@ export const PLATFORM_STAIRWELL_ROWS: readonly StreetPropByDef[] = [
   {
     id: 51n,
     x: PLATFORM_FLIGHT_X0,
-    y: PLATFORM_UP_ANCHOR_Y,
+    // Anchored on its south row: two cells deep, the walked row on top.
+    y: PLATFORM_UP_ANCHOR_Y + PLATFORM_FLIGHT_DEPTH - 1,
     floor: SUBWAY_FLOOR,
     layer: "ground_objects",
     defId: PLATFORM_STAIR_FLIGHT_DEF_ID,

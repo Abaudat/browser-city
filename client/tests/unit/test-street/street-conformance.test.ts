@@ -91,6 +91,7 @@ import {
   lamppostApproachMaxX,
   lamppostRestY,
   onUnderpassRowY,
+  platformWestRestX,
   propCells,
   simulateStreetWalk,
   stairwellRowsAt,
@@ -1864,5 +1865,193 @@ describe("the bollard approach route (NFR50)", () => {
         `'${segment.label}' already holds at the previous lagged rest`,
       ).toBe(false);
     });
+  });
+});
+
+describe("a stairwell is drawn whole (story 15.14, FR126)", () => {
+  const sheetRect = (p: DefProp) => objectDef(p.defId).sprite;
+  /** The sprite's drawn rect in world px: bottom-left on the anchor cell. */
+  const drawnRect = (p: DefProp) => {
+    const { w, h } = sheetRect(p);
+    return { x: p.x * 16, y: (p.y + 1) * 16 - h, w, h };
+  };
+  const overlap = (
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number },
+  ) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  /** Whether two sheet rects touch along an edge with overlapping extent. */
+  const abut = (
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number },
+  ) => {
+    const cols = a.x < b.x + b.w && b.x < a.x + a.w;
+    const rows = a.y < b.y + b.h && b.y < a.y + a.h;
+    return (
+      (cols && (a.y + a.h === b.y || b.y + b.h === a.y)) ||
+      (rows && (a.x + a.w === b.x || b.x + b.w === a.x))
+    );
+  };
+  const groups = () =>
+    subwayAnchors().map(({ anchor }) => ({ anchor, rows: stairwellRowsAt(anchor) }));
+
+  it("(a) pieces cut from one sheet that touch on the sheet touch on the floor, at the offset the sheet implies", () => {
+    let pairs = 0;
+    for (const { rows } of groups()) {
+      for (const a of rows) {
+        for (const b of rows) {
+          if (a === b || sheetRect(a).sheet !== sheetRect(b).sheet) continue;
+          if (!abut(sheetRect(a), sheetRect(b))) continue;
+          pairs++;
+          const da = drawnRect(a);
+          const db = drawnRect(b);
+          expect(
+            { dx: db.x - da.x, dy: db.y - da.y },
+            `${objectDef(a.defId).key} -> ${objectDef(b.defId).key}`,
+          ).toEqual({ dx: sheetRect(b).x - sheetRect(a).x, dy: sheetRect(b).y - sheetRect(a).y });
+        }
+      }
+    }
+    expect(pairs, "the street stairwell's own pieces are examined").toBeGreaterThanOrEqual(4);
+  });
+
+  it("(a') a piece whose edge is continued by a twin sheet's piece is placed abutting it at the sheet offset", () => {
+    const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+    const sheets = new Map<string, PNG>();
+    const pixel = (sheet: string, x: number, y: number) => {
+      let png = sheets.get(sheet);
+      if (!png) {
+        png = PNG.sync.read(readFileSync(join(repoRoot, sheet)));
+        sheets.set(sheet, png);
+      }
+      const i = (y * png.width + x) * 4;
+      return [...png.data.subarray(i, i + 4)];
+    };
+    const opaque = (px: number[]) => px[3] >= 200;
+    let twins = 0;
+    for (const { rows } of groups()) {
+      for (const a of rows) {
+        for (const b of rows) {
+          const sa = sheetRect(a);
+          const sb = sheetRect(b);
+          if (a === b || sa.sheet === sb.sheet || sb.y === 0) continue;
+          // b's north edge: its own top row and the row above it on its sheet
+          // are both art, and a's last row is that same art, column for column.
+          let touching = 0;
+          let same = true;
+          for (let u = sb.x; u < sb.x + sb.w; u++) {
+            if (!opaque(pixel(sb.sheet, u, sb.y)) || !opaque(pixel(sb.sheet, u, sb.y - 1)))
+              continue;
+            touching++;
+            const last = pixel(sa.sheet, u, sa.y + sa.h - 1);
+            if (
+              u < sa.x ||
+              u >= sa.x + sa.w ||
+              last.join() !== pixel(sb.sheet, u, sb.y - 1).join()
+            ) {
+              same = false;
+            }
+          }
+          if (touching === 0 || !same) continue;
+          twins++;
+          const da = drawnRect(a);
+          const db = drawnRect(b);
+          const label = `${objectDef(a.defId).key} -> ${objectDef(b.defId).key}`;
+          expect(da.y + da.h, `${label}: drawn abutting`).toBe(db.y);
+          expect(db.x - da.x, `${label}: at the sheet offset`).toBe(sb.x - sa.x);
+        }
+      }
+    }
+    expect(
+      twins,
+      "the street's top and bottom railings are a twin-sheet pair",
+    ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("every committed object meets the atlas loader's row precondition: one row, or a sprite exactly its footprint tall", () => {
+    const tile = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value;
+    if (tile === undefined) throw new Error("no render.tile_size_px balance");
+    const several = committedDefs().objects.filter((o) => o.height > 1);
+    expect(several.length, "the platform flight is a several-row def").toBeGreaterThan(0);
+    for (const o of several) {
+      expect(o.atlas.h, `${o.key} is ${o.height} rows tall`).toBe(o.height * tile);
+    }
+  });
+
+  it("(b) the platform stairwell's flat rows are drawn inside the platform's interior", () => {
+    const { anchor } = subwayAnchors().find((a) => a.anchor.floor === SUBWAY_FLOOR) ?? {};
+    if (!anchor) throw new Error("no platform anchor");
+    const flat = stairwellRowsAt(anchor).filter(
+      (p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects",
+    );
+    expect(flat.length).toBeGreaterThan(0);
+    const interior = {
+      x: PLATFORM_INTERIOR_X0 * 16,
+      y: PLATFORM_INTERIOR_Y0 * 16,
+      w: (PLATFORM_INTERIOR_X1 - PLATFORM_INTERIOR_X0 + 1) * 16,
+      h: (PLATFORM_INTERIOR_Y1 - PLATFORM_INTERIOR_Y0 + 1) * 16,
+    };
+    for (const p of flat) {
+      const r = drawnRect(p);
+      const key = objectDef(p.defId).key;
+      expect(r.x, `${key} west`).toBeGreaterThanOrEqual(interior.x);
+      expect(r.y, `${key} north`).toBeGreaterThanOrEqual(interior.y);
+      expect(r.x + r.w, `${key} east`).toBeLessThanOrEqual(interior.x + interior.w);
+      expect(r.y + r.h, `${key} south`).toBeLessThanOrEqual(interior.y + interior.h);
+    }
+  });
+
+  /** A placed row's drawn rect, def-placed or `assetKey`: an asset's rect is
+   * its real art size, a one-tile art repeated across its footprint. */
+  const anyDrawnRect = (p: (typeof STREET_PROPS)[number]) => {
+    if (isDefStreetProp(p)) return drawnRect(p);
+    const href = ASSET_URLS[p.assetKey];
+    if (!href) throw new Error(`no ASSET_URLS entry for '${p.assetKey}'`);
+    const buf = readFileSync(fileURLToPath(href));
+    const art = { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+    const footprint = p.footprint ?? { width: 1, height: 1 };
+    const w = art.w === 16 ? footprint.width * 16 : art.w;
+    const h = art.h === 16 ? footprint.height * 16 : art.h;
+    return { x: p.x * 16, y: (p.y + 1) * 16 - h, w, h };
+  };
+  const labelOf = (p: (typeof STREET_PROPS)[number]) =>
+    isDefStreetProp(p) ? objectDef(p.defId).key : p.assetKey;
+
+  it("(c) nothing outside a stairwell's own group, def-placed or asset, is drawn over its flight", () => {
+    for (const { anchor, rows } of groups()) {
+      const flight = rows.filter((p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects");
+      expect(flight.length).toBeGreaterThan(0);
+      const outside = STREET_PROPS.filter(
+        (o) => o.floor === anchor.floor && !rows.includes(o as DefProp),
+      );
+      expect(outside.length, `floor ${anchor.floor}: outside rows examined`).toBeGreaterThan(0);
+      for (const other of outside) {
+        for (const f of flight) {
+          expect(
+            overlap(anyDrawnRect(other), drawnRect(f)),
+            `${labelOf(other)} at (${other.x}, ${other.y}) is drawn over ${objectDef(f.defId).key}`,
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("(c) controls: a wall face drawn over the platform flight is found", () => {
+    const { anchor, rows } = groups().find((g) => g.anchor.floor === SUBWAY_FLOOR) ?? {};
+    if (!anchor || !rows) throw new Error("no platform stairwell");
+    const flight = rows.filter((p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects");
+    const wall = STREET_PROPS.find(
+      (o) => o.floor === SUBWAY_FLOOR && !isDefStreetProp(o) && o.layer === "walls",
+    );
+    if (!wall) throw new Error("no asset wall on the platform");
+    const moved = { ...wall, x: flight[0].x, y: flight[0].y };
+    expect(overlap(anyDrawnRect(moved), drawnRect(flight[0]))).toBe(true);
+  });
+
+  it("the platform's west rest, walking from the landing, leaves the body clear of the stairwell group", () => {
+    const { anchor, rows } = groups().find((g) => g.anchor.floor === SUBWAY_FLOOR) ?? {};
+    if (!anchor || !rows) throw new Error("no platform stairwell");
+    const westEdge = Math.min(...rows.flatMap(propCells).map((c) => c.x));
+    const half = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+    expect(platformWestRestX() + half).toBeLessThanOrEqual(westEdge);
   });
 });

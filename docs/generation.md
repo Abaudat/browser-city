@@ -776,7 +776,8 @@ names; `unclaimed` otherwise -- checked mechanically, not by eye.
 | A building whose entrance faces the block interior or a side passage | adjacency | | unclaimed |
 | A vacant gap in an otherwise continuous high-density street wall | coherence | | unclaimed |
 | A stair entered over its own drawn post, railing or end wall | adjacency | | unclaimed |
-| A stair climbed against the direction its art rises, or drawn at a different width on the two floors it joins | coherence | | unclaimed |
+| A stair climbed against the direction its art rises, or walked at a different width on the two floors it joins | coherence | | unclaimed |
+| A stair whose treads stop short of the foot of its own railing, with floor showing between them | coherence | | unclaimed |
 
 The five `defs/rules/city.toml` rows and the `defs/rules/grammar.toml`
 rows above are placeholders and grammar primitives, not a claim on this

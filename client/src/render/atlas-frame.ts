@@ -23,9 +23,9 @@ export function atlasFrameRect(rect: AtlasRect): FrameRect {
  * per-cell crop rect, sliced off the object's whole-sprite frame
  * (`whole`, `atlasFrameRect`'s own output) -- the pure half of
  * `AtlasPageLoader.objectCellTexture`'s own per-cell cache, which is the
- * one caller and the one place that rejects a def taller than one row
- * before this function ever runs (`objectCellTexture`'s own doc comment
- * says why: never silently cropping only a taller def's own top row).
+ * one caller. A def of one row keeps its whole sprite height (an upright
+ * may overhang north); a def of several rows is cut one tile-high row at
+ * `sourceRow` (north row first), so every row of the art is drawn.
  * `whole`'s own `x`/`y` are already wherever the packer placed this
  * object's whole sprite on its page, never the page's own origin -- so
  * the frame this function builds starts from that same offset, not from
@@ -41,7 +41,17 @@ export function defCellFrameRect(
   whole: FrameRect,
   sourceCol: number,
   tileSizePx: number,
+  sourceRow: number,
+  rows: number,
 ): FrameRect {
+  if (rows > 1) {
+    return {
+      x: whole.x + sourceCol * tileSizePx,
+      y: whole.y + sourceRow * tileSizePx,
+      width: tileSizePx,
+      height: tileSizePx,
+    };
+  }
   return {
     x: whole.x + sourceCol * tileSizePx,
     y: whole.y,

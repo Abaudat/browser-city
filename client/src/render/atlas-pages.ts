@@ -151,36 +151,39 @@ export class AtlasPageLoader {
    * page request must not permanently hide this cell for the rest of the
    * session.
    *
-   * `object.height` is checked here, not in `defCellFrameRect` (never
-   * silent, Tim's direction): every real `defs/objects` entry is one row
-   * tall today, so this throws naming the object rather than silently
-   * drawing only its own top row the day a taller one exists -- no
-   * `sourceRow` parameter here (Tim's direction, cycle 2: a parameter kept
-   * "for a future caller" that slices rows properly is dead API today,
-   * not a real one; the day row-slicing is real, this signature grows the
-   * parameter it needs then).
+   * A def several rows tall is cut one row per call (`sourceRow`, north
+   * row first), cached per `(object id, column, row)`; its sprite must be
+   * exactly `height * tileSizePx` tall, else this rejects naming the object
+   * (never a silent crop of an overhanging several-row sprite).
    */
   objectCellTexture(
     defs: Defs,
     object: ObjectDef,
     sourceCol: number,
     tileSizePx: number,
+    sourceRow: number,
   ): Promise<Texture> {
-    if (object.height > 1) {
+    if (object.height > 1 && object.atlas.h !== object.height * tileSizePx) {
       return Promise.reject(
         new Error(
-          `atlas-pages: object '${object.key}' is ${object.height} cells tall -- per-cell ` +
-            "slicing along the vertical axis is not supported yet",
+          `atlas-pages: object '${object.key}' is ${object.height} cells tall but its sprite is ${object.atlas.h}px, not ${object.height * tileSizePx}px -- only art exactly its footprint tall is cut row by row`,
         ),
       );
     }
-    const key = `${object.id}:${sourceCol}`;
+    if (sourceRow < 0 || sourceRow >= object.height) {
+      return Promise.reject(
+        new Error(
+          `atlas-pages: object '${object.key}' is ${object.height} cell(s) tall, no row ${sourceRow}`,
+        ),
+      );
+    }
+    const key = `${object.id}:${sourceCol}:${sourceRow}`;
     let promise = this.objectCellTextures.get(key);
     if (promise) return promise;
 
     promise = this.objectTexture(defs, object)
       .then((base) => {
-        const frame = defCellFrameRect(base.frame, sourceCol, tileSizePx);
+        const frame = defCellFrameRect(base.frame, sourceCol, tileSizePx, sourceRow, object.height);
         return new Texture({
           source: base.source,
           frame: new Rectangle(frame.x, frame.y, frame.width, frame.height),

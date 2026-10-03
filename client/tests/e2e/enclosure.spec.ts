@@ -31,6 +31,8 @@ import { worldPointPx } from "../../src/render/screen-position";
 import {
   isDefStreetProp,
   PLATFORM_LANDING_Y,
+  PLATFORM_UP_ANCHOR_X,
+  PLATFORM_UP_ANCHOR_Y,
   PLAYER_STABLE_ID,
   PLAYER_START,
   STAIRS_Y,
@@ -42,6 +44,7 @@ import {
   STREET_EXIT_X,
   STREET_EXIT_Y,
   STREET_PROPS,
+  SUBWAY_FLOOR,
   streetNearRailingPressRoute,
   streetSubwayApproachRoute,
 } from "../../src/test-street/fixture";
@@ -52,7 +55,10 @@ import {
 } from "../unit/test-street/golden";
 import {
   committedDefs,
+  platformWestRestX,
+  propCells,
   shopfrontExitRestY,
+  stairwellRowsAt,
   streetMovementConfig,
   streetWalkInputs,
 } from "../unit/test-street/street-world";
@@ -107,11 +113,28 @@ async function walkTo(
   await page.keyboard.up(key);
 }
 
+/** The platform stairwell's cells, found by the `stairs` tag from the anchor. */
+function platformStairwellBox() {
+  const cells = stairwellRowsAt({
+    x: PLATFORM_UP_ANCHOR_X,
+    y: PLATFORM_UP_ANCHOR_Y,
+    floor: SUBWAY_FLOOR,
+  }).flatMap(propCells);
+  return {
+    x0: Math.min(...cells.map((c) => c.x)),
+    y0: Math.min(...cells.map((c) => c.y)),
+    x1: Math.max(...cells.map((c) => c.x)) + 1,
+    y1: Math.max(...cells.map((c) => c.y)) + 1,
+  };
+}
+
 // Pinned like every other baseline spec, so the picture is the same size everywhere.
 test.use({ viewport: { width: 1920, height: 1080 } });
 
 // Well under the platform flight and its railing's own area (~20k device pixels at zoom).
 const PLATFORM_MAX_DIFF_PIXELS = 200;
+// The stairwell clip is small and nothing in it animates under `freezeCrowd`.
+const PLATFORM_STAIRS_MAX_DIFF_PIXELS = 50;
 
 test.describe("story 1.7: enclosure visibility", () => {
   test("at rest inside shop A matches the committed visibility golden, every mounted sprite's mask is null, and a translucent sprite's alpha is render.window_alpha", async ({
@@ -227,6 +250,62 @@ test.describe("story 1.7: enclosure visibility", () => {
       ...SCREENSHOT_OPTIONS,
       maxDiffPixels: PLATFORM_MAX_DIFF_PIXELS,
     });
+
+    // Story 15.14: the whole stairwell group, flight and railing, with the
+    // player walked west until clear of it. The clip is the group's cells
+    // plus one row north and one cell south and east (never the player), from
+    // the real view transform.
+    const box = platformStairwellBox();
+    // Held, the body rests clear of the group: its east edge is west of the group's box.
+    const config = streetMovementConfig();
+    const bodyHalf = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+    expect(platformWestRestX() + bodyHalf).toBeLessThanOrEqual(box.x0);
+    await page.keyboard.down("ArrowLeft");
+    // Held until the body is at the rest the movement code computes from the
+    // fixture (the blocker's face plus half the body): the same pixel every run.
+    const restX = platformWestRestX();
+    await page.waitForFunction(
+      (x) => Math.abs((window.__bc?.playerPosition?.x ?? Infinity) - x) < 1e-6,
+      restX,
+      { timeout: 15_000 },
+    );
+    await page.keyboard.up("ArrowLeft");
+    // The platform is a storey down: its screen rows sit one storey lower.
+    const storeyPx = committedDefs().balance.find(
+      (b) => b.key === "render.storey_height_px",
+    )?.value;
+    if (storeyPx === undefined) throw new Error("no render.storey_height_px balance");
+    const floorShift = -SUBWAY_FLOOR * storeyPx;
+    const stairsClip = await page.evaluate(
+      ({ x0, y0, x1, y1, floorShift }) => {
+        const view = window.__bc?.viewTransform;
+        const canvas = document.querySelector("#test-street canvas");
+        if (!view || !canvas) throw new Error("no view transform or canvas");
+        const rect = canvas.getBoundingClientRect();
+        const px = (cell: number, offset: number, shift = 0) =>
+          (cell * 16 + shift) * view.zoom + offset;
+        return {
+          x: rect.x + px(x0, view.offsetX),
+          y: rect.y + px(y0, view.offsetY, floorShift),
+          width: px(x1, view.offsetX) - px(x0, view.offsetX),
+          height: px(y1, view.offsetY) - px(y0, view.offsetY),
+        };
+      },
+      { x0: box.x0, y0: box.y0 - 1, x1: box.x1 + 1, y1: box.y1 + 1, floorShift },
+    );
+    await expect(page).toHaveScreenshot("platform-stairs.png", {
+      ...SCREENSHOT_OPTIONS,
+      maxDiffPixels: PLATFORM_STAIRS_MAX_DIFF_PIXELS,
+      clip: stairsClip,
+    });
+    // Back to the landing for the walk east below.
+    await page.keyboard.down("ArrowRight");
+    await page.waitForFunction(
+      (x) => (window.__bc?.playerPosition?.x ?? 0) >= x,
+      PLATFORM_UP_ANCHOR_X - 1 + 0.5,
+      { timeout: 15_000 },
+    );
+    await page.keyboard.up("ArrowRight");
 
     // Story 15.2: the reverse input (`ArrowRight`, the mirror of the
     // `ArrowLeft` that walked down) climbs straight back up -- no detour
