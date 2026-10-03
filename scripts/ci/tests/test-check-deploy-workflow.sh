@@ -208,8 +208,18 @@ jobs:
     steps:
       - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
       - run: spacetime call --server maincloud --no-config -y "$DB" finish_publish
+      - run: spacetime call --server maincloud --no-config -y "$DB" accept_oidc_issuer "${{ vars.OIDC_AUTHORITY }}" "${{ vars.OIDC_CLIENT_ID }}"
       - run: bash scripts/ops/assert-world-invariants.sh "$DB" --server maincloud
     needs: [backup]
+
+  deploy-client:
+    name: deploy-client
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo deploying client
+        env:
+          VITE_OIDC_AUTHORITY: ${{ vars.OIDC_AUTHORITY }}
+          VITE_OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}
 
   report-failure:
     name: report-failure
