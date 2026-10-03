@@ -90,11 +90,23 @@ function manager(backend: FakeBackend, onError: (m: string) => void = noop): Reg
 
 type Command =
   | { t: "move"; p: { x: number; y: number; floor: number } }
-  | { t: "applied" | "ended" | "error"; i: number };
+  | { t: DeliveryKind; i: number };
+
+/** Each delivery draws from its own pool of handles. `error` draws from
+ * every handle not yet ended; the three below from one state each. */
+const POOLS = {
+  applied: ["pending"],
+  ended: ["unsubscribing"],
+  error: ["pending", "applied", "unsubscribing"],
+  errorPending: ["pending"],
+  errorApplied: ["applied"],
+  errorEnding: ["unsubscribing"],
+} as const satisfies Record<string, readonly State[]>;
+type DeliveryKind = keyof typeof POOLS;
 
 /** What a delivery hit: the command and the handle's state beforehand. */
 interface Delivery {
-  t: "applied" | "ended" | "error";
+  t: DeliveryKind;
   before: State;
 }
 
@@ -112,13 +124,8 @@ function runSchedule(commands: Command[], backend: FakeBackend = new FakeBackend
       m.moveTo(c.p.x, c.p.y, c.p.floor);
       last = c.p;
     } else {
-      const pool = backend.handles.filter((h) =>
-        c.t === "applied"
-          ? h.state === "pending"
-          : c.t === "ended"
-            ? h.state === "unsubscribing"
-            : h.state !== "ended",
-      );
+      const states: readonly State[] = POOLS[c.t];
+      const pool = backend.handles.filter((h) => states.includes(h.state));
       const h = pool[c.i % Math.max(pool.length, 1)];
       if (h) {
         trace.push({ t: c.t, before: h.state });
@@ -295,7 +302,9 @@ describe("RegionSubscriptions", () => {
       { weight: 4, arbitrary: pos.map((p) => ({ t: "move" as const, p })) },
       { weight: 3, arbitrary: fc.nat().map((i) => ({ t: "applied" as const, i })) },
       { weight: 3, arbitrary: fc.nat().map((i) => ({ t: "ended" as const, i })) },
-      { weight: 1, arbitrary: fc.nat().map((i) => ({ t: "error" as const, i })) },
+      { weight: 1, arbitrary: fc.nat().map((i) => ({ t: "errorPending" as const, i })) },
+      { weight: 1, arbitrary: fc.nat().map((i) => ({ t: "errorApplied" as const, i })) },
+      { weight: 3, arbitrary: fc.nat().map((i) => ({ t: "errorEnding" as const, i })) },
     );
     fc.assert(
       fc.property(fc.array(command, { maxLength: 120 }), (commands) => {
