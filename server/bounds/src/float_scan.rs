@@ -2,19 +2,29 @@
 //! and fixed-point only; clippy's `disallowed_types` and `float_arithmetic`
 //! miss an untyped literal that is only compared, and a float reached
 //! through a method call, so this walks every token -- macro bodies and
-//! groups included -- and reports any float literal or `f32`/`f64`
-//! identifier. Comments and string literals are not tokens of that kind,
-//! which is why this is a tokeniser and not a text search.
+//! groups included -- and reports any float literal, any identifier
+//! containing `f16`/`f32`/`f64`/`f128`, and `c_float`/`c_double`. That is
+//! complete because `sim` has no dependencies
+//! (`scripts/ci/check-sim-purity.sh`), so every float source is a literal,
+//! a primitive type name, a `c_*` alias, or a std method whose name carries
+//! a float type name; adding a dependency to `sim` reopens this guard.
+//! Std's `utf16` names are exempt from the name rule (`f16` hides in
+//! them). `include!` and `#[path]` (any depth of an attribute) are reported too, so "every file under
+//! `sim/src/`" stays "every source compiled into `sim`". Comments and
+//! string literals are not tokens of that kind, which is why this is a
+//! tokeniser and not a text search.
 //!
 //! Native test tooling only: `proc-macro2` is a dev-dependency of `bounds`,
 //! never of `sim` or `browser_city`.
 
-use proc_macro2::{TokenStream, TokenTree};
+use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use std::path::{Path, PathBuf};
 
 /// The one file exempt from the scan, by its path relative to the scanned
 /// root (`sim/src/`): a same-named file anywhere else is scanned.
 pub const EXEMPT: &str = "lint_canary.rs";
+
+const FLOAT_NAMES: [&str; 4] = ["f16", "f32", "f64", "f128"];
 
 const INT_SUFFIXES: [&str; 12] = [
     "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize",
@@ -27,7 +37,7 @@ fn is_float_literal(text: &str) -> bool {
     if text.starts_with("0x") || text.starts_with("0o") || text.starts_with("0b") {
         return false;
     }
-    if text.ends_with("f32") || text.ends_with("f64") {
+    if FLOAT_NAMES.iter().any(|s| text.ends_with(s)) {
         return true;
     }
     let mut body = text;
@@ -40,14 +50,36 @@ fn is_float_literal(text: &str) -> bool {
     body.contains('.') || body.contains('e') || body.contains('E')
 }
 
-fn walk(stream: TokenStream, found: &mut Vec<(usize, String)>) {
-    for tree in stream {
+fn is_punct(tree: Option<&TokenTree>, c: char) -> bool {
+    matches!(tree, Some(TokenTree::Punct(p)) if p.as_char() == c)
+}
+
+/// `in_attr` is true inside an outer `#[...]` or inner `#![...]` group, at
+/// any depth.
+fn walk(stream: TokenStream, in_attr: bool, found: &mut Vec<(usize, String)>) {
+    let trees: Vec<TokenTree> = stream.into_iter().collect();
+    for (n, tree) in trees.iter().enumerate() {
         match tree {
-            TokenTree::Group(g) => walk(g.stream(), found),
+            TokenTree::Group(g) => {
+                let after_hash = n >= 1 && is_punct(trees.get(n - 1), '#')
+                    || n >= 2 && is_punct(trees.get(n - 1), '!') && is_punct(trees.get(n - 2), '#');
+                let attr = in_attr || (g.delimiter() == Delimiter::Bracket && after_hash);
+                walk(g.stream(), attr, found);
+            }
             TokenTree::Ident(i) => {
                 let name = i.to_string();
-                if name == "f32" || name == "f64" {
-                    found.push((i.span().start().line, name));
+                let line = i.span().start().line;
+                // std's UTF-16 API carries `f16` and has no rename.
+                let checked = name.replace("utf16", "");
+                if FLOAT_NAMES.iter().any(|s| checked.contains(s))
+                    || name == "c_float"
+                    || name == "c_double"
+                {
+                    found.push((line, name));
+                } else if name == "include" && is_punct(trees.get(n + 1), '!') {
+                    found.push((line, "include!".to_string()));
+                } else if in_attr && name == "path" && is_punct(trees.get(n + 1), '=') {
+                    found.push((line, "#[path]".to_string()));
                 }
             }
             TokenTree::Literal(l) => {
@@ -66,7 +98,7 @@ fn walk(stream: TokenStream, found: &mut Vec<(usize, String)>) {
 pub fn float_tokens(src: &str) -> Result<Vec<(usize, String)>, String> {
     let stream: TokenStream = src.parse().map_err(|e| format!("{e}"))?;
     let mut found = Vec::new();
-    walk(stream, &mut found);
+    walk(stream, false, &mut found);
     Ok(found)
 }
 
@@ -176,6 +208,169 @@ mod tests {
     }
 
     #[test]
+    fn red_the_ticket_shapes_verbatim() {
+        let shapes: [(&str, &str); 5] = [
+            (
+                "fn f(x: i32) { let _ = 1.07_f64.powi(x) as i32; }",
+                "1.07_f64",
+            ),
+            (
+                "fn f(x: u64) { let _ = Duration::from_millis(x).as_secs_f64().sqrt() as u64; }",
+                "as_secs_f64",
+            ),
+            ("fn f(x: i32) { let _ = 0.5_f64.max(x.into()); }", "0.5_f64"),
+            ("fn f() { let _ = 1.5f32 > 1.0; }", "1.5f32"),
+            ("fn f() { let y = 1.5; if y > 1.0 {} }", "1.5"),
+        ];
+        for (src, token) in shapes {
+            assert_eq!(hits(src)[0].1, token, "{src}");
+        }
+    }
+
+    #[test]
+    fn red_f16_and_f128_as_types_and_name_fragments() {
+        assert_eq!(hits("fn f(x: f128) {}")[0].1, "f128");
+        assert_eq!(hits("fn f(x: u8) { let _ = x as f16; }")[0].1, "f16");
+        assert_eq!(hits("fn f(y: Y) { let _ = y.to_f128(); }")[0].1, "to_f128");
+        assert_eq!(hits("fn f() { let buf16 = 0; }")[0].1, "buf16");
+    }
+
+    #[test]
+    fn red_a_literal_suffixed_f32_without_a_dot() {
+        assert_eq!(hits("fn f() { let _ = 3f32; }")[0].1, "3f32");
+    }
+
+    #[test]
+    fn red_include_and_path_attributes_hide_sources_from_the_scan() {
+        assert_eq!(
+            hits("include!(concat!(env!(\"OUT_DIR\"), \"/a.rs\"));")[0].1,
+            "include!"
+        );
+        assert_eq!(
+            hits(
+                "#[path = \"elsewhere.rs\"]
+mod m;"
+            )[0]
+            .1,
+            "#[path]"
+        );
+    }
+
+    #[test]
+    fn red_a_path_attribute_in_any_spelling() {
+        let cfg_attr = "#[cfg_attr(unix, path = \"../x.rs\")] mod m;";
+        assert_eq!(hits(cfg_attr)[0].1, "#[path]");
+        let inner = "mod m { #![path = \"../x\"] mod inner; }";
+        assert_eq!(hits(inner)[0].1, "#[path]");
+        let nested = "#[cfg_attr(a, cfg_attr(b, path = \"x.rs\"))] mod m;";
+        assert_eq!(hits(nested)[0].1, "#[path]");
+    }
+
+    #[test]
+    fn green_path_outside_an_attribute_or_without_an_equals() {
+        assert!(hits("fn f() { let path = 1; let _ = path; }").is_empty());
+        assert!(
+            hits(
+                "#[cfg(feature = \"path\")]
+fn f() {}"
+            )
+            .is_empty()
+        );
+        assert!(
+            hits(
+                "#[cfg_attr(test, derive(Debug))]
+struct S;"
+            )
+            .is_empty()
+        );
+        assert!(
+            hits(
+                "#[foo(path)]
+struct S;"
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn green_std_utf16_names_but_not_a_float_beside_them() {
+        assert!(hits("fn f(s: &str) { let _ = s.encode_utf16(); }").is_empty());
+        assert!(hits("fn f() { let _ = String::from_utf16_lossy(&[]); }").is_empty());
+        assert!(hits("fn f(s: &str) { let _ = s.len_utf16(); }").is_empty());
+        assert_eq!(
+            hits("fn f() { let utf16_as_f64 = 0; }")[0].1,
+            "utf16_as_f64"
+        );
+        assert_eq!(hits("fn f() { let buf16 = 0; }")[0].1, "buf16");
+    }
+
+    #[test]
+    fn green_include_str_include_bytes_and_a_local_named_path() {
+        assert!(hits("const A: &str = include_str!(\"a.txt\");").is_empty());
+        assert!(hits("const A: &[u8] = include_bytes!(\"a.bin\");").is_empty());
+        assert!(hits("fn f(path: u8) { let include = path; let _ = include; }").is_empty());
+        assert!(
+            hits(
+                "#[derive(Debug)]
+struct S;"
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn red_an_identifier_carrying_a_float_name() {
+        assert_eq!(hits("fn f() { let _: c_float = 0; }")[0].1, "c_float");
+        assert_eq!(hits("fn f() { let _: c_double = 0; }")[0].1, "c_double");
+        assert_eq!(
+            hits("fn f(x: u32) { let _ = Duration::from_secs_f32(x); }")[0].1,
+            "from_secs_f32"
+        );
+        assert_eq!(hits("fn f(d: D) { let _ = d.mul_f64(y); }")[0].1, "mul_f64");
+    }
+
+    #[test]
+    fn red_a_float_name_is_matched_as_a_substring_not_a_segment() {
+        // `buf64` costs a rename; a miss is permanent in the persisted world.
+        assert_eq!(hits("fn f() { let buf64 = 0; }")[0].1, "buf64");
+        assert_eq!(hits("fn f() { let half32 = 0; }")[0].1, "half32");
+    }
+
+    #[test]
+    fn red_a_nested_tuple_index_lexes_as_a_float_by_design() {
+        // `x.0.1` lexes as the literal `0.1`; write `(x.0).1`.
+        assert_eq!(
+            hits("fn f(x: ((u8, u8), u8)) { let _ = x.0.1; }")[0].1,
+            "0.1"
+        );
+        assert!(hits("fn f(x: ((u8, u8), u8)) { let _ = (x.0).1; }").is_empty());
+    }
+
+    #[test]
+    fn red_the_other_float_widths_and_a_trailing_dot() {
+        assert_eq!(hits("fn f() { let _ = 3f128; }")[0].1, "3f128");
+        assert_eq!(hits("fn f() { let _ = 1f16; }")[0].1, "1f16");
+        assert_eq!(hits("fn f() { let _ = 1.; }")[0].1, "1.");
+    }
+
+    #[test]
+    fn red_a_float_in_a_nested_macro_group_or_an_attribute() {
+        assert_eq!(
+            hits("macro_rules! m { () => { [ ( 0.5 ) ] }; }")[0].1,
+            "0.5"
+        );
+        assert_eq!(hits("#[cfg_attr(test, foo(1.5))]\nfn f() {}")[0].1, "1.5");
+    }
+
+    #[test]
+    fn green_hex_digits_that_spell_a_float_suffix_and_non_float_literals() {
+        assert!(hits("const A: u32 = 0x1f32; const B: u64 = 0xdead_bf64;").is_empty());
+        assert!(hits("const A: isize = 1isize;").is_empty());
+        assert!(hits("const A: &[u8] = b\"1.5\"; const B: &str = r\"1.5 f64\";").is_empty());
+        assert!(hits("const A: char = 'e';").is_empty());
+    }
+
+    #[test]
     fn the_scan_names_file_and_line() {
         let dir = std::env::temp_dir().join(format!("bc-float-scan-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -216,5 +411,9 @@ mod tests {
         let sim_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../sim/src");
         let out = scan_tree(&sim_src);
         assert!(out.is_empty(), "float tokens in sim:\n{}", out.join("\n"));
+        // The exemption is the only reason the tree is green: the canary
+        // must exist and the scan must see its floats.
+        let canary = std::fs::read_to_string(sim_src.join(EXEMPT)).expect("canary exists");
+        assert!(!float_tokens(&canary).expect("tokenises").is_empty());
     }
 }
