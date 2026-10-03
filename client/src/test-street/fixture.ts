@@ -1453,10 +1453,8 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
   ];
 }
 
-/** The tread columns the stairwell's draw order is seen from, east to west.
- * Each is far enough east of the anchor cell (x < 15) that the release lag of
- * a slow runner cannot carry the body into it: pressing north from there
- * would fire the floor transition. */
+/** The tread columns the stairwell's draw order is seen from, east to west
+ * (targets: the walk's release lag decides where the body really rests). */
 export const STAIRWELL_POSTURE_X = [
   STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width - 0.5,
   STAIRWELL_X0 + 2.3,
@@ -1492,6 +1490,15 @@ export function streetNearRailingPressRoute(
         label: `press-south-${i}`,
         key: "ArrowDown",
         until: { kind: "y-at-least", value: inputs.nearRailingRestY },
+      },
+      // Back east before pressing north: the walk west overshoots by however
+      // many frames a loaded runner takes (over a cell on CI), and north of
+      // the tread row the anchor cell (x < 15) fires the floor transition.
+      // Overshooting east is harmless.
+      {
+        label: `east-of-the-anchor-${i}`,
+        key: "ArrowRight",
+        until: { kind: "x-at-least", value: STAIRWELL_X0 + 1.5 },
       },
       {
         label: `press-north-${i}`,

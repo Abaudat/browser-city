@@ -1789,8 +1789,13 @@ describe("the near-railing press route (story 15.13)", () => {
     for (const { label, state } of out) {
       if (label.startsWith("press-south-")) expect(state.y).toBeCloseTo(inputs.nearRailingRestY, 9);
       if (label.startsWith("press-north-")) expect(state.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
-      if (label.startsWith("press-")) {
+      if (label.startsWith("press-north-")) {
+        // Never west of the anchor cell: pressing north there fires the transition.
         expect(state.x).toBeGreaterThanOrEqual(STAIRWELL_X0 + 1);
+        expect(state.x).toBeLessThan(STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width);
+      }
+      if (label.startsWith("press-south-")) {
+        expect(state.x).toBeGreaterThanOrEqual(STAIRWELL_X0);
         expect(state.x).toBeLessThan(STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width);
       }
     }

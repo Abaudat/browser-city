@@ -307,11 +307,14 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
       if (!segment.label.startsWith("press-")) continue;
       const south = segment.label.startsWith("press-south-");
       // At rest, exactly where the resolver puts it -- never a timed wait.
-      await page.waitForFunction(
-        (y) => Math.abs((window.__bc?.playerPosition?.y ?? Number.NaN) - y) < 1e-6,
-        south ? inputs.nearRailingRestY : inputs.subwayTreadRowY,
-        { timeout: 5_000 },
-      );
+      await expect
+        .poll(() => page.evaluate(() => window.__bc?.playerPosition), {
+          message: `${segment.label}: the body rests where the resolver puts it`,
+          timeout: 5_000,
+        })
+        .toMatchObject({
+          y: expect.closeTo(south ? inputs.nearRailingRestY : inputs.subwayTreadRowY, 6),
+        });
       const feet = await page.evaluate(() => window.__bc?.playerPosition);
       const view = await page.evaluate(() => window.__bc?.viewTransform);
       const bounds = await page.evaluate(() => window.__bc?.playerScreenBounds?.());
