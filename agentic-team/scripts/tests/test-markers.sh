@@ -163,4 +163,15 @@ check_out "live: visible with an empty where-line is undeclared" 0 undeclared \
   parse_live "$(printf '### Live\n\n<!-- bc:live visible -->')"
 check_out "live: no marker at all is undeclared" 0 undeclared parse_live "just a human comment"
 
+echo
+echo "is_live_declaration: only the shape render_live writes is a declaration:"
+
+check "a visible declaration is one" 0 is_live_declaration "$LV"
+check "a none declaration is one" 0 is_live_declaration "$LN"
+check "a CRLF copy of a declaration is one" 0 is_live_declaration "$(printf '%s' "$LV" | sed 's/$/\r/')"
+check "a body with no marker is not one" 1 is_live_declaration "just a human comment"
+check "the marker quoted inline in prose is not one" 1 is_live_declaration "Today it says \`<!-- bc:live none -->\` here."
+check "the marker on its own line beside another bc: marker is not one" 1 \
+  is_live_declaration "$(printf '### Analysis\n\n<!-- bc:live none -->\n<!-- bc:lead:tim -->\n')"
+
 summary

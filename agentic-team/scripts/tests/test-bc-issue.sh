@@ -490,14 +490,18 @@ QUOTE_OWNLINE='{"id":10,"body":"### Analysis — tim\n\n<!-- bc:live none -->\n\
 QUOTE_BARE='{"id":10,"body":"Quoting it: <!-- bc:live none --> in prose."}'
 REAL_DECL='{"id":11,"body":"### Live\n\nWalk to the cafe.\n\n<!-- bc:live visible -->"}'
 VIS_CAFE='{"live":"visible","where":"Walk to the cafe."}'
-for Q in "$QUOTE_INLINE" "$QUOTE_OWNLINE" "$QUOTE_BARE"; do
-  check_out "live: visible when the quoting comment comes before the real one" 0 "$VIS_CAFE" \
+quote_cases() { # <variant> <quoting-comment-json>
+  local v="$1" Q="$2"
+  check_out "live: visible when the $v quoting comment comes before the real one" 0 "$VIS_CAFE" \
     run "$(live_fake "[$Q,$REAL_DECL]")" "" live 7
-  check_out "live: visible when the quoting comment comes after the real one" 0 "$VIS_CAFE" \
+  check_out "live: visible when the $v quoting comment comes after the real one" 0 "$VIS_CAFE" \
     run "$(live_fake "[$REAL_DECL,$Q]")" "" live 7
-  check_out "live: a quoting comment alone reads undeclared" 0 '{"live":"undeclared"}' \
+  check_out "live: a $v quoting comment alone reads undeclared" 0 '{"live":"undeclared"}' \
     run "$(live_fake "[$Q]")" "" live 7
-done
+}
+quote_cases "inline" "$QUOTE_INLINE"
+quote_cases "own-line-beside-other-markers" "$QUOTE_OWNLINE"
+quote_cases "bare" "$QUOTE_BARE"
 FAKE_QD="$(live_fake "[$QUOTE_INLINE,$REAL_DECL]")"
 printf 'Walk to the cafe.\n' > "$FAKE_QD/where.txt"
 check "declare-live past a quoting comment exits 0" 0 run "$FAKE_QD" "" declare-live 7 visible "$FAKE_QD/where.txt"
@@ -894,6 +898,21 @@ rm -f "$FAKE_LV_UNREAD/gh_issue_comments.11.json"
 printf 'A summary.\n\n- [ ] Walk around the city (#11)\n' > "$FAKE_LV_UNREAD/u.md"
 check "an unreadable comment read is exit 2, not 3" 2 run "$FAKE_LV_UNREAD" "" write-demo 3 "$FAKE_LV_UNREAD/u.md"
 check "and created nothing" 1 test -f "$FAKE_LV_UNREAD/calls.log"
+
+FAKE_LV_NOBOARD="$(fake_dir)"
+demo_world "$FAKE_LV_NOBOARD"
+rm -f "$FAKE_LV_NOBOARD/project_items.json"
+printf 'A summary.\n\n- [ ] Walk around the city (#11)\n' > "$FAKE_LV_NOBOARD/b.md"
+check "an unreadable board is exit 2, not 3" 2 run "$FAKE_LV_NOBOARD" "" write-demo 3 "$FAKE_LV_NOBOARD/b.md"
+check "an unreadable board created nothing" 1 test -f "$FAKE_LV_NOBOARD/calls.log"
+FAKE_LV_BADBOARD="$(fake_dir)"
+demo_world "$FAKE_LV_BADBOARD"
+printf 'not json' > "$FAKE_LV_BADBOARD/project_items.json"
+cp "$FAKE_LV_NOBOARD/b.md" "$FAKE_LV_BADBOARD/b.md"
+check "an unparseable board is exit 2, not 3" 2 run "$FAKE_LV_BADBOARD" "" write-demo 3 "$FAKE_LV_BADBOARD/b.md"
+BADBOARD_ERR="$(run "$FAKE_LV_BADBOARD" "" write-demo 3 "$FAKE_LV_BADBOARD/b.md" 2>&1 1>/dev/null)"
+check "an unparseable board says it could not read project items" 0 err_has "$BADBOARD_ERR" "could not read project items"
+check "an unparseable board created nothing" 1 test -f "$FAKE_LV_BADBOARD/calls.log"
 
 echo
 echo "write-demo: Sprint 5's own checklist is the acceptance -- the four lines Adrian could not do are each named, the five he could are not, and nothing is created:"
