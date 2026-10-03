@@ -218,18 +218,13 @@ describe("the story 1.6 street scene's committed ordering", () => {
       }
     });
 
-    it("both resting postures of the press route (collider rest south, upper rail north) sort correctly, and are where the helpers say", () => {
-      const inputs = streetWalkInputs();
-      const out = simulateStreetWalk(streetNearRailingPressRoute(inputs));
-      const south = out.find((c) => c.label === "press-south")?.state;
-      const north = out.find((c) => c.label === "press-north")?.state;
-      if (!south || !north) throw new Error("no rest checkpoint");
-      expect(south.y).toBeCloseTo(nearRailingRestY(), 9);
-      expect(north.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
-      for (const rest of [south, north]) {
-        expect(rest.floor).toBe(floor);
-        expectStairwellSortAt(rest.x, rest.y);
-      }
+    it("the body pressed south along the near railing's face rests where the helper says and sorts under the railing", () => {
+      const out = simulateStreetWalk(streetNearRailingPressRoute(streetWalkInputs()));
+      const rest = out.find((c) => c.label === "west-along-the-near-railing")?.state;
+      if (!rest) throw new Error("no rest checkpoint");
+      expect(rest.y).toBeCloseTo(nearRailingRestY(), 9);
+      expect(rest.floor).toBe(floor);
+      expectStairwellSortAt(rest.x, rest.y);
     });
 
     it("negative control: a player south of the stairwell draws over the bottom railing, and one north of it under the top railing", () => {

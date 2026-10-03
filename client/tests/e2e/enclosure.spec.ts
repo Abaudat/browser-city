@@ -272,7 +272,7 @@ function balanceValue(key: string): number {
 }
 
 test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
-  test("pressed against the near railing then the far one, the player is under the near railing's pixels and over the far one's", async ({
+  test("pressed south along the near railing, the player is under its pixels and over the far railing's", async ({
     page,
   }) => {
     // A long real-keyboard walk and three canvas captures; a CI software
@@ -298,25 +298,19 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
 
     for (const segment of streetNearRailingPressRoute(inputs)) {
       await walkRealSegment(page, segment);
-      // The two rests: pressed south along the near railing's face (after
-      // the west walk), and pressed north against the far one's.
-      const rest =
-        segment.label === "west-along-the-near-railing"
-          ? "press-south"
-          : segment.label === "press-north"
-            ? "press-north"
-            : undefined;
-      if (!rest) continue;
-      const south = rest === "press-south";
-      // At rest, exactly where the resolver puts it -- never a timed wait.
+      // The rest: pressed south along the near railing's face, after the
+      // west walk. (A north rest against the far railing is not walked here:
+      // where a walk ends in x depends on release lag, and the far
+      // railing's foot only holds the body over its own columns. The sort
+      // there is x-independent and the unit sweep holds it.)
+      if (segment.label !== "west-along-the-near-railing") continue;
+      const rest = "press-south";
       await expect
         .poll(() => page.evaluate(() => window.__bc?.playerPosition), {
           message: `${rest}: the body rests where the resolver puts it`,
           timeout: 5_000,
         })
-        .toMatchObject({
-          y: expect.closeTo(south ? inputs.nearRailingRestY : inputs.subwayTreadRowY, 6),
-        });
+        .toMatchObject({ y: expect.closeTo(inputs.nearRailingRestY, 6) });
       const feet = await page.evaluate(() => window.__bc?.playerPosition);
       const view = await page.evaluate(() => window.__bc?.viewTransform);
       const bounds = await page.evaluate(() => window.__bc?.playerScreenBounds?.());
@@ -349,7 +343,6 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
         },
       });
       writeFileSync(join(STAIRWELL_SHOT_DIR, `${rest}.png`), shot);
-      if (!south) continue;
 
       // The pixels: the whole canvas, probed only where the art is.
       const seen = PNG.sync.read(await canvasOf(page).screenshot());

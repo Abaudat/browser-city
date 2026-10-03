@@ -57,7 +57,6 @@ import {
   STREET_ROOM_AREAS,
   STREET_STAIRWELL_ROWS,
   STREET_TRANSITIONS,
-  type StreetWalkSegment,
   SUBWAY_ENTRANCE_X0,
   SUBWAY_FLOOR,
   streetBollardRoute,
@@ -1776,72 +1775,34 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
 describe("the near-railing press route (story 15.13)", () => {
   const inputs = streetWalkInputs();
   const route = streetNearRailingPressRoute(inputs);
-  const label = (name: string) => route.findIndex((s) => s.label === name);
+  const west = route.findIndex((s) => s.label === "west-along-the-near-railing");
 
-  it("completes on the street floor, resting on the collider south and on the upper railing's face north", () => {
+  it("completes on the street floor, resting on the near railing's collider face", () => {
     const out = simulateStreetWalk(route, RELEASE_LAG);
     expect(out).toHaveLength(route.length);
     for (const { state } of out) expect(state.floor).toBe(PLAYER_START.floor);
-    const at = (name: string) => out[label(name)]?.state;
-    expect(at("press-south")?.y).toBeCloseTo(inputs.nearRailingRestY, 9);
-    expect(at("press-north")?.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
+    expect(out[west]?.state.y).toBeCloseTo(inputs.nearRailingRestY, 9);
   });
 
   // Where the west walk ends is decided by release lag, which on a loaded
   // runner is large. However far it overshoots -- all the way to the west
   // boundary -- the body stays on the street floor (it is on the row south
-  // of the anchor's), and the rest of the route still completes.
+  // of the anchor's) and on the railing's face.
   for (const lag of [0, 1, 8, 400]) {
-    it(`survives a west walk that overshoots by ${lag} steps, all the way to the west wall when large`, () => {
-      const before = simulateStreetWalk(
-        route.slice(0, label("west-along-the-near-railing")),
-        RELEASE_LAG,
-      );
+    it(`survives a west walk that overshoots by ${lag} steps`, () => {
+      const before = simulateStreetWalk(route.slice(0, west), RELEASE_LAG);
       const start = before[before.length - 1]?.state;
-      if (!start) throw new Error("no start state");
-      const west = simulateStreetWalk(
-        [route[label("west-along-the-near-railing")] as StreetWalkSegment],
-        {
-          ...RELEASE_LAG,
-          releaseLagSteps: lag,
-          start,
-        },
-      );
-      const end = west[0]?.state;
+      const segment = route[west];
+      if (!start || !segment) throw new Error("no start state");
+      const end = simulateStreetWalk([segment], {
+        ...RELEASE_LAG,
+        releaseLagSteps: lag,
+        start,
+      })[0]?.state;
       if (!end) throw new Error("no west state");
       expect(end.floor).toBe(PLAYER_START.floor);
       expect(end.y).toBeCloseTo(inputs.nearRailingRestY, 9);
       if (lag === 400) expect(end.x).toBeLessThan(STAIRWELL_X0 + 0.5); // against the west wall
-      const rest = simulateStreetWalk(route.slice(label("east-of-the-anchor")), {
-        ...RELEASE_LAG,
-        start: end,
-      });
-      expect(rest).toHaveLength(2);
-      for (const { state } of rest) expect(state.floor).toBe(PLAYER_START.floor);
-      expect(rest[1]?.state.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
-    });
-  }
-
-  // The same for the east walk: its overshoot must leave the body under the
-  // upper railing's foot, or pressing north would not rest on its face.
-  for (const lag of [0, 1, 4]) {
-    it(`rests on the upper railing's face after an east walk that overshoots by ${lag} steps`, () => {
-      const before = simulateStreetWalk(route.slice(0, label("east-of-the-anchor")), RELEASE_LAG);
-      const start = before[before.length - 1]?.state;
-      if (!start) throw new Error("no start state");
-      const east = simulateStreetWalk([route[label("east-of-the-anchor")] as StreetWalkSegment], {
-        ...RELEASE_LAG,
-        releaseLagSteps: lag,
-        start,
-      });
-      const mid = east[0]?.state;
-      if (!mid) throw new Error("no east state");
-      const north = simulateStreetWalk([route[label("press-north")] as StreetWalkSegment], {
-        ...RELEASE_LAG,
-        start: mid,
-      });
-      expect(north[0]?.state.floor).toBe(PLAYER_START.floor);
-      expect(north[0]?.state.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
     });
   }
 });

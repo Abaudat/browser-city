@@ -1454,23 +1454,14 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
   ];
 }
 
-/** The first column centre east of the anchor cell (one cell wide at the
- * stairwell's west end): the least the body can be east by for pressing
- * north to cross the anchor's row clear of it. Eastward, the railing's foot
- * still stops the body for any overshoot up to the stairwell's width and a
- * half-body beyond. */
-const STAIRWELL_ANCHOR_CLEARANCE = 1.05;
-
 /** From the subway entrance onto the tread row, then the stairwell's draw
  * order is seen from the demo's posture, FR123's worst case. South first,
  * in the entrance: the body rests on the boundary below the entrance cells,
  * level with the near railing's top face (`press-south`). West along that
  * face to the east tread (`west-along-the-near-railing`): the feet are off
  * the anchor's row there, so however far the release overshoots the body
- * ends against the west boundary and no transition can fire. East past the
- * anchor column, then north to the upper railing's face (`press-north`),
- * where the anchor's row is crossed east of the anchor cell. Where the
- * west walk really ends is decided by release lag; the rests in `y` are not. */
+ * ends against the west boundary and no transition can fire. Where that
+ * walk really ends is decided by release lag; the rest in `y` is not. */
 export function streetNearRailingPressRoute(
   inputs: StreetWalkInputs,
 ): readonly StreetWalkSegment[] {
@@ -1487,16 +1478,6 @@ export function streetNearRailingPressRoute(
       label: "west-along-the-near-railing",
       key: "ArrowLeft",
       until: { kind: "x-at-most", value: STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width - 0.5 },
-    },
-    {
-      label: "east-of-the-anchor",
-      key: "ArrowRight",
-      until: { kind: "x-at-least", value: STAIRWELL_X0 + STAIRWELL_ANCHOR_CLEARANCE },
-    },
-    {
-      label: "press-north",
-      key: "ArrowUp",
-      until: { kind: "y-at-most", value: inputs.subwayTreadRowY },
     },
   ];
 }
