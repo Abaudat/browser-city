@@ -275,6 +275,9 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
   test("pressed against either railing, along the tread row, the player is under the near railing's pixels and over the far one's", async ({
     page,
   }) => {
+    // Three real-keyboard postures with two canvas captures each: the walk
+    // alone is ~14 s locally, and a CI software rasteriser captures slowly.
+    test.setTimeout(120_000);
     const defs = committedDefs();
     const tile = balanceValue("render.tile_size_px");
     const storey = balanceValue("render.storey_height_px");
