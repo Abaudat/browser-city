@@ -1776,7 +1776,8 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
 describe("the near-railing press route (story 15.13)", () => {
   const inputs = streetWalkInputs();
   const route = streetNearRailingPressRoute(inputs);
-  for (const lag of [0, 1] as const) {
+  // Two 50 ms steps of release lag is more than the in-page release ever has.
+  for (const lag of [0, 1, 2] as const) {
     it(`completes on the street floor, with the body never leaving it, release lag ${lag}`, () => {
       const out = simulateStreetWalk(route, { ...RELEASE_LAG, releaseLagSteps: lag });
       expect(out).toHaveLength(route.length);

@@ -1443,12 +1443,14 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
   ];
 }
 
-/** The tread columns the stairwell's draw order is seen from: the east
- * tread, mid-flight, and the last position before the transition fires. */
+/** The tread columns the stairwell's draw order is seen from, east to west.
+ * Each is far enough east of the anchor cell (x < 15) that the release lag of
+ * a slow runner cannot carry the body into it: pressing north from there
+ * would fire the floor transition. */
 export const STAIRWELL_POSTURE_X = [
   STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width - 0.5,
-  STAIRWELL_X0 + 2,
-  STAIRWELL_X0 + 1.4,
+  STAIRWELL_X0 + 2.3,
+  STAIRWELL_X0 + 2.1,
 ] as const;
 
 /** How far south of the upper railing's face the body settles before a
