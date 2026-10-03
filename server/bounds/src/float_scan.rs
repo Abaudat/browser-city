@@ -176,6 +176,66 @@ mod tests {
     }
 
     #[test]
+    fn red_the_ticket_shapes_verbatim() {
+        assert_eq!(
+            hits("fn f(x: u64) { let _ = Duration::from_millis(x).as_secs_f64().sqrt() as u64; }")
+                [0]
+            .1,
+            "as_secs_f64"
+        );
+        assert_eq!(
+            hits("fn f(x: i32) { let _ = 0.5_f64.max(x.into()); }")[0].1,
+            "0.5_f64"
+        );
+    }
+
+    #[test]
+    fn red_an_identifier_carrying_a_float_name() {
+        assert_eq!(hits("fn f() { let _: c_float = 0; }")[0].1, "c_float");
+        assert_eq!(hits("fn f() { let _: c_double = 0; }")[0].1, "c_double");
+        assert_eq!(
+            hits("fn f(x: u32) { let _ = Duration::from_secs_f32(x); }")[0].1,
+            "from_secs_f32"
+        );
+        assert_eq!(hits("fn f(d: D) { let _ = d.mul_f64(y); }")[0].1, "mul_f64");
+    }
+
+    #[test]
+    fn red_a_float_name_is_matched_as_a_substring_not_a_segment() {
+        // `buf64` costs a rename; a miss is permanent in the persisted world.
+        assert_eq!(hits("fn f() { let buf64 = 0; }")[0].1, "buf64");
+        assert_eq!(hits("fn f() { let half32 = 0; }")[0].1, "half32");
+    }
+
+    #[test]
+    fn red_a_nested_tuple_index_lexes_as_a_float_by_design() {
+        // `x.0.1` lexes as the literal `0.1`; write `(x.0).1`.
+        assert_eq!(hits("fn f(x: ((u8, u8), u8)) { let _ = x.0.1; }")[0].1, "0.1");
+        assert!(hits("fn f(x: ((u8, u8), u8)) { let _ = (x.0).1; }").is_empty());
+    }
+
+    #[test]
+    fn red_the_other_float_widths_and_a_trailing_dot() {
+        assert_eq!(hits("fn f() { let _ = 3f128; }")[0].1, "3f128");
+        assert_eq!(hits("fn f() { let _ = 1f16; }")[0].1, "1f16");
+        assert_eq!(hits("fn f() { let _ = 1.; }")[0].1, "1.");
+    }
+
+    #[test]
+    fn red_a_float_in_a_nested_macro_group_or_an_attribute() {
+        assert_eq!(hits("macro_rules! m { () => { [ ( 0.5 ) ] }; }")[0].1, "0.5");
+        assert_eq!(hits("#[cfg_attr(test, foo(1.5))]\nfn f() {}")[0].1, "1.5");
+    }
+
+    #[test]
+    fn green_hex_digits_that_spell_a_float_suffix_and_non_float_literals() {
+        assert!(hits("const A: u32 = 0x1f32; const B: u64 = 0xdead_bf64;").is_empty());
+        assert!(hits("const A: isize = 1isize;").is_empty());
+        assert!(hits("const A: &[u8] = b\"1.5\"; const B: &str = r\"1.5 f64\";").is_empty());
+        assert!(hits("const A: char = 'e';").is_empty());
+    }
+
+    #[test]
     fn the_scan_names_file_and_line() {
         let dir = std::env::temp_dir().join(format!("bc-float-scan-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -216,5 +276,9 @@ mod tests {
         let sim_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../sim/src");
         let out = scan_tree(&sim_src);
         assert!(out.is_empty(), "float tokens in sim:\n{}", out.join("\n"));
+        // The exemption is the only reason the tree is green: the canary
+        // must exist and the scan must see its floats.
+        let canary = std::fs::read_to_string(sim_src.join(EXEMPT)).expect("canary exists");
+        assert!(!float_tokens(&canary).expect("tokenises").is_empty());
     }
 }
