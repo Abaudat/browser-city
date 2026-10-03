@@ -64,7 +64,7 @@ key stays legal). A `#[cfg(test)]` canary in `sim/src/lint_canary.rs` expects ev
 ban to fire, and `unfulfilled_lint_expectations` is denied, so a ban that
 stops applying fails clippy.
 
-A `bounds` test tokenises every file under `sim/src/` (`generated/` included; `sim/src/lint_canary.rs` is the one exempt path) and fails on any float literal or `f32`/`f64` identifier, naming file and line; the clippy lints are the second layer.
+A `bounds` test tokenises every file under `sim/src/` (`generated/` included; `sim/src/lint_canary.rs` is the one exempt path) and fails on any float literal, any identifier containing `f32`/`f64`, or `c_float`/`c_double`, naming file and line; the clippy lints are the second layer.
 
 `browser_city` cannot be linked natively, so anything requiring a native
 test lives in `sim` or `bounds`.

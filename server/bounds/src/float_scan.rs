@@ -27,7 +27,10 @@ fn is_float_literal(text: &str) -> bool {
     if text.starts_with("0x") || text.starts_with("0o") || text.starts_with("0b") {
         return false;
     }
-    if text.ends_with("f32") || text.ends_with("f64") {
+    if ["f16", "f32", "f64", "f128"]
+        .iter()
+        .any(|s| text.ends_with(s))
+    {
         return true;
     }
     let mut body = text;
@@ -46,7 +49,11 @@ fn walk(stream: TokenStream, found: &mut Vec<(usize, String)>) {
             TokenTree::Group(g) => walk(g.stream(), found),
             TokenTree::Ident(i) => {
                 let name = i.to_string();
-                if name == "f32" || name == "f64" {
+                if name.contains("f32")
+                    || name.contains("f64")
+                    || name == "c_float"
+                    || name == "c_double"
+                {
                     found.push((i.span().start().line, name));
                 }
             }
@@ -210,7 +217,10 @@ mod tests {
     #[test]
     fn red_a_nested_tuple_index_lexes_as_a_float_by_design() {
         // `x.0.1` lexes as the literal `0.1`; write `(x.0).1`.
-        assert_eq!(hits("fn f(x: ((u8, u8), u8)) { let _ = x.0.1; }")[0].1, "0.1");
+        assert_eq!(
+            hits("fn f(x: ((u8, u8), u8)) { let _ = x.0.1; }")[0].1,
+            "0.1"
+        );
         assert!(hits("fn f(x: ((u8, u8), u8)) { let _ = (x.0).1; }").is_empty());
     }
 
@@ -223,7 +233,10 @@ mod tests {
 
     #[test]
     fn red_a_float_in_a_nested_macro_group_or_an_attribute() {
-        assert_eq!(hits("macro_rules! m { () => { [ ( 0.5 ) ] }; }")[0].1, "0.5");
+        assert_eq!(
+            hits("macro_rules! m { () => { [ ( 0.5 ) ] }; }")[0].1,
+            "0.5"
+        );
         assert_eq!(hits("#[cfg_attr(test, foo(1.5))]\nfn f() {}")[0].1, "1.5");
     }
 
