@@ -31,7 +31,6 @@ import {
   SIDEWALK_TILES,
   STAIRS_ENTRY_DIRECTION,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
-  STAIRWELL_POSTURE_X,
   STAIRWELL_TOP_RAILING_DEF_ID,
   STAIRWELL_X0,
   STREET_FLOOR,
@@ -169,7 +168,7 @@ describe("the story 1.6 street scene's committed ordering", () => {
     expect(compareDrawables(nearCell, player)).toBeGreaterThan(0); // near end: in front of the player
   });
 
-  // Stories 15.3 / 15.13 (FR123): the street stairwell is three objects so
+  // Stories 15.3 / 15.13 (FR123): the street stairwell is objects so
   // the player walks between the railings -- behind the near (bottom) one,
   // in front of the far (top) one -- wherever the body can rest on the
   // treads. The sweep covers every position the real resolver allows on the
@@ -183,14 +182,12 @@ describe("the story 1.6 street scene's committed ordering", () => {
         d.floor === floor &&
         (d.defId === STAIRWELL_TOP_RAILING_DEF_ID || d.defId === STAIRWELL_BOTTOM_RAILING_DEF_ID),
     );
-    const stairwellPool = () => pooled;
 
-    /** The oracle, as a function of the feet position only (#391 reuses it
-     * with a moving floor height): every stairwell pool row whose ground row
+    /** The oracle, as a function of the feet position: every stairwell pool row whose ground row
      * is south of the feet sorts after the player, every one north before. */
     function expectStairwellSortAt(x: number, y: number) {
       const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
-      for (const row of stairwellPool()) {
+      for (const row of pooled) {
         const where = `player (${x}, ${y}) vs def ${"defId" in row ? row.defId : "?"} row ${row.y / SORT_SUBDIVISIONS}`;
         if (row.y / SORT_SUBDIVISIONS > y) {
           expect(compareDrawables(row, player), where).toBeGreaterThan(0);
@@ -206,7 +203,7 @@ describe("the story 1.6 street scene's committed ordering", () => {
       const path = treadPath(stairwellRowsAt(anchor), anchor, STAIRS_ENTRY_DIRECTION);
       const cells = [path.entry, ...path.path];
       expect(cells.length).toBeGreaterThanOrEqual(3);
-      const pool = stairwellPool();
+      const pool = pooled;
       expect(
         pool.filter((d) => "defId" in d && d.defId === STAIRWELL_TOP_RAILING_DEF_ID),
       ).toHaveLength(3);
@@ -221,32 +218,26 @@ describe("the story 1.6 street scene's committed ordering", () => {
       }
     });
 
-    it("every resting posture of the press route (collider rest south, upper rail north) sorts correctly, and is where the helpers say", () => {
+    it("both resting postures of the press route (collider rest south, upper rail north) sort correctly, and are where the helpers say", () => {
       const inputs = streetWalkInputs();
-      const route = streetNearRailingPressRoute(inputs);
-      const out = simulateStreetWalk(route);
-      let seen = 0;
-      for (const { label, state } of out) {
-        if (label.startsWith("press-south-")) {
-          expect(state.y).toBeCloseTo(nearRailingRestY(), 9);
-        } else if (label.startsWith("press-north-")) {
-          expect(state.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
-        } else continue;
-        expect(state.floor).toBe(floor);
-        expectStairwellSortAt(state.x, state.y);
-        seen++;
+      const out = simulateStreetWalk(streetNearRailingPressRoute(inputs));
+      const south = out.find((c) => c.label === "press-south")?.state;
+      const north = out.find((c) => c.label === "press-north")?.state;
+      if (!south || !north) throw new Error("no rest checkpoint");
+      expect(south.y).toBeCloseTo(nearRailingRestY(), 9);
+      expect(north.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
+      for (const rest of [south, north]) {
+        expect(rest.floor).toBe(floor);
+        expectStairwellSortAt(rest.x, rest.y);
       }
-      expect(seen).toBe(STAIRWELL_POSTURE_X.length * 2);
     });
 
     it("negative control: a player south of the stairwell draws over the bottom railing, and one north of it under the top railing", () => {
-      expect(stairwellPool().length).toBe(6);
-      const bottom = stairwellPool().filter(
+      expect(pooled.length).toBe(6);
+      const bottom = pooled.filter(
         (d) => "defId" in d && d.defId === STAIRWELL_BOTTOM_RAILING_DEF_ID,
       );
-      const top = stairwellPool().filter(
-        (d) => "defId" in d && d.defId === STAIRWELL_TOP_RAILING_DEF_ID,
-      );
+      const top = pooled.filter((d) => "defId" in d && d.defId === STAIRWELL_TOP_RAILING_DEF_ID);
       const south = buildPlayerDrawable(
         rankOf("characters"),
         (bottom[0]?.x ?? Number.NaN) / SORT_SUBDIVISIONS,

@@ -46,7 +46,6 @@ import {
   STAIRS_X,
   STAIRS_Y,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
-  STAIRWELL_FOOTPRINT,
   STAIRWELL_TOP_RAILING_DEF_ID,
   STAIRWELL_X0,
   STREET_BOUNDARY,
@@ -58,6 +57,7 @@ import {
   STREET_ROOM_AREAS,
   STREET_STAIRWELL_ROWS,
   STREET_TRANSITIONS,
+  type StreetWalkSegment,
   SUBWAY_ENTRANCE_X0,
   SUBWAY_FLOOR,
   streetBollardRoute,
@@ -1776,30 +1776,51 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
 describe("the near-railing press route (story 15.13)", () => {
   const inputs = streetWalkInputs();
   const route = streetNearRailingPressRoute(inputs);
-  // Two 50 ms steps of release lag is more than the in-page release ever has.
-  for (const lag of [0, 1, 2] as const) {
-    it(`completes on the street floor, with the body never leaving it, release lag ${lag}`, () => {
-      const out = simulateStreetWalk(route, { ...RELEASE_LAG, releaseLagSteps: lag });
-      expect(out).toHaveLength(route.length);
-      for (const { state } of out) expect(state.floor).toBe(PLAYER_START.floor);
+  const label = (name: string) => route.findIndex((s) => s.label === name);
+
+  it("completes on the street floor, resting on the collider south and on the upper railing's face north", () => {
+    const out = simulateStreetWalk(route, RELEASE_LAG);
+    expect(out).toHaveLength(route.length);
+    for (const { state } of out) expect(state.floor).toBe(PLAYER_START.floor);
+    const at = (name: string) => out[label(name)]?.state;
+    expect(at("press-south")?.y).toBeCloseTo(inputs.nearRailingRestY, 9);
+    expect(at("press-north")?.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
+  });
+
+  // Where the west walk ends is decided by release lag, which on a loaded
+  // runner is large. However far it overshoots -- all the way to the west
+  // boundary -- the body stays on the street floor (it is on the row south
+  // of the anchor's), and the rest of the route still completes.
+  for (const lag of [0, 1, 8, 400]) {
+    it(`survives a west walk that overshoots by ${lag} steps, all the way to the west wall when large`, () => {
+      const before = simulateStreetWalk(
+        route.slice(0, label("west-along-the-near-railing")),
+        RELEASE_LAG,
+      );
+      const start = before[before.length - 1]?.state;
+      if (!start) throw new Error("no start state");
+      const west = simulateStreetWalk(
+        [route[label("west-along-the-near-railing")] as StreetWalkSegment],
+        {
+          ...RELEASE_LAG,
+          releaseLagSteps: lag,
+          start,
+        },
+      );
+      const end = west[0]?.state;
+      if (!end) throw new Error("no west state");
+      expect(end.floor).toBe(PLAYER_START.floor);
+      expect(end.y).toBeCloseTo(inputs.nearRailingRestY, 9);
+      if (lag === 400) expect(end.x).toBeLessThan(STAIRWELL_X0 + 0.5); // against the west wall
+      const rest = simulateStreetWalk(route.slice(label("east-of-the-anchor")), {
+        ...RELEASE_LAG,
+        start: end,
+      });
+      expect(rest).toHaveLength(2);
+      for (const { state } of rest) expect(state.floor).toBe(PLAYER_START.floor);
+      expect(rest[1]?.state.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
     });
   }
-  it("each posture rests on the near railing's collider south and on the upper railing's north, and every posture column is on the tread row", () => {
-    const out = simulateStreetWalk(route, RELEASE_LAG);
-    for (const { label, state } of out) {
-      if (label.startsWith("press-south-")) expect(state.y).toBeCloseTo(inputs.nearRailingRestY, 9);
-      if (label.startsWith("press-north-")) expect(state.y).toBeCloseTo(inputs.subwayTreadRowY, 9);
-      if (label.startsWith("press-north-")) {
-        // Never west of the anchor cell: pressing north there fires the transition.
-        expect(state.x).toBeGreaterThanOrEqual(STAIRWELL_X0 + 1);
-        expect(state.x).toBeLessThan(STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width);
-      }
-      if (label.startsWith("press-south-")) {
-        expect(state.x).toBeGreaterThanOrEqual(STAIRWELL_X0);
-        expect(state.x).toBeLessThan(STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width);
-      }
-    }
-  });
 });
 
 describe("the bollard approach route (NFR50)", () => {

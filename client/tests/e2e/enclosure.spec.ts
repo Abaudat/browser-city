@@ -22,7 +22,7 @@
 // direction) -- the walk always goes through the real keyboard and the
 // real `world/transitions.ts` port.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { PNG } from "pngjs";
@@ -37,7 +37,6 @@ import {
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STAIRWELL_FOOTPRINT,
   STAIRWELL_TOP_RAILING_DEF_ID,
-  STAIRWELL_TREADS_DEF_ID,
   STAIRWELL_X0,
   STAIRWELL_Y0,
   STREET_EXIT_X,
@@ -256,14 +255,15 @@ test.describe("story 1.7: enclosure visibility", () => {
 });
 
 // Story 15.13 (FR123): the street stairwell's near railing draws over a
-// player standing on the treads, along the whole tread row, on every pixel
-// it owns. Probed analytically: the railing-only art (the stairwell with
+// player standing on the treads, on every pixel it owns (the unit sweep
+// covers every position along the row; this is the mounted picture at the
+// demo's posture). Probed analytically: the railing-only art (the stairwell with
 // the treads removed) is placed from the stairwell's own art origin through
 // the live view transform; every opaque pixel of it from the tread row down
 // that falls under the player's body must be the canvas's colour, never the
-// player's. Clips of the stairwell at each posture go to a directory CI
-// uploads on every run, for review.
-const STAIRWELL_SHOT_DIR = "test-results/stairwell-shots";
+// player's. Clips of the stairwell at both rests go to a directory CI
+// uploads straight after this job's e2e step, for review.
+const STAIRWELL_SHOT_DIR = "test-results/story-15.13-shots";
 
 function balanceValue(key: string): number {
   const entry = committedDefs().balance.find((b) => b.key === key);
@@ -272,30 +272,24 @@ function balanceValue(key: string): number {
 }
 
 test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
-  test("pressed against either railing, along the tread row, the player is under the near railing's pixels and over the far one's", async ({
+  test("pressed against the near railing then the far one, the player is under the near railing's pixels and over the far one's", async ({
     page,
   }) => {
-    // Three real-keyboard postures with two canvas captures each: the walk
-    // alone is ~14 s locally, and a CI software rasteriser captures slowly.
-    test.setTimeout(120_000);
+    // A long real-keyboard walk and three canvas captures; a CI software
+    // rasteriser captures slowly.
+    test.setTimeout(60_000);
     const defs = committedDefs();
     const tile = balanceValue("render.tile_size_px");
     const storey = balanceValue("render.storey_height_px");
     const config = streetMovementConfig();
     const inputs = streetWalkInputs();
     const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
-    const treads = defs.objects.find((o) => o.id === STAIRWELL_TREADS_DEF_ID);
-    if (!treads) throw new Error("no treads def");
-    // The railing-only art, beside the treads' own sheet.
-    const railing = PNG.sync.read(
-      readFileSync(
-        join(
-          repoRoot,
-          dirname(treads.sprite.sheet),
-          "ME_Singles_Subway_and_Train_Station_16x16_Stairs_Railing_1.png",
-        ),
-      ),
-    );
+    const nearRailing = defs.objects.find((o) => o.id === STAIRWELL_BOTTOM_RAILING_DEF_ID);
+    if (!nearRailing) throw new Error("no near railing def");
+    // The railing-only art: the near railing's own sheet (the unit tests
+    // assert it is not the treads' sheet), placed from the stairwell's art
+    // origin rather than from the def's rect.
+    const railing = PNG.sync.read(readFileSync(join(repoRoot, nearRailing.sprite.sheet)));
     const treadTopArtY = (STAIRS_Y - STAIRWELL_Y0) * tile;
 
     await page.goto("/?freezeCrowd=1");
@@ -304,12 +298,20 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
 
     for (const segment of streetNearRailingPressRoute(inputs)) {
       await walkRealSegment(page, segment);
-      if (!segment.label.startsWith("press-")) continue;
-      const south = segment.label.startsWith("press-south-");
+      // The two rests: pressed south along the near railing's face (after
+      // the west walk), and pressed north against the far one's.
+      const rest =
+        segment.label === "west-along-the-near-railing"
+          ? "press-south"
+          : segment.label === "press-north"
+            ? "press-north"
+            : undefined;
+      if (!rest) continue;
+      const south = rest === "press-south";
       // At rest, exactly where the resolver puts it -- never a timed wait.
       await expect
         .poll(() => page.evaluate(() => window.__bc?.playerPosition), {
-          message: `${segment.label}: the body rests where the resolver puts it`,
+          message: `${rest}: the body rests where the resolver puts it`,
           timeout: 5_000,
         })
         .toMatchObject({
@@ -346,7 +348,7 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
           height: (STAIRWELL_FOOTPRINT.height + 1) * tile * view.zoom,
         },
       });
-      writeFileSync(join(STAIRWELL_SHOT_DIR, `${segment.label}.png`), shot);
+      writeFileSync(join(STAIRWELL_SHOT_DIR, `${rest}.png`), shot);
       if (!south) continue;
 
       // The pixels: the whole canvas, probed only where the art is.
@@ -389,7 +391,7 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
       expect(probed, "every railing pixel under the body was probed").toBeGreaterThanOrEqual(
         expected,
       );
-      expect(wrong, `railing pixels the player is drawn over at ${segment.label}`).toEqual([]);
+      expect(wrong, `railing pixels the player is drawn over at ${rest}`).toEqual([]);
     }
   });
 });

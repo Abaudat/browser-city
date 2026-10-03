@@ -155,9 +155,9 @@ export const BRIDGE_DECK_DEF_ID = 7;
  * walkable flight of steps. Which floors it joins is a `floor_transition`
  * row anchored on its cell, never a field on the prop. */
 export const FOOT_STAIRS_DEF_ID = 8;
-/** The street stairwell's three `defs/objects` rows (`stairwell_top_railing`,
- * `stairwell_treads`, `stairwell_bottom_railing`): the player walks between
- * the railings. */
+/** The street stairwell's four `defs/objects` rows (`stairwell_top_railing`,
+ * `stairwell_treads`, `stairwell_well`, `stairwell_bottom_railing`): the
+ * player walks between the railings. */
 export const STAIRWELL_TOP_RAILING_DEF_ID = 12;
 export const STAIRWELL_TREADS_DEF_ID = 13;
 export const STAIRWELL_BOTTOM_RAILING_DEF_ID = 14;
@@ -255,9 +255,10 @@ export const PLATFORM_BUILDING_ID = 3n;
 export const STREET_FLOOR = 0;
 export const SUBWAY_FLOOR = -1;
 
-/** The street stairwell's own art is three objects on one 3x3 ground
+/** The street stairwell's own art is four objects on one 3x3 ground
  * footprint: the top railing and the bottom railing (each drawn one row
- * taller than its footprint row, overhanging north), and the treads. */
+ * taller than its footprint row, overhanging north), and the two flat rows
+ * under them, the treads and the well. */
 export const STAIRWELL_FOOTPRINT = { width: 3, height: 3 } as const;
 
 /** The art row (from its north edge) the treads are drawn on: the rows
@@ -434,7 +435,7 @@ export const STREET_BUILDING_AREAS: readonly OwnershipArea[] = [
 
 export const STREET_ROOM_AREAS: readonly OwnershipArea[] = [];
 
-/** The street stairwell as its three `defs/objects` rows, anchored under
+/** The street stairwell as its four `defs/objects` rows, anchored under
  * its art (`x` the west column, `artY` the art's north row), top railing
  * first. */
 function streetStairwellRows(
@@ -738,7 +739,7 @@ const STREET_PROP_LIST: StreetProp[] = [
 
   // --- The subway ---------------------------------------------------------
   // The street stairwell (a real descending stairwell with railings,
-  // Artie's direction): three def rows -- the railings block their own
+  // Artie's direction): four def rows -- the railings block their own
   // row, the tread row is walkable from its east opening down to the down
   // anchor.
   ...STREET_STAIRWELL_ROWS,
@@ -1453,23 +1454,16 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
   ];
 }
 
-/** The tread columns the stairwell's draw order is seen from, east to west
- * (targets: the walk's release lag decides where the body really rests). */
-export const STAIRWELL_POSTURE_X = [
-  STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width - 0.5,
-  STAIRWELL_X0 + 2.3,
-  STAIRWELL_X0 + 2.1,
-] as const;
-
-/** How far south of the upper railing's face the body settles before a
- * posture's walk west. */
-const STAIRWELL_SETTLE_CELLS = 0.25;
-
-/** From the subway entrance onto the tread row, then at each of
- * [`STAIRWELL_POSTURE_X`]: west to the column, pressed south against the
- * near railing's collider (the demo's posture, FR123's worst case), then
- * north to the upper railing's. The `press-south` and `press-north`
- * segments' rests are where the body is seen. */
+/** From the subway entrance onto the tread row, then the stairwell's draw
+ * order is seen from the demo's posture, FR123's worst case. South first,
+ * in the entrance: the body rests on the boundary below the entrance cells,
+ * level with the near railing's top face (`press-south`). West along that
+ * face to the east tread (`west-along-the-near-railing`): the feet are off
+ * the anchor's row there, so however far the release overshoots the body
+ * ends against the west boundary and no transition can fire. East past the
+ * anchor column, then north to the upper railing's face (`press-north`),
+ * where the anchor's row is crossed east of the anchor cell. Where the
+ * west walk really ends is decided by release lag; the rests in `y` are not. */
 export function streetNearRailingPressRoute(
   inputs: StreetWalkInputs,
 ): readonly StreetWalkSegment[] {
@@ -1477,35 +1471,26 @@ export function streetNearRailingPressRoute(
   const onTreads = approach.findIndex((s) => s.label === "onto-the-subway-treads-row");
   return [
     ...approach.slice(0, onTreads + 1),
-    ...STAIRWELL_POSTURE_X.flatMap((x, i): StreetWalkSegment[] => [
-      // Off the upper railing's face before sliding west along the row: a
-      // body flush against a face is one float away from overlapping it.
-      {
-        label: `settle-on-treads-${i}`,
-        key: "ArrowDown",
-        until: { kind: "y-at-least", value: inputs.subwayTreadRowY + STAIRWELL_SETTLE_CELLS },
-      },
-      { label: `west-to-tread-${i}`, key: "ArrowLeft", until: { kind: "x-at-most", value: x } },
-      {
-        label: `press-south-${i}`,
-        key: "ArrowDown",
-        until: { kind: "y-at-least", value: inputs.nearRailingRestY },
-      },
-      // Back east before pressing north: the walk west overshoots by however
-      // many frames a loaded runner takes (over a cell on CI), and north of
-      // the tread row the anchor cell (x < 15) fires the floor transition.
-      // Overshooting east is harmless.
-      {
-        label: `east-of-the-anchor-${i}`,
-        key: "ArrowRight",
-        until: { kind: "x-at-least", value: STAIRWELL_X0 + 1.5 },
-      },
-      {
-        label: `press-north-${i}`,
-        key: "ArrowUp",
-        until: { kind: "y-at-most", value: inputs.subwayTreadRowY },
-      },
-    ]),
+    {
+      label: "press-south",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.nearRailingRestY },
+    },
+    {
+      label: "west-along-the-near-railing",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width - 0.5 },
+    },
+    {
+      label: "east-of-the-anchor",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: STAIRWELL_X0 + 1.5 },
+    },
+    {
+      label: "press-north",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: inputs.subwayTreadRowY },
+    },
   ];
 }
 
