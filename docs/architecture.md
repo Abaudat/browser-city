@@ -327,8 +327,9 @@ and an OIDC identity on the same character.
   back after a write. `connect()` takes one options object; the stored
   token goes to `withToken`. A refused token shows the connection notice
   and is kept. A tab that connected without a token and finds one stored
-  when it goes to write discards its own connection and reconnects with
-  the stored one. A first visit is the WebSocket alone; a return visit
+  when it goes to write keeps its connection as a session-only identity
+  (`persisted: false`); nothing creates a character for it
+  (`identity/create-guard.ts`) and its next load uses the stored token. A first visit is the WebSocket alone; a return visit
   adds the SDK's own `POST /v1/identity/websocket-token`.
   `scripts/ci/check-identity-token-confined.sh` keeps the key, `withToken`,
   and any `console.` in the token module where they belong.
@@ -337,10 +338,12 @@ and an OIDC identity on the same character.
   row), `oidc_issuer` and `link_request`, all private, and every read of
   `character_identity` (`check-character-identity-path.sh`). `identity_connected`
   writes nothing. `create_character()` is a no-op when the caller already
-  has a character. `begin_link(code)` stores a 256-bit code for ten
-  minutes (replacing the caller's last, pruning expired ones);
-  `complete_link(code)` consumes it as the OIDC identity and maps whichever
-  of the two identities has no character onto the other's; two characters
+  has a character. `begin_link(code)` stores a 256-bit code, with the
+  requester's own issuer, for ten minutes (replacing the caller's last,
+  pruning expired ones, refusing at `link_request`'s ceiling);
+  `complete_link(code)` consumes it as an OIDC identity of any registered
+  issuer and maps whichever of the two identities has no character onto the
+  other's, under its own issuer; two characters
   or none is an `Err` that changes nothing. `accept_oidc_issuer` is
   owner-only and idempotent; zero rows means linking is off. A token whose
   issuer is registered must carry that row's `client_id` in `aud`
@@ -352,8 +355,8 @@ and an OIDC identity on the same character.
   than `character_identity`, `module_owner` and `link_request` holds an
   `Identity` column; player data keys on `character_id`.
 - **OIDC client.** Authorization code with PKCE through full-page redirect,
-  no popup, iframe, renew or kept user; the link code travels in the
-  library's local state. On return the page boots on the anonymous token,
+  no popup, iframe, renew or kept user; the sign-in state lives in
+  `sessionStorage` and the link code travels in the library's own state. On return the page boots on the anonymous token,
   strips the callback parameters, and `net/link.ts` opens a short-lived
   connection with the ID token to call `complete_link`. The provider is
   `VITE_OIDC_AUTHORITY`/`VITE_OIDC_CLIENT_ID` for the client and
@@ -364,8 +367,14 @@ and an OIDC identity on the same character.
   exists, is unlinked, its token is persisted, a provider is configured,
   and the character's age and the time since the last offer are past
   `identity.link_prompt_min_character_age_days` and
-  `identity.link_prompt_cooloff_days`; evaluated once per session at scene
-  mount. The offer has no DOM and no canvas text: it is an in-world object.
+  `identity.link_prompt_cooloff_days`; evaluated once per session as the scene
+  mounts (`identity/link-offer.ts`), recording the city day when shown. The
+  offer has no DOM and no canvas text: it is the `[[object]]` carrying the
+  `registry_post` tag, placed in the test street (`test-street/link-carrier.ts`,
+  throwaway) when due, and an in-reach intent on it starts `offerLink`. A
+  character's age is its real creation instant read on the city clock, so
+  the e2e harness (which publishes the `time-control` flavour) ages it with
+  `set_clock_speed`, never `jump_clock`.
 
 ## Stock
 

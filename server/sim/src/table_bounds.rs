@@ -77,7 +77,7 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
     // one, so this is the ceiling that stops a flood.
     TableBound {
         accessor: "link_request",
-        max_rows: 10_000,
+        max_rows: crate::identity::LINK_REQUEST_MAX_ROWS,
         expected_rows: 10,
         alert_rows: 7_500,
         kind: BoundKind::Engineering,

@@ -152,4 +152,16 @@ case "$MINE_D" in *'[[2,'*) ;; *) fail "D's my_character does not show D's own c
 case "$MINE_D" in *'[[1,'*) fail "D's my_character leaked another character: $MINE_D" ;; esac
 ok "character_identity is private and my_character returns only the caller's row"
 
+# The requester's own issuer is what its new mapping records: a requester that
+# came through the registered issuer (every local token here does) is never
+# written down as anonymous.
+E="$(mint)"; F="$(mint)"
+CODE_4="$(printf 'd4%.0s' $(seq 32))"
+expect_ok "create_character as E" "$E" create_character
+expect_ok "begin_link as F" "$F" begin_link "[\"$CODE_4\"]"
+expect_ok "complete_link as E (the redeemer has the character)" "$E" complete_link "[\"$CODE_4\"]"
+FISSUER="$(owner_sql 'SELECT * FROM character_identity' | grep -E '^ [0-9]+ ' | tail -1 | awk -F'|' '{gsub(/ /, "", $4); print $4}')"
+[ "$FISSUER" = "1" ] || fail "the requester's mapping was recorded under issuer '$FISSUER', not its own (1)"
+ok "a mapped requester is recorded under its own issuer"
+
 echo "check-identity-link: all checks passed" >&2

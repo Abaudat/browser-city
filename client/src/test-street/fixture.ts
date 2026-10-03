@@ -565,7 +565,7 @@ function platformWalls(): readonly StreetProp[] {
 /** Every non-player prop in the fixture, fixed and hand-placed. Ids are
  * small and sequential -- this is fixture data, not a live `object_id`
  * sequence. */
-export const STREET_PROPS: readonly StreetProp[] = [
+const STREET_PROP_LIST: StreetProp[] = [
   // --- Shop A ----------------------------------------------------------
   // North (back) wall: full width, never near-side (nothing owned by
   // shop A sits south of it -- it is the interior itself).
@@ -896,7 +896,17 @@ export const STREET_PROPS: readonly StreetProp[] = [
     floor: STREET_FLOOR,
     layer: "ground_objects",
   },
-] as const;
+];
+
+export const STREET_PROPS: readonly StreetProp[] = STREET_PROP_LIST;
+
+/** Adds one prop to the street before it mounts. Throwaway harness only: the
+ * link offer's carrier (story 4.5) is placed this way, once per session,
+ * when the offer is due -- the fixture itself stays the fixed layout every
+ * spec and baseline reads. */
+export function placeExtraStreetProp(prop: StreetProp): void {
+  STREET_PROP_LIST.push(prop);
+}
 
 /** A collider-only rect, in whole cells, with no sprite and no place in
  * the depth-sorted pool. `x`/`y` is the anchor cell -- the rect's

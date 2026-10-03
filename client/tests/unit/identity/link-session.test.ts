@@ -13,7 +13,6 @@ function flow(
   return {
     calls,
     module: {
-      hasLinkCallback: (s: string) => s.includes("code=") && s.includes("state="),
       stripLinkCallback: () => "/clean",
       startLink: vi.fn(async (_c: unknown, code: string) => {
         calls.push(`start:${code}`);

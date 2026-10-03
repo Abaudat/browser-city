@@ -83,8 +83,11 @@ const fakeSubscriptionBuilder = {
 };
 
 const fakeConn = {
+  // The SDK fires `onDisconnect` for a client-initiated close too; a fake
+  // that stayed silent would hide any status a deliberate close reports.
   disconnect: () => {
     state.disconnectCalls += 1;
+    state.onDisconnectCb?.({}, undefined);
   },
   subscriptionBuilder: () => fakeSubscriptionBuilder,
   procedures: {
@@ -496,24 +499,27 @@ describe("identity token (story 4.5, FR141)", () => {
     expect(seen).toEqual([{ identityHex: "c200abcd", persisted: false }]);
   });
 
-  it("a second tab that stored a token first wins: this connection is dropped and the stored token reconnects", () => {
+  it("a second tab that stored a token first wins: this tab keeps its connection as a session-only identity", () => {
     const f = fakeStorage();
     const statuses: string[] = [];
+    const seen: unknown[] = [];
     connect(
       () => {},
       (s) => statuses.push(s),
       undefined,
       undefined,
-      { storage: f.storage },
+      { storage: f.storage, onIdentity: (i) => seen.push(i) },
     );
     // The other tab writes between this connect starting and its handshake.
     f.data.set(IDENTITY_STORAGE_KEY, blob("other-tab"));
     state.onConnectCb?.(fakeConn, identity, "mine");
     expect(f.writes).toEqual([]);
-    expect(state.disconnectCalls).toBe(1);
-    expect(state.builds).toBe(2);
-    expect(state.token).toBe("other-tab");
-    expect(statuses).not.toContain("connected");
+    expect(f.data.get(IDENTITY_STORAGE_KEY)).toBe(blob("other-tab"));
+    expect(state.builds).toBe(1);
+    expect(state.disconnectCalls).toBe(0);
+    expect(statuses).toEqual(["connecting", "connected"]);
+    expect(state.subscribeCalls).toBe(1);
+    expect(seen).toEqual([{ identityHex: "c200abcd", persisted: false }]);
   });
 
   describe("the stored token is never replaced or removed by a failure", () => {
@@ -572,6 +578,20 @@ describe("identity token (story 4.5, FR141)", () => {
       expect(f.writes).toEqual([]);
       expect(f.data.get(IDENTITY_STORAGE_KEY)).toBe("{corrupt");
     });
+  });
+
+  it("reports once the subscription has applied, so the first state is complete", () => {
+    let applied = 0;
+    connect(() => {}, undefined, undefined, undefined, {
+      storage: fakeStorage().storage,
+      onApplied: () => {
+        applied += 1;
+      },
+    });
+    state.onConnectCb?.(fakeConn, identity, "t");
+    expect(applied).toBe(0);
+    state.onAppliedCb?.();
+    expect(applied).toBe(1);
   });
 
   it("reports the player's own character from the my_character view", () => {

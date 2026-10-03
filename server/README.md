@@ -89,7 +89,10 @@ the offer is never made and nothing else changes. `deploy.yml` hands the pair to
 and a client for the Pages URL (redirect URI = the deployed game URL, authorization code with PKCE,
 `openid` scope), then set `OIDC_AUTHORITY` to its issuer URL and `OIDC_CLIENT_ID` to the client id.
 SpacetimeAuth is in beta with no published price: confirm its terms before setting the variables.
-A second provider is a second `accept_oidc_issuer` call, not a migration.
+A second provider is a second `accept_oidc_issuer` call, not a migration. `OIDC_AUTHORITY` must equal
+the ID token's `iss` claim byte for byte (the module compares strings): a trailing slash that the
+provider's tokens do not carry means every `complete_link` is refused as "needs a token from the
+configured provider".
 
 ## Running locally
 

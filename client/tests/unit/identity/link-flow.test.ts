@@ -31,25 +31,20 @@ vi.mock("oidc-client-ts", () => {
   return { UserManager, WebStorageStateStore, InMemoryWebStorage };
 });
 
-const { startLink, finishLink, hasLinkCallback, stripLinkCallback } = await import(
+const { startLink, finishLink, stripLinkCallback } = await import(
   "../../../src/identity/link-flow"
 );
 
 const CFG = { authority: "https://idp.example", clientId: "bc" };
 
+const fakeSession = { fake: "session" };
+
 beforeEach(() => {
+  vi.stubGlobal("sessionStorage", fakeSession);
+  vi.stubGlobal("localStorage", { fake: "local" });
   calls.length = 0;
   ctorSettings = undefined;
   callbackUser = { id_token: "id-tok", state: { code: "c0de" } };
-});
-
-describe("hasLinkCallback", () => {
-  it("is true only for a redirect carrying both code and state", () => {
-    expect(hasLinkCallback("?code=a&state=b")).toBe(true);
-    expect(hasLinkCallback("?code=a")).toBe(false);
-    expect(hasLinkCallback("?state=b")).toBe(false);
-    expect(hasLinkCallback("")).toBe(false);
-  });
 });
 
 describe("startLink", () => {
@@ -66,6 +61,13 @@ describe("startLink", () => {
       monitorSession: false,
       loadUserInfo: false,
     });
+  });
+
+  it("keeps sign-in state in sessionStorage, never localStorage", async () => {
+    await startLink(CFG, "c0de", "https://game.example/");
+    const store = ctorSettings?.stateStore as { opts: { store: unknown } };
+    expect(store.opts.store).toBe(fakeSession);
+    expect(store.opts.store).not.toBe(globalThis.localStorage);
   });
 
   it("keeps no user: the user store is in-memory, never a web storage", async () => {

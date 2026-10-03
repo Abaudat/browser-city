@@ -109,9 +109,41 @@ export async function startSpacetime() {
     );
   }
 
+  // The module is built with the dev-only `time-control` feature
+  // (`jump_clock`/`set_clock_speed`, FR163), the same flavour
+  // `scripts/dev/publish-dev.sh` publishes, so a spec can age a character
+  // by city days without waiting; this instance is disposable and local,
+  // and the production build never carries the feature.
+  const build = spawnSync(
+    "cargo",
+    [
+      "build",
+      "--features",
+      "time-control",
+      "--target",
+      "wasm32-unknown-unknown",
+      "--release",
+      "-p",
+      "browser_city",
+    ],
+    { cwd: path.join(REPO_ROOT, "server"), encoding: "utf-8" },
+  );
+  if (build.status !== 0) {
+    throw new Error(`cargo build (time-control) failed:
+${build.stdout}
+${build.stderr}`);
+  }
+  const wasm = path.join(
+    REPO_ROOT,
+    "server",
+    "target",
+    "wasm32-unknown-unknown",
+    "release",
+    "browser_city.wasm",
+  );
   const publish = spawnSync(
     "spacetime",
-    ["publish", "--no-config", "--server", serverUrl, "--module-path", "server", "--yes", dbName],
+    ["publish", "--no-config", "--server", serverUrl, "--bin-path", wasm, "--yes", dbName],
     { cwd: REPO_ROOT, encoding: "utf-8" },
   );
   if (publish.status !== 0) {

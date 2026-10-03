@@ -8,11 +8,14 @@ import { readReloadedFor, writeReloadedFor } from "./boot/reloaded-for-storage";
 import type { DebugWorldView } from "./debug/world-view";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
+import { carrierDefId, offerDue, readOfferRules } from "./identity/link-offer";
+import { loadLastShownDay, saveLastShownDay } from "./identity/link-prompt";
 import { offerLink, resumeLinkIfPending } from "./identity/link-session";
+import type { Intent } from "./input/intent";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
 import { OIDC_CONFIG } from "./net/config";
-import { connect } from "./net/connection";
+import { type CharacterReport, connect, type IdentityReport } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
@@ -28,6 +31,7 @@ import {
   recordIdentityForE2e,
   recordIgnoredIntentForE2e,
   recordIntentForE2e,
+  recordLinkOfferForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerAppearanceForE2e,
@@ -47,6 +51,7 @@ import { visibleCellBounds } from "./render/screen-position";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
+import { placeLinkCarrier } from "./test-street/link-carrier";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
 import { CityClock } from "./time/city-clock";
 import { ServerClock } from "./time/server-clock";
@@ -61,6 +66,12 @@ import { objectDefsById, windowDefIds } from "./world/object-defs";
  * overlay drawn against a made-up camera would be drawn in the wrong
  * place, which is worse than not yet drawn. */
 const NO_CAMERA_YET = { zoom: 0, offsetX: 0, offsetY: 0 } as const;
+
+/** Story 4.5: the link offer's two touch points with the street scene. */
+interface OfferWiring {
+  readonly beforeMount: (defs: VerifiedDefs) => Promise<void>;
+  readonly onIntent: (intent: Intent) => void;
+}
 
 async function main(): Promise<void> {
   // Story 1.14 (NFR1): the bundle term's own end -- module top-level
@@ -106,12 +117,26 @@ async function main(): Promise<void> {
   // defs are verified.
   const serverClock = new ServerClock(() => performance.now());
   const cityClock = new CityClock(serverClock);
+  // Story 4.5 (FR143): what the link offer is decided from, kept as the
+  // connection reports it. `applied` settles on the first subscription apply
+  // (every initial row, the player's own character included) or on the first
+  // failure to connect, so the decision never waits on a socket that is down.
+  let latestIdentity: IdentityReport | null = null;
+  let latestCharacter: CharacterReport | null = null;
+  let latestClock: { epochMicros: bigint; speed: number } | null = null;
+  let resolveApplied: () => void = () => {};
+  const applied = new Promise<void>((resolve) => {
+    resolveApplied = resolve;
+  });
   exposeCityTimeForE2e(() => cityClock.now());
   const conn = connect({
     onPing,
     onStatus: (status) => {
       notice.setStatus(status);
-      if (status === "disconnected") latch.resolveUnreachable();
+      if (status === "disconnected") {
+        latch.resolveUnreachable();
+        resolveApplied();
+      }
     },
     onHandshake: (version) => {
       latch.resolveHandshake(version);
@@ -122,6 +147,7 @@ async function main(): Promise<void> {
       visibility: document,
       onClock: ({ epochMicros, speed }, kind) => {
         cityClock.setClock(epochMicros, speed);
+        latestClock = { epochMicros, speed };
         if (performance.getEntriesByName(BOOT_MARK.CITY_CLOCK_KNOWN).length === 0) {
           markBoot(BOOT_MARK.CITY_CLOCK_KNOWN);
         }
@@ -129,8 +155,15 @@ async function main(): Promise<void> {
       },
     },
     storage: resolveSessionStorage(() => window.localStorage),
-    onIdentity: recordIdentityForE2e,
-    onCharacter: recordCharacterForE2e,
+    onIdentity: (identity) => {
+      latestIdentity = identity;
+      recordIdentityForE2e(identity);
+    },
+    onCharacter: (character) => {
+      latestCharacter = character;
+      recordCharacterForE2e(character);
+    },
+    onApplied: resolveApplied,
   });
 
   // Story 4.5 (FR143): linking. The OIDC library is a dynamic import,
@@ -159,6 +192,57 @@ async function main(): Promise<void> {
       }),
   });
 
+  const startOffer = () =>
+    offerLink({
+      config: OIDC_CONFIG,
+      redirectUri,
+      loadFlow: loadLinkFlow,
+      newCode: newLinkCode,
+      beginLink: (code) => beginLink(conn, code),
+    });
+  const identityStorage = resolveSessionStorage(() => window.localStorage);
+  let carrierDef: number | undefined;
+  // Evaluated once per session, as the scene is about to mount, never
+  // mid-session. Showing the offer records the city day, so declining is
+  // simply not taking it.
+  const offer: OfferWiring = {
+    beforeMount: async (defs) => {
+      const carrier = carrierDefId(defs);
+      if (carrier === undefined || OIDC_CONFIG === null) {
+        recordLinkOfferForE2e(false);
+        return;
+      }
+      await applied;
+      let today = cityClock.now()?.day;
+      for (let i = 0; today === undefined && i < 40; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        today = cityClock.now()?.day;
+      }
+      const due = offerDue({
+        character: latestCharacter,
+        identity: latestIdentity,
+        configured: true,
+        clock: latestClock,
+        realMsPerCityMinute: defs.realMsPerCityMinute,
+        today,
+        lastShownDay: loadLastShownDay(identityStorage),
+        rules: readOfferRules(defs),
+      });
+      if (due && today !== undefined) {
+        placeLinkCarrier(carrier);
+        carrierDef = carrier;
+        saveLastShownDay(identityStorage, today);
+      }
+      recordLinkOfferForE2e(due);
+    },
+    onIntent: (intent) => {
+      if (carrierDef === undefined || intent.defId !== carrierDef) return;
+      startOffer().catch((error: unknown) => {
+        console.error("[identity] the link offer could not start", error);
+      });
+    },
+  };
+
   try {
     await startStreetScene(
       latch,
@@ -167,6 +251,7 @@ async function main(): Promise<void> {
         postMountGuard = guard;
       },
       (rate) => cityClock.setRate(rate),
+      offer,
     );
   } catch (error: unknown) {
     // NFR42: the street scene degrades to not-drawing, never takes the ping
@@ -217,6 +302,7 @@ async function startStreetScene(
   onDegrade: () => void,
   setPostMountGuard: (guard: PostMountGuard) => void,
   setCityRate: (realMsPerCityMinute: number) => void,
+  offer: OfferWiring,
 ): Promise<void> {
   const mount = document.getElementById("test-street");
   if (!mount) {
@@ -277,6 +363,8 @@ async function startStreetScene(
   }
   const defs: VerifiedDefs = sequenceResult.defs;
   setCityRate(defs.realMsPerCityMinute);
+  // Story 4.5 (FR143): decided once, as the scene is about to mount.
+  await offer.beforeMount(defs);
 
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");
@@ -424,7 +512,10 @@ async function startStreetScene(
     // procedure interaction model is Epic 8's, deliberately unresolved --
     // so the only consumer today is the e2e observation hook. Swapping
     // this function is the whole of what Epic 8 has to do here.
-    onIntent: recordIntentForE2e,
+    onIntent: (intent) => {
+      recordIntentForE2e(intent);
+      offer.onIntent(intent);
+    },
     onIgnored: recordIgnoredIntentForE2e,
     onViewTransform: (zoom, offsetX, offsetY) => {
       recordViewTransformForE2e(zoom, offsetX, offsetY);

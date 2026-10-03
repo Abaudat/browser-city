@@ -69,6 +69,8 @@ pub enum ClaimError {
     /// No such claim: never issued, or already spent.
     Unknown,
     Expired,
+    /// Too many unexpired claims are pending to take another.
+    Full,
 }
 
 impl ClaimError {
@@ -76,7 +78,28 @@ impl ClaimError {
         match self {
             ClaimError::Unknown => "unknown or already used link code",
             ClaimError::Expired => "link code expired",
+            ClaimError::Full => "too many link codes are pending, try again shortly",
         }
+    }
+}
+
+/// `link_request`'s row ceiling (`table_bounds`). Anyone may mint a claim,
+/// so `begin_link` refuses at it once stale rows are pruned.
+pub const LINK_REQUEST_MAX_ROWS: u64 = 10_000;
+
+/// Whether a stored claim has lapsed and may be pruned (the same boundary
+/// `check_claim` refuses at).
+pub fn is_claim_stale(expires_at: i64, now: i64) -> bool {
+    expires_at <= now
+}
+
+/// `pending` is the row count after pruning and after the caller's own
+/// previous request was dropped.
+pub fn check_capacity(pending: u64) -> Result<(), ClaimError> {
+    if pending >= LINK_REQUEST_MAX_ROWS {
+        Err(ClaimError::Full)
+    } else {
+        Ok(())
     }
 }
 
@@ -85,7 +108,7 @@ impl ClaimError {
 pub fn check_claim(expires_at: Option<i64>, now: i64) -> Result<(), ClaimError> {
     match expires_at {
         None => Err(ClaimError::Unknown),
-        Some(e) if e <= now => Err(ClaimError::Expired),
+        Some(e) if is_claim_stale(e, now) => Err(ClaimError::Expired),
         Some(_) => Ok(()),
     }
 }

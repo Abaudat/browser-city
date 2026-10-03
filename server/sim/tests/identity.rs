@@ -3,8 +3,9 @@
 //! `support::identity_model` applies them the way the reducers do.
 
 use sim::identity::{
-    ANONYMOUS_ISSUER, ClaimError, CreatePlan, Credential, CredentialError, IssuerRow, LinkError,
-    LinkPlan, check_claim, credential, plan_create, plan_link,
+    ANONYMOUS_ISSUER, ClaimError, CreatePlan, Credential, CredentialError, IssuerRow,
+    LINK_REQUEST_MAX_ROWS, LinkError, LinkPlan, check_capacity, check_claim, credential,
+    is_claim_stale, plan_create, plan_link,
 };
 
 #[test]
@@ -79,4 +80,22 @@ fn an_unregistered_issuer_is_anonymous() {
             issuer_id: ANONYMOUS_ISSUER
         })
     );
+}
+
+#[test]
+fn a_claim_is_stale_exactly_when_check_claim_refuses_it() {
+    for (exp, now) in [(5, 4), (5, 5), (5, 6), (i64::MIN, 0), (i64::MAX, 0)] {
+        assert_eq!(
+            is_claim_stale(exp, now),
+            check_claim(Some(exp), now).is_err()
+        );
+    }
+}
+
+#[test]
+fn begin_link_is_refused_at_the_ceiling_and_not_below_it() {
+    assert_eq!(check_capacity(0), Ok(()));
+    assert_eq!(check_capacity(LINK_REQUEST_MAX_ROWS - 1), Ok(()));
+    assert_eq!(check_capacity(LINK_REQUEST_MAX_ROWS), Err(ClaimError::Full));
+    assert_eq!(check_capacity(u64::MAX), Err(ClaimError::Full));
 }

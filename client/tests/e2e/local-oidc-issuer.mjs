@@ -4,8 +4,10 @@
 // token endpoint -- the whole authorization-code-with-PKCE shape
 // `oidc-client-ts` drives. No dependency, no real provider is ever
 // contacted from CI, and no secret is needed: the key never leaves this
-// process. Every login is the same subject, so the OIDC identity
-// (issuer + subject) is the same one on every device, as a real account is.
+// process. Every login is the same subject until a spec changes it with
+// `POST /admin/subject?sub=<value>`, so the OIDC identity (issuer + subject)
+// is the same one on every device, as a real account is -- and a spec that
+// picks its own subject shares no account with any other.
 //
 // `POST /admin/audience?aud=<value>` makes later ID tokens carry that
 // audience instead of the client id (a token minted for another
@@ -14,7 +16,6 @@
 import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import { createServer } from "node:http";
 
-const SUBJECT = "e2e-player";
 const KID = "e2e-key";
 
 function b64url(buffer) {
@@ -32,6 +33,7 @@ export async function startLocalOidcIssuer({ port, clientId }) {
   const issuer = `http://127.0.0.1:${port}`;
   const codes = new Map();
   let audienceOverride = null;
+  let subject = "e2e-player";
 
   function idToken(nonce) {
     const now = Math.floor(Date.now() / 1000);
@@ -39,7 +41,7 @@ export async function startLocalOidcIssuer({ port, clientId }) {
     const payload = b64url(
       JSON.stringify({
         iss: issuer,
-        sub: SUBJECT,
+        sub: subject,
         aud: audienceOverride ?? clientId,
         iat: now,
         exp: now + 3600,
@@ -130,6 +132,11 @@ export async function startLocalOidcIssuer({ port, clientId }) {
           id_token: idToken(nonce),
         });
       });
+      return;
+    }
+    if (url.pathname === "/admin/subject" && req.method === "POST") {
+      subject = url.searchParams.get("sub") ?? "e2e-player";
+      json(res, { subject });
       return;
     }
     if (url.pathname === "/admin/audience" && req.method === "POST") {

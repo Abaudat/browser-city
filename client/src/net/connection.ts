@@ -70,6 +70,9 @@ export interface ConnectOptions {
   readonly storage?: SettingsStorage | null;
   readonly onIdentity?: (identity: IdentityReport) => void;
   readonly onCharacter?: (character: CharacterReport) => void;
+  /** The first subscription apply: every table's initial rows, the player's
+   * own character included, have been delivered. */
+  readonly onApplied?: () => void;
 }
 
 /**
@@ -86,20 +89,20 @@ export interface ConnectOptions {
  * successful connect are otherwise indistinguishable from this module's
  * only two ways of reaching "not connected").
  */
-export function connect(options: ConnectOptions): DbConnection {
-  options.onStatus?.("connecting");
-  return open(options);
-}
 
 /**
  * Story 4.5 (FR141): the stored token, if any, is presented with
  * `withToken`; a first visit takes the one the server issues in the
  * handshake and stores it. The stored token is never replaced or removed by
  * a failure of any kind: a refused token shows the connection notice and
- * keeps the token, it never falls back to a fresh anonymous identity.
+ * keeps the token, it never falls back to a fresh anonymous identity. A
+ * tab that finds another tab's token already stored keeps its own
+ * connection as a session-only identity (`persisted: false`).
  */
-function open(options: ConnectOptions): DbConnection {
-  const { onPing, onStatus, onHandshake, clock, storage, onIdentity, onCharacter } = options;
+export function connect(options: ConnectOptions): DbConnection {
+  options.onStatus?.("connecting");
+  const { onPing, onStatus, onHandshake, clock, storage, onIdentity, onCharacter, onApplied } =
+    options;
   let clockSync: ClockSync | undefined;
 
   const stored = readStoredToken(storage);
@@ -110,13 +113,6 @@ function open(options: ConnectOptions): DbConnection {
     .onConnect((connection, identity, token) => {
       if (stored === null) {
         const outcome = rememberFirstToken(storage, token);
-        if (outcome.kind === "occupied" && outcome.token !== null) {
-          // A second tab stored its own token while this one connected:
-          // theirs wins, this identity is discarded unused.
-          connection.disconnect();
-          open(options);
-          return;
-        }
         onIdentity?.({ identityHex: identity.toHexString(), persisted: outcome.kind === "stored" });
       } else {
         onIdentity?.({ identityHex: identity.toHexString(), persisted: true });
@@ -131,7 +127,10 @@ function open(options: ConnectOptions): DbConnection {
       // extra round trip on the common (matched-version) path.
       connection
         .subscriptionBuilder()
-        .onApplied(() => markBoot(BOOT_MARK.SUBSCRIPTION_APPLIED))
+        .onApplied(() => {
+          markBoot(BOOT_MARK.SUBSCRIPTION_APPLIED);
+          onApplied?.();
+        })
         .onError((ctx) => {
           // Cycle 1 review (Tim's finding 6): with no `onError`, a
           // rejected subscribe left the boot gate's own handshake latch

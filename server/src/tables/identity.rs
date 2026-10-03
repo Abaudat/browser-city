@@ -5,8 +5,8 @@
 //! on `character_id`, never on an identity.
 
 use sim::identity::{
-    ANONYMOUS_ISSUER, ClaimError, CreatePlan, IssuerRow, LinkPlan, check_claim, credential,
-    plan_create, plan_link,
+    ANONYMOUS_ISSUER, ClaimError, CreatePlan, IssuerRow, LinkPlan, check_capacity, check_claim,
+    credential, is_claim_stale, plan_create, plan_link,
 };
 use sim::reducer_classes::ReducerClass;
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, Timestamp, ViewContext, view};
@@ -61,8 +61,8 @@ pub struct OidcIssuer {
     pub client_id: String,
 }
 
-/// A one-time claim: `identity` (the device's anonymous identity) offers to
-/// share its character with whoever redeems `code` through `issuer_id`.
+/// A one-time claim: `identity` offers to share its character with whoever
+/// redeems `code`. `issuer_id` is the requester's own issuer (0 anonymous).
 #[derive(Clone)]
 #[spacetimedb::table(accessor = link_request)]
 pub struct LinkRequest {
@@ -193,19 +193,17 @@ pub fn begin_link(ctx: &ReducerContext, code: String) -> Result<(), String> {
     if code.len() != LINK_CODE_LEN || !code.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err("link code must be 64 hex characters".to_string());
     }
-    let issuer_id = ctx
-        .db
-        .oidc_issuer()
-        .iter()
-        .map(|r| r.issuer_id)
-        .min()
-        .ok_or_else(|| "linking is not available".to_string())?;
+    if ctx.db.oidc_issuer().iter().next().is_none() {
+        return Err("linking is not available".to_string());
+    }
+    let issuer_id = caller_issuer(ctx)?;
     let now = ctx.timestamp.to_micros_since_unix_epoch();
     let expired: Vec<u64> = ctx
         .db
         .link_request()
         .expires_at()
         .filter(..=now)
+        .filter(|r| is_claim_stale(r.expires_at, now))
         .map(|r| r.request_id)
         .collect();
     for id in expired {
@@ -221,6 +219,7 @@ pub fn begin_link(ctx: &ReducerContext, code: String) -> Result<(), String> {
     for id in mine {
         ctx.db.link_request().request_id().delete(id);
     }
+    check_capacity(ctx.db.link_request().count()).map_err(|e| e.message().to_string())?;
     ctx.db.link_request().insert(LinkRequest {
         request_id: 0,
         identity: ctx.sender(),
@@ -247,9 +246,6 @@ pub fn complete_link(ctx: &ReducerContext, code: String) -> Result<(), String> {
     let Some(req) = req else {
         return Err(ClaimError::Unknown.message().to_string());
     };
-    if req.issuer_id != issuer_id {
-        return Err("link code was issued for another provider".to_string());
-    }
     if req.identity == ctx.sender() {
         return Err("an identity cannot link to itself".to_string());
     }
@@ -273,7 +269,7 @@ pub fn complete_link(ctx: &ReducerContext, code: String) -> Result<(), String> {
                 mapping_id: 0,
                 identity: req.identity,
                 character_id: c,
-                issuer_id: ANONYMOUS_ISSUER,
+                issuer_id: req.issuer_id,
             });
         }
     }

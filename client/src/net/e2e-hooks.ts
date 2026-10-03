@@ -15,6 +15,9 @@ declare global {
       pings: PingObservation[];
       /** Story 4.5: who this device is. Never the token. */
       identity?: { identityHex: string; persisted: boolean };
+      /** Story 4.5: whether the link offer's carrier was placed this
+       * session, set once the scene is about to mount. */
+      linkOffer?: { placed: boolean };
       createCharacter?: () => Promise<void>;
       startLink?: () => Promise<void>;
       /** Story 4.5: the character this identity reaches, once the
@@ -371,6 +374,13 @@ export function recordCharacterForE2e(character: {
     createdAtMicros: character.createdAtMicros.toString(),
     linked: character.linked,
   };
+  window.__bc = bucket;
+}
+
+export function recordLinkOfferForE2e(placed: boolean): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.linkOffer = { placed };
   window.__bc = bucket;
 }
 

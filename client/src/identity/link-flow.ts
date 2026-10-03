@@ -19,13 +19,10 @@ function manager(config: OidcConfig, redirectUri: string): UserManager {
     monitorSession: false,
     loadUserInfo: false,
     userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
+    // The PKCE verifier, nonce and link code live for one tab's sign-in,
+    // never in localStorage where an abandoned attempt would leave them.
+    stateStore: new WebStorageStateStore({ store: globalThis.sessionStorage }),
   });
-}
-
-/** Whether `search` is a provider redirect back to the game. */
-export function hasLinkCallback(search: string): boolean {
-  const params = new URLSearchParams(search);
-  return params.has("code") && params.has("state");
 }
 
 /** Sends the whole page to the provider; the link code travels in the
