@@ -250,6 +250,36 @@ mod m;"
     }
 
     #[test]
+    fn red_a_path_attribute_in_any_spelling() {
+        let cfg_attr = "#[cfg_attr(unix, path = \"../x.rs\")] mod m;";
+        assert_eq!(hits(cfg_attr)[0].1, "#[path]");
+        let inner = "mod m { #![path = \"../x\"] mod inner; }";
+        assert_eq!(hits(inner)[0].1, "#[path]");
+        let nested = "#[cfg_attr(a, cfg_attr(b, path = \"x.rs\"))] mod m;";
+        assert_eq!(hits(nested)[0].1, "#[path]");
+    }
+
+    #[test]
+    fn green_path_outside_an_attribute_or_without_an_equals() {
+        assert!(hits("fn f() { let path = 1; let _ = path; }").is_empty());
+        assert!(hits("#[cfg(feature = \"path\")]
+fn f() {}").is_empty());
+        assert!(hits("#[cfg_attr(test, derive(Debug))]
+struct S;").is_empty());
+        assert!(hits("#[foo(path)]
+struct S;").is_empty());
+    }
+
+    #[test]
+    fn green_std_utf16_names_but_not_a_float_beside_them() {
+        assert!(hits("fn f(s: &str) { let _ = s.encode_utf16(); }").is_empty());
+        assert!(hits("fn f() { let _ = String::from_utf16_lossy(&[]); }").is_empty());
+        assert!(hits("fn f(s: &str) { let _ = s.len_utf16(); }").is_empty());
+        assert_eq!(hits("fn f() { let utf16_as_f64 = 0; }")[0].1, "utf16_as_f64");
+        assert_eq!(hits("fn f() { let buf16 = 0; }")[0].1, "buf16");
+    }
+
+    #[test]
     fn green_include_str_include_bytes_and_a_local_named_path() {
         assert!(hits("const A: &str = include_str!(\"a.txt\");").is_empty());
         assert!(hits("const A: &[u8] = include_bytes!(\"a.bin\");").is_empty());
