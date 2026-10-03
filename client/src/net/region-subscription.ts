@@ -28,6 +28,8 @@ import {
 import type { DbConnection } from "./bindings";
 import { tables } from "./bindings";
 
+/** A handle ends on exactly one of `onEnded` or `onError`, whichever comes
+ * first; `onError` can arrive in any state, unsubscribing included. */
 export interface HandleCallbacks {
   onApplied(): void;
   /** The handle's unsubscribe completed. */
@@ -69,8 +71,8 @@ interface Entry {
 
 export class RegionSubscriptions {
   private readonly entries = new Map<string, Entry>();
-  /** Handles unsubscribed whose end has not arrived yet. */
-  private ending = 0;
+  /** Handles unsubscribed that have neither ended nor errored yet. */
+  private readonly ending = new Set<Entry>();
   private lastColumn: { cx: number; cy: number; band: Band } | undefined;
   private failed = false;
   private initial: Set<string> | undefined;
@@ -100,7 +102,7 @@ export class RegionSubscriptions {
 
   /** Handles created and not yet ended, ending ones included. */
   liveHandleCount(): number {
-    return this.entries.size + this.ending;
+    return this.entries.size + this.ending.size;
   }
 
   /** The handles currently wanted. */
@@ -136,7 +138,7 @@ export class RegionSubscriptions {
     entry.handle = this.backend.subscribe(key, this.range, {
       onApplied: () => this.applied(id, entry),
       onEnded: () => {
-        this.ending--;
+        this.ending.delete(entry);
       },
       onError: (message) => this.errored(id, entry, message),
     });
@@ -165,12 +167,13 @@ export class RegionSubscriptions {
   private unsubscribe(id: string, entry: Entry): void {
     if (!entry.handle) throw new Error(`region handle ${id} applied before it was returned`);
     this.entries.delete(id);
-    this.ending++;
+    this.ending.add(entry);
     entry.handle.unsubscribe();
   }
 
   private errored(id: string, entry: Entry, message: string): void {
     if (this.entries.get(id) === entry) this.entries.delete(id);
+    this.ending.delete(entry);
     this.failed = true;
     this.listener.onError(message);
   }
