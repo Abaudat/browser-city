@@ -13,6 +13,12 @@
 #   4. asserts the epoch a legacy world was repaired to is a moment inside
 #      the post-publish sequence (dawn at repair time), and that an
 #      anonymous `finish_publish` is rejected with the owner-check message.
+#   5. the generate-once record: `create_district` as owner writes exactly
+#      one `district` row carrying this build's three versions (and its
+#      wasm duration is reported), a second call is refused and writes
+#      nothing, an anonymous call is refused, and a republish plus
+#      `finish_publish` and a restart on the same data directory leave the row
+#      byte-identical;
 #
 # Assumption: additivity is transitive for the adds NFR33 allows, so
 # born-sha straight to HEAD stands in for every generation in between.
@@ -122,4 +128,63 @@ fi
 grep -qF "$OWNER_REJECTION_PATTERN" "$DATA_DIR/anon.log" \
   || fail "finish_publish rejected the anonymous call, but not with the owner-check message" "$DATA_DIR/anon.log"
 
-echo "check-deploy-rehearsal: ok -- a world born at $LIVE_DATABASE_BORN_AT survives a HEAD deploy: repaired epoch $EPOCH_FIRST, idempotent, owner-only" >&2
+# --- the generate-once record -----------------------------------------
+district_rows() { # the whole record, one line per row, in id order
+  local log="$DATA_DIR/district.log"
+  spacetime sql "$DB" --server "$SERVER_URL" --no-config -y \
+    "SELECT * FROM district" >"$log" 2>&1 || fail "could not query district" "$log"
+  awk '/^[- +|]+$/ { seen=1; next } seen && NF' "$log" | tr -d ' ' | sort
+}
+const_of() { sed -nE "s/^pub const $2: u32 = ([0-9]+);.*/\1/p" "$REPO_ROOT/$1" | tr -d '\r' | head -1; }
+HEAD_GENERATION="$(const_of server/sim/src/generation/mod.rs GENERATION_VERSION)"
+HEAD_RNG="$(const_of server/sim/src/rng.rs RNG_VERSION)"
+HEAD_DEFS="$(sed -nE 's/^pub const DEFS_VERSION: &str = "([^"]+)";.*/\1/p' "$REPO_ROOT/server/sim/src/generated/defs.rs" | tr -d '\r' | head -1)"
+[ -n "$HEAD_GENERATION" ] && [ -n "$HEAD_RNG" ] && [ -n "$HEAD_DEFS" ] || fail "could not read the three versions out of the source"
+
+[ -z "$(district_rows)" ] || fail "district has rows before create_district was ever called -- nothing may generate a district on publish"
+T0=$(date +%s%3N)
+spacetime call "$DB" --server "$SERVER_URL" --no-config -y create_district 7 >"$DATA_DIR/create-1.log" 2>&1 \
+  || fail "create_district as owner failed" "$DATA_DIR/create-1.log"
+T1=$(date +%s%3N)
+echo "check-deploy-rehearsal: create_district (generation inside one transaction, wasm) took $((T1 - T0)) ms including the CLI round trip" >&2
+ROWS_FIRST="$(district_rows)"
+[ "$(wc -l <<<"$ROWS_FIRST")" -eq 1 ] && [ -n "$ROWS_FIRST" ] || fail "create_district should write exactly one district row, got: $ROWS_FIRST"
+district_cols() { # seed|generation_version|rng_version|defs_version, one line per row
+  local log="$DATA_DIR/district-cols.log"
+  spacetime sql "$DB" --server "$SERVER_URL" --no-config -y \
+    "SELECT seed, generation_version, rng_version, defs_version FROM district" >"$log" 2>&1 \
+    || fail "could not query district columns" "$log"
+  awk '/^[- +|]+$/ { seen=1; next } seen && NF' "$log" | tr -d ' '
+}
+WANT_COLS="7|$HEAD_GENERATION|$HEAD_RNG|\"$HEAD_DEFS\""
+[ "$(district_cols)" = "$WANT_COLS" ] \
+  || fail "the district row's seed and versions are '$(district_cols)', expected exactly '$WANT_COLS'"
+
+if spacetime call "$DB" --server "$SERVER_URL" --no-config -y create_district 8 >"$DATA_DIR/create-2.log" 2>&1; then
+  fail "a second create_district over the same site was accepted" "$DATA_DIR/create-2.log"
+fi
+grep -qF "overlaps an already generated district" "$DATA_DIR/create-2.log" \
+  || fail "the second create_district was refused, but not for overlapping an already generated district" "$DATA_DIR/create-2.log"
+[ "$(district_rows)" = "$ROWS_FIRST" ] || fail "a refused create_district changed the district rows"
+
+if spacetime call "$DB" --server "$SERVER_URL" --no-config -y --anonymous create_district 9 >"$DATA_DIR/create-anon.log" 2>&1; then
+  fail "create_district accepted an anonymous caller" "$DATA_DIR/create-anon.log"
+fi
+grep -qF "$OWNER_REJECTION_PATTERN" "$DATA_DIR/create-anon.log" \
+  || fail "create_district rejected the anonymous call, but not with the owner-check message" "$DATA_DIR/create-anon.log"
+[ "$(district_rows)" = "$ROWS_FIRST" ] || fail "a refused anonymous create_district changed the district rows"
+
+publish "$REPO_ROOT/server" "$DATA_DIR/head-again.log" || fail "could not republish HEAD's server/" "$DATA_DIR/head-again.log"
+run_post_publish third
+[ "$(district_rows)" = "$ROWS_FIRST" ] || fail "a republish plus finish_publish changed the district row"
+
+OLD_PID="$START_PID"
+bc_stop_spacetime_confirmed "$OLD_PID" "$SERVER_URL" 30 \
+  || fail "the instance was still answering 30s after it was stopped -- there would be no restart to prove" "$START_LOG"
+START_PID="$(bc_start_spacetime "$DATA_DIR/data" "$PORT" "$START_LOG")"
+bc_wait_spacetime_healthy "$SERVER_URL" 30 || fail "SpacetimeDB did not come back healthy after a restart" "$START_LOG"
+bc_spacetime_alive "$START_PID" || fail "the restarted instance's process is not running -- the health ping was answered by something else" "$START_LOG"
+[ "$(district_rows)" = "$ROWS_FIRST" ] || fail "a restart on the same data directory changed the district row"
+bc_spacetime_alive "$START_PID" || fail "the restarted instance died while its district row was being read" "$START_LOG"
+
+echo "check-deploy-rehearsal: ok -- a world born at $LIVE_DATABASE_BORN_AT survives a HEAD deploy: repaired epoch $EPOCH_FIRST, idempotent, owner-only; one generate-once district row survives a republish and a restart" >&2

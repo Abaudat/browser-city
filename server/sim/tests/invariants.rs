@@ -19,7 +19,10 @@ use proptest::prelude::*;
 use sim::appearance;
 use sim::cadence;
 use sim::generated::defs::{self, Family, Pool};
-use sim::generation::{GenerationConfig, GenerationContent, envelopes, land_use, plots, streets};
+use sim::generation::{
+    DistrictRecord, GenerationConfig, GenerationContent, GenerationError, RuleSetVersion, create,
+    envelopes, land_use, plots, streets,
+};
 use sim::rng::{Rng, seed_from_ids};
 use sim::routing::estimate::{Correction, Rates, estimate};
 use sim::routing::{Point, TransportMode};
@@ -86,6 +89,7 @@ pub const INV_SEALED_RING_YIELDS_EXACTLY_ONE_ENCLOSED_REGION: &str =
     "a ring with no gap at all always yields exactly one enclosed region (FR128)";
 pub const INV_REMOVING_A_DOOR_NEVER_REDUCES_ENCLOSED_REGIONS: &str = "narrowing a ring's own doorway gap (down to and including closing it entirely) never reduces the number of reported enclosed regions (FR128)";
 pub const INV_RING_OPEN_TO_ANY_WINDOW_EDGE_IS_NEVER_REPORTED: &str = "a ring's own interior, pushed flush against any one of the window's own four edges with no wall and no margin between them, is never reported by enclosed_regions or by narrow_passages, for a door narrower than the real player body (FR128)";
+pub const INV_EXISTING_CITY_NEVER_REGENERATES: &str = "an existing city is never regenerated: for any list of recorded districts in any order, with any seeds and any recorded versions -- equal to or different from this build's -- the generate-once gate refuses exactly when some recorded site shares a cell with the site and runs no generation; generation is reachable only from no overlapping record";
 pub const INV_GENERATION_TOTAL_NEVER_PANICS: &str = "generation is total: for any seed, both passes return a valid plan or a typed error, never a panic (FR110)";
 pub const INV_GENERATION_ALL_FOUR_LAND_USES_PRESENT: &str = "pass 1's coarse grid is fully assigned (no unassigned cell) and every one of the four land uses appears at least once, for any seed (FR110)";
 pub const INV_GENERATION_STREETS_CONNECTED_AND_NOT_STRANDED: &str = "pass 2's street graph is a single connected component, and every pass-1 region borders a street, for any seed (FR110)";
@@ -2491,6 +2495,54 @@ proptest! {
                     seed, b.bounds, side, sides.get(side), touches
                 );
             }
+        }
+    }
+
+    /// `inv_existing_city_never_regenerates`: whatever the recorded
+    /// districts say about their seeds and versions, `create` over a site
+    /// any of them shares a cell with refuses -- checked against an
+    /// independent cell-sharing oracle, for one to four records in any
+    /// order with the overlapping one at any position.
+    #[test]
+    fn inv_existing_city_never_regenerates(
+        rects in proptest::collection::vec(
+            (-3000i32..3000, -3000i32..3000, 1i32..3000, 1i32..3000),
+            1..5,
+        ),
+        seeds in proptest::collection::vec(any::<u64>(), 4),
+        generation_version in any::<u32>(),
+        rng_version in any::<u32>(),
+        defs_version in "[a-z0-9]{0,12}",
+        same_defs in any::<bool>(),
+        new_seed in any::<u64>(),
+    ) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let site = cfg.site();
+        let existing: Vec<DistrictRecord> = rects
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, y, w, h))| DistrictRecord {
+                seed: seeds[i],
+                site: Rect { x0: x, y0: y, x1: x + w, y1: y + h },
+                version: RuleSetVersion {
+                    generation: generation_version,
+                    rng: rng_version,
+                    defs: if same_defs { defs::DEFS_VERSION.to_string() } else { defs_version.clone() },
+                },
+            })
+            .collect();
+        let shares_a_cell = |r: &Rect| {
+            r.x0.max(site.x0) < r.x1.min(site.x1) && r.y0.max(site.y0) < r.y1.min(site.y1)
+        };
+        // Acceptance is exercised by `record.rs`'s own cases; only the
+        // refusal is checked here, so a case costs no generation.
+        if existing.iter().any(|r| shares_a_cell(&r.site)) {
+            let r = create(&existing, new_seed, &cfg, &GenerationContent::committed());
+            prop_assert!(
+                matches!(r, Err(GenerationError::SiteAlreadyGenerated { .. })),
+                "a record sharing a cell must refuse, got {:?}",
+                r.map(|(rec, _)| rec)
+            );
         }
     }
 
@@ -5985,7 +6037,8 @@ fn cash_case() -> impl Strategy<Value = CashCase> {
     ];
     faces.prop_flat_map(|set| {
         let mut faces: Vec<u32> = set.into_iter().collect();
-        faces.sort_unstable_by(|a, b| b.cmp(a));
+        faces.sort_unstable();
+        faces.reverse();
         let n = faces.len();
         let quantities = move || proptest::collection::vec(0u64..=6, n);
         let sparse = move || {

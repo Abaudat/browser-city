@@ -455,6 +455,20 @@ sed -i '/VITE_OIDC_CLIENT_ID/d' "$D31/deploy.yml"
 OUT="$(bash "$CHECK" "$D31/deploy.yml" 2>&1)"; CODE=$?
 check "a client build that is not handed the client id fails" 1 bash -c "exit $CODE"
 
+# No workflow and no ops script may call create_district: the live world
+# gets no generated district until the story that picks its seed says so.
+R1="$(fake_dir)"; mkdir -p "$R1/.github/workflows" "$R1/scripts/ops"
+check "a tree that never names create_district passes" 0 bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml" "$R1"
+printf 'jobs: {}
+# spacetime call "$DB" create_district 7
+' > "$R1/.github/workflows/x.yml"
+OUT="$(bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml" "$R1" 2>&1)"; CODE=$?
+check "a workflow naming create_district fails" 1 bash -c "exit $CODE"
+check "names the reducer" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'create_district'" _ "$OUT"
+rm "$R1/.github/workflows/x.yml"
+printf 'spacetime call "$1" create_district 7
+' > "$R1/scripts/ops/seed.sh"
+check "an ops script naming create_district fails" 1 bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml" "$R1"
 
 summary
 exit $?

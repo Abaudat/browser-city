@@ -111,6 +111,11 @@ gh_pr_head() { # <pr> -> current head SHA
   "$GH" pr view "$1" --repo "$BC_REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null
 }
 
+gh_pr_mergeable() { # <pr> -> MERGEABLE | CONFLICTING | UNKNOWN
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_pr_mergeable "$1"; return; }
+  "$GH" pr view "$1" --repo "$BC_REPO" --json mergeable --jq '.mergeable' 2>/dev/null
+}
+
 gh_pr_create() { # <base> <head> <title> <bodyfile> <labels-csv> -> new PR number
   [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_pr_create "$@"; return; }
   local base="$1" head="$2" title="$3" bodyfile="$4" labels="$5" url

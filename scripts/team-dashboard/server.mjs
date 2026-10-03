@@ -138,6 +138,8 @@ async function readSessions() {
     r.state = r.sessions.some((s) => s.state === 'working') ? 'working' : r.sessions.length ? 'idle' : 'off';
     const lead = r.sessions.find((s) => s.state === r.state) ?? r.sessions[0];
     r.issue = lead?.issue ?? null;
+    // A role works one session per story in flight; every issue it is on.
+    r.issues = [...new Set(r.sessions.map((s) => s.issue))].sort((a, b) => Number(a) - Number(b));
     r.lastOutputAt = lead?.lastOutputAt ?? null;
   }
   state.sessions = { roles, loopTerminal, at: Date.now() };
@@ -240,11 +242,68 @@ const marker = (body, name) => {
 const leadOf = (body) => /<!-- bc:lead:([a-z]+) -->/.exec(body ?? '')?.[1] ?? null;
 
 const PR_Q = `query($owner:String!,$name:String!,$number:Int!){ repository(owner:$owner,name:$name){
-  pullRequest(number:$number){ number title url state isDraft createdAt mergedAt additions deletions changedFiles headRefOid
+  pullRequest(number:$number){ number title url state isDraft mergeable createdAt mergedAt additions deletions changedFiles headRefOid
     commits(last:1){ nodes{ commit{ statusCheckRollup{ state } } } }
     comments(first:100){ nodes{ body } } } } }`;
 const ISSUE_COMMENTS_Q = `query($owner:String!,$name:String!,$number:Int!){ repository(owner:$owner,name:$name){
   issue(number:$number){ comments(first:100){ nodes{ body } } } } }`;
+
+// One story in flight: its directions, and the PR that closes it with its
+// reviews, CI and counters. Each lane is read on its own, so one that cannot
+// be read leaves the others on the page.
+async function readTask(owner, name, current) {
+  let task = null, pr = null;
+  const scope = current.labels.filter((l) => l.startsWith('lead:')).map((l) => l.slice(5));
+  task = {
+    number: current.number, title: current.title, url: current.url, status: current.status,
+    priority: current.priority, size: current.size, epic: current.parent ?? null, scope,
+    directions: {}, createdAt: current.createdAt,
+  };
+  const ic = await gql(ISSUE_COMMENTS_Q, { owner, name, number: current.number });
+  for (const c of ic.data.repository.issue.comments.nodes) {
+    const lead = leadOf(c.body);
+    const d = marker(c.body, 'direction');
+    if (lead && d !== null) task.directions[lead] = d || 'PENDING';
+  }
+  if (!task.scope.length) task.scope = Object.keys(task.directions);
+  // The PR that closes it: bc-pr.sh for-issue's search.
+  const found = JSON.parse(await run(GH, ['pr', 'list', '--repo', REPO, '--state', 'all', '--search', `"Closes #${current.number}" in:body`, '--json', 'number,state', '--limit', '5']));
+  const pick = found.find((p) => p.state === 'OPEN') ?? found[0];
+  if (pick) {
+    const pj = await gql(PR_Q, { owner, name, number: pick.number });
+    const p = pj.data.repository.pullRequest;
+    const reviews = {};
+    let status = null, crew = null;
+    for (const c of p.comments.nodes) {
+      if (marker(c.body, 'status') !== null && marker(c.body, 'issue') !== null) status = c.body;
+      const lead = leadOf(c.body);
+      const reviewed = marker(c.body, 'reviewed');
+      if (lead && reviewed !== null) {
+        const verdict = marker(c.body, 'verdict');
+        reviews[lead] = {
+          verdict: reviewed === '-' || !reviewed ? 'PENDING' : (verdict || 'PENDING'),
+          stale: !!reviewed && reviewed !== '-' && reviewed !== p.headRefOid,
+        };
+      }
+      if (marker(c.body, 'crew') !== null) crew = marker(c.body, 'addressed');
+    }
+    // The scope the orchestrator stamped on the PR is the authority once
+    // there is one; before that, whoever was asked for a direction.
+    const scope = status ? (marker(status, 'scope') ?? '').split(/[ ,]+/).filter(Boolean) : [];
+    if (scope.length) task.scope = scope;
+    pr = {
+      number: p.number, title: p.title, url: p.url, state: p.state, draft: p.isDraft, createdAt: p.createdAt,
+      additions: p.additions, deletions: p.deletions, files: p.changedFiles, head: p.headRefOid.slice(0, 7),
+      ci: p.commits.nodes[0]?.commit.statusCheckRollup?.state ?? null,
+      cycle: status ? Number(marker(status, 'cycle') ?? 0) : null, cycleLimit: CYCLE_LIMIT,
+      ciFails: status ? Number(marker(status, 'ci_fails') ?? 0) : 0,
+      conflicts: status ? Number(marker(status, 'conflicts') ?? 0) : 0,
+      mergeable: p.mergeable ?? null,
+      reviews, crewAddressed: crew && crew !== '-' ? crew.slice(0, 7) : null,
+    };
+  }
+  return { ...task, pr };
+}
 
 async function readBoard() {
   const [owner, name] = REPO.split('/');
@@ -255,7 +314,8 @@ async function readBoard() {
 
   const isStory = (i) => !i.isParent && !i.labels.includes('demo') && !i.labels.includes('epic');
   const ACTIVE = ['To analyze', 'In progress', 'Leads review', 'Reviewed'];
-  const current = items.find((i) => isStory(i) && ACTIVE.includes(i.status)) ?? null;
+  // Every story in flight -- the orchestrator's lanes, in its order.
+  const actives = items.filter((i) => isStory(i) && ACTIVE.includes(i.status)).sort((a, b) => a.number - b.number);
 
   const counts = {};
   for (const i of items) if (isStory(i)) counts[i.status ?? 'None'] = (counts[i.status ?? 'None'] ?? 0) + 1;
@@ -306,56 +366,11 @@ async function readBoard() {
   const sprint = sprints.map(sprintOf).find((sp) => sp.start <= now.getTime() && now.getTime() < sp.end) ?? null;
   const demo = items.find((i) => i.labels.includes('demo') && i.state === 'OPEN') ?? null;
 
-  let task = null, pr = null;
-  if (current) {
-    const scope = current.labels.filter((l) => l.startsWith('lead:')).map((l) => l.slice(5));
-    task = {
-      number: current.number, title: current.title, url: current.url, status: current.status,
-      priority: current.priority, size: current.size, epic: current.parent ?? null, scope,
-      directions: {}, createdAt: current.createdAt,
-    };
-    const ic = await gql(ISSUE_COMMENTS_Q, { owner, name, number: current.number });
-    for (const c of ic.data.repository.issue.comments.nodes) {
-      const lead = leadOf(c.body);
-      const d = marker(c.body, 'direction');
-      if (lead && d !== null) task.directions[lead] = d || 'PENDING';
-    }
-    if (!task.scope.length) task.scope = Object.keys(task.directions);
-    // The PR that closes it: bc-pr.sh for-issue's search.
-    const found = JSON.parse(await run(GH, ['pr', 'list', '--repo', REPO, '--state', 'all', '--search', `"Closes #${current.number}" in:body`, '--json', 'number,state', '--limit', '5']));
-    const pick = found.find((p) => p.state === 'OPEN') ?? found[0];
-    if (pick) {
-      const pj = await gql(PR_Q, { owner, name, number: pick.number });
-      const p = pj.data.repository.pullRequest;
-      const reviews = {};
-      let status = null, crew = null;
-      for (const c of p.comments.nodes) {
-        if (marker(c.body, 'status') !== null && marker(c.body, 'issue') !== null) status = c.body;
-        const lead = leadOf(c.body);
-        const reviewed = marker(c.body, 'reviewed');
-        if (lead && reviewed !== null) {
-          const verdict = marker(c.body, 'verdict');
-          reviews[lead] = {
-            verdict: reviewed === '-' || !reviewed ? 'PENDING' : (verdict || 'PENDING'),
-            stale: !!reviewed && reviewed !== '-' && reviewed !== p.headRefOid,
-          };
-        }
-        if (marker(c.body, 'crew') !== null) crew = marker(c.body, 'addressed');
-      }
-      // The scope the orchestrator stamped on the PR is the authority once
-      // there is one; before that, whoever was asked for a direction.
-      const scope = status ? (marker(status, 'scope') ?? '').split(/[ ,]+/).filter(Boolean) : [];
-      if (scope.length) task.scope = scope;
-      pr = {
-        number: p.number, title: p.title, url: p.url, state: p.state, draft: p.isDraft, createdAt: p.createdAt,
-        additions: p.additions, deletions: p.deletions, files: p.changedFiles, head: p.headRefOid.slice(0, 7),
-        ci: p.commits.nodes[0]?.commit.statusCheckRollup?.state ?? null,
-        cycle: status ? Number(marker(status, 'cycle') ?? 0) : null, cycleLimit: CYCLE_LIMIT,
-        ciFails: status ? Number(marker(status, 'ci_fails') ?? 0) : 0,
-        reviews, crewAddressed: crew && crew !== '-' ? crew.slice(0, 7) : null,
-      };
-    }
-  }
+  const tasks = (await Promise.allSettled(actives.map((i) => readTask(owner, name, i)))).map((r, k) => r.status === 'fulfilled' ? r.value : {
+    number: actives[k].number, title: actives[k].title, url: actives[k].url, status: actives[k].status,
+    priority: actives[k].priority, size: actives[k].size, epic: actives[k].parent ?? null, scope: [], directions: {},
+    createdAt: actives[k].createdAt, pr: null, error: String(r.reason?.message ?? r.reason),
+  });
 
   // PRs merged this week, and how long each was open.
   const merged = JSON.parse(await run(GH, ['pr', 'list', '--repo', REPO, '--state', 'merged', '--search', `merged:>=${weekStart.toISOString().slice(0, 19)}Z`,
@@ -379,7 +394,7 @@ async function readBoard() {
   };
   state.board = {
     at: Date.now(),
-    task, pr, sprint,
+    tasks, sprint,
     demo: demo ? { number: demo.number, title: demo.title, url: demo.url, status: demo.status } : null,
     counts,
     backlog: { total: backlog.length, blocked: backlog.filter((i) => i.blocked).length },

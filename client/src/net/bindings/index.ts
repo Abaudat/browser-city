@@ -39,6 +39,7 @@ import BeginLinkReducer from "./begin_link_reducer";
 import BeginRestoreReducer from "./begin_restore_reducer";
 import CompleteLinkReducer from "./complete_link_reducer";
 import CreateCharacterReducer from "./create_character_reducer";
+import CreateDistrictReducer from "./create_district_reducer";
 import FinishPublishReducer from "./finish_publish_reducer";
 import FinishRestoreReducer from "./finish_restore_reducer";
 import RestoreBuildingReducer from "./restore_building_reducer";
@@ -51,6 +52,7 @@ import RestoreCitizenReducer from "./restore_citizen_reducer";
 import RestoreCitizenStateReducer from "./restore_citizen_state_reducer";
 import RestoreContainerKindReducer from "./restore_container_kind_reducer";
 import RestoreDemoPingReducer from "./restore_demo_ping_reducer";
+import RestoreDistrictReducer from "./restore_district_reducer";
 import RestoreFloorTransitionReducer from "./restore_floor_transition_reducer";
 import RestoreHolderKindReducer from "./restore_holder_kind_reducer";
 import RestoreItemHeldReducer from "./restore_item_held_reducer";
@@ -146,6 +148,7 @@ const reducersSchema = __reducers(
   __reducerSchema("begin_restore", BeginRestoreReducer),
   __reducerSchema("complete_link", CompleteLinkReducer),
   __reducerSchema("create_character", CreateCharacterReducer),
+  __reducerSchema("create_district", CreateDistrictReducer),
   __reducerSchema("finish_publish", FinishPublishReducer),
   __reducerSchema("finish_restore", FinishRestoreReducer),
   __reducerSchema("restore_building", RestoreBuildingReducer),
@@ -158,6 +161,7 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_citizen_state", RestoreCitizenStateReducer),
   __reducerSchema("restore_container_kind", RestoreContainerKindReducer),
   __reducerSchema("restore_demo_ping", RestoreDemoPingReducer),
+  __reducerSchema("restore_district", RestoreDistrictReducer),
   __reducerSchema("restore_floor_transition", RestoreFloorTransitionReducer),
   __reducerSchema("restore_holder_kind", RestoreHolderKindReducer),
   __reducerSchema("restore_item_held", RestoreItemHeldReducer),

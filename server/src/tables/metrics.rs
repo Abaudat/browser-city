@@ -36,6 +36,7 @@ use super::clock::world_clock;
 use super::codes::{
     container_kind, holder_kind, matter_kind, node_kind, provision, reason_code, unit,
 };
+use super::district::district;
 use super::identity::{character, character_identity, link_request, oidc_issuer};
 use super::item_instance::{item_held, item_instance, item_placed};
 use super::ops::module_owner;
@@ -250,6 +251,7 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(building);
     sample!(room);
     sample!(building_area);
+    sample!(district);
     sample!(room_area);
     sample!(citizen_transition_schedule);
     sample!(metrics_sample_schedule);

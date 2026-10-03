@@ -15,6 +15,7 @@ cited here by identifier.
 | Property testing (client)     | `fast-check` 4.10.0, pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle; RNG seed from `FAST_CHECK_SEED` through the one vitest setup file (`tests/unit/setup/property-seed.ts`) — fixed in `ci.yml`, derived from `github.run_id` in `explore.yml`, fresh when unset locally, an error when unset under `CI`; no per-test `seed`/`path`, no `configureGlobal` outside the setup file, no `fc.sample`/`fc.check`; a failure prints `FAST_CHECK_SEED=<seed> npx vitest run <file>` (NFR50) |
 | E2E pixel compare             | `pixelmatch` 7.2.0 + `pngjs` 7.0.0 (`@types/pngjs` 6.0.5), pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
 | Boot-budget HTTPS preview     | `@vitejs/plugin-basic-ssl` 2.3.0, pinned, `devDependency` of `client` only; enabled only when `BC_BOOT_HTTPS=1` (the boot-budget harness), never for `npm run dev`/`preview` defaults, never in the built bundle |
+| `proc-macro2`                 | `=1.0.107`, dev-dependency of `bounds` only (the token-level float scan over `sim`'s sources); native test tooling, never a dependency of `sim` or `browser_city` |
 | `serde`/`serde_json`          | Native-only tooling (`bounds`'s schema-snapshot serialization, the spike-report binaries under `server/spikes/*_report`, `server/tools/*` e.g. `world_backup`) — never a dependency of a published module crate |
 | Hosting                       | SpacetimeDB Maincloud                                                                                    |
 | CI / deploy                   | GitHub Actions is the only path to Maincloud; never a local `spacetime publish` |
@@ -54,6 +55,16 @@ and seeds its own PRNG (`sim::rng`, xoshiro256++ via splitmix64 — never
 `rand`) from stable ids, never from a local source (NFR25, NFR26). Its
 determinism is pinned by a committed golden vector, keyed by
 `sim::rng::RNG_VERSION`; the golden and the version move together.
+
+`sim`'s `Cargo.toml` denies `clippy::disallowed_types`,
+`disallowed_methods` and `float_arithmetic`; `clippy.toml` also bans
+`sort_unstable_by`, `sort_unstable_by_key`, `select_nth_unstable_by*` and
+std's `DefaultHasher`/`RandomState` (plain `sort_unstable()` over a total
+key stays legal). A `#[cfg(test)]` canary in `sim/src/lint_canary.rs` expects every
+ban to fire, and `unfulfilled_lint_expectations` is denied, so a ban that
+stops applying fails clippy.
+
+A `bounds` test tokenises every file under `sim/src/` (`generated/` included; `sim/src/lint_canary.rs` is the one exempt path) and fails on any float literal or `f32`/`f64` identifier, naming file and line; the clippy lints are the second layer.
 
 `browser_city` cannot be linked natively, so anything requiring a native
 test lives in `sim` or `bounds`.
@@ -1292,9 +1303,10 @@ also reach `client/public/defs/defs.json` as a required field (an
 object's `tags` field, validated against the tag table on both sides
 identically), rule rows never do -- the client never evaluates a rule.
 
-There is no separate rule-set version: `defs_version` already hashes
-every tracked file under `defs/`, including `defs/rules/` and
-`defs/tags/`, and is the rule-set version FR108/FR109 refer to.
+The rule-set version is the triple `sim::generation::RuleSetVersion
+{ generation, rng, defs }` (`GENERATION_VERSION`, `RNG_VERSION`,
+`DEFS_VERSION`): three typed fields, never one string or hash.
+`RuleSetVersion::current()` is its only non-test constructor.
 
 `sim::rules::RuleSet` is the only thing `evaluate` accepts, and
 `RuleSet::committed` (wrapping `generated::defs::RULES`) is its only
@@ -1380,8 +1392,10 @@ verdict; `District::check_rules(&content)` holds FR112's verdict over the
 finished district's own `DistrictSite` (`sim::rules::evaluate` must find
 no violation); `District::check_workplace_count(&cfg, &content)` holds
 AC4's workplace-count verdict, the same two-band shape as building count.
-`generation::generate` is `plan` plus all three, in that order, and is
-what production calls. `scripts/ci/check-generation-entry-point.sh` fails
+`generation::generate` is `plan` plus all three, in that order; production
+calls `generation::create`, which wraps it. `generate` and `plan` are
+reachable outside `sim` only with the `test-fixtures` feature, which
+`browser_city` never enables. `scripts/ci/check-generation-entry-point.sh` fails
 the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`
 call under `server/sim/tests/` or `server/bounds/` not marked `//
 generation-entry-point: allow` -- the marker is reserved for the
@@ -1576,18 +1590,28 @@ map, one line per catchment). `cargo run -p bounds --bin dump-generation`
 regenerates them; `bounds/tests/generation_evidence_current.rs` fails
 the build if the committed files and a fresh render ever disagree.
 
-`GENERATION_VERSION` is bumped whenever any implemented pass's algorithm
-or seeding (never a `defs/balance/generation.toml` or
-`defs/building-types/`/`defs/rules/` retune) moves a fixed seed's
-output; `server/sim/tests/generation_golden.rs` runs against a config
-and a small `GenerationContent` both frozen in the test itself, under
-deliberately unrelated ids/keys, not live `defs::BALANCE`/
-`defs::BUILDING_TYPES`, so a balance or content retune alone never
-forces a version bump, and the same shape of output against a wholly
-different content table is itself proof the generator never branches on
-a content key. `server/sim/tests/goldens/generation_v5.golden` is keyed
-to it, guarded by `check-golden-version-bump.sh`'s `generation_*` arm the
-same way `RNG_VERSION`/`APPEARANCE_VERSION` are.
+- `GENERATION_VERSION` moves whenever a pass's algorithm or seeding moves a
+  fixed seed's output, never for a `defs/` retune. `RNG_VERSION`,
+  `APPEARANCE_VERSION` and `GENERATION_VERSION` only ever increase.
+- `server/sim/tests/generation_golden.rs` runs on a config and a
+  `GenerationContent` frozen in the test; its golden under
+  `server/sim/tests/goldens/` is keyed to `GENERATION_VERSION`, guarded by
+  `check-golden-version-bump.sh`.
+- Every draw under `generation/` goes through `Rng::below`, reduced in
+  `u64` before any narrowing.
+- `sim::generation::create(existing, seed, cfg, content)` is the one gate
+  to the generator: it refuses with `SiteAlreadyGenerated` when
+  `cfg.site()` overlaps any recorded site, whatever versions the record
+  carries; otherwise it runs `generate` and stamps
+  `RuleSetVersion::current()`.
+- The `district` table (private) has one row per generated district: seed,
+  world-absolute site, the three versions, `generated_at`. Rows are
+  inserted once, read back as stored and never rewritten; restore writes
+  them by value.
+- The `create_district` reducer (operator class) is the only caller of
+  `generation::`; `check-district-write-path.sh` enforces it.
+- No workflow and no `scripts/ops` file calls `create_district`;
+  `init` and `finish_publish` never generate.
 
 ## Routing
 

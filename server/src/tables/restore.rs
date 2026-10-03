@@ -95,6 +95,7 @@ use super::codes::{
     ContainerKind, HolderKind, MatterKind, NodeKind, Provision, ReasonCode, Unit, container_kind,
     holder_kind, matter_kind, node_kind, provision, reason_code, unit,
 };
+use super::district::{District, district};
 use super::identity::{
     Character, CharacterIdentity, LinkRequest, OidcIssuer, character, character_identity,
     link_request, oidc_issuer,
@@ -182,6 +183,7 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "demo_ping",
     "building",
     "building_area",
+    "district",
     "character",
     "character_identity",
     "oidc_issuer",
@@ -272,6 +274,9 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.building_area().iter().next().is_some() {
         nonempty.push("building_area");
+    }
+    if ctx.db.district().iter().next().is_some() {
+        nonempty.push("district");
     }
     if ctx.db.character().iter().next().is_some() {
         nonempty.push("character");
@@ -505,6 +510,22 @@ impl_autoinc_row!(
     }
 );
 impl_autoinc_row!(
+    District,
+    district_id,
+    District {
+        district_id: 0,
+        seed: 0,
+        x0: 0,
+        y0: 0,
+        x1: 0,
+        y1: 0,
+        generation_version: 0,
+        rng_version: 0,
+        defs_version: String::new(),
+        generated_at: Timestamp::UNIX_EPOCH,
+    }
+);
+impl_autoinc_row!(
     Character,
     character_id,
     Character {
@@ -729,6 +750,26 @@ pub fn restore_building_area(
             ctx.db.building_area().area_id().delete(id);
         },
         "building_area",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_district(
+    ctx: &ReducerContext,
+    rows: Vec<District>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.district().insert(r),
+        |id| {
+            ctx.db.district().district_id().delete(id);
+        },
+        "district",
         sequence_floor,
     )
 }

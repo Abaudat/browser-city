@@ -26,6 +26,12 @@ _BC_CONFIG_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 : "${BC_ROLES:=$BC_LEADS crew}"
 : "${BC_IDLE_MS:=300000}"
 : "${BC_CYCLE_LIMIT:=8}"
+# How many sub-issues the team works at once. Every active sub-issue is a
+# lane the orchestrator advances each tick; a new dev cycle starts only
+# while fewer than this many are open. Each lane is its own worktree and its
+# own set of role sessions, so the cap is a budget and attention dial, not a
+# correctness one. 0 = no cap: start whatever the backlog has startable.
+: "${BC_MAX_ACTIVE:=3}"
 # The budget gate's two caps, as fractions of Anthropic's own unified rate
 # limit windows. 85% of the 5-hour window and 90% of the week leave Adrian a
 # margin he never has to ask the team for -- and because the headers are
@@ -71,7 +77,8 @@ _BC_CONFIG_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 : "${BC_SCOTTY_WORKTREE:=$BC_MAIN_CHECKOUT}"
 : "${BC_BASE_BRANCH:=master}"
 # Empty = pick from the whole backlog. The e2e run sets it to its throwaway
-# story so `bc-issue.sh next` can start nothing else.
+# story so `bc-issue.sh next` can start nothing else, and `active` advance
+# nothing else.
 : "${BC_ONLY_ISSUE:=}"
 : "${BC_REQUIRED_CHECK:=ci}"
 
