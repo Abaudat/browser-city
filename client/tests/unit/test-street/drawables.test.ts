@@ -32,6 +32,7 @@ import {
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STAIRWELL_TOP_RAILING_DEF_ID,
   STAIRWELL_TREADS_DEF_ID,
+  STAIRWELL_X0,
   STREET_FLOOR,
   STREET_PROPS,
   SUBWAY_FLOOR,
@@ -58,6 +59,7 @@ import {
   streetWindowDefIds,
   streetWorldIndex,
   subwayAnchors,
+  topRailingFoot,
   treadPath,
 } from "./street-world";
 
@@ -166,7 +168,7 @@ describe("the story 1.6 street scene's committed ordering", () => {
   // walks between the railings -- behind the near (bottom) one, in front of
   // the far (top) one -- wherever they stand on the treads. (The platform's
   // flight is one flat row with a railing beside it: story 15.11, below.)
-  it("floor 0: a player on any tread cell draws after the top railing and before the bottom railing", () => {
+  it("floor 0: a player on any tread cell, and approaching the top railing from the north, draws after the top railing and before the bottom railing", () => {
     const floor = STREET_FLOOR;
     const props = buildStreetProps();
     const treads = STREET_PROPS.find(
@@ -186,6 +188,23 @@ describe("the story 1.6 street scene's committed ordering", () => {
         const player = buildPlayerDrawable(rankOf("characters"), treads.x + dx + 0.5, feetY, floor);
         for (const rail of top) expect(compareDrawables(rail, player)).toBeLessThan(0);
         for (const rail of bottom) expect(compareDrawables(rail, player)).toBeGreaterThan(0);
+      }
+    }
+    // Story 15.12: north of the top railing the player is behind it, at every
+    // sub-cell step from the finial row to the rest position (the foot's
+    // north face), on each of its three columns.
+    const sub = streetMovementConfig().subcellsPerCell;
+    const foot = topRailingFoot();
+    const rest = foot.rect.y0;
+    for (let dx = 0; dx < 3; dx++) {
+      for (let feetY = foot.prop.y - 1 + 1 / sub; feetY <= rest + 1e-9; feetY += 1 / sub) {
+        const player = buildPlayerDrawable(rankOf("characters"), treads.x + dx + 0.5, feetY, floor);
+        for (const rail of top) {
+          expect(
+            compareDrawables(rail, player),
+            `the player at feet y ${feetY}, column ${dx}, is not behind the top railing`,
+          ).toBeGreaterThan(0);
+        }
       }
     }
   });
@@ -415,6 +434,68 @@ describe("the player can never walk off the drawn world", () => {
       expect(isOnDrawnGround(pos), `left the drawn world at (${pos.x}, ${pos.y})`).toBe(true);
     }
     expect(pos.y).toBeCloseTo(shopfrontExitRestY(), 9);
+  });
+
+  // Story 15.12: the top railing collides at its foot, so a body can stand
+  // wholly inside the open strip of its row. That strip must not lead out of
+  // the world past the well's west end, nor down into the treads.
+  it("a body inside the top railing's open strip cannot slide out west past the well, nor down into the treads, for any input sequence", () => {
+    const foot = topRailingFoot();
+    const half = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+    const overWell = (pos: Vec2) => pos.x + half > foot.rect.x0 && pos.x - half < foot.rect.x1;
+    const outsideTheWorld = (pos: Vec2) =>
+      pos.x - half < STAIRWELL_X0 - 1e-9 && pos.y > foot.prop.y;
+    const start = (x: number): Vec2 => ({ x, y: foot.rect.y0 });
+    /** Runs the inputs from the strip. The invariant: a body over the well
+     * at-or-north of the foot face that is still over the well after a step
+     * is stopped by the foot. A body that has left the well (a diagonal step
+     * clears its last column in the X pass, then the Y pass carries it south
+     * down the entrance column) is no longer the foot's business, and may
+     * come back west onto the treads through the opening. */
+    const run = (
+      from: Vec2,
+      inputs: readonly { dx: number; dy: number; deltaMs: number }[],
+    ): void => {
+      let pos = from;
+      for (const { dx, dy, deltaMs } of inputs) {
+        const before = pos;
+        pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config);
+        expect(outsideTheWorld(pos), `slid out of the world at (${pos.x}, ${pos.y})`).toBe(false);
+        if (overWell(before) && before.y <= foot.rect.y0 + 1e-9 && overWell(pos)) {
+          expect(
+            pos.y,
+            `stepped through the foot at (${before.x}, ${before.y})`,
+          ).toBeLessThanOrEqual(foot.rect.y0 + 1e-9);
+        }
+      }
+    };
+    const repeat = (dx: number, dy: number, n: number) =>
+      Array.from({ length: n }, () => ({ dx, dy, deltaMs: 100 }));
+    for (const direction of [-1, 1]) {
+      run(start(foot.rect.x0 + 1.5), repeat(direction, 0, 400));
+    }
+    // East out of the strip, south down the entrance column, west through
+    // the opening onto the treads: legitimate, and the invariant tolerates it.
+    const around = [...repeat(1, 0, 20), ...repeat(0, 1, 8), ...repeat(-1, 0, 12)];
+    run(start(foot.rect.x0 + half), around);
+    // A diagonal off the strip's east end, in one step.
+    run(start(foot.rect.x0 + half), repeat(1, 1, 40));
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            dx: fc.integer({ min: -1, max: 1 }),
+            dy: fc.integer({ min: -1, max: 1 }),
+            deltaMs: fc.integer({ min: 1, max: 5_000 }),
+          }),
+          { minLength: 1, maxLength: 400 },
+        ),
+        fc.integer({ min: 0, max: 8 }),
+        (inputs, offset) =>
+          run(start(foot.rect.x0 + half + offset / config.subcellsPerCell), inputs),
+      ),
+      { numRuns: 60 },
+    );
   });
 
   // Story 1.13, cycle 2 (Quentin's direction): the bridge's own east end

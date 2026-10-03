@@ -1240,6 +1240,17 @@ fn check_archetype_self_consistency(entries: &[ArchetypeEntry]) -> Result<(), De
                 ),
             ));
         }
+        if a.foot && a.collider_inset.is_none() {
+            return Err(DefsError::new(
+                &a.path,
+                a.key.line,
+                a.key.col,
+                format!(
+                    "archetype '{}' is a foot but supplies no collider_inset -- the foot is that collider",
+                    a.key.value
+                ),
+            ));
+        }
         if let Some(h) = &a.height {
             if h.value == 0 {
                 return Err(DefsError::new(

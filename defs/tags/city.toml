@@ -67,3 +67,10 @@ key = "wall_run"
 [[tag]]
 id = 17
 key = "entrance"
+
+# Story 15.12: an upright seen face-on (a railing, a fence). Its collider
+# is its foot -- `tools/defs-build` refuses one that rises above the foot
+# of a `foot = true` archetype (`defs/archetypes/`).
+[[tag]]
+id = 34
+key = "upright"

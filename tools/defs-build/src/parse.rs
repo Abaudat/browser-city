@@ -420,6 +420,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         key: located(text, &a.key),
                         height: a.height.as_ref().map(|h| located(text, h)),
                         collider_inset: a.collider_inset.as_ref().map(|c| located(text, c)),
+                        foot: a.foot,
                     });
                 }
             }

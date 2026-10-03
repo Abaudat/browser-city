@@ -13,7 +13,15 @@
 import { expect, type Page, test } from "@playwright/test";
 import { DEBUG_OVERLAYS } from "../../src/debug/overlays";
 import type {} from "../../src/net/e2e-hooks";
+import { STAIRWELL_X0, streetSubwayApproachRoute } from "../../src/test-street/fixture";
+import {
+  streetMovementConfig,
+  streetWalkInputs,
+  topRailingFoot,
+} from "../unit/test-street/street-world";
+import { canvasOf } from "./camera-test-support";
 import { SCREENSHOT_OPTIONS } from "./screenshot-support";
+import { walkRealSegment } from "./walk-support";
 
 const OVERLAY_IDS = DEBUG_OVERLAYS.map((o) => o.id);
 
@@ -239,4 +247,92 @@ test("the overlay is deliberately non-diegetic", async ({ page }) => {
     "collision-overlay.png",
     OVERLAY_SCREENSHOT_OPTIONS,
   );
+});
+
+// Story 15.12 (Artie, Quentin): the top railing collides at its foot, so a
+// player walking south from the finial row rests with their feet on the
+// base rail. The DOM facts are the proof -- the player's body sits exactly
+// on the railing's collider rect -- and the picture is the supplement.
+test("the player walking south rests on the top railing's foot (story 15.12)", async ({ page }) => {
+  await page.goto("/?debug=collision&freezeCrowd");
+  await waitForSceneReady(page);
+
+  const foot = topRailingFoot();
+  const route = streetSubwayApproachRoute(streetWalkInputs());
+  const toEntrance = route.findIndex((segment) => segment.label === "east-to-the-subway-entrance");
+  for (const segment of route.slice(0, toEntrance + 1)) await walkRealSegment(page, segment);
+  // West along the pavement row to the railing's middle column, then south.
+  await walkRealSegment(page, {
+    label: "west-to-the-railing-middle",
+    key: "ArrowLeft",
+    until: { kind: "x-at-most", value: foot.rect.x0 + 1.5 },
+  });
+  await walkRealSegment(page, {
+    label: "south-onto-the-railing-foot",
+    key: "ArrowDown",
+    until: { kind: "y-at-least", value: foot.rect.y0 - 0.001 },
+  });
+  // Slide west along the foot to the strip's end, where the body rests
+  // against the ring: a position fixed by geometry, never by key timing,
+  // so the picture is the same on every run.
+  const config = streetMovementConfig();
+  const westRestX = STAIRWELL_X0 + config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  await page.keyboard.down("ArrowLeft");
+  await page.waitForFunction(
+    (x) => Math.abs((window.__bc?.playerPosition?.x ?? 0) - x) < 1e-6,
+    westRestX,
+    { timeout: 30_000 },
+  );
+  await page.keyboard.up("ArrowLeft");
+
+  const position = await page.evaluate(() => window.__bc?.playerPosition);
+  expect(position?.y).toBeCloseTo(foot.rect.y0, 4);
+
+  // The overlay redraws a frame after the body stops: poll the condition.
+  await expect
+    .poll(
+      () =>
+        page.evaluate((objectId) => {
+          const player = document.querySelector('[data-bc-collider="player"]');
+          const rail = document.querySelector(
+            `[data-bc-collider="collider"][data-bc-object="${objectId}"]`,
+          );
+          if (!player || !rail) return Number.NaN;
+          return (
+            Number(player.getAttribute("y")) +
+            Number(player.getAttribute("height")) -
+            Number(rail.getAttribute("y"))
+          );
+        }, foot.prop.id.toString()),
+      { message: "the player's bottom edge sits on the railing collider's top edge" },
+    )
+    .toBeCloseTo(0, 4);
+
+  // The stairwell plus one cell each side, from the real view transform.
+  const clip = await page.evaluate(
+    ({ x0, y0, x1, y1 }) => {
+      const view = window.__bc?.viewTransform;
+      const canvas = document.querySelector("#test-street canvas");
+      if (!view || !canvas) throw new Error("no view transform or canvas");
+      const box = canvas.getBoundingClientRect();
+      const px = (cell: number, offset: number) => cell * 16 * view.zoom + offset;
+      return {
+        x: box.x + px(x0, view.offsetX),
+        y: box.y + px(y0, view.offsetY),
+        width: px(x1, view.offsetX) - px(x0, view.offsetX),
+        height: px(y1, view.offsetY) - px(y0, view.offsetY),
+      };
+    },
+    {
+      x0: STAIRWELL_X0 - 1,
+      y0: foot.prop.y - 2,
+      x1: STAIRWELL_X0 + 4,
+      y1: foot.prop.y + 3,
+    },
+  );
+  await expect(canvasOf(page)).toBeVisible();
+  await expect(page).toHaveScreenshot("top-railing-foot.png", {
+    ...OVERLAY_SCREENSHOT_OPTIONS,
+    clip,
+  });
 });
